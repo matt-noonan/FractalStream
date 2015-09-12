@@ -1,5 +1,8 @@
 
-module Color.Colorize where
+module Color.Colorize ( Colorizer(Colorizer)
+                      , runColorizer
+                      , checkers
+                      ) where
 
 import Exec.Region
 import Graphics.Gloss
