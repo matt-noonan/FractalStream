@@ -60,9 +60,10 @@ instance Fractional C where
 
 instance Floating C where
     pi   = complex pi 0
-    exp z = complex (r * cos theta) (r * sin theta)
-        where (r, theta) = coords z
-    log _  = error "unimplemented"
+    exp z = complex (exp x * cos y) (exp x * sin y)
+        where (x, y) = coords z
+    log z  = complex ((log $ norm2 z) / 2) (atan2 y x)
+        where (x,y) = coords z
     sin _  = error "unimplemented"
     cos _  = error "unimplemented"
     tan _  = error "unimplemented"
