@@ -6,40 +6,43 @@ import Exec.Region
 import Color.Colorize
 
 import Exec.Tasking.Block
-
-import Control.Monad
-import Control.Concurrent
+import Exec.Tasking.Manager
 
 import Graphics.Gloss
 import Foreign.ForeignPtr
 import Foreign.Ptr
-import Foreign.Storable
 import Data.Word
 
 glossView :: Dynamics C -> Colorizer C -> IO ()
 
 glossView dyn col = do
-    block <- windowBlock dyn col (512,512)
-    _ <- forkIO $ fillBlock block
+    let (width, height) = (512, 512)
+
+    buf <- mallocForeignPtrBytes (4 * width * height)
+    ptr <- withForeignPtr buf return
+    
+    let block = windowBlock dyn col (width, height) ptr
+    _ <- progressively fillBlock block
+
     simulate 
-        (InWindow "FractalStream" (512, 512) (10, 10))
+        (InWindow "FractalStream" (width, height) (10, 10))
         white
         5
-        (foreignBuf block)
-        (\b -> bitmapOfForeignPtr 512 512 b False)
+        buf
+        (\b -> bitmapOfForeignPtr width height b False)
         (\_ _ b -> b)
 
 
-windowBlock :: Dynamics C -> Colorizer C -> (Int, Int) -> IO (Block C)
-windowBlock dyn col (x,y) = do
-  buf <- mallocForeignPtrBytes (x * y * 4)
-  withForeignPtr buf $ \ptr -> 
-    return Block { dynamics = dyn
+windowBlock :: Dynamics C -> Colorizer C -> (Int, Int) -> Ptr Word8 -> Block C
+windowBlock dyn col (x,y) ptr = Block
+                 { dynamics = dyn
                  , colorizer = col
                  , coordToModel = \(u,v) -> C ((u - fromIntegral x / 2) / 160) ((v - fromIntegral y / 2) / 160)
                  , oversample = True
                  , buffer = ptr
-                 , foreignBuf = buf
+                 , x0 = 0
+                 , y0 = 0
+                 , xStride = x
                  , xSize = fromIntegral x
                  , ySize = fromIntegral y
                  } 

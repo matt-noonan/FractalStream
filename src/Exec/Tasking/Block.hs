@@ -1,17 +1,18 @@
 
-module Exec.Tasking.Block ( Block(Block)
-                          , dynamics
-                          , colorizer
-                          , coordToModel
-                          , oversample
-                          , buffer
-                          , foreignBuf
-                          , xSize
-                          , ySize
+module Exec.Tasking.Block ( Block( Block )
+                                 , dynamics
+                                 , colorizer
+                                 , coordToModel
+                                 , oversample
+                                 , buffer
+                                 , x0
+                                 , y0
+                                 , xStride
+                                 , xSize
+                                 , ySize
                           , fillBlock
                           ) where
 
-import Lang.Numbers
 import Exec.Region
 import Color.Colorize
 
@@ -20,7 +21,6 @@ import Graphics.Gloss.Data.Color
 import Control.Monad
 import Foreign.Ptr
 import Foreign.Storable
-import Foreign.ForeignPtr
 import Data.Word
 
 data Block a = Block { dynamics  :: Dynamics a
@@ -28,19 +28,22 @@ data Block a = Block { dynamics  :: Dynamics a
                      , coordToModel :: (Double, Double) -> a
                      , oversample :: Bool
                      , buffer :: Ptr Word8
-                     , foreignBuf :: ForeignPtr Word8
+                     , xStride :: Int
+                     , x0 :: Int
+                     , y0 :: Int
                      , xSize :: Double
                      , ySize :: Double
                      }
 
-fillBlock :: Block C -> IO ()
+fillBlock :: Block a -> IO ()
 
 fillBlock block = do
     forM_ [(x,y) | y <- [0..ySize block - 1]
                  , x <- [0..xSize block - 1] ] $ \(x,y) -> do
 
         let subsamples = if oversample block then [0,0.5] else [0]
-            samples = [(x + dx, y + dy) | dx <- subsamples, dy <- subsamples]
+            (u,v) = (x + (fromIntegral $ x0 block), y + (fromIntegral $ y0 block))
+            samples = [(u + du, v + dv) | du <- subsamples, dv <- subsamples]
 
             theDynamics = runDynamics  $ dynamics block
             colorize    = runColorizer $ colorizer block
@@ -48,7 +51,7 @@ fillBlock block = do
             colorCoord = colorize . theDynamics . coordToModel block
             (r,g,b) = averageColor $ map colorCoord samples
 
-            index = round $ 4 * (x + (xSize block) * y)
+            index = round $ 4 * (u + v * (fromIntegral $ xStride block))
             buf = buffer block
 
         pokeByteOff buf (index + 3) r
