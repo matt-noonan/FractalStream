@@ -1,15 +1,5 @@
 
-module Exec.Tasking.Block ( Block( Block )
-                                 , dynamics
-                                 , colorizer
-                                 , coordToModel
-                                 , oversample
-                                 , buffer
-                                 , x0
-                                 , y0
-                                 , xStride
-                                 , xSize
-                                 , ySize
+module Exec.Tasking.Block ( Block(..)
                           , fillBlock
                           ) where
 
@@ -26,8 +16,8 @@ import Data.Word
 data Block a = Block { dynamics  :: Dynamics a
                      , colorizer :: Colorizer a
                      , coordToModel :: (Double, Double) -> a
-                     , oversample :: Bool
-                     , buffer :: Ptr Word8
+                     , logSampleRate :: Int
+                     , blockBuffer :: Ptr Word8
                      , xStride :: Int
                      , x0 :: Int
                      , y0 :: Int
@@ -38,10 +28,12 @@ data Block a = Block { dynamics  :: Dynamics a
 fillBlock :: Block a -> IO ()
 
 fillBlock block = do
-    forM_ [(x,y) | y <- [0..ySize block - 1]
-                 , x <- [0..xSize block - 1] ] $ \(x,y) -> do
+    let skip = (if logSampleRate block < 0 then 2^(negate $ logSampleRate block) else 1)
+    forM_ [(x,y) | y <- [0, (fromIntegral skip) .. ySize block - 1]
+                 , x <- [0, (fromIntegral skip) .. xSize block - 1] ] $ \(x,y) -> do
 
-        let subsamples = if oversample block then [0,0.5] else [0]
+        let k = if logSampleRate block > 0 then 2^logSampleRate block else 1
+            subsamples = [s / k | s <- [0..k-1]]
             (u,v) = (x + (fromIntegral $ x0 block), y + (fromIntegral $ y0 block))
             samples = [(u + du, v + dv) | du <- subsamples, dv <- subsamples]
 
@@ -52,12 +44,14 @@ fillBlock block = do
             (r,g,b) = averageColor $ map colorCoord samples
 
             index = round $ 4 * (u + v * (fromIntegral $ xStride block))
-            buf = buffer block
+            buf = blockBuffer block
 
-        pokeByteOff buf (index + 3) r
-        pokeByteOff buf (index + 2) g
-        pokeByteOff buf (index + 1) b
-        pokeByteOff buf (index + 0) (0xff :: Word8)
+        forM_ [(u',v') | v' <- [0 .. skip - 1], u' <- [0 .. skip - 1] ] $ \(u',v') -> do
+            let index' = index + 4 * (u' + v' * xStride block)
+            pokeByteOff buf (index' + 3) r
+            pokeByteOff buf (index' + 2) g
+            pokeByteOff buf (index' + 1) b
+            pokeByteOff buf (index' + 0) (0xff :: Word8)
 
 --
 --  Color averaging, for anti-aliased drawing

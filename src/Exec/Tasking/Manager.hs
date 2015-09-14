@@ -21,8 +21,9 @@ progressively render block = do
 
     blockIDs <- shuffle [(x,y) | x <- [0..xBlocks - 1], y <- [0..yBlocks - 1]]
 
-    forM_ blockIDs $ \(x,y) -> do
-        let subblock = block { xSize = 16, ySize = 16, x0 = 16 * x, y0 = 16 * y }
+    forM_ [-4, -2, 0, logSampleRate block] $ \rate -> do
+      forM_ blockIDs $ \(x,y) -> do
+        let subblock = block { xSize = 16, ySize = 16, x0 = 16 * x, y0 = 16 * y, logSampleRate = rate }
         _ <- forkIO $ render subblock
         return ()
 
