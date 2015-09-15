@@ -5,6 +5,7 @@ module Lang.Planar ( Planar (..)
                    , rectangle
                    , upperLeft
                    , lowerRight
+                   , translateRect
                    , convertRect
                    , intersectsRect
                    , dimensions
@@ -31,6 +32,11 @@ rectangle p p' = Rectangle { _upperLeft  = fromCoords $ (min x x', min y y')
                            }
     where (x , y ) = toCoords p
           (x', y') = toCoords p'
+
+translateRect :: Planar a => (Double, Double) -> Rectangle a -> Rectangle a
+
+translateRect (dx,dy) rect = rectangle (move $ upperLeft rect) (move $ lowerRight rect)
+    where move p = let (x,y) = toCoords p in fromCoords (x + dx, y + dy)
 
 convertRect :: (Planar xy, Planar uv) => Rectangle xy -> Rectangle uv -> xy -> uv
 

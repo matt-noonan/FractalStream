@@ -1,7 +1,7 @@
 
 module UI.Tile ( Tile()
                , renderTile
-               , drawGlossyTile
+               , tileData
                ) where
 
 import Lang.Planar
@@ -15,8 +15,6 @@ import Control.Concurrent
 import Foreign.ForeignPtr
 import Data.Word
 
-import Graphics.Gloss
-
 newtype ImagePoint = ImagePoint (Double,Double)
 
 instance Planar ImagePoint where
@@ -26,11 +24,11 @@ instance Planar ImagePoint where
 data Tile a = Tile { imageRect  :: Rectangle ImagePoint
                    , tileBuffer :: ForeignPtr Word8
                    , threadId :: ThreadId
-                   , draw :: String -> Picture
                    }
 
-drawGlossyTile :: Tile a -> String -> Picture
-drawGlossyTile = draw
+tileData :: Tile a -> (Int, Int, ForeignPtr Word8)
+tileData tile = (floor w, floor h, tileBuffer tile)
+    where (w, h) = dimensions $ imageRect tile
 
 renderTile :: Planar a => Dynamics a -> Colorizer a -> (Int, Int) -> Rectangle a -> IO (Tile a)
 
@@ -55,5 +53,4 @@ renderTile dyn col (width, height) mRect = do
     return Tile { imageRect = iRect
                 , tileBuffer = buf
                 , threadId = tid
-                , draw = const (bitmapOfForeignPtr width height buf False)
                 }
