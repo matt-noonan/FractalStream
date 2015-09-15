@@ -12,12 +12,7 @@ import UI.Tile
 import Graphics.Gloss
 import Graphics.Gloss.Interface.Pure.Game
 
-newtype GlossViewport = GlossViewport (Int,Int)
-instance Planar GlossViewport where
-    toCoords (GlossViewport (x,y)) = (fromIntegral x, fromIntegral y)
-    fromCoords (x,y) = GlossViewport (floor x, floor y)
-
-data GlossState = GlossState { viewRect :: Rectangle GlossViewport
+data GlossState = GlossState { viewRect :: Rectangle Viewport
                              , dragging :: Maybe (Float,Float)
                              , zoomBox :: Maybe ((Float,Float), (Float,Float))
                              }

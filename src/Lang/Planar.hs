@@ -2,6 +2,7 @@
 module Lang.Planar ( Planar (..)
                    , R
                    , Rectangle()
+                   , Viewport (Viewport)
                    , rectangle
                    , upperLeft
                    , lowerRight
@@ -66,3 +67,9 @@ dimensions r = (x1 - x0, y1 - y0)
 instance Planar C where
     toCoords = coords
     fromCoords = uncurry complex
+
+newtype Viewport = Viewport (Int,Int)
+
+instance Planar Viewport where
+    toCoords (Viewport (x,y)) = (fromIntegral x, fromIntegral y)
+    fromCoords (x,y) = Viewport (floor x, floor y)

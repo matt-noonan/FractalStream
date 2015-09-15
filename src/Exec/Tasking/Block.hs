@@ -6,9 +6,10 @@ module Exec.Tasking.Block ( Block(..)
 import Exec.Region
 import Color.Colorize
 
-import Graphics.Gloss.Data.Color
+import Color.Color
 
 import Control.Monad
+import Control.Concurrent.MVar
 import Foreign.Ptr
 import Foreign.Storable
 import Data.Word
@@ -23,6 +24,7 @@ data Block a = Block { dynamics  :: Dynamics a
                      , y0 :: Int
                      , xSize :: Double
                      , ySize :: Double
+                     , shouldRedraw :: MVar ()
                      }
 
 fillBlock :: Block a -> IO ()
@@ -41,42 +43,15 @@ fillBlock block = do
             colorize    = runColorizer $ colorizer block
 
             colorCoord = colorize . theDynamics . coordToModel block
-            (r,g,b) = averageColor $ map colorCoord samples
+            (r,g,b) = colorToRGB $ averageColor $ map colorCoord samples
 
-            index = round $ 4 * (u + v * (fromIntegral $ xStride block))
+            index = round $ (u + v * (fromIntegral $ xStride block))
             buf = blockBuffer block
 
         forM_ [(u',v') | v' <- [0 .. skip - 1], u' <- [0 .. skip - 1] ] $ \(u',v') -> do
-            let index' = index + 4 * (u' + v' * xStride block)
-            pokeByteOff buf (index' + 3) r
-            pokeByteOff buf (index' + 2) g
-            pokeByteOff buf (index' + 1) b
-            pokeByteOff buf (index' + 0) (0xff :: Word8)
+            let index' = index + (u' + v' * xStride block)
+            pokeColor buf index' $ rgbToColor (r,g,b)
 
---
---  Color averaging, for anti-aliased drawing
---
-
-rgbOfColor8 :: Color -> (Word8, Word8, Word8)
-rgbOfColor8 c = (to8 r, to8 g, to8 b)
-    where (r,g,b,_) = rgbaOfColor c
-          to8 :: Float -> Word8
-          to8 x = round (x * 255)
-
-averageOver :: Floating b => (a -> b) -> [a] -> b
-averageOver f xs = sum $ map ((/ n) . f) xs where n = fromIntegral $ length xs
-
-getRed :: Color -> Float
-getRed c = r where (r,_,_,_) = rgbaOfColor c
-
-getGreen :: Color -> Float
-getGreen c = g where (_,g,_,_) = rgbaOfColor c
-
-getBlue :: Color -> Float
-getBlue c = b where (_,_,b,_) = rgbaOfColor c
-
-averageColor :: [Color] -> (Word8, Word8, Word8)
-averageColor cs = rgbOfColor8 $ makeColor r g b 1
-    where r = averageOver getRed   cs
-          g = averageOver getGreen cs
-          b = averageOver getBlue  cs
+        -- Completed the block for this resolution, signal for a redraw
+        _ <- tryPutMVar (shouldRedraw block) ()
+        return ()
