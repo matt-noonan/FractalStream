@@ -19,9 +19,8 @@ runColorizer (Colorizer f) = f
 
 checker :: Planar a => Colorizer a -> Colorizer a -> Colorizer a
 checker colorizerA colorizerB = Colorizer f
-    where y p = let (_,y') = toCoords p in y'
-          f   (Result Interior _ _) = black
-          f r@(Result Exterior p _) = (runColorizer $ if y p > 0 then colorizerA else colorizerB) r
+    where f   (Result Interior _ _) = black
+          f r@(Result Exterior p _) = (runColorizer $ if snd (toCoords p) > 0 then colorizerA else colorizerB) r
 
 gradient :: Int -> Colorizer a -> Colorizer a -> Colorizer a
 
