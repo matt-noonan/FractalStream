@@ -16,8 +16,8 @@ progressively render block = do
 
     let height = xSize block
         width  = ySize block
-        xBlocks = (ceiling $  width / 16)
-        yBlocks = (ceiling $ height / 16)
+        xBlocks =  width `div` 16
+        yBlocks = height `div` 16
 
     blockIDs <- shuffle [(x,y) | x <- [0..xBlocks - 1], y <- [0..yBlocks - 1]]
 

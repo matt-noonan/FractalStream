@@ -63,8 +63,8 @@ renderTile dyn col (width, height) mRect = do
                       , x0 = 0
                       , y0 = 0
                       , xStride = width
-                      , xSize = fromIntegral width
-                      , ySize = fromIntegral height
+                      , xSize = width
+                      , ySize = height
                       , shouldRedraw = redraw
                       }
 
