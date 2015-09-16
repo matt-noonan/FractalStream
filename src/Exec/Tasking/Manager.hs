@@ -6,6 +6,17 @@ import System.Random
 import Data.Array.IO
 import Control.Monad
 import Control.Concurrent
+import Control.Concurrent.Async
+
+forPool :: Int -> [a] -> (a -> IO b) -> IO [b]
+forPool nSimul xs f = do
+    sem <- newQSem nSimul
+    mapConcurrently (with sem . f) xs
+  where with s op = do
+            waitQSem s
+            r <- op
+            signalQSem s
+            return r
 
 -- Chop up a block into sub-blocks, delegate rendering
 -- tasks for sub-blocks, and blit the results back
@@ -21,11 +32,11 @@ progressively render block = do
 
     blockIDs <- shuffle [(x,y) | x <- [0..xBlocks - 1], y <- [0..yBlocks - 1]]
 
+    poolSize <- getNumCapabilities >>= (return . max 4)
+    
     forM_ [-4, -2, 0, logSampleRate block] $ \rate -> do
-      forM_ blockIDs $ \(x,y) -> do
-        let subblock = block { xSize = 16, ySize = 16, x0 = 16 * x, y0 = 16 * y, logSampleRate = rate }
-        _ <- forkIO $ render subblock
-        return ()
+      forPool poolSize blockIDs $ \(x,y) ->
+        render $ block { xSize = 16, ySize = 16, x0 = 16 * x, y0 = 16 * y, logSampleRate = rate }
 
 shuffle :: [a] -> IO [a]
 shuffle xs = do
