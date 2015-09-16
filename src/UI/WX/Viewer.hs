@@ -10,6 +10,7 @@ import UI.Tile
 
 import Graphics.UI.WX
 import Graphics.UI.WXCore.Image
+import Graphics.UI.WXCore.Draw
 
 import Foreign.ForeignPtr
 
@@ -38,7 +39,7 @@ wxView dyn col = start $ do
 
     let mRect = rectangle (complex (-2) 2) (complex 2 (-2))
     viewerTile <- renderTile dyn col (width, height) mRect
-    p <- panel f [on paint := paintTile viewerTile]
+    p <- panel f [on paint := \dc r -> (windowGetViewRect f >>= paintTile viewerTile dc r)]
 
     -- Add a timer which will check for repainting requests
     _ <- timer f [interval := 20, on command := ifModified viewerTile $ repaint p ]
@@ -46,17 +47,22 @@ wxView dyn col = start $ do
     -- Add the status bar, menu bar, and layout to the frame
     set f [ statusBar := [status]
           , menuBar   := [file,hlp]
-          , layout    := minsize (sz width height) $ widget p
-          , on (menu about) := infoDialog f "About FractalStream" "FractalStream Contributors\nMatt Noonan"
+          , layout    := fill $ minsize (sz width height) $ widget p
+          , on (menu about) := infoDialog f "About FractalStream" "Contributors:\nMatt Noonan"
           ]
 
-paintTile :: Tile a -> DC d -> Rect -> IO ()
+paintTile :: Tile a -> DC d -> Rect -> Rect -> IO ()
 
-paintTile viewerTile dc _ = do
+paintTile viewerTile dc _ windowRect = do
 
-    putStrLn "redraw tile!"
-
+    putStrLn $ "redraw tile! windowRect=" ++ show windowRect
+    
     let (width, height, fptr) = tileData viewerTile
+
+    let Point { pointX = fWidth, pointY = fHeight } = rectBottomRight windowRect
+
+    let (x0, y0) = ( (fWidth  + width ) `div` 2 - width  ,
+                     (fHeight + height) `div` 2 - height )
 
     withForeignPtr fptr $ \buf -> do
         pbuf <- pixelBufferCreate (sz width height)
@@ -65,4 +71,4 @@ paintTile viewerTile dc _ = do
         pixelBufferSetPixels pbuf pixels
 
         img <- imageCreateFromPixelBuffer pbuf
-        drawImage dc img (pt 0 0) []
+        drawImage dc img (pt x0 y0) []
