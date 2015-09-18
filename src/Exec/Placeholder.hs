@@ -1,12 +1,15 @@
 
-module Exec.Placeholder (rabbit) where
+module Exec.Placeholder (rabbit, mandelbrot) where
 
 import Exec.Haskell
 import Lang.Numbers
 import Exec.Region
 
+f_C :: C -> C -> C
+f_C c z = z^2 + c
+
 f_rabbit :: C -> C
-f_rabbit z = z^2 - 0.122565 + 0.744864 * i
+f_rabbit = f_C (-0.122565 + 0.744864 * i)
 
 maxIters :: Int
 maxNorm2 :: Double
@@ -27,3 +30,10 @@ rabbit = ComplexDynamics { function = f_rabbit
                          , continue = unsure
                          , classify = escaped
                          }
+
+mandelbrot :: ParametricComplexDynamics
+mandelbrot = ParametricComplexDynamics { family = f_C
+                                       , initialValue = const 0
+                                       , continueP = unsure
+                                       , classifyP = escaped
+                                       }
