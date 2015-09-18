@@ -1,4 +1,7 @@
-
+{- |
+Module      : Lang.Numbers
+Description : Unboxed real and complex numbers.
+-}
 module Lang.Numbers
     ( R(R)
     , C(C)
@@ -10,7 +13,6 @@ module Lang.Numbers
     , conj
     , norm2
     ) where
-
 
 data R = R {-# UNPACK #-}!Double deriving (Eq, Ord, Show)
 data C = C {-# UNPACK #-}!Double {-# UNPACK #-}!Double deriving (Ord, Eq)

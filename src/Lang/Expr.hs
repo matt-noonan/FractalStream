@@ -1,4 +1,7 @@
-
+{- |
+Module      : Lang.Expr
+Description : Expression ASTs and manipulation.
+-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}

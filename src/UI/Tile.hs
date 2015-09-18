@@ -1,4 +1,7 @@
-
+{- |
+Module      : UI.Tile
+Description : Creation and execution of viewer tiles.
+-}
 module UI.Tile ( Tile()
                , renderTile
                , tileData
@@ -24,16 +27,20 @@ instance Planar ImagePoint where
     toCoords (ImagePoint (x,y)) = (x, y)
     fromCoords = ImagePoint
 
-data Tile a = Tile { imageRect  :: Rectangle ImagePoint
-                   , tileBuffer :: ForeignPtr Word8
-                   , threadId :: ThreadId
-                   , shouldRedrawTile :: MVar ()
-                   }
+-- | A tile in the image viewer.
+data Tile a = Tile
+    { imageRect  :: Rectangle ImagePoint   -- ^ The region in view space described by the tile.
+    , tileBuffer :: ForeignPtr Word8       -- ^ The buffer into which the tile will draw.
+    , threadId :: ThreadId                 -- ^ The id of the thread which is drawing this tile.
+    , shouldRedrawTile :: MVar ()          -- ^ A value which signals that the tile needs to be redrawn.
+    }
 
+-- | Unpack the width, height, and buffer behind a tile. 
 tileData :: Tile a -> (Int, Int, ForeignPtr Word8)
 tileData tile = (floor w, floor h, tileBuffer tile)
     where (w, h) = dimensions $ imageRect tile
 
+-- | Perform an action, but only if the tile needs to be redrawn.
 ifModified :: Tile a -> IO () -> IO ()
 ifModified tile f = do
     redraw <- tryTakeMVar $ shouldRedrawTile tile
@@ -41,8 +48,16 @@ ifModified tile f = do
         Nothing -> return ()
         Just _  -> f
 
-renderTile :: Planar a => Dynamics a -> Colorizer a -> (Int, Int) -> Rectangle a -> IO (Tile a)
-
+-- | Construct a tile from a dynamical system, and begin drawing to it.
+renderTile :: Planar a
+           => Dynamics a   -- ^ The dynamical system to draw.
+           -> Colorizer a  -- ^ The per-region color scheme.
+           -> (Int, Int)   -- ^ The height and width of this tile.
+           -> Rectangle a  -- ^ The region of the dynamical plane corresponding
+                           --   to this tile.
+           -> IO (Tile a)  -- ^ An action which allocates the tile and 
+                           --   forks a task which draws into it.
+                           
 renderTile dyn col (width, height) mRect = do
 
     buf <- mallocForeignPtrBytes (4 * width * height)

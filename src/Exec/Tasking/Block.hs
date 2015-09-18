@@ -1,4 +1,8 @@
-
+{- |
+Module      : Exec.Tasking.Block
+Description : Blocks encapsulate the task of rendering a picture of a
+              dynamical system to one or more tiles.
+-}
 module Exec.Tasking.Block ( Block(..)
                           , fillBlock
                           ) where
@@ -13,19 +17,31 @@ import Control.Concurrent.MVar
 import Foreign.Ptr
 import Data.Word
 
-data Block a = Block { dynamics  :: Dynamics a
-                     , colorizer :: Colorizer a
-                     , coordToModel :: (Double, Double) -> a
-                     , logSampleRate :: Int
-                     , blockBuffer :: Ptr Word8
-                     , xStride :: Int
-                     , x0 :: Int
-                     , y0 :: Int
-                     , xSize :: Int
-                     , ySize :: Int
-                     , shouldRedraw :: MVar ()
+-- | A Block carries the information required to go from a 
+--   runnable dynamical system and choice of color scheme
+--   to a buffer filled with the resulting color data.
+data Block a = Block { dynamics  :: Dynamics a                -- ^ The dynamical system to run.
+                     , colorizer :: Colorizer a               -- ^ The color scheme to use.
+                     , coordToModel :: (Double, Double) -> a  -- ^ Conversion function from block
+                                                              --   coordinates to model coordinates.
+                     , logSampleRate :: Int       -- ^ The rate of over- or under-sampling to use.
+                                                  --      * logSampleRate == 0: draw one point per pixel.
+                                                  --      * logSampleRate == N < 0: draw 2^-N by 2^-N pixel
+                                                  --          blocks per model point.
+                                                  --      * logSampleRate == N > 0: subsample each pixel
+                                                  --          on a 2^N by 2^N subgrid and average the
+                                                  --          results, for a smoother picture.
+                     , blockBuffer :: Ptr Word8   -- ^ The pixel buffer to write into.
+                     , xStride :: Int             -- ^ The width of the pixel buffer.
+                     , x0 :: Int        -- ^ The upper-left x coordinate of this block in the pixel buffer.
+                     , y0 :: Int        -- ^ The upper-left y coordinate of this block in the pixel buffer.
+                     , xSize :: Int     -- ^ The width of the block.
+                     , ySize :: Int     -- ^ The height of the block
+                     , shouldRedraw :: MVar ()  -- ^ A variable used to signal that this block is complete
+                                                --   and the pixel buffer should be redrawn.
                      }
 
+-- | Create an action describing how to draw the given block.
 fillBlock :: Block a -> IO ()
 
 fillBlock block = do

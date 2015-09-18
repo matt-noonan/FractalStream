@@ -1,3 +1,7 @@
+{- |
+Module      : Exec.Tasking.Manager
+Description : Block-execution strategies.
+-}
 module Exec.Tasking.Manager (progressively) where
 
 import Exec.Tasking.Block
@@ -18,9 +22,9 @@ forPool nSimul xs f = do
             signalQSem s
             return r
 
--- Chop up a block into sub-blocks, delegate rendering
--- tasks for sub-blocks, and blit the results back
--- into an image.
+-- | Chop up a block into sub-blocks, delegate rendering
+--   tasks for sub-blocks, and blit the results back
+--   into an image.
 progressively :: (Block a -> IO ()) -> (Block a -> IO ())
 
 progressively render block = do

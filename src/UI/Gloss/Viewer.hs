@@ -1,4 +1,7 @@
-
+{- |
+Module      : UI.Gloss.Viewer
+Description : Very simple gloss-based viewer, for initial experiments.
+-}
 module UI.Gloss.Viewer ( glossView
                        , GlossState
                        ) where 

@@ -1,4 +1,7 @@
-
+{- |
+Module       : Main
+Description  : Main entry point into FractalStream 
+-}
 module Main where
 
 import Lang.Numbers

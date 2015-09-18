@@ -1,3 +1,7 @@
+{- |
+Module      : UI.WX.Viewer
+Description : Interactive view based on wxWidgets
+-}
 module UI.WX.Viewer ( wxView
                     ) where
 
@@ -14,7 +18,11 @@ import Graphics.UI.WXCore.Draw
 
 import Foreign.ForeignPtr
 
-wxView :: (C, C) -> Dynamics C -> Colorizer C -> IO ()
+-- | Create a window with an interactive view of a complex-dynamical system.
+wxView :: (C, C)       -- ^ The upper-left and lower-right corners of the view.
+       -> Dynamics C   -- ^ The dynamical system to explore.
+       -> Colorizer C  -- ^ How to color the iteration results.
+       -> IO ()
 wxView (ul, lr) dyn col = start $ do
 
     let (width, height) = (512, 512)
@@ -51,7 +59,12 @@ wxView (ul, lr) dyn col = start $ do
           , on (menu about) := infoDialog f "About FractalStream" "Contributors:\nMatt Noonan"
           ]
 
-paintTile :: Tile a -> DC d -> Rect -> Rect -> IO ()
+-- | Paint the state of a tile into a device context.
+paintTile :: Tile a  -- ^ A tile to convert to an image
+          -> DC d    -- ^ The WX device context
+          -> Rect    -- ^ The rectangle which needs updating
+          -> Rect    -- ^ The enclosing view rectangle
+          -> IO ()
 
 paintTile viewerTile dc _ windowRect = do
     

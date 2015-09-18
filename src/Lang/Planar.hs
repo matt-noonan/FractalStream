@@ -1,4 +1,7 @@
-
+{- |
+Module      : Lang.Planar
+Description : The Planar typeclass, for types with maps to and from R^2.
+-}
 module Lang.Planar ( Planar (..)
                    , R
                    , Rectangle()
@@ -14,33 +17,42 @@ module Lang.Planar ( Planar (..)
 
 import Lang.Numbers
 
+-- | The class of types which can be converted to and from $\mathbb{R}^2$.
+--   Instances should satisfy the law (fromCoords . toCoords == id).
 class Planar a where
     toCoords :: a -> (Double,Double)
     fromCoords :: (Double,Double) -> a
 
+-- | A representation of a generic rectangle.
 data Rectangle a = Rectangle { _upperLeft :: a, _lowerRight :: a }
 
+-- | Extract the upper-left point of a rectangle.
 upperLeft :: Rectangle a -> a
 upperLeft = _upperLeft
 
+-- | Extract the lower-right point of a rectangle.
 lowerRight :: Rectangle a -> a
 lowerRight = _lowerRight
 
-rectangle :: Planar a => a -> a -> Rectangle a
-
+-- | Build a rectangle.
+rectangle :: Planar a
+          => a  -- ^ The upper-left corner.
+          -> a  -- ^ The lower-right corner.
+          -> Rectangle a
 rectangle p p' = Rectangle { _upperLeft  = fromCoords $ (min x x', min y y')
                            , _lowerRight = fromCoords $ (max x x', max y y')
                            }
     where (x , y ) = toCoords p
           (x', y') = toCoords p'
 
+-- | Move a rectangle by a given displacement vector.
 translateRect :: Planar a => (Double, Double) -> Rectangle a -> Rectangle a
-
 translateRect (dx,dy) rect = rectangle (move $ upperLeft rect) (move $ lowerRight rect)
     where move p = let (x,y) = toCoords p in fromCoords (x + dx, y + dy)
 
+-- | Given a rectangle $R_1$ in XY space and a rectangle $R_2$ in UV space,
+--   make the affine transformation which maps $R_1$ to $R_2$.
 convertRect :: (Planar xy, Planar uv) => Rectangle xy -> Rectangle uv -> xy -> uv
-
 convertRect xyRect uvRect xy = fromCoords (u,v)
     where (x,y)   = toCoords xy
           (x0,y0) = toCoords $ upperLeft  xyRect
@@ -51,14 +63,15 @@ convertRect xyRect uvRect xy = fromCoords (u,v)
           vyRatio = (v1 - v0) / (y1 - y0)
           (u,v) = (u0 + uxRatio * (x - x0), v0 + vyRatio * (y - y0))
 
+-- | Determine if two rectangles intersect.
 intersectsRect :: Planar a => Rectangle a -> Rectangle a -> Bool
-
 intersectsRect rect1 rect2 = l1 <= r2 && l2 <= r1 && t1 <= b2 && t2 <= b1
     where (l1, t1) = toCoords $ upperLeft  rect1
           (r1, b1) = toCoords $ lowerRight rect1
           (l2, t2) = toCoords $ upperLeft  rect2
           (r2, b2) = toCoords $ lowerRight rect2
 
+-- | Get the width and height of a rectangle.
 dimensions :: Planar a => Rectangle a -> (Double, Double)
 dimensions r = (x1 - x0, y1 - y0)
     where (x0,y0) = toCoords $ upperLeft r

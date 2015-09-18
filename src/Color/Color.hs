@@ -1,94 +1,121 @@
-module Color.Color (  Color
-                     , light
-                     , dark
-                     , lightenBy
-                     , darkenBy
-                     , black
-                     , red
-                     , green
-                     , blue
-                     , white
-                     , grey
-                     , cyan
-                     , orange
-                     , lime
-                     , purple
-                     , yellow
-                     , colorToRGB
-                     , rgbToColor
-                     , mixColors
-                     , averageColor
-                     , invertColor
-                     , peekColor
-                     , pokeColor
-                     ) where
+{- |
+Module      : Color.Color
+Description : Color definitions, modifiers, and combinators.
+-}
+module Color.Color (
+-- * Constructors and destructors
+      Color
+    , colorToRGB
+    , rgbToColor
+-- * Basic colors
+    , black
+    , red
+    , green
+    , blue
+    , white
+    , grey
+    , orange
+    , violet
+    , purple
+    , yellow
+-- * Color modifiers and combinators
+    , light
+    , dark
+    , lightenBy
+    , darkenBy
+    , mixColors
+    , averageColor
+    , invertColor
+-- * Manipulating color buffers
+    , peekColor
+    , pokeColor
+    ) where
 
 import Graphics.UI.WXCore.WxcTypes
 
 import Foreign.Storable
 
--- Constructors and destructors
-
+-- | Extract the red/green/blue channels from a color
 colorToRGB :: Color -> (Word8, Word8, Word8)
 colorToRGB c = (colorRed c, colorGreen c, colorBlue c)
 
+-- | Construct a color from its red/green/blue channels
 rgbToColor :: (Word8, Word8, Word8) -> Color
 rgbToColor (r,g,b) = rgb r g b
 
--- Basic colors
-
+-- | Black color.
 black  :: Color
-red    :: Color
-green  :: Color
-blue   :: Color
-white  :: Color
-grey   :: Color
-cyan   :: Color
-yellow :: Color
-purple :: Color
-orange :: Color
-lime   :: Color
-
 black  = rgbToColor (  0,   0,   0)
-red    = rgbToColor (255,   0,   0)
-green  = rgbToColor (  0, 128,   0)
-blue   = rgbToColor (  0,   0, 255)
+
+-- | White color.
+white  :: Color
 white  = rgbToColor (255, 255, 255)
+
+-- | Grey color.
+grey   :: Color
 grey   = rgbToColor (128, 128, 128)
-cyan   = rgbToColor (  0, 255, 255)
-purple = rgbToColor (128,   0, 128)
-yellow = rgbToColor (255, 255,   0)
-lime   = rgbToColor (128, 255,   0)
+
+-- | Red color.
+red    :: Color
+red    = rgbToColor (255,   0,   0)
+
+-- | Orange color.
+orange :: Color
 orange = rgbToColor (255, 100,   0)
 
--- Color combinators
+-- | Yellow color.
+yellow :: Color
+yellow = rgbToColor (255, 255,   0)
 
+-- | Green color.
+green  :: Color
+green  = rgbToColor (  0, 128,   0)
+
+-- | Blue color.
+blue   :: Color
+blue   = rgbToColor (  0,   0, 255)
+
+-- | Purple color.
+purple :: Color
+purple = rgbToColor (128,   0, 128)
+
+-- | Violet color.
+violet :: Color
+violet = rgbToColor (255,   0, 160)
+
+-- | Lighten the color
 light :: Color -> Color
 light = lightenBy 0.5
 
+-- | Lighten the color by an amount in the range [0 .. 1]
 lightenBy :: Double -> Color -> Color
 lightenBy p c = rgbToColor (tint r, tint g, tint b)
     where (r,g,b) = colorToRGB c
           tint x = let x' = fromIntegral x in round $ x' + p * (255 - x')
 
+-- | Darken the color
 dark :: Color -> Color
 dark = darkenBy 0.5
 
+-- | Darken the color by an amount in the range [0 .. 1]
 darkenBy :: Double -> Color -> Color
 darkenBy p c = rgbToColor (shade r, shade g, shade b)
     where (r,g,b) = colorToRGB c
           shade x = let x' = fromIntegral x in round $ x' - p * x'
 
-mixColors :: Double -> Color -> Color -> Color
-
+-- | Blend two colors
+mixColors :: Double  -- ^ The ratio to take from the first color
+          -> Color
+          -> Color
+          -> Color
 mixColors pct c1 c2 = rgb (mix r1 r2) (mix g1 g2) (mix b1 b2)
     where (r1,g1,b1) = colorToRGB c1
           (r2,g2,b2) = colorToRGB c2
           mix :: Word8 -> Word8 -> Word8
           mix x y = floor $ pct * fromIntegral x + (1.0 - pct) * fromIntegral y
 
+-- | Average a list of colors.
 averageColor :: [Color] -> Color
-
 averageColor [] = grey
 averageColor colors = go colors (0,0,0) 0
     where toInts   (x,y,z) = (toInteger x, toInteger y, toInteger z)
@@ -97,10 +124,12 @@ averageColor colors = go colors (0,0,0) 0
             []     -> rgbToColor $ fromInts (r `div` n, g `div` n, b `div` n)
             (c:cs) -> let (r',g',b') = toInts $ colorToRGB c in go cs (r + r', g + g', b + b') (n + 1)
 
+-- | Invert the color in RGB space.
 invertColor :: Color -> Color
 invertColor c = rgbToColor (255 - r, 255 - g, 255 - b)
     where (r,g,b) = colorToRGB c
-    
+
+-- | Write a color into a buffer of bytes
 peekColor :: Ptr Word8 -> Int -> IO Color
 peekColor buf idx = do
     let index = 4 * idx
@@ -109,8 +138,8 @@ peekColor buf idx = do
     b <- peekByteOff buf $ index + 1            
     return $ rgbToColor (r,g,b)
 
+-- | Read a color from a buffer of bytes
 pokeColor :: Ptr Word8 -> Int -> Color -> IO ()
-
 pokeColor buf idx col = do
     let index = 4 * idx
     let (r,g,b) = colorToRGB col
