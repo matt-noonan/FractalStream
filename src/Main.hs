@@ -1,15 +1,18 @@
 
 module Main where
 
+import Lang.Numbers
+
 import Exec.Haskell
 import Exec.Placeholder
 
-import Color.Color
 import Color.Colorize
 
 import UI.WX.Viewer
 
 main :: IO ()
-main = wxView (runComplexDynamics rabbit) checkers
-    where checkers = checker (grad yellow white) (grad (dark blue) blue)
-          grad c1 c2 = gradient 5 (solid c1) (solid c2)
+
+main = wxView (complex (-2.5) 2, complex 1.5 (-2))
+              (runParametric mandelbrot)
+              (blackInterior $ darkChecker $ smoothedRainbow (loglogSmoothing 2) 20)
+    where darkChecker c = checker c (darker c)

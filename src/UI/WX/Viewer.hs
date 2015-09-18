@@ -14,8 +14,8 @@ import Graphics.UI.WXCore.Draw
 
 import Foreign.ForeignPtr
 
-wxView :: Dynamics C -> Colorizer C -> IO ()
-wxView dyn col = start $ do
+wxView :: (C, C) -> Dynamics C -> Colorizer C -> IO ()
+wxView (ul, lr) dyn col = start $ do
 
     let (width, height) = (512, 512)
 
@@ -37,7 +37,7 @@ wxView dyn col = start $ do
 
     -- Panel and tile for initial view
 
-    let mRect = rectangle (complex (-2) 2) (complex 2 (-2))
+    let mRect = rectangle ul lr
     viewerTile <- renderTile dyn col (width, height) mRect
     p <- panel f [on paint := \dc r -> (windowGetViewRect f >>= paintTile viewerTile dc r)]
 
@@ -54,8 +54,6 @@ wxView dyn col = start $ do
 paintTile :: Tile a -> DC d -> Rect -> Rect -> IO ()
 
 paintTile viewerTile dc _ windowRect = do
-
-    putStrLn $ "redraw tile! windowRect=" ++ show windowRect
     
     let (width, height, fptr) = tileData viewerTile
 
