@@ -21,6 +21,7 @@ module Color.Color (
 -- * Color modifiers and combinators
     , light
     , dark
+    , clear
     , lightenBy
     , darkenBy
     , mixColors
@@ -102,6 +103,10 @@ darkenBy :: Double -> Color -> Color
 darkenBy p c = rgbToColor (shade r, shade g, shade b)
     where (r,g,b) = colorToRGB c
           shade x = let x' = fromIntegral x in round $ x' - p * x'
+
+-- | Make a transparent color
+clear :: Color -> Color
+clear c = rgba r g b 128 where (r,g,b) = colorToRGB c
 
 -- | Blend two colors
 mixColors :: Double  -- ^ The ratio to take from the first color
