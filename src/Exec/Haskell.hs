@@ -9,6 +9,9 @@ module Exec.Haskell (
 -- * Complex families of 1-dimensional complex dynamical systems.
     , ParametricComplexDynamics(..)
     , runParametric
+-- * Real families of 1-dimensional real dynamical systems.
+    , ParametricRealDynamics(..)
+    , runParametricReal
     ) where
 
 import Lang.Numbers
@@ -39,9 +42,23 @@ data ParametricComplexDynamics = ParametricComplexDynamics
 
 -- | Convert a description of a parameterized dynamical system to a Haskell function.
 runParametric :: ParametricComplexDynamics -> Dynamics C
-runParametric pdyn = Dynamics $ \c -> classify' $ head $ dropWhile (uncurry $ continueP pdyn) (trace c)
+runParametric pdyn = Dynamics $ \c -> classify' $ head $ dropWhile shouldContinue (trace c)
     where trace :: C -> [(C,Int)]
           trace c = zip (iterate (f c) (z0 c)) [0..] 
           f  = family pdyn
           z0 = initialValue pdyn
+          shouldContinue (z, n) = (continueP pdyn) z n
           classify' (z, n) = Result ((classifyP pdyn) z n) z n
+
+data ParametricRealDynamics = ParametricRealDynamics
+  { realFamily :: R -> R -> R              -- ^ The family of functions.
+  , continuePR :: R -> R -> Int -> Bool    -- ^ Check if the iteration should continue. 
+  , classifyPR :: R -> R -> Int -> Region  -- ^ Determine which region the iteration results belong to.
+  }
+
+runParametricReal :: ParametricRealDynamics -> Dynamics R2
+runParametricReal rpdyn = Dynamics $ \(R2 a x) -> classify' (R x) $ head $ dropWhile (shouldContinue $ R x) (trace (R a) (R x))
+  where trace a x = zip (iterate (f a) x) [0..]
+        f = realFamily rpdyn
+        shouldContinue x0 (x, n) = (continuePR rpdyn) x0 x n
+        classify' x0 (x@(R x'), n) = Result ((classifyPR rpdyn) x0 x n) (R2 x' 0) n

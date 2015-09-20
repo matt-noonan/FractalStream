@@ -2,7 +2,7 @@
 Module      : Exec.Placeholder
 Description : Some placeholder dynamical systems, as Haskell code.
 -}
-module Exec.Placeholder (rabbit, mandelbrot) where
+module Exec.Placeholder (rabbit, mandelbrot, logisticMap) where
 
 import Exec.Haskell
 import Lang.Numbers
@@ -18,8 +18,11 @@ f_rabbit = f_C (-0.122565 + 0.744864 * i)
 
 maxIters :: Int
 maxNorm2 :: Double
+minNorm :: Double
+
 maxIters = 100
 maxNorm2 = 100
+minNorm = 0.001
 
 -- | We're unsure if:
 --   * z hasn't become large yet, and
@@ -42,8 +45,17 @@ rabbit = ComplexDynamics { function = f_rabbit
 
 -- | A description of the Mandelbrot set.
 mandelbrot :: ParametricComplexDynamics
-mandelbrot = ParametricComplexDynamics { family = f_C
-                                       , initialValue = const 0
-                                       , continueP = unsure
-                                       , classifyP = escaped
-                                       }
+mandelbrot = ParametricComplexDynamics
+    { family = f_C
+    , initialValue = const 0
+    , continueP = unsure
+    , classifyP = escaped
+    }
+
+-- | The classical logistic map.
+logisticMap :: ParametricRealDynamics
+logisticMap = ParametricRealDynamics
+    { realFamily = \a x -> a * x * (1 - x)
+    , continuePR = \x0 x n -> n < 20 || (n < maxIters && abs (x - x0) > R minNorm)
+    , classifyPR = \_ _ n -> if n == maxIters then Exterior else Interior
+    }
