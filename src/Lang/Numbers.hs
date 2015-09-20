@@ -5,6 +5,7 @@ Description : Unboxed real and complex numbers.
 module Lang.Numbers
     ( R(R)
     , C(C)
+    , R2(R2)
     , complex
     , i
     , realPart
@@ -14,11 +15,12 @@ module Lang.Numbers
     , norm2
     ) where
 
-data R = R {-# UNPACK #-}!Double deriving (Eq, Ord, Show)
-data C = C {-# UNPACK #-}!Double {-# UNPACK #-}!Double deriving (Ord, Eq)
+data R  = R  {-# UNPACK #-}!Double deriving (Eq, Ord, Show)
+data C  = C  {-# UNPACK #-}!Double {-# UNPACK #-}!Double deriving (Ord, Eq)
+data R2 = R2 {-# UNPACK #-}!Double {-# UNPACK #-}!Double deriving (Eq,Ord,Show)
 
 instance Show C where
-    show (C x y) = show x ++ (if y < 0 then " - " else " + ") ++ show y ++ "i"
+    show (C x y) = show x ++ (if y < 0 then " - " else " + ") ++ show (abs y) ++ "i"
 
 i :: C
 i = C 0 1
@@ -79,6 +81,36 @@ instance Floating C where
     acosh _ = error "unimplemented"
     atanh _ = error "unimplemented"
     sqrt = error "unimplemented"
+
+instance Num R where
+    (R x) + (R y) = R $ x + y
+    (R x) * (R y) = R $ x * y
+    abs (R x) = R $ abs x
+    signum (R x) = R $ signum x
+    fromInteger = R . fromInteger
+    negate (R x) = R $ negate x
+
+instance Fractional R where
+    recip (R x) = R $ recip x
+    fromRational = R . fromRational
+
+instance Floating R where
+    pi = R pi
+    sqrt (R x) = R $ sqrt x
+    exp (R x) = R $ exp x
+    log (R x) = R $ log x
+    sin (R x) = R $ sin x
+    cos (R x) = R $ cos x
+    tan (R x) = R $ tan x
+    acos (R x) = R $ acos x
+    asin (R x) = R $ asin x
+    atan (R x) = R $ atan x
+    sinh (R x) = R $ sinh x
+    cosh (R x) = R $ cosh x
+    tanh (R x) = R $ tanh x
+    acosh (R x) = R $ acosh x
+    asinh (R x) = R $ asinh x
+    atanh (R x) = R $ atanh x
 
 
 
