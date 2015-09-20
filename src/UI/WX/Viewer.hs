@@ -5,25 +5,26 @@ Description : Interactive view based on wxWidgets
 module UI.WX.Viewer ( wxView
                     ) where
 
-import Lang.Numbers
 import Lang.Planar
 import Exec.Region
-import Color.Color
+import Color.Color (peekColor, clear)
 import Color.Colorize
 import UI.Tile
 
 import Graphics.UI.WX
 import Graphics.UI.WXCore.Image
 import Graphics.UI.WXCore.Draw
+import Graphics.UI.WXCore.WxcTypes (rgba)
 
 import Foreign.ForeignPtr
 
 -- | Create a window with an interactive view of a complex-dynamical system.
-wxView :: (C, C)       -- ^ The upper-left and lower-right corners of the view.
-       -> Dynamics C   -- ^ The dynamical system to explore.
-       -> Colorizer C  -- ^ How to color the iteration results.
+wxView :: (Planar a, Show a)
+       => Rectangle a  -- ^ The upper-left and lower-right corners of the view.
+       -> Dynamics a   -- ^ The dynamical system to explore.
+       -> Colorizer a  -- ^ How to color the iteration results.
        -> IO ()
-wxView (ul, lr) dyn col = start $ do
+wxView modelRect dyn col = start $ do
 
     let (width, height) = (512, 512)
 
@@ -43,19 +44,67 @@ wxView (ul, lr) dyn col = start $ do
     -- Viewer status bar
     status <- statusField   [text := "FractalStream status bar"]
 
-    -- Panel and tile for initial view
+    draggedTo <- variable [value := Nothing]
+    lastClick <- variable [value := Nothing]
 
-    let mRect = rectangle ul lr
-    viewerTile <- renderTile dyn col (width, height) mRect
-    p <- panel f [on paint := \dc r -> (windowGetViewRect f >>= paintTile viewerTile dc r)]
+    -- Panel and tile for initial view
+    viewerTile <- renderTile dyn col (width, height) modelRect
+    currentTile <- variable [value := viewerTile]
+
+    p <- panel f []
+    set p [ on paint := \dc r -> do
+                viewRect <- windowGetViewRect f
+                paintTile viewerTile dc r viewRect
+                paintToolLayer lastClick draggedTo dc r viewRect
+          ]
+
+    let viewRect = rectangle (Viewport (0,0)) (Viewport (width, height))
+    let viewToModel p = convertRect viewRect modelRect $ Viewport (pointX p, pointY p)
+
+    -- Set click and drag event handlers
+    set p [ on click   := \pt -> do
+                set lastClick [value := Just $ Viewport (pointX pt, pointY pt)]
+                propagateEvent
+
+          , on unclick := \pt -> do
+
+                dragBox <- getDragBox lastClick draggedTo
+                case dragBox of
+                    Nothing  -> return ()
+                    Just box -> selectRegion box >> repaint p
+
+                set draggedTo [value := Nothing]
+                set lastClick [value := Nothing]
+                propagateEvent
+
+          , on drag := \pt -> do
+                set draggedTo [value := Just $ Viewport (pointX pt, pointY pt)]
+                set status [text := show (viewToModel pt)]
+
+                dragBox <- getDragBox lastClick draggedTo
+                case dragBox of
+                    Nothing -> return ()
+                    Just _  -> repaint p
+
+                propagateEvent
+
+          , on motion := \pt -> do
+                set status [text := show (viewToModel pt)]
+                propagateEvent
+          ]
 
     -- Add a timer which will check for repainting requests
-    _ <- timer f [interval := 20, on command := ifModified viewerTile $ repaint p ]
+    _ <- timer f [ interval := 5
+                 , on command := do
+                        curTile <- get currentTile value
+                        ifModified curTile $ repaint p
+                 ]
 
     -- Add the status bar, menu bar, and layout to the frame
     set f [ statusBar := [status]
           , menuBar   := [file,hlp]
-          , layout    := fill $ minsize (sz width height) $ widget p
+          , layout    := fill $ minsize (sz 512 512) $ widget p
+          , on resize := resizeWxView >> propagateEvent
           , on (menu about) := infoDialog f "About FractalStream" "Contributors:\nMatt Noonan"
           ]
 
@@ -67,7 +116,6 @@ paintTile :: Tile a  -- ^ A tile to convert to an image
           -> IO ()
 
 paintTile viewerTile dc _ windowRect = do
-    
     let (width, height, fptr) = tileData viewerTile
 
     let Point { pointX = fWidth, pointY = fHeight } = rectBottomRight windowRect
@@ -83,3 +131,49 @@ paintTile viewerTile dc _ windowRect = do
 
         img <- imageCreateFromPixelBuffer pbuf
         drawImage dc img (pt x0 y0) []
+
+
+viewportToPoint :: Viewport -> Point
+viewportToPoint (Viewport (x,y)) = Point { pointX = x, pointY = y }
+
+paintToolLayer :: Var (Maybe Viewport)
+               -> Var (Maybe Viewport)
+               -> DC d
+               -> Rect 
+               -> Rect
+               -> IO ()
+paintToolLayer lastClick draggedTo dc _ _ = dcEncapsulate dc $ do
+    dragBox <- getDragBox lastClick draggedTo
+    case dragBox of
+        Nothing  -> return ()
+        Just box -> do
+            let boxPts = map viewportToPoint (rectPoints box)
+            drawBox dc (rgba 0 128 255 128) white boxPts
+
+getDragBox :: Var (Maybe Viewport)
+           -> Var (Maybe Viewport)
+           -> IO (Maybe (Rectangle Viewport))
+getDragBox lastClick draggedTo = do
+    dragSrc <- get lastClick value
+    dragTgt <- get draggedTo value
+    return $ case (dragSrc, dragTgt) of
+        (Just p1, Just p2) -> Just $ rectangle p1 p2
+        _ -> Nothing
+
+drawBox :: DC d
+        -> Color
+        -> Color
+        -> [Point]
+        -> IO ()
+drawBox dc fillColor lineColor coords =
+    polygon dc coords [ brush := brushSolid fillColor
+                      , pen := penColored lineColor 2
+                      ]
+
+resizeWxView :: IO ()
+resizeWxView = return ()
+
+selectRegion :: Rectangle Viewport -> IO ()
+selectRegion r = do
+    putStrLn $ "selected region " ++ show r
+    return ()
