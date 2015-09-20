@@ -9,6 +9,7 @@ module Lang.Planar ( Planar (..)
                    , rectangle
                    , upperLeft
                    , lowerRight
+                   , rectPoints
                    , translateRect
                    , convertRect
                    , intersectsRect
@@ -24,7 +25,7 @@ class Planar a where
     fromCoords :: (Double,Double) -> a
 
 -- | A representation of a generic rectangle.
-data Rectangle a = Rectangle { _upperLeft :: a, _lowerRight :: a }
+data Rectangle a = Rectangle { _upperLeft :: a, _lowerRight :: a } deriving (Eq, Ord, Show)
 
 -- | Extract the upper-left point of a rectangle.
 upperLeft :: Rectangle a -> a
@@ -81,8 +82,21 @@ instance Planar C where
     toCoords = coords
     fromCoords = uncurry complex
 
-newtype Viewport = Viewport (Int,Int)
+instance Planar R2 where
+    toCoords (R2 x y) = (x,y)
+    fromCoords (x,y) = R2 x y
+
+newtype Viewport = Viewport (Int,Int) deriving (Eq,Ord,Show)
 
 instance Planar Viewport where
     toCoords (Viewport (x,y)) = (fromIntegral x, fromIntegral y)
     fromCoords (x,y) = Viewport (floor x, floor y)
+
+-- | Get a list of the four vertices of the rectangle, in 
+--   clockwise order from the upper-left corner.
+rectPoints :: Planar a
+           => Rectangle a
+           -> [a]
+rectPoints r = [fromCoords (x0,y0), fromCoords (x1,y0), fromCoords (x1,y1), fromCoords (x0,y1)]
+    where (x0,y0) = toCoords $ upperLeft r
+          (x1,y1) = toCoords $ lowerRight r
