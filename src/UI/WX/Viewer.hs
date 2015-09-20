@@ -15,6 +15,7 @@ import Graphics.UI.WX
 import Graphics.UI.WXCore.Image
 import Graphics.UI.WXCore.Draw
 import Graphics.UI.WXCore.WxcTypes (rgba)
+import Graphics.UI.WXCore.WxcClassTypes
 
 import Foreign.ForeignPtr
 
@@ -50,11 +51,17 @@ wxView modelRect dyn col = start $ do
     -- Panel and tile for initial view
     viewerTile <- renderTile dyn col (width, height) modelRect
     currentTile <- variable [value := viewerTile]
+    savedTileImage <- variable [value := Nothing]
 
     p <- panel f []
     set p [ on paint := \dc r -> do
                 viewRect <- windowGetViewRect f
-                paintTile viewerTile dc r viewRect
+                curTile <- get currentTile value
+                let (width, height, _) = tileData curTile
+                img <- get savedTileImage value
+                case img of
+                    Nothing -> return ()
+                    Just im -> drawCenteredImage im dc viewRect (width, height)
                 paintToolLayer lastClick draggedTo dc r viewRect
           ]
 
@@ -97,7 +104,11 @@ wxView modelRect dyn col = start $ do
     _ <- timer f [ interval := 5
                  , on command := do
                         curTile <- get currentTile value
-                        ifModified curTile $ repaint p
+                        ifModified curTile $ do
+                            viewRect <- windowGetViewRect f
+                            tileImage <- generateTileImage curTile viewRect
+                            set savedTileImage [value := Just tileImage]
+                            repaint p
                  ]
 
     -- Add the status bar, menu bar, and layout to the frame
@@ -109,29 +120,30 @@ wxView modelRect dyn col = start $ do
           ]
 
 -- | Paint the state of a tile into a device context.
-paintTile :: Tile a  -- ^ A tile to convert to an image
-          -> DC d    -- ^ The WX device context
-          -> Rect    -- ^ The rectangle which needs updating
-          -> Rect    -- ^ The enclosing view rectangle
-          -> IO ()
+generateTileImage
+    :: Tile a  -- ^ A tile to convert to an image
+    -> Rect    -- ^ The enclosing view rectangle
+    -> IO (Image ())
 
-paintTile viewerTile dc _ windowRect = do
+generateTileImage viewerTile windowRect = do
     let (width, height, fptr) = tileData viewerTile
-
     let Point { pointX = fWidth, pointY = fHeight } = rectBottomRight windowRect
-
     let (x0, y0) = ( (fWidth  + width ) `div` 2 - width  ,
                      (fHeight + height) `div` 2 - height )
 
     withForeignPtr fptr $ \buf -> do
         pbuf <- pixelBufferCreate (sz width height)
-
         pixels <- mapM (peekColor buf) [0..(width * height - 1)]
         pixelBufferSetPixels pbuf pixels
+        imageCreateFromPixelBuffer pbuf
 
-        img <- imageCreateFromPixelBuffer pbuf
-        drawImage dc img (pt x0 y0) []
+drawCenteredImage :: Image b -> DC d -> Rect -> (Int,Int) -> IO ()
 
+drawCenteredImage img dc windowRect (width, height) = do
+    let Point { pointX = fWidth, pointY = fHeight } = rectBottomRight windowRect
+    let (x0, y0) = ( (fWidth  + width ) `div` 2 - width  ,
+                     (fHeight + height) `div` 2 - height )
+    drawImage dc img (pt x0 y0) []
 
 viewportToPoint :: Viewport -> Point
 viewportToPoint (Viewport (x,y)) = Point { pointX = x, pointY = y }
