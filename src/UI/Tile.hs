@@ -57,7 +57,7 @@ renderTile :: Planar a
                            --   to this tile.
            -> IO (Tile a)  -- ^ An action which allocates the tile and 
                            --   forks a task which draws into it.
-                           
+
 renderTile dyn col (width, height) mRect = do
 
     buf <- mallocForeignPtrBytes (4 * width * height)

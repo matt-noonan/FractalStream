@@ -7,6 +7,7 @@ module Lang.Planar ( Planar (..)
                    , Rectangle()
                    , Viewport (Viewport)
                    , rectangle
+                   , flippedRectangle
                    , upperLeft
                    , lowerRight
                    , rectPoints
@@ -35,7 +36,8 @@ upperLeft = _upperLeft
 lowerRight :: Rectangle a -> a
 lowerRight = _lowerRight
 
--- | Build a rectangle.
+-- | Build a rectangle, in a coordinate system where
+--   the (+,+) quadrant is in the upper right.
 rectangle :: Planar a
           => a  -- ^ The upper-left corner.
           -> a  -- ^ The lower-right corner.
@@ -43,6 +45,18 @@ rectangle :: Planar a
 rectangle p p' = Rectangle { _upperLeft  = fromCoords $ (min x x', min y y')
                            , _lowerRight = fromCoords $ (max x x', max y y')
                            }
+    where (x , y ) = toCoords p
+          (x', y') = toCoords p'
+
+-- | Build a rectangle, in a coordinate system where
+--   the (+,-) quadrant is in the upper right.
+flippedRectangle :: Planar a
+                 => a  -- ^ The upper-left corner
+                 -> a  -- ^ The lower-right corner
+                 -> Rectangle a
+flippedRectangle p p' = Rectangle { _upperLeft  = fromCoords $ (min x x', max y y')
+                                  , _lowerRight = fromCoords $ (max x x', min y y')
+                                  }
     where (x , y ) = toCoords p
           (x', y') = toCoords p'
 
