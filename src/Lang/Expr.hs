@@ -13,6 +13,8 @@ module Lang.Expr where
 
 import Lang.Numbers
 
+import Data.List
+
 data Function a where
     Sqrt :: Function R
     Exp  :: Function R
@@ -28,6 +30,10 @@ deriving instance Show a => Show (Function a)
 deriving instance Ord a => Ord (Function a)
 deriving instance Eq a => Eq (Function a)
 
+data Expression
+  = ComplexExpr (Expr C)
+  | RealExpr (Expr R)
+
 data Expr a where
     CConst :: C -> Expr C
     CEmbed  :: Expr R -> Expr C
@@ -41,6 +47,7 @@ data Expr a where
     CCall :: Function C -> Expr C -> Expr C
     CRealPart :: Expr C -> Expr R
     CImagPart :: Expr C -> Expr R
+    CPow :: Expr C -> Expr C -> Expr C
     Const :: R -> Expr R
     Var :: String -> Expr R
     Norm :: Expr C -> Expr R
@@ -51,6 +58,7 @@ data Expr a where
     Abs :: Expr R -> Expr R
     Mul :: [Expr R] -> Expr R
     Div :: Expr R -> Expr R -> Expr R
+    Pow :: Expr R -> Expr R -> Expr R
     Call :: Function R -> Expr R -> Expr R
     Call2 :: Function (R,R) -> Expr R -> Expr R -> Expr R
 deriving instance Show a => Show (Expr a)
@@ -90,7 +98,9 @@ toRExpr (CDiv z z') = (Div u k, Div v k)
           (x, y) = toRExpr z'
           k = Add [Mul [x, x], Mul [y, y]]
 
-toRExpr (CCall CExp z) = (Mul [Call Exp logr, Call Cos theta], Mul [Call Exp logr, Call Sin theta]) where (logr, theta) = toRExpr z
+toRExpr (CCall CExp z) = (Mul [Call Exp logr, Call Cos theta],
+                          Mul [Call Exp logr, Call Sin theta])
+    where (logr, theta) = toRExpr z
 
 
 {---------}
@@ -126,7 +136,7 @@ simplifyRExpr :: Expr R -> Expr R
 simplifyRExpr (Sub x y)
     | y' == Const (R 0)  = x'
     | x' == y'           = Const (R 0)
-    | otherwise          = case y' of 
+    | otherwise          = case y' of
                             Neg y'' -> simplifyRExpr $ Add [x', y'']
                             _       -> Sub x' y'
   where x' = simplifyRExpr x
