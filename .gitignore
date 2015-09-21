@@ -13,3 +13,5 @@ cabal.config
 *.prof
 *.hp
 *.aux
+FractalStream.app/
+cabal-macosx-0.2.3/
