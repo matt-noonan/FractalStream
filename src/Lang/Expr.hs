@@ -21,6 +21,7 @@ data Function a where
     Log  :: Function R
     Cos  :: Function R
     Sin  :: Function R
+    Tan  :: Function R
     CExp :: Function C
     --CUser :: String -> Function C
     --User  :: String -> Function R
@@ -65,6 +66,70 @@ deriving instance Show a => Show (Expr a)
 deriving instance Ord a => Ord (Expr a)
 deriving instance Eq a => Eq (Expr a)
 
+instance Num (Expr C) where
+  (+) = CAdd
+  (-) = CSub
+  (*) = CMul
+  abs = CEmbed . Norm
+  signum z = (CConj z) `CDiv` (CEmbed $ Norm z)
+  fromInteger = CConst . fromInteger
+  negate = CNeg
+
+instance Fractional (Expr C) where
+  recip z = (CConj z) `CDiv` (CEmbed $ Norm2 z)
+  fromRational = CConst . fromRational
+
+instance Floating (Expr C) where
+  pi = CEmbed $ Const pi
+  exp _  = error "unimplemented"
+  log _  = error "unimplemented"
+  sin _  = error "unimplemented"
+  cos _  = error "unimplemented"
+  tan _  = error "unimplemented"
+  asin _ = error "unimplemented"
+  acos _ = error "unimplemented"
+  atan _ = error "unimplemented"
+  sinh _  = error "unimplemented"
+  cosh _  = error "unimplemented"
+  tanh _  = error "unimplemented"
+  asinh _ = error "unimplemented"
+  acosh _ = error "unimplemented"
+  atanh _ = error "unimplemented"
+  sqrt = error "unimplemented"
+  (**) = CPow
+
+instance Num (Expr R) where
+  x + y = Add [x,y]
+  (-) = Sub
+  x * y = Mul [x,y]
+  abs = Abs
+  signum x = x `Div` (Abs x)
+  fromInteger = Const . fromInteger
+  negate = Neg
+
+instance Fractional (Expr R) where
+  recip x = 1 `Div` x
+  fromRational = Const . fromRational
+
+instance Floating (Expr R) where
+  pi = Const pi
+  exp = Call Exp
+  log = Call Log
+  sin = Call Sin
+  cos = Call Cos
+  tan = Call Tan
+  asin _ = error "unimplemented"
+  acos _ = error "unimplemented"
+  atan _ = error "unimplemented"
+  sinh _  = error "unimplemented"
+  cosh _  = error "unimplemented"
+  tanh _  = error "unimplemented"
+  asinh _ = error "unimplemented"
+  acosh _ = error "unimplemented"
+  atanh _ = error "unimplemented"
+  sqrt = Call Sqrt
+  (**) = Pow
+
 {---------}
 {---------  Conversion from complex expressions to pairs of real expressions ----------}
 {---------}
@@ -73,7 +138,7 @@ toRExpr :: Expr C -> (Expr R, Expr R)
 
 toRExpr (CConst z) = (Const (R x), Const (R y)) where (x,y) = coords z
 
-toRExpr (CVar v) = (Var $ v ++ "@x", Var $ v ++ "@y")
+toRExpr (CVar v) = (Var $ v ++ ".re", Var $ v ++ ".im")
 
 toRExpr (CEmbed r) = (r, Const $ R 0)
 
