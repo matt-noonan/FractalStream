@@ -23,6 +23,7 @@ data Function a where
     Sin  :: Function R
     Tan  :: Function R
     CExp :: Function C
+    CLog :: Function C
     --CUser :: String -> Function C
     --User  :: String -> Function R
     --CFunc :: String -> Expr C -> Function C
@@ -167,6 +168,17 @@ toRExpr (CCall CExp z) = (Mul [Call Exp logr, Call Cos theta],
                           Mul [Call Exp logr, Call Sin theta])
     where (logr, theta) = toRExpr z
 
+toRExpr (CPow z n) = case n of
+  CConst n' -> if n' == fromIntegral (realIntOf n')
+               then toRExpr $ mkPower CMul (realIntOf n') z
+               else complexExponential
+  _ -> complexExponential
+  where complexExponential = toRExpr $ CCall CExp (CMul n (CCall CLog z))
+
+mkPower times n x = (foldr times 1 . map fst . filter snd) (zip (power2s x) (bits n))
+  where power2s p = p : power2s (p `times` p)
+        bits 0 = []
+        bits k = odd k : bits (k `div` 2)
 
 {---------}
 {---------  Elimination of all complex-valued subexpressions -------------}

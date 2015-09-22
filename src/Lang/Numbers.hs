@@ -10,6 +10,7 @@ module Lang.Numbers
     , i
     , realPart
     , imagPart
+    , realIntOf
     , coords
     , conj
     , norm2
@@ -36,6 +37,9 @@ imagPart = snd . coords
 coords :: C -> (Double, Double)
 conj :: C -> C
 norm2 :: C -> Double
+
+realIntOf :: C -> Integer
+realIntOf (C x _) = round x
 
 complex x y = C x y
 coords (C x y) = (x, y)
@@ -111,6 +115,3 @@ instance Floating R where
     acosh (R x) = R $ acosh x
     asinh (R x) = R $ asinh x
     atanh (R x) = R $ atanh x
-
-
-
