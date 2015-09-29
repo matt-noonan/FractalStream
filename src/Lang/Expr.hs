@@ -2,6 +2,7 @@
 Module      : Lang.Expr
 Description : Expression ASTs and manipulation.
 -}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -14,6 +15,7 @@ module Lang.Expr where
 import Lang.Numbers
 
 import Data.List
+import qualified Data.Map as Map
 
 data Function a where
     Sqrt :: Function R
@@ -31,6 +33,21 @@ data Function a where
 deriving instance Show a => Show (Function a)
 deriving instance Ord a => Ord (Function a)
 deriving instance Eq a => Eq (Function a)
+
+doCCall :: Function C -> (C -> C)
+doCCall CExp = exp
+doCCall CLog = log
+
+doCall :: Function R -> (R -> R)
+doCall Sqrt = sqrt
+doCall Exp = exp
+doCall Log = log
+doCall Cos = cos
+doCall Sin = sin
+doCall Tan = tan
+
+doCall2 :: Function (R,R) -> (R -> R -> R)
+doCall2 = error "TODO"
 
 data Expression
   = ComplexExpr (Expr C)
@@ -256,6 +273,7 @@ simplifyRExpr (Call f x) = Call f $ simplifyRExpr x  -- TODO: special cases for 
 simplifyRExpr (Call2 f x y) = Call2 f (simplifyRExpr x) (simplifyRExpr y)
 
 simplifyRExpr (Add xs)
+    | xs == []      = 0
     | consts == 0   = case vars of
             [x] -> x
             _   -> add vars
@@ -272,6 +290,7 @@ simplifyRExpr (Add xs)
         consts = sum $ 0 : map constVal nums
         isNeg x = case x of { Neg _ -> True; _ -> False }
         add terms
+            | terms == [] = 0
             | ns == []    = Add $ sort ps
             | ps == []    = Neg $ Add $ sort ns
             | otherwise   = simplifyRExpr $ Sub (Add ps) (Add ns)
@@ -280,6 +299,7 @@ simplifyRExpr (Add xs)
                 stripNeg x = case x of { Neg x' -> x'; _ -> x }
 
 simplifyRExpr (Mul xs)
+    | xs == []                    = 1
     | consts == 1                 = case vars of
                                         [x] -> sign $ x
                                         _   -> sign $ mul vars
@@ -300,6 +320,191 @@ simplifyRExpr (Mul xs)
         constVal _ = 1
         (nums, vars) = partition isConst xs'
         consts = product $ 1 : map constVal nums
-        mul = Mul . sort
+        mul xs = case xs of
+          [] -> 1
+          _  -> Mul $ sort xs
 
 simplifyRExpr expr = expr
+
+data Bindings = Bindings
+  { varC :: Map.Map String (Expr C)
+  , varR :: Map.Map String (Expr R)
+  }
+
+-- | Evaluate an expression in a given context.
+--   The context is represented by a map from variable names to expressions.
+--   Currently, recursive bindings are disallowed by removing a binding from
+--   the context when recursively calling evalExpr on the binding's value.
+evalExpr :: Bindings -> Expr a -> Expr a
+
+evalExpr ctx e = case e of
+  CConst _   -> e
+  CEmbed x   -> CEmbed $ ev x
+  CVar s    -> evalExpr (ctx { varC = (varC ctx) `without` s }) $ Map.findWithDefault e s (varC ctx)
+  CAdd z z'  -> CAdd (evC z) (evC z')
+  CSub z z'  -> CSub (evC z) (evC z')
+  CNeg z     -> CNeg (evC z)
+  CConj z    -> CConj (evC z)
+  CMul z z'  -> CMul (evC z) (evC z')
+  CDiv z z'  -> CDiv (evC z) (evC z')
+  CCall f z  -> CCall f (evC z)
+  CRealPart z -> CRealPart (evC z)
+  CImagPart z -> CImagPart (evC z)
+  CPow z n    -> CPow (evC z) (evC n)
+  Const _     -> e
+  Var s     -> evalExpr (ctx { varR = (varR ctx) `without` s }) $ Map.findWithDefault e s (varR ctx)
+  Norm z      -> Norm (evC z)
+  Norm2 z     -> Norm2 (evC z)
+  Add xs      -> Add $ map ev xs
+  Sub x y     -> Sub (ev x) (ev y)
+  Neg x       -> Neg (ev x)
+  Abs x       -> Abs (ev x)
+  Mul xs      -> Mul $ map ev xs
+  Div x y     -> Div (ev x) (ev y)
+  Pow x y     -> Pow (ev x) (ev y)
+  Call f x    -> Call f (ev x)
+  Call2 f x y -> Call2 f (ev x) (ev y)
+ where evC = (evalExpr ctx) :: Expr C -> Expr C  -- explicitly typed because of some GADT
+       ev  = (evalExpr ctx) :: Expr R -> Expr R  -- behavior that I don't really understand..
+       without = (flip Map.delete) :: Map.Map String (Expr a) -> String -> Map.Map String (Expr a)
+
+-- | Perform constant propagation on the given expression.
+constProp :: Expr a -> Expr a
+
+constProp k@(CConst _) = k
+
+constProp (CEmbed x) = let x' = constProp x in case x' of
+  Const (R r) -> CConst $ complex r 0
+  _  -> CEmbed x'
+
+constProp k@(CVar _) = k
+
+constProp (CAdd x y) = case (x',y') of
+    (CConst 0, _) -> y'
+    (_, CConst 0) -> x'
+    (CConst z, CConst z') -> CConst $ z + z'
+    _ -> CAdd x' y'
+  where (x',y') = (constProp x, constProp y)
+
+constProp (CSub x y) = case (x',y') of
+    (CConst 0, _) -> constProp $ CNeg y'
+    (_, CConst 0) -> x'
+    (CConst z, CConst z') -> CConst $ z - z'
+    _ -> CSub x' y'
+  where (x',y') = (constProp x, constProp y)
+
+constProp (CNeg x) = case x' of
+    CConst z -> CConst (-z)
+    _ -> CNeg x'
+  where x' = constProp x
+
+constProp (CConj z) = case z' of
+    CConst w -> CConst $ conj w
+    _ -> CConj z'
+  where z' = constProp z
+
+constProp (CMul z w) = case (z',w') of
+    (CConst 0, _) -> CConst 0
+    (_, CConst 0) -> CConst 0
+    (CConst 1, p) -> p
+    (p, CConst 1) -> p
+    (CConst x, CConst y) -> CConst $ x * y
+    _ -> CMul z' w'
+  where (z',w') = (constProp z, constProp w)
+
+constProp (CDiv z w) = case (z',w') of
+    (CConst 0, _) -> CConst 0
+    (p, CConst 1) -> p
+    (CConst x, CConst y) -> CConst $ x / y
+    _ -> CDiv z' w'
+  where (z',w') = (constProp z, constProp w)
+
+constProp (CCall f z) = case z' of
+    CConst w -> CConst $ doCCall f w
+    _ -> CCall f z'
+  where z' = constProp z
+
+constProp (CRealPart z) = case z' of
+    CConst w -> (Const . R . realPart) w
+    _ -> CRealPart z'
+  where z' = constProp z
+
+constProp (CImagPart z) = case z' of
+    CConst w -> (Const . R . imagPart) w
+    _ -> CImagPart z'
+  where z' = constProp z
+
+constProp (CPow z n) = case (z',n') of
+    (CConst x, CConst y) -> CConst $ x ** y
+    _ -> CPow z' n'
+  where (z',n') = (constProp z, constProp n)
+
+constProp k@(Const _) = k
+
+constProp k@(Var _) = k
+
+constProp (Add xs) = case (k, ts) of
+    (_, []) -> Const k
+    (0, _)  -> Add ts
+    _       -> Add (Const k : ts)
+  where isConst (Const _) = True
+        isConst _ = False
+        xs' = map constProp xs
+        ts = filter (not . isConst) xs'
+        constVal :: Expr R -> R
+        constVal (Const x) = x
+        constVal _ = 0
+        k = sum $ map constVal xs'
+
+constProp (Sub x y) = case (x',y') of
+    (Const 0, _) -> constProp $ Neg y'
+    (_, Const 0) -> x'
+    (Const z, Const z') -> Const $ z - z'
+    _ -> Sub x' y'
+  where (x',y') = (constProp x, constProp y)
+
+constProp (Neg x) = case x' of
+    Const z -> Const (-z)
+    _ -> Neg x'
+  where x' = constProp x
+
+constProp (Abs x) = case x' of
+    Const z -> Const $ abs z
+    _ -> Abs x'
+  where x' = constProp x
+
+constProp (Mul xs) = case (k, ts) of
+    (_, []) -> Const k
+    (0, _)  -> Const 0
+    (1, _)  -> Mul ts
+    _       -> Mul (Const k : ts)
+  where isConst (Const _) = True
+        isConst _ = False
+        xs' = map constProp xs
+        ts = filter (not . isConst) xs'
+        constVal :: Expr R -> R
+        constVal (Const x) = x
+        constVal _ = 1
+        k = product $ map constVal xs'
+
+constProp (Div z w) = case (z',w') of
+    (Const 0, _) -> Const 0
+    (p, Const 1) -> p
+    (Const x, Const y) -> Const $ x / y
+    _ -> Div z' w'
+  where (z',w') = (constProp z, constProp w)
+
+constProp (Pow z n) = case (z',n') of
+    (Const x, Const y) -> Const $ x ** y
+    _ -> Pow z' n'
+  where (z',n') = (constProp z, constProp n)
+
+constProp (Call f z) = case z' of
+    Const w -> Const $ doCall f w
+    _ -> Call f z'
+  where z' = constProp z
+
+constProp (Call2 f x y) = case (x',y') of
+    (Const u, Const v) -> Const $ doCall2 f u v
+    _ -> Call2 f x' y'
+  where (x', y') = (constProp x, constProp y)
