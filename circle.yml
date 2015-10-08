@@ -1,7 +1,7 @@
 machine:
 
   ghc:
-    version: 7.10.2
+    version: 7.10.1
 
 dependencies:
 
