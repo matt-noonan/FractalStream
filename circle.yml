@@ -1,0 +1,41 @@
+machine:
+
+  ghc:
+    version: 7.10.2
+
+dependencies:
+
+  override:
+    - cabal update
+    - cabal sandbox init
+    - cabal install --only-dependencies -j
+    - cabal configure
+
+test:
+
+  override:
+    - cabal build
+
+  post:
+    - git submodule init
+    - git submodule update
+    - cd _site/ && git checkout master
+    - cabal run build
+
+deployment:
+
+  production:
+    branch: hakyll
+    commands:
+      - git config --global user.email circleci@circleci
+      - git config --global user.name CircleCI
+      - cd _site/ && git status
+      - cd _site/ && git add --all
+      - cd _site/ && git commit -m "Update (`date '+%F %T %Z'`) [ci skip]"
+      - cd _site/ && git push origin master
+      - git status
+      - git add _site/
+      - git commit -m "Update _site (`date '+%F %T %Z'`) [ci skip]"
+      - git push origin hakyll
+
+
