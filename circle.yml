@@ -20,7 +20,7 @@ test:
     - git submodule init
     - git submodule update
     - cd _site/ && git checkout gh-pages
-    - cabal run --verbose=3 build
+    - cabal run --verbose=3 site -- build
 
 deployment:
 
