@@ -15,7 +15,7 @@ cabal.sandbox.config
 tests/Main
 _cache
 _store
-
+_site
 
 # Rest of the file: ignore examples
 web/_cache
