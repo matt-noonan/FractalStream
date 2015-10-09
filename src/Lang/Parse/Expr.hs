@@ -3,8 +3,7 @@ Module      : Lang.Expr
 Description : Parsers for expression ASTs.
 -}
 module Lang.Parse.Expr
-  ( parseRExpr
-  , parseCExpr
+  ( parseExpr
   ) where
 
 import Lang.Expr
@@ -64,32 +63,29 @@ expr_table  =
   ]
 
 -- | Parser definition and state
-data TermContext a = TermContext
-  { mkVar   :: String -> a  -- ^ Handler when parsing an identifier
-  , mkConst :: Double -> a  -- ^ Handler when parsing a number
-  , inNorm  :: Bool -- ^ Is the parser currently handling a |...| construction?
+data TermContext = TermContext
+  { inNorm  :: Bool -- ^ Is the parser currently handling a |...| construction?
   }
 
-expr_term :: Floating a => TermContext a -> Parser a
+expr_term :: TermContext -> Parser Expr
 expr_term ctx = if inNorm ctx then p_normfree_terms else (p_normfree_terms <|> p_normed_term)
-  where p_normfree_terms = p_parens (p_expr ctx { inNorm = False })
-                       <|> mkVar ctx <$> p_identifier
-                       <|> (mkConst ctx . either fromIntegral id) <$> p_num
+  where p_normfree_terms = p_paren_expr
+                       <|> p_call_or_var
+                       <|> (fromDouble . either fromIntegral id) <$> p_num
         p_normed_term = abs <$> between (p_symbol "|") (p_symbol "|")
                                         (p_expr ctx { inNorm = True })
+        p_paren_expr = p_parens (p_expr ctx { inNorm = False })
+        p_call_or_var = do
+          name <- p_identifier
+          apply (var name) <$> p_paren_expr <|> return (var name)
 
 -- | Generic expression parser.
-p_expr :: Floating a => TermContext a -> Parser a
+p_expr :: TermContext -> Parser Expr
 p_expr ctx = buildExpressionParser expr_table (expr_term ctx) <?> "expression"
 
--- | Parser for expressions over $\mathbb{C}$.
-p_cexpr :: Parser (Expr C)
-p_cexpr = p_expr (TermContext { mkVar = CVar, mkConst = CConst . toC, inNorm = False })
-  where toC x = complex x 0
-
 -- | Parser for expressions over $\mathbb{R}$.
-p_rexpr :: Parser (Expr R)
-p_rexpr = p_expr (TermContext { mkVar = Var, mkConst = Const . R, inNorm = False })
+p_expression :: Parser Expr
+p_expression = p_expr (TermContext { inNorm = False })
 
 -- | Helper to parse a complete expression.
 allOf :: Parser a -> Parser a
@@ -99,10 +95,6 @@ allOf p = do
   eof
   return r
 
--- | Parse a string representing an expression over $\mathbb{C}$.
-parseCExpr :: String -> Either ParseError (Expr C)
-parseCExpr = parse (allOf p_cexpr) "C expression"
-
--- | Parse a string representing an expression over $\mathbb{R}$.
-parseRExpr :: String -> Either ParseError (Expr R)
-parseRExpr = parse (allOf p_rexpr) "R expression"
+-- | Parse a string representing an expression.
+parseExpr :: String -> Either ParseError Expr
+parseExpr = parse (allOf p_expression) "expression"
