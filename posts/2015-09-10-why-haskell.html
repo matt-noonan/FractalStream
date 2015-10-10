@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>FractalStream Development Blog - FractalStream, meet Haskell</title>
+
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+    <link rel="stylesheet" type="text/css" href="../css/bootstrap-blog.css">
+
+  </head>
+
+  <body>
+
+    <div class="blog-masthead">
+      <div class="container">
+	<nav class="blog-nav">
+          <a class="blog-nav-item" href="../">Home</a>
+          <a class="blog-nav-item" href="../about.html">About</a>
+          <a class="blog-nav-item" href="../contact.html">Contact</a>
+          <a class="blog-nav-item" href="../archive.html">Archive</a>
+	  </nav>
+      </div>
+    </div>
+
+    <div class="container">
+
+      <div class="blog-header">
+	<h1 class="blog-title">FractalStream Development Blog</h1>
+	<p class="lead blog-description">
+	    Building a tool in Haskell for dynamical systems research.
+	    </p>
+      </div>
+
+      <div class="row">
+	<div class="col-sm-8 blog-main">
+	    <div class="info">
+    Posted on September 10, 2015
+    
+        by Matt Noonan
+    
+</div>
+
+<h1 id="rewriting-fractalstream">Rewriting FractalStream</h1>
+<p>Over the years since FractalStream was first released, there have been several instances where people wanted to use FractalStream on Windows; unfortunately, the original program was written to target OS X and is heavily entwined with Objective C and Apple’s Cocoa framework. I did some experiments to try to get it to build under GnuSTEP and the Cocotron, but never did end up with a reliable and stable build.</p>
+<p>Another sticky point is the LLVM dependency. I really like the LLVM project and their clean, well-thought-through APIs. But the downside is that to get these nice APIs, you have to be willing to make breaking changes. The effect is that people have not had terrific luck getting the right LLVM dependency in place so that FractalStream will compile, even on OS X.</p>
+<p>So how am I planning on solving these problems to get a FractalStream that is cross-platform, maintainable, and can be hacked on by anybody anytime?</p>
+<p>Would you believe me if I said “by using a language whose motto is ‘avoid success at all costs’”?</p>
+<h1 id="fractalstream-2.0-haskell-edition">FractalStream 2.0, Haskell edition</h1>
+<p>That language is <a href="https://www.haskell.org/">Haskell</a>, a purely functional language in the ML family. Maybe it isn’t surprising that a mathematician writing mathematical software would choose Haskell: it’s family tree leads back to the language used to compose proof tactics in the early automated theorem prover LCF (1972).</p>
+<p>Haskell has made many design choices that seem foreign to many programmers but natural to mathematicians:</p>
+<ul>
+<li><p>All variables are immutable; just a name attached to a value. No “x = x + 1” funny business.</p></li>
+<li><p>Functions are considered values. You can pass around and manipulate functions just as easily as you pass around and manipulate integers.</p></li>
+<li><p>All values in a Haskell program are typed, but the programmer doesn’t need to explicitly declare types except in very exceptional cases or for documentation purposes.</p></li>
+<li><p>Evaluation is lazy. Haskell will only evaluate enough of an expression to get the final result.</p></li>
+</ul>
+<h1 id="so-why-haskell">So, why Haskell?</h1>
+<p>Although I have used Haskell for some scripting tasks and some rapid prototyping, I have never had the chance to try it out on the scale of a medium-sized application like FractalStream. But from my experience so far, there are several points in Haskell’s favor.</p>
+<ul>
+<li><p>Haskell is <em>fun</em> to work with, especially if you are coming from a mathematical background. Haskell code has monoids and functors and F-algebras and all kinds of cool gadgets from algebra and category theory. Since I’m doing this as a hobby project, being fun is probably design criteria #1.</p></li>
+<li><p>The Haskell community is excellent. Since many members of the Haskell community are active researchers in type theory and programming language design, Haskell is curated by people who care deeply about getting things right. In other words, the Haskell motto is really “avoid [success at all costs]”, not “[avoid success] at all costs”.</p></li>
+</ul>
+<p>Much of the work on Haskell is supported by papers, which I have found to be generally quite lucid. Read anything by Simon Peyton-Jones and you’ll see what I mean.</p>
+<p>For questions, the #haskell IRC channel is very active and very useful.</p>
+<ul>
+<li><p>Haskell is high-level, memory safe, and garbage collected. FractalStream involves a lot of fiddly low-level operations like allocating rendering buffers, drawing results into pixel buffers, compiling scripts to executable code, multithreading the script execution, and so on. Keeping this all working properly in Objective C (or regular C, or C++) was a mess. Haskell offers a higher level of abstraction and far more stringent guarantees about program execution, which should make managing the low-level details safer, easier, and more correct.</p></li>
+<li><p>Haskell has a good refactoring story. As I built the original FractalStream, design mistakes were inevitably made. At first, it was easy enough to refactor the design to keep things clean. But as the project grew, it became calcified: making changes to the overall design or interface of any particular component became increasingly difficult. By contrast, Haskell offers a strong type system that can be used to guide a program’s refactoring. The type system even encourages better design from the start by forcing implicit assumptions about code behavior to be reified in the types.</p></li>
+<li><p>Haskell is cross-platform and actively developed by an open community. The Haskell ecosystem is great on Linux and OS X, and pretty decent on Windows. There are even Haskell compilers which target the browser by compiling to Javascript. The <em>de facto</em> Haskell compiler <code>ghc</code> is mature yet still improving rapidly, acting both as a stable platform and as a testbed for programming language research.</p></li>
+<li><p>Haskell has good library support and C integration. The Haskell FFI makes it easy to interface with C libraries, and many useful library wrappers already exist for the components that FractalStream requires: LLVM and/or OpenCL, GUI libraries, language parsing, and so on.</p></li>
+</ul>
+
+	    </div>
+
+	<div class="col-sm-3 col-sm-offset-1 blog-sidebar">
+	    <div class="sidebar-module sidebar-module-inset">
+	          <h4>About</h4>
+		      <p>Updates on the trials and tribulations of developing an interactive,
+			 performace-critical, GUI-based application in Haskell.</p>
+		        </div>
+	      <div class="sidebar-module">
+		    <h4>Archives</h4>
+		        <ol class="list-unstyled">
+			        <li><a href="#">June 2015</a></li>
+				    </ol>
+			  </div>
+	        <div class="sidebar-module">
+		      <h4>Elsewhere</h4>
+		          <ol class="list-unstyled">
+			          <li>
+				    <a href="#">GitHub</a>
+				          </li>
+				        <li>
+					  <a href="#">Twitter</a>
+					        </li>
+					      <li>
+						<a href="#">Facebook</a>
+						      </li>
+					          </ol>
+			    </div>
+		  <div class="sidebar-module">
+		        <a href="../atom.xml">Atom</a> - <a href="../rss.xml">RSS</a>
+			  </div>
+		  </div>
+
+      </div>
+
+    </div>
+
+    <footer class="blog-footer">
+      <p>
+	Site proudly generated by
+	<a href="http://jaspervdj.be/hakyll">Hakyll</a>
+      </p>
+    </footer>
+
+  </body>
+
+</html>

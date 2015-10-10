@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>FractalStream Development Blog - FractalStream 1.0</title>
+
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+    <link rel="stylesheet" type="text/css" href="../css/bootstrap-blog.css">
+
+  </head>
+
+  <body>
+
+    <div class="blog-masthead">
+      <div class="container">
+	<nav class="blog-nav">
+          <a class="blog-nav-item" href="../">Home</a>
+          <a class="blog-nav-item" href="../about.html">About</a>
+          <a class="blog-nav-item" href="../contact.html">Contact</a>
+          <a class="blog-nav-item" href="../archive.html">Archive</a>
+	  </nav>
+      </div>
+    </div>
+
+    <div class="container">
+
+      <div class="blog-header">
+	<h1 class="blog-title">FractalStream Development Blog</h1>
+	<p class="lead blog-description">
+	    Building a tool in Haskell for dynamical systems research.
+	    </p>
+      </div>
+
+      <div class="row">
+	<div class="col-sm-8 blog-main">
+	    <div class="info">
+    Posted on September  9, 2015
+    
+        by Matt Noonan
+    
+</div>
+
+<h1 id="a-bit-of-backstory">A bit of backstory</h1>
+<p><a href="http://www.math.cornell.edu/~noonan/fstream.html">FractalStream</a> is a program that I developed while I was a graduate student with <a href="http://www.math.cornell.edu/~hubbard/">John Hubbard</a>. It was developed to replace a pre-OS X Mac program called <a href="http://www.math.cornell.edu/~dynamics/FA/">FractalAsm</a> which was written by Karl Papadantonakis while he was an undergraduate at Cornell. FractalAsm was cool because the scripts you wrote were translated directly to PowerPC machine code, so they were quite fast; in fact, I think they were compiled down to code that would execute without touching memory. Since the PowerPC has 32 double-precision floating point registers there was a good amount of state that you could work with.</p>
+<p>The biggest drawback, of course, was that FractalAsm scripts were translated directly to <em>PowerPC</em> machine code. For a while, FractalAsm could still be run using the Classic Environment; but once Apple dropped the PowerPC, keeping FractalAsm running got a bit gruesome.</p>
+<p>Bill Thurston ended up funding me for a semester to develop a replacement for FractalAsm that would run on (then-)modern Apple hardware. In retrospect we should have used that opportunity to develop a cross-platform solution right away, but things were getting desparate enough that just running natively on Intel OS X was considered a big improvement. In any case, Bill’s funding along with Hubbard and <a href="http://www-personal.umich.edu/~kochsc/">Sarah Koch</a>’s extensive experience using FractalAsm in their research gave me the opportunity to develop the initial (and essentially only) version of FractalStream.</p>
+<h1 id="what-is-fractalstream">What is FractalStream?</h1>
+<p>FractalStream is a program for experimentally investigating dynamical systems. In practice, that means that it can make pretty pictures, but those pretty pictures have to help real mathematicians get real work done.</p>
+<p>It was decided early on to use a new scripting language rather than maintaining compatibility with the FractalAsm language; for one thing, I didn’t personally have a running version of FractalAsm and couldn’t quite reverse-engineer the semantics of the language from the documentation.</p>
+<p>Since many of the FractalStream users study complex dynamics, Sarah and I felt that it would be useful to allow the user to write scripts that directly manipulate complex variables. For example, the full FractalStream (1.0) script for rendering a Mandelbrot set with click-through to the corresponding Julia set is simply</p>
+<pre><code>iterate z^2 + C until z escapes.</code></pre>
+<p>Since the original FractalStream was developed during Apple’s PowerPC-to-Intel transition, it was important that it would run on both platforms. The solution was to translate the scripts to <a href="https://en.wikipedia.org/wiki/LLVM">LLVM IR</a>, which could then be compiled and executed as native code (a script compiler to C also existed at one point).</p>
+<h2 id="why-fractalstream">Why Fractal<em>Stream</em>?</h2>
+<p>I had a notion early on that the scripts could compile to GPU programs since the FractalStream drawing operations fall squarely in the set of “embarassingly parallel” tasks. The idea was to get a massive speed boost by using the GPU as a <a href="https://en.wikipedia.org/wiki/Stream_processing">streaming coprocessor</a>. The big drawback is precision: even now, 64-bit floating point precision is not a given on GPUs. This is especially true for mobile GPUs, and most FractalStream users seem to primarily use it on a laptop.</p>
+<p>Since 32-bit floating point results in major precision loss after just a few zooms into the Mandelbrot set, it seems clear that 64-bit support is a hard requirement. This effectively killed the “stream” part of FractalStream, but the name stuck.</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>That’s all for now. To see what FractalStream is capable of, have a look at the PDFs in the zombified <a href="http://code.google.com/p/fractalstream/downloads/list">Google code archive</a>.</p>
+
+	    </div>
+
+	<div class="col-sm-3 col-sm-offset-1 blog-sidebar">
+	    <div class="sidebar-module sidebar-module-inset">
+	          <h4>About</h4>
+		      <p>Updates on the trials and tribulations of developing an interactive,
+			 performace-critical, GUI-based application in Haskell.</p>
+		        </div>
+	      <div class="sidebar-module">
+		    <h4>Archives</h4>
+		        <ol class="list-unstyled">
+			        <li><a href="#">June 2015</a></li>
+				    </ol>
+			  </div>
+	        <div class="sidebar-module">
+		      <h4>Elsewhere</h4>
+		          <ol class="list-unstyled">
+			          <li>
+				    <a href="#">GitHub</a>
+				          </li>
+				        <li>
+					  <a href="#">Twitter</a>
+					        </li>
+					      <li>
+						<a href="#">Facebook</a>
+						      </li>
+					          </ol>
+			    </div>
+		  <div class="sidebar-module">
+		        <a href="../atom.xml">Atom</a> - <a href="../rss.xml">RSS</a>
+			  </div>
+		  </div>
+
+      </div>
+
+    </div>
+
+    <footer class="blog-footer">
+      <p>
+	Site proudly generated by
+	<a href="http://jaspervdj.be/hakyll">Hakyll</a>
+      </p>
+    </footer>
+
+  </body>
+
+</html>
