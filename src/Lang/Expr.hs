@@ -1,5 +1,6 @@
 
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
@@ -81,6 +82,9 @@ instance Show BuiltinFunc where
 
 newtype Expr = Fix (ExprF Expr) deriving (Eq, Ord)
 
+unfix :: Expr -> ExprF Expr
+unfix (Fix e) = e
+
 data ExprF a
   = Let Symbol a a
   | Var Symbol
@@ -107,7 +111,7 @@ data ExprF a
   | Col Int [a]
   | Pair a a
   | Builtin BuiltinFunc
-  deriving (Eq, Ord, Show, Functor)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
 
 instance Num Expr where
   (Fix (Add xs)) + (Fix (Add ys)) = Fix $ Add (sort $ xs ++ ys)
@@ -162,7 +166,8 @@ fromDouble = Fix . Const . R
 -- | Expression AST with an annotation of type t at each AST node.
 --   shachaf on #haskell suggests looking at cofree comonads to
 --   de-boilerplate this type and the associated fold functions.
-data AExpr t = AExpr t (ExprF (AExpr t)) deriving (Eq, Ord, Functor)
+data AExpr t = AExpr t (ExprF (AExpr t))
+  deriving (Eq, Ord, Functor, Foldable, Traversable)
 
 -- | Extract the top-level annotation on an annotated expression.
 getAnnotation :: AExpr t -> t
@@ -174,71 +179,46 @@ getExpr (AExpr _ x) = x
 
 -- | Annotate each subexpression with the result of
 --   applying the given function.
-annotateWith :: Ord t => (Expr -> t) -> Expr -> AExpr t
+annotateWith :: (Expr -> t) -> Expr -> AExpr t
 annotateWith = annotate . (. Fix . fmap forget)
 
 -- | Annotate each subexpression with the result of applying
 --   the given monadic function.  Monadic results are gathered
 --   in preorder over the expression's AST.
-annotateWithM :: (Ord t, Monad m) => (Expr -> m t) -> Expr -> m (AExpr t)
+annotateWithM :: Monad m => (Expr -> m t) -> Expr -> m (AExpr t)
 annotateWithM = annotateM . (. Fix . fmap forget)
 
 -- | Forget annotations on an expression.
-forget :: Ord t => AExpr t -> Expr
+forget :: AExpr t -> Expr
 forget = foldAExpr (const Fix)
 
 -- | Lift a function on expressions to a function on annotated expressions.
-upgrade :: Ord t => (Expr -> t) -> (AExpr t -> t)
+upgrade :: (Expr -> t) -> (AExpr t -> t)
 upgrade = (.forget)
 
 -- | Add annotations to an expression based on the current
 --   AST node and the annotations on its children.
-annotate :: Ord t => (ExprF (AExpr t) -> t) -> Expr -> AExpr t
+annotate :: (ExprF (AExpr t) -> t) -> Expr -> AExpr t
 annotate f = foldExpr (\e -> AExpr (f e) e)
 
-annotateM :: (Ord t, Monad m) => (ExprF (AExpr t) -> m t) -> Expr -> m (AExpr t)
+annotateM :: Monad m => (ExprF (AExpr t) -> m t) -> Expr -> m (AExpr t)
 annotateM f = foldExprM $ \e -> do
     ann <- f e
     return $ AExpr ann e
 
 -- | Fold over an expression, implemented as a catamorphism a la recursion-schemes.
 foldExpr :: (ExprF a -> a) -> Expr -> a
-foldExpr f = g where g (Fix e) = f $ fmap g e
+foldExpr f = f . fmap (foldExpr f) . unfix
 
 -- | Fold over an expression, inside the Kleisi category for a monad m.
-foldExprM :: (Ord a, Monad m) => (ExprF a -> m a) -> Expr -> m a
-foldExprM f = foldAExprM (const f) . annotate (const ())
+foldExprM :: Monad m => (ExprF a -> m a) -> Expr -> m a
+foldExprM f = (f =<<) . sequence . fmap (foldExprM f) . unfix
 
 -- | Fold over an annotated expression.
 foldAExpr :: (t -> ExprF a -> a) -> AExpr t -> a
-foldAExpr f = g where g (AExpr x e) = f x $ fmap g e
+foldAExpr f (AExpr x e) = f x $ fmap (foldAExpr f) e
 
 -- | Fold over an annotated expression, inside the Kleisi category for a monad m.
---   This is the boilerplate that lets us write all of the other folds nicely!
-foldAExprM :: (Ord t, Ord a, Monad m) => (t -> ExprF a -> m a) -> AExpr t -> m a
-foldAExprM f = g where
-  g (AExpr x e) = (pure (fmap g e) >>= runM >>= f x)
-  runM :: (Ord a, Monad m) => ExprF (m a) -> m (ExprF a)
-  runM expr = case expr of
-                Let s x a  -> liftM2 (Let s) x a
-                Var s      -> pure (Var s)
-                I          -> pure I
-                Apply f x  -> liftM2 Apply f x
-                Lambda s e -> liftM (Lambda s) e
-                Const k    -> pure (Const k)
-                Add xs     -> liftM (Add . sort) (sequence xs)
-                Embed x    -> liftM Embed x
-                Sub x y    -> liftM2 Sub x y
-                Mul xs     -> liftM (Mul . sort) (sequence xs)
-                Div x y    -> liftM2 Div x y
-                Pow x n    -> liftM2 Pow x n
-                Neg x      -> liftM Neg x
-                Conj x     -> liftM Conj x
-                RealPart x -> liftM RealPart x
-                ImagPart x -> liftM ImagPart x
-                Norm x     -> liftM Norm x
-                Norm2 x    -> liftM Norm2 x
-                Diff s x   -> liftM (Diff s) x
-                Pair x y   -> liftM2 Pair x y
-                Case cs x  -> error "TODO"
-                Builtin f -> pure (Builtin f)
+foldAExprM :: Monad m => (t -> ExprF a -> m a) -> AExpr t -> m a
+foldAExprM f (AExpr x e) = f x =<< sequence (fmap (foldAExprM f) e)
+
