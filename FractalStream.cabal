@@ -18,7 +18,25 @@ cabal-version:       >=1.10
 executable FractalStream
   ghc-options:         -Wall -O2 -threaded
   main-is:             Main.hs
-  -- other-modules:
+  other-modules:       Color.Color
+                       Color.Colorize
+                       Exec.Accelerate
+                       Exec.Haskell
+                       Exec.Placeholder
+                       Exec.Region
+                       Exec.Tasking.Block
+                       Exec.Tasking.Manager
+                       Lang.Expr
+                       Lang.Expr.Print
+                       Lang.Expr.Transform
+                       Lang.Expr.Typing
+                       Lang.Numbers
+                       Lang.Parse.Expr
+                       Lang.Planar
+                       UI.Tile
+                       UI.WX.Viewer
+                       Utilities
+                       Utils.Concurrent
   -- other-extensions:
   build-depends:       base >=4.8 && <4.9,
                        random,
@@ -29,7 +47,11 @@ executable FractalStream
                        containers,
                        parsec,
                        mtl,
-                       recursion-schemes
+                       recursion-schemes,
+                       accelerate,
+                       accelerate-llvm,
+                       accelerate-llvm-native,
+                       time
   hs-source-dirs:      src
   default-language:    Haskell2010
   build-tools:         c2hs

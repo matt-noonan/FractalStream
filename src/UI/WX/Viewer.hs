@@ -6,7 +6,6 @@ module UI.WX.Viewer ( wxView
                     ) where
 
 import Lang.Planar
-import Exec.Region
 import Color.Color (peekColor, clear)
 import Color.Colorize
 import UI.Tile
@@ -19,13 +18,14 @@ import Graphics.UI.WXCore.WxcClassTypes
 
 import Foreign.ForeignPtr
 
+import Control.Concurrent
+
 -- | Create a window with an interactive view of a complex-dynamical system.
 wxView :: (Planar a, Show a)
        => Rectangle a  -- ^ The upper-left and lower-right corners of the view.
-       -> Dynamics a   -- ^ The dynamical system to explore.
-       -> Colorizer a  -- ^ How to color the iteration results.
+       -> ([a] -> IO [Color]) -- ^ The rendering action
        -> IO ()
-wxView modelRect dyn col = start $ do
+wxView modelRect renderAction = start $ do
 
     let (width, height) = (512, 512)
 
@@ -49,7 +49,7 @@ wxView modelRect dyn col = start $ do
     lastClick <- variable [value := Nothing]
 
     -- Panel and tile for initial view
-    viewerTile <- renderTile dyn col (width, height) modelRect
+    viewerTile <- renderTile renderAction (width, height) modelRect
     currentTile <- variable [value := viewerTile]
     savedTileImage <- variable [value := Nothing]
 
@@ -57,7 +57,7 @@ wxView modelRect dyn col = start $ do
     set p [ on paint := \dc r -> do
                 viewRect <- windowGetViewRect f
                 curTile <- get currentTile value
-                let (width, height, _) = tileData curTile
+                let (width, height) = tileRect curTile
                 img <- get savedTileImage value
                 case img of
                     Nothing -> return ()
@@ -121,17 +121,18 @@ wxView modelRect dyn col = start $ do
 
 -- | Paint the state of a tile into a device context.
 generateTileImage
-    :: Tile a  -- ^ A tile to convert to an image
+    :: Tile    -- ^ A tile to convert to an image
     -> Rect    -- ^ The enclosing view rectangle
     -> IO (Image ())
 
 generateTileImage viewerTile windowRect = do
-    let (width, height, fptr) = tileData viewerTile
+    let (width, height) = tileRect viewerTile
     let Point { pointX = fWidth, pointY = fHeight } = rectBottomRight windowRect
     let (x0, y0) = ( (fWidth  + width ) `div` 2 - width  ,
                      (fHeight + height) `div` 2 - height )
 
-    withForeignPtr fptr $ \buf -> do
+    withSynchedTileBuffer viewerTile $ \fptr -> do
+      withForeignPtr fptr $ \buf -> do
         pbuf <- pixelBufferCreate (sz width height)
         pixels <- mapM (peekColor buf) [0..(width * height - 1)]
         pixelBufferSetPixels pbuf pixels

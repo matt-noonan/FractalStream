@@ -3,6 +3,7 @@ module Utilities
   ( sort
   , toMultiset
   , fromMultiset
+  , groupsOf
   ) where
     
 import Data.Map (Map)
@@ -17,3 +18,7 @@ toMultiset = Map.fromListWith (+) . (`zip` repeat 1)
 fromMultiset :: Ord a => Map a Int -> [a]
 fromMultiset = concatMap (uncurry (flip replicate')) . Map.toList
   where replicate' n = replicate (abs n)
+
+groupsOf :: Int -> [a] -> [[a]]
+groupsOf n [] = []
+groupsOf n xs = take n xs : groupsOf n (drop n xs)

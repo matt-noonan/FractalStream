@@ -5,22 +5,14 @@ Description : Block-execution strategies.
 module Exec.Tasking.Manager (progressively) where
 
 import Exec.Tasking.Block
+import Utils.Concurrent
 
 import System.Random
 import Data.Array.IO
 import Control.Monad
 import Control.Concurrent
-import Control.Concurrent.Async
 
-forPool :: Int -> [a] -> (a -> IO b) -> IO [b]
-forPool nSimul xs f = do
-    sem <- newQSem nSimul
-    mapConcurrently (with sem . f) xs
-  where with s op = do
-            waitQSem s
-            r <- op
-            signalQSem s
-            return r
+import Data.Time (getCurrentTime, diffUTCTime)
 
 -- | Chop up a block into sub-blocks, delegate rendering
 --   tasks for sub-blocks, and blit the results back
@@ -38,10 +30,19 @@ progressively render block = do
 
     poolSize <- getNumCapabilities >>= (return . max 4)
     
-    forM_ [-4, -2, 0, logSampleRate block] $ \rate -> do
-      forPool poolSize blockIDs $ \(x,y) ->
-        render $ block { xSize = 16, ySize = 16, x0 = 16 * x, y0 = 16 * y, logSampleRate = rate }
-
+    let rates = if logSampleRate block > 0
+                then [-4, -2, 0, logSampleRate block]
+                else [-4, -2, 0]
+    forM_ rates $ \rate -> do
+      start <- getCurrentTime
+      forPool_ poolSize blockIDs $ \(x,y) ->
+        render $ block { xSize = 16, ySize = 16,
+                         x0 = 16 * x, y0 = 16 * y,
+                         logSampleRate = rate }
+      end <- getCurrentTime
+      putStrLn $ show width ++ " x " ++ show height ++ " @ rate " ++ show rate
+                            ++ " rendered in " ++ show (diffUTCTime end start)
+        
 shuffle :: [a] -> IO [a]
 shuffle xs = do
         ar <- makeArray xs

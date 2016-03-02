@@ -6,6 +6,7 @@ module Exec.Region where
 
 -- | A region in the parameter- or dynamical-plane.
 data Region = Interior | Exterior deriving (Eq, Ord, Show)
+--type Region = Int
 
 -- | The result of an iteration. The type parameter determines the type of the
 --   dynamics: real, complex, real-planar, etc.

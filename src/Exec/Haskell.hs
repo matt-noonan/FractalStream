@@ -26,7 +26,9 @@ data ComplexDynamics = ComplexDynamics
 
 -- | Convert a description of a dynamical system to a Haskell function.
 runComplexDynamics :: ComplexDynamics -> Dynamics C
-runComplexDynamics dyn = Dynamics $ \z -> classify' $ head $ dropWhile (uncurry $ continue dyn) (trace z)
+runComplexDynamics dyn = Dynamics $ \z -> classify'
+                                          $ head
+                                          $ dropWhile (uncurry $ continue dyn) (trace z)
     where trace :: C -> [(C,Int)]
           trace z = zip (iterate f z) [0..] 
           f = function dyn
