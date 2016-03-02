@@ -17,6 +17,8 @@ import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Monad
 
+-- | forPool n is similar to forM, except the actions
+--   are executed concurrently by a pool of n workers.
 forPool :: Int -> [a] -> (a -> IO b) -> IO [b]
 forPool nSimul xs f
   | nSimul < 1 = forPool 1 xs f
@@ -29,6 +31,8 @@ forPool nSimul xs f
           signalQSem s
           return r
 
+-- | forPool_ n is similar to forM_, except the actions
+--   are executed concurrently by a pool of n workers.
 forPool_ :: Int -> [a] -> (a -> IO b) -> IO ()
 forPool_ n xs f = void $ forPool n xs f
 
@@ -44,6 +48,8 @@ data Synchronizable a = Synchronizable
   , resource :: a
   }
 
+-- | Create a new synchronization structure
+--   around a shared resource.
 synchronized :: a -> IO (Synchronizable a)
 synchronized res = do
   _mutable  <- newMVar ()
@@ -55,24 +61,29 @@ synchronized res = do
                           , resource = res
                           }
 
+-- | Use an existing synchronized resource to
+--   control access to another resource.  
 synchronizedTo :: a -> Synchronizable b -> Synchronizable a
-synchronizedTo res obj = Synchronizable { mutable  = mutable obj
-                                        , users    = users obj
-                                        , finished = finished obj
-                                        , resource = res
-                                        }
+synchronizedTo res obj = obj { resource = res }
+
+{- If the functions 'with' and 'synchedWith' are replaced
+   with the definitions below, no rendering anomalies occur.
+
 with :: Synchronizable a -> (a -> IO b) -> IO b
 with obj action = do
   void $ takeMVar (mutable obj)
   result <- action (resource obj)
   putMVar (mutable obj) ()
   return result
-  
-synchedWith :: Synchronizable a -> (a -> IO b) -> IO b
-synchedWith = with
 
-with' :: Synchronizable a -> (a -> IO b) -> IO b
-with' r action = do
+synchedWith :: Synchronizable a -> (a -> IO b) -> IO b
+synchedWith obj = ($ resource obj)
+-}
+
+-- | Execute an action on a synchronized resource, perhaps
+--   concurrently with other threads.
+with :: Synchronizable a -> (a -> IO b) -> IO b
+with r action = do
   let usrs = users r
   -- Block until general access is allowed.
   readMVar (mutable r)
@@ -95,8 +106,13 @@ with' r action = do
   
   return result
   
-synchedWith' :: Synchronizable a -> (a -> IO b) -> IO b
-synchedWith' obj action = do
+-- | Execute an action on a synchronized resource while
+--   preventing concurrent access to the resource.  synchedWith
+--   will wait until any running actions complete before
+--   executing the given action, and will prevent new actions
+--   from beginning.
+synchedWith :: Synchronizable a -> (a -> IO b) -> IO b
+synchedWith obj action = do
   -- Prevent anybody else from beginning to work on this resource.
   void $ takeMVar (mutable obj)
   tid <- myThreadId
