@@ -42,23 +42,23 @@ forPool_ n xs f = void $ forPool n xs f
 --   before allowing more actions on the resource
 --   to execute.
 data Synchronizable a = Synchronizable
-  { mutable  :: MVar ()
-  , users    :: MVar Int
-  , finished :: MVar ()
-  , resource :: a
+  { available :: MVar ()
+  , users     :: MVar Int
+  , finished  :: MVar ()
+  , resource  :: a
   }
 
 -- | Create a new synchronization structure
 --   around a shared resource.
 synchronized :: a -> IO (Synchronizable a)
 synchronized res = do
-  _mutable  <- newMVar ()
-  _users    <- newMVar 0
-  _finished <- newMVar ()
-  return $ Synchronizable { mutable  = _mutable
-                          , users    = _users
-                          , finished = _finished
-                          , resource = res
+  _available <- newMVar ()
+  _users     <- newMVar 0
+  _finished  <- newMVar ()
+  return $ Synchronizable { available = _available
+                          , users     = _users
+                          , finished  = _finished
+                          , resource  = res
                           }
 
 -- | Use an existing synchronized resource to
@@ -71,9 +71,9 @@ synchronizedTo res obj = obj { resource = res }
 
 with :: Synchronizable a -> (a -> IO b) -> IO b
 with obj action = do
-  void $ takeMVar (mutable obj)
+  void $ takeMVar (available obj)
   result <- action (resource obj)
-  putMVar (mutable obj) ()
+  putMVar (available obj) ()
   return result
 
 synchedWith :: Synchronizable a -> (a -> IO b) -> IO b
@@ -83,25 +83,25 @@ synchedWith obj = ($ resource obj)
 -- | Execute an action on a synchronized resource, perhaps
 --   concurrently with other threads.
 with :: Synchronizable a -> (a -> IO b) -> IO b
-with r action = do
-  let usrs = users r
+with obj action = do
+  let usrs = users obj
   -- Block until general access is allowed.
-  readMVar (mutable r)
+  readMVar (available obj)
 
   -- Increment the number of active users, and
   -- flag the resource as not finished if we are
   -- the first worker.
   n <- takeMVar usrs
-  when (n == 0) $ void $ tryTakeMVar (finished r)
+  when (n == 0) $ void $ tryTakeMVar (finished obj)
   putMVar usrs (n + 1)
   
   -- Perform the action
-  result <- action $ resource r
+  result <- action $ resource obj
 
   -- Decrement the number of users and, if we were the last
   -- active user, flag the resource as finished.
   n <- takeMVar usrs
-  when (n == 1) $ void $ tryPutMVar (finished r) ()
+  when (n == 1) $ void $ tryPutMVar (finished obj) ()
   putMVar usrs (n - 1)
   
   return result
@@ -113,14 +113,13 @@ with r action = do
 --   from beginning.
 synchedWith :: Synchronizable a -> (a -> IO b) -> IO b
 synchedWith obj action = do
-  -- Prevent anybody else from beginning to work on this resource.
-  void $ takeMVar (mutable obj)
-  tid <- myThreadId
+  -- Prevent anybody else from beginning new work with this resource.
+  void $ takeMVar (available obj)
 
   -- Wait until there are no users of the resource, then run the action.
   void $ takeMVar (finished obj)
   result <- action (resource obj)
 
   -- Allow others to access the resource again.
-  putMVar (mutable obj) ()
+  putMVar (available obj) ()
   return result
