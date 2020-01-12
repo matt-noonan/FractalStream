@@ -1,9 +1,4 @@
 
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Lang.Expr
   ( Symbol
@@ -13,7 +8,6 @@ module Lang.Expr
   , BuiltinFunc(..)
   , builtinFuncType
   , var
-  , lambda
   , apply
   , fromDouble
   , AExpr(..)
@@ -31,10 +25,8 @@ module Lang.Expr
   , foldAExprM
   ) where
 
-import Lang.Numbers
-import Utilities
-
-import Control.Monad
+import           Lang.Numbers
+import           Utilities
 
 type Symbol = String
 
@@ -153,9 +145,6 @@ instance Floating Expr where
 
 var :: Symbol -> Expr
 var = Fix . Var
-
-lambda :: Expr -> Expr -> Expr
-lambda (Fix (Var s)) = Fix . Lambda s
 
 apply :: Expr -> Expr -> Expr
 apply f = Fix . Apply f

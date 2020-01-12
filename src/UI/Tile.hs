@@ -9,19 +9,17 @@ module UI.Tile ( Tile()
                , withSynchedTileBuffer
                ) where
 
-import Lang.Planar
-import Exec.Region
-import Exec.Tasking.Block
-import Exec.Tasking.Manager
+import           Exec.Tasking.Block
+import           Exec.Tasking.Manager
+import           Lang.Planar
 
-import Color.Color
-import Color.Colorize
-import Utils.Concurrent
+import           Color.Color
+import           Utils.Concurrent
 
-import Control.Concurrent
+import           Control.Concurrent
 
-import Foreign.ForeignPtr
-import Data.Word
+import           Data.Word
+import           Foreign.ForeignPtr
 
 newtype ImagePoint = ImagePoint (Double,Double)
 
@@ -31,9 +29,9 @@ instance Planar ImagePoint where
 
 -- | A tile in the image viewer.
 data Tile = Tile
-    { imageRect  :: Rectangle ImagePoint   -- ^ The region in view space described by the tile.
-    , tileBuffer :: Synchronizable (ForeignPtr Word8)       -- ^ The buffer into which the tile will draw.
-    , threadId :: ThreadId                 -- ^ The id of the thread which is drawing this tile.
+    { imageRect        :: Rectangle ImagePoint   -- ^ The region in view space described by the tile.
+    , tileBuffer       :: Synchronizable (ForeignPtr Word8)       -- ^ The buffer into which the tile will draw.
+    , threadId         :: ThreadId                 -- ^ The id of the thread which is drawing this tile.
     , shouldRedrawTile :: MVar ()          -- ^ A value which signals that the tile needs to be redrawn.
     }
 
@@ -59,14 +57,14 @@ renderTile :: Planar a
            -> (Int, Int)   -- ^ The height and width of this tile.
            -> Rectangle a  -- ^ The region of the dynamical plane corresponding
                            --   to this tile.
-           -> IO Tile      -- ^ An action which allocates the tile and 
+           -> IO Tile      -- ^ An action which allocates the tile and
                            --   forks a task which draws into it.
 
 renderTile renderingAction (width, height) mRect = do
 
     buf <- mallocForeignPtrBytes (4 * width * height)
     ptr <- withForeignPtr buf return
-    
+
     -- Initial fill of the image
     sequence_ [ pokeColor ptr index grey | index <- [0 .. width * height - 1] ]
 
@@ -74,7 +72,7 @@ renderTile renderingAction (width, height) mRect = do
 
     redraw     <- newMVar ()  -- used to request a redraw
     managedPtr <- synchronized ptr
-    
+
     tid <- forkIO $ progressively fillBlock
                   $ Block { coordToModel = convertRect iRect mRect . fromCoords
                           , compute = renderingAction
@@ -89,7 +87,7 @@ renderTile renderingAction (width, height) mRect = do
                           }
 
     return Tile { imageRect = iRect
-                , tileBuffer = buf `synchronizedTo` managedPtr 
+                , tileBuffer = buf `synchronizedTo` managedPtr
                 , threadId = tid
                 , shouldRedrawTile = redraw
                 }

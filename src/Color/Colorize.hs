@@ -1,3 +1,5 @@
+{-# options_ghc -Wno-type-defaults #-}
+
 {- |
 Module      : Color.Colorize
 Description : Functions and combinators for converting iteration results to colors.
@@ -28,10 +30,10 @@ module Color.Colorize (
   , smoothedRainbow
   ) where
 
-import Color.Color
+import           Color.Color
 
-import Exec.Region
-import Lang.Planar
+import           Exec.Region
+import           Lang.Planar
 
 import qualified Data.Map.Strict as M
 
@@ -58,7 +60,7 @@ rainbow = smoothedRainbow (const 0)
 blackInterior :: Colorizer a -> Colorizer a
 blackInterior c = Colorizer f
     where f (Result Interior _ _) = black
-          f r = (runColorizer c) r
+          f r                     = (runColorizer c) r
 
 -- | Invert the output of another colorizer.
 invert :: Colorizer a -> Colorizer a
@@ -99,26 +101,29 @@ smoothedLinearGradient :: (a -> Double)  -- ^ The smoothing function
                        -> Colorizer a    -- ^ The final colorizer.
                        -> Colorizer a    -- ^ The produced gradient.
 smoothedLinearGradient f n c1 c2 = if n > 0 then Colorizer c else c1
-    where c r@(Result _ z  k) = mixColors ((f z + (fromIntegral $ k `mod` n)) / fromIntegral n)
-                                          (runColorizer c1 $ r)
-                                          (runColorizer c2 $ r)
+    where c r@(Result _ z  k) =
+            mixColors (modOne ((f z + (fromIntegral $ k `mod` n)) / fromIntegral n))
+                      (runColorizer c1 $ r)
+                      (runColorizer c2 $ r)
 
 -- | A cyclic gradient in a fixed number of steps, with a smoothing
 --   function to interpolate between steps.
 smoothedCyclicGradient :: (a -> Double) -> Int -> [Colorizer a] -> Colorizer a
 smoothedCyclicGradient _ _ [] = solid grey
-smoothedCyclicGradient f n cs = smoothedMultiGradient f n $ M.fromList $ zip [0.0, 1 / fromIntegral (length cs) .. 1.0] (cycle cs)
+smoothedCyclicGradient f n cs@(c0:_) =
+  let m = M.fromList $ zip [0.0, 1 / fromIntegral (length cs) .. 1.0] (cycle cs)
+  in  smoothedMultiGradient f n (M.insert 1.0 c0 m)
 
 -- | A custom gradient in a fixed number of steps, with a smoothing
 --   function to interpolate between steps.
 smoothedMultiGradient :: (a -> Double) -> Int -> M.Map Double (Colorizer a) -> Colorizer a
 smoothedMultiGradient f n colors = if M.null colors then solid grey else Colorizer c
     where c r@(Result _ z k) = mix (M.lookupLE p colors) (M.lookupGE p colors)
-            where p = (f z + fromIntegral (k `mod` n)) / fromIntegral n
+            where p = modOne ((f z + fromIntegral (k `mod` n)) / fromIntegral n)
                   mix (Just (p0, Colorizer c0)) (Just (p1, Colorizer c1)) = if p0 == p1
                                                                             then c1 r
                                                                             else mixColors ( (p - p0) / (p1 - p0) ) (c1 r) (c0 r)
-                  mix _ _ = black
+                  mix _ _ = grey
 
 -- | A rainbow color scheme with custom smoothing.
 smoothedRainbow :: (a -> Double) -> Int -> Colorizer a
@@ -128,8 +133,9 @@ smoothedRainbow f n = smoothedCyclicGradient f n $ map solid [red, orange, yello
 --   adding $1 - \log_n (\frac{1}{2} \log (x^2 + y^2))$ to the gradient index.
 loglogSmoothing :: Planar a
                 => Int           -- ^ The degree $n$
-                -> (a -> Double) -- ^ The smoothing function for polynomials of degree $n$.                
+                -> (a -> Double) -- ^ The smoothing function for polynomials of degree $n$.
 loglogSmoothing n = \p -> let (x,y) = toCoords p in 1.0 - (log $ (log $ x^2 + y^2) / 2) / log (fromIntegral n)
 
-
-
+modOne :: Double -> Double
+modOne x = let x' = snd (properFraction x)
+           in if x' >= 0 then x' else 1 + x'

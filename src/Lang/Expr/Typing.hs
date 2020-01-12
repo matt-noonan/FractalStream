@@ -1,3 +1,4 @@
+{-# options_ghc -Wno-type-defaults #-}
 
 module Lang.Expr.Typing
   ( TypedExpr
@@ -5,7 +6,7 @@ module Lang.Expr.Typing
   , Context(..)
   , emptyContext
   , TypeError(..)
-  , TCStateT(..)
+  , TCStateT
   , runTC
   , runTCStateT
   , fresh
@@ -23,17 +24,16 @@ module Lang.Expr.Typing
   , checkType
   ) where
 
-import Lang.Expr
-import Lang.Expr.Print
+import           Lang.Expr
+import           Lang.Expr.Print        ()
 
-import Data.List (intercalate)
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.Maybe
+import           Data.List              (intercalate)
+import           Data.Map               (Map)
+import qualified Data.Map               as Map
 
-import Control.Monad.Error
-import Control.Monad.State
-import Control.Monad.Identity
+import           Control.Monad.Except
+import           Control.Monad.Identity
+import           Control.Monad.State
 
 type TypedExpr = AExpr Type
 
@@ -43,7 +43,7 @@ typeExpr :: Monad m => Expr -> TCStateT m TypedExpr
 typeExpr = annotateWithM inferType
 
 data Context = Context
-  { bindings :: Map Symbol Type
+  { bindings    :: Map Symbol Type
   , tempSymbols :: [Symbol]
   } deriving (Eq, Ord)
 
@@ -65,20 +65,16 @@ data TypeError
   | NotAFunction Type
   deriving (Eq, Ord, Show)
 
-instance Error TypeError where
-  noMsg    = AssertionFailure "unknown failure"
-  strMsg s = AssertionFailure s
-
 -- | State monad for type checker; threads a TypeContext
 --   state or an error of type TypeError.
-type TCStateT m = StateT Context (ErrorT TypeError m)
+type TCStateT m = StateT Context (ExceptT TypeError m)
 type TCState = TCStateT Identity
 
 runTC :: Context -> TCState a -> Either TypeError (a, Context)
-runTC ctx f = (runIdentity . runErrorT . runStateT f) ctx
+runTC ctx f = (runIdentity . runExceptT . runStateT f) ctx
 
 runTCStateT :: Monad m => Context -> TCStateT m a -> m (Either TypeError (a, Context))
-runTCStateT ctx f = (runErrorT . runStateT f) ctx
+runTCStateT ctx f = (runExceptT . runStateT f) ctx
 
 fresh :: Monad m => TCStateT m Symbol
 fresh = do
@@ -103,7 +99,7 @@ getType s = do
 
 getTypeRep :: Monad m => Type -> TCStateT m Type
 getTypeRep (TypeOf s) = getType s
-getTypeRep t = return t
+getTypeRep t          = return t
 
 setType :: Monad m => Symbol -> Type -> TCStateT m Type
 setType s t = do
@@ -133,7 +129,7 @@ unify t t' = t `unifiedWith` t' >>= \_ -> return ()
 unifiedWith :: Monad m => Type -> Type -> TCStateT m Type
 unifiedWith t t' = do
   let getRep (Underconstrained x) = Just x
-      getRep _ = Nothing
+      getRep _                    = Nothing
 
   case (getRep t, getRep t') of
     (Nothing, Nothing) -> case mergeTypes t t' of
@@ -141,7 +137,7 @@ unifiedWith t t' = do
                             Nothing  -> throwError $ CouldNotUnifyTypes t t'
     (Just r,  Nothing)  -> setType r  t'
     (Nothing, Just r')  -> setType r' t
-    (Just r, Just r')   -> setType r' t
+    (Just _, Just r')   -> setType r' t
 
 mergeTypes :: Type -> Type -> Maybe Type
 mergeTypes t t'
@@ -151,7 +147,7 @@ mergeTypes t t'
   | otherwise                        = Nothing
 
 unifyAll :: Monad m => [Type] -> TCStateT m Type
-unifyAll [] = throwError $ AssertionFailure "no types to unify"
+unifyAll []     = throwError $ AssertionFailure "no types to unify"
 unifyAll (t:ts) = foldM unifiedWith t ts
 
 inferType :: Monad m => Expr -> TCStateT m Type
@@ -159,32 +155,36 @@ inferType = foldExprM infer
 
 infer :: Monad m => ExprF Type -> TCStateT m Type
 infer expr = case expr of
-   Let s x a  -> getType s >>= unify x >> return a
+   Let s x a                -> getType s >>= unify x >> return a
 
-   Var s      -> getType s
+   Var s                    -> getType s
 
-   Apply (Func_T dom cod) x  -> unify x dom >> return cod
-   Apply f _ -> throwError $ NotAFunction f
+   Apply (Func_T dom cod) x -> unify x dom >> return cod
+   Apply f _                -> throwError $ NotAFunction f
 
-   Lambda s e -> getType s >>= \t -> return $ Func_T t e
+   Lambda s e               -> getType s >>= \t -> return $ Func_T t e
 
-   Const _    -> return Real_T
-   I          -> return Complex_T
-   Add xs     -> unifyAll xs
-   Embed x    -> return Complex_T
-   Sub x y    -> x `unifiedWith` y
-   Mul xs     -> unifyAll xs
-   Div x y    -> x `unifiedWith` y
-   Pow x n    -> x `unifiedWith` n
-   Neg x      -> return x
-   Conj x     -> return x
-   RealPart x -> return x
-   ImagPart x -> return x
-   Norm x     -> return Real_T
-   Norm2 x    -> return Real_T
-   Diff _ x   -> return x
-   Case cs x  -> error "TODO"
-   Builtin f  -> return $ builtinFuncType f
+   Const _                  -> return Real_T
+   I                        -> return Complex_T
+   Add xs                   -> unifyAll xs
+   Embed _                  -> return Complex_T
+   Sub x y                  -> x `unifiedWith` y
+   Mul xs                   -> unifyAll xs
+   Div x y                  -> x `unifiedWith` y
+   Pow x n                  -> x `unifiedWith` n
+   Neg x                    -> return x
+   Conj x                   -> return x
+   RealPart x               -> return x
+   ImagPart x               -> return x
+   Norm _                   -> return Real_T
+   Norm2 _                  -> return Real_T
+   Diff _ x                 -> return x
+   Case _ _                 -> error "TODO"
+   Builtin f                -> return $ builtinFuncType f
+   Pair _ _                 -> error "TODO"
+   Transpose _              -> error "TODO"
+   Row _ _                  -> error "TODO"
+   Col _ _                  -> error "TODO"
 
 checkType :: Monad m => Context -> Expr -> Type -> m Bool
 checkType ctx e t = do

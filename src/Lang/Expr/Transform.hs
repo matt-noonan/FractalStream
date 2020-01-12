@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# options_ghc -Wno-type-defaults #-}
 
 module Lang.Expr.Transform
   ( normalize
@@ -9,15 +9,15 @@ module Lang.Expr.Transform
   , precompile
   ) where
 
-import Lang.Numbers
-import Lang.Expr
-import Lang.Expr.Typing
-import Utilities
+import           Lang.Expr
+import           Lang.Expr.Typing
+import           Lang.Numbers        hiding (norm2)
+import           Utilities
 
-import qualified Data.Map as Map
-import Data.Maybe
+import qualified Data.Map            as Map
+import           Data.Maybe
 
-import Control.Monad.State
+import           Control.Monad.State
 
 -- | When an expression involves operations on a mixed set of
 --   real and complex numbers, embed the reals as r |-> r + 0i.
@@ -27,17 +27,17 @@ embedR :: TypedExpr -> TypedExpr
 embedR = foldAExpr phi
   where embed = AExpr Complex_T . Embed
         embed' e@(AExpr Real_T _) = embed e
-        embed' e = e
+        embed' e                  = e
         phi Complex_T expr = AExpr Complex_T $ case expr of
-          Add xs                      -> Add (sort $ map embed' xs)
-          Mul xs                      -> Mul (sort $ map embed' xs)
-          Sub x y@(AExpr Real_T _)    -> Sub x (embed y)
-          Sub x@(AExpr Real_T _) y    -> Sub (embed x) y
-          Div x y@(AExpr Real_T _)    -> Div x (embed y)
-          Div x@(AExpr Real_T _) y    -> Div (embed x) y
-          Pow x y@(AExpr Real_T _)    -> Pow x (embed y)
-          Pow x@(AExpr Real_T _) y    -> Pow (embed x) y
-          otherwise                   -> expr
+          Add xs                   -> Add (sort $ map embed' xs)
+          Mul xs                   -> Mul (sort $ map embed' xs)
+          Sub x y@(AExpr Real_T _) -> Sub x (embed y)
+          Sub x@(AExpr Real_T _) y -> Sub (embed x) y
+          Div x y@(AExpr Real_T _) -> Div x (embed y)
+          Div x@(AExpr Real_T _) y -> Div (embed x) y
+          Pow x y@(AExpr Real_T _) -> Pow x (embed y)
+          Pow x@(AExpr Real_T _) y -> Pow (embed x) y
+          _                        -> expr
         phi t expr = AExpr t expr
 
 normalize :: Expr -> Expr
@@ -50,18 +50,18 @@ normalizeA = foldAExpr phi
           Mul xs -> Mul $ sort $ concatMap unpackMul xs
           expr@_ -> expr
         unpackAdd (AExpr _ (Add xs)) = xs
-        unpackAdd e = [e]
+        unpackAdd e                  = [e]
         unpackMul (AExpr _ (Mul xs)) = xs
-        unpackMul e = [e]
+        unpackMul e                  = [e]
 
 constProp :: TypedExpr -> TypedExpr
 constProp = normalizeA . foldAExpr phi
   where phi Real_T expr = AExpr Real_T $ case expr of
 
           Add xs -> case mergeAddConsts xs of
-                      [] -> Const 0
+                      []          -> Const 0
                       [AExpr _ x] -> x
-                      terms@_ -> Add $ sort terms
+                      terms@_     -> Add $ sort terms
 
           Sub (AExpr _ (Const 0)) x -> Neg x
           Sub (AExpr _ x) (AExpr _ (Const 0)) -> x
@@ -70,9 +70,9 @@ constProp = normalizeA . foldAExpr phi
           Mul xs -> if not (null $ filter isZero xs)
                       then Const 0
                       else case mergeMulConsts xs of
-                        [] -> Const 1
+                        []          -> Const 1
                         [AExpr _ x] -> x
-                        terms@_ -> Mul $ sort terms
+                        terms@_     -> Mul $ sort terms
 
           Div (AExpr _ (Const 0)) _ -> Const 0
           Div (AExpr _ x) (AExpr _ (Const 1)) -> x
@@ -85,17 +85,17 @@ constProp = normalizeA . foldAExpr phi
 
           Neg (AExpr _ (Const x)) -> Const $ negate x
 
-          otherwise -> expr
+          _ -> expr
         phi Complex_T _ = error "cannot use constProp on complex expressions!"
         phi t e = AExpr t e
 
         isZero = maybe False (== 0) . constValue
 
         constValue (AExpr _ (Const x)) = Just x
-        constValue _ = Nothing
+        constValue _                   = Nothing
 
         negatedValue (AExpr _ (Neg x)) = Just x
-        negatedValue _ = Nothing
+        negatedValue _                 = Nothing
 
         mergeMulConsts :: [TypedExpr] -> [TypedExpr]
         mergeMulConsts xs = if c == 1 then exprs else (AExpr Real_T (Const c) : exprs)
@@ -117,16 +117,18 @@ constProp = normalizeA . foldAExpr phi
 complexToReal :: TypedExpr -> TypedExpr
 complexToReal = normalizeA . foldAExpr phi
   where ra = AExpr Real_T
-        unpair (AExpr _ (Pair x y)) = (x,y)
-        unzipP = unzip . map (\(AExpr _ (Pair x y)) -> (x,y))
+        unpair (AExpr _ p) = case p of
+            Pair x y -> (x,y)
+            _        -> error "Internal error; not a Pair"
+        unzipP = unzip . map unpair
         (==>) = Func_T
         rfun = Real_T ==> Real_T
         phi Complex_T expr = AExpr (Pair_T Real_T Real_T) $ case expr of
           Let s x a  -> letInCExpr s x a
           Var s      -> Pair (ra $ Var $ s ++ ".re") (ra $ Var $ s ++ ".im")
           I          -> Pair (ra $ Const 0) (ra $ Const 1)
-          Apply f x  -> error "TODO"
-          Lambda s e -> error "Internal error: impossible type, function == scalar"
+          Apply _ _  -> error "TODO"
+          Lambda _ _ -> error "Internal error: impossible type, function == scalar"
           Const k    -> Pair (ra $ Const k) (ra $ Const 0)
           Add xs     -> let (re, im) = unzipP xs in
                           Pair (ra $ Add $ sort re) (ra $ Add $ sort im)
@@ -140,12 +142,12 @@ complexToReal = normalizeA . foldAExpr phi
                             n2 e = ra $ Div (ra e) (ra $ norm2 u v) in
                           Pair (n2 $ Add [ra $ Mul [x,u], ra $ Mul [y,v]])
                                (n2 $ Add [ra $ Mul [y,u], ra $ Mul [x,v]])
-          Pow x n    -> error "TODO"
+          Pow _ _    -> error "TODO"
           Neg x      -> let (xr,xi) = unpair x in Pair (ra $ Neg xr) (ra $ Neg xi)
           Conj x     -> let (xr,xi) = unpair x in Pair xr (ra $ Neg xi)
-          Diff s x   -> error "TODO"
-          Case cs x  -> error "TODO"
-          otherwise  -> expr
+          Diff _ _   -> error "TODO"
+          Case _ _   -> error "TODO"
+          _          -> expr
 
         phi Real_T expr = AExpr Real_T $ case expr of
           Let s x a  -> letInRExpr s x a
@@ -153,7 +155,7 @@ complexToReal = normalizeA . foldAExpr phi
           ImagPart x -> let (_, AExpr Real_T xi) = unpair x in xi
           Norm  z@(AExpr Complex_T _) -> let (x,y) = unpair z in (Apply rsqrt (ra $ norm2 x y))
           Norm2 z@(AExpr Complex_T _) -> let (x,y) = unpair z in norm2 x y
-          otherwise  -> expr
+          _          -> expr
 
         phi (Func_T Complex_T Real_T) (Lambda s e) = AExpr (Real_T ==> rfun)
           (Lambda (s ++ ".re") $ AExpr rfun $ Lambda (s ++ ".im") e)
@@ -176,6 +178,7 @@ complexToReal = normalizeA . foldAExpr phi
         cplxMul (Pair x y) (Pair u v) = Pair px py where
           px = ra $ Sub (ra $ Mul [x,u]) (ra $ Mul [y,v])
           py = ra $ Add [ra $ Mul [x,v], ra $ Mul [y,u]]
+        cplxMul _ _ = error "Internal error: cplxMul called on non-Pairs"
 
         letInCExpr s (AExpr _ (Pair x y))
                      (AExpr (Pair_T ut vt) (Pair u v)) = Pair (lets ut u) (lets vt v)
@@ -195,7 +198,7 @@ pow2mul = normalizeA . foldAExpr phi
           Pow x (AExpr _ (Const (R n))) -> if fromIntegral (floor n) == n && n > 1
                                               then mkPower ty x (floor n)
                                               else AExpr ty expr
-          otherwise -> AExpr ty expr
+          _ -> AExpr ty expr
 
 mkPower :: Type -> TypedExpr -> Int -> TypedExpr
 mkPower ty x n = foldl (.) id lets (AExpr ty $ Mul pows)
@@ -215,20 +218,20 @@ simplifyLet = normalizeA . foldAExpr phi
                         0 -> e
                         1 -> substitute s x e
                         _ -> AExpr ty expr
-          otherwise -> AExpr ty expr
+          _ -> AExpr ty expr
 
 countUsesOf :: Symbol -> Expr -> Int
 countUsesOf s e = snd $ runState (foldExprM phi e) 0
   where phi :: ExprF () -> State Int ()
         phi = \case
-                Var s'    -> if s == s' then modify (+1) else return ()
-                otherwise -> return ()
+                Var s' -> if s == s' then modify (+1) else return ()
+                _      -> return ()
 
 substitute :: Symbol -> AExpr a -> AExpr a -> AExpr a
 substitute s x = foldAExpr phi
   where phi ty expr = case expr of
-          Var s'    -> if s == s' then x else AExpr ty expr
-          otherwise -> AExpr ty expr
+          Var s' -> if s == s' then x else AExpr ty expr
+          _      -> AExpr ty expr
 
 precompile :: TypedExpr -> TypedExpr
 precompile = normalizeA . simplifyLet . pow2mul . constProp . complexToReal . embedR . normalizeA . simplifyLet . pow2mul

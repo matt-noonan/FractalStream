@@ -13,9 +13,10 @@ module Utils.Concurrent
        , synchedWith
        ) where
 
-import Control.Concurrent
-import Control.Concurrent.Async
-import Control.Monad
+import           Control.Concurrent
+import           Control.Concurrent.Async
+import           Control.Monad
+import qualified Control.Monad.Parallel   as Par
 
 -- | forPool n is similar to forM, except the actions
 --   are executed concurrently by a pool of n workers.
@@ -34,7 +35,9 @@ forPool nSimul xs f
 -- | forPool_ n is similar to forM_, except the actions
 --   are executed concurrently by a pool of n workers.
 forPool_ :: Int -> [a] -> (a -> IO b) -> IO ()
-forPool_ n xs f = void $ forPool n xs f
+--forPool_ n xs f = void $ forPool n xs f
+
+forPool_ _ xs f = void $ Par.mapM f xs
 
 -- | A resource on which actions may be performed
 --   by many threads concurrently, or serially
@@ -62,7 +65,7 @@ synchronized res = do
                           }
 
 -- | Use an existing synchronized resource to
---   control access to another resource.  
+--   control access to another resource.
 synchronizedTo :: a -> Synchronizable b -> Synchronizable a
 synchronizedTo res obj = obj { resource = res }
 
@@ -91,21 +94,21 @@ with obj action = do
   -- Increment the number of active users, and
   -- flag the resource as not finished if we are
   -- the first worker.
-  n <- takeMVar usrs
-  when (n == 0) $ void $ tryTakeMVar (finished obj)
-  putMVar usrs (n + 1)
-  
+  takeMVar usrs >>= \n -> do
+      when (n == 0) $ void $ tryTakeMVar (finished obj)
+      putMVar usrs (n + 1)
+
   -- Perform the action
   result <- action $ resource obj
 
   -- Decrement the number of users and, if we were the last
   -- active user, flag the resource as finished.
-  n <- takeMVar usrs
-  when (n == 1) $ void $ tryPutMVar (finished obj) ()
-  putMVar usrs (n - 1)
-  
+  takeMVar usrs >>= \n -> do
+      when (n == 1) $ void $ tryPutMVar (finished obj) ()
+      putMVar usrs (n - 1)
+
   return result
-  
+
 -- | Execute an action on a synchronized resource while
 --   preventing concurrent access to the resource.  synchedWith
 --   will wait until any running actions complete before
@@ -117,7 +120,7 @@ synchedWith obj action = do
   void $ takeMVar (available obj)
 
   -- Wait until there are no users of the resource, then run the action.
-  void $ takeMVar (finished obj)
+  readMVar (finished obj)
   result <- action (resource obj)
 
   -- Allow others to access the resource again.

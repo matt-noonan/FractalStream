@@ -5,8 +5,8 @@ module Utilities
   , fromMultiset
   , groupsOf
   ) where
-    
-import Data.Map (Map)
+
+import           Data.Map (Map)
 import qualified Data.Map as Map
 
 sort :: Ord a => [a] -> [a]
@@ -20,5 +20,5 @@ fromMultiset = concatMap (uncurry (flip replicate')) . Map.toList
   where replicate' n = replicate (abs n)
 
 groupsOf :: Int -> [a] -> [[a]]
-groupsOf n [] = []
+groupsOf _ [] = []
 groupsOf n xs = take n xs : groupsOf n (drop n xs)

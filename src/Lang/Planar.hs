@@ -11,13 +11,14 @@ module Lang.Planar ( Planar (..)
                    , upperLeft
                    , lowerRight
                    , rectPoints
+                   , rectCenter
                    , translateRect
                    , convertRect
                    , intersectsRect
                    , dimensions
                    ) where
 
-import Lang.Numbers
+import           Lang.Numbers
 
 -- | The class of types which can be converted to and from $\mathbb{R}^2$.
 --   Instances should satisfy the law (fromCoords . toCoords == id).
@@ -26,7 +27,7 @@ class Planar a where
     fromCoords :: (Double,Double) -> a
 
 -- | A representation of a generic rectangle.
-data Rectangle a = Rectangle { _upperLeft :: a, _lowerRight :: a } deriving (Eq, Ord, Show)
+data Rectangle a = Rectangle { _upperLeft :: a, _lowerRight :: a } deriving (Eq, Ord, Show, Functor)
 
 -- | Extract the upper-left point of a rectangle.
 upperLeft :: Rectangle a -> a
@@ -47,6 +48,12 @@ rectangle p p' = Rectangle { _upperLeft  = fromCoords $ (min x x', min y y')
                            }
     where (x , y ) = toCoords p
           (x', y') = toCoords p'
+
+rectCenter :: Planar a => Rectangle a -> a
+rectCenter r = fromCoords ((x0 + x1) / 2, (y0 + y1) / 2)
+  where
+    (x0,y0) = toCoords $ upperLeft  r
+    (x1,y1) = toCoords $ lowerRight r
 
 -- | Build a rectangle, in a coordinate system where
 --   the (+,-) quadrant is in the upper right.
@@ -106,7 +113,7 @@ instance Planar Viewport where
     toCoords (Viewport (x,y)) = (fromIntegral x, fromIntegral y)
     fromCoords (x,y) = Viewport (floor x, floor y)
 
--- | Get a list of the four vertices of the rectangle, in 
+-- | Get a list of the four vertices of the rectangle, in
 --   clockwise order from the upper-left corner.
 rectPoints :: Planar a
            => Rectangle a

@@ -16,7 +16,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 executable FractalStream
-  ghc-options:         -Wall -O2 -threaded
+  ghc-options:         -Wall -Werror -O2 -threaded -rtsopts
   main-is:             Main.hs
   other-modules:       Color.Color
                        Color.Colorize
@@ -37,8 +37,40 @@ executable FractalStream
                        UI.WX.Viewer
                        Utilities
                        Utils.Concurrent
-  -- other-extensions:
-  build-depends:       base >=4.8 && <4.9,
+  default-extensions:  ApplicativeDo
+                     , BangPatterns
+                     , ConstraintKinds
+                     , DataKinds
+                     , DefaultSignatures
+                     , DeriveFoldable
+                     , DeriveFunctor
+                     , DeriveGeneric
+                     , DeriveLift
+                     , DeriveTraversable
+                     , DerivingStrategies
+                     , EmptyCase
+                     , ExistentialQuantification
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , FunctionalDependencies
+                     , GADTs
+                     , GeneralizedNewtypeDeriving
+                     , InstanceSigs
+                     , KindSignatures
+                     , LambdaCase
+                     , MultiParamTypeClasses
+                     , MultiWayIf
+                     , NamedFieldPuns
+                     , PatternSynonyms
+                     , RankNTypes
+                     , ScopedTypeVariables
+                     , StandaloneDeriving
+                     , TupleSections
+                     , TypeApplications
+                     , TypeFamilies
+                     , TypeFamilyDependencies
+                     , TypeOperators
+  build-depends:       base >=4.8 && <5,
                        random,
                        array,
                        wxcore,
@@ -51,7 +83,8 @@ executable FractalStream
                        accelerate,
                        accelerate-llvm,
                        accelerate-llvm-native,
-                       time
+                       time,
+                       monad-parallel
   hs-source-dirs:      src
   default-language:    Haskell2010
   build-tools:         c2hs

@@ -1,12 +1,14 @@
+{-# options_ghc -Wno-type-defaults #-}
+
 {- |
 Module      : Exec.Placeholder
 Description : Some placeholder dynamical systems, as Haskell code.
 -}
 module Exec.Placeholder (rabbit, mandelbrot, logisticMap) where
 
-import Exec.Haskell
-import Lang.Numbers
-import Exec.Region
+import           Exec.Haskell
+import           Exec.Region
+import           Lang.Numbers
 
 -- | The family of quadratic polynomials.
 f_C :: C -> C -> C

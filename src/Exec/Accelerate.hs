@@ -1,27 +1,20 @@
-{-# LANGUAGE BangPatterns #-}
-
 module Exec.Accelerate (
   computeMandel
   ) where
 
-import Lang.Planar
-import Color.Color
-import Color.Colorize
-import Lang.Numbers (C(..))
-import Exec.Region
+import           Color.Color
+import           Color.Colorize
+import           Exec.Region
+import           Lang.Numbers                       (C (..))
 
-import Prelude hiding ((<*))
-import Data.Array.Accelerate (Vector, Acc, Exp,
-                              Int32, Word8,
-                              use, lift1, lift, constant,
-                              (<*), (&&*))
-import qualified Data.Array.Accelerate as A
+import           Data.Array.Accelerate              (Exp, Int32, Vector,
+                                                     constant, lift,
+                                                     lift1)
+import qualified Data.Array.Accelerate              as A
 --import Data.Array.Accelerate.Interpreter (run1)
-import Data.Array.Accelerate.LLVM.Native (run1)
+import           Data.Array.Accelerate.LLVM.Native  (run1)
 
-import Data.Array.Accelerate.Data.Complex
-
-import Control.Monad
+import           Data.Array.Accelerate.Data.Complex
 
 type C_acc = Complex Double
 
@@ -38,17 +31,17 @@ computeMandel col pts = do
 classify :: (C_acc, Int32) -> Result C
 classify (x :+ y, k) = Result region (C x y) (fromIntegral k)
   where region = if k == 100 then Interior else Exterior
-        
+
 iter :: Exp C_acc -> Exp (C_acc, Int32)
 iter c = A.while (lift1 unsure) (lift1 $ step c) $ lift (c, constant 0)
 
 norm2 :: Exp C_acc -> Exp Double
 norm2 z = (x*x) + (y*y)
   where (x,y) = (real z, imag z)
-        
+
 unsure :: (Exp C_acc, Exp Int32) -> Exp Bool
-unsure (z,k) = ((norm2 z) <* 100) &&* (k <* 100)
-        
+unsure (z,k) = (norm2 z A.< 100) A.&& (k A.< 100)
+
 step :: Exp C_acc
      -> (Exp C_acc, Exp Int32)
      -> (Exp C_acc, Exp Int32)

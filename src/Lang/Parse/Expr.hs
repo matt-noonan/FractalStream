@@ -6,15 +6,14 @@ module Lang.Parse.Expr
   ( parseExpr
   ) where
 
-import Lang.Expr
-import Lang.Numbers
+import           Lang.Expr
 
-import Text.Parsec
-import Text.Parsec.String
-import Text.Parsec.Expr
-import Text.Parsec.Token
-import Text.Parsec.Language
-import Data.Functor.Identity (Identity)
+import           Data.Functor.Identity (Identity)
+import           Text.Parsec
+import           Text.Parsec.Expr
+import           Text.Parsec.Language
+import           Text.Parsec.String
+import           Text.Parsec.Token
 
 -- | Definition of "token" for the expression language
 token_def :: GenLanguageDef String () Identity
@@ -34,7 +33,6 @@ token_def = emptyDef
 p_parens     :: Parser a -> Parser a
 p_identifier :: Parser String
 p_reservedOp :: String -> Parser ()
-p_reserved   :: String -> Parser ()
 p_whiteSpace :: Parser ()
 p_symbol     :: String -> Parser String
 p_num        :: Parser (Either Integer Double)
@@ -43,7 +41,7 @@ TokenParser
   { parens     = p_parens
   , identifier = p_identifier
   , reservedOp = p_reservedOp
-  , reserved   = p_reserved
+  , reserved   = _ -- p_reserved
   , whiteSpace = p_whiteSpace
   , symbol     = p_symbol
   , naturalOrFloat = p_num
