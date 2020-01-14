@@ -8,7 +8,7 @@ Description : Interactive view based on wxWidgets
 module UI.WX.Viewer ( wxView
                     ) where
 
-import           Color.Color                      (peekColor)
+--import           Color.Color                      (peekColor)
 import           Color.Colorize
 import           Lang.Planar
 import           UI.Tile
@@ -16,9 +16,11 @@ import           UI.Tile
 import           Graphics.UI.WX hiding (pt)
 import           qualified Graphics.UI.WX as WX
 import           Graphics.UI.WXCore.Draw
-import           Graphics.UI.WXCore.Image
+--import           Graphics.UI.WXCore.Image
 import           Graphics.UI.WXCore.WxcClassTypes
 import           Graphics.UI.WXCore.WxcTypes      (rgba)
+import           Graphics.UI.WXCore.WxcClassesAL
+import           Graphics.UI.WXCore.WxcClassesMZ 
 
 import           Foreign.ForeignPtr
 import Control.Concurrent
@@ -35,7 +37,15 @@ modelToRect (w,h) Model{..} = flippedRectangle (fromCoords ul) (fromCoords lr)
     lr = (cx + px * fromIntegral w / 2, cy + py * fromIntegral h / 2)
     (cx, cy) = modelCenter
     (px, py) = modelPixelDim
+
+helloFrom :: String -> IO ()
+helloFrom me = do
+    tid <- myThreadId
+    bound <- isCurrentThreadBound
+    capInfo <- threadCapability tid
+    putStrLn ("Hello from " ++ me ++ ", on thread " ++ show tid ++ " cap=" ++ show capInfo ++ " bound=" ++ show bound)
     
+
 -- | Create a window with an interactive view of a complex-dynamical system.
 wxView :: forall a. (Planar a, Show a)
        => Rectangle a  -- ^ The upper-left and lower-right corners of the view.
@@ -44,11 +54,8 @@ wxView :: forall a. (Planar a, Show a)
 wxView _modelRect renderAction = start $ do
 
     model <- variable [value := Model (0,0) (1/128,1/128)]
-    
-    tid <- myThreadId
-    bound <- isCurrentThreadBound
-    capInfo <- threadCapability tid
-    putStrLn ("Hello from wxView, on thread " ++ show tid ++ " " ++ show capInfo ++ " " ++ show bound)
+
+    helloFrom "wxView"
     
     let (width, height) = (512, 512)
 
@@ -59,7 +66,7 @@ wxView _modelRect renderAction = start $ do
 
     -- File menu
     file <- menuPane      [text := "&File"]
-    _    <- menuQuit file [help := "Quit", on command := close f]
+    _    <- menuQuit file [help := "&Quit", on command := close f]
 
     -- Help menu
     hlp   <- menuHelp      []
@@ -91,18 +98,40 @@ wxView _modelRect renderAction = start $ do
                                   , row 0 [hglue, centre $ widget dlog_q, hglue]
                                   , hstretch $ vspace 5
                                   ]
-             , visible := True
+             , visible := False
              , clientSize := sz 256 512]
 
     p <- panel f []
+
+    -- trigger repaint
+{-
+    trigger <- newEmptyMVar
+    let triggerRepaint = putMVar trigger ()
+
+    let checkForRepaint = do
+          _ <- takeMVar trigger
+          repaint p
+          windowRefresh p True -- True=redraw background
+          windowUpdateWindowUI p
+          checkForRepaint
+-}
+    let checkForRepaint = pure ()
+        triggerRepaint = do
+          repaint p
+          windowRefresh p True -- True=redraw background
+          windowUpdateWindowUI p
+    
     set p [ on paint := \dc r -> do
+                putStrLn "PAINT"
                 viewRect <- windowGetViewRect f
                 curTile <- get currentTile value
                 let (w, h) = tileRect curTile
                 get savedTileImage value >>= \case
-                    Nothing -> return ()
+                    Nothing -> pure ()
                     Just im -> drawCenteredImage im dc viewRect (w, h)
                 paintToolLayer lastClick draggedTo dc r viewRect
+
+          --, on idle := putStrLn "IDLE" >> propagateEvent >> pure False
           ]
 
     let viewToModel pt = do
@@ -128,8 +157,12 @@ wxView _modelRect renderAction = start $ do
                         newCenter <- viewToModel pt
                         set model [value := oldModel
                                     { modelCenter = toCoords newCenter }]
+                        --putStrLn "cancel1"
+                        get currentTile value >>= cancelTile
+                        --putStrLn "/cancel1"
                         newViewerTile <- renderTile' renderAction (w, h) model
                         set currentTile [value := newViewerTile]
+                        triggerRepaint
                     Just box -> do
                         -- Completed a drag. Zoom in to the dragged box, unless
                         -- the box is pathologically small; in that case, treat
@@ -149,9 +182,12 @@ wxView _modelRect renderAction = start $ do
                         set model [value := Model
                                     { modelCenter = toCoords newCenter
                                     , modelPixelDim = (px * scale, py * scale) }]
+                        --putStrLn "cancel2"
+                        get currentTile value >>= cancelTile
+                        --putStrLn "/cancel2"
                         newViewerTile <- renderTile' renderAction (w, h) model
                         set currentTile [value := newViewerTile]
-                        repaint p
+                        triggerRepaint
 
                 set draggedTo [value := Nothing]
                 set lastClick [value := Nothing]
@@ -165,7 +201,7 @@ wxView _modelRect renderAction = start $ do
                 dragBox <- getDragBox lastClick draggedTo
                 case dragBox of
                     Nothing -> return ()
-                    Just _  -> repaint p
+                    Just _  -> triggerRepaint
 
                 propagateEvent
 
@@ -176,30 +212,38 @@ wxView _modelRect renderAction = start $ do
           ]
 
     -- Add a timer which will check for repainting requests, ~10Hz
-    _ <- timer f [ interval := 100
+    _ <- timer f [ interval := 5
+                 , enabled := True 
                  , on command := do
                         curTile <- get currentTile value
                         ifModified curTile $ do
+                            helloFrom "tick repaint"
+                            putStrLn "tick repaint"
                             viewRect <- windowGetViewRect f
                             tileImage <- generateTileImage curTile viewRect
                             set savedTileImage [value := Just tileImage]
-                            repaint p
+                            triggerRepaint
+                            putStrLn "/tick repaint"
                  ]
-
+        
     -- onResizeTimer is a one-shot timer that fires 100ms after the
     -- frame has been resized. If another resize event comes in during
     -- that interval, the timer is reset to 100ms. When the timer fires,
     -- we kick off a new rendering task to build the contents of the
     -- window. Using a timer lets us avoid starting hundreds of rendering
     -- tasks while the user adjusts their window size.
+
+{-
+    _ <- timer f [ interval := 5000
+                 , enabled := True
+                 , on command := close f ]
+-}
     onResizeTimer <- timer f [ interval := 100
                              , enabled := False ]
     set onResizeTimer [ on command := do
-                              putStrLn "<timer>"
                               set onResizeTimer [enabled := False] -- one-shot
                               needResize <- get pendingResize value
                               when needResize $ do
-                                  putStrLn "<resize>"
                                   set pendingResize [value := False]
                                   Size { sizeW = w0, sizeH = h0 } <- get f clientSize
                                   let w = roundUp w0 16
@@ -207,10 +251,13 @@ wxView _modelRect renderAction = start $ do
                                       roundUp x n = case x `mod` n of
                                           0 -> x
                                           k -> x + (n - k)
+                                  --putStrLn "cancel3"
+                                  get currentTile value >>= cancelTile
+                                  --putStrLn "/cancel3"
                                   newViewerTile <- renderTile' renderAction (w, h) model
                                   set currentTile [value := newViewerTile]
                       ]
-      
+
     -- Add the status bar, menu bar, and layout to the frame
     set f [ statusBar := [status]
           , menuBar   := [file,hlp]
@@ -221,7 +268,9 @@ wxView _modelRect renderAction = start $ do
                   set onResizeTimer [enabled := True]
                   propagateEvent
           , on (menu about) := infoDialog f "About FractalStream" "Contributors:\nMatt Noonan"
+--          , on paint := \_ _ -> putStrLn "PAINT<frame>"
           ]
+    checkForRepaint
 
 renderTile' :: (Planar a, Valued w)
             => ([a] -> IO [Color])
@@ -240,23 +289,22 @@ generateTileImage
 
 generateTileImage viewerTile _windowRect = do    
     let (width, height) = tileRect viewerTile
-    tid <- myThreadId
-    bound <- isCurrentThreadBound
-    capInfo <- threadCapability tid
-    putStrLn ("generateTileImage w=" ++ show width ++ ", h=" ++ show height
-              ++ " on thread " ++ show tid ++ " " ++ show capInfo ++ " " ++ show bound)
     --let Point { pointX = fWidth, pointY = fHeight } = rectBottomRight windowRect
     --let (x0, y0) = ( (fWidth  + width ) `div` 2 - width  ,
     --                 (fHeight + height) `div` 2 - height )
-
-    withSynchedTileBuffer viewerTile $ \fptr -> do
+    putStrLn "generateTileImage"
+    ans <- withSynchedTileBuffer viewerTile $ \fptr -> do
+      putStrLn "generateTileImage got buffer, creating image"
       withForeignPtr fptr $ \buf -> do
-        pbuf <- pixelBufferCreate (sz width height)
-        pixels <- mapM (peekColor buf) [0..(width * height - 1)]
-        pixelBufferSetPixels pbuf pixels
-        result <- imageCreateFromPixelBuffer pbuf
-        pure result
-
+        --pbuf <- pixelBufferCreate (sz width height)
+        --pixels <- mapM (peekColor buf) [0..(width * height - 1)]
+        --pixelBufferSetPixels pbuf pixels
+        --result <- imageCreateFromPixelBuffer pbuf
+        --pure result
+        imageCreateFromData (sz width height) buf
+    putStrLn "/generateTileImage"
+    pure ans
+    
 drawCenteredImage :: Image b -> DC d -> Rect -> (Int,Int) -> IO ()
 
 drawCenteredImage img dc windowRect (width, height) = do

@@ -32,9 +32,9 @@ module Color.Color (
     , pokeColor
     ) where
 
-import Graphics.UI.WXCore.WxcTypes
+import           Graphics.UI.WXCore.WxcTypes
 
-import Foreign.Storable
+import           Foreign.Storable
 
 -- | Extract the red/green/blue channels from a color
 colorToRGB :: Color -> (Word8, Word8, Word8)
@@ -125,7 +125,7 @@ averageColor [] = grey
 averageColor colors = go colors (0,0,0) 0
     where toInts   (x,y,z) = (toInteger x, toInteger y, toInteger z)
           fromInts (x,y,z) = (fromIntegral x, fromIntegral y, fromIntegral z)
-          go cols (r,g,b) n = case cols of 
+          go cols (r,g,b) n = case cols of
             []     -> rgbToColor $ fromInts (r `div` n, g `div` n, b `div` n)
             (c:cs) -> let (r',g',b') = toInts $ colorToRGB c in go cs (r + r', g + g', b + b') (n + 1)
 
@@ -137,19 +137,18 @@ invertColor c = rgbToColor (255 - r, 255 - g, 255 - b)
 -- | Write a color into a buffer of bytes
 peekColor :: Ptr Word8 -> Int -> IO Color
 peekColor buf idx = do
-    let index = 4 * idx
-    r <- peekByteOff buf $ index + 3
-    g <- peekByteOff buf $ index + 2
-    b <- peekByteOff buf $ index + 1            
+    let index = 3 * idx
+    r <- peekByteOff buf $ index + 0
+    g <- peekByteOff buf $ index + 1
+    b <- peekByteOff buf $ index + 2
     return $ rgbToColor (r,g,b)
 
 -- | Read a color from a buffer of bytes
 pokeColor :: Ptr Word8 -> Int -> Color -> IO ()
 pokeColor buf idx col = do
-    let index = 4 * idx
+    let index = 3 * idx
     let (r,g,b) = colorToRGB col
-    pokeByteOff buf (index + 3) r
-    pokeByteOff buf (index + 2) g
-    pokeByteOff buf (index + 1) b
-    pokeByteOff buf (index + 0) (0xff :: Word8)    
+    pokeByteOff buf (index + 2) b
+    pokeByteOff buf (index + 1) g
+    pokeByteOff buf (index + 0) r
 

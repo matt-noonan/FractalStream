@@ -4,6 +4,7 @@ Description : Creation and execution of viewer tiles.
 -}
 module UI.Tile ( Tile()
                , renderTile
+               , cancelTile
                , tileRect
                , ifModified
                , withSynchedTileBuffer
@@ -17,6 +18,7 @@ import           Color.Color
 import           Utils.Concurrent
 
 import           Control.Concurrent
+import           Control.Concurrent.Async
 
 import           Data.Word
 import           Foreign.ForeignPtr
@@ -31,9 +33,12 @@ instance Planar ImagePoint where
 data Tile = Tile
     { imageRect        :: Rectangle ImagePoint   -- ^ The region in view space described by the tile.
     , tileBuffer       :: Synchronizable (ForeignPtr Word8)       -- ^ The buffer into which the tile will draw.
-    , threadId         :: ThreadId                 -- ^ The id of the thread which is drawing this tile.
+    , threadId         :: Async ()               -- ^ The id of the thread which is drawing this tile.
     , shouldRedrawTile :: MVar ()          -- ^ A value which signals that the tile needs to be redrawn.
     }
+
+cancelTile :: Tile -> IO ()
+cancelTile tile = cancel (threadId tile)
 
 withSynchedTileBuffer :: Tile -> (ForeignPtr Word8 -> IO b) -> IO b
 withSynchedTileBuffer tile action = synchedWith (tileBuffer tile) action
@@ -61,23 +66,24 @@ renderTile :: Planar a
                            --   forks a task which draws into it.
 
 renderTile renderingAction (width, height) mRect = do
+    putStrLn ("renderTile at w=" ++ show width ++ " h=" ++ show height)
 
-    buf <- mallocForeignPtrBytes (4 * width * height)
-    ptr <- withForeignPtr buf return
+    buf <- mallocForeignPtrBytes (3 * width * height)
 
     -- Initial fill of the image
-    sequence_ [ pokeColor ptr index grey | index <- [0 .. width * height - 1] ]
+    withForeignPtr buf $ \ptr ->
+      sequence_ [ pokeColor ptr index yellow | index <- [0 .. width * height - 1] ]
 
     let iRect = rectangle (ImagePoint (0,0)) (ImagePoint (fromIntegral width, fromIntegral height))
 
     redraw     <- newMVar ()  -- used to request a redraw
-    managedPtr <- synchronized ptr
+    managedBuf <- synchronized buf
 
-    tid <- forkIO $ progressively fillBlock
+    tid <- async  $ (if True then progressively else id) fillBlock
                   $ Block { coordToModel = convertRect iRect mRect . fromCoords
                           , compute = renderingAction
                           , logSampleRate = 1
-                          , blockBuffer = managedPtr
+                          , blockBuffer = managedBuf
                           , x0 = 0
                           , y0 = 0
                           , xStride = width
@@ -85,9 +91,10 @@ renderTile renderingAction (width, height) mRect = do
                           , ySize = height
                           , shouldRedraw = redraw
                           }
+    link tid
 
     return Tile { imageRect = iRect
-                , tileBuffer = buf `synchronizedTo` managedPtr
+                , tileBuffer = managedBuf
                 , threadId = tid
                 , shouldRedrawTile = redraw
                 }

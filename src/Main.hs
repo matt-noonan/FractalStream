@@ -20,15 +20,26 @@ import           Lang.Parse.Expr
 
 import           System.IO
 
+import           Exec.Haskell
+import           Exec.Placeholder
+import           Exec.Region
+
 -- tinkering with accelerate
 import           Exec.Accelerate     (computeMandel)
 
 import           Control.Concurrent
 
+
 -- the mains
 
 main :: IO ()
-main = wxMain
+main = do
+    tid <- myThreadId
+    bound <- isCurrentThreadBound
+    capInfo <- threadCapability tid
+    putStrLn ("Hello from main, on thread " ++ show tid ++ " " ++ show capInfo ++ " " ++ show bound)
+    wxMain
+    putStrLn "main is done"
 
 wxMain :: IO ()
 wxMain = do
@@ -41,7 +52,10 @@ wxMain = do
     viewport = flippedRectangle (complex (-2.5) 2) (complex 1.5 (-2))
     darkChecker c = checker c (darker c) :: Colorizer C
     col = blackInterior $ darkChecker $ smoothedRainbow (loglogSmoothing 2) 20
-    action = computeMandel col
+    action =
+      if False
+      then pure . map (runColorizer col . runDynamics (runParametric mandelbrot))
+      else computeMandel col
 
 parserMain :: IO ()
 parserMain = do

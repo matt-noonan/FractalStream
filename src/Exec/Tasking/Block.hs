@@ -18,7 +18,7 @@ import           Utils.Concurrent
 import           Control.Concurrent.MVar
 import           Control.Monad
 import           Data.Word
-import           Foreign.Ptr
+import           Foreign.ForeignPtr
 
 import           Utilities               (groupsOf)
 
@@ -35,7 +35,7 @@ data Block a =
                            --      * logSampleRate == N > 0: subsample each pixel
                            --          on a 2^N by 2^N subgrid and average the
                            --          results, for a smoother picture.
-        , blockBuffer   :: Synchronizable (Ptr Word8)   -- ^ The pixel buffer to write into.
+        , blockBuffer   :: Synchronizable (ForeignPtr Word8)   -- ^ The pixel buffer to write into.
         , xStride       :: Int             -- ^ The width of the pixel buffer.
         , x0            :: Int        -- ^ The upper-left x coordinate of this block in the pixel buffer.
         , y0            :: Int        -- ^ The upper-left y coordinate of this block in the pixel buffer.
@@ -84,15 +84,17 @@ fillBlock block = do
     --      of color).  When everybody is using synchedWith, this
     --      falls back to acting like a mutex guarding access to the
     --      buffer.
-    with buf $ \buffer -> do
+    putStrLn ("I am done computing, time to fill the buffer")
+    with buf $ \buffer -> withForeignPtr buffer $ \ptr -> do
+      putStrLn ("I got the buffer")
       forM_ (zip uv_points rgbs) $ \((u,v), rgb) -> do
         let index = floor $ u + v * (fromIntegral $ xStride block)
         forM_ [indexOf (du,dv) | dv <- [0 .. skip - 1]
                                , du <- [0 .. skip - 1] ] $ \offset -> do
-          pokeColor buffer (index + offset) rgb
-
-        -- Completed the block, signal for a redraw
-        void $ tryPutMVar (shouldRedraw block) ()
+          pokeColor ptr (index + offset) rgb
+    -- Completed the block, signal for a redraw
+    putStrLn "completed the block, signal for a redraw"
+    void $ tryPutMVar (shouldRedraw block) ()
 
 resampleBy :: ([a] -> b) -> Int -> [a] -> [b]
 resampleBy f n

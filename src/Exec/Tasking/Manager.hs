@@ -23,14 +23,18 @@ progressively render block = do
 
     let width   = xSize block
         height  = ySize block
-        xBlocks =  width `div` 16
-        yBlocks = height `div` 16
+        xBlocks =  case width `divMod` 16 of
+            (z, 0) -> z
+            (z, _) -> z -- + 1
+        yBlocks = case height `divMod` 16 of
+            (z, 0) -> z
+            (z, _) -> z -- + 1
 
     blockIDs <- shuffle [(x,y) | x <- [0..xBlocks - 1], y <- [0..yBlocks - 1]]
 
-    poolSize <- max 128 <$> getNumCapabilities
+    poolSize <- max 32 <$> getNumCapabilities
     caps <- getNumCapabilities
-    putStrLn $ show caps ++ " capabilities, pool size " ++ show poolSize
+    putStrLn $ show caps ++ " capabilities, pool size " ++ show poolSize ++ " (w=" ++ show (xSize block) ++ ", h=" ++ show (ySize block) ++ ")"
 
     let rates = if logSampleRate block > 0
                 then [-4, -2, 0, logSampleRate block]
@@ -42,7 +46,7 @@ progressively render block = do
                          x0 = 16 * x, y0 = 16 * y,
                          logSampleRate = rate }
       end <- getCurrentTime
-      putStrLn $ show width ++ " x " ++ show height ++ " @ rate " ++ show rate
+      putStrLn $ "***** " ++ show width ++ " x " ++ show height ++ " @ rate " ++ show rate
                             ++ " rendered in " ++ show (diffUTCTime end start)
 
 shuffle :: [a] -> IO [a]
