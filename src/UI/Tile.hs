@@ -79,7 +79,7 @@ renderTile renderingAction (width, height) mRect = do
     redraw     <- newMVar ()  -- used to request a redraw
     managedBuf <- synchronized buf
 
-    tid <- async  $ (if True then progressively else id) fillBlock
+    tid <- async  $ progressively fillBlock
                   $ Block { coordToModel = convertRect iRect mRect . fromCoords
                           , compute = renderingAction
                           , logSampleRate = 1

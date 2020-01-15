@@ -67,8 +67,9 @@ fillBlock block = do
     let samples = map (coordToModel block) $ concatMap subsample uv_points
 
     -- Run the computation on each subsampled point.
+    --putStrLn "computing block samples"
     results <- compute block samples
-
+    --putStrLn "resampling"
     -- Resample the results
     let rgbs = resampleBy averageColor nSubsamples results
 
@@ -84,17 +85,19 @@ fillBlock block = do
     --      of color).  When everybody is using synchedWith, this
     --      falls back to acting like a mutex guarding access to the
     --      buffer.
-    putStrLn ("I am done computing, time to fill the buffer")
+    --putStrLn ("I am done computing, time to fill the buffer")
+
     with buf $ \buffer -> withForeignPtr buffer $ \ptr -> do
-      putStrLn ("I got the buffer")
+      --putStrLn ("I got the buffer")
       forM_ (zip uv_points rgbs) $ \((u,v), rgb) -> do
         let index = floor $ u + v * (fromIntegral $ xStride block)
         forM_ [indexOf (du,dv) | dv <- [0 .. skip - 1]
                                , du <- [0 .. skip - 1] ] $ \offset -> do
           pokeColor ptr (index + offset) rgb
-    -- Completed the block, signal for a redraw
-    putStrLn "completed the block, signal for a redraw"
+      -- Completed the block, signal for a redraw
+      --putStrLn "completed the block, signal for a redraw"
     void $ tryPutMVar (shouldRedraw block) ()
+    --putStrLn "end fillBlock"
 
 resampleBy :: ([a] -> b) -> Int -> [a] -> [b]
 resampleBy f n

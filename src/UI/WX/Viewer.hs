@@ -122,7 +122,7 @@ wxView _modelRect renderAction = start $ do
           windowUpdateWindowUI p
     
     set p [ on paint := \dc r -> do
-                putStrLn "PAINT"
+                --putStrLn "PAINT"
                 viewRect <- windowGetViewRect f
                 curTile <- get currentTile value
                 let (w, h) = tileRect curTile
@@ -212,18 +212,18 @@ wxView _modelRect renderAction = start $ do
           ]
 
     -- Add a timer which will check for repainting requests, ~10Hz
-    _ <- timer f [ interval := 5
+    _ <- timer f [ interval := 100
                  , enabled := True 
                  , on command := do
                         curTile <- get currentTile value
                         ifModified curTile $ do
-                            helloFrom "tick repaint"
-                            putStrLn "tick repaint"
+                            --helloFrom "tick repaint"
+                            --putStrLn "tick repaint"
                             viewRect <- windowGetViewRect f
                             tileImage <- generateTileImage curTile viewRect
                             set savedTileImage [value := Just tileImage]
                             triggerRepaint
-                            putStrLn "/tick repaint"
+                            --putStrLn "/tick repaint"
                  ]
         
     -- onResizeTimer is a one-shot timer that fires 100ms after the
@@ -292,9 +292,9 @@ generateTileImage viewerTile _windowRect = do
     --let Point { pointX = fWidth, pointY = fHeight } = rectBottomRight windowRect
     --let (x0, y0) = ( (fWidth  + width ) `div` 2 - width  ,
     --                 (fHeight + height) `div` 2 - height )
-    putStrLn "generateTileImage"
+    --putStrLn "generateTileImage"
     ans <- withSynchedTileBuffer viewerTile $ \fptr -> do
-      putStrLn "generateTileImage got buffer, creating image"
+      --putStrLn "generateTileImage got buffer, creating image"
       withForeignPtr fptr $ \buf -> do
         --pbuf <- pixelBufferCreate (sz width height)
         --pixels <- mapM (peekColor buf) [0..(width * height - 1)]
@@ -302,7 +302,7 @@ generateTileImage viewerTile _windowRect = do
         --result <- imageCreateFromPixelBuffer pbuf
         --pure result
         imageCreateFromData (sz width height) buf
-    putStrLn "/generateTileImage"
+    --putStrLn "/generateTileImage"
     pure ans
     
 drawCenteredImage :: Image b -> DC d -> Rect -> (Int,Int) -> IO ()
