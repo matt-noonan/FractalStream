@@ -32,7 +32,7 @@ progressively render block = do
 
     blockIDs <- shuffle [(x,y) | x <- [0..xBlocks - 1], y <- [0..yBlocks - 1]]
 
-    poolSize <- max 32 <$> getNumCapabilities
+    poolSize <- subtract 1 <$> getNumCapabilities
     caps <- getNumCapabilities
     putStrLn $ show caps ++ " capabilities, pool size " ++ show poolSize ++ " (w=" ++ show (xSize block) ++ ", h=" ++ show (ySize block) ++ ")"
 
@@ -40,6 +40,7 @@ progressively render block = do
                 then [-4, -2, 0, logSampleRate block]
                 else [-4, -2, 0]
     forM_ rates $ \rate -> do
+      putStrLn $ "***** start @ rate=" ++ show rate
       start <- getCurrentTime
       forPool_ poolSize blockIDs $ \(x,y) -> do
         render $ block { xSize = 16, ySize = 16,

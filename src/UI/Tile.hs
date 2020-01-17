@@ -20,6 +20,7 @@ import           Utils.Concurrent
 import           Control.Concurrent
 import           Control.Concurrent.Async
 
+import           Control.Monad            (void)
 import           Data.Word
 import           Foreign.ForeignPtr
 
@@ -38,7 +39,7 @@ data Tile = Tile
     }
 
 cancelTile :: Tile -> IO ()
-cancelTile tile = cancel (threadId tile)
+cancelTile = void . forkIO . cancel . threadId -- cancel, but get on with life
 
 withSynchedTileBuffer :: Tile -> (ForeignPtr Word8 -> IO b) -> IO b
 withSynchedTileBuffer tile action = synchedWith (tileBuffer tile) action

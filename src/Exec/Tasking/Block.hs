@@ -20,6 +20,7 @@ import           Control.Monad
 import           Data.Word
 import           Foreign.ForeignPtr
 
+--import           Data.Time               (diffUTCTime, getCurrentTime)
 import           Utilities               (groupsOf)
 
 -- | A Block carries the information required to go from a
@@ -68,7 +69,11 @@ fillBlock block = do
 
     -- Run the computation on each subsampled point.
     --putStrLn "computing block samples"
+    --zstart <- getCurrentTime
     results <- compute block samples
+    --zend <- getCurrentTime
+    --let computeTime = diffUTCTime zend zstart
+
     --putStrLn "resampling"
     -- Resample the results
     let rgbs = resampleBy averageColor nSubsamples results
@@ -88,6 +93,7 @@ fillBlock block = do
     --putStrLn ("I am done computing, time to fill the buffer")
 
     with buf $ \buffer -> withForeignPtr buffer $ \ptr -> do
+      --cstart <- getCurrentTime
       --putStrLn ("I got the buffer")
       forM_ (zip uv_points rgbs) $ \((u,v), rgb) -> do
         let index = floor $ u + v * (fromIntegral $ xStride block)
@@ -96,6 +102,11 @@ fillBlock block = do
           pokeColor ptr (index + offset) rgb
       -- Completed the block, signal for a redraw
       --putStrLn "completed the block, signal for a redraw"
+      --cend <- getCurrentTime
+      --let colorTime = diffUTCTime cend cstart
+      --putStrLn ("compute time / color time = " ++ show (computeTime / colorTime)
+      --         ++ "  compute=" ++ show computeTime ++ "  color=" ++ show colorTime)
+
     void $ tryPutMVar (shouldRedraw block) ()
     --putStrLn "end fillBlock"
 

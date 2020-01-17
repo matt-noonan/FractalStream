@@ -225,19 +225,13 @@ wxView _modelRect renderAction = start $ do
                             triggerRepaint
                             --putStrLn "/tick repaint"
                  ]
-        
+
     -- onResizeTimer is a one-shot timer that fires 100ms after the
     -- frame has been resized. If another resize event comes in during
     -- that interval, the timer is reset to 100ms. When the timer fires,
     -- we kick off a new rendering task to build the contents of the
     -- window. Using a timer lets us avoid starting hundreds of rendering
     -- tasks while the user adjusts their window size.
-
-{-
-    _ <- timer f [ interval := 5000
-                 , enabled := True
-                 , on command := close f ]
--}
     onResizeTimer <- timer f [ interval := 100
                              , enabled := False ]
     set onResizeTimer [ on command := do

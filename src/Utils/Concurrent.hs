@@ -38,9 +38,9 @@ forPool nSimul xs f
 forPool_ :: NFData b => Int -> [a] -> (a -> IO b) -> IO ()
 --forPool_ n xs f = void $ forPool n xs f
 --forPool_ _ xs f = Par.mapM_ f xs
-forPool_ _ xs f =
-  if False
-  then mapM_ f xs
+forPool_ n xs f =
+  if True
+  then void $ forPool n xs f -- mapM_ f xs
   else void . runParIO . parMapM (\x -> liftIO (f x)) $ xs
 
 -- | A resource on which actions may be performed
@@ -93,7 +93,7 @@ with :: Synchronizable a -> (a -> IO b) -> IO b
 with obj action = do
   let usrs = users obj
   -- Block until general access is allowed.
-  readMVar (available obj)
+  _ <- takeMVar (available obj)
 
   -- Increment the number of active users, and
   -- flag the resource as not finished if we are
@@ -101,6 +101,8 @@ with obj action = do
   takeMVar usrs >>= \n -> do
       when (n == 0) $ void $ tryTakeMVar (finished obj)
       putMVar usrs (n + 1)
+
+  putMVar (available obj) ()
 
   -- Perform the action
   result <- action $ resource obj
