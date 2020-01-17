@@ -24,6 +24,7 @@ import           Graphics.UI.WXCore.WxcClassesMZ
 
 import           Foreign.ForeignPtr
 import Control.Concurrent
+import           Data.Time               (diffUTCTime, getCurrentTime)
 
 data Model = Model
   { modelCenter   :: (Double, Double)
@@ -38,6 +39,19 @@ modelToRect (w,h) Model{..} = flippedRectangle (fromCoords ul) (fromCoords lr)
     (cx, cy) = modelCenter
     (px, py) = modelPixelDim
 
+interpolateModel :: Double -> Model -> Model -> Model
+interpolateModel t m1 m2 = Model
+    { modelCenter   = interpolate modelCenter
+    , modelPixelDim = logInterpolate modelPixelDim
+    }
+  where
+    interp p q = p + t * (q - p)
+    interp2 (p1,p2) (q1,q2) = (interp p1 q1, interp p2 q2)
+    interpolate f = interp2 (f m1) (f m2)
+    logInterp p q = p * (q/p) ** t
+    logInterp2  (p1,p2) (q1,q2) = (logInterp p1 q1, logInterp p2 q2)
+    logInterpolate f = logInterp2 (f m1) (f m2)
+    
 helloFrom :: String -> IO ()
 helloFrom me = do
     tid <- myThreadId
@@ -83,6 +97,7 @@ wxView _modelRect renderAction = start $ do
     viewerTile     <- renderTile' renderAction (width, height) model
     currentTile    <- variable [value := viewerTile]
     savedTileImage <- variable [value := Nothing]
+    lastTileImage  <- variable [value := Nothing]
 
     -- Test dialog
     dlog <- dialog f [ text := "Test dialog"
@@ -120,16 +135,78 @@ wxView _modelRect renderAction = start $ do
           repaint p
           windowRefresh p True -- True=redraw background
           windowUpdateWindowUI p
+
+    animate <- variable [value := Nothing]
+    let startAnimatingFrom oldModel = do
+            now <- getCurrentTime
+            img <- get savedTileImage value >>= traverse imageCopy
+            set lastTileImage [value := img]
+            set animate [value := Just (now, oldModel, img)]
     
-    set p [ on paint := \dc r -> do
-                --putStrLn "PAINT"
-                viewRect <- windowGetViewRect f
-                curTile <- get currentTile value
-                let (w, h) = tileRect curTile
-                get savedTileImage value >>= \case
-                    Nothing -> pure ()
-                    Just im -> drawCenteredImage im dc viewRect (w, h)
-                paintToolLayer lastClick draggedTo dc r viewRect
+    set p [ on paintRaw := \dc r _dirty -> get animate value >>= \case
+                  Nothing -> do
+                  
+                      --putStrLn "PAINT"
+                      viewRect <- windowGetViewRect f
+                      curTile <- get currentTile value
+                      let (w, h) = tileRect curTile
+                      get savedTileImage value >>= \case
+                          Nothing -> pure ()
+                          Just im -> drawCenteredImage im dc viewRect (w, h)
+                      paintToolLayer lastClick draggedTo dc r viewRect
+                  Just (startTime, oldModel, oldImage) -> do
+                      now <- getCurrentTime
+                      let blend = min 255 (round (255 * toRational (diffUTCTime now startTime)))
+                          t = min 1.0 $ fromRational (toRational (diffUTCTime now startTime)) :: Double
+                      when (blend >= 255) (set animate [value := Nothing])
+                      viewRect <- windowGetViewRect f
+                      curTile <- get currentTile value
+                      let (w, h) = tileRect curTile
+
+                      gc <- graphicsContextCreate dc
+                      newModel <- get model value
+                      let midModel = interpolateModel t oldModel newModel
+                          withLayer opacity action = do
+                              graphicsContextBeginLayer gc opacity
+                              action
+                              graphicsContextEndLayer gc
+                          restoringContext action = do
+                              graphicsContextPushState gc
+                              action
+                              graphicsContextPopState gc
+                      -- draw the old image
+                      withLayer 1 $ do
+                     
+                           let zoomRatioX' = fst (modelPixelDim oldModel) / fst (modelPixelDim midModel)
+                               zoomRatioY' = snd (modelPixelDim oldModel) / snd (modelPixelDim midModel)
+                           --let dx' = 10
+                           --    dy' = 10
+                              
+                           restoringContext $ do
+                               graphicsContextTranslate gc
+                                   ((1 - zoomRatioX') * fromIntegral w / 2)
+                                   ((1 - zoomRatioY') * fromIntegral h / 2)
+                               graphicsContextScale gc (sz zoomRatioX' zoomRatioY')
+                              
+                               case oldImage of
+                                   Nothing -> pure ()
+                                   Just im -> drawCenteredImage im dc viewRect (w, h)
+                      -- draw the new image
+                      withLayer t $ do
+                          let zoomRatioX = fst (modelPixelDim newModel) / fst (modelPixelDim midModel)
+                              zoomRatioY = snd (modelPixelDim newModel) / snd (modelPixelDim midModel)
+                              cx = (fst (modelCenter newModel) - fst (modelCenter oldModel)) / fst (modelPixelDim oldModel)
+                              cy = (snd (modelCenter newModel) - snd (modelCenter oldModel)) / snd (modelPixelDim oldModel)
+                              
+                          restoringContext $ do
+                              graphicsContextTranslate gc
+                                   (cx + (1 - zoomRatioX) * fromIntegral w / 2)
+                                   (negate cy + (1 - zoomRatioY) * fromIntegral h / 2)
+                              graphicsContextScale gc (sz zoomRatioX zoomRatioY)
+                              
+                              get savedTileImage value >>= \case
+                                Nothing -> pure ()
+                                Just im -> drawCenteredImage im dc viewRect (w, h)
 
           --, on idle := putStrLn "IDLE" >> propagateEvent >> pure False
           ]
@@ -162,6 +239,7 @@ wxView _modelRect renderAction = start $ do
                         --putStrLn "/cancel1"
                         newViewerTile <- renderTile' renderAction (w, h) model
                         set currentTile [value := newViewerTile]
+                        startAnimatingFrom oldModel
                         triggerRepaint
                     Just box -> do
                         -- Completed a drag. Zoom in to the dragged box, unless
@@ -187,6 +265,7 @@ wxView _modelRect renderAction = start $ do
                         --putStrLn "/cancel2"
                         newViewerTile <- renderTile' renderAction (w, h) model
                         set currentTile [value := newViewerTile]
+                        startAnimatingFrom oldModel
                         triggerRepaint
 
                 set draggedTo [value := Nothing]
@@ -221,11 +300,21 @@ wxView _modelRect renderAction = start $ do
                             --putStrLn "tick repaint"
                             viewRect <- windowGetViewRect f
                             tileImage <- generateTileImage curTile viewRect
-                            set savedTileImage [value := Just tileImage]
+                            saved <- imageCopy tileImage
+                            set savedTileImage [value := Just saved]
                             triggerRepaint
                             --putStrLn "/tick repaint"
                  ]
 
+    -- Animation timer. At 100Hz, check if we are animating between
+    -- two views. If so, step the animation and repaint.
+    _ <- timer f [ interval := 10
+                 , enabled := True
+                 , on command := get animate value >>= \case
+                         Nothing -> pure ()
+                         Just _  -> triggerRepaint
+                 ]
+                         
     -- onResizeTimer is a one-shot timer that fires 100ms after the
     -- frame has been resized. If another resize event comes in during
     -- that interval, the timer is reset to 100ms. When the timer fires,
@@ -250,6 +339,8 @@ wxView _modelRect renderAction = start $ do
                                   --putStrLn "/cancel3"
                                   newViewerTile <- renderTile' renderAction (w, h) model
                                   set currentTile [value := newViewerTile]
+                                  -- no animation?
+                                  triggerRepaint
                       ]
 
     -- Add the status bar, menu bar, and layout to the frame
