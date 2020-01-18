@@ -156,10 +156,10 @@ wxView _modelRect renderAction = start $ do
                       paintToolLayer lastClick draggedTo dc r viewRect
                   Just (startTime, oldModel, oldImage) -> do
                       now <- getCurrentTime
-                      let blend = min 255 (round (255 * toRational (diffUTCTime now startTime)))
-                          t = min 1.0 $ fromRational (toRational (diffUTCTime now startTime)) :: Double
+                      let blend = min 255 (round ((4/3) * 255 * toRational (diffUTCTime now startTime)))
+                          t = min 1.0 ((4/3) * fromRational (toRational (diffUTCTime now startTime)) :: Double)
                       when (blend >= 255) (set animate [value := Nothing])
-                      viewRect <- windowGetViewRect f
+                      --viewRect <- windowGetViewRect f
                       curTile <- get currentTile value
                       let (w, h) = tileRect curTile
 
@@ -174,40 +174,54 @@ wxView _modelRect renderAction = start $ do
                               graphicsContextPushState gc
                               action
                               graphicsContextPopState gc
-                      -- draw the old image
-                      withLayer 1 $ do
-                     
-                           let zoomRatioX' = fst (modelPixelDim oldModel) / fst (modelPixelDim midModel)
-                               zoomRatioY' = snd (modelPixelDim oldModel) / snd (modelPixelDim midModel)
-                           --let dx' = 10
-                           --    dy' = 10
-                              
-                           restoringContext $ do
-                               graphicsContextTranslate gc
-                                   ((1 - zoomRatioX') * fromIntegral w / 2)
-                                   ((1 - zoomRatioY') * fromIntegral h / 2)
-                               graphicsContextScale gc (sz zoomRatioX' zoomRatioY')
-                              
-                               case oldImage of
-                                   Nothing -> pure ()
-                                   Just im -> drawCenteredImage im dc viewRect (w, h)
-                      -- draw the new image
-                      withLayer t $ do
-                          let zoomRatioX = fst (modelPixelDim newModel) / fst (modelPixelDim midModel)
-                              zoomRatioY = snd (modelPixelDim newModel) / snd (modelPixelDim midModel)
-                              cx = (fst (modelCenter newModel) - fst (modelCenter oldModel)) / fst (modelPixelDim oldModel)
-                              cy = (snd (modelCenter newModel) - snd (modelCenter oldModel)) / snd (modelPixelDim oldModel)
-                              
-                          restoringContext $ do
-                              graphicsContextTranslate gc
-                                   (cx + (1 - zoomRatioX) * fromIntegral w / 2)
-                                   (negate cy + (1 - zoomRatioY) * fromIntegral h / 2)
-                              graphicsContextScale gc (sz zoomRatioX zoomRatioY)
-                              
-                              get savedTileImage value >>= \case
-                                Nothing -> pure ()
-                                Just im -> drawCenteredImage im dc viewRect (w, h)
 
+                      let zoom :: (Double, Double) -> (Double, Double) -> IO () -> IO ()
+                          zoom (scaleX, scaleY) (cx, cy) action = do
+                              restoringContext $ do
+                                  graphicsContextTranslate gc cx cy
+                                  graphicsContextScale gc (sz scaleX scaleY)
+                                  action
+
+                          viewCenterX = fromIntegral w / 2
+                          viewCenterY = fromIntegral h / 2
+                          dx = (fst (modelCenter newModel) - fst (modelCenter oldModel)) / fst (modelPixelDim oldModel)
+                          dy = negate (snd (modelCenter newModel) - snd (modelCenter oldModel)) / snd (modelPixelDim oldModel)
+
+                      -- draw the old image
+                      let k = 1 / sqrt ( (fst (modelPixelDim oldModel) * snd (modelPixelDim oldModel))
+                                   / (fst (modelPixelDim newModel) * snd (modelPixelDim newModel)))
+                          t' = if (k - 1)^2 < 0.05 then t else (1 - k ** t) / (1 - k)
+                      graphicsContextTranslate gc viewCenterX viewCenterY
+                      graphicsContextScale gc (sz (fst (modelPixelDim oldModel) / fst (modelPixelDim midModel)) (snd (modelPixelDim oldModel) / snd (modelPixelDim midModel)))
+                      graphicsContextTranslate gc (negate viewCenterX) (negate viewCenterY)
+                      graphicsContextTranslate gc (negate $ dx * t') (negate $ dy * t')
+                      
+                      withLayer 1 $ do
+                          --let zoomRatioX = fst (modelPixelDim oldModel) / fst (modelPixelDim midModel)
+                          --    zoomRatioY = snd (modelPixelDim oldModel) / snd (modelPixelDim midModel)
+                          restoringContext $ do
+                              zoom (1.0, 1.0) --(zoomRatioX, zoomRatioY)
+                                   --(viewCenterX + dx * t, viewCenterY + dy * t)
+                                   (viewCenterX,
+                                    viewCenterY)
+                              
+                              $ case oldImage of
+                                    Nothing -> pure ()
+                                    Just im -> drawImage dc im (WX.pt (round $ negate viewCenterX) (round $ negate viewCenterY)) []
+                      -- draw the new image
+                      withLayer (min 1 (1.2 * t)) $ do
+                          let zoomRatioX = fst (modelPixelDim newModel) / fst (modelPixelDim oldModel)
+                              zoomRatioY = snd (modelPixelDim newModel) / snd (modelPixelDim oldModel)
+                          restoringContext $ do
+                              zoom (zoomRatioX, zoomRatioY)
+                                   --(viewCenterX + dx * t, viewCenterY + dy * t)
+                                   (viewCenterX + dx,
+                                    viewCenterY + dy)
+                              
+                                   $ get savedTileImage value >>= \case
+                                       Nothing -> pure ()
+                                       Just im -> drawImage dc im (WX.pt (round $ negate viewCenterX) (round $ negate viewCenterY)) []
+--                      graphicsContextScale gc (sz ( (fst (modelPixelDim oldModel) / fst (modelPixelDim newModel)) ** t) ( (snd (modelPixelDim oldModel) / snd (modelPixelDim newModel)) ** t))
           --, on idle := putStrLn "IDLE" >> propagateEvent >> pure False
           ]
 
