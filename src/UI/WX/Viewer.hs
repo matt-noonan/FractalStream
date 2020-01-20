@@ -25,6 +25,7 @@ import           Graphics.UI.WXCore.WxcClassesMZ
 import           Foreign.ForeignPtr
 import Control.Concurrent
 import           Data.Time               (diffUTCTime, getCurrentTime)
+import Data.IORef
 
 data Model = Model
   { modelCenter   :: (Double, Double)
@@ -94,7 +95,8 @@ wxView _modelRect renderAction = start $ do
     pendingResize <- variable [value := False]
     
     -- Panel and tile for initial view
-    viewerTile     <- renderTile' renderAction (width, height) model
+    renderId <- newIORef (0 :: Int)
+    viewerTile     <- renderTile' renderId renderAction (width, height) model
     currentTile    <- variable [value := viewerTile]
     savedTileImage <- variable [value := Nothing]
     lastTileImage  <- variable [value := Nothing]
@@ -118,6 +120,7 @@ wxView _modelRect renderAction = start $ do
 
     p <- panel f []
 
+    
     -- trigger repaint
 {-
     trigger <- newEmptyMVar
@@ -156,8 +159,8 @@ wxView _modelRect renderAction = start $ do
                       paintToolLayer lastClick draggedTo dc r viewRect
                   Just (startTime, oldModel, oldImage) -> do
                       now <- getCurrentTime
-                      let blend = min 255 (round ((4/3) * 255 * toRational (diffUTCTime now startTime)))
-                          t = min 1.0 ((4/3) * fromRational (toRational (diffUTCTime now startTime)) :: Double)
+                      let blend = min 255 (round (2 * 255 * toRational (diffUTCTime now startTime)))
+                          t = min 1.0 (2 * fromRational (toRational (diffUTCTime now startTime)) :: Double)
                       when (blend >= 255) (set animate [value := Nothing])
                       --viewRect <- windowGetViewRect f
                       curTile <- get currentTile value
@@ -251,7 +254,7 @@ wxView _modelRect renderAction = start $ do
                         --putStrLn "cancel1"
                         get currentTile value >>= cancelTile
                         --putStrLn "/cancel1"
-                        newViewerTile <- renderTile' renderAction (w, h) model
+                        newViewerTile <- renderTile' renderId renderAction (w, h) model
                         set currentTile [value := newViewerTile]
                         startAnimatingFrom oldModel
                         triggerRepaint
@@ -277,7 +280,7 @@ wxView _modelRect renderAction = start $ do
                         --putStrLn "cancel2"
                         get currentTile value >>= cancelTile
                         --putStrLn "/cancel2"
-                        newViewerTile <- renderTile' renderAction (w, h) model
+                        newViewerTile <- renderTile' renderId renderAction (w, h) model
                         set currentTile [value := newViewerTile]
                         startAnimatingFrom oldModel
                         triggerRepaint
@@ -351,7 +354,7 @@ wxView _modelRect renderAction = start $ do
                                   --putStrLn "cancel3"
                                   get currentTile value >>= cancelTile
                                   --putStrLn "/cancel3"
-                                  newViewerTile <- renderTile' renderAction (w, h) model
+                                  newViewerTile <- renderTile' renderId renderAction (w, h) model
                                   set currentTile [value := newViewerTile]
                                   -- no animation?
                                   triggerRepaint
@@ -372,13 +375,19 @@ wxView _modelRect renderAction = start $ do
     checkForRepaint
 
 renderTile' :: (Planar a, Valued w)
-            => ([a] -> IO [Color])
+            => IORef Int
+            -> ([a] -> IO [Color])
             -> (Int, Int)
             -> w Model
             -> IO Tile
-renderTile' action dim model = do
+renderTile' renderId action dim model = do
+    iD <- atomicModifyIORef' renderId (\x -> (x + 1, x + 1)) 
     modelRect <- modelToRect dim <$> get model value
-    renderTile action dim modelRect
+    let action' pts = do
+            curId <- readIORef renderId
+            if (curId == iD) then action pts else pure []
+            
+    renderTile action' dim modelRect
     
 -- | Paint the state of a tile into a device context.
 generateTileImage

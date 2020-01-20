@@ -69,7 +69,7 @@ renderTile :: Planar a
 renderTile renderingAction (width, height) mRect = do
     putStrLn ("renderTile at w=" ++ show width ++ " h=" ++ show height)
 
-    buf <- mallocForeignPtrBytes (3 * width * height)
+    buf <- mallocForeignPtrBytes (3 * (width + 16) * (height + 16))
 
     -- Initial fill of the image
     withForeignPtr buf $ \ptr ->
