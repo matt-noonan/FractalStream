@@ -21,11 +21,13 @@ executable FractalStream
   other-modules:       Color.Color
                        Color.Colorize
                        Exec.Accelerate
+                       Exec.LLVM
                        Exec.Haskell
                        Exec.Placeholder
                        Exec.Region
                        Exec.Tasking.Block
                        Exec.Tasking.Manager
+                       FractalStream.Models
                        Lang.Expr
                        Lang.Expr.Print
                        Lang.Expr.Transform
@@ -83,10 +85,13 @@ executable FractalStream
                        accelerate,
                        accelerate-llvm,
                        accelerate-llvm-native,
+                       llvm-hs,
+                       llvm-hs-pure,
                        time,
                        monad-parallel,
                        monad-par,
-                       monad-par-extras
+                       monad-par-extras,
+                       bytestring
   hs-source-dirs:      src
   default-language:    Haskell2010
   build-tools:         c2hs

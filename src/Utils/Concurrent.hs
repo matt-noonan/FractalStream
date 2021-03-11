@@ -15,13 +15,8 @@ module Utils.Concurrent
 
 import           Control.Concurrent
 import           Control.Concurrent.Async
-import           Control.Exception            (bracket_)
+import           Control.Exception        (bracket_)
 import           Control.Monad
---import qualified Control.Monad.Parallel   as Par
-import           Control.Monad.IO.Class       (liftIO)
-import           Control.Monad.Par            hiding (runParIO)
-import           Control.Monad.Par.Combinator (parMapM)
-import           Control.Monad.Par.IO         (runParIO)
 
 -- | forPool n is similar to forM, except the actions
 --   are executed concurrently by a pool of n workers.
@@ -35,13 +30,8 @@ forPool nSimul xs f
 
 -- | forPool_ n is similar to forM_, except the actions
 --   are executed concurrently by a pool of n workers.
-forPool_ :: NFData b => Int -> [a] -> (a -> IO b) -> IO ()
---forPool_ n xs f = void $ forPool n xs f
---forPool_ _ xs f = Par.mapM_ f xs
-forPool_ n xs f =
-  if True
-  then void $ forPool n xs f -- mapM_ f xs
-  else void . runParIO . parMapM (\x -> liftIO (f x)) $ xs
+forPool_ :: Int -> [a] -> (a -> IO b) -> IO ()
+forPool_ n xs = void . forPool n xs
 
 -- | A resource on which actions may be performed
 --   by many threads concurrently, or serially

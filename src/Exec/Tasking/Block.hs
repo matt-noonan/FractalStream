@@ -17,33 +17,44 @@ import           Utils.Concurrent
 
 import           Control.Concurrent.MVar
 import           Control.Monad
+import           Data.Proxy
 import           Data.Word
 import           Foreign.ForeignPtr
 
---import           Data.Time               (diffUTCTime, getCurrentTime)
+import           FractalStream.Models
 import           Utilities               (groupsOf)
 
 -- | A Block carries the information required to go from a
 --   runnable dynamical system and choice of color scheme
 --   to a buffer filled with the resulting color data.
-data Block a =
-  Block { coordToModel  :: (Double,Double) -> a
-        , compute       :: [a] -> IO [Color]
-        , logSampleRate :: Int       -- ^ The rate of over- or under-sampling to use.
-                           --      * logSampleRate == 0: draw one point per pixel.
-                           --      * logSampleRate == N < 0: draw 2^-N by 2^-N pixel
-                           --          blocks per model point.
-                           --      * logSampleRate == N > 0: subsample each pixel
-                           --          on a 2^N by 2^N subgrid and average the
-                           --          results, for a smoother picture.
-        , blockBuffer   :: Synchronizable (ForeignPtr Word8)   -- ^ The pixel buffer to write into.
-        , xStride       :: Int             -- ^ The width of the pixel buffer.
-        , x0            :: Int        -- ^ The upper-left x coordinate of this block in the pixel buffer.
-        , y0            :: Int        -- ^ The upper-left y coordinate of this block in the pixel buffer.
-        , xSize         :: Int     -- ^ The width of the block.
-        , ySize         :: Int     -- ^ The height of the block
-        , shouldRedraw  :: MVar ()  -- ^ A variable used to signal that this block is complete
-                          --   and the pixel buffer should be redrawn.
+data Block model =
+  Block { coordToModel  :: (Double,Double) -> Coordinate model
+        , compute       :: [Coordinate model] -> IO [Color]
+        , logSampleRate :: Int
+          -- ^ The rate of over- or under-sampling to use.
+          --      * logSampleRate == 0: draw one point per pixel.
+          --      * logSampleRate == N < 0: draw 2^-N by 2^-N pixel
+          --          blocks per model point.
+          --      * logSampleRate == N > 0: subsample each pixel
+          --          on a 2^N by 2^N subgrid and average the
+          --          results, for a smoother picture.
+        , blockBuffer   :: Synchronizable (ForeignPtr Word8)
+          -- ^ The pixel buffer to write into.
+        , xStride       :: Int
+          -- ^ The width of the pixel buffer.
+        , x0            :: Int
+          -- ^ The upper-left x coordinate of this block in the pixel buffer.
+        , y0            :: Int
+          -- ^ The upper-left y coordinate of this block in the pixel buffer.
+        , xSize         :: Int
+          -- ^ The width of the block.
+        , ySize         :: Int
+          -- ^ The height of the block
+        , blockModel    :: Proxy model
+          -- ^ A proxy value for the model type parameter
+        , shouldRedraw  :: MVar ()
+          -- ^ A variable used to signal that this block is complete
+          --   and the pixel buffer should be redrawn.
         }
 
 -- | Create an action describing how to draw the given block.
@@ -68,13 +79,8 @@ fillBlock block = do
     let samples = map (coordToModel block) $ concatMap subsample uv_points
 
     -- Run the computation on each subsampled point.
-    --putStrLn "computing block samples"
-    --zstart <- getCurrentTime
     results <- compute block samples
-    --zend <- getCurrentTime
-    --let computeTime = diffUTCTime zend zstart
 
-    --putStrLn "resampling"
     -- Resample the results
     let rgbs = resampleBy averageColor nSubsamples results
 
@@ -90,25 +96,20 @@ fillBlock block = do
     --      of color).  When everybody is using synchedWith, this
     --      falls back to acting like a mutex guarding access to the
     --      buffer.
-    --putStrLn ("I am done computing, time to fill the buffer")
+    --
+    --      The rendering anomaly only appears when using the accelerate
+    --      rendering kernel, and when ACCELERATE_LLVM_NATIVE_THREADS
+    --      is greater than 1.
 
     with buf $ \buffer -> withForeignPtr buffer $ \ptr -> do
-      --cstart <- getCurrentTime
-      --putStrLn ("I got the buffer")
       forM_ (zip uv_points rgbs) $ \((u,v), rgb) -> do
         let index = floor $ u + v * (fromIntegral $ xStride block)
         forM_ [indexOf (du,dv) | dv <- [0 .. skip - 1]
                                , du <- [0 .. skip - 1] ] $ \offset -> do
           pokeColor ptr (index + offset) rgb
-      -- Completed the block, signal for a redraw
-      --putStrLn "completed the block, signal for a redraw"
-      --cend <- getCurrentTime
-      --let colorTime = diffUTCTime cend cstart
-      --putStrLn ("compute time / color time = " ++ show (computeTime / colorTime)
-      --         ++ "  compute=" ++ show computeTime ++ "  color=" ++ show colorTime)
 
+    -- Completed the block, signal for a redraw
     void $ tryPutMVar (shouldRedraw block) ()
-    --putStrLn "end fillBlock"
 
 resampleBy :: ([a] -> b) -> Int -> [a] -> [b]
 resampleBy f n

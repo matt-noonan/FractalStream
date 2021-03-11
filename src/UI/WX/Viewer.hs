@@ -8,24 +8,23 @@ Description : Interactive view based on wxWidgets
 module UI.WX.Viewer ( wxView
                     ) where
 
---import           Color.Color                      (peekColor)
 import           Color.Colorize
 import           Lang.Planar
 import           UI.Tile
+import FractalStream.Models
 
 import           Graphics.UI.WX hiding (pt)
 import           qualified Graphics.UI.WX as WX
 import           Graphics.UI.WXCore.Draw
---import           Graphics.UI.WXCore.Image
 import           Graphics.UI.WXCore.WxcClassTypes
 import           Graphics.UI.WXCore.WxcTypes      (rgba)
 import           Graphics.UI.WXCore.WxcClassesAL
 import           Graphics.UI.WXCore.WxcClassesMZ 
 
-import           Foreign.ForeignPtr
 import Control.Concurrent
 import           Data.Time               (diffUTCTime, getCurrentTime)
 import Data.IORef
+import Data.Proxy
 
 data Model = Model
   { modelCenter   :: (Double, Double)
@@ -41,7 +40,7 @@ modelToRect (w,h) Model{..} = flippedRectangle (fromCoords ul) (fromCoords lr)
     (px, py) = modelPixelDim
 
 interpolateModel :: Double -> Model -> Model -> Model
-interpolateModel t m1 m2 = Model
+interpolateModel t m1 m2 = m2
     { modelCenter   = interpolate modelCenter
     , modelPixelDim = logInterpolate modelPixelDim
     }
@@ -58,13 +57,17 @@ helloFrom me = do
     tid <- myThreadId
     bound <- isCurrentThreadBound
     capInfo <- threadCapability tid
-    putStrLn ("Hello from " ++ me ++ ", on thread " ++ show tid ++ " cap=" ++ show capInfo ++ " bound=" ++ show bound)
+    putStrLn ("Hello from " ++ me
+              ++ ", on thread " ++ show tid
+              ++ " cap=" ++ show capInfo
+              ++ " bound=" ++ show bound)
     
 
 -- | Create a window with an interactive view of a complex-dynamical system.
-wxView :: forall a. (Planar a, Show a)
-       => Rectangle a  -- ^ The upper-left and lower-right corners of the view.
-       -> ([a] -> IO [Color]) -- ^ The rendering action
+wxView :: Rectangle (Coordinate ComplexParametric1d)
+          -- ^ The upper-left and lower-right corners of the view.
+       -> ([Coordinate ComplexParametric1d] -> IO [Color])
+          -- ^ The rendering action
        -> IO ()
 wxView _modelRect renderAction = start $ do
 
@@ -115,26 +118,14 @@ wxView _modelRect renderAction = start $ do
                                   , row 0 [hglue, centre $ widget dlog_q, hglue]
                                   , hstretch $ vspace 5
                                   ]
-             , visible := False
+             , visible := True
              , clientSize := sz 256 512]
 
     p <- panel f []
 
     
     -- trigger repaint
-{-
-    trigger <- newEmptyMVar
-    let triggerRepaint = putMVar trigger ()
-
-    let checkForRepaint = do
-          _ <- takeMVar trigger
-          repaint p
-          windowRefresh p True -- True=redraw background
-          windowUpdateWindowUI p
-          checkForRepaint
--}
-    let checkForRepaint = pure ()
-        triggerRepaint = do
+    let triggerRepaint = do
           repaint p
           windowRefresh p True -- True=redraw background
           windowUpdateWindowUI p
@@ -148,8 +139,8 @@ wxView _modelRect renderAction = start $ do
     
     set p [ on paintRaw := \dc r _dirty -> get animate value >>= \case
                   Nothing -> do
-                  
-                      --putStrLn "PAINT"
+                      -- Normal paint. Draw current rendering, then layer
+                      -- tool imagery on top.
                       viewRect <- windowGetViewRect f
                       curTile <- get currentTile value
                       let (w, h) = tileRect curTile
@@ -157,12 +148,14 @@ wxView _modelRect renderAction = start $ do
                           Nothing -> pure ()
                           Just im -> drawCenteredImage im dc viewRect (w, h)
                       paintToolLayer lastClick draggedTo dc r viewRect
+                      
                   Just (startTime, oldModel, oldImage) -> do
+                      -- Animated paint. Zoom and blend smoothly between
+                      -- the new and old images.
                       now <- getCurrentTime
                       let blend = min 255 (round (2 * 255 * toRational (diffUTCTime now startTime)))
                           t = min 1.0 (2 * fromRational (toRational (diffUTCTime now startTime)) :: Double)
                       when (blend >= 255) (set animate [value := Nothing])
-                      --viewRect <- windowGetViewRect f
                       curTile <- get currentTile value
                       let (w, h) = tileRect curTile
 
@@ -187,52 +180,52 @@ wxView _modelRect renderAction = start $ do
 
                           viewCenterX = fromIntegral w / 2
                           viewCenterY = fromIntegral h / 2
-                          dx = (fst (modelCenter newModel) - fst (modelCenter oldModel)) / fst (modelPixelDim oldModel)
-                          dy = negate (snd (modelCenter newModel) - snd (modelCenter oldModel)) / snd (modelPixelDim oldModel)
+                          dx = (fst (modelCenter newModel) - fst (modelCenter oldModel))
+                              / fst (modelPixelDim oldModel)
+                          dy = negate (snd (modelCenter newModel) - snd (modelCenter oldModel))
+                                     / snd (modelPixelDim oldModel)
 
                       -- draw the old image
                       let k = 1 / sqrt ( (fst (modelPixelDim oldModel) * snd (modelPixelDim oldModel))
                                    / (fst (modelPixelDim newModel) * snd (modelPixelDim newModel)))
                           t' = if (k - 1)^2 < 0.05 then t else (1 - k ** t) / (1 - k)
                       graphicsContextTranslate gc viewCenterX viewCenterY
-                      graphicsContextScale gc (sz (fst (modelPixelDim oldModel) / fst (modelPixelDim midModel)) (snd (modelPixelDim oldModel) / snd (modelPixelDim midModel)))
+                      graphicsContextScale gc (sz (fst (modelPixelDim oldModel)
+                                                 / fst (modelPixelDim midModel))
+                                                  (snd (modelPixelDim oldModel)
+                                                 / snd (modelPixelDim midModel)))
                       graphicsContextTranslate gc (negate viewCenterX) (negate viewCenterY)
                       graphicsContextTranslate gc (negate $ dx * t') (negate $ dy * t')
                       
-                      withLayer 1 $ do
-                          --let zoomRatioX = fst (modelPixelDim oldModel) / fst (modelPixelDim midModel)
-                          --    zoomRatioY = snd (modelPixelDim oldModel) / snd (modelPixelDim midModel)
-                          restoringContext $ do
-                              zoom (1.0, 1.0) --(zoomRatioX, zoomRatioY)
-                                   --(viewCenterX + dx * t, viewCenterY + dy * t)
-                                   (viewCenterX,
-                                    viewCenterY)
+                      withLayer 1 $ restoringContext $ do
+                              zoom (1.0, 1.0)
+                                   (viewCenterX, viewCenterY)
                               
                               $ case oldImage of
                                     Nothing -> pure ()
-                                    Just im -> drawImage dc im (WX.pt (round $ negate viewCenterX) (round $ negate viewCenterY)) []
+                                    Just im -> drawImage dc im (WX.pt
+                                                               (round $ negate viewCenterX)
+                                                               (round $ negate viewCenterY)) []
                       -- draw the new image
-                      withLayer (min 1 (1.2 * t)) $ do
+                      withLayer (min 1 t) $ do
                           let zoomRatioX = fst (modelPixelDim newModel) / fst (modelPixelDim oldModel)
                               zoomRatioY = snd (modelPixelDim newModel) / snd (modelPixelDim oldModel)
                           restoringContext $ do
                               zoom (zoomRatioX, zoomRatioY)
-                                   --(viewCenterX + dx * t, viewCenterY + dy * t)
-                                   (viewCenterX + dx,
-                                    viewCenterY + dy)
+                                   (viewCenterX + dx, viewCenterY + dy)
                               
                                    $ get savedTileImage value >>= \case
                                        Nothing -> pure ()
-                                       Just im -> drawImage dc im (WX.pt (round $ negate viewCenterX) (round $ negate viewCenterY)) []
---                      graphicsContextScale gc (sz ( (fst (modelPixelDim oldModel) / fst (modelPixelDim newModel)) ** t) ( (snd (modelPixelDim oldModel) / snd (modelPixelDim newModel)) ** t))
-          --, on idle := putStrLn "IDLE" >> propagateEvent >> pure False
+                                       Just im -> drawImage dc im (WX.pt
+                                                                  (round $ negate viewCenterX)
+                                                                  (round $ negate viewCenterY)) []
           ]
 
     let viewToModel pt = do
             Size { sizeW = w, sizeH = h } <- get f clientSize
             let dim = (w,h)
                 fullViewRect = rectangle (Viewport (0,0)) (Viewport dim)
-            modelRect <- modelToRect @a dim <$> get model value
+            modelRect <- modelToRect @(Coordinate ComplexParametric1d) dim <$> get model value
             pure (convertRect fullViewRect modelRect $ Viewport (pointX pt, pointY pt))
 
     -- Set click and drag event handlers
@@ -251,11 +244,11 @@ wxView _modelRect renderAction = start $ do
                         newCenter <- viewToModel pt
                         set model [value := oldModel
                                     { modelCenter = toCoords newCenter }]
-                        --putStrLn "cancel1"
+
                         get currentTile value >>= cancelTile
-                        --putStrLn "/cancel1"
                         newViewerTile <- renderTile' renderId renderAction (w, h) model
                         set currentTile [value := newViewerTile]
+                        
                         startAnimatingFrom oldModel
                         triggerRepaint
                     Just box -> do
@@ -272,14 +265,11 @@ wxView _modelRect renderAction = start $ do
                             newArea = boxW * boxH
                             literalScale = sqrt (newArea / oldArea)
                             scale = if literalScale < 0.001 then 1 else literalScale
-                        putStrLn ("new viewport center: " ++ show (viewportToPoint (rectCenter box)))
-                        putStrLn ("new model center: " ++ show (toCoords newCenter) ++ ", scale by: " ++ show scale)
-                        set model [value := Model
+                        set model [value := oldModel
                                     { modelCenter = toCoords newCenter
-                                    , modelPixelDim = (px * scale, py * scale) }]
-                        --putStrLn "cancel2"
+                                    , modelPixelDim = (px * scale, py * scale)
+                                    }]
                         get currentTile value >>= cancelTile
-                        --putStrLn "/cancel2"
                         newViewerTile <- renderTile' renderId renderAction (w, h) model
                         set currentTile [value := newViewerTile]
                         startAnimatingFrom oldModel
@@ -313,19 +303,16 @@ wxView _modelRect renderAction = start $ do
                  , on command := do
                         curTile <- get currentTile value
                         ifModified curTile $ do
-                            --helloFrom "tick repaint"
-                            --putStrLn "tick repaint"
                             viewRect <- windowGetViewRect f
                             tileImage <- generateTileImage curTile viewRect
                             saved <- imageCopy tileImage
                             set savedTileImage [value := Just saved]
                             triggerRepaint
-                            --putStrLn "/tick repaint"
                  ]
 
-    -- Animation timer. At 100Hz, check if we are animating between
+    -- Animation timer. At ~65Hz, check if we are animating between
     -- two views. If so, step the animation and repaint.
-    _ <- timer f [ interval := 10
+    _ <- timer f [ interval := 16
                  , enabled := True
                  , on command := get animate value >>= \case
                          Nothing -> pure ()
@@ -351,9 +338,7 @@ wxView _modelRect renderAction = start $ do
                                       roundUp x n = case x `mod` n of
                                           0 -> x
                                           k -> x + (n - k)
-                                  --putStrLn "cancel3"
                                   get currentTile value >>= cancelTile
-                                  --putStrLn "/cancel3"
                                   newViewerTile <- renderTile' renderId renderAction (w, h) model
                                   set currentTile [value := newViewerTile]
                                   -- no animation?
@@ -370,13 +355,12 @@ wxView _modelRect renderAction = start $ do
                   set onResizeTimer [enabled := True]
                   propagateEvent
           , on (menu about) := infoDialog f "About FractalStream" "Contributors:\nMatt Noonan"
---          , on paint := \_ _ -> putStrLn "PAINT<frame>"
           ]
-    checkForRepaint
 
-renderTile' :: (Planar a, Valued w)
+
+renderTile' :: Valued w
             => IORef Int
-            -> ([a] -> IO [Color])
+            -> ([Coordinate ComplexParametric1d] -> IO [Color])
             -> (Int, Int)
             -> w Model
             -> IO Tile
@@ -387,7 +371,7 @@ renderTile' renderId action dim model = do
             curId <- readIORef renderId
             if (curId == iD) then action pts else pure []
             
-    renderTile action' dim modelRect
+    renderTile (Proxy @ComplexParametric1d) action' dim modelRect
     
 -- | Paint the state of a tile into a device context.
 generateTileImage
@@ -401,17 +385,7 @@ generateTileImage viewerTile _windowRect = do
     --let (x0, y0) = ( (fWidth  + width ) `div` 2 - width  ,
     --                 (fHeight + height) `div` 2 - height )
     --putStrLn "generateTileImage"
-    ans <- withSynchedTileBuffer viewerTile $ \fptr -> do
-      --putStrLn "generateTileImage got buffer, creating image"
-      withForeignPtr fptr $ \buf -> do
-        --pbuf <- pixelBufferCreate (sz width height)
-        --pixels <- mapM (peekColor buf) [0..(width * height - 1)]
-        --pixelBufferSetPixels pbuf pixels
-        --result <- imageCreateFromPixelBuffer pbuf
-        --pure result
-        imageCreateFromData (sz width height) buf
-    --putStrLn "/generateTileImage"
-    pure ans
+    withSynchedTileBuffer viewerTile (imageCreateFromData (sz width height))
     
 drawCenteredImage :: Image b -> DC d -> Rect -> (Int,Int) -> IO ()
 

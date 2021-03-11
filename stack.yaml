@@ -40,13 +40,22 @@ packages:
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
 - git: https://github.com/AccelerateHS/accelerate.git
-  commit: 3d8fee277e0e211a0e1e5c1f38385478dab741e6
+  # commit: 3d8fee277e0e211a0e1e5c1f38385478dab741e6
+  commit: 49a39ea6e3d2d13cbfa8605dcb57a29ef13db1f9
 - git: https://github.com/AccelerateHS/accelerate-llvm.git
-  commit: 0f92cd6ad324f87378bffbb9b74bbd0722cee417
+  # commit: 0f92cd6ad324f87378bffbb9b74bbd0722cee417
+  commit: 6f93b9a1fb33b8ac7d86be46b6cafd2a939b9ff5
   subdirs:
     - accelerate-llvm
     # - accelerate-llvm-ptx
     - accelerate-llvm-native
+#- git: https://github.com/wxHaskell/wxHaskell.git
+#  commit: b7ac21d1dba48076dc7538d1967a14d59cfeb615
+#  subdirs:
+#      - wx
+#      - wxcore
+#      - wxc
+#      - wxdirect
 
 # - wx-0.92.3.0@sha256:c4685d4f1fcb92e279409eb9455bef41cbd336d0b557040a6966bcf4881124a1,1825
 # - wxcore-0.92.3.0@sha256:266a9080542a1de472dcf1df707cc304b9be8066411ebfdfa6adfea6c11769b3,2705

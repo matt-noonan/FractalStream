@@ -13,6 +13,7 @@ module UI.Tile ( Tile()
 import           Exec.Tasking.Block
 import           Exec.Tasking.Manager
 import           Lang.Planar
+import           FractalStream.Models
 
 import           Color.Color
 import           Utils.Concurrent
@@ -23,6 +24,8 @@ import           Control.Concurrent.Async
 import           Control.Monad            (void)
 import           Data.Word
 import           Foreign.ForeignPtr
+import           Foreign.Ptr
+import Data.Proxy
 
 newtype ImagePoint = ImagePoint (Double,Double)
 
@@ -32,17 +35,21 @@ instance Planar ImagePoint where
 
 -- | A tile in the image viewer.
 data Tile = Tile
-    { imageRect        :: Rectangle ImagePoint   -- ^ The region in view space described by the tile.
-    , tileBuffer       :: Synchronizable (ForeignPtr Word8)       -- ^ The buffer into which the tile will draw.
-    , threadId         :: Async ()               -- ^ The id of the thread which is drawing this tile.
-    , shouldRedrawTile :: MVar ()          -- ^ A value which signals that the tile needs to be redrawn.
+    { imageRect        :: Rectangle ImagePoint
+      -- ^ The region in view space described by the tile.
+    , tileBuffer       :: Synchronizable (ForeignPtr Word8)
+      -- ^ The buffer into which the tile will draw.
+    , tileWorker       :: Async ()
+      -- ^ The worker thread which is drawing this tile.
+    , shouldRedrawTile :: MVar ()
+      -- ^ A value which signals that the tile needs to be redrawn.
     }
 
 cancelTile :: Tile -> IO ()
-cancelTile = void . forkIO . cancel . threadId -- cancel, but get on with life
+cancelTile = void . forkIO . cancel . tileWorker -- cancel, but get on with life
 
-withSynchedTileBuffer :: Tile -> (ForeignPtr Word8 -> IO b) -> IO b
-withSynchedTileBuffer tile action = synchedWith (tileBuffer tile) action
+withSynchedTileBuffer :: Tile -> (Ptr Word8 -> IO b) -> IO b
+withSynchedTileBuffer tile action = synchedWith (tileBuffer tile) (`withForeignPtr` action)
 
 -- | Unpack the width and height of a tile.
 tileRect :: Tile -> (Int, Int)
@@ -58,44 +65,47 @@ ifModified tile f = do
         Just _  -> f
 
 -- | Construct a tile from a dynamical system, and begin drawing to it.
-renderTile :: Planar a
-           => ([a] -> IO [Color]) -- ^ The rendering action
+renderTile :: forall model proxy. Planar (Coordinate model)
+           => proxy model
+           -> ([Coordinate model] -> IO [Color]) -- ^ The rendering action
            -> (Int, Int)   -- ^ The height and width of this tile.
-           -> Rectangle a  -- ^ The region of the dynamical plane corresponding
+           -> Rectangle (Coordinate model)  -- ^ The region of the dynamical plane corresponding
                            --   to this tile.
            -> IO Tile      -- ^ An action which allocates the tile and
                            --   forks a task which draws into it.
 
-renderTile renderingAction (width, height) mRect = do
+renderTile _ renderingAction (width, height) mRect = do
     putStrLn ("renderTile at w=" ++ show width ++ " h=" ++ show height)
 
     buf <- mallocForeignPtrBytes (3 * (width + 16) * (height + 16))
 
     -- Initial fill of the image
     withForeignPtr buf $ \ptr ->
-      sequence_ [ pokeColor ptr index yellow | index <- [0 .. width * height - 1] ]
+      sequence_ [ pokeColor ptr index grey | index <- [0 .. width * height - 1] ]
 
-    let iRect = rectangle (ImagePoint (0,0)) (ImagePoint (fromIntegral width, fromIntegral height))
+    let iRect = rectangle (ImagePoint (0,0))
+                          (ImagePoint (fromIntegral width, fromIntegral height))
 
     redraw     <- newMVar ()  -- used to request a redraw
     managedBuf <- synchronized buf
 
-    tid <- async  $ progressively fillBlock
-                  $ Block { coordToModel = convertRect iRect mRect . fromCoords
-                          , compute = renderingAction
-                          , logSampleRate = 1
-                          , blockBuffer = managedBuf
-                          , x0 = 0
-                          , y0 = 0
-                          , xStride = width
-                          , xSize = width
-                          , ySize = height
-                          , shouldRedraw = redraw
-                          }
-    link tid
+    worker <- async $ progressively fillBlock
+                    $ Block { coordToModel = convertRect iRect mRect . fromCoords
+                            , compute = renderingAction
+                            , logSampleRate = 1
+                            , blockBuffer = managedBuf
+                            , x0 = 0
+                            , y0 = 0
+                            , xStride = width
+                            , xSize = width
+                            , ySize = height
+                            , blockModel = Proxy @model
+                            , shouldRedraw = redraw
+                            }
+    link worker
 
     return Tile { imageRect = iRect
                 , tileBuffer = managedBuf
-                , threadId = tid
+                , tileWorker = worker
                 , shouldRedrawTile = redraw
                 }
