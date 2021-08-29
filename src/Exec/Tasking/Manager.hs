@@ -21,12 +21,13 @@ progressively :: (Block a -> IO ()) -> (Block a -> IO ())
 
 progressively render block = do
 
-    let width   = xSize block
+    let subBlockSize = 8
+        width   = xSize block
         height  = ySize block
-        xBlocks =  case width `divMod` 16 of
+        xBlocks =  case width `divMod` subBlockSize of
             (z, 0) -> z
             (z, _) -> z -- + 1
-        yBlocks = case height `divMod` 16 of
+        yBlocks = case height `divMod` subBlockSize of
             (z, 0) -> z
             (z, _) -> z -- + 1
 
@@ -43,8 +44,8 @@ progressively render block = do
       putStrLn $ "***** start @ rate=" ++ show rate
       start <- getCurrentTime
       forPool_ poolSize blockIDs $ \(x,y) -> do
-        render $ block { xSize = 16, ySize = 16,
-                         x0 = 16 * x, y0 = 16 * y,
+        render $ block { xSize = subBlockSize, ySize = subBlockSize,
+                         x0 = subBlockSize * x, y0 = subBlockSize * y,
                          logSampleRate = rate }
       end <- getCurrentTime
       putStrLn $ "***** " ++ show width ++ " x " ++ show height ++ " @ rate " ++ show rate

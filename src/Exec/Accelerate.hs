@@ -1,4 +1,7 @@
-module Exec.Accelerate (
+module Exec.Accelerate
+  where
+{-
+  (
   computeMandel
   ) where
 
@@ -47,3 +50,4 @@ step :: Exp C_acc
      -> (Exp C_acc, Exp Int32)
 step c (z,k) = (c + z * z, k + 1)
 
+-}

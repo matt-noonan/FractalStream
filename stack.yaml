@@ -1,86 +1,34 @@
-# For more information, see: http://docs.haskellstack.org/en/stable/yaml_configuration.html
+resolver: lts-17.5
 
-# Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
-resolver: lts-14.17
-
-# Local packages, usually specified by relative directory name
 packages:
 - .
-#- git: https://github.com/wxHaskell/wxHaskell.git
-#  commit: b7ac21d1dba48076dc7538d1967a14d59cfeb615
 - ../wxHaskell/wx
 - ../wxHaskell/wxcore
 - ../wxHaskell/wxc
 - ../wxHaskell/wxdirect
-# - location:
-#     git: git@github.com:AccelerateHS/accelerate.git
-#     commit: 4e901bb0994496c5cc09c535835e65064ba3502d
-# - location:
-#     git: git@github.com:AccelerateHS/accelerate-llvm.git
-#     commit: 987bff46f146b718a1da60c194eceff4b91a843f
-#   subdirs:
-#   - accelerate-llvm
-#   - accelerate-llvm-native
-# - location:
-#     git: git@github.com:bscarlet/llvm-general.git
-#     commit: 981e5de8b036ee382dd9a52b468a3f98083a6999
-#   subdirs:
-#   - llvm-general
-#   - llvm-general-pure
-# - location:
-#     git: git@github.com:wxHaskell/wxHaskell.git
-#     commit: a833aca068de7cbfcb84490cf13bb7ff9089bbfc
-#   subdirs:
-#   - wx
-#   - wxc
-#   - wxcore
-#   - wxdirect
-
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
-- git: https://github.com/AccelerateHS/accelerate.git
-  # commit: 3d8fee277e0e211a0e1e5c1f38385478dab741e6
-  commit: 49a39ea6e3d2d13cbfa8605dcb57a29ef13db1f9
-- git: https://github.com/AccelerateHS/accelerate-llvm.git
-  # commit: 0f92cd6ad324f87378bffbb9b74bbd0722cee417
-  commit: 6f93b9a1fb33b8ac7d86be46b6cafd2a939b9ff5
-  subdirs:
-    - accelerate-llvm
-    # - accelerate-llvm-ptx
-    - accelerate-llvm-native
-#- git: https://github.com/wxHaskell/wxHaskell.git
-#  commit: b7ac21d1dba48076dc7538d1967a14d59cfeb615
+#- github: tmcdonell/accelerate
+#  commit: b23f41f2383bc21e099ebae75a18aed213aa5d48
+#- git: https://github.com/matt-noonan/accelerate-llvm.git
+#  commit: 5e367dc4d1e8b99d5dc44ef9716acf52d9b13e56
+#  subdirs:
+#    - accelerate-llvm
+#    - accelerate-llvm-native
+#- git: https://github.com/matt-noonan/llvm-hs.git
+#  commit: 6ddf7e8bbb219ccc6e0d13c4b8b945cba8952dab
+#  subdirs:
+#      - llvm-hs
+#      - llvm-hs-pure
+
+#- git: https://github.com/matt-noonan/wxHaskell.git
+#  commit: 97b4a014f2e554d44f0596b19bb455eb198ddc58
 #  subdirs:
 #      - wx
 #      - wxcore
 #      - wxc
 #      - wxdirect
-
-# - wx-0.92.3.0@sha256:c4685d4f1fcb92e279409eb9455bef41cbd336d0b557040a6966bcf4881124a1,1825
-# - wxcore-0.92.3.0@sha256:266a9080542a1de472dcf1df707cc304b9be8066411ebfdfa6adfea6c11769b3,2705
-# - containers-0.5.11.0@sha256:28ad7337057442f75bc689315ab4ec7bdf5e6b2c39668f306672cecd82c02798,16685
-# - wxc-0.92.3.0@sha256:a42d1650704f9fb515f0fcb0fee8c21aa21c50019f5ada7ab875ead6ce29f8b1,8205
-# - wxdirect-0.92.3.0@sha256:7533e84784560be0313b5940227870ea105975d581eab5b6ad5e8219d82dfaff,1740
-# - binary-0.8.7.0@sha256:ae3e6cca723ac55c54bbb3fa771bcf18142bc727afd57818e66d6ee6c8044f12,7705
-# - process-1.4.3.0@sha256:cf30533f073721fd059790f0b963fb9b57e3507cffef5141e9377449570b07ca,2021
-# - text-1.2.4.0@sha256:8c24450feb8e3bbb7ea3e17af24ef57e85db077c4bf53e5bcc345b283d1b1d5b,10081
-
-#- 'accelerate-llvm-1.0.0.0'
-#- 'accelerate-llvm-native-1.0.0.0'
-#- 'accelerate-llvm-ptx-1.0.0.0'
-#- 'cuda-0.7.5.3'
-#- 'llvm-hs-4.0.1.0'
-#- 'llvm-hs-pure-4.0.0.0'
-#- chaselev-deque-0.5.0.5
-#- text-1.2.2.0
-#- recursion-schemes-4.1.2
-#- unique-0
-#- libffi-0.1
-#- wx-0.92.3.0
-#- wxcore-0.92.3.0
-#- wxc-0.92.3.0
-#- wxdirect-0.92.3.0
 
 
 
@@ -89,8 +37,12 @@ flags:
   llvm-hs:
     shared-llvm: true
 
+ghc-options:
+  llvm-hs:
+    -optcxx=-std=c++17
+
 extra-lib-dirs:
-- /usr/local/Cellar/libffi/3.0.13/lib/
+- /usr/local/Cellar/libffi/3.3_3/lib/
 
 # Extra package databases containing global packages
 extra-package-dbs: []

@@ -16,7 +16,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 executable FractalStream
-  ghc-options:         -Wall -Werror -O2 -threaded -rtsopts
+  ghc-options:         -Wall -Werror -O2 -threaded -rtsopts -with-rtsopts=-N
   main-is:             Main.hs
   other-modules:       Color.Color
                        Color.Colorize
@@ -82,16 +82,14 @@ executable FractalStream
                        parsec,
                        mtl,
                        recursion-schemes,
-                       accelerate,
-                       accelerate-llvm,
-                       accelerate-llvm-native,
                        llvm-hs,
                        llvm-hs-pure,
                        time,
                        monad-parallel,
                        monad-par,
                        monad-par-extras,
-                       bytestring
+                       bytestring,
+                       vector
   hs-source-dirs:      src
   default-language:    Haskell2010
   build-tools:         c2hs

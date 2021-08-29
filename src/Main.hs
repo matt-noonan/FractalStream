@@ -26,7 +26,7 @@ import           Exec.Region
 
 
 -- tinkering with accelerate
-import           Exec.Accelerate     (computeMandel)
+--import           Exec.Accelerate     (computeMandel)
 
 -- tinkering with llvm, sans accelerate
 import           Exec.LLVM
@@ -58,11 +58,11 @@ wxMain = do
     darkChecker c = checker c (darker c) :: Colorizer C
     col = blackInterior $ darkChecker $ smoothedRainbow (loglogSmoothing 2) 20
     action =
-      case 0 + 1 of
-          0 -> computeMandel col  -- accelerate
+      case 1 + 0 of
+          0 -> error "X" -- computeMandel col  -- accelerate
           1 -> computeMandel' col -- llvm
           (_ :: Int) -> pure . map (runColorizer col .  -- pure haskell
-                           runDynamics (runParametric mandelbrot))
+                         runDynamics (runParametric mandelbrot))
 
 parserMain :: IO ()
 parserMain = do

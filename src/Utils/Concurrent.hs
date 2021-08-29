@@ -15,23 +15,37 @@ module Utils.Concurrent
 
 import           Control.Concurrent
 import           Control.Concurrent.Async
-import           Control.Exception        (bracket_)
 import           Control.Monad
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as VM
 
 -- | forPool n is similar to forM, except the actions
 --   are executed concurrently by a pool of n workers.
 forPool :: Int -> [a] -> (a -> IO b) -> IO [b]
-forPool nSimul xs f
-  | nSimul < 1 = forPool 1 xs f
-  | otherwise = do
-      sem <- newQSem nSimul
-      mapConcurrently (withSem sem . f) xs
-  where withSem s = bracket_ (waitQSem s) (signalQSem s)
+forPool nSimul xs action = do
+  result <- VM.new (length xs)
+  forPool_ nSimul (zip [0..] xs) $ \(i,x) -> do
+    y <- action x
+    VM.unsafeWrite result i y
+  V.toList <$> V.unsafeFreeze result
 
 -- | forPool_ n is similar to forM_, except the actions
 --   are executed concurrently by a pool of n workers.
-forPool_ :: Int -> [a] -> (a -> IO b) -> IO ()
-forPool_ n xs = void . forPool n xs
+forPool_ :: Int -> [a] -> (a -> IO ()) -> IO ()
+forPool_ nSimul xs action
+  | nSimul < 1 = forPool_ 1 xs action
+  | otherwise = do
+      todo <- newMVar xs
+      let loop = do
+            -- pop a work item
+            next <- modifyMVar todo $ \case
+              []      -> pure ([], Nothing)
+              (x:xs') -> pure (xs', Just x)
+            -- process the item and loop
+            case next of
+              Nothing -> pure ()
+              Just x  -> action x >> loop
+      forConcurrently_ [1..nSimul] (const loop)
 
 -- | A resource on which actions may be performed
 --   by many threads concurrently, or serially

@@ -3,8 +3,8 @@
 {-# LANGUAGE RecursiveDo              #-}
 
 module Exec.LLVM
-    ( computeMandel'
-    ) where
+  ( computeMandel'
+  ) where
 
 import           Prelude                         hiding (and, mod)
 
@@ -43,6 +43,9 @@ import           LLVM.IRBuilder.Instruction
 import qualified LLVM.IRBuilder.Module           as M
 import           LLVM.IRBuilder.Monad
 import           LLVM.PassManager
+import qualified LLVM.Relocation as Reloc
+import qualified LLVM.CodeModel as Model
+import qualified LLVM.CodeGenOpt as Codegen
 
 computeMandel' :: Colorizer C -> [C] -> IO [Color]
 computeMandel' col pts = do
@@ -59,10 +62,11 @@ computeMandel' col pts = do
 
     withForeignPtr finalX_ $ \finalX ->
       withForeignPtr finalY_ $ \finalY ->
-        withForeignPtr steps_ $ \steps ->
-          forM pts $ \(C x y) -> do
+        withForeignPtr steps_ $ \steps -> do
+          results <- forM pts $ \(C x y) -> do
             fn x y maxIter finalX finalY steps
-            colorize <$> (classify maxIter <$> peek finalX <*> peek finalY <*> peek steps)
+            (,,) <$> peek finalX <*> peek finalY <*> peek steps
+          pure (map (\(x,y,z) -> colorize (classify maxIter x y z)) results)
 
 
 classify :: Int32 -> Double -> Double -> Int32 -> Result C
@@ -98,9 +102,9 @@ mkker = unsafePerformIO $ void $ forkIO $ do
       putStrLn "ASSEMBLY: "
       BS.putStrLn asm
       putStrLn "withHostTargetMachine"
-      withHostTargetMachine $ \tm -> do
+      withHostTargetMachine Reloc.Default Model.Default Codegen.Aggressive $ \tm -> do
         let pass = defaultCuratedPassSetSpec
-                   { optLevel = Just 2
+                   { optLevel = Just 3
                    , loopVectorize = Just True
                    }
         withPassManager pass (void . (`runPassManager` mod))
@@ -151,32 +155,30 @@ kernelModule = M.buildModule "exampleModule" $ mdo
                         , (ptr int32,  "steps") ] VoidType $ \[cx,cy,maxIter,finalX,finalY,steps] -> mdo
       entry <- block `named` "entry"
       -- initialize n <- 0, x <- 0.0, y <- 0.0
-      n0 <- C.int32 0
-      x0 <- C.double 0.0
-      y0 <- C.double 0.0
+      let n0 = C.int32 0
+          x0 = C.double 0.0
+          y0 = C.double 0.0
+
       br loop
 
       loop <- block `named` "loop"
       n <- phi [(n0, entry), (n', loop)]
       x <- phi [(x0, entry), (x', loop)]
       y <- phi [(y0, entry), (y', loop)]
+      x2 <- phi [(x0, entry), (x'2, loop)] -- the |Z|^2 < limit^2 at the end of the loop involves computing
+      y2 <- phi [(y0, entry), (y'2, loop)] --   x^2 and y^2, so reuse those instead of recomputing.
 
-      x2 <- x `fmul` x
-      y2 <- y `fmul` y
       xy <- x `fmul` y
-      two <- C.double 2
-      twoxy <- two `fmul` xy
+      twoxy <- xy `fadd` xy
       x2py2 <- x2 `fsub` y2
       x' <- x2py2 `fadd` cx
       y' <- twoxy `fadd` cy
-      one <- C.int32 1
-      n' <- n `add` one
+      n' <- n `add` C.int32 1
       nOK <- icmp IP.ULT n' maxIter
       x'2 <- x' `fmul` x'
       y'2 <- y' `fmul` y'
       znorm2 <- x'2 `fadd` y'2
-      f100 <- C.double 100
-      zOK <- fcmp FP.OLT znorm2 f100
+      zOK <- fcmp FP.OLT znorm2 (C.double 100)
       bothOK <- nOK `and` zOK
       condBr bothOK loop exit
 
