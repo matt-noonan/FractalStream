@@ -59,10 +59,10 @@ instance HasSetting name t ( '(name, t) ': env) where
 instance HasSetting name t env => HasSetting name t ( x ': env) where
   getSetting (UiSetting _ _ ss) pxy = getSetting ss pxy
 
-makeSettings :: SettingsList env -> IO (UiSetting env)
+makeSettings :: Context (Pure2 Setting) env -> IO (UiSetting env)
 makeSettings = \case
-  NoSettings -> pure LastUiSetting
-  AddSetting (Setting name v _) more -> do
+  EmptyContext -> pure LastUiSetting
+  Bind _ _ (Setting name v _) more -> do
     ref <- newIORef v
     UiSetting name ref <$> makeSettings more
 
@@ -81,8 +81,8 @@ instance ToUI WX (Settings env NoEffects) where
       , on resize := propagateEvent ]
 
     settingsRefs <- makeSettings settingsList
-    let addSetting :: forall name t. Setting name t -> IO [Layout]
-        addSetting (Setting _ (Scalar ty v) mn) = do
+    let addSetting :: forall name t. Proxy name -> ScalarProxy t -> Setting name t -> IO [Layout]
+        addSetting _ _ (Setting _ (Scalar ty v) mn) = do
           let name = fromMaybe (showType ty) (fst <$> mn)
           ctrl <- case ty of
                   -- Represent boolean settings with a checkbox
@@ -103,7 +103,7 @@ instance ToUI WX (Settings env NoEffects) where
                                     [ text := showValue ty v ]
 
           pure [label name, hfill ctrl]
-    widgets <- sequence (mapSetting addSetting settingsList)
+    widgets <- fromContextM addSetting settingsList
     set settingsDialog
       [ layout := margin 10 (grid 10 10 widgets)
       , visible := True ]
@@ -125,15 +125,19 @@ type MySettings =
 sampleSettings :: Settings MySettings NoEffects
 sampleSettings = Settings{..}
   where
-    onChanged = NoOp
+    onChanged = Fix NoOp
     parentActor = error "todo"
     settingsTitle = "Settings widget demo"
     settingsList
-      = AddSetting (Setting Proxy (Scalar RealProxy    3.141592)       (Just ("pi", [])))
-      $ AddSetting (Setting Proxy (Scalar IntegerProxy 42)              Nothing)
-      $ AddSetting (Setting Proxy (Scalar BooleanProxy True)           (Just ("toggle", [])))
-      $ AddSetting (Setting Proxy (Scalar ColorProxy   FSColor.violet) (Just ("shade", [])))
-      $ NoSettings
+      = Bind Proxy RealProxy
+            (Setting Proxy (Scalar RealProxy    3.141592) (Just ("pi", [])))
+      $ Bind Proxy IntegerProxy
+            (Setting Proxy (Scalar IntegerProxy 42) Nothing)
+      $ Bind Proxy BooleanProxy
+            (Setting Proxy (Scalar BooleanProxy True) (Just ("toggle", [])))
+      $ Bind Proxy ColorProxy
+            (Setting Proxy (Scalar ColorProxy FSColor.violet) (Just ("shade", [])))
+      $ EmptyContext
 
 ----------------------------------------------------------------
 -- Viewer widget

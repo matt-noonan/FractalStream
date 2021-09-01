@@ -15,8 +15,8 @@ data Render (env :: Environment) (ty :: Type) where
        -> Value env 'RealT -- Starting Y coordinate
        -> Value env 'RealT -- dx
        -> Value env 'RealT -- dy
-       -> Code ( '("inputX", 'RealT) ': '("inputY", 'RealT) ': env)
-               '[ Output '[ '("color", 'ColorT) ] ]
+       -> Code '[ Output '[ '("color", 'ColorT) ] ]
+                ( '("inputX", 'RealT) ': '("inputY", 'RealT) ': env)
                'VoidT
        -> Render env 'IntegerT -- returns an identifier for the result
 

@@ -16,10 +16,10 @@ data Tool effs where
           )
        =>
     { toolSettings :: Settings env effs
-    , onClick :: Maybe (Code posEnv effs 'VoidT)
-    , onMouseDown :: Maybe (Code posEnv effs 'VoidT)
-    , onMouseUp   :: Maybe (Code posEnv effs 'VoidT)
-    , onMotion :: Maybe (Code posEnv effs 'VoidT)
-    , onDrag :: Maybe (Code pos2Env effs 'VoidT)
-    , onButton :: [(String, Code env effs 'VoidT)]
+    , onClick :: Maybe (Code effs posEnv 'VoidT)
+    , onMouseDown :: Maybe (Code effs posEnv 'VoidT)
+    , onMouseUp   :: Maybe (Code effs posEnv 'VoidT)
+    , onMotion :: Maybe (Code effs posEnv 'VoidT)
+    , onDrag :: Maybe (Code effs pos2Env 'VoidT)
+    , onButton :: [(String, Code effs env 'VoidT)]
     } -> Tool effs

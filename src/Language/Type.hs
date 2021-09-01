@@ -21,7 +21,17 @@ module Language.Type
   , showType
   , showValue
   , Context(..)
+  , mapContext
+  , fromContext
+  , fromContextM
+  , fromContextM_
   , getBinding
+  , setBinding
+  , EnvironmentProxy(..)
+  , KnownType(..)
+  , withKnownType
+  , KnownEnvironment(..)
+  , withEnvironment
   ) where
 
 import Data.Int
@@ -110,8 +120,30 @@ data ScalarProxy (t :: Type) where
   ComplexProxy  :: ScalarProxy 'ComplexT
   RationalProxy :: ScalarProxy 'RationalT
   ColorProxy    :: ScalarProxy 'ColorT
-  PairProxy     :: ScalarProxy x -> ScalarProxy y -> ScalarProxy ('Pair x y)
+  PairProxy     :: (KnownType x, KnownType y) => ScalarProxy x -> ScalarProxy y -> ScalarProxy ('Pair x y)
   VoidProxy     :: ScalarProxy 'VoidT
+
+class KnownType (t :: Type)  where typeProxy :: ScalarProxy t
+instance KnownType 'BooleanT where typeProxy = BooleanProxy
+instance KnownType 'IntegerT where typeProxy = IntegerProxy
+instance KnownType 'RealT    where typeProxy = RealProxy
+instance KnownType 'ComplexT where typeProxy = ComplexProxy
+instance KnownType 'RationalT where typeProxy = RationalProxy
+instance KnownType 'ColorT    where typeProxy = ColorProxy
+instance KnownType 'VoidT     where typeProxy = VoidProxy
+instance (KnownType x, KnownType y) => KnownType ('Pair x y) where
+  typeProxy = PairProxy (typeProxy @x) (typeProxy @y)
+
+withKnownType :: ScalarProxy t -> (KnownType t => a) -> a
+withKnownType ty k = case ty of
+  BooleanProxy  -> k
+  IntegerProxy  -> k
+  RealProxy     -> k
+  ComplexProxy  -> k
+  RationalProxy -> k
+  ColorProxy    -> k
+  VoidProxy     -> k
+  PairProxy {}  -> k
 
 pattern Boolean_ :: forall (t :: Type). () => (t ~ 'BooleanT) => ScalarType t -> Scalar t
 pattern Boolean_ x = Scalar BooleanProxy x
@@ -191,27 +223,103 @@ type family NotPresent_impl
                'Text " shadows another variable in scope")
   NotPresent_impl name 'Nothing = ()
 
-data Context (value :: Type -> Exp *) (env :: Environment) where
+data Context (value :: Symbol -> Type -> Exp *) (env :: Environment) where
   EmptyContext :: forall value. Context value '[]
   Bind :: forall name ty env value
         . (NotPresent name env, KnownSymbol name)
        => Proxy name
        -> ScalarProxy ty
-       -> Eval (value ty)
+       -> Eval (value name ty)
        -> Context value env
        -> Context value ( '(name, ty) ': env)
 
+mapContext :: forall a b env
+            . (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> Eval (b name ty))
+           -> Context a env
+           -> Context b env
+mapContext f = \case
+  EmptyContext       -> EmptyContext
+  Bind name ty x ctx -> Bind name ty (f name ty x) (mapContext f ctx)
+
+fromContext :: forall a env t
+             . (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> t)
+            -> Context a env
+            -> [t]
+fromContext f = \case
+  EmptyContext -> []
+  Bind name ty x ctx -> f name ty x : fromContext f ctx
+
+fromContextM :: forall a env t m
+              . Applicative m
+             => (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> m t)
+             -> Context a env
+             -> m [t]
+fromContextM f = \case
+  EmptyContext -> pure []
+  Bind name ty x ctx -> (:) <$> f name ty x <*> fromContextM f ctx
+
+fromContextM_ :: forall a env m
+              . Applicative m
+             => (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> m ())
+             -> Context a env
+             -> m ()
+fromContextM_ f = \case
+  EmptyContext -> pure ()
+  Bind name ty x ctx -> f name ty x *> fromContextM_ f ctx
+
 getBinding :: forall name t env value
             . (Required name env ~ t, KnownSymbol name)
-           => Context value env -> Proxy name -> ScalarProxy t -> Eval (value t)
+           => Context value env -> Proxy name -> ScalarProxy t -> Eval (value name t)
 getBinding ctx0 name ty = go ctx0
   where
-    go :: forall env'. Context value env' -> Eval (value t)
+    go :: forall env'. Context value env' -> Eval (value name t)
     go = \case
       EmptyContext -> error "unreachable due to (Required name env ~ t) constraint"
       Bind name' ty' v ctx ->
         case sameSymbol name name' of
           Nothing -> go ctx
-          Just _  -> case sameScalarType ty ty' of
+          Just Refl -> case sameScalarType ty ty' of
             Just Refl -> v
             Nothing   -> error "unreachable due to (NotPresent name env) constraint in Bind constructor"
+
+
+setBinding :: forall name t env value
+            . (Required name env ~ t, KnownSymbol name)
+           => Proxy name
+           -> ScalarProxy t
+           -> Eval (value name t)
+           -> Context value env
+           -> Context value env
+setBinding name ty value = go
+  where
+    go :: forall env'. Context value env' -> Context value env'
+    go = \case
+      EmptyContext -> error "unreachable due to (Required name env ~ t) constraint"
+      Bind name' ty' v ctx ->
+        case sameSymbol name name' of
+          Nothing -> Bind name' ty' v (go ctx)
+          Just Refl -> case sameScalarType ty ty' of
+            Just Refl -> Bind name' ty' value ctx
+            Nothing   -> error "unreachable due to (NotPresent name env) constraint in Bind constructor"
+
+data EnvironmentProxy (env :: Environment) where
+  EmptyEnvProxy :: EnvironmentProxy '[]
+  BindingProxy  :: forall name t env
+                 . (NotPresent name env, KnownSymbol name, KnownType t, KnownEnvironment env)
+                => Proxy name
+                -> ScalarProxy t
+                -> Proxy env
+                -> EnvironmentProxy ( '(name, t) ': env )
+
+class KnownEnvironment (env :: Environment) where
+  envProxy :: EnvironmentProxy env
+
+instance KnownEnvironment '[] where envProxy = EmptyEnvProxy
+instance (KnownEnvironment env, KnownSymbol name, KnownType t, NotPresent name env)
+  => KnownEnvironment ( '(name, t) ': env ) where
+  envProxy = BindingProxy Proxy (typeProxy @t) Proxy
+
+withEnvironment :: EnvironmentProxy env -> (KnownEnvironment env => a) -> a
+withEnvironment pxy k = case pxy of
+  EmptyEnvProxy   -> k
+  BindingProxy {} -> k

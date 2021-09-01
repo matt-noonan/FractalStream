@@ -16,10 +16,11 @@ data Viewer where
             , NotPresent "viewHeight" env )
          =>
     { viewerSettings :: Settings env NoEffects
-    , onResize :: Code (  '("viewWidth",  'IntegerT)
-                       ': '("viewHeight", 'IntegerT)
-                       ': env ) '[Render] 'VoidT
-    , onTimer :: Maybe (Code env '[Render] 'VoidT)
+    , onResize ::
+        Code '[Render]
+             ( '("viewWidth",  'IntegerT) ': '("viewHeight", 'IntegerT) ': env)
+             'VoidT
+    , onTimer :: Maybe (Code '[Render] env 'VoidT)
     , viewerTools :: [Tool '[Draw]]
     } -> Viewer
 

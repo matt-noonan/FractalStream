@@ -81,6 +81,7 @@ library
                        Event
 
                        Language.Code
+                       Language.Code.Simulator
                        Language.Type
                        Language.Value
                        Language.Value.Evaluator
