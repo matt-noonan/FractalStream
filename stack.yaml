@@ -7,30 +7,14 @@ packages:
 - ../wxHaskell/wxc
 - ../wxHaskell/wxdirect
 
-# Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
-extra-deps:
-#- github: tmcdonell/accelerate
-#  commit: b23f41f2383bc21e099ebae75a18aed213aa5d48
-#- git: https://github.com/matt-noonan/accelerate-llvm.git
-#  commit: 5e367dc4d1e8b99d5dc44ef9716acf52d9b13e56
-#  subdirs:
-#    - accelerate-llvm
-#    - accelerate-llvm-native
-#- git: https://github.com/matt-noonan/llvm-hs.git
-#  commit: 6ddf7e8bbb219ccc6e0d13c4b8b945cba8952dab
-#  subdirs:
-#      - llvm-hs
-#      - llvm-hs-pure
-
-#- git: https://github.com/matt-noonan/wxHaskell.git
-#  commit: 97b4a014f2e554d44f0596b19bb455eb198ddc58
-#  subdirs:
-#      - wx
-#      - wxcore
-#      - wxc
-#      - wxdirect
-
-
+# extra-deps:
+# - git: https://github.com/matt-noonan/wxHaskell.git
+#   commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+#   subdirs:
+#       - wx
+#       - wxcore
+#       - wxc
+#       - wxdirect
 
 # Override default flag values for local packages and extra-deps
 flags:
@@ -43,24 +27,3 @@ ghc-options:
 
 extra-lib-dirs:
 - /usr/local/Cellar/libffi/3.3_3/lib/
-
-# Extra package databases containing global packages
-extra-package-dbs: []
-
-# Control whether we use the GHC we find on the path
-# system-ghc: true
-
-# Require a specific version of stack, using version ranges
-# require-stack-version: -any # Default
-# require-stack-version: >= 1.0.0
-
-# Override the architecture used by stack, especially useful on Windows
-# arch: i386
-# arch: x86_64
-
-# Extra directories used by stack for building
-# extra-include-dirs: [/path/to/dir]
-# extra-lib-dirs: [/path/to/dir]
-
-# Allow a newer minor version of GHC than the snapshot specifies
-# compiler-check: newer-minor

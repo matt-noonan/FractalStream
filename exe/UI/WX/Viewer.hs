@@ -8,7 +8,7 @@ Description : Interactive view based on wxWidgets
 module UI.WX.Viewer ( wxView
                     ) where
 
-import           Color.Colorize
+import qualified Color.Color as FSColor
 import           Lang.Planar
 import           UI.Tile
 import FractalStream.Models
@@ -25,6 +25,9 @@ import Control.Concurrent
 import           Data.Time               (diffUTCTime, getCurrentTime)
 import Data.IORef
 import Data.Proxy
+
+import UI
+import UI.WxWidgets
 
 data Model = Model
   { modelCenter   :: (Double, Double)
@@ -81,18 +84,37 @@ wxView _modelRect renderAction = start $ do
     f <- frame [ text := "FractalStream"
                , clientSize := sz width height ]
 
+    _myViewer <- toUI @WX sampleViewer ()
+
     -- Create the menus
 
     -- File menu
     file <- menuPane      [text := "&File"]
-    _    <- menuQuit file [help := "&Quit", on command := close f]
+    menuItem file [ text := "&New", on command := putStrLn "TODO"]
+    _    <- menuQuit file [text := "&Quit", on command := close f]
 
     -- Help menu
     hlp   <- menuHelp      []
-    about <- menuAbout hlp [help := "About FractalStream"]
+    about <- menuAbout hlp [text := "About FractalStream"]
 
     -- Viewer status bar
-    status <- statusField   [text := "FractalStream status bar"]
+    status <- statusField   [text := "Pointer location"]
+    toolStatus <- statusField [text := ""]
+
+    -- Tool menu
+    tools <- menuPane [text := "&Tool"]
+    mapM_ (\(x,y,z) -> menuRadioItem tools [ text := x
+                                           , help := y
+                                           , on command := do
+                                               set toolStatus [text := y]
+                                               z])
+      [ ("Navigate",
+         "Move around a dynamical system, select a point by ctrl-clicking",
+         do putStrLn "hi")
+      , ("Trace",
+         "Follow the orbit of a point",
+         do putStrLn "bye")
+      ]
 
     draggedTo <- variable [value := Nothing]
     lastClick <- variable [value := Nothing]
@@ -105,6 +127,7 @@ wxView _modelRect renderAction = start $ do
     savedTileImage <- variable [value := Nothing]
     lastTileImage  <- variable [value := Nothing]
 
+    {-
     -- Test dialog
     dlog <- dialog f [ text := "Test dialog"
                      , on resize := propagateEvent ]
@@ -121,6 +144,8 @@ wxView _modelRect renderAction = start $ do
                                   ]
              , visible := True
              , clientSize := sz 256 512]
+
+    -}
 
     p <- panel f []
 
@@ -352,15 +377,19 @@ wxView _modelRect renderAction = start $ do
                       ]
 
     -- Add the status bar, menu bar, and layout to the frame
-    set f [ statusBar := [status]
-          , menuBar   := [file,hlp]
+    set f [ statusBar := [status, toolStatus]
+          , menuBar   := [file,tools,hlp]
           , layout    := fill $ minsize (sz 512 512) $ widget p
           , on resize := do
                   set onResizeTimer [enabled := False]
                   set pendingResize [value := True]
                   set onResizeTimer [enabled := True]
                   propagateEvent
-          , on (menu about) := infoDialog f "About FractalStream" "Contributors:\nMatt Noonan"
+          , on (menu about) :=
+              infoDialog f "About FractalStream" $ unlines
+              [ "Contributors:"
+              , "Matt Noonan"
+              ]
           ]
 
 
@@ -373,10 +402,11 @@ renderTile' :: Valued w
 renderTile' renderId action dim model = do
     iD <- atomicModifyIORef' renderId (\x -> (x + 1, x + 1))
     modelRect <- modelToRect dim <$> get model value
-    let action' pts = do
+    let action' pts = map colorConvert <$> do
             curId <- readIORef renderId
             if (curId == iD) then action pts else pure []
-
+        colorConvert c =
+          FSColor.rgbToColor (colorRed c, colorGreen c, colorBlue c)
     renderTile (Proxy @ComplexParametric1d) action' dim modelRect
 
 -- | Paint the state of a tile into a device context.

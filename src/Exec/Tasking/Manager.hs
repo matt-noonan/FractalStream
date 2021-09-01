@@ -37,19 +37,18 @@ progressively render block = do
     caps <- getNumCapabilities
     putStrLn $ show caps ++ " capabilities, pool size " ++ show poolSize ++ " (w=" ++ show (xSize block) ++ ", h=" ++ show (ySize block) ++ ")"
 
-    let rates = if logSampleRate block > 0
-                then [-4, -2, 0, logSampleRate block]
-                else [-4, -2, 0]
-    forM_ rates $ \rate -> do
-      putStrLn $ "***** start @ rate=" ++ show rate
-      start <- getCurrentTime
-      forPool_ poolSize blockIDs $ \(x,y) -> do
-        render $ block { xSize = subBlockSize, ySize = subBlockSize,
-                         x0 = subBlockSize * x, y0 = subBlockSize * y,
-                         logSampleRate = rate }
-      end <- getCurrentTime
-      putStrLn $ "***** " ++ show width ++ " x " ++ show height ++ " @ rate " ++ show rate
-                            ++ " rendered in " ++ show (diffUTCTime end start)
+    let rates = filter (<= logSampleRate block) [-4, -2, 0, logSampleRate block]
+
+    let todo = [(rate, x, y) | rate <- rates, (x,y) <- blockIDs]
+    putStrLn $ "***** start @ rates=" ++ show rates
+    start <- getCurrentTime
+    forPool_ poolSize todo $ \(rate,x,y) -> do
+      render $ block { xSize = subBlockSize, ySize = subBlockSize,
+                       x0 = subBlockSize * x, y0 = subBlockSize * y,
+                       logSampleRate = rate }
+    end <- getCurrentTime
+    putStrLn $ "***** " ++ show width ++ " x " ++ show height ++ " @ rates " ++ show rates
+               ++ " rendered in " ++ show (diffUTCTime end start)
 
 shuffle :: [a] -> IO [a]
 shuffle xs = do

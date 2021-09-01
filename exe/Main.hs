@@ -5,12 +5,13 @@ Description  : Main entry point into FractalStream
 module Main where
 
 -- for wxMain
+import qualified Color.Color as FSColor
 import           Color.Colorize
 import           Lang.Numbers
 import           Lang.Planar
 
 import           UI.WX.Viewer
-
+import           Graphics.UI.WXCore.WxcTypes      (rgb)
 
 -- for parserMain
 import           Lang.Expr
@@ -52,11 +53,14 @@ wxMain = do
     bound <- isCurrentThreadBound
     capInfo <- threadCapability tid
     putStrLn ("Hello from wxMain, on thread " ++ show tid ++ " " ++ show capInfo ++ " " ++ show bound)
-    wxView viewport action
+    wxView viewport (fmap (map colorConvert) . action)
   where
     viewport = flippedRectangle (complex (-2.5) 2) (complex 1.5 (-2))
     darkChecker c = checker c (darker c) :: Colorizer C
     col = blackInterior $ darkChecker $ smoothedRainbow (loglogSmoothing 2) 20
+    colorConvert c =
+      let (r,g,b) = FSColor.colorToRGB c
+      in rgb r g b
     action =
       case 1 + 0 of
           0 -> error "X" -- computeMandel col  -- accelerate

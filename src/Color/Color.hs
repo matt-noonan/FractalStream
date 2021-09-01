@@ -21,7 +21,7 @@ module Color.Color (
 -- * Color modifiers and combinators
     , light
     , dark
-    , clear
+--    , clear
     , lightenBy
     , darkenBy
     , mixColors
@@ -32,17 +32,19 @@ module Color.Color (
     , pokeColor
     ) where
 
-import           Graphics.UI.WXCore.WxcTypes
+import Data.Word
+import Foreign.Storable
+import Foreign.Ptr
 
-import           Foreign.Storable
+data Color = Color Word8 Word8 Word8
 
 -- | Extract the red/green/blue channels from a color
 colorToRGB :: Color -> (Word8, Word8, Word8)
-colorToRGB c = (colorRed c, colorGreen c, colorBlue c)
+colorToRGB (Color r g b) = (r, g, b)
 
 -- | Construct a color from its red/green/blue channels
 rgbToColor :: (Word8, Word8, Word8) -> Color
-rgbToColor (r,g,b) = rgb r g b
+rgbToColor (r,g,b) = Color r g b
 
 -- | Black color.
 black  :: Color
@@ -104,16 +106,18 @@ darkenBy p c = rgbToColor (shade r, shade g, shade b)
     where (r,g,b) = colorToRGB c
           shade x = let x' = fromIntegral x in round $ x' - p * x'
 
+{-
 -- | Make a transparent color
 clear :: Color -> Color
 clear c = rgba r g b 128 where (r,g,b) = colorToRGB c
+-}
 
 -- | Blend two colors
 mixColors :: Double  -- ^ The ratio to take from the first color
           -> Color
           -> Color
           -> Color
-mixColors pct c1 c2 = rgb (mix r1 r2) (mix g1 g2) (mix b1 b2)
+mixColors pct c1 c2 = rgbToColor (mix r1 r2, mix g1 g2, mix b1 b2)
     where (r1,g1,b1) = colorToRGB c1
           (r2,g2,b2) = colorToRGB c2
           mix :: Word8 -> Word8 -> Word8
@@ -134,7 +138,7 @@ invertColor :: Color -> Color
 invertColor c = rgbToColor (255 - r, 255 - g, 255 - b)
     where (r,g,b) = colorToRGB c
 
--- | Write a color into a buffer of bytes
+-- | Read a color from a buffer of bytes
 peekColor :: Ptr Word8 -> Int -> IO Color
 peekColor buf idx = do
     let index = 3 * idx
@@ -143,7 +147,7 @@ peekColor buf idx = do
     b <- peekByteOff buf $ index + 2
     return $ rgbToColor (r,g,b)
 
--- | Read a color from a buffer of bytes
+-- | Write a color into a buffer of bytes
 pokeColor :: Ptr Word8 -> Int -> Color -> IO ()
 pokeColor buf idx col = do
     let index = 3 * idx
@@ -151,4 +155,3 @@ pokeColor buf idx col = do
     pokeByteOff buf (index + 2) b
     pokeByteOff buf (index + 1) g
     pokeByteOff buf (index + 0) r
-
