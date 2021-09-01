@@ -83,6 +83,7 @@ library
                        Language.Code
                        Language.Type
                        Language.Value
+                       Language.Value.Evaluator
                        Language.Effect
                        Language.Effect.Output
                        Language.Effect.Draw

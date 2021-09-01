@@ -11,11 +11,15 @@ import Data.Indexed.Functor
 -----------------------------------------------------
 data T = IntT | BoolT
 
+data TProxy (ty :: T) where
+  IsInt  :: TProxy 'IntT
+  IsBool :: TProxy 'BoolT
+
 data Ast (ty :: T) where
   Yes    :: Ast 'BoolT
   No     :: Ast 'BoolT
   Number :: Int -> Ast 'IntT
-  Equals :: forall t. IndexProxy t -> Ast t -> Ast t -> Ast 'BoolT
+  Equals :: forall t. TProxy t -> Ast t -> Ast t -> Ast 'BoolT
   Plus   :: Ast 'IntT -> Ast 'IntT -> Ast 'IntT
   Times  :: Ast 'IntT -> Ast 'IntT -> Ast 'IntT
 
@@ -31,7 +35,7 @@ data AstF (ast :: T -> Exp *) (i :: T) where
   Yes_    :: forall ast. AstF ast 'BoolT
   No_     :: forall ast. AstF ast 'BoolT
   Number_ :: forall ast. Int -> AstF ast 'IntT
-  Equals_ :: forall ast t. IndexProxy t -> Eval (ast t) -> Eval (ast t) -> AstF ast 'BoolT
+  Equals_ :: forall ast t. TProxy t -> Eval (ast t) -> Eval (ast t) -> AstF ast 'BoolT
   Plus_   :: forall ast. Eval (ast 'IntT) -> Eval (ast 'IntT) -> AstF ast 'IntT
   Times_  :: forall ast. Eval (ast 'IntT) -> Eval (ast 'IntT) -> AstF ast 'IntT
 
@@ -41,12 +45,8 @@ data AstF (ast :: T -> Exp *) (i :: T) where
 -- for the type index.
 -----------------------------------------------------
 
-data TProxy (ty :: T) where
-  IsInt  :: TProxy 'IntT
-  IsBool :: TProxy 'BoolT
-
 instance IFunctor AstF where
-  type IndexProxy = TProxy
+  type IndexProxy AstF = TProxy
 
   imap f = \case
     Yes_        -> Yes_
@@ -102,7 +102,7 @@ type HaskellType t = Eval (HaskellType_ t)
 -- An evaluator, from Asts to values of the
 -- corresponding Haskell type. Computed using
 -- an indexed fold, so the recursive values are
--- "already computed".
+-- "already computed" and have the right type.
 -----------------------------------------------------
 eval :: Ast t -> HaskellType t
 eval = indexedFold @HaskellType_ $ \case
@@ -117,6 +117,43 @@ eval = indexedFold @HaskellType_ $ \case
       IsBool -> x == y  -- each possible type
 
 -----------------------------------------------------
+-- An indexed traversable instance for the AST.
+-- This will allow us to perform indexed folds
+-- that also run monadic effects.
+-----------------------------------------------------
+instance ITraversable AstF where
+  isequence = \case
+    Yes_ -> pure Yes_
+    No_  -> pure No_
+    Number_ n -> pure (Number_ n)
+    Plus_  mx my -> Plus_ <$> mx <*> my
+    Times_ mx my -> Times_ <$> mx <*> my
+    Equals_ t mx my -> Equals_ t <$> mx <*> my
+
+-----------------------------------------------------
+-- An evaluator, from Asts to values of the
+-- corresponding Haskell type, that performs
+-- the fold in the Maybe monad. This allows for
+-- any sub-computation to short-circuit the
+-- larger computation.
+-- By way of example, we will make Number fail
+-- for negative values.
+-----------------------------------------------------
+evalMaybe :: Ast t -> Maybe (HaskellType t)
+evalMaybe = indexedFoldM @HaskellType_ $ \case
+  Yes_          -> Just True
+  No_           -> Just False
+  Number_ n
+    | n >= 0    -> Just n
+    | otherwise -> Nothing
+  Plus_ x y     -> Just (x + y)
+  Times_ x y    -> Just (x * y)
+  Equals_ t x y ->
+    case t of
+      IsInt  -> Just (x == y)
+      IsBool -> Just (x == y)
+
+-----------------------------------------------------
 
 spec :: Spec
 spec = do
@@ -128,3 +165,7 @@ spec = do
 
     it "computes the expected Haskell values, of type Int" $ do
       eval ((Number 3 `Plus` Number 7) `Plus` Number 5) `shouldBe` 15
+
+    it "can perform applicative effects while folding" $ do
+      evalMaybe ((Number 3 `Plus` Number 7) `Plus` Number 5) `shouldBe` Just 15
+      evalMaybe ((Number 3 `Plus` Number (-7)) `Plus` Number 5) `shouldBe` Nothing

@@ -115,26 +115,6 @@ toWxColor c =
   let (r,g,b) = FSColor.colorToRGB c
   in rgb r g b
 
-showType :: ScalarProxy t -> String
-showType = \case
-  BooleanProxy  -> "Boolean"
-  IntegerProxy  -> "Integer"
-  RealProxy     -> "Real"
-  ComplexProxy  -> "Complex"
-  RationalProxy -> "Rational"
-  ColorProxy    -> "Color"
-
-showValue :: ScalarProxy t -> ScalarType t -> String
-showValue ty v = case ty of
-  BooleanProxy  -> if v then "true" else "false"
-  IntegerProxy  -> show v
-  RealProxy     -> show v
-  ComplexProxy  -> let (x, y) = v
-                   in show x <> " + " <> show y <> "i"
-  RationalProxy -> let (x, y) = v
-                   in show x <> " / " <> show y
-  ColorProxy    -> show (FSColor.colorToRGB v)
-
 type MySettings =
   '[ '("x", 'RealT)
    , '("y", 'IntegerT)
