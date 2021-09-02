@@ -85,6 +85,7 @@ library
                        Language.Type
                        Language.Value
                        Language.Value.Evaluator
+                       Language.Value.Parser
                        Language.Effect
                        Language.Effect.Output
                        Language.Effect.Draw
@@ -98,6 +99,7 @@ library
                        array,
                        async,
                        containers,
+                       Earley,
                        parsec,
                        mtl,
                        recursion-schemes,
@@ -149,4 +151,6 @@ test-suite spec
   build-depends:      base >=4.8 && <5, FractalStream, hspec
                     , first-class-families
   other-modules:      Data.Indexed.FunctorSpec
+                    , Language.Value.EvaluatorSpec
+                    , Language.Value.ParserSpec
   build-tool-depends: hspec-discover:hspec-discover == 2.*

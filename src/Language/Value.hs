@@ -14,6 +14,7 @@ import Fcf
 import Language.Type
 import Data.Indexed.Functor
 import GHC.TypeLits
+import Data.Ratio
 
 ---------------------------------------------------------------------------------
 -- Value
@@ -44,6 +45,7 @@ data ValueF (env :: [(Symbol, Type)]) (value :: Type -> Exp *) (t :: Type) where
   ModF :: forall env value. Eval (value 'RealT) -> Eval (value 'RealT) -> ValueF env value 'RealT
   PowF :: forall env value. Eval (value 'RealT) -> Eval (value 'IntegerT) -> ValueF env value 'RealT
   AbsF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
+  NegF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
 
   -- Exponential and logarithmic functions
   ExpF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
@@ -66,6 +68,7 @@ data ValueF (env :: [(Symbol, Type)]) (value :: Type -> Exp *) (t :: Type) where
   ModI :: forall env value. Eval (value 'IntegerT) -> Eval (value 'IntegerT) -> ValueF env value 'IntegerT
   PowI :: forall env value. Eval (value 'IntegerT) -> Eval (value 'IntegerT) -> ValueF env value 'IntegerT
   AbsI :: forall env value. Eval (value 'IntegerT) -> ValueF env value 'IntegerT
+  NegI :: forall env value. Eval (value 'IntegerT) -> ValueF env value 'IntegerT
 
   -- Boolean operations
   Or  :: forall env value. Eval (value 'BooleanT) -> Eval (value 'BooleanT) -> ValueF env value 'BooleanT
@@ -94,6 +97,49 @@ data ValueF (env :: [(Symbol, Type)]) (value :: Type -> Exp *) (t :: Type) where
   GTI :: forall env value. Eval (value 'IntegerT) -> Eval (value 'IntegerT) -> ValueF env value 'BooleanT
   GTF :: forall env value. Eval (value 'RealT) -> Eval (value 'RealT) -> ValueF env value 'BooleanT
 
+fix2 :: (Value env t -> Value env t -> ValueF env (Pure1 (Value env)) t)
+     ->  Value env t -> Value env t -> Value env t
+fix2 (#) x y = Fix (x # y)
+
+instance Num (Value env 'IntegerT) where
+  (+) = fix2 AddI
+  (-) = fix2 SubI
+  (*) = fix2 MulI
+  abs = Fix . AbsI
+  negate = Fix . NegI
+  fromInteger = Fix . Const . Scalar IntegerProxy . fromInteger
+  signum = error "TODO"
+
+instance Num (Value env 'RealT) where
+  (+) = fix2 AddF
+  (-) = fix2 SubF
+  (*) = fix2 MulF
+  abs = Fix . AbsF
+  negate = Fix . NegF
+  fromInteger = Fix . Const . Scalar RealProxy . fromInteger
+  signum = error "TODO"
+
+instance Fractional (Value env 'RealT) where
+  (/) = fix2 DivF
+  fromRational q = fromInteger (numerator q) / fromInteger (denominator q)
+
+instance Floating (Value env 'RealT) where
+  pi = Fix (Const (Scalar RealProxy pi))
+  exp = Fix . ExpF
+  log = Fix . LogF
+  sin = Fix . SinF
+  cos = Fix . CosF
+  tan = Fix . TanF
+  asin = Fix . ArcsinF
+  acos = Fix . ArccosF
+  atan = Fix . ArctanF
+  sinh = error "TODO"
+  cosh = error "TODO"
+  tanh = error "TODO"
+  asinh = error "TODO"
+  acosh = error "TODO"
+  atanh = error "TODO"
+
 ---------------------------------------------------------------------------------
 -- IFunctor instance
 ---------------------------------------------------------------------------------
@@ -120,6 +166,7 @@ instance IFunctor (ValueF env) where
     ModF {} -> RealProxy
     PowF {} -> RealProxy
     AbsF {} -> RealProxy
+    NegF {} -> RealProxy
 
     ExpF {} -> RealProxy
     LogF {} -> RealProxy
@@ -139,6 +186,7 @@ instance IFunctor (ValueF env) where
     ModI {} -> IntegerProxy
     PowI {} -> IntegerProxy
     AbsI {} -> IntegerProxy
+    NegI {} -> IntegerProxy
 
     Or {} -> BooleanProxy
     And {} -> BooleanProxy
@@ -175,6 +223,7 @@ instance IFunctor (ValueF env) where
     ModF x y -> ModF (f RealProxy x) (f RealProxy y)
     PowF x y -> PowF (f RealProxy x) (f IntegerProxy y)
     AbsF x   -> AbsF (f RealProxy x)
+    NegF x   -> NegF (f RealProxy x)
 
     ExpF x -> ExpF (f RealProxy x)
     LogF x -> LogF (f RealProxy x)
@@ -194,6 +243,7 @@ instance IFunctor (ValueF env) where
     ModI x y -> ModI (f IntegerProxy x) (f IntegerProxy y)
     PowI x y -> PowI (f IntegerProxy x) (f IntegerProxy y)
     AbsI x   -> AbsI (f IntegerProxy x)
+    NegI x   -> NegI (f IntegerProxy x)
 
     Or  x y -> Or  (f BooleanProxy x) (f BooleanProxy y)
     And x y -> And (f BooleanProxy x) (f BooleanProxy y)
@@ -233,6 +283,7 @@ instance ITraversable (ValueF env) where
     ModF mx my -> ModF <$> mx <*> my
     PowF mx my -> PowF <$> mx <*> my
     AbsF mx    -> AbsF <$> mx
+    NegF mx    -> NegF <$> mx
 
     ExpF mx -> ExpF <$> mx
     LogF mx -> LogF <$> mx
@@ -252,6 +303,7 @@ instance ITraversable (ValueF env) where
     ModI mx my -> ModI <$> mx <*> my
     PowI mx my -> PowI <$> mx <*> my
     AbsI mx    -> AbsI <$> mx
+    NegI mx    -> NegI <$> mx
 
     Or  mx my -> Or  <$> mx <*> my
     And mx my -> And <$> mx <*> my

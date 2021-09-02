@@ -1,4 +1,5 @@
-module Data.Indexed.FunctorSpec (spec) where
+module Data.Indexed.FunctorSpec
+  ( spec ) where
 
 import Test.Hspec
 import Fcf

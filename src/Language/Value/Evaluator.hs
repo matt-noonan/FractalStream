@@ -30,6 +30,14 @@ type family WithoutBinding (env :: Environment) (name :: Symbol) :: Environment 
 
 -- | Perform partial evaluation, replacing uses of a specific
 -- variable with the given value.
+--
+-- NOTE: This actually computes a Value env t -> Value env t transformation,
+-- but hits the result with unsafeCoerce to transform env to
+-- (env `WithoutBinding name). This is safe because the environment only
+-- appears in the `Required name env ~ t` constraint on the Var
+-- constructor, and this constraint doesn't carry any nontrivial
+-- information. Since all references to 'name' are removed by this
+-- transformation, the result type really *is* correct.
 partialEvaluate :: forall env t name ty
                  . (Required name env ~ ty, KnownSymbol name)
                 => Proxy name
@@ -111,6 +119,7 @@ evaluator lookUp = \case
     ModF _ _ -> error "TODO"
     PowF x n -> x ^^ n
     AbsF x   -> abs x
+    NegF x   -> negate x
 
     ExpF x -> exp x
     LogF x -> log x
@@ -130,6 +139,7 @@ evaluator lookUp = \case
     ModI x y -> x `mod` y
     PowI x n -> x ^ n
     AbsI x   -> abs x
+    NegI x   -> negate x
 
     Or  x y -> x || y
     And x y -> x && y
