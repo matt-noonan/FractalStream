@@ -2,6 +2,7 @@
 
 module Language.Value
   ( module Language.Type
+  , module Language.Environment
   , type Value
   , ValueF(..)
   , Proxy(..)
@@ -11,10 +12,12 @@ module Language.Value
 
 import Data.Proxy (Proxy(..))
 import Fcf
-import Language.Type
-import Data.Indexed.Functor
 import GHC.TypeLits
 import Data.Ratio
+
+import Data.Indexed.Functor
+import Language.Type
+import Language.Environment
 
 ---------------------------------------------------------------------------------
 -- Value
@@ -27,9 +30,10 @@ data ValueF (env :: [(Symbol, Type)]) (value :: Type -> Exp *) (t :: Type) where
   -- Constants and variables
   Const :: forall ty env value. Scalar ty -> ValueF env value ty
   Var :: forall name ty env value
-       . (Required name env ~ ty, KnownSymbol name)
+       . (KnownSymbol name)
       => Proxy name
       -> ScalarProxy ty
+      -> NameIsPresent name ty env
       -> ValueF env value ty
 
   -- Product types and projections
@@ -43,7 +47,7 @@ data ValueF (env :: [(Symbol, Type)]) (value :: Type -> Exp *) (t :: Type) where
   MulF :: forall env value. Eval (value 'RealT) -> Eval (value 'RealT) -> ValueF env value 'RealT
   DivF :: forall env value. Eval (value 'RealT) -> Eval (value 'RealT) -> ValueF env value 'RealT
   ModF :: forall env value. Eval (value 'RealT) -> Eval (value 'RealT) -> ValueF env value 'RealT
-  PowF :: forall env value. Eval (value 'RealT) -> Eval (value 'IntegerT) -> ValueF env value 'RealT
+  PowF :: forall env value. Eval (value 'RealT) -> Eval (value 'RealT) -> ValueF env value 'RealT
   AbsF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
   NegF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
 
@@ -153,7 +157,7 @@ instance IFunctor (ValueF env) where
 
   toIndex = \case
     Const (Scalar t _) -> t
-    Var _ t -> t
+    Var _ t _ -> t
 
     PairV t _ _ -> t
     ProjV1 t _ -> case t of { PairProxy t1 _ -> t1 }
@@ -208,7 +212,7 @@ instance IFunctor (ValueF env) where
 
   imap f = \case
     Const x -> Const x
-    Var name v -> Var name v
+    Var name v pf -> Var name v pf
 
     PairV t x y ->
       let (t1, t2) = case t of { PairProxy tx ty -> (tx, ty) }
@@ -221,7 +225,7 @@ instance IFunctor (ValueF env) where
     MulF x y -> MulF (f RealProxy x) (f RealProxy y)
     DivF x y -> DivF (f RealProxy x) (f RealProxy y)
     ModF x y -> ModF (f RealProxy x) (f RealProxy y)
-    PowF x y -> PowF (f RealProxy x) (f IntegerProxy y)
+    PowF x y -> PowF (f RealProxy x) (f RealProxy y)
     AbsF x   -> AbsF (f RealProxy x)
     NegF x   -> NegF (f RealProxy x)
 
@@ -270,7 +274,7 @@ instance IFunctor (ValueF env) where
 instance ITraversable (ValueF env) where
   isequence = \case
     Const x -> pure (Const x)
-    Var name v -> pure (Var name v)
+    Var name v pf -> pure (Var name v pf)
 
     PairV t mx my -> PairV t <$> mx <*> my
     ProjV1 t mp   -> ProjV1 t <$> mp
@@ -339,7 +343,7 @@ instance ITraversable (ValueF env) where
 --     Get (Proxy :: Proxy "foo") IntegerProxy
 --
 get :: forall name env ty
-     . (Required name env ~ ty, KnownSymbol name)
+     . (Required name env ~ ty, NotPresent name (env `Without` name), KnownSymbol name)
     => ScalarProxy ty
     -> Value env ty
-get ty = Fix (Var (Proxy @name) ty)
+get ty = Fix (Var (Proxy @name) ty bindingEvidence)

@@ -1,17 +1,11 @@
-{-# language UndecidableInstances #-}
-
 module Language.Type
   ( Type(..)
   , type ScalarType
   , Scalar(..)
   , ScalarProxy(..)
   , sameScalarType
-  , type Environment
   , Int64
   , Symbol
-  , type Lookup
-  , type Required
-  , type NotPresent
   , pattern Boolean_
   , pattern Integer_
   , pattern Real_
@@ -20,26 +14,13 @@ module Language.Type
   , pattern Color_
   , showType
   , showValue
-  , Context(..)
-  , mapContext
-  , fromContext
-  , fromContextM
-  , fromContextM_
-  , getBinding
-  , setBinding
-  , EnvironmentProxy(..)
   , KnownType(..)
   , withKnownType
-  , KnownEnvironment(..)
-  , withEnvironment
   ) where
 
 import Data.Int
 import GHC.TypeLits
-import GHC.Exts (Constraint)
 import Data.Type.Equality ((:~:)(..))
-import Data.Proxy
-import Fcf (Exp, Eval)
 import Color.Color (Color, colorToRGB)
 
 data Type
@@ -188,138 +169,3 @@ showValue ty v = case ty of
   VoidProxy     -> "n/a"
   PairProxy xt yt -> let (x, y) = v
                      in showValue xt x <> " , " <> showValue yt y
-
--- | An 'Environment' is a map from symbols to 'Type's.
-type Environment = [(Symbol, Type)]
-
--- | Look up the 'Type' of a name in the environment.
-type family Lookup
-    (name :: Symbol) (env :: [(Symbol, Type)]) :: Maybe Type where
-  Lookup _ '[] = 'Nothing
-  Lookup name ('(name, t) ': _) = 'Just t
-  Lookup name (_ ': env) = Lookup name env
-
--- | Evaluate to the 'Type' of @name@ in the environment @env@,
--- or raise a type error if the name is not present.
-type Required name env
-  = Required_impl name (Lookup name env)
-
-type family Required_impl
-    (name :: Symbol) (result :: Maybe Type) :: Type where
-  Required_impl name 'Nothing =
-    TypeError ('Text "No variable named " ':<>:
-               'Text name ':<>: 'Text " is in scope")
-  Required_impl name ('Just t) = t
-
--- | Raise a type error if the given name is already
--- present in the environment.
-type NotPresent name env
-  = NotPresent_impl name (Lookup name env)
-
-type family NotPresent_impl
-    (name :: Symbol) (result :: Maybe Type) :: Constraint where
-  NotPresent_impl name ('Just _) =
-    TypeError ('Text "The name " ':<>: 'Text name ':<>:
-               'Text " shadows another variable in scope")
-  NotPresent_impl name 'Nothing = ()
-
-data Context (value :: Symbol -> Type -> Exp *) (env :: Environment) where
-  EmptyContext :: forall value. Context value '[]
-  Bind :: forall name ty env value
-        . (NotPresent name env, KnownSymbol name)
-       => Proxy name
-       -> ScalarProxy ty
-       -> Eval (value name ty)
-       -> Context value env
-       -> Context value ( '(name, ty) ': env)
-
-mapContext :: forall a b env
-            . (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> Eval (b name ty))
-           -> Context a env
-           -> Context b env
-mapContext f = \case
-  EmptyContext       -> EmptyContext
-  Bind name ty x ctx -> Bind name ty (f name ty x) (mapContext f ctx)
-
-fromContext :: forall a env t
-             . (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> t)
-            -> Context a env
-            -> [t]
-fromContext f = \case
-  EmptyContext -> []
-  Bind name ty x ctx -> f name ty x : fromContext f ctx
-
-fromContextM :: forall a env t m
-              . Applicative m
-             => (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> m t)
-             -> Context a env
-             -> m [t]
-fromContextM f = \case
-  EmptyContext -> pure []
-  Bind name ty x ctx -> (:) <$> f name ty x <*> fromContextM f ctx
-
-fromContextM_ :: forall a env m
-              . Applicative m
-             => (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> m ())
-             -> Context a env
-             -> m ()
-fromContextM_ f = \case
-  EmptyContext -> pure ()
-  Bind name ty x ctx -> f name ty x *> fromContextM_ f ctx
-
-getBinding :: forall name t env value
-            . (Required name env ~ t, KnownSymbol name)
-           => Context value env -> Proxy name -> ScalarProxy t -> Eval (value name t)
-getBinding ctx0 name ty = go ctx0
-  where
-    go :: forall env'. Context value env' -> Eval (value name t)
-    go = \case
-      EmptyContext -> error "unreachable due to (Required name env ~ t) constraint"
-      Bind name' ty' v ctx ->
-        case sameSymbol name name' of
-          Nothing -> go ctx
-          Just Refl -> case sameScalarType ty ty' of
-            Just Refl -> v
-            Nothing   -> error "unreachable due to (NotPresent name env) constraint in Bind constructor"
-
-
-setBinding :: forall name t env value
-            . (Required name env ~ t, KnownSymbol name)
-           => Proxy name
-           -> ScalarProxy t
-           -> Eval (value name t)
-           -> Context value env
-           -> Context value env
-setBinding name ty value = go
-  where
-    go :: forall env'. Context value env' -> Context value env'
-    go = \case
-      EmptyContext -> error "unreachable due to (Required name env ~ t) constraint"
-      Bind name' ty' v ctx ->
-        case sameSymbol name name' of
-          Nothing -> Bind name' ty' v (go ctx)
-          Just Refl -> case sameScalarType ty ty' of
-            Just Refl -> Bind name' ty' value ctx
-            Nothing   -> error "unreachable due to (NotPresent name env) constraint in Bind constructor"
-
-data EnvironmentProxy (env :: Environment) where
-  EmptyEnvProxy :: EnvironmentProxy '[]
-  BindingProxy  :: forall name t env
-                 . (NotPresent name env, KnownSymbol name, KnownType t, KnownEnvironment env)
-                => Proxy name
-                -> ScalarProxy t
-                -> Proxy env
-                -> EnvironmentProxy ( '(name, t) ': env )
-
-class KnownEnvironment (env :: Environment) where
-  envProxy :: EnvironmentProxy env
-
-instance KnownEnvironment '[] where envProxy = EmptyEnvProxy
-instance (KnownEnvironment env, KnownSymbol name, KnownType t, NotPresent name env)
-  => KnownEnvironment ( '(name, t) ': env ) where
-  envProxy = BindingProxy Proxy (typeProxy @t) Proxy
-
-withEnvironment :: EnvironmentProxy env -> (KnownEnvironment env => a) -> a
-withEnvironment pxy k = case pxy of
-  EmptyEnvProxy   -> k
-  BindingProxy {} -> k

@@ -16,7 +16,7 @@ import Language.Effect
 import Data.Indexed.Functor
 import Fcf
 import GHC.TypeLits
-import Data.Function ((&))
+-- import Data.Function ((&))
 
 data SomeCode where
   SomeCode :: forall effs env t. Code effs env t -> SomeCode
@@ -34,16 +34,18 @@ type Code effs env t = Fix (CodeF effs) '(env, t)
 data CodeF (effs :: [Effect]) (code :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) where
 
   Let :: forall name ty env result effs code
-       . (NotPresent name env, KnownSymbol name, KnownEnvironment env)
-      => Proxy (name :: Symbol)
+       . (KnownSymbol name, KnownEnvironment env)
+      => NameIsPresent name ty ( '(name, ty) ': env)
+      -> Proxy (name :: Symbol)
       -> Value env ty
       -> ScalarProxy result
       -> Eval (code '( '(name, ty) ': env, result))
       -> CodeF effs code '(env, result)
 
   Set :: forall name ty env effs code
-       . (Required name env ~ ty, KnownSymbol name, KnownEnvironment env)
-      => Proxy name
+       . (KnownSymbol name, KnownEnvironment env)
+      => NameIsPresent name ty env
+      -> Proxy name
       -> Value env ty
       -> CodeF effs code '(env, 'VoidT)
 
@@ -116,15 +118,15 @@ instance IFunctor (CodeF eff) where
   type IndexProxy (CodeF eff) = EnvTypeProxy
 
   toIndex = \case
-    Let _ _ t _ -> EnvType t
-    Set _ _     -> EnvType VoidProxy
-    Call t _    -> EnvType t
-    Block t _ _ -> EnvType t
-    Pure v      -> EnvType (typeOfValue v)
-    NoOp        -> EnvType VoidProxy
-    DoWhile _   -> EnvType VoidProxy
+    Let _ _ _ t _ -> EnvType t
+    Set _ _ _     -> EnvType VoidProxy
+    Call t _      -> EnvType t
+    Block t _ _   -> EnvType t
+    Pure v        -> EnvType (typeOfValue v)
+    NoOp          -> EnvType VoidProxy
+    DoWhile _     -> EnvType VoidProxy
     IfThenElse t _ _ _ -> EnvType t
-    Effect t _  -> EnvType t
+    Effect t _    -> EnvType t
 
   imap :: forall a b et
         . (forall env' t'. EnvTypeProxy '(env', t') -> Eval (a '(env', t')) -> Eval (b '(env', t')))
@@ -132,16 +134,19 @@ instance IFunctor (CodeF eff) where
        -> CodeF eff b et
   imap f x =
     let env :: EnvironmentProxy (Env et)
-        env = case toIndex x of { EnvType _ -> envProxy @(Env et) }
+        env = case toIndex x of { EnvType _ -> envProxy (Proxy @(Env et)) }
         index :: forall i. ScalarProxy i -> EnvTypeProxy '(Env et, i)
         index i = withEnvironment env (EnvType i)
     in case x of
-      Let n v t b -> (n, typeOfValue v) & \(_ :: Proxy name, tv :: ScalarProxy ty) ->
+      Let {} -> error "todo"
+      {-
+      Let pf n v t b -> (n, typeOfValue v) & \(_ :: Proxy name, tv :: ScalarProxy ty) ->
         let env' = withKnownType tv
                  $ withEnvironment env
                  $ BindingProxy n tv (Proxy @(Env et))
-        in Let n v t (f (withEnvironment env' (EnvType @( '(name, ty) ': Env et)t)) b)
-      Set n v -> Set n v
+        in Let pf n v t (f (withEnvironment env' (EnvType @( '(name, ty) ': Env et) t)) b)
+-}
+      Set pf n v -> Set pf n v
       Call t c -> Call t (f (index t) c)
       Block t cs c -> Block t (map (f (index VoidProxy)) cs) (f (index t) c)
       Pure v -> Pure v
@@ -169,7 +174,7 @@ let_ :: forall name env effs ty result
      -> ScalarProxy result
      -> Code effs ('(name, ty) ': env) result
      -> Code effs env result
-let_ v t = Fix . Let (Proxy @name) v t
+let_ v t = Fix . Let bindingEvidence (Proxy @name) v t
 
 
 -- | Set the value of a variable.
@@ -184,7 +189,8 @@ let_ v t = Fix . Let (Proxy @name) v t
 --     Set (Proxy :: Proxy "foo") value
 --
 set :: forall name env effs ty
-     . (Required name env ~ ty, KnownSymbol name, KnownEnvironment env)
+     . ( Required name env ~ ty, NotPresent name (env `Without` name)
+       , KnownSymbol name, KnownEnvironment env)
     => Value env ty
     -> Code effs env 'VoidT
-set = Fix . Set (Proxy @name)
+set = Fix . Set bindingEvidence (Proxy @name)

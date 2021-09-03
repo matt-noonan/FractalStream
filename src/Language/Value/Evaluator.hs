@@ -34,23 +34,25 @@ type family WithoutBinding (env :: Environment) (name :: Symbol) :: Environment 
 -- NOTE: This actually computes a Value env t -> Value env t transformation,
 -- but hits the result with unsafeCoerce to transform env to
 -- (env `WithoutBinding name). This is safe because the environment only
--- appears in the `Required name env ~ t` constraint on the Var
--- constructor, and this constraint doesn't carry any nontrivial
+-- appears in the `NameIsPresent` proof in the Var
+-- constructor, and this proof doesn't carry any nontrivial
 -- information. Since all references to 'name' are removed by this
 -- transformation, the result type really *is* correct.
 partialEvaluate :: forall env t name ty
-                 . (Required name env ~ ty, KnownSymbol name)
+                 . (KnownSymbol name)
                 => Proxy name
                 -> ScalarProxy ty
                 -> ScalarType ty
+                -> NameIsPresent name ty env
                 -> Value env t
                 -> Value (env `WithoutBinding` name) t
-partialEvaluate name ty v =
+partialEvaluate name ty v pf =
   unsafeCoerce . (indexedFold @(Pure1 (Value env)) @(Value env) @(ValueF env) $ \case
 
-    Var name' ty' -> case sameSymbol name name' of
-      Just Refl -> Fix (Const (Scalar ty v))
-      Nothing   -> Fix (Var name' ty')
+    Var name' ty' pf' -> case sameSymbol name name' of
+      Just Refl -> case typeIsUnique pf pf' of
+        Refl -> Fix (Const (Scalar ty v))
+      Nothing   -> Fix (Var name' ty' pf')
     etc -> Fix etc
   )
 
@@ -79,7 +81,7 @@ constantFold =
   toV . (indexedFold @(Pure1 (ValueOrConstant env)) @(Value env) @(ValueF env) $ \case
     -- Base cases: constants are constant, variables aren't.
     Const c     -> C c
-    Var name ty -> V (Fix (Var name ty))
+    Var name ty pf -> V (Fix (Var name ty pf))
 
     -- For all other constructors: if all children are constants,
     -- use the 'evaluator' algebra to compute the value of the constructor.
@@ -89,7 +91,7 @@ constantFold =
       Just  c -> C (Scalar (toIndex etc) (evaluator impossible c))
   )
  where
-   impossible _ _ = error "unreachable, Var constructor is already handled in constantFold"
+   impossible = error "unreachable, Var constructor is already handled in constantFold"
 
 -- | Evaluate the (normal) value corresponding to a 'Value', given values
 -- for each variable that appears.
@@ -99,14 +101,14 @@ evaluate context =
 
 -- | Evaluation algebra
 evaluator :: forall env t
-           . (forall name ty. (KnownSymbol name, Required name env ~ ty)
-              => Proxy name -> ScalarProxy ty -> ScalarType ty)
+           . (forall name ty. (KnownSymbol name, KnownType ty)
+              => NameIsPresent name ty env -> ScalarType ty)
           -> ValueF env ScalarType_ t
           -> ScalarType t
 evaluator lookUp = \case
 
     Const (Scalar _ v) -> v
-    Var name ty -> lookUp name ty
+    Var _name ty pf -> withKnownType ty (lookUp pf)
 
     PairV _ x y     -> (x, y)
     ProjV1 _ (x, _) -> x
@@ -117,7 +119,7 @@ evaluator lookUp = \case
     MulF x y -> x * y
     DivF x y -> x / y
     ModF _ _ -> error "TODO"
-    PowF x n -> x ^^ n
+    PowF x n -> x ** n
     AbsF x   -> abs x
     NegF x   -> negate x
 

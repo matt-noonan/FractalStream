@@ -8,6 +8,8 @@ module Language.Effect
   ) where
 
 import Language.Type
+import Language.Environment
+
 import GHC.TypeLits
 import GHC.Exts (Constraint)
 

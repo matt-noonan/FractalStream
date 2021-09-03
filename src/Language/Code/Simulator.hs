@@ -21,12 +21,13 @@ type family Ty  (et :: (Environment, Type)) where Ty  '(env, t) = t
 
 -- | Update a variable in the current environment
 update :: forall name t env
-        . ( Required name env ~ t, KnownSymbol name)
-       => Proxy name
+        . KnownSymbol name
+       => NameIsPresent name t env
+       -> Proxy name
        -> ScalarProxy t
        -> ScalarType t
        -> State (Context ScalarTypeOfBinding env) ()
-update name t v = modify' (setBinding name t v)
+update pf _name t v = withKnownType t (modify' (setBinding pf v))
 
 -- | Evaluate a value in the current environment
 eval :: forall t env
@@ -40,7 +41,7 @@ eval v = do
 simulate :: Code NoEffects env t
          -> State (Context ScalarTypeOfBinding env) (ScalarType t)
 simulate = indexedFold @ScalarTypeM @(Fix (CodeF NoEffects)) @(CodeF NoEffects) $ \case
-  Let name v _ body -> do
+  Let _pf name v _ body -> do
     ctx <- get
     value <- eval v
     let ctx' = Bind name (typeOfValue v) value ctx
@@ -48,9 +49,9 @@ simulate = indexedFold @ScalarTypeM @(Fix (CodeF NoEffects)) @(CodeF NoEffects) 
     put ctx''
     pure result
 
-  Set name v -> do
+  Set pf name v -> do
     result <- eval v
-    update name (typeOfValue v) result
+    update pf name (typeOfValue v) result
 
   Call _ code -> do
     ctx <- get

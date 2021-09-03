@@ -83,6 +83,7 @@ library
                        Language.Code
                        Language.Code.Simulator
                        Language.Type
+                       Language.Environment
                        Language.Value
                        Language.Value.Evaluator
                        Language.Value.Parser
@@ -139,7 +140,8 @@ executable FractalStream
                        monad-par,
                        monad-par-extras,
                        bytestring,
-                       vector
+                       vector,
+                       first-class-families
   hs-source-dirs:      exe
   extra-lib-dirs:      /usr/local/lib
 

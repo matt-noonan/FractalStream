@@ -2,20 +2,24 @@
 module Language.Value.Parser
   ( valueExpr
   , parseValue
+  , ParseResult(..)
   ) where
 
 import Text.Earley
 import Language.Type
 import Language.Value
 import Data.Indexed.Functor
+import Fcf (Pure1)
 
 import Control.Applicative ((<|>))
+import Data.Functor ((<&>))
+import Control.Monad
 import Data.Char
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
---import GHC.TypeLits
+import GHC.TypeLits
 
 data Token
   = NumberI Integer
@@ -143,149 +147,192 @@ inEnv env t nameStr k = case someSymbolVal nameStr of
     Nothing -> error (nameStr <> " is not bound in the environment")
 -}
 
+newtype Status a = Status (Either String a)
+  deriving (Functor, Applicative, Monad)
+
+type StatusValue env = Status :.: Pure1 (Value env)
+
+good :: ValueF env (Pure1 (Value env)) t -> Status (Value env t)
+good = Status . Right . Fix
+
+bad :: String -> Status (Value env t)
+bad = Status . Left
+
+ok :: forall t env f. Functor f => f (ValueF env (StatusValue env) t) -> f (Status (Value env t))
+ok = fmap (good <=< isequence @_ @_ @t @Status @(Pure1 (Value env)))
 
 valueExpr :: forall env t r
            . EnvironmentProxy env
           -> ScalarProxy t
-          -> Grammar r (Prod r String Token (Value env t))
+          -> Grammar r (Prod r String Token (Status (Value env t)))
 valueExpr env = \case
 
   -- Parse boolean expressions
   BooleanProxy -> mdo
     startRule <- rule rOr
-    rOr <- rule $ Fix <$> (Or <$> rOr <* token Or_ <*> rAnd)
+    rOr <- rule $ ok (Or <$> rOr <* token Or_ <*> rAnd)
             <|> rAnd
             <?> "boolean disjunction"
-    rAnd <- rule $ Fix <$> (And <$> rAnd <* token And_ <*> rNot)
+    rAnd <- rule $ ok (And <$> rAnd <* token And_ <*> rNot)
             <|> rNot
             <?> "boolean conjunction"
-    rNot <- rule $ Fix <$> (Not <$> (token Not_ *> rNot))
+    rNot <- rule $ ok (Not <$> (token Not_ *> rNot))
             <|> rITE
             <?> "boolean negation"
 
-    rITE <- rule $ Fix <$> (ITE BooleanProxy
+    rITE <- rule $ ok (ITE BooleanProxy
                             <$> (token If   *> startRule)
                             <*> (token Then *> startRule)
                             <*> (token Else *> startRule))
-             <|> rParen
+             <|> rVar
              <?> "boolean-valued if/then/else expression"
 
+    rVar <- rule $ (satisfy isIdentifier <&> \(Identifier n) ->
+                       case someSymbolVal n of
+                         SomeSymbol name -> case lookupEnv name BooleanProxy env of
+                           Found pf  -> good (Var name BooleanProxy pf)
+                           Absent _  -> bad ("Unbound variable " <> n)
+                           WrongType -> bad ("Mismatched type for variable " <> n)
+                   )
+                 <|> rParen
+                 <?> "boolean variable"
     rParen <- rule $ token OpenParen *> startRule <* token CloseParen
               <|> rTrue
               <|> rFalse
               <?> "subexpression"
-    rTrue <- rule $ (Fix (Const (Scalar BooleanProxy True)) <$ token True_)
+    rTrue <- rule $ (good (Const $ Scalar BooleanProxy True) <$ token True_)
               <?> "true"
-    rFalse <- rule $ (Fix (Const (Scalar BooleanProxy False)) <$ token False_)
+    rFalse <- rule $ (good (Const $ Scalar BooleanProxy False) <$ token False_)
               <?> "false"
     pure startRule
 
   -- Parse integer expressions
   IntegerProxy -> mdo
     startRule <- rule rNegate
-    rNegate <- rule $ Fix <$> (NegI <$> (token Minus *> rSub))
+    rNegate <- rule $ ok (NegI <$> (token Minus *> rSub))
                <|> rSub
                <?> "negation"
-    rSub <- rule $ Fix <$> (SubI <$> rSub <* token Minus <*> rAdd)
+    rSub <- rule $ ok (SubI <$> rSub <* token Minus <*> rAdd)
                <|> rAdd
                <?> "subtract"
-    rAdd <- rule $ Fix <$> (AddI <$> rAdd <* token Plus <*> rMul)
+    rAdd <- rule $ ok (AddI <$> rAdd <* token Plus <*> rMul)
                <|> rMul
                <?> "sum"
-    rMul <- rule $ Fix <$> (MulI <$> rMul <* token Times <*> rDiv)
+    rMul <- rule $ ok (MulI <$> rMul <* token Times <*> rDiv)
+               <|> ok (MulI <$> rMul <*> rDiv)
                <|> rDiv
                <?> "product"
-    rDiv <- rule $ Fix <$> (DivI <$> rDiv <* token Divide <*> rPower)
+    rDiv <- rule $ ok (DivI <$> rDiv <* token Divide <*> rPower)
                <|> rPower
                <?> "quotient"
-    rPower <- rule $ Fix <$> (PowI <$> rITE <* token Caret <*> rPower)
+    rPower <- rule $ ok (PowI <$> rITE <* token Caret <*> rPower)
                <|> rITE
                <?> "exponential"
     boolRule <- valueExpr env BooleanProxy
-    rITE <- rule $ Fix <$> (ITE IntegerProxy
+    rITE <- rule $ ok (ITE IntegerProxy
                             <$> (token If   *> boolRule)
                             <*> (token Then *> startRule)
                             <*> (token Else *> startRule))
              <|> rConst
              <?> "integer-valued if/then/else expression"
-    rConst <- rule $ (\(NumberI n) -> Fix (Const (Scalar IntegerProxy (fromIntegral n))))
+    rConst <- rule $ (\(NumberI n) -> good (Const $ Scalar IntegerProxy (fromIntegral n)))
                   <$> satisfy numberI
                <|> rVar
                <?> "integer constant"
 
-    rVar <- rule rParen
-{-
-    rVar <- rule $ (\(Identifier x) -> inEnv env IntegerProxy x (\p -> Fix (Var p IntegerProxy))) <$> satisfy ident
-               <|> rParen
-               <?> "integer variable"
--}
+    rVar <- rule $ (satisfy isIdentifier <&> \(Identifier n) ->
+                       case someSymbolVal n of
+                         SomeSymbol name -> case lookupEnv name IntegerProxy env of
+                           Found pf  -> good (Var name IntegerProxy pf)
+                           Absent _  -> bad ("Unbound variable " <> n)
+                           WrongType -> bad ("Mismatched type for variable " <> n)
+                   )
+                 <|> rParen
+                 <?> "integer variable"
+
     rParen <- rule $ token OpenParen *> startRule <* token CloseParen
                <|> rAbs
                <?> "subexpression"
-    rAbs <- rule $ Fix <$> (AbsI <$> (token Bar *> startRule <* token Bar))
+    rAbs <- rule $ ok (AbsI <$> (token Bar *> startRule <* token Bar))
                <?> "absolute value"
     pure startRule
 
   -- Parse real expressions
   RealProxy -> mdo
     startRule <- rule rNegate
-    rNegate <- rule $ Fix <$> (NegF <$> (token Minus *> rSub))
+    rNegate <- rule $ ok (NegF <$> (token Minus *> rSub))
                <|> rSub
                <?> "negation"
-    rSub <- rule $ Fix <$> (SubF <$> rSub <* token Minus <*> rAdd)
+    rSub <- rule $ ok (SubF <$> rSub <* token Minus <*> rAdd)
                <|> rAdd
                <?> "subtract"
-    rAdd <- rule $ Fix <$> (AddF <$> rAdd <* token Plus <*> rMul)
+    rAdd <- rule $ ok (AddF <$> rAdd <* token Plus <*> rMul)
                <|> rMul
                <?> "sum"
-    rMul <- rule $ Fix <$> (MulF <$> rMul <* token Times <*> rDiv)
+    rMul <- rule $ ok (MulF <$> rMul <* token Times <*> rDiv)
+               <|> ok (MulF <$> rMul <*> rDiv)
                <|> rDiv
                <?> "product"
-    rDiv <- rule $ Fix <$> (DivF <$> rDiv <* token Divide <*> rPower)
+    rDiv <- rule $ ok (DivF <$> rDiv <* token Divide <*> rPower)
                <|> rPower
                <?> "quotient"
     rPower <- rule rITE
-    --rPower <- rule $ Fix <$> (PowF <$> rITE <* token Caret <*> rPower)
+    --rPower <- rule $ ok (PowF <$> rITE <* token Caret <*> rPower)
     --          <|> rITE
     --           <?> "exponential"
     boolRule <- valueExpr env BooleanProxy
-    rITE <- rule $ Fix <$> (ITE RealProxy
+    rITE <- rule $ ok (ITE RealProxy
                             <$> (token If   *> boolRule)
                             <*> (token Then *> startRule)
                             <*> (token Else *> startRule))
              <|> rFunc
              <?> "real-valued if/then/else expression"
 
-    rFunc <- rule $ ((\(toFun -> Just f) -> Fix . f) <$> satisfy isFunction <*> rFunc)
-               <|> rE
+    rFunc <- rule $ ((\(toFun -> Just f) arg -> (Fix . f) <$> arg) <$> satisfy isFunction <*> rFunc')
+               <|> rAtom
                <?> "real function of one variable"
-    rE <- rule $ (Fix (Const (Scalar RealProxy (exp(1)))) <$ token Euler)
-               <|> rPi
+
+    rFunc' <- rule $ ((\(toFun -> Just f) arg -> (Fix . f) <$> arg) <$> satisfy isFunction <*> rFunc')
+                  <|> ok (MulF <$> (rFunc' <* token Times) <*> rAtom)
+                  <|> ok (MulF <$> rFunc' <*> rAtom)
+                  <|> rAtom
+                  <?> "multiplication of function arguments"
+
+
+    rAtom <- rule $ (rE <|> rPi <|> rConstI <|> rConst <|> rVar <|> rParen <|> rAbs)
+                 <?> "constant, variable, or delimited expression"
+
+    rE <- rule $ (good (Const $ Scalar RealProxy (exp 1)) <$ token Euler)
                <?> "e"
-    rPi <- rule $ (Fix (Const (Scalar RealProxy pi)) <$ token Pi)
-               <|> rConstI
+    rPi <- rule $ (good (Const (Scalar RealProxy pi)) <$ token Pi)
                <?> "pi"
-    rConstI <- rule $ (\(NumberI n) -> Fix (Const (Scalar RealProxy (fromIntegral n))))
-                  <$> satisfy numberI
-               <|> rConst
+    rConstI <- rule $ ((\(NumberI n) -> good $ Const (Scalar RealProxy (fromIntegral n)))
+                  <$> satisfy numberI)
                <?> "real constant"
-    rConst <- rule $ (\(NumberF n) -> Fix (Const (Scalar RealProxy n)))
-                  <$> satisfy numberF
-               <|> rParen
+    rConst <- rule $ ((\(NumberF n) -> good $ Const (Scalar RealProxy n))
+                  <$> satisfy numberF)
                <?> "real constant"
+    rVar <- rule $ (satisfy isIdentifier <&> \(Identifier n) ->
+                       case someSymbolVal n of
+                         SomeSymbol name -> case lookupEnv name RealProxy env of
+                           Found pf  -> good (Var name RealProxy pf)
+                           Absent _  -> bad ("Unbound variable " <> n)
+                           WrongType -> bad ("Mismatched type for variable " <> n)
+                   )
+                 <?> "real variable"
     rParen <- rule $ token OpenParen *> startRule <* token CloseParen
-               <|> rAbs
                <?> "subexpression"
-    rAbs <- rule $ Fix <$> (AbsF <$> (token Bar *> startRule <* token Bar))
-               <?> "absolute value"
+    rAbs <- rule $ ok (AbsF <$> (token Bar *> startRule <* token Bar))
+              <?> "absolute value"
+
     pure startRule
 
   -- Parse tuples
   PairProxy t1 t2 -> do
     r1 <- valueExpr env t1
     r2 <- valueExpr env t2
-    rule (Fix @_ @(ValueF env) @t
-           <$> (PairV (PairProxy t1 t2)
+    rule (ok
+             (PairV (PairProxy t1 t2)
                 <$> (token OpenParen *> r1 <* token Comma)
                 <*> (r2 <* token CloseParen)))
 
@@ -295,8 +342,9 @@ valueExpr env = \case
   where
     numberI = \case { NumberI _ -> True; _ -> False }
     numberF = \case { NumberF _ -> True; _ -> False }
-    -- ident = \case { Identifier _ -> True; _ -> False }
+    isIdentifier = \case { Identifier _ -> True; _ -> False }
     isFunction = \case { Function _ -> True; _ -> False }
+    toFun :: Token -> Maybe (Value env 'RealT -> ValueF env (Pure1 (Value env)) 'RealT)
     toFun = \case
       Function "exp" -> Just ExpF
       Function "log" -> Just LogF
@@ -312,8 +360,19 @@ valueExpr env = \case
       Function "abs" -> Just AbsF
       _ -> Nothing
 
+data ParseResult a
+  = AmbiguousParse
+  | NoParse
+  | ParseError String
+  | Ok a
+  deriving (Functor, Show, Eq, Ord)
+
 parseValue :: EnvironmentProxy env
            -> ScalarProxy t
            -> String
-           -> [Value env t]
-parseValue env t = fst . fullParses (parser (valueExpr env t)) . tokenize
+           -> ParseResult (Value env t)
+parseValue env t input =
+  case fst (fullParses (parser (valueExpr env t)) (tokenize input)) of
+    []  -> NoParse
+    [Status p] -> either ParseError Ok p
+    _   -> AmbiguousParse

@@ -22,6 +22,14 @@ import Graphics.UI.WX hiding (when)
 import Data.Maybe (fromMaybe)
 import qualified Color.Color as FSColor
 
+import Fcf (Exp, Eval)
+import GHC.TypeLits
+
+----------------------------------------------------------------
+-- The WxWidgets UI tag
+-- WxHaskell ain't fancy. It just needs good old IO.
+----------------------------------------------------------------
+
 data WX :: UI
 type instance UIMonad WX = IO
 
@@ -29,42 +37,27 @@ type instance UIMonad WX = IO
 -- Settings widget
 ----------------------------------------------------------------
 
-data UiSetting (env :: Environment) where
-  UiSetting :: forall name t env
-             . NotPresent name env
-            => Proxy name
-            -> IORef (Scalar t)
-            -> UiSetting env
-            -> UiSetting ( '(name, t) ': env)
-  LastUiSetting :: UiSetting '[]
+data ScalarIORef :: Symbol -> Type -> Exp *
+type instance Eval (ScalarIORef name t) = (Maybe String, IORef (Scalar t))
 
 data SettingsWidget (env :: Environment) = SettingsWidget
   { settingsDialog :: Dialog ()
-  , settingsRefs   :: UiSetting env
+  , settingsRefs   :: Context ScalarIORef env
   }
 
 readSetting :: forall name t env
-             . HasSetting name t env
+             . (KnownSymbol name, KnownType t)
             => SettingsWidget env
+            -> NameIsPresent name t env
             -> Proxy name
             -> IO (Scalar t)
-readSetting sw name = readIORef (getSetting (settingsRefs sw) name)
+readSetting sw pf _name = readIORef (snd $ getBinding (settingsRefs sw) pf)
 
-class HasSetting (name :: Symbol) (t :: Type) (env :: Environment) where
-  getSetting :: UiSetting env -> Proxy name -> IORef (Scalar t)
 
-instance HasSetting name t ( '(name, t) ': env) where
-  getSetting (UiSetting _ ref _) _ = ref
-
-instance HasSetting name t env => HasSetting name t ( x ': env) where
-  getSetting (UiSetting _ _ ss) pxy = getSetting ss pxy
-
-makeSettings :: Context (Pure2 Setting) env -> IO (UiSetting env)
-makeSettings = \case
-  EmptyContext -> pure LastUiSetting
-  Bind _ _ (Setting name v _) more -> do
+makeSettings :: Context (Pure2 Setting) env -> IO (Context ScalarIORef env)
+makeSettings = mapContextM $ \_ _ (Setting _ v mn) -> do
     ref <- newIORef v
-    UiSetting name ref <$> makeSettings more
+    pure (fst <$> mn, ref)
 
 instance ToUI WX (Settings env NoEffects) where
   -- Require a reference to the parent frame when creating the settings widget
