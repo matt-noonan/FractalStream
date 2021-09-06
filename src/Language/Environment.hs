@@ -1,4 +1,4 @@
-{-# language UndecidableInstances #-}
+{-# language UndecidableInstances, RoleAnnotations #-}
 
 module Language.Environment
   ( type Environment
@@ -22,13 +22,18 @@ module Language.Environment
   , NameIsPresent
   , NameIsAbsent
   , typeIsUnique
+  , bindName
   , withoutName
   , removeName
   , type Without
   , bindingEvidence
+  , isAbsent
+  , recallIsAbsent
 
   , lookupEnv
   , LookupEnvResult(..)
+  , lookupEnv'
+  , LookupEnvResult'(..)
 
   ) where
 
@@ -36,11 +41,11 @@ import Language.Type
 
 import GHC.TypeLits
 import Fcf (Exp, Eval)
-import GHC.Exts (Constraint)
 import Data.Type.Equality ((:~:)(..))
 import Data.Proxy
 import Data.Coerce
 import Unsafe.Coerce
+import Data.Constraint
 
 ---------------------------------------------------------------------------------
 -- Environments
@@ -57,7 +62,7 @@ type Environment = [(Symbol, Type)]
 data EnvironmentProxy (env :: Environment) where
   EmptyEnvProxy :: EnvironmentProxy '[]
   BindingProxy  :: forall name t env
-                 . (NotPresent name env, KnownSymbol name, KnownType t, KnownEnvironment env)
+                 . (KnownSymbol name, KnownEnvironment env, NotPresent name env)
                 => Proxy name
                 -> ScalarProxy t
                 -> Proxy env
@@ -75,8 +80,8 @@ instance (KnownEnvironment env, KnownSymbol name, KnownType t, NotPresent name e
 -- | Make the given environment implicit.
 withEnvironment :: EnvironmentProxy env -> (KnownEnvironment env => a) -> a
 withEnvironment pxy k = case pxy of
-  EmptyEnvProxy   -> k
-  BindingProxy {} -> k
+  EmptyEnvProxy -> k
+  BindingProxy _ t _ -> withKnownType t k
 
 ---------------------------------------------------------------------------------
 -- "Proofs" that names are present in the environment and have the right type.
@@ -96,10 +101,23 @@ trustMe = coerce TrustMe
 newtype NameIsPresent (name :: Symbol) (t :: Type) (env :: Environment)
   = NameIsPresent TrustMe
 
+-- Prevent coercion of the type parameters
+type role NameIsPresent nominal nominal nominal
+
 -- | 'NameIsPresent' represents a proof that the name is absent in the
 -- environment.
 newtype NameIsAbsent  (name :: Symbol) (env :: Environment)
   = NameIsAbsent TrustMe
+
+isAbsent :: NotPresent name env => NameIsAbsent name env
+isAbsent = trustMe
+
+recallIsAbsent :: forall name env a. NameIsAbsent name env -> (NotPresent name env => a) -> a
+recallIsAbsent _ k = case (unsafeCoerce :: Dict () -> Dict (NotPresent name env)) Dict of
+  Dict -> k
+
+-- Prevent coercion of the type parameters
+type role NameIsAbsent nominal nominal
 
 type family Without (env :: Environment) (name :: Symbol) :: Environment where
   Without ( '(name,  t) ': env) name = env
@@ -133,6 +151,13 @@ bindingEvidence :: forall name t env
                 => NameIsPresent name t env
 bindingEvidence = trustMe
 
+bindName :: forall name t env
+          . Proxy name
+         -> ScalarProxy t
+         -> NameIsAbsent name env
+         -> NameIsPresent name t ( '(name, t) ': env)
+bindName _ _ _ = trustMe
+
 data LookupEnvResult name t env
   = Found (NameIsPresent name t env)
   | WrongType -- found, but not with the correct type
@@ -149,6 +174,21 @@ lookupEnv name ty = \case
       Absent _  -> Absent trustMe
       WrongType -> WrongType
   EmptyEnvProxy -> Absent trustMe
+
+
+data LookupEnvResult' name env where
+  Found'  :: forall name t env. ScalarProxy t -> NameIsPresent name t env -> LookupEnvResult' name env
+  Absent' :: forall name env. NameIsAbsent name env -> LookupEnvResult' name env
+
+-- | Look up a name in the environment, when we don't yet know what its type should be.
+lookupEnv' :: KnownSymbol name => Proxy name -> EnvironmentProxy env -> LookupEnvResult' name env
+lookupEnv' name = \case
+  BindingProxy name' ty' env' -> case sameSymbol name name' of
+    Just Refl -> Found' ty' trustMe
+    Nothing -> case lookupEnv' name (envProxy env') of
+      Found' ty _ -> Found' ty trustMe
+      Absent' _   -> Absent' trustMe
+  EmptyEnvProxy -> Absent' trustMe
 
 
 ---------------------------------------------------------------------------------

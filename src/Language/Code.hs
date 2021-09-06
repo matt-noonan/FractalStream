@@ -16,7 +16,6 @@ import Language.Effect
 import Data.Indexed.Functor
 import Fcf
 import GHC.TypeLits
--- import Data.Function ((&))
 
 data SomeCode where
   SomeCode :: forall effs env t. Code effs env t -> SomeCode
@@ -138,14 +137,19 @@ instance IFunctor (CodeF eff) where
         index :: forall i. ScalarProxy i -> EnvTypeProxy '(Env et, i)
         index i = withEnvironment env (EnvType i)
     in case x of
-      Let {} -> error "todo"
-      {-
-      Let pf n v t b -> (n, typeOfValue v) & \(_ :: Proxy name, tv :: ScalarProxy ty) ->
-        let env' = withKnownType tv
-                 $ withEnvironment env
-                 $ BindingProxy n tv (Proxy @(Env et))
-        in Let pf n v t (f (withEnvironment env' (EnvType @( '(name, ty) ': Env et) t)) b)
--}
+      Let pf (n :: Proxy name) (v :: Value (Env et) vt) t b ->
+        recallIsAbsent (removeName @name pf) $
+          let env' :: EnvironmentProxy ( '(name, vt) ': Env et)
+              env' = withKnownType (typeOfValue v)
+                     $ withEnvironment env
+                     $ BindingProxy n (typeOfValue v) (Proxy @(Env et))
+              index' :: forall i r
+                      . ScalarProxy i
+                     -> ScalarProxy r
+                     -> EnvTypeProxy '( '(name, i) ': Env et, r)
+              index' i r = withKnownType i
+                         $ withEnvironment env' (EnvType @( '(name, i) ': Env et) r)
+          in withEnvironment env' (Let pf n v t (f (index' (typeOfValue v) t) b))
       Set pf n v -> Set pf n v
       Call t c -> Call t (f (index t) c)
       Block t cs c -> Block t (map (f (index VoidProxy)) cs) (f (index t) c)
@@ -154,6 +158,22 @@ instance IFunctor (CodeF eff) where
       DoWhile c -> DoWhile (f (index BooleanProxy) c)
       IfThenElse t v yes no -> IfThenElse t v (f (index t) yes) (f (index t) no)
       Effect t c -> Effect t c
+
+---------------------------------------------------------------------------------
+-- Indexed traversable instance
+---------------------------------------------------------------------------------
+
+instance ITraversable (CodeF effs) where
+  isequence = \case
+    Let pf n v t c -> Let pf n v t <$> c
+    Set pf n v -> pure (Set pf n v)
+    Call t c -> Call t <$> c
+    Block t block final -> Block t <$> sequenceA block <*> final
+    Pure v -> pure (Pure v)
+    NoOp -> pure NoOp
+    DoWhile body -> DoWhile <$> body
+    IfThenElse t v yes no -> IfThenElse t v <$> yes <*> no
+    Effect t e -> pure (Effect t e)
 
 ---------------------------------------------------------------------------------
 -- Utility functions

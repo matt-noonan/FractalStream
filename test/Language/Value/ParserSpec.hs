@@ -19,63 +19,59 @@ spec = do
     it "can parse simple arithmetic expressions" $ do
       let parses1 = parseI "(1 + 2) *3+ 4"
           parses2 = parseF "(1.0 + 2) *3.25 + 3.75"
-      parses1 `shouldBe` Ok 13
-      parses2 `shouldBe` Ok 13.5
-
-    it "can parse simple arithmetic expressions" $ do
-      let parses = parseI "(1 + 2) *3+ 4"
-      parses `shouldBe` Ok 13
+      parses1 `shouldBe` Right 13
+      parses2 `shouldBe` Right 13.5
 
     it "can parse tuples" $ do
       let ty = PairProxy IntegerProxy IntegerProxy
           parses = parseValue EmptyEnvProxy ty "(1 + 2, 3 * 4)"
-      eval parses `shouldBe` Ok (3, 12)
+      eval parses `shouldBe` Right (3, 12)
 
     it "parses with expected precedence" $ do
       let parses1 = parseI "1 + 2 * 3 + 4"
-          parses2 = parseI "1 + 4 / 2 * 3"
+          parses2 = parseI "1 + 12 / 2 * 3"
           parses3 = parseI "1 - 2 - 3"
           parses4 = parseI "1 - 4 / 2 - 3"
-      parses1 `shouldBe` Ok 11
-      parses2 `shouldBe` Ok 7
-      parses3 `shouldBe` Ok (-4)
-      parses4 `shouldBe` Ok (-4)
+      parses1 `shouldBe` Right 11
+      parses2 `shouldBe` Right 3
+      parses3 `shouldBe` Right (-4)
+      parses4 `shouldBe` Right (-4)
 
     it "parses exponential towers with the correct associativity" $ do
-      parseI "3 ^ 2 ^ 3" `shouldBe` Ok 6561
-      parseI "(3 ^ 2) ^ 3" `shouldBe` Ok 729
+      parseI "3 ^ 2 ^ 3" `shouldBe` Right 6561
+      parseI "(3 ^ 2) ^ 3" `shouldBe` Right 729
 
     it "parses boolean expressions with expected precedence" $ do
       let parses1 = parseB "true or false and false"
           parses2 = parseB "(true or false) and false"
           parses3 = parseB "not true or false and not false"
           parses4 = parseB "not (true or false) and not false"
-      parses1 `shouldBe` Ok True
-      parses2 `shouldBe` Ok False
-      parses3 `shouldBe` Ok False
-      parses4 `shouldBe` Ok False
+      parses1 `shouldBe` Right True
+      parses2 `shouldBe` Right False
+      parses3 `shouldBe` Right False
+      parses4 `shouldBe` Right False
 
     it "parses if/then/else expressions with expected precedence" $ do
       let parses1 = parseI "if true and false then 1 + 2 else 4 * 5"
           parses2 = parseI "if false then 1 else if true then 2 else 3"
-      parses1 `shouldBe` AmbiguousParse -- TODO: why two parses?
-      parses2 `shouldBe` Ok 2
+      parses1 `shouldBe` Right 20
+      parses2 `shouldBe` Right 2
 
     it "parses function applications" $ do
       let parses1 = parseF "exp (log 17)"
           parses2 = parseF "exp log(17)"
           parses3 = parseF "exp(log(17)) - cos pi"
-      parses1 `shouldBe` Ok 17
-      parses2 `shouldBe` Ok 17
-      parses3 `shouldBe` Ok 18
+      parses1 `shouldBe` Right 17
+      parses2 `shouldBe` Right 17
+      parses3 `shouldBe` Right 18
 
     it "parses absolute value bars" $ do
       let parses1 = parseF "|-3| + | 5 - 6|"
           parses2 = parseF "||-1||"
           parses3 = parseF "log |-e|"
-      parses1 `shouldBe` Ok 4
-      parses2 `shouldBe` Ok 1
-      parses3 `shouldBe` Ok 1
+      parses1 `shouldBe` Right 4
+      parses2 `shouldBe` Right 1
+      parses3 `shouldBe` Right 1
 
   describe "when using common notational quirks" $ do
 
@@ -86,17 +82,16 @@ spec = do
     it "parses concatenation as function application" $ do
       let parses1 = parseF "cos pi"
           parses2 = parseF "exp exp 0"
-      parses1 `shouldBe` Ok (-1)
-      parses2 `shouldBe` Ok (exp 1)
+      parses1 `shouldBe` Right (-1)
+      parses2 `shouldBe` Right (exp 1)
 
     it "also parses concatenation as multiplication" $ do
       let parses1 = parseI "(1 + 2) 3 4"
           parses2 = parseF "2 cos pi"
           parses3 = parseF "cos 2pi"
-      parses1 `shouldBe` Ok 36
-      parses2 `shouldBe` Ok (-2)
-      -- Ambiguous parse
-      parses3 `shouldBe` AmbiguousParse
+      parses1 `shouldBe` Right 36
+      parses2 `shouldBe` Right (-2)
+      parses3 `shouldBe` Left (1, AmbiguousParse)
 
   describe "when parsing parameterized values" $ do
 
@@ -107,14 +102,14 @@ spec = do
     it "parses expressions with variables in the environment" $ do
       let parses1 = parseI1 "(1 + x) *3 + 4"
           parses2 = parseI1 "x x + 1"
-      parses1 0    `shouldBe` Ok 7
-      parses1 (-1) `shouldBe` Ok 4
-      parses2 2    `shouldBe` Ok 5
+      parses1 0    `shouldBe` Right 7
+      parses1 (-1) `shouldBe` Right 4
+      parses2 2    `shouldBe` Right 5
 
     it "will not parse an unbound variable" $ do
       let parses1 = parseI1 "(1 + y) *3 + 4"
-      parses1 0    `shouldBe` ParseError "Unbound variable y"
+      parses1 0    `shouldBe` Left (4, UnboundVariable "y")
 
     it "will not parse a variable at the wrong type" $ do
       let parses1 = parseI1 "if x and false then 1 else 2"
-      parses1 0 `shouldBe` ParseError "Mismatched type for variable x"
+      parses1 0 `shouldBe` Left (2, MismatchedType "x")

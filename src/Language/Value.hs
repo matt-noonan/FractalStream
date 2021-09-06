@@ -54,15 +54,51 @@ data ValueF (env :: [(Symbol, Type)]) (value :: Type -> Exp *) (t :: Type) where
   -- Exponential and logarithmic functions
   ExpF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
   LogF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
+  SqrtF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
 
   -- Trigonometric functions
   SinF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
   CosF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
   TanF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
+  SinhF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
+  CoshF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
+  TanhF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
   ArcsinF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
   ArccosF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
   ArctanF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
   Arctan2F :: forall env value. Eval (value 'RealT) -> Eval (value 'RealT) -> ValueF env value 'RealT
+  ArcsinhF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
+  ArccoshF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
+  ArctanhF :: forall env value. Eval (value 'RealT) -> ValueF env value 'RealT
+
+  -- Complex arithmetic
+  AddC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  SubC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  MulC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  DivC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  ModC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  PowC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  NegC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+
+  -- Complex-only functions
+  AbsC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'RealT
+  ArgC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'RealT
+  ReC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'RealT
+  ImC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'RealT
+  ConjC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+
+  -- Complex exponential and logarithmic functions
+  ExpC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  LogC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  SqrtC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+
+  -- Complex trigonometric functions
+  SinC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  CosC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  TanC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  SinhC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  CoshC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
+  TanhC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
 
   -- Integer arithmetic
   AddI :: forall env value. Eval (value 'IntegerT) -> Eval (value 'IntegerT) -> ValueF env value 'IntegerT
@@ -73,6 +109,10 @@ data ValueF (env :: [(Symbol, Type)]) (value :: Type -> Exp *) (t :: Type) where
   PowI :: forall env value. Eval (value 'IntegerT) -> Eval (value 'IntegerT) -> ValueF env value 'IntegerT
   AbsI :: forall env value. Eval (value 'IntegerT) -> ValueF env value 'IntegerT
   NegI :: forall env value. Eval (value 'IntegerT) -> ValueF env value 'IntegerT
+
+  -- Conversion
+  I2R :: forall env value. Eval (value 'IntegerT) -> ValueF env value 'RealT
+  R2C :: forall env value. Eval (value 'RealT) -> ValueF env value 'ComplexT
 
   -- Boolean operations
   Or  :: forall env value. Eval (value 'BooleanT) -> Eval (value 'BooleanT) -> ValueF env value 'BooleanT
@@ -137,9 +177,39 @@ instance Floating (Value env 'RealT) where
   asin = Fix . ArcsinF
   acos = Fix . ArccosF
   atan = Fix . ArctanF
-  sinh = error "TODO"
-  cosh = error "TODO"
-  tanh = error "TODO"
+  sinh = Fix . SinhF
+  cosh = Fix . CoshF
+  tanh = Fix . TanhF
+  asinh = error "TODO"
+  acosh = error "TODO"
+  atanh = error "TODO"
+
+instance Num (Value env 'ComplexT) where
+  (+) = fix2 AddC
+  (-) = fix2 SubC
+  (*) = fix2 MulC
+  abs = Fix . R2C . Fix . AbsC
+  negate = Fix . NegC
+  fromInteger = Fix . Const . Scalar ComplexProxy . fromInteger
+  signum = error "TODO"
+
+instance Fractional (Value env 'ComplexT) where
+  (/) = fix2 DivC
+  fromRational q = fromInteger (numerator q) / fromInteger (denominator q)
+
+instance Floating (Value env 'ComplexT) where
+  pi = Fix (Const (Scalar ComplexProxy pi))
+  exp = Fix . ExpC
+  log = Fix . LogC
+  sin = Fix . SinC
+  cos = Fix . CosC
+  tan = Fix . TanC
+  asin = error "TODO"
+  acos = error "TODO"
+  atan = error "TODO"
+  sinh = Fix . SinhC
+  cosh = Fix . CoshC
+  tanh = Fix . TanhC
   asinh = error "TODO"
   acosh = error "TODO"
   atanh = error "TODO"
@@ -174,6 +244,7 @@ instance IFunctor (ValueF env) where
 
     ExpF {} -> RealProxy
     LogF {} -> RealProxy
+    SqrtF {} -> RealProxy
 
     SinF {} -> RealProxy
     CosF {} -> RealProxy
@@ -182,6 +253,37 @@ instance IFunctor (ValueF env) where
     ArccosF {} -> RealProxy
     ArctanF {} -> RealProxy
     Arctan2F {} -> RealProxy
+    SinhF {} -> RealProxy
+    CoshF {} -> RealProxy
+    TanhF {} -> RealProxy
+    ArcsinhF {} -> RealProxy
+    ArccoshF {} -> RealProxy
+    ArctanhF {} -> RealProxy
+
+    AddC {} -> ComplexProxy
+    SubC {} -> ComplexProxy
+    MulC {} -> ComplexProxy
+    DivC {} -> ComplexProxy
+    ModC {} -> ComplexProxy
+    PowC {} -> ComplexProxy
+    NegC {} -> ComplexProxy
+
+    AbsC {} -> RealProxy
+    ArgC {} -> RealProxy
+    ReC {} -> RealProxy
+    ImC {} -> RealProxy
+    ConjC {} -> ComplexProxy
+
+    ExpC {} -> ComplexProxy
+    LogC {} -> ComplexProxy
+    SqrtC {} -> ComplexProxy
+
+    SinC {} -> ComplexProxy
+    CosC {} -> ComplexProxy
+    TanC {} -> ComplexProxy
+    SinhC {} -> ComplexProxy
+    CoshC {} -> ComplexProxy
+    TanhC {} -> ComplexProxy
 
     AddI {} -> IntegerProxy
     SubI {} -> IntegerProxy
@@ -191,6 +293,9 @@ instance IFunctor (ValueF env) where
     PowI {} -> IntegerProxy
     AbsI {} -> IntegerProxy
     NegI {} -> IntegerProxy
+
+    I2R {} -> RealProxy
+    R2C {} -> ComplexProxy
 
     Or {} -> BooleanProxy
     And {} -> BooleanProxy
@@ -231,6 +336,7 @@ instance IFunctor (ValueF env) where
 
     ExpF x -> ExpF (f RealProxy x)
     LogF x -> LogF (f RealProxy x)
+    SqrtF x -> SqrtF (f RealProxy x)
 
     SinF x -> SinF (f RealProxy x)
     CosF x -> CosF (f RealProxy x)
@@ -239,6 +345,37 @@ instance IFunctor (ValueF env) where
     ArccosF x -> ArccosF (f RealProxy x)
     ArctanF x -> ArctanF (f RealProxy x)
     Arctan2F x y -> Arctan2F (f RealProxy x) (f RealProxy y)
+    SinhF x -> SinhF (f RealProxy x)
+    CoshF x -> CoshF (f RealProxy x)
+    TanhF x -> TanhF (f RealProxy x)
+    ArcsinhF x -> ArcsinhF (f RealProxy x)
+    ArccoshF x -> ArccoshF (f RealProxy x)
+    ArctanhF x -> ArctanhF (f RealProxy x)
+
+    AddC x y -> AddC (f ComplexProxy x) (f ComplexProxy y)
+    SubC x y -> SubC (f ComplexProxy x) (f ComplexProxy y)
+    MulC x y -> MulC (f ComplexProxy x) (f ComplexProxy y)
+    DivC x y -> DivC (f ComplexProxy x) (f ComplexProxy y)
+    ModC x y -> ModC (f ComplexProxy x) (f ComplexProxy y)
+    PowC x y -> PowC (f ComplexProxy x) (f ComplexProxy y)
+    NegC x   -> NegC (f ComplexProxy x)
+
+    ExpC x -> ExpC (f ComplexProxy x)
+    LogC x -> LogC (f ComplexProxy x)
+    SqrtC x -> SqrtC (f ComplexProxy x)
+
+    SinC x -> SinC (f ComplexProxy x)
+    CosC x -> CosC (f ComplexProxy x)
+    TanC x -> TanC (f ComplexProxy x)
+    SinhC x -> SinhC (f ComplexProxy x)
+    CoshC x -> CoshC (f ComplexProxy x)
+    TanhC x -> TanhC (f ComplexProxy x)
+
+    AbsC x -> AbsC (f ComplexProxy x)
+    ArgC x -> ArgC (f ComplexProxy x)
+    ReC x -> ReC (f ComplexProxy x)
+    ImC x -> ImC (f ComplexProxy x)
+    ConjC x -> ConjC (f ComplexProxy x)
 
     AddI x y -> AddI (f IntegerProxy x) (f IntegerProxy y)
     SubI x y -> SubI (f IntegerProxy x) (f IntegerProxy y)
@@ -248,6 +385,9 @@ instance IFunctor (ValueF env) where
     PowI x y -> PowI (f IntegerProxy x) (f IntegerProxy y)
     AbsI x   -> AbsI (f IntegerProxy x)
     NegI x   -> NegI (f IntegerProxy x)
+
+    I2R x -> I2R (f IntegerProxy x)
+    R2C x -> R2C (f RealProxy x)
 
     Or  x y -> Or  (f BooleanProxy x) (f BooleanProxy y)
     And x y -> And (f BooleanProxy x) (f BooleanProxy y)
@@ -291,6 +431,7 @@ instance ITraversable (ValueF env) where
 
     ExpF mx -> ExpF <$> mx
     LogF mx -> LogF <$> mx
+    SqrtF mx -> SqrtF <$> mx
 
     SinF mx -> SinF <$> mx
     CosF mx -> CosF <$> mx
@@ -300,6 +441,39 @@ instance ITraversable (ValueF env) where
     ArctanF mx -> ArctanF <$> mx
     Arctan2F mx my -> Arctan2F <$> mx <*> my
 
+    SinhF mx -> SinhF <$> mx
+    CoshF mx -> CoshF <$> mx
+    TanhF mx -> TanhF <$> mx
+    ArcsinhF mx -> ArcsinhF <$> mx
+    ArccoshF mx -> ArccoshF <$> mx
+    ArctanhF mx -> ArctanhF <$> mx
+
+    AddC mx my -> AddC <$> mx <*> my
+    SubC mx my -> SubC <$> mx <*> my
+    MulC mx my -> MulC <$> mx <*> my
+    DivC mx my -> DivC <$> mx <*> my
+    ModC mx my -> ModC <$> mx <*> my
+    PowC mx my -> PowC <$> mx <*> my
+    NegC mx    -> NegC <$> mx
+
+    ExpC mx -> ExpC <$> mx
+    LogC mx -> LogC <$> mx
+    SqrtC mx -> SqrtC <$> mx
+
+    SinC mx -> SinC <$> mx
+    CosC mx -> CosC <$> mx
+    TanC mx -> TanC <$> mx
+
+    SinhC mx -> SinhC <$> mx
+    CoshC mx -> CoshC <$> mx
+    TanhC mx -> TanhC <$> mx
+
+    AbsC mx -> AbsC <$> mx
+    ArgC mx -> ArgC <$> mx
+    ReC mx -> ReC <$> mx
+    ImC mx -> ImC <$> mx
+    ConjC mx -> ConjC <$> mx
+
     AddI mx my -> AddI <$> mx <*> my
     SubI mx my -> SubI <$> mx <*> my
     MulI mx my -> MulI <$> mx <*> my
@@ -308,6 +482,9 @@ instance ITraversable (ValueF env) where
     PowI mx my -> PowI <$> mx <*> my
     AbsI mx    -> AbsI <$> mx
     NegI mx    -> NegI <$> mx
+
+    I2R mx -> I2R <$> mx
+    R2C mx -> R2C <$> mx
 
     Or  mx my -> Or  <$> mx <*> my
     And mx my -> And <$> mx <*> my

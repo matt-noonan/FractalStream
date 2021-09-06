@@ -125,6 +125,7 @@ evaluator lookUp = \case
 
     ExpF x -> exp x
     LogF x -> log x
+    SqrtF x -> sqrt x
 
     SinF x -> sin x
     CosF x -> cos x
@@ -133,6 +134,42 @@ evaluator lookUp = \case
     ArccosF x -> acos x
     ArctanF x -> atan x
     Arctan2F x y -> atan2 x y
+
+    SinhF x -> sinh x
+    CoshF x -> cosh x
+    TanhF x -> tanh x
+    ArcsinhF x -> asinh x
+    ArccoshF x -> acosh x
+    ArctanhF x -> atanh x
+
+    AddC x y -> x + y
+    SubC x y -> x - y
+    MulC x y -> x * y
+    DivC x y -> x / y
+    ModC _ _ -> error "TODO"
+    PowC x n -> x ** n
+    NegC x   -> negate x
+
+    ExpC x -> exp x
+    LogC x -> log x
+    SqrtC x -> sqrt x
+
+    SinC x -> sin x
+    CosC x -> cos x
+    TanC x -> tan x
+
+    SinhC x -> sinh x
+    CoshC x -> cosh x
+    TanhC x -> tanh x
+
+    AbsC (x :+ y) -> sqrt (x ** 2 + y ** 2)
+    ArgC (x :+ y) -> atan2 y x
+    ReC (x :+ _) -> x
+    ImC (_ :+ y) -> y
+    ConjC (x :+ y) -> x :+ negate y
+
+    I2R n -> fromIntegral n
+    R2C x -> x :+ 0
 
     AddI x y -> x + y
     SubI x y -> x - y

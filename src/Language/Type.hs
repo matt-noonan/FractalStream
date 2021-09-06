@@ -6,6 +6,7 @@ module Language.Type
   , sameScalarType
   , Int64
   , Symbol
+  , Complex(..)
   , pattern Boolean_
   , pattern Integer_
   , pattern Real_
@@ -22,6 +23,7 @@ import Data.Int
 import GHC.TypeLits
 import Data.Type.Equality ((:~:)(..))
 import Color.Color (Color, colorToRGB)
+import Data.Complex
 
 data Type
   = VoidT
@@ -38,7 +40,7 @@ type family ScalarType (t :: Type) :: * where
   ScalarType 'BooleanT   = Bool
   ScalarType 'IntegerT   = Int64
   ScalarType 'RealT      = Double
-  ScalarType 'ComplexT   = (Double, Double)
+  ScalarType 'ComplexT   = Complex Double
   ScalarType 'RationalT  = (Int64, Int64)
   ScalarType 'ColorT     = Color
   ScalarType ('Pair x y) = (ScalarType x, ScalarType y)
@@ -69,7 +71,7 @@ instance Ord (Scalar t) where
     BooleanProxy  -> compare x y
     IntegerProxy  -> compare x y
     RealProxy     -> compare x y
-    ComplexProxy  -> compare x y
+    ComplexProxy  -> compare (realPart x, imagPart x) (realPart y, imagPart y)
     RationalProxy -> compare x y
     ColorProxy    -> compare x y
     PairProxy t1 t2 ->
@@ -161,7 +163,7 @@ showValue ty v = case ty of
   BooleanProxy  -> if v then "true" else "false"
   IntegerProxy  -> show v
   RealProxy     -> show v
-  ComplexProxy  -> let (x, y) = v
+  ComplexProxy  -> let x :+ y = v
                    in show x <> " + " <> show y <> "i"
   RationalProxy -> let (x, y) = v
                    in show x <> " / " <> show y

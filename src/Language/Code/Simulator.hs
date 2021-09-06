@@ -74,4 +74,4 @@ simulate = indexedFold @ScalarTypeM @(Fix (CodeF NoEffects)) @(CodeF NoEffects) 
     tf <- eval test
     if tf then t else f
 
-  Effect {} -> error "todo"
+  Effect {} -> error "todo: simulate effects"
