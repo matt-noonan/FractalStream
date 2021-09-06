@@ -1,5 +1,5 @@
 cabal-version:       3.0
-name:                FractalStream
+name:                fractalstream-core
 version:             2.0.0.0
 synopsis:            Tool for dynamical systems research.
 description:         Dynamical system visualization
@@ -119,8 +119,6 @@ library
                        megaparsec,
                        parser-combinators,
                        mtl,
-                       -- llvm-hs,
-                       -- llvm-hs-pure,
                        time,
                        monad-parallel,
                        monad-par,
@@ -165,7 +163,9 @@ test-suite spec
   hs-source-dirs: test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
-  build-depends:      base >=4.8 && <5, FractalStream, hspec
+  build-depends:      base >=4.8 && <5
+                    , fractalstream-core
+                    , hspec
                     , first-class-families
                     , raw-strings-qq
                     , mtl
