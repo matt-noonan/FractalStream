@@ -22,7 +22,7 @@ module Language.Type
 import Data.Int
 import GHC.TypeLits
 import Data.Type.Equality ((:~:)(..))
-import Color.Color (Color, colorToRGB)
+import Data.Color (Color, colorToRGB)
 import Data.Complex
 
 data Type

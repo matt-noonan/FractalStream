@@ -20,7 +20,7 @@ import Language.Code hiding (set, get)
 
 import Graphics.UI.WX hiding (when)
 import Data.Maybe (fromMaybe)
-import qualified Color.Color as FSColor
+import qualified Data.Color as FSColor
 
 import Fcf (Exp, Eval)
 import GHC.TypeLits

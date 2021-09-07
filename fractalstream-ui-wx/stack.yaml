@@ -1,0 +1,31 @@
+resolver: lts-17.5
+
+packages:
+- .
+- ../fractalstream-core
+- ../../wxHaskell/wx
+- ../../wxHaskell/wxcore
+- ../../wxHaskell/wxc
+- ../../wxHaskell/wxdirect
+
+extra-deps:
+- cabal-macosx-0.2.4.2@sha256:6794dab50ca2a062b9c54455442ccc3d9d9ffa6dbdb81940597329e3b377436b,3045
+# - git: https://github.com/matt-noonan/wxHaskell.git
+#   commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+#   subdirs:
+#       - wx
+#       - wxcore
+#       - wxc
+#       - wxdirect
+
+# Override default flag values for local packages and extra-deps
+flags:
+  llvm-hs:
+    shared-llvm: true
+
+ghc-options:
+  llvm-hs:
+    -optcxx=-std=c++17
+
+extra-lib-dirs:
+- /usr/local/Cellar/libffi/3.3_3/lib/

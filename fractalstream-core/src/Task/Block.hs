@@ -11,7 +11,7 @@ module Task.Block
   , progressively
   ) where
 
-import Color.Color
+import Data.Color
 
 import Task.Concurrent
 

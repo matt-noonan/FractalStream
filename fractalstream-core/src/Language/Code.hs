@@ -92,9 +92,12 @@ data CodeF (effs :: [Effect]) (code :: (Environment, Type) -> Exp *) (et :: (Env
       -> Eval (code '(env, t))
       -> CodeF effs code '(env, t)
 
+  -- | Embedded effect sub-language
   Effect :: forall env effs eff t code
           . (HasEffect eff effs, KnownEnvironment env)
-         => ScalarProxy t
+         => Proxy eff
+         -> Proxy env
+         -> ScalarProxy t
          -> eff env t
          -> CodeF effs code '(env, t)
 
@@ -125,7 +128,7 @@ instance IFunctor (CodeF eff) where
     NoOp          -> EnvType VoidProxy
     DoWhile _     -> EnvType VoidProxy
     IfThenElse t _ _ _ -> EnvType t
-    Effect t _    -> EnvType t
+    Effect _ _ t _ -> EnvType t
 
   imap :: forall a b et
         . (forall env' t'. EnvTypeProxy '(env', t') -> Eval (a '(env', t')) -> Eval (b '(env', t')))
@@ -157,7 +160,7 @@ instance IFunctor (CodeF eff) where
       NoOp -> NoOp
       DoWhile c -> DoWhile (f (index BooleanProxy) c)
       IfThenElse t v yes no -> IfThenElse t v (f (index t) yes) (f (index t) no)
-      Effect t c -> Effect t c
+      Effect e en t c -> Effect e en t c
 
 ---------------------------------------------------------------------------------
 -- Indexed traversable instance
@@ -173,7 +176,7 @@ instance ITraversable (CodeF effs) where
     NoOp -> pure NoOp
     DoWhile body -> DoWhile <$> body
     IfThenElse t v yes no -> IfThenElse t v <$> yes <*> no
-    Effect t e -> pure (Effect t e)
+    Effect eff env t e -> pure (Effect eff env t e)
 
 ---------------------------------------------------------------------------------
 -- Utility functions

@@ -37,10 +37,16 @@ eval v = do
   ctx <- get
   pure (evaluate ctx v)
 
+data StateWithEnv :: Environment -> Type -> Exp *
+type instance Eval (StateWithEnv env t) =
+  State (Context ScalarTypeOfBinding env) (ScalarType t)
+
 -- | Run some effect-free 'Code' by interpreting it into a state monad.
-simulate :: Code NoEffects env t
+simulate :: forall effs env t
+          . Handlers effs StateWithEnv
+         -> Code effs env t
          -> State (Context ScalarTypeOfBinding env) (ScalarType t)
-simulate = indexedFold @ScalarTypeM @(Fix (CodeF NoEffects)) @(CodeF NoEffects) $ \case
+simulate handlers = indexedFold @ScalarTypeM @(Fix (CodeF effs)) @(CodeF effs) $ \case
   Let _pf name v _ body -> do
     ctx <- get
     value <- eval v
@@ -74,4 +80,6 @@ simulate = indexedFold @ScalarTypeM @(Fix (CodeF NoEffects)) @(CodeF NoEffects) 
     tf <- eval test
     if tf then t else f
 
-  Effect {} -> error "todo: simulate effects"
+  Effect effectType env ty eff ->
+    case getHandler effectType handlers of
+      Handle _ handle -> handle env ty eff

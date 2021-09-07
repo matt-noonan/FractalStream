@@ -1,8 +1,8 @@
 {- |
-Module      : Color.Color
+Module      : Data.Color
 Description : Color definitions, modifiers, and combinators.
 -}
-module Color.Color (
+module Data.Color (
 -- * Constructors and destructors
       Color
     , colorToRGB

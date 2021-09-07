@@ -58,7 +58,7 @@ common FractalStream-common
 
 library
   import: FractalStream-common
-  exposed-modules:     Color.Color
+  exposed-modules:
                        -- Color.Colorize
                        -- Exec.LLVM
                        -- Exec.Haskell
@@ -79,6 +79,8 @@ library
                        -- Utils.Concurrent
 
                        UI
+
+                       Backend
 
                        Actor
                        Actor.Viewer
@@ -106,6 +108,8 @@ library
                        Language.Parser
 
                        Data.Indexed.Functor
+                       Data.Planar
+                       Data.Color
 
                        Utilities
 

@@ -93,8 +93,12 @@ pPure env t = do
 
 pLoop :: EnvironmentProxy env -> Parser (Code eff env 'VoidT)
 pLoop env = do
-  tok_ (Identifier "loop")
+  tok_ (Identifier "repeat")
   eol
+  tok_ Indent
+  body <- some (pCode env VoidProxy)
+  tok_ Dedent
+
   withEnvironment env (Fix . DoWhile <$> pBlock env BooleanProxy)
 
 pSet :: EnvironmentProxy env -> Parser (Code eff env 'VoidT)

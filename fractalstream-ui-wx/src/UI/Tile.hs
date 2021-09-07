@@ -10,22 +10,19 @@ module UI.Tile ( Tile()
                , withSynchedTileBuffer
                ) where
 
-import           Exec.Tasking.Block
-import           Exec.Tasking.Manager
-import           Lang.Planar
-import           FractalStream.Models
+import Task.Block
+import Task.Concurrent
+import Data.Planar
 
-import           Color.Color
-import           Utils.Concurrent
+import Data.Color
 
-import           Control.Concurrent
-import           Control.Concurrent.Async
+import Control.Concurrent
+import Control.Concurrent.Async
 
-import           Control.Monad            (void)
-import           Data.Word
-import           Foreign.ForeignPtr
-import           Foreign.Ptr
-import Data.Proxy
+import Control.Monad (void)
+import Data.Word
+import Foreign.ForeignPtr
+import Foreign.Ptr
 
 newtype ImagePoint = ImagePoint (Double,Double)
 
@@ -65,16 +62,15 @@ ifModified tile f = do
         Just _  -> f
 
 -- | Construct a tile from a dynamical system, and begin drawing to it.
-renderTile :: forall model proxy. Planar (Coordinate model)
-           => proxy model
-           -> ([Coordinate model] -> IO [Color]) -- ^ The rendering action
+renderTile :: ([(Double, Double)] -> IO [Color]) -- ^ The rendering action
            -> (Int, Int)   -- ^ The height and width of this tile.
-           -> Rectangle (Coordinate model)  -- ^ The region of the dynamical plane corresponding
-                           --   to this tile.
+           -> Rectangle (Double, Double)
+              -- ^ The region of the dynamical plane corresponding
+              --   to this tile.
            -> IO Tile      -- ^ An action which allocates the tile and
                            --   forks a task which draws into it.
 
-renderTile _ renderingAction (width, height) mRect = do
+renderTile renderingAction (width, height) mRect = do
     putStrLn ("renderTile at w=" ++ show width ++ " h=" ++ show height)
 
     buf <- mallocForeignPtrBytes (3 * (width + 16) * (height + 16))
@@ -99,7 +95,6 @@ renderTile _ renderingAction (width, height) mRect = do
                             , xStride = width
                             , xSize = width
                             , ySize = height
-                            , blockModel = Proxy @model
                             , shouldRedraw = redraw
                             }
     link worker

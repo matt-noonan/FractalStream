@@ -7,25 +7,37 @@ import Language.Value
 import Language.Value.Parser
 import Language.Code.Parser
 import Language.Code.Simulator
+import Language.Effect
 
 import Control.Monad.State
 --import Text.RawString.QQ
 
-runEmpty :: ScalarProxy t -> String -> Either (Int, BadParse) (ScalarType t)
-runEmpty t input = fmap ((`evalState` EmptyContext ) . simulate) $ parseCode EmptyEnvProxy t input
+runEmpty :: ScalarProxy t
+         -> String
+         -> Either (Int, BadParse) (ScalarType t)
+runEmpty t input = fmap ((`evalState` EmptyContext ) . simulate NoHandler) $ parseCode EmptyEnvProxy t input
 
-runWithX :: forall t ty. ScalarProxy t -> Scalar ty -> String -> Either (Int, BadParse) (ScalarType t)
+runWithX :: forall t xt
+          . ScalarProxy t
+         -> Scalar xt
+         -> String
+         -> Either (Int, BadParse) (ScalarType t)
 runWithX t (Scalar xt x) input = withKnownType xt $
   let env = BindingProxy (Proxy @"x") xt (Proxy @'[])
       ctx = Bind (Proxy @"x") xt x EmptyContext
-  in fmap ((`evalState` ctx) . simulate) $ parseCode env t input
+  in fmap ((`evalState` ctx) . simulate NoHandler) $ parseCode env t input
 
-runWithXY :: forall t xt yt. ScalarProxy t -> Scalar xt -> Scalar yt -> String -> Either (Int, BadParse) (ScalarType t)
+runWithXY :: forall t xt yt
+           . ScalarProxy t
+          -> Scalar xt
+          -> Scalar yt
+          -> String
+          -> Either (Int, BadParse) (ScalarType t)
 runWithXY t (Scalar xt x) (Scalar yt y) input = withKnownType xt $ withKnownType yt $
   let ctx = Bind (Proxy @"x") xt x
           $ Bind (Proxy @"y") yt y
           $ EmptyContext
-  in fmap ((`evalState` ctx) . simulate) $ parseCode (envProxy Proxy) t input
+  in fmap ((`evalState` ctx) . simulate NoHandler) $ parseCode (envProxy Proxy) t input
 
 spec :: Spec
 spec = do

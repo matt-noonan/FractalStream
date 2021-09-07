@@ -8,10 +8,9 @@ Description : Interactive view based on wxWidgets
 module UI.WX.Viewer ( wxView
                     ) where
 
-import qualified Color.Color as FSColor
-import           Lang.Planar
-import           UI.Tile
-import FractalStream.Models
+import qualified Data.Color as FSColor
+import Data.Planar
+import UI.Tile
 
 import           Graphics.UI.WX hiding (pt)
 import           qualified Graphics.UI.WX as WX
@@ -22,9 +21,8 @@ import           Graphics.UI.WXCore.WxcClassesAL
 import           Graphics.UI.WXCore.WxcClassesMZ
 
 import Control.Concurrent
-import           Data.Time               (diffUTCTime, getCurrentTime)
+import Data.Time (diffUTCTime, getCurrentTime)
 import Data.IORef
-import Data.Proxy
 
 import UI
 import UI.WxWidgets
@@ -67,9 +65,9 @@ helloFrom me = do
 
 
 -- | Create a window with an interactive view of a complex-dynamical system.
-wxView :: Rectangle (Coordinate ComplexParametric1d)
+wxView :: Rectangle (Double, Double)
           -- ^ The upper-left and lower-right corners of the view.
-       -> ([Coordinate ComplexParametric1d] -> IO [Color])
+       -> ([(Double, Double)] -> IO [Color])
           -- ^ The rendering action
        -> IO ()
 wxView _modelRect renderAction = start $ do
@@ -253,7 +251,7 @@ wxView _modelRect renderAction = start $ do
             Size { sizeW = w, sizeH = h } <- get f clientSize
             let dim = (w,h)
                 fullViewRect = rectangle (Viewport (0,0)) (Viewport dim)
-            modelRect <- modelToRect @(Coordinate ComplexParametric1d) dim <$> get model value
+            modelRect <- modelToRect @(Double,Double) dim <$> get model value
             pure (convertRect fullViewRect modelRect $ Viewport (pointX pt, pointY pt))
 
     -- Set click and drag event handlers
@@ -395,7 +393,7 @@ wxView _modelRect renderAction = start $ do
 
 renderTile' :: Valued w
             => IORef Int
-            -> ([Coordinate ComplexParametric1d] -> IO [Color])
+            -> ([(Double, Double)] -> IO [Color])
             -> (Int, Int)
             -> w Model
             -> IO Tile
@@ -407,7 +405,7 @@ renderTile' renderId action dim model = do
             if (curId == iD) then action pts else pure []
         colorConvert c =
           FSColor.rgbToColor (colorRed c, colorGreen c, colorBlue c)
-    renderTile (Proxy @ComplexParametric1d) action' dim modelRect
+    renderTile action' dim modelRect
 
 -- | Paint the state of a tile into a device context.
 generateTileImage

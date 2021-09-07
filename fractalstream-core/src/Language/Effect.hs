@@ -2,25 +2,48 @@
 
 module Language.Effect
   ( type Effect
+  , HasEffect(..)
+  , EffectHandler(..)
+  , Handlers(..)
   , type NoEffects
-  , type HasEffect
-  , NoEffect(..)
   ) where
 
 import Language.Type
 import Language.Environment
 
-import GHC.TypeLits
-import GHC.Exts (Constraint)
+import Fcf (Exp, Eval)
+import Data.Proxy
 
 type Effect = Environment -> Type -> *
 
-type family HasEffect (e :: Effect) (es :: [Effect]) :: Constraint where
-  HasEffect e (e ': _)  = ()
-  HasEffect e (_ ': es) = HasEffect e es
-  HasEffect e '[]       = TypeError ('Text "The effect " ':<>: 'ShowType e
-                                    ':<>: 'Text " cannot be used here")
+type NoEffects = '[] :: [Effect]
 
-type NoEffects = '[NoEffect]
+data EffectHandler (eff :: Effect) (result :: Environment -> Type -> Exp *) where
+  Handle :: forall result eff
+          . Proxy result
+         -> (forall env t
+              . KnownEnvironment env
+             => Proxy env
+             -> ScalarProxy t
+             -> eff env t
+             -> Eval (result env t))
+         -> EffectHandler eff result
 
-data NoEffect (env :: Environment) (t :: Type) = NoEffect
+data Handlers (effs :: [Effect]) (result :: Environment -> Type -> Exp *) where
+  Handler :: forall eff effs result
+           . EffectHandler eff result
+          -> Handlers effs result
+          -> Handlers (eff ': effs) result
+  NoHandler :: forall result. Handlers '[] result
+
+class HasEffect (e :: Effect) (es :: [Effect]) where
+  getHandler :: forall result
+              . Proxy e
+             -> Handlers es result
+             -> EffectHandler e result
+
+instance HasEffect e (e ': es) where
+  getHandler _ (Handler h _) = h
+
+instance HasEffect e es => HasEffect e (e' ': es) where
+  getHandler e (Handler _ hs) = getHandler e hs

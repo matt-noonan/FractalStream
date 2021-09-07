@@ -3,7 +3,6 @@ Module      : Data.Planar
 Description : The Planar typeclass, for types with maps to and from R^2.
 -}
 module Data.Planar ( Planar (..)
-                   , R
                    , Rectangle()
                    , Viewport (Viewport)
                    , rectangle
@@ -17,6 +16,8 @@ module Data.Planar ( Planar (..)
                    , intersectsRect
                    , dimensions
                    ) where
+
+import Data.Complex
 
 -- | The class of types which can be converted to and from $\mathbb{R}^2$.
 --   Instances should satisfy the law (fromCoords . toCoords == id).
@@ -102,12 +103,12 @@ dimensions r = (x1 - x0, y1 - y0)
           (x1,y1) = toCoords $ lowerRight r
 
 instance Planar (Double,Double) where
-    toCoords = coords
-    fromCoords = uncurry complex
+    toCoords   = id
+    fromCoords = id
 
-instance Planar R2 where
-    toCoords (R2 x y) = (x,y)
-    fromCoords (x,y) = R2 x y
+instance Planar (Complex Double) where
+    toCoords (x :+ y) = (x,y)
+    fromCoords (x,y) = x :+ y
 
 newtype Viewport = Viewport (Int,Int) deriving (Eq,Ord,Show)
 
