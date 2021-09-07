@@ -12,5 +12,5 @@ guiApps = [MacApp "FractalStream"
                   Nothing -- Build a default Info.plist for the icon.
                   [] -- No other resources.
                   [] -- No other binaries.
-                  ChaseWithDefaults
+                  DoNotChase -- FIXME, should use ChaseWithDefaults
           ]

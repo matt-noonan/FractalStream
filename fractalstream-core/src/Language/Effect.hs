@@ -6,6 +6,7 @@ module Language.Effect
   , EffectHandler(..)
   , Handlers(..)
   , type NoEffects
+  , KnownHandlers(..)
   ) where
 
 import Language.Type
@@ -47,3 +48,10 @@ instance HasEffect e (e ': es) where
 
 instance HasEffect e es => HasEffect e (e' ': es) where
   getHandler e (Handler _ hs) = getHandler e hs
+
+class KnownHandlers (effs :: [Effect]) (result :: Environment -> Type -> Exp *) where
+  knownHandlers :: Handlers effs result
+{-
+class KnownHandler (e :: Effect) (result :: Environment -> Type -> Exp *) where
+  knownHandler :: Handler e result
+-}
