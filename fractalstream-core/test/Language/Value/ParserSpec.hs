@@ -95,7 +95,7 @@ spec = do
 
   describe "when parsing parameterized values" $ do
 
-    let env = BindingProxy (Proxy @"x") IntegerProxy (Proxy @'[])
+    let env = BindingProxy (Proxy @"x") IntegerProxy EmptyEnvProxy
         ctx x = Bind (Proxy @"x") IntegerProxy x EmptyContext
         parseI1 s x = fmap (evaluate (ctx x)) (parseValue env IntegerProxy s)
 
@@ -113,3 +113,32 @@ spec = do
     it "will not parse a variable at the wrong type" $ do
       let parses1 = parseI1 "if x and false then 1 else 2"
       parses1 0 `shouldBe` Left (2, MismatchedType "x")
+
+  describe "when parsing boolean-valued operations" $ do
+    let env = BindingProxy (Proxy @"x") IntegerProxy
+            $ BindingProxy (Proxy @"y") RealProxy
+            $ BindingProxy (Proxy @"z") ComplexProxy
+            $ EmptyEnvProxy
+        ctx x y z = Bind (Proxy @"x") IntegerProxy x
+                  $ Bind (Proxy @"y") RealProxy y
+                  $ Bind (Proxy @"z") ComplexProxy z
+                  $ EmptyContext
+        parseB1 s x y z = fmap (evaluate (ctx x y z))
+          (parseValue env BooleanProxy s)
+
+    it "can parse inequalities" $ do
+      let parses1 = parseB1 "3 x < 5"
+      let parses2 = parseB1 "3 x > 5"
+      let parses3 = parseB1 "3 x <= 6"
+      let parses4 = parseB1 "3 x >= 6"
+
+      parses1 1 0 0 `shouldBe` Right True
+      parses1 2 0 0 `shouldBe` Right False
+      parses2 1 0 0 `shouldBe` Right False
+      parses2 2 0 0 `shouldBe` Right True
+      parses3 1 0 0 `shouldBe` Right True
+      parses3 2 0 0 `shouldBe` Right True
+      parses3 3 0 0 `shouldBe` Right False
+      parses4 1 0 0 `shouldBe` Right False
+      parses4 2 0 0 `shouldBe` Right True
+      parses4 3 0 0 `shouldBe` Right True

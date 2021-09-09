@@ -127,6 +127,23 @@ data ValueF (env :: [(Symbol, Type)]) (value :: Type -> Exp *) (t :: Type) where
       -> Eval (value t)
       -> ValueF env value t
 
+  -- Color operations
+  RGB :: forall env value
+       . Eval (value 'RealT)
+      -> Eval (value 'RealT)
+      -> Eval (value 'RealT)
+      -> ValueF env value 'ColorT
+
+  Blend :: forall env value
+         . Eval (value 'RealT)
+        -> Eval (value 'ColorT)
+        -> Eval (value 'ColorT)
+        -> ValueF env value 'ColorT
+
+  InvertRGB :: forall env value
+             . Eval (value 'ColorT)
+            -> ValueF env value 'ColorT
+
   -- Equality tests
   Eql :: forall env t value. ScalarProxy t -> Eval (value t) -> Eval (value t) -> ValueF env value 'BooleanT
   NEq :: forall env t value. ScalarProxy t -> Eval (value t) -> Eval (value t) -> ValueF env value 'BooleanT
@@ -303,6 +320,10 @@ instance IFunctor (ValueF env) where
 
     ITE t _ _ _ -> t
 
+    RGB {}       -> ColorProxy
+    Blend {}     -> ColorProxy
+    InvertRGB {} -> ColorProxy
+
     Eql {} -> BooleanProxy
     NEq {} -> BooleanProxy
 
@@ -394,6 +415,10 @@ instance IFunctor (ValueF env) where
     Not x -> Not (f BooleanProxy x)
 
     ITE t b yes no -> ITE t (f BooleanProxy b) (f t yes) (f t no)
+
+    RGB r g b -> RGB (f RealProxy r) (f RealProxy g) (f RealProxy b)
+    Blend s c1 c2 -> Blend (f RealProxy s) (f ColorProxy c1) (f ColorProxy c2)
+    InvertRGB c -> InvertRGB (f ColorProxy c)
 
     Eql t x y -> Eql t (f t x) (f t y)
     NEq t x y -> NEq t (f t x) (f t y)
@@ -491,6 +516,10 @@ instance ITraversable (ValueF env) where
     Not mx    -> Not <$> mx
 
     ITE t mb myes mno -> ITE t <$> mb <*> myes <*> mno
+
+    RGB mr mg mb -> RGB <$> mr <*> mg <*> mb
+    Blend ms mc1 mc2 -> Blend <$> ms <*> mc1 <*> mc2
+    InvertRGB mc -> InvertRGB <$> mc
 
     Eql t mx my -> Eql t <$> mx <*> my
     NEq t mx my -> NEq t <$> mx <*> my

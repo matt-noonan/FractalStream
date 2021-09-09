@@ -41,12 +41,30 @@ data CodeF (effs :: [Effect]) (code :: (Environment, Type) -> Exp *) (et :: (Env
       -> Eval (code '( '(name, ty) ': env, result))
       -> CodeF effs code '(env, result)
 
+  LetBind :: forall name ty env result effs code
+       . (KnownSymbol name, KnownEnvironment env)
+      => NameIsPresent name ty ( '(name, ty) ': env)
+      -> Proxy (name :: Symbol)
+      -> ScalarProxy ty
+      -> Eval (code '(env, ty))
+      -> ScalarProxy result
+      -> Eval (code '( '(name, ty) ': env, result))
+      -> CodeF effs code '(env, result)
+
   Set :: forall name ty env effs code
        . (KnownSymbol name, KnownEnvironment env)
       => NameIsPresent name ty env
       -> Proxy name
       -> Value env ty
       -> CodeF effs code '(env, 'VoidT)
+
+  SetBind :: forall name ty env effs code
+        . (KnownSymbol name, KnownEnvironment env)
+       => NameIsPresent name ty env
+       -> Proxy name
+       -> ScalarProxy ty
+       -> Eval (code '(env, ty))
+       -> CodeF effs code '(env, 'VoidT)
 
   -- | Invoke another chunk of 'Code', using a copy of the environment.
   -- Variable mutations within the called code will not be reflected
@@ -98,22 +116,12 @@ data CodeF (effs :: [Effect]) (code :: (Environment, Type) -> Exp *) (et :: (Env
          => Proxy eff
          -> Proxy env
          -> ScalarProxy t
-         -> eff env t
+         -> eff code '(env, t)
          -> CodeF effs code '(env, t)
 
 ---------------------------------------------------------------------------------
 -- Indexed functor instance for Code
 ---------------------------------------------------------------------------------
-
-type family Env (et :: (Environment, Type)) where Env '(env, t) = env
-
--- | Proxy the type index directly, and the environment
--- index implicitly through the KnownEnvironment constraint
-data EnvTypeProxy (et :: (Environment, Type)) where
-  EnvType :: forall env t
-           . KnownEnvironment env
-          => ScalarProxy t
-          -> EnvTypeProxy '(env, t)
 
 instance IFunctor (CodeF eff) where
 
@@ -121,7 +129,9 @@ instance IFunctor (CodeF eff) where
 
   toIndex = \case
     Let _ _ _ t _ -> EnvType t
+    LetBind _ _ _ _ t _ -> EnvType t
     Set _ _ _     -> EnvType VoidProxy
+    SetBind {}    -> EnvType VoidProxy
     Call t _      -> EnvType t
     Block t _ _   -> EnvType t
     Pure v        -> EnvType (typeOfValue v)
@@ -131,7 +141,7 @@ instance IFunctor (CodeF eff) where
     Effect _ _ t _ -> EnvType t
 
   imap :: forall a b et
-        . (forall env' t'. EnvTypeProxy '(env', t') -> Eval (a '(env', t')) -> Eval (b '(env', t')))
+        . (forall et'. EnvTypeProxy et' -> Eval (a et') -> Eval (b et'))
        -> CodeF eff a et
        -> CodeF eff b et
   imap f x =
@@ -145,7 +155,7 @@ instance IFunctor (CodeF eff) where
           let env' :: EnvironmentProxy ( '(name, vt) ': Env et)
               env' = withKnownType (typeOfValue v)
                      $ withEnvironment env
-                     $ BindingProxy n (typeOfValue v) (Proxy @(Env et))
+                     $ BindingProxy n (typeOfValue v) (envProxy (Proxy @(Env et)))
               index' :: forall i r
                       . ScalarProxy i
                      -> ScalarProxy r
@@ -153,14 +163,28 @@ instance IFunctor (CodeF eff) where
               index' i r = withKnownType i
                          $ withEnvironment env' (EnvType @( '(name, i) ': Env et) r)
           in withEnvironment env' (Let pf n v t (f (index' (typeOfValue v) t) b))
+      LetBind pf (n :: Proxy name) (vt :: ScalarProxy vt) cv t b ->
+        recallIsAbsent (removeName @name pf) $
+          let env' :: EnvironmentProxy ( '(name, vt) ': Env et)
+              env' = withKnownType vt
+                     $ withEnvironment env
+                     $ BindingProxy n vt (envProxy (Proxy @(Env et)))
+              index' :: forall i r
+                      . ScalarProxy i
+                     -> ScalarProxy r
+                     -> EnvTypeProxy '( '(name, i) ': Env et, r)
+              index' i r = withKnownType i
+                         $ withEnvironment env' (EnvType @( '(name, i) ': Env et) r)
+          in withEnvironment env' (LetBind pf n vt (f (index vt) cv) t (f (index' vt t) b))
       Set pf n v -> Set pf n v
+      SetBind pf n ty c -> SetBind pf n ty (f (index ty) c)
       Call t c -> Call t (f (index t) c)
       Block t cs c -> Block t (map (f (index VoidProxy)) cs) (f (index t) c)
       Pure v -> Pure v
       NoOp -> NoOp
       DoWhile c -> DoWhile (f (index BooleanProxy) c)
       IfThenElse t v yes no -> IfThenElse t v (f (index t) yes) (f (index t) no)
-      Effect e en t c -> Effect e en t c
+      Effect e en t c -> Effect e en t (imap f c)
 
 ---------------------------------------------------------------------------------
 -- Indexed traversable instance
@@ -169,14 +193,16 @@ instance IFunctor (CodeF eff) where
 instance ITraversable (CodeF effs) where
   isequence = \case
     Let pf n v t c -> Let pf n v t <$> c
+    LetBind pf n vt cv t c -> LetBind pf n vt <$> cv <*> pure t <*> c
     Set pf n v -> pure (Set pf n v)
+    SetBind pf n ty c -> SetBind pf n ty <$> c
     Call t c -> Call t <$> c
     Block t block final -> Block t <$> sequenceA block <*> final
     Pure v -> pure (Pure v)
     NoOp -> pure NoOp
     DoWhile body -> DoWhile <$> body
     IfThenElse t v yes no -> IfThenElse t v <$> yes <*> no
-    Effect eff env t e -> pure (Effect eff env t e)
+    Effect eff env t e -> Effect eff env t <$> isequence e
 
 ---------------------------------------------------------------------------------
 -- Utility functions

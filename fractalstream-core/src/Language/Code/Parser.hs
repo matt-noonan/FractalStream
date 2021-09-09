@@ -16,28 +16,9 @@ import Language.Value
 import Language.Value.Parser
 import Language.Code
 
-import Control.Monad
 import GHC.TypeLits
+import Data.Type.Equality ((:~:)(..))
 
-
-data EffectParser (eff :: Effect) where
-  EffectParser :: forall eff
-                . Proxy eff
-               -> (forall env t
-                   . EnvironmentProxy env
-                  -> ScalarProxy t
-                  -> Parser (eff env t))
-               -> EffectParser eff
-
-newtype EffectParsers effs = EP (EffectParsers_ effs effs)
-
-data EffectParsers_ (effs :: [Effect]) (effs0 :: [Effect]) where
-  ParseEff :: forall eff effs effs0
-            . HasEffect eff effs0
-           => EffectParser eff
-           -> EffectParsers_ effs effs0
-           -> EffectParsers_ (eff ': effs) effs0
-  NoEffs :: forall effs0. EffectParsers_ '[] effs0
 
 parseCode :: forall effs env t
            . EffectParsers effs
@@ -54,16 +35,21 @@ parseCode eps env t input
 -- applicative parser like Text.Earley, so we'll use Megaparsec's monadic
 -- parsing here. The code grammar is simple enough that we can do this fairly
 -- easily.
-pCode :: forall effs env t. EffectParsers effs
-          -> EnvironmentProxy env -> ScalarProxy t -> Parser (Code effs env t)
+pCode :: forall effs env t
+       . EffectParsers effs
+      -> EnvironmentProxy env
+      -> ScalarProxy t
+      -> Parser (Code effs env t)
 pCode eps env t
   =   pBlock   eps env t
   <|> pLine    eps env t
   <|> pEffects eps env t
 
--- | End of line (including end of input)
-eol :: Parser ()
-eol = eof <|> tok_ Newline
+pCode' :: forall effs et
+        . EffectParsers effs
+       -> EnvTypeProxy et
+       -> Parser (Code effs (Env et) (Ty et))
+pCode' eps et = withEnvType et (pCode eps)
 
 -- | An indented block of statements
 pBlock :: EffectParsers effs
@@ -94,7 +80,7 @@ pVoidLine :: EffectParsers effs
           ->  EnvironmentProxy env -> Parser (Code effs env 'VoidT)
 pVoidLine eps env
   =   pLoop eps env
-  <|> pSet      env
+  <|> pSet  eps env
   <|> pPass     env
   <?> "statement"
 
@@ -112,23 +98,28 @@ pAnyLine eps env t
   <|> pVar        eps env t
 
 -- |
--- if TEST
--- then
+-- if TEST then
 --   BLOCK
 -- else
 --   BLOCK
-pIfThenElse :: EffectParsers effs
-          ->  EnvironmentProxy env -> ScalarProxy t -> Parser (Code effs env t)
-pIfThenElse eps env t = do
+--
+-- if TEST then
+--   VOIDBLOCK
+pIfThenElse :: forall effs env t
+             . EffectParsers effs
+            -> EnvironmentProxy env
+            -> ScalarProxy t
+            -> Parser (Code effs env t)
+pIfThenElse eps env t = withEnvironment env $ do
   tok_ If
   (toks, _) <- manyTill_ anyToken (satisfy (== Then))
   eol
   cond <- nest (parseValueFromTokens env BooleanProxy toks)
   yes <- pBlock eps env t
-  tok_ Else
-  eol
-  no <- pBlock eps env t
-  withEnvironment env (pure (Fix (IfThenElse t cond yes no)))
+  no <- case t of
+    VoidProxy -> (tok_ Else >> eol >> pBlock eps env t) <|> pure (Fix (NoOp @env))
+    _         -> (tok_ Else >> eol >> pBlock eps env t)
+  pure (Fix (IfThenElse t cond yes no))
 
 -- | pass
 pPass :: EnvironmentProxy env -> Parser (Code effs env 'VoidT)
@@ -163,21 +154,36 @@ pLoop eps env = do
 
 -- |
 -- set VAR to VALUE
-pSet :: EnvironmentProxy env -> Parser (Code effs env 'VoidT)
-pSet env = do
+-- set VAR <- CODE
+pSet :: EffectParsers effs -> EnvironmentProxy env -> Parser (Code effs env 'VoidT)
+pSet effs env = do
   tok_ (Identifier "set")
   Identifier n <- satisfy (\case { (Identifier _) -> True; _ -> False })
-  tok_ (Identifier "to")
-  toks <- manyTill anyToken eol
+  (    (tok_ (Identifier "to") *> pTo n)
+   <|> (tok_ LeftArrow *> pBind n)
+   <?> "binding style")
+ where
+  pTo n = do
+    toks <- manyTill anyToken eol
 
-  -- Figure out what type the RHS should have, and try to parse a
-  -- value at that type.
-  case someSymbolVal n of
-    SomeSymbol name -> case lookupEnv' name env of
-      Absent' _ -> mzero
-      Found' t pf -> do
-        v <- nest (parseValueFromTokens env t toks)
-        withEnvironment env (pure (Fix (Set pf name v)))
+    -- Figure out what type the RHS should have, and try to parse a
+    -- value at that type.
+    case someSymbolVal n of
+      SomeSymbol name -> case lookupEnv' name env of
+        Absent' _ -> mzero
+        Found' t pf -> do
+          v <- nest (parseValueFromTokens env t toks)
+          withEnvironment env (pure (Fix (Set pf name v)))
+
+  pBind n = do
+    -- Figure out what type the RHS should have, and try to parse some
+    -- code at that type.
+    case someSymbolVal n of
+      SomeSymbol name -> case lookupEnv' name env of
+        Absent' _ -> mzero
+        Found' t pf -> do
+          code <- pCode effs env t
+          withEnvironment env (pure (Fix (SetBind pf name t code)))
 
 -- | Variable
 pVar :: forall effs env t
@@ -197,9 +203,10 @@ pVar eps env t = withKnownType t $ do
       Absent' pf -> case sv of
         SomeValue vt v -> withEnvironment env $ withKnownType vt $ recallIsAbsent pf $ do
           let pf' = bindName name vt pf
-              env' = BindingProxy name vt (Proxy @env)
+              env' = BindingProxy name vt env
           (body, final) <- case t of
-                             VoidProxy -> (\xs -> (init xs, last xs)) <$> some (pCode eps env' VoidProxy)
+                             VoidProxy -> (\xs -> (init xs, last xs))
+                                          <$> some (pCode eps env' VoidProxy)
                              _ -> manyTill_ (pCode eps env' VoidProxy) (try (pCode eps env' t))
           -- peek at the next token, which should be a dedent; we should have parsed the
           -- remainder of the current scope's block.
@@ -209,13 +216,19 @@ pVar eps env t = withKnownType t $ do
 -- | Parse embedded effect languages
 pEffects :: forall effs env t
           . EffectParsers effs
-          ->  EnvironmentProxy env -> ScalarProxy t -> Parser (Code effs env t)
+         -> EnvironmentProxy env
+         -> ScalarProxy t
+         -> Parser (Code effs env t)
 pEffects (EP eps) env t = go eps
   where
     go :: forall effs'. EffectParsers_ effs' effs -> Parser (Code effs env t)
     go NoEffs = mzero
     go (ParseEff (EffectParser eff p) etc) =
-      withEnvironment env (Fix . Effect eff Proxy t <$> p env t) <|> go etc
+      withEnvironment env (Fix . Effect eff Proxy t
+                           <$> p (envTypeProxy env t) (\(et' :: EnvTypeProxy et') ->
+                                                         case lemmaEnvTy @et' of
+                                                           Refl -> pCode' (EP eps) et'))
+      <|> go etc
 
 -- | Parse a value with an unknown type
 parseSomeValue :: forall env. EnvironmentProxy env -> [Token] -> Parser (SomeValue env)

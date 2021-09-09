@@ -11,6 +11,8 @@ module Language.Value.Evaluator
 
 import Language.Value
 import Data.Indexed.Functor
+import Data.Color
+
 import Data.Type.Equality ((:~:)(..))
 import GHC.TypeLits
 import Fcf (Exp, Eval, Pure1)
@@ -185,6 +187,12 @@ evaluator lookUp = \case
     Not x   -> not x
 
     ITE _ b yes no -> if b then yes else no
+
+    RGB r g b     -> rgbToColor ( round (255 * r)
+                                , round (255 * g)
+                                , round (255 * b) )
+    Blend s c1 c2 -> mixColors s c1 c2
+    InvertRGB c   -> invertColor c
 
     Eql t x y -> Scalar t x == Scalar t y
     NEq t x y -> Scalar t x /= Scalar t y

@@ -16,7 +16,7 @@ runEmpty :: ScalarProxy t
          -> String
          -> Either (Int, BadParse) (ScalarType t)
 runEmpty t input
-  = fmap ((`evalState` EmptyContext ) . simulate NoHandler)
+  = fmap ((`evalState` (EmptyContext, ()) ) . simulate NoHandler)
     $ parseCode (EP NoEffs) EmptyEnvProxy t input
 
 runWithX :: forall t xt
@@ -25,9 +25,9 @@ runWithX :: forall t xt
          -> String
          -> Either (Int, BadParse) (ScalarType t)
 runWithX t (Scalar xt x) input = withKnownType xt $
-  let env = BindingProxy (Proxy @"x") xt (Proxy @'[])
+  let env = BindingProxy (Proxy @"x") xt EmptyEnvProxy
       ctx = Bind (Proxy @"x") xt x EmptyContext
-  in fmap ((`evalState` ctx) . simulate NoHandler)
+  in fmap ((`evalState` (ctx, ())) . simulate NoHandler)
    $ parseCode (EP NoEffs) env t input
 
 runWithXY :: forall t xt yt
@@ -40,7 +40,7 @@ runWithXY t (Scalar xt x) (Scalar yt y) input = withKnownType xt $ withKnownType
   let ctx = Bind (Proxy @"x") xt x
           $ Bind (Proxy @"y") yt y
           $ EmptyContext
-  in fmap ((`evalState` ctx) . simulate NoHandler)
+  in fmap ((`evalState` (ctx, ())) . simulate NoHandler)
    $ parseCode (EP NoEffs) (envProxy Proxy) t input
 
 spec :: Spec

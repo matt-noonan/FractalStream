@@ -1,5 +1,6 @@
 module Language.Code.Simulator
   ( simulate
+  , ScalarTypeM
   ) where
 
 import Language.Value hiding (get)
@@ -12,56 +13,63 @@ import Control.Monad.State
 import GHC.TypeLits
 import Fcf (Exp, Eval)
 
-data ScalarTypeM :: (Environment, Type) -> Exp *
-type instance Eval (ScalarTypeM '(env, t)) =
-  State (Context ScalarTypeOfBinding env) (ScalarType t)
-
-type family Env (et :: (Environment, Type)) where Env '(env, t) = env
-type family Ty  (et :: (Environment, Type)) where Ty  '(env, t) = t
+data ScalarTypeM :: * -> (Environment, Type) -> Exp *
+type instance Eval (ScalarTypeM s '(env, t)) =
+  State (Context ScalarTypeOfBinding env, s) (ScalarType t)
 
 -- | Update a variable in the current environment
-update :: forall name t env
+update :: forall name t env s
         . KnownSymbol name
        => NameIsPresent name t env
        -> Proxy name
        -> ScalarProxy t
        -> ScalarType t
-       -> State (Context ScalarTypeOfBinding env) ()
-update pf _name t v = withKnownType t (modify' (setBinding pf v))
+       -> State (Context ScalarTypeOfBinding env, s) ()
+update pf _name t v = withKnownType t (modify' (\(x,y) -> (setBinding pf v x, y)))
 
 -- | Evaluate a value in the current environment
-eval :: forall t env
+eval :: forall t env s
       . Value env t
-     -> State (Context ScalarTypeOfBinding env) (ScalarType t)
+     -> State (Context ScalarTypeOfBinding env, s) (ScalarType t)
 eval v = do
-  ctx <- get
+  ctx <- fst <$> get
   pure (evaluate ctx v)
 
-data StateWithEnv :: Environment -> Type -> Exp *
-type instance Eval (StateWithEnv env t) =
-  State (Context ScalarTypeOfBinding env) (ScalarType t)
-
--- | Run some effect-free 'Code' by interpreting it into a state monad.
-simulate :: forall effs env t
-          . Handlers effs StateWithEnv
+-- | Run some 'Code' by interpreting it into a state monad.
+-- The 's' parameter allows for extra state that may be used
+-- by the effects handlers.
+simulate :: forall effs env t s
+          . Handlers effs (ScalarTypeM s)
          -> Code effs env t
-         -> State (Context ScalarTypeOfBinding env) (ScalarType t)
-simulate handlers = indexedFold @ScalarTypeM @(Fix (CodeF effs)) @(CodeF effs) $ \case
+         -> State (Context ScalarTypeOfBinding env, s) (ScalarType t)
+simulate handlers = indexedFold @(ScalarTypeM s) @(Fix (CodeF effs)) @(CodeF effs) $ \case
   Let _pf name v _ body -> do
-    ctx <- get
+    (ctx, s) <- get
     value <- eval v
     let ctx' = Bind name (typeOfValue v) value ctx
-        (result, Bind _ _ _ ctx'') = runState body ctx'
-    put ctx''
+        (result, (Bind _ _ _ ctx'', s'')) = runState body (ctx', s)
+    put (ctx'', s'')
+    pure result
+
+  LetBind _pf name tv vc _tr body -> do
+    (ctx, s) <- get
+    value <- vc
+    let ctx' = Bind name tv value ctx
+        (result, (Bind _ _ _ ctx'', s'')) = runState body (ctx', s)
+    put (ctx'', s'')
     pure result
 
   Set pf name v -> do
     result <- eval v
     update pf name (typeOfValue v) result
 
+  SetBind pf name tv vc -> do
+    result <- vc
+    update pf name tv result
+
   Call _ code -> do
-    ctx <- get
-    pure (evalState code ctx)
+    st <- get
+    pure (evalState code st)
 
   Block _ stmts stmt -> do
     sequence_ stmts
@@ -82,4 +90,4 @@ simulate handlers = indexedFold @ScalarTypeM @(Fix (CodeF effs)) @(CodeF effs) $
 
   Effect effectType env ty eff ->
     case getHandler effectType handlers of
-      Handle _ handle -> handle env ty eff
+      Handle _ handle -> handle (envProxy env) ty eff

@@ -11,6 +11,7 @@ module Language.Parser
   , Token(..)
   , nest
   , anyToken
+  , eol
   -- Re-exports from megaparsec
   , (<|>)
   , (<?>)
@@ -24,8 +25,10 @@ module Language.Parser
   , manyTill
   , manyTill_
   , lookAhead
+  , many
   , some
   , eof
+  , mzero
   ) where
 
 import Text.Megaparsec hiding (Token, parse)
@@ -38,6 +41,9 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Char
 import Control.Monad
+import Data.List (isPrefixOf, sortOn)
+import Data.Maybe (listToMaybe)
+import Data.Ord
 
 data BadParse
   = AmbiguousParse
@@ -80,15 +86,26 @@ tok_ = void . single
 ident :: Char -> Bool
 ident c = isAlphaNum c || c == '_'
 
-
-singleTokens :: Map Char Token
-singleTokens = Map.fromList
-  [ ('+', Plus), ('-', Minus), ('*', Times), ('/', Divide)
-  , ('^', Caret), ('|', Bar), ('(', OpenParen), (')', CloseParen)
-  , ('[', OpenBracket), (']', CloseBracket)
-  , ('{', OpenBrace), ('}', CloseBrace)
-  , (',', Comma), (':', Colon), (';', Semicolon)
+opTokens :: [(String, Token)]
+opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
+  [ ("+", Plus), ("-", Minus), ("*", Times), ("/", Divide)
+  , ("^", Caret), ("|", Bar), ("(", OpenParen), (")", CloseParen)
+  , ("[", OpenBracket), ("]", CloseBracket)
+  , ("{", OpenBrace), ("}", CloseBrace)
+  , (",", Comma), (":", Colon), (";", Semicolon)
+  , (">", GreaterThan), ("<", LessThan), ("=", Equal)
+  , (">=", GreaterThanOrEqual), ("<=", LessThanOrEqual)
+  , ("≥", GreaterThanOrEqual), ("≤", LessThanOrEqual)
+  , ("!=", NotEqual), ("=/=", NotEqual), ("≠", NotEqual)
+  , ("->", RightArrow), ("<-", LeftArrow)
+  , ("⭢", RightArrow), ("⭠", LeftArrow)
+  , ("→", RightArrow), ("←", LeftArrow)
   ]
+
+longestMatchingOperator :: String -> Maybe (Token, String)
+longestMatchingOperator cs =
+  listToMaybe [ (t, drop (length s) cs)
+              | (s, t) <- opTokens, s `isPrefixOf` cs ]
 
 wordlikeTokens :: Map String Token
 wordlikeTokens = Map.fromList
@@ -106,6 +123,9 @@ toTok :: TokenGroup -> [Token]
 toTok (Single s) = s ++ [Newline]
 toTok (Group s xs) = [Indent] ++ s ++ [Newline] ++ concatMap toTok xs ++ [Dedent]
 
+-- | End of line (including end of input)
+eol :: Parser ()
+eol = eof <|> tok_ Newline
 
 tokenize :: String -> [Token]
 tokenize = \case
@@ -137,9 +157,9 @@ tokenize = \case
                     in NumberF (read ds') : tokenize (dropWhile isDigit cs')
           cs' -> NumberI (read ds) : tokenize cs'
 
-  -- Tokenize the single-character tokens
-  (c:cs) | Just tok <- Map.lookup c singleTokens
-           -> tok : tokenize cs
+  -- Tokenize special operators
+  cs | Just (tok, cs') <- longestMatchingOperator cs
+       -> tok : tokenize cs'
 
   -- Tokenize identifiers
   cs@(c:_) | isAlpha c ->
@@ -221,6 +241,8 @@ data Token
   | Or_
   | And_
   | Not_
+  | LeftArrow
+  | RightArrow
   deriving (Eq, Ord, Show)
 
 instance IsString Token where fromString = Identifier

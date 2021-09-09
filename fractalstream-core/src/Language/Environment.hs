@@ -16,6 +16,13 @@ module Language.Environment
   , getBinding
   , setBinding
   , EnvironmentProxy(..)
+  , EnvTypeProxy(..)
+  , envTypeProxy
+  , withEnvType
+  , bindNameEnv
+  , type Env
+  , type Ty
+  , lemmaEnvTy
   , KnownEnvironment(..)
   , withEnvironment
 
@@ -62,11 +69,44 @@ type Environment = [(Symbol, Type)]
 data EnvironmentProxy (env :: Environment) where
   EmptyEnvProxy :: EnvironmentProxy '[]
   BindingProxy  :: forall name t env
-                 . (KnownSymbol name, KnownEnvironment env, NotPresent name env)
+                 . (KnownSymbol name, NotPresent name env, KnownEnvironment env)
                 => Proxy name
                 -> ScalarProxy t
-                -> Proxy env
+                -> EnvironmentProxy env
                 -> EnvironmentProxy ( '(name, t) ': env )
+
+type family Env (et :: (Environment, Type)) where Env '(env, t) = env
+type family Ty  (et :: (Environment, Type)) where Ty  '(env, t) = t
+
+lemmaEnvTy :: forall et. (et :~: '(Env et, Ty et))
+lemmaEnvTy = (unsafeCoerce :: (Int :~: Int) -> (et :~: '(Env et, Ty et))) Refl
+
+-- | Proxy the type index directly, and the environment
+-- index implicitly through the KnownEnvironment constraint
+data EnvTypeProxy (et :: (Environment, Type)) where
+  EnvType :: forall env t
+           . KnownEnvironment env
+          => ScalarProxy t
+          -> EnvTypeProxy '(env, t)
+
+envTypeProxy :: EnvironmentProxy env -> ScalarProxy t -> EnvTypeProxy '(env, t)
+envTypeProxy env t = withEnvironment env (EnvType t)
+
+withEnvType :: EnvTypeProxy et -> (EnvironmentProxy (Env et) -> ScalarProxy (Ty et) -> a) -> a
+withEnvType (EnvType t) k = k (envProxy Proxy) t
+
+bindNameEnv :: forall name t env
+             . KnownSymbol name
+            => Proxy name
+            -> ScalarProxy t
+            -> NameIsAbsent name env
+            -> EnvironmentProxy env
+            -> EnvironmentProxy ( '(name, t) ': env)
+bindNameEnv _ t pf env
+  = recallIsAbsent pf
+  $ withEnvironment env
+  $ withKnownType t
+  $ envProxy (Proxy @( '(name, t) ': env))
 
 -- | An implicit environment
 class KnownEnvironment (env :: Environment) where
@@ -75,7 +115,7 @@ class KnownEnvironment (env :: Environment) where
 instance KnownEnvironment '[] where envProxy _ = EmptyEnvProxy
 instance (KnownEnvironment env, KnownSymbol name, KnownType t, NotPresent name env)
   => KnownEnvironment ( '(name, t) ': env ) where
-  envProxy _ = BindingProxy Proxy (typeProxy @t) Proxy
+  envProxy _ = BindingProxy Proxy (typeProxy @t) (envProxy Proxy)
 
 -- | Make the given environment implicit.
 withEnvironment :: EnvironmentProxy env -> (KnownEnvironment env => a) -> a
@@ -109,15 +149,15 @@ type role NameIsPresent nominal nominal nominal
 newtype NameIsAbsent  (name :: Symbol) (env :: Environment)
   = NameIsAbsent TrustMe
 
+-- Prevent coercion of the type parameters
+type role NameIsAbsent nominal nominal
+
 isAbsent :: NotPresent name env => NameIsAbsent name env
 isAbsent = trustMe
 
 recallIsAbsent :: forall name env a. NameIsAbsent name env -> (NotPresent name env => a) -> a
 recallIsAbsent _ k = case (unsafeCoerce :: Dict () -> Dict (NotPresent name env)) Dict of
   Dict -> k
-
--- Prevent coercion of the type parameters
-type role NameIsAbsent nominal nominal
 
 type family Without (env :: Environment) (name :: Symbol) :: Environment where
   Without ( '(name,  t) ': env) name = env
@@ -169,7 +209,7 @@ lookupEnv name ty = \case
     Just Refl -> case sameScalarType ty ty' of
       Just Refl -> Found trustMe
       Nothing   -> WrongType
-    Nothing -> case lookupEnv name ty (envProxy env') of
+    Nothing -> case lookupEnv name ty env' of
       Found _   -> Found trustMe
       Absent _  -> Absent trustMe
       WrongType -> WrongType
@@ -185,7 +225,7 @@ lookupEnv' :: KnownSymbol name => Proxy name -> EnvironmentProxy env -> LookupEn
 lookupEnv' name = \case
   BindingProxy name' ty' env' -> case sameSymbol name name' of
     Just Refl -> Found' ty' trustMe
-    Nothing -> case lookupEnv' name (envProxy env') of
+    Nothing -> case lookupEnv' name env' of
       Found' ty _ -> Found' ty trustMe
       Absent' _   -> Absent' trustMe
   EmptyEnvProxy -> Absent' trustMe
