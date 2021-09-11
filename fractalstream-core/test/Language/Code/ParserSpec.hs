@@ -8,9 +8,10 @@ import Language.Value.Parser
 import Language.Code.Parser
 import Language.Code.Simulator
 import Language.Effect
+import Data.Color
 
 import Control.Monad.State
---import Text.RawString.QQ
+import Text.RawString.QQ
 
 runEmpty :: ScalarProxy t
          -> String
@@ -60,6 +61,43 @@ spec = do
 
     it "can bind new variables" $ do
 
-       let p1 = "set x to 5\ninit y to x - 2\nif true then\n  set x to 2 * y\nelse\n  pass\nx"
+       let p1 = [r|
+set x to 5
+init y : Z to x - 2
+if true then
+  set x to 2 * y
+else
+  pass
+x|]
+           p2 = [r|
+set x to 5
+init y : Z to x - 2
+if true then
+  set x to 2 * y
+x|]
 
        runWithX IntegerProxy (Scalar IntegerProxy 0) p1 `shouldBe` Right 6
+       runWithX IntegerProxy (Scalar IntegerProxy 0) p2 `shouldBe` Right 6
+
+  describe "when parsing more complex code" $ do
+
+    it "can parse a checkered Mandelbrot program" $ do
+      let mandel = [r|
+init C : C to x + y i
+init z : C to 0
+init count : Z to 0
+loop
+  set z to z^2 + C
+  set count to count + 1
+  |z| < 10 and count < 100
+if count = 100 then
+  black
+else if im z > 0 then
+  red
+else
+  yellow|]
+
+          runMandel (x :+ y) = runWithXY ColorProxy (Scalar RealProxy x) (Scalar RealProxy y) mandel
+      runMandel 0 `shouldBe` Right black
+      runMandel (1 :+ 1) `shouldBe` Right yellow
+      runMandel (1 :+ (-1)) `shouldBe` Right red

@@ -25,7 +25,7 @@ import Language.Environment
 
 type Value env = Fix (ValueF env)
 
-data ValueF (env :: [(Symbol, Type)]) (value :: Type -> Exp *) (t :: Type) where
+data ValueF (env :: Environment) (value :: Type -> Exp *) (t :: Type) where
 
   -- Constants and variables
   Const :: forall ty env value. Scalar ty -> ValueF env value ty
@@ -76,7 +76,6 @@ data ValueF (env :: [(Symbol, Type)]) (value :: Type -> Exp *) (t :: Type) where
   SubC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
   MulC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
   DivC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
-  ModC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
   PowC :: forall env value. Eval (value 'ComplexT) -> Eval (value 'ComplexT) -> ValueF env value 'ComplexT
   NegC :: forall env value. Eval (value 'ComplexT) -> ValueF env value 'ComplexT
 
@@ -281,7 +280,6 @@ instance IFunctor (ValueF env) where
     SubC {} -> ComplexProxy
     MulC {} -> ComplexProxy
     DivC {} -> ComplexProxy
-    ModC {} -> ComplexProxy
     PowC {} -> ComplexProxy
     NegC {} -> ComplexProxy
 
@@ -377,7 +375,6 @@ instance IFunctor (ValueF env) where
     SubC x y -> SubC (f ComplexProxy x) (f ComplexProxy y)
     MulC x y -> MulC (f ComplexProxy x) (f ComplexProxy y)
     DivC x y -> DivC (f ComplexProxy x) (f ComplexProxy y)
-    ModC x y -> ModC (f ComplexProxy x) (f ComplexProxy y)
     PowC x y -> PowC (f ComplexProxy x) (f ComplexProxy y)
     NegC x   -> NegC (f ComplexProxy x)
 
@@ -477,7 +474,6 @@ instance ITraversable (ValueF env) where
     SubC mx my -> SubC <$> mx <*> my
     MulC mx my -> MulC <$> mx <*> my
     DivC mx my -> DivC <$> mx <*> my
-    ModC mx my -> ModC <$> mx <*> my
     PowC mx my -> PowC <$> mx <*> my
     NegC mx    -> NegC <$> mx
 
@@ -532,6 +528,8 @@ instance ITraversable (ValueF env) where
     LTF mx my -> LTF <$> mx <*> my
     GTI mx my -> GTI <$> mx <*> my
     GTF mx my -> GTF <$> mx <*> my
+
+instance Show (Value env t) where show _ = "<value>"
 
 ---------------------------------------------------------------------------------
 -- Utility functions

@@ -6,6 +6,12 @@ module Language.Effect.ThrowEvent
 import Language.Value
 import Actor
 import Event
+import Fcf (Exp)
 
-data ThrowEvent (env :: Environment) (ty :: Type) where
-  Throw :: forall env. SomeActor -> Event (Value env) -> ThrowEvent env 'VoidT
+data ThrowEvent (code :: (Environment, Type) -> Exp *)
+                (et :: (Environment, Type)) where
+  Throw :: forall et args code
+         . EnvTypeProxy et
+        -> SomeActor
+        -> Event args
+        -> ThrowEvent code et

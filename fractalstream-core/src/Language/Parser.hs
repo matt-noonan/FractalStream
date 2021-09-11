@@ -13,6 +13,7 @@ module Language.Parser
   , anyToken
   , eol
   -- Re-exports from megaparsec
+  , dbg
   , (<|>)
   , (<?>)
   , (<$)
@@ -45,14 +46,22 @@ import Data.List (isPrefixOf, sortOn)
 import Data.Maybe (listToMaybe)
 import Data.Ord
 
+-- | Swap this out for @Text.Megaparsec.Debug@'s
+-- 'dbg' to debug the parsers.
+dbg :: String -> Parser t -> Parser t
+dbg _ = id
+
 data BadParse
   = AmbiguousParse
   | UnboundVariable String
   | MismatchedType String
-  | Unexpected
+  | Unexpected (Maybe [Token]) [[Token]]
   | Other String
   | Internal
   deriving (Eq, Ord, Show)
+
+instance ShowErrorComponent BadParse where showErrorComponent = show
+instance VisualStream [Token] where showTokens _ (t NE.:| ts) = show (t : ts)
 
 -- | Fail with a custom parse error
 bad :: forall t. BadParse -> Parser t
@@ -68,8 +77,14 @@ parse p toks = runParser (p <* eof) "" toks & \case
       ErrorIndentation{} -> Other "indentation error"
       ErrorCustom e' -> e'
     FancyError n _ -> Left (n, Internal)
-    TrivialError n _ _ -> Left (n, Unexpected)
+    TrivialError n ue es -> Left (n, Unexpected (getTokens <$> ue) (map getTokens (Set.toList es)))
   Right v   -> Right v
+
+getTokens :: ErrorItem Token -> [Token]
+getTokens = \case
+  Tokens (t NE.:| ts) -> t : ts
+  Label  (c NE.:| cs) -> [Identifier (c:cs)]
+  EndOfInput          -> [Newline]
 
 nest :: Either (Int, BadParse) t -> Parser t
 nest =  \case
@@ -110,7 +125,7 @@ longestMatchingOperator cs =
 wordlikeTokens :: Map String Token
 wordlikeTokens = Map.fromList
   [ ("if", If), ("then", Then), ("else", Else)
-  , ("e", Euler), ("pi", Pi)
+  , ("e", Euler), ("pi", Pi), ("i", I)
   , ("true", True_), ("false", False_)
   , ("or", Or_), ("and", And_), ("not", Not_)
   ]
@@ -236,6 +251,7 @@ data Token
   | Else
   | Euler
   | Pi
+  | I
   | True_
   | False_
   | Or_

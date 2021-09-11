@@ -17,6 +17,7 @@ import Data.Type.Equality ((:~:)(..))
 import GHC.TypeLits
 import Fcf (Exp, Eval, Pure1)
 import Unsafe.Coerce
+import Numeric.Extras
 
 -- | First-class family corresponding to ScalarType, suitable to use in a Context
 data ScalarTypeOfBinding :: Symbol -> Type -> Exp *
@@ -120,7 +121,7 @@ evaluator lookUp = \case
     SubF x y -> x - y
     MulF x y -> x * y
     DivF x y -> x / y
-    ModF _ _ -> error "TODO"
+    ModF x y -> fmod x y
     PowF x n -> x ** n
     AbsF x   -> abs x
     NegF x   -> negate x
@@ -148,7 +149,6 @@ evaluator lookUp = \case
     SubC x y -> x - y
     MulC x y -> x * y
     DivC x y -> x / y
-    ModC _ _ -> error "TODO"
     PowC x n -> x ** n
     NegC x   -> negate x
 
@@ -191,7 +191,8 @@ evaluator lookUp = \case
     RGB r g b     -> rgbToColor ( round (255 * r)
                                 , round (255 * g)
                                 , round (255 * b) )
-    Blend s c1 c2 -> mixColors s c1 c2
+    Blend s c1 c2 -> mixColors s c2 c1
+
     InvertRGB c   -> invertColor c
 
     Eql t x y -> Scalar t x == Scalar t y

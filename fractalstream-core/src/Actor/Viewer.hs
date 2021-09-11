@@ -5,6 +5,7 @@ module Actor.Viewer
 import Language.Code
 import Language.Effect.Render
 import Language.Effect.Draw
+import Language.Effect.Provide
 import Actor
 import Actor.Settings
 import Actor.Tool
@@ -16,16 +17,21 @@ data Viewer where
             , NotPresent "viewHeight" env )
          =>
     { viewerSettings :: Settings env NoEffects
-    , onResize ::
-        Code '[Render]
-             ( '("viewWidth",  'IntegerT) ': '("viewHeight", 'IntegerT) ': env)
-             'VoidT
-    , onTimer :: Maybe (Code '[Render] env 'VoidT)
+    , viewToModel :: Value
+                      ( '("viewX", 'RealT) ': '("viewY", 'RealT) ': env)
+                     ('Pair 'RealT 'RealT)
+    , modelToView :: Value
+                      ( '("modelX", 'RealT) ': '("modelY", 'RealT) ': env)
+                     ('Pair 'RealT 'RealT)
+    , onRefresh :: Maybe (Code '[Provide env, Render] '[] 'VoidT)
+    , onResize  :: Maybe (Code '[Provide env, Render] ResizeEnv 'VoidT)
+    , onTimer   :: Maybe (Code '[Provide env, Render] '[] 'VoidT)
     , viewerTools :: [Tool '[Draw]]
     } -> Viewer
 
 instance Actor Viewer where
-  handle evt Viewer{..} = case evt of
-    Timer -> SomeCode <$> onTimer
-    Resize (_w,_h) -> Just $ SomeCode onResize
-    _ -> Nothing
+  handle Viewer{..} = \case
+    Timer   -> CodeWithEffects <$> onTimer
+    Resize  -> CodeWithEffects <$> onResize
+    Refresh -> CodeWithEffects <$> onRefresh
+    _       -> Nothing

@@ -75,17 +75,18 @@ executable FractalStream
                        wx,
                        async,
                        containers,
-                       parsec,
+                       --parsec,
                        mtl,
-                       recursion-schemes,
-                       llvm-hs,
-                       llvm-hs-pure,
+                       --recursion-schemes,
+                       --llvm-hs,
+                       --llvm-hs-pure,
                        time,
                        monad-parallel,
                        monad-par,
                        monad-par-extras,
                        bytestring,
                        vector,
-                       first-class-families
+                       first-class-families,
+                       raw-strings-qq
   hs-source-dirs:      src
   extra-lib-dirs:      /usr/local/lib

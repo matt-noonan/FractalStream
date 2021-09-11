@@ -3,6 +3,7 @@ module Language.Type
   , type ScalarType
   , Scalar(..)
   , ScalarProxy(..)
+  , SomeType(..)
   , sameScalarType
   , Int64
   , Symbol
@@ -105,6 +106,9 @@ data ScalarProxy (t :: Type) where
   ColorProxy    :: ScalarProxy 'ColorT
   PairProxy     :: (KnownType x, KnownType y) => ScalarProxy x -> ScalarProxy y -> ScalarProxy ('Pair x y)
   VoidProxy     :: ScalarProxy 'VoidT
+
+data SomeType where
+  SomeType :: forall t. ScalarProxy t -> SomeType
 
 class KnownType (t :: Type)  where typeProxy :: ScalarProxy t
 instance KnownType 'BooleanT where typeProxy = BooleanProxy

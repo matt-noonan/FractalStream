@@ -1,11 +1,13 @@
-{-# language UndecidableInstances, RoleAnnotations #-}
+{-# language UndecidableInstances, RoleAnnotations, AllowAmbiguousTypes #-}
 
 module Language.Environment
   ( type Environment
+  , CanAppendTo(..)
   , type Lookup
   , type Required
   , type NotPresent
   , Context(..)
+  , contextToEnv
   , mapContext
   , mapContextM
   , forContext
@@ -36,6 +38,7 @@ module Language.Environment
   , bindingEvidence
   , isAbsent
   , recallIsAbsent
+  , absentInTail
 
   , lookupEnv
   , LookupEnvResult(..)
@@ -69,7 +72,7 @@ type Environment = [(Symbol, Type)]
 data EnvironmentProxy (env :: Environment) where
   EmptyEnvProxy :: EnvironmentProxy '[]
   BindingProxy  :: forall name t env
-                 . (KnownSymbol name, NotPresent name env, KnownEnvironment env)
+                 . (KnownSymbol name, NotPresent name env)
                 => Proxy name
                 -> ScalarProxy t
                 -> EnvironmentProxy env
@@ -77,6 +80,11 @@ data EnvironmentProxy (env :: Environment) where
 
 type family Env (et :: (Environment, Type)) where Env '(env, t) = env
 type family Ty  (et :: (Environment, Type)) where Ty  '(env, t) = t
+
+instance Show (EnvironmentProxy env) where
+  show = \case
+    BindingProxy name ty env' -> symbolVal name <> ":" <> showType ty <> ", " <> show env'
+    EmptyEnvProxy -> "<empty>"
 
 lemmaEnvTy :: forall et. (et :~: '(Env et, Ty et))
 lemmaEnvTy = (unsafeCoerce :: (Int :~: Int) -> (et :~: '(Env et, Ty et))) Refl
@@ -89,10 +97,14 @@ data EnvTypeProxy (et :: (Environment, Type)) where
           => ScalarProxy t
           -> EnvTypeProxy '(env, t)
 
-envTypeProxy :: EnvironmentProxy env -> ScalarProxy t -> EnvTypeProxy '(env, t)
+envTypeProxy :: EnvironmentProxy env
+             -> ScalarProxy t
+             -> EnvTypeProxy '(env, t)
 envTypeProxy env t = withEnvironment env (EnvType t)
 
-withEnvType :: EnvTypeProxy et -> (EnvironmentProxy (Env et) -> ScalarProxy (Ty et) -> a) -> a
+withEnvType :: EnvTypeProxy et
+            -> (EnvironmentProxy (Env et) -> ScalarProxy (Ty et) -> a)
+            -> a
 withEnvType (EnvType t) k = k (envProxy Proxy) t
 
 bindNameEnv :: forall name t env
@@ -121,7 +133,7 @@ instance (KnownEnvironment env, KnownSymbol name, KnownType t, NotPresent name e
 withEnvironment :: EnvironmentProxy env -> (KnownEnvironment env => a) -> a
 withEnvironment pxy k = case pxy of
   EmptyEnvProxy -> k
-  BindingProxy _ t _ -> withKnownType t k
+  BindingProxy _ t env -> withEnvironment env (withKnownType t k)
 
 ---------------------------------------------------------------------------------
 -- "Proofs" that names are present in the environment and have the right type.
@@ -158,6 +170,10 @@ isAbsent = trustMe
 recallIsAbsent :: forall name env a. NameIsAbsent name env -> (NotPresent name env => a) -> a
 recallIsAbsent _ k = case (unsafeCoerce :: Dict () -> Dict (NotPresent name env)) Dict of
   Dict -> k
+
+absentInTail :: NameIsPresent name t ( '(name, t) ': env)
+             -> NameIsAbsent name env
+absentInTail _ = trustMe
 
 type family Without (env :: Environment) (name :: Symbol) :: Environment where
   Without ( '(name,  t) ': env) name = env
@@ -230,6 +246,35 @@ lookupEnv' name = \case
       Absent' _   -> Absent' trustMe
   EmptyEnvProxy -> Absent' trustMe
 
+---------------------------------------------------------------------------------
+-- Concatenating environments
+---------------------------------------------------------------------------------
+
+class CanAppendTo (xs :: Environment) (ys :: Environment) where
+  type EnvAppend xs ys :: Environment
+  envAppend :: EnvironmentProxy xs
+            -> EnvironmentProxy ys
+            -> EnvironmentProxy (xs `EnvAppend` ys)
+
+instance CanAppendTo '[] ys where
+  type EnvAppend '[] ys = ys
+  envAppend EmptyEnvProxy ys = ys
+
+instance (KnownSymbol name, NotPresent name xs, NotPresent name ys, CanAppendTo xs ys)
+    => CanAppendTo ( '(name,t) ': xs) ys where
+  type EnvAppend ( '(name,t) ': xs) ys = '(name,t) ': EnvAppend xs ys
+  envAppend (BindingProxy name t xs) ys =
+    recallNotPresentInEither @name @xs @ys $
+      BindingProxy name t (envAppend xs ys)
+
+recallNotPresentInEither
+  :: forall name xs ys a
+   . (NotPresent name xs, NotPresent name ys)
+  => (NotPresent name (xs `EnvAppend` ys) => a)
+  -> a
+recallNotPresentInEither k =
+  case (unsafeCoerce :: Dict () -> Dict (NotPresent name (xs `EnvAppend` ys))) Dict of
+    Dict -> k
 
 ---------------------------------------------------------------------------------
 -- Constraints to require that a certain name is or is not present
@@ -281,12 +326,17 @@ type family NotPresent_impl
 data Context (value :: Symbol -> Type -> Exp *) (env :: Environment) where
   EmptyContext :: forall value. Context value '[]
   Bind :: forall name ty env value
-        . KnownSymbol name
+        . (KnownSymbol name, NotPresent name env)
        => Proxy name
        -> ScalarProxy ty
        -> Eval (value name ty)
        -> Context value env
        -> Context value ( '(name, ty) ': env)
+
+contextToEnv :: Context value env -> EnvironmentProxy env
+contextToEnv = \case
+  EmptyContext -> EmptyEnvProxy
+  Bind name t _ ctx -> BindingProxy name t (contextToEnv ctx)
 
 -- | Transform each bound value in the context, creating a new context.
 mapContext :: forall a b env

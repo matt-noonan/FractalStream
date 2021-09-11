@@ -26,6 +26,8 @@ data SomeCode where
 
 type Code effs env t = Fix (CodeF effs) '(env, t)
 
+instance Show (Code effs env t) where show _ = "<code>"
+
 -- | The Code type is used recursively at different Type parameters,
 -- and also at different Environments (in a Let binding). That means
 -- we need to use both the environment *and* the type as indices

@@ -1,13 +1,16 @@
 module Actor.Settings
   ( Setting(..)
   , Settings(..)
+  , InputValidator(..)
   , Pure2
   ) where
 
-import GHC.TypeLits
+import Language.Effect.Provide
 import Language.Code
 import Actor
 import Event
+
+import GHC.TypeLits
 import Fcf (Pure2)
 
 data Setting (name :: Symbol) (t :: Type) where
@@ -15,11 +18,12 @@ data Setting (name :: Symbol) (t :: Type) where
            . KnownSymbol name
           => Proxy name -- ^ Variable name
           -> Scalar ty  -- ^ Initial value
-          -> Maybe (String
-                   , [ ( String
-                       , Code NoEffects '[ '(name, ty) ] 'BooleanT )]
-                   ) -- ^ User-facing name, and input validators
+          -> Maybe (String, [InputValidator name ty])
+             -- ^ User-facing name, and input validators
           -> Setting name ty
+
+data InputValidator name ty =
+  InputValidator String (Value '[ '(name, ty) ] 'BooleanT)
 
 data Settings (env :: Environment) (effs :: [Effect]) where
   Settings :: forall env effs.
@@ -27,11 +31,12 @@ data Settings (env :: Environment) (effs :: [Effect]) where
     ) =>
     { settingsList :: Context (Pure2 Setting) env
     , settingsTitle :: String
+    , settingsEnv :: EnvironmentProxy env
     , parentActor :: SomeActor
-    , onChanged :: Code effs env 'VoidT
+    , onChanged :: Maybe (Code (Provide env ': effs) '[] 'VoidT)
     } -> Settings env effs
 
 instance Actor (Settings env effs) where
-  handle evt Settings{..} = case evt of
-    Refresh -> Just (SomeCode onChanged)
+  handle Settings{..} = \case
+    Refresh -> CodeWithEffects <$> onChanged
     _       -> Nothing

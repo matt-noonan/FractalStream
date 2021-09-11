@@ -3,23 +3,32 @@ module Actor.Tool
   ) where
 
 import Language.Code
+import Actor
 import Actor.Settings
+import Event
+import Language.Effect.Provide
 
 data Tool effs where
-  Tool :: forall env effs posEnv pos2Env
-        . ( NotPresent "posX" env
-          , NotPresent "posY" env
-          , NotPresent "posX0" env
-          , NotPresent "posY0" env
-          , posEnv  ~ ( '("posX",  'RealT) ': '("posY",  'RealT) ': env )
-          , pos2Env ~ ( '("posX0", 'RealT) ': '("posY0", 'RealT) ': posEnv )
-          )
-       =>
+  Tool :: forall env effs
+        . ( PosEnv  `CanAppendTo` env
+          , DragEnv `CanAppendTo` env
+          ) =>
     { toolSettings :: Settings env effs
-    , onClick :: Maybe (Code effs posEnv 'VoidT)
-    , onMouseDown :: Maybe (Code effs posEnv 'VoidT)
-    , onMouseUp   :: Maybe (Code effs posEnv 'VoidT)
-    , onMotion :: Maybe (Code effs posEnv 'VoidT)
-    , onDrag :: Maybe (Code effs pos2Env 'VoidT)
-    , onButton :: [(String, Code effs env 'VoidT)]
+    , toolName :: String
+    , toolHelp :: String
+    , onClick     :: Maybe (Code (Provide env ': effs) PosEnv 'VoidT)
+    , onMouseDown :: Maybe (Code (Provide env ': effs) PosEnv 'VoidT)
+    , onMouseUp   :: Maybe (Code (Provide env ': effs) PosEnv 'VoidT)
+    , onMotion    :: Maybe (Code (Provide env ': effs) PosEnv 'VoidT)
+    , onDrag      :: Maybe (Code (Provide env ': effs) DragEnv 'VoidT)
+    , buttons     :: [(String, Code (Provide env ': effs) '[] 'VoidT)]
     } -> Tool effs
+
+instance Actor (Tool effs) where
+  handle Tool{..} = \case
+    Click     -> CodeWithEffects <$> onClick
+    MouseDown -> CodeWithEffects <$> onMouseDown
+    MouseUp   -> CodeWithEffects <$> onMouseUp
+    Motion    -> CodeWithEffects <$> onMotion
+    Drag      -> CodeWithEffects <$> onDrag
+    _         -> Nothing

@@ -9,6 +9,7 @@ module Language.Effect
   , EffectParser(..)
   , EffectParsers(..)
   , EffectParsers_(..)
+  , noParser
   ) where
 
 import Language.Type
@@ -76,3 +77,6 @@ data EffectParsers_ (effs :: [Effect]) (effs0 :: [Effect]) where
            -> EffectParsers_ effs effs0
            -> EffectParsers_ (eff ': effs) effs0
   NoEffs :: forall effs0. EffectParsers_ '[] effs0
+
+noParser :: EffectParser eff
+noParser = EffectParser Proxy (\_ _ -> mzero)

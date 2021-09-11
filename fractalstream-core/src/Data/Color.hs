@@ -37,7 +37,7 @@ import Foreign.Storable
 import Foreign.Ptr
 
 data Color = Color Word8 Word8 Word8
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 -- | Extract the red/green/blue channels from a color
 colorToRGB :: Color -> (Word8, Word8, Word8)

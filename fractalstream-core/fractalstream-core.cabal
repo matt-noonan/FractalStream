@@ -105,8 +105,10 @@ library
                        Language.Effect.Draw
                        Language.Effect.Render
                        Language.Effect.ThrowEvent
+                       Language.Effect.Provide
                        Language.Effect.List
                        Language.Parser
+                       Language.Untyped
 
                        Data.Indexed.Functor
                        Data.Planar
@@ -128,6 +130,7 @@ library
                        monad-parallel,
                        monad-par,
                        monad-par-extras,
+                       numeric-extras,
                        bytestring,
                        vector,
                        first-class-families,

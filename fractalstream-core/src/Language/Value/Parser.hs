@@ -79,15 +79,15 @@ ok = (>>= good)
 value_ :: forall t env
             . (KnownEnvironment env, KnownType t)
            => Parser (Value env t)
-value_ = case typeProxy @t of
-  VoidProxy     -> fail "no values of void type"
-  BooleanProxy  -> boolValue_
-  IntegerProxy  -> intValue_
-  RealProxy     -> realValue_
-  ComplexProxy  -> cplxValue_
-  ColorProxy    -> colorValue_
-  PairProxy x y -> pairValue_ x y
-  p -> error ("todo: value @" <> showType p)
+value_ = dbg ("value_ @" <> showType (typeProxy @t)) $ case typeProxy @t of
+  VoidProxy     -> dbg "badB" $ fail "no values of void type"
+  BooleanProxy  -> dbg "badC" $ boolValue_
+  IntegerProxy  -> dbg "badD" $ intValue_
+  RealProxy     -> dbg "badE" $ realValue_
+  ComplexProxy  -> dbg "badF" $ cplxValue_
+  ColorProxy    -> dbg "ok" $ colorValue_
+  PairProxy x y -> dbg "badZ" $ pairValue_ x y
+  p -> dbg "badA" $ error ("todo: value @" <> showType p)
 
 valueAtType_ :: forall t env
                 . KnownEnvironment env
@@ -98,7 +98,7 @@ valueAtType_ t = withKnownType t (value_ @t)
 atom_ :: forall t env
        . ( KnownEnvironment env, KnownType t )
       => Parser (Value env t)
-atom_ = case typeProxy @t of
+atom_ = dbg ("atom_ @" <> showType (typeProxy @t) <> "  " <> show (envProxy (Proxy @env))) $ case typeProxy @t of
   VoidProxy     -> fail "no values of void type"
   BooleanProxy  -> boolAtom_
   IntegerProxy  -> intAtom_
@@ -169,7 +169,7 @@ data SomeValue env where
 someValue_ :: forall env. KnownEnvironment env => Parser (SomeValue env)
 someValue_
   =   try (SomeValue IntegerProxy <$> value_)
-  <|> try (SomeValue RealProxy <$> value_)
+  <|> try (SomeValue RealProxy    <$> value_)
   <|> try (SomeValue ComplexProxy <$> value_)
   <?> "value of unknown type"
 
@@ -187,7 +187,7 @@ boolOp_ = do
       rhs <- value_ @'RealT @env
       let op = opsF Map.! opTok
       good (op lhs rhs)
-    _ -> fail "wrong type for boolean operation"
+    _ -> fail ("wrong type " <> showType t <> " for comparison")
  where
    opsI = Map.fromList
      [ (GreaterThan, GTI), (GreaterThanOrEqual, GEI)
@@ -299,7 +299,7 @@ intValue_ :: forall env. KnownEnvironment env => Parser (Value env 'IntegerT)
 intValue_ = arithValue_ intOps <|> atom_
 
 intAtom_ :: forall env. KnownEnvironment env => Parser (Value env 'IntegerT)
-intAtom_ = intConst_ <|> intParen_ {- <|> intAbs_ -} <|> intVar_
+intAtom_ = intConst_ <|> intMod_ <|> intParen_ {- <|> intAbs_ -} <|> intVar_
   where
     intConst_ = (\(NumberI n) -> Fix (Const $ Scalar IntegerProxy (fromIntegral n)))
                 <$> satisfy (\case { NumberI _ -> True; _ -> False })
@@ -314,6 +314,13 @@ intAtom_ = intConst_ <|> intParen_ {- <|> intAbs_ -} <|> intVar_
                                  Absent _  -> bad (UnboundVariable n)
                                  WrongType -> bad (MismatchedType n))
       <?> "integer variable"
+
+    intMod_ = do
+      tok_ (Identifier "mod")
+      tok_ OpenParen
+      x <- value_ <* tok_ Comma
+      y <- value_ <* tok_ CloseParen
+      good (ModI x y)
 
     intParen_ = tok_ OpenParen *> intValue_ @env <* tok_ CloseParen
                 <?> "subexpression"
@@ -338,7 +345,9 @@ realAtom_
     =   realConst_ <|> realConstI_ <|> e_ <|> pi_
     <|> realParen_
     <|> someAbs_
+    <|> realMod_
     <|> try realFun_
+    <|> try intVar_
     <|> realVar_
   where
     e_  = (Fix $ Const $ Scalar RealProxy (exp 1)) <$ tok_ Euler
@@ -362,8 +371,25 @@ realAtom_
                                  WrongType -> bad (MismatchedType n))
       <?> "real variable"
 
+    intVar_ =
+      (satisfy (\case { Identifier _ -> True; _ -> False }) >>=
+        \(Identifier n) ->
+          case someSymbolVal n of
+            SomeSymbol name -> case lookupEnv name IntegerProxy (envProxy (Proxy @env)) of
+                                 Found pf  -> good (I2R (Fix (Var name IntegerProxy pf)))
+                                 Absent _  -> bad (UnboundVariable n)
+                                 WrongType -> bad (MismatchedType n))
+      <?> "real variable"
+
     realParen_ = tok_ OpenParen *> realValue_ @env <* tok_ CloseParen
                 <?> "subexpression"
+
+    realMod_ = do
+      tok_ (Identifier "mod")
+      tok_ OpenParen
+      x <- value_ <* tok_ Comma
+      y <- value_ <* tok_ CloseParen
+      good (ModF x y)
 
     someAbs_ = try realAbs_ <|> cplxAbs_
 
@@ -404,24 +430,41 @@ cplxValue_ = arithValue_ cplxOps <|> atom_
 cplxAtom_ :: forall env. KnownEnvironment env => Parser (Value env 'ComplexT)
 cplxAtom_
     =   cplxConst_
+    <|> i_
     <|> cplxParen_
     <|> try cplxFun_
     <|> cplxVar_
   where
     cplxConst_ :: Parser (Value env 'ComplexT)
-    cplxConst_ = (satisfy (\case { NumberI _ -> True; _ -> False }) <&>
-                   \(NumberI n) -> Fix (Const $ Scalar ComplexProxy (fromIntegral n)))
+    cplxConst_ = (satisfy (\case { NumberI _ -> True
+                                 ; NumberF _ -> True
+                                 ; _ -> False }) <&>
+                   \case
+                     NumberI n -> Fix (Const $ Scalar ComplexProxy (fromIntegral n))
+                     NumberF n -> Fix (Const $ Scalar ComplexProxy (n :+ 0))
+                     _ -> error "unreachable"
+                 )
                 <?> "complex constant"
+
+    i_ = (Fix $ Const $ Scalar ComplexProxy (0 :+ 1)) <$ tok_ I
 
     cplxVar_ =
       (satisfy (\case { Identifier _ -> True; _ -> False }) >>=
         \(Identifier n) ->
           case someSymbolVal n of
-            SomeSymbol name -> case lookupEnv name ComplexProxy (envProxy (Proxy @env)) of
-                                 Found pf  -> good (Var name ComplexProxy pf)
-                                 Absent _  -> bad (UnboundVariable n)
-                                 WrongType -> bad (MismatchedType n))
-      <?> "complex variable"
+            SomeSymbol name ->
+              case lookupEnv name ComplexProxy (envProxy (Proxy @env)) of
+                Found pf  -> good (Var name ComplexProxy pf)
+                Absent _  -> bad (UnboundVariable n)
+                WrongType -> case lookupEnv name RealProxy (envProxy (Proxy @env)) of
+                  -- Try again with Real type and coerce
+                  Found pf  -> good (R2C (Fix (Var name RealProxy pf)))
+                  Absent _  -> bad (UnboundVariable n)
+                  WrongType -> case lookupEnv name IntegerProxy (envProxy (Proxy @env)) of
+                    Found pf  -> good (R2C (Fix . I2R . Fix $ Var name IntegerProxy pf))
+                    Absent _  -> bad (UnboundVariable n)
+                    WrongType -> bad (MismatchedType (n ++ " D:"))
+      ) <?> "complex variable"
 
     cplxParen_ = tok_ OpenParen *> cplxValue_ @env <* tok_ CloseParen
                 <?> "subexpression"
@@ -440,13 +483,15 @@ cplxAtom_
 ---------------------------------------------------------------------------------
 
 colorValue_ :: forall env. KnownEnvironment env => Parser (Value env 'ColorT)
-colorValue_ = atom_
+colorValue_ = dbg "colorValue_" atom_
 
 colorAtom_ :: forall env. KnownEnvironment env => Parser (Value env 'ColorT)
-colorAtom_ = colorOp_ <|> namedColor_ <|> rgb_
+colorAtom_ =
+  dbg "colorAtom_" (colorOp_ <|> namedColor_ <|> rgb_ <|> colorVar_)
 
 colorOp_ :: forall env. KnownEnvironment env => Parser (Value env 'ColorT)
-colorOp_ = dark_ <|> light_ <|> blend_ <|> invert_ <?> "color operation"
+colorOp_ =
+    dbg "colorOp_" $ (dark_ <|> light_ <|> blend_ <|> invert_ <?> "color operation")
   where
     color = Fix . Const . Scalar ColorProxy
 
@@ -462,9 +507,10 @@ colorOp_ = dark_ <|> light_ <|> blend_ <|> invert_ <?> "color operation"
 
     blend_ = do
       tok_ (Identifier "blend")
-      s <- value_
-      c1 <- value_
-      c2 <- value_
+      tok_ OpenParen
+      s  <- value_ <* tok_ Comma
+      c1 <- value_ <* tok_ Comma
+      c2 <- value_ <* tok_ CloseParen
       good (Blend s c1 c2)
 
     invert_ = do
@@ -473,7 +519,7 @@ colorOp_ = dark_ <|> light_ <|> blend_ <|> invert_ <?> "color operation"
       good (InvertRGB c)
 
 rgb_ :: forall env. KnownEnvironment env => Parser (Value env 'ColorT)
-rgb_ = do
+rgb_ = dbg "rgb_" $ do
   tok_ (Identifier "rgb") >> tok_ OpenParen
   r <- value_
   tok_ Comma
@@ -484,8 +530,8 @@ rgb_ = do
   good (RGB r g b)
 
 namedColor_ :: forall env. KnownEnvironment env => Parser (Value env 'ColorT)
-namedColor_ = do
-  Identifier n <- satisfy (\(Identifier n) -> Map.member n colors)
+namedColor_ = dbg "namedColor_" $ do
+  Identifier n <- satisfy $ \case { Identifier n -> Map.member n colors; _ -> False }
   good (Const (Scalar ColorProxy (colors Map.! n)))
  where
    colors :: Map String Color
@@ -493,3 +539,16 @@ namedColor_ = do
      [ ("red", red), ("green", green), ("blue", blue)
      , ("black", black), ("white", white), ("grey", grey), ("gray", grey)
      , ("orange", orange), ("yellow", yellow), ("purple", purple), ("violet", violet) ]
+
+colorVar_ :: forall env. KnownEnvironment env => Parser (Value env 'ColorT)
+colorVar_ = dbg "colorVar_" (
+  (satisfy (\case { Identifier _ -> True; _ -> False }) >>=
+    \(Identifier n) ->
+      case someSymbolVal n of
+        SomeSymbol name ->
+          case lookupEnv name ColorProxy (envProxy (Proxy @env)) of
+            Found pf  -> good (Var name ColorProxy pf)
+            Absent _  -> bad (UnboundVariable n)
+            WrongType -> bad (MismatchedType n)
+  ) <?> "color variable"
+  )

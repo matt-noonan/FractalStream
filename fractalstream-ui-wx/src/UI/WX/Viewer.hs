@@ -27,6 +27,8 @@ import Data.IORef
 import UI
 import UI.WxWidgets
 
+import Actor.Viewer
+
 data Model = Model
   { modelCenter   :: (Double, Double)
   , modelPixelDim :: (Double, Double)
@@ -69,8 +71,10 @@ wxView :: Rectangle (Double, Double)
           -- ^ The upper-left and lower-right corners of the view.
        -> ([(Double, Double)] -> IO [Color])
           -- ^ The rendering action
+       -> Viewer
+          -- ^ The script-defined viewer
        -> IO ()
-wxView _modelRect renderAction = start $ do
+wxView _modelRect renderAction testViewer = start $ do
 
     model <- variable [value := Model (0,0) (1/128,1/128)]
 
@@ -82,7 +86,7 @@ wxView _modelRect renderAction = start $ do
     f <- frame [ text := "FractalStream"
                , clientSize := sz width height ]
 
-    _myViewer <- toUI @WX sampleViewer ()
+    _myViewer <- toUI @WX testViewer ()
 
     -- Create the menus
 

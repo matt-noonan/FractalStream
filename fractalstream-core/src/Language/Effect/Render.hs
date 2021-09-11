@@ -121,7 +121,7 @@ renderEffectParser = EffectParser Proxy $
 initialize x0 to centerX
 set oldBitmap to bitmap
 set bitmap <- render in x y plane with dim=(width, height) corner=(x0, y0) pixel=(pixelSize, pixelSize)
-  init c to inputX + i inputY
+  init c to x + y i
   init z to 0
   init i to 0
   loop

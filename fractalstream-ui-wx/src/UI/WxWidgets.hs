@@ -2,12 +2,10 @@
 module UI.WxWidgets
   ( WX
   -- Settings widget
-  , sampleSettings
   , SettingsWidget(..)
   , readSetting
   -- Viewer widget
   , ViewerWidget(..)
-  , sampleViewer
   ) where
 
 import Data.IORef
@@ -16,9 +14,10 @@ import Control.Monad
 import UI
 import Actor.Settings
 import Actor.Viewer
+import Actor.Tool
 import Language.Code hiding (set, get)
 
-import Graphics.UI.WX hiding (when)
+import Graphics.UI.WX hiding (when, tool)
 import Data.Maybe (fromMaybe)
 import qualified Data.Color as FSColor
 
@@ -59,12 +58,12 @@ makeSettings = mapContextM $ \_ _ (Setting _ v mn) -> do
     ref <- newIORef v
     pure (fst <$> mn, ref)
 
-instance ToUI WX (Settings env NoEffects) where
+instance ToUI WX (Settings env effs) where
   -- Require a reference to the parent frame when creating the settings widget
-  type CreationContext WX (Settings env NoEffects) = Frame ()
+  type CreationContext WX (Settings env effs) = Frame ()
 
   -- Resulting UI object
-  type UIObject WX (Settings env NoEffects) = SettingsWidget env
+  type UIObject WX (Settings env effs) = SettingsWidget env
 
   -- Construct a SettingsWidget
   toUI Settings{..} parentFrame = do
@@ -96,7 +95,9 @@ instance ToUI WX (Settings env NoEffects) where
                                     [ text := showValue ty v ]
 
           pure [label name, hfill ctrl]
-    widgets <- fromContextM addSetting settingsList
+    widgets <- case settingsList of
+      EmptyContext -> (:[]) . (:[]) . widget <$> button settingsDialog [ text := "FIXME" ]
+      _ -> fromContextM addSetting settingsList
     set settingsDialog
       [ layout := margin 10 (grid 10 10 widgets)
       , visible := True ]
@@ -107,30 +108,6 @@ toWxColor :: FSColor.Color -> Color
 toWxColor c =
   let (r,g,b) = FSColor.colorToRGB c
   in rgb r g b
-
-type MySettings =
-  '[ '("x", 'RealT)
-   , '("y", 'IntegerT)
-   , '("z", 'BooleanT)
-   , '("c", 'ColorT)
-   ]
-
-sampleSettings :: Settings MySettings NoEffects
-sampleSettings = Settings{..}
-  where
-    onChanged = Fix NoOp
-    parentActor = error "todo"
-    settingsTitle = "Settings widget demo"
-    settingsList
-      = Bind Proxy RealProxy
-            (Setting Proxy (Scalar RealProxy    3.141592) (Just ("pi", [])))
-      $ Bind Proxy IntegerProxy
-            (Setting Proxy (Scalar IntegerProxy 42) Nothing)
-      $ Bind Proxy BooleanProxy
-            (Setting Proxy (Scalar BooleanProxy True) (Just ("toggle", [])))
-      $ Bind Proxy ColorProxy
-            (Setting Proxy (Scalar ColorProxy FSColor.violet) (Just ("shade", [])))
-      $ EmptyContext
 
 ----------------------------------------------------------------
 -- Viewer widget
@@ -161,7 +138,12 @@ instance ToUI WX Viewer where
     toolsMenu <- menuPane [text := "&Tools"]
     case viewerTools of
       [] -> void $ menuItem toolsMenu [ text := "None", enabled := False ]
-      tools -> forM_ tools $ \_tool -> pure ()
+      tools -> forM_ @_ @_ @_ @() tools $ \Tool{..} -> do
+        tsettings <- toUI @WX toolSettings viewerFrame
+        set (settingsDialog tsettings) [ visible := False ]
+        void $ menuItem toolsMenu [ text := toolName
+                                  , enabled := True
+                                  , on command := set (settingsDialog tsettings) [ visible := True ]]
 
     -- Build the Viewer menu
     viewerMenu <- menuPane [text := "&Viewer"]
@@ -210,11 +192,3 @@ instance ToUI WX Viewer where
                                   [ visible := True ]
               ]
     pure ViewerWidget{..}
-
-sampleViewer :: Viewer
-sampleViewer = Viewer
-  { viewerSettings = sampleSettings
-  , onResize = undefined
-  , onTimer = Nothing
-  , viewerTools = []
-  }
