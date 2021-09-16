@@ -213,25 +213,63 @@ pVar eps env t = dbg "init" $ withKnownType t $ do
   Identifier n <- satisfy (\case { (Identifier _) -> True; _ -> False })
   tok_ Colon
   someVt <- pTypeName
-  tok_ (Identifier "to")
-  toks <- manyTill anyToken eol
   case someSymbolVal n of
     SomeSymbol name -> case lookupEnv' name env of
       Found' {} -> mzero -- name is already bound
       Absent' pf -> case someVt of
-       SomeType vt -> do
-        v <- nest (parseValueFromTokens env vt toks)
-        withEnvironment env $ withKnownType vt $ recallIsAbsent pf $ do
-          let pf' = bindName name vt pf
-              env' = BindingProxy name vt env
-          (body, final) <- case t of
-                             VoidProxy -> (\xs -> (init xs, last xs))
-                                          <$> some (pCode eps env' VoidProxy)
-                             _ -> manyTill_ (pCode eps env' VoidProxy) (try (pCode eps env' t))
-          -- peek at the next token, which should be a dedent; we should have parsed the
-          -- remainder of the current scope's block.
-          lookAhead (tok_ Dedent)
-          pure (Fix (Let pf' name v t (Fix (Block t body final))))
+       SomeType vt ->  pVarValue eps env t pf name vt -- init x : T to VALUE
+                   <|> pVarCode  eps env t pf name vt -- init x : T <- CODE
+
+pVarValue :: forall effs env t ty name
+           . KnownSymbol name
+          => EffectParsers effs
+          -> EnvironmentProxy env
+          -> ScalarProxy t
+          -> NameIsAbsent name env
+          -> Proxy name
+          -> ScalarProxy ty
+          -> Parser (Code effs env t)
+pVarValue eps env t pf name vt = do
+  tok_ (Identifier "to")
+  toks <- manyTill anyToken eol
+  v <- nest (parseValueFromTokens env vt toks)
+  withEnvironment env $ withKnownType vt $ recallIsAbsent pf $ do
+    let pf' = bindName name vt pf
+        env' = BindingProxy name vt env
+    (body, final) <- case t of
+      VoidProxy -> (\xs -> (init xs, last xs))
+                     <$> some (pCode eps env' VoidProxy)
+      _ -> manyTill_ (pCode eps env' VoidProxy) (try (pCode eps env' t))
+    -- peek at the next token, which should be a dedent; we should have parsed the
+    -- remainder of the current scope's block.
+    lookAhead (tok_ Dedent)
+    pure (Fix (Let pf' name v t (Fix (Block t body final))))
+
+pVarCode  :: forall effs env t ty name
+           . KnownSymbol name
+          => EffectParsers effs
+          -> EnvironmentProxy env
+          -> ScalarProxy t
+          -> NameIsAbsent name env
+          -> Proxy name
+          -> ScalarProxy ty
+          -> Parser (Code effs env t)
+pVarCode eps env t pf name vt = do
+  tok_ LeftArrow
+  c <- pCode eps env vt
+  many eol
+  withEnvironment env $ withKnownType vt $ recallIsAbsent pf $ do
+    let pf' = bindName name vt pf
+        env' = BindingProxy name vt env
+    (body, final) <- case t of
+      VoidProxy -> (\xs -> (init xs, last xs))
+                     <$> some (pCode eps env' VoidProxy)
+      _ -> manyTill_ (pCode eps env' VoidProxy) (try (pCode eps env' t))
+    -- peek at the next token, which should be a dedent; we should have parsed the
+    -- remainder of the current scope's block.
+    lookAhead (tok_ Dedent)
+    pure (Fix (LetBind pf' name vt c t (Fix (Block t body final))))
+
 
 -- | Parse type name
 pTypeName :: Parser SomeType

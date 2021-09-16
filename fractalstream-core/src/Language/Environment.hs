@@ -61,7 +61,9 @@ import Data.Constraint
 -- Environments
 ---------------------------------------------------------------------------------
 
--- | An 'Environment' is a map from symbols to 'Type's.
+-- | An 'Environment' is a map from symbols to 'Type's. It is represented
+-- as a type-level list of pairs; the rest of the API generally requires that
+-- each symbol appears one time at most.
 type Environment = [(Symbol, Type)]
 
 ---------------------------------------------------------------------------------
@@ -255,10 +257,14 @@ class CanAppendTo (xs :: Environment) (ys :: Environment) where
   envAppend :: EnvironmentProxy xs
             -> EnvironmentProxy ys
             -> EnvironmentProxy (xs `EnvAppend` ys)
+  contextAppend :: Context value xs
+                -> Context value ys
+                -> Context value (xs `EnvAppend` ys)
 
 instance CanAppendTo '[] ys where
   type EnvAppend '[] ys = ys
   envAppend EmptyEnvProxy ys = ys
+  contextAppend EmptyContext ys = ys
 
 instance (KnownSymbol name, NotPresent name xs, NotPresent name ys, CanAppendTo xs ys)
     => CanAppendTo ( '(name,t) ': xs) ys where
@@ -266,6 +272,9 @@ instance (KnownSymbol name, NotPresent name xs, NotPresent name ys, CanAppendTo 
   envAppend (BindingProxy name t xs) ys =
     recallNotPresentInEither @name @xs @ys $
       BindingProxy name t (envAppend xs ys)
+  contextAppend (Bind name ty v xs) ys =
+    recallNotPresentInEither @name @xs @ys $
+      Bind name ty v (contextAppend xs ys)
 
 recallNotPresentInEither
   :: forall name xs ys a

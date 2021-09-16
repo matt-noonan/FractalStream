@@ -3,7 +3,7 @@ module Actor.Tool
   ) where
 
 import Language.Code
-import Actor
+--import Actor
 import Actor.Settings
 import Event
 import Language.Effect.Provide
@@ -13,7 +13,7 @@ data Tool effs where
         . ( PosEnv  `CanAppendTo` env
           , DragEnv `CanAppendTo` env
           ) =>
-    { toolSettings :: Settings env effs
+    { toolSettings :: Settings env '[]
     , toolName :: String
     , toolHelp :: String
     , onClick     :: Maybe (Code (Provide env ': effs) PosEnv 'VoidT)
@@ -24,11 +24,13 @@ data Tool effs where
     , buttons     :: [(String, Code (Provide env ': effs) '[] 'VoidT)]
     } -> Tool effs
 
+{-
 instance Actor (Tool effs) where
-  handle Tool{..} = \case
-    Click     -> CodeWithEffects <$> onClick
-    MouseDown -> CodeWithEffects <$> onMouseDown
-    MouseUp   -> CodeWithEffects <$> onMouseUp
-    Motion    -> CodeWithEffects <$> onMotion
-    Drag      -> CodeWithEffects <$> onDrag
+  handle Tool{..} _ = \case
+    Click     -> onClick
+    MouseDown -> onMouseDown
+    MouseUp   -> onMouseUp
+    Motion    -> onMotion
+    Drag      -> onDrag
     _         -> Nothing
+-}

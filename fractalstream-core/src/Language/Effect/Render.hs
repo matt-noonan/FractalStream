@@ -29,16 +29,16 @@ data Render (code :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) w
           -- rendering effect specifically requires effect-free code. Any
           -- handler for a Render effect will have to be able to handle
           -- this embedded blob of code.
-       -> Render code '(env, 'IntegerT) -- returns an identifier for the result
+       -> Render code '(env, 'ImageT) -- returns an identifier for the result
 
   HaltRender :: forall env code
               . EnvironmentProxy env
-             -> Value env 'IntegerT
+             -> Value env 'ImageT
              -> Render code '(env, 'VoidT)
 
   Blit :: forall env code
         . EnvironmentProxy env
-       -> Value env 'IntegerT -- identifier for bitmap
+       -> Value env 'ImageT -- identifier for bitmap
        -> Value env ('Pair 'IntegerT 'IntegerT) -- upper-left X,Y coordinates
        -> Value env 'RealT -- scale factor
        -> Value env 'RealT -- alpha (1.0 = fully opaque, 0.0 = fully transparent)
@@ -57,7 +57,7 @@ instance IFunctor Render where
     Blit env iD ul scale alpha -> Blit env iD ul scale alpha
     ClearTo env v -> ClearTo env v
   toIndex = \case
-    Render env _ _ _ _ _ _ _ _ -> envTypeProxy env IntegerProxy
+    Render env _ _ _ _ _ _ _ _ -> envTypeProxy env ImageProxy
     HaltRender env _   -> envTypeProxy env VoidProxy
     Blit env _ _ _ _   -> envTypeProxy env VoidProxy
     ClearTo env _      -> envTypeProxy env VoidProxy
@@ -73,7 +73,7 @@ renderEffectParser :: EffectParser Render
 renderEffectParser = EffectParser Proxy $
   \(et :: EnvTypeProxy et) _code -> case lemmaEnvTy @et of
     Refl -> withEnvType et $ \env t ->  withEnvironment env $ case t of
-      IntegerProxy -> do
+      ImageProxy -> do
         tok_ "render" >> tok_ "in"
         Identifier inputXstr <- satisfy (\case { Identifier _ -> True; _ -> False })
         Identifier inputYstr <- satisfy (\case { Identifier _ -> True; _ -> False })

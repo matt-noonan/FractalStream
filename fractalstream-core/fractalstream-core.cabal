@@ -94,6 +94,7 @@ library
 
                        Language.Code
                        Language.Code.Simulator
+                       Language.Code.InterpretIO
                        Language.Code.Parser
                        Language.Type
                        Language.Environment
@@ -110,9 +111,13 @@ library
                        Language.Parser
                        Language.Untyped
 
+                       Project
+
                        Data.Indexed.Functor
                        Data.Planar
                        Data.Color
+
+                       Template.Complex.Parametric
 
                        Utilities
 

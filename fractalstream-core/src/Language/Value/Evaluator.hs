@@ -23,7 +23,7 @@ import Numeric.Extras
 data ScalarTypeOfBinding :: Symbol -> Type -> Exp *
 type instance Eval (ScalarTypeOfBinding name t) = ScalarType t
 
--- | First-class family corresponding to ScalarType, suitable to use in a Context
+  -- | First-class family corresponding to ScalarType, suitable to use in a Context
 data ScalarType_ :: Type -> Exp *
 type instance Eval (ScalarType_ t) = ScalarType t
 

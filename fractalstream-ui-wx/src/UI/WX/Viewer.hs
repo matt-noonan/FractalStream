@@ -20,9 +20,16 @@ import           Graphics.UI.WXCore.WxcTypes      (rgba)
 import           Graphics.UI.WXCore.WxcClassesAL
 import           Graphics.UI.WXCore.WxcClassesMZ
 
+import Graphics.UI.WXCore.Events
+
 import Control.Concurrent
 import Data.Time (diffUTCTime, getCurrentTime)
 import Data.IORef
+import Text.Printf
+import Control.Monad (forM_)
+import Data.Functor ((<&>))
+import Data.Maybe (fromMaybe)
+import qualified Data.Set as Set
 
 import UI
 import UI.WxWidgets
@@ -65,7 +72,6 @@ helloFrom me = do
               ++ " cap=" ++ show capInfo
               ++ " bound=" ++ show bound)
 
-
 -- | Create a window with an interactive view of a complex-dynamical system.
 wxView :: Rectangle (Double, Double)
           -- ^ The upper-left and lower-right corners of the view.
@@ -88,15 +94,277 @@ wxView _modelRect renderAction testViewer = start $ do
 
     _myViewer <- toUI @WX testViewer ()
 
+    -- Create a "simple complex dynamics" wizard
+    do
+      wiz <- frame [ text := "Parametric complex dynamics" ]
+
+      p <- panel wiz [ clientSize := sz 200 200 ]
+
+      initialZ <- textEntry p [ text := "0" ]
+      fun <- textEntry p [ text := "z^2 + C" ]
+      stopWhen <- textEntry p [ text := "|z| > maxRadius" ]
+
+      set wiz [ layout := margin 10 $ container p $ grid 10 10 $
+                [ [ widget (label "Starting from z = "), hfill (widget initialZ) ]
+                , [ widget (label "Iterate f(z) = "), hfill (widget fun) ]
+                , [ widget (label "         until "), hfill (widget stopWhen) ]]
+              ]
+
+    -- Create a code editor frame
+    ce <- frame [ text := "Script editor"
+                , clientSize := sz 300 300 ]
+    cep <- panel ce [ clientSize := sz 100 100 ]
+    stc <- styledTextCtrl cep [ clientSize := sz 100 100 ]
+    styledTextCtrlSetMarginWidth stc 0 30
+    styledTextCtrlSetMarginWidth stc 1 0
+    styledTextCtrlSetMarginWidth stc 2 0
+    -- see Style Definition at https://www.scintilla.org/ScintillaDoc.html#Styling
+    lum <- do
+      col <- get ce bgcolor
+      let rc :: Float = colorRed col / 255
+          gc = colorGreen col / 255
+          bc = colorBlue col / 255
+      pure (0.299 * rc + 0.587 * gc + 0.114 * bc)
+    if lum > 0.5
+      then do
+        styledTextCtrlStyleSetSpec stc  0 "fore:#000000,back:#f8f8f8"
+        styledTextCtrlStyleSetSpec stc 32 "fore:#000000,back:#f8f8f8"
+        styledTextCtrlStyleSetSpec stc 33 "fore:#808080,back:#f0f060"
+        styledTextCtrlSetCaretLineBackground stc (rgb 240 240 255)
+      else do
+        styledTextCtrlStyleSetSpec stc  0 "fore:#dbdbdb,back:#14191e"
+        styledTextCtrlStyleSetSpec stc 32 "fore:#dbdbdb,back:#14191e"
+        styledTextCtrlStyleSetSpec stc 33 "fore:#a0a0a0,back:#101040"
+        styledTextCtrlSetCaretLineBackground stc (rgb 0x20 0x30 0x38)
+
+    styledTextCtrlStyleSetFaceName stc 0 "Monaco"
+    -- Set the minimum size, or else Scintilla will default to 2000 pixels(!)
+    styledTextCtrlSetScrollWidth stc 100
+    styledTextCtrlSetCaretLineVisible stc True
+
+    styledTextCtrlSetUseTabs stc False
+    styledTextCtrlSetTabWidth stc 4
+    styledTextCtrlSetIndent stc 4
+    styledTextCtrlSetTabIndents stc True
+    styledTextCtrlSetBackSpaceUnIndents stc True
+    --styledTextCtrlSetIndentationGuides stc True
+    styledTextCtrlSetViewWhiteSpace stc 3
+
+    seFileMenu <- menuPane [ text := "&File" ]
+    menuItem seFileMenu [ text := "&Open..."
+                        , on command := putStrLn "TODO" ]
+    seEditMenu <- menuPane [ text := "&Edit" ]
+    --menuItem seEditMenu [ text := "Copy\tCtrl-C" ]
+    --menuItem seEditMenu [ text := "Cut\tCtrl-X" ]
+    --menuItem seEditMenu [ text := "Paste\tCtrl-V" ]
+    seHelpMenu  <- menuHelp      [ text := "&Help" ]
+    --seAboutMenu <- menuAbout seHelpMenu [text := "About FractalStream"]
+    set ce [ menuBar := [ seFileMenu
+                        , seEditMenu
+                        , seHelpMenu
+                        ] ]
+
+    titleBox <- textEntry cep [ text := "" ]
+
+    lc <- listView cep [ "Variable", "Initial value", "Type", "Label" ] id
+
+    listViewAddItem lc ["maxRadius", "10", "ℝ", "Escape radius"]
+    listViewAddItem lc ["maxIters", "100", "ℕ", "Iteration limit"]
+    listViewAddItem lc ["exterior", "blue", "Color", "Exterior color"]
+
+    addParam <- button cep [ text := "Add parameter..." ]
+    delParam <- button cep [ text := "Delete parameter" ]
+
+    set ce [ layout := container cep $ column 1
+               [ hstretch
+                 $ margin 5
+                 $ row 5 [ widget (label "Title:")
+                         , fill (widget titleBox) ]
+               , fill $ widget stc
+               , hstretch
+                 $ margin 10
+                 $ row 5 [ column 5 [ widget (label "Parameters")
+                                    , vglue
+                                    , widget addParam
+                                    , widget delParam ]
+                         , fill (widget $ listViewLayout lc) ]
+               ]
+           , clientSize := sz 400 400 ]
+
+    -- Test dialog
+    dlog <- dialog ce [ text := "Edit parameter"
+                      , resizeable := True
+                      , on resize := propagateEvent
+                      , visible := False ]
+    dlog_ok <- button dlog [ text := "Ok" ]
+    dlog_cancel <- button dlog [ text := "Cancel" ]
+
+    varEditor <- entry dlog [ font := fontFixed
+                            , text := ""
+                            ]
+    editor <- entry dlog [ font := fontFixed
+                         , text := "0"
+                         ]
+    descEditor <- entry dlog [ font := fontFixed
+                             , text := ""
+                             ]
+    editorB <- checkBox dlog [ text := "true"
+                             , checkable := True
+                             , checked := True
+                             , visible := False ]
+
+    set editorB [ on command := do
+                    isChecked <- get editorB checked
+                    set editorB [ text := if isChecked then "true" else "false" ]
+                ]
+    let colorPickerCtrl :: Window a -> Color -> [Prop (ColourPickerCtrl ())] -> IO (ColourPickerCtrl ())
+        colorPickerCtrl parent' color0 props
+          = feed2 props 0 $
+            initialWindow    $ \iD rect' ps s ->
+            do e <- colorPickerCtrlCreate parent' iD color0 rect' s
+               set e ps
+               return e
+
+    editorC  <- colorPickerCtrl dlog (rgb 255 0 0) [ visible := False ]
+    editorC' <- entry dlog [ font := fontFixed
+                           , text := "red"
+                           , visible := False ]
+
+    let newPick = do
+          c <- colorPickerCtrlGetColour editorC
+          let cr_ = colorRed   c / 255.0 :: Float
+              cg_ = colorGreen c / 255.0 :: Float
+              cb_ = colorBlue  c / 255.0 :: Float
+          set editorC' [ text := "rgb (" ++ printf "%0.2f" cr_ ++ ", "
+                                         ++ printf "%0.2f" cg_ ++ ", "
+                                         ++ printf "%0.2f" cb_ ++ ")"
+                   ]
+    windowOnEvent editorC [wxEVT_COMMAND_COLOURPICKER_CHANGED] newPick (const newPick)
+
+    typeEditor <- choice dlog [ fontFace := "Monaco"
+                              , fontSize := 14 ]
+
+    let typeList = ["ℂ", "ℝ", "ℤ", "ℕ", "Boolean", "Color"]
+    forM_ typeList (itemAppend typeEditor)
+
+    set dlog
+      [ layout := fill $ margin 15 $ column 10 $
+        [ row 5 [ boxed "Variable" (hfill $ widget varEditor)
+                , column 10 [ label " ", label ":" ]
+                , boxed "Type" (widget typeEditor) ]
+        , boxed "Default value" $
+          column 0 [ hfill (widget editor)
+                   , hfill (widget editorB)
+                   , row 5 [ widget editorC
+                           , hfill (widget editorC') ]
+                   ]
+        , boxed "Description" (hfill (widget descEditor))
+        , row 5 [ widget dlog_ok, hglue, widget dlog_cancel ]
+        ]
+      ]
+
+    let editParam = do
+          mresult <- showModal dlog $ \stopParamEdit -> do
+            set typeEditor [ on select := do
+                               ix <- get typeEditor selection
+                               case ix of
+                                 4 -> do
+                                   set editor   [ visible := False ]
+                                   set editorB  [ visible := True ]
+                                   set editorC  [ visible := False ]
+                                   set editorC' [ visible := False ]
+                                   windowReFit dlog
+                                 5 -> do
+                                   set editor   [ visible := False ]
+                                   set editorB  [ visible := False ]
+                                   set editorC  [ visible := True ]
+                                   set editorC' [ visible := True ]
+                                   windowReFit dlog
+                                 _ -> do
+                                   set editor   [ visible := True ]
+                                   set editorB  [ visible := False ]
+                                   set editorC  [ visible := False ]
+                                   set editorC' [ visible := False ]
+                                   windowReFit dlog
+                           ]
+            set dlog_ok     [on command := stopParamEdit (Just ())]
+            set dlog_cancel [on command := stopParamEdit Nothing]
+
+          case mresult of
+            Nothing -> pure Nothing
+            Just _ -> do
+              vname <- get varEditor text
+              vdesc <- get descEditor text
+              vtypeIx <- get typeEditor selection
+              let vtype = typeList !! vtypeIx
+              v <- case vtypeIx of
+                4 -> get editorB checked <&> \case { True -> "true"; False -> "false" }
+                5 -> get editorC' text
+                _ -> get editor text
+              pure (Just [vname, v, vtype, vdesc])
+
+    selectedRef <- newIORef Set.empty
+
+    set addParam [ on command := do
+                     set varEditor [ text := "" ]
+                     set descEditor [ text := "" ]
+                     set typeEditor [ selection := 0 ]
+                     set editor [ text := "" ]
+                     set editorB [ checked := True ]
+                     set editorC' [ text := "red" ]
+                     editParam >>= \case
+                       Nothing -> pure ()
+                       Just i  -> listViewAddItem lc i
+                 ]
+
+    set delParam [ on command := do
+                     sels <- Set.toList <$> readIORef selectedRef
+                     case sels of
+                       [ix] -> do
+                         ct0 <- length <$> listViewGetItems lc
+                         putStrLn ("Deleting " ++ show ix ++ ", count was " ++ show ct0)
+                         writeIORef selectedRef Set.empty
+                         is <- listViewGetItems lc
+                         listViewSetItems lc (take ix is ++ drop (ix + 1) is)
+                         ct1 <- length <$> listViewGetItems lc
+                         putStrLn ("Deleted " ++ show ix ++ ", count was " ++ show ct1)
+                       _    -> pure ()
+                 ]
+    listViewSetHandler lc $ \case
+      ListItemSelected ix -> modifyIORef' selectedRef (Set.insert ix)
+      ListItemDeselected ix -> modifyIORef' selectedRef (Set.delete ix)
+      ListItemFocused ix  -> putStrLn ("focused " ++ show ix )
+      ListItemActivated ix -> do
+        putStrLn ("activated ix=" ++ show ix)
+        [vname, v, vtype, vdesc] <- listViewGetItems lc <&> (!! ix)
+        set varEditor [ text := vname ]
+        set descEditor [ text := vdesc ]
+        let vtypeIx = fromMaybe 0 (lookup vtype (zip typeList [0..]))
+        set typeEditor [ selection := vtypeIx ]
+        case vtypeIx of
+          4 -> set editorB  [ checked := v == "true" ]
+          5 -> set editorC' [ text := v ]
+          _ -> set editor [text := v]
+        editParam >>= \case
+          Nothing -> pure ()
+          Just i  -> do
+            is <- listViewGetItems lc
+            listViewSetItems lc (take ix is ++ [i] ++ drop (ix + 1) is)
+
+      ListBeginDrag ix pt _stop -> putStrLn ("drag " ++ show ix ++ ", " ++ show pt)
+      _ -> pure ()
+
     -- Create the menus
 
     -- File menu
     file <- menuPane      [text := "&File"]
     menuItem file [ text := "&New", on command := putStrLn "TODO"]
-    _    <- menuQuit file [text := "&Quit", on command := close f]
+--    _    <- menuQuit file [ text := "&Quit"
+--                          , help := "Quit FractalStream"]
 
     -- Help menu
-    hlp   <- menuHelp      []
+    hlp   <- menuHelp      [ text := "&Help" ]
+    menuItem hlp [ text := "blah" ]
     about <- menuAbout hlp [text := "About FractalStream"]
 
     -- Viewer status bar
@@ -129,25 +397,6 @@ wxView _modelRect renderAction testViewer = start $ do
     savedTileImage <- variable [value := Nothing]
     lastTileImage  <- variable [value := Nothing]
 
-    {-
-    -- Test dialog
-    dlog <- dialog f [ text := "Test dialog"
-                     , on resize := propagateEvent ]
-    dlog_q <- button dlog [ text := "Say \"Butt\""
-                          , on command := putStrLn "butt" ]
-
-    editor <- textCtrl dlog [ font := fontFixed
-                            , text := "f(z) = z^2 + C"
-                            ]
-
-    set dlog [ layout := column 5 [ margin 5 $ fill $ stretch $ expand $ widget editor
-                                  , row 0 [hglue, centre $ widget dlog_q, hglue]
-                                  , hstretch $ vspace 5
-                                  ]
-             , visible := True
-             , clientSize := sz 256 512]
-
-    -}
 
     p <- panel f []
 

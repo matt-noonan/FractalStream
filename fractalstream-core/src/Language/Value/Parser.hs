@@ -207,12 +207,29 @@ pairValue_ :: forall t1 t2 env
            => ScalarProxy t1
            -> ScalarProxy t2
            -> Parser (Value env ('Pair t1 t2))
-pairValue_ t1 t2 = (withKnownType t1 $ withKnownType t2 $
+pairValue_ t1 t2 = case (t1, t2) of
+  (RealProxy, RealProxy) -> try complexAsPair_ <|> normalPairValue_ t1 t2
+  _ -> normalPairValue_ t1 t2
+
+normalPairValue_ :: forall t1 t2 env
+                  . ( KnownEnvironment env )
+                 => ScalarProxy t1
+                 -> ScalarProxy t2
+                 -> Parser (Value env ('Pair t1 t2))
+normalPairValue_ t1 t2 = (withKnownType t1 $ withKnownType t2 $
   ok
     (PairV (PairProxy t1 t2)
       <$> (tok_ OpenParen *> value_ <* tok_ Comma)
       <*> (value_ <* tok_ CloseParen)))
   <?> "pair"
+
+complexAsPair_ :: forall env
+                . KnownEnvironment env
+               => Parser (Value env ('Pair 'RealT 'RealT))
+complexAsPair_ = do
+  z <- value_
+  pure (Fix (PairV (PairProxy RealProxy RealProxy)
+             (Fix (ReC z)) (Fix (ImC z))))
 
 ---------------------------------------------------------------------------------
 -- Parse basic arithmetic expressions (shared between integers, reals,

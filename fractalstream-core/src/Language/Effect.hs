@@ -10,6 +10,7 @@ module Language.Effect
   , EffectParsers(..)
   , EffectParsers_(..)
   , noParser
+  , mapHandlers
   ) where
 
 import Language.Type
@@ -19,6 +20,7 @@ import Data.Indexed.Functor
 
 import Fcf (Exp, Eval)
 import Data.Proxy
+import Data.Type.Equality ((:~:)(..))
 
 -- | An @Effect@ takes a family of nested code types, and produces
 -- an AST of effects that may include nested code. Effects are a
@@ -40,10 +42,34 @@ data EffectHandler (eff :: Effect) (result :: (Environment, Type) -> Exp *) wher
 
 data Handlers (effs :: [Effect]) (result :: (Environment, Type) -> Exp *) where
   Handler :: forall eff effs result
-           . EffectHandler eff result
+           . (IFunctor eff, IndexProxy eff ~ EnvTypeProxy)
+          => EffectHandler eff result
           -> Handlers effs result
           -> Handlers (eff ': effs) result
   NoHandler :: forall result. Handlers '[] result
+
+mapHandlers :: forall effs a b
+             . (forall env t
+                 . EnvironmentProxy env
+                -> ScalarProxy t
+                -> Eval (a '(env,t))
+                -> Eval (b '(env,t)))
+            -> (forall env t
+                 . EnvironmentProxy env
+                -> ScalarProxy t
+                -> Eval (b '(env,t))
+                -> Eval (a '(env,t)))
+            -> Handlers effs a
+            -> Handlers effs b
+mapHandlers f unF = \case
+  NoHandler -> NoHandler
+  Handler (Handle _ h) hs ->
+    Handler (Handle (Proxy @b) (\e t x -> f e t (h e t (imap unF' x)))) (mapHandlers @_ @a @b f unF hs)
+ where
+    unF' :: forall et. EnvTypeProxy et -> Eval (b et) -> Eval (a et)
+    unF' (et :: EnvTypeProxy et) = case lemmaEnvTy @et of
+      Refl -> withEnvType et unF
+
 
 class (IndexProxy e ~ EnvTypeProxy, ITraversable e) => HasEffect (e :: Effect) (es :: [Effect]) where
   getHandler :: forall result

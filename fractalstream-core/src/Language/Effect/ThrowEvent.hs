@@ -1,5 +1,5 @@
-module Language.Effect.ThrowEvent
-  ( Event(..)
+module Language.Effect.ThrowEvent where
+{-  ( Event(..)
   , ThrowEvent(..)
   ) where
 
@@ -8,6 +8,7 @@ import Actor
 import Event
 import Fcf (Exp)
 
+
 data ThrowEvent (code :: (Environment, Type) -> Exp *)
                 (et :: (Environment, Type)) where
   Throw :: forall et args code
@@ -15,3 +16,4 @@ data ThrowEvent (code :: (Environment, Type) -> Exp *)
         -> SomeActor
         -> Event args
         -> ThrowEvent code et
+-}

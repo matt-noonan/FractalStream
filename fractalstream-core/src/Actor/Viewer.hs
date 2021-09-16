@@ -6,7 +6,6 @@ import Language.Code
 import Language.Effect.Render
 import Language.Effect.Draw
 import Language.Effect.Provide
-import Actor
 import Actor.Settings
 import Actor.Tool
 import Event
@@ -29,9 +28,11 @@ data Viewer where
     , viewerTools :: [Tool '[Draw]]
     } -> Viewer
 
-instance Actor Viewer where
-  handle Viewer{..} = \case
-    Timer   -> CodeWithEffects <$> onTimer
-    Resize  -> CodeWithEffects <$> onResize
-    Refresh -> CodeWithEffects <$> onRefresh
+{-
+instance Actor (Viewer env) '[Provide env, Render] where
+  handle Viewer{..} _ = \case
+    Timer   -> onTimer
+    Resize  -> onResize
+    Refresh -> onRefresh
     _       -> Nothing
+-}

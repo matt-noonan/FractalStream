@@ -1,6 +1,8 @@
 {-# language OverloadedStrings #-}
 module Language.Effect.Draw
-  ( Draw(..)
+  ( type Draw
+  , Draw_(..)
+  , type DrawCommand
   , drawEffectParser
   ) where
 
@@ -11,61 +13,77 @@ import Language.Effect
 import Data.Indexed.Functor
 
 import Data.Functor (($>))
-import Fcf (Exp)
+import Fcf (Exp, Eval)
 import Data.Type.Equality ((:~:)(..))
 
-data Draw (code :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) where
+type Draw = Draw_ Value_
+
+type DrawCommand = Draw_ ConcreteValue NoCode '( '[], 'VoidT )
+
+-- | Partially-applied Value type
+data Value_ :: Environment -> Type -> Exp *
+type instance Eval (Value_ env t) = Value env t
+
+data ConcreteValue :: Environment -> Type -> Exp *
+type instance Eval (ConcreteValue env t) = ScalarType t
+
+data NoCode :: (Environment, Type) -> Exp *
+type instance Eval (NoCode et) = ()
+
+data Draw_ (value :: Environment -> Type -> Exp *)
+           (code :: (Environment, Type) -> Exp *)
+           (et :: (Environment, Type)) where
 
   -- | draw point at POINT
-  DrawPoint :: forall env code
+  DrawPoint :: forall env code value
              . EnvironmentProxy env
-            -> Value env ('Pair 'RealT 'RealT)
-            -> Draw code '(env, 'VoidT)
+            -> Eval (value env ('Pair 'RealT 'RealT))
+            -> Draw_ value code '(env, 'VoidT)
 
   -- | draw circle at POINT with radius VALUE
   -- | draw filled circle at POINT with radius VALUE
-  DrawCircle :: forall env code
+  DrawCircle :: forall env code value
               . EnvironmentProxy env
              -> Bool
-             -> Value env 'RealT
-             -> Value env ('Pair 'RealT 'RealT)
-             -> Draw code '(env, 'VoidT)
+             -> Eval (value env 'RealT)
+             -> Eval (value env ('Pair 'RealT 'RealT))
+             -> Draw_ value code '(env, 'VoidT)
 
   -- | draw line from POINT to POINT
-  DrawLine :: forall env code
+  DrawLine :: forall env code value
             . EnvironmentProxy env
-           -> Value env ('Pair 'RealT 'RealT)
-           -> Value env ('Pair 'RealT 'RealT)
-           -> Draw code '(env, 'VoidT)
+           -> Eval (value env ('Pair 'RealT 'RealT))
+           -> Eval (value env ('Pair 'RealT 'RealT))
+           -> Draw_ value code '(env, 'VoidT)
 
   -- | draw rectangle from POINT to POINT
   -- | draw filled rectangle from POINT to POINT
-  DrawRect :: forall env code
+  DrawRect :: forall env code value
             . EnvironmentProxy env
            -> Bool
-           -> Value env ('Pair 'RealT 'RealT)
-           -> Value env ('Pair 'RealT 'RealT)
-           -> Draw code '(env, 'VoidT)
+           -> Eval (value env ('Pair 'RealT 'RealT))
+           -> Eval (value env ('Pair 'RealT 'RealT))
+           -> Draw_ value code '(env, 'VoidT)
 
   -- | use COLOR for stroke
-  SetStroke :: forall env code
+  SetStroke :: forall env code value
              . EnvironmentProxy env
-            -> Value env 'ColorT
-            -> Draw code '(env, 'VoidT)
+            -> Eval (value env 'ColorT)
+            -> Draw_ value code '(env, 'VoidT)
 
   -- | use COLOR for fill
-  SetFill :: forall env code
+  SetFill :: forall env code value
              . EnvironmentProxy env
-            -> Value env 'ColorT
-            -> Draw code '(env, 'VoidT)
+            -> Eval (value env 'ColorT)
+            -> Draw_ value code '(env, 'VoidT)
 
   -- | erase
-  Clear :: forall env code
+  Clear :: forall env code value
          . EnvironmentProxy env
-        -> Draw code '(env, 'VoidT)
+        -> Draw_ value code '(env, 'VoidT)
 
-instance IFunctor Draw where
-  type IndexProxy Draw = EnvTypeProxy
+instance IFunctor (Draw_ value) where
+  type IndexProxy (Draw_ value) = EnvTypeProxy
   imap _ = \case
     DrawPoint e p -> DrawPoint e p
     DrawCircle e f r p -> DrawCircle e f r p
@@ -83,7 +101,7 @@ instance IFunctor Draw where
     SetFill e _ -> envTypeProxy e VoidProxy
     Clear e -> envTypeProxy e VoidProxy
 
-instance ITraversable Draw where
+instance ITraversable (Draw_ value) where
   isequence = \case
     DrawPoint e p -> pure (DrawPoint e p)
     DrawCircle e f r p -> pure (DrawCircle e f r p)

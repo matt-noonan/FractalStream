@@ -7,8 +7,7 @@ module Actor.Settings
 
 import Language.Effect.Provide
 import Language.Code
-import Actor
-import Event
+--import Event
 
 import GHC.TypeLits
 import Fcf (Pure2)
@@ -32,11 +31,12 @@ data Settings (env :: Environment) (effs :: [Effect]) where
     { settingsList :: Context (Pure2 Setting) env
     , settingsTitle :: String
     , settingsEnv :: EnvironmentProxy env
-    , parentActor :: SomeActor
     , onChanged :: Maybe (Code (Provide env ': effs) '[] 'VoidT)
     } -> Settings env effs
 
-instance Actor (Settings env effs) where
-  handle Settings{..} = \case
-    Refresh -> CodeWithEffects <$> onChanged
+{-
+instance Actor (Settings env effs) (Provide env ': effs) where
+  handle Settings{..} _ = \case
+    Refresh -> onChanged
     _       -> Nothing
+-}

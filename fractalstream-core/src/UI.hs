@@ -1,11 +1,17 @@
-{-# language AllowAmbiguousTypes #-}
+{-# language AllowAmbiguousTypes, UndecidableInstances #-}
 module UI
   ( type UI
   , type UIMonad
   , ToUI(..)
+  , UIActor(..)
   ) where
 
-import Actor
+import Event
+import Language.Environment
+import Language.Value.Evaluator
+
+import Control.Applicative ((<|>))
+
 
 -- | 'UI' is meant to be used as an open kind, so that
 -- type-level tags for UIs are given by types of kind 'UI'.
@@ -31,9 +37,21 @@ type UI = UI_ -> *
 -- > type instance UIMonad MyUI = StateT MyState IO
 type family UIMonad (ui :: UI) :: * -> *
 
-class Actor actor => ToUI (ui :: UI) actor where
-  type CreationContext ui actor :: *
-  type UIObject ui actor :: *
-  toUI :: actor
-       -> CreationContext ui actor
-       -> UIMonad ui (UIObject ui actor)
+class ToUI (ui :: UI) component where
+  type CreationContext ui component :: *
+  type UIObject ui component :: *
+  toUI :: component
+       -> CreationContext ui component
+       -> UIMonad ui (UIObject ui component)
+
+data UIActor (ui :: UI) =
+  UIActor (forall args
+            . Event args
+           -> Maybe (Context ScalarTypeOfBinding args
+                    -> UIMonad ui ()))
+
+instance Monad (UIMonad ui) => Semigroup (UIActor ui) where
+  UIActor f <> UIActor g = UIActor $ \event -> f event <|> g event
+
+instance Monad (UIMonad ui) => Monoid (UIActor ui) where
+  mempty = UIActor (const Nothing)

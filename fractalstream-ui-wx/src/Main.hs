@@ -23,7 +23,6 @@ import Language.Code.Parser
 import Language.Value.Parser
 import Data.Proxy
 
-import Actor
 import Actor.Settings
 import Actor.Tool
 import Actor.Viewer
@@ -85,11 +84,11 @@ else
 
 mandelProgram' :: String
 mandelProgram' = [r|
-init bitmap : Z <- render in x y plane (viewWidth,viewHeight) (-2,2) (1 / 128, 1 / 128)
+init curImage : bitmap <- render in x y plane (viewWidth,viewHeight) (-2,2) (1 / 128, 1 / 128)
   init C : C to -0.11 + 0.75i
-  init z : C to x + i y
-  init k : Z to 0
-  init r2 : R to maxRadius * maxRadius
+  set complex z to x + i y
+  set integer k to 0
+  set real r2 to maxRadius * maxRadius
   loop
     set z to z z + C
     set k to k + 1
@@ -97,10 +96,10 @@ init bitmap : Z <- render in x y plane (viewWidth,viewHeight) (-2,2) (1 / 128, 1
   if k >= maxIters then
     black
   else
-    init s : R to k + 1 - (log ((log (|z|^2)) / 2)) / log 2
+    set s : R to k + 1 - (log ((log (|z|^2)) / 2)) / log 2
     set s to mod(s, 10) / 10
-    init c1 : Color to blue
-    init c2 : Color to white
+    set c1 : Color to blue
+    set c2 : Color to white
     if im z > 0 then
       set c1 to yellow
       set c2 to red
@@ -109,8 +108,36 @@ init bitmap : Z <- render in x y plane (viewWidth,viewHeight) (-2,2) (1 / 128, 1
     if s < 0.5 then
       blend(2s, c1, c2)
     else
-      blend(2s - 1, c2, c1)
-|]
+      blend(2s - 1, c2, c1)|]
+
+mandelProgram'' :: String
+mandelProgram'' = [r|
+curImage : Image
+curImage ⟵ render in x y plane (viewWidth,viewHeight) (-2,2) (1 / 128, 1 / 128)
+  C : Complex
+  C = -0.11 + 0.75i
+  z : Complex
+  z = x + i y
+
+  repeat maxIters times with counter k
+      z = z² + C
+  while |z| < maxRadius
+
+  if k = maxIters then
+    black
+  else
+    s : Real
+    s = if use_smoothing then k + 1 - log (log |z|² / 2) / log 2 else k
+    s = mod (s, speed) / speed
+    c₁ = blue  : Color
+    c₂ = white : Color
+    if im z > 0 then
+        c₁ = yellow
+        c₂ = red
+    if s < 0.5 then
+      blend(2s, c₁, c₂)
+    else
+      blend(2s - 1, c₂, c₁)|]
 
 traceProgram :: String
 traceProgram = [r|
@@ -121,12 +148,31 @@ init k : Z to 0
 erase
 use white for line
 loop
-  set z0 to z
-  set z to z z + C
-  draw point at (re z0, im z0)
-  draw line from (re z0, im z0) to (re z, im z)
-  set k to k + 1
-  k < 100
+    set z0 to z
+    set z to z z + C
+    draw point at z0
+    draw line from z0 to z
+    set k to k + 1
+    k < 100|]
+
+traceProgram' :: String
+traceProgram' = [r|
+C : ℂ
+C = -0.11 + 0.75i
+
+z : ℂ
+z = x + i y
+
+z₀ : ℂ
+z₀ = 0
+
+erase
+use white for line
+repeat 100 times
+    z₀ = z
+    z  = z² + C
+    draw point at z₀
+    draw line from z₀ to z
 |]
 
 traceTool :: Tool '[Draw]
@@ -145,7 +191,6 @@ traceTool = Tool{..}
                     $ EmptyContext
     settingsEnv = BindingProxy (Proxy @"steps") IntegerProxy EmptyEnvProxy
     settingsTitle = "Trace settings"
-    parentActor   = SomeActor mainViewer
     onChanged     = Nothing
 
     onClick = Just ( Fix
@@ -185,7 +230,6 @@ mainViewer = Viewer{..}
     settingsEnv = contextToEnv settingsList
 
     settingsTitle = "FractalStream demo viewer settings"
-    parentActor = error "undefined parent actor"
     onChanged = Nothing
     onResize  = Nothing
     onRefresh = Just ( Fix
