@@ -149,7 +149,7 @@ pPure :: forall effs env t
 pPure env t = dbg ("pure @" <> showType t) $ do
   toks <- manyTill anyToken eol
   withEnvironment env $ do
-    result <- Fix . Pure <$> nest (parseValueFromTokens env t toks)
+    result <- Fix . Pure t <$> nest (parseValueFromTokens env t toks)
     pure result
 
 -- |
@@ -243,7 +243,7 @@ pVarValue eps env t pf name vt = do
     -- peek at the next token, which should be a dedent; we should have parsed the
     -- remainder of the current scope's block.
     lookAhead (tok_ Dedent)
-    pure (Fix (Let pf' name v t (Fix (Block t body final))))
+    pure (Fix (Let pf' name vt v t (Fix (Block t body final))))
 
 pVarCode  :: forall effs env t ty name
            . KnownSymbol name

@@ -42,11 +42,11 @@ simulate :: forall effs env t s
           . Handlers effs (ScalarTypeM s)
          -> Code effs env t
          -> State (Context ScalarTypeOfBinding env, s) (ScalarType t)
-simulate handlers = indexedFold @(ScalarTypeM s) @(Fix (CodeF effs)) @(CodeF effs) $ \case
-  Let pf name v _ body -> recallIsAbsent (absentInTail pf) $ do
+simulate handlers = indexedFold @(ScalarTypeM s) @(Fix (CodeF effs Value_)) @(CodeF effs Value_) $ \case
+  Let pf name vt v _ body -> recallIsAbsent (absentInTail pf) $ do
     (ctx, s) <- get
     value <- eval v
-    let ctx' = Bind name (typeOfValue v) value ctx
+    let ctx' = Bind name vt value ctx
         (result, (Bind _ _ _ ctx'', s'')) = runState body (ctx', s)
     put (ctx'', s'')
     pure result
@@ -75,7 +75,7 @@ simulate handlers = indexedFold @(ScalarTypeM s) @(Fix (CodeF effs)) @(CodeF eff
     sequence_ stmts
     stmt
 
-  Pure v -> eval v
+  Pure _ v -> eval v
 
   NoOp -> pure ()
 

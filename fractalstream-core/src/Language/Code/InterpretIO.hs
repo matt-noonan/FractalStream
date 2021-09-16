@@ -87,12 +87,12 @@ interpretToIO_ :: forall effs env t s
                -> Code effs env t
                -> StateT (Context IORefTypeOfBinding env, s) IO (ScalarType t)
 interpretToIO_ handlers =
-  indexedFold @(ScalarIORefMWith s) @(Fix (CodeF effs)) @(CodeF effs) $ \case
-    Let pf name v _ body -> recallIsAbsent (absentInTail pf) $ do
+  indexedFold @(ScalarIORefMWith s) @(Fix (CodeF effs Value_)) @(CodeF effs Value_) $ \case
+    Let pf name vt v _ body -> recallIsAbsent (absentInTail pf) $ do
       (ctxRef, s) <- get
       value <- eval v
       valueRef <- lift (newIORef value)
-      let ctxRef' = Bind name (typeOfValue v) valueRef ctxRef
+      let ctxRef' = Bind name vt valueRef ctxRef
       lift (evalStateT body (ctxRef', s))
 
     LetBind pf name tv vc _ body -> recallIsAbsent (absentInTail pf) $ do
@@ -121,7 +121,7 @@ interpretToIO_ handlers =
       sequence_ stmts
       stmt
 
-    Pure v -> eval v
+    Pure _ v -> eval v
 
     NoOp -> pure ()
 

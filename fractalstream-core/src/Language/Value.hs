@@ -5,6 +5,7 @@ module Language.Value
   , module Language.Environment
   , type Value
   , ValueF(..)
+  , Value_
   , Proxy(..)
   , typeOfValue
   , get
@@ -24,6 +25,9 @@ import Language.Environment
 ---------------------------------------------------------------------------------
 
 type Value env = Fix (ValueF env)
+
+data Value_ :: Environment -> Type -> Exp *
+type instance Eval (Value_ env t) = Value env t
 
 data ValueF (env :: Environment) (value :: Type -> Exp *) (t :: Type) where
 

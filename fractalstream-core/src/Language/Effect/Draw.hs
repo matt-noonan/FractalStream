@@ -20,10 +20,6 @@ type Draw = Draw_ Value_
 
 type DrawCommand = Draw_ ConcreteValue NoCode '( '[], 'VoidT )
 
--- | Partially-applied Value type
-data Value_ :: Environment -> Type -> Exp *
-type instance Eval (Value_ env t) = Value env t
-
 data ConcreteValue :: Environment -> Type -> Exp *
 type instance Eval (ConcreteValue env t) = ScalarType t
 
@@ -37,7 +33,7 @@ data Draw_ (value :: Environment -> Type -> Exp *)
   -- | draw point at POINT
   DrawPoint :: forall env code value
              . EnvironmentProxy env
-            -> Eval (value env ('Pair 'RealT 'RealT))
+            -> Eval (value env  ('Pair 'RealT 'RealT))
             -> Draw_ value code '(env, 'VoidT)
 
   -- | draw circle at POINT with radius VALUE
