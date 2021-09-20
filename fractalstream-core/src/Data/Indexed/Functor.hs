@@ -3,6 +3,7 @@ module Data.Indexed.Functor
   ( IFunctor(..)
   , IFixpoint(..)
   , (:.:)
+  , (:+:)
   , ITraversable(..)
   , Fix(..)
   , indexedFold
@@ -27,6 +28,9 @@ class IFunctor f => IFixpoint (t :: k -> *) (f :: (k -> Exp *) -> (k -> *)) wher
 
 data (:.:) (m :: * -> *) (a :: k -> Exp *) (i :: k) :: Exp *
 type instance Eval ((m :.: a) i) = m (Eval (a i))
+
+data (:+:) (a :: k -> Exp *) (b :: k -> Exp *) (i :: k) :: Exp *
+type instance Eval ((a :+: b) i) = Either (Eval (a i)) (Eval (b i))
 
 class IFunctor f => ITraversable (f :: (k -> Exp *) -> (k -> *)) where
 

@@ -12,7 +12,18 @@ module Language.Parser
   , nest
   , anyToken
   , eol
-  -- Re-exports from megaparsec
+  -- * Indexed parsers
+  , IParser(..)
+  , runIParser
+  -- * Precedence-based indexed parsers
+  , ParserStep(..)
+  , PriorityParser(..)
+  , parsePrio
+  , leveledParser
+  , infixR
+  , infixL
+  , prefixOp
+  -- * Re-exports from megaparsec
   , dbg
   , (<|>)
   , (<?>)
@@ -30,7 +41,12 @@ module Language.Parser
   , some
   , eof
   , mzero
+  , choice
+  , notFollowedBy
+  , void
   ) where
+
+import Language.Type
 
 import Text.Megaparsec hiding (Token, parse)
 import qualified Data.List.NonEmpty as NE
@@ -45,10 +61,14 @@ import Control.Monad
 import Data.List (isPrefixOf, sortOn)
 import Data.Maybe (listToMaybe)
 import Data.Ord
+import Fcf (Exp, Eval)
+import Data.Type.Equality ((:~:)(..))
 
 -- | Swap this out for @Text.Megaparsec.Debug@'s
--- 'dbg' to debug the parsers.
+-- 'dbg'' to debug the parsers.
+--import Text.Megaparsec.Debug (dbg')
 dbg :: String -> Parser t -> Parser t
+--dbg = dbg'
 dbg _ = id
 
 data BadParse
@@ -262,3 +282,108 @@ data Token
   deriving (Eq, Ord, Show)
 
 instance IsString Token where fromString = Identifier
+
+---------------------------------------------------------------------------------
+-- Indexed parsers
+---------------------------------------------------------------------------------
+
+newtype IParser (a :: Type -> Exp *) =
+  IParser (forall i. ScalarProxy i -> Parser (Eval (a i)))
+
+instance Semigroup (IParser a) where
+  IParser f <> IParser g = IParser (\i -> f i <|> g i)
+
+instance Monoid (IParser a) where
+  mempty = IParser (const (fail "no parse"))
+
+runIParser :: forall i a. IParser a -> ScalarProxy i -> Parser (Eval (a i))
+runIParser (IParser f) = f
+
+---------------------------------------------------------------------------------
+-- Precedence-based indexed parsers
+---------------------------------------------------------------------------------
+
+data ParserStep (a :: Type -> Exp *) = ParserStep
+  { pFull :: IParser a
+  , pSame :: IParser a
+  , pNext :: IParser a
+  }
+
+newtype PriorityParser (a :: Type -> Exp *) = PriorityParser
+  { parseAtPriority ::
+      Map (Down Integer) (ParserStep a -> IParser a)
+  }
+
+instance Semigroup (PriorityParser a) where
+  PriorityParser m1 <> PriorityParser m2 =
+    PriorityParser (Map.unionWith (<>) m1 m2)
+
+instance Monoid (PriorityParser a) where
+  mempty = PriorityParser Map.empty
+
+parsePrio :: forall a. PriorityParser a -> IParser a
+parsePrio (PriorityParser m) = head parserList
+  where
+    pstep0 = ParserStep
+      { pFull = head parserList
+      , pSame = head parserList
+      , pNext = head (tail parserList) -- (*), see below
+      }
+    parserList :: [IParser a]
+    parserList = go pstep0 (Map.elems m)
+    go :: ParserStep a
+       -> [(ParserStep a -> IParser a)]
+       -> [IParser a]
+    go _ [] = [mempty, mempty] -- ensure at least 2 entries for (*)
+    go pstep (p:ps) = p pstep
+                    : let nexts = go (pstep { pSame = pNext pstep
+                                            , pNext = head (tail nexts) }) ps
+                      in nexts
+
+leveledParser :: forall a t
+               . Integer
+              -> ScalarProxy t
+              -> (ParserStep a -> Parser (Eval (a t)))
+              -> PriorityParser a
+leveledParser level i p =
+  PriorityParser . Map.singleton (Down level) $ \step ->
+    IParser $ \j ->
+      case sameScalarType i j of
+        Just Refl -> p step
+        Nothing   -> runIParser (pNext step) j
+
+infixR :: forall t a
+          . Token
+         -> Integer
+         -> ScalarProxy t
+         -> String
+         -> (Eval (a t) -> Eval (a t) -> Eval (a t))
+         -> PriorityParser a
+infixR tk level t name ctor = leveledParser level t $ \ParserStep{..} ->
+  dbg name $ do
+    lhs <- runIParser pNext t
+    ((ctor lhs <$> (tok_ tk *> runIParser pSame t))
+      <|> pure lhs
+      <?> name)
+
+infixL :: forall t a
+          . Token
+         -> Integer
+         -> ScalarProxy t
+         -> String
+         -> (Eval (a t) -> Eval (a t) -> Eval (a t))
+         -> PriorityParser a
+infixL tk level t name ctor = leveledParser level t $ \ParserStep{..} ->
+  dbg name $ (foldl1 ctor <$> (runIParser pNext t `sepBy1` tok_ tk) <?> name)
+
+prefixOp :: forall t a
+          . Token
+         -> Integer
+         -> ScalarProxy t
+         -> String
+         -> (Eval (a t) -> Eval (a t))
+         -> PriorityParser a
+prefixOp tk level t name ctor = leveledParser level t $ \ParserStep{..} ->
+  dbg name (ctor <$> (tok_ tk *> runIParser pSame t)
+            <|> runIParser pNext t
+            <?> name)

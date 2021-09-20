@@ -19,8 +19,14 @@ spec = do
     it "can parse simple arithmetic expressions" $ do
       let parses1 = parseI "(1 + 2) *3+ 4"
           parses2 = parseF "(1.0 + 2) *3.25 + 3.75"
+          parses3 = parseI "5 - 3"
+          parses4 = parseI "-17"
+          parses5 = parseI "-2 * -21"
       parses1 `shouldBe` Right 13
       parses2 `shouldBe` Right 13.5
+      parses3 `shouldBe` Right 2
+      parses4 `shouldBe` Right (-17)
+      parses5 `shouldBe` Right 42
 
     it "can parse tuples" $ do
       let ty = PairProxy IntegerProxy IntegerProxy
@@ -32,10 +38,14 @@ spec = do
           parses2 = parseI "1 + 12 / 2 * 3"
           parses3 = parseI "1 - 2 - 3"
           parses4 = parseI "1 - 4 / 2 - 3"
+          parses5 = parseI "5 - 3 + 4 - 2 + 1"
+          parses6 = parseI "--10 + ---6"
       parses1 `shouldBe` Right 11
       parses2 `shouldBe` Right 3
       parses3 `shouldBe` Right (-4)
       parses4 `shouldBe` Right (-4)
+      parses5 `shouldBe` Right 5
+      parses6 `shouldBe` Right 4
 
     it "parses exponential towers with the correct associativity" $ do
       parseI "3 ^ 2 ^ 3" `shouldBe` Right 6561
@@ -66,9 +76,11 @@ spec = do
       parses3 `shouldBe` Right 18
 
     it "parses absolute value bars" $ do
-      let parses1 = parseF "|-3| + | 5 - 6|"
+      let parses0 = parseI "|3|"
+          parses1 = parseF "|-3| + | 5 - 6|"
           parses2 = parseF "||-1||"
           parses3 = parseF "log |-e|"
+      parses0 `shouldBe` Right 3
       parses1 `shouldBe` Right 4
       parses2 `shouldBe` Right 1
       parses3 `shouldBe` Right 1
@@ -76,7 +88,7 @@ spec = do
   describe "when using common notational quirks" $ do
 
     let eval = fmap (evaluate EmptyContext)
-        parseI = eval . parseValue EmptyEnvProxy IntegerProxy
+        --parseI = eval . parseValue EmptyEnvProxy IntegerProxy
         parseF = eval . parseValue EmptyEnvProxy RealProxy
 
     it "parses concatenation as function application" $ do
@@ -86,18 +98,27 @@ spec = do
       parses2 `shouldBe` Right (exp 1)
 
     it "also parses concatenation as multiplication" $ do
-      let parses1 = parseI "(1 + 2) 3 4"
-          parses2 = parseF "2 cos pi"
-          parses3 = parseF "cos 2pi"
-      parses1 `shouldBe` Right 36
-      parses2 `shouldBe` Right (-2)
-      parses3 `shouldBe` Left (1, AmbiguousParse)
+      let --parses1 = parseI "(1 + 2) 3 4"
+          --parses2 = parseF "2 cos pi"
+          --parses3 = parseF "cos 2pi"
+          parses4 = parseF "cos(2) pi  - cos (2 pi)"
+      --parses1 `shouldBe` Right 36
+      --parses2 `shouldBe` Right (-2)
+      --parses3 `shouldBe` Left (3, AmbiguousParse)
+      parses4 `shouldBe` Right (cos 2 * pi - 1)
 
   describe "when parsing parameterized values" $ do
 
     let env = BindingProxy (Proxy @"x") IntegerProxy EmptyEnvProxy
         ctx x = Bind (Proxy @"x") IntegerProxy x EmptyContext
         parseI1 s x = fmap (evaluate (ctx x)) (parseValue env IntegerProxy s)
+        envC = BindingProxy (Proxy @"x") RealProxy
+             $ BindingProxy (Proxy @"y") RealProxy
+             $ EmptyEnvProxy
+        ctxC x y = Bind (Proxy @"x") RealProxy x
+                 $ Bind (Proxy @"y") RealProxy y
+                 $ EmptyContext
+        parseCR s x y = fmap (evaluate (ctxC x y)) (parseValue envC ComplexProxy s)
 
     it "parses expressions with variables in the environment" $ do
       let parses1 = parseI1 "(1 + x) *3 + 4"
@@ -114,6 +135,14 @@ spec = do
       let parses1 = parseI1 "if x and false then 1 else 2"
       parses1 0 `shouldBe` Left (2, MismatchedType "x")
 
+    it "can coerce values of compatible types" $ do
+      let parses1 = parseI1 "if (pi = x) then 1 else 0"
+          parses2 = parseI1 "if (x = pi) then 1 else 0"
+          parses3 = parseCR "x + y i"
+      parses1 0 `shouldBe` Right 0
+      parses2 0 `shouldBe` Right 0
+      parses3 1 2 `shouldBe` Right (1 :+ 2)
+
   describe "when parsing boolean-valued operations" $ do
     let env = BindingProxy (Proxy @"x") IntegerProxy
             $ BindingProxy (Proxy @"y") RealProxy
@@ -125,6 +154,12 @@ spec = do
                   $ EmptyContext
         parseB1 s x y z = fmap (evaluate (ctx x y z))
           (parseValue env BooleanProxy s)
+
+    it "can parse equalities" $ do
+      let parses1 = parseB1 "exp log 2 = log exp 2"
+          parses2 = parseB1 "1 + 2 + 3 = 2 * 3"
+      parses1 1 2 3 `shouldBe` Right True
+      parses2 0 0 0 `shouldBe` Right True
 
     it "can parse inequalities" $ do
       let parses1 = parseB1 "3 x < 5"

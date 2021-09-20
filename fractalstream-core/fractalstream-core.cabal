@@ -128,7 +128,7 @@ library
                        containers,
                        constraints,
                        Earley,
-                       megaparsec,
+                       megaparsec >= 9.1,
                        parser-combinators,
                        mtl,
                        time,

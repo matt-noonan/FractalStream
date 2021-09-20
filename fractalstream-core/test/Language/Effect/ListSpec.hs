@@ -57,7 +57,7 @@ listHandler = Handle Proxy handle
         x <- eval v
         modify' (\(ctx, s) -> (ctx, x : s))
 
-      Lookup _ _ _ _ _ _ test match miss -> do
+      Lookup _ _ _ pf _ _ test match miss -> recallIsAbsent pf $ do
         let test' item = do
               (ctx, _) <- get
               let ctx' = Bind Proxy RealProxy item ctx
@@ -79,12 +79,12 @@ listHandler = Handle Proxy handle
 
       ClearList _ _ _ -> modify' (\(ctx, _) -> (ctx, []))
 
-      Remove _ _ _ _ _ test -> do
+      Remove _ _ _ pf _ test -> recallIsAbsent pf $ do
         (ctx, items) <- get
         let reject item = evaluate (Bind Proxy RealProxy item ctx) test
         put (ctx, filter (not . reject) items)
 
-      ForEach _ _ _ _ _ _ body -> do
+      ForEach _ _ _ pf _ _ body -> recallIsAbsent pf $ do
         items <- snd <$> get
         forM_ items $ \item -> do
           (ctx, s) <- get

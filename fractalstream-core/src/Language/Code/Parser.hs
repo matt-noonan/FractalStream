@@ -32,8 +32,7 @@ parseCode eps env t input
 -- depend on which variables are in scope, and this can change as new 'var'
 -- bindings are introduced. That's enough to prevent the use of a pure
 -- applicative parser like Text.Earley, so we'll use Megaparsec's monadic
--- parsing here. The code grammar is simple enough that we can do this fairly
--- easily.
+-- parsing here.
 pCode :: forall effs env t
        . EffectParsers effs
       -> EnvironmentProxy env
