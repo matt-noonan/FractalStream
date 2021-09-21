@@ -64,7 +64,7 @@ init r2 : R to maxRadius * maxRadius
 loop
   set z to z z + C
   set k to k + 1
-  re z re z + im z im z < r2 and k < maxIters
+  |z|^2 < r2 and k < maxIters
 if k >= maxIters then
   black
 else
@@ -272,7 +272,9 @@ mandel' maxIters maxRadius (x :+ y) =
  where
    prog = case parseCode (EP NoEffs) env ColorProxy mandelProgram of
      Right p -> p
-     Left e  -> error (show e)
+     Left _  -> case parseCode (EP NoEffs) env ColorProxy "dark red" of
+       Right p -> p
+       Left e  -> error (show e) -- should be unreachable
    env = BindingProxy (Proxy @"x") RealProxy
        $ BindingProxy (Proxy @"y") RealProxy
        $ BindingProxy (Proxy @"maxRadius") RealProxy

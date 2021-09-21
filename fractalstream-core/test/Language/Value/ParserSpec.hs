@@ -118,14 +118,24 @@ spec = do
         ctxC x y = Bind (Proxy @"x") RealProxy x
                  $ Bind (Proxy @"y") RealProxy y
                  $ EmptyContext
+        envC' = BindingProxy (Proxy @"z") ComplexProxy
+              $ BindingProxy (Proxy @"r") RealProxy
+              $ EmptyEnvProxy
+        ctxC' z r = Bind (Proxy @"z") ComplexProxy z
+                  $ Bind (Proxy @"r") RealProxy r
+                  $ EmptyContext
         parseCR s x y = fmap (evaluate (ctxC x y)) (parseValue envC ComplexProxy s)
+        parseBC s z r = fmap (evaluate (ctxC' z r)) (parseValue envC' BooleanProxy s)
 
     it "parses expressions with variables in the environment" $ do
       let parses1 = parseI1 "(1 + x) *3 + 4"
           parses2 = parseI1 "x x + 1"
+          parses3 = parseBC "re(z) re(z) + im(z) im(z) < r^2"
       parses1 0    `shouldBe` Right 7
       parses1 (-1) `shouldBe` Right 4
       parses2 2    `shouldBe` Right 5
+      parses3 (1 :+ 2) 2 `shouldBe` Right False
+      parses3 (1 :+ 2) 3 `shouldBe` Right True
 
     it "will not parse an unbound variable" $ do
       let parses1 = parseI1 "(1 + y) *3 + 4"

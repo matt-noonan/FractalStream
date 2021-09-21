@@ -18,16 +18,9 @@ packages:
       sha256: 50d4ba02031b8802260a734d5fb1954ac6db1ba99a4c78486d85ace19dc854f4
   original:
     hackage: megaparsec-9.1.0@sha256:f2ef8a08cc1e3fa6628965732f588e07e886a01f8267310404e31072fa9e802b,3238
-- completed:
-    hackage: scientific-0.3.7.0@sha256:0f188a7b92780d81a2e3cf1195a3a24cfe3e7c43d0e9e0f2101a465803d68076,4773
-    pantry-tree:
-      size: 657
-      sha256: bf2a42f08eea0d1845aaf1d4897b2c9c7d1d7da6ed4a07f481b38224f6be3f3c
-  original:
-    hackage: scientific-0.3.7.0@sha256:0f188a7b92780d81a2e3cf1195a3a24cfe3e7c43d0e9e0f2101a465803d68076,4773
 snapshots:
 - completed:
-    size: 565266
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/17/5.yaml
-    sha256: 78e8ebabf11406261abbc95b44f240acf71802630b368888f6d758de7fc3a2f7
-  original: lts-17.5
+    size: 586923
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/9.yaml
+    sha256: 9f9fe35c949414146840a985fb228fd397c504d1781b834bfc9ab935f4d27df6
+  original: lts-18.9
