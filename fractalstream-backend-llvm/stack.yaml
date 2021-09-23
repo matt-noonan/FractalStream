@@ -1,0 +1,22 @@
+resolver: lts-18.9
+
+packages:
+- .
+- ../fractalstream-core
+
+extra-deps:
+- megaparsec-9.1.0@sha256:f2ef8a08cc1e3fa6628965732f588e07e886a01f8267310404e31072fa9e802b,3238
+- git: https://github.com/llvm-hs/llvm-hs.git
+  commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+  subdirs:
+    - llvm-hs
+    - llvm-hs-pure
+
+# Override default flag values for local packages and extra-deps
+flags:
+  llvm-hs:
+    shared-llvm: true
+
+ghc-options:
+  llvm-hs:
+    -optcxx=-std=c++17

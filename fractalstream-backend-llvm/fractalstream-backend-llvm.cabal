@@ -1,0 +1,89 @@
+cabal-version:       3.0
+name:                fractalstream-backend-llvm
+version:             2.0.0.0
+synopsis:            FractalStream to LLVM compilation.
+description:         FractalStream to LLVM compilation.
+license:             BSD-3-Clause
+license-file:        LICENSE
+author:              Matt Noonan
+maintainer:          matt.noonan@gmail.com
+copyright:           2021, Matt Noonan
+category:            Math
+build-type:          Simple
+
+common FractalStream-common
+  ghc-options:         -Wall -Werror -O2
+  -- This is basically the list of extensions from
+  -- https://lexi-lambda.github.io/blog/2018/02/10/an-opinionated-guide-to-haskell-in-2018/
+  -- with a few minor additions like ViewPatterns.
+  -- I also switch on RecordWildCards because I like it: it lets you bring
+  -- all fields of a record into scope, giving some of the flavor of an OOP
+  -- language with member variables automatically in scope of object methods.
+  default-extensions:  ApplicativeDo
+                     , BangPatterns
+                     , ConstraintKinds
+                     , DataKinds
+                     , DefaultSignatures
+                     , DeriveFoldable
+                     , DeriveFunctor
+                     , DeriveGeneric
+                     , DeriveLift
+                     , DeriveTraversable
+                     , DerivingStrategies
+                     , EmptyCase
+                     , ExistentialQuantification
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , FunctionalDependencies
+                     , GADTs
+                     , GeneralizedNewtypeDeriving
+                     , InstanceSigs
+                     , KindSignatures
+                     , LambdaCase
+                     , MultiParamTypeClasses
+                     , MultiWayIf
+                     , NamedFieldPuns
+                     , PatternSynonyms
+                     , RankNTypes
+                     , RecordWildCards
+                     , ScopedTypeVariables
+                     , StandaloneDeriving
+                     , TupleSections
+                     , TypeApplications
+                     , TypeFamilies
+                     , TypeFamilyDependencies
+                     , TypeOperators
+                     , ViewPatterns
+  default-language:    Haskell2010
+
+library
+  import: FractalStream-common
+  exposed-modules:     Backend.LLVM.Operand
+                       Backend.LLVM.Value
+                       Backend.LLVM.Code
+  build-depends:       base >=4.8 && <5,
+                       fractalstream-core,
+                       llvm-hs,
+                       llvm-hs-pure,
+                       containers,
+                       first-class-families,
+                       mtl
+  hs-source-dirs:      src
+
+test-suite spec
+  import: FractalStream-common
+  hs-source-dirs: test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:      Backend.LLVMSpec
+  build-depends:      base >=4.8 && <5
+                    , fractalstream-core
+                    , fractalstream-backend-llvm
+                    , llvm-hs
+                    , llvm-hs-pure
+                    , hspec
+                    , bytestring
+                    , containers
+                    , libffi
+                    , raw-strings-qq
+  build-tool-depends: hspec-discover:hspec-discover == 2.*

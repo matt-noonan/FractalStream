@@ -127,7 +127,6 @@ library
                        async,
                        containers,
                        constraints,
-                       Earley,
                        megaparsec >= 9.1,
                        parser-combinators,
                        mtl,
