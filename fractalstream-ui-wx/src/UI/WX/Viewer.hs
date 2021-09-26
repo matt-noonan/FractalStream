@@ -8,7 +8,6 @@ Description : Interactive view based on wxWidgets
 module UI.WX.Viewer ( wxView
                     ) where
 
-import qualified Data.Color as FSColor
 import Data.Planar
 import UI.Tile
 
@@ -35,6 +34,10 @@ import UI
 import UI.WxWidgets
 
 import Actor.Viewer
+
+import Data.Word
+import Foreign (Ptr)
+import Data.Complex
 
 data Model = Model
   { modelCenter   :: (Double, Double)
@@ -75,7 +78,7 @@ helloFrom me = do
 -- | Create a window with an interactive view of a complex-dynamical system.
 wxView :: Rectangle (Double, Double)
           -- ^ The upper-left and lower-right corners of the view.
-       -> ([(Double, Double)] -> IO [Color])
+       -> (Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ()) -- ([(Double, Double)] -> IO [Color])
           -- ^ The rendering action
        -> Viewer
           -- ^ The script-defined viewer
@@ -431,7 +434,7 @@ wxView _modelRect renderAction testViewer = start $ do
                       -- the new and old images.
                       now <- getCurrentTime
                       let speed :: forall n. Num n => n
-                          speed = 4
+                          speed = 6
                           blend = min 255 (round (speed * 255 * toRational (diffUTCTime now startTime)))
                           t = min 1.0 (speed * fromRational (toRational (diffUTCTime now startTime)) :: Double)
                       when (blend >= 255) (set animate [value := Nothing])
@@ -646,18 +649,16 @@ wxView _modelRect renderAction testViewer = start $ do
 
 renderTile' :: Valued w
             => IORef Int
-            -> ([(Double, Double)] -> IO [Color])
+            -> (Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ())  --([(Double, Double)] -> IO [Color])
             -> (Int, Int)
             -> w Model
             -> IO Tile
 renderTile' renderId action dim model = do
     iD <- atomicModifyIORef' renderId (\x -> (x + 1, x + 1))
     modelRect <- modelToRect dim <$> get model value
-    let action' pts = map colorConvert <$> do
+    let action' p q x y c = do
             curId <- readIORef renderId
-            if (curId == iD) then action pts else pure []
-        colorConvert c =
-          FSColor.rgbToColor (colorRed c, colorGreen c, colorBlue c)
+            if (curId == iD) then action p q x y c else pure ()
     renderTile action' dim modelRect
 
 -- | Paint the state of a tile into a device context.

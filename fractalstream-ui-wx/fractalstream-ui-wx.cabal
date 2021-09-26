@@ -67,26 +67,23 @@ executable FractalStream
   other-modules:       UI.Tile
                        UI.WxWidgets
                        UI.WX.Viewer
-  build-depends:       base >=4.8 && <5,
-                       fractalstream-core,
-                       random,
-                       array,
-                       wxcore,
-                       wx,
-                       async,
-                       containers,
-                       --parsec,
-                       mtl,
-                       --recursion-schemes,
-                       --llvm-hs,
-                       --llvm-hs-pure,
-                       time,
-                       monad-parallel,
-                       monad-par,
-                       monad-par-extras,
-                       bytestring,
-                       vector,
-                       first-class-families,
-                       raw-strings-qq
+  build-depends:       base >=4.8 && <5
+                     , fractalstream-core
+                     , fractalstream-backend-llvm
+                     , random
+                     , array
+                     , wxcore
+                     , wx
+                     , async
+                     , containers
+                     , mtl
+                     , time
+                     , monad-parallel
+                     , monad-par
+                     , monad-par-extras
+                     , bytestring
+                     , vector
+                     , first-class-families
+                     , raw-strings-qq
   hs-source-dirs:      src
   extra-lib-dirs:      /usr/local/lib

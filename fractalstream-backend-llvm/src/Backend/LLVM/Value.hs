@@ -1,6 +1,8 @@
+{-# language OverloadedStrings #-}
 module Backend.LLVM.Value
   ( value_
   , buildValue
+  , getGetExtern
   ) where
 
 import Backend.LLVM.Operand
@@ -22,24 +24,27 @@ import Control.Monad.Reader
 import Control.Monad.Except
 import Fcf (Pure1)
 
+import qualified Data.Map as Map
+
 value_ :: forall env t m
        . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
-      => Value env t
-      -> ReaderT (Context Operand_ env) m (Op t)
-value_ v = ReaderT (`buildValue` v)
-
+      => (String -> Operand)
+      -> Value env t
+      -> ReaderT (Context OperandPtr env) m (Op t)
+value_ getExtern v = ReaderT (\ctx -> buildValue getExtern ctx v)
 
 buildValue :: forall env t' m
             . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
-           => Context Operand_ env
+           => (String -> Operand)
+           -> Context OperandPtr env
            -> Value env t'
            -> m (Op t')
-buildValue ctx = indexedFoldM @(Pure1 Op) @(Fix (ValueF env)) @(ValueF env) go
+buildValue getExtern ctx = indexedFoldM @(Pure1 Op) @(Fix (ValueF env)) @(ValueF env) go
   where
     go :: forall t. ValueF env (Pure1 Op) t -> m (Op t)
     go = \case
 
-      Var _ t pf -> withKnownType t (derefOperand t (getBinding ctx pf))
+      Var _ t pf -> withKnownType t (derefOperand (getBinding ctx pf))
 
       Const (Scalar BooleanProxy b) -> pure (BooleanOp (C.bit (if b then 1 else 0)))
       Const (Scalar IntegerProxy n) -> pure (IntegerOp (C.int32 (fromIntegral n)))
@@ -79,6 +84,25 @@ buildValue ctx = indexedFoldM @(Pure1 Op) @(Fix (ValueF env)) @(ValueF env) go
         ColorOp <$> sub (C.int8 255) r
                 <*> sub (C.int8 255) g
                 <*> sub (C.int8 255) b
+
+      Blend (RealOp s) (ColorOp r g b) (ColorOp r' g' b') -> do
+        rf  <- uitofp r  AST.double
+        gf  <- uitofp g  AST.double
+        bf  <- uitofp b  AST.double
+        rf' <- uitofp r' AST.double
+        gf' <- uitofp g' AST.double
+        bf' <- uitofp b' AST.double
+        rr <- fmul s rf
+        gg <- fmul s gf
+        bb <- fmul s bf
+        s' <- fsub (C.double 1.0) s
+        rr' <- fmul s' rf'
+        gg' <- fmul s' gf'
+        bb' <- fmul s' bf'
+        cr <- fadd rr rr'
+        cg <- fadd gg gg'
+        cb <- fadd bb bb'
+        ColorOp <$> fptoui cr AST.i8 <*> fptoui cg AST.i8 <*> fptoui cb AST.i8
 
       ITE BooleanProxy (BooleanOp cond) (BooleanOp yes) (BooleanOp no) ->
         BooleanOp <$> select cond yes no
@@ -165,6 +189,9 @@ buildValue ctx = indexedFoldM @(Pure1 Op) @(Fix (ValueF env)) @(ValueF env) go
       DivI (IntegerOp lhs) (IntegerOp rhs) -> IntegerOp <$> sdiv lhs rhs
       ModI (IntegerOp lhs) (IntegerOp rhs) -> IntegerOp <$> srem lhs rhs
       NegI (IntegerOp x) -> IntegerOp <$> sub (C.int32 0) x
+      PowI (IntegerOp x) (IntegerOp n) ->
+        IntegerOp <$> call (getExtern "powi") [(x, []), (n, [])]
+      AbsI (IntegerOp x) -> IntegerOp <$> call (getExtern "absi") [(x, [])]
 
       AddF (RealOp lhs) (RealOp rhs) -> RealOp <$> fadd lhs rhs
       SubF (RealOp lhs) (RealOp rhs) -> RealOp <$> fsub lhs rhs
@@ -201,4 +228,92 @@ buildValue ctx = indexedFoldM @(Pure1 Op) @(Fix (ValueF env)) @(ValueF env) go
 
       ConjC (ComplexOp x y) -> ComplexOp x <$> fsub (C.double 0.0) y
 
+      AbsF (RealOp x)  -> RealOp <$> call (getExtern "fabs") [(x, [])]
+      SqrtF (RealOp x) -> RealOp <$> call (getExtern "sqrt") [(x, [])]
+      PowF (RealOp x) (RealOp y) ->
+        RealOp <$> call (getExtern "pow") [(x, []), (y, [])]
+      LogF (RealOp x) -> RealOp <$> call (getExtern "log") [(x, [])]
+      ExpF (RealOp x) -> RealOp <$> call (getExtern "exp") [(x, [])]
+      CosF (RealOp x) -> RealOp <$> call (getExtern "cos") [(x, [])]
+      SinF (RealOp x) -> RealOp <$> call (getExtern "sin") [(x, [])]
+      TanF (RealOp x) -> RealOp <$> call (getExtern "tan") [(x, [])]
+      SinhF (RealOp x) -> RealOp <$> call (getExtern "sinh") [(x, [])]
+      CoshF (RealOp x) -> RealOp <$> call (getExtern "cosh") [(x, [])]
+      TanhF (RealOp x) -> RealOp <$> call (getExtern "tanh") [(x, [])]
+      ArcsinF (RealOp x) -> RealOp <$> call (getExtern "asin") [(x, [])]
+      ArccosF (RealOp x) -> RealOp <$> call (getExtern "acos") [(x, [])]
+      ArctanF (RealOp x) -> RealOp <$> call (getExtern "atan") [(x, [])]
+      Arctan2F (RealOp y) (RealOp x) ->
+        RealOp <$> call (getExtern "atan2") [(y, []), (x, [])]
+      ArcsinhF (RealOp x) -> RealOp <$> call (getExtern "asinh") [(x, [])]
+      ArccoshF (RealOp x) -> RealOp <$> call (getExtern "acosh") [(x, [])]
+      ArctanhF (RealOp x) -> RealOp <$> call (getExtern "atanh") [(x, [])]
+
+      AbsC (ComplexOp x y) -> do
+        xx <- fmul x x
+        yy <- fmul y y
+        abs2 <- fadd xx yy
+        RealOp <$> call (getExtern "sqrt") [(abs2, [])]
+
+      ArgC (ComplexOp x y) ->
+        RealOp <$> call (getExtern "atan2") [(y, []), (x, [])]
+
+      ExpC (ComplexOp x y) -> do
+        ex <- call (getExtern "exp") [(x, [])]
+        cy <- call (getExtern "cos") [(y, [])]
+        sy <- call (getExtern "sin") [(y, [])]
+        ComplexOp <$> fmul ex cy <*> fmul ex sy
+
+      LogC (ComplexOp x y) -> do
+        xx <- fmul x x
+        yy <- fmul y y
+        norm2 <- fadd xx yy
+        logNorm2 <- call (getExtern "log") [(norm2, [])]
+        ComplexOp <$> fmul (C.double 0.5) logNorm2
+                  <*> call (getExtern "atan2") [(y, []), (x, [])]
+
+      CosC (ComplexOp x y) -> do
+        cosX  <- call (getExtern "cos")  [(x, [])]
+        coshY <- call (getExtern "cosh") [(y, [])]
+        sinX  <- call (getExtern "sin")  [(x, [])]
+        sinhY <- call (getExtern "sinh") [(y, [])]
+        yy <- fmul sinX sinhY
+        ComplexOp <$> fmul cosX coshY <*> fsub (C.double 0.0) yy
+
+      SinC (ComplexOp x y) -> do
+        cosX  <- call (getExtern "cos")  [(x, [])]
+        coshY <- call (getExtern "cosh") [(y, [])]
+        sinX  <- call (getExtern "sin")  [(x, [])]
+        sinhY <- call (getExtern "sinh") [(y, [])]
+        ComplexOp <$> fmul sinX coshY <*> fmul cosX sinhY
+
+
       _ -> error "TODO: unhandled Value constructor"
+
+getGetExtern :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+             => m (String -> Operand)
+getGetExtern = do
+  es <- mapM (\(name, getter) -> (name,) <$> getter) $
+    [ ("absi", extern "llvm.abs.i32" [AST.i32] AST.i32)
+    , ("powi", extern "llvm.powi.i32" [AST.i32] AST.i32)
+    , ("log", extern "llvm.log.f64" [AST.double] AST.double)
+    , ("exp", extern "llvm.exp.f64" [AST.double] AST.double)
+    , ("pow", extern "llvm.pow.f64" [AST.double, AST.double] AST.double)
+    , ("cos", extern "llvm.cos.f64" [AST.double] AST.double)
+    , ("sin", extern "llvm.sin.f64" [AST.double] AST.double)
+    , ("tan", extern "tan" [AST.double] AST.double)
+    , ("acos", extern "acos" [AST.double] AST.double)
+    , ("asin", extern "asin" [AST.double] AST.double)
+    , ("atan", extern "atan" [AST.double] AST.double)
+    , ("atan2", extern "atan2" [AST.double, AST.double] AST.double)
+    , ("sqrt", extern "llvm.sqrt.f64" [AST.double] AST.double)
+    , ("fabs", extern "llvm.fabs.f64" [AST.double] AST.double)
+    , ("cosh", extern "cosh" [AST.double] AST.double)
+    , ("sinh", extern "sinh" [AST.double] AST.double)
+    , ("tanh", extern "tanh" [AST.double] AST.double)
+    , ("acosh", extern "acosh" [AST.double] AST.double)
+    , ("asinh", extern "asinh" [AST.double] AST.double)
+    , ("atanh", extern "atanh" [AST.double] AST.double)
+    ]
+  let m = Map.fromList es
+  pure (m Map.!)

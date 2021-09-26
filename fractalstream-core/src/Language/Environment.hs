@@ -45,6 +45,8 @@ module Language.Environment
   , lookupEnv'
   , LookupEnvResult'(..)
 
+  , declare
+  , endOfDecls
   ) where
 
 import Language.Type
@@ -87,6 +89,16 @@ instance Show (EnvironmentProxy env) where
   show = \case
     BindingProxy name ty env' -> symbolVal name <> ":" <> showType ty <> ", " <> show env'
     EmptyEnvProxy -> "<empty>"
+
+declare :: forall name ty env
+         . (KnownSymbol name, NotPresent name env)
+        => ScalarProxy ty
+        -> EnvironmentProxy env
+        -> EnvironmentProxy ( '(name, ty) ': env)
+declare = BindingProxy (Proxy @name)
+
+endOfDecls :: EnvironmentProxy '[]
+endOfDecls = EmptyEnvProxy
 
 lemmaEnvTy :: forall et. (et :~: '(Env et, Ty et))
 lemmaEnvTy = (unsafeCoerce :: (Int :~: Int) -> (et :~: '(Env et, Ty et))) Refl

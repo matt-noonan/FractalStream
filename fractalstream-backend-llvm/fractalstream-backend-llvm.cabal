@@ -58,16 +58,19 @@ common FractalStream-common
 
 library
   import: FractalStream-common
-  exposed-modules:     Backend.LLVM.Operand
+  exposed-modules:     Backend.LLVM
+                       Backend.LLVM.Operand
                        Backend.LLVM.Value
                        Backend.LLVM.Code
-  build-depends:       base >=4.8 && <5,
-                       fractalstream-core,
-                       llvm-hs,
-                       llvm-hs-pure,
-                       containers,
-                       first-class-families,
-                       mtl
+  build-depends:       base >=4.8 && <5
+                     , fractalstream-core
+                     , llvm-hs
+                     , llvm-hs-pure
+                     , containers
+                     , first-class-families
+                     , bytestring
+                     , libffi
+                     , mtl
   hs-source-dirs:      src
 
 test-suite spec
@@ -79,11 +82,6 @@ test-suite spec
   build-depends:      base >=4.8 && <5
                     , fractalstream-core
                     , fractalstream-backend-llvm
-                    , llvm-hs
-                    , llvm-hs-pure
                     , hspec
-                    , bytestring
-                    , containers
-                    , libffi
                     , raw-strings-qq
   build-tool-depends: hspec-discover:hspec-discover == 2.*

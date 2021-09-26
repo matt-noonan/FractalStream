@@ -19,6 +19,7 @@ import Data.Color
 import Control.Concurrent
 import Control.Concurrent.Async
 
+import Data.Complex
 import Control.Monad (void)
 import Data.Word
 import Foreign.ForeignPtr
@@ -62,7 +63,7 @@ ifModified tile f = do
         Just _  -> f
 
 -- | Construct a tile from a dynamical system, and begin drawing to it.
-renderTile :: ([(Double, Double)] -> IO [Color]) -- ^ The rendering action
+renderTile :: (Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ()) -- ([(Double, Double)] -> IO [Color]) -- ^ The rendering action
            -> (Int, Int)   -- ^ The height and width of this tile.
            -> Rectangle (Double, Double)
               -- ^ The region of the dynamical plane corresponding
@@ -85,6 +86,8 @@ renderTile renderingAction (width, height) mRect = do
     redraw     <- newMVar ()  -- used to request a redraw
     managedBuf <- synchronized buf
 
+    let (mRectWidth, mRectHeight) = dimensions mRect
+
     worker <- async $ progressively fillBlock
                     $ Block { coordToModel = convertRect iRect mRect . fromCoords
                             , compute = renderingAction
@@ -92,6 +95,8 @@ renderTile renderingAction (width, height) mRect = do
                             , blockBuffer = managedBuf
                             , x0 = 0
                             , y0 = 0
+                            , deltaX = mRectWidth / fromIntegral width
+                            , deltaY = negate (mRectHeight / fromIntegral height)
                             , xStride = width
                             , xSize = width
                             , ySize = height

@@ -78,15 +78,17 @@ translateRect (dx,dy) rect = rectangle (move $ upperLeft rect) (move $ lowerRigh
 -- | Given a rectangle $R_1$ in XY space and a rectangle $R_2$ in UV space,
 --   make the affine transformation which maps $R_1$ to $R_2$.
 convertRect :: (Planar xy, Planar uv) => Rectangle xy -> Rectangle uv -> xy -> uv
-convertRect xyRect uvRect xy = fromCoords (u,v)
-    where (x,y)   = toCoords xy
-          (x0,y0) = toCoords $ upperLeft  xyRect
-          (x1,y1) = toCoords $ lowerRight xyRect
-          (u0,v0) = toCoords $ upperLeft  uvRect
-          (u1,v1) = toCoords $ lowerRight uvRect
-          uxRatio = (u1 - u0) / (x1 - x0)
-          vyRatio = (v1 - v0) / (y1 - y0)
-          (u,v) = (u0 + uxRatio * (x - x0), v0 + vyRatio * (y - y0))
+convertRect xyRect uvRect = \xy ->
+    let (x,y) = toCoords xy
+    in fromCoords (u0 + uxRatio * (x - x0), v0 + vyRatio * (y - y0))
+  where
+    (x0,y0) = toCoords $ upperLeft  xyRect
+    (x1,y1) = toCoords $ lowerRight xyRect
+    (u0,v0) = toCoords $ upperLeft  uvRect
+    (u1,v1) = toCoords $ lowerRight uvRect
+    uxRatio = (u1 - u0) / (x1 - x0)
+    vyRatio = (v1 - v0) / (y1 - y0)
+
 
 -- | Determine if two rectangles intersect.
 intersectsRect :: Planar a => Rectangle a -> Rectangle a -> Bool

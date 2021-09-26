@@ -7,9 +7,7 @@ module Main where
 
 import qualified Data.Color as FSColor
 import UI.WX.Viewer
-import Graphics.UI.WXCore.WxcTypes (rgb)
 import Control.Concurrent
-import Control.Monad
 import Control.Monad.State
 import Data.Planar
 import Data.Complex
@@ -31,13 +29,15 @@ import Language.Effect.Draw
 import Language.Effect.Render
 import Language.Effect.Provide
 import Language.Code
+import Backend.LLVM
 
 main :: IO ()
 main = do
     tid <- myThreadId
     bound <- isCurrentThreadBound
     capInfo <- threadCapability tid
-    putStrLn ("Hello from main, on thread " ++ show tid ++ " " ++ show capInfo ++ " " ++ show bound)
+    putStrLn ("Hello from main, on thread " ++ show tid ++ " "
+              ++ show capInfo ++ " " ++ show bound)
     wxMain
     putStrLn "main is done"
 
@@ -47,13 +47,78 @@ wxMain = do
     bound <- isCurrentThreadBound
     capInfo <- threadCapability tid
     putStrLn ("Hello from wxMain, on thread " ++ show tid ++ " " ++ show capInfo ++ " " ++ show bound)
-    wxView viewport (fmap (map colorConvert) . action) mainViewer
+    let env = declare @"maxIters" IntegerProxy
+            $ declare @"maxRadius" RealProxy
+            $ declare @"x" RealProxy
+            $ declare @"y" RealProxy
+            $ endOfDecls
+    withCompiledCode env juliaProgram0 $ \kernel -> do
+      let action bs ss dz z out = runJX kernel out (fromIntegral bs) (fromIntegral ss) dz 100 10 z
+      wxView viewport action mainViewer
   where
     viewport = flippedRectangle (-2.5, 2) (1.5, -2)
-    colorConvert c =
-      let (rd,g,b) = FSColor.colorToRGB c
-      in rgb rd g b
-    action pts = forM pts $ \(x,y) -> pure (mandel' 100 10 (x :+ y))
+
+flag :: String
+flag = [r|
+if x < -0.65 then
+  dark green
+else if x > 0.65 then
+  orange
+else
+  white|]
+
+grid :: String
+grid = [r|
+init z : C to x + i y
+init fz : C to sin z
+init dfz : C to cos z
+init size : R to 0.01 * |dfz|
+if |sin (pi re(fz))| < size or |sin (pi im(fz))| < size then
+  light blue
+else
+  white|]
+
+mandelProgram0 :: String
+mandelProgram0 = [r|
+init C : C to x + i y
+init z : C to 0
+init k : Z to 0
+init r2 : R to maxRadius * maxRadius
+loop
+  set z to z z + C
+  set k to k + 1
+  re(z) re(z) + im(z) im(z) < r2 and k < maxIters
+if k = maxIters then
+  black
+else
+  init c1 : Color to if im(z) > 0 then blue else yellow
+  init c2 : Color to if im(z) > 0 then green else orange
+  init s : R to k + 1 - (log (log (|z|^2) / 2)) / log 2
+  set s to cos (s pi / 10)
+  set s to s s
+  blend (s, c1, c2)
+|]
+
+juliaProgram0 :: String
+juliaProgram0 = [r|
+init C : C to -0.12256 + 0.74486i
+init z : C to x + i y
+init k : Z to 0
+init r2 : R to maxRadius * maxRadius
+loop
+  set z to z z + C
+  set k to k + 1
+  re(z) re(z) + im(z) im(z) < r2 and k < maxIters
+if k = maxIters then
+  black
+else
+  init c1 : Color to if im(z) > 0 then blue else yellow
+  init c2 : Color to if im(z) > 0 then green else orange
+  init s : R to k + 1 - (log (log (|z|^2) / 2)) / log 2
+  set s to cos (s pi / 10)
+  set s to s s
+  blend (s, c1, c2)
+|]
 
 mandelProgram :: String
 mandelProgram = [r|
@@ -189,7 +254,7 @@ traceTool = Tool{..}
                                 "Trace steps must be non-negative"
                                 validator ])))
                     $ EmptyContext
-    settingsEnv = BindingProxy (Proxy @"steps") IntegerProxy EmptyEnvProxy
+    settingsEnv = declare @"steps" IntegerProxy endOfDecls
     settingsTitle = "Trace settings"
     onChanged     = Nothing
 
@@ -201,16 +266,14 @@ traceTool = Tool{..}
     onMotion = Nothing
     onDrag = Nothing
     buttons = []
-    env  = BindingProxy (Proxy @"posX") RealProxy
-         $ BindingProxy (Proxy @"posY") RealProxy
-         $ env'
-    env' = BindingProxy (Proxy @"steps") IntegerProxy
-         $ EmptyEnvProxy
+    env  = declare @"posX" RealProxy
+         $ declare @"posY" RealProxy
+         $ settingsEnv
     trace = case parseCode (EP (ParseEff noParser $ ParseEff drawEffectParser NoEffs)) env VoidProxy traceProgram of
       Right p -> p
       Left e  -> error (show e)
 
-    validator = case parseValue env' BooleanProxy "steps > 0" of
+    validator = case parseValue settingsEnv BooleanProxy "steps > 0" of
       Right p -> p
       Left e -> error (show e)
 
@@ -242,17 +305,17 @@ mainViewer = Viewer{..}
       Right c -> c
       Left e -> error (show e)
 
-    envV2M = BindingProxy (Proxy @"viewX") RealProxy
-           $ BindingProxy (Proxy @"viewY") RealProxy
+    envV2M = declare @"viewX" RealProxy
+           $ declare @"viewY" RealProxy
            $ env
 
-    envM2V = BindingProxy (Proxy @"modelX") RealProxy
-           $ BindingProxy (Proxy @"modelY") RealProxy
+    envM2V = declare @"modelX" RealProxy
+           $ declare @"modelY" RealProxy
            $ env
 
-    env = BindingProxy (Proxy @"maxRadius")  RealProxy
-        $ BindingProxy (Proxy @"maxIters")   IntegerProxy
-        $ EmptyEnvProxy
+    env = declare @"maxRadius" RealProxy
+        $ declare @"maxIters"  IntegerProxy
+        $ endOfDecls
 
     v2m = "((viewX - 256) / 128, (viewY - 256) / 128)"
     m2v = "(128 modelX + 256, 128 modelY + 256)"
@@ -275,8 +338,8 @@ mandel' maxIters maxRadius (x :+ y) =
      Left _  -> case parseCode (EP NoEffs) env ColorProxy "dark red" of
        Right p -> p
        Left e  -> error (show e) -- should be unreachable
-   env = BindingProxy (Proxy @"x") RealProxy
-       $ BindingProxy (Proxy @"y") RealProxy
-       $ BindingProxy (Proxy @"maxRadius") RealProxy
-       $ BindingProxy (Proxy @"maxIters") IntegerProxy
-       $ EmptyEnvProxy
+   env = declare @"x" RealProxy
+       $ declare @"y" RealProxy
+       $ declare @"maxRadius" RealProxy
+       $ declare @"maxIters" IntegerProxy
+       $ endOfDecls

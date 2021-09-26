@@ -126,13 +126,13 @@ mixColors pct c1 c2 = rgbToColor (mix r1 r2, mix g1 g2, mix b1 b2)
 
 -- | Average a list of colors.
 averageColor :: [Color] -> Color
-averageColor [] = grey
-averageColor colors = go colors (0,0,0) 0
+averageColor = go 0 0 0 0
     where toInts   (x,y,z) = (toInteger x, toInteger y, toInteger z)
           fromInts (x,y,z) = (fromIntegral x, fromIntegral y, fromIntegral z)
-          go cols (r,g,b) n = case cols of
+          go !r !g !b !n = \case
             []     -> rgbToColor $ fromInts (r `div` n, g `div` n, b `div` n)
-            (c:cs) -> let (r',g',b') = toInts $ colorToRGB c in go cs (r + r', g + g', b + b') (n + 1)
+            (c:cs) -> let (r',g',b') = toInts $ colorToRGB c
+                      in go (r + r') (g + g') (b + b') (n + 1) cs
 
 -- | Invert the color in RGB space.
 invertColor :: Color -> Color
