@@ -21,9 +21,9 @@ data Render (code :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) w
        -> Proxy inputY
        -> NameIsAbsent inputX ( '(inputY, 'RealT) ': env)
        -> NameIsAbsent inputY env
-       -> Value env ('Pair 'IntegerT 'IntegerT) -- Width and height of the image
-       -> Value env ('Pair 'RealT 'RealT) -- Upper-left X, Y coordinates
-       -> Value env ('Pair 'RealT 'RealT) -- dx, dy
+       -> Value '(env, 'Pair 'IntegerT 'IntegerT) -- Width and height of the image
+       -> Value '(env, 'Pair 'RealT 'RealT) -- Upper-left X, Y coordinates
+       -> Value '(env, 'Pair 'RealT 'RealT) -- dx, dy
        -> Code '[] ( '(inputX, 'RealT) ': '(inputY, 'RealT) ': env) 'ColorT
           -- ^ NOTE: this does *not* use the recursive 'code' type! The
           -- rendering effect specifically requires effect-free code. Any
@@ -33,20 +33,20 @@ data Render (code :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) w
 
   HaltRender :: forall env code
               . EnvironmentProxy env
-             -> Value env 'ImageT
+             -> Value '(env, 'ImageT)
              -> Render code '(env, 'VoidT)
 
   Blit :: forall env code
         . EnvironmentProxy env
-       -> Value env 'ImageT -- identifier for bitmap
-       -> Value env ('Pair 'IntegerT 'IntegerT) -- upper-left X,Y coordinates
-       -> Value env 'RealT -- scale factor
-       -> Value env 'RealT -- alpha (1.0 = fully opaque, 0.0 = fully transparent)
+       -> Value '(env, 'ImageT) -- identifier for bitmap
+       -> Value '(env, 'Pair 'IntegerT 'IntegerT) -- upper-left X,Y coordinates
+       -> Value '(env, 'RealT) -- scale factor
+       -> Value '(env, 'RealT) -- alpha (1.0 = fully opaque, 0.0 = fully transparent)
        -> Render code '(env, 'VoidT)
 
   ClearTo :: forall code env
            . EnvironmentProxy env
-          -> Value env 'ColorT
+          -> Value '(env, 'ColorT)
           -> Render code '(env, 'VoidT)
 
 instance IFunctor Render where

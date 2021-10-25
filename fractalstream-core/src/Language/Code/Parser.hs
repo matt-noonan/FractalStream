@@ -8,6 +8,7 @@ module Language.Code.Parser
   , EffectParser(..)
   , EffectParsers(..)
   , EffectParsers_(..)
+  , uCode
   ) where
 
 import Language.Type
@@ -15,6 +16,8 @@ import Language.Parser
 import Language.Value
 import Language.Value.Parser
 import Language.Code
+import qualified Language.Untyped.Code as U
+import qualified Data.Recursive as U
 
 import GHC.TypeLits
 import Data.Type.Equality ((:~:)(..))
@@ -295,3 +298,89 @@ pEffects (EP eps) env t = dbg "effects" $ go eps
                                                          case lemmaEnvTy @et' of
                                                            Refl -> pCode' (EP eps) et'))
       <|> go etc
+
+uCode :: Parser U.Code
+uCode = U.Fix <$> (uBlock <|> uLine <?> "code")
+  where
+    value = untypedValue_
+    word = tok_ . Identifier
+    ident = do
+      Identifier n <- satisfy (\case { (Identifier _) -> True; _ -> False })
+      pure n
+
+    uLine
+      =   uLoop
+      <|> uSet
+      -- <|> uVar  TODO
+      <|> uPass
+      <|> uIfThenElse
+      <|> uDraw
+      <|> uOutput
+      <|> (U.Pure <$> value)
+      <?> "line of code"
+
+    uBlock = (do
+      tok_ Indent
+      body <- some uCode
+      tok_ Dedent
+      pure (U.Block body)) <?> "block of code"
+
+    uPass = (do
+      word "pass"
+      pure (U.Block [])) <?> "pass"
+
+    uLoop = (do
+      word "loop" >> eol
+      U.DoWhile . U.Fix <$> uBlock) <?> "loop"
+
+    uSet = do
+      word "set"
+      n <- ident
+      (    (word "to" *> pTo n)
+        <|> (tok_ LeftArrow *> pBind n)
+        <?> "binding style")
+
+    pTo   n = U.Set n <$> (value <* eol)
+    pBind n = U.SetBind n <$> uCode
+
+    uIfThenElse = do
+      tok_ If
+      cond <- value <* (tok_ Then >> eol)
+      yes  <- U.Fix <$> uBlock
+      no   <- (tok_ Else >> U.Fix <$> uBlock) <|> pure (U.Fix $ U.Block [])
+      pure (U.IfThenElse cond yes no)
+
+    -- Draw commands
+
+    uDraw
+      =   (word "draw" *> drawCmd)
+      <|> (word "use"  *> useCmd)
+      <|> (U.Clear <$ word "erase")
+      <?> "drawing command"
+
+    drawCmd
+      =   (do
+            word "filled"
+            (    (U.DrawCircle True <$> (word "circle" *> word "at" *> value)
+                  <*> (word "with" *> word "radius" *> value))
+             <|> (U.DrawRect True <$> (word "rectangle" *> word "from" *> value)
+                  <*> (word "to" *> value))))
+      <|> (U.DrawCircle False <$> (word "circle" *> word "at" *> value)
+            <*> (word "with" *> word "radius" *> value))
+      <|> (U.DrawRect False <$> (word "rectangle" *> word "from" *> value)
+            <*> (word "to" *> value))
+      <|> (U.DrawLine <$> (word "line" *> word "from" *> value)
+            <*> (word "to" *> value))
+      <|> (U.DrawPoint <$> (word "point" *> word "at" *> value))
+      <?> "draw command"
+
+    useCmd = do
+      c <- value
+      word "for"
+      ( (word "fill" $> U.SetFill c) <|> (word "stroke" $> U.SetStroke c) )
+
+    -- Output commands
+    uOutput = do
+      v <- word "output" *> value
+      n <- word "to" *> ident
+      pure (U.Output n v)

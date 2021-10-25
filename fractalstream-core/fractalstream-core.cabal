@@ -89,6 +89,8 @@ library
 
                        Event
 
+                       Helper.UnionFind
+
                        Task.Concurrent
                        Task.Block
 
@@ -109,13 +111,18 @@ library
                        Language.Effect.Provide
                        Language.Effect.List
                        Language.Parser
-                       Language.Untyped
+                       Language.Untyped.Value
+                       Language.Untyped.Code
+                       Language.Untyped.Infer
+                       Language.Untyped.Constraints
+                       Language.Untyped.Shape
 
                        Project
 
                        Data.Indexed.Functor
                        Data.Planar
                        Data.Color
+                       Data.Recursive
 
                        Template.Complex.Parametric
 
@@ -138,6 +145,7 @@ library
                        bytestring,
                        vector,
                        first-class-families,
+                       bifunctors,
   hs-source-dirs:      src
 
 -- executable FractalStream
@@ -181,9 +189,11 @@ test-suite spec
                     , first-class-families
                     , raw-strings-qq
                     , mtl
+                    , containers
   other-modules:      Data.Indexed.FunctorSpec
                     , Language.Value.EvaluatorSpec
                     , Language.Value.ParserSpec
+                    , Language.Untyped.ShapeSpec
                     , Language.Code.ParserSpec
                     , Language.Effect.ListSpec
   build-tool-depends: hspec-discover:hspec-discover == 2.*

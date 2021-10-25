@@ -1,11 +1,15 @@
 {-# language AllowAmbiguousTypes #-}
+{-# options_ghc -Wno-unused-imports #-}
 module Language.Value.Parser
   ( parseValue
   , parseValueFromTokens
+  , parseUntypedValue
+  , parseUntypedValueFromTokens
   , BadParse(..)
   , value_
   , valueRules
   , tokenize
+  , untypedValue_
   , Token(..)
   , PriorityParser(..)
   , parsePrio
@@ -17,14 +21,30 @@ import Language.Type
 import Language.Value
 import Language.Parser
 import Data.Indexed.Functor
+import qualified Data.Recursive as U
 import Data.Color
 
-import Fcf (Eval)
+import Fcf (Eval, Pure1)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import GHC.TypeLits
 import Data.Ord
+
+import qualified Language.Untyped.Value as U
+
+import Helper.UnionFind
+import Data.STRef
+import Control.Monad.State
+import qualified Data.Map as Map
+import GHC.TypeLits
+import Control.Monad.Except
+import Data.Functor ((<&>))
+import Language.Untyped.Shape
+import Language.Untyped.Infer
+import Language.Untyped.Constraints (initialTCState)
+
+import Debug.Trace
 
 ---------------------------------------------------------------------------------
 -- Top-level entry points
@@ -33,7 +53,7 @@ import Data.Ord
 parseValue :: EnvironmentProxy env
            -> ScalarProxy t
            -> String
-           -> Either (Int, BadParse) (Value env t)
+           -> Either (Int, BadParse) (Value '(env, t))
 parseValue env t input = parseValueFromTokens env t (tokenize input)
 
 parseValueFromTokens
@@ -41,7 +61,7 @@ parseValueFromTokens
    . EnvironmentProxy env
   -> ScalarProxy t
   -> [Token]
-  -> Either (Int, BadParse) (Value env t)
+  -> Either (Int, BadParse) (Value '(env, t))
 parseValueFromTokens env t toks
    = withEnvironment env
    $ withKnownType t
@@ -49,377 +69,248 @@ parseValueFromTokens env t toks
 
 value_ :: forall t env
         . (KnownEnvironment env, KnownType t)
-       => Parser (Value env t)
-value_ = runIParser (parsePrio (valueRules @_ @env Fix)) (typeProxy @t)
+       => Parser (Value '(env, t))
+value_ = case envProxy (Proxy @env) of
+  env -> case typeProxy @t of
+    rt -> do
+      traceM "about to parse an untyped value"
+      uv <- dbg "untyped value" $ untypedValue_
+      traceM ("uv = " ++ show uv)
+      let result = do
+            -- Infer the value's shape
+            (v, ctx') <- runST $ do
+              ctx <- fmap Map.fromList $ fromEnvironmentM env $ \name ty -> do
+                let go :: forall ty s. ScalarProxy ty -> ST s (UF s (STShape s))
+                    go = \case
+                      BooleanProxy -> fresh (STShape BoolShape)
+                      IntegerProxy -> fresh (STShape NumShape)
+                      RealProxy    -> fresh (STShape NumShape)
+                      ComplexProxy -> fresh (STShape NumShape)
+                      ColorProxy   -> fresh (STShape ColorShape)
+                      PairProxy x y -> do
+                        ps <- PairShape <$> go x <*> go y
+                        fresh (STShape ps)
+                      _ -> error "missing case"
+                t <- go ty
+                pure (symbolVal name, t)
+
+              s <- inferShape ctx uv
+
+              nextTV <- newSTRef 0
+              ctx' <- forM ctx (shapeToTS nextTV [])
+              evalStateT (toTypeShape nextTV s) ctx' <&> \case
+                Left  e -> Left . (-1,) $ case e of
+                  Unbound n -> UnboundVariable n
+                  _         -> Other (show e)
+                Right v -> pure (v, ctx')
+
+            traceM ("v = " ++ show v)
+            -- Infer the value's type
+            case evalStateT (infer env ctx' rt v) initialTCState of
+              Right typedValue -> pure typedValue
+              Left e -> throwError . (-1,) $ case e of
+                _ -> Other (show e)
+      case result of
+        Right v -> pure v
+        Left (pos,e)  -> parseError (FancyError pos (Set.singleton (ErrorCustom e)))
+
+parseUntypedValue :: String
+                  -> Either (Int, BadParse) U.Value
+parseUntypedValue = parseUntypedValueFromTokens . tokenize
+
+parseUntypedValueFromTokens :: [Token]
+                            -> Either (Int, BadParse) U.Value
+parseUntypedValueFromTokens = parse untypedValue_
+
+untypedValue_ :: Parser U.Value
+untypedValue_ = parsePrio (valueRules U.Fix)
 
 ---------------------------------------------------------------------------------
 -- Rules
 ---------------------------------------------------------------------------------
 
-valueRules :: forall value env
-            . (KnownEnvironment env)
-           => (forall i. ValueF env value i -> Eval (value i))
+valueRules :: forall value
+            . (U.ValueF value -> value)
            -> PriorityParser value
 valueRules inj = mconcat rules
   where
-    op2 :: forall i. (Eval (value i) -> Eval (value i) -> ValueF env value i)
-      -> Eval (value i) -> Eval (value i) -> Eval (value i)
     op2 c x y = inj (c x y)
-    op1 :: forall i. (Eval (value i) -> ValueF env value i)
-        -> Eval (value i) -> Eval (value i)
-    op1 c x = inj (c x)
-    mkAtom :: ScalarProxy i -> String -> Parser (ValueF env value i) -> PriorityParser value
-    mkAtom t name p = leveledParser 0 t $ \_ -> dbg name ((inj <$> p) <?> name)
-    mkAtom' :: ScalarProxy i -> String -> (IParser value -> Parser (ValueF env value i)) -> PriorityParser value
-    mkAtom' t name p = leveledParser 0 t $ \step -> dbg name ((inj <$> p (pFull step)) <?> name)
-    funNames = Map.keysSet funR2R `Set.union` Map.keysSet funC2R
-
-    funNameR = void $ satisfy $ \case
-      Identifier f -> f `Set.member` funNames
-      _            -> False
-    funNameC = void $ satisfy $ \case
-      Identifier f -> f `Map.member` funC2C
-      _            -> False
-    color = inj . Const . Scalar ColorProxy
-    twoThirds = inj (Const (Scalar RealProxy 0.66))
+    op1 c x   = inj (c x)
+    mkAtom  name p = leveledParser 0 (\_ -> dbg name ((inj <$> p) <?> name))
+    mkAtom' name p = leveledParser 0 (\step -> dbg name ((inj <$> p (pFull step)) <?> name))
+    color = inj . U.ConstColor
+    twoThirds = inj (U.ConstF 0.66)
 
     rules :: [PriorityParser value]
     rules =
-
       ---------------------------------------------------------------------
       -- Boolean operators
       ---------------------------------------------------------------------
 
-      [ infixL Or_    3002 BooleanProxy "boolean disjunction" (op2 Or)
-      , infixL And_   2902 BooleanProxy "boolean conjunction" (op2 And)
-
-      , leveledParser 2802 BooleanProxy $ \ParserStep{..} -> dbg "equality" $ choice
-          [ try (inj <$> (Eql IntegerProxy
-                      <$> (runIParser pFull IntegerProxy <* tok_ Equal)
-                      <*> (runIParser pFull IntegerProxy)))
-          , try (inj <$> (Eql RealProxy
-                      <$> (runIParser pFull RealProxy <* tok_ Equal)
-                      <*> (runIParser pFull RealProxy)))
-          , try (inj <$> (Eql ComplexProxy
-                      <$> (runIParser pFull ComplexProxy <* tok_ Equal)
-                      <*> (runIParser pFull ComplexProxy)))
-          , do
-              lhs <- runIParser pNext BooleanProxy
-              (inj . Eql BooleanProxy lhs
-               <$> (tok_ Equal *> runIParser pNext BooleanProxy)) <|> pure lhs
-          ]
-      , leveledParser 2801 BooleanProxy $ \ParserStep{..} -> dbg "inequality" $ choice
-          [ try (inj <$> (NEq IntegerProxy
-                      <$> (runIParser pFull IntegerProxy <* tok_ NotEqual)
-                      <*> (runIParser pFull IntegerProxy)))
-          , try (inj <$> (NEq RealProxy
-                      <$> (runIParser pFull RealProxy <* tok_ NotEqual)
-                      <*> (runIParser pFull RealProxy)))
-          , try (inj <$> (NEq ComplexProxy
-                      <$> (runIParser pFull ComplexProxy <* tok_ NotEqual)
-                      <*> (runIParser pFull ComplexProxy)))
-          , do
-              lhs <- runIParser pNext BooleanProxy
-              (inj . NEq BooleanProxy lhs
-               <$> (tok_ NotEqual *> runIParser pNext BooleanProxy)) <|> pure lhs
-          ]
-
-      , leveledParser 2702 BooleanProxy $ \ParserStep{..} -> dbg "comparison" (choice
-          [ try $ do
-              lhs <- runIParser pFull IntegerProxy
-              opTok <- satisfy (`Map.member` opsI)
-              inj <$> (opsI Map.! opTok) lhs <$> runIParser pFull IntegerProxy
-          , try $ do
-              lhs <- runIParser pFull RealProxy
-              opTok <- satisfy (`Map.member` opsF)
-              inj <$> (opsF Map.! opTok) lhs <$> runIParser pFull RealProxy
-          , runIParser pNext BooleanProxy
-          ] <?> "comparison")
-
-      , prefixOp Not_ 2602 BooleanProxy "boolean negation" (op1 Not)
+      [ infixL Or_      3002 "disjunction" (op2 U.Or)
+      , infixL And_     2902 "conjunction" (op2 U.And)
+      , infixL Equal    2802 "equality" (op2 U.Eql)
+      , infixL NotEqual 2801 "inequality" (op2 U.NEq)
+      , leveledParser 2800 $ \ParserStep{..} -> dbg "boolean operator" (do
+          lhs <- pNext
+          (do
+              opTok <- satisfy (`Map.member` bops)
+              inj <$> (bops Map.! opTok) lhs <$> pNext) <|> pure lhs
+        ) <?> "comparison"
+      , prefixOp Not_   2602 "boolean negation" (op1 U.Not)
 
       ---------------------------------------------------------------------
       -- Arithmetic operators
       ---------------------------------------------------------------------
 
-      -- Integer arithmetic
-      , infixL Plus    2000 IntegerProxy "addition"    (op2 AddI)
-      , infixL Minus   1900 IntegerProxy "subtraction" (op2 SubI)
-      , infixL Divide  1800 IntegerProxy "division"    (op2 DivI)
-      , infixL Times   1700 IntegerProxy "multiplication" (op2 MulI)
-      , leveledParser  1600 IntegerProxy $ \ParserStep{..} -> dbg "implicit multiplication" $
-          (foldl1 (\x y -> inj (MulI x y)) <$> do
-              -- No integer-valued functions that have optional
-              -- parentheses, but we'll keep the form in case we
-              -- want to add some later on.
-              let factor = (False,) <$> runIParser pNext IntegerProxy
+      , infixL Plus    2000 "addition"    (op2 (U.Arith U.Add))
+      , infixL Minus   1900 "subtraction" (op2 (U.Arith U.Sub))
+      , infixL Divide  1800 "division"    (op2 (U.Arith U.Div))
+      , infixL Times   1700 "multiplication" (op2 (U.Arith U.Mul))
+      , leveledParser  1600 $ \ParserStep{..} -> dbg "implicit multiplication" $
+          (foldl1 (op2 (U.Arith U.Mul)) <$> do
+              -- Look ahead to figure out which factors are function applications
+              -- that elide the parentheses around their argument. We'll allow
+              -- this to occur in the last factor only, and raise an ambiguous
+              -- parse error otherwise. This means that we will parse things
+              -- like `2 cos x` but not `cos 2x`; in the latter case, there is
+              -- ambiguity between `cos (2x)` or `(cos 2) x`.
+              let peekNoParenFun =
+                    lookAhead (try $ do
+                                  _ <- satisfy $ \case
+                                         Identifier n -> Map.member n functions
+                                         _            -> False
+                                  notFollowedBy (tok_ OpenParen)
+                                  pure True) <|> pure False
+              let factor = (,) <$> peekNoParenFun <*> pNext
               factors <- some (notFollowedBy (tok_ Minus) *> try factor)
               if any fst (init factors)
                 then bad AmbiguousParse
                 else pure (map snd factors))
-          <|> runIParser pNext IntegerProxy
-      , prefixOp Minus 1500 IntegerProxy "negation"    (op1 NegI)
-      , infixR Caret   1400 IntegerProxy "power"       (op2 PowI)
+          <|> pNext
+      , prefixOp Minus 1500 "negation"    (op1 (U.Ap1 U.Neg))
+      , infixR Caret   1400 "power"       (op2 (U.Arith U.Pow))
 
-      -- Real arithmetic
-      , infixL Plus    2001 RealProxy "addition"    (op2 AddF)
-      , infixL Minus   1901 RealProxy "subtraction" (op2 SubF)
-      , infixL Divide  1801 RealProxy "division"    (op2 DivF)
-      , infixL Times   1701 RealProxy "multiplication" (op2 MulF)
-      , leveledParser  1601 RealProxy $ \ParserStep{..} -> dbg "implicit multiplication" $ do
-          (foldl1 (\x y -> inj (MulF x y)) <$> do
-              -- If any factor except the last is a non-parenthesized
-              -- function call, complain about an ambiguous parse.
-              let factor = do
-                    isNonParenFun <-
-                      (True <$ lookAhead (try (funNameR >> notFollowedBy (tok_ OpenParen))))
-                      <|> pure False
-                    (isNonParenFun,) <$> runIParser pNext RealProxy
-              factors <- some (notFollowedBy (tok_ Minus) *> try factor)
-              if any fst (init factors)
-                then bad AmbiguousParse
-                else pure (map snd factors))
-           <|> runIParser pNext RealProxy
-      , prefixOp Minus 1501 RealProxy "negation"    (op1 NegF)
-      , infixR Caret   1401 RealProxy "power"       (op2 PowF)
+      ---------------------------------------------------------------------
+      -- If/then/else
+      ---------------------------------------------------------------------
 
-      -- Complex arithmetic
-      , infixL Plus    2002 ComplexProxy "addition"    (op2 AddC)
-      , infixL Minus   1902 ComplexProxy "subtraction" (op2 SubC)
-      , infixL Divide  1802 ComplexProxy "division"    (op2 DivC)
-      , infixL Times   1702 ComplexProxy "multiplication" (op2 MulC)
-      , leveledParser  1602 ComplexProxy $ \ParserStep{..} -> dbg "implicit multiplication" $ do
-          (foldl1 (\x y -> inj (MulC x y)) <$> do
-              -- If any factor except the last is a non-parenthesized
-              -- function call, complain about an ambiguous parse.
-              let factor = do
-                    isNonParenFun <-
-                      (True <$ lookAhead (try (funNameC >> notFollowedBy (tok_ OpenParen))))
-                      <|> pure False
-                    (isNonParenFun,) <$> runIParser pNext ComplexProxy
-              factors <- some (notFollowedBy (tok_ Minus) *> try factor)
-              if any fst (init factors)
-                then bad AmbiguousParse
-                else pure (map snd factors))
-           <|> runIParser pNext ComplexProxy
-      , prefixOp Minus 1502 ComplexProxy "negation"    (op1 NegC)
-      , infixR Caret   1402 ComplexProxy "power"       (op2 PowC)
-
-      -- Polymorphic operators
       , PriorityParser . Map.singleton (Down 1000) $ \ParserStep{..} ->
-          IParser $ \t -> dbg "conditional" ((do
+          dbg "conditional" ((do
             tok_ If
-            cond <- runIParser pFull BooleanProxy
+            cond <- pFull
             tok_ Then
-            yes <- runIParser pFull t
+            yes <- pFull
             tok_ Else
-            no  <- runIParser pFull t
-            pure (inj (ITE t cond yes no)))
-                          <|> runIParser pNext t
-                          <?> "conditional")
+            no  <- pFull
+            pure (inj (U.ITE cond yes no)))
+                             <|> pNext
+                             <?> "conditional")
 
       ---------------------------------------------------------------------
       -- Color operators
       ---------------------------------------------------------------------
 
-      , prefixOp (Identifier "dark") 0 ColorProxy "dark" $ \col ->
-          inj (Blend twoThirds col (color black))
+      , prefixOp (Identifier "dark") 0 "dark" $ \col ->
+          inj (U.Blend twoThirds col (color black))
 
-      , prefixOp (Identifier "light") 0 ColorProxy "light" $ \col ->
-          inj (Blend twoThirds col (color white))
+      , prefixOp (Identifier "light") 0 "light" $ \col ->
+          inj (U.Blend twoThirds col (color white))
 
-      , prefixOp (Identifier "invert") 0 ColorProxy "invert" (op1 InvertRGB)
+      , prefixOp (Identifier "invert") 0 "invert" (op1 U.InvertRGB)
 
-      , mkAtom' ColorProxy "blend operator" $ \top -> do
+      , mkAtom' "blend operator" $ \top -> do
           tok_ (Identifier "blend")
           tok_ OpenParen
-          s  <- runIParser top RealProxy  <* tok_ Comma
-          c1 <- runIParser top ColorProxy <* tok_ Comma
-          c2 <- runIParser top ColorProxy <* tok_ CloseParen
-          pure (Blend s c1 c2)
+          s  <- top <* tok_ Comma
+          c1 <- top <* tok_ Comma
+          c2 <- top <* tok_ CloseParen
+          pure (U.Blend s c1 c2)
 
-      , mkAtom' ColorProxy "color constructor" $ \top -> do
+      , mkAtom' "color constructor" $ \top -> do
           tok_ (Identifier "rgb")
           tok_ OpenParen
-          r <- runIParser top RealProxy <* tok_ Comma
-          g <- runIParser top RealProxy <* tok_ Comma
-          b <- runIParser top RealProxy <* tok_ CloseParen
-          pure (RGB r g b)
+          r <- top <* tok_ Comma
+          g <- top <* tok_ Comma
+          b <- top <* tok_ CloseParen
+          pure (U.RGB r g b)
 
-      , mkAtom ColorProxy "named color" $ do
+      , mkAtom "named color" $ do
           Identifier c <- satisfy (\case { Identifier c -> Map.member c colors
                                          ; _ -> False })
-          pure (Const (Scalar ColorProxy (colors Map.! c)))
+          pure (U.ConstColor (colors Map.! c))
 
       ---------------------------------------------------------------------
-      -- Function application and implicit coercions
+      -- Function application
       ---------------------------------------------------------------------
 
-      -- Real functions of one variable (real or complex)
       , PriorityParser . Map.singleton (Down 10) $ \step ->
-          IParser $ \case
-            RealProxy -> dbg "real function of one variable" $ do
-              Identifier f <- satisfy (\case { Identifier f -> Set.member f funNames
+          dbg "function of one variable" ((do
+              Identifier f <- satisfy (\case { Identifier f -> Map.member f functions
                                              ; _ -> False })
-              case Map.lookup f funR2R of
-                Just fun -> inj . fun <$> runIParser (pSame step) RealProxy
-                Nothing -> case Map.lookup f funC2R of
-                  Just fun -> inj . fun <$> runIParser (pSame step) ComplexProxy
-                  Nothing -> error "internal error, should be unreachable"
-            _ -> mzero
-
-      -- Complex functions of one complex variable
-      , PriorityParser . Map.singleton (Down 10) $ \step ->
-          IParser $ \case
-            ComplexProxy -> dbg "complex function of one variable" $ do
-              Identifier f <- satisfy (\case { Identifier f -> Map.member f funC2C
-                                             ; _ -> False })
-              case Map.lookup f funC2C of
-                Just fun -> inj . fun <$> runIParser (pSame step) ComplexProxy
-                Nothing -> error "internal error, should be unreachable"
-            _ -> mzero
-
-      -- Implicit coercions
-      , PriorityParser . Map.singleton (Down 10) $ \ParserStep{..} ->
-          IParser $ \case
-            ComplexProxy -> dbg "complex" (choice
-              [ try (runIParser pNext ComplexProxy)
-              , try (inj . R2C <$> runIParser pNext RealProxy)
-              , inj . R2C . inj . I2R <$> runIParser pNext IntegerProxy
-              ] <?> "basic complex value")
-            RealProxy -> dbg "real" (choice
-              [ try (runIParser pNext RealProxy)
-              , inj . I2R <$> runIParser pNext IntegerProxy
-              ] <?> "basic real value")
-            t -> runIParser pNext t
+              case Map.lookup f functions of
+                Just fun -> inj . U.Ap1 fun <$> pSame step
+                Nothing  -> error "internal error, should be unreachable")
+                                          <|> pNext step)
 
       ---------------------------------------------------------------------
       -- Atoms
       ---------------------------------------------------------------------
 
       -- Boolean constants
-      , mkAtom BooleanProxy "true"  (tok_ True_  >> pure (Const (Scalar BooleanProxy True)))
-      , mkAtom BooleanProxy "false" (tok_ False_ >> pure (Const (Scalar BooleanProxy False)))
+      , mkAtom "true"  (tok_ True_  >> pure (U.ConstB True))
+      , mkAtom "false" (tok_ False_ >> pure (U.ConstB False))
 
       -- Integer constants
-      , mkAtom IntegerProxy "integer constant" $ do
+      , mkAtom "integer constant" $ do
           NumberI n <- satisfy (\case { NumberI _ -> True; _ -> False })
-          pure (Const (Scalar IntegerProxy (fromIntegral n)))
+          pure (U.ConstI (fromIntegral n))
 
-      -- Real constants, including promoted integer constants
-      , mkAtom RealProxy "real constant" $ do
-          c <- satisfy (\case { NumberI _ -> True
-                              ; NumberF _ -> True
-                              ; _         -> False })
-          case c of
-            NumberI n -> pure (Const (Scalar RealProxy (fromIntegral n)))
-            NumberF n -> pure (Const (Scalar RealProxy n))
-            _         -> mzero
+      -- Real constants
+      , mkAtom "real constant" $ do
+          NumberF c <- satisfy (\case { NumberF _ -> True
+                                      ; _         -> False })
+          pure (U.ConstF c)
 
-      , mkAtom RealProxy "Euler's constant"
-        (Const (Scalar RealProxy (exp 1)) <$ tok_ Euler)
+      , mkAtom "Euler's constant" (U.ConstF (exp 1) <$ tok_ Euler)
 
-      , mkAtom RealProxy "pi"
-        (Const (Scalar RealProxy pi) <$ tok_ Pi)
+      , mkAtom "pi" (U.ConstF pi <$ tok_ Pi)
 
-      -- Complex constants, including promoted real and integer constants
-      , mkAtom ComplexProxy "complex constant" $ do
-          c <- satisfy (\case { NumberI _ -> True
-                              ; NumberF _ -> True
-                              ; _         -> False })
-          case c of
-            NumberI n -> pure (Const (Scalar ComplexProxy (fromIntegral n)))
-            NumberF n -> pure (Const (Scalar ComplexProxy (n :+ 0)))
-            _         -> mzero
-
-      , mkAtom ComplexProxy "imaginary unit"
-        (Const (Scalar ComplexProxy (0 :+ 1)) <$ tok_ I)
+      -- Complex constants
+      , mkAtom "imaginary unit" (U.ConstC 0 1 <$ tok_ I)
 
       -- mod functions
-      , mkAtom' IntegerProxy "integer modulo operator" $ \top -> do
+      , mkAtom' "modulo operator" $ \top -> do
           tok_ (Identifier "mod") >> tok_ OpenParen
-          x <- runIParser top IntegerProxy <* tok_ Comma
-          y <- runIParser top IntegerProxy <* tok_ CloseParen
-          pure (ModI x y)
-      , mkAtom' RealProxy "real modulo operator" $ \top -> do
-          tok_ (Identifier "mod") >> tok_ OpenParen
-          x <- runIParser top RealProxy <* tok_ Comma
-          y <- runIParser top RealProxy <* tok_ CloseParen
-          pure (ModF x y)
+          x <- top <* tok_ Comma
+          y <- top <* tok_ CloseParen
+          pure (U.Arith U.Mod x y)
 
       -- Absolute value bars
       , PriorityParser . Map.singleton (Down 0) $ \step ->
-          IParser $ \case
-            IntegerProxy -> dbg "integer absolute value" (do
+          dbg "integer absolute value" (do
               tok_ Bar
-              v <- runIParser (pFull step) IntegerProxy
+              v <- pFull step
               tok_ Bar
-              pure (inj (AbsI v))) <?> "integer absolute value"
-            RealProxy -> dbg "real or complex absolute value" $ do
-              tok_ Bar
-              -- Could be a real or a complex argument, try both
-              try ((do
-                      v <- runIParser (pFull step) RealProxy <* tok_ Bar
-                      pure (inj (AbsF v))) <?> "real absolute value")
-               <|> ((do
-                      v <- runIParser (pFull step) ComplexProxy <* tok_ Bar
-                      pure (inj (AbsC v))) <?> "complex magnitude")
-            _ -> mzero
+              pure (inj (U.Ap1 U.Abs v))) <?> "absolute value"
 
       -- Variables
       , PriorityParser . Map.singleton (Down 0) $ \_ ->
-          IParser $ \t -> dbg "variable" (do
-            Identifier n <- satisfy (\case { Identifier _ -> True; _ -> False })
-            case someSymbolVal n of
-              SomeSymbol name ->
-                case lookupEnv name t (envProxy (Proxy @env)) of
-                  Found pf  -> pure (inj (Var name t pf))
-                  Absent _  -> bad (UnboundVariable n)
-                  WrongType -> bad (MismatchedType n)) <?> "variable"
+          dbg "variable" $ do
+            Identifier n <- satisfy (\case { Identifier _ -> True
+                                           ; _            -> False })
+            pure (inj (U.Var n))
 
-      -- Ordered pairs
+      -- Ordered pairs and parenthesized subexpressions
       , PriorityParser . Map.singleton (Down 0) $ \step -> do
-          IParser $ \case
-            p@(PairProxy t1 t2) -> dbg "ordered pair" (do
+          dbg "ordered pair or parenthesized expression" (do
               tok_ OpenParen
-              x <- runIParser (pFull step) t1 <* tok_ Comma
-              y <- runIParser (pFull step) t2 <* tok_ CloseParen
-              pure (inj (PairV p x y))) <?> "ordered pair"
-            _ -> mzero
-
-      -- Parenthesized subexpressions
-      , PriorityParser . Map.singleton (Down 0) $ \step -> do
-          IParser $ \t -> dbg "parenthesized subexpression"
-            (tok_ OpenParen *> runIParser (pFull step) t <* tok_ CloseParen)
-            <?> "parenthesized expression"
+              x <- pFull step
+              ((do tok_ Comma
+                   y <- pFull step <* tok_ CloseParen
+                   pure (inj (U.PairV x y))) <?> "ordered pair") <|>
+                (tok_ CloseParen >> pure x <?> "parenthesized expression"))
       ]
-
----------------------------------------------------------------------------------
--- Utility functions
----------------------------------------------------------------------------------
-
-funR2R :: Map String (Eval (value 'RealT) -> ValueF env value 'RealT)
-funR2R = Map.fromList
-  [ ("exp", ExpF), ("log", LogF), ("abs", AbsF)
-  , ("cos", CosF), ("sin", SinF), ("tan", TanF)
-  , ("arccos", ArccosF), ("arcsin", ArcsinF), ("arctan", ArctanF)
-  , ("acos", ArccosF), ("asin", ArcsinF), ("atan", ArctanF)
-  , ("cosh", CoshF), ("sinh", SinhF), ("tanh", TanhF)
-  , ("arccosh", ArccoshF), ("arcsinh", ArcsinhF), ("arctanh", ArctanhF)
-  , ("acosh", ArccoshF), ("asinh", ArcsinhF), ("atanh", ArctanhF)
-  ]
-
-funC2C :: Map String (Eval (value 'ComplexT) -> ValueF env value 'ComplexT)
-funC2C = Map.fromList
-  [ ("exp", ExpC), ("log", LogC)
-  , ("cos", CosC), ("sin", SinC), ("tan", TanC)
-  , ("cosh", CoshC), ("sinh", SinhC), ("tanh", TanhC)
-  , ("bar", ConjC), ("conj", ConjC)
-  ]
-
-funC2R :: Map String (Eval (value 'ComplexT) -> ValueF env value 'RealT)
-funC2R = Map.fromList
-  [ ("re", ReC), ("im", ImC), ("arg", ArgC) ]
 
 colors :: Map String Color
 colors = Map.fromList
@@ -427,20 +318,21 @@ colors = Map.fromList
   , ("black", black), ("white", white), ("grey", grey), ("gray", grey)
   , ("orange", orange), ("yellow", yellow), ("purple", purple), ("violet", violet) ]
 
-opsI :: forall value env
-      . Map Token (   Eval (value 'IntegerT)
-                   -> Eval (value 'IntegerT)
-                   -> ValueF env value 'BooleanT)
-opsI = Map.fromList
-  [ (GreaterThan, GTI), (GreaterThanOrEqual, GEI)
-  , (LessThan, LTI), (LessThanOrEqual, LEI)
-  ] -- , (Equal, Eql IntegerProxy), (NotEqual, NEq IntegerProxy) ]
 
-opsF :: forall value env
-      . Map Token (   Eval (value 'RealT)
-                   -> Eval (value 'RealT)
-                   -> ValueF env value 'BooleanT)
-opsF = Map.fromList
-  [ (GreaterThan, GTF), (GreaterThanOrEqual, GEF)
-  , (LessThan, LTF), (LessThanOrEqual, LEF)
-  ] -- , (Equal, Eql RealProxy), (NotEqual, NEq RealProxy) ]
+functions :: Map String U.Fun
+functions = Map.fromList
+  [ ("exp", U.Exp), ("log", U.Log), ("abs", U.Abs), ("sqrt", U.Sqrt)
+  , ("cos", U.Cos), ("sin", U.Sin), ("tan", U.Tan)
+  , ("arccos", U.Arccos), ("arcsin", U.Arcsin), ("arctan", U.Arctan)
+  , ("acos", U.Arccos), ("asin", U.Arcsin), ("atan", U.Arctan)
+  , ("cosh", U.Cosh), ("sinh", U.Sinh), ("tanh", U.Tanh)
+  , ("arccosh", U.Arccosh), ("arcsinh", U.Arcsinh), ("arctanh", U.Arctanh)
+  , ("acosh", U.Arccosh), ("asinh", U.Arcsinh), ("atanh", U.Arctanh)
+  , ("re", U.Re), ("im", U.Im), ("arg", U.Arg)
+  ]
+
+bops :: forall value. Map Token (value -> value -> U.ValueF value)
+bops = Map.fromList
+  [ (GreaterThan, U.Cmp U.GT), (GreaterThanOrEqual, U.Cmp U.GE)
+  , (LessThan, U.Cmp U.LT), (LessThanOrEqual, U.Cmp U.LE)
+  , (Equal, U.Eql), (NotEqual, U.NEq) ]

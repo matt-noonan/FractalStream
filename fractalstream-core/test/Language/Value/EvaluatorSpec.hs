@@ -11,7 +11,7 @@ spec = do
   describe "The 'evaluate' function" $ do
 
     it "computes real values from an empty context" $ do
-      let v1, v2, v3 :: Value '[] 'RealT
+      let v1, v2, v3 :: Value '( '[], 'RealT)
           v1 = cos(pi) + abs(10 - 20)
           v2 = (10 * 10) / 20 - 30
           v3 = exp(2 * log(pi))
@@ -22,23 +22,23 @@ spec = do
             Fix (AddF _ _) -> True
             _ -> False
       v1_outermost_add `shouldBe` True
-      evaluate EmptyContext v1 `shouldBe` 9
-      evaluate EmptyContext v2 `shouldBe` (-25)
-      evaluate EmptyContext v3 `shouldBe` (pi * pi)
+      evaluate v1 EmptyContext `shouldBe` 9
+      evaluate v2 EmptyContext `shouldBe` (-25)
+      evaluate v3 EmptyContext `shouldBe` (pi * pi)
 
     it "computes integer values from an empty context" $ do
-      let v1, v2, v3, v4 :: Value '[] 'IntegerT
+      let v1, v2, v3, v4 :: Value '( '[], 'IntegerT)
           v1 = abs(20 - 30)
           v2 = Fix (DivI (10 * 10) 20) - 30
           v3 = Fix (DivI 20 7)
           v4 = Fix (ModI 20 7)
-      evaluate EmptyContext v1 `shouldBe` 10
-      evaluate EmptyContext v2 `shouldBe` (-25)
-      evaluate EmptyContext v3 `shouldBe` 2
-      evaluate EmptyContext v4 `shouldBe` 6
+      evaluate v1 EmptyContext `shouldBe` 10
+      evaluate v2 EmptyContext `shouldBe` (-25)
+      evaluate v3 EmptyContext `shouldBe` 2
+      evaluate v4 EmptyContext `shouldBe` 6
 
     it "computes boolean values from an empty context" $ do
-      let yes, no, v1, v2, v3, v4 :: Value '[] 'BooleanT
+      let yes, no, v1, v2, v3, v4 :: Value '( '[], 'BooleanT)
           yes = Fix (Const (Scalar BooleanProxy True ))
           no  = Fix (Const (Scalar BooleanProxy False))
           v1 = Fix (Eql RealProxy
@@ -56,7 +56,7 @@ spec = do
                                   (Fix (ModI 20 7))))
                       (Fix (PairV (PairProxy IntegerProxy IntegerProxy)
                                   2 6)))
-      evaluate EmptyContext v1 `shouldBe` True
-      evaluate EmptyContext v2 `shouldBe` False
-      evaluate EmptyContext v3 `shouldBe` False
-      evaluate EmptyContext v4 `shouldBe` True
+      evaluate v1 EmptyContext `shouldBe` True
+      evaluate v2 EmptyContext `shouldBe` False
+      evaluate v3 EmptyContext `shouldBe` False
+      evaluate v4 EmptyContext `shouldBe` True

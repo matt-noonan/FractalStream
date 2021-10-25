@@ -79,17 +79,37 @@ x|]
        runWithX IntegerProxy (Scalar IntegerProxy 0) p1 `shouldBe` Right 6
        runWithX IntegerProxy (Scalar IntegerProxy 0) p2 `shouldBe` Right 6
 
+    it "can coerce variable types" $ do
+        let p1 = [r|
+init k : Z to 1
+set x to k|]
+        runWithX VoidProxy (Scalar RealProxy 0) p1 `shouldBe` Right ()
+
   describe "when parsing more complex code" $ do
 
     it "can parse a checkered Mandelbrot program" $ do
+      let _mandel = [r|
+init C : C to x + y i
+init z : C to 0
+init count : Z to 0
+loop
+  set z to z z + C
+  set count to count + 1
+  |z| < 10 and count < 100
+if count = 100 then
+  black
+else if im z > 0 then
+  red
+else
+  yellow|]
       let mandel = [r|
 init C : C to x + y i
 init z : C to 0
 init count : Z to 0
 loop
-  set z to z^2 + C
+  set z to z z + C
   set count to count + 1
-  |z| < 10 and count < 100
+  |z| < 100 and count < 100
 if count = 100 then
   black
 else if im z > 0 then

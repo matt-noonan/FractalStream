@@ -21,7 +21,7 @@ import Control.Monad.Reader
 import Language.Type
 import Language.Code
 import Data.Indexed.Functor
-import Fcf (Exp, Eval)
+import Fcf (Exp, Eval, Pure1)
 
 import Debug.Trace
 
@@ -227,7 +227,7 @@ compileCode :: forall m env t
             => (String -> Operand)
             -> Code '[] env t
             -> ReaderT (Context OperandPtr env) m (Op t)
-compileCode getExtern = indexedFold @(CtxOp m) @(Fix (CodeF '[] Value_)) @(CodeF '[] Value_) $ \case
+compileCode getExtern = indexedFold @(CtxOp m) @(Fix (CodeF '[] (Pure1 Value))) @(CodeF '[] (Pure1 Value)) $ \case
 
   Block _ body end -> sequence_ body >> end
 

@@ -12,7 +12,6 @@ import Language.Value.Parser
 import Language.Effect
 import Data.Indexed.Functor
 
-import Data.Functor (($>))
 import Fcf (Exp, Eval)
 import Data.Type.Equality ((:~:)(..))
 

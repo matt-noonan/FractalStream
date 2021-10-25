@@ -1,4 +1,6 @@
 module Template.Complex.Parametric
+where
+{-
   ( StoppingCondition(..)
   , SimpleComplexParametric(..)
   , ComplexParametric(..)
@@ -10,8 +12,8 @@ import Data.List.NonEmpty (NonEmpty)
 --import qualified Data.List.NonEmpty as NE
 
 data StoppingCondition env
-  = StopWhenTrue     (Value env 'BooleanT)
-  | StopOnAnyCycle   (Value env 'RealT) (Value env 'IntegerT)
+  = StopWhenTrue     (Value '(env, 'BooleanT))
+  | StopOnAnyCycle   (Value '(env, 'RealT)) (Value '(env 'IntegerT))
   | StopOnExactCycle (Value env 'RealT) (Value env 'IntegerT)
 
 data Colorizer env
@@ -26,6 +28,8 @@ data SimpleComplexParametric env = SimpleComplexParametric
   }
 
 data ComplexParametric = ComplexParametric
+-}
+
 {-
 scpToProject :: String
              -> String

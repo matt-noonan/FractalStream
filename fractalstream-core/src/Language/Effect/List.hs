@@ -43,7 +43,7 @@ data List (listName :: Symbol) (listType :: Type) (code :: (Environment, Type) -
           . Proxy name
          -> ScalarProxy ty
          -> EnvTypeProxy '(env, 'VoidT)
-         -> Value env ty
+         -> Value '(env, ty)
          -> List name ty code '(env, 'VoidT)
 
   Lookup :: forall name ty env t code item
@@ -54,7 +54,7 @@ data List (listName :: Symbol) (listType :: Type) (code :: (Environment, Type) -
          -> NameIsAbsent item env
          -> EnvTypeProxy '( '(item, ty) ': env, t)
          -> EnvTypeProxy '(env, t)
-         -> Value ( '(item, ty) ': env) 'BooleanT
+         -> Value '( '(item, ty) ': env, 'BooleanT)
          -- ^ predicate to test for
          -> Eval (code '( '(item, ty) ': env, t))
          -- ^ action to run on the first item matching the predicate
@@ -76,7 +76,7 @@ data List (listName :: Symbol) (listType :: Type) (code :: (Environment, Type) -
          -> Proxy item
          -> NameIsAbsent item env
          -> EnvTypeProxy '(env, 'VoidT)
-         -> Value ( '(item, ty) ': env) 'BooleanT
+         -> Value '( '(item, ty) ': env, 'BooleanT)
          -> List name ty code '(env, 'VoidT)
 
   ForEach :: forall name ty env code item

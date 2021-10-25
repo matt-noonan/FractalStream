@@ -15,6 +15,8 @@ module Language.Environment
   , fromContext
   , fromContextM
   , fromContextM_
+  , fromEnvironment
+  , fromEnvironmentM
   , getBinding
   , setBinding
   , EnvironmentProxy(..)
@@ -25,6 +27,7 @@ module Language.Environment
   , type Env
   , type Ty
   , lemmaEnvTy
+  , lemmaEnvTy'
   , KnownEnvironment(..)
   , withEnvironment
 
@@ -47,6 +50,9 @@ module Language.Environment
 
   , declare
   , endOfDecls
+
+  , sameEnvironment
+  , sameEnvType
   ) where
 
 import Language.Type
@@ -90,6 +96,29 @@ instance Show (EnvironmentProxy env) where
     BindingProxy name ty env' -> symbolVal name <> ":" <> showType ty <> ", " <> show env'
     EmptyEnvProxy -> "<empty>"
 
+fromEnvironment :: forall env a
+                 . EnvironmentProxy env
+                -> (forall name t. KnownSymbol name => Proxy name -> ScalarProxy t -> a)
+                -> [a]
+fromEnvironment env0 f = go env0
+  where
+    go :: EnvironmentProxy env' -> [a]
+    go = \case
+      EmptyEnvProxy        -> []
+      BindingProxy n t env -> f n t : go env
+
+fromEnvironmentM :: forall env m a
+                  . Applicative m
+                 => EnvironmentProxy env
+                 -> (forall name t. KnownSymbol name => Proxy name -> ScalarProxy t -> m a)
+                 -> m [a]
+fromEnvironmentM env0 f = go env0
+  where
+    go :: EnvironmentProxy env' -> m [a]
+    go = \case
+      EmptyEnvProxy        -> pure []
+      BindingProxy n t env -> (:) <$> f n t <*> go env
+
 declare :: forall name ty env
          . (KnownSymbol name, NotPresent name env)
         => ScalarProxy ty
@@ -102,6 +131,9 @@ endOfDecls = EmptyEnvProxy
 
 lemmaEnvTy :: forall et. (et :~: '(Env et, Ty et))
 lemmaEnvTy = (unsafeCoerce :: (Int :~: Int) -> (et :~: '(Env et, Ty et))) Refl
+
+lemmaEnvTy' :: forall et. EnvTypeProxy et -> (et :~: '(Env et, Ty et))
+lemmaEnvTy' _ = lemmaEnvTy @et
 
 -- | Proxy the type index directly, and the environment
 -- index implicitly through the KnownEnvironment constraint
@@ -117,9 +149,33 @@ envTypeProxy :: EnvironmentProxy env
 envTypeProxy env t = withEnvironment env (EnvType t)
 
 withEnvType :: EnvTypeProxy et
-            -> (EnvironmentProxy (Env et) -> ScalarProxy (Ty et) -> a)
+            -> ((et ~ '(Env et, Ty et))
+                => EnvironmentProxy (Env et)
+                -> ScalarProxy (Ty et)
+                -> a)
             -> a
 withEnvType (EnvType t) k = k (envProxy Proxy) t
+
+sameEnvironment :: EnvironmentProxy env1 -> EnvironmentProxy env2 -> Maybe (env1 :~: env2)
+sameEnvironment v1 v2 = case v1 of
+  EmptyEnvProxy -> case v2 of { EmptyEnvProxy -> Just Refl; _ -> Nothing }
+  BindingProxy name t env -> case v2 of
+    BindingProxy name' t' env' ->
+      case (,,) <$> sameEnvironment env env' <*> sameScalarType t t' <*> sameSymbol name name' of
+      Just (Refl, Refl, Refl) -> Just Refl
+      Nothing           -> Nothing
+    _ -> Nothing
+
+sameEnvType :: forall et1 et2. EnvTypeProxy et1 -> EnvTypeProxy et2 -> Maybe (et1 :~: et2)
+sameEnvType et1 et2 =
+  withEnvType et1 $ \env1 t1 ->
+    withEnvType et2 $ \env2 t2 ->
+      case sameEnvironment env1 env2 of
+        Just Refl -> case sameScalarType t1 t2 of
+          Just Refl -> case (lemmaEnvTy @et1, lemmaEnvTy @et2) of
+            (Refl, Refl) -> Just Refl
+          Nothing -> Nothing
+        Nothing -> Nothing
 
 bindNameEnv :: forall name t env
              . KnownSymbol name
@@ -230,7 +286,7 @@ bindName _ _ _ = trustMe
 
 data LookupEnvResult name t env
   = Found (NameIsPresent name t env)
-  | WrongType -- found, but not with the correct type
+  | WrongType SomeType -- found, but not with the correct type
   | Absent (NameIsAbsent name env)
 
 lookupEnv :: KnownSymbol name => Proxy name -> ScalarProxy t -> EnvironmentProxy env -> LookupEnvResult name t env
@@ -238,11 +294,11 @@ lookupEnv name ty = \case
   BindingProxy name' ty' env' -> case sameSymbol name name' of
     Just Refl -> case sameScalarType ty ty' of
       Just Refl -> Found trustMe
-      Nothing   -> WrongType
+      Nothing   -> WrongType (SomeType ty')
     Nothing -> case lookupEnv name ty env' of
-      Found _   -> Found trustMe
-      Absent _  -> Absent trustMe
-      WrongType -> WrongType
+      Found _     -> Found trustMe
+      Absent _    -> Absent trustMe
+      WrongType t -> WrongType t
   EmptyEnvProxy -> Absent trustMe
 
 

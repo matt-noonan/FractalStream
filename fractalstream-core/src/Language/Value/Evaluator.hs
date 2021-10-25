@@ -1,4 +1,4 @@
-{-# language AllowAmbiguousTypes #-}
+{-# language AllowAmbiguousTypes, UndecidableInstances #-}
 
 module Language.Value.Evaluator
   ( evaluate
@@ -7,6 +7,8 @@ module Language.Value.Evaluator
   , ScalarTypeOfBinding
   , partialEvaluate
   , constantFold
+  , evaluateInContext
+  , type ScalarFromContext
   ) where
 
 import Language.Value
@@ -19,13 +21,13 @@ import Fcf (Exp, Eval, Pure1)
 import Unsafe.Coerce
 import Numeric.Extras
 
--- | First-class family corresponding to ScalarType, suitable to use in a Context
+-- | First-class family corresponding to 'ScalarType', suitable to use in a 'Context'
 data ScalarTypeOfBinding :: Symbol -> Type -> Exp *
 type instance Eval (ScalarTypeOfBinding name t) = ScalarType t
 
-  -- | First-class family corresponding to ScalarType, suitable to use in a Context
-data ScalarType_ :: Type -> Exp *
-type instance Eval (ScalarType_ t) = ScalarType t
+-- | First-class family corresponding to 'ScalarType', suitable to use in a 'Context'
+data ScalarType_ :: (Environment, Type) -> Exp *
+type instance Eval (ScalarType_ et) = ScalarType (Ty et)
 
 type family WithoutBinding (env :: Environment) (name :: Symbol) :: Environment where
   WithoutBinding ( '(name,t) ': env ) name = env
@@ -47,14 +49,18 @@ partialEvaluate :: forall env t name ty
                 -> ScalarProxy ty
                 -> ScalarType ty
                 -> NameIsPresent name ty env
-                -> Value env t
-                -> Value (env `WithoutBinding` name) t
-partialEvaluate name ty v pf =
-  unsafeCoerce . (indexedFold @(Pure1 (Value env)) @(Value env) @(ValueF env) $ \case
+                -> Value '(env, t)
+                -> Value '(env `WithoutBinding` name, t)
+partialEvaluate name ty v _pf =
+  unsafeCoerce . (indexedFold @(Pure1 Value) @Value @ValueF $ \case
 
     Var name' ty' pf' -> case sameSymbol name name' of
-      Just Refl -> case typeIsUnique pf pf' of
-        Refl -> Fix (Const (Scalar ty v))
+      Just Refl -> case sameScalarType ty ty' of -- was: case typeIsUnique pf pf' of
+        Just Refl -> Fix (Const (Scalar ty v))
+        -- The invariant is: "if X is bound to type T at the outer scope, and X
+        -- is referenced within the value, that reference will *also* be at type T.
+        -- In other words: we don't have name shadowing, so the environment only grows.
+        Nothing   -> error "internal error: should be unreachable"
       Nothing   -> Fix (Var name' ty' pf')
     etc -> Fix etc
   )
@@ -62,147 +68,179 @@ partialEvaluate name ty v pf =
 -- | ValueOrConstant is used during constant folding. It
 -- can represent either a value of type @Value env t@,
 -- or else a constant of type @ScalarType t@.
-data ValueOrConstant (env :: Environment) (t :: Type) where
-  V :: Value  env t -> ValueOrConstant env t
-  C :: Scalar t -> ValueOrConstant env t
+data ValueOrConstant (et :: (Environment, Type)) where
+  V :: Value et -> ValueOrConstant et
+  C :: KnownEnvironment env => Scalar t -> ValueOrConstant '(env, t)
 
 -- | Turn a ValueOrConstant into a Value. This can
 -- always be done.
-toV :: ValueOrConstant env t -> Value env t
+toV :: ValueOrConstant et -> Value et
 toV = \case
   V v -> v
   C c -> Fix (Const c)
 
 -- | Turn a ValueOrConstant into a constant. This
 -- could fail, hence the Maybe.
-toC :: ValueOrConstant env t -> Maybe (ScalarType t)
+toC :: ValueOrConstant et -> Maybe (ScalarType (Ty et))
 toC = \case { V _ -> Nothing; C (Scalar _ c) -> Just c }
 
+envTypeToType :: EnvTypeProxy '(env, t) -> ScalarProxy t
+envTypeToType (EnvType t) = t
+
 -- | Perform a constant-folding transformation over a 'Value'
-constantFold :: forall env t. Value env t -> Value env t
+constantFold :: forall et. Value et -> Value et
 constantFold =
-  toV . (indexedFold @(Pure1 (ValueOrConstant env)) @(Value env) @(ValueF env) $ \case
+  toV . (indexedFold @(Pure1 ValueOrConstant) @Value @ValueF $ \case
     -- Base cases: constants are constant, variables aren't.
     Const c     -> C c
     Var name ty pf -> V (Fix (Var name ty pf))
 
+    -- Special cases, where we can constant-fold even with variables
+    MulI (C x@(Scalar _ 0)) _ -> C x
+    MulI _ (C x@(Scalar _ 0)) -> C x
+    MulF (C x@(Scalar _ 0)) _ -> C x
+    MulF _ (C x@(Scalar _ 0)) -> C x
+    MulC (C x@(Scalar _ 0)) _ -> C x
+    MulC _ (C x@(Scalar _ 0)) -> C x
+    DivI (C x@(Scalar _ 0)) _ -> C x
+    DivF (C x@(Scalar _ 0)) _ -> C x
+    DivC (C x@(Scalar _ 0)) _ -> C x
+
     -- For all other constructors: if all children are constants,
     -- use the 'evaluator' algebra to compute the value of the constructor.
     -- If not all children are constants, create a non-constant Value.
-    etc -> case itraverse (const toC) etc of
-      Nothing -> V (Fix (imap (const toV) etc))
-      Just  c -> C (Scalar (toIndex etc) (evaluator impossible c))
-  )
+    etc -> case itraverse @_ @_ @_ @_ @(Pure1 ValueOrConstant) @ScalarType_ (const toC) etc of
+        Nothing -> V (Fix (imap (const toV) etc))
+        Just  c -> case (lemmaEnvTy' (toIndex etc), toIndex etc) of
+          (Refl, EnvType _) -> C (Scalar (envTypeToType (toIndex etc))
+                                  (evaluator (imap (\_ t _ -> t) c) impossible))
+   )
  where
    impossible = error "unreachable, Var constructor is already handled in constantFold"
 
+-- | First-class family corresponding to 'ScalarType', suitable to use in a 'Context'
+data ScalarFromContext :: (Environment, Type) -> Exp *
+type instance Eval (ScalarFromContext et) =
+  Context ScalarTypeOfBinding (Env et) -> ScalarType (Ty et)
+
+evaluateInContext :: forall env t
+                   . Context ScalarTypeOfBinding env
+                  -> Value '(env, t)
+                  -> ScalarType t
+evaluateInContext = flip evaluate
+
+
 -- | Evaluate the (normal) value corresponding to a 'Value', given values
 -- for each variable that appears.
-evaluate :: forall env t. Context ScalarTypeOfBinding env -> Value env t -> ScalarType t
-evaluate context =
-  indexedFold @ScalarType_ @(Value env) @(ValueF env) (evaluator (getBinding context))
+evaluate :: forall env t
+          . Value '(env, t)
+         -> Context ScalarTypeOfBinding env
+         -> ScalarType t
+evaluate =
+  indexedFold @ScalarFromContext @Value @ValueF $ \v ->
+    case lemmaEnvTy' (toIndex v) of
+      Refl -> evaluator v
 
 -- | Evaluation algebra
-evaluator :: forall env t
-           . (forall name ty. (KnownSymbol name, KnownType ty)
-              => NameIsPresent name ty env -> ScalarType ty)
-          -> ValueF env ScalarType_ t
-          -> ScalarType t
-evaluator lookUp = \case
+evaluator :: forall et
+           . ValueF ScalarFromContext et
+          -> Context ScalarTypeOfBinding (Env et)
+          -> ScalarType (Ty et)
+evaluator v0 ctx = case v0 of
 
     Const (Scalar _ v) -> v
-    Var _name ty pf -> withKnownType ty (lookUp pf)
+    Var _name ty pf -> withKnownType ty (getBinding ctx pf)
 
-    PairV _ x y     -> (x, y)
-    ProjV1 _ (x, _) -> x
-    ProjV2 _ (_, y) -> y
+    PairV _ x y -> (x ctx, y ctx)
+    ProjV1 _ p  -> let (x, _) = p ctx in x
+    ProjV2 _ p  -> let (_, y) = p ctx in y
 
-    AddF x y -> x + y
-    SubF x y -> x - y
-    MulF x y -> x * y
-    DivF x y -> x / y
-    ModF x y -> fmod x y
-    PowF x n -> x ** n
-    AbsF x   -> abs x
-    NegF x   -> negate x
+    AddF x y -> x ctx + y ctx
+    SubF x y -> x ctx - y ctx
+    MulF x y -> x ctx * y ctx
+    DivF x y -> x ctx / y ctx
+    ModF x y -> fmod (x ctx) (y ctx)
+    PowF x n -> x ctx ** n ctx
+    AbsF x   -> abs (x ctx)
+    NegF x   -> negate (x ctx)
 
-    ExpF x -> exp x
-    LogF x -> log x
-    SqrtF x -> sqrt x
+    ExpF x -> exp (x ctx)
+    LogF x -> log (x ctx)
+    SqrtF x -> sqrt (x ctx)
 
-    SinF x -> sin x
-    CosF x -> cos x
-    TanF x -> tan x
-    ArcsinF x -> asin x
-    ArccosF x -> acos x
-    ArctanF x -> atan x
-    Arctan2F x y -> atan2 x y
+    SinF x -> sin (x ctx)
+    CosF x -> cos (x ctx)
+    TanF x -> tan (x ctx)
+    ArcsinF x -> asin (x ctx)
+    ArccosF x -> acos (x ctx)
+    ArctanF x -> atan (x ctx)
+    Arctan2F x y -> atan2 (x ctx) (y ctx)
 
-    SinhF x -> sinh x
-    CoshF x -> cosh x
-    TanhF x -> tanh x
-    ArcsinhF x -> asinh x
-    ArccoshF x -> acosh x
-    ArctanhF x -> atanh x
+    SinhF x -> sinh (x ctx)
+    CoshF x -> cosh (x ctx)
+    TanhF x -> tanh (x ctx)
+    ArcsinhF x -> asinh (x ctx)
+    ArccoshF x -> acosh (x ctx)
+    ArctanhF x -> atanh (x ctx)
 
-    AddC x y -> x + y
-    SubC x y -> x - y
-    MulC x y -> x * y
-    DivC x y -> x / y
-    PowC x n -> x ** n
-    NegC x   -> negate x
+    AddC x y -> x ctx + y ctx
+    SubC x y -> x ctx - y ctx
+    MulC x y -> x ctx * y ctx
+    DivC x y -> x ctx / y ctx
+    PowC x n -> x ctx ** n ctx
+    NegC x   -> negate (x ctx)
 
-    ExpC x -> exp x
-    LogC x -> log x
-    SqrtC x -> sqrt x
+    ExpC x -> exp (x ctx)
+    LogC x -> log (x ctx)
+    SqrtC x -> sqrt (x ctx)
 
-    SinC x -> sin x
-    CosC x -> cos x
-    TanC x -> tan x
+    SinC x -> sin (x ctx)
+    CosC x -> cos (x ctx)
+    TanC x -> tan (x ctx)
 
-    SinhC x -> sinh x
-    CoshC x -> cosh x
-    TanhC x -> tanh x
+    SinhC x -> sinh (x ctx)
+    CoshC x -> cosh (x ctx)
+    TanhC x -> tanh (x ctx)
 
-    AbsC (x :+ y) -> sqrt (x ** 2 + y ** 2)
-    ArgC (x :+ y) -> atan2 y x
-    ReC (x :+ _) -> x
-    ImC (_ :+ y) -> y
-    ConjC (x :+ y) -> x :+ negate y
+    AbsC z  -> let x :+ y = z ctx in sqrt (x ** 2 + y ** 2)
+    ArgC z  -> let x :+ y = z ctx in atan2 y x
+    ReC z   -> let x :+ _ = z ctx in x
+    ImC z   -> let _ :+ y = z ctx in y
+    ConjC z -> let x :+ y = z ctx in x :+ negate y
 
-    I2R n -> fromIntegral n
-    R2C x -> x :+ 0
+    I2R n -> fromIntegral (n ctx)
+    R2C x -> x ctx :+ 0
 
-    AddI x y -> x + y
-    SubI x y -> x - y
-    MulI x y -> x * y
-    DivI x y -> x `div` y
-    ModI x y -> x `mod` y
-    PowI x n -> x ^ n
-    AbsI x   -> abs x
-    NegI x   -> negate x
+    AddI x y -> x ctx + y ctx
+    SubI x y -> x ctx - y ctx
+    MulI x y -> x ctx * y ctx
+    DivI x y -> x ctx `div` y ctx
+    ModI x y -> x ctx `mod` y ctx
+    PowI x n -> x ctx ^ n ctx
+    AbsI x   -> abs (x ctx)
+    NegI x   -> negate (x ctx)
 
-    Or  x y -> x || y
-    And x y -> x && y
-    Not x   -> not x
+    Or  x y -> x ctx || y ctx
+    And x y -> x ctx && y ctx
+    Not x   -> not (x ctx)
 
-    ITE _ b yes no -> if b then yes else no
+    ITE _ b yes no -> if b ctx then yes ctx else no ctx
 
-    RGB r g b     -> rgbToColor ( round (255 * r)
-                                , round (255 * g)
-                                , round (255 * b) )
-    Blend s c1 c2 -> mixColors s c2 c1
+    RGB r g b     -> rgbToColor ( round (255 * r ctx)
+                                , round (255 * g ctx)
+                                , round (255 * b ctx) )
+    Blend s c1 c2 -> mixColors (s ctx) (c2 ctx) (c1 ctx)
 
-    InvertRGB c   -> invertColor c
+    InvertRGB c   -> invertColor (c ctx)
 
-    Eql t x y -> Scalar t x == Scalar t y
-    NEq t x y -> Scalar t x /= Scalar t y
+    Eql t x y -> Scalar t (x ctx) == Scalar t (y ctx)
+    NEq t x y -> Scalar t (x ctx) /= Scalar t (y ctx)
 
-    LEI x y -> x <= y
-    LEF x y -> x <= y
-    GEI x y -> x >= y
-    GEF x y -> x >= y
-    LTI x y -> x < y
-    LTF x y -> x < y
-    GTI x y -> x > y
-    GTF x y -> x > y
+    LEI x y -> x ctx <= y ctx
+    LEF x y -> x ctx <= y ctx
+    GEI x y -> x ctx >= y ctx
+    GEF x y -> x ctx >= y ctx
+    LTI x y -> x ctx < y ctx
+    LTF x y -> x ctx < y ctx
+    GTI x y -> x ctx > y ctx
+    GTF x y -> x ctx > y ctx

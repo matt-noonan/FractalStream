@@ -36,11 +36,11 @@ runWithXY t (Scalar xt x) (Scalar yt y) list0 input = withKnownType xt $ withKno
 
 -- | Evaluate a value in the current environment
 eval :: forall t env s
-      . Value env t
+      . Value '(env, t)
      -> State (Context ScalarTypeOfBinding env, s) (ScalarType t)
 eval v = do
   ctx <- fst <$> get
-  pure (evaluate ctx v)
+  pure (evaluate v ctx)
 
 -- | Mix in list manipulation effects
 listHandler :: EffectHandler (List "test" 'RealT) (ScalarTypeM [Double])
@@ -61,7 +61,7 @@ listHandler = Handle Proxy handle
         let test' item = do
               (ctx, _) <- get
               let ctx' = Bind Proxy RealProxy item ctx
-              pure (evaluate ctx' test)
+              pure (evaluate test ctx')
 
             go [] = case miss of
                 VNothing     -> pure ()
@@ -81,7 +81,7 @@ listHandler = Handle Proxy handle
 
       Remove _ _ _ pf _ test -> recallIsAbsent pf $ do
         (ctx, items) <- get
-        let reject item = evaluate (Bind Proxy RealProxy item ctx) test
+        let reject item = evaluate test (Bind Proxy RealProxy item ctx)
         put (ctx, filter (not . reject) items)
 
       ForEach _ _ _ pf _ _ body -> recallIsAbsent pf $ do

@@ -8,6 +8,8 @@ module Data.Indexed.Functor
   , Fix(..)
   , indexedFold
   , indexedFoldM
+  , indexedUnfold
+  , indexedUnfoldM
   ) where
 
 import Control.Monad
@@ -22,7 +24,7 @@ class IFunctor (f :: (k -> Exp *) -> (k -> *)) where
        -> f b i
   toIndex :: forall a i. f a i -> IndexProxy f i
 
-class IFunctor f => IFixpoint (t :: k -> *) (f :: (k -> Exp *) -> (k -> *)) where
+class IFunctor f => IFixpoint (t :: k -> *) (f :: (k -> Exp *) -> (k -> *)) | t -> f where
   unrollIx :: forall i. t i -> f (Pure1 t) i
   rerollIx :: forall i. f (Pure1 t) i -> t i
 
@@ -73,3 +75,25 @@ indexedFoldM f x =
   let go :: forall k. IndexProxy f k -> t k -> m (Eval (a k))
       go _ = f <=< (itraverse go . unrollIx)
   in go (toIndex (unrollIx @_ @t @f x)) x
+
+indexedUnfold :: forall a t f i
+               . IFixpoint t f
+              => (forall j. IndexProxy f j -> Eval (a j) -> f a j)
+              -> IndexProxy f i
+              -> Eval (a i)
+              -> t i
+indexedUnfold f =
+  let go :: forall k. IndexProxy f k -> Eval (a k) -> t k
+      go = \k -> rerollIx @_ @t @f . imap go . f k
+  in go
+
+indexedUnfoldM :: forall a t f i m
+               . (IFixpoint t f, ITraversable f, Monad m)
+              => (forall j. IndexProxy f j -> Eval (a j) -> m (f a j))
+              -> IndexProxy f i
+              -> Eval (a i)
+              -> m (t i)
+indexedUnfoldM f =
+  let go :: forall k. IndexProxy f k -> Eval (a k) -> m (t k)
+      go = \k x -> (fmap (rerollIx @_ @t @f) . itraverse go) =<< f k x
+  in go

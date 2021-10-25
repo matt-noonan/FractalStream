@@ -24,7 +24,7 @@ data SomeCode where
 -- Code
 ---------------------------------------------------------------------------------
 
-type Code effs env t = Fix (CodeF effs Value_) '(env, t)
+type Code effs env t = Fix (CodeF effs (Pure1 Value)) '(env, t)
 
 instance Show (Code effs env t) where show _ = "<code>"
 
@@ -33,7 +33,7 @@ instance Show (Code effs env t) where show _ = "<code>"
 -- we need to use both the environment *and* the type as indices
 -- in order to make an indexed functor.
 data CodeF (effs :: [Effect])
-           (value :: Environment -> Type -> Exp *)
+           (value :: (Environment, Type) -> Exp *)
            (code :: (Environment, Type) -> Exp *)
            (et :: (Environment, Type)) where
 
@@ -42,7 +42,7 @@ data CodeF (effs :: [Effect])
       => NameIsPresent name ty ( '(name, ty) ': env)
       -> Proxy (name :: Symbol)
       -> ScalarProxy ty
-      -> Eval (value env ty)
+      -> Eval (value '(env, ty))
       -> ScalarProxy result
       -> Eval (code '( '(name, ty) ': env, result))
       -> CodeF effs value code '(env, result)
@@ -61,7 +61,7 @@ data CodeF (effs :: [Effect])
        . (KnownSymbol name, KnownEnvironment env)
       => NameIsPresent name ty env
       -> Proxy name
-      -> Eval (value env ty)
+      -> Eval (value '(env, ty))
       -> CodeF effs value code '(env, 'VoidT)
 
   SetBind :: forall name ty env effs code value
@@ -95,7 +95,7 @@ data CodeF (effs :: [Effect])
   Pure :: forall effs env ty code value
         . KnownEnvironment env
        => ScalarProxy ty
-       -> Eval (value env ty)
+       -> Eval (value '(env, ty))
        -> CodeF effs value code '(env, ty)
 
   NoOp :: forall env effs code value
@@ -112,7 +112,7 @@ data CodeF (effs :: [Effect])
   IfThenElse :: forall env effs t code value
        . KnownEnvironment env
       => ScalarProxy t
-      -> Eval (value env 'BooleanT)
+      -> Eval (value '(env, 'BooleanT))
       -> Eval (code '(env, t))
       -> Eval (code '(env, t))
       -> CodeF effs value code '(env, t)
@@ -228,7 +228,7 @@ instance ITraversable (CodeF effs value) where
 --
 let_ :: forall name env effs ty result
       . (NotPresent name env, KnownSymbol name, KnownEnvironment env)
-     => Value env ty
+     => Value '(env, ty)
      -> ScalarProxy result
      -> Code effs ('(name, ty) ': env) result
      -> Code effs env result
@@ -249,6 +249,6 @@ let_ v t = Fix . Let bindingEvidence (Proxy @name) (typeOfValue v) v t
 set :: forall name env effs ty
      . ( Required name env ~ ty, NotPresent name (env `Without` name)
        , KnownSymbol name, KnownEnvironment env)
-    => Value env ty
+    => Value '(env, ty)
     -> Code effs env 'VoidT
 set = Fix . Set bindingEvidence (Proxy @name)

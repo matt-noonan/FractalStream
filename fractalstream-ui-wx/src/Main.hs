@@ -52,7 +52,7 @@ wxMain = do
             $ declare @"x" RealProxy
             $ declare @"y" RealProxy
             $ endOfDecls
-    withCompiledCode env juliaProgram0 $ \kernel -> do
+    withCompiledCode env mandelOrig $ \kernel -> do
       let action bs ss dz z out = runJX kernel out (fromIntegral bs) (fromIntegral ss) dz 100 10 z
       wxView viewport action mainViewer
   where
@@ -78,16 +78,34 @@ if |sin (pi re(fz))| < size or |sin (pi im(fz))| < size then
 else
   white|]
 
+mandelOrig :: String
+mandelOrig = [r|
+init C : C to x + y i
+init z : C to 0
+init count : Z to 0
+loop
+  set z to z z + C
+  set count to count + 1
+  |z| < 10 and count < 100
+if count = maxIters then
+  black
+else if im z > 0 then
+  init c1 : Color to if true then blue else red
+  init c2 : Color to green
+  init s : R to count + 1 - log (log |z| / 2)
+  red
+else
+  yellow|]
+
 mandelProgram0 :: String
 mandelProgram0 = [r|
 init C : C to x + i y
 init z : C to 0
 init k : Z to 0
-init r2 : R to maxRadius * maxRadius
 loop
   set z to z z + C
   set k to k + 1
-  re(z) re(z) + im(z) im(z) < r2 and k < maxIters
+  |z| < maxRadius and k < maxIters
 if k = maxIters then
   black
 else
@@ -96,8 +114,7 @@ else
   init s : R to k + 1 - (log (log (|z|^2) / 2)) / log 2
   set s to cos (s pi / 10)
   set s to s s
-  blend (s, c1, c2)
-|]
+  blend (s, c1, c2)|]
 
 juliaProgram0 :: String
 juliaProgram0 = [r|

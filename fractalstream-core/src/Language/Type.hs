@@ -36,6 +36,7 @@ data Type
   | Pair Type Type
   | ColorT
   | ImageT
+  deriving (Eq, Ord, Show)
 
 -- | Constant values for scalar types
 type family ScalarType (t :: Type) :: * where
@@ -115,6 +116,12 @@ data ScalarProxy (t :: Type) where
 
 data SomeType where
   SomeType :: forall t. ScalarProxy t -> SomeType
+
+instance Show SomeType where
+  show (SomeType t) = showType t
+
+instance Eq SomeType where
+  SomeType t1 == SomeType t2 = maybe False (const True) (sameScalarType t1 t2)
 
 class KnownType (t :: Type)   where typeProxy :: ScalarProxy t
 instance KnownType 'BooleanT  where typeProxy = BooleanProxy

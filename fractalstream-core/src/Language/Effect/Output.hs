@@ -19,7 +19,7 @@ data Output (outputs :: Environment) (code :: (Environment, Type) -> Exp *) (et 
           . EnvironmentProxy env
          -> NameIsPresent name ty outputs
          -> Proxy name
-         -> Value env ty
+         -> Value '(env, ty)
          -> Output outputs code '(env, 'VoidT)
 
 instance IFunctor (Output outputs) where

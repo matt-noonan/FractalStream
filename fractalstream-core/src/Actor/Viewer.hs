@@ -17,11 +17,11 @@ data Viewer where
          =>
     { viewerSettings :: Settings env NoEffects
     , viewToModel :: Value
-                      ( '("viewX", 'RealT) ': '("viewY", 'RealT) ': env)
-                     ('Pair 'RealT 'RealT)
+                      '( '("viewX", 'RealT) ': '("viewY", 'RealT) ': env
+                       , 'Pair 'RealT 'RealT)
     , modelToView :: Value
-                      ( '("modelX", 'RealT) ': '("modelY", 'RealT) ': env)
-                     ('Pair 'RealT 'RealT)
+                      '( '("modelX", 'RealT) ': '("modelY", 'RealT) ': env
+                       , 'Pair 'RealT 'RealT)
     , onRefresh :: Maybe (Code '[Provide env, Render] '[] 'VoidT)
     , onResize  :: Maybe (Code '[Provide env, Render] ResizeEnv 'VoidT)
     , onTimer   :: Maybe (Code '[Provide env, Render] '[] 'VoidT)

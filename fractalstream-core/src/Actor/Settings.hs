@@ -22,7 +22,7 @@ data Setting (name :: Symbol) (t :: Type) where
           -> Setting name ty
 
 data InputValidator name ty =
-  InputValidator String (Value '[ '(name, ty) ] 'BooleanT)
+  InputValidator String (Value '( '[ '(name, ty) ], 'BooleanT))
 
 data Settings (env :: Environment) (effs :: [Effect]) where
   Settings :: forall env effs.

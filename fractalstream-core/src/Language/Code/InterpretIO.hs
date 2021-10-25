@@ -18,7 +18,7 @@ import Data.Indexed.Functor
 import Data.IORef
 import Control.Monad.State
 import GHC.TypeLits
-import Fcf (Exp, Eval)
+import Fcf (Exp, Eval, Pure1)
 
 data ScalarIORefM :: (Environment, Type) -> Exp *
 type instance Eval (ScalarIORefM '(env, t)) =
@@ -33,12 +33,12 @@ type instance Eval (IORefTypeOfBinding name t) = IORef (ScalarType t)
 
 -- | Evaluate a value in the current environment
 eval :: forall t env s
-      . Value env t
+      . Value '(env, t)
      -> StateT (Context IORefTypeOfBinding env, s) IO (ScalarType t)
 eval v = do
   ctxRef <- fst <$> get
   ctx <- mapContextM (\_ _ -> lift . readIORef) ctxRef
-  pure (evaluate ctx v)
+  pure (evaluate v ctx)
 
 -- | Update a variable in the current environment
 update :: forall name t env s
@@ -87,7 +87,7 @@ interpretToIO_ :: forall effs env t s
                -> Code effs env t
                -> StateT (Context IORefTypeOfBinding env, s) IO (ScalarType t)
 interpretToIO_ handlers =
-  indexedFold @(ScalarIORefMWith s) @(Fix (CodeF effs Value_)) @(CodeF effs Value_) $ \case
+  indexedFold @(ScalarIORefMWith s) @(Fix (CodeF effs (Pure1 Value))) @(CodeF effs (Pure1 Value)) $ \case
     Let pf name vt v _ body -> recallIsAbsent (absentInTail pf) $ do
       (ctxRef, s) <- get
       value <- eval v

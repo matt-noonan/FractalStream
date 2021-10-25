@@ -11,7 +11,7 @@ import Data.Indexed.Functor
 
 import Control.Monad.State
 import GHC.TypeLits
-import Fcf (Exp, Eval)
+import Fcf (Exp, Eval, Pure1)
 
 data ScalarTypeM :: * -> (Environment, Type) -> Exp *
 type instance Eval (ScalarTypeM s '(env, t)) =
@@ -29,11 +29,11 @@ update pf _name t v = withKnownType t (modify' (\(x,y) -> (setBinding pf v x, y)
 
 -- | Evaluate a value in the current environment
 eval :: forall t env s
-      . Value env t
+      . Value '(env, t)
      -> State (Context ScalarTypeOfBinding env, s) (ScalarType t)
 eval v = do
   ctx <- fst <$> get
-  pure (evaluate ctx v)
+  pure (evaluate v ctx)
 
 -- | Run some 'Code' by interpreting it into a state monad.
 -- The 's' parameter allows for extra state that may be used
@@ -42,7 +42,7 @@ simulate :: forall effs env t s
           . Handlers effs (ScalarTypeM s)
          -> Code effs env t
          -> State (Context ScalarTypeOfBinding env, s) (ScalarType t)
-simulate handlers = indexedFold @(ScalarTypeM s) @(Fix (CodeF effs Value_)) @(CodeF effs Value_) $ \case
+simulate handlers = indexedFold @(ScalarTypeM s) @(Fix (CodeF effs (Pure1 Value))) @(CodeF effs (Pure1 Value)) $ \case
   Let pf name vt v _ body -> recallIsAbsent (absentInTail pf) $ do
     (ctx, s) <- get
     value <- eval v
