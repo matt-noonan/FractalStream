@@ -52,7 +52,7 @@ wxMain = do
             $ declare @"x" RealProxy
             $ declare @"y" RealProxy
             $ endOfDecls
-    withCompiledCode env mandelOrig $ \kernel -> do
+    withCompiledCode env mandelProgram0 $ \kernel -> do
       let action bs ss dz z out = runJX kernel out (fromIntegral bs) (fromIntegral ss) dz 100 10 z
       wxView viewport action mainViewer
   where
@@ -77,25 +77,6 @@ if |sin (pi re(fz))| < size or |sin (pi im(fz))| < size then
   light blue
 else
   white|]
-
-mandelOrig :: String
-mandelOrig = [r|
-init C : C to x + y i
-init z : C to 0
-init count : Z to 0
-loop
-  set z to z z + C
-  set count to count + 1
-  |z| < 10 and count < 100
-if count = maxIters then
-  black
-else if im z > 0 then
-  init c1 : Color to if true then blue else red
-  init c2 : Color to green
-  init s : R to count + 1 - log (log |z| / 2)
-  red
-else
-  yellow|]
 
 mandelProgram0 :: String
 mandelProgram0 = [r|

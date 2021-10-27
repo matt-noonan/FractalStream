@@ -414,6 +414,20 @@ genConstraintsAlg (AnnF tv0 val) = do
            , tv `Generalizes` rhs ]
     _ -> throwError @_ @m InconsistentType
 
+  -- like binOp, but don't fail for non-numeric values
+  -- TODO: better typechecking here?
+  binOp' lhs0 rhs0 = binOp'' tv0 lhs0 rhs0
+
+  binOp'' xx yy zz = case (xx, yy, zz) of
+    (BoolTV, BoolTV, BoolTV) -> pure []
+    (ColorTV, ColorTV, ColorTV) -> pure []
+    (PairTV a1 a2, PairTV b1 b2, PairTV c1 c2) -> do
+      concat' [binOp'' a1 b1 c1, binOp'' a2 b2 c2]
+    (NumTV tv, NumTV lhs, NumTV rhs) ->
+      pure [ tv `Generalizes` lhs
+           , tv `Generalizes` rhs ]
+    _ -> throwError @_ @m InconsistentType
+
   fun x0 = case (tv0, x0) of
     (NumTV tv, NumTV x) -> pure [ tv `Generalizes` x
                                 , x `IsDefinedLike` R_T
@@ -513,7 +527,7 @@ genConstraintsAlg (AnnF tv0 val) = do
 
     U.ITE cond lhs rhs -> do
       assertBoolean cond
-      binOp lhs rhs
+      binOp' lhs rhs
 
     U.RGB r g b -> do
       assertColor tv0
