@@ -22,19 +22,19 @@ import Fcf (Exp, Eval, Pure1)
 
 data ScalarIORefM :: (Environment, Type) -> Exp *
 type instance Eval (ScalarIORefM '(env, t)) =
-  StateT (Context IORefTypeOfBinding env) IO (ScalarType t)
+  StateT (Context IORefTypeOfBinding env) IO (HaskellType t)
 
 data ScalarIORefMWith :: * -> (Environment, Type) -> Exp *
 type instance Eval (ScalarIORefMWith s '(env, t)) =
-  StateT (Context IORefTypeOfBinding env, s) IO (ScalarType t)
+  StateT (Context IORefTypeOfBinding env, s) IO (HaskellType t)
 
 data IORefTypeOfBinding :: Symbol -> Type -> Exp *
-type instance Eval (IORefTypeOfBinding name t) = IORef (ScalarType t)
+type instance Eval (IORefTypeOfBinding name t) = IORef (HaskellType t)
 
 -- | Evaluate a value in the current environment
 eval :: forall t env s
       . Value '(env, t)
-     -> StateT (Context IORefTypeOfBinding env, s) IO (ScalarType t)
+     -> StateT (Context IORefTypeOfBinding env, s) IO (HaskellType t)
 eval v = do
   ctxRef <- fst <$> get
   ctx <- mapContextM (\_ _ -> lift . readIORef) ctxRef
@@ -46,7 +46,7 @@ update :: forall name t env s
        => NameIsPresent name t env
        -> Proxy name
        -> TypeProxy t
-       -> ScalarType t
+       -> HaskellType t
        -> StateT (Context IORefTypeOfBinding env, s) IO ()
 update pf _name t v = withKnownType t $ do
   ctx <- fst <$> get
@@ -56,15 +56,15 @@ update pf _name t v = withKnownType t $ do
 interpretToIO :: forall effs env0 t0
                . Handlers effs ScalarIORefM
               -> Code effs env0 t0
-              -> StateT (Context IORefTypeOfBinding env0) IO (ScalarType t0)
+              -> StateT (Context IORefTypeOfBinding env0) IO (HaskellType t0)
 interpretToIO handlers = fro (Proxy @env0) (Proxy @t0)
                        . interpretToIO_ @_ @_ @_ @() (mapHandlers to fro handlers)
   where
     to  :: forall env t pxy1 pxy2
          . pxy1 env
         -> pxy2 t
-        -> StateT (Context IORefTypeOfBinding env) IO (ScalarType t)
-        -> StateT (Context IORefTypeOfBinding env, ()) IO (ScalarType t)
+        -> StateT (Context IORefTypeOfBinding env) IO (HaskellType t)
+        -> StateT (Context IORefTypeOfBinding env, ()) IO (HaskellType t)
     to _ _ s = do
       (ctx, _) <- get
       (result, ctx') <- lift (runStateT s ctx)
@@ -74,8 +74,8 @@ interpretToIO handlers = fro (Proxy @env0) (Proxy @t0)
     fro :: forall env t pxy1 pxy2
          . pxy1 env
         -> pxy2 t
-        -> StateT (Context IORefTypeOfBinding env, ()) IO (ScalarType t)
-        -> StateT (Context IORefTypeOfBinding env) IO (ScalarType t)
+        -> StateT (Context IORefTypeOfBinding env, ()) IO (HaskellType t)
+        -> StateT (Context IORefTypeOfBinding env) IO (HaskellType t)
     fro _ _ s = do
       ctx <- get
       (result, (ctx', _)) <- lift (runStateT s (ctx, ()))
@@ -85,7 +85,7 @@ interpretToIO handlers = fro (Proxy @env0) (Proxy @t0)
 interpretToIO_ :: forall effs env t s
                 . Handlers effs (ScalarIORefMWith s)
                -> Code effs env t
-               -> StateT (Context IORefTypeOfBinding env, s) IO (ScalarType t)
+               -> StateT (Context IORefTypeOfBinding env, s) IO (HaskellType t)
 interpretToIO_ handlers =
   indexedFold @(ScalarIORefMWith s) @(Fix (CodeF effs (Pure1 Value))) @(CodeF effs (Pure1 Value)) $ \case
     Let pf name vt v _ body -> recallIsAbsent (absentInTail pf) $ do

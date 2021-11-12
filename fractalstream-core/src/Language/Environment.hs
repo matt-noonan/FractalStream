@@ -161,7 +161,7 @@ sameEnvironment v1 v2 = case v1 of
   EmptyEnvProxy -> case v2 of { EmptyEnvProxy -> Just Refl; _ -> Nothing }
   BindingProxy name t env -> case v2 of
     BindingProxy name' t' env' ->
-      case (,,) <$> sameEnvironment env env' <*> sameScalarType t t' <*> sameSymbol name name' of
+      case (,,) <$> sameEnvironment env env' <*> sameHaskellType t t' <*> sameSymbol name name' of
       Just (Refl, Refl, Refl) -> Just Refl
       Nothing           -> Nothing
     _ -> Nothing
@@ -171,7 +171,7 @@ sameEnvType et1 et2 =
   withEnvType et1 $ \env1 t1 ->
     withEnvType et2 $ \env2 t2 ->
       case sameEnvironment env1 env2 of
-        Just Refl -> case sameScalarType t1 t2 of
+        Just Refl -> case sameHaskellType t1 t2 of
           Just Refl -> case (lemmaEnvTy @et1, lemmaEnvTy @et2) of
             (Refl, Refl) -> Just Refl
           Nothing -> Nothing
@@ -292,7 +292,7 @@ data LookupEnvResult name t env
 lookupEnv :: KnownSymbol name => Proxy name -> TypeProxy t -> EnvironmentProxy env -> LookupEnvResult name t env
 lookupEnv name ty = \case
   BindingProxy name' ty' env' -> case sameSymbol name name' of
-    Just Refl -> case sameScalarType ty ty' of
+    Just Refl -> case sameHaskellType ty ty' of
       Just Refl -> Found trustMe
       Nothing   -> WrongType (SomeType ty')
     Nothing -> case lookupEnv name ty env' of
@@ -497,7 +497,7 @@ getBinding ctx0 _pf = go ctx0
       Bind name' ty' v ctx ->
         case sameSymbol (Proxy @name) name' of
           Nothing -> go ctx
-          Just Refl -> case sameScalarType (typeProxy @t) ty' of
+          Just Refl -> case sameHaskellType (typeProxy @t) ty' of
             Just Refl -> v
             Nothing   -> error "unreachable due to (NotPresent name env) constraint in Bind constructor"
 
@@ -519,6 +519,6 @@ setBinding _pf value = go
       Bind name' ty' v ctx ->
         case sameSymbol (Proxy @name) name' of
           Nothing -> Bind name' ty' v (go ctx)
-          Just Refl -> case sameScalarType (typeProxy @t) ty' of
+          Just Refl -> case sameHaskellType (typeProxy @t) ty' of
             Just Refl -> Bind name' ty' value ctx
             Nothing   -> error "unreachable due to (NotPresent name env) constraint in Bind constructor"

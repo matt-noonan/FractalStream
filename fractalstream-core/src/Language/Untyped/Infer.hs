@@ -231,7 +231,7 @@ toTypedValue getType =
     go wanted tvv = do
       ity <- typeOf tvv
       withType ity $ \inferred ->
-        case sameScalarType wanted inferred of
+        case sameHaskellType wanted inferred of
           Just _  -> go' wanted tvv
           Nothing -> case (wanted, inferred) of
             (RealType,    IntegerType) -> pure (I2R tvv)
@@ -251,14 +251,14 @@ toTypedValue getType =
     go' ty (Ann _ (U.ProjV1 p)) = do
       pairTy <- typeOf p
       withType pairTy $ \case
-        PairType t1 t2 -> case sameScalarType ty t1 of
+        PairType t1 t2 -> case sameHaskellType ty t1 of
           Just Refl -> pure (ProjV1 (PairType t1 t2) p)
           Nothing   -> error "bad"
         _               -> error "bad"
     go' ty (Ann _ (U.ProjV2 p)) = do
       pairTy <- typeOf p
       withType pairTy $ \case
-        PairType t1 t2 -> case sameScalarType t2 ty of
+        PairType t1 t2 -> case sameHaskellType t2 ty of
           Just Refl -> pure (ProjV2 (PairType t1 t2) p)
           Nothing   -> error "bad"
         _               -> error "bad"

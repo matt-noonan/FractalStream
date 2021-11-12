@@ -3,8 +3,8 @@
 module Language.Value.Evaluator
   ( evaluate
   , evaluator
-  , ScalarType_
-  , ScalarTypeOfBinding
+  , HaskellType_
+  , HaskellTypeOfBinding
   , partialEvaluate
   , constantFold
   , evaluateInContext
@@ -21,13 +21,13 @@ import Fcf (Exp, Eval, Pure1)
 import Unsafe.Coerce
 import Numeric.Extras
 
--- | First-class family corresponding to 'ScalarType', suitable to use in a 'Context'
-data ScalarTypeOfBinding :: Symbol -> Type -> Exp *
-type instance Eval (ScalarTypeOfBinding name t) = ScalarType t
+-- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
+data HaskellTypeOfBinding :: Symbol -> Type -> Exp *
+type instance Eval (HaskellTypeOfBinding name t) = HaskellType t
 
--- | First-class family corresponding to 'ScalarType', suitable to use in a 'Context'
-data ScalarType_ :: (Environment, Type) -> Exp *
-type instance Eval (ScalarType_ et) = ScalarType (Ty et)
+-- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
+data HaskellType_ :: (Environment, Type) -> Exp *
+type instance Eval (HaskellType_ et) = HaskellType (Ty et)
 
 type family WithoutBinding (env :: Environment) (name :: Symbol) :: Environment where
   WithoutBinding ( '(name,t) ': env ) name = env
@@ -47,7 +47,7 @@ partialEvaluate :: forall env t name ty
                  . (KnownSymbol name)
                 => Proxy name
                 -> TypeProxy ty
-                -> ScalarType ty
+                -> HaskellType ty
                 -> NameIsPresent name ty env
                 -> Value '(env, t)
                 -> Value '(env `WithoutBinding` name, t)
@@ -55,7 +55,7 @@ partialEvaluate name ty v _pf =
   unsafeCoerce . (indexedFold @(Pure1 Value) @Value @ValueF $ \case
 
     Var name' ty' pf' -> case sameSymbol name name' of
-      Just Refl -> case sameScalarType ty ty' of -- was: case typeIsUnique pf pf' of
+      Just Refl -> case sameHaskellType ty ty' of -- was: case typeIsUnique pf pf' of
         Just Refl -> Fix (Const (Scalar ty v))
         -- The invariant is: "if X is bound to type T at the outer scope, and X
         -- is referenced within the value, that reference will *also* be at type T.
@@ -67,7 +67,7 @@ partialEvaluate name ty v _pf =
 
 -- | ValueOrConstant is used during constant folding. It
 -- can represent either a value of type @Value env t@,
--- or else a constant of type @ScalarType t@.
+-- or else a constant of type @HaskellType t@.
 data ValueOrConstant (et :: (Environment, Type)) where
   V :: Value et -> ValueOrConstant et
   C :: KnownEnvironment env => Scalar t -> ValueOrConstant '(env, t)
@@ -81,7 +81,7 @@ toV = \case
 
 -- | Turn a ValueOrConstant into a constant. This
 -- could fail, hence the Maybe.
-toC :: ValueOrConstant et -> Maybe (ScalarType (Ty et))
+toC :: ValueOrConstant et -> Maybe (HaskellType (Ty et))
 toC = \case { V _ -> Nothing; C (Scalar _ c) -> Just c }
 
 envTypeToType :: EnvTypeProxy '(env, t) -> TypeProxy t
@@ -109,7 +109,7 @@ constantFold =
     -- For all other constructors: if all children are constants,
     -- use the 'evaluator' algebra to compute the value of the constructor.
     -- If not all children are constants, create a non-constant Value.
-    etc -> case itraverse @_ @_ @_ @_ @(Pure1 ValueOrConstant) @ScalarType_ (const toC) etc of
+    etc -> case itraverse @_ @_ @_ @_ @(Pure1 ValueOrConstant) @HaskellType_ (const toC) etc of
         Nothing -> V (Fix (imap (const toV) etc))
         Just  c -> case (lemmaEnvTy' (toIndex etc), toIndex etc) of
           (Refl, EnvType _) -> C (Scalar (envTypeToType (toIndex etc))
@@ -118,15 +118,15 @@ constantFold =
  where
    impossible = error "unreachable, Var constructor is already handled in constantFold"
 
--- | First-class family corresponding to 'ScalarType', suitable to use in a 'Context'
+-- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
 data ScalarFromContext :: (Environment, Type) -> Exp *
 type instance Eval (ScalarFromContext et) =
-  Context ScalarTypeOfBinding (Env et) -> ScalarType (Ty et)
+  Context HaskellTypeOfBinding (Env et) -> HaskellType (Ty et)
 
 evaluateInContext :: forall env t
-                   . Context ScalarTypeOfBinding env
+                   . Context HaskellTypeOfBinding env
                   -> Value '(env, t)
-                  -> ScalarType t
+                  -> HaskellType t
 evaluateInContext = flip evaluate
 
 
@@ -134,8 +134,8 @@ evaluateInContext = flip evaluate
 -- for each variable that appears.
 evaluate :: forall env t
           . Value '(env, t)
-         -> Context ScalarTypeOfBinding env
-         -> ScalarType t
+         -> Context HaskellTypeOfBinding env
+         -> HaskellType t
 evaluate =
   indexedFold @ScalarFromContext @Value @ValueF $ \v ->
     case lemmaEnvTy' (toIndex v) of
@@ -144,8 +144,8 @@ evaluate =
 -- | Evaluation algebra
 evaluator :: forall et
            . ValueF ScalarFromContext et
-          -> Context ScalarTypeOfBinding (Env et)
-          -> ScalarType (Ty et)
+          -> Context HaskellTypeOfBinding (Env et)
+          -> HaskellType (Ty et)
 evaluator v0 ctx = case v0 of
 
     Const (Scalar _ v) -> v

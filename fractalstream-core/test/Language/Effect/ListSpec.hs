@@ -23,7 +23,7 @@ runWithXY :: forall t xt yt
           -> Scalar yt
           -> [Double]
           -> String
-          -> Either (Int, BadParse) (ScalarType t, [Double])
+          -> Either (Int, BadParse) (HaskellType t, [Double])
 runWithXY t (Scalar xt x) (Scalar yt y) list0 input = withKnownType xt $ withKnownType yt $
   let ctx = Bind (Proxy @"x") xt x
           $ Bind (Proxy @"y") yt y
@@ -37,20 +37,20 @@ runWithXY t (Scalar xt x) (Scalar yt y) list0 input = withKnownType xt $ withKno
 -- | Evaluate a value in the current environment
 eval :: forall t env s
       . Value '(env, t)
-     -> State (Context ScalarTypeOfBinding env, s) (ScalarType t)
+     -> State (Context HaskellTypeOfBinding env, s) (HaskellType t)
 eval v = do
   ctx <- fst <$> get
   pure (evaluate v ctx)
 
 -- | Mix in list manipulation effects
-listHandler :: EffectHandler (List "test" 'RealT) (ScalarTypeM [Double])
+listHandler :: EffectHandler (List "test" 'RealT) (HaskellTypeM [Double])
 listHandler = Handle Proxy handle
   where
     handle :: forall env t
             . EnvironmentProxy env
            -> TypeProxy t
-           -> List "test" 'RealT (ScalarTypeM [Double]) '(env, t)
-           -> State (Context ScalarTypeOfBinding env, [Double]) (ScalarType t)
+           -> List "test" 'RealT (HaskellTypeM [Double]) '(env, t)
+           -> State (Context HaskellTypeOfBinding env, [Double]) (HaskellType t)
     handle _ _ = \case
 
       Insert _ _ _ v -> do

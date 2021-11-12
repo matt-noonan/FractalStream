@@ -1,6 +1,6 @@
 module Language.Code.Simulator
   ( simulate
-  , ScalarTypeM
+  , HaskellTypeM
   ) where
 
 import Language.Value hiding (get)
@@ -13,9 +13,9 @@ import Control.Monad.State
 import GHC.TypeLits
 import Fcf (Exp, Eval, Pure1)
 
-data ScalarTypeM :: * -> (Environment, Type) -> Exp *
-type instance Eval (ScalarTypeM s '(env, t)) =
-  State (Context ScalarTypeOfBinding env, s) (ScalarType t)
+data HaskellTypeM :: * -> (Environment, Type) -> Exp *
+type instance Eval (HaskellTypeM s '(env, t)) =
+  State (Context HaskellTypeOfBinding env, s) (HaskellType t)
 
 -- | Update a variable in the current environment
 update :: forall name t env s
@@ -23,14 +23,14 @@ update :: forall name t env s
        => NameIsPresent name t env
        -> Proxy name
        -> TypeProxy t
-       -> ScalarType t
-       -> State (Context ScalarTypeOfBinding env, s) ()
+       -> HaskellType t
+       -> State (Context HaskellTypeOfBinding env, s) ()
 update pf _name t v = withKnownType t (modify' (\(x,y) -> (setBinding pf v x, y)))
 
 -- | Evaluate a value in the current environment
 eval :: forall t env s
       . Value '(env, t)
-     -> State (Context ScalarTypeOfBinding env, s) (ScalarType t)
+     -> State (Context HaskellTypeOfBinding env, s) (HaskellType t)
 eval v = do
   ctx <- fst <$> get
   pure (evaluate v ctx)
@@ -39,10 +39,10 @@ eval v = do
 -- The 's' parameter allows for extra state that may be used
 -- by the effects handlers.
 simulate :: forall effs env t s
-          . Handlers effs (ScalarTypeM s)
+          . Handlers effs (HaskellTypeM s)
          -> Code effs env t
-         -> State (Context ScalarTypeOfBinding env, s) (ScalarType t)
-simulate handlers = indexedFold @(ScalarTypeM s) @(Fix (CodeF effs (Pure1 Value))) @(CodeF effs (Pure1 Value)) $ \case
+         -> State (Context HaskellTypeOfBinding env, s) (HaskellType t)
+simulate handlers = indexedFold @(HaskellTypeM s) @(Fix (CodeF effs (Pure1 Value))) @(CodeF effs (Pure1 Value)) $ \case
   Let pf name vt v _ body -> recallIsAbsent (absentInTail pf) $ do
     (ctx, s) <- get
     value <- eval v

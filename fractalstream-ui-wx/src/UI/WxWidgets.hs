@@ -22,7 +22,7 @@ import Language.Code hiding (set, get)
 import Language.Effect.Draw
 import Language.Effect.Provide
 import Language.Effect.Render
-import Language.Value.Evaluator (ScalarTypeOfBinding)
+import Language.Value.Evaluator (HaskellTypeOfBinding)
 import Language.Code.InterpretIO
 import Language.Code.Simulator
 
@@ -65,7 +65,7 @@ attachActor f (UIActor handler) = do
 ----------------------------------------------------------------
 
 data ScalarIORef :: Symbol -> Type -> Exp *
-type instance Eval (ScalarIORef name t) = (Maybe String, IORef (ScalarType t))
+type instance Eval (ScalarIORef name t) = (Maybe String, IORef (HaskellType t))
 
 data SettingsWidget (env :: Environment) = SettingsWidget
   { settingsDialog :: Dialog ()
@@ -78,7 +78,7 @@ readSetting :: forall name t env
             => SettingsWidget env
             -> NameIsPresent name t env
             -> Proxy name
-            -> IO (ScalarType t)
+            -> IO (HaskellType t)
 readSetting sw pf _name = readIORef (snd $ getBinding (settingsRefs sw) pf)
 
 
@@ -136,7 +136,7 @@ instance ToUI WX (Settings env '[]) where
       let refs = mapContext (\_ _ -> snd) settingsRefs
           build :: forall args
                  . Code '[Provide env] args 'VoidT
-                -> IO (Context ScalarTypeOfBinding args -> IO ())
+                -> IO (Context HaskellTypeOfBinding args -> IO ())
           build code = pure $ \ctx -> do
             let prog = interpretedInIO (provide refs NoHandler) code
             ctx' <- mapContextM (\_ _ -> newIORef) ctx
@@ -165,7 +165,7 @@ provide providedCtx = Handler (Handle Proxy handle)
             . EnvironmentProxy e
            -> TypeProxy t
            -> Provide env ScalarIORefM '(e,t)
-           -> StateT (Context IORefTypeOfBinding e) IO (ScalarType t)
+           -> StateT (Context IORefTypeOfBinding e) IO (HaskellType t)
     handle _ _ (Provide _ _ _ code) = do
       ctx <- State.get
       let ctx' = contextAppend ctx providedCtx
@@ -181,7 +181,7 @@ provideD providedCtx = Handler (Handle Proxy handle)
             . EnvironmentProxy e
            -> TypeProxy t
            -> Provide env DrawScalarIORefM '(e,t)
-           -> StateT (Context IORefTypeOfBinding e, [DrawCommand]) IO (ScalarType t)
+           -> StateT (Context IORefTypeOfBinding e, [DrawCommand]) IO (HaskellType t)
     handle _ _ (Provide _ _ _ code) = do
       (ctx, cmds) <- State.get
       let ctx' = contextAppend ctx providedCtx
@@ -199,7 +199,7 @@ drawHandler = Handler (Handle Proxy handle)
             . EnvironmentProxy e
            -> TypeProxy t
            -> Draw (ScalarIORefMWith [DrawCommand]) '(e,t)
-           -> StateT (Context IORefTypeOfBinding e, [DrawCommand]) IO (ScalarType t)
+           -> StateT (Context IORefTypeOfBinding e, [DrawCommand]) IO (HaskellType t)
     handle _ _ = \case
       DrawPoint _env pv -> do
         p <- eval pv
@@ -227,11 +227,11 @@ drawHandler = Handler (Handle Proxy handle)
 render :: forall e t
         . (forall env
              . Code '[] env 'ColorT
-            -> IO (Context ScalarTypeOfBinding env -> IO FS.Color))
+            -> IO (Context HaskellTypeOfBinding env -> IO FS.Color))
        -> EnvironmentProxy e
        -> TypeProxy t
        -> Render ScalarIORefM '(e,t)
-       -> StateT (Context IORefTypeOfBinding e) IO (ScalarType t)
+       -> StateT (Context IORefTypeOfBinding e) IO (HaskellType t)
 render _compileCode _ _ = \case
   Render _ _ _ _ _ _dim _corner _dz _actionCode -> lift $ do
     putStrLn "render"
@@ -244,14 +244,14 @@ render _compileCode _ _ = \case
 interpretedInIO :: Handlers effs ScalarIORefM
                 -> Code effs env t
                 -> Context IORefTypeOfBinding env
-                -> IO (ScalarType t)
+                -> IO (HaskellType t)
 interpretedInIO handlers code = evalStateT (interpretToIO handlers code)
 
 interpretedInIO_ :: Handlers effs (ScalarIORefMWith s)
                  -> Code effs env t
                  -> s
                  -> Context IORefTypeOfBinding env
-                 -> IO (ScalarType t, s)
+                 -> IO (HaskellType t, s)
 interpretedInIO_ handlers code s =
   fmap (fmap snd) . runStateT (interpretToIO_ handlers code) . (,s)
 
@@ -284,7 +284,7 @@ instance ToUI WX (Tool '[Draw]) where
         provideEffect = provideD refs
         build :: forall args
                . Code '[Provide env, Draw] args 'VoidT
-              -> IO (Context ScalarTypeOfBinding args -> IO ())
+              -> IO (Context HaskellTypeOfBinding args -> IO ())
         build code = pure $ \ctx -> do
           let prog = interpretedInIO_ (provideEffect (drawHandler NoHandler)) code []
           ctx' <- mapContextM (\_ _ -> newIORef) ctx
@@ -352,7 +352,7 @@ instance ToUI WX Viewer where
         provideEffect = provide refs
         build :: forall args
                . Code '[Provide settingsEnv, Render] args 'VoidT
-              -> IO (Context ScalarTypeOfBinding args -> IO ())
+              -> IO (Context HaskellTypeOfBinding args -> IO ())
         build code = pure $ \ctx -> do
           let prog = interpretedInIO (provideEffect (Handler (Handle Proxy (render (\c -> pure (pure . evalState (simulate NoHandler c) . (,()))))) NoHandler)) code
           ctx' <- mapContextM (\_ _ -> newIORef) ctx

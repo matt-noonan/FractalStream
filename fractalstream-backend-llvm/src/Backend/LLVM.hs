@@ -29,7 +29,7 @@ import Foreign.C.Types
 import Backend.LLVM.Code
 
 import Language.Value
-import Language.Value.Evaluator (ScalarTypeOfBinding)
+import Language.Value.Evaluator (HaskellTypeOfBinding)
 import Language.Code
 import Language.Code.Parser
 import Data.Color
@@ -56,19 +56,19 @@ foreign import ccall "dynamic"
 
 class ToForeignFun (env :: Environment) (ret :: Type) where
   type AsForeignFun env ret :: *
-  toForeignFun :: (Context ScalarTypeOfBinding env -> IO (ScalarType ret))
+  toForeignFun :: (Context HaskellTypeOfBinding env -> IO (HaskellType ret))
                -> AsForeignFun env ret
 
 instance ToForeignFun '[] ret where
-  type AsForeignFun '[] ret = IO (ScalarType ret)
+  type AsForeignFun '[] ret = IO (HaskellType ret)
   toForeignFun f = f EmptyContext
 
 instance (KnownSymbol name, KnownType t, ToForeignFun env ret, NotPresent name env)
     => ToForeignFun ( '(name,t) ': env) ret where
-  type AsForeignFun ( '(name,t) ': env) ret = ScalarType t -> AsForeignFun env ret
+  type AsForeignFun ( '(name,t) ': env) ret = HaskellType t -> AsForeignFun env ret
   toForeignFun f x = toForeignFun @env @ret (f . Bind (Proxy @name) (typeProxy @t) x)
 
-invoke :: JITFun env ret -> Context ScalarTypeOfBinding env -> IO (ScalarType ret)
+invoke :: JITFun env ret -> Context HaskellTypeOfBinding env -> IO (HaskellType ret)
 invoke (JITFun _ rt f) ctx = do
   (args, frees) <- unzip <$> fromContextM toFFIArg ctx
   allocaArray @Double 2 $ \ret -> do   -- FIXME: allocate the correct type!
@@ -86,7 +86,7 @@ invoke' _ _ f = toForeignFun @env @ret (invoke f)
 
 toFFIArg :: Proxy (name :: Symbol)
          -> TypeProxy ty
-         -> ScalarType ty
+         -> HaskellType ty
          -> IO (Arg, IO ())
 toFFIArg _ t v = case t of
   IntegerType -> pure (argInt32 (fromIntegral v), pure ())
@@ -101,7 +101,7 @@ toFFIArg _ t v = case t of
 
 fromFFIRetArg :: TypeProxy ty
               -> Ptr Double
-              -> IO (ScalarType ty)
+              -> IO (HaskellType ty)
 fromFFIRetArg t ptr = case t of
   IntegerType -> fromIntegral <$> peek (castPtr @_ @Int32 ptr)
   RealType    -> peek (castPtr ptr)

@@ -20,7 +20,7 @@ type Draw = Draw_ Value_
 type DrawCommand = Draw_ ConcreteValue NoCode '( '[], 'VoidT )
 
 data ConcreteValue :: Environment -> Type -> Exp *
-type instance Eval (ConcreteValue env t) = ScalarType t
+type instance Eval (ConcreteValue env t) = HaskellType t
 
 data NoCode :: (Environment, Type) -> Exp *
 type instance Eval (NoCode et) = ()

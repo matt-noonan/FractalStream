@@ -15,7 +15,7 @@ import Text.RawString.QQ
 
 runEmpty :: TypeProxy t
          -> String
-         -> Either (Int, BadParse) (ScalarType t)
+         -> Either (Int, BadParse) (HaskellType t)
 runEmpty t input
   = fmap ((`evalState` (EmptyContext, ()) ) . simulate NoHandler)
     $ parseCode (EP NoEffs) EmptyEnvProxy t input
@@ -24,7 +24,7 @@ runWithX :: forall t xt
           . TypeProxy t
          -> Scalar xt
          -> String
-         -> Either (Int, BadParse) (ScalarType t)
+         -> Either (Int, BadParse) (HaskellType t)
 runWithX t (Scalar xt x) input = withKnownType xt $
   let env = BindingProxy (Proxy @"x") xt EmptyEnvProxy
       ctx = Bind (Proxy @"x") xt x EmptyContext
@@ -36,7 +36,7 @@ runWithXY :: forall t xt yt
           -> Scalar xt
           -> Scalar yt
           -> String
-          -> Either (Int, BadParse) (ScalarType t)
+          -> Either (Int, BadParse) (HaskellType t)
 runWithXY t (Scalar xt x) (Scalar yt y) input = withKnownType xt $ withKnownType yt $
   let ctx = Bind (Proxy @"x") xt x
           $ Bind (Proxy @"y") yt y

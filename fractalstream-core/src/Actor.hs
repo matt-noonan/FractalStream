@@ -7,7 +7,7 @@ module Actor
 
 --import Event
 import Language.Code
-import Language.Value.Evaluator (ScalarTypeOfBinding)
+import Language.Value.Evaluator (HaskellTypeOfBinding)
 import GHC.TypeLits
 
 {-
@@ -22,7 +22,7 @@ class Actor actor effs where
 
 class ToFun (env :: Environment) (result :: *) where
   type ToFunction env result :: *
-  toFunction :: (Context ScalarTypeOfBinding env -> result)
+  toFunction :: (Context HaskellTypeOfBinding env -> result)
              -> ToFunction env result
 
 instance ToFun '[] result where
@@ -32,6 +32,6 @@ instance ToFun '[] result where
 instance (KnownSymbol name, KnownType ty, NotPresent name env, ToFun env result)
     => ToFun ( '(name, ty) ': env ) result where
   type ToFunction ( '(name, ty) ': env ) result
-    = ScalarType ty -> ToFunction env result
+    = HaskellType ty -> ToFunction env result
   toFunction k = \x ->
     toFunction @env @result (k . Bind (Proxy @name) (typeProxy @ty) x)

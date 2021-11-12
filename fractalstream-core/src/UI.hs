@@ -47,7 +47,7 @@ class ToUI (ui :: UI) component where
 data UIActor (ui :: UI) =
   UIActor (forall args
             . Event args
-           -> Maybe (Context ScalarTypeOfBinding args
+           -> Maybe (Context HaskellTypeOfBinding args
                     -> UIMonad ui ()))
 
 instance Monad (UIMonad ui) => Semigroup (UIActor ui) where

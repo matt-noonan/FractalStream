@@ -1,10 +1,10 @@
 module Language.Type
   ( Type(..)
-  , type ScalarType
+  , type HaskellType
   , Scalar(..)
   , TypeProxy(..)
   , SomeType(..)
-  , sameScalarType
+  , sameHaskellType
   , Int64
   , Symbol
   , Complex(..)
@@ -41,23 +41,23 @@ data Type
   deriving (Eq, Ord, Show)
 
 -- | Constant values for scalar types
-type family ScalarType (t :: Type) :: * where
-  ScalarType 'BooleanT   = Bool
-  ScalarType 'IntegerT   = Int64
-  ScalarType 'RealT      = Double
-  ScalarType 'ComplexT   = Complex Double
-  ScalarType 'RationalT  = (Int64, Int64)
-  ScalarType 'ColorT     = Color
-  ScalarType ('Pair x y) = (ScalarType x, ScalarType y)
-  ScalarType 'VoidT      = ()
-  ScalarType 'ImageT     = Int
-  ScalarType ('ListT x)  = [ScalarType x]
+type family HaskellType (t :: Type) :: * where
+  HaskellType 'BooleanT   = Bool
+  HaskellType 'IntegerT   = Int64
+  HaskellType 'RealT      = Double
+  HaskellType 'ComplexT   = Complex Double
+  HaskellType 'RationalT  = (Int64, Int64)
+  HaskellType 'ColorT     = Color
+  HaskellType ('Pair x y) = (HaskellType x, HaskellType y)
+  HaskellType 'VoidT      = ()
+  HaskellType 'ImageT     = Int
+  HaskellType ('ListT x)  = [HaskellType x]
 
 -- | Constant values for scalar types. Match on the
 -- first argument to make the type of the second argument
 -- known.
 data Scalar (t :: Type) where
-  Scalar :: forall t. TypeProxy t -> ScalarType t -> Scalar t
+  Scalar :: forall t. TypeProxy t -> HaskellType t -> Scalar t
 
 instance Eq (Scalar t) where
   Scalar t x == Scalar _ y = case t of
@@ -91,8 +91,8 @@ instance Ord (Scalar t) where
     ImageType    -> compare x y
     ListType it -> compare (map (Scalar it) x) (map (Scalar it) y)
 
-sameScalarType :: TypeProxy t1 -> TypeProxy t2 -> Maybe (t1 :~: t2)
-sameScalarType v1 v2 = case v1 of
+sameHaskellType :: TypeProxy t1 -> TypeProxy t2 -> Maybe (t1 :~: t2)
+sameHaskellType v1 v2 = case v1 of
   BooleanType  -> case v2 of { BooleanType  -> Just Refl; _ -> Nothing }
   IntegerType  -> case v2 of { IntegerType  -> Just Refl; _ -> Nothing }
   RealType     -> case v2 of { RealType     -> Just Refl; _ -> Nothing }
@@ -102,12 +102,12 @@ sameScalarType v1 v2 = case v1 of
   VoidType     -> case v2 of { VoidType     -> Just Refl; _ -> Nothing }
   ImageType    -> case v2 of { ImageType    -> Just Refl; _ -> Nothing }
   PairType x y -> case v2 of
-    PairType x' y' -> case (,) <$> sameScalarType x x' <*> sameScalarType y y' of
+    PairType x' y' -> case (,) <$> sameHaskellType x x' <*> sameHaskellType y y' of
       Just (Refl, Refl) -> Just Refl
       Nothing           -> Nothing
     _ -> Nothing
   ListType x -> case v2 of
-    ListType x' -> case sameScalarType x x' of
+    ListType x' -> case sameHaskellType x x' of
       Just Refl -> Just Refl
       Nothing   -> Nothing
     _ -> Nothing
@@ -132,7 +132,7 @@ instance Show SomeType where
   show (SomeType t) = showType t
 
 instance Eq SomeType where
-  SomeType t1 == SomeType t2 = maybe False (const True) (sameScalarType t1 t2)
+  SomeType t1 == SomeType t2 = maybe False (const True) (sameHaskellType t1 t2)
 
 class KnownType (t :: Type)   where typeProxy :: TypeProxy t
 instance KnownType 'BooleanT  where typeProxy = BooleanType
@@ -161,22 +161,22 @@ withKnownType ty k = case ty of
   PairType {}  -> k
   ListType {}  -> k
 
-pattern Boolean_ :: forall (t :: Type). () => (t ~ 'BooleanT) => ScalarType t -> Scalar t
+pattern Boolean_ :: forall (t :: Type). () => (t ~ 'BooleanT) => HaskellType t -> Scalar t
 pattern Boolean_ x = Scalar BooleanType x
 
-pattern Integer_ :: forall (t :: Type). () => (t ~ 'IntegerT) => ScalarType t -> Scalar t
+pattern Integer_ :: forall (t :: Type). () => (t ~ 'IntegerT) => HaskellType t -> Scalar t
 pattern Integer_ x = Scalar IntegerType x
 
-pattern Real_ :: forall (t :: Type). () => (t ~ 'RealT) => ScalarType t -> Scalar t
+pattern Real_ :: forall (t :: Type). () => (t ~ 'RealT) => HaskellType t -> Scalar t
 pattern Real_ x    = Scalar RealType x
 
-pattern Complex_ :: forall (t :: Type). () => (t ~ 'ComplexT) => ScalarType t -> Scalar t
+pattern Complex_ :: forall (t :: Type). () => (t ~ 'ComplexT) => HaskellType t -> Scalar t
 pattern Complex_  pair = Scalar ComplexType pair
 
-pattern Rational_ :: forall (t :: Type). () => (t ~ 'RationalT) => ScalarType t -> Scalar t
+pattern Rational_ :: forall (t :: Type). () => (t ~ 'RationalT) => HaskellType t -> Scalar t
 pattern Rational_ pair = Scalar RationalType pair
 
-pattern Color_ :: forall (t :: Type). () => (t ~ 'ColorT) => ScalarType t -> Scalar t
+pattern Color_ :: forall (t :: Type). () => (t ~ 'ColorT) => HaskellType t -> Scalar t
 pattern Color_ c = Scalar ColorType c
 
 
@@ -193,7 +193,7 @@ showType = \case
   PairType x y -> "(" <> showType x <> " x " <> showType y <> ")"
   ListType x   -> "List " <> showType x
 
-showValue :: TypeProxy t -> ScalarType t -> String
+showValue :: TypeProxy t -> HaskellType t -> String
 showValue ty v = case ty of
   BooleanType  -> if v then "true" else "false"
   IntegerType  -> show v
