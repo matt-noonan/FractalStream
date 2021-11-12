@@ -3,6 +3,7 @@ module Language.Untyped.Code
   ( type Code
   , CodeF(..)
   , attachScope
+  , promoteSetToLet
   ) where
 
 import Language.Untyped.Value
@@ -110,3 +111,59 @@ attachScope :: Set String
             -> Code
             -> Either BindingError CodeWithEnv
 attachScope = curry (unfoldM withBindings)
+
+-- | Find Set/SetBind instructions for unbound variables,
+-- and promote them to Let/LetBind instructions that introduce
+-- the variable.
+promoteSetToLet :: Set String -> Code -> Code
+promoteSetToLet = curry (unfold phi)
+  where
+    phi :: (Set String, Code) -> CodeF Value (Set String, Code)
+    phi (scope, Fix ast) = case ast of
+      -- In a block, find any Set or SetBind instructions that
+      -- are setting an unbound variable. Convert these to
+      -- Let / LetBind, scoping over the remainder of the block.
+      Block instrs ->
+        let setsUnboundVar = \case
+              Fix (Set v _)     -> not (v `Set.member` scope)
+              Fix (SetBind v _) -> not (v `Set.member` scope)
+              _                 -> False
+
+            toBlock [Fix x] = x
+            toBlock xs      = Block xs
+
+            toLet = \case
+              -- Set -> Let promotion
+              (Fix (Set var value) : more) ->
+                [(Set.insert var scope,
+                  Fix (Let var value (Fix (toBlock more))))]
+
+              -- SetBind -> LetBind promotion
+              (Fix (SetBind var code) : more) ->
+                [(Set.insert var scope,
+                  Fix (LetBind var code (Fix (toBlock more))))]
+
+              []  -> []
+              etc -> error ("unreachable case in promoteSetToLet: " ++ show etc)
+
+            (body, rest) = break setsUnboundVar instrs
+        in case map (scope,) body ++ toLet rest of
+          [oneInstr] -> phi oneInstr
+          manyInstrs -> Block manyInstrs
+
+      -- Instructions that modify the scope
+      Let var value body ->
+        Let var value (Set.insert var scope, body)
+      LetBind var code body ->
+        LetBind var (scope, code) (Set.insert var scope, body)
+      Render x y dim pos delta body ->
+        Render x y dim pos delta (Set.insert x (Set.insert y scope), body)
+      Lookup lst n p yes no ->
+        Lookup lst n p (Set.insert n scope, yes) (scope, no)
+      ForEach lst n body ->
+        ForEach lst n (Set.insert n scope, body)
+      Provide names body ->
+        Provide names (names `Set.union` scope, body)
+
+      -- Default case: recurse without modifying the scope
+      _ -> (scope,) <$> ast

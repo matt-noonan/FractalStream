@@ -8,8 +8,12 @@ module Language.Code.Parser
   , EffectParser(..)
   , EffectParsers(..)
   , EffectParsers_(..)
+  , uParseCode
   , uCode
   ) where
+
+import Prelude hiding (words)
+import qualified Prelude as Prelude
 
 import Language.Type
 import Language.Parser
@@ -30,6 +34,10 @@ parseCode :: forall effs env t
           -> Either (Int, BadParse) (Code effs env t)
 parseCode eps env t input
   = parse (pCode eps env t <* eof) (tokenizeWithIndentation input)
+
+uParseCode :: String
+          -> Either (Int, BadParse) U.Code
+uParseCode = parse (uCode <* eof) . tokenizeWithIndentation
 
 -- | The code grammar is a tiny bit monadic, because the allowed parses
 -- depend on which variables are in scope, and this can change as new 'var'
@@ -304,6 +312,13 @@ uCode = U.Fix <$> (uBlock <|> uLine <?> "code")
   where
     value = untypedValue_
     word = tok_ . Identifier
+    words = mapM_ word . Prelude.words
+
+    blockConcat (U.Block xs) (U.Block ys) = U.Block (xs ++ ys)
+    blockConcat (U.Block xs)  y           = U.Block (xs ++ [U.Fix y])
+    blockConcat  x           (U.Block ys) = U.Block (U.Fix x : ys)
+    blockConcat  x            y           = U.Block [U.Fix x, U.Fix y]
+
     ident = do
       Identifier n <- satisfy (\case { (Identifier _) -> True; _ -> False })
       pure n
@@ -311,11 +326,11 @@ uCode = U.Fix <$> (uBlock <|> uLine <?> "code")
     uLine
       =   uLoop
       <|> uSet
-      -- <|> uVar  TODO
       <|> uPass
       <|> uIfThenElse
       <|> uDraw
       <|> uOutput
+      <|> uList
       <|> (U.Pure <$> value)
       <?> "line of code"
 
@@ -330,28 +345,29 @@ uCode = U.Fix <$> (uBlock <|> uLine <?> "code")
       pure (U.Block [])) <?> "pass"
 
     uLoop = (do
-      word "loop" >> eol
-      U.DoWhile . U.Fix <$> uBlock) <?> "loop"
+      word "repeat" >> eol
+      body <- uBlock
+      test <- word "while" *> value
+      pure (U.DoWhile (U.Fix (body `blockConcat` U.Pure test))))
+      <?> "repeat"
 
     uSet = do
       word "set"
       n <- ident
-      (    (word "to" *> pTo n)
-        <|> (tok_ LeftArrow *> pBind n)
+      (    (word "to" *> (U.Set n <$> (value <* eol)))
+        <|> (tok_ LeftArrow *> (U.SetBind n <$> uCode))
         <?> "binding style")
-
-    pTo   n = U.Set n <$> (value <* eol)
-    pBind n = U.SetBind n <$> uCode
 
     uIfThenElse = do
       tok_ If
       cond <- value <* (tok_ Then >> eol)
       yes  <- U.Fix <$> uBlock
-      no   <- (tok_ Else >> U.Fix <$> uBlock) <|> pure (U.Fix $ U.Block [])
+      no   <- (tok_ Else >> ((eol >> U.Fix <$> uBlock)
+                         <|> (U.Fix <$> uIfThenElse)))
+           <|> pure (U.Fix $ U.Block [])
       pure (U.IfThenElse cond yes no)
 
     -- Draw commands
-
     uDraw
       =   (word "draw" *> drawCmd)
       <|> (word "use"  *> useCmd)
@@ -361,17 +377,17 @@ uCode = U.Fix <$> (uBlock <|> uLine <?> "code")
     drawCmd
       =   (do
             word "filled"
-            (    (U.DrawCircle True <$> (word "circle" *> word "at" *> value)
-                  <*> (word "with" *> word "radius" *> value))
-             <|> (U.DrawRect True <$> (word "rectangle" *> word "from" *> value)
+            (    (U.DrawCircle True <$> (words "circle at" *> value)
+                  <*> (words "with radius" *> value))
+             <|> (U.DrawRect True <$> (words "rectangle from" *> value)
                   <*> (word "to" *> value))))
-      <|> (U.DrawCircle False <$> (word "circle" *> word "at" *> value)
-            <*> (word "with" *> word "radius" *> value))
-      <|> (U.DrawRect False <$> (word "rectangle" *> word "from" *> value)
+      <|> (U.DrawCircle False <$> (words "circle at" *> value)
+            <*> (words "with radius" *> value))
+      <|> (U.DrawRect False <$> (words "rectangle from" *> value)
             <*> (word "to" *> value))
-      <|> (U.DrawLine <$> (word "line" *> word "from" *> value)
+      <|> (U.DrawLine <$> (words "line from" *> value)
             <*> (word "to" *> value))
-      <|> (U.DrawPoint <$> (word "point" *> word "at" *> value))
+      <|> (U.DrawPoint <$> (words "point at" *> value))
       <?> "draw command"
 
     useCmd = do
@@ -384,3 +400,37 @@ uCode = U.Fix <$> (uBlock <|> uLine <?> "code")
       v <- word "output" *> value
       n <- word "to" *> ident
       pure (U.Output n v)
+
+    -- List commands
+    uList
+      =   (word "insert" *> insertCmd)
+      <|> (word "with" *> lookupCmd)
+      <|> (word "remove" *> removeCmd)
+      <|> (words "for each" *> forEachCmd)
+
+    insertCmd = do
+      v <- value
+      words "at start of"
+      U.Insert <$> ident <*> pure v
+
+    lookupCmd = do
+      word "first"
+      item <- ident <* word "matching"
+      test <- value <* word "in"
+      list <- ident <* eol
+      yes <- uBlock
+      -- Parse an else block, or else make a default no-op else case
+      no <- (tok_ Else >> eol >> uBlock) <|> pure (U.Block [])
+      pure (U.Lookup list item test (U.Fix yes) (U.Fix no))
+
+    removeCmd =   (try (words "all items from") >> (U.ClearList <$> ident))
+              <|> (do
+                      item <- word "each" *> ident
+                      test <- word "matching" *> value
+                      list <- word "from" *> ident
+                      pure (U.Remove list item test))
+
+    forEachCmd = do
+      item <- ident <* word "in"
+      list <- ident <* eol
+      U.ForEach list item . U.Fix <$> uBlock

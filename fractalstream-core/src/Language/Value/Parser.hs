@@ -44,7 +44,7 @@ import Language.Untyped.Shape
 import Language.Untyped.Infer
 import Language.Untyped.Constraints (initialTCState)
 
-import Debug.Trace
+--import Debug.Trace
 
 ---------------------------------------------------------------------------------
 -- Top-level entry points
@@ -73,9 +73,9 @@ value_ :: forall t env
 value_ = case envProxy (Proxy @env) of
   env -> case typeProxy @t of
     rt -> do
-      traceM "about to parse an untyped value"
+      --traceM "about to parse an untyped value"
       uv <- dbg "untyped value" $ untypedValue_
-      traceM ("uv = " ++ show uv)
+      --traceM ("uv = " ++ show uv)
       let result = do
             -- Infer the value's shape
             (v, ctx') <- runST $ do
@@ -104,7 +104,7 @@ value_ = case envProxy (Proxy @env) of
                   _         -> Other (show e)
                 Right v -> pure (v, ctx')
 
-            traceM ("v = " ++ show v)
+            -- traceM ("v = " ++ show v)
             -- Infer the value's type
             case evalStateT (infer env ctx' rt v) initialTCState of
               Right typedValue -> pure typedValue

@@ -59,25 +59,6 @@ common FractalStream-common
 library
   import: FractalStream-common
   exposed-modules:
-                       -- Color.Colorize
-                       -- Exec.LLVM
-                       -- Exec.Haskell
-                       -- Exec.Placeholder
-                       -- Exec.Region
-                       -- Exec.Tasking.Block
-                       -- Exec.Tasking.Manager
-                       -- FractalStream.Models
-                       -- Lang.Component
-                       -- Lang.Expr
-                       -- Lang.Expr.Print
-                       -- Lang.Expr.Transform
-                       -- Lang.Expr.Typing
-                       -- Lang.Numbers
-                       -- Lang.Parse.Expr
-                       -- Lang.Planar
-                       -- Utilities
-                       -- Utils.Concurrent
-
                        UI
 
                        Backend
@@ -148,36 +129,6 @@ library
                        bifunctors,
   hs-source-dirs:      src
 
--- executable FractalStream
---   import: FractalStream-common
---   ghc-options:         -Wall -Werror -O2 -threaded -rtsopts -with-rtsopts=-N
---   main-is:             Main.hs
---   other-modules:       UI.Tile
---                        UI.WxWidgets
---                        UI.WX.Viewer
---   build-depends:       base >=4.8 && <5,
---                        FractalStream,
---                        random,
---                        array,
---                        wxcore,
---                        wx,
---                        async,
---                        containers,
---                        parsec,
---                        mtl,
---                        recursion-schemes,
---                        llvm-hs,
---                        llvm-hs-pure,
---                        time,
---                        monad-parallel,
---                        monad-par,
---                        monad-par-extras,
---                        bytestring,
---                        vector,
---                        first-class-families
---   hs-source-dirs:      exe
---   extra-lib-dirs:      /usr/local/lib
-
 test-suite spec
   import: FractalStream-common
   hs-source-dirs: test
@@ -194,6 +145,7 @@ test-suite spec
                     , Language.Value.EvaluatorSpec
                     , Language.Value.ParserSpec
                     , Language.Untyped.ShapeSpec
+                    , Language.Untyped.CodeSpec
                     , Language.Code.ParserSpec
                     , Language.Effect.ListSpec
   build-tool-depends: hspec-discover:hspec-discover == 2.*

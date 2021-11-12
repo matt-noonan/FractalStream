@@ -25,7 +25,7 @@ import Data.Type.Equality ((:~:)(..))
 
 import Language.Untyped.Constraints
 
-import Debug.Trace
+--import Debug.Trace
 
 addEnvironmentConstraints :: forall m env
                            . (MonadState TCState m, MonadError TCError m)
@@ -79,7 +79,7 @@ solveConstraints = do
                  (uniques [ (toTVID src, toTVID tgt)
                           | (src, tgt) <- csEdges])
 
-  forM csEdges (\(src, tgt) -> traceM (show src ++ " --> " ++ show tgt))
+  -- forM csEdges (\(src, tgt) -> traceM (show src ++ " --> " ++ show tgt))
 
   -- Find the DAG of SCCs in the constraint graph. Each type variable in an
   -- SCC will be given the same type. The sinks in the DAG correspond to
@@ -138,13 +138,13 @@ solveConstraints = do
     let hi = case Map.lookup s upperTypes of
           Just h  -> h
           Nothing -> C_T -- default case: upper bound is most general numeric type
-    traceM ("SCC " ++ show s ++ " : " ++ " lo=" ++ show lo ++ ", hi=" ++ show hi)
+    -- traceM ("SCC " ++ show s ++ " : " ++ " lo=" ++ show lo ++ ", hi=" ++ show hi)
     when (joinNumTy lo hi /= hi) (throwError (TypeMismatch (numTyToTy lo) (numTyToTy hi)))
 
   pure $ \tv -> case Map.lookup (toSCC . toTVID . TyVar $ tv) lowerTypes of
                   Just tt -> case tt of
-                    Num_T -> traceM ("typeOf " ++ show tv ++ " (scc " ++ show (toSCC . toTVID . TyVar $ tv) ++ ") = Z_T (default)") >> pure Z_T
-                    _     -> traceM ("typeOf " ++ show tv ++ " (scc " ++ show (toSCC . toTVID . TyVar $ tv) ++ ") = " ++ show tt) >> pure tt
+                    Num_T -> {-traceM ("typeOf " ++ show tv ++ " (scc " ++ show (toSCC . toTVID . TyVar $ tv) ++ ") = Z_T (default)") >> -} pure Z_T
+                    _     -> {-traceM ("typeOf " ++ show tv ++ " (scc " ++ show (toSCC . toTVID . TyVar $ tv) ++ ") = " ++ show tt) >> -} pure tt
                   Nothing -> pure Z_T -- default case: no constraints? integer.
 
 data TypeVar_ :: (Environment, Type) -> Exp *
@@ -181,9 +181,9 @@ infer env ctx rt ast = withEnvironment env $ do
         NumTV tv -> numTyToTy <$> getNumType tv
 
   -- Apply the solution to get a typed value
-  v <- toTypedValue getType (envTypeProxy env rt) ast
-  traceM ("result: " ++ show v)
-  pure v
+  toTypedValue getType (envTypeProxy env rt) ast
+  -- traceM ("result: " ++ show v)
+  --pure v
 
 toTypedValue :: forall env0 t0 m
               . (MonadState TCState m, MonadError TCError m)
