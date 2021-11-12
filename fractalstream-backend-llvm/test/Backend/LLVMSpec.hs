@@ -24,7 +24,7 @@ loop
   x < y
 x y
 |]
-      withCompiledCode prog1 $ \f -> do
+      withCompiledCode env prog1 $ \f -> do
         f1 <- invoke' env RealProxy f 1.5 5
         f2 <- invoke' env RealProxy f 1.5 2
         f1 `shouldBe` (5.5 * 5)
@@ -47,7 +47,7 @@ if k = maxIter then
 else
   red|]
 
-      withCompiledCode mandel $ \f -> do
+      withCompiledCode env mandel $ \f -> do
         v1 <- invoke' env ColorProxy f (1 :+ 1) 10 100
         v1 `shouldBe` red
         v2 <- invoke' env ColorProxy f ((-1) :+ 0.1) 10 100

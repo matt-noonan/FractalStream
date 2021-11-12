@@ -17,7 +17,7 @@ import Control.Monad.Except
 import Data.Functor ((<&>))
 
 parseValue :: EnvironmentProxy env
-           -> ScalarProxy t
+           -> TypeProxy t
            -> String
            -> Either (Int, BadParse) (Value '(env, t))
 parseValue env rt input = do
@@ -26,14 +26,14 @@ parseValue env rt input = do
   -- Infer the value's shape
   (v, ctx') <- runST $ do
     ctx <- fmap Map.fromList $ fromEnvironmentM env $ \name ty -> do
-      let go :: forall ty s. ScalarProxy ty -> ST s (UF s (STShape s))
+      let go :: forall ty s. TypeProxy ty -> ST s (UF s (STShape s))
           go = \case
-            BooleanProxy -> fresh (STShape BoolShape)
-            IntegerProxy -> fresh (STShape NumShape)
-            RealProxy    -> fresh (STShape NumShape)
-            ComplexProxy -> fresh (STShape NumShape)
-            ColorProxy   -> fresh (STShape ColorShape)
-            PairProxy x y -> do
+            BooleanType -> fresh (STShape BoolShape)
+            IntegerType -> fresh (STShape NumShape)
+            RealType    -> fresh (STShape NumShape)
+            ComplexType -> fresh (STShape NumShape)
+            ColorType   -> fresh (STShape ColorShape)
+            PairType x y -> do
               ps <- PairShape <$> go x <*> go y
               fresh (STShape ps)
             _ -> error "missing case"
@@ -63,9 +63,9 @@ spec = do
   describe "when parsing values" $ do
 
     let eval = fmap (`evaluate` EmptyContext)
-        parseI = eval . parseValue EmptyEnvProxy IntegerProxy
-        parseF = eval . parseValue EmptyEnvProxy RealProxy
-        parseB = eval . parseValue EmptyEnvProxy BooleanProxy
+        parseI = eval . parseValue EmptyEnvProxy IntegerType
+        parseF = eval . parseValue EmptyEnvProxy RealType
+        parseB = eval . parseValue EmptyEnvProxy BooleanType
 
     it "can parse simple arithmetic expressions" $ do
       let parses1 = parseI "(1 + 2) *3+ 4"
@@ -80,7 +80,7 @@ spec = do
       parses5 `shouldBe` Right 42
 
     it "can parse tuples" $ do
-      let ty = PairProxy IntegerProxy IntegerProxy
+      let ty = PairType IntegerType IntegerType
           parses = parseValue EmptyEnvProxy ty "(1 + 2, 3 * 4)"
       eval parses `shouldBe` Right (3, 12)
 
@@ -139,8 +139,8 @@ spec = do
   describe "when using common notational quirks" $ do
 
     let eval = fmap (`evaluate` EmptyContext)
-        parseI = eval . parseValue EmptyEnvProxy IntegerProxy
-        parseF = eval . parseValue EmptyEnvProxy RealProxy
+        parseI = eval . parseValue EmptyEnvProxy IntegerType
+        parseF = eval . parseValue EmptyEnvProxy RealType
 
     it "parses concatenation as function application" $ do
       let parses1 = parseF "cos pi"
@@ -160,23 +160,23 @@ spec = do
 
   describe "when parsing parameterized values" $ do
 
-    let env = BindingProxy (Proxy @"x") IntegerProxy EmptyEnvProxy
-        ctx x = Bind (Proxy @"x") IntegerProxy x EmptyContext
-        parseI1 s x = fmap (`evaluate` (ctx x)) (parseValue env IntegerProxy s)
-        envC = BindingProxy (Proxy @"x") RealProxy
-             $ BindingProxy (Proxy @"y") RealProxy
+    let env = BindingProxy (Proxy @"x") IntegerType EmptyEnvProxy
+        ctx x = Bind (Proxy @"x") IntegerType x EmptyContext
+        parseI1 s x = fmap (`evaluate` (ctx x)) (parseValue env IntegerType s)
+        envC = BindingProxy (Proxy @"x") RealType
+             $ BindingProxy (Proxy @"y") RealType
              $ EmptyEnvProxy
-        ctxC x y = Bind (Proxy @"x") RealProxy x
-                 $ Bind (Proxy @"y") RealProxy y
+        ctxC x y = Bind (Proxy @"x") RealType x
+                 $ Bind (Proxy @"y") RealType y
                  $ EmptyContext
-        envC' = BindingProxy (Proxy @"z") ComplexProxy
-              $ BindingProxy (Proxy @"r") RealProxy
+        envC' = BindingProxy (Proxy @"z") ComplexType
+              $ BindingProxy (Proxy @"r") RealType
               $ EmptyEnvProxy
-        ctxC' z r = Bind (Proxy @"z") ComplexProxy z
-                  $ Bind (Proxy @"r") RealProxy r
+        ctxC' z r = Bind (Proxy @"z") ComplexType z
+                  $ Bind (Proxy @"r") RealType r
                   $ EmptyContext
-        parseCR s x y = fmap (`evaluate` (ctxC x y)) (parseValue envC ComplexProxy s)
-        parseBC s z r = fmap (`evaluate` (ctxC' z r)) (parseValue envC' BooleanProxy s)
+        parseCR s x y = fmap (`evaluate` (ctxC x y)) (parseValue envC ComplexType s)
+        parseBC s z r = fmap (`evaluate` (ctxC' z r)) (parseValue envC' BooleanType s)
 
     it "parses expressions with variables in the environment" $ do
       let parses1 = parseI1 "(1 + x) *3 + 4"
@@ -205,16 +205,16 @@ spec = do
       parses3 1 2 `shouldBe` Right (1 :+ 2)
 
   describe "when parsing boolean-valued operations" $ do
-    let env = BindingProxy (Proxy @"x") IntegerProxy
-            $ BindingProxy (Proxy @"y") RealProxy
-            $ BindingProxy (Proxy @"z") ComplexProxy
+    let env = BindingProxy (Proxy @"x") IntegerType
+            $ BindingProxy (Proxy @"y") RealType
+            $ BindingProxy (Proxy @"z") ComplexType
             $ EmptyEnvProxy
-        ctx x y z = Bind (Proxy @"x") IntegerProxy x
-                  $ Bind (Proxy @"y") RealProxy y
-                  $ Bind (Proxy @"z") ComplexProxy z
+        ctx x y z = Bind (Proxy @"x") IntegerType x
+                  $ Bind (Proxy @"y") RealType y
+                  $ Bind (Proxy @"z") ComplexType z
                   $ EmptyContext
         parseB1 s x y z = fmap (`evaluate` (ctx x y z))
-          (parseValue env BooleanProxy s)
+          (parseValue env BooleanType s)
 
     it "can parse equalities" $ do
       let parses1 = parseB1 "exp log 2 = log exp 2"

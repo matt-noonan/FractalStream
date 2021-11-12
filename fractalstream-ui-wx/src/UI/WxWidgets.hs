@@ -102,17 +102,17 @@ instance ToUI WX (Settings env '[]) where
       , on resize := propagateEvent ]
 
     settingsRefs <- makeSettings settingsList
-    let addSetting :: forall name t. Proxy name -> ScalarProxy t -> Setting name t -> IO [Layout]
+    let addSetting :: forall name t. Proxy name -> TypeProxy t -> Setting name t -> IO [Layout]
         addSetting _ _ (Setting _ (Scalar ty v) mn) = do
           let name = fromMaybe (showType ty) (fst <$> mn)
           ctrl <- case ty of
                   -- Represent boolean settings with a checkbox
-                  BooleanProxy -> widget <$>
+                  BooleanType -> widget <$>
                       checkBox settingsDialog
                         [ checkable := True
                         , checked := v ]
                   -- Color picker, triggered by a colored button
-                  ColorProxy -> widget <$>
+                  ColorType -> widget <$>
                       button settingsDialog
                         [ text := showValue ty v
                         , on command := do
@@ -163,7 +163,7 @@ provide providedCtx = Handler (Handle Proxy handle)
   where
     handle :: forall e t
             . EnvironmentProxy e
-           -> ScalarProxy t
+           -> TypeProxy t
            -> Provide env ScalarIORefM '(e,t)
            -> StateT (Context IORefTypeOfBinding e) IO (ScalarType t)
     handle _ _ (Provide _ _ _ code) = do
@@ -179,7 +179,7 @@ provideD providedCtx = Handler (Handle Proxy handle)
   where
     handle :: forall e t
             . EnvironmentProxy e
-           -> ScalarProxy t
+           -> TypeProxy t
            -> Provide env DrawScalarIORefM '(e,t)
            -> StateT (Context IORefTypeOfBinding e, [DrawCommand]) IO (ScalarType t)
     handle _ _ (Provide _ _ _ code) = do
@@ -197,7 +197,7 @@ drawHandler = Handler (Handle Proxy handle)
 
     handle :: forall e t
             . EnvironmentProxy e
-           -> ScalarProxy t
+           -> TypeProxy t
            -> Draw (ScalarIORefMWith [DrawCommand]) '(e,t)
            -> StateT (Context IORefTypeOfBinding e, [DrawCommand]) IO (ScalarType t)
     handle _ _ = \case
@@ -229,7 +229,7 @@ render :: forall e t
              . Code '[] env 'ColorT
             -> IO (Context ScalarTypeOfBinding env -> IO FS.Color))
        -> EnvironmentProxy e
-       -> ScalarProxy t
+       -> TypeProxy t
        -> Render ScalarIORefM '(e,t)
        -> StateT (Context IORefTypeOfBinding e) IO (ScalarType t)
 render _compileCode _ _ = \case

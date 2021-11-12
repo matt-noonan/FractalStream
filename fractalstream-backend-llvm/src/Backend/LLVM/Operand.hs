@@ -77,7 +77,7 @@ storeOperand op (PtrOp ptrOp) = case (op, ptrOp) of
   _ -> error "TODO: Unhandled store type"
 
 detypeOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
-              => ScalarProxy t
+              => TypeProxy t
               -> Op t
               -> m Operand
 detypeOperand _t = \case
@@ -118,46 +118,48 @@ derefOperand (PtrOp ptrOp) = case ptrOp of
 
 -- | Get the LLVM function argument type corresponding to
 -- a FractalStream type.
-toLLVMType :: forall t. ScalarProxy t -> AST.Type
+toLLVMType :: forall t. TypeProxy t -> AST.Type
 toLLVMType = \case
-  VoidProxy       -> AST.void
-  BooleanProxy    -> AST.i1
-  IntegerProxy    -> AST.i32
-  RealProxy       -> AST.double
-  ComplexProxy    -> AST.ptr (AST.ArrayType 2 AST.double)
-  RationalProxy   -> AST.ptr (AST.ArrayType 2 AST.i32)
-  PairProxy t1 t2 -> AST.ptr (AST.StructureType False [ toLLVMType t1
+  VoidType       -> AST.void
+  BooleanType    -> AST.i1
+  IntegerType    -> AST.i32
+  RealType       -> AST.double
+  ComplexType    -> AST.ptr (AST.ArrayType 2 AST.double)
+  RationalType   -> AST.ptr (AST.ArrayType 2 AST.i32)
+  PairType t1 t2 -> AST.ptr (AST.StructureType False [ toLLVMType t1
                                                       , toLLVMType t2 ])
-  ColorProxy      -> AST.ptr (AST.ArrayType 3 AST.i8)
-  ImageProxy      -> AST.i32
+  ColorType      -> AST.ptr (AST.ArrayType 3 AST.i8)
+  ImageType      -> AST.i32
+  ListType {}    -> AST.i32
 
-toLLVMPtrType :: forall t. ScalarProxy t -> AST.Type
+toLLVMPtrType :: forall t. TypeProxy t -> AST.Type
 toLLVMPtrType = \case
-  VoidProxy       -> AST.ptr AST.void
-  BooleanProxy    -> AST.ptr AST.i1
-  IntegerProxy    -> AST.ptr AST.i32
-  RealProxy       -> AST.ptr AST.double
-  ComplexProxy    -> AST.ptr (AST.ArrayType 2 AST.double)
-  RationalProxy   -> AST.ptr (AST.ArrayType 2 AST.i32)
-  PairProxy t1 t2 -> AST.ptr (AST.StructureType False [ toLLVMType t1
+  VoidType       -> AST.ptr AST.void
+  BooleanType    -> AST.ptr AST.i1
+  IntegerType    -> AST.ptr AST.i32
+  RealType       -> AST.ptr AST.double
+  ComplexType    -> AST.ptr (AST.ArrayType 2 AST.double)
+  RationalType   -> AST.ptr (AST.ArrayType 2 AST.i32)
+  PairType t1 t2 -> AST.ptr (AST.StructureType False [ toLLVMType t1
                                                       , toLLVMType t2 ])
-  ColorProxy      -> AST.ptr (AST.ArrayType 3 AST.i8)
-  ImageProxy      -> AST.ptr AST.i32
+  ColorType      -> AST.ptr (AST.ArrayType 3 AST.i8)
+  ImageType      -> AST.ptr AST.i32
+  ListType {}    -> AST.ptr AST.i32
 
 allocaOp :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
-         => ScalarProxy t
+         => TypeProxy t
          -> m (PtrOp t)
 allocaOp = \case
-  VoidProxy -> pure (PtrOp VoidOp)
-  BooleanProxy -> PtrOp . BooleanOp <$> alloca AST.i1  Nothing 0
-  IntegerProxy -> PtrOp . IntegerOp <$> alloca AST.i32 Nothing 0
-  RealProxy    -> PtrOp . RealOp    <$> alloca AST.double Nothing 0
-  ComplexProxy -> PtrOp <$> (ComplexOp <$> alloca AST.double Nothing 0
+  VoidType -> pure (PtrOp VoidOp)
+  BooleanType -> PtrOp . BooleanOp <$> alloca AST.i1  Nothing 0
+  IntegerType -> PtrOp . IntegerOp <$> alloca AST.i32 Nothing 0
+  RealType    -> PtrOp . RealOp    <$> alloca AST.double Nothing 0
+  ComplexType -> PtrOp <$> (ComplexOp <$> alloca AST.double Nothing 0
                                        <*> alloca AST.double Nothing 0)
-  ColorProxy   -> PtrOp <$> (ColorOp <$> alloca AST.i8 Nothing 0
+  ColorType   -> PtrOp <$> (ColorOp <$> alloca AST.i8 Nothing 0
                                      <*> alloca AST.i8 Nothing 0
                                      <*> alloca AST.i8 Nothing 0)
-  PairProxy t1 t2 -> do
+  PairType t1 t2 -> do
     PtrOp ptr1 <- allocaOp t1
     PtrOp ptr2 <- allocaOp t2
     pure (PtrOp (PairOp ptr1 ptr2))
@@ -165,7 +167,7 @@ allocaOp = \case
   _ -> throwError "TODO: unhandled type in allocaOp"
 
 typedOperandPtr :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
-                => ScalarProxy t
+                => TypeProxy t
                 -> Operand
                 -> m (PtrOp t)
 typedOperandPtr t op = do
@@ -173,21 +175,21 @@ typedOperandPtr t op = do
   if opTy /= toLLVMPtrType t
     then throwError "internal error: mismatched type in typedOperandPtr"
     else case t of
-           VoidProxy    -> pure (PtrOp VoidOp)
-           BooleanProxy -> pure (PtrOp (BooleanOp op))
-           IntegerProxy -> pure (PtrOp (IntegerOp op))
-           RealProxy    -> pure (PtrOp (RealOp op))
-           ComplexProxy ->
+           VoidType    -> pure (PtrOp VoidOp)
+           BooleanType -> pure (PtrOp (BooleanOp op))
+           IntegerType -> pure (PtrOp (IntegerOp op))
+           RealType    -> pure (PtrOp (RealOp op))
+           ComplexType ->
              PtrOp <$> (ComplexOp <$> gep op[int32 0, int32 0]
                                   <*> gep op[int32 0, int32 1])
-           ColorProxy   ->
+           ColorType   ->
              PtrOp <$> (ColorOp <$> gep op[int32 0, int32 0]
                                 <*> gep op[int32 0, int32 1]
                                 <*> gep op[int32 0, int32 2])
            _ -> error "TODO: typedOperandPtr"
 
 typedOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
-             => ScalarProxy t
+             => TypeProxy t
              -> Operand
              -> m (Op t)
 typedOperand t op = do
@@ -195,20 +197,20 @@ typedOperand t op = do
   if opTy /= toLLVMType t
     then throwError "internal error: mismatched type in typedOperand"
     else case t of
-           VoidProxy    -> pure VoidOp
-           BooleanProxy -> pure (BooleanOp op)
-           IntegerProxy -> pure (IntegerOp op)
-           RealProxy    -> pure (RealOp op)
-           ComplexProxy -> do
+           VoidType    -> pure VoidOp
+           BooleanType -> pure (BooleanOp op)
+           IntegerType -> pure (IntegerOp op)
+           RealType    -> pure (RealOp op)
+           ComplexType -> do
              z <- load op 0
              ComplexOp <$> extractValue z[0]
                        <*> extractValue z[1]
-           ColorProxy -> do
+           ColorType -> do
              c <- load op 0
              ColorOp <$> extractValue c[0]
                      <*> extractValue c[1]
                      <*> extractValue c[2]
-           PairProxy t1 t2 -> do
+           PairType t1 t2 -> do
              p <- load op 0
              x1 <- extractValue p[0]
              x2 <- extractValue p[1]

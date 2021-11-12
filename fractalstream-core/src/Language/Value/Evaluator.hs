@@ -46,7 +46,7 @@ type family WithoutBinding (env :: Environment) (name :: Symbol) :: Environment 
 partialEvaluate :: forall env t name ty
                  . (KnownSymbol name)
                 => Proxy name
-                -> ScalarProxy ty
+                -> TypeProxy ty
                 -> ScalarType ty
                 -> NameIsPresent name ty env
                 -> Value '(env, t)
@@ -84,7 +84,7 @@ toV = \case
 toC :: ValueOrConstant et -> Maybe (ScalarType (Ty et))
 toC = \case { V _ -> Nothing; C (Scalar _ c) -> Just c }
 
-envTypeToType :: EnvTypeProxy '(env, t) -> ScalarProxy t
+envTypeToType :: EnvTypeProxy '(env, t) -> TypeProxy t
 envTypeToType (EnvType t) = t
 
 -- | Perform a constant-folding transformation over a 'Value'

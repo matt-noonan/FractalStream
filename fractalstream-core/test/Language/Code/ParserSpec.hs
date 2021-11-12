@@ -13,7 +13,7 @@ import Data.Color
 import Control.Monad.State
 import Text.RawString.QQ
 
-runEmpty :: ScalarProxy t
+runEmpty :: TypeProxy t
          -> String
          -> Either (Int, BadParse) (ScalarType t)
 runEmpty t input
@@ -21,7 +21,7 @@ runEmpty t input
     $ parseCode (EP NoEffs) EmptyEnvProxy t input
 
 runWithX :: forall t xt
-          . ScalarProxy t
+          . TypeProxy t
          -> Scalar xt
          -> String
          -> Either (Int, BadParse) (ScalarType t)
@@ -32,7 +32,7 @@ runWithX t (Scalar xt x) input = withKnownType xt $
    $ parseCode (EP NoEffs) env t input
 
 runWithXY :: forall t xt yt
-           . ScalarProxy t
+           . TypeProxy t
           -> Scalar xt
           -> Scalar yt
           -> String
@@ -54,10 +54,10 @@ spec = do
       let p1 = "if true then\n  pass\n  1 + 2\nelse\n  3 + 4"
           p2 = "set x to 1 + 3\nx"
           p3 = "if y then\n  set x to 1 + 3\n  pass\nelse\n  pass\nx"
-      runEmpty  IntegerProxy p1 `shouldBe` Right 3
-      runWithX  IntegerProxy (Scalar IntegerProxy 7) p2 `shouldBe` Right 4
-      runWithXY IntegerProxy (Scalar IntegerProxy 7) (Scalar BooleanProxy True)  p3 `shouldBe` Right 4
-      runWithXY IntegerProxy (Scalar IntegerProxy 7) (Scalar BooleanProxy False) p3 `shouldBe` Right 7
+      runEmpty  IntegerType p1 `shouldBe` Right 3
+      runWithX  IntegerType (Scalar IntegerType 7) p2 `shouldBe` Right 4
+      runWithXY IntegerType (Scalar IntegerType 7) (Scalar BooleanType True)  p3 `shouldBe` Right 4
+      runWithXY IntegerType (Scalar IntegerType 7) (Scalar BooleanType False) p3 `shouldBe` Right 7
 
     it "can bind new variables" $ do
 
@@ -76,14 +76,14 @@ if true then
   set x to 2 * y
 x|]
 
-       runWithX IntegerProxy (Scalar IntegerProxy 0) p1 `shouldBe` Right 6
-       runWithX IntegerProxy (Scalar IntegerProxy 0) p2 `shouldBe` Right 6
+       runWithX IntegerType (Scalar IntegerType 0) p1 `shouldBe` Right 6
+       runWithX IntegerType (Scalar IntegerType 0) p2 `shouldBe` Right 6
 
     it "can coerce variable types" $ do
         let p1 = [r|
 init k : Z to 1
 set x to k|]
-        runWithX VoidProxy (Scalar RealProxy 0) p1 `shouldBe` Right ()
+        runWithX VoidType (Scalar RealType 0) p1 `shouldBe` Right ()
 
   describe "when parsing more complex code" $ do
 
@@ -117,7 +117,7 @@ else if im z > 0 then
 else
   yellow|]
 
-          runMandel (x :+ y) = runWithXY ColorProxy (Scalar RealProxy x) (Scalar RealProxy y) mandel
+          runMandel (x :+ y) = runWithXY ColorType (Scalar RealType x) (Scalar RealType y) mandel
       runMandel 0 `shouldBe` Right black
       runMandel (1 :+ 1) `shouldBe` Right yellow
       runMandel (1 :+ (-1)) `shouldBe` Right red

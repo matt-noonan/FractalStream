@@ -84,7 +84,7 @@ data EnvironmentProxy (env :: Environment) where
   BindingProxy  :: forall name t env
                  . (KnownSymbol name, NotPresent name env)
                 => Proxy name
-                -> ScalarProxy t
+                -> TypeProxy t
                 -> EnvironmentProxy env
                 -> EnvironmentProxy ( '(name, t) ': env )
 
@@ -98,7 +98,7 @@ instance Show (EnvironmentProxy env) where
 
 fromEnvironment :: forall env a
                  . EnvironmentProxy env
-                -> (forall name t. KnownSymbol name => Proxy name -> ScalarProxy t -> a)
+                -> (forall name t. KnownSymbol name => Proxy name -> TypeProxy t -> a)
                 -> [a]
 fromEnvironment env0 f = go env0
   where
@@ -110,7 +110,7 @@ fromEnvironment env0 f = go env0
 fromEnvironmentM :: forall env m a
                   . Applicative m
                  => EnvironmentProxy env
-                 -> (forall name t. KnownSymbol name => Proxy name -> ScalarProxy t -> m a)
+                 -> (forall name t. KnownSymbol name => Proxy name -> TypeProxy t -> m a)
                  -> m [a]
 fromEnvironmentM env0 f = go env0
   where
@@ -121,7 +121,7 @@ fromEnvironmentM env0 f = go env0
 
 declare :: forall name ty env
          . (KnownSymbol name, NotPresent name env)
-        => ScalarProxy ty
+        => TypeProxy ty
         -> EnvironmentProxy env
         -> EnvironmentProxy ( '(name, ty) ': env)
 declare = BindingProxy (Proxy @name)
@@ -140,18 +140,18 @@ lemmaEnvTy' _ = lemmaEnvTy @et
 data EnvTypeProxy (et :: (Environment, Type)) where
   EnvType :: forall env t
            . KnownEnvironment env
-          => ScalarProxy t
+          => TypeProxy t
           -> EnvTypeProxy '(env, t)
 
 envTypeProxy :: EnvironmentProxy env
-             -> ScalarProxy t
+             -> TypeProxy t
              -> EnvTypeProxy '(env, t)
 envTypeProxy env t = withEnvironment env (EnvType t)
 
 withEnvType :: EnvTypeProxy et
             -> ((et ~ '(Env et, Ty et))
                 => EnvironmentProxy (Env et)
-                -> ScalarProxy (Ty et)
+                -> TypeProxy (Ty et)
                 -> a)
             -> a
 withEnvType (EnvType t) k = k (envProxy Proxy) t
@@ -180,7 +180,7 @@ sameEnvType et1 et2 =
 bindNameEnv :: forall name t env
              . KnownSymbol name
             => Proxy name
-            -> ScalarProxy t
+            -> TypeProxy t
             -> NameIsAbsent name env
             -> EnvironmentProxy env
             -> EnvironmentProxy ( '(name, t) ': env)
@@ -279,7 +279,7 @@ bindingEvidence = trustMe
 
 bindName :: forall name t env
           . Proxy name
-         -> ScalarProxy t
+         -> TypeProxy t
          -> NameIsAbsent name env
          -> NameIsPresent name t ( '(name, t) ': env)
 bindName _ _ _ = trustMe
@@ -289,7 +289,7 @@ data LookupEnvResult name t env
   | WrongType SomeType -- found, but not with the correct type
   | Absent (NameIsAbsent name env)
 
-lookupEnv :: KnownSymbol name => Proxy name -> ScalarProxy t -> EnvironmentProxy env -> LookupEnvResult name t env
+lookupEnv :: KnownSymbol name => Proxy name -> TypeProxy t -> EnvironmentProxy env -> LookupEnvResult name t env
 lookupEnv name ty = \case
   BindingProxy name' ty' env' -> case sameSymbol name name' of
     Just Refl -> case sameScalarType ty ty' of
@@ -303,7 +303,7 @@ lookupEnv name ty = \case
 
 
 data LookupEnvResult' name env where
-  Found'  :: forall name t env. ScalarProxy t -> NameIsPresent name t env -> LookupEnvResult' name env
+  Found'  :: forall name t env. TypeProxy t -> NameIsPresent name t env -> LookupEnvResult' name env
   Absent' :: forall name env. NameIsAbsent name env -> LookupEnvResult' name env
 
 -- | Look up a name in the environment, when we don't yet know what its type should be.
@@ -405,7 +405,7 @@ data Context (value :: Symbol -> Type -> Exp *) (env :: Environment) where
   Bind :: forall name ty env value
         . (KnownSymbol name, NotPresent name env)
        => Proxy name
-       -> ScalarProxy ty
+       -> TypeProxy ty
        -> Eval (value name ty)
        -> Context value env
        -> Context value ( '(name, ty) ': env)
@@ -417,7 +417,7 @@ contextToEnv = \case
 
 -- | Transform each bound value in the context, creating a new context.
 mapContext :: forall a b env
-            . (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> Eval (b name ty))
+            . (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> Eval (b name ty))
            -> Context a env
            -> Context b env
 mapContext f = \case
@@ -427,14 +427,14 @@ mapContext f = \case
 -- | 'mapContext' with the arguments flipped
 forContext :: forall a b env
             . Context a env
-           -> (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> Eval (b name ty))
+           -> (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> Eval (b name ty))
            -> Context b env
 forContext x f = mapContext f x
 
 -- | Transform each bound value in the context, creating a new context.
 mapContextM :: forall a b env m
              . Applicative m
-            =>  (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> m (Eval (b name ty)))
+            =>  (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> m (Eval (b name ty)))
            -> Context a env
            -> m (Context b env)
 mapContextM f = \case
@@ -447,13 +447,13 @@ mapContextM f = \case
 forContextM :: forall a b env m
             . Applicative m
            => Context a env
-           -> (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> m (Eval (b name ty)))
+           -> (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> m (Eval (b name ty)))
            -> m (Context b env)
 forContextM x f = mapContextM f x
 
 -- | Transform each bound value in the context, creating a list of results.
 fromContext :: forall a env t
-             . (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> t)
+             . (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> t)
             -> Context a env
             -> [t]
 fromContext f = \case
@@ -464,7 +464,7 @@ fromContext f = \case
 -- creating a list of results.
 fromContextM :: forall a env t m
               . Applicative m
-             => (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> m t)
+             => (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> m t)
              -> Context a env
              -> m [t]
 fromContextM f = \case
@@ -474,7 +474,7 @@ fromContextM f = \case
 -- | Run an effect for each bound value in the context.
 fromContextM_ :: forall a env m
               . Applicative m
-             => (forall name ty. Proxy name -> ScalarProxy ty -> Eval (a name ty) -> m ())
+             => (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> m ())
              -> Context a env
              -> m ()
 fromContextM_ f = \case

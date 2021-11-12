@@ -14,7 +14,7 @@ data Provide (env :: Environment)
            . env `CanAppendTo` env2
           => EnvironmentProxy env
           -> EnvironmentProxy env2
-          -> ScalarProxy t
+          -> TypeProxy t
           -> Eval (code '(env `EnvAppend` env2, t))
           -> Provide env2 code '(env, t)
 

@@ -39,22 +39,22 @@ spec = do
 
     it "computes boolean values from an empty context" $ do
       let yes, no, v1, v2, v3, v4 :: Value '( '[], 'BooleanT)
-          yes = Fix (Const (Scalar BooleanProxy True ))
-          no  = Fix (Const (Scalar BooleanProxy False))
-          v1 = Fix (Eql RealProxy
+          yes = Fix (Const (Scalar BooleanType True ))
+          no  = Fix (Const (Scalar BooleanType False))
+          v1 = Fix (Eql RealType
                       (cos(pi) + abs(10 - 20))
                       (3 * 3))
-          v2 = Fix (Eql BooleanProxy
+          v2 = Fix (Eql BooleanType
                       (Fix (Or yes no))
                       (Fix (And yes no)))
-          v3 = Fix (NEq IntegerProxy
+          v3 = Fix (NEq IntegerType
                       (Fix (DivI (10 * 10) 20) - 30)
                       (50 - 75))
-          v4 = Fix (Eql (PairProxy IntegerProxy IntegerProxy)
-                      (Fix (PairV (PairProxy IntegerProxy IntegerProxy)
+          v4 = Fix (Eql (PairType IntegerType IntegerType)
+                      (Fix (PairV (PairType IntegerType IntegerType)
                                   (Fix (DivI 20 7))
                                   (Fix (ModI 20 7))))
-                      (Fix (PairV (PairProxy IntegerProxy IntegerProxy)
+                      (Fix (PairV (PairType IntegerType IntegerType)
                                   2 6)))
       evaluate v1 EmptyContext `shouldBe` True
       evaluate v2 EmptyContext `shouldBe` False

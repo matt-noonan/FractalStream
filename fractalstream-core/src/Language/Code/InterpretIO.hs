@@ -45,7 +45,7 @@ update :: forall name t env s
         . KnownSymbol name
        => NameIsPresent name t env
        -> Proxy name
-       -> ScalarProxy t
+       -> TypeProxy t
        -> ScalarType t
        -> StateT (Context IORefTypeOfBinding env, s) IO ()
 update pf _name t v = withKnownType t $ do

@@ -22,7 +22,7 @@ update :: forall name t env s
         . KnownSymbol name
        => NameIsPresent name t env
        -> Proxy name
-       -> ScalarProxy t
+       -> TypeProxy t
        -> ScalarType t
        -> State (Context ScalarTypeOfBinding env, s) ()
 update pf _name t v = withKnownType t (modify' (\(x,y) -> (setBinding pf v x, y)))

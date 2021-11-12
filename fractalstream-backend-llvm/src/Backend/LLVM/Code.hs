@@ -68,7 +68,7 @@ compileRenderer :: forall env
                 -> Either String AST.Module
 compileRenderer code = runExcept $
   buildModuleT "compiled rendering kernel" $ do
-    let retParam = (toLLVMPtrType ColorProxy, NoParameterName)
+    let retParam = (toLLVMPtrType ColorType, NoParameterName)
         params   = toParameterList (envProxy (Proxy @(RenderEnv env)))
         pfX = bindingEvidence @"x" @'RealT @env
         pfY = bindingEvidence @"y" @'RealT @env
@@ -79,9 +79,9 @@ compileRenderer code = runExcept $
       --  ( Bind _ _ subsamplesPtr
       --    (Bind _ _ dzPtr
       --       args))) <- allocaArgs (envProxy (Proxy @(RenderEnv env))) rawArgs
-      blockSizePtr <- allocaArg IntegerProxy blockSizeArg
-      subsamplesPtr <- allocaArg IntegerProxy subsamplesArg
-      dzPtr <- allocaArg ComplexProxy dzArg
+      blockSizePtr <- allocaArg IntegerType blockSizeArg
+      subsamplesPtr <- allocaArg IntegerType subsamplesArg
+      dzPtr <- allocaArg ComplexType dzArg
       args <- allocaArgs (envProxy (Proxy @env)) rawArgs
       mdo
 
@@ -263,8 +263,8 @@ compileCode getExtern = indexedFold @(CtxOp m) @(Fix (CodeF '[] (Pure1 Value))) 
       ctx <- Bind name t ptr <$> ask
       lift (runReaderT body ctx)
 
-  IfThenElse VoidProxy cond yes no -> mdo
-    c <- value_ getExtern cond >>= detypeOperand BooleanProxy
+  IfThenElse VoidType cond yes no -> mdo
+    c <- value_ getExtern cond >>= detypeOperand BooleanType
     condBr c yesLabel noLabel
 
     yesLabel <- block
@@ -280,7 +280,7 @@ compileCode getExtern = indexedFold @(CtxOp m) @(Fix (CodeF '[] (Pure1 Value))) 
 
   IfThenElse t cond yes no -> mdo
     ptr <- allocaOp t
-    c <- value_ getExtern cond >>= detypeOperand BooleanProxy
+    c <- value_ getExtern cond >>= detypeOperand BooleanType
     condBr c yesLabel noLabel
 
     yesLabel <- block
@@ -300,7 +300,7 @@ compileCode getExtern = indexedFold @(CtxOp m) @(Fix (CodeF '[] (Pure1 Value))) 
     br entry
 
     entry <- block
-    test <- body >>= detypeOperand BooleanProxy
+    test <- body >>= detypeOperand BooleanType
     condBr test entry exit
 
     exit <- block
@@ -324,7 +324,7 @@ allocaArgs _ _ =
   throwError "internal error: mismatched environment/args counts"
 
 allocaArg :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
-         => ScalarProxy t
+         => TypeProxy t
          -> Operand
          -> m (PtrOp t)
 allocaArg t op = do

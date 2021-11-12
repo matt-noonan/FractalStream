@@ -47,28 +47,28 @@ type DragEnv = '[ '("posX", 'RealT)
 type ButtonEnv = '[ '("button", 'IntegerT) ]
 
 resizeEnv :: EnvironmentProxy ResizeEnv
-resizeEnv = BindingProxy (Proxy @"viewWidth")  IntegerProxy
-          $ BindingProxy (Proxy @"viewHeight") IntegerProxy
+resizeEnv = BindingProxy (Proxy @"viewWidth")  IntegerType
+          $ BindingProxy (Proxy @"viewHeight") IntegerType
           $ EmptyEnvProxy
 
 posEnv :: EnvironmentProxy PosEnv
-posEnv = BindingProxy (Proxy @"posX") RealProxy
-       $ BindingProxy (Proxy @"posY") RealProxy
+posEnv = BindingProxy (Proxy @"posX") RealType
+       $ BindingProxy (Proxy @"posY") RealType
        $ EmptyEnvProxy
 
 pinchEnv :: EnvironmentProxy PinchEnv
-pinchEnv = BindingProxy (Proxy @"posX") RealProxy
-         $ BindingProxy (Proxy @"posY") RealProxy
-         $ BindingProxy (Proxy @"posZ") RealProxy
+pinchEnv = BindingProxy (Proxy @"posX") RealType
+         $ BindingProxy (Proxy @"posY") RealType
+         $ BindingProxy (Proxy @"posZ") RealType
          $ EmptyEnvProxy
 
 dragEnv :: EnvironmentProxy DragEnv
-dragEnv = BindingProxy (Proxy @"posX") RealProxy
-        $ BindingProxy (Proxy @"posY") RealProxy
-        $ BindingProxy (Proxy @"oldX") RealProxy
-        $ BindingProxy (Proxy @"oldY") RealProxy
+dragEnv = BindingProxy (Proxy @"posX") RealType
+        $ BindingProxy (Proxy @"posY") RealType
+        $ BindingProxy (Proxy @"oldX") RealType
+        $ BindingProxy (Proxy @"oldY") RealType
         $ EmptyEnvProxy
 
 buttonEnv :: EnvironmentProxy ButtonEnv
-buttonEnv = BindingProxy (Proxy @"button") IntegerProxy
+buttonEnv = BindingProxy (Proxy @"button") IntegerType
           $ EmptyEnvProxy

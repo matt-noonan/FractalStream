@@ -18,7 +18,7 @@ import Language.Effect
 import Text.RawString.QQ
 
 runWithXY :: forall t xt yt
-           . ScalarProxy t
+           . TypeProxy t
           -> Scalar xt
           -> Scalar yt
           -> [Double]
@@ -48,7 +48,7 @@ listHandler = Handle Proxy handle
   where
     handle :: forall env t
             . EnvironmentProxy env
-           -> ScalarProxy t
+           -> TypeProxy t
            -> List "test" 'RealT (ScalarTypeM [Double]) '(env, t)
            -> State (Context ScalarTypeOfBinding env, [Double]) (ScalarType t)
     handle _ _ = \case
@@ -60,7 +60,7 @@ listHandler = Handle Proxy handle
       Lookup _ _ _ pf _ _ test match miss -> recallIsAbsent pf $ do
         let test' item = do
               (ctx, _) <- get
-              let ctx' = Bind Proxy RealProxy item ctx
+              let ctx' = Bind Proxy RealType item ctx
               pure (evaluate test ctx')
 
             go [] = case miss of
@@ -70,7 +70,7 @@ listHandler = Handle Proxy handle
               False -> go items
               True  -> do -- evaluate continuation with "item" bound
                 (ctx, s) <- get
-                let ctx' = Bind Proxy RealProxy item ctx
+                let ctx' = Bind Proxy RealType item ctx
                     (result, (Bind _ _ _ ctx'', s'')) = runState match (ctx', s)
                 put (ctx'', s'')
                 pure result
@@ -81,14 +81,14 @@ listHandler = Handle Proxy handle
 
       Remove _ _ _ pf _ test -> recallIsAbsent pf $ do
         (ctx, items) <- get
-        let reject item = evaluate test (Bind Proxy RealProxy item ctx)
+        let reject item = evaluate test (Bind Proxy RealType item ctx)
         put (ctx, filter (not . reject) items)
 
       ForEach _ _ _ pf _ _ body -> recallIsAbsent pf $ do
         items <- snd <$> get
         forM_ items $ \item -> do
           (ctx, s) <- get
-          let ctx' = Bind Proxy RealProxy item ctx
+          let ctx' = Bind Proxy RealType item ctx
               (Bind _ _ _ ctx'', s'') = execState body (ctx', s)
           put (ctx'', s'')
 
@@ -105,13 +105,13 @@ for each item in test do
   set x to x + item
 set y to x
 y|]
-      runWithXY RealProxy (Scalar RealProxy 5) (Scalar RealProxy 7) [1,2,3,4,5] p1
+      runWithXY RealType (Scalar RealType 5) (Scalar RealType 7) [1,2,3,4,5] p1
         `shouldBe` Right (15, [1,2,3,4,5])
 
       let p2 = [r|
 set x to 3
 remove each item matching item <= x from test|]
-      runWithXY VoidProxy (Scalar RealProxy 5) (Scalar RealProxy 7) [1,2,3,4,5] p2
+      runWithXY VoidType (Scalar RealType 5) (Scalar RealType 7) [1,2,3,4,5] p2
         `shouldBe` Right ((), [4,5])
 
       let p3 = [r|
@@ -119,9 +119,9 @@ set x to 3
 if |x - y| < 2 then
   remove all items from test|]
 
-      runWithXY VoidProxy (Scalar RealProxy 1) (Scalar RealProxy 10) [1,2,3,4,5] p3
+      runWithXY VoidType (Scalar RealType 1) (Scalar RealType 10) [1,2,3,4,5] p3
         `shouldBe` Right ((), [1,2,3,4,5])
-      runWithXY VoidProxy (Scalar RealProxy 1) (Scalar RealProxy 4) [1,2,3,4,5] p3
+      runWithXY VoidType (Scalar RealType 1) (Scalar RealType 4) [1,2,3,4,5] p3
         `shouldBe` Right ((), [])
 
 

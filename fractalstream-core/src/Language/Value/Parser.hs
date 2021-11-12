@@ -51,7 +51,7 @@ import Language.Untyped.Constraints (initialTCState)
 ---------------------------------------------------------------------------------
 
 parseValue :: EnvironmentProxy env
-           -> ScalarProxy t
+           -> TypeProxy t
            -> String
            -> Either (Int, BadParse) (Value '(env, t))
 parseValue env t input = parseValueFromTokens env t (tokenize input)
@@ -59,7 +59,7 @@ parseValue env t input = parseValueFromTokens env t (tokenize input)
 parseValueFromTokens
   :: forall env t
    . EnvironmentProxy env
-  -> ScalarProxy t
+  -> TypeProxy t
   -> [Token]
   -> Either (Int, BadParse) (Value '(env, t))
 parseValueFromTokens env t toks
@@ -80,14 +80,14 @@ value_ = case envProxy (Proxy @env) of
             -- Infer the value's shape
             (v, ctx') <- runST $ do
               ctx <- fmap Map.fromList $ fromEnvironmentM env $ \name ty -> do
-                let go :: forall ty s. ScalarProxy ty -> ST s (UF s (STShape s))
+                let go :: forall ty s. TypeProxy ty -> ST s (UF s (STShape s))
                     go = \case
-                      BooleanProxy -> fresh (STShape BoolShape)
-                      IntegerProxy -> fresh (STShape NumShape)
-                      RealProxy    -> fresh (STShape NumShape)
-                      ComplexProxy -> fresh (STShape NumShape)
-                      ColorProxy   -> fresh (STShape ColorShape)
-                      PairProxy x y -> do
+                      BooleanType -> fresh (STShape BoolShape)
+                      IntegerType -> fresh (STShape NumShape)
+                      RealType    -> fresh (STShape NumShape)
+                      ComplexType -> fresh (STShape NumShape)
+                      ColorType   -> fresh (STShape ColorShape)
+                      PairType x y -> do
                         ps <- PairShape <$> go x <*> go y
                         fresh (STShape ps)
                       _ -> error "missing case"

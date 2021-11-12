@@ -40,7 +40,7 @@ import Foreign hiding (void)
 import GHC.TypeLits
 
 data JITFun (env :: Environment) (ret :: Type) where
-  JITFun :: EnvironmentProxy env -> ScalarProxy ret -> FunPtr () -> JITFun env ret
+  JITFun :: EnvironmentProxy env -> TypeProxy ret -> FunPtr () -> JITFun env ret
 
 type JX = FunPtr (Ptr Word8 -> Int32 -> Int32 -> Ptr Double -> Int32 -> Double -> Double -> Double -> IO ())
 
@@ -79,19 +79,19 @@ invoke (JITFun _ rt f) ctx = do
 invoke' :: forall env ret
          . ToForeignFun env ret
         => EnvironmentProxy env
-        -> ScalarProxy ret
+        -> TypeProxy ret
         -> JITFun env ret
         -> AsForeignFun env ret
 invoke' _ _ f = toForeignFun @env @ret (invoke f)
 
 toFFIArg :: Proxy (name :: Symbol)
-         -> ScalarProxy ty
+         -> TypeProxy ty
          -> ScalarType ty
          -> IO (Arg, IO ())
 toFFIArg _ t v = case t of
-  IntegerProxy -> pure (argInt32 (fromIntegral v), pure ())
-  RealProxy    -> pure (argCDouble (CDouble v), pure ())
-  ComplexProxy -> do
+  IntegerType -> pure (argInt32 (fromIntegral v), pure ())
+  RealType    -> pure (argCDouble (CDouble v), pure ())
+  ComplexType -> do
     let x :+ y = v
     z <- mallocArray 2
     pokeArray z [x,y]
@@ -99,16 +99,16 @@ toFFIArg _ t v = case t of
 
   _ -> error ("todo: toFFIArg " ++ showType t)
 
-fromFFIRetArg :: ScalarProxy ty
+fromFFIRetArg :: TypeProxy ty
               -> Ptr Double
               -> IO (ScalarType ty)
 fromFFIRetArg t ptr = case t of
-  IntegerProxy -> fromIntegral <$> peek (castPtr @_ @Int32 ptr)
-  RealProxy    -> peek (castPtr ptr)
-  ComplexProxy -> do
+  IntegerType -> fromIntegral <$> peek (castPtr @_ @Int32 ptr)
+  RealType    -> peek (castPtr ptr)
+  ComplexType -> do
     [x,y] <- peekArray 2 (castPtr ptr)
     pure (x :+ y)
-  ColorProxy -> do
+  ColorType -> do
     [cr,cg,cb] <- peekArray 3 (castPtr ptr)
     pure (rgbToColor (cr, cg, cb))
 
@@ -131,7 +131,7 @@ withCompiledCode :: forall env
 withCompiledCode env code run = do
   --let env = envProxy (Proxy @env)
   --    t = typeProxy @t
-  c <- case parseCode (EP NoEffs) env ColorProxy code of
+  c <- case parseCode (EP NoEffs) env ColorType code of
          Left e  -> error (show e)
          Right c -> pure c
   m <- either error pure (compileRenderer c)

@@ -47,10 +47,10 @@ wxMain = do
     bound <- isCurrentThreadBound
     capInfo <- threadCapability tid
     putStrLn ("Hello from wxMain, on thread " ++ show tid ++ " " ++ show capInfo ++ " " ++ show bound)
-    let env = declare @"maxIters" IntegerProxy
-            $ declare @"maxRadius" RealProxy
-            $ declare @"x" RealProxy
-            $ declare @"y" RealProxy
+    let env = declare @"maxIters" IntegerType
+            $ declare @"maxRadius" RealType
+            $ declare @"x" RealType
+            $ declare @"y" RealType
             $ endOfDecls
     withCompiledCode env mandelProgram0 $ \kernel -> do
       let action bs ss dz z out = runJX kernel out (fromIntegral bs) (fromIntegral ss) dz 100 10 z
@@ -245,33 +245,33 @@ traceTool = Tool{..}
     toolHelp = "Click on a point to draw its trace"
 
     toolSettings = Settings{..}
-    settingsList  = Bind (Proxy @"steps") IntegerProxy
-                    (Setting Proxy (Scalar IntegerProxy 100)
+    settingsList  = Bind (Proxy @"steps") IntegerType
+                    (Setting Proxy (Scalar IntegerType 100)
                       (Just ("Trace steps",
                               [ InputValidator
                                 "Trace steps must be non-negative"
                                 validator ])))
                     $ EmptyContext
-    settingsEnv = declare @"steps" IntegerProxy endOfDecls
+    settingsEnv = declare @"steps" IntegerType endOfDecls
     settingsTitle = "Trace settings"
     onChanged     = Nothing
 
     onClick = Just ( Fix
-                   $ Effect Proxy Proxy VoidProxy
-                   $ Provide posEnv settingsEnv VoidProxy trace)
+                   $ Effect Proxy Proxy VoidType
+                   $ Provide posEnv settingsEnv VoidType trace)
     onMouseDown = Nothing
     onMouseUp = Nothing
     onMotion = Nothing
     onDrag = Nothing
     buttons = []
-    env  = declare @"posX" RealProxy
-         $ declare @"posY" RealProxy
+    env  = declare @"posX" RealType
+         $ declare @"posY" RealType
          $ settingsEnv
-    trace = case parseCode (EP (ParseEff noParser $ ParseEff drawEffectParser NoEffs)) env VoidProxy traceProgram of
+    trace = case parseCode (EP (ParseEff noParser $ ParseEff drawEffectParser NoEffs)) env VoidType traceProgram of
       Right p -> p
       Left e  -> error (show e)
 
-    validator = case parseValue settingsEnv BooleanProxy "steps > 0" of
+    validator = case parseValue settingsEnv BooleanType "steps > 0" of
       Right p -> p
       Left e -> error (show e)
 
@@ -281,11 +281,11 @@ mainViewer = Viewer{..}
     onTimer = Nothing
     viewerTools = [traceTool]
     viewerSettings = Settings{..}
-    settingsList = Bind (Proxy @"maxRadius") RealProxy
-                     (Setting Proxy (Scalar RealProxy 10)
+    settingsList = Bind (Proxy @"maxRadius") RealType
+                     (Setting Proxy (Scalar RealType 10)
                        (Just ("Max. radius", [])))
-                 $ Bind (Proxy @"maxIters") IntegerProxy
-                     (Setting Proxy (Scalar IntegerProxy 100)
+                 $ Bind (Proxy @"maxIters") IntegerType
+                     (Setting Proxy (Scalar IntegerType 100)
                        (Just ("Max. iterations", [])))
                  $ EmptyContext
     settingsEnv = contextToEnv settingsList
@@ -294,50 +294,50 @@ mainViewer = Viewer{..}
     onChanged = Nothing
     onResize  = Nothing
     onRefresh = Just ( Fix
-                     $ Effect Proxy Proxy VoidProxy
-                     $ Provide EmptyEnvProxy settingsEnv VoidProxy mandelCode)
-    viewToModel = case parseValue envV2M (PairProxy RealProxy RealProxy) v2m of
+                     $ Effect Proxy Proxy VoidType
+                     $ Provide EmptyEnvProxy settingsEnv VoidType mandelCode)
+    viewToModel = case parseValue envV2M (PairType RealType RealType) v2m of
       Right c -> c
       Left e -> error (show e)
-    modelToView = case parseValue envM2V (PairProxy RealProxy RealProxy) m2v of
+    modelToView = case parseValue envM2V (PairType RealType RealType) m2v of
       Right c -> c
       Left e -> error (show e)
 
-    envV2M = declare @"viewX" RealProxy
-           $ declare @"viewY" RealProxy
+    envV2M = declare @"viewX" RealType
+           $ declare @"viewY" RealType
            $ env
 
-    envM2V = declare @"modelX" RealProxy
-           $ declare @"modelY" RealProxy
+    envM2V = declare @"modelX" RealType
+           $ declare @"modelY" RealType
            $ env
 
-    env = declare @"maxRadius" RealProxy
-        $ declare @"maxIters"  IntegerProxy
+    env = declare @"maxRadius" RealType
+        $ declare @"maxIters"  IntegerType
         $ endOfDecls
 
     v2m = "((viewX - 256) / 128, (viewY - 256) / 128)"
     m2v = "(128 modelX + 256, 128 modelY + 256)"
 
-    mandelCode = case parseCode (EP (ParseEff noParser $ ParseEff renderEffectParser NoEffs)) settingsEnv VoidProxy mandelProgram' of
+    mandelCode = case parseCode (EP (ParseEff noParser $ ParseEff renderEffectParser NoEffs)) settingsEnv VoidType mandelProgram' of
       Right c -> c
       Left e  -> error (show e)
 
 mandel' :: Int -> Double -> Complex Double -> FSColor.Color
 mandel' maxIters maxRadius (x :+ y) =
-  let ctx = Bind (Proxy @"x") RealProxy x
-          $ Bind (Proxy @"y") RealProxy y
-          $ Bind (Proxy @"maxRadius") RealProxy maxRadius
-          $ Bind (Proxy @"maxIters") IntegerProxy (fromIntegral maxIters)
+  let ctx = Bind (Proxy @"x") RealType x
+          $ Bind (Proxy @"y") RealType y
+          $ Bind (Proxy @"maxRadius") RealType maxRadius
+          $ Bind (Proxy @"maxIters") IntegerType (fromIntegral maxIters)
           $ EmptyContext
   in evalState (simulate NoHandler prog) (ctx, ())
  where
-   prog = case parseCode (EP NoEffs) env ColorProxy mandelProgram of
+   prog = case parseCode (EP NoEffs) env ColorType mandelProgram of
      Right p -> p
-     Left _  -> case parseCode (EP NoEffs) env ColorProxy "dark red" of
+     Left _  -> case parseCode (EP NoEffs) env ColorType "dark red" of
        Right p -> p
        Left e  -> error (show e) -- should be unreachable
-   env = declare @"x" RealProxy
-       $ declare @"y" RealProxy
-       $ declare @"maxRadius" RealProxy
-       $ declare @"maxIters" IntegerProxy
+   env = declare @"x" RealType
+       $ declare @"y" RealType
+       $ declare @"maxRadius" RealType
+       $ declare @"maxIters" IntegerType
        $ endOfDecls

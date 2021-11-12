@@ -153,32 +153,32 @@ numTyToTy = \case
   C_T   -> ComplexTy
   Top_T -> Top
 
-toTy :: ScalarProxy t -> Ty
+toTy :: TypeProxy t -> Ty
 toTy = \case
-  BooleanProxy -> BooleanTy
-  IntegerProxy -> IntegerTy
-  RealProxy    -> RealTy
-  ComplexProxy -> ComplexTy
-  ColorProxy   -> ColorTy
-  PairProxy t1 t2 -> PairTy (toTy t1) (toTy t2)
+  BooleanType -> BooleanTy
+  IntegerType -> IntegerTy
+  RealType    -> RealTy
+  ComplexType -> ComplexTy
+  ColorType   -> ColorTy
+  PairType t1 t2 -> PairTy (toTy t1) (toTy t2)
   _ -> UnknownTy
 
--- | Lift a 'Ty' type to the type level, as a 'ScalarProxy'
+-- | Lift a 'Ty' type to the type level, as a 'TypeProxy'
 withType :: forall a m
           . MonadError TCError m
          => Ty
-         -> (forall t. KnownType t => ScalarProxy t -> m a)
+         -> (forall t. KnownType t => TypeProxy t -> m a)
          -> m a
 withType t k = case t of
-  BooleanTy -> k BooleanProxy
-  IntegerTy -> k IntegerProxy
-  RealTy    -> k RealProxy
-  ComplexTy -> k ComplexProxy
-  ColorTy   -> k ColorProxy
+  BooleanTy -> k BooleanType
+  IntegerTy -> k IntegerType
+  RealTy    -> k RealType
+  ComplexTy -> k ComplexType
+  ColorTy   -> k ColorType
   PairTy t1 t2 ->
-    withType t1 (\ty1 -> withType t2 (\ty2 -> k (PairProxy ty1 ty2)))
+    withType t1 (\ty1 -> withType t2 (\ty2 -> k (PairType ty1 ty2)))
   Top -> throwError InconsistentType
-  UnknownNumeric -> k IntegerProxy -- default to Integer
+  UnknownNumeric -> k IntegerType -- default to Integer
   UnknownPair    -> error ("unknown pair") >> throwError UnderdeterminedType
   UnknownTy      -> throwError UnderdeterminedType
 

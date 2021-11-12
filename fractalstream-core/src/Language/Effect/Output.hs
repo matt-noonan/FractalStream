@@ -25,7 +25,7 @@ data Output (outputs :: Environment) (code :: (Environment, Type) -> Exp *) (et 
 instance IFunctor (Output outputs) where
   type IndexProxy (Output outputs) = EnvTypeProxy
   imap _ (Output env pf name v) = Output env pf name v
-  toIndex (Output env _ _ _) = envTypeProxy env VoidProxy
+  toIndex (Output env _ _ _) = envTypeProxy env VoidType
 
 instance ITraversable (Output outputs) where
   isequence (Output env pf name v) = pure (Output env pf name v)
@@ -37,7 +37,7 @@ outputEffectParser :: forall outputs
 outputEffectParser outputs = EffectParser (Proxy @(Output outputs)) $
   \(et :: EnvTypeProxy et) _code -> case lemmaEnvTy @et of
     Refl -> withEnvType et $ \env -> \case
-      VoidProxy -> do
+      VoidType -> do
         tok_ "output"
         -- Grab the tokens corresponding to VALUE, but don't
         -- parse them yet. We want to peek at the type of

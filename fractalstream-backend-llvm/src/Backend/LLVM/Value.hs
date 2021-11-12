@@ -54,18 +54,18 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
         ctx <- ask
         derefOperand (getBinding ctx pf)
 
-      Const (Scalar BooleanProxy b) -> pure (BooleanOp (C.bit (if b then 1 else 0)))
-      Const (Scalar IntegerProxy n) -> pure (IntegerOp (C.int32 (fromIntegral n)))
-      Const (Scalar RealProxy x) -> pure (RealOp (C.double x))
-      Const (Scalar ComplexProxy (x :+ y)) ->
+      Const (Scalar BooleanType b) -> pure (BooleanOp (C.bit (if b then 1 else 0)))
+      Const (Scalar IntegerType n) -> pure (IntegerOp (C.int32 (fromIntegral n)))
+      Const (Scalar RealType x) -> pure (RealOp (C.double x))
+      Const (Scalar ComplexType (x :+ y)) ->
         pure (ComplexOp (C.double x) (C.double y))
-      Const (Scalar ColorProxy c) ->
+      Const (Scalar ColorType c) ->
         let (r,g,b) = colorToRGB c
         in pure (ColorOp (C.int8 (fromIntegral r))
                          (C.int8 (fromIntegral g))
                          (C.int8 (fromIntegral b)))
 
-      Const (Scalar (PairProxy t1 t2) (x,y)) ->
+      Const (Scalar (PairType t1 t2) (x,y)) ->
         PairOp <$> go @env' (Const (Scalar t1 x)) <*> go @env' (Const (Scalar t2 y))
 
       And x y -> ((,) <$> x <*> y) >>= \case
@@ -116,56 +116,56 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
           cb <- fadd bb bb'
           ColorOp <$> fptoui cr AST.i8 <*> fptoui cg AST.i8 <*> fptoui cb AST.i8
 
-      ITE BooleanProxy mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
+      ITE BooleanType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
         (BooleanOp cond, BooleanOp yes, BooleanOp no) ->
           BooleanOp <$> select cond yes no
 
-      ITE RealProxy mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
+      ITE RealType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
         (BooleanOp cond, RealOp yes, RealOp no) ->
           RealOp <$> select cond yes no
 
-      ITE IntegerProxy mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
+      ITE IntegerType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
         (BooleanOp cond, IntegerOp yes, IntegerOp no) ->
           IntegerOp <$> select cond yes no
 
-      ITE ComplexProxy mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
+      ITE ComplexType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
         (BooleanOp cond, ComplexOp yesX yesY, ComplexOp noX noY) ->
           ComplexOp <$> select cond yesX noX <*> select cond yesY noY
 
-      ITE (PairProxy t1 t2) cond mx my -> ((,) <$> mx <*> my) >>= \case
+      ITE (PairType t1 t2) cond mx my -> ((,) <$> mx <*> my) >>= \case
         (PairOp x1 x2, PairOp y1 y2) ->
           PairOp <$> go @env' (ITE t1 cond (pure x1) (pure y1))
                  <*> go @env' (ITE t2 cond (pure x2) (pure y2))
 
-      ITE ColorProxy mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
+      ITE ColorType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
         (BooleanOp cond, ColorOp r g b, ColorOp r' g' b') ->
           ColorOp <$> select cond r r' <*> select cond g g' <*> select cond b b'
 
-      Eql BooleanProxy x y -> ((,) <$> x <*> y) >>= \case
+      Eql BooleanType x y -> ((,) <$> x <*> y) >>= \case
         (BooleanOp lhs, BooleanOp rhs) ->
           BooleanOp <$> icmp P.EQ lhs rhs
 
-      Eql IntegerProxy x y -> ((,) <$> x <*> y) >>= \case
+      Eql IntegerType x y -> ((,) <$> x <*> y) >>= \case
          (IntegerOp lhs, IntegerOp rhs) ->
            BooleanOp <$> icmp P.EQ lhs rhs
 
-      Eql RealProxy x y -> ((,) <$> x <*> y) >>= \case
+      Eql RealType x y -> ((,) <$> x <*> y) >>= \case
          (RealOp lhs, RealOp rhs) ->
            BooleanOp <$> fcmp P.OEQ lhs rhs
 
-      Eql ComplexProxy x y -> ((,) <$> x <*> y) >>= \case
+      Eql ComplexType x y -> ((,) <$> x <*> y) >>= \case
          (ComplexOp lhsX lhsY, ComplexOp rhsX rhsY) -> do
            cX <- fcmp P.OEQ lhsX rhsX
            cY <- fcmp P.OEQ lhsY rhsY
            BooleanOp <$> I.and cX cY
 
-      Eql (PairProxy t1 t2) x y -> ((,) <$> x <*> y) >>= \case
+      Eql (PairType t1 t2) x y -> ((,) <$> x <*> y) >>= \case
           (PairOp x1 x2, PairOp y1 y2) -> do
             c1 <- getBooleanOp <$> go @env' (Eql t1 (pure x1) (pure y1))
             c2 <- getBooleanOp <$> go @env' (Eql t2 (pure x2) (pure y2))
             BooleanOp <$> I.and c1 c2
 
-      Eql ColorProxy x y -> ((,) <$> x <*> y) >>= \case
+      Eql ColorType x y -> ((,) <$> x <*> y) >>= \case
           (ColorOp r g b, ColorOp r' g' b') -> do
             c1 <- icmp P.EQ r r'
             c2 <- icmp P.EQ g g'
@@ -173,31 +173,31 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
             c12 <- I.and c1 c2
             BooleanOp <$> I.and c12 c3
 
-      NEq BooleanProxy x y -> ((,) <$> x <*> y) >>= \case
+      NEq BooleanType x y -> ((,) <$> x <*> y) >>= \case
            (BooleanOp lhs, BooleanOp rhs) ->
              BooleanOp <$> icmp P.NE lhs rhs
 
-      NEq IntegerProxy x y -> ((,) <$> x <*> y) >>= \case
+      NEq IntegerType x y -> ((,) <$> x <*> y) >>= \case
            (IntegerOp lhs, IntegerOp rhs) ->
              BooleanOp <$> icmp P.NE lhs rhs
 
-      NEq RealProxy x y -> ((,) <$> x <*> y) >>= \case
+      NEq RealType x y -> ((,) <$> x <*> y) >>= \case
            (RealOp lhs, RealOp rhs) ->
              BooleanOp <$> fcmp P.ONE lhs rhs
 
-      NEq ComplexProxy x y -> ((,) <$> x <*> y) >>= \case
+      NEq ComplexType x y -> ((,) <$> x <*> y) >>= \case
            (ComplexOp lhsX lhsY, ComplexOp rhsX rhsY) -> do
              cX <- fcmp P.ONE lhsX rhsX
              cY <- fcmp P.ONE lhsY rhsY
              BooleanOp <$> I.or cX cY
 
-      NEq (PairProxy t1 t2) x y -> ((,) <$> x <*> y) >>= \case
+      NEq (PairType t1 t2) x y -> ((,) <$> x <*> y) >>= \case
            (PairOp x1 x2, PairOp y1 y2) -> do
              c1 <- getBooleanOp <$> go @env' (NEq t1 (pure x1) (pure y1))
              c2 <- getBooleanOp <$> go @env' (NEq t2 (pure x2) (pure y2))
              BooleanOp <$> I.or c1 c2
 
-      NEq ColorProxy x y -> ((,) <$> x <*> y) >>= \case
+      NEq ColorType x y -> ((,) <$> x <*> y) >>= \case
            (ColorOp r g b, ColorOp r' g' b') -> do
              c1 <- icmp P.NE r r'
              c2 <- icmp P.NE g g'

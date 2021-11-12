@@ -29,7 +29,7 @@ import Data.Type.Equality ((:~:)(..))
 parseCode :: forall effs env t
            . EffectParsers effs
           -> EnvironmentProxy env
-          -> ScalarProxy t
+          -> TypeProxy t
           -> String
           -> Either (Int, BadParse) (Code effs env t)
 parseCode eps env t input
@@ -47,7 +47,7 @@ uParseCode = parse (uCode <* eof) . tokenizeWithIndentation
 pCode :: forall effs env t
        . EffectParsers effs
       -> EnvironmentProxy env
-      -> ScalarProxy t
+      -> TypeProxy t
       -> Parser (Code effs env t)
 pCode eps env t
   = dbg "pCode" ( pBlock   eps env t
@@ -62,17 +62,17 @@ pCode' eps et = withEnvType et (pCode eps)
 
 -- | An indented block of statements
 pBlock :: EffectParsers effs
-          ->  EnvironmentProxy env -> ScalarProxy t -> Parser (Code effs env t)
+          ->  EnvironmentProxy env -> TypeProxy t -> Parser (Code effs env t)
 pBlock eps env = \case
-  VoidProxy -> dbg "void block" $ do
+  VoidType -> dbg "void block" $ do
     tok_ Indent
-    body <- some (pCode eps env VoidProxy)
+    body <- some (pCode eps env VoidType)
     tok_ Dedent
-    withEnvironment env (pure (Fix (Block VoidProxy (init body) (last body))))
+    withEnvironment env (pure (Fix (Block VoidType (init body) (last body))))
   t -> dbg ("pBlock @" ++ showType t) $ do
     tok_ Indent
     -- This is kind of stupid
-    (body, final) <- manyTill_ (pCode eps env VoidProxy) (try (pCode eps env t))
+    (body, final) <- manyTill_ (pCode eps env VoidType) (try (pCode eps env t))
     tok_ Dedent
     withEnvironment env (pure (Fix (Block t body final)))
 
@@ -80,9 +80,9 @@ pBlock eps env = \case
 -- let-bindings are syntactically a single line, but they introduce a
 -- variable that is scoped over the remainder of the current block.
 pLine :: EffectParsers effs
-          -> EnvironmentProxy env -> ScalarProxy t -> Parser (Code effs env t)
+          -> EnvironmentProxy env -> TypeProxy t -> Parser (Code effs env t)
 pLine eps env = \case
-  VoidProxy -> try (pAnyLine eps env VoidProxy) <|> pVoidLine eps env
+  VoidType -> try (pAnyLine eps env VoidType) <|> pVoidLine eps env
   t         -> try (pAnyLine eps env t)         <|> pNonVoidLine eps env t
 
 pVoidLine :: EffectParsers effs
@@ -94,13 +94,13 @@ pVoidLine eps env
   <?> "statement")
 
 pNonVoidLine :: EffectParsers effs
-          -> EnvironmentProxy env -> ScalarProxy t -> Parser (Code effs env t)
+          -> EnvironmentProxy env -> TypeProxy t -> Parser (Code effs env t)
 pNonVoidLine _eps env t
   = dbg "non-void line" ( pPure env t
   <?> ("statement of type " <> showType t))
 
 pAnyLine :: EffectParsers effs
-          ->  EnvironmentProxy env -> ScalarProxy t -> Parser (Code effs env t)
+          ->  EnvironmentProxy env -> TypeProxy t -> Parser (Code effs env t)
 pAnyLine eps env t
   = dbg "anyLine" ( pIfThenElse eps env t
   <|> pEffects    eps env t
@@ -130,16 +130,16 @@ pAnyLine eps env t
 pIfThenElse :: forall effs env t
              . EffectParsers effs
             -> EnvironmentProxy env
-            -> ScalarProxy t
+            -> TypeProxy t
             -> Parser (Code effs env t)
 pIfThenElse eps env t = dbg "if/then/else statement" $ withEnvironment env $ do
   tok_ If
   (toks, _) <- manyTill_ anyToken (satisfy (== Then))
   eol
-  cond <- nest (parseValueFromTokens env BooleanProxy toks)
+  cond <- nest (parseValueFromTokens env BooleanType toks)
   yes <- pBlock eps env t
   no <- case t of
-    VoidProxy -> try (tok_ Else >> pIfThenElse eps env t)
+    VoidType -> try (tok_ Else >> pIfThenElse eps env t)
                  <|> (tok_ Else >> eol >> pBlock eps env t)
                  <|> pure (Fix (NoOp @env))
     _         -> try (tok_ Else >> pIfThenElse eps env t)
@@ -155,7 +155,7 @@ pPass env = do
 
 -- | pure VALUE
 pPure :: forall effs env t
-       . EnvironmentProxy env -> ScalarProxy t -> Parser (Code effs env t)
+       . EnvironmentProxy env -> TypeProxy t -> Parser (Code effs env t)
 pPure env t = dbg ("pure @" <> showType t) $ do
   toks <- manyTill anyToken eol
   withEnvironment env $ do
@@ -173,11 +173,11 @@ pLoop eps env = dbg "loop" $ do
   tok_ (Identifier "repeat")
   eol
   tok_ Indent
-  body <- some (pCode @effs env VoidProxy)
+  body <- some (pCode @effs env VoidType)
   tok_ Dedent
 -}
   tok_ (Identifier "loop") >> eol
-  withEnvironment env (Fix . DoWhile <$> pBlock eps env BooleanProxy)
+  withEnvironment env (Fix . DoWhile <$> pBlock eps env BooleanType)
 
 -- |
 -- set VAR to VALUE
@@ -216,7 +216,7 @@ pSet effs env = dbg "set" $ do
 pVar :: forall effs env t
       . EffectParsers effs
      -> EnvironmentProxy env
-     -> ScalarProxy t
+     -> TypeProxy t
      -> Parser (Code effs env t)
 pVar eps env t = dbg "init" $ withKnownType t $ do
   tok_ (Identifier "init")
@@ -234,10 +234,10 @@ pVarValue :: forall effs env t ty name
            . KnownSymbol name
           => EffectParsers effs
           -> EnvironmentProxy env
-          -> ScalarProxy t
+          -> TypeProxy t
           -> NameIsAbsent name env
           -> Proxy name
-          -> ScalarProxy ty
+          -> TypeProxy ty
           -> Parser (Code effs env t)
 pVarValue eps env t pf name vt = do
   tok_ (Identifier "to")
@@ -247,9 +247,9 @@ pVarValue eps env t pf name vt = do
     let pf' = bindName name vt pf
         env' = BindingProxy name vt env
     (body, final) <- case t of
-      VoidProxy -> (\xs -> (init xs, last xs))
-                     <$> some (pCode eps env' VoidProxy)
-      _ -> manyTill_ (pCode eps env' VoidProxy) (try (pCode eps env' t))
+      VoidType -> (\xs -> (init xs, last xs))
+                     <$> some (pCode eps env' VoidType)
+      _ -> manyTill_ (pCode eps env' VoidType) (try (pCode eps env' t))
     -- peek at the next token, which should be a dedent; we should have parsed the
     -- remainder of the current scope's block.
     lookAhead (tok_ Dedent)
@@ -259,10 +259,10 @@ pVarCode  :: forall effs env t ty name
            . KnownSymbol name
           => EffectParsers effs
           -> EnvironmentProxy env
-          -> ScalarProxy t
+          -> TypeProxy t
           -> NameIsAbsent name env
           -> Proxy name
-          -> ScalarProxy ty
+          -> TypeProxy ty
           -> Parser (Code effs env t)
 pVarCode eps env t pf name vt = do
   tok_ LeftArrow
@@ -272,9 +272,9 @@ pVarCode eps env t pf name vt = do
     let pf' = bindName name vt pf
         env' = BindingProxy name vt env
     (body, final) <- case t of
-      VoidProxy -> (\xs -> (init xs, last xs))
-                     <$> some (pCode eps env' VoidProxy)
-      _ -> manyTill_ (pCode eps env' VoidProxy) (try (pCode eps env' t))
+      VoidType -> (\xs -> (init xs, last xs))
+                     <$> some (pCode eps env' VoidType)
+      _ -> manyTill_ (pCode eps env' VoidType) (try (pCode eps env' t))
     -- peek at the next token, which should be a dedent; we should have parsed the
     -- remainder of the current scope's block.
     lookAhead (tok_ Dedent)
@@ -284,17 +284,17 @@ pVarCode eps env t pf name vt = do
 -- | Parse type name
 pTypeName :: Parser SomeType
 pTypeName
-  =   (SomeType RealProxy    <$ tok_ (Identifier "R"))
-  <|> (SomeType IntegerProxy <$ tok_ (Identifier "Z"))
-  <|> (SomeType ComplexProxy <$ tok_ (Identifier "C"))
-  <|> (SomeType ColorProxy   <$ tok_ (Identifier "Color"))
+  =   (SomeType RealType    <$ tok_ (Identifier "R"))
+  <|> (SomeType IntegerType <$ tok_ (Identifier "Z"))
+  <|> (SomeType ComplexType <$ tok_ (Identifier "C"))
+  <|> (SomeType ColorType   <$ tok_ (Identifier "Color"))
   <?> "type"
 
 -- | Parse embedded effect languages
 pEffects :: forall effs env t
           . EffectParsers effs
          -> EnvironmentProxy env
-         -> ScalarProxy t
+         -> TypeProxy t
          -> Parser (Code effs env t)
 pEffects (EP eps) env t = dbg "effects" $ go eps
   where

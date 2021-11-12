@@ -41,7 +41,7 @@ data List (listName :: Symbol) (listType :: Type) (code :: (Environment, Type) -
 
   Insert :: forall name ty env code
           . Proxy name
-         -> ScalarProxy ty
+         -> TypeProxy ty
          -> EnvTypeProxy '(env, 'VoidT)
          -> Value '(env, ty)
          -> List name ty code '(env, 'VoidT)
@@ -49,7 +49,7 @@ data List (listName :: Symbol) (listType :: Type) (code :: (Environment, Type) -
   Lookup :: forall name ty env t code item
           . KnownSymbol item
          => Proxy name
-         -> ScalarProxy ty
+         -> TypeProxy ty
          -> Proxy item
          -> NameIsAbsent item env
          -> EnvTypeProxy '( '(item, ty) ': env, t)
@@ -65,14 +65,14 @@ data List (listName :: Symbol) (listType :: Type) (code :: (Environment, Type) -
 
   ClearList :: forall name ty env code
              . Proxy name
-            -> ScalarProxy ty
+            -> TypeProxy ty
             -> EnvTypeProxy '(env, 'VoidT)
             -> List name ty code '(env, 'VoidT)
 
   Remove :: forall name ty env code item
           . KnownSymbol item
          => Proxy name
-         -> ScalarProxy ty
+         -> TypeProxy ty
          -> Proxy item
          -> NameIsAbsent item env
          -> EnvTypeProxy '(env, 'VoidT)
@@ -82,7 +82,7 @@ data List (listName :: Symbol) (listType :: Type) (code :: (Environment, Type) -
   ForEach :: forall name ty env code item
            . KnownSymbol item
           => Proxy name
-          -> ScalarProxy ty
+          -> TypeProxy ty
           -> Proxy item
           -> NameIsAbsent item env
           -> EnvTypeProxy '(env, 'VoidT)
@@ -139,11 +139,11 @@ listEffectParser = EffectParser Proxy $ \(et :: EnvTypeProxy et) code_ -> do
 
   case lemmaEnvTy @et of
     Refl -> withEnvType et $ \env -> \case
-      VoidProxy ->  pInsert env code_
+      VoidType ->  pInsert env code_
                 <|> pRemoveSome env code_
                 <|> pRemoveAll env code_
                 <|> pFor env code_
-                <|> pWith env VoidProxy code_
+                <|> pWith env VoidType code_
                 <?> ("list command for " ++ name)
       ty ->
         (pWith env ty code_ <?> ("list command for " ++ name))
@@ -167,10 +167,10 @@ listEffectParser = EffectParser Proxy $ \(et :: EnvTypeProxy et) code_ -> do
       tok_ "at"
       let start = do
             tok_ "start" >> tok_ "of" >> tok_ (Identifier name) >> eol
-            pure (Insert Proxy typeProxy (envTypeProxy env VoidProxy) v)
+            pure (Insert Proxy typeProxy (envTypeProxy env VoidType) v)
           end = do
             tok_ "end" >> tok_ "of" >> tok_ (Identifier name) >> eol
-            pure (Insert Proxy typeProxy (envTypeProxy env VoidProxy) v) -- FIXME
+            pure (Insert Proxy typeProxy (envTypeProxy env VoidType) v) -- FIXME
       (start <|> end <?> "insertion style")
 
     -- remove each item matching VALUE from LISTNAME
@@ -188,9 +188,9 @@ listEffectParser = EffectParser Proxy $ \(et :: EnvTypeProxy et) code_ -> do
           Absent' pf -> recallIsAbsent pf $ do
             vtoks <- manyTill anyToken (tok_ "from")
             let env' = bindNameEnv item (typeProxy @ty) pf env
-            v <- nest (parseValueFromTokens env' BooleanProxy vtoks)
+            v <- nest (parseValueFromTokens env' BooleanType vtoks)
             tok_ (Identifier name) >> eol
-            pure (Remove Proxy (typeProxy @ty) item pf (envTypeProxy env VoidProxy) v)
+            pure (Remove Proxy (typeProxy @ty) item pf (envTypeProxy env VoidType) v)
 
     -- remove all items from LISTNAME
     pRemoveAll :: EnvironmentProxy env
@@ -199,7 +199,7 @@ listEffectParser = EffectParser Proxy $ \(et :: EnvTypeProxy et) code_ -> do
     pRemoveAll env _ = do
       tok_ "remove" >> tok_ "all" >> tok_ "items"
         >> tok_ "from" >> tok_ (Identifier name) >> eol
-      pure (ClearList Proxy (typeProxy @ty) (envTypeProxy env VoidProxy))
+      pure (ClearList Proxy (typeProxy @ty) (envTypeProxy env VoidType))
 
     -- for each item in LISTNAME do CODE
     pFor :: forall env code
@@ -217,17 +217,17 @@ listEffectParser = EffectParser Proxy $ \(et :: EnvTypeProxy et) code_ -> do
           Found' {} -> fail "a variable named 'item' is already defined"
           Absent' pf -> recallIsAbsent pf $ do
             let env' = bindNameEnv item (typeProxy @ty) pf env
-            body <- code_ (envTypeProxy env' VoidProxy)
+            body <- code_ (envTypeProxy env' VoidType)
             pure (ForEach Proxy (typeProxy @ty) item pf
-                   (envTypeProxy env VoidProxy)
-                   (envTypeProxy env' VoidProxy)
+                   (envTypeProxy env VoidType)
+                   (envTypeProxy env' VoidType)
                    body)
 
     -- with first item matching VALUE in LISTNAME do CODE
     -- with first item matching VALUE in LISTNAME do CODE else CODE
     pWith :: forall env t code
            . EnvironmentProxy env
-          -> ScalarProxy t
+          -> TypeProxy t
           -> (forall et. EnvTypeProxy et -> Parser (Eval (code et)))
           -> Parser (List name ty code '(env, t))
     pWith env t code_ = withEnvironment env $ do
@@ -245,7 +245,7 @@ listEffectParser = EffectParser Proxy $ \(et :: EnvTypeProxy et) code_ -> do
             many eol
             lookAhead (tok_ Indent)
             case t of
-              VoidProxy -> do
+              VoidType -> do
                 match <- code_ (envTypeProxy env' t)
                 -- Else branch is optional for void return type
                 let elseParser = do
@@ -253,8 +253,8 @@ listEffectParser = EffectParser Proxy $ \(et :: EnvTypeProxy et) code_ -> do
                       VJust <$> code_ (envTypeProxy env t)
                 miss <- elseParser <|> pure VNothing
                 pure (Lookup Proxy (typeProxy @ty) item pf
-                      (envTypeProxy env' VoidProxy)
-                      (envTypeProxy env  VoidProxy)
+                      (envTypeProxy env' VoidType)
+                      (envTypeProxy env  VoidType)
                       v match miss)
               _ -> do
                 match <- code_ (envTypeProxy env' t)

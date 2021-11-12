@@ -88,13 +88,13 @@ instance IFunctor (Draw_ value) where
     SetFill e c -> SetFill e c
     Clear e -> Clear e
   toIndex = \case
-    DrawPoint e _ -> envTypeProxy e VoidProxy
-    DrawCircle e _ _ _ -> envTypeProxy e VoidProxy
-    DrawLine e _ _ -> envTypeProxy e VoidProxy
-    DrawRect e _ _ _ -> envTypeProxy e VoidProxy
-    SetStroke e _ -> envTypeProxy e VoidProxy
-    SetFill e _ -> envTypeProxy e VoidProxy
-    Clear e -> envTypeProxy e VoidProxy
+    DrawPoint e _ -> envTypeProxy e VoidType
+    DrawCircle e _ _ _ -> envTypeProxy e VoidType
+    DrawLine e _ _ -> envTypeProxy e VoidType
+    DrawRect e _ _ _ -> envTypeProxy e VoidType
+    SetStroke e _ -> envTypeProxy e VoidType
+    SetFill e _ -> envTypeProxy e VoidType
+    Clear e -> envTypeProxy e VoidType
 
 instance ITraversable (Draw_ value) where
   isequence = \case
@@ -113,10 +113,10 @@ drawEffectParser = EffectParser Proxy $
 
 pDrawEffect
   :: EnvironmentProxy env
-  -> ScalarProxy t
+  -> TypeProxy t
   -> Parser (Draw code '(env, t))
 pDrawEffect env = \case
-  VoidProxy -> pErase env
+  VoidType -> pErase env
            <|> pDrawCommand env
            <|> pUseCommand env
            <?> "draw command"

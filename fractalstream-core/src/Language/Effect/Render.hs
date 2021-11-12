@@ -57,10 +57,10 @@ instance IFunctor Render where
     Blit env iD ul scale alpha -> Blit env iD ul scale alpha
     ClearTo env v -> ClearTo env v
   toIndex = \case
-    Render env _ _ _ _ _ _ _ _ -> envTypeProxy env ImageProxy
-    HaltRender env _   -> envTypeProxy env VoidProxy
-    Blit env _ _ _ _   -> envTypeProxy env VoidProxy
-    ClearTo env _      -> envTypeProxy env VoidProxy
+    Render env _ _ _ _ _ _ _ _ -> envTypeProxy env ImageType
+    HaltRender env _   -> envTypeProxy env VoidType
+    Blit env _ _ _ _   -> envTypeProxy env VoidType
+    ClearTo env _      -> envTypeProxy env VoidType
 
 instance ITraversable Render where
   isequence = \case
@@ -73,7 +73,7 @@ renderEffectParser :: EffectParser Render
 renderEffectParser = EffectParser Proxy $
   \(et :: EnvTypeProxy et) _code -> case lemmaEnvTy @et of
     Refl -> withEnvType et $ \env t ->  withEnvironment env $ case t of
-      ImageProxy -> do
+      ImageType -> do
         tok_ "render" >> tok_ "in"
         Identifier inputXstr <- satisfy (\case { Identifier _ -> True; _ -> False })
         Identifier inputYstr <- satisfy (\case { Identifier _ -> True; _ -> False })
@@ -87,14 +87,14 @@ renderEffectParser = EffectParser Proxy $
             case lookupEnv' inputY env of
               Found' {} -> fail ("a variable named " <> inputYstr <> " is already in scope")
               Absent' pfY -> do
-                let env' = bindNameEnv inputY RealProxy pfY env
+                let env' = bindNameEnv inputY RealType pfY env
                 case lookupEnv' inputX env' of
                   Found' {} -> fail ("a variable named " <> inputXstr <> " is already in scope")
                   Absent' pfX -> do
-                    let env'' = bindNameEnv inputX RealProxy pfX env'
+                    let env'' = bindNameEnv inputX RealType pfX env'
                     Render env inputX inputY pfX pfY dim corner pixel
-                      <$> pCode (EP NoEffs) env'' ColorProxy
-      VoidProxy -> pHalt env <|> pBlit env <|> pClear env
+                      <$> pCode (EP NoEffs) env'' ColorType
+      VoidType -> pHalt env <|> pBlit env <|> pClear env
       _ -> mzero
 
  where

@@ -40,14 +40,14 @@ data ValueF (value :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) 
   Var :: forall name ty env value
        . (KnownEnvironment env, KnownSymbol name)
       => Proxy name
-      -> ScalarProxy ty
+      -> TypeProxy ty
       -> NameIsPresent name ty env
       -> ValueF value '(env, ty)
 
   -- Product types and projections
-  PairV :: forall t1 t2 env value. KnownEnvironment env => ScalarProxy ('Pair t1 t2) -> Eval (value '(env, t1)) -> Eval (value '(env, t2)) -> ValueF value '(env, 'Pair t1 t2)
-  ProjV1 :: forall t1 t2 env value. KnownEnvironment env => ScalarProxy ('Pair t1 t2) -> Eval (value '(env, 'Pair t1 t2)) -> ValueF value '(env, t1)
-  ProjV2 :: forall t1 t2 env value. KnownEnvironment env => ScalarProxy ('Pair t1 t2) -> Eval (value '(env, 'Pair t1 t2)) -> ValueF value '(env, t2)
+  PairV :: forall t1 t2 env value. KnownEnvironment env => TypeProxy ('Pair t1 t2) -> Eval (value '(env, t1)) -> Eval (value '(env, t2)) -> ValueF value '(env, 'Pair t1 t2)
+  ProjV1 :: forall t1 t2 env value. KnownEnvironment env => TypeProxy ('Pair t1 t2) -> Eval (value '(env, 'Pair t1 t2)) -> ValueF value '(env, t1)
+  ProjV2 :: forall t1 t2 env value. KnownEnvironment env => TypeProxy ('Pair t1 t2) -> Eval (value '(env, 'Pair t1 t2)) -> ValueF value '(env, t2)
 
   -- Floating-point arithmetic
   AddF :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> Eval (value '(env, 'RealT)) -> ValueF value '(env, 'RealT)
@@ -129,7 +129,7 @@ data ValueF (value :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) 
   -- If/then/else expression
   ITE :: forall env t value
        . KnownEnvironment env
-      => ScalarProxy t
+      => TypeProxy t
       -> Eval (value '(env, 'BooleanT))
       -> Eval (value '(env, t))
       -> Eval (value '(env, t))
@@ -156,8 +156,8 @@ data ValueF (value :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) 
             -> ValueF value '(env, 'ColorT)
 
   -- Equality tests
-  Eql :: forall env t value. KnownEnvironment env => ScalarProxy t -> Eval (value '(env, t)) -> Eval (value '(env, t)) -> ValueF value '(env, 'BooleanT)
-  NEq :: forall env t value. KnownEnvironment env => ScalarProxy t -> Eval (value '(env, t)) -> Eval (value '(env, t)) -> ValueF value '(env, 'BooleanT)
+  Eql :: forall env t value. KnownEnvironment env => TypeProxy t -> Eval (value '(env, t)) -> Eval (value '(env, t)) -> ValueF value '(env, 'BooleanT)
+  NEq :: forall env t value. KnownEnvironment env => TypeProxy t -> Eval (value '(env, t)) -> Eval (value '(env, t)) -> ValueF value '(env, 'BooleanT)
 
   -- Scalar comparisons
   LEI :: forall env value. KnownEnvironment env => Eval (value '(env, 'IntegerT)) -> Eval (value '(env, 'IntegerT)) -> ValueF value '(env, 'BooleanT)
@@ -179,7 +179,7 @@ instance KnownEnvironment env => Num (Value '(env, 'IntegerT)) where
   (*) = fix2 MulI
   abs = Fix . AbsI
   negate = Fix . NegI
-  fromInteger = Fix . Const . Scalar IntegerProxy . fromInteger
+  fromInteger = Fix . Const . Scalar IntegerType . fromInteger
   signum = error "TODO"
 
 instance KnownEnvironment env => Num (Value '(env, 'RealT)) where
@@ -188,7 +188,7 @@ instance KnownEnvironment env => Num (Value '(env, 'RealT)) where
   (*) = fix2 MulF
   abs = Fix . AbsF
   negate = Fix . NegF
-  fromInteger = Fix . Const . Scalar RealProxy . fromInteger
+  fromInteger = Fix . Const . Scalar RealType . fromInteger
   signum = error "TODO"
 
 instance KnownEnvironment env => Fractional (Value '(env, 'RealT)) where
@@ -196,7 +196,7 @@ instance KnownEnvironment env => Fractional (Value '(env, 'RealT)) where
   fromRational q = fromInteger (numerator q) / fromInteger (denominator q)
 
 instance KnownEnvironment env => Floating (Value '(env, 'RealT)) where
-  pi = Fix (Const (Scalar RealProxy pi))
+  pi = Fix (Const (Scalar RealType pi))
   exp = Fix . ExpF
   log = Fix . LogF
   sin = Fix . SinF
@@ -218,7 +218,7 @@ instance KnownEnvironment env => Num (Value '(env, 'ComplexT)) where
   (*) = fix2 MulC
   abs = Fix . R2C . Fix . AbsC
   negate = Fix . NegC
-  fromInteger = Fix . Const . Scalar ComplexProxy . fromInteger
+  fromInteger = Fix . Const . Scalar ComplexType . fromInteger
   signum = error "TODO"
 
 instance KnownEnvironment env => Fractional (Value '(env, 'ComplexT)) where
@@ -226,7 +226,7 @@ instance KnownEnvironment env => Fractional (Value '(env, 'ComplexT)) where
   fromRational q = fromInteger (numerator q) / fromInteger (denominator q)
 
 instance KnownEnvironment env => Floating (Value '(env, 'ComplexT)) where
-  pi = Fix (Const (Scalar ComplexProxy pi))
+  pi = Fix (Const (Scalar ComplexType pi))
   exp = Fix . ExpC
   log = Fix . LogC
   sin = Fix . SinC
@@ -246,7 +246,7 @@ instance KnownEnvironment env => Floating (Value '(env, 'ComplexT)) where
 -- IFunctor instance
 ---------------------------------------------------------------------------------
 
-typeOfValue :: forall env t. Value '(env, t) -> ScalarProxy t
+typeOfValue :: forall env t. Value '(env, t) -> TypeProxy t
 typeOfValue v = case toIndex (unrollIx @_ @Value @ValueF v) of
   EnvType t -> t
 
@@ -260,194 +260,194 @@ instance IFunctor ValueF where
     Var _ t _ -> EnvType t
 
     PairV t _ _ -> EnvType t
-    ProjV1 t _ -> case t of { PairProxy t1 _ -> EnvType t1 }
-    ProjV2 t _ -> case t of { PairProxy _ t2 -> EnvType t2 }
+    ProjV1 t _ -> case t of { PairType t1 _ -> EnvType t1 }
+    ProjV2 t _ -> case t of { PairType _ t2 -> EnvType t2 }
 
-    AddF {} -> EnvType RealProxy
-    SubF {} -> EnvType RealProxy
-    MulF {} -> EnvType RealProxy
-    DivF {} -> EnvType RealProxy
-    ModF {} -> EnvType RealProxy
-    PowF {} -> EnvType RealProxy
-    AbsF {} -> EnvType RealProxy
-    NegF {} -> EnvType RealProxy
+    AddF {} -> EnvType RealType
+    SubF {} -> EnvType RealType
+    MulF {} -> EnvType RealType
+    DivF {} -> EnvType RealType
+    ModF {} -> EnvType RealType
+    PowF {} -> EnvType RealType
+    AbsF {} -> EnvType RealType
+    NegF {} -> EnvType RealType
 
-    ExpF {} -> EnvType RealProxy
-    LogF {} -> EnvType RealProxy
-    SqrtF {} -> EnvType RealProxy
+    ExpF {} -> EnvType RealType
+    LogF {} -> EnvType RealType
+    SqrtF {} -> EnvType RealType
 
-    SinF {} -> EnvType RealProxy
-    CosF {} -> EnvType RealProxy
-    TanF {} -> EnvType RealProxy
-    ArcsinF {} -> EnvType RealProxy
-    ArccosF {} -> EnvType RealProxy
-    ArctanF {} -> EnvType RealProxy
-    Arctan2F {} -> EnvType RealProxy
-    SinhF {} -> EnvType RealProxy
-    CoshF {} -> EnvType RealProxy
-    TanhF {} -> EnvType RealProxy
-    ArcsinhF {} -> EnvType RealProxy
-    ArccoshF {} -> EnvType RealProxy
-    ArctanhF {} -> EnvType RealProxy
+    SinF {} -> EnvType RealType
+    CosF {} -> EnvType RealType
+    TanF {} -> EnvType RealType
+    ArcsinF {} -> EnvType RealType
+    ArccosF {} -> EnvType RealType
+    ArctanF {} -> EnvType RealType
+    Arctan2F {} -> EnvType RealType
+    SinhF {} -> EnvType RealType
+    CoshF {} -> EnvType RealType
+    TanhF {} -> EnvType RealType
+    ArcsinhF {} -> EnvType RealType
+    ArccoshF {} -> EnvType RealType
+    ArctanhF {} -> EnvType RealType
 
-    AddC {} -> EnvType ComplexProxy
-    SubC {} -> EnvType ComplexProxy
-    MulC {} -> EnvType ComplexProxy
-    DivC {} -> EnvType ComplexProxy
-    PowC {} -> EnvType ComplexProxy
-    NegC {} -> EnvType ComplexProxy
+    AddC {} -> EnvType ComplexType
+    SubC {} -> EnvType ComplexType
+    MulC {} -> EnvType ComplexType
+    DivC {} -> EnvType ComplexType
+    PowC {} -> EnvType ComplexType
+    NegC {} -> EnvType ComplexType
 
-    AbsC {} -> EnvType RealProxy
-    ArgC {} -> EnvType RealProxy
-    ReC {} -> EnvType RealProxy
-    ImC {} -> EnvType RealProxy
-    ConjC {} -> EnvType ComplexProxy
+    AbsC {} -> EnvType RealType
+    ArgC {} -> EnvType RealType
+    ReC {} -> EnvType RealType
+    ImC {} -> EnvType RealType
+    ConjC {} -> EnvType ComplexType
 
-    ExpC {} -> EnvType ComplexProxy
-    LogC {} -> EnvType ComplexProxy
-    SqrtC {} -> EnvType ComplexProxy
+    ExpC {} -> EnvType ComplexType
+    LogC {} -> EnvType ComplexType
+    SqrtC {} -> EnvType ComplexType
 
-    SinC {} -> EnvType ComplexProxy
-    CosC {} -> EnvType ComplexProxy
-    TanC {} -> EnvType ComplexProxy
-    SinhC {} -> EnvType ComplexProxy
-    CoshC {} -> EnvType ComplexProxy
-    TanhC {} -> EnvType ComplexProxy
+    SinC {} -> EnvType ComplexType
+    CosC {} -> EnvType ComplexType
+    TanC {} -> EnvType ComplexType
+    SinhC {} -> EnvType ComplexType
+    CoshC {} -> EnvType ComplexType
+    TanhC {} -> EnvType ComplexType
 
-    AddI {} -> EnvType IntegerProxy
-    SubI {} -> EnvType IntegerProxy
-    MulI {} -> EnvType IntegerProxy
-    DivI {} -> EnvType IntegerProxy
-    ModI {} -> EnvType IntegerProxy
-    PowI {} -> EnvType IntegerProxy
-    AbsI {} -> EnvType IntegerProxy
-    NegI {} -> EnvType IntegerProxy
+    AddI {} -> EnvType IntegerType
+    SubI {} -> EnvType IntegerType
+    MulI {} -> EnvType IntegerType
+    DivI {} -> EnvType IntegerType
+    ModI {} -> EnvType IntegerType
+    PowI {} -> EnvType IntegerType
+    AbsI {} -> EnvType IntegerType
+    NegI {} -> EnvType IntegerType
 
-    I2R {} -> EnvType RealProxy
-    R2C {} -> EnvType ComplexProxy
+    I2R {} -> EnvType RealType
+    R2C {} -> EnvType ComplexType
 
-    Or {} -> EnvType BooleanProxy
-    And {} -> EnvType BooleanProxy
-    Not {} -> EnvType BooleanProxy
+    Or {} -> EnvType BooleanType
+    And {} -> EnvType BooleanType
+    Not {} -> EnvType BooleanType
 
     ITE t _ _ _ -> EnvType t
 
-    RGB {}       -> EnvType ColorProxy
-    Blend {}     -> EnvType ColorProxy
-    InvertRGB {} -> EnvType ColorProxy
+    RGB {}       -> EnvType ColorType
+    Blend {}     -> EnvType ColorType
+    InvertRGB {} -> EnvType ColorType
 
-    Eql {} -> EnvType BooleanProxy
-    NEq {} -> EnvType BooleanProxy
+    Eql {} -> EnvType BooleanType
+    NEq {} -> EnvType BooleanType
 
-    LEI {} -> EnvType BooleanProxy
-    LEF {} -> EnvType BooleanProxy
-    GEI {} -> EnvType BooleanProxy
-    GEF {} -> EnvType BooleanProxy
-    LTI {} -> EnvType BooleanProxy
-    LTF {} -> EnvType BooleanProxy
-    GTI {} -> EnvType BooleanProxy
-    GTF {} -> EnvType BooleanProxy
+    LEI {} -> EnvType BooleanType
+    LEF {} -> EnvType BooleanType
+    GEI {} -> EnvType BooleanType
+    GEF {} -> EnvType BooleanType
+    LTI {} -> EnvType BooleanType
+    LTF {} -> EnvType BooleanType
+    GTI {} -> EnvType BooleanType
+    GTF {} -> EnvType BooleanType
 
   imap :: forall a b i
         . (forall j. EnvTypeProxy j -> Eval (a j) -> Eval (b j))
        -> ValueF a i
        -> ValueF b i
   imap f v0  = case lemmaEnvTy @i of
-    Refl -> let { env = withEnvType (toIndex v0) (\e _ -> e); withEnv :: ScalarProxy t -> EnvTypeProxy '(Env i, t); withEnv t = envTypeProxy env t } in case v0 of
+    Refl -> let { env = withEnvType (toIndex v0) (\e _ -> e); withEnv :: TypeProxy t -> EnvTypeProxy '(Env i, t); withEnv t = envTypeProxy env t } in case v0 of
       Const x -> Const x
       Var name v pf -> Var name v pf
 
       PairV t x y ->
-        let (t1, t2) = case t of { PairProxy tx ty -> (tx, ty) }
+        let (t1, t2) = case t of { PairType tx ty -> (tx, ty) }
         in PairV t (f (withEnv t1) x) (f (withEnv t2) y)
       ProjV1 t p -> ProjV1 t (f (withEnv t) p)
       ProjV2 t p -> ProjV2 t (f (withEnv t) p)
 
-      AddF x y -> AddF (f (withEnv RealProxy) x) (f (withEnv RealProxy) y)
+      AddF x y -> AddF (f (withEnv RealType) x) (f (withEnv RealType) y)
 
-      SubF x y -> SubF (f (withEnv RealProxy) x) (f (withEnv RealProxy) y)
-      MulF x y -> MulF (f (withEnv RealProxy) x) (f (withEnv RealProxy) y)
-      DivF x y -> DivF (f (withEnv RealProxy) x) (f (withEnv RealProxy) y)
-      ModF x y -> ModF (f (withEnv RealProxy) x) (f (withEnv RealProxy) y)
-      PowF x y -> PowF (f (withEnv RealProxy) x) (f (withEnv RealProxy) y)
-      AbsF x   -> AbsF (f (withEnv RealProxy) x)
-      NegF x   -> NegF (f (withEnv RealProxy) x)
+      SubF x y -> SubF (f (withEnv RealType) x) (f (withEnv RealType) y)
+      MulF x y -> MulF (f (withEnv RealType) x) (f (withEnv RealType) y)
+      DivF x y -> DivF (f (withEnv RealType) x) (f (withEnv RealType) y)
+      ModF x y -> ModF (f (withEnv RealType) x) (f (withEnv RealType) y)
+      PowF x y -> PowF (f (withEnv RealType) x) (f (withEnv RealType) y)
+      AbsF x   -> AbsF (f (withEnv RealType) x)
+      NegF x   -> NegF (f (withEnv RealType) x)
 
-      ExpF x -> ExpF (f (withEnv RealProxy) x)
-      LogF x -> LogF (f (withEnv RealProxy) x)
-      SqrtF x -> SqrtF (f (withEnv RealProxy) x)
+      ExpF x -> ExpF (f (withEnv RealType) x)
+      LogF x -> LogF (f (withEnv RealType) x)
+      SqrtF x -> SqrtF (f (withEnv RealType) x)
 
-      SinF x -> SinF (f (withEnv RealProxy) x)
-      CosF x -> CosF (f (withEnv RealProxy) x)
-      TanF x -> TanF (f (withEnv RealProxy) x)
-      ArcsinF x -> ArcsinF (f (withEnv RealProxy) x)
-      ArccosF x -> ArccosF (f (withEnv RealProxy) x)
-      ArctanF x -> ArctanF (f (withEnv RealProxy) x)
-      Arctan2F x y -> Arctan2F (f (withEnv RealProxy) x) (f (withEnv RealProxy) y)
-      SinhF x -> SinhF (f (withEnv RealProxy) x)
-      CoshF x -> CoshF (f (withEnv RealProxy) x)
-      TanhF x -> TanhF (f (withEnv RealProxy) x)
-      ArcsinhF x -> ArcsinhF (f (withEnv RealProxy) x)
-      ArccoshF x -> ArccoshF (f (withEnv RealProxy) x)
-      ArctanhF x -> ArctanhF (f (withEnv RealProxy) x)
+      SinF x -> SinF (f (withEnv RealType) x)
+      CosF x -> CosF (f (withEnv RealType) x)
+      TanF x -> TanF (f (withEnv RealType) x)
+      ArcsinF x -> ArcsinF (f (withEnv RealType) x)
+      ArccosF x -> ArccosF (f (withEnv RealType) x)
+      ArctanF x -> ArctanF (f (withEnv RealType) x)
+      Arctan2F x y -> Arctan2F (f (withEnv RealType) x) (f (withEnv RealType) y)
+      SinhF x -> SinhF (f (withEnv RealType) x)
+      CoshF x -> CoshF (f (withEnv RealType) x)
+      TanhF x -> TanhF (f (withEnv RealType) x)
+      ArcsinhF x -> ArcsinhF (f (withEnv RealType) x)
+      ArccoshF x -> ArccoshF (f (withEnv RealType) x)
+      ArctanhF x -> ArctanhF (f (withEnv RealType) x)
 
-      AddC x y -> AddC (f (withEnv ComplexProxy) x) (f (withEnv ComplexProxy) y)
-      SubC x y -> SubC (f (withEnv ComplexProxy) x) (f (withEnv ComplexProxy) y)
-      MulC x y -> MulC (f (withEnv ComplexProxy) x) (f (withEnv ComplexProxy) y)
-      DivC x y -> DivC (f (withEnv ComplexProxy) x) (f (withEnv ComplexProxy) y)
-      PowC x y -> PowC (f (withEnv ComplexProxy) x) (f (withEnv ComplexProxy) y)
-      NegC x   -> NegC (f (withEnv ComplexProxy) x)
+      AddC x y -> AddC (f (withEnv ComplexType) x) (f (withEnv ComplexType) y)
+      SubC x y -> SubC (f (withEnv ComplexType) x) (f (withEnv ComplexType) y)
+      MulC x y -> MulC (f (withEnv ComplexType) x) (f (withEnv ComplexType) y)
+      DivC x y -> DivC (f (withEnv ComplexType) x) (f (withEnv ComplexType) y)
+      PowC x y -> PowC (f (withEnv ComplexType) x) (f (withEnv ComplexType) y)
+      NegC x   -> NegC (f (withEnv ComplexType) x)
 
-      ExpC x -> ExpC (f (withEnv ComplexProxy) x)
-      LogC x -> LogC (f (withEnv ComplexProxy) x)
-      SqrtC x -> SqrtC (f (withEnv ComplexProxy) x)
+      ExpC x -> ExpC (f (withEnv ComplexType) x)
+      LogC x -> LogC (f (withEnv ComplexType) x)
+      SqrtC x -> SqrtC (f (withEnv ComplexType) x)
 
-      SinC x -> SinC (f (withEnv ComplexProxy) x)
-      CosC x -> CosC (f (withEnv ComplexProxy) x)
-      TanC x -> TanC (f (withEnv ComplexProxy) x)
-      SinhC x -> SinhC (f (withEnv ComplexProxy) x)
-      CoshC x -> CoshC (f (withEnv ComplexProxy) x)
-      TanhC x -> TanhC (f (withEnv ComplexProxy) x)
+      SinC x -> SinC (f (withEnv ComplexType) x)
+      CosC x -> CosC (f (withEnv ComplexType) x)
+      TanC x -> TanC (f (withEnv ComplexType) x)
+      SinhC x -> SinhC (f (withEnv ComplexType) x)
+      CoshC x -> CoshC (f (withEnv ComplexType) x)
+      TanhC x -> TanhC (f (withEnv ComplexType) x)
 
-      AbsC x -> AbsC (f (withEnv ComplexProxy) x)
-      ArgC x -> ArgC (f (withEnv ComplexProxy) x)
-      ReC x -> ReC (f (withEnv ComplexProxy) x)
-      ImC x -> ImC (f (withEnv ComplexProxy) x)
-      ConjC x -> ConjC (f (withEnv ComplexProxy) x)
+      AbsC x -> AbsC (f (withEnv ComplexType) x)
+      ArgC x -> ArgC (f (withEnv ComplexType) x)
+      ReC x -> ReC (f (withEnv ComplexType) x)
+      ImC x -> ImC (f (withEnv ComplexType) x)
+      ConjC x -> ConjC (f (withEnv ComplexType) x)
 
-      AddI x y -> AddI (f (withEnv IntegerProxy) x) (f (withEnv IntegerProxy) y)
-      SubI x y -> SubI (f (withEnv IntegerProxy) x) (f (withEnv IntegerProxy) y)
-      MulI x y -> MulI (f (withEnv IntegerProxy) x) (f (withEnv IntegerProxy) y)
-      DivI x y -> DivI (f (withEnv IntegerProxy) x) (f (withEnv IntegerProxy) y)
-      ModI x y -> ModI (f (withEnv IntegerProxy) x) (f (withEnv IntegerProxy) y)
-      PowI x y -> PowI (f (withEnv IntegerProxy) x) (f (withEnv IntegerProxy) y)
-      AbsI x   -> AbsI (f (withEnv IntegerProxy) x)
-      NegI x   -> NegI (f (withEnv IntegerProxy) x)
+      AddI x y -> AddI (f (withEnv IntegerType) x) (f (withEnv IntegerType) y)
+      SubI x y -> SubI (f (withEnv IntegerType) x) (f (withEnv IntegerType) y)
+      MulI x y -> MulI (f (withEnv IntegerType) x) (f (withEnv IntegerType) y)
+      DivI x y -> DivI (f (withEnv IntegerType) x) (f (withEnv IntegerType) y)
+      ModI x y -> ModI (f (withEnv IntegerType) x) (f (withEnv IntegerType) y)
+      PowI x y -> PowI (f (withEnv IntegerType) x) (f (withEnv IntegerType) y)
+      AbsI x   -> AbsI (f (withEnv IntegerType) x)
+      NegI x   -> NegI (f (withEnv IntegerType) x)
 
-      I2R x -> I2R (f (withEnv IntegerProxy) x)
-      R2C x -> R2C (f (withEnv RealProxy) x)
+      I2R x -> I2R (f (withEnv IntegerType) x)
+      R2C x -> R2C (f (withEnv RealType) x)
 
-      Or  x y -> Or  (f (withEnv BooleanProxy) x) (f (withEnv BooleanProxy) y)
-      And x y -> And (f (withEnv BooleanProxy) x) (f (withEnv BooleanProxy) y)
-      Not x -> Not (f (withEnv BooleanProxy) x)
+      Or  x y -> Or  (f (withEnv BooleanType) x) (f (withEnv BooleanType) y)
+      And x y -> And (f (withEnv BooleanType) x) (f (withEnv BooleanType) y)
+      Not x -> Not (f (withEnv BooleanType) x)
 
-      ITE t b yes no -> ITE t (f (withEnv BooleanProxy) b) (f (withEnv t) yes) (f (withEnv t) no)
+      ITE t b yes no -> ITE t (f (withEnv BooleanType) b) (f (withEnv t) yes) (f (withEnv t) no)
 
-      RGB r g b -> RGB (f (withEnv RealProxy) r) (f (withEnv RealProxy) g) (f (withEnv RealProxy) b)
-      Blend s c1 c2 -> Blend (f (withEnv RealProxy) s) (f (withEnv ColorProxy) c1) (f (withEnv ColorProxy) c2)
-      InvertRGB c -> InvertRGB (f (withEnv ColorProxy) c)
+      RGB r g b -> RGB (f (withEnv RealType) r) (f (withEnv RealType) g) (f (withEnv RealType) b)
+      Blend s c1 c2 -> Blend (f (withEnv RealType) s) (f (withEnv ColorType) c1) (f (withEnv ColorType) c2)
+      InvertRGB c -> InvertRGB (f (withEnv ColorType) c)
 
       Eql t x y -> Eql t (f (withEnv t) x) (f (withEnv t) y)
       NEq t x y -> NEq t (f (withEnv t) x) (f (withEnv t) y)
 
-      LEI x y -> LEI (f (withEnv IntegerProxy) x) (f (withEnv IntegerProxy) y)
-      LEF x y -> LEF (f (withEnv RealProxy)    x) (f (withEnv RealProxy)    y)
-      GEI x y -> GEI (f (withEnv IntegerProxy) x) (f (withEnv IntegerProxy) y)
-      GEF x y -> GEF (f (withEnv RealProxy)    x) (f (withEnv RealProxy)    y)
-      LTI x y -> LTI (f (withEnv IntegerProxy) x) (f (withEnv IntegerProxy) y)
-      LTF x y -> LTF (f (withEnv RealProxy)    x) (f (withEnv RealProxy)    y)
-      GTI x y -> GTI (f (withEnv IntegerProxy) x) (f (withEnv IntegerProxy) y)
-      GTF x y -> GTF (f (withEnv RealProxy)    x) (f (withEnv RealProxy)    y)
+      LEI x y -> LEI (f (withEnv IntegerType) x) (f (withEnv IntegerType) y)
+      LEF x y -> LEF (f (withEnv RealType)    x) (f (withEnv RealType)    y)
+      GEI x y -> GEI (f (withEnv IntegerType) x) (f (withEnv IntegerType) y)
+      GEF x y -> GEF (f (withEnv RealType)    x) (f (withEnv RealType)    y)
+      LTI x y -> LTI (f (withEnv IntegerType) x) (f (withEnv IntegerType) y)
+      LTF x y -> LTF (f (withEnv RealType)    x) (f (withEnv RealType)    y)
+      GTI x y -> GTI (f (withEnv IntegerType) x) (f (withEnv IntegerType) y)
+      GTF x y -> GTF (f (withEnv RealType)    x) (f (withEnv RealType)    y)
 
 ---------------------------------------------------------------------------------
 -- Indexed traversable instance for values
@@ -561,18 +561,20 @@ pprint = indexedFold @PrecString @Value @ValueF go
   go :: forall et'. ValueF PrecString et' -> String
   go = \case
     Const (Scalar t c) -> case t of
-      BooleanProxy -> show c
-      IntegerProxy -> show c
-      RealProxy    -> show c
-      ComplexProxy -> show c
-      RationalProxy -> show c
-      ColorProxy -> show c
-      VoidProxy  -> show c
-      ImageProxy -> show c
-      PairProxy (t1 :: ScalarProxy t1) (t2 :: ScalarProxy t2) ->
+      BooleanType -> show c
+      IntegerType -> show c
+      RealType    -> show c
+      ComplexType -> show c
+      RationalType -> show c
+      ColorType -> show c
+      VoidType  -> show c
+      ImageType -> show c
+      PairType (t1 :: TypeProxy t1) (t2 :: TypeProxy t2) ->
         let (x,y) = c
         in concat [ "(", go @'(Env et', t1) (Const (Scalar t1 x)), ", "
                   , go @'(Env et', t2) (Const (Scalar t2 y)), ")"]
+      ListType (it :: TypeProxy it) ->
+        "[" <> intercalate ", " (map (go @'(Env et', it) . Const . Scalar it) c) <> "]"
     Var name _ _ -> symbolVal name
     PairV _ x y  -> concat ["(", x, ", ", y, ")"]
     ProjV1 _ p   -> concat ["(1st ", p, ")"]
@@ -661,15 +663,15 @@ pprint = indexedFold @PrecString @Value @ValueF go
 -- except that it saves you the syntactic noise of using a
 -- 'Proxy', by using type applications instead.
 --
---     get @"foo" IntegerProxy
+--     get @"foo" IntegerType
 --
 -- vs
 --
---     Get (Proxy :: Proxy "foo") IntegerProxy
+--     Get (Proxy :: Proxy "foo") IntegerType
 --
 get :: forall name env ty
      . ( Required name env ~ ty, NotPresent name (env `Without` name)
        , KnownSymbol name, KnownEnvironment env)
-    => ScalarProxy ty
+    => TypeProxy ty
     -> Value '(env, ty)
 get ty = Fix (Var (Proxy @name) ty bindingEvidence)

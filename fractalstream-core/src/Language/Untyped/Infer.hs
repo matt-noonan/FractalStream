@@ -38,15 +38,15 @@ addEnvironmentConstraints env ctx = void $ fromEnvironmentM env $ \name ty -> do
     Just tv -> go ty tv
  where
    v `is` t = addConstraints [ v `IsUsedLike` t, v `IsDefinedLike` t ]
-   go :: ScalarProxy t -> TypeVar -> m ()
+   go :: TypeProxy t -> TypeVar -> m ()
    go ty tv = case (ty, tv) of
-     (BooleanProxy, BoolTV) -> pure ()
-     (ColorProxy, ColorTV)  -> pure ()
+     (BooleanType, BoolTV) -> pure ()
+     (ColorType, ColorTV)  -> pure ()
      (_, ErrorTV e) -> throwError (ShapeErr $ show e)
-     (PairProxy t1 t2, PairTV tv1 tv2) -> go t1 tv1 >> go t2 tv2
-     (IntegerProxy, NumTV v) -> v `is` Z_T
-     (RealProxy,    NumTV v) -> v `is` R_T
-     (ComplexProxy, NumTV v) -> v `is` C_T
+     (PairType t1 t2, PairTV tv1 tv2) -> go t1 tv1 >> go t2 tv2
+     (IntegerType, NumTV v) -> v `is` Z_T
+     (RealType,    NumTV v) -> v `is` R_T
+     (ComplexType, NumTV v) -> v `is` C_T
      _ -> throwError InconsistentType
 
 solveConstraints :: forall m
@@ -154,7 +154,7 @@ infer :: forall env rt m
        . ( MonadState TCState m, MonadError TCError m )
       => EnvironmentProxy env
       -> Map String TypeVar
-      -> ScalarProxy rt
+      -> TypeProxy rt
       -> ValueWith TypeVar
       -> m (Value '(env, rt))
 infer env ctx rt ast = withEnvironment env $ do
@@ -164,9 +164,9 @@ infer env ctx rt ast = withEnvironment env $ do
   result <- foldM genConstraintsAlg ast
   case result of
     NumTV resultTV -> case rt of
-      IntegerProxy -> addConstraint (resultTV `IsUsedLike` Z_T)
-      RealProxy    -> addConstraint (resultTV `IsUsedLike` R_T)
-      ComplexProxy -> addConstraint (resultTV `IsUsedLike` C_T)
+      IntegerType -> addConstraint (resultTV `IsUsedLike` Z_T)
+      RealType    -> addConstraint (resultTV `IsUsedLike` R_T)
+      ComplexType -> addConstraint (resultTV `IsUsedLike` C_T)
       _            -> throwError InconsistentType
     _ -> pure ()
 
@@ -198,7 +198,7 @@ toTypedValue getType =
     lookupName :: forall env t a
                 . KnownEnvironment env
                => String
-               -> ScalarProxy t
+               -> TypeProxy t
                -> (forall name. KnownSymbol name
                      => Proxy name
                      -> NameIsPresent name t env
@@ -217,7 +217,7 @@ toTypedValue getType =
     typeOf = getType . annotation
 
     withJoinedType ::
-      forall a. ValueWith TypeVar -> ValueWith TypeVar -> (forall t. ScalarProxy t -> m a) -> m a
+      forall a. ValueWith TypeVar -> ValueWith TypeVar -> (forall t. TypeProxy t -> m a) -> m a
     withJoinedType v1 v2 k = do
       t1 <- typeOf v1
       t2 <- typeOf v2
@@ -225,7 +225,7 @@ toTypedValue getType =
 
     go :: forall env t
         . KnownEnvironment env
-       => ScalarProxy t
+       => TypeProxy t
        -> ValueWith TypeVar
        -> m (ValueF ValueWithTypeVar_ '(env,t))
     go wanted tvv = do
@@ -234,16 +234,16 @@ toTypedValue getType =
         case sameScalarType wanted inferred of
           Just _  -> go' wanted tvv
           Nothing -> case (wanted, inferred) of
-            (RealProxy,    IntegerProxy) -> pure (I2R tvv)
-            (ComplexProxy, RealProxy)    -> pure (R2C tvv)
-            (ComplexProxy, IntegerProxy) -> pure (R2C tvv)
-              -- this ^ will go back through the (RealProxy, IntegerProxy)
+            (RealType,    IntegerType) -> pure (I2R tvv)
+            (ComplexType, RealType)    -> pure (R2C tvv)
+            (ComplexType, IntegerType) -> pure (R2C tvv)
+              -- this ^ will go back through the (RealType, IntegerType)
               -- case during the next unfolding step.
             _ -> error ("wanted=" ++ showType wanted ++ ", but inferred=" ++ showType inferred)
 
     go' :: forall env t
          . KnownEnvironment env
-        => ScalarProxy t
+        => TypeProxy t
         -> ValueWith TypeVar
         -> m (ValueF ValueWithTypeVar_ '(env,t))
     go' ty (Ann _ (U.Var s)) =
@@ -251,50 +251,50 @@ toTypedValue getType =
     go' ty (Ann _ (U.ProjV1 p)) = do
       pairTy <- typeOf p
       withType pairTy $ \case
-        PairProxy t1 t2 -> case sameScalarType ty t1 of
-          Just Refl -> pure (ProjV1 (PairProxy t1 t2) p)
+        PairType t1 t2 -> case sameScalarType ty t1 of
+          Just Refl -> pure (ProjV1 (PairType t1 t2) p)
           Nothing   -> error "bad"
         _               -> error "bad"
     go' ty (Ann _ (U.ProjV2 p)) = do
       pairTy <- typeOf p
       withType pairTy $ \case
-        PairProxy t1 t2 -> case sameScalarType t2 ty of
-          Just Refl -> pure (ProjV2 (PairProxy t1 t2) p)
+        PairType t1 t2 -> case sameScalarType t2 ty of
+          Just Refl -> pure (ProjV2 (PairType t1 t2) p)
           Nothing   -> error "bad"
         _               -> error "bad"
     go' ty (Ann _ (U.ITE c y n)) = pure (ITE ty c y n)
     go' ty tvv@(Ann _ uv) = case ty of
-      PairProxy _ _ -> case uv of
+      PairType _ _ -> case uv of
         U.PairV lhs rhs -> pure (PairV ty lhs rhs)
         _               -> error "bad"
-      BooleanProxy -> case uv of
-        U.ConstB b    -> pure (Const (Scalar BooleanProxy b))
+      BooleanType -> case uv of
+        U.ConstB b    -> pure (Const (Scalar BooleanType b))
         U.Or  lhs rhs -> pure (Or lhs rhs)
         U.And lhs rhs -> pure (And lhs rhs)
         U.Not x       -> pure (Not x)
         U.Eql lhs rhs -> withJoinedType lhs rhs (\ct -> pure (Eql ct lhs rhs))
         U.NEq lhs rhs -> withJoinedType lhs rhs (\ct -> pure (NEq ct lhs rhs))
         U.Cmp op lhs rhs -> withJoinedType lhs rhs $ \case
-          IntegerProxy -> case op of
+          IntegerType -> case op of
             U.LE -> pure (LEI lhs rhs)
             U.LT -> pure (LTI lhs rhs)
             U.GE -> pure (GEI lhs rhs)
             U.GT -> pure (GTI lhs rhs)
-          RealProxy -> case op of
+          RealType -> case op of
             U.LE -> pure (LEF lhs rhs)
             U.LT -> pure (LTF lhs rhs)
             U.GE -> pure (GEF lhs rhs)
             U.GT -> pure (GTF lhs rhs)
           _         -> error "bad"
         _ -> error "bad"
-      ColorProxy -> case uv of
-        U.ConstColor c  -> pure (Const (Scalar ColorProxy c))
+      ColorType -> case uv of
+        U.ConstColor c  -> pure (Const (Scalar ColorType c))
         U.RGB r g b     -> pure (RGB r g b)
         U.Blend s c1 c2 -> pure (Blend s c1 c2)
         U.InvertRGB c   -> pure (InvertRGB c)
         _               -> error "bad"
-      IntegerProxy -> case uv of
-        U.ConstI n    -> pure (Const (Scalar IntegerProxy (fromIntegral n)))
+      IntegerType -> case uv of
+        U.ConstI n    -> pure (Const (Scalar IntegerType (fromIntegral n)))
         U.Arith op lhs rhs -> case op of
           U.Add       -> pure (AddI lhs rhs)
           U.Sub       -> pure (SubI lhs rhs)
@@ -306,9 +306,9 @@ toTypedValue getType =
         U.Ap1 U.Abs x -> pure (AbsI x)
         U.Ap1 U.Neg x -> pure (NegI x)
         _             -> error "bad"
-      RealProxy -> case uv of
-        U.ConstI n    -> pure (Const (Scalar RealProxy (fromIntegral n)))
-        U.ConstF x    -> pure (Const (Scalar RealProxy x))
+      RealType -> case uv of
+        U.ConstI n    -> pure (Const (Scalar RealType (fromIntegral n)))
+        U.ConstF x    -> pure (Const (Scalar RealType x))
         U.Arith op lhs rhs -> case op of
           U.Add       -> pure (AddF lhs rhs)
           U.Sub       -> pure (SubF lhs rhs)
@@ -344,10 +344,10 @@ toTypedValue getType =
           U.Arctanh   -> pure (ArctanhF x)
           _           -> error "bad"
         _             -> error "bad"
-      ComplexProxy -> case uv of
-        U.ConstI n    -> pure (Const (Scalar ComplexProxy (fromIntegral n :+ 0)))
-        U.ConstF x    -> pure (Const (Scalar ComplexProxy (x :+ 0)))
-        U.ConstC x y  -> pure (Const (Scalar ComplexProxy (x :+ y)))
+      ComplexType -> case uv of
+        U.ConstI n    -> pure (Const (Scalar ComplexType (fromIntegral n :+ 0)))
+        U.ConstF x    -> pure (Const (Scalar ComplexType (x :+ 0)))
+        U.ConstC x y  -> pure (Const (Scalar ComplexType (x :+ y)))
         U.Arith op lhs rhs -> case op of
           U.Add       -> pure (AddC lhs rhs)
           U.Sub       -> pure (SubC lhs rhs)

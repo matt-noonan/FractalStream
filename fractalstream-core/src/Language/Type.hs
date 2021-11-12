@@ -2,7 +2,7 @@ module Language.Type
   ( Type(..)
   , type ScalarType
   , Scalar(..)
-  , ScalarProxy(..)
+  , TypeProxy(..)
   , SomeType(..)
   , sameScalarType
   , Int64
@@ -25,6 +25,7 @@ import GHC.TypeLits
 import Data.Type.Equality ((:~:)(..))
 import Data.Color (Color, colorToRGB)
 import Data.Complex
+import Data.List (intercalate)
 
 data Type
   = VoidT
@@ -36,6 +37,7 @@ data Type
   | Pair Type Type
   | ColorT
   | ImageT
+  | ListT Type
   deriving (Eq, Ord, Show)
 
 -- | Constant values for scalar types
@@ -49,73 +51,82 @@ type family ScalarType (t :: Type) :: * where
   ScalarType ('Pair x y) = (ScalarType x, ScalarType y)
   ScalarType 'VoidT      = ()
   ScalarType 'ImageT     = Int
+  ScalarType ('ListT x)  = [ScalarType x]
 
 -- | Constant values for scalar types. Match on the
 -- first argument to make the type of the second argument
 -- known.
 data Scalar (t :: Type) where
-  Scalar :: forall t. ScalarProxy t -> ScalarType t -> Scalar t
+  Scalar :: forall t. TypeProxy t -> ScalarType t -> Scalar t
 
 instance Eq (Scalar t) where
   Scalar t x == Scalar _ y = case t of
-    BooleanProxy  -> x == y
-    IntegerProxy  -> x == y
-    RealProxy     -> x == y
-    ComplexProxy  -> x == y
-    RationalProxy -> x == y
-    ColorProxy    -> x == y
-    PairProxy t1 t2 ->
+    BooleanType  -> x == y
+    IntegerType  -> x == y
+    RealType     -> x == y
+    ComplexType  -> x == y
+    RationalType -> x == y
+    ColorType    -> x == y
+    PairType t1 t2 ->
       let (x1, x2) = x
           (y1, y2) = y
       in (Scalar t1 x1, Scalar t2 x2) == (Scalar t1 y1, Scalar t2 y2)
-    VoidProxy     -> x == y
-    ImageProxy    -> x == y
+    VoidType     -> x == y
+    ImageType    -> x == y
+    ListType it -> map (Scalar it) x == map (Scalar it) y
 
 instance Ord (Scalar t) where
   compare (Scalar t x) (Scalar _ y) = case t of
-    BooleanProxy  -> compare x y
-    IntegerProxy  -> compare x y
-    RealProxy     -> compare x y
-    ComplexProxy  -> compare (realPart x, imagPart x) (realPart y, imagPart y)
-    RationalProxy -> compare x y
-    ColorProxy    -> compare x y
-    PairProxy t1 t2 ->
+    BooleanType  -> compare x y
+    IntegerType  -> compare x y
+    RealType     -> compare x y
+    ComplexType  -> compare (realPart x, imagPart x) (realPart y, imagPart y)
+    RationalType -> compare x y
+    ColorType    -> compare x y
+    PairType t1 t2 ->
       let (x1, x2) = x
           (y1, y2) = y
       in compare (Scalar t1 x1, Scalar t2 x2) (Scalar t1 y1, Scalar t2 y2)
-    VoidProxy     -> compare x y
-    ImageProxy    -> compare x y
+    VoidType     -> compare x y
+    ImageType    -> compare x y
+    ListType it -> compare (map (Scalar it) x) (map (Scalar it) y)
 
-sameScalarType :: ScalarProxy t1 -> ScalarProxy t2 -> Maybe (t1 :~: t2)
+sameScalarType :: TypeProxy t1 -> TypeProxy t2 -> Maybe (t1 :~: t2)
 sameScalarType v1 v2 = case v1 of
-  BooleanProxy  -> case v2 of { BooleanProxy  -> Just Refl; _ -> Nothing }
-  IntegerProxy  -> case v2 of { IntegerProxy  -> Just Refl; _ -> Nothing }
-  RealProxy     -> case v2 of { RealProxy     -> Just Refl; _ -> Nothing }
-  ComplexProxy  -> case v2 of { ComplexProxy  -> Just Refl; _ -> Nothing }
-  RationalProxy -> case v2 of { RationalProxy -> Just Refl; _ -> Nothing }
-  ColorProxy    -> case v2 of { ColorProxy    -> Just Refl; _ -> Nothing }
-  VoidProxy     -> case v2 of { VoidProxy     -> Just Refl; _ -> Nothing }
-  ImageProxy    -> case v2 of { ImageProxy    -> Just Refl; _ -> Nothing }
-  PairProxy x y -> case v2 of
-    PairProxy x' y' -> case (,) <$> sameScalarType x x' <*> sameScalarType y y' of
+  BooleanType  -> case v2 of { BooleanType  -> Just Refl; _ -> Nothing }
+  IntegerType  -> case v2 of { IntegerType  -> Just Refl; _ -> Nothing }
+  RealType     -> case v2 of { RealType     -> Just Refl; _ -> Nothing }
+  ComplexType  -> case v2 of { ComplexType  -> Just Refl; _ -> Nothing }
+  RationalType -> case v2 of { RationalType -> Just Refl; _ -> Nothing }
+  ColorType    -> case v2 of { ColorType    -> Just Refl; _ -> Nothing }
+  VoidType     -> case v2 of { VoidType     -> Just Refl; _ -> Nothing }
+  ImageType    -> case v2 of { ImageType    -> Just Refl; _ -> Nothing }
+  PairType x y -> case v2 of
+    PairType x' y' -> case (,) <$> sameScalarType x x' <*> sameScalarType y y' of
       Just (Refl, Refl) -> Just Refl
       Nothing           -> Nothing
     _ -> Nothing
+  ListType x -> case v2 of
+    ListType x' -> case sameScalarType x x' of
+      Just Refl -> Just Refl
+      Nothing   -> Nothing
+    _ -> Nothing
 
 -- | Singleton values reflecting the type-level parameter @t@.
-data ScalarProxy (t :: Type) where
-  BooleanProxy  :: ScalarProxy 'BooleanT
-  IntegerProxy  :: ScalarProxy 'IntegerT
-  RealProxy     :: ScalarProxy 'RealT
-  ComplexProxy  :: ScalarProxy 'ComplexT
-  RationalProxy :: ScalarProxy 'RationalT
-  ColorProxy    :: ScalarProxy 'ColorT
-  PairProxy     :: (KnownType x, KnownType y) => ScalarProxy x -> ScalarProxy y -> ScalarProxy ('Pair x y)
-  VoidProxy     :: ScalarProxy 'VoidT
-  ImageProxy    :: ScalarProxy 'ImageT
+data TypeProxy (t :: Type) where
+  BooleanType  :: TypeProxy 'BooleanT
+  IntegerType  :: TypeProxy 'IntegerT
+  RealType     :: TypeProxy 'RealT
+  ComplexType  :: TypeProxy 'ComplexT
+  RationalType :: TypeProxy 'RationalT
+  ColorType    :: TypeProxy 'ColorT
+  PairType     :: (KnownType x, KnownType y) => TypeProxy x -> TypeProxy y -> TypeProxy ('Pair x y)
+  VoidType     :: TypeProxy 'VoidT
+  ImageType    :: TypeProxy 'ImageT
+  ListType     :: KnownType x => TypeProxy x -> TypeProxy ('ListT x)
 
 data SomeType where
-  SomeType :: forall t. ScalarProxy t -> SomeType
+  SomeType :: forall t. TypeProxy t -> SomeType
 
 instance Show SomeType where
   show (SomeType t) = showType t
@@ -123,72 +134,77 @@ instance Show SomeType where
 instance Eq SomeType where
   SomeType t1 == SomeType t2 = maybe False (const True) (sameScalarType t1 t2)
 
-class KnownType (t :: Type)   where typeProxy :: ScalarProxy t
-instance KnownType 'BooleanT  where typeProxy = BooleanProxy
-instance KnownType 'IntegerT  where typeProxy = IntegerProxy
-instance KnownType 'RealT     where typeProxy = RealProxy
-instance KnownType 'ComplexT  where typeProxy = ComplexProxy
-instance KnownType 'RationalT where typeProxy = RationalProxy
-instance KnownType 'ColorT    where typeProxy = ColorProxy
-instance KnownType 'VoidT     where typeProxy = VoidProxy
-instance KnownType 'ImageT    where typeProxy = ImageProxy
+class KnownType (t :: Type)   where typeProxy :: TypeProxy t
+instance KnownType 'BooleanT  where typeProxy = BooleanType
+instance KnownType 'IntegerT  where typeProxy = IntegerType
+instance KnownType 'RealT     where typeProxy = RealType
+instance KnownType 'ComplexT  where typeProxy = ComplexType
+instance KnownType 'RationalT where typeProxy = RationalType
+instance KnownType 'ColorT    where typeProxy = ColorType
+instance KnownType 'VoidT     where typeProxy = VoidType
+instance KnownType 'ImageT    where typeProxy = ImageType
+instance KnownType x => KnownType ('ListT x) where
+  typeProxy = ListType (typeProxy @x)
 instance (KnownType x, KnownType y) => KnownType ('Pair x y) where
-  typeProxy = PairProxy (typeProxy @x) (typeProxy @y)
+  typeProxy = PairType (typeProxy @x) (typeProxy @y)
 
-withKnownType :: ScalarProxy t -> (KnownType t => a) -> a
+withKnownType :: TypeProxy t -> (KnownType t => a) -> a
 withKnownType ty k = case ty of
-  BooleanProxy  -> k
-  IntegerProxy  -> k
-  RealProxy     -> k
-  ComplexProxy  -> k
-  RationalProxy -> k
-  ColorProxy    -> k
-  VoidProxy     -> k
-  ImageProxy    -> k
-  PairProxy {}  -> k
+  BooleanType  -> k
+  IntegerType  -> k
+  RealType     -> k
+  ComplexType  -> k
+  RationalType -> k
+  ColorType    -> k
+  VoidType     -> k
+  ImageType    -> k
+  PairType {}  -> k
+  ListType {}  -> k
 
 pattern Boolean_ :: forall (t :: Type). () => (t ~ 'BooleanT) => ScalarType t -> Scalar t
-pattern Boolean_ x = Scalar BooleanProxy x
+pattern Boolean_ x = Scalar BooleanType x
 
 pattern Integer_ :: forall (t :: Type). () => (t ~ 'IntegerT) => ScalarType t -> Scalar t
-pattern Integer_ x = Scalar IntegerProxy x
+pattern Integer_ x = Scalar IntegerType x
 
 pattern Real_ :: forall (t :: Type). () => (t ~ 'RealT) => ScalarType t -> Scalar t
-pattern Real_ x    = Scalar RealProxy x
+pattern Real_ x    = Scalar RealType x
 
 pattern Complex_ :: forall (t :: Type). () => (t ~ 'ComplexT) => ScalarType t -> Scalar t
-pattern Complex_  pair = Scalar ComplexProxy pair
+pattern Complex_  pair = Scalar ComplexType pair
 
 pattern Rational_ :: forall (t :: Type). () => (t ~ 'RationalT) => ScalarType t -> Scalar t
-pattern Rational_ pair = Scalar RationalProxy pair
+pattern Rational_ pair = Scalar RationalType pair
 
 pattern Color_ :: forall (t :: Type). () => (t ~ 'ColorT) => ScalarType t -> Scalar t
-pattern Color_ c = Scalar ColorProxy c
+pattern Color_ c = Scalar ColorType c
 
 
-showType :: ScalarProxy t -> String
+showType :: TypeProxy t -> String
 showType = \case
-  BooleanProxy  -> "Boolean"
-  IntegerProxy  -> "Integer"
-  RealProxy     -> "Real"
-  ComplexProxy  -> "Complex"
-  RationalProxy -> "Rational"
-  ColorProxy    -> "Color"
-  VoidProxy     -> "Unit"
-  ImageProxy    -> "Image"
-  PairProxy x y -> showType x <> " x " <> showType y
+  BooleanType  -> "Boolean"
+  IntegerType  -> "Integer"
+  RealType     -> "Real"
+  ComplexType  -> "Complex"
+  RationalType -> "Rational"
+  ColorType    -> "Color"
+  VoidType     -> "Unit"
+  ImageType    -> "Image"
+  PairType x y -> "(" <> showType x <> " x " <> showType y <> ")"
+  ListType x   -> "List " <> showType x
 
-showValue :: ScalarProxy t -> ScalarType t -> String
+showValue :: TypeProxy t -> ScalarType t -> String
 showValue ty v = case ty of
-  BooleanProxy  -> if v then "true" else "false"
-  IntegerProxy  -> show v
-  RealProxy     -> show v
-  ComplexProxy  -> let x :+ y = v
+  BooleanType  -> if v then "true" else "false"
+  IntegerType  -> show v
+  RealType     -> show v
+  ComplexType  -> let x :+ y = v
                    in show x <> " + " <> show y <> "i"
-  RationalProxy -> let (x, y) = v
+  RationalType -> let (x, y) = v
                    in show x <> " / " <> show y
-  ColorProxy    -> show (colorToRGB v)
-  VoidProxy     -> "n/a"
-  ImageProxy    -> "(image)"
-  PairProxy xt yt -> let (x, y) = v
+  ColorType    -> show (colorToRGB v)
+  VoidType     -> "n/a"
+  ImageType    -> "(image)"
+  PairType xt yt -> let (x, y) = v
                      in showValue xt x <> " , " <> showValue yt y
+  ListType xt -> "[" ++ intercalate ", " (map (showValue xt) v) ++ "]"

@@ -35,7 +35,7 @@ data EffectHandler (eff :: Effect) (result :: (Environment, Type) -> Exp *) wher
           . Proxy result
          -> (forall env t
               . EnvironmentProxy env
-             -> ScalarProxy t
+             -> TypeProxy t
              -> eff result '(env, t)
              -> Eval (result '(env, t)))
          -> EffectHandler eff result
@@ -51,12 +51,12 @@ data Handlers (effs :: [Effect]) (result :: (Environment, Type) -> Exp *) where
 mapHandlers :: forall effs a b
              . (forall env t
                  . EnvironmentProxy env
-                -> ScalarProxy t
+                -> TypeProxy t
                 -> Eval (a '(env,t))
                 -> Eval (b '(env,t)))
             -> (forall env t
                  . EnvironmentProxy env
-                -> ScalarProxy t
+                -> TypeProxy t
                 -> Eval (b '(env,t))
                 -> Eval (a '(env,t)))
             -> Handlers effs a
