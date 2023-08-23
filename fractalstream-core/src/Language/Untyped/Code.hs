@@ -13,6 +13,7 @@ import qualified Data.Set as Set
 import Control.Monad.Except
 import Data.Bifunctor
 import Data.Bifunctor.TH
+import Debug.Trace
 
 type Code = Fix (CodeF Value)
 
@@ -119,7 +120,7 @@ promoteSetToLet :: Set String -> Code -> Code
 promoteSetToLet = curry (unfold phi)
   where
     phi :: (Set String, Code) -> CodeF Value (Set String, Code)
-    phi (scope, Fix ast) = case ast of
+    phi (scope, Fix ast) = trace (show ast) $ case ast of
       -- In a block, find any Set or SetBind instructions that
       -- are setting an unbound variable. Convert these to
       -- Let / LetBind, scoping over the remainder of the block.

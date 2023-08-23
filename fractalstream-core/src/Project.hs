@@ -33,4 +33,4 @@ data ProjectSource = ProjectSource
   }
 
 data SettingDefinition =
-  SettingDefinition String Type
+  SettingDefinition String FSType

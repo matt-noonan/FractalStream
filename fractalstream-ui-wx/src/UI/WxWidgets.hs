@@ -64,7 +64,7 @@ attachActor f (UIActor handler) = do
 -- Settings widget
 ----------------------------------------------------------------
 
-data ScalarIORef :: Symbol -> Type -> Exp *
+data ScalarIORef :: Symbol -> FSType -> Exp *
 type instance Eval (ScalarIORef name t) = (Maybe String, IORef (HaskellType t))
 
 data SettingsWidget (env :: Environment) = SettingsWidget

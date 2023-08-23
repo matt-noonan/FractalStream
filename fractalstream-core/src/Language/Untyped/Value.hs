@@ -11,6 +11,7 @@ import Prelude hiding (GT, LT)
 --import Control.Monad.State.Strict
 import Data.Color
 import Data.Recursive
+import Data.Kind
 
 type Value = Fix ValueF
 
@@ -29,7 +30,7 @@ data ArithOp = Add | Sub | Mul | Div | Pow | Mod
 data CmpOp = LE | LT | GE | GT
   deriving (Eq, Ord, Show)
 
-data ValueF (value :: *)
+data ValueF (value :: Type)
   = ConstB Bool
   | ConstI Integer
   | ConstF Double

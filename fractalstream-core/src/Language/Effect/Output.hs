@@ -12,9 +12,10 @@ import Data.Indexed.Functor
 import GHC.TypeLits
 import Fcf (Exp)
 import Data.Type.Equality ((:~:)(..))
+import Data.Kind
 
 -- | An 'Output' effect introduces a set of typed write-only variables.
-data Output (outputs :: Environment) (code :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) where
+data Output (outputs :: Environment) (code :: (Environment, FSType) -> Exp Type) (et :: (Environment, FSType)) where
   Output :: forall name ty outputs env code
           . EnvironmentProxy env
          -> NameIsPresent name ty outputs

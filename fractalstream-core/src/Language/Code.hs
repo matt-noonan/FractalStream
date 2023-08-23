@@ -16,6 +16,7 @@ import Language.Effect
 import Data.Indexed.Functor
 import Fcf
 import GHC.TypeLits
+import Data.Kind
 
 data SomeCode where
   SomeCode :: forall effs env t. Code effs env t -> SomeCode
@@ -33,9 +34,9 @@ instance Show (Code effs env t) where show _ = "<code>"
 -- we need to use both the environment *and* the type as indices
 -- in order to make an indexed functor.
 data CodeF (effs :: [Effect])
-           (value :: (Environment, Type) -> Exp *)
-           (code :: (Environment, Type) -> Exp *)
-           (et :: (Environment, Type)) where
+           (value :: (Environment, FSType) -> Exp Type)
+           (code :: (Environment, FSType) -> Exp Type)
+           (et :: (Environment, FSType)) where
 
   Let :: forall name ty env result effs code value
        . (KnownSymbol name, KnownEnvironment env)

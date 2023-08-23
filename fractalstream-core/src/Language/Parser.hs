@@ -64,10 +64,10 @@ import Data.Ord
 
 -- | Swap this out for @Text.Megaparsec.Debug@'s
 -- 'dbg'' to debug the parsers.
---import Text.Megaparsec.Debug (dbg')
+import Text.Megaparsec.Debug (dbg')
 dbg :: String -> Parser t -> Parser t
---dbg = dbg'
-dbg _ = id
+dbg = if False then dbg' else const id
+--dbg _ = id
 
 data BadParse
   = AmbiguousParse

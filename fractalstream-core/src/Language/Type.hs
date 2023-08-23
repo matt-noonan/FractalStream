@@ -1,5 +1,5 @@
 module Language.Type
-  ( Type(..)
+  ( FSType(..)
   , type HaskellType
   , Scalar(..)
   , TypeProxy(..)
@@ -26,22 +26,23 @@ import Data.Type.Equality ((:~:)(..))
 import Data.Color (Color, colorToRGB)
 import Data.Complex
 import Data.List (intercalate)
+import Data.Kind
 
-data Type
+data FSType
   = VoidT
   | BooleanT
   | IntegerT
   | RealT
   | ComplexT
   | RationalT
-  | Pair Type Type
+  | Pair FSType FSType
   | ColorT
   | ImageT
-  | ListT Type
+  | ListT FSType
   deriving (Eq, Ord, Show)
 
 -- | Constant values for scalar types
-type family HaskellType (t :: Type) :: * where
+type family HaskellType (t :: FSType) :: Type where
   HaskellType 'BooleanT   = Bool
   HaskellType 'IntegerT   = Int64
   HaskellType 'RealT      = Double
@@ -56,7 +57,7 @@ type family HaskellType (t :: Type) :: * where
 -- | Constant values for scalar types. Match on the
 -- first argument to make the type of the second argument
 -- known.
-data Scalar (t :: Type) where
+data Scalar (t :: FSType) where
   Scalar :: forall t. TypeProxy t -> HaskellType t -> Scalar t
 
 instance Eq (Scalar t) where
@@ -113,7 +114,7 @@ sameHaskellType v1 v2 = case v1 of
     _ -> Nothing
 
 -- | Singleton values reflecting the type-level parameter @t@.
-data TypeProxy (t :: Type) where
+data TypeProxy (t :: FSType) where
   BooleanType  :: TypeProxy 'BooleanT
   IntegerType  :: TypeProxy 'IntegerT
   RealType     :: TypeProxy 'RealT
@@ -134,7 +135,7 @@ instance Show SomeType where
 instance Eq SomeType where
   SomeType t1 == SomeType t2 = maybe False (const True) (sameHaskellType t1 t2)
 
-class KnownType (t :: Type)   where typeProxy :: TypeProxy t
+class KnownType (t :: FSType)   where typeProxy :: TypeProxy t
 instance KnownType 'BooleanT  where typeProxy = BooleanType
 instance KnownType 'IntegerT  where typeProxy = IntegerType
 instance KnownType 'RealT     where typeProxy = RealType
@@ -161,22 +162,22 @@ withKnownType ty k = case ty of
   PairType {}  -> k
   ListType {}  -> k
 
-pattern Boolean_ :: forall (t :: Type). () => (t ~ 'BooleanT) => HaskellType t -> Scalar t
+pattern Boolean_ :: forall (t :: FSType). () => (t ~ 'BooleanT) => HaskellType t -> Scalar t
 pattern Boolean_ x = Scalar BooleanType x
 
-pattern Integer_ :: forall (t :: Type). () => (t ~ 'IntegerT) => HaskellType t -> Scalar t
+pattern Integer_ :: forall (t :: FSType). () => (t ~ 'IntegerT) => HaskellType t -> Scalar t
 pattern Integer_ x = Scalar IntegerType x
 
-pattern Real_ :: forall (t :: Type). () => (t ~ 'RealT) => HaskellType t -> Scalar t
+pattern Real_ :: forall (t :: FSType). () => (t ~ 'RealT) => HaskellType t -> Scalar t
 pattern Real_ x    = Scalar RealType x
 
-pattern Complex_ :: forall (t :: Type). () => (t ~ 'ComplexT) => HaskellType t -> Scalar t
+pattern Complex_ :: forall (t :: FSType). () => (t ~ 'ComplexT) => HaskellType t -> Scalar t
 pattern Complex_  pair = Scalar ComplexType pair
 
-pattern Rational_ :: forall (t :: Type). () => (t ~ 'RationalT) => HaskellType t -> Scalar t
+pattern Rational_ :: forall (t :: FSType). () => (t ~ 'RationalT) => HaskellType t -> Scalar t
 pattern Rational_ pair = Scalar RationalType pair
 
-pattern Color_ :: forall (t :: Type). () => (t ~ 'ColorT) => HaskellType t -> Scalar t
+pattern Color_ :: forall (t :: FSType). () => (t ~ 'ColorT) => HaskellType t -> Scalar t
 pattern Color_ c = Scalar ColorType c
 
 

@@ -7,46 +7,98 @@ packages:
 - completed:
     hackage: cabal-macosx-0.2.4.2@sha256:6794dab50ca2a062b9c54455442ccc3d9d9ffa6dbdb81940597329e3b377436b,3045
     pantry-tree:
-      size: 844
       sha256: b1ec74d2cdf16e1cf8dd71ebffbb922099cfa8ad949a5fa07974a645b806f029
+      size: 844
   original:
     hackage: cabal-macosx-0.2.4.2@sha256:6794dab50ca2a062b9c54455442ccc3d9d9ffa6dbdb81940597329e3b377436b,3045
 - completed:
     hackage: megaparsec-9.1.0@sha256:f2ef8a08cc1e3fa6628965732f588e07e886a01f8267310404e31072fa9e802b,3238
     pantry-tree:
-      size: 1447
       sha256: 50d4ba02031b8802260a734d5fb1954ac6db1ba99a4c78486d85ace19dc854f4
+      size: 1447
   original:
     hackage: megaparsec-9.1.0@sha256:f2ef8a08cc1e3fa6628965732f588e07e886a01f8267310404e31072fa9e802b,3238
 - completed:
-    subdir: llvm-hs
+    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    git: https://github.com/llvm-hs/llvm-hs.git
     name: llvm-hs
-    version: 9.0.1.1
-    git: https://github.com/llvm-hs/llvm-hs.git
     pantry-tree:
-      size: 14018
       sha256: 7336db96faddbf178009d31aaa1b3d78d3c86d2b3aca352f43c0a1e1048ff50f
-    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
-  original:
+      size: 14018
     subdir: llvm-hs
-    git: https://github.com/llvm-hs/llvm-hs.git
-    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
-- completed:
-    subdir: llvm-hs-pure
-    name: llvm-hs-pure
     version: 9.0.1.1
-    git: https://github.com/llvm-hs/llvm-hs.git
-    pantry-tree:
-      size: 2652
-      sha256: e7a3bddb79062fe63d1a05fd23949d7312032eef06f50dc3b5de7df1fe62be1c
-    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
   original:
-    subdir: llvm-hs-pure
-    git: https://github.com/llvm-hs/llvm-hs.git
     commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    git: https://github.com/llvm-hs/llvm-hs.git
+    subdir: llvm-hs
+- completed:
+    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    git: https://github.com/llvm-hs/llvm-hs.git
+    name: llvm-hs-pure
+    pantry-tree:
+      sha256: e7a3bddb79062fe63d1a05fd23949d7312032eef06f50dc3b5de7df1fe62be1c
+      size: 2652
+    subdir: llvm-hs-pure
+    version: 9.0.1.1
+  original:
+    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    git: https://github.com/llvm-hs/llvm-hs.git
+    subdir: llvm-hs-pure
+- completed:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    name: wx
+    pantry-tree:
+      sha256: c37c510210385ac5a73a96b4e1d9c9818f9762409c036b58bbf0c996e9777d54
+      size: 1265
+    subdir: wx
+    version: 0.93.0.0
+  original:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    subdir: wx
+- completed:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    name: wxcore
+    pantry-tree:
+      sha256: e2f7d551558229a4ba1fb260549463b2a4ce6c90e31e5035eada1d2731821db9
+      size: 1631
+    subdir: wxcore
+    version: 0.93.0.0
+  original:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    subdir: wxcore
+- completed:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    name: wxc
+    pantry-tree:
+      sha256: 88914ff48fbd1abff54e6e7e5c1f593f737d428b5ae3ce9d69baabf22908e77c
+      size: 9113
+    subdir: wxc
+    version: 0.93.0.0
+  original:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    subdir: wxc
+- completed:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    name: wxdirect
+    pantry-tree:
+      sha256: a3fb951117cbbefa6ea25609751b5c4c87310809178d29a3ed501ebf664e956a
+      size: 922
+    subdir: wxdirect
+    version: 0.93.0.0
+  original:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    subdir: wxdirect
 snapshots:
 - completed:
+    sha256: 9f9fe35c949414146840a985fb228fd397c504d1781b834bfc9ab935f4d27df6
     size: 586923
     url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/9.yaml
-    sha256: 9f9fe35c949414146840a985fb228fd397c504d1781b834bfc9ab935f4d27df6
   original: lts-18.9

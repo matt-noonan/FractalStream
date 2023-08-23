@@ -5,7 +5,7 @@ module FractalStream.Models
 
 import Lang.Numbers
 
-type family Coordinate model :: *
+type family Coordinate model :: Type
 data ComplexParametric1d
 
 
@@ -14,7 +14,7 @@ import Data.Word
 import Data.Complex
 
 
-  
+
 newtype ViewCoordinate a = ViewCoordinate a
 
 data ParameterType = N | Z | R | C
@@ -29,7 +29,7 @@ data Group = Group
   { groupTitle  :: !String
   , groupParams :: [Parameter]
   }
-  
+
 epsilon :: Parameter
 epsilon = Parameter
   { parameterType = R
@@ -60,8 +60,8 @@ data Int32
 
 data ParameterDesc where
   = Param Parameter
-  | 
-  
+  |
+
 complexParametric1d
   =  viewCoordinate @(Complex Double) "C"
   <> parameter @Int32 "Maximum iteration count"

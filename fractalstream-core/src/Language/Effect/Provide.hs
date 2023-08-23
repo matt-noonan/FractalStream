@@ -5,10 +5,11 @@ module Language.Effect.Provide
 import Language.Value
 import Data.Indexed.Functor
 import Fcf (Exp, Eval)
+import Data.Kind
 
 data Provide (env :: Environment)
-             (code :: (Environment, Type) -> Exp *)
-             (et :: (Environment, Type)) where
+             (code :: (Environment, FSType) -> Exp Type)
+             (et :: (Environment, FSType)) where
 
   Provide :: forall env t code env2
            . env `CanAppendTo` env2

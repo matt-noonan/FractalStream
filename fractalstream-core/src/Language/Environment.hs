@@ -64,6 +64,7 @@ import Data.Proxy
 import Data.Coerce
 import Unsafe.Coerce
 import Data.Constraint
+import Data.Kind
 
 ---------------------------------------------------------------------------------
 -- Environments
@@ -72,7 +73,7 @@ import Data.Constraint
 -- | An 'Environment' is a map from symbols to 'Type's. It is represented
 -- as a type-level list of pairs; the rest of the API generally requires that
 -- each symbol appears one time at most.
-type Environment = [(Symbol, Type)]
+type Environment = [(Symbol, FSType)]
 
 ---------------------------------------------------------------------------------
 -- Value-level proxies for the environment
@@ -88,8 +89,8 @@ data EnvironmentProxy (env :: Environment) where
                 -> EnvironmentProxy env
                 -> EnvironmentProxy ( '(name, t) ': env )
 
-type family Env (et :: (Environment, Type)) where Env '(env, t) = env
-type family Ty  (et :: (Environment, Type)) where Ty  '(env, t) = t
+type family Env (et :: (Environment, FSType)) where Env '(env, t) = env
+type family Ty  (et :: (Environment, FSType)) where Ty  '(env, t) = t
 
 instance Show (EnvironmentProxy env) where
   show = \case
@@ -137,7 +138,7 @@ lemmaEnvTy' _ = lemmaEnvTy @et
 
 -- | Proxy the type index directly, and the environment
 -- index implicitly through the KnownEnvironment constraint
-data EnvTypeProxy (et :: (Environment, Type)) where
+data EnvTypeProxy (et :: (Environment, FSType)) where
   EnvType :: forall env t
            . KnownEnvironment env
           => TypeProxy t
@@ -220,7 +221,7 @@ trustMe = coerce TrustMe
 
 -- | 'NameIsPresent' represents a proof that the name is present in the
 -- environment *exactly one time*, and also has the given type.
-newtype NameIsPresent (name :: Symbol) (t :: Type) (env :: Environment)
+newtype NameIsPresent (name :: Symbol) (t :: FSType) (env :: Environment)
   = NameIsPresent TrustMe
 
 -- Prevent coercion of the type parameters
@@ -368,17 +369,17 @@ recallNotPresentInEither k =
 --
 -- 'Nothing
 type family Lookup
-    (name :: Symbol) (env :: [(Symbol, Type)]) :: Maybe Type where
+    (name :: Symbol) (env :: [(Symbol, FSType)]) :: Maybe FSType where
   Lookup _ '[] = 'Nothing
   Lookup name ('(name, t) ': _) = 'Just t
   Lookup name (_ ': env) = Lookup name env
 
--- | Evaluate to the 'Type' of @name@ in the environment @env@,  or raise a
+-- | Evaluate to the 'FSType' of @name@ in the environment @env@,  or raise a
 -- type error at compile-time if the name is not present.
 type Required name env = Required_impl name (Lookup name env)
 
 type family Required_impl
-    (name :: Symbol) (result :: Maybe Type) :: Type where
+    (name :: Symbol) (result :: Maybe FSType) :: FSType where
   Required_impl name 'Nothing =
     TypeError ('Text "No variable named " ':<>:
                'Text name ':<>: 'Text " is in scope")
@@ -389,7 +390,7 @@ type family Required_impl
 type NotPresent name env = NotPresent_impl name (Lookup name env)
 
 type family NotPresent_impl
-    (name :: Symbol) (result :: Maybe Type) :: Constraint where
+    (name :: Symbol) (result :: Maybe FSType) :: Constraint where
   NotPresent_impl name ('Just _) =
     TypeError ('Text "The name " ':<>: 'Text name ':<>:
                'Text " shadows another variable in scope")
@@ -400,7 +401,7 @@ type family NotPresent_impl
 -- defined in the environment.
 ---------------------------------------------------------------------------------
 
-data Context (value :: Symbol -> Type -> Exp *) (env :: Environment) where
+data Context (value :: Symbol -> FSType -> Exp Type) (env :: Environment) where
   EmptyContext :: forall value. Context value '[]
   Bind :: forall name ty env value
         . (KnownSymbol name, NotPresent name env)

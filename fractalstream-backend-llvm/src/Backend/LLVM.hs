@@ -39,7 +39,7 @@ import qualified Data.Map as Map
 import Foreign hiding (void)
 import GHC.TypeLits
 
-data JITFun (env :: Environment) (ret :: Type) where
+data JITFun (env :: Environment) (ret :: FSType) where
   JITFun :: EnvironmentProxy env -> TypeProxy ret -> FunPtr () -> JITFun env ret
 
 type JX = FunPtr (Ptr Word8 -> Int32 -> Int32 -> Ptr Double -> Int32 -> Double -> Double -> Double -> IO ())
@@ -54,7 +54,7 @@ runJX go outPtr blockSize subsamples (dx :+ dy) maxIters maxRadius (x :+ y) = do
 foreign import ccall "dynamic"
   mkJX :: JX -> Ptr Word8 -> Int32 -> Int32 -> Ptr Double -> Int32 -> Double -> Double -> Double -> IO ()
 
-class ToForeignFun (env :: Environment) (ret :: Type) where
+class ToForeignFun (env :: Environment) (ret :: FSType) where
   type AsForeignFun env ret :: *
   toForeignFun :: (Context HaskellTypeOfBinding env -> IO (HaskellType ret))
                -> AsForeignFun env ret

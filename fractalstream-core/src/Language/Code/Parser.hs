@@ -8,20 +8,15 @@ module Language.Code.Parser
   , EffectParser(..)
   , EffectParsers(..)
   , EffectParsers_(..)
-  , uParseCode
-  , uCode
+  --, uParseCode
+  --, uCode
   ) where
-
-import Prelude hiding (words)
-import qualified Prelude as Prelude
 
 import Language.Type
 import Language.Parser
 import Language.Value
 import Language.Value.Parser
 import Language.Code
-import qualified Language.Untyped.Code as U
-import qualified Data.Recursive as U
 
 import GHC.TypeLits
 import Data.Type.Equality ((:~:)(..))
@@ -35,9 +30,11 @@ parseCode :: forall effs env t
 parseCode eps env t input
   = parse (pCode eps env t <* eof) (tokenizeWithIndentation input)
 
+{-
 uParseCode :: String
           -> Either (Int, BadParse) U.Code
 uParseCode = parse (uCode <* eof) . tokenizeWithIndentation
+-}
 
 -- | The code grammar is a tiny bit monadic, because the allowed parses
 -- depend on which variables are in scope, and this can change as new 'var'
@@ -306,13 +303,18 @@ pEffects (EP eps) env t = dbg "effects" $ go eps
                                                          case lemmaEnvTy @et' of
                                                            Refl -> pCode' (EP eps) et'))
       <|> go etc
-
+{-
 uCode :: Parser U.Code
-uCode = U.Fix <$> (uBlock <|> uLine <?> "code")
+uCode = dbg "uCode" (U.Fix <$> (uBlock <|> uLine <?> "code"))
   where
-    value = untypedValue_
-    word = tok_ . Identifier
-    words = mapM_ word . Prelude.words
+    value end = dbg "value" $ do
+      toks <- manyTill anyToken end
+      case parseUntypedValueFromTokens toks of
+        Left (_, err) -> fail (show err)
+        Right v -> pure v
+      --untypedValue_
+    word = dbg "word" . tok_ . Identifier
+    words = dbg "words" . mapM_ word . Prelude.words
 
     blockConcat (U.Block xs) (U.Block ys) = U.Block (xs ++ ys)
     blockConcat (U.Block xs)  y           = U.Block (xs ++ [U.Fix y])
@@ -324,43 +326,43 @@ uCode = U.Fix <$> (uBlock <|> uLine <?> "code")
       pure n
 
     uLine
-      =   uLoop
+      =  dbg "uLine" (uLoop
       <|> uSet
       <|> uPass
       <|> uIfThenElse
       <|> uDraw
       <|> uOutput
       <|> uList
-      <|> (U.Pure <$> value)
-      <?> "line of code"
+      <|> (U.Pure <$> value eol)
+      <?> "line of code")
 
-    uBlock = (do
+    uBlock = dbg "uBlock" (do
       tok_ Indent
       body <- some uCode
       tok_ Dedent
       pure (U.Block body)) <?> "block of code"
 
-    uPass = (do
+    uPass = dbg "uPass" (do
       word "pass"
       pure (U.Block [])) <?> "pass"
 
-    uLoop = (do
+    uLoop = dbg "uLoop" (do
       word "repeat" >> eol
       body <- uBlock
-      test <- word "while" *> value
+      test <- word "while" *> value eol
       pure (U.DoWhile (U.Fix (body `blockConcat` U.Pure test))))
       <?> "repeat"
 
-    uSet = do
+    uSet = dbg "uSet" $ do
       word "set"
       n <- ident
-      (    (word "to" *> (U.Set n <$> (value <* eol)))
+      (    (word "to" *> (U.Set n <$> value eol))
         <|> (tok_ LeftArrow *> (U.SetBind n <$> uCode))
         <?> "binding style")
 
-    uIfThenElse = do
+    uIfThenElse = dbg "uIfThenElse" $ do
       tok_ If
-      cond <- value <* (tok_ Then >> eol)
+      cond <- value (tok_ Then >> eol)
       yes  <- U.Fix <$> uBlock
       no   <- (tok_ Else >> ((eol >> U.Fix <$> uBlock)
                          <|> (U.Fix <$> uIfThenElse)))
@@ -369,68 +371,67 @@ uCode = U.Fix <$> (uBlock <|> uLine <?> "code")
 
     -- Draw commands
     uDraw
-      =   (word "draw" *> drawCmd)
+      =   dbg "uDraw" ((word "draw" *> drawCmd)
       <|> (word "use"  *> useCmd)
       <|> (U.Clear <$ word "erase")
-      <?> "drawing command"
+      <?> "drawing command")
 
     drawCmd
-      =   (do
+      = dbg "drawCmd" (  (do
             word "filled"
-            (    (U.DrawCircle True <$> (words "circle at" *> value)
-                  <*> (words "with radius" *> value))
-             <|> (U.DrawRect True <$> (words "rectangle from" *> value)
-                  <*> (word "to" *> value))))
-      <|> (U.DrawCircle False <$> (words "circle at" *> value)
-            <*> (words "with radius" *> value))
-      <|> (U.DrawRect False <$> (words "rectangle from" *> value)
-            <*> (word "to" *> value))
-      <|> (U.DrawLine <$> (words "line from" *> value)
-            <*> (word "to" *> value))
-      <|> (U.DrawPoint <$> (words "point at" *> value))
-      <?> "draw command"
+            (    (U.DrawCircle True <$> (words "circle at" *> value (words "with radius"))
+                  <*> value eol)
+             <|> (U.DrawRect True <$> (words "rectangle from" *> value (word "to"))
+                  <*> (value eol))))
+      <|> (U.DrawCircle False <$> (words "circle at" *> value (words "with radius"))
+            <*> value eol)
+      <|> (U.DrawRect False <$> (words "rectangle from" *> value (word "to"))
+            <*> value eol)
+      <|> (U.DrawLine <$> (words "line from" *> value (word "to"))
+            <*> value eol)
+      <|> (U.DrawPoint <$> (words "point at" *> value eol))
+      <?> "draw command")
 
-    useCmd = do
-      c <- value
-      word "for"
+    useCmd = dbg "useCmd" $ do
+      c <- value (word "for")
       ( (word "fill" $> U.SetFill c) <|> (word "stroke" $> U.SetStroke c) )
 
     -- Output commands
-    uOutput = do
-      v <- word "output" *> value
-      n <- word "to" *> ident
+    uOutput = dbg "uOutput" $ do
+      v <- word "output" *> value (word "to")
+      n <- ident
       pure (U.Output n v)
 
     -- List commands
     uList
-      =   (word "insert" *> insertCmd)
+      = dbg "uList" (  (word "insert" *> insertCmd)
       <|> (word "with" *> lookupCmd)
       <|> (word "remove" *> removeCmd)
-      <|> (words "for each" *> forEachCmd)
+      <|> (words "for each" *> forEachCmd))
 
-    insertCmd = do
-      v <- value
-      words "at start of"
+    insertCmd = dbg "insertCmd" $ do
+      v <- value (words "at start of")
       U.Insert <$> ident <*> pure v
 
-    lookupCmd = do
+    lookupCmd = dbg "lookupCmd" $ do
       word "first"
       item <- ident <* word "matching"
-      test <- value <* word "in"
+      test <- value (word "in")
       list <- ident <* eol
       yes <- uBlock
       -- Parse an else block, or else make a default no-op else case
       no <- (tok_ Else >> eol >> uBlock) <|> pure (U.Block [])
       pure (U.Lookup list item test (U.Fix yes) (U.Fix no))
 
-    removeCmd =   (try (words "all items from") >> (U.ClearList <$> ident))
+    removeCmd = dbg "removeCmd" ( (try (words "all items from") >> (U.ClearList <$> ident))
               <|> (do
                       item <- word "each" *> ident
-                      test <- word "matching" *> value
-                      list <- word "from" *> ident
-                      pure (U.Remove list item test))
+                      test <- word "matching" *> value (word "from")
+                      list <- ident
+                      pure (U.Remove list item test)))
 
-    forEachCmd = do
+    forEachCmd = dbg "forEachCmd" $ do
       item <- ident <* word "in"
       list <- ident <* eol
       U.ForEach list item . U.Fix <$> uBlock
+-}

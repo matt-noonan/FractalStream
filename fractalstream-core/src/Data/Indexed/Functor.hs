@@ -15,26 +15,27 @@ module Data.Indexed.Functor
 import Control.Monad
 import Data.Coerce
 import Fcf
+import Data.Kind
 
-class IFunctor (f :: (k -> Exp *) -> (k -> *)) where
-  type IndexProxy f :: k -> *
+class IFunctor (f :: (k -> Exp Type) -> (k -> Type)) where
+  type IndexProxy f :: k -> Type
   imap :: forall a b i
         . (forall j. IndexProxy f j -> Eval (a j) -> Eval (b j))
        -> f a i
        -> f b i
   toIndex :: forall a i. f a i -> IndexProxy f i
 
-class IFunctor f => IFixpoint (t :: k -> *) (f :: (k -> Exp *) -> (k -> *)) | t -> f where
+class IFunctor f => IFixpoint (t :: k -> Type) (f :: (k -> Exp Type) -> (k -> Type)) | t -> f where
   unrollIx :: forall i. t i -> f (Pure1 t) i
   rerollIx :: forall i. f (Pure1 t) i -> t i
 
-data (:.:) (m :: * -> *) (a :: k -> Exp *) (i :: k) :: Exp *
+data (:.:) (m :: Type -> Type) (a :: k -> Exp Type) (i :: k) :: Exp Type
 type instance Eval ((m :.: a) i) = m (Eval (a i))
 
-data (:+:) (a :: k -> Exp *) (b :: k -> Exp *) (i :: k) :: Exp *
+data (:+:) (a :: k -> Exp Type) (b :: k -> Exp Type) (i :: k) :: Exp Type
 type instance Eval ((a :+: b) i) = Either (Eval (a i)) (Eval (b i))
 
-class IFunctor f => ITraversable (f :: (k -> Exp *) -> (k -> *)) where
+class IFunctor f => ITraversable (f :: (k -> Exp Type) -> (k -> Type)) where
 
   isequence :: forall i m a
              . Applicative m
@@ -49,7 +50,7 @@ class IFunctor f => ITraversable (f :: (k -> Exp *) -> (k -> *)) where
             -> m (f b i)
   itraverse f = isequence . imap f
 
-newtype Fix (f :: (k -> Exp *) -> k -> *) (i :: k)
+newtype Fix (f :: (k -> Exp Type) -> k -> Type) (i :: k)
   = Fix (f (Pure1 (Fix f)) i)
 
 instance IFunctor f => IFixpoint (Fix f) f where

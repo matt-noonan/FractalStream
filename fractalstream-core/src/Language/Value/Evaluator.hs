@@ -16,17 +16,18 @@ import Data.Indexed.Functor
 import Data.Color
 
 import Data.Type.Equality ((:~:)(..))
-import GHC.TypeLits
+import GHC.TypeLits --hiding (LTI, GTI)
 import Fcf (Exp, Eval, Pure1)
 import Unsafe.Coerce
 import Numeric.Extras
+import Data.Kind
 
 -- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
-data HaskellTypeOfBinding :: Symbol -> Type -> Exp *
+data HaskellTypeOfBinding :: Symbol -> FSType -> Exp Type
 type instance Eval (HaskellTypeOfBinding name t) = HaskellType t
 
 -- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
-data HaskellType_ :: (Environment, Type) -> Exp *
+data HaskellType_ :: (Environment, FSType) -> Exp Type
 type instance Eval (HaskellType_ et) = HaskellType (Ty et)
 
 type family WithoutBinding (env :: Environment) (name :: Symbol) :: Environment where
@@ -68,7 +69,7 @@ partialEvaluate name ty v _pf =
 -- | ValueOrConstant is used during constant folding. It
 -- can represent either a value of type @Value env t@,
 -- or else a constant of type @HaskellType t@.
-data ValueOrConstant (et :: (Environment, Type)) where
+data ValueOrConstant (et :: (Environment, FSType)) where
   V :: Value et -> ValueOrConstant et
   C :: KnownEnvironment env => Scalar t -> ValueOrConstant '(env, t)
 
@@ -119,7 +120,7 @@ constantFold =
    impossible = error "unreachable, Var constructor is already handled in constantFold"
 
 -- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
-data ScalarFromContext :: (Environment, Type) -> Exp *
+data ScalarFromContext :: (Environment, FSType) -> Exp Type
 type instance Eval (ScalarFromContext et) =
   Context HaskellTypeOfBinding (Env et) -> HaskellType (Ty et)
 

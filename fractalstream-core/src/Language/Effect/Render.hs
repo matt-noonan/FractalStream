@@ -12,8 +12,9 @@ import Data.Indexed.Functor
 import Fcf (Exp)
 import Data.Type.Equality ((:~:)(..))
 import GHC.TypeLits
+import Data.Kind
 
-data Render (code :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) where
+data Render (code :: (Environment, FSType) -> Exp Type) (et :: (Environment, FSType)) where
   Render :: forall env code inputX inputY
         . ( KnownSymbol inputX, KnownSymbol inputY )
        => EnvironmentProxy env
@@ -98,7 +99,7 @@ renderEffectParser = EffectParser Proxy $
       _ -> mzero
 
  where
-  pHalt env = withEnvironment env $do
+  pHalt env = withEnvironment env $ do
     tok_ "stop" >> tok_ "work" >> tok_ "on"
     HaltRender env <$> value_
 

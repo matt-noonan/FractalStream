@@ -12,7 +12,7 @@ import Language.Code
 import GHC.TypeLits
 import Fcf (Pure2)
 
-data Setting (name :: Symbol) (t :: Type) where
+data Setting (name :: Symbol) (t :: FSType) where
   Setting :: forall name ty
            . KnownSymbol name
           => Proxy name -- ^ Variable name

@@ -308,7 +308,7 @@ compileCode getExtern = indexedFold @(CtxOp m) @(Fix (CodeF '[] (Pure1 Value))) 
 
   _ -> error "TODO: unhandled Code constructor"
 
-data CtxOp :: (* -> *) -> (Environment,Type) -> Exp *
+data CtxOp :: (* -> *) -> (Environment, FSType) -> Exp *
 type instance Eval (CtxOp m et) =
   ReaderT (Context OperandPtr (Env et)) m (Op (Ty et))
 

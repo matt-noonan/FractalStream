@@ -16,6 +16,7 @@ module Data.Recursive
 import Data.Coerce
 import Control.Monad hiding (foldM)
 import Data.Bifunctor
+import Data.Kind
 
 ---------------------------------------------------------------------------------
 -- Fixpoint class
@@ -68,7 +69,7 @@ type Ann f = Fix1 (AnnF f)
 data AnnF f a x = AnnF a (f x)
   deriving (Show, Functor, Foldable, Traversable)
 
-pattern Ann :: forall (f :: * -> *) a
+pattern Ann :: forall (f :: Type -> Type) a
              . a
             -> f (Fix1 (AnnF f) a)
             -> Fix1 (AnnF f) a

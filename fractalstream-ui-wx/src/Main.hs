@@ -52,7 +52,7 @@ wxMain = do
             $ declare @"x" RealType
             $ declare @"y" RealType
             $ endOfDecls
-    withCompiledCode env mandelProgram0 $ \kernel -> do
+    withCompiledCode env juliaProgram0 $ \kernel -> do
       let action bs ss dz z out = runJX kernel out (fromIntegral bs) (fromIntegral ss) dz 100 10 z
       wxView viewport action mainViewer
   where

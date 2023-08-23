@@ -127,6 +127,7 @@ library
                        vector,
                        first-class-families,
                        bifunctors,
+                       Earley
   hs-source-dirs:      src
 
 test-suite spec

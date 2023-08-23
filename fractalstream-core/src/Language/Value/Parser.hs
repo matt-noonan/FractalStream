@@ -44,7 +44,7 @@ import Language.Untyped.Shape
 import Language.Untyped.Infer
 import Language.Untyped.Constraints (initialTCState)
 
---import Debug.Trace
+import Debug.Trace
 
 ---------------------------------------------------------------------------------
 -- Top-level entry points

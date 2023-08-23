@@ -5,41 +5,34 @@
 
 packages:
 - completed:
-    hackage: megaparsec-9.1.0@sha256:f2ef8a08cc1e3fa6628965732f588e07e886a01f8267310404e31072fa9e802b,3238
-    pantry-tree:
-      size: 1447
-      sha256: 50d4ba02031b8802260a734d5fb1954ac6db1ba99a4c78486d85ace19dc854f4
-  original:
-    hackage: megaparsec-9.1.0@sha256:f2ef8a08cc1e3fa6628965732f588e07e886a01f8267310404e31072fa9e802b,3238
-- completed:
-    subdir: llvm-hs
+    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    git: https://github.com/llvm-hs/llvm-hs.git
     name: llvm-hs
-    version: 9.0.1.1
-    git: https://github.com/llvm-hs/llvm-hs.git
     pantry-tree:
-      size: 14018
       sha256: 7336db96faddbf178009d31aaa1b3d78d3c86d2b3aca352f43c0a1e1048ff50f
-    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
-  original:
+      size: 14018
     subdir: llvm-hs
-    git: https://github.com/llvm-hs/llvm-hs.git
-    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
-- completed:
-    subdir: llvm-hs-pure
-    name: llvm-hs-pure
     version: 9.0.1.1
-    git: https://github.com/llvm-hs/llvm-hs.git
-    pantry-tree:
-      size: 2652
-      sha256: e7a3bddb79062fe63d1a05fd23949d7312032eef06f50dc3b5de7df1fe62be1c
-    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
   original:
-    subdir: llvm-hs-pure
-    git: https://github.com/llvm-hs/llvm-hs.git
     commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    git: https://github.com/llvm-hs/llvm-hs.git
+    subdir: llvm-hs
+- completed:
+    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    git: https://github.com/llvm-hs/llvm-hs.git
+    name: llvm-hs-pure
+    pantry-tree:
+      sha256: e7a3bddb79062fe63d1a05fd23949d7312032eef06f50dc3b5de7df1fe62be1c
+      size: 2652
+    subdir: llvm-hs-pure
+    version: 9.0.1.1
+  original:
+    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    git: https://github.com/llvm-hs/llvm-hs.git
+    subdir: llvm-hs-pure
 snapshots:
 - completed:
-    size: 586923
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/9.yaml
-    sha256: 9f9fe35c949414146840a985fb228fd397c504d1781b834bfc9ab935f4d27df6
-  original: lts-18.9
+    sha256: 7430d6db09f2b997efa8ab2e2a67d9637ff8b3a7f79806c5a5cd85ba76ea9253
+    size: 558755
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/nightly/2022/12/17.yaml
+  original: nightly-2022-12-17

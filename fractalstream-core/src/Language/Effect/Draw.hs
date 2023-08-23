@@ -14,20 +14,21 @@ import Data.Indexed.Functor
 
 import Fcf (Exp, Eval)
 import Data.Type.Equality ((:~:)(..))
+import Data.Kind
 
 type Draw = Draw_ Value_
 
 type DrawCommand = Draw_ ConcreteValue NoCode '( '[], 'VoidT )
 
-data ConcreteValue :: Environment -> Type -> Exp *
+data ConcreteValue :: Environment -> FSType -> Exp Type
 type instance Eval (ConcreteValue env t) = HaskellType t
 
-data NoCode :: (Environment, Type) -> Exp *
+data NoCode :: (Environment, FSType) -> Exp Type
 type instance Eval (NoCode et) = ()
 
-data Draw_ (value :: Environment -> Type -> Exp *)
-           (code :: (Environment, Type) -> Exp *)
-           (et :: (Environment, Type)) where
+data Draw_ (value :: Environment -> FSType -> Exp Type)
+           (code :: (Environment, FSType) -> Exp Type)
+           (et :: (Environment, FSType)) where
 
   -- | draw point at POINT
   DrawPoint :: forall env code value

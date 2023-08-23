@@ -34,16 +34,16 @@ import LLVM.AST.Operand hiding (local)
 import Control.Monad.Except
 import Fcf (Exp, Eval)
 
-data OperandPtr :: Symbol -> Type -> Exp *
+data OperandPtr :: Symbol -> FSType -> Exp *
 type instance Eval (OperandPtr name t) = PtrOp t
 
-data PtrOp_ :: (Environment, Type) -> Exp *
+data PtrOp_ :: (Environment, FSType) -> Exp *
 type instance Eval (PtrOp_ et) = PtrOp (Ty et)
 
-data Op_ :: (Environment, Type) -> Exp *
+data Op_ :: (Environment, FSType) -> Exp *
 type instance Eval (Op_ et) = Op (Ty et)
 
-data Op (t :: Type) where
+data Op (t :: FSType) where
   VoidOp    :: Op 'VoidT
   BooleanOp :: Operand -> Op 'BooleanT
   IntegerOp :: Operand -> Op 'IntegerT

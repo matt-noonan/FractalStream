@@ -19,16 +19,17 @@ import Data.IORef
 import Control.Monad.State
 import GHC.TypeLits
 import Fcf (Exp, Eval, Pure1)
+import Data.Kind
 
-data ScalarIORefM :: (Environment, Type) -> Exp *
+data ScalarIORefM :: (Environment, FSType) -> Exp Type
 type instance Eval (ScalarIORefM '(env, t)) =
   StateT (Context IORefTypeOfBinding env) IO (HaskellType t)
 
-data ScalarIORefMWith :: * -> (Environment, Type) -> Exp *
+data ScalarIORefMWith :: Type -> (Environment, FSType) -> Exp Type
 type instance Eval (ScalarIORefMWith s '(env, t)) =
   StateT (Context IORefTypeOfBinding env, s) IO (HaskellType t)
 
-data IORefTypeOfBinding :: Symbol -> Type -> Exp *
+data IORefTypeOfBinding :: Symbol -> FSType -> Exp Type
 type instance Eval (IORefTypeOfBinding name t) = IORef (HaskellType t)
 
 -- | Evaluate a value in the current environment

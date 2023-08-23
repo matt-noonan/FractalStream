@@ -9,6 +9,7 @@ module Actor
 import Language.Code
 import Language.Value.Evaluator (HaskellTypeOfBinding)
 import GHC.TypeLits
+import Data.Kind
 
 {-
 data SomeActor where
@@ -20,8 +21,8 @@ class Actor actor effs where
   handle _ _ _ = Nothing
 -}
 
-class ToFun (env :: Environment) (result :: *) where
-  type ToFunction env result :: *
+class ToFun (env :: Environment) (result :: Type) where
+  type ToFunction env result :: Type
   toFunction :: (Context HaskellTypeOfBinding env -> result)
              -> ToFunction env result
 

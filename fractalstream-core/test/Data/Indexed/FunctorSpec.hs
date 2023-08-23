@@ -4,6 +4,7 @@ module Data.Indexed.FunctorSpec
 import Test.Hspec
 import Fcf
 import Data.Indexed.Functor
+import Data.Kind
 
 -----------------------------------------------------
 -- An indexed AST for simple arithmetic statements.
@@ -27,12 +28,12 @@ data Ast (ty :: T) where
 -----------------------------------------------------
 -- An indexed functor describing the same tree.
 -- This is built mechanically from the Ast type
--- by adding a type parameter `ast` of kind T -> Exp *,
+-- by adding a type parameter `ast` of kind T -> Exp Type,
 -- where T is the index type, and replacing all
 -- recursive uses of Ast with `ast`.
 -----------------------------------------------------
 
-data AstF (ast :: T -> Exp *) (i :: T) where
+data AstF (ast :: T -> Exp Type) (i :: T) where
   Yes_    :: forall ast. AstF ast 'BoolT
   No_     :: forall ast. AstF ast 'BoolT
   Number_ :: forall ast. Int -> AstF ast 'IntT
@@ -93,7 +94,7 @@ instance IFixpoint Ast AstF where
 -- Haskell type that can be used as the evaluation
 -- target for a given index.
 -----------------------------------------------------
-data HaskellType_ :: T -> Exp *
+data HaskellType_ :: T -> Exp Type
 type instance Eval (HaskellType_ 'IntT)  = Int
 type instance Eval (HaskellType_ 'BoolT) = Bool
 

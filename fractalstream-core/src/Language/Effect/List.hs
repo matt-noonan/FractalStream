@@ -15,10 +15,11 @@ import Language.Value.Parser
 import Fcf
 import GHC.TypeLits
 import Data.Type.Equality ((:~:)(..))
+import Data.Kind
 
 -- | A type that is like @a@ if @t@ is non-void,
 -- or like @Maybe a@ when @t@ is @'VoidT@.
-data MaybeIfVoid (t :: Type) a where
+data MaybeIfVoid (t :: FSType) a where
   VNothing :: forall a. MaybeIfVoid 'VoidT a
   VJust :: forall t a. a -> MaybeIfVoid t a
 
@@ -37,7 +38,7 @@ instance Traversable (MaybeIfVoid t) where
     VNothing -> pure VNothing
     VJust mx -> VJust <$> mx
 
-data List (listName :: Symbol) (listType :: Type) (code :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) where
+data List (listName :: Symbol) (listType :: FSType) (code :: (Environment, FSType) -> Exp Type) (et :: (Environment, FSType)) where
 
   Insert :: forall name ty env code
           . Proxy name

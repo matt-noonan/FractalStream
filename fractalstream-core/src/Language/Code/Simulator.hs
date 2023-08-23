@@ -12,8 +12,9 @@ import Data.Indexed.Functor
 import Control.Monad.State
 import GHC.TypeLits
 import Fcf (Exp, Eval, Pure1)
+import Data.Kind
 
-data HaskellTypeM :: * -> (Environment, Type) -> Exp *
+data HaskellTypeM :: Type -> (Environment, FSType) -> Exp Type
 type instance Eval (HaskellTypeM s '(env, t)) =
   State (Context HaskellTypeOfBinding env, s) (HaskellType t)
 

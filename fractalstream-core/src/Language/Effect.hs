@@ -21,16 +21,17 @@ import Data.Indexed.Functor
 import Fcf (Exp, Eval)
 import Data.Proxy
 import Data.Type.Equality ((:~:)(..))
+import Data.Kind
 
 -- | An @Effect@ takes a family of nested code types, and produces
 -- an AST of effects that may include nested code. Effects are a
 -- kind of "@Code@ mix-in", so they should have the same kind
 -- signature as @Code effects@.
-type Effect = ((Environment, Type) -> Exp *) -> (Environment, Type) -> *
+type Effect = ((Environment, FSType) -> Exp Type) -> (Environment, FSType) -> Type
 
 type NoEffects = '[] :: [Effect]
 
-data EffectHandler (eff :: Effect) (result :: (Environment, Type) -> Exp *) where
+data EffectHandler (eff :: Effect) (result :: (Environment, FSType) -> Exp Type) where
   Handle :: forall result eff
           . Proxy result
          -> (forall env t
@@ -40,7 +41,7 @@ data EffectHandler (eff :: Effect) (result :: (Environment, Type) -> Exp *) wher
              -> Eval (result '(env, t)))
          -> EffectHandler eff result
 
-data Handlers (effs :: [Effect]) (result :: (Environment, Type) -> Exp *) where
+data Handlers (effs :: [Effect]) (result :: (Environment, FSType) -> Exp Type) where
   Handler :: forall eff effs result
            . (IFunctor eff, IndexProxy eff ~ EnvTypeProxy)
           => EffectHandler eff result

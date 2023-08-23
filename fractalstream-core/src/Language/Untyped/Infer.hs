@@ -10,7 +10,7 @@ import Language.Value hiding (get, Ty)
 import Data.Indexed.Functor
 import Data.Recursive hiding (Fix)
 
-import GHC.TypeLits
+import GHC.TypeLits --hiding (LTI, GTI)
 import Control.Monad.State.Strict hiding (foldM)
 import Control.Monad.Except hiding (foldM)
 import Data.Map (Map)
@@ -22,6 +22,7 @@ import qualified Data.Array as Array
 
 import Fcf (Exp, Eval)
 import Data.Type.Equality ((:~:)(..))
+import Data.Kind
 
 import Language.Untyped.Constraints
 
@@ -147,7 +148,7 @@ solveConstraints = do
                     _     -> {-traceM ("typeOf " ++ show tv ++ " (scc " ++ show (toSCC . toTVID . TyVar $ tv) ++ ") = " ++ show tt) >> -} pure tt
                   Nothing -> pure Z_T -- default case: no constraints? integer.
 
-data TypeVar_ :: (Environment, Type) -> Exp *
+data TypeVar_ :: (Environment, FSType) -> Exp Type
 type instance Eval (TypeVar_ et) = TypeVar
 
 infer :: forall env rt m
@@ -371,7 +372,7 @@ toTypedValue getType =
         _             -> error "bad"
       _ -> error ("FIXME: " ++ show (unfold @U.Value (\(Ann _ v) -> v) tvv))
 
-data ValueWithTypeVar_ :: (Environment, Type) -> Exp *
+data ValueWithTypeVar_ :: (Environment, FSType) -> Exp Type
 type instance Eval (ValueWithTypeVar_ et) = ValueWith TypeVar
 
 uniques :: Ord a => [a] -> [a]

@@ -14,7 +14,7 @@ module Language.Value
 
 import Data.Proxy (Proxy(..))
 import Fcf
-import GHC.TypeLits
+import GHC.TypeLits --hiding (LTI, GTI)
 import Data.Ratio
 
 import Data.Indexed.Functor
@@ -23,6 +23,7 @@ import Language.Environment
 
 import Data.Type.Equality ((:~:)(..))
 import Data.List (intercalate)
+import Data.Kind
 
 ---------------------------------------------------------------------------------
 -- Value
@@ -30,10 +31,10 @@ import Data.List (intercalate)
 
 type Value = Fix ValueF
 
-data Value_ :: Environment -> Type -> Exp *
+data Value_ :: Environment -> FSType -> Exp Type
 type instance Eval (Value_ env t) = Value '(env, t)
 
-data ValueF (value :: (Environment, Type) -> Exp *) (et :: (Environment, Type)) where
+data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FSType)) where
 
   -- Constants and variables
   Const :: forall ty env value. KnownEnvironment env => Scalar ty -> ValueF value '(env, ty)
@@ -552,7 +553,7 @@ instance ITraversable ValueF  where
 
 instance Show (Value et) where show = pprint
 
-data PrecString :: (Environment, Type) -> Exp *
+data PrecString :: (Environment, FSType) -> Exp Type
 type instance Eval (PrecString et) = String -- (Int, String)
 
 pprint :: Value et -> String

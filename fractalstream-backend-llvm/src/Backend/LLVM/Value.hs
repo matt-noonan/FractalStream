@@ -34,7 +34,7 @@ value_ :: forall env t m
       -> ReaderT (Context OperandPtr env) m (Op t)
 value_ = buildValue
 
-data CtxOp :: (* -> *) -> (Environment,Type) -> Exp *
+data CtxOp :: (* -> *) -> (Environment, FSType) -> Exp *
 type instance Eval (CtxOp m et) =
   ReaderT (Context OperandPtr (Env et)) m (Op (Ty et))
 

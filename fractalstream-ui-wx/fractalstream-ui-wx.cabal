@@ -86,4 +86,4 @@ executable FractalStream
                      , first-class-families
                      , raw-strings-qq
   hs-source-dirs:      src
-  extra-lib-dirs:      /usr/local/lib
+  extra-lib-dirs:      /usr/local/opt/libffi/lib
