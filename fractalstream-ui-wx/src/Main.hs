@@ -31,6 +31,8 @@ import Language.Effect.Provide
 import Language.Code
 import Backend.LLVM
 
+import UI.Definition
+
 main :: IO ()
 main = do
     tid <- myThreadId
@@ -38,7 +40,7 @@ main = do
     capInfo <- threadCapability tid
     putStrLn ("Hello from main, on thread " ++ show tid ++ " "
               ++ show capInfo ++ " " ++ show bound)
-    wxMain
+    if False then wxMain else defToUI "/Users/mnoonan/FractalStream/wiz.yaml"
     putStrLn "main is done"
 
 wxMain :: IO ()
