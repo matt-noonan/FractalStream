@@ -70,7 +70,7 @@ import Data.Kind
 -- Environments
 ---------------------------------------------------------------------------------
 
--- | An 'Environment' is a map from symbols to 'Type's. It is represented
+-- | An 'Environment' is a map from symbols to 'FSType's. It is represented
 -- as a type-level list of pairs; the rest of the API generally requires that
 -- each symbol appears one time at most.
 type Environment = [(Symbol, FSType)]

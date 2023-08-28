@@ -21,14 +21,15 @@ import Language.Code
 import GHC.TypeLits
 import Data.Type.Equality ((:~:)(..))
 
-parseCode :: forall effs env t
+parseCode :: forall effs env splices t
            . EffectParsers effs
           -> EnvironmentProxy env
+          -> Context (Splice env) splices
           -> TypeProxy t
           -> String
           -> Either (Int, BadParse) (Code effs env t)
-parseCode eps env t input
-  = parse (pCode eps env t <* eof) (tokenizeWithIndentation input)
+parseCode eps env splices t input
+  = parse (pCode eps env splices t <* eof) (tokenizeWithIndentation input)
 
 {-
 uParseCode :: String
@@ -41,35 +42,40 @@ uParseCode = parse (uCode <* eof) . tokenizeWithIndentation
 -- bindings are introduced. That's enough to prevent the use of a pure
 -- applicative parser like Text.Earley, so we'll use Megaparsec's monadic
 -- parsing here.
-pCode :: forall effs env t
+pCode :: forall effs env splices t
        . EffectParsers effs
       -> EnvironmentProxy env
+      -> Context (Splice env) splices
       -> TypeProxy t
       -> Parser (Code effs env t)
-pCode eps env t
-  = dbg "pCode" ( pBlock   eps env t
-  <|> pLine    eps env t
-  <|> pEffects eps env t)
+pCode eps env splices t
+  = dbg "pCode" ( pBlock   eps env splices t
+  <|> pLine    eps env splices t
+  <|> pEffects eps env splices t)
 
-pCode' :: forall effs et
+pCode' :: forall effs et splices
         . EffectParsers effs
        -> EnvTypeProxy et
+       -> Context (Splice (Env et)) splices
        -> Parser (Code effs (Env et) (Ty et))
-pCode' eps et = withEnvType et (pCode eps)
+pCode' eps et splices = withEnvType et (\env -> pCode eps env splices)
 
 -- | An indented block of statements
 pBlock :: EffectParsers effs
-          ->  EnvironmentProxy env -> TypeProxy t -> Parser (Code effs env t)
-pBlock eps env = \case
+       -> EnvironmentProxy env
+       -> Context (Splice env) splices
+       -> TypeProxy t
+       -> Parser (Code effs env t)
+pBlock eps env splices = \case
   VoidType -> dbg "void block" $ do
     tok_ Indent
-    body <- some (pCode eps env VoidType)
+    body <- some (pCode eps env splices VoidType)
     tok_ Dedent
     withEnvironment env (pure (Fix (Block VoidType (init body) (last body))))
   t -> dbg ("pBlock @" ++ showType t) $ do
     tok_ Indent
     -- This is kind of stupid
-    (body, final) <- manyTill_ (pCode eps env VoidType) (try (pCode eps env t))
+    (body, final) <- manyTill_ (pCode eps env splices VoidType) (try (pCode eps env splices t))
     tok_ Dedent
     withEnvironment env (pure (Fix (Block t body final)))
 
@@ -77,31 +83,42 @@ pBlock eps env = \case
 -- let-bindings are syntactically a single line, but they introduce a
 -- variable that is scoped over the remainder of the current block.
 pLine :: EffectParsers effs
-          -> EnvironmentProxy env -> TypeProxy t -> Parser (Code effs env t)
-pLine eps env = \case
-  VoidType -> try (pAnyLine eps env VoidType) <|> pVoidLine eps env
-  t         -> try (pAnyLine eps env t)         <|> pNonVoidLine eps env t
+      -> EnvironmentProxy env
+      -> Context (Splice env) splices
+      -> TypeProxy t
+      -> Parser (Code effs env t)
+pLine eps env splices = \case
+  VoidType -> try (pAnyLine eps env splices VoidType) <|> pVoidLine eps env splices
+  t        -> try (pAnyLine eps env splices t)        <|> pNonVoidLine eps env splices t
 
 pVoidLine :: EffectParsers effs
-          ->  EnvironmentProxy env -> Parser (Code effs env 'VoidT)
-pVoidLine eps env
-  = dbg "void line" ( pLoop eps env
-  <|> pSet  eps env
+          -> EnvironmentProxy env
+          -> Context (Splice env) splices
+          -> Parser (Code effs env 'VoidT)
+pVoidLine eps env splices
+  = dbg "void line" ( pLoop eps env splices
+  <|> pSet  eps env splices
   <|> pPass     env
   <?> "statement")
 
 pNonVoidLine :: EffectParsers effs
-          -> EnvironmentProxy env -> TypeProxy t -> Parser (Code effs env t)
-pNonVoidLine _eps env t
-  = dbg "non-void line" ( pPure env t
+             -> EnvironmentProxy env
+             -> Context (Splice env) splices
+             -> TypeProxy t
+             -> Parser (Code effs env t)
+pNonVoidLine _eps env splices t
+  = dbg "non-void line" ( pPure env splices t
   <?> ("statement of type " <> showType t))
 
 pAnyLine :: EffectParsers effs
-          ->  EnvironmentProxy env -> TypeProxy t -> Parser (Code effs env t)
-pAnyLine eps env t
-  = dbg "anyLine" ( pIfThenElse eps env t
-  <|> pEffects    eps env t
-  <|> pVar        eps env t)
+         -> EnvironmentProxy env
+         -> Context (Splice env) splices
+         -> TypeProxy t
+         -> Parser (Code effs env t)
+pAnyLine eps env splices t
+  = dbg "anyLine" ( pIfThenElse eps env splices t
+  <|> pEffects    eps env splices t
+  <|> pVar        eps env splices t)
 
 -- |
 -- if TEST then
@@ -124,23 +141,24 @@ pAnyLine eps env t
 -- else if TEST then
 --   VOIDBLOCK
 --
-pIfThenElse :: forall effs env t
+pIfThenElse :: forall effs env splices t
              . EffectParsers effs
             -> EnvironmentProxy env
+            -> Context (Splice env) splices
             -> TypeProxy t
             -> Parser (Code effs env t)
-pIfThenElse eps env t = dbg "if/then/else statement" $ withEnvironment env $ do
+pIfThenElse eps env splices t = dbg "if/then/else statement" $ withEnvironment env $ do
   tok_ If
   (toks, _) <- manyTill_ anyToken (satisfy (== Then))
   eol
-  cond <- nest (parseValueFromTokens env BooleanType toks)
-  yes <- pBlock eps env t
+  cond <- nest (parseValueFromTokens env splices BooleanType toks)
+  yes <- pBlock eps env splices t
   no <- case t of
-    VoidType -> try (tok_ Else >> pIfThenElse eps env t)
-                 <|> (tok_ Else >> eol >> pBlock eps env t)
+    VoidType -> try (tok_ Else >> pIfThenElse eps env splices t)
+                 <|> (tok_ Else >> eol >> pBlock eps env splices t)
                  <|> pure (Fix (NoOp @env))
-    _         -> try (tok_ Else >> pIfThenElse eps env t)
-                 <|> (tok_ Else >> eol >> pBlock eps env t)
+    _         -> try (tok_ Else >> pIfThenElse eps env splices t)
+                 <|> (tok_ Else >> eol >> pBlock eps env splices t)
   pure (Fix (IfThenElse t cond yes no))
 
 -- | pass
@@ -151,21 +169,27 @@ pPass env = do
   pure (withEnvironment env (Fix NoOp))
 
 -- | pure VALUE
-pPure :: forall effs env t
-       . EnvironmentProxy env -> TypeProxy t -> Parser (Code effs env t)
-pPure env t = dbg ("pure @" <> showType t) $ do
+pPure :: forall effs env splices t
+       . EnvironmentProxy env
+      -> Context (Splice env) splices
+      -> TypeProxy t
+      -> Parser (Code effs env t)
+pPure env splices t = dbg ("pure @" <> showType t) $ do
   toks <- manyTill anyToken eol
   withEnvironment env $ do
-    result <- Fix . Pure t <$> nest (parseValueFromTokens env t toks)
+    result <- Fix . Pure t <$> nest (parseValueFromTokens env splices t toks)
     pure result
 
 -- |
 -- repeat
 --   BLOCK
 -- while TEST
-pLoop :: forall effs env. EffectParsers effs
-          ->  EnvironmentProxy env -> Parser (Code effs env 'VoidT)
-pLoop eps env = dbg "loop" $ do
+pLoop :: forall effs env splices
+       . EffectParsers effs
+      -> EnvironmentProxy env
+      -> Context (Splice env) splices
+      -> Parser (Code effs env 'VoidT)
+pLoop eps env splices = dbg "loop" $ do
   {-
   tok_ (Identifier "repeat")
   eol
@@ -174,13 +198,16 @@ pLoop eps env = dbg "loop" $ do
   tok_ Dedent
 -}
   tok_ (Identifier "loop") >> eol
-  withEnvironment env (Fix . DoWhile <$> pBlock eps env BooleanType)
+  withEnvironment env (Fix . DoWhile <$> pBlock eps env splices BooleanType)
 
 -- |
 -- set VAR to VALUE
 -- set VAR <- CODE
-pSet :: EffectParsers effs -> EnvironmentProxy env -> Parser (Code effs env 'VoidT)
-pSet effs env = dbg "set" $ do
+pSet :: EffectParsers effs
+     -> EnvironmentProxy env
+     -> Context (Splice env) splices
+     -> Parser (Code effs env 'VoidT)
+pSet effs env splices = dbg "set" $ do
   tok_ (Identifier "set")
   Identifier n <- satisfy (\case { (Identifier _) -> True; _ -> False })
   (    (tok_ (Identifier "to") *> pTo n)
@@ -196,7 +223,7 @@ pSet effs env = dbg "set" $ do
       SomeSymbol name -> case lookupEnv' name env of
         Absent' _ -> mzero
         Found' t pf -> do
-          v <- nest (parseValueFromTokens env t toks)
+          v <- nest (parseValueFromTokens env splices t toks)
           withEnvironment env (pure (Fix (Set pf name v)))
 
   pBind n = do
@@ -206,16 +233,17 @@ pSet effs env = dbg "set" $ do
       SomeSymbol name -> case lookupEnv' name env of
         Absent' _ -> mzero
         Found' t pf -> do
-          code <- pCode effs env t
+          code <- pCode effs env splices t
           withEnvironment env (pure (Fix (SetBind pf name t code)))
 
 -- | Variable initialization
-pVar :: forall effs env t
+pVar :: forall effs env splices t
       . EffectParsers effs
      -> EnvironmentProxy env
+     -> Context (Splice env) splices
      -> TypeProxy t
      -> Parser (Code effs env t)
-pVar eps env t = dbg "init" $ withKnownType t $ do
+pVar eps env splices t = dbg "init" $ withKnownType t $ do
   tok_ (Identifier "init")
   Identifier n <- satisfy (\case { (Identifier _) -> True; _ -> False })
   tok_ Colon
@@ -224,59 +252,69 @@ pVar eps env t = dbg "init" $ withKnownType t $ do
     SomeSymbol name -> case lookupEnv' name env of
       Found' {} -> mzero -- name is already bound
       Absent' pf -> case someVt of
-       SomeType vt ->  pVarValue eps env t pf name vt -- init x : T to VALUE
-                   <|> pVarCode  eps env t pf name vt -- init x : T <- CODE
+       SomeType vt ->  pVarValue eps env splices t pf name vt -- init x : T to VALUE
+                   <|> pVarCode  eps env splices t pf name vt -- init x : T <- CODE
 
-pVarValue :: forall effs env t ty name
+pVarValue :: forall effs env splices t ty name
            . KnownSymbol name
           => EffectParsers effs
           -> EnvironmentProxy env
+          -> Context (Splice env) splices
           -> TypeProxy t
           -> NameIsAbsent name env
           -> Proxy name
           -> TypeProxy ty
           -> Parser (Code effs env t)
-pVarValue eps env t pf name vt = do
+pVarValue eps env splices t pf name vt = do
   tok_ (Identifier "to")
   toks <- manyTill anyToken eol
-  v <- nest (parseValueFromTokens env vt toks)
+  v <- nest (parseValueFromTokens env splices vt toks)
   withEnvironment env $ withKnownType vt $ recallIsAbsent pf $ do
     let pf' = bindName name vt pf
         env' = BindingProxy name vt env
+        splices' = injectSpliceEnv name vt splices
     (body, final) <- case t of
       VoidType -> (\xs -> (init xs, last xs))
-                     <$> some (pCode eps env' VoidType)
-      _ -> manyTill_ (pCode eps env' VoidType) (try (pCode eps env' t))
+                     <$> some (pCode eps env' splices' VoidType)
+      _ -> manyTill_ (pCode eps env' splices' VoidType) (try (pCode eps env' splices' t))
     -- peek at the next token, which should be a dedent; we should have parsed the
     -- remainder of the current scope's block.
     lookAhead (tok_ Dedent)
     pure (Fix (Let pf' name vt v t (Fix (Block t body final))))
 
-pVarCode  :: forall effs env t ty name
+pVarCode  :: forall effs env splices t ty name
            . KnownSymbol name
           => EffectParsers effs
           -> EnvironmentProxy env
+          -> Context (Splice env) splices
           -> TypeProxy t
           -> NameIsAbsent name env
           -> Proxy name
           -> TypeProxy ty
           -> Parser (Code effs env t)
-pVarCode eps env t pf name vt = do
+pVarCode eps env splices t pf name vt = do
   tok_ LeftArrow
-  c <- pCode eps env vt
+  c <- pCode eps env splices vt
   many eol
   withEnvironment env $ withKnownType vt $ recallIsAbsent pf $ do
     let pf' = bindName name vt pf
         env' = BindingProxy name vt env
+        splices' = injectSpliceEnv name vt splices
     (body, final) <- case t of
       VoidType -> (\xs -> (init xs, last xs))
-                     <$> some (pCode eps env' VoidType)
-      _ -> manyTill_ (pCode eps env' VoidType) (try (pCode eps env' t))
+                     <$> some (pCode eps env' splices' VoidType)
+      _ -> manyTill_ (pCode eps env' splices' VoidType) (try (pCode eps env' splices' t))
     -- peek at the next token, which should be a dedent; we should have parsed the
     -- remainder of the current scope's block.
     lookAhead (tok_ Dedent)
     pure (Fix (LetBind pf' name vt c t (Fix (Block t body final))))
 
+
+injectSpliceEnv :: Proxy name
+                -> TypeProxy ty
+                -> Context (Splice env) splices
+                -> Context (Splice ('(name, ty) ': env)) splices
+injectSpliceEnv _ _ = mapContext (error "TODO: injectSpliceEnv")
 
 -- | Parse type name
 pTypeName :: Parser SomeType
@@ -288,12 +326,13 @@ pTypeName
   <?> "type"
 
 -- | Parse embedded effect languages
-pEffects :: forall effs env t
+pEffects :: forall effs env splices t
           . EffectParsers effs
          -> EnvironmentProxy env
+         -> Context (Splice env) splices
          -> TypeProxy t
          -> Parser (Code effs env t)
-pEffects (EP eps) env t = dbg "effects" $ go eps
+pEffects (EP eps) env _splices t = dbg "effects" $ go eps
   where
     go :: forall effs'. EffectParsers_ effs' effs -> Parser (Code effs env t)
     go NoEffs = mzero
@@ -301,137 +340,5 @@ pEffects (EP eps) env t = dbg "effects" $ go eps
       withEnvironment env (Fix . Effect eff Proxy t
                            <$> p (envTypeProxy env t) (\(et' :: EnvTypeProxy et') ->
                                                          case lemmaEnvTy @et' of
-                                                           Refl -> pCode' (EP eps) et'))
+                                                           Refl -> pCode' (EP eps) et' EmptyContext))
       <|> go etc
-{-
-uCode :: Parser U.Code
-uCode = dbg "uCode" (U.Fix <$> (uBlock <|> uLine <?> "code"))
-  where
-    value end = dbg "value" $ do
-      toks <- manyTill anyToken end
-      case parseUntypedValueFromTokens toks of
-        Left (_, err) -> fail (show err)
-        Right v -> pure v
-      --untypedValue_
-    word = dbg "word" . tok_ . Identifier
-    words = dbg "words" . mapM_ word . Prelude.words
-
-    blockConcat (U.Block xs) (U.Block ys) = U.Block (xs ++ ys)
-    blockConcat (U.Block xs)  y           = U.Block (xs ++ [U.Fix y])
-    blockConcat  x           (U.Block ys) = U.Block (U.Fix x : ys)
-    blockConcat  x            y           = U.Block [U.Fix x, U.Fix y]
-
-    ident = do
-      Identifier n <- satisfy (\case { (Identifier _) -> True; _ -> False })
-      pure n
-
-    uLine
-      =  dbg "uLine" (uLoop
-      <|> uSet
-      <|> uPass
-      <|> uIfThenElse
-      <|> uDraw
-      <|> uOutput
-      <|> uList
-      <|> (U.Pure <$> value eol)
-      <?> "line of code")
-
-    uBlock = dbg "uBlock" (do
-      tok_ Indent
-      body <- some uCode
-      tok_ Dedent
-      pure (U.Block body)) <?> "block of code"
-
-    uPass = dbg "uPass" (do
-      word "pass"
-      pure (U.Block [])) <?> "pass"
-
-    uLoop = dbg "uLoop" (do
-      word "repeat" >> eol
-      body <- uBlock
-      test <- word "while" *> value eol
-      pure (U.DoWhile (U.Fix (body `blockConcat` U.Pure test))))
-      <?> "repeat"
-
-    uSet = dbg "uSet" $ do
-      word "set"
-      n <- ident
-      (    (word "to" *> (U.Set n <$> value eol))
-        <|> (tok_ LeftArrow *> (U.SetBind n <$> uCode))
-        <?> "binding style")
-
-    uIfThenElse = dbg "uIfThenElse" $ do
-      tok_ If
-      cond <- value (tok_ Then >> eol)
-      yes  <- U.Fix <$> uBlock
-      no   <- (tok_ Else >> ((eol >> U.Fix <$> uBlock)
-                         <|> (U.Fix <$> uIfThenElse)))
-           <|> pure (U.Fix $ U.Block [])
-      pure (U.IfThenElse cond yes no)
-
-    -- Draw commands
-    uDraw
-      =   dbg "uDraw" ((word "draw" *> drawCmd)
-      <|> (word "use"  *> useCmd)
-      <|> (U.Clear <$ word "erase")
-      <?> "drawing command")
-
-    drawCmd
-      = dbg "drawCmd" (  (do
-            word "filled"
-            (    (U.DrawCircle True <$> (words "circle at" *> value (words "with radius"))
-                  <*> value eol)
-             <|> (U.DrawRect True <$> (words "rectangle from" *> value (word "to"))
-                  <*> (value eol))))
-      <|> (U.DrawCircle False <$> (words "circle at" *> value (words "with radius"))
-            <*> value eol)
-      <|> (U.DrawRect False <$> (words "rectangle from" *> value (word "to"))
-            <*> value eol)
-      <|> (U.DrawLine <$> (words "line from" *> value (word "to"))
-            <*> value eol)
-      <|> (U.DrawPoint <$> (words "point at" *> value eol))
-      <?> "draw command")
-
-    useCmd = dbg "useCmd" $ do
-      c <- value (word "for")
-      ( (word "fill" $> U.SetFill c) <|> (word "stroke" $> U.SetStroke c) )
-
-    -- Output commands
-    uOutput = dbg "uOutput" $ do
-      v <- word "output" *> value (word "to")
-      n <- ident
-      pure (U.Output n v)
-
-    -- List commands
-    uList
-      = dbg "uList" (  (word "insert" *> insertCmd)
-      <|> (word "with" *> lookupCmd)
-      <|> (word "remove" *> removeCmd)
-      <|> (words "for each" *> forEachCmd))
-
-    insertCmd = dbg "insertCmd" $ do
-      v <- value (words "at start of")
-      U.Insert <$> ident <*> pure v
-
-    lookupCmd = dbg "lookupCmd" $ do
-      word "first"
-      item <- ident <* word "matching"
-      test <- value (word "in")
-      list <- ident <* eol
-      yes <- uBlock
-      -- Parse an else block, or else make a default no-op else case
-      no <- (tok_ Else >> eol >> uBlock) <|> pure (U.Block [])
-      pure (U.Lookup list item test (U.Fix yes) (U.Fix no))
-
-    removeCmd = dbg "removeCmd" ( (try (words "all items from") >> (U.ClearList <$> ident))
-              <|> (do
-                      item <- word "each" *> ident
-                      test <- word "matching" *> value (word "from")
-                      list <- ident
-                      pure (U.Remove list item test)))
-
-    forEachCmd = dbg "forEachCmd" $ do
-      item <- ident <* word "in"
-      list <- ident <* eol
-      U.ForEach list item . U.Fix <$> uBlock
--}

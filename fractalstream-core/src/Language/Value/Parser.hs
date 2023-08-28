@@ -51,26 +51,29 @@ import Debug.Trace
 ---------------------------------------------------------------------------------
 
 parseValue :: EnvironmentProxy env
+  -> Context (Splice env) splices
            -> TypeProxy t
            -> String
            -> Either (Int, BadParse) (Value '(env, t))
-parseValue env t input = parseValueFromTokens env t (tokenize input)
+parseValue env splices t input = parseValueFromTokens env splices t (tokenize input)
 
 parseValueFromTokens
-  :: forall env t
+  :: forall env splices t
    . EnvironmentProxy env
+  -> Context (Splice env) splices
   -> TypeProxy t
   -> [Token]
   -> Either (Int, BadParse) (Value '(env, t))
-parseValueFromTokens env t toks
+parseValueFromTokens env splices t toks
    = withEnvironment env
    $ withKnownType t
-   $ parse value_ toks
+   $ parse (value_ splices) toks
 
-value_ :: forall t env
+value_ :: forall t env splices
         . (KnownEnvironment env, KnownType t)
-       => Parser (Value '(env, t))
-value_ = case envProxy (Proxy @env) of
+       => Context (Splice env) splices
+       -> Parser (Value '(env, t))
+value_ _splices = case envProxy (Proxy @env) of
   env -> case typeProxy @t of
     rt -> do
       --traceM "about to parse an untyped value"

@@ -164,7 +164,7 @@ listEffectParser = EffectParser Proxy $ \(et :: EnvTypeProxy et) code_ -> do
             -> Parser (List name ty code '(env, 'VoidT))
     pInsert (env :: EnvironmentProxy env) _ = withEnvironment env $ do
       tok_ "insert"
-      v <- value_ @ty @env
+      v <- value_ @ty @env EmptyContext
       tok_ "at"
       let start = do
             tok_ "start" >> tok_ "of" >> tok_ (Identifier name) >> eol
@@ -189,7 +189,7 @@ listEffectParser = EffectParser Proxy $ \(et :: EnvTypeProxy et) code_ -> do
           Absent' pf -> recallIsAbsent pf $ do
             vtoks <- manyTill anyToken (tok_ "from")
             let env' = bindNameEnv item (typeProxy @ty) pf env
-            v <- nest (parseValueFromTokens env' BooleanType vtoks)
+            v <- nest (parseValueFromTokens env' EmptyContext BooleanType vtoks)
             tok_ (Identifier name) >> eol
             pure (Remove Proxy (typeProxy @ty) item pf (envTypeProxy env VoidType) v)
 
@@ -240,7 +240,7 @@ listEffectParser = EffectParser Proxy $ \(et :: EnvTypeProxy et) code_ -> do
           Found' {} -> fail "a variable named 'item' is already defined"
           Absent' pf -> recallIsAbsent pf $ do
             let env' = bindNameEnv item (typeProxy @ty) pf env
-            v <- value_ @'BooleanT @( '(item, ty) ': env)
+            v <- value_ @'BooleanT @( '(item, ty) ': env) EmptyContext
             tok_ "in" >> tok_ (Identifier name)
             tok_ "do"
             many eol

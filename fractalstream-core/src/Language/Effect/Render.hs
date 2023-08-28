@@ -79,9 +79,9 @@ renderEffectParser = EffectParser Proxy $
         Identifier inputXstr <- satisfy (\case { Identifier _ -> True; _ -> False })
         Identifier inputYstr <- satisfy (\case { Identifier _ -> True; _ -> False })
         tok_ "plane"
-        dim <- value_
-        corner <- value_
-        pixel <- value_
+        dim <- (value_ EmptyContext)
+        corner <- (value_ EmptyContext)
+        pixel <- (value_ EmptyContext)
         eol >> lookAhead (tok_ Indent)
         case (someSymbolVal inputXstr, someSymbolVal inputYstr) of
           (SomeSymbol inputX, SomeSymbol inputY) ->
@@ -94,28 +94,28 @@ renderEffectParser = EffectParser Proxy $
                   Absent' pfX -> do
                     let env'' = bindNameEnv inputX RealType pfX env'
                     Render env inputX inputY pfX pfY dim corner pixel
-                      <$> pCode (EP NoEffs) env'' ColorType
+                      <$> pCode (EP NoEffs) env'' EmptyContext ColorType
       VoidType -> pHalt env <|> pBlit env <|> pClear env
       _ -> mzero
 
  where
   pHalt env = withEnvironment env $ do
     tok_ "stop" >> tok_ "work" >> tok_ "on"
-    HaltRender env <$> value_
+    HaltRender env <$> (value_ EmptyContext)
 
   pClear env = do
     tok_ "clear" >> tok_ "to"
-    ClearTo env <$> value_
+    ClearTo env <$> (value_ EmptyContext)
 
   pBlit env = do
     tok_ "blit"
-    handle <- value_
+    handle <- (value_ EmptyContext)
     tok_ "at"
-    pt <- value_
+    pt <- (value_ EmptyContext)
     tok_ "with" >> tok_ "scale" >> tok_ Equal
-    scale <- value_
+    scale <- (value_ EmptyContext)
     tok_ "opacity" >> tok_ Equal
-    opacity <- value_
+    opacity <- (value_ EmptyContext)
     pure (Blit env handle pt scale opacity)
 
 {-

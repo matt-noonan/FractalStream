@@ -40,7 +40,7 @@ main = do
     capInfo <- threadCapability tid
     putStrLn ("Hello from main, on thread " ++ show tid ++ " "
               ++ show capInfo ++ " " ++ show bound)
-    if False then wxMain else defToUI "/Users/mnoonan/FractalStream/wiz.yaml"
+    if True then wxMain else defToUI "/Users/mnoonan/FractalStream/wiz.yaml"
     putStrLn "main is done"
 
 wxMain :: IO ()
@@ -269,11 +269,11 @@ traceTool = Tool{..}
     env  = declare @"posX" RealType
          $ declare @"posY" RealType
          $ settingsEnv
-    trace = case parseCode (EP (ParseEff noParser $ ParseEff drawEffectParser NoEffs)) env VoidType traceProgram of
+    trace = case parseCode (EP (ParseEff noParser $ ParseEff drawEffectParser NoEffs)) env EmptyContext VoidType traceProgram of
       Right p -> p
       Left e  -> error (show e)
 
-    validator = case parseValue settingsEnv BooleanType "steps > 0" of
+    validator = case parseValue settingsEnv EmptyContext BooleanType "steps > 0" of
       Right p -> p
       Left e -> error (show e)
 
@@ -298,10 +298,10 @@ mainViewer = Viewer{..}
     onRefresh = Just ( Fix
                      $ Effect Proxy Proxy VoidType
                      $ Provide EmptyEnvProxy settingsEnv VoidType mandelCode)
-    viewToModel = case parseValue envV2M (PairType RealType RealType) v2m of
+    viewToModel = case parseValue envV2M EmptyContext (PairType RealType RealType) v2m of
       Right c -> c
       Left e -> error (show e)
-    modelToView = case parseValue envM2V (PairType RealType RealType) m2v of
+    modelToView = case parseValue envM2V EmptyContext (PairType RealType RealType) m2v of
       Right c -> c
       Left e -> error (show e)
 
@@ -320,7 +320,7 @@ mainViewer = Viewer{..}
     v2m = "((viewX - 256) / 128, (viewY - 256) / 128)"
     m2v = "(128 modelX + 256, 128 modelY + 256)"
 
-    mandelCode = case parseCode (EP (ParseEff noParser $ ParseEff renderEffectParser NoEffs)) settingsEnv VoidType mandelProgram' of
+    mandelCode = case parseCode (EP (ParseEff noParser $ ParseEff renderEffectParser NoEffs)) settingsEnv EmptyContext VoidType mandelProgram' of
       Right c -> c
       Left e  -> error (show e)
 
@@ -333,9 +333,9 @@ mandel' maxIters maxRadius (x :+ y) =
           $ EmptyContext
   in evalState (simulate NoHandler prog) (ctx, ())
  where
-   prog = case parseCode (EP NoEffs) env ColorType mandelProgram of
+   prog = case parseCode (EP NoEffs) env EmptyContext ColorType mandelProgram of
      Right p -> p
-     Left _  -> case parseCode (EP NoEffs) env ColorType "dark red" of
+     Left _  -> case parseCode (EP NoEffs) env EmptyContext ColorType "dark red" of
        Right p -> p
        Left e  -> error (show e) -- should be unreachable
    env = declare @"x" RealType

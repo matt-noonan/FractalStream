@@ -131,7 +131,7 @@ withCompiledCode :: forall env
 withCompiledCode env code run = do
   --let env = envProxy (Proxy @env)
   --    t = typeProxy @t
-  c <- case parseCode (EP NoEffs) env ColorType code of
+  c <- case parseCode (EP NoEffs) env EmptyContext ColorType code of
          Left e  -> error (show e)
          Right c -> pure c
   m <- either error pure (compileRenderer c)

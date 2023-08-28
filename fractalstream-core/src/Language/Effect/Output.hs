@@ -50,6 +50,6 @@ outputEffectParser outputs = EffectParser (Proxy @(Output outputs)) $
           SomeSymbol name -> case lookupEnv' name outputs of
             Absent' _ -> mzero
             Found' t pf -> do
-              v <- nest (parseValueFromTokens env t valueTokens)
+              v <- nest (parseValueFromTokens env EmptyContext t valueTokens)
               pure (Output env pf name v)
       _ -> mzero

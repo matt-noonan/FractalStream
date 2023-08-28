@@ -132,7 +132,7 @@ pUseCommand :: EnvironmentProxy env
             -> Parser (Draw code '(env, 'VoidT))
 pUseCommand env = do
   tok_ "use"
-  c <- withEnvironment env value_
+  c <- withEnvironment env (value_ EmptyContext)
   tok_ "for"
   ((tok_ "fill" $> SetFill env c)
    <|> (tok_ "line" $> SetStroke env c)
@@ -154,27 +154,27 @@ pDrawCommand env = do
 
     pDrawPoint = do
       tok_ "point" >> tok_ "at"
-      DrawPoint env <$> withEnvironment env value_
+      DrawPoint env <$> withEnvironment env (value_ EmptyContext)
 
     pDrawLine = do
       tok_ "line" >> tok_ "from"
-      p1 <- withEnvironment env value_
+      p1 <- withEnvironment env (value_ EmptyContext)
       tok_ "to"
-      p2 <- withEnvironment env value_
+      p2 <- withEnvironment env (value_ EmptyContext)
       pure (DrawLine env p1 p2)
 
     pDrawCircle fill = do
       tok_ "circle" >> tok_ "at"
-      center <- withEnvironment env value_
+      center <- withEnvironment env (value_ EmptyContext)
       tok_ "with" >> tok_ "radius"
-      r <- withEnvironment env value_
+      r <- withEnvironment env (value_ EmptyContext)
       pure (DrawCircle env fill center r)
 
     pDrawRect fill = do
       tok_ "rectangle" >> tok_ "from"
-      p1 <- withEnvironment env value_
+      p1 <- withEnvironment env (value_ EmptyContext)
       tok_ "to"
-      p2 <- withEnvironment env value_
+      p2 <- withEnvironment env (value_ EmptyContext)
       pure (DrawRect env fill p1 p2)
 
     pDrawFilled = do

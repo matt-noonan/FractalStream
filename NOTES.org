@@ -1,5 +1,7 @@
 * Building on OS X
 
+for llvm-hs, `brew install llvm-hs/llvm/llvm-12`
+
 ** El Capitan (OS X 10.11)
 
 System Integrity Protection (SIP) on 10.11 means that all environment
@@ -10,7 +12,7 @@ For accelerate-llvm, stack needs to run hsc2hs via a shell script, but
 hsc2hs is picking up the system libffi, which is an older version.
 The required version is installed via homebrew to /usr/local/opt.  Before
 OS X 10.11, I think we could just point DYLD_LIBRARY_PATH at /usr/local/opt
-before calling "stack build", but that no longer works due to the SIP 
+before calling "stack build", but that no longer works due to the SIP
 behavior mentioned above.
 
 To get it to build, I ran "stack build" until it failed trying to execute
@@ -20,4 +22,3 @@ point it at the Homebrew version instead.  Run the command that stack was
 attempting manually (it'll tell you what the command was).  Run "stack build"
 again.  You'll get the same problem on another file.  Repeat, and then once
 more.  Now "stack build" should succeed.
-  

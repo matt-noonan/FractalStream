@@ -2,6 +2,7 @@ module UI.Definition where
 
 import Language.Environment
 import Language.Type
+import Language.Value (Splice)
 import Language.Code.Parser
 import qualified Language.Effect as Effect
 
@@ -48,15 +49,17 @@ parseYAML = error "todo, parseYAML"
 buildViewer :: ComplexViewer -> ExceptT String IO (Layout Signal)
 buildViewer ComplexViewer{..} =
   bindInEnv cvCoord ComplexType EmptyEnvProxy $ \env0 -> do
-    withConfigurationBindings cvSetup env0 $ \env1 -> do
-      lift (print (allBindings (coContents cvSetup)))
-      withConfigurationBindings cvConfig env1 $ \env2 -> do
+    withConfigurationBindings cvConfig env0 $ \(env :: EnvironmentProxy env) -> do
+      lift (print (allBindings (coContents cvConfig)))
+      withConfigurationBindings cvSetup EmptyEnvProxy $ \(_spliceEnv :: EnvironmentProxy splices) -> do
         -- parse the code block in env2
-        lift (print (allBindings (coContents cvConfig)))
+        lift (print (allBindings (coContents cvSetup)))
         let effectParser = Effect.EP Effect.NoEffs
-        case parseCode effectParser env2 ColorType cvCode of
+            splices :: Context (Splice env) splices
+            splices = error "TODO"
+        case parseCode effectParser env splices ColorType cvCode of
           Left err -> fail ("bad parse: " ++ show err)
-          Right _code -> error "TIDO"
+          Right _code -> error "TODO"
 
 withConfigurationBindings :: forall m t env
                            . MonadFail m
