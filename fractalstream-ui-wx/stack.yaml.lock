@@ -19,29 +19,29 @@ packages:
   original:
     hackage: megaparsec-9.1.0@sha256:f2ef8a08cc1e3fa6628965732f588e07e886a01f8267310404e31072fa9e802b,3238
 - completed:
-    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    commit: 423220bffac4990d019fc088c46c5f25310d5a33
     git: https://github.com/llvm-hs/llvm-hs.git
     name: llvm-hs
     pantry-tree:
-      sha256: 7336db96faddbf178009d31aaa1b3d78d3c86d2b3aca352f43c0a1e1048ff50f
-      size: 14018
+      sha256: 9b23124e823e5033382960de17f7b2c6a406afc52e6d3c3ac4f08fde382632be
+      size: 12781
     subdir: llvm-hs
-    version: 9.0.1.1
+    version: 12.0.0
   original:
-    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    commit: 423220bffac4990d019fc088c46c5f25310d5a33
     git: https://github.com/llvm-hs/llvm-hs.git
     subdir: llvm-hs
 - completed:
-    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    commit: 423220bffac4990d019fc088c46c5f25310d5a33
     git: https://github.com/llvm-hs/llvm-hs.git
     name: llvm-hs-pure
     pantry-tree:
-      sha256: e7a3bddb79062fe63d1a05fd23949d7312032eef06f50dc3b5de7df1fe62be1c
-      size: 2652
+      sha256: cdb0ef9cee5b3569791494c8ac4e1dc5d0fe778f7c9bd2f661e537d1e2ca639b
+      size: 2712
     subdir: llvm-hs-pure
-    version: 9.0.1.1
+    version: 12.0.0
   original:
-    commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+    commit: 423220bffac4990d019fc088c46c5f25310d5a33
     git: https://github.com/llvm-hs/llvm-hs.git
     subdir: llvm-hs-pure
 - completed:

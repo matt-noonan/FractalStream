@@ -9,14 +9,12 @@ module Backend.LLVM
   , type JX
   ) where
 
-import Data.Functor
 import qualified Data.ByteString.Char8 as BS
 
 import LLVM.Module
 import LLVM.Context hiding (Context)
 import LLVM.PassManager
 import LLVM.OrcJIT
-import LLVM.OrcJIT.CompileLayer
 import LLVM.Target
 import LLVM.Linking
 import qualified LLVM.CodeModel as CodeModel
@@ -34,8 +32,6 @@ import Language.Code
 import Language.Code.Parser
 import Data.Color
 
-import Data.IORef
-import qualified Data.Map as Map
 import Foreign hiding (void)
 import GHC.TypeLits
 
@@ -126,16 +122,13 @@ withCompiledCode :: forall env
                     )
                  => EnvironmentProxy env
                  -> String
-                 -> ((Ptr Word8 -> Int32 -> Int32 -> Ptr Double -> Int32 -> Double -> Double -> Double -> IO ()) -> IO ()) -- ((Ptr Word8 -> Int32 -> Double -> Ptr Double -> IO ()) -> IO ()) -- (JITFun env t -> IO ())
+                 -> ((Ptr Word8 -> Int32 -> Int32 -> Ptr Double -> Int32 -> Double -> Double -> Double -> IO ()) -> IO ())
                  -> IO ()
 withCompiledCode env code run = do
-  --let env = envProxy (Proxy @env)
-  --    t = typeProxy @t
   c <- case parseCode (EP NoEffs) env EmptyContext ColorType code of
          Left e  -> error (show e)
          Right c -> pure c
   m <- either error pure (compileRenderer c)
-  resolvers <- newIORef Map.empty
   loadLibraryPermanently Nothing
   withContext $ \ctx ->
     withModuleFromAST ctx m $ \md -> do
@@ -146,34 +139,20 @@ withCompiledCode env code run = do
       asm' <- BS.unpack <$> moduleLLVMAssembly md
       putStrLn asm'
 
-      withExecutionSession $ \session -> do
-        let resolve k = readIORef resolvers <&> (\rs -> rs Map.! k)
-        withHostTargetMachine' $ \tm ->
-          withObjectLinkingLayer session resolve $ \linker ->
-          withIRCompileLayer linker tm $ \compileLayer ->
-          withModuleKey session $ \mkey -> do
-          let resolveSymbol = SymbolResolver $ \s ->
-                findSymbol compileLayer s True >>= \case
-                  Right v -> pure (Right v)
-                  Left e  -> do
-                    putStrLn ("didn't find " ++ show s ++ ", checking in process symbols")
-                    jitSymbolAddress <- getSymbolAddressInProcess s
-                    putStrLn ("  found " ++ show jitSymbolAddress)
-                    pure $ if jitSymbolAddress == 0
-                           then Left e
-                           else let jitSymbolFlags = defaultJITSymbolFlags
-                                                     { jitSymbolExported = True
-                                                     , jitSymbolCommon = False
-                                                     , jitSymbolAbsolute = False
-                                                     , jitSymbolWeak = False }
-                                in Right JITSymbol{..}
-          withSymbolResolver session resolveSymbol $ \resolver -> do
-            modifyIORef' resolvers (Map.insert mkey resolver)
-            withModule compileLayer mkey md $ do
-              sym <- mangleSymbol compileLayer "kernel"
-              Right (JITSymbol kernelFn _) <- findSymbol compileLayer sym True
-              let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
-              run (mkJX fn) -- (JITFun env t fn)
+      withHostTargetMachine' $ \tm -> do
+        withExecutionSession $ \session -> do
+          withClonedThreadSafeModule md $ \tsm -> do
+            let dylibName = "kernel_dylib"
+            dylib <- createJITDylib session dylibName
+            linker <- createRTDyldObjectLinkingLayer session --resolve
+            compileLayer <- createIRCompileLayer session linker tm
+            addDynamicLibrarySearchGeneratorForCurrentProcess compileLayer dylib
+            addModule tsm dylib compileLayer
+            lookupSymbol session compileLayer dylib "kernel" >>= \case
+              Left err -> error ("error JITing kernel: " ++ show err)
+              Right (JITSymbol kernelFn _) -> do
+                let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
+                run (mkJX fn)
 
 withHostTargetMachine' :: (TargetMachine -> IO a) -> IO a
 withHostTargetMachine' f = do

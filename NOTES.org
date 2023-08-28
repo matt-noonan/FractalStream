@@ -1,6 +1,8 @@
 * Building on OS X
 
 for llvm-hs, `brew install llvm-hs/llvm/llvm-12`
+build of fractalstream-backend-llvm failed while trying to find libc++abi.1.dylib, which is due to @rpath not being set correctly. I copied the dylib from /usr/local/Cellar/llvm-12/12_2/lib/llvm-12/lib/ to /usr/local/lib where it
+could be found, but this is obviously not the morally correct thing to do.
 
 ** El Capitan (OS X 10.11)
 

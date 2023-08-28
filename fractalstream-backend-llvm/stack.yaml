@@ -7,10 +7,11 @@ packages:
 
 extra-deps:
 - git: https://github.com/llvm-hs/llvm-hs.git
-  commit: d348dcff95f3f1c17289b5ba0a173397d0e005fc
+  commit: 423220bffac4990d019fc088c46c5f25310d5a33
   subdirs:
     - llvm-hs
     - llvm-hs-pure
+- megaparsec-9.2.0@sha256:0c272aa13b9f663dbd7b74ef81e9b1f9f05cafde50f5362ce87ffd4913046e0b,3213
 
 allow-newer: true
 
