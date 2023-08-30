@@ -8,6 +8,8 @@ module Language.Environment
   , type NotPresent
   , Context(..)
   , contextToEnv
+  , envToContext
+  , envToContextM
   , mapContext
   , mapContextM
   , forContext
@@ -416,9 +418,34 @@ contextToEnv = \case
   EmptyContext -> EmptyEnvProxy
   Bind name t _ ctx -> BindingProxy name t (contextToEnv ctx)
 
+envToContext :: forall a env
+              . EnvironmentProxy env
+             -> (forall name ty. KnownSymbol name => Proxy name -> TypeProxy ty -> Eval (a name ty))
+             -> Context a env
+envToContext env0 make = go env0
+  where
+    go :: forall env'. EnvironmentProxy env' -> Context a env'
+    go = \case
+      EmptyEnvProxy -> EmptyContext
+      BindingProxy name ty env -> Bind name ty (make name ty) (go env)
+
+envToContextM :: forall a env m
+               . Monad m
+              => EnvironmentProxy env
+              -> (forall name ty. KnownSymbol name => Proxy name -> TypeProxy ty -> m (Eval (a name ty)))
+              -> m (Context a env)
+envToContextM env0 make = go env0
+  where
+    go :: forall env'. EnvironmentProxy env' -> m (Context a env')
+    go = \case
+      EmptyEnvProxy -> pure EmptyContext
+      BindingProxy name ty env -> do
+        v <- make name ty
+        Bind name ty v <$> go env
+
 -- | Transform each bound value in the context, creating a new context.
 mapContext :: forall a b env
-            . (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> Eval (b name ty))
+            . (forall name ty. KnownSymbol name => Proxy name -> TypeProxy ty -> Eval (a name ty) -> Eval (b name ty))
            -> Context a env
            -> Context b env
 mapContext f = \case
@@ -428,14 +455,14 @@ mapContext f = \case
 -- | 'mapContext' with the arguments flipped
 forContext :: forall a b env
             . Context a env
-           -> (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> Eval (b name ty))
+           -> (forall name ty. KnownSymbol name => Proxy name -> TypeProxy ty -> Eval (a name ty) -> Eval (b name ty))
            -> Context b env
 forContext x f = mapContext f x
 
 -- | Transform each bound value in the context, creating a new context.
 mapContextM :: forall a b env m
              . Applicative m
-            =>  (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> m (Eval (b name ty)))
+            =>  (forall name ty. KnownSymbol name => Proxy name -> TypeProxy ty -> Eval (a name ty) -> m (Eval (b name ty)))
            -> Context a env
            -> m (Context b env)
 mapContextM f = \case
@@ -448,13 +475,13 @@ mapContextM f = \case
 forContextM :: forall a b env m
             . Applicative m
            => Context a env
-           -> (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> m (Eval (b name ty)))
+           -> (forall name ty. KnownSymbol name => Proxy name -> TypeProxy ty -> Eval (a name ty) -> m (Eval (b name ty)))
            -> m (Context b env)
 forContextM x f = mapContextM f x
 
 -- | Transform each bound value in the context, creating a list of results.
 fromContext :: forall a env t
-             . (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> t)
+             . (forall name ty. KnownSymbol name => Proxy name -> TypeProxy ty -> Eval (a name ty) -> t)
             -> Context a env
             -> [t]
 fromContext f = \case
@@ -465,7 +492,7 @@ fromContext f = \case
 -- creating a list of results.
 fromContextM :: forall a env t m
               . Applicative m
-             => (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> m t)
+             => (forall name ty. KnownSymbol name => Proxy name -> TypeProxy ty -> Eval (a name ty) -> m t)
              -> Context a env
              -> m [t]
 fromContextM f = \case
@@ -475,7 +502,7 @@ fromContextM f = \case
 -- | Run an effect for each bound value in the context.
 fromContextM_ :: forall a env m
               . Applicative m
-             => (forall name ty. Proxy name -> TypeProxy ty -> Eval (a name ty) -> m ())
+             => (forall name ty. KnownSymbol name => Proxy name -> TypeProxy ty -> Eval (a name ty) -> m ())
              -> Context a env
              -> m ()
 fromContextM_ f = \case

@@ -6,8 +6,8 @@ module Language.Value
   , type Value
   , ValueF(..)
   , Value_
-  , Splice
   , Proxy(..)
+  , SomeValue(..)
   , typeOfValue
   , get
   , pprint
@@ -35,8 +35,17 @@ type Value = Fix ValueF
 data Value_ :: Environment -> FSType -> Exp Type
 type instance Eval (Value_ env t) = Value '(env, t)
 
+{-
 data Splice :: Environment -> Symbol -> FSType -> Exp Type
 type instance Eval (Splice env name ty) = Value '(env, ty)
+-}
+
+data SomeValue where
+  SomeValue :: forall env ty
+             . EnvironmentProxy env
+            -> TypeProxy ty
+            -> Value '(env, ty)
+            -> SomeValue
 
 data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FSType)) where
 

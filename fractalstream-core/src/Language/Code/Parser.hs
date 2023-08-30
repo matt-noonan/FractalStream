@@ -314,7 +314,7 @@ injectSpliceEnv :: Proxy name
                 -> TypeProxy ty
                 -> Context (Splice env) splices
                 -> Context (Splice ('(name, ty) ': env)) splices
-injectSpliceEnv _ _ = mapContext (error "TODO: injectSpliceEnv")
+injectSpliceEnv _ _ = mapContext (\_ _ -> id)
 
 -- | Parse type name
 pTypeName :: Parser SomeType

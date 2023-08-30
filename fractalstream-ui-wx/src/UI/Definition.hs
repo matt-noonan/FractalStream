@@ -1,73 +1,281 @@
+{-# language OverloadedStrings #-}
+{-# options_ghc -Wno-orphans #-}
+
 module UI.Definition where
 
 import Language.Environment
 import Language.Type
-import Language.Value (Splice)
+import Language.Value hiding (get)
 import Language.Code.Parser
+import Language.Value.Parser (parseValue, parseUntypedValue, Splice)
+import Language.Value.Evaluator (HaskellTypeOfBinding, evaluate)
 import qualified Language.Effect as Effect
+import Control.Concurrent.MVar
+import Control.Applicative
 
-import Data.Proxy
 import GHC.TypeLits
 import Control.Monad.Except
+import Fcf (Eval, Exp)
+import Data.Kind
+import qualified Data.Text as Text
+import Text.Read (readMaybe)
+import Data.String (IsString(..))
 
-import Graphics.UI.WX hiding (when, tool, Horizontal, Vertical, Layout)
+import Data.Aeson
+import qualified Data.Yaml as YAML
+
+import Graphics.UI.WX hiding (glue, when, tool, Object, Dimensions, Horizontal, Vertical, Layout, Color)
+import qualified Graphics.UI.WX as WX
+
+import Data.Color (Color)
 
 defToUI :: FilePath -> IO ()
-defToUI yf =
-  if False
-  then defToUI_ yf
-  else do
-    result <- runExceptT (buildViewer sampleCV)
-    case result of
-      Left e -> error ("ERROR: " ++ e)
-      Right _ -> putStrLn ("OKOK OK!")
+defToUI yamlFile = start $ do
 
-defToUI_ :: FilePath -> IO ()
-defToUI_ _yamlFile = start $ do
+  ensemble <- parseEnsembleFile yamlFile
+  result <- runExceptT (buildEnsemble ensemble)
+  case result of
+    Left e -> error ("ERROR: " ++ e)
+    Right _ -> putStrLn ("OKOKOK")
 
-  let fakeSignal = Signal (const (pure ())) . pure
+  Just setup <- pure (ensembleSetup ensemble)
+  uiResult <- runExceptT (allocateDummyUIValues (coContents setup))
 
-  let lo = Vertical
-        [ Horizontal
-            [ CheckBox (Label "check1: ") cb1
-            , TextBox (Label "Hello: ") tb1
-            ]
-        , TextBox (Label "World: ") tb2
-        , CheckBox (Label "check2: ") cb2
-        ]
-      cb1 = fakeSignal True
-      cb2 = fakeSignal False
-      tb1 = fakeSignal "hello"
-      tb2 = fakeSignal "world"
+  case uiResult of
+    Left e -> error ("ERROR2: " ++ e)
+    Right ui -> do
+      configFrame <- frame [ text := coTitle setup
+                           , on resize := propagateEvent
+                           ]
+      innerLayout <- generateWxLayout setTextOnly configFrame ui
+      compileButton <- button configFrame [ text := "Go!" ]
+      set configFrame [ layout := fill
+                                $ margin 5
+                                $ column 5
+                                $ [ innerLayout
+                                  , widget compileButton
+                                  ] ]
 
-  _ <- layoutToWindow "test window" lo
-  pure ()
+data Ensemble = Ensemble
+  { ensembleSetup :: Maybe Configuration
+  , ensembleConfiguration :: Maybe Configuration
+  , ensembleViewers :: [ComplexViewer]
+  }
 
-parseYAML :: String -> Either String ComplexViewer
-parseYAML = error "todo, parseYAML"
+parseEnsembleFile :: String -> IO Ensemble
+parseEnsembleFile filePath = YAML.decodeFileThrow filePath
 
-buildViewer :: ComplexViewer -> ExceptT String IO (Layout Signal)
-buildViewer ComplexViewer{..} =
-  bindInEnv cvCoord ComplexType EmptyEnvProxy $ \env0 -> do
-    withConfigurationBindings cvConfig env0 $ \(env :: EnvironmentProxy env) -> do
-      lift (print (allBindings (coContents cvConfig)))
-      withConfigurationBindings cvSetup EmptyEnvProxy $ \(_spliceEnv :: EnvironmentProxy splices) -> do
-        -- parse the code block in env2
-        lift (print (allBindings (coContents cvSetup)))
-        let effectParser = Effect.EP Effect.NoEffs
-            splices :: Context (Splice env) splices
-            splices = error "TODO"
-        case parseCode effectParser env splices ColorType cvCode of
-          Left err -> fail ("bad parse: " ++ show err)
-          Right _code -> error "TODO"
+instance FromJSON Ensemble where
+  parseJSON = withObject "ensemble" $ \o -> do
+    ensembleSetup <- o .:? "setup"
+    ensembleConfiguration <- o .:? "configuration"
+    singleViewer <- o .:? "viewer"
+    ensembleViewers <- case singleViewer of
+      Just viewer -> pure [viewer]
+      Nothing -> o .:? "viewers" .!= []
+    pure Ensemble{..}
 
-withConfigurationBindings :: forall m t env
+instance FromJSON Configuration where
+  parseJSON = withObject "configuration" $ \o -> do
+    coTitle <- o .: "title"
+    Dimensions coSize <- o .: "size"
+    coContents <- parseLayout o
+    pure Configuration{..}
+
+instance FromJSON (Layout Dummy) where
+  parseJSON = withObject "layout" parseLayout
+
+parseLayout :: Object -> YAML.Parser (Layout Dummy)
+parseLayout o
+  =   (Vertical <$> (o .: "vertical-contents"))
+  <|> (Horizontal <$> (o .: "horizontal-contents"))
+  <|> (uncurry Panel <$> (titled =<< (o .: "panel")))
+  <|> (Tabbed <$> ((o .: "tabbed") >>= mapM titled))
+  <|> (textBoxLayout =<< (o .: "text-entry"))
+  <|> (checkBoxLayout =<< (o .: "checkbox"))
+  <|> (colorPickerLayout =<< (o .: "color-picker"))
+  <|> fail "bad layout description"
+ where
+   titled p = (,) <$> (p .: "title") <*> parseLayout p
+
+   textBoxLayout p = do
+     lab <- p .: "label"
+     StringOrNumber varValue <- p .: "value"
+     (p .: "type") >>= \(SomeType ty) -> do
+       varVariable <- p .: "variable"
+       pure (TextBox lab ty (Dummy YamlVar{..}))
+
+   checkBoxLayout p = do
+     lab <- p .: "label"
+     val <- p .: "value"
+     let varValue = if val then "true" else "false"
+     varVariable <- p .: "variable"
+     pure (CheckBox lab (Dummy YamlVar{..}))
+
+   colorPickerLayout p = do
+     lab <- p .: "label"
+     varValue <- p .: "value"
+     varVariable <- p .: "variable"
+     pure (ColorPicker lab (Dummy YamlVar{..}))
+
+newtype StringOrNumber t = StringOrNumber t
+
+instance (IsString s) => FromJSON (StringOrNumber s) where
+  parseJSON v
+    =   (withText "string" (pure . StringOrNumber . fromString . Text.unpack) v)
+    <|> (withScientific "number" (pure . StringOrNumber . fromString . show) v)
+
+instance FromJSON ComplexViewer where
+  parseJSON = withObject "complex viewer" $ \o -> do
+    cvTitle <- o .: "title"
+    Dimensions cvSize <- o .: "size"
+    cvCanResize <- o .:? "resizable" .!= True
+    cvCoord <- o .: "z-coord"
+    cvPixel <- o .:? "pixel-size"
+    StringOrNumber cvCenter <- o .: "initial-center"
+    StringOrNumber cvPixelSize <- o .: "initial-pixel-size"
+    cvCode <- Text.unpack <$> o .: "code"
+    cvOverlay <- o .:? "overlay"
+    cvOnSelect <- o .:? "on-select"
+    pure ComplexViewer{..}
+
+instance FromJSON (StringOf t) where
+  parseJSON = fmap StringOf . parseJSON
+
+instance FromJSON Label where
+  parseJSON = withText "label" (pure . Label . Text.unpack)
+
+instance FromJSON SomeType where
+  parseJSON = withText "type" $ \case
+    "C"       -> pure $ SomeType ComplexType
+    "R"       -> pure $ SomeType RealType
+    "Z"       -> pure $ SomeType IntegerType
+    "N"       -> pure $ SomeType IntegerType
+    "Boolean" -> pure $ SomeType BooleanType
+    "2"       -> pure $ SomeType BooleanType
+    "Q"       -> pure $ SomeType RationalType
+    "Color"   -> pure $ SomeType ColorType
+    _         -> fail "unknown type"
+
+data Dimensions = Dimensions (Int, Int)
+
+instance FromJSON Dimensions where
+  parseJSON = withText "dimensions" $ \txt -> do
+    case Text.splitOn "x" txt of
+      [xStr, yStr] -> do
+        case (,) <$> readMaybe (Text.unpack xStr) <*> readMaybe (Text.unpack yStr) of
+          Just dim -> pure (Dimensions dim)
+          Nothing  -> fail "could not parse dimension descriptor"
+      _ -> fail "expected a dimension descriptor, e.g. 400x200"
+
+buildEnsemble :: Ensemble -> ExceptT String IO ()
+buildEnsemble Ensemble{..} =
+  withConfigurationEnv ensembleConfiguration EmptyEnvProxy $ \env0 -> do
+    lift (putStrLn (maybe "n/a" (show . allBindings . coContents) ensembleConfiguration))
+    lift (putStrLn (maybe "n/a" (show . allBindings . coContents) ensembleSetup))
+    let effectParser = Effect.EP Effect.NoEffs
+
+    forM_ ensembleViewers $ \ComplexViewer{..} ->
+      (bindInEnv cvCoord ComplexType env0 $ \env ->
+        withConfigurationSplices ensembleSetup env $ \splices -> do
+          lift (putStrLn cvCode)
+          case parseCode effectParser env splices ColorType cvCode of
+            Left err -> fail ("bad parse: " ++ show err)
+            Right code -> (lift $ print code)) :: ExceptT String IO ()
+
+-- | Allocate UI glue to read and write to configuration values
+newtype UIValue t = UIValue (MVar (t, [t -> t -> IO ()]))
+
+newtype UIValueRepr t = UIValueRepr (UIValue (String, t))
+
+newUIValue :: MonadIO m => t -> m (UIValue t)
+newUIValue v = UIValue <$> liftIO (newMVar (v, []))
+
+onChange :: MonadIO m => UIValue t -> (t -> t -> IO ()) -> m ()
+onChange (UIValue glue) action =
+  liftIO (modifyMVar_ glue (\(v, actions) -> pure (v, action:actions)))
+
+modifyUIValue :: MonadIO m => UIValue t -> (t -> t) -> m ()
+modifyUIValue (UIValue glue) f = liftIO $ modifyMVar_ glue $ \(old, actions) -> do
+  -- Run the on-changed handlers while holding the lock, which will
+  -- prevent another change to this element from performing its callbacks
+  -- until this one is finished.
+  -- NOTE: if any of these handlers change this same element, then they
+  --       they will deadlock. If they must set this element, they should
+  --       fork a thread to do it asynchronously, and not wait for completion.
+  let !new = f old
+  forM_ actions (\action -> action old new)
+  pure (new, actions)
+
+setUIValue :: MonadIO m => UIValue t -> t -> m ()
+setUIValue v = liftIO . modifyUIValue v . const
+
+getUIValue :: MonadIO m => UIValue t -> m t
+getUIValue (UIValue glue) = fst <$> liftIO (readMVar glue)
+
+allocateUIValues :: (forall ty. TypeProxy ty -> String -> Either String (HaskellType ty))
+                 -> Layout Dummy
+                 -> ExceptT String IO (Layout UIValueRepr) -- aka UILayout
+allocateUIValues pValue = go
+  where
+    go = \case
+      Vertical xs -> Vertical <$> mapM go xs
+      Horizontal xs -> Horizontal <$> mapM go xs
+      Panel lab x -> Panel lab <$> go x
+      Tabbed ps -> Tabbed <$> mapM (\(lab, x) -> (lab,) <$> go x) ps
+      TextBox lab ty (Dummy YamlVar{..}) ->
+        case pValue ty varValue of
+          Left err -> fail err
+          Right v  -> TextBox lab ty . UIValueRepr <$> newUIValue (varValue, v)
+      CheckBox lab (Dummy YamlVar{..}) ->
+        case pValue BooleanType varValue of
+          Left err -> fail err
+          Right v  -> CheckBox lab . UIValueRepr <$> newUIValue (varValue, v)
+      ColorPicker lab (Dummy YamlVar{..}) ->
+        case pValue ColorType varValue of
+          Left err -> fail err
+          Right v  -> ColorPicker lab . UIValueRepr <$> newUIValue (varValue, v)
+
+allocateDummyUIValues :: Layout Dummy -> ExceptT String IO (Layout UIValueRepr)
+allocateDummyUIValues = go
+  where
+    go = \case
+      Vertical xs -> Vertical <$> mapM go xs
+      Horizontal xs -> Horizontal <$> mapM go xs
+      Panel lab x -> Panel lab <$> go x
+      Tabbed ps -> Tabbed <$> mapM (\(lab, x) -> (lab,) <$> go x) ps
+      TextBox lab ty (Dummy YamlVar{..}) ->
+        fmap (TextBox lab ty . UIValueRepr)
+          $ case ty of
+              ComplexType -> newUIValue (varValue, 0)
+              RealType    -> newUIValue (varValue, 0)
+              IntegerType -> newUIValue (varValue, 0)
+              BooleanType -> newUIValue (varValue, False)
+              _ -> fail "todo, textbox"
+      CheckBox lab (Dummy YamlVar{..}) ->
+        CheckBox lab . UIValueRepr <$> newUIValue (varValue, False)
+      ColorPicker lab (Dummy YamlVar{}) ->
+        ColorPicker lab . UIValueRepr <$> fail "todo, colorpicker"
+
+data UIValueRepr_ :: Symbol -> FSType -> Exp Type
+type instance Eval (UIValueRepr_ name ty) = UIValueRepr (HaskellType ty)
+
+{-
+withConfigurationGlue :: Configuration
+                         -> (forall splices. Context UIValue_ splices -> IO t)
+                         -> IO t
+withConfigurationGlue Configuration{..} action = do
+  _
+-}
+
+withConfigurationEnv :: forall m t env
                            . MonadFail m
-                          => Configuration
+                          => Maybe Configuration
                           -> EnvironmentProxy env
                           -> (forall env'. EnvironmentProxy env' -> m t)
                           -> m t
-withConfigurationBindings Configuration{..} env0 k
+withConfigurationEnv Nothing env0 k = k env0
+withConfigurationEnv (Just Configuration{..}) env0 k
    = go (allBindings coContents) env0
  where
    go :: forall e. [(String, SomeType)] -> EnvironmentProxy e -> m t
@@ -75,37 +283,57 @@ withConfigurationBindings Configuration{..} env0 k
    go ((nameStr, SomeType ty) : etc) env =
      bindInEnv nameStr ty env (go etc)
 
+withConfigurationSplices :: forall m t env
+                          . MonadFail m
+                         => Maybe Configuration
+                         -> EnvironmentProxy env
+                         -> (forall splices. Context (Splice env) splices -> m t)
+                         -> m t
+withConfigurationSplices Nothing _env k = k EmptyContext
+withConfigurationSplices (Just Configuration{..}) _env k
+   = go (allBindingVars coContents) EmptyEnvProxy EmptyContext
+ where
+   go :: forall e. [(YamlVar, SomeType)] -> EnvironmentProxy e -> Context (Splice env) e ->  m t
+   go [] _ ctx = k ctx
+   go ((YamlVar valStr nameStr, SomeType ty) : etc) ctxEnv ctx =
+     case someSymbolVal nameStr of
+       SomeSymbol name -> bindInEnv' name ty ctxEnv $ \ctxEnv' ->
+         case parseUntypedValue valStr of -- case parseValue env EmptyContext ty valStr of
+           Left e -> fail ("parse error when parsing config argument `" <> nameStr <> "`: " <> show (snd e))
+           Right v -> go etc ctxEnv' (Bind name ty v ctx)
+
 bindInEnv :: (MonadFail m)
           => String
           -> TypeProxy ty
           -> EnvironmentProxy env
-          -> (forall name. EnvironmentProxy ( '(name, ty) ': env) -> m t)
+          -> (forall name. NotPresent name env => EnvironmentProxy ( '(name, ty) ': env) -> m t)
           -> m t
-
 bindInEnv nameStr ty env k = case someSymbolVal nameStr of
   SomeSymbol name -> case lookupEnv' name env of
-    Absent' proof -> k (bindNameEnv name ty proof env)
+    Absent' proof -> recallIsAbsent proof (k (bindNameEnv name ty proof env))
     _ -> fail (symbolVal name <> " is defined twice")
 
 bindInEnv' :: (MonadFail m, KnownSymbol name)
           => Proxy name
           -> TypeProxy ty
           -> EnvironmentProxy env
-          -> (EnvironmentProxy ( '(name, ty) ': env) -> m t)
+          -> (NotPresent name env => EnvironmentProxy ( '(name, ty) ': env) -> m t)
           -> m t
-
 bindInEnv' name ty env k = case lookupEnv' name env of
-  Absent' proof -> k (bindNameEnv name ty proof env)
+  Absent' proof -> recallIsAbsent proof (k (bindNameEnv name ty proof env))
   _ -> fail (symbolVal name <> " is defined twice")
 
 data ComplexViewer = ComplexViewer
   { cvTitle :: String
   , cvSize :: (Int, Int)
   , cvCanResize :: Bool
+  , cvCenter :: StringOf 'ComplexT
+  , cvPixelSize :: StringOf 'RealT
   , cvCoord :: String
-  , cvSetup :: Configuration
-  , cvConfig :: Configuration
+  , cvPixel :: Maybe String
   , cvCode :: String
+  , cvOverlay :: Maybe String
+  , cvOnSelect :: Maybe String
   }
 
 data Configuration = Configuration
@@ -114,75 +342,58 @@ data Configuration = Configuration
   , coContents :: Layout Dummy
   }
 
-dummy :: String -> String -> TypeProxy ty -> Dummy t
-dummy var val ty = Dummy (YamlVar val (SomeType ty) var)
-
-sampleCV :: ComplexViewer
-sampleCV = ComplexViewer{..}
-  where
-    textBox a b c d = TextBox (Label a) (dummy b c d)
-    cvTitle = "C plane"
-    cvSize = (256, 256)
-    cvCanResize = True
-    cvCoord = "z"
-    cvSetup = Configuration "Parametric complex dynamics" (200, 200)
-      $ Vertical
-      [ textBox "Iterate f(z) = " "f" "z^2 + C" ComplexType
-      , textBox "until" "stop" "|z| > maxRadius" BooleanType
-      ]
-    cvConfig = Configuration "Parameters" (400, 200)
-      $ Vertical
-      [ textBox "C = " "C" "0.11 + 0.78i" ComplexType
-      , textBox "Max. iterations: " "maxIters" "100" IntegerType
-      , textBox "Max. radius: "  "maxRadius" "10" RealType
-      ]
-    cvCode = "init k : Z to 0\nloop\n  set z to {f}\n  set k to k + 1\n  k < maxIters and not {stop}\nif k = maxIters then black else blue\n"
+newtype StringOf (t :: FSType) = StringOf String
+  deriving IsString
 
 data Dummy t = Dummy YamlVar
   deriving Show
 
 data YamlVar = YamlVar
   { varValue :: String
-  , varType :: SomeType
   , varVariable :: String
   }
   deriving Show
 
 allBindings :: Layout Dummy -> [(String, SomeType)]
-allBindings = go
-  where
-    toBinding (Dummy YamlVar{..}) = [(varVariable, varType)]
-    go = \case
-      Vertical xs -> concatMap allBindings xs
-      Horizontal xs -> concatMap allBindings xs
-      Panel _ x -> allBindings x
-      Tabbed xs -> concatMap (allBindings . snd) xs
-      TextBox _ x -> toBinding x
-      CheckBox _ x -> toBinding x
-      ColorPicker _ x -> toBinding x
+allBindings = map (\(x,t) -> (varVariable x, t)) . allBindingVars
 
+allBindingVars :: Layout Dummy -> [(YamlVar, SomeType)]
+allBindingVars = go
+  where
+    go = \case
+      Vertical xs -> concatMap go xs
+      Horizontal xs -> concatMap go xs
+      Panel _ x -> go x
+      Tabbed xs -> concatMap (go . snd) xs
+      TextBox _ ty (Dummy x) -> [(x, SomeType ty)]
+      CheckBox _ (Dummy x) -> [(x, SomeType BooleanType)]
+      ColorPicker _ (Dummy x) -> [(x, SomeType ColorType)]
 
 newtype Label = Label String
 
-data Signal t = Signal (t -> IO ()) (IO t)
+data Layout f where
+  Vertical :: [Layout f] -> Layout f
+  Horizontal :: [Layout f] -> Layout f
+  Panel :: String -> Layout f -> Layout f
+  Tabbed :: [(String, Layout f)] -> Layout f
+  TextBox :: Label -> TypeProxy ty -> f (HaskellType ty) -> Layout f
+  CheckBox :: Label -> f Bool -> Layout f
+  ColorPicker :: Label -> f Color -> Layout f
 
-data Layout f
-  = Vertical [Layout f]
-  | Horizontal [Layout f]
-  | Panel String (Layout f)
-  | Tabbed [(String, Layout f)]
-  | TextBox Label (f String)
-  | CheckBox Label (f Bool)
-  | ColorPicker Label (f Color)
+type UILayout = Layout UIValueRepr
 
-layoutToWindow :: String -> Layout Signal -> IO ()
-layoutToWindow wTitle wLayout = do
-  frame0 <- frame [ text := wTitle
-                  , on resize := propagateEvent
-                  ]
+generateWxLayout :: (forall ty. TypeProxy ty
+                           -> String
+                           -> UIValue (String, HaskellType ty)
+                           -> IO (Maybe String))
+              -> Window a
+              -> UILayout
+              -> IO WX.Layout
+
+generateWxLayout setValueText frame0 wLayout = do
   panel0 <- panel frame0 []
   computedLayout <- go panel0 wLayout
-  set frame0 [ layout := container panel0 computedLayout ]
+  pure (container panel0 computedLayout)
 
  where
 
@@ -207,8 +418,8 @@ layoutToWindow wTitle wLayout = do
 
      ColorPicker{} -> error "todo, colorpicker"
 
-     CheckBox (Label lab) (Signal setter getter) -> do
-       initial <- getter
+     CheckBox (Label lab) (UIValueRepr v) -> do
+       initial <- snd <$> getUIValue v
        cb <- checkBox p [ text := lab
                         , checkable := True
                         , checked := initial
@@ -216,11 +427,50 @@ layoutToWindow wTitle wLayout = do
                         ]
        set cb [ on command := do
                   isChecked <- get cb checked
-                  setter isChecked
+                  setUIValue v ("", isChecked)
               ]
+       onChange v $ \_ (_, isChecked) -> set cb [ checked := isChecked ]
        pure (widget cb)
 
-     TextBox (Label lab) (Signal _setter getter) -> do
-       initial <- getter
-       te <- textEntry p [ text := initial ]
+     TextBox (Label lab) ty (UIValueRepr v) -> do
+       initial <- fst <$> getUIValue v
+       te <- textEntry p [ text := initial
+                         , processEnter := True
+                         ]
+       set te [ on command := do
+                  newText <- get te text
+                  setValueText ty newText v >>= \case
+                    Nothing -> pure ()
+                    Just _err -> error "bad parse of text field"
+              ]
+       onChange v $ \_ (newText, _) -> set te [ text := newText ]
        pure (fill $ row 5 [ label lab, hfill (widget te) ])
+
+parseToHaskellValue :: Context HaskellTypeOfBinding env
+                    -> TypeProxy ty
+                    -> String
+                    -> Either String (HaskellType ty)
+parseToHaskellValue ctx ty input = do
+  case parseValue (contextToEnv ctx) EmptyContext ty input of
+    Left err -> Left (show err)
+    Right v  -> pure (evaluate v ctx)
+
+setTextOnly :: forall ty
+             . TypeProxy ty
+            -> String
+            -> UIValue (String, HaskellType ty)
+            -> IO (Maybe String)
+setTextOnly _ s ui = do
+  modifyUIValue ui (\(_, v) -> (s, v))
+  pure Nothing
+
+setToParsed :: forall ty
+             . (TypeProxy ty -> String -> Either String (HaskellType ty))
+            -> TypeProxy ty
+            -> String
+            -> UIValue (String, HaskellType ty)
+            -> IO (Maybe String)
+setToParsed parse ty input ui = do
+  case parse ty input of
+    Left err -> pure (Just err)
+    Right v  -> setUIValue ui (input, v) >> pure Nothing

@@ -15,6 +15,7 @@ module Language.Value.Parser
   , parsePrio
   , infixL
   , infixR
+  , Splice
   ) where
 
 import Language.Type
@@ -44,14 +45,21 @@ import Language.Untyped.Shape
 import Language.Untyped.Infer
 import Language.Untyped.Constraints (initialTCState)
 
+import Data.Kind
+import Fcf (Exp, Eval)
 import Debug.Trace
+
+-- we really want to use typed splices, but we'll swap in this
+-- untyped version for now just to make life a little easier
+data Splice :: Environment -> Symbol -> FSType -> Exp Type
+type instance Eval (Splice env name ty) = U.Value
 
 ---------------------------------------------------------------------------------
 -- Top-level entry points
 ---------------------------------------------------------------------------------
 
 parseValue :: EnvironmentProxy env
-  -> Context (Splice env) splices
+           -> Context (Splice env) splices
            -> TypeProxy t
            -> String
            -> Either (Int, BadParse) (Value '(env, t))
@@ -73,29 +81,37 @@ value_ :: forall t env splices
         . (KnownEnvironment env, KnownType t)
        => Context (Splice env) splices
        -> Parser (Value '(env, t))
-value_ _splices = case envProxy (Proxy @env) of
+value_ splices = case envProxy (Proxy @env) of
   env -> case typeProxy @t of
     rt -> do
       --traceM "about to parse an untyped value"
-      uv <- dbg "untyped value" $ untypedValue_
+      uv0 <- dbg "untyped value" $ untypedValue_
+
+      -- insert the untyped splices
+      let spliceMap = Map.fromList
+                    $ fromContext (\name _ -> (symbolVal name,)) splices
+          uv = U.substitute spliceMap uv0
+
       --traceM ("uv = " ++ show uv)
+      let typeToShape :: forall ty s. TypeProxy ty -> ST s (UF s (STShape s))
+          typeToShape = \case
+            BooleanType -> fresh (STShape BoolShape)
+            IntegerType -> fresh (STShape NumShape)
+            RealType    -> fresh (STShape NumShape)
+            ComplexType -> fresh (STShape NumShape)
+            ColorType   -> fresh (STShape ColorShape)
+            PairType x y -> do
+              ps <- PairShape <$> typeToShape x <*> typeToShape y
+              fresh (STShape ps)
+            _ -> error "missing case"
+
       let result = do
             -- Infer the value's shape
             (v, ctx') <- runST $ do
-              ctx <- fmap Map.fromList $ fromEnvironmentM env $ \name ty -> do
-                let go :: forall ty s. TypeProxy ty -> ST s (UF s (STShape s))
-                    go = \case
-                      BooleanType -> fresh (STShape BoolShape)
-                      IntegerType -> fresh (STShape NumShape)
-                      RealType    -> fresh (STShape NumShape)
-                      ComplexType -> fresh (STShape NumShape)
-                      ColorType   -> fresh (STShape ColorShape)
-                      PairType x y -> do
-                        ps <- PairShape <$> go x <*> go y
-                        fresh (STShape ps)
-                      _ -> error "missing case"
-                t <- go ty
-                pure (symbolVal name, t)
+
+              ctx <- fmap Map.fromList
+                   $ fromEnvironmentM env
+                   $ \name ty -> (symbolVal name,) <$> typeToShape ty
 
               s <- inferShape ctx uv
 
@@ -107,12 +123,11 @@ value_ _splices = case envProxy (Proxy @env) of
                   _         -> Other (show e)
                 Right v -> pure (v, ctx')
 
-            -- traceM ("v = " ++ show v)
+            --traceM ("v = " ++ show v)
             -- Infer the value's type
             case evalStateT (infer env ctx' rt v) initialTCState of
               Right typedValue -> pure typedValue
-              Left e -> throwError . (-1,) $ case e of
-                _ -> Other (show e)
+              Left e -> throwError (-1, Other (show e))
       case result of
         Right v -> pure v
         Left (pos,e)  -> parseError (FancyError pos (Set.singleton (ErrorCustom e)))

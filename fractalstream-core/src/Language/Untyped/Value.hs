@@ -5,6 +5,7 @@ module Language.Untyped.Value
   , ArithOp(..)
   , CmpOp(..)
   , type ValueWith
+  , substitute
   ) where
 
 import Prelude hiding (GT, LT)
@@ -12,6 +13,8 @@ import Prelude hiding (GT, LT)
 import Data.Color
 import Data.Recursive
 import Data.Kind
+import Data.Map (Map)
+import qualified Data.Map as Map
 
 type Value = Fix ValueF
 
@@ -53,3 +56,8 @@ data ValueF (value :: Type)
   | NEq value value
   | Cmp CmpOp value value
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+substitute :: Map String Value -> Value -> Value
+substitute m = fold $ \case
+  Var s -> Map.findWithDefault (Fix (Var s)) s m
+  other -> Fix other
