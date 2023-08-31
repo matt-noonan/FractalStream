@@ -24,7 +24,7 @@ import Data.Type.Equality ((:~:)(..))
 parseCode :: forall effs env splices t
            . EffectParsers effs
           -> EnvironmentProxy env
-          -> Context (Splice env) splices
+          -> Context Splice splices
           -> TypeProxy t
           -> String
           -> Either (Int, BadParse) (Code effs env t)
@@ -45,7 +45,7 @@ uParseCode = parse (uCode <* eof) . tokenizeWithIndentation
 pCode :: forall effs env splices t
        . EffectParsers effs
       -> EnvironmentProxy env
-      -> Context (Splice env) splices
+      -> Context Splice splices
       -> TypeProxy t
       -> Parser (Code effs env t)
 pCode eps env splices t
@@ -56,14 +56,14 @@ pCode eps env splices t
 pCode' :: forall effs et splices
         . EffectParsers effs
        -> EnvTypeProxy et
-       -> Context (Splice (Env et)) splices
+       -> Context Splice splices
        -> Parser (Code effs (Env et) (Ty et))
 pCode' eps et splices = withEnvType et (\env -> pCode eps env splices)
 
 -- | An indented block of statements
 pBlock :: EffectParsers effs
        -> EnvironmentProxy env
-       -> Context (Splice env) splices
+       -> Context Splice splices
        -> TypeProxy t
        -> Parser (Code effs env t)
 pBlock eps env splices = \case
@@ -84,7 +84,7 @@ pBlock eps env splices = \case
 -- variable that is scoped over the remainder of the current block.
 pLine :: EffectParsers effs
       -> EnvironmentProxy env
-      -> Context (Splice env) splices
+      -> Context Splice splices
       -> TypeProxy t
       -> Parser (Code effs env t)
 pLine eps env splices = \case
@@ -93,7 +93,7 @@ pLine eps env splices = \case
 
 pVoidLine :: EffectParsers effs
           -> EnvironmentProxy env
-          -> Context (Splice env) splices
+          -> Context Splice splices
           -> Parser (Code effs env 'VoidT)
 pVoidLine eps env splices
   = dbg "void line" ( pLoop eps env splices
@@ -103,7 +103,7 @@ pVoidLine eps env splices
 
 pNonVoidLine :: EffectParsers effs
              -> EnvironmentProxy env
-             -> Context (Splice env) splices
+             -> Context Splice splices
              -> TypeProxy t
              -> Parser (Code effs env t)
 pNonVoidLine _eps env splices t
@@ -112,7 +112,7 @@ pNonVoidLine _eps env splices t
 
 pAnyLine :: EffectParsers effs
          -> EnvironmentProxy env
-         -> Context (Splice env) splices
+         -> Context Splice splices
          -> TypeProxy t
          -> Parser (Code effs env t)
 pAnyLine eps env splices t
@@ -144,7 +144,7 @@ pAnyLine eps env splices t
 pIfThenElse :: forall effs env splices t
              . EffectParsers effs
             -> EnvironmentProxy env
-            -> Context (Splice env) splices
+            -> Context Splice splices
             -> TypeProxy t
             -> Parser (Code effs env t)
 pIfThenElse eps env splices t = dbg "if/then/else statement" $ withEnvironment env $ do
@@ -171,7 +171,7 @@ pPass env = do
 -- | pure VALUE
 pPure :: forall effs env splices t
        . EnvironmentProxy env
-      -> Context (Splice env) splices
+      -> Context Splice splices
       -> TypeProxy t
       -> Parser (Code effs env t)
 pPure env splices t = dbg ("pure @" <> showType t) $ do
@@ -187,7 +187,7 @@ pPure env splices t = dbg ("pure @" <> showType t) $ do
 pLoop :: forall effs env splices
        . EffectParsers effs
       -> EnvironmentProxy env
-      -> Context (Splice env) splices
+      -> Context Splice splices
       -> Parser (Code effs env 'VoidT)
 pLoop eps env splices = dbg "loop" $ do
   {-
@@ -205,7 +205,7 @@ pLoop eps env splices = dbg "loop" $ do
 -- set VAR <- CODE
 pSet :: EffectParsers effs
      -> EnvironmentProxy env
-     -> Context (Splice env) splices
+     -> Context Splice splices
      -> Parser (Code effs env 'VoidT)
 pSet effs env splices = dbg "set" $ do
   tok_ (Identifier "set")
@@ -240,7 +240,7 @@ pSet effs env splices = dbg "set" $ do
 pVar :: forall effs env splices t
       . EffectParsers effs
      -> EnvironmentProxy env
-     -> Context (Splice env) splices
+     -> Context Splice splices
      -> TypeProxy t
      -> Parser (Code effs env t)
 pVar eps env splices t = dbg "init" $ withKnownType t $ do
@@ -259,7 +259,7 @@ pVarValue :: forall effs env splices t ty name
            . KnownSymbol name
           => EffectParsers effs
           -> EnvironmentProxy env
-          -> Context (Splice env) splices
+          -> Context Splice splices
           -> TypeProxy t
           -> NameIsAbsent name env
           -> Proxy name
@@ -272,11 +272,10 @@ pVarValue eps env splices t pf name vt = do
   withEnvironment env $ withKnownType vt $ recallIsAbsent pf $ do
     let pf' = bindName name vt pf
         env' = BindingProxy name vt env
-        splices' = injectSpliceEnv name vt splices
     (body, final) <- case t of
       VoidType -> (\xs -> (init xs, last xs))
-                     <$> some (pCode eps env' splices' VoidType)
-      _ -> manyTill_ (pCode eps env' splices' VoidType) (try (pCode eps env' splices' t))
+                     <$> some (pCode eps env' splices VoidType)
+      _ -> manyTill_ (pCode eps env' splices VoidType) (try (pCode eps env' splices t))
     -- peek at the next token, which should be a dedent; we should have parsed the
     -- remainder of the current scope's block.
     lookAhead (tok_ Dedent)
@@ -286,7 +285,7 @@ pVarCode  :: forall effs env splices t ty name
            . KnownSymbol name
           => EffectParsers effs
           -> EnvironmentProxy env
-          -> Context (Splice env) splices
+          -> Context Splice splices
           -> TypeProxy t
           -> NameIsAbsent name env
           -> Proxy name
@@ -299,22 +298,15 @@ pVarCode eps env splices t pf name vt = do
   withEnvironment env $ withKnownType vt $ recallIsAbsent pf $ do
     let pf' = bindName name vt pf
         env' = BindingProxy name vt env
-        splices' = injectSpliceEnv name vt splices
     (body, final) <- case t of
       VoidType -> (\xs -> (init xs, last xs))
-                     <$> some (pCode eps env' splices' VoidType)
-      _ -> manyTill_ (pCode eps env' splices' VoidType) (try (pCode eps env' splices' t))
+                     <$> some (pCode eps env' splices VoidType)
+      _ -> manyTill_ (pCode eps env' splices VoidType) (try (pCode eps env' splices t))
     -- peek at the next token, which should be a dedent; we should have parsed the
     -- remainder of the current scope's block.
     lookAhead (tok_ Dedent)
     pure (Fix (LetBind pf' name vt c t (Fix (Block t body final))))
 
-
-injectSpliceEnv :: Proxy name
-                -> TypeProxy ty
-                -> Context (Splice env) splices
-                -> Context (Splice ('(name, ty) ': env)) splices
-injectSpliceEnv _ _ = mapContext (\_ _ -> id)
 
 -- | Parse type name
 pTypeName :: Parser SomeType
@@ -329,7 +321,7 @@ pTypeName
 pEffects :: forall effs env splices t
           . EffectParsers effs
          -> EnvironmentProxy env
-         -> Context (Splice env) splices
+         -> Context Splice splices
          -> TypeProxy t
          -> Parser (Code effs env t)
 pEffects (EP eps) env _splices t = dbg "effects" $ go eps

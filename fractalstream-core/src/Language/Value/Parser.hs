@@ -51,15 +51,15 @@ import Debug.Trace
 
 -- we really want to use typed splices, but we'll swap in this
 -- untyped version for now just to make life a little easier
-data Splice :: Environment -> Symbol -> FSType -> Exp Type
-type instance Eval (Splice env name ty) = U.Value
+data Splice :: Symbol -> FSType -> Exp Type
+type instance Eval (Splice name ty) = U.Value
 
 ---------------------------------------------------------------------------------
 -- Top-level entry points
 ---------------------------------------------------------------------------------
 
 parseValue :: EnvironmentProxy env
-           -> Context (Splice env) splices
+           -> Context Splice splices
            -> TypeProxy t
            -> String
            -> Either (Int, BadParse) (Value '(env, t))
@@ -68,7 +68,7 @@ parseValue env splices t input = parseValueFromTokens env splices t (tokenize in
 parseValueFromTokens
   :: forall env splices t
    . EnvironmentProxy env
-  -> Context (Splice env) splices
+  -> Context Splice splices
   -> TypeProxy t
   -> [Token]
   -> Either (Int, BadParse) (Value '(env, t))
@@ -79,7 +79,7 @@ parseValueFromTokens env splices t toks
 
 value_ :: forall t env splices
         . (KnownEnvironment env, KnownType t)
-       => Context (Splice env) splices
+       => Context Splice splices
        -> Parser (Value '(env, t))
 value_ splices = case envProxy (Proxy @env) of
   env -> case typeProxy @t of

@@ -25,6 +25,8 @@ import Data.Maybe
 import Data.Aeson hiding (Value)
 import qualified Data.Yaml as YAML
 import Fcf (Eval, Exp)
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 import Graphics.UI.WX hiding (glue, when, tool, Object, Dimensions, Horizontal, Vertical, Layout, Color)
 import qualified Graphics.UI.WX as WX
@@ -43,12 +45,38 @@ defToUI yamlFile = start $ do
     Left e -> error ("ERROR: " ++ e)
     Right _ -> putStrLn ("OKOKOK")
 
-  Just setup <- pure (ensembleSetup ensemble)
-  Just config <- pure (ensembleConfiguration ensemble)
+  -- TODO: verify that the code for each viewer, tool, etc works properly
+  --       with the splices declared by the setup config. e.g. all code
+  --       typechecks with the splice's types, each splice's environment
+  --       is contained in the actual code environment at each use, etc.
+  --
+  --       If the ensemble passes this verification, then the end-user
+  --       should not be able to cause a compilation failure via the
+  --       UI.
+  runEnsemble WX ensemble
 
-  configUI <- runExceptTIO (allocateUIConstants (coContents config))
-  withDynamicBindings configUI $ \configContext -> do
-    runSetup WX (contextToEnv configContext) setup
+runEnsemble :: ToUI ui => ui -> Ensemble -> IO ()
+runEnsemble ui Ensemble{..} = do
+  -- Get a handle for the ensemble
+  project <- newEnsemble ui
+
+  -- Make the setup window and let it run
+  Just setup <- pure ensembleSetup
+  setupUI <- runExceptTIO (allocateUIExpressions (coContents setup))
+  runSetup ui project (coTitle setup) setupUI $ \_splices -> do
+
+    -- Build the configuration window, if any.
+    whenJust ensembleConfiguration $ \config -> do
+      configUI <- runExceptTIO (allocateUIConstants (coContents config))
+      makeLayout ui project "Configuration" configUI
+      --withDynamicBindings configUI $ \configContext -> do
+
+    putStrLn "made it!"
+
+whenJust :: Monad m => Maybe a -> (a -> m ()) -> m ()
+whenJust m k = case m of
+  Nothing -> pure ()
+  Just x  -> k x
 
 
 data Ensemble = Ensemble
@@ -98,6 +126,7 @@ parseLayout o
      StringOrNumber varValue <- p .: "value"
      varType <- p .: "type"
      varVariable <- p .: "variable"
+     varEnv <- p .:? "environment" .!= Map.empty
      pure (TextBox lab (Dummy YamlVar{..}))
 
    checkBoxLayout p = do
@@ -105,6 +134,7 @@ parseLayout o
      val <- p .: "value"
      let varValue = if val then "true" else "false"
          varType = SomeType BooleanType
+         varEnv = Map.empty
      varVariable <- p .: "variable"
      pure (CheckBox lab (Dummy YamlVar{..}))
 
@@ -113,6 +143,7 @@ parseLayout o
      varValue <- p .: "value"
      varVariable <- p .: "variable"
      let varType = SomeType ColorType
+         varEnv = Map.empty
      pure (ColorPicker lab (Dummy YamlVar{..}))
 
 newtype StringOrNumber t = StringOrNumber { unStringOrNumber :: t }
@@ -174,7 +205,7 @@ buildEnsemble Ensemble{..} =
 
     forM_ ensembleViewers $ \ComplexViewer{..} ->
       (bindInEnv cvCoord ComplexType env0 $ \env ->
-        withConfigurationSplices ensembleSetup env $ \splices -> do
+        withConfigurationSplices ensembleSetup $ \splices -> do
           lift (putStrLn cvCode)
           case parseCode effectParser env splices ColorType cvCode of
             Left err -> fail ("bad parse: " ++ show err)
@@ -225,24 +256,33 @@ withConfigurationEnv (Just Configuration{..}) env0 k
    go ((nameStr, SomeType ty) : etc) env =
      bindInEnv nameStr ty env (go etc)
 
-withConfigurationSplices :: forall m t env
+withConfigurationSplices :: forall m t
                           . MonadFail m
                          => Maybe Configuration
-                         -> EnvironmentProxy env
-                         -> (forall splices. Context (Splice env) splices -> m t)
+                         -> (forall splices. Context Splice splices -> m t)
                          -> m t
-withConfigurationSplices Nothing _env k = k EmptyContext
-withConfigurationSplices (Just Configuration{..}) _env k
+withConfigurationSplices Nothing k = k EmptyContext
+withConfigurationSplices (Just Configuration{..}) k
    = go (allBindingVars coContents) EmptyEnvProxy EmptyContext
  where
-   go :: forall e. [YamlVar] -> EnvironmentProxy e -> Context (Splice env) e ->  m t
+   go :: forall e. [YamlVar] -> EnvironmentProxy e -> Context Splice e ->  m t
    go [] _ ctx = k ctx
-   go ((YamlVar valStr (SomeType ty) nameStr) : etc) ctxEnv ctx =
+   go ((YamlVar valStr (SomeType ty) envMap nameStr) : etc) ctxEnv ctx =
      case someSymbolVal nameStr of
-       SomeSymbol name -> bindInEnv' name ty ctxEnv $ \ctxEnv' ->
-         case parseUntypedValue valStr of -- case parseValue env EmptyContext ty valStr of
-           Left e -> fail ("parse error when parsing config argument `" <> nameStr <> "`: " <> show (snd e))
-           Right v -> go etc ctxEnv' (Bind name ty v ctx)
+       SomeSymbol name -> bindInEnv' name ty ctxEnv $ \ctxEnv' -> do
+         let die e = fail $ "parse error when parsing config argument `" <>
+               nameStr <> "`: " <> show (snd e)
+
+         withEnvFromMap envMap $ \env ->
+           -- see if we can parse this as a value at all
+           case parseUntypedValue valStr of
+             Left e -> die e
+             Right v ->
+               -- now see if we can parse at the right type,
+               -- in the expected environment
+               case parseValue env EmptyContext ty valStr of
+                 Left e -> die e
+                 Right _ -> go etc ctxEnv' (Bind name ty v ctx)
 
 bindInEnv :: (MonadFail m)
           => String
@@ -295,7 +335,7 @@ data ComplexViewer' where
     } -> ComplexViewer'
 
 makeComplexViewer' :: Context DynamicValue env
-                   -> Context (Splice env) splices
+                   -> Context Splice splices
                    -> ComplexViewer
                    -> IO (ViewerUIProperties, ComplexViewer')
 makeComplexViewer' cvConfig' _splices ComplexViewer{..} = do
@@ -348,9 +388,11 @@ data Dummy t = Dummy YamlVar
 data YamlVar = YamlVar
   { varValue :: String
   , varType :: SomeType
+  , varEnv :: Map String SomeType
   , varVariable :: String
   }
   deriving Show
+
 
 allBindings :: Layout Dummy -> [(String, SomeType)]
 allBindings = map (\YamlVar{..} -> (varVariable, varType)) . allBindingVars
@@ -393,25 +435,54 @@ data Layout f
   | ColorPicker Label (f Color)
 
 class ToUI ui where
-  runSetup :: ui
-           -> EnvironmentProxy env
-           -> Configuration
+  type EnsembleHandle ui
+
+  newEnsemble :: ui -> IO (EnsembleHandle ui)
+
+  runSetup :: Dynamic dyn
+           => ui
+           -> EnsembleHandle ui
+           -> String
+           -> Layout dyn
+           -> (forall splices. Context Splice splices -> IO ())
            -> IO ()
+
+  makeLayout :: Dynamic dyn
+             => ui
+             -> EnsembleHandle ui
+             -> String
+             -> Layout dyn
+             -> IO ()
 
 data WX = WX
 
 instance ToUI WX where
-  runSetup _ env Configuration{..} = do
-    f <- frame [ text := coTitle
+  type EnsembleHandle WX = ()
+
+  newEnsemble _ = pure ()
+
+  runSetup _ _ title setupUI k = do
+    f <- frame [ text := title
                , on resize := propagateEvent
                ]
 
-    Right setupUI <- runExceptT (allocateUIExpressions env coContents)
     innerLayout <- generateWxLayout f setupUI
-    compileButton <- button f [ text := "Go!" ]
+    compileButton <- button f [ text := "Go!"
+                              , on command := do
+                                  set f [ visible := False ]
+                                  k EmptyContext -- fixme
+                              ]
     set f [ layout := fill . margin 5 . column 5
                       $ [ innerLayout, widget compileButton ]
           ]
+
+  makeLayout _ _ title ui = do
+    f <- frame [ text := title
+               , on resize := propagateEvent
+               ]
+
+    innerLayout <- generateWxLayout f ui
+    set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ] ]
 
 generateWxLayout :: Dynamic dyn
                  => Window a
@@ -473,7 +544,7 @@ generateWxLayout frame0 wLayout = do
                     Nothing -> set te [ bgcolor := normalBG
                                       , tooltip := "" ]
                     Just err -> do
-                      set te [ bgcolor := rgb 100 30 (30 :: Int)
+                      set te [ bgcolor := rgb 160 100 (100 :: Int)
                              , tooltip := unlines
                                  [ "Could not parse an expression"
                                  , ""
@@ -594,11 +665,9 @@ instance Dynamic ConstantExpression where
     ConstantExpression _ _ v ->
       listenWith v (\old new -> action (fst old) (fst new))
 
-allocateUIExpressions :: forall env
-                       . EnvironmentProxy env
-                      -> Layout Dummy
+allocateUIExpressions :: Layout Dummy
                       -> ExceptT String IO (Layout Expression)
-allocateUIExpressions env0 = go
+allocateUIExpressions = go
   where
     go = \case
 
@@ -612,10 +681,12 @@ allocateUIExpressions env0 = go
 
       TextBox lab (Dummy YamlVar{..}) -> case varType of
         SomeType ty ->
-          case parseValue env0 EmptyContext ty varValue of
-            Left (_, err) -> fail (show err)
-            Right v  ->
-              TextBox lab . Expression varVariable env0 ty <$> newUIValue (varValue, v)
+          withEnvFromMap varEnv $ \env ->
+            case parseValue env EmptyContext ty varValue of
+              Left (_, err) -> fail (show err)
+              Right v  ->
+                TextBox lab . Expression varVariable env ty
+                <$> newUIValue (varValue, v)
 
       CheckBox lab (Dummy YamlVar{..}) ->
         case parseValue EmptyEnvProxy EmptyContext BooleanType varValue of

@@ -26,6 +26,8 @@ module Language.Environment
   , envTypeProxy
   , withEnvType
   , bindNameEnv
+  , withEnvFromMap
+  , envToMap
   , type Env
   , type Ty
   , lemmaEnvTy
@@ -67,6 +69,8 @@ import Data.Coerce
 import Unsafe.Coerce
 import Data.Constraint
 import Data.Kind
+import Data.Map (Map)
+import qualified Data.Map as Map
 
 ---------------------------------------------------------------------------------
 -- Environments
@@ -150,6 +154,30 @@ envTypeProxy :: EnvironmentProxy env
              -> TypeProxy t
              -> EnvTypeProxy '(env, t)
 envTypeProxy env t = withEnvironment env (EnvType t)
+
+-- TODO: could move this into the trusted core and avoid the quadratic behavior
+withEnvFromMap :: forall t
+                . Map String SomeType
+               -> (forall env. EnvironmentProxy env -> t)
+               -> t
+withEnvFromMap m k = go EmptyEnvProxy (Map.toList m)
+  where
+    go :: EnvironmentProxy env -> [(String, SomeType)] -> t
+    go env = \case
+      [] -> k env
+      ((nameStr, SomeType ty) : etc) -> case someSymbolVal nameStr of
+        SomeSymbol name -> case lookupEnv' name env of
+          Found' _ _ -> error "impossible internal error! duplicated key in map"
+          Absent' proof -> recallIsAbsent proof $
+            go (BindingProxy name ty env) etc
+
+envToMap :: EnvironmentProxy env -> Map String SomeType
+envToMap = Map.fromList . go
+  where
+    go :: forall e. EnvironmentProxy e -> [(String, SomeType)]
+    go = \case
+      BindingProxy name ty env -> (symbolVal name, SomeType ty) : go env
+      EmptyEnvProxy -> []
 
 withEnvType :: EnvTypeProxy et
             -> ((et ~ '(Env et, Ty et))
