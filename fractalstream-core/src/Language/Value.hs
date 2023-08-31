@@ -8,6 +8,7 @@ module Language.Value
   , Value_
   , Proxy(..)
   , SomeValue(..)
+  , SomeConstantValue(..)
   , typeOfValue
   , get
   , pprint
@@ -46,6 +47,12 @@ data SomeValue where
             -> TypeProxy ty
             -> Value '(env, ty)
             -> SomeValue
+
+data SomeConstantValue where
+  SomeConstantValue :: forall ty
+                     . TypeProxy ty
+                    -> Value '( '[], ty )
+                    -> SomeConstantValue
 
 data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FSType)) where
 

@@ -6,6 +6,7 @@ module UI.Definition where
 import Language.Environment
 import Language.Type
 import Language.Value hiding (get)
+import Language.Code (Code)
 import Language.Code.Parser
 import Language.Value.Parser (parseValue, parseUntypedValue, Splice)
 import Language.Value.Evaluator (HaskellTypeOfBinding, evaluate)
@@ -15,19 +16,23 @@ import Control.Applicative
 
 import GHC.TypeLits
 import Control.Monad.Except
-import Fcf (Eval, Exp)
 import Data.Kind
 import qualified Data.Text as Text
 import Text.Read (readMaybe)
 import Data.String (IsString(..))
+import Data.Maybe
 
-import Data.Aeson
+import Data.Aeson hiding (Value)
 import qualified Data.Yaml as YAML
+import Fcf (Eval, Exp)
 
 import Graphics.UI.WX hiding (glue, when, tool, Object, Dimensions, Horizontal, Vertical, Layout, Color)
 import qualified Graphics.UI.WX as WX
 
 import Data.Color (Color)
+
+runExceptTIO :: ExceptT String IO a -> IO a
+runExceptTIO = fmap (either error id) . runExceptT
 
 defToUI :: FilePath -> IO ()
 defToUI yamlFile = start $ do
@@ -39,22 +44,12 @@ defToUI yamlFile = start $ do
     Right _ -> putStrLn ("OKOKOK")
 
   Just setup <- pure (ensembleSetup ensemble)
-  uiResult <- runExceptT (allocateDummyUIValues (coContents setup))
+  Just config <- pure (ensembleConfiguration ensemble)
 
-  case uiResult of
-    Left e -> error ("ERROR2: " ++ e)
-    Right ui -> do
-      configFrame <- frame [ text := coTitle setup
-                           , on resize := propagateEvent
-                           ]
-      innerLayout <- generateWxLayout setTextOnly configFrame ui
-      compileButton <- button configFrame [ text := "Go!" ]
-      set configFrame [ layout := fill
-                                $ margin 5
-                                $ column 5
-                                $ [ innerLayout
-                                  , widget compileButton
-                                  ] ]
+  configUI <- runExceptTIO (allocateUIConstants (coContents config))
+  withDynamicBindings configUI $ \configContext -> do
+    runSetup WX (contextToEnv configContext) setup
+
 
 data Ensemble = Ensemble
   { ensembleSetup :: Maybe Configuration
@@ -101,14 +96,15 @@ parseLayout o
    textBoxLayout p = do
      lab <- p .: "label"
      StringOrNumber varValue <- p .: "value"
-     (p .: "type") >>= \(SomeType ty) -> do
-       varVariable <- p .: "variable"
-       pure (TextBox lab ty (Dummy YamlVar{..}))
+     varType <- p .: "type"
+     varVariable <- p .: "variable"
+     pure (TextBox lab (Dummy YamlVar{..}))
 
    checkBoxLayout p = do
      lab <- p .: "label"
      val <- p .: "value"
      let varValue = if val then "true" else "false"
+         varType = SomeType BooleanType
      varVariable <- p .: "variable"
      pure (CheckBox lab (Dummy YamlVar{..}))
 
@@ -116,9 +112,10 @@ parseLayout o
      lab <- p .: "label"
      varValue <- p .: "value"
      varVariable <- p .: "variable"
+     let varType = SomeType ColorType
      pure (ColorPicker lab (Dummy YamlVar{..}))
 
-newtype StringOrNumber t = StringOrNumber t
+newtype StringOrNumber t = StringOrNumber { unStringOrNumber :: t }
 
 instance (IsString s) => FromJSON (StringOrNumber s) where
   parseJSON v
@@ -139,8 +136,8 @@ instance FromJSON ComplexViewer where
     cvOnSelect <- o .:? "on-select"
     pure ComplexViewer{..}
 
-instance FromJSON (StringOf t) where
-  parseJSON = fmap StringOf . parseJSON
+instance KnownType t => FromJSON (StringOf t) where
+  parseJSON = fmap unStringOrNumber . parseJSON
 
 instance FromJSON Label where
   parseJSON = withText "label" (pure . Label . Text.unpack)
@@ -213,61 +210,6 @@ setUIValue v = liftIO . modifyUIValue v . const
 getUIValue :: MonadIO m => UIValue t -> m t
 getUIValue (UIValue glue) = fst <$> liftIO (readMVar glue)
 
-allocateUIValues :: (forall ty. TypeProxy ty -> String -> Either String (HaskellType ty))
-                 -> Layout Dummy
-                 -> ExceptT String IO (Layout UIValueRepr) -- aka UILayout
-allocateUIValues pValue = go
-  where
-    go = \case
-      Vertical xs -> Vertical <$> mapM go xs
-      Horizontal xs -> Horizontal <$> mapM go xs
-      Panel lab x -> Panel lab <$> go x
-      Tabbed ps -> Tabbed <$> mapM (\(lab, x) -> (lab,) <$> go x) ps
-      TextBox lab ty (Dummy YamlVar{..}) ->
-        case pValue ty varValue of
-          Left err -> fail err
-          Right v  -> TextBox lab ty . UIValueRepr <$> newUIValue (varValue, v)
-      CheckBox lab (Dummy YamlVar{..}) ->
-        case pValue BooleanType varValue of
-          Left err -> fail err
-          Right v  -> CheckBox lab . UIValueRepr <$> newUIValue (varValue, v)
-      ColorPicker lab (Dummy YamlVar{..}) ->
-        case pValue ColorType varValue of
-          Left err -> fail err
-          Right v  -> ColorPicker lab . UIValueRepr <$> newUIValue (varValue, v)
-
-allocateDummyUIValues :: Layout Dummy -> ExceptT String IO (Layout UIValueRepr)
-allocateDummyUIValues = go
-  where
-    go = \case
-      Vertical xs -> Vertical <$> mapM go xs
-      Horizontal xs -> Horizontal <$> mapM go xs
-      Panel lab x -> Panel lab <$> go x
-      Tabbed ps -> Tabbed <$> mapM (\(lab, x) -> (lab,) <$> go x) ps
-      TextBox lab ty (Dummy YamlVar{..}) ->
-        fmap (TextBox lab ty . UIValueRepr)
-          $ case ty of
-              ComplexType -> newUIValue (varValue, 0)
-              RealType    -> newUIValue (varValue, 0)
-              IntegerType -> newUIValue (varValue, 0)
-              BooleanType -> newUIValue (varValue, False)
-              _ -> fail "todo, textbox"
-      CheckBox lab (Dummy YamlVar{..}) ->
-        CheckBox lab . UIValueRepr <$> newUIValue (varValue, False)
-      ColorPicker lab (Dummy YamlVar{}) ->
-        ColorPicker lab . UIValueRepr <$> fail "todo, colorpicker"
-
-data UIValueRepr_ :: Symbol -> FSType -> Exp Type
-type instance Eval (UIValueRepr_ name ty) = UIValueRepr (HaskellType ty)
-
-{-
-withConfigurationGlue :: Configuration
-                         -> (forall splices. Context UIValue_ splices -> IO t)
-                         -> IO t
-withConfigurationGlue Configuration{..} action = do
-  _
--}
-
 withConfigurationEnv :: forall m t env
                            . MonadFail m
                           => Maybe Configuration
@@ -293,9 +235,9 @@ withConfigurationSplices Nothing _env k = k EmptyContext
 withConfigurationSplices (Just Configuration{..}) _env k
    = go (allBindingVars coContents) EmptyEnvProxy EmptyContext
  where
-   go :: forall e. [(YamlVar, SomeType)] -> EnvironmentProxy e -> Context (Splice env) e ->  m t
+   go :: forall e. [YamlVar] -> EnvironmentProxy e -> Context (Splice env) e ->  m t
    go [] _ ctx = k ctx
-   go ((YamlVar valStr nameStr, SomeType ty) : etc) ctxEnv ctx =
+   go ((YamlVar valStr (SomeType ty) nameStr) : etc) ctxEnv ctx =
      case someSymbolVal nameStr of
        SomeSymbol name -> bindInEnv' name ty ctxEnv $ \ctxEnv' ->
          case parseUntypedValue valStr of -- case parseValue env EmptyContext ty valStr of
@@ -336,28 +278,84 @@ data ComplexViewer = ComplexViewer
   , cvOnSelect :: Maybe String
   }
 
+data ViewerUIProperties = ViewerUIProperties
+  { vpTitle :: String
+  , vpSize :: (Int, Int)
+  , vpCanResize :: Bool
+  }
+
+data ComplexViewer' where
+  ComplexViewer' :: forall z px env. (KnownSymbol z, KnownSymbol px) =>
+    { cvCenter'    :: UIValue (Complex Double)
+    , cvPixelSize' :: UIValue Double
+    , cvConfig' :: Context DynamicValue env
+    , cvCoord' :: Proxy z
+    , cvPixel' :: Proxy px
+    , cvCode' :: Code '[] ( '(z, 'ComplexT) ': '(px, 'RealT) ': env ) 'ColorT
+    } -> ComplexViewer'
+
+makeComplexViewer' :: Context DynamicValue env
+                   -> Context (Splice env) splices
+                   -> ComplexViewer
+                   -> IO (ViewerUIProperties, ComplexViewer')
+makeComplexViewer' cvConfig' _splices ComplexViewer{..} = do
+  let cvPixelName = fromMaybe "#pixel" cvPixel
+  case (someSymbolVal cvCoord, someSymbolVal cvPixelName) of
+    (SomeSymbol cvCoord', SomeSymbol cvPixel') -> do
+      let env0 = contextToEnv cvConfig'
+      case lookupEnv cvPixel' RealType env0 of
+        Absent proof -> recallIsAbsent proof $ do
+          let env1 = BindingProxy cvPixel' RealType env0
+          case lookupEnv cvCoord' ComplexType env1 of
+            Absent proof' -> recallIsAbsent proof' $ do
+              let env = BindingProxy cvCoord' ComplexType env1
+              cvCenter' <- newUIValue (valueOf cvCenter)
+              cvPixelSize' <- newUIValue (valueOf cvPixelSize)
+
+              let vpTitle = cvTitle
+                  vpSize  = cvSize
+                  vpCanResize = cvCanResize
+
+              let effectParser = Effect.EP Effect.NoEffs
+                  splices = EmptyContext -- FIXME
+
+              case parseCode effectParser env splices ColorType cvCode of
+                Left err -> error ("bad parse: " ++ show err)
+                Right cvCode' -> pure (ViewerUIProperties{..}, ComplexViewer'{..})
+
+            _ -> error (cvCoord ++ " defined in both the viewer and the configuration")
+        _ -> error (cvPixelName ++ " defined in both the viewer and the configuration")
+
+
 data Configuration = Configuration
   { coTitle :: String
   , coSize :: (Int, Int)
   , coContents :: Layout Dummy
   }
 
-newtype StringOf (t :: FSType) = StringOf String
-  deriving IsString
+newtype StringOf (t :: FSType) =
+  StringOf { valueOf :: HaskellType t }
+
+instance KnownType t => IsString (StringOf t) where
+  fromString s =
+    case parseValue EmptyEnvProxy EmptyContext (typeProxy @t) s of
+      Left err -> error (show err)
+      Right v  -> StringOf (evaluate v EmptyContext)
 
 data Dummy t = Dummy YamlVar
   deriving Show
 
 data YamlVar = YamlVar
   { varValue :: String
+  , varType :: SomeType
   , varVariable :: String
   }
   deriving Show
 
 allBindings :: Layout Dummy -> [(String, SomeType)]
-allBindings = map (\(x,t) -> (varVariable x, t)) . allBindingVars
+allBindings = map (\YamlVar{..} -> (varVariable, varType)) . allBindingVars
 
-allBindingVars :: Layout Dummy -> [(YamlVar, SomeType)]
+allBindingVars :: Layout Dummy -> [YamlVar]
 allBindingVars = go
   where
     go = \case
@@ -365,32 +363,62 @@ allBindingVars = go
       Horizontal xs -> concatMap go xs
       Panel _ x -> go x
       Tabbed xs -> concatMap (go . snd) xs
-      TextBox _ ty (Dummy x) -> [(x, SomeType ty)]
-      CheckBox _ (Dummy x) -> [(x, SomeType BooleanType)]
-      ColorPicker _ (Dummy x) -> [(x, SomeType ColorType)]
+      TextBox _ (Dummy x) -> [x]
+      CheckBox _ (Dummy x) -> [x]
+      ColorPicker _ (Dummy x) -> [x]
+
+extractAllBindings :: (forall t. f t -> a)
+                   -> Layout f
+                   -> [a]
+extractAllBindings extractor = go
+  where
+    go = \case
+      Vertical xs -> concatMap go xs
+      Horizontal xs -> concatMap go xs
+      Panel _ x -> go x
+      Tabbed xs -> concatMap (go . snd) xs
+      TextBox _ x -> [extractor x]
+      CheckBox _ x -> [extractor x]
+      ColorPicker _ x -> [extractor x]
 
 newtype Label = Label String
 
-data Layout f where
-  Vertical :: [Layout f] -> Layout f
-  Horizontal :: [Layout f] -> Layout f
-  Panel :: String -> Layout f -> Layout f
-  Tabbed :: [(String, Layout f)] -> Layout f
-  TextBox :: Label -> TypeProxy ty -> f (HaskellType ty) -> Layout f
-  CheckBox :: Label -> f Bool -> Layout f
-  ColorPicker :: Label -> f Color -> Layout f
+data Layout f
+  = Vertical [Layout f]
+  | Horizontal [Layout f]
+  | Panel String (Layout f)
+  | Tabbed [(String, Layout f)]
+  | TextBox Label (f String)
+  | CheckBox Label (f Bool)
+  | ColorPicker Label (f Color)
 
-type UILayout = Layout UIValueRepr
+class ToUI ui where
+  runSetup :: ui
+           -> EnvironmentProxy env
+           -> Configuration
+           -> IO ()
 
-generateWxLayout :: (forall ty. TypeProxy ty
-                           -> String
-                           -> UIValue (String, HaskellType ty)
-                           -> IO (Maybe String))
-              -> Window a
-              -> UILayout
-              -> IO WX.Layout
+data WX = WX
 
-generateWxLayout setValueText frame0 wLayout = do
+instance ToUI WX where
+  runSetup _ env Configuration{..} = do
+    f <- frame [ text := coTitle
+               , on resize := propagateEvent
+               ]
+
+    Right setupUI <- runExceptT (allocateUIExpressions env coContents)
+    innerLayout <- generateWxLayout f setupUI
+    compileButton <- button f [ text := "Go!" ]
+    set f [ layout := fill . margin 5 . column 5
+                      $ [ innerLayout, widget compileButton ]
+          ]
+
+generateWxLayout :: Dynamic dyn
+                 => Window a
+                 -> Layout dyn
+                 -> IO WX.Layout
+
+generateWxLayout frame0 wLayout = do
   panel0 <- panel frame0 []
   computedLayout <- go panel0 wLayout
   pure (container panel0 computedLayout)
@@ -418,8 +446,8 @@ generateWxLayout setValueText frame0 wLayout = do
 
      ColorPicker{} -> error "todo, colorpicker"
 
-     CheckBox (Label lab) (UIValueRepr v) -> do
-       initial <- snd <$> getUIValue v
+     CheckBox (Label lab) v -> do
+       initial <- getDynamic v
        cb <- checkBox p [ text := lab
                         , checkable := True
                         , checked := initial
@@ -427,23 +455,32 @@ generateWxLayout setValueText frame0 wLayout = do
                         ]
        set cb [ on command := do
                   isChecked <- get cb checked
-                  setUIValue v ("", isChecked)
+                  void (setDynamic v isChecked)
               ]
-       onChange v $ \_ (_, isChecked) -> set cb [ checked := isChecked ]
+       listenWith v (\_ isChecked -> set cb [ checked := isChecked ])
        pure (widget cb)
 
-     TextBox (Label lab) ty (UIValueRepr v) -> do
-       initial <- fst <$> getUIValue v
+     TextBox (Label lab) v -> do
+       initial <- getDynamic v
        te <- textEntry p [ text := initial
                          , processEnter := True
+                         , tooltip := ""
                          ]
+       normalBG <- get te bgcolor
        set te [ on command := do
                   newText <- get te text
-                  setValueText ty newText v >>= \case
-                    Nothing -> pure ()
-                    Just _err -> error "bad parse of text field"
+                  setDynamic v newText >>= \case
+                    Nothing -> set te [ bgcolor := normalBG
+                                      , tooltip := "" ]
+                    Just err -> do
+                      set te [ bgcolor := rgb 100 30 (30 :: Int)
+                             , tooltip := unlines
+                                 [ "Could not parse an expression"
+                                 , ""
+                                 , show err ]
+                             ]
               ]
-       onChange v $ \_ (newText, _) -> set te [ text := newText ]
+       listenWith v (\_ newText -> set te [ text := newText ])
        pure (fill $ row 5 [ label lab, hfill (widget te) ])
 
 parseToHaskellValue :: Context HaskellTypeOfBinding env
@@ -474,3 +511,205 @@ setToParsed parse ty input ui = do
   case parse ty input of
     Left err -> pure (Just err)
     Right v  -> setUIValue ui (input, v) >> pure Nothing
+
+
+class Dynamic (e :: Type -> Type) where
+  getDynamic :: e t -> IO t
+  setDynamic :: e t -> t -> IO (Maybe String)
+  listenWith :: e t -> (t -> t -> IO ()) -> IO ()
+
+instance Dynamic UIValue where
+  getDynamic = getUIValue
+  setDynamic d v = setUIValue d v >> pure Nothing
+  listenWith = onChange
+
+data SomeDynamic t where
+  SomeDynamic :: forall dyn t. Dynamic dyn => dyn t -> SomeDynamic t
+
+instance Dynamic SomeDynamic where
+  getDynamic (SomeDynamic d) = getDynamic d
+  setDynamic (SomeDynamic d) = setDynamic d
+  listenWith (SomeDynamic d) = listenWith d
+
+data Expression t where
+  Expression :: forall env ty
+              . String
+             -> EnvironmentProxy env
+             -> TypeProxy ty
+             -> UIValue (String, Value '(env, ty))
+             -> Expression String
+  BoolExpression :: String -> UIValue Bool -> Expression Bool
+  ColorExpression :: String -> UIValue Color -> Expression Color
+
+instance Dynamic Expression where
+  getDynamic = \case
+    BoolExpression _ b -> getDynamic b
+    ColorExpression _ c -> getDynamic c
+    Expression _ _ _ v -> fst <$> getDynamic v
+
+  setDynamic d new = case d of
+    BoolExpression _ b -> setDynamic b new
+    ColorExpression _ c -> setDynamic c new
+    Expression _ env ty v -> do
+      case parseValue env EmptyContext ty new of
+        Left (_, err) -> pure (Just (show err))
+        Right newV    -> do
+          setDynamic v (new, newV)
+          pure Nothing
+
+  listenWith d action = case d of
+    BoolExpression _ b -> listenWith b action
+    ColorExpression _ c -> listenWith c action
+    Expression _ _ _ v ->
+      listenWith v (\old new -> action (fst old) (fst new))
+
+data ConstantExpression t where
+  ConstantExpression :: forall ty
+                      . String
+                     -> TypeProxy ty
+                     -> UIValue (String, HaskellType ty)
+                     -> ConstantExpression String
+  ConstantBoolExpression :: String -> UIValue Bool -> ConstantExpression Bool
+  ConstantColorExpression :: String -> UIValue Color -> ConstantExpression Color
+
+instance Dynamic ConstantExpression where
+  getDynamic = \case
+    ConstantBoolExpression _ b -> getDynamic b
+    ConstantColorExpression _ c -> getDynamic c
+    ConstantExpression _ _ v -> fst <$> getDynamic v
+
+  setDynamic d new = case d of
+    ConstantBoolExpression _ b -> setDynamic b new
+    ConstantColorExpression _ c -> setDynamic c new
+    ConstantExpression _ ty v -> do
+      case parseValue EmptyEnvProxy EmptyContext ty new of
+        Left (_, err) -> pure (Just (show err))
+        Right newV    -> do
+          setDynamic v (new, evaluate newV EmptyContext)
+          pure Nothing
+
+  listenWith d action = case d of
+    ConstantBoolExpression _ b -> listenWith b action
+    ConstantColorExpression _ c -> listenWith c action
+    ConstantExpression _ _ v ->
+      listenWith v (\old new -> action (fst old) (fst new))
+
+allocateUIExpressions :: forall env
+                       . EnvironmentProxy env
+                      -> Layout Dummy
+                      -> ExceptT String IO (Layout Expression)
+allocateUIExpressions env0 = go
+  where
+    go = \case
+
+      Vertical xs -> Vertical <$> mapM go xs
+
+      Horizontal xs -> Horizontal <$> mapM go xs
+
+      Panel lab x -> Panel lab <$> go x
+
+      Tabbed ps -> Tabbed <$> mapM (\(lab, x) -> (lab,) <$> go x) ps
+
+      TextBox lab (Dummy YamlVar{..}) -> case varType of
+        SomeType ty ->
+          case parseValue env0 EmptyContext ty varValue of
+            Left (_, err) -> fail (show err)
+            Right v  ->
+              TextBox lab . Expression varVariable env0 ty <$> newUIValue (varValue, v)
+
+      CheckBox lab (Dummy YamlVar{..}) ->
+        case parseValue EmptyEnvProxy EmptyContext BooleanType varValue of
+          Left (_, err) -> fail (show err)
+          Right v  -> CheckBox lab . BoolExpression varVariable
+                      <$> newUIValue (evaluate v EmptyContext)
+
+      ColorPicker lab (Dummy YamlVar{..}) ->
+        case parseValue EmptyEnvProxy EmptyContext ColorType varValue of
+          Left (_, err) -> fail (show err)
+          Right v  -> ColorPicker lab . ColorExpression varVariable
+                      <$> newUIValue (evaluate v EmptyContext)
+
+allocateUIConstants :: Layout Dummy
+                    -> ExceptT String IO (Layout ConstantExpression)
+allocateUIConstants = go
+  where
+    go = \case
+
+      Vertical xs -> Vertical <$> mapM go xs
+
+      Horizontal xs -> Horizontal <$> mapM go xs
+
+      Panel lab x -> Panel lab <$> go x
+
+      Tabbed ps -> Tabbed <$> mapM (\(lab, x) -> (lab,) <$> go x) ps
+
+      TextBox lab (Dummy YamlVar{..}) -> case varType of
+        SomeType ty ->
+          case parseValue EmptyEnvProxy EmptyContext ty varValue of
+            Left (_, err) -> fail (show err)
+            Right v       -> TextBox lab . ConstantExpression varVariable ty
+                             <$> newUIValue (varValue, evaluate v EmptyContext)
+
+      CheckBox lab (Dummy YamlVar{..}) ->
+        case parseValue EmptyEnvProxy EmptyContext BooleanType varValue of
+          Left (_, err) -> fail (show err)
+          Right v       -> CheckBox lab . ConstantBoolExpression varVariable
+                           <$> newUIValue (evaluate v EmptyContext)
+
+      ColorPicker lab (Dummy YamlVar{..}) ->
+        case parseValue EmptyEnvProxy EmptyContext ColorType varValue of
+          Left (_, err) -> fail (show err)
+          Right v       -> ColorPicker lab . ConstantColorExpression varVariable
+                           <$> newUIValue (evaluate v EmptyContext)
+
+data DynamicValue :: Symbol -> FSType -> Exp Type
+type instance Eval (DynamicValue name ty) = SomeDynamic (HaskellType ty)
+
+data SomeUIValue where
+  SomeUIValue :: forall name ty
+               . (KnownSymbol name)
+              => Proxy name
+              -> TypeProxy ty
+              -> SomeDynamic (HaskellType ty)
+              -> SomeUIValue
+
+withDynamicBindings :: forall t
+                     . Layout ConstantExpression
+                    -> (forall env. Context DynamicValue env -> t)
+                    -> t
+withDynamicBindings lo action =
+    go EmptyContext (extractAllBindings toSomeUIValue lo)
+  where
+    go :: forall env. Context DynamicValue env -> [SomeUIValue] -> t
+    go ctx [] = action ctx
+    go ctx ( (SomeUIValue name ty dyn) : xs ) =
+      case lookupEnv name ty (contextToEnv ctx) of
+        Absent proof -> recallIsAbsent proof
+                        $ go (Bind name ty dyn ctx) xs
+        _ -> error ("`" ++ symbolVal name ++ "` is re-defined")
+
+    toSomeUIValue :: forall a. ConstantExpression a -> SomeUIValue
+    toSomeUIValue = \case
+      ConstantExpression nameStr ty v -> case someSymbolVal nameStr of
+        SomeSymbol name -> SomeUIValue name ty (SomeDynamic (ConstantExpression' ty v))
+      ConstantBoolExpression nameStr b -> case someSymbolVal nameStr of
+        SomeSymbol name -> SomeUIValue name BooleanType (SomeDynamic b)
+      ConstantColorExpression nameStr c -> case someSymbolVal nameStr of
+        SomeSymbol name -> SomeUIValue name ColorType (SomeDynamic c)
+
+data ConstantExpression' t where
+  ConstantExpression' :: forall ty t
+                      . (t ~ HaskellType ty)
+                     => TypeProxy ty
+                     -> UIValue (String, t)
+                     -> ConstantExpression' t
+
+instance Dynamic ConstantExpression' where
+  getDynamic (ConstantExpression' _ d) =
+    snd <$> getDynamic d
+
+  setDynamic (ConstantExpression' ty d) v =
+    setDynamic d (showValue ty v, v)
+
+  listenWith (ConstantExpression' _ d) action =
+    listenWith d (\(_, old) (_, new) -> action old new)
