@@ -26,7 +26,7 @@ import Data.Kind
 
 import Language.Untyped.Constraints
 
---import Debug.Trace
+import Debug.Trace
 
 addEnvironmentConstraints :: forall m env
                            . (MonadState TCState m, MonadError TCError m)
@@ -139,7 +139,7 @@ solveConstraints = do
     let hi = case Map.lookup s upperTypes of
           Just h  -> h
           Nothing -> C_T -- default case: upper bound is most general numeric type
-    -- traceM ("SCC " ++ show s ++ " : " ++ " lo=" ++ show lo ++ ", hi=" ++ show hi)
+    traceM ("SCC " ++ show s ++ " : " ++ " lo=" ++ show lo ++ ", hi=" ++ show hi)
     when (joinNumTy lo hi /= hi) (throwError (TypeMismatch (numTyToTy lo) (numTyToTy hi)))
 
   pure $ \tv -> case Map.lookup (toSCC . toTVID . TyVar $ tv) lowerTypes of
@@ -159,6 +159,7 @@ infer :: forall env rt m
       -> ValueWith TypeVar
       -> m (Value '(env, rt))
 infer env ctx rt ast = withEnvironment env $ do
+  traceM ("value: " ++ show ast)
   -- Add constraints coming from the environment
   addEnvironmentConstraints env ctx
   -- Generate constraints from the value
@@ -208,7 +209,10 @@ toTypedValue getType =
     lookupName s t k = case someSymbolVal s of
       SomeSymbol name -> case lookupEnv name t (envProxy (Proxy @env)) of
         Found pf     -> k name pf
-        WrongType t' -> throwError (TypeMismatch' (SomeType t) t')
+        WrongType t' -> do
+          traceM ("in environment " ++ show (envProxy (Proxy @env)))
+          traceM ("while looking for " ++ show (symbolVal name))
+          throwError (TypeMismatch' (SomeType t) t')
         Absent _     -> throwError (UnboundVariable s)
 
     --bad :: m a

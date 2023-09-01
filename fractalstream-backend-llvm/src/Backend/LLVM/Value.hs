@@ -68,6 +68,8 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
       Const (Scalar (PairType t1 t2) (x,y)) ->
         PairOp <$> go @env' (Const (Scalar t1 x)) <*> go @env' (Const (Scalar t2 y))
 
+      Const _ -> error "unhandled scalar type"
+
       And x y -> ((,) <$> x <*> y) >>= \case
         (BooleanOp lhs, BooleanOp rhs) -> BooleanOp <$> I.and lhs rhs
       Or x y -> ((,) <$> x <*> y) >>= \case
@@ -141,6 +143,8 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
         (BooleanOp cond, ColorOp r g b, ColorOp r' g' b') ->
           ColorOp <$> select cond r r' <*> select cond g g' <*> select cond b b'
 
+      ITE {} -> error "unhandled ITE type"
+
       Eql BooleanType x y -> ((,) <$> x <*> y) >>= \case
         (BooleanOp lhs, BooleanOp rhs) ->
           BooleanOp <$> icmp P.EQ lhs rhs
@@ -173,6 +177,8 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
             c12 <- I.and c1 c2
             BooleanOp <$> I.and c12 c3
 
+      Eql {} -> error "unhandled Eql type"
+
       NEq BooleanType x y -> ((,) <$> x <*> y) >>= \case
            (BooleanOp lhs, BooleanOp rhs) ->
              BooleanOp <$> icmp P.NE lhs rhs
@@ -204,6 +210,8 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
              c3 <- icmp P.NE b b'
              c12 <- I.or c1 c2
              BooleanOp <$> I.or c12 c3
+
+      NEq {} -> error "unhandled NEq type"
 
       LEI x y -> ((,) <$> x <*> y) >>= \case
         (IntegerOp lhs, IntegerOp rhs) -> BooleanOp <$> icmp P.SLE lhs rhs
@@ -369,8 +377,13 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
           sinhY <- call (getExtern "sinh") [(y, [])]
           ComplexOp <$> fmul sinX coshY <*> fmul cosX sinhY
 
-
-      _ -> error "TODO: unhandled Value constructor"
+      PowC {} -> error "TODO: unimplemented PowC"
+      SqrtC {} -> error "TODO: unimplemented SqrtC"
+      TanC {} -> error "TODO: unimplemented TanC"
+      SinhC {} -> error "TODO: unimplemented SinhC"
+      CoshC {} -> error "TODO: unimplemented CoshC"
+      TanhC {} -> error "TODO: unimplemented CoshC"
+   --   _ -> error "TODO: unhandled Value constructor"
 
 
 getGetExtern :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)

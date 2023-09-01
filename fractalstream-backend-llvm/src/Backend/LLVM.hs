@@ -5,6 +5,7 @@ module Backend.LLVM
   , invoke
   , invoke'
   , withCompiledCode
+  , withViewerCode
   , runJX
   , type JX
   ) where
@@ -34,6 +35,8 @@ import Data.Color
 
 import Foreign hiding (void)
 import GHC.TypeLits
+
+import Debug.Trace
 
 data JITFun (env :: Environment) (ret :: FSType) where
   JITFun :: EnvironmentProxy env -> TypeProxy ret -> FunPtr () -> JITFun env ret
@@ -153,6 +156,61 @@ withCompiledCode env code run = do
               Right (JITSymbol kernelFn _) -> do
                 let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
                 run (mkJX fn)
+
+withViewerCode :: forall x y dx dy env t
+                  . ( KnownEnvironment env
+                    , NotPresent "[internal argument] #blockSize" env
+                    , NotPresent "[internal argument] #subsamples" env
+                    , KnownSymbol x, KnownSymbol y
+                    , KnownSymbol dx, KnownSymbol dy
+                    , Required x env ~ 'RealT
+                    , NotPresent x (env `Without` x)
+                    , Required y env ~ 'RealT
+                    , NotPresent y (env `Without` y)
+                    , Required dx env ~ 'RealT
+                    , NotPresent dx (env `Without` dx)
+                    , Required dy env ~ 'RealT
+                    , NotPresent dy (env `Without` dy)
+                    )
+                 => Proxy x
+                 -> Proxy y
+                 -> Proxy dx
+                 -> Proxy dy
+                 -> Code '[] env 'ColorT
+                 -> ((Int32 -> Int32 -> Context HaskellTypeOfBinding env -> Ptr Word8 -> IO ())
+                      -> IO t)
+                 -> IO t
+withViewerCode x y dx dy c action = do
+  m <- either error pure (compileRenderer' x y dx dy c)
+  loadLibraryPermanently Nothing
+  withContext $ \ctx ->
+    withModuleFromAST ctx m $ \md -> do
+      asm <- BS.unpack <$> moduleLLVMAssembly md
+      putStrLn asm
+      let pm = defaultCuratedPassSetSpec
+      withPassManager pm (`runPassManager` md)
+      asm' <- BS.unpack <$> moduleLLVMAssembly md
+      putStrLn asm'
+
+      withHostTargetMachine' $ \tm -> do
+        withExecutionSession $ \session -> do
+          withClonedThreadSafeModule md $ \tsm -> do
+            let dylibName = "kernel_dylib"
+            dylib <- createJITDylib session dylibName
+            linker <- createRTDyldObjectLinkingLayer session --resolve
+            compileLayer <- createIRCompileLayer session linker tm
+            addDynamicLibrarySearchGeneratorForCurrentProcess compileLayer dylib
+            addModule tsm dylib compileLayer
+            lookupSymbol session compileLayer dylib "kernel" >>= \case
+              Left err -> error ("error JITing kernel: " ++ show err)
+              Right (JITSymbol kernelFn _) -> do
+                let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
+                action $ \blocksize subsamples argCtx buf -> do
+                  (args, frees) <- unzip <$> fromContextM toFFIArg argCtx
+                  traceM ("invoking with arg type " ++ show (contextToEnv argCtx))
+                  callFFI fn retVoid (argPtr buf : argInt32 blocksize : argInt32 subsamples : args)
+                  sequence_ frees
+
 
 withHostTargetMachine' :: (TargetMachine -> IO a) -> IO a
 withHostTargetMachine' f = do

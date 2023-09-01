@@ -1,0 +1,65 @@
+viewer:
+  style: complex-plane
+  title: Dynamical plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/128
+  code: |
+        init k : Z to 0
+        loop
+          set z to f
+          set k to k + 1
+          k < maxIters and not stop
+        if k = maxIters then
+          black
+        else
+          init c1 : Color to if im(z) > 0 then blue else yellow
+          init c2 : Color to if im(z) > 0 then green else red
+          init s : R to k + 1 - (log (log (|z|^2 / 2))) / log 2
+          set s to cos (s pi / 10)
+          set s to s s
+          blend (s, c1, c2)
+
+setup:
+  title: Parametric complex dynamics
+  size: 200x200
+  vertical-contents:
+    - text-entry:
+        label: "Iterate f(z) = "
+        value: "z^2 + C"
+        type: C
+        environment:
+          z: C
+          C: C
+        variable: f
+    - text-entry:
+        label: "until"
+        value: "|z| > maxRadius"
+        environment:
+          z: C
+          C: C
+          maxRadius: R
+        type: Boolean
+        variable: stop
+
+configuration:
+  title: Configuration
+  size: 400x200
+  vertical-contents:
+    - text-entry:
+        label: "C"
+        value: 0.11 + 0.78i
+        type: C
+        variable: C
+    - text-entry:
+        label: "Max. iterations: "
+        value: "100"
+        type: Z
+        variable: maxIters
+    - text-entry:
+        label: "Max. radius: "
+        value: 10
+        type: R
+        variable: maxRadius
