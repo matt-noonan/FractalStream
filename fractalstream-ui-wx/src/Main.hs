@@ -40,7 +40,7 @@ main = do
     capInfo <- threadCapability tid
     putStrLn ("Hello from main, on thread " ++ show tid ++ " "
               ++ show capInfo ++ " " ++ show bound)
-    if False then wxMain else defToUI "/Users/mnoonan/FractalStream/wiz0.yaml"
+    if False then wxMain else defToUI "/Users/mnoonan/FractalStream/wiz0c.yaml"
     putStrLn "main is done"
 
 wxMain :: IO ()

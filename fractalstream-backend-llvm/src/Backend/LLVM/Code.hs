@@ -82,7 +82,7 @@ compileRenderer code = runExcept $
       --  ( Bind _ _ subsamplesPtr
       --    (Bind _ _ dzPtr
       --       args))) <- allocaArgs (envProxy (Proxy @(RenderEnv env))) rawArgs
-      blockSizePtr <- allocaArg IntegerType blockSizeArg
+      blockSizePtr <- allocaArg IntegerType blockSizeArg `named` "set up environment"
       subsamplesPtr <- allocaArg IntegerType subsamplesArg
       dzPtr <- allocaArg ComplexType dzArg
       args <- allocaArgs (envProxy (Proxy @env)) rawArgs
@@ -98,7 +98,7 @@ compileRenderer code = runExcept $
           IntegerOp v -> pure v
         subsamples <- derefOperand subsamplesPtr >>= \case
           IntegerOp v -> pure v
-        indexPtr <- alloca AST.i32 Nothing 0
+        indexPtr <- alloca AST.i32 Nothing 0 `named` "set up loop variables"
         iPtr <- alloca AST.i32 Nothing 0
         jPtr <- alloca AST.i32 Nothing 0
         kPtr <- alloca AST.i32 Nothing 0
@@ -108,12 +108,12 @@ compileRenderer code = runExcept $
         -- index = 0;
         -- y = 0;
         -- for (i = 0; i < blockSize; ++i) {
-        store indexPtr 0 (C.int32 0)
+        store indexPtr 0 (C.int32 0) `named` "initialize i loop"
         store yPtr 0 y0
         store iPtr 0 (C.int32 0)
         br pixelLoopY
 
-        pixelLoopY <- block
+        pixelLoopY <- block `named` "initialize j loop"
 
         --     x = 0;
         --     for (j = 0; j < blockSize; ++j) {
@@ -121,7 +121,7 @@ compileRenderer code = runExcept $
         store jPtr 0 (C.int32 0)
         br pixelLoopX
 
-        pixelLoopX <- block
+        pixelLoopX <- block `named` "initialize pixel loop"
 
         --       color_acc = (0,0,0);
         accR <- alloca AST.i32 Nothing 0
@@ -134,7 +134,7 @@ compileRenderer code = runExcept $
         br subsampleLoop
 
         --       for (k = 0; k < subsamples; ++k) {
-        subsampleLoop <- block
+        subsampleLoop <- block `named` "body of pixel loop"
 
         --           color_acc += user_kernel(x, y, ...);
         do
@@ -169,7 +169,7 @@ compileRenderer code = runExcept $
 
         --       }
         --       output[index++] = color_acc / subsamples;
-        exitSubsampleLoop <- block
+        exitSubsampleLoop <- block `named` "exit pixel loop"
         do
           index <- load indexPtr 0
           do
@@ -208,7 +208,7 @@ compileRenderer code = runExcept $
           condBr continue pixelLoopX exitPixelLoopX
 
         --    } // end j/x loop
-        exitPixelLoopX <- block
+        exitPixelLoopX <- block `named` "exit j loop"
         do -- y -= dy
           tmp1 <- load yPtr 0
           tmp2 <- fsub tmp1 dy
@@ -222,7 +222,7 @@ compileRenderer code = runExcept $
           condBr continue pixelLoopY exitPixelLoopY
 
         -- } // end i/y loop
-        exitPixelLoopY <- block
+        exitPixelLoopY <- block `named` "exit i loop"
         retVoid
 
 type RenderEnv' env =
@@ -246,13 +246,14 @@ compileRenderer' :: forall x y dx dy env
                    , Required dy env ~ 'RealT
                    , NotPresent dy (env `Without` dy)
                    )
-                => Proxy x
+                => AST.Name
+                -> Proxy x
                 -> Proxy y
                 -> Proxy dx
                 -> Proxy dy
                 -> Code '[] env 'ColorT
                 -> Either String AST.Module
-compileRenderer' _ _ _ _ code = runExcept $
+compileRenderer' name _ _ _ _ code = runExcept $
   buildModuleT "compiled rendering kernel" $ do
     let retParam = (toLLVMPtrType ColorType, NoParameterName)
         params   = toParameterList (envProxy (Proxy @(RenderEnv' env)))
@@ -260,14 +261,10 @@ compileRenderer' _ _ _ _ code = runExcept $
         pfY = bindingEvidence @y @'RealT @env
         pfdX = bindingEvidence @dx @'RealT @env
         pfdY = bindingEvidence @dy @'RealT @env
-    function "kernel" (retParam : params) AST.void $ \(retPtr : blockSizeArg : subsamplesArg : rawArgs) -> do
+    function name (retParam : params) AST.void $ \(retPtr : blockSizeArg : subsamplesArg : rawArgs) -> do
       getExtern <- getGetExtern
       traceM ("ok... retPtr = " ++ show retPtr)
-      --( Bind _ _ blockSizePtr
-      --  ( Bind _ _ subsamplesPtr
-      --    (Bind _ _ dzPtr
-      --       args))) <- allocaArgs (envProxy (Proxy @(RenderEnv env))) rawArgs
-      blockSizePtr <- allocaArg IntegerType blockSizeArg
+      blockSizePtr <- allocaArg IntegerType blockSizeArg `named` "set up environment"
       subsamplesPtr <- allocaArg IntegerType subsamplesArg
       args <- allocaArgs (envProxy (Proxy @env)) rawArgs
       mdo
@@ -284,7 +281,7 @@ compileRenderer' _ _ _ _ code = runExcept $
           IntegerOp v -> pure v
         subsamples <- derefOperand subsamplesPtr >>= \case
           IntegerOp v -> pure v
-        indexPtr <- alloca AST.i32 Nothing 0
+        indexPtr <- alloca AST.i32 Nothing 0 `named` "set up loop indices"
         iPtr <- alloca AST.i32 Nothing 0
         jPtr <- alloca AST.i32 Nothing 0
         kPtr <- alloca AST.i32 Nothing 0
@@ -294,12 +291,12 @@ compileRenderer' _ _ _ _ code = runExcept $
         -- index = 0;
         -- y = 0;
         -- for (i = 0; i < blockSize; ++i) {
-        store indexPtr 0 (C.int32 0)
+        store indexPtr 0 (C.int32 0) `named` "begin i loop"
         store yPtr 0 y0
         store iPtr 0 (C.int32 0)
         br pixelLoopY
 
-        pixelLoopY <- block
+        pixelLoopY <- block `named` "begin j loop"
 
         --     x = 0;
         --     for (j = 0; j < blockSize; ++j) {
@@ -307,7 +304,7 @@ compileRenderer' _ _ _ _ code = runExcept $
         store jPtr 0 (C.int32 0)
         br pixelLoopX
 
-        pixelLoopX <- block
+        pixelLoopX <- block `named` "begin k loop"
 
         --       color_acc = (0,0,0);
         accR <- alloca AST.i32 Nothing 0
@@ -320,7 +317,7 @@ compileRenderer' _ _ _ _ code = runExcept $
         br subsampleLoop
 
         --       for (k = 0; k < subsamples; ++k) {
-        subsampleLoop <- block
+        subsampleLoop <- block `named` "k loop body"
 
         --           color_acc += user_kernel(x, y, ...);
         do
@@ -355,7 +352,7 @@ compileRenderer' _ _ _ _ code = runExcept $
 
         --       }
         --       output[index++] = color_acc / subsamples;
-        exitSubsampleLoop <- block
+        exitSubsampleLoop <- block `named` "end k loop"
         do
           index <- load indexPtr 0
           do
@@ -394,7 +391,7 @@ compileRenderer' _ _ _ _ code = runExcept $
           condBr continue pixelLoopX exitPixelLoopX
 
         --    } // end j/x loop
-        exitPixelLoopX <- block
+        exitPixelLoopX <- block `named` "end j loop"
         do -- y -= dy
           tmp1 <- load yPtr 0
           tmp2 <- fsub tmp1 dy
@@ -408,7 +405,7 @@ compileRenderer' _ _ _ _ code = runExcept $
           condBr continue pixelLoopY exitPixelLoopY
 
         -- } // end i/y loop
-        exitPixelLoopY <- block
+        exitPixelLoopY <- block `named` "end i loop"
         retVoid
 
 

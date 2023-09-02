@@ -1,4 +1,4 @@
-{-# language OverloadedStrings, UndecidableInstances #-}
+{-# language OverloadedStrings, UndecidableInstances, NumericUnderscores #-}
 {-# options_ghc -Wno-orphans #-}
 
 module UI.Definition where
@@ -15,6 +15,7 @@ import qualified Language.Effect as Effect
 import Control.Concurrent.MVar
 import Control.Applicative hiding (Const)
 import Data.Indexed.Functor
+import Control.Concurrent (isCurrentThreadBound)
 
 import GHC.TypeLits
 import Control.Monad.Except
@@ -46,13 +47,13 @@ import Foreign (Ptr)
 
 import Data.Color (Color)
 
-import Backend.LLVM (withViewerCode)
+import Backend.LLVM (withViewerCode', withJIT, LLVMJit)
 
 runExceptTIO :: ExceptT String IO a -> IO a
 runExceptTIO = fmap (either error id) . runExceptT
 
 defToUI :: FilePath -> IO ()
-defToUI yamlFile = start $ do
+defToUI yamlFile = withJIT $ \jit -> start $ do
 
   ensemble <- parseEnsembleFile yamlFile
   result <- runExceptT (buildEnsemble ensemble)
@@ -68,10 +69,14 @@ defToUI yamlFile = start $ do
   --       If the ensemble passes this verification, then the end-user
   --       should not be able to cause a compilation failure via the
   --       UI.
-  runEnsemble WX ensemble
+  runEnsemble jit WX ensemble
 
-runEnsemble :: forall ui. ToUI ui => ui -> Ensemble -> IO ()
-runEnsemble ui Ensemble{..} = do
+runEnsemble :: forall ui. ToUI ui => LLVMJit -> ui -> Ensemble -> IO ()
+runEnsemble jit ui Ensemble{..} = do
+
+  --bound <- isCurrentThreadBound
+  --putStrLn ("Ensemble thread bound? " ++ show bound)
+
   -- Get a handle for the ensemble
   project <- newEnsemble ui
 
@@ -94,18 +99,21 @@ runEnsemble ui Ensemble{..} = do
           withDynamicBindings configUI k
 
   withSplicesFromSetup $ \splices -> do
+    bound' <- isCurrentThreadBound
+    putStrLn ("Post-splice thread bound? " ++ show bound')
+
     putStrLn ("SPLICES: " ++ show (contextToEnv splices))
     putStrLn ("parsed config: " ++ show ensembleConfiguration)
     withContextFromConfiguration $ \config -> do
       putStrLn ("CONFIGURATION: " ++ show (contextToEnv config))
-      [oneViewer] <- pure ensembleViewers
       case lookupEnv' (Proxy @"[internal argument] #blockSize") (contextToEnv config) of
         Absent' pf1 -> recallIsAbsent pf1 $
           case lookupEnv' (Proxy @"[internal argument] #subsamples") (contextToEnv config) of
             Absent' pf2 -> recallIsAbsent pf2 $ do
-              withComplexViewer' config splices oneViewer $ \vu cv' -> do
-                makeViewer ui project vu cv'
-                putStrLn "made it!"
+              forM_ ensembleViewers $ \viewer ->
+                withComplexViewer' jit config splices viewer $ \vu cv' -> do
+                  makeViewer ui project vu cv'
+
             _ -> error "internal error"
         _ -> error "internal error"
 
@@ -379,12 +387,13 @@ data ComplexViewer' where
 
 withComplexViewer' :: ( NotPresent "[internal argument] #blockSize" env
                       , NotPresent "[internal argument] #subsamples" env )
-                   => Context DynamicValue env
+                   => LLVMJit
+                   -> Context DynamicValue env
                    -> Context Splice splices
                    -> ComplexViewer
-                   -> (ViewerUIProperties ->  ComplexViewer' -> IO t)
-                   -> IO t
-withComplexViewer' cvConfig' splices ComplexViewer{..} action = withEnvironment (contextToEnv cvConfig') $ do
+                   -> (ViewerUIProperties -> ComplexViewer' -> IO ())
+                   -> IO ()
+withComplexViewer' jit cvConfig' splices ComplexViewer{..} action = withEnvironment (contextToEnv cvConfig') $ do
   let cvPixelName = fromMaybe "#pixel" cvPixel
       argX = Proxy @"[internal] x"
       argY = Proxy @"[internal] y"
@@ -424,10 +433,10 @@ withComplexViewer' cvConfig' splices ComplexViewer{..} action = withEnvironment 
                               Found pfY <- pure (lookupEnv argY RealType env3)
                               Found pfPx <- pure (lookupEnv argPx RealType env4)
                               let realCode = complexToReal pfX pfY pfPx cvCode'
-                              withViewerCode argX argY argPx argPx realCode $ \fun -> do
+                              withViewerCode' jit argX argY argPx argPx realCode $ \fun -> do
                                 let cvGetFunction = do
                                       args <- mapContextM (\_ _ -> getDynamic) cvConfig'
-                                      pure $ \blockSize subsamples (x :+ y) (dx :+ _dy) buf -> do
+                                      pure $ \blockSize subsamples (dx :+ _dy) (x :+ y) buf -> do
                                         let fullArgs = Bind argX RealType x
                                                      $ Bind argY RealType y
                                                      $ Bind argPx RealType dx
