@@ -36,11 +36,6 @@ type Value = Fix ValueF
 data Value_ :: Environment -> FSType -> Exp Type
 type instance Eval (Value_ env t) = Value '(env, t)
 
-{-
-data Splice :: Environment -> Symbol -> FSType -> Exp Type
-type instance Eval (Splice env name ty) = Value '(env, ty)
--}
-
 data SomeValue where
   SomeValue :: forall env ty
              . EnvironmentProxy env
@@ -57,7 +52,11 @@ data SomeConstantValue where
 data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FSType)) where
 
   -- Constants and variables
-  Const :: forall ty env value. KnownEnvironment env => Scalar ty -> ValueF value '(env, ty)
+  Const :: forall ty env value
+         . KnownEnvironment env
+        => Scalar ty
+        -> ValueF value '(env, ty)
+
   Var :: forall name ty env value
        . (KnownEnvironment env, KnownSymbol name)
       => Proxy name
@@ -65,10 +64,35 @@ data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FS
       -> NameIsPresent name ty env
       -> ValueF value '(env, ty)
 
+  LocalLet :: forall name vty ty env value
+            . (KnownEnvironment env, KnownSymbol name)
+           => Proxy name
+           -> TypeProxy vty
+           -> NameIsAbsent name env
+           -> Eval (value '(env, vty))
+           -> TypeProxy ty
+           -> Eval (value '( '(name, vty) ': env,  ty))
+           -> ValueF value '(env, ty)
+
   -- Product types and projections
-  PairV :: forall t1 t2 env value. KnownEnvironment env => TypeProxy ('Pair t1 t2) -> Eval (value '(env, t1)) -> Eval (value '(env, t2)) -> ValueF value '(env, 'Pair t1 t2)
-  ProjV1 :: forall t1 t2 env value. KnownEnvironment env => TypeProxy ('Pair t1 t2) -> Eval (value '(env, 'Pair t1 t2)) -> ValueF value '(env, t1)
-  ProjV2 :: forall t1 t2 env value. KnownEnvironment env => TypeProxy ('Pair t1 t2) -> Eval (value '(env, 'Pair t1 t2)) -> ValueF value '(env, t2)
+  PairV :: forall t1 t2 env value
+         . KnownEnvironment env
+        => TypeProxy ('Pair t1 t2)
+        -> Eval (value '(env, t1))
+        -> Eval (value '(env, t2))
+        -> ValueF value '(env, 'Pair t1 t2)
+
+  ProjV1 :: forall t1 t2 env value
+          . KnownEnvironment env
+         => TypeProxy ('Pair t1 t2)
+         -> Eval (value '(env, 'Pair t1 t2))
+         -> ValueF value '(env, t1)
+
+  ProjV2 :: forall t1 t2 env value
+          . KnownEnvironment env
+         => TypeProxy ('Pair t1 t2)
+         -> Eval (value '(env, 'Pair t1 t2))
+         -> ValueF value '(env, t2)
 
   -- Floating-point arithmetic
   AddF :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> Eval (value '(env, 'RealT)) -> ValueF value '(env, 'RealT)
@@ -279,6 +303,7 @@ instance IFunctor ValueF where
   toIndex = \case
     Const (Scalar t _) -> EnvType t
     Var _ t _ -> EnvType t
+    LocalLet _ _ _ _ t _ -> EnvType t
 
     PairV t _ _ -> EnvType t
     ProjV1 t _ -> case t of { PairType t1 _ -> EnvType t1 }
@@ -377,6 +402,9 @@ instance IFunctor ValueF where
     Refl -> let { env = withEnvType (toIndex v0) (\e _ -> e); withEnv :: TypeProxy t -> EnvTypeProxy '(Env i, t); withEnv t = envTypeProxy env t } in case v0 of
       Const x -> Const x
       Var name v pf -> Var name v pf
+      LocalLet name vt pf v ty e -> recallIsAbsent pf $
+        let innerEnvTy = envTypeProxy (BindingProxy name vt env) ty
+        in LocalLet name vt pf (f (withEnv vt) v) ty (f innerEnvTy e)
 
       PairV t x y ->
         let (t1, t2) = case t of { PairType tx ty -> (tx, ty) }
@@ -478,6 +506,8 @@ instance ITraversable ValueF  where
   isequence = \case
     Const x -> pure (Const x)
     Var name v pf -> pure (Var name v pf)
+    LocalLet name vty pf v ty e ->
+      LocalLet name vty pf <$> v <*> pure ty <*> e
 
     PairV t mx my -> PairV t <$> mx <*> my
     ProjV1 t mp   -> ProjV1 t <$> mp
@@ -597,6 +627,8 @@ pprint = indexedFold @PrecString @Value @ValueF go
       ListType (it :: TypeProxy it) ->
         "[" <> intercalate ", " (map (go @'(Env et', it) . Const . Scalar it) c) <> "]"
     Var name _ _ -> symbolVal name
+    LocalLet name _ _ v _ e -> concat
+      ["let ", symbolVal name, " = ", v, " in ", e]
     PairV _ x y  -> concat ["(", x, ", ", y, ")"]
     ProjV1 _ p   -> concat ["(1st ", p, ")"]
     ProjV2 _ p   -> concat ["(2nd ", p, ")"]

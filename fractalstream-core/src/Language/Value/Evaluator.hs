@@ -151,6 +151,8 @@ evaluator v0 ctx = case v0 of
 
     Const (Scalar _ v) -> v
     Var _name ty pf -> withKnownType ty (getBinding ctx pf)
+    LocalLet name vty pf v _ e ->
+      e (recallIsAbsent pf (Bind name vty (v ctx) ctx))
 
     PairV _ x y -> (x ctx, y ctx)
     ProjV1 _ p  -> let (x, _) = p ctx in x

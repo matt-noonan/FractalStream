@@ -422,10 +422,10 @@ compileCode getExtern = indexedFold @(CtxOp m) @(Fix (CodeF '[] (Pure1 Value))) 
 
   NoOp -> pure VoidOp
 
-  Set pf _ v -> do
+  Set pf _ t v -> do
     x <- value_ getExtern v
     ctx <- ask
-    storeOperand x (withKnownType (typeOfValue v) (getBinding ctx pf))
+    storeOperand x (withKnownType t (getBinding ctx pf))
     pure VoidOp
 
   SetBind pf _ t body -> do

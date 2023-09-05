@@ -1,3 +1,4 @@
+{-# language OverloadedStrings #-}
 module Language.Type
   ( FSType(..)
   , type HaskellType
@@ -27,6 +28,8 @@ import Data.Color (Color, colorToRGB)
 import Data.Complex
 import Data.List (intercalate)
 import Data.Kind
+
+import Data.Aeson (FromJSON(..), withText)
 
 data FSType
   = VoidT
@@ -134,6 +137,24 @@ instance Show SomeType where
 
 instance Eq SomeType where
   SomeType t1 == SomeType t2 = maybe False (const True) (sameHaskellType t1 t2)
+
+instance FromJSON SomeType where
+  parseJSON = withText "type" $ \case
+    "C"       -> pure $ SomeType ComplexType
+    "ℂ"       -> pure $ SomeType ComplexType
+    "R"       -> pure $ SomeType RealType
+    "ℝ"       -> pure $ SomeType RealType
+    "Z"       -> pure $ SomeType IntegerType
+    "ℤ"       -> pure $ SomeType IntegerType
+    "N"       -> pure $ SomeType IntegerType
+    "ℕ"       -> pure $ SomeType IntegerType
+    "Boolean" -> pure $ SomeType BooleanType
+    "𝔹"       -> pure $ SomeType BooleanType
+    "2"       -> pure $ SomeType BooleanType
+    "Q"       -> pure $ SomeType RationalType
+    "ℚ"       -> pure $ SomeType RationalType
+    "Color"   -> pure $ SomeType ColorType
+    _         -> fail "unknown type"
 
 class KnownType (t :: FSType)   where typeProxy :: TypeProxy t
 instance KnownType 'BooleanT  where typeProxy = BooleanType

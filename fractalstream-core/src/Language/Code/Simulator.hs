@@ -60,9 +60,9 @@ simulate handlers = indexedFold @(HaskellTypeM s) @(Fix (CodeF effs (Pure1 Value
     put (ctx'', s'')
     pure result
 
-  Set pf name v -> do
+  Set pf name ty v -> do
     result <- eval v
-    update pf name (typeOfValue v) result
+    update pf name ty result
 
   SetBind pf name tv vc -> do
     result <- vc

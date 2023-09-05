@@ -54,6 +54,12 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
         ctx <- ask
         derefOperand (getBinding ctx pf)
 
+      LocalLet name vt pf v _ e -> recallIsAbsent pf $ do
+        vptr <- allocaOp vt
+        vv <- v
+        storeOperand vv vptr
+        withReaderT (Bind name vt vptr) e
+
       Const (Scalar BooleanType b) -> pure (BooleanOp (C.bit (if b then 1 else 0)))
       Const (Scalar IntegerType n) -> pure (IntegerOp (C.int32 (fromIntegral n)))
       Const (Scalar RealType x) -> pure (RealOp (C.double x))
@@ -377,13 +383,55 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
           sinhY <- call (getExtern "sinh") [(y, [])]
           ComplexOp <$> fmul sinX coshY <*> fmul cosX sinhY
 
-      PowC {} -> error "TODO: unimplemented PowC"
-      SqrtC {} -> error "TODO: unimplemented SqrtC"
-      TanC {} -> error "TODO: unimplemented TanC"
-      SinhC {} -> error "TODO: unimplemented SinhC"
-      CoshC {} -> error "TODO: unimplemented CoshC"
-      TanhC {} -> error "TODO: unimplemented CoshC"
-   --   _ -> error "TODO: unhandled Value constructor"
+      PowC z p -> go (ExpC (go (MulC p (go (LogC z)))))
+
+      SqrtC z -> do
+        half <- go (R2C (pure (RealOp (C.double 0.5))))
+        go (z `PowC` pure half)
+
+      TanC z -> z >>= \case
+        ComplexOp x y -> do
+          tanX <- call (getExtern "tan") [(x, [])]
+          tanhY  <- call (getExtern "tanh")  [(y, [])]
+          tanX_tanhY <- fmul tanX tanhY
+          tanX2_tanhY <- fmul tanX tanX_tanhY
+          tanX_tanhY2 <- fmul tanhY tanX_tanhY
+          tanX2_tanhY2 <- fmul tanX tanX_tanhY2
+          denominator <- fadd (C.double 1) tanX2_tanhY2
+          realNumerator <- fsub tanX tanX_tanhY2
+          imagNumerator <- fadd tanhY tanX2_tanhY
+          ComplexOp <$> fdiv realNumerator denominator
+                    <*> fdiv imagNumerator denominator
+
+      SinhC z -> z >>= \case
+        ComplexOp x y -> do
+          sinhX <- call (getExtern "sinh") [(x, [])]
+          cosY  <- call (getExtern "cos")  [(y, [])]
+          coshX <- call (getExtern "cosh") [(x, [])]
+          sinY  <- call (getExtern "sin")  [(y, [])]
+          ComplexOp <$> fmul sinhX cosY <*> fmul coshX sinY
+
+      CoshC z -> z >>= \case
+        ComplexOp x y -> do
+          coshX <- call (getExtern "cosh") [(x, [])]
+          cosY  <- call (getExtern "cos")  [(y, [])]
+          sinhX <- call (getExtern "sinh") [(x, [])]
+          sinY  <- call (getExtern "sin")  [(y, [])]
+          ComplexOp <$> fmul coshX cosY <*> fmul sinhX sinY
+
+      TanhC z -> z >>= \case
+        ComplexOp x y -> do
+          tanhX <- call (getExtern "tanh") [(x, [])]
+          tanY  <- call (getExtern "tan")  [(y, [])]
+          tanhX_tanY <- fmul tanhX tanY
+          tanhX2_tanY <- fmul tanhX tanhX_tanY
+          tanhX_tanY2 <- fmul tanY tanhX_tanY
+          tanhX2_tanY2 <- fmul tanhX tanhX_tanY2
+          denominator <- fadd (C.double 1) tanhX2_tanY2
+          realNumerator <- fadd tanhX tanhX_tanY2
+          imagNumerator <- fsub tanY tanhX2_tanY
+          ComplexOp <$> fdiv realNumerator denominator
+                    <*> fdiv imagNumerator denominator
 
 
 getGetExtern :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)

@@ -7,6 +7,7 @@ module Language.Environment
   , type Required
   , type NotPresent
   , Context(..)
+  , type (:**:)
   , contextToEnv
   , envToContext
   , envToContextM
@@ -17,10 +18,13 @@ module Language.Environment
   , fromContext
   , fromContextM
   , fromContextM_
+  , zipContext
   , fromEnvironment
   , fromEnvironmentM
   , getBinding
   , setBinding
+  , bindInEnv
+  , bindInEnv'
   , EnvironmentProxy(..)
   , EnvTypeProxy(..)
   , envTypeProxy
@@ -537,6 +541,21 @@ fromContextM_ f = \case
   EmptyContext -> pure ()
   Bind name ty x ctx -> f name ty x *> fromContextM_ f ctx
 
+data (:**:) :: (Symbol -> FSType -> Exp Type)
+            -> (Symbol -> FSType -> Exp Type)
+            -> (Symbol -> FSType -> Exp Type)
+type instance Eval ((f :**: g) name ty) = (Eval (f name ty), Eval (g name ty))
+
+-- | Transform each bound value in the context, creating a new context.
+zipContext :: forall a b env
+            . Context a env
+           -> Context b env
+           -> Context (a :**: b) env
+zipContext xs0 ys0 = case (xs0, ys0) of
+  (EmptyContext, EmptyContext) -> EmptyContext
+  (Bind name ty x ctx1, Bind _ _ y ctx2) ->
+    Bind name ty (x, y) (zipContext ctx1 ctx2)
+
 -- | Look up the value associated to a name in the context.
 -- You do this by presenting a proof that the name is
 -- available in the environment, with the given type.
@@ -578,3 +597,24 @@ setBinding _pf value = go
           Just Refl -> case sameHaskellType (typeProxy @t) ty' of
             Just Refl -> Bind name' ty' value ctx
             Nothing   -> error "unreachable due to (NotPresent name env) constraint in Bind constructor"
+
+bindInEnv :: (MonadFail m)
+          => String
+          -> TypeProxy ty
+          -> EnvironmentProxy env
+          -> (forall name. NotPresent name env => EnvironmentProxy ( '(name, ty) ': env) -> m t)
+          -> m t
+bindInEnv nameStr ty env k = case someSymbolVal nameStr of
+  SomeSymbol name -> case lookupEnv' name env of
+    Absent' proof -> recallIsAbsent proof (k (bindNameEnv name ty proof env))
+    _ -> fail (symbolVal name <> " is defined twice")
+
+bindInEnv' :: (MonadFail m, KnownSymbol name)
+          => Proxy name
+          -> TypeProxy ty
+          -> EnvironmentProxy env
+          -> (NotPresent name env => EnvironmentProxy ( '(name, ty) ': env) -> m t)
+          -> m t
+bindInEnv' name ty env k = case lookupEnv' name env of
+  Absent' proof -> recallIsAbsent proof (k (bindNameEnv name ty proof env))
+  _ -> fail (symbolVal name <> " is defined twice")

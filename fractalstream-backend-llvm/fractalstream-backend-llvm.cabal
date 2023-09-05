@@ -71,6 +71,7 @@ library
                      , bytestring
                      , libffi
                      , mtl
+                     , disassembler
   hs-source-dirs:      src
 
 test-suite spec

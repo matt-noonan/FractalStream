@@ -1,12 +1,13 @@
-viewer:
-  style: complex-plane
-  title: Dynamical plane
-  size: 512x512
-  resizable: true
-  z-coord: z
-  initial-center: 0
-  initial-pixel-size: 1/128
-  code: |
+viewers:
+  - title: Parameter plane
+    style: complex-plane
+    size: 512x512
+    resizable: true
+    z-coord: C
+    initial-center: 0
+    initial-pixel-size: 1/128
+    code: |
+        init z : C to 0
         init k : Z to 0
         loop
           set z to f
@@ -28,7 +29,7 @@ setup:
   vertical-contents:
     - text-entry:
         label: "Iterate f(z) = "
-        value: "z z + C" # "z^2 + C"
+        value: "z^2 + C"
         type: C
         environment:
           z: C
@@ -48,11 +49,11 @@ configuration:
   title: Configuration
   size: 400x200
   vertical-contents:
-    - text-entry:
-        label: "C"
-        value: 0.11 + 0.78i
-        type: C
-        variable: C
+    # - text-entry:
+    #     label: "C"
+    #     value: -0.11 + 0.78i
+    #     type: C
+    #     variable: C
     - text-entry:
         label: "Max. iterations: "
         value: "100"

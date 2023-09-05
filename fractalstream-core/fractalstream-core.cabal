@@ -68,6 +68,12 @@ library
                        Actor.Tool
                        Actor.Settings
 
+                       Actor.Configuration
+                       Actor.Ensemble
+                       Actor.Layout
+                       Actor.UI
+                       Actor.Viewer.Complex
+
                        Event
 
                        Helper.UnionFind
@@ -84,6 +90,7 @@ library
                        Language.Value
                        Language.Value.Evaluator
                        Language.Value.Parser
+                       Language.Value.Transform
                        Language.Effect
                        Language.Effect.Output
                        Language.Effect.Draw
@@ -104,6 +111,7 @@ library
                        Data.Planar
                        Data.Color
                        Data.Recursive
+                       Data.DynamicValue
 
                        Template.Complex.Parametric
 
@@ -111,6 +119,7 @@ library
 
   build-depends:       base >=4.8 && <5,
                        random,
+                       aeson,
                        array,
                        async,
                        containers,
@@ -118,11 +127,12 @@ library
                        megaparsec >= 9.1,
                        parser-combinators,
                        mtl,
-                       time,
                        monad-parallel,
                        monad-par,
                        monad-par-extras,
                        numeric-extras,
+                       text,
+                       time,
                        bytestring,
                        vector,
                        first-class-families,

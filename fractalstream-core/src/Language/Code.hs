@@ -7,6 +7,8 @@ module Language.Code
   , Fix(..)
   , CodeF(..)
   , SomeCode(..)
+  , mapValues
+  , transformValues
   , set
   , let_
   ) where
@@ -62,6 +64,7 @@ data CodeF (effs :: [Effect])
        . (KnownSymbol name, KnownEnvironment env)
       => NameIsPresent name ty env
       -> Proxy name
+      -> TypeProxy ty
       -> Eval (value '(env, ty))
       -> CodeF effs value code '(env, 'VoidT)
 
@@ -138,7 +141,7 @@ instance IFunctor (CodeF eff value) where
   toIndex = \case
     Let _ _ _ _ t _ -> EnvType t
     LetBind _ _ _ _ t _ -> EnvType t
-    Set _ _ _     -> EnvType VoidType
+    Set _ _ _ _   -> EnvType VoidType
     SetBind {}    -> EnvType VoidType
     Call t _      -> EnvType t
     Block t _ _   -> EnvType t
@@ -186,7 +189,7 @@ instance IFunctor (CodeF eff value) where
               index' i r = withKnownType i
                          $ withEnvironment env' (EnvType @( '(name, i) ': Env et) r)
           in withEnvironment env' (LetBind pf n vt (f (index vt) cv) t (f (index' vt t) b))
-      Set pf n v -> Set pf n v
+      Set pf n ty v -> Set pf n ty v
       SetBind pf n ty c -> SetBind pf n ty (f (index ty) c)
       Call t c -> Call t (f (index t) c)
       Block t cs c -> Block t (map (f (index VoidType)) cs) (f (index t) c)
@@ -197,6 +200,43 @@ instance IFunctor (CodeF eff value) where
       Effect e en t c -> Effect e en t (imap f c)
 
 ---------------------------------------------------------------------------------
+-- Mapping over `value`; CodeF is an indexed bifunctor
+---------------------------------------------------------------------------------
+
+mapValues :: forall a b eff code et
+          . (forall et'. EnvTypeProxy et' -> Eval (a et') -> Eval (b et'))
+         -> CodeF eff a code et
+         -> CodeF eff b code et
+mapValues f x =
+  let env :: EnvironmentProxy (Env et)
+      env = case toIndex x of { EnvType _ -> envProxy (Proxy @(Env et)) }
+      index :: forall i. TypeProxy i -> EnvTypeProxy '(Env et, i)
+      index i = withEnvironment env (EnvType i)
+  in case x of
+      Let pf n vt v t b -> Let pf n vt (f (index vt) v) t b
+      LetBind pf n vt cv t b -> LetBind pf n vt cv t b
+      Set pf n ty v -> Set pf n ty (f (index ty) v)
+      SetBind pf n ty c -> SetBind pf n ty c
+      Call t c -> Call t c
+      Block t cs c -> Block t cs c
+      Pure t v -> Pure t (f (index t) v)
+      NoOp -> NoOp
+      DoWhile c -> DoWhile c
+      IfThenElse t v yes no -> IfThenElse t (f (index BooleanType) v) yes no
+      Effect e en t c -> Effect e en t c
+
+transformValues :: forall eff env result
+                . (forall et. Value et -> Value et)
+               -> Code eff env result
+               -> Code eff env result
+transformValues f = indexedFold phi
+  where
+    phi :: forall et
+         . CodeF eff (Pure1 Value) (Pure1 (Fix (CodeF eff (Pure1 Value)))) et
+        -> Fix (CodeF eff (Pure1 Value)) et
+    phi x = Fix (mapValues (const f) x)
+
+---------------------------------------------------------------------------------
 -- Indexed traversable instance
 ---------------------------------------------------------------------------------
 
@@ -204,7 +244,7 @@ instance ITraversable (CodeF effs value) where
   isequence = \case
     Let pf n vt v t c -> Let pf n vt v t <$> c
     LetBind pf n vt cv t c -> LetBind pf n vt <$> cv <*> pure t <*> c
-    Set pf n v -> pure (Set pf n v)
+    Set pf n ty v -> pure (Set pf n ty v)
     SetBind pf n ty c -> SetBind pf n ty <$> c
     Call t c -> Call t <$> c
     Block t block final -> Block t <$> sequenceA block <*> final
@@ -252,4 +292,4 @@ set :: forall name env effs ty
        , KnownSymbol name, KnownEnvironment env)
     => Value '(env, ty)
     -> Code effs env 'VoidT
-set = Fix . Set bindingEvidence (Proxy @name)
+set v = Fix (Set bindingEvidence (Proxy @name) (typeOfValue v) v)

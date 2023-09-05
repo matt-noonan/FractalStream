@@ -4,10 +4,12 @@ module Data.Indexed.Functor
   , IFixpoint(..)
   , (:.:)
   , (:+:)
+  , (:*:)
   , ITraversable(..)
   , Fix(..)
   , indexedFold
   , indexedFoldM
+  , indexedFoldWithOriginal
   , indexedUnfold
   , indexedUnfoldM
   ) where
@@ -34,6 +36,9 @@ type instance Eval ((m :.: a) i) = m (Eval (a i))
 
 data (:+:) (a :: k -> Exp Type) (b :: k -> Exp Type) (i :: k) :: Exp Type
 type instance Eval ((a :+: b) i) = Either (Eval (a i)) (Eval (b i))
+
+data (:*:) (a :: k -> Exp Type) (b :: k -> Exp Type) (i :: k) :: Exp Type
+type instance Eval ((a :*: b) i) = (Eval (a i), Eval (b i))
 
 class IFunctor f => ITraversable (f :: (k -> Exp Type) -> (k -> Type)) where
 
@@ -98,3 +103,12 @@ indexedUnfoldM f =
   let go :: forall k. IndexProxy f k -> Eval (a k) -> m (t k)
       go = \k x -> (fmap (rerollIx @_ @t @f) . itraverse go) =<< f k x
   in go
+
+indexedFoldWithOriginal
+  :: forall a t f i
+   . IFixpoint t f
+  => (forall j. f (Pure1 t :*: a) j -> Eval (a j))
+  -> t i
+  -> Eval (a i)
+indexedFoldWithOriginal f =
+  snd . indexedFold (\x -> (rerollIx @_ @t @f (imap (const fst) x), f x))

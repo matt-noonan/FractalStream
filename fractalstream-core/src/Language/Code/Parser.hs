@@ -21,6 +21,8 @@ import Language.Code
 import GHC.TypeLits
 import Data.Type.Equality ((:~:)(..))
 
+import Debug.Trace
+
 parseCode :: forall effs env splices t
            . EffectParsers effs
           -> EnvironmentProxy env
@@ -29,7 +31,9 @@ parseCode :: forall effs env splices t
           -> String
           -> Either (Int, BadParse) (Code effs env t)
 parseCode eps env splices t input
-  = parse (pCode eps env splices t <* eof) (tokenizeWithIndentation input)
+  =
+  let toks = tokenizeWithIndentation input
+  in trace ("toks = " ++ show toks) $ parse (pCode eps env splices t <* eof) (tokenizeWithIndentation input)
 
 {-
 uParseCode :: String
@@ -49,9 +53,9 @@ pCode :: forall effs env splices t
       -> TypeProxy t
       -> Parser (Code effs env t)
 pCode eps env splices t
-  = dbg "pCode" ( pBlock   eps env splices t
-  <|> pLine    eps env splices t
-  <|> pEffects eps env splices t)
+  = dbg "pCode" ( pEffects eps env splices t
+              <|> pBlock   eps env splices t
+              <|> pLine    eps env splices t)
 
 pCode' :: forall effs et splices
         . EffectParsers effs
@@ -224,7 +228,7 @@ pSet effs env splices = dbg "set" $ do
         Absent' _ -> mzero
         Found' t pf -> do
           v <- nest (parseValueFromTokens env splices t toks)
-          withEnvironment env (pure (Fix (Set pf name v)))
+          withEnvironment env (pure (Fix (Set pf name t v)))
 
   pBind n = do
     -- Figure out what type the RHS should have, and try to parse some
@@ -312,8 +316,15 @@ pVarCode eps env splices t pf name vt = do
 pTypeName :: Parser SomeType
 pTypeName
   =   (SomeType RealType    <$ tok_ (Identifier "R"))
+  <|> (SomeType RealType    <$ tok_ (Identifier "Real"))
   <|> (SomeType IntegerType <$ tok_ (Identifier "Z"))
+  <|> (SomeType IntegerType <$ tok_ (Identifier "Int"))
+  <|> (SomeType IntegerType <$ tok_ (Identifier "Integer"))
   <|> (SomeType ComplexType <$ tok_ (Identifier "C"))
+  <|> (SomeType ComplexType <$ tok_ (Identifier "Complex"))
+  <|> (SomeType BooleanType <$ tok_ (Identifier "B"))
+  <|> (SomeType BooleanType <$ tok_ (Identifier "Bool"))
+  <|> (SomeType BooleanType <$ tok_ (Identifier "Boolean"))
   <|> (SomeType ColorType   <$ tok_ (Identifier "Color"))
   <?> "type"
 

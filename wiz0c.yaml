@@ -18,10 +18,11 @@ viewers:
         else
           init c1 : Color to if im(z) > 0 then blue else yellow
           init c2 : Color to if im(z) > 0 then green else red
-          init s : R to k + 1 - (log (log (|z|^2 / 2))) / log 2
+          init s : R to k + 1 - (log (log (|z|^2 / 2))) / log p
           set s to cos (s pi / 10)
           set s to s s
           blend (s, c1, c2)
+    on-select: output C to selectedC
 
   - title: Dynamical plane
     style: complex-plane
@@ -42,7 +43,7 @@ viewers:
         else
           init c1 : Color to if im(z) > 0 then blue else yellow
           init c2 : Color to if im(z) > 0 then green else red
-          init s : R to k + 1 - (log (log (|z|^2 / 2))) / log 2
+          init s : R to k + 1 - (log (log (|z|^2 / 2))) / log p
           set s to cos (s pi / 10)
           set s to s s
           blend (s, c1, c2)
@@ -52,13 +53,20 @@ setup:
   size: 200x200
   vertical-contents:
     - text-entry:
-        label: "Iterate f(z) = "
-        value: "z z + C"
+        label: "Iterate f(z) ="
+        value: "z^2 + C"
         type: C
         environment:
           z: C
           C: C
         variable: f
+    - text-entry:
+        label: "starting from z ="
+        value: "0"
+        type: C
+        environment:
+          C: C
+        variable: initialZ
     - text-entry:
         label: "until"
         value: "|z| > maxRadius"
@@ -79,17 +87,17 @@ configuration:
         type: C
         variable: selectedC
     - text-entry:
-        label: "initialZ"
-        value: 0
-        type: C
-        variable: initialZ
-    - text-entry:
-        label: "Max. iterations: "
+        label: "Max. iterations:"
         value: "100"
         type: Z
         variable: maxIters
     - text-entry:
-        label: "Max. radius: "
+        label: "Max. radius:"
         value: 10
         type: R
         variable: maxRadius
+    - text-entry:
+        label: "Smooth coloring exponent:"
+        value: 2
+        type: R
+        variable: p

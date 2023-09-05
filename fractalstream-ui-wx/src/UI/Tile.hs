@@ -7,6 +7,7 @@ module UI.Tile ( Tile()
                , cancelTile
                , tileRect
                , ifModified
+               , ifElseModified
                , withSynchedTileBuffer
                ) where
 
@@ -62,6 +63,15 @@ ifModified tile f = do
         Nothing -> return ()
         Just _  -> f
 
+-- | Perform an action, but only if the tile needs to be redrawn.
+-- Otherwise, perform a fallback action
+ifElseModified :: Tile -> IO a -> IO a -> IO a
+ifElseModified tile yes no = do
+    redraw <- tryTakeMVar $ shouldRedrawTile tile
+    case redraw of
+        Nothing -> no
+        Just _  -> yes
+
 -- | Construct a tile from a dynamical system, and begin drawing to it.
 renderTile :: (Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ()) -- ([(Double, Double)] -> IO [Color]) -- ^ The rendering action
            -> (Int, Int)   -- ^ The height and width of this tile.
@@ -91,7 +101,7 @@ renderTile renderingAction (width, height) mRect = do
     worker <- async $ progressively fillBlock
                     $ Block { coordToModel = convertRect iRect mRect . fromCoords
                             , compute = renderingAction
-                            , logSampleRate = 1
+                            , logSampleRate = 0
                             , blockBuffer = managedBuf
                             , x0 = 0
                             , y0 = 0

@@ -13,6 +13,8 @@ extra-deps:
   subdirs:
     - llvm-hs
     - llvm-hs-pure
+- git: https://github.com/mgrabmueller/disassembler
+  commit: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
 
 - git: https://github.com/matt-noonan/wxHaskell.git
   commit: f4bab8e081bd45795d68a9ade089ee36023632c8

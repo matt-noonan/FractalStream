@@ -45,6 +45,17 @@ packages:
     git: https://github.com/llvm-hs/llvm-hs.git
     subdir: llvm-hs-pure
 - completed:
+    commit: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
+    git: https://github.com/mgrabmueller/disassembler
+    name: disassembler
+    pantry-tree:
+      sha256: 65eb5dfb873e809603e2e7bb9bed9d97a09d09095e1a17621f1c9f7ecf42a929
+      size: 384
+    version: 0.2.0.1
+  original:
+    commit: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
+    git: https://github.com/mgrabmueller/disassembler
+- completed:
     commit: f4bab8e081bd45795d68a9ade089ee36023632c8
     git: https://github.com/matt-noonan/wxHaskell.git
     name: wx

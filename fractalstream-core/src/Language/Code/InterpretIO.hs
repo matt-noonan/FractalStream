@@ -3,7 +3,9 @@ module Language.Code.InterpretIO
   ( interpretToIO
   , interpretToIO_
   , eval
+  , eval'
   , update
+  , update'
   , IORefTypeOfBinding
   , ScalarIORefM
   , ScalarIORefMWith
@@ -41,6 +43,15 @@ eval v = do
   ctx <- mapContextM (\_ _ -> lift . readIORef) ctxRef
   pure (evaluate v ctx)
 
+-- | Evaluate a value in the current environment
+eval' :: forall t env
+      . Value '(env, t)
+     -> StateT (Context IORefTypeOfBinding env) IO (HaskellType t)
+eval' v = do
+  ctxRef <- get
+  ctx <- mapContextM (\_ _ -> lift . readIORef) ctxRef
+  pure (evaluate v ctx)
+
 -- | Update a variable in the current environment
 update :: forall name t env s
         . KnownSymbol name
@@ -51,6 +62,19 @@ update :: forall name t env s
        -> StateT (Context IORefTypeOfBinding env, s) IO ()
 update pf _name t v = withKnownType t $ do
   ctx <- fst <$> get
+  let valueRef = getBinding ctx pf
+  lift (writeIORef valueRef v)
+
+-- | Update a variable in the current environment
+update' :: forall name t env
+        . KnownSymbol name
+       => NameIsPresent name t env
+       -> Proxy name
+       -> TypeProxy t
+       -> HaskellType t
+       -> StateT (Context IORefTypeOfBinding env) IO ()
+update' pf _name t v = withKnownType t $ do
+  ctx <- get
   let valueRef = getBinding ctx pf
   lift (writeIORef valueRef v)
 
@@ -104,9 +128,9 @@ interpretToIO_ handlers =
       s <- snd <$> get
       lift (evalStateT body (ctxRef', s))
 
-    Set pf name v -> do
+    Set pf name ty v -> do
       value <- eval v
-      update pf name (typeOfValue v) value
+      update pf name ty value
 
     SetBind pf name tv vc -> do
       value <- vc

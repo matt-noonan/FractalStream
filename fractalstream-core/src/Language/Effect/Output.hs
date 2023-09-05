@@ -14,10 +14,13 @@ import Fcf (Exp)
 import Data.Type.Equality ((:~:)(..))
 import Data.Kind
 
+import Debug.Trace
+
 -- | An 'Output' effect introduces a set of typed write-only variables.
 data Output (outputs :: Environment) (code :: (Environment, FSType) -> Exp Type) (et :: (Environment, FSType)) where
   Output :: forall name ty outputs env code
-          . EnvironmentProxy env
+          . (KnownSymbol name, KnownType ty)
+         => EnvironmentProxy env
          -> NameIsPresent name ty outputs
          -> Proxy name
          -> Value '(env, ty)
@@ -50,6 +53,9 @@ outputEffectParser outputs = EffectParser (Proxy @(Output outputs)) $
           SomeSymbol name -> case lookupEnv' name outputs of
             Absent' _ -> mzero
             Found' t pf -> do
+              traceM ("got here, t = " ++ showType t)
               v <- nest (parseValueFromTokens env EmptyContext t valueTokens)
-              pure (Output env pf name v)
+              traceM ("parsed v = " ++ pprint v)
+              eol
+              pure (withKnownType t $ Output env pf name v)
       _ -> mzero

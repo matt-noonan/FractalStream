@@ -36,12 +36,16 @@ import Backend.LLVM.Code
 
 import Language.Value
 import Language.Value.Evaluator (HaskellTypeOfBinding)
+import Language.Value.Transform
 import Language.Code
 import Language.Code.Parser
 import Data.Color
 
 import Foreign hiding (void)
 import GHC.TypeLits
+
+import Text.Disassembler.X86Disassembler
+import Control.Monad (forM_)
 
 data JITFun (env :: Environment) (ret :: FSType) where
   JITFun :: EnvironmentProxy env -> TypeProxy ret -> FunPtr () -> JITFun env ret
@@ -257,13 +261,18 @@ withViewerCode' :: forall x y dx dy env t
                       -> IO t)
                  -> IO t
 withViewerCode' (dylib, session, compileLayer, nextId) x y dx dy c action = do
+
+  let optimizedCode = transformValues (integerPowers . avoidSqrt) c
+
   name <- modifyMVar nextId (\n -> pure (n + 1, "kernel_" ++ show n))
-  m <- either error pure (compileRenderer' (fromString name) x y dx dy c)
+  m <- either error pure (compileRenderer' (fromString name) x y dx dy optimizedCode)
   withContext $ \ctx ->
     withModuleFromAST ctx m $ \md -> do
     let pm = defaultCuratedPassSetSpec
     withPassManager pm (`runPassManager` md)
     asm' <- BS.unpack <$> moduleLLVMAssembly md
+
+    putStrLn "------------------------------------------------------------"
     putStrLn asm'
 
     withClonedThreadSafeModule md $ \tsm -> do
@@ -271,6 +280,13 @@ withViewerCode' (dylib, session, compileLayer, nextId) x y dx dy c action = do
       lookupSymbol session compileLayer dylib (fromString name) >>= \case
         Left err -> error ("error JITing kernel: " ++ show err)
         Right (JITSymbol kernelFn _) -> do
+          putStrLn "------------------------------------------------------------"
+          let dcfg = defaultConfig { confIn64BitMode = True }
+          instrs <- disassembleBlockWithConfig dcfg (wordPtrToPtr kernelFn) 1024
+          case instrs of
+            Left err -> putStrLn ("disassembly error: " ++ show err)
+            Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
+
           let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
           action $ \blocksize subsamples argCtx buf -> do
             (args, frees) <- unzip <$> fromContextM toFFIArg argCtx
