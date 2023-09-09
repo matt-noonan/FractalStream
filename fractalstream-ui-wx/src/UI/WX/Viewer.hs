@@ -1,3 +1,6 @@
+module UI.WX.Viewer where
+
+{-
 {-# language RecordWildCards #-}
 {-# options_ghc -Wno-type-defaults #-}
 
@@ -724,3 +727,4 @@ selectRegion :: Rectangle Viewport -> IO ()
 selectRegion r = do
     putStrLn $ "selected region " ++ show r
     return ()
+-}

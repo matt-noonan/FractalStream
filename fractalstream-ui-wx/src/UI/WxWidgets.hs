@@ -1,5 +1,6 @@
 {-# language IncoherentInstances #-}
-module UI.WxWidgets
+module UI.WxWidgets where
+{-
   ( WX
   -- Settings widget
   , SettingsWidget(..)
@@ -415,3 +416,4 @@ instance ToUI WX Viewer where
                                   [ visible := True ]
               ]
     pure ViewerWidget{..}
+-}

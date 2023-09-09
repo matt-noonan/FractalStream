@@ -1,36 +1,71 @@
+{-# language OverloadedStrings #-}
 module Actor.Tool
   ( Tool(..)
+  , ParsedTool(..)
+  , ToolInfo(..)
+  , RealTool(..)
+  , ComplexTool(..)
   ) where
 
-import Language.Code
---import Actor
-import Actor.Settings
-import Event
-import Language.Effect.Provide
+import Actor.Configuration
+import Actor.Event
+import Actor.Layout
 
-data Tool effs where
-  Tool :: forall env effs
-        . ( PosEnv  `CanAppendTo` env
-          , DragEnv `CanAppendTo` env
-          ) =>
-    { toolSettings :: Settings env '[]
-    , toolName :: String
-    , toolHelp :: String
-    , onClick     :: Maybe (Code (Provide env ': effs) PosEnv 'VoidT)
-    , onMouseDown :: Maybe (Code (Provide env ': effs) PosEnv 'VoidT)
-    , onMouseUp   :: Maybe (Code (Provide env ': effs) PosEnv 'VoidT)
-    , onMotion    :: Maybe (Code (Provide env ': effs) PosEnv 'VoidT)
-    , onDrag      :: Maybe (Code (Provide env ': effs) DragEnv 'VoidT)
-    , buttons     :: [(String, Code (Provide env ': effs) '[] 'VoidT)]
-    } -> Tool effs
+import Data.Aeson
+import Data.List (foldl')
 
-{-
-instance Actor (Tool effs) where
-  handle Tool{..} _ = \case
-    Click     -> onClick
-    MouseDown -> onMouseDown
-    MouseUp   -> onMouseUp
-    Motion    -> onMotion
-    Drag      -> onDrag
-    _         -> Nothing
--}
+data ParsedTool = ParsedTool
+  { ptoolInfo :: ToolInfo
+  , ptoolDrawLayer :: Int
+  , ptoolConfig :: Maybe Configuration
+  , ptoolEventHandlers :: ParsedEventHandlers
+  }
+
+data Tool = Tool
+  { toolInfo :: ToolInfo
+  , toolDrawLayer :: Int
+  , toolConfig :: Maybe (Layout ConstantExpression)
+  , toolEventHandler :: Event -> IO ()
+  }
+
+data ToolInfo = ToolInfo
+  { tiName :: String
+  , tiShortcut :: Maybe Char
+  , tiShortHelp :: String
+  , tiHelp :: String
+  }
+
+newtype RealTool = RealTool ParsedTool
+newtype ComplexTool = ComplexTool ParsedTool
+
+instance FromJSON (String -> String -> Either String RealTool) where
+  parseJSON = withObject "tool" $ \o -> do
+    tiName <- o .: "name"
+    tiShortcut <- o .:? "shortcut"
+    tiShortHelp <- o .:? "short-help" .!= ""
+    tiHelp <- o .:? "help" .!= ""
+    let ptoolInfo = ToolInfo{..}
+    ptoolConfig <- o .:? "configuration"
+    ptoolDrawLayer <- o .:? "draw-to-layer" .!= 100
+    handlers <- o .:? "actions" .!= []
+    pure $ \x y -> do
+      let handlers' = map (($ y) . ($ x)) handlers
+      ptoolEventHandlers <-
+        foldl' combineEventHandlers (Right noEventHandlers) handlers'
+      pure (RealTool ParsedTool{..})
+
+instance FromJSON (String -> Either String ComplexTool) where
+  parseJSON = withObject "tool" $ \o -> do
+    tiName <- o .: "name"
+    tiShortcut <- o .:? "shortcut"
+    tiShortHelp <- o .:? "short-help" .!= ""
+    tiHelp <- o .:? "help" .!= ""
+    let ptoolInfo = ToolInfo{..}
+    ptoolConfig <- o .:? "configuration"
+    ptoolDrawLayer <- o .:? "draw-to-layer" .!= 100
+    handlers <- o .:? "actions" .!= []
+    pure $ \z -> do
+      let handlers' = map (convertComplexToRealEventHandlers . ($ z)) handlers
+      ptoolEventHandlers <-
+        foldl' combineEventHandlers (Right noEventHandlers) handlers'
+      pure (ComplexTool ParsedTool{..})

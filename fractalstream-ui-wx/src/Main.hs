@@ -5,31 +5,7 @@ Description  : Main entry point into FractalStream
 -}
 module Main where
 
-import qualified Data.Color as FSColor
-import UI.WX.Viewer
 import Control.Concurrent
-import Control.Monad.State
-import Data.Planar
-import Data.Complex
-import Text.RawString.QQ
-
-import Language.Code.Simulator
-import Language.Type
-import Language.Environment
-import Language.Effect
-import Language.Code.Parser
-import Language.Value.Parser
-import Data.Proxy
-
-import Actor.Settings
-import Actor.Tool
-import Actor.Viewer
-import Event
-import Language.Effect.Draw
-import Language.Effect.Render
-import Language.Effect.Provide
-import Language.Code
-import Backend.LLVM
 
 import UI.Definition
 
@@ -40,9 +16,9 @@ main = do
     capInfo <- threadCapability tid
     putStrLn ("Hello from main, on thread " ++ show tid ++ " "
               ++ show capInfo ++ " " ++ show bound)
-    if False then wxMain else defToUI "/Users/mnoonan/FractalStream/wiz0c.yaml"
+    defToUI "/Users/mnoonan/FractalStream/wiz0c.yaml"
     putStrLn "main is done"
-
+{-
 wxMain :: IO ()
 wxMain = do
     tid <- myThreadId
@@ -343,3 +319,4 @@ mandel' maxIters maxRadius (x :+ y) =
        $ declare @"maxRadius" RealType
        $ declare @"maxIters" IntegerType
        $ endOfDecls
+-}

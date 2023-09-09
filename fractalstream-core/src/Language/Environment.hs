@@ -602,7 +602,7 @@ bindInEnv :: (MonadFail m)
           => String
           -> TypeProxy ty
           -> EnvironmentProxy env
-          -> (forall name. NotPresent name env => EnvironmentProxy ( '(name, ty) ': env) -> m t)
+          -> (forall name. (KnownSymbol name, NotPresent name env) => EnvironmentProxy ( '(name, ty) ': env) -> m t)
           -> m t
 bindInEnv nameStr ty env k = case someSymbolVal nameStr of
   SomeSymbol name -> case lookupEnv' name env of

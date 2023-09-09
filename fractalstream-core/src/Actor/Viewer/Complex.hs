@@ -5,26 +5,28 @@ module Actor.Viewer.Complex
   , ComplexViewer'(..)
   , ComplexViewerCompiler(..)
   , withComplexViewer'
-  , runOnSelectHandler
+  , cloneComplexViewer
   ) where
 
 import Actor.Layout
+import Actor.Tool
+import Actor.Event
+
 import Language.Type
 import Language.Code
 import Data.DynamicValue
 
-import Language.Effect.Output
+import Language.Effect.Draw
+import Language.Code.InterpretIO (ScalarIORefM)
 
 import Language.Value.Parser
 import Language.Code.Parser
 
-import Language.Code.InterpretIO (interpretToIO, eval', ScalarIORefM, IORefTypeOfBinding)
 import Language.Value.Evaluator
 
 import Data.Word
 import Data.Int
 import Data.String
-import Data.IORef
 import Data.Maybe (fromMaybe)
 import Foreign (Ptr)
 import GHC.TypeLits
@@ -43,7 +45,7 @@ data ComplexViewer = ComplexViewer
   , cvPixel :: Maybe String
   , cvCode :: String
   , cvOverlay :: Maybe String
-  , cvOnSelect :: Maybe String
+  , cvTools :: [ComplexTool]
   }
 
 instance FromJSON ComplexViewer where
@@ -57,7 +59,7 @@ instance FromJSON ComplexViewer where
     StringOrNumber cvPixelSize <- o .: "initial-pixel-size"
     cvCode <- Text.unpack <$> o .: "code"
     cvOverlay <- o .:? "overlay"
-    cvOnSelect <- o .:? "on-select"
+    cvTools <- (o .:? "tools" .!= []) >>= (either fail pure . sequence . map ($ cvCoord))
     pure ComplexViewer{..}
 
 
@@ -81,14 +83,17 @@ data ComplexViewer' where
                          ': '("[internal] px", 'RealT)
                          ': env
                           ) 'ColorT
-    , cvOnSelect' :: Maybe (Code '[Output env]
-                                 ( '(px, 'RealT)
-                                 ': '(z, 'ComplexT)
-                                 ': env
-                                 ) 'VoidT)
-
+    , cvTools' :: (Int -> EffectHandler Draw ScalarIORefM) -> [Tool]
     , cvGetFunction :: IO (Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ())
     } -> ComplexViewer'
+
+cloneComplexViewer :: ComplexViewer' -> IO ComplexViewer'
+cloneComplexViewer cv = do
+  newCenter <- newUIValue =<< getUIValue (cvCenter' cv)
+  newPixelSize <- newUIValue =<< getUIValue (cvPixelSize' cv)
+  pure (cv { cvCenter' = newCenter
+           , cvPixelSize' = newPixelSize
+           })
 
 newtype StringOf (t :: FSType) =
   StringOf { valueOf :: HaskellType t }
@@ -101,86 +106,6 @@ instance KnownType t => IsString (StringOf t) where
 
 instance KnownType t => FromJSON (StringOf t) where
   parseJSON = fmap unStringOrNumber . parseJSON
-
-parseOnSelect :: (KnownSymbol px, KnownSymbol z)
-              => Proxy px
-              -> Proxy z
-              -> EnvironmentProxy env
-              -> Context Splice splices
-              -> Maybe String
-              -> IO (Maybe (Code '[Output env] ( '(px, 'RealT) ': '(z, 'ComplexT) ': env) 'VoidT))
-parseOnSelect _ _ _ _ Nothing = pure Nothing
-parseOnSelect px z env splices (Just input) = do
-  let effectParser = EP (ParseEff (outputEffectParser env) NoEffs)
-  env'  <- bindEnvProxyIO z  ComplexType env
-  env'' <- bindEnvProxyIO px RealType    env'
-  case parseCode effectParser env'' splices VoidType input of
-    Left err -> error ("bad parse of on-select handler: " ++ show err)
-    Right code -> pure (Just code)
-
--- | Run the code and find any variables in the environment that were modified by
--- `output` statements. Reflect those changes back into the environment.
-runOnSelectHandler :: ComplexViewer' -> Complex Double -> IO ()
-runOnSelectHandler ComplexViewer'{..} z = do
-   px <- getDynamic cvPixelSize'
-   let ctx = cvConfig'
-   case cvOnSelect' of
-     Nothing -> pure ()
-     Just code -> do
-       -- Copy the current environment into a bunch of IORefs
-       iorefs :: Context IORefTypeOfBinding env <-
-         mapContextM (\_ _ d -> getDynamic d >>= newIORef) ctx
-
-       -- Build an handler for the Output effect that outputs values
-       -- into the corresponding IORef in `iorefs`.
-       let handle :: forall e t
-                   . EnvironmentProxy e
-                  -> TypeProxy t
-                  -> Output env ScalarIORefM '(e,t)
-                  -> StateT (Context IORefTypeOfBinding e) IO (HaskellType t)
-           handle _ _ (Output _ pf _ v) = do
-             x <- eval' v
-             let ioref = getBinding iorefs pf
-             liftIO (writeIORef ioref x)
-           outputHandler = Handle (Proxy @ScalarIORefM) handle
-           handlers = Handler outputHandler NoHandler
-
-       -- Build the initial evaluation environment by reading the current
-       -- value out of each IORef, also prepending the pixel size and
-       -- selected coordinate.
-       pxRef <- newIORef px
-       zRef <- newIORef z
-       iorefs' <- bindContextIO cvPixel' RealType pxRef =<<
-                  bindContextIO cvCoord' ComplexType zRef iorefs
-
-       inValues :: Context HaskellTypeOfBinding env <-
-         mapContextM (\_ _ -> readIORef) iorefs
-
-       -- Run the code and then read values back from the `iorefs`
-       void (runStateT (interpretToIO handlers code) iorefs')
-       outValues :: Context HaskellTypeOfBinding env <-
-         mapContextM (\_ _ -> readIORef) iorefs
-
-       -- Find values that were updated by an output effect, and
-       -- update the corresponding dynamic values
-       let finalCtx :: Context ((HaskellTypeOfBinding :**: HaskellTypeOfBinding)
-                                :**: DynamicValue) env
-           finalCtx = zipContext (zipContext inValues outValues) ctx
-       fromContextM_ (\_ ty ((old, new), v) ->
-                        if Scalar ty old == Scalar ty new
-                        then pure ()
-                        else void (setDynamic v new))
-                     finalCtx
-
-bindEnvProxyIO :: KnownSymbol name
-               => Proxy name
-               -> TypeProxy ty
-               -> EnvironmentProxy env
-               -> IO (EnvironmentProxy ( '(name, ty) ': env))
-bindEnvProxyIO name ty env =
-  case lookupEnv name ty env of
-    Absent pf -> recallIsAbsent pf (pure (BindingProxy name ty env))
-    _ -> error (symbolVal name ++ " is defined twice")
 
 bindContextIO :: KnownSymbol name
               => Proxy name
@@ -251,7 +176,31 @@ withComplexViewer' jit cvConfig' splices ComplexViewer{..} action = withEnvironm
                                                      $ Bind argPx RealType dx
                                                      $ args
                                         fun (fromIntegral blockSize) (fromIntegral subsamples) fullArgs buf
-                                cvOnSelect' <- parseOnSelect cvPixel' cvCoord' env0 splices cvOnSelect
+                                -- For tools, bind the viewer coordinate to the
+                                -- view's center point. Maybe this is going to be too
+                                -- confusing...
+                                cvToolContext
+                                  <-  bindContextIO cvCoord' ComplexType
+                                        (SomeDynamic cvCenter')
+                                  =<< bindContextIO cvPixel' RealType
+                                        (SomeDynamic cvPixelSize')
+                                  cvConfig'
+                                cvToolsFns <- forM cvTools $ \(ComplexTool ParsedTool{..}) -> do
+                                  -- FIXME: currently parses in the global context,
+                                  -- not the viewer context extended by the tool's
+                                  -- configuration context.
+                                  putStrLn ("building tool `" ++ tiName ptoolInfo ++ "`")
+                                  putStrLn ("environment: " ++ show (contextToEnv cvToolContext))
+                                  h <- case toEventHandlers (contextToEnv cvToolContext) ptoolEventHandlers of
+                                         Left err -> error ("toEventHandlers returned " ++ err)
+                                         Right ok -> pure ok
+                                  let toolInfo = ptoolInfo
+                                      toolDrawLayer = ptoolDrawLayer
+                                      toolConfig = Nothing -- TODO
+                                      toolEventHandler = const (pure ()) -- to be replaced below
+                                      tool = Tool{..}
+                                  pure (\drawTo -> tool { toolEventHandler = handleEvent cvToolContext (drawTo ptoolDrawLayer) h })
+                                let cvTools' = sequence cvToolsFns
                                 action ViewerUIProperties{..} ComplexViewer'{..}
 
                         _ -> error "could not define viewer-internal pixel size"

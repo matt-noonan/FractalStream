@@ -7,12 +7,14 @@ module UI.Definition
 
 import Language.Environment
 import Language.Type
+import Data.Color (colorToRGB, rgbToColor)
 import Control.Concurrent.MVar
 import Control.Monad.State hiding (get)
 
 import qualified Data.Yaml as YAML
 
 import Graphics.UI.WX hiding (pt, glue, when, tool, Object, Dimensions, Horizontal, Vertical, Layout, Color)
+import qualified Graphics.UI.WXCore.Events as WX
 import qualified Graphics.UI.WX as WX
 import           Graphics.UI.WXCore.Draw
 import           Graphics.UI.WXCore.WxcClassTypes
@@ -31,7 +33,9 @@ import Backend.LLVM (withViewerCode', withJIT)
 import Actor.Layout
 import Actor.UI
 import Actor.Ensemble
+import Actor.Tool
 import Actor.Viewer.Complex
+import Actor.Event (Event(..))
 import Data.DynamicValue
 
 
@@ -83,7 +87,12 @@ wxUI = UI {..}
     innerLayout <- generateWxLayout f ui
     set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ] ]
 
-  makeViewer = \_ ViewerUIProperties{..} theViewer@ComplexViewer'{..} -> do
+  makeViewer = \_ vup@ViewerUIProperties{..} theViewer@ComplexViewer'{..} -> do
+
+    let clone = do
+          newCV <- cloneComplexViewer theViewer
+          makeViewer () vup newCV
+
     f <- frame [ text := vpTitle
                , on resize := propagateEvent
                ]
@@ -105,54 +114,8 @@ wxUI = UI {..}
     -- Build the initial view model
     model <- variable [value := Model (0,0) (1/128,1/128)]
 
-    -------------------------------------------------------
-    -- Menus
-    -------------------------------------------------------
-
-    -- File menu
-    file <- menuPane      [text := "&File"]
-    menuItem file [ text := "&New", on command := putStrLn "TODO"]
---    _    <- menuQuit file [ text := "&Quit"
---                          , help := "Quit FractalStream"]
-
-    -- Help menu
-    hlp   <- menuHelp      [ text := "&Help" ]
-    menuItem hlp [ text := "blah" ]
-    about <- menuAbout hlp [text := "About FractalStream"]
-
-    -- Viewer menu
-    viewMenu <- menuPane [text := "&Viewer"]
-    menuItem viewMenu [ text := "Reset view"
-                      , on command := do
-                          set model [ value := Model (0,0) (1/128,1/128) ]
-                          requestRefresh
-                      ]
-
-    -- Tool menu
-    tools <- menuPane [text := "&Tool"]
-    mapM_ (\(x,y,z) -> menuRadioItem tools [ text := x
-                                           , help := y
-                                           , on command := do
-                                               set toolStatus [text := x]
-                                               z])
-      [ ("Navigate",
-         "Move around a dynamical system, select a point by ctrl-clicking",
-         do putStrLn "hi")
-      , ("Trace",
-         "Follow the orbit of a point",
-         do putStrLn "bye")
-      ]
-
-    set f [ menuBar   := [ file
-                         , viewMenu
-                         , tools
-                         , hlp ]
-          , on (menu about) :=
-              infoDialog f "About FractalStream" $ unlines
-              [ "Contributors:"
-              , "Matt Noonan"
-              ]
-          ]
+    -- Provide a draw effect in order to obtain the tools
+    let theTools = cvTools' (\_ -> error "unimplemented draw effect")
 
     -------------------------------------------------------
     -- Main view
@@ -177,6 +140,7 @@ wxUI = UI {..}
     savedTileImage <- variable [value := Nothing]
     lastTileImage  <- variable [value := Nothing]
     animate        <- variable [value := Nothing]
+    currentToolIndex <- variable [value := Nothing]
 
     let startAnimatingFrom oldModel = do
             now <- getCurrentTime
@@ -285,7 +249,8 @@ wxUI = UI {..}
               MouseLeftUp pt modifiers | isNoShiftAltControlDown modifiers -> do
                 dragBox <- getDragBox lastClick draggedTo
                 case dragBox of
-                    Nothing  -> do
+                    Nothing  -> get currentToolIndex value >>= \case
+                      Nothing -> do
                         -- Completed a click, recenter to the clicked point.
                         Size { sizeW = w, sizeH = h } <- get f clientSize
                         oldModel <- get model value
@@ -300,7 +265,13 @@ wxUI = UI {..}
 
                         startAnimatingFrom oldModel
                         triggerRepaint
-                    Just box -> do
+                      Just ix -> do
+                        z <- viewToModel pt
+                        toolEventHandler (theTools !! ix) (Click z)
+
+                    Just box -> get currentToolIndex value >>= \case
+                      Just _ -> pure ()
+                      Nothing -> do
                         -- Completed a drag. Zoom in to the dragged box, unless
                         -- the box is pathologically small; in that case, treat
                         -- the action as if it were a simple click.
@@ -329,17 +300,29 @@ wxUI = UI {..}
                 set lastClick [value := Nothing]
                 propagateEvent
 
-              MouseLeftDrag pt modifiers | isNoShiftAltControlDown modifiers -> do
-                set draggedTo [value := Just $ Viewport (pointX pt, pointY pt)]
-                mpt <- viewToModel pt
-                set status [text := show mpt]
+              MouseLeftDrag pt modifiers | isNoShiftAltControlDown modifiers ->
+                get currentToolIndex value >>= \case
+                  Nothing -> do
+                    set draggedTo [value := Just $ Viewport (pointX pt, pointY pt)]
+                    mpt <- viewToModel pt
+                    set status [text := show mpt]
 
-                dragBox <- getDragBox lastClick draggedTo
-                case dragBox of
-                    Nothing -> return ()
-                    Just _  -> triggerRepaint
+                    dragBox <- getDragBox lastClick draggedTo
+                    case dragBox of
+                      Nothing -> return ()
+                      Just _  -> triggerRepaint
 
-                propagateEvent
+                    propagateEvent
+
+                  Just ix -> do
+                     get lastClick value >>= \case
+                       Nothing -> pure ()
+                       Just (Viewport vstart) -> do
+                         zstart <- viewToModel (uncurry Point vstart)
+                         z <- viewToModel pt
+                         toolEventHandler (theTools !! ix) (Drag z zstart)
+                     propagateEvent
+
 
               MouseMotion pt modifiers | isNoShiftAltControlDown modifiers -> do
                 mpt <- viewToModel pt
@@ -347,9 +330,12 @@ wxUI = UI {..}
                 propagateEvent
 
               MouseLeftDClick pt modifiers | isNoShiftAltControlDown modifiers -> do
-                (x, y) <- viewToModel pt
-                runOnSelectHandler theViewer (x :+ y)
-                propagateEvent
+                get currentToolIndex value >>= \case
+                   Nothing -> pure ()
+                   Just ix -> do
+                     z <- viewToModel pt
+                     toolEventHandler (theTools !! ix) (DoubleClick z)
+                     propagateEvent
 
               -- other mouse events
               _ -> propagateEvent
@@ -420,15 +406,87 @@ wxUI = UI {..}
                                   -- no animation?
                                   triggerRepaint ]
 
+
     set f [ on resize := do
                   set onResizeTimer [enabled := False]
                   set pendingResize [value := True]
                   set onResizeTimer [enabled := True]
                   propagateEvent ]
 
+    -------------------------------------------------------
+    -- Change tracking
+    -------------------------------------------------------
+
     -- For each variable that the viewer code depends on, trigger a repaint whenever
     -- that variable changes
     fromContextM_ (\_ _ -> (`listenWith` (\_ _ -> requestRefresh))) cvConfig'
+
+    -------------------------------------------------------
+    -- Tools
+    -------------------------------------------------------
+    forM_ theTools $ \Tool{..} -> do
+      putStrLn ("loading tool `" ++ tiName toolInfo ++ "`")
+
+    -------------------------------------------------------
+    -- Menus
+    -------------------------------------------------------
+
+    -- File menu
+    file <- menuPane      [text := "&File"]
+    menuItem file [ text := "&New", on command := putStrLn "TODO"]
+--    _    <- menuQuit file [ text := "&Quit"
+--                          , help := "Quit FractalStream"]
+
+    -- Help menu
+    hlp   <- menuHelp      [ text := "&Help" ]
+    menuItem hlp [ text := "blah" ]
+    about <- menuAbout hlp [text := "About FractalStream"]
+
+    -- Viewer menu
+    viewMenu <- menuPane [text := "&Viewer"]
+    menuItem viewMenu [ text := "Reset view\t^"
+                      , on command := do
+                          set model [ value := Model (0,0) (1/128,1/128) ]
+                          requestRefresh
+                      ]
+    menuItem viewMenu [ text := "Clone viewer\t2"
+                      , on command := clone
+                      ]
+
+    -- Tool menu
+    tools <- menuPane [text := "&Tool"]
+
+    nav <- menuRadioItem tools [ text := "Navigate\tn"
+                               , help := "Move around or whatever"
+                               , on command := do
+                                   set toolStatus [text := "Navigate"]
+                                   set currentToolIndex [value := Nothing]
+                               ]
+
+    let addToToolMenu ix ToolInfo{..} = menuRadioItem tools
+          [ text := tiName ++ maybe "" (\c -> "\t" ++ (c : "")) tiShortcut
+          , help := tiShortHelp
+          , on command := do
+              set toolStatus [text := tiName]
+              set currentToolIndex [value := Just ix]
+          ]
+
+    mapM_ (uncurry addToToolMenu) ( zip [0..] . map toolInfo $ theTools )
+    set nav [ checked := True ]
+
+    let menuBarItems
+          = [ file, viewMenu ]
+          ++ [ tools | length theTools > 0 ]
+          ++ [ hlp ]
+
+    set f [ menuBar := menuBarItems
+          , on (menu about) :=
+              infoDialog f "About FractalStream" $ unlines
+              [ "Contributors:"
+              , "Matt Noonan"
+              ]
+          ]
+
 
 data Model = Model
   { modelCenter   :: (Double, Double)
@@ -455,7 +513,6 @@ interpolateModel t m1 m2 = m2
     logInterp p q = p * (q/p) ** t
     logInterp2  (p1,p2) (q1,q2) = (logInterp p1 q1, logInterp p2 q2)
     logInterpolate f = logInterp2 (f m1) (f m2)
-
 
 generateWxLayout :: Dynamic dyn
                  => Window a
@@ -488,7 +545,21 @@ generateWxLayout frame0 wLayout = do
 
      Tabbed _ -> error "Todo, tabbed"
 
-     ColorPicker{} -> error "todo, colorpicker"
+     ColorPicker (Label lab) v -> do
+       (r0, g0, b0) <- colorToRGB <$> getDynamic v
+       picker <- feed2 [ text := lab, visible := True ] 0 $
+                 initialWindow $ \iD rect' ps s -> do
+                   e <- colorPickerCtrlCreate p iD (rgb r0 g0 b0) rect' s
+                   set e ps
+                   pure e
+       let newPick = do
+             c <- colorPickerCtrlGetColour picker
+             let r = colorRed c
+                 g = colorGreen c
+                 b = colorBlue c
+             void (setDynamic v (rgbToColor (r, g, b)))
+       WX.windowOnEvent picker [wxEVT_COMMAND_COLOURPICKER_CHANGED] newPick (const newPick)
+       pure (fill $ row 5 [ marginTop (label lab), hfill (widget picker) ])
 
      CheckBox (Label lab) v -> do
        initial <- getDynamic v

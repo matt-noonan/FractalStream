@@ -118,7 +118,11 @@ toFFIArg _ t v = case t of
     z <- mallocArray 2
     pokeArray z [x,y]
     pure (argPtr z, free z)
-
+  ColorType -> do
+    let (r, g, b) = colorToRGB v
+    c <- mallocArray 3
+    pokeArray c [r,g,b]
+    pure (argPtr c, free c)
   _ -> error ("todo: toFFIArg " ++ showType t)
 
 fromFFIRetArg :: TypeProxy ty

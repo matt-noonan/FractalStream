@@ -73,6 +73,7 @@ library
                        Actor.Layout
                        Actor.UI
                        Actor.Viewer.Complex
+                       Actor.Event
 
                        Event
 

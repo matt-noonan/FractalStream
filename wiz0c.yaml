@@ -12,17 +12,22 @@ viewers:
         loop
           set z to f
           set k to k + 1
-          k < maxIters and not stop
+          k < maxIters and not stopping_condition
         if k = maxIters then
           black
         else
-          init c1 : Color to if im(z) > 0 then blue else yellow
-          init c2 : Color to if im(z) > 0 then green else red
-          init s : R to k + 1 - (log (log (|z|^2 / 2))) / log p
-          set s to cos (s pi / 10)
-          set s to s s
-          blend (s, c1, c2)
-    on-select: output C to selectedC
+          init c1 : Color to if im(z) > 0 then upper_color else lower_color
+          init c2 : Color to if im(z) > 0 then other_upper_color else other_lower_color
+          init s : R to k + 1 - (log (log (|z|^2) / 2 log(maxRadius))) / log p
+          blend ((cos (s pi / 10))^2, c1, c2)
+    tools:
+      - name: "Select C"
+        shortcut: s
+        actions:
+          - event: click
+            code: output C to selectedC
+          - event: drag
+            code: output C to selectedC
 
   - title: Dynamical plane
     style: complex-plane
@@ -37,16 +42,14 @@ viewers:
         loop
           set z to f
           set k to k + 1
-          k < maxIters and not stop
+          k < maxIters and not stopping_condition
         if k = maxIters then
           black
         else
-          init c1 : Color to if im(z) > 0 then blue else yellow
-          init c2 : Color to if im(z) > 0 then green else red
-          init s : R to k + 1 - (log (log (|z|^2 / 2))) / log p
-          set s to cos (s pi / 10)
-          set s to s s
-          blend (s, c1, c2)
+          init c1 : Color to if im(z) > 0 then upper_color else lower_color
+          init c2 : Color to if im(z) > 0 then other_upper_color else other_lower_color
+          init s : R to k + 1 - (log (log (|z|^2) / 2 log(maxRadius))) / log p
+          blend ((cos (s pi / 10))^2, c1, c2)
 
 setup:
   title: Parametric complex dynamics
@@ -75,15 +78,15 @@ setup:
           C: C
           maxRadius: R
         type: Boolean
-        variable: stop
+        variable: stopping_condition
 
 configuration:
   title: Configuration
   size: 400x200
   vertical-contents:
     - text-entry:
-        label: "selectedC"
-        value: -0.11 + 0.78i
+        label: "Selected value of C:"
+        value: 0
         type: C
         variable: selectedC
     - text-entry:
@@ -101,3 +104,19 @@ configuration:
         value: 2
         type: R
         variable: p
+    - color-picker:
+        label: "Main color 1:"
+        variable: upper_color
+        value: blue
+    - color-picker:
+        label: "Main color 2:"
+        variable: other_upper_color
+        value: green
+    - color-picker:
+        label: "Alt color 1:"
+        variable: lower_color
+        value: yellow
+    - color-picker:
+        label: "Alt color 2:"
+        variable: other_lower_color
+        value: red
