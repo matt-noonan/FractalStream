@@ -73,7 +73,7 @@ ifElseModified tile yes no = do
         Just _  -> yes
 
 -- | Construct a tile from a dynamical system, and begin drawing to it.
-renderTile :: (Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ()) -- ([(Double, Double)] -> IO [Color]) -- ^ The rendering action
+renderTile :: (Word32 -> Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ()) -- ([(Double, Double)] -> IO [Color]) -- ^ The rendering action
            -> (Int, Int)   -- ^ The height and width of this tile.
            -> Rectangle (Double, Double)
               -- ^ The region of the dynamical plane corresponding
@@ -84,7 +84,7 @@ renderTile :: (Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8
 renderTile renderingAction (width, height) mRect = do
     putStrLn ("renderTile at w=" ++ show width ++ " h=" ++ show height)
 
-    buf <- mallocForeignPtrBytes (3 * (width + 16) * (height + 16))
+    buf <- mallocForeignPtrBytes (3 * width * height)
 
     -- Initial fill of the image
     withForeignPtr buf $ \ptr ->

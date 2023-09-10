@@ -6,7 +6,7 @@ module Backend.LLVM
   , invoke
   , invoke'
   , withCompiledCode
-  , withViewerCode
+--  , withViewerCode
   , withJIT
   , withViewerCode'
   , runJX
@@ -181,7 +181,7 @@ withCompiledCode env code run = do
               Right (JITSymbol kernelFn _) -> do
                 let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
                 run (mkJX fn)
-
+{-
 withViewerCode :: forall x y dx dy env t
                   . ( KnownEnvironment env
                     , NotPresent "[internal argument] #blockSize" env
@@ -239,10 +239,11 @@ withViewerCode x y dx dy c action = do
 
                 putStrLn "************ WARNING, VIEWER CODE IS DEAD TO ME ****************"
                 pure r
-
+-}
 withViewerCode' :: forall x y dx dy env t
                   . ( KnownEnvironment env
-                    , NotPresent "[internal argument] #blockSize" env
+                    , NotPresent "[internal argument] #blockWidth" env
+                    , NotPresent "[internal argument] #blockHeight" env
                     , NotPresent "[internal argument] #subsamples" env
                     , KnownSymbol x, KnownSymbol y
                     , KnownSymbol dx, KnownSymbol dy
@@ -261,7 +262,7 @@ withViewerCode' :: forall x y dx dy env t
                  -> Proxy dx
                  -> Proxy dy
                  -> Code '[] env 'ColorT
-                 -> ((Int32 -> Int32 -> Context HaskellTypeOfBinding env -> Ptr Word8 -> IO ())
+                 -> ((Int32 -> Int32 -> Int32 -> Context HaskellTypeOfBinding env -> Ptr Word8 -> IO ())
                       -> IO t)
                  -> IO t
 withViewerCode' (dylib, session, compileLayer, nextId) x y dx dy c action = do
@@ -292,10 +293,11 @@ withViewerCode' (dylib, session, compileLayer, nextId) x y dx dy c action = do
             Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
 
           let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
-          action $ \blocksize subsamples argCtx buf -> do
+          action $ \blockwidth blockheight subsamples argCtx buf -> do
             (args, frees) <- unzip <$> fromContextM toFFIArg argCtx
             let fullArgs = argPtr buf
-                         : argInt32 blocksize
+                         : argInt32 blockwidth
+                         : argInt32 blockheight
                          : argInt32 subsamples
                          : args
             callFFI fn retVoid fullArgs

@@ -31,10 +31,11 @@ import Foreign (Ptr, peekByteOff, pokeByteOff, allocaArray)
 --   to a buffer filled with the resulting color data.
 data Block =
   Block { coordToModel  :: (Double, Double) -> (Double, Double)
-        , compute       :: Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ()
+        , compute       :: Word32 -> Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ()
           -- ^ The arguments of the compute function are:
           --     * Block width, in subsamples
-          --     * Subsamples per point
+          --     * Block height, in subsamples
+          --     * Subsamples per point length
           --     * Array of two doubles: initial (x,y) values
           --     * Array of two doubles: (dx,dy)
           --     * Output color samples
@@ -59,9 +60,9 @@ data Block =
         , deltaY        :: Double
           -- ^ The model size of a pixel in the Y direction
         , xSize         :: Int
-          -- ^ The width of the block.
+          -- ^ The width of the block, in subsamples.
         , ySize         :: Int
-          -- ^ The height of the block
+          -- ^ The height of the block, in subsamples
         , shouldRedraw  :: MVar ()
           -- ^ A variable used to signal that this block is complete
           --   and the pixel buffer should be redrawn.
@@ -82,11 +83,13 @@ fillBlock Block{..} = do
 
     -- Run the computation on each subsampled point.
     allocaArray (length points * 3) $ \tmp -> do
-      compute (fromIntegral (xSize `div` skip)) (floor k)
-               (deltaX :+ deltaY)
-               (let (u,v) = coordToModel (fromIntegral x0, fromIntegral y0)
-                in u :+ v)
-               tmp
+      compute (fromIntegral (xSize `div` skip))
+              (fromIntegral (ySize `div` skip))
+              (floor k)
+              (deltaX :+ deltaY)
+              (let (u,v) = coordToModel (fromIntegral x0, fromIntegral y0)
+               in u :+ v)
+              tmp
 
       -- Resample the results
       --let rgbs = resampleBy averageColor nSubsamples results
@@ -156,27 +159,27 @@ progressively render block = do
     let subBlockSize = 16
         width   = xSize block
         height  = ySize block
-        xBlocks =  case width `divMod` subBlockSize of
-            (z, 0) -> z
-            (z, _) -> z + 1
-        yBlocks = case height `divMod` subBlockSize of
-            (z, 0) -> z
-            (z, _) -> z + 1
+        xBlocks = let (z,r) = width `divMod` subBlockSize
+                  in zip [0 .. z - 1] (repeat subBlockSize) ++
+                     [(z,r) | r > 0]
+        yBlocks = let (z,r) = height `divMod` subBlockSize
+                  in zip [0 .. z - 1] (repeat subBlockSize) ++
+                     [(z,r) | r > 0]
 
-    blockIDs <- shuffle [(x,y) | x <- [0..xBlocks - 1], y <- [0..yBlocks - 1]]
+    subblocks <- shuffle [(x,y) | x <- xBlocks, y <- yBlocks]
 
     poolSize <- subtract 1 <$> getNumCapabilities
     caps <- getNumCapabilities
     putStrLn $ show caps ++ " capabilities, pool size " ++ show poolSize ++ " (w=" ++ show (xSize block) ++ ", h=" ++ show (ySize block) ++ ")"
 
-    let rates = filter (<= logSampleRate block) [0] -- [-4, -2, 0] --, logSampleRate block]
+    let rates = [logSampleRate block] -- FIXME filter (<= logSampleRate block) [-4, -2, 0, 1] --, logSampleRate block]
 
-    let todo = [(rate, x, y) | rate <- rates, (x,y) <- blockIDs]
+    let todo = [(rate, x, y) | rate <- rates, (x,y) <- subblocks]
     putStrLn $ "***** start @ rates=" ++ show rates
     start <- getCurrentTime
 
-    forPool_ poolSize todo $ \(rate,x,y) -> do
-      render $ block { xSize = subBlockSize, ySize = subBlockSize,
+    forPool_ poolSize todo $ \(rate,(x,w),(y,h)) -> do
+      render $ block { xSize = w, ySize = h,
                        x0 = subBlockSize * x, y0 = subBlockSize * y,
                        logSampleRate = rate }
 

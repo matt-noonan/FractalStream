@@ -84,7 +84,7 @@ data ComplexViewer' where
                          ': env
                           ) 'ColorT
     , cvTools' :: (Int -> EffectHandler Draw ScalarIORefM) -> [Tool]
-    , cvGetFunction :: IO (Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ())
+    , cvGetFunction :: IO (Word32 -> Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ())
     } -> ComplexViewer'
 
 cloneComplexViewer :: ComplexViewer' -> IO ComplexViewer'
@@ -119,7 +119,8 @@ bindContextIO name ty v ctx =
     _ -> error (symbolVal name ++ " is defined twice")
 
 
-withComplexViewer' :: ( NotPresent "[internal argument] #blockSize" env
+withComplexViewer' :: ( NotPresent "[internal argument] #blockWidth" env
+                      , NotPresent "[internal argument] #blockHeight" env
                       , NotPresent "[internal argument] #subsamples" env )
                    => ComplexViewerCompiler
                    -> Context DynamicValue env
@@ -170,12 +171,12 @@ withComplexViewer' jit cvConfig' splices ComplexViewer{..} action = withEnvironm
                               withCompiledComplexViewer jit argX argY argPx argPx realCode $ \fun -> do
                                 let cvGetFunction = do
                                       args <- mapContextM (\_ _ -> getDynamic) cvConfig'
-                                      pure $ \blockSize subsamples (dx :+ _dy) (x :+ y) buf -> do
+                                      pure $ \blockWidth blockHeight subsamples (dx :+ _dy) (x :+ y) buf -> do
                                         let fullArgs = Bind argX RealType x
                                                      $ Bind argY RealType y
                                                      $ Bind argPx RealType dx
                                                      $ args
-                                        fun (fromIntegral blockSize) (fromIntegral subsamples) fullArgs buf
+                                        fun (fromIntegral blockWidth) (fromIntegral blockHeight) (fromIntegral subsamples) fullArgs buf
                                 -- For tools, bind the viewer coordinate to the
                                 -- view's center point. Maybe this is going to be too
                                 -- confusing...
@@ -214,7 +215,8 @@ newtype ComplexViewerCompiler = ComplexViewerCompiler
   { withCompiledComplexViewer
     :: forall x y dx dy env t
      . ( KnownEnvironment env
-       , NotPresent "[internal argument] #blockSize" env
+       , NotPresent "[internal argument] #blockWidth" env
+       , NotPresent "[internal argument] #blockHeight" env
        , NotPresent "[internal argument] #subsamples" env
        , KnownSymbol x, KnownSymbol y
        , KnownSymbol dx, KnownSymbol dy
@@ -232,7 +234,7 @@ newtype ComplexViewerCompiler = ComplexViewerCompiler
     -> Proxy dx
     -> Proxy dy
     -> Code '[] env 'ColorT
-    -> ((Int32 -> Int32 -> Context HaskellTypeOfBinding env -> Ptr Word8 -> IO ())
+    -> ((Int32 -> Int32 -> Int32 -> Context HaskellTypeOfBinding env -> Ptr Word8 -> IO ())
          -> IO t)
     -> IO t
   }

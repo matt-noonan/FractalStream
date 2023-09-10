@@ -61,14 +61,16 @@ runEnsemble jit UI{..} Ensemble{..} = do
 
   withSplicesFromSetup $ \splices -> do
     withContextFromConfiguration $ \config -> do
-      case lookupEnv' (Proxy @"[internal argument] #blockSize") (contextToEnv config) of
+      case lookupEnv' (Proxy @"[internal argument] #blockWidth") (contextToEnv config) of
         Absent' pf1 -> recallIsAbsent pf1 $
-          case lookupEnv' (Proxy @"[internal argument] #subsamples") (contextToEnv config) of
-            Absent' pf2 -> recallIsAbsent pf2 $ do
-              forM_ ensembleViewers $ \viewer ->
-                withComplexViewer' jit config splices viewer $ \vu cv' -> do
-                  makeViewer project vu cv'
-
+          case lookupEnv' (Proxy @"[internal argument] #blockHeight") (contextToEnv config) of
+            Absent' pf2 -> recallIsAbsent pf2 $
+              case lookupEnv' (Proxy @"[internal argument] #subsamples") (contextToEnv config) of
+                Absent' pf3 -> recallIsAbsent pf3 $ do
+                  forM_ ensembleViewers $ \viewer ->
+                    withComplexViewer' jit config splices viewer $ \vu cv' -> do
+                      makeViewer project vu cv'
+                _ -> error "internal error"
             _ -> error "internal error"
         _ -> error "internal error"
 

@@ -226,14 +226,16 @@ compileRenderer code = runExcept $
         retVoid
 
 type RenderEnv' env =
-  (  '("[internal argument] #blockSize", 'IntegerT)
+  (  '("[internal argument] #blockWidth", 'IntegerT)
+  ': '("[internal argument] #blockHeight", 'IntegerT)
   ': '("[internal argument] #subsamples", 'IntegerT)
   ': env )
 
 
 compileRenderer' :: forall x y dx dy env
                  . ( KnownEnvironment env
-                   , NotPresent "[internal argument] #blockSize" env
+                   , NotPresent "[internal argument] #blockWidth" env
+                   , NotPresent "[internal argument] #blockHeight" env
                    , NotPresent "[internal argument] #subsamples" env
                    , KnownSymbol x, KnownSymbol y
                    , KnownSymbol dx, KnownSymbol dy
@@ -261,10 +263,11 @@ compileRenderer' name _ _ _ _ code = runExcept $
         pfY = bindingEvidence @y @'RealT @env
         pfdX = bindingEvidence @dx @'RealT @env
         pfdY = bindingEvidence @dy @'RealT @env
-    function name (retParam : params) AST.void $ \(retPtr : blockSizeArg : subsamplesArg : rawArgs) -> do
+    function name (retParam : params) AST.void $ \(retPtr : blockWidthArg : blockHeightArg : subsamplesArg : rawArgs) -> do
       getExtern <- getGetExtern
       traceM ("ok... retPtr = " ++ show retPtr)
-      blockSizePtr <- allocaArg IntegerType blockSizeArg `named` "set up environment"
+      blockWidthPtr <- allocaArg IntegerType blockWidthArg `named` "set up environment"
+      blockHeightPtr <- allocaArg IntegerType blockHeightArg `named` "set up environment"
       subsamplesPtr <- allocaArg IntegerType subsamplesArg
       args <- allocaArgs (envProxy (Proxy @env)) rawArgs
       mdo
@@ -277,7 +280,9 @@ compileRenderer' name _ _ _ _ code = runExcept $
           RealOp v -> pure v
         dy <- derefOperand (getBinding args pfdY) >>= \case
           RealOp v -> pure v
-        blockSize <- derefOperand blockSizePtr >>= \case
+        blockWidth <- derefOperand blockWidthPtr >>= \case
+          IntegerOp v -> pure v
+        blockHeight <- derefOperand blockHeightPtr >>= \case
           IntegerOp v -> pure v
         subsamples <- derefOperand subsamplesPtr >>= \case
           IntegerOp v -> pure v
@@ -387,7 +392,7 @@ compileRenderer' name _ _ _ _ code = runExcept $
           tmp2 <- add tmp1 (C.int32 1)
           store jPtr 0 tmp2
           j <- load jPtr 0
-          continue <- icmp P.ULT j blockSize
+          continue <- icmp P.ULT j blockWidth
           condBr continue pixelLoopX exitPixelLoopX
 
         --    } // end j/x loop
@@ -401,7 +406,7 @@ compileRenderer' name _ _ _ _ code = runExcept $
           tmp2 <- add tmp1 (C.int32 1)
           store iPtr 0 tmp2
           i <- load iPtr 0
-          continue <- icmp P.ULT i blockSize
+          continue <- icmp P.ULT i blockHeight
           condBr continue pixelLoopY exitPixelLoopY
 
         -- } // end i/y loop

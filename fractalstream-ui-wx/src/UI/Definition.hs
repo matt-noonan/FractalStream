@@ -615,16 +615,16 @@ generateWxLayout frame0 wLayout = do
 
 renderTile' :: Valued w
             => IORef Int
-            -> (Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ())
+            -> (Word32 -> Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ())
             -> (Int, Int)
             -> w Model
             -> IO Tile
 renderTile' renderId action dim model = do
     iD <- atomicModifyIORef' renderId (\x -> (x + 1, x + 1))
     modelRect <- modelToRect dim <$> get model value
-    let action' p q x y c = do
+    let action' p q r x y c = do
             curId <- readIORef renderId
-            if (curId == iD) then action p q x y c else pure ()
+            if (curId == iD) then action p q r x y c else pure ()
     renderTile action' dim modelRect
 
 drawCenteredImage :: Image b -> DC d -> Rect -> (Int,Int) -> IO ()
