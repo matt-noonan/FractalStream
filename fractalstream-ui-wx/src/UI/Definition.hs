@@ -37,7 +37,17 @@ import Actor.Tool
 import Actor.Viewer.Complex
 import Actor.Event (Event(..))
 import Data.DynamicValue
+import Language.Value (Value, ValueF(..))
+import Language.Code (CodeF(..))
+import Data.Set (Set)
+import qualified Data.Set as Set
+import GHC.TypeLits
+import Data.Kind
+import Data.Indexed.Functor
+import Fcf (Exp, Eval, Pure1)
 
+data Unit :: (Environment, FSType) -> Exp Type
+type instance Eval (Unit et) = ()
 
 defToUI :: FilePath -> IO ()
 defToUI yamlFile = withJIT $ \jit -> start $ do
@@ -418,8 +428,34 @@ wxUI = UI {..}
     -------------------------------------------------------
 
     -- For each variable that the viewer code depends on, trigger a repaint whenever
-    -- that variable changes
-    fromContextM_ (\_ _ -> (`listenWith` (\_ _ -> requestRefresh))) cvConfig'
+    -- that variable changes.
+    let usedVars = execState (indexedFoldM gatherUsedVarsInCode cvCode') Set.empty
+        gatherUsedVars :: Value et -> State (Set String) ()
+        gatherUsedVars = indexedFoldM @Unit gatherUsedVarsInValue
+        gatherUsedVarsInValue :: ValueF Unit et -> State (Set String) ()
+        gatherUsedVarsInValue = \case
+          Var name _ _ -> modify' (Set.insert (symbolVal name))
+          LocalLet name _ _ _ _ _ -> modify' (Set.delete (symbolVal name))
+          _ -> pure ()
+        gatherUsedVarsInCode :: CodeF '[] (Pure1 Value) Unit et -> State (Set String) ()
+        gatherUsedVarsInCode = \case
+          Let _ name _ v _ _ -> do
+            modify' (Set.delete (symbolVal name))
+            gatherUsedVars v
+          LetBind _ name _ _ _ _ -> modify' (Set.delete (symbolVal name))
+          Set _ _ _ v -> gatherUsedVars v
+          SetBind{} -> pure ()
+          Call{} -> pure ()
+          Block{} -> pure ()
+          Pure _ v -> gatherUsedVars v
+          NoOp{} -> pure ()
+          DoWhile{} -> pure ()
+          IfThenElse _ tf _ _ -> gatherUsedVars tf
+          Effect{} -> error "TODO: Effect"
+
+    fromContextM_ (\name _ v ->
+                      when (symbolVal name `Set.member` usedVars)
+                        (v `listenWith` (\_ _ -> requestRefresh))) cvConfig'
 
     -------------------------------------------------------
     -- Tools
