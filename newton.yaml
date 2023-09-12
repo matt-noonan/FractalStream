@@ -1,0 +1,58 @@
+viewer:
+  style: complex-plane
+  title: Roots of {f}
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/128
+  code: |
+        init k : Z to 0
+        init lastZ : C to 0
+        loop
+          set lastZ to z
+          set z to z - f / df
+          set k to k + 1
+          k < maxIters and |z - lastZ| > tol
+        if k = maxIters then
+          black
+        else
+          init c : Color to if re(z) > 0 then red else if im(z) > 0 then yellow else blue
+          init s : R to k
+          set s to cos (s pi / 10)
+          set s to s s
+          blend (s, dark c, light c)
+
+setup:
+  title: Newton's method setup
+  size: 200x200
+  vertical-contents:
+    - text-entry:
+        label: "f(z) = "
+        value: "z^3 - 1"
+        type: C
+        environment:
+          z: C
+        variable: f
+    - text-entry:
+        label: "f'(z) = "
+        value: "3 z^2"
+        type: C
+        environment:
+          z: C
+        variable: df
+
+configuration:
+  title: Newton's method configuration
+  size: 400x200
+  vertical-contents:
+    - text-entry:
+        label: "closeness"
+        value: "0.01"
+        type: R
+        variable: tol
+    - text-entry:
+        label: "Max. iterations: "
+        value: "100"
+        type: Z
+        variable: maxIters

@@ -47,6 +47,7 @@ data ComplexViewer = ComplexViewer
   , cvOverlay :: Maybe String
   , cvTools :: [ComplexTool]
   }
+  deriving Show
 
 instance FromJSON ComplexViewer where
   parseJSON = withObject "complex viewer" $ \o -> do
@@ -97,6 +98,9 @@ cloneComplexViewer cv = do
 
 newtype StringOf (t :: FSType) =
   StringOf { valueOf :: HaskellType t }
+
+instance KnownType t => Show (StringOf t) where
+  show (StringOf v) = showValue (typeProxy @t) v
 
 instance KnownType t => IsString (StringOf t) where
   fromString s =

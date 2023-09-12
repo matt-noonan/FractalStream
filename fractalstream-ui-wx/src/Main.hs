@@ -1,322 +1,307 @@
-{-# language QuasiQuotes #-}
 {- |
 Module       : Main
 Description  : Main entry point into FractalStream
 -}
 module Main where
 
-import Control.Concurrent
+import Actor.Ensemble
+import Actor.Configuration
+import Actor.Layout
+import Actor.Viewer.Complex
+import Actor.Tool
+import Actor.Event
+import UI.Definition (wxUI)
+import Backend.LLVM (withViewerCode', withJIT)
 
-import UI.Definition
+import Graphics.UI.WX hiding (Vertical, Horizontal)
+import qualified Graphics.UI.WXCore.Events as WX
+import Graphics.UI.WXCore.WxcClasses
+import Graphics.UI.WXCore.WxcDefs
+import qualified Data.Yaml as YAML
+
+import Control.Monad
+import qualified Data.Map as Map
+import Data.IORef
+import Data.Word
+
 
 main :: IO ()
-main = do
-    tid <- myThreadId
-    bound <- isCurrentThreadBound
-    capInfo <- threadCapability tid
-    putStrLn ("Hello from main, on thread " ++ show tid ++ " "
-              ++ show capInfo ++ " " ++ show bound)
-    defToUI "/Users/mnoonan/FractalStream/wiz0c.yaml"
-    putStrLn "main is done"
-{-
+main = wxMain
+
 wxMain :: IO ()
-wxMain = do
-    tid <- myThreadId
-    bound <- isCurrentThreadBound
-    capInfo <- threadCapability tid
-    putStrLn ("Hello from wxMain, on thread " ++ show tid ++ " " ++ show capInfo ++ " " ++ show bound)
-    let env = declare @"maxIters" IntegerType
-            $ declare @"maxRadius" RealType
-            $ declare @"x" RealType
-            $ declare @"y" RealType
-            $ endOfDecls
-    withCompiledCode env juliaProgram0 $ \kernel -> do
-      let action bs ss dz z out = runJX kernel out (fromIntegral bs) (fromIntegral ss) dz 100 10 z
-      wxView viewport action mainViewer
-  where
-    viewport = flippedRectangle (-2.5, 2) (1.5, -2)
+wxMain = withJIT $ \jit -> start $ do
+  let getProject = do
+        prj <- fileOpenDialog objectNull True True
+               "Open a FractalStream 2 project"
+               [ ("FractalStream 2 project files", ["*.yaml"])
+               , ("All files", ["*.*"])
+               ] "" ""
+        maybe getProject pure prj
 
-flag :: String
-flag = [r|
-if x < -0.65 then
-  dark green
-else if x > 0.65 then
-  orange
-else
-  white|]
+  yamlFile <- getProject
 
-grid :: String
-grid = [r|
-init z : C to x + i y
-init fz : C to sin z
-init dfz : C to cos z
-init size : R to 0.01 * |dfz|
-if |sin (pi re(fz))| < size or |sin (pi im(fz))| < size then
-  light blue
-else
-  white|]
+  -- TODO: verify that the code for each viewer, tool, etc works properly
+  --       with the splices declared by the setup config. e.g. all code
+  --       typechecks with the splice's types, each splice's environment
+  --       is contained in the actual code environment at each use, etc.
+  --
+  --       If the ensemble passes this verification, then the end-user
+  --       should not be able to cause a compilation failure via the
+  --       UI.
+  if True
+    then do
+      ensemble <- YAML.decodeFileThrow yamlFile
+      let jitter = ComplexViewerCompiler (withViewerCode' jit)
+      runEnsemble jitter wxUI ensemble
+    else do
+      editProject yamlFile
 
-mandelProgram0 :: String
-mandelProgram0 = [r|
-init C : C to x + i y
-init z : C to 0
-init k : Z to 0
-loop
-  set z to z z + C
-  set k to k + 1
-  |z| < maxRadius and k < maxIters
-if k = maxIters then
-  black
-else
-  init c1 : Color to if im(z) > 0 then blue else yellow
-  init c2 : Color to if im(z) > 0 then green else orange
-  init s : R to k + 1 - (log (log (|z|^2) / 2)) / log 2
-  set s to cos (s pi / 10)
-  set s to s s
-  blend (s, c1, c2)|]
+editProject :: FilePath -> IO ()
+editProject yamlFile = do
+  Ensemble{..} <- YAML.decodeFileThrow yamlFile
 
-juliaProgram0 :: String
-juliaProgram0 = [r|
-init C : C to -0.12256 + 0.74486i
-init z : C to x + i y
-init k : Z to 0
-init r2 : R to maxRadius * maxRadius
-loop
-  set z to z z + C
-  set k to k + 1
-  re(z) re(z) + im(z) im(z) < r2 and k < maxIters
-if k = maxIters then
-  black
-else
-  init c1 : Color to if im(z) > 0 then blue else yellow
-  init c2 : Color to if im(z) > 0 then green else orange
-  init s : R to k + 1 - (log (log (|z|^2) / 2)) / log 2
-  set s to cos (s pi / 10)
-  set s to s s
-  blend (s, c1, c2)
-|]
+  print Ensemble{..}
 
-mandelProgram :: String
-mandelProgram = [r|
-init C : C to -0.11 + 0.75i
-init z : C to x + i y
-init k : Z to 0
-init r2 : R to maxRadius * maxRadius
-loop
-  set z to z z + C
-  set k to k + 1
-  |z|^2 < r2 and k < maxIters
-if k >= maxIters then
-  black
-else
-  init s : R to k + 1 - (log ((log (|z|^2)) / 2)) / log 2
-  set s to mod(s, 10) / 10
-  init c1 : Color to blue
-  init c2 : Color to white
-  if im z > 0 then
-    set c1 to yellow
-    set c2 to red
-  else
-    pass
-  if s < 0.5 then
-    blend(2s, c1, c2)
-  else
-    blend(2s - 1, c2, c1)|]
+  f <- frame [ text := "Editing project " ++ yamlFile
+             , on resize := propagateEvent
+             ]
 
-mandelProgram' :: String
-mandelProgram' = [r|
-init curImage : bitmap <- render in x y plane (viewWidth,viewHeight) (-2,2) (1 / 128, 1 / 128)
-  init C : C to -0.11 + 0.75i
-  set complex z to x + i y
-  set integer k to 0
-  set real r2 to maxRadius * maxRadius
-  loop
-    set z to z z + C
-    set k to k + 1
-    re z re z + im z im z < r2 and k < maxIters
-  if k >= maxIters then
-    black
-  else
-    set s : R to k + 1 - (log ((log (|z|^2)) / 2)) / log 2
-    set s to mod(s, 10) / 10
-    set c1 : Color to blue
-    set c2 : Color to white
-    if im z > 0 then
-      set c1 to yellow
-      set c2 to red
-    else
-      pass
-    if s < 0.5 then
-      blend(2s, c1, c2)
-    else
-      blend(2s - 1, c2, c1)|]
+  let splitter pp props0 = feed2 props0 (wxSP_3D .+.
+                                         wxSP_3DBORDER .+.
+                                         wxSP_3DSASH .+.
+                                         wxSP_LIVE_UPDATE) $
+        initialContainer $ \i r -> \props flags  ->
+        do p <- splitterWindowCreate pp i r flags
+           windowSetFocus p
+           set p props
+           return p
 
-mandelProgram'' :: String
-mandelProgram'' = [r|
-curImage : Image
-curImage ⟵ render in x y plane (viewWidth,viewHeight) (-2,2) (1 / 128, 1 / 128)
-  C : Complex
-  C = -0.11 + 0.75i
-  z : Complex
-  z = x + i y
+  sw <- splitter f [ visible := True ]
 
-  repeat maxIters times with counter k
-      z = z² + C
-  while |z| < maxRadius
+  pf <- panel sw []
+  p0 <- panel pf [ ]
 
-  if k = maxIters then
-    black
-  else
-    s : Real
-    s = if use_smoothing then k + 1 - log (log |z|² / 2) / log 2 else k
-    s = mod (s, speed) / speed
-    c₁ = blue  : Color
-    c₂ = white : Color
-    if im z > 0 then
-        c₁ = yellow
-        c₂ = red
-    if s < 0.5 then
-      blend(2s, c₁, c₂)
-    else
-      blend(2s - 1, c₂, c₁)|]
+  tc <- treeCtrl sw [ text := "test"
+                    , visible := True ]
 
-traceProgram :: String
-traceProgram = [r|
-init C : C to -0.11 + 0.75i
-init z : C to posX + posY i
-init z0 : C to 0
-init k : Z to 0
-erase
-use white for line
-loop
-    set z0 to z
-    set z to z z + C
-    draw point at z0
-    draw line from z0 to z
-    set k to k + 1
-    k < 100|]
+  treeItemPanel <- newIORef []
+  currentPanel <- newIORef p0
 
-traceProgram' :: String
-traceProgram' = [r|
-C : ℂ
-C = -0.11 + 0.75i
+  do
+    let addItem' i title mkPanel = do
+          it <- treeCtrlAppendItem tc i title (-1) (-1) objectNull
+          let tp = do
+                p <- panel pf []
+                mkPanel it p
+                pure p
+          modifyIORef' treeItemPanel ((it, tp):)
+          pure it
+        addItem i title = addItem' i title (\_ _ -> pure ())
 
-z : ℂ
-z = x + i y
+    treeCtrlAddRoot tc "Project" (-1) (-1) objectNull
+    root <- treeCtrlGetRootItem tc
 
-z₀ : ℂ
-z₀ = 0
+    let tcFromLayout r0 teName =
+         let go r = \case
+               Vertical xs -> forM_ xs (go r)
+               Horizontal xs -> do
+                 sbs <- addItem r "side-by-side"
+                 forM_ xs (go sbs)
+               Panel s x -> do
+                 g <- addItem r ("group \"" ++ s ++ "\"")
+                 go g x
+               Tabbed ts -> do
+                 tb <- addItem r "tab group"
+                 forM_ ts $ \(t, x) -> do
+                   i <- addItem tb ("Tab \"" ++ t ++ "\"")
+                   go i x
+               TextBox _ (Dummy YamlVar{..}) -> do
+                 void $ addItem r (teName ++ " for \"" ++ varVariable ++ "\"")
+               CheckBox _ (Dummy YamlVar{..}) -> do
+                 void $ addItem r ("Checkbox for \"" ++ varVariable ++ "\"")
+               ColorPicker _ (Dummy YamlVar{..}) -> do
+                 void $ addItem r ("Color picker for \"" ++ varVariable ++ "\"")
+         in go r0
 
-erase
-use white for line
-repeat 100 times
-    z₀ = z
-    z  = z² + C
-    draw point at z₀
-    draw line from z₀ to z
-|]
+    whenJust ensembleSetup $ \Configuration{..} -> do
+      let title x = "Setup \"" ++ x ++ "\""
+      i <- addItem' root (title coTitle) $ \this p -> do
+        te <- textEntry p [ text := coTitle
+                          , processEnter := True
+                          ]
+        set te [ on command := do
+                   newText <- get te text
+                   treeCtrlSetItemText tc this (title newText)
+               ]
+        set p [ layout := fill $ row 5
+                  [ margin 3 (label "Title of setup window: ")
+                  , hfill (widget te)] ]
 
-traceTool :: Tool '[Draw]
-traceTool = Tool{..}
-  where
-    toolName = "Trace"
-    toolHelp = "Click on a point to draw its trace"
+      tcFromLayout i "Expression" coContents
 
-    toolSettings = Settings{..}
-    settingsList  = Bind (Proxy @"steps") IntegerType
-                    (Setting Proxy (Scalar IntegerType 100)
-                      (Just ("Trace steps",
-                              [ InputValidator
-                                "Trace steps must be non-negative"
-                                validator ])))
-                    $ EmptyContext
-    settingsEnv = declare @"steps" IntegerType endOfDecls
-    settingsTitle = "Trace settings"
-    onChanged     = Nothing
+    whenJust ensembleConfiguration $ \Configuration{..} -> do
+      let title x = "Configuration \"" ++ x ++ "\""
+      i <- addItem' root (title coTitle) $ \this p -> do
+        te <- textEntry p [ text := coTitle
+                          , processEnter := True ]
+        set te [ on command := do
+                   newText <- get te text
+                   treeCtrlSetItemText tc this (title newText)
+               ]
+        set p [ layout := fill $ row 5
+                  [ margin 3 (label "Title of configuration window: ")
+                  , hfill (widget te)] ]
+      tcFromLayout i "Value" coContents
 
-    onClick = Just ( Fix
-                   $ Effect Proxy Proxy VoidType
-                   $ Provide posEnv settingsEnv VoidType trace)
-    onMouseDown = Nothing
-    onMouseUp = Nothing
-    onMotion = Nothing
-    onDrag = Nothing
-    buttons = []
-    env  = declare @"posX" RealType
-         $ declare @"posY" RealType
-         $ settingsEnv
-    trace = case parseCode (EP (ParseEff noParser $ ParseEff drawEffectParser NoEffs)) env EmptyContext VoidType traceProgram of
-      Right p -> p
-      Left e  -> error (show e)
 
-    validator = case parseValue settingsEnv EmptyContext BooleanType "steps > 0" of
-      Right p -> p
-      Left e -> error (show e)
+    forM_ ensembleViewers $ \ComplexViewer{..} -> do
+      let title x = "ℂ viewer \"" ++ x ++ "\""
+      v <- addItem' root (title cvTitle) $ \this p -> do
+        te <- textEntry p [ text := cvTitle
+                          , processEnter := True
+                          ]
+        set te [ on command := do
+                   newText <- get te text
+                   treeCtrlSetItemText tc this (title newText)
+               ]
+        ce <- codeEditor f p cvCode
+        set p [ layout := hfill $ column 5 $
+                [ fill $ row 5
+                  [ margin 3 (label "Title of complex viewer: ")
+                  , hfill (widget te) ]
+                , hglue
+                , fill (margin 10 $ widget ce)
+                ] ]
 
-mainViewer :: Viewer
-mainViewer = Viewer{..}
-  where
-    onTimer = Nothing
-    viewerTools = [traceTool]
-    viewerSettings = Settings{..}
-    settingsList = Bind (Proxy @"maxRadius") RealType
-                     (Setting Proxy (Scalar RealType 10)
-                       (Just ("Max. radius", [])))
-                 $ Bind (Proxy @"maxIters") IntegerType
-                     (Setting Proxy (Scalar IntegerType 100)
-                       (Just ("Max. iterations", [])))
-                 $ EmptyContext
-    settingsEnv = contextToEnv settingsList
+      void $ addItem v "Default navigation tool"
+      forM_ cvTools $ \(ComplexTool ParsedTool{..}) -> do
+        t <- addItem v ("\"" ++ tiName ptoolInfo ++ "\" tool")
+        whenJust ptoolConfig $ \Configuration{..} -> do
+          i <- addItem t ("Tool configuration \"" ++ coTitle ++ "\"")
+          tcFromLayout i "Expression" coContents
+        let ParsedEventHandlers{..} = ptoolEventHandlers
+        whenJust pehOnClick $ \(xCoord, yCoord, code) -> do
+          addItem' t "Click event handler" $ \_ p -> do
+            cb <- checkBox p [ text := "Use viewer coordinate as click coordinate"
+                             , checkable := True
+                             , checked := True ]
+            teX <- textEntry p [ text := xCoord
+                               , enabled := False ]
+            teY <- textEntry p [ text := yCoord
+                               , enabled := False ]
+            ce <- codeEditor f p code
+            set p [ layout := fill $ column 5
+                    [ fill (widget cb)
+                    , hglue
+                    , fill $ row 5 [ widget teX, widget teY ]
+                    , hglue
+                    , fill (margin 10 $ widget ce) ]]
+        whenJust pehOnDoubleClick $ \(xCoord, yCoord, code) -> do
+          addItem' t "Double click event handler" $ \_ p -> do
+            cb <- checkBox p [ text := "Use viewer coordinate as double-click coordinate"
+                             , checkable := True
+                             , checked := True ]
+            teX <- textEntry p [ text := xCoord
+                               , enabled := False ]
+            teY <- textEntry p [ text := yCoord
+                               , enabled := False ]
+            ce <- codeEditor f p code
+            set p [ color := rgb (0x80 :: Word8) 0 0
+                  , layout := fill $ column 5
+                    [ expand (widget cb)
+                    , expand (row 5 [ widget teX, widget teY ])
+                    , expand (widget ce) ]]
+        whenJust pehOnDrag $ \_ -> do
+          addItem' t "Drag event handler" $ \_ p -> do
+            cb <- checkBox p [ text := "Use viewer coordinate as dragged-to coordinate"
+                             , checkable := True
+                             , checked := True ]
+            set p [ layout := widget cb ]
+        whenJust pehOnDragDone $ \_ -> do
+          addItem' t "Drag finsihed event handler" $ \_ p -> do
+            cb <- checkBox p [ text := "Use viewer coordinate as final drag coordinate"
+                             , checkable := True
+                             , checked := True ]
+            set p [ layout := widget cb ]
+        forM_ (Map.toList pehOnTimer) $ \(tmr, _) -> do
+          addItem t ("Timer event handler for \"" ++ tmr ++ "\"")
+          pure ()
+        whenJust pehOnRefresh $ \_ -> do
+          addItem t "View refresh event handler"
+          pure ()
+        whenJust pehOnActivated $ \_ -> do
+          addItem t "Tool activation event handler"
+          pure ()
+        whenJust pehOnDeactivated $ \_ -> do
+          addItem t "Tool deactivation event handler"
+          pure ()
 
-    settingsTitle = "FractalStream demo viewer settings"
-    onChanged = Nothing
-    onResize  = Nothing
-    onRefresh = Just ( Fix
-                     $ Effect Proxy Proxy VoidType
-                     $ Provide EmptyEnvProxy settingsEnv VoidType mandelCode)
-    viewToModel = case parseValue envV2M EmptyContext (PairType RealType RealType) v2m of
-      Right c -> c
-      Left e -> error (show e)
-    modelToView = case parseValue envM2V EmptyContext (PairType RealType RealType) m2v of
-      Right c -> c
-      Left e -> error (show e)
+  let updatePanelForSelection = do
+        i <- treeCtrlGetSelection tc
+        fmap (filter ((== i) . fst)) (readIORef treeItemPanel) >>= \case
+          [(_, mkPanel)] -> do
+            sash <- splitterWindowGetSashPosition sw
+            p <- mkPanel
+            set pf [ layout := row 5 []]
+            oldP <- readIORef currentPanel
+            cs <- get oldP clientSize
+            objectDelete oldP
+            set p [ clientSize := cs ]
+            writeIORef currentPanel p
+            set pf [ layout := fill (stretch $ widget p) ]
+            refit f
+            splitterWindowSetSashPosition sw sash True
+          _ -> pure () -- hmmmm...
+        propagateEvent
 
-    envV2M = declare @"viewX" RealType
-           $ declare @"viewY" RealType
-           $ env
+  WX.windowOnEvent tc [wxEVT_COMMAND_TREE_SEL_CHANGED]
+    updatePanelForSelection (const updatePanelForSelection)
 
-    envM2V = declare @"modelX" RealType
-           $ declare @"modelY" RealType
-           $ env
+  set pf [ layout := fill (stretch $ widget p0) ]
+  splitterWindowSetBorderSize sw 20
+  set f [ layout := fill (vsplit sw 5 200 (margin 5 $ fill (widget tc))
+                           (margin 5 $ fill (stretch $ widget pf))) ]
 
-    env = declare @"maxRadius" RealType
-        $ declare @"maxIters"  IntegerType
-        $ endOfDecls
+whenJust :: Maybe a -> (a -> IO b) -> IO ()
+whenJust mx f = maybe (pure ()) (void . f) mx
 
-    v2m = "((viewX - 256) / 128, (viewY - 256) / 128)"
-    m2v = "(128 modelX + 256, 128 modelY + 256)"
+codeEditor :: Frame () -> Window a -> String -> IO (StyledTextCtrl ())
+codeEditor ce cep code = do
+    stc <- styledTextCtrl cep [ clientSize := sz 100 100 ]
+    styledTextCtrlSetMarginWidth stc 0 30
+    styledTextCtrlSetMarginWidth stc 1 0
+    styledTextCtrlSetMarginWidth stc 2 0
+    -- see Style Definition at https://www.scintilla.org/ScintillaDoc.html#Styling
+    lum <- do
+      col <- get ce bgcolor
+      let rc :: Float = colorRed col / 255
+          gc = colorGreen col / 255
+          bc = colorBlue col / 255
+      pure (0.299 * rc + 0.587 * gc + 0.114 * bc)
+    if lum > 0.5
+      then do
+        styledTextCtrlStyleSetSpec stc  0 "fore:#000000,back:#f8f8f8"
+        styledTextCtrlStyleSetSpec stc 32 "fore:#000000,back:#f8f8f8"
+        styledTextCtrlStyleSetSpec stc 33 "fore:#808080,back:#f0f060"
+        styledTextCtrlSetCaretLineBackground stc (rgb 240 240 (255 :: Word8))
+      else do
+        styledTextCtrlStyleSetSpec stc  0 "fore:#dbdbdb,back:#14191e"
+        styledTextCtrlStyleSetSpec stc 32 "fore:#dbdbdb,back:#14191e"
+        styledTextCtrlStyleSetSpec stc 33 "fore:#a0a0a0,back:#101040"
+        styledTextCtrlSetCaretLineBackground stc (rgb 0x20 0x30 (0x38 :: Word8))
 
-    mandelCode = case parseCode (EP (ParseEff noParser $ ParseEff renderEffectParser NoEffs)) settingsEnv EmptyContext VoidType mandelProgram' of
-      Right c -> c
-      Left e  -> error (show e)
+    styledTextCtrlStyleSetFaceName stc 0 "Monaco"
+    -- Set the minimum size, or else Scintilla will default to 2000 pixels(!)
+    styledTextCtrlSetScrollWidth stc 100
+    styledTextCtrlSetCaretLineVisible stc True
 
-mandel' :: Int -> Double -> Complex Double -> FSColor.Color
-mandel' maxIters maxRadius (x :+ y) =
-  let ctx = Bind (Proxy @"x") RealType x
-          $ Bind (Proxy @"y") RealType y
-          $ Bind (Proxy @"maxRadius") RealType maxRadius
-          $ Bind (Proxy @"maxIters") IntegerType (fromIntegral maxIters)
-          $ EmptyContext
-  in evalState (simulate NoHandler prog) (ctx, ())
- where
-   prog = case parseCode (EP NoEffs) env EmptyContext ColorType mandelProgram of
-     Right p -> p
-     Left _  -> case parseCode (EP NoEffs) env EmptyContext ColorType "dark red" of
-       Right p -> p
-       Left e  -> error (show e) -- should be unreachable
-   env = declare @"x" RealType
-       $ declare @"y" RealType
-       $ declare @"maxRadius" RealType
-       $ declare @"maxIters" IntegerType
-       $ endOfDecls
--}
+    styledTextCtrlSetUseTabs stc False
+    styledTextCtrlSetTabWidth stc 4
+    styledTextCtrlSetIndent stc 4
+    styledTextCtrlSetTabIndents stc True
+    styledTextCtrlSetBackSpaceUnIndents stc True
+    styledTextCtrlSetIndentationGuides stc True
+    styledTextCtrlSetViewWhiteSpace stc 3
+
+    styledTextCtrlSetText stc code
+    pure stc

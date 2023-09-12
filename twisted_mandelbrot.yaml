@@ -1,0 +1,125 @@
+viewers:
+  - title: Parameter space
+    style: complex-plane
+    size: 512x512
+    resizable: true
+    z-coord: C
+    initial-center: 0
+    initial-pixel-size: 1/128
+    code: |
+        init z : C to 0
+        init k : Z to 0
+        loop
+          set z to f
+          init d : R to |z - twist_center|
+          if d > r0 and d < r1 then
+            init theta : R to 2 pi (d - r0) / (r1 - r0)
+            set z to e^(i theta) (z - twist_center) + twist_center
+          set k to k + 1
+          k < maxIters and not stop
+        if k = maxIters then
+          black
+        else
+          init c1 : Color to if im(z) > 0 then blue else yellow
+          init c2 : Color to if im(z) > 0 then green else red
+          init s : R to k + 1 - (log (log (|z|^2 / 2 log (maxRadius)))) / log 2
+          set s to cos (s pi / 10)
+          set s to s s
+          blend (s, c1, c2)
+    tools:
+      - name: "Select C"
+        shortcut: s
+        actions:
+          - event: click
+            code: output C to selectedC
+          - event: drag
+            code: output C to selectedC
+
+  - title: Twisted dynamical plane
+    style: complex-plane
+    size: 512x512
+    resizable: true
+    z-coord: z
+    initial-center: 0
+    initial-pixel-size: 1/128
+    code: |
+        init C : C to selectedC
+        init k : Z to 0
+        loop
+          set z to f
+          init d : R to |z - twist_center|
+          if d > r0 and d < r1 then
+            init theta : R to 2 pi (d - r0) / (r1 - r0)
+            set z to e^(i theta) (z - twist_center) + twist_center
+          set k to k + 1
+          k < maxIters and not stop
+        if k = maxIters then
+          black
+        else
+          init c1 : Color to if im(z) > 0 then blue else yellow
+          init c2 : Color to if im(z) > 0 then green else red
+          init s : R to k + 1 - (log (log (|z|^2 / 2 log (maxRadius)))) / log 2
+          set s to cos (s pi / 10)
+          set s to s s
+          blend (s, c1, c2)
+
+setup:
+  title: Parametric complex dynamics
+  size: 200x200
+  vertical-contents:
+    - text-entry:
+        label: "Iterate f(z) = "
+        value: "z^2 + C"
+        type: C
+        environment:
+          z: C
+          C: C
+        variable: f
+    - text-entry:
+        label: "until"
+        value: "|z| > maxRadius"
+        environment:
+          z: C
+          C: C
+          maxRadius: R
+        type: Boolean
+        variable: stop
+
+configuration:
+  title: Configuration
+  size: 400x200
+  vertical-contents:
+    - text-entry:
+        label: "Selected value of C:"
+        value: -0.1226 + 0.7449i
+        type: C
+        variable: selectedC
+    - panel:
+        title: "Dehn twist"
+        vertical-contents:
+          - text-entry:
+              label: "Center of twist:"
+              value: -0.267 + 0.478i
+              type: C
+              variable: twist_center
+          - horizontal-contents:
+              - text-entry:
+                  label: "Inner radius"
+                  value: 0.2
+                  type: R
+                  variable: r0
+              - text-entry:
+                  label: "Outer radius"
+                  value: 0.5
+                  type: R
+                  variable: r1
+    - text-entry:
+        label: "Max. iterations: "
+        value: "100"
+        type: Z
+        variable: maxIters
+    - text-entry:
+        label: "Max. radius: "
+        value: 10
+        type: R
+        variable: maxRadius

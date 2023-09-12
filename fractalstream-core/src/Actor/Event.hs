@@ -74,6 +74,7 @@ data ParsedEventHandlers = ParsedEventHandlers
   , pehOnActivated :: Maybe String
   , pehOnDeactivated :: Maybe String
   }
+  deriving Show
 
 data ComplexParsedEventHandlers = ComplexParsedEventHandlers
   { cpehOnClick :: Maybe (Either String String, String)
@@ -85,6 +86,7 @@ data ComplexParsedEventHandlers = ComplexParsedEventHandlers
   , cpehOnActivated :: Maybe String
   , cpehOnDeactivated :: Maybe String
   }
+  deriving Show
 
 toEventHandlers :: forall env
                  . EnvironmentProxy env

@@ -21,6 +21,7 @@ data Ensemble = Ensemble
   , ensembleConfiguration :: Maybe Configuration
   , ensembleViewers :: [ComplexViewer]
   }
+  deriving Show
 
 instance FromJSON Ensemble where
   parseJSON = withObject "ensemble" $ \o -> do

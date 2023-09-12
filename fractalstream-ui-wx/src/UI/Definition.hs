@@ -2,7 +2,7 @@
 {-# options_ghc -Wno-orphans #-}
 
 module UI.Definition
-  ( defToUI
+  ( wxUI
   ) where
 
 import Language.Environment
@@ -10,8 +10,6 @@ import Language.Type
 import Data.Color (colorToRGB, rgbToColor)
 import Control.Concurrent.MVar
 import Control.Monad.State hiding (get)
-
-import qualified Data.Yaml as YAML
 
 import Graphics.UI.WX hiding (pt, glue, when, tool, Object, Dimensions, Horizontal, Vertical, Layout, Color)
 import qualified Graphics.UI.WXCore.Events as WX
@@ -28,11 +26,8 @@ import Data.IORef
 import Data.Word
 import Foreign (Ptr)
 
-import Backend.LLVM (withViewerCode', withJIT)
-
 import Actor.Layout
 import Actor.UI
-import Actor.Ensemble
 import Actor.Tool
 import Actor.Viewer.Complex
 import Actor.Event (Event(..))
@@ -49,25 +44,6 @@ import Fcf (Exp, Eval, Pure1)
 data Unit :: (Environment, FSType) -> Exp Type
 type instance Eval (Unit et) = ()
 
-defToUI :: FilePath -> IO ()
-defToUI yamlFile = withJIT $ \jit -> start $ do
-
-  ensemble <- parseEnsembleFile yamlFile
-
-  -- TODO: verify that the code for each viewer, tool, etc works properly
-  --       with the splices declared by the setup config. e.g. all code
-  --       typechecks with the splice's types, each splice's environment
-  --       is contained in the actual code environment at each use, etc.
-  --
-  --       If the ensemble passes this verification, then the end-user
-  --       should not be able to cause a compilation failure via the
-  --       UI.
-  let jitter = ComplexViewerCompiler (withViewerCode' jit)
-  runEnsemble jitter wxUI ensemble
-
-parseEnsembleFile :: String -> IO Ensemble
-parseEnsembleFile filePath = YAML.decodeFileThrow filePath
-
 wxUI :: UI
 wxUI = UI {..}
   where
@@ -78,6 +54,8 @@ wxUI = UI {..}
     f <- frame [ text := title
                , on resize := propagateEvent
                ]
+
+    WX.windowOnClose f (set f [ visible := False ])
 
     innerLayout <- generateWxLayout f setupUI
     compileButton <- button f [ text := "Go!"
@@ -94,6 +72,8 @@ wxUI = UI {..}
                , on resize := propagateEvent
                ]
 
+    WX.windowOnClose f (set f [ visible := False ])
+
     innerLayout <- generateWxLayout f ui
     set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ] ]
 
@@ -106,6 +86,8 @@ wxUI = UI {..}
     f <- frame [ text := vpTitle
                , on resize := propagateEvent
                ]
+    WX.windowOnClose f (set f [ visible := False ])
+
     let (width, height) = (fst vpSize, snd vpSize)
     p <- panel f [ clientSize := sz width height ]
 
@@ -133,9 +115,11 @@ wxUI = UI {..}
 
     -- trigger repaint
     let triggerRepaint = do
-          repaint p
-          windowRefresh p True -- True=redraw background
-          windowUpdateWindowUI p
+          isVisible <- get f visible
+          when isVisible $ do
+            repaint p
+            windowRefresh p True -- True=redraw background
+            windowUpdateWindowUI p
 
     renderId <- newIORef (0 :: Int)
 
@@ -562,24 +546,39 @@ generateWxLayout frame0 wLayout = do
 
  where
 
+   go :: Dynamic dyn => Window a -> Layout dyn -> IO WX.Layout
    go p = \case
 
-     Panel _pTitle inner -> do
-       p' <- panel p []
+     Panel pTitle inner -> do
+       p' <- panel p [ ]
        go p' inner
-       pure (fill $ widget p')
+       pure (fill $ boxed pTitle (widget p'))
 
-     Vertical parts ->
-       fill . column 5 <$> mapM (go p) parts
+     Vertical parts -> do
+       p' <- panel p []
+       lo <- fill . column 5 <$> mapM (go p') parts
+       set p' [ layout := lo ]
+       pure (fill (widget p'))
 
-     Horizontal parts ->
-         fill
-       . hstretch
-       . margin 10
-       . row 5
-       <$> mapM (go p) parts
+     Horizontal parts -> do
+       p' <- panel p []
+       lo <- fill . margin 10 . row 5 <$> mapM (go p') parts
+       set p' [ layout := lo ]
+       pure (fill (widget p'))
 
-     Tabbed _ -> error "Todo, tabbed"
+     Tabbed ts -> do
+       nb <- feed2 [ visible := True ] 0 $
+             initialWindow $ \iD rect' ps s -> do
+                   e <- notebookCreate p iD rect' s
+                   set e ps
+                   pure e
+       forM_ ts $ \(lab, x) -> do
+         c <- panel nb []
+         page <- go c x
+         set c [ layout := page ]
+         notebookAddPage nb c lab True (-1)
+       notebookSetSelection nb 0
+       pure (fill $ widget nb)
 
      ColorPicker (Label lab) v -> do
        (r0, g0, b0) <- colorToRGB <$> getDynamic v
@@ -595,7 +594,7 @@ generateWxLayout frame0 wLayout = do
                  b = colorBlue c
              void (setDynamic v (rgbToColor (r, g, b)))
        WX.windowOnEvent picker [wxEVT_COMMAND_COLOURPICKER_CHANGED] newPick (const newPick)
-       pure (fill $ row 5 [ marginTop (label lab), hfill (widget picker) ])
+       pure (fill $ row 5 [ margin 3 (label lab), hfill (widget picker) ])
 
      CheckBox (Label lab) v -> do
        initial <- getDynamic v
@@ -647,7 +646,7 @@ generateWxLayout frame0 wLayout = do
                                              ])
               ]
        listenWith v (\_ newText -> set te [ text := newText ])
-       pure (fill $ row 5 [ marginTop (label lab), hfill (widget te) ])
+       pure (fill $ row 5 [ margin 3 (label lab), hfill (widget te) ])
 
 renderTile' :: Valued w
             => IORef Int

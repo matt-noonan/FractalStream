@@ -9,7 +9,7 @@ viewer:
   code: |
         init k : Z to 0
         loop
-          set z to z^2 + C
+          set z to f
           init d : R to |z - twist_center|
           if d > r0 and d < r1 then
             init theta : R to 2 pi (d - r0) / (r1 - r0)
@@ -63,12 +63,12 @@ configuration:
         type: C
         variable: twist_center
     - text-entry:
-        label: "r"
+        label: "Inner radius"
         value: 0.2
         type: R
         variable: r0
     - text-entry:
-        label: "R"
+        label: "Outer radius"
         value: 0.5
         type: R
         variable: r1

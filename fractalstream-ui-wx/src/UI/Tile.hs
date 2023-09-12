@@ -82,7 +82,7 @@ renderTile :: (Word32 -> Word32 -> Word32 -> Complex Double -> Complex Double ->
                            --   forks a task which draws into it.
 
 renderTile renderingAction (width, height) mRect = do
-    putStrLn ("renderTile at w=" ++ show width ++ " h=" ++ show height)
+    --putStrLn ("renderTile at w=" ++ show width ++ " h=" ++ show height)
 
     buf <- mallocForeignPtrBytes (3 * width * height)
 

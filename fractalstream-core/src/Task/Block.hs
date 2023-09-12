@@ -169,13 +169,15 @@ progressively render block = do
     subblocks <- shuffle [(x,y) | x <- xBlocks, y <- yBlocks]
 
     poolSize <- subtract 1 <$> getNumCapabilities
-    caps <- getNumCapabilities
-    putStrLn $ show caps ++ " capabilities, pool size " ++ show poolSize ++ " (w=" ++ show (xSize block) ++ ", h=" ++ show (ySize block) ++ ")"
+
+    when False $ do
+      caps <- getNumCapabilities
+      putStrLn $ show caps ++ " capabilities, pool size " ++ show poolSize ++ " (w=" ++ show (xSize block) ++ ", h=" ++ show (ySize block) ++ ")"
 
     let rates = [logSampleRate block] -- FIXME filter (<= logSampleRate block) [-4, -2, 0, 1] --, logSampleRate block]
 
     let todo = [(rate, x, y) | rate <- rates, (x,y) <- subblocks]
-    putStrLn $ "***** start @ rates=" ++ show rates
+    when False $ putStrLn $ "***** start @ rates=" ++ show rates
     start <- getCurrentTime
 
     forPool_ poolSize todo $ \(rate,(x,w),(y,h)) -> do
@@ -184,7 +186,8 @@ progressively render block = do
                        logSampleRate = rate }
 
     end <- getCurrentTime
-    putStrLn $ "***** " ++ show width ++ " x " ++ show height ++ " @ rates " ++ show rates
+    when False $ do
+      putStrLn $ "***** " ++ show width ++ " x " ++ show height ++ " @ rates " ++ show rates
                ++ " rendered in " ++ show (diffUTCTime end start)
 
 shuffle :: [a] -> IO [a]

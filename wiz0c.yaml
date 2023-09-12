@@ -83,40 +83,47 @@ setup:
 configuration:
   title: Configuration
   size: 400x200
-  vertical-contents:
-    - text-entry:
+  tabbed:
+    - title: "Iteration"
+      vertical-contents:
+        - text-entry:
+            label: "Max. iterations:"
+            value: "100"
+            type: Z
+            variable: maxIters
+        - text-entry:
+            label: "Max. radius:"
+            value: 10
+            type: R
+            variable: maxRadius
+    - title: "Coloring"
+      vertical-contents:
+        - text-entry:
+            label: "Smooth coloring exponent:"
+            value: 2
+            type: R
+            variable: p
+        - horizontal-contents:
+            - color-picker:
+                label: "Main gradient:"
+                variable: upper_color
+                value: blue
+            - color-picker:
+                label: ""
+                variable: other_upper_color
+                value: green
+        - horizontal-contents:
+            - color-picker:
+                label: "Alt gradient:"
+                variable: lower_color
+                value: yellow
+            - color-picker:
+                label: ""
+                variable: other_lower_color
+                value: red
+    - title: "Internal"
+      text-entry:
         label: "Selected value of C:"
         value: 0
         type: C
         variable: selectedC
-    - text-entry:
-        label: "Max. iterations:"
-        value: "100"
-        type: Z
-        variable: maxIters
-    - text-entry:
-        label: "Max. radius:"
-        value: 10
-        type: R
-        variable: maxRadius
-    - text-entry:
-        label: "Smooth coloring exponent:"
-        value: 2
-        type: R
-        variable: p
-    - color-picker:
-        label: "Main color 1:"
-        variable: upper_color
-        value: blue
-    - color-picker:
-        label: "Main color 2:"
-        variable: other_upper_color
-        value: green
-    - color-picker:
-        label: "Alt color 1:"
-        variable: lower_color
-        value: yellow
-    - color-picker:
-        label: "Alt color 2:"
-        variable: other_lower_color
-        value: red

@@ -20,6 +20,7 @@ data ParsedTool = ParsedTool
   , ptoolConfig :: Maybe Configuration
   , ptoolEventHandlers :: ParsedEventHandlers
   }
+  deriving Show
 
 data Tool = Tool
   { toolInfo :: ToolInfo
@@ -34,9 +35,13 @@ data ToolInfo = ToolInfo
   , tiShortHelp :: String
   , tiHelp :: String
   }
+  deriving Show
 
 newtype RealTool = RealTool ParsedTool
+  deriving Show
+
 newtype ComplexTool = ComplexTool ParsedTool
+  deriving Show
 
 instance FromJSON (String -> String -> Either String RealTool) where
   parseJSON = withObject "tool" $ \o -> do
