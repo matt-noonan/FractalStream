@@ -1,0 +1,117 @@
+viewers:
+  - title: Parameter plane
+    style: complex-plane
+    size: 512x512
+    resizable: true
+    z-coord: a
+    initial-center: 0
+    initial-pixel-size: 1/128
+    code: |
+        init r1 : C to 1
+        init r2 : C to -0.5 + a
+        init r3 : C to -0.5 - a
+        init z : C to 0
+        init k : Z to 0
+        init lastZ : C to 0
+        loop
+          set lastZ to z
+          init f : C to (z - r1) (z - r2) (z - r3)
+          init df : C to (z - r2) (z - r3) + (z - r1) (z - r3) + (z - r1) (z - r2)
+          set z to z - f / df
+          set k to k + 1
+          k < maxIters and |z - lastZ| > tol
+        init c : Color to grey
+        if |z - r1| < tol then
+          set c to red
+        else if |z - r2| < tol then
+          set c to green
+        else if |z - r3| < tol then
+          set c to blue
+        init s : R to k
+        set s to cos (s pi / 10)
+        set s to s s
+        if k = maxIters then black else blend (s, dark c, light c)
+
+    tools:
+      - name: "Select parameter"
+        shortcut: s
+        actions:
+          - event: click-or-drag
+            code: output a to selectedA
+
+  - title: Newton's method dynamics
+    style: complex-plane
+    size: 512x512
+    resizable: true
+    z-coord: z
+    initial-center: 0
+    initial-pixel-size: 1/128
+    code: |
+        init k : Z to 0
+        init lastZ : C to 0
+        init r1 : C to 1
+        init r2 : C to -0.5 + selectedA
+        init r3 : C to -0.5 - selectedA
+        loop
+          set lastZ to z
+          init f : C to (z - r1) (z - r2) (z - r3)
+          init df : C to (z - r2) (z - r3) + (z - r1) (z - r3) + (z - r1) (z - r2)
+          set z to z - f / df
+          set k to k + 1
+          k < maxIters and |z - lastZ| > tol
+        init c : Color to grey
+        if |z - r1| < tol then
+          set c to red
+        else if |z - r2| < tol then
+          set c to green
+        else if |z - r3| < tol then
+          set c to blue
+        init s : R to k
+        set s to cos (s pi / 10)
+        set s to s s
+        if k = maxIters then black else blend (s, dark c, light c)
+
+    tools:
+      - name: Trace
+        shortcut: t
+        actions:
+          - event: deactivated
+            code: erase
+          - event: click-or-drag
+            code: |
+              init k : Z to 0
+              init lastZ : C to 0
+              init r1 : C to 1
+              init r2 : C to -0.5 + selectedA
+              init r3 : C to -0.5 - selectedA
+              erase
+              loop
+                set lastZ to z
+                init f : C to (z - r1) (z - r2) (z - r3)
+                init df : C to (z - r2) (z - r3) + (z - r1) (z - r3) + (z - r1) (z - r2)
+                set z to z - f / df
+                draw point at lastZ
+                draw line from lastZ to z
+                set k to k + 1
+                k < maxIters and |z - lastZ| > tol
+              draw point at z
+
+configuration:
+  title: Newton's method configuration
+  size: 400x200
+  vertical-contents:
+    - text-entry:
+        label: "a ="
+        value: "0"
+        type: C
+        variable: selectedA
+    - text-entry:
+        label: "closeness"
+        value: "0.01"
+        type: R
+        variable: tol
+    - text-entry:
+        label: "Max. iterations: "
+        value: "100"
+        type: Z
+        variable: maxIters

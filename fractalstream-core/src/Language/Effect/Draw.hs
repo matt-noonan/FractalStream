@@ -117,9 +117,9 @@ pDrawEffect
   -> TypeProxy t
   -> Parser (Draw code '(env, t))
 pDrawEffect env = \case
-  VoidType -> pErase env
+  VoidType -> ((pErase env
            <|> pDrawCommand env
-           <|> pUseCommand env
+           <|> pUseCommand env) <* eol)
            <?> "draw command"
   _ -> mzero
 
@@ -132,8 +132,8 @@ pUseCommand :: EnvironmentProxy env
             -> Parser (Draw code '(env, 'VoidT))
 pUseCommand env = do
   tok_ "use"
-  c <- withEnvironment env (value_ EmptyContext)
-  tok_ "for"
+  valueTokens <- manyTill anyToken (tok_ "for")
+  c <- nest (parseValueFromTokens env EmptyContext ColorType valueTokens)
   ((tok_ "fill" $> SetFill env c)
    <|> (tok_ "line" $> SetStroke env c)
    <|> (tok_ "stroke" $> SetStroke env c)
@@ -152,29 +152,30 @@ pDrawCommand env = do
 
   where
 
-    pDrawPoint = do
+    pDrawPoint = withEnvironment env $ do
       tok_ "point" >> tok_ "at"
-      DrawPoint env <$> withEnvironment env (value_ EmptyContext)
+      DrawPoint env . Fix . C2R2 <$> value_ EmptyContext
 
-    pDrawLine = do
+    pDrawLine = withEnvironment env $ do
       tok_ "line" >> tok_ "from"
-      p1 <- withEnvironment env (value_ EmptyContext)
-      tok_ "to"
-      p2 <- withEnvironment env (value_ EmptyContext)
+      valueTokens <- manyTill anyToken (tok_ "to")
+      p1 <- Fix . C2R2 <$> nest (parseValueFromTokens env EmptyContext ComplexType valueTokens)
+      p2 <- Fix . C2R2 <$> value_ EmptyContext
       pure (DrawLine env p1 p2)
 
-    pDrawCircle fill = do
+    pDrawCircle fill = withEnvironment env $ do
       tok_ "circle" >> tok_ "at"
-      center <- withEnvironment env (value_ EmptyContext)
-      tok_ "with" >> tok_ "radius"
-      r <- withEnvironment env (value_ EmptyContext)
-      pure (DrawCircle env fill center r)
+      valueTokens <- manyTill anyToken (tok_ "with")
+      center <- Fix . C2R2 <$> nest (parseValueFromTokens env EmptyContext ComplexType valueTokens)
+      tok_ "radius"
+      r <- value_ EmptyContext
+      pure (DrawCircle env fill r center)
 
-    pDrawRect fill = do
+    pDrawRect fill = withEnvironment env $ do
       tok_ "rectangle" >> tok_ "from"
-      p1 <- withEnvironment env (value_ EmptyContext)
-      tok_ "to"
-      p2 <- withEnvironment env (value_ EmptyContext)
+      valueTokens <- manyTill anyToken (tok_ "to")
+      p1 <- Fix . C2R2 <$> nest (parseValueFromTokens env EmptyContext ComplexType valueTokens)
+      p2 <- Fix . C2R2 <$> value_ EmptyContext
       pure (DrawRect env fill p1 p2)
 
     pDrawFilled = do

@@ -7,7 +7,7 @@ module UI.Definition
 
 import Language.Environment
 import Language.Type
-import Data.Color (colorToRGB, rgbToColor)
+import Data.Color (Color, colorToRGB, rgbToColor)
 import Control.Concurrent.MVar
 import Control.Monad.State hiding (get)
 
@@ -31,6 +31,8 @@ import Actor.UI
 import Actor.Tool
 import Actor.Viewer.Complex
 import Actor.Event (Event(..))
+import Language.Effect.Draw
+
 import Data.DynamicValue
 import Language.Value (Value, ValueF(..))
 import Language.Code (CodeF(..))
@@ -106,8 +108,8 @@ wxUI = UI {..}
     -- Build the initial view model
     model <- variable [value := Model (0,0) (1/128,1/128)]
 
-    -- Provide a draw effect in order to obtain the tools
-    let theTools = cvTools' (\_ -> error "unimplemented draw effect")
+    -- Get the tools
+    let theTools = cvTools'
 
     -------------------------------------------------------
     -- Main view
@@ -142,6 +144,20 @@ wxUI = UI {..}
             set lastTileImage [value := img]
             set animate [value := Just (now, oldModel, img)]
 
+    let viewToModel pt = do
+            Size { sizeW = w, sizeH = h } <- get f clientSize
+            let dim = (w,h)
+                fullViewRect = rectangle (Viewport (0,0)) (Viewport dim)
+            modelRect <- modelToRect @(Double,Double) dim <$> get model value
+            pure (convertRect fullViewRect modelRect $ Viewport (pointX pt, pointY pt))
+        modelToView mdl pt = do
+          Size { sizeW = w, sizeH = h } <- get f clientSize
+          let dim = (w,h)
+              fullViewRect = rectangle (Viewport (0,0)) (Viewport dim)
+          let modelRect = modelToRect @(Double,Double) dim mdl
+          let Viewport (px, py) = convertRect modelRect fullViewRect pt
+          pure (point px py)
+
     -- Set paint handlers
     set p [ on paintRaw := \dc r _dirty -> get animate value >>= \case
               Nothing -> do
@@ -153,7 +169,11 @@ wxUI = UI {..}
                 get savedTileImage value >>= \case
                   Nothing -> pure ()
                   Just im -> drawCenteredImage im dc viewRect (w, h)
-                paintToolLayer lastClick draggedTo dc r viewRect
+
+                mdl <- get model value
+                get currentToolIndex value >>= \case
+                  Nothing -> paintToolLayer' (modelToView mdl) (modelPixelDim mdl) cvGetDrawCommands lastClick draggedTo dc r viewRect
+                  Just{} -> paintToolLayer (modelToView mdl) (modelPixelDim mdl) cvGetDrawCommands dc
 
               Just (startTime, oldModel, oldImage) -> do
                 -- Animated paint. Zoom and blend smoothly between
@@ -194,45 +214,43 @@ wxUI = UI {..}
                          / snd (modelPixelDim oldModel)
 
                       -- draw the old image
-                let k = 1 / sqrt ( (fst (modelPixelDim oldModel) * snd (modelPixelDim oldModel))
+                restoringContext $ do
+                  let k = 1 / sqrt ( (fst (modelPixelDim oldModel) * snd (modelPixelDim oldModel))
                                    / (fst (modelPixelDim newModel) * snd (modelPixelDim newModel)))
-                    t' = if (k - 1)^(2 :: Int) < 0.05 then t else (1 - k ** t) / (1 - k)
-                graphicsContextTranslate gc viewCenterX viewCenterY
-                graphicsContextScale gc (sz (fst (modelPixelDim oldModel)
+                      t' = if (k - 1)^(2 :: Int) < 0.05 then t else (1 - k ** t) / (1 - k)
+                  graphicsContextTranslate gc viewCenterX viewCenterY
+                  graphicsContextScale gc (sz (fst (modelPixelDim oldModel)
                                               / fst (modelPixelDim midModel))
                                             (snd (modelPixelDim oldModel)
                                               / snd (modelPixelDim midModel)))
-                graphicsContextTranslate gc (negate viewCenterX) (negate viewCenterY)
-                graphicsContextTranslate gc (negate $ dx * t') (negate $ dy * t')
+                  graphicsContextTranslate gc (negate viewCenterX) (negate viewCenterY)
+                  graphicsContextTranslate gc (negate $ dx * t') (negate $ dy * t')
 
-                withLayer 1 $ restoringContext $ do
-                  zoom (1.0, 1.0) (viewCenterX, viewCenterY) $
-                    case oldImage of
-                      Nothing -> pure ()
-                      Just im -> drawImage dc im (WX.pt
-                                                   (round $ negate viewCenterX)
-                                                   (round $ negate viewCenterY))
-                                 []
-                -- draw the new image
-                withLayer (min 1 t) $ do
-                  let zoomRatioX = fst (modelPixelDim newModel) / fst (modelPixelDim oldModel)
-                      zoomRatioY = snd (modelPixelDim newModel) / snd (modelPixelDim oldModel)
-                  restoringContext $ do
-                    zoom (zoomRatioX, zoomRatioY)
-                         (viewCenterX + dx, viewCenterY + dy)
-                      $ get savedTileImage value >>= \case
-                          Nothing -> pure ()
-                          Just im -> drawImage dc im (WX.pt
-                                                       (round $ negate viewCenterX)
-                                                       (round $ negate viewCenterY)) []
+                  withLayer 1 $ restoringContext $ do
+                    zoom (1.0, 1.0) (viewCenterX, viewCenterY) $
+                      case oldImage of
+                        Nothing -> pure ()
+                        Just im -> do
+                          drawImage dc im (WX.pt
+                                           (round $ negate viewCenterX)
+                                           (round $ negate viewCenterY))
+                            []
+                  -- draw the new image
+                  withLayer (min 1 t) $ do
+                    let zoomRatioX = fst (modelPixelDim newModel) / fst (modelPixelDim oldModel)
+                        zoomRatioY = snd (modelPixelDim newModel) / snd (modelPixelDim oldModel)
+                    restoringContext $ do
+                      zoom (zoomRatioX, zoomRatioY)
+                           (viewCenterX + dx, viewCenterY + dy)
+                        $ get savedTileImage value >>= \case
+                              Nothing -> pure ()
+                              Just im -> do
+                                drawImage dc im (WX.pt
+                                              (round $ negate viewCenterX)
+                                              (round $ negate viewCenterY)) []
+                paintToolLayer (modelToView midModel) (modelPixelDim midModel) cvGetDrawCommands dc
           ]
 
-    let viewToModel pt = do
-            Size { sizeW = w, sizeH = h } <- get f clientSize
-            let dim = (w,h)
-                fullViewRect = rectangle (Viewport (0,0)) (Viewport dim)
-            modelRect <- modelToRect @(Double,Double) dim <$> get model value
-            pure (convertRect fullViewRect modelRect $ Viewport (pointX pt, pointY pt))
 
     -- Set click and drag event handlers
     set p [ on mouse   := \case
@@ -262,9 +280,17 @@ wxUI = UI {..}
                       Just ix -> do
                         z <- viewToModel pt
                         toolEventHandler (theTools !! ix) (Click z)
+                        cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
 
                     Just box -> get currentToolIndex value >>= \case
-                      Just _ -> pure ()
+                      Just ix -> do
+                        get lastClick value >>= \case
+                          Nothing -> pure ()
+                          Just (Viewport vstart) -> do
+                            zstart <- viewToModel (uncurry Point vstart)
+                            z <- viewToModel pt
+                            toolEventHandler (theTools !! ix) (DragDone z zstart)
+                            cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
                       Nothing -> do
                         -- Completed a drag. Zoom in to the dragged box, unless
                         -- the box is pathologically small; in that case, treat
@@ -294,10 +320,10 @@ wxUI = UI {..}
                 set lastClick [value := Nothing]
                 propagateEvent
 
-              MouseLeftDrag pt modifiers | isNoShiftAltControlDown modifiers ->
+              MouseLeftDrag pt modifiers | isNoShiftAltControlDown modifiers -> do
+                set draggedTo [value := Just $ Viewport (pointX pt, pointY pt)]
                 get currentToolIndex value >>= \case
                   Nothing -> do
-                    set draggedTo [value := Just $ Viewport (pointX pt, pointY pt)]
                     mpt <- viewToModel pt
                     set status [text := show mpt]
 
@@ -315,12 +341,13 @@ wxUI = UI {..}
                          zstart <- viewToModel (uncurry Point vstart)
                          z <- viewToModel pt
                          toolEventHandler (theTools !! ix) (Drag z zstart)
+                         cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
                      propagateEvent
 
 
               MouseMotion pt modifiers | isNoShiftAltControlDown modifiers -> do
                 mpt <- viewToModel pt
-                set status [text := show mpt]
+                set status [text := show (pt, mpt)]
                 propagateEvent
 
               MouseLeftDClick pt modifiers | isNoShiftAltControlDown modifiers -> do
@@ -329,6 +356,7 @@ wxUI = UI {..}
                    Just ix -> do
                      z <- viewToModel pt
                      toolEventHandler (theTools !! ix) (DoubleClick z)
+                     cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
                      propagateEvent
 
               -- other mouse events
@@ -487,8 +515,15 @@ wxUI = UI {..}
           [ text := tiName ++ maybe "" (\c -> "\t" ++ (c : "")) tiShortcut
           , help := tiShortHelp
           , on command := do
+              get currentToolIndex value >>= \case
+                Nothing -> pure ()
+                Just i -> do
+                  toolEventHandler (theTools !! i) Deactivated
+                  cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
               set toolStatus [text := tiName]
               set currentToolIndex [value := Just ix]
+              toolEventHandler (theTools !! ix) Activated
+              cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
           ]
 
     mapM_ (uncurry addToToolMenu) ( zip [0..] . map toolInfo $ theTools )
@@ -712,16 +747,79 @@ generateTileImage viewerTile _windowRect = do
     --putStrLn "generateTileImage"
     withSynchedTileBuffer viewerTile (imageCreateFromData (sz width height))
 
-paintToolLayer :: Var (Maybe Viewport)
+paintToolLayer' :: ((Double, Double) -> IO Point)
+               -> (Double, Double)
+               -> IO [[DrawCommand]]
+               -> Var (Maybe Viewport)
                -> Var (Maybe Viewport)
                -> DC d
                -> Rect
                -> Rect
                -> IO ()
-paintToolLayer lastClick draggedTo dc _ _ = dcEncapsulate dc $ do
+paintToolLayer' modelToView pxDim getDrawCommands lastClick draggedTo dc _ _ = dcEncapsulate dc $ do
+    paintToolLayer modelToView pxDim getDrawCommands dc
     dragBox <- getDragBox lastClick draggedTo
     case dragBox of
         Nothing  -> return ()
         Just box -> do
             let boxPts = map viewportToPoint (rectPoints box)
             drawBox dc (rgba @Word8 0 128 255 128) white boxPts
+
+paintToolLayer :: ((Double, Double) -> IO Point)
+               -> (Double, Double)
+               -> IO [[DrawCommand]]
+               -> DC d
+               -> IO ()
+paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
+
+    cmdss <- getDrawCommands
+    let initialPenColor = rgba 255 255 255 (255 :: Word8)
+        initialBrushColor = rgba 255 255 255 (255 :: Word8)
+    currentPen <- newIORef initialPenColor
+    currentBrush <- newIORef initialBrushColor
+
+    let withPen fil action = do
+          curPen <- (`penColored` 2) <$> readIORef currentPen
+          curBrush <- (if fil then brushSolid else const brushTransparent) <$> readIORef currentBrush
+          dcWithPenStyle dc curPen $ dcWithBrushStyle dc curBrush $ action []
+        pxSz = sqrt(fst pxDim * snd pxDim)
+
+    forM_ cmdss $ \cmds -> do
+      -- Reset the pen and brush for the next drawing layer
+      writeIORef currentPen initialPenColor
+      writeIORef currentBrush initialBrushColor
+
+      forM_ cmds $ \case
+
+        DrawPoint _ pt -> do
+          pt' <- modelToView pt
+          withPen True (circle dc pt' 2)
+
+        DrawLine _ pt1 pt2 -> do
+          pt1' <- modelToView pt1
+          pt2' <- modelToView pt2
+          withPen False (line dc pt1' pt2')
+
+        DrawCircle _ fil r pt -> do
+          pt' <- modelToView pt
+          let r' = round (r / pxSz)
+          withPen fil (circle dc pt' r')
+
+        DrawRect _ fil pt1 pt3 -> do
+          let pt2 = (fst pt1, snd pt2)
+              pt4 = (snd pt1, fst pt2)
+          pt1' <- modelToView pt1
+          pt2' <- modelToView pt2
+          pt3' <- modelToView pt3
+          pt4' <- modelToView pt4
+          let boxpts = [pt1', pt2', pt3', pt4']
+          withPen fil (polygon dc boxpts)
+
+        Clear {} -> pure () -- clear operations should be handled upstream, by truncating the draw command list
+        SetStroke _ c -> writeIORef currentPen (fsColorToWxColor c)
+
+        SetFill _ c -> writeIORef currentBrush (fsColorToWxColor c)
+
+fsColorToWxColor :: Color -> WX.Color
+fsColorToWxColor c =
+  let (r,g,b) = colorToRGB c in rgba r g b 255

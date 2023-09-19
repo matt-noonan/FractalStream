@@ -21,6 +21,7 @@ import Language.Type
 import Language.Environment
 import Language.Value.Evaluator (HaskellTypeOfBinding)
 import Language.Code
+import Language.Value.Parser
 import Language.Code.Parser
 import Language.Code.InterpretIO
 
@@ -34,8 +35,6 @@ import qualified Data.Map as Map
 import GHC.TypeLits
 import Data.Aeson
 import Data.Maybe (fromMaybe)
-
-import Debug.Trace
 
 type Point = (Double, Double)
 
@@ -88,14 +87,15 @@ data ComplexParsedEventHandlers = ComplexParsedEventHandlers
   }
   deriving Show
 
-toEventHandlers :: forall env
+toEventHandlers :: forall env splices
                  . EnvironmentProxy env
+                -> Context Splice splices
                 -> ParsedEventHandlers
                 -> Either String (EventHandlers env)
-toEventHandlers env ParsedEventHandlers{..} = do
+toEventHandlers env splices ParsedEventHandlers{..} = do
   let parse :: EnvironmentProxy e -> String -> Either String (HandlerCode env e)
       parse e = either (Left . show . snd) Right
-              . parseCode (effs env) e EmptyContext VoidType
+              . parseCode (effs env) e splices VoidType
 
       effs e = EP $ ParseEff (outputEffectParser e)
                   $ ParseEff drawEffectParser
@@ -104,23 +104,17 @@ toEventHandlers env ParsedEventHandlers{..} = do
       mmaybe :: Maybe a -> (a -> Either String b) -> Either String (Maybe b)
       mmaybe m f = maybe (pure Nothing) (fmap Just . f) m
 
-  traceM "1"
-
   ehOnClick <- mmaybe pehOnClick $ \(x, y, code) ->
     bind y RealType env $ \env' ->
     bind x RealType env' $ \env'' ->
         ( WithArg Proxy RealType . WithArg Proxy RealType . WithNoArgs )
           <$> parse env'' code
 
-  traceM "2"
-
   ehOnDoubleClick <- mmaybe pehOnDoubleClick $ \(x, y, code) ->
     bind y RealType env $ \env' ->
     bind x RealType env' $ \env'' ->
         ( WithArg Proxy RealType . WithArg Proxy RealType . WithNoArgs )
           <$> parse env'' code
-
-  traceM "3"
 
   ehOnDrag <- mmaybe pehOnDrag $ \(x1, y1, x2, y2, code) ->
     bind y2 RealType env  $ \env1 ->
@@ -131,8 +125,6 @@ toEventHandlers env ParsedEventHandlers{..} = do
       . WithArg Proxy RealType . WithArg Proxy RealType . WithNoArgs )
           <$> parse env4 code
 
-  traceM "4"
-
   ehOnDragDone <- mmaybe pehOnDragDone $ \(x1, y1, x2, y2, code) ->
     bind y2 RealType env  $ \env1 ->
     bind x2 RealType env1 $ \env2 ->
@@ -142,23 +134,13 @@ toEventHandlers env ParsedEventHandlers{..} = do
       . WithArg Proxy RealType . WithArg Proxy RealType . WithNoArgs )
           <$> parse env4 code
 
-  traceM "5"
-
   ehOnTimer <- traverse (\(ms, code) -> (ms,) . WithNoArgs <$> parse env code) pehOnTimer
-
-  traceM "6"
 
   ehOnRefresh <- mmaybe pehOnRefresh (fmap WithNoArgs . parse env)
 
-  traceM "7"
-
   ehOnActivated <- mmaybe pehOnActivated (fmap WithNoArgs . parse env)
 
-  traceM "8"
-
   ehOnDeactivated <- mmaybe pehOnDeactivated (fmap WithNoArgs . parse env)
-
-  traceM "9"
 
   pure EventHandlers{..}
 
@@ -233,6 +215,17 @@ instance FromJSON (String -> String -> ParsedEventHandlers) where
         code <- o .: "code"
         pure (\x y -> handler { pehOnClick = Just (fromMaybe x xVar, fromMaybe y yVar, code) })
 
+      "click-or-drag" -> do
+        xVar <- o .:? "x-coord"
+        yVar <- o .:? "y-coord"
+        code <- o .: "code"
+        let x0Var = "INTERNAL__drag_x_start"
+            y0Var = "INTERNAL__drag_y_start"
+        pure (\x y -> handler { pehOnClick = Just (fromMaybe x xVar, fromMaybe y yVar, code)
+                              , pehOnDrag  = Just (fromMaybe x xVar, fromMaybe y yVar, x0Var, y0Var, code)
+                              , pehOnDragDone = Just (fromMaybe x xVar, fromMaybe y yVar, x0Var, y0Var, code)
+                              })
+
       "double-click" -> do
         xVar <- o .:? "x-coord"
         yVar <- o .:? "y-coord"
@@ -286,6 +279,15 @@ instance FromJSON (String -> ComplexParsedEventHandlers) where
         zVar <- o .:? "coord"
         code <- o .: "code"
         pure (\z -> handler { cpehOnClick = Just (lr z zVar, code) })
+
+      "click-or-drag" -> do
+        zVar <- o .:? "coord"
+        code <- o .: "code"
+        let z0Var = "INTERNAL__drag_start"
+        pure (\z -> handler { cpehOnClick = Just (lr z zVar, code)
+                            , cpehOnDrag = Just (lr z zVar, z0Var, code)
+                            , cpehOnDragDone = Just (lr z zVar, z0Var, code)
+                            })
 
       "double-click" -> do
         zVar <- o .:? "coord"
@@ -376,7 +378,7 @@ handleEvent ctx draw EventHandlers{..} =
     Drag (x1,y1) (x2, y2) ->
       run ehOnDrag (Arg y2 $ Arg x2 $ Arg y1 $ Arg x1 $ EndOfArgs)
     DragDone (x1,y1) (x2, y2) ->
-      run ehOnDrag (Arg y2 $ Arg x2 $ Arg y1 $ Arg x1 $ EndOfArgs)
+      run ehOnDragDone (Arg y2 $ Arg x2 $ Arg y1 $ Arg x1 $ EndOfArgs)
     Timer t ->
       run (snd <$> Map.lookup t ehOnTimer) EndOfArgs
     Refresh -> run ehOnRefresh EndOfArgs

@@ -23,6 +23,26 @@ viewer:
           set s to s s
           blend (s, dark c, light c)
 
+  tools:
+    - name: Trace
+      shortcut: t
+      actions:
+        - event: deactivated
+          code: erase
+        - event: click-or-drag
+          code: |
+            init k : Z to 0
+            init lastZ : C to 0
+            erase
+            loop
+              set lastZ to z
+              set z to z - f / df
+              draw point at lastZ
+              draw line from lastZ to z
+              set k to k + 1
+              k < maxIters and |z - lastZ| > tol
+            draw point at z
+
 setup:
   title: Newton's method setup
   size: 200x200

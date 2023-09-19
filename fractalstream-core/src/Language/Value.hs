@@ -165,6 +165,7 @@ data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FS
   -- Conversion
   I2R :: forall env value. KnownEnvironment env => Eval (value '(env, 'IntegerT)) -> ValueF value '(env, 'RealT)
   R2C :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> ValueF value '(env, 'ComplexT)
+  C2R2 :: forall env value. KnownEnvironment env => Eval (value '(env, 'ComplexT)) -> ValueF value '(env, 'Pair 'RealT 'RealT)
 
   -- Boolean operations
   Or  :: forall env value. KnownEnvironment env => Eval (value '(env, 'BooleanT)) -> Eval (value '(env, 'BooleanT)) -> ValueF value '(env, 'BooleanT)
@@ -371,6 +372,7 @@ instance IFunctor ValueF where
 
     I2R {} -> EnvType RealType
     R2C {} -> EnvType ComplexType
+    C2R2 {} -> EnvType (PairType RealType RealType)
 
     Or {} -> EnvType BooleanType
     And {} -> EnvType BooleanType
@@ -475,6 +477,7 @@ instance IFunctor ValueF where
 
       I2R x -> I2R (f (withEnv IntegerType) x)
       R2C x -> R2C (f (withEnv RealType) x)
+      C2R2 x -> C2R2 (f (withEnv ComplexType) x)
 
       Or  x y -> Or  (f (withEnv BooleanType) x) (f (withEnv BooleanType) y)
       And x y -> And (f (withEnv BooleanType) x) (f (withEnv BooleanType) y)
@@ -577,6 +580,7 @@ instance ITraversable ValueF  where
 
     I2R mx -> I2R <$> mx
     R2C mx -> R2C <$> mx
+    C2R2 mx -> C2R2 <$> mx
 
     Or  mx my -> Or  <$> mx <*> my
     And mx my -> And <$> mx <*> my
@@ -642,6 +646,7 @@ pprint = indexedFold @PrecString @Value @ValueF go
     NegI x   -> "-" ++ x
     I2R x    -> x ++ ":R"
     R2C x    -> x ++ ":C"
+    C2R2 x   -> x ++ ":R^2"
     Or x y   -> binop "or" x y
     And x y  -> binop "and" x y
     Not x    -> "!" ++ x

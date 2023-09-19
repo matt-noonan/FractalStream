@@ -213,6 +213,8 @@ evaluator v0 ctx = case v0 of
 
     I2R n -> fromIntegral (n ctx)
     R2C x -> x ctx :+ 0
+    C2R2 z -> let x :+ y = z ctx
+              in (x, y)
 
     AddI x y -> x ctx + y ctx
     SubI x y -> x ctx - y ctx

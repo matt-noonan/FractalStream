@@ -22,6 +22,12 @@ viewers:
           set s to cos (s pi / 10)
           set s to s s
           blend (s, c1, c2)
+    tools:
+      - name: "Draw test"
+        shortcut: d
+        actions:
+          - event: click
+            code: draw point at C
 
 setup:
   title: Parametric complex dynamics

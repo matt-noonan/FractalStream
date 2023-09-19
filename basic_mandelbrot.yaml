@@ -1,0 +1,40 @@
+viewer:
+  title: Mandelbrot set
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: C
+  initial-center: 0
+  initial-pixel-size: 1/128
+  code: |
+      init z : C to 0
+      init k : Z to 0
+      loop
+        set z to z^2 + C
+        set k to k + 1
+        k < max_iters and |z| < escape_radius
+      if k = max_iters then
+        black
+      else
+        init t : R to 1.0 * k / max_iters
+        blend (t^p, dark blue, white)
+
+configuration:
+  title: Configuration
+  size: 400x200
+  vertical-contents:
+    - text-entry:
+        label: "Max. iterations:"
+        value: "100"
+        type: Z
+        variable: max_iters
+    - text-entry:
+        label: "Escape radius:"
+        value: 10
+        type: R
+        variable: escape_radius
+    - text-entry:
+        label: "Brightness: "
+        value: 0.5
+        type: R
+        variable: p

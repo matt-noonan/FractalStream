@@ -84,6 +84,7 @@ buildValue getExtern = indexedFold @(CtxOp m) @(Fix ValueF) @ValueF go'
 
       R2C r -> r <&> \case { RealOp    x -> ComplexOp x (C.double 0.0) }
       I2R i -> i >>= \case { IntegerOp x -> RealOp <$> sitofp x AST.double }
+      C2R2 z -> z <&> \case { ComplexOp x y -> PairOp (RealOp x) (RealOp y) }
 
       ReC z -> z <&> \case { ComplexOp x _ -> RealOp x }
       ImC z -> z <&> \case { ComplexOp _ y -> RealOp y }
