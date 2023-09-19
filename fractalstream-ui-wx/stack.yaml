@@ -4,10 +4,6 @@ packages:
 - .
 - ../fractalstream-core
 - ../fractalstream-backend-llvm
-- ../../wxHaskell/wxc
-- ../../wxHaskell/wxcore
-- ../../wxHaskell/wxdirect
-- ../../wxHaskell/wx
 
 
 extra-deps:
@@ -21,13 +17,13 @@ extra-deps:
 - git: https://github.com/mgrabmueller/disassembler
   commit: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
 
-# - git: https://github.com/matt-noonan/wxHaskell.git
-#   commit: f4bab8e081bd45795d68a9ade089ee36023632c8
-#   subdirs:
-#       - wx
-#       - wxcore
-#       - wxc
-#       - wxdirect
+- git: https://github.com/matt-noonan/wxHaskell.git
+  commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+  subdirs:
+      - wx
+      - wxcore
+      - wxc
+      - wxdirect
 
 # Override default flag values for local packages and extra-deps
 flags:
