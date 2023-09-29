@@ -11,9 +11,10 @@ jobs:
     - uses: actions/checkout@v1
     - name: Setup
       run: |
+        brew install haskell-stack
         brew install libffi
         brew install llvm-hs/llvm/llvm-12
-        brew install wxwidgets --devel
+        brew install wxwidgets
     - name: Build
       run: |
         cd fractalstream-ui-wx
