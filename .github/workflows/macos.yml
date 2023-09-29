@@ -14,7 +14,7 @@ jobs:
         brew install haskell-stack
         brew install libffi
         brew install llvm-hs/llvm/llvm-12
-        brew install wxwidgets
+        brew install wxwidgets@3.0
     - name: Build
       run: |
         cd fractalstream-ui-wx
