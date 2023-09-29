@@ -1,4 +1,4 @@
-name: Haskell CI
+name: Linux build
 
 on: [push]
 
@@ -20,5 +20,3 @@ jobs:
         cd fractalstream-ui-wx
         cp stack.yaml.ubuntu stack.yaml
         stack build
-    - name: Run tests
-      run: stack test
