@@ -13,8 +13,8 @@ jobs:
       run: |
         sudo apt install libffi-dev
         sudo apt install llvm-12-dev
-        sudo apt install libwxgtk3.0-gtk3-dev
-        sudo apt install libwxgtk-media3.0-gtk3-dev
+        sudo apt install libwxgtk3.2-gtk3-dev
+        sudo apt install libwxgtk-media3.2-gtk3-dev
     - name: Build
       run: |
         cd fractalstream-ui-wx
