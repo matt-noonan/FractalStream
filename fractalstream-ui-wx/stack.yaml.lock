@@ -55,6 +55,58 @@ packages:
   original:
     commit: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
     git: https://github.com/mgrabmueller/disassembler
+- completed:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    name: wx
+    pantry-tree:
+      sha256: c37c510210385ac5a73a96b4e1d9c9818f9762409c036b58bbf0c996e9777d54
+      size: 1265
+    subdir: wx
+    version: 0.93.0.0
+  original:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    subdir: wx
+- completed:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    name: wxcore
+    pantry-tree:
+      sha256: e2f7d551558229a4ba1fb260549463b2a4ce6c90e31e5035eada1d2731821db9
+      size: 1631
+    subdir: wxcore
+    version: 0.93.0.0
+  original:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    subdir: wxcore
+- completed:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    name: wxc
+    pantry-tree:
+      sha256: 88914ff48fbd1abff54e6e7e5c1f593f737d428b5ae3ce9d69baabf22908e77c
+      size: 9113
+    subdir: wxc
+    version: 0.93.0.0
+  original:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    subdir: wxc
+- completed:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    name: wxdirect
+    pantry-tree:
+      sha256: a3fb951117cbbefa6ea25609751b5c4c87310809178d29a3ed501ebf664e956a
+      size: 922
+    subdir: wxdirect
+    version: 0.93.0.0
+  original:
+    commit: f4bab8e081bd45795d68a9ade089ee36023632c8
+    git: https://github.com/matt-noonan/wxHaskell.git
+    subdir: wxdirect
 snapshots:
 - completed:
     sha256: 9f9fe35c949414146840a985fb228fd397c504d1781b834bfc9ab935f4d27df6

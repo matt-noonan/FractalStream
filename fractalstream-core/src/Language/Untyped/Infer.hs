@@ -474,6 +474,12 @@ genConstraintsAlg (AnnF tv0 val) = do
 
     U.Arith op lhs rhs -> case op of
       U.Arctan2 -> (++) <$> realFun lhs <*> realFun rhs
+      U.Div     -> do
+        opCs <- binOp lhs rhs
+        case (lhs, rhs) of
+          (NumTV lv, NumTV rv) -> pure (opCs ++ [ lv `IsDefinedLike` R_T
+                                                , rv `IsDefinedLike` R_T ])
+          _ -> throwError InconsistentType
       _         -> binOp lhs rhs
 
     U.Ap1 f x -> case f of

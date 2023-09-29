@@ -106,7 +106,7 @@ viewers:
           - event: drag
             start: z0
             code: |
-              init eps : R to 0.05
+              init eps : R to 5 px
               if drag_target = 0 then
                 if |z0 - twist_center| < eps then
                   output 1 to drag_target
