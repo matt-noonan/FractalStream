@@ -9,8 +9,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
-    - name: Install Stack
-      run: curl -sSL https://get.haskellstack.org/ | sh
+    - name: Setup
+      run: |
+        sudo apt install libffi-dev
+        sudo apt install libwxgtk3.0-gtk3-dev
+        sudo apt install libwxgtk-media3.0-gtk3-dev
     - name: Build
       run: |
         cd fractalstream-ui-wx
