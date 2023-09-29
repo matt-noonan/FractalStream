@@ -18,4 +18,5 @@ jobs:
     - name: Build
       run: |
         cd fractalstream-ui-wx
+        cp stack.yaml.macos stack.yaml
         stack build
