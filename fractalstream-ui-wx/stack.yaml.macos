@@ -18,7 +18,7 @@ extra-deps:
   commit: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
 
 - git: https://github.com/matt-noonan/wxHaskell.git
-  commit: 8422aa9f1e3b9de10604b85e2183880f430a7bd2
+  commit: d0853dc1530855cf32ff4a6a73c0e941a77b7864
   subdirs:
       - wx
       - wxcore
