@@ -18,6 +18,11 @@ jobs:
         ln -s `which wx-config-3.0` $(dirname `which wx-config-3.0`)/wx-config
         ln -s `which wxrc-3.0` $(dirname `which wxrc-3.0`)/wxrc
         ln -s /usr/local/Cellar/wxwidgets/3.2.2.1_1/lib/wx /usr/local/lib/wx
+        echo `which wx-config`
+        wx-config --list
+        wx-config --version
+        wx-config --version-full
+        wx-config --libs
     - name: Build
       run: |
         cd fractalstream-ui-wx
