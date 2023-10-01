@@ -14,6 +14,7 @@ jobs:
         brew install haskell-stack
         brew install libffi
         brew install llvm-hs/llvm/llvm-12
+        cp /usr/local/Cellar/llvm-12/12_2/lib/llvm-12/lib/libc++abi.1.dylib /usr/local/lib
         echo WX `which wx-config`
         brew install wxwidgets@3.0
         ln -s `which wx-config-3.0` $(dirname `which wx-config-3.0`)/wx-config
