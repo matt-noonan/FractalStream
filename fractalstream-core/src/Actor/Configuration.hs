@@ -10,22 +10,23 @@ import Language.Type
 import Language.Environment
 import Language.Value.Parser
 import qualified Data.Map as Map
+import Data.Codec
 
 import Data.Aeson
 
-data Configuration = Configuration
+data Configuration f = Configuration
   { coTitle :: String
-  , coSize :: (Int, Int)
-  , coContents :: Layout Dummy
+  , coSize :: Dimensions
+  , coContents :: Layout f
   }
   deriving Show
 
-instance FromJSON Configuration where
-  parseJSON = withObject "configuration" $ \o -> do
-    coTitle <- o .: "title"
-    Dimensions coSize <- o .: "size"
-    coContents <- parseLayout o
-    pure Configuration{..}
+instance CodecWith ctx (Layout f) => CodecWith ctx (Configuration f) where
+  codecWith_ ctx = do
+    title <-coTitle-< key "title"
+    size  <-coSize-< key "size"
+    body  <-coContents-< codecWith ctx
+    build Configuration title size body
 
 withConfigurationEnv :: forall m t env
                            . MonadFail m

@@ -11,7 +11,7 @@ setup:
   vertical-contents:
     - text-entry:
         label: "Title:"
-        value: "Quadratic dynamics"
+        value: "Parametric complex dynamics"
         type: Text
         variable: title
     - panel:

@@ -45,7 +45,6 @@ main = withBackend $ \complexViewerCompiler -> start $ do
               . (`catch` errorCalled projectWindow)
               . (`catch` badYaml projectWindow yamlFile)
 
-
         withRecoveryActions $ do
 
           prj <- either error id <$> parseTemplateFromFile yamlFile

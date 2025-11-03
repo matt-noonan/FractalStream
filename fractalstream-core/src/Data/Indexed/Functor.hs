@@ -9,6 +9,7 @@ module Data.Indexed.Functor
   , indexedFold
   , indexedFoldM
   , indexedFoldWithOriginal
+  , indexedFoldWithOriginalM
   , indexedUnfold
   , indexedUnfoldM
   ) where
@@ -225,3 +226,14 @@ indexedFoldWithOriginal
   -> Eval (a i)
 indexedFoldWithOriginal f =
   snd . indexedFold (\x -> ((imap (const fst) x), f x))
+
+-- | Perform an @indexedFoldM@, but also make the original sub-ASTs
+-- available during the fold.
+indexedFoldWithOriginalM
+  :: forall a f i m
+   . (Monad m, ITraversable f)
+  => (forall j. f (FIX f :*: a) j -> m (Eval (a j)))
+  -> Eval (FIX f i)
+  -> m (Eval (a i))
+indexedFoldWithOriginalM f =
+  fmap snd . indexedFoldM (\x -> ((imap (const fst) x),) <$> f x)

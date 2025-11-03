@@ -34,14 +34,14 @@ atType :: (KnownEnvironment env, KnownType ty)
        -> TypeProxy ty
        -> TC (Value '(env, ty))
 atType v@(ParsedValue sr f) ty = case ty of
-  TextType    -> tryEach (Advice sr "I don't know how to turn this type of value into text.")
+  TextType    -> tryEachType (Advice sr "I don't know how to turn this type of value into text.")
     [ f TextType
     , ToText IntegerType <$> atType v IntegerType
     , ToText RealType    <$> atType v RealType
     , ToText ComplexType <$> atType v ComplexType
     ]
-  RealType    -> catchError (I2R <$> atType v IntegerType) $ \_ -> f RealType
-  ComplexType -> catchError (R2C <$> atType v RealType) $ \_ -> f ComplexType
+  RealType    -> catchError (I2R <$> atType v IntegerType) (\_ -> f RealType)
+  ComplexType -> catchError (R2C <$> atType v RealType) (\_ -> f ComplexType)
   _           -> f ty
 
 ------------------------------------------------------
@@ -53,11 +53,11 @@ tcCast v tgt sr ty = withType tgt $ \tgtTy ->
   case sameHaskellType ty tgtTy of
     Nothing -> throwError (BadConversion sr (SomeType tgtTy) (Expected $ SomeType ty))
     Just Refl -> case ty of
-      RealType -> tryEach (Advice sr "Could not convert to a real number")
+      RealType -> tryEachType (Advice sr "Could not convert to a real number")
         [ atType v RealType
         , I2R <$> atType v IntegerType
         ]
-      ComplexType -> tryEach (Advice sr "Could not convert to a complex number")
+      ComplexType -> tryEachType (Advice sr "Could not convert to a complex number")
         [ atType v ComplexType
         , R2C <$> atType v RealType
         , R2C . I2R <$> atType v IntegerType
@@ -90,35 +90,35 @@ tcNot arg sr = \case
 tcEql, tcLT, tcLTE, tcGT, tcGTE :: ParsedValue -> ParsedValue -> CheckedValue
 
 tcEql lhs rhs sr = \case
-  BooleanType -> tryEach (Advice sr "Arguments to ≡ must be real or complex numbers.")
+  BooleanType -> tryEachType (Advice sr "Arguments to ≡ must be real or complex numbers.")
     [ Eql RealType    <$> atType lhs RealType    <*> atType rhs RealType
     , Eql ComplexType <$> atType lhs ComplexType <*> atType rhs ComplexType
     ]
   ty -> throwError (Surprise sr "the result of an equality check" "a truth value" (Expected $ an ty))
 
 tcLT lhs rhs sr = \case
-  BooleanType -> tryEach (Advice sr "Arguments to a comparison must be integers or real numbers.")
+  BooleanType -> tryEachType (Advice sr "Arguments to a comparison must be integers or real numbers.")
     [ LTF <$> atType lhs RealType    <*> atType rhs RealType
     , LTI <$> atType lhs IntegerType <*> atType rhs IntegerType
     ]
   ty -> throwError (Surprise sr "the result of a comparison" "a truth value" (Expected $ an ty))
 
 tcGT lhs rhs sr = \case
-  BooleanType -> tryEach (Advice sr "Arguments to a comparison must be integers or real numbers.")
+  BooleanType -> tryEachType (Advice sr "Arguments to a comparison must be integers or real numbers.")
     [ LTF <$> atType rhs RealType    <*> atType lhs RealType
     , LTI <$> atType rhs IntegerType <*> atType lhs IntegerType
     ]
   ty -> throwError (Surprise sr "the result of a comparison" "a truth value" (Expected $ an ty))
 
 tcGTE lhs rhs sr = \case
-  BooleanType -> tryEach (Advice sr "Arguments to a comparison must be integers or real numbers.")
+  BooleanType -> tryEachType (Advice sr "Arguments to a comparison must be integers or real numbers.")
     [ Not <$> (LTF <$> atType lhs RealType    <*> atType rhs RealType)
     , Not <$> (LTI <$> atType lhs IntegerType <*> atType rhs IntegerType)
     ]
   ty -> throwError (Surprise sr "the result of a comparison" "a truth value" (Expected $ an ty))
 
 tcLTE lhs rhs sr = \case
-  BooleanType -> tryEach (Advice sr "Arguments to a comparison must be integers or real numbers.")
+  BooleanType -> tryEachType (Advice sr "Arguments to a comparison must be integers or real numbers.")
     [ Not <$> (LTF <$> atType rhs RealType    <*> atType lhs RealType)
     , Not <$> (LTI <$> atType rhs IntegerType <*> atType lhs IntegerType)
     ]
@@ -127,7 +127,7 @@ tcLTE lhs rhs sr = \case
 tcAppxEql, tcAppxNEq :: Splices -> ParsedValue -> ParsedValue -> CheckedValue
 
 tcAppxEql splices lhs rhs sr = \case
-  BooleanType -> tryEach (Advice sr "Arguments to ≠ must be of some comparable type.")
+  BooleanType -> tryEachType (Advice sr "Arguments to ≠ must be of some comparable type.")
     [ Eql IntegerType <$> atType lhs IntegerType <*> atType rhs IntegerType
     , Eql BooleanType <$> atType lhs BooleanType <*> atType rhs BooleanType
     , let delta = ParsedValue sr (tcSub lhs rhs sr)
@@ -137,7 +137,7 @@ tcAppxEql splices lhs rhs sr = \case
   ty -> throwError (Surprise sr "the result of an equality check" "a truth value" (Expected $ an ty))
 
 tcAppxNEq splices lhs rhs sr = \case
-  BooleanType -> tryEach (Advice sr "Arguments to = must be of some comparable type.")
+  BooleanType -> tryEachType (Advice sr "Arguments to = must be of some comparable type.")
     [ NEq IntegerType <$> atType lhs IntegerType <*> atType rhs IntegerType
     , NEq BooleanType <$> atType lhs BooleanType <*> atType rhs BooleanType
     , let delta = ParsedValue sr (tcSub lhs rhs sr)
@@ -209,7 +209,7 @@ tcStuck splices sr ty = case Map.lookup internalStuck splices of
 tcAbs :: ParsedValue -> CheckedValue
 tcAbs x sr = \case
   IntegerType -> AbsI <$> atType x IntegerType
-  RealType -> tryEach (Advice sr "The argument to |·| is not a real or complex number")
+  RealType -> tryEachType (Advice sr "The argument to |·| is not a real or complex number")
      [ AbsF <$> atType x RealType
      , AbsC <$> atType x ComplexType ]
   ty -> throwError (Surprise sr "the result of |·|" "a real number or integer" (Expected $ an ty))
@@ -381,7 +381,7 @@ tcMod x y sr = \case
 tcEscapes :: Splices -> ParsedValue -> CheckedValue
 tcEscapes splices pv sr = \case
   BooleanType -> do
-    p <- tryEach (Advice sr "The argument to `escapes` should be a real or complex number.")
+    p <- tryEachType (Advice sr "The argument to `escapes` should be a real or complex number.")
      [ AbsC <$> atType pv ComplexType
      , AbsF <$> atType pv RealType ]
     case Map.lookup internalEscapeRadius splices of
@@ -392,7 +392,7 @@ tcEscapes splices pv sr = \case
 tcVanishes :: Splices -> ParsedValue -> CheckedValue
 tcVanishes splices pv sr = \case
   BooleanType -> do
-    p <- tryEach (Advice sr "The argument to `vanishes` should be a real or complex number.")
+    p <- tryEachType (Advice sr "The argument to `vanishes` should be a real or complex number.")
      [ AbsC <$> atType pv ComplexType
      , AbsF <$> atType pv RealType ]
     case Map.lookup internalVanishingRadius splices of
@@ -414,7 +414,7 @@ tcText :: [ParsedValue] -> CheckedValue
 tcText args sr = \case
   TextType -> do
     let pv (ParsedValue sr' f) =
-          tryEach (Advice sr' "I don't know how to make this value into text.")
+          tryEachType (Advice sr' "I don't know how to make this value into text.")
           [ f TextType
           , ToText IntegerType <$> f IntegerType
           , ToText RealType <$> f RealType

@@ -2,6 +2,7 @@
 
 module Language.Environment
   ( type Environment
+  , SomeEnvironment(..)
   , CanAppendTo(..)
   , type Lookup
   , type Required
@@ -92,6 +93,9 @@ type family Append (xs :: [(Symbol, FSType)]) (ys :: [(Symbol, FSType)]) :: [(Sy
 ---------------------------------------------------------------------------------
 -- Value-level proxies for the environment
 ---------------------------------------------------------------------------------
+
+data SomeEnvironment where
+  SomeEnvironment :: forall env. EnvironmentProxy env -> SomeEnvironment
 
 -- | A singleton datatype for Environment type variables.
 data EnvironmentProxy (env :: Environment) where

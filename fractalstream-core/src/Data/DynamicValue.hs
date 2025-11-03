@@ -1,5 +1,150 @@
 module Data.DynamicValue
   ( Dynamic(..)
+  , Variable(..)
+  , Mapped(..)
+  , mapper
+  , source
+  , AsDynamic(..)
+  , newVariable
+  , setValue
+  , setValue'
+  , modifyValue
+  , watchDynamic
+  , getDynamic
+  , Dynamic_
+  , Variable_
+  , SomeUIValue(..)
+  , SomeUIExpr(..)
+  ) where
+
+import FractalStream.Prelude
+import Language.Type
+import Language.Value.Parser (ParsedValue(..))
+
+import qualified Data.Map as Map
+import Control.Concurrent
+
+data Variable a = Variable String (MVar (a, Int, Map Int (a -> IO ())))
+
+instance Eq (Variable a) where
+  Variable _ m == Variable _ m' = m == m'
+
+data Dynamic a where
+  Dynamic :: forall a. Variable a -> Dynamic a
+  Ap :: forall a b. Dynamic (a -> b) -> Dynamic a -> Dynamic b
+  Pure :: forall a. a -> Dynamic a
+  Join :: forall a. Dynamic (Dynamic a) -> Dynamic a
+
+instance Functor Dynamic where
+  fmap f = \case
+    Pure x -> Pure (f x)
+    x -> Ap (Pure f) x
+
+instance Applicative Dynamic where
+  Pure f <*> Pure x = Pure (f x)
+  f <*> x = Ap f x
+  pure = Pure
+
+instance Monad Dynamic where
+  Pure x >>= f = f x
+  dx >>= f = Join (f <$> dx)
+
+data Mapped src a = Mapped
+  { mapper :: Dynamic (src -> a)
+  , source :: Variable src
+  }
+
+newVariable :: String -> a -> IO (Variable a)
+newVariable n x = Variable n <$> newMVar (x, 0, Map.empty)
+
+class AsDynamic f where
+  dyn :: forall a. f a -> Dynamic a
+
+instance AsDynamic Dynamic where dyn = id
+instance AsDynamic Variable where dyn = Dynamic
+instance AsDynamic (Mapped s) where dyn (Mapped f x) = f <*> dyn x
+
+getDynamic :: AsDynamic f => f a -> IO a
+getDynamic d = case dyn d of
+  Dynamic (Variable _ mvar) -> (\(x,_,_) -> x) <$> readMVar mvar
+  Ap f x   -> getDynamic f <*> getDynamic x
+  Pure x   -> pure x
+  Join ddx -> getDynamic ddx >>= getDynamic
+
+setValue :: Eq a
+         => Variable a
+         -> a
+         -> IO ()
+setValue (Variable _ mvar) x' = do
+  (x, n, actions) <- readMVar mvar
+  when (x /= x') $ do
+    modifyMVar_ mvar (\_ -> pure (x', n, actions))
+    void $ traverse ($ x') actions
+
+setValue' :: Variable a
+          -> a
+          -> IO ()
+setValue' (Variable _ mvar) x' = do
+  actions <- modifyMVar mvar (\(_, n, actions) -> pure ((x', n, actions), actions))
+  void $ traverse ($ x') actions
+
+modifyValue :: Variable a
+            -> (a -> a)
+            -> IO ()
+modifyValue (Variable _ mvar) f = do
+  (fx, actions) <- modifyMVar mvar (\(x, n, actions) ->
+                                      let fx = f x
+                                      in pure ((fx, n, actions), (fx, actions)))
+  void $ traverse ($ fx) actions
+
+watchDynamic :: AsDynamic f => f a -> (a -> IO ()) -> IO (IO ())
+watchDynamic d = (`go` dyn d)
+  where
+    go :: forall t. (t -> IO ()) -> Dynamic t -> IO (IO ())
+    go action = \case
+      Pure _ -> pure (pure ())
+
+      Ap f x -> do
+        update <- newEmptyMVar
+        tid <- forkIO $
+          let next = takeMVar update >>= \case
+                Just (Left  fv) -> do
+                  fx <- fv <$> getDynamic x
+                  action fx
+                  next
+                Just (Right xv) -> do
+                  fx <- getDynamic f <&> ($ xv)
+                  action fx
+                  next
+                Nothing -> pure ()
+          in next
+        stopF <- go (void . putMVar update . Just . Left) f
+        stopX <- go (void . putMVar update . Just . Right) x
+        pure (stopF >> stopX >> putMVar update Nothing >> killThread tid)
+
+      Dynamic (Variable _ mvar) -> do
+        n <- modifyMVar mvar $ \(x, n, m) ->
+          pure ((x, n + 1, Map.insert n action m), n)
+        pure (modifyMVar_ mvar $ \(x', n', m) -> pure (x', n', Map.delete n m))
+
+      Join ddx -> do
+        inner <- newMVar (pure ())
+        outerStop <- watchDynamic ddx $ \dx -> do
+          -- If the inner dynamic value has changed, run the old
+          -- stop action (if any), then set the new stop action.
+          tryTakeMVar inner >>= \case
+            Nothing -> do
+              istop <- watchDynamic dx action
+              putMVar inner istop
+            Just oldStop -> do
+              oldStop
+              istop <- watchDynamic dx action
+              putMVar inner istop
+        pure (join (takeMVar inner) >> outerStop)
+
+
+  {-
+  ( Dynamic(..)
   , SomeDynamic(..)
   , UIValue
   , newUIValue
@@ -98,3 +243,32 @@ data SomeUIExpr where
               -> TypeProxy ty
               -> IO ParsedValue
               -> SomeUIExpr
+-}
+
+data SomeUIValue where
+  SomeUIValue :: forall name ty
+               . KnownSymbol name
+              => Proxy name
+              -> TypeProxy ty
+              -> Variable (HaskellType ty)
+              -> SomeUIValue
+
+data SomeUIExpr where
+  SomeUIExpr  :: forall name ty
+               . KnownSymbol name
+              => Proxy name
+              -> TypeProxy ty
+              -> Dynamic ParsedValue
+              -> SomeUIExpr
+
+-- | @Dynamic_@ is a type family that represents
+-- a named, dynamic version of the Haskell type corresponding to
+-- the given 'FSType'.
+data Dynamic_ :: Symbol -> FSType -> Exp Type
+type instance Eval (Dynamic_ name ty) = Dynamic (HaskellType ty)
+
+-- | @Variable_@ is a type family that represents
+-- a named, variable version of the Haskell type corresponding to
+-- the given 'FSType'.
+data Variable_ :: Symbol -> FSType -> Exp Type
+type instance Eval (Variable_ name ty) = Variable (HaskellType ty)

@@ -13,12 +13,14 @@ viewer:
 
         while z != lastZ:
           lastZ <- z
-          z <- z - $f$ / $df$
+          z <- z - ($f$) / ($df$)
 
         if z = lastZ:
           c : Color <- if re(z) > 0 then red else if im(z) > 0 then yellow else blue
           s : R <- (cos (iterations pi / 10))^2
-          color <- blend (s, dark c, light c)
+          #color <- blend (s, dark c, light c)
+          color <- rainbow(arg z / (2π))
+          color <- cycle(iterations / 20, dark color, light color)
         else:
           color <- black
 
@@ -34,7 +36,7 @@ viewer:
             erase
             while z != lastZ:
               lastZ <- z
-              z <- z - $f$ / $df$
+              z <- z - ($f$) / ($df$)
               draw point at lastZ
               draw line from lastZ to z
             draw point at z

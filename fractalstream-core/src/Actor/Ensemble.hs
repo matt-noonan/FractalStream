@@ -114,7 +114,7 @@ substitute input0 splices = unlines . concatMap substituteLine . lines $ input0
           input' = drop (length name + 1) input
       in case Map.lookup name splices of
            Nothing -> error ("No splice named " ++ show name)
-           Just s  -> s ++ input'
+           Just s  -> concat ["{", s, "}", input']
 
 runTemplate :: ComplexViewerCompiler
             -> UI
@@ -169,7 +169,7 @@ withStrings lo action = do
   let getNameAndString :: forall t. Expression t -> IO (String, String)
       getNameAndString = \case
         Expression name _ _ v -> (name,) . fst <$> getDynamic v
-        ScriptExpression name _ v -> (name,) . fst <$> getDynamic v
+        ScriptExpression name _ v -> (name,) . fst . first unCodeString <$> getDynamic v
         BoolExpression {} -> error "TODO: withStrings BoolExpression"
         ColorExpression {} -> error "TODO: withStrings ColorExpression"
   contents <- sequence (extractAllBindings getNameAndString lo)

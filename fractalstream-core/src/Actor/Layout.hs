@@ -1,14 +1,24 @@
-{-# language UndecidableInstances, OverloadedStrings #-}
+{-# language UndecidableInstances, OverloadedStrings, TemplateHaskell #-}
 module Actor.Layout
   ( Layout(..)
   , Label(..)
+  , CodeString(..)
+  , Dimensions(..)
+  , Expression
+  , basicSplices
+  , Parsed(..)
+  , UIVariable(..)
+  , AnyCode(..)
+{-
   , Dimensions(..)
   , allBindings
   , allBindingVars
   , extractAllBindings
   , Dummy(..)
+  , unDummy
   , ConfigVar(..)
   , StringOrNumber(..)
+  , CodeString(..)
   -- *
   , parseLayout
   , parseToHaskellValue
@@ -21,7 +31,10 @@ module Actor.Layout
   , allocateUIConstants
   , withSplices
   , withDynamicBindings
-  , toSomeDynamic
+  , mapLayout
+  , mapLayoutA
+  , basicSplices
+-}
   ) where
 
 import FractalStream.Prelude
@@ -30,10 +43,11 @@ import Language.Type
 import Language.Environment
 import Data.Color
 import Data.DynamicValue
+import Data.Codec
 import Language.Value.Evaluator (HaskellTypeOfBinding, evaluate)
 import Language.Value
 import Language.Value.Parser
-import Language.Code
+import Language.Code hiding (End)
 import Language.Code.Parser
 import Language.Value.Typecheck ( internalVanishingRadius
                                 , internalEscapeRadius
@@ -43,19 +57,191 @@ import Language.Value.Typecheck ( internalVanishingRadius
 import Language.Parser.SourceRange
 import Language.Typecheck
 
-
+import Control.Monad.Identity
 import Data.Aeson hiding (Value)
 import qualified Data.Aeson.Types as JSON
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import Text.Read (readMaybe)
+import Data.Void
 
 newtype Label = Label String
-  deriving (Show, IsString)
+  deriving (Show, IsString, FromJSON, ToJSON)
 
-instance FromJSON Label where
-  parseJSON = withText "label" (pure . Label . Text.unpack)
+instance Codec Label where codec = aeson
 
+newtype CodeString = CodeString { unCodeString :: String }
+  deriving (Show, FromJSON, ToJSON)
+
+data Editor = Expression | Script
+
+type EachEditor (c :: Type -> Constraint) (f :: Editor -> Exp Type) =
+  (c (Eval (f 'Expression)), c (Eval (f 'Script)))
+
+data Layout (f :: Widget -> Exp Type)
+  = Vertical (Variable [Layout f])
+  | Horizontal (Variable [Layout f])
+  | Panel (Variable Label) (Variable (Layout f))
+  | Tabbed (Variable [TabItem f])
+  | PlainText (Variable String)
+  | Button (Variable String)
+  | CheckBox (Variable Label) (Variable Bool)
+  | ColorPicker (Variable Label) (Variable Color)
+  | TextBox (Variable Label) UIVariable
+  | ScriptBox UIScript
+
+data TabItem f = TabItem
+  { tiLabel :: Variable Label
+  , tiBody  :: Variable (Layout f)
+  }
+
+instance EachEditor (CodecWith (Dynamic Splices)) f => CodecWith (Dynamic Splices) (TabItem f) where
+  codecWith_ splices = do
+    title <-tiLabel-< key "title"
+    body  <-tiBody-< codecWith splices
+    build TabItem title body
+
+instance EachWidget (CodecWith (Dynamic Splices)) f => CodecWith (Dynamic Splices) (Layout f) where
+  codecWith_ (splices :: Part b a (Dynamic Splices)) = do
+    let titledBy :: forall t. CodecWith (Dynamic Splices) t
+                 => String -> b (Whole b (Variable Label, t))
+        titledBy name = do
+          title <-fst-< key name
+          body  <-snd-< codecWith splices
+          build (,) title body
+    match
+      [ Fragment Vertical (\case { Vertical x -> Just x; _ -> Nothing }) $
+        field "vertical-contents" (codecWith splices)
+      , Fragment Horizontal (\case { Horizontal x -> Just x; _ -> Nothing }) $
+        field "horizontal-contents" (codecWith splices)
+      , Fragment (uncurry Panel) (\case { Panel l x -> Just (l, x); _ -> Nothing }) $
+        field "panel" (titledBy "title")
+      , Fragment Tabbed (\case { Tabbed ts -> Just ts; _ -> Nothing }) $
+        field "tabbed" (codecWith splices)
+      , Fragment PlainText (\case { PlainText x -> Just x; _ -> Nothing }) $
+        key "text"
+      , Fragment Button (\case { Button x -> Just x; _ -> Nothing }) $
+        key "button"
+      , Fragment (uncurry TextBox) (\case { TextBox l x -> Just (l, x); _ -> Nothing }) $
+        field "text-entry" (titledBy "label")
+      , Fragment (uncurry CheckBox) (\case { CheckBox l x -> Just (l, x); _ -> Nothing }) $
+        field "checkbox" (titledBy "label")
+      , Fragment (uncurry ColorPicker) (\case { ColorPicker l x -> Just (l, x); _ -> Nothing }) $
+        field "color-picker" (titledBy "label")
+      , Fragment ScriptBox (\case { ScriptBox x -> Just x; _ -> Nothing }) $
+        field "code" (codecWith splices)
+      ]
+
+type Parsed t = Mapped String (Either String t)
+
+
+{-
+Different kinds of entry:
+
+Variable with arbitrary type, in an arbitrary env. Example: ?
+Variable with arbitrary type, in an empty env. Example: a normal runtime script parameter
+Variable with fixed type, in an empty env. Example: checkbox or color-picker variables
+Script in an empty env. Example:
+
+...
+
+The cases with nonempty envs all come from building splices
+The cases for runtime-changeable variables all have empty envs
+-}
+data UIVariable = UIVariable
+  { exprName  :: Parsed String
+  , exprType  :: Parsed SomeType
+  , exprEnv   :: Parsed SomeEnvironment
+  , exprValue :: Parsed SomeValue
+  }
+
+data UIScript = UIScript
+  { scriptName :: Parsed String
+  , scriptEnv  :: Parsed SomeEnvironment
+  , scriptCode :: Mapped CodeString (Either (SourceRange, String) SomeCode)
+  }
+
+nonEmptyString :: String -> Either String String
+nonEmptyString = \case
+  "" -> Left "This field cannot be empty"
+  s  -> Right s
+
+newtype SomeType' = SomeType' { getSomeType :: SomeType }
+
+parseType' :: String -> Either String SomeType
+parseType' s = left (\err -> ppFullError err s) (parseType s)
+
+parseEnv' :: String -> Either String SomeEnvironment
+parseEnv' s =
+  bimap (`ppFullError` s) (`withEnvFromMap` SomeEnvironment) (parseEnvironment s)
+
+instance CodecWith (Dynamic Splices) UIVariable where
+  codecWith_ ctx = do
+    ty  <-exprType-< field "type" $ mapBy parseType'
+    env <-exprEnv-<  field "environment"  $ mapBy parseEnv'
+
+    -- Variable name is required and must be non-empty, and not
+    -- already present in the environment
+    name <-exprName-< mapped (key "variable") $ \use -> (<$> use env) $ \e s -> do
+      void (nonEmptyString s)
+      case e of
+        Left _ -> Left "Cannot check this value until the errors in the environment are fixed."
+        Right (SomeEnvironment e) -> case someSymbolVal s of
+          SomeSymbol n -> case lookupEnv' n e of
+            Absent' _ -> pure ()
+            _ -> Left ("The variable name `" ++ s ++ "` is already defined in the environment.")
+      pure s
+
+    expr <-exprValue-< mapped (key "value") $ \use ->
+      let f = \mt me splices src -> do
+            SomeType t <- case mt of
+              Left _ -> Left "Cannot check this value until the error in its type is fixed."
+              Right t -> pure t
+            SomeEnvironment e <- case me of
+              Left _ -> Left "Cannot check this value until the error in its environment is fixed."
+              Right e -> pure e
+            let e = EmptyEnvProxy
+            withEnvironment e $ withKnownType t $ do
+              bimap (`ppFullError` src) (SomeValue e t) (parseInputValue splices src)
+      in f <$> use ty <*> use env <*> use ctx
+
+    build UIVariable name ty env expr
+
+newtype Dimensions = Dimensions { dimToPair :: (Int, Int) }
+
+instance FromJSON Dimensions where
+  parseJSON = withText "dimensions" $ \txt -> do
+    case Text.splitOn "x" txt of
+      [xStr, yStr] -> do
+        case (,) <$> readMaybe (Text.unpack xStr) <*> readMaybe (Text.unpack yStr) of
+          Just dim -> pure (Dimensions dim)
+          Nothing  -> fail "could not parse dimension descriptor"
+      _ -> fail "expected a dimension descriptor, e.g. 400x200"
+
+instance ToJSON Dimensions where
+  toJSON (Dimensions (x, y)) = String . Text.pack $ show x ++ "x" ++ show y
+
+instance Codec Dimensions where codec = aeson
+
+allBindings :: Layout Dummy -> [(String, SomeType)]
+allBindings = map (\ConfigVar{..} -> (varVariable, varType)) . allBindingVars
+
+allBindingVars :: Layout Dummy -> [ConfigVar]
+allBindingVars = go
+  where
+    go = \case
+      Vertical xs -> concatMap go xs
+      Horizontal xs -> concatMap go xs
+      Panel _ x -> go x
+      Tabbed xs -> concatMap (go . snd) xs
+      TextBox _ d -> [unDummy d]
+      CheckBox _ d -> [unDummy d]
+      ColorPicker _ d -> [unDummy d]
+      PlainText _ -> []
+      Button {} -> []
+      ScriptBox d -> [unDummy d]
+
+{-
 data Layout f
   = Vertical [Layout f]
   | Horizontal [Layout f]
@@ -66,9 +252,35 @@ data Layout f
   | ColorPicker Label (f Color)
   | PlainText String
   | Button String
-  | Multiline (f String)
+  | Multiline (f CodeString)
 
-deriving instance (Show (f String), Show (f Bool), Show (f Color)) => Show (Layout f)
+deriving instance (Show (f String), Show (f Bool), Show (f Color), Show (f CodeString))
+  => Show (Layout f)
+-}
+
+{-
+mapLayoutA :: Applicative m
+           => (forall t. f t -> m (g t))
+           -> Layout f
+           -> m (Layout g)
+mapLayoutA f = go
+  where
+    go = \case
+      Vertical xs -> Vertical <$> traverse go xs
+      Horizontal xs -> Horizontal <$> traverse go xs
+      Panel n x -> Panel n <$> go x
+      Tabbed xs -> Tabbed <$> traverse (\(s, x) -> (s,) <$> go x) xs
+      TextBox n x -> TextBox n <$> f x
+      CheckBox n x -> CheckBox n <$> f x
+      ColorPicker n x -> ColorPicker n <$> f x
+      PlainText s -> pure (PlainText s)
+      Button s -> pure (Button s)
+      Multiline x -> Multiline <$> f x
+
+mapLayout :: (forall t. f t -> g t)
+          -> Layout f
+          -> Layout g
+mapLayout f = runIdentity . mapLayoutA (Identity . f)
 
 data Dimensions = Dimensions (Int, Int)
 
@@ -81,14 +293,22 @@ instance FromJSON Dimensions where
           Nothing  -> fail "could not parse dimension descriptor"
       _ -> fail "expected a dimension descriptor, e.g. 400x200"
 
-data Dummy t = Dummy ConfigVar
-  deriving Show
+data Dummy t where
+  Dummy :: forall t. ConfigVar -> Dummy t
+  DummyCode :: ConfigVar -> Dummy CodeString
+
+unDummy :: Dummy t -> ConfigVar
+unDummy = \case
+  Dummy x -> x
+  DummyCode x -> x
+
+deriving instance Show (Dummy t)
 
 data ConfigVar = ConfigVar
   { varValue :: String
   , varType :: SomeType
   , varEnv :: Map String SomeType
-  , varVariable :: String
+  , varVariable :: Variable String
   }
   deriving Show
 
@@ -151,23 +371,6 @@ parseLayout o
      varValue <- p .: "value"
      pure (Multiline (Dummy ConfigVar{..}))
 
-allBindings :: Layout Dummy -> [(String, SomeType)]
-allBindings = map (\ConfigVar{..} -> (varVariable, varType)) . allBindingVars
-
-allBindingVars :: Layout Dummy -> [ConfigVar]
-allBindingVars = go
-  where
-    go = \case
-      Vertical xs -> concatMap go xs
-      Horizontal xs -> concatMap go xs
-      Panel _ x -> go x
-      Tabbed xs -> concatMap (go . snd) xs
-      TextBox _ (Dummy x) -> [x]
-      CheckBox _ (Dummy x) -> [x]
-      ColorPicker _ (Dummy x) -> [x]
-      PlainText _ -> []
-      Button {} -> []
-      Multiline (Dummy x) -> [x]
 
 extractAllBindings :: (forall t. f t -> a)
                    -> Layout f
@@ -211,7 +414,7 @@ setToParsed :: forall ty
              . (TypeProxy ty -> String -> Either (Either ParseError TCError) (HaskellType ty))
             -> TypeProxy ty
             -> String
-            -> UIValue (String, HaskellType ty)
+            -> Mapped String (Either String (HaskellType ty))
             -> IO (Maybe String)
 setToParsed parser ty input ui = do
   case parser ty input of
@@ -219,21 +422,7 @@ setToParsed parser ty input ui = do
     Right v  -> setUIValue ui (input, v) >> pure Nothing
 
 
-data Expression t where
-  Expression :: forall env ty
-              . String
-             -> EnvironmentProxy env
-             -> TypeProxy ty
-             -> UIValue (String, Value '(env, ty))
-             -> Expression String
-  BoolExpression :: String -> UIValue Bool -> Expression Bool
-  ColorExpression :: String -> UIValue Color -> Expression Color
-  ScriptExpression :: forall env
-                       . String
-                      -> EnvironmentProxy env
-                      -> UIValue (String, Code env)
-                      -> Expression String
-
+{-
 instance Dynamic Expression where
   getDynamic = \case
     BoolExpression _ b -> getDynamic b
@@ -241,7 +430,7 @@ instance Dynamic Expression where
     Expression _ _ _ v -> fst <$> getDynamic v
     ScriptExpression _ _ e -> do
       x <- fst <$> getDynamic e
-      putStrLn ("Script expression:\n" ++ x)
+      putStrLn ("Script expression:\n" ++ unCodeString x)
       return x
 
   setDynamic d new = case d of
@@ -249,8 +438,8 @@ instance Dynamic Expression where
     ColorExpression _ c -> setDynamic c new
     ScriptExpression _ env e ->
       withEnvironment env $ do
-        case parseCode env basicSplices new of
-          Left err -> pure (Just $ ppFullError err new)
+        case parseCode env basicSplices (unCodeString new) of
+          Left err -> pure (Just $ ppFullError err (unCodeString new))
           Right newC -> do
             setDynamic e (new, newC)
             pure Nothing
@@ -271,28 +460,30 @@ instance Dynamic Expression where
     ScriptExpression _ _ e -> listenWith e (\old new -> action (fst old) (fst new))
     Expression _ _ _ v ->
       listenWith v (\old new -> action (fst old) (fst new))
+-}
 
 data ConstantExpression t where
   ConstantExpression :: forall ty
                       . String
                      -> TypeProxy ty
-                     -> UIValue (String, HaskellType ty)
+                     -> Mapped String (Either String (HaskellType ty))
                      -> ConstantExpression String
   ConstantBoolExpression :: String -> UIValue Bool -> ConstantExpression Bool
   ConstantColorExpression :: String -> UIValue Color -> ConstantExpression Color
-  ConstantScriptExpression :: String -> UIValue String -> ConstantExpression String
+  ConstantScriptExpression :: String -> UIValue String -> ConstantExpression CodeString
 
+{-
 instance Dynamic ConstantExpression where
   getDynamic = \case
     ConstantBoolExpression _ b -> getDynamic b
     ConstantColorExpression _ c -> getDynamic c
-    ConstantScriptExpression _ e -> getDynamic e
+    ConstantScriptExpression _ e -> CodeString <$> getDynamic e
     ConstantExpression _ _ v -> fst <$> getDynamic v
 
   setDynamic d new = case d of
     ConstantBoolExpression _ b -> setDynamic b new
     ConstantColorExpression _ c -> setDynamic c new
-    ConstantScriptExpression _ e -> setDynamic e new
+    ConstantScriptExpression _ e -> setDynamic e (unCodeString new)
     ConstantExpression _ (ty :: TypeProxy ty) v ->
       withKnownType ty $ do
       let new' = case ty of
@@ -307,9 +498,10 @@ instance Dynamic ConstantExpression where
   listenWith d action = case d of
     ConstantBoolExpression _ b -> listenWith b action
     ConstantColorExpression _ c -> listenWith c action
-    ConstantScriptExpression _ e -> listenWith e action
+    ConstantScriptExpression _ e -> listenWith e (coerce action)
     ConstantExpression _ _ v ->
       listenWith v (\old new -> action (fst old) (fst new))
+-}
 
 allocateUIExpressions :: Layout Dummy
                       -> ExceptT String IO (Layout Expression)
@@ -325,38 +517,43 @@ allocateUIExpressions = go
 
       Tabbed ps -> Tabbed <$> mapM (\(lab, x) -> (lab,) <$> go x) ps
 
-      TextBox lab (Dummy ConfigVar{..}) -> case varType of
-        SomeType (ty :: TypeProxy ty) -> withKnownType ty $
-          withEnvFromMap varEnv $ \(env :: EnvironmentProxy env) ->
-            withEnvironment env $
-            case parseInputValue @env @ty basicSplices varValue of
-              Left err -> throwError (ppFullError err varValue)
-              Right v  ->
-                TextBox lab . Expression varVariable env ty
-                <$> newUIValue (varValue, v)
+      TextBox lab d ->
+        let ConfigVar{..} = unDummy d
+        in case varType of
+             SomeType (ty :: TypeProxy ty) -> withKnownType ty $
+               withEnvFromMap varEnv $ \(env :: EnvironmentProxy env) ->
+                 withEnvironment env $
+                   case parseInputValue @env @ty basicSplices varValue of
+                     Left err -> throwError (ppFullError err varValue)
+                     Right v  ->
+                       TextBox lab . Expression varVariable env ty
+                       <$> newUIValue (varValue, v)
 
-      CheckBox lab (Dummy ConfigVar{..}) ->
-        case parseInputValue @'[] @'BooleanT basicSplices varValue of
-          Left err -> throwError (ppFullError err varValue)
-          Right v  -> CheckBox lab . BoolExpression varVariable
-                      <$> newUIValue (evaluate v EmptyContext)
+      CheckBox lab d ->
+        let ConfigVar{..} = unDummy d
+        in case parseInputValue @'[] @'BooleanT basicSplices varValue of
+             Left err -> throwError (ppFullError err varValue)
+             Right v  -> CheckBox lab . BoolExpression varVariable
+                         <$> newUIValue (evaluate v EmptyContext)
 
-      ColorPicker lab (Dummy ConfigVar{..}) ->
-        case parseInputValue @'[] @'ColorT basicSplices varValue of
-          Left err -> throwError (ppFullError err varValue)
-          Right v  -> ColorPicker lab . ColorExpression varVariable
-                      <$> newUIValue (evaluate v EmptyContext)
+      ColorPicker lab d ->
+        let ConfigVar{..} = unDummy d
+        in case parseInputValue @'[] @'ColorT basicSplices varValue of
+             Left err -> throwError (ppFullError err varValue)
+             Right v  -> ColorPicker lab . ColorExpression varVariable
+                         <$> newUIValue (evaluate v EmptyContext)
 
       PlainText txt -> pure (PlainText txt)
 
       Button txt -> pure (Button txt)
 
-      Multiline (Dummy ConfigVar{..}) ->
-        withEnvFromMap varEnv $ \env -> withEnvironment env $
-          case parseCode env basicSplices varValue of
-            Left err -> throwError (ppFullError err varValue)
-            Right c -> Multiline . ScriptExpression varVariable env
-                       <$> newUIValue (varValue, c)
+      Multiline d ->
+        let ConfigVar{..} = unDummy d
+        in withEnvFromMap varEnv $ \env -> withEnvironment env $
+             case parseCode env basicSplices varValue of
+               Left err -> throwError (ppFullError err varValue)
+               Right c -> Multiline . ScriptExpression varVariable env
+                          <$> newUIValue (CodeString varValue, c)
 
 allocateUIConstants :: Layout Dummy
                     -> ExceptT String IO (Layout ConstantExpression)
@@ -509,9 +706,9 @@ data ConstantExpression' t where
   ConstantExpression' :: forall ty t
                       . (t ~ HaskellType ty)
                      => TypeProxy ty
-                     -> UIValue (String, t)
+                     -> Mapped String (Either String t)
                      -> ConstantExpression' t
-
+{-
 instance Dynamic ConstantExpression' where
   getDynamic (ConstantExpression' _ d) =
     snd <$> getDynamic d
@@ -521,6 +718,7 @@ instance Dynamic ConstantExpression' where
 
   listenWith (ConstantExpression' _ d) action =
     listenWith d (\(_, old) (_, new) -> action old new)
+-}
 
 newtype StringOrNumber t = StringOrNumber { unStringOrNumber :: t }
 
@@ -529,6 +727,7 @@ instance (IsString s) => FromJSON (StringOrNumber s) where
     =   (withText "string" (pure . StringOrNumber . fromString . Text.unpack) v)
     <|> (withScientific "number" (pure . StringOrNumber . fromString . show) v)
 
+{-
 toSomeDynamic :: Dynamic dyn => Layout dyn -> Layout SomeDynamic
 toSomeDynamic = \case
   Vertical xs -> Vertical (map toSomeDynamic xs)
@@ -541,7 +740,9 @@ toSomeDynamic = \case
   PlainText txt -> PlainText txt
   Button txt -> Button txt
   Multiline txt -> Multiline (SomeDynamic txt)
+-}
 
+-}
 basicSplices :: Splices
 basicSplices = Map.fromList
   [ (internalEscapeRadius, ParsedValue NoSourceRange $ \case

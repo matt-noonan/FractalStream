@@ -8,6 +8,9 @@ module Actor.Viewer.Complex
   , cloneComplexViewer
   , StringOf(..)
   , BadProject(..)
+  , InternalX
+  , InternalY
+  , InternalPx
   ) where
 
 import FractalStream.Prelude

@@ -111,7 +111,7 @@ generateWxLayout buttonPress frame0 wLayout = do
        pure (hstretch . expand . margin 5 $ widget cb)
 
      Multiline v -> do
-       txt <- getDynamic v
+       txt <- unCodeString <$> getDynamic v
        p' <- panel p []
        ce <- codeEditor p' txt
        lastText <- newIORef txt
@@ -123,7 +123,7 @@ generateWxLayout buttonPress frame0 wLayout = do
                       old <- readIORef lastText
                       when (new /= old) $ do
                         writeIORef lastText new
-                        void (setDynamic v new)
+                        void (setDynamic v (CodeString new))
                   propagateEvent
               ]
        pure (container p' $ fill $ widget ce)

@@ -435,7 +435,7 @@ combineEventHandlers (Right lhs) rhs = do
     <*> combine pehOnDeactivated "deactivated"
 
 handleEvent :: forall env
-             . Context DynamicValue env
+             . Context Variable_ env
             -> Bool
             -> DrawHandler ScalarIORefM
             -> EventHandlers env
@@ -509,7 +509,7 @@ runEvt draw ctx eh args = case eh of
 
 runEventHandler :: forall env args
                  . Bool
-                -> Context DynamicValue env
+                -> Context Variable_ env
                 -> DrawHandler ScalarIORefM
                 -> SomeEventHandler env args
                 -> ArgList args
@@ -534,12 +534,12 @@ runEventHandler allowUpdates ctx draw SomeEventHandler{..} args = do
   -- update the corresponding dynamic values
   when allowUpdates $ do
     let finalCtx :: Context ((HaskellTypeOfBinding :**: HaskellTypeOfBinding :**: K Bool)
-                                :**: DynamicValue) env
+                                :**: Variable_) env
         finalCtx = zipContext (zipContext (zipContext inValues outValues) mutableArgs) ctx
     fromContextM_ (\_ ty (((old, new), canUpdate), v) ->
                      if Scalar ty old == Scalar ty new || not canUpdate
                      then pure ()
-                     else void (setDynamic v new))
+                     else void (setValue' v new))
                   finalCtx
 
 data K :: Type -> Symbol -> FSType -> Exp Type

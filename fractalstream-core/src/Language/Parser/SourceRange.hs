@@ -34,6 +34,7 @@ instance Monoid SourceRange where
 data SourceSpan
   = InLine Int Int Int
   | InRows Int Int
+  deriving (Eq, Show)
 
 spanOfSourceRange :: SourceRange -> Maybe SourceSpan
 spanOfSourceRange = \case

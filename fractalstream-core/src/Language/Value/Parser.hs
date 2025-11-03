@@ -4,6 +4,7 @@ module Language.Value.Parser
   , parseParsedValue
   , parseInputValue
   , parseType
+  , parseEnvironment
   , valueGrammar
   , valueGrammarWithNoSplices
   , atType
@@ -36,6 +37,10 @@ import Language.Parser.Tokenizer
 parseType :: String -> Either ParseError SomeType
 parseType = fmap (`withType` SomeType) . parse typeGrammar . tokenize
 
+parseEnvironment :: String -> Either ParseError (Map String SomeType)
+parseEnvironment = fmap (Map.fromList . map (fmap (`withType` SomeType)))
+                 . parse envGrammar . tokenize
+
 parseValue :: forall env ty. (KnownEnvironment env, KnownType ty)
            => Splices
            -> String
@@ -55,7 +60,7 @@ parseInputValue :: forall env ty. (KnownEnvironment env, KnownType ty)
                 -> Either (Either ParseError TCError) (Value '(env, ty))
 parseInputValue splices input = case typeProxy @ty of
   TextType     -> parseValue splices (show input)
-  ListType ity -> case filter (not . (`elem` " \t\n\r")) input of
+  ListType ity -> case filter (not . (flip (elem @[]) " \t\n\r")) input of
     "" -> pure (List ity [])
     _  -> parseValue splices ("[" ++ input ++ "]")
   _ -> parseValue splices input
@@ -63,6 +68,20 @@ parseInputValue splices input = case typeProxy @ty of
 ------------------------------------------------------
 -- Type and Value grammars
 ------------------------------------------------------
+
+envGrammar :: forall r. Grammar r (Prod r [(String, FSType)])
+envGrammar = mdo
+
+  toplevel <- ruleChoice
+    [ pure []
+    , (:) <$> oneVar <*> many (token Comma *> oneVar)
+    ]
+
+  oneVar <- rule ((,) <$> (ident <* token Colon) <*> typ)
+
+  typ <- typeGrammar
+
+  pure toplevel
 
 typeGrammar :: forall r. Grammar r (Prod r FSType)
 typeGrammar = mdo

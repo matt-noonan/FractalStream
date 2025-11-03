@@ -6,8 +6,8 @@ viewer:
   z-coord: C
   escape-radius: escape_radius
   iteration-limit: max_iters
-  initial-center: 0
-  initial-pixel-size: 1/128
+  initial-center: "0"
+  initial-pixel-size: "1/128"
   code: |
       z : C <- 0
       iterate z -> z^2 + C until z escapes
@@ -91,6 +91,6 @@ configuration:
         variable: max_iters
     - text-entry:
         label: "Escape radius:"
-        value: 10
+        value: "10"
         type: R
         variable: escape_radius

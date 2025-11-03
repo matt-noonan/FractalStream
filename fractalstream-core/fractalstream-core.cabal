@@ -62,8 +62,6 @@ library
                        FractalStream.Prelude
                        FractalStream.Metadata
 
-                       UI
-
                        Actor
                        Actor.Tool
 
@@ -104,6 +102,7 @@ library
                        Data.Color
                        Data.Recursive
                        Data.DynamicValue
+                       Data.Codec
 
   c-sources: src/FractalStream/find_jemalloc.c
 
@@ -131,7 +130,9 @@ library
                        Earley,
                        include-file,
                        utf8-string,
-                       githash
+                       githash,
+                       microlens,
+                       microlens-th,
   hs-source-dirs:      src
 
 test-suite spec

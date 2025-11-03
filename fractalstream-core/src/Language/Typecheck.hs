@@ -4,6 +4,9 @@ module Language.Typecheck
   , TCError(..)
   , internal
   , tryEach
+  , tryEachType
+  , isTypeError
+  , catchTypeError
   , advise
   , ppError
 
@@ -52,6 +55,23 @@ tryEach failure = go
     go = \case
       [] -> throwError failure
       (x:xs) -> catchError x (\_ -> go xs)
+
+tryEachType :: TCError -> [TC a] -> TC a
+tryEachType failure = go
+  where
+    go = \case
+      [] -> throwError failure
+      (x:xs) -> catchError x (\e -> if isTypeError e then go xs else throwError e)
+
+catchTypeError :: TC a -> (TCError -> TC a) -> TC a
+catchTypeError x action =
+  catchError x (\e -> if isTypeError e then action e else throwError e)
+
+isTypeError :: TCError -> Bool
+isTypeError = \case
+  Surprise{} -> True
+  BadConversion{} -> True
+  _ -> False
 
 instance HasErrorLocation TCError where
   errorLocation = \case

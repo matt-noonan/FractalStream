@@ -107,9 +107,9 @@ tcIterate splices var expr isWhile cond upto sr env = do
 
 tcPoint :: KnownEnvironment env => ParsedValue -> TC (Value '(env, 'Pair 'RealT 'RealT))
 tcPoint p@(ParsedValue sr _) =
-  tryEach (Surprise sr "this"
-            "not a complex number or pair of real numbers"
-            (Expected "something point-like"))
+  tryEachType (Surprise sr "this"
+               "not a complex number or pair of real numbers"
+               (Expected "something point-like"))
     [ atType p (PairType RealType RealType)
     , C2R2 <$> atType p ComplexType ]
 
