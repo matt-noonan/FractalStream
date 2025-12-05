@@ -13,7 +13,7 @@ viewer:
 
         while z != lastZ:
           lastZ <- z
-          z <- z - «f» / «df»
+          z <- z - «f» / diff(z, «f»)
 
         if z = lastZ:
           c : Color <- if re(z) > 0 then red else if im(z) > 0 then yellow else blue
@@ -36,7 +36,7 @@ viewer:
             erase
             while z != lastZ:
               lastZ <- z
-              z <- z - «f» / «df»
+              z <- z - «f» / diff(z, «f»)
               draw point at lastZ
               draw line from lastZ to z
             draw point at z
@@ -52,13 +52,6 @@ setup:
         environment:
           z: C
         variable: f
-    - text-entry:
-        label: "f'(z) = "
-        value: "3 z^2"
-        type: C
-        environment:
-          z: C
-        variable: df
 
 configuration:
   title: Newton's method configuration

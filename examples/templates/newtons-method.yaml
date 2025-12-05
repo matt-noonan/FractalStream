@@ -18,13 +18,6 @@ setup:
                   environment:
                     z: C
                   variable: "f"
-              - text-entry:
-                  label: "Derivative: "
-                  value: "3 z^2"
-                  type: C
-                  environment:
-                    z: C
-                  variable: "df"
     - panel:
         title: "Coloring"
         vertical-contents:
@@ -61,7 +54,7 @@ viewers:
         lastZ : C <- 0
         repeat:
           lastZ <- z
-          z <- z - «f» / «df»
+          z <- z - «f» / diff(z, «f»)
         until z = lastZ
 
         if stuck:
@@ -89,7 +82,7 @@ viewers:
               repeat:
                 prevZ <- z
                 draw point at z
-                z <- z - «f» / «df»
+                z <- z - «f» / diff(z, «f»)
                 draw line from z to prevZ
               until z = prevZ
 
