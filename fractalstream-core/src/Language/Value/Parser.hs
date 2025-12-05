@@ -298,6 +298,7 @@ valueGrammar splices = mdo
     , var
     , color
     , listOp
+    , diff
     ]
 
   quoted <- rule $ tokenMatch (\case { Quoted txt -> Just txt; _ -> Nothing })
@@ -416,6 +417,10 @@ valueGrammar splices = mdo
     , check (tcIndex True  <$> (toplevel <* token AtAt) <*> toplevel)
     ]
 
+  diff <- rule $ check $
+    tcDiff <$> (token DiffKeyword *> (token OpenParen *> ident))
+            <*> (token Comma *> toplevel <* token CloseParen)
+
   typ <- typeGrammar
 
   let reserved = (`Set.member` reservedWords)
@@ -424,7 +429,7 @@ valueGrammar splices = mdo
         , "romao", "bamo", "broco", "corko", "viko"
         , "ice", "fire", "rose", "wheat", "forest", "ocean"
         , "winter", "spring", "summer", "fall"
-        , "rgb", "mod"]
+        , "rgb", "mod", "diff"]
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions
         `Set.union` Map.keysSet realFunctions
