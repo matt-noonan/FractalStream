@@ -23,7 +23,6 @@ derivative z sr = indexedFoldWithOriginalM derivativeRules
         RealType    -> pure 0
         IntegerType -> pure 0
         _           -> throwError $ DiffNotImplemented sr z
-        -- _           -> throwError (Surprise sr "a constant" "a real or complex constant" (Expected $ an ty))
 
       -- | Other variables are assumed to be constant with respect to z 
       Var name ty _ -> case ty of
@@ -34,7 +33,6 @@ derivative z sr = indexedFoldWithOriginalM derivativeRules
                        then pure $ Const $ Scalar RealType 1
                        else pure $ Const $ Scalar RealType 0
         _           -> throwError $ DiffNotImplemented sr z
-        -- _           -> throwError (Surprise sr "a variable" "a real or complex variable" (Expected $ an ty))
 
       -- | Basic algebra
 
@@ -93,5 +91,3 @@ derivative z sr = indexedFoldWithOriginalM derivativeRules
       C2R2 (_, dx) -> pure $ C2R2 dx
 
       _ -> throwError $ DiffNotImplemented sr z
-
-      -- TO DO: Deal with LocalLet
