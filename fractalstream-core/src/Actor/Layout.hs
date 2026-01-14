@@ -4,11 +4,18 @@ module Actor.Layout
   , Label(..)
   , CodeString(..)
   , Dimensions(..)
-  , Expression
   , basicSplices
-  , Parsed(..)
+  , Parsed
   , UIVariable(..)
-  , AnyCode(..)
+  , UIScript(..)
+  , layoutBindings
+  , layoutEnv
+  , layoutToSplices
+  , nonEmptyString
+  , parseType'
+  , parseConstant'
+  , parseEnv'
+  , parseScript'
 {-
   , Dimensions(..)
   , allBindings
@@ -44,7 +51,6 @@ import Language.Environment
 import Data.Color
 import Data.DynamicValue
 import Data.Codec
-import Language.Value.Evaluator (HaskellTypeOfBinding, evaluate)
 import Language.Value
 import Language.Value.Parser
 import Language.Code hiding (End)
@@ -57,13 +63,10 @@ import Language.Value.Typecheck ( internalVanishingRadius
 import Language.Parser.SourceRange
 import Language.Typecheck
 
-import Control.Monad.Identity
 import Data.Aeson hiding (Value)
-import qualified Data.Aeson.Types as JSON
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import Text.Read (readMaybe)
-import Data.Void
 
 newtype Label = Label String
   deriving (Show, IsString, FromJSON, ToJSON)
@@ -73,49 +76,45 @@ instance Codec Label where codec = aeson
 newtype CodeString = CodeString { unCodeString :: String }
   deriving (Show, FromJSON, ToJSON)
 
-data Editor = Expression | Script
+instance Codec CodeString where codec = aeson
 
-type EachEditor (c :: Type -> Constraint) (f :: Editor -> Exp Type) =
-  (c (Eval (f 'Expression)), c (Eval (f 'Script)))
+type Parsed t = Mapped String (Either String t)
 
-data Layout (f :: Widget -> Exp Type)
-  = Vertical (Variable [Layout f])
-  | Horizontal (Variable [Layout f])
-  | Panel (Variable Label) (Variable (Layout f))
-  | Tabbed (Variable [TabItem f])
+data Layout
+  = Vertical (Variable [Layout])
+  | Horizontal (Variable [Layout])
+  | Panel (Variable Label) (Variable Layout)
+  | Tabbed (Variable [TabItem])
   | PlainText (Variable String)
   | Button (Variable String)
-  | CheckBox (Variable Label) (Variable Bool)
-  | ColorPicker (Variable Label) (Variable Color)
+  | CheckBox (Variable Label) (Parsed String) (Variable Bool)
+  | ColorPicker (Variable Label) (Parsed String) (Parsed Color)
   | TextBox (Variable Label) UIVariable
   | ScriptBox UIScript
 
-data TabItem f = TabItem
+data TabItem = TabItem
   { tiLabel :: Variable Label
-  , tiBody  :: Variable (Layout f)
+  , tiBody  :: Variable Layout
   }
 
-instance EachEditor (CodecWith (Dynamic Splices)) f => CodecWith (Dynamic Splices) (TabItem f) where
+instance CodecWith (Dynamic Splices) TabItem where
   codecWith_ splices = do
     title <-tiLabel-< key "title"
     body  <-tiBody-< codecWith splices
     build TabItem title body
 
-instance EachWidget (CodecWith (Dynamic Splices)) f => CodecWith (Dynamic Splices) (Layout f) where
-  codecWith_ (splices :: Part b a (Dynamic Splices)) = do
-    let titledBy :: forall t. CodecWith (Dynamic Splices) t
-                 => String -> b (Whole b (Variable Label, t))
-        titledBy name = do
-          title <-fst-< key name
-          body  <-snd-< codecWith splices
-          build (,) title body
+instance CodecWith (Dynamic Splices) Layout where
+  codecWith_ (splices :: Part b a (Dynamic Splices)) =
     match
       [ Fragment Vertical (\case { Vertical x -> Just x; _ -> Nothing }) $
         field "vertical-contents" (codecWith splices)
       , Fragment Horizontal (\case { Horizontal x -> Just x; _ -> Nothing }) $
         field "horizontal-contents" (codecWith splices)
       , Fragment (uncurry Panel) (\case { Panel l x -> Just (l, x); _ -> Nothing }) $
-        field "panel" (titledBy "title")
+        field "panel" $ do
+          title <-fst-< key "title"
+          body  <-snd-< codecWith splices
+          build (,) title body
       , Fragment Tabbed (\case { Tabbed ts -> Just ts; _ -> Nothing }) $
         field "tabbed" (codecWith splices)
       , Fragment PlainText (\case { PlainText x -> Just x; _ -> Nothing }) $
@@ -123,31 +122,29 @@ instance EachWidget (CodecWith (Dynamic Splices)) f => CodecWith (Dynamic Splice
       , Fragment Button (\case { Button x -> Just x; _ -> Nothing }) $
         key "button"
       , Fragment (uncurry TextBox) (\case { TextBox l x -> Just (l, x); _ -> Nothing }) $
-        field "text-entry" (titledBy "label")
-      , Fragment (uncurry CheckBox) (\case { CheckBox l x -> Just (l, x); _ -> Nothing }) $
-        field "checkbox" (titledBy "label")
-      , Fragment (uncurry ColorPicker) (\case { ColorPicker l x -> Just (l, x); _ -> Nothing }) $
-        field "color-picker" (titledBy "label")
+        field "text-entry" $ do
+          label <-fst-< key "label"
+          body  <-snd-< codecWith splices
+          build (,) label body
+      , Fragment (uncurry3 CheckBox) (\case { CheckBox l v x -> Just (l, v, x); _ -> Nothing }) $
+        field "checkbox" $ do
+          label <-(\(x,_,_) -> x)-< key "label"
+          var   <-(\(_,y,_) -> y)-< mapped codec $ \_ -> pure nonEmptyString
+          body  <-(\(_,_,z) -> z)-< codec
+          build (,,) label var body
+      , Fragment (uncurry3 ColorPicker) (\case { ColorPicker l v x -> Just (l, v, x); _ -> Nothing }) $
+        field "color-picker" $ do
+          label <-(\(x,_,_) -> x)-< key "label"
+          var   <-(\(_,y,_) -> y)-< mapped codec $ \_ -> pure nonEmptyString
+          body  <-(\(_,_,z) -> z)-< mapped codec $ \_ -> pure (parseConstant' ColorType)
+          build (,,) label var body
       , Fragment ScriptBox (\case { ScriptBox x -> Just x; _ -> Nothing }) $
         field "code" (codecWith splices)
       ]
 
-type Parsed t = Mapped String (Either String t)
+uncurry3 :: (a1 -> a2 -> a3 -> b) -> (a1, a2, a3) -> b
+uncurry3 f (x, y, z) = f x y z
 
-
-{-
-Different kinds of entry:
-
-Variable with arbitrary type, in an arbitrary env. Example: ?
-Variable with arbitrary type, in an empty env. Example: a normal runtime script parameter
-Variable with fixed type, in an empty env. Example: checkbox or color-picker variables
-Script in an empty env. Example:
-
-...
-
-The cases with nonempty envs all come from building splices
-The cases for runtime-changeable variables all have empty envs
--}
 data UIVariable = UIVariable
   { exprName  :: Parsed String
   , exprType  :: Parsed SomeType
@@ -166,14 +163,27 @@ nonEmptyString = \case
   "" -> Left "This field cannot be empty"
   s  -> Right s
 
-newtype SomeType' = SomeType' { getSomeType :: SomeType }
-
 parseType' :: String -> Either String SomeType
 parseType' s = left (\err -> ppFullError err s) (parseType s)
+
+parseConstant' :: TypeProxy ty -> String -> Either String (HaskellType ty)
+parseConstant' ty s = left (\err -> ppFullError err s) (parseConstant ty s)
 
 parseEnv' :: String -> Either String SomeEnvironment
 parseEnv' s =
   bimap (`ppFullError` s) (`withEnvFromMap` SomeEnvironment) (parseEnvironment s)
+
+parseScript' :: Either String SomeEnvironment
+             -> Splices
+             -> CodeString
+             -> Either (SourceRange, String) SomeCode
+parseScript' menv splices (CodeString src) = do
+  SomeEnvironment env <- case menv of
+    Left _ -> Left (NoSourceRange,
+                     "Cannot check this script until the error in its environment is fixed.")
+    Right e -> pure e
+  withEnvironment env $
+    bimap (errorLocation &&& unlines . pp) SomeCode (parseCode env splices src)
 
 instance CodecWith (Dynamic Splices) UIVariable where
   codecWith_ ctx = do
@@ -182,9 +192,9 @@ instance CodecWith (Dynamic Splices) UIVariable where
 
     -- Variable name is required and must be non-empty, and not
     -- already present in the environment
-    name <-exprName-< mapped (key "variable") $ \use -> (<$> use env) $ \e s -> do
+    name <-exprName-< mapped (key "variable") $ \use -> (<$> use env) $ \me s -> do
       void (nonEmptyString s)
-      case e of
+      case me of
         Left _ -> Left "Cannot check this value until the errors in the environment are fixed."
         Right (SomeEnvironment e) -> case someSymbolVal s of
           SomeSymbol n -> case lookupEnv' n e of
@@ -200,14 +210,35 @@ instance CodecWith (Dynamic Splices) UIVariable where
             SomeEnvironment e <- case me of
               Left _ -> Left "Cannot check this value until the error in its environment is fixed."
               Right e -> pure e
-            let e = EmptyEnvProxy
             withEnvironment e $ withKnownType t $ do
               bimap (`ppFullError` src) (SomeValue e t) (parseInputValue splices src)
       in f <$> use ty <*> use env <*> use ctx
 
     build UIVariable name ty env expr
 
+instance CodecWith (Dynamic Splices) UIScript where
+  codecWith_ ctx = do
+    env <-scriptEnv-< field "environment" $ mapBy parseEnv'
+
+    -- Variable name is required and must be non-empty, and not
+    -- already present in the environment
+    name <-scriptName-< mapped (key "variable") $ \use -> (<$> use env) $ \me s -> do
+      void (nonEmptyString s)
+      case me of
+        Left _ -> Left "Cannot check this value until the errors in the environment are fixed."
+        Right (SomeEnvironment e) -> case someSymbolVal s of
+          SomeSymbol n -> case lookupEnv' n e of
+            Absent' _ -> pure ()
+            _ -> Left ("The variable name `" ++ s ++ "` is already defined in the environment.")
+      pure s
+
+    code <-scriptCode-< mapped (key "value") $ \use -> parseScript' <$> use env <*> use ctx
+
+    build UIScript name env code
+
 newtype Dimensions = Dimensions { dimToPair :: (Int, Int) }
+
+instance Show Dimensions where show (Dimensions (x, y)) = show x ++ "x" ++ show y
 
 instance FromJSON Dimensions where
   parseJSON = withText "dimensions" $ \txt -> do
@@ -219,10 +250,71 @@ instance FromJSON Dimensions where
       _ -> fail "expected a dimension descriptor, e.g. 400x200"
 
 instance ToJSON Dimensions where
-  toJSON (Dimensions (x, y)) = String . Text.pack $ show x ++ "x" ++ show y
+  toJSON d = String . Text.pack $ show d
 
 instance Codec Dimensions where codec = aeson
 
+layoutEnv :: Layout -> Dynamic (Either String SomeEnvironment)
+layoutEnv = fmap (fmap ((`withEnvFromMap` SomeEnvironment) . Map.fromList)) . layoutBindings
+
+layoutBindings :: Layout -> Dynamic (Either String [(String, SomeType)])
+layoutBindings = \case
+  Vertical   xs -> do
+    parts <- dyn xs
+    fmap concat . sequence <$> (mapM layoutBindings parts)
+  Horizontal xs -> do
+    parts <- dyn xs
+    fmap concat . sequence <$> (mapM layoutBindings parts)
+  Panel _ lo -> layoutBindings =<< dyn lo
+  Tabbed items -> do
+    parts <- mapM (dyn . tiBody) =<< dyn items
+    fmap concat . sequence <$> (mapM layoutBindings parts)
+  PlainText{} -> pure (pure [])
+  Button{} -> pure (pure [])
+  ScriptBox {} -> pure (pure [])
+  CheckBox    _ var _ -> fmap (:[]) <$> (fmap (, SomeType BooleanType) <$> dyn var)
+  ColorPicker _ var _ -> fmap (:[]) <$> (fmap (, SomeType ColorType)   <$> dyn var)
+  TextBox _ var -> do
+    name <- dyn (exprName var)
+    ty <- dyn (exprType var)
+    pure (((,) <$> name <*> ty) <&> (:[]))
+
+layoutToSplices :: Layout -> Dynamic (Either String Splices)
+layoutToSplices = fmap (fmap Map.fromList) . go
+  where
+    go :: Layout -> Dynamic (Either String [(String, ParsedValue)])
+    go = \case
+      Vertical xs -> do
+        parts <- dyn xs
+        fmap concat . sequence <$> mapM go parts
+      Horizontal xs -> do
+        parts <- dyn xs
+        fmap concat . sequence <$> mapM go parts
+      Panel _ lo -> go =<< dyn lo
+      Tabbed items -> do
+        parts <- mapM (dyn . tiBody) =<< dyn items
+        fmap concat . sequence <$> mapM go parts
+      PlainText{} -> pure (pure [])
+      Button{} -> pure (pure [])
+      ScriptBox{} -> pure (pure [])
+      CheckBox _ var val -> do
+        name <- dyn var
+        value <- dyn val <&> \b ->
+          let src = if b then "true" else "false"
+          in bimap (`ppFullError` src) id (parseParsedValue Map.empty src)
+        pure (((,) <$> name <*> value) <&> (:[]))
+      ColorPicker _ var val -> do
+        name <- dyn var
+        value <- dyn (source val) <&> \src ->
+          bimap (`ppFullError` src) id (parseParsedValue Map.empty src)
+        pure (((,) <$> name <*> value) <&> (:[]))
+      TextBox _ ve -> do
+        name <- dyn (exprName ve)
+        value <- dyn (source (exprValue ve)) <&> \src ->
+          bimap (`ppFullError` src) id (parseParsedValue Map.empty src)
+        pure (((,) <$> name <*> value) <&> (:[]))
+
+{-
 allBindings :: Layout Dummy -> [(String, SomeType)]
 allBindings = map (\ConfigVar{..} -> (varVariable, varType)) . allBindingVars
 
@@ -240,6 +332,7 @@ allBindingVars = go
       PlainText _ -> []
       Button {} -> []
       ScriptBox d -> [unDummy d]
+-}
 
 {-
 data Layout f

@@ -54,8 +54,6 @@ import Data.Functor hiding (unzip)
 import Data.Bifunctor
 import Data.String
 import Fcf (Exp, Eval, Pure1)
-import Lens.Micro hiding (ix, set, to)
-import Lens.Micro.TH (makeLenses)
 
 import Data.Map (Map)
 import Data.Set (Set)

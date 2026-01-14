@@ -28,15 +28,43 @@ import qualified Data.ByteString.UTF8 as UTF8
 
 import Development.IncludeFile
 
+import Data.Codec
+
 import Debug.Trace
 
 data Ensemble = Ensemble
-  { ensembleSetup :: Maybe Configuration
-  , ensembleConfiguration :: Maybe Configuration
-  , ensembleViewers :: [ComplexViewer]
+  { ensembleSetup         :: Variable (Maybe Configuration)
+  , ensembleConfiguration :: Variable (Maybe Configuration)
+  , ensembleViewers       :: Variable [ComplexViewer]
   }
-  deriving Show
 
+instance Codec Ensemble where
+  codec = do
+    setup <-ensembleSetup-< optionalField "setup"
+      (newVariable "" Nothing) (fmap isNothing . getDynamic) $ do
+      codecWith (pure $ pure Map.empty)
+
+    config <-ensembleConfiguration-< optionalField "configuration"
+      (newVariable "" Nothing) (fmap isNothing . getDynamic) $ do
+      splices <- purely $ \use -> use setup >>= \case
+          Nothing -> pure Map.empty
+
+          -- TODO: add error reporting for splices
+          Just Configuration{..} -> either (const Map.empty) id <$> layoutToSplices coContents
+
+      codecWith splices
+
+    viewers <-ensembleViewers-< newOf $ match
+      [ Fragment (const []) (\case { [] -> Just (); _ -> Nothing }) $ pure (pure ())
+      , Fragment (:[]) (\case { [x] -> Just x; _ -> Nothing }) $ do
+          q <- purely $ \use -> _
+          codecWith q
+      , Fragment id Just (codecWith _)
+      ]
+
+    build Ensemble setup config viewers
+
+{-
 data Project = Project
   { projectConfiguration :: Maybe Configuration
   , projectViewers :: [ComplexViewer]
@@ -245,3 +273,4 @@ allTemplates =
    template name bs = case parseTemplate bs of
      Left e -> error ("Internal error when parsing a template: " ++ e)
      Right t -> (name, t)
+-}

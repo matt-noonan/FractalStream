@@ -1,9 +1,17 @@
-{-# language OverloadedStrings #-}
 module Actor.Event
   ( Event(..)
-  , EventHandlers(..)
-  , ParsedEventHandlers(..)
-  , ComplexParsedEventHandlers(..)
+  --, EventHandlers(..)
+  --, ParsedEventHandlers(..)
+  --, ComplexParsedEventHandlers(..)
+
+  , XEventHandler(..)
+  , ClickHandler(..)
+  , DragHandler(..)
+  , TimerHandler(..)
+  , ButtonHandler(..)
+  , UnitHandler(..)
+
+{-
   , convertComplexToRealEventHandlers
   , combineEventHandlers
   , noEventHandlers
@@ -12,27 +20,25 @@ module Actor.Event
   , handleEvent
   , toEventHandlers
   , prependHandlerCode
+-}
   ) where
 
 import FractalStream.Prelude
 
-import Language.Type
+--import Language.Type
 import Language.Environment
-import Language.Value.Evaluator (HaskellTypeOfBinding)
+--import Language.Value.Evaluator (HaskellTypeOfBinding)
 import Language.Code
+import Language.Parser.SourceRange
 import Language.Value.Parser
-import Language.Value.Typecheck (internalIterations, internalStuck)
-import Language.Code.Parser
-import Language.Code.InterpretIO
-import Language.Draw
+--import Language.Value.Typecheck (internalIterations, internalStuck)
+--import Language.Code.Parser
+--import Language.Code.InterpretIO
+--import Language.Draw
 
 import Data.DynamicValue
-
-import Data.IORef
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-
-import Data.Aeson
+import Data.Codec
+import Actor.Layout (parseScript', CodeString(..))
 
 type Point = (Double, Double)
 
@@ -47,6 +53,113 @@ data Event
   | Activated
   | Deactivated
   deriving Show
+
+data XEventHandler
+  = OnClick ClickHandler
+  | OnDoubleClick ClickHandler
+  | OnClickOrDrag ClickHandler
+  | OnDrag DragHandler
+  | OnDragDone DragHandler
+  | OnTimer TimerHandler
+  | OnButton ButtonHandler
+  | OnRefresh UnitHandler
+  | OnActivated UnitHandler
+  | OnDeactivated UnitHandler
+
+instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) XEventHandler where
+  codecWith_ ctx = match
+    [ Fragment OnClick (\case { OnClick h -> Just h; _ -> Nothing}) $
+        "event" `mustBe` "click" $ codecWith ctx
+    , Fragment OnDoubleClick (\case { OnDoubleClick h -> Just h; _ -> Nothing}) $ do
+        "event" `mustBe` "double-click" $ codecWith ctx
+    , Fragment OnClickOrDrag (\case { OnDoubleClick h -> Just h; _ -> Nothing}) $ do
+        "event" `mustBe` "click-or-drag" $ codecWith ctx
+    , Fragment OnDrag (\case { OnDrag h -> Just h; _ -> Nothing}) $ do
+        "event" `mustBe` "drag" $ codecWith ctx
+    , Fragment OnDragDone (\case { OnDragDone h -> Just h; _ -> Nothing}) $ do
+        "event" `mustBe` "drag-finished" $ codecWith ctx
+    , Fragment OnTimer (\case { OnTimer h -> Just h; _ -> Nothing}) $ do
+        "event" `mustBe` "timer" $ codecWith ctx
+    , Fragment OnButton (\case { OnButton h -> Just h; _ -> Nothing}) $ do
+        "event" `mustBe` "button" $ codecWith ctx
+    , Fragment OnRefresh (\case { OnRefresh h -> Just h; _ -> Nothing}) $ do
+        "event" `mustBe` "refresh" $ codecWith ctx
+    , Fragment OnActivated (\case { OnActivated h -> Just h; _ -> Nothing}) $ do
+        "event" `mustBe` "activated" $ codecWith ctx
+    , Fragment OnDeactivated (\case { OnDeactivated h -> Just h; _ -> Nothing}) $ do
+        "event" `mustBe` "deactivated" $ codecWith ctx
+    ]
+
+type HandlerScript = Mapped CodeString (Either (SourceRange, String) SomeCode)
+
+newtype UnitHandler = UnitHandler HandlerScript
+
+instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) UnitHandler where
+  codecWith_ ctx = do
+    code <-coerce-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    build UnitHandler code
+
+data TimerHandler = TimerHandler
+  { thName     :: Variable String
+  , thInterval :: Variable Int
+  , thScript   :: HandlerScript }
+
+instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) TimerHandler where
+  codecWith_ ctx = do
+    name     <-thName-<     key "name"
+    interval <-thInterval-< key "interval"
+    script   <-thScript-<   mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    build TimerHandler name interval script
+
+data ButtonHandler = ButtonHandler
+  { bhName   :: Variable String
+  , bhScript :: HandlerScript }
+
+instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) ButtonHandler where
+  codecWith_ ctx = do
+    name   <-bhName-<   key "label"
+    script <-bhScript-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    build ButtonHandler name script
+
+data Coordinate = ComplexCoordinate String | RealCoordinates String String
+
+instance Codec Coordinate where
+  codec = match
+    [ Fragment ComplexCoordinate (\case { ComplexCoordinate z -> Just z; _ -> Nothing })
+      (key "coord")
+    , Fragment (uncurry RealCoordinates) (\case { RealCoordinates x y -> Just (x, y); _ -> Nothing }) $ do
+        x <-fst-< key "x-coord"
+        y <-snd-< key "y-coord"
+        build (,) x y
+    ]
+
+data ClickHandler = ClickHandler
+  { chCoord  :: Variable Coordinate
+  , chCanUpdateViewer :: Variable Bool
+  , chScript :: HandlerScript }
+
+instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) ClickHandler where
+  codecWith_ ctx = do
+    coord  <-chCoord-< codec
+    update <-chCanUpdateViewer-< keyWithDefaultValue False "can-update-viewer-coords"
+    script <-chScript-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    build ClickHandler coord update script
+
+data DragHandler = DragHandler
+  { dhCoord  :: Variable Coordinate
+  , dhStart  :: Variable Coordinate
+  , dhCanUpdateViewer :: Variable Bool
+  , dhScript :: HandlerScript }
+
+instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) DragHandler where
+  codecWith_ ctx = do
+    coord  <-dhCoord-< codec
+    start  <-dhStart-< codec
+    update <-dhCanUpdateViewer-< keyWithDefaultValue False "can-update-viewer-coords"
+    script <-dhScript-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    build DragHandler coord start update script
+
+{-
 
 data EventHandlers env = EventHandlers
   { ehOnClick       :: Maybe (SomeEventHandler env '[ 'RealT, 'RealT ])
@@ -544,3 +657,4 @@ runEventHandler allowUpdates ctx draw SomeEventHandler{..} args = do
 
 data K :: Type -> Symbol -> FSType -> Exp Type
 type instance Eval (K t _ _) = t
+-}

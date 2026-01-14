@@ -2,8 +2,6 @@ module Data.DynamicValue
   ( Dynamic(..)
   , Variable(..)
   , Mapped(..)
-  , mapper
-  , source
   , AsDynamic(..)
   , newVariable
   , setValue

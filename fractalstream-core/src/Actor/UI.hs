@@ -2,7 +2,7 @@ module Actor.UI
   ( UI(..)
   ) where
 
-import Data.DynamicValue
+
 import Actor.Layout
 import Actor.Viewer.Complex
 
@@ -11,15 +11,15 @@ data UI where
       { newEnsemble :: IO ensembleHandle
       , runSetup :: ensembleHandle
                  -> String
-                 -> Layout SomeDynamic
+                 -> Layout
                  -> IO ()
                  -> IO ()
       , makeLayout :: ensembleHandle
                    -> String
-                   -> Layout SomeDynamic
+                   -> Layout
                    -> IO ()
       , makeViewer :: ensembleHandle
-                   -> ViewerUIProperties
-                   -> ComplexViewer'
+--                   -> ViewerUIProperties
+                   -> ComplexViewer
                    -> IO ()
       } -> UI

@@ -1,33 +1,29 @@
 {-# language OverloadedStrings #-}
 module Actor.Configuration
   ( Configuration(..)
-  , withConfigurationEnv
-  , getConfigurationSplices
+  --, withConfigurationEnv
+ --  , getConfigurationSplices
   ) where
 
 import Actor.Layout
-import Language.Type
-import Language.Environment
 import Language.Value.Parser
-import qualified Data.Map as Map
 import Data.Codec
+import Data.DynamicValue
 
-import Data.Aeson
-
-data Configuration f = Configuration
-  { coTitle :: String
-  , coSize :: Dimensions
-  , coContents :: Layout f
+data Configuration = Configuration
+  { coTitle    :: Parsed String
+  , coSize     :: Variable Dimensions
+  , coContents :: Layout
   }
-  deriving Show
 
-instance CodecWith ctx (Layout f) => CodecWith ctx (Configuration f) where
-  codecWith_ ctx = do
-    title <-coTitle-< key "title"
+instance CodecWith (Dynamic Splices) Configuration where
+  codecWith_ splices = do
+    title <-coTitle-< mapped (key "title") $ \_ -> pure nonEmptyString
     size  <-coSize-< key "size"
-    body  <-coContents-< codecWith ctx
+    body  <-coContents-< codecWith splices
     build Configuration title size body
 
+{-
 withConfigurationEnv :: forall m t env
                            . MonadFail m
                           => Maybe Configuration
@@ -62,3 +58,4 @@ getConfigurationSplices Configuration{..}
       case parseParsedValue Map.empty valStr of
         Left e -> fail (ppFullError e valStr)
         Right v -> pure (name, v)
+-}

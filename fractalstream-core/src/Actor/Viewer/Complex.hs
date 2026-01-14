@@ -1,6 +1,7 @@
 {-# language OverloadedStrings #-}
 module Actor.Viewer.Complex
   ( ComplexViewer(..)
+{-
   , ViewerUIProperties(..)
   , ComplexViewer'(..)
   , ComplexViewerCompiler(..)
@@ -8,67 +9,98 @@ module Actor.Viewer.Complex
   , cloneComplexViewer
   , StringOf(..)
   , BadProject(..)
+-}
   , InternalX
   , InternalY
   , InternalPx
+  , RealViewer
+  , BadProject(..)
   ) where
 
 import FractalStream.Prelude
 
 import Actor.Layout
-import Actor.Configuration
+--import Actor.Configuration
 import Actor.Tool
-import Actor.Event
+--import Actor.Event
 
 import Language.Type
 import Language.Code
 import Data.DynamicValue
-import Data.Color (grey)
+import Data.Codec
 
-import Language.Draw
-import Language.Code.InterpretIO (ScalarIORefM, IORefTypeOfBinding, eval)
+--import Data.Color (grey)
+
+--import Language.Draw
+--import Language.Code.InterpretIO (ScalarIORefM, IORefTypeOfBinding, eval)
 
 import Language.Value.Parser
+{-
 import Language.Value.Typecheck ( internalVanishingRadius
                                 , internalEscapeRadius
                                 , internalIterationLimit
                                 , internalIterations
                                 , internalStuck )
-import Language.Code.Parser
+-}
+--import Language.Code.Parser
 import Language.Parser.SourceRange
-import Language.Value.Evaluator
-import Language.Typecheck
+--import Language.Value.Evaluator
+--import Language.Typecheck
 
-import Foreign (Ptr)
-import Data.Aeson
-import qualified Data.Text as Text
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-import Control.Concurrent.MVar
-import Control.Exception (Exception(..), throwIO)
+--import Foreign (Ptr)
+--import Data.Aeson
+--import qualified Data.Text as Text
+--import qualified Data.Map as Map
+--import qualified Data.Set as Set
+--import Control.Concurrent.MVar
+import Control.Exception (Exception(..)) --, throwIO)
 
 data BadProject = BadProject String String
   deriving Show
 
 instance Exception BadProject
 
-data ComplexViewer = ComplexViewer
-  { cvTitle :: String
-  , cvSize :: (Int, Int)
-  , cvCanResize :: Bool
-  , cvCenter :: StringOf 'ComplexT
-  , cvPixelSize :: StringOf 'RealT
-  , cvCoord :: String
-  , cvPixel :: Maybe String
-  , cvEscapeRadius :: Maybe String
-  , cvVanishRadius :: Maybe String
-  , cvIterationLimit :: Maybe String
-  , cvCode :: String
-  , cvOverlay :: Maybe String
-  , cvTools :: [ComplexTool]
-  }
-  deriving Show
+type InternalX  = "[internal] x"
+type InternalY  = "[internal] y"
+type InternalPx = "[internal] px"
 
+type RealViewer env =
+  ( '(InternalX, 'RealT) ': '(InternalY, 'RealT) ': '(InternalPx, 'RealT) ':
+    '("color", 'ColorT) ': env)
+
+data ComplexViewer = ComplexViewer
+  { cvTitle :: Parsed String
+  , cvSize :: Variable Dimensions
+  , cvCanResize :: Variable Bool
+  , cvCenter :: Parsed (Complex Double)
+  , cvPixelSize :: Parsed Double
+  , cvCoord :: Parsed String
+  , cvPixel :: Mapped (Maybe String) (Either String (Maybe String))
+  --, cvEscapeRadius :: Parsed (Maybe String)
+  --, cvVanishRadius :: Parsed (Maybe String)
+  --, cvIterationLimit :: Parsed (Maybe String)
+  , cvCode :: Mapped CodeString (Either (SourceRange, String) SomeCode)
+  --, cvOverlay :: Variable (Maybe String)
+  , cvTools :: Variable [Tool]
+  }
+
+instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) ComplexViewer where
+  codecWith_ ctx = do
+    title  <-cvTitle-< mapped (key "title") $ \_ -> pure nonEmptyString
+    size   <-cvSize-< key "size"
+    resize <-cvCanResize-< keyWithDefaultValue True "resizable"
+    center <-cvCenter-< mapped (keyWithDefaultValue "0" "initial-center") $ \_ ->
+      pure (parseConstant' ComplexType)
+    pxSize <-cvPixelSize-< mapped (keyWithDefaultValue "1/128" "initial-pixel-size") $ \_ ->
+      pure (parseConstant' RealType)
+    coord  <-cvCoord-< mapped (key "z-coord") $ \_ -> pure nonEmptyString
+    pixel  <-cvPixel-< mapped (keyWithDefaultValue Nothing "pixel-size") $ \_ ->
+      pure (traverse nonEmptyString)
+    code   <-cvCode-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    tools  <-cvTools-< optionalField "tools" (newVariable "" []) (fmap null . getDynamic) (codecWith ctx)
+    build ComplexViewer title size resize center pxSize coord pixel code tools
+
+{-
 instance FromJSON ComplexViewer where
   parseJSON = withObject "complex viewer" $ \o -> do
     cvTitle <- o .: "title"
@@ -92,14 +124,6 @@ data ViewerUIProperties = ViewerUIProperties
   , vpSize :: (Int, Int)
   , vpCanResize :: Bool
   }
-
-type InternalX  = "[internal] x"
-type InternalY  = "[internal] y"
-type InternalPx = "[internal] px"
-
-type RealViewer env =
-  ( '(InternalX, 'RealT) ': '(InternalY, 'RealT) ': '(InternalPx, 'RealT) ':
-    '("color", 'ColorT) ': env)
 
 data ComplexViewer' where
   ComplexViewer' :: forall z px env
@@ -491,3 +515,4 @@ runExceptTIO :: ExceptT String IO a -> IO a
 runExceptTIO action = runExceptT action >>= \case
   Right result -> pure result
   Left err     -> throwIO (BadProject "there was a problem building the viewer's configuration values." err)
+-}

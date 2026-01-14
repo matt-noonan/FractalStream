@@ -5,6 +5,7 @@ module Language.Value.Parser
   , parseInputValue
   , parseType
   , parseEnvironment
+  , parseConstant
   , valueGrammar
   , valueGrammarWithNoSplices
   , atType
@@ -29,6 +30,8 @@ import Language.Value.Typecheck
 import Language.Parser
 import Language.Typecheck
 import Language.Parser.Tokenizer
+import Language.Parser.SourceRange
+import Language.Value.Evaluator (evaluateInContext)
 
 ------------------------------------------------------
 -- Main functions for parsing Values
@@ -40,6 +43,17 @@ parseType = fmap (`withType` SomeType) . parse typeGrammar . tokenize
 parseEnvironment :: String -> Either ParseError (Map String SomeType)
 parseEnvironment = fmap (Map.fromList . map (fmap (`withType` SomeType)))
                  . parse envGrammar . tokenize
+
+parseConstant :: forall ty
+               . TypeProxy ty
+              -> String
+              -> Either (Either ParseError TCError) (HaskellType ty)
+parseConstant ty input = withKnownType ty $
+  parseValue @'[] @ty Map.empty input >>= \v ->
+    case sameHaskellType (typeOfValue v) ty of
+      Just Refl -> Right (evaluateInContext EmptyContext v)
+      Nothing   -> Left . Right $ Surprise NoSourceRange
+        "this expression" (an $ typeOfValue v) (Expected $ an ty)
 
 parseValue :: forall env ty. (KnownEnvironment env, KnownType ty)
            => Splices

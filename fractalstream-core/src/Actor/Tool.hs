@@ -1,11 +1,11 @@
 {-# language OverloadedStrings #-}
 module Actor.Tool
   ( Tool(..)
-  , ParsedTool(..)
+--  , ParsedTool(..)
   , ToolInfo(..)
-  , RealTool(..)
-  , ComplexTool(..)
-  , defaultComplexSelectionTool
+--  , RealTool(..)
+--  , ComplexTool(..)
+--  , defaultComplexSelectionTool
   ) where
 
 import FractalStream.Prelude
@@ -14,34 +14,58 @@ import Actor.Configuration
 import Actor.Event
 import Actor.Layout
 
-import Data.Aeson
-
-data ParsedTool = ParsedTool
-  { ptoolInfo :: ToolInfo
-  , ptoolDrawLayer :: Int
-  , ptoolRefreshOnActivate :: Bool
-  , ptoolRefreshCanUpdate :: Bool
-  , ptoolConfig :: Maybe Configuration
-  , ptoolEventHandlers :: ParsedEventHandlers
-  }
-  deriving Show
+import Data.Codec
+import Data.DynamicValue
+import Language.Value.Typecheck (Splices)
+import Language.Environment (SomeEnvironment)
 
 data Tool = Tool
   { toolInfo :: ToolInfo
-  , toolDrawLayer :: Int
-  , toolRefreshOnActivate :: Bool
-  , toolConfig :: Maybe (Layout ConstantExpression)
-  , toolEventHandler :: Event -> Maybe (IO ())
-  , toolVars :: Set String
+  , toolDrawLayer :: Variable Int
+  , toolRefreshOnActivate :: Variable Bool
+  , toolRefreshCanUpdate  :: Variable Bool
+  , toolConfig :: Variable (Maybe Configuration)
+  , toolEventHandlers :: Variable [XEventHandler]
+  --, toolEventHandler :: Dynamic (Event -> Maybe (IO ()))
+  --, toolVars :: Dynamic (Set String)
   }
 
 data ToolInfo = ToolInfo
-  { tiName :: String
-  , tiShortcut :: Maybe Char
-  , tiShortHelp :: String
-  , tiHelp :: String
+  { tiName      :: Parsed String
+  , tiShortcut  :: Variable String
+  , tiShortHelp :: Variable String
+  , tiHelp      :: Variable String
   }
-  deriving Show
+
+instance Codec ToolInfo where
+  codec = do
+    name      <-tiName-<      mapped (key "name") $ \_ -> pure nonEmptyString
+    shortcut  <-tiShortcut-<  keyWithDefaultValue "" "shortcut"
+    shortHelp <-tiShortHelp-< keyWithDefaultValue "" "short-help"
+    help      <-tiHelp-<      keyWithDefaultValue "" "help"
+    build ToolInfo name shortcut shortHelp help
+
+instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) Tool where
+  codecWith_ ctx = do
+    ti <-toolInfo-< codec
+    layer <-toolDrawLayer-< keyWithDefaultValue 100 "draw-to-layer"
+    refreshOnActivate <-toolRefreshOnActivate-< keyWithDefaultValue True  "refresh-on-activation"
+    refreshCanUpdate  <-toolRefreshCanUpdate-<  keyWithDefaultValue False "refresh-can-update"
+    config <-toolConfig-< optionalField "configuration"
+      (newVariable "" Nothing) (fmap isNothing . getDynamic) (codecWith (fmap snd <$> ctx))
+    handlers <-toolEventHandlers-< optionalField "actions"
+      (newVariable "" []) (fmap null . getDynamic) (codecWith ctx)
+    build Tool ti layer refreshOnActivate refreshCanUpdate config handlers
+{-
+data ParsedTool = ParsedTool
+  { ptoolInfo :: ToolInfo
+  , ptoolDrawLayer :: Variable Int
+  , ptoolRefreshOnActivate :: Variable Bool
+  , ptoolRefreshCanUpdate :: Variable Bool
+  , ptoolConfig :: Variable (Maybe Configuration)
+  , ptoolEventHandlers :: ParsedEventHandlers
+  }
+
 
 newtype RealTool = RealTool ParsedTool
   deriving Show
@@ -103,3 +127,4 @@ defaultComplexSelectionTool name = ParsedTool{..}
       , cpehOnDrag = Just (Left name, "INTERNAL__drag_start", True, "pass")
       , cpehOnDragDone = Just (Left name, "INTERNAL__drag_start", True, "pass")
       }
+-}

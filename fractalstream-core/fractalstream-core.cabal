@@ -131,8 +131,6 @@ library
                        include-file,
                        utf8-string,
                        githash,
-                       microlens,
-                       microlens-th,
   hs-source-dirs:      src
 
 test-suite spec

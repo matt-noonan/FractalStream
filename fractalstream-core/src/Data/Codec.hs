@@ -99,6 +99,7 @@ data Fragment f s where
 -- a typeclass.
 class (IsPrivateCodecBuilderInstance f ~ 'True, Monad f) => CodecBuilder f where
   aeson  :: forall a. (FromJSON a, ToJSON a) => f (Whole f a)
+  mustBe :: forall a s t. (FromJSON a, ToJSON a) => String -> a -> f (Part f s t) -> f (Part f s t)
   manyOf :: forall a. f (Whole f a) -> f (Whole f [a])
   optOf  :: forall a. f (Whole f a) -> f (Whole f (Maybe a))
   newOf  :: forall a. f (Whole f a) -> f (Whole f (Variable a))
@@ -126,13 +127,18 @@ data ArgsOf f g s where
   End :: forall s f. ArgsOf f s s
 
 -- | Decoder monad
-newtype D a = D { runD :: ReaderT Value (ExceptT String IO) a }
+newtype D a = D (ReaderT Value (ExceptT String IO) a)
   deriving (Functor, Applicative, Monad)
 
 instance CodecBuilder D where
   aeson = D . ReaderT $ \v -> ExceptT . pure $ case fromJSON v of
     Error err -> Left err
     Success v' -> Right (PartD v')
+  mustBe fld x (D (ReaderT cont)) = D . ReaderT $ \case
+    Object o -> case KM.lookup (fromString fld) o of
+      Just v' -> if toJSON x == v' then cont (Object o) else throwError "wrong tag value"
+      Nothing -> throwError ("no field named `" ++ fld ++ "`")
+    _ -> throwError "not an object"
   newOf xsch = do
     x <- unD <$> xsch
     D . ReaderT $ \_ -> ExceptT (Right . PartD <$> newVariable "" x)
@@ -174,8 +180,7 @@ instance Alternative D where
   D x <|> D y = D (x <|> y)
 
 -- | Encoder monad
-newtype E a = E { runE :: a }
-  deriving Functor
+newtype E a = E a deriving Functor
 
 instance Applicative E where
   pure = E
@@ -186,6 +191,9 @@ instance Monad E where
 
 instance CodecBuilder E where
   aeson = E . PartE $ (pure . toJSON)
+  mustBe fld x (E cont) = E . PartE $ \y -> do
+    v <- unE cont y
+    pure (combineObjects [v, Object (KM.singleton (fromString fld) (toJSON x))])
   newOf (E f) = E . PartE $ \d -> getDynamic (Dynamic d) >>= unE f
   optOf (E f) = E . PartE $ \m -> maybe (pure Null) (unE f) m
   manyOf (E f) = E . PartE $ \xs -> Array . V.fromList <$> mapM (unE f) xs
@@ -215,10 +223,11 @@ class Codec a where
 
 -- | Sometimes we can't deserialize a value without some additional context.
 -- @CodecWith@ is like @Codec@ but allows for that extra context to be passed in.
-class CodecWith ctx a where
+class CodecWith ctx a | a -> ctx where
   codecWith_ :: forall f. CodecBuilder f => Part f a ctx -> f (Whole f a)
 
 instance Codec Void where codec = match []
+instance Codec Bool where codec = aeson
 instance Codec Int where codec = aeson
 instance {-# OVERLAPS #-} Codec String where codec = aeson
 instance {-# OVERLAPPABLE #-} Codec a => Codec [a] where codec = manyOf codec
@@ -229,12 +238,10 @@ instance (Codec a, Codec b) => Codec (Either a b) where
   codec = match [ Fragment Left  (either Just (const Nothing)) codec
                 , Fragment Right (either (const Nothing) Just) codec ]
 
-instance CodecWith ctx Void where codecWith_ _ = match []
 instance (CodecWith ctx b, b ~ a) => CodecWith ctx [a] where codecWith_ ctx = manyOf (codecWith ctx)
 instance (CodecWith ctx b, b ~ a) => CodecWith ctx (Variable a) where codecWith_ ctx = newOf (codecWith ctx)
 instance (CodecWith ctx b, b ~ a) => CodecWith ctx (Maybe a) where codecWith_ ctx = optOf (codecWith ctx)
 instance (CodecWith ctx b, b ~ a) => CodecWith ctx (Map String a) where codecWith_ ctx = mapOf (codecWith ctx)
-instance Codec a => CodecWith () a where codecWith_ _ = codec
 
 -- | @key "foo"@ describes a required value that can be found at the object key "foo".
 key :: forall a f. (CodecBuilder f, Codec a) => String -> f (Whole f a)
@@ -324,15 +331,15 @@ build :: forall f ctor s
       -> Fun f (CollectArgs ctor) (CollectResult ctor)
 build ctor = liftCtor @f @ctor @s (build_ ctor)
 
-type family CollectArgs t :: [*] where
+type family CollectArgs t :: [Type] where
   CollectArgs (a -> b) = a ': CollectArgs b
   CollectArgs r = '[]
 
-type family CollectResult t :: * where
+type family CollectResult t :: Type where
   CollectResult (a -> b) = CollectResult b
   CollectResult r = r
 
-type family BuilderOf f (args :: [*]) t where
+type family BuilderOf f (args :: [Type]) t where
   BuilderOf f '[] t = t
   BuilderOf f (x ': args) t = f x -> BuilderOf f args t
 
