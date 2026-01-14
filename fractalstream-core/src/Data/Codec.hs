@@ -111,7 +111,7 @@ class (IsPrivateCodecBuilderInstance f ~ 'True, Monad f) => CodecBuilder f where
   build_  :: forall ctor s. ctor -> ArgsOf f ctor s -> f (Whole f s)
   codecWithImpl :: forall a s ctx. CodecWith ctx a => Proxy a -> Part f s ctx -> f (Whole f a)
   purely :: forall t
-          . (forall g. Applicative g => (forall s a q. AsDynamic q => Part f s (q a) -> g a) -> g t)
+          . ((forall s a q. AsDynamic q => Part f s (q a) -> Dynamic a) -> Dynamic t)
          -> f (Whole f (Dynamic t))
 
 codecWith :: forall a s ctx f. (CodecBuilder f, CodecWith ctx a) => Part f s ctx -> f (Whole f a)
@@ -172,7 +172,7 @@ instance CodecBuilder D where
     pure (PartD <$> go ctor args)
   codecWithImpl (_ :: Proxy a) (ctx :: Part D s ctx) =
     codecWith_ @ctx @a (PartD $ unD ctx)
-  purely action = pure (PartD $ action @Dynamic (dyn . unD))
+  purely action = pure (PartD $ action (dyn . unD))
   match xs = asum (map (\(Fragment f _ x) -> PartD . f . unD <$> x) xs)
 
 instance Alternative D where

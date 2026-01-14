@@ -2,35 +2,33 @@
 module Actor.Ensemble
   ( Ensemble(..)
   --, runEnsemble
-  , Template(..)
-  , Project(..)
-  , runTemplate
-  , parseTemplate
-  , parseTemplateFromFile
-  , allTemplates
+--  , Template(..)
+--  , Project(..)
+--  , runTemplate
+--  , parseTemplate
+--  , parseTemplateFromFile
+--  , allTemplates
   ) where
 
 import FractalStream.Prelude
 
 import Data.DynamicValue
-import Actor.UI
+--import Actor.UI
 import Actor.Configuration
 import Actor.Layout
 import Actor.Viewer.Complex
 import Language.Environment
 
-import Data.Char (isSpace)
-import qualified Data.ByteString as BS
-import Data.Aeson
-import qualified Data.Yaml as YAML
+--import Data.Char (isSpace)
+--import qualified Data.ByteString as BS
+--import Data.Aeson
+--import qualified Data.Yaml as YAML
 import qualified Data.Map as Map
-import qualified Data.ByteString.UTF8 as UTF8
+--import qualified Data.ByteString.UTF8 as UTF8
 
-import Development.IncludeFile
+--import Development.IncludeFile
 
 import Data.Codec
-
-import Debug.Trace
 
 data Ensemble = Ensemble
   { ensembleSetup         :: Variable (Maybe Configuration)
@@ -44,22 +42,28 @@ instance Codec Ensemble where
       (newVariable "" Nothing) (fmap isNothing . getDynamic) $ do
       codecWith (pure $ pure Map.empty)
 
+    splices <- purely $ \use -> use setup >>= \case
+      Nothing -> pure Map.empty
+
+      -- TODO: add error reporting for splices
+      Just Configuration{..} -> either (const Map.empty) id <$> layoutToSplices coContents
+
     config <-ensembleConfiguration-< optionalField "configuration"
-      (newVariable "" Nothing) (fmap isNothing . getDynamic) $ do
-      splices <- purely $ \use -> use setup >>= \case
-          Nothing -> pure Map.empty
-
-          -- TODO: add error reporting for splices
-          Just Configuration{..} -> either (const Map.empty) id <$> layoutToSplices coContents
-
+      (newVariable "" Nothing) (fmap isNothing . getDynamic) $
       codecWith splices
+
+    env <- purely $ \use -> use config >>= \case
+      Nothing -> pure (Right $ SomeEnvironment EmptyEnvProxy)
+      Just Configuration{..} -> layoutEnv coContents
+
+    ctx <- purely $ \use -> (,) <$> use env <*> use splices
 
     viewers <-ensembleViewers-< newOf $ match
       [ Fragment (const []) (\case { [] -> Just (); _ -> Nothing }) $ pure (pure ())
-      , Fragment (:[]) (\case { [x] -> Just x; _ -> Nothing }) $ do
-          q <- purely $ \use -> _
-          codecWith q
-      , Fragment id Just (codecWith _)
+      , Fragment (:[]) (\case { [x] -> Just x; _ -> Nothing }) $
+        field "viewer" (codecWith ctx)
+      , Fragment id Just $
+        field "viewers" (codecWith ctx)
       ]
 
     build Ensemble setup config viewers
