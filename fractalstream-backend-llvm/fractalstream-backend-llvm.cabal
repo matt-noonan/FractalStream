@@ -59,7 +59,7 @@ common FractalStream-common
 library
   import: FractalStream-common
   exposed-modules:     Backend
-  other-modules:       Backend.LLVM
+                       Backend.LLVM
                        Backend.LLVM.Operand
                        Backend.LLVM.Value
                        Backend.LLVM.Code

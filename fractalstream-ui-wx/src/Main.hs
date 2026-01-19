@@ -5,7 +5,7 @@ Description  : Main entry point into FractalStream
 -}
 module Main where
 
-import Actor.Ensemble
+--import Actor.Ensemble
 
 import UI.ProjectActions
 import UI.Menu
@@ -34,7 +34,7 @@ main = withBackend $ \complexViewerCompiler -> start $ do
 
   wxcAppSetAppName "FractalStream"
 
-  sessions <- newUIValue []
+  activeSessions <- newVariable "" []
 
   let projectNew = putStrLn "TODO"
 
@@ -47,37 +47,35 @@ main = withBackend $ \complexViewerCompiler -> start $ do
 
         withRecoveryActions $ do
 
-          prj <- either error id <$> parseTemplateFromFile yamlFile
+          prj <- either error id <$> parseProjectFromFile yamlFile
 
-          let si = SessionInfo
-                { sessionName = yamlFile
-                , sessionHandle = SessionHandle projectWindow
-                , sessionVisible = True
-                , sessionUnsaved = False }
-          modifyValue sessions (si :)
-          runTemplate complexViewerCompiler
+          sessionName <- newVariable "" yamlFile
+          let sessionHandle = SessionHandle projectWindow
+          sessionVisible <- newVariable "" True
+          sessionUnsaved <- newVariable "" False
+          let si = SessionInfo{..}
+          modifyValue activeSessions (si :)
+          runEnsemble complexViewerCompiler
             (viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..}))
             prj
-
+{-
       projectOpenTemplate = \name prj -> do
         projectWindow <- frame [ visible := False ]
         let withRecoveryActions
               = (`catch` badProjectFile projectWindow name)
               . (`catch` errorCalled projectWindow)
         withRecoveryActions $ do
-          let si = SessionInfo
-                { sessionName = name
-                , sessionHandle = SessionHandle projectWindow
-                , sessionVisible = True
-                , sessionUnsaved = False }
-          modifyUIValue sessions (si :)
+          sessionName <- newVariable "" name
+          let sessionHandle = SessionHandle projectWindow
+          sessionVisible <- newVariable "" True
+          sessionUnsaved <- newVariable "" False
+          let si = SessionInfo{..}
+          modifyValue activeSessions (si :)
           runTemplate complexViewerCompiler
             (viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..}))
             prj
-
+-}
       projectEdit = editProject
-
-      activeSessions = SomeDynamic sessions
 
       closeSession SessionInfo{..} = case sessionHandle of
         SessionHandle f -> close f
@@ -85,20 +83,23 @@ main = withBackend $ \complexViewerCompiler -> start $ do
       hideSession SessionInfo{..} = case sessionHandle of
         SessionHandle f -> do
           windowChildren f >>= mapM_ (\child -> set child [visible := False])
-          modifyUIValue sessions (map $ markVisible sessionHandle False)
+          mapM_ (markVisible sessionHandle False) =<< getDynamic activeSessions
 
       showSession SessionInfo{..} = case sessionHandle of
         SessionHandle f -> do
           windowChildren f >>= mapM_ (\child -> set child [visible := True])
-          modifyUIValue sessions (map $ markVisible sessionHandle True)
+          mapM_ (markVisible sessionHandle True) =<< getDynamic activeSessions
 
       markVisible h yn s
-        | sessionHandle s == h = s { sessionVisible = yn }
-        | otherwise = s
+        | sessionHandle s == h = setValue (sessionVisible s) yn
+        | otherwise = pure ()
 
       editSession _ = putStrLn "TODO, editSession"
 
   welcome ProjectActions{..}
+
+runTemplate :: ComplexViewerCompiler ->
+runTemplate _ _ _ = putStrLn "TODO: runTemplate"
 
 badYaml :: Frame a -> FilePath -> YAML.ParseException -> IO ()
 badYaml w path e = badProjectFile w path (BadProject "Bad YAML file" (show e))

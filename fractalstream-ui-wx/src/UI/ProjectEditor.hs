@@ -2,7 +2,7 @@
 {-# options_ghc -Wno-unused-top-binds #-}
 module UI.ProjectEditor
   ( editProject
-
+{-
   , Dyn
   , newDyn
   , getDyn
@@ -13,9 +13,14 @@ module UI.ProjectEditor
   , DEnsemble(..)
 
   , DynamicLayout(..)
-
+-}
   ) where
 
+editProject :: FilePath -> IO ()
+editProject _ = do
+  putStrLn "TODO: editProject"
+
+{-
 import FractalStream.Prelude hiding (get)
 
 --import Actor.Ensemble
@@ -1601,3 +1606,4 @@ substitute input0 splices = fmap (unlines . concat) . mapM substituteLine . zip 
            Nothing -> Left ( SourceRange (Pos linum (colnum - 1)) (Pos linum (colnum + length name))
                            , "No expression named " ++ show name ++ " has been defined in the Setup tab.")
            Just s  -> Right (colnum + length name + 1 - length s - 2, "{" ++ s ++ "}" ++ input')
+-}

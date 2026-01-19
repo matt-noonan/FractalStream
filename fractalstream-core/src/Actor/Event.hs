@@ -1,8 +1,9 @@
 module Actor.Event
   ( Event(..)
-  --, EventHandlers(..)
+  , EventHandlers(..)
   --, ParsedEventHandlers(..)
   --, ComplexParsedEventHandlers(..)
+  , type SomeEventHandler
 
   , XEventHandler(..)
   , ClickHandler(..)
@@ -11,13 +12,13 @@ module Actor.Event
   , ButtonHandler(..)
   , UnitHandler(..)
 
+  , handleEvent
+
 {-
   , convertComplexToRealEventHandlers
   , combineEventHandlers
   , noEventHandlers
   , noComplexEventHandlers
-  , type SomeEventHandler
-  , handleEvent
   , toEventHandlers
   , prependHandlerCode
 -}
@@ -27,14 +28,16 @@ import FractalStream.Prelude
 
 --import Language.Type
 import Language.Environment
---import Language.Value.Evaluator (HaskellTypeOfBinding)
+import Language.Value.Evaluator (HaskellTypeOfBinding)
 import Language.Code
 import Language.Parser.SourceRange
 import Language.Value.Parser
 --import Language.Value.Typecheck (internalIterations, internalStuck)
 --import Language.Code.Parser
---import Language.Code.InterpretIO
---import Language.Draw
+import Language.Code.InterpretIO hiding (update)
+import Language.Draw
+import qualified Data.Map as Map
+import Data.IORef
 
 import Data.DynamicValue
 import Data.Codec
@@ -159,7 +162,6 @@ instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) DragHandle
     script <-dhScript-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
     build DragHandler coord start update script
 
-{-
 
 data EventHandlers env = EventHandlers
   { ehOnClick       :: Maybe (SomeEventHandler env '[ 'RealT, 'RealT ])
@@ -172,6 +174,7 @@ data EventHandlers env = EventHandlers
   , ehOnActivated   :: Maybe (SomeEventHandler env '[])
   , ehOnDeactivated :: Maybe (SomeEventHandler env '[])
   }
+{-
 
 data ParsedEventHandlers = ParsedEventHandlers
   { pehOnClick :: Maybe (String, String, Bool, String)
@@ -547,6 +550,8 @@ combineEventHandlers (Right lhs) rhs = do
     <*> combine pehOnActivated "activated"
     <*> combine pehOnDeactivated "deactivated"
 
+-}
+
 handleEvent :: forall env
              . Context Variable_ env
             -> Bool
@@ -619,7 +624,6 @@ runEvt draw ctx eh args = case eh of
       let ctx' = Bind name ty ref ctx
       runEvt draw ctx' eh' args'
 
-
 runEventHandler :: forall env args
                  . Bool
                 -> Context Variable_ env
@@ -657,4 +661,3 @@ runEventHandler allowUpdates ctx draw SomeEventHandler{..} args = do
 
 data K :: Type -> Symbol -> FSType -> Exp Type
 type instance Eval (K t _ _) = t
--}

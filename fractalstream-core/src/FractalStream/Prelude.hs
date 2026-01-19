@@ -18,6 +18,7 @@ module FractalStream.Prelude
     , module Data.Maybe
     , (***)
     , (&&&)
+    , (&)
     , left
     , right
     , Exp
@@ -50,6 +51,7 @@ import Control.Applicative hiding (Const(..))
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Except
+import Data.Function ((&))
 import Data.Functor hiding (unzip)
 import Data.Bifunctor
 import Data.String

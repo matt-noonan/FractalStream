@@ -1,7 +1,8 @@
 {-# language OverloadedStrings, TemplateHaskell #-}
 module Actor.Ensemble
   ( Ensemble(..)
-  --, runEnsemble
+  , parseEnsembleFromFile
+  , runEnsemble
 --  , Template(..)
 --  , Project(..)
 --  , runTemplate
@@ -13,14 +14,15 @@ module Actor.Ensemble
 import FractalStream.Prelude
 
 import Data.DynamicValue
---import Actor.UI
+import Actor.UI
 import Actor.Configuration
 import Actor.Layout
 import Actor.Viewer.Complex
 import Language.Environment
+import Language.Value.Typecheck (Splices)
 
 --import Data.Char (isSpace)
---import qualified Data.ByteString as BS
+import qualified Data.ByteString as BS
 --import Data.Aeson
 --import qualified Data.Yaml as YAML
 import qualified Data.Map as Map
@@ -59,14 +61,24 @@ instance Codec Ensemble where
     ctx <- purely $ \use -> (,) <$> use env <*> use splices
 
     viewers <-ensembleViewers-< newOf $ match
-      [ Fragment (const []) (\case { [] -> Just (); _ -> Nothing }) $ pure (pure ())
-      , Fragment (:[]) (\case { [x] -> Just x; _ -> Nothing }) $
-        field "viewer" (codecWith ctx)
-      , Fragment id Just $
-        field "viewers" (codecWith ctx)
+      [ Fragment (:[]) (\case { [x] -> Just x; _ -> Nothing }) $ do
+          debugDump "trying [_]"
+          field "viewer" (codecWith ctx)
+      , Fragment id Just $ do
+          debugDump "trying [...]"
+          field "viewers" (codecWith ctx)
+      , Fragment (const []) (\case { [] -> Just (); _ -> Nothing }) $ do
+          debugDump "trying []"
+          pure (pure ())
       ]
 
     build Ensemble setup config viewers
+
+parseEnsembleFromFile :: FilePath -> IO (Either String Ensemble)
+parseEnsembleFromFile path = do
+  contents <- BS.readFile path
+  BS.length contents `seq` pure ()
+  deserializeYAML contents
 
 {-
 data Project = Project
@@ -147,7 +159,9 @@ substitute input0 splices = unlines . concatMap substituteLine . lines $ input0
       in case Map.lookup name splices of
            Nothing -> error ("No splice named " ++ show name)
            Just s  -> concat ["{", s, "}", input']
+-}
 
+{-
 runTemplate :: ComplexViewerCompiler
             -> UI
             -> Template
@@ -206,8 +220,8 @@ withStrings lo action = do
         ColorExpression {} -> error "TODO: withStrings ColorExpression"
   contents <- sequence (extractAllBindings getNameAndString lo)
   action (Map.fromList contents)
+-}
 
-{-
 runEnsemble :: ComplexViewerCompiler
             -> UI
             -> Ensemble
@@ -220,20 +234,25 @@ runEnsemble jit UI{..} Ensemble{..} = do
   -- Make the setup window and let it run
   let withSplicesFromSetup :: (Splices -> IO ())
                            -> IO ()
-      withSplicesFromSetup k = case ensembleSetup of
+      withSplicesFromSetup k = getDynamic ensembleSetup >>= \case
         Nothing -> k Map.empty
         Just setup -> do
-          setupUI <- runExceptTIO (allocateUIExpressions (coContents setup))
-          runSetup project (coTitle setup) (toSomeDynamic setupUI) (withSplices setupUI k)
+          title <- fromRight (const "???") <$> getDynamic (coTitle setup)
+          runSetup project title (coContents setup) $ do
+              getDynamic (layoutToSplices $ coContents setup) >>= \case
+                Left err -> error err
+                Right splices -> k splices
 
       withContextFromConfiguration :: (forall env. Context DynamicValue env -> IO ())
                                    -> IO ()
-      withContextFromConfiguration k = case ensembleConfiguration of
+      withContextFromConfiguration k = getDynamic ensembleConfiguration >>= \case
         Nothing -> k EmptyContext
         Just config -> do
-          configUI <- runExceptTIO (allocateUIConstants (coContents config))
-          makeLayout project (coTitle config) (toSomeDynamic configUI)
-          withDynamicBindings configUI k
+          title <- fromRight (const "???") <$> getDynamic (coTitle config)
+          makeLayout project title (coContents config)
+          getDynamic (layoutContext $ coContents config) >>= \case
+            Left err -> putStrLn ("ERROR (withContextFromConfiguration): " ++ err)
+            Right (SomeContext ctx) -> k ctx
 
   withSplicesFromSetup $ \splices -> do
     withContextFromConfiguration $ \config -> do
@@ -246,14 +265,15 @@ runEnsemble jit UI{..} Ensemble{..} = do
       ProofNameIsAbsent <- assertAbsentInEnv' (Proxy @"color")
                                               (contextToEnv config)
                                               "internal error, `color` already defined"
-      forM_ ensembleViewers $ \viewer ->
-        withComplexViewer' jit config splices viewer $ \vu cv' -> do
-          makeViewer project vu cv'
--}
+      viewers <- getDynamic ensembleViewers
+      forM_ viewers $ \viewer -> error "TODO"
+--        withComplexViewer' jit config splices viewer $ \vu cv' -> do
+--          makeViewer project vu cv'
 
 runExceptTIO :: ExceptT String IO a -> IO a
 runExceptTIO = fmap (either error id) . runExceptT
 
+{-
 $(includeFileInSource "../examples/templates/simple-complex-dynamics.yaml"
   "simpleComplexDynamicsTemplate")
 

@@ -18,6 +18,7 @@ data Configuration = Configuration
 
 instance CodecWith (Dynamic Splices) Configuration where
   codecWith_ splices = do
+    debugDump "Configuration"
     title <-coTitle-< mapped (key "title") $ \_ -> pure nonEmptyString
     size  <-coSize-< key "size"
     body  <-coContents-< codecWith splices

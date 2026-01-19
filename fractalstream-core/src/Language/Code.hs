@@ -10,6 +10,7 @@ module Language.Code
   , transformValuesM
   , set
   , let_
+  , letInEnv
   , usedVarsInCode
   , usedVarsInValue
   , Unit
@@ -233,6 +234,12 @@ let_ :: forall name env ty
      -> Code env
 let_ = Let bindingEvidence (Proxy @name)
 
+letInEnv :: forall name env ty
+          . (KnownSymbol name, KnownType ty)
+         => (KnownEnvironment env => Value '(env, ty))
+         -> (EnvironmentProxy ( '(name, ty) ': env ), Code ( '(name, ty) ': env))
+         -> (EnvironmentProxy env, Code env)
+letInEnv x (BindingProxy _ _ e, c) = withEnvironment e (e, let_ x c)
 
 -- | Set the value of a variable.
 -- This is the same as using the 'Set' constructor directly,

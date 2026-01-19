@@ -45,18 +45,20 @@ makeMenuBar ProjectActions{..} f addlMenus = do
   sessionItems <- variable [ value := [] ]
 
   let updateSessionMenuItems sessions = do
-        forM_ sessions $ \s@SessionInfo{..} -> case sessionVisible of
-          True  -> do
-            mis <- get sessionItems value
-            mi <- menuItem prj [ text := "Hide " ++ sessionName
-                               , on command := hideSession s ]
-            set sessionItems [ value := mi : mis ]
+        forM_ sessions $ \s@SessionInfo{..} -> do
+          name <- getDynamic sessionName
+          getDynamic sessionVisible >>= \case
+            True  -> do
+              mis <- get sessionItems value
+              mi <- menuItem prj [ text := "Hide " ++ name
+                                 , on command := hideSession s ]
+              set sessionItems [ value := mi : mis ]
 
-          False -> do
-            mis <- get sessionItems value
-            mi <- menuItem prj [ text := "Show " ++ sessionName
-                                , on command := showSession s ]
-            set sessionItems [ value := mi : mis ]
+            False -> do
+              mis <- get sessionItems value
+              mi <- menuItem prj [ text := "Show " ++ name
+                                 , on command := showSession s ]
+              set sessionItems [ value := mi : mis ]
 
       destroySessionMenuItems = do
         mis <- get sessionItems value
@@ -64,7 +66,7 @@ makeMenuBar ProjectActions{..} f addlMenus = do
         mapM_ (menuDestroyByItem prj) mis
 
   getDynamic activeSessions >>= updateSessionMenuItems
-  listenWith activeSessions $ \_ newSessions -> do
+  stopWatchingSessions <- watchDynamic activeSessions $ \newSessions -> do
     active <- readMVar isActive
     when active $ do
       destroySessionMenuItems
@@ -83,4 +85,5 @@ makeMenuBar ProjectActions{..} f addlMenus = do
           infoDialog f "About FractalStream" $ unlines
           ("Contributors:" : contributors ++
             ["", "Build info:", gitBranch ++ "@" ++ take 8 gitHash])
+        , on closing :~ (>> stopWatchingSessions)
         ]

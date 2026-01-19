@@ -18,6 +18,7 @@ import Data.Codec
 import Data.DynamicValue
 import Language.Value.Typecheck (Splices)
 import Language.Environment (SomeEnvironment)
+import qualified Data.Set as Set
 
 data Tool = Tool
   { toolInfo :: ToolInfo
@@ -26,8 +27,8 @@ data Tool = Tool
   , toolRefreshCanUpdate  :: Variable Bool
   , toolConfig :: Variable (Maybe Configuration)
   , toolEventHandlers :: Variable [XEventHandler]
-  --, toolEventHandler :: Dynamic (Event -> Maybe (IO ()))
-  --, toolVars :: Dynamic (Set String)
+  , toolEventHandler :: Dynamic (Event -> Maybe (IO ()))
+  , toolVars :: Dynamic (Set String)
   }
 
 data ToolInfo = ToolInfo
@@ -55,7 +56,12 @@ instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) Tool where
       (newVariable "" Nothing) (fmap isNothing . getDynamic) (codecWith (fmap snd <$> ctx))
     handlers <-toolEventHandlers-< optionalField "actions"
       (newVariable "" []) (fmap null . getDynamic) (codecWith ctx)
-    build Tool ti layer refreshOnActivate refreshCanUpdate config handlers
+    thandlers <-toolEventHandler-< purely $ \_ -> pure (const Nothing) -- FIXME TODO
+    tvars <-toolVars-< purely $ \use -> Set.fromList <$> do
+      cfg <- use config
+      maybe (pure []) (fmap (either (const []) (map fst)) . layoutBindings . coContents) cfg
+    build Tool ti layer refreshOnActivate refreshCanUpdate config handlers thandlers tvars
+
 {-
 data ParsedTool = ParsedTool
   { ptoolInfo :: ToolInfo

@@ -4,11 +4,13 @@ module Data.DynamicValue
   , Mapped(..)
   , AsDynamic(..)
   , newVariable
+  , clone
   , setValue
   , setValue'
   , modifyValue
   , watchDynamic
   , getDynamic
+  , type DynamicValue
   , Dynamic_
   , Variable_
   , SomeUIValue(..)
@@ -52,8 +54,11 @@ data Mapped src a = Mapped
   , source :: Variable src
   }
 
-newVariable :: String -> a -> IO (Variable a)
-newVariable n x = Variable n <$> newMVar (x, 0, Map.empty)
+newVariable :: MonadIO io => String -> a -> io (Variable a)
+newVariable n x = Variable n <$> liftIO (newMVar (x, 0, Map.empty))
+
+clone :: MonadIO io => Variable a -> io (Variable a)
+clone v = newVariable "" =<< getDynamic v
 
 class AsDynamic f where
   dyn :: forall a. f a -> Dynamic a
@@ -62,41 +67,49 @@ instance AsDynamic Dynamic where dyn = id
 instance AsDynamic Variable where dyn = Dynamic
 instance AsDynamic (Mapped s) where dyn (Mapped f x) = f <*> dyn x
 
-getDynamic :: AsDynamic f => f a -> IO a
+-- | @DynamicValue@ is a type family that represents
+-- a named, dynamic version of the Haskell type corresponding to
+-- the given 'FSType'.
+data DynamicValue :: Symbol -> FSType -> Exp Type
+type instance Eval (DynamicValue name ty) = Dynamic (HaskellType ty)
+
+getDynamic :: (AsDynamic f, MonadIO io) => f a -> io a
 getDynamic d = case dyn d of
-  Dynamic (Variable _ mvar) -> (\(x,_,_) -> x) <$> readMVar mvar
+  Dynamic (Variable _ mvar) -> (\(x,_,_) -> x) <$> liftIO (readMVar mvar)
   Ap f x   -> getDynamic f <*> getDynamic x
   Pure x   -> pure x
   Join ddx -> getDynamic ddx >>= getDynamic
 
-setValue :: Eq a
+setValue :: (MonadIO io, Eq a)
          => Variable a
          -> a
-         -> IO ()
-setValue (Variable _ mvar) x' = do
+         -> io ()
+setValue (Variable _ mvar) x' = liftIO $ do
   (x, n, actions) <- readMVar mvar
   when (x /= x') $ do
     modifyMVar_ mvar (\_ -> pure (x', n, actions))
     void $ traverse ($ x') actions
 
-setValue' :: Variable a
+setValue' :: MonadIO io
+          => Variable a
           -> a
-          -> IO ()
-setValue' (Variable _ mvar) x' = do
+          -> io ()
+setValue' (Variable _ mvar) x' = liftIO $ do
   actions <- modifyMVar mvar (\(_, n, actions) -> pure ((x', n, actions), actions))
   void $ traverse ($ x') actions
 
-modifyValue :: Variable a
+modifyValue :: MonadIO io
+            => Variable a
             -> (a -> a)
-            -> IO ()
-modifyValue (Variable _ mvar) f = do
+            -> io ()
+modifyValue (Variable _ mvar) f = liftIO $ do
   (fx, actions) <- modifyMVar mvar (\(x, n, actions) ->
                                       let fx = f x
                                       in pure ((fx, n, actions), (fx, actions)))
   void $ traverse ($ fx) actions
 
-watchDynamic :: AsDynamic f => f a -> (a -> IO ()) -> IO (IO ())
-watchDynamic d = (`go` dyn d)
+watchDynamic :: (MonadIO io, AsDynamic f) => f a -> (a -> IO ()) -> io (IO ())
+watchDynamic d = liftIO . (`go` dyn d)
   where
     go :: forall t. (t -> IO ()) -> Dynamic t -> IO (IO ())
     go action = \case

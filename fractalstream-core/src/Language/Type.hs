@@ -17,6 +17,7 @@ module Language.Type
   , pattern Color_
   , showType
   , showValue
+  , ppType
   , KnownType(..)
   , withKnownType
   , withType
@@ -201,7 +202,6 @@ pattern Rational_ pair = Scalar RationalType pair
 pattern Color_ :: forall (t :: FSType). () => (t ~ 'ColorT) => HaskellType t -> Scalar t
 pattern Color_ c = Scalar ColorType c
 
-
 showType :: TypeProxy t -> String
 showType = \case
   BooleanType  -> "truth value"
@@ -215,6 +215,20 @@ showType = \case
   TextType     -> "text"
   PairType x y -> "(" <> showType x <> " x " <> showType y <> ")"
   ListType x   -> "list of " <> showType x
+
+ppType :: TypeProxy t -> String
+ppType = \case
+  BooleanType  -> "Boolean"
+  IntegerType  -> "ℤ"
+  RealType     -> "ℝ"
+  ComplexType  -> "ℂ"
+  RationalType -> "Rational"
+  ColorType    -> "Color"
+  VoidType     -> "Unit"
+  ImageType    -> "Image"
+  TextType     -> "Text"
+  PairType{}   -> error "TODO"
+  ListType t   -> "List of " ++ ppType t
 
 showValue :: TypeProxy t -> HaskellType t -> String
 showValue ty v = case ty of

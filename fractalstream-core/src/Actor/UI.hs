@@ -4,7 +4,9 @@ module Actor.UI
 
 
 import Actor.Layout
-import Actor.Viewer.Complex
+--import Actor.Viewer.Complex
+
+data TODO = TODO
 
 data UI where
   UI :: forall ensembleHandle.
@@ -19,7 +21,7 @@ data UI where
                    -> Layout
                    -> IO ()
       , makeViewer :: ensembleHandle
---                   -> ViewerUIProperties
-                   -> ComplexViewer
+                   -> TODO --ViewerUIProperties
+                   -> TODO --ComplexViewer'
                    -> IO ()
       } -> UI

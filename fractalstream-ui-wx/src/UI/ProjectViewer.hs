@@ -32,6 +32,7 @@ import Data.IORef
 import Actor.UI
 import Actor.Tool
 import Actor.Layout
+import Actor.Configuration
 import Actor.Viewer.Complex
 import Actor.Event (Event(..))
 import Language.Draw
@@ -57,7 +58,7 @@ viewProject projectWindow addMenuBar = UI
       WX.windowOnClose f (set f [ visible := False ])
 
       p <- panel f []
-      innerLayout <- generateWxLayout (\_ -> pure ()) p setupUI
+      (stopListening, innerLayout) <- generateWxLayout (\_ -> pure ()) p setupUI
       compileButton <- button p [ text := "Go!"
                                 , on command := do
                                     set f [ visible := False ]
@@ -65,6 +66,7 @@ viewProject projectWindow addMenuBar = UI
                                 ]
       set f [ layout := margin 5 . container p $ fill $ column 5
               $ [ innerLayout, hfloatRight $ widget compileButton ]
+            , on closing :~ (>> stopListening)
             ]
       windowReLayout f
 
@@ -77,8 +79,9 @@ viewProject projectWindow addMenuBar = UI
 
       addMenuBar f []
 
-      innerLayout <- generateWxLayout (\_ -> pure ()) f ui
-      set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ] ]
+      (stopListening, innerLayout) <- generateWxLayout (\_ -> pure ()) f ui
+      set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ]
+            , on closing :~ (>> stopListening) ]
       windowReLayout f
 
   , makeViewer = const (makeWxComplexViewer projectWindow addMenuBar)
@@ -94,6 +97,9 @@ makeWxComplexViewer
   addMenuBar
   vup@ViewerUIProperties{..}
   theViewer@ComplexViewer'{..} = do
+
+    let listenWith :: a -> (b -> c -> IO ()) -> IO ()
+        listenWith _ _ = putStrLn "listenWith TODO"
 
     let clone = do
           newCV <- cloneComplexViewer theViewer
@@ -123,8 +129,8 @@ makeWxComplexViewer
     let requestRefresh = void (tryPutMVar offThreadRefresh ())
 
     -- Build the initial view model
-    initialX :+ initialY <- getUIValue cvCenter'
-    initialPx <- getUIValue cvPixelSize'
+    initialX :+ initialY <- getDynamic cvCenter'
+    initialPx <- getDynamic cvPixelSize'
 
     let initialModel = Model (initialX, initialY) (initialPx, initialPx)
     model <- variable [value := initialModel]
@@ -313,8 +319,10 @@ makeWxComplexViewer
 
     lastKnownMouse <- newIORef Nothing
 
-    let getToolEventHandler ix = toolEventHandler (theTools !! ix)
-        runToolEventHandler ix = fromMaybe (pure ()) . getToolEventHandler ix
+    let getToolEventHandler ix = getDynamic (toolEventHandler (theTools !! ix))
+        runToolEventHandler ix e = do
+          handle <- getToolEventHandler ix
+          fromMaybe (pure ()) (handle e)
 
     -- Set click and drag event handlers
     set p [ on mouse   := \case
@@ -332,11 +340,13 @@ makeWxComplexViewer
                 ptz <- viewToModel pt
                 toolClickAction <- get currentToolIndex value <&> \case
                   Nothing -> recenterAction
-                  Just ix -> case getToolEventHandler ix (Click ptz) of
-                    Nothing -> recenterAction
-                    Just handle -> do
-                      handle
-                      cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
+                  Just ix -> do
+                    handle <- getToolEventHandler ix
+                    case handle (Click ptz) of
+                      Nothing -> recenterAction
+                      Just action -> do
+                        action
+                        cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
 
                 case dragBox of
                     Nothing  -> toolClickAction
@@ -365,9 +375,10 @@ makeWxComplexViewer
                             Just (Viewport vstart) -> do
                               zstart <- viewToModel (uncurry Point vstart)
                               z <- viewToModel pt
-                              case getToolEventHandler ix (DragDone z zstart) of
-                                Just handle -> do
-                                  handle
+                              handle <- getToolEventHandler ix
+                              case handle (DragDone z zstart) of
+                                Just action -> do
+                                  action
                                   cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
                                 Nothing -> finishDrag
                         Nothing -> finishDrag
@@ -397,7 +408,8 @@ makeWxComplexViewer
                        Just (Viewport vstart) -> do
                          zstart <- viewToModel (uncurry Point vstart)
                          z <- viewToModel pt
-                         case getToolEventHandler ix (Drag z zstart) of
+                         handle <- getToolEventHandler ix
+                         case handle (Drag z zstart) of
                            Just action -> do
                              action
                              cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
@@ -524,7 +536,7 @@ makeWxComplexViewer
 
     set f [ on resize := do
                   set onResizeTimer [enabled := False]
-                  set pendingResize [value := True]
+                  set pendingResize [value   := True]
                   set onResizeTimer [enabled := True]
                   propagateEvent ]
 
@@ -588,10 +600,11 @@ makeWxComplexViewer
     tools <- menuPane [text := "&Tool"]
 
     -- Build the configuration window for each tool
-    showToolConfig <- forM (zip [0..] theTools) $ \(ix, Tool{..}) -> case toolConfig of
+    showToolConfig <- forM (zip [0..] theTools) $ \(ix, Tool{..}) -> getDynamic toolConfig >>= \case
       Nothing  -> pure (\_ -> pure ())
       Just tcfg -> do
-        tf <- frameTool [ text := tiName toolInfo
+        n <- getDynamic (source $ tiName toolInfo)
+        tf <- frameTool [ text := n
                         , visible := False
                         , style := wxFRAME_TOOL_WINDOW .+. wxRESIZE_BORDER .+. wxCAPTION
                         ] f
@@ -599,8 +612,9 @@ makeWxComplexViewer
         let buttonPress txt = do
               runToolEventHandler ix (ButtonPressed txt)
               cvDrawCommandsChanged >>= \yn -> when yn triggerRepaint
-        tlo <- generateWxLayout buttonPress tf tcfg
-        set tf [ layout := margin 10 $ fill $ tlo ]
+        (stopListening, tlo) <- generateWxLayout buttonPress tf (coContents tcfg)
+        set tf [ layout := margin 10 $ fill $ tlo
+               , on closing :~ (>> stopListening) ]
         windowReLayout tf
         pure (\viz -> do
                  set tf [ visible := viz ]
@@ -624,31 +638,40 @@ makeWxComplexViewer
 
     -- Change tracking for variables used in each tool
     forM_ theTools $ \Tool{..} -> do
-      fromContextM_ (\name _ v ->
-                        when (symbolVal name `Set.member` toolVars) $ do
-                        (v `listenWith` (\_ _ -> do
-                                            -- Don't run the refresh handler here,
-                                            -- we could deadlock since it will also
-                                            -- want to access this variable. Just
-                                            -- queue up a refresh for later.
-                                            void $ tryPutMVar needToSendRefreshEvent ()
-                                        ))) cvConfig'
-      case toolConfig of
+      fromContextM_ (\name _ v -> do
+                        tvs <- getDynamic toolVars
+                        when (symbolVal name `Set.member` tvs) $ do
+                          (v `listenWith` (\_ _ -> do
+                                              -- Don't run the refresh handler here,
+                                              -- we could deadlock since it will also
+                                              -- want to access this variable. Just
+                                              -- queue up a refresh for later.
+                                              void $ tryPutMVar needToSendRefreshEvent ()
+                                          ))) cvConfig'
+      (fmap coContents <$> getDynamic toolConfig) >>= \case
         Nothing -> pure ()
-        Just tconfig -> withDynamicBindings tconfig $ do
-          fromContextM_ (\name _ v ->
-                          when (symbolVal name `Set.member` toolVars) $ do
-                           (v `listenWith` (\_ _ -> do
+        Just tlo -> getDynamic (layoutContext tlo) >>= \case
+          Left err -> putStrLn ("ERROR: " ++ err)
+          Right (SomeContext ctx) ->
+            fromContextM_ (\name _ v -> do
+                          tvs <- getDynamic toolVars
+                          when (symbolVal name `Set.member` tvs) $ do
+                            (v `listenWith` (\_ _ -> do
                                                -- Don't run the refresh handler here,
                                                -- we could deadlock since it will also
                                                -- want to access this variable. Just
                                                -- queue up a refresh for later.
-                                               void $ tryPutMVar needToSendRefreshEvent ())))
+                                                void $ tryPutMVar needToSendRefreshEvent ()))) ctx
+
 
     -- Add each tool to the tool menu
-    forM_  (zip [0..] . map toolInfo $ theTools) $ \(ix, ToolInfo{..}) -> menuRadioItem tools
-          [ text := tiName ++ maybe "" (\c -> "\t" ++ (c : "")) tiShortcut
-          , help := tiShortHelp
+    forM_  (zip [0..] . map toolInfo $ theTools) $ \(ix, ToolInfo{..}) -> do
+      n <- getDynamic (source tiName)
+      shortcut <- \case { [c] -> Just c; _ -> Nothing } <$> getDynamic tiShortcut
+      hlp <- getDynamic tiShortHelp
+      menuRadioItem tools
+          [ text := n ++ maybe "" (\c -> "\t" ++ (c : "")) shortcut
+          , help := hlp
           , on command := do
               -- When the menu item is selected, send the current tool
               -- a Deactivated event, and then send the selected tool
@@ -659,12 +682,12 @@ makeWxComplexViewer
                   runToolEventHandler i Deactivated
                   (showToolConfig !! i) False
                   cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
-              set toolStatus [text := tiName]
+              set toolStatus [text := n]
               set currentToolIndex [value := Just ix]
               runToolEventHandler ix Activated
               (showToolConfig !! ix) True
-              when (toolRefreshOnActivate (theTools !! ix)) $
-                runToolEventHandler ix Refresh
+              shouldRefresh <- getDynamic (toolRefreshOnActivate (theTools !! ix))
+              when shouldRefresh (runToolEventHandler ix Refresh)
               cvDrawCommandsChanged >>= \tf -> when tf triggerRepaint
           ]
 

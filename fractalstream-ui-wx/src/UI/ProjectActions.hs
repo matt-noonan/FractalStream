@@ -5,7 +5,7 @@ module UI.ProjectActions
   ) where
 
 import Data.DynamicValue
-import Actor.Ensemble (Template)
+--import Actor.Ensemble (Template)
 
 import Graphics.UI.WX (Frame)
 
@@ -14,10 +14,10 @@ newtype SessionHandle = SessionHandle (Frame ())
 
 data ProjectActions = ProjectActions
   { projectOpen :: FilePath -> IO ()
-  , projectOpenTemplate :: String -> Template -> IO ()
+  --, projectOpenTemplate :: String -> Template -> IO ()
   , projectEdit :: FilePath -> IO ()
   , projectNew  :: IO ()
-  , activeSessions :: SomeDynamic [SessionInfo]
+  , activeSessions :: Variable [SessionInfo]
   , closeSession :: SessionInfo -> IO ()
   , hideSession  :: SessionInfo -> IO ()
   , showSession  :: SessionInfo -> IO ()
@@ -25,9 +25,8 @@ data ProjectActions = ProjectActions
   }
 
 data SessionInfo = SessionInfo
-  { sessionName :: String
+  { sessionName :: Variable String
   , sessionHandle :: SessionHandle
-  , sessionVisible :: Bool
-  , sessionUnsaved :: Bool
+  , sessionVisible :: Variable Bool
+  , sessionUnsaved :: Variable Bool
   }
-  deriving Show

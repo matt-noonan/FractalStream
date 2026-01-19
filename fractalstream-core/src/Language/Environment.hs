@@ -8,6 +8,8 @@ module Language.Environment
   , type Required
   , type NotPresent
   , Context(..)
+  , SomeContext(..)
+  , SomeContext'(..)
   , type (:**:)
   , (#)
   , (<#>)
@@ -440,6 +442,18 @@ ctx1 <#> ctx2 = go ctx1
           Absent pf -> pure (recallIsAbsent pf $ Bind n t v ctx')
           _ -> Left (symbolVal n ++ " is defined twice.")
 
+newtype SomeContext' f = SomeContext' (Either String (SomeContext f))
+
+instance Semigroup (SomeContext' f) where
+  e@(SomeContext' (Left _)) <> _ = e
+  _ <> e@(SomeContext' (Left _)) = e
+  SomeContext' (Right (SomeContext ctx1)) <> SomeContext' (Right (SomeContext ctx2))
+    = SomeContext' $ case ctx1 <#> ctx2 of
+        Left err -> Left err
+        Right ctx -> withEnvironment (contextToEnv ctx) (pure $ SomeContext ctx)
+
+instance Monoid (SomeContext' f) where
+  mempty = SomeContext' (Right (SomeContext EmptyContext))
 
 ---------------------------------------------------------------------------------
 -- Constraints to require that a certain name is or is not present
@@ -487,6 +501,11 @@ type family NotPresent_impl
 -- Contexts attach a value (with the correct type) to each name
 -- defined in the environment.
 ---------------------------------------------------------------------------------
+
+data SomeContext (value :: Symbol -> FSType -> Exp Type) where
+  SomeContext :: forall env value. KnownEnvironment env
+              => Context value env
+              -> SomeContext value
 
 data Context (value :: Symbol -> FSType -> Exp Type) (env :: Environment) where
   EmptyContext :: forall value. Context value '[]

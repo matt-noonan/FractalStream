@@ -3,6 +3,10 @@ module UI.ConfigEditor
   ( editConfig
   ) where
 
+editConfig :: IO ()
+editConfig = putStrLn "TODO"
+
+{-
 import FractalStream.Prelude hiding (get)
 
 import Graphics.UI.WX hiding (pt, when, tool, Object, Dimensions, Horizontal, Vertical, Layout, Color, parent, item, label, area)
@@ -40,11 +44,11 @@ data LayoutParts f l = LayoutParts
   , rootLP       :: LayoutPartId
   }
 
-toLayout :: forall l f g
+toLayout :: forall l f
           . (l -> Label)
-         -> (forall t. f t -> g t)
+         -> (forall t. f t -> Dynamic t)
          -> LayoutParts f l
-         -> Maybe (Layout g)
+         -> Maybe Layout
 toLayout label f LayoutParts{..} = go rootLP
   where
     label' x = case label x of Label x' -> x'
@@ -854,3 +858,4 @@ raiseRecursively w = do
   p <- get w WX.parent
   unless (objectIsNull p) (raiseRecursively p)
   windowRaise w
+-}

@@ -402,13 +402,16 @@ tcVanishes splices pv sr = \case
 
 internalEscapeRadius, internalVanishingRadius, internalIterations :: String
 internalStuck, internalIterationLimit :: String
-internalEscapeRadius    = "[internal] escape radius"
-internalVanishingRadius = "[internal] vanishing radius"
+internalEscapeRadius      = "[internal] escape radius"
+type InternalEscapeRadius = "[internal] escape radius"
+internalVanishingRadius      = "[internal] vanishing radius"
+type InternalVanishingRadius = "[internal] vanishing radius"
 internalIterations      = "[internal] iteration count"
 type InternalIterations = "[internal] iteration count"
-internalIterationLimit  = "[internal] iteration limit"
-type InternalStuck      = "[internal] stuck"
-internalStuck           = "[internal] stuck"
+internalIterationLimit      = "[internal] iteration limit"
+type InternalIterationLimit = "[internal] iteration limit"
+type InternalStuck = "[internal] stuck"
+internalStuck      = "[internal] stuck"
 
 tcText :: [ParsedValue] -> CheckedValue
 tcText args sr = \case

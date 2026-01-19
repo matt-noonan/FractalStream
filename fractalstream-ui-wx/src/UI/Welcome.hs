@@ -4,7 +4,7 @@ module UI.Welcome
 
 import Graphics.UI.WX
 
-import Actor.Ensemble (allTemplates)
+--import Actor.Ensemble (allTemplates)
 
 import UI.ProjectActions
 import UI.Menu
@@ -45,6 +45,8 @@ welcome ProjectActions{..} = do
   windowReLayout f
 
 chooseTemplate :: ProjectActions -> Window a -> IO (Choice ())
+chooseTemplate _ f = choice f [ items := ["TODO"] ]
+{-
 chooseTemplate pa f = do
   c <- choice f [ items := "New project from template..." : map fst allTemplates ]
   set c [ on select := get c selection >>= \case
@@ -54,3 +56,4 @@ chooseTemplate pa f = do
               uncurry (projectOpenTemplate pa) (allTemplates !! (ix - 1))
         ]
   pure c
+-}

@@ -1,6 +1,8 @@
 {-# language AllowAmbiguousTypes, UndecidableInstances #-}
 module Data.Codec
   ( deserialize
+  , deserializeWith
+  , deserializeYAML
   , serialize
   , Codec(..)
   , CodecWith(..)
@@ -31,13 +33,14 @@ import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Aeson.Key as Key
 import qualified Data.Vector as V
 import qualified Data.Map as Map
+import qualified Data.Yaml as YAML
 import Data.Void
 
 combineObjects :: [Value] -> Value
 combineObjects vs0 =
   let vs = filter (\case { Null -> False; _ -> True }) vs0
   in case vs of
-    [] -> error "expected JSON value"
+    [] -> Null
     [v] -> v
     _ -> Object . foldl' KM.union KM.empty
           $ map (\case { Object km -> km
@@ -113,6 +116,8 @@ class (IsPrivateCodecBuilderInstance f ~ 'True, Monad f) => CodecBuilder f where
   purely :: forall t
           . ((forall s a q. AsDynamic q => Part f s (q a) -> Dynamic a) -> Dynamic t)
          -> f (Whole f (Dynamic t))
+  cut :: f ()
+  debugDump :: String -> f ()
 
 codecWith :: forall a s ctx f. (CodecBuilder f, CodecWith ctx a) => Part f s ctx -> f (Whole f a)
 codecWith = codecWithImpl (Proxy @a)
@@ -131,6 +136,8 @@ newtype D a = D (ReaderT Value (ExceptT String IO) a)
   deriving (Functor, Applicative, Monad)
 
 instance CodecBuilder D where
+  debugDump what = D . ReaderT $ \v ->
+    liftIO $ putStrLn (">>> Decoding " ++ what ++ " from " ++ show v)
   aeson = D . ReaderT $ \v -> ExceptT . pure $ case fromJSON v of
     Error err -> Left err
     Success v' -> Right (PartD v')
@@ -173,6 +180,7 @@ instance CodecBuilder D where
   codecWithImpl (_ :: Proxy a) (ctx :: Part D s ctx) =
     codecWith_ @ctx @a (PartD $ unD ctx)
   purely action = pure (PartD $ action (dyn . unD))
+  cut = pure () -- TODO
   match xs = asum (map (\(Fragment f _ x) -> PartD . f . unD <$> x) xs)
 
 instance Alternative D where
@@ -190,6 +198,7 @@ instance Monad E where
   E x >>= f = f x
 
 instance CodecBuilder E where
+  debugDump _ = E ()
   aeson = E . PartE $ (pure . toJSON)
   mustBe fld x (E cont) = E . PartE $ \y -> do
     v <- unE cont y
@@ -212,6 +221,7 @@ instance CodecBuilder E where
   codecWithImpl (_ :: Proxy a) (_ :: Part E s ctx) =
     codecWith_ @ctx @a (PartX $ error "Internal error: CodecWith instance has an illegal use of the context.")
   purely _action = E (PartE $ const (pure Null))
+  cut = pure ()
   match (xs :: [Fragment f a]) = pure $ PartE $ \x ->
     case mapMaybe (\(Fragment _ inspect (E action)) -> unE action <$> inspect x) xs of
       (action : _) -> action
@@ -301,12 +311,23 @@ deserialize bs = case eitherDecodeStrict' bs of
   Right v  -> let D (ReaderT f) = codec @a
               in runExceptT (f v <&> unD)
 
+deserializeWith :: forall ctx a. CodecWith ctx a => ctx -> ByteString -> IO (Either String a)
+deserializeWith ctx bs = case eitherDecodeStrict' bs of
+  Left err -> pure (Left err)
+  Right v  -> let D (ReaderT f) = codecWith @_ @a (pure ctx)
+              in runExceptT (f v <&> unD)
+
+deserializeYAML :: forall a. Codec a => ByteString -> IO (Either String a)
+deserializeYAML bs = case YAML.decodeEither bs of
+  Left err -> pure (Left $ show err)
+  Right v  -> let D (ReaderT f) = codec @a
+              in runExceptT (f v <&> unD)
+
 mapped :: forall src result f
         . CodecBuilder f
        => f (Whole f (Variable src))
-       -> (forall g. Applicative g
-            => (forall s a q. AsDynamic q => Part f s (q a) -> g a)
-            -> g (src -> result))
+       -> ((forall s a q. AsDynamic q => Part f s (q a) -> Dynamic a)
+           -> Dynamic (src -> result))
        -> f (Whole f (Mapped src result))
 mapped makeSrc makeMapper = do
   src  <-source-< makeSrc

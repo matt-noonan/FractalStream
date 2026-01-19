@@ -1,19 +1,27 @@
-{-# language OverloadedStrings #-}
+{-# language OverloadedStrings, RequiredTypeArguments #-}
 module Actor.Viewer.Complex
   ( ComplexViewer(..)
-{-
-  , ViewerUIProperties(..)
-  , ComplexViewer'(..)
+
+--  , ComplexViewer'(..)
   , ComplexViewerCompiler(..)
-  , withComplexViewer'
+--  , withComplexViewer'
+--  , ViewerUIProperties(..)
   , cloneComplexViewer
+{-
   , StringOf(..)
   , BadProject(..)
 -}
+  , ViewerInfo(..)
+  , ViewerArgs(..)
+  , Viewer(..)
+  --, makeComplexViewer
+  , parseViewerScript
+  , SomeViewerCode(..)
+
   , InternalX
   , InternalY
   , InternalPx
-  , RealViewer
+
   , BadProject(..)
   ) where
 
@@ -34,26 +42,21 @@ import Data.Codec
 --import Language.Draw
 --import Language.Code.InterpretIO (ScalarIORefM, IORefTypeOfBinding, eval)
 
+import Language.Value
 import Language.Value.Parser
-{-
-import Language.Value.Typecheck ( internalVanishingRadius
-                                , internalEscapeRadius
-                                , internalIterationLimit
-                                , internalIterations
-                                , internalStuck )
--}
---import Language.Code.Parser
+import Language.Value.Typecheck
+import Language.Code.Parser
 import Language.Parser.SourceRange
---import Language.Value.Evaluator
---import Language.Typecheck
+import Language.Value.Evaluator
+import Language.Typecheck
 
---import Foreign (Ptr)
+import Foreign (Ptr)
 --import Data.Aeson
 --import qualified Data.Text as Text
---import qualified Data.Map as Map
+import qualified Data.Map as Map
 --import qualified Data.Set as Set
 --import Control.Concurrent.MVar
-import Control.Exception (Exception(..)) --, throwIO)
+import Control.Exception (Exception(..))
 
 data BadProject = BadProject String String
   deriving Show
@@ -64,9 +67,21 @@ type InternalX  = "[internal] x"
 type InternalY  = "[internal] y"
 type InternalPx = "[internal] px"
 
-type RealViewer env =
-  ( '(InternalX, 'RealT) ': '(InternalY, 'RealT) ': '(InternalPx, 'RealT) ':
-    '("color", 'ColorT) ': env)
+type InternalViewerEnv env =
+    ( '(InternalIterationLimit, 'IntegerT) ': '(InternalIterations, 'IntegerT) ':
+      '(InternalEscapeRadius, 'RealT) ': '(InternalVanishingRadius, 'RealT) ':
+      '(InternalStuck, 'BooleanT) ':
+      ViewerEnv env)
+
+type ViewerEnv env =
+  ( '(InternalX, 'RealT) ': '(InternalY, 'RealT) ':
+    '(InternalPx, 'RealT) ': '("color", 'ColorT) ': env )
+
+data SomeViewerCode where
+  SomeViewerCode :: forall env
+    . EnvironmentProxy env
+   -> Code (ViewerEnv env)
+   -> SomeViewerCode
 
 data ComplexViewer = ComplexViewer
   { cvTitle :: Parsed String
@@ -76,13 +91,38 @@ data ComplexViewer = ComplexViewer
   , cvPixelSize :: Parsed Double
   , cvCoord :: Parsed String
   , cvPixel :: Mapped (Maybe String) (Either String (Maybe String))
-  --, cvEscapeRadius :: Parsed (Maybe String)
-  --, cvVanishRadius :: Parsed (Maybe String)
-  --, cvIterationLimit :: Parsed (Maybe String)
-  , cvCode :: Mapped CodeString (Either (SourceRange, String) SomeCode)
+  , cvEscapeRadius :: Parsed (Maybe ParsedValue)
+  , cvVanishRadius :: Parsed (Maybe ParsedValue)
+  , cvIterationLimit :: Parsed (Maybe ParsedValue)
+  , cvCode :: Mapped CodeString (Either (SourceRange, String) SomeViewerCode)
   --, cvOverlay :: Variable (Maybe String)
   , cvTools :: Variable [Tool]
   }
+
+
+data ViewerArgs env = ViewerArgs
+  { vaPoint      :: (Double, Double)
+  , vaStep       :: (Double, Double)
+  , vaWidth      :: Int32
+  , vaHeight     :: Int32
+  , vaSubsamples :: Int32
+  , vaBuffer     :: Ptr Word8
+  , vaArgs       :: Context HaskellTypeOfBinding env
+  }
+
+data ViewerInfo env = ViewerInfo
+  { vTitle     :: Variable String
+  , vSize      :: Variable Dimensions
+  , vCanResize :: Bool
+  , vCenter    :: Variable (Double, Double)
+  , vPixelSize :: Variable Double
+  , vSaveView  :: IO ()
+  , vGetArgs   :: IO (Maybe (Context HaskellTypeOfBinding env))
+  , vCode      :: Dynamic (ViewerArgs env -> IO ())
+  }
+
+data Viewer where
+  Viewer :: forall env. ViewerInfo env -> Viewer
 
 instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) ComplexViewer where
   codecWith_ ctx = do
@@ -96,9 +136,150 @@ instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) ComplexVie
     coord  <-cvCoord-< mapped (key "z-coord") $ \_ -> pure nonEmptyString
     pixel  <-cvPixel-< mapped (keyWithDefaultValue Nothing "pixel-size") $ \_ ->
       pure (traverse nonEmptyString)
-    code   <-cvCode-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    code   <-cvCode-< mapped (key "code") $ \use -> (fst <$> use ctx) >>= \case
+      Right (SomeEnvironment env) -> (fmap (SomeViewerCode env) .) <$>
+        (parseViewerScript <$> pure (Right env) <*> (Right . snd <$> use ctx) <*> use coord)
+      Left err -> pure (const (Left (NoSourceRange,
+                                     "Cannot parse the script because of other errors: " ++ err)))
     tools  <-cvTools-< optionalField "tools" (newVariable "" []) (fmap null . getDynamic) (codecWith ctx)
-    build ComplexViewer title size resize center pxSize coord pixel code tools
+    esc    <-cvEscapeRadius-<   mapped (optionalKey "escape-radius")    $ \_ ->
+      pure (\s -> fmap Just . left (`ppFullError` s) . parseParsedValue Map.empty $ s)
+    van    <-cvVanishRadius-<   mapped (optionalKey "vanishing-radius") $ \_ ->
+      pure (\s -> fmap Just . left (`ppFullError` s) . parseParsedValue Map.empty $ s)
+    iter   <-cvIterationLimit-< mapped (optionalKey "iteration-limit")  $ \_ ->
+      pure (\s -> fmap Just . left (`ppFullError` s) . parseParsedValue Map.empty $ s)
+    build ComplexViewer title size resize center pxSize coord pixel esc van iter code tools
+
+parseViewerScript :: forall env
+                   . Either String (EnvironmentProxy env)
+                  -> Either String Splices
+                  -> Either String String
+                  -> CodeString
+                  -> Either (SourceRange, String) (Code (ViewerEnv env))
+parseViewerScript menv msplices mvar (CodeString src) = do
+  let liftE :: String -> Either String a -> Either (SourceRange, String) a
+      liftE what = let msg = "I cannot compile this script due to an error in " ++ what ++ ": "
+                   in left ((NoSourceRange,) . (msg  ++))
+  env <- liftE "the environment" menv
+  withEnvironment env $ do
+    splices0 <- liftE "the setup" msplices
+
+    let spliceVar :: forall name -> forall ty. KnownSymbol name
+                  => TypeProxy ty -> String -> String -> (String, ParsedValue)
+        spliceVar name ty what whatTy =
+          (symbolVal (Proxy @name), ParsedValue NoSourceRange $ \ty' -> case sameHaskellType ty ty' of
+            Nothing   -> throwError (Surprise NoSourceRange what whatTy (Expected $ an ty'))
+            Just Refl -> do
+              pf <- findVarAtType NoSourceRange (Proxy @name) ty (envProxy Proxy)
+              pure (Var (Proxy @name) ty pf))
+
+        declareE :: forall n -> forall t e. KnownSymbol n => TypeProxy t -> EnvironmentProxy e
+                 -> Either (SourceRange, String) (EnvironmentProxy ( '(n,t) ': e ))
+        declareE n t e = case lookupEnv' (Proxy @n) e of
+          Found'{} -> throwError (NoSourceRange, "Internal error: duplicate definition of `" ++
+                                   symbolVal (Proxy @n) ++ "`.")
+          Absent' pf -> pure (recallIsAbsent pf $ declare t e)
+
+    let splices = Map.union splices0 . Map.fromList $
+          [ spliceVar InternalEscapeRadius    RealType    "the hidden escape radius"       "a real number"
+          , spliceVar InternalVanishingRadius RealType    "the hidden vanishing tolerance" "a real number"
+          , spliceVar InternalIterationLimit  IntegerType "the hidden iteration limit"     "an integer"
+          , spliceVar InternalIterations      IntegerType "the hidden iteration counter"   "an integer"
+          , spliceVar InternalStuck           BooleanType "the `stuck` loop status"        "a truth value"
+          ]
+
+    -- Bind all of the internal bookkeeping variables
+    env' :: EnvironmentProxy (InternalViewerEnv env) <-
+      (     declareE InternalIterationLimit  IntegerType
+        <=< declareE InternalIterations      IntegerType
+        <=< declareE InternalEscapeRadius    RealType
+        <=< declareE InternalVanishingRadius RealType
+        <=< declareE InternalStuck           BooleanType
+        <=< declareE InternalX               RealType
+        <=< declareE InternalY               RealType
+        <=< declareE InternalPx              RealType
+        <=< declareE "color"                 ColorType
+      ) env
+
+    withEnvironment env' $ do
+
+      let exists :: forall n -> forall t. KnownSymbol n => TypeProxy t
+                 -> Either (SourceRange, String) (NameIsPresent n t (InternalViewerEnv env))
+          exists n t = case lookupEnv (Proxy @n) t env' of
+            Found pf -> pure pf
+            _ -> throwError (NoSourceRange,
+                             "INTERNAL ERROR, there was a problem locating `" ++ symbolVal (Proxy @n) ++ "`")
+      let getVar :: forall n -> forall t e.  KnownSymbol n
+                 => TypeProxy t -> EnvironmentProxy e -> Either (SourceRange, String) (Value '(e, t))
+          getVar n t e = withEnvironment e $ case lookupEnv (Proxy @n) t e of
+            Found pf -> pure (Var (Proxy @n) t pf)
+            _ -> throwError (NoSourceRange,
+                             "INTERNAL ERROR, there was a problem locating `" ++ symbolVal (Proxy @n) ++ "`")
+
+      let i = Const (Scalar ComplexType (0 :+ 1))
+
+      -- If the viewer variable is already defined in the environment, ensure that it also has
+      -- complex type. Otherwise, extend the environment with the viewer variable. Then parse
+      -- the code in this extended environment.
+      var <- liftE "the viewer variable" mvar
+      SomeSymbol (coord :: Proxy coordT) <- pure (someSymbolVal var)
+
+      code :: Code (InternalViewerEnv env) <- case lookupEnv coord ComplexType env' of
+        Found pf      -> do
+          code0 <- left (errorLocation &&& unlines . pp) (parseCode env' splices src)
+          -- Set the viewer variable to x + i y
+          x <- getVar InternalX RealType env'
+          y <- getVar InternalY RealType env'
+          pure $ Block [ Set pf coord (R2C x + i * R2C y), code0 ]
+        WrongType ty -> throwError (NoSourceRange,
+                                    "Viewer variable `" ++ "` should be complex, not " ++ show ty)
+        Absent pf    -> do
+          let env'' = recallIsAbsent pf $ BindingProxy coord ComplexType env'
+          code0 <- left (errorLocation &&& unlines . pp) (parseCode env'' splices src)
+          x <- getVar InternalX RealType env'
+          y <- getVar InternalY RealType env'
+          pure (snd $ letInEnv @coordT (R2C x + i * R2C y) (env'', code0))
+
+      -- Now bind all of the bookkeeping variables
+      let (_, code') = (env', code)
+                     & letInEnv (Const (Scalar typeProxy 100))
+                     & letInEnv (Const (Scalar typeProxy 0))
+                     & letInEnv (Const (Scalar typeProxy 10.0))
+                     & letInEnv (Const (Scalar typeProxy 0.0001))
+                     & letInEnv (Const (Scalar typeProxy False))
+      pure code'
+
+{-
+makeComplexViewer :: ComplexViewerCompiler -> ComplexViewer -> IO Viewer
+makeComplexViewer jit ComplexViewer{..} = do
+
+  -- Build all of the easy Viewer fields
+  let getd :: Parsed a -> IO a
+      getd x = getDynamic x >>= \case
+        Left err -> throwIO (BadProject "Could not compile the viewer." err)
+        Right v  -> pure v
+
+  vTitle <- newVariable g"" =<< getd cvTitle
+  vSize  <- clone cvSize
+  vCanResize <- getDynamic cvCanResize
+  x :+ y <- getd cvCenter
+  vCenter <- newVariable "" (x, y)
+  vPixelSize <- newVariable "" =<< getd cvPixelSize
+
+  let vSaveView = do
+        setValue (source cvTitle) =<< getDynamic vTitle
+        setValue cvSize =<< getDynamic vSize
+        -- TODO: set center etc
+
+  let vGetArgs = pure Nothing -- TODO FIXME, need to thread arguments from config
+
+  code <- getDynamic cvCode >>= \case
+    Left err -> throwIO (BadProject "Could not compile the viewer's script." (snd err))
+    Right c  -> pure c
+
+  _
+  pure (Viewer ViewerInfo{..})
+-}
 
 {-
 instance FromJSON ComplexViewer where
@@ -118,18 +299,20 @@ instance FromJSON ComplexViewer where
     cvTools <- (o .:? "tools" .!= []) >>= (either fail pure . sequence . map ($ cvCoord))
     pure ComplexViewer{..}
 
-
+-}
+{-
 data ViewerUIProperties = ViewerUIProperties
   { vpTitle :: String
   , vpSize :: (Int, Int)
   , vpCanResize :: Bool
   }
 
+
 data ComplexViewer' where
   ComplexViewer' :: forall z px env
     . (KnownSymbol z, KnownSymbol px) =>
-    { cvCenter'    :: UIValue (Complex Double)
-    , cvPixelSize' :: UIValue Double
+    { cvCenter'    :: Variable (Complex Double)
+    , cvPixelSize' :: Variable Double
     , cvConfig' :: Context DynamicValue env
     , cvCoord' :: Proxy z
     , cvPixel' :: Proxy px
@@ -139,15 +322,27 @@ data ComplexViewer' where
     , cvDrawCommandsChanged :: IO Bool
     , cvGetFunction :: IO (Word32 -> Word32 -> Word32 -> Complex Double -> Complex Double -> Ptr Word8 -> IO ())
     } -> ComplexViewer'
+-}
+cloneComplexViewer :: Viewer -> IO Viewer
+cloneComplexViewer (Viewer v) = do
+  newTitle     <- newVariable "" =<< getDynamic (vTitle v)
+  newSize      <- newVariable "" =<< getDynamic (vSize v)
+  newCenter    <- newVariable "" =<< getDynamic (vCenter v)
+  newPixelSize <- newVariable "" =<< getDynamic (vPixelSize v)
+  pure . Viewer $
+    ViewerInfo { vTitle = newTitle
+               , vSize  = newSize
+               , vCanResize = vCanResize v
+               , vCenter = newCenter
+               , vPixelSize = newPixelSize
+               , vSaveView = vSaveView v
+               , vGetArgs = vGetArgs v
+               , vCode = vCode v
+               }
 
-cloneComplexViewer :: ComplexViewer' -> IO ComplexViewer'
-cloneComplexViewer cv = do
-  newCenter <- newUIValue =<< getUIValue (cvCenter' cv)
-  newPixelSize <- newUIValue =<< getUIValue (cvPixelSize' cv)
-  pure (cv { cvCenter' = newCenter
-           , cvPixelSize' = newPixelSize
-           })
 
+
+{-
 newtype StringOf (t :: FSType) =
   StringOf { valueOf :: Either String (HaskellType t) }
 
@@ -162,7 +357,9 @@ instance KnownType t => IsString (StringOf t) where
 
 instance KnownType t => FromJSON (StringOf t) where
   parseJSON = fmap unStringOrNumber . parseJSON
+-}
 
+{-
 bindContextIO :: KnownSymbol name
               => Proxy name
               -> TypeProxy ty
@@ -263,26 +460,17 @@ withComplexViewer' :: forall env
                    -> IO ()
 withComplexViewer' jit cvConfig' splices0 ComplexViewer{..} action = withEnvironment (contextToEnv cvConfig') $ do
 
-  escapeRadius <- case cvEscapeRadius of
-    Nothing -> pure Nothing
-    Just x -> case parseParsedValue Map.empty x of
-      Right v  -> pure (Just v)
-      Left err -> throwIO (BadProject "I couldn't parse the viewer's escape-radius field."
-                            (ppFullError err x))
+  escapeRadius <- getDynamic cvEscapeRadius >>= \case
+    Left err -> throwIO (BadProject "I couldn't parse the viewer's escape-radius field." err)
+    Right x  -> pure x
 
-  vanishRadius <- case cvVanishRadius of
-    Nothing -> pure Nothing
-    Just x -> case parseParsedValue Map.empty x of
-      Right v  -> pure (Just v)
-      Left err -> throwIO (BadProject "I couldn't parse the viewer's vanishing-radius field."
-                            (ppFullError err x))
+  vanishRadius <- getDynamic cvVanishRadius >>= \case
+    Left err -> throwIO (BadProject "I couldn't parse the viewer's vanishing-radius field." err)
+    Right x  -> pure x
 
-  iterationLimit <- case cvIterationLimit of
-    Nothing -> pure Nothing
-    Just x -> case parseParsedValue Map.empty x of
-      Right v  -> pure (Just v)
-      Left err -> throwIO (BadProject "I couldn't parse the viewer's iteration-limit field."
-                            (ppFullError err x))
+  iterationLimit <- getDynamic cvIterationLimit >>= \case
+    Left err -> throwIO (BadProject "I couldn't parse the viewer's iteration-limit field." err)
+    Right x  -> pure x
 
   SomeSymbol it <- pure (someSymbolVal internalIterations)
   let iterations = ParsedValue NoSourceRange $ \case
@@ -300,8 +488,11 @@ withComplexViewer' jit cvConfig' splices0 ComplexViewer{..} action = withEnviron
         ty -> throwError (Surprise NoSourceRange "the `stuck` loop status"
                           "a truth value" (Expected $ an ty))
 
-  let cvPixelName = fromMaybe "#pixel" cvPixel
-      argX = Proxy @InternalX
+  pixelName <- getDynamic cvPixel >>= \case
+    Left err -> throwIO (BadProject "I couldn't parse the pixel variable." err)
+    Right v  -> pure (fromMaybe "#pixel" v)
+
+  let argX = Proxy @InternalX
       argY = Proxy @InternalY
       argPx = Proxy @InternalPx
       argOutput = Proxy @"color"
@@ -314,7 +505,9 @@ withComplexViewer' jit cvConfig' splices0 ComplexViewer{..} action = withEnviron
                                 , (internalStuck, stuck) ]]
                 , [splices0] ]
 
-  case (someSymbolVal cvCoord, someSymbolVal cvPixelName) of
+  coord <- getDynamic (source cvCoord)
+
+  case (someSymbolVal coord, someSymbolVal pixelName) of
     (SomeSymbol (cvCoord' :: Proxy cvCoord'), SomeSymbol (cvPixel' :: Proxy cvPixel')) -> do
      let envOrig = contextToEnv cvConfig'
 
@@ -328,19 +521,20 @@ withComplexViewer' jit cvConfig' splices0 ComplexViewer{..} action = withEnviron
        $ \envX'' -> declareIO stuckVar BooleanType envX''
        $ \envX''' -> do
 
-      cvCenter' <- case valueOf cvCenter of
-        Right v  -> newUIValue v
+      cvCenter' <- getDynamic cvCenter >>= \case
+        Right v  -> newVariable "" v
         Left err -> throwIO (BadProject "I couldn't parse the viewer's initial-center field." err)
-      cvPixelSize' <- case valueOf cvPixelSize of
-        Right v  -> newUIValue v
+      cvPixelSize' <- getDynamic cvPixelSize >>= \case
+        Right v  -> newVariable "" v
         Left err -> throwIO (BadProject "I couldn't parse the viewer's initial-pixel-size field" err)
 
-      let vpTitle = cvTitle
-          vpSize  = cvSize
-          vpCanResize = cvCanResize
+      vpTitle <- getDynamic (source cvTitle)
+      Dimensions vpSize  <- getDynamic cvSize
+      vpCanResize <- getDynamic cvCanResize
 
-      case parseCode envX''' splices cvCode of
-        Left err -> throwIO (BadProject "there was an error parsing the viewer's script" (ppFullError err cvCode))
+      CodeString src <- getDynamic (source cvCode)
+      case parseCode envX''' splices src of
+        Left err -> throwIO (BadProject "there was an error parsing the viewer's script" (ppFullError err src))
         Right cvCode0 -> do
           Found pfX <- pure (lookupEnv argX RealType env)
           Found pfY <- pure (lookupEnv argY RealType env)
@@ -365,11 +559,12 @@ withComplexViewer' jit cvConfig' splices0 ComplexViewer{..} action = withEnviron
                         (fromIntegral subsamples) fullArgs buf
 
             inheritedContext <- bindContextIO cvPixel' RealType
-                                  (SomeDynamic cvPixelSize')
+                                  (dyn cvPixelSize')
                                   cvConfig'
 
             (cvGetDrawCommands, cvDrawCommandsChanged, drawTo) <- makeDrawCommandGetter
 
+            {-
             let cvToolsX = case pfCoord' of
                   Right{} -> cvTools
                   Left{}  -> ComplexTool (defaultComplexSelectionTool cvCoord) : cvTools
@@ -414,10 +609,10 @@ withComplexViewer' jit cvConfig' splices0 ComplexViewer{..} action = withEnviron
                                                   cvToolContext
                                                   ptoolRefreshCanUpdate
                                                   (drawTo ptoolDrawLayer) h })
-
+-}
+            let cvTools' = []
             action ViewerUIProperties{..} ComplexViewer'{..}
-
-
+-}
 newtype ComplexViewerCompiler = ComplexViewerCompiler
   { withCompiledComplexViewer
     :: forall x y dx dy out env t
@@ -449,8 +644,7 @@ newtype ComplexViewerCompiler = ComplexViewerCompiler
          -> IO t)
     -> IO t
   }
-
-
+{-
 consDrawCmd :: Draw_ value env
             -> Maybe [Draw_ value env]
             -> Maybe [Draw_ value env]
