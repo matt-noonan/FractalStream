@@ -54,7 +54,7 @@ main = withBackend $ \complexViewerCompiler -> start $ do
                 , sessionHandle = SessionHandle projectWindow
                 , sessionVisible = True
                 , sessionUnsaved = False }
-          modifyUIValue sessions (si :)
+          modifyValue sessions (si :)
           runTemplate complexViewerCompiler
             (viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..}))
             prj
