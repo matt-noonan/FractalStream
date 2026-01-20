@@ -18,6 +18,7 @@ module Actor.Layout
   , parseConstant'
   , parseEnv'
   , parseScript'
+  , ScriptDependencies
 
   , testJson, testJson2
   , Wrap(..)
@@ -107,7 +108,7 @@ data TabItem = TabItem
   , tiBody  :: Variable Layout
   }
 
-instance CodecWith (Dynamic Splices) TabItem where
+instance CodecWith (Dynamic (Either String Splices)) TabItem where
   codecWith_ splices = do
     title <-tiLabel-< key "title"
     body  <-tiBody-< codecWith splices
@@ -125,8 +126,8 @@ instance CodecWith (Dynamic (Map k v)) a => Codec (Wrap a) where
     w <-coerce-< codecWith (pure $ pure Map.empty)
     build Wrap w
 
-instance CodecWith (Dynamic Splices) Layout where
-  codecWith_ (splices :: Part b a (Dynamic Splices)) = do
+instance CodecWith (Dynamic (Either String Splices)) Layout where
+  codecWith_ (splices :: Part b a (Dynamic (Either String Splices))) = do
     debugDump "Layout"
     match
       [ Fragment Vertical (\case { Vertical x -> Just x; _ -> Nothing }) $
@@ -197,16 +198,13 @@ parseEnv' :: String -> Either String SomeEnvironment
 parseEnv' s =
   bimap (`ppFullError` s) (`withEnvFromMap` SomeEnvironment) (parseEnvironment s)
 
-parseScript' :: Either String SomeEnvironment
+type ScriptDependencies = Dynamic (Either String (SomeContext DynamicValue, Splices))
+
+parseScript' :: SomeEnvironment
              -> Splices
              -> CodeString
              -> Either (SourceRange, String) SomeCode
-parseScript' menv splices (CodeString src) = do
-  SomeEnvironment env <- case menv of
-    Left _ -> Left (NoSourceRange,
-                     "Cannot check this script until the error in its environment is fixed.")
-    Right e -> pure e
-  withEnvironment env $
+parseScript' (SomeEnvironment env) splices (CodeString src) = withEnvironment env $
     bimap (errorLocation &&& unlines . pp) SomeCode (parseCode env splices src)
 
 instance Optionally SomeEnvironment where
@@ -235,7 +233,7 @@ instance FromJSON SomeType where
 instance ToJSON SomeType where
   toJSON (SomeType ty) = String (Text.pack $ ppType ty)
 
-instance CodecWith (Dynamic Splices) UIVariable where
+instance CodecWith (Dynamic (Either String Splices)) UIVariable where
   codecWith_ ctx = do
     debugDump "UIVariable"
     ty  <-exprType-< field "type" $ mapBy parseType'
@@ -252,18 +250,21 @@ instance CodecWith (Dynamic Splices) UIVariable where
              _ -> Left ("The variable name `" ++ s ++ "` is already defined in the environment.")
         pure s
 
-    expr <-exprValue-< mapped (key "value") $ \use ->
-      let f = \mt (SomeEnvironment e) splices src -> do
+    expr <-exprValue-< mapped (key "value") $ \use -> do
+      let f = \mt (SomeEnvironment e) msplices src -> do
             SomeType t <- case mt of
               Left _ -> Left "Cannot check this value until the error in its type is fixed."
               Right t -> pure t
+            splices <- case msplices of
+              Left _ -> Left "Cannot check this value until the error in the Setup is fixed."
+              Right s -> pure s
             withEnvironment e $ withKnownType t $ do
               bimap (`ppFullError` src) (SomeValue e t) (parseInputValue splices src)
-      in f <$> use ty <*> use env <*> use ctx
+      f <$> use ty <*> use env <*> use ctx
 
     build UIVariable name ty env expr
 
-instance CodecWith (Dynamic Splices) UIScript where
+instance CodecWith (Dynamic (Either String Splices)) UIScript where
   codecWith_ ctx = do
     env <-scriptEnv-< field "environment" $ mapBy parseEnv'
 
@@ -279,7 +280,17 @@ instance CodecWith (Dynamic Splices) UIScript where
             _ -> Left ("The variable name `" ++ s ++ "` is already defined in the environment.")
       pure s
 
-    code <-scriptCode-< mapped (key "value") $ \use -> parseScript' <$> use env <*> use ctx
+    code <-scriptCode-< mapped (key "value") $ \use -> do
+      me <- use env
+      ms <- use ctx
+      pure (either
+             (\err _ -> Left (NoSourceRange, "Cannot check this script until another error is fixed: " ++ err))
+             (uncurry parseScript') ((,) <$> me <*> ms))
+{-
+        Left err -> pure ()
+        Right (e, s) -> pure (parseScript' e s)
+-}
+      --  parseScript' <$> use env <*> use ctx
 
     build UIScript name env code
 

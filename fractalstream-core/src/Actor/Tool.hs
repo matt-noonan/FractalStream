@@ -17,7 +17,7 @@ import Actor.Layout
 import Data.Codec
 import Data.DynamicValue
 import Language.Value.Typecheck (Splices)
-import Language.Environment (SomeEnvironment)
+import Language.Environment (SomeContext)
 import qualified Data.Set as Set
 
 data Tool = Tool
@@ -46,14 +46,14 @@ instance Codec ToolInfo where
     help      <-tiHelp-<      keyWithDefaultValue "" "help"
     build ToolInfo name shortcut shortHelp help
 
-instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) Tool where
+instance CodecWith ScriptDependencies Tool where
   codecWith_ ctx = do
     ti <-toolInfo-< codec
     layer <-toolDrawLayer-< keyWithDefaultValue 100 "draw-to-layer"
     refreshOnActivate <-toolRefreshOnActivate-< keyWithDefaultValue True  "refresh-on-activation"
     refreshCanUpdate  <-toolRefreshCanUpdate-<  keyWithDefaultValue False "refresh-can-update"
     config <-toolConfig-< optionalField "configuration"
-      (newVariable "" Nothing) (fmap isNothing . getDynamic) (codecWith (fmap snd <$> ctx))
+      (newVariable "" Nothing) (fmap isNothing . getDynamic) (codecWith (fmap (fmap snd) <$> ctx))
     handlers <-toolEventHandlers-< optionalField "actions"
       (newVariable "" []) (fmap null . getDynamic) (codecWith ctx)
     thandlers <-toolEventHandler-< purely $ \_ -> pure (const Nothing) -- FIXME TODO

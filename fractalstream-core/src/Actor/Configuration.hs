@@ -16,7 +16,7 @@ data Configuration = Configuration
   , coContents :: Layout
   }
 
-instance CodecWith (Dynamic Splices) Configuration where
+instance CodecWith (Dynamic (Either String Splices)) Configuration where
   codecWith_ splices = do
     debugDump "Configuration"
     title <-coTitle-< mapped (key "title") $ \_ -> pure nonEmptyString

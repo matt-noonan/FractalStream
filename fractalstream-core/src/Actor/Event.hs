@@ -41,7 +41,7 @@ import Data.IORef
 
 import Data.DynamicValue
 import Data.Codec
-import Actor.Layout (parseScript', CodeString(..))
+import Actor.Layout (parseScript', ScriptDependencies, CodeString(..))
 
 type Point = (Double, Double)
 
@@ -69,7 +69,7 @@ data XEventHandler
   | OnActivated UnitHandler
   | OnDeactivated UnitHandler
 
-instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) XEventHandler where
+instance CodecWith (Dynamic (Either String (SomeContext DynamicValue, Splices))) XEventHandler where
   codecWith_ ctx = match
     [ Fragment OnClick (\case { OnClick h -> Just h; _ -> Nothing}) $
         "event" `mustBe` "click" $ codecWith ctx
@@ -97,9 +97,18 @@ type HandlerScript = Mapped CodeString (Either (SourceRange, String) SomeCode)
 
 newtype UnitHandler = UnitHandler HandlerScript
 
-instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) UnitHandler where
+parseToolScript :: Either String (SomeContext DynamicValue, Splices)
+                -> CodeString
+                -> Either (SourceRange, String) SomeCode
+parseToolScript = \case
+  Left err -> \_ -> Left . (NoSourceRange,) $
+    "Cannot parse script until this other error is fixed: " ++ err
+  Right (SomeContext c, s) -> parseScript' (SomeEnvironment $ contextToEnv c) s
+
+
+instance CodecWith ScriptDependencies UnitHandler where
   codecWith_ ctx = do
-    code <-coerce-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    code <-coerce-< mapped (key "code") $ \use -> parseToolScript <$> use ctx
     build UnitHandler code
 
 data TimerHandler = TimerHandler
@@ -107,21 +116,21 @@ data TimerHandler = TimerHandler
   , thInterval :: Variable Int
   , thScript   :: HandlerScript }
 
-instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) TimerHandler where
+instance CodecWith ScriptDependencies TimerHandler where
   codecWith_ ctx = do
     name     <-thName-<     key "name"
     interval <-thInterval-< key "interval"
-    script   <-thScript-<   mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    script   <-thScript-<   mapped (key "code") $ \use -> parseToolScript <$> use ctx
     build TimerHandler name interval script
 
 data ButtonHandler = ButtonHandler
   { bhName   :: Variable String
   , bhScript :: HandlerScript }
 
-instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) ButtonHandler where
+instance CodecWith ScriptDependencies ButtonHandler where
   codecWith_ ctx = do
     name   <-bhName-<   key "label"
-    script <-bhScript-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    script <-bhScript-< mapped (key "code") $ \use -> parseToolScript <$> use ctx
     build ButtonHandler name script
 
 data Coordinate = ComplexCoordinate String | RealCoordinates String String
@@ -141,11 +150,11 @@ data ClickHandler = ClickHandler
   , chCanUpdateViewer :: Variable Bool
   , chScript :: HandlerScript }
 
-instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) ClickHandler where
+instance CodecWith ScriptDependencies ClickHandler where
   codecWith_ ctx = do
     coord  <-chCoord-< codec
     update <-chCanUpdateViewer-< keyWithDefaultValue False "can-update-viewer-coords"
-    script <-chScript-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    script <-chScript-< mapped (key "code") $ \use -> parseToolScript <$> use ctx
     build ClickHandler coord update script
 
 data DragHandler = DragHandler
@@ -154,12 +163,12 @@ data DragHandler = DragHandler
   , dhCanUpdateViewer :: Variable Bool
   , dhScript :: HandlerScript }
 
-instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) DragHandler where
+instance CodecWith ScriptDependencies DragHandler where
   codecWith_ ctx = do
     coord  <-dhCoord-< codec
     start  <-dhStart-< codec
     update <-dhCanUpdateViewer-< keyWithDefaultValue False "can-update-viewer-coords"
-    script <-dhScript-< mapped (key "code") $ \use -> uncurry parseScript' <$> use ctx
+    script <-dhScript-< mapped (key "code") $ \use -> parseToolScript <$> use ctx
     build DragHandler coord start update script
 
 

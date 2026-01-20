@@ -17,6 +17,7 @@ module Actor.Viewer.Complex
   --, makeComplexViewer
   , parseViewerScript
   , SomeViewerCode(..)
+  , SomeViewerWithContext(..)
 
   , InternalX
   , InternalY
@@ -42,7 +43,6 @@ import Data.Codec
 --import Language.Draw
 --import Language.Code.InterpretIO (ScalarIORefM, IORefTypeOfBinding, eval)
 
-import Language.Value
 import Language.Value.Parser
 import Language.Value.Typecheck
 import Language.Code.Parser
@@ -83,6 +83,12 @@ data SomeViewerCode where
    -> Code (ViewerEnv env)
    -> SomeViewerCode
 
+data SomeViewerWithContext where
+  SomeViewerWithContext :: forall env
+    . Context DynamicValue env
+   -> Code (ViewerEnv env)
+   -> SomeViewerWithContext
+
 data ComplexViewer = ComplexViewer
   { cvTitle :: Parsed String
   , cvSize :: Variable Dimensions
@@ -94,7 +100,7 @@ data ComplexViewer = ComplexViewer
   , cvEscapeRadius :: Parsed (Maybe ParsedValue)
   , cvVanishRadius :: Parsed (Maybe ParsedValue)
   , cvIterationLimit :: Parsed (Maybe ParsedValue)
-  , cvCode :: Mapped CodeString (Either (SourceRange, String) SomeViewerCode)
+  , cvCode :: Mapped CodeString (Either (SourceRange, String) SomeViewerWithContext)
   --, cvOverlay :: Variable (Maybe String)
   , cvTools :: Variable [Tool]
   }
@@ -124,7 +130,7 @@ data ViewerInfo env = ViewerInfo
 data Viewer where
   Viewer :: forall env. ViewerInfo env -> Viewer
 
-instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) ComplexViewer where
+instance CodecWith (Dynamic (Either String (SomeContext DynamicValue, Splices))) ComplexViewer where
   codecWith_ ctx = do
     title  <-cvTitle-< mapped (key "title") $ \_ -> pure nonEmptyString
     size   <-cvSize-< key "size"
@@ -136,11 +142,25 @@ instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) ComplexVie
     coord  <-cvCoord-< mapped (key "z-coord") $ \_ -> pure nonEmptyString
     pixel  <-cvPixel-< mapped (keyWithDefaultValue Nothing "pixel-size") $ \_ ->
       pure (traverse nonEmptyString)
-    code   <-cvCode-< mapped (key "code") $ \use -> (fst <$> use ctx) >>= \case
-      Right (SomeEnvironment env) -> (fmap (SomeViewerCode env) .) <$>
-        (parseViewerScript <$> pure (Right env) <*> (Right . snd <$> use ctx) <*> use coord)
-      Left err -> pure (const (Left (NoSourceRange,
-                                     "Cannot parse the script because of other errors: " ++ err)))
+
+    code   <-cvCode-< mapped (key "code") $ \use -> do
+      let complain err = pure . const . Left . (NoSourceRange,)
+                    $ ("Cannot parse the script because of previous errors: " ++ err)
+      use ctx >>= \case
+        Left err -> complain err
+        Right (SomeContext (vcContext :: Context DynamicValue env), vcSplices) -> do
+          vc :: Either String (ViewerContext env) <- runExceptT $ do
+            vcCoord <- ExceptT (use coord)
+            pure ViewerContext{..}
+          case vc of
+            Left err   -> complain err
+            Right args -> pure (fmap (SomeViewerWithContext vcContext) . parseViewerScript args)
+
+      -- (fst <$> use ctx) >>= \case
+      -- Right (SomeEnvironment env) -> (fmap (SomeViewerCode env) .) <$>
+      --  (parseViewerScript <$> pure (Right env) <*> (Right . snd <$> use ctx) <*> use coord)
+      --Left err -> pure (const (Left (NoSourceRange,
+      --                               "Cannot parse the script because of other errors: " ++ err)))
     tools  <-cvTools-< optionalField "tools" (newVariable "" []) (fmap null . getDynamic) (codecWith ctx)
     esc    <-cvEscapeRadius-<   mapped (optionalKey "escape-radius")    $ \_ ->
       pure (\s -> fmap Just . left (`ppFullError` s) . parseParsedValue Map.empty $ s)
@@ -150,19 +170,26 @@ instance CodecWith (Dynamic (Either String SomeEnvironment, Splices)) ComplexVie
       pure (\s -> fmap Just . left (`ppFullError` s) . parseParsedValue Map.empty $ s)
     build ComplexViewer title size resize center pxSize coord pixel esc van iter code tools
 
-parseViewerScript :: forall env
-                   . Either String (EnvironmentProxy env)
-                  -> Either String Splices
-                  -> Either String String
-                  -> CodeString
-                  -> Either (SourceRange, String) (Code (ViewerEnv env))
-parseViewerScript menv msplices mvar (CodeString src) = do
+data ViewerContext env = ViewerContext
+  { vcContext :: Context DynamicValue env
+  , vcSplices :: Splices
+  , vcCoord   :: String
+  }
+
+{-
   let liftE :: String -> Either String a -> Either (SourceRange, String) a
       liftE what = let msg = "I cannot compile this script due to an error in " ++ what ++ ": "
                    in left ((NoSourceRange,) . (msg  ++))
-  env <- liftE "the environment" menv
+-}
+
+parseViewerScript :: forall env
+                   . ViewerContext env
+                  -> CodeString
+                  -> Either (SourceRange, String) (Code (ViewerEnv env))
+parseViewerScript ViewerContext{..} (CodeString src) = do
+
+  let env = contextToEnv vcContext
   withEnvironment env $ do
-    splices0 <- liftE "the setup" msplices
 
     let spliceVar :: forall name -> forall ty. KnownSymbol name
                   => TypeProxy ty -> String -> String -> (String, ParsedValue)
@@ -180,7 +207,7 @@ parseViewerScript menv msplices mvar (CodeString src) = do
                                    symbolVal (Proxy @n) ++ "`.")
           Absent' pf -> pure (recallIsAbsent pf $ declare t e)
 
-    let splices = Map.union splices0 . Map.fromList $
+    let splices = Map.union vcSplices . Map.fromList $
           [ spliceVar InternalEscapeRadius    RealType    "the hidden escape radius"       "a real number"
           , spliceVar InternalVanishingRadius RealType    "the hidden vanishing tolerance" "a real number"
           , spliceVar InternalIterationLimit  IntegerType "the hidden iteration limit"     "an integer"
@@ -203,12 +230,6 @@ parseViewerScript menv msplices mvar (CodeString src) = do
 
     withEnvironment env' $ do
 
-      let exists :: forall n -> forall t. KnownSymbol n => TypeProxy t
-                 -> Either (SourceRange, String) (NameIsPresent n t (InternalViewerEnv env))
-          exists n t = case lookupEnv (Proxy @n) t env' of
-            Found pf -> pure pf
-            _ -> throwError (NoSourceRange,
-                             "INTERNAL ERROR, there was a problem locating `" ++ symbolVal (Proxy @n) ++ "`")
       let getVar :: forall n -> forall t e.  KnownSymbol n
                  => TypeProxy t -> EnvironmentProxy e -> Either (SourceRange, String) (Value '(e, t))
           getVar n t e = withEnvironment e $ case lookupEnv (Proxy @n) t e of
@@ -221,8 +242,7 @@ parseViewerScript menv msplices mvar (CodeString src) = do
       -- If the viewer variable is already defined in the environment, ensure that it also has
       -- complex type. Otherwise, extend the environment with the viewer variable. Then parse
       -- the code in this extended environment.
-      var <- liftE "the viewer variable" mvar
-      SomeSymbol (coord :: Proxy coordT) <- pure (someSymbolVal var)
+      SomeSymbol (coord :: Proxy coordT) <- pure (someSymbolVal vcCoord)
 
       code :: Code (InternalViewerEnv env) <- case lookupEnv coord ComplexType env' of
         Found pf      -> do

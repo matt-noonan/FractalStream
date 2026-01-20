@@ -42,23 +42,24 @@ instance Codec Ensemble where
   codec = do
     setup <-ensembleSetup-< optionalField "setup"
       (newVariable "" Nothing) (fmap isNothing . getDynamic) $ do
-      codecWith (pure $ pure Map.empty)
+      codecWith (pure . pure . pure $ Map.empty)
 
     splices <- purely $ \use -> use setup >>= \case
-      Nothing -> pure Map.empty
-
-      -- TODO: add error reporting for splices
-      Just Configuration{..} -> either (const Map.empty) id <$> layoutToSplices coContents
+      Nothing                -> pure (pure Map.empty)
+      Just Configuration{..} -> layoutToSplices coContents
 
     config <-ensembleConfiguration-< optionalField "configuration"
       (newVariable "" Nothing) (fmap isNothing . getDynamic) $
       codecWith splices
 
-    env <- purely $ \use -> use config >>= \case
-      Nothing -> pure (Right $ SomeEnvironment EmptyEnvProxy)
-      Just Configuration{..} -> layoutEnv coContents
+    context <- purely $ \use -> use config >>= \case
+      Nothing                -> pure (Right $ SomeContext EmptyContext)
+      Just Configuration{..} -> layoutContext coContents
 
-    ctx <- purely $ \use -> (,) <$> use env <*> use splices
+    ctx <- purely $ \use -> do
+      c <- use context
+      s <- use splices
+      pure ((,) <$> c <*> s)
 
     viewers <-ensembleViewers-< newOf $ match
       [ Fragment (:[]) (\case { [x] -> Just x; _ -> Nothing }) $ do
