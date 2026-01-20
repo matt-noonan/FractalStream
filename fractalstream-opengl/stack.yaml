@@ -1,0 +1,19 @@
+resolver: lts-24.12
+
+packages:
+- .
+- ../fractalstream-core
+
+extra-deps:
+
+- git: https://github.com/matt-noonan/cabal-macosx.git
+  commit: 7e892fbeb761f4adb29d52b5377e6a1869faf48d
+
+- git: https://github.com/matt-noonan/wxHaskell-3.2.git
+  commit: de15548c6587891cca9228a8fedf2336c72a5f3b
+  subdirs:
+    - wx
+    - wxcore
+    - wxdirect
+
+allow-newer: true
