@@ -13,13 +13,10 @@ module Data.DynamicValue
   , type DynamicValue
   , Dynamic_
   , Variable_
-  , SomeUIValue(..)
-  , SomeUIExpr(..)
   ) where
 
 import FractalStream.Prelude
 import Language.Type
-import Language.Value.Parser (ParsedValue(..))
 
 import qualified Data.Map as Map
 import Control.Concurrent
@@ -256,21 +253,6 @@ data SomeUIExpr where
               -> SomeUIExpr
 -}
 
-data SomeUIValue where
-  SomeUIValue :: forall name ty
-               . KnownSymbol name
-              => Proxy name
-              -> TypeProxy ty
-              -> Variable (HaskellType ty)
-              -> SomeUIValue
-
-data SomeUIExpr where
-  SomeUIExpr  :: forall name ty
-               . KnownSymbol name
-              => Proxy name
-              -> TypeProxy ty
-              -> Dynamic ParsedValue
-              -> SomeUIExpr
 
 -- | @Dynamic_@ is a type family that represents
 -- a named, dynamic version of the Haskell type corresponding to

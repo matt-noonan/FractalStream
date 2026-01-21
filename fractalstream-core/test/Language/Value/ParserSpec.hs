@@ -239,7 +239,7 @@ spec = do
   describe "when using keywords that require splices" $ do
 
     let ctx :: Complex Double -> Double -> Double -> Double
-            -> Context HaskellTypeOfBinding VanishEscapeEnv
+            -> Context HaskellValue VanishEscapeEnv
         ctx z x big tiny
             = Bind (Proxy @"z") ComplexType z
             $ Bind (Proxy @"x") RealType    x

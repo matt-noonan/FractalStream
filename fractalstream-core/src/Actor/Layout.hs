@@ -9,6 +9,8 @@ module Actor.Layout
   , Parsed
   , UIVariable(..)
   , UIScript(..)
+  , SomeUIValue(..)
+  , SomeUIExpr(..)
   , layoutBindings
   , layoutEnv
   , layoutToSplices
@@ -89,6 +91,22 @@ newtype CodeString = CodeString { unCodeString :: String }
 
 instance Codec CodeString where codec = aeson
 
+data SomeUIValue where
+  SomeUIValue :: forall name ty
+               . KnownSymbol name
+              => Proxy name
+              -> TypeProxy ty
+              -> Variable (HaskellType ty)
+              -> SomeUIValue
+
+data SomeUIExpr where
+  SomeUIExpr  :: forall name ty
+               . KnownSymbol name
+              => Proxy name
+              -> TypeProxy ty
+              -> Dynamic ParsedValue
+              -> SomeUIExpr
+
 type Parsed t = Mapped String (Either String t)
 
 data Layout
@@ -120,6 +138,38 @@ testJson = "{ \"vertical-contents\": [ { \"text-entry\": { \"label\": \"foo\", \
 testJson2 = "{ \"vertical-contents\": [ { \"text-entry\": { \"label\": \"foo\", \"value\": \"1 + i\", \"type\": \"C\", \"variable\": \"z\", \"environment\": { \"p\": \"Z\", \"c\": \"Color\" } }}]}"
 
 newtype Wrap a = Wrap a
+
+-- Newtypes for orphan instances
+newtype SomeEnvironment' = SomeEnvironment' SomeEnvironment
+newtype SomeType'        = SomeType'        SomeType
+
+instance Optionally SomeEnvironment' where
+  makeDefault = pure (SomeEnvironment' $ SomeEnvironment EmptyEnvProxy)
+  isDefault (SomeEnvironment' (SomeEnvironment env)) = pure $
+    case env of { EmptyEnvProxy -> True; _ -> False }
+
+instance Codec SomeEnvironment' where codec = aeson
+
+instance FromJSON SomeEnvironment' where
+  parseJSON = withObject "SomeEnvironment" $ \o -> do
+    (`withEnvFromMap` (SomeEnvironment' . SomeEnvironment))
+      . Map.fromList
+      . fmap (first Key.toString)
+      . KM.toList <$> traverse (fmap (\(SomeType' t) -> t) . parseJSON) o
+
+instance ToJSON SomeEnvironment' where
+  toJSON (SomeEnvironment' (SomeEnvironment e)) =
+    object (map (bimap Key.fromString (toJSON . SomeType')) . Map.toList $ envToMap e)
+
+instance FromJSON SomeType' where
+  parseJSON = withText "SomeType" $ \t -> do
+    let src = Text.unpack t
+    case parseType src of
+      Left err -> fail (ppFullError err src)
+      Right ty -> pure (SomeType' ty)
+
+instance ToJSON SomeType' where
+  toJSON (SomeType' (SomeType ty)) = String (Text.pack $ ppType ty)
 
 instance CodecWith (Dynamic (Map k v)) a => Codec (Wrap a) where
   codec = do
@@ -207,42 +257,16 @@ parseScript' :: SomeEnvironment
 parseScript' (SomeEnvironment env) splices (CodeString src) = withEnvironment env $
     bimap (errorLocation &&& unlines . pp) SomeCode (parseCode env splices src)
 
-instance Optionally SomeEnvironment where
-  makeDefault = pure (SomeEnvironment EmptyEnvProxy)
-  isDefault (SomeEnvironment env) = pure $ case env of { EmptyEnvProxy -> True; _ -> False }
-
-instance Codec SomeEnvironment where codec = aeson
-
-instance FromJSON SomeEnvironment where
-  parseJSON = withObject "SomeEnvironment" $ \o -> do
-    (`withEnvFromMap` SomeEnvironment)
-      . Map.fromList
-      . fmap (first Key.toString)
-      . KM.toList <$> traverse parseJSON o
-
-instance ToJSON SomeEnvironment where
-  toJSON (SomeEnvironment e) = object (map (bimap Key.fromString toJSON) . Map.toList $ envToMap e)
-
-instance FromJSON SomeType where
-  parseJSON = withText "SomeType" $ \t -> do
-    let src = Text.unpack t
-    case parseType src of
-      Left err -> fail (ppFullError err src)
-      Right ty -> pure ty
-
-instance ToJSON SomeType where
-  toJSON (SomeType ty) = String (Text.pack $ ppType ty)
-
 instance CodecWith (Dynamic (Either String Splices)) UIVariable where
   codecWith_ ctx = do
     debugDump "UIVariable"
     ty  <-exprType-< field "type" $ mapBy parseType'
-    env <-exprEnv-<  optionalKey "environment"
+    env <-coerce . exprEnv-< optionalKey @(Variable SomeEnvironment') "environment"
 
     -- Variable name is required and must be non-empty, and not
     -- already present in the environment
     name <-exprName-< mapped (key "variable") $ \use -> (<$> use env) $
-      \(SomeEnvironment e) s -> do
+      \(SomeEnvironment' (SomeEnvironment e)) s -> do
         void (nonEmptyString s)
         case someSymbolVal s of
            SomeSymbol n -> case lookupEnv' n e of
@@ -251,7 +275,7 @@ instance CodecWith (Dynamic (Either String Splices)) UIVariable where
         pure s
 
     expr <-exprValue-< mapped (key "value") $ \use -> do
-      let f = \mt (SomeEnvironment e) msplices src -> do
+      let f = \mt (SomeEnvironment' (SomeEnvironment e)) msplices src -> do
             SomeType t <- case mt of
               Left _ -> Left "Cannot check this value until the error in its type is fixed."
               Right t -> pure t
@@ -262,7 +286,7 @@ instance CodecWith (Dynamic (Either String Splices)) UIVariable where
               bimap (`ppFullError` src) (SomeValue e t) (parseInputValue splices src)
       f <$> use ty <*> use env <*> use ctx
 
-    build UIVariable name ty env expr
+    build UIVariable name ty (coerce <$> env) expr
 
 instance CodecWith (Dynamic (Either String Splices)) UIScript where
   codecWith_ ctx = do
@@ -577,7 +601,7 @@ extractAllBindings extractor = go
       ScriptBox -> [extractor x]
 
 parseToHaskellValue :: forall env ty
-                     . Context HaskellTypeOfBinding env
+                     . Context HaskellValue env
                     -> TypeProxy ty
                     -> String
                     -> Either String (HaskellType ty)

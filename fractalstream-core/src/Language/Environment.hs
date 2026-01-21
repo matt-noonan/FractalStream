@@ -75,8 +75,8 @@ import FractalStream.Prelude
 
 import Language.Type
 
-import Unsafe.Coerce
 import Data.Constraint
+import Unsafe.Coerce
 import qualified Data.Map as Map
 
 ---------------------------------------------------------------------------------

@@ -15,7 +15,7 @@ import Data.Indexed.Functor
 
 data HaskellTypeM :: Type -> Environment -> Exp Type
 type instance Eval (HaskellTypeM s env) =
-  State (Context HaskellTypeOfBinding env, s) ()
+  State (Context HaskellValue env, s) ()
 
 -- | Update a variable in the current environment
 update :: forall name t env s
@@ -24,13 +24,13 @@ update :: forall name t env s
        -> Proxy name
        -> TypeProxy t
        -> HaskellType t
-       -> State (Context HaskellTypeOfBinding env, s) ()
+       -> State (Context HaskellValue env, s) ()
 update pf _name t v = withKnownType t (modify' (\(x,y) -> (setBinding pf v x, y)))
 
 -- | Evaluate a value in the current environment
 eval :: forall t env s
       . Value '(env, t)
-     -> State (Context HaskellTypeOfBinding env, s) (HaskellType t)
+     -> State (Context HaskellValue env, s) (HaskellType t)
 eval v = do
   ctx <- fst <$> get
   pure (evaluate v ctx)
@@ -41,7 +41,7 @@ eval v = do
 simulate :: forall env s
           . DrawHandler (HaskellTypeM s)
          -> Code env
-         -> State (Context HaskellTypeOfBinding env, s) ()
+         -> State (Context HaskellValue env, s) ()
 simulate draw = indexedFold @(HaskellTypeM s) $ \case
 
   Let pf name vc body -> recallIsAbsent (absentInTail pf) $ do

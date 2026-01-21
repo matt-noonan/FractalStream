@@ -4,7 +4,7 @@ module Language.Value.Evaluator
   ( evaluate
   , evaluator
   , HaskellType_
-  , HaskellTypeOfBinding
+  , HaskellValue
   , partialEvaluate
   , constantFold
   , evaluateInContext
@@ -21,8 +21,8 @@ import Unsafe.Coerce
 import Numeric.Extras
 
 -- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
-data HaskellTypeOfBinding :: Symbol -> FSType -> Exp Type
-type instance Eval (HaskellTypeOfBinding name t) = HaskellType t
+data HaskellValue :: Symbol -> FSType -> Exp Type
+type instance Eval (HaskellValue name t) = HaskellType t
 
 -- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
 data HaskellType_ :: (Environment, FSType) -> Exp Type
@@ -120,10 +120,10 @@ constantFold =
 -- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
 data ScalarFromContext :: (Environment, FSType) -> Exp Type
 type instance Eval (ScalarFromContext et) =
-  Context HaskellTypeOfBinding (Env et) -> HaskellType (Ty et)
+  Context HaskellValue (Env et) -> HaskellType (Ty et)
 
 evaluateInContext :: forall env t
-                   . Context HaskellTypeOfBinding env
+                   . Context HaskellValue env
                   -> Value '(env, t)
                   -> HaskellType t
 evaluateInContext = flip evaluate
@@ -133,7 +133,7 @@ evaluateInContext = flip evaluate
 -- for each variable that appears.
 evaluate :: forall env t
           . Value '(env, t)
-         -> Context HaskellTypeOfBinding env
+         -> Context HaskellValue env
          -> HaskellType t
 evaluate =
   indexedFold @ScalarFromContext (\v ->
@@ -143,7 +143,7 @@ evaluate =
 -- | Evaluation algebra
 evaluator :: forall et
            . ValueF ScalarFromContext et
-          -> Context HaskellTypeOfBinding (Env et)
+          -> Context HaskellValue (Env et)
           -> HaskellType (Ty et)
 evaluator v0 ctx = case v0 of
 

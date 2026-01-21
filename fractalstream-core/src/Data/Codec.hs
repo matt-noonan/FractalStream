@@ -2,8 +2,9 @@
 module Data.Codec
   ( deserialize
   , deserializeWith
-  , deserializeYAML
   , serialize
+  , deserializeYAML
+  , serializeYAML
   , Codec(..)
   , CodecWith(..)
   , CodecBuilder(..)
@@ -34,6 +35,7 @@ import qualified Data.Aeson.Key as Key
 import qualified Data.Vector as V
 import qualified Data.Map as Map
 import qualified Data.Yaml as YAML
+import Text.Read
 import Data.Void
 
 combineObjects :: [Value] -> Value
@@ -239,7 +241,11 @@ class CodecWith ctx a | a -> ctx where
 instance Codec Void where codec = match []
 instance Codec Bool where codec = aeson
 instance Codec Int where codec = aeson
-instance {-# OVERLAPS #-} Codec String where codec = aeson
+instance {-# OVERLAPS #-} Codec String where
+  codec = match [ Fragment show (readMaybe @Int) aeson
+                , Fragment show (readMaybe @Double) aeson
+                , Fragment id Just aeson ]
+
 instance {-# OVERLAPPABLE #-} Codec a => Codec [a] where codec = manyOf codec
 instance Codec a => Codec (Variable a) where codec = newOf codec
 instance Codec a => Codec (Maybe a) where codec = optOf codec
@@ -305,6 +311,11 @@ serialize x =
   let E f = codec @a
   in BS.toStrict . encode <$> unE f x
 
+serializeYAML :: forall a. Codec a => a -> IO ByteString
+serializeYAML x =
+  let E f = codec @a
+  in YAML.encode <$> unE f x
+
 deserialize :: forall a. Codec a => ByteString -> IO (Either String a)
 deserialize bs = case eitherDecodeStrict' bs of
   Left err -> pure (Left err)
@@ -318,7 +329,7 @@ deserializeWith ctx bs = case eitherDecodeStrict' bs of
               in runExceptT (f v <&> unD)
 
 deserializeYAML :: forall a. Codec a => ByteString -> IO (Either String a)
-deserializeYAML bs = case YAML.decodeEither bs of
+deserializeYAML bs = case YAML.decodeEither' bs of
   Left err -> pure (Left $ show err)
   Right v  -> let D (ReaderT f) = codec @a
               in runExceptT (f v <&> unD)

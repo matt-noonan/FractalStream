@@ -17,16 +17,12 @@ import Data.DynamicValue
 import Actor.UI
 import Actor.Configuration
 import Actor.Layout
+import Actor.Viewer
 import Actor.Viewer.Complex
 import Language.Environment
-import Language.Value.Typecheck (Splices)
 
---import Data.Char (isSpace)
 import qualified Data.ByteString as BS
---import Data.Aeson
---import qualified Data.Yaml as YAML
 import qualified Data.Map as Map
---import qualified Data.ByteString.UTF8 as UTF8
 
 --import Development.IncludeFile
 
@@ -223,6 +219,40 @@ withStrings lo action = do
   action (Map.fromList contents)
 -}
 
+
+runEnsemble :: ViewerCompiler -> UI -> Ensemble -> IO ()
+runEnsemble jit UI{..} Ensemble{..} = do
+
+  -- Get a handle for the ensemble
+  project <- newEnsemble
+
+  -- Make the viewers
+  viewers <- getDynamic ensembleViewers
+  forM_ viewers $ \ComplexViewer{..} -> do
+
+    let throwLeft :: Show e => IO (Either e a) -> IO a
+        throwLeft = fmap (either (error . show) id)
+
+    SomeViewerWithContext context code <- throwLeft (getDynamic cvCode)
+    let env = contextToEnv context
+    withEnvironment env $ do
+      let vTitle = source cvTitle
+          vSize  = cvSize
+
+      vCanResize <- getDynamic cvCanResize
+
+      x0 :+ y0 <- throwLeft (getDynamic cvCenter)
+      vCenter <- newVariable "" (x0, y0)
+      vPixelSize <- throwLeft (getDynamic cvPixelSize) >>= newVariable ""
+      let vSaveView = pure ()
+
+          vGetArgs = mapContextM (\_ _ -> getDynamic) context
+
+      withCompiledViewer jit code $ \fun -> do
+        let vCode = pure fun
+        makeViewer project (Viewer ViewerInfo{..})
+
+{-
 runEnsemble :: ComplexViewerCompiler
             -> UI
             -> Ensemble
@@ -270,9 +300,12 @@ runEnsemble jit UI{..} Ensemble{..} = do
       forM_ viewers $ \viewer -> error "TODO"
 --        withComplexViewer' jit config splices viewer $ \vu cv' -> do
 --          makeViewer project vu cv'
+-}
 
+{-
 runExceptTIO :: ExceptT String IO a -> IO a
 runExceptTIO = fmap (either error id) . runExceptT
+-}
 
 {-
 $(includeFileInSource "../examples/templates/simple-complex-dynamics.yaml"

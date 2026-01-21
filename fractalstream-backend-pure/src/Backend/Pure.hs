@@ -8,7 +8,7 @@ import Language.Environment
 import Language.Draw
 import Language.Code
 import Language.Code.InterpretIO
-import Language.Value.Evaluator (HaskellTypeOfBinding)
+import Language.Value.Evaluator (HaskellValue)
 import Data.Color (colorToRGB)
 
 import Foreign hiding (void)
@@ -40,7 +40,7 @@ interpretComplexViewer
     -> Proxy dy
     -> Proxy out
     -> Code env
-    -> ((Int32 -> Int32 -> Int32 -> Context HaskellTypeOfBinding env -> Ptr Word8 -> IO ())
+    -> ((Int32 -> Int32 -> Int32 -> Context HaskellValue env -> Ptr Word8 -> IO ())
          -> IO t)
     -> IO t
 interpretComplexViewer px py pdx pdy out body action = do

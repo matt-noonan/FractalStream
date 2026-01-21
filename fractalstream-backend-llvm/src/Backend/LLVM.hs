@@ -36,7 +36,7 @@ import Foreign.C.Types
 import Backend.LLVM.Code
 
 import Language.Value
-import Language.Value.Evaluator (HaskellTypeOfBinding)
+import Language.Value.Evaluator (HaskellValue)
 import Language.Value.Transform
 import Language.Code
 import Language.Code.Parser
@@ -78,7 +78,7 @@ foreign import ccall "dynamic"
 
 class ToForeignFun (env :: Environment) (ret :: FSType) where
   type AsForeignFun env ret :: *
-  toForeignFun :: (Context HaskellTypeOfBinding env -> IO (HaskellType ret))
+  toForeignFun :: (Context HaskellValue env -> IO (HaskellType ret))
                -> AsForeignFun env ret
 
 instance ToForeignFun '[] ret where
@@ -90,7 +90,7 @@ instance (KnownSymbol name, KnownType t, ToForeignFun env ret, NotPresent name e
   type AsForeignFun ( '(name,t) ': env) ret = HaskellType t -> AsForeignFun env ret
   toForeignFun f x = toForeignFun @env @ret (f . Bind (Proxy @name) (typeProxy @t) x)
 
-invoke :: JITFun env ret -> Context HaskellTypeOfBinding env -> IO (HaskellType ret)
+invoke :: JITFun env ret -> Context HaskellValue env -> IO (HaskellType ret)
 invoke (JITFun _ rt f) ctx = do
   (args, frees) <- unzip <$> fromContextM toFFIArg ctx
   allocaArray @Double 2 $ \ret -> do   -- FIXME: allocate the correct type!
@@ -215,7 +215,7 @@ withViewerCode' :: forall x y dx dy output env t
                  -> Proxy dy
                  -> Proxy output
                  -> Code env
-                 -> ((Int32 -> Int32 -> Int32 -> Context HaskellTypeOfBinding env -> Ptr Word8 -> IO ())
+                 -> ((Int32 -> Int32 -> Int32 -> Context HaskellValue env -> Ptr Word8 -> IO ())
                       -> IO t)
                  -> IO t
 withViewerCode' (dylib, session, compileLayer, nextId) x y dx dy output c action = do

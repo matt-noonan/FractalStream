@@ -46,6 +46,7 @@ common FractalStream-common
                      , PatternSynonyms
                      , RankNTypes
                      , RecordWildCards
+                     , RequiredTypeArguments
                      , ScopedTypeVariables
                      , StandaloneDeriving
                      , TupleSections
@@ -62,13 +63,12 @@ library
                        FractalStream.Prelude
                        FractalStream.Metadata
 
-                       Actor
                        Actor.Tool
-
                        Actor.Configuration
                        Actor.Ensemble
                        Actor.Layout
                        Actor.UI
+                       Actor.Viewer
                        Actor.Viewer.Complex
                        Actor.Event
 
