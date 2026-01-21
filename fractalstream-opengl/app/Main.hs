@@ -19,8 +19,9 @@ main
 
 gui :: IO ()
 gui
-  = do -- Create top frame
-      f <- frameCreateTopFrame "FractalStream"
+  = do   
+      -- Create top frame
+      f <- frameCreateTopFrame "Per₂ Parameter Space"
 
       -- Create GLCanvas and GLContext
       canvas <- glCanvasCreateEx f 
@@ -81,7 +82,7 @@ gui
 
       -- Load, bind, link, and compile shaders
       program <- loadShaders [ ShaderInfo VertexShader (FileSource "examples/plane/vertex.glsl")
-                             , ShaderInfo FragmentShader (FileSource "examples/plane/parameter-Per30.glsl")
+                             , ShaderInfo FragmentShader (FileSource "examples/plane/parameter-per2.glsl")
                              ]
       currentProgram $= Just program
 
