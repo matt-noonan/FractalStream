@@ -32,7 +32,7 @@ void main() {
    
    for (int iter = 0; iter < 300; iter++) {
       if (length(z) > 100.0) {
-         float depth = fract((float(iter) - log2(log(length(z)))) / 32.0);
+         float depth = fract((float(iter) / 3.0 - log2(log(length(z)))) / 32.0);
          FragColor = texture(uTexture, depth);
          break;
       }

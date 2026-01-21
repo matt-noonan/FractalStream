@@ -17,14 +17,12 @@ main :: IO ()
 main
   = run gui
 
-type GLComplex = GL.Vector2 GLfloat
-
 gui :: IO ()
 gui
-  = do -- create top frame
+  = do -- Create top frame
       f <- frameCreateTopFrame "FractalStream"
 
-      -- for good measure: put a scrolled window inside the frame
+      -- Create GLCanvas and GLContext
       canvas <- glCanvasCreateEx f 
                                  0 
                                  (Rect 0 0 700 700)
@@ -78,19 +76,20 @@ gui
                                        )
       vertexAttribArray vPosition $= Enabled
 
+      -- Create color palette
       initTexture
 
       -- Load, bind, link, and compile shaders
-      program <- loadShaders [ ShaderInfo VertexShader (FileSource "app/vert.glsl")
-                             , ShaderInfo FragmentShader (FileSource "app/frag.glsl")
+      program <- loadShaders [ ShaderInfo VertexShader (FileSource "examples/plane/vertex.glsl")
+                             , ShaderInfo FragmentShader (FileSource "examples/plane/parameter-Per30.glsl")
                              ]
       currentProgram $= Just program
 
+      -- Set uniforms
       let c = Vector2 (-0.5) 0.0 :: GLComplex
           d = Vector2   6.0  6.0 :: GLComplex
           m = Vector2   0.0  0.0 :: GLComplex
 
-      -- Set uniforms
       setUniform program "uCenter" c
       setUniform program "uDiameter" d
       setUniform program "uMouse" m
@@ -101,24 +100,51 @@ gui
       mousePosition <- varCreate m
       dragStart <- varCreate Nothing
     
-      -- to show the effect of double-buffering, we track the mouse with a small disc.
+      -- Set event handlers
+      windowOnPaint canvas $ onPaint mesh gl
+      windowOnSize canvas $ onSize program canvas ctx viewDiameter
       windowOnMouse canvas True $ onMouse program canvas mousePosition dragStart viewCenter viewDiameter
 
-      -- set paint event handler:
-      windowOnPaint canvas $ onPaint mesh gl
-
-      -- set resize event handler:
-      windowOnSize canvas $ onSize program canvas ctx viewDiameter
-
-      -- show the frame
+      -- Show the frame
       _ <- windowShow f
       windowRaise f
       return ()
 
   where
-    -- update the mouse position and force a repaint
+    -- Run vertex and fragment shaders
+    onPaint (Mesh triangles firstIndex numVertices) (GLWindow canvas ctx) _dc _view
+      = do 
+          _ <- glCanvasSetCurrent canvas ctx
+          clear [ ColorBuffer ]  
+
+          bindVertexArrayObject $= Just triangles
+          drawArrays Triangles firstIndex numVertices
+          
+          flush
+          _ <- glCanvasSwapBuffers canvas
+          
+          return ()
+
+    -- Change uniforms that track canvas dimensions
+    onSize program canvas ctx viewDiameter
+      = do 
+          _ <- glCanvasSetCurrent canvas ctx
+          WXC.Size w h <- windowGetClientSize canvas
+          viewport $= (Position 0 0, GL.Size (fromIntegral w) (fromIntegral h))
+
+          (Vector2 width height) <- varGet viewDiameter
+          
+          let r = if w <= h
+                    then Vector2 width $ fromIntegral h / fromIntegral w * width
+                    else Vector2 (fromIntegral w / fromIntegral h * height) height
+          
+          setUniform program "uDiameter" r
+
+          varSet viewDiameter r
+
     onMouse program canvas mousePosition dragStart viewCenter viewDiameter event
       = do
+          -- First find the mouse position in the view coordinates
           let WXC.Point i j = mousePos event
           
           Vector2 cx cy <- varGet viewCenter
@@ -131,16 +157,20 @@ gui
               m = Vector2 x y
         
           case event of
+              -- Update mouse position
               MouseMotion _ _ -> do
                 setUniform program "uMouse" m
                 varSet mousePosition m
 
+              -- Stopped dragging
               MouseLeftUp _ _ -> do
                 varSet dragStart Nothing
 
+              -- Started dragging
               MouseLeftDown _ _ -> do
                 varSet dragStart $ Just m
 
+              -- Pan the view
               MouseLeftDrag _ _ -> do
                 ds <- varGet dragStart
 
@@ -154,6 +184,7 @@ gui
 
                     windowRefresh canvas False
 
+              -- Zoom in/out
               MouseWheel downward _ _ -> do
                 let speed = 1.2
                     scalingFactor = if downward then speed else 1/speed
@@ -174,37 +205,10 @@ gui
 
                 windowRefresh canvas False
               
+              -- Pass the event forward
               _ -> do propagateEvent
 
-    -- do some painting.
-    onPaint (Mesh triangles firstIndex numVertices) (GLWindow canvas ctx) _dc _view
-      = do 
-          _ <- glCanvasSetCurrent canvas ctx
-          clear [ ColorBuffer ]  
-
-          bindVertexArrayObject $= Just triangles
-          drawArrays Triangles firstIndex numVertices
-          
-          flush
-          _ <- glCanvasSwapBuffers canvas
-          
-          return ()
-
-    onSize program canvas ctx viewDiameter
-      = do 
-          _ <- glCanvasSetCurrent canvas ctx
-          WXC.Size w h <- windowGetClientSize canvas
-          viewport $= (Position 0 0, GL.Size (fromIntegral w) (fromIntegral h))
-
-          (Vector2 width height) <- varGet viewDiameter
-          
-          let r = if w <= h
-                    then Vector2 width $ fromIntegral h / fromIntegral w * width
-                    else Vector2 (fromIntegral w / fromIntegral h * height) height
-          
-          setUniform program "uDiameter" r
-
-          varSet viewDiameter r
+type GLComplex = GL.Vector2 GLfloat
 
 data GLWindow a b = GLWindow (GLCanvas a) (GLContext b)
 data Mesh = Mesh VertexArrayObject ArrayIndex NumArrayIndices
