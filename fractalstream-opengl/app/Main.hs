@@ -11,6 +11,7 @@ import qualified Graphics.UI.WXCore as WXC
 import qualified Graphics.Rendering.OpenGL as GL
 
 import LoadShaders
+import LoadPalette
 
 main :: IO ()
 main
@@ -76,6 +77,8 @@ gui
                                                                $ bufferOffset $ firstIndex * vertexSize
                                        )
       vertexAttribArray vPosition $= Enabled
+
+      initTexture
 
       -- Load, bind, link, and compile shaders
       program <- loadShaders [ ShaderInfo VertexShader (FileSource "app/vert.glsl")

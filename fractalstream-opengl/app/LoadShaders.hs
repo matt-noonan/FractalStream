@@ -32,8 +32,6 @@ data ShaderSource =
   | FileSource FilePath
   deriving ( Eq, Ord, Show )
 
--- | Transform source into a string.
-
 getSource :: ShaderSource -> IO B.ByteString
 getSource (ByteStringSource bs) = return bs
 getSource (StringSource str) = return $ packUtf8 str
