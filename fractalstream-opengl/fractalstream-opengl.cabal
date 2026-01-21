@@ -30,6 +30,7 @@ executable FractalStream
     
     other-modules:    LoadShaders
                       LoadPalette
+                      Viewer
 
     build-depends:    base >=4.8 && <5
                     , fractalstream-core
