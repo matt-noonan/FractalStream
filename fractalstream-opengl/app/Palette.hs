@@ -1,4 +1,4 @@
-module LoadPalette ( initTexture ) where
+module Palette ( initTexture ) where
 
 import Foreign.Marshal.Array
 

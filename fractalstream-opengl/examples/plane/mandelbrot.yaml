@@ -1,0 +1,23 @@
+viewer:
+  title: Mandelbrot set
+  size: 700x700
+  z-coord: c
+  
+  initial-center: -0.5
+  initial-radius: 4.0
+
+  code: |
+    vec2 z = vec2(0.0);
+   
+    color = texture(uTexture, 0.5);
+   
+    for (int iter = 0; iter < 300; iter++) {
+      if (length(z) > 100.0) {
+         float depth = fract((float(iter) - log2(log(length(z)))) / 32.0);
+         color = texture(uTexture, depth);
+         break;
+      }
+      
+      // z^2 + c
+      z = _cMul(z, z) + c;
+    }

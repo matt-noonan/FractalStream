@@ -2,7 +2,6 @@ module Main ( main ) where
 
 import Graphics.UI.WX
 
-import LoadShaders ( ShaderSource(..) )
 import Viewer
 
 main :: IO ()
@@ -11,17 +10,23 @@ main = start welcome
 welcome :: IO ()
 welcome = do
   -- Create welcome frame
-  f <- frame [ text := "Welcome to FractalStream" ]
+  f <- frame [ text := "FractalStream" ]
   p <- panel f []
 
-  open <- button p [ text := "Open GLSL fragment shader..."
-                   , on command := onOpen f
-                   ]
+  newScript <- button p [ text := "New project"
+                        ]
+  openScript <- button p [ text := "Open project..."
+                         , on command := onOpen f
+                         ]
 
   -- Add menubar
   prj <- menuPane [ text := "&Project"]
-  _   <- menuItem prj [ text := "Open shader..."
-                      , help := "Open a GLSL fragment shader"
+
+  _   <- menuItem prj [ text := "New project"
+                      , help := "Open an empty editor"
+                      ]
+  _   <- menuItem prj [ text := "Open project..."
+                      , help := "Open YAML config file"
                       , on command := onOpen f
                       ]
   
@@ -34,7 +39,9 @@ welcome = do
 
   -- Combine into the top frame
   set f [ layout  := margin 30 $ fill $ container p $ floatCenter $ column 10
-                        [ widget open ]
+            [ expand $ widget newScript
+            , expand $ widget openScript
+            ]
         , menuBar := [prj, hlp]
         , on (menu about) := onAbout f
         ]
@@ -54,10 +61,10 @@ welcome = do
       
       case mbfname of
         Nothing    -> return ()
-        Just fname -> do viewer $ FileSource fname
+        Just fname -> do openViewer fname
       
       where
-        title = "Open GLSL fragment shader"
-        fTypes = [ ("GLSL fragment shader",["*.glsl","*.frag"])
+        title = "Open Config File"
+        fTypes = [ ("YAML config file", ["*.yaml"])
                  , ("All files", ["*.*"])
                  ]

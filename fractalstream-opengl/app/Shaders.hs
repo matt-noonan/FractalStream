@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
 -- |
--- Module      :  LoadShaders
+-- Module      :  Shaders
 -- Copyright   :  (c) Sven Panne 2018
 -- License     :  BSD3
 --
@@ -13,7 +13,7 @@
 --
 --------------------------------------------------------------------------------
 
-module LoadShaders (
+module Shaders (
   ShaderSource(..), ShaderInfo(..), loadShaders
 ) where
 

@@ -1,8 +1,10 @@
-module Viewer ( viewer ) where
+{-# LANGUAGE OverloadedRecordDot #-}
+module Viewer ( openViewer ) where
 
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Foreign.Storable
+import Text.Printf
 
 import Graphics.UI.WXCore
 import Graphics.Rendering.OpenGL
@@ -10,17 +12,21 @@ import Graphics.Rendering.OpenGL
 import qualified Graphics.UI.WXCore as WXC
 import qualified Graphics.Rendering.OpenGL as GL
 
-import LoadShaders
-import LoadPalette
+import Config
+import Shaders
+import Palette
 
-viewer :: ShaderSource -> IO ()
-viewer fragSource
-  = do   
+openViewer :: FilePath -> IO ()
+openViewer yamlFilePath
+  = do
+      -- Load yaml config file
+      config <- loadConfig yamlFilePath
+
       -- Create top frame
-      f <- frameCreateTopFrame "Parameter Space"
+      f <- frameCreateTopFrame config.viewer.title
 
       -- Create GLCanvas and GLContext
-      let initRect = (Rect 0 0 700 700)
+      let initRect = (Rect 0 0 config.viewer.pxWidth config.viewer.pxHeight)
           options  = [GL_RGBA, GL_MAJOR_VERSION 4, GL_DOUBLEBUFFER]
       
       canvas <- glCanvasCreateEx f 0 initRect 0 "GLCanvas" options nullPalette
@@ -67,17 +73,18 @@ viewer fragSource
       initTexture
 
       -- Load, bind, link, and compile shaders
-      program <- loadShaders [ ShaderInfo VertexShader (FileSource "examples/plane/vertex.glsl")
-                             , ShaderInfo FragmentShader fragSource
+      let fragSource = addPlaneHeader config.viewer.coord config.viewer.source
+      program <- loadShaders [ ShaderInfo VertexShader $ StringSource planeVertexCode
+                             , ShaderInfo FragmentShader $ StringSource fragSource
                              ]
       currentProgram $= Just program
 
       let glInfo = GLInfo canvas ctx program
 
       -- Set uniforms
-      let c = Vector2 (-0.5) 0.0 :: GLComplex
-          d = Vector2   6.0  6.0 :: GLComplex
-          m = Vector2   0.0  0.0 :: GLComplex
+      let c = Vector2 (config.viewer.center) 0.0 :: GLComplex
+          d = Vector2 (config.viewer.radius) (config.viewer.radius) :: GLComplex
+          m = Vector2 0.0 0.0 :: GLComplex
 
       setUniform program "uCenter" c
       setUniform program "uDiameter" d
@@ -211,3 +218,44 @@ setUniform program var val = do
   -- TODO: figure out error checking here
   location <- get (uniformLocation program var)
   uniform location $= val
+
+planeVertexCode :: String
+planeVertexCode =
+  "#version 410 core\n\
+  \\n\
+  \layout (location = 0) in vec2 pos;\n\
+  \\n\
+  \out vec4 FragPos;\n\
+  \\n\
+  \void main() {\n\
+  \  FragPos = vec4(pos, 0.0, 1.0);\n\
+  \  gl_Position = FragPos;\n\
+  \}"
+
+addPlaneHeader :: String -> String -> String
+addPlaneHeader var code = printf
+  "#version 410 core \n\
+  \\n\
+  \uniform vec2 uMouse;\n\
+  \uniform vec2 uDiameter;\n\
+  \uniform vec2 uCenter;\n\
+  \uniform sampler1D uTexture;\n\
+  \\n\
+  \in vec4 FragPos;\n\
+  \\n\
+  \out vec4 color;\n\
+  \\n\
+  \// Complex Multiplication\n\
+  \vec2 _cMul(vec2 a, vec2 b) {\n\
+    \return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);\n\
+  \}\n\
+  \\n\
+  \// Complex Division\n\
+  \vec2 _cDiv(vec2 a, vec2 b) {\n\
+  \  return vec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / (b.x * b.x + b.y * b.y);\n\
+  \}\n\
+  \\n\
+  \void main() {\n\
+  \  vec2 %s = uCenter + FragPos.xy * uDiameter / 2.0;\n\
+  \  %s\n\
+  \}" var code

@@ -28,16 +28,19 @@ executable FractalStream
 
     main-is:          Main.hs
     
-    other-modules:    LoadShaders
-                      LoadPalette
+    other-modules:    Config
+                      Palette
+                      Shaders
                       Viewer
 
     build-depends:    base >=4.8 && <5
+                    , bytestring
                     , fractalstream-core
+                    , OpenGL
+                    , text
+                    , yaml
                     , wxcore
                     , wx
-                    , OpenGL
-                    , bytestring
 
     hs-source-dirs:   app
     default-language: Haskell2010
