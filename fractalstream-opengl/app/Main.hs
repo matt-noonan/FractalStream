@@ -61,7 +61,7 @@ welcome = do
       
       case mbfname of
         Nothing    -> return ()
-        Just fname -> do openViewer fname
+        Just fname -> do openViewers fname
       
       where
         title = "Open Config File"

@@ -1,0 +1,51 @@
+viewers:
+  - title: Mandelbrot set
+    
+    width_pixels: 700
+    height_pixels: 700
+    coord: c
+    
+    center_x: -0.5
+    center_y: 0.0
+    radius: 4.0
+
+    code: |
+      vec2 z = vec2(0.0);
+    
+      color = texture(uTexture, 0.5);
+    
+      for (int iter = 0; iter < 300; iter++) {
+        if (length(z) > 100.0) {
+          float depth = fract((float(iter) - log2(log(length(z)))) / 32.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+        
+        // z^2 + c
+        z = _cMul(z, z) + c;
+      }
+    
+  - title: Julia set
+    
+    width_pixels: 700
+    height_pixels: 700
+    coord: z
+    
+    center_x: 0.0
+    center_y: 0.0
+    radius: 4.0
+
+    code: |   
+      vec2 c = vec2(0.0, 1.0);
+      color = texture(uTexture, 0.5);
+    
+      for (int iter = 0; iter < 300; iter++) {
+        if (length(z) > 100.0) {
+          float depth = fract((float(iter) - log2(log(length(z)))) / 32.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+        
+        // z^2 + c
+        z = _cMul(z, z) + c;
+      }

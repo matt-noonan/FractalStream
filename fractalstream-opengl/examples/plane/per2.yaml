@@ -1,23 +1,26 @@
-viewer:
-  title: Per₂ Parameter Space
-  size: 700x700
-  z-coord: c
-  
-  initial-center: -0.5
-  initial-radius: 6.0
+viewers:
+  - title: Per₂ Parameter Space
+    
+    width_pixels: 700
+    height_pixels: 700
+    coord: c
+    
+    center_x: -0.5
+    center_y: 0.0
+    radius: 6.0
 
-  code: |
-    vec2 z = vec2(0.0);
-   
-    color = texture(uTexture, 0.5);
-   
-    for (int iter = 0; iter < 300; iter++) {
-      if (length(z) > 100.0) {
-         float depth = fract((float(iter) / 2.0 - log2(log(length(z)))) / 32.0);
-         color = texture(uTexture, depth);
-         break;
+    code: |
+      vec2 z = vec2(0.0);
+    
+      color = texture(uTexture, 0.5);
+    
+      for (int iter = 0; iter < 300; iter++) {
+        if (length(z) > 100.0) {
+          float depth = fract((float(iter) / 2.0 - log2(log(length(z)))) / 32.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+        
+        // (z^2-c) / (z^2-1)
+        z = _cDiv(_cMul(z, z) - c, _cMul(z, z) - vec2(1.0, 0.0));
       }
-      
-      // (z^2-c) / (z^2-1)
-      z = _cDiv(_cMul(z, z) - c, _cMul(z, z) - vec2(1.0, 0.0));
-    }

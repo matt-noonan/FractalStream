@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedRecordDot #-}
-module Viewer ( openViewer ) where
+module Viewer ( openViewers ) where
 
 import Foreign.Marshal.Array
 import Foreign.Ptr
@@ -13,20 +13,26 @@ import qualified Graphics.UI.WXCore as WXC
 import qualified Graphics.Rendering.OpenGL as GL
 
 import Config
-import Shaders
 import Palette
+import Shaders
 
-openViewer :: FilePath -> IO ()
-openViewer yamlFilePath
+openViewers :: FilePath -> IO ()
+openViewers configPath 
   = do
-      -- Load yaml config file
-      config <- loadConfig yamlFilePath
+      -- Load config file and stores OpenGL programs
+      p <- loadConfig configPath
 
+      -- Open all viewers 
+      mapM_ openViewer p.viewers
+
+openViewer :: Viewer -> IO ()
+openViewer viewer
+  = do
       -- Create top frame
-      f <- frameCreateTopFrame config.viewer.title
+      f <- frameCreateTopFrame viewer.title
 
       -- Create GLCanvas and GLContext
-      let initRect = (Rect 0 0 config.viewer.pxWidth config.viewer.pxHeight)
+      let initRect = (Rect 0 0 viewer.width_pixels viewer.height_pixels)
           options  = [GL_RGBA, GL_MAJOR_VERSION 4, GL_DOUBLEBUFFER]
       
       canvas <- glCanvasCreateEx f 0 initRect 0 "GLCanvas" options nullPalette
@@ -64,7 +70,6 @@ openViewer yamlFilePath
 
       let vPosition = AttribLocation 0
           vDescriptor = VertexArrayDescriptor 2 Float 0 nullPtr
-          mesh = Mesh triangles (fromIntegral numVertices)
       
       vertexAttribPointer vPosition $= (ToFloat, vDescriptor)
       vertexAttribArray vPosition $= Enabled
@@ -72,23 +77,18 @@ openViewer yamlFilePath
       -- Create color palette
       initTexture
 
-      -- Load, bind, link, and compile shaders
-      let fragSource = addPlaneHeader config.viewer.coord config.viewer.source
-      program <- loadShaders [ ShaderInfo VertexShader $ StringSource planeVertexCode
-                             , ShaderInfo FragmentShader $ StringSource fragSource
-                             ]
+      -- Load program from Viewer record
+      program <- getProgram $ addHeader viewer.coord viewer.code
       currentProgram $= Just program
 
-      let glInfo = GLInfo canvas ctx program
-
       -- Set uniforms
-      let c = Vector2 (config.viewer.center) 0.0 :: GLComplex
-          d = Vector2 (config.viewer.radius) (config.viewer.radius) :: GLComplex
+      let c = Vector2 viewer.center_x viewer.center_y :: GLComplex
+          d = Vector2 viewer.radius viewer.radius :: GLComplex
           m = Vector2 0.0 0.0 :: GLComplex
 
-      setUniform program "uCenter" c
-      setUniform program "uDiameter" d
-      setUniform program "uMouse" m
+      setUniform program "_center" c
+      setUniform program "_diameter" d
+      setUniform program "_mouse" m
 
       -- Set variables to keep track of the last uniform values
       viewCenter <- varCreate c
@@ -97,10 +97,10 @@ openViewer yamlFilePath
       dragStart <- varCreate Nothing
     
       -- Set event handlers
-      windowOnPaint canvas $ onPaint mesh glInfo
-      windowOnSize canvas $ onSize glInfo viewDiameter
+      windowOnPaint canvas $ onPaint canvas ctx triangles numVertices
+      windowOnSize canvas $ onSize canvas ctx program viewDiameter
       windowOnMouse canvas True $ 
-        onMouse glInfo mousePosition dragStart viewCenter viewDiameter
+        onMouse canvas ctx program mousePosition dragStart viewCenter viewDiameter
 
       -- Show the frame
       _ <- windowShow f
@@ -109,13 +109,13 @@ openViewer yamlFilePath
 
   where
     -- Run vertex and fragment shaders
-    onPaint (Mesh triangles numVertices) (GLInfo canvas ctx _) _ _
+    onPaint canvas ctx triangles numVertices _ _
       = do 
           _ <- glCanvasSetCurrent canvas ctx
           clear [ ColorBuffer ]  
 
           bindVertexArrayObject $= Just triangles
-          drawArrays Triangles 0 numVertices
+          drawArrays Triangles 0 (fromIntegral numVertices)
           
           flush
           _ <- glCanvasSwapBuffers canvas
@@ -123,7 +123,7 @@ openViewer yamlFilePath
           return ()
 
     -- Change uniforms that track canvas dimensions
-    onSize (GLInfo canvas ctx program) viewDiameter
+    onSize canvas ctx p viewDiameter
       = do 
           _ <- glCanvasSetCurrent canvas ctx
           WXC.Size w h <- windowGetClientSize canvas
@@ -135,12 +135,11 @@ openViewer yamlFilePath
                     then Vector2 width $ fromIntegral h / fromIntegral w * width
                     else Vector2 (fromIntegral w / fromIntegral h * height) height
           
-          setUniform program "uDiameter" r
+          setUniform p "_diameter" r
 
           varSet viewDiameter r
 
-    onMouse (GLInfo canvas ctx program) 
-            mousePosition dragStart viewCenter viewDiameter event
+    onMouse canvas ctx p mousePosition dragStart viewCenter viewDiameter event
       = do
           _ <- glCanvasSetCurrent canvas ctx
 
@@ -159,7 +158,7 @@ openViewer yamlFilePath
           case event of
               -- Update mouse position
               MouseMotion _ _ -> do
-                setUniform program "uMouse" m
+                setUniform p "_mouse" m
                 varSet mousePosition m
 
               -- Stopped dragging
@@ -170,6 +169,10 @@ openViewer yamlFilePath
               MouseLeftDown _ _ -> do
                 varSet dragStart $ Just m
 
+              -- Picked a point (change globals in all programs)
+              -- MouseLeftDClick _ _ -> do
+              --   forM_ vs $ \a -> setUniform p ("_" ++ a.var) m
+
               -- Pan the view
               MouseLeftDrag _ _ -> do
                 ds <- varGet dragStart
@@ -179,7 +182,7 @@ openViewer yamlFilePath
                   Just (Vector2 dsx dsy) -> do
                     let t = Vector2 (dsx - x + cx) (dsy - y + cy)
 
-                    setUniform program "uCenter" t
+                    setUniform p "_center" t
                     varSet viewCenter t
 
                     windowRefresh canvas False
@@ -197,8 +200,8 @@ openViewer yamlFilePath
                     dyNew = dy * scalingFactor
                     d = Vector2 dxNew dyNew
                 
-                setUniform program "uCenter" c
-                setUniform program "uDiameter" d
+                setUniform p "_center" c
+                setUniform p "_diameter" d
 
                 varSet viewCenter c
                 varSet viewDiameter d
@@ -210,17 +213,20 @@ openViewer yamlFilePath
 
 type GLComplex = GL.Vector2 GLfloat
 
-data GLInfo a b = GLInfo (GLCanvas a) (GLContext b) Program
-data Mesh = Mesh VertexArrayObject NumArrayIndices
-
 setUniform :: Uniform a => Program -> String -> a -> IO ()
-setUniform program var val = do
+setUniform p var_ val = do
   -- TODO: figure out error checking here
-  location <- get (uniformLocation program var)
+  location <- get (uniformLocation p var_)
   uniform location $= val
 
-planeVertexCode :: String
-planeVertexCode =
+getProgram :: String -> IO Program
+getProgram fragSource = do
+  loadShaders [ ShaderInfo VertexShader $ StringSource vertexCode
+              , ShaderInfo FragmentShader $ StringSource fragSource
+              ]
+
+vertexCode :: String
+vertexCode =
   "#version 410 core\n\
   \\n\
   \layout (location = 0) in vec2 pos;\n\
@@ -232,13 +238,13 @@ planeVertexCode =
   \  gl_Position = FragPos;\n\
   \}"
 
-addPlaneHeader :: String -> String -> String
-addPlaneHeader var code = printf
+addHeader :: String -> String -> String
+addHeader varName sourceCode = printf
   "#version 410 core \n\
   \\n\
-  \uniform vec2 uMouse;\n\
-  \uniform vec2 uDiameter;\n\
-  \uniform vec2 uCenter;\n\
+  \uniform vec2 _mouse;\n\
+  \uniform vec2 _diameter;\n\
+  \uniform vec2 _center;\n\
   \uniform sampler1D uTexture;\n\
   \\n\
   \in vec4 FragPos;\n\
@@ -256,6 +262,6 @@ addPlaneHeader var code = printf
   \}\n\
   \\n\
   \void main() {\n\
-  \  vec2 %s = uCenter + FragPos.xy * uDiameter / 2.0;\n\
+  \  vec2 %s = _center + FragPos.xy * _diameter / 2.0;\n\
   \  %s\n\
-  \}" var code
+  \}" varName sourceCode
