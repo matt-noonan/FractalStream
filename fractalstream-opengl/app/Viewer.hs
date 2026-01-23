@@ -1,14 +1,16 @@
 {-# LANGUAGE OverloadedRecordDot, RecordWildCards, FlexibleContexts #-}
 module Viewer ( openViewers ) where
 
+import Control.Monad
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Foreign.Storable
 import Text.Printf
 
-import Graphics.UI.WXCore
+import Graphics.UI.WXCore hiding ( when )
 import Graphics.Rendering.OpenGL
 
+import qualified Graphics.UI.WX as WX
 import qualified Graphics.UI.WXCore as WXC
 import qualified Graphics.Rendering.OpenGL as GL
 
@@ -17,16 +19,16 @@ import Palette
 import Shaders
 
 openViewers :: FilePath -> IO ()
-openViewers configPath 
+openViewers configPath
   = do
       -- Load config file
       c <- loadConfig configPath
 
       -- Create header for global uniform variables
       let vars = map coord c.viewers
-          header = concat $ map (printf "uniform vec2 _%s;\n") vars
+          header = concatMap (printf "uniform vec2 _%s;\n") vars
 
-      -- Open all viewers 
+      -- Open all viewers
       viewerInfos <- mapM (openViewer vars header) c.viewers
 
       -- Add mouse events last, because the might affect all viewers
@@ -39,7 +41,7 @@ openViewers configPath
 
           -- First find the mouse position in the view coordinates
           let p@(WXC.Point i j) = mousePos event
-          
+
           Vector2 cx cy <- varGet v.viewCenter
           Vector2 dx dy <- varGet v.viewDiameter
 
@@ -48,73 +50,79 @@ openViewers configPath
           let x = cx + (fromIntegral i / fromIntegral w - 0.5) * dx
               y = cy - (fromIntegral j / fromIntegral h - 0.5) * dy
               m = Vector2 x y
-        
+
           case event of
-              -- Update mouse position
-              MouseMotion _ _ -> do
-                setUniform v.program "_mouse" m
-                varSet v.mousePosition m
+            -- Update mouse position
+            MouseMotion _ _ -> do
+              setUniform v.program "_mouse" m
+              varSet v.mousePosition m
 
-              -- Stop dragging and pick a point (if pointer didn't move much)
-              MouseLeftUp _ _ -> do
-                p0 <- varGet v.dragStartPoint
+            -- Stop dragging and pick a point (if pointer didn't move much)
+            MouseLeftUp _ _ -> do
+              t <- varGet v.currentTool
+              case t of
+                SelectPoint -> propagateEvent
+                Navigate    -> do
+                    p0 <- varGet v.dragStartPoint
 
-                let pickPoint viewerInfo = do
-                      _   <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
-                      setUniform viewerInfo.program v.var m
-                      windowRefresh viewerInfo.canvas False
-                
-                case p0 of
-                  Nothing -> return ()
-                  Just (WXC.Point i' j') -> if abs(i - i') < 3 && abs(j - j') < 3
-                                              then mapM_ pickPoint viewerInfos
-                                              else return ()
-                
-                varSet v.dragStart Nothing
-                varSet v.dragStartPoint Nothing
+                    case p0 of
+                      Nothing                -> return ()
+                      Just (WXC.Point i' j') -> when (abs(i - i') < 3 && abs(j - j') < 3) $
+                                                  do mapM_ (pickPoint m v) viewerInfos
 
-              -- Start dragging
-              MouseLeftDown _ _ -> do
-                varSet v.dragStart $ Just m
-                varSet v.dragStartPoint $ Just p
+                    varSet v.dragStart Nothing
+                    varSet v.dragStartPoint Nothing
 
-              -- Pan the view
-              MouseLeftDrag _ _ -> do
-                ds <- varGet v.dragStart
+            -- Start dragging or pick a point
+            MouseLeftDown _ _ -> do
+              t <- varGet v.currentTool
+              case t of
+                  Navigate    -> do varSet v.dragStart (Just m)
+                                    varSet v.dragStartPoint (Just p)
+                  SelectPoint -> mapM_ (pickPoint m v) viewerInfos
 
-                case ds of
-                  Nothing -> do return ()
-                  Just (Vector2 dsx dsy) -> do
-                    let t = Vector2 (dsx - x + cx) (dsy - y + cy)
+            -- Pan the view
+            MouseLeftDrag _ _ -> do
+              t <- varGet v.currentTool
+              case t of
+                SelectPoint -> mapM_ (pickPoint m v) viewerInfos
 
-                    setUniform v.program "_center" t
-                    varSet v.viewCenter t
+                Navigate -> do
+                  ds <- varGet v.dragStart
 
-                    windowRefresh v.canvas False
+                  case ds of
+                    Nothing -> return ()
+                    Just (Vector2 dsx dsy) -> do
+                      let v' = Vector2 (dsx - x + cx) (dsy - y + cy)
 
-              -- Zoom in/out
-              MouseWheel downward _ _ -> do
-                let speed = 1.2
-                    scalingFactor = if downward then speed else 1/speed
+                      setUniform v.program "_center" v'
+                      varSet v.viewCenter v'
 
-                    cxNew = x + scalingFactor * (cx - x)
-                    cyNew = y + scalingFactor * (cy - y)
-                    c = Vector2 cxNew cyNew
+                      windowRefresh v.canvas False
 
-                    dxNew = dx * scalingFactor
-                    dyNew = dy * scalingFactor
-                    d = Vector2 dxNew dyNew
-                
-                setUniform v.program "_center" c
-                setUniform v.program "_diameter" d
+            -- Zoom in/out
+            MouseWheel downward _ _ -> do
+              let speed = 1.2
+                  scalingFactor = if downward then speed else 1/speed
 
-                varSet v.viewCenter c
-                varSet v.viewDiameter d
+                  cxNew = x + scalingFactor * (cx - x)
+                  cyNew = y + scalingFactor * (cy - y)
+                  c = Vector2 cxNew cyNew
 
-                windowRefresh v.canvas False
-              
-              -- Pass the event forward
-              _ -> do propagateEvent
+                  dxNew = dx * scalingFactor
+                  dyNew = dy * scalingFactor
+                  d = Vector2 dxNew dyNew
+
+              setUniform v.program "_center" c
+              setUniform v.program "_diameter" d
+
+              varSet v.viewCenter c
+              varSet v.viewDiameter d
+
+              windowRefresh v.canvas False
+
+            -- Pass the event forward
+            _ -> do propagateEvent
 
 openViewer :: [String] -> String -> Viewer -> IO ViewerInfo
 openViewer vars header viewer
@@ -125,7 +133,7 @@ openViewer vars header viewer
       -- Create GLCanvas and GLContext
       let initRect = (Rect 0 0 viewer.width_pixels viewer.height_pixels)
           options  = [GL_RGBA, GL_MAJOR_VERSION 4, GL_DOUBLEBUFFER]
-      
+
       canvas <- glCanvasCreateEx f 0 initRect 0 "GLCanvas" options nullPalette
 
       ctx <- glContextCreateFromNull canvas
@@ -137,7 +145,7 @@ openViewer vars header viewer
       -- Set background and shading
       clearColor $= Color4 0 0 0 0
       shadeModel $= Flat
- 
+
       -- Create mesh buffer
       triangles <- genObjectName
       bindVertexArrayObject $= Just triangles
@@ -147,8 +155,8 @@ openViewer vars header viewer
                      , Vertex2   1.0  (-1.0)
                      , Vertex2 (-1.0)   1.0
                      , Vertex2   1.0  (-1.0)  -- Triangle 2
-                     , Vertex2   1.0    1.0 
-                     , Vertex2 (-1.0)   1.0 
+                     , Vertex2   1.0    1.0
+                     , Vertex2 (-1.0)   1.0
                      ] :: [Vertex2 GLfloat]
           numVertices = length vertices
           vertexSize = sizeOf (Vertex2 0.0 (0.0 :: GLfloat))
@@ -161,7 +169,7 @@ openViewer vars header viewer
 
       let vPosition = AttribLocation 0
           vDescriptor = VertexArrayDescriptor 2 Float 0 nullPtr
-      
+
       vertexAttribPointer vPosition $= (ToFloat, vDescriptor)
       vertexAttribArray vPosition $= Enabled
 
@@ -191,10 +199,26 @@ openViewer vars header viewer
       mousePosition <- varCreate m
       dragStart <- varCreate Nothing
       dragStartPoint <- varCreate Nothing
+      currentTool <- varCreate Navigate
+
+      -- Add tools
+      tools <- WX.menuPane [ WX.text WX.:= "&Tools"]
+
+      _   <- WX.menuItem tools [ WX.text WX.:= "Navigate\tCtrl+T"
+                               , WX.help WX.:= "Drag to pan the view"
+                               , WX.on WX.command WX.:= onTool currentTool Navigate
+                               ]
+      _   <- WX.menuItem tools [ WX.text WX.:= "Select\tCtrl+S"
+                               , WX.help WX.:= "Click to select point"
+                               , WX.on WX.command WX.:= onTool currentTool SelectPoint
+                               ]
+
+      WX.menuLine tools
+      WX.set f [ WX.menuBar WX.:= [tools] ]
 
       -- Store all data in a record
       let viewerInfo = ViewerInfo{..}
-    
+
       -- Set event handlers
       windowOnPaint canvas $ onPaint viewerInfo triangles numVertices
       windowOnSize canvas $ onSize viewerInfo
@@ -207,38 +231,47 @@ openViewer vars header viewer
   where
     -- Run vertex and fragment shaders
     onPaint viewerInfo triangles numVertices _dc _rect
-      = do 
+      = do
           _ <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
-          clear [ ColorBuffer ]  
+          clear [ ColorBuffer ]
 
           bindVertexArrayObject $= Just triangles
           drawArrays Triangles 0 (fromIntegral numVertices)
-          
+
           flush
           _ <- glCanvasSwapBuffers viewerInfo.canvas
-          
+
           return ()
 
     -- Change uniforms that track canvas dimensions
     onSize viewerInfo
-      = do 
+      = do
           _ <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
           WXC.Size w h <- windowGetClientSize viewerInfo.canvas
           viewport $= (Position 0 0, GL.Size (fromIntegral w) (fromIntegral h))
 
           (Vector2 width height) <- varGet viewerInfo.viewDiameter
-          
+
           let r = if w <= h
                     then Vector2 width $ fromIntegral h / fromIntegral w * width
                     else Vector2 (fromIntegral w / fromIntegral h * height) height
-          
+
           setUniform viewerInfo.program "_diameter" r
 
           varSet viewerInfo.viewDiameter r
 
+    onTool currentTool newTool
+      = do
+          varSet currentTool newTool
+          putStrLn $ show newTool
+
+
 type GLComplex = GL.Vector2 GLfloat
 
-data ViewerInfo = ViewerInfo 
+data Tool = Navigate | SelectPoint
+  deriving (Eq, Show)
+
+data ViewerInfo = ViewerInfo
   { program         :: Program
   , canvas          :: GLCanvas ()
   , ctx             :: GLContext ()
@@ -246,7 +279,8 @@ data ViewerInfo = ViewerInfo
   , viewDiameter    :: Var GLComplex
   , mousePosition   :: Var GLComplex
   , dragStart       :: Var (Maybe GLComplex)
-  , dragStartPoint :: Var (Maybe (WXC.Point2 Int))
+  , dragStartPoint  :: Var (Maybe (WXC.Point2 Int))
+  , currentTool     :: Var Tool
   , var             :: String
   }
 
@@ -261,6 +295,12 @@ getProgram fragSource = do
   loadShaders [ ShaderInfo VertexShader $ StringSource vertexCode
               , ShaderInfo FragmentShader $ StringSource fragSource
               ]
+
+pickPoint :: GLComplex -> ViewerInfo -> ViewerInfo -> IO ()
+pickPoint mousePointer v viewerInfo = do
+  _   <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
+  setUniform viewerInfo.program v.var mousePointer
+  windowRefresh viewerInfo.canvas False
 
 vertexCode :: String
 vertexCode =
