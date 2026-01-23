@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedRecordDot, RecordWildCards, FlexibleContexts #-}
 module Viewer ( openViewers ) where
 
-import Control.Monad
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Foreign.Storable
@@ -40,7 +39,7 @@ openViewers configPath
           _ <- glCanvasSetCurrent v.canvas v.ctx
 
           -- First find the mouse position in the view coordinates
-          let p@(WXC.Point i j) = mousePos event
+          let WXC.Point i j = mousePos event
 
           Vector2 cx cy <- varGet v.viewCenter
           Vector2 dx dy <- varGet v.viewDiameter
@@ -62,23 +61,13 @@ openViewers configPath
               t <- varGet v.currentTool
               case t of
                 SelectPoint -> propagateEvent
-                Navigate    -> do
-                    p0 <- varGet v.dragStartPoint
-
-                    case p0 of
-                      Nothing                -> return ()
-                      Just (WXC.Point i' j') -> when (abs(i - i') < 3 && abs(j - j') < 3) $
-                                                  do mapM_ (pickPoint m v) viewerInfos
-
-                    varSet v.dragStart Nothing
-                    varSet v.dragStartPoint Nothing
+                Navigate    -> do varSet v.dragStart Nothing
 
             -- Start dragging or pick a point
             MouseLeftDown _ _ -> do
               t <- varGet v.currentTool
               case t of
                   Navigate    -> do varSet v.dragStart (Just m)
-                                    varSet v.dragStartPoint (Just p)
                   SelectPoint -> mapM_ (pickPoint m v) viewerInfos
 
             -- Pan the view
@@ -198,19 +187,18 @@ openViewer vars header viewer
       viewDiameter <- varCreate d
       mousePosition <- varCreate m
       dragStart <- varCreate Nothing
-      dragStartPoint <- varCreate Nothing
       currentTool <- varCreate Navigate
 
       -- Add tools
       tools <- WX.menuPane [ WX.text WX.:= "&Tools"]
 
-      _   <- WX.menuItem tools [ WX.text WX.:= "Navigate\tCtrl+T"
+      _   <- WX.menuItem tools [ WX.text WX.:= "Navigate\tN"
                                , WX.help WX.:= "Drag to pan the view"
-                               , WX.on WX.command WX.:= onTool currentTool Navigate
+                               , WX.on WX.command WX.:= switchTool currentTool Navigate
                                ]
-      _   <- WX.menuItem tools [ WX.text WX.:= "Select\tCtrl+S"
+      _   <- WX.menuItem tools [ WX.text WX.:= "Select\tS"
                                , WX.help WX.:= "Click to select point"
-                               , WX.on WX.command WX.:= onTool currentTool SelectPoint
+                               , WX.on WX.command WX.:= switchTool currentTool SelectPoint
                                ]
 
       WX.menuLine tools
@@ -222,6 +210,7 @@ openViewer vars header viewer
       -- Set event handlers
       windowOnPaint canvas $ onPaint viewerInfo triangles numVertices
       windowOnSize canvas $ onSize viewerInfo
+      windowOnKeyChar f $ onKeyChar viewerInfo
 
       -- Show the frame
       _ <- windowShow f
@@ -260,11 +249,13 @@ openViewer vars header viewer
 
           varSet viewerInfo.viewDiameter r
 
-    onTool currentTool newTool
-      = do
-          varSet currentTool newTool
-          putStrLn $ show newTool
+    onKeyChar viewerInfo eventKey
+      = case eventKey of
+          EventKey (KeyChar 'n') _ _ -> switchTool viewerInfo.currentTool Navigate
 
+          EventKey (KeyChar 's') _ _ -> switchTool viewerInfo.currentTool SelectPoint
+
+          EventKey _ _ _ -> propagateEvent
 
 type GLComplex = GL.Vector2 GLfloat
 
@@ -279,7 +270,6 @@ data ViewerInfo = ViewerInfo
   , viewDiameter    :: Var GLComplex
   , mousePosition   :: Var GLComplex
   , dragStart       :: Var (Maybe GLComplex)
-  , dragStartPoint  :: Var (Maybe (WXC.Point2 Int))
   , currentTool     :: Var Tool
   , var             :: String
   }
@@ -301,6 +291,9 @@ pickPoint mousePointer v viewerInfo = do
   _   <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
   setUniform viewerInfo.program v.var mousePointer
   windowRefresh viewerInfo.canvas False
+
+switchTool :: Var Tool -> Tool -> IO ()
+switchTool currentTool newTool = varSet currentTool newTool
 
 vertexCode :: String
 vertexCode =
