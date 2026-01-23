@@ -35,8 +35,7 @@ viewers:
     center_y: 0.0
     radius: 4.0
 
-    code: |   
-      vec2 c = vec2(0.0, 1.0);
+    code: |
       color = texture(uTexture, 0.5);
     
       for (int iter = 0; iter < 300; iter++) {
@@ -46,6 +45,6 @@ viewers:
           break;
         }
         
-        // z^2 + c
-        z = _cMul(z, z) + c;
+        // z^2 + _c
+        z = _cMul(z, z) + _c;
       }
