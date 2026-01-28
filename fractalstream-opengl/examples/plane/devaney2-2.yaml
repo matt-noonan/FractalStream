@@ -1,35 +1,36 @@
 viewers:
-  - title: Mandelbrot set
+  - title: Devaney (2,2) Family Parameter Space
 
     width_pixels: 700
     height_pixels: 700
     coord: c
 
-    center_x: -0.5
+    center_x: 0.0
     center_y: 0.0
-    width: 4.0
+    width: 1.0
 
     max_iterations: 300
     escape_radius: 100.0
     convergence_radius: 1e-4
 
     code: |
-      vec2 z = vec2(0.0);
+      // λ^(1 / 4)
+      vec2 z = _cPow(c, 0.25);
 
       color = texture(uTexture, 0.5);
 
       for (int iter = 0; iter < _max_iterations; iter++) {
         if (length(z) > _escape_radius) {
-          float depth = fract((float(iter) - log2(log(length(z)))) / 32.0);
+          float depth = fract((float(iter) / 2.0 - log2(log(length(z))) / log2(4.0) ) / 32.0);
           color = texture(uTexture, depth);
           break;
         }
 
-        // z^2 + c
-        z = _cMul(z, z) + c;
+        // z^2 + λ / z^2
+        z = _cMul(z, z) + _cDiv(c, _cMul(z,z));
       }
 
-  - title: Julia set
+  - title: Devaney (2,2) Family Dynamical Space
 
     width_pixels: 700
     height_pixels: 700
@@ -37,7 +38,7 @@ viewers:
 
     center_x: 0.0
     center_y: 0.0
-    width: 4.0
+    width: 3.0
 
     max_iterations: 300
     escape_radius: 100.0
@@ -48,11 +49,11 @@ viewers:
 
       for (int iter = 0; iter < _max_iterations; iter++) {
         if (length(z) > _escape_radius) {
-          float depth = fract((float(iter) - log2(log(length(z)))) / 32.0);
+          float depth = fract((float(iter) / 2.0 - log2(log(length(z))) / log2(4.0) ) / 32.0);
           color = texture(uTexture, depth);
           break;
         }
 
-        // z^2 + _c
-        z = _cMul(z, z) + _c;
+        // z^2 + λ / z^2
+        z = _cMul(z, z) + _cDiv(_c, _cMul(z,z));
       }

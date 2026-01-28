@@ -32,8 +32,12 @@ openViewers configPath
 
       -- Add mouse events last, because the might affect all viewers
       mapM_ (\v -> windowOnMouse v.canvas True $ onMouse viewerInfos v) viewerInfos
+      mapM_ (\v -> windowOnClose v.vFrame $ onClose viewerInfos) viewerInfos
 
   where
+    onClose viewerInfos
+      = mapM_ (\v -> windowDestroy v.vFrame) viewerInfos
+
     onMouse viewerInfos v event
       = do
           _ <- glCanvasSetCurrent v.canvas v.ctx
@@ -117,19 +121,19 @@ openViewer :: [String] -> String -> Viewer -> IO ViewerInfo
 openViewer vars header viewer
   = do
       -- Create top frame
-      f <- frameCreateTopFrame viewer.title
+      vFrame <- frameCreateTopFrame viewer.title
 
       -- Create GLCanvas and GLContext
-      let initRect = (Rect 0 0 viewer.width_pixels viewer.height_pixels)
+      let initRect = Rect 0 0 viewer.width_pixels viewer.height_pixels
           options  = [GL_RGBA, GL_MAJOR_VERSION 4, GL_DOUBLEBUFFER]
 
-      canvas <- glCanvasCreateEx f 0 initRect 0 "GLCanvas" options nullPalette
+      canvas <- glCanvasCreateEx vFrame 0 initRect 0 "GLCanvas" options nullPalette
 
       ctx <- glContextCreateFromNull canvas
       _   <- glCanvasSetCurrent canvas ctx
 
       let w  = fill $ widget canvas
-      windowSetLayout f w
+      windowSetLayout vFrame w
 
       -- Set background and shading
       clearColor $= Color4 0 0 0 0
@@ -170,13 +174,20 @@ openViewer vars header viewer
       currentProgram $= Just program
 
       -- Set uniforms
-      let c = Vector2 viewer.center_x viewer.center_y :: GLComplex
-          d = Vector2 viewer.radius viewer.radius :: GLComplex
+      let aspect = fromIntegral viewer.height_pixels / fromIntegral viewer.width_pixels :: GLfloat
+          c = Vector2 viewer.center_x viewer.center_y :: GLComplex
+          d = Vector2 viewer.width (aspect * viewer.width) :: GLComplex
           m = Vector2 0.0 0.0 :: GLComplex
+          n = viewer.max_iterations
+          e = viewer.escape_radius
+          r = viewer.convergence_radius
 
       setUniform program "_center" c
       setUniform program "_diameter" d
       setUniform program "_mouse" m
+      setUniform program "_max_iterations" n
+      setUniform program "_escape_radius" e
+      setUniform program "_convergence_radius" r
 
       -- Set variable uniforms (for point picking)
       let var = "_" ++ viewer.coord
@@ -186,6 +197,10 @@ openViewer vars header viewer
       viewCenter <- varCreate c
       viewDiameter <- varCreate d
       mousePosition <- varCreate m
+      maxIterations <- varCreate n
+      escapeRadius <- varCreate e
+      convergenceRadius <- varCreate r
+
       dragStart <- varCreate Nothing
       currentTool <- varCreate Navigate
 
@@ -202,7 +217,7 @@ openViewer vars header viewer
                                ]
 
       WX.menuLine tools
-      WX.set f [ WX.menuBar WX.:= [tools] ]
+      WX.set vFrame [ WX.menuBar WX.:= [tools] ]
 
       -- Store all data in a record
       let viewerInfo = ViewerInfo{..}
@@ -210,11 +225,11 @@ openViewer vars header viewer
       -- Set event handlers
       windowOnPaint canvas $ onPaint viewerInfo triangles numVertices
       windowOnSize canvas $ onSize viewerInfo
-      windowOnKeyChar f $ onKeyChar viewerInfo
+      windowOnKeyChar vFrame $ onKeyChar viewerInfo
 
       -- Show the frame
-      _ <- windowShow f
-      windowRaise f
+      _ <- windowShow vFrame
+      windowRaise vFrame
       return viewerInfo
 
   where
@@ -255,7 +270,7 @@ openViewer vars header viewer
 
           EventKey (KeyChar 's') _ _ -> switchTool viewerInfo.currentTool SelectPoint
 
-          EventKey _ _ _ -> propagateEvent
+          _ -> propagateEvent
 
 type GLComplex = GL.Vector2 GLfloat
 
@@ -263,15 +278,19 @@ data Tool = Navigate | SelectPoint
   deriving (Eq, Show)
 
 data ViewerInfo = ViewerInfo
-  { program         :: Program
-  , canvas          :: GLCanvas ()
-  , ctx             :: GLContext ()
-  , viewCenter      :: Var GLComplex
-  , viewDiameter    :: Var GLComplex
-  , mousePosition   :: Var GLComplex
-  , dragStart       :: Var (Maybe GLComplex)
-  , currentTool     :: Var Tool
-  , var             :: String
+  { vFrame            :: WX.Frame ()
+  , program           :: Program
+  , canvas            :: GLCanvas ()
+  , ctx               :: GLContext ()
+  , viewCenter        :: Var GLComplex
+  , viewDiameter      :: Var GLComplex
+  , maxIterations     :: Var GLint
+  , escapeRadius      :: Var GLfloat
+  , convergenceRadius :: Var GLfloat
+  , mousePosition     :: Var GLComplex
+  , dragStart         :: Var (Maybe GLComplex)
+  , currentTool       :: Var Tool
+  , var               :: String
   }
 
 setUniform :: Uniform a => Program -> String -> a -> IO ()
@@ -293,7 +312,7 @@ pickPoint mousePointer v viewerInfo = do
   windowRefresh viewerInfo.canvas False
 
 switchTool :: Var Tool -> Tool -> IO ()
-switchTool currentTool newTool = varSet currentTool newTool
+switchTool = varSet
 
 vertexCode :: String
 vertexCode =
@@ -309,12 +328,26 @@ vertexCode =
   \}"
 
 addHeader :: String -> String -> String -> String
-addHeader header varName sourceCode = printf
+addHeader = printf
   "#version 410 core \n\
+  \\n\
+  \#define M_PI 3.1415926535897932384626433832795\n\
+  \\n\
+  \const vec4 WHITE = vec4(1.0, 1.0, 1.0, 1.0);\n\
+  \const vec4 BLACK = vec4(0.0, 0.0, 0.0, 1.0);\n\
+  \const vec4 RED = vec4(1.0, 0.0, 0.0, 1.0);\n\
+  \const vec4 GREEN = vec4(0.0, 1.0, 0.0, 1.0);\n\
+  \const vec4 BLUE = vec4(0.0, 0.0, 1.0, 1.0);\n\
+  \const vec4 YELLOW = vec4(1.0, 1.0, 0.0, 1.0);\n\
+  \const vec4 MAGENTA = vec4(1.0, 0.0, 1.0, 1.0);\n\
+  \const vec4 CYAN = vec4(0.0, 1.0, 1.0, 1.0);\n\
   \\n\
   \uniform vec2 _mouse;\n\
   \uniform vec2 _diameter;\n\
   \uniform vec2 _center;\n\
+  \uniform int _max_iterations;\n\
+  \uniform float _escape_radius;\n\
+  \uniform float _convergence_radius;\n\
   \uniform sampler1D uTexture;\n\
   \\n\
   \%s\
@@ -333,7 +366,34 @@ addHeader header varName sourceCode = printf
   \  return vec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / (b.x * b.x + b.y * b.y);\n\
   \}\n\
   \\n\
+  \// Transcendental functions on the Complex Plane\n\
+  \\n\
+  \// Complex square root\n\
+  \vec2 _sqrt(vec2 a) {\n\
+  \  float sqrtR = sqrt(length(a));\n\
+  \  float theta = atan(a.y, a.x);\n\
+  \  return vec2(sqrtR * cos(theta / 2.0), sqrtR * sin(theta / 2.0));\n\
+  \} \n\
+  \\n\
+  \// Exponentiation to a real power (with any base)\n\
+  \vec2 _cPow(vec2 a, float b) {\n\
+  \  float powR = pow(length(a), b);\n\
+  \  float theta = atan(a.y, a.x);\n\
+  \  return vec2(powR * cos(b * theta), powR * sin(b * theta));\n\
+  \}\n\
+  \\n\
+  \// Complex Exponential\n\
+  \vec2 _cExp(vec2 a) {\n\
+  \  float expR = exp(a.x); \n\
+  \  return vec2(expR * cos(a.y), expR * sin(a.y));\n\
+  \}\n\
+  \\n\
+  \// Complex Logarithm\n\
+  \vec2 _cLog(vec2 a) {\n\
+  \  return vec2(log(length(a)), atan(a.y, a.x));\n\
+  \}\n\
+  \\n\
   \void main() {\n\
   \  vec2 %s = _center + FragPos.xy * _diameter / 2.0;\n\
   \  %s\n\
-  \}" header varName sourceCode
+  \}"

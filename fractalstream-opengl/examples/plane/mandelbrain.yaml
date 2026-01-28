@@ -1,0 +1,76 @@
+viewers:
+  - title: Newton's Method Parameter Plane
+
+    width_pixels: 700
+    height_pixels: 700
+    coord: c
+
+    center_x: 0.0
+    center_y: 0.0
+    width: 3.0
+
+    max_iterations: 600
+    escape_radius: 100.0
+    convergence_radius: 1e-3
+
+    code: |
+      vec2 z = vec2(1.0 / 3.0, 0.0);
+
+      color = texture(uTexture, 0.5);
+
+      for (int iter = 1; iter <= _max_iterations; iter++) {
+        vec2 lastZ = z;
+
+        // z - f / df for f = (z-1)(z-c)(z+c)
+        vec2 f = _cMul(_cMul(z - vec2(1.0, 0.0), z - c), z + c);
+        vec2 df = _cMul(z-vec2(1.0, 0.0), z-c) + _cMul(z-vec2(1.0, 0.0), z+c) + _cMul(z+c, z-c);
+        z = z - _cDiv(f, df);
+
+        if (length(z-lastZ) < _convergence_radius) {
+          float depth = fract((float(iter) + 1.0 - log2(-log(length(z-lastZ)))) / 32.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+      }
+
+  - title: Newton's Method Dynamical Plane
+
+    width_pixels: 700
+    height_pixels: 700
+    coord: z
+
+    center_x: 0.0
+    center_y: 0.0
+    width: 2.0
+
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-3
+
+    code: |
+      color = BLACK;
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+        // z - f / df for f = (z-1)(z-c)(z+c)
+        vec2 f = _cMul(_cMul(z - vec2(1.0, 0.0), z - _c), z + _c);
+        vec2 df = _cMul(z-vec2(1.0, 0.0), z-_c) + _cMul(z-vec2(1.0, 0.0), z+_c) + _cMul(z+_c, z-_c);
+        z = z - _cDiv(f, df);
+
+        if (length(z-vec2(1.0,0.0)) < _convergence_radius) {
+          float depth = (float(iter) + 1.0 - log2(-log(length(z-vec2(1.0,0.0))))) / 16.0;
+          color = cos(M_PI * depth) * WHITE / 4.0 + 0.5 * RED;
+          break;
+        }
+
+        if (length(z-_c) < _convergence_radius) {
+          float depth = (float(iter) + 1.0 - log2(-log(length(z-_c)))) / 16.0;
+          color = cos(M_PI * depth) * WHITE / 4.0 + 0.5 * GREEN;
+          break;
+        }
+
+        if (length(z+_c) < _convergence_radius) {
+          float depth = (float(iter) + 1.0 - log2(-log(length(z+_c)))) / 16.0;
+          color = cos(M_PI * depth) * WHITE / 4.0 + 0.5 * BLUE;
+          break;
+        }
+      }

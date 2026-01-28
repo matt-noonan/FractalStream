@@ -1,0 +1,107 @@
+viewers:
+  - title: Per₃(0) Parameter Space
+
+    width_pixels: 700
+    height_pixels: 700
+    coord: c
+
+    center_x: 0.0
+    center_y: 0.0
+    width: 6.28318531
+
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-4
+
+    code: |
+
+      // set c to exp(c).
+      // par set z to 2*c/(c+1).
+      // do
+      // set x to (z-1)*(z-c)/z^2.
+      // set y to (x-1)*(x-c)/x^2.
+      // set z to (y-1)*(y-c)/y^2.
+      // until z escapes or z vanishes or (z-1) vanishes.
+      // If z escapes then [purple].
+      // If z vanishes then [yellow].
+      // If (z-1) vanishes then [teal].
+
+      vec2 x = vec2(0.0);
+      vec2 y = vec2(0.0);
+
+      c = _cExp(c);
+      vec2 z = _cDiv(2.0 * c, c + vec2(1.0, 0.0));
+
+      color = texture(uTexture, 0.5);
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+
+        if (length(z) > _escape_radius) {
+          float depth = fract((float(iter) / 3.0 - log2(log(length(z))) / log2(4.0)) / 16.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+
+        if (length(z) < 1e-4) {
+          float depth = fract((float(iter) / 3.0 - log2(-log(length(z))) / log2(4.0)) / 16.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+
+        if (length(z - vec2(1.0, 0.0)) < 1e-4) {
+          float depth = fract((float(iter) / 3.0 - log2(-log(length(z - vec2(1.0, 0.0)))) / log2(4.0)) / 16.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+
+        x = _cDiv(_cMul(z - vec2(1.0, 0.0), z - c), _cMul(z, z));
+        y = _cDiv(_cMul(x - vec2(1.0, 0.0), x - c), _cMul(x, x));
+        z = _cDiv(_cMul(y - vec2(1.0, 0.0), y - c), _cMul(y, y));
+      }
+
+  - title: Per₃(0) Dynamical Space
+
+    width_pixels: 700
+    height_pixels: 700
+    coord: z
+
+    center_x: 0.0
+    center_y: 0.0
+    width: 8.0
+
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-4
+
+    code: |
+      vec2 x = vec2(0.0);
+      vec2 y = vec2(0.0);
+
+      vec2 c = _cExp(_c);
+
+      color = texture(uTexture, 0.5);
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+
+        if (length(z) > _escape_radius) {
+          float depth = fract((float(iter) / 3.0 - log2(log(length(z))) / log2(4.0)) / 16.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+
+        if (length(z) < _convergence_radius) {
+          float depth = fract((float(iter) / 3.0 - log2(-log(length(z))) / log2(4.0)) / 16.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+
+        if (length(z - vec2(1.0, 0.0)) < _convergence_radius) {
+          float depth = fract((float(iter) / 3.0 - log2(-log(length(z - vec2(1.0, 0.0)))) / log2(4.0)) / 16.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+
+        x = _cDiv(_cMul(z - vec2(1.0, 0.0), z - c), _cMul(z, z));
+        y = _cDiv(_cMul(x - vec2(1.0, 0.0), x - c), _cMul(x, x));
+        z = _cDiv(_cMul(y - vec2(1.0, 0.0), y - c), _cMul(y, y));
+      }

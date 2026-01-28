@@ -29,9 +29,9 @@ welcome = do
                       , help := "Open YAML config file"
                       , on command := onOpen f
                       ]
-  
+
   menuLine prj
-  
+
   _   <- menuQuit prj []
 
   hlp   <- menuHelp      [ text := "&Help" ]
@@ -46,23 +46,23 @@ welcome = do
         , on (menu about) := onAbout f
         ]
 
-  
+
   where
     onAbout f = do
       _ <- infoDialog f title msg
       return ()
-      
+
       where
         title = "About 'FractalStream'"
         msg   = "This is an OpenGL backend test"
 
     onOpen f = do
-      mbfname <- fileOpenDialog f False True title fTypes "" ""
-      
-      case mbfname of
+      maybeFilename <- fileOpenDialog f False True title fTypes "" ""
+
+      case maybeFilename of
         Nothing    -> return ()
-        Just fname -> do openViewers fname
-      
+        Just filename -> do openViewers filename
+
       where
         title = "Open Config File"
         fTypes = [ ("YAML config file", ["*.yaml"])

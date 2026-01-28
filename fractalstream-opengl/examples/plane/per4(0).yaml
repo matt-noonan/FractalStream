@@ -1,51 +1,59 @@
 viewers:
   - title: Per₄(0) Parameter Space
-    
+
     width_pixels: 700
     height_pixels: 700
     coord: c
-    
+
     center_x: -0.5
     center_y: 0.0
-    radius: 6.0
+    width: 6.0
+
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-4
 
     code: |
       // (4c^2-2c) / (-1+c+c^2)
       vec2 z = _cDiv(4.0 * _cMul(c,c) - 2.0 * c, - vec2(1.0, 0.0) + c + _cMul(c, c));
-    
+
       color = texture(uTexture, 0.5);
-    
-      for (int iter = 0; iter < 300; iter++) {
-        if (length(z) > 100.0) {
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+        if (length(z) > _escape_radius) {
           float depth = fract((float(iter) / 4.0 - log2(log(length(z)))) / 32.0);
           color = texture(uTexture, depth);
           break;
         }
-        
-        // (z-c)*(z-(2c-1)/(c-1))/z^2  
+
+        // (z-c)*(z-(2c-1)/(c-1))/z^2
         z = _cDiv(_cMul(z - c, z - _cDiv(2.0 * c - vec2(1.0, 0.0), c - vec2(1.0, 0.0))), _cMul(z, z));
       }
 
   - title: Per₄(0) Dynamical Space
-    
+
     width_pixels: 700
     height_pixels: 700
     coord: z
-    
+
     center_x: 0.0
     center_y: 0.0
-    radius: 6.0
+    width: 6.0
 
-    code: |   
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-4
+
+    code: |
       color = texture(uTexture, 0.5);
-    
-      for (int iter = 0; iter < 300; iter++) {
-        if (length(z) > 100.0) {
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+        if (length(z) > _escape_radius) {
           float depth = fract((float(iter) / 4.0 - log2(log(length(z)))) / 32.0);
           color = texture(uTexture, depth);
           break;
         }
-        
-        // (z-c)*(z-(2c-1)/(c-1))/z^2  
+
+        // (z-c)*(z-(2c-1)/(c-1))/z^2
         z = _cDiv(_cMul(z - _c, z - _cDiv(2.0 * _c - vec2(1.0, 0.0), _c - vec2(1.0, 0.0))), _cMul(z, z));
       }

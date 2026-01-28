@@ -1,50 +1,60 @@
 viewers:
   - title: Per₃(0) Parameter Space
-    
+
     width_pixels: 700
     height_pixels: 700
     coord: c
-    
+
     center_x: -0.5
     center_y: 0.0
-    radius: 6.0
+    width: 6.0
+
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-4
 
     code: |
       vec2 z = vec2(0.0);
-    
+
       color = texture(uTexture, 0.5);
-    
-      for (int iter = 0; iter < 300; iter++) {
-        if (length(z) > 100.0) {
-          float depth = fract((float(iter) / 3.0 - log2(log(length(z)))) / 32.0);
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+        if (length(z) > _escape_radius) {
+          float depth = fract((float(iter) / 3.0 + 1.0 - log2(log(length(z)))) / 32.0);
           color = texture(uTexture, depth);
           break;
         }
-        
-        // (z^2-1+c-c^3) / (z^2-c^2)      
+
+        // (z^2-1+c-c^3) / (z^2-c^2)
         z = _cDiv(_cMul(z, z) - vec2(1.0, 0.0) + c - _cMul(c, _cMul(c, c)), _cMul(z, z) - _cMul(c, c));
       }
 
   - title: Per₃(0) Dynamical Space
-    
+
     width_pixels: 700
     height_pixels: 700
     coord: z
-    
+
     center_x: 0.0
     center_y: 0.0
-    radius: 6.0
+    width: 6.0
 
-    code: |   
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-3
+
+    code: |
       color = texture(uTexture, 0.5);
-    
-      for (int iter = 0; iter < 300; iter++) {
-        if (length(z) > 100.0) {
-          float depth = fract((float(iter) / 3.0 - log2(log(length(z)))) / 32.0);
-          color = texture(uTexture, depth);
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+        if (length(z) > _escape_radius) {
+          float depth = float(iter) / 3.0 + 1.0;
+          depth -= smoothstep(0.01, 0.99, 1-length(_c)) * log2(log(length(z))) / log2(4.0);
+          depth -= smoothstep(0.01, 0.99, length(_c)) * log2(log(length(z)));
+          color = texture(uTexture, fract(depth / 32.0));
           break;
         }
-        
-        // (z^2-1+c-c^3) / (z^2-c^2)      
+
+        // (z^2-1+c-c^3) / (z^2-c^2)
         z = _cDiv(_cMul(z, z) - vec2(1.0, 0.0) + _c - _cMul(_c, _cMul(_c, _c)), _cMul(z, z) - _cMul(_c, _c));
       }
