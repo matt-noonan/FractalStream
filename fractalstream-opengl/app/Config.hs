@@ -23,7 +23,7 @@ data Viewer = Viewer
   , coord              :: String
   , center_x           :: GLfloat
   , center_y           :: GLfloat
-  , width              :: GLfloat
+  , height              :: GLfloat
   , max_iterations     :: GLint
   , escape_radius      :: GLfloat
   , convergence_radius :: GLfloat

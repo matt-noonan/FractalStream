@@ -16,4 +16,6 @@ extra-deps:
     - wxcore
     - wxdirect
 
+- linear-opengl-0.3.0.0@sha256:6be4fa9b5c89c225bf1ec85f5558876b5491be05f549403c467646552099f7c3,1250
+
 allow-newer: true

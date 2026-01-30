@@ -1,11 +1,16 @@
 {-# LANGUAGE OverloadedRecordDot, RecordWildCards, FlexibleContexts, LambdaCase #-}
 module Viewer ( openViewers ) where
 
+import Control.Lens
+import Linear.V2
+import Linear.Matrix
+import Linear.OpenGL
 import Text.Printf
 
-import Graphics.UI.WXCore hiding ( when )
+import Graphics.UI.WXCore
 import Graphics.Rendering.OpenGL
 
+import Linear.Projection as L
 import qualified Graphics.UI.WX as WX
 import qualified Graphics.UI.WXCore as WXC
 import qualified Graphics.Rendering.OpenGL as GL
@@ -48,19 +53,19 @@ openViewers configPath
           -- First find the mouse position in the view coordinates
           let WXC.Point i j = mousePos event
 
-          Vector2 cx cy <- varGet v.viewCenter
-          Vector2 dx dy <- varGet v.viewDiameter
+          V2 cx cy <- varGet v.viewCenter
+          V2 dx dy <- varGet v.viewDiameter
 
           WXC.Size w h <- windowGetClientSize v.canvas
 
           let x = cx + (fromIntegral i / fromIntegral w - 0.5) * dx
               y = cy - (fromIntegral j / fromIntegral h - 0.5) * dy
-              m = Vector2 x y
+              m = V2 x y
 
           case event of
             -- Update mouse position
             MouseMotion _ _ -> do
-              setUniform v.program "_mouse" m
+              setUniform v.program "_mouse" $ m ^. vector2V
               varSet v.mousePosition m
 
             -- Stop dragging and pick a point (if pointer didn't move much)
@@ -88,11 +93,13 @@ openViewers configPath
 
                   case ds of
                     Nothing -> return ()
-                    Just (Vector2 dsx dsy) -> do
-                      let v' = Vector2 (dsx - x + cx) (dsy - y + cy)
 
-                      setUniform v.program "_center" v'
-                      varSet v.viewCenter v'
+                    Just (V2 dsx dsy) -> do
+                      let c = V2 (dsx - x + cx) (dsy - y + cy)
+                          d = V2 dx dy
+
+                      varSet v.viewCenter c
+                      setUniform v.program "_projMatrix" $ (getOrtho c d) ^. m44GLmatrix
 
                       windowRefresh v.canvas False
 
@@ -103,17 +110,16 @@ openViewers configPath
 
                   cxNew = x + scalingFactor * (cx - x)
                   cyNew = y + scalingFactor * (cy - y)
-                  c = Vector2 cxNew cyNew
+                  c = V2 cxNew cyNew
 
                   dxNew = dx * scalingFactor
                   dyNew = dy * scalingFactor
-                  d = Vector2 dxNew dyNew
-
-              setUniform v.program "_center" c
-              setUniform v.program "_diameter" d
+                  d = V2 dxNew dyNew
 
               varSet v.viewCenter c
               varSet v.viewDiameter d
+
+              setUniform v.program "_projMatrix" $ (getOrtho c d) ^. m44GLmatrix
 
               windowRefresh v.canvas False
 
@@ -158,31 +164,33 @@ openViewer vars header viewer
       let initialValueFormat = if viewer.projective
                                   then "vec4 %s = vec4(FragPos.xy, 1.0 + FragPos.z, 0.0);\n\
                                         \// c = uMobiusMatrix * c;\n"
-                                  else "vec2 %s = _center + FragPos.xy * _diameter / 2.0;\n"
+                                  else "vec2 %s = FragPos.xy / FragPos.w;\n"
           initialValueCode = printf initialValueFormat viewer.coord
 
       program <- getProgram viewer.projective $ addHeader header initialValueCode viewer.code
       currentProgram $= Just program
 
       -- Set uniforms
-      let aspect = fromIntegral viewer.height_pixels / fromIntegral viewer.width_pixels :: GLfloat
-          c = Vector2 viewer.center_x viewer.center_y :: GLComplex
-          d = Vector2 viewer.width (aspect * viewer.width) :: GLComplex
-          m = Vector2 0.0 0.0 :: GLComplex
+      let aspect = fromIntegral viewer.width_pixels / fromIntegral viewer.height_pixels :: GLfloat
+          c = V2 viewer.center_x viewer.center_y
+          d = V2 (aspect * viewer.height) viewer.height
+          m = V2 0.0 0.0 :: GLComplex
           n = viewer.max_iterations
           e = viewer.escape_radius
           r = viewer.convergence_radius
+          pm = if viewer.projective
+                  then L.perspective (45 * pi / 180) aspect 0.1 3.0
+                  else getOrtho c d
 
-      setUniform program "_center" c
-      setUniform program "_diameter" d
-      setUniform program "_mouse" m
+      setUniform program "_mouse" $ m ^. vector2V
       setUniform program "_max_iterations" n
       setUniform program "_escape_radius" e
       setUniform program "_convergence_radius" r
+      setUniform program "_projMatrix" $ pm ^. m44GLmatrix
 
       -- Set variable uniforms (for point picking)
       let var = "_" ++ viewer.coord
-      mapM_ (\v -> setUniform program ("_" ++ v) m) vars
+      mapM_ (\v -> setUniform program ("_" ++ v) (m ^. vector2V)) vars
 
       -- Set variables to keep track of the last uniform values
       viewCenter <- varCreate c
@@ -191,6 +199,7 @@ openViewer vars header viewer
       maxIterations <- varCreate n
       escapeRadius <- varCreate e
       convergenceRadius <- varCreate r
+      projMatrix <- varCreate pm
 
       dragStart <- varCreate Nothing
       currentTool <- varCreate Navigate
@@ -245,15 +254,13 @@ openViewer vars header viewer
           WXC.Size w h <- windowGetClientSize viewerInfo.canvas
           viewport $= (Position 0 0, GL.Size (fromIntegral w) (fromIntegral h))
 
-          (Vector2 width height) <- varGet viewerInfo.viewDiameter
+          (V2 width height) <- varGet viewerInfo.viewDiameter
 
-          let r = if w <= h
-                    then Vector2 width $ fromIntegral h / fromIntegral w * width
-                    else Vector2 (fromIntegral w / fromIntegral h * height) height
+          let d = if w <= h
+                    then V2 width $ fromIntegral h / fromIntegral w * width
+                    else V2 (fromIntegral w / fromIntegral h * height) height
 
-          setUniform viewerInfo.program "_diameter" r
-
-          varSet viewerInfo.viewDiameter r
+          varSet viewerInfo.viewDiameter d
 
     onKeyChar viewerInfo eventKey
       = case eventKey of
@@ -263,7 +270,7 @@ openViewer vars header viewer
 
           _ -> propagateEvent
 
-type GLComplex = GL.Vector2 GLfloat
+type GLComplex = V2 GLfloat
 
 data Tool = Navigate | SelectPoint
   deriving (Eq, Show)
@@ -273,6 +280,7 @@ data ViewerInfo = ViewerInfo
   , program           :: Program
   , canvas            :: GLCanvas ()
   , ctx               :: GLContext ()
+  , projMatrix        :: Var (M44 GLfloat)
   , viewCenter        :: Var GLComplex
   , viewDiameter      :: Var GLComplex
   , maxIterations     :: Var GLint
@@ -290,6 +298,16 @@ setUniform p var_ val = do
   location <- get (uniformLocation p var_)
   uniform location $= val
 
+getOrtho :: Floating a => V2 a -> V2 a -> M44 a
+getOrtho (V2 centerX centerY) (V2 diameterX diameterY) =
+  L.inverseOrtho left right bottom top near far
+    where left = centerX - diameterX / 2
+          right = centerX + diameterX / 2
+          bottom = centerY - diameterY / 2
+          top = centerY + diameterY / 2
+          near = -1
+          far = 1
+
 getProgram :: Bool -> String -> IO Program
 getProgram projective fragSource = do
   loadShaders [ ShaderInfo VertexShader $ StringSource $ vertexCode projective
@@ -299,7 +317,7 @@ getProgram projective fragSource = do
 pickPoint :: GLComplex -> ViewerInfo -> ViewerInfo -> IO ()
 pickPoint mousePointer v viewerInfo = do
   _   <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
-  setUniform viewerInfo.program v.var mousePointer
+  setUniform viewerInfo.program v.var $ mousePointer ^. vector2V
   windowRefresh viewerInfo.canvas False
 
 switchTool :: Var Tool -> Tool -> IO ()
@@ -308,14 +326,15 @@ switchTool = varSet
 vertexCode :: Bool -> String
 vertexCode = \case
   False -> "#version 410 core\n\
+            \uniform mat4 _projMatrix;\n\
             \\n\
             \layout (location = 0) in vec2 pos;\n\
             \\n\
             \out vec4 FragPos;\n\
             \\n\
             \void main() {\n\
-            \  FragPos = vec4(pos, 0.0, 1.0);\n\
-            \  gl_Position = FragPos;\n\
+            \  FragPos = _projMatrix * vec4(pos, 0.0, 1.0);\n\
+            \  gl_Position = vec4(pos, 0.0, 1.0);\n\
             \}"
 
   True -> "#version 410 core\n\
@@ -346,8 +365,6 @@ fragConstants = "\n\
 fragUniforms :: String
 fragUniforms = "\n\
   \uniform vec2 _mouse;\n\
-  \uniform vec2 _diameter;\n\
-  \uniform vec2 _center;\n\
   \uniform int _max_iterations;\n\
   \uniform float _escape_radius;\n\
   \uniform float _convergence_radius;\n\

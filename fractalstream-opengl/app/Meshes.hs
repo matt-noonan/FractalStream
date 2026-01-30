@@ -16,7 +16,7 @@ createPlaneMesh = createVAO StaticDraw 2 $
   Vertex2 (-1.0) (-1.0) :| -- Triangle 1
   [ Vertex2   1.0  (-1.0)
   , Vertex2 (-1.0)   1.0
-  , Vertex2   1.0  (-1.0) -- Triangle 2
+  , Vertex2   1.0  (-1.0)  -- Triangle 2
   , Vertex2   1.0    1.0
   , Vertex2 (-1.0)   1.0
   ]
@@ -53,7 +53,7 @@ createVAO bufferUsage stride vertices = do
   vertexAttribPointer vPosition $= (ToFloat, vDescriptor)
   vertexAttribArray vPosition $= Enabled
 
-  return $ VAOInfo planeVAO n
+  return $ VAOInfo { triangles = planeVAO, numVertices = n }
 
 midpoint :: Vertex3 GLfloat -> Vertex3 GLfloat -> Vertex3 GLfloat
 midpoint (Vertex3 x1 y1 z1) (Vertex3 x2 y2 z2) =
@@ -72,9 +72,6 @@ subdivideTriangle (Triangle3 v1 v2 v3) =
     v12 = midpoint v1 v2
     v23 = midpoint v2 v3
     v31 = midpoint v3 v1
-
--- subdivideTriangles :: NonEmpty Triangle3 -> NonEmpty Triangle3
--- subdivideTriangles = join $ subdivideTriangle <$>
 
 createCubeSubdivision :: Int -> NonEmpty Triangle3
 createCubeSubdivision n

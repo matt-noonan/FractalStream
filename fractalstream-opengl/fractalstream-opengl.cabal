@@ -37,7 +37,9 @@ executable FractalStream
     build-depends:    base >=4.8 && <5
                     , bytestring
                     , fractalstream-core
+                    , lens
                     , linear
+                    , linear-opengl
                     , OpenGL
                     , text
                     , yaml

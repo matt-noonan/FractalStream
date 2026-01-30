@@ -9,7 +9,7 @@ viewers:
 
     center_x: -0.5
     center_y: 0.0
-    width: 4.0
+    height: 4.0
 
     max_iterations: 300
     escape_radius: 100.0

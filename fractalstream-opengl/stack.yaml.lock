@@ -54,6 +54,13 @@ packages:
     commit: de15548c6587891cca9228a8fedf2336c72a5f3b
     git: https://github.com/matt-noonan/wxHaskell-3.2.git
     subdir: wxdirect
+- completed:
+    hackage: linear-opengl-0.3.0.0@sha256:6be4fa9b5c89c225bf1ec85f5558876b5491be05f549403c467646552099f7c3,1250
+    pantry-tree:
+      sha256: 3033bdc03e3a3464a307f061a61be0c333975836b43f7b9f199fca628fe3a39a
+      size: 294
+  original:
+    hackage: linear-opengl-0.3.0.0@sha256:6be4fa9b5c89c225bf1ec85f5558876b5491be05f549403c467646552099f7c3,1250
 snapshots:
 - completed:
     sha256: 0d0bb681dd5be9b930c8fc070d717aae757b9aed176ae6047d87624b46406816
