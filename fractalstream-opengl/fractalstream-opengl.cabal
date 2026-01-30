@@ -27,8 +27,9 @@ executable FractalStream
     import:           warnings
 
     main-is:          Main.hs
-    
+
     other-modules:    Config
+                      Meshes
                       Palette
                       Shaders
                       Viewer
@@ -36,6 +37,7 @@ executable FractalStream
     build-depends:    base >=4.8 && <5
                     , bytestring
                     , fractalstream-core
+                    , linear
                     , OpenGL
                     , text
                     , yaml
