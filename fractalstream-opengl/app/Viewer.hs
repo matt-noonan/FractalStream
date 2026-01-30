@@ -46,8 +46,8 @@ openViewers configPath
   where
     onClose = mapM_ (\v -> windowDestroy v.vFrame)
 
-    onMouse viewerInfos v event
-      = do
+    onMouse viewerInfos v event = case v.projective of
+      False -> do
           _ <- glCanvasSetCurrent v.canvas v.ctx
 
           -- First find the mouse position in the view coordinates
@@ -97,9 +97,11 @@ openViewers configPath
                     Just (V2 dsx dsy) -> do
                       let c = V2 (dsx - x + cx) (dsy - y + cy)
                           d = V2 dx dy
+                          pm = getOrtho c d
 
                       varSet v.viewCenter c
-                      setUniform v.program "_projMatrix" $ (getOrtho c d) ^. m44GLmatrix
+                      varSet v.projMatrix pm
+                      setUniform v.program "_projMatrix" $ pm ^. m44GLmatrix
 
                       windowRefresh v.canvas False
 
@@ -115,16 +117,23 @@ openViewers configPath
                   dxNew = dx * scalingFactor
                   dyNew = dy * scalingFactor
                   d = V2 dxNew dyNew
+                  pm = getOrtho c d
 
               varSet v.viewCenter c
               varSet v.viewDiameter d
 
-              setUniform v.program "_projMatrix" $ (getOrtho c d) ^. m44GLmatrix
+              varSet v.projMatrix pm
+              setUniform v.program "_projMatrix" $ pm ^. m44GLmatrix
 
               windowRefresh v.canvas False
 
             -- Pass the event forward
             _ -> do propagateEvent
+
+      True -> do
+            -- Pass the event forward
+            propagateEvent
+
 
 openViewer :: [String] -> String -> Viewer -> IO ViewerInfo
 openViewer vars header viewer
@@ -151,23 +160,24 @@ openViewer vars header viewer
       cullFace $= Just Back
 
       -- Set background and buffers
-      clearColor $= Color4 0 0 0 1
+      clearColor $= Color4 0.2 0.3 0.3 1.0
       clear [ ColorBuffer, DepthBuffer ]
 
       -- Create plane mesh object
-      mesh <- if viewer.projective then createSphereMesh else createPlaneMesh
+      let projective = viewer.projective
+      mesh <- if projective then createSphereMesh else createPlaneMesh
 
       -- Create color palette
       initTexture
 
       -- Compile shader programs
-      let initialValueFormat = if viewer.projective
+      let initialValueFormat = if projective
                                   then "vec4 %s = vec4(FragPos.xy, 1.0 + FragPos.z, 0.0);\n\
                                         \// c = uMobiusMatrix * c;\n"
                                   else "vec2 %s = FragPos.xy / FragPos.w;\n"
           initialValueCode = printf initialValueFormat viewer.coord
 
-      program <- getProgram viewer.projective $ addHeader header initialValueCode viewer.code
+      program <- getProgram projective $ addHeader header initialValueCode viewer.code
       currentProgram $= Just program
 
       -- Set uniforms
@@ -178,8 +188,8 @@ openViewer vars header viewer
           n = viewer.max_iterations
           e = viewer.escape_radius
           r = viewer.convergence_radius
-          pm = if viewer.projective
-                  then L.perspective (45 * pi / 180) aspect 0.1 3.0
+          pm = if projective
+                  then L.perspective (45 * pi / 180) aspect 0.1 5.0
                   else getOrtho c d
 
       setUniform program "_mouse" $ m ^. vector2V
@@ -248,19 +258,37 @@ openViewer vars header viewer
           return ()
 
     -- Change uniforms that track canvas dimensions
-    onSize viewerInfo
-      = do
+    onSize viewerInfo = case viewerInfo.projective of
+      False -> do
           _ <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
           WXC.Size w h <- windowGetClientSize viewerInfo.canvas
           viewport $= (Position 0 0, GL.Size (fromIntegral w) (fromIntegral h))
 
           (V2 width height) <- varGet viewerInfo.viewDiameter
+          c <- varGet viewerInfo.viewCenter
 
           let d = if w <= h
                     then V2 width $ fromIntegral h / fromIntegral w * width
                     else V2 (fromIntegral w / fromIntegral h * height) height
 
+              pm = getOrtho c d
+
           varSet viewerInfo.viewDiameter d
+          varSet viewerInfo.projMatrix pm
+          setUniform viewerInfo.program "_projMatrix" $ pm ^. m44GLmatrix
+
+      True -> do
+          _ <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
+          WXC.Size w h <- windowGetClientSize viewerInfo.canvas
+          viewport $= (Position 0 0, GL.Size (fromIntegral w) (fromIntegral h))
+
+          let aspect = fromIntegral w / fromIntegral h :: GLfloat
+              fovRatio = if h > w then 1/aspect else 1.0
+              pm = L.perspective (fovRatio * 45 * pi / 180) aspect 0.1 5.0
+
+          varSet viewerInfo.projMatrix pm
+          setUniform viewerInfo.program "_projMatrix" $ pm ^. m44GLmatrix
+
 
     onKeyChar viewerInfo eventKey
       = case eventKey of
@@ -280,6 +308,7 @@ data ViewerInfo = ViewerInfo
   , program           :: Program
   , canvas            :: GLCanvas ()
   , ctx               :: GLContext ()
+  , projective        :: Bool
   , projMatrix        :: Var (M44 GLfloat)
   , viewCenter        :: Var GLComplex
   , viewDiameter      :: Var GLComplex
@@ -338,6 +367,7 @@ vertexCode = \case
             \}"
 
   True -> "#version 410 core\n\
+          \uniform mat4 _projMatrix;\n\
           \\n\
           \layout (location = 0) in vec3 pos;\n\
           \\n\
@@ -345,7 +375,7 @@ vertexCode = \case
           \\n\
           \void main() {\n\
           \  FragPos = vec4(pos, 1.0);\n\
-          \  gl_Position = vec4(0.95 * pos, 1.0) - vec4(0.0, 0.0, 1.0, 0.0);\n\
+          \  gl_Position = _projMatrix * (vec4(pos, 1.0) - vec4(0.0, 0.0, 3.0, 0.0));\n\
           \}"
 
 fragConstants :: String
