@@ -1,0 +1,106 @@
+viewers:
+  - title: PrePer(2,2) Parameter Space
+
+    width_pixels: 700
+    height_pixels: 700
+
+    projective: false
+    coord: c
+
+    center_x: -3.5
+    center_y: 0.0
+    width: 20.0
+
+    max_iterations: 1000
+    escape_radius: 10000.0
+    convergence_radius: 1e-6
+
+    code: |
+      // par block
+      // par set t to 1.
+      // par set z to (-c^2 - 1)/(2*c).
+      // do set w to z*(c + 1)^2/(z^2 + c)^2.
+      // set t to t*w.
+      // set x to -(c^2 - 2*z^2 + 1)/(2*z^2 + 2*c).
+      // set z to x.
+      // until t escapes or t vanishes.
+      // if t escapes then [blue].
+      // if t vanishes then [yellow].
+      // end.
+
+      vec2 t = vec2(1.0, 0.0);
+      vec2 z = _cDiv(- _cMul(c, c) - vec2(1.0, 0.0), 2.0 * c);
+      vec2 w = vec2(0.0);
+      vec2 x = vec2(0.0);
+      color = BLACK;
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+        if (length(t) > _escape_radius) {
+          float depth = float(iter) / 32.0;
+          // color = cos(M_PI * depth) * WHITE / 4.0 + 0.5 * BLUE;
+          color = texture(uTexture, 0.25 - 0.25 * cos(M_PI * depth));
+          break;
+        }
+
+        if (length(t) < _convergence_radius) {
+          float depth = float(iter) / 256.0;
+          // color = cos(M_PI * depth) * WHITE / 4.0 + 0.5 * YELLOW;
+          color = texture(uTexture, 0.75 + 0.25 * cos(M_PI * depth));
+          break;
+        }
+
+        w = _cDiv(_cMul(z, _cMul(c + vec2(1.0, 0.0),c + vec2(1.0, 0.0))), _cMul(_cMul(z,z) + c, _cMul(z,z) + c));
+        t = _cMul(t, w);
+        x = - _cDiv(_cMul(c, c) - 2.0 * _cMul(z,z) + vec2(1.0, 0.0), 2.0 * _cMul(z,z) + 2.0 * c);
+        z = x;
+      }
+
+  - title: PrePer(2,2) Dynamical Space
+
+    width_pixels: 700
+    height_pixels: 700
+
+    projective: false
+    coord: z
+
+    center_x: 0.0
+    center_y: 0.0
+    width: 6.0
+
+    max_iterations: 1000
+    escape_radius: 10000.0
+    convergence_radius: 1e-6
+
+    code: |
+      // dyn block
+      // set t to 1.
+      // do
+      // set t to t*(z*(c + 1)^2/(z^2 + c)^2).
+      // set z to -(c^2 - 2*z^2 + 1)/(2*z^2 + 2*c).
+      // until t escapes or t vanishes.
+      // if t vanishes then [yellow].
+      // if t escapes then [blue].
+      // end.
+
+      color = texture(uTexture, 0.5);
+
+      vec2 t = vec2(1.0, 0.0);
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+        if (length(t) > _escape_radius) {
+          float depth = float(iter) / 32.0;
+          // color = cos(M_PI * depth) * WHITE / 4.0 + 0.5 * BLUE;
+          color = texture(uTexture, 0.25 - 0.20 * cos(M_PI * depth));
+          break;
+        }
+
+        if (length(t) < _convergence_radius) {
+          float depth = float(iter) / 256.0;
+          // color = cos(M_PI * depth) * WHITE / 4.0 + 0.5 * YELLOW;
+          color = texture(uTexture, 0.75 + 0.20 * cos(M_PI * depth));
+          break;
+        }
+
+        t = _cMul(t, _cDiv(_cMul(z, _cMul(_c + vec2(1.0, 0.0),_c + vec2(1.0, 0.0))), _cMul(_cMul(z,z) + _c, _cMul(z,z) + _c)));
+        z = _cDiv(_cMul(_c, _c) - 2.0 * _cMul(z,z) + vec2(1.0, 0.0), 2.0 * _cMul(z,z) + 2.0 * _c);
+      }

@@ -4,7 +4,7 @@ viewers:
     width_pixels: 700
     height_pixels: 700
 
-    projective: false
+    projective: true
     coord: c
 
     center_x: -0.5
@@ -16,17 +16,18 @@ viewers:
     convergence_radius: 1e-4
 
     code: |
-      vec2 z = vec2(0.0);
+      vec4 z = vec4(0.0, 0.0, 1.0, 0.0);
+      const vec4 infinity = vec4(1.0, 0.0, 0.0, 0.0);
 
-      color = texture(uTexture, 0.5);
+      color = vec4(0.0, 0.0, 0.0, 1.0);
 
       for (int iter = 0; iter < _max_iterations; iter++) {
-        if (length(z) > _escape_radius) {
-          float depth = fract((float(iter) - log2(log(length(z)))) / 32.0);
+        if (_pDist(z, infinity) < _convergence_radius) {
+          float d = _pDist(z, infinity);
+          float depth = fract((float(iter) - log2(-log(d))) / 32.0);
           color = texture(uTexture, depth);
           break;
         }
 
-        // z^2 + c
-        z = _cMul(z, z) + c;
+        z = _pAdd(_pMul(z, z), c);
       }

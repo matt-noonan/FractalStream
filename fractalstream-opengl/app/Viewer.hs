@@ -1,9 +1,6 @@
-{-# LANGUAGE OverloadedRecordDot, RecordWildCards, FlexibleContexts #-}
+{-# LANGUAGE OverloadedRecordDot, RecordWildCards, FlexibleContexts, LambdaCase #-}
 module Viewer ( openViewers ) where
 
-import Foreign.Marshal.Array
-import Foreign.Ptr
-import Foreign.Storable
 import Text.Printf
 
 import Graphics.UI.WXCore hiding ( when )
@@ -14,6 +11,7 @@ import qualified Graphics.UI.WXCore as WXC
 import qualified Graphics.Rendering.OpenGL as GL
 
 import Config
+import Meshes
 import Palette
 import Shaders
 
@@ -25,6 +23,8 @@ openViewers configPath
 
       -- Create header for global uniform variables
       let vars = map coord c.viewers
+          -- types = [if projective v then "vec4" else "vec2" | v <- c.viewers]
+          -- header = concat $ zipWith (printf "uniform %s _%s;\n") types vars
           header = concatMap (printf "uniform vec2 _%s;\n") vars
 
       -- Open all viewers
@@ -32,11 +32,14 @@ openViewers configPath
 
       -- Add mouse events last, because the might affect all viewers
       mapM_ (\v -> windowOnMouse v.canvas True $ onMouse viewerInfos v) viewerInfos
+
+      -- Close all viewers of the project at the same time
+      -- This is to avoid setting variables out of scope.
+      -- TODO: Add error checking to avoid these errors in general.
       mapM_ (\v -> windowOnClose v.vFrame $ onClose viewerInfos) viewerInfos
 
   where
-    onClose viewerInfos
-      = mapM_ (\v -> windowDestroy v.vFrame) viewerInfos
+    onClose = mapM_ (\v -> windowDestroy v.vFrame)
 
     onMouse viewerInfos v event
       = do
@@ -125,7 +128,7 @@ openViewer vars header viewer
 
       -- Create GLCanvas and GLContext
       let initRect = Rect 0 0 viewer.width_pixels viewer.height_pixels
-          options  = [GL_RGBA, GL_MAJOR_VERSION 4, GL_DOUBLEBUFFER]
+          options  = [ GL_RGBA, GL_MAJOR_VERSION 4, GL_DOUBLEBUFFER, GL_DEPTH_SIZE 16 ]
 
       canvas <- glCanvasCreateEx vFrame 0 initRect 0 "GLCanvas" options nullPalette
 
@@ -135,42 +138,30 @@ openViewer vars header viewer
       let w  = fill $ widget canvas
       windowSetLayout vFrame w
 
-      -- Set background and shading
-      clearColor $= Color4 0 0 0 0
-      shadeModel $= Flat
+      -- Put smaller z in the back
+      depthFunc $= Just Less
 
-      -- Create mesh buffer
-      triangles <- genObjectName
-      bindVertexArrayObject $= Just triangles
+      -- Don't draw back faces
+      cullFace $= Just Back
 
-      -- Create vertex buffer
-      let vertices = [ Vertex2 (-1.0) (-1.0)  -- Triangle 1
-                     , Vertex2   1.0  (-1.0)
-                     , Vertex2 (-1.0)   1.0
-                     , Vertex2   1.0  (-1.0)  -- Triangle 2
-                     , Vertex2   1.0    1.0
-                     , Vertex2 (-1.0)   1.0
-                     ] :: [Vertex2 GLfloat]
-          numVertices = length vertices
-          vertexSize = sizeOf (Vertex2 0.0 (0.0 :: GLfloat))
+      -- Set background and buffers
+      clearColor $= Color4 0 0 0 1
+      clear [ ColorBuffer, DepthBuffer ]
 
-      arrayBuffer <- genObjectName
-      bindBuffer ArrayBuffer $= Just arrayBuffer
-      withArray vertices $ \ptr -> do
-        let size = fromIntegral (numVertices * vertexSize)
-        bufferData ArrayBuffer $= (size, ptr, StaticDraw)
-
-      let vPosition = AttribLocation 0
-          vDescriptor = VertexArrayDescriptor 2 Float 0 nullPtr
-
-      vertexAttribPointer vPosition $= (ToFloat, vDescriptor)
-      vertexAttribArray vPosition $= Enabled
+      -- Create plane mesh object
+      mesh <- if viewer.projective then createSphereMesh else createPlaneMesh
 
       -- Create color palette
       initTexture
 
       -- Compile shader programs
-      program <- getProgram $ addHeader header viewer.coord viewer.code
+      let initialValueFormat = if viewer.projective
+                                  then "vec4 %s = vec4(FragPos.xy, 1.0 + FragPos.z, 0.0);\n\
+                                        \// c = uMobiusMatrix * c;\n"
+                                  else "vec2 %s = _center + FragPos.xy * _diameter / 2.0;\n"
+          initialValueCode = printf initialValueFormat viewer.coord
+
+      program <- getProgram viewer.projective $ addHeader header initialValueCode viewer.code
       currentProgram $= Just program
 
       -- Set uniforms
@@ -223,7 +214,7 @@ openViewer vars header viewer
       let viewerInfo = ViewerInfo{..}
 
       -- Set event handlers
-      windowOnPaint canvas $ onPaint viewerInfo triangles numVertices
+      windowOnPaint canvas $ onPaint viewerInfo mesh
       windowOnSize canvas $ onSize viewerInfo
       windowOnKeyChar vFrame $ onKeyChar viewerInfo
 
@@ -234,13 +225,13 @@ openViewer vars header viewer
 
   where
     -- Run vertex and fragment shaders
-    onPaint viewerInfo triangles numVertices _dc _rect
+    onPaint viewerInfo mesh _dc _rect
       = do
           _ <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
-          clear [ ColorBuffer ]
+          clear [ ColorBuffer, DepthBuffer ]
 
-          bindVertexArrayObject $= Just triangles
-          drawArrays Triangles 0 (fromIntegral numVertices)
+          bindVertexArrayObject $= Just mesh.triangles
+          drawArrays Triangles 0 (fromIntegral mesh.numVertices)
 
           flush
           _ <- glCanvasSwapBuffers viewerInfo.canvas
@@ -299,9 +290,9 @@ setUniform p var_ val = do
   location <- get (uniformLocation p var_)
   uniform location $= val
 
-getProgram :: String -> IO Program
-getProgram fragSource = do
-  loadShaders [ ShaderInfo VertexShader $ StringSource vertexCode
+getProgram :: Bool -> String -> IO Program
+getProgram projective fragSource = do
+  loadShaders [ ShaderInfo VertexShader $ StringSource $ vertexCode projective
               , ShaderInfo FragmentShader $ StringSource fragSource
               ]
 
@@ -314,34 +305,46 @@ pickPoint mousePointer v viewerInfo = do
 switchTool :: Var Tool -> Tool -> IO ()
 switchTool = varSet
 
-vertexCode :: String
-vertexCode =
-  "#version 410 core\n\
-  \\n\
-  \layout (location = 0) in vec2 pos;\n\
-  \\n\
-  \out vec4 FragPos;\n\
-  \\n\
-  \void main() {\n\
-  \  FragPos = vec4(pos, 0.0, 1.0);\n\
-  \  gl_Position = FragPos;\n\
-  \}"
+vertexCode :: Bool -> String
+vertexCode = \case
+  False -> "#version 410 core\n\
+            \\n\
+            \layout (location = 0) in vec2 pos;\n\
+            \\n\
+            \out vec4 FragPos;\n\
+            \\n\
+            \void main() {\n\
+            \  FragPos = vec4(pos, 0.0, 1.0);\n\
+            \  gl_Position = FragPos;\n\
+            \}"
 
-addHeader :: String -> String -> String -> String
-addHeader = printf
-  "#version 410 core \n\
-  \\n\
+  True -> "#version 410 core\n\
+          \\n\
+          \layout (location = 0) in vec3 pos;\n\
+          \\n\
+          \out vec4 FragPos;\n\
+          \\n\
+          \void main() {\n\
+          \  FragPos = vec4(pos, 1.0);\n\
+          \  gl_Position = vec4(0.95 * pos, 1.0) - vec4(0.0, 0.0, 1.0, 0.0);\n\
+          \}"
+
+fragConstants :: String
+fragConstants = "\n\
   \#define M_PI 3.1415926535897932384626433832795\n\
-  \\n\
-  \const vec4 WHITE = vec4(1.0, 1.0, 1.0, 1.0);\n\
-  \const vec4 BLACK = vec4(0.0, 0.0, 0.0, 1.0);\n\
-  \const vec4 RED = vec4(1.0, 0.0, 0.0, 1.0);\n\
-  \const vec4 GREEN = vec4(0.0, 1.0, 0.0, 1.0);\n\
-  \const vec4 BLUE = vec4(0.0, 0.0, 1.0, 1.0);\n\
-  \const vec4 YELLOW = vec4(1.0, 1.0, 0.0, 1.0);\n\
-  \const vec4 MAGENTA = vec4(1.0, 0.0, 1.0, 1.0);\n\
-  \const vec4 CYAN = vec4(0.0, 1.0, 1.0, 1.0);\n\
-  \\n\
+  \#define EULER 2.718281828459045235360287471352\n\
+  \#define WHITE (vec4(1.0, 1.0, 1.0, 1.0))\n\
+  \#define BLACK (vec4(0.0, 0.0, 0.0, 1.0))\n\
+  \#define RED (vec4(1.0, 0.0, 0.0, 1.0))\n\
+  \#define GREEN (vec4(0.0, 1.0, 0.0, 1.0))\n\
+  \#define BLUE (vec4(0.0, 0.0, 1.0, 1.0))\n\
+  \#define YELLOW (vec4(1.0, 1.0, 0.0, 1.0))\n\
+  \#define MAGENTA (vec4(1.0, 0.0, 1.0, 1.0))\n\
+  \#define CYAN (vec4(0.0, 1.0, 1.0, 1.0))\n\
+  \\n"
+
+fragUniforms :: String
+fragUniforms = "\n\
   \uniform vec2 _mouse;\n\
   \uniform vec2 _diameter;\n\
   \uniform vec2 _center;\n\
@@ -349,24 +352,21 @@ addHeader = printf
   \uniform float _escape_radius;\n\
   \uniform float _convergence_radius;\n\
   \uniform sampler1D uTexture;\n\
-  \\n\
-  \%s\
-  \\n\
-  \in vec4 FragPos;\n\
-  \\n\
-  \out vec4 color;\n\
-  \\n\
+  \\n"
+
+baseFunctions :: String
+baseFunctions =
+  "\n\
+  \// Complex Viewer Functions\n\
   \// Complex Multiplication\n\
   \vec2 _cMul(vec2 a, vec2 b) {\n\
-    \return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);\n\
+  \  return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);\n\
   \}\n\
   \\n\
   \// Complex Division\n\
   \vec2 _cDiv(vec2 a, vec2 b) {\n\
   \  return vec2(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / (b.x * b.x + b.y * b.y);\n\
   \}\n\
-  \\n\
-  \// Transcendental functions on the Complex Plane\n\
   \\n\
   \// Complex square root\n\
   \vec2 _sqrt(vec2 a) {\n\
@@ -393,7 +393,75 @@ addHeader = printf
   \  return vec2(log(length(a)), atan(a.y, a.x));\n\
   \}\n\
   \\n\
-  \void main() {\n\
-  \  vec2 %s = _center + FragPos.xy * _diameter / 2.0;\n\
-  \  %s\n\
+  \\n\
+  \// Projective Viewer Functions\
+  \// Complex Addition in Projective Coordinates\n\
+  \vec4 _pAdd(vec4 a, vec4 b) {\n\
+  \  return normalize(vec4(\n\
+  \    a.x * b.z - a.y * b.w + a.z * b.x - a.w * b.y,\n\
+  \    a.x * b.w + a.y * b.z + a.z * b.y + a.w * b.x,\n\
+  \    a.z * b.z - a.w * b.w,\n\
+  \    a.z * b.w + a.w * b.z\n\
+  \  ));\n\
+  \}\n\
+  \\n\
+  \// Complex Subtraction in Projective Coordinates\n\
+  \vec4 _pSub(vec4 a, vec4 b) {\n\
+  \  return normalize(vec4(\n\
+  \    a.x * b.z - a.y * b.w - a.z * b.x + a.w * b.y,\n\
+  \    a.x * b.w + a.y * b.z - a.z * b.y - a.w * b.x,\n\
+  \    a.z * b.z - a.w * b.w,\n\
+  \    a.z * b.w + a.w * b.z\n\
+  \  ));\n\
+  \}\n\
+  \\n\
+  \// Complex Additive Inverse in Projective Coordinates\n\
+  \vec4 _pOpp(vec4 a) {return vec4(-a.xy, a.zw);}\n\
+  \\n\
+  \// Complex Multiplication in Projective Coordinates\n\
+  \vec4 _pMul(vec4 a, vec4 b) {\n\
+  \  return normalize(vec4(\n\
+  \    a.x * b.x - a.y * b.y,\n\
+  \    a.x * b.y + a.y * b.x,\n\
+  \    a.z * b.z - a.w * b.w,\n\
+  \    a.z * b.w + a.w * b.z\n\
+  \  ));\n\
+  \}\n\
+  \\n\
+  \// Complex Division in Projective Coordinates\n\
+  \vec4 _pDiv(vec4 a, vec4 b) {\n\
+  \  return normalize(vec4(\n\
+  \    a.x * b.z - a.y * b.w,\n\
+  \    a.x * b.w + a.y * b.z,\n\
+  \    a.z * b.x - a.w * b.y,\n\
+  \    a.z * b.y + a.w * b.x\n\
+  \  ));\n\
+  \}\n\
+  \\n\
+  \// Complex Multiplicative Inverse in Projective Coordinates\n\
+  \vec4 _pInv(vec4 a) {return vec4(a.zw, a.xy);}\n\
+  \\n\
+  \// Distance in the Complex Projective Line\n\
+  \// Assumes that both vec4s are normalized\n\
+  \float _pDist(vec4 a, vec4 b) {\n\
+  \  return length(vec2(\n\
+  \    a.x * b.z - a.y * b.w - a.z * b.x + a.w * b.y,\n\
+  \    a.x * b.w + a.y * b.z + a.z * b.y + a.w * b.x\n\
+  \  ));\n\
   \}"
+
+addHeader :: String -> String -> String -> String
+addHeader = printf
+  "#version 410 core \n\
+  \%s\
+  \%s\
+  \\n\
+  \%s\
+  \\n\
+  \in vec4 FragPos;\n\
+  \out vec4 color;\n\
+  \%s\
+  \void main() {\n\
+  \  %s\n\
+  \  %s\n\
+  \}" fragConstants fragUniforms baseFunctions

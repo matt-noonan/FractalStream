@@ -3,6 +3,8 @@ viewers:
 
     width_pixels: 700
     height_pixels: 700
+
+    projective: false
     coord: c
 
     center_x: 0.0
@@ -63,6 +65,8 @@ viewers:
 
     width_pixels: 700
     height_pixels: 700
+
+    projective: false
     coord: z
 
     center_x: 0.0

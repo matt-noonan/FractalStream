@@ -19,6 +19,7 @@ data Viewer = Viewer
   { title              :: String
   , width_pixels       :: Int
   , height_pixels      :: Int
+  , projective         :: Bool
   , coord              :: String
   , center_x           :: GLfloat
   , center_y           :: GLfloat
