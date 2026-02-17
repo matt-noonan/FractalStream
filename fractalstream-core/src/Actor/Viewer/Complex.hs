@@ -127,8 +127,13 @@ instance CodecWith ScriptDependencies ComplexViewer where
                   Nothing -> pure . const. Left . (NoSourceRange,) $ "INTERNAL ERROR: redefined internal argument"
                   Just ok -> ok
 
-    ctx' <- purely $ \use ->
-      (snd (use ctx), fmap ComplexCoordinate <$> dyn (use coord), dyn (use pixel))
+    ctx' <- purely $ \use -> ( snd (use ctx)
+                             , fmap ComplexCoordinate <$> dyn (use coord)
+                             , (\x y z -> (,,) <$> x <*> y <*> z)
+                               <$> (fmap (fromMaybe defaultIterLimit) <$> (dyn $ use iter))
+                               <*> (fmap (fromMaybe defaultMaxRadius) <$> (dyn $ use esc))
+                               <*> (fmap (fromMaybe defaultMinRadius) <$> (dyn $ use van))
+                             , dyn (use pixel))
 
     tools  <-cvTools-< optionalField "tools" (newVariable []) (fmap null . getDynamic) $ do
       codecWith ctx'

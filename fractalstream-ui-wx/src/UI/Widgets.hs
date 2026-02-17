@@ -1,5 +1,6 @@
 module UI.Widgets
   ( wxTimer
+  , wxWatchDynamic1
   , wxWatchDynamic
   , checkboxWidget
   , selectionWidget
@@ -83,7 +84,7 @@ buttonWidget p s = liftIO $ do
   editMenu <- menuPane [ text := "" ]
   menuItem editMenu [ text := "Edit button label...", on command := editString "button label" btn s ]
   set btn [ on clickRight := \pt -> menuPopup editMenu pt btn ]
-  wxWatchDynamic p s $ \newText -> set btn [ text := newText ]
+  wxWatchDynamic1 p s $ \newText -> set btn [ text := newText ]
   pure btn
 
 checkboxWidget :: MonadIO io => Window a -> Variable Label -> Parsed String -> Variable Bool -> io (CheckBox ())
@@ -96,7 +97,7 @@ checkboxWidget p l v b = liftIO $ do
   editMenu <- menuPane [ text := "" ]
   var <- getDynamic (source v)
   info <- menuItem editMenu [ text := var ++ " : Boolean" ]
-  wxWatchDynamic cb (source v) $ \newVar -> set info [ text := newVar ++ " : Boolean" ]
+  wxWatchDynamic1 cb (source v) $ \newVar -> set info [ text := newVar ++ " : Boolean" ]
   menuLine editMenu
   menuItem editMenu [ text := "Edit label...", on command := editLabel cb l ]
   menuItem editMenu [ text := "Edit variable...", on command := editString "variable name" cb (source v) ]
@@ -106,8 +107,8 @@ checkboxWidget p l v b = liftIO $ do
              void (setValue b isChecked)
          , on clickRight := \pt -> menuPopup editMenu pt cb ]
 
-  wxWatchDynamic cb b (\isChecked -> set cb [ checked := isChecked ])
-  wxWatchDynamic cb l (\(Label lab) -> set cb [ text := lab ])
+  wxWatchDynamic1 cb b (\isChecked -> set cb [ checked := isChecked ])
+  wxWatchDynamic1 cb l (\(Label lab) -> set cb [ text := lab ])
   pure cb
 
 selectionWidget :: MonadIO io => Window a -> Parsed String -> Variable Int64 -> Variable [String] -> io (Choice ())
@@ -120,7 +121,7 @@ selectionWidget p v pick options = liftIO $ do
   editMenu <- menuPane [ text := "" ]
   var <- getDynamic (source v)
   info <- menuItem editMenu [ text := var ++ " : ℤ" ]
-  wxWatchDynamic c (source v) $ \newVar -> set info [ text := newVar ++ " : ℤ" ]
+  wxWatchDynamic1 c (source v) $ \newVar -> set info [ text := newVar ++ " : ℤ" ]
   menuLine editMenu
   menuItem editMenu [ text := "Edit variable...", on command := editString "variable name" c (source v) ]
 
@@ -129,7 +130,7 @@ selectionWidget p v pick options = liftIO $ do
             setValue pick newIx
         , on clickRight := \pt -> menuPopup editMenu pt c ]
 
-  wxWatchDynamic c pick $ \newIx -> do
+  wxWatchDynamic1 c pick $ \newIx -> do
     numOpts <- length <$> get c items
     if fromIntegral newIx >= numOpts
       then set c [ enabled := False ]
@@ -142,7 +143,7 @@ plainTextWidget p s = liftIO $ do
   editMenu <- menuPane [ text := "" ]
   menuItem editMenu [ text := "Edit text...", on command := editMultilineText txt s ]
   set txt [ on clickRight := \pt -> menuPopup editMenu pt txt ]
-  wxWatchDynamic p s $ \newText -> set txt [ text := newText ]
+  wxWatchDynamic1 p s $ \newText -> set txt [ text := newText ]
   pure txt
 
 colorWidget :: MonadIO io
@@ -165,7 +166,7 @@ colorWidget p l v col = liftIO $ do
             b = fromIntegral (colorBlue  c :: Word8) / 255.0 :: Double
         setValue (source col) (printf "rgb(%0.3f, %0.3f, %0.3f)" r g b :: String)
 
-  wxWatchDynamic p col $ \case
+  wxWatchDynamic1 p col $ \case
     Left _ -> pure ()
     Right newColor -> do
       let (r,g,b) = colorToRGB newColor
@@ -175,7 +176,7 @@ colorWidget p l v col = liftIO $ do
   editMenu <- menuPane [ text := "" ]
   var <- getDynamic (source v)
   info <- menuItem editMenu [ text := var ++ " : Color" ]
-  wxWatchDynamic picker (source v) $ \newVar -> set info [ text := newVar ++ " : Color" ]
+  wxWatchDynamic1 picker (source v) $ \newVar -> set info [ text := newVar ++ " : Color" ]
   menuLine editMenu
   menuItem editMenu [ text := "Edit label...", on command := editLabel picker l ]
   menuItem editMenu [ text := "Edit variable..."
@@ -183,7 +184,7 @@ colorWidget p l v col = liftIO $ do
 
   Label lab0 <- getDynamic l
   labelTxt <- liftIO $ staticText p [ text := lab0 ]
-  wxWatchDynamic p l $ \(Label lab) -> do
+  wxWatchDynamic1 p l $ \(Label lab) -> do
     set labelTxt [ text := lab ]
     windowReLayout p
 
@@ -206,7 +207,7 @@ genericExpressionWidget :: MonadIO io
                         -> UIVariable
                         -> io (StaticText (), TextCtrl (), StaticText ())
 genericExpressionWidget _canEditEnvironment p l UIVariable{..} = liftIO $ do
-  errorMessage <- staticText p [ text := "" ] -- , font := fontFixed, fontSize := 12, color := black ]
+  errorMessage <- staticText p [ text := "" ]
 
   initial <- getDynamic (source exprValue)
   te <- textEntry p [ text := initial
@@ -256,15 +257,15 @@ genericExpressionWidget _canEditEnvironment p l UIVariable{..} = liftIO $ do
                    _        -> setErrorMessage Nothing
                propagateEvent
          ]
-  wxWatchDynamic te (source exprValue) (\newText -> set te [ text := newText ])
+  wxWatchDynamic1 te (source exprValue) (\newText -> set te [ text := newText ])
 
   editMenu <- menuPane [ text := "" ]
   info <- menuItem editMenu [ text := "--" ]
-  wxWatchDynamic te exprName $ \newVar -> do
+  wxWatchDynamic1 te exprName $ \newVar -> do
     let var = fromRight "???" newVar
     ty <- either (const "???") (\(SomeType t) -> ppType t) <$> getDynamic exprType
     set info [ text := var ++ " : " ++ ty ]
-  wxWatchDynamic te exprType $ \newTy -> do
+  wxWatchDynamic1 te exprType $ \newTy -> do
     var <- fromRight "???" <$> getDynamic exprName
     let ty = either (const "???") (\(SomeType t) -> ppType t) newTy
     set info [ text := var ++ " : " ++ ty ]
@@ -275,9 +276,8 @@ genericExpressionWidget _canEditEnvironment p l UIVariable{..} = liftIO $ do
   menuItem editMenu [ text := "Edit type..."
                     , on command := editString "type" te (source exprType) ]
 
-  Label lab0 <- getDynamic l
-  labelTxt <- staticText p [ text := lab0 ]
-  wxWatchDynamic p l $ \(Label lab) -> do
+  labelTxt <- staticText p [ text := "" ]
+  wxWatchDynamic1 p l $ \(Label lab) -> do
     set labelTxt [ text := lab ]
     windowReLayout p
 
@@ -285,9 +285,6 @@ genericExpressionWidget _canEditEnvironment p l UIVariable{..} = liftIO $ do
   set te       [ on clickRight := \pt -> menuPopup editMenu pt te ]
 
   pure (labelTxt, te, errorMessage)
-
-
-
 
 -- | Like `watchDynamic`, but ensures that the action
 -- runs on the main UI thread. Automatically attaches
@@ -306,8 +303,13 @@ wxWatchDynamic p dv action = liftIO $ do
                        sequence_ (reverse actions)
                  ]
   set p [ on closing :~ \previous -> halt >> previous ]
+
+-- | Same as `wxWatchDynamic`, but also
+wxWatchDynamic1 :: (AsDynamic f, MonadIO io) => Window b -> f a -> (a -> IO ()) -> io ()
+wxWatchDynamic1 p dv action = do
+  wxWatchDynamic p dv action
   -- Run the action once
-  getDynamic dv >>= action
+  liftIO (getDynamic dv >>= action)
 
 wxTimer :: MonadIO io => Window a -> [Prop Timer] -> io Timer
 wxTimer w props = liftIO $ do

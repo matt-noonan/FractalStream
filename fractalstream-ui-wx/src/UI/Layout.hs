@@ -156,7 +156,9 @@ generateWxLayout buttonPress frame0 wLayout = do
                                     setValue (source $ scriptCode v) (CodeString new) ]
             set frame0 [ on closing :~ (timerStop t >>) ]
           watch (source $ scriptCode v) $ \(CodeString newText) -> do
-            set ce [ text := newText ]
+            oldText <- styledTextCtrlGetText ce
+            when (oldText /= newText) $
+              styledTextCtrlSetText ce newText
           isError <- liftIO ((isLeft <$> getDynamic (scriptCode v)) >>= \startError ->
              variable [ value := startError ])
           watch (scriptCode v) $ \case

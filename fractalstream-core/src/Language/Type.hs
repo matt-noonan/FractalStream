@@ -2,6 +2,7 @@
 module Language.Type
   ( FSType(..)
   , type HaskellType
+  , SomeHaskellType(..)
   , Scalar(..)
   , TypeProxy(..)
   , SomeType(..)
@@ -56,6 +57,11 @@ type family HaskellType (t :: FSType) :: Type where
   HaskellType 'ImageT     = Int
   HaskellType ('ListT x)  = [HaskellType x]
   HaskellType 'TextT      = String
+
+data SomeHaskellType where
+  SomeHaskellType :: forall t. TypeProxy t -> HaskellType t -> SomeHaskellType
+
+instance Show SomeHaskellType where show (SomeHaskellType t v) = showValue t v
 
 -- | Constant values for scalar types. Match on the
 -- first argument to make the type of the second argument

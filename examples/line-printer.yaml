@@ -21,20 +21,6 @@ viewer:
       if stuck and x^2 + y^2 < (1.5 - cos (6 arg(x + i y))) / 3:
           color ⭠ black
 
-  tools:
-    - name: Clicky
-      actions:
-        - event: click
-          code: |
-            clickedX <- 2 mod(re z + size / 2, size) / size - 1
-            clickedY <- 2 mod(im z + size / 2, size) / size - 1
-            clickedC ⭠ z - (clickedX + i clickedY) * size / 2
-            norm2 <- clickedX^2 + clickedY^2
-            bound <- (1.5 - cos (6 arg(clickedX + i clickedY))) / 3
-            cond <- clickedX^2 + clickedY^2 < (1.5 - cos (6 arg(clickedX + i clickedY))) / 3
-        - event: drag
-          code: pass
-
 configuration:
   title: Configuration
   size: 400x200
@@ -54,32 +40,3 @@ configuration:
         value: "0.035"
         type: ℝ
         variable: size
-    - text-entry:
-        label: "Clicked X"
-        value: "0"
-        type: R
-        variable: clickedX
-    - text-entry:
-        label: "Clicked Y"
-        value: "0"
-        type: R
-        variable: clickedY
-    - text-entry:
-        label: "Clicked C"
-        value: "0"
-        type: C
-        variable: clickedC
-    - text-entry:
-        label: "Norm^2"
-        value: "0"
-        type: R
-        variable: norm2
-    - text-entry:
-        label: "Bound"
-        value: "0"
-        type: R
-        variable: bound
-    - checkbox:
-        label: "Condition"
-        value: true
-        variable: cond

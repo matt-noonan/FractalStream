@@ -99,6 +99,13 @@ type family Append (xs :: [(Symbol, FSType)]) (ys :: [(Symbol, FSType)]) :: [(Sy
 data SomeEnvironment where
   SomeEnvironment :: forall env. EnvironmentProxy env -> SomeEnvironment
 
+instance Eq SomeEnvironment where
+  SomeEnvironment env1 == SomeEnvironment env2 = case sameEnvironment env1 env2 of
+    Just Refl -> True
+    Nothing   -> False
+
+instance Show SomeEnvironment where show (SomeEnvironment env) = show env
+
 -- | A singleton datatype for Environment type variables.
 data EnvironmentProxy (env :: Environment) where
   EmptyEnvProxy :: EnvironmentProxy '[]

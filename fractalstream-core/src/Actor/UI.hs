@@ -7,6 +7,7 @@ import Actor.Layout
 import Actor.Viewer
 import Actor.Event
 import Language.Environment
+import Data.DynamicValue
 
 data UI where
   UI :: forall ensembleHandle.
@@ -22,6 +23,7 @@ data UI where
                    -> IO (IO ())
       , makeViewer :: ensembleHandle
                    -> IO ()
+                   -> Dynamic (Either String SomeEnvironment)
                    -> SomeContext EventArgument_
                    -> IO ()
                    -> IO ()

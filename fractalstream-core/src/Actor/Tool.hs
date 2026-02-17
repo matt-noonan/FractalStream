@@ -48,7 +48,7 @@ instance CodecWith EventDependencies Tool where
     refreshOnActivate <-toolRefreshOnActivate-< keyWithDefaultValue True  "refresh-on-activation"
     refreshCanUpdate  <-toolRefreshCanUpdate-<  keyWithDefaultValue False "refresh-can-update"
     config <-toolConfig-< optionalField "configuration"
-      (newVariable Nothing) (fmap isNothing . getDynamic) (codecWith ((\(x,_,_) -> x) <$> ctx))
+      (newVariable Nothing) (fmap isNothing . getDynamic) (codecWith ((\(x,_,_,_) -> x) <$> ctx))
     showConfig <-toolShowConfig-< newOf (pure $ pure $ const (pure ()))
     handlers <-toolEventHandlers-< optionalField "actions"
       (newVariable []) (fmap null . getDynamic) (codecWith ctx)

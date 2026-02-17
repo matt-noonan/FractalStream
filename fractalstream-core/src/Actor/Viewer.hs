@@ -19,6 +19,10 @@ module Actor.Viewer
   , invokeViewerFunction
   , assertMissingViewerArgs
   , snapshotToFile
+  , allGrey
+  , defaultIterLimit
+  , defaultMaxRadius
+  , defaultMinRadius
   ) where
 
 import FractalStream.Prelude
@@ -28,6 +32,7 @@ import Data.DynamicValue
 import Actor.Layout (CodeString(..), Dimensions(..), UIScript)
 import Actor.Tool
 import Language.Environment
+import Language.Value.Parser
 import Language.Code
 import Language.Draw
 import Language.Code.Parser
@@ -36,6 +41,7 @@ import Language.Parser.SourceRange
 import Language.Value.Evaluator
 import Foreign
 import Data.PNG
+import qualified Data.Map as Map
 
 data ViewerContext env = ViewerContext
   { vcContext :: Context DynamicValue env
@@ -71,7 +77,9 @@ data ViewerArgs env = ViewerArgs
 
 data CodeWithArgs where
   CodeWithArgs :: forall env
-                . IO (Either String (Context HaskellValue env))
+                . MissingViewerArgs env
+               => IO (Either String (Context HaskellValue env))
+               -> Maybe (Code (ViewerEnv env))
                -> Dynamic (ViewerFunction env)
                -> CodeWithArgs
 
@@ -94,7 +102,7 @@ data Viewer = Viewer
 
 snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Maybe String)
 snapshotToFile Viewer{..} downsample path = case vCodeWithArgs of
-  CodeWithArgs vGetArgs vCode -> vGetArgs >>= \case
+  CodeWithArgs vGetArgs _ vCode -> vGetArgs >>= \case
     Left err -> pure (Just err)
     Right vaArgs -> do
       Dimensions (w, h) <- getDynamic vSize
@@ -292,3 +300,18 @@ cloneViewer v = do
     , vDrawTo = vDrawTo v
     , vScript = vScript v
     }
+
+-- | A fallback viewer function that paints every point grey
+allGrey :: ViewerFunction '[]
+allGrey = ViewerFunction $ \ViewerArgs{..} -> do
+  let (w, h) = (fromIntegral vaWidth, fromIntegral vaHeight)
+  forM_ [0..w - 1] $ \j ->
+    forM_ [0..h - 1] $ \i -> do
+      pokeElemOff vaBuffer (3 * j * w + 3 * i + 0) 0x7f
+      pokeElemOff vaBuffer (3 * j * w + 3 * i + 1) 0x7f
+      pokeElemOff vaBuffer (3 * j * w + 3 * i + 2) 0x7f
+
+defaultIterLimit, defaultMaxRadius, defaultMinRadius :: ParsedValue
+defaultIterLimit = fromRight (error "INTERNAL ERROR: defaultIterLimit") $ parseParsedValue Map.empty "100"
+defaultMaxRadius = fromRight (error "INTERNAL ERROR: defaultMaxRadius") $ parseParsedValue Map.empty "10"
+defaultMinRadius = fromRight (error "INTERNAL ERROR: defaultMinRadius") $ parseParsedValue Map.empty "0.0001"

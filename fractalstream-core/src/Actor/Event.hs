@@ -25,6 +25,7 @@ import FractalStream.Prelude
 
 import Language.Type
 import Language.Environment
+import Language.Typecheck
 import Language.Code
 import Language.Parser.SourceRange
 import Language.Value.Typecheck
@@ -232,6 +233,7 @@ buildHandler draw (SomeContext ctx) handlers = do
 type EventDependencies =
   (Dynamic (Either String Splices),
    Dynamic (Either String Coordinate),
+   Dynamic (Either String (ParsedValue, ParsedValue, ParsedValue)),
    Dynamic (Either String (Maybe String))
   )
 
@@ -289,7 +291,7 @@ instance CodecWith EventDependencies ClickHandler where
     coord  <-coerce . chCoord-< fmap coerce <$> codec @(Variable MCoordinate)
     update <-chCanUpdateViewer-< keyWithDefaultValue False "can-update-viewer-coords"
     script <-chScript-< mapped (key "code") $ \use -> do
-      let (dsplices, dvc, dmpx) = use ctx
+      let (dsplices, dvc, dlimits, dmpx) = use ctx
           complain err = pure (\_ -> SomeClickHandler (\_ -> Left (NoSourceRange, err)))
       dvc >>= \case
         Left err -> complain err
@@ -299,7 +301,9 @@ instance CodecWith EventDependencies ClickHandler where
             Left err -> complain err
             Right mpx -> do
               pt <- fromMaybe vc <$> dyn (use coord)
-              pure (fmap SomeClickHandler $ parseClickScript splices pt mpx)
+              dlimits >>= \case
+                Left err -> complain err
+                Right limits -> pure (fmap SomeClickHandler $ parseClickScript splices pt limits mpx)
     build ClickHandler coord update script
 
 newtype SomeClickHandler = SomeClickHandler (forall env. EnvironmentProxy env -> Either (SourceRange, String) (Code (ClickHandlerEnv env)))
@@ -322,44 +326,49 @@ assertMissingClickArgs env k =
   assertAbsent (Proxy @InternalPx)   RealType env k
 
 type Bookkeeping env =
-    ( '(InternalIterationLimit, 'IntegerT) ': '(InternalIterations, 'IntegerT) ':
+    ( '(InternalIterations, 'IntegerT) ': '(InternalStuck, 'BooleanT) ':
+      '(InternalIterationLimit, 'IntegerT) ':
       '(InternalEscapeRadius, 'RealT) ': '(InternalVanishingRadius, 'RealT) ':
-      '(InternalStuck, 'BooleanT) ': env)
+      env)
 
 withBookkeeping :: forall env
                  . EnvironmentProxy env
                 -> Splices
+                -> (ParsedValue, ParsedValue, ParsedValue)
                 -> (KnownEnvironment (Bookkeeping env) =>
                     EnvironmentProxy (Bookkeeping env) ->
                     Splices ->
                     Either (SourceRange, String) (Code (Bookkeeping env)))
                 -> Either (SourceRange, String) (Code env)
-withBookkeeping env splices action = withEnvironment env $ do
+withBookkeeping env splices (pMaxIters, pMaxRadius, pMinRadius) action = withEnvironment env $ do
   env' :: EnvironmentProxy (Bookkeeping env) <-
-      (     declareE InternalIterationLimit  IntegerType
-        <=< declareE InternalIterations      IntegerType
+      (     declareE InternalIterations      IntegerType
+        <=< declareE InternalStuck           BooleanType
+        <=< declareE InternalIterationLimit  IntegerType
         <=< declareE InternalEscapeRadius    RealType
         <=< declareE InternalVanishingRadius RealType
-        <=< declareE InternalStuck           BooleanType
       ) env
   withEnvironment env' $ do
     code <- action env' splices
     -- Now bind all of the bookkeeping variables
-    let (_, code') = (env', code)
-          & letInEnv (Const (Scalar typeProxy 100))
-          & letInEnv (Const (Scalar typeProxy 0))
-          & letInEnv (Const (Scalar typeProxy 10.0))
-          & letInEnv (Const (Scalar typeProxy 0.0001))
-          & letInEnv (Const (Scalar typeProxy False))
+    let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
+          (env', code) & letInEnv (Const (Scalar typeProxy 0))
+                       & letInEnv (Const (Scalar typeProxy False))
+    code1 <- snd . (`letInEnv` (env0, code0)) <$> pvAtType pMaxIters  IntegerType env1
+    code2 <- snd . (`letInEnv` (env1, code1)) <$> pvAtType pMaxRadius RealType    env2
+    code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
     pure code'
 
 parseClickScript :: Splices
                  -> Coordinate
+                -> (ParsedValue, ParsedValue, ParsedValue)
                  -> Maybe String
                  -> CodeString
                  -> (forall env. EnvironmentProxy env
                      -> Either (SourceRange, String) (Code (ClickHandlerEnv env)))
-parseClickScript splices0 clickCoord mpixel (CodeString src) (env0 :: EnvironmentProxy env) = do
+parseClickScript splices0 clickCoord limits mpixel (CodeString src)
+  (env0 :: EnvironmentProxy env) = do
+
   env1 <- (declareE InternalX  RealType
        <=< declareE InternalY  RealType
        <=< declareE InternalPx RealType) env0
@@ -367,7 +376,7 @@ parseClickScript splices0 clickCoord mpixel (CodeString src) (env0 :: Environmen
   case clickCoord of
     RealCoordinates p q -> case (someSymbolVal p, someSymbolVal q) of
       (SomeSymbol xcoord, SomeSymbol ycoord) -> do
-        withBookkeeping env1 splices0 $ \env splices -> do
+        withBookkeeping env1 splices0 limits $ \env splices -> do
           x <- getVar InternalX RealType env
           bindOrDeclare xcoord RealType x env $ \env' -> do
             y <- getVar InternalY RealType env'
@@ -384,7 +393,7 @@ parseClickScript splices0 clickCoord mpixel (CodeString src) (env0 :: Environmen
     ComplexCoordinate c -> case someSymbolVal c of
       SomeSymbol coord -> do
 
-        withBookkeeping env1 splices0 $ \env splices -> do
+        withBookkeeping env1 splices0 limits $ \env splices -> do
           let i = Const (Scalar ComplexType (0 :+ 1))
           x <- getVar InternalX RealType env
           y <- getVar InternalY RealType env
@@ -417,18 +426,15 @@ instance CodecWith EventDependencies DragHandler where
     start  <-coerce . dhStart-< fmap coerce <$> codec @(Variable SCoordinate)
     update <-dhCanUpdateViewer-< keyWithDefaultValue False "can-update-viewer-coords"
     script <-dhScript-< mapped (key "code") $ \use -> do
-      let (dsplices, dvc, dmpx) = use ctx
+      let (dsplices, dvc, dlimits, dmpx) = use ctx
           complain err = pure (\_ -> SomeDragHandler (\_ -> Left (NoSourceRange, err)))
-      dvc >>= \case
+      ((\x1 x2 x3 x4 -> (,,,) <$> x1 <*> x2 <*> x3 <*> x4)
+        <$> dvc <*> dsplices <*> dlimits <*> dmpx) >>= \case
         Left err -> complain err
-        Right vc -> dsplices >>= \case
-          Left err -> complain err
-          Right splices -> dmpx >>= \case
-            Left err -> complain err
-            Right mpx -> do
-              pt  <- fromMaybe vc <$> dyn (use coord)
-              pt' <- fromMaybe (ComplexCoordinate "[unused] start") <$> dyn (use start)
-              pure (fmap SomeDragHandler $ parseDragScript splices pt pt' mpx)
+        Right (vc, splices, limits, mpx) -> do
+          pt  <- fromMaybe vc <$> dyn (use coord)
+          pt' <- fromMaybe (ComplexCoordinate "[unused] start") <$> dyn (use start)
+          pure (fmap SomeDragHandler $ parseDragScript splices pt pt' limits mpx)
     build DragHandler coord start update script
 
 newtype SomeDragHandler = SomeDragHandler (forall env. EnvironmentProxy env -> Either (SourceRange, String) (Code (DragHandlerEnv env)))
@@ -455,9 +461,11 @@ type DragHandlerEnv env =
     '(InternalPx, 'RealT) ': env )
 
 type InternalDragHandlerEnv env =
-  ( '(InternalIterationLimit, 'IntegerT) ': '(InternalIterations, 'IntegerT) ':
-    '(InternalEscapeRadius, 'RealT) ': '(InternalVanishingRadius, 'RealT) ':
+  ( '(InternalIterations, 'IntegerT) ':
     '(InternalStuck, 'BooleanT) ':
+    '(InternalIterationLimit, 'IntegerT) ':
+    '(InternalEscapeRadius, 'RealT) ':
+    '(InternalVanishingRadius, 'RealT) ':
     DragHandlerEnv env)
 
 bindOrDeclare :: forall name ty env
@@ -485,19 +493,21 @@ bindOrDeclare name ty v env action = case lookupEnv name ty env of
 parseDragScript :: Splices
                 -> Coordinate
                 -> Coordinate
+                -> (ParsedValue, ParsedValue, ParsedValue)
                 -> Maybe String
                 -> CodeString
                 -> (forall env. EnvironmentProxy env
                     -> Either (SourceRange, String) (Code (DragHandlerEnv env)))
-parseDragScript splices curCoord oldCoord mpixel (CodeString src) (env :: EnvironmentProxy env) = do
+parseDragScript splices curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mpixel (CodeString src)
+  (env :: EnvironmentProxy env) = do
   withEnvironment env $ do
     -- Bind all of the internal bookkeeping variables
     env' :: EnvironmentProxy (InternalDragHandlerEnv env) <-
-      (     declareE InternalIterationLimit  IntegerType
-        <=< declareE InternalIterations      IntegerType
+      (     declareE InternalIterations      IntegerType
+        <=< declareE InternalStuck           BooleanType
+        <=< declareE InternalIterationLimit  IntegerType
         <=< declareE InternalEscapeRadius    RealType
         <=< declareE InternalVanishingRadius RealType
-        <=< declareE InternalStuck           BooleanType
         <=< declareE InternalX               RealType
         <=< declareE InternalY               RealType
         <=< declareE InternalOldX            RealType
@@ -536,13 +546,12 @@ parseDragScript splices curCoord oldCoord mpixel (CodeString src) (env :: Enviro
                   _ -> Left (NoSourceRange, "The pixel size variable `" ++ symbolVal px ++ "` was redefined.")
 
       -- Now bind all of the bookkeeping variables
-      -- FIXME TODO are these hardcoded values correct?!
-      let (_, code') = (env', code)
-                     & letInEnv (Const (Scalar typeProxy 100))
-                     & letInEnv (Const (Scalar typeProxy 0))
-                     & letInEnv (Const (Scalar typeProxy 10.0))
-                     & letInEnv (Const (Scalar typeProxy 0.0001))
-                     & letInEnv (Const (Scalar typeProxy False))
+      let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
+            (env', code) & letInEnv (Const (Scalar typeProxy 0))
+                         & letInEnv (Const (Scalar typeProxy False))
+      code1 <- snd . (`letInEnv` (env0, code0)) <$> pvAtType pMaxIters  IntegerType env1
+      code2 <- snd . (`letInEnv` (env1, code1)) <$> pvAtType pMaxRadius RealType    env2
+      code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
       pure code'
 
 ------------------------------------------------------------
@@ -556,9 +565,11 @@ newtype UnitHandler = UnitHandler (Mapped CodeString SomeUnitHandler)
 type UnitHandlerEnv env = '(InternalPx, 'RealT) ': env
 
 type InternalUnitHandlerEnv env =
-  ( '(InternalIterationLimit, 'IntegerT) ': '(InternalIterations, 'IntegerT) ':
-    '(InternalEscapeRadius, 'RealT) ': '(InternalVanishingRadius, 'RealT) ':
+  ( '(InternalIterations, 'IntegerT) ':
     '(InternalStuck, 'BooleanT) ':
+    '(InternalIterationLimit, 'IntegerT) ':
+    '(InternalEscapeRadius, 'RealT) ':
+    '(InternalVanishingRadius, 'RealT) ':
     UnitHandlerEnv env)
 
 type MissingUnitArgs env = ( NotPresent InternalPx env )
@@ -582,12 +593,12 @@ assertMissingUnitArgs = assertAbsent (Proxy @InternalPx) RealType
 
 instance CodecWith EventDependencies (Mapped CodeString SomeUnitHandler) where
   codecWith_ ctx = mapped (key "code") $ \use -> do
-    let (dsplices, _, dpx) = use ctx
-    dsplices >>= \case
+    let (dsplices, dvc, dlimits, dpx) = use ctx
+    ((\x1 x2 x3 x4 -> (,,,) <$> x1 <*> x2 <*> x3 <*> x4)
+      <$> dvc <*> dsplices <*> dlimits <*> dpx) >>= \case
       Left err -> pure (\_ -> SomeUnitHandler $ \_ -> Left (NoSourceRange, err))
-      Right splices -> dpx >>= \case
-        Left err -> pure (\_ -> SomeUnitHandler $ \_ -> Left (NoSourceRange, err))
-        Right px -> pure (fmap SomeUnitHandler $ parseUnitScript splices px)
+      Right (vc, splices, limits, px) -> do
+        pure (fmap SomeUnitHandler $ parseUnitScript splices limits vc px)
 
 instance CodecWith EventDependencies UnitHandler where
   codecWith_ ctx = do
@@ -617,44 +628,56 @@ instance CodecWith EventDependencies ButtonHandler where
     build ButtonHandler name script
 
 parseUnitScript :: Splices
+                -> (ParsedValue, ParsedValue, ParsedValue)
+                -> Coordinate
                 -> Maybe String
                 -> CodeString
                 -> (forall env. EnvironmentProxy env
                     -> Either (SourceRange, String) (Code (UnitHandlerEnv env)))
-parseUnitScript splices mpx (CodeString src) (env :: EnvironmentProxy env) = do
+parseUnitScript splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx (CodeString src)
+  (env :: EnvironmentProxy env) = do
+
   withEnvironment env $ do
     -- Bind all of the internal bookkeeping variables
     env' :: EnvironmentProxy (InternalUnitHandlerEnv env) <-
-      (     declareE InternalIterationLimit  IntegerType
-        <=< declareE InternalIterations      IntegerType
+      (     declareE InternalIterations      IntegerType
+        <=< declareE InternalStuck           BooleanType
+        <=< declareE InternalIterationLimit  IntegerType
         <=< declareE InternalEscapeRadius    RealType
         <=< declareE InternalVanishingRadius RealType
-        <=< declareE InternalStuck           BooleanType
         <=< declareE InternalPx              RealType
       ) env
 
     withEnvironment env' $ case someSymbolVal <$> mpx of
       Nothing -> do
+
         code <- left (errorLocation &&& unlines . pp) (parseCode env' splices src)
-        let (_, code') = (env', code)
-                         & letInEnv (Const (Scalar typeProxy 100))
-                         & letInEnv (Const (Scalar typeProxy 0))
-                         & letInEnv (Const (Scalar typeProxy 10.0))
-                         & letInEnv (Const (Scalar typeProxy 0.0001))
-                         & letInEnv (Const (Scalar typeProxy False))
+
+        let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
+              (env', code) & letInEnv (Const (Scalar typeProxy 0))
+                           & letInEnv (Const (Scalar typeProxy False))
+
+        code1 <- snd . (`letInEnv` (env0, code0)) <$> pvAtType pMaxIters  IntegerType env1
+        code2 <- snd . (`letInEnv` (env1, code1)) <$> pvAtType pMaxRadius RealType    env2
+        code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
+
         pure code'
+
       Just (SomeSymbol px) -> do
         case lookupEnv px RealType env' of
           Absent pf -> do
             let env'' = recallIsAbsent pf $ BindingProxy px RealType env'
+
             code0 <- left (errorLocation &&& unlines . pp) (parseCode env'' splices src)
             let code = Let bindingEvidence px (Var (Proxy @InternalPx) RealType bindingEvidence) code0
-            let (_, code') = (env', code)
-                             & letInEnv (Const (Scalar typeProxy 100))
-                             & letInEnv (Const (Scalar typeProxy 0))
-                             & letInEnv (Const (Scalar typeProxy 10.0))
-                             & letInEnv (Const (Scalar typeProxy 0.0001))
-                             & letInEnv (Const (Scalar typeProxy False))
+            let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), codeX) =
+                  (env', code) & letInEnv (Const (Scalar typeProxy 0))
+                               & letInEnv (Const (Scalar typeProxy False))
+
+            code1 <- snd . (`letInEnv` (env0, codeX)) <$> pvAtType pMaxIters  IntegerType env1
+            code2 <- snd . (`letInEnv` (env1, code1)) <$> pvAtType pMaxRadius RealType    env2
+            code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
+
             pure code'
           _ -> Left (NoSourceRange, "Pixel variable `" ++ symbolVal px ++ "` was redefined.")
 
@@ -694,3 +717,9 @@ instance Codec SCoordinate where
         build (,) x y
     , Fragment (\_ -> SC Nothing) (\case { SC Nothing -> Just (); _ -> Nothing }) (build ())
     ]
+
+pvAtType :: forall env ty. ParsedValue -> TypeProxy ty -> EnvironmentProxy env
+         -> Either (SourceRange, String) (Value '(env, ty))
+pvAtType pv ty env = withEnvironment env $ withKnownType ty $ case atType pv ty of
+  TC (Left err) -> Left (NoSourceRange, ppError err)
+  TC (Right v)  -> pure v

@@ -129,7 +129,7 @@ runEnsemblePostSetup :: forall ensembleHandle
                       . ensembleHandle
                      -> ViewerCompiler
                      -> (ensembleHandle -> String -> Layout -> IO (IO ()))
-                     -> (ensembleHandle -> IO () -> SomeContext EventArgument_ -> IO () -> IO () -> Viewer -> IO (IO ()))
+                     -> (ensembleHandle -> IO () -> Dynamic (Either String SomeEnvironment) -> SomeContext EventArgument_ -> IO () -> IO () -> Viewer -> IO (IO ()))
                      -> IO ()
                      -> Ensemble
                      -> IO ()
@@ -147,9 +147,13 @@ runEnsemblePostSetup project jit mkLayout mkViewer rerunSetup Ensemble{..} = do
           SomeContext' (Left err)   -> throwIO (BadEnsemble err)
           SomeContext' (Right args) -> pure (c, args, showConfig)
 
+  let env = maybe (pure $ Right $ SomeEnvironment EmptyEnvProxy) (layoutEnv . coContents) =<< dyn ensembleConfiguration
+  watchDynamic env $ \env' -> putStrLn ("ENV: " ++ show env')
+  let mkViewer' x1 x2 = mkViewer x1 x2 env
+
   -- Make the viewers
   viewers <- getDynamic ensembleViewers
-  forM_ viewers (makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSetup)
+  forM_ viewers $ makeComplexViewer project jit mkViewer' someContext configArgs showConfig rerunSetup
 
 makeComplexViewer :: forall ensembleHandle
                    . ensembleHandle
@@ -161,71 +165,82 @@ makeComplexViewer :: forall ensembleHandle
                   -> IO ()
                   -> ComplexViewer
                   -> IO ()
-makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSetup ComplexViewer{..} =
+makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSetup ComplexViewer{..} = do
    rebuildScript
   where
    rebuildScript = do
 
-    let throwLeft :: Show e => IO (Either e a) -> IO a
+    let throwLeft :: IO (Either String a) -> IO a
         throwLeft action = action >>= \case
           Left err -> throwIO (BadEnsemble $ show err)
           Right x  -> pure x
 
-    SomeViewerWithContext context code <- throwLeft (getDynamic cvCode)
+    coord <- fromRight "?coord" <$> getDynamic cvCoord
+    let vTitle    = source cvTitle
+        vSize     = cvSize
+        vPosition = cvPosition
 
-    coord <- throwLeft (getDynamic cvCoord)
-    let usedVars = Set.delete coord (execState (usedVarsInCode code) Set.empty)
-    let vListen :: IO () -> IO (IO ())
-        vListen = \action -> do
-          let changed :: forall env. Context DynamicValue' env -> Dynamic ()
-              changed = \case
-                Bind n _t v ctx'
-                  | symbolVal n `Set.member` usedVars
-                              -> ((<>) <$> (const () <$> v) <*> changed ctx')
-                  | otherwise -> changed ctx'
-                EmptyContext  -> pure ()
+    let scriptCode = cvCode <&> right (\(SomeViewerWithContext _ c) -> SomeCode c)
+    scriptName <- newMapped (pure $ \n -> if null n then Left "Script title must be non-empty" else Right n)
+                  vTitle
+    scriptEnv <- newVariable (SomeEnvironment endOfDecls)
+    let vScript = UIScript{..}
 
-          let cc = (\(SomeContext c) -> changed c) someContext
-          watchDynamic cc (\_ -> action)
+    vCanResize <- getDynamic cvCanResize
+    x0 :+ y0 <- throwLeft (getDynamic cvCenter)
+    vCenter <- newVariable (x0, y0)
+    vPixelSize <- throwLeft (getDynamic cvPixelSize) >>= newVariable
+    let vSaveView = pure ()
 
-    let env = contextToEnv context
-    withEnvironment env $ do
-      let vTitle = source cvTitle
-          vSize  = cvSize
-          vPosition = cvPosition
+    (vDrawCmds, vDrawCmdsChanged, vDrawTo) <- makeDrawCommandGetter
 
-          scriptCode = cvCode <&> right (\(SomeViewerWithContext _ c) -> SomeCode c)
-      scriptName <- newMapped (pure $ \n -> if null n then Left "Script title must be non-empty" else Right n)
-                              vTitle
-      scriptEnv <- newVariable (SomeEnvironment endOfDecls)
-      let vScript = UIScript{..}
+    getDynamic cvCode >>= \case
 
-      vCanResize <- getDynamic cvCanResize
+      Left (_, err) -> do
+        let vTools = dyn cvTools
+            vCodeWithArgs = CodeWithArgs (pure $ Right EmptyContext) Nothing (pure allGrey)
+            vListen = const (pure $ pure ())
 
-      x0 :+ y0 <- throwLeft (getDynamic cvCenter)
-      vCenter <- newVariable (x0, y0)
-      vPixelSize <- throwLeft (getDynamic cvPixelSize) >>= newVariable
-      let vSaveView = pure ()
-          vGetArgs = case someContext of
-            SomeContext context' -> case sameEnvironment (contextToEnv context) (contextToEnv context') of
-              Nothing   -> pure $ Left "Internal error: the context changed, so the viewer should have recompiled"
-              Just Refl -> do
-                rawResult <- mapContextM @DynamicValue' @HaskellValueOrError (\_ _ -> getDynamic) context'
-                case mapContextM (\_ _ -> id) rawResult of
-                  Left err -> pure $
-                    Left ("Viewer paused until this issue with the configuration is addressed:\n" ++
-                          err)
-                  r -> pure r
-
-      withSelectTool <- if coord `Map.member` envToMap env then (:) <$> makeSelectTool coord else pure id
-      let vTools = withSelectTool <$> dyn cvTools
-
-      (vDrawCmds, vDrawCmdsChanged, vDrawTo) <- makeDrawCommandGetter
-
-      withCompiledViewer jit code $ \fun -> do
-        let vCodeWithArgs = CodeWithArgs vGetArgs (pure fun)
-        -- FIXME, we should grab the "close this window" action and do something with it
+        putStrLn ("Can't build viewer: " ++ err)
         void $ mkViewer project showConfig configArgs rerunSetup rebuildScript Viewer{..}
+
+      Right (SomeViewerWithContext context code) -> do
+
+        let env = contextToEnv context
+            usedVars = Set.delete coord (execState (usedVarsInCode code) Set.empty)
+
+            vListen :: IO () -> IO (IO ())
+            vListen = \action -> do
+              let changed :: forall env. Context DynamicValue' env -> Dynamic ()
+                  changed = \case
+                    Bind n _t v ctx'
+                      | symbolVal n `Set.member` usedVars
+                        -> ((<>) <$> (const () <$> v) <*> changed ctx')
+                      | otherwise -> changed ctx'
+                    EmptyContext  -> pure ()
+              let cc = (\(SomeContext c) -> changed c) someContext
+              watchDynamic cc (\_ -> action)
+
+        withEnvironment env $ do
+
+          let vGetArgs = case someContext of
+                SomeContext context' -> case sameEnvironment (contextToEnv context) (contextToEnv context') of
+                  Nothing   -> pure $ Left "Internal error: the context changed, so the viewer should have recompiled"
+                  Just Refl -> do
+                    rawResult <- mapContextM @DynamicValue' @HaskellValueOrError (\_ _ -> getDynamic) context'
+                    case mapContextM (\_ _ -> id) rawResult of
+                      Left err -> pure $
+                        Left ("Viewer paused until this issue with the configuration is addressed:\n" ++
+                              err)
+                      r -> pure r
+
+          withSelectTool <- if coord `Map.member` envToMap env then (:) <$> makeSelectTool coord else pure id
+          let vTools = withSelectTool <$> dyn cvTools
+
+          withCompiledViewer jit code $ \fun -> do
+            let vCodeWithArgs = CodeWithArgs vGetArgs (Just code) (pure fun)
+            -- FIXME, we should grab the "close this window" action and do something with it
+            void $ mkViewer project showConfig configArgs rerunSetup rebuildScript Viewer{..}
 
 layoutToArgs :: Layout -> IO (SomeContext' EventArgument_)
 layoutToArgs = \case
@@ -338,8 +353,9 @@ makeSelectTool :: String -> IO Tool
 makeSelectTool coord = do
   let dep1 = pure (Right noSplices)
       dep2 = pure (Right (ComplexCoordinate coord))
-      dep3 = pure (Right Nothing)
-  tool <- deserializeWith (dep1, dep2, dep3) (selectToolJson coord)
+      dep3 = pure (Right (defaultIterLimit, defaultMaxRadius, defaultMinRadius))
+      dep4 = pure (Right Nothing)
+  tool <- deserializeWith (dep1, dep2, dep3, dep4) (selectToolJson coord)
   either (error . ("Internal error: " ++)) pure tool
 
 selectToolJson :: String -> ByteString
