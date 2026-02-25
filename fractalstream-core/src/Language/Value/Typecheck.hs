@@ -241,6 +241,11 @@ tcComplexFun (name, ComplexFun resultTy makeC) x sr ty = case resultTy of
     _ -> throwError (Surprise sr ("the result of " ++ name) "a complex number" (Expected $ an ty))
   _ -> throwError (Surprise sr ("the result of " ++ name) (an $ SomeType resultTy) (Expected $ an ty))
 
+tcRoundingFun :: (String, RoundingFun) -> ParsedValue -> CheckedValue
+tcRoundingFun (name, RoundingFun makeF) x sr = \case
+  IntegerType -> makeF <$> atType x RealType
+  ty -> throwError (Surprise sr ("the result of " ++ name) "an integer number" (Expected $ an ty))
+
 tcInvert, tcDark, tcLight :: ParsedValue -> CheckedValue
 tcDark c sr = \case
   ColorType -> Blend (Const $ Scalar RealType 0.333) (Const $ Scalar ColorType black)
@@ -587,6 +592,7 @@ commonFunctions = Map.fromList
   ]
 
 data RealFun = RealFun (Fun 'RealT 'RealT)
+data RoundingFun = RoundingFun (Fun 'RealT 'IntegerT)
 data ComplexFun where
   ComplexFun :: forall ty. TypeProxy ty -> Fun 'ComplexT ty -> ComplexFun
 
@@ -602,6 +608,14 @@ complexFunctions = Map.fromList
   , ("Conj", ComplexFun ComplexType ConjC)
   , ("bar", ComplexFun ComplexType ConjC)
   , ("Bar", ComplexFun ComplexType ConjC)
+  ]
+
+roundingFunctions :: Map String RoundingFun
+roundingFunctions = Map.fromList
+  [ ("round",   RoundingFun RoundF)
+  , ("floor",   RoundingFun FloorF)
+  , ("ceiling", RoundingFun CeilingF)
+  , ("ceil",    RoundingFun CeilingF)
   ]
 
 types :: Map String FSType

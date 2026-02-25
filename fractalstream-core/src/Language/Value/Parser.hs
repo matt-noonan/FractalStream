@@ -238,6 +238,11 @@ valueGrammar splices = mdo
                                  _ -> Nothing }))
         <*> atomOrFunAp)
 
+    , check (tcRoundingFun
+        <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n roundingFunctions;
+                                 _ -> Nothing }))
+        <*> atomOrFunAp)
+
     , check (tcComplexFun
         <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n complexFunctions;
                                  _ -> Nothing }))
@@ -424,6 +429,7 @@ valueGrammar splices = mdo
         `Set.union` Map.keysSet commonFunctions
         `Set.union` Map.keysSet realFunctions
         `Set.union` Map.keysSet complexFunctions
+        `Set.union` Map.keysSet roundingFunctions
         `Set.union` Map.keysSet splices
 
   pure toplevel

@@ -175,6 +175,10 @@ evaluator v0 ctx = case v0 of
     LogF x -> log (x ctx)
     SqrtF x -> sqrt (x ctx)
 
+    RoundF x -> Prelude.round (x ctx)
+    FloorF x -> Prelude.floor (x ctx)
+    CeilingF x -> Prelude.ceiling (x ctx)
+
     SinF x -> sin (x ctx)
     CosF x -> cos (x ctx)
     TanF x -> tan (x ctx)

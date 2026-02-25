@@ -310,6 +310,18 @@ buildValue getExtern = indexedFold go'
       ConjC z -> z >>= \case
         ComplexOp x y -> ComplexOp x <$> fsub (C.double 0.0) y
 
+      RoundF r -> r >>= \case
+        (RealOp x) -> IntegerOp <$>
+          (call (getExtern "trunc") [(x, [])] >>= (`fptosi` AST.i32))
+
+      FloorF r -> r >>= \case
+        (RealOp x) -> IntegerOp <$>
+          (call (getExtern "floor") [(x, [])] >>= (`fptosi` AST.i32))
+
+      CeilingF r -> r >>= \case
+        (RealOp x) -> IntegerOp <$>
+          (call (getExtern "ceil") [(x, [])] >>= (`fptosi` AST.i32))
+
       AbsF r -> r >>= \case
         (RealOp x)  -> RealOp <$> call (getExtern "fabs") [(x, [])]
       SqrtF r -> r >>= \case
@@ -449,6 +461,9 @@ getGetExtern = do
   es <- mapM (\(name, getter) -> (name,) <$> getter) $
     [ ("absi", extern "llvm.abs.i32" [AST.i32] AST.i32)
     , ("powi", extern "llvm.powi.i32" [AST.i32] AST.i32)
+    , ("trunc", extern "llvm.trunc.f64" [AST.double] AST.double)
+    , ("floor", extern "llvm.floor.f64" [AST.double] AST.double)
+    , ("ceil", extern "llvm.ceil.f64" [AST.double] AST.double)
     , ("log", extern "llvm.log.f64" [AST.double] AST.double)
     , ("exp", extern "llvm.exp.f64" [AST.double] AST.double)
     , ("pow", extern "llvm.pow.f64" [AST.double, AST.double] AST.double)

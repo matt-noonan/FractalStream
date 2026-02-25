@@ -108,6 +108,11 @@ data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FS
   AbsF :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> ValueF value '(env, 'RealT)
   NegF :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> ValueF value '(env, 'RealT)
 
+  -- Rounding
+  RoundF :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> ValueF value '(env, 'IntegerT)
+  FloorF :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> ValueF value '(env, 'IntegerT)
+  CeilingF :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> ValueF value '(env, 'IntegerT)
+
   -- Exponential and logarithmic functions
   ExpF  :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> ValueF value '(env, 'RealT)
   LogF  :: forall env value. KnownEnvironment env => Eval (value '(env, 'RealT)) -> ValueF value '(env, 'RealT)
@@ -382,6 +387,10 @@ instance IFunctor ValueF where
     LogF {} -> EnvType RealType
     SqrtF {} -> EnvType RealType
 
+    RoundF {} -> EnvType IntegerType
+    FloorF {} -> EnvType IntegerType
+    CeilingF {} -> EnvType IntegerType
+
     SinF {} -> EnvType RealType
     CosF {} -> EnvType RealType
     TanF {} -> EnvType RealType
@@ -494,6 +503,10 @@ instance IFunctor ValueF where
       LogF x -> LogF (f (withEnv RealType) x)
       SqrtF x -> SqrtF (f (withEnv RealType) x)
 
+      RoundF x -> RoundF (f (withEnv RealType) x)
+      FloorF x -> FloorF (f (withEnv RealType) x)
+      CeilingF x -> CeilingF (f (withEnv RealType) x)
+
       SinF x -> SinF (f (withEnv RealType) x)
       CosF x -> CosF (f (withEnv RealType) x)
       TanF x -> TanF (f (withEnv RealType) x)
@@ -604,6 +617,10 @@ instance ITraversable ValueF  where
     PowF mx my -> PowF <$> mx <*> my
     AbsF mx    -> AbsF <$> mx
     NegF mx    -> NegF <$> mx
+
+    RoundF   mx -> RoundF   <$> mx
+    FloorF   mx -> FloorF   <$> mx
+    CeilingF mx -> CeilingF <$> mx
 
     ExpF mx -> ExpF <$> mx
     LogF mx -> LogF <$> mx
@@ -753,6 +770,9 @@ pprint = indexedFold @PrecString @ValueF go
     PowF x y -> binop "^" x y
     AbsF x   -> "|" ++ x ++ "|"
     NegF x   -> "-" ++ x
+    RoundF x -> fun "round" [x]
+    FloorF x -> fun "floor" [x]
+    CeilingF x -> fun "ceil" [x]
     ExpF x   -> fun "exp" [x]
     LogF x   -> fun "log" [x]
     SqrtF x  -> fun "sqrt" [x]

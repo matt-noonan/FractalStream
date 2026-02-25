@@ -1,42 +1,45 @@
+configuration:
+  size: 400x200
+  title: Configuration
+  vertical-contents:
+  - text-entry:
+      label: Iteration limit
+      type: ℤ
+      value: 250
+      variable: max_iters
+  - text-entry:
+      label: Escape radius
+      type: ℝ
+      value: 10
+      variable: R
+  - text-entry:
+      label: Cell width
+      type: ℝ
+      value: 3.5e-2
+      variable: xsize
+  - text-entry:
+      label: Parameter shift
+      type: ℝ
+      value: -5.0e-2
+      variable: shift
 viewer:
-  title: Mandelbrot set throwback
-  style: complex-plane
-  size: 512x512
-  resizable: true
-  z-coord: z
-  iteration-limit: max_iters
+  code: |
+    ysize : ℝ ⭠ 1.66 xsize
+
+    C : ℂ ⭠ xsize * floor(re w / xsize) + i * ysize * floor(im w / ysize)
+    r : ℂ ⭠ 2 ((w - C) / xsize) - 1 - i
+    C ⭠ C + shift
+
+    z : ℂ ⭠ 0
+    iterate z ⟼ z² + C until z escapes
+
+    color ⭠ rgb(0.980, 0.976, 0.965)
+    if stuck and |r|^2 < (1.5 - cos (6 arg r)) / 3:
+        color ⭠ black
   escape-radius: R
   initial-center: -0.75
-  initial-pixel-size: 1/128
-  code: |
-      x : ℝ <- 2 mod(re z + size / 2, size) / size - 1
-      y : ℝ <- 2 mod(im z + size / 2, size) / size - 1
-
-      C : ℂ ⭠ z - (x + i y) * size / 2
-      z <- 0
-
-      iterate z ⟼ z² + C until z escapes
-
-      color ⭠ rgb(0.980, 0.976, 0.965)
-      if stuck and x^2 + y^2 < (1.5 - cos (6 arg(x + i y))) / 3:
-          color ⭠ black
-
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "Iteration limit"
-        value: "250"
-        type: ℤ
-        variable: max_iters
-    - text-entry:
-        label: "Escape radius"
-        value: "10"
-        type: ℝ
-        variable: R
-    - text-entry:
-        label: "Cell size"
-        value: "0.035"
-        type: ℝ
-        variable: size
+  initial-pixel-size: 1/220
+  iteration-limit: max_iters
+  size: 752x546
+  title: Mandelbrot set throwback
+  z-coord: w
