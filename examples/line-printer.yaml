@@ -27,7 +27,7 @@ viewer:
     ysize : ℝ ⭠ 1.66 xsize
 
     C : ℂ ⭠ xsize * floor(re w / xsize) + i * ysize * floor(im w / ysize)
-    r : ℂ ⭠ 2 ((w - C) / xsize) - 1 - i
+    r : ℂ ⭠ 2 ((w - C) / xsize) - 1 - 1.66 i
     C ⭠ C + shift
 
     z : ℂ ⭠ 0
@@ -40,6 +40,7 @@ viewer:
   initial-center: -0.75
   initial-pixel-size: 1/220
   iteration-limit: max_iters
+  position: 100x99
   size: 752x546
   title: Mandelbrot set throwback
   z-coord: w

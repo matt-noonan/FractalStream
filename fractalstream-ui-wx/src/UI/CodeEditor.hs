@@ -47,6 +47,7 @@ codeEditor cep code = do
         styledTextCtrlStyleSetSpec stc  2 "fore:#8080a0,back:#f8f8f8"
         styledTextCtrlStyleSetSpec stc 32 "fore:#000000,back:#f8f8f8"
         styledTextCtrlStyleSetSpec stc 33 "fore:#a0a098,back:#f0f0e8"
+        styledTextCtrlSetCaretForeground stc (rgb 0 0 (0 :: Word8))
         styledTextCtrlSetCaretLineBackground stc (rgb 240 240 (255 :: Word8))
       else do
         styledTextCtrlStyleSetSpec stc  0 "fore:#dbdbdb,back:#14191e"
@@ -54,6 +55,7 @@ codeEditor cep code = do
         styledTextCtrlStyleSetSpec stc  2 "fore:#c0c0e8,back:#14191e"
         styledTextCtrlStyleSetSpec stc 32 "fore:#dbdbdb,back:#14191e"
         styledTextCtrlStyleSetSpec stc 33 "fore:#a0a0a0,back:#101020"
+        styledTextCtrlSetCaretForeground stc (rgb 255 255 (255 :: Word8))
         styledTextCtrlSetCaretLineBackground stc (rgb 0x20 0x30 (0x38 :: Word8))
 
     styledTextCtrlStyleSetFaceName stc 0 "Monaco"

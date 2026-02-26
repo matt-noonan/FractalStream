@@ -8,6 +8,7 @@ module UI.Widgets
   , buttonWidget
   , colorWidget
   , expressionWidget
+  , scriptWidget
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -16,6 +17,8 @@ import Language.Type
 import Data.DynamicValue
 import Data.Color hiding (black, white)
 import Actor.Layout
+import Language.Parser.SourceRange (spanOfSourceRange, SourceSpan(..))
+import Language.Parser.Tokenizer (commentRanges)
 
 import UI.CodeEditor
 
@@ -26,7 +29,9 @@ import Graphics.UI.WXCore.WxcClassesMZ
 import Graphics.UI.WXCore.WxcClassTypes (ColourPickerCtrl)
 import Control.Concurrent
 import Data.Char (toUpper)
+import Data.IORef
 import Text.Printf
+import qualified Data.Map as Map
 
 simpleDialog :: (MonadIO io, Widget (Window w), Eq t)
              => String
@@ -285,6 +290,106 @@ genericExpressionWidget _canEditEnvironment p l UIVariable{..} = liftIO $ do
   set te       [ on clickRight := \pt -> menuPopup editMenu pt te ]
 
   pure (labelTxt, te, errorMessage)
+
+scriptWidget :: MonadIO io
+             => Window a
+             -> UIScript
+             -> io (StyledTextCtrl (), StaticText ())
+scriptWidget p UIScript{..} = do
+  ce <- liftIO $ codeEditor p scriptCode
+  txt <- unCodeString <$> getDynamic (source scriptCode)
+  lastText <- liftIO $ newIORef txt
+  errorText <- liftIO $ staticText p [ text := "" ]
+
+  let doSyntaxColoring = do
+        code <- styledTextCtrlGetText ce
+        if null code
+          then pure Map.empty
+          else do
+            let m = editorOffsetMap code
+            styledTextCtrlStartStyling ce 0 0
+            case Map.lookup (length code - 1) m of
+              Nothing -> pure ()
+              Just k -> styledTextCtrlSetStyling ce (k + 1) 0
+            forM_ (commentRanges code) $ \(s, e) -> do
+              case (,) <$> Map.lookup s m <*> Map.lookup (e + 1 - s) m of
+                Nothing -> pure ()
+                Just (styleStart, styleRange) -> do
+                  styledTextCtrlStartStyling ce styleStart 0
+                  styledTextCtrlSetStyling ce styleRange 2
+            pure m
+
+  liftIO $ set ce $
+    [ on focus := \tf -> do
+        case tf of
+          True -> styledTextCtrlGetText ce >>= writeIORef lastText
+          False -> do
+            new <- styledTextCtrlGetText ce
+            old <- readIORef lastText
+            when (new /= old) $ do
+              writeIORef lastText new
+              void (setValue (source scriptCode) (CodeString new))
+        propagateEvent
+    ]
+
+  -- Check for script changes periodically. TODO: make this event-driven instead
+  void $ wxTimer p [ interval := 500, enabled := True
+                   , on command := do
+                       new <- styledTextCtrlGetText ce
+                       old <- readIORef lastText
+                       when (new /= old) $ do
+                         writeIORef lastText new
+                         setValue (source scriptCode) (CodeString new) ]
+  wxWatchDynamic p (source scriptCode) $ \(CodeString newText) -> do
+    oldText <- styledTextCtrlGetText ce
+    when (oldText /= newText) $ do
+      writeIORef lastText newText
+      styledTextCtrlSetText ce newText
+  isError <- liftIO ((isLeft <$> getDynamic scriptCode) >>= \startError ->
+                        variable [ value := startError ])
+  wxWatchDynamic p scriptCode $ \case
+    Left (loc, msg) -> do
+      set isError [ value := True ]
+      set errorText [ text := "⚠️ " ++ msg, visible := True ]
+      windowReLayout p
+      code <- styledTextCtrlGetText ce
+      case convertSourceSpan code <$> spanOfSourceRange loc of
+        Nothing -> void doSyntaxColoring
+        Just (s, e) -> do
+          m <- doSyntaxColoring
+          case (,) <$> Map.lookup s m <*> Map.lookup (e + 1 - s) m of
+            Nothing -> pure ()
+            Just (styleStart, styleRange) -> do
+              styledTextCtrlStartStyling ce styleStart 0
+              styledTextCtrlSetStyling ce styleRange 1
+    Right _ -> do
+      wasError <- get isError value
+      void doSyntaxColoring
+      when wasError $ do
+        set isError [ value := False ]
+        set errorText [ text := "", visible := False ]
+        windowReLayout p
+
+  void $ liftIO doSyntaxColoring
+  pure (ce, errorText)
+
+convertSourceSpan :: String -> SourceSpan -> (Int, Int)
+convertSourceSpan input = \case
+  InLine linum s e -> let lo = lineOffset input linum + s - 1
+                          hi = e - s + lo
+                      in (lo, hi)
+  InRows s e -> let lo = lineOffset input
+                in (lo s, lo (e + 1))
+
+lineOffset :: String -> Int -> Int
+lineOffset input = let m = Map.fromList
+                         . ((0,0):)
+                         . zip [1..]
+                         . map fst
+                         . filter ((== '\n') . snd)
+                         . zip [1..] $ input
+                       li = length input
+                   in \lo -> 1 + Map.findWithDefault li lo m
 
 -- | Like `watchDynamic`, but ensures that the action
 -- runs on the main UI thread. Automatically attaches
