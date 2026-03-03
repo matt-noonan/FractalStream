@@ -247,10 +247,16 @@ tcRoundingFun (name, RoundingFun makeF) x sr = \case
   IntegerType -> makeF <$> atType x RealType
   ty -> throwError (Surprise sr ("the result of " ++ name) "an integer number" (Expected $ an ty))
 
-tcDiff :: String -> ParsedValue -> CheckedValue
+tcDiff :: ParsedValue -> ParsedValue -> CheckedValue
 tcDiff x f sr = \case
-  RealType    -> (atType f RealType) >>= derivative x sr
-  ComplexType -> (atType f ComplexType) >>= derivative x sr
+  RealType    -> do
+    xValue <- (atType x RealType)
+    fValue <- (atType f RealType)
+    derivative xValue sr fValue
+  ComplexType -> do
+    xValue <- (atType x ComplexType)
+    fValue <- (atType f ComplexType)
+    derivative xValue sr fValue
   ty -> throwError (Surprise sr "the result of a derivative" "a real or complex variable" (Expected $ an ty))
 
 tcInvert, tcDark, tcLight :: ParsedValue -> CheckedValue

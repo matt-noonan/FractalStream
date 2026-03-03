@@ -11,8 +11,8 @@ import Language.Typecheck
 import Language.Value
 
 -- Computes the partial derivative of a Value et with respect to z
-derivative :: forall et. String -> SourceRange -> Value et -> TC (Value et)
-derivative z sr = indexedFoldWithOriginalM derivativeRules
+derivative :: Value et -> SourceRange -> Value et -> TC (Value et)
+derivative (Var zName _ _) sr = indexedFoldWithOriginalM derivativeRules
   where
     derivativeRules :: forall s. ValueF (FIX ValueF :*: FIX ValueF) s -> TC (Value s)
     derivativeRules = \case
@@ -22,17 +22,17 @@ derivative z sr = indexedFoldWithOriginalM derivativeRules
         ComplexType -> pure 0
         RealType    -> pure 0
         IntegerType -> pure 0
-        _           -> throwError $ DiffNotImplemented sr z
+        _           -> throwError $ DiffNotImplemented sr $ symbolVal zName
 
-      -- | Other variables are assumed to be constant with respect to z 
+      -- | Other variables are assumed to be constant with respect to z
       Var name ty _ -> case ty of
-        ComplexType -> if symbolVal name == z
+        ComplexType -> if symbolVal name == symbolVal zName
                        then pure $ Const $ Scalar ComplexType 1
                        else pure $ Const $ Scalar ComplexType 0
-        RealType    -> if symbolVal name == z
+        RealType    -> if symbolVal name == symbolVal zName
                        then pure $ Const $ Scalar RealType 1
                        else pure $ Const $ Scalar RealType 0
-        _           -> throwError $ DiffNotImplemented sr z
+        _           -> throwError $ DiffNotImplemented sr $ symbolVal zName
 
       -- | Basic algebra
 
@@ -55,7 +55,7 @@ derivative z sr = indexedFoldWithOriginalM derivativeRules
       ExpF     (x, dx) -> pure $ dx * ExpF x
       LogF     (x, dx) -> pure $ dx / x
       SqrtF    (x, dx) -> pure $ dx / (2 * SqrtF x)
-      
+
       CosF     (x, dx) -> pure $ negate dx * SinF x
       SinF     (x, dx) -> pure $ dx * CosF x
       TanF     (x, dx) -> pure $ dx * (1 + TanF x ** 2)
@@ -63,7 +63,7 @@ derivative z sr = indexedFoldWithOriginalM derivativeRules
       ArccosF  (x, dx) -> pure $ negate dx * SqrtF (1 - x ** 2)
       ArcsinF  (x, dx) -> pure $ dx * SqrtF (1 - x ** 2)
       ArctanF  (x, dx) -> pure $ dx / (1 + x ** 2)
-      
+
       CoshF    (x, dx) -> pure $ dx * SinhF x
       SinhF    (x, dx) -> pure $ dx * CoshF x
       TanhF    (x, dx) -> pure $ dx * (1 - TanhF x ** 2)
@@ -71,7 +71,7 @@ derivative z sr = indexedFoldWithOriginalM derivativeRules
       ArccoshF (x, dx) -> pure $ negate dx * SqrtF (x ** 2 - 1)
       ArcsinhF (x, dx) -> pure $ dx * SqrtF (1 + x ** 2)
       ArctanhF (x, dx) -> pure $ dx / (1 - x ** 2)
-      
+
       ExpC     (x, dx) -> pure $ dx * ExpC x
       LogC     (x, dx) -> pure $ dx / x
       SqrtC    (x, dx) -> pure $ dx / (2 * SqrtC x)
@@ -90,4 +90,6 @@ derivative z sr = indexedFoldWithOriginalM derivativeRules
       R2C  (_, dx) -> pure $ R2C dx
       C2R2 (_, dx) -> pure $ C2R2 dx
 
-      _ -> throwError $ DiffNotImplemented sr z
+      _ -> throwError $ DiffNotImplemented sr $ symbolVal zName
+
+derivative _ sr = \_ -> throwError $ DiffInputMustBeVariable sr

@@ -40,8 +40,9 @@ data TCError
   | MissingName SourceRange String
   | AlreadyDefined SourceRange String
   | BadConversion SourceRange SomeType (Expected SomeType)
-  | Advice SourceRange String 
+  | Advice SourceRange String
   | DiffNotImplemented SourceRange String
+  | DiffInputMustBeVariable SourceRange
   | Internal TCError
   deriving Show
 
@@ -76,12 +77,13 @@ isTypeError = \case
 
 instance HasErrorLocation TCError where
   errorLocation = \case
-    Surprise sr _ _ _        -> sr
-    MissingName sr _         -> sr
-    AlreadyDefined sr _      -> sr
-    BadConversion sr _ _     -> sr
-    Advice sr _              -> sr
-    DiffNotImplemented sr _  -> sr
+    Surprise sr _ _ _          -> sr
+    MissingName sr _           -> sr
+    AlreadyDefined sr _        -> sr
+    BadConversion sr _ _       -> sr
+    Advice sr _                -> sr
+    DiffNotImplemented sr _    -> sr
+    DiffInputMustBeVariable sr -> sr
     Internal e -> errorLocation e
 
 instance PrettyPrint TCError where
@@ -99,6 +101,7 @@ ppError = concat .  \case
     ["Conversion to ", an ty, " was used here, but ", an ety, " was expected."]
   Advice _ advice -> [advice]
   DiffNotImplemented _ name  -> ["The derivative of this function with respect to ", name, " is not implemented."]
+  DiffInputMustBeVariable _  -> ["First argument of derivative must be a real or complex variable."]
   Internal e ->
     ["INTERNAL ERROR, please report at ",
       "https://github.com/matt-noonan/FractalStream/issues:\n",
