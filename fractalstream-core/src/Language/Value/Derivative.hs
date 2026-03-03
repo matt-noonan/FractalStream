@@ -11,8 +11,8 @@ import Language.Typecheck
 import Language.Value
 
 -- Computes the partial derivative of a Value et with respect to z
-derivative :: Value et -> SourceRange -> Value et -> TC (Value et)
-derivative (Var zName _ _) sr = indexedFoldWithOriginalM derivativeRules
+derivative :: SourceRange -> Value et -> SourceRange -> Value et -> TC (Value et)
+derivative _ (Var zName _ _) sr2 = indexedFoldWithOriginalM derivativeRules
   where
     derivativeRules :: forall s. ValueF (FIX ValueF :*: FIX ValueF) s -> TC (Value s)
     derivativeRules = \case
@@ -22,7 +22,7 @@ derivative (Var zName _ _) sr = indexedFoldWithOriginalM derivativeRules
         ComplexType -> pure 0
         RealType    -> pure 0
         IntegerType -> pure 0
-        _           -> throwError $ DiffNotImplemented sr $ symbolVal zName
+        _           -> throwError $ DiffNotImplemented sr2 $ symbolVal zName
 
       -- | Other variables are assumed to be constant with respect to z
       Var name ty _ -> case ty of
@@ -32,7 +32,7 @@ derivative (Var zName _ _) sr = indexedFoldWithOriginalM derivativeRules
         RealType    -> if symbolVal name == symbolVal zName
                        then pure $ Const $ Scalar RealType 1
                        else pure $ Const $ Scalar RealType 0
-        _           -> throwError $ DiffNotImplemented sr $ symbolVal zName
+        _           -> throwError $ DiffNotImplemented sr2 $ symbolVal zName
 
       -- | Basic algebra
 
@@ -90,6 +90,6 @@ derivative (Var zName _ _) sr = indexedFoldWithOriginalM derivativeRules
       R2C  (_, dx) -> pure $ R2C dx
       C2R2 (_, dx) -> pure $ C2R2 dx
 
-      _ -> throwError $ DiffNotImplemented sr $ symbolVal zName
+      _ -> throwError $ DiffNotImplemented sr2 $ symbolVal zName
 
-derivative _ sr = \_ -> throwError $ DiffInputMustBeVariable sr
+derivative sr1 _ _ = \_ -> throwError $ DiffInputMustBeVariable sr1

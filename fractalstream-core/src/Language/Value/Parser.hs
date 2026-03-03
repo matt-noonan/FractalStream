@@ -419,7 +419,7 @@ valueGrammar splices = mdo
 
   diff <- rule $ check $
     tcDiff <$> (token DiffKeyword *> (token OpenParen *> toplevel))
-            <*> (token Comma *> toplevel <* token CloseParen)
+           <*> (token Comma *> toplevel <* token CloseParen)
 
   typ <- typeGrammar
 

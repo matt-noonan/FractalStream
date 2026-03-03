@@ -50,20 +50,32 @@ spec = do
       parseC 2 "diff(z, log(z^2))" `shouldBe` Right (1.0 :+ 0.0)
 
     it "throws errors when trying to differentiate non-numeric variables" $ do
-      parseR 0 "diff(x, 2x+1 < 1)" `shouldBe` Left (unlines 
+      parseR 0 "diff(x, 2x+1 < 1)" `shouldBe` Left (unlines
         ["  diff(x, 2x+1 < 1)"
         ,"          ^^^^^^^^"
         ,""
         ,"I expected a real number here, but the result of a comparison is a truth value."])
 
     it "throws errors when trying to differentiate non-differentiable functions" $ do
-      parseR 0 "diff(x, |x|)" `shouldBe` Left (unlines 
+      parseR 0 "diff(x, |x|)" `shouldBe` Left (unlines
         ["  diff(x, |x|)"
-        ,"  ^^^^^^^^^^^^"
+        ,"          ^^^"
         ,""
         ,"The derivative of this function with respect to x is not implemented."])
-      parseC 1 "diff(z, im z)" `shouldBe` Left (unlines 
+      parseC 1 "diff(z, im z)" `shouldBe` Left (unlines
         ["  diff(z, im z)"
-        ,"  ^^^^^^^^^^^^^"
+        ,"          ^^^^"
         ,""
         ,"The derivative of this function with respect to z is not implemented."])
+
+    it "throws errors when first argument is not a variable" $ do
+      parseR 0 "diff(2, x)" `shouldBe` Left (unlines
+        ["  diff(2, x)"
+        ,"       ^"
+        ,""
+        ,"First argument of the derivative must be a real or complex variable."])
+      parseC 1 "diff(z^2, z)" `shouldBe` Left (unlines
+        ["  diff(z^2, z)"
+        ,"       ^^^"
+        ,""
+        ,"First argument of the derivative must be a real or complex variable."])

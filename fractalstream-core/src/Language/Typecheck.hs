@@ -101,7 +101,7 @@ ppError = concat .  \case
     ["Conversion to ", an ty, " was used here, but ", an ety, " was expected."]
   Advice _ advice -> [advice]
   DiffNotImplemented _ name  -> ["The derivative of this function with respect to ", name, " is not implemented."]
-  DiffInputMustBeVariable _  -> ["First argument of derivative must be a real or complex variable."]
+  DiffInputMustBeVariable _  -> ["First argument of the derivative must be a real or complex variable."]
   Internal e ->
     ["INTERNAL ERROR, please report at ",
       "https://github.com/matt-noonan/FractalStream/issues:\n",
