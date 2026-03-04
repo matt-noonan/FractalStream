@@ -227,8 +227,6 @@ indexedFoldWithOriginal
 indexedFoldWithOriginal f =
   snd . indexedFold (\x -> ((imap (const fst) x), f x))
 
--- | Perform an @indexedFoldM@, but also make the original sub-ASTs
--- available during the fold.
 indexedFoldWithOriginalM
   :: forall a f i m
    . (Monad m, ITraversable f)

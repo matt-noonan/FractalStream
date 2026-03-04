@@ -13,9 +13,7 @@ viewer:
         lastZ : C <- 0
         repeat:
           lastZ <- z
-          f : C <- (z - a) (z - b) (z - c)
-          df : C <- (z - a) (z - b) + (z - a) (z - c) + (z - b) (z - c)
-          z <- z - f / df
+          z <- z - (z - a) (z - b) (z - c) / diff(z, (z - a) (z - b) (z - c))
         while z != lastZ
 
         col : Color <- yellow
@@ -42,9 +40,7 @@ viewer:
             erase
             repeat:
               lastZ <- z
-              f : C <- (z - a) (z - b) (z - c)
-              df : C <- (z - a) (z - b) + (z - a) (z - c) + (z - b) (z - c)
-              z <- z - f / df
+              z <- z - (z - a) (z - b) (z - c) / diff(z, (z - a) (z - b) (z - c))
               draw point at lastZ
               draw line from lastZ to z
             while z != lastZ

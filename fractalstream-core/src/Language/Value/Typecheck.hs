@@ -6,6 +6,7 @@ import FractalStream.Prelude
 import qualified Data.Map as Map
 
 import Language.Value
+import Language.Value.Derivative
 import Language.Typecheck
 import Language.Parser.SourceRange
 
@@ -245,6 +246,18 @@ tcRoundingFun :: (String, RoundingFun) -> ParsedValue -> CheckedValue
 tcRoundingFun (name, RoundingFun makeF) x sr = \case
   IntegerType -> makeF <$> atType x RealType
   ty -> throwError (Surprise sr ("the result of " ++ name) "an integer number" (Expected $ an ty))
+
+tcDiff :: ParsedValue -> ParsedValue -> CheckedValue
+tcDiff x@(ParsedValue sr1 _) f@(ParsedValue sr2 _) sr = \case
+  RealType    -> do
+    xValue <- (atType x RealType)
+    fValue <- (atType f RealType)
+    derivative sr1 xValue sr2 fValue
+  ComplexType -> do
+    xValue <- (atType x ComplexType)
+    fValue <- (atType f ComplexType)
+    derivative sr1 xValue sr2 fValue
+  ty -> throwError (Surprise sr "the result of a derivative" "a real or complex variable" (Expected $ an ty))
 
 tcInvert, tcDark, tcLight :: ParsedValue -> CheckedValue
 tcDark c sr = \case

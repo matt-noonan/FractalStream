@@ -1,0 +1,274 @@
+viewers:
+  - title: Parameter space
+    style: complex-plane
+    size: 800x800
+    resizable: true
+    z-coord: c
+    pixel-size: px
+    iteration-limit: maxIters
+    escape-radius: maxRadius
+    vanishing-radius: minRadius
+    initial-center: "-0.5"
+    initial-pixel-size: 1/200
+    code: |
+      z : C <- «critical_point»
+      w : C <- z
+      z0 : C <- z
+
+      repeat:
+        z <- «f»
+        w <- «f2»
+      until |z-w| vanishes or z escapes
+
+      if stuck:
+        color <- black
+
+      else if z escaped:
+        color <- if im(z) > 0 then blue else yellow
+
+        s : R <- iterations + 1 - (log (log |z|)) / (log «degree»)
+        color <- blend (cos (s pi)^2, light color, dark color)
+
+      else:
+        λ: C <- 1
+
+        repeat:
+          z <- «f»
+          λ <- diff(z, «f») λ
+        until |z-w| vanishes
+
+        period: Z <- iterations
+
+        counter : Z <- 0
+        while counter < extra_iterations period:
+          w <- «f2»
+
+        z <- z0
+        while not (|z-w| vanishes):
+          z <- «f»
+
+        preperiod: Z <- iterations
+
+        s : R <- preperiod / period
+        θ : R <- arg λ
+        pθ : R <- mod(θ / (2 pi), 1)
+
+        if continuous:
+          color <- rainbow(mod(pθ den, 1))
+        else:
+          color <- if mod(pθ, 1 / den) > 0.5 / den then red else rgb(0,1,1)
+
+        s_adjusted : R <- s + 1 - log |z-w| / log |λ|
+        color <- blend (cos (s_adjusted pi)^2, light color, dark color)
+
+  - title: Dynamical plane
+    style: complex-plane
+    size: 800x800
+    resizable: true
+    z-coord: z
+    pixel-size: px
+    iteration-limit: maxIters
+    escape-radius: maxRadius
+    vanishing-radius: minRadius
+    initial-center: "0"
+    initial-pixel-size: 1/200
+    code: |
+      w : C <- z
+      z0 : C <- z
+
+      repeat:
+        z <- «f»
+        w <- «f2»
+      until |z-w| vanishes or z escapes
+
+      if stuck:
+        color <- black
+
+      else if z escaped:
+        color <- if im(z) > 0 then blue else yellow
+
+        s : R <- iterations + 1 - (log (log |z|)) / (log «degree»)
+        color <- blend (cos (s pi)^2, light color, dark color)
+
+      else:
+        λ: C <- 1
+
+        repeat:
+          z <- «f»
+          λ <- diff(z, «f») λ
+        until |z-w| vanishes
+
+        period: Z <- iterations
+
+        counter : Z <- 0
+        while counter < extra_iterations period:
+          w <- «f2»
+
+        z <- z0
+        while not (|z-w| vanishes):
+          z <- «f»
+
+        preperiod: Z <- iterations
+
+        s : R <- preperiod / period
+        θ : R <- arg (z-w) - s arg λ
+        pθ : R <- mod(θ / (2 pi), 1)
+
+        if continuous:
+          color <- rainbow(mod(pθ den, 1))
+        else:
+          color <- if mod(pθ, 1 / den) > 0.5 / den then red else rgb(0,1,1)
+
+        s_adjusted : R <- s + 1 - log |z-w| / log |λ|
+        color <- blend (cos (s_adjusted pi)^2, light color, dark color)
+
+    tools:
+    - name: Trace
+      shortcut: t
+      actions:
+        - event: click-or-drag
+          code: |
+            start <- z
+            w : C <- z
+            lastZ : C <- z
+            erase
+
+            repeat:
+              z <- «f»
+              w <- «f2»
+            until |z-w| vanishes or z escapes
+
+            if |z-w| vanishes:
+              z <- lastZ
+
+              while not (|z-w| vanishes):
+                lastZ <- z
+                z <- «f»
+
+                draw point at lastZ
+                draw line from lastZ to z
+
+            use green for stroke
+            draw circle at w with radius minRadius
+
+        - event: refresh
+          code: |
+            z : C <- start
+            w : C <- z
+            lastZ : C <- 0
+            erase
+
+            repeat:
+              z <- «f»
+              w <- «f2»
+            until |z-w| vanishes or z escapes
+
+            if |z-w| vanishes:
+              z <- lastZ
+
+              while not (|z-w| vanishes):
+                lastZ <- z
+                z <- «f»
+
+                draw point at lastZ
+                draw line from lastZ to z
+
+            use green for stroke
+            draw circle at w with radius minRadius
+
+setup:
+  title: Internal Rays Setup
+  size: 200x200
+  vertical-contents:
+    - text-entry:
+        label: "f_c(z) = "
+        value: "z^2 + c"
+        type: C
+        environment:
+          z: C
+          c: C
+        variable: f
+
+    - text-entry:
+        label: "(f_c)²(w) = "
+        value: "(w^2 + c)^2 + c"
+        type: C
+        environment:
+          w: C
+          c: C
+        variable: f2
+
+    - text-entry:
+        label: "critical_point(c) = "
+        value: "0"
+        type: C
+        environment:
+          c: C
+        variable: critical_point
+
+    - text-entry:
+        label: "Degree"
+        value: "2"
+        type: Z
+        variable: degree
+
+configuration:
+  title: Parameter
+  size: 400x400
+  vertical-contents:
+    - panel:
+        title: "Internal Rays"
+        vertical-contents:
+        - text-entry:
+            label: "continuous = "
+            value: "false"
+            type: Bool
+            variable: continuous
+
+        - text-entry:
+            label: "denominator = "
+            value: "3"
+            type: Z
+            variable: den
+
+    - panel:
+        title: "Dynamics"
+        vertical-contents:
+          - text-entry:
+              label: "c = "
+              value: "0"
+              type: C
+              variable: c
+
+          - text-entry:
+              label: "max iterations = "
+              value: "300"
+              type: Z
+              variable: maxIters
+
+          - text-entry:
+              label: "escape radius = "
+              value: "100.0"
+              type: R
+              variable: maxRadius
+
+          - text-entry:
+              label: "vanishing radius = "
+              value: "0.00001"
+              type: R
+              variable: minRadius
+
+          - text-entry:
+              label: "extra iterations = "
+              value: "1"
+              type: Z
+              variable: extra_iterations
+
+    - panel:
+        title: "Orbit Tracker"
+        vertical-contents:
+          - text-entry:
+              label: "orbit start = "
+              value: "0"
+              type: C
+              variable: start
