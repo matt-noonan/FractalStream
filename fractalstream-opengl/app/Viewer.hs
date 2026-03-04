@@ -21,27 +21,26 @@ import Palette
 import Shaders
 
 openViewers :: FilePath -> IO ()
-openViewers configPath
-  = do
-      -- Load config file
-      c <- loadConfig configPath
+openViewers configPath = do
+    -- Load config file
+    c <- loadConfig configPath
 
-      -- Create header for global uniform variables
-      let vars = map coord c.viewers
-          -- types = [if projective v then "vec4" else "vec2" | v <- c.viewers]
-          -- header = concat $ zipWith (printf "uniform %s _%s;\n") types vars
-          header = concatMap (printf "uniform vec2 _%s;\n") vars
+    -- Create header for global uniform variables
+    let vars = map coord c.viewers
+        -- types = [if projective v then "vec4" else "vec2" | v <- c.viewers]
+        -- header = concat $ zipWith (printf "uniform %s _%s;\n") types vars
+        header = concatMap (printf "uniform vec2 _%s;\n") vars
 
-      -- Open all viewers
-      viewerInfos <- mapM (openViewer vars header) c.viewers
+    -- Open all viewers
+    viewerInfos <- mapM (openViewer vars header) c.viewers
 
-      -- Add mouse events last, because the might affect all viewers
-      mapM_ (\v -> windowOnMouse v.canvas True $ onMouse viewerInfos v) viewerInfos
+    -- Add mouse events last, because they might affect all viewers
+    mapM_ (\v -> windowOnMouse v.canvas True $ onMouse viewerInfos v) viewerInfos
 
-      -- Close all viewers of the project at the same time
-      -- This is to avoid setting variables out of scope.
-      -- TODO: Add error checking to avoid these errors in general.
-      mapM_ (\v -> windowOnClose v.vFrame $ onClose viewerInfos) viewerInfos
+    -- Close all viewers of the project at the same time
+    -- This is to avoid setting variables out of scope.
+    -- TODO: Add error checking to avoid these errors in general.
+    mapM_ (\v -> windowOnClose v.vFrame $ onClose viewerInfos) viewerInfos
 
   where
     onClose = mapM_ (\v -> windowDestroy v.vFrame)
@@ -131,131 +130,140 @@ openViewers configPath
             _ -> do propagateEvent
 
       True -> do
-            -- Pass the event forward
-            propagateEvent
+          -- Pass the event forward
+          propagateEvent
 
 
 openViewer :: [String] -> String -> Viewer -> IO ViewerInfo
-openViewer vars header viewer
-  = do
-      -- Create top frame
-      vFrame <- frameCreateTopFrame viewer.title
+openViewer vars header viewer = do
+    -- Create top frame
+    vFrame <- frameCreateTopFrame viewer.title
 
-      -- Create GLCanvas and GLContext
-      let initRect = Rect 0 0 viewer.width_pixels viewer.height_pixels
-          options  = [ GL_RGBA, GL_MAJOR_VERSION 4, GL_DOUBLEBUFFER, GL_DEPTH_SIZE 16 ]
+    -- Create GLCanvas and GLContext
+    let initRect = Rect 0 0 viewer.width_pixels viewer.height_pixels
+        options  = [ GL_RGBA, GL_MAJOR_VERSION 4, GL_DOUBLEBUFFER, GL_DEPTH_SIZE 16 ]
 
-      canvas <- glCanvasCreateEx vFrame 0 initRect 0 "GLCanvas" options nullPalette
+    canvas <- glCanvasCreateEx vFrame 0 initRect 0 "GLCanvas" options nullPalette
 
-      ctx <- glContextCreateFromNull canvas
-      _   <- glCanvasSetCurrent canvas ctx
+    ctx <- glContextCreateFromNull canvas
+    _   <- glCanvasSetCurrent canvas ctx
 
-      let w  = fill $ widget canvas
-      windowSetLayout vFrame w
+    let w  = fill $ widget canvas
+    windowSetLayout vFrame w
 
-      -- Put smaller z in the back
-      depthFunc $= Just Less
+    -- Put smaller z in the back
+    depthFunc $= Just Less
 
-      -- Don't draw back faces
-      cullFace $= Just Back
+    -- Don't draw back faces
+    cullFace $= Just Back
 
-      -- Set background and buffers
-      clearColor $= Color4 0.2 0.3 0.3 1.0
-      clear [ ColorBuffer, DepthBuffer ]
+    -- Set background and buffers
+    clearColor $= Color4 0.2 0.3 0.3 1.0
+    clear [ ColorBuffer, DepthBuffer ]
 
-      -- Create plane mesh object
-      let projective = viewer.projective
-      mesh <- if projective then createSphereMesh else createPlaneMesh
+    -- Create plane mesh object
+    let projective = viewer.projective
+    mesh <- if projective then createSphereMesh else createPlaneMesh
 
-      -- Create color palette
-      initTexture
+    -- Create color palette
+    initTexture
 
-      -- Compile shader programs
-      let initialValueFormat = if projective
-                                  then "vec4 %s = vec4(FragPos.xy, 1.0 + FragPos.z, 0.0);\n\
-                                        \// c = uMobiusMatrix * c;\n"
-                                  else "vec2 %s = FragPos.xy / FragPos.w;\n"
-          initialValueCode = printf initialValueFormat viewer.coord
+    -- Compile shader programs
+    let initialValueFormat = if projective
+                                then "vec4 %s = _mobiusMatrix * vec4(FragPos.xy, 1.0 + FragPos.z, 0.0);\n"
+                                else "vec2 %s = FragPos.xy / FragPos.w;\n"
+        initialValueCode = printf initialValueFormat viewer.coord
 
-      program <- getProgram projective $ addHeader header initialValueCode viewer.code
-      currentProgram $= Just program
+    program <- getProgram projective $ addHeader header initialValueCode viewer.code
+    currentProgram $= Just program
 
-      -- Set uniforms
-      let aspect = fromIntegral viewer.width_pixels / fromIntegral viewer.height_pixels :: GLfloat
-          c = V2 viewer.center_x viewer.center_y
-          d = V2 (aspect * viewer.height) viewer.height
-          m = V2 0.0 0.0 :: GLComplex
-          n = viewer.max_iterations
-          e = viewer.escape_radius
-          r = viewer.convergence_radius
-          pm = if projective
-                  then L.perspective (45 * pi / 180) aspect 0.1 5.0
-                  else getOrtho c d
+    -- Set uniforms
+    let aspect = fromIntegral viewer.width_pixels / fromIntegral viewer.height_pixels :: GLfloat
 
-      setUniform program "_mouse" $ m ^. vector2V
-      setUniform program "_max_iterations" n
-      setUniform program "_escape_radius" e
-      setUniform program "_convergence_radius" r
-      setUniform program "_projMatrix" $ pm ^. m44GLmatrix
+        initialMaxIterations     = viewer.max_iterations
+        initialEscapeRadius      = viewer.escape_radius
+        initialConvergenceRadius = viewer.convergence_radius
 
-      -- Set variable uniforms (for point picking)
-      let var = "_" ++ viewer.coord
-      mapM_ (\v -> setUniform program ("_" ++ v) (m ^. vector2V)) vars
+        initialViewCenter        = V2 viewer.center_x viewer.center_y
+        initialViewDiameter      = V2 (aspect * viewer.height) viewer.height
+        initialMousePosition     = V2 0.0 0.0 :: GLComplex
 
-      -- Set variables to keep track of the last uniform values
-      viewCenter <- varCreate c
-      viewDiameter <- varCreate d
-      mousePosition <- varCreate m
-      maxIterations <- varCreate n
-      escapeRadius <- varCreate e
-      convergenceRadius <- varCreate r
-      projMatrix <- varCreate pm
+        initialLocalMatrix       = identity :: GLMatrix
+        initialMobiusMatrix      = identity :: GLMatrix
 
-      dragStart <- varCreate Nothing
-      currentTool <- varCreate Navigate
+        initialProjectiveMatrix  = if projective
+                then L.perspective (45 * pi / 180) aspect 0.1 5.0
+                else getOrtho initialViewCenter initialViewDiameter
 
-      -- Add tools
-      tools <- WX.menuPane [ WX.text WX.:= "&Tools"]
+    setUniform program "_max_iterations"     initialMaxIterations
+    setUniform program "_escape_radius"      initialEscapeRadius
+    setUniform program "_convergence_radius" initialConvergenceRadius
+    setUniform program "_mouse"              $ initialMousePosition ^. vector2V
+    setUniform program "_projMatrix"         $ initialProjectiveMatrix ^. m44GLmatrix
+    setUniform program "_localMatrix"        $ initialLocalMatrix ^. m44GLmatrix
+    setUniform program "_mobiusMatrix"       $ initialMobiusMatrix ^. m44GLmatrix
 
-      _   <- WX.menuItem tools [ WX.text WX.:= "Navigate\tN"
-                               , WX.help WX.:= "Drag to pan the view"
-                               , WX.on WX.command WX.:= switchTool currentTool Navigate
-                               ]
-      _   <- WX.menuItem tools [ WX.text WX.:= "Select\tS"
-                               , WX.help WX.:= "Click to select point"
-                               , WX.on WX.command WX.:= switchTool currentTool SelectPoint
-                               ]
+    -- Set variable uniforms (for point picking)
+    let var = "_" ++ viewer.coord
+    mapM_ (\v -> setUniform program ("_" ++ v) (initialMousePosition ^. vector2V)) vars
 
-      WX.menuLine tools
-      WX.set vFrame [ WX.menuBar WX.:= [tools] ]
+    -- Set variables to keep track of the last uniform values
+    maxIterations     <- varCreate initialMaxIterations
+    escapeRadius      <- varCreate initialEscapeRadius
+    convergenceRadius <- varCreate initialConvergenceRadius
 
-      -- Store all data in a record
-      let viewerInfo = ViewerInfo{..}
+    viewCenter        <- varCreate initialViewCenter
+    viewDiameter      <- varCreate initialViewDiameter
+    mousePosition     <- varCreate initialMousePosition
 
-      -- Set event handlers
-      windowOnPaint canvas $ onPaint viewerInfo mesh
-      windowOnSize canvas $ onSize viewerInfo
-      windowOnKeyChar vFrame $ onKeyChar viewerInfo
+    localMatrix       <- varCreate initialLocalMatrix
+    mobiusMatrix      <- varCreate initialMobiusMatrix
 
-      -- Show the frame
-      _ <- windowShow vFrame
-      windowRaise vFrame
-      return viewerInfo
+    projMatrix        <- varCreate initialProjectiveMatrix
+    dragStart         <- varCreate Nothing
+    currentTool       <- varCreate Navigate
+
+    -- Add tools
+    tools <- WX.menuPane [ WX.text WX.:= "&Tools"]
+
+    _   <- WX.menuItem tools [ WX.text WX.:= "Navigate\tN"
+                              , WX.help WX.:= "Drag to pan the view"
+                              , WX.on WX.command WX.:= switchTool currentTool Navigate
+                              ]
+    _   <- WX.menuItem tools [ WX.text WX.:= "Select\tS"
+                              , WX.help WX.:= "Click to select point"
+                              , WX.on WX.command WX.:= switchTool currentTool SelectPoint
+                              ]
+
+    WX.menuLine tools
+    WX.set vFrame [ WX.menuBar WX.:= [tools] ]
+
+    -- Store all data in a record
+    let viewerInfo = ViewerInfo{..}
+
+    -- Set event handlers
+    windowOnPaint   canvas $ onPaint viewerInfo mesh
+    windowOnSize    canvas $ onSize viewerInfo
+    windowOnKeyChar vFrame $ onKeyChar viewerInfo
+
+    -- Show the frame
+    _ <- windowShow vFrame
+    windowRaise vFrame
+    return viewerInfo
 
   where
     -- Run vertex and fragment shaders
-    onPaint viewerInfo mesh _dc _rect
-      = do
-          _ <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
-          clear [ ColorBuffer, DepthBuffer ]
+    onPaint viewerInfo mesh _dc _rect = do
+      _ <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
+      clear [ ColorBuffer, DepthBuffer ]
 
-          bindVertexArrayObject $= Just mesh.triangles
-          drawArrays Triangles 0 (fromIntegral mesh.numVertices)
+      bindVertexArrayObject $= Just mesh.triangles
+      drawArrays Triangles 0 (fromIntegral mesh.numVertices)
 
-          flush
-          _ <- glCanvasSwapBuffers viewerInfo.canvas
+      flush
+      _ <- glCanvasSwapBuffers viewerInfo.canvas
 
-          return ()
+      return ()
 
     -- Change uniforms that track canvas dimensions
     onSize viewerInfo = case viewerInfo.projective of
@@ -299,26 +307,41 @@ openViewer vars header viewer
           _ -> propagateEvent
 
 type GLComplex = V2 GLfloat
+type GLMatrix  = M44 GLfloat
 
 data Tool = Navigate | SelectPoint
   deriving (Eq, Show)
 
 data ViewerInfo = ViewerInfo
   { vFrame            :: WX.Frame ()
+
+  -- OpenGL setup
   , program           :: Program
   , canvas            :: GLCanvas ()
   , ctx               :: GLContext ()
-  , projective        :: Bool
+  , var               :: String
+
+  -- Options / State
+  , currentTool       :: Var Tool
   , projMatrix        :: Var (M44 GLfloat)
-  , viewCenter        :: Var GLComplex
-  , viewDiameter      :: Var GLComplex
+
+  -- Dynamical variables
   , maxIterations     :: Var GLint
   , escapeRadius      :: Var GLfloat
   , convergenceRadius :: Var GLfloat
+
+  -- Flag for 2D/3D view
+  , projective        :: Bool
+
+  -- 2D view variables
+  , viewCenter        :: Var GLComplex
+  , viewDiameter      :: Var GLComplex
   , mousePosition     :: Var GLComplex
   , dragStart         :: Var (Maybe GLComplex)
-  , currentTool       :: Var Tool
-  , var               :: String
+
+  -- 3D view variables
+  , localMatrix       :: Var GLMatrix
+  , mobiusMatrix      :: Var GLMatrix
   }
 
 setUniform :: Uniform a => Program -> String -> a -> IO ()
@@ -367,6 +390,7 @@ vertexCode = \case
             \}"
 
   True -> "#version 410 core\n\
+          \uniform mat4 _localMatrix;\n\
           \uniform mat4 _projMatrix;\n\
           \\n\
           \layout (location = 0) in vec3 pos;\n\
@@ -394,10 +418,11 @@ fragConstants = "\n\
 
 fragUniforms :: String
 fragUniforms = "\n\
-  \uniform vec2 _mouse;\n\
   \uniform int _max_iterations;\n\
   \uniform float _escape_radius;\n\
   \uniform float _convergence_radius;\n\
+  \uniform vec2 _mouse;\n\
+  \uniform mat4 _mobiusMatrix;\n\
   \uniform sampler1D uTexture;\n\
   \\n"
 

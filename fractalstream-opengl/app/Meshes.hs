@@ -47,11 +47,11 @@ createVAO bufferUsage stride vertices = do
     let size = fromIntegral (n * vertexSize)
     bufferData ArrayBuffer $= (size, ptr, bufferUsage)
 
-  let vPosition = AttribLocation 0
+  let vPosition   = AttribLocation 0
       vDescriptor = VertexArrayDescriptor stride Float 0 nullPtr
 
   vertexAttribPointer vPosition $= (ToFloat, vDescriptor)
-  vertexAttribArray vPosition $= Enabled
+  vertexAttribArray   vPosition $= Enabled
 
   return $ VAOInfo { triangles = planeVAO, numVertices = n }
 
