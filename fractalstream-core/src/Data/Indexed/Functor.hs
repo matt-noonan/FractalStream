@@ -8,6 +8,7 @@ module Data.Indexed.Functor
   , FIX
   , indexedFold
   , indexedFoldM
+  , indexedFoldWithOriginal
   , indexedFoldWithOriginalM
   , indexedUnfold
   , indexedUnfoldM
