@@ -4,6 +4,7 @@ module Viewer ( openViewers ) where
 import Control.Lens
 import Linear.V2
 import Linear.Matrix
+import Linear.Vector
 import Linear.OpenGL
 import Text.Printf
 
@@ -52,8 +53,8 @@ openViewers configPath = do
           -- First find the mouse position in the view coordinates
           let WXC.Point i j = mousePos event
 
-          V2 cx cy <- varGet v.viewCenter
-          V2 dx dy <- varGet v.viewDiameter
+          c0@(V2 cx cy) <- varGet v.viewCenter
+          d0@(V2 dx dy) <- varGet v.viewDiameter
 
           WXC.Size w h <- windowGetClientSize v.canvas
 
@@ -67,7 +68,7 @@ openViewers configPath = do
               setUniform v.program "_mouse" $ m ^. vector2V
               varSet v.mousePosition m
 
-            -- Stop dragging and pick a point (if pointer didn't move much)
+            -- Stop dragging
             MouseLeftUp _ _ -> do
               t <- varGet v.currentTool
               case t of
@@ -81,22 +82,21 @@ openViewers configPath = do
                   Navigate    -> do varSet v.dragStart (Just m)
                   SelectPoint -> mapM_ (pickPoint m v) viewerInfos
 
-            -- Pan the view
+            -- Pan the view or change point continuously
             MouseLeftDrag _ _ -> do
               t <- varGet v.currentTool
               case t of
                 SelectPoint -> mapM_ (pickPoint m v) viewerInfos
 
                 Navigate -> do
-                  ds <- varGet v.dragStart
+                  maybe_ds <- varGet v.dragStart
 
-                  case ds of
+                  case maybe_ds of
                     Nothing -> return ()
 
-                    Just (V2 dsx dsy) -> do
-                      let c = V2 (dsx - x + cx) (dsy - y + cy)
-                          d = V2 dx dy
-                          pm = getOrtho c d
+                    Just ds -> do
+                      let c = ds ^-^ m ^+^ c0
+                          pm = getOrtho c d0
 
                       varSet v.viewCenter c
                       varSet v.projMatrix pm
@@ -109,13 +109,9 @@ openViewers configPath = do
               let speed = 1.2
                   scalingFactor = if downward then speed else 1/speed
 
-                  cxNew = x + scalingFactor * (cx - x)
-                  cyNew = y + scalingFactor * (cy - y)
-                  c = V2 cxNew cyNew
+                  c = m ^+^ (c0 - m) ^* scalingFactor
 
-                  dxNew = dx * scalingFactor
-                  dyNew = dy * scalingFactor
-                  d = V2 dxNew dyNew
+                  d = scalingFactor *^ d0
                   pm = getOrtho c d
 
               varSet v.viewCenter c
@@ -127,11 +123,47 @@ openViewers configPath = do
               windowRefresh v.canvas False
 
             -- Pass the event forward
-            _ -> do propagateEvent
+            _ -> propagateEvent
 
       True -> do
-          -- Pass the event forward
-          propagateEvent
+          _ <- glCanvasSetCurrent v.canvas v.ctx
+
+          -- First find the mouse position in the view coordinates
+          let WXC.Point i j = mousePos event
+          WXC.Size w h <- windowGetClientSize v.canvas
+
+          let x = 2 * (fromIntegral i / fromIntegral w - 0.5) :: GLfloat
+              y = - 2 * (fromIntegral j / fromIntegral h - 0.5) :: GLfloat
+              m = V2 x y
+
+          case event of
+            -- Update mouse position
+            MouseMotion _ _ -> do
+              setUniform v.program "_mouse" $ m ^. vector2V
+              varSet v.mousePosition m
+
+            -- Stop dragging
+            MouseLeftUp _ _ -> do
+              varSet v.dragStart Nothing
+
+            -- Start dragging
+            MouseLeftDown _ _ -> do
+              varSet v.dragStart (Just m)
+
+            -- Rotate sphere
+            MouseLeftDrag _ _ -> do
+              ds <- varGet v.dragStart
+
+              case ds of
+                Nothing -> return ()
+
+                Just m0 -> do
+                  let _dm = m ^-^ m0
+
+                  windowRefresh v.canvas False
+
+            -- Pass the event forward
+            _ -> propagateEvent
 
 
 openViewer :: [String] -> String -> Viewer -> IO ViewerInfo
@@ -195,6 +227,11 @@ openViewer vars header viewer = do
                 then L.perspective (45 * pi / 180) aspect 0.1 5.0
                 else getOrtho initialViewCenter initialViewDiameter
 
+        -- Only relevant for projective views
+        initialInverseProjectiveMatrix = if projective
+                then L.inversePerspective (45 * pi / 180) aspect 0.1 5.0
+                else identity :: GLMatrix
+
     setUniform program "_max_iterations"     initialMaxIterations
     setUniform program "_escape_radius"      initialEscapeRadius
     setUniform program "_convergence_radius" initialConvergenceRadius
@@ -220,6 +257,7 @@ openViewer vars header viewer = do
     mobiusMatrix      <- varCreate initialMobiusMatrix
 
     projMatrix        <- varCreate initialProjectiveMatrix
+    invProjMatrix     <- varCreate initialInverseProjectiveMatrix
     dragStart         <- varCreate Nothing
     currentTool       <- varCreate Navigate
 
@@ -321,9 +359,15 @@ data ViewerInfo = ViewerInfo
   , ctx               :: GLContext ()
   , var               :: String
 
-  -- Options / State
+  -- Viewer State
+  , mousePosition     :: Var GLComplex
+  , viewDiameter      :: Var GLComplex
+  , dragStart         :: Var (Maybe GLComplex)
+  , projMatrix        :: Var GLMatrix
+  , invProjMatrix     :: Var GLMatrix
+
+  -- Options
   , currentTool       :: Var Tool
-  , projMatrix        :: Var (M44 GLfloat)
 
   -- Dynamical variables
   , maxIterations     :: Var GLint
@@ -335,9 +379,6 @@ data ViewerInfo = ViewerInfo
 
   -- 2D view variables
   , viewCenter        :: Var GLComplex
-  , viewDiameter      :: Var GLComplex
-  , mousePosition     :: Var GLComplex
-  , dragStart         :: Var (Maybe GLComplex)
 
   -- 3D view variables
   , localMatrix       :: Var GLMatrix
