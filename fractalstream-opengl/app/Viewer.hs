@@ -2,14 +2,12 @@
 module Viewer ( openViewers ) where
 
 import Control.Lens
-import Linear.V2
-import Linear.Matrix
-import Linear.Vector
+import Linear
 import Linear.OpenGL
 import Text.Printf
 
 import Graphics.UI.WXCore
-import Graphics.Rendering.OpenGL
+import Graphics.Rendering.OpenGL hiding ( normalize )
 
 import Linear.Projection as L
 import qualified Graphics.UI.WX as WX
@@ -73,13 +71,13 @@ openViewers configPath = do
               t <- varGet v.currentTool
               case t of
                 SelectPoint -> propagateEvent
-                Navigate    -> do varSet v.dragStart Nothing
+                DragView    -> do varSet v.dragStart Nothing
 
             -- Start dragging or pick a point
             MouseLeftDown _ _ -> do
               t <- varGet v.currentTool
               case t of
-                  Navigate    -> do varSet v.dragStart (Just m)
+                  DragView    -> do varSet v.dragStart (Just m)
                   SelectPoint -> mapM_ (pickPoint m v) viewerInfos
 
             -- Pan the view or change point continuously
@@ -88,7 +86,7 @@ openViewers configPath = do
               case t of
                 SelectPoint -> mapM_ (pickPoint m v) viewerInfos
 
-                Navigate -> do
+                DragView -> do
                   maybe_ds <- varGet v.dragStart
 
                   case maybe_ds of
@@ -132,7 +130,8 @@ openViewers configPath = do
           let WXC.Point i j = mousePos event
           WXC.Size w h <- windowGetClientSize v.canvas
 
-          let x = 2 * (fromIntegral i / fromIntegral w - 0.5) :: GLfloat
+          let aspect = fromIntegral w / fromIntegral h :: GLfloat
+              x = 2 * (fromIntegral i / fromIntegral w - 0.5) :: GLfloat
               y = - 2 * (fromIntegral j / fromIntegral h - 0.5) :: GLfloat
               m = V2 x y
 
@@ -158,9 +157,50 @@ openViewers configPath = do
                 Nothing -> return ()
 
                 Just m0 -> do
-                  let _dm = m ^-^ m0
+                  local0 <- varGet v.localMatrix
+
+                  -- TODO: check if I can simplify the computations below
+
+                  -- Take the axis perpendicular to the movement
+                  -- Get the quaternion representing the rotation
+                  -- Apply rotation along the axis to the coordinate system
+
+                  let V2 dx dy = m ^-^ m0
+                      axis = (inv33 $ local0 ^._m33) !* (V3 (-dy) (aspect * dx) 0)
+                      q = axisAngle axis $ norm axis
+                      local = local0 !*! (m33_to_m44 $ fromQuaternion q)
+
+                  setUniform v.program "_localMatrix" $ local ^. m44GLmatrix
+                  varSet v.localMatrix local
+
+                  -- dragStart only serves as the last position in 3D
+                  -- TODO: Maybe I should make 2D relative to last position too
+                  varSet v.dragStart $ Just m
 
                   windowRefresh v.canvas False
+
+            MouseWheel downward _ _ -> do
+              local <- varGet v.localMatrix
+              mobius0 <- varGet v.mobiusMatrix
+
+              -- TODO: check if I can simplify the computations below
+
+              -- The computation below applies a hyperbolic isometry in H^3 to S^2
+              -- The two fixed points are v and -v where v points to the viewer
+
+              let invLocal = inv44 local
+                  northPole = toProjective $ invLocal !* V4 0 0 1 0
+                  southPole = toProjective $ invLocal !* V4 0 0 (-1) 0
+
+                  speed = 1.2
+                  scalingFactor = if downward then speed else 1/speed
+
+                  mobius = mobius0 !*! (hyperbolicMobius northPole southPole scalingFactor)
+
+              varSet v.mobiusMatrix mobius
+              setUniform v.program "_mobiusMatrix" $ mobius ^. m44GLmatrix
+
+              windowRefresh v.canvas False
 
             -- Pass the event forward
             _ -> propagateEvent
@@ -259,16 +299,16 @@ openViewer vars header viewer = do
     projMatrix        <- varCreate initialProjectiveMatrix
     invProjMatrix     <- varCreate initialInverseProjectiveMatrix
     dragStart         <- varCreate Nothing
-    currentTool       <- varCreate Navigate
+    currentTool       <- varCreate DragView
 
     -- Add tools
     tools <- WX.menuPane [ WX.text WX.:= "&Tools"]
 
-    _   <- WX.menuItem tools [ WX.text WX.:= "Navigate\tN"
+    _   <- WX.menuItem tools [ WX.text WX.:= "Drag view\tD"
                               , WX.help WX.:= "Drag to pan the view"
-                              , WX.on WX.command WX.:= switchTool currentTool Navigate
+                              , WX.on WX.command WX.:= switchTool currentTool DragView
                               ]
-    _   <- WX.menuItem tools [ WX.text WX.:= "Select\tS"
+    _   <- WX.menuItem tools [ WX.text WX.:= "Select point\tS"
                               , WX.help WX.:= "Click to select point"
                               , WX.on WX.command WX.:= switchTool currentTool SelectPoint
                               ]
@@ -338,16 +378,18 @@ openViewer vars header viewer = do
 
     onKeyChar viewerInfo eventKey
       = case eventKey of
-          EventKey (KeyChar 'n') _ _ -> switchTool viewerInfo.currentTool Navigate
+          EventKey (KeyChar 'd') _ _ -> switchTool viewerInfo.currentTool DragView
 
           EventKey (KeyChar 's') _ _ -> switchTool viewerInfo.currentTool SelectPoint
 
           _ -> propagateEvent
 
-type GLComplex = V2 GLfloat
-type GLMatrix  = M44 GLfloat
+type GLComplex    = V2 GLfloat
+type GLVector     = V4 GLfloat
+type GLProjective = V4 GLfloat
+type GLMatrix     = M44 GLfloat
 
-data Tool = Navigate | SelectPoint
+data Tool = DragView | SelectPoint
   deriving (Eq, Show)
 
 data ViewerInfo = ViewerInfo
@@ -416,6 +458,28 @@ pickPoint mousePointer v viewerInfo = do
 switchTool :: Var Tool -> Tool -> IO ()
 switchTool = varSet
 
+toProjective :: GLVector -> GLProjective
+toProjective v@(V4 v1 v2 v3 _) =
+  if distance v (V4 0 0 (-1) 0) < 1e-5
+    then V4 1 0 0 0
+    else normalize $ V4 v1 v2 (1 + v3) 0
+
+hyperbolicMobius :: GLProjective -> GLProjective -> GLfloat -> GLMatrix
+hyperbolicMobius (V4 p1 p2 p3 p4) (V4 q1 q2 q3 q4) scalingFactor =
+    V4 (V4   a   b   c   d)
+       (V4 (-b)  a (-d)  c)
+       (V4   e   f   g   h)
+       (V4 (-f)  e (-h)  g)
+    where
+      a = p1 * q3 - p2 * q4 - scalingFactor * (p3 * q1 - p4 * q2)
+      b = p1 * q4 + p2 * q3 - scalingFactor * (p3 * q2 + p4 * q1)
+      c = (1 - scalingFactor) * (p3 * q3 - p4 * q4)
+      d = (1 - scalingFactor) * (p3 * q4 + p4 * q3)
+      e = (scalingFactor - 1) * (p1 * q1 - p2 * q2)
+      f = (scalingFactor - 1) * (p1 * q2 + p2 * q1)
+      g = scalingFactor * (p1 * q3 - p2 * q4) - p3 * q1 - p4 * q2
+      h = scalingFactor * (p1 * q4 + p2 * q3) - p3 * q2 + p4 * q1
+
 vertexCode :: Bool -> String
 vertexCode = \case
   False -> "#version 410 core\n\
@@ -440,7 +504,7 @@ vertexCode = \case
           \\n\
           \void main() {\n\
           \  FragPos = vec4(pos, 1.0);\n\
-          \  gl_Position = _projMatrix * (vec4(pos, 1.0) - vec4(0.0, 0.0, 3.0, 0.0));\n\
+          \  gl_Position = _projMatrix * (_localMatrix * vec4(pos, 1.0) - vec4(0.0, 0.0, 3.0, 0.0));\n\
           \}"
 
 fragConstants :: String
