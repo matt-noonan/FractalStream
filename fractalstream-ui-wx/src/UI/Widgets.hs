@@ -333,7 +333,7 @@ scriptWidget p UIScript{..} = do
     ]
 
   -- Check for script changes periodically. TODO: make this event-driven instead
-  void $ wxTimer p [ interval := 500, enabled := True
+  void $ wxTimer p [ interval := 200, enabled := True
                    , on command := do
                        new <- styledTextCtrlGetText ce
                        old <- readIORef lastText

@@ -34,7 +34,7 @@ viewer:
     iterate z ⟼ z² + C until z escapes
 
     color ⭠ rgb(0.980, 0.976, 0.965)
-    if stuck and |r|^2 < (1.5 - cos (6 arg r)) / 3:
+    if stuck and |r|² < (1.5 - cos (6 arg r)) / 3:
         color ⭠ black
   escape-radius: R
   initial-center: -0.75
