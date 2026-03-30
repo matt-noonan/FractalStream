@@ -62,7 +62,7 @@ jobs:
       uses: actions/cache@v4
       with:
         key: ${{ runner.os }}-${{ runner.arch }}-cache-wxwidgets-${{ inputs.wxwidgets }}
-        path: wxWidgets-3.2.8
+        path: wxWidgets-3.2.9
 
     - if: ${{ inputs.wxwidgets == 'homebrew' }}
       name: Install wxWidgets@3.2 from Homebrew
@@ -81,10 +81,10 @@ jobs:
     - if: ${{ inputs.wxwidgets == 'build-static' && steps.cache-wxwidgets.outputs.cache-hit != 'true' }}
       name: Build wxWidgets 3.2 for static linking
       run: |
-        wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.8/wxWidgets-3.2.8.tar.bz2
-        tar xvf wxWidgets-3.2.8.tar.bz2
-        cd wxWidgets-3.2.8
-        git apply ../patches/macos-fix-for-wxcolour.patch
+        wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.9/wxWidgets-3.2.9.tar.bz2
+        tar xvf wxWidgets-3.2.9.tar.bz2
+        cd wxWidgets-3.2.9
+        git apply ../patches/atomic-refcounts.patch && echo Applied patch
         mkdir build-cocoa
         cd build-cocoa
         cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=OFF -DwxBUILD_MONOLITHIC=ON ..
@@ -93,10 +93,10 @@ jobs:
     - if: ${{ inputs.wxwidgets == 'build-dynamic' && steps.cache-wxwidgets.outputs.cache-hit != 'true' }}
       name: Build wxWidgets 3.2 for dynamic linking
       run: |
-        wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.8/wxWidgets-3.2.8.tar.bz2
-        tar xvf wxWidgets-3.2.8.tar.bz2
-        cd wxWidgets-3.2.8
-        git apply ../patches/macos-fix-for-wxcolour.patch
+        wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.9/wxWidgets-3.2.9.tar.bz2
+        tar xvf wxWidgets-3.2.9.tar.bz2
+        cd wxWidgets-3.2.9
+        git apply ../patches/atomic-refcounts.patch && echo Applied patch
         mkdir build-cocoa
         cd build-cocoa
         cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=ON -DwxBUILD_MONOLITHIC=ON ..
@@ -105,7 +105,7 @@ jobs:
     - if: ${{ inputs.wxwidgets != 'homebrew' }}
       name: Install wxWidgets 3.2
       run: |
-        cd wxWidgets-3.2.8/build-cocoa
+        cd wxWidgets-3.2.9/build-cocoa
         ln -s wx-config /usr/local/bin/wx-config-3.2
         ln -s lib/wxrc /usr/local/bin/wxrc-3.2
         sudo cmake --build . --target=install
