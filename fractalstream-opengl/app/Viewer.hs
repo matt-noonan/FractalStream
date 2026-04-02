@@ -25,11 +25,11 @@ openViewers configPath = do
     c <- loadConfig configPath
 
     -- Create header for global uniform variables
-    let vars = map coord c.viewers
-        header = concatMap (printf "uniform vec2 _%s;\n") vars
+    let varNames = map coord c.viewers
+        header = concatMap (printf "uniform vec2 _%s;\n") varNames
 
     -- Open all viewers
-    viewerInfos <- mapM (openViewer vars header) c.viewers
+    viewerInfos <- mapM (openViewer varNames header) c.viewers
 
     -- Add mouse events last, because they might affect all viewers
     mapM_ (\v -> windowOnMouse v.canvas True $ onMouse viewerInfos v) viewerInfos
@@ -42,7 +42,7 @@ openViewers configPath = do
   where
     onClose = mapM_ (\v -> windowDestroy v.vFrame)
 
-    onMouse viewerInfos v@ViewerInfo{..} event = case viewType of
+    onMouse viewerInfos ViewerInfo{..} event = case viewType of
       ComplexPlane -> do
           _ <- glCanvasSetCurrent canvas ctx
 
@@ -76,13 +76,13 @@ openViewers configPath = do
               t <- varGet currentTool
               case t of
                   DragView    -> do varSet dragStart (Just m)
-                  SelectPoint -> mapM_ (pickPoint m v) viewerInfos
+                  SelectPoint -> mapM_ (pickPoint m varName) viewerInfos
 
             -- Pan the view or change point continuously
             MouseLeftDrag _ _ -> do
               t <- varGet currentTool
               case t of
-                SelectPoint -> mapM_ (pickPoint m v) viewerInfos
+                SelectPoint -> mapM_ (pickPoint m varName) viewerInfos
 
                 DragView -> do
                   maybe_ds <- varGet dragStart
@@ -282,7 +282,7 @@ openViewer vars header Viewer{..} = do
     setUniform program "_mobiusMatrix"       $ initialMobiusMatrix ^. m44GLmatrix
 
     -- Set variable uniforms (for point picking)
-    let var = "_" ++ coord
+    let varName = "_" ++ coord
     mapM_ (\v -> setUniform program ("_" ++ v) (initialMousePosition ^. vector2V)) vars
 
     -- Set variables to keep track of the last uniform values
@@ -409,7 +409,7 @@ data ViewerInfo = ViewerInfo
   , program             :: Program
   , canvas              :: GLCanvas ()
   , ctx                 :: GLContext ()
-  , var                 :: String
+  , varName             :: String
 
   -- Viewer State
   , mousePosition       :: Var GLComplex
@@ -440,9 +440,9 @@ data ViewerInfo = ViewerInfo
   }
 
 setUniform :: Uniform a => Program -> String -> a -> IO ()
-setUniform p var_ val = do
+setUniform p varName val = do
   -- TODO: figure out error checking here
-  location <- get (uniformLocation p var_)
+  location <- get (uniformLocation p varName)
   uniform location $= val
 
 getOrtho :: Floating a => V2 a -> V2 a -> M44 a
@@ -461,10 +461,10 @@ getProgram is_projective fragSource = do
               , ShaderInfo FragmentShader $ StringSource fragSource
               ]
 
-pickPoint :: GLComplex -> ViewerInfo -> ViewerInfo -> IO ()
-pickPoint mousePointer v ViewerInfo{..} = do
+pickPoint :: GLComplex -> String -> ViewerInfo -> IO ()
+pickPoint mousePointer pointVarName ViewerInfo{..} = do
   _   <- glCanvasSetCurrent canvas ctx
-  setUniform program v.var $ mousePointer ^. vector2V
+  setUniform program pointVarName $ mousePointer ^. vector2V
   windowRefresh canvas False
 
 switchTool :: Var Tool -> Tool -> IO ()
