@@ -4,12 +4,12 @@ viewers:
     width_pixels: 700
     height_pixels: 700
 
-    projective: false
+    is_projective: false
     coord: c
 
     center_x: -3.5
     center_y: 0.0
-    height: 20.0
+    view_height: 20.0
 
     max_iterations: 1000
     escape_radius: 10000.0
@@ -60,12 +60,12 @@ viewers:
     width_pixels: 700
     height_pixels: 700
 
-    projective: false
+    is_projective: false
     coord: z
 
     center_x: 0.0
     center_y: 0.0
-    height: 6.0
+    view_height: 6.0
 
     max_iterations: 1000
     escape_radius: 10000.0

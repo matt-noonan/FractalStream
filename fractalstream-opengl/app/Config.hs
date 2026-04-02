@@ -19,11 +19,11 @@ data Viewer = Viewer
   { title              :: String
   , width_pixels       :: Int
   , height_pixels      :: Int
-  , projective         :: Bool
+  , is_projective      :: Bool
   , coord              :: String
   , center_x           :: GLfloat
   , center_y           :: GLfloat
-  , height              :: GLfloat
+  , view_height        :: GLfloat
   , max_iterations     :: GLint
   , escape_radius      :: GLfloat
   , convergence_radius :: GLfloat

@@ -26,8 +26,6 @@ openViewers configPath = do
 
     -- Create header for global uniform variables
     let vars = map coord c.viewers
-        -- types = [if projective v then "vec4" else "vec2" | v <- c.viewers]
-        -- header = concat $ zipWith (printf "uniform %s _%s;\n") types vars
         header = concatMap (printf "uniform vec2 _%s;\n") vars
 
     -- Open all viewers
@@ -44,17 +42,17 @@ openViewers configPath = do
   where
     onClose = mapM_ (\v -> windowDestroy v.vFrame)
 
-    onMouse viewerInfos v event = case v.projective of
-      False -> do
-          _ <- glCanvasSetCurrent v.canvas v.ctx
+    onMouse viewerInfos v@ViewerInfo{..} event = case viewType of
+      ComplexPlane -> do
+          _ <- glCanvasSetCurrent canvas ctx
 
           -- First find the mouse position in the view coordinates
           let WXC.Point i j = mousePos event
 
-          c0@(V2 cx cy) <- varGet v.viewCenter
-          d0@(V2 dx dy) <- varGet v.viewDiameter
+          c0@(V2 cx cy) <- varGet viewCenter
+          d0@(V2 dx dy) <- varGet viewDiameter
 
-          WXC.Size w h <- windowGetClientSize v.canvas
+          WXC.Size w h <- windowGetClientSize canvas
 
           let x = cx + (fromIntegral i / fromIntegral w - 0.5) * dx
               y = cy - (fromIntegral j / fromIntegral h - 0.5) * dy
@@ -63,31 +61,31 @@ openViewers configPath = do
           case event of
             -- Update mouse position
             MouseMotion _ _ -> do
-              setUniform v.program "_mouse" $ m ^. vector2V
-              varSet v.mousePosition m
+              setUniform program "_mouse" $ m ^. vector2V
+              varSet mousePosition m
 
             -- Stop dragging
             MouseLeftUp _ _ -> do
-              t <- varGet v.currentTool
+              t <- varGet currentTool
               case t of
                 SelectPoint -> propagateEvent
-                DragView    -> do varSet v.dragStart Nothing
+                DragView    -> do varSet dragStart Nothing
 
             -- Start dragging or pick a point
             MouseLeftDown _ _ -> do
-              t <- varGet v.currentTool
+              t <- varGet currentTool
               case t of
-                  DragView    -> do varSet v.dragStart (Just m)
+                  DragView    -> do varSet dragStart (Just m)
                   SelectPoint -> mapM_ (pickPoint m v) viewerInfos
 
             -- Pan the view or change point continuously
             MouseLeftDrag _ _ -> do
-              t <- varGet v.currentTool
+              t <- varGet currentTool
               case t of
                 SelectPoint -> mapM_ (pickPoint m v) viewerInfos
 
                 DragView -> do
-                  maybe_ds <- varGet v.dragStart
+                  maybe_ds <- varGet dragStart
 
                   case maybe_ds of
                     Nothing -> return ()
@@ -96,11 +94,11 @@ openViewers configPath = do
                       let c = ds ^-^ m ^+^ c0
                           pm = getOrtho c d0
 
-                      varSet v.viewCenter c
-                      varSet v.projMatrix pm
-                      setUniform v.program "_projMatrix" $ pm ^. m44GLmatrix
+                      varSet viewCenter c
+                      varSet projMatrix pm
+                      setUniform program "_projMatrix" $ pm ^. m44GLmatrix
 
-                      windowRefresh v.canvas False
+                      windowRefresh canvas False
 
             -- Zoom in/out
             MouseWheel downward _ _ -> do
@@ -112,23 +110,23 @@ openViewers configPath = do
                   d = scalingFactor *^ d0
                   pm = getOrtho c d
 
-              varSet v.viewCenter c
-              varSet v.viewDiameter d
+              varSet viewCenter c
+              varSet viewDiameter d
 
-              varSet v.projMatrix pm
-              setUniform v.program "_projMatrix" $ pm ^. m44GLmatrix
+              varSet projMatrix pm
+              setUniform program "_projMatrix" $ pm ^. m44GLmatrix
 
-              windowRefresh v.canvas False
+              windowRefresh canvas False
 
             -- Pass the event forward
             _ -> propagateEvent
 
-      True -> do
-          _ <- glCanvasSetCurrent v.canvas v.ctx
+      ProjectiveSpace -> do
+          _ <- glCanvasSetCurrent canvas ctx
 
           -- First find the mouse position in the view coordinates
           let WXC.Point i j = mousePos event
-          WXC.Size w h <- windowGetClientSize v.canvas
+          WXC.Size w h <- windowGetClientSize canvas
 
           let aspect = fromIntegral w / fromIntegral h :: GLfloat
               x = 2 * (fromIntegral i / fromIntegral w - 0.5) :: GLfloat
@@ -138,26 +136,26 @@ openViewers configPath = do
           case event of
             -- Update mouse position
             MouseMotion _ _ -> do
-              setUniform v.program "_mouse" $ m ^. vector2V
-              varSet v.mousePosition m
+              setUniform program "_mouse" $ m ^. vector2V
+              varSet mousePosition m
 
             -- Stop dragging
             MouseLeftUp _ _ -> do
-              varSet v.dragStart Nothing
+              varSet dragStart Nothing
 
             -- Start dragging
             MouseLeftDown _ _ -> do
-              varSet v.dragStart (Just m)
+              varSet dragStart (Just m)
 
             -- Rotate sphere
             MouseLeftDrag _ _ -> do
-              ds <- varGet v.dragStart
+              ds <- varGet dragStart
 
               case ds of
                 Nothing -> return ()
 
                 Just m0 -> do
-                  local0 <- varGet v.localMatrix
+                  local0 <- varGet localMatrix
 
                   -- TODO: check if I can simplify the computations below
 
@@ -170,18 +168,18 @@ openViewers configPath = do
                       q = axisAngle axis $ norm axis
                       local = local0 !*! (m33_to_m44 $ fromQuaternion q)
 
-                  setUniform v.program "_localMatrix" $ local ^. m44GLmatrix
-                  varSet v.localMatrix local
+                  setUniform program "_localMatrix" $ local ^. m44GLmatrix
+                  varSet localMatrix local
 
                   -- dragStart only serves as the last position in 3D
                   -- TODO: Maybe I should make 2D relative to last position too
-                  varSet v.dragStart $ Just m
+                  varSet dragStart $ Just m
 
-                  windowRefresh v.canvas False
+                  windowRefresh canvas False
 
             MouseWheel downward _ _ -> do
-              local <- varGet v.localMatrix
-              mobius0 <- varGet v.mobiusMatrix
+              local <- varGet localMatrix
+              mobius0 <- varGet mobiusMatrix
 
               -- TODO: check if I can simplify the computations below
 
@@ -197,22 +195,22 @@ openViewers configPath = do
 
                   mobius = mobius0 !*! (hyperbolicMobius northPole southPole scalingFactor)
 
-              varSet v.mobiusMatrix mobius
-              setUniform v.program "_mobiusMatrix" $ mobius ^. m44GLmatrix
+              varSet mobiusMatrix mobius
+              setUniform program "_mobiusMatrix" $ mobius ^. m44GLmatrix
 
-              windowRefresh v.canvas False
+              windowRefresh canvas False
 
             -- Pass the event forward
             _ -> propagateEvent
 
 
 openViewer :: [String] -> String -> Viewer -> IO ViewerInfo
-openViewer vars header viewer = do
+openViewer vars header Viewer{..} = do
     -- Create top frame
-    vFrame <- frameCreateTopFrame viewer.title
+    vFrame <- frameCreateTopFrame title
 
     -- Create GLCanvas and GLContext
-    let initRect = Rect 0 0 viewer.width_pixels viewer.height_pixels
+    let initRect = Rect 0 0 width_pixels height_pixels
         options  = [ GL_RGBA, GL_MAJOR_VERSION 4, GL_DOUBLEBUFFER, GL_DEPTH_SIZE 16 ]
 
     canvas <- glCanvasCreateEx vFrame 0 initRect 0 "GLCanvas" options nullPalette
@@ -234,54 +232,57 @@ openViewer vars header viewer = do
     clear [ ColorBuffer, DepthBuffer ]
 
     -- Create plane mesh object
-    let projective = viewer.projective
-    mesh <- if projective then createSphereMesh else createPlaneMesh
+    let viewType = if is_projective then ProjectiveSpace else ComplexPlane
+
+    mesh <- case viewType of
+              ProjectiveSpace -> createSphereMesh
+              ComplexPlane -> createPlaneMesh
 
     -- Create color palette
     initTexture
 
     -- Compile shader programs
-    let initialValueFormat = if projective
-                                then "vec4 %s = _mobiusMatrix * vec4(FragPos.xy, 1.0 + FragPos.z, 0.0);\n"
-                                else "vec2 %s = FragPos.xy / FragPos.w;\n"
-        initialValueCode = printf initialValueFormat viewer.coord
+    let initialValueFormat = case viewType of
+            ComplexPlane    -> "vec2 %s = FragPos.xy / FragPos.w;\n"
+            ProjectiveSpace -> "vec4 %s = _mobiusMatrix * vec4(FragPos.xy, 1.0 + FragPos.z, 0.0);\n"
+        initialValueCode = printf initialValueFormat coord
 
-    program <- getProgram projective $ addHeader header initialValueCode viewer.code
+    program <- getProgram is_projective $ addHeader header initialValueCode code
     currentProgram $= Just program
 
     -- Set uniforms
-    let aspect = fromIntegral viewer.width_pixels / fromIntegral viewer.height_pixels :: GLfloat
+    let aspect = fromIntegral width_pixels / fromIntegral height_pixels :: GLfloat
 
-        initialMaxIterations     = viewer.max_iterations
-        initialEscapeRadius      = viewer.escape_radius
-        initialConvergenceRadius = viewer.convergence_radius
+        initialMaxIterations     = max_iterations
+        initialEscapeRadius      = escape_radius
+        initialConvergenceRadius = convergence_radius
 
-        initialViewCenter        = V2 viewer.center_x viewer.center_y
-        initialViewDiameter      = V2 (aspect * viewer.height) viewer.height
+        initialViewCenter        = V2 center_x center_y
+        initialViewDiameter      = V2 (aspect * view_height) view_height
         initialMousePosition     = V2 0.0 0.0 :: GLComplex
 
         initialLocalMatrix       = identity :: GLMatrix
         initialMobiusMatrix      = identity :: GLMatrix
 
-        initialProjectiveMatrix  = if projective
-                then L.perspective (45 * pi / 180) aspect 0.1 5.0
-                else getOrtho initialViewCenter initialViewDiameter
+        initialProjectionMatrix  = case viewType of
+            ProjectiveSpace -> L.perspective (45 * pi / 180) aspect 0.1 5.0
+            ComplexPlane    -> getOrtho initialViewCenter initialViewDiameter
 
         -- Only relevant for projective views
-        initialInverseProjectiveMatrix = if projective
-                then L.inversePerspective (45 * pi / 180) aspect 0.1 5.0
-                else identity :: GLMatrix
+        initialInverseProjectionMatrix = case viewType of
+            ProjectiveSpace -> L.inversePerspective (45 * pi / 180) aspect 0.1 5.0
+            ComplexPlane    -> identity :: GLMatrix
 
     setUniform program "_max_iterations"     initialMaxIterations
     setUniform program "_escape_radius"      initialEscapeRadius
     setUniform program "_convergence_radius" initialConvergenceRadius
     setUniform program "_mouse"              $ initialMousePosition ^. vector2V
-    setUniform program "_projMatrix"         $ initialProjectiveMatrix ^. m44GLmatrix
+    setUniform program "_projMatrix"         $ initialProjectionMatrix ^. m44GLmatrix
     setUniform program "_localMatrix"        $ initialLocalMatrix ^. m44GLmatrix
     setUniform program "_mobiusMatrix"       $ initialMobiusMatrix ^. m44GLmatrix
 
     -- Set variable uniforms (for point picking)
-    let var = "_" ++ viewer.coord
+    let var = "_" ++ coord
     mapM_ (\v -> setUniform program ("_" ++ v) (initialMousePosition ^. vector2V)) vars
 
     -- Set variables to keep track of the last uniform values
@@ -296,8 +297,8 @@ openViewer vars header viewer = do
     localMatrix       <- varCreate initialLocalMatrix
     mobiusMatrix      <- varCreate initialMobiusMatrix
 
-    projMatrix        <- varCreate initialProjectiveMatrix
-    invProjMatrix     <- varCreate initialInverseProjectiveMatrix
+    projMatrix        <- varCreate initialProjectionMatrix
+    invProjMatrix     <- varCreate initialInverseProjectionMatrix
     dragStart         <- varCreate Nothing
     currentTool       <- varCreate DragView
 
@@ -336,27 +337,27 @@ openViewer vars header viewer = do
 
   where
     -- Run vertex and fragment shaders
-    onPaint viewerInfo mesh _dc _rect = do
-      _ <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
+    onPaint ViewerInfo{..} mesh _dc _rect = do
+      _ <- glCanvasSetCurrent canvas ctx
       clear [ ColorBuffer, DepthBuffer ]
 
       bindVertexArrayObject $= Just mesh.triangles
       drawArrays Triangles 0 (fromIntegral mesh.numVertices)
 
       flush
-      _ <- glCanvasSwapBuffers viewerInfo.canvas
+      _ <- glCanvasSwapBuffers canvas
 
       return ()
 
     -- Change uniforms that track canvas dimensions
-    onSize viewerInfo = case viewerInfo.projective of
-      False -> do
-          _ <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
-          WXC.Size w h <- windowGetClientSize viewerInfo.canvas
+    onSize ViewerInfo{..} = case viewType of
+      ComplexPlane -> do
+          _ <- glCanvasSetCurrent canvas ctx
+          WXC.Size w h <- windowGetClientSize canvas
           viewport $= (Position 0 0, GL.Size (fromIntegral w) (fromIntegral h))
 
-          (V2 width height) <- varGet viewerInfo.viewDiameter
-          c <- varGet viewerInfo.viewCenter
+          (V2 width height) <- varGet viewDiameter
+          c <- varGet viewCenter
 
           let d = if w <= h
                     then V2 width $ fromIntegral h / fromIntegral w * width
@@ -364,21 +365,21 @@ openViewer vars header viewer = do
 
               pm = getOrtho c d
 
-          varSet viewerInfo.viewDiameter d
-          varSet viewerInfo.projMatrix pm
-          setUniform viewerInfo.program "_projMatrix" $ pm ^. m44GLmatrix
+          varSet viewDiameter d
+          varSet projMatrix pm
+          setUniform program "_projMatrix" $ pm ^. m44GLmatrix
 
-      True -> do
-          _ <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
-          WXC.Size w h <- windowGetClientSize viewerInfo.canvas
+      ProjectiveSpace -> do
+          _ <- glCanvasSetCurrent canvas ctx
+          WXC.Size w h <- windowGetClientSize canvas
           viewport $= (Position 0 0, GL.Size (fromIntegral w) (fromIntegral h))
 
           let aspect = fromIntegral w / fromIntegral h :: GLfloat
               fovRatio = if h > w then 1 / aspect else 1.0
               pm = L.perspective (fovRatio * 45 * pi / 180) aspect 0.1 5.0
 
-          varSet viewerInfo.projMatrix pm
-          setUniform viewerInfo.program "_projMatrix" $ pm ^. m44GLmatrix
+          varSet projMatrix pm
+          setUniform program "_projMatrix" $ pm ^. m44GLmatrix
 
 
     onKeyChar viewerInfo eventKey
@@ -395,6 +396,8 @@ type GLComplex    = V2 GLfloat
 type GLVector     = V4 GLfloat
 type GLProjective = V4 GLfloat
 type GLMatrix     = M44 GLfloat
+
+data ViewType = ComplexPlane | ProjectiveSpace
 
 data Tool = DragView | SelectPoint
   deriving (Eq, Show)
@@ -423,7 +426,7 @@ data ViewerInfo = ViewerInfo
   , convergenceRadius   :: Var GLfloat
 
   -- Flag for 2D/3D view
-  , projective          :: Bool
+  , viewType            :: ViewType
 
   -- 2D view variables
   , viewCenter          :: Var GLComplex
@@ -453,43 +456,43 @@ getOrtho (V2 centerX centerY) (V2 diameterX diameterY) =
           far = 1
 
 getProgram :: Bool -> String -> IO Program
-getProgram projective fragSource = do
-  loadShaders [ ShaderInfo VertexShader $ StringSource $ vertexCode projective
+getProgram is_projective fragSource = do
+  loadShaders [ ShaderInfo VertexShader $ StringSource $ vertexCode is_projective
               , ShaderInfo FragmentShader $ StringSource fragSource
               ]
 
 pickPoint :: GLComplex -> ViewerInfo -> ViewerInfo -> IO ()
-pickPoint mousePointer v viewerInfo = do
-  _   <- glCanvasSetCurrent viewerInfo.canvas viewerInfo.ctx
-  setUniform viewerInfo.program v.var $ mousePointer ^. vector2V
-  windowRefresh viewerInfo.canvas False
+pickPoint mousePointer v ViewerInfo{..} = do
+  _   <- glCanvasSetCurrent canvas ctx
+  setUniform program v.var $ mousePointer ^. vector2V
+  windowRefresh canvas False
 
 switchTool :: Var Tool -> Tool -> IO ()
 switchTool = varSet
 
 resetView :: ViewerInfo -> IO ()
-resetView viewerInfo = if viewerInfo.projective
-  then do
-    varSet viewerInfo.localMatrix identity
-    varSet viewerInfo.mobiusMatrix identity
-
-    setUniform viewerInfo.program "_localMatrix" (identity :: GLMatrix)
-    setUniform viewerInfo.program "_mobiusMatrix" (identity :: GLMatrix)
-
-    windowRefresh viewerInfo.canvas False
-
-  else do
-    let c = viewerInfo.initialViewCenter
-        d = viewerInfo.initialViewDiameter
+resetView ViewerInfo{..} = case viewType of
+  ComplexPlane -> do
+    let c = initialViewCenter
+        d = initialViewDiameter
         pm = getOrtho c d
 
-    varSet viewerInfo.viewCenter c
-    varSet viewerInfo.viewDiameter d
-    varSet viewerInfo.projMatrix pm
+    varSet viewCenter c
+    varSet viewDiameter d
+    varSet projMatrix pm
 
-    setUniform viewerInfo.program "_projMatrix" $ pm ^. m44GLmatrix
+    setUniform program "_projMatrix" $ pm ^. m44GLmatrix
 
-    windowRefresh viewerInfo.canvas False
+    windowRefresh canvas False
+
+  ProjectiveSpace -> do
+    varSet localMatrix identity
+    varSet mobiusMatrix identity
+
+    setUniform program "_localMatrix" (identity :: GLMatrix)
+    setUniform program "_mobiusMatrix" (identity :: GLMatrix)
+
+    windowRefresh canvas False
 
 toProjective :: GLVector -> GLProjective
 toProjective v@(V4 v1 v2 v3 _) =
