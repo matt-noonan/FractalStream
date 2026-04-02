@@ -301,6 +301,9 @@ openViewer vars header viewer = do
     dragStart         <- varCreate Nothing
     currentTool       <- varCreate DragView
 
+    -- Store all data in a record
+    let viewerInfo = ViewerInfo{..}
+
     -- Add tools
     tools <- WX.menuPane [ WX.text WX.:= "&Tools"]
 
@@ -313,11 +316,13 @@ openViewer vars header viewer = do
                               , WX.on WX.command WX.:= switchTool currentTool SelectPoint
                               ]
 
+    _   <- WX.menuItem tools [ WX.text WX.:= "Reset view\tR"
+                              , WX.help WX.:= "Reset view to initial state"
+                              , WX.on WX.command WX.:= resetView viewerInfo
+                              ]
+
     WX.menuLine tools
     WX.set vFrame [ WX.menuBar WX.:= [tools] ]
-
-    -- Store all data in a record
-    let viewerInfo = ViewerInfo{..}
 
     -- Set event handlers
     windowOnPaint   canvas $ onPaint viewerInfo mesh
@@ -369,7 +374,7 @@ openViewer vars header viewer = do
           viewport $= (Position 0 0, GL.Size (fromIntegral w) (fromIntegral h))
 
           let aspect = fromIntegral w / fromIntegral h :: GLfloat
-              fovRatio = if h > w then 1/aspect else 1.0
+              fovRatio = if h > w then 1 / aspect else 1.0
               pm = L.perspective (fovRatio * 45 * pi / 180) aspect 0.1 5.0
 
           varSet viewerInfo.projMatrix pm
@@ -382,6 +387,8 @@ openViewer vars header viewer = do
 
           EventKey (KeyChar 's') _ _ -> switchTool viewerInfo.currentTool SelectPoint
 
+          EventKey (KeyChar 'r') _ _ -> resetView viewerInfo
+
           _ -> propagateEvent
 
 type GLComplex    = V2 GLfloat
@@ -393,38 +400,40 @@ data Tool = DragView | SelectPoint
   deriving (Eq, Show)
 
 data ViewerInfo = ViewerInfo
-  { vFrame            :: WX.Frame ()
+  { vFrame              :: WX.Frame ()
 
   -- OpenGL setup
-  , program           :: Program
-  , canvas            :: GLCanvas ()
-  , ctx               :: GLContext ()
-  , var               :: String
+  , program             :: Program
+  , canvas              :: GLCanvas ()
+  , ctx                 :: GLContext ()
+  , var                 :: String
 
   -- Viewer State
-  , mousePosition     :: Var GLComplex
-  , viewDiameter      :: Var GLComplex
-  , dragStart         :: Var (Maybe GLComplex)
-  , projMatrix        :: Var GLMatrix
-  , invProjMatrix     :: Var GLMatrix
+  , mousePosition       :: Var GLComplex
+  , dragStart           :: Var (Maybe GLComplex)
+  , projMatrix          :: Var GLMatrix
+  , invProjMatrix       :: Var GLMatrix
 
   -- Options
-  , currentTool       :: Var Tool
+  , currentTool         :: Var Tool
 
   -- Dynamical variables
-  , maxIterations     :: Var GLint
-  , escapeRadius      :: Var GLfloat
-  , convergenceRadius :: Var GLfloat
+  , maxIterations       :: Var GLint
+  , escapeRadius        :: Var GLfloat
+  , convergenceRadius   :: Var GLfloat
 
   -- Flag for 2D/3D view
-  , projective        :: Bool
+  , projective          :: Bool
 
   -- 2D view variables
-  , viewCenter        :: Var GLComplex
+  , viewCenter          :: Var GLComplex
+  , viewDiameter        :: Var GLComplex
+  , initialViewCenter   :: GLComplex
+  , initialViewDiameter :: GLComplex
 
   -- 3D view variables
-  , localMatrix       :: Var GLMatrix
-  , mobiusMatrix      :: Var GLMatrix
+  , localMatrix         :: Var GLMatrix
+  , mobiusMatrix        :: Var GLMatrix
   }
 
 setUniform :: Uniform a => Program -> String -> a -> IO ()
@@ -457,6 +466,30 @@ pickPoint mousePointer v viewerInfo = do
 
 switchTool :: Var Tool -> Tool -> IO ()
 switchTool = varSet
+
+resetView :: ViewerInfo -> IO ()
+resetView viewerInfo = if viewerInfo.projective
+  then do
+    varSet viewerInfo.localMatrix identity
+    varSet viewerInfo.mobiusMatrix identity
+
+    setUniform viewerInfo.program "_localMatrix" (identity :: GLMatrix)
+    setUniform viewerInfo.program "_mobiusMatrix" (identity :: GLMatrix)
+
+    windowRefresh viewerInfo.canvas False
+
+  else do
+    let c = viewerInfo.initialViewCenter
+        d = viewerInfo.initialViewDiameter
+        pm = getOrtho c d
+
+    varSet viewerInfo.viewCenter c
+    varSet viewerInfo.viewDiameter d
+    varSet viewerInfo.projMatrix pm
+
+    setUniform viewerInfo.program "_projMatrix" $ pm ^. m44GLmatrix
+
+    windowRefresh viewerInfo.canvas False
 
 toProjective :: GLVector -> GLProjective
 toProjective v@(V4 v1 v2 v3 _) =
