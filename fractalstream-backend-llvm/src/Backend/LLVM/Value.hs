@@ -257,7 +257,7 @@ buildValue getExtern = indexedFold go'
          (IntegerOp x, IntegerOp n) ->
            IntegerOp <$> call (getExtern "powi") [(x, []), (n, [])]
       AbsI i -> i >>= \case
-        IntegerOp x -> IntegerOp <$> call (getExtern "absi") [(x, [])]
+        IntegerOp x -> IntegerOp <$> call (getExtern "absi") [(x, []), (C.bit 0, [])]
 
       AddF x y -> ((,) <$> x <*> y) >>= \case
           (RealOp lhs, RealOp rhs) -> RealOp <$> fadd lhs rhs
@@ -459,8 +459,8 @@ getGetExtern :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
              => m (String -> Operand)
 getGetExtern = do
   es <- mapM (\(name, getter) -> (name,) <$> getter) $
-    [ ("absi", extern "llvm.abs.i32" [AST.i32] AST.i32)
-    , ("powi", extern "llvm.powi.i32" [AST.i32] AST.i32)
+    [ ("absi", extern "llvm.abs.i32" [AST.i32, AST.i1] AST.i32)
+    , ("powi", extern "llvm.powi.i32" [AST.i32, AST.i32] AST.i32)
     , ("trunc", extern "llvm.trunc.f64" [AST.double] AST.double)
     , ("floor", extern "llvm.floor.f64" [AST.double] AST.double)
     , ("ceil", extern "llvm.ceil.f64" [AST.double] AST.double)

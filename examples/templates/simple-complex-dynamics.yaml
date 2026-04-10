@@ -84,7 +84,7 @@ viewers:
               until «exit_condition»:
                 prevZ <- z
                 draw point at z
-                z <- «expression$
+                z <- «expression»
                 draw line from z to prevZ
 
 configuration:
