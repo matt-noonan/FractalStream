@@ -145,37 +145,56 @@ openViewers configPath = do
 
             -- Start dragging
             MouseLeftDown _ _ -> do
-              varSet dragStart (Just m)
+              t <- varGet currentTool
+              case t of
+                  DragView    -> do varSet dragStart (Just m)
+                  SelectPoint -> do
+                    -- putStrLn $ show m
+
+                    -- _invLocal <- inv44 <$> varGet localMatrix
+                    -- invProj <- inv44 <$> varGet projMatrix
+
+                    -- let direction = invProj !* (V4 x y (-3) 0)
+                    -- putStrLn $ show direction
+
+                    mapM_ (pickPoint m varName) viewerInfos
 
             -- Rotate sphere
             MouseLeftDrag _ _ -> do
-              ds <- varGet dragStart
+              t <- varGet currentTool
 
-              case ds of
-                Nothing -> return ()
+              case t of
+                SelectPoint -> do
+                  mapM_ (pickPoint m varName) viewerInfos
 
-                Just m0 -> do
-                  local0 <- varGet localMatrix
+                DragView -> do
+                  ds <- varGet dragStart
 
-                  -- TODO: check if I can simplify the computations below
+                  case ds of
+                    Nothing -> return ()
 
-                  -- Take the axis perpendicular to the movement
-                  -- Get the quaternion representing the rotation
-                  -- Apply rotation along the axis to the coordinate system
+                    Just m0 -> do
+                      local0 <- varGet localMatrix
 
-                  let V2 dx dy = m ^-^ m0
-                      axis = (inv33 $ local0 ^._m33) !* (V3 (-dy) (aspect * dx) 0)
-                      q = axisAngle axis $ norm axis
-                      local = local0 !*! (m33_to_m44 $ fromQuaternion q)
+                      -- TODO: check if I can simplify the computations below
 
-                  setUniform program "_localMatrix" $ local ^. m44GLmatrix
-                  varSet localMatrix local
+                      -- Take the axis perpendicular to the movement
+                      -- Get the quaternion representing the rotation
+                      -- Apply rotation along the axis to the coordinate system
 
-                  -- dragStart only serves as the last position in 3D
-                  -- TODO: Maybe I should make 2D relative to last position too
-                  varSet dragStart $ Just m
+                      let V2 dx dy = m ^-^ m0
+                          axis = (inv33 $ local0 ^._m33) !* (V3 (-dy) (aspect * dx) 0)
+                          q = axisAngle axis $ norm axis
+                          local = local0 !*! (m33_to_m44 $ fromQuaternion q)
 
-                  windowRefresh canvas False
+                      setUniform program "_localMatrix" $ local ^. m44GLmatrix
+                      varSet localMatrix local
+
+                      -- dragStart only serves as the last position in 3D
+                      -- TODO: Maybe I should make 2D relative to last position too
+                      varSet dragStart $ Just m
+
+                      windowRefresh canvas False
 
             MouseWheel downward _ _ -> do
               local <- varGet localMatrix
