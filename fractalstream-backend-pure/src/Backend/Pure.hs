@@ -17,9 +17,10 @@ import Foreign hiding (void)
 import Data.IORef
 
 interpretViewer :: forall env t. MissingViewerArgs env
-                => Code (ViewerEnv env)
+                => Maybe (PrepScript env)
+                -> Code (ViewerEnv env)
                 -> (ViewerFunction env -> IO t) -> IO t
-interpretViewer body action = do
+interpretViewer mPrepScript body action = do
   let env = toIndex body
   withEnvironment env $ action $ ViewerFunction $ \ViewerArgs{..} -> do
     let (x0, y0) = vaPoint
@@ -41,6 +42,10 @@ interpretViewer body action = do
         (r, g, b) <- fmap colorToRGB . flip evalStateT iorefs $ do
           update bindingEvidence (Proxy @InternalX) RealType x
           update bindingEvidence (Proxy @InternalY) RealType y
+          -- Run prep script first (can Set prep output variables in context)
+          case mPrepScript of
+            Nothing -> pure ()
+            Just (PrepScript _ prepCode) -> interpretToIO noDrawing prepCode
           interpretToIO noDrawing body
           eval (Var (Proxy @"color") ColorType bindingEvidence)
 

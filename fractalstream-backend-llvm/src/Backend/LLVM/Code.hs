@@ -1,4 +1,4 @@
-{-# language RecursiveDo, OverloadedStrings #-}
+{-# language RecursiveDo, OverloadedStrings, RankNTypes, ScopedTypeVariables #-}
 {-# options_ghc -Wno-incomplete-uni-patterns #-}
 module Backend.LLVM.Code
   ( --compile
@@ -22,6 +22,9 @@ import qualified LLVM.IRBuilder.Constant as C
 import qualified LLVM.AST.IntegerPredicate as P
 
 import Control.Monad.Fix
+
+import qualified Data.Map.Strict as Map
+import Unsafe.Coerce (unsafeCoerce)
 
 import Language.Type
 import Language.Code
@@ -254,12 +257,114 @@ assertAbsent name env action = case lookupEnv' name env of
     Absent' pf -> recallIsAbsent pf action
     _ -> throwError ("INTERNAL ERROR: llvm-internal argument `" ++ symbolVal name ++ "` re-defined.")
 
-compileRenderer' :: forall env
+-- | Count the number of bindings in an environment proxy.
+envLength :: EnvironmentProxy env -> Int
+envLength = \case
+  EmptyEnvProxy      -> 0
+  BindingProxy _ _ e -> 1 + envLength e
+
+-- | Generate one @ptr i8@ LLVM parameter per prep output variable.
+toPrepParamList :: EnvironmentProxy env -> [(AST.Type, ParameterName)]
+toPrepParamList = \case
+  EmptyEnvProxy -> []
+  BindingProxy name _t env ->
+    ( AST.ptr AST.i8
+    , ParameterName (fromString (symbolVal name ++ "_prep_array"))
+    ) : toPrepParamList env
+
+-- | An existential wrapping a typed operand pointer, for name-based lookup.
+data SomePtrOp where
+  SomePtrOp :: TypeProxy t -> PtrOp t -> SomePtrOp
+
+-- | Build a map from variable name to its LLVM alloca pointer.
+contextToArgMap :: Context OperandPtr env -> Map.Map String SomePtrOp
+contextToArgMap = \case
+  EmptyContext             -> Map.empty
+  Bind name ty ptrOp rest -> Map.insert (symbolVal name) (SomePtrOp ty ptrOp) (contextToArgMap rest)
+
+-- | Load a value of type @t@ from a flat byte array (@ptr i8@) at the given
+-- pixel index.  Byte stride per pixel: Bool=1, Int=4, Real=8, Complex=16,
+-- Color=3.
+loadFromPrepArrayAt
+  :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+  => TypeProxy t
+  -> Operand    -- ^ base @ptr i8@ of the prep array
+  -> Operand    -- ^ flat pixel index (i32)
+  -> m (Op t)
+loadFromPrepArrayAt ty arrayPtr pixelIdx = case ty of
+  BooleanType -> do
+    ptr <- gep arrayPtr [pixelIdx]
+    val <- load ptr 0
+    bit <- trunc val AST.i1
+    pure (BooleanOp bit)
+  IntegerType -> do
+    byteOff <- mul pixelIdx (C.int32 4)
+    ptr     <- gep arrayPtr [byteOff]
+    ptr'    <- bitcast ptr (AST.ptr AST.i32)
+    val     <- load ptr' 0
+    pure (IntegerOp val)
+  RealType -> do
+    byteOff <- mul pixelIdx (C.int32 8)
+    ptr     <- gep arrayPtr [byteOff]
+    ptr'    <- bitcast ptr (AST.ptr AST.double)
+    val     <- load ptr' 0
+    pure (RealOp val)
+  ComplexType -> do
+    byteOff <- mul pixelIdx (C.int32 16)
+    rePtr0  <- gep arrayPtr [byteOff]
+    rePtr   <- bitcast rePtr0 (AST.ptr AST.double)
+    reVal   <- load rePtr 0
+    imOff   <- add byteOff (C.int32 8)
+    imPtr0  <- gep arrayPtr [imOff]
+    imPtr   <- bitcast imPtr0 (AST.ptr AST.double)
+    imVal   <- load imPtr 0
+    pure (ComplexOp reVal imVal)
+  ColorType -> do
+    byteOff <- mul pixelIdx (C.int32 3)
+    rPtr    <- gep arrayPtr [byteOff]
+    gOff    <- add byteOff (C.int32 1)
+    gPtr    <- gep arrayPtr [gOff]
+    bOff    <- add byteOff (C.int32 2)
+    bPtr    <- gep arrayPtr [bOff]
+    r <- load rPtr 0
+    g <- load gPtr 0
+    b <- load bPtr 0
+    pure (ColorOp r g b)
+  t -> throwError ("loadFromPrepArrayAt: unsupported type " ++ showType t)
+
+-- | For each variable in @prepOutputEnv@, load its value from the
+-- corresponding prep array at the given pixel index and overwrite its slot in
+-- the arg context.
+overwritePrepOutputs
+  :: forall prepOutputEnv m
+   . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+  => EnvironmentProxy prepOutputEnv
+  -> [Operand]                 -- ^ one @ptr i8@ per var in @prepOutputEnv@
+  -> Operand                   -- ^ flat pixel index (i32)
+  -> Map.Map String SomePtrOp  -- ^ from 'contextToArgMap'
+  -> m ()
+overwritePrepOutputs EmptyEnvProxy [] _ _ = pure ()
+overwritePrepOutputs (BindingProxy name ty env') (ptr:ptrs) pixelIdx argMap = do
+  let n = symbolVal name
+  case Map.lookup n argMap of
+    Nothing -> (throwError ("INTERNAL ERROR: prep output `" ++ n ++ "` not in args") :: m ())
+    Just (SomePtrOp ty' ptrOp) -> case sameHaskellType ty ty' of
+      Nothing -> (throwError ("INTERNAL ERROR: prep output `" ++ n ++ "` type mismatch") :: m ())
+      Just Refl -> do
+        op <- loadFromPrepArrayAt ty ptr pixelIdx
+        -- sameHaskellType proved t ~ t', so this coercion is safe.
+        storeOperand op (unsafeCoerce ptrOp)
+  overwritePrepOutputs env' ptrs pixelIdx argMap
+overwritePrepOutputs _ _ _ _ =
+  throwError "INTERNAL ERROR: mismatched prep output env/ptrs"
+
+compileRenderer' :: forall env prepOutputEnv
                  . KnownEnvironment env
-                => AST.Name
+                => EnvironmentProxy prepOutputEnv
+                -> AST.Name
                 -> Code (ViewerEnv env)
                 -> Either String AST.Module
-compileRenderer' name code = runExcept $
+compileRenderer' prepOutputEnv name code = runExcept $
   assertAbsent (Proxy @InternalBlockWidth)  (envProxy (Proxy @env)) $
   assertAbsent (Proxy @InternalBlockHeight) (envProxy (Proxy @env)) $
   assertAbsent (Proxy @InternalSubsamples)  (envProxy (Proxy @env)) $
@@ -269,14 +374,18 @@ compileRenderer' name code = runExcept $
   assertAbsent (Proxy @InternalDY)          (envProxy (Proxy @env)) $
   assertAbsent (Proxy @"color")             (envProxy (Proxy @env)) $
   buildModuleT "compiled rendering kernel" $ do
-    let retParam = (toLLVMPtrType ColorType, NoParameterName)
-        params   = toParameterList (envProxy (Proxy @(RenderEnv' env)))
-        pfX  = bindingEvidence @InternalX   @'RealT  @(ViewerEnv env)
-        pfY  = bindingEvidence @InternalY   @'RealT  @(ViewerEnv env)
-        pfdX = bindingEvidence @InternalDX  @'RealT  @(ViewerEnv env)
-        pfdY = bindingEvidence @InternalDY  @'RealT  @(ViewerEnv env)
-        pfOutput = bindingEvidence @"color" @'ColorT @(ViewerEnv env)
-    function name (retParam : params) AST.void $ \(retPtr : blockWidthArg : blockHeightArg : subsamplesArg : rawArgs) -> do
+    let retParam       = (toLLVMPtrType ColorType, NoParameterName)
+        params         = toParameterList (envProxy (Proxy @(RenderEnv' env)))
+        prepParams     = toPrepParamList prepOutputEnv
+        pfX      = bindingEvidence @InternalX   @'RealT  @(ViewerEnv env)
+        pfY      = bindingEvidence @InternalY   @'RealT  @(ViewerEnv env)
+        pfdX     = bindingEvidence @InternalDX  @'RealT  @(ViewerEnv env)
+        pfdY     = bindingEvidence @InternalDY  @'RealT  @(ViewerEnv env)
+        pfOutput = bindingEvidence @"color"     @'ColorT @(ViewerEnv env)
+        nViewerEnvArgs = envLength (envProxy (Proxy @(ViewerEnv env)))
+    function name (retParam : params ++ prepParams) AST.void $ \allArgs -> do
+      let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg : rest) = allArgs
+          (rawArgs, prepArrayPtrs) = splitAt nViewerEnvArgs rest
       getExtern <- getGetExtern
       mdo
 
@@ -292,7 +401,9 @@ compileRenderer' name code = runExcept $
         blockWidth  <- derefOperand blockWidthPtr  >>= \case IntegerOp v -> pure v
         blockHeight <- derefOperand blockHeightPtr >>= \case IntegerOp v -> pure v
         subsamples  <- derefOperand subsamplesPtr  >>= \case IntegerOp v -> pure v
-        indexPtr <- alloca AST.i32 Nothing 0 `named` "set up loop indices"
+        let argMap = contextToArgMap args
+        indexPtr      <- alloca AST.i32 Nothing 0 `named` "set up loop indices"
+        pixelIndexPtr <- alloca AST.i32 Nothing 0
         iPtr <- alloca AST.i32 Nothing 0
         jPtr <- alloca AST.i32 Nothing 0
         kPtr <- alloca AST.i32 Nothing 0
@@ -300,26 +411,19 @@ compileRenderer' name code = runExcept $
         yPtr <- alloca AST.double Nothing 0
         br beginLoops
 
-        -- index = 0;
-        -- y = 0;
-        -- for (i = 0; i < blockSize; ++i) {
         beginLoops <- block `named` "begin i loop"
         store indexPtr 0 (C.int32 0)
+        store pixelIndexPtr 0 (C.int32 0)
         store yPtr 0 y0
         store iPtr 0 (C.int32 0)
         br pixelLoopY
 
         pixelLoopY <- block `named` "begin j loop"
-
-        --     x = 0;
-        --     for (j = 0; j < blockSize; ++j) {
         store xPtr 0 x0
         store jPtr 0 (C.int32 0)
         br pixelLoopX
 
         pixelLoopX <- block `named` "begin k loop"
-
-        --       color_acc = (0,0,0);
         accR <- alloca AST.i32 Nothing 0
         accG <- alloca AST.i32 Nothing 0
         accB <- alloca AST.i32 Nothing 0
@@ -330,21 +434,16 @@ compileRenderer' name code = runExcept $
 
         br subsampleLoop
 
-        --       for (k = 0; k < subsamples; ++k) {
         subsampleLoop <- block `named` "k loop body"
-
-        --           color_acc += user_kernel(x, y, ...);
         do
           xVal <- load xPtr 0
           yVal <- load yPtr 0
-          -- FIXME: add in subdivided dx and dy for subsamples
           storeOperand (RealOp xVal) (getBinding args pfX)
           storeOperand (RealOp yVal) (getBinding args pfY)
 
-          -- Allocate a color pointer, pass in to compileCode,
-          -- read components out into cr0, cg0, cb0
-          --(cr0, cg0, cb0) <- runReaderT (compileCode getExtern _ code) args >>= \case
-          --  ColorOp vr vg vb -> pure (vr, vg, vb)
+          -- Load prep output vars from their flat arrays before the kernel.
+          pixelIndex <- load pixelIndexPtr 0
+          overwritePrepOutputs prepOutputEnv prepArrayPtrs pixelIndex argMap
 
           runReaderT (compileCode getExtern code) args
           (cr0, cg0, cb0) <- case getBinding args pfOutput of
@@ -373,27 +472,25 @@ compileRenderer' name code = runExcept $
             continue <- icmp P.ULT k subsamples
             condBr continue subsampleLoop exitSubsampleLoop
 
-        --       }
-        --       output[index++] = color_acc / subsamples;
         exitSubsampleLoop <- block `named` "end k loop"
         do
           index <- load indexPtr 0
           do
             c <- load accR 0
-            c' <- udiv c subsamples -- TODO: use log2(subsamples) and a shift?
+            c' <- udiv c subsamples
             outPtr <- gep retPtr [C.int32 0, index]
             c'' <- trunc c' AST.i8
             store outPtr 0 c''
           do
             c <- load accG 0
-            c' <- udiv c subsamples -- TODO: use log2(subsamples) and a shift?
+            c' <- udiv c subsamples
             index' <- add index (C.int32 1)
             outPtr <- gep retPtr [C.int32 0, index']
             c'' <- trunc c' AST.i8
             store outPtr 0 c''
           do
             c <- load accB 0
-            c' <- udiv c subsamples -- TODO: use log2(subsamples) and a shift?
+            c' <- udiv c subsamples
             index' <- add index (C.int32 2)
             outPtr <- gep retPtr [C.int32 0, index']
             c'' <- trunc c' AST.i8
@@ -401,6 +498,10 @@ compileRenderer' name code = runExcept $
 
           index' <- add index (C.int32 3)
           store indexPtr 0 index'
+          -- Advance the flat pixel index once per output pixel.
+          pixelIndex <- load pixelIndexPtr 0
+          pixelIndex' <- add pixelIndex (C.int32 1)
+          store pixelIndexPtr 0 pixelIndex'
         do -- x += dx
           tmp1 <- load xPtr 0
           tmp2 <- fadd tmp1 dx
@@ -413,7 +514,6 @@ compileRenderer' name code = runExcept $
           continue <- icmp P.ULT j blockWidth
           condBr continue pixelLoopX exitPixelLoopX
 
-        --    } // end j/x loop
         exitPixelLoopX <- block `named` "end j loop"
         do -- y -= dy
           tmp1 <- load yPtr 0
@@ -427,7 +527,6 @@ compileRenderer' name code = runExcept $
           continue <- icmp P.ULT i blockHeight
           condBr continue pixelLoopY exitPixelLoopY
 
-        -- } // end i/y loop
         exitPixelLoopY <- block `named` "end i loop"
         retVoid
 

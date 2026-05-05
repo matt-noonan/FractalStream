@@ -180,7 +180,7 @@ makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSe
         vSize     = cvSize
         vPosition = cvPosition
 
-    let scriptCode = cvCode <&> right (\(SomeViewerWithContext _ c) -> SomeCode c)
+    let scriptCode = cvCode <&> right (\(SomeViewerWithContext _ _ c) -> SomeCode c)
     scriptName <- newMapped (pure $ \n -> if null n then Left "Script title must be non-empty" else Right n)
                   vTitle
     scriptEnv <- newVariable (SomeEnvironment endOfDecls)
@@ -204,10 +204,13 @@ makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSe
         putStrLn ("Can't build viewer: " ++ err)
         void $ mkViewer project showConfig configArgs rerunSetup rebuildScript Viewer{..}
 
-      Right (SomeViewerWithContext context code) -> do
+      Right (SomeViewerWithContext context mprep code) -> do
 
         let env = contextToEnv context
-            usedVars = Set.delete coord (execState (usedVarsInCode code) Set.empty)
+            prepUsedVars = case mprep of
+              Nothing -> Set.empty
+              Just (PrepScript _ prepCode) -> execState (usedVarsInCode prepCode) Set.empty
+            usedVars = Set.delete coord (execState (usedVarsInCode code) Set.empty `Set.union` prepUsedVars)
 
             vListen :: IO () -> IO (IO ())
             vListen = \action -> do
@@ -225,7 +228,6 @@ makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSe
 
           let vGetArgs = case someContext of
                 SomeContext context' -> case sameEnvironment (contextToEnv context) (contextToEnv context') of
-                  Nothing   -> pure $ Left "Internal error: the context changed, so the viewer should have recompiled"
                   Just Refl -> do
                     rawResult <- mapContextM @DynamicValue' @HaskellValueOrError (\_ _ -> getDynamic) context'
                     case mapContextM (\_ _ -> id) rawResult of
@@ -233,11 +235,24 @@ makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSe
                         Left ("Viewer paused until this issue with the configuration is addressed:\n" ++
                               err)
                       r -> pure r
+                  Nothing ->
+                    -- Env has prep output vars appended beyond the config env.
+                    -- Config vars: read live from someContext (which uses layoutContext').
+                    -- Prep output vars: not in someContext, so fall back to snapshot default.
+                    let liveEnv = contextToEnv context'
+                    in do
+                      result <- mapContextM @DynamicValue @HaskellValueOrError
+                        (\name ty val ->
+                          case lookupEnv name ty liveEnv of
+                            Found pf -> withKnownType ty $ getDynamic (getBinding context' pf)
+                            _        -> Right <$> getDynamic val)
+                        context
+                      pure (mapContextM (\_ _ -> id) result)
 
           withSelectTool <- if coord `Map.member` envToMap env then (:) <$> makeSelectTool coord else pure id
           let vTools = withSelectTool <$> dyn cvTools
 
-          withCompiledViewer jit code $ \fun -> do
+          withCompiledViewer jit mprep code $ \fun -> do
             let vCodeWithArgs = CodeWithArgs vGetArgs (Just code) (pure fun)
             -- FIXME, we should grab the "close this window" action and do something with it
             void $ mkViewer project showConfig configArgs rerunSetup rebuildScript Viewer{..}

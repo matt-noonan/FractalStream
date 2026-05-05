@@ -1,4 +1,4 @@
-{-# language OverloadedStrings, ForeignFunctionInterface, AllowAmbiguousTypes, UndecidableInstances #-}
+{-# language OverloadedStrings, ForeignFunctionInterface, AllowAmbiguousTypes, UndecidableInstances, RankNTypes #-}
 module Backend.LLVM
   ( JITFun(..)
   , ToForeignFun(..)
@@ -38,8 +38,13 @@ import Language.Value
 import Language.Value.Evaluator (HaskellValue)
 import Language.Value.Transform
 import Language.Code
+import Language.Code.InterpretIO (interpretToIOWithLastValues, ScalarIORefM)
+import Language.Draw (DrawHandler(..))
 import Actor.Viewer
 import Data.Color
+
+import Data.IORef (newIORef)
+import qualified Data.Map.Strict as Map
 
 import Foreign hiding (void)
 
@@ -144,70 +149,163 @@ fromFFIRetArg t ptr = case t of
     pure (v /= 0)
   _ -> error ("todo: fromFFIRetArg " ++ showType t)
 
+-- | Stride in bytes per pixel for each FSType in prep arrays.
+prepArrayStride :: TypeProxy t -> Int
+prepArrayStride = \case
+  BooleanType -> 1
+  IntegerType -> 4
+  RealType    -> 8
+  ComplexType -> 16
+  ColorType   -> 3
+  _           -> 4  -- stub for List/Text
+
+-- | Run @action@ with one zeroed @Ptr Word8@ prep array per variable in
+-- @prepOutputEnv@.  The arrays are stack-allocated and zero-initialised.
+withPrepArrays :: EnvironmentProxy env -> Int -> ([Ptr Word8] -> IO r) -> IO r
+withPrepArrays EmptyEnvProxy _ action = action []
+withPrepArrays (BindingProxy _name ty env') nPixels action =
+  let sz = nPixels * prepArrayStride ty
+  in allocaBytes sz $ \ptr -> do
+    fillBytes ptr 0 sz
+    withPrepArrays env' nPixels $ \restPtrs ->
+      action (ptr : restPtrs)
+
+-- | Write a single Haskell value into a prep array at the given byte offset.
+writeToPrepArray :: TypeProxy t -> Ptr Word8 -> Int -> HaskellType t -> IO ()
+writeToPrepArray ty ptr offset val = case ty of
+  BooleanType -> pokeByteOff ptr offset (if val then (1 :: Word8) else 0)
+  IntegerType -> pokeByteOff ptr offset (fromIntegral val :: Int32)
+  RealType    -> pokeByteOff ptr offset (val :: Double)
+  ComplexType -> let re :+ im = val
+                 in pokeByteOff ptr offset re >> pokeByteOff ptr (offset + 8) im
+  ColorType   -> let (r, g, b) = colorToRGB val
+                 in pokeByteOff ptr offset r
+                 >> pokeByteOff ptr (offset + 1) g
+                 >> pokeByteOff ptr (offset + 2) b
+  _ -> pure ()
+
+-- | For each variable in @prepOutputEnv@, look up its last-assigned value
+-- from the interpreter's tracking map and write it to the corresponding
+-- prep array at pixel index @pixelIdx@.
+writePrepOutputsFromMap
+  :: EnvironmentProxy prepOutputEnv
+  -> [Ptr Word8]
+  -> Map.Map String SomeHaskellType
+  -> Int
+  -> IO ()
+writePrepOutputsFromMap EmptyEnvProxy [] _ _ = pure ()
+writePrepOutputsFromMap (BindingProxy name ty env') (ptr:ptrs) vals pixelIdx = do
+  let n = symbolVal name
+      byteOffset = pixelIdx * prepArrayStride ty
+  case Map.lookup n vals of
+    Just (SomeHaskellType ty' val) -> writeToPrepArray ty' ptr byteOffset val
+    Nothing                        -> pure ()
+  writePrepOutputsFromMap env' ptrs vals pixelIdx
+writePrepOutputsFromMap _ _ _ _ = pure ()
+
+-- | No-op draw handler for use in the Haskell prep pass.
+noPrepDraw :: DrawHandler ScalarIORefM
+noPrepDraw = DrawHandler (\_ -> pure ())
+
+-- | CPS wrapper that exposes the prep output environment proxy from a 'PrepScript'.
+-- Avoids existential escape by keeping the proxy in the continuation's scope.
+withPrepEnvProxy :: Maybe (PrepScript env)
+                 -> (forall prepOutputEnv. EnvironmentProxy prepOutputEnv -> IO r)
+                 -> IO r
+withPrepEnvProxy Nothing                       k = k EmptyEnvProxy
+withPrepEnvProxy (Just (PrepScript proxy _))   k = k proxy
+
 withJittedViewer :: forall env t. (MissingViewerArgs env, KnownEnvironment env)
                  => LLVMJit
+                 -> Maybe (PrepScript env)
                  -> Code (ViewerEnv env)
                  -> (ViewerFunction env -> IO t) -> IO t
-withJittedViewer (dylib, session, compileLayer, nextId) code0 action = do
+withJittedViewer (dylib, session, compileLayer, nextId) mPrepScript code0 action = do
   -- Do some basic AST-level optimizations first
   let code = transformValues (integerPowers . avoidSqrt) code0
-
   name <- modifyMVar nextId (\n -> pure (n + 1, "kernel_" ++ show n))
-  m <- either error pure (compileRenderer' (fromString name) code)
-  withContext $ \ctx ->
-    withModuleFromAST ctx m $ \md -> do
-    let pm = CuratedPassSetSpec
-             { optLevel = Just 2 -- "-O2"?
-             , sizeLevel = Nothing
-             , unitAtATime = Nothing
-             , simplifyLibCalls = Just True
-             , loopVectorize = Just True
-             , superwordLevelParallelismVectorize = Nothing
-             , useInlinerWithThreshold = Nothing
-             , dataLayout = Nothing
-             , targetLibraryInfo = Nothing
-             , targetMachine = Nothing
-             }
-    withPassManager pm (`runPassManager` md)
+  withPrepEnvProxy mPrepScript $ \prepEnvProxy -> do
+    m <- either error pure (compileRenderer' prepEnvProxy (fromString name) code)
+    withContext $ \ctx ->
+      withModuleFromAST ctx m $ \md -> do
+      let pm = CuratedPassSetSpec
+               { optLevel = Just 2 -- "-O2"?
+               , sizeLevel = Nothing
+               , unitAtATime = Nothing
+               , simplifyLibCalls = Just True
+               , loopVectorize = Just True
+               , superwordLevelParallelismVectorize = Nothing
+               , useInlinerWithThreshold = Nothing
+               , dataLayout = Nothing
+               , targetLibraryInfo = Nothing
+               , targetMachine = Nothing
+               }
+      withPassManager pm (`runPassManager` md)
 
-    let dumpLLVM = False
-        dumpAsm  = False
-    when dumpLLVM $ do
-      putStrLn "------------------------------------------------------------"
-      asm' <- BS.unpack <$> moduleLLVMAssembly md
-      putStrLn asm'
+      let dumpLLVM = False
+          dumpAsm  = False
+      when dumpLLVM $ do
+        putStrLn "------------------------------------------------------------"
+        asm' <- BS.unpack <$> moduleLLVMAssembly md
+        putStrLn asm'
 
-    withClonedThreadSafeModule md $ \tsm -> do
-      addModule tsm dylib compileLayer
-      lookupSymbol session compileLayer dylib (fromString name) >>= \case
-        Left err -> error ("error JITing kernel: " ++ show err)
-        Right (JITSymbol kernelFn _) -> do
-          when dumpLLVM $
-            putStrLn "------------------------------------------------------------"
+      withClonedThreadSafeModule md $ \tsm -> do
+        addModule tsm dylib compileLayer
+        lookupSymbol session compileLayer dylib (fromString name) >>= \case
+          Left err -> error ("error JITing kernel: " ++ show err)
+          Right (JITSymbol kernelFn _) -> do
+            when dumpLLVM $
+              putStrLn "------------------------------------------------------------"
 
-          when dumpAsm $ do
-            let dcfg = defaultConfig { confIn64BitMode = True }
-            instrs <- disassembleBlockWithConfig dcfg (wordPtrToPtr kernelFn) 1024
-            case instrs of
-              Left err -> putStrLn ("disassembly error: " ++ show err)
-              Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
+            when dumpAsm $ do
+              let dcfg = defaultConfig { confIn64BitMode = True }
+              instrs <- disassembleBlockWithConfig dcfg (wordPtrToPtr kernelFn) 1024
+              case instrs of
+                Left err -> putStrLn ("disassembly error: " ++ show err)
+                Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
 
-          let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
-          action $ ViewerFunction $ \ViewerArgs{..} -> do
-            (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
-            (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
-            let fullArgs = argPtr   vaBuffer
-                         : argInt32 vaWidth
-                         : argInt32 vaHeight
-                         : argInt32 vaSubsamples
-                         : argCDouble (CDouble $ fst vaPoint)
-                         : argCDouble (CDouble $ snd vaPoint)
-                         : argCDouble (CDouble $ fst vaStep)
-                         : argCDouble (CDouble $ snd vaStep)
-                         : colorArg
-                         : args
-            callFFI fn retVoid fullArgs
-            sequence_ (colorFree : frees)
+            let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
+            action $ ViewerFunction $ \ViewerArgs{..} -> do
+              (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
+              (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
+              let nPixels = fromIntegral vaWidth * fromIntegral vaHeight :: Int
+                  w = fromIntegral vaWidth  :: Int
+                  h = fromIntegral vaHeight :: Int
+                  (x0, y0) = vaPoint
+                  (dx, dy) = vaStep
+              withPrepArrays prepEnvProxy nPixels $ \prepPtrs -> do
+                -- Haskell prep pass: populate prep arrays before LLVM kernel
+                case mPrepScript of
+                  Nothing -> pure ()
+                  Just (PrepScript _ prepCode) -> do
+                    forM_ (zip [0 .. h - 1] [y0, y0 - dy ..]) $ \(row, y) ->
+                      forM_ (zip [0 .. w - 1] [x0, x0 + dx ..]) $ \(col, x) -> do
+                        let pixelCtx :: Context HaskellValue (ViewerEnv env)
+                            pixelCtx = Bind (Proxy @InternalX)  RealType  x
+                                     $ Bind (Proxy @InternalY)  RealType  y
+                                     $ Bind (Proxy @InternalDX) RealType  dx
+                                     $ Bind (Proxy @InternalDY) RealType  dy
+                                     $ Bind (Proxy @"color")    ColorType grey
+                                     $ vaArgs
+                        iorefs <- mapContextM (\_ _ -> newIORef) pixelCtx
+                        (lastVals, _) <- execStateT
+                          (interpretToIOWithLastValues noPrepDraw prepCode)
+                          (Map.empty, iorefs)
+                        writePrepOutputsFromMap prepEnvProxy prepPtrs lastVals
+                          (row * w + col)
+                -- Call the LLVM kernel with prep arrays passed as raw pointers
+                let fullArgs = argPtr   vaBuffer
+                             : argInt32 vaWidth
+                             : argInt32 vaHeight
+                             : argInt32 vaSubsamples
+                             : argCDouble (CDouble $ fst vaPoint)
+                             : argCDouble (CDouble $ snd vaPoint)
+                             : argCDouble (CDouble $ fst vaStep)
+                             : argCDouble (CDouble $ snd vaStep)
+                             : colorArg
+                             : args ++ map argPtr prepPtrs
+                callFFI fn retVoid fullArgs
+              sequence_ (colorFree : frees)
 
 {-
 -- This is only used in tests

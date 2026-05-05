@@ -1,0 +1,37 @@
+viewer:
+  title: Voronoi
+  style: complex-plane
+  size: 150x150
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/128
+  code: |
+    color <- if |z| < radius then blue else computed
+
+  preparation:
+    outputs:
+      - variable: computed
+        type: Color
+        default: pink
+    code: |
+      computed <- myColor
+
+configuration:
+  title: Configuration
+  size: 400x200
+  vertical-contents:
+    - text-entry:
+        label: "Centers"
+        value: "0, 1, i"
+        type: List of ℂ
+        variable: myList
+    - text-entry:
+        label: "Radius"
+        value: "0.2"
+        type: R
+        variable: radius
+    - color-picker:
+        label: "My color"
+        value: yellow
+        variable: myColor
