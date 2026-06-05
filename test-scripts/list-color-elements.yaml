@@ -1,0 +1,27 @@
+# Tests: List of Color, for-each, index
+# A list of colors is indexed by which Mandelbrot orbit period the pixel belongs to.
+# Simpler test: config list of 4 colors; shader picks one based on quadrant.
+viewer:
+  title: List of Color Elements
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/64
+  code: |
+    # Pick quadrant index (1-based, cycling through 4 colors)
+    qx : Z <- if re z >= 0 then 1 else 0
+    qy : Z <- if im z >= 0 then 1 else 0
+    idx : Z <- qx + 2 * qy + 1
+    color <- palette @@ idx
+
+configuration:
+  title: Configuration
+  size: 400x100
+  vertical-contents:
+    - text-entry:
+        label: "Palette (4 colors)"
+        value: "red, green, blue, yellow"
+        type: List of Color
+        variable: palette

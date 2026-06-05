@@ -1,0 +1,38 @@
+# Tests: join + remove + transform + find in one shader (List of ℝ)
+# Pipeline: join two lists, remove negatives, square remaining, find first > threshold.
+# Expected: single bright band at the found value; grey if none found.
+viewer:
+  title: List Pipeline (join→remove→transform→find)
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/128
+  code: |
+    combined : List of R <- join(listA, listB)
+    positives : List of R <- remove(combined, x -> x <= 0)
+    squared : List of R <- transform(positives, x -> x * x)
+    result : R <- find(squared, x -> x > threshold, -1)
+    d : R <- |re z - result|
+    color <- if result < 0 then grey else blend(exp(-d * 15), white, black)
+
+configuration:
+  title: Configuration
+  size: 400x200
+  vertical-contents:
+    - text-entry:
+        label: "List A"
+        value: "-3, -1, 2, 4"
+        type: List of ℝ
+        variable: listA
+    - text-entry:
+        label: "List B"
+        value: "-2, 0.5, 1, 3"
+        type: List of ℝ
+        variable: listB
+    - text-entry:
+        label: "Threshold"
+        value: "5"
+        type: ℝ
+        variable: threshold

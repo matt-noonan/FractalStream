@@ -1,0 +1,20 @@
+# Tests: remove, for-each (List of ℝ)
+# Starts with [-3,-2,-1,0,1,2,3]; removes non-negative values; keeps negatives.
+# Expected: bright bands only at x = -3, -2, -1 (left half of view).
+viewer:
+  title: List Remove
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/64
+  code: |
+    all : List of R <- [-3, -2, -1, 0, 1, 2, 3]
+    negatives : List of R <- remove(all, x -> x >= 0)
+    closest : R <- 1000
+    for each x in negatives:
+      d : R <- |re z - x|
+      if d < closest:
+        closest <- d
+    color <- blend(exp(-closest * 5), white, black)

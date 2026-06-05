@@ -374,9 +374,15 @@ compileRenderer' prepOutputEnv name code = runExcept $
   assertAbsent (Proxy @InternalDY)          (envProxy (Proxy @env)) $
   assertAbsent (Proxy @"color")             (envProxy (Proxy @env)) $
   buildModuleT "compiled rendering kernel" $ do
-    let retParam       = (toLLVMPtrType ColorType, NoParameterName)
-        params         = toParameterList (envProxy (Proxy @(RenderEnv' env)))
-        prepParams     = toPrepParamList prepOutputEnv
+    let retParam     = (toLLVMPtrType ColorType, NoParameterName)
+        allEnvParams = toParameterList (envProxy (Proxy @(RenderEnv' env)))
+        -- RenderEnv' env = blockWidth ': blockHeight ': subsamples ': ViewerEnv env
+        -- First 3 params are the internal render args; the rest are ViewerEnv.
+        (internalRenderParams, viewerEnvParams) = splitAt 3 allEnvParams
+        arenaParams  = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
+                       , (AST.i32,        ParameterName "#arenaSize") ]
+        params       = internalRenderParams ++ arenaParams ++ viewerEnvParams
+        prepParams   = toPrepParamList prepOutputEnv
         pfX      = bindingEvidence @InternalX   @'RealT  @(ViewerEnv env)
         pfY      = bindingEvidence @InternalY   @'RealT  @(ViewerEnv env)
         pfdX     = bindingEvidence @InternalDX  @'RealT  @(ViewerEnv env)
@@ -384,7 +390,8 @@ compileRenderer' prepOutputEnv name code = runExcept $
         pfOutput = bindingEvidence @"color"     @'ColorT @(ViewerEnv env)
         nViewerEnvArgs = envLength (envProxy (Proxy @(ViewerEnv env)))
     function name (retParam : params ++ prepParams) AST.void $ \allArgs -> do
-      let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg : rest) = allArgs
+      let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg
+                  : arenaPtrArg : arenaSizeArg : rest) = allArgs
           (rawArgs, prepArrayPtrs) = splitAt nViewerEnvArgs rest
       getExtern <- getGetExtern
       mdo
@@ -393,6 +400,12 @@ compileRenderer' prepOutputEnv name code = runExcept $
         blockWidthPtr  <- allocaArg IntegerType blockWidthArg
         blockHeightPtr <- allocaArg IntegerType blockHeightArg
         subsamplesPtr  <- allocaArg IntegerType subsamplesArg
+        -- Arena setup: bumpAlloca tracks the current allocation position.
+        -- arenaEnd is constant = arenaBase + arenaSize.
+        bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
+        store bumpAlloca 0 arenaPtrArg
+        arenaEnd <- gep arenaPtrArg [arenaSizeArg]
+        let arenaState = ArenaState bumpAlloca arenaEnd
         args <- allocaArgs (envProxy (Proxy @(ViewerEnv env))) rawArgs
         x0 <- derefOperand (getBinding args pfX)  >>= \case RealOp v -> pure v
         y0 <- derefOperand (getBinding args pfY)  >>= \case RealOp v -> pure v
@@ -441,11 +454,15 @@ compileRenderer' prepOutputEnv name code = runExcept $
           storeOperand (RealOp xVal) (getBinding args pfX)
           storeOperand (RealOp yVal) (getBinding args pfY)
 
+          -- Reset the arena at the start of each subsample so each pixel's
+          -- dynamic list allocations are independent.
+          store bumpAlloca 0 arenaPtrArg
+
           -- Load prep output vars from their flat arrays before the kernel.
           pixelIndex <- load pixelIndexPtr 0
           overwritePrepOutputs prepOutputEnv prepArrayPtrs pixelIndex argMap
 
-          runReaderT (compileCode getExtern code) args
+          runReaderT (compileCode getExtern arenaState code) args
           (cr0, cg0, cb0) <- case getBinding args pfOutput of
             PtrOp (ColorOp outputR outputG outputB) ->
               (,,) <$> load outputR 0 <*> load outputG 0 <*> load outputB 0
@@ -534,22 +551,23 @@ compileRenderer' prepOutputEnv name code = runExcept $
 compileCode :: forall m env
              . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
             => (String -> Operand)
+            -> ArenaState
             -> Code env
             -> ReaderT (Context OperandPtr env) m ()
-compileCode getExtern = indexedFold @(OperandPtrContext m) $ \case
+compileCode getExtern arena = indexedFold @(OperandPtrContext m) $ \case
 
   Block body -> sequence_ body
 
   NoOp -> pure ()
 
   Set pf _ e -> do
-    x <- value_ getExtern e
+    x <- value_ getExtern arena e
     ctx <- ask
     storeOperand x (withKnownType (typeOfValue e) (getBinding ctx pf))
     pure ()
 
   Let pf name val body -> do
-    x <- value_ getExtern val
+    x <- value_ getExtern arena val
     let t = typeOfValue val
     ptr <- allocaOp t
     storeOperand x ptr
@@ -558,7 +576,7 @@ compileCode getExtern = indexedFold @(OperandPtrContext m) $ \case
       lift (runReaderT body ctx)
 
   IfThenElse cond yes no -> mdo
-    c <- value_ getExtern cond >>= detypeOperand BooleanType
+    c <- value_ getExtern arena cond >>= detypeOperand BooleanType
     condBr c yesLabel noLabel
 
     yesLabel <- block
@@ -577,11 +595,87 @@ compileCode getExtern = indexedFold @(OperandPtrContext m) $ \case
 
     loop <- block
     void body
-    test <- value_ getExtern cond >>= detypeOperand BooleanType
+    test <- value_ getExtern arena cond >>= detypeOperand BooleanType
     condBr test loop exit
 
     exit <- block
     pure ()
+
+  -- | Iterate over each element of a list variable.
+  ForEach pfList _listName (ListType itemTy) itemName pfNoItem _env _ body ->
+    recallIsAbsent pfNoItem $ do
+    ctx <- ask
+    -- Load the head pointer from the list variable's stack slot.
+    headPtr <- lift $ getListOp <$> derefOperand (getBinding ctx pfList)
+    -- Allocate a stack slot to track the current node pointer.
+    currPtrAlloca <- lift $ alloca (AST.ptr AST.i8) Nothing 0
+    lift $ store currPtrAlloca 0 headPtr
+    -- Allocate a stack slot for the current element.
+    elemSlot <- lift $ allocaOp itemTy
+    mdo
+      lift $ br loopHead
+
+      loopHead <- block `named` "foreach_head"
+      currPtr <- lift $ load currPtrAlloca 0
+      isNull  <- lift $ icmp P.EQ currPtr nullI8Ptr
+      lift $ condBr isNull loopExit loopBody
+
+      loopBody <- block `named` "foreach_body"
+      elem_ <- lift $ loadListElem itemTy currPtr
+      lift $ storeOperand elem_ elemSlot
+      -- Run the body with the element bound in the context.
+      lift $ runReaderT body (Bind itemName itemTy elemSlot ctx)
+      nextPtr <- lift $ loadListNext currPtr
+      lift $ store currPtrAlloca 0 nextPtr
+      lift $ br loopHead
+
+      loopExit <- block `named` "foreach_exit"
+      pure ()
+
+  -- | Find the first list element matching a predicate; run action or fallback.
+  Lookup pfList _listName (ListType itemTy) itemName pfNoItem _extEnv _env
+         predicate action fallback ->
+    recallIsAbsent pfNoItem $ do
+    ctx <- ask
+    -- Load the head pointer from the list variable's stack slot.
+    headPtr <- lift $ getListOp <$> derefOperand (getBinding ctx pfList)
+    currPtrAlloca <- lift $ alloca (AST.ptr AST.i8) Nothing 0
+    lift $ store currPtrAlloca 0 headPtr
+    elemSlot <- lift $ allocaOp itemTy
+    mdo
+      lift $ br loopHead
+
+      loopHead <- block `named` "lookup_head"
+      currPtr <- lift $ load currPtrAlloca 0
+      isNull  <- lift $ icmp P.EQ currPtr nullI8Ptr
+      lift $ condBr isNull notFound loopBody
+
+      loopBody <- block `named` "lookup_body"
+      elem_ <- lift $ loadListElem itemTy currPtr
+      lift $ storeOperand elem_ elemSlot
+      -- Evaluate the predicate in the extended context.
+      let extCtx = Bind itemName itemTy elemSlot ctx
+      testBit <- lift $ runReaderT (value_ getExtern arena predicate) extCtx
+                   >>= detypeOperand BooleanType
+      lift $ condBr testBit foundBlock nextIter
+
+      nextIter <- block `named` "lookup_next"
+      nextPtr <- lift $ loadListNext currPtr
+      lift $ store currPtrAlloca 0 nextPtr
+      lift $ br loopHead
+
+      foundBlock <- block `named` "lookup_found"
+      lift $ runReaderT action extCtx
+      lift $ br exit
+
+      notFound <- block `named` "lookup_not_found"
+      lift $ case fallback of
+        Nothing  -> pure ()
+        Just alt -> runReaderT alt ctx
+      lift $ br exit
+
+      exit <- block `named` "lookup_exit"
+      pure ()
 
   _ -> error "unsupported command"
 

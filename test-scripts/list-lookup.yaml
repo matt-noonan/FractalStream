@@ -1,0 +1,31 @@
+# Tests: with-first-matching (Lookup) in shader (List of ℂ)
+# Finds the first point within radius of z; colors that region red.
+# Points beyond radius get black.
+viewer:
+  title: List Lookup (with first matching)
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/48
+  code: |
+    color <- black
+
+    with first c matching |z - c| < radius in myList:
+      color <- blend(|z - c| / radius, red, yellow)
+
+configuration:
+  title: Configuration
+  size: 400x150
+  vertical-contents:
+    - text-entry:
+        label: "Points"
+        value: "0, 1, -1, i, -i"
+        type: List of ℂ
+        variable: myList
+    - text-entry:
+        label: "Radius"
+        value: "0.4"
+        type: ℝ
+        variable: radius

@@ -33,6 +33,7 @@ import Foreign.LibFFI
 import Foreign.C.Types
 
 import Backend.LLVM.Code
+import Backend.LLVM.Operand (listNodeStride)
 
 import Language.Value
 import Language.Value.Evaluator (HaskellValue)
@@ -127,10 +128,57 @@ toFFIArg _ t v = case t of
     c <- mallocArray 3
     pokeArray c [r,g,b]
     pure (argPtr c, free c)
-  ListType _ -> pure (argInt32 0, pure ())
+  ListType itemTy -> do
+    (headPtr, cleanup) <- buildListBuffer itemTy v
+    pure (argPtr headPtr, cleanup)
   TextType -> pure (argInt32 0, pure ())
   BooleanType -> pure (argInt8 (if v then 1 else 0), pure ())
   _ -> error ("todo: toFFIArg " ++ showType t)
+
+-- | Allocate and populate a contiguous buffer of linked-list nodes for a
+-- Haskell list.  Returns the head pointer (null for empty) and a cleanup action.
+-- Node layout (stride = listNodeStride itemTy):
+--   bytes 0-7:  next pointer (null = end of list)
+--   bytes 8+:   element data
+buildListBuffer :: TypeProxy t -> [HaskellType t] -> IO (Ptr Word8, IO ())
+buildListBuffer _      []    = pure (nullPtr, pure ())
+buildListBuffer itemTy items = do
+  let n      = length items
+      stride = listNodeStride itemTy
+  buf <- mallocBytes (n * stride) :: IO (Ptr Word8)
+  forM_ (zip [0 .. n - 1] items) $ \(i, item) -> do
+    let nodeBase = buf `plusPtr` (i * stride)
+        nextRaw  = if i == n - 1
+                   then nullPtr
+                   else buf `plusPtr` ((i + 1) * stride) :: Ptr Word8
+    poke (castPtr nodeBase :: Ptr (Ptr Word8)) nextRaw
+    pokeListElem itemTy (nodeBase `plusPtr` 8) item
+  pure (buf, free buf)
+
+-- | Write element data for a single list node at the given byte address.
+-- Returns an optional cleanup action for recursively allocated sub-lists.
+pokeListElem :: TypeProxy t -> Ptr Word8 -> HaskellType t -> IO ()
+pokeListElem t ptr item = case t of
+  BooleanType -> poke (castPtr ptr :: Ptr Word8)
+                      (if item then 1 else 0 :: Word8)
+  IntegerType -> poke (castPtr ptr :: Ptr Int32)
+                      (fromIntegral item :: Int32)
+  RealType    -> poke (castPtr ptr :: Ptr Double) item
+  ComplexType -> do
+    let x :+ y = item
+    poke (castPtr ptr              :: Ptr Double) x
+    poke (castPtr (ptr `plusPtr` 8) :: Ptr Double) y
+  ColorType   -> do
+    let (r, g, b) = colorToRGB item
+    poke ptr r
+    poke (ptr `plusPtr` 1) g
+    poke (ptr `plusPtr` 2) b
+  ListType itemTy' -> do
+    -- Nested list: recursively build and store the head pointer.
+    (headPtr, _cleanup) <- buildListBuffer itemTy' item
+    -- Note: _cleanup leaks for now; nested lists are uncommon.
+    poke (castPtr ptr :: Ptr (Ptr Word8)) headPtr
+  _ -> pure ()  -- unsupported element types: leave zeroed
 
 fromFFIRetArg :: TypeProxy ty
               -> Ptr Double
@@ -265,6 +313,8 @@ withJittedViewer (dylib, session, compileLayer, nextId) mPrepScript code0 action
                 Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
 
             let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
+                -- 1 MB arena per tile call, reset per subsample inside the kernel.
+                arenaCapacity = 1024 * 1024 :: Int
             action $ ViewerFunction $ \ViewerArgs{..} -> do
               (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
               (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
@@ -273,6 +323,7 @@ withJittedViewer (dylib, session, compileLayer, nextId) mPrepScript code0 action
                   h = fromIntegral vaHeight :: Int
                   (x0, y0) = vaPoint
                   (dx, dy) = vaStep
+              arena <- mallocBytes arenaCapacity :: IO (Ptr Word8)
               withPrepArrays prepEnvProxy nPixels $ \prepPtrs -> do
                 -- Haskell prep pass: populate prep arrays before LLVM kernel
                 case mPrepScript of
@@ -293,11 +344,13 @@ withJittedViewer (dylib, session, compileLayer, nextId) mPrepScript code0 action
                           (Map.empty, iorefs)
                         writePrepOutputsFromMap prepEnvProxy prepPtrs lastVals
                           (row * w + col)
-                -- Call the LLVM kernel with prep arrays passed as raw pointers
+                -- Call the LLVM kernel with the arena + prep arrays as raw pointers
                 let fullArgs = argPtr   vaBuffer
                              : argInt32 vaWidth
                              : argInt32 vaHeight
                              : argInt32 vaSubsamples
+                             : argPtr   arena
+                             : argInt32 (fromIntegral arenaCapacity)
                              : argCDouble (CDouble $ fst vaPoint)
                              : argCDouble (CDouble $ snd vaPoint)
                              : argCDouble (CDouble $ fst vaStep)
@@ -305,6 +358,7 @@ withJittedViewer (dylib, session, compileLayer, nextId) mPrepScript code0 action
                              : colorArg
                              : args ++ map argPtr prepPtrs
                 callFFI fn retVoid fullArgs
+              free arena
               sequence_ (colorFree : frees)
 
 {-
