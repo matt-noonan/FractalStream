@@ -26,6 +26,10 @@ module Actor.Viewer
   , defaultIterLimit
   , defaultMaxRadius
   , defaultMinRadius
+  -- * Backend
+  , ToolRunnerFactory(..)
+  , Backend(..)
+  , defaultToolRunnerFactory
   ) where
 
 import FractalStream.Prelude
@@ -39,7 +43,8 @@ import Language.Value.Parser
 import Language.Code
 import Language.Draw
 import Language.Code.Parser
-import Language.Code.InterpretIO (ScalarIORefM)
+import Language.Code.InterpretIO (ScalarIORefM, IORefTypeOfBinding, eval)
+import Control.Concurrent.MVar
 import Language.Parser.SourceRange
 import Language.Value.Evaluator
 import Foreign
@@ -346,3 +351,80 @@ defaultIterLimit, defaultMaxRadius, defaultMinRadius :: ParsedValue
 defaultIterLimit = fromRight (error "INTERNAL ERROR: defaultIterLimit") $ parseParsedValue Map.empty "100"
 defaultMaxRadius = fromRight (error "INTERNAL ERROR: defaultMaxRadius") $ parseParsedValue Map.empty "10"
 defaultMinRadius = fromRight (error "INTERNAL ERROR: defaultMinRadius") $ parseParsedValue Map.empty "0.0001"
+
+------------------------------------------------------------------------
+-- Backend
+------------------------------------------------------------------------
+
+-- | A factory that sets up the draw-command accumulation system for a viewer's
+-- tools.  Returns three things:
+--   * an action to read all accumulated draw commands (grouped by layer),
+--   * an action to check whether any commands have been added since last read,
+--   * a function from layer number to a 'DrawHandler' for that layer.
+newtype ToolRunnerFactory = ToolRunnerFactory
+  { makeToolRunnerForLayer :: IO ( IO [[DrawCommand]]
+                                 , IO Bool
+                                 , Int -> DrawHandler ScalarIORefM
+                                 )
+  }
+
+-- | Bundles a viewer (shader) compiler with the tool execution machinery.
+data Backend = Backend
+  { bViewerCompiler    :: ViewerCompiler
+  , bToolRunnerFactory :: ToolRunnerFactory
+  }
+
+-- | The default 'ToolRunnerFactory': tool scripts are executed by the
+-- pure Haskell interpreter, and draw commands are accumulated in an
+-- in-memory layer map for the UI to paint afterward.
+defaultToolRunnerFactory :: ToolRunnerFactory
+defaultToolRunnerFactory = ToolRunnerFactory $ do
+  layersMVar <- newMVar (Map.empty :: Map Int [DrawCommand])
+  dcChanged  <- newMVar False
+
+  let consDrawCmd :: Draw_ value env
+                  -> Maybe [Draw_ value env]
+                  -> Maybe [Draw_ value env]
+      consDrawCmd = \case
+        Clear{} -> const (Just [])
+        c       -> Just . \case
+          Nothing -> [c]
+          Just cs -> c : cs
+
+      drawTo :: Int -> DrawHandler ScalarIORefM
+      drawTo n = DrawHandler $ \cmd -> do
+        let emit :: DrawCommand -> StateT (Context IORefTypeOfBinding e) IO ()
+            emit cmd' = liftIO $ do
+              modifyMVar_ dcChanged  (pure . const True)
+              modifyMVar_ layersMVar (pure . Map.alter (consDrawCmd cmd') n)
+        case cmd of
+          DrawPoint _env pv        -> eval pv >>= \p -> emit (DrawPoint EmptyEnvProxy p)
+          DrawCircle _env fill rv pv -> do
+            r <- eval rv; p <- eval pv
+            emit (DrawCircle EmptyEnvProxy fill r p)
+          DrawLine _env fv tv    -> do
+            fr <- eval fv; to <- eval tv
+            emit (DrawLine EmptyEnvProxy fr to)
+          DrawRect _env fill fv tv -> do
+            fr <- eval fv; to <- eval tv
+            emit (DrawRect EmptyEnvProxy fill fr to)
+          SetStroke _env cv      -> eval cv >>= \c -> emit (SetStroke EmptyEnvProxy c)
+          SetFill   _env cv      -> eval cv >>= \c -> emit (SetFill   EmptyEnvProxy c)
+          Clear _env             -> emit (Clear EmptyEnvProxy)
+          Write _env tv pv       -> do
+            txt <- eval tv; pt <- eval pv
+            emit (Write EmptyEnvProxy txt pt)
+
+      getDrawCommands = do
+        tryTakeMVar dcChanged >>= \case
+          Nothing -> pure ()
+          Just _  -> putMVar dcChanged False
+        tryReadMVar layersMVar >>= \case
+          Nothing -> pure [[]]
+          Just m  -> pure (map reverse (Map.elems m))
+
+      drawCommandsChanged = tryReadMVar dcChanged >>= \case
+        Nothing -> pure True
+        Just tf -> pure tf
+
+  pure (getDrawCommands, drawCommandsChanged, drawTo)

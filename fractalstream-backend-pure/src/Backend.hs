@@ -1,10 +1,14 @@
 module Backend
   ( withBackend
+  , module Actor.Viewer   -- re-export Backend, ToolRunnerFactory, etc.
   ) where
 
 import Actor.Viewer
 import Backend.Pure
 
-withBackend :: (ViewerCompiler -> IO a) -> IO a
+withBackend :: (Backend -> IO a) -> IO a
 withBackend action =
-  action (ViewerCompiler interpretViewer)
+  action Backend
+    { bViewerCompiler    = ViewerCompiler interpretViewer
+    , bToolRunnerFactory = defaultToolRunnerFactory
+    }
