@@ -27,7 +27,10 @@ import LLVM.Linking
 import qualified LLVM.CodeModel as CodeModel
 import qualified LLVM.CodeGenOpt as CodeGenOpt
 import qualified LLVM.Relocation as Reloc
+import Control.Concurrent (getNumCapabilities)
+import Control.Concurrent.Chan
 import Control.Concurrent.MVar
+import Control.Exception (bracket)
 
 import Foreign.LibFFI
 import Foreign.C.Types
@@ -313,53 +316,60 @@ withJittedViewer (dylib, session, compileLayer, nextId) mPrepScript code0 action
                 Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
 
             let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
-                -- 1 MB arena per tile call, reset per subsample inside the kernel.
+                -- 1 MB arena per worker, reset per subsample inside the kernel.
                 arenaCapacity = 1024 * 1024 :: Int
-            action $ ViewerFunction $ \ViewerArgs{..} -> do
-              (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
-              (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
-              let nPixels = fromIntegral vaWidth * fromIntegral vaHeight :: Int
-                  w = fromIntegral vaWidth  :: Int
-                  h = fromIntegral vaHeight :: Int
-                  (x0, y0) = vaPoint
-                  (dx, dy) = vaStep
-              arena <- mallocBytes arenaCapacity :: IO (Ptr Word8)
-              withPrepArrays prepEnvProxy nPixels $ \prepPtrs -> do
-                -- Haskell prep pass: populate prep arrays before LLVM kernel
-                case mPrepScript of
-                  Nothing -> pure ()
-                  Just (PrepScript _ prepCode) -> do
-                    forM_ (zip [0 .. h - 1] [y0, y0 - dy ..]) $ \(row, y) ->
-                      forM_ (zip [0 .. w - 1] [x0, x0 + dx ..]) $ \(col, x) -> do
-                        let pixelCtx :: Context HaskellValue (ViewerEnv env)
-                            pixelCtx = Bind (Proxy @InternalX)  RealType  x
-                                     $ Bind (Proxy @InternalY)  RealType  y
-                                     $ Bind (Proxy @InternalDX) RealType  dx
-                                     $ Bind (Proxy @InternalDY) RealType  dy
-                                     $ Bind (Proxy @"color")    ColorType grey
-                                     $ vaArgs
-                        iorefs <- mapContextM (\_ _ -> newIORef) pixelCtx
-                        (lastVals, _) <- execStateT
-                          (interpretToIOWithLastValues noPrepDraw prepCode)
-                          (Map.empty, iorefs)
-                        writePrepOutputsFromMap prepEnvProxy prepPtrs lastVals
-                          (row * w + col)
-                -- Call the LLVM kernel with the arena + prep arrays as raw pointers
-                let fullArgs = argPtr   vaBuffer
-                             : argInt32 vaWidth
-                             : argInt32 vaHeight
-                             : argInt32 vaSubsamples
-                             : argPtr   arena
-                             : argInt32 (fromIntegral arenaCapacity)
-                             : argCDouble (CDouble $ fst vaPoint)
-                             : argCDouble (CDouble $ snd vaPoint)
-                             : argCDouble (CDouble $ fst vaStep)
-                             : argCDouble (CDouble $ snd vaStep)
-                             : colorArg
-                             : args ++ map argPtr prepPtrs
-                callFFI fn retVoid fullArgs
-              free arena
-              sequence_ (colorFree : frees)
+
+            -- Allocate a fixed pool of arenas (one per capability)
+            numWorkers <- getNumCapabilities
+            arenas <- replicateM numWorkers (mallocBytes arenaCapacity :: IO (Ptr Word8))
+            arenaPool <- newChan
+            mapM_ (writeChan arenaPool) arenas
+            result <- action $ ViewerFunction $ \ViewerArgs{..} ->
+              bracket (readChan arenaPool) (writeChan arenaPool) $ \arena -> do
+                (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
+                (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
+                let nPixels = fromIntegral vaWidth * fromIntegral vaHeight :: Int
+                    w = fromIntegral vaWidth  :: Int
+                    h = fromIntegral vaHeight :: Int
+                    (x0, y0) = vaPoint
+                    (dx, dy) = vaStep
+                withPrepArrays prepEnvProxy nPixels $ \prepPtrs -> do
+                  -- Haskell prep pass: populate prep arrays before LLVM kernel
+                  case mPrepScript of
+                    Nothing -> pure ()
+                    Just (PrepScript _ prepCode) -> do
+                      forM_ (zip [0 .. h - 1] [y0, y0 - dy ..]) $ \(row, y) ->
+                        forM_ (zip [0 .. w - 1] [x0, x0 + dx ..]) $ \(col, x) -> do
+                          let pixelCtx :: Context HaskellValue (ViewerEnv env)
+                              pixelCtx = Bind (Proxy @InternalX)  RealType  x
+                                       $ Bind (Proxy @InternalY)  RealType  y
+                                       $ Bind (Proxy @InternalDX) RealType  dx
+                                       $ Bind (Proxy @InternalDY) RealType  dy
+                                       $ Bind (Proxy @"color")    ColorType grey
+                                       $ vaArgs
+                          iorefs <- mapContextM (\_ _ -> newIORef) pixelCtx
+                          (lastVals, _) <- execStateT
+                            (interpretToIOWithLastValues noPrepDraw prepCode)
+                            (Map.empty, iorefs)
+                          writePrepOutputsFromMap prepEnvProxy prepPtrs lastVals
+                            (row * w + col)
+                  -- Call the LLVM kernel with the arena + prep arrays as raw pointers
+                  let fullArgs = argPtr   vaBuffer
+                               : argInt32 vaWidth
+                               : argInt32 vaHeight
+                               : argInt32 vaSubsamples
+                               : argPtr   arena
+                               : argInt32 (fromIntegral arenaCapacity)
+                               : argCDouble (CDouble $ fst vaPoint)
+                               : argCDouble (CDouble $ snd vaPoint)
+                               : argCDouble (CDouble $ fst vaStep)
+                               : argCDouble (CDouble $ snd vaStep)
+                               : colorArg
+                               : args ++ map argPtr prepPtrs
+                  callFFI fn retVoid fullArgs
+                sequence_ (colorFree : frees)
+            mapM_ free arenas
+            pure result
 
 {-
 -- This is only used in tests
