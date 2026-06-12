@@ -28,6 +28,8 @@ module Actor.Viewer
   , defaultMinRadius
   -- * Backend
   , ToolRunnerFactory(..)
+  , ToolRunner(..)
+  , defaultToolRunner
   , Backend(..)
   , defaultToolRunnerFactory
   ) where
@@ -38,12 +40,12 @@ import Actor.Viewer.Types
 import Data.DynamicValue
 import Actor.Layout (CodeString(..), Dimensions(..), UIScript)
 import Actor.Tool
+import Actor.Event (ToolRunner(..), defaultToolRunner, EventArgument_, SingleEventHandler, Event)
 import Language.Environment
 import Language.Value.Parser
 import Language.Code
 import Language.Draw
 import Language.Code.Parser
-import Language.Code.InterpretIO (ScalarIORefM, IORefTypeOfBinding, eval)
 import Control.Concurrent.MVar
 import Language.Parser.SourceRange
 import Language.Value.Evaluator
@@ -129,10 +131,16 @@ data Viewer = Viewer
   , vListen    :: IO () -> IO (IO ())
   , vDrawCmds  :: IO [[DrawCommand]]
   , vDrawCmdsChanged :: IO Bool
-  , vDrawTo    :: Int -> DrawHandler ScalarIORefM
   , vCodeWithArgs :: CodeWithArgs
   , vTools     :: Dynamic [Tool]
   , vScript    :: UIScript
+  , vBuildToolHandler
+      :: Int
+      -> SomeContext EventArgument_
+      -> [SingleEventHandler]
+      -> IO (Either String (Double -> Event -> Maybe (IO ())))
+    -- ^ Build a tool's event dispatcher for the given draw layer.  Supplied by
+    --   the backend (interpreter or JIT-compiled); see 'ToolRunner'.
   }
 
 snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Maybe String)
@@ -333,7 +341,7 @@ cloneViewer v = do
     , vCodeWithArgs = vCodeWithArgs v
     , vDrawCmds = vDrawCmds v
     , vDrawCmdsChanged = vDrawCmdsChanged v
-    , vDrawTo = vDrawTo v
+    , vBuildToolHandler = vBuildToolHandler v
     , vScript = vScript v
     }
 
@@ -360,11 +368,11 @@ defaultMinRadius = fromRight (error "INTERNAL ERROR: defaultMinRadius") $ parseP
 -- tools.  Returns three things:
 --   * an action to read all accumulated draw commands (grouped by layer),
 --   * an action to check whether any commands have been added since last read,
---   * a function from layer number to a 'DrawHandler' for that layer.
+--   * a function from layer number to a 'DrawSink' for that layer.
 newtype ToolRunnerFactory = ToolRunnerFactory
   { makeToolRunnerForLayer :: IO ( IO [[DrawCommand]]
                                  , IO Bool
-                                 , Int -> DrawHandler ScalarIORefM
+                                 , Int -> DrawSink
                                  )
   }
 
@@ -372,6 +380,9 @@ newtype ToolRunnerFactory = ToolRunnerFactory
 data Backend = Backend
   { bViewerCompiler    :: ViewerCompiler
   , bToolRunnerFactory :: ToolRunnerFactory
+  , bToolRunner        :: ToolRunner
+    -- ^ How tool event handlers are executed: 'defaultToolRunner' (interpreter)
+    --   or a backend-specific JIT-compiled runner.
   }
 
 -- | The default 'ToolRunnerFactory': tool scripts are executed by the
@@ -382,38 +393,31 @@ defaultToolRunnerFactory = ToolRunnerFactory $ do
   layersMVar <- newMVar (Map.empty :: Map Int [DrawCommand])
   dcChanged  <- newMVar False
 
-  let consDrawCmd :: Draw_ value env
-                  -> Maybe [Draw_ value env]
-                  -> Maybe [Draw_ value env]
+  let consDrawCmd :: DrawCommand
+                  -> Maybe [DrawCommand]
+                  -> Maybe [DrawCommand]
       consDrawCmd = \case
         Clear{} -> const (Just [])
         c       -> Just . \case
           Nothing -> [c]
           Just cs -> c : cs
 
-      drawTo :: Int -> DrawHandler ScalarIORefM
-      drawTo n = DrawHandler $ \cmd -> do
-        let emit :: DrawCommand -> StateT (Context IORefTypeOfBinding e) IO ()
-            emit cmd' = liftIO $ do
-              modifyMVar_ dcChanged  (pure . const True)
-              modifyMVar_ layersMVar (pure . Map.alter (consDrawCmd cmd') n)
-        case cmd of
-          DrawPoint _env pv        -> eval pv >>= \p -> emit (DrawPoint EmptyEnvProxy p)
-          DrawCircle _env fill rv pv -> do
-            r <- eval rv; p <- eval pv
-            emit (DrawCircle EmptyEnvProxy fill r p)
-          DrawLine _env fv tv    -> do
-            fr <- eval fv; to <- eval tv
-            emit (DrawLine EmptyEnvProxy fr to)
-          DrawRect _env fill fv tv -> do
-            fr <- eval fv; to <- eval tv
-            emit (DrawRect EmptyEnvProxy fill fr to)
-          SetStroke _env cv      -> eval cv >>= \c -> emit (SetStroke EmptyEnvProxy c)
-          SetFill   _env cv      -> eval cv >>= \c -> emit (SetFill   EmptyEnvProxy c)
-          Clear _env             -> emit (Clear EmptyEnvProxy)
-          Write _env tv pv       -> do
-            txt <- eval tv; pt <- eval pv
-            emit (Write EmptyEnvProxy txt pt)
+      emit :: Int -> DrawCommand -> IO ()
+      emit n cmd' = do
+        modifyMVar_ dcChanged  (pure . const True)
+        modifyMVar_ layersMVar (pure . Map.alter (consDrawCmd cmd') n)
+
+      mkSink :: Int -> DrawSink
+      mkSink n = DrawSink
+        { dsClear  = emit n (Clear EmptyEnvProxy)
+        , dsStroke = \c -> emit n (SetStroke EmptyEnvProxy c)
+        , dsFill   = \c -> emit n (SetFill EmptyEnvProxy c)
+        , dsPoint  = \p -> emit n (DrawPoint EmptyEnvProxy p)
+        , dsLine   = \f t -> emit n (DrawLine EmptyEnvProxy f t)
+        , dsCircle = \fill r p -> emit n (DrawCircle EmptyEnvProxy fill r p)
+        , dsRect   = \fill f t -> emit n (DrawRect EmptyEnvProxy fill f t)
+        , dsWrite  = \txt pt -> emit n (Write EmptyEnvProxy txt pt)
+        }
 
       getDrawCommands = do
         tryTakeMVar dcChanged >>= \case
@@ -427,4 +431,4 @@ defaultToolRunnerFactory = ToolRunnerFactory $ do
         Nothing -> pure True
         Just tf -> pure tf
 
-  pure (getDrawCommands, drawCommandsChanged, drawTo)
+  pure (getDrawCommands, drawCommandsChanged, mkSink)

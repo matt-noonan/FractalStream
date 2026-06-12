@@ -189,7 +189,9 @@ makeComplexViewer project backend mkViewer someContext configArgs showConfig rer
     vPixelSize <- throwLeft (getDynamic cvPixelSize) >>= newVariable
     let vSaveView = pure ()
 
-    (vDrawCmds, vDrawCmdsChanged, vDrawTo) <- makeToolRunnerForLayer (bToolRunnerFactory backend)
+    (vDrawCmds, vDrawCmdsChanged, vDrawSink) <- makeToolRunnerForLayer (bToolRunnerFactory backend)
+
+    let vBuildToolHandler = runTool (bToolRunner backend) vDrawSink
 
     getDynamic cvCode >>= \case
 

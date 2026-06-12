@@ -4,6 +4,8 @@ module Backend.LLVM.Code
   ( --compile
 --  , compileRenderer
    compileRenderer'
+  , compileToolHandler
+  , DrawVTable(..)
   ) where
 
 import FractalStream.Prelude
@@ -28,6 +30,7 @@ import Unsafe.Coerce (unsafeCoerce)
 
 import Language.Type
 import Language.Code
+import Language.Draw
 import Data.Indexed.Functor
 
 toParameterList :: EnvironmentProxy env -> [(AST.Type, ParameterName)]
@@ -468,7 +471,7 @@ compileRenderer' prepOutputEnv name code = runExcept $
           pixelIndex <- load pixelIndexPtr 0
           overwritePrepOutputs prepOutputEnv prepArrayPtrs pixelIndex argMap
 
-          runReaderT (compileCode getExtern arenaState code) args
+          runReaderT (compileCode getExtern arenaState Nothing code) args
           overflowed <- load overflowFlag 0
           (cr0, cg0, cb0) <- case getBinding args pfOutput of
             PtrOp (ColorOp outputR outputG outputB) ->
@@ -559,13 +562,91 @@ compileRenderer' prepOutputEnv name code = runExcept $
         retVoid
 
 
+-- | C function pointers (one per draw primitive) that a compiled tool's
+-- 'DrawCommand's call back into Haskell.  Each field is an LLVM operand of the
+-- appropriate function-pointer type.  Viewers don't draw, so they pass
+-- 'Nothing' to 'compileCode'; tool handlers pass 'Just'.
+data DrawVTable = DrawVTable
+  { dvClear  :: Operand   -- ^ void()
+  , dvStroke :: Operand   -- ^ void(i8 r, i8 g, i8 b)
+  , dvFill   :: Operand   -- ^ void(i8 r, i8 g, i8 b)
+  , dvPoint  :: Operand   -- ^ void(double x, double y)
+  , dvLine   :: Operand   -- ^ void(double x1, double y1, double x2, double y2)
+  , dvCircle :: Operand   -- ^ void(i8 fill, double r, double x, double y)
+  , dvRect   :: Operand   -- ^ void(i8 fill, double x1, double y1, double x2, double y2)
+  }
+
+-- | Compile a single tool event handler into a native function.  Unlike a
+-- viewer kernel there is no pixel loop: the body runs once.  ABI (in order):
+-- seven draw-callback function pointers (passed as i8*), the arena pointer and
+-- size, a 1-byte overflow-out pointer, then the handler's environment values
+-- (read-only inputs, marshalled like viewer args).  Draw commands in the body
+-- 'call' the vtable; list allocations use the arena; on overflow the kernel
+-- writes 1 to the overflow byte.
+compileToolHandler :: forall e
+                    . EnvironmentProxy e
+                   -> AST.Name
+                   -> Code e
+                   -> Either String AST.Module
+compileToolHandler envp name code = runExcept $
+  buildModuleT "compiled tool handler" $ do
+    let drawParams =
+          [ (AST.ptr AST.i8, ParameterName "draw.clear")
+          , (AST.ptr AST.i8, ParameterName "draw.stroke")
+          , (AST.ptr AST.i8, ParameterName "draw.fill")
+          , (AST.ptr AST.i8, ParameterName "draw.point")
+          , (AST.ptr AST.i8, ParameterName "draw.line")
+          , (AST.ptr AST.i8, ParameterName "draw.circle")
+          , (AST.ptr AST.i8, ParameterName "draw.rect") ]
+        arenaParams    = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
+                         , (AST.i32,        ParameterName "#arenaSize") ]
+        overflowParams = [ (AST.ptr AST.i8, ParameterName "#overflowOut") ]
+        params = drawParams ++ arenaParams ++ overflowParams ++ toParameterList envp
+        fnPtrTy rTy aTys = AST.ptr (AST.FunctionType rTy aTys False)
+    function name params AST.void $ \allArgs -> do
+      getExtern <- getGetExtern
+      _entry <- block `named` "tool_entry"
+      let (drawArgs, afterDraw) = splitAt 7 allArgs
+          (arenaPtrArg : arenaSizeArg : overflowArg : rawEnvArgs) = afterDraw
+          [clearP, strokeP, fillP, pointP, lineP, circleP, rectP] = drawArgs
+
+      bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
+      store bumpAlloca 0 arenaPtrArg
+      arenaEnd <- gep arenaPtrArg [arenaSizeArg]
+      overflowFlag <- alloca AST.i1 Nothing 0
+      store overflowFlag 0 (C.bit 0)
+      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag
+
+      clearF  <- bitcast clearP  (fnPtrTy AST.void [])
+      strokeF <- bitcast strokeP (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
+      fillF   <- bitcast fillP   (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
+      pointF  <- bitcast pointP  (fnPtrTy AST.void [AST.double, AST.double])
+      lineF   <- bitcast lineP
+                   (fnPtrTy AST.void [AST.double, AST.double, AST.double, AST.double])
+      circleF <- bitcast circleP
+                   (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double])
+      rectF   <- bitcast rectP
+                   (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double, AST.double])
+      let vt = DrawVTable { dvClear = clearF, dvStroke = strokeF, dvFill = fillF
+                          , dvPoint = pointF, dvLine = lineF, dvCircle = circleF
+                          , dvRect = rectF }
+
+      args <- allocaToolArgs envp rawEnvArgs
+      runReaderT (compileCode getExtern arenaState (Just vt) code) args
+
+      ovf  <- load overflowFlag 0
+      ovf8 <- zext ovf AST.i8
+      store overflowArg 0 ovf8
+      retVoid
+
 compileCode :: forall m env
              . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
             => (String -> Operand)
             -> ArenaState
+            -> Maybe DrawVTable
             -> Code env
             -> ReaderT (Context OperandPtr env) m ()
-compileCode getExtern arena = indexedFold @(OperandPtrContext m) $ \case
+compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
 
   Block body -> sequence_ body
 
@@ -688,7 +769,31 @@ compileCode getExtern arena = indexedFold @(OperandPtrContext m) $ \case
       exit <- block `named` "lookup_exit"
       pure ()
 
-  _ -> error "unsupported command"
+  DrawCommand d -> case mvtable of
+    Nothing -> throwError "internal error: draw command compiled without a draw vtable"
+    Just vt -> do
+      -- A point Value has type (Pair RealT RealT) -> PairOp (RealOp x) (RealOp y).
+      let withPt pv k = value_ getExtern arena pv >>= \case
+            PairOp (RealOp x) (RealOp y) -> k x y
+      case d of
+        Clear _ -> void $ call (dvClear vt) []
+        SetStroke _ cv -> value_ getExtern arena cv >>= \case
+          ColorOp r g b -> void $ call (dvStroke vt) [(r,[]),(g,[]),(b,[])]
+        SetFill _ cv -> value_ getExtern arena cv >>= \case
+          ColorOp r g b -> void $ call (dvFill vt) [(r,[]),(g,[]),(b,[])]
+        DrawPoint _ pv -> withPt pv $ \x y ->
+          void $ call (dvPoint vt) [(x,[]),(y,[])]
+        DrawLine _ p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
+          void $ call (dvLine vt) [(x1,[]),(y1,[]),(x2,[]),(y2,[])]
+        DrawCircle _ fill rv pv -> value_ getExtern arena rv >>= \case
+          RealOp r -> withPt pv $ \x y ->
+            void $ call (dvCircle vt)
+              [(C.int8 (if fill then 1 else 0),[]),(r,[]),(x,[]),(y,[])]
+        DrawRect _ fill p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
+          void $ call (dvRect vt)
+            [(C.int8 (if fill then 1 else 0),[]),(x1,[]),(y1,[]),(x2,[]),(y2,[])]
+        Write _ _ _ ->
+          throwError "The LLVM backend cannot compile `write` (text) yet"
 
 
 data OperandPtrContext :: (* -> *) -> Environment -> Exp *
@@ -715,3 +820,25 @@ allocaArg t op = do
   x <- typedOperand t op
   storeOperand x ptr
   pure ptr
+
+-- | Bind a tool handler's environment arguments.  Complex and Color values are
+-- already passed as pointers, so we bind them in/out (pointing directly at the
+-- caller's buffer) so that a 'Set' of a config variable is visible to the host
+-- after the call (used for write-back, e.g. the Select tool).  Everything else
+-- is bound by value as usual (no write-back yet).
+allocaToolArgs :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+               => EnvironmentProxy env
+               -> [Operand]
+               -> m (Context OperandPtr env)
+allocaToolArgs EmptyEnvProxy [] = pure EmptyContext
+allocaToolArgs (BindingProxy name ty env) (op:ops) =
+  Bind name ty <$> bindToolArg ty op <*> allocaToolArgs env ops
+allocaToolArgs _ _ =
+  throwError "internal error: mismatched environment/args counts (tool)"
+
+bindToolArg :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+            => TypeProxy t -> Operand -> m (PtrOp t)
+bindToolArg ty op = case ty of
+  ComplexType -> typedOperandPtr ComplexType op
+  ColorType   -> typedOperandPtr ColorType op
+  _           -> allocaArg ty op

@@ -333,8 +333,7 @@ buildValue getExtern arena = indexedFold go'
       NegI i -> i >>= \case
          (IntegerOp x) -> IntegerOp <$> sub (C.int32 0) x
       PowI mx my -> ((,) <$> mx <*> my) >>= \case
-         (IntegerOp x, IntegerOp n) ->
-           IntegerOp <$> call (getExtern "powi") [(x, []), (n, [])]
+         (IntegerOp x, IntegerOp n) -> IntegerOp <$> intPow x n
       AbsI i -> i >>= \case
         IntegerOp x -> IntegerOp <$> call (getExtern "absi") [(x, []), (C.bit 0, [])]
 
@@ -877,12 +876,39 @@ appendNode headSlot prevSlot newNode = do
     pure ()
   store prevSlot 0 newNode
 
+-- | Emit a loop computing @base ^ expo@ for a non-negative integer exponent by
+-- repeated multiplication.  This matches the interpreter's integer power and
+-- replaces a bogus @llvm.powi.i32@ "intrinsic" (LLVM's @llvm.powi@ only takes a
+-- floating-point base, so the old declaration produced garbage when actually
+-- called — which only happened from tools, since viewer code's constant
+-- exponents are rewritten to multiplications).  A negative exponent yields 1.
+intPow :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
+       => Operand -> Operand -> m Operand
+intPow base expo = mdo
+  resultSlot <- alloca AST.i32 Nothing 0
+  store resultSlot 0 (C.int32 1)
+  eSlot <- alloca AST.i32 Nothing 0
+  store eSlot 0 expo
+  br powHead
+  powHead <- block `named` "ipow_head"
+  e <- load eSlot 0
+  cont <- icmp P.SGT e (C.int32 0)
+  condBr cont powBody powExit
+  powBody <- block `named` "ipow_body"
+  r <- load resultSlot 0
+  r' <- mul r base
+  store resultSlot 0 r'
+  e' <- sub e (C.int32 1)
+  store eSlot 0 e'
+  br powHead
+  powExit <- block `named` "ipow_exit"
+  load resultSlot 0
+
 getGetExtern :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
              => m (String -> Operand)
 getGetExtern = do
   es <- mapM (\(name, getter) -> (name,) <$> getter) $
     [ ("absi", extern "llvm.abs.i32" [AST.i32, AST.i1] AST.i32)
-    , ("powi", extern "llvm.powi.i32" [AST.i32, AST.i32] AST.i32)
     , ("trunc", extern "llvm.trunc.f64" [AST.double] AST.double)
     , ("floor", extern "llvm.floor.f64" [AST.double] AST.double)
     , ("ceil", extern "llvm.ceil.f64" [AST.double] AST.double)

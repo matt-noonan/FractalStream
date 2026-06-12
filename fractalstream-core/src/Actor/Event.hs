@@ -12,12 +12,17 @@ module Actor.Event
 
   , Coordinate(..)
   , buildHandler
+  , buildHandlerWith
+  , ToolExec
+  , ToolRunner(..)
+  , defaultToolRunner
   , makeEventHandler
 
   , constArg
   , mutableVar
   , mutableArg
   , toUserString
+  , snapshotEventArgs
 
   ) where
 
@@ -127,24 +132,46 @@ run draw ctx script = do
                         Just setter -> when (Scalar ty old /= Scalar ty new) (setter ty new)
                     ) ctx'
 
+-- | Read the current value of every argument in a tool's event context,
+-- yielding a concrete 'HaskellValue' context (or 'Nothing' if any argument is
+-- currently unavailable, e.g. an unparsed configuration field).
+snapshotEventArgs :: Context EventArgument_ env -> IO (Maybe (Context HaskellValue env))
+snapshotEventArgs ctx =
+  mapContextM @MaybeHaskellValue @HaskellValue (\_ _ -> id) <$> mapContextM (\_ _ -> argGetValue) ctx
+
+-- | How a single tool event handler's 'Code' is executed: given a witness for
+-- its environment, the argument context, and the code, run it.  The interpreter
+-- ignores the proxy and uses 'run'; the LLVM backend uses it to JIT the handler.
+type ToolExec =
+  forall e. EnvironmentProxy e -> Context EventArgument_ e -> Code e -> IO ()
+
 makeEventHandler :: forall env
                   . (MissingClickArgs env, MissingDragArgs env, MissingUnitArgs env)
-                 => DrawHandler ScalarIORefM
+                 => ToolExec
                  -> Context EventArgument_ env
                  -> CombinedEventHandler env
                  -> Double
                  -> Event
                  -> Maybe (IO ())
-makeEventHandler draw ctx CombinedEventHandler{..} = \px -> \case
-  Click (x, y) -> onClick <&> run draw (constArg x # constArg y # constArg px # ctx)
-  DoubleClick (x, y) -> onDoubleClick <&> run draw (constArg x # constArg y # constArg px # ctx)
-  Drag (x, y) (x', y') -> onDrag <&> run draw (constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx)
-  DragDone (x, y) (x', y') -> onDragDone <&> run draw (constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx)
-  Timer name -> Map.lookup name onTimer <&> run draw (constArg px # ctx) . snd
-  ButtonPressed name -> Map.lookup name onButton <&> run draw (constArg px # ctx)
-  Refresh -> onRefresh <&> run draw (constArg px # ctx)
-  Activated -> onActivated <&> run draw (constArg px # ctx)
-  Deactivated -> onDeactivated <&> run draw (constArg px # ctx)
+makeEventHandler exec ctx CombinedEventHandler{..} = \px -> \case
+  Click (x, y) -> onClick <&> \code ->
+    let c = constArg x # constArg y # constArg px # ctx in exec (contextToEnv c) c code
+  DoubleClick (x, y) -> onDoubleClick <&> \code ->
+    let c = constArg x # constArg y # constArg px # ctx in exec (contextToEnv c) c code
+  Drag (x, y) (x', y') -> onDrag <&> \code ->
+    let c = constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx in exec (contextToEnv c) c code
+  DragDone (x, y) (x', y') -> onDragDone <&> \code ->
+    let c = constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx in exec (contextToEnv c) c code
+  Timer name -> Map.lookup name onTimer <&> \(_, code) ->
+    let c = constArg px # ctx in exec (contextToEnv c) c code
+  ButtonPressed name -> Map.lookup name onButton <&> \code ->
+    let c = constArg px # ctx in exec (contextToEnv c) c code
+  Refresh -> onRefresh <&> \code ->
+    let c = constArg px # ctx in exec (contextToEnv c) c code
+  Activated -> onActivated <&> \code ->
+    let c = constArg px # ctx in exec (contextToEnv c) c code
+  Deactivated -> onDeactivated <&> \code ->
+    let c = constArg px # ctx in exec (contextToEnv c) c code
 
 combineEventHandlers :: forall env
                       . Either String (CombinedEventHandler env)
@@ -212,11 +239,13 @@ singleToCombined env = \case
     SomeUnitHandler script <- getDynamic (dyn code)
     pure $ bimap snd (\h -> noHandlers { onDeactivated = Just h }) (script env)
 
-buildHandler :: DrawHandler ScalarIORefM
-             -> SomeContext EventArgument_
-             -> [SingleEventHandler]
-             -> IO (Either String (Double -> Event -> Maybe (IO ())))
-buildHandler draw (SomeContext ctx) handlers = do
+-- | Parse a tool's event handlers and build its event dispatcher, with handler
+-- execution supplied by the given 'ToolExec' (interpreter or JIT-compiled).
+buildHandlerWith :: ToolExec
+                 -> SomeContext EventArgument_
+                 -> [SingleEventHandler]
+                 -> IO (Either String (Double -> Event -> Maybe (IO ())))
+buildHandlerWith exec (SomeContext ctx) handlers = do
   let env = contextToEnv ctx
   ecombined <- foldl' combineEventHandlers (Right noHandlers) <$> mapM (singleToCombined env) handlers
   case ecombined of
@@ -228,7 +257,47 @@ buildHandler draw (SomeContext ctx) handlers = do
       let combined = case (onDrag combined0, onDragDone combined0) of
             (Just _, Nothing) -> combined0 { onDragDone = Just NoOp }
             _ -> combined0
-      in pure (pure $ makeEventHandler draw ctx combined)
+      in pure (pure $ makeEventHandler exec ctx combined)
+
+-- | The interpreter handler builder: execute each handler through 'run'.
+buildHandler :: DrawHandler ScalarIORefM
+             -> SomeContext EventArgument_
+             -> [SingleEventHandler]
+             -> IO (Either String (Double -> Event -> Maybe (IO ())))
+buildHandler draw = buildHandlerWith (\_ c code -> run draw c code)
+
+-- | How a backend turns a tool's parsed event handlers into the event
+-- dispatcher the UI calls.  Given the per-layer draw handler (from the tool
+-- draw-command accumulator), the layer number, the tool's variable context, and
+-- the parsed handlers, it produces (or fails to produce) a
+-- @Double -> Event -> Maybe (IO ())@ dispatcher.  The pure/interpreter backend
+-- uses 'defaultToolRunner'; the LLVM backend supplies one that JIT-compiles the
+-- handlers.
+newtype ToolRunner = ToolRunner
+  { runTool :: (Int -> DrawSink)
+            -> Int
+            -> SomeContext EventArgument_
+            -> [SingleEventHandler]
+            -> IO (Either String (Double -> Event -> Maybe (IO ()))) }
+
+-- | The interpreter tool runner: evaluate draw values through the pure
+-- interpreter and emit them into the given layer's 'DrawSink'.
+defaultToolRunner :: ToolRunner
+defaultToolRunner = ToolRunner $ \sink layer ctx handlers ->
+  buildHandlerWith (\_ c code -> run (drawHandlerForSink (sink layer)) c code) ctx handlers
+
+-- | Adapt a 'DrawSink' into an interpreter 'DrawHandler': evaluate each draw
+-- command's value arguments and forward the concrete values to the sink.
+drawHandlerForSink :: DrawSink -> DrawHandler ScalarIORefM
+drawHandlerForSink sink = DrawHandler $ \case
+  DrawPoint _ pv          -> eval pv >>= liftIO . dsPoint sink
+  DrawCircle _ fill rv pv -> do r <- eval rv; p <- eval pv; liftIO (dsCircle sink fill r p)
+  DrawLine _ fv tv        -> do f <- eval fv; t <- eval tv; liftIO (dsLine sink f t)
+  DrawRect _ fill fv tv   -> do f <- eval fv; t <- eval tv; liftIO (dsRect sink fill f t)
+  SetStroke _ cv          -> eval cv >>= liftIO . dsStroke sink
+  SetFill _ cv            -> eval cv >>= liftIO . dsFill sink
+  Clear _                 -> liftIO (dsClear sink)
+  Write _ tv pv           -> do txt <- eval tv; pt <- eval pv; liftIO (dsWrite sink txt pt)
 
 type EventDependencies =
   (Dynamic (Either String Splices),

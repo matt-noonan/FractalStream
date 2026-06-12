@@ -11,4 +11,5 @@ withBackend action = withJIT $ \jit ->
   action Backend
     { bViewerCompiler    = ViewerCompiler (withJittedViewer jit)
     , bToolRunnerFactory = defaultToolRunnerFactory
+    , bToolRunner        = llvmToolRunner jit
     }

@@ -7,6 +7,7 @@ module Language.Draw
   , transformDrawValuesM
   , DrawHandler(..)
   , runDrawHandler
+  , DrawSink(..)
   ) where
 
 import FractalStream.Prelude
@@ -20,6 +21,25 @@ type DrawCommand = Draw_ ConcreteValue '[]
 
 data ConcreteValue :: Environment -> FSType -> Exp Type
 type instance Eval (ConcreteValue env t) = HaskellType t
+
+-- | A backend-agnostic sink for draw commands, in concrete (plane-coordinate)
+-- Haskell values.  The interpreter adapts a 'DrawHandler' onto one of these;
+-- the LLVM backend wraps each field as a C callback for compiled tools.  There
+-- is no compiled support for 'dsWrite' (text) yet — only the interpreter uses it.
+data DrawSink = DrawSink
+  { dsClear  :: IO ()
+  , dsStroke :: HaskellType 'ColorT -> IO ()
+  , dsFill   :: HaskellType 'ColorT -> IO ()
+  , dsPoint  :: HaskellType ('Pair 'RealT 'RealT) -> IO ()
+  , dsLine   :: HaskellType ('Pair 'RealT 'RealT)
+             -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
+  , dsCircle :: Bool -> HaskellType 'RealT
+             -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
+  , dsRect   :: Bool -> HaskellType ('Pair 'RealT 'RealT)
+             -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
+  , dsWrite  :: HaskellType 'TextT
+             -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
+  }
 
 data DrawHandler (code :: Environment -> Exp Type) where
   DrawHandler :: forall code

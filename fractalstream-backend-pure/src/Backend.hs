@@ -11,4 +11,5 @@ withBackend action =
   action Backend
     { bViewerCompiler    = ViewerCompiler interpretViewer
     , bToolRunnerFactory = defaultToolRunnerFactory
+    , bToolRunner        = defaultToolRunner
     }

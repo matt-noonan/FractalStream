@@ -8,6 +8,7 @@ module Backend.LLVM
   -- , withCompiledCode
   , withJIT
   , withJittedViewer
+  , llvmToolRunner
   , runJX
   , type JX
   , mkKernelFun
@@ -43,8 +44,9 @@ import Language.Value.Evaluator (HaskellValue)
 import Language.Value.Transform
 import Language.Code
 import Language.Code.InterpretIO (interpretToIOWithLastValues, ScalarIORefM)
-import Language.Draw (DrawHandler(..))
+import Language.Draw
 import Actor.Viewer
+import Actor.Event (ToolExec, buildHandlerWith, snapshotEventArgs, EventArgument(..))
 import Data.Color
 
 import Data.IORef (newIORef)
@@ -137,6 +139,41 @@ toFFIArg _ t v = case t of
   TextType -> pure (argInt32 0, pure ())
   BooleanType -> pure (argInt8 (if v then 1 else 0), pure ())
   _ -> error ("todo: toFFIArg " ++ showType t)
+
+-- | Like 'toFFIArg', but for tool handlers, which may /set/ config variables.
+-- Complex and Color values are passed as pointers and bound in/out by the
+-- compiled kernel, so the caller's buffer holds the final value after the call.
+-- The returned write-back action reads that buffer and, if the value changed
+-- and the argument is settable, propagates it back to the host.  Other types
+-- are passed by value (no write-back yet).
+toFFIArgInOut :: TypeProxy ty
+              -> EventArgument ty
+              -> HaskellType ty
+              -> IO (Arg, IO () {- free -}, IO () {- write-back -})
+toFFIArgInOut t earg v = case t of
+  ComplexType -> do
+    let x :+ y = v
+    z <- mallocArray 2
+    pokeArray z [x, y]
+    let writeBack = peekArray 2 z >>= \case
+          [x', y'] -> setBack ComplexType (x' :+ y')
+          _        -> pure ()
+    pure (argPtr z, free z, writeBack)
+  ColorType -> do
+    let (r, g, b) = colorToRGB v
+    c <- mallocArray 3
+    pokeArray c [r, g, b]
+    let writeBack = peekArray 3 c >>= \case
+          [r', g', b'] -> setBack ColorType (rgbToColor (r', g', b'))
+          _            -> pure ()
+    pure (argPtr c, free c, writeBack)
+  _ -> do
+    (arg, free') <- toFFIArg (Proxy @"tool-arg") t v
+    pure (arg, free', pure ())
+ where
+  setBack ty newV = case argSetValue earg of
+    Just setter | Scalar ty v /= Scalar ty newV -> setter ty newV
+    _ -> pure ()
 
 -- | Allocate and populate a contiguous buffer of linked-list nodes for a
 -- Haskell list.  Returns the head pointer (null for empty) and a cleanup action.
@@ -365,6 +402,127 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
                                : args ++ map argPtr prepPtrs
                   callFFI fn retVoid fullArgs
                 sequence_ (colorFree : frees)
+
+------------------------------------------------------------------------
+-- Compiled tools
+------------------------------------------------------------------------
+
+foreign import ccall "wrapper"
+  wrapClear :: IO () -> IO (FunPtr (IO ()))
+foreign import ccall "wrapper"
+  wrapColor3 :: (Word8 -> Word8 -> Word8 -> IO ())
+             -> IO (FunPtr (Word8 -> Word8 -> Word8 -> IO ()))
+foreign import ccall "wrapper"
+  wrapPoint :: (CDouble -> CDouble -> IO ())
+            -> IO (FunPtr (CDouble -> CDouble -> IO ()))
+foreign import ccall "wrapper"
+  wrapLine :: (CDouble -> CDouble -> CDouble -> CDouble -> IO ())
+           -> IO (FunPtr (CDouble -> CDouble -> CDouble -> CDouble -> IO ()))
+foreign import ccall "wrapper"
+  wrapCircle :: (Word8 -> CDouble -> CDouble -> CDouble -> IO ())
+             -> IO (FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> IO ()))
+foreign import ccall "wrapper"
+  wrapRect :: (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
+           -> IO (FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()))
+
+-- | Build the seven C callbacks for a 'DrawSink', run the action with them, and
+-- free them afterwards.
+withDrawVTablePtrs
+  :: DrawSink
+  -> ( ( FunPtr (IO ())
+       , FunPtr (Word8 -> Word8 -> Word8 -> IO ())
+       , FunPtr (Word8 -> Word8 -> Word8 -> IO ())
+       , FunPtr (CDouble -> CDouble -> IO ())
+       , FunPtr (CDouble -> CDouble -> CDouble -> CDouble -> IO ())
+       , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> IO ())
+       , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()) )
+       -> IO a )
+  -> IO a
+withDrawVTablePtrs sink action = do
+  clearFP  <- wrapClear  (dsClear sink)
+  strokeFP <- wrapColor3 (\r g b -> dsStroke sink (rgbToColor (r, g, b)))
+  fillFP   <- wrapColor3 (\r g b -> dsFill sink (rgbToColor (r, g, b)))
+  pointFP  <- wrapPoint  (\x y -> dsPoint sink (realToFrac x, realToFrac y))
+  lineFP   <- wrapLine   (\x1 y1 x2 y2 ->
+                            dsLine sink (realToFrac x1, realToFrac y1)
+                                        (realToFrac x2, realToFrac y2))
+  circleFP <- wrapCircle (\f r x y ->
+                            dsCircle sink (f /= 0) (realToFrac r)
+                                          (realToFrac x, realToFrac y))
+  rectFP   <- wrapRect   (\f x1 y1 x2 y2 ->
+                            dsRect sink (f /= 0) (realToFrac x1, realToFrac y1)
+                                        (realToFrac x2, realToFrac y2))
+  action (clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP)
+    `finally` (   freeHaskellFunPtr clearFP  >> freeHaskellFunPtr strokeFP
+               >> freeHaskellFunPtr fillFP   >> freeHaskellFunPtr pointFP
+               >> freeHaskellFunPtr lineFP   >> freeHaskellFunPtr circleFP
+               >> freeHaskellFunPtr rectFP )
+
+-- | Execute a tool event handler by JIT-compiling it and calling it, with draw
+-- commands routed back to the given sink.  Compiles once per invocation for now.
+compiledToolExec :: LLVMJit -> DrawSink -> ToolExec
+compiledToolExec (dylib, session, compileLayer, nextId, arenaPool) sink =
+  \envp ctx code -> snapshotEventArgs ctx >>= \case
+    Nothing -> pure ()
+    Just haskArgs ->
+      withDrawVTablePtrs sink $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP) ->
+      bracket (readChan arenaPool) (writeChan arenaPool) $ \arena ->
+      allocaBytes 1 $ \overflowPtr -> do
+        poke overflowPtr (0 :: Word8)
+        (envArgs, envFrees, envWriteBacks) <-
+          unzip3 <$> fromContextM (\_ ty (earg, v) -> toFFIArgInOut ty earg v)
+                                  (zipContext ctx haskArgs)
+        name <- modifyMVar nextId (\n -> pure (n + 1, "tool_" ++ show n))
+
+        -- Same AST pre-pass as viewers: turn constant-exponent powers (e.g. z²)
+        -- into multiplications instead of generic exp/log complex powers, which
+        -- otherwise lose precision and shift a Newton iteration off course.
+        let code' = transformValues (integerPowers . avoidSqrt) code
+
+        m <- either error pure (compileToolHandler envp (fromString name) code')
+        withContext $ \llctx ->
+          withModuleFromAST llctx m $ \md -> do
+            let pm = CuratedPassSetSpec
+                     { optLevel = Just 2
+                     , sizeLevel = Nothing
+                     , unitAtATime = Nothing
+                     , simplifyLibCalls = Just True
+                     , loopVectorize = Just True
+                     , superwordLevelParallelismVectorize = Nothing
+                     , useInlinerWithThreshold = Nothing
+                     , dataLayout = Nothing
+                     , targetLibraryInfo = Nothing
+                     , targetMachine = Nothing
+                     }
+            _ <- withPassManager pm (`runPassManager` md)
+            withClonedThreadSafeModule md $ \tsm -> do
+              addModule tsm dylib compileLayer
+              lookupSymbol session compileLayer dylib (fromString name) >>= \case
+                Left err -> error ("error JITing tool handler: " ++ show err)
+                Right (JITSymbol fnPtr _) -> do
+                  let fn = castPtrToFunPtr (wordPtrToPtr fnPtr)
+                      fullArgs =
+                        [ argPtr (castFunPtrToPtr clearFP)
+                        , argPtr (castFunPtrToPtr strokeFP)
+                        , argPtr (castFunPtrToPtr fillFP)
+                        , argPtr (castFunPtrToPtr pointFP)
+                        , argPtr (castFunPtrToPtr lineFP)
+                        , argPtr (castFunPtrToPtr circleFP)
+                        , argPtr (castFunPtrToPtr rectFP)
+                        , argPtr arena
+                        , argInt32 (fromIntegral arenaCapacity)
+                        , argPtr overflowPtr ]
+                        ++ envArgs
+                  callFFI fn retVoid fullArgs
+                  -- Propagate any config-variable Sets back to the host
+                  -- (e.g. the Select tool sets the coordinate), then free.
+                  sequence_ envWriteBacks
+                  sequence_ envFrees
+
+-- | A 'ToolRunner' that JIT-compiles tool event handlers via this JIT session.
+llvmToolRunner :: LLVMJit -> ToolRunner
+llvmToolRunner jit = ToolRunner $ \sink layer ctx handlers ->
+  buildHandlerWith (compiledToolExec jit (sink layer)) ctx handlers
 
 {-
 -- This is only used in tests
