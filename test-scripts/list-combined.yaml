@@ -8,7 +8,7 @@ viewer:
   resizable: true
   z-coord: z
   initial-center: 0
-  initial-pixel-size: 1/128
+  initial-pixel-size: 1/8
   code: |
     combined : List of R <- join(listA, listB)
     positives : List of R <- remove(combined, x -> x <= 0)

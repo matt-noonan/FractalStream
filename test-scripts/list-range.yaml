@@ -10,7 +10,7 @@ viewer:
   initial-center: 0
   initial-pixel-size: 1/64
   code: |
-    ns : List of Z <- [lo .. hi]
+    ns : List of Z <- range(lo, hi)
     n : Z <- length(ns)
     closest : R <- 1000
     for each k in ns:

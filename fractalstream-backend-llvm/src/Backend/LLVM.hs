@@ -30,7 +30,7 @@ import qualified LLVM.Relocation as Reloc
 import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
-import Control.Exception (bracket)
+import Control.Exception (bracket, finally)
 
 import Foreign.LibFFI
 import Foreign.C.Types
@@ -271,7 +271,7 @@ withJittedViewer :: forall env t. (MissingViewerArgs env, KnownEnvironment env)
                  -> Maybe (PrepScript env)
                  -> Code (ViewerEnv env)
                  -> (ViewerFunction env -> IO t) -> IO t
-withJittedViewer (dylib, session, compileLayer, nextId) mPrepScript code0 action = do
+withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript code0 action = do
   -- Do some basic AST-level optimizations first
   let code = transformValues (integerPowers . avoidSqrt) code0
   name <- modifyMVar nextId (\n -> pure (n + 1, "kernel_" ++ show n))
@@ -316,15 +316,12 @@ withJittedViewer (dylib, session, compileLayer, nextId) mPrepScript code0 action
                 Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
 
             let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
-                -- 1 MB arena per worker, reset per subsample inside the kernel.
-                arenaCapacity = 1024 * 1024 :: Int
 
-            -- Allocate a fixed pool of arenas (one per capability)
-            numWorkers <- getNumCapabilities
-            arenas <- replicateM numWorkers (mallocBytes arenaCapacity :: IO (Ptr Word8))
-            arenaPool <- newChan
-            mapM_ (writeChan arenaPool) arenas
-            result <- action $ ViewerFunction $ \ViewerArgs{..} ->
+            -- Borrow an arena from the session-wide pool for the duration of each
+            -- kernel call; bracket returns it even if AsyncCancelled is thrown.
+            -- The pool (and the arena lifetime) is owned by withJIT, not here,
+            -- because rendering outlives this action (see LLVMJit).
+            action $ ViewerFunction $ \ViewerArgs{..} ->
               bracket (readChan arenaPool) (writeChan arenaPool) $ \arena -> do
                 (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
                 (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
@@ -368,8 +365,6 @@ withJittedViewer (dylib, session, compileLayer, nextId) mPrepScript code0 action
                                : args ++ map argPtr prepPtrs
                   callFFI fn retVoid fullArgs
                 sequence_ (colorFree : frees)
-            mapM_ free arenas
-            pure result
 
 {-
 -- This is only used in tests
@@ -418,7 +413,15 @@ withCompiledCode env code run = do
                 run (mkJX fn)
 -}
 
-type LLVMJit = (JITDylib, ExecutionSession, IRCompileLayer, MVar Int)
+-- | 1 MB arena per worker, reset per subsample inside the kernel.
+arenaCapacity :: Int
+arenaCapacity = 1024 * 1024
+
+-- | The arena pool lives for the whole JIT session: the JIT'd kernels stay
+-- resident until the session is torn down, and rendering runs on the wx event
+-- loop *after* each 'withJittedViewer' action returns, so the arenas must
+-- outlive any single viewer compile (and be shared across viewers).
+type LLVMJit = (JITDylib, ExecutionSession, IRCompileLayer, MVar Int, Chan (Ptr Word8))
 
 withJIT :: (LLVMJit -> IO t) -> IO t
 withJIT action = do
@@ -431,7 +434,20 @@ withJIT action = do
       compileLayer <- createIRCompileLayer session linker tm
       addDynamicLibrarySearchGeneratorForCurrentProcess compileLayer dylib
       nextId <- newMVar 0
-      action (dylib, session, compileLayer, nextId)
+
+      -- Fixed pool of arenas (one per capability), shared by all viewers.
+      numWorkers <- getNumCapabilities
+      arenas <- replicateM numWorkers (mallocBytes arenaCapacity :: IO (Ptr Word8))
+      arenaPool <- newChan
+      mapM_ (writeChan arenaPool) arenas
+      -- On teardown, reading all arenas back blocks until every in-flight kernel
+      -- call has returned its arena (each call holds one for exactly its
+      -- duration via bracket below) and leaves the pool empty so none can start
+      -- -- so freeing them and unmapping the session afterwards is safe.
+      let drainAndFreeArenas =
+            replicateM numWorkers (readChan arenaPool) >>= mapM_ free
+      action (dylib, session, compileLayer, nextId, arenaPool)
+        `finally` drainAndFreeArenas
 
 withHostTargetMachine' :: (TargetMachine -> IO a) -> IO a
 withHostTargetMachine' f = do
