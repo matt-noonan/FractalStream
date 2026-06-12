@@ -1,0 +1,36 @@
+# Tests: @ (1-based index), @@ (cyclic index), length (List of ℂ)
+# Config list has 5 points. The shader selects one by index and lights it up.
+# Also tests negative index: index -1 should pick the last element.
+viewer:
+  title: List Index
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/48
+  code: |
+    n : Z <- length(myList)
+    # Direct index (1-based): light up point at 'idx'
+    chosen : ℂ <- myList @ idx
+    # Cyclic index: should wrap; light up a second point
+    chosen2 : ℂ <- myList @@ (idx + n)
+    d1 : R <- |z - chosen|
+    d2 : R <- |z - chosen2|
+    closest : R <- if d1 < d2 then d1 else d2
+    color <- blend(exp(-closest * 8), white, black)
+
+configuration:
+  title: Configuration
+  size: 400x150
+  vertical-contents:
+    - text-entry:
+        label: "Points"
+        value: "0, 1, -1, i, -i"
+        type: List of ℂ
+        variable: myList
+    - text-entry:
+        label: "Index (1-based)"
+        value: "1"
+        type: ℤ
+        variable: idx

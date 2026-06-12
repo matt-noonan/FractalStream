@@ -376,7 +376,8 @@ data ArenaState = ArenaState
 
 -- | Emit inline bump-allocation of 'size' bytes (must be a multiple of 8).
 -- Returns the allocated i8* on success; returns null on overflow and sets the
--- overflow flag in ArenaState.
+-- overflow flag in ArenaState. Callers MUST null-check the result and bail out
+-- of list construction on overflow (see the builders in Backend.LLVM.Value).
 arenaAlloc :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
            => ArenaState
            -> Int        -- ^ compile-time byte count (multiple of 8)

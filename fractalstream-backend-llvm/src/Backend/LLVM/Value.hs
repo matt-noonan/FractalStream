@@ -18,6 +18,7 @@ import LLVM.IRBuilder.Monad
 import LLVM.IRBuilder.Instruction
 import qualified LLVM.IRBuilder.Constant as C
 import qualified LLVM.AST.IntegerPredicate as P
+import qualified LLVM.AST.IntegerPredicate as IP
 import qualified LLVM.AST.FloatingPointPredicate as P
 import qualified LLVM.IRBuilder.Instruction as I
 import qualified LLVM.AST.Type as AST
@@ -538,19 +539,40 @@ buildValue getExtern arena = indexedFold go'
 ------------------------------------------------------------------------
 
 -- | Allocate one node per element, link them, and return the head pointer.
--- Elements are pre-evaluated; nodes are allocated straight-line (no loop).
+-- Elements are pre-evaluated.  A literal has a known length, so we do a single
+-- up-front bounds check: if the whole list will not fit, set the overflow flag
+-- (pixel goes magenta) and return the empty list.  Otherwise every per-node
+-- 'arenaAlloc' below is guaranteed to succeed, so no null can be written.
 buildLitList :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
              => ArenaState -> TypeProxy t -> Int -> [Op t] -> m (Op ('ListT t))
-buildLitList arena ty stride elems = do
-  nodePtrs <- mapM (\_ -> arenaAlloc arena stride) elems
+buildLitList arena ty stride elems = mdo
+  headSlot <- alloca (AST.ptr AST.i8) Nothing 0
+  store headSlot 0 nullI8Ptr
+
+  -- Will all (length elems) nodes fit from the current bump position?
+  bump    <- load (asBumpAlloca arena) 0
+  needEnd  <- gep bump [C.int32 (fromIntegral (stride * length elems))]
+  overflow <- icmp IP.UGT needEnd (asArenaEnd arena)   -- unsigned pointer compare
+  condBr overflow litOverflow litBuild
+
+  litOverflow <- block `named` "lit_overflow"
+  store (asOverflowFlag arena) 0 (C.bit 1)
+  br litDone
+
+  litBuild <- block `named` "lit_build"
+  nodePtrs <- mapM (const (arenaAlloc arena stride)) elems
   let nextPtrs = drop 1 nodePtrs ++ [nullI8Ptr]
   forM_ (zip3 nodePtrs nextPtrs elems) $ \(nodePtr, nextPtr, elemOp) -> do
     nf <- bitcast nodePtr (AST.ptr (AST.ptr AST.i8))
     store nf 0 nextPtr
     storeListElem ty nodePtr elemOp
-  pure $ case nodePtrs of
-    (h:_) -> ListOp h
-    []    -> ListOp nullI8Ptr  -- unreachable: caller guards on non-empty elems
+  case nodePtrs of
+    (h:_) -> store headSlot 0 h
+    []    -> pure ()
+  br litDone
+
+  litDone <- block `named` "lit_done"
+  ListOp <$> load headSlot 0
 
 -- | Copy every node from every input-list head ptr into the arena, linking
 -- the copies end-to-end.  All input lists are copied (no sharing).
@@ -574,6 +596,9 @@ buildJoin arena ty inputHeads = do
       condBr done copyExit copyBody
       copyBody <- block `named` "join_copy_body"
       newNode <- arenaAlloc arena stride
+      isNull <- icmp P.EQ newNode nullI8Ptr   -- arena overflow: bail with partial list
+      condBr isNull copyExit copyAlloc
+      copyAlloc <- block `named` "join_copy_alloc"
       -- Copy element from curr to newNode
       elemOp <- loadListElem ty curr
       nf <- bitcast newNode (AST.ptr (AST.ptr AST.i8))
@@ -616,6 +641,9 @@ buildFilter arena ty inputHead elemSlot predCb = do
     condBr shouldRemove filterAdvance filterAdd
     filterAdd <- block `named` "filter_add"
     newNode <- arenaAlloc arena stride
+    isNull <- icmp P.EQ newNode nullI8Ptr   -- arena overflow: bail with partial list
+    condBr isNull filterExit filterStore
+    filterStore <- block `named` "filter_store"
     nf <- bitcast newNode (AST.ptr (AST.ptr AST.i8))
     store nf 0 nullI8Ptr
     storeListElem ty newNode elemOp
@@ -653,6 +681,9 @@ buildMap arena ty1 ty2 inputHead elemSlot transformCb = do
     storeOperand elemOp elemSlot
     outOp <- transformCb elemSlot
     newNode <- arenaAlloc arena stride2
+    isNull <- icmp P.EQ newNode nullI8Ptr   -- arena overflow: bail with partial list
+    condBr isNull mapExit mapStore
+    mapStore <- block `named` "map_store"
     nf <- bitcast newNode (AST.ptr (AST.ptr AST.i8))
     store nf 0 nullI8Ptr
     storeListElem ty2 newNode outOp
@@ -808,6 +839,9 @@ buildRange arena loOp hiOp = do
     condBr past rangeExit rangeBody
     rangeBody <- block `named` "range_body"
     newNode <- arenaAlloc arena stride
+    isNull <- icmp P.EQ newNode nullI8Ptr   -- arena overflow: bail with partial list
+    condBr isNull rangeExit rangeAlloc
+    rangeAlloc <- block `named` "range_alloc"
     nf <- bitcast newNode (AST.ptr (AST.ptr AST.i8))
     store nf 0 nullI8Ptr
     storeListElem IntegerType newNode (IntegerOp i)
