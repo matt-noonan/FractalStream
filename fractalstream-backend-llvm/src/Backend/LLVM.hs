@@ -141,16 +141,29 @@ toFFIArg _ t v = case t of
   _ -> error ("todo: toFFIArg " ++ showType t)
 
 -- | Like 'toFFIArg', but for tool handlers, which may /set/ config variables.
--- Complex and Color values are passed as pointers and bound in/out by the
--- compiled kernel, so the caller's buffer holds the final value after the call.
--- The returned write-back action reads that buffer and, if the value changed
--- and the argument is settable, propagates it back to the host.  Other types
--- are passed by value (no write-back yet).
+-- Scalar values (Integer/Real/Boolean/Complex/Color) are passed as pointers and
+-- bound in/out by the compiled kernel, so the caller's cell holds the final
+-- value after the call.  The returned write-back action reads that cell and, if
+-- the value changed and the argument is settable, propagates it back to the
+-- host.  Lists and text are passed by value (no write-back).  The set of in/out
+-- types must match 'Backend.LLVM.Code.toolInOut'.
 toFFIArgInOut :: TypeProxy ty
               -> EventArgument ty
               -> HaskellType ty
               -> IO (Arg, IO () {- free -}, IO () {- write-back -})
 toFFIArgInOut t earg v = case t of
+  IntegerType -> do
+    p <- malloc :: IO (Ptr Int32)
+    poke p (fromIntegral v)
+    pure (argPtr p, free p, peek p >>= \v' -> setBack IntegerType (fromIntegral v'))
+  RealType -> do
+    p <- malloc :: IO (Ptr Double)
+    poke p v
+    pure (argPtr p, free p, peek p >>= \v' -> setBack RealType v')
+  BooleanType -> do
+    p <- malloc :: IO (Ptr Word8)
+    poke p (if v then 1 else 0)
+    pure (argPtr p, free p, peek p >>= \w -> setBack BooleanType (w /= 0))
   ComplexType -> do
     let x :+ y = v
     z <- mallocArray 2
@@ -462,62 +475,68 @@ withDrawVTablePtrs sink action = do
 -- commands routed back to the given sink.  Compiles once per invocation for now.
 compiledToolExec :: LLVMJit -> DrawSink -> ToolExec
 compiledToolExec (dylib, session, compileLayer, nextId, arenaPool) sink =
-  \envp ctx code -> snapshotEventArgs ctx >>= \case
-    Nothing -> pure ()
-    Just haskArgs ->
-      withDrawVTablePtrs sink $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP) ->
-      bracket (readChan arenaPool) (writeChan arenaPool) $ \arena ->
-      allocaBytes 1 $ \overflowPtr -> do
-        poke overflowPtr (0 :: Word8)
-        (envArgs, envFrees, envWriteBacks) <-
-          unzip3 <$> fromContextM (\_ ty (earg, v) -> toFFIArgInOut ty earg v)
-                                  (zipContext ctx haskArgs)
-        name <- modifyMVar nextId (\n -> pure (n + 1, "tool_" ++ show n))
+  \envp code -> do
+    -- Compile the handler ONCE, when the dispatcher is built.  OrcJIT's
+    -- 'addModule' hands a clone of the module to the session-wide JIT, so the
+    -- resulting function pointer stays valid after these brackets close.
+    name <- modifyMVar nextId (\n -> pure (n + 1, "tool_" ++ show n))
 
-        -- Same AST pre-pass as viewers: turn constant-exponent powers (e.g. z²)
-        -- into multiplications instead of generic exp/log complex powers, which
-        -- otherwise lose precision and shift a Newton iteration off course.
-        let code' = transformValues (integerPowers . avoidSqrt) code
+    -- Same AST pre-pass as viewers: turn constant-exponent powers (e.g. z²)
+    -- into multiplications instead of generic exp/log complex powers, which
+    -- otherwise lose precision and shift a Newton iteration off course.
+    let code' = transformValues (integerPowers . avoidSqrt) code
 
-        m <- either error pure (compileToolHandler envp (fromString name) code')
-        withContext $ \llctx ->
-          withModuleFromAST llctx m $ \md -> do
-            let pm = CuratedPassSetSpec
-                     { optLevel = Just 2
-                     , sizeLevel = Nothing
-                     , unitAtATime = Nothing
-                     , simplifyLibCalls = Just True
-                     , loopVectorize = Just True
-                     , superwordLevelParallelismVectorize = Nothing
-                     , useInlinerWithThreshold = Nothing
-                     , dataLayout = Nothing
-                     , targetLibraryInfo = Nothing
-                     , targetMachine = Nothing
-                     }
-            _ <- withPassManager pm (`runPassManager` md)
-            withClonedThreadSafeModule md $ \tsm -> do
-              addModule tsm dylib compileLayer
-              lookupSymbol session compileLayer dylib (fromString name) >>= \case
-                Left err -> error ("error JITing tool handler: " ++ show err)
-                Right (JITSymbol fnPtr _) -> do
-                  let fn = castPtrToFunPtr (wordPtrToPtr fnPtr)
-                      fullArgs =
-                        [ argPtr (castFunPtrToPtr clearFP)
-                        , argPtr (castFunPtrToPtr strokeFP)
-                        , argPtr (castFunPtrToPtr fillFP)
-                        , argPtr (castFunPtrToPtr pointFP)
-                        , argPtr (castFunPtrToPtr lineFP)
-                        , argPtr (castFunPtrToPtr circleFP)
-                        , argPtr (castFunPtrToPtr rectFP)
-                        , argPtr arena
-                        , argInt32 (fromIntegral arenaCapacity)
-                        , argPtr overflowPtr ]
-                        ++ envArgs
-                  callFFI fn retVoid fullArgs
-                  -- Propagate any config-variable Sets back to the host
-                  -- (e.g. the Select tool sets the coordinate), then free.
-                  sequence_ envWriteBacks
-                  sequence_ envFrees
+    m <- either error pure (compileToolHandler envp (fromString name) code')
+    fn <- withContext $ \llctx ->
+      withModuleFromAST llctx m $ \md -> do
+        let pm = CuratedPassSetSpec
+                 { optLevel = Just 2
+                 , sizeLevel = Nothing
+                 , unitAtATime = Nothing
+                 , simplifyLibCalls = Just True
+                 , loopVectorize = Just True
+                 , superwordLevelParallelismVectorize = Nothing
+                 , useInlinerWithThreshold = Nothing
+                 , dataLayout = Nothing
+                 , targetLibraryInfo = Nothing
+                 , targetMachine = Nothing
+                 }
+        _ <- withPassManager pm (`runPassManager` md)
+        withClonedThreadSafeModule md $ \tsm -> do
+          addModule tsm dylib compileLayer
+          lookupSymbol session compileLayer dylib (fromString name) >>= \case
+            Left err -> error ("error JITing tool handler: " ++ show err)
+            Right (JITSymbol fnPtr _) ->
+              pure (castPtrToFunPtr (wordPtrToPtr fnPtr) :: FunPtr ())
+
+    -- The per-event invoker: snapshot args, marshal, call, write back.
+    pure $ \ctx -> snapshotEventArgs ctx >>= \case
+      Nothing -> pure ()
+      Just haskArgs ->
+        withDrawVTablePtrs sink $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP) ->
+        bracket (readChan arenaPool) (writeChan arenaPool) $ \arena ->
+        allocaBytes 1 $ \overflowPtr -> do
+          poke overflowPtr (0 :: Word8)
+          (envArgs, envFrees, envWriteBacks) <-
+            unzip3 <$> fromContextM (\_ ty (earg, v) -> toFFIArgInOut ty earg v)
+                                    (zipContext ctx haskArgs)
+          let fullArgs =
+                [ argPtr (castFunPtrToPtr clearFP)
+                , argPtr (castFunPtrToPtr strokeFP)
+                , argPtr (castFunPtrToPtr fillFP)
+                , argPtr (castFunPtrToPtr pointFP)
+                , argPtr (castFunPtrToPtr lineFP)
+                , argPtr (castFunPtrToPtr circleFP)
+                , argPtr (castFunPtrToPtr rectFP)
+                , argPtr arena
+                , argInt32 (fromIntegral arenaCapacity)
+                , argPtr overflowPtr ]
+                ++ envArgs
+          callFFI fn retVoid fullArgs
+          -- Propagate any config-variable Sets back to the host
+          -- (e.g. the Select tool sets the coordinate), then free.
+          sequence_ envWriteBacks
+          sequence_ envFrees
 
 -- | A 'ToolRunner' that JIT-compiles tool event handlers via this JIT session.
 llvmToolRunner :: LLVMJit -> ToolRunner

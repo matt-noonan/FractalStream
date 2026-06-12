@@ -11,7 +11,6 @@ module Actor.Event
   , EventArgument(..)
 
   , Coordinate(..)
-  , buildHandler
   , buildHandlerWith
   , ToolExec
   , ToolRunner(..)
@@ -139,39 +138,57 @@ snapshotEventArgs :: Context EventArgument_ env -> IO (Maybe (Context HaskellVal
 snapshotEventArgs ctx =
   mapContextM @MaybeHaskellValue @HaskellValue (\_ _ -> id) <$> mapContextM (\_ _ -> argGetValue) ctx
 
--- | How a single tool event handler's 'Code' is executed: given a witness for
--- its environment, the argument context, and the code, run it.  The interpreter
--- ignores the proxy and uses 'run'; the LLVM backend uses it to JIT the handler.
+-- | How a tool event handler's 'Code' is /prepared/ for execution: given a
+-- witness for its environment and the code, produce an invoker that runs the
+-- handler against a (per-event) argument context.  Preparation happens once,
+-- when the dispatcher is built; the invoker runs on every event.  The
+-- interpreter prepares trivially (returns a closure over 'run'); the LLVM
+-- backend JIT-compiles the handler during preparation so each event just
+-- marshals arguments and calls the compiled code (rather than recompiling).
 type ToolExec =
-  forall e. EnvironmentProxy e -> Context EventArgument_ e -> Code e -> IO ()
+  forall e. EnvironmentProxy e
+         -> Code e
+         -> IO (Context EventArgument_ e -> IO ())
 
 makeEventHandler :: forall env
                   . (MissingClickArgs env, MissingDragArgs env, MissingUnitArgs env)
                  => ToolExec
                  -> Context EventArgument_ env
                  -> CombinedEventHandler env
-                 -> Double
-                 -> Event
-                 -> Maybe (IO ())
-makeEventHandler exec ctx CombinedEventHandler{..} = \px -> \case
-  Click (x, y) -> onClick <&> \code ->
-    let c = constArg x # constArg y # constArg px # ctx in exec (contextToEnv c) c code
-  DoubleClick (x, y) -> onDoubleClick <&> \code ->
-    let c = constArg x # constArg y # constArg px # ctx in exec (contextToEnv c) c code
-  Drag (x, y) (x', y') -> onDrag <&> \code ->
-    let c = constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx in exec (contextToEnv c) c code
-  DragDone (x, y) (x', y') -> onDragDone <&> \code ->
-    let c = constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx in exec (contextToEnv c) c code
-  Timer name -> Map.lookup name onTimer <&> \(_, code) ->
-    let c = constArg px # ctx in exec (contextToEnv c) c code
-  ButtonPressed name -> Map.lookup name onButton <&> \code ->
-    let c = constArg px # ctx in exec (contextToEnv c) c code
-  Refresh -> onRefresh <&> \code ->
-    let c = constArg px # ctx in exec (contextToEnv c) c code
-  Activated -> onActivated <&> \code ->
-    let c = constArg px # ctx in exec (contextToEnv c) c code
-  Deactivated -> onDeactivated <&> \code ->
-    let c = constArg px # ctx in exec (contextToEnv c) c code
+                 -> IO (Double -> Event -> Maybe (IO ()))
+makeEventHandler exec ctx CombinedEventHandler{..} = do
+  -- Prepare (e.g. JIT-compile) each present handler once.  The dummy contexts
+  -- only serve to recover each branch's 'EnvironmentProxy'; 'contextToEnv'
+  -- ignores the values.
+  let dummyR     = constArg 0 :: EventArgument 'RealT
+      clickEnvP  = contextToEnv (dummyR # dummyR # dummyR # ctx)
+      dragEnvP   = contextToEnv (dummyR # dummyR # dummyR # dummyR # dummyR # ctx)
+      unitEnvP   = contextToEnv (dummyR # ctx)
+  clickRun       <- traverse (exec clickEnvP) onClick
+  dblClickRun    <- traverse (exec clickEnvP) onDoubleClick
+  dragRun        <- traverse (exec dragEnvP)  onDrag
+  dragDoneRun    <- traverse (exec dragEnvP)  onDragDone
+  timerRun       <- traverse (\(i, code) -> (i,) <$> exec unitEnvP code) onTimer
+  buttonRun      <- traverse (exec unitEnvP)  onButton
+  refreshRun     <- traverse (exec unitEnvP)  onRefresh
+  activatedRun   <- traverse (exec unitEnvP)  onActivated
+  deactivatedRun <- traverse (exec unitEnvP)  onDeactivated
+  pure $ \px -> \case
+    Click (x, y) -> clickRun <&> \invoke ->
+      invoke (constArg x # constArg y # constArg px # ctx)
+    DoubleClick (x, y) -> dblClickRun <&> \invoke ->
+      invoke (constArg x # constArg y # constArg px # ctx)
+    Drag (x, y) (x', y') -> dragRun <&> \invoke ->
+      invoke (constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx)
+    DragDone (x, y) (x', y') -> dragDoneRun <&> \invoke ->
+      invoke (constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx)
+    Timer name -> Map.lookup name timerRun <&> \(_, invoke) ->
+      invoke (constArg px # ctx)
+    ButtonPressed name -> Map.lookup name buttonRun <&> \invoke ->
+      invoke (constArg px # ctx)
+    Refresh -> refreshRun <&> \invoke -> invoke (constArg px # ctx)
+    Activated -> activatedRun <&> \invoke -> invoke (constArg px # ctx)
+    Deactivated -> deactivatedRun <&> \invoke -> invoke (constArg px # ctx)
 
 combineEventHandlers :: forall env
                       . Either String (CombinedEventHandler env)
@@ -257,14 +274,7 @@ buildHandlerWith exec (SomeContext ctx) handlers = do
       let combined = case (onDrag combined0, onDragDone combined0) of
             (Just _, Nothing) -> combined0 { onDragDone = Just NoOp }
             _ -> combined0
-      in pure (pure $ makeEventHandler exec ctx combined)
-
--- | The interpreter handler builder: execute each handler through 'run'.
-buildHandler :: DrawHandler ScalarIORefM
-             -> SomeContext EventArgument_
-             -> [SingleEventHandler]
-             -> IO (Either String (Double -> Event -> Maybe (IO ())))
-buildHandler draw = buildHandlerWith (\_ c code -> run draw c code)
+      in Right <$> makeEventHandler exec ctx combined
 
 -- | How a backend turns a tool's parsed event handlers into the event
 -- dispatcher the UI calls.  Given the per-layer draw handler (from the tool
@@ -284,7 +294,7 @@ newtype ToolRunner = ToolRunner
 -- interpreter and emit them into the given layer's 'DrawSink'.
 defaultToolRunner :: ToolRunner
 defaultToolRunner = ToolRunner $ \sink layer ctx handlers ->
-  buildHandlerWith (\_ c code -> run (drawHandlerForSink (sink layer)) c code) ctx handlers
+  buildHandlerWith (\_ code -> pure (\c -> run (drawHandlerForSink (sink layer)) c code)) ctx handlers
 
 -- | Adapt a 'DrawSink' into an interpreter 'DrawHandler': evaluate each draw
 -- command's value arguments and forward the concrete values to the sink.

@@ -601,7 +601,7 @@ compileToolHandler envp name code = runExcept $
         arenaParams    = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
                          , (AST.i32,        ParameterName "#arenaSize") ]
         overflowParams = [ (AST.ptr AST.i8, ParameterName "#overflowOut") ]
-        params = drawParams ++ arenaParams ++ overflowParams ++ toParameterList envp
+        params = drawParams ++ arenaParams ++ overflowParams ++ toToolParameterList envp
         fnPtrTy rTy aTys = AST.ptr (AST.FunctionType rTy aTys False)
     function name params AST.void $ \allArgs -> do
       getExtern <- getGetExtern
@@ -821,11 +821,30 @@ allocaArg t op = do
   storeOperand x ptr
   pure ptr
 
--- | Bind a tool handler's environment arguments.  Complex and Color values are
--- already passed as pointers, so we bind them in/out (pointing directly at the
--- caller's buffer) so that a 'Set' of a config variable is visible to the host
--- after the call (used for write-back, e.g. the Select tool).  Everything else
--- is bound by value as usual (no write-back yet).
+-- | Scalar tool-handler arguments are passed in/out: the caller hands the
+-- kernel a pointer to a cell, so a 'Set' of a config variable is visible to the
+-- host after the call (write-back; e.g. the Select tool sets a coordinate, or
+-- newton3's \"Move roots\" tool sets @drag_target@).  Lists and text are passed
+-- by value (read-only — no write-back).  This predicate must agree between
+-- 'toToolParameterList' (param types), 'bindToolArg', and the host's marshaller.
+toolInOut :: TypeProxy t -> Bool
+toolInOut = \case
+  IntegerType -> True
+  RealType    -> True
+  BooleanType -> True
+  ComplexType -> True
+  ColorType   -> True
+  _           -> False
+
+-- | Parameter types for a tool handler's environment: in/out types become
+-- pointers; everything else keeps its by-value representation.
+toToolParameterList :: EnvironmentProxy env -> [(AST.Type, ParameterName)]
+toToolParameterList = \case
+  EmptyEnvProxy -> []
+  BindingProxy name t env ->
+    let ty = if toolInOut t then toLLVMPtrType t else toLLVMType t
+    in (ty, ParameterName (fromString (symbolVal name))) : toToolParameterList env
+
 allocaToolArgs :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
                => EnvironmentProxy env
                -> [Operand]
@@ -836,9 +855,11 @@ allocaToolArgs (BindingProxy name ty env) (op:ops) =
 allocaToolArgs _ _ =
   throwError "internal error: mismatched environment/args counts (tool)"
 
+-- | Bind a tool handler's environment argument.  In/out types receive a pointer
+-- and are bound directly to the caller's cell (so 'Set' writes are visible to
+-- the host); other types are bound by value as usual.
 bindToolArg :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
             => TypeProxy t -> Operand -> m (PtrOp t)
-bindToolArg ty op = case ty of
-  ComplexType -> typedOperandPtr ComplexType op
-  ColorType   -> typedOperandPtr ColorType op
-  _           -> allocaArg ty op
+bindToolArg ty op
+  | toolInOut ty = typedOperandPtr ty op
+  | otherwise    = allocaArg ty op
