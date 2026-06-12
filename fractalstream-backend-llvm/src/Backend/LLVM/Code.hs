@@ -400,12 +400,17 @@ compileRenderer' prepOutputEnv name code = runExcept $
         blockWidthPtr  <- allocaArg IntegerType blockWidthArg
         blockHeightPtr <- allocaArg IntegerType blockHeightArg
         subsamplesPtr  <- allocaArg IntegerType subsamplesArg
+
         -- Arena setup: bumpAlloca tracks the current allocation position.
         -- arenaEnd is constant = arenaBase + arenaSize.
+        -- overflowFlag is reset per subsample and set by arenaAlloc on overflow.
         bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
         store bumpAlloca 0 arenaPtrArg
         arenaEnd <- gep arenaPtrArg [arenaSizeArg]
-        let arenaState = ArenaState bumpAlloca arenaEnd
+        overflowFlag <- alloca AST.i1 Nothing 0
+        store overflowFlag 0 (C.bit 0)
+        let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag
+
         args <- allocaArgs (envProxy (Proxy @(ViewerEnv env))) rawArgs
         x0 <- derefOperand (getBinding args pfX)  >>= \case RealOp v -> pure v
         y0 <- derefOperand (getBinding args pfY)  >>= \case RealOp v -> pure v
@@ -457,19 +462,25 @@ compileRenderer' prepOutputEnv name code = runExcept $
           -- Reset the arena at the start of each subsample so each pixel's
           -- dynamic list allocations are independent.
           store bumpAlloca 0 arenaPtrArg
+          store overflowFlag 0 (C.bit 0)
 
           -- Load prep output vars from their flat arrays before the kernel.
           pixelIndex <- load pixelIndexPtr 0
           overwritePrepOutputs prepOutputEnv prepArrayPtrs pixelIndex argMap
 
           runReaderT (compileCode getExtern arenaState code) args
+          overflowed <- load overflowFlag 0
           (cr0, cg0, cb0) <- case getBinding args pfOutput of
             PtrOp (ColorOp outputR outputG outputB) ->
               (,,) <$> load outputR 0 <*> load outputG 0 <*> load outputB 0
+          -- On arena overflow, render the pixel magenta so it's visually obvious.
+          cr0' <- select overflowed (C.int8 255) cr0
+          cg0' <- select overflowed (C.int8 0)   cg0
+          cb0' <- select overflowed (C.int8 255) cb0
 
-          cr <- zext cr0 AST.i32
-          cg <- zext cg0 AST.i32
-          cb <- zext cb0 AST.i32
+          cr <- zext cr0' AST.i32
+          cg <- zext cg0' AST.i32
+          cb <- zext cb0' AST.i32
           do
             tmp1 <- load accR 0
             tmp2 <- add tmp1 cr

@@ -366,13 +366,17 @@ storeListElem t nodePtr op = do
 -- | Arena state threaded through LLVM IR generation for dynamic list allocation.
 -- The arena is a flat byte buffer; a bump pointer is advanced on each allocation
 -- and reset to the base at the start of each pixel/subsample computation.
+-- asOverflowFlag is an i1* stack slot set to 1 on the first failed allocation;
+-- checked after compileCode to render the pixel magenta.
 data ArenaState = ArenaState
-  { asBumpAlloca :: Operand  -- ^ i8** stack slot holding the current bump pointer
-  , asArenaEnd   :: Operand  -- ^ i8* constant end of the arena (base + capacity)
+  { asBumpAlloca   :: Operand  -- ^ i8** stack slot holding the current bump pointer
+  , asArenaEnd     :: Operand  -- ^ i8* constant end of the arena (base + capacity)
+  , asOverflowFlag :: Operand  -- ^ i1* stack slot; set to 1 on overflow
   }
 
 -- | Emit inline bump-allocation of 'size' bytes (must be a multiple of 8).
--- Returns the allocated i8* on success; returns null on overflow.
+-- Returns the allocated i8* on success; returns null on overflow and sets the
+-- overflow flag in ArenaState.
 arenaAlloc :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
            => ArenaState
            -> Int        -- ^ compile-time byte count (multiple of 8)
@@ -388,6 +392,7 @@ arenaAlloc ArenaState{..} size = mdo
   br mergeBb
 
   overflowBb <- block
+  store asOverflowFlag 0 (bit 1)  -- signal overflow
   br mergeBb
 
   mergeBb <- block
