@@ -1,6 +1,5 @@
-# Tests: List of Color, for-each, index
-# A list of colors is indexed by which Mandelbrot orbit period the pixel belongs to.
-# Simpler test: config list of 4 colors; shader picks one based on quadrant.
+# Tests: List of Color, index
+# Config list of 4 colors; shader picks one based on quadrant.
 viewer:
   title: List of Color Elements
   style: complex-plane

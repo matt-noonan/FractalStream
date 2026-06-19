@@ -1,5 +1,5 @@
-# Tests: join + remove + transform + find in one shader (List of ℝ)
-# Pipeline: join two lists, remove negatives, square remaining, find first > threshold.
+# Tests: join + remove + transform + find in one script (List of ℝ)
+# Pipeline: join two lists, remove nonpositives, square remaining, find first > threshold.
 # Expected: single bright band at the found value; grey if none found.
 viewer:
   title: List Pipeline (join→remove→transform→find)
