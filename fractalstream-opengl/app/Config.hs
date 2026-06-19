@@ -27,7 +27,8 @@ data Viewer = Viewer
   , max_iterations     :: GLint
   , escape_radius      :: GLfloat
   , convergence_radius :: GLfloat
-  , code               :: String
+  , code               :: String        -- ^ Raw GLSL (fallback)
+  , fs_code            :: Maybe String  -- ^ FractalStream source (compiled to GLSL when present)
   } deriving Generic
 
 instance FromJSON Viewer

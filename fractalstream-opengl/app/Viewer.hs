@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedRecordDot, RecordWildCards, FlexibleContexts, LambdaCase #-}
 module Viewer ( openViewers ) where
 
+import Backend.GLSL (compileViewerScript)
+
 import Control.Lens
 import Linear
 import Linear.OpenGL
@@ -266,7 +268,16 @@ openViewer vars header Viewer{..} = do
             ProjectiveSpace -> "vec4 %s = _mobiusMatrix * vec4(FragPos.xy, 1.0 + FragPos.z, 0.0);\n"
         initialValueCode = printf initialValueFormat coord
 
-    program <- getProgram is_projective $ addHeader header initialValueCode code
+    glslCode <- case fs_code of
+      Nothing  -> pure code
+      Just src -> case compileViewerScript is_projective coord src of
+        Left err  -> do
+          putStrLn $ "FS compile error: " ++ err
+          putStrLn "Falling back to raw GLSL."
+          pure code
+        Right gen -> pure gen
+
+    program <- getProgram is_projective $ addHeader header initialValueCode glslCode
     currentProgram $= Just program
 
     -- Set uniforms

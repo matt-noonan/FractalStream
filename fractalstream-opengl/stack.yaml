@@ -3,6 +3,7 @@ resolver: lts-24.12
 packages:
 - .
 - ../fractalstream-core
+- ../fractalstream-backend-glsl
 
 extra-deps:
 
