@@ -5,7 +5,7 @@ configuration:
   - text-entry:
       label: 'Selected value of C:'
       type: C
-      value: "-0.16406250000000 - 0.12500000000000\U0001D456"
+      value: "1.41406250000000 - 0.78906250000000\U0001D456"
       variable: C
   - text-entry:
       label: 'Max. iterations: '
@@ -43,8 +43,8 @@ viewers:
     \ \nelse:\n  color <- black\n"
   escape-radius: maxRadius
   iteration-limit: maxIters
-  position: 2238x348
-  size: 512x512
+  position: 36x110
+  size: 569x586
   title: Parameter plane
   z-coord: C
 - code: |
@@ -56,8 +56,8 @@ viewers:
       color <- black
   escape-radius: maxRadius
   iteration-limit: maxIters
-  position: 2797x341
-  size: 512x512
+  position: 606x135
+  size: 627x561
   title: Dynamical plane
   tools:
   - actions:
