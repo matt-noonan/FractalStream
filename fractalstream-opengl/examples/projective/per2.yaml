@@ -1,0 +1,66 @@
+viewers:
+  - title: Parameter space
+
+    width_pixels: 700
+    height_pixels: 700
+
+    is_projective: true
+    coord: c
+
+    center_x: -0.5
+    center_y: 0.0
+    view_height: 4.0
+
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-4
+
+    code: |
+      vec4 z = vec4(0.0, 0.0, 1.0, 0.0);
+      const vec4 infinity = vec4(1.0, 0.0, 0.0, 0.0);
+
+      color = vec4(0.0, 0.0, 0.0, 1.0);
+
+      for (int iter = 0; iter < 100; iter++) {
+        if (_pDist(z, infinity) < 1e-3) {
+            float d = _pDist(z, infinity);
+            float depth = fract((float(iter) / 2.0 - log2(-log(d))) / 32.0);
+            color = texture(uTexture, depth);
+            break;
+        }
+
+        z = _pDiv((_pSub(_pMul(z, z), c)), (_pSub(_pMul(z, z), vec4(1.0, 0.0, 1.0, 0.0))));
+      }
+
+  - title: Dynamical space
+
+    width_pixels: 700
+    height_pixels: 700
+
+    is_projective: true
+    coord: z
+
+    center_x: -0.5
+    center_y: 0.0
+    view_height: 4.0
+
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-4
+
+    code: |
+      vec4 c = vec4(_c, 1.0, 0.0);
+      const vec4 infinity = vec4(1.0, 0.0, 0.0, 0.0);
+
+      color = vec4(0.0, 0.0, 0.0, 1.0);
+
+      for (int iter = 0; iter < 100; iter++) {
+        if (_pDist(z, infinity) < 1e-3) {
+            float d = _pDist(z, infinity);
+            float depth = fract((float(iter) / 2.0 - log2(-log(d))) / 32.0);
+            color = texture(uTexture, depth);
+            break;
+        }
+
+        z = _pDiv((_pSub(_pMul(z, z), c)), (_pSub(_pMul(z, z), vec4(1.0, 0.0, 1.0, 0.0))));
+      }

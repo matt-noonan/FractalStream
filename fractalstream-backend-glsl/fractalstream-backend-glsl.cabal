@@ -1,0 +1,68 @@
+cabal-version:       3.0
+name:                fractalstream-backend-glsl
+version:             0.1.0.0
+synopsis:            FractalStream to GLSL compilation.
+description:         Compile FractalStream viewer scripts to GLSL fragment-shader
+                     source, reusing fractalstream-core's parser, typechecker and
+                     typed AST.  Depends only on fractalstream-core (no LLVM), so
+                     the standalone OpenGL app can use it directly.
+license:             BSD-3-Clause
+author:              Vinicius Ambrosi, Matt Noonan
+maintainer:          viniciusambrosi@gmail.com
+copyright:           2026, Vinicius Ambrosi, Matt Noonan
+category:            Math
+build-type:          Simple
+
+common FractalStream-common
+  ghc-options:         -Wall -Werror -O2 -Wno-star-is-type
+  default-extensions:  ApplicativeDo
+                     , BangPatterns
+                     , ConstraintKinds
+                     , DataKinds
+                     , DefaultSignatures
+                     , DeriveFoldable
+                     , DeriveFunctor
+                     , DeriveGeneric
+                     , DeriveLift
+                     , DeriveTraversable
+                     , DerivingStrategies
+                     , EmptyCase
+                     , ExistentialQuantification
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , FunctionalDependencies
+                     , GADTs
+                     , GeneralizedNewtypeDeriving
+                     , InstanceSigs
+                     , KindSignatures
+                     , LambdaCase
+                     , MultiParamTypeClasses
+                     , MultiWayIf
+                     , NamedFieldPuns
+                     , PatternSynonyms
+                     , RankNTypes
+                     , RecordWildCards
+                     , ScopedTypeVariables
+                     , StandaloneDeriving
+                     , TupleSections
+                     , TypeApplications
+                     , TypeFamilies
+                     , TypeFamilyDependencies
+                     , TypeOperators
+                     , ViewPatterns
+  default-language:    Haskell2010
+
+library
+  import: FractalStream-common
+  exposed-modules:     Backend.GLSL
+                       Backend.GLSL.Types
+                       Backend.GLSL.Prelude
+                       Backend.GLSL.Value
+                       Backend.GLSL.Code
+                       Backend.GLSL.Compile
+  build-depends:       base >=4.8 && <5
+                     , fractalstream-core
+                     , containers
+                     , mtl
+                     , first-class-families
+  hs-source-dirs:      src

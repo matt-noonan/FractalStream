@@ -1,0 +1,63 @@
+viewers:
+  - title: Devaney (2,2) Family Parameter Space
+
+    width_pixels: 700
+    height_pixels: 700
+
+    is_projective: false
+    coord: c
+
+    center_x: 0.0
+    center_y: 0.0
+    view_height: 1.0
+
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-4
+
+    code: |
+      // λ^(1 / 4)
+      vec2 z = _cPow(c, 0.25);
+
+      color = texture(uTexture, 0.5);
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+        if (length(z) > _escape_radius) {
+          float depth = fract((float(iter) / 2.0 - log2(log(length(z))) / log2(4.0) ) / 32.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+
+        // z^2 + λ / z^2
+        z = _cMul(z, z) + _cDiv(c, _cMul(z,z));
+      }
+
+  - title: Devaney (2,2) Family Dynamical Space
+
+    width_pixels: 700
+    height_pixels: 700
+
+    is_projective: false
+    coord: z
+
+    center_x: 0.0
+    center_y: 0.0
+    view_height: 3.0
+
+    max_iterations: 300
+    escape_radius: 100.0
+    convergence_radius: 1e-4
+
+    code: |
+      color = texture(uTexture, 0.5);
+
+      for (int iter = 0; iter < _max_iterations; iter++) {
+        if (length(z) > _escape_radius) {
+          float depth = fract((float(iter) / 2.0 - log2(log(length(z))) / log2(4.0) ) / 32.0);
+          color = texture(uTexture, depth);
+          break;
+        }
+
+        // z^2 + λ / z^2
+        z = _cMul(z, z) + _cDiv(_c, _cMul(z,z));
+      }
