@@ -1,0 +1,20 @@
+# Tests: transform, for-each (List of ℂ)
+# Starts with [1, i, -1, -i]; transform squares each element -> [1, -1, 1, -1].
+# After squaring, duplicates collapse so only 2 distinct bright spots at 1 and -1.
+viewer:
+  title: List Transform
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/48
+  code: |
+    pts : List of ℂ <- [1, i, -1, -i]
+    squared : List of ℂ <- transform(pts, w -> w^2)
+    closest : R <- 1000
+    for each c in squared:
+      d : R <- |z - c|
+      if d < closest:
+        closest <- d
+    color <- blend(exp(-closest * 8), white, black)

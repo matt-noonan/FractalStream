@@ -555,8 +555,14 @@ tcRange x y sr = \case
   ty -> throwError (Surprise sr "the result of a range operation" "a list of integers" (Expected $ an ty))
 
 tcLength :: ParsedValue -> CheckedValue
-tcLength _lst sr = \case
-  IntegerType -> throwError (internal $ Advice sr "`length` has not been implemented yet")
+tcLength lst sr = \case
+  IntegerType -> tryEachType (Advice sr "The argument to `length` should be a list.")
+    [ Length BooleanType <$> atType lst (ListType BooleanType)
+    , Length IntegerType <$> atType lst (ListType IntegerType)
+    , Length RealType    <$> atType lst (ListType RealType)
+    , Length ComplexType <$> atType lst (ListType ComplexType)
+    , Length ColorType   <$> atType lst (ListType ColorType)
+    ]
   ty -> throwError (Surprise sr "the result of a length operation" "an integer" (Expected $ an ty))
 
 tcIndex :: Bool -> ParsedValue -> ParsedValue -> CheckedValue

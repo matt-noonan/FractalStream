@@ -1,0 +1,37 @@
+# Tests: range [lo..hi] (List of ℤ), for-each, length
+# Builds a range in the shader and iterates over it.
+# Expected: vertical bright bands at integer x positions from lo to hi.
+viewer:
+  title: List Range
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/64
+  code: |
+    ns : List of Z <- range(lo, hi)
+    n : Z <- length(ns)
+    closest : R <- 1000
+    for each k in ns:
+      d : R <- |re z - k|
+      if d < closest:
+        closest <- d
+    # Encode length in brightness of far-field to verify count is correct
+    bg : R <- n / 20
+    color <- blend(exp(-closest * 6) + bg, white, black)
+
+configuration:
+  title: Configuration
+  size: 400x150
+  vertical-contents:
+    - text-entry:
+        label: "lo"
+        value: "-3"
+        type: ℤ
+        variable: lo
+    - text-entry:
+        label: "hi"
+        value: "3"
+        type: ℤ
+        variable: hi

@@ -1,0 +1,34 @@
+# Tests: join, for-each (List of ℂ)
+# Two config lists are joined; shader colors by minimum distance to any point.
+# Expected: bright spots at all 6 points (3 from each list).
+viewer:
+  title: List Join
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/48
+  code: |
+    all : List of ℂ <- join(listA, listB)
+    closest : R <- 1000
+    for each c in all:
+      d : R <- |z - c|
+      if d < closest:
+        closest <- d
+    color <- blend(exp(-closest * 5), white, black)
+
+configuration:
+  title: Configuration
+  size: 400x150
+  vertical-contents:
+    - text-entry:
+        label: "List A"
+        value: "0, 1, -1"
+        type: List of ℂ
+        variable: listA
+    - text-entry:
+        label: "List B"
+        value: "i, -i, 0.5 + 0.5i"
+        type: List of ℂ
+        variable: listB

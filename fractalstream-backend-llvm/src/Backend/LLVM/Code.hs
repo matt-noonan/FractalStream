@@ -4,6 +4,8 @@ module Backend.LLVM.Code
   ( --compile
 --  , compileRenderer
    compileRenderer'
+  , compileToolHandler
+  , DrawVTable(..)
   ) where
 
 import FractalStream.Prelude
@@ -28,6 +30,7 @@ import Unsafe.Coerce (unsafeCoerce)
 
 import Language.Type
 import Language.Code
+import Language.Draw
 import Data.Indexed.Functor
 
 toParameterList :: EnvironmentProxy env -> [(AST.Type, ParameterName)]
@@ -374,9 +377,15 @@ compileRenderer' prepOutputEnv name code = runExcept $
   assertAbsent (Proxy @InternalDY)          (envProxy (Proxy @env)) $
   assertAbsent (Proxy @"color")             (envProxy (Proxy @env)) $
   buildModuleT "compiled rendering kernel" $ do
-    let retParam       = (toLLVMPtrType ColorType, NoParameterName)
-        params         = toParameterList (envProxy (Proxy @(RenderEnv' env)))
-        prepParams     = toPrepParamList prepOutputEnv
+    let retParam     = (toLLVMPtrType ColorType, NoParameterName)
+        allEnvParams = toParameterList (envProxy (Proxy @(RenderEnv' env)))
+        -- RenderEnv' env = blockWidth ': blockHeight ': subsamples ': ViewerEnv env
+        -- First 3 params are the internal render args; the rest are ViewerEnv.
+        (internalRenderParams, viewerEnvParams) = splitAt 3 allEnvParams
+        arenaParams  = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
+                       , (AST.i32,        ParameterName "#arenaSize") ]
+        params       = internalRenderParams ++ arenaParams ++ viewerEnvParams
+        prepParams   = toPrepParamList prepOutputEnv
         pfX      = bindingEvidence @InternalX   @'RealT  @(ViewerEnv env)
         pfY      = bindingEvidence @InternalY   @'RealT  @(ViewerEnv env)
         pfdX     = bindingEvidence @InternalDX  @'RealT  @(ViewerEnv env)
@@ -384,7 +393,8 @@ compileRenderer' prepOutputEnv name code = runExcept $
         pfOutput = bindingEvidence @"color"     @'ColorT @(ViewerEnv env)
         nViewerEnvArgs = envLength (envProxy (Proxy @(ViewerEnv env)))
     function name (retParam : params ++ prepParams) AST.void $ \allArgs -> do
-      let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg : rest) = allArgs
+      let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg
+                  : arenaPtrArg : arenaSizeArg : rest) = allArgs
           (rawArgs, prepArrayPtrs) = splitAt nViewerEnvArgs rest
       getExtern <- getGetExtern
       mdo
@@ -393,6 +403,17 @@ compileRenderer' prepOutputEnv name code = runExcept $
         blockWidthPtr  <- allocaArg IntegerType blockWidthArg
         blockHeightPtr <- allocaArg IntegerType blockHeightArg
         subsamplesPtr  <- allocaArg IntegerType subsamplesArg
+
+        -- Arena setup: bumpAlloca tracks the current allocation position.
+        -- arenaEnd is constant = arenaBase + arenaSize.
+        -- overflowFlag is reset per subsample and set by arenaAlloc on overflow.
+        bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
+        store bumpAlloca 0 arenaPtrArg
+        arenaEnd <- gep arenaPtrArg [arenaSizeArg]
+        overflowFlag <- alloca AST.i1 Nothing 0
+        store overflowFlag 0 (C.bit 0)
+        let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag
+
         args <- allocaArgs (envProxy (Proxy @(ViewerEnv env))) rawArgs
         x0 <- derefOperand (getBinding args pfX)  >>= \case RealOp v -> pure v
         y0 <- derefOperand (getBinding args pfY)  >>= \case RealOp v -> pure v
@@ -441,18 +462,28 @@ compileRenderer' prepOutputEnv name code = runExcept $
           storeOperand (RealOp xVal) (getBinding args pfX)
           storeOperand (RealOp yVal) (getBinding args pfY)
 
+          -- Reset the arena at the start of each subsample so each pixel's
+          -- dynamic list allocations are independent.
+          store bumpAlloca 0 arenaPtrArg
+          store overflowFlag 0 (C.bit 0)
+
           -- Load prep output vars from their flat arrays before the kernel.
           pixelIndex <- load pixelIndexPtr 0
           overwritePrepOutputs prepOutputEnv prepArrayPtrs pixelIndex argMap
 
-          runReaderT (compileCode getExtern code) args
+          runReaderT (compileCode getExtern arenaState Nothing code) args
+          overflowed <- load overflowFlag 0
           (cr0, cg0, cb0) <- case getBinding args pfOutput of
             PtrOp (ColorOp outputR outputG outputB) ->
               (,,) <$> load outputR 0 <*> load outputG 0 <*> load outputB 0
+          -- On arena overflow, render the pixel magenta so it's visually obvious.
+          cr0' <- select overflowed (C.int8 255) cr0
+          cg0' <- select overflowed (C.int8 0)   cg0
+          cb0' <- select overflowed (C.int8 255) cb0
 
-          cr <- zext cr0 AST.i32
-          cg <- zext cg0 AST.i32
-          cb <- zext cb0 AST.i32
+          cr <- zext cr0' AST.i32
+          cg <- zext cg0' AST.i32
+          cb <- zext cb0' AST.i32
           do
             tmp1 <- load accR 0
             tmp2 <- add tmp1 cr
@@ -531,25 +562,104 @@ compileRenderer' prepOutputEnv name code = runExcept $
         retVoid
 
 
+-- | C function pointers (one per draw primitive) that a compiled tool's
+-- 'DrawCommand's call back into Haskell.  Each field is an LLVM operand of the
+-- appropriate function-pointer type.  Viewers don't draw, so they pass
+-- 'Nothing' to 'compileCode'; tool handlers pass 'Just'.
+data DrawVTable = DrawVTable
+  { dvClear  :: Operand   -- ^ void()
+  , dvStroke :: Operand   -- ^ void(i8 r, i8 g, i8 b)
+  , dvFill   :: Operand   -- ^ void(i8 r, i8 g, i8 b)
+  , dvPoint  :: Operand   -- ^ void(double x, double y)
+  , dvLine   :: Operand   -- ^ void(double x1, double y1, double x2, double y2)
+  , dvCircle :: Operand   -- ^ void(i8 fill, double r, double x, double y)
+  , dvRect   :: Operand   -- ^ void(i8 fill, double x1, double y1, double x2, double y2)
+  }
+
+-- | Compile a single tool event handler into a native function.  Unlike a
+-- viewer kernel there is no pixel loop: the body runs once.  ABI (in order):
+-- seven draw-callback function pointers (passed as i8*), the arena pointer and
+-- size, a 1-byte overflow-out pointer, then the handler's environment values
+-- (read-only inputs, marshalled like viewer args).  Draw commands in the body
+-- 'call' the vtable; list allocations use the arena; on overflow the kernel
+-- writes 1 to the overflow byte.
+compileToolHandler :: forall e
+                    . EnvironmentProxy e
+                   -> AST.Name
+                   -> Code e
+                   -> Either String AST.Module
+compileToolHandler envp name code = runExcept $
+  buildModuleT "compiled tool handler" $ do
+    let drawParams =
+          [ (AST.ptr AST.i8, ParameterName "draw.clear")
+          , (AST.ptr AST.i8, ParameterName "draw.stroke")
+          , (AST.ptr AST.i8, ParameterName "draw.fill")
+          , (AST.ptr AST.i8, ParameterName "draw.point")
+          , (AST.ptr AST.i8, ParameterName "draw.line")
+          , (AST.ptr AST.i8, ParameterName "draw.circle")
+          , (AST.ptr AST.i8, ParameterName "draw.rect") ]
+        arenaParams    = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
+                         , (AST.i32,        ParameterName "#arenaSize") ]
+        overflowParams = [ (AST.ptr AST.i8, ParameterName "#overflowOut") ]
+        params = drawParams ++ arenaParams ++ overflowParams ++ toToolParameterList envp
+        fnPtrTy rTy aTys = AST.ptr (AST.FunctionType rTy aTys False)
+    function name params AST.void $ \allArgs -> do
+      getExtern <- getGetExtern
+      _entry <- block `named` "tool_entry"
+      let (drawArgs, afterDraw) = splitAt 7 allArgs
+          (arenaPtrArg : arenaSizeArg : overflowArg : rawEnvArgs) = afterDraw
+          [clearP, strokeP, fillP, pointP, lineP, circleP, rectP] = drawArgs
+
+      bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
+      store bumpAlloca 0 arenaPtrArg
+      arenaEnd <- gep arenaPtrArg [arenaSizeArg]
+      overflowFlag <- alloca AST.i1 Nothing 0
+      store overflowFlag 0 (C.bit 0)
+      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag
+
+      clearF  <- bitcast clearP  (fnPtrTy AST.void [])
+      strokeF <- bitcast strokeP (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
+      fillF   <- bitcast fillP   (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
+      pointF  <- bitcast pointP  (fnPtrTy AST.void [AST.double, AST.double])
+      lineF   <- bitcast lineP
+                   (fnPtrTy AST.void [AST.double, AST.double, AST.double, AST.double])
+      circleF <- bitcast circleP
+                   (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double])
+      rectF   <- bitcast rectP
+                   (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double, AST.double])
+      let vt = DrawVTable { dvClear = clearF, dvStroke = strokeF, dvFill = fillF
+                          , dvPoint = pointF, dvLine = lineF, dvCircle = circleF
+                          , dvRect = rectF }
+
+      args <- allocaToolArgs envp rawEnvArgs
+      runReaderT (compileCode getExtern arenaState (Just vt) code) args
+
+      ovf  <- load overflowFlag 0
+      ovf8 <- zext ovf AST.i8
+      store overflowArg 0 ovf8
+      retVoid
+
 compileCode :: forall m env
              . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
             => (String -> Operand)
+            -> ArenaState
+            -> Maybe DrawVTable
             -> Code env
             -> ReaderT (Context OperandPtr env) m ()
-compileCode getExtern = indexedFold @(OperandPtrContext m) $ \case
+compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
 
   Block body -> sequence_ body
 
   NoOp -> pure ()
 
   Set pf _ e -> do
-    x <- value_ getExtern e
+    x <- value_ getExtern arena e
     ctx <- ask
     storeOperand x (withKnownType (typeOfValue e) (getBinding ctx pf))
     pure ()
 
   Let pf name val body -> do
-    x <- value_ getExtern val
+    x <- value_ getExtern arena val
     let t = typeOfValue val
     ptr <- allocaOp t
     storeOperand x ptr
@@ -558,7 +668,7 @@ compileCode getExtern = indexedFold @(OperandPtrContext m) $ \case
       lift (runReaderT body ctx)
 
   IfThenElse cond yes no -> mdo
-    c <- value_ getExtern cond >>= detypeOperand BooleanType
+    c <- value_ getExtern arena cond >>= detypeOperand BooleanType
     condBr c yesLabel noLabel
 
     yesLabel <- block
@@ -577,13 +687,113 @@ compileCode getExtern = indexedFold @(OperandPtrContext m) $ \case
 
     loop <- block
     void body
-    test <- value_ getExtern cond >>= detypeOperand BooleanType
+    test <- value_ getExtern arena cond >>= detypeOperand BooleanType
     condBr test loop exit
 
     exit <- block
     pure ()
 
-  _ -> error "unsupported command"
+  -- | Iterate over each element of a list variable.
+  ForEach pfList _listName (ListType itemTy) itemName pfNoItem _env _ body ->
+    recallIsAbsent pfNoItem $ do
+    ctx <- ask
+    -- Load the head pointer from the list variable's stack slot.
+    headPtr <- lift $ getListOp <$> derefOperand (getBinding ctx pfList)
+    -- Allocate a stack slot to track the current node pointer.
+    currPtrAlloca <- lift $ alloca (AST.ptr AST.i8) Nothing 0
+    lift $ store currPtrAlloca 0 headPtr
+    -- Allocate a stack slot for the current element.
+    elemSlot <- lift $ allocaOp itemTy
+    mdo
+      lift $ br loopHead
+
+      loopHead <- block `named` "foreach_head"
+      currPtr <- lift $ load currPtrAlloca 0
+      isNull  <- lift $ icmp P.EQ currPtr nullI8Ptr
+      lift $ condBr isNull loopExit loopBody
+
+      loopBody <- block `named` "foreach_body"
+      elem_ <- lift $ loadListElem itemTy currPtr
+      lift $ storeOperand elem_ elemSlot
+      -- Run the body with the element bound in the context.
+      lift $ runReaderT body (Bind itemName itemTy elemSlot ctx)
+      nextPtr <- lift $ loadListNext currPtr
+      lift $ store currPtrAlloca 0 nextPtr
+      lift $ br loopHead
+
+      loopExit <- block `named` "foreach_exit"
+      pure ()
+
+  -- | Find the first list element matching a predicate; run action or fallback.
+  Lookup pfList _listName (ListType itemTy) itemName pfNoItem _extEnv _env
+         predicate action fallback ->
+    recallIsAbsent pfNoItem $ do
+    ctx <- ask
+    -- Load the head pointer from the list variable's stack slot.
+    headPtr <- lift $ getListOp <$> derefOperand (getBinding ctx pfList)
+    currPtrAlloca <- lift $ alloca (AST.ptr AST.i8) Nothing 0
+    lift $ store currPtrAlloca 0 headPtr
+    elemSlot <- lift $ allocaOp itemTy
+    mdo
+      lift $ br loopHead
+
+      loopHead <- block `named` "lookup_head"
+      currPtr <- lift $ load currPtrAlloca 0
+      isNull  <- lift $ icmp P.EQ currPtr nullI8Ptr
+      lift $ condBr isNull notFound loopBody
+
+      loopBody <- block `named` "lookup_body"
+      elem_ <- lift $ loadListElem itemTy currPtr
+      lift $ storeOperand elem_ elemSlot
+      -- Evaluate the predicate in the extended context.
+      let extCtx = Bind itemName itemTy elemSlot ctx
+      testBit <- lift $ runReaderT (value_ getExtern arena predicate) extCtx
+                   >>= detypeOperand BooleanType
+      lift $ condBr testBit foundBlock nextIter
+
+      nextIter <- block `named` "lookup_next"
+      nextPtr <- lift $ loadListNext currPtr
+      lift $ store currPtrAlloca 0 nextPtr
+      lift $ br loopHead
+
+      foundBlock <- block `named` "lookup_found"
+      lift $ runReaderT action extCtx
+      lift $ br exit
+
+      notFound <- block `named` "lookup_not_found"
+      lift $ case fallback of
+        Nothing  -> pure ()
+        Just alt -> runReaderT alt ctx
+      lift $ br exit
+
+      exit <- block `named` "lookup_exit"
+      pure ()
+
+  DrawCommand d -> case mvtable of
+    Nothing -> throwError "internal error: draw command compiled without a draw vtable"
+    Just vt -> do
+      -- A point Value has type (Pair RealT RealT) -> PairOp (RealOp x) (RealOp y).
+      let withPt pv k = value_ getExtern arena pv >>= \case
+            PairOp (RealOp x) (RealOp y) -> k x y
+      case d of
+        Clear _ -> void $ call (dvClear vt) []
+        SetStroke _ cv -> value_ getExtern arena cv >>= \case
+          ColorOp r g b -> void $ call (dvStroke vt) [(r,[]),(g,[]),(b,[])]
+        SetFill _ cv -> value_ getExtern arena cv >>= \case
+          ColorOp r g b -> void $ call (dvFill vt) [(r,[]),(g,[]),(b,[])]
+        DrawPoint _ pv -> withPt pv $ \x y ->
+          void $ call (dvPoint vt) [(x,[]),(y,[])]
+        DrawLine _ p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
+          void $ call (dvLine vt) [(x1,[]),(y1,[]),(x2,[]),(y2,[])]
+        DrawCircle _ fill rv pv -> value_ getExtern arena rv >>= \case
+          RealOp r -> withPt pv $ \x y ->
+            void $ call (dvCircle vt)
+              [(C.int8 (if fill then 1 else 0),[]),(r,[]),(x,[]),(y,[])]
+        DrawRect _ fill p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
+          void $ call (dvRect vt)
+            [(C.int8 (if fill then 1 else 0),[]),(x1,[]),(y1,[]),(x2,[]),(y2,[])]
+        Write _ _ _ ->
+          throwError "The LLVM backend cannot compile `write` (text) yet"
 
 
 data OperandPtrContext :: (* -> *) -> Environment -> Exp *
@@ -610,3 +820,46 @@ allocaArg t op = do
   x <- typedOperand t op
   storeOperand x ptr
   pure ptr
+
+-- | Scalar tool-handler arguments are passed in/out: the caller hands the
+-- kernel a pointer to a cell, so a 'Set' of a config variable is visible to the
+-- host after the call (write-back; e.g. the Select tool sets a coordinate, or
+-- newton3's \"Move roots\" tool sets @drag_target@).  Lists and text are passed
+-- by value (read-only — no write-back).  This predicate must agree between
+-- 'toToolParameterList' (param types), 'bindToolArg', and the host's marshaller.
+toolInOut :: TypeProxy t -> Bool
+toolInOut = \case
+  IntegerType -> True
+  RealType    -> True
+  BooleanType -> True
+  ComplexType -> True
+  ColorType   -> True
+  _           -> False
+
+-- | Parameter types for a tool handler's environment: in/out types become
+-- pointers; everything else keeps its by-value representation.
+toToolParameterList :: EnvironmentProxy env -> [(AST.Type, ParameterName)]
+toToolParameterList = \case
+  EmptyEnvProxy -> []
+  BindingProxy name t env ->
+    let ty = if toolInOut t then toLLVMPtrType t else toLLVMType t
+    in (ty, ParameterName (fromString (symbolVal name))) : toToolParameterList env
+
+allocaToolArgs :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+               => EnvironmentProxy env
+               -> [Operand]
+               -> m (Context OperandPtr env)
+allocaToolArgs EmptyEnvProxy [] = pure EmptyContext
+allocaToolArgs (BindingProxy name ty env) (op:ops) =
+  Bind name ty <$> bindToolArg ty op <*> allocaToolArgs env ops
+allocaToolArgs _ _ =
+  throwError "internal error: mismatched environment/args counts (tool)"
+
+-- | Bind a tool handler's environment argument.  In/out types receive a pointer
+-- and are bound directly to the caller's cell (so 'Set' writes are visible to
+-- the host); other types are bound by value as usual.
+bindToolArg :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+            => TypeProxy t -> Operand -> m (PtrOp t)
+bindToolArg ty op
+  | toolInOut ty = typedOperandPtr ty op
+  | otherwise    = allocaArg ty op

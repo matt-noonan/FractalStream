@@ -1,0 +1,31 @@
+# Tests: find (List of ℝ)
+# Finds the first element > threshold in a config list.
+# Pixel is colored white if z is close to that found value, black otherwise.
+# Expected: single bright band at the first element of myList that exceeds threshold.
+viewer:
+  title: List Find
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/64
+  code: |
+    found : R <- find(myList, x -> x > threshold, -99)
+    d : R <- |re z - found|
+    color <- if found = -99 then grey else blend(exp(-d * 8), white, black)
+
+configuration:
+  title: Configuration
+  size: 400x150
+  vertical-contents:
+    - text-entry:
+        label: "List"
+        value: "-2, -1, 0.5, 1.5, 2.5"
+        type: List of ℝ
+        variable: myList
+    - text-entry:
+        label: "Threshold"
+        value: "0"
+        type: ℝ
+        variable: threshold

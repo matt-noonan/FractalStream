@@ -25,7 +25,6 @@ import Actor.Tool (Tool)
 import Actor.Viewer
 import Actor.Viewer.Complex
 import Language.Environment
-import Language.Draw
 import Language.Value hiding (Join)
 import Language.Code.Parser (Splices(..), noSplices)
 
@@ -36,10 +35,8 @@ import qualified Data.Set as Set
 
 import Language.Code (usedVarsInCode, SomeCode(..))
 import Language.Value.Evaluator (evaluate)
-import Language.Code.InterpretIO
 import Development.IncludeFile
 
-import Control.Concurrent
 import Control.Exception (Exception, throwIO)
 
 import Data.Codec
@@ -101,13 +98,13 @@ parseEnsembleFromFile path = do
 data HaskellValueOrError :: Symbol -> FSType -> Exp Type
 type instance Eval (HaskellValueOrError name t) = Either String (HaskellType t)
 
-runEnsembleFromSetup :: ViewerCompiler -> UI -> Ensemble -> IO ()
-runEnsembleFromSetup jit UI{..} Ensemble{..} = do
+runEnsembleFromSetup :: Backend -> UI -> Ensemble -> IO ()
+runEnsembleFromSetup backend UI{..} Ensemble{..} = do
 
   -- Get a handle for the ensemble
   project <- newEnsemble
   let rerunSetup = pure ()
-  let runPostSetup = runEnsemblePostSetup project jit makeLayout makeViewer rerunSetup Ensemble{..}
+  let runPostSetup = runEnsemblePostSetup project backend makeLayout makeViewer rerunSetup Ensemble{..}
 
   -- Run the setup panel
   getDynamic ensembleSetup >>= \case
@@ -116,24 +113,24 @@ runEnsembleFromSetup jit UI{..} Ensemble{..} = do
       title <- either (throwIO . BadEnsemble) pure =<< getDynamic coTitle
       runSetup project title coContents runPostSetup
 
-runEnsemble :: ViewerCompiler -> UI -> Ensemble -> IO ()
-runEnsemble jit UI{..} Ensemble{..} = do
+runEnsemble :: Backend -> UI -> Ensemble -> IO ()
+runEnsemble backend UI{..} Ensemble{..} = do
 
   -- Get a handle for the ensemble
   project <- newEnsemble
   let rerunSetup = pure ()
-  runEnsemblePostSetup project jit makeLayout makeViewer rerunSetup Ensemble{..}
+  runEnsemblePostSetup project backend makeLayout makeViewer rerunSetup Ensemble{..}
 
 
 runEnsemblePostSetup :: forall ensembleHandle
                       . ensembleHandle
-                     -> ViewerCompiler
+                     -> Backend
                      -> (ensembleHandle -> String -> Layout -> IO (IO ()))
                      -> (ensembleHandle -> IO () -> Dynamic (Either String SomeEnvironment) -> SomeContext EventArgument_ -> IO () -> IO () -> Viewer -> IO (IO ()))
                      -> IO ()
                      -> Ensemble
                      -> IO ()
-runEnsemblePostSetup project jit mkLayout mkViewer rerunSetup Ensemble{..} = do
+runEnsemblePostSetup project backend mkLayout mkViewer rerunSetup Ensemble{..} = do
 
   -- Make the configuration panel
   (someContext, configArgs, showConfig) <- getDynamic ensembleConfiguration >>= \case
@@ -153,11 +150,11 @@ runEnsemblePostSetup project jit mkLayout mkViewer rerunSetup Ensemble{..} = do
 
   -- Make the viewers
   viewers <- getDynamic ensembleViewers
-  forM_ viewers $ makeComplexViewer project jit mkViewer' someContext configArgs showConfig rerunSetup
+  forM_ viewers $ makeComplexViewer project backend mkViewer' someContext configArgs showConfig rerunSetup
 
 makeComplexViewer :: forall ensembleHandle
                    . ensembleHandle
-                  -> ViewerCompiler
+                  -> Backend
                   -> (ensembleHandle -> IO () -> SomeContext EventArgument_ -> IO () -> IO () -> Viewer -> IO (IO ()))
                   -> SomeContext DynamicValue'
                   -> SomeContext EventArgument_
@@ -165,7 +162,7 @@ makeComplexViewer :: forall ensembleHandle
                   -> IO ()
                   -> ComplexViewer
                   -> IO ()
-makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSetup ComplexViewer{..} = do
+makeComplexViewer project backend mkViewer someContext configArgs showConfig rerunSetup ComplexViewer{..} = do
    rebuildScript
   where
    rebuildScript = do
@@ -192,7 +189,9 @@ makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSe
     vPixelSize <- throwLeft (getDynamic cvPixelSize) >>= newVariable
     let vSaveView = pure ()
 
-    (vDrawCmds, vDrawCmdsChanged, vDrawTo) <- makeDrawCommandGetter
+    (vDrawCmds, vDrawCmdsChanged, vDrawSink) <- makeToolRunnerForLayer (bToolRunnerFactory backend)
+
+    let vBuildToolHandler = runTool (bToolRunner backend) vDrawSink
 
     getDynamic cvCode >>= \case
 
@@ -252,7 +251,7 @@ makeComplexViewer project jit mkViewer someContext configArgs showConfig rerunSe
           withSelectTool <- if coord `Map.member` envToMap env then (:) <$> makeSelectTool coord else pure id
           let vTools = withSelectTool <$> dyn cvTools
 
-          withCompiledViewer jit mprep code $ \fun -> do
+          withCompiledViewer (bViewerCompiler backend) mprep code $ \fun -> do
             let vCodeWithArgs = CodeWithArgs vGetArgs (Just code) (pure fun)
             -- FIXME, we should grab the "close this window" action and do something with it
             void $ mkViewer project showConfig configArgs rerunSetup rebuildScript Viewer{..}
@@ -302,66 +301,6 @@ layoutToArgs = \case
             in SomeContext' (Right $ SomeContext $ Bind name ty arg EmptyContext)
 
 
-makeDrawCommandGetter :: IO (IO [[DrawCommand]], IO Bool, Int -> DrawHandler ScalarIORefM)
-makeDrawCommandGetter = do
-  layersMVar <- newMVar (Map.empty :: Map Int [DrawCommand])
-  dcChanged <- newMVar False
-
-  let consDrawCmd :: Draw_ value env
-                  -> Maybe [Draw_ value env]
-                  -> Maybe [Draw_ value env]
-      consDrawCmd = \case
-        Clear{} -> const (Just [])
-        c -> Just . \case
-          Nothing -> [c]
-          Just cs -> c:cs
-
-  let drawTo :: Int -> DrawHandler ScalarIORefM
-      drawTo n = DrawHandler $ \cmd -> do
-        let emit :: DrawCommand -> StateT (Context IORefTypeOfBinding e) IO ()
-            emit cmd' = liftIO $ do
-              modifyMVar_ dcChanged (pure . const True)
-              modifyMVar_ layersMVar (pure . Map.alter (consDrawCmd cmd') n)
-        case cmd of
-          DrawPoint _env pv -> do
-            p <- eval pv
-            emit (DrawPoint EmptyEnvProxy p)
-          DrawCircle _env doFill rv pv -> do
-            r    <- eval rv
-            p    <- eval pv
-            emit (DrawCircle EmptyEnvProxy doFill r p)
-          DrawLine _env fromv tov -> do
-            from <- eval fromv
-            to   <- eval tov
-            emit (DrawLine EmptyEnvProxy from to)
-          DrawRect _env doFill fromv tov -> do
-            from <- eval fromv
-            to   <- eval tov
-            emit (DrawRect EmptyEnvProxy doFill from to)
-          SetStroke _env cv -> do
-            c <- eval cv
-            emit (SetStroke EmptyEnvProxy c)
-          SetFill _env cv -> do
-            c <- eval cv
-            emit (SetFill EmptyEnvProxy c)
-          Clear _env -> emit (Clear EmptyEnvProxy)
-          Write _env txtv ptv -> do
-            txt <- eval txtv
-            pt <- eval ptv
-            emit (Write EmptyEnvProxy txt pt)
-
-  let getDrawCommands = do
-        tryTakeMVar dcChanged >>= \case
-          Nothing -> pure ()
-          Just _  -> putMVar dcChanged False
-        tryReadMVar layersMVar >>= \case
-          Nothing -> pure [[]]
-          Just m  -> pure (map reverse (Map.elems m))
-
-      drawCommandsChanged = tryReadMVar dcChanged >>= \case
-        Nothing -> pure True
-        Just tf -> pure tf
-  pure (getDrawCommands, drawCommandsChanged, drawTo)
 
   -- | A standard tool for selecting the clicked point
 makeSelectTool :: String -> IO Tool

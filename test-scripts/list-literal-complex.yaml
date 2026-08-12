@@ -1,0 +1,19 @@
+# Tests: List literal (List of ℂ), for-each, length
+# Expected: 5 bright spots at 0, 1, -1, i, -i; rest dark.
+# The shader builds a literal list each pixel and iterates over it.
+viewer:
+  title: List Literal — Complex
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/64
+  code: |
+    pts : List of ℂ <- [0, 1, -1, i, -i]
+    closest : R <- 1000
+    for each c in pts:
+      d : R <- |z - c|
+      if d < closest:
+        closest <- d
+    color <- blend(exp(-closest * 6), white, black)

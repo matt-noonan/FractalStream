@@ -11,13 +11,17 @@ module Actor.Event
   , EventArgument(..)
 
   , Coordinate(..)
-  , buildHandler
+  , buildHandlerWith
+  , ToolExec
+  , ToolRunner(..)
+  , defaultToolRunner
   , makeEventHandler
 
   , constArg
   , mutableVar
   , mutableArg
   , toUserString
+  , snapshotEventArgs
 
   ) where
 
@@ -127,24 +131,64 @@ run draw ctx script = do
                         Just setter -> when (Scalar ty old /= Scalar ty new) (setter ty new)
                     ) ctx'
 
+-- | Read the current value of every argument in a tool's event context,
+-- yielding a concrete 'HaskellValue' context (or 'Nothing' if any argument is
+-- currently unavailable, e.g. an unparsed configuration field).
+snapshotEventArgs :: Context EventArgument_ env -> IO (Maybe (Context HaskellValue env))
+snapshotEventArgs ctx =
+  mapContextM @MaybeHaskellValue @HaskellValue (\_ _ -> id) <$> mapContextM (\_ _ -> argGetValue) ctx
+
+-- | How a tool event handler's 'Code' is /prepared/ for execution: given a
+-- witness for its environment and the code, produce an invoker that runs the
+-- handler against a (per-event) argument context.  Preparation happens once,
+-- when the dispatcher is built; the invoker runs on every event.  The
+-- interpreter prepares trivially (returns a closure over 'run'); the LLVM
+-- backend JIT-compiles the handler during preparation so each event just
+-- marshals arguments and calls the compiled code (rather than recompiling).
+type ToolExec =
+  forall e. EnvironmentProxy e
+         -> Code e
+         -> IO (Context EventArgument_ e -> IO ())
+
 makeEventHandler :: forall env
                   . (MissingClickArgs env, MissingDragArgs env, MissingUnitArgs env)
-                 => DrawHandler ScalarIORefM
+                 => ToolExec
                  -> Context EventArgument_ env
                  -> CombinedEventHandler env
-                 -> Double
-                 -> Event
-                 -> Maybe (IO ())
-makeEventHandler draw ctx CombinedEventHandler{..} = \px -> \case
-  Click (x, y) -> onClick <&> run draw (constArg x # constArg y # constArg px # ctx)
-  DoubleClick (x, y) -> onDoubleClick <&> run draw (constArg x # constArg y # constArg px # ctx)
-  Drag (x, y) (x', y') -> onDrag <&> run draw (constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx)
-  DragDone (x, y) (x', y') -> onDragDone <&> run draw (constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx)
-  Timer name -> Map.lookup name onTimer <&> run draw (constArg px # ctx) . snd
-  ButtonPressed name -> Map.lookup name onButton <&> run draw (constArg px # ctx)
-  Refresh -> onRefresh <&> run draw (constArg px # ctx)
-  Activated -> onActivated <&> run draw (constArg px # ctx)
-  Deactivated -> onDeactivated <&> run draw (constArg px # ctx)
+                 -> IO (Double -> Event -> Maybe (IO ()))
+makeEventHandler exec ctx CombinedEventHandler{..} = do
+  -- Prepare (e.g. JIT-compile) each present handler once.  The dummy contexts
+  -- only serve to recover each branch's 'EnvironmentProxy'; 'contextToEnv'
+  -- ignores the values.
+  let dummyR     = constArg 0 :: EventArgument 'RealT
+      clickEnvP  = contextToEnv (dummyR # dummyR # dummyR # ctx)
+      dragEnvP   = contextToEnv (dummyR # dummyR # dummyR # dummyR # dummyR # ctx)
+      unitEnvP   = contextToEnv (dummyR # ctx)
+  clickRun       <- traverse (exec clickEnvP) onClick
+  dblClickRun    <- traverse (exec clickEnvP) onDoubleClick
+  dragRun        <- traverse (exec dragEnvP)  onDrag
+  dragDoneRun    <- traverse (exec dragEnvP)  onDragDone
+  timerRun       <- traverse (\(i, code) -> (i,) <$> exec unitEnvP code) onTimer
+  buttonRun      <- traverse (exec unitEnvP)  onButton
+  refreshRun     <- traverse (exec unitEnvP)  onRefresh
+  activatedRun   <- traverse (exec unitEnvP)  onActivated
+  deactivatedRun <- traverse (exec unitEnvP)  onDeactivated
+  pure $ \px -> \case
+    Click (x, y) -> clickRun <&> \invoke ->
+      invoke (constArg x # constArg y # constArg px # ctx)
+    DoubleClick (x, y) -> dblClickRun <&> \invoke ->
+      invoke (constArg x # constArg y # constArg px # ctx)
+    Drag (x, y) (x', y') -> dragRun <&> \invoke ->
+      invoke (constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx)
+    DragDone (x, y) (x', y') -> dragDoneRun <&> \invoke ->
+      invoke (constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx)
+    Timer name -> Map.lookup name timerRun <&> \(_, invoke) ->
+      invoke (constArg px # ctx)
+    ButtonPressed name -> Map.lookup name buttonRun <&> \invoke ->
+      invoke (constArg px # ctx)
+    Refresh -> refreshRun <&> \invoke -> invoke (constArg px # ctx)
+    Activated -> activatedRun <&> \invoke -> invoke (constArg px # ctx)
+    Deactivated -> deactivatedRun <&> \invoke -> invoke (constArg px # ctx)
 
 combineEventHandlers :: forall env
                       . Either String (CombinedEventHandler env)
@@ -212,11 +256,13 @@ singleToCombined env = \case
     SomeUnitHandler script <- getDynamic (dyn code)
     pure $ bimap snd (\h -> noHandlers { onDeactivated = Just h }) (script env)
 
-buildHandler :: DrawHandler ScalarIORefM
-             -> SomeContext EventArgument_
-             -> [SingleEventHandler]
-             -> IO (Either String (Double -> Event -> Maybe (IO ())))
-buildHandler draw (SomeContext ctx) handlers = do
+-- | Parse a tool's event handlers and build its event dispatcher, with handler
+-- execution supplied by the given 'ToolExec' (interpreter or JIT-compiled).
+buildHandlerWith :: ToolExec
+                 -> SomeContext EventArgument_
+                 -> [SingleEventHandler]
+                 -> IO (Either String (Double -> Event -> Maybe (IO ())))
+buildHandlerWith exec (SomeContext ctx) handlers = do
   let env = contextToEnv ctx
   ecombined <- foldl' combineEventHandlers (Right noHandlers) <$> mapM (singleToCombined env) handlers
   case ecombined of
@@ -228,7 +274,40 @@ buildHandler draw (SomeContext ctx) handlers = do
       let combined = case (onDrag combined0, onDragDone combined0) of
             (Just _, Nothing) -> combined0 { onDragDone = Just NoOp }
             _ -> combined0
-      in pure (pure $ makeEventHandler draw ctx combined)
+      in Right <$> makeEventHandler exec ctx combined
+
+-- | How a backend turns a tool's parsed event handlers into the event
+-- dispatcher the UI calls.  Given the per-layer draw handler (from the tool
+-- draw-command accumulator), the layer number, the tool's variable context, and
+-- the parsed handlers, it produces (or fails to produce) a
+-- @Double -> Event -> Maybe (IO ())@ dispatcher.  The pure/interpreter backend
+-- uses 'defaultToolRunner'; the LLVM backend supplies one that JIT-compiles the
+-- handlers.
+newtype ToolRunner = ToolRunner
+  { runTool :: (Int -> DrawSink)
+            -> Int
+            -> SomeContext EventArgument_
+            -> [SingleEventHandler]
+            -> IO (Either String (Double -> Event -> Maybe (IO ()))) }
+
+-- | The interpreter tool runner: evaluate draw values through the pure
+-- interpreter and emit them into the given layer's 'DrawSink'.
+defaultToolRunner :: ToolRunner
+defaultToolRunner = ToolRunner $ \sink layer ctx handlers ->
+  buildHandlerWith (\_ code -> pure (\c -> run (drawHandlerForSink (sink layer)) c code)) ctx handlers
+
+-- | Adapt a 'DrawSink' into an interpreter 'DrawHandler': evaluate each draw
+-- command's value arguments and forward the concrete values to the sink.
+drawHandlerForSink :: DrawSink -> DrawHandler ScalarIORefM
+drawHandlerForSink sink = DrawHandler $ \case
+  DrawPoint _ pv          -> eval pv >>= liftIO . dsPoint sink
+  DrawCircle _ fill rv pv -> do r <- eval rv; p <- eval pv; liftIO (dsCircle sink fill r p)
+  DrawLine _ fv tv        -> do f <- eval fv; t <- eval tv; liftIO (dsLine sink f t)
+  DrawRect _ fill fv tv   -> do f <- eval fv; t <- eval tv; liftIO (dsRect sink fill f t)
+  SetStroke _ cv          -> eval cv >>= liftIO . dsStroke sink
+  SetFill _ cv            -> eval cv >>= liftIO . dsFill sink
+  Clear _                 -> liftIO (dsClear sink)
+  Write _ tv pv           -> do txt <- eval tv; pt <- eval pv; liftIO (dsWrite sink txt pt)
 
 type EventDependencies =
   (Dynamic (Either String Splices),
