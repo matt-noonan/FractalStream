@@ -482,6 +482,8 @@ getGetExtern = do
     , ("acosh", extern "acosh" [AST.double] AST.double)
     , ("asinh", extern "asinh" [AST.double] AST.double)
     , ("atanh", extern "atanh" [AST.double] AST.double)
+    , ("stacksave", extern "llvm.stacksave" [] (AST.ptr AST.i8))
+    , ("stackrestore", extern "llvm.stackrestore" [AST.ptr AST.i8] AST.void)
     ]
   let m = Map.fromList es
   pure (m Map.!)

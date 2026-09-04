@@ -424,6 +424,24 @@ compileRenderer' prepOutputEnv name code = runExcept $
         br pixelLoopX
 
         pixelLoopX <- block `named` "begin k loop"
+
+        -- To paraphrase the LLVM reference, `stacksave` only stores a pointer
+        -- to the current stack position, and the `stackrestore` later only
+        -- returns the stack to the saved position. It should be analogous to
+        -- an arena reset (so it should cost almost nothing).
+        --
+        -- (https://releases.llvm.org/12.0.1/docs/LangRef.html#int-stacksave)
+        --
+        -- Not doing this would incur a memory cost proportional to the number
+        -- of pixels, which was enough to make the SaddleDrop script crash.
+        --
+        -- Loop counters, the argument context and the prep pointers are
+        -- allocated in the entry block, so the restore does not disturb them.
+        --
+        -- The less brittle alternative would be to hoist all allocations to
+        -- the entry block (since we know how many we need at compile time).
+
+        pixelStack <- call (getExtern "stacksave") []
         accR <- alloca AST.i32 Nothing 0
         accG <- alloca AST.i32 Nothing 0
         accB <- alloca AST.i32 Nothing 0
@@ -502,6 +520,11 @@ compileRenderer' prepOutputEnv name code = runExcept $
           pixelIndex <- load pixelIndexPtr 0
           pixelIndex' <- add pixelIndex (C.int32 1)
           store pixelIndexPtr 0 pixelIndex'
+
+        -- Release this pixel's stack. This has to come after the accumulators
+        -- above have been read and written out (because they will be cleared).
+
+        _ <- call (getExtern "stackrestore") [(pixelStack, [])]
         do -- x += dx
           tmp1 <- load xPtr 0
           tmp2 <- fadd tmp1 dx
@@ -572,11 +595,19 @@ compileCode getExtern = indexedFold @(OperandPtrContext m) $ \case
     nextLabel <- block
     pure ()
 
+
+  -- `Let` does not hoist `allocaOp` outside of loops, so a loop allocates
+  -- fresh stack space for a variable on every new iteration. We avoided stack
+  -- overflows so far, because the -O2 optimizations removed allocations in
+  -- simple enough scripts.
+
   DoWhile cond body -> mdo
+    stackPtr <- call (getExtern "stacksave") []
     br loop
 
     loop <- block
     void body
+    _ <- call (getExtern "stackrestore") [(stackPtr, [])]
     test <- value_ getExtern cond >>= detypeOperand BooleanType
     condBr test loop exit
 
