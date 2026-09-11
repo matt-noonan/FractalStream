@@ -1,0 +1,18 @@
+# Tests: List literal (List of ℝ), for-each
+# Expected: vertical bright bands at x = -2, -1, 0, 1, 2 (re z only).
+viewer:
+  title: List Literal — Real
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/64
+  code: |
+    xs : List of R <- [-2, -1, 0, 1, 2]
+    closest : R <- 1000
+    for each x in xs:
+      d : R <- |re z - x|
+      if d < closest:
+        closest <- d
+    color <- blend(exp(-closest * 6), white, black)

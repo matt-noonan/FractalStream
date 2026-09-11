@@ -1,0 +1,39 @@
+viewers:
+  - title: Arena overflow test
+    style: complex-plane
+    size: 512x512
+    resizable: true
+    z-coord: z
+    initial-center: 0
+    initial-pixel-size: 1/128
+
+    code: |
+      # Arena overflow visual test
+      # ─────────────────────────
+      # Arena capacity : 1 MB = 1 048 576 bytes
+      # Integer list-node stride : 16 bytes  (8-byte next-ptr + 4-byte i32, rounded to 8)
+      # Max nodes before overflow: 1 048 576 / 16 = 65 536
+      #
+      # n grows linearly with re(z).  Overflow boundary:
+      #   50 000 * (re z + 1.5) = 65 536  →  re z ≈ -0.19
+      # In a ±2-unit, 512-pixel-wide view that is ~pixel 232 from the left.
+      #
+      # Expected appearance
+      #   Left  of boundary (~232 px): blue-to-green gradient
+      #   Right of boundary (~280 px): solid magenta
+      #
+      # If any of those rightmost pixels are NOT magenta after building with
+      # the overflow-flag patch, the signal is broken.
+
+      n : ℤ ⭠ round(50000.0 * (re z + 1.5))
+
+      # Horizontal gradient so the safe region is clearly distinguishable
+      color ⭠ blend(re z / 2.0 + 0.5, green, dark blue)
+
+      if n > 0:
+        xs : List of ℤ ⭠ range(1, n)
+        len : ℤ ⭠ length(xs)
+
+        # Shade by traversed length: confirms list was actually walked, not just allocated.
+        # blend clamps to [0,1] so large-but-not-overflow values stay in the green band.
+        color ⭠ blend(re z / 2.0 + 0.5, light green, dark green)

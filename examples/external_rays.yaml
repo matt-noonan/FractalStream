@@ -210,7 +210,7 @@ viewers:
                   R : ℝ ⭠ escape_radius
 
                   theta : ℝ ⭠ p / q
-                  z ⭠ R e^{2 π 𝑖 theta}
+                  z : ℂ ⭠ R e^{2 π 𝑖 theta}
 
                   dist : ℝ ⭠ error
 

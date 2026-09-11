@@ -1,0 +1,38 @@
+viewer:
+  title: List from Config
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 0
+  initial-pixel-size: 1/64
+  code: |
+    # Color each pixel by its distance to the nearest point in myList.
+    # Points close to a list element are bright; far points are dark.
+    closest : R <- 1000
+    for each c in myList:
+      d : R <- |z - c|
+      if d < closest:
+        closest <- d
+    color <- blend(exp(-closest * 4), white, black)
+
+  tools:
+    - name: Show points
+      shortcut: s
+      actions:
+        - event: refresh
+          code: |
+            erase
+            use red for stroke
+            for each c in myList:
+              draw circle at c with radius 0.05
+
+configuration:
+  title: Configuration
+  size: 400x100
+  vertical-contents:
+    - text-entry:
+        label: "Points"
+        value: "0, 1, -1, i, -i"
+        type: List of ℂ
+        variable: myList
