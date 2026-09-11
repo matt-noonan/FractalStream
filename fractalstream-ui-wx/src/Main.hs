@@ -30,7 +30,7 @@ import Control.Exception (Exception, catch, ErrorCall(..))
 import qualified Data.ByteString as BS
 
 main :: IO ()
-main = withBackend $ \backend -> start $ do
+main = withBackend $ \complexViewerCompiler -> start $ do
 
   wxcAppSetAppName "FractalStream"
 
@@ -65,7 +65,7 @@ main = withBackend $ \backend -> start $ do
           let sessionSave = save prj projectWindow sessionUnsaved
           let si = SessionInfo{..}
           modifyValue activeSessions (si :)
-          runEnsemble backend
+          runEnsemble complexViewerCompiler
             (viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..}) sessionSave)
             prj
 
@@ -79,7 +79,7 @@ main = withBackend $ \backend -> start $ do
         let sessionSave = save prj projectWindow sessionUnsaved
         let si = SessionInfo{..}
         modifyValue activeSessions (si :)
-        runEnsembleFromSetup backend
+        runEnsembleFromSetup complexViewerCompiler
             (viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..}) sessionSave)
             prj
 
