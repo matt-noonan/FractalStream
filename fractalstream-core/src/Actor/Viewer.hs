@@ -26,6 +26,12 @@ module Actor.Viewer
   , defaultIterLimit
   , defaultMaxRadius
   , defaultMinRadius
+  -- * Backend
+  , ToolRunnerFactory(..)
+  , ToolRunner(..)
+  , defaultToolRunner
+  , Backend(..)
+  , defaultToolRunnerFactory
   ) where
 
 import FractalStream.Prelude
@@ -34,12 +40,13 @@ import Actor.Viewer.Types
 import Data.DynamicValue
 import Actor.Layout (CodeString(..), Dimensions(..), UIScript)
 import Actor.Tool
+import Actor.Event (ToolRunner(..), defaultToolRunner, EventArgument_, SingleEventHandler, Event)
 import Language.Environment
 import Language.Value.Parser
 import Language.Code
 import Language.Draw
 import Language.Code.Parser
-import Language.Code.InterpretIO (ScalarIORefM)
+import Control.Concurrent.MVar
 import Language.Parser.SourceRange
 import Language.Value.Evaluator
 import Foreign
@@ -124,10 +131,16 @@ data Viewer = Viewer
   , vListen    :: IO () -> IO (IO ())
   , vDrawCmds  :: IO [[DrawCommand]]
   , vDrawCmdsChanged :: IO Bool
-  , vDrawTo    :: Int -> DrawHandler ScalarIORefM
   , vCodeWithArgs :: CodeWithArgs
   , vTools     :: Dynamic [Tool]
   , vScript    :: UIScript
+  , vBuildToolHandler
+      :: Int
+      -> SomeContext EventArgument_
+      -> [SingleEventHandler]
+      -> IO (Either String (Double -> Event -> Maybe (IO ())))
+    -- ^ Build a tool's event dispatcher for the given draw layer.  Supplied by
+    --   the backend (interpreter or JIT-compiled); see 'ToolRunner'.
   }
 
 snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Maybe String)
@@ -328,7 +341,7 @@ cloneViewer v = do
     , vCodeWithArgs = vCodeWithArgs v
     , vDrawCmds = vDrawCmds v
     , vDrawCmdsChanged = vDrawCmdsChanged v
-    , vDrawTo = vDrawTo v
+    , vBuildToolHandler = vBuildToolHandler v
     , vScript = vScript v
     }
 
@@ -346,3 +359,76 @@ defaultIterLimit, defaultMaxRadius, defaultMinRadius :: ParsedValue
 defaultIterLimit = fromRight (error "INTERNAL ERROR: defaultIterLimit") $ parseParsedValue Map.empty "100"
 defaultMaxRadius = fromRight (error "INTERNAL ERROR: defaultMaxRadius") $ parseParsedValue Map.empty "10"
 defaultMinRadius = fromRight (error "INTERNAL ERROR: defaultMinRadius") $ parseParsedValue Map.empty "0.0001"
+
+------------------------------------------------------------------------
+-- Backend
+------------------------------------------------------------------------
+
+-- | A factory that sets up the draw-command accumulation system for a viewer's
+-- tools.  Returns three things:
+--   * an action to read all accumulated draw commands (grouped by layer),
+--   * an action to check whether any commands have been added since last read,
+--   * a function from layer number to a 'DrawSink' for that layer.
+newtype ToolRunnerFactory = ToolRunnerFactory
+  { makeToolRunnerForLayer :: IO ( IO [[DrawCommand]]
+                                 , IO Bool
+                                 , Int -> DrawSink
+                                 )
+  }
+
+-- | Bundles a viewer (shader) compiler with the tool execution machinery.
+data Backend = Backend
+  { bViewerCompiler    :: ViewerCompiler
+  , bToolRunnerFactory :: ToolRunnerFactory
+  , bToolRunner        :: ToolRunner
+    -- ^ How tool event handlers are executed: 'defaultToolRunner' (interpreter)
+    --   or a backend-specific JIT-compiled runner.
+  }
+
+-- | The default 'ToolRunnerFactory': tool scripts are executed by the
+-- pure Haskell interpreter, and draw commands are accumulated in an
+-- in-memory layer map for the UI to paint afterward.
+defaultToolRunnerFactory :: ToolRunnerFactory
+defaultToolRunnerFactory = ToolRunnerFactory $ do
+  layersMVar <- newMVar (Map.empty :: Map Int [DrawCommand])
+  dcChanged  <- newMVar False
+
+  let consDrawCmd :: DrawCommand
+                  -> Maybe [DrawCommand]
+                  -> Maybe [DrawCommand]
+      consDrawCmd = \case
+        Clear{} -> const (Just [])
+        c       -> Just . \case
+          Nothing -> [c]
+          Just cs -> c : cs
+
+      emit :: Int -> DrawCommand -> IO ()
+      emit n cmd' = do
+        modifyMVar_ dcChanged  (pure . const True)
+        modifyMVar_ layersMVar (pure . Map.alter (consDrawCmd cmd') n)
+
+      mkSink :: Int -> DrawSink
+      mkSink n = DrawSink
+        { dsClear  = emit n (Clear EmptyEnvProxy)
+        , dsStroke = \c -> emit n (SetStroke EmptyEnvProxy c)
+        , dsFill   = \c -> emit n (SetFill EmptyEnvProxy c)
+        , dsPoint  = \p -> emit n (DrawPoint EmptyEnvProxy p)
+        , dsLine   = \f t -> emit n (DrawLine EmptyEnvProxy f t)
+        , dsCircle = \fill r p -> emit n (DrawCircle EmptyEnvProxy fill r p)
+        , dsRect   = \fill f t -> emit n (DrawRect EmptyEnvProxy fill f t)
+        , dsWrite  = \txt pt -> emit n (Write EmptyEnvProxy txt pt)
+        }
+
+      getDrawCommands = do
+        tryTakeMVar dcChanged >>= \case
+          Nothing -> pure ()
+          Just _  -> putMVar dcChanged False
+        tryReadMVar layersMVar >>= \case
+          Nothing -> pure [[]]
+          Just m  -> pure (map reverse (Map.elems m))
+
+      drawCommandsChanged = tryReadMVar dcChanged >>= \case
+        Nothing -> pure True
+        Just tf -> pure tf
+
+  pure (getDrawCommands, drawCommandsChanged, mkSink)

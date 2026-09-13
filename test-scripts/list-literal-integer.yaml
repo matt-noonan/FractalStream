@@ -1,0 +1,22 @@
+# Tests: List literal (List of ℤ), for-each, length
+# Expected: bright horizontal bands at imaginary parts 0, 1, 2, 3 (from the
+# length = 4, used as scaling factor); rest dark.
+viewer:
+  title: List Literal — Integer
+  style: complex-plane
+  size: 512x512
+  resizable: true
+  z-coord: z
+  initial-center: 1.5 + 1.5 i
+  initial-pixel-size: 1/64
+  code: |
+    ns : List of Z <- [0, 1, 2, 3]
+    n : Z <- length(ns)
+    closest : R <- 1000
+    for each k in ns:
+      d : R <- |im z - k|
+      if d < closest:
+        closest <- d
+    # Color also encodes length (n=4 -> white background, else grey)
+    base : R <- if n = 4 then 0.1 else 0.5
+    color <- blend(exp(-closest * 6) * (1 - base) + base, white, black)

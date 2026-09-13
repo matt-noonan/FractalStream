@@ -31,14 +31,22 @@ type instance Eval (ScalarIORefM' env) =
 data IORefTypeOfBinding :: Symbol -> FSType -> Exp Type
 type instance Eval (IORefTypeOfBinding name t) = IORef (HaskellType t)
 
--- | Evaluate a value in the current environment
+-- | Evaluate a value in the current environment.
+-- Forces the result eagerly to prevent lazy thunk chains from building up
+-- over loop iterations: each iteration's IORefs would otherwise accumulate
+-- thunks referencing the full context snapshot from that iteration,
+-- retaining O(iterations × context_size) memory.
 eval :: forall t env
       . Value '(env, t)
      -> StateT (Context IORefTypeOfBinding env) IO (HaskellType t)
 eval v = do
   ctxRef <- get
   ctx <- mapContextM (\_ _ -> lift . readIORef) ctxRef
-  pure (evaluate v ctx)
+  let result = evaluate v ctx
+  lift $ case typeOfValue v of
+    ComplexType -> case result of
+      re :+ im -> re `seq` im `seq` return result
+    _ -> result `seq` return result
 
 
 -- | Update a variable in the current environment
