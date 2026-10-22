@@ -8,9 +8,25 @@ runs do more than render one static picture -- to set up a scene with
 tool-driven annotations and assert on the result, for use in tests or
 batch image generation.
 
-A scenario file does not name a project; the project is a separate CLI
-argument (`fractalstream-headless project.yaml scenario.txt`), so the
-same scenario vocabulary is meaningful across any project.
+A scenario file does not name a project; the project is always a
+separate CLI argument, so the same scenario vocabulary is meaningful
+across any project. Commands can come from a standalone file:
+
+```
+fractalstream-headless project.yaml --commands scenario.txt
+```
+
+or from a scenario embedded directly in the project file itself (see
+"Embedding scenarios in a project file" below), selected by name:
+
+```
+fractalstream-headless project.yaml --scenario "basic trace"
+```
+
+(A third, unrelated mode exists for the simple case of just rendering
+one viewer with no tool interaction at all:
+`fractalstream-headless project.yaml --snapshot "<viewer name>" --output
+file.png`.)
 
 ## Design principles
 
@@ -124,10 +140,13 @@ untrue later.
 ### Structure
 
 - `#` line comments, matching the main scripting language's convention.
-- Not in scope for v1, deliberately: named scenarios/sections inside one
-  file, loops, control flow. A batch of scenarios is better handled as
-  "run the CLI once per scenario file" than as a construct inside the
-  language.
+- Not in scope for v1, deliberately: control flow (loops, conditionals)
+  within a single command sequence. A sequence is always just a flat
+  list of commands, run in order.
+- Multiple *named* sequences aren't a construct in the language itself
+  (there's no way to define more than one inside a single standalone
+  commands file) -- that's handled one layer up, by a project file's own
+  `scenarios:` list (below), with the CLI selecting one by name.
 
 ## Example
 
@@ -147,7 +166,45 @@ set viewer pixel size to 1/512
 capture viewer "Mandelbrot set" base to "zoomed.png"
 ```
 
-## Open questions
+## Embedding scenarios in a project file
 
-- Project loading is a CLI argument (`fractalstream-headless project.yaml
-  scenario.txt`), not a scenario command -- settled.
+A project file can carry its own named scenarios directly, as a
+top-level `scenarios:` list, each entry a `name:` and a `commands:`
+block (the same command sequence syntax as a standalone file, as a YAML
+block-literal string):
+
+```yaml
+viewer:
+  title: Mandelbrot set
+  ...
+
+scenarios:
+  - name: "basic trace"
+    commands: |
+      select viewer "Mandelbrot set"
+      select tool "Trace"
+      click at (-0.75, 0.1)
+      capture viewer "Mandelbrot set" to "trace.png"
+  - name: "zoomed view"
+    commands: |
+      select viewer "Mandelbrot set"
+      resize viewer to 800x600
+      set viewer pixel size to 1/512
+      capture viewer "Mandelbrot set" base to "zoomed.png"
+```
+
+run with `fractalstream-headless project.yaml --scenario "basic trace"`.
+This is the natural home for a project's own regression\/smoke-test
+scenarios -- checked in alongside the project file itself, rather than
+kept as separate files that can drift out of sync with it. A project
+with no `scenarios:` field just has none (`--scenario` reports which
+names, if any, are available); a standalone commands file
+(`--commands`) remains the way to run a one-off sequence that isn't
+part of the project at all.
+
+The project-file-level `scenarios:` field is parsed by
+`fractalstream-core` (`Actor.Ensemble.NamedScenario`) as raw text --
+the scenario language's own parser lives in
+`fractalstream-ui-headless` (`Scenario.parseScenario`), specific to
+that frontend, not something every consumer of a project file needs to
+know about.

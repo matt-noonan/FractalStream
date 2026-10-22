@@ -4,20 +4,24 @@ Description  : Headless FractalStream frontend
 
 A frontend analogous to fractalstream-ui-wx: it implements the same
 'Actor.UI.UI' interface that drives 'Actor.Ensemble.runEnsemble', but with
-no actual GUI. Two modes:
+no actual GUI. Three modes:
 
   fractalstream-headless <project.yaml> --snapshot <viewer-name> --output <file.png>
-  fractalstream-headless <project.yaml> --scenario <scenario-file>
+  fractalstream-headless <project.yaml> --commands <commands-file>
+  fractalstream-headless <project.yaml> --scenario <name>
 
 Snapshot mode renders one named viewer's base per-pixel script to a PNG
-and exits. Scenario mode drives a project through a sequence of commands
-(see @SCENARIO_LANGUAGE.md@, "Scenario", and "Interpreter") -- selecting
-viewers and tools, injecting synthetic events, changing configuration and
-the viewport, and capturing or asserting on what got rendered.
+and exits. The other two both drive a project through a sequence of
+commands (see @SCENARIO_LANGUAGE.md@, "Scenario", and "Interpreter") --
+selecting viewers and tools, injecting synthetic events, changing
+configuration and the viewport, and capturing or asserting on what got
+rendered -- taken either from a standalone commands file (@--commands@)
+or from one of the project file's own top-level @scenarios:@ entries, by
+name (@--scenario@).
 -}
 module Main where
 
-import Actor.Ensemble (Ensemble, parseEnsembleFromFile, runEnsemble)
+import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble)
 import Actor.UI (UI(..))
 import Actor.Viewer (Backend, Viewer(..), snapshotToFile)
 import Data.DynamicValue (getDynamic)
@@ -32,13 +36,15 @@ import System.Exit (exitFailure)
 
 data Mode
   = Snapshot { snapshotViewer :: String, snapshotOutput :: FilePath }
-  | RunScenario { scenarioFile :: FilePath }
+  | RunCommandsFile { commandsFile :: FilePath }
+  | RunNamedScenario { scenarioName :: String }
 
 usage :: String
 usage = unlines
   [ "usage:"
   , "  fractalstream-headless <project.yaml> --snapshot <viewer-name> --output <file.png>"
-  , "  fractalstream-headless <project.yaml> --scenario <scenario-file>"
+  , "  fractalstream-headless <project.yaml> --commands <commands-file>"
+  , "  fractalstream-headless <project.yaml> --scenario <name>"
   ]
 
 main :: IO ()
@@ -49,28 +55,34 @@ main = getArgs >>= \case
   [] -> putStr usage >> exitFailure
 
 -- | Parse the flags following the project file into a 'Mode'. Hand-rolled
--- rather than pulling in an argument-parsing library, since there are only
--- two mutually exclusive shapes to recognize.
+-- rather than pulling in an argument-parsing library, since there are
+-- only a few mutually exclusive shapes to recognize.
 parseMode :: [String] -> Either String Mode
 parseMode args = do
   flags <- parseFlags args
-  case (lookup "scenario" flags, lookup "snapshot" flags, lookup "output" flags) of
-    (Just scenario, Nothing, Nothing) -> Right (RunScenario scenario)
-    (Nothing, Just viewer, Just out)  -> Right (Snapshot viewer out)
-    (Just _, Just _, _) -> Left "--scenario cannot be combined with --snapshot/--output."
-    (Just _, _, Just _) -> Left "--scenario cannot be combined with --snapshot/--output."
-    (Nothing, Just _, Nothing) -> Left "--snapshot requires --output as well."
-    (Nothing, Nothing, Just _) -> Left "--output requires --snapshot as well."
-    (Nothing, Nothing, Nothing) -> Left "specify either --snapshot/--output or --scenario."
+  let scenario = lookup "scenario" flags
+      commands = lookup "commands" flags
+      snapshot = lookup "snapshot" flags
+      output   = lookup "output"   flags
+  case (scenario, commands, snapshot, output) of
+    (Just name, Nothing, Nothing, Nothing)    -> Right (RunNamedScenario name)
+    (Nothing, Just file, Nothing, Nothing)    -> Right (RunCommandsFile file)
+    (Nothing, Nothing, Just viewer, Just out) -> Right (Snapshot viewer out)
+    (Nothing, Nothing, Just _, Nothing)       -> Left "--snapshot requires --output as well."
+    (Nothing, Nothing, Nothing, Just _)       -> Left "--output requires --snapshot as well."
+    (Nothing, Nothing, Nothing, Nothing)      -> Left "specify one of --snapshot/--output, --commands, or --scenario."
+    _ -> Left "--snapshot/--output, --commands, and --scenario are mutually exclusive."
 
 parseFlags :: [String] -> Either String [(String, String)]
 parseFlags = \case
   [] -> Right []
   ("--snapshot" : v : rest) -> (("snapshot", v) :) <$> parseFlags rest
   ("--output"   : v : rest) -> (("output", v)   :) <$> parseFlags rest
+  ("--commands" : v : rest) -> (("commands", v) :) <$> parseFlags rest
   ("--scenario" : v : rest) -> (("scenario", v) :) <$> parseFlags rest
   (flag@"--snapshot" : []) -> Left ("missing value for " ++ flag)
   (flag@"--output"   : []) -> Left ("missing value for " ++ flag)
+  (flag@"--commands" : []) -> Left ("missing value for " ++ flag)
   (flag@"--scenario" : []) -> Left ("missing value for " ++ flag)
   (bad : _) -> Left ("unrecognized argument: " ++ bad)
 
@@ -82,7 +94,8 @@ run projectFile mode = withBackend $ \backend ->
       exitFailure
     Right ensemble -> case mode of
       Snapshot viewerName outputFile -> runSnapshot backend ensemble viewerName outputFile
-      RunScenario scenarioPath       -> runScenarioFile backend ensemble scenarioPath
+      RunCommandsFile path           -> runCommandsFile backend ensemble path
+      RunNamedScenario name          -> runNamedScenario backend ensemble name
 
 runSnapshot :: Backend -> Ensemble -> String -> FilePath -> IO ()
 runSnapshot backend ensemble viewerName outputFile = do
@@ -132,16 +145,40 @@ renderViewer viewer outputFile =
     Nothing  -> putStrLn ("Wrote " ++ outputFile)
     Just err -> putStrLn ("Error rendering viewer: " ++ err)
 
--- | Parse a scenario file and run it against the already-loaded project.
-runScenarioFile :: Backend -> Ensemble -> FilePath -> IO ()
-runScenarioFile backend ensemble scenarioPath = do
-  src <- readFile scenarioPath
-  case parseScenario src of
-    Left (_, err) -> do
-      putStrLn ("Could not parse " ++ scenarioPath ++ ": " ++ err)
+-- | Parse a standalone commands file and run it against the already-loaded
+-- project.
+runCommandsFile :: Backend -> Ensemble -> FilePath -> IO ()
+runCommandsFile backend ensemble path = do
+  src <- readFile path
+  runCommandsText backend ensemble path src
+
+-- | Find a scenario by name among the project's own top-level
+-- @scenarios:@ entries and run it, the same way 'runCommandsFile' runs
+-- one read from a standalone file.
+runNamedScenario :: Backend -> Ensemble -> String -> IO ()
+runNamedScenario backend ensemble name = do
+  scenarios <- getDynamic (ensembleScenarios ensemble)
+  named <- mapM (\ns -> (, ns) <$> getDynamic (nsName ns)) scenarios
+  case lookup name named of
+    Nothing -> do
+      putStrLn ("No scenario named " ++ show name ++ ".")
+      putStrLn ("Scenarios in this project: " ++ show (map fst named))
       exitFailure
-    Right cmds -> runScenario backend ensemble cmds >>= \case
-      Left err -> do
-        putStrLn ("Scenario failed: " ++ err)
-        exitFailure
-      Right () -> putStrLn (scenarioPath ++ ": all " ++ show (length cmds) ++ " command(s) succeeded.")
+    Just ns -> do
+      src <- getDynamic (nsCommands ns)
+      runCommandsText backend ensemble ("scenario " ++ show name) src
+
+-- | Parse scenario-language source and run it against the already-loaded
+-- project, reporting the outcome the same way regardless of whether the
+-- commands came from a standalone file or an embedded named scenario
+-- (@label@ is just used in the messages, to say which).
+runCommandsText :: Backend -> Ensemble -> String -> String -> IO ()
+runCommandsText backend ensemble label src = case parseScenario src of
+  Left (_, err) -> do
+    putStrLn ("Could not parse " ++ label ++ ": " ++ err)
+    exitFailure
+  Right cmds -> runScenario backend ensemble cmds >>= \case
+    Left err -> do
+      putStrLn ("Scenario failed: " ++ err)
+      exitFailure
+    Right () -> putStrLn (label ++ ": all " ++ show (length cmds) ++ " command(s) succeeded.")

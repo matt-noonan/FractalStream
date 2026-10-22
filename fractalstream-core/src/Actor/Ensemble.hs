@@ -1,6 +1,7 @@
 {-# language OverloadedStrings, TemplateHaskell #-}
 module Actor.Ensemble
   ( Ensemble(..)
+  , NamedScenario(..)
   , parseEnsembleFromFile
   , runEnsemble
   , runEnsembleFromSetup
@@ -46,11 +47,31 @@ data BadEnsemble = BadEnsemble String deriving Show
 instance Exception BadEnsemble
 
 
+-- | A named, headless-runnable sequence of commands, embedded directly in
+-- a project file under a top-level @scenarios:@ list -- e.g. so a CI run
+-- can do @fractalstream-headless project.yaml --scenario NAME@ instead of
+-- pointing at a separate commands file. The commands themselves are kept
+-- as raw text here: the scenario language's parser
+-- (@Scenario.parseScenario@) lives in @fractalstream-ui-headless@, not
+-- here, since it's specific to that frontend, not a thing every consumer
+-- of an 'Ensemble' needs to know about.
+data NamedScenario = NamedScenario
+  { nsName     :: Variable String
+  , nsCommands :: Variable String
+  }
+
+instance Codec NamedScenario where
+  codec = do
+    name     <-nsName-<     key "name"
+    commands <-nsCommands-< key "commands"
+    build NamedScenario name commands
+
 data Ensemble = Ensemble
   { ensembleSetup         :: Variable (Maybe Configuration)
   , ensembleSplices       :: Dynamic (Either String Splices)
   , ensembleConfiguration :: Variable (Maybe Configuration)
   , ensembleViewers       :: Variable [ComplexViewer]
+  , ensembleScenarios     :: Variable [NamedScenario]
   }
 
 instance Codec Ensemble where
@@ -82,7 +103,10 @@ instance Codec Ensemble where
       , Fragment id Just $ field "viewers" (codecWith ctx)
       ]
 
-    build Ensemble setup splices config viewers
+    scenarios <-ensembleScenarios-< optionalField "scenarios"
+      (newVariable []) (fmap null . getDynamic) codec
+
+    build Ensemble setup splices config viewers scenarios
 
 contextValuesChanged :: SomeContext DynamicValue -> Dynamic ()
 contextValuesChanged (SomeContext ctx0) = go ctx0
