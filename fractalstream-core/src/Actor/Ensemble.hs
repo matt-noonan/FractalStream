@@ -7,6 +7,7 @@ module Actor.Ensemble
 
   , contextValuesChanged
   , layoutToArgs
+  , buildToolContext
 
   , BadEnsemble(..)
 
@@ -91,6 +92,21 @@ contextValuesChanged (SomeContext ctx0) = go ctx0
       Bind _ _ v ctx' -> (<>) <$> (const () <$> v) <*> go ctx'
       EmptyContext    -> pure ()
 
+-- | The full variable context a tool's event handlers see: its own
+-- @configuration:@ panel's variables (if it has one) combined with the
+-- ensemble-wide context, matching what every frontend needs to build
+-- before calling a 'Viewer''s @vBuildToolHandler@. Shared by
+-- @fractalstream-ui-wx@ and @fractalstream-ui-headless@ so the two
+-- frontends can't silently drift on how a tool's context is assembled.
+buildToolContext :: SomeContext EventArgument_
+                  -> Maybe Configuration
+                  -> IO (Either String (SomeContext EventArgument_))
+buildToolContext ensembleCtx = \case
+  Nothing -> pure (Right ensembleCtx)
+  Just tcfg -> do
+    toolContext0 <- layoutToArgs (coContents tcfg)
+    pure $ case toolContext0 <> SomeContext' (Right ensembleCtx) of
+      SomeContext' e -> e
 
 parseEnsembleFromFile :: FilePath -> IO (Either String Ensemble)
 parseEnsembleFromFile path = do
