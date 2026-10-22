@@ -8,6 +8,8 @@ module Language.Value.Parser
   , parseConstant
   , valueGrammar
   , valueGrammarWithNoSplices
+  , arithGrammar
+  , arithGrammarWithNoSplices
   , atType
   , typeGrammar
   , ParsedValue(..)
@@ -134,7 +136,42 @@ valueGrammarWithNoSplices = valueGrammar Map.empty
 valueGrammar :: forall r
               . ValueSplices
              -> Grammar r (Prod r ParsedValue)
-valueGrammar splices = mdo
+valueGrammar splices = fst <$> valueAndArithGrammar splices
+
+-- | A self-contained arithmetic\/complex-valued expression grammar --
+-- @+ - * / ^@, unary minus, implicit-multiplication concatenation, named
+-- functions and constants, and grouping parentheses\/braces at any depth
+-- (so e.g. @e^(2 pi i / 5)@ still works) -- deliberately missing two
+-- things 'valueGrammarWithNoSplices' has: comparisons\/booleans (not
+-- meaningful for a bare numeric value), and 'Pair's\/'List's. The latter
+-- is what makes this safe to offer as an unparenthesized alternative
+-- alongside a @(expr, expr)@ Cartesian-pair syntax without introducing a
+-- grammar ambiguity: this whole family is closed under "never builds a
+-- 'Pair'" -- its own grouping-paren alternative recurses back into this
+-- same family rather than out to the shared, pair-including 'toplevel'
+-- -- so @(expr, expr)@ can only ever be read as a Cartesian pair, never
+-- also as this grammar's own grouped expression. Used by "Scenario"'s
+-- point syntax, where @(x, y)@ is Cartesian and a bare complex literal
+-- like @1 + 2i@ needs to parse unambiguously as a single value.
+--
+-- This necessarily duplicates the handful of precedence levels between
+-- 'valueGrammar'\'s @arith@ and @atom@ productions (see the @*Np@ rules
+-- below, \"no parens\"), since Earley rules are nominal -- there's no way
+-- to parameterize an existing rule over which lower rule it bottoms out
+-- at. 'funAp' and 'simpleAtom' are reused unchanged, since neither can
+-- ever start with a bare @(@.
+arithGrammarWithNoSplices :: forall r. Grammar r (Prod r ParsedValue)
+arithGrammarWithNoSplices = arithGrammar Map.empty
+
+arithGrammar :: forall r
+              . ValueSplices
+             -> Grammar r (Prod r ParsedValue)
+arithGrammar splices = snd <$> valueAndArithGrammar splices
+
+valueAndArithGrammar :: forall r
+                       . ValueSplices
+                      -> Grammar r (Prod r ParsedValue, Prod r ParsedValue)
+valueAndArithGrammar splices = mdo
 
   let toplevel = cast
 
@@ -421,6 +458,74 @@ valueGrammar splices = mdo
     tcDiff <$> (token DiffKeyword *> (token OpenParen *> toplevel))
            <*> (token Comma *> toplevel <* token CloseParen)
 
+  ------------------------------------------------------
+  -- A duplicate of the precedence levels from 'arith' down to 'atom';
+  -- see 'arithGrammar'. Each rule here otherwise mirrors its unsuffixed
+  -- counterpart exactly, except 'atomNp': its grouping-paren\/brace
+  -- alternative recurses into 'addOrSubNp' (this family) rather than the
+  -- shared, pair\/list-including 'toplevel'. That keeps grouping parens
+  -- usable at any depth (@e^(2 pi i / 5)@) while keeping this whole
+  -- family -- including everything reachable through nested parens --
+  -- closed under "never builds a 'Pair' or 'List'", since nothing in it
+  -- ever recurses back out to the shared 'toplevel'\/'pair' rules.
+  ------------------------------------------------------
+
+  addOrSubNp <- ruleChoice
+    [ check (tcAdd <$> (addOrSubNp <* token Plus)  <*> mulOrDivNp)
+    , check (tcSub <$> (addOrSubNp <* token Minus) <*> mulOrDivNp)
+    , mulOrDivNp
+    ]
+
+  mulOrDivNp <- ruleChoice
+    [ check (tcMul <$> (mulOrDivNp <* token Times) <*> negatedNp)
+    , check (tcMul <$> concatenatedFunApsNp <*> funAp)
+    , check (tcMul <$> concatenatedAtomsNp <*> noFunPowerNp)
+    , check (tcNeg <$> (token Minus *> concatenatedAtomsNp'))
+    , check (tcDiv <$> (mulOrDivNp <* token Divide) <*> negatedNp)
+    , check (tcIDiv <$> (mulOrDivNp <* token IntegerDivide) <*> negatedNp)
+    , negatedNp
+    ]
+
+  concatenatedAtomsNp' <- rule $ check
+    (tcMul <$> concatenatedAtomsNp <*> noFunPowerNp)
+
+  concatenatedAtomsNp <- ruleChoice
+    [ check (tcMul <$> concatenatedAtomsNp <*> noFunPowerNp)
+    , noFunPowerNp
+    , check (funAp $> \sr _ ->
+                advise sr "To avoid ambiguity when using implicit multiplication, functions must go to the left of other values")
+    ]
+
+  concatenatedFunApsNp <- ruleChoice
+    [ check (tcMul <$> concatenatedFunApsNp <*> funAp)
+    , check (tcMul <$> concatenatedAtomsNp <*> atomNp)
+    , funAp
+    , atomNp
+    ]
+
+  negatedNp <- ruleChoice
+    [ check (tcNeg <$> (token Minus *> negatedNp))
+    , powerNp
+    ]
+
+  powerNp <- ruleChoice
+    [ check (tcPow <$> (atomOrFunApNp <* token Caret) <*> powerNp)
+    , atomOrFunApNp
+    ]
+
+  noFunPowerNp <- ruleChoice
+    [ check (tcPow <$> (atomNp <* token Caret) <*> powerNp)
+    , atomNp
+    ]
+
+  atomOrFunApNp <- ruleChoice [funAp, atomNp]
+
+  atomNp <- ruleChoice
+    [ simpleAtom
+    , token OpenParen *> addOrSubNp <* token CloseParen
+    , token OpenBrace *> addOrSubNp <* token CloseBrace
+    ]
+
   typ <- typeGrammar
 
   let reserved = (`Set.member` reservedWords)
@@ -437,7 +542,7 @@ valueGrammar splices = mdo
         `Set.union` Map.keysSet roundingFunctions
         `Set.union` Map.keysSet splices
 
-  pure toplevel
+  pure (toplevel, addOrSubNp)
 
 check :: Prod r CheckedValue -> Prod r ParsedValue
 check = withSourceRange

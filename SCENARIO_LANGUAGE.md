@@ -49,6 +49,18 @@ file.png`.)
   wrapper syntax (`model (x,y)` vs `pixel (x,y)`) to mark this; each
   command's coordinate space is fixed by what the command means.
 
+- **A model-space point can be written either way.** `(<x>, <y>)` is a
+  Cartesian pair of real-valued expressions; a bare complex-valued
+  expression like `1 + 2i` or `e^(2 pi i / 5)` is also accepted, and is
+  the more natural spelling for a complex-plane viewer. Both forms
+  resolve to the same underlying `(Double, Double)`. The one thing the
+  complex form can't do is be *exactly* a two-item parenthesized pair
+  with nothing else around it (`(1, 2)`) -- that specific shape always
+  means Cartesian coordinates, since otherwise it would be genuinely
+  ambiguous which reading was meant. Parentheses are fine anywhere else,
+  including wrapping the whole thing (`(1 + 2i)`) or a sub-expression
+  (`e^(2 pi i / 5)`).
+
 - **Value expressions reuse the real scripting language**, not a
   separate ad hoc syntax. The right-hand side of `set parameter ... to
   ...` is parsed with the same value grammar `1 + 2i` already works in
@@ -85,16 +97,16 @@ file.png`.)
 | Command | Effect |
 |---|---|
 | `resize viewer to <W>x<H>` | Change the viewer's pixel dimensions (`WxH`, same bare token form as a project file's `size:` field). |
-| `set viewer center to (<x>, <y>)` | Change the model-space point the view is centered on. |
+| `set viewer center to <point>` | Change the model-space point the view is centered on. |
 | `set viewer pixel size to <value-expr>` | Change the model-space size of one pixel (zoom level). |
 
 ### Synthetic input (current viewer/tool)
 
 | Command | `Actor.Event.Event` |
 |---|---|
-| `click at (<x>, <y>)` | `Click` |
-| `double-click at (<x>, <y>)` | `DoubleClick` |
-| `drag from (<x1>, <y1>) to (<x2>, <y2>)` | one `Drag`, then `DragDone` |
+| `click at <point>` | `Click` |
+| `double-click at <point>` | `DoubleClick` |
+| `drag from <point> to <point>` | one `Drag`, then `DragDone` |
 | `press button "<label>"` | `ButtonPressed` |
 | `trigger refresh` | `Refresh` |
 | `trigger timer "<name>"` | `Timer` |
@@ -155,7 +167,7 @@ select viewer "Mandelbrot set"
 set parameter max_iters to 200
 
 select tool "Trace"
-click at (-0.75, 0.1)
+click at -0.75 + 0.1i
 drag from (-0.75, 0.1) to (-0.7, 0.15)
 capture viewer "Mandelbrot set" to "trace.png"
 assert viewer "Mandelbrot set" pixel (256, 256) is (0, 0, 0) within 4

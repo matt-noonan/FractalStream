@@ -17,7 +17,7 @@ module Interpreter
 
 import FractalStream.Prelude
 
-import Scenario (Command(..), Point, RGB)
+import Scenario (Command(..), Point(..), RGB)
 
 import Actor.Ensemble (Ensemble, runEnsemble, buildToolContext, layoutToArgs)
 import Actor.UI (UI(..))
@@ -35,7 +35,7 @@ import Language.Environment
   ( SomeContext(..), SomeContext'(..), Context(..)
   , FoundBinding(..), lookupSomeContextByName
   )
-import Language.Type (TypeProxy(RealType), HaskellType, withKnownType)
+import Language.Type (TypeProxy(RealType, ComplexType), HaskellType, withKnownType)
 import Language.Value (Value)
 import Language.Value.Typecheck (ParsedValue, atType)
 import Language.Value.Evaluator (evaluate)
@@ -296,8 +296,12 @@ resolveAtType ty pv = withKnownType ty $ case (atType pv ty :: TC (Value '( '[],
 resolveReal :: ParsedValue -> Either String Double
 resolveReal = resolveAtType RealType
 
+resolveComplex :: ParsedValue -> Either String (Complex Double)
+resolveComplex = resolveAtType ComplexType
+
 resolvePoint :: Point -> Either String (Double, Double)
-resolvePoint (px, py) = (,) <$> resolveReal px <*> resolveReal py
+resolvePoint (CartesianPoint px py) = (,) <$> resolveReal px <*> resolveReal py
+resolvePoint (ComplexPoint pz) = (\z -> (realPart z, imagPart z)) <$> resolveComplex pz
 
 -- | Resolve a configuration variable's new value at its own declared
 -- type, and set it.

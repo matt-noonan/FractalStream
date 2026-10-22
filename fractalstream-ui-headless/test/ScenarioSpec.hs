@@ -26,6 +26,11 @@ resolveReal pv = case (atType pv RealType :: TC (Value '( '[], 'RealT))) of
   TC (Left e)  -> Left (ppErr e)
   TC (Right v) -> Right (evaluate v EmptyContext)
 
+resolveComplex :: ParsedValue -> Either String (Complex Double)
+resolveComplex pv = case (atType pv ComplexType :: TC (Value '( '[], 'ComplexT))) of
+  TC (Left e)  -> Left (ppErr e)
+  TC (Right v) -> Right (evaluate v EmptyContext)
+
 ppErr :: TCError -> String
 ppErr = unlines . pp
 
@@ -91,7 +96,7 @@ spec = describe "parseScenario" $ do
   it "parses set viewer center" $
     onlyCommand [r|set viewer center to (1/2, 0)
 |] $ \case
-      SetViewerCenter (px, py) -> do
+      SetViewerCenter (CartesianPoint px py) -> do
         px `shouldResolveTo` 0.5
         py `shouldResolveTo` 0
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
@@ -102,12 +107,20 @@ spec = describe "parseScenario" $ do
       SetViewerPixelSize pv -> pv `shouldResolveTo` (1/128)
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
-  it "parses click at" $
+  it "parses click at, Cartesian form" $
     onlyCommand [r|click at (-0.75, 0.1)
 |] $ \case
-      ClickAt (px, py) -> do
+      ClickAt (CartesianPoint px py) -> do
         px `shouldResolveTo` (-0.75)
         py `shouldResolveTo` 0.1
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses click at, complex form" $
+    onlyCommand [r|click at -0.75 + 0.1i
+|] $ \case
+      ClickAt (ComplexPoint pz) -> case resolveComplex pz of
+        Left err -> expectationFailure ("expected -0.75 + 0.1i, got error: " ++ err)
+        Right z  -> z `shouldBe` ((-0.75) :+ 0.1)
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
   it "parses double-click at" $
@@ -119,7 +132,7 @@ spec = describe "parseScenario" $ do
   it "parses drag from...to..." $
     onlyCommand [r|drag from (-0.75, 0.1) to (-0.7, 0.15)
 |] $ \case
-      DragFromTo (x1, y1) (x2, y2) -> do
+      DragFromTo (CartesianPoint x1 y1) (CartesianPoint x2 y2) -> do
         x1 `shouldResolveTo` (-0.75)
         y1 `shouldResolveTo` 0.1
         x2 `shouldResolveTo` (-0.7)

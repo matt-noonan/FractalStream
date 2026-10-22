@@ -67,5 +67,5 @@ scenarios:
     commands: |
       select viewer "Julia set"
       select tool "Trace"
-      click at (-0.5, 0.5)
+      click at e^(2 pi i / 5)
       capture viewer "Julia set" to "trace.png"

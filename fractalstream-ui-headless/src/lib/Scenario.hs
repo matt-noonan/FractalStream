@@ -19,7 +19,7 @@ substrings.
 -}
 module Scenario
   ( Command(..)
-  , Point
+  , Point(..)
   , RGB
   , parseScenario
   ) where
@@ -27,14 +27,20 @@ module Scenario
 import FractalStream.Prelude
 
 import Language.Value.Typecheck (ParsedValue)
-import Language.Value.Parser (valueGrammarWithNoSplices)
+import Language.Value.Parser (valueGrammarWithNoSplices, arithGrammarWithNoSplices)
 import Data.Char (isDigit)
 import Language.Parser hiding (many)
 import Language.Parser.Tokenizer (Token(..), tokenizeWithIndentation)
 import Language.Parser.SourceRange
 
--- | A model-space point, as two (not-yet-typechecked) value expressions.
-type Point = (ParsedValue, ParsedValue)
+-- | A model-space point, either as two (not-yet-typechecked) real-valued
+-- expressions in Cartesian form, @(x, y)@, or as a single complex-valued
+-- expression, @1 + 2i@ -- the natural way to write a point for a
+-- complex-plane viewer, reusing the value grammar's own complex literal
+-- syntax rather than a separate ad hoc notation.
+data Point
+  = CartesianPoint ParsedValue ParsedValue
+  | ComplexPoint ParsedValue
 
 -- | An 8-bit RGB color literal.
 type RGB = (Int, Int, Int)
@@ -74,6 +80,7 @@ scenarioGrammar :: forall r. Grammar r (Prod r [Command])
 scenarioGrammar = mdo
 
   value <- valueGrammarWithNoSplices
+  arith <- arithGrammarWithNoSplices
 
   str    <- rule (tokenMatch (\case { Quoted s -> Just s; _ -> Nothing }) <?> "a quoted string")
   intLit <- rule (tokenMatch (\case { NumberI n -> Just (fromIntegral n); _ -> Nothing }) <?> "a whole number")
@@ -86,7 +93,8 @@ scenarioGrammar = mdo
       doubleClickKw = kw "double" *> token Minus *> kw "click"
 
   point <- rule $
-    (,) <$> (token OpenParen *> value <* token Comma) <*> (value <* token CloseParen)
+        (CartesianPoint <$> (token OpenParen *> value <* token Comma) <*> (value <* token CloseParen))
+    <|> (ComplexPoint <$> arith)
 
   pixel <- rule $
     (,) <$> (token OpenParen *> intLit <* token Comma) <*> (intLit <* token CloseParen)
