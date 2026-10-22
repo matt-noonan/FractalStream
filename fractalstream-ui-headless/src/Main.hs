@@ -1,61 +1,112 @@
 {- |
 Module       : Main
-Description  : Headless FractalStream frontend -- render one viewer to a file
+Description  : Headless FractalStream frontend
 
 A frontend analogous to fractalstream-ui-wx: it implements the same
 'Actor.UI.UI' interface that drives 'Actor.Ensemble.runEnsemble', but with
-no actual GUI. For this first cut, it just renders a named viewer's base
-per-pixel script to a PNG file and exits; it does not yet run any tool
-event handlers or composite their drawn annotations onto the picture (see
-the note on 'renderViewer' below for where that will plug in).
+no actual GUI. Two modes:
+
+  fractalstream-headless <project.yaml> --snapshot <viewer-name> --output <file.png>
+  fractalstream-headless <project.yaml> --scenario <scenario-file>
+
+Snapshot mode renders one named viewer's base per-pixel script to a PNG
+and exits (see 'renderViewer' for where tool-drawn annotations will plug
+in once scenario mode can inject events). Scenario mode will drive a
+project through a sequence of commands (see @SCENARIO_LANGUAGE.md@ and
+"Scenario"); for now it only parses the scenario file and reports what it
+found -- the interpreter that actually executes commands against a
+loaded project isn't built yet.
 -}
 module Main where
 
-import Actor.Ensemble (parseEnsembleFromFile, runEnsemble)
+import Actor.Ensemble (Ensemble, parseEnsembleFromFile, runEnsemble)
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), snapshotToFile)
+import Actor.Viewer (Backend, Viewer(..), snapshotToFile)
 import Data.DynamicValue (getDynamic)
 import Backend (withBackend)
+import Scenario (parseScenario)
 
 import Data.IORef
 import Control.Monad (when)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 
+data Mode
+  = Snapshot { snapshotViewer :: String, snapshotOutput :: FilePath }
+  | RunScenario { scenarioFile :: FilePath }
+
+usage :: String
+usage = unlines
+  [ "usage:"
+  , "  fractalstream-headless <project.yaml> --snapshot <viewer-name> --output <file.png>"
+  , "  fractalstream-headless <project.yaml> --scenario <scenario-file>"
+  ]
+
 main :: IO ()
 main = getArgs >>= \case
-  [projectFile, viewerName, outputFile] -> run projectFile viewerName outputFile
-  _ -> do
-    putStrLn "usage: fractalstream-headless <project.yaml> <viewer-name> <output.png>"
-    exitFailure
+  (projectFile : rest) -> case parseMode rest of
+    Right mode -> run projectFile mode
+    Left err   -> putStrLn err >> putStr usage >> exitFailure
+  [] -> putStr usage >> exitFailure
 
-run :: FilePath -> String -> FilePath -> IO ()
-run projectFile viewerName outputFile = withBackend $ \backend ->
+-- | Parse the flags following the project file into a 'Mode'. Hand-rolled
+-- rather than pulling in an argument-parsing library, since there are only
+-- two mutually exclusive shapes to recognize.
+parseMode :: [String] -> Either String Mode
+parseMode args = do
+  flags <- parseFlags args
+  case (lookup "scenario" flags, lookup "snapshot" flags, lookup "output" flags) of
+    (Just scenario, Nothing, Nothing) -> Right (RunScenario scenario)
+    (Nothing, Just viewer, Just out)  -> Right (Snapshot viewer out)
+    (Just _, Just _, _) -> Left "--scenario cannot be combined with --snapshot/--output."
+    (Just _, _, Just _) -> Left "--scenario cannot be combined with --snapshot/--output."
+    (Nothing, Just _, Nothing) -> Left "--snapshot requires --output as well."
+    (Nothing, Nothing, Just _) -> Left "--output requires --snapshot as well."
+    (Nothing, Nothing, Nothing) -> Left "specify either --snapshot/--output or --scenario."
+
+parseFlags :: [String] -> Either String [(String, String)]
+parseFlags = \case
+  [] -> Right []
+  ("--snapshot" : v : rest) -> (("snapshot", v) :) <$> parseFlags rest
+  ("--output"   : v : rest) -> (("output", v)   :) <$> parseFlags rest
+  ("--scenario" : v : rest) -> (("scenario", v) :) <$> parseFlags rest
+  (flag@"--snapshot" : []) -> Left ("missing value for " ++ flag)
+  (flag@"--output"   : []) -> Left ("missing value for " ++ flag)
+  (flag@"--scenario" : []) -> Left ("missing value for " ++ flag)
+  (bad : _) -> Left ("unrecognized argument: " ++ bad)
+
+run :: FilePath -> Mode -> IO ()
+run projectFile mode = withBackend $ \backend ->
   parseEnsembleFromFile projectFile >>= \case
     Left err -> do
       putStrLn ("Could not load " ++ projectFile ++ ": " ++ err)
       exitFailure
-    Right ensemble -> do
-      -- 'runEnsemble' calls 'makeViewer' once per viewer declared in the
-      -- project; track whether one of them had the requested title (and
-      -- what titles we did see, for a useful error message if not).
-      found <- newIORef False
-      seenTitles <- newIORef []
-      runEnsemble backend (headlessUI viewerName outputFile found seenTitles) ensemble
-      readIORef found >>= \case
-        True  -> pure ()
-        False -> do
-          titles <- reverse <$> readIORef seenTitles
-          putStrLn ("No viewer named " ++ show viewerName ++ " in " ++ projectFile ++ ".")
-          putStrLn ("Viewers in this project: " ++ show titles)
-          exitFailure
+    Right ensemble -> case mode of
+      Snapshot viewerName outputFile -> runSnapshot backend ensemble viewerName outputFile
+      RunScenario scenarioPath       -> runScenarioStub scenarioPath
 
--- | The headless 'UI': every callback other than @makeViewer@ is a no-op
--- (there's no setup screen or configuration window to show), and
+runSnapshot :: Backend -> Ensemble -> String -> FilePath -> IO ()
+runSnapshot backend ensemble viewerName outputFile = do
+  -- 'runEnsemble' calls 'makeViewer' once per viewer declared in the
+  -- project; track whether one of them had the requested title (and
+  -- what titles we did see, for a useful error message if not).
+  found <- newIORef False
+  seenTitles <- newIORef []
+  runEnsemble backend (snapshotUI viewerName outputFile found seenTitles) ensemble
+  readIORef found >>= \case
+    True  -> pure ()
+    False -> do
+      titles <- reverse <$> readIORef seenTitles
+      putStrLn ("No viewer named " ++ show viewerName ++ ".")
+      putStrLn ("Viewers in this project: " ++ show titles)
+      exitFailure
+
+-- | The snapshot-mode 'UI': every callback other than @makeViewer@ is a
+-- no-op (there's no setup screen or configuration window to show), and
 -- @makeViewer@ renders exactly the one viewer whose title matches, via
 -- 'renderViewer'.
-headlessUI :: String -> FilePath -> IORef Bool -> IORef [String] -> UI
-headlessUI viewerName outputFile found seenTitles = UI
+snapshotUI :: String -> FilePath -> IORef Bool -> IORef [String] -> UI
+snapshotUI viewerName outputFile found seenTitles = UI
   { newEnsemble = pure ()
   , runSetup    = \_ _ _ proceed -> proceed
   , makeLayout  = \_ _ _ -> pure (pure ())
@@ -71,16 +122,32 @@ headlessUI viewerName outputFile found seenTitles = UI
 -- | Render a viewer's current state to @outputFile@.
 --
 -- For now this is just 'snapshotToFile': the base per-pixel script,
--- downsampled for antialiasing, with no tool-drawn annotations. When this
--- frontend grows the ability to inject synthetic 'Actor.Event.Event's
--- (via a tool's dispatcher, which 'Actor.Viewer.vBuildToolHandler' already
--- hands back given a merged tool\/ensemble context -- see
--- 'Actor.Ensemble.buildToolContext' -- it should switch to
--- 'Actor.Viewer.withRenderedViewerBuffer' instead, so it can composite
--- each tool's accumulated 'Actor.Viewer.vDrawCmds' onto the same buffer
--- before encoding, rather than discarding them.
+-- downsampled for antialiasing, with no tool-drawn annotations. Once
+-- scenario mode can inject events (via a tool's dispatcher, which
+-- 'Actor.Viewer.vBuildToolHandler' already hands back given a merged
+-- tool\/ensemble context -- see 'Actor.Ensemble.buildToolContext') it
+-- should switch to 'Actor.Viewer.withRenderedViewerBuffer' instead, so it
+-- can composite each tool's accumulated 'Actor.Viewer.vDrawCmds' via
+-- 'Actor.Viewer.Overlay.compositeDrawLayersToFile' rather than
+-- discarding them.
 renderViewer :: Viewer -> FilePath -> IO ()
 renderViewer viewer outputFile =
   snapshotToFile viewer True outputFile >>= \case
     Nothing  -> putStrLn ("Wrote " ++ outputFile)
     Just err -> putStrLn ("Error rendering viewer: " ++ err)
+
+-- | Parse a scenario file and report what it found. The project has
+-- already loaded successfully by the time this runs, but nothing is
+-- actually executed against it yet -- there's no interpreter for
+-- 'Scenario.Command's. This exists so the CLI shape (this task) can land
+-- and be committed independently of the interpreter (the next task).
+runScenarioStub :: FilePath -> IO ()
+runScenarioStub scenarioPath = do
+  src <- readFile scenarioPath
+  case parseScenario src of
+    Left (_, err) -> do
+      putStrLn ("Could not parse " ++ scenarioPath ++ ": " ++ err)
+      exitFailure
+    Right cmds -> do
+      putStrLn (scenarioPath ++ ": parsed " ++ show (length cmds) ++ " command(s).")
+      putStrLn "(Scenario execution is not implemented yet.)"
