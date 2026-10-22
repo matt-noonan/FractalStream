@@ -67,8 +67,11 @@ common FractalStream-common
 library
   import: FractalStream-common
   exposed-modules:     Scenario
+                     , Interpreter
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
+                     , containers
+                     , JuicyPixels
   hs-source-dirs:      src/lib
 
 executable fractalstream-headless

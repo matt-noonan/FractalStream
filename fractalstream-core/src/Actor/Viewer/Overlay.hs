@@ -11,7 +11,8 @@ new system-library dependency -- the point of a headless frontend is to
 avoid exactly that kind of weight.
 -}
 module Actor.Viewer.Overlay
-  ( compositeDrawLayersToFile
+  ( compositeDrawLayers
+  , compositeDrawLayersToFile
   ) where
 
 import FractalStream.Prelude
@@ -30,30 +31,38 @@ import Foreign.Storable (peekElemOff)
 
 -- | Composite a viewer's rendered base image (an RGB8 buffer, as produced
 -- by 'Actor.Viewer.withRenderedViewerBuffer') with its tools' drawn
--- annotations, and write the result to a PNG file.
+-- annotations, producing the resulting image in memory -- e.g. so a caller
+-- can inspect a pixel directly (as a scenario's @assert@ command does)
+-- without a round trip through a file.
 --
 -- @center@ and @pixelSize@ fix the model-space\/pixel-space mapping; pass
 -- the same values used to produce the base render (the center and pixel
 -- size 'Actor.Viewer.withRenderedViewerBuffer' computes @vaPoint@ from).
 -- @layers@ is one list of draw commands per draw-order layer, as returned
 -- by a tool's combined 'Actor.Viewer.vDrawCmds'.
-compositeDrawLayersToFile
+compositeDrawLayers
   :: (Double, Double)  -- ^ model-space view center
   -> Double             -- ^ model-space size of one pixel
   -> [[DrawCommand]]    -- ^ draw layers, in draw order
   -> (Word32, Word32)   -- ^ buffer dimensions, in pixels
   -> Ptr Word8          -- ^ the rendered base image, as RGB8
-  -> FilePath
-  -> IO ()
-compositeDrawLayersToFile center pixelSize layers (w32, h32) buf path = do
+  -> IO (Image PixelRGBA8)
+compositeDrawLayers center pixelSize layers (w32, h32) buf = do
   let w = fromIntegral w32
       h = fromIntegral h32
   baseImage <- bufferToImage w h buf
   let toPixel = modelToPixel center pixelSize (w, h)
-      composited = renderDrawing w h (PixelRGBA8 0 0 0 255) $ do
-        drawImage baseImage 0 (V2 0 0)
-        drawLayers toPixel pixelSize layers
-  writePng path composited
+  pure $ renderDrawing w h (PixelRGBA8 0 0 0 255) $ do
+    drawImage baseImage 0 (V2 0 0)
+    drawLayers toPixel pixelSize layers
+
+-- | 'compositeDrawLayers', written out to a PNG file.
+compositeDrawLayersToFile
+  :: (Double, Double) -> Double -> [[DrawCommand]] -> (Word32, Word32) -> Ptr Word8
+  -> FilePath
+  -> IO ()
+compositeDrawLayersToFile center pixelSize layers dims buf path =
+  writePng path =<< compositeDrawLayers center pixelSize layers dims buf
 
 -- | Copy an RGB8 'Ptr Word8' buffer into a JuicyPixels 'Image' (as opaque
 -- RGBA8 -- Rasterific's 'renderDrawing' needs a 'PackeablePixel' instance

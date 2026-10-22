@@ -10,12 +10,10 @@ no actual GUI. Two modes:
   fractalstream-headless <project.yaml> --scenario <scenario-file>
 
 Snapshot mode renders one named viewer's base per-pixel script to a PNG
-and exits (see 'renderViewer' for where tool-drawn annotations will plug
-in once scenario mode can inject events). Scenario mode will drive a
-project through a sequence of commands (see @SCENARIO_LANGUAGE.md@ and
-"Scenario"); for now it only parses the scenario file and reports what it
-found -- the interpreter that actually executes commands against a
-loaded project isn't built yet.
+and exits. Scenario mode drives a project through a sequence of commands
+(see @SCENARIO_LANGUAGE.md@, "Scenario", and "Interpreter") -- selecting
+viewers and tools, injecting synthetic events, changing configuration and
+the viewport, and capturing or asserting on what got rendered.
 -}
 module Main where
 
@@ -25,6 +23,7 @@ import Actor.Viewer (Backend, Viewer(..), snapshotToFile)
 import Data.DynamicValue (getDynamic)
 import Backend (withBackend)
 import Scenario (parseScenario)
+import Interpreter (runScenario)
 
 import Data.IORef
 import Control.Monad (when)
@@ -83,7 +82,7 @@ run projectFile mode = withBackend $ \backend ->
       exitFailure
     Right ensemble -> case mode of
       Snapshot viewerName outputFile -> runSnapshot backend ensemble viewerName outputFile
-      RunScenario scenarioPath       -> runScenarioStub scenarioPath
+      RunScenario scenarioPath       -> runScenarioFile backend ensemble scenarioPath
 
 runSnapshot :: Backend -> Ensemble -> String -> FilePath -> IO ()
 runSnapshot backend ensemble viewerName outputFile = do
@@ -121,33 +120,28 @@ snapshotUI viewerName outputFile found seenTitles = UI
 
 -- | Render a viewer's current state to @outputFile@.
 --
--- For now this is just 'snapshotToFile': the base per-pixel script,
--- downsampled for antialiasing, with no tool-drawn annotations. Once
--- scenario mode can inject events (via a tool's dispatcher, which
--- 'Actor.Viewer.vBuildToolHandler' already hands back given a merged
--- tool\/ensemble context -- see 'Actor.Ensemble.buildToolContext') it
--- should switch to 'Actor.Viewer.withRenderedViewerBuffer' instead, so it
--- can composite each tool's accumulated 'Actor.Viewer.vDrawCmds' via
--- 'Actor.Viewer.Overlay.compositeDrawLayersToFile' rather than
--- discarding them.
+-- This is just 'snapshotToFile': the base per-pixel script, downsampled
+-- for antialiasing, with no tool-drawn annotations -- snapshot mode never
+-- selects a tool or injects any events, so there's never anything in
+-- 'Actor.Viewer.vDrawCmds' to composite. A scenario's own @capture@
+-- command is what reaches 'Actor.Viewer.Overlay.compositeDrawLayersToFile'
+-- (see "Interpreter").
 renderViewer :: Viewer -> FilePath -> IO ()
 renderViewer viewer outputFile =
   snapshotToFile viewer True outputFile >>= \case
     Nothing  -> putStrLn ("Wrote " ++ outputFile)
     Just err -> putStrLn ("Error rendering viewer: " ++ err)
 
--- | Parse a scenario file and report what it found. The project has
--- already loaded successfully by the time this runs, but nothing is
--- actually executed against it yet -- there's no interpreter for
--- 'Scenario.Command's. This exists so the CLI shape (this task) can land
--- and be committed independently of the interpreter (the next task).
-runScenarioStub :: FilePath -> IO ()
-runScenarioStub scenarioPath = do
+-- | Parse a scenario file and run it against the already-loaded project.
+runScenarioFile :: Backend -> Ensemble -> FilePath -> IO ()
+runScenarioFile backend ensemble scenarioPath = do
   src <- readFile scenarioPath
   case parseScenario src of
     Left (_, err) -> do
       putStrLn ("Could not parse " ++ scenarioPath ++ ": " ++ err)
       exitFailure
-    Right cmds -> do
-      putStrLn (scenarioPath ++ ": parsed " ++ show (length cmds) ++ " command(s).")
-      putStrLn "(Scenario execution is not implemented yet.)"
+    Right cmds -> runScenario backend ensemble cmds >>= \case
+      Left err -> do
+        putStrLn ("Scenario failed: " ++ err)
+        exitFailure
+      Right () -> putStrLn (scenarioPath ++ ": all " ++ show (length cmds) ++ " command(s) succeeded.")
