@@ -40,7 +40,7 @@ import Actor.Viewer.Types
 import Data.DynamicValue
 import Actor.Layout (CodeString(..), Dimensions(..), UIScript)
 import Actor.Tool
-import Actor.Event (ToolRunner(..), defaultToolRunner, EventArgument_, SingleEventHandler, Event)
+import Actor.Event (ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript, Event)
 import Language.Environment
 import Language.Value.Parser
 import Language.Code
@@ -137,7 +137,7 @@ data Viewer = Viewer
   , vBuildToolHandler
       :: Int
       -> SomeContext EventArgument_
-      -> [SingleEventHandler]
+      -> ParsedToolScript
       -> IO (Either String (Double -> Event -> Maybe (IO ())))
     -- ^ Build a tool's event dispatcher for the given draw layer.  Supplied by
     --   the backend (interpreter or JIT-compiled); see 'ToolRunner'.

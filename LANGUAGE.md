@@ -312,6 +312,69 @@ to other variables are ignored.
 is useful for building tools that directly manipulate the configuration,
 such as selecting a parameter value.
 
+### Tool scripts
+
+A tool in a viewer's `tools:` list responds to user input (clicks, drags,
+button presses, and so on) by running a single `script:`, made up of one
+or more blocks. Each block starts with an `on <event>:` header and is
+followed by an indented body, the same way an `if:` or `until:` block is
+written in ordinary script code:
+
+```yaml
+tools:
+  - name: Trace
+    shortcut: t
+    script: |
+      on refresh:
+        erase
+
+      on deactivated:
+        erase
+
+      on click-or-drag at z:
+        use white for line
+        erase
+        prevZ : C <- z
+        until z escapes:
+          prevZ <- z
+          draw point at z
+          z <- z^2 + C
+          draw line from z to prevZ
+```
+
+The available headers are:
+
+| Header | Fires on |
+|---|---|
+| `on refresh:` | the viewer redrawing (e.g. after panning or zooming) |
+| `on activated:` / `on deactivated:` | the tool being selected / deselected |
+| `on click [at <coord>]:` | a single click |
+| `on double-click [at <coord>]:` | a double-click |
+| `on click-or-drag [at <coord>]:` | either a click or a drag, sharing one body |
+| `on drag [from <coord> to <coord>]:` | a drag in progress |
+| `on drag-finished [from <coord> to <coord>]:` | a drag ending |
+| `on button "<label>":` | a configuration button with the given label being pressed |
+| `on timer "<name>" every <N> ms:` | a repeating timer firing |
+
+`<coord>` is a variable name for the point under the mouse, bound (and
+available to use in the block's body) for the duration of that block —
+either a single name for a complex-plane point (`at z`) or a pair
+`(x, y)` for a real-plane point. It doesn't need to already exist as a
+variable anywhere else.
+
+For `drag` and `drag-finished`, the first name is where the drag started
+and the second is its current position: `on drag from start to z:`.
+
+When `at`/`from ... to` is omitted, the current-position coordinate
+defaults to the viewer's own `z-coord` variable; for drags, an omitted
+start position is simply unused. `on click-or-drag` binds one coordinate
+shared between the click and the in-progress drag.
+
+A tool script can have at most one block for each of `refresh`,
+`activated`, `deactivated`, `click`, `double-click`, `drag`, and
+`drag-finished`, but any number of distinctly-named `button` and `timer`
+blocks.
+
 ### Drawing commands
 
 In some contexts, a script might have the ability to draw annotations

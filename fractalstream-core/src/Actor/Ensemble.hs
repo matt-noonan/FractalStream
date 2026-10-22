@@ -72,10 +72,13 @@ instance Codec Ensemble where
 
     ctx <- purely $ \use -> (use context, use splices)
 
+    -- NOTE: deliberately no fallback fragment for "neither `viewer:` nor
+    -- `viewers:` present" -- a project with no viewers at all isn't a
+    -- legitimate case, so that absence should surface as a decode error
+    -- rather than silently producing an empty-viewer ensemble.
     viewers <-ensembleViewers-< newOf $ match
       [ Fragment (:[]) (\case { [x] -> Just x; _ -> Nothing }) $ field "viewer" (codecWith ctx)
       , Fragment id Just $ field "viewers" (codecWith ctx)
-      , Fragment (const []) (\case { [] -> Just (); _ -> Nothing }) $ pure (pure ())
       ]
 
     build Ensemble setup splices config viewers
@@ -313,7 +316,7 @@ makeSelectTool coord = do
   either (error . ("Internal error: " ++)) pure tool
 
 selectToolJson :: String -> ByteString
-selectToolJson n = "{ \"name\": \"Select " <> UTF8.fromString n <> "\", \"shortcut\": \"S\", \"actions\": [ {\"event\": \"click-or-drag\", \"code\": \"pass\", \"can-update-viewer-coords\": false }]}"
+selectToolJson n = "{ \"name\": \"Select " <> UTF8.fromString n <> "\", \"shortcut\": \"S\", \"script\": \"on click-or-drag:\\n  pass\\n\" }"
 
 $(includeFileInSource "../examples/templates/simple-complex-dynamics.yaml"
   "simpleComplexDynamicsTemplate")

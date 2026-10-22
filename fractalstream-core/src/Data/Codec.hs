@@ -39,6 +39,15 @@ import Text.Printf
 import Data.Void
 import Data.Typeable
 
+-- | Format the error messages from a set of failed 'match' fragments into
+-- one readable message, instead of the garbled run-on string that plain
+-- 'Alternative'/'mappend' concatenation of 'String' errors would produce.
+describeFailures :: [String] -> String
+describeFailures = \case
+  []  -> "No matching decoder"
+  [e] -> e
+  es  -> "none of the following worked:\n" ++ unlines (map ("  - " ++) es)
+
 combineObjects :: [Value] -> Value
 combineObjects vs0 =
   let vs = filter (\case { Null -> False; _ -> True }) vs0
@@ -193,7 +202,18 @@ instance CodecBuilder D where
     codecWith_ @ctx @a (PartD $ unD ctx)
   purely action = pure (PartD $ action unD)
   cut = pure () -- TODO
-  match xs = asum (map (\(Fragment f _ x) -> PartD . f . unD <$> x) xs)
+  -- Try each fragment in turn, stopping at the first success. If every
+  -- fragment fails, report all of their error messages together rather
+  -- than just the last one tried (the default 'Alternative' behavior for
+  -- 'ExceptT' concatenates failed alternatives' error strings directly,
+  -- with no separator, which reads as one garbled run-on message).
+  match xs = D . ReaderT $ \v -> tryFragments v xs []
+    where
+      tryFragments :: Value -> [Fragment D a] -> [String] -> ExceptT String IO (Whole D a)
+      tryFragments _ [] errs = throwError (describeFailures (reverse errs))
+      tryFragments v (Fragment ctor _ (D (ReaderT decodeFragment)) : rest) errs =
+        catchError (fmap (PartD . ctor . unD) (decodeFragment v))
+                   (\err -> tryFragments v rest (err : errs))
   debugIO action = D (liftIO $ action unD)
 
 instance Alternative D where

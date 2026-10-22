@@ -974,7 +974,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession raiseConfigWindow confi
       layer <- getDynamic toolDrawLayer
       getDynamic toolConfig >>= \case
         Nothing -> do
-          getDynamic (dyn toolEventHandlers) >>= (vBuildToolHandler layer (SomeContext configValues)) >>= \case
+          getDynamic (dyn toolScript) >>= (vBuildToolHandler layer (SomeContext configValues)) >>= \case
             Left err -> do
               n <- getDynamic (source $ tiName toolInfo)
               putStrLn ("Problem with tool " ++ n ++ ": " ++ err)
@@ -999,7 +999,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession raiseConfigWindow confi
           case toolContext0 <> SomeContext' (Right $ SomeContext configValues) of
             SomeContext' (Left _) -> setValue' toolEventHandler (\_ _ -> Nothing)
             SomeContext' (Right toolContext) -> do
-              getDynamic (dyn toolEventHandlers) >>= (vBuildToolHandler layer toolContext) >>= \case
+              getDynamic (dyn toolScript) >>= (vBuildToolHandler layer toolContext) >>= \case
                 Left err -> do
                   putStrLn ("Problem with tool " ++ n ++ ": " ++ err)
                   setValue' toolEventHandler (\_ _ -> Nothing)

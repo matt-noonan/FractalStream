@@ -78,67 +78,65 @@ viewers:
                       value: "100"
                       type: ℤ
                       variable: iter_limit
-        actions:
-            - event: refresh
-              code: |
-                erase
+        script: |
+          on refresh:
+            erase
 
-                # This is nearly a literal copy of
-                # https://github.com/sagemath/sage/blob/develop/src/sage/dynamics/complex_dynamics/mandel_julia_helper.pyx#L179-L287
+            # This is nearly a literal copy of
+            # https://github.com/sagemath/sage/blob/develop/src/sage/dynamics/complex_dynamics/mandel_julia_helper.pyx#L179-L287
 
-                for each p in ps:
+            for each p in ps:
 
-                  R : ℝ ⭠ escape_radius
+              R : ℝ ⭠ escape_radius
 
-                  theta : ℝ ⭠ p / q
-                  z : ℂ ⭠ R e^{2 π 𝑖 theta}
+              theta : ℝ ⭠ p / q
+              z : ℂ ⭠ R e^{2 π 𝑖 theta}
 
-                  dist : ℝ ⭠ error
+              dist : ℝ ⭠ error
 
-                  k : ℤ ⭠ 0
-                  while dist >= error:
-                    k ⭠ k + 1
-                    j : ℤ ⭠ 0
-                    while j < S and dist >= error:
-                      j ⭠ j + 1
-                      m : ℝ ⭠ (k - 1) S + j
-                      r_m : ℝ ⭠ R^(2^(-m / S))
-                      t_m : ℂ ⭠ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
-                      temp_c : ℂ ⭠ z
-                      difference : ℝ ⭠ error
+              k : ℤ ⭠ 0
+              while dist >= error:
+                k ⭠ k + 1
+                j : ℤ ⭠ 0
+                while j < S and dist >= error:
+                  j ⭠ j + 1
+                  m : ℝ ⭠ (k - 1) S + j
+                  r_m : ℝ ⭠ R^(2^(-m / S))
+                  t_m : ℂ ⭠ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
+                  temp_c : ℂ ⭠ z
+                  difference : ℝ ⭠ error
 
-                      C_k : ℂ ⭠ temp_c
-                      D_k : ℂ ⭠ 1
+                  C_k : ℂ ⭠ temp_c
+                  D_k : ℂ ⭠ 1
 
-                      n : ℤ ⭠ 0
-                      while difference >= error up to iter_limit times:
-                        n ⭠ n + 1
-                        old_c : ℂ ⭠ temp_c
-                        C_k ⭠ old_c
-                        D_k ⭠ 1
+                  n : ℤ ⭠ 0
+                  while difference >= error up to iter_limit times:
+                    n ⭠ n + 1
+                    old_c : ℂ ⭠ temp_c
+                    C_k ⭠ old_c
+                    D_k ⭠ 1
 
-                        # Work out C_k = f^{\circ k}(z) and
-                        # D_k = d/dz (f^{\circ k}(z))
-                        while true up to k times:
-                          D_k ⭠ 2 D_k C_k + 1
-                          C_k ⭠ C_k² + old_c
+                    # Work out C_k = f^{\circ k}(z) and
+                    # D_k = d/dz (f^{\circ k}(z))
+                    while true up to k times:
+                      D_k ⭠ 2 D_k C_k + 1
+                      C_k ⭠ C_k² + old_c
 
-                        # Use C_k and D_k to take one step of
-                        # Newton's method for f^{\circ(k)}(z) - t_m
-                        temp_c ⭠ old_c - (C_k - t_m) / D_k
-                        difference ⭠ |old_c - temp_c|
+                    # Use C_k and D_k to take one step of
+                    # Newton's method for f^{\circ(k)}(z) - t_m
+                    temp_c ⭠ old_c - (C_k - t_m) / D_k
+                    difference ⭠ |old_c - temp_c|
 
-                      if difference < error:
-                        dist ⭠ 2 |C_k| log |C_k| / |D_k|
-                        draw line from z to temp_c
-                        z ⭠ temp_c
-                      else:
-                        dist ⭠ 0 # failed to converge, break out of the loops
-                        draw filled circle at z with radius error
+                  if difference < error:
+                    dist ⭠ 2 |C_k| log |C_k| / |D_k|
+                    draw line from z to temp_c
+                    z ⭠ temp_c
+                  else:
+                    dist ⭠ 0 # failed to converge, break out of the loops
+                    draw filled circle at z with radius error
 
-            - event: deactivated
-              code: erase
-
+          on deactivated:
+            erase
   - title: Dynamical plane
     style: complex-plane
     size: 512x512
@@ -200,64 +198,63 @@ viewers:
                       type: ℤ
                       variable: iter_limit
 
-        actions:
-            - event: refresh
-              code: |
-                erase
+        script: |
+          on refresh:
+            erase
 
-                for each p in ps:
+            for each p in ps:
 
-                  R : ℝ ⭠ escape_radius
+              R : ℝ ⭠ escape_radius
 
-                  theta : ℝ ⭠ p / q
-                  z : ℂ ⭠ R e^{2 π 𝑖 theta}
+              theta : ℝ ⭠ p / q
+              z : ℂ ⭠ R e^{2 π 𝑖 theta}
 
-                  dist : ℝ ⭠ error
+              dist : ℝ ⭠ error
 
-                  k : ℤ ⭠ 0
-                  while dist >= error:
-                    k ⭠ k + 1
-                    j : ℤ ⭠ 0
-                    while dist >= error up to S times:
-                      j ⭠ j + 1
-                      m : ℝ ⭠ (k - 1) S + j
-                      r_m : ℝ ⭠ R^(2^(-m / S))
-                      t_m : ℂ ⭠ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
+              k : ℤ ⭠ 0
+              while dist >= error:
+                k ⭠ k + 1
+                j : ℤ ⭠ 0
+                while dist >= error up to S times:
+                  j ⭠ j + 1
+                  m : ℝ ⭠ (k - 1) S + j
+                  r_m : ℝ ⭠ R^(2^(-m / S))
+                  t_m : ℂ ⭠ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
 
-                      difference : ℝ ⭠ error
+                  difference : ℝ ⭠ error
 
-                      temp_z : ℂ ⭠ z
+                  temp_z : ℂ ⭠ z
 
-                      # these get initialized for real below, in the loop
-                      z_k : ℂ ⭠ 0
-                      dz_k : ℂ ⭠ 0
+                  # these get initialized for real below, in the loop
+                  z_k : ℂ ⭠ 0
+                  dz_k : ℂ ⭠ 0
 
-                      while difference >= error up to iter_limit times:
+                  while difference >= error up to iter_limit times:
 
-                        old_z : ℂ ⭠ temp_z
-                        z_k ⭠ temp_z
-                        dz_k ⭠ 1
+                    old_z : ℂ ⭠ temp_z
+                    z_k ⭠ temp_z
+                    dz_k ⭠ 1
 
-                        # Work out z_k = f^{\circ k}(z) and
-                        # dz_k = d/dz (f^{\circ k}(z))
-                        t : ℤ ⭠ 0
-                        while t < k:
-                          t ⭠ t + 1
-                          dz_k ⭠ 2 dz_k z_k
-                          z_k ⭠ z_k² + C
+                    # Work out z_k = f^{\circ k}(z) and
+                    # dz_k = d/dz (f^{\circ k}(z))
+                    t : ℤ ⭠ 0
+                    while t < k:
+                      t ⭠ t + 1
+                      dz_k ⭠ 2 dz_k z_k
+                      z_k ⭠ z_k² + C
 
-                        # Use z_k and dz_k to take one step of
-                        # Newton's method for f^{\circ(k)}(z) - t_m
-                        temp_z ⭠ old_z - (z_k - t_m) / dz_k
-                        difference ⭠ |old_z - temp_z|
+                    # Use z_k and dz_k to take one step of
+                    # Newton's method for f^{\circ(k)}(z) - t_m
+                    temp_z ⭠ old_z - (z_k - t_m) / dz_k
+                    difference ⭠ |old_z - temp_z|
 
-                      if difference < error:
-                        dist ⭠ |z - temp_z|
-                        draw line from z to temp_z
-                        z ⭠ temp_z
-                      else:
-                        dist ⭠ 0 # failed to converge, break out of the loops
-                        draw filled circle at z with radius error
+                  if difference < error:
+                    dist ⭠ |z - temp_z|
+                    draw line from z to temp_z
+                    z ⭠ temp_z
+                  else:
+                    dist ⭠ 0 # failed to converge, break out of the loops
+                    draw filled circle at z with radius error
 
-            - event: deactivated
-              code: erase
+          on deactivated:
+            erase

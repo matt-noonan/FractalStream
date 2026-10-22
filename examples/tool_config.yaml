@@ -32,32 +32,29 @@ viewer:
               value: "pi/4"
               type: R
               variable: theta
-      actions:
-        - event: refresh
-          code: |
-            erase
-            draw circle at 0 with radius R
-            draw line from 0 to R e^{i theta}
-            # Refresh events aren't able to change
-            # configuration variables, so this next
-            # line will have no effect.
-            R <- R + 0.001
-        - event: deactivated
-          code: erase
+      script: |
+        on refresh:
+          erase
+          draw circle at 0 with radius R
+          draw line from 0 to R e^{i theta}
+          # Refresh events aren't able to change
+          # configuration variables, so this next
+          # line will have no effect.
+          R <- R + 0.001
 
+        on deactivated:
+          erase
     - name: Trace
       shortcut: t
-      actions:
-        - event: click-or-drag
-          code: |
-            prevZ : C <- z
-            erase
-            while |z| < 10 escape_radius up to 100 times:
-              prevZ <- z
-              draw point at z
-              z <- z^2 + C
-              draw line from z to prevZ
-
+      script: |
+        on click-or-drag:
+          prevZ : C <- z
+          erase
+          while |z| < 10 escape_radius up to 100 times:
+            prevZ <- z
+            draw point at z
+            z <- z^2 + C
+            draw line from z to prevZ
 configuration:
   title: Configuration
   size: 400x200

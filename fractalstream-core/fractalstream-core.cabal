@@ -156,4 +156,5 @@ test-suite spec
                     , Language.Value.ParserSpec
                     , Language.Code.ParserSpec
                     , Language.Effect.ListSpec
+                    , Actor.EventSpec
   build-tool-depends: hspec-discover:hspec-discover == 2.*

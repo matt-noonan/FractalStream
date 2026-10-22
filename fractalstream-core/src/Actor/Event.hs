@@ -1,12 +1,8 @@
+{-# language RecursiveDo #-}
 module Actor.Event
   ( Event(..)
   , type EventDependencies
 
-  , SingleEventHandler(..)
-  , ClickHandler(..)
-  , DragHandler(..)
-  , TimerHandler(..)
-  , ButtonHandler(..)
   , EventArgument_
   , EventArgument(..)
 
@@ -23,6 +19,11 @@ module Actor.Event
   , toUserString
   , snapshotEventArgs
 
+  , CombinedEventHandler
+  , ParsedToolScript(..)
+  , parseToolScript
+  , emptyToolScript
+
   ) where
 
 import FractalStream.Prelude
@@ -34,6 +35,8 @@ import Language.Code
 import Language.Parser.SourceRange
 import Language.Value.Typecheck
 import Language.Code.Parser
+import Language.Parser hiding (many)
+import Language.Parser.Tokenizer (Token(..), tokenizeWithIndentation)
 import Language.Value.Evaluator (HaskellValue)
 import Language.Code.InterpretIO hiding (update)
 import Language.Draw
@@ -45,7 +48,6 @@ import Data.IORef
 import Data.DynamicValue
 import Data.Codec
 import Actor.Viewer.Types
-import Actor.Layout (CodeString(..))
 --import Data.Typeable
 
 type Point = (Double, Double)
@@ -61,18 +63,6 @@ data Event
   | Activated
   | Deactivated
   deriving Show
-
-data SingleEventHandler
-  = OnClick ClickHandler
-  | OnDoubleClick ClickHandler
-  | OnClickOrDrag (ClickHandler, DragHandler)
-  | OnDrag DragHandler
-  | OnDragDone DragHandler
-  | OnTimer TimerHandler
-  | OnButton ButtonHandler
-  | OnRefresh UnitHandler
-  | OnActivated UnitHandler
-  | OnDeactivated UnitHandler
 
 data CombinedEventHandler env = CombinedEventHandler
   { onClick       :: Maybe (Code (ClickHandlerEnv env))
@@ -221,51 +211,15 @@ combineEventHandlers (Right lhs) (Right rhs) = do
 noHandlers :: CombinedEventHandler env
 noHandlers = CombinedEventHandler Nothing Nothing Nothing Nothing Map.empty Map.empty Nothing Nothing Nothing
 
-singleToCombined :: EnvironmentProxy env -> SingleEventHandler -> IO (Either String (CombinedEventHandler env))
-singleToCombined env = \case
-  OnClick ClickHandler{..} -> getDynamic (dyn chScript) <&> \(SomeClickHandler script) ->
-    bimap snd (\h -> noHandlers { onClick = Just h }) (script env)
-  OnDoubleClick ClickHandler{..} -> getDynamic (dyn chScript) <&> \(SomeClickHandler script) ->
-    bimap snd (\h -> noHandlers { onDoubleClick = Just h }) (script env)
-  OnDrag DragHandler{..} -> getDynamic (dyn dhScript) <&> \(SomeDragHandler script) ->
-    bimap snd (\h -> noHandlers { onDrag = Just h }) (script env)
-  OnDragDone DragHandler{..} -> getDynamic (dyn dhScript) <&> \(SomeDragHandler script) ->
-    bimap snd (\h -> noHandlers { onDragDone = Just h }) (script env)
-  OnClickOrDrag (ClickHandler{..}, DragHandler{..}) ->
-    ((,) <$> getDynamic (dyn chScript) <*> getDynamic (dyn dhScript)) <&>
-      \(SomeClickHandler cscript, SomeDragHandler dscript) ->
-        bimap snd (\(ch, dh) -> noHandlers { onClick = Just ch
-                                           , onDrag  = Just dh
-                                           }) ((,) <$> cscript env <*> dscript env)
-  OnTimer TimerHandler{..} -> do
-    name <- getDynamic (dyn thName)
-    interval <- getDynamic (dyn thInterval)
-    SomeUnitHandler script <- getDynamic (dyn thScript)
-    pure $ bimap snd (\h -> noHandlers { onTimer = Map.singleton name (interval, h) }) (script env)
-  OnButton ButtonHandler{..} -> do
-    name <- getDynamic (dyn bhName)
-    SomeUnitHandler script <- getDynamic (dyn bhScript)
-    pure $ bimap snd (\h -> noHandlers { onButton = Map.singleton name h }) (script env)
-  OnRefresh (UnitHandler code) -> do
-    SomeUnitHandler script <- getDynamic (dyn code)
-    pure $ bimap snd (\h -> noHandlers { onRefresh = Just h }) (script env)
-  OnActivated (UnitHandler code) -> do
-    SomeUnitHandler script <- getDynamic (dyn code)
-    pure $ bimap snd (\h -> noHandlers { onActivated = Just h }) (script env)
-  OnDeactivated (UnitHandler code) -> do
-    SomeUnitHandler script <- getDynamic (dyn code)
-    pure $ bimap snd (\h -> noHandlers { onDeactivated = Just h }) (script env)
-
 -- | Parse a tool's event handlers and build its event dispatcher, with handler
 -- execution supplied by the given 'ToolExec' (interpreter or JIT-compiled).
 buildHandlerWith :: ToolExec
                  -> SomeContext EventArgument_
-                 -> [SingleEventHandler]
+                 -> ParsedToolScript
                  -> IO (Either String (Double -> Event -> Maybe (IO ())))
-buildHandlerWith exec (SomeContext ctx) handlers = do
+buildHandlerWith exec (SomeContext ctx) script = do
   let env = contextToEnv ctx
-  ecombined <- foldl' combineEventHandlers (Right noHandlers) <$> mapM (singleToCombined env) handlers
-  case ecombined of
+  case runParsedToolScript script env of
     Left err -> pure (Left err)
     Right combined0 ->
       assertMissingClickArgs env $
@@ -279,7 +233,7 @@ buildHandlerWith exec (SomeContext ctx) handlers = do
 -- | How a backend turns a tool's parsed event handlers into the event
 -- dispatcher the UI calls.  Given the per-layer draw handler (from the tool
 -- draw-command accumulator), the layer number, the tool's variable context, and
--- the parsed handlers, it produces (or fails to produce) a
+-- the parsed script, it produces (or fails to produce) a
 -- @Double -> Event -> Maybe (IO ())@ dispatcher.  The pure/interpreter backend
 -- uses 'defaultToolRunner'; the LLVM backend supplies one that JIT-compiles the
 -- handlers.
@@ -287,14 +241,14 @@ newtype ToolRunner = ToolRunner
   { runTool :: (Int -> DrawSink)
             -> Int
             -> SomeContext EventArgument_
-            -> [SingleEventHandler]
+            -> ParsedToolScript
             -> IO (Either String (Double -> Event -> Maybe (IO ()))) }
 
 -- | The interpreter tool runner: evaluate draw values through the pure
 -- interpreter and emit them into the given layer's 'DrawSink'.
 defaultToolRunner :: ToolRunner
-defaultToolRunner = ToolRunner $ \sink layer ctx handlers ->
-  buildHandlerWith (\_ code -> pure (\c -> run (drawHandlerForSink (sink layer)) c code)) ctx handlers
+defaultToolRunner = ToolRunner $ \sink layer ctx script ->
+  buildHandlerWith (\_ code -> pure (\c -> run (drawHandlerForSink (sink layer)) c code)) ctx script
 
 -- | Adapt a 'DrawSink' into an interpreter 'DrawHandler': evaluate each draw
 -- command's value arguments and forward the concrete values to the sink.
@@ -316,30 +270,6 @@ type EventDependencies =
    Dynamic (Either String (Maybe String))
   )
 
-instance CodecWith EventDependencies SingleEventHandler where
-  codecWith_ ctx = match
-    [ Fragment OnClick (\case { OnClick h -> Just h; _ -> Nothing}) $
-        "event" `mustBe` "click" $ codecWith ctx
-    , Fragment OnDoubleClick (\case { OnDoubleClick h -> Just h; _ -> Nothing}) $ do
-        "event" `mustBe` "double-click" $ codecWith ctx
-    , Fragment OnClickOrDrag (\case { OnClickOrDrag h -> Just h; _ -> Nothing}) $ do
-        "event" `mustBe` "click-or-drag" $ codecWith ctx
-    , Fragment OnDrag (\case { OnDrag h -> Just h; _ -> Nothing}) $ do
-        "event" `mustBe` "drag" $ codecWith ctx
-    , Fragment OnDragDone (\case { OnDragDone h -> Just h; _ -> Nothing}) $ do
-        "event" `mustBe` "drag-finished" $ codecWith ctx
-    , Fragment OnTimer (\case { OnTimer h -> Just h; _ -> Nothing}) $ do
-        "event" `mustBe` "timer" $ codecWith ctx
-    , Fragment OnButton (\case { OnButton h -> Just h; _ -> Nothing}) $ do
-        "event" `mustBe` "button" $ codecWith ctx
-    , Fragment OnRefresh (\case { OnRefresh h -> Just h; _ -> Nothing}) $ do
-        "event" `mustBe` "refresh" $ codecWith ctx
-    , Fragment OnActivated (\case { OnActivated h -> Just h; _ -> Nothing}) $ do
-        "event" `mustBe` "activated" $ codecWith ctx
-    , Fragment OnDeactivated (\case { OnDeactivated h -> Just h; _ -> Nothing}) $ do
-        "event" `mustBe` "deactivated" $ codecWith ctx
-    ]
-
 declareE :: forall n -> forall t e. KnownSymbol n => TypeProxy t -> EnvironmentProxy e
          -> Either (SourceRange, String) (EnvironmentProxy ( '(n,t) ': e ))
 declareE n t e = case lookupEnv' (Proxy @n) e of
@@ -359,33 +289,6 @@ getVar n t e = withEnvironment e $ case lookupEnv (Proxy @n) t e of
 ------------------------------------------------------------
 
 type InternalPx  = "[internal] px"
-
-data ClickHandler = ClickHandler
-  { chCoord  :: Variable (Maybe Coordinate)
-  , chCanUpdateViewer :: Variable Bool
-  , chScript :: Mapped CodeString SomeClickHandler }
-
-instance CodecWith EventDependencies ClickHandler where
-  codecWith_ ctx = do
-    coord  <-coerce . chCoord-< fmap coerce <$> codec @(Variable MCoordinate)
-    update <-chCanUpdateViewer-< keyWithDefaultValue False "can-update-viewer-coords"
-    script <-chScript-< mapped (key "code") $ \use -> do
-      let (dsplices, dvc, dlimits, dmpx) = use ctx
-          complain err = pure (\_ -> SomeClickHandler (\_ -> Left (NoSourceRange, err)))
-      dvc >>= \case
-        Left err -> complain err
-        Right vc -> dsplices >>= \case
-          Left err -> complain err
-          Right splices -> dmpx >>= \case
-            Left err -> complain err
-            Right mpx -> do
-              pt <- fromMaybe vc <$> dyn (use coord)
-              dlimits >>= \case
-                Left err -> complain err
-                Right limits -> pure (fmap SomeClickHandler $ parseClickScript splices pt limits mpx)
-    build ClickHandler coord update script
-
-newtype SomeClickHandler = SomeClickHandler (forall env. EnvironmentProxy env -> Either (SourceRange, String) (Code (ClickHandlerEnv env)))
 
 type ClickHandlerEnv env =
   ( '(InternalX, 'RealT) ': '(InternalY, 'RealT) ':
@@ -438,14 +341,24 @@ withBookkeeping env splices (pMaxIters, pMaxRadius, pMinRadius) action = withEnv
     code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
     pure code'
 
+-- | Apply an already-'Earley'-parsed script body to a concrete environment,
+-- running its (deferred) typechecking phase. This is the tail end of
+-- 'parseCode', minus the tokenize-and-parse step, for use when the body's
+-- 'ParsedCode' was already recovered as part of a larger single parse (e.g.
+-- a whole multi-block tool script) rather than from its own separate
+-- source string.
+runParsedBody :: EnvironmentProxy env -> ParsedCode
+              -> Either (Either ParseError TCError) (Code env)
+runParsedBody env (ParsedCode f) = case f env of TC x -> first Right x
+
 parseClickScript :: Splices
                  -> Coordinate
                 -> (ParsedValue, ParsedValue, ParsedValue)
                  -> Maybe String
-                 -> CodeString
+                 -> ParsedCode
                  -> (forall env. EnvironmentProxy env
                      -> Either (SourceRange, String) (Code (ClickHandlerEnv env)))
-parseClickScript splices0 clickCoord limits mpixel (CodeString src)
+parseClickScript splices0 clickCoord limits mpixel body
   (env0 :: EnvironmentProxy env) = do
 
   env1 <- (declareE InternalX  RealType
@@ -455,7 +368,7 @@ parseClickScript splices0 clickCoord limits mpixel (CodeString src)
   case clickCoord of
     RealCoordinates p q -> case (someSymbolVal p, someSymbolVal q) of
       (SomeSymbol xcoord, SomeSymbol ycoord) -> do
-        withBookkeeping env1 splices0 limits $ \env splices -> do
+        withBookkeeping env1 splices0 limits $ \env _splices -> do
           x <- getVar InternalX RealType env
           bindOrDeclare xcoord RealType x env $ \env' -> do
             y <- getVar InternalY RealType env'
@@ -465,14 +378,14 @@ parseClickScript splices0 clickCoord limits mpixel (CodeString src)
                 Absent pf -> recallIsAbsent pf $ do
                   let env3 = BindingProxy px RealType env''
                   ip <- getVar InternalPx RealType env''
-                  code <- left (errorLocation &&& unlines . pp) (parseCode env3 splices src)
+                  code <- left (errorLocation &&& unlines . pp) (runParsedBody env3 body)
                   pure (Let (bindName px RealType pf) px ip code)
                 _ -> Left (NoSourceRange, "The pixel size variable `" ++ symbolVal px ++ "` was redefined.")
 
     ComplexCoordinate c -> case someSymbolVal c of
       SomeSymbol coord -> do
 
-        withBookkeeping env1 splices0 limits $ \env splices -> do
+        withBookkeeping env1 splices0 limits $ \env _splices -> do
           let i = Const (Scalar ComplexType (0 :+ 1))
           x <- getVar InternalX RealType env
           y <- getVar InternalY RealType env
@@ -482,7 +395,7 @@ parseClickScript splices0 clickCoord limits mpixel (CodeString src)
                 Absent pf -> recallIsAbsent pf $ do
                   let env2 = BindingProxy px RealType env'
                   ip <- getVar InternalPx RealType env'
-                  code <- left (errorLocation &&& unlines . pp) (parseCode env2 splices src)
+                  code <- left (errorLocation &&& unlines . pp) (runParsedBody env2 body)
                   pure (Let (bindName px RealType pf) px ip code)
                 _ -> Left (NoSourceRange, "The pixel size variable `" ++ symbolVal px ++ "` was redefined.")
 
@@ -492,31 +405,6 @@ parseClickScript splices0 clickCoord limits mpixel (CodeString src)
 
 type InternalOldX  = "[internal] oldx"
 type InternalOldY  = "[internal] oldy"
-
-data DragHandler = DragHandler
-  { dhCoord  :: Variable (Maybe Coordinate)
-  , dhStart  :: Variable (Maybe Coordinate)
-  , dhCanUpdateViewer :: Variable Bool
-  , dhScript :: Mapped CodeString SomeDragHandler }
-
-instance CodecWith EventDependencies DragHandler where
-  codecWith_ ctx = do
-    coord  <-coerce . dhCoord-< fmap coerce <$> codec @(Variable MCoordinate)
-    start  <-coerce . dhStart-< fmap coerce <$> codec @(Variable SCoordinate)
-    update <-dhCanUpdateViewer-< keyWithDefaultValue False "can-update-viewer-coords"
-    script <-dhScript-< mapped (key "code") $ \use -> do
-      let (dsplices, dvc, dlimits, dmpx) = use ctx
-          complain err = pure (\_ -> SomeDragHandler (\_ -> Left (NoSourceRange, err)))
-      ((\x1 x2 x3 x4 -> (,,,) <$> x1 <*> x2 <*> x3 <*> x4)
-        <$> dvc <*> dsplices <*> dlimits <*> dmpx) >>= \case
-        Left err -> complain err
-        Right (vc, splices, limits, mpx) -> do
-          pt  <- fromMaybe vc <$> dyn (use coord)
-          pt' <- fromMaybe (ComplexCoordinate "[unused] start") <$> dyn (use start)
-          pure (fmap SomeDragHandler $ parseDragScript splices pt pt' limits mpx)
-    build DragHandler coord start update script
-
-newtype SomeDragHandler = SomeDragHandler (forall env. EnvironmentProxy env -> Either (SourceRange, String) (Code (DragHandlerEnv env)))
 
 type MissingDragArgs env =
   ( NotPresent InternalX  env, NotPresent InternalY  env
@@ -574,10 +462,10 @@ parseDragScript :: Splices
                 -> Coordinate
                 -> (ParsedValue, ParsedValue, ParsedValue)
                 -> Maybe String
-                -> CodeString
+                -> ParsedCode
                 -> (forall env. EnvironmentProxy env
                     -> Either (SourceRange, String) (Code (DragHandlerEnv env)))
-parseDragScript splices curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mpixel (CodeString src)
+parseDragScript _splices curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mpixel body
   (env :: EnvironmentProxy env) = do
   withEnvironment env $ do
     -- Bind all of the internal bookkeeping variables
@@ -614,13 +502,13 @@ parseDragScript splices curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mp
           y' <- getVar InternalOldY RealType env1
           bindOrDeclare coord2 ComplexType (R2C x' + i * R2C y') env1 $ \env2 ->
             case someSymbolVal <$> mpixel of
-              Nothing -> left (errorLocation &&& unlines . pp) (parseCode env2 splices src)
+              Nothing -> left (errorLocation &&& unlines . pp) (runParsedBody env2 body)
               Just (SomeSymbol (px :: Proxy px)) -> do
                 case lookupEnv px RealType env2 of
                   Absent pf -> recallIsAbsent pf $ do
                     let env3 = BindingProxy px RealType env2
                     p <- getVar InternalPx RealType env2
-                    c <- left (errorLocation &&& unlines . pp) (parseCode env3 splices src)
+                    c <- left (errorLocation &&& unlines . pp) (runParsedBody env3 body)
                     pure (snd $ letInEnv @px p (env3, c))
                   _ -> Left (NoSourceRange, "The pixel size variable `" ++ symbolVal px ++ "` was redefined.")
 
@@ -636,10 +524,6 @@ parseDragScript splices curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mp
 ------------------------------------------------------------
 -- Nullary event handlers
 ------------------------------------------------------------
-
-newtype SomeUnitHandler = SomeUnitHandler (forall env. EnvironmentProxy env -> Either (SourceRange, String) (Code (UnitHandlerEnv env)))
-
-newtype UnitHandler = UnitHandler (Mapped CodeString SomeUnitHandler)
 
 type UnitHandlerEnv env = '(InternalPx, 'RealT) ': env
 
@@ -670,50 +554,14 @@ assertMissingUnitArgs :: forall env a
                       -> a
 assertMissingUnitArgs = assertAbsent (Proxy @InternalPx) RealType
 
-instance CodecWith EventDependencies (Mapped CodeString SomeUnitHandler) where
-  codecWith_ ctx = mapped (key "code") $ \use -> do
-    let (dsplices, dvc, dlimits, dpx) = use ctx
-    ((\x1 x2 x3 x4 -> (,,,) <$> x1 <*> x2 <*> x3 <*> x4)
-      <$> dvc <*> dsplices <*> dlimits <*> dpx) >>= \case
-      Left err -> pure (\_ -> SomeUnitHandler $ \_ -> Left (NoSourceRange, err))
-      Right (vc, splices, limits, px) -> do
-        pure (fmap SomeUnitHandler $ parseUnitScript splices limits vc px)
-
-instance CodecWith EventDependencies UnitHandler where
-  codecWith_ ctx = do
-    script <-coerce-< fmap coerce <$> codecWith @(Mapped CodeString SomeUnitHandler) ctx
-    build UnitHandler script
-
-data TimerHandler = TimerHandler
-  { thName     :: Variable String
-  , thInterval :: Variable Int
-  , thScript   :: Mapped CodeString SomeUnitHandler }
-
-instance CodecWith EventDependencies TimerHandler where
-  codecWith_ ctx = do
-    name     <-thName-<     key "name"
-    interval <-thInterval-< key "interval"
-    script   <-thScript-<   codecWith ctx
-    build TimerHandler name interval script
-
-data ButtonHandler = ButtonHandler
-  { bhName   :: Variable String
-  , bhScript :: Mapped CodeString SomeUnitHandler }
-
-instance CodecWith EventDependencies ButtonHandler where
-  codecWith_ ctx = do
-    name   <-bhName-<   key "label"
-    script <-bhScript-< codecWith ctx
-    build ButtonHandler name script
-
 parseUnitScript :: Splices
                 -> (ParsedValue, ParsedValue, ParsedValue)
                 -> Coordinate
                 -> Maybe String
-                -> CodeString
+                -> ParsedCode
                 -> (forall env. EnvironmentProxy env
                     -> Either (SourceRange, String) (Code (UnitHandlerEnv env)))
-parseUnitScript splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx (CodeString src)
+parseUnitScript _splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx body
   (env :: EnvironmentProxy env) = do
 
   withEnvironment env $ do
@@ -730,7 +578,7 @@ parseUnitScript splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx (CodeString 
     withEnvironment env' $ case someSymbolVal <$> mpx of
       Nothing -> do
 
-        code <- left (errorLocation &&& unlines . pp) (parseCode env' splices src)
+        code <- left (errorLocation &&& unlines . pp) (runParsedBody env' body)
 
         let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
               (env', code) & letInEnv (Const (Scalar typeProxy 0))
@@ -747,7 +595,7 @@ parseUnitScript splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx (CodeString 
           Absent pf -> do
             let env'' = recallIsAbsent pf $ BindingProxy px RealType env'
 
-            code0 <- left (errorLocation &&& unlines . pp) (parseCode env'' splices src)
+            code0 <- left (errorLocation &&& unlines . pp) (runParsedBody env'' body)
             let code = Let bindingEvidence px (Var (Proxy @InternalPx) RealType bindingEvidence) code0
             let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), codeX) =
                   (env', code) & letInEnv (Const (Scalar typeProxy 0))
@@ -760,6 +608,159 @@ parseUnitScript splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx (CodeString 
             pure code'
           _ -> Left (NoSourceRange, "Pixel variable `" ++ symbolVal px ++ "` was redefined.")
 
+
+------------------------------------------------------------
+-- Tool-script grammar
+--
+-- Parses a tool's whole `script:` field -- a sequence of `on <event>:`
+-- blocks -- in a single tokenization + Earley parse over the entire input,
+-- reusing `codeBlockGrammar` for each block's body the same way
+-- `codeGrammar` itself reuses `valueGrammar`. This avoids re-tokenizing
+-- substrings (which would need manual source-range offset correction) and
+-- keeps indentation handling in the one place that already owns it.
+------------------------------------------------------------
+
+-- | One block's contribution to a tool's combined event handler, deferred
+-- over the final environment (the tool's variable context) the same way
+-- 'ParsedCode' defers over its environment.
+newtype ParsedToolBlock = ParsedToolBlock
+  (forall env. EnvironmentProxy env -> Either String (CombinedEventHandler env))
+
+-- | The result of parsing an entire tool script: all of its blocks already
+-- merged and checked for duplicate event definitions.
+newtype ParsedToolScript = ParsedToolScript
+  { runParsedToolScript :: forall env. EnvironmentProxy env -> Either String (CombinedEventHandler env) }
+
+mergeToolBlocks :: [ParsedToolBlock] -> ParsedToolScript
+mergeToolBlocks blocks = ParsedToolScript $ \env ->
+  foldl' combineEventHandlers (Right noHandlers)
+    [ f env | ParsedToolBlock f <- blocks ]
+
+-- | A tool script with no event handlers at all (e.g. a tool whose
+-- @script:@ field is absent or empty).
+emptyToolScript :: ParsedToolScript
+emptyToolScript = mergeToolBlocks []
+
+-- | Parse a tool's whole @script:@ text into its combined event handler.
+parseToolScript :: Splices
+                 -> Coordinate                              -- ^ default coordinate (the viewer's z-coord)
+                 -> (ParsedValue, ParsedValue, ParsedValue)  -- ^ iteration\/escape\/vanishing limits
+                 -> Maybe String                             -- ^ pixel-size variable name, if any
+                 -> String                                   -- ^ the whole script source
+                 -> Either (SourceRange, String) ParsedToolScript
+parseToolScript splices defaultCoord limits mpixel input =
+  bimap (errorLocation &&& unlines . pp) mergeToolBlocks
+    (parse (toolScriptGrammar splices defaultCoord limits mpixel) (tokenizeWithIndentation input))
+
+toolScriptGrammar :: forall r
+                   . Splices
+                  -> Coordinate
+                  -> (ParsedValue, ParsedValue, ParsedValue)
+                  -> Maybe String
+                  -> Grammar r (Prod r [ParsedToolBlock])
+toolScriptGrammar splices defaultCoord limits mpixel = mdo
+
+  codeBlock <- codeBlockGrammar splices
+
+  colon <- rule (token Colon <?> ":")
+  nl    <- rule (token Newline <?> "end of line")
+
+  coordSpec <- rule $
+        (ComplexCoordinate <$> ident)
+    <|> (RealCoordinates
+          <$> (token OpenParen *> ident <* token Comma)
+          <*> (ident <* token CloseParen))
+
+  fromTo <- rule $
+    (,) <$> (tok "from" *> coordSpec) <*> (tok "to" *> coordSpec)
+
+  quoted <- rule (tokenMatch (\case { Quoted s -> Just s; _ -> Nothing }))
+  intLit <- rule (tokenMatch (\case { NumberI n -> Just (fromIntegral n); _ -> Nothing }))
+
+  let dummyStart = ComplexCoordinate "[unused] start"
+
+  onRefresh' <- rule $
+    (\body -> ParsedToolBlock $ \env ->
+        bimap snd (\u -> noHandlers { onRefresh = Just u })
+          (parseUnitScript splices limits defaultCoord mpixel body env))
+    <$> (tok "on" *> tok "refresh" *> colon *> nl *> codeBlock)
+
+  onActivated' <- rule $
+    (\body -> ParsedToolBlock $ \env ->
+        bimap snd (\u -> noHandlers { onActivated = Just u })
+          (parseUnitScript splices limits defaultCoord mpixel body env))
+    <$> (tok "on" *> tok "activated" *> colon *> nl *> codeBlock)
+
+  onDeactivated' <- rule $
+    (\body -> ParsedToolBlock $ \env ->
+        bimap snd (\u -> noHandlers { onDeactivated = Just u })
+          (parseUnitScript splices limits defaultCoord mpixel body env))
+    <$> (tok "on" *> tok "deactivated" *> colon *> nl *> codeBlock)
+
+  onButton' <- rule $
+    (\label body -> ParsedToolBlock $ \env ->
+        bimap snd (\u -> noHandlers { onButton = Map.singleton label u })
+          (parseUnitScript splices limits defaultCoord mpixel body env))
+    <$> (tok "on" *> tok "button" *> quoted <* colon <* nl)
+    <*> codeBlock
+
+  onTimer' <- rule $
+    (\name interval body -> ParsedToolBlock $ \env ->
+        bimap snd (\u -> noHandlers { onTimer = Map.singleton name (interval, u) })
+          (parseUnitScript splices limits defaultCoord mpixel body env))
+    <$> (tok "on" *> tok "timer" *> quoted)
+    <*> (tok "every" *> intLit <* tok "ms" <* colon <* nl)
+    <*> codeBlock
+
+  onClick' <- rule $
+    (\mc body -> ParsedToolBlock $ \env ->
+        bimap snd (\c -> noHandlers { onClick = Just c })
+          (parseClickScript splices (fromMaybe defaultCoord mc) limits mpixel body env))
+    <$> (tok "on" *> tok "click" *> optional (tok "at" *> coordSpec) <* colon <* nl)
+    <*> codeBlock
+
+  onDoubleClick' <- rule $
+    (\mc body -> ParsedToolBlock $ \env ->
+        bimap snd (\c -> noHandlers { onDoubleClick = Just c })
+          (parseClickScript splices (fromMaybe defaultCoord mc) limits mpixel body env))
+    <$> (tok "on" *> tok "double" *> token Minus *> tok "click"
+          *> optional (tok "at" *> coordSpec) <* colon <* nl)
+    <*> codeBlock
+
+  onClickOrDrag' <- rule $
+    (\mc body -> ParsedToolBlock $ \env ->
+        let c = fromMaybe defaultCoord mc
+        in bimap snd (\(ch, dh) -> noHandlers { onClick = Just ch, onDrag = Just dh })
+             ((,) <$> parseClickScript splices c limits mpixel body env
+                  <*> parseDragScript  splices c dummyStart limits mpixel body env))
+    <$> (tok "on" *> tok "click" *> token Minus *> token Or_ *> token Minus *> tok "drag"
+          *> optional (tok "at" *> coordSpec) <* colon <* nl)
+    <*> codeBlock
+
+  onDrag' <- rule $
+    (\mft body -> ParsedToolBlock $ \env ->
+        let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
+        in bimap snd (\d -> noHandlers { onDrag = Just d })
+             (parseDragScript splices curC startC limits mpixel body env))
+    <$> (tok "on" *> tok "drag" *> optional fromTo <* colon <* nl)
+    <*> codeBlock
+
+  onDragFinished' <- rule $
+    (\mft body -> ParsedToolBlock $ \env ->
+        let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
+        in bimap snd (\d -> noHandlers { onDragDone = Just d })
+             (parseDragScript splices curC startC limits mpixel body env))
+    <$> (tok "on" *> tok "drag" *> token Minus *> tok "finished" *> optional fromTo <* colon <* nl)
+    <*> codeBlock
+
+  toolBlock <- ruleChoice
+    [ onClick', onDoubleClick', onClickOrDrag', onDragFinished', onDrag'
+    , onRefresh', onActivated', onDeactivated', onButton', onTimer'
+    ]
+
+  topLevel <- rule (token Indent *> many toolBlock <* token Dedent)
+
+  pure topLevel
 
 ------------------------------------------------------------
 -- Helpers

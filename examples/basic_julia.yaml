@@ -9,26 +9,24 @@ viewer:
   initial-center: 0
   initial-pixel-size: 1/128
   code: |
-      iterate z -> z^2 + C until z escapes
-      if stuck:
-        color <- black
-      else:
-        color <- blend ((iterations / max_iters)^p, dark blue, white)
+    iterate z -> z^2 + C until z escapes
+    if stuck:
+      color <- black
+    else:
+      color <- blend ((iterations / max_iters)^p, dark blue, white)
 
   tools:
     - name: Trace
       shortcut: t
-      actions:
-        - event: click-or-drag
-          code: |
-            prevZ : C <- z
-            erase
-            until z escapes:
-              prevZ <- z
-              draw point at z
-              z <- z^2 + C
-              draw line from z to prevZ
-
+      script: |
+        on click-or-drag:
+          prevZ : C <- z
+          erase
+          until z escapes:
+            prevZ <- z
+            draw point at z
+            z <- z^2 + C
+            draw line from z to prevZ
 configuration:
   title: Configuration
   size: 400x200
