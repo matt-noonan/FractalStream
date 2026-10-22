@@ -38,7 +38,7 @@ import Language.Code (usedVarsInCode, SomeCode(..))
 import Language.Value.Evaluator (evaluate)
 import Development.IncludeFile
 
-import Control.Exception (Exception, throwIO)
+import Control.Exception (Exception, IOException, throwIO, try)
 
 import Data.Codec
 
@@ -108,11 +108,18 @@ buildToolContext ensembleCtx = \case
     pure $ case toolContext0 <> SomeContext' (Right ensembleCtx) of
       SomeContext' e -> e
 
+-- | Load an 'Ensemble' from a project file. Reports a missing\/unreadable
+-- file the same way every other failure here is reported (as a 'Left'),
+-- rather than letting 'BS.readFile' throw an uncaught 'IOException' --
+-- the project path comes from user input (an open dialog, a CLI
+-- argument, ...), so a bad path is an ordinary, expected failure here,
+-- not a programming error.
 parseEnsembleFromFile :: FilePath -> IO (Either String Ensemble)
-parseEnsembleFromFile path = do
-  contents <- BS.readFile path
-  BS.length contents `seq` pure ()
-  deserializeYAML contents
+parseEnsembleFromFile path = try (BS.readFile path) >>= \case
+  Left (e :: IOException) -> pure (Left ("could not read " ++ path ++ ": " ++ show e))
+  Right contents -> do
+    BS.length contents `seq` pure ()
+    deserializeYAML contents
 
 data HaskellValueOrError :: Symbol -> FSType -> Exp Type
 type instance Eval (HaskellValueOrError name t) = Either String (HaskellType t)
