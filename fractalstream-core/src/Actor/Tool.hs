@@ -21,7 +21,7 @@ data Tool = Tool
   , toolRefreshCanUpdate  :: Variable Bool
   , toolConfig :: Variable (Maybe Configuration)
   , toolShowConfig :: Variable (Bool -> IO ())
-  , toolEventHandlers :: Variable [SingleEventHandler]
+  , toolScript :: Mapped CodeString ParsedToolScript
   , toolEventHandler :: Variable (Double -> Event -> Maybe (IO ()))
   , toolVars :: Dynamic (Set String)
   }
@@ -50,10 +50,25 @@ instance CodecWith EventDependencies Tool where
     config <-toolConfig-< optionalField "configuration"
       (newVariable Nothing) (fmap isNothing . getDynamic) (codecWith ((\(x,_,_,_) -> x) <$> ctx))
     showConfig <-toolShowConfig-< newOf (pure $ pure $ const (pure ()))
-    handlers <-toolEventHandlers-< optionalField "actions"
-      (newVariable []) (fmap null . getDynamic) (codecWith ctx)
+    script <-toolScript-< optionalField "script"
+      newEmptyToolScript
+      (\m -> (== "") . unCodeString <$> getDynamic (dyn (source m)))
+      (mapped codec $ \use -> do
+        let (dsplices, dvc, dlimits, dmpx) = use ctx
+        ((\x1 x2 x3 x4 -> (,,,) <$> x1 <*> x2 <*> x3 <*> x4)
+          <$> dvc <*> dsplices <*> dlimits <*> dmpx) >>= \case
+          Left err -> pure (\_ -> ParsedToolScript $ \_ -> Left err)
+          Right (vc, splices, limits, mpx) ->
+            pure $ \(CodeString src) ->
+              either (\(_, e) -> ParsedToolScript $ \_ -> Left e) id
+                (parseToolScript splices vc limits mpx src))
     tvars <-toolVars-< purely $ \use -> Set.fromList <$> do
       cfg <- dyn (use config)
       maybe (pure []) (fmap (either (const []) (map fst)) . layoutBindings . coContents) cfg
     handler <-toolEventHandler-< newOf (pure $ pure (\_ _ -> Nothing))
-    build Tool ti layer refreshOnActivate refreshCanUpdate config showConfig handlers handler tvars
+    build Tool ti layer refreshOnActivate refreshCanUpdate config showConfig script handler tvars
+
+-- | A @script:@ field whose default (when the field is absent) is an empty
+-- script with no event handlers.
+newEmptyToolScript :: IO (Mapped CodeString ParsedToolScript)
+newEmptyToolScript = newVariable (CodeString "") >>= newMapped (pure (const emptyToolScript))

@@ -77,9 +77,9 @@ viewers:
     initial-center: 0
     initial-pixel-size: 1/128
     code: |
-        z : C <- «initialZ»
-        iterate z -> «expression» until «exit_condition»
-        color <- if stuck then «on_failure» else «on_success»
+      z : C <- «initialZ»
+      iterate z -> «expression» until «exit_condition»
+      color <- if stuck then «on_failure» else «on_success»
 
   - title: "«title»"
     style: complex-plane
@@ -92,30 +92,28 @@ viewers:
     initial-center: 0
     initial-pixel-size: 1/128
     code: |
-        iterate z -> «expression» until «exit_condition»
-        color <- if stuck then «on_failure» else «on_success»
+      iterate z -> «expression» until «exit_condition»
+      color <- if stuck then «on_failure» else «on_success»
 
     tools:
-     - name: Trace
-       shortcut: t
-       actions:
-          - event: refresh
-            code: erase
+      - name: Trace
+        shortcut: t
+        script: |
+          on refresh:
+            erase
 
-          - event: deactivated
-            code: erase
+          on deactivated:
+            erase
 
-          - event: click-or-drag
-            code: |
-              use white for line
-              erase
-              prevZ : C <- z
-              until «exit_condition»:
-                prevZ <- z
-                draw point at z
-                z <- «expression»
-                draw line from z to prevZ
-
+          on click-or-drag:
+            use white for line
+            erase
+            prevZ : C <- z
+            until «exit_condition»:
+              prevZ <- z
+              draw point at z
+              z <- «expression»
+              draw line from z to prevZ
 configuration:
   title: Configuration
   size: 400x200

@@ -51,41 +51,39 @@ viewers:
     initial-center: 0
     initial-pixel-size: 1/128
     code: |
-        lastZ : C <- 0
-        repeat:
-          lastZ <- z
-          z <- z - «f» / diff(z, «f»)
-        until z = lastZ
+      lastZ : C <- 0
+      repeat:
+        lastZ <- z
+        z <- z - «f» / diff(z, «f»)
+      until z = lastZ
 
-        if stuck:
-          color <- «on_failure»
-        else:
-          color <- «basin_color»
-          if shade_convergence:
-            color <- blend(iterations / 20, dark color, light color)
+      if stuck:
+        color <- «on_failure»
+      else:
+        color <- «basin_color»
+        if shade_convergence:
+          color <- blend(iterations / 20, dark color, light color)
 
     tools:
-     - name: Trace
-       shortcut: t
-       actions:
-          - event: refresh
-            code: erase
+      - name: Trace
+        shortcut: t
+        script: |
+          on refresh:
+            erase
 
-          - event: deactivated
-            code: erase
+          on deactivated:
+            erase
 
-          - event: click-or-drag
-            code: |
-              use white for line
-              erase
-              prevZ : C <- z
-              repeat:
-                prevZ <- z
-                draw point at z
-                z <- z - «f» / diff(z, «f»)
-                draw line from z to prevZ
-              until z = prevZ
-
+          on click-or-drag:
+            use white for line
+            erase
+            prevZ : C <- z
+            repeat:
+              prevZ <- z
+              draw point at z
+              z <- z - «f» / diff(z, «f»)
+              draw line from z to prevZ
+            until z = prevZ
 configuration:
   title: Configuration
   size: 400x200

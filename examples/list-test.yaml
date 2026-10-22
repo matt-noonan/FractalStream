@@ -7,23 +7,21 @@ viewer:
   initial-center: 0
   initial-pixel-size: 1/128
   code: |
-      if |z| < 1:
-        color <- red
-      else if im z > 0:
-        color <- green
-      else:
-        color <- blue
+    if |z| < 1:
+      color <- red
+    else if im z > 0:
+      color <- green
+    else:
+      color <- blue
 
   tools:
     - name: Show circles
       shortcut: s
-      actions:
-        - event: refresh
-          code: |
-            erase
-            for each center in myList:
-              draw circle at center with radius 1
-
+      script: |
+        on refresh:
+          erase
+          for each center in myList:
+            draw circle at center with radius 1
 configuration:
   title: Configuration
   size: 400x200

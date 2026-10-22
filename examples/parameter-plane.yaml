@@ -9,17 +9,17 @@ viewers:
     initial-center: 0
     initial-pixel-size: 1/128
     code: |
-        z : C <- 0
-        iterate z -> «f» until «stop»
+      z : C <- 0
+      iterate z -> «f» until «stop»
 
-        if «stop»:
-          c1 : Color <- if im(z) > 0 then blue else yellow
-          c2 : Color <- if im(z) > 0 then green else red
-          s : R <- iterations + 1 - (log (log (|z|^2 / 2))) / log 2
-          s <- cos (s pi / 10)^2
-          color <- blend (s, c1, c2)
-        else:
-          color <- black
+      if «stop»:
+        c1 : Color <- if im(z) > 0 then blue else yellow
+        c2 : Color <- if im(z) > 0 then green else red
+        s : R <- iterations + 1 - (log (log (|z|^2 / 2))) / log 2
+        s <- cos (s pi / 10)^2
+        color <- blend (s, c1, c2)
+      else:
+        color <- black
 
   - title: Dynamical plane
     style: complex-plane
@@ -31,34 +31,32 @@ viewers:
     initial-center: 0
     initial-pixel-size: 1/128
     code: |
-        iterate z -> «f» until «stop»
+      iterate z -> «f» until «stop»
 
-        if «stop»:
-          c1 : Color <- if im(z) > 0 then blue else yellow
-          c2 : Color <- if im(z) > 0 then green else red
-          s : R <- iterations + 1 - (log (log (|z|^2 / 2))) / log 2
-          s <- cos (s pi / 10)^2
-          color <- blend (s, c1, c2)
-        else:
-          color <- black
+      if «stop»:
+        c1 : Color <- if im(z) > 0 then blue else yellow
+        c2 : Color <- if im(z) > 0 then green else red
+        s : R <- iterations + 1 - (log (log (|z|^2 / 2))) / log 2
+        s <- cos (s pi / 10)^2
+        color <- blend (s, c1, c2)
+      else:
+        color <- black
 
     tools:
-     - name: Trace
-       shortcut: t
-       actions:
-          - event: deactivated
-            code: erase
+      - name: Trace
+        shortcut: t
+        script: |
+          on deactivated:
+            erase
 
-          - event: click-or-drag
-            code: |
-              prevZ : C <- z
-              erase
-              until «stop»:
-                prevZ <- z
-                draw point at z
-                z <- «f»
-                draw line from z to prevZ
-
+          on click-or-drag:
+            prevZ : C <- z
+            erase
+            until «stop»:
+              prevZ <- z
+              draw point at z
+              z <- «f»
+              draw line from z to prevZ
 setup:
   title: Parametric complex dynamics
   size: 200x200

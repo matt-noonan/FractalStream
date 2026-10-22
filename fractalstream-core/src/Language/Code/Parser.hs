@@ -2,6 +2,7 @@
 module Language.Code.Parser
   ( parseCode
   , parseParsedCode
+  , codeBlockGrammar
   , Splices(..)
   , noSplices
   -- * Re-exports
@@ -46,16 +47,22 @@ parseCode env splices input = do
 
 parseParsedCode :: Splices -> String -> Either (Either ParseError TCError) ParsedCode
 parseParsedCode splices input =
-  first Left (parse (codeGrammar splices) (tokenizeWithIndentation input))
+  first Left (parse (codeBlockGrammar splices) (tokenizeWithIndentation input))
 
 ------------------------------------------------------
 -- Code grammar
 ------------------------------------------------------
 
-codeGrammar :: forall r
-             . Splices
-            -> Grammar r (Prod r ParsedCode)
-codeGrammar Splices{..} = mdo
+-- | The grammar for a single indented block of statements (what follows a
+-- header line like @if ...:@, @until ...:@, or, for whole-program/handler-
+-- body parsing, the entire input). Exported so that other grammars with
+-- their own header syntax (e.g. 'Actor.Event's tool-script grammar) can
+-- recurse into statement-block parsing from their own 'Grammar' computation,
+-- the same way this grammar itself calls into 'valueGrammar'.
+codeBlockGrammar :: forall r
+                  . Splices
+                 -> Grammar r (Prod r ParsedCode)
+codeBlockGrammar Splices{..} = mdo
 
   toplevel <- ruleChoice
     [ block
@@ -208,7 +215,7 @@ codeGrammar Splices{..} = mdo
   colon <- rule (token Colon <?> ":")
   nl <- rule (token Newline <?> "end of line")
 
-  pure toplevel
+  pure block
 
 check :: Prod r CheckedCode -> Prod r ParsedCode
 check = withSourceRange

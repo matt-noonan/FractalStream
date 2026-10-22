@@ -1,3 +1,5 @@
+viewers: []
+
 setup:
   title: "Test window"
   size: 400x200

@@ -66,21 +66,20 @@ viewers:
                       label: "Color"
                       value: yellow
                       variable: color3
-        actions:
-          - event: deactivated
-            code: erase
-          - event: click-or-drag
-            code: |
-              erase
-              use color1 for line
-              draw point at z
-              pre1 <- sqrt((-C + z) / (z - 1))
-              pre2 <- -sqrt((-C + z) / (z - 1))
-              use color2 for line
-              draw point at pre1
-              use color3 for line
-              draw point at pre2
+        script: |
+          on deactivated:
+            erase
 
+          on click-or-drag:
+            erase
+            use color1 for line
+            draw point at z
+            pre1 <- sqrt((-C + z) / (z - 1))
+            pre2 <- -sqrt((-C + z) / (z - 1))
+            use color2 for line
+            draw point at pre1
+            use color3 for line
+            draw point at pre2
       - name: Mark orbit of critical point
         shortcut: o
         draw-to-layer: 11
@@ -104,28 +103,26 @@ viewers:
                 variable: one_color
             - button: "Erase postcritical points"
 
-        actions:
-          - event: button
-            label: "Erase postcritical points"
-            code: erase
-          - event: refresh
-            code: |
-              erase
+        script: |
+          on button "Erase postcritical points":
+            erase
 
-              use one_color for line
-              draw point at 1
+          on refresh:
+            erase
 
-              use zero_orbit_color for line
-              z <- 0
-              last_z : C <- z
-              repeat:
-                draw point at z
-                if follow:
-                  draw line from last_z to z
-                  last_z <- z
-                z <- (z^2 - C) / (z^2 - 1)
-              while z != 0
+            use one_color for line
+            draw point at 1
 
+            use zero_orbit_color for line
+            z <- 0
+            last_z : C <- z
+            repeat:
+              draw point at z
+              if follow:
+                draw line from last_z to z
+                last_z <- z
+              z <- (z^2 - C) / (z^2 - 1)
+            while z != 0
       - name: Pullback
         shortcut: p
         draw-to-layer: 12
@@ -169,56 +166,51 @@ viewers:
 
             - button: "Erase"
 
-        actions:
-          - event: button
-            label: "Erase"
-            code: |
-              erase
-              follow <- false
+        script: |
+          on button "Erase":
+            erase
+            follow <- false
 
-          - event: drag-finished
-            code: |
-              follow <- false
+          on drag-finished:
+            follow <- false
 
-          - event: drag
-            code: |
-              pre1 : C <- sqrt((-C + z) / (z - 1))
-              pre2 : C <- -sqrt((-C + z) / (z - 1))
+          on drag:
+            pre1 : C <- sqrt((-C + z) / (z - 1))
+            pre2 : C <- -sqrt((-C + z) / (z - 1))
 
-              if follow:
-                use color1 for line
-                draw line from last_z to z
-                last_z <- z
+            if follow:
+              use color1 for line
+              draw line from last_z to z
+              last_z <- z
 
-                # Make sure that pre1 is the preimage that
-                # is closest to last_pre1
-                if |last_pre1 - pre2| < |last_pre1 - pre1|:
-                  tmp : C <- pre1
-                  pre1 <- pre2
-                  pre2 <- tmp
+              # Make sure that pre1 is the preimage that
+              # is closest to last_pre1
+              if |last_pre1 - pre2| < |last_pre1 - pre1|:
+                tmp : C <- pre1
+                pre1 <- pre2
+                pre2 <- tmp
 
-                use color2 for line
-                draw line from last_pre1 to pre1
-                last_pre1 <- pre1
+              use color2 for line
+              draw line from last_pre1 to pre1
+              last_pre1 <- pre1
 
-                use color3 for line
-                draw line from last_pre2 to pre2
-                last_pre2 <- pre2
+              use color3 for line
+              draw line from last_pre2 to pre2
+              last_pre2 <- pre2
 
-              else:
-                use color1 for line
-                draw point at z
-                last_z <- z
+            else:
+              use color1 for line
+              draw point at z
+              last_z <- z
 
-                use color2 for line
-                draw point at pre1
-                last_pre1 <- pre1
+              use color2 for line
+              draw point at pre1
+              last_pre1 <- pre1
 
-                use color3 for line
-                draw point at pre2
-                last_pre2 <- pre2
-                follow <- true
-
+              use color3 for line
+              draw point at pre2
+              last_pre2 <- pre2
+              follow <- true
 configuration:
   title: Configuration
   size: 400x200

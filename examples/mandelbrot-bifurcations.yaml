@@ -34,14 +34,11 @@ viewer:
   tools:
     - name: Vertical line
       shortcut: v
-      actions:
-        - event: click-or-drag
-          code: |
-            erase
-            use red for line
-            draw line from re C + 2 i to re C - 2 i
-
-
+      script: |
+        on click-or-drag:
+          erase
+          use red for line
+          draw line from re C + 2 i to re C - 2 i
 configuration:
   title: Configuration
   size: 400x200

@@ -123,11 +123,10 @@ viewers:
         color <- blend (cos (s_adjusted pi)^2, light color, dark color)
 
     tools:
-    - name: Trace
-      shortcut: t
-      actions:
-        - event: click-or-drag
-          code: |
+      - name: Trace
+        shortcut: t
+        script: |
+          on click-or-drag:
             start <- z
             w : C <- z
             lastZ : C <- z
@@ -151,8 +150,7 @@ viewers:
             use green for stroke
             draw circle at w with radius minRadius
 
-        - event: refresh
-          code: |
+          on refresh:
             z : C <- start
             w : C <- z
             lastZ : C <- 0
@@ -175,7 +173,6 @@ viewers:
 
             use green for stroke
             draw circle at w with radius minRadius
-
 setup:
   title: Internal Rays Setup
   size: 200x200
@@ -219,17 +216,17 @@ configuration:
     - panel:
         title: "Internal Rays"
         vertical-contents:
-        - text-entry:
-            label: "continuous = "
-            value: "false"
-            type: Bool
-            variable: continuous
+          - text-entry:
+              label: "continuous = "
+              value: "false"
+              type: Bool
+              variable: continuous
 
-        - text-entry:
-            label: "denominator = "
-            value: "3"
-            type: Z
-            variable: den
+          - text-entry:
+              label: "denominator = "
+              value: "3"
+              type: Z
+              variable: den
 
     - panel:
         title: "Dynamics"

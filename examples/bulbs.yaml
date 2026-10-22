@@ -9,13 +9,13 @@ viewer:
   initial-center: "0"
   initial-pixel-size: "1/128"
   code: |
-      z : C <- 0
-      iterate z -> z^2 + C until z escapes
+    z : C <- 0
+    iterate z -> z^2 + C until z escapes
 
-      if z escaped:
-        color <- rainbow (iterations / 20)
-      else:
-        color <- black
+    if z escaped:
+      color <- rainbow (iterations / 20)
+    else:
+      color <- black
 
   tools:
     - name: Bulb info
@@ -52,34 +52,31 @@ viewer:
 
           - button: "Erase annotations"
 
-      actions:
-        - event: button
-          label: "Erase annotations"
-          code: erase
+      script: |
+        on button "Erase annotations":
+          erase
 
-        - event: click
-          code: |
-            # Iterate z^2 + C many times so that we end up with
-            # z close to one of the points on the attracting cycle.
-            z : C <- 0
-            iterate z -> z^2 + C until z escapes up to warmup times
+        on click:
+          # Iterate z^2 + C many times so that we end up with
+          # z close to one of the points on the attracting cycle.
+          z : C <- 0
+          iterate z -> z^2 + C until z escapes up to warmup times
 
-            # Now that z is on the attracting cycle (or at least very near it),
-            # count how many times we need to apply z^2 + C until we get
-            # back to z again. Report the result in the `period` variable,
-            # or report 0 if something went wrong.
-            if not (z escaped):
-              target : C <- z
-              repeat up to max_period times:
-                z <- z^2 + C
-              until |z - target| < tol
-              if stuck:
-                write "?" at C
-              else:
-                write iterations at C
+          # Now that z is on the attracting cycle (or at least very near it),
+          # count how many times we need to apply z^2 + C until we get
+          # back to z again. Report the result in the `period` variable,
+          # or report 0 if something went wrong.
+          if not (z escaped):
+            target : C <- z
+            repeat up to max_period times:
+              z <- z^2 + C
+            until |z - target| < tol
+            if stuck:
+              write "?" at C
             else:
-              write "X" at C
-
+              write iterations at C
+          else:
+            write "X" at C
 configuration:
   title: Configuration
   size: 400x200
