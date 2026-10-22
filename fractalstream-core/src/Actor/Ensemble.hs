@@ -49,7 +49,7 @@ instance Exception BadEnsemble
 
 -- | A named, headless-runnable sequence of commands, embedded directly in
 -- a project file under a top-level @scenarios:@ list -- e.g. so a CI run
--- can do @fractalstream-headless project.yaml --scenario NAME@ instead of
+-- can do @fsrun project.yaml --scenario NAME@ instead of
 -- pointing at a separate commands file. The commands themselves are kept
 -- as raw text here: the scenario language's parser
 -- (@Scenario.parseScenario@) lives in @fractalstream-ui-headless@, not

@@ -1,7 +1,7 @@
 # FractalStream scenario language
 
 A scenario is a small, human-writable script that drives
-`fractalstream-headless` through a project the same way a person would
+`fsrun` through a project the same way a person would
 drive the interactive app: pick a viewer, pick a tool, click and drag,
 change parameters, and check what got drawn. It exists to let headless
 runs do more than render one static picture -- to set up a scene with
@@ -13,19 +13,19 @@ separate CLI argument, so the same scenario vocabulary is meaningful
 across any project. Commands can come from a standalone file:
 
 ```
-fractalstream-headless project.yaml --commands scenario.txt
+fsrun project.yaml --commands scenario.txt
 ```
 
 or from a scenario embedded directly in the project file itself (see
 "Embedding scenarios in a project file" below), selected by name:
 
 ```
-fractalstream-headless project.yaml --scenario "basic trace"
+fsrun project.yaml --scenario "basic trace"
 ```
 
 (A third, unrelated mode exists for the simple case of just rendering
 one viewer with no tool interaction at all:
-`fractalstream-headless project.yaml --snapshot "<viewer name>" --output
+`fsrun project.yaml --snapshot "<viewer name>" --output
 file.png`.)
 
 ## Design principles
@@ -193,7 +193,7 @@ scenarios:
       capture viewer "Mandelbrot set" base to "zoomed.png"
 ```
 
-run with `fractalstream-headless project.yaml --scenario "basic trace"`.
+run with `fsrun project.yaml --scenario "basic trace"`.
 This is the natural home for a project's own regression\/smoke-test
 scenarios -- checked in alongside the project file itself, rather than
 kept as separate files that can drift out of sync with it. A project

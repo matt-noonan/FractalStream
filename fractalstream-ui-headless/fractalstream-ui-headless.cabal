@@ -74,7 +74,7 @@ library
                      , JuicyPixels
   hs-source-dirs:      src/lib
 
-executable fractalstream-headless
+executable fsrun
   import: FractalStream-common
   ghc-options:         -Wall -Werror -O2
 
