@@ -1,9 +1,8 @@
 {-# language RecursiveDo, OverloadedStrings, RankNTypes, ScopedTypeVariables #-}
 {-# options_ghc -Wno-incomplete-uni-patterns #-}
 module Backend.LLVM.Code
-  ( --compile
---  , compileRenderer
-   compileRenderer'
+  ( compile
+  , compileRenderer'
   , compileToolHandler
   , DrawVTable(..)
   ) where
@@ -39,7 +38,18 @@ toParameterList = \case
   BindingProxy name t env ->
     (toLLVMType t, ParameterName (fromString (symbolVal name))) : toParameterList env
 
-{-
+-- | Compile a closed 'Code' block into a standalone kernel function that
+-- takes @env@'s bindings as arguments and writes the value a chosen
+-- @output@ binding holds once the code finishes through an out-pointer
+-- (matching 'Backend.LLVM.invoke'\'s calling convention). Unlike
+-- 'compileToolHandler'\/'compileRenderer'', the scratch arena list\/array
+-- allocations need is a fixed-size buffer local to the generated
+-- function (`alloca`\'d once per call) rather than supplied by the
+-- caller -- there's no per-pixel\/per-event loop here resetting it, and
+-- no caller-side arena pool to plumb through, so a generous flat buffer
+-- is simplest. Draw commands aren't supported (no 'DrawVTable' to call
+-- into). Used by "Backend.LLVM"'s @withCompiledCode@, itself only used
+-- by tests.
 compile :: forall env output t
          . (KnownEnvironment env, KnownSymbol output, KnownType t
            , Required output env ~ t)
@@ -53,16 +63,26 @@ compile _ outputTy code = runExcept $
         params   = toParameterList (envProxy (Proxy @env))
     function "kernel" (retParam : params) AST.void $ \(retArg : rawArgs) -> do
       getExtern <- getGetExtern
-      traceM ("making typedOperandPtr, return type is " ++ showType outputTy)
-      traceM ("  retArg = " ++ show retArg)
       retPtr <- typedOperandPtr outputTy retArg
-      traceM ("ok, continuing... retPtr = " ++ show retPtr)
       args <- allocaArgs (envProxy (Proxy @env)) rawArgs
-      runReaderT (compileCode getExtern code) args
+
+      -- A 64 KiB scratch arena, local to this call, for any list/array
+      -- allocation 'code' happens to do.
+      arenaBuf <- alloca (AST.ArrayType 65536 AST.i8) Nothing 0
+      arenaBase <- bitcast arenaBuf (AST.ptr AST.i8)
+      bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
+      store bumpAlloca 0 arenaBase
+      arenaEnd <- gep arenaBase [C.int32 65536]
+      overflowFlag <- alloca AST.i1 Nothing 0
+      store overflowFlag 0 (C.bit 0)
+      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag
+
+      runReaderT (compileCode getExtern arenaState Nothing code) args
       rv <- derefOperand (getBinding args (bindingEvidence @output @t @env))
       storeOperand rv retPtr
       retVoid
 
+{-
 type RenderEnv env =
   (  '("#blockSize", 'IntegerT)
   ': '("#subsamples", 'IntegerT)
