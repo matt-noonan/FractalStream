@@ -1,12 +1,14 @@
 {-# language OverloadedStrings, TemplateHaskell #-}
 module Actor.Ensemble
   ( Ensemble(..)
+  , NamedScenario(..)
   , parseEnsembleFromFile
   , runEnsemble
   , runEnsembleFromSetup
 
   , contextValuesChanged
   , layoutToArgs
+  , buildToolContext
 
   , BadEnsemble(..)
 
@@ -37,7 +39,7 @@ import Language.Code (usedVarsInCode, SomeCode(..))
 import Language.Value.Evaluator (evaluate)
 import Development.IncludeFile
 
-import Control.Exception (Exception, throwIO)
+import Control.Exception (Exception, IOException, throwIO, try)
 
 import Data.Codec
 
@@ -45,11 +47,31 @@ data BadEnsemble = BadEnsemble String deriving Show
 instance Exception BadEnsemble
 
 
+-- | A named, headless-runnable sequence of commands, embedded directly in
+-- a project file under a top-level @scenarios:@ list -- e.g. so a CI run
+-- can do @fsrun project.yaml --scenario NAME@ instead of
+-- pointing at a separate commands file. The commands themselves are kept
+-- as raw text here: the scenario language's parser
+-- (@Scenario.parseScenario@) lives in @fractalstream-ui-headless@, not
+-- here, since it's specific to that frontend, not a thing every consumer
+-- of an 'Ensemble' needs to know about.
+data NamedScenario = NamedScenario
+  { nsName     :: Variable String
+  , nsCommands :: Variable String
+  }
+
+instance Codec NamedScenario where
+  codec = do
+    name     <-nsName-<     key "name"
+    commands <-nsCommands-< key "commands"
+    build NamedScenario name commands
+
 data Ensemble = Ensemble
   { ensembleSetup         :: Variable (Maybe Configuration)
   , ensembleSplices       :: Dynamic (Either String Splices)
   , ensembleConfiguration :: Variable (Maybe Configuration)
   , ensembleViewers       :: Variable [ComplexViewer]
+  , ensembleScenarios     :: Variable [NamedScenario]
   }
 
 instance Codec Ensemble where
@@ -81,7 +103,10 @@ instance Codec Ensemble where
       , Fragment id Just $ field "viewers" (codecWith ctx)
       ]
 
-    build Ensemble setup splices config viewers
+    scenarios <-ensembleScenarios-< optionalField "scenarios"
+      (newVariable []) (fmap null . getDynamic) codec
+
+    build Ensemble setup splices config viewers scenarios
 
 contextValuesChanged :: SomeContext DynamicValue -> Dynamic ()
 contextValuesChanged (SomeContext ctx0) = go ctx0
@@ -91,12 +116,34 @@ contextValuesChanged (SomeContext ctx0) = go ctx0
       Bind _ _ v ctx' -> (<>) <$> (const () <$> v) <*> go ctx'
       EmptyContext    -> pure ()
 
+-- | The full variable context a tool's event handlers see: its own
+-- @configuration:@ panel's variables (if it has one) combined with the
+-- ensemble-wide context, matching what every frontend needs to build
+-- before calling a 'Viewer''s @vBuildToolHandler@. Shared by
+-- @fractalstream-ui-wx@ and @fractalstream-ui-headless@ so the two
+-- frontends can't silently drift on how a tool's context is assembled.
+buildToolContext :: SomeContext EventArgument_
+                  -> Maybe Configuration
+                  -> IO (Either String (SomeContext EventArgument_))
+buildToolContext ensembleCtx = \case
+  Nothing -> pure (Right ensembleCtx)
+  Just tcfg -> do
+    toolContext0 <- layoutToArgs (coContents tcfg)
+    pure $ case toolContext0 <> SomeContext' (Right ensembleCtx) of
+      SomeContext' e -> e
 
+-- | Load an 'Ensemble' from a project file. Reports a missing\/unreadable
+-- file the same way every other failure here is reported (as a 'Left'),
+-- rather than letting 'BS.readFile' throw an uncaught 'IOException' --
+-- the project path comes from user input (an open dialog, a CLI
+-- argument, ...), so a bad path is an ordinary, expected failure here,
+-- not a programming error.
 parseEnsembleFromFile :: FilePath -> IO (Either String Ensemble)
-parseEnsembleFromFile path = do
-  contents <- BS.readFile path
-  BS.length contents `seq` pure ()
-  deserializeYAML contents
+parseEnsembleFromFile path = try (BS.readFile path) >>= \case
+  Left (e :: IOException) -> pure (Left ("could not read " ++ path ++ ": " ++ show e))
+  Right contents -> do
+    BS.length contents `seq` pure ()
+    deserializeYAML contents
 
 data HaskellValueOrError :: Symbol -> FSType -> Exp Type
 type instance Eval (HaskellValueOrError name t) = Either String (HaskellType t)

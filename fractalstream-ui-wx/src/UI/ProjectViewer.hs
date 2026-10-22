@@ -34,7 +34,7 @@ import Actor.Tool
 import Actor.Layout
 import Actor.Configuration
 import Actor.Viewer
-import Actor.Ensemble (layoutToArgs)
+import Actor.Ensemble (buildToolContext)
 import Actor.Event (Event(..), EventArgument_)
 import Language.Type
 import Language.Draw
@@ -995,10 +995,9 @@ makeWxComplexViewer projectWindow addMenuBar saveSession raiseConfigWindow confi
                  , on closing :~ (>> stopListening) ]
           windowReLayout tf
 
-          toolContext0 <- layoutToArgs (coContents tcfg)
-          case toolContext0 <> SomeContext' (Right $ SomeContext configValues) of
-            SomeContext' (Left _) -> setValue' toolEventHandler (\_ _ -> Nothing)
-            SomeContext' (Right toolContext) -> do
+          buildToolContext (SomeContext configValues) (Just tcfg) >>= \case
+            Left _ -> setValue' toolEventHandler (\_ _ -> Nothing)
+            Right toolContext ->
               getDynamic (dyn toolScript) >>= (vBuildToolHandler layer toolContext) >>= \case
                 Left err -> do
                   putStrLn ("Problem with tool " ++ n ++ ": " ++ err)

@@ -22,6 +22,7 @@ module Actor.Viewer
   , invokeViewerFunction
   , assertMissingViewerArgs
   , snapshotToFile
+  , withRenderedViewerBuffer
   , allGrey
   , defaultIterLimit
   , defaultMaxRadius
@@ -143,18 +144,44 @@ data Viewer = Viewer
     --   the backend (interpreter or JIT-compiled); see 'ToolRunner'.
   }
 
-snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Maybe String)
-snapshotToFile Viewer{..} downsample path = case vCodeWithArgs of
+-- | Render a 'Viewer's base per-pixel script into an in-memory RGB8 buffer
+-- (already downsampled, if requested) and hand it, with the model-space
+-- center and pixel size it corresponds to and its pixel dimensions, to the
+-- given continuation. This is the shared rendering step behind
+-- 'snapshotToFile'; it's a separate entry point so that a caller wanting to
+-- draw something /on top of/ the base render -- e.g. a tool's recorded
+-- 'DrawCommand's, once a headless frontend grows the ability to run event
+-- handlers before taking a picture -- can do so by drawing into the
+-- continuation's buffer before encoding it, without re-deriving any of this
+-- per-pixel setup.
+--
+-- Note that the center\/pixel-size passed to the continuation is always the
+-- viewer's own nominal 'vCenter'\/'vPixelSize' ((relative to the *final*
+-- buffer, whatever its dimensions): downsampling supersamples internally at
+-- twice the resolution and half the pixel size, then averages back down,
+-- so the buffer handed to the continuation always covers the same
+-- model-space extent as the viewer's own 'vSize' at 'vPixelSize' -- this
+-- spares a caller doing its own model-space\/pixel-space placement (e.g.
+-- compositing tool-drawn annotations) from having to duplicate that
+-- halve-then-double arithmetic to find out what coordinate system the
+-- buffer it was handed is actually in.
+withRenderedViewerBuffer
+  :: Viewer
+  -> Bool
+  -> ((Double, Double) -> Double -> (Word32, Word32) -> Ptr Word8 -> IO a)
+  -> IO (Either String a)
+withRenderedViewerBuffer Viewer{..} downsample withBuffer = case vCodeWithArgs of
   CodeWithArgs vGetArgs _ vCode -> vGetArgs >>= \case
-    Left err -> pure (Just err)
+    Left err -> pure (Left err)
     Right vaArgs -> do
       Dimensions (w, h) <- getDynamic vSize
       let vaWidth  = fromIntegral w * if downsample then 2 else 1
           vaHeight = fromIntegral h * if downsample then 2 else 1
           vaSubsamples = 1
-      px <- getDynamic vPixelSize <&> if downsample then (/ 2) else id
+      pixelSize <- getDynamic vPixelSize
+      let px = if downsample then pixelSize / 2 else pixelSize
       let vaStep = (px, px)
-      (cx, cy) <- getDynamic vCenter
+      center@(cx, cy) <- getDynamic vCenter
       let vaPoint = (cx - fromIntegral vaWidth * px / 2, cy + fromIntegral vaHeight * px / 2)
       ViewerFunction fn <- getDynamic vCode
       allocaBytes (fromIntegral $ 3 * vaWidth * vaHeight) $ \vaBuffer -> do
@@ -177,10 +204,14 @@ snapshotToFile Viewer{..} downsample path = case vCodeWithArgs of
                     c4 :: Word16 <- fromIntegral <$>
                       peekElemOff vaBuffer (inputIx + 3 + 6 * width)
                     pokeElemOff buf (3 * i + 3 * width * j + k) (fromIntegral $ (c1 + c2 + c3 + c4) `div` 4)
-              encodeBufferToPngFile (fromIntegral width, fromIntegral height) buf path
+              Right <$> withBuffer center pixelSize (fromIntegral width, fromIntegral height) buf
           else
-            encodeBufferToPngFile (fromIntegral vaWidth, fromIntegral vaHeight) vaBuffer path
-        pure Nothing
+            Right <$> withBuffer center pixelSize (fromIntegral vaWidth, fromIntegral vaHeight) vaBuffer
+
+snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Maybe String)
+snapshotToFile viewer downsample path =
+  either Just (const Nothing) <$>
+    withRenderedViewerBuffer viewer downsample (\_ _ dim buf -> encodeBufferToPngFile dim buf path)
 
 onParameterChanges :: Viewer -> IO () -> IO (IO ())
 onParameterChanges = vListen

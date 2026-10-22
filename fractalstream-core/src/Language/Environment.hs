@@ -28,6 +28,9 @@ module Language.Environment
   , fromEnvironmentM
   , getBinding
   , setBinding
+  , FoundBinding(..)
+  , lookupContextByName
+  , lookupSomeContextByName
   , bindInEnv
   , bindInEnv'
   , EnvironmentProxy(..)
@@ -685,6 +688,30 @@ setBinding _pf value = go
           Just Refl -> case sameHaskellType (typeProxy @t) ty' of
             Just Refl -> Bind name' ty' value ctx
             Nothing   -> error "unreachable due to (NotPresent name env) constraint in Bind constructor"
+
+-- | A binding found by name at runtime: its type, and the value stored
+-- at it. The binding's own name is existentially hidden, since by the
+-- time you're looking a variable up by a runtime 'String' (rather than
+-- via 'NameIsPresent' evidence recovered at compile time) there's nothing
+-- further to do with the type-level name itself.
+data FoundBinding (value :: Symbol -> FSType -> Exp Type) where
+  FoundBinding :: forall name t value. TypeProxy t -> Eval (value name t) -> FoundBinding value
+
+-- | Look up a binding by its runtime name, rather than by compile-time
+-- 'NameIsPresent' evidence -- for the common case of locating a
+-- configuration variable a user named in a string (a YAML field, a CLI
+-- argument, a scenario-language command, ...).
+lookupContextByName :: String -> Context value env -> Maybe (FoundBinding value)
+lookupContextByName target = \case
+  EmptyContext -> Nothing
+  Bind (name :: Proxy name) ty v ctx
+    | symbolVal name == target -> Just (FoundBinding @name ty v)
+    | otherwise -> lookupContextByName target ctx
+
+-- | 'lookupContextByName', for a 'SomeContext' (an environment-erased
+-- 'Context').
+lookupSomeContextByName :: String -> SomeContext value -> Maybe (FoundBinding value)
+lookupSomeContextByName target (SomeContext ctx) = lookupContextByName target ctx
 
 bindInEnv :: (MonadFail m)
           => String

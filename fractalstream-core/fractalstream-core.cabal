@@ -71,6 +71,7 @@ library
                        Actor.Viewer
                        Actor.Viewer.Types
                        Actor.Viewer.Complex
+                       Actor.Viewer.Overlay
                        Actor.Event
 
                        Event
@@ -136,6 +137,8 @@ library
                        utf8-string,
                        githash,
                        zlib,
+                       JuicyPixels,
+                       Rasterific,
   hs-source-dirs:      src
 
 test-suite spec
