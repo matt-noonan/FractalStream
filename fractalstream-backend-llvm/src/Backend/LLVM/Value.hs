@@ -184,9 +184,13 @@ buildValue getExtern arena = indexedFold go'
 
       RGB mr mg mb -> ((,,) <$> mr <*> mg <*> mb) >>= \case
         (RealOp r, RealOp g, RealOp b) -> do
-          rr <- fmul r (C.double 255.0)
-          gg <- fmul g (C.double 255.0)
-          bb <- fmul b (C.double 255.0)
+          -- Round to the nearest byte, matching the pure interpreter's
+          -- 'round' (Language.Value.Evaluator) -- 'fptoui' alone
+          -- truncates toward zero instead, which previously made the
+          -- LLVM and pure backends render RGB literals differently.
+          rr <- fmul r (C.double 255.0) >>= (`fadd` C.double 0.5)
+          gg <- fmul g (C.double 255.0) >>= (`fadd` C.double 0.5)
+          bb <- fmul b (C.double 255.0) >>= (`fadd` C.double 0.5)
           ColorOp <$> fptoui rr AST.i8 <*> fptoui gg AST.i8 <*> fptoui bb AST.i8
 
       InvertRGB c -> c >>= \case

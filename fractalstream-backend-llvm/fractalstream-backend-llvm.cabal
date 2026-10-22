@@ -85,5 +85,4 @@ test-suite spec
                     , fractalstream-core
                     , fractalstream-backend-llvm
                     , hspec
-                    , raw-strings-qq
   build-tool-depends: hspec-discover:hspec-discover == 2.*

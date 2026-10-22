@@ -5,7 +5,7 @@ module Backend.LLVM
   , type LLVMJit
   , invoke
   , invoke'
-  -- , withCompiledCode
+  , withCompiledCode
   , withJIT
   , withJittedViewer
   , llvmToolRunner
@@ -43,6 +43,7 @@ import Language.Value
 import Language.Value.Evaluator (HaskellValue)
 import Language.Value.Transform
 import Language.Code
+import Language.Code.Parser (parseCode, noSplices, ppFullError)
 import Language.Code.InterpretIO (interpretToIOWithLastValues, ScalarIORefM)
 import Language.Draw
 import Actor.Viewer
@@ -543,52 +544,54 @@ llvmToolRunner :: LLVMJit -> ToolRunner
 llvmToolRunner jit = ToolRunner $ \sink layer ctx handlers ->
   buildHandlerWith (compiledToolExec jit (sink layer)) ctx handlers
 
-{-
--- This is only used in tests
-withCompiledCode :: forall env
-                  . ( KnownEnvironment env
-                    , Required "x" env ~ 'RealT
-                    , NotPresent "x" (env `Without` "x")
-                    , Required "y" env ~ 'RealT
-                    , NotPresent "y" (env `Without` "y")
-                    , Required "color" env ~ 'ColorT
-                    , NotPresent "color" (env `Without` "color")
-                    , NotPresent "#blockSize" env
-                    , NotPresent "#subsamples" env
-                    , NotPresent "#dz" env
-                    )
-                 => EnvironmentProxy env
-                 -> String
-                 -> ((Ptr Word8 -> Int32 -> Int32 -> Ptr Double -> Int32 -> Double -> Double -> Double -> IO ()) -> IO ())
-                 -> IO ()
-withCompiledCode env code run = do
-  c <- case parseCode env Map.empty code of
-         Left e  -> error (ppFullError e code)
-         Right c -> pure c
-  m <- either error pure (compileRenderer c)
+-- | Compile a closed script to a 'JITFun' and hand it to the given
+-- continuation -- generic over the input environment and a single
+-- @output@ binding the script writes its result to (so the same env also
+-- has to declare that binding; see 'compile'). Only used by tests: real
+-- rendering\/tool-handler code has its own, more specialized compilation
+-- entry points ('compileRenderer''\/'compileToolHandler') with their own
+-- calling conventions (block\/subsample loops, draw callbacks, a
+-- caller-supplied arena), which this deliberately doesn't reproduce.
+withCompiledCode :: forall env output t a
+                   . ( KnownEnvironment env, KnownSymbol output, KnownType t
+                     , Required output env ~ t
+                     )
+                  => Proxy output
+                  -> TypeProxy t
+                  -> EnvironmentProxy env
+                  -> String
+                  -> (JITFun env t -> IO a)
+                  -> IO a
+withCompiledCode outputProxy outputTy env src run = do
+  code0 <- case parseCode env noSplices src of
+    Left (Left parseErr) -> error (ppFullError parseErr src)
+    Left (Right tcErr)   -> error (ppFullError tcErr src)
+    Right c               -> pure c
+  -- Same pre-pass 'compiledToolExec'/'compileRenderer'' apply: constant-
+  -- exponent powers (e.g. z^2) must become multiplications rather than
+  -- the generic complex power (exp(n*log(z))), which is NaN at z=0 --
+  -- exactly the z=0 starting point a Mandelbrot-style iteration uses.
+  let code = transformValues (integerPowers . avoidSqrt) code0
+  m <- either error pure (compile outputProxy outputTy code)
   loadLibraryPermanently Nothing
   withContext $ \ctx ->
     withModuleFromAST ctx m $ \md -> do
       let pm = defaultCuratedPassSetSpec
-      withPassManager pm (`runPassManager` md)
-      asm' <- BS.unpack <$> moduleLLVMAssembly md
-      putStrLn asm'
+      _ <- withPassManager pm (`runPassManager` md)
 
       withHostTargetMachine' $ \tm -> do
         withExecutionSession $ \session -> do
           withClonedThreadSafeModule md $ \tsm -> do
-            let dylibName = "kernel_dylib"
+            let dylibName = "test_kernel_dylib"
             dylib <- createJITDylib session dylibName
-            linker <- createRTDyldObjectLinkingLayer session --resolve
+            linker <- createRTDyldObjectLinkingLayer session
             compileLayer <- createIRCompileLayer session linker tm
             addDynamicLibrarySearchGeneratorForCurrentProcess compileLayer dylib
             addModule tsm dylib compileLayer
             lookupSymbol session compileLayer dylib "kernel" >>= \case
               Left err -> error ("error JITing kernel: " ++ show err)
-              Right (JITSymbol kernelFn _) -> do
-                let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
-                run (mkJX fn)
--}
+              Right (JITSymbol kernelFn _) ->
+                run (JITFun env outputTy (castPtrToFunPtr (wordPtrToPtr kernelFn)))
 
 -- | 1 MB arena per worker, reset per subsample inside the kernel.
 arenaCapacity :: Int
