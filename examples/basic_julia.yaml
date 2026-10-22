@@ -51,3 +51,21 @@ configuration:
         value: 0.5
         type: R
         variable: p
+
+scenarios:
+
+  - name: simple
+    commands: |
+      capture viewer "Julia set" to "julia.png"
+
+  - name: circle
+    commands: |
+      set parameter C to 0
+      capture viewer "Julia set" to "circle.png"
+
+  - name: trace
+    commands: |
+      select viewer "Julia set"
+      select tool "Trace"
+      click at (-0.5, 0.5)
+      capture viewer "Julia set" to "trace.png"

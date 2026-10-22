@@ -18,8 +18,18 @@ configuration and the viewport, and capturing or asserting on what got
 rendered -- taken either from a standalone commands file (@--commands@)
 or from one of the project file's own top-level @scenarios:@ entries, by
 name (@--scenario@).
+
+Every failure path reports via 'dieWith': printed to /stderr/ (not
+stdout, where every success message goes) and a non-zero exit code --
+deliberately, since the alternative bit us once already (see commit
+history): errors and ordinary output interleaved on the same stream,
+with ordinary output's buffering not necessarily flushed before
+'exitFailure' tears the process down, can mean an error that was
+genuinely printed is never actually seen.
 -}
 module Main where
+
+import FractalStream.Prelude
 
 import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble)
 import Actor.UI (UI(..))
@@ -28,11 +38,12 @@ import Data.DynamicValue (getDynamic)
 import Backend (withBackend)
 import Scenario (parseScenario)
 import Interpreter (runScenario)
+import Language.Parser.SourceRange (Indicated(..))
 
 import Data.IORef
-import Control.Monad (when)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
+import System.IO (hPutStrLn, stderr)
 
 data Mode
   = Snapshot { snapshotViewer :: String, snapshotOutput :: FilePath }
@@ -47,12 +58,19 @@ usage = unlines
   , "  fractalstream-headless <project.yaml> --scenario <name>"
   ]
 
+-- | Report a failure on stderr and exit non-zero. Every error path in
+-- this module goes through this (not a bare @putStrLn@), so errors are
+-- never competing with ordinary output on the same stream -- see the
+-- module header.
+dieWith :: String -> IO a
+dieWith msg = hPutStrLn stderr msg >> exitFailure
+
 main :: IO ()
 main = getArgs >>= \case
   (projectFile : rest) -> case parseMode rest of
     Right mode -> run projectFile mode
-    Left err   -> putStrLn err >> putStr usage >> exitFailure
-  [] -> putStr usage >> exitFailure
+    Left err   -> dieWith (err ++ "\n" ++ usage)
+  [] -> dieWith usage
 
 -- | Parse the flags following the project file into a 'Mode'. Hand-rolled
 -- rather than pulling in an argument-parsing library, since there are
@@ -89,9 +107,7 @@ parseFlags = \case
 run :: FilePath -> Mode -> IO ()
 run projectFile mode = withBackend $ \backend ->
   parseEnsembleFromFile projectFile >>= \case
-    Left err -> do
-      putStrLn ("Could not load " ++ projectFile ++ ": " ++ err)
-      exitFailure
+    Left err -> dieWith ("Could not load " ++ projectFile ++ ": " ++ err)
     Right ensemble -> case mode of
       Snapshot viewerName outputFile -> runSnapshot backend ensemble viewerName outputFile
       RunCommandsFile path           -> runCommandsFile backend ensemble path
@@ -100,25 +116,30 @@ run projectFile mode = withBackend $ \backend ->
 runSnapshot :: Backend -> Ensemble -> String -> FilePath -> IO ()
 runSnapshot backend ensemble viewerName outputFile = do
   -- 'runEnsemble' calls 'makeViewer' once per viewer declared in the
-  -- project; track whether one of them had the requested title (and
-  -- what titles we did see, for a useful error message if not).
-  found <- newIORef False
+  -- project; track whether one of them had the requested title, and
+  -- (separately) whether rendering it then actually succeeded, for a
+  -- useful error message either way.
+  found  <- newIORef False
+  result <- newIORef Nothing
   seenTitles <- newIORef []
-  runEnsemble backend (snapshotUI viewerName outputFile found seenTitles) ensemble
+  runEnsemble backend (snapshotUI viewerName outputFile found result seenTitles) ensemble
   readIORef found >>= \case
-    True  -> pure ()
     False -> do
       titles <- reverse <$> readIORef seenTitles
-      putStrLn ("No viewer named " ++ show viewerName ++ ".")
-      putStrLn ("Viewers in this project: " ++ show titles)
-      exitFailure
+      dieWith ("No viewer named " ++ show viewerName ++ ".\n" ++
+               "Viewers in this project: " ++ show titles)
+    True -> readIORef result >>= \case
+      Just (Just err) -> dieWith ("Error rendering viewer: " ++ err)
+      _                -> putStrLn ("Wrote " ++ outputFile)
 
 -- | The snapshot-mode 'UI': every callback other than @makeViewer@ is a
 -- no-op (there's no setup screen or configuration window to show), and
--- @makeViewer@ renders exactly the one viewer whose title matches, via
--- 'renderViewer'.
-snapshotUI :: String -> FilePath -> IORef Bool -> IORef [String] -> UI
-snapshotUI viewerName outputFile found seenTitles = UI
+-- @makeViewer@ renders exactly the one viewer whose title matches,
+-- recording whether that succeeded into @result@ rather than deciding
+-- here whether that's a fatal error -- 'runSnapshot' does that once
+-- 'runEnsemble' has returned.
+snapshotUI :: String -> FilePath -> IORef Bool -> IORef (Maybe (Maybe String)) -> IORef [String] -> UI
+snapshotUI viewerName outputFile found result seenTitles = UI
   { newEnsemble = pure ()
   , runSetup    = \_ _ _ proceed -> proceed
   , makeLayout  = \_ _ _ -> pure (pure ())
@@ -127,23 +148,21 @@ snapshotUI viewerName outputFile found seenTitles = UI
       modifyIORef' seenTitles (title :)
       when (title == viewerName) $ do
         writeIORef found True
-        renderViewer viewer outputFile
+        err <- renderViewer viewer outputFile
+        writeIORef result (Just err)
       pure (pure ())
   }
 
--- | Render a viewer's current state to @outputFile@.
+-- | Render a viewer's current state to @outputFile@, returning an error
+-- message if that failed.
 --
--- This is just 'snapshotToFile': the base per-pixel script, downsampled
--- for antialiasing, with no tool-drawn annotations -- snapshot mode never
--- selects a tool or injects any events, so there's never anything in
--- 'Actor.Viewer.vDrawCmds' to composite. A scenario's own @capture@
--- command is what reaches 'Actor.Viewer.Overlay.compositeDrawLayersToFile'
--- (see "Interpreter").
-renderViewer :: Viewer -> FilePath -> IO ()
-renderViewer viewer outputFile =
-  snapshotToFile viewer True outputFile >>= \case
-    Nothing  -> putStrLn ("Wrote " ++ outputFile)
-    Just err -> putStrLn ("Error rendering viewer: " ++ err)
+-- This is the base per-pixel script, downsampled for antialiasing, with
+-- no tool-drawn annotations -- snapshot mode never selects a tool or
+-- injects any events, so there's never anything in 'Actor.Viewer.vDrawCmds'
+-- to composite. A scenario's own @capture@ command is what reaches
+-- 'Actor.Viewer.Overlay.compositeDrawLayersToFile' (see "Interpreter").
+renderViewer :: Viewer -> FilePath -> IO (Maybe String)
+renderViewer viewer outputFile = snapshotToFile viewer True outputFile
 
 -- | Parse a standalone commands file and run it against the already-loaded
 -- project.
@@ -160,10 +179,8 @@ runNamedScenario backend ensemble name = do
   scenarios <- getDynamic (ensembleScenarios ensemble)
   named <- mapM (\ns -> (, ns) <$> getDynamic (nsName ns)) scenarios
   case lookup name named of
-    Nothing -> do
-      putStrLn ("No scenario named " ++ show name ++ ".")
-      putStrLn ("Scenarios in this project: " ++ show (map fst named))
-      exitFailure
+    Nothing -> dieWith ("No scenario named " ++ show name ++ ".\n" ++
+                         "Scenarios in this project: " ++ show (map fst named))
     Just ns -> do
       src <- getDynamic (nsCommands ns)
       runCommandsText backend ensemble ("scenario " ++ show name) src
@@ -174,11 +191,10 @@ runNamedScenario backend ensemble name = do
 -- (@label@ is just used in the messages, to say which).
 runCommandsText :: Backend -> Ensemble -> String -> String -> IO ()
 runCommandsText backend ensemble label src = case parseScenario src of
-  Left (_, err) -> do
-    putStrLn ("Could not parse " ++ label ++ ": " ++ err)
-    exitFailure
+  Left (sr, err) -> dieWith $
+    "Could not parse " ++ label ++ ":\n" ++
+    unlines (pp (Indicated sr src)) ++
+    err
   Right cmds -> runScenario backend ensemble cmds >>= \case
-    Left err -> do
-      putStrLn ("Scenario failed: " ++ err)
-      exitFailure
+    Left err -> dieWith ("Scenario failed: " ++ err)
     Right () -> putStrLn (label ++ ": all " ++ show (length cmds) ++ " command(s) succeeded.")

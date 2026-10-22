@@ -202,6 +202,20 @@ names, if any, are available); a standalone commands file
 (`--commands`) remains the way to run a one-off sequence that isn't
 part of the project at all.
 
+**`commands:` must use the `|` block-literal marker**, as above --
+never a bare `commands:` followed by indented lines. Without `|`, YAML
+folds a multi-line plain scalar onto one line (newlines become
+spaces), silently merging every command in the scenario into a single
+line of tokens. Depending on what's in it, the scenario language's
+value-expression grammar can sometimes still parse that merged line as
+one syntactically valid (but nonsensical) command -- e.g. `set
+parameter C to 0` followed by a folded-in `capture viewer ...` has
+been observed to parse as one `set parameter` command whose value
+expression swallows the rest, running "successfully" while silently
+never executing the capture at all. This is worse than it sounds: the
+scenario reports success and gives no indication anything is wrong.
+Always use `|`.
+
 The project-file-level `scenarios:` field is parsed by
 `fractalstream-core` (`Actor.Ensemble.NamedScenario`) as raw text --
 the scenario language's own parser lives in
