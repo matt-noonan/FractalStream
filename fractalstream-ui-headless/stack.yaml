@@ -3,4 +3,25 @@ resolver: lts-24.12
 packages:
 - .
 - ../fractalstream-core
-- ../fractalstream-backend-pure
+- ../fractalstream-backend-llvm
+
+extra-deps:
+
+- git: https://github.com/matt-noonan/llvm-hs.git
+  commit: 46fbe902a83a4198f296e2062c767b34ecc6be65
+  subdirs:
+    - llvm-hs
+    - llvm-hs-pure
+
+- git: https://github.com/mgrabmueller/disassembler
+  commit: 15a15db1fba50fd0ce52f26f43550fbad5529bf8
+
+flags:
+  llvm-hs:
+    shared-llvm: false
+
+ghc-options:
+  llvm-hs:
+    -optcxx=-std=c++17
+
+allow-newer: true
