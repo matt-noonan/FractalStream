@@ -1,13 +1,4 @@
-viewer:
-  title: Douady rabbit
-  style: complex-plane
-  size: 400x425
-  resizable: true
-  z-coord: z
-  initial-center: "0"
-  iteration-limit: "100"
-  escape-radius: "10"
-  initial-pixel-size: 1/128
-  code: |
-    iterate z ⟼ z² + -0.12256 + 0.74486 𝑖 until z escapes
-    color ⭠ if z escaped then white else black
+script: |
+  @viewer "Douady rabbit" var=z size="400x425"
+  iterate z ⟼ z² + -0.12256 + 0.74486 𝑖 until z escapes
+  color ⭠ if z escaped then white else black

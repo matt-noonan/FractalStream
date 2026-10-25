@@ -1,40 +1,25 @@
-viewer:
-  title: Monsieur Mathieu
-  style: complex-plane
-  size: 512x512
-  resizable: true
-  z-coord: z
-  vanishing-radius: tol
-  initial-center: 0
-  initial-pixel-size: 1/128
-  code: |
-    a : C <- (107 + 7*sqrt(11)*i)/486
-    b : C <- -13*a/567 + 5/1701
-    d : C <- 23*a/7 + 256 / 567
-    # e is reserved for the constant in FractalStream
-    ee : C <- -1573*a/567 + 605 / 1701
-    f : C <- -17/9
-    k : C <- -16192*a/301327047 + 10880/903981141
+script: |
+  @config "Configuration"
+  tol : R as "Tolerance" <- 0.01
 
-    z <- (z^3 - z^2 + a*z + b)^3 * (z^3 + f*z^2 + d*z + ee) / (k*z)
+  @viewer "Monsieur Mathieu" var=z size="512x512" vanish="tol"
+  a : C <- (107 + 7*sqrt(11)*i)/486
+  b : C <- -13*a/567 + 5/1701
+  d : C <- 23*a/7 + 256 / 567
+  # e is reserved for the constant in FractalStream
+  ee : C <- -1573*a/567 + 605 / 1701
+  f : C <- -17/9
+  k : C <- -16192*a/301327047 + 10880/903981141
 
-    if z = tol:
-      color <- blue
-    else if z = 1:
-      color <- red
-    else if (im z) vanishes and re z > 0 and re z < 1:
-      color <- green
-    else if im z > 0:
-      color <- white
-    else:
-      color <- black
+  z <- (z^3 - z^2 + a*z + b)^3 * (z^3 + f*z^2 + d*z + ee) / (k*z)
 
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "Tolerance"
-        value: "0.01"
-        type: R
-        variable: tol
+  if z = tol:
+    color <- blue
+  else if z = 1:
+    color <- red
+  else if (im z) vanishes and re z > 0 and re z < 1:
+    color <- green
+  else if im z > 0:
+    color <- white
+  else:
+    color <- black

@@ -1,15 +1,8 @@
-viewer:
-  title: Circle
-  style: complex-plane
-  size: 512x512
-  resizable: true
-  z-coord: z
-  initial-center: 0
-  initial-pixel-size: 1/128
-  code: |
-      if |z| < 1:
-        color <- red
-      else if im z > 0:
-        color <- green
-      else:
-        color <- blue
+script: |
+  @viewer "Circle" var=z size="512x512"
+  if |z| < 1:
+    color <- red
+  else if im z > 0:
+    color <- green
+  else:
+    color <- blue

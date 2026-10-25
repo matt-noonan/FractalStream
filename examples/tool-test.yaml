@@ -1,34 +1,14 @@
-viewer:
-  style: complex-plane
-  title: Test
-  size: 512x512
-  resizable: true
-  z-coord: z
-  initial-center: 0
-  initial-pixel-size: 1/128
-  pixel-size: px
-  code: |
-    color <- if |z| < 1 then blue else red
+script: |
+  @config "Test"
+  point : C as "test" <- 0
+  pixelSize : R as "test2" <- 0
 
-  tools:
-    - name: Clicky
-      script: |
-        on click-or-drag:
-          point <- z
+  @viewer "Test" var=z size="512x512" pixelVar=px
+  color <- if |z| < 1 then blue else red
 
-        on activated:
-          pixelSize <- px
-configuration:
-  title: Test
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "test"
-        value: "0"
-        type: C
-        variable: point
-    - text-entry:
-        label: "test2"
-        value: "0"
-        type: R
-        variable: pixelSize
+  @tool "Clicky"
+  on click-or-drag:
+    point <- z
+
+  on activated:
+    pixelSize <- px

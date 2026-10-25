@@ -1,0 +1,75 @@
+script: |
+  @config "Configuration"
+  a : C as "a = " <- 0.3
+  c : C as "c = " <- 0.6 + 0.2i
+  zoom : R as "zoom = " <- 0.001
+  max_iters : Z as "Max. iterations:" <- 100
+  escape_radius : R as "Escape radius:" <- 10
+
+  @viewer "a-plane" var=a size="512x512" limit="max_iters" escape="escape_radius"
+  z : C <- 0
+  aa : C <- (a + 1) / 2
+  disc : C <- aa^2 - c
+  p : C <- sqrt(disc) + aa
+  disc <- p^2 - a
+  lambda : C <- sqrt(disc) + p
+  save : C <- z * zoom
+  x : C <- p + lambda * save
+  y : C <- p + save
+
+  repeat:
+    t : C <- x
+    x <- x^2 + c - a y
+    y <- t
+  until x escapes
+  if x escaped:
+    color <- cycle (iterations / 10, blue, white)
+  else:
+    color <- black
+
+  @viewer "c-plane" var=c size="512x512" limit="max_iters" escape="escape_radius"
+  z : C <- 0
+  aa : C <- (a + 1) / 2
+  disc : C <- aa^2 - c
+  p : C <- sqrt(disc) + aa
+  disc <- p^2 - a
+  lambda : C <- sqrt(disc) + p
+  save : C <- z * zoom
+  x : C <- p + lambda * save
+  y : C <- p + save
+
+  repeat:
+    t : C <- x
+    x <- x^2 + c - a y
+    y <- t
+  until x escapes
+
+  if x escaped:
+    color <- cycle (iterations / 10, blue, white)
+  else:
+    color <- black
+
+  @viewer "Hénon dynamics" var=z size="512x512" limit="max_iters" escape="escape_radius"
+  aa : C <- (a + 1) / 2
+  disc : C <- aa^2 - c
+  p : C <- sqrt(disc) + aa
+  disc <- p^2 - a
+  lambda : C <- sqrt(disc) + p
+  save : C <- z * zoom
+  x : C <- p + lambda * save
+  y : C <- p + save
+
+  repeat:
+    t : C <- x
+    x <- x^2 + c - a y
+    y <- t
+  until x escapes
+
+  if x escaped:
+    color <- rainbow (iterations / 10)
+  else:
+    color <- black
+
+  @tool "Select saddle" for="Hénon dynamics" shortcut="s"
+  on click-or-drag:
+    pass

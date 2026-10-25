@@ -1,49 +1,24 @@
-configuration:
-  size: 400x300
-  title: Settings
-  vertical-contents:
-  - panel:
-      title: Standard settings
-      vertical-contents:
-      - text-entry:
-          label: Iteration limit
-          type: ℤ
-          value: '100'
-          variable: max_iters
-      - text-entry:
-          label: Escape radius
-          type: ℝ
-          value: '10'
-          variable: max_radius
-      - text-entry:
-          label: Vanishing radius
-          type: ℝ
-          value: '0.0001'
-          variable: min_radius
-viewer:
-  code: |
-    p : C <- z
-    x : C <- z + 1
-    y : C <- z (z+1)^2 + 1
+script: |
+  @config "Standard settings"
+  max_iters : Z as "Iteration limit" <- 100
+  max_radius : R as "Escape radius" <- 10
+  min_radius : R as "Vanishing radius" <- 0.0001
 
-    repeat:
-        x <- (y^2 - 1)/y^2
-        y <- (y^2 - x^2) / y^2
-    until x = 0 and y = 1
-    saved_count : Z <- iterations
+  @viewer "Sarah thing" var=z size="600x600" limit="max_iters" escape="max_radius" vanish="min_radius"
+  p : C <- z
+  x : C <- z + 1
+  y : C <- z (z+1)^2 + 1
 
-    z <- 0
-    iterate z -> p z^2 + 1 until z escapes
+  repeat:
+      x <- (y^2 - 1)/y^2
+      y <- (y^2 - x^2) / y^2
+  until x = 0 and y = 1
+  saved_count : Z <- iterations
 
-    if z escapes:
-        color <- cycle(saved_count / 20, dark red, light red)
-    else:
-        color <- cycle(saved_count / 20, dark green, light green)
-  escape-radius: max_radius
-  initial-center: '0.0'
-  initial-pixel-size: 1/128
-  iteration-limit: max_iters
-  size: 600x600
-  title: Sarah thing
-  vanishing-radius: min_radius
-  z-coord: z
+  z <- 0
+  iterate z -> p z^2 + 1 until z escapes
+
+  if z escapes:
+      color <- cycle(saved_count / 20, dark red, light red)
+  else:
+      color <- cycle(saved_count / 20, dark green, light green)

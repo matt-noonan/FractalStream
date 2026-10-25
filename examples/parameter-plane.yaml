@@ -1,100 +1,46 @@
-viewers:
-  - title: Parameter plane
-    style: complex-plane
-    size: 512x512
-    resizable: true
-    z-coord: C
-    iteration-limit: maxIters
-    escape-radius: maxRadius
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      z : C <- 0
-      iterate z -> «f» until «stop»
+script: |
+  @setup "Parametric complex dynamics"
+  f : C as "Iterate f(z) = " using z:C, C:C <- z^2 + C
+  stop : Boolean as "until" using z:C, C:C, maxRadius:R <- |z| > maxRadius
 
-      if «stop»:
-        c1 : Color <- if im(z) > 0 then blue else yellow
-        c2 : Color <- if im(z) > 0 then green else red
-        s : R <- iterations + 1 - (log (log (|z|^2 / 2))) / log 2
-        s <- cos (s pi / 10)^2
-        color <- blend (s, c1, c2)
-      else:
-        color <- black
+  @config "Configuration"
+  C : C as "Selected value of C:" <- -0.1226 + 0.7449i
+  maxIters : Z as "Max. iterations: " <- 100
+  maxRadius : R as "Max. radius: " <- 10
 
-  - title: Dynamical plane
-    style: complex-plane
-    size: 512x512
-    resizable: true
-    z-coord: z
-    iteration-limit: maxIters
-    escape-radius: maxRadius
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      iterate z -> «f» until «stop»
+  @viewer "Parameter plane" var=C size="512x512" limit="maxIters" escape="maxRadius" center="0" pixelSize="1/128"
+  z : C <- 0
+  iterate z -> «f» until «stop»
 
-      if «stop»:
-        c1 : Color <- if im(z) > 0 then blue else yellow
-        c2 : Color <- if im(z) > 0 then green else red
-        s : R <- iterations + 1 - (log (log (|z|^2 / 2))) / log 2
-        s <- cos (s pi / 10)^2
-        color <- blend (s, c1, c2)
-      else:
-        color <- black
+  if «stop»:
+    c1 : Color <- if im(z) > 0 then blue else yellow
+    c2 : Color <- if im(z) > 0 then green else red
+    s : R <- iterations + 1 - (log (log (|z|^2 / 2))) / log 2
+    s <- cos (s pi / 10)^2
+    color <- blend (s, c1, c2)
+  else:
+    color <- black
 
-    tools:
-      - name: Trace
-        shortcut: t
-        script: |
-          on deactivated:
-            erase
+  @viewer "Dynamical plane" var=z size="512x512" limit="maxIters" escape="maxRadius" center="0" pixelSize="1/128"
+  iterate z -> «f» until «stop»
 
-          on click-or-drag:
-            prevZ : C <- z
-            erase
-            until «stop»:
-              prevZ <- z
-              draw point at z
-              z <- «f»
-              draw line from z to prevZ
-setup:
-  title: Parametric complex dynamics
-  size: 200x200
-  vertical-contents:
-    - text-entry:
-        label: "Iterate f(z) = "
-        value: "z^2 + C"
-        type: C
-        environment:
-          z: C
-          C: C
-        variable: f
-    - text-entry:
-        label: "until"
-        value: "|z| > maxRadius"
-        environment:
-          z: C
-          C: C
-          maxRadius: R
-        type: Boolean
-        variable: stop
+  if «stop»:
+    c1 : Color <- if im(z) > 0 then blue else yellow
+    c2 : Color <- if im(z) > 0 then green else red
+    s : R <- iterations + 1 - (log (log (|z|^2 / 2))) / log 2
+    s <- cos (s pi / 10)^2
+    color <- blend (s, c1, c2)
+  else:
+    color <- black
 
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "Selected value of C:"
-        value: -0.1226 + 0.7449i
-        type: C
-        variable: C
-    - text-entry:
-        label: "Max. iterations: "
-        value: "100"
-        type: Z
-        variable: maxIters
-    - text-entry:
-        label: "Max. radius: "
-        value: 10
-        type: R
-        variable: maxRadius
+  @tool "Trace" for="Dynamical plane" shortcut="t"
+  on deactivated:
+    erase
+  on click-or-drag:
+    prevZ : C <- z
+    erase
+    until «stop»:
+      prevZ <- z
+      draw point at z
+      z <- «f»
+      draw line from z to prevZ

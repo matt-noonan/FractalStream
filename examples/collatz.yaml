@@ -1,65 +1,34 @@
-viewer:
-  title: Collatz sequence
-  style: complex-plane
-  size: 512x512
-  resizable: true
-  z-coord: z
-  iteration-limit: max_iters
-  escape-radius: escape_radius
-  initial-center: 0
-  initial-pixel-size: 1/128
-  code: |
-    iterate z -> (z/2) (cos (pi z / 2))^2 + (3z + C) (sin (pi z / 2))^2 until z = 1 or z = 0 or z = -1 or z = -5 or z = -17 or z escapes
-    color <- black
-    if z = 1:
-      color <- red
-    else if z = 0:
-      color <- yellow
-    else if z = -1:
-      color <- green
-    else if z = -5:
-      color <- blue
-    else if z = -17:
-      color <- purple
-    else if z escapes:
-      color <- grey
-    if not stuck:
-      color <- cycle(iterations/20, light color, dark color)
+script: |
+  @config "Configuration"
+  C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
+  max_iters : Z as "Max. iterations:" <- 100
+  escape_radius : R as "Escape radius:" <- 100
+  p : R as "Brightness: " <- 0.5
 
+  @viewer "Collatz sequence" var=z size="512x512" limit="max_iters" escape="escape_radius"
+  iterate z -> (z/2) (cos (pi z / 2))^2 + (3z + C) (sin (pi z / 2))^2 until z = 1 or z = 0 or z = -1 or z = -5 or z = -17 or z escapes
+  color <- black
+  if z = 1:
+    color <- red
+  else if z = 0:
+    color <- yellow
+  else if z = -1:
+    color <- green
+  else if z = -5:
+    color <- blue
+  else if z = -17:
+    color <- purple
+  else if z escapes:
+    color <- grey
+  if not stuck:
+    color <- cycle(iterations/20, light color, dark color)
 
-  tools:
-    - name: Trace
-      shortcut: t
-      script: |
-        on click-or-drag:
-          prevZ : C <- z
-          erase
-          until z vanishes:
-            prevZ <- z
-            draw point at z
-            z <- (z/2) (cos (pi z / 2))^2 + (3z + 1) (sin (pi z / 2))^2
-            draw line from z to prevZ
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "f(z) = z^2 +"
-        value: "-0.11 + 0.78i"
-        type: C
-        variable: C
-    - text-entry:
-        label: "Max. iterations:"
-        value: "100"
-        type: Z
-        variable: max_iters
-    - text-entry:
-        label: "Escape radius:"
-        value: 100
-        type: R
-        variable: escape_radius
-    - text-entry:
-        label: "Brightness: "
-        value: 0.5
-        type: R
-        variable: p
+  @tool "Trace" for="Collatz sequence" shortcut="t"
+  on click-or-drag:
+    prevZ : C <- z
+    erase
+    until z vanishes:
+      prevZ <- z
+      draw point at z
+      z <- (z/2) (cos (pi z / 2))^2 + (3z + 1) (sin (pi z / 2))^2
+      draw line from z to prevZ

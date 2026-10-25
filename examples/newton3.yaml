@@ -1,128 +1,83 @@
-viewer:
-  style: complex-plane
-  title: Roots of {f}
-  size: 512x512
-  resizable: true
-  z-coord: z
-  iteration-limit: maxIters
-  vanishing-radius: tol
-  pixel-size: px
-  initial-center: 0
-  initial-pixel-size: 1/128
-  code: |
+script: |
+  @config "Roots"
+  a : C as "a =" <- 1
+  b : C as "b =" <- e^(2 pi i / 3)
+  c : C as "c =" <- e^(-2 pi i / 3)
+
+  @config "Newton's method configuration"
+  tol : R as "closeness" <- 0.01
+  rad : R as "grab radius (px)" <- 5
+  maxIters : Z as "Max. iterations: " <- 100
+  drag_target : Z as "Drag target: " <- 0
+
+  @viewer "Roots of {f}" var=z size="512x512" limit="maxIters" vanish="tol" pixelVar=px
+  lastZ : C <- 0
+  repeat:
+    lastZ <- z
+    z <- z - (z - a) (z - b) (z - c) / diff(z, (z - a) (z - b) (z - c))
+  while z != lastZ
+
+  col : Color <- yellow
+  if z = a:
+    col <- red
+  else if z = b:
+    col <- green
+  else if z = c:
+    col <- blue
+  if z = lastZ:
+    color <- blend ((cos (iterations pi / 10))^2, dark col, light col)
+  else:
+    color <- black
+
+  @tool "Trace" shortcut="t"
+  on deactivated:
+    erase
+
+  on click-or-drag:
     lastZ : C <- 0
+    erase
     repeat:
       lastZ <- z
       z <- z - (z - a) (z - b) (z - c) / diff(z, (z - a) (z - b) (z - c))
+      draw point at lastZ
+      draw line from lastZ to z
     while z != lastZ
 
-    col : Color <- yellow
-    if z = a:
-      col <- red
-    else if z = b:
-      col <- green
-    else if z = c:
-      col <- blue
-    if z = lastZ:
-      color <- blend ((cos (iterations pi / 10))^2, dark col, light col)
-    else:
-      color <- black
+    draw point at z
 
-  tools:
-    - name: Trace
-      shortcut: t
-      script: |
-        on deactivated:
-          erase
+  @tool "Move roots" shortcut="m"
+  on activated:
+    draw point at a
+    draw point at b
+    draw point at c
 
-        on click-or-drag:
-          lastZ : C <- 0
-          erase
-          repeat:
-            lastZ <- z
-            z <- z - (z - a) (z - b) (z - c) / diff(z, (z - a) (z - b) (z - c))
-            draw point at lastZ
-            draw line from lastZ to z
-          while z != lastZ
+  on deactivated:
+    erase
 
-          draw point at z
-    - name: Move roots
-      shortcut: m
-      script: |
-        on activated:
-          draw point at a
-          draw point at b
-          draw point at c
+  on drag from z0 to z:
+    if drag_target = 0:
+      if |z0 - a| < rad px:
+        drag_target <- 1
+      else if |z0 - b| < rad px:
+        drag_target <- 2
+      else if |z0 - c| < rad px:
+        drag_target <- 3
+    else if drag_target = 1:
+      a <- z
+    else if drag_target = 2:
+      b <- z
+    else if drag_target = 3:
+      c <- z
+    erase
+    draw point at a
+    draw point at b
+    draw point at c
 
-        on deactivated:
-          erase
+  on refresh:
+    erase
+    draw point at a
+    draw point at b
+    draw point at c
 
-        on drag from z0 to z:
-          if drag_target = 0:
-            if |z0 - a| < rad px:
-              drag_target <- 1
-            else if |z0 - b| < rad px:
-              drag_target <- 2
-            else if |z0 - c| < rad px:
-              drag_target <- 3
-          else if drag_target = 1:
-            a <- z
-          else if drag_target = 2:
-            b <- z
-          else if drag_target = 3:
-            c <- z
-          erase
-          draw point at a
-          draw point at b
-          draw point at c
-
-        on refresh:
-          erase
-          draw point at a
-          draw point at b
-          draw point at c
-
-        on drag-finished:
-          drag_target <- 0
-configuration:
-  title: Newton's method configuration
-  size: 400x200
-  vertical-contents:
-    - panel:
-        title: "Roots"
-        vertical-contents:
-          - text-entry:
-              label: "a ="
-              value: 1
-              type: C
-              variable: a
-          - text-entry:
-              label: "b ="
-              value: e^(2 pi i / 3)
-              type: C
-              variable: b
-          - text-entry:
-              label: "c ="
-              value: e^(-2 pi i / 3)
-              type: C
-              variable: c
-    - text-entry:
-        label: "closeness"
-        value: "0.01"
-        type: R
-        variable: tol
-    - text-entry:
-        label: "grab radius (px)"
-        value: "5"
-        type: R
-        variable: rad
-    - text-entry:
-        label: "Max. iterations: "
-        value: "100"
-        type: Z
-        variable: maxIters
-    - text-entry:
-        label: "Drag target: "
-        value: "0"
-        type: Z
-        variable: drag_target
+  on drag-finished:
+    drag_target <- 0

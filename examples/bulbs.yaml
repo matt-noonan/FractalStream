@@ -1,93 +1,40 @@
-viewer:
-  title: Mandelbrot set
-  style: complex-plane
-  size: 512x512
-  resizable: true
-  z-coord: C
-  escape-radius: escape_radius
-  iteration-limit: max_iters
-  initial-center: "0"
-  initial-pixel-size: "1/128"
-  code: |
+script: |
+  @config "Configuration"
+  max_iters : Z as "Max. iterations:" <- 100
+  escape_radius : R as "Escape radius:" <- 10
+
+  @viewer "Mandelbrot set" var=C size="512x512" limit="max_iters" escape="escape_radius"
+  z : C <- 0
+  iterate z -> z^2 + C until z escapes
+
+  if z escaped:
+    color <- rainbow (iterations / 20)
+  else:
+    color <- black
+
+  @tool "Bulb info" for="Mandelbrot set" shortcut="b"
+  text "Click on points of the Mandelbrot set to find the period of the attracting cycle."
+  text "Points outside of the Mandelbrot set will result in \"X\""
+  text "Cycles exceeding the maximum period will result in \"?\""
+  warmup : Z as "Warmup iterations" <- 10000
+  max_period : Z as "Maximum period" <- 1000
+  tol : R as "Tolerance when checking for cycles" <- 0.0001
+  button "Erase annotations"
+  on button "Erase annotations":
+    erase
+
+  on click:
     z : C <- 0
-    iterate z -> z^2 + C until z escapes
+    iterate z -> z^2 + C until z escapes up to warmup times
 
-    if z escaped:
-      color <- rainbow (iterations / 20)
+    if not (z escaped):
+      target : C <- z
+      repeat up to max_period times:
+        z <- z^2 + C
+      until |z - target| < tol
+      if stuck:
+        write "?" at C
+      else:
+        write iterations at C
     else:
-      color <- black
-
-  tools:
-    - name: Bulb info
-      shortcut: b
-      configuration:
-        title: Bulb period finder
-        size: 400x200
-        vertical-contents:
-          - text: |
-              Click on points of the Mandelbrot set to find the period of the attracting cycle.
-
-              Points outside of the Mandelbrot set will result in "X"
-
-              Cycles exceeding the maximum period will result in "?"
-
-          - panel:
-              title: Settings
-              vertical-contents:
-                - text-entry:
-                    label: "Warmup iterations"
-                    value: "10000"
-                    type: Z
-                    variable: warmup
-                - text-entry:
-                    label: "Maximum period"
-                    value: "1000"
-                    type: Z
-                    variable: max_period
-                - text-entry:
-                    label: "Tolerance when checking for cycles"
-                    value: "0.0001"
-                    type: R
-                    variable: tol
-
-          - button: "Erase annotations"
-
-      script: |
-        on button "Erase annotations":
-          erase
-
-        on click:
-          # Iterate z^2 + C many times so that we end up with
-          # z close to one of the points on the attracting cycle.
-          z : C <- 0
-          iterate z -> z^2 + C until z escapes up to warmup times
-
-          # Now that z is on the attracting cycle (or at least very near it),
-          # count how many times we need to apply z^2 + C until we get
-          # back to z again. Report the result in the `period` variable,
-          # or report 0 if something went wrong.
-          if not (z escaped):
-            target : C <- z
-            repeat up to max_period times:
-              z <- z^2 + C
-            until |z - target| < tol
-            if stuck:
-              write "?" at C
-            else:
-              write iterations at C
-          else:
-            write "X" at C
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "Max. iterations:"
-        value: "100"
-        type: Z
-        variable: max_iters
-    - text-entry:
-        label: "Escape radius:"
-        value: "10"
-        type: R
-        variable: escape_radius
+      write "X" at C

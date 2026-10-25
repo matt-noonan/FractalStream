@@ -1,46 +1,20 @@
-configuration:
-  size: 400x200
-  title: Configuration
-  vertical-contents:
-  - text-entry:
-      label: Iteration limit
-      type: ℤ
-      value: 250
-      variable: max_iters
-  - text-entry:
-      label: Escape radius
-      type: ℝ
-      value: 10
-      variable: R
-  - text-entry:
-      label: Cell width
-      type: ℝ
-      value: 3.5e-2
-      variable: xsize
-  - text-entry:
-      label: Parameter shift
-      type: ℝ
-      value: -5.0e-2
-      variable: shift
-viewer:
-  code: |
-    ysize : ℝ ⭠ 1.66 xsize
+script: |
+  @config "Configuration"
+  max_iters : Z as "Iteration limit" <- 250
+  R : R as "Escape radius" <- 10
+  xsize : R as "Cell width" <- 3.5e-2
+  shift : R as "Parameter shift" <- -5.0e-2
 
-    C : ℂ ⭠ xsize * floor(re w / xsize) + i * ysize * floor(im w / ysize)
-    r : ℂ ⭠ 2 ((w - C) / xsize) - 1 - 1.66 i
-    C ⭠ C + shift
+  @viewer "Mandelbrot set throwback" var=w size="752x546" limit="max_iters" escape="R" center="-0.75" pixelSize="1/220" position="100x99"
+  ysize : R <- 1.66 xsize
 
-    z : ℂ ⭠ 0
-    iterate z ⟼ z² + C until z escapes
+  C : C <- xsize * floor(re w / xsize) + i * ysize * floor(im w / ysize)
+  r : C <- 2 ((w - C) / xsize) - 1 - 1.66 i
+  C <- C + shift
 
-    color ⭠ rgb(0.980, 0.976, 0.965)
-    if stuck and |r|² < (1.5 - cos (6 arg r)) / 3:
-        color ⭠ black
-  escape-radius: R
-  initial-center: -0.75
-  initial-pixel-size: 1/220
-  iteration-limit: max_iters
-  position: 100x99
-  size: 752x546
-  title: Mandelbrot set throwback
-  z-coord: w
+  z : C <- 0
+  iterate z -> z^2 + C until z escapes
+
+  color <- rgb(0.980, 0.976, 0.965)
+  if stuck and |r|^2 < (1.5 - cos (6 arg r)) / 3:
+      color <- black

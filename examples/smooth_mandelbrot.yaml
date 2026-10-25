@@ -1,35 +1,15 @@
-viewer:
-  title: Mandelbrot set with smooth coloring
-  style: complex-plane
-  size: 512x512
-  resizable: true
-  z-coord: C
-  iteration-limit: max_iters
-  escape-radius: escape_radius
-  initial-center: 0
-  initial-pixel-size: 1/128
-  code: |
-      z : ℂ ⭠ 0
-      iterate z ⟼ z² + C until z escapes
+script: |
+  @config "Configuration"
+  max_iters : ℤ as "Max. iterations:" <- 100
+  escape_radius : ℝ as "Escape radius:" <- 10
 
-      if z escaped:
-        # see https://linas.org/art-gallery/escape/ray.html
-        m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log escape_radius)) / log 2
-        color ⭠ blend (2 arctan (m / 20) / pi, red, white)
-      else:
-        color ⭠ black
+  @viewer "Mandelbrot set with smooth coloring" var=C size="512x512" limit="max_iters" escape="escape_radius"
+  z : ℂ ⭠ 0
+  iterate z ⟼ z² + C until z escapes
 
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "Max. iterations:"
-        value: "100"
-        type: ℤ
-        variable: max_iters
-    - text-entry:
-        label: "Escape radius:"
-        value: 10
-        type: ℝ
-        variable: escape_radius
+  if z escaped:
+    # see https://linas.org/art-gallery/escape/ray.html
+    m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log escape_radius)) / log 2
+    color ⭠ blend (2 arctan (m / 20) / pi, red, white)
+  else:
+    color ⭠ black
