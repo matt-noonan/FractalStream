@@ -1,4 +1,4 @@
-{-# language QuasiQuotes #-}
+{-# language QuasiQuotes, OverloadedStrings #-}
 module Actor.EnsembleBuildSpec (spec) where
 
 import Test.Hspec
@@ -9,12 +9,21 @@ import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Layout (Dimensions(..), Layout(..), UIVariable(..))
 import Actor.Configuration (Configuration(..))
 import Actor.Event (runParsedToolScript)
-import Language.Environment (SomeContext(..), Context(EmptyContext), contextToEnv)
+import Language.Environment (SomeContext(..), Context(EmptyContext), EnvironmentProxy(..), contextToEnv)
+import Language.Type (TypeProxy(..))
+import Language.Value (SomeValue(..))
+import Language.Value.Evaluator (evaluateInContext)
 import Data.DynamicValue
 
 import qualified Data.Set as Set
 import Data.List (isInfixOf)
 import Text.RawString.QQ
+
+import qualified Data.Yaml as YAML
+import Data.Aeson (Value(..))
+import qualified Data.Aeson.KeyMap as KM
+import qualified Data.Text as Text
+import qualified Data.Vector as V
 
 build :: String -> IO (Either String Ensemble)
 build src = buildEnsembleFromScript src >>= \case
@@ -244,6 +253,58 @@ maxIters : Z <- 100
               other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
             _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
 
+    it "renders a small Real default as fixed-point text, not scientific notation \
+       \that silently mis-parses via implicit multiplication with e \
+       \(regression: show (0.05 :: Double) == \"5.0e-2\", which re-parses as 5.0 * e - 2)" $
+      shouldBuild [r|
+@config "Configuration"
+x : R <- 0.05
+|] $ \ens -> do
+        mcfg <- getDynamic (ensembleConfiguration ens)
+        case mcfg of
+          Nothing -> expectationFailure "expected a Configuration"
+          Just cfg -> case coContents cfg of
+            Vertical panelsV -> getDynamic panelsV >>= \case
+              [Panel _ bodyV] -> getDynamic bodyV >>= \case
+                Vertical itemsV -> getDynamic itemsV >>= \case
+                  [TextBox _ UIVariable{exprValue}] -> do
+                    initialText <- getDynamic (source exprValue)
+                    initialText `shouldSatisfy` notElem 'e'
+                    getDynamic (dyn exprValue) >>= \case
+                      Left err -> expectationFailure ("expected the initial value to parse, got: " ++ err)
+                      Right (SomeValue EmptyEnvProxy RealType v) ->
+                        evaluateInContext EmptyContext v `shouldBe` 0.05
+                      Right _ -> expectationFailure "expected an empty-environment Real value"
+                  other -> expectationFailure ("unexpected panel body items: " ++ show (length other))
+                _ -> expectationFailure "expected the panel body to be Vertical"
+              other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
+            _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
+
+    it "round-trips a List-typed config field's default value \
+       \(regression: toUserString strips brackets for display, so re-parsing \
+       \needs parseInputValue, which re-adds them, not plain parseValue)" $
+      shouldBuild [r|
+@config "Configuration"
+xs : List of Z <- [1, 2, 3]
+|] $ \ens -> do
+        mcfg <- getDynamic (ensembleConfiguration ens)
+        case mcfg of
+          Nothing -> expectationFailure "expected a Configuration"
+          Just cfg -> case coContents cfg of
+            Vertical panelsV -> getDynamic panelsV >>= \case
+              [Panel _ bodyV] -> getDynamic bodyV >>= \case
+                Vertical itemsV -> getDynamic itemsV >>= \case
+                  [TextBox _ UIVariable{exprValue}] ->
+                    getDynamic (dyn exprValue) >>= \case
+                      Left err -> expectationFailure ("expected the initial value to parse, got: " ++ err)
+                      Right (SomeValue EmptyEnvProxy (ListType IntegerType) v) ->
+                        evaluateInContext EmptyContext v `shouldBe` [1, 2, 3]
+                      Right _ -> expectationFailure "expected an empty-environment List of Integer value"
+                  other -> expectationFailure ("unexpected panel body items: " ++ show (length other))
+                _ -> expectationFailure "expected the panel body to be Vertical"
+              other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
+            _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
+
     it "builds a `using`-clause formula field and splices it into a viewer's code" $
       shouldBuild [r|
 @setup "Setup"
@@ -279,6 +340,45 @@ color <- black
         [viewer] <- getDynamic (ensembleViewers ens)
         title <- getDynamic (cvTitle viewer)
         title `shouldBe` Right "V"
+
+    it "remembers its own source text, for a frontend's save path to write back out" $
+      let src = "@viewer \"V\" var=z size=\"100x100\"\npass\n"
+      in shouldBuild src $ \ens -> do
+           msrc <- getDynamic (ensembleSourceScript ens)
+           msrc `shouldBe` Just src
+
+    it "encodeEnsemble writes a script-built ensemble's text back out verbatim, \
+       \not re-derived through the classic codec" $
+      let src = "@viewer \"V\" var=z size=\"100x100\"\npass\n"
+      in shouldBuild src $ \ens -> do
+           bytes <- encodeEnsemble ens
+           case YAML.decodeEither' bytes of
+             Left err -> expectationFailure ("re-decoding the saved bytes failed: " ++ show err)
+             Right (Object o) -> case KM.lookup "script" o of
+               Just (String t) -> Text.unpack t `shouldBe` src
+               _ -> expectationFailure "expected a `script:` key with a string value"
+             Right _ -> expectationFailure "expected a YAML object"
+
+    it "encodeEnsemble omits scenarios: when there are none, and includes it \
+       \with the scenario's name and commands when there are" $
+      let src = "@viewer \"V\" var=z size=\"100x100\"\npass\n"
+      in shouldBuild src $ \ens -> do
+           bytesEmpty <- encodeEnsemble ens
+           case YAML.decodeEither' bytesEmpty of
+             Right (Object o) -> KM.member "scenarios" o `shouldBe` False
+             _ -> expectationFailure "expected a YAML object"
+
+           name <- newVariable "Scenario 1"
+           commands <- newVariable "click at 0"
+           setValue' (ensembleScenarios ens) [NamedScenario name commands]
+           bytesWith <- encodeEnsemble ens
+           case YAML.decodeEither' bytesWith of
+             Right (Object o) -> case KM.lookup "scenarios" o of
+               Just (Array (V.toList -> [Object s])) -> do
+                 KM.lookup "name" s `shouldBe` Just (String "Scenario 1")
+                 KM.lookup "commands" s `shouldBe` Just (String "click at 0")
+               other -> expectationFailure ("expected a one-element scenarios list, got " ++ show other)
+             _ -> expectationFailure "expected a YAML object"
 
     it "rejects a tool targeting an unknown viewer" $
       [r|

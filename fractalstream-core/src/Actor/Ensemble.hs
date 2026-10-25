@@ -4,6 +4,8 @@ module Actor.Ensemble
   , NamedScenario(..)
   , parseEnsembleFromFile
   , buildEnsembleFromScript
+  , encodeEnsemble
+  , formatScriptError
   , runEnsemble
   , runEnsembleFromSetup
 
@@ -84,6 +86,14 @@ data Ensemble = Ensemble
   , ensembleConfiguration :: Variable (Maybe Configuration)
   , ensembleViewers       :: Variable [ComplexViewer]
   , ensembleScenarios     :: Variable [NamedScenario]
+  , ensembleSourceScript  :: Variable (Maybe String)
+    -- ^ The raw text of this ensemble's unified @script:@, if it was
+    -- built from one (via 'buildEnsembleFromScript') rather than the
+    -- classic multi-key format. A frontend's save path uses this to
+    -- write the script straight back out, verbatim, instead of
+    -- re-encoding through the classic 'Codec' instance below -- which
+    -- would otherwise silently convert a unified-script project into
+    -- the classic format on every save.
   }
 
 instance Codec Ensemble where
@@ -118,7 +128,9 @@ instance Codec Ensemble where
     scenarios <-ensembleScenarios-< optionalField "scenarios"
       (newVariable []) (fmap null . getDynamic) codec
 
-    build Ensemble setup splices config viewers scenarios
+    sourceScript <-ensembleSourceScript-< newOf (pure (pure Nothing))
+
+    build Ensemble setup splices config viewers scenarios sourceScript
 
 contextValuesChanged :: SomeContext DynamicValue -> Dynamic ()
 contextValuesChanged (SomeContext ctx0) = go ctx0
@@ -182,6 +194,25 @@ attachScenarios o ens = case KM.lookup "scenarios" o of
       setValue' (ensembleScenarios ens) scenarios
       pure (Right ens)
 
+-- | Serialize an 'Ensemble' back to project-file bytes. Prefers its own
+-- unified-script text, verbatim, under a @script:@ key (alongside a
+-- @scenarios:@ key if there are any), when it has one -- i.e. when it
+-- was built via 'buildEnsembleFromScript' -- and falls back to the
+-- classic multi-key 'Codec' instance otherwise. Every frontend's save
+-- path should go through this rather than 'serializeYAML' directly, or
+-- opening a unified-script project and saving it would silently
+-- convert it into the classic format.
+encodeEnsemble :: Ensemble -> IO ByteString
+encodeEnsemble ens = getDynamic (ensembleSourceScript ens) >>= \case
+  Nothing -> serializeYAML ens
+  Just scriptText -> do
+    scenarios <- getDynamic (ensembleScenarios ens)
+    scenariosKV <- if null scenarios
+      then pure []
+      else (\v -> [("scenarios", v)]) <$> encodeValue scenarios
+    pure $ YAML.encode $ Object $ KM.fromList $
+      ("script", String (Text.pack scriptText)) : scenariosKV
+
 -- | Render a unified-script build error the same way every other
 -- source-range-tagged parse\/typecheck error in this codebase is shown:
 -- the offending span of the original text, followed by the message.
@@ -217,7 +248,11 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
 
     case checkTitlesAndTargets viewerTitles tools of
       Left err -> pure (Left err)
-      Right () -> buildWithValidTargets setupGroups configGroups viewers tools viewerTitles
+      Right () -> buildWithValidTargets setupGroups configGroups viewers tools viewerTitles >>= \case
+        Left err  -> pure (Left err)
+        Right ens -> do
+          setValue' (ensembleSourceScript ens) (Just scriptText)
+          pure (Right ens)
 
 buildWithValidTargets :: [(String, [ConfigStmt])]
                        -> [(String, [ConfigStmt])]
@@ -255,9 +290,10 @@ buildWithValidTargets setupGroups configGroups viewers tools viewerTitles = do
           case sequence eViewers of
             Left err -> pure (Left err)
             Right viewerList -> do
-              viewersVar   <- newVariable viewerList
-              scenariosVar <- newVariable []
-              pure (Right (Ensemble setupVar splicesDyn configVar viewersVar scenariosVar))
+              viewersVar     <- newVariable viewerList
+              scenariosVar   <- newVariable []
+              sourceScriptVar <- newVariable Nothing
+              pure (Right (Ensemble setupVar splicesDyn configVar viewersVar scenariosVar sourceScriptVar))
 
 ------------------------------------------------------------
 -- Stanza field extraction (total, so no incomplete-pattern risk)
@@ -372,7 +408,13 @@ constParsed = constMapped
 reactiveSomeValue :: forall env ty. (KnownEnvironment env, KnownType ty)
                    => EnvironmentProxy env -> TypeProxy ty -> String -> IO (Parsed SomeValue)
 reactiveSomeValue env ty initial = do
-  let f src = bimap (`ppFullError` src) (SomeValue env ty) (parseValue @env @ty Map.empty src)
+  -- 'parseInputValue', not 'parseValue': it's what the classic codec's
+  -- own 'UIVariable' text-entry field uses, and its special handling of
+  -- list-typed input (wrapping bare, unbracketed text in @[...]@ before
+  -- parsing) is exactly what 'toUserString's own list rendering expects
+  -- on the other end -- 'toUserString' strips the brackets back off a
+  -- list value for display, matching this.
+  let f src = bimap (`ppFullError` src) (SomeValue env ty) (parseInputValue @env @ty Map.empty src)
   newVariable initial >>= newMapped (pure f)
 
 parseConstantE :: TypeProxy ty -> String -> Either (SourceRange, String) (HaskellType ty)
@@ -486,7 +528,7 @@ buildConfigDecl sr name (SomeType ty) defaultValue mlabel mchoices mUsing = with
         exprNameP  <- constParsed name (Right name)
         exprTypeP  <- constParsed (ppType ty) (Right (SomeType ty))
         exprEnvV   <- newVariable (SomeEnvironment EmptyEnvProxy)
-        exprValueP <- reactiveSomeValue EmptyEnvProxy ty (showValue ty v)
+        exprValueP <- reactiveSomeValue EmptyEnvProxy ty (toUserString ty v)
         pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprEnvV exprValueP)))
 
 -- | One @\@setup@\/@\@config@ stanza's statements, combined into a single

@@ -4,6 +4,7 @@ module Data.Codec
   , deserializeWith
   , deserializeValue
   , serialize
+  , encodeValue
   , deserializeYAML
   , serializeYAML
   , Codec(..)
@@ -351,6 +352,14 @@ serialize :: forall a. Codec a => a -> IO ByteString
 serialize x =
   let E f = codec @a
   in BS.toStrict . encode <$> unE f x
+
+-- | Like 'serialize', but for a caller that's building a larger
+-- 'Value' by hand (e.g. assembling several top-level keys itself) and
+-- just needs one piece's encoding, not the final serialized bytes.
+encodeValue :: forall a. Codec a => a -> IO Value
+encodeValue x =
+  let E f = codec @a
+  in unE f x
 
 serializeYAML :: forall a. Codec a => a -> IO ByteString
 serializeYAML x =

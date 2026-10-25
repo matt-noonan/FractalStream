@@ -154,6 +154,10 @@ test-suite spec
                     , raw-strings-qq
                     , mtl
                     , containers
+                    , aeson
+                    , yaml
+                    , text
+                    , vector
   other-modules:      Data.Indexed.FunctorSpec
                     , Language.Value.DerivativeSpec
                     , Language.Value.EvaluatorSpec
