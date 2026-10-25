@@ -5,6 +5,7 @@ module Actor.Layout
   , TabItem(..)
   , CodeString(..)
   , Dimensions(..)
+  , parseDimensions
   , Parsed
   , UIVariable(..)
   , UIScript(..)
@@ -277,14 +278,20 @@ newtype Dimensions = Dimensions { dimToPair :: (Int, Int) }
 
 instance Show Dimensions where show (Dimensions (x, y)) = show x ++ "x" ++ show y
 
+-- | Parse a @WIDTHxHEIGHT@ dimension descriptor (e.g. @400x200@). Exposed
+-- so that a caller with a bare 'String' (e.g. a unified-script @\@viewer@
+-- header's @size=@ attribute) can reuse the exact same parsing logic as
+-- the YAML @size:@ field's 'FromJSON' instance below.
+parseDimensions :: String -> Either String Dimensions
+parseDimensions s = case Text.splitOn "x" (Text.pack s) of
+  [xStr, yStr] ->
+    case (,) <$> readMaybe (Text.unpack xStr) <*> readMaybe (Text.unpack yStr) of
+      Just dim -> Right (Dimensions dim)
+      Nothing  -> Left "could not parse dimension descriptor"
+  _ -> Left "expected a dimension descriptor, e.g. 400x200"
+
 instance FromJSON Dimensions where
-  parseJSON = withText "dimensions" $ \txt -> do
-    case Text.splitOn "x" txt of
-      [xStr, yStr] -> do
-        case (,) <$> readMaybe (Text.unpack xStr) <*> readMaybe (Text.unpack yStr) of
-          Just dim -> pure (Dimensions dim)
-          Nothing  -> fail "could not parse dimension descriptor"
-      _ -> fail "expected a dimension descriptor, e.g. 400x200"
+  parseJSON = withText "dimensions" $ either fail pure . parseDimensions . Text.unpack
 
 instance ToJSON Dimensions where
   toJSON d = String . Text.pack $ show d

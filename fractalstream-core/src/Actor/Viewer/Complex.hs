@@ -20,7 +20,6 @@ import Language.Value.Parser
 import Language.Value.Typecheck
   (InternalVanishingRadius, InternalEscapeRadius,
    InternalIterations, InternalStuck, InternalIterationLimit)
-import Language.Typecheck
 import Language.Parser.SourceRange
 import Language.Code.Parser
 
@@ -170,51 +169,19 @@ instance CodecWith ScriptDependencies ComplexViewer where
                                 (combinedCtx :: Context DynamicValue combinedEnv)
                                 mPrepCodeStr) -> do
                 let env = contextToEnv combinedCtx
-                    vcContext = combinedCtx
-                    assertAbsentViewerArgs :: forall e t
-                                           . EnvironmentProxy e
-                                          -> (MissingViewerArgs e => Either String t)
-                                          -> Either String t
-                    assertAbsentViewerArgs e action =
-                      fromMaybe (Left "Internal error") (assertMissingViewerArgs e action)
 
-                vc :: Either String (ViewerContext combinedEnv) <- withEnvironment env $
-                  (fromMaybe (pure $ Left "Internal error") . assertMissingViewerArgs env) $
-                  runExceptT $ do
-                  vcCoord <- ExceptT (dyn $ use coord)
+                vc :: Either String (ViewerContext combinedEnv) <- do
+                  coordResult <- dyn (use coord)
+                  iterResult  <- dyn (use iter)
+                  escResult   <- dyn (use esc)
+                  vanResult   <- dyn (use van)
+                  pure $ do
+                    coordName <- coordResult
+                    mIterPV   <- iterResult
+                    mEscPV    <- escResult
+                    mVanPV    <- vanResult
+                    buildViewerContext env combinedCtx vcSplices coordName mIterPV mEscPV mVanPV
 
-                  vcIterLimit <- ExceptT $ (dyn $ use iter) <&> \case
-                    Left err -> Left err
-                    Right Nothing -> Right Nothing
-                    Right (Just pv) -> assertAbsentViewerArgs env $ do
-                      case lookupEnv (Proxy @InternalVanishingRadius) RealType env of
-                        Absent pf -> recallIsAbsent pf $
-                          case lookupEnv (Proxy @InternalEscapeRadius) RealType env of
-                            Absent pf' -> recallIsAbsent pf' $ case pv `atType` IntegerType of
-                              TC (Left err) -> Left ("Error with internal iteration limit: " ++ ppError err)
-                              TC (Right x)  -> pure (Just x)
-                            _ -> Left "Internal error"
-                        _ -> Left "Internal error"
-
-                  vcEscapes <- ExceptT $ (dyn $ use esc) <&> \case
-                    Left err -> Left err
-                    Right Nothing -> Right Nothing
-                    Right (Just pv) -> assertAbsentViewerArgs env $ do
-                      case lookupEnv (Proxy @InternalVanishingRadius) RealType env of
-                        Absent pf -> recallIsAbsent pf $ case pv `atType` RealType of
-                          TC (Left err) -> Left ("Error with internal escape radius: " ++ ppError err)
-                          TC (Right x)  -> pure (Just x)
-                        _ -> Left "Internal error"
-
-                  vcVanishes <- ExceptT $ (dyn $ use van) <&> \case
-                    Left err -> Left err
-                    Right Nothing -> Right Nothing
-                    Right (Just pv) -> assertAbsentViewerArgs env $ do
-                      case pv `atType` RealType of
-                        TC (Left err) -> Left ("Error with internal vanishing radius: " ++ ppError err)
-                        TC (Right x)  -> pure (Just x)
-
-                  pure ViewerContext{..}
                 case vc of
                   Left err   -> complain err
                   Right args -> dyn (use pixel) >>= \case
@@ -254,7 +221,9 @@ instance CodecWith ScriptDependencies ComplexViewer where
                                        & letInEnv (fromMaybe (Const (Scalar typeProxy 10.0)) (vcEscapes args))
                                        & letInEnv (fromMaybe (Const (Scalar typeProxy 0.0001)) (vcVanishes args))
                                  pure (Just (PrepScript prepEnvProxy prepCode))
-                             viewerCode <- parseViewerScript mpx args (CodeString viewerSrc)
+                             parsedViewerCode <- bimap (errorLocation &&& unlines . pp) id
+                               (parseParsedCode vcSplices viewerSrc)
+                             viewerCode <- parseViewerScript mpx args parsedViewerCode
                              pure (SomeViewerWithContext combinedCtx mPrepScript viewerCode)
                       of
                         Nothing -> pure . const . Left . (NoSourceRange,) $ "INTERNAL ERROR: redefined internal argument"

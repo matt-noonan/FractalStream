@@ -31,6 +31,10 @@ data ToolInfo = ToolInfo
   , tiShortcut  :: Variable String
   , tiShortHelp :: Variable String
   , tiHelp      :: Variable String
+  , tiIcon      :: Variable (Maybe String)
+    -- ^ An icon name, as given by a unified-script @\@tool@ stanza's
+    -- @icon=@ attribute. Not yet rendered anywhere -- threaded through
+    -- for forward compatibility until icon display is implemented.
   }
 
 instance Codec ToolInfo where
@@ -39,7 +43,8 @@ instance Codec ToolInfo where
     shortcut  <-tiShortcut-<  keyWithDefaultValue "" "shortcut"
     shortHelp <-tiShortHelp-< keyWithDefaultValue "" "short-help"
     help      <-tiHelp-<      keyWithDefaultValue "" "help"
-    build ToolInfo name shortcut shortHelp help
+    icon      <-tiIcon-<      keyWithDefaultValue Nothing "icon"
+    build ToolInfo name shortcut shortHelp help icon
 
 instance CodecWith EventDependencies Tool where
   codecWith_ ctx = do

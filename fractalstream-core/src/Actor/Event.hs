@@ -20,8 +20,11 @@ module Actor.Event
   , snapshotEventArgs
 
   , CombinedEventHandler
+  , ParsedToolBlock
   , ParsedToolScript(..)
   , parseToolScript
+  , toolBlocksGrammar
+  , mergeToolBlocks
   , emptyToolScript
 
   ) where
@@ -620,26 +623,39 @@ parseUnitScript _splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx body
 -- keeps indentation handling in the one place that already owns it.
 ------------------------------------------------------------
 
--- | One block's contribution to a tool's combined event handler, deferred
--- over the final environment (the tool's variable context) the same way
--- 'ParsedCode' defers over its environment.
+-- | One block's contribution to a tool's combined event handler. Deferred
+-- not just over the final environment (the tool's variable context), the
+-- same way 'ParsedCode' defers over its environment, but also over the
+-- default coordinate\/iteration-limits\/pixel-size-variable that a header
+-- omitting @at ...@\/@from ... to ...@ falls back on -- so that
+-- 'toolBlocksGrammar' can be built /once/, independent of which viewer a
+-- @\@tool@ stanza in a unified project script ends up targeting (that's
+-- only known once every @\@viewer@ stanza's header has been parsed, which
+-- may happen after the tool's own stanza in the source). The single-tool
+-- entry point below ('parseToolScript') simply applies these immediately,
+-- since it already has them in hand before parsing starts.
 newtype ParsedToolBlock = ParsedToolBlock
-  (forall env. EnvironmentProxy env -> Either String (CombinedEventHandler env))
+  (Coordinate -> (ParsedValue, ParsedValue, ParsedValue) -> Maybe String
+   -> forall env. EnvironmentProxy env -> Either String (CombinedEventHandler env))
 
 -- | The result of parsing an entire tool script: all of its blocks already
 -- merged and checked for duplicate event definitions.
 newtype ParsedToolScript = ParsedToolScript
   { runParsedToolScript :: forall env. EnvironmentProxy env -> Either String (CombinedEventHandler env) }
 
-mergeToolBlocks :: [ParsedToolBlock] -> ParsedToolScript
-mergeToolBlocks blocks = ParsedToolScript $ \env ->
+mergeToolBlocks :: [ParsedToolBlock]
+                -> Coordinate
+                -> (ParsedValue, ParsedValue, ParsedValue)
+                -> Maybe String
+                -> ParsedToolScript
+mergeToolBlocks blocks defaultCoord limits mpixel = ParsedToolScript $ \env ->
   foldl' combineEventHandlers (Right noHandlers)
-    [ f env | ParsedToolBlock f <- blocks ]
+    [ f defaultCoord limits mpixel env | ParsedToolBlock f <- blocks ]
 
 -- | A tool script with no event handlers at all (e.g. a tool whose
 -- @script:@ field is absent or empty).
 emptyToolScript :: ParsedToolScript
-emptyToolScript = mergeToolBlocks []
+emptyToolScript = ParsedToolScript $ const (Right noHandlers)
 
 -- | Parse a tool's whole @script:@ text into its combined event handler.
 parseToolScript :: Splices
@@ -649,16 +665,30 @@ parseToolScript :: Splices
                  -> String                                   -- ^ the whole script source
                  -> Either (SourceRange, String) ParsedToolScript
 parseToolScript splices defaultCoord limits mpixel input =
-  bimap (errorLocation &&& unlines . pp) mergeToolBlocks
-    (parse (toolScriptGrammar splices defaultCoord limits mpixel) (tokenizeWithIndentation input))
+  bimap (errorLocation &&& unlines . pp) (\blocks -> mergeToolBlocks blocks defaultCoord limits mpixel)
+    (parse (toolScriptGrammar splices) (tokenizeWithIndentation input))
 
+-- | The grammar for a whole tool script: a sequence of @on <event>:@ blocks,
+-- surrounded by the @Indent@\/@Dedent@ pair that delimits the tool's own
+-- @script:@ field. Thin wrapper around 'toolBlocksGrammar', the same way
+-- 'Language.Code.Parser.codeBlockGrammar' wraps 'codeStatementsGrammar'.
 toolScriptGrammar :: forall r
                    . Splices
-                  -> Coordinate
-                  -> (ParsedValue, ParsedValue, ParsedValue)
-                  -> Maybe String
                   -> Grammar r (Prod r [ParsedToolBlock])
-toolScriptGrammar splices defaultCoord limits mpixel = mdo
+toolScriptGrammar splices = do
+  blocks <- toolBlocksGrammar splices
+  rule (token Indent *> blocks <* token Dedent)
+
+-- | The grammar for a bare sequence of @on <event>:@ blocks with no
+-- surrounding @Indent@\/@Dedent@ tokens. Exported so that a grammar whose
+-- tool-script bodies aren't indentation-delimited (e.g. a future unified
+-- project-script grammar, where an @\@tool@ stanza's @on ...:@ blocks sit
+-- flush with the stanza's own header rather than nested beneath it) can
+-- reuse the full set of event-block headers without re-deriving them.
+toolBlocksGrammar :: forall r
+                   . Splices
+                  -> Grammar r (Prod r [ParsedToolBlock])
+toolBlocksGrammar splices = mdo
 
   codeBlock <- codeBlockGrammar splices
 
@@ -680,32 +710,32 @@ toolScriptGrammar splices defaultCoord limits mpixel = mdo
   let dummyStart = ComplexCoordinate "[unused] start"
 
   onRefresh' <- rule $
-    (\body -> ParsedToolBlock $ \env ->
+    (\body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         bimap snd (\u -> noHandlers { onRefresh = Just u })
           (parseUnitScript splices limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "refresh" *> colon *> nl *> codeBlock)
 
   onActivated' <- rule $
-    (\body -> ParsedToolBlock $ \env ->
+    (\body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         bimap snd (\u -> noHandlers { onActivated = Just u })
           (parseUnitScript splices limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "activated" *> colon *> nl *> codeBlock)
 
   onDeactivated' <- rule $
-    (\body -> ParsedToolBlock $ \env ->
+    (\body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         bimap snd (\u -> noHandlers { onDeactivated = Just u })
           (parseUnitScript splices limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "deactivated" *> colon *> nl *> codeBlock)
 
   onButton' <- rule $
-    (\label body -> ParsedToolBlock $ \env ->
+    (\label body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         bimap snd (\u -> noHandlers { onButton = Map.singleton label u })
           (parseUnitScript splices limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "button" *> quoted <* colon <* nl)
     <*> codeBlock
 
   onTimer' <- rule $
-    (\name interval body -> ParsedToolBlock $ \env ->
+    (\name interval body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         bimap snd (\u -> noHandlers { onTimer = Map.singleton name (interval, u) })
           (parseUnitScript splices limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "timer" *> quoted)
@@ -713,14 +743,14 @@ toolScriptGrammar splices defaultCoord limits mpixel = mdo
     <*> codeBlock
 
   onClick' <- rule $
-    (\mc body -> ParsedToolBlock $ \env ->
+    (\mc body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         bimap snd (\c -> noHandlers { onClick = Just c })
           (parseClickScript splices (fromMaybe defaultCoord mc) limits mpixel body env))
     <$> (tok "on" *> tok "click" *> optional (tok "at" *> coordSpec) <* colon <* nl)
     <*> codeBlock
 
   onDoubleClick' <- rule $
-    (\mc body -> ParsedToolBlock $ \env ->
+    (\mc body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         bimap snd (\c -> noHandlers { onDoubleClick = Just c })
           (parseClickScript splices (fromMaybe defaultCoord mc) limits mpixel body env))
     <$> (tok "on" *> tok "double" *> token Minus *> tok "click"
@@ -728,7 +758,7 @@ toolScriptGrammar splices defaultCoord limits mpixel = mdo
     <*> codeBlock
 
   onClickOrDrag' <- rule $
-    (\mc body -> ParsedToolBlock $ \env ->
+    (\mc body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         let c = fromMaybe defaultCoord mc
         in bimap snd (\(ch, dh) -> noHandlers { onClick = Just ch, onDrag = Just dh })
              ((,) <$> parseClickScript splices c limits mpixel body env
@@ -738,7 +768,7 @@ toolScriptGrammar splices defaultCoord limits mpixel = mdo
     <*> codeBlock
 
   onDrag' <- rule $
-    (\mft body -> ParsedToolBlock $ \env ->
+    (\mft body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
         in bimap snd (\d -> noHandlers { onDrag = Just d })
              (parseDragScript splices curC startC limits mpixel body env))
@@ -746,7 +776,7 @@ toolScriptGrammar splices defaultCoord limits mpixel = mdo
     <*> codeBlock
 
   onDragFinished' <- rule $
-    (\mft body -> ParsedToolBlock $ \env ->
+    (\mft body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
         in bimap snd (\d -> noHandlers { onDragDone = Just d })
              (parseDragScript splices curC startC limits mpixel body env))
@@ -758,9 +788,7 @@ toolScriptGrammar splices defaultCoord limits mpixel = mdo
     , onRefresh', onActivated', onDeactivated', onButton', onTimer'
     ]
 
-  topLevel <- rule (token Indent *> many toolBlock <* token Dedent)
-
-  pure topLevel
+  rule (many toolBlock)
 
 ------------------------------------------------------------
 -- Helpers

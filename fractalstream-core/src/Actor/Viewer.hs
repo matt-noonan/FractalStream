@@ -1,5 +1,6 @@
 module Actor.Viewer
   ( ViewerContext(..)
+  , buildViewerContext
   , parseViewerScript
   , InternalX
   , InternalY
@@ -39,10 +40,11 @@ import FractalStream.Prelude
 
 import Actor.Viewer.Types
 import Data.DynamicValue
-import Actor.Layout (CodeString(..), Dimensions(..), UIScript)
+import Actor.Layout (Dimensions(..), UIScript)
 import Actor.Tool
 import Actor.Event (ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript, Event)
 import Language.Environment
+import Language.Typecheck (TC(..), ppError)
 import Language.Value.Parser
 import Language.Code
 import Language.Draw
@@ -68,6 +70,62 @@ data ViewerContext env = ViewerContext
   , vcVanishes   :: Maybe (Value
       '( ViewerEnv env, 'RealT))
   }
+
+-- | Build a 'ViewerContext' from already-resolved (non-reactive) pieces:
+-- the config context, the coordinate variable's name, and the raw
+-- iteration-limit\/escape-radius\/vanishing-radius expressions (if given).
+-- Extracted from 'Actor.Viewer.Complex.ComplexViewer's @code:@ codec so
+-- that a caller which has already resolved these values some other way
+-- (e.g. the unified-script builder, which has no 'Dynamic' dependencies
+-- to wait on) can build the same 'ViewerContext' without duplicating the
+-- internal-argument bookkeeping below.
+buildViewerContext :: forall env
+                     . EnvironmentProxy env
+                    -> Context DynamicValue env
+                    -> Splices
+                    -> String
+                    -> Maybe ParsedValue
+                    -> Maybe ParsedValue
+                    -> Maybe ParsedValue
+                    -> Either String (ViewerContext env)
+buildViewerContext env vcContext vcSplices vcCoord mIterLimit mEscape mVanish =
+  withEnvironment env $ do
+    let assertAbsentViewerArgs :: forall e t
+                                 . EnvironmentProxy e
+                                -> (MissingViewerArgs e => Either String t)
+                                -> Either String t
+        assertAbsentViewerArgs e action =
+          fromMaybe (Left "Internal error") (assertMissingViewerArgs e action)
+
+    vcIterLimit <- case mIterLimit of
+      Nothing -> Right Nothing
+      Just pv -> assertAbsentViewerArgs env $
+        case lookupEnv (Proxy @InternalVanishingRadius) RealType env of
+          Absent pf -> recallIsAbsent pf $
+            case lookupEnv (Proxy @InternalEscapeRadius) RealType env of
+              Absent pf' -> recallIsAbsent pf' $ case pv `atType` IntegerType of
+                TC (Left err) -> Left ("Error with internal iteration limit: " ++ ppError err)
+                TC (Right x)  -> Right (Just x)
+              _ -> Left "Internal error"
+          _ -> Left "Internal error"
+
+    vcEscapes <- case mEscape of
+      Nothing -> Right Nothing
+      Just pv -> assertAbsentViewerArgs env $
+        case lookupEnv (Proxy @InternalVanishingRadius) RealType env of
+          Absent pf -> recallIsAbsent pf $ case pv `atType` RealType of
+            TC (Left err) -> Left ("Error with internal escape radius: " ++ ppError err)
+            TC (Right x)  -> Right (Just x)
+          _ -> Left "Internal error"
+
+    vcVanishes <- case mVanish of
+      Nothing -> Right Nothing
+      Just pv -> assertAbsentViewerArgs env $
+        case pv `atType` RealType of
+          TC (Left err) -> Left ("Error with internal vanishing radius: " ++ ppError err)
+          TC (Right x)  -> Right (Just x)
+
+    Right ViewerContext{..}
 
 data SomeViewerWithContext where
   SomeViewerWithContext :: forall env
@@ -267,12 +325,22 @@ newtype ViewerCompiler = ViewerCompiler
                        -> (ViewerFunction env -> IO t)
                        -> IO t }
 
+-- | Resolve a viewer's already-parsed body code ('ParsedCode', deferred
+-- over environment the same way 'Language.Code.Parser.parseParsedCode'
+-- always produces) against a specific 'ViewerContext'. Takes a
+-- 'ParsedCode' rather than a raw source string so that a caller which
+-- already has one in hand (e.g. the unified-script builder, which parsed
+-- the whole project file in a single Earley pass) never needs to
+-- re-serialize and re-tokenize it -- the normal, string-sourced YAML path
+-- (see 'Actor.Viewer.Complex.ComplexViewer') just parses its @code:@
+-- string into a 'ParsedCode' once and passes that in here, same as
+-- before.
 parseViewerScript :: forall env
                    . Maybe String
                   -> ViewerContext env
-                  -> CodeString
+                  -> ParsedCode
                   -> Either (SourceRange, String) (Code (ViewerEnv env))
-parseViewerScript mpx ViewerContext{..} (CodeString src) = do
+parseViewerScript mpx ViewerContext{..} (ParsedCode c) = do
   let env = contextToEnv vcContext
   withEnvironment env $ do
 
@@ -319,7 +387,7 @@ parseViewerScript mpx ViewerContext{..} (CodeString src) = do
         Found pf -> case lookupEnv px RealType env' of
           Absent pf' -> do
             let env2 = recallIsAbsent pf' $ BindingProxy px RealType env'
-            code0 <- left (errorLocation &&& unlines . pp) (parseCode env2 vcSplices src)
+            code0 <- case c env2 of TC r -> left (errorLocation &&& unlines . pp) r
             -- Set the viewer variable to x + i y
             x <- getVar InternalX RealType env'
             y <- getVar InternalY RealType env'
@@ -335,7 +403,7 @@ parseViewerScript mpx ViewerContext{..} (CodeString src) = do
               Absent pf' -> do
                 let env3 = recallIsAbsent pf' $ BindingProxy px RealType env2
 
-                code0 <- left (errorLocation &&& unlines . pp) (parseCode env3 vcSplices src)
+                code0 <- case c env3 of TC r -> left (errorLocation &&& unlines . pp) r
                 x  <- getVar InternalX  RealType env'
                 y  <- getVar InternalY  RealType env'
                 dx <- getVar InternalDX RealType env2

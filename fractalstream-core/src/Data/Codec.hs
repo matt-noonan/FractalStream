@@ -2,6 +2,7 @@
 module Data.Codec
   ( deserialize
   , deserializeWith
+  , deserializeValue
   , serialize
   , deserializeYAML
   , serializeYAML
@@ -361,6 +362,14 @@ deserialize bs = case eitherDecodeStrict' bs of
   Left err -> pure (Left err)
   Right v  -> let D (ReaderT f) = codec @a
               in runExceptT (f v <&> unD)
+
+-- | Like 'deserialize', but for a caller that already has an
+-- 'Data.Aeson.Value' in hand (e.g. because it decoded the surrounding
+-- document for some other reason) and doesn't need the
+-- 'ByteString'-to-'Value' step repeated.
+deserializeValue :: forall a. Codec a => Value -> IO (Either String a)
+deserializeValue v = let D (ReaderT f) = codec @a
+                      in runExceptT (f v <&> unD)
 
 deserializeWith :: forall ctx a. CodecWith ctx a => ctx -> ByteString -> IO (Either String a)
 deserializeWith ctx bs = case eitherDecodeStrict' bs of

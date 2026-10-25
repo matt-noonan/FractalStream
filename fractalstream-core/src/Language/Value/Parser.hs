@@ -12,6 +12,7 @@ module Language.Value.Parser
   , arithGrammarWithNoSplices
   , atType
   , typeGrammar
+  , envGrammar
   , ParsedValue(..)
   , CheckedValue
   , ValueSplices

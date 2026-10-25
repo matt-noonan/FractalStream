@@ -3,6 +3,7 @@ module Language.Code.Parser
   ( parseCode
   , parseParsedCode
   , codeBlockGrammar
+  , codeStatementsGrammar
   , Splices(..)
   , noSplices
   -- * Re-exports
@@ -62,22 +63,40 @@ parseParsedCode splices input =
 codeBlockGrammar :: forall r
                   . Splices
                  -> Grammar r (Prod r ParsedCode)
-codeBlockGrammar Splices{..} = mdo
+codeBlockGrammar splices = do
+  statements <- codeStatementsGrammar splices
+  rule ((token Indent *> statements <* token Dedent) <?> "indented statements")
+
+-- | The grammar for a bare sequence of statements with no surrounding
+-- @Indent@\/@Dedent@ tokens -- i.e. the part of 'codeBlockGrammar' that
+-- comes after its own @Indent@ is consumed and before its @Dedent@.
+-- Exported so that a grammar whose statement sequences aren't indentation-
+-- delimited (e.g. a future unified project-script grammar, where a
+-- @\@viewer@\/@\@tool@ stanza's body sits flush with its own header rather
+-- than nested beneath it) can still reuse the full statement-level
+-- language -- assignments, loops, conditionals, draw commands, and the
+-- 'letStatement' scoping hack below -- without re-deriving any of it.
+codeStatementsGrammar :: forall r
+                        . Splices
+                       -> Grammar r (Prod r ParsedCode)
+codeStatementsGrammar Splices{..} = mdo
 
   toplevel <- ruleChoice
     [ block
     , lineStatement
     ]
 
-  block <- ruleChoice
-    [ check (tcBlock <$> (token Indent *> many toplevel <* token Dedent)) <?> "indented statements"
+  statements <- ruleChoice
+    [ check (tcBlock <$> many toplevel) <?> "statements"
     -- Grammar hack so that Let statements slurp up the remainder
     -- of the block into their scope.
     , check (
         ((\xs x -> tcBlock (xs ++ [x]))
-         <$> (token Indent *> many toplevel)
-         <*> (letStatement <* token Dedent)) <?> "indented statements")
+         <$> many toplevel
+         <*> letStatement) <?> "statements")
     ]
+
+  block <- rule ((token Indent *> statements <* token Dedent) <?> "indented statements")
 
   letStatement <- rule $
     check (
@@ -215,7 +234,7 @@ codeBlockGrammar Splices{..} = mdo
   colon <- rule (token Colon <?> ":")
   nl <- rule (token Newline <?> "end of line")
 
-  pure block
+  pure statements
 
 check :: Prod r CheckedCode -> Prod r ParsedCode
 check = withSourceRange

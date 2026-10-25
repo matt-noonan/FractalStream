@@ -73,6 +73,7 @@ library
                        Actor.Viewer.Complex
                        Actor.Viewer.Overlay
                        Actor.Event
+                       Actor.Script
 
                        Event
 
@@ -160,4 +161,6 @@ test-suite spec
                     , Language.Code.ParserSpec
                     , Language.Effect.ListSpec
                     , Actor.EventSpec
+                    , Actor.ScriptSpec
+                    , Actor.EnsembleBuildSpec
   build-tool-depends: hspec-discover:hspec-discover == 2.*
