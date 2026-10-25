@@ -9,9 +9,9 @@ import UI.ProjectActions
 import UI.Menu
 import UI.ProjectViewer (viewProject)
 import UI.ProjectEditor (editProject)
+import UI.ProjectScriptEditor (editProjectScript)
 import UI.Session
 import Data.DynamicValue
-import Data.Codec
 import Actor.Ensemble
 
 import qualified Data.Yaml as YAML
@@ -38,13 +38,19 @@ main = withBackend $ \backend -> start $ do
 
   let projectNew = putStrLn "TODO"
 
-      save prj f isUnsaved = do
+      -- `currentEnsemble` holds whichever `Ensemble` the session is
+      -- currently running -- fixed at open time, but replaced in place
+      -- by a successful rebuild from `editProjectScript`, so `save`
+      -- (and any later rebuild) always acts on the live one rather
+      -- than a value that was only ever accurate at open time.
+      save currentEnsemble f isUnsaved = do
         result <- fileSaveDialog f True True "Save FractalStream project"
                   [ ("FractalStream project files",["*.fs"]), ("All files", ["*.*"])] "" ".fs"
         case result of
           Nothing -> pure ()
           Just file -> do
-            serializeYAML prj >>= BS.writeFile file
+            prj <- getDynamic currentEnsemble
+            encodeEnsemble prj >>= BS.writeFile file
             setValue isUnsaved False
 
       projectOpen = \yamlFile -> do
@@ -57,31 +63,40 @@ main = withBackend $ \backend -> start $ do
         withRecoveryActions $ do
 
           prj <- either error id <$> parseEnsembleFromFile yamlFile
+          currentEnsemble <- newVariable prj
 
           sessionName <- newVariable yamlFile
           let sessionHandle = SessionHandle projectWindow
           sessionVisible <- newVariable True
           sessionUnsaved <- newVariable False
-          let sessionSave = save prj projectWindow sessionUnsaved
-          let si = SessionInfo{..}
+          let sessionSave = save currentEnsemble projectWindow sessionUnsaved
+              -- `ui` and `editProjectScript` refer to each other: a
+              -- rebuild needs a `UI` to hand `runEnsemble` for the
+              -- *next* round of viewer windows, and that same `UI`
+              -- needs the rebuild action for its own menus. Fine in
+              -- Haskell as an ordinary lazy `let` -- `editProjectScript`
+              -- only forces `ui` when the user actually picks the menu
+              -- item, by which point it's long since finished building.
+              ui = viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..})
+                     sessionSave (editProjectScript backend projectWindow currentEnsemble ui)
+              si = SessionInfo{..}
           modifyValue activeSessions (si :)
-          runEnsemble backend
-            (viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..}) sessionSave)
-            prj
+          runEnsemble backend ui prj
 
       projectOpenTemplate = \name prj -> do
         projectWindow <- frame [ visible := False ]
+        currentEnsemble <- newVariable prj
 
         sessionName <- newVariable name
         let sessionHandle = SessionHandle projectWindow
         sessionVisible <- newVariable True
         sessionUnsaved <- newVariable False
-        let sessionSave = save prj projectWindow sessionUnsaved
-        let si = SessionInfo{..}
+        let sessionSave = save currentEnsemble projectWindow sessionUnsaved
+            ui = viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..})
+                   sessionSave (editProjectScript backend projectWindow currentEnsemble ui)
+            si = SessionInfo{..}
         modifyValue activeSessions (si :)
-        runEnsembleFromSetup backend
-            (viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..}) sessionSave)
-            prj
+        runEnsembleFromSetup backend ui prj
 
       projectEdit = editProject
 

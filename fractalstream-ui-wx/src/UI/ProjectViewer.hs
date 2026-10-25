@@ -54,8 +54,9 @@ import qualified System.Info as System
 viewProject :: Window ()
             -> (forall a. Frame a -> [Menu ()] -> IO ())
             -> IO ()
+            -> IO ()
             -> UI
-viewProject projectWindow addMenuBar saveSession = UI
+viewProject projectWindow addMenuBar saveSession editProjectScript = UI
   { newEnsemble = pure ()
 
   , runSetup = \_ title setupUI continue -> do
@@ -97,7 +98,7 @@ viewProject projectWindow addMenuBar saveSession = UI
       windowReLayout f
       pure (windowShow f >> windowRaise f)
 
-  , makeViewer = const (makeWxComplexViewer projectWindow addMenuBar saveSession)
+  , makeViewer = const (makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript)
   }
 
 data BuiltinTool = NavTool | DebugTool
@@ -106,13 +107,14 @@ makeWxComplexViewer :: Window ()
                     -> (forall a. Frame a -> [Menu ()] -> IO ())
                     -> IO ()
                     -> IO ()
+                    -> IO ()
                     -> Dynamic (Either String SomeEnvironment)
                     -> SomeContext EventArgument_
                     -> IO ()
                     -> IO ()
                     -> Viewer
                     -> IO (IO ())
-makeWxComplexViewer projectWindow addMenuBar saveSession raiseConfigWindow configEnv (SomeContext configValues) _rerunSetup remakeViewer theViewer@Viewer{..} = do
+makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raiseConfigWindow configEnv (SomeContext configValues) _rerunSetup remakeViewer theViewer@Viewer{..} = do
 
     {- let clone = cloneViewer theViewer >>= void . makeWxComplexViewer projectWindow addMenuBar saveSessi         on raiseConfigWindow (SomeContext configValues)
     -}
@@ -944,6 +946,10 @@ makeWxComplexViewer projectWindow addMenuBar saveSession raiseConfigWindow confi
                                windowReLayout f
                            ]
     menuItem hamburgerMenu [ text := "Edit viewer tools...", enabled := False ]
+    menuItem hamburgerMenu [ text := "Edit project script...\tCtrl+Shift+E"
+                           , enabled := True
+                           , on command := editProjectScript
+                           ]
     menuLine hamburgerMenu
     smoothingSelection <- menuItem hamburgerMenu [ text := "Use subpixel smoothing"
                                                  , checkable := True

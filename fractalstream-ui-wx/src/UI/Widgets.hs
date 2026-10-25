@@ -339,12 +339,14 @@ scriptWidget p UIScript{..} = do
                        old <- readIORef lastText
                        when (new /= old) $ do
                          writeIORef lastText new
+                         updateFoldLevels ce new
                          setValue (source scriptCode) (CodeString new) ]
   wxWatchDynamic p (source scriptCode) $ \(CodeString newText) -> do
     oldText <- styledTextCtrlGetText ce
     when (oldText /= newText) $ do
       writeIORef lastText newText
       styledTextCtrlSetText ce newText
+      updateFoldLevels ce newText
   isError <- liftIO ((isLeft <$> getDynamic scriptCode) >>= \startError ->
                         variable [ value := startError ])
   wxWatchDynamic p scriptCode $ \case
