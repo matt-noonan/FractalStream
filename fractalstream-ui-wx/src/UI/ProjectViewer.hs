@@ -76,8 +76,11 @@ viewProject projectWindow addMenuBar saveSession editProjectScript = UI
                                 ]
       set f [ layout := margin 5 . container p $ fill $ column 5
               $ [ innerLayout, hfloatRight $ widget compileButton ]
-            , on closing :~ (>> stopListening)
             ]
+      -- Hooks `windowOnDestroy`, not `on closing` -- see the note on
+      -- 'UI.Widgets.wxWatchDynamic'.
+      previousOnDestroy <- WX.windowGetOnDestroy f
+      WX.windowOnDestroy f (stopListening >> previousOnDestroy)
       windowReLayout f
 
   , makeLayout = \_ title ui -> do
@@ -93,8 +96,11 @@ viewProject projectWindow addMenuBar saveSession editProjectScript = UI
       addMenuBar f []
 
       (stopListening, innerLayout) <- generateWxLayout (\_ -> pure ()) f ui
-      set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ]
-            , on closing :~ (>> stopListening) ]
+      set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ] ]
+      -- Hooks `windowOnDestroy`, not `on closing` -- see the note on
+      -- 'UI.Widgets.wxWatchDynamic'.
+      previousOnDestroy <- WX.windowGetOnDestroy f
+      WX.windowOnDestroy f (stopListening >> previousOnDestroy)
       windowReLayout f
       pure (windowShow f >> windowRaise f)
 
@@ -847,7 +853,12 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
     -- For each variable that the viewer code depends on, trigger a repaint whenever
     -- that variable changes.
     stopListening' <- onParameterChanges theViewer requestRefresh
-    set f [ on closing :~ (stopListening' >>) ]
+    -- Hooks `windowOnDestroy`, not `on closing` -- `f` is exactly the
+    -- viewer frame a rebuild tears down with `windowDestroy`, which
+    -- never fires `closing` at all; see the note on
+    -- 'UI.Widgets.wxWatchDynamic'.
+    do previousOnDestroy <- WX.windowGetOnDestroy f
+       WX.windowOnDestroy f (stopListening' >> previousOnDestroy)
 
     -------------------------------------------------------
     -- Navigation actions
@@ -997,8 +1008,11 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                 runToolEventHandler Tool{..} (ButtonPressed txt)
                 vDrawCmdsChanged >>= \yn -> when yn triggerRepaint
           (stopListening, tlo) <- generateWxLayout buttonPress tf (coContents tcfg)
-          set tf [ layout := margin 10 $ fill $ tlo
-                 , on closing :~ (>> stopListening) ]
+          set tf [ layout := margin 10 $ fill $ tlo ]
+          -- Hooks `windowOnDestroy`, not `on closing` -- see the note
+          -- on 'UI.Widgets.wxWatchDynamic'.
+          previousOnDestroy <- WX.windowGetOnDestroy tf
+          WX.windowOnDestroy tf (stopListening >> previousOnDestroy)
           windowReLayout tf
 
           buildToolContext (SomeContext configValues) (Just tcfg) >>= \case

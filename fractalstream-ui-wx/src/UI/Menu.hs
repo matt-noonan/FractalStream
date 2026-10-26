@@ -87,5 +87,11 @@ makeMenuBar ProjectActions{..} f addlMenus = do
           infoDialog f "About FractalStream" $ unlines
           ("Contributors:" : contributors ++
             ["", "Build info:", gitBranch ++ "@" ++ take 8 gitHash])
-        , on closing :~ (>> stopWatchingSessions)
         ]
+  -- Hooks `windowOnDestroy` (`wxEVT_DESTROY`) rather than `on closing`
+  -- (`wxEVT_CLOSE_WINDOW`) -- `windowDestroy` never fires `closing` at
+  -- all, so a `closing`-only hook here would silently never run this
+  -- cleanup if `f` were ever torn down that way. See the same note on
+  -- 'UI.Widgets.wxWatchDynamic'.
+  previousOnDestroy <- windowGetOnDestroy f
+  windowOnDestroy f (stopWatchingSessions >> previousOnDestroy)
