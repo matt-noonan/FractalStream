@@ -13,6 +13,7 @@ module Language.Code
   , letInEnv
   , usedVarsInCode
   , usedVarsInValue
+  , checkDefiniteAssignment
   , pprintCode
   , Unit
   , UnitET
@@ -290,6 +291,72 @@ usedVarsInValue = indexedFoldM @UnitET phi
 
 usedVarsInCode :: Code env -> State (Set String) ()
 usedVarsInCode = indexedFoldM @Unit gatherUsedVarsInCode
+
+-- | Check that every one of the given @targets@ is definitely 'Set'
+-- by the end of this code, and never read before its own first
+-- assignment anywhere this code might read it -- the same discipline
+-- Java applies to a @final@ local. Written for
+-- 'Actor.Ensemble.buildComplexViewer's own handling of a @prepare
+-- name1 : Type1, ...:@ block's declared output variables, but not
+-- specific to them: just a generic property of a set of names and a
+-- piece of code.
+--
+-- Deliberately conservative about control flow, in exchange for one
+-- simple rule that's always sound (never accepts code that could
+-- genuinely read a not-yet-assigned target) rather than a precise but
+-- intricate one:
+--
+--   * An @if@\/@else@ only credits an assignment present in *both*
+--     branches (if only one branch assigns a target, a run that takes
+--     the other branch never would have).
+--   * A loop body (@while@\/@until@\/@repeat@, which all compile down
+--     to the same 'DoWhile') never credits anything it assigns, even
+--     a @repeat@-style loop that's guaranteed at least one iteration --
+--     treating every loop the same way avoids a separate "is this
+--     guaranteed to run" case while staying sound either way. Its own
+--     reads are still checked, just never given credit afterward.
+--   * 'Lookup'\/'ForEach'\/'DrawCommand' are treated the same way: any
+--     read anywhere inside is checked (reusing 'usedVarsInCode' on the
+--     whole node, which already excludes each one's own bound
+--     iteration variable), but nothing inside is ever credited.
+checkDefiniteAssignment :: Set String -> Code env -> Either String ()
+checkDefiniteAssignment targets code0 = do
+  assigned <- go Set.empty code0
+  case Set.toList (targets Set.\\ assigned) of
+    []    -> Right ()
+    (n:_) -> Left ("`" ++ n ++ "` is never assigned.")
+  where
+    go :: forall env'. Set String -> Code env' -> Either String (Set String)
+    go assigned = \case
+      Let _ _ val rest -> do
+        checkValue assigned val
+        go assigned rest
+      Set _ name val -> do
+        checkValue assigned val
+        let n = symbolVal name
+        pure (if n `Set.member` targets then Set.insert n assigned else assigned)
+      Block stmts -> foldM go assigned stmts
+      NoOp -> pure assigned
+      IfThenElse cond yes no -> do
+        checkValue assigned cond
+        assignedYes <- go assigned yes
+        assignedNo  <- go assigned no
+        pure (assigned `Set.union` (assignedYes `Set.intersection` assignedNo))
+      other -> do
+        let used = execState (usedVarsInCode other) Set.empty
+        case Set.toList ((targets Set.\\ assigned) `Set.intersection` used) of
+          []    -> pure assigned
+          (n:_) -> unassignedRead n
+
+    checkValue :: Set String -> Value et -> Either String ()
+    checkValue assigned val =
+      let used = execState (usedVarsInValue val) Set.empty
+      in case Set.toList ((targets Set.\\ assigned) `Set.intersection` used) of
+        []    -> Right ()
+        (n:_) -> unassignedRead n
+
+    unassignedRead :: String -> Either String a
+    unassignedRead n = Left ("`" ++ n ++ "` is read before `prepare` assigns it.")
 
 data String_ :: Environment -> Exp Type
 type instance Eval (String_ env) = String

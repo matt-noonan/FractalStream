@@ -4,6 +4,7 @@ module Actor.EnsembleBuildSpec (spec) where
 import Test.Hspec
 
 import Actor.Ensemble
+import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Layout (Dimensions(..), Layout(..), UIVariable(..))
@@ -433,6 +434,102 @@ pass
 w <- w + 1
 |] `shouldFailWith` "No variable named"
 
+    it "builds a `prepare` block's output into a real PrepScript, merged into the \
+       \viewer's own environment for its main code to reference" $
+      shouldBuild [r|
+@config "C"
+myColor : Color <- white
+
+@viewer "Voronoi" var=z size="150x150"
+prepare computed : Color:
+  computed <- myColor
+color <- if |z| < 1 then black else computed
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        cc <- getDynamic (cvCode viewer)
+        case cc of
+          Left (_, err) -> expectationFailure ("expected a build-able viewer, got: " ++ err)
+          Right (SomeViewerWithContext _ mprep _) -> case mprep of
+            Nothing -> expectationFailure "expected a PrepScript to have been built"
+            Just _  -> pure ()
+
+    it "accepts a `prepare` block whose output is assigned conditionally, in both \
+       \branches of an if/else" $
+      shouldBuild [r|
+@viewer "V" var=z size="100x100"
+prepare computed : Color:
+  if 1 < 2:
+    computed <- black
+  else:
+    computed <- white
+color <- computed
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        cc <- getDynamic (cvCode viewer)
+        case cc of
+          Left (_, err) -> expectationFailure ("expected a build-able viewer, got: " ++ err)
+          Right (SomeViewerWithContext _ mprep _) -> case mprep of
+            Nothing -> expectationFailure "expected a PrepScript to have been built"
+            Just _  -> pure ()
+
+    it "rejects a `prepare` output that's never assigned" $
+      [r|
+@viewer "V" var=z size="100x100"
+prepare computed : Color:
+  pass
+color <- black
+|] `shouldFailWith` "is never assigned"
+
+    it "rejects a `prepare` output read before it's assigned" $
+      [r|
+@viewer "V" var=z size="100x100"
+prepare computed : Color:
+  color <- computed
+  computed <- black
+color <- black
+|] `shouldFailWith` "is read before"
+
+    it "rejects a `prepare` output only assigned in one branch of an if/else" $
+      [r|
+@viewer "V" var=z size="100x100"
+prepare computed : Color:
+  if 1 < 2:
+    computed <- black
+  else:
+    pass
+color <- black
+|] `shouldFailWith` "is never assigned"
+
+    it "rejects a `prepare` output only assigned inside a loop (conservative: no \
+       \credit for a loop body even though this one always runs)" $
+      [r|
+@viewer "V" var=z size="100x100"
+prepare computed : Color:
+  repeat:
+    computed <- black
+  while false
+color <- black
+|] `shouldFailWith` "is never assigned"
+
+    it "rejects two `prepare` outputs sharing a name" $
+      [r|
+@viewer "V" var=z size="100x100"
+prepare computed : Color, computed : Color:
+  computed <- black
+color <- black
+|] `shouldFailWith` "more than once"
+
+    it "rejects a `prepare` output whose name collides with an ensemble `@config` variable" $
+      [r|
+@config "C"
+computed : Color <- white
+
+@viewer "V" var=z size="100x100"
+prepare computed : Color:
+  computed <- black
+color <- computed
+|] `shouldFailWith` "defined twice"
+
   describe "checkScript" $ do
 
     let checkFailsWith :: String -> String -> Expectation
@@ -649,3 +746,54 @@ on click:
       build src >>= \case
         Left err -> expectationFailure ("expected buildEnsembleFromScript to still accept this (the gap this test documents), got: " ++ err)
         Right _  -> pure ()
+
+    -- Unlike tool code (above), a `prepare` block's own code *is*
+    -- eagerly checked by buildEnsembleFromScript (it's forced as part
+    -- of the main viewer's own ComplexViewer code field), so checkScript
+    -- and buildEnsembleFromScript should agree on every case here --
+    -- no "new coverage" asymmetry to call out.
+
+    it "accepts a `prepare` block whose declared output is correctly assigned \
+       \and used by the main viewer code" $
+      agree [r|
+@viewer "V" var=z size="100x100"
+prepare computed : Color:
+  computed <- black
+color <- computed
+|]
+
+    it "catches a `prepare` output that's never assigned" $
+      agree [r|
+@viewer "V" var=z size="100x100"
+prepare computed : Color:
+  pass
+color <- black
+|]
+
+    it "catches a `prepare` output read before it's assigned" $
+      agree [r|
+@viewer "V" var=z size="100x100"
+prepare computed : Color:
+  color <- computed
+  computed <- black
+color <- black
+|]
+
+    it "catches two `prepare` outputs sharing a name" $
+      agree [r|
+@viewer "V" var=z size="100x100"
+prepare computed : Color, computed : Color:
+  computed <- black
+color <- black
+|]
+
+    it "catches a `prepare` output colliding with an ensemble `@config` variable" $
+      agree [r|
+@config "C"
+computed : Color <- white
+
+@viewer "V" var=z size="100x100"
+prepare computed : Color:
+  computed <- black
+color <- computed
+|]

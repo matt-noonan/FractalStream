@@ -34,9 +34,14 @@ import Actor.Script
 import Language.Environment
 import Language.Value hiding (Join)
 import Language.Value.Parser
+import Language.Value.Typecheck
+  (InternalVanishingRadius, InternalEscapeRadius,
+   InternalIterations, InternalStuck, InternalIterationLimit)
 import Language.Typecheck (TC(..), ppError)
+import Language.Code (Code, letInEnv, checkDefiniteAssignment)
 import Language.Code.Parser (Splices(..), noSplices, ParsedCode)
 import Language.Parser.SourceRange
+import Data.Color (black)
 
 import Data.Aeson (Value(..))
 import qualified Data.Aeson as Aeson
@@ -417,20 +422,38 @@ checkViewer configEnv env splices myTools ViewerFields{..} = do
   mEscPV  <- parseMaybeAttrValue vfEscape
   mVanPV  <- parseMaybeAttrValue vfVanish
 
-  -- Needs its own explicit type signature: as just one statement among
-  -- several in this 'do' block (rather than the final, whole-function
-  -- result, as it used to be before this had more to check afterward),
-  -- GHC can't otherwise pin down 'assertMissingViewerArgs'`s rank-n
-  -- @t@ from context alone (an "untouchable type variable" error).
-  let codeCheck :: Either (SourceRange, String) ()
-      codeCheck = fromMaybe (Left (NoSourceRange, "INTERNAL ERROR: redefined internal argument")) $
-        assertMissingViewerArgs env $ do
-          let dummyCtx :: Context DynamicValue env
-              dummyCtx = envToContext env (\_ _ -> error "checkViewer: dummy context value forced unexpectedly")
-          vc <- left (NoSourceRange,) (buildViewerContext env dummyCtx splices vfVar mIterPV mEscPV mVanPV)
-          _  <- parseViewerScript vfPixelVar vc vfCode
-          pure ()
-  codeCheck
+  -- Checks the main code (and, below, its tools) against whatever
+  -- environment they actually see: plain config, or config merged
+  -- with a `prepare` block's own declared outputs -- mirroring
+  -- 'buildComplexViewer's own 'finishBuild'. Needs its own explicit
+  -- type signature, polymorphic in `someEnv` separately from this
+  -- function's own `env`, for the same "untouchable type variable"
+  -- reason 'checkTool's caller below does: GHC can't otherwise pin
+  -- down 'assertMissingViewerArgs'`s rank-n @t@ from context alone.
+  let checkMainAndTools :: forall someEnv. EnvironmentProxy someEnv -> Either (SourceRange, String) ()
+      checkMainAndTools someEnv =
+        fromMaybe (Left (NoSourceRange, "INTERNAL ERROR: redefined internal argument")) $
+          assertMissingViewerArgs someEnv $ do
+            let dummyCtx :: Context DynamicValue someEnv
+                dummyCtx = envToContext someEnv (\_ _ -> error "checkViewer: dummy context value forced unexpectedly")
+            vc <- left (NoSourceRange,) (buildViewerContext someEnv dummyCtx splices vfVar mIterPV mEscPV mVanPV)
+            _  <- parseViewerScript vfPixelVar vc vfCode
+            pure ()
+
+      -- A `prepare` block's own declared outputs merge into the plain
+      -- config environment (checked for a name collision with it, the
+      -- same way 'buildComplexViewer's real `<#>`-based merge would
+      -- reject one at build time) before its code -- and then the
+      -- main code -- are checked against the result.
+      viewerCheck :: Either (SourceRange, String) ()
+      viewerCheck = case vfPrepare of
+        Nothing -> checkMainAndTools env
+        Just (outputSpecs, prepParsedCode) -> do
+          checkNoDuplicateNames (configEnv ++ outputSpecs)
+          withEnvFromMap (Map.fromList (configEnv ++ outputSpecs)) $ \combinedEnv -> do
+            _ <- checkPrepCode (map fst outputSpecs) combinedEnv prepParsedCode
+            checkMainAndTools combinedEnv
+  viewerCheck
 
   let toolLimits = ( fromMaybe defaultIterLimit mIterPV
                     , fromMaybe defaultMaxRadius mEscPV
@@ -522,6 +545,7 @@ data ViewerFields = ViewerFields
   , vfPixelVar  :: Maybe String
   , vfResizable :: Bool
   , vfPosition  :: Dimensions
+  , vfPrepare   :: Maybe ([(String, SomeType)], ParsedCode)
   , vfCode      :: ParsedCode
   }
 
@@ -532,6 +556,7 @@ viewerFields = \case
     , vfCenter = vsCenter, vfPixelSize = vsPixelSize
     , vfIterLimit = vsIterLimit, vfEscape = vsEscape, vfVanish = vsVanish
     , vfPixelVar = vsPixelVar, vfResizable = vsResizable, vfPosition = vsPosition
+    , vfPrepare = vsPrepare
     , vfCode = vsCode
     }
   _ -> Nothing
@@ -776,6 +801,88 @@ buildMaybeConfiguration overallTitle stanzaGroups = do
 -- Viewer -> ComplexViewer
 ------------------------------------------------------------
 
+-- | A type-appropriate placeholder value, used only to seed a context
+-- entry that a correct script will always overwrite before ever
+-- reading it (see 'buildPrepOutputCtx' in 'buildComplexViewer').
+zeroHaskellValue :: TypeProxy t -> HaskellType t
+zeroHaskellValue = \case
+  BooleanType    -> False
+  IntegerType    -> 0
+  RealType       -> 0
+  ComplexType    -> 0
+  RationalType   -> (0, 0)
+  ColorType      -> black
+  VoidType       -> ()
+  ImageType      -> 0
+  ListType _     -> []
+  TextType       -> ""
+  PairType x y   -> (zeroHaskellValue x, zeroHaskellValue y)
+
+-- | Declare one more name in an environment, for use in a 'Kleisli'
+-- chain (@declareE p1 t1 \<=\< declareE p2 t2 \<=\< ...@) building up a
+-- bookkeeping-extended environment one name at a time -- the same
+-- pattern 'Actor.Viewer.Complex.ComplexViewer's own codec uses for
+-- its preparation script's environment, copied here so a unified-
+-- script `prepare ...:` block behaves identically.
+declareE :: forall n t e. KnownSymbol n
+         => Proxy n -> TypeProxy t -> EnvironmentProxy e
+         -> Either (SourceRange, String) (EnvironmentProxy ('(n, t) ': e))
+declareE _ t e = case lookupEnv' (Proxy @n) e of
+  Found' _ _ -> Left (NoSourceRange, "Internal error: duplicate `" ++ symbolVal (Proxy @n) ++ "`.")
+  Absent' pf -> Right (recallIsAbsent pf $ declare t e)
+
+-- | The bookkeeping names a preparation script's own code can see,
+-- on top of whatever environment it's declared against: per-pixel
+-- position\/step, the stopping-condition state, and the output color
+-- slot -- the same ones 'Actor.Viewer.Complex.ComplexViewer's codec
+-- declares for the classic YAML @preparation:@ key's own code. The
+-- order matters: it's exactly the order 'buildComplexViewer's own
+-- @letInEnv@ chain discharges them in.
+type PrepBookkeeping e =
+  '(InternalIterations, 'IntegerT) ': '(InternalStuck, 'BooleanT) ':
+  '(InternalIterationLimit, 'IntegerT) ': '(InternalEscapeRadius, 'RealT) ':
+  '(InternalVanishingRadius, 'RealT) ': '(InternalX, 'RealT) ':
+  '(InternalY, 'RealT) ': '(InternalDX, 'RealT) ': '(InternalDY, 'RealT) ':
+  '("color", 'ColorT) ': e
+
+-- | Declares the same bookkeeping names (per-pixel position\/step, the
+-- stopping-condition state, and the output color slot) that the
+-- classic YAML @preparation:@ key's own prep code sees -- see
+-- 'Actor.Viewer.Complex.ComplexViewer's codec, which this mirrors
+-- exactly so a prep script behaves identically either way it's
+-- written.
+declareBookkeeping :: forall e. EnvironmentProxy e
+                   -> Either (SourceRange, String) (EnvironmentProxy (PrepBookkeeping e))
+declareBookkeeping e0 =
+      declareE (Proxy @InternalIterations)      IntegerType
+  <=< declareE (Proxy @InternalStuck)           BooleanType
+  <=< declareE (Proxy @InternalIterationLimit)  IntegerType
+  <=< declareE (Proxy @InternalEscapeRadius)    RealType
+  <=< declareE (Proxy @InternalVanishingRadius) RealType
+  <=< declareE (Proxy @InternalX)               RealType
+  <=< declareE (Proxy @InternalY)               RealType
+  <=< declareE (Proxy @InternalDX)              RealType
+  <=< declareE (Proxy @InternalDY)              RealType
+  <=< declareE (Proxy @"color")                 ColorType
+  $ e0
+
+-- | Type-check a @prepare ...:@ block's own code against its declared
+-- output names (already bound, alongside config, in @env@) plus
+-- bookkeeping, and check definite assignment of every declared
+-- output. Shared between the real build ('buildComplexViewer's
+-- 'buildPrepScript', which goes on to actually discharge the
+-- bookkeeping with concrete values and construct a 'PrepScript' from
+-- the result) and the pure, allocation-free live-editor check
+-- ('checkViewer', which only needs to know whether it's valid).
+checkPrepCode :: forall someEnv. [String] -> EnvironmentProxy someEnv -> ParsedCode
+              -> Either (SourceRange, String)
+                   (EnvironmentProxy (PrepBookkeeping someEnv), Code (PrepBookkeeping someEnv))
+checkPrepCode outputNames env prepParsedCode = do
+  env' <- declareBookkeeping env
+  prepCode0 <- left (errorLocation &&& unlines . pp) (runParsedBody env' prepParsedCode)
+  left (NoSourceRange,) (checkDefiniteAssignment (Set.fromList outputNames) prepCode0)
+  pure (env', prepCode0)
+
 buildComplexViewer :: Dynamic (Either String Splices)
                     -> Dynamic (Either String (SomeContext DynamicValue))
                     -> [ToolFields]
@@ -801,19 +908,90 @@ buildComplexViewer splicesDyn contextDyn myTools ViewerFields{..} =
     cvIterLimP   <- constParsed (fromMaybe "" vfIterLimit) (Right mIterPV)
     cvPrepV      <- newVariable Nothing
 
-    let runBuild :: Either String (SomeContext DynamicValue)
+    let -- Shared tail end of building a viewer, once its context (plain
+        -- config, or config merged with preparation-script outputs) is
+        -- in hand. Builds the real 'ViewerContext' first -- needed both
+        -- for the main code and, if there's a `prepare` block, to
+        -- supply that block's own concrete iteration-limit\/escape\/
+        -- vanishing-radius values, exactly mirroring the classic YAML
+        -- `preparation:` key's own codec, which builds its
+        -- 'ViewerContext' before its prep code for the same reason.
+        finishBuild :: forall someEnv prepOutputEnv. KnownEnvironment someEnv
+                     => Maybe (EnvironmentProxy prepOutputEnv, [String], ParsedCode)
+                     -> Context DynamicValue someEnv -> Splices
+                     -> Either (SourceRange, String) SomeViewerWithContext
+        finishBuild mprepInfo ctx splices =
+          let env = contextToEnv ctx
+          in fromMaybe (Left (NoSourceRange, "INTERNAL ERROR: redefined internal argument")) $
+             assertMissingViewerArgs env $ do
+               vc <- left (NoSourceRange,) (buildViewerContext env ctx splices vfVar mIterPV mEscPV mVanPV)
+               mprep <- case mprepInfo of
+                 Nothing -> pure Nothing
+                 Just (prepOutputEnvProxy, outputNames, prepParsedCode) ->
+                   Just <$> buildPrepScript prepOutputEnvProxy outputNames ctx vc prepParsedCode
+               code <- parseViewerScript vfPixelVar vc vfCode
+               pure (SomeViewerWithContext ctx mprep code)
+
+        -- A constant context entry per declared `prepare` output,
+        -- holding a type-appropriate placeholder value -- never
+        -- actually observed by a correct prep script, since
+        -- 'checkDefiniteAssignment' below rejects any script that
+        -- could read an output before assigning it. It's only ever
+        -- genuinely read as the pure\/interpreter backend's initial
+        -- per-pixel seed value, immediately overwritten by the prep
+        -- script's own first assignment (see 'Backend.Pure.
+        -- interpretViewer').
+        buildPrepOutputCtx :: [(String, SomeType)] -> Either String (SomeContext DynamicValue)
+        buildPrepOutputCtx = foldM addOne (SomeContext EmptyContext)
+          where
+            addOne :: SomeContext DynamicValue -> (String, SomeType) -> Either String (SomeContext DynamicValue)
+            addOne (SomeContext acc) (name, SomeType ty) = withKnownType ty $
+              case someSymbolVal name of
+                SomeSymbol nameProxy ->
+                  case acc <#> Bind nameProxy ty (pure (zeroHaskellValue ty)) EmptyContext of
+                    Left err -> Left err
+                    Right merged -> Right (withEnvironment (contextToEnv merged) (SomeContext merged))
+
+        -- Discharges the bookkeeping names 'checkPrepCode' type-checked
+        -- against with concrete values -- using `vc`'s own already-
+        -- type-checked iteration-limit\/escape\/vanishing-radius, the
+        -- same values the main viewer code's bookkeeping uses, not the
+        -- raw, unchecked `mIterPV`\/`mEscPV`\/`mVanPV`. The rest
+        -- (InternalX\/Y\/DX\/DY\/"color") stay open, supplied per-pixel
+        -- by the backend, matching 'PrepScript's own contract.
+        buildPrepScript :: forall someEnv prepOutputEnv. KnownEnvironment someEnv
+                         => EnvironmentProxy prepOutputEnv -> [String]
+                         -> Context DynamicValue someEnv -> ViewerContext someEnv -> ParsedCode
+                         -> Either (SourceRange, String) (PrepScript someEnv)
+        buildPrepScript prepOutputEnvProxy outputNames ctx vc prepParsedCode = do
+          (env', prepCode0) <- checkPrepCode outputNames (contextToEnv ctx) prepParsedCode
+          let (_, prepCode) = (env', prepCode0)
+                & letInEnv (Const (Scalar typeProxy 0))
+                & letInEnv (Const (Scalar typeProxy False))
+                & letInEnv (fromMaybe (Const (Scalar typeProxy 100)) (vcIterLimit vc))
+                & letInEnv (fromMaybe (Const (Scalar typeProxy 10.0)) (vcEscapes vc))
+                & letInEnv (fromMaybe (Const (Scalar typeProxy 0.0001)) (vcVanishes vc))
+          withEnvironment prepOutputEnvProxy $ pure (PrepScript prepOutputEnvProxy prepCode)
+
+        runBuild :: Either String (SomeContext DynamicValue)
                  -> Either String Splices
                  -> Either (SourceRange, String) SomeViewerWithContext
         runBuild ectx esplices = case (ectx, esplices) of
           (Left err, _) -> Left (NoSourceRange, err)
           (_, Left err) -> Left (NoSourceRange, err)
           (Right (SomeContext (configCtx :: Context DynamicValue cEnv)), Right splices) ->
-            let env = contextToEnv configCtx
-            in fromMaybe (Left (NoSourceRange, "INTERNAL ERROR: redefined internal argument")) $
-               assertMissingViewerArgs env $ do
-                 vc   <- left (NoSourceRange,) (buildViewerContext env configCtx splices vfVar mIterPV mEscPV mVanPV)
-                 code <- parseViewerScript vfPixelVar vc vfCode
-                 pure (SomeViewerWithContext configCtx Nothing code)
+            case vfPrepare of
+              Nothing -> finishBuild Nothing configCtx splices
+              Just (outputSpecs, prepParsedCode) ->
+                case buildPrepOutputCtx outputSpecs of
+                  Left err -> Left (NoSourceRange, err)
+                  Right (SomeContext (prepCtx :: Context DynamicValue prepOutputEnv)) ->
+                    case configCtx <#> prepCtx of
+                      Left err -> Left (NoSourceRange, err)
+                      Right (combinedCtx :: Context DynamicValue combinedEnv) ->
+                        withEnvironment (contextToEnv combinedCtx) $
+                          finishBuild (Just (contextToEnv prepCtx, map fst outputSpecs, prepParsedCode))
+                            combinedCtx splices
 
         codeMapper :: Dynamic (CodeString -> Either (SourceRange, String) SomeViewerWithContext)
         codeMapper = (\ectx esplices -> const (runBuild ectx esplices)) <$> contextDyn <*> splicesDyn
