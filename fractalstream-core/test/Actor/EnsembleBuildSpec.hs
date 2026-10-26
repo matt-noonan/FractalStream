@@ -423,6 +423,25 @@ iterate z -> «f» until z escapes
             other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
           _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
 
+    it "rebuildWithCurrentSetup succeeds, even with no edits at all, when \
+       \@setup has a `code «name»:` splice (regression: a code splice has no \
+       \Setup-panel widget -- its own Layout is an invisible empty Vertical \
+       \-- so layoutToSplices's recomputed Splices always had an empty \
+       \codeSplices, making «name» unrecognizable on re-parse and crashing \
+       \\"Go!\" outright, independently of any edit)" $
+      shouldBuild [r|
+@setup "Setup"
+code script:
+  iterate z -> z^2 + i until z escapes
+  color <- if stuck then black else white
+
+@viewer "V" var=z size="100x100"
+«script»
+|] $ \ens ->
+        rebuildWithCurrentSetup ens >>= \case
+          Left (_, err) -> expectationFailure ("expected the rebuild to succeed, got: " ++ err)
+          Right _        -> pure ()
+
     it "builds a boolean-typed `using`-clause formula and splices it as a stopping condition" $
       shouldBuild [r|
 @setup "Setup"

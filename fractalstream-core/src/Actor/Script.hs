@@ -200,23 +200,41 @@ parseScript input = do
   pure (fillDefaultSrcs input (map snd (sortOn fst (setupResults ++ otherResults))))
 
 -- | Re-parse just a script's non-@\@setup@ stanzas (@\@config@\/
--- @\@viewer@\/@\@tool@), against an externally-supplied splices map
--- instead of the one its own @\@setup@ stanzas would otherwise
--- contribute -- used to make an edited @\@setup@ field's value
--- actually take effect (the Setup wizard's "Go!" button): a
--- @\@viewer@\/@\@tool@\/@\@config@ body's own @«name»@ references are
+-- @\@viewer@\/@\@tool@), against the given *value* splices instead of
+-- whatever its own @\@setup@ stanzas would otherwise contribute --
+-- used to make an edited @\@setup@ field's value actually take effect
+-- (the Setup wizard's "Go!" button): a @\@viewer@\/@\@tool@\/@\@config@
+-- body's own @«name»@ reference to a @using@-clause formula is
 -- resolved once, at parse time, into whatever the given splices say,
--- so re-parsing with the *current* splices (reflecting whatever's live
--- in the Setup panel's widgets right now, via
+-- so re-parsing with the *current* ones (reflecting whatever's live in
+-- the Setup panel's widgets right now, via
 -- 'Actor.Layout.layoutToSplices') is what makes the edit actually
--- reach them. Deliberately does not also re-parse @\@setup@ itself:
--- its own declarations are already live data (the widgets this
--- splices map was itself just computed from), so there's nothing to
--- recover by parsing their text again.
+-- reach them.
+--
+-- Deliberately re-derives @\@setup@'s own *code* splices
+-- (@code «name»:@ declarations) fresh from its text rather than taking
+-- them from the caller too: unlike a formula field, a code splice has
+-- no Setup-panel widget at all to read an edit back from (see
+-- 'Actor.Ensemble.configStmtToLayout's own @ConfigCode@ case) --
+-- 'Actor.Layout.layoutToSplices' never sees it, so a splices value
+-- computed that way always has an empty 'codeSplices', which would
+-- otherwise make any @«name»@ reference to one unrecognizable here.
+-- Not re-parsing @\@setup@ for its *value* splices too, since those
+-- are already live data (the widgets the given splices were
+-- themselves just computed from) -- nothing to recover there by
+-- parsing their text again.
 reparseNonSetupStanzas :: Splices -> String -> Either (SourceRange, String) [ParsedStanza]
-reparseNonSetupStanzas splices input = do
+reparseNonSetupStanzas currentSplices input = do
   let allToks      = tokenizeWithIndentation input
-      otherChunks  = [ c | c <- splitStanzas allToks, not (isSetupChunk c) ]
+      chunks        = splitStanzas allToks
+      setupChunks   = [ c | c <- chunks, isSetupChunk c ]
+      otherChunks   = [ c | c <- chunks, not (isSetupChunk c) ]
+
+  setupResults <- traverse (parseChunk noSplices) setupChunks
+  let setupBodies = [ b | SetupStanza _ b <- setupResults ]
+      splices = (buildSplicesFromSetups setupBodies)
+                  { valueSplices = valueSplices currentSplices }
+
   otherResults <- traverse (parseChunk splices) otherChunks
   pure (fillDefaultSrcs input otherResults)
 
