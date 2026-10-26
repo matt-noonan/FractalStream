@@ -1,113 +1,42 @@
-setup:
-  title: Newton's method on ℂ
-  size: 200x200
-  vertical-contents:
-    - text-entry:
-        label: "Title:"
-        value: "\"Newton's method on ℂ\""
-        type: Text
-        variable: title
-    - panel:
-        title: "Solve for..."
-        vertical-contents:
-          - horizontal-contents:
-              - text-entry:
-                  label: "0 = "
-                  value: "z^3 - 1"
-                  type: C
-                  environment:
-                    z: C
-                  variable: "f"
-    - panel:
-        title: "Coloring"
-        vertical-contents:
-          - text: |
-              Color expressions can use color names like `red` or `black`,
-              color functions involving the variables `z` and `iterations`.
-          - text-entry:
-              label: "Color expression for basins:"
-              value: "rainbow(arg z / (2π))"
-              type: Color
-              environment:
-                z: C
-              variable: "basin_color"
-          - text-entry:
-              label: "Color expression for failure to converge:"
-              value: "black"
-              type: Color
-              environment:
-                z: C
-              variable: "on_failure"
+script: |
+  @setup "Setup"
+  f : C as "0 = " using z:C <- z^3 - 1
+  text "Color expressions can use color names like `red` or `black`, color functions involving the variables `z` and `iterations`."
+  basin_color : Color as "Color expression for basins:" using z:C <- rainbow(arg z / (2π))
+  on_failure : Color as "Color expression for failure to converge:" using z:C <- black
 
-viewers:
-  - title: "«title»"
-    style: complex-plane
-    size: 600x600
-    resizable: true
-    z-coord: z
-    iteration-limit: maxIters
-    escape-radius: maxRadius
-    vanishing-radius: minRadius
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      lastZ : C <- 0
-      repeat:
-        lastZ <- z
-        z <- z - «f» / diff(z, «f»)
-      until z = lastZ
+  @config "Configuration"
+  shade_convergence : Boolean as "Shade by convergence speed: " <- true
+  maxIters : Z as "Iteration limit: " <- 100
+  maxRadius : R as "Escape radius: " <- 10
+  minRadius : R as "Vanishing radius: " <- 0.0001
 
-      if stuck:
-        color <- «on_failure»
-      else:
-        color <- «basin_color»
-        if shade_convergence:
-          color <- blend(iterations / 20, dark color, light color)
+  @viewer "Newton's method on ℂ" var=z size="600x600" limit="maxIters" escape="maxRadius" vanish="minRadius"
+  lastZ : C <- 0
+  repeat:
+    lastZ <- z
+    z <- z - «f» / diff(z, «f»)
+  until z = lastZ
 
-    tools:
-      - name: Trace
-        shortcut: t
-        script: |
-          on refresh:
-            erase
+  if stuck:
+    color <- «on_failure»
+  else:
+    color <- «basin_color»
+    if shade_convergence:
+      color <- blend(iterations / 20, dark color, light color)
 
-          on deactivated:
-            erase
-
-          on click-or-drag:
-            use white for line
-            erase
-            prevZ : C <- z
-            repeat:
-              prevZ <- z
-              draw point at z
-              z <- z - «f» / diff(z, «f»)
-              draw line from z to prevZ
-            until z = prevZ
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - checkbox:
-        label: "Shade by convergence speed: "
-        value: true
-        type: Boolean
-        variable: shade_convergence
-    - panel:
-        title: Standard options
-        vertical-contents:
-          - text-entry:
-              label: "Iteration limit: "
-              value: "100"
-              type: Z
-              variable: maxIters
-          - text-entry:
-              label: "Escape radius: "
-              value: "10"
-              type: R
-              variable: maxRadius
-          - text-entry:
-              label: "Vanishing radius: "
-              value: "0.0001"
-              type: R
-              variable: minRadius
+  @tool "Trace" shortcut="t"
+  on refresh:
+    erase
+  on deactivated:
+    erase
+  on click-or-drag:
+    use white for line
+    erase
+    prevZ : C <- z
+    repeat:
+      prevZ <- z
+      draw point at z
+      z <- z - «f» / diff(z, «f»)
+      draw line from z to prevZ
+    until z = prevZ

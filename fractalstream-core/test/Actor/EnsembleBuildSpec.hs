@@ -342,6 +342,47 @@ color <- black
         title <- getDynamic (cvTitle viewer)
         title `shouldBe` Right "V"
 
+    it "builds a `using`-clause formula whose default expression uses the \
+       \`escapes` keyword, even though `using` never declares the internal \
+       \escape-radius name it resolves to -- falling back to offering the \
+       \viewer bookkeeping names, the same way a real viewer body always can" $
+      shouldBuild [r|
+@setup "Setup"
+stop : Boolean using z:C <- z escapes
+
+@viewer "V" var=z size="100x100"
+until «stop»:
+  pass
+color <- black
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        title <- getDynamic (cvTitle viewer)
+        title `shouldBe` Right "V"
+
+    it "builds a `using`-clause formula whose default expression uses the \
+       \`iterations`/`stuck` keywords" $
+      shouldBuild [r|
+@setup "Setup"
+col : Color using z:C <- if stuck then black else rainbow(iterations / 20)
+
+@viewer "V" var=z size="100x100"
+iterate z -> z^2 until z escapes
+color <- «col»
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        title <- getDynamic (cvTitle viewer)
+        title `shouldBe` Right "V"
+
+    it "still rejects a formula field whose expression uses a variable \
+       \missing from `using`, even once the bookkeeping fallback is tried" $
+      [r|
+@setup "Setup"
+f : C using z:C <- w
+
+@viewer "V" var=C size="100x100"
+pass
+|] `shouldFailWith` "doesn't typecheck"
+
     it "remembers its own source text, for a frontend's save path to write back out" $
       let src = "@viewer \"V\" var=z size=\"100x100\"\npass\n"
       in shouldBuild src $ \ens -> do
@@ -530,6 +571,34 @@ prepare computed : Color:
 color <- computed
 |] `shouldFailWith` "defined twice"
 
+    it "splices a `code «name»:` declaration -- a whole block of statements \
+       \-- into a viewer's own body" $
+      shouldBuild [r|
+@setup "Setup"
+code script:
+  iterate z -> z^2 + i until z escapes
+  color <- if stuck then black else white
+
+@viewer "V" var=z size="100x100"
+«script»
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        cc <- getDynamic (cvCode viewer)
+        case cc of
+          Left (_, err) -> expectationFailure ("expected the spliced code to build, got: " ++ err)
+          Right _        -> pure ()
+
+    it "rejects a `code «name»:` declaration whose body references an \
+       \undeclared variable, once spliced into a viewer" $
+      [r|
+@setup "Setup"
+code script:
+  color <- badvar
+
+@viewer "V" var=z size="100x100"
+«script»
+|] `shouldFailWith` "No variable named"
+
   describe "checkScript" $ do
 
     let checkFailsWith :: String -> String -> Expectation
@@ -625,6 +694,30 @@ f : C using z:C <- z^2 + C
 @viewer "V" var=C size="100x100"
 pass
 |] "doesn't typecheck"
+
+    it "accepts a `using`-clause formula whose default expression uses the \
+       \`escapes`/`iterations`/`stuck` bookkeeping keywords, agreeing with \
+       \the real build's own bookkeeping fallback" $
+      agree [r|
+@setup "Setup"
+stop : Boolean using z:C <- z escapes
+col : Color using z:C <- if stuck then black else rainbow(iterations / 20)
+
+@viewer "V" var=z size="100x100"
+until «stop»:
+  pass
+color <- «col»
+|]
+
+    it "still rejects a `using`-clause formula missing an ordinary variable, \
+       \agreeing with the real build even once the bookkeeping fallback is tried" $
+      agree [r|
+@setup "Setup"
+f : C using z:C <- w
+
+@viewer "V" var=C size="100x100"
+pass
+|]
 
     it "still catches cross-stanza errors (unchanged from before this was extended)" $ do
       checkFailsWith [r|
@@ -796,4 +889,32 @@ computed : Color <- white
 prepare computed : Color:
   computed <- black
 color <- computed
+|]
+
+    -- A `code «name»:` declaration's own body is already fully resolved
+    -- into the splicing viewer's own ParsedCode by parseScript itself
+    -- (splicing happens at parse time), so checkViewer's existing
+    -- vfCode check already covers it -- no extra wiring needed, and no
+    -- "new coverage" asymmetry to call out, same as `prepare`.
+
+    it "accepts a `code «name»:` declaration spliced into a viewer" $
+      agree [r|
+@setup "Setup"
+code script:
+  iterate z -> z^2 + i until z escapes
+  color <- if stuck then black else white
+
+@viewer "V" var=z size="100x100"
+«script»
+|]
+
+    it "catches a `code «name»:` declaration referencing an undeclared \
+       \variable, once spliced into a viewer" $
+      agree [r|
+@setup "Setup"
+code script:
+  color <- badvar
+
+@viewer "V" var=z size="100x100"
+«script»
 |]

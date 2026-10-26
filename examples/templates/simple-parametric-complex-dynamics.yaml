@@ -1,140 +1,38 @@
-metadata:
-  author: Matt Noonan
-  email: matt.noonan@gmail.com
-  information: |
-    Single-variable complex dynamics, with an additional
-    complex parameter C.
+script: |
+  @setup "Setup"
+  expression : C as "iterate z ⟼ " using z:C, C:C <- z^2 + C
+  exit_condition : Boolean as "until" using z:C, C:C <- z escapes
+  initialZ : C as "Initial expression for z in parameter plane:" using C:C <- 0
+  text "Color expressions can use color names like `red` or `black`, color functions involving the variables `z`, `C`, and `iterations`, or the color variables `color1` and `color2`."
+  on_success : Color as "Color expression for success:" using z:C, C:C <- rainbow(iterations / 20)
+  on_failure : Color as "Color expression for failure:" using z:C, C:C <- black
 
-setup:
-  title: Simple parametric complex dynamics
-  size: 200x200
-  vertical-contents:
-    - text-entry:
-        label: "Title:"
-        value: "Parametric complex dynamics"
-        type: Text
-        variable: title
-    - panel:
-        title: "Dynamical system"
-        vertical-contents:
-          - horizontal-contents:
-              - text-entry:
-                  label: "iterate z ⟼ "
-                  value: "z² + C"
-                  type: C
-                  environment:
-                    z: C
-                    C: C
-                  variable: "expression"
-              - text-entry:
-                  label: "until"
-                  value: "z escapes"
-                  type: Boolean
-                  environment:
-                    z: C
-                    C: C
-                  variable: "exit_condition"
-          - text-entry:
-              label: "Initial expression for z in parameter plane:"
-              value: "0"
-              type: C
-              environment:
-                C: C
-              variable: "initialZ"
-    - panel:
-        title: "Coloring"
-        vertical-contents:
-          - text: |
-              Color expressions can use color names like `red` or `black`,
-              color functions involving the variables `z`, `C`, and `iterations`,
-              or the color variables `color1` and `color2`.
-          - text-entry:
-              label: "Color expression for success:"
-              value: "rainbow(iterations / 20)"
-              type: Color
-              environment:
-                z: C
-                C: C
-              variable: "on_success"
-          - text-entry:
-              label: "Color expression for failure:"
-              value: "black"
-              type: Color
-              environment:
-                z: C
-                C: C
-              variable: "on_failure"
+  @config "Configuration"
+  C : C as "Selected value of C:" <- -0.1226 + 0.7449i
+  maxIters : Z as "Iteration limit: " <- 100
+  maxRadius : R as "Escape radius: " <- 10
+  minRadius : R as "Vanishing radius: " <- 0.0001
 
-viewers:
-  - title: "«title» parameter plane"
-    style: complex-plane
-    size: 600x600
-    resizable: true
-    z-coord: C
-    iteration-limit: maxIters
-    escape-radius: maxRadius
-    vanishing-radius: minRadius
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      z : C <- «initialZ»
-      iterate z -> «expression» until «exit_condition»
-      color <- if stuck then «on_failure» else «on_success»
+  @viewer "Parametric complex dynamics parameter plane" var=C size="600x600" limit="maxIters" escape="maxRadius" vanish="minRadius"
+  z : C <- «initialZ»
+  iterate z -> «expression» until «exit_condition»
+  color <- if stuck then «on_failure» else «on_success»
 
-  - title: "«title»"
-    style: complex-plane
-    size: 600x600
-    resizable: true
-    z-coord: z
-    iteration-limit: maxIters
-    escape-radius: maxRadius
-    vanishing-radius: minRadius
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      iterate z -> «expression» until «exit_condition»
-      color <- if stuck then «on_failure» else «on_success»
+  @viewer "Parametric complex dynamics" var=z size="600x600" limit="maxIters" escape="maxRadius" vanish="minRadius"
+  iterate z -> «expression» until «exit_condition»
+  color <- if stuck then «on_failure» else «on_success»
 
-    tools:
-      - name: Trace
-        shortcut: t
-        script: |
-          on refresh:
-            erase
-
-          on deactivated:
-            erase
-
-          on click-or-drag:
-            use white for line
-            erase
-            prevZ : C <- z
-            until «exit_condition»:
-              prevZ <- z
-              draw point at z
-              z <- «expression»
-              draw line from z to prevZ
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "Selected value of C:"
-        value: -0.1226 + 0.7449i
-        type: C
-        variable: C
-    - text-entry:
-        label: "Iteration limit: "
-        value: "100"
-        type: Z
-        variable: maxIters
-    - text-entry:
-        label: "Escape radius: "
-        value: "10"
-        type: R
-        variable: maxRadius
-    - text-entry:
-        label: "Vanishing radius: "
-        value: "0.0001"
-        type: R
-        variable: minRadius
+  @tool "Trace" shortcut="t" for="Parametric complex dynamics"
+  on refresh:
+    erase
+  on deactivated:
+    erase
+  on click-or-drag:
+    use white for line
+    erase
+    prevZ : C <- z
+    until «exit_condition»:
+      prevZ <- z
+      draw point at z
+      z <- «expression»
+      draw line from z to prevZ

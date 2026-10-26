@@ -49,8 +49,9 @@ import Text.Read (readMaybe)
 ------------------------------------------------------------
 
 -- | One statement inside an @\@setup@\/@\@config@ stanza's body: either a
--- variable declaration (which becomes a config\/setup field in the UI), a
--- line of explanatory text, or a plain button.
+-- variable declaration (which becomes a config\/setup field in the UI),
+-- a line of explanatory text, a plain button, or a @code «name»:@
+-- code-splice declaration.
 data ConfigStmt
   = ConfigDecl
       { cdRange   :: SourceRange
@@ -75,6 +76,21 @@ data ConfigStmt
   | ConfigRow [ConfigStmt]
     -- ^ An indented @row:@ block; its statements are laid out side by
     -- side instead of stacked vertically.
+  | ConfigCode
+      { ccRange :: SourceRange
+      , ccName  :: String
+      , ccBody  :: ParsedCode
+      }
+    -- ^ A @code «name»:@ declaration: a whole block of statements,
+    -- parsed exactly like a @\@viewer@\/@\@tool@ body (so it can use
+    -- the full statement language -- assignments, loops, conditionals,
+    -- draw commands), spliced as code (via @«name»@, not as a value)
+    -- into whichever @\@viewer@\/@\@tool@ body binds its free
+    -- variables. Only meaningful under @\@setup@ (mirroring every
+    -- other splice-contributing declaration): the two-pass parse that
+    -- builds the splices map only ever looks at @\@setup@ stanzas, so
+    -- one declared under @\@config@ parses fine but never becomes a
+    -- usable splice, the same as a @using@-clause formula field would.
 
 -- | One stanza of a unified project script, with its body already parsed
 -- but not yet resolved against any other stanza.
@@ -239,7 +255,8 @@ splitStanzas allToks = case allToks of
 -- what makes a `using`-clause formula field spliceable at all).
 buildSplicesFromSetups :: [[ConfigStmt]] -> Splices
 buildSplicesFromSetups stmtLists = Splices
-  { codeSplices  = Map.empty
+  { codeSplices  = Map.fromList
+      [ (ccName, ccBody) | stmts <- stmtLists, ConfigCode{..} <- concatMap flatten stmts ]
   , valueSplices = Map.fromList
       [ (cdName, cdDefault) | stmts <- stmtLists, ConfigDecl{..} <- concatMap flatten stmts ]
   }
@@ -341,7 +358,23 @@ scriptGrammar splices@Splices{valueSplices} = mdo
     (\estmts -> ConfigRow <$> sequence estmts) <$>
     (tok "row" *> colon *> nl *> token Indent *> many configStmt <* token Dedent)
 
-  configStmt <- ruleChoice [configDecl, configText, configButton, configRow]
+  -- A `code «name»:` declaration: reuses `viewerBody` (the exact same
+  -- statement-level grammar a `@viewer`\/`@tool` body parses with), so
+  -- this can use the full statement language, not just expressions.
+  -- Its free variables are left unresolved, same as a `using`-clause
+  -- formula field's default -- they're only bound once this is
+  -- spliced (via `«name»`, as code rather than a value) into whatever
+  -- body actually declares them.
+  configCodeHeader <- rule $
+    withSourceRange $
+      (\name sr -> Right (name, sr))
+      <$> (tok "code" *> ident <* colon <* nl)
+
+  configCode <- rule $
+    (\ehdr code -> (\(name, sr) -> ConfigCode sr name code) <$> ehdr)
+    <$> configCodeHeader <*> (token Indent *> viewerBody <* token Dedent)
+
+  configStmt <- ruleChoice [configDecl, configText, configButton, configRow, configCode]
 
   ------------------------------------------------------------
   -- @\@viewer@ preparation-script header: `prepare name1 : Ty1, ...:`

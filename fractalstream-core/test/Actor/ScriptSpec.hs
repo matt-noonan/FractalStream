@@ -149,6 +149,19 @@ row:
         [ConfigStanza "Configuration" [ConfigRow [ConfigText "hi", ConfigButton "Go"]]] -> pure ()
         other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
 
+    it "accepts a `code «name»:` declaration, parsed with the full statement \
+       \language (assignments, conditionals), not just expressions" $
+      shouldParseTo [r|
+@setup "Setup"
+code script:
+  if z escapes:
+    color <- black
+  else:
+    color <- white
+|] $ \case
+        [SetupStanza "Setup" [ConfigCode{ccName = "script"}]] -> pure ()
+        other -> expectationFailure ("did not match expected setup stanza: " ++ show (length other) ++ " stanzas")
+
     it "allows a plain declaration named `row` outside of a row: block" $
       shouldParseTo [r|
 @config "Configuration"
@@ -339,6 +352,20 @@ iterate z -> «f» until z escapes
 z : C <- «nope»
 pass
 |] "couldn't parse"
+
+    it "resolves a `«name»` code splice -- a whole block of statements, \
+       \not just an expression -- from a `code «name»:` declaration" $
+      shouldParseTo [r|
+@setup "Setup"
+code script:
+  if |z| < 1:
+    color <- black
+  else:
+    color <- white
+
+@viewer "V" var=z size="100x100"
+«script»
+|] $ \stanzas -> length stanzas `shouldBe` 2
 
     it "allows stanzas in any order -- a `@viewer` before the `@setup` it splices from" $
       shouldParseTo [r|

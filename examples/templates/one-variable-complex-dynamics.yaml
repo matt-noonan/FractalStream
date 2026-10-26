@@ -1,68 +1,20 @@
-setup:
-  title: One-variable complex dynamics
-  size: 200x200
-  vertical-contents:
-    - text-entry:
-        label: "Title:"
-        value: "One-variable complex dynamics"
-        type: Text
-        variable: title
-    - text: |
-        This template can be used to make a
-        script that draws in the z-plane.
+script: |
+  @setup "Setup"
+  text "This template can be used to make a script that draws in the z-plane."
+  text "The script runs once per pixel in the view, and should use the `color` variable to indicate what color to use for that pixel."
+  code script:
+    iterate z -> z^2 + i until z escapes
+    if stuck:
+      color <- black
+    else if im z > 0:
+      color <- light rainbow(iterations / 20)
+    else:
+      color <- dark rainbow(iterations / 20)
 
-        The script runs once per pixel in the view, and
-        should use the `color` variable to indicate what
-        color to use for that pixel.
-    - code:
-        variable: script
-        environment:
-          z: C
-          color: Color
-          maxIters: Z
-          maxRadius: R
-          minRadius: R
-        value: |
-          iterate z ⟼ z² + i until z escapes
+  @config "Configuration"
+  maxIters : Z as "Iteration limit: " <- 100
+  maxRadius : R as "Escape radius: " <- 10
+  minRadius : R as "Vanishing radius: " <- 0.0001
 
-          if stuck:
-            color ⭠ black
-          else if im z > 0:
-            color ⭠ light rainbow(iterations / 20)
-          else:
-            color ⭠ dark rainbow(iterations / 20)
-
-viewers:
-
-  - title: "«title»"
-    style: complex-plane
-    size: 600x600
-    resizable: true
-    z-coord: z
-    iteration-limit: maxIters
-    escape-radius: maxRadius
-    vanishing-radius: minRadius
-    initial-center: "0"
-    initial-pixel-size: 1/100
-    code: |
-      «script»
-
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "Iteration limit: "
-        value: "100"
-        type: Z
-        variable: maxIters
-    - text-entry:
-        label: "Escape radius: "
-        value: "10"
-        type: R
-        variable: maxRadius
-    - text-entry:
-        label: "Vanishing radius: "
-        value: "0.0001"
-        type: R
-        variable: minRadius
+  @viewer "One-variable complex dynamics" var=z size="600x600" limit="maxIters" escape="maxRadius" vanish="minRadius" pixelSize="1/100"
+  «script»

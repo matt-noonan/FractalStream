@@ -354,6 +354,11 @@ checkConfigStmt :: ConfigStmt -> Either (SourceRange, String) ([(String, SomeTyp
 checkConfigStmt = \case
   ConfigText{}     -> Right ([], [])
   ConfigButton{}   -> Right ([], [])
+  ConfigCode{}     -> Right ([], [])
+    -- Contributes to `codeSplices` instead, already resolved by the
+    -- time `checkScript` ever sees a parsed stanza -- any `«name»`
+    -- code-splice reference is substituted at parse time, so there's
+    -- nothing left for this live check to do with it here.
   ConfigRow stmts' -> checkConfigStmts stmts'
   ConfigDecl{..}    -> do
     checkConfigDecl cdRange cdName cdType cdDefault cdChoices cdUsing
@@ -381,11 +386,22 @@ checkConfigDecl sr name (SomeType ty) defaultValue mchoices mUsing = withKnownTy
 
       checkFormulaField envSpec =
         withEnvFromMap (Map.fromList [ (n, withType t SomeType) | (n, t) <- envSpec ]) $
-          \(env' :: EnvironmentProxy env') -> withEnvironment env' $
-            case atType @env' defaultValue ty of
-              TC (Left err) -> Left (sr, "The formula for `" ++ name ++
-                                          "` doesn't typecheck: " ++ ppError err)
+          \(env0 :: EnvironmentProxy env0) -> withEnvironment env0 $
+            case atType @env0 defaultValue ty of
               TC (Right _)  -> Right ()
+              TC (Left err0) ->
+                -- Fall back to also offering the bookkeeping names that
+                -- `escapes`/`vanishes`/`iterations`/`stuck` resolve to,
+                -- in case that (and not anything else) is why this
+                -- failed -- see 'declareFormulaBookkeeping'.
+                case declareFormulaBookkeeping env0 of
+                  Left _ -> Left (sr, "The formula for `" ++ name ++
+                                       "` doesn't typecheck: " ++ ppError err0)
+                  Right (env1 :: EnvironmentProxy env1) -> withEnvironment env1 $
+                    case atType @env1 defaultValue ty of
+                      TC (Right _) -> Right ()
+                      TC (Left _)  -> Left (sr, "The formula for `" ++ name ++
+                                                 "` doesn't typecheck: " ++ ppError err0)
 
   in case mUsing of
        Just envSpec -> checkFormulaField envSpec
@@ -676,6 +692,12 @@ configStmtToLayout = \case
   ConfigText s   -> Right . PlainText <$> newVariable s
   ConfigButton s -> Right . Button <$> newVariable s
   ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdLabel cdChoices cdUsing
+  ConfigCode{} ->
+    -- Not a user-facing field at all -- just a code-splice
+    -- definition, already resolved into whatever body spliced it in
+    -- by the time anything builds a real UI. An empty, invisible
+    -- group is the simplest "nothing to show here" Layout.
+    Right . Vertical <$> newVariable []
   ConfigRow stmts -> do
     results <- mapM configStmtToLayout stmts
     case sequence results of
@@ -690,11 +712,12 @@ configStmtNames = \case
   ConfigRow stmts    -> concatMap configStmtNames stmts
   ConfigText{}       -> []
   ConfigButton{}     -> []
+  ConfigCode{}       -> []
 
 buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> Maybe String -> Maybe [String]
                 -> Maybe [(String, FSType)]
                 -> IO (Either (SourceRange, String) Layout)
-buildConfigDecl sr name (SomeType ty) defaultValue mlabel mchoices mUsing = withKnownType ty $
+buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoices mUsing = withKnownType ty $
   let lbl = Label (fromMaybe name mlabel)
 
       evalDefault = case atType @'[] defaultValue ty of
@@ -717,18 +740,32 @@ buildConfigDecl sr name (SomeType ty) defaultValue mlabel mchoices mUsing = with
       -- 'reactiveSomeValue' below.
       buildFormulaField envSpec =
         withEnvFromMap (Map.fromList [ (n, withType t SomeType) | (n, t) <- envSpec ]) $
-          \(env' :: EnvironmentProxy env') -> withEnvironment env' $
-            case atType @env' defaultValue ty of
-              TC (Left err) -> pure (Left (sr, "The formula for `" ++ name ++
-                                                "` doesn't typecheck: " ++ ppError err))
-              TC (Right v) -> do
-                labelV     <- newVariable lbl
-                exprNameP  <- constParsed name (Right name)
-                exprTypeP  <- constParsed (ppType ty) (Right (SomeType ty))
-                exprEnvV   <- newVariable (SomeEnvironment env')
-                exprValueP <- constParsed (name ++ " (defined in script)")
-                                           (Right (SomeValue env' ty v))
-                pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprEnvV exprValueP)))
+          \(env0 :: EnvironmentProxy env0) -> withEnvironment env0 $
+            let finish :: forall e. EnvironmentProxy e -> Language.Value.Value '(e, t) -> IO (Either (SourceRange, String) Layout)
+                finish env v = do
+                  labelV     <- newVariable lbl
+                  exprNameP  <- constParsed name (Right name)
+                  exprTypeP  <- constParsed (ppType ty) (Right (SomeType ty))
+                  exprEnvV   <- newVariable (SomeEnvironment env)
+                  exprValueP <- constParsed (name ++ " (defined in script)")
+                                             (Right (SomeValue env ty v))
+                  pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprEnvV exprValueP)))
+            in case atType @env0 defaultValue ty of
+                 TC (Right v) -> finish env0 v
+                 TC (Left err0) ->
+                   -- Fall back to also offering the bookkeeping names
+                   -- that `escapes`/`vanishes`/`iterations`/`stuck`
+                   -- resolve to, in case that (and not anything else)
+                   -- is why this failed -- see
+                   -- 'declareFormulaBookkeeping'.
+                   case declareFormulaBookkeeping env0 of
+                     Left _ -> pure (Left (sr, "The formula for `" ++ name ++
+                                                "` doesn't typecheck: " ++ ppError err0))
+                     Right (env1 :: EnvironmentProxy env1) -> withEnvironment env1 $
+                       case atType @env1 defaultValue ty of
+                         TC (Right v) -> finish env1 v
+                         TC (Left _)  -> pure (Left (sr, "The formula for `" ++ name ++
+                                                          "` doesn't typecheck: " ++ ppError err0))
 
   in case mUsing of
     Just envSpec -> buildFormulaField envSpec
@@ -830,6 +867,30 @@ declareE :: forall n t e. KnownSymbol n
 declareE _ t e = case lookupEnv' (Proxy @n) e of
   Found' _ _ -> Left (NoSourceRange, "Internal error: duplicate `" ++ symbolVal (Proxy @n) ++ "`.")
   Absent' pf -> Right (recallIsAbsent pf $ declare t e)
+
+-- | The bookkeeping names a @using@-clause formula field's default
+-- expression can reach for (on top of whatever environment its own
+-- @using@ clause declares) if it uses one of the @escapes@\/@vanishes@\/
+-- @iterations@\/@stuck@ keywords -- the same ones always implicitly
+-- available inside a real @\@viewer@\/@\@tool@ body. A plain variable
+-- reference still only ever sees the @using@ clause's own declared
+-- names; this is consulted only as a fallback, once a formula fails to
+-- typecheck against that smaller environment -- see 'checkConfigDecl'\/
+-- 'buildConfigDecl's own @checkFormulaField@\/@buildFormulaField@.
+type FormulaBookkeeping e =
+  '(InternalIterations, 'IntegerT) ': '(InternalStuck, 'BooleanT) ':
+  '(InternalIterationLimit, 'IntegerT) ': '(InternalEscapeRadius, 'RealT) ':
+  '(InternalVanishingRadius, 'RealT) ': e
+
+declareFormulaBookkeeping :: forall e. EnvironmentProxy e
+                          -> Either (SourceRange, String) (EnvironmentProxy (FormulaBookkeeping e))
+declareFormulaBookkeeping e0 =
+      declareE (Proxy @InternalIterations)      IntegerType
+  <=< declareE (Proxy @InternalStuck)           BooleanType
+  <=< declareE (Proxy @InternalIterationLimit)  IntegerType
+  <=< declareE (Proxy @InternalEscapeRadius)    RealType
+  <=< declareE (Proxy @InternalVanishingRadius) RealType
+  $ e0
 
 -- | The bookkeeping names a preparation script's own code can see,
 -- on top of whatever environment it's declared against: per-pixel
@@ -1332,6 +1393,18 @@ allTemplates =
   , template "General parametric complex dynamics" parametricComplexDynamicsTemplate
   ]
  where
-   template name bs = (name,) $
-     either (error . ("Internal error when parsing a template: " ++)) pure =<< deserializeYAML bs
+   -- Each embedded template now carries its whole project as a unified
+   -- script under one top-level `script:` key -- the same shape
+   -- 'parseEnsembleFromFile' recognizes and hands to
+   -- 'buildEnsembleFromScript', tried first here for the same reason,
+   -- before falling back to the classic multi-key 'Codec' instance (so
+   -- a template embedded in the classic format, should one ever be
+   -- added back, still loads unchanged).
+   template name bs = (name,) $ case YAML.decodeEither' bs of
+     Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
+       buildEnsembleFromScript (Text.unpack scriptText) >>= \case
+         Left err  -> error ("Internal error when parsing a template: " ++
+                              formatScriptError (Text.unpack scriptText) err)
+         Right ens -> pure ens
+     _ -> either (error . ("Internal error when parsing a template: " ++)) pure =<< deserializeYAML bs
 
