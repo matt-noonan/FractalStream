@@ -17,7 +17,7 @@ import Language.Type
 import Data.DynamicValue
 import Data.Color hiding (black, white)
 import Actor.Layout
-import Language.Parser.SourceRange (spanOfSourceRange, SourceSpan(..))
+import Language.Parser.SourceRange (SourceRange, spanOfSourceRange, SourceSpan(..))
 import Language.Parser.Tokenizer (commentRanges)
 
 import UI.CodeEditor
@@ -26,6 +26,7 @@ import Graphics.UI.WX hiding (pt, when, grey, Color)
 import Graphics.UI.WXCore.Events
 import Graphics.UI.WXCore.WxcClassesAL
 import Graphics.UI.WXCore.WxcClassesMZ
+import Graphics.UI.WXCore.Frame (windowGetFrameParent)
 import Graphics.UI.WXCore.WxcClassTypes (ColourPickerCtrl)
 import Control.Concurrent
 import Data.Char (toUpper)
@@ -291,11 +292,19 @@ genericExpressionWidget _canEditEnvironment p l UIVariable{..} = liftIO $ do
 
   pure (labelTxt, te, errorMessage)
 
+-- | Everything about editing a piece of unified-script text that comes
+-- "for free" from a reactive 'Mapped': live syntax coloring (comments)
+-- and an inline error indicator at the first error's source span, kept
+-- in sync as the text changes. Takes the 'Mapped' directly rather than
+-- a 'UIScript' (the only one of 'UIScript's fields this ever actually
+-- used), so any pure text -> @'Either' ('SourceRange', 'String') t@
+-- check can drive it -- not just parsing a single viewer's code into a
+-- 'SomeCode', which is all 'UIScript' itself can express.
 scriptWidget :: MonadIO io
              => Window a
-             -> UIScript
+             -> Mapped CodeString (Either (SourceRange, String) t)
              -> io (StyledTextCtrl (), StaticText ())
-scriptWidget p UIScript{..} = do
+scriptWidget p scriptCode = do
   ce <- liftIO $ codeEditor p scriptCode
   txt <- unCodeString <$> getDynamic (source scriptCode)
   lastText <- liftIO $ newIORef txt
@@ -333,7 +342,17 @@ scriptWidget p UIScript{..} = do
     ]
 
   -- Check for script changes periodically. TODO: make this event-driven instead
-  void $ wxTimer p [ interval := 200, enabled := True
+  --
+  -- Owned by the enclosing frame, not `p`: 'wxTimer's cleanup hooks
+  -- into the owner's "closing" event, which wxWidgets only ever
+  -- generates for a top-level window (a frame/dialog), never for a
+  -- plain panel like `p`, regardless of what happens to its parent --
+  -- a panel-owned timer's cleanup can't ever fire, so it leaks and
+  -- keeps polling this now-destroyed StyledTextCtrl every 200ms for
+  -- as long as the process runs, every time the enclosing window
+  -- (and so this widget) is closed.
+  enclosingFrame <- liftIO (windowGetFrameParent p)
+  void $ wxTimer enclosingFrame [ interval := 200, enabled := True
                    , on command := do
                        new <- styledTextCtrlGetText ce
                        old <- readIORef lastText

@@ -91,7 +91,7 @@ generateWxLayout buttonPress frame0 wLayout = do
 
         ScriptBox v -> do
           p' <- liftIO $ panel p []
-          (ce, errorText) <- scriptWidget p' v
+          (ce, errorText) <- scriptWidget p' (scriptCode v)
           pure (container p' $ fill $ column 5 [ fill $ widget ce, hstretch $ expand $ widget errorText ])
 
         TextBox l v -> do
