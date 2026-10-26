@@ -5,7 +5,7 @@ script: |
   text "Use the `dynamic` variable to test if the script is running in the `z`-plane."
   z0 : C as "Initial value for z in the C plane:" <- 0
   initialC : C as "Initial value for C:" <- 0
-  code script:
+  code script using z:C, C:C:
     iterate z -> z^2 + C until z escapes
     if stuck:
       color <- black
