@@ -4,6 +4,7 @@ module Actor.Ensemble
   , NamedScenario(..)
   , parseEnsembleFromFile
   , buildEnsembleFromScript
+  , checkScript
   , encodeEnsemble
   , formatScriptError
   , runEnsemble
@@ -253,6 +254,216 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
         Right ens -> do
           setValue' (ensembleSourceScript ens) (Just scriptText)
           pure (Right ens)
+
+-- | A pure, allocation-free check of a unified project script: parses
+-- it, validates its cross-stanza references (a duplicate @\@viewer@
+-- title, a tool's unresolved @for=@ target), validates every
+-- @\@setup@\/@\@config@ declaration's default value against its
+-- declared type, and type-checks every @\@viewer@'s own code against
+-- the environment\/splices its declarations would produce -- all
+-- without building any runtime 'Ensemble'. This recovers, purely, the
+-- same type errors 'buildEnsembleFromScript' catches: per-declaration
+-- type-checking was never actually entangled with allocation in this
+-- codebase (every one of 'buildConfigDecl'\/'buildViewerContext'\/
+-- 'parseViewerScript's own validation logic is already a plain,
+-- non-'IO' function -- allocating a 'Variable' for a checked value is
+-- always a separate step after it, done by 'buildConfigDecl' and
+-- 'buildComplexViewer' themselves, never inside the checking logic
+-- itself); this function just calls that existing pure logic directly
+-- instead of going through the 'Layout'\/'Ensemble' machinery built
+-- around it, which is what actually requires 'IO'.
+--
+-- Also checks every @\@tool@'s own code, against the ensemble's
+-- @\@config@ environment combined with that tool's own declarations
+-- (mirroring 'Actor.Event.buildHandlerWith's own
+-- 'Actor.Event.runParsedToolScript' call, also already pure) -- this
+-- is *more* than 'buildEnsembleFromScript' itself catches at build
+-- time, since 'buildTool' stores a tool's
+-- 'Actor.Event.ParsedToolScript' unapplied and only runs it against a
+-- real environment when the tool is actually activated. So a tool
+-- error caught here is new coverage, not something
+-- 'buildEnsembleFromScript' would also reject today -- the drift-guard
+-- test only compares the two when both agree, not full parity.
+checkScript :: String -> Either (SourceRange, String) ()
+checkScript scriptText = do
+  stanzas <- parseScript scriptText
+  let setupGroups  = [ (t, b) | SetupStanza t b <- stanzas ]
+      configGroups = [ (t, b) | ConfigStanza t b <- stanzas ]
+      viewers      = mapMaybe viewerFields stanzas
+      tools        = mapMaybe toolFields stanzas
+      viewerTitles = [ vfTitle v | v <- viewers ]
+
+  checkTitlesAndTargets viewerTitles tools
+
+  -- '@setup@ contributes splices only (its values are only ever
+  -- spliced into viewer\/tool code as @«name»@, never bound as plain
+  -- variables -- 'buildWithValidTargets' wires it the same
+  -- asymmetric way: 'ensembleSetup' feeds only this ensemble's
+  -- splices, never its context); '@config@ contributes the ordinary-
+  -- variable environment only. Mirrors that same split, computed
+  -- directly from the parsed declarations' defaults rather than from
+  -- an allocated 'Layout's current values (nothing has been edited
+  -- yet at check time, so a field's current value is always still
+  -- its declared default).
+  (_, setupSplices) <- checkConfigGroup setupGroups
+  (configEnv, _)     <- checkConfigGroup configGroups
+  checkNoDuplicateNames configEnv
+  let splices = Splices Map.empty (Map.fromList setupSplices)
+
+  withEnvFromMap (Map.fromList configEnv) $ \env ->
+    forM_ viewers $ \v ->
+      checkViewer configEnv env splices
+        [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ] v
+
+-- | Mirrors '<#>'s own duplicate-name rejection -- the same check
+-- 'Actor.Layout.layoutContext' hits (via its 'SomeContext'' 'Monoid'
+-- instance) when combining multiple @\@config@ stanzas' variables
+-- into one context, and 'Actor.Ensemble.buildToolContext' hits when
+-- combining a tool's own declarations with the ensemble context.
+-- 'Map.fromList' alone would just silently let a later entry win,
+-- which is *not* what either of those real paths do.
+checkNoDuplicateNames :: [(String, SomeType)] -> Either (SourceRange, String) ()
+checkNoDuplicateNames entries = case names \\ nub names of
+  (d:_) -> Left (NoSourceRange, d ++ " is defined twice.")
+  []    -> Right ()
+  where names = map fst entries
+
+-- | Validate every declaration in a group of @\@setup@\/@\@config@
+-- stanzas, and extract, for each, the ordinary-variable environment
+-- entry it contributes (every declaration except a @using@ formula
+-- field, which can only ever be referenced as a splice -- see
+-- 'buildConfigDecl's own doc comment on 'buildFormulaField') and the
+-- splice entry it always contributes. The allocation-free counterpart
+-- of 'buildMaybeConfiguration' feeding 'Actor.Layout.layoutContext'\/
+-- 'layoutToSplices'.
+checkConfigGroup :: [(String, [ConfigStmt])]
+                  -> Either (SourceRange, String) ([(String, SomeType)], [(String, ParsedValue)])
+checkConfigGroup = checkConfigStmts . concatMap snd
+
+checkConfigStmts :: [ConfigStmt] -> Either (SourceRange, String) ([(String, SomeType)], [(String, ParsedValue)])
+checkConfigStmts stmts = do
+  parts <- traverse checkConfigStmt stmts
+  pure (concatMap fst parts, concatMap snd parts)
+
+checkConfigStmt :: ConfigStmt -> Either (SourceRange, String) ([(String, SomeType)], [(String, ParsedValue)])
+checkConfigStmt = \case
+  ConfigText{}     -> Right ([], [])
+  ConfigButton{}   -> Right ([], [])
+  ConfigRow stmts' -> checkConfigStmts stmts'
+  ConfigDecl{..}    -> do
+    checkConfigDecl cdRange cdName cdType cdDefault cdChoices cdUsing
+    case cdUsing of
+      Just _  -> pure ([], [(cdName, cdDefault)])
+      Nothing -> pure ([(cdName, cdType)], [(cdName, cdDefault)])
+
+-- | The pure, allocation-free counterpart of 'buildConfigDecl': the
+-- exact same validation (a plain field's default against its declared
+-- type, or a @using@ formula's default against its own environment,
+-- or a choice index against its list of choices), minus every
+-- subsequent 'newVariable' call -- those build a 'Layout' for display
+-- and don't change whether this declaration is valid. Keep this in
+-- sync with 'buildConfigDecl' (the test suite cross-checks 'checkScript'
+-- and 'buildEnsembleFromScript' reject the same scripts, to catch
+-- drift between them).
+checkConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue
+                -> Maybe [String] -> Maybe [(String, FSType)]
+                -> Either (SourceRange, String) ()
+checkConfigDecl sr name (SomeType ty) defaultValue mchoices mUsing = withKnownType ty $
+  let evalDefault = case atType @'[] defaultValue ty of
+        TC (Left err) -> Left (sr, "The default value for `" ++ name ++
+                                    "` doesn't match its declared type: " ++ ppError err)
+        TC (Right v)  -> Right (evaluateInContext EmptyContext v)
+
+      checkFormulaField envSpec =
+        withEnvFromMap (Map.fromList [ (n, withType t SomeType) | (n, t) <- envSpec ]) $
+          \(env' :: EnvironmentProxy env') -> withEnvironment env' $
+            case atType @env' defaultValue ty of
+              TC (Left err) -> Left (sr, "The formula for `" ++ name ++
+                                          "` doesn't typecheck: " ++ ppError err)
+              TC (Right _)  -> Right ()
+
+  in case mUsing of
+       Just envSpec -> checkFormulaField envSpec
+       Nothing -> case (ty, mchoices) of
+         (IntegerType, Just choices) -> evalDefault >>= \ix ->
+           if ix < 0 || ix >= fromIntegral (length choices)
+           then Left (sr, "The choice index " ++ show ix ++ " for `" ++ name ++
+                           "` is out of range (there " ++
+                           (if length choices == 1 then "is 1 choice" else
+                            "are " ++ show (length choices) ++ " choices") ++ ").")
+           else Right ()
+         _ -> evalDefault >> Right ()
+
+-- | The pure, allocation-free counterpart of 'buildComplexViewer's own
+-- type-check of a viewer's code (mirroring its internal @runBuild@
+-- exactly, down to the @INTERNAL ERROR@ case -- see 'buildComplexViewer'
+-- for why it can't happen in practice), then its own targeting tools'
+-- code too (mirroring 'buildComplexViewer's own @toolLimits@\/
+-- 'ComplexCoordinate' computation, passed to 'buildTool' the same
+-- way). The 'Context' passed to 'buildViewerContext' is never actually
+-- a real build's allocated one here: that function only ever threads
+-- its @vcContext@ argument through to its result, never inspects it
+-- (confirmed by reading its definition), so a context built entirely
+-- from 'error' placeholders via 'envToContext' is safe -- nothing in
+-- this check-only path ever forces it. (If that invariant ever
+-- changes, this will fail loudly -- including in the test suite --
+-- rather than silently.)
+checkViewer :: forall env. [(String, SomeType)] -> EnvironmentProxy env -> Splices
+            -> [ToolFields] -> ViewerFields -> Either (SourceRange, String) ()
+checkViewer configEnv env splices myTools ViewerFields{..} = do
+  _ <- parseConstantE ComplexType (fromMaybe "0" vfCenter)
+  _ <- parseConstantE RealType (fromMaybe "1/128" vfPixelSize)
+  mIterPV <- parseMaybeAttrValue vfIterLimit
+  mEscPV  <- parseMaybeAttrValue vfEscape
+  mVanPV  <- parseMaybeAttrValue vfVanish
+
+  -- Needs its own explicit type signature: as just one statement among
+  -- several in this 'do' block (rather than the final, whole-function
+  -- result, as it used to be before this had more to check afterward),
+  -- GHC can't otherwise pin down 'assertMissingViewerArgs'`s rank-n
+  -- @t@ from context alone (an "untouchable type variable" error).
+  let codeCheck :: Either (SourceRange, String) ()
+      codeCheck = fromMaybe (Left (NoSourceRange, "INTERNAL ERROR: redefined internal argument")) $
+        assertMissingViewerArgs env $ do
+          let dummyCtx :: Context DynamicValue env
+              dummyCtx = envToContext env (\_ _ -> error "checkViewer: dummy context value forced unexpectedly")
+          vc <- left (NoSourceRange,) (buildViewerContext env dummyCtx splices vfVar mIterPV mEscPV mVanPV)
+          _  <- parseViewerScript vfPixelVar vc vfCode
+          pure ()
+  codeCheck
+
+  let toolLimits = ( fromMaybe defaultIterLimit mIterPV
+                    , fromMaybe defaultMaxRadius mEscPV
+                    , fromMaybe defaultMinRadius mVanPV
+                    )
+  forM_ myTools (checkTool configEnv (ComplexCoordinate vfVar) toolLimits vfPixelVar)
+
+-- | The pure, allocation-free counterpart of a tool's own code getting
+-- type-checked -- in the real app, this first happens inside
+-- 'Actor.Event.buildHandlerWith' (itself already pure past its
+-- 'SomeContext' argument), only once the tool is actually activated.
+-- Combines the ensemble's own @\@config@ environment with this tool's
+-- own declarations (mirroring 'buildToolContext's
+-- 'Language.Environment.<#>'-based combining, including its rejection
+-- of a name defined on both sides -- see 'checkNoDuplicateNames')
+-- before type-checking its merged event-handler blocks against the
+-- result, the same way 'mergeToolBlocks' feeds 'buildTool'.
+-- 'runParsedToolScript's errors already carry a real 'SourceRange'
+-- (threaded through since -- unlike when this was first written --
+-- 'ParsedToolBlock'\/'CombinedEventHandler' no longer discard it), so
+-- there's no need to tag anything with 'NoSourceRange' here.
+checkTool :: [(String, SomeType)] -> Coordinate -> (ParsedValue, ParsedValue, ParsedValue)
+          -> Maybe String -> ToolFields -> Either (SourceRange, String) ()
+checkTool ensembleEnv coord limits mpixel ToolFields{..} = do
+  (toolEnvEntries, _) <- checkConfigStmts tfConfig
+  checkNoDuplicateNames (ensembleEnv ++ toolEnvEntries)
+  withEnvFromMap (Map.fromList (ensembleEnv ++ toolEnvEntries)) $ \(env :: EnvironmentProxy env) ->
+    assertMissingClickArgs env $
+    assertMissingDragArgs env $
+    assertMissingUnitArgs env $
+    case runParsedToolScript (mergeToolBlocks tfBlocks coord limits mpixel) env of
+      Left err -> Left err
+      Right _  -> Right ()
 
 buildWithValidTargets :: [(String, [ConfigStmt])]
                        -> [(String, [ConfigStmt])]

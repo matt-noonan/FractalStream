@@ -133,7 +133,7 @@ on refresh:
           Left err -> expectationFailure ("buildToolContext failed: " ++ err)
           Right (SomeContext ctx) ->
             case runParsedToolScript script (contextToEnv ctx) of
-              Left err -> expectationFailure
+              Left (_, err) -> expectationFailure
                 ("tool script failed to resolve its own config variables: " ++ err)
               Right _ -> pure ()
 
@@ -432,3 +432,220 @@ pass
 @viewer "V" var=z size="100x100"
 w <- w + 1
 |] `shouldFailWith` "No variable named"
+
+  describe "checkScript" $ do
+
+    let checkFailsWith :: String -> String -> Expectation
+        checkFailsWith src needle = case checkScript src of
+          Left (_, err) -> err `shouldSatisfy` isInfixOf needle
+          Right ()       -> expectationFailure "expected checkScript to reject this, but it accepted it"
+
+        checkAccepts :: String -> Expectation
+        checkAccepts src = case checkScript src of
+          Left (_, err) -> expectationFailure ("expected checkScript to accept this, got: " ++ err)
+          Right ()       -> pure ()
+
+        -- Regression guard against 'checkScript' and 'buildEnsembleFromScript'
+        -- drifting apart (see 'checkConfigDecl's doc comment): a script this
+        -- asserts both accept, or both reject the same way, independently of
+        -- the live-editor-specific assertions above.
+        agree :: String -> Expectation
+        agree src = do
+          built <- build src
+          case (checkScript src, built) of
+            (Right (), Right _)   -> pure ()
+            (Left (_, cErr), Left bErr) ->
+              bErr `shouldSatisfy` isInfixOf cErr
+            (Right (), Left bErr) ->
+              expectationFailure ("checkScript accepted, but buildEnsembleFromScript rejected: " ++ bErr)
+            (Left (_, cErr), Right _) ->
+              expectationFailure ("checkScript rejected (" ++ cErr ++ "), but buildEnsembleFromScript accepted")
+
+    it "accepts a simple, valid single-viewer script" $
+      checkAccepts [r|
+@viewer "Mandelbrot Set" var=C size="500x500"
+z : C <- 0
+iterate z -> z^2 + C until z escapes
+color <- if stuck then black else rainbow(iterations / 20)
+|]
+
+    it "catches a viewer body referencing an undeclared variable, live, \
+       \without building an Ensemble" $
+      checkFailsWith [r|
+@viewer "V" var=z size="100x100"
+w <- w + 1
+|] "No variable named"
+
+    it "catches a viewer body referencing a misspelled `@config` variable" $
+      checkFailsWith [r|
+@config "C"
+radius : R <- 2
+
+@viewer "V" var=z size="100x100"
+color <- if |z| > raduis then black else white
+|] "No variable named"
+
+    it "accepts a viewer body that correctly references a `@config` variable" $
+      checkAccepts [r|
+@config "C"
+radius : R <- 2
+
+@viewer "V" var=z size="100x100"
+color <- if |z| > radius then black else white
+|]
+
+    it "accepts a viewer body that references a `@setup` formula splice" $
+      checkAccepts [r|
+@setup "Setup"
+f : C using z:C, C:C <- z^2 + C
+
+@viewer "Mandelbrot" var=C size="100x100"
+z : C <- 0
+iterate z -> «f» until z escapes
+|]
+
+    it "catches a `@config` declaration whose default doesn't match its type" $
+      checkFailsWith [r|
+@config "C"
+foo : Z <- "hello"
+|] "doesn't match its declared type"
+
+    it "catches an out-of-range choice index" $
+      checkFailsWith [r|
+@config "C"
+foo : Z as "Pick" choice {"a", "b"} <- 5
+
+@viewer "V" var=z size="100x100"
+pass
+|] "out of range"
+
+    it "catches a `using`-clause formula whose expression uses a variable \
+       \missing from `using`" $
+      checkFailsWith [r|
+@setup "Setup"
+f : C using z:C <- z^2 + C
+
+@viewer "V" var=C size="100x100"
+pass
+|] "doesn't typecheck"
+
+    it "still catches cross-stanza errors (unchanged from before this was extended)" $ do
+      checkFailsWith [r|
+@viewer "A" var=z size="100x100"
+pass
+
+@tool "T" for="B"
+on refresh:
+  pass
+|] "targets an unknown viewer `B`"
+      checkFailsWith [r|
+@viewer "A" var=z size="100x100"
+pass
+
+@viewer "A" var=w size="100x100"
+pass
+|] "share the title `A`"
+
+    it "agrees with buildEnsembleFromScript on acceptance/rejection, across a \
+       \mix of valid and invalid scripts" $ do
+      agree [r|
+@viewer "Mandelbrot Set" var=C size="500x500"
+z : C <- 0
+iterate z -> z^2 + C until z escapes
+|]
+      agree [r|
+@config "C"
+radius : R <- 2
+
+@viewer "V" var=z size="100x100"
+color <- if |z| > radius then black else white
+|]
+      agree [r|
+@viewer "V" var=z size="100x100"
+w <- w + 1
+|]
+      agree [r|
+@config "C"
+foo : Z <- "hello"
+|]
+      agree [r|
+@config "C"
+foo : Z as "Pick" choice {"a", "b"} <- 5
+
+@viewer "V" var=z size="100x100"
+pass
+|]
+      agree [r|
+@setup "Setup"
+f : C using z:C, C:C <- z^2 + C
+
+@viewer "Mandelbrot" var=C size="100x100"
+z : C <- 0
+iterate z -> «f» until z escapes
+|]
+
+    it "catches a tool body referencing an undeclared variable" $
+      checkFailsWith [r|
+@viewer "V" var=z size="100x100"
+pass
+
+@tool "T" for="V"
+on click:
+  draw point at badvar
+|] "No variable named"
+
+    it "accepts a tool body that correctly references a `@config` variable" $
+      checkAccepts [r|
+@config "C"
+center : C <- 0
+
+@viewer "V" var=z size="100x100"
+pass
+
+@tool "T" for="V"
+on click:
+  draw point at center
+|]
+
+    it "accepts a tool body that references the tool's own declaration" $
+      checkAccepts [r|
+@viewer "V" var=z size="100x100"
+pass
+
+@tool "T" for="V"
+center : C <- 0
+on click:
+  draw point at center
+|]
+
+    it "catches a tool's own declaration sharing a name with the ensemble's \
+       \`@config`, the same as `buildToolContext`'s own combining would at \
+       \runtime" $
+      checkFailsWith [r|
+@config "C"
+center : C <- 0
+
+@viewer "V" var=z size="100x100"
+pass
+
+@tool "T" for="V"
+center : C <- 1
+on click:
+  draw point at center
+|] "is defined twice"
+
+    it "catches a tool error that buildEnsembleFromScript itself doesn't \
+       \catch eagerly -- new coverage, not something the drift guard above \
+       \expects parity on (see checkScript's own doc comment on this gap)" $ do
+      let src = [r|
+@viewer "V" var=z size="100x100"
+pass
+
+@tool "T" for="V"
+on click:
+  draw point at badvar
+|]
+      checkFailsWith src "No variable named"
+      build src >>= \case
+        Left err -> expectationFailure ("expected buildEnsembleFromScript to still accept this (the gap this test documents), got: " ++ err)
+        Right _  -> pure ()

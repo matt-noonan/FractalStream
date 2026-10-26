@@ -9,6 +9,7 @@ import FractalStream.Prelude
 import Actor.Configuration
 import Actor.Event
 import Actor.Layout
+import Language.Parser.SourceRange (SourceRange(..))
 
 import Data.Codec
 import Data.DynamicValue
@@ -62,10 +63,16 @@ instance CodecWith EventDependencies Tool where
         let (dsplices, dvc, dlimits, dmpx) = use ctx
         ((\x1 x2 x3 x4 -> (,,,) <$> x1 <*> x2 <*> x3 <*> x4)
           <$> dvc <*> dsplices <*> dlimits <*> dmpx) >>= \case
-          Left err -> pure (\_ -> ParsedToolScript $ \_ -> Left err)
+          Left err -> pure (\_ -> ParsedToolScript $ \_ -> Left (NoSourceRange, err))
           Right (vc, splices, limits, mpx) ->
             pure $ \(CodeString src) ->
-              either (\(_, e) -> ParsedToolScript $ \_ -> Left e) id
+              -- Keep the whole (SourceRange, String) pair, not just the
+              -- message: 'parseToolScript' already locates this error
+              -- precisely, and 'runParsedToolScript's error type carries
+              -- a 'SourceRange' now specifically so a caller doing live
+              -- editor highlighting (the same way a viewer's own code
+              -- already does) doesn't lose it here.
+              either (\se -> ParsedToolScript $ \_ -> Left se) id
                 (parseToolScript splices vc limits mpx src))
     tvars <-toolVars-< purely $ \use -> Set.fromList <$> do
       cfg <- dyn (use config)

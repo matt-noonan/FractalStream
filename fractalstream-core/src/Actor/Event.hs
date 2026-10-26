@@ -27,6 +27,10 @@ module Actor.Event
   , mergeToolBlocks
   , emptyToolScript
 
+  , assertMissingClickArgs
+  , assertMissingDragArgs
+  , assertMissingUnitArgs
+
   ) where
 
 import FractalStream.Prelude
@@ -184,22 +188,26 @@ makeEventHandler exec ctx CombinedEventHandler{..} = do
     Deactivated -> deactivatedRun <&> \invoke -> invoke (constArg px # ctx)
 
 combineEventHandlers :: forall env
-                      . Either String (CombinedEventHandler env)
-                     -> Either String (CombinedEventHandler env)
-                     -> Either String (CombinedEventHandler env)
+                      . Either (SourceRange, String) (CombinedEventHandler env)
+                     -> Either (SourceRange, String) (CombinedEventHandler env)
+                     -> Either (SourceRange, String) (CombinedEventHandler env)
 combineEventHandlers err@(Left _) _ = err
 combineEventHandlers _ err@(Left _) = err
 combineEventHandlers (Right lhs) (Right rhs) = do
-    let atMostOne :: String -> (CombinedEventHandler env -> Maybe b) -> Either String (Maybe b)
+    -- No specific source location to blame for either kind of error
+    -- below: a duplicate block isn't a property of either block on its
+    -- own, but of there being two of them, in (possibly) unrelated
+    -- places in the source.
+    let atMostOne :: String -> (CombinedEventHandler env -> Maybe b) -> Either (SourceRange, String) (Maybe b)
         atMostOne what how = case (how lhs, how rhs) of
-          (Just _, Just _) -> Left ("Duplicate definitions of the " ++ what ++ " event handler")
+          (Just _, Just _) -> Left (NoSourceRange, "Duplicate definitions of the " ++ what ++ " event handler")
           (Nothing, x)     -> Right x
           (x, Nothing)     -> Right x
-        uniqueKey :: String -> (CombinedEventHandler env -> Map String v) -> Either String (Map String v)
+        uniqueKey :: String -> (CombinedEventHandler env -> Map String v) -> Either (SourceRange, String) (Map String v)
         uniqueKey what how =
           case Set.toList $ Set.intersection (Map.keysSet $ how lhs) (Map.keysSet $ how rhs) of
             [] -> Right (how lhs `Map.union` how rhs)
-            (k:_) -> Left ("Duplicate definitions of the " ++ what ++ " event handler named `" ++ k ++ "`")
+            (k:_) -> Left (NoSourceRange, "Duplicate definitions of the " ++ what ++ " event handler named `" ++ k ++ "`")
     CombinedEventHandler
       <$> atMostOne "click"          onClick
       <*> atMostOne "double-click"   onDoubleClick
@@ -223,7 +231,12 @@ buildHandlerWith :: ToolExec
 buildHandlerWith exec (SomeContext ctx) script = do
   let env = contextToEnv ctx
   case runParsedToolScript script env of
-    Left err -> pure (Left err)
+    -- This function's own callers only ever show a tool-activation
+    -- error as a plain message (there's no editor open at this point
+    -- to highlight a span in), so the source location 'checkTool'
+    -- wants is dropped right here, at this one boundary, rather than
+    -- rippling further up into 'ToolRunner'/'vBuildToolHandler'.
+    Left (_, err) -> pure (Left err)
     Right combined0 ->
       assertMissingClickArgs env $
       assertMissingDragArgs env $
@@ -636,12 +649,12 @@ parseUnitScript _splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx body
 -- since it already has them in hand before parsing starts.
 newtype ParsedToolBlock = ParsedToolBlock
   (Coordinate -> (ParsedValue, ParsedValue, ParsedValue) -> Maybe String
-   -> forall env. EnvironmentProxy env -> Either String (CombinedEventHandler env))
+   -> forall env. EnvironmentProxy env -> Either (SourceRange, String) (CombinedEventHandler env))
 
 -- | The result of parsing an entire tool script: all of its blocks already
 -- merged and checked for duplicate event definitions.
 newtype ParsedToolScript = ParsedToolScript
-  { runParsedToolScript :: forall env. EnvironmentProxy env -> Either String (CombinedEventHandler env) }
+  { runParsedToolScript :: forall env. EnvironmentProxy env -> Either (SourceRange, String) (CombinedEventHandler env) }
 
 mergeToolBlocks :: [ParsedToolBlock]
                 -> Coordinate
@@ -711,32 +724,32 @@ toolBlocksGrammar splices = mdo
 
   onRefresh' <- rule $
     (\body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
-        bimap snd (\u -> noHandlers { onRefresh = Just u })
+        second (\u -> noHandlers { onRefresh = Just u })
           (parseUnitScript splices limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "refresh" *> colon *> nl *> codeBlock)
 
   onActivated' <- rule $
     (\body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
-        bimap snd (\u -> noHandlers { onActivated = Just u })
+        second (\u -> noHandlers { onActivated = Just u })
           (parseUnitScript splices limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "activated" *> colon *> nl *> codeBlock)
 
   onDeactivated' <- rule $
     (\body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
-        bimap snd (\u -> noHandlers { onDeactivated = Just u })
+        second (\u -> noHandlers { onDeactivated = Just u })
           (parseUnitScript splices limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "deactivated" *> colon *> nl *> codeBlock)
 
   onButton' <- rule $
     (\label body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
-        bimap snd (\u -> noHandlers { onButton = Map.singleton label u })
+        second (\u -> noHandlers { onButton = Map.singleton label u })
           (parseUnitScript splices limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "button" *> quoted <* colon <* nl)
     <*> codeBlock
 
   onTimer' <- rule $
     (\name interval body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
-        bimap snd (\u -> noHandlers { onTimer = Map.singleton name (interval, u) })
+        second (\u -> noHandlers { onTimer = Map.singleton name (interval, u) })
           (parseUnitScript splices limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "timer" *> quoted)
     <*> (tok "every" *> intLit <* tok "ms" <* colon <* nl)
@@ -744,14 +757,14 @@ toolBlocksGrammar splices = mdo
 
   onClick' <- rule $
     (\mc body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
-        bimap snd (\c -> noHandlers { onClick = Just c })
+        second (\c -> noHandlers { onClick = Just c })
           (parseClickScript splices (fromMaybe defaultCoord mc) limits mpixel body env))
     <$> (tok "on" *> tok "click" *> optional (tok "at" *> coordSpec) <* colon <* nl)
     <*> codeBlock
 
   onDoubleClick' <- rule $
     (\mc body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
-        bimap snd (\c -> noHandlers { onDoubleClick = Just c })
+        second (\c -> noHandlers { onDoubleClick = Just c })
           (parseClickScript splices (fromMaybe defaultCoord mc) limits mpixel body env))
     <$> (tok "on" *> tok "double" *> token Minus *> tok "click"
           *> optional (tok "at" *> coordSpec) <* colon <* nl)
@@ -760,7 +773,7 @@ toolBlocksGrammar splices = mdo
   onClickOrDrag' <- rule $
     (\mc body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         let c = fromMaybe defaultCoord mc
-        in bimap snd (\(ch, dh) -> noHandlers { onClick = Just ch, onDrag = Just dh })
+        in second (\(ch, dh) -> noHandlers { onClick = Just ch, onDrag = Just dh })
              ((,) <$> parseClickScript splices c limits mpixel body env
                   <*> parseDragScript  splices c dummyStart limits mpixel body env))
     <$> (tok "on" *> tok "click" *> token Minus *> token Or_ *> token Minus *> tok "drag"
@@ -770,7 +783,7 @@ toolBlocksGrammar splices = mdo
   onDrag' <- rule $
     (\mft body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
-        in bimap snd (\d -> noHandlers { onDrag = Just d })
+        in second (\d -> noHandlers { onDrag = Just d })
              (parseDragScript splices curC startC limits mpixel body env))
     <$> (tok "on" *> tok "drag" *> optional fromTo <* colon <* nl)
     <*> codeBlock
@@ -778,7 +791,7 @@ toolBlocksGrammar splices = mdo
   onDragFinished' <- rule $
     (\mft body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
-        in bimap snd (\d -> noHandlers { onDragDone = Just d })
+        in second (\d -> noHandlers { onDragDone = Just d })
              (parseDragScript splices curC startC limits mpixel body env))
     <$> (tok "on" *> tok "drag" *> token Minus *> tok "finished" *> optional fromTo <* colon <* nl)
     <*> codeBlock
