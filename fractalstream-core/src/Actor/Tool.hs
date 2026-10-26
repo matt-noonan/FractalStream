@@ -53,8 +53,12 @@ instance CodecWith EventDependencies Tool where
     layer <-toolDrawLayer-< keyWithDefaultValue 100 "draw-to-layer"
     refreshOnActivate <-toolRefreshOnActivate-< keyWithDefaultValue True  "refresh-on-activation"
     refreshCanUpdate  <-toolRefreshCanUpdate-<  keyWithDefaultValue False "refresh-can-update"
-    config <-toolConfig-< optionalField "configuration"
-      (newVariable Nothing) (fmap isNothing . getDynamic) (codecWith ((\(x,_,_,_) -> x) <$> ctx))
+    -- No codec for `Configuration` anymore (the classic project-file
+    -- format is gone) -- this field is always `Nothing` now. The only
+    -- surviving caller of this instance ('Actor.Ensemble.makeSelectTool',
+    -- building the built-in "Select" tool from a small fixed JSON
+    -- string) never supplied a `configuration:` key anyway.
+    config <-toolConfig-< newOf (pure (pure Nothing))
     showConfig <-toolShowConfig-< newOf (pure $ pure $ const (pure ()))
     script <-toolScript-< optionalField "script"
       newEmptyToolScript

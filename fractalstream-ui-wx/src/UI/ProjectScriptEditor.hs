@@ -82,96 +82,83 @@ import qualified Data.Map as Map
 editProjectScript :: Backend -> Window a -> Variable Ensemble -> UI -> IO ()
 editProjectScript backend projectWindow currentEnsemble ui = do
   prj <- getDynamic currentEnsemble
-  getDynamic (ensembleSourceScript prj) >>= \case
-    Nothing -> do
-      d <- dialog projectWindow [ text := "Can't edit this project as a script" ]
-      p <- panel d []
-      msg <- staticText p
-        [ text := "This project uses the classic format and doesn't have\n\
-                   \a unified script to edit yet."
-        ]
-      ok <- button p [ text := "OK" ]
-      set d [ layout := margin 15 $ container p $ column 10
-                [ widget msg, hfloatRight (widget ok) ] ]
-      _ <- showModal d (\done -> set ok [ on command := done Nothing ])
-      pure ()
+  srcText <- getDynamic (ensembleSourceScript prj)
 
-    Just srcText -> do
-      f <- frameEx frameDefaultStyle
-             [ text := "Edit project script", visible := False ] projectWindow
-      p <- panel f []
+  f <- frameEx frameDefaultStyle
+         [ text := "Edit project script", visible := False ] projectWindow
+  p <- panel f []
 
-      -- 'checkScript' is pure (parse + cross-stanza-reference check,
-      -- no allocation), so -- unlike 'buildEnsembleFromScript' -- it
-      -- can drive a reactive 'Mapped', giving this editor the same
-      -- live syntax-coloring and inline error squiggles a single
-      -- viewer's own code editor gets from 'scriptWidget', for free.
-      srcVar <- newVariable (CodeString srcText)
-      scriptCheck <- newMapped (pure (\(CodeString s) -> checkScript s)) srcVar
-      (ce, liveErrorText) <- scriptWidget p scriptCheck
+  -- 'checkScript' is pure (parse + cross-stanza-reference check,
+  -- no allocation), so -- unlike 'buildEnsembleFromScript' -- it
+  -- can drive a reactive 'Mapped', giving this editor the same
+  -- live syntax-coloring and inline error squiggles a single
+  -- viewer's own code editor gets from 'scriptWidget', for free.
+  srcVar <- newVariable (CodeString srcText)
+  scriptCheck <- newMapped (pure (\(CodeString s) -> checkScript s)) srcVar
+  (ce, liveErrorText) <- scriptWidget p scriptCheck
 
-      -- Stanza-header styling has no counterpart in a single viewer's
-      -- own code (which never has `@`-lines), so 'scriptWidget' can't
-      -- know to do it -- kept as this editor's own small addition,
-      -- piggybacking on `scriptCheck`'s source (which 'scriptWidget'
-      -- itself already keeps in sync with the widget's text) rather
-      -- than a second polling timer of this editor's own.
-      restyleStanzaHeaders ce srcText
-      wxWatchDynamic f (source scriptCheck) $ \(CodeString newText) ->
-        restyleStanzaHeaders ce newText
+  -- Stanza-header styling has no counterpart in a single viewer's
+  -- own code (which never has `@`-lines), so 'scriptWidget' can't
+  -- know to do it -- kept as this editor's own small addition,
+  -- piggybacking on `scriptCheck`'s source (which 'scriptWidget'
+  -- itself already keeps in sync with the widget's text) rather
+  -- than a second polling timer of this editor's own.
+  restyleStanzaHeaders ce srcText
+  wxWatchDynamic f (source scriptCheck) $ \(CodeString newText) ->
+    restyleStanzaHeaders ce newText
 
-      -- Separate from `liveErrorText` above: that one reflects the
-      -- *current* text's live check, continuously; this one reflects
-      -- the *last explicit Rebuild attempt*, and is the only place a
-      -- deeper error 'checkScript' doesn't catch (e.g. a config
-      -- field's default not matching its declared type -- only
-      -- found by 'buildWithValidTargets', which interleaves that
-      -- check with allocation) ever gets reported.
-      rebuildErrorText <- staticText p [ text := "", visible := False ]
+  -- Separate from `liveErrorText` above: that one reflects the
+  -- *current* text's live check, continuously; this one reflects
+  -- the *last explicit Rebuild attempt*, and is the only place a
+  -- deeper error 'checkScript' doesn't catch (e.g. a config
+  -- field's default not matching its declared type -- only
+  -- found by 'buildWithValidTargets', which interleaves that
+  -- check with allocation) ever gets reported.
+  rebuildErrorText <- staticText p [ text := "", visible := False ]
 
-      rebuildBtn <- button p [ text := "Rebuild" ]
-      cancelBtn  <- button p [ text := "Cancel"
-                             , on command := void (windowClose f True) ]
+  rebuildBtn <- button p [ text := "Rebuild" ]
+  cancelBtn  <- button p [ text := "Cancel"
+                         , on command := void (windowClose f True) ]
 
-      set rebuildBtn [ on command := do
-          newText <- styledTextCtrlGetText ce
-          buildEnsembleFromScript newText >>= \case
-            Left err -> do
-              set rebuildErrorText [ text := formatScriptError newText err, visible := True ]
-              windowReLayout f
-            Right newEns -> do
-              -- `windowDestroy`, not `windowClose ... True`: every
-              -- viewer frame ('UI.ProjectViewer.makeWxComplexViewer')
-              -- installs its own `windowOnClose` handler that just
-              -- hides the window (meant to make a user's click on its
-              -- native close button a reversible hide, not a
-              -- destroy). `Close(force)` still always runs that
-              -- installed handler and only controls whether its veto
-              -- is honored -- force doesn't bypass the handler or
-              -- destroy the window itself, so `windowClose` never
-              -- actually closed a single viewer frame here, no matter
-              -- the force flag: every rebuild leaked a whole, fully
-              -- alive previous generation of viewer windows.
-              -- `windowDestroy` calls wxWidgets' `Destroy()` directly,
-              -- bypassing that installed handler entirely -- which is
-              -- what a deliberate, programmatic teardown like this
-              -- one actually wants, unlike a user's own accidental
-              -- click. `f` is itself a child of `projectWindow`, so
-              -- it's already included in this sweep.
-              windowChildren projectWindow >>= mapM_ windowDestroy
-              setValue' currentEnsemble newEns
-              runEnsemble backend ui newEns
-        ]
+  set rebuildBtn [ on command := do
+      newText <- styledTextCtrlGetText ce
+      buildEnsembleFromScript newText >>= \case
+        Left err -> do
+          set rebuildErrorText [ text := formatScriptError newText err, visible := True ]
+          windowReLayout f
+        Right newEns -> do
+          -- `windowDestroy`, not `windowClose ... True`: every
+          -- viewer frame ('UI.ProjectViewer.makeWxComplexViewer')
+          -- installs its own `windowOnClose` handler that just
+          -- hides the window (meant to make a user's click on its
+          -- native close button a reversible hide, not a
+          -- destroy). `Close(force)` still always runs that
+          -- installed handler and only controls whether its veto
+          -- is honored -- force doesn't bypass the handler or
+          -- destroy the window itself, so `windowClose` never
+          -- actually closed a single viewer frame here, no matter
+          -- the force flag: every rebuild leaked a whole, fully
+          -- alive previous generation of viewer windows.
+          -- `windowDestroy` calls wxWidgets' `Destroy()` directly,
+          -- bypassing that installed handler entirely -- which is
+          -- what a deliberate, programmatic teardown like this
+          -- one actually wants, unlike a user's own accidental
+          -- click. `f` is itself a child of `projectWindow`, so
+          -- it's already included in this sweep.
+          windowChildren projectWindow >>= mapM_ windowDestroy
+          setValue' currentEnsemble newEns
+          runEnsemble backend ui newEns
+    ]
 
-      set f [ layout := fill $ container p $ fill $ margin 5 $ column 5
-                [ fill $ widget ce
-                , hstretch $ expand $ widget liveErrorText
-                , hstretch $ expand $ widget rebuildErrorText
-                , hstretch $ expand $ row 5 [ widget rebuildBtn, widget cancelBtn ]
-                ]
-            , clientSize := sz 700 500
+  set f [ layout := fill $ container p $ fill $ margin 5 $ column 5
+            [ fill $ widget ce
+            , hstretch $ expand $ widget liveErrorText
+            , hstretch $ expand $ widget rebuildErrorText
+            , hstretch $ expand $ row 5 [ widget rebuildBtn, widget cancelBtn ]
             ]
-      void (windowShow f)
+        , clientSize := sz 700 500
+        ]
+  void (windowShow f)
 
 -- | Apply 'stanzaHeaderStyle' to every line that starts with @\@@ --
 -- a unified script's @\@setup@\/@\@config@\/@\@viewer@\/@\@tool@ stanza

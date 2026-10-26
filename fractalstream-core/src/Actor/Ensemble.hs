@@ -92,51 +92,14 @@ data Ensemble = Ensemble
   , ensembleConfiguration :: Variable (Maybe Configuration)
   , ensembleViewers       :: Variable [ComplexViewer]
   , ensembleScenarios     :: Variable [NamedScenario]
-  , ensembleSourceScript  :: Variable (Maybe String)
-    -- ^ The raw text of this ensemble's unified @script:@, if it was
-    -- built from one (via 'buildEnsembleFromScript') rather than the
-    -- classic multi-key format. A frontend's save path uses this to
-    -- write the script straight back out, verbatim, instead of
-    -- re-encoding through the classic 'Codec' instance below -- which
-    -- would otherwise silently convert a unified-script project into
-    -- the classic format on every save.
+  , ensembleSourceScript  :: Variable String
+    -- ^ The raw text of this ensemble's unified @script:@. A frontend's
+    -- save path uses this to write the script straight back out,
+    -- verbatim. Briefly holds a placeholder empty string between
+    -- 'buildWithValidTargets' constructing the 'Ensemble' and
+    -- 'buildEnsembleFromScript' (its only caller) setting the real
+    -- text right after -- never observable outside this module.
   }
-
-instance Codec Ensemble where
-  codec = do
-    setup <-ensembleSetup-< optionalField "setup"
-      (newVariable Nothing) (fmap isNothing . getDynamic) $ do
-      codecWith (pure . pure . pure $ noSplices)
-
-    splices <-ensembleSplices-< purely $ \use -> dyn (use setup) >>= \case
-      Nothing                -> pure (pure noSplices)
-      Just Configuration{..} -> layoutToSplices coContents
-
-    config <-ensembleConfiguration-< optionalField "configuration"
-      (newVariable Nothing) (fmap isNothing . getDynamic) $
-      codecWith splices
-
-    context <- purely $ \use -> dyn (use config) >>= \case
-      Nothing                -> pure (Right $ SomeContext EmptyContext)
-      Just Configuration{..} -> layoutContext coContents
-
-    ctx <- purely $ \use -> (use context, use splices)
-
-    -- NOTE: deliberately no fallback fragment for "neither `viewer:` nor
-    -- `viewers:` present" -- a project with no viewers at all isn't a
-    -- legitimate case, so that absence should surface as a decode error
-    -- rather than silently producing an empty-viewer ensemble.
-    viewers <-ensembleViewers-< newOf $ match
-      [ Fragment (:[]) (\case { [x] -> Just x; _ -> Nothing }) $ field "viewer" (codecWith ctx)
-      , Fragment id Just $ field "viewers" (codecWith ctx)
-      ]
-
-    scenarios <-ensembleScenarios-< optionalField "scenarios"
-      (newVariable []) (fmap null . getDynamic) codec
-
-    sourceScript <-ensembleSourceScript-< newOf (pure (pure Nothing))
-
-    build Ensemble setup splices config viewers scenarios sourceScript
 
 contextValuesChanged :: SomeContext DynamicValue -> Dynamic ()
 contextValuesChanged (SomeContext ctx0) = go ctx0
@@ -173,16 +136,20 @@ parseEnsembleFromFile path = try (BS.readFile path) >>= \case
   Left (e :: IOException) -> pure (Left ("could not read " ++ path ++ ": " ++ show e))
   Right contents -> do
     BS.length contents `seq` pure ()
-    -- A project written as a single unified script carries its whole
-    -- text under one top-level `script:` key, tried before falling back
-    -- to the classic `setup:`/`configuration:`/`viewer(s):` shape -- so
-    -- existing projects keep loading exactly as before, unchanged.
+    -- A project's whole text lives under one top-level `script:` key
+    -- (the unified @setup@/@config@/@viewer@/@tool@ script format --
+    -- the older classic `setup:`/`configuration:`/`viewer(s):` shape
+    -- is no longer supported).
     case YAML.decodeEither' contents of
       Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
         buildEnsembleFromScript (Text.unpack scriptText) >>= \case
           Left err  -> pure (Left (formatScriptError (Text.unpack scriptText) err))
           Right ens -> attachScenarios o ens
-      _ -> deserializeYAML contents
+      Right _  -> pure (Left (path ++ " doesn't have a top-level `script:` key -- \
+                               \this file isn't in a format FractalStream can open \
+                               \(the classic setup:/configuration:/viewer(s): project \
+                               \format is no longer supported)."))
+      Left err -> pure (Left (path ++ " isn't valid YAML: " ++ show err))
 
 -- | A unified-script project can still carry a sibling top-level
 -- `scenarios:` key. Reading it has nothing to do with the unified-script
@@ -200,24 +167,19 @@ attachScenarios o ens = case KM.lookup "scenarios" o of
       setValue' (ensembleScenarios ens) scenarios
       pure (Right ens)
 
--- | Serialize an 'Ensemble' back to project-file bytes. Prefers its own
+-- | Serialize an 'Ensemble' back to project-file bytes: its own
 -- unified-script text, verbatim, under a @script:@ key (alongside a
--- @scenarios:@ key if there are any), when it has one -- i.e. when it
--- was built via 'buildEnsembleFromScript' -- and falls back to the
--- classic multi-key 'Codec' instance otherwise. Every frontend's save
--- path should go through this rather than 'serializeYAML' directly, or
--- opening a unified-script project and saving it would silently
--- convert it into the classic format.
+-- @scenarios:@ key if there are any). Every frontend's save path
+-- should go through this rather than hand-rolling the YAML itself.
 encodeEnsemble :: Ensemble -> IO ByteString
-encodeEnsemble ens = getDynamic (ensembleSourceScript ens) >>= \case
-  Nothing -> serializeYAML ens
-  Just scriptText -> do
-    scenarios <- getDynamic (ensembleScenarios ens)
-    scenariosKV <- if null scenarios
-      then pure []
-      else (\v -> [("scenarios", v)]) <$> encodeValue scenarios
-    pure $ YAML.encode $ Object $ KM.fromList $
-      ("script", String (Text.pack scriptText)) : scenariosKV
+encodeEnsemble ens = do
+  scriptText <- getDynamic (ensembleSourceScript ens)
+  scenarios <- getDynamic (ensembleScenarios ens)
+  scenariosKV <- if null scenarios
+    then pure []
+    else (\v -> [("scenarios", v)]) <$> encodeValue scenarios
+  pure $ YAML.encode $ Object $ KM.fromList $
+    ("script", String (Text.pack scriptText)) : scenariosKV
 
 -- | Render a unified-script build error the same way every other
 -- source-range-tagged parse\/typecheck error in this codebase is shown:
@@ -257,7 +219,7 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
       Right () -> buildWithValidTargets setupGroups configGroups viewers tools viewerTitles >>= \case
         Left err  -> pure (Left err)
         Right ens -> do
-          setValue' (ensembleSourceScript ens) (Just scriptText)
+          setValue' (ensembleSourceScript ens) scriptText
           pure (Right ens)
 
 -- | A pure, allocation-free check of a unified project script: parses
@@ -542,7 +504,7 @@ buildWithValidTargets setupGroups configGroups viewers tools viewerTitles = do
             Right viewerList -> do
               viewersVar     <- newVariable viewerList
               scenariosVar   <- newVariable []
-              sourceScriptVar <- newVariable Nothing
+              sourceScriptVar <- newVariable ""
               pure (Right (Ensemble setupVar splicesDyn configVar viewersVar scenariosVar sourceScriptVar))
 
 ------------------------------------------------------------
@@ -1393,18 +1355,16 @@ allTemplates =
   , template "General parametric complex dynamics" parametricComplexDynamicsTemplate
   ]
  where
-   -- Each embedded template now carries its whole project as a unified
+   -- Each embedded template carries its whole project as a unified
    -- script under one top-level `script:` key -- the same shape
    -- 'parseEnsembleFromFile' recognizes and hands to
-   -- 'buildEnsembleFromScript', tried first here for the same reason,
-   -- before falling back to the classic multi-key 'Codec' instance (so
-   -- a template embedded in the classic format, should one ever be
-   -- added back, still loads unchanged).
+   -- 'buildEnsembleFromScript'.
    template name bs = (name,) $ case YAML.decodeEither' bs of
      Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
        buildEnsembleFromScript (Text.unpack scriptText) >>= \case
          Left err  -> error ("Internal error when parsing a template: " ++
                               formatScriptError (Text.unpack scriptText) err)
          Right ens -> pure ens
-     _ -> either (error . ("Internal error when parsing a template: " ++)) pure =<< deserializeYAML bs
+     _ -> error ("Internal error: template " ++ show name ++
+                 " doesn't have a top-level `script:` key.")
 

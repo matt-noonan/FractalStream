@@ -387,10 +387,9 @@ pass
       let src = "@viewer \"V\" var=z size=\"100x100\"\npass\n"
       in shouldBuild src $ \ens -> do
            msrc <- getDynamic (ensembleSourceScript ens)
-           msrc `shouldBe` Just src
+           msrc `shouldBe` src
 
-    it "encodeEnsemble writes a script-built ensemble's text back out verbatim, \
-       \not re-derived through the classic codec" $
+    it "encodeEnsemble writes a script-built ensemble's text back out verbatim" $
       let src = "@viewer \"V\" var=z size=\"100x100\"\npass\n"
       in shouldBuild src $ \ens -> do
            bytes <- encodeEnsemble ens

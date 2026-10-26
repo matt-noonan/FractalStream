@@ -41,8 +41,6 @@ import Language.Parser.SourceRange
 import Language.Typecheck
 
 import Data.Aeson hiding (Value)
-import qualified Data.Aeson.KeyMap as KM
-import qualified Data.Aeson.Key as Key
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import Text.Read (readMaybe)
@@ -93,96 +91,6 @@ data TabItem = TabItem
   , tiBody  :: Variable Layout
   }
 
-instance CodecWith (Dynamic (Either String Splices)) TabItem where
-  codecWith_ splices = do
-    title <-tiLabel-< key "title"
-    body  <-tiBody-< codecWith splices
-    build TabItem title body
-
--- Newtypes for orphan instances
-newtype SomeEnvironment' = SomeEnvironment' SomeEnvironment
-newtype SomeType'        = SomeType'        SomeType
-
-instance Optionally SomeEnvironment' where
-  makeDefault = pure (SomeEnvironment' $ SomeEnvironment EmptyEnvProxy)
-  isDefault (SomeEnvironment' (SomeEnvironment env)) = pure $
-    case env of { EmptyEnvProxy -> True; _ -> False }
-
-instance Codec SomeEnvironment' where codec = aeson
-
-instance FromJSON SomeEnvironment' where
-  parseJSON = withObject "SomeEnvironment" $ \o -> do
-    (`withEnvFromMap` (SomeEnvironment' . SomeEnvironment))
-      . Map.fromList
-      . fmap (first Key.toString)
-      . KM.toList <$> traverse (fmap (\(SomeType' t) -> t) . parseJSON) o
-
-instance ToJSON SomeEnvironment' where
-  toJSON (SomeEnvironment' (SomeEnvironment e)) =
-    object (map (bimap Key.fromString (toJSON . SomeType')) . Map.toList $ envToMap e)
-
-instance FromJSON SomeType' where
-  parseJSON = withText "SomeType" $ \t -> do
-    let src = Text.unpack t
-    case parseType src of
-      Left err -> fail (ppFullError err src)
-      Right ty -> pure (SomeType' ty)
-
-instance ToJSON SomeType' where
-  toJSON (SomeType' (SomeType ty)) = String (Text.pack $ ppType ty)
-
-instance CodecWith (Dynamic (Either String Splices)) Layout where
-  codecWith_ (splices :: Part b a (Dynamic (Either String Splices))) = do
-    match
-      [ Fragment Vertical (\case { Vertical x -> Just x; _ -> Nothing }) $
-        field "vertical-contents" (codecWith splices)
-      , Fragment Horizontal (\case { Horizontal x -> Just x; _ -> Nothing }) $
-        field "horizontal-contents" (codecWith splices)
-      , Fragment (uncurry Panel) (\case { Panel l x -> Just (l, x); _ -> Nothing }) $
-        field "panel" $ do
-          title <-fst-< key "title"
-          body  <-snd-< codecWith splices
-          build (,) title body
-      , Fragment Tabbed (\case { Tabbed ts -> Just ts; _ -> Nothing }) $
-        field "tabbed" (codecWith splices)
-      , Fragment PlainText (\case { PlainText x -> Just x; _ -> Nothing }) $
-        key "text"
-      , Fragment Button (\case { Button x -> Just x; _ -> Nothing }) $
-        key "button"
-      , Fragment (uncurry TextBox) (\case { TextBox l x -> Just (l, x); _ -> Nothing }) $
-        field "text-entry" $ do
-          label <-fst-< key "label"
-          body  <-snd-< codecWith splices
-          build (,) label body
-      , Fragment (uncurry3 CheckBox) (\case { CheckBox l v x -> Just (l, v, x); _ -> Nothing }) $
-        field "checkbox" $ do
-          label <-(\(x,_,_) -> x)-< key "label"
-          var   <-(\(_,y,_) -> y)-< field "variable" (mapped codec $ \_ -> pure nonEmptyString)
-          body  <-(\(_,_,z) -> z)-< key "value"
-          build (,,) label var body
-      , Fragment (uncurry3 ColorPicker) (\case { ColorPicker l v x -> Just (l, v, x); _ -> Nothing }) $
-        field "color-picker" $ do
-          label <-(\(x,_,_) -> x)-< key "label"
-          var   <-(\(_,y,_) -> y)-< field "variable" (mapped codec $ \_ -> pure nonEmptyString)
-          body  <-(\(_,_,z) -> z)-< field "value" (mapped codec $ \_ -> pure (parseConstant' ColorType))
-          build (,,) label var body
-      , Fragment (uncurry4 Selection) (\case { Selection l v i xs -> Just (l, v, i, xs); _ -> Nothing }) $
-        field "selection" $ do
-          label <-(\(x,_,_,_) -> x)-< key "label"
-          var   <-(\(_,y,_,_) -> y)-< field "variable" (mapped codec $ \_ -> pure nonEmptyString)
-          ix    <-(\(_,_,z,_) -> z)-< key "current-choice"
-          opts  <-(\(_,_,_,w) -> w)-< key "choices"
-          build (,,,) label var ix opts
-      , Fragment ScriptBox (\case { ScriptBox x -> Just x; _ -> Nothing }) $
-        field "code" (codecWith splices)
-      ]
-
-uncurry3 :: (a1 -> a2 -> a3 -> b) -> (a1, a2, a3) -> b
-uncurry3 f (x, y, z) = f x y z
-
-uncurry4 :: (a1 -> a2 -> a3 -> a4 -> b) -> (a1, a2, a3, a4) -> b
-uncurry4 f (w, x, y, z) = f w x y z
-
 data UIVariable = UIVariable
   { exprName  :: Parsed String
   , exprType  :: Parsed SomeType
@@ -221,57 +129,6 @@ parseScript' :: SomeEnvironment
              -> Either (SourceRange, String) SomeCode
 parseScript' (SomeEnvironment env) splices (CodeString src) = withEnvironment env $
     bimap (errorLocation &&& unlines . pp) SomeCode (parseCode env splices src)
-
-instance CodecWith (Dynamic (Either String Splices)) UIVariable where
-  codecWith_ ctx = do
-    ty  <-exprType-< field "type" $ mapBy parseType'
-    env <-coerce . exprEnv-< optionalKey @(Variable SomeEnvironment') "environment"
-
-    -- Variable name is required and must be non-empty, and not
-    -- already present in the environment
-    name <-exprName-< mapped (key "variable") $ \use -> (<$> dyn (use env)) $
-      \(SomeEnvironment' (SomeEnvironment e)) s -> do
-        void (nonEmptyString s)
-        case someSymbolVal s of
-           SomeSymbol n -> case lookupEnv' n e of
-             Absent' _ -> pure ()
-             _ -> Left ("The variable name `" ++ s ++ "` is already defined in the environment.")
-        pure s
-
-    expr <-exprValue-< mapped (key "value") $ \use -> do
-      let f = \mt (SomeEnvironment' (SomeEnvironment e)) msplices src -> do
-            SomeType t <- case mt of
-              Left _ -> Left "Cannot check this value until the error in its type is fixed."
-              Right t -> pure t
-            splices <- case msplices of
-              Left _ -> Left "Cannot check this value until the error in the Setup is fixed."
-              Right s -> pure s
-            withEnvironment e $ withKnownType t $ do
-              bimap (`ppFullError` src) (SomeValue e t) (parseInputValue (valueSplices splices) src)
-      f <$> dyn (use ty) <*> dyn (use env) <*> use ctx
-
-    build UIVariable name ty (coerce <$> env) expr
-
-instance CodecWith (Dynamic (Either String Splices)) UIScript where
-  codecWith_ ctx = do
-    env <-scriptEnv-< coerce <$> optionalKey @(Variable SomeEnvironment') "environment"
-
-    -- Variable name is required and must be non-empty, and not
-    -- already present in the environment
-    name <-scriptName-< mapped (key "variable") $ \use -> (<$> dyn (use env)) $ \(SomeEnvironment e) s -> do
-      void (nonEmptyString s)
-      case someSymbolVal s of
-        SomeSymbol n -> case lookupEnv' n e of
-          Absent' _ -> pure ()
-          _ -> Left ("The variable name `" ++ s ++ "` is already defined in the environment.")
-      pure s
-
-    code <-scriptCode-< mapped (key "value") $ \use ->
-      (either (\err _ -> Left (NoSourceRange, "Cannot check this script until another error is fixed: " ++ err))
-              (uncurry parseScript'))
-      <$> ((\(x,y) -> (x,) <$> y) <$> (((,) <$> dyn (use env)) <*> dyn (use ctx)))
-
-    build UIScript name env code
 
 newtype Dimensions = Dimensions { dimToPair :: (Int, Int) }
   deriving Eq
