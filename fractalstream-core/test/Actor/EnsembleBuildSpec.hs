@@ -328,6 +328,42 @@ f : C using z:C <- z^2 + C
 pass
 |] `shouldFailWith` "doesn't typecheck"
 
+    it "shows a `using`-clause formula field's own source text in its Setup \
+       \panel, not a placeholder (regression: used to show `name (defined \
+       \in script)` -- constParsed, unlike reactiveFormulaValue, never \
+       \updates on an edit either), and re-parses it reactively on edit" $
+      shouldBuild [r|
+@setup "Setup"
+f : C using z:C, C:C <- z^2 + C
+
+@viewer "Mandelbrot" var=C size="100x100"
+z : C <- 0
+iterate z -> «f» until z escapes
+|] $ \ens -> do
+        Just setupCfg <- getDynamic (ensembleSetup ens)
+        case coContents setupCfg of
+          Vertical panelsV -> getDynamic panelsV >>= \case
+            [Panel _ bodyV] -> getDynamic bodyV >>= \case
+              Vertical itemsV -> getDynamic itemsV >>= \case
+                [TextBox _ UIVariable{exprValue}] -> do
+                  initialText <- getDynamic (source exprValue)
+                  initialText `shouldBe` "z^2 + C"
+                  getDynamic (dyn exprValue) >>= \case
+                    Left err -> expectationFailure ("expected the initial formula to parse, got: " ++ err)
+                    Right _  -> pure ()
+                  setValue (source exprValue) "z^3"
+                  getDynamic (dyn exprValue) >>= \case
+                    Left err -> expectationFailure ("expected the edited formula to parse, got: " ++ err)
+                    Right _  -> pure ()
+                  setValue (source exprValue) "z +"
+                  getDynamic (dyn exprValue) >>= \case
+                    Right _ -> expectationFailure "expected the malformed edit to be rejected"
+                    Left _  -> pure ()
+                other -> expectationFailure ("expected a single formula TextBox, got " ++ show (length other))
+              _ -> expectationFailure "expected the panel body to be Vertical"
+            other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
+          _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
+
     it "builds a boolean-typed `using`-clause formula and splices it as a stopping condition" $
       shouldBuild [r|
 @setup "Setup"

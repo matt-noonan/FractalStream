@@ -58,6 +58,20 @@ data ConfigStmt
       , cdName    :: String
       , cdType    :: SomeType
       , cdDefault :: ParsedValue
+      , cdDefaultRange :: SourceRange
+        -- ^ The span of just the @<- value@ expression, not the whole
+        -- declaration (which 'cdRange' already covers). Only used
+        -- transiently, to fill in 'cdDefaultSrc' below -- see
+        -- 'fillDefaultSrcs'.
+      , cdDefaultSrc :: String
+        -- ^ The raw text of the @<- value@ expression, exactly as the
+        -- user wrote it -- empty until 'parseScript's own
+        -- 'fillDefaultSrcs' post-processing pass fills it in (the
+        -- grammar itself has no access to the original string, only
+        -- to already-tokenized input). Lets a caller display\/re-edit
+        -- a @using@-clause formula field's own text (e.g.
+        -- 'Actor.Ensemble.buildFormulaField'), unlike 'cdDefault',
+        -- which is already-parsed and no longer textual.
       , cdLabel   :: Maybe String
         -- ^ Overrides the default label (the variable name) when present.
       , cdChoices :: Maybe [String]
@@ -182,7 +196,34 @@ parseScript input = do
 
   otherResults <- traverse (\(i, c) -> (i,) <$> parseChunk splices c) otherChunks
 
-  pure (map snd (sortOn fst (setupResults ++ otherResults)))
+  pure (fillDefaultSrcs input (map snd (sortOn fst (setupResults ++ otherResults))))
+
+-- | Fill in every 'ConfigDecl's 'cdDefaultSrc' with the raw text of its
+-- own @<- value@ expression, sliced out of the original script via
+-- 'cdDefaultRange'. A post-processing pass over the whole parse result,
+-- rather than something the grammar does directly, because the grammar
+-- operates purely over already-tokenized input -- it never has the
+-- original string in hand to slice from.
+fillDefaultSrcs :: String -> [ParsedStanza] -> [ParsedStanza]
+fillDefaultSrcs input = map onStanza
+  where
+    onStanza = \case
+      SetupStanza t b  -> SetupStanza t (map onStmt b)
+      ConfigStanza t b -> ConfigStanza t (map onStmt b)
+      t@ToolStanza{..} -> t { tsConfig = map onStmt tsConfig }
+      v@ViewerStanza{} -> v
+
+    onStmt = \case
+      d@ConfigDecl{..} -> d { cdDefaultSrc = sliceSource input cdDefaultRange }
+      ConfigRow stmts  -> ConfigRow (map onStmt stmts)
+      other            -> other
+
+    sliceSource :: String -> SourceRange -> String
+    sliceSource src sr = case spanOfSourceRange sr of
+      Just (InLine i s e) -> case drop i (lines src) of
+        (line:_) -> take (e + 1 - s) (drop s line)
+        []       -> ""
+      _ -> ""
 
 -- | Parse one stanza's own token span (as produced by 'splitStanzas',
 -- without the enclosing file-level Indent\/Dedent) into its 'ParsedStanza'.
@@ -334,16 +375,24 @@ scriptGrammar splices@Splices{valueSplices} = mdo
   -- `"L"` -- a second, equally valid parse of the same tokens.
   usingEnv <- envGrammar
 
+  -- Captures the value expression's own span, separately from the
+  -- whole declaration's ('configDecl's own `withSourceRange`) -- so a
+  -- later caller with the original script text in hand can recover
+  -- exactly the `<- ...` text the user wrote, not just the
+  -- already-parsed 'ParsedValue'. See 'cdDefaultRange's doc comment.
+  valueWithRange <- rule $
+    withSourceRange ((\v sr -> (sr, v)) <$> value)
+
   configDecl <- rule $
     withSourceRange $
-      (\name fsTy mlabel mchoices museEnv val sr ->
-          validateConfigDecl sr name fsTy val mlabel mchoices museEnv)
+      (\name fsTy mlabel mchoices museEnv (valRange, val) sr ->
+          validateConfigDecl sr name fsTy val valRange mlabel mchoices museEnv)
       <$> ident
       <*> (colon *> ty)
       <*> optional (tok "as" *> quotedP)
       <*> optional (tok "choice" *> choiceList)
       <*> optional (tok "using" *> usingEnv)
-      <*> (token LeftArrow *> value <* nl)
+      <*> (token LeftArrow *> valueWithRange <* nl)
 
   configText <- rule $
     (\s -> Right (ConfigText s)) <$> (token TextKeyword *> quotedP <* nl)
@@ -564,11 +613,12 @@ validateConfigDecl :: SourceRange
                     -> String
                     -> FSType
                     -> ParsedValue
+                    -> SourceRange
                     -> Maybe String
                     -> Maybe [String]
                     -> Maybe [(String, FSType)]
                     -> Either (SourceRange, String) ConfigStmt
-validateConfigDecl sr name fsTy val mlabel mchoices museEnv = do
+validateConfigDecl sr name fsTy val valRange mlabel mchoices museEnv = do
   case mchoices of
     Just _ | fsTy /= IntegerT ->
       Left (sr, "`choice { ... }` can only be used with a ℤ-typed declaration (`" ++
@@ -582,7 +632,11 @@ validateConfigDecl sr name fsTy val mlabel mchoices museEnv = do
     Just env | Just dup <- firstDuplicate (map fst env) ->
       Left (sr, "`" ++ name ++ "`'s `using` clause declares `" ++ dup ++ "` more than once.")
     _ -> Right ()
-  pure (ConfigDecl sr name (withType fsTy SomeType) val mlabel mchoices museEnv)
+  pure ConfigDecl
+    { cdRange = sr, cdName = name, cdType = withType fsTy SomeType
+    , cdDefault = val, cdDefaultRange = valRange, cdDefaultSrc = ""
+    , cdLabel = mlabel, cdChoices = mchoices, cdUsing = museEnv
+    }
 
 ------------------------------------------------------------
 -- Preparation-script header validation

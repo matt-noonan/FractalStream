@@ -631,6 +631,24 @@ reactiveSomeValue env ty initial = do
   let f src = bimap (`ppFullError` src) (SomeValue env ty) (parseInputValue @env @ty Map.empty src)
   newVariable initial >>= newMapped (pure f)
 
+-- | Like 'reactiveSomeValue', but for a @using@-clause formula field's
+-- own text box: re-parses as a plain DSL expression via 'atType'
+-- (same as the formula's initial default value already is), not via
+-- 'parseInputValue's classic-UI-text-entry conventions (e.g. its
+-- bracket-free list rendering) -- those would double up a list-typed
+-- formula's own brackets, since both the initial text (from 'pprint',
+-- an ordinary expression pretty-printer that always writes them) and
+-- any later re-parse need to agree on the same convention.
+reactiveFormulaValue :: forall env ty. (KnownEnvironment env, KnownType ty)
+                      => EnvironmentProxy env -> TypeProxy ty -> String -> IO (Parsed SomeValue)
+reactiveFormulaValue env ty initial = do
+  let f src = case parseParsedValue Map.empty src of
+        Left err -> Left (ppFullError err src)
+        Right pv -> case atType @env pv ty of
+          TC (Left err) -> Left (ppFullError err src)
+          TC (Right v)  -> Right (SomeValue env ty v)
+  newVariable initial >>= newMapped (pure f)
+
 parseConstantE :: TypeProxy ty -> String -> Either (SourceRange, String) (HaskellType ty)
 parseConstantE ty s = left (errorLocation &&& unlines . pp) (parseConstant ty s)
 
@@ -653,7 +671,7 @@ configStmtToLayout :: ConfigStmt -> IO (Either (SourceRange, String) Layout)
 configStmtToLayout = \case
   ConfigText s   -> Right . PlainText <$> newVariable s
   ConfigButton s -> Right . Button <$> newVariable s
-  ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdLabel cdChoices cdUsing
+  ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdDefaultSrc cdLabel cdChoices cdUsing
   ConfigCode{} ->
     -- Not a user-facing field at all -- just a code-splice
     -- definition, already resolved into whatever body spliced it in
@@ -676,10 +694,10 @@ configStmtNames = \case
   ConfigButton{}     -> []
   ConfigCode{}       -> []
 
-buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> Maybe String -> Maybe [String]
+buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> String -> Maybe String -> Maybe [String]
                 -> Maybe [(String, FSType)]
                 -> IO (Either (SourceRange, String) Layout)
-buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoices mUsing = withKnownType ty $
+buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue defaultSrc mlabel mchoices mUsing = withKnownType ty $
   let lbl = Label (fromMaybe name mlabel)
 
       evalDefault = case atType @'[] defaultValue ty of
@@ -695,25 +713,27 @@ buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoi
       -- variables left unresolved) is what gets stored under this
       -- declaration's name in the splices map built by 'Actor.Script.
       -- parseScript', for `@viewer`/`@tool` bodies to reference via
-      -- `«name»`. Unlike an ordinary field, editing this one at runtime
-      -- couldn't do anything useful: every splice reference to it was
-      -- already resolved once, at parse time, into whatever code spliced
-      -- it in -- so this is intentionally not wired up like
-      -- 'reactiveSomeValue' below.
+      -- `«name»`. The displayed text box shows (and lets the user edit)
+      -- `defaultSrc` -- the formula's own raw source text, via
+      -- 'reactiveFormulaValue' -- rather than 'cdDefault'/this `v`
+      -- (already-parsed, no longer textual): editing it here has no
+      -- effect on any *already-spliced* body (those were resolved once,
+      -- at parse time), so this is purely a readable/correct display, not
+      -- a live hook into anything downstream.
       buildFormulaField envSpec =
         withEnvFromMap (Map.fromList [ (n, withType t SomeType) | (n, t) <- envSpec ]) $
           \(env0 :: EnvironmentProxy env0) -> withEnvironment env0 $
-            let finish :: forall e. EnvironmentProxy e -> Language.Value.Value '(e, t) -> IO (Either (SourceRange, String) Layout)
-                finish env v = do
+            let finish :: forall e. KnownEnvironment e
+                       => EnvironmentProxy e -> IO (Either (SourceRange, String) Layout)
+                finish env = do
                   labelV     <- newVariable lbl
                   exprNameP  <- constParsed name (Right name)
                   exprTypeP  <- constParsed (ppType ty) (Right (SomeType ty))
                   exprEnvV   <- newVariable (SomeEnvironment env)
-                  exprValueP <- constParsed (name ++ " (defined in script)")
-                                             (Right (SomeValue env ty v))
+                  exprValueP <- reactiveFormulaValue env ty defaultSrc
                   pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprEnvV exprValueP)))
             in case atType @env0 defaultValue ty of
-                 TC (Right v) -> finish env0 v
+                 TC (Right _) -> finish env0
                  TC (Left err0) ->
                    -- Fall back to also offering the bookkeeping names
                    -- that `escapes`/`vanishes`/`iterations`/`stuck`
@@ -725,7 +745,7 @@ buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoi
                                                 "` doesn't typecheck: " ++ ppError err0))
                      Right (env1 :: EnvironmentProxy env1) -> withEnvironment env1 $
                        case atType @env1 defaultValue ty of
-                         TC (Right v) -> finish env1 v
+                         TC (Right _) -> finish env1
                          TC (Left _)  -> pure (Left (sr, "The formula for `" ++ name ++
                                                           "` doesn't typecheck: " ++ ppError err0))
 
