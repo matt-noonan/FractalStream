@@ -32,17 +32,28 @@ generateWxLayout buttonPress frame0 wLayout = do
           liftIO $ set p' [ layout := lo ]
           pure (hstretch $ expand $ margin 5 $ boxed title (fill $ widget p'))
 
+        -- `column`/`row` route through wxHaskell's own `grid`, which
+        -- calls `maximum` on its row lengths -- an empty list of
+        -- sub-layouts (e.g. a `code <name>:` declaration's own
+        -- invisible placeholder, or any stanza with no visible
+        -- fields) would crash with `Prelude.maximum: empty list`, so
+        -- skip straight to `WX.empty` (a zero-size layout) rather than
+        -- ever calling `column`/`row 5` with nothing in it.
         Vertical v -> do
           p' <- liftIO $ panel p []
           parts <- getDynamic v
-          lo <- hstretch . expand . margin 5 . column 5 <$> mapM (go p') parts
+          lo <- case parts of
+            [] -> pure WX.empty
+            _  -> hstretch . expand . margin 5 . column 5 <$> mapM (go p') parts
           liftIO $ set p' [ layout := lo ]
           pure (hstretch $ expand (widget p'))
 
         Horizontal v -> do
           p' <- liftIO $ panel p []
           parts <- getDynamic v
-          lo <- fill . margin 5 . row 5 <$> mapM (go p') parts
+          lo <- case parts of
+            [] -> pure WX.empty
+            _  -> fill . margin 5 . row 5 <$> mapM (go p') parts
           liftIO $ set p' [ layout := lo ]
           pure (hstretch $ expand (widget p'))
 
