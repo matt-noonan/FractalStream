@@ -40,7 +40,7 @@ import Language.Value.Typecheck
    InternalIterations, InternalStuck, InternalIterationLimit)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv, checkDefiniteAssignment)
-import Language.Code.Parser (Splices(..), noSplices, ParsedCode)
+import Language.Code.Parser (Splices(..), noSplices, ParsedCode, parseCode)
 import Language.Parser.SourceRange
 import Data.Color (black)
 
@@ -690,13 +690,13 @@ reactiveSomeValue env ty initial = do
   newVariable initial >>= newMapped (pure f)
 
 -- | Like 'reactiveSomeValue', but for a @using@-clause formula field's
--- own text box: re-parses as a plain DSL expression via 'atType'
--- (same as the formula's initial default value already is), not via
+-- own text box: re-parses as a plain DSL expression via 'atType' (same
+-- as the formula's initial default value already is), not via
 -- 'parseInputValue's classic-UI-text-entry conventions (e.g. its
 -- bracket-free list rendering) -- those would double up a list-typed
--- formula's own brackets, since both the initial text (from 'pprint',
--- an ordinary expression pretty-printer that always writes them) and
--- any later re-parse need to agree on the same convention.
+-- formula's own brackets, since the initial text (the formula's own
+-- 'Actor.Script.cdDefaultSrc', exactly as the user wrote it) and any
+-- later re-parse need to agree on the same convention.
 reactiveFormulaValue :: forall env ty. (KnownEnvironment env, KnownType ty)
                       => EnvironmentProxy env -> TypeProxy ty -> String -> IO (Parsed SomeValue)
 reactiveFormulaValue env ty initial = do
@@ -706,6 +706,33 @@ reactiveFormulaValue env ty initial = do
           TC (Left err) -> Left (ppFullError err src)
           TC (Right v)  -> Right (SomeValue env ty v)
   newVariable initial >>= newMapped (pure f)
+
+-- | A @code «name»:@ declaration's own preview\/edit widget (only
+-- built when it has a @using@ clause -- see 'buildConfigCode'):
+-- re-parses as a whole statement block via 'parseCode', falling back
+-- to also offering 'PrepBookkeeping's names (same shape as
+-- 'declareFormulaBookkeeping', but reused as-is here rather than
+-- redefined: a statement block can also want to *set* @color@, which
+-- 'FormulaBookkeeping' doesn't include, and the rest of
+-- 'PrepBookkeeping' -- @x@\/@y@\/@dx@\/@dy@ -- is harmless if unused)
+-- if the plain declared environment doesn't typecheck on its own.
+-- Purely for this widget's own benefit: the actual splice substitution
+-- (see 'Actor.Script.ccUsing's doc comment) never calls this, and
+-- isn't affected by whether it would succeed or fail here.
+reactiveCodeValue :: forall env. KnownEnvironment env
+                  => EnvironmentProxy env -> String
+                  -> IO (Mapped CodeString (Either (SourceRange, String) SomeCode))
+reactiveCodeValue env initial = do
+  let render = errorLocation &&& unlines . pp
+      f src = case parseCode env noSplices src of
+        Right code -> Right (SomeCode code)
+        Left err0 -> case declareBookkeeping env of
+          Left _ -> Left (render err0)
+          Right (env1 :: EnvironmentProxy env1) -> withEnvironment env1 $
+            case parseCode env1 noSplices src of
+              Right code -> Right (SomeCode code)
+              Left _     -> Left (render err0)
+  newVariable (CodeString initial) >>= newMapped (pure (\(CodeString src) -> f src))
 
 parseConstantE :: TypeProxy ty -> String -> Either (SourceRange, String) (HaskellType ty)
 parseConstantE ty s = left (errorLocation &&& unlines . pp) (parseConstant ty s)
@@ -730,12 +757,7 @@ configStmtToLayout = \case
   ConfigText s   -> Right . PlainText <$> newVariable s
   ConfigButton s -> Right . Button <$> newVariable s
   ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdDefaultSrc cdLabel cdChoices cdUsing
-  ConfigCode{} ->
-    -- Not a user-facing field at all -- just a code-splice
-    -- definition, already resolved into whatever body spliced it in
-    -- by the time anything builds a real UI. An empty, invisible
-    -- group is the simplest "nothing to show here" Layout.
-    Right . Vertical <$> newVariable []
+  ConfigCode{..} -> buildConfigCode ccName ccBodySrc ccUsing
   ConfigRow stmts -> do
     results <- mapM configStmtToLayout stmts
     case sequence results of
@@ -751,6 +773,25 @@ configStmtNames = \case
   ConfigText{}       -> []
   ConfigButton{}     -> []
   ConfigCode{}       -> []
+
+-- | A @code «name»:@ declaration's own Setup-panel Layout. Without a
+-- @using@ clause, there's no environment to type-check against, so
+-- this stays the same invisible, empty placeholder it's always been
+-- -- a code splice is never itself a user-facing field; only once
+-- spliced into a real @\@viewer@\/@\@tool@ body does it mean anything.
+-- With one, builds a real 'ScriptBox' preview\/edit widget (via
+-- 'reactiveCodeValue') instead, purely for that widget's own benefit
+-- -- see 'Actor.Script.ccUsing's doc comment for why this can never
+-- affect the actual splice substitution either way.
+buildConfigCode :: String -> String -> Maybe [(String, FSType)] -> IO (Either (SourceRange, String) Layout)
+buildConfigCode _ _ Nothing = Right . Vertical <$> newVariable []
+buildConfigCode name bodySrc (Just envSpec) =
+  withEnvFromMap (Map.fromList [ (n, withType t SomeType) | (n, t) <- envSpec ]) $
+    \(env :: EnvironmentProxy env) -> withEnvironment env $ do
+      nameP <- constParsed name (Right name)
+      envV  <- newVariable (SomeEnvironment env)
+      codeM <- reactiveCodeValue env bodySrc
+      pure (Right (ScriptBox (UIScript nameP envV codeM)))
 
 buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> String -> Maybe String -> Maybe [String]
                 -> Maybe [(String, FSType)]

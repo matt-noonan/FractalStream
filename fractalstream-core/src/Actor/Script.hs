@@ -44,6 +44,7 @@ import Actor.Layout (Dimensions(..), parseDimensions)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
+import Data.Char (isSpace)
 
 ------------------------------------------------------------
 -- Parsed stanza bodies
@@ -95,6 +96,28 @@ data ConfigStmt
       { ccRange :: SourceRange
       , ccName  :: String
       , ccBody  :: ParsedCode
+      , ccUsing :: Maybe [(String, FSType)]
+        -- ^ When present (@code «name» using z:C, color:Color:@), this
+        -- declaration also gets a real, type-checked preview\/edit
+        -- widget in its Setup panel (a 'ScriptBox'), type-checking
+        -- 'ccBody' against this environment -- purely for that
+        -- widget's own benefit. The actual splice substitution is
+        -- unaffected either way: a code splice's body is always
+        -- spliced in raw\/untyped, re-checked wherever it actually
+        -- ends up, since that's the only environment that could ever
+        -- be correct for it (unlike a 'using'-clause formula's fixed
+        -- environment).
+      , ccBodyRange :: SourceRange
+        -- ^ The span of just the indented block (not the @code
+        -- «name»:@ header @ccRange@ also covers). Only used
+        -- transiently, to fill in 'ccBodySrc' below -- see
+        -- 'fillDefaultSrcs'.
+      , ccBodySrc :: String
+        -- ^ The raw text of the indented block, exactly as the user
+        -- wrote it -- empty until 'parseScript's own 'fillDefaultSrcs'
+        -- post-processing pass fills it in (the grammar itself has no
+        -- access to the original string, only to already-tokenized
+        -- input). Seeds the preview\/edit widget above, when built.
       }
     -- ^ A @code «name»:@ declaration: a whole block of statements,
     -- parsed exactly like a @\@viewer@\/@\@tool@ body (so it can use
@@ -211,18 +234,21 @@ parseScript input = do
 -- 'Actor.Layout.layoutToSplices') is what makes the edit actually
 -- reach them.
 --
--- Deliberately re-derives @\@setup@'s own *code* splices
--- (@code «name»:@ declarations) fresh from its text rather than taking
--- them from the caller too: unlike a formula field, a code splice has
--- no Setup-panel widget at all to read an edit back from (see
--- 'Actor.Ensemble.configStmtToLayout's own @ConfigCode@ case) --
--- 'Actor.Layout.layoutToSplices' never sees it, so a splices value
--- computed that way always has an empty 'codeSplices', which would
--- otherwise make any @«name»@ reference to one unrecognizable here.
--- Not re-parsing @\@setup@ for its *value* splices too, since those
--- are already live data (the widgets the given splices were
--- themselves just computed from) -- nothing to recover there by
--- parsing their text again.
+-- Also re-derives @\@setup@'s own *code* splices (@code «name»:@
+-- declarations) fresh from its text, but only as a fallback for a
+-- name the caller's splices don't already have: a @code «name»:@
+-- declaration with no @using@ clause has no Setup-panel widget at all
+-- to read an edit back from (see 'Actor.Ensemble.configStmtToLayout's
+-- own @ConfigCode@ case) -- 'Actor.Layout.layoutToSplices' never sees
+-- it, so a splices value computed that way is always missing it,
+-- which would otherwise make its @«name»@ reference unrecognizable
+-- here. One *with* a @using@ clause does have a widget, and
+-- 'Actor.Layout.layoutToSplices' does see it -- so the caller's own
+-- version (reflecting whatever's live in it right now) wins for that
+-- one, same as a formula field's value splice. Not re-parsing @\@setup@
+-- for its *value* splices at all, since those are already live data
+-- (the widgets the given splices were themselves just computed from)
+-- -- nothing to recover there by parsing their text again.
 reparseNonSetupStanzas :: Splices -> String -> Either (SourceRange, String) [ParsedStanza]
 reparseNonSetupStanzas currentSplices input = do
   let allToks      = tokenizeWithIndentation input
@@ -232,18 +258,23 @@ reparseNonSetupStanzas currentSplices input = do
 
   setupResults <- traverse (parseChunk noSplices) setupChunks
   let setupBodies = [ b | SetupStanza _ b <- setupResults ]
-      splices = (buildSplicesFromSetups setupBodies)
-                  { valueSplices = valueSplices currentSplices }
+      freshSplices = buildSplicesFromSetups setupBodies
+      splices = freshSplices
+                  { codeSplices  = Map.union (codeSplices currentSplices) (codeSplices freshSplices)
+                  , valueSplices = valueSplices currentSplices
+                  }
 
   otherResults <- traverse (parseChunk splices) otherChunks
   pure (fillDefaultSrcs input otherResults)
 
--- | Fill in every 'ConfigDecl's 'cdDefaultSrc' with the raw text of its
--- own @<- value@ expression, sliced out of the original script via
--- 'cdDefaultRange'. A post-processing pass over the whole parse result,
--- rather than something the grammar does directly, because the grammar
--- operates purely over already-tokenized input -- it never has the
--- original string in hand to slice from.
+-- | Fill in every 'ConfigDecl's 'cdDefaultSrc' (the raw text of its own
+-- @<- value@ expression) and every 'ConfigCode's 'ccBodySrc' (the raw
+-- text of its own indented block), sliced out of the original script
+-- via 'cdDefaultRange'\/'ccBodyRange' respectively. A post-processing
+-- pass over the whole parse result, rather than something the grammar
+-- does directly, because the grammar operates purely over
+-- already-tokenized input -- it never has the original string in hand
+-- to slice from.
 fillDefaultSrcs :: String -> [ParsedStanza] -> [ParsedStanza]
 fillDefaultSrcs input = map onStanza
   where
@@ -254,16 +285,35 @@ fillDefaultSrcs input = map onStanza
       v@ViewerStanza{} -> v
 
     onStmt = \case
-      d@ConfigDecl{..} -> d { cdDefaultSrc = sliceSource input cdDefaultRange }
+      d@ConfigDecl{..} -> d { cdDefaultSrc = sliceLine input cdDefaultRange }
+      c@ConfigCode{..}  -> c { ccBodySrc = sliceBlock input ccBodyRange }
       ConfigRow stmts  -> ConfigRow (map onStmt stmts)
       other            -> other
 
-    sliceSource :: String -> SourceRange -> String
-    sliceSource src sr = case spanOfSourceRange sr of
+    sliceLine :: String -> SourceRange -> String
+    sliceLine src sr = case spanOfSourceRange sr of
       Just (InLine i s e) -> case drop i (lines src) of
         (line:_) -> take (e + 1 - s) (drop s line)
         []       -> ""
       _ -> ""
+
+    -- A code block's own range always spans whole lines (the
+    -- indentation-aware tokenizer guarantees a statement never starts
+    -- or ends mid-line), so 'InRows' is the expected case here -- but
+    -- a one-statement block is still a single line, i.e. 'InLine',
+    -- so that's handled too. Dedents by the block's own common
+    -- leading whitespace, so the result reads naturally on its own,
+    -- independent of how deeply nested under @\@setup@ it was.
+    sliceBlock :: String -> SourceRange -> String
+    sliceBlock src sr = case spanOfSourceRange sr of
+      Just (InLine i _ _)  -> dedent (take 1 (drop i (lines src)))
+      Just (InRows s e)    -> dedent (take (e + 1 - s) (drop s (lines src)))
+      Nothing              -> ""
+
+    dedent ls =
+      let indents = [ length (takeWhile isSpace l) | l <- ls, not (all isSpace l) ]
+          commonIndent = if null indents then 0 else minimum indents
+      in intercalate "\n" (map (drop commonIndent) ls)
 
 -- | Parse one stanza's own token span (as produced by 'splitStanzas',
 -- without the enclosing file-level Indent\/Dedent) into its 'ParsedStanza'.
@@ -453,15 +503,22 @@ scriptGrammar splices@Splices{valueSplices} = mdo
   -- Its free variables are left unresolved, same as a `using`-clause
   -- formula field's default -- they're only bound once this is
   -- spliced (via `«name»`, as code rather than a value) into whatever
-  -- body actually declares them.
+  -- body actually declares them. An optional `using <env>` clause
+  -- (same grammar as a formula field's own) doesn't change that --
+  -- see 'ConfigStmt's own 'ccUsing' doc comment for what it's for.
   configCodeHeader <- rule $
     withSourceRange $
-      (\name sr -> Right (name, sr))
-      <$> (tok "code" *> ident <* colon <* nl)
+      (\name museEnv sr -> (name, museEnv, sr))
+      <$> (tok "code" *> ident) <*> (optional (tok "using" *> usingEnv) <* colon <* nl)
+
+  configCodeBody <- rule $
+    withSourceRange $
+      (\body sr -> (sr, body))
+      <$> (token Indent *> viewerBody <* token Dedent)
 
   configCode <- rule $
-    (\ehdr code -> (\(name, sr) -> ConfigCode sr name code) <$> ehdr)
-    <$> configCodeHeader <*> (token Indent *> viewerBody <* token Dedent)
+    (\(name, museEnv, sr) (bodySr, body) -> Right (ConfigCode sr name body museEnv bodySr ""))
+    <$> configCodeHeader <*> configCodeBody
 
   configStmt <- ruleChoice [configDecl, configText, configButton, configRow, configCode]
 
