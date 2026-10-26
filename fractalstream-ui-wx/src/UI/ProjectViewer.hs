@@ -217,56 +217,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
           Size ww wh <- get warningPanel outerSize
           set warningPanel [ position := Point ((w - ww) `div` 2) ((h - wh) `div` 2) ]
 
-    -- Make the script editor
-    let showViewer tf = do
-          set p [ visible := tf ]
-          set hamburgerPanel [ visible := tf ]
-          showTools <- get shouldShowToolPicker value
-          set toolPanel [ visible := tf && showTools ]
-          showPtr <- get shouldShowPointerLocation value
-          set pointerLocation [ visible := tf && showPtr ]
-
-    sePanel <- panel f []
-    seTitle <- staticText sePanel [ text := "Edit script for `" ++ title0 ++ "`" ]
-    oldScriptValue <- variable [ value := CodeString "" ]
-    seOk <- button sePanel [ text := "Ok"
-                           , on command := do
-                               newScript <- getDynamic (source $ scriptCode vScript)
-                               oldScript <- get oldScriptValue value
-                               if newScript /= oldScript
-                                 then do
-                                   void $ windowClose f True
-                                   remakeViewer
-                                 else do
-                                   showViewer True
-                                   set sePanel [ visible := False ]
-                                   windowReLayout f
-                                   focusOn p
-                           ]
-    --wxWatchDynamic1 f (dyn $ scriptCode vScript) $ \result ->
-    --  set seOk [ enabled := isRight result ]
-
-    seCancel <- button sePanel [ text := "Cancel"
-                               , on command := do
-                                   showViewer True
-                                   set sePanel [ visible := False ]
-                                   oldScript <- get oldScriptValue value
-                                   putStrLn ("Setting source to:\n" ++ show oldScript)
-                                   setValue (source $ scriptCode vScript) =<< get oldScriptValue value
-                                   windowReLayout f
-                                   focusOn p
-                               ]
-
-    (_seUnhook, seLo) <- generateWxLayout (const $ pure ()) sePanel (ScriptBox vScript)
-    set sePanel [ visible := False
-                , layout := column 5 $
-                  [ hfloatCentre (widget seTitle)
-                  , seLo
-                  , row 5 [ expand (margin 3 $ widget seOk)
-                          , hglue
-                          , expand (margin 3 $ widget seCancel) ] ]]
-
-    set f [ layout := column 0 [ fill $ widget p, margin 5 $ fill (widget sePanel) ]
+    set f [ layout := fill $ widget p
           , clientSize := sz width height
           , on activate :~ \old vis -> do
               shouldShowTools <- get shouldShowToolPicker value
@@ -947,15 +898,6 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                                               , checkable := True, checked := False ]
     menuLine hamburgerMenu
     menuItem hamburgerMenu [ text := "Save...\tCtrl+S", enabled := True, on command := saveSession ]
-    menuItem hamburgerMenu [ text := "Edit viewer script...\tCtrl+E"
-                           , enabled := True
-                           , on command := do
-                               oldSource <- getDynamic (source $ scriptCode vScript)
-                               set oldScriptValue [ value := oldSource ]
-                               showViewer False
-                               set sePanel [ visible := True ]
-                               windowReLayout f
-                           ]
     menuItem hamburgerMenu [ text := "Edit viewer tools...", enabled := False ]
     menuItem hamburgerMenu [ text := "Edit project script...\tCtrl+Shift+E"
                            , enabled := True
