@@ -8,7 +8,6 @@ module Main where
 import UI.ProjectActions
 import UI.Menu
 import UI.ProjectViewer (viewProject)
-import UI.ProjectEditor (editProject)
 import UI.ProjectScriptEditor (editProjectScript)
 import UI.Session
 import Data.DynamicValue
@@ -36,7 +35,32 @@ main = withBackend $ \backend -> start $ do
 
   activeSessions <- newVariable []
 
-  let projectNew = putStrLn "TODO"
+  let -- A brand-new project has no file of its own yet, and nothing
+      -- worth looking at until the user writes one -- so, unlike
+      -- `projectOpen`/`projectOpenTemplate`, this skips straight to
+      -- the whole-project script editor instead of calling
+      -- `runEnsemble`/`runEnsembleFromSetup`, with `editProjectScript`'s
+      -- own "Rebuild" button as the only way any viewer ever gets
+      -- built. `newProjectScript` is a fixed, known-valid starting
+      -- point (a project needs at least one `@viewer`), so the
+      -- `either error id` here can only ever fire from a programming
+      -- mistake in that constant, not from anything the user did.
+      projectNew = do
+        projectWindow <- frame [ visible := False ]
+        prj <- either (error . formatScriptError newProjectScript) id
+               <$> buildEnsembleFromScript newProjectScript
+        currentEnsemble <- newVariable prj
+
+        sessionName <- newVariable "Untitled"
+        let sessionHandle = SessionHandle projectWindow
+        sessionVisible <- newVariable True
+        sessionUnsaved <- newVariable True
+        let sessionSave = save currentEnsemble projectWindow sessionUnsaved
+            ui = viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..})
+                   sessionSave (editProjectScript backend projectWindow currentEnsemble ui)
+            si = SessionInfo{..}
+        modifyValue activeSessions (si :)
+        editProjectScript backend projectWindow currentEnsemble ui
 
       -- `currentEnsemble` holds whichever `Ensemble` the session is
       -- currently running -- fixed at open time, but replaced in place
@@ -98,8 +122,6 @@ main = withBackend $ \backend -> start $ do
         modifyValue activeSessions (si :)
         runEnsembleFromSetup backend ui prj
 
-      projectEdit = editProject
-
       closeSession SessionInfo{..} = case sessionHandle of
         SessionHandle f -> close f
 
@@ -120,6 +142,16 @@ main = withBackend $ \backend -> start $ do
       editSession _ = putStrLn "TODO, editSession"
 
   welcome ProjectActions{..}
+
+-- | The starting point for "New project": the smallest script that's
+-- actually valid (an ensemble needs at least one @\@viewer@), so a
+-- brand-new project's editor opens with something to immediately
+-- rebuild and see, rather than empty text.
+newProjectScript :: String
+newProjectScript = unlines
+  [ "@viewer \"New viewer\" var=z size=\"600x600\""
+  , "color <- black"
+  ]
 
 runTemplate :: a -> b -> c -> IO ()
 runTemplate _ _ _ = putStrLn "TODO: runTemplate"

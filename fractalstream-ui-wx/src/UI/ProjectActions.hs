@@ -9,7 +9,6 @@ import UI.Session
 data ProjectActions = ProjectActions
   { projectOpen :: FilePath -> IO ()
   , projectOpenTemplate :: String -> Ensemble -> IO ()
-  , projectEdit :: FilePath -> IO ()
   , projectNew  :: IO ()
   , activeSessions :: Variable [SessionInfo]
   , closeSession :: SessionInfo -> IO ()

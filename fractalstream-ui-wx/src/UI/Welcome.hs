@@ -32,14 +32,9 @@ welcome ProjectActions{..} = do
   open <- button p [ text := "Open existing project..."
                    , on command := getProject "Open" projectOpen
                    ]
-  edit <- button p [ text := "Edit project"
-                   , on command := getProject "Edit" projectEdit
-                   , enabled := False
-                   ]
   set f [ layout := margin 10 $ fill $ container p $ floatCenter $ column 10
                     [ widget template
                     , widget open
-                    , widget edit
                     ]
         ]
   windowReLayout f
