@@ -14,6 +14,7 @@ import Language.Environment (SomeContext(..), Context(EmptyContext), Environment
 import Language.Type (TypeProxy(..))
 import Language.Value (SomeValue(..))
 import Language.Value.Evaluator (evaluateInContext)
+import Language.Code (pprintCode)
 import Data.DynamicValue
 
 import qualified Data.Set as Set
@@ -359,6 +360,64 @@ iterate z -> «f» until z escapes
                   getDynamic (dyn exprValue) >>= \case
                     Right _ -> expectationFailure "expected the malformed edit to be rejected"
                     Left _  -> pure ()
+                other -> expectationFailure ("expected a single formula TextBox, got " ++ show (length other))
+              _ -> expectationFailure "expected the panel body to be Vertical"
+            other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
+          _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
+
+    it "rebuildWithCurrentSetup actually splices an edited `using`-clause \
+       \formula field's new text into the viewer it's spliced into (regression: \
+       \the Setup wizard's \"Go!\" button used to just reveal the viewer(s) \
+       \already built from the original script text, with rerunSetup wired \
+       \to a no-op, so an edit never reached anything downstream)" $
+      shouldBuild [r|
+@setup "Setup"
+f : C using z:C, C:C <- z^2 + C
+
+@viewer "Mandelbrot" var=C size="100x100"
+z : C <- 0
+iterate z -> «f» until z escapes
+|] $ \ens -> do
+        Just setupCfg <- getDynamic (ensembleSetup ens)
+        case coContents setupCfg of
+          Vertical panelsV -> getDynamic panelsV >>= \case
+            [Panel _ bodyV] -> getDynamic bodyV >>= \case
+              Vertical itemsV -> getDynamic itemsV >>= \case
+                [TextBox _ UIVariable{exprValue}] -> do
+                  setValue (source exprValue) "z^3 + 42"
+                  rebuildWithCurrentSetup ens >>= \case
+                    Left err -> expectationFailure ("expected the rebuild to succeed, got: " ++ show err)
+                    Right _  -> pure ()
+                  [viewer] <- getDynamic (ensembleViewers ens)
+                  getDynamic (cvCode viewer) >>= \case
+                    Left (_, err) -> expectationFailure ("expected the rebuilt viewer's code to build, got: " ++ err)
+                    Right (SomeViewerWithContext _ _ code) ->
+                      pprintCode code `shouldSatisfy` isInfixOf "z ^ 3"
+                other -> expectationFailure ("expected a single formula TextBox, got " ++ show (length other))
+              _ -> expectationFailure "expected the panel body to be Vertical"
+            other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
+          _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
+
+    it "rebuildWithCurrentSetup rejects a malformed edit instead of building \
+       \a viewer with it" $
+      shouldBuild [r|
+@setup "Setup"
+f : C using z:C, C:C <- z^2 + C
+
+@viewer "Mandelbrot" var=C size="100x100"
+z : C <- 0
+iterate z -> «f» until z escapes
+|] $ \ens -> do
+        Just setupCfg <- getDynamic (ensembleSetup ens)
+        case coContents setupCfg of
+          Vertical panelsV -> getDynamic panelsV >>= \case
+            [Panel _ bodyV] -> getDynamic bodyV >>= \case
+              Vertical itemsV -> getDynamic itemsV >>= \case
+                [TextBox _ UIVariable{exprValue}] -> do
+                  setValue (source exprValue) "z +"
+                  rebuildWithCurrentSetup ens >>= \case
+                    Right _   -> expectationFailure "expected the rebuild to be rejected"
+                    Left _    -> pure ()
                 other -> expectationFailure ("expected a single formula TextBox, got " ++ show (length other))
               _ -> expectationFailure "expected the panel body to be Vertical"
             other -> expectationFailure ("expected a single Panel, got " ++ show (length other))

@@ -26,6 +26,7 @@ module Actor.Script
   ( ConfigStmt(..)
   , ParsedStanza(..)
   , parseScript
+  , reparseNonSetupStanzas
   , scriptGrammar
   ) where
 
@@ -197,6 +198,27 @@ parseScript input = do
   otherResults <- traverse (\(i, c) -> (i,) <$> parseChunk splices c) otherChunks
 
   pure (fillDefaultSrcs input (map snd (sortOn fst (setupResults ++ otherResults))))
+
+-- | Re-parse just a script's non-@\@setup@ stanzas (@\@config@\/
+-- @\@viewer@\/@\@tool@), against an externally-supplied splices map
+-- instead of the one its own @\@setup@ stanzas would otherwise
+-- contribute -- used to make an edited @\@setup@ field's value
+-- actually take effect (the Setup wizard's "Go!" button): a
+-- @\@viewer@\/@\@tool@\/@\@config@ body's own @«name»@ references are
+-- resolved once, at parse time, into whatever the given splices say,
+-- so re-parsing with the *current* splices (reflecting whatever's live
+-- in the Setup panel's widgets right now, via
+-- 'Actor.Layout.layoutToSplices') is what makes the edit actually
+-- reach them. Deliberately does not also re-parse @\@setup@ itself:
+-- its own declarations are already live data (the widgets this
+-- splices map was itself just computed from), so there's nothing to
+-- recover by parsing their text again.
+reparseNonSetupStanzas :: Splices -> String -> Either (SourceRange, String) [ParsedStanza]
+reparseNonSetupStanzas splices input = do
+  let allToks      = tokenizeWithIndentation input
+      otherChunks  = [ c | c <- splitStanzas allToks, not (isSetupChunk c) ]
+  otherResults <- traverse (parseChunk splices) otherChunks
+  pure (fillDefaultSrcs input otherResults)
 
 -- | Fill in every 'ConfigDecl's 'cdDefaultSrc' with the raw text of its
 -- own @<- value@ expression, sliced out of the original script via

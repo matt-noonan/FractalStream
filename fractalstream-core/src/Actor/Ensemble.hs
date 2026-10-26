@@ -9,6 +9,7 @@ module Actor.Ensemble
   , formatScriptError
   , runEnsemble
   , runEnsembleFromSetup
+  , rebuildWithCurrentSetup
 
   , contextValuesChanged
   , layoutToArgs
@@ -477,35 +478,92 @@ buildWithValidTargets setupGroups configGroups viewers tools viewerTitles = do
   case eSetupConfig of
     Left err -> pure (Left err)
     Right setupConfig -> do
-      eConfigConfig <- buildMaybeConfiguration "Configuration" configGroups
-      case eConfigConfig of
+      setupVar <- newVariable setupConfig
+      let splicesDyn :: Dynamic (Either String Splices)
+          splicesDyn = dyn setupVar >>= \case
+            Nothing                -> pure (Right noSplices)
+            Just Configuration{..} -> layoutToSplices coContents
+
+      buildConfigAndViewers splicesDyn configGroups viewers tools viewerTitles >>= \case
         Left err -> pure (Left err)
-        Right configConfig -> do
-          setupVar  <- newVariable setupConfig
-          configVar <- newVariable configConfig
+        Right (configVar, viewersVar) -> do
+          scenariosVar     <- newVariable []
+          sourceScriptVar  <- newVariable ""
+          pure (Right (Ensemble setupVar splicesDyn configVar viewersVar scenariosVar sourceScriptVar))
 
-          let splicesDyn :: Dynamic (Either String Splices)
-              splicesDyn = dyn setupVar >>= \case
-                Nothing                -> pure (Right noSplices)
-                Just Configuration{..} -> layoutToSplices coContents
+-- | Build @\@config@'s own 'Configuration' plus every viewer and tool,
+-- given a @\@setup@'s splices rather than building them from a fresh
+-- @\@setup@ parse -- factored out of 'buildWithValidTargets' so
+-- 'rebuildWithCurrentSetup' can reuse the *existing*, live setup (and
+-- its current, possibly-edited splices) instead of discarding it and
+-- building a brand new one from the original script text.
+buildConfigAndViewers :: Dynamic (Either String Splices)
+                       -> [(String, [ConfigStmt])]
+                       -> [ViewerFields]
+                       -> [ToolFields]
+                       -> [String]
+                       -> IO (Either (SourceRange, String)
+                                (Variable (Maybe Configuration), Variable [ComplexViewer]))
+buildConfigAndViewers splicesDyn configGroups viewers tools viewerTitles = do
+  eConfigConfig <- buildMaybeConfiguration "Configuration" configGroups
+  case eConfigConfig of
+    Left err -> pure (Left err)
+    Right configConfig -> do
+      configVar <- newVariable configConfig
 
-              contextDyn :: Dynamic (Either String (SomeContext DynamicValue))
-              contextDyn = dyn configVar >>= \case
-                Nothing                -> pure (Right (SomeContext EmptyContext))
-                Just Configuration{..} -> layoutContext coContents
+      let contextDyn :: Dynamic (Either String (SomeContext DynamicValue))
+          contextDyn = dyn configVar >>= \case
+            Nothing                -> pure (Right (SomeContext EmptyContext))
+            Just Configuration{..} -> layoutContext coContents
 
-          eViewers <- forM viewers $ \v ->
-            buildComplexViewer splicesDyn contextDyn
-              [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ]
-              v
+      eViewers <- forM viewers $ \v ->
+        buildComplexViewer splicesDyn contextDyn
+          [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ]
+          v
 
-          case sequence eViewers of
-            Left err -> pure (Left err)
-            Right viewerList -> do
-              viewersVar     <- newVariable viewerList
-              scenariosVar   <- newVariable []
-              sourceScriptVar <- newVariable ""
-              pure (Right (Ensemble setupVar splicesDyn configVar viewersVar scenariosVar sourceScriptVar))
+      case sequence eViewers of
+        Left err -> pure (Left err)
+        Right viewerList -> do
+          viewersVar <- newVariable viewerList
+          pure (Right (configVar, viewersVar))
+
+-- | Rebuild @\@config@ and every viewer\/tool from a script's *current*
+-- state -- used by the Setup wizard's "Go!" button to make an edited
+-- @\@setup@ field's value actually take effect. A @\@viewer@\/@\@tool@\/
+-- @\@config@ body's own @«name»@ references are otherwise always
+-- whatever the *original* script text's @\@setup@ declarations said,
+-- resolved once at parse time by 'Actor.Script.parseScript' -- editing
+-- a Setup panel widget afterward never reaches them, since nothing
+-- re-parses anything in response. Re-parses just the non-@\@setup@
+-- stanzas (@\@config@\/@\@viewer@\/@\@tool@, via
+-- 'Actor.Script.reparseNonSetupStanzas') against @\@setup@'s *current*
+-- splices (reflecting whatever's live in its widgets right now) and
+-- rebuilds @\@config@ and every viewer\/tool from the result, replacing
+-- this 'Ensemble's own 'ensembleConfiguration'\/'ensembleViewers' in
+-- place. Deliberately doesn't touch @\@setup@ itself -- see
+-- 'reparseNonSetupStanzas's own doc comment for why.
+rebuildWithCurrentSetup :: Ensemble -> IO (Either (SourceRange, String) Ensemble)
+rebuildWithCurrentSetup ens@Ensemble{..} = do
+  scriptText <- getDynamic ensembleSourceScript
+  getDynamic ensembleSplices >>= \case
+    Left err -> pure (Left (NoSourceRange, err))
+    Right splices -> case reparseNonSetupStanzas splices scriptText of
+      Left err -> pure (Left err)
+      Right stanzas -> do
+        let configGroups = [ (t, b) | ConfigStanza t b <- stanzas ]
+            viewers       = mapMaybe viewerFields stanzas
+            tools         = mapMaybe toolFields stanzas
+            viewerTitles  = [ vfTitle v | v <- viewers ]
+
+        case checkTitlesAndTargets viewerTitles tools of
+          Left err -> pure (Left err)
+          Right () ->
+            buildConfigAndViewers ensembleSplices configGroups viewers tools viewerTitles >>= \case
+              Left err -> pure (Left err)
+              Right (configVar, viewersVar) -> do
+                getDynamic configVar  >>= setValue' ensembleConfiguration
+                getDynamic viewersVar >>= setValue' ensembleViewers
+                pure (Right ens)
 
 ------------------------------------------------------------
 -- Stanza field extraction (total, so no incomplete-pattern risk)
@@ -1139,18 +1197,23 @@ data HaskellValueOrError :: Symbol -> FSType -> Exp Type
 type instance Eval (HaskellValueOrError name t) = Either String (HaskellType t)
 
 runEnsembleFromSetup :: Backend -> UI -> Ensemble -> IO ()
-runEnsembleFromSetup backend UI{..} Ensemble{..} = do
+runEnsembleFromSetup backend UI{..} ens@Ensemble{..} = do
 
   -- Get a handle for the ensemble
   project <- newEnsemble
   let rerunSetup = pure ()
-  let runPostSetup = runEnsemblePostSetup project backend makeLayout makeViewer rerunSetup Ensemble{..}
 
   -- Run the setup panel
   getDynamic ensembleSetup >>= \case
-    Nothing -> runPostSetup
+    Nothing -> runEnsemblePostSetup project backend makeLayout makeViewer rerunSetup ens
     Just Configuration{..} -> do
       title <- either (throwIO . BadEnsemble) pure =<< getDynamic coTitle
+      -- "Go!" re-splices and re-parses @config/@viewer/@tool against
+      -- @setup's *current* (possibly-edited) values before building
+      -- anything -- see 'rebuildWithCurrentSetup's own doc comment.
+      let runPostSetup = rebuildWithCurrentSetup ens >>= \case
+            Left (_, err) -> throwIO (BadEnsemble err)
+            Right ens'    -> runEnsemblePostSetup project backend makeLayout makeViewer rerunSetup ens'
       runSetup project title coContents runPostSetup
 
 runEnsemble :: Backend -> UI -> Ensemble -> IO ()
