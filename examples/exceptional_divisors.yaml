@@ -15,7 +15,7 @@ script: |
   color10 : Color as "jbar" <- blue
   exceptional : Color as "exceptional" <- rgb(1,0.7,0.7)
 
-  @viewer "t-plane" var=t size="512x512" vanish="tol"
+  @viewer "t-plane" var=t size=512x512 vanish=tol
   while t^3 != 1:
     t <- t (2 + t^3) / (2 t^3 + 1)
 
@@ -28,7 +28,7 @@ script: |
   else:
     color <- black
 
-  @viewer "z-plane" var=z size="512x512" vanish="tol"
+  @viewer "z-plane" var=z size=512x512 vanish=tol
   y : C <- 0.5 / z
   x : C <- 0.5 * t / z
 

@@ -9,7 +9,7 @@ script: |
   rad : R as "grab radius (px)" <- 5
   drag_target : Z as "Drag target: " <- 0
 
-  @viewer "Roots of {f}" var=z size="512x512" vanish="tol"
+  @viewer "Roots of {f}" var=z size=512x512 vanish=tol
   lastZ : C <- 0
   repeat:
     lastZ <- z
@@ -28,7 +28,7 @@ script: |
   else:
     color <- black
 
-  @tool "Trace" shortcut="t"
+  @tool "Trace" shortcut=t
   on deactivated:
     erase
 
@@ -44,7 +44,7 @@ script: |
 
     draw point at z
 
-  @tool "Move roots" shortcut="m"
+  @tool "Move roots" shortcut=m
   on activated:
     draw point at a
     draw point at b

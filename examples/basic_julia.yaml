@@ -3,14 +3,14 @@ script: |
   C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
   p : R as "Brightness: " <- 0.5
 
-  @viewer "Julia set" var=z size="512x512"
+  @viewer "Julia set" var=z size=512x512
   iterate z -> z^2 + C until z escapes
   if stuck:
     color <- black
   else:
     color <- blend ((iterations / max_iters)^p, dark blue, white)
 
-  @tool "Trace" for="Julia set" shortcut="t"
+  @tool "Trace" for="Julia set" shortcut=t
   on click-or-drag:
     prevZ : C <- z
     erase

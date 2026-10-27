@@ -2,8 +2,8 @@ script: |
   @config "Configuration"
   x : C as "Selected value of x:" <- -0.1226 + 0.7449i
 
-  @viewer "x plane" var=x size="512x512"
+  @viewer "x plane" var=x size=512x512
   color <- pink
 
-  @viewer "z plane" var=z size="512x512"
+  @viewer "z plane" var=z size=512x512
   color <- yellow

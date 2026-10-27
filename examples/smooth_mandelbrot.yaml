@@ -1,5 +1,5 @@
 script: |
-  @viewer "Mandelbrot set with smooth coloring" var=C size="512x512"
+  @viewer "Mandelbrot set with smooth coloring" var=C size=512x512
   z : ℂ ⭠ 0
   iterate z ⟼ z² + C until z escapes
 

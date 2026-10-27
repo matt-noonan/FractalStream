@@ -6,7 +6,7 @@ script: |
   @config "Configuration"
   C : C as "Selected value of C:" <- -0.1226 + 0.7449i
 
-  @viewer "Parameter plane" var=C size="512x512" center="0" pixelSize="1/128"
+  @viewer "Parameter plane" var=C size=512x512 center=0 pixelSize=1/128
   z : C <- 0
   iterate z -> «f» until «stop»
 
@@ -19,7 +19,7 @@ script: |
   else:
     color <- black
 
-  @viewer "Dynamical plane" var=z size="512x512" center="0" pixelSize="1/128"
+  @viewer "Dynamical plane" var=z size=512x512 center=0 pixelSize=1/128
   iterate z -> «f» until «stop»
 
   if «stop»:
@@ -31,7 +31,7 @@ script: |
   else:
     color <- black
 
-  @tool "Trace" for="Dynamical plane" shortcut="t"
+  @tool "Trace" for="Dynamical plane" shortcut=t
   on deactivated:
     erase
   on click-or-drag:

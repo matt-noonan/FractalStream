@@ -9,7 +9,7 @@ script: |
   r0 : R as "Inner radius" <- 0.2
   r1 : R as "Outer radius" <- 0.5
 
-  @viewer "Twisted rabbit" var=z size="512x512" center="0" pixelSize="1/128"
+  @viewer "Twisted rabbit" var=z size=512x512 center=0 pixelSize=1/128
   until «stop»:
     z <- «f»
     d : R <- |z - twist_center|

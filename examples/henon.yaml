@@ -4,7 +4,7 @@ script: |
   b : C as "b = " <- 0.6 + 0.2i
   zoom : R as "zoom = " <- 0.001
 
-  @viewer "a-plane" var=a size="512x512"
+  @viewer "a-plane" var=a size=512x512
   z : C <- 0
   aa : C <- (a + 1) / 2
   disc : C <- aa^2 - b
@@ -25,7 +25,7 @@ script: |
   else:
     color <- black
 
-  @viewer "b-plane" var=b size="512x512"
+  @viewer "b-plane" var=b size=512x512
   z : C <- 0
   aa : C <- (a + 1) / 2
   disc : C <- aa^2 - b
@@ -47,7 +47,7 @@ script: |
   else:
     color <- black
 
-  @viewer "Hénon dynamics" var=z size="512x512"
+  @viewer "Hénon dynamics" var=z size=512x512
   aa : C <- (a + 1) / 2
   disc : C <- aa^2 - b
   p : C <- sqrt(disc) + aa

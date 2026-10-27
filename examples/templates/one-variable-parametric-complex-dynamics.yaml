@@ -17,11 +17,11 @@ script: |
   @config "Configuration"
   C : C as "C =" <- «initialC»
 
-  @viewer "Parametric complex dynamics parameter plane" var=C size="600x600" pixelSize="1/100"
+  @viewer "Parametric complex dynamics parameter plane" var=C size=600x600 pixelSize=1/100
   dynamic : Boolean <- false
   z : C <- «z0»
   «script»
 
-  @viewer "Parametric complex dynamics dynamical plane" var=z size="600x600" pixelSize="1/100"
+  @viewer "Parametric complex dynamics dynamical plane" var=z size=600x600 pixelSize=1/100
   dynamic : Boolean <- true
   «script»

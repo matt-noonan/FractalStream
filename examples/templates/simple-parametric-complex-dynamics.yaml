@@ -10,16 +10,16 @@ script: |
   @config "Configuration"
   C : C as "Selected value of C:" <- -0.1226 + 0.7449i
 
-  @viewer "Parametric complex dynamics parameter plane" var=C size="600x600"
+  @viewer "Parametric complex dynamics parameter plane" var=C size=600x600
   z : C <- «initialZ»
   iterate z -> «expression» until «exit_condition»
   color <- if stuck then «on_failure» else «on_success»
 
-  @viewer "Parametric complex dynamics" var=z size="600x600"
+  @viewer "Parametric complex dynamics" var=z size=600x600
   iterate z -> «expression» until «exit_condition»
   color <- if stuck then «on_failure» else «on_success»
 
-  @tool "Trace" shortcut="t" for="Parametric complex dynamics"
+  @tool "Trace" shortcut=t for="Parametric complex dynamics"
   on refresh:
     erase
   on deactivated:

@@ -8,7 +8,7 @@ script: |
   @config "Configuration"
   shade_convergence : Boolean as "Shade by convergence speed: " <- true
 
-  @viewer "Newton's method on ℂ" var=z size="600x600"
+  @viewer "Newton's method on ℂ" var=z size=600x600
   lastZ : C <- 0
   repeat:
     lastZ <- z
@@ -22,7 +22,7 @@ script: |
     if shade_convergence:
       color <- blend(iterations / 20, dark color, light color)
 
-  @tool "Trace" shortcut="t"
+  @tool "Trace" shortcut=t
   on refresh:
     erase
   on deactivated:

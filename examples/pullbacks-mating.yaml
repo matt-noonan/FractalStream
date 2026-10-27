@@ -4,7 +4,7 @@ script: |
   p : R as "Brightness: " <- 0.5
   color1 : Color as "Selected point" <- white
 
-  @viewer "C-plane" var=C size="512x512" center="0" pixelSize="1/128"
+  @viewer "C-plane" var=C size=512x512 center=0 pixelSize=1/128
   z : C <- C
   iterate z -> (z^2 - C)/(z^2 - 1) until z escapes
   if stuck:
@@ -12,14 +12,14 @@ script: |
   else:
     color <- rainbow (iterations / 20)
 
-  @viewer "Dynamics" var=z size="512x512" center="0" pixelSize="1/128"
+  @viewer "Dynamics" var=z size=512x512 center=0 pixelSize=1/128
   iterate z -> (z^2 - C)/(z^2 - 1) until z escapes
   if stuck:
     color <- black
   else:
     color <- dark rainbow (iterations / 20)
 
-  @tool "Preimages" for="Dynamics" shortcut="i" drawLayer="10"
+  @tool "Preimages" for=Dynamics shortcut="i" drawLayer=10
   pre1 : C as "Value" <- 0
   color2 : Color as "Color" <- red
   pre2 : C as "Value" <- 0
@@ -37,7 +37,7 @@ script: |
     use color3 for line
     draw point at pre2
 
-  @tool "Mark orbit of critical point" for="Dynamics" shortcut="o" drawLayer="11"
+  @tool "Mark orbit of critical point" for=Dynamics shortcut=o drawLayer=11
   follow : Boolean as "Draw lines between iterations?" <- false
   zero_orbit_color : Color as "Orbit of 0" <- blue
   one_color : Color as "Mark 1" <- green
@@ -59,7 +59,7 @@ script: |
       z <- (z^2 - C) / (z^2 - 1)
     while z != 0
 
-  @tool "Pullback" for="Dynamics" shortcut="p" drawLayer="12"
+  @tool "Pullback" for=Dynamics shortcut=p drawLayer=12
   follow : Boolean as "Follow previous preimages?" <- false
   last_z : C as "Selected point" <- 0
   last_pre1 : C as "Value" <- 0

@@ -6,11 +6,11 @@ script: |
   on_success : Color as "Color expression for success:" using z:C, C:C <- rainbow(iterations / 20)
   on_failure : Color as "Color expression for failure:" using z:C, C:C <- black
 
-  @viewer "Simple complex dynamics" var=z size="600x600"
+  @viewer "Simple complex dynamics" var=z size=600x600
   iterate z -> «expression» until «exit_condition»
   color <- if stuck then «on_failure» else «on_success»
 
-  @tool "Trace" shortcut="t"
+  @tool "Trace" shortcut=t
   on refresh:
     erase
   on deactivated:

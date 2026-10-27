@@ -3,7 +3,7 @@ script: |
   outer : R as "outer tolerance: " <- 0.01
   warmup : Z as "Warmup iterations:" <- 1000
 
-  @viewer "Bifurcation diagram for the logistic map" var=z size="512x512"
+  @viewer "Bifurcation diagram for the logistic map" var=z size=512x512
   x : R <- im(z)
   x0 : R <- x
   r : R <- re(z)

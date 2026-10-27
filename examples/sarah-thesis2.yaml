@@ -1,5 +1,5 @@
 script: |
-  @viewer "Sarah thing" var=z size="600x600"
+  @viewer "Sarah thing" var=z size=600x600
   p : C <- z
   x : C <- z + 1
   y : C <- z (z+1)^2 + 1

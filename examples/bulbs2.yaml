@@ -1,5 +1,5 @@
 script: |
-  @viewer "Mandelbrot set" var=C size="512x512"
+  @viewer "Mandelbrot set" var=C size=512x512
   z : C <- 0
   iterate z -> z^2 + C until z escapes
 
@@ -8,7 +8,7 @@ script: |
   else:
     color <- black
 
-  @tool "Bulb info" for="Mandelbrot set" shortcut="b"
+  @tool "Bulb info" for="Mandelbrot set" shortcut=b
   text "Click on points of the Mandelbrot set to find the period of the attracting cycle."
   text "Points outside of the Mandelbrot set will result in \"X\""
   text "Cycles exceeding the maximum period will result in \"?\""

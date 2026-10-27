@@ -13,7 +13,7 @@ script: |
     r0 : R as "Inner radius" <- 0.2
     r1 : R as "Outer radius" <- 0.5
 
-  @viewer "Parameter space" var=C size="512x512"
+  @viewer "Parameter space" var=C size=512x512
   z : ℂ ⭠ 0
   until «stop»:
     z ⭠ «f»
@@ -31,7 +31,7 @@ script: |
     s ⭠ cos (s π / 10)²
     color ⭠ blend (s, c1, c2)
 
-  @viewer "Twisted dynamical plane" var=z size="512x512" position="620x104"
+  @viewer "Twisted dynamical plane" var=z size=512x512 position=620x104
   until «stop»:
     z ⭠ «f»
     d : ℝ ⭠ |z - twist_center|
@@ -48,7 +48,7 @@ script: |
     s ⭠ cos (s π / 10)²
     color ⭠ blend (s, c1, c2)
 
-  @tool "Trace" for="Twisted dynamical plane" shortcut="t"
+  @tool "Trace" for="Twisted dynamical plane" shortcut=t
   on deactivated:
     erase
   on click-or-drag:
@@ -65,7 +65,7 @@ script: |
         z ⭠ e^(i theta) (z - twist_center) + twist_center
       draw line from z to prevZ
 
-  @tool "Dehn twist" for="Twisted dynamical plane" shortcut="d"
+  @tool "Dehn twist" for="Twisted dynamical plane" shortcut=d
   on activated:
     use red for stroke
     draw point at twist_center

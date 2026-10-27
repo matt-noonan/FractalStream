@@ -2,7 +2,7 @@ script: |
   @config "Configuration"
   tol : R as "Tolerance" <- 0.01
 
-  @viewer "Monsieur Mathieu" var=z size="512x512" vanish="tol"
+  @viewer "Monsieur Mathieu" var=z size=512x512 vanish=tol
   a : C <- (107 + 7*sqrt(11)*i)/486
   b : C <- -13*a/567 + 5/1701
   d : C <- 23*a/7 + 256 / 567

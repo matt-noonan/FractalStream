@@ -4,7 +4,7 @@ script: |
   collatz_escape_radius : R as "Escape radius:" <- 100
   p : R as "Brightness: " <- 0.5
 
-  @viewer "Collatz sequence" var=z size="512x512" escape="collatz_escape_radius"
+  @viewer "Collatz sequence" var=z size=512x512 escape=collatz_escape_radius
   iterate z -> (z/2) (cos (pi z / 2))^2 + (3z + C) (sin (pi z / 2))^2 until z = 1 or z = 0 or z = -1 or z = -5 or z = -17 or z escapes
   color <- black
   if z = 1:
@@ -22,7 +22,7 @@ script: |
   if not stuck:
     color <- cycle(iterations/20, light color, dark color)
 
-  @tool "Trace" for="Collatz sequence" shortcut="t"
+  @tool "Trace" for="Collatz sequence" shortcut=t
   on click-or-drag:
     prevZ : C <- z
     erase

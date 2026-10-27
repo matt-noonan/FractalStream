@@ -1,5 +1,5 @@
 script: |
-  @viewer "Douady rabbit" var=z size="400x425"
+  @viewer "Douady rabbit" var=z size=400x425
   # Iterate until we escape or loop 100 times
   while |z| < 10:
     z ⭠ z² + -0.12256 …

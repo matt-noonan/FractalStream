@@ -4,10 +4,10 @@ script: |
   t : C as "t = " <- 0.7 - 0.6i
   custom_vanishing_radius : R as "Tolerance:" <- 0.00001
 
-  @viewer "λ-plane" var=λ size="500x500" pixelSize="1/250"
+  @viewer "λ-plane" var=λ size=500x500 pixelSize=1/250
   color <- if |λ| < 1 then (if re(λ) * im(λ) > 0 then light grey else white) else black
 
-  @viewer "t-plane" var=t size="512x512" vanish="custom_vanishing_radius"
+  @viewer "t-plane" var=t size=512x512 vanish=custom_vanishing_radius
   crit1 : C <- 1
   crit2 : C <- -1
 
@@ -30,11 +30,11 @@ script: |
   if crit2_went_to_0:
     color <- ice(iters2 / 20)
 
-  @viewer "Dynamics" var=z size="512x512" vanish="custom_vanishing_radius"
+  @viewer "Dynamics" var=z size=512x512 vanish=custom_vanishing_radius
   iterate z -> λ z / (z^2 + t z + 1) until z vanishes
   color <- if stuck then black else rainbow(iterations / 20)
 
-  @tool "Trace" for="Dynamics" shortcut="t"
+  @tool "Trace" for=Dynamics shortcut=t
   on refresh:
     erase
 

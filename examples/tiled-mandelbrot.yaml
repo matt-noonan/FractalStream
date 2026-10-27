@@ -4,7 +4,7 @@ script: |
   scale : R as "Julia set zoom level" <- 2.5
   dummy : R as "Dummy" <- 123
 
-  @viewer "Mandelbrot set tiled by Julia sets" var=w size="512x512"
+  @viewer "Mandelbrot set tiled by Julia sets" var=w size=512x512
   x : R <- mod(re w, size)
   y : R <- mod(im w, size)
 

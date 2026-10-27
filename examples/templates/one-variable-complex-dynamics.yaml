@@ -11,5 +11,5 @@ script: |
     else:
       color <- dark rainbow(iterations / 20)
 
-  @viewer "One-variable complex dynamics" var=z size="600x600" pixelSize="1/100"
+  @viewer "One-variable complex dynamics" var=z size=600x600 pixelSize=1/100
   «script»
