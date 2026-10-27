@@ -5,7 +5,7 @@ script: |
 
   if z escaped:
     # see https://linas.org/art-gallery/escape/ray.html
-    m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log max_radius)) / log 2
+    m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log escape_radius)) / log 2
     color ⭠ blend (2 arctan (m / 20) / pi, red, white)
   else:
     color ⭠ black

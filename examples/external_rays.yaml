@@ -9,7 +9,7 @@ script: |
   color ⭠ black
   if z escapes:
     m : ℝ ⭠ iterations + 1 ...
-             - log (log (|z|²) / (2 log max_radius)) / log 2
+             - log (log (|z|²) / (2 log escape_radius)) / log 2
     base_color : Color ⭠ if im z > 0 then dark purple else dark green
     color ⭠ blend (cos (π m / 20)², base_color, light base_color)
 
@@ -23,7 +23,7 @@ script: |
   on refresh:
     erase
     for each p in ps:
-      R : ℝ ⭠ max_radius
+      R : ℝ ⭠ escape_radius
       theta : ℝ ⭠ p / q
       z : ℂ ⭠ R e^{2 π 𝑖 theta}
       dist : ℝ ⭠ error
@@ -67,7 +67,7 @@ script: |
   color ⭠ black
   if z escaped:
     m : ℝ ⭠ iterations + 1 ...
-             - log (log (|z|²) / (2 log max_radius)) / log 2
+             - log (log (|z|²) / (2 log escape_radius)) / log 2
     base_color : Color ⭠ if im z > 0 then dark purple else dark green
     color ⭠ blend (cos (π m / 20)², base_color, light base_color)
 
@@ -81,7 +81,7 @@ script: |
   on refresh:
     erase
     for each p in ps:
-      R : ℝ ⭠ max_radius
+      R : ℝ ⭠ escape_radius
       theta : ℝ ⭠ p / q
       z : ℂ ⭠ R e^{2 π 𝑖 theta}
       dist : ℝ ⭠ error

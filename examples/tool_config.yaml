@@ -26,7 +26,7 @@ script: |
   on click-or-drag:
     prevZ : C <- z
     erase
-    while |z| < 10 max_radius up to 100 times:
+    while |z| < 10 escape_radius up to 100 times:
       prevZ <- z
       draw point at z
       z <- z^2 + C

@@ -16,5 +16,5 @@ script: |
   if stuck:
     color <- black
   else:
-    m : R <- iterations + 1 - log (log (|z|^2) / (2 log max_radius)) / log 2
+    m : R <- iterations + 1 - log (log (|z|^2) / (2 log escape_radius)) / log 2
     color <- rainbow(m / 20) #blend (2 arctan (m / 20) / pi, dark blue, white)

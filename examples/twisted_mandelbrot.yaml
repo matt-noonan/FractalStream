@@ -1,7 +1,7 @@
 script: |
   @setup "Parametric complex dynamics"
   f : C as "Iterate f(z) = " using z:C, C:C <- z^2 + C
-  stop : Boolean as "until" using z:C, C:C, max_radius:R <- |z| > max_radius
+  stop : Boolean as "until" using z:C, C:C, escape_radius:R <- |z| > escape_radius
 
   @config "Configuration"
   C : C as "Selected value of C:" <- -0.1226 + 0.7449i
@@ -27,7 +27,7 @@ script: |
   else:
     c1 : Color ⭠ if im(z) > 0 then blue else yellow
     c2 : Color ⭠ if im(z) > 0 then green else red
-    s : ℝ ⭠ iterations + 1 - (log (log (|z|²) / (2 log max_radius))) / log 2
+    s : ℝ ⭠ iterations + 1 - (log (log (|z|²) / (2 log escape_radius))) / log 2
     s ⭠ cos (s π / 10)²
     color ⭠ blend (s, c1, c2)
 
@@ -44,7 +44,7 @@ script: |
   else:
     c1 : Color ⭠ if im(z) > 0 then blue else yellow
     c2 : Color ⭠ if im(z) > 0 then green else red
-    s : ℝ ⭠ iterations + 1 - (log (log (|z|²) / (2 log max_radius))) / log 2
+    s : ℝ ⭠ iterations + 1 - (log (log (|z|²) / (2 log escape_radius))) / log 2
     s ⭠ cos (s π / 10)²
     color ⭠ blend (s, c1, c2)
 

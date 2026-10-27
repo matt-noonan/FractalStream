@@ -130,7 +130,7 @@ on refresh:
         -- own `configuration:` key already goes through: combine the
         -- tool's own config with the *real* ensemble context (not an
         -- empty stand-in -- every ensemble now always has at least
-        -- `max_iters`/`max_radius`/`min_radius` bound, via the
+        -- `max_iters`/`escape_radius`/`vanishing_radius` bound, via the
         -- automatically-provided "Iteration settings" group, which a
         -- tool's own bookkeeping always needs to resolve regardless of
         -- whether its own handler body references them), and confirm
@@ -209,7 +209,7 @@ c : Z <- 3
           Nothing -> expectationFailure "expected a Configuration"
           -- Two panels, not one: every ensemble now also gets an
           -- automatically-provided "Iteration settings" panel
-          -- (max_iters/max_radius/min_radius) appended after whatever
+          -- (max_iters/escape_radius/vanishing_radius) appended after whatever
           -- the script's own @config declares.
           Just cfg -> case coContents cfg of
             Vertical panelsV -> getDynamic panelsV >>= \case
@@ -238,7 +238,7 @@ pass
         -- No explicit @config stanza at all, but ensembleConfiguration
         -- is never Nothing anymore: every ensemble always gets at
         -- least the automatically-provided "Iteration settings" panel
-        -- (max_iters/max_radius/min_radius), distinct from @setup's
+        -- (max_iters/escape_radius/vanishing_radius), distinct from @setup's
         -- own Configuration either way.
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
@@ -328,7 +328,7 @@ xs : List of Z <- [1, 2, 3]
               other -> expectationFailure ("expected two Panels (the script's own, plus the implicit one), got " ++ show (length other))
             _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
 
-    it "automatically provides max_iters/max_radius/min_radius in an \
+    it "automatically provides max_iters/escape_radius/vanishing_radius in an \
        \\"Iteration settings\" panel, with the right types and defaults, \
        \even when the script declares no @config at all" $
       shouldBuild [r|
@@ -361,7 +361,7 @@ pass
 
     it "lets an explicit `limit=`/`escape=`/`vanish=`/`pixelVar=` override \
        \still point at the script's own custom-named variable instead of \
-       \the automatic max_iters/max_radius/min_radius/pixel_size" $
+       \the automatic max_iters/escape_radius/vanishing_radius/pixel_size" $
       shouldBuild [r|
 @config "Configuration"
 myLimit : Z <- 50

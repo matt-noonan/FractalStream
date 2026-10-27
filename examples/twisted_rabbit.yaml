@@ -1,7 +1,7 @@
 script: |
   @setup "Parametric complex dynamics"
   f : C as "Iterate f(z) = " using z:C, C:C <- z^2 + C
-  stop : Boolean as "until" using z:C, C:C, max_radius:R <- |z| > max_radius
+  stop : Boolean as "until" using z:C, C:C, escape_radius:R <- |z| > escape_radius
 
   @config "Configuration"
   C : C as "C" <- -0.1226 + 0.7449i

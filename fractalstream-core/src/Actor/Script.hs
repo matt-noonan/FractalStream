@@ -223,8 +223,8 @@ parseScript input = do
 
   pure (fillDefaultSrcs input (map snd (sortOn fst (setupResults ++ otherResults))))
 
--- | A synthesized @\@config@ stanza providing `max_iters`\/`max_radius`\/
--- `min_radius`, meant to be appended to a parsed script's own stanzas
+-- | A synthesized @\@config@ stanza providing `max_iters`\/`escape_radius`\/
+-- `vanishing_radius`, meant to be appended to a parsed script's own stanzas
 -- by 'Actor.Ensemble.buildEnsembleFromScript'\/'Actor.Ensemble.checkScript'\/
 -- 'Actor.Ensemble.rebuildWithCurrentSetup' (not by 'parseScript' or
 -- 'reparseNonSetupStanzas' themselves, which stay pure grammar-level
@@ -240,9 +240,9 @@ parseScript input = do
 -- config name -- no special-casing needed.
 implicitBookkeepingStanza :: ParsedStanza
 implicitBookkeepingStanza = ConfigStanza "Iteration settings"
-  [ implicitDecl "max_iters"  IntegerT "Iteration limit: "  "100"
-  , implicitDecl "max_radius" RealT    "Escape radius: "    "10"
-  , implicitDecl "min_radius" RealT    "Vanishing radius: " "0.0001"
+  [ implicitDecl "max_iters"        IntegerT "Iteration limit: "  "100"
+  , implicitDecl "escape_radius"    RealT    "Escape radius: "    "10"
+  , implicitDecl "vanishing_radius" RealT    "Vanishing radius: " "0.0001"
   ]
   where
     implicitDecl :: String -> FSType -> String -> String -> ConfigStmt
@@ -719,14 +719,15 @@ validateViewerHeader sr vhTitle attrs = do
     , vhPixelSize = lookupAttr "pixelSize" attrs
     -- An omitted `limit=`/`escape=`/`vanish=`/`pixelVar=` falls back to
     -- a reference to the automatically-provided `max_iters`/
-    -- `max_radius`/`min_radius`/`pixel_size` name (see parseScript's
-    -- own synthesized `@config` group for the first three; `pixel_size`
-    -- is always bound as a plain `Let`, needing no such group) --
-    -- these attributes remain available as an explicit override, for a
-    -- script that wants a differently-named variable instead.
+    -- `escape_radius`/`vanishing_radius`/`pixel_size` name (see
+    -- parseScript's own synthesized `@config` group for the first
+    -- three; `pixel_size` is always bound as a plain `Let`, needing no
+    -- such group) -- these attributes remain available as an explicit
+    -- override, for a script that wants a differently-named variable
+    -- instead.
     , vhIterLimit = lookupAttr "limit"    attrs <|> Just "max_iters"
-    , vhEscape    = lookupAttr "escape"   attrs <|> Just "max_radius"
-    , vhVanish    = lookupAttr "vanish"   attrs <|> Just "min_radius"
+    , vhEscape    = lookupAttr "escape"   attrs <|> Just "escape_radius"
+    , vhVanish    = lookupAttr "vanish"   attrs <|> Just "vanishing_radius"
     , vhPixelVar  = lookupAttr "pixelVar" attrs <|> Just "pixel_size"
     }
 
