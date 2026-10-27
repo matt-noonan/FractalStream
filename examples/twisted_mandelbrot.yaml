@@ -1,12 +1,10 @@
 script: |
   @setup "Parametric complex dynamics"
   f : C as "Iterate f(z) = " using z:C, C:C <- z^2 + C
-  stop : Boolean as "until" using z:C, C:C, maxRadius:R <- |z| > maxRadius
+  stop : Boolean as "until" using z:C, C:C, max_radius:R <- |z| > max_radius
 
   @config "Configuration"
   C : C as "Selected value of C:" <- -0.1226 + 0.7449i
-  maxIters : Z as "Max. iterations: " <- 100
-  maxRadius : R as "Max. radius: " <- 10
   drag_target : Z as "Dehn tool drag target: " <- 0
 
   @config "Dehn twist"
@@ -15,7 +13,7 @@ script: |
     r0 : R as "Inner radius" <- 0.2
     r1 : R as "Outer radius" <- 0.5
 
-  @viewer "Parameter space" var=C size="512x512" limit="maxIters" escape="maxRadius"
+  @viewer "Parameter space" var=C size="512x512"
   z : ℂ ⭠ 0
   until «stop»:
     z ⭠ «f»
@@ -29,11 +27,11 @@ script: |
   else:
     c1 : Color ⭠ if im(z) > 0 then blue else yellow
     c2 : Color ⭠ if im(z) > 0 then green else red
-    s : ℝ ⭠ iterations + 1 - (log (log (|z|²) / (2 log maxRadius))) / log 2
+    s : ℝ ⭠ iterations + 1 - (log (log (|z|²) / (2 log max_radius))) / log 2
     s ⭠ cos (s π / 10)²
     color ⭠ blend (s, c1, c2)
 
-  @viewer "Twisted dynamical plane" var=z size="512x512" limit="maxIters" escape="maxRadius" pixelVar="px" position="620x104"
+  @viewer "Twisted dynamical plane" var=z size="512x512" position="620x104"
   until «stop»:
     z ⭠ «f»
     d : ℝ ⭠ |z - twist_center|
@@ -46,7 +44,7 @@ script: |
   else:
     c1 : Color ⭠ if im(z) > 0 then blue else yellow
     c2 : Color ⭠ if im(z) > 0 then green else red
-    s : ℝ ⭠ iterations + 1 - (log (log (|z|²) / (2 log maxRadius))) / log 2
+    s : ℝ ⭠ iterations + 1 - (log (log (|z|²) / (2 log max_radius))) / log 2
     s ⭠ cos (s π / 10)²
     color ⭠ blend (s, c1, c2)
 
@@ -79,7 +77,7 @@ script: |
   on drag-finished:
     drag_target ⭠ 0
   on drag from z0 to z:
-    eps : ℝ ⭠ 5 px
+    eps : ℝ ⭠ 5 pixel_size
     if drag_target = 0:
       if |z0 - twist_center| < eps:
         drag_target ⭠ 1

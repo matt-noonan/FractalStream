@@ -1,8 +1,6 @@
 script: |
   @config "Configuration"
   C : C as "Selected value of C:" <- -0.1226 + 0.7449i
-  maxIters : Z as "Max. iterations: " <- 100
-  big : R as "Max. radius: " <- 10
   tiny : R as "Min. radius: " <- 0.001
   fatness : R as "Fatness" <- 0.1
 
@@ -11,11 +9,11 @@ script: |
   exterior_color : Color as "Exterior" <- white
   interior_color : Color as "Interior" <- rgb(0.926, 0.863, 0.927)
 
-  @viewer "Parameter plane" var=C size="512x512" pixelVar=px limit="maxIters" escape="big" vanish="tiny"
+  @viewer "Parameter plane" var=C size="512x512" vanish="tiny"
   z : C <- 0
   dz : C <- 1
 
-  tol : R <- px fatness / 2
+  tol : R <- pixel_size fatness / 2
 
   dzdc : C <- 0
   der : C <- 1
@@ -33,10 +31,10 @@ script: |
   else:
     color <- interior_color
 
-  @viewer "Dynamical plane" var=z size="512x512" pixelVar=px limit="maxIters" escape="big" vanish="tiny"
+  @viewer "Dynamical plane" var=z size="512x512" vanish="tiny"
   dz : C <- 1
   w : C <- z
-  tol : R <- 2 px fatness
+  tol : R <- 2 pixel_size fatness
 
   repeat:
     dz <- 2 z dz

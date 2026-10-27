@@ -1,11 +1,9 @@
 script: |
   @config "Configuration"
   C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
-  max_iters : Z as "Max. iterations:" <- 100
-  escape_radius : R as "Escape radius:" <- 10
   p : R as "Brightness: " <- 0.5
 
-  @viewer "Julia set" var=z size="512x512" limit="max_iters" escape="escape_radius"
+  @viewer "Julia set" var=z size="512x512"
   iterate z -> z^2 + C until z escapes
   if stuck:
     color <- black

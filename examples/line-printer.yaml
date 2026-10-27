@@ -1,11 +1,9 @@
 script: |
   @config "Configuration"
-  max_iters : Z as "Iteration limit" <- 250
-  R : R as "Escape radius" <- 10
   xsize : R as "Cell width" <- 3.5e-2
   shift : R as "Parameter shift" <- -5.0e-2
 
-  @viewer "Mandelbrot set throwback" var=w size="752x546" limit="max_iters" escape="R" center="-0.75" pixelSize="1/220" position="100x99"
+  @viewer "Mandelbrot set throwback" var=w size="752x546" center="-0.75" pixelSize="1/220" position="100x99"
   ysize : R <- 1.66 xsize
 
   C : C <- xsize * floor(re w / xsize) + i * ysize * floor(im w / ysize)

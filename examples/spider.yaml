@@ -18,10 +18,9 @@ script: |
   spider_ready : Boolean as "Spider representative ready?" <- false
   contour : List of C as "γ =" <- []
   encloses_zero : Boolean as "Encloses 0?" <- false
-  max_iters : Z as "Max. iterations:" <- 1000
   foot : R as "Foot radius:" <- 0.03
 
-  @viewer "Standard spider" var=z size="512x512" resizable="false" pixelVar="px" limit="max_iters" center="0" pixelSize="1/128"
+  @viewer "Standard spider" var=z size="512x512" resizable="false" center="0" pixelSize="1/128"
   color <- white
 
   @tool "Draw standard spider" for="Standard spider" shortcut="s" refreshCanUpdate="true"
@@ -146,7 +145,7 @@ script: |
     p <- savedP
     q <- savedQ
 
-  @viewer "Iterated spider" var=z size="512x512" resizable="false" limit="max_iters" center="0" pixelSize="1/128"
+  @viewer "Iterated spider" var=z size="512x512" resizable="false" center="0" pixelSize="1/128"
   color <- white
 
   @tool "Reset spider" for="Iterated spider" shortcut="r"

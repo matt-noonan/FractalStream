@@ -2,9 +2,8 @@ script: |
   @config "Newton's method configuration"
   a : C as "a =" <- 0
   tol : R as "closeness" <- 0.01
-  maxIters : Z as "Max. iterations: " <- 100
 
-  @viewer "Parameter plane" var=a size="512x512" limit="maxIters" vanish="tol"
+  @viewer "Parameter plane" var=a size="512x512" vanish="tol"
   r1 : C <- 1
   r2 : C <- -0.5 + a
   r3 : C <- -0.5 - a
@@ -29,7 +28,7 @@ script: |
   s : R <- (cos (iterations pi / 10))^2
   color <- if z = lastZ then blend (s, dark c, light c) else black
 
-  @viewer "Newton's method dynamics" var=z size="512x512" limit="maxIters" vanish="tol"
+  @viewer "Newton's method dynamics" var=z size="512x512" vanish="tol"
   lastZ : C <- 0
   r1 : C <- 1
   r2 : C <- -0.5 + a

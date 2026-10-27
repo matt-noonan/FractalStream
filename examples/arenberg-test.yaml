@@ -4,10 +4,10 @@ script: |
   speed : R as "Iterations per color cycle: " <- 20
   C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
 
-  @viewer "Reference" var=z size="640x32" limit="100" escape="10"
+  @viewer "Reference" var=z size="640x32"
   color <- if use_arenberg then arenberg(re z / 4) else rainbow(re z / 4)
 
-  @viewer "Parameter plane" var=C size="512x512" limit="100" escape="10"
+  @viewer "Parameter plane" var=C size="512x512"
   z : C <- 0
   iterate z -> z^2 + C until z escapes
 
@@ -16,7 +16,7 @@ script: |
     m : R <- iterations + 1 - log (log (|z|^2) / (2 log 10)) / log 2
     color <- if use_arenberg then arenberg(m / speed) else rainbow(m / speed)
 
-  @viewer "Dynamical plane" var=z size="512x512" limit="100" escape="10"
+  @viewer "Dynamical plane" var=z size="512x512"
   iterate z -> z^2 + C until z escapes
 
   color <- black

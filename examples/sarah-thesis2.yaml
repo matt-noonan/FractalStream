@@ -1,10 +1,5 @@
 script: |
-  @config "Standard settings"
-  max_iters : Z as "Iteration limit" <- 100
-  max_radius : R as "Escape radius" <- 10
-  min_radius : R as "Vanishing radius" <- 0.0001
-
-  @viewer "Sarah thing" var=z size="600x600" limit="max_iters" escape="max_radius" vanish="min_radius"
+  @viewer "Sarah thing" var=z size="600x600"
   p : C <- z
   x : C <- z + 1
   y : C <- z (z+1)^2 + 1

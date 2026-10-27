@@ -1,11 +1,9 @@
 script: |
   @config "Configuration"
   C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
-  max_iters : Z as "Max. iterations:" <- 100
-  escape_radius : R as "Escape radius:" <- 10
   p : R as "Brightness: " <- 0.5
 
-  @viewer "Julia set" var=z size="512x512" limit="max_iters" escape="escape_radius"
+  @viewer "Julia set" var=z size="512x512"
   iterate z -> z^2 + C until z escapes
   if stuck:
     color <- black
@@ -28,7 +26,7 @@ script: |
   on click-or-drag:
     prevZ : C <- z
     erase
-    while |z| < 10 escape_radius up to 100 times:
+    while |z| < 10 max_radius up to 100 times:
       prevZ <- z
       draw point at z
       z <- z^2 + C

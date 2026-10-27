@@ -2,16 +2,11 @@ script: |
   @setup "Setup"
   expression : C as "iterate z ⟼ " using z:C, C:C <- z^2 + i
   exit_condition : Boolean as "until" using z:C, C:C <- z escapes
-  text "Color expressions can use color names like `red` or `black`, color functions involving the variables `z`, `C`, and `iterations`, or the color variables `color1` and `color2`."
+  text "Color expressions can use color names like `red` or `black`, or color functions involving the variables `z`, `C`, and `iterations`."
   on_success : Color as "Color expression for success:" using z:C, C:C <- rainbow(iterations / 20)
   on_failure : Color as "Color expression for failure:" using z:C, C:C <- black
 
-  @config "Configuration"
-  maxIters : Z as "Iteration limit: " <- 100
-  maxRadius : R as "Escape radius: " <- 10
-  minRadius : R as "Vanishing radius: " <- 0.0001
-
-  @viewer "Simple complex dynamics" var=z size="600x600" limit="maxIters" escape="maxRadius" vanish="minRadius"
+  @viewer "Simple complex dynamics" var=z size="600x600"
   iterate z -> «expression» until «exit_condition»
   color <- if stuck then «on_failure» else «on_success»
 

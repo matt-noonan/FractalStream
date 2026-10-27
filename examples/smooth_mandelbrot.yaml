@@ -1,15 +1,11 @@
 script: |
-  @config "Configuration"
-  max_iters : ℤ as "Max. iterations:" <- 100
-  escape_radius : ℝ as "Escape radius:" <- 10
-
-  @viewer "Mandelbrot set with smooth coloring" var=C size="512x512" limit="max_iters" escape="escape_radius"
+  @viewer "Mandelbrot set with smooth coloring" var=C size="512x512"
   z : ℂ ⭠ 0
   iterate z ⟼ z² + C until z escapes
 
   if z escaped:
     # see https://linas.org/art-gallery/escape/ray.html
-    m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log escape_radius)) / log 2
+    m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log max_radius)) / log 2
     color ⭠ blend (2 arctan (m / 20) / pi, red, white)
   else:
     color ⭠ black

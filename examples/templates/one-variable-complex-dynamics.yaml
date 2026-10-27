@@ -11,10 +11,5 @@ script: |
     else:
       color <- dark rainbow(iterations / 20)
 
-  @config "Configuration"
-  maxIters : Z as "Iteration limit: " <- 100
-  maxRadius : R as "Escape radius: " <- 10
-  minRadius : R as "Vanishing radius: " <- 0.0001
-
-  @viewer "One-variable complex dynamics" var=z size="600x600" limit="maxIters" escape="maxRadius" vanish="minRadius" pixelSize="1/100"
+  @viewer "One-variable complex dynamics" var=z size="600x600" pixelSize="1/100"
   «script»

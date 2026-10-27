@@ -1,17 +1,15 @@
 script: |
   @config "Configuration"
   C : C as "f(z) = z² +" <- -0.11 + 0.78i
-  max_iters : Z as "Max. iterations:" <- 100
-  escape_radius : R as "Escape radius:" <- 10
 
-  @viewer "Parameter plane" var=C size="512x512" limit="max_iters" escape="escape_radius" center="0" pixelSize="1/128"
+  @viewer "Parameter plane" var=C size="512x512" center="0" pixelSize="1/128"
   z : ℂ ⭠ 0
   iterate z ⟼ z² + C until z escapes
 
   color ⭠ black
   if z escapes:
     m : ℝ ⭠ iterations + 1 ...
-             - log (log (|z|²) / (2 log escape_radius)) / log 2
+             - log (log (|z|²) / (2 log max_radius)) / log 2
     base_color : Color ⭠ if im z > 0 then dark purple else dark green
     color ⭠ blend (cos (π m / 20)², base_color, light base_color)
 
@@ -25,7 +23,7 @@ script: |
   on refresh:
     erase
     for each p in ps:
-      R : ℝ ⭠ escape_radius
+      R : ℝ ⭠ max_radius
       theta : ℝ ⭠ p / q
       z : ℂ ⭠ R e^{2 π 𝑖 theta}
       dist : ℝ ⭠ error
@@ -63,13 +61,13 @@ script: |
   on deactivated:
     erase
 
-  @viewer "Dynamical plane" var=z size="512x512" escape="escape_radius" limit="max_iters" pixelVar="px" center="0" pixelSize="1/128"
+  @viewer "Dynamical plane" var=z size="512x512" center="0" pixelSize="1/128"
   iterate z ⟼ z² + C until z escapes
 
   color ⭠ black
   if z escaped:
     m : ℝ ⭠ iterations + 1 ...
-             - log (log (|z|²) / (2 log escape_radius)) / log 2
+             - log (log (|z|²) / (2 log max_radius)) / log 2
     base_color : Color ⭠ if im z > 0 then dark purple else dark green
     color ⭠ blend (cos (π m / 20)², base_color, light base_color)
 
@@ -83,7 +81,7 @@ script: |
   on refresh:
     erase
     for each p in ps:
-      R : ℝ ⭠ escape_radius
+      R : ℝ ⭠ max_radius
       theta : ℝ ⭠ p / q
       z : ℂ ⭠ R e^{2 π 𝑖 theta}
       dist : ℝ ⭠ error

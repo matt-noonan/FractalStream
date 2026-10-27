@@ -1,7 +1,5 @@
 script: |
   @config "Configuration"
-  maxIters : Z as "Iteration limit" <- 100
-  escape : R as "Escape radius" <- 10
   tol : R as "Tolerance" <- 0.01
   t : C as "t = " <- 1+i
 
@@ -17,7 +15,7 @@ script: |
   color10 : Color as "jbar" <- blue
   exceptional : Color as "exceptional" <- rgb(1,0.7,0.7)
 
-  @viewer "t-plane" var=t size="512x512" limit="maxIters" vanish="tol" escape="escape"
+  @viewer "t-plane" var=t size="512x512" vanish="tol"
   while t^3 != 1:
     t <- t (2 + t^3) / (2 t^3 + 1)
 
@@ -30,7 +28,7 @@ script: |
   else:
     color <- black
 
-  @viewer "z-plane" var=z size="512x512" limit="maxIters" vanish="tol" escape="escape"
+  @viewer "z-plane" var=z size="512x512" vanish="tol"
   y : C <- 0.5 / z
   x : C <- 0.5 * t / z
 

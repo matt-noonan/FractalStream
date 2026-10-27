@@ -1,14 +1,12 @@
 script: |
   @setup "Parametric complex dynamics"
   f : C as "Iterate f(z) = " using z:C, C:C <- z^2 + C
-  stop : Boolean as "until" using z:C, C:C, maxRadius:R <- |z| > maxRadius
+  stop : Boolean as "until" using z:C, C:C, max_radius:R <- |z| > max_radius
 
   @config "Configuration"
   C : C as "Selected value of C:" <- -0.1226 + 0.7449i
-  maxIters : Z as "Max. iterations: " <- 100
-  maxRadius : R as "Max. radius: " <- 10
 
-  @viewer "Parameter plane" var=C size="512x512" limit="maxIters" escape="maxRadius" center="0" pixelSize="1/128"
+  @viewer "Parameter plane" var=C size="512x512" center="0" pixelSize="1/128"
   z : C <- 0
   iterate z -> «f» until «stop»
 
@@ -21,7 +19,7 @@ script: |
   else:
     color <- black
 
-  @viewer "Dynamical plane" var=z size="512x512" limit="maxIters" escape="maxRadius" center="0" pixelSize="1/128"
+  @viewer "Dynamical plane" var=z size="512x512" center="0" pixelSize="1/128"
   iterate z -> «f» until «stop»
 
   if «stop»:

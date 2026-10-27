@@ -4,9 +4,8 @@ script: |
 
   @config "Newton's method configuration"
   tol : R as "closeness" <- 0.01
-  maxIters : Z as "Max. iterations: " <- 100
 
-  @viewer "Roots of f" var=z size="512x512" limit="maxIters" vanish="tol" center="0" pixelSize="1/128"
+  @viewer "Roots of f" var=z size="512x512" vanish="tol" center="0" pixelSize="1/128"
   lastZ : C <- 0
   while z != lastZ:
     lastZ <- z

@@ -19,7 +19,7 @@ script: |
   @config "Orbit Tracker"
   start : C as "orbit start = " <- 0
 
-  @viewer "Parameter space" var=c size="800x800" pixelVar="px" limit="maxIters" escape="maxRadius" vanish="minRadius" center="-0.5" pixelSize="1/200"
+  @viewer "Parameter space" var=c size="800x800" limit="maxIters" escape="maxRadius" vanish="minRadius" center="-0.5" pixelSize="1/200"
   z : C <- «critical_point»
   w : C <- z
   z0 : C <- z
@@ -70,7 +70,7 @@ script: |
     s_adjusted : R <- s + 1 - log |z-w| / log |λ|
     color <- blend (cos (s_adjusted pi)^2, light color, dark color)
 
-  @viewer "Dynamical plane" var=z size="800x800" pixelVar="px" limit="maxIters" escape="maxRadius" vanish="minRadius" center="0" pixelSize="1/200"
+  @viewer "Dynamical plane" var=z size="800x800" limit="maxIters" escape="maxRadius" vanish="minRadius" center="0" pixelSize="1/200"
   w : C <- z
   z0 : C <- z
 

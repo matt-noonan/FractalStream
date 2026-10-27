@@ -1,9 +1,5 @@
 script: |
-  @config "Configuration"
-  max_iters : Z as "Max. iterations:" <- 100
-  escape_radius : R as "Escape radius:" <- 10
-
-  @viewer "Mandelbrot set" var=C size="512x512" limit="max_iters" escape="escape_radius"
+  @viewer "Mandelbrot set" var=C size="512x512"
   z : C <- 0
   iterate z -> z^2 + C until z escapes
 

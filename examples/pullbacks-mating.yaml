@@ -1,13 +1,10 @@
 script: |
   @config "Configuration"
   C : C as "C = " <- 0.5000000000 + 0.8660254038*i
-  max_iters : Z as "Max. iterations:" <- 100
-  escape_radius : R as "Escape radius:" <- 10
-  tolerance : R as "Tolerance:" <- 0.0001
   p : R as "Brightness: " <- 0.5
   color1 : Color as "Selected point" <- white
 
-  @viewer "C-plane" var=C size="512x512" limit="max_iters" escape="escape_radius" vanish="tolerance" center="0" pixelSize="1/128"
+  @viewer "C-plane" var=C size="512x512" center="0" pixelSize="1/128"
   z : C <- C
   iterate z -> (z^2 - C)/(z^2 - 1) until z escapes
   if stuck:
@@ -15,7 +12,7 @@ script: |
   else:
     color <- rainbow (iterations / 20)
 
-  @viewer "Dynamics" var=z size="512x512" limit="max_iters" vanish="tolerance" escape="escape_radius" center="0" pixelSize="1/128"
+  @viewer "Dynamics" var=z size="512x512" center="0" pixelSize="1/128"
   iterate z -> (z^2 - C)/(z^2 - 1) until z escapes
   if stuck:
     color <- black

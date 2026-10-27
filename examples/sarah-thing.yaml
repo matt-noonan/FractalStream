@@ -1,12 +1,9 @@
 script: |
   @config "Configuration"
   x : C as "Selected value of x:" <- -0.1226 + 0.7449i
-  maxIters : Z as "Max. iterations: " <- 100
-  maxRadius : R as "Max. radius: " <- 10
-  minRadius : R as "Min. radius: " <- 0.0001
 
-  @viewer "x plane" var=x size="512x512" limit="maxIters" escape="maxRadius" vanish="minRadius"
+  @viewer "x plane" var=x size="512x512"
   color <- pink
 
-  @viewer "z plane" var=z size="512x512" limit="maxIters" escape="maxRadius" vanish="minRadius"
+  @viewer "z plane" var=z size="512x512"
   color <- yellow

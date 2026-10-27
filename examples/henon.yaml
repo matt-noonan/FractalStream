@@ -3,10 +3,8 @@ script: |
   a : C as "a = " <- 0.3
   b : C as "b = " <- 0.6 + 0.2i
   zoom : R as "zoom = " <- 0.001
-  max_iters : Z as "Max. iterations:" <- 100
-  escape_radius : R as "Escape radius:" <- 10
 
-  @viewer "a-plane" var=a size="512x512" limit="max_iters" escape="escape_radius"
+  @viewer "a-plane" var=a size="512x512"
   z : C <- 0
   aa : C <- (a + 1) / 2
   disc : C <- aa^2 - b
@@ -27,7 +25,7 @@ script: |
   else:
     color <- black
 
-  @viewer "b-plane" var=b size="512x512" limit="max_iters" escape="escape_radius"
+  @viewer "b-plane" var=b size="512x512"
   z : C <- 0
   aa : C <- (a + 1) / 2
   disc : C <- aa^2 - b
@@ -49,7 +47,7 @@ script: |
   else:
     color <- black
 
-  @viewer "Hénon dynamics" var=z size="512x512" limit="max_iters" escape="escape_radius"
+  @viewer "Hénon dynamics" var=z size="512x512"
   aa : C <- (a + 1) / 2
   disc : C <- aa^2 - b
   p : C <- sqrt(disc) + aa
