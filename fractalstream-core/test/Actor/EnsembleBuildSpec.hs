@@ -7,10 +7,10 @@ import Actor.Ensemble
 import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Tool (Tool(..), ToolInfo(..))
-import Actor.Layout (Dimensions(..), Layout(..), UIVariable(..), UIScript(..), CodeString(..))
+import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), UIScript(..), CodeString(..))
 import Actor.Configuration (Configuration(..))
 import Actor.Event (runParsedToolScript)
-import Language.Environment (SomeContext(..), Context(EmptyContext), EnvironmentProxy(..), contextToEnv)
+import Language.Environment (SomeContext(..), SomeContext'(..), Context(EmptyContext), EnvironmentProxy(..), contextToEnv)
 import Language.Type (TypeProxy(..))
 import Language.Value (SomeValue(..))
 import Language.Value.Evaluator (evaluateInContext)
@@ -128,16 +128,26 @@ on refresh:
 
         -- The same (unmodified) runtime machinery a classic YAML tool's
         -- own `configuration:` key already goes through: combine the
-        -- tool's own config with the (here, empty) ensemble context, and
-        -- confirm the tool's own `r`/`theta` resolve inside its handler.
+        -- tool's own config with the *real* ensemble context (not an
+        -- empty stand-in -- every ensemble now always has at least
+        -- `max_iters`/`max_radius`/`min_radius` bound, via the
+        -- automatically-provided "Iteration settings" group, which a
+        -- tool's own bookkeeping always needs to resolve regardless of
+        -- whether its own handler body references them), and confirm
+        -- the tool's own `r`/`theta` resolve inside its handler too.
         script <- getDynamic (toolScript tool)
-        buildToolContext (SomeContext EmptyContext) mcfg >>= \case
-          Left err -> expectationFailure ("buildToolContext failed: " ++ err)
-          Right (SomeContext ctx) ->
-            case runParsedToolScript script (contextToEnv ctx) of
-              Left (_, err) -> expectationFailure
-                ("tool script failed to resolve its own config variables: " ++ err)
-              Right _ -> pure ()
+        Just ensembleCfg <- getDynamic (ensembleConfiguration ens)
+        SomeContext' eEnsembleArgs <- layoutToArgs (coContents ensembleCfg)
+        case eEnsembleArgs of
+          Left err -> expectationFailure ("layoutToArgs failed: " ++ err)
+          Right ensembleArgs ->
+            buildToolContext ensembleArgs mcfg >>= \case
+              Left err -> expectationFailure ("buildToolContext failed: " ++ err)
+              Right (SomeContext ctx) ->
+                case runParsedToolScript script (contextToEnv ctx) of
+                  Left (_, err) -> expectationFailure
+                    ("tool script failed to resolve its own config variables: " ++ err)
+                  Right _ -> pure ()
 
     it "defaults a tool with no declarations to no configuration panel" $
       shouldBuild [r|
@@ -197,16 +207,20 @@ c : Z <- 3
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
           Nothing -> expectationFailure "expected a Configuration"
+          -- Two panels, not one: every ensemble now also gets an
+          -- automatically-provided "Iteration settings" panel
+          -- (max_iters/max_radius/min_radius) appended after whatever
+          -- the script's own @config declares.
           Just cfg -> case coContents cfg of
             Vertical panelsV -> getDynamic panelsV >>= \case
-              [Panel _ bodyV] -> getDynamic bodyV >>= \case
+              [Panel _ bodyV, _implicitPanel] -> getDynamic bodyV >>= \case
                 Vertical itemsV -> getDynamic itemsV >>= \case
                   [Horizontal rowV, _declItem] -> do
                     rowItems <- getDynamic rowV
                     length rowItems `shouldBe` 2
                   other -> expectationFailure ("unexpected panel body items: " ++ show (length other))
                 _ -> expectationFailure "expected the panel body to be Vertical"
-              other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
+              other -> expectationFailure ("expected two Panels (the script's own, plus the implicit one), got " ++ show (length other))
             _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
 
     it "builds a @setup panel distinct from @config" $
@@ -221,10 +235,17 @@ pass
         case msetup of
           Nothing -> expectationFailure "expected a setup Configuration"
           Just _  -> pure ()
+        -- No explicit @config stanza at all, but ensembleConfiguration
+        -- is never Nothing anymore: every ensemble always gets at
+        -- least the automatically-provided "Iteration settings" panel
+        -- (max_iters/max_radius/min_radius), distinct from @setup's
+        -- own Configuration either way.
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
-          Nothing -> pure ()
-          Just _  -> expectationFailure "did not expect a configuration Configuration"
+          Nothing  -> expectationFailure "expected the implicit \"Iteration settings\" Configuration"
+          Just cfg -> case coContents cfg of
+            Vertical panelsV -> getDynamic panelsV >>= \ps -> length ps `shouldBe` 1
+            _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
 
     it "makes a @config field's text box genuinely reactive to edits \
        \(regression: a frozen Mapped used to silently ignore them)" $
@@ -237,7 +258,7 @@ maxIters : Z <- 100
           Nothing -> expectationFailure "expected a Configuration"
           Just cfg -> case coContents cfg of
             Vertical panelsV -> getDynamic panelsV >>= \case
-              [Panel _ bodyV] -> getDynamic bodyV >>= \case
+              [Panel _ bodyV, _implicitPanel] -> getDynamic bodyV >>= \case
                 Vertical itemsV -> getDynamic itemsV >>= \case
                   [TextBox _ UIVariable{exprValue}] -> do
                     initialValue <- getDynamic (dyn exprValue)
@@ -252,7 +273,7 @@ maxIters : Z <- 100
                       Left _  -> pure ()
                   other -> expectationFailure ("unexpected panel body items: " ++ show (length other))
                 _ -> expectationFailure "expected the panel body to be Vertical"
-              other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
+              other -> expectationFailure ("expected two Panels (the script's own, plus the implicit one), got " ++ show (length other))
             _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
 
     it "renders a small Real default as fixed-point text, not scientific notation \
@@ -267,7 +288,7 @@ x : R <- 0.05
           Nothing -> expectationFailure "expected a Configuration"
           Just cfg -> case coContents cfg of
             Vertical panelsV -> getDynamic panelsV >>= \case
-              [Panel _ bodyV] -> getDynamic bodyV >>= \case
+              [Panel _ bodyV, _implicitPanel] -> getDynamic bodyV >>= \case
                 Vertical itemsV -> getDynamic itemsV >>= \case
                   [TextBox _ UIVariable{exprValue}] -> do
                     initialText <- getDynamic (source exprValue)
@@ -279,7 +300,7 @@ x : R <- 0.05
                       Right _ -> expectationFailure "expected an empty-environment Real value"
                   other -> expectationFailure ("unexpected panel body items: " ++ show (length other))
                 _ -> expectationFailure "expected the panel body to be Vertical"
-              other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
+              other -> expectationFailure ("expected two Panels (the script's own, plus the implicit one), got " ++ show (length other))
             _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
 
     it "round-trips a List-typed config field's default value \
@@ -294,7 +315,7 @@ xs : List of Z <- [1, 2, 3]
           Nothing -> expectationFailure "expected a Configuration"
           Just cfg -> case coContents cfg of
             Vertical panelsV -> getDynamic panelsV >>= \case
-              [Panel _ bodyV] -> getDynamic bodyV >>= \case
+              [Panel _ bodyV, _implicitPanel] -> getDynamic bodyV >>= \case
                 Vertical itemsV -> getDynamic itemsV >>= \case
                   [TextBox _ UIVariable{exprValue}] ->
                     getDynamic (dyn exprValue) >>= \case
@@ -304,8 +325,74 @@ xs : List of Z <- [1, 2, 3]
                       Right _ -> expectationFailure "expected an empty-environment List of Integer value"
                   other -> expectationFailure ("unexpected panel body items: " ++ show (length other))
                 _ -> expectationFailure "expected the panel body to be Vertical"
-              other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
+              other -> expectationFailure ("expected two Panels (the script's own, plus the implicit one), got " ++ show (length other))
             _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
+
+    it "automatically provides max_iters/max_radius/min_radius in an \
+       \\"Iteration settings\" panel, with the right types and defaults, \
+       \even when the script declares no @config at all" $
+      shouldBuild [r|
+@viewer "V" var=z size="100x100"
+pass
+|] $ \ens -> do
+        Just cfg <- getDynamic (ensembleConfiguration ens)
+        case coContents cfg of
+          Vertical panelsV -> getDynamic panelsV >>= \case
+            [Panel titleV bodyV] -> do
+              Label title <- getDynamic titleV
+              title `shouldBe` "Iteration settings"
+              getDynamic bodyV >>= \case
+                Vertical itemsV -> getDynamic itemsV >>= \items -> do
+                  length items `shouldBe` 3
+                  let uivars = [ uv | TextBox _ uv <- items ]
+                  length uivars `shouldBe` 3
+                  values <- mapM (getDynamic . dyn . exprValue) uivars
+                  case values of
+                    [ Right (SomeValue EmptyEnvProxy IntegerType i)
+                      , Right (SomeValue EmptyEnvProxy RealType r1)
+                      , Right (SomeValue EmptyEnvProxy RealType r2) ] -> do
+                      evaluateInContext EmptyContext i  `shouldBe` 100
+                      evaluateInContext EmptyContext r1 `shouldBe` 10
+                      evaluateInContext EmptyContext r2 `shouldBe` 0.0001
+                    _ -> expectationFailure ("expected Z, R, R defaults 100/10/0.0001, got: " ++ show (length values) ++ " values")
+                _ -> expectationFailure "expected the panel body to be Vertical"
+            other -> expectationFailure ("expected a single implicit Panel, got " ++ show (length other))
+          _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
+
+    it "lets an explicit `limit=`/`escape=`/`vanish=`/`pixelVar=` override \
+       \still point at the script's own custom-named variable instead of \
+       \the automatic max_iters/max_radius/min_radius/pixel_size" $
+      shouldBuild [r|
+@config "Configuration"
+myLimit : Z <- 50
+myEscape : R <- 5
+myVanish : R <- 0.01
+
+@viewer "V" var=z size="100x100" limit="myLimit" escape="myEscape" vanish="myVanish" pixelVar="myPixel"
+color <- if myPixel > 0 then black else white
+|] $ \_ -> pure ()
+
+    it "a user-declared `max_iters` collides cleanly with the automatic \
+       \one, same as any other duplicate config name" $
+      [r|
+@config "Configuration"
+max_iters : Z <- 50
+
+@viewer "V" var=z size="100x100"
+pass
+|] `shouldFailWith` "defined twice"
+
+    it "a nullary event handler (`on refresh:`) can now reference the \
+       \automatically-provided `pixel_size` (regression: it previously had \
+       \no way to name the per-pixel scale at all for this handler kind)" $
+      shouldBuild [r|
+@viewer "V" var=z size="100x100"
+color <- black
+
+@tool "T" shortcut="t"
+on refresh:
+  scale : R <- pixel_size * 2
+|] $ \_ -> pure ()
 
     it "builds a `using`-clause formula field and splices it into a viewer's code" $
       shouldBuild [r|

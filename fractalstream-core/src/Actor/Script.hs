@@ -27,6 +27,7 @@ module Actor.Script
   , ParsedStanza(..)
   , parseScript
   , reparseNonSetupStanzas
+  , implicitBookkeepingStanza
   , scriptGrammar
   ) where
 
@@ -221,6 +222,42 @@ parseScript input = do
   otherResults <- traverse (\(i, c) -> (i,) <$> parseChunk splices c) otherChunks
 
   pure (fillDefaultSrcs input (map snd (sortOn fst (setupResults ++ otherResults))))
+
+-- | A synthesized @\@config@ stanza providing `max_iters`\/`max_radius`\/
+-- `min_radius`, meant to be appended to a parsed script's own stanzas
+-- by 'Actor.Ensemble.buildEnsembleFromScript'\/'Actor.Ensemble.checkScript'\/
+-- 'Actor.Ensemble.rebuildWithCurrentSetup' (not by 'parseScript' or
+-- 'reparseNonSetupStanzas' themselves, which stay pure grammar-level
+-- parses with no semantic additions -- 'Actor.Script.ScriptSpec's own
+-- tests check their *exact* stanza shape), so a project gets a real,
+-- editable, auto-generated panel for these without the script author
+-- declaring or wiring anything. A viewer's own `limit=`\/`escape=`\/
+-- `vanish=` header attributes default to referencing these names now
+-- (see 'validateViewerHeader'), rather than falling back to a
+-- hard-coded constant, unless explicitly overridden to point at a
+-- different variable. A script that declares its own `max_iters` (or
+-- the other two) collides with this exactly like any other duplicate
+-- config name -- no special-casing needed.
+implicitBookkeepingStanza :: ParsedStanza
+implicitBookkeepingStanza = ConfigStanza "Iteration settings"
+  [ implicitDecl "max_iters"  IntegerT "Iteration limit: "  "100"
+  , implicitDecl "max_radius" RealT    "Escape radius: "    "10"
+  , implicitDecl "min_radius" RealT    "Vanishing radius: " "0.0001"
+  ]
+  where
+    implicitDecl :: String -> FSType -> String -> String -> ConfigStmt
+    implicitDecl cdName fsTy label defaultSrc = ConfigDecl
+      { cdRange = NoSourceRange
+      , cdName
+      , cdType = withType fsTy SomeType
+      , cdDefault = either (error . ("INTERNAL ERROR: implicitBookkeepingStanza: " ++) . show)
+                           id (parseParsedValue Map.empty defaultSrc)
+      , cdDefaultRange = NoSourceRange
+      , cdDefaultSrc = defaultSrc
+      , cdLabel = Just label
+      , cdChoices = Nothing
+      , cdUsing = Nothing
+      }
 
 -- | Re-parse just a script's non-@\@setup@ stanzas (@\@config@\/
 -- @\@viewer@\/@\@tool@), against the given *value* splices instead of
@@ -680,10 +717,17 @@ validateViewerHeader sr vhTitle attrs = do
     { vhTitle, vhVar, vhSize, vhResizable, vhPosition
     , vhCenter    = lookupAttr "center" attrs
     , vhPixelSize = lookupAttr "pixelSize" attrs
-    , vhIterLimit = lookupAttr "limit" attrs
-    , vhEscape    = lookupAttr "escape" attrs
-    , vhVanish    = lookupAttr "vanish" attrs
-    , vhPixelVar  = lookupAttr "pixelVar" attrs
+    -- An omitted `limit=`/`escape=`/`vanish=`/`pixelVar=` falls back to
+    -- a reference to the automatically-provided `max_iters`/
+    -- `max_radius`/`min_radius`/`pixel_size` name (see parseScript's
+    -- own synthesized `@config` group for the first three; `pixel_size`
+    -- is always bound as a plain `Let`, needing no such group) --
+    -- these attributes remain available as an explicit override, for a
+    -- script that wants a differently-named variable instead.
+    , vhIterLimit = lookupAttr "limit"    attrs <|> Just "max_iters"
+    , vhEscape    = lookupAttr "escape"   attrs <|> Just "max_radius"
+    , vhVanish    = lookupAttr "vanish"   attrs <|> Just "min_radius"
+    , vhPixelVar  = lookupAttr "pixelVar" attrs <|> Just "pixel_size"
     }
 
 validateToolHeader :: SourceRange

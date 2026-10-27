@@ -45,7 +45,10 @@ iterate z -> z^2 + C until z escapes
           vsVar `shouldBe` "C"
           vsSize `shouldBe` Dimensions (500, 500)
           vsCenter `shouldBe` Nothing
-          vsIterLimit `shouldBe` Nothing
+          -- Omitted, so defaults to a reference to the automatically
+          -- provided `max_iters` (see 'validateViewerHeader') --
+          -- not `Nothing` anymore.
+          vsIterLimit `shouldBe` Just "max_iters"
         other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
 
     it "accepts optional viewer attributes" $
@@ -64,7 +67,8 @@ pass
           vsPosition `shouldBe` Dimensions (10, 20)
         other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
 
-    it "defaults resizable to true, position to 100x100, and pixelVar to Nothing" $
+    it "defaults resizable to true, position to 100x100, and pixelVar to \
+       \a reference to the automatically-provided `pixel_size`" $
       shouldParseTo [r|
 @viewer "Mandelbrot Set" var=C size="500x500"
 pass
@@ -72,7 +76,7 @@ pass
         [ViewerStanza{..}] -> do
           vsResizable `shouldBe` True
           vsPosition `shouldBe` Dimensions (100, 100)
-          vsPixelVar `shouldBe` Nothing
+          vsPixelVar `shouldBe` Just "pixel_size"
         other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
 
     it "rejects a non-boolean resizable attribute" $

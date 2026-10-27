@@ -208,8 +208,9 @@ formatScriptError src (range, msg) = unlines (pp (Indicated range src) ++ [""] +
 buildEnsembleFromScript :: String -> IO (Either (SourceRange, String) Ensemble)
 buildEnsembleFromScript scriptText = case parseScript scriptText of
   Left err -> pure (Left err)
-  Right stanzas -> do
-    let setupGroups   = [ (t, b) | SetupStanza t b <- stanzas ]
+  Right stanzas0 -> do
+    let stanzas       = stanzas0 ++ [implicitBookkeepingStanza]
+        setupGroups   = [ (t, b) | SetupStanza t b <- stanzas ]
         configGroups  = [ (t, b) | ConfigStanza t b <- stanzas ]
         viewers       = mapMaybe viewerFields stanzas
         tools         = mapMaybe toolFields stanzas
@@ -254,8 +255,9 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
 -- test only compares the two when both agree, not full parity.
 checkScript :: String -> Either (SourceRange, String) ()
 checkScript scriptText = do
-  stanzas <- parseScript scriptText
-  let setupGroups  = [ (t, b) | SetupStanza t b <- stanzas ]
+  stanzas0 <- parseScript scriptText
+  let stanzas      = stanzas0 ++ [implicitBookkeepingStanza]
+      setupGroups  = [ (t, b) | SetupStanza t b <- stanzas ]
       configGroups = [ (t, b) | ConfigStanza t b <- stanzas ]
       viewers      = mapMaybe viewerFields stanzas
       tools        = mapMaybe toolFields stanzas
@@ -549,8 +551,9 @@ rebuildWithCurrentSetup ens@Ensemble{..} = do
     Left err -> pure (Left (NoSourceRange, err))
     Right splices -> case reparseNonSetupStanzas splices scriptText of
       Left err -> pure (Left err)
-      Right stanzas -> do
-        let configGroups = [ (t, b) | ConfigStanza t b <- stanzas ]
+      Right stanzas0 -> do
+        let stanzas       = stanzas0 ++ [implicitBookkeepingStanza]
+            configGroups = [ (t, b) | ConfigStanza t b <- stanzas ]
             viewers       = mapMaybe viewerFields stanzas
             tools         = mapMaybe toolFields stanzas
             viewerTitles  = [ vfTitle v | v <- viewers ]
