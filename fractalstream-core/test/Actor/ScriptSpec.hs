@@ -79,6 +79,33 @@ pass
           vsPixelVar `shouldBe` Just "pixel_size"
         other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
 
+    it "staggers each viewer's defaulted position 30 pixels further than \
+       \the last, so several don't all open stacked on top of each other, \
+       \but leaves an explicit `position=` alone and doesn't let it \
+       \consume a step in that sequence" $
+      shouldParseTo [r|
+@viewer "A"
+pass
+
+@viewer "B"
+pass
+
+@viewer "C" position="5x5"
+pass
+
+@viewer "D"
+pass
+|] $ \case
+        [ ViewerStanza{vsPosition = posA}
+          , ViewerStanza{vsPosition = posB}
+          , ViewerStanza{vsPosition = posC}
+          , ViewerStanza{vsPosition = posD} ] -> do
+          posA `shouldBe` Dimensions (100, 100)
+          posB `shouldBe` Dimensions (130, 130)
+          posC `shouldBe` Dimensions (5, 5)
+          posD `shouldBe` Dimensions (160, 160)
+        other -> expectationFailure ("expected 4 viewer stanzas, got " ++ show (length other))
+
     it "rejects a non-boolean resizable attribute" $
       [r|
 @viewer "Mandelbrot Set" var=C size="500x500" resizable="sideways"
