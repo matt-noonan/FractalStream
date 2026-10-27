@@ -91,11 +91,34 @@ pass
 pass
 |] `shouldFailWith` "dimension descriptor"
 
-    it "rejects a viewer stanza missing the required `var` attribute" $
-      [r|
-@viewer "Mandelbrot Set" size="500x500"
+    it "defaults a viewer's `var` to `z` and `size` to 600x600 when \
+       \both attributes are omitted" $
+      shouldParseTo [r|
+@viewer "Mandelbrot Set"
 pass
-|] `shouldFailWith` "Missing required attribute `var`"
+|] $ \case
+        [ViewerStanza{..}] -> do
+          vsVar `shouldBe` "z"
+          vsSize `shouldBe` Dimensions (600, 600)
+        other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
+
+    it "accepts unquoted attribute values: a dimension, a whole number \
+       \(negative too), a whole-number fraction, and a boolean" $
+      shouldParseTo [r|
+@viewer "Mandelbrot Set" var=C size=500x500 center=-2 pixelSize=1/128 resizable=false
+pass
+
+@tool "Demo" drawLayer=-1
+on click:
+  pass
+|] $ \case
+        [ViewerStanza{..}, ToolStanza{..}] -> do
+          vsSize `shouldBe` Dimensions (500, 500)
+          vsCenter `shouldBe` Just "-2"
+          vsPixelSize `shouldBe` Just "1/128"
+          vsResizable `shouldBe` False
+          tsDrawLayer `shouldBe` (-1)
+        other -> expectationFailure ("expected a viewer and a tool stanza, got " ++ show (length other) ++ " stanzas")
 
     it "rejects a viewer stanza with an unknown attribute" $
       [r|

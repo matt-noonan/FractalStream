@@ -45,7 +45,7 @@ import Actor.Layout (Dimensions(..), parseDimensions)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
-import Data.Char (isSpace)
+import Data.Char (isSpace, isDigit)
 
 ------------------------------------------------------------
 -- Parsed stanza bodies
@@ -456,7 +456,40 @@ scriptGrammar splices@Splices{valueSplices} = mdo
   -- Headers
   ------------------------------------------------------------
 
-  attrValue <- rule (quotedP <|> ident)
+  -- An attribute's value is usually a quoted string or a bare
+  -- identifier (`pixelVar=px`), but several common shapes can also be
+  -- written unquoted, since none of them need any help from quotes to
+  -- know where the value ends -- each is a small, fixed-length run of
+  -- tokens that can never be confused with the start of the next
+  -- `name=value` pair (Earley explores every alternative in parallel,
+  -- but only the interpretation that leaves no stray tokens before the
+  -- next attribute or the header's closing newline survives to a full
+  -- parse): a dimension (`size=600x600`), a whole number, possibly
+  -- negative (`drawLayer=-1`), a whole-number fraction
+  -- (`pixelSize=1/128`), and a boolean (`resizable=false`). Each is
+  -- reconstructed via `show` on the parsed `Int`\/`Integer`, never on a
+  -- `Double` -- which can render in scientific notation, the exact
+  -- landmine `toUserString` exists to dodge for `@config` defaults --
+  -- so this intentionally only covers whole numbers; a fractional
+  -- value like `center=-0.5` still needs quotes.
+  numberToken <- rule (tokenMatch (\case { NumberI n -> Just n; _ -> Nothing }))
+
+  signedNumber <- rule
+    (((\n -> "-" ++ show n) <$> (token Minus *> numberToken))
+     <|> (show <$> numberToken))
+
+  fractionValue <- rule
+    ((\n d -> n ++ "/" ++ d) <$> signedNumber <*> (token Divide *> signedNumber))
+
+  dimensionValue <- rule
+    ((\w h -> show w ++ "x" ++ h) <$> numberToken <*> tokenMatch (\case
+        Identifier ('x':ds@(_:_)) | all isDigit ds -> Just ds
+        _ -> Nothing))
+
+  boolValue <- rule (("true" <$ token True_) <|> ("false" <$ token False_))
+
+  attrValue <- rule
+    (quotedP <|> dimensionValue <|> fractionValue <|> boolValue <|> signedNumber <|> ident)
 
   attr <- rule ((,) <$> ident <*> (token Equal *> attrValue))
 
@@ -648,11 +681,6 @@ checkKnownAttrs sr known attrs = do
 lookupAttr :: String -> [(String, String)] -> Maybe String
 lookupAttr = lookup
 
-requireAttr :: SourceRange -> String -> [(String, String)] -> Either (SourceRange, String) String
-requireAttr sr k attrs = case lookupAttr k attrs of
-  Just v  -> Right v
-  Nothing -> Left (sr, "Missing required attribute `" ++ k ++ "`.")
-
 data ViewerHeader = ViewerHeader
   { vhTitle     :: String
   , vhVar       :: String
@@ -685,9 +713,9 @@ parseBoolAttr sr k = \case
   "false" -> Right False
   v -> Left (sr, "The `" ++ k ++ "` attribute must be `true` or `false`, not `" ++ v ++ "`.")
 
--- | Parse an integer-valued attribute (always quoted, since a bare
--- numeral doesn't tokenize as a single identifier -- see @size=@'s
--- treatment of @WxH@ for the same reason).
+-- | Parse an integer-valued attribute. May be quoted or not -- the
+-- grammar's own @attrValue@ rule accepts a bare (optionally negative)
+-- whole number directly now, not just via @ident@.
 parseIntAttr :: SourceRange -> String -> String -> Either (SourceRange, String) Int
 parseIntAttr sr k v = case readMaybe v of
   Just n  -> Right n
@@ -709,8 +737,12 @@ validateViewerHeader sr vhTitle attrs = do
   checkKnownAttrs sr
     ["var", "size", "center", "pixelSize", "limit", "escape", "vanish", "pixelVar", "resizable", "position"]
     attrs
-  vhVar      <- requireAttr sr "var" attrs
-  vhSize     <- requireAttr sr "size" attrs >>= left (sr,) . parseDimensions
+  -- A beginner's first viewer doesn't need to think about a
+  -- coordinate-variable name or a window size at all -- `z` and
+  -- 600x600 are reasonable defaults, and both stay available as
+  -- explicit overrides for anyone who wants something else.
+  let vhVar = fromMaybe "z" (lookupAttr "var" attrs)
+  vhSize     <- optionalDimensionsAttr sr "size" (Dimensions (600, 600)) attrs
   vhResizable <- optionalBoolAttr sr "resizable" True attrs
   vhPosition  <- optionalDimensionsAttr sr "position" (Dimensions (100, 100)) attrs
   pure ViewerHeader
