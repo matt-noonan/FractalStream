@@ -27,13 +27,17 @@ welcome ProjectActions{..} = do
                 ] "" ""
         maybe (pure ()) action mprj
 
+  new <- button p [ text := "New project"
+                  , on command := projectNew ]
+
   template <- chooseTemplate ProjectActions{..} p
 
   open <- button p [ text := "Open existing project..."
                    , on command := getProject "Open" projectOpen
                    ]
   set f [ layout := margin 10 $ fill $ container p $ floatCenter $ column 10
-                    [ widget template
+                    [ widget new
+                    , widget template
                     , widget open
                     ]
         ]

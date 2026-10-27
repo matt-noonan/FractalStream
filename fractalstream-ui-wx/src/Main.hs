@@ -149,8 +149,14 @@ main = withBackend $ \backend -> start $ do
 -- rebuild and see, rather than empty text.
 newProjectScript :: String
 newProjectScript = unlines
-  [ "@viewer \"New viewer\" var=z size=\"600x600\""
-  , "color <- black"
+  [ "@viewer \"z plane\""
+  , ""
+  , "# Put your script here"
+  , ""
+  , "if stuck:"
+  , "  color <- black"
+  , "else:"
+  , "  color <- rainbow(iterations / 20)"
   ]
 
 runTemplate :: a -> b -> c -> IO ()

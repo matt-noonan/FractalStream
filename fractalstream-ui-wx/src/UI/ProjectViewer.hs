@@ -75,7 +75,7 @@ viewProject projectWindow addMenuBar saveSession editProjectScript = UI
                                     continue
                                 ]
       set f [ layout := margin 5 . container p $ fill $ column 5
-              $ [ innerLayout, hfloatRight $ widget compileButton ]
+              $ [ expand $ innerLayout, hfloatRight $ widget compileButton ]
             ]
       -- Hooks `windowOnDestroy`, not `on closing` -- see the note on
       -- 'UI.Widgets.wxWatchDynamic'.
@@ -898,7 +898,6 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                                               , checkable := True, checked := False ]
     menuLine hamburgerMenu
     menuItem hamburgerMenu [ text := "Save...\tCtrl+S", enabled := True, on command := saveSession ]
-    menuItem hamburgerMenu [ text := "Edit viewer tools...", enabled := False ]
     menuItem hamburgerMenu [ text := "Edit project script...\tCtrl+Shift+E"
                            , enabled := True
                            , on command := editProjectScript
