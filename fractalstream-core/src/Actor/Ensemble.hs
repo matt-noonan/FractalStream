@@ -1324,12 +1324,6 @@ makeComplexViewer project backend mkViewer someContext configArgs showConfig rer
         vSize     = cvSize
         vPosition = cvPosition
 
-    let scriptCode = cvCode <&> right (\(SomeViewerWithContext _ _ c) -> SomeCode c)
-    scriptName <- newMapped (pure $ \n -> if null n then Left "Script title must be non-empty" else Right n)
-                  vTitle
-    scriptEnv <- newVariable (SomeEnvironment endOfDecls)
-    let vScript = UIScript{..}
-
     vCanResize <- getDynamic cvCanResize
     x0 :+ y0 <- throwLeft (getDynamic cvCenter)
     vCenter <- newVariable (x0, y0)

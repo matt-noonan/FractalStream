@@ -40,7 +40,7 @@ import FractalStream.Prelude
 
 import Actor.Viewer.Types
 import Data.DynamicValue
-import Actor.Layout (Dimensions(..), UIScript)
+import Actor.Layout (Dimensions(..))
 import Actor.Tool
 import Actor.Event (ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript, Event)
 import Language.Environment
@@ -192,7 +192,6 @@ data Viewer = Viewer
   , vDrawCmdsChanged :: IO Bool
   , vCodeWithArgs :: CodeWithArgs
   , vTools     :: Dynamic [Tool]
-  , vScript    :: UIScript
   , vBuildToolHandler
       :: Int
       -> SomeContext EventArgument_
@@ -441,7 +440,6 @@ cloneViewer v = do
     , vDrawCmds = vDrawCmds v
     , vDrawCmdsChanged = vDrawCmdsChanged v
     , vBuildToolHandler = vBuildToolHandler v
-    , vScript = vScript v
     }
 
 -- | A fallback viewer function that paints every point grey
