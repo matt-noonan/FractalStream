@@ -46,6 +46,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
 import Data.Char (isSpace, isDigit)
+import Numeric (showFFloat)
 
 ------------------------------------------------------------
 -- Parsed stanza bodies
@@ -464,25 +465,39 @@ scriptGrammar splices@Splices{valueSplices} = mdo
   -- `name=value` pair (Earley explores every alternative in parallel,
   -- but only the interpretation that leaves no stray tokens before the
   -- next attribute or the header's closing newline survives to a full
-  -- parse): a dimension (`size=600x600`), a whole number, possibly
-  -- negative (`drawLayer=-1`), a whole-number fraction
-  -- (`pixelSize=1/128`), and a boolean (`resizable=false`). Each is
-  -- reconstructed via `show` on the parsed `Int`\/`Integer`, never on a
-  -- `Double` -- which can render in scientific notation, the exact
-  -- landmine `toUserString` exists to dodge for `@config` defaults --
-  -- so this intentionally only covers whole numbers; a fractional
-  -- value like `center=-0.5` still needs quotes.
-  numberToken <- rule (tokenMatch (\case { NumberI n -> Just n; _ -> Nothing }))
+  -- parse): a dimension (`size=600x600`), a signed whole number or
+  -- decimal (`center=-0.5`), a fraction of either
+  -- (`pixelSize=1/128`), and a boolean (`resizable=false`).
+  --
+  -- A decimal literal is reconstructed via 'showFFloat' (fixed-point
+  -- *by construction*), never via plain `show` on a `Double`, which
+  -- can render in scientific notation (e.g. `show (0.0001 :: Double)
+  -- == "1.0e-4"`) -- the exact landmine `toUserString` already exists
+  -- to dodge for `@config` defaults, and just as fatal here: `e` is
+  -- the Euler's-number keyword, so a round-tripped "1.0e-4" would
+  -- silently re-parse as `1.0 * e - 4`, not the original value, if it
+  -- parsed at all. A whole number reconstructs via plain `show` on
+  -- the `Integer` instead, which never uses scientific notation.
+  numberLiteral <- rule (tokenMatch (\case
+    NumberI n -> Just (Right n)
+    NumberF f -> Just (Left f)
+    _ -> Nothing))
 
   signedNumber <- rule
-    (((\n -> "-" ++ show n) <$> (token Minus *> numberToken))
-     <|> (show <$> numberToken))
+    ((showNumberLiteral . negateNumberLiteral <$> (token Minus *> numberLiteral))
+     <|> (showNumberLiteral <$> numberLiteral))
 
   fractionValue <- rule
     ((\n d -> n ++ "/" ++ d) <$> signedNumber <*> (token Divide *> signedNumber))
 
+  -- Dimensions (`size=`/`position=`) are always whole, non-negative
+  -- pixel counts -- parsed downstream by `parseDimensions`, which
+  -- never accepts a decimal -- so this deliberately doesn't go
+  -- through `numberLiteral`/`signedNumber` above.
+  dimWidth <- rule (tokenMatch (\case { NumberI n -> Just n; _ -> Nothing }))
+
   dimensionValue <- rule
-    ((\w h -> show w ++ "x" ++ h) <$> numberToken <*> tokenMatch (\case
+    ((\w h -> show w ++ "x" ++ h) <$> dimWidth <*> tokenMatch (\case
         Identifier ('x':ds@(_:_)) | all isDigit ds -> Just ds
         _ -> Nothing))
 
@@ -680,6 +695,16 @@ checkKnownAttrs sr known attrs = do
 
 lookupAttr :: String -> [(String, String)] -> Maybe String
 lookupAttr = lookup
+
+-- | Render a number literal parsed from an unquoted attribute value
+-- back to text that re-parses to the exact same value, without ever
+-- using scientific notation. See the `numberLiteral`\/`signedNumber`
+-- rules' own doc comment in 'scriptGrammar' for why that matters.
+showNumberLiteral :: Either Double Integer -> String
+showNumberLiteral = either (\d -> showFFloat Nothing d "") show
+
+negateNumberLiteral :: Either Double Integer -> Either Double Integer
+negateNumberLiteral = either (Left . negate) (Right . negate)
 
 data ViewerHeader = ViewerHeader
   { vhTitle     :: String

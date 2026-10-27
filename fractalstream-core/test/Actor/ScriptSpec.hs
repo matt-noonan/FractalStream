@@ -120,6 +120,19 @@ on click:
           tsDrawLayer `shouldBe` (-1)
         other -> expectationFailure ("expected a viewer and a tool stanza, got " ++ show (length other) ++ " stanzas")
 
+    it "accepts an unquoted decimal attribute value, rendered back \
+       \without ever using scientific notation (regression: show \
+       \(0.0001 :: Double) == \"1.0e-4\", which re-parses as 1.0 * e - 4, \
+       \since `e` is the Euler's-number keyword)" $
+      shouldParseTo [r|
+@viewer "Mandelbrot Set" center=-0.5 pixelSize=0.0001
+pass
+|] $ \case
+        [ViewerStanza{..}] -> do
+          vsCenter `shouldBe` Just "-0.5"
+          vsPixelSize `shouldBe` Just "0.0001"
+        other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
+
     it "rejects a viewer stanza with an unknown attribute" $
       [r|
 @viewer "Mandelbrot Set" var=C size="500x500" bogus="1"
