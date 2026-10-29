@@ -121,7 +121,7 @@ let `[internal] vanishing radius` = tol in:
                                                   if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)) then:
                                                     do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)):
                                                       block:
-                                                        set `w` := (((((2:R:C * (w ^ 3:R:C)) / 3:R:C) + (w ^ 2:R:C)) + (2:R:C * w)) + (w / 3:R:C))
+                                                        set `w` := (((((2:R:C * (w ^ 3:R:C)) / 3:R:C) + (w ^ 2:R:C)) + (2:R:C * w)) + (1:R / 3:R):C)
                                                         set `[internal] fresh #30` := ([internal] fresh #30 + 1)
                                                   else:
                                                     no-op
@@ -149,8 +149,8 @@ let `[internal] vanishing radius` = tol in:
                                               let `[internal] fresh #30` = 0 in:
                                                 let `[internal] fresh #31` = [internal] iteration limit in:
                                                   block:
-                                                    if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(j - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)) then:
-                                                      do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(j - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)):
+                                                    if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)) then:
+                                                      do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)):
                                                         block:
                                                           set `w` := (((((2:R:C * (w ^ 3:R:C)) / 3:R:C) + (w ^ 2:R:C)) + (2:R:C * w)) + (1:R / 3:R):C)
                                                           set `[internal] fresh #30` := ([internal] fresh #30 + 1)

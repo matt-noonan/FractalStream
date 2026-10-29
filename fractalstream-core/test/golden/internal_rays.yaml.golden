@@ -69,6 +69,7 @@ let `[internal] vanishing radius` = minRadius in:
                                                                     block:
                                                                       block:
                                                                         set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
+                                                                        set `counter` := (counter + 1)
                                                                       set `[internal] fresh #30` := ([internal] fresh #30 + 1)
                                                                 else:
                                                                   no-op
@@ -175,6 +176,7 @@ let `[internal] vanishing radius` = minRadius in:
                                                                 block:
                                                                   block:
                                                                     set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
+                                                                    set `counter` := (counter + 1)
                                                                   set `[internal] fresh #30` := ([internal] fresh #30 + 1)
                                                             else:
                                                               no-op

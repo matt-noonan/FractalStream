@@ -306,7 +306,7 @@ script: |
       w := -2 + 2 sqrt(z_jp1 / z_2)
 
       integral := 0
-      last_zeta : C <- 0
+      last_zeta := 0
       first := true
       for each zeta in contour:
         if first:
@@ -314,6 +314,7 @@ script: |
         else:
           dzeta := zeta - last_zeta
           integral <- integral + dzeta / (zeta - w)
+        last_zeta <- zeta
 
       zero_winding := if encloses_zero then 1 else -1
       sqrt_sign := if im integral > 0 then 1 else -1

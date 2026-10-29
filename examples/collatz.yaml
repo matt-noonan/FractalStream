@@ -33,5 +33,5 @@ script: |
     until z vanishes:
       prevZ <- z
       draw point at z
-      z <- step(z, 1)
+      z <- step(z, C)
       draw line from z to prevZ

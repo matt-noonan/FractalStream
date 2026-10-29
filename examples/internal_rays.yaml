@@ -37,6 +37,7 @@ script: |
       counter := 0
       while counter < extra_iterations period:
         w <- f2(w)
+        counter <- counter + 1
 
       z <- z0
       while not (|z-w| vanishes):

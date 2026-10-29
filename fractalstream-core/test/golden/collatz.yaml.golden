@@ -75,7 +75,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                 block:
                                   set `prevZ` := z
                                   draw point at z:R^2
-                                  set `z` := let [internal] step.z #0 = z in let [internal] step.c #0 = 1 in ((([internal] step.z #0 / 2:R:C) * (cos(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)) + (((3:R:C * [internal] step.z #0) + [internal] step.c #0:R:C) * (sin(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)))
+                                  set `z` := let [internal] step.z #0 = z in let [internal] step.c #0 = C in ((([internal] step.z #0 / 2:R:C) * (cos(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)) + (((3:R:C * [internal] step.z #0) + [internal] step.c #0) * (sin(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)))
                                   draw line from z:R^2 to prevZ:R^2
                                 set `[internal] fresh #17` := ([internal] fresh #17 + 1)
                           else:
@@ -105,7 +105,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   block:
                                     set `prevZ` := z
                                     draw point at z:R^2
-                                    set `z` := let [internal] step.z #0 = z in let [internal] step.c #0 = 1 in ((([internal] step.z #0 / 2:R:C) * (cos(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)) + (((3:R:C * [internal] step.z #0) + [internal] step.c #0:R:C) * (sin(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)))
+                                    set `z` := let [internal] step.z #0 = z in let [internal] step.c #0 = C in ((([internal] step.z #0 / 2:R:C) * (cos(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)) + (((3:R:C * [internal] step.z #0) + [internal] step.c #0) * (sin(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)))
                                     draw line from z:R^2 to prevZ:R^2
                                   set `[internal] fresh #20` := ([internal] fresh #20 + 1)
                             else:
