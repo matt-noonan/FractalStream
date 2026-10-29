@@ -704,7 +704,8 @@ toolBlocksGrammar :: forall r
                   -> Grammar r (Prod r [ParsedToolBlock])
 toolBlocksGrammar splices = mdo
 
-  codeBlock <- codeBlockGrammar splices
+  -- Each handler's body, with the project's @common statements prepended.
+  codeBlock <- rule . fmap (withCommon splices) =<< codeBlockGrammar splices
 
   colon <- rule (token Colon <?> ":")
   nl    <- rule (token Newline <?> "end of line")

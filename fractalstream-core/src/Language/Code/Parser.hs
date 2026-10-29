@@ -12,6 +12,7 @@ module Language.Code.Parser
   , ppFullError
   , ParsedCode
   , withDefinedFunctions
+  , withCommon
   , runParsedCode
   ) where
 
@@ -39,10 +40,33 @@ data Splices = Splices
   , funNames     :: Set String
     -- ^ The names of the user-defined functions, which the grammar
     -- parses as function calls rather than as variables.
+  , commonCode   :: [Stmt]
+    -- ^ Statements (from a project's @\@common@ stanzas) to prepend to
+    -- every viewer and tool script; see 'withCommon'.
   }
 
 noSplices :: Splices
-noSplices = Splices Map.empty Map.empty Set.empty
+noSplices = Splices Map.empty Map.empty Set.empty []
+
+-- | Prepend the common statements that a script body uses (directly, or
+-- through other common definitions) to it, so that their declarations
+-- and function definitions scope over the whole body. Unused definitions
+-- are left out, so a definition that mentions a variable some scripts
+-- don't have (like a viewer's coordinate, which preparation scripts and
+-- tool refresh handlers don't see) only matters where it is used.
+withCommon :: Splices -> ParsedCode -> ParsedCode
+withCommon Splices{commonCode} body = case (used, body) of
+  ([], _) -> body
+  (_, Stmt sr (SBlock stmts)) -> Stmt sr (SBlock (used ++ stmts))
+  _ -> Stmt (stmtRange body) (SBlock (used ++ [body]))
+  where
+    -- Walk the common statements backwards, keeping each one that
+    -- defines something needed later (by the body, or by a kept
+    -- definition after it).
+    used = fst (foldr keep ([], stmtNames body) commonCode)
+    keep stmt (kept, needed) = case definedName stmt of
+      Just n | n `Set.member` needed -> (stmt : kept, needed <> stmtNames stmt)
+      _ -> (kept, needed)
 
 -- | Record the names of the functions defined (by @let f(...) = ...@)
 -- anywhere in the given tokens, so that the grammar can parse calls to

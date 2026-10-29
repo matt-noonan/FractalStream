@@ -278,7 +278,7 @@ checkScript scriptText = do
   (_, setupSplices) <- checkConfigGroup setupGroups
   (configEnv, _)     <- checkConfigGroup configGroups
   checkNoDuplicateNames configEnv
-  let splices = Splices Map.empty (Map.fromList setupSplices) mempty
+  let splices = noSplices { valueSplices = Map.fromList setupSplices }
 
   withEnvFromMap (Map.fromList configEnv) $ \env ->
     forM_ viewers $ \v ->

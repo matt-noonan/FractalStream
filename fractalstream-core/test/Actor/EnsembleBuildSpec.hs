@@ -1241,3 +1241,151 @@ code script:
 @viewer "V" var=z size="100x100"
 «script»
 |]
+
+  describe "@common stanzas" $ do
+
+    let accepts :: String -> Expectation
+        accepts src = case checkScript src of
+          Left (_, err) -> expectationFailure ("expected checkScript to accept this, got: " ++ err)
+          Right ()       -> pure ()
+
+        rejects :: String -> String -> Expectation
+        rejects src needle = case checkScript src of
+          Left (_, err) -> err `shouldSatisfy` isInfixOf needle
+          Right ()       -> expectationFailure "expected checkScript to reject this, but it accepted it"
+
+        viewerCode :: String -> IO String
+        viewerCode src = build src >>= \case
+          Left err -> fail ("expected success, got error: " ++ err)
+          Right ens -> do
+            [viewer] <- getDynamic (ensembleViewers ens)
+            getDynamic (cvCode viewer) >>= \case
+              Left (_, err) -> fail ("expected the viewer's code to build, got: " ++ err)
+              Right (SomeViewerWithContext _ _ code) -> pure (pprintCode code)
+
+    it "makes its definitions available to viewers and tools" $ do
+      let src = [r|
+@config "Configuration"
+a : C as "a =" <- 1
+
+@common
+let f(z) = z^3 - a
+step := 1
+
+@viewer "V" var=z size="100x100"
+iterate z -> z - step * f(z) / f'(z) until f(z) vanishes
+
+@tool "T" for="V"
+on click:
+  z <- z - step * f(z) / f'(z)
+|]
+      accepts src
+      code <- viewerCode src
+      code `shouldSatisfy` isInfixOf "let `step` = 1"
+
+    it "can come after the stanzas that use it, and can be split up" $
+      accepts [r|
+@viewer "V" var=z size="100x100"
+color <- if g(z) < 1 then black else white
+
+@common
+let f(z) = |z|
+
+@common
+let g(w) = f(w) / 2
+|]
+
+    it "is available in preparation scripts" $
+      accepts [r|
+@common
+let f(z) = |z|
+
+@viewer "V" var=z size="100x100"
+prepare r : R:
+  r <- f(-2)
+color <- if |z| < r then black else white
+|]
+
+    it "is typechecked where it is used" $
+      rejects [r|
+@common
+k := 2
+
+@viewer "V" var=z size="100x100"
+pass
+
+@tool "T" for="V"
+k : Z as "k" <- 1
+on click:
+  k <- k + 1
+|] "The variable k is already defined"
+
+    it "only includes the definitions a script uses" $ do
+      -- `g` mentions the viewer's `z`, which neither the preparation
+      -- script nor the refresh handler can see; neither uses `g`.
+      accepts [r|
+@common
+let g(w) = w + z
+c := 2
+
+@viewer "V" var=z size="100x100"
+prepare r : R:
+  r <- c
+color <- if |g(z)| < r then black else white
+
+@tool "T" for="V"
+on refresh:
+  erase
+on click:
+  draw point at g(z)
+|]
+      -- ...but a script that does use it still gets the error
+      rejects [r|
+@common
+let g(w) = w + z
+
+@viewer "V" var=z size="100x100"
+prepare r : R:
+  r <- |g(1)|
+color <- if r < 1 then black else white
+|] "No variable named z"
+
+    it "includes definitions used through other definitions" $ do
+      code <- viewerCode [r|
+@common
+a := 3
+unused := 4
+let f(t) = a t
+let g(t) = f(t) + 1
+
+@viewer "V" var=z size="100x100"
+color <- if |g(z)| < 1 then black else white
+|]
+      code `shouldSatisfy` isInfixOf "let `a` = 3"
+      code `shouldNotSatisfy` isInfixOf "unused"
+
+    it "can only contain declarations and function definitions" $ do
+      rejects [r|
+@common
+erase
+
+@viewer "V" var=z size="100x100"
+pass
+|] "can only contain variable declarations"
+      rejects [r|
+@common
+let f(z) = z
+color <- black
+
+@viewer "V" var=z size="100x100"
+pass
+|] "can only contain variable declarations"
+
+    it "takes no attributes" $
+      rejects [r|
+@common bogus=1
+let f(z) = z
+
+@viewer "V" var=z size="100x100"
+pass
+|] "bogus"

@@ -42,7 +42,6 @@ import Language.Parser.SourceRange
 
 import Data.Aeson hiding (Value)
 import qualified Data.Map as Map
-import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Text.Read (readMaybe)
 
@@ -269,7 +268,7 @@ layoutToSplices :: Layout -> Dynamic (Either String Splices)
 layoutToSplices = fmap (fmap finish) . go
   where
     finish :: [Either (String, ParsedCode) (String, ParsedValue)] -> Splices
-    finish = (\(xs, ys) -> Splices (Map.fromList xs) (Map.fromList ys) Set.empty) . partitionEithers
+    finish = (\(xs, ys) -> noSplices { codeSplices = Map.fromList xs, valueSplices = Map.fromList ys }) . partitionEithers
 
     go :: Layout -> Dynamic (Either String [Either (String, ParsedCode) (String, ParsedValue)])
     go = \case

@@ -177,6 +177,39 @@ let f(z) = z^3 - 1
 iterate z -> z - f(z) / f'(z) until f(z) vanishes
 ```
 
+### Sharing definitions between scripts
+
+In a project, an `@common` stanza holds definitions that every viewer and
+tool script can use, as if they were written at the top of each one:
+
+```
+@config "Configuration"
+a : C as "a =" <- 1
+
+@common
+let f(z) = z^3 - a
+let newton(z) = z - f(z) / f'(z)
+
+@viewer "Newton's method" var=z size=512x512
+iterate z -> newton(z) until f(z) vanishes
+
+@tool "Trace" for="Newton's method"
+on click:
+  erase
+  repeat up to 20 times:
+    draw point at z
+    z <- newton(z)
+  until f(z) vanishes
+```
+
+An `@common` stanza can only contain function definitions and variable
+declarations. Each script gets just the common definitions it uses (and
+whatever those use), checked against its own variables, so they can use
+anything in scope there: here, the configuration variable `a`, and each
+script's own `z`. A definition that mentions a variable some scripts don't
+have is only a problem in scripts that use it. A project can have several
+`@common` stanzas, anywhere in the script.
+
 ### Line continuations
 
 If you have a very long command, it might be convenient to split it across

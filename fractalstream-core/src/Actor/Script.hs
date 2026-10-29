@@ -38,7 +38,8 @@ import Language.Parser
 import Language.Parser.Tokenizer
 import Language.Parser.SourceRange
 import Language.Value.Parser
-import Language.Code.Parser (Splices(..), noSplices, codeStatementsGrammar, ParsedCode, withDefinedFunctions)
+import Language.Code.Parser (Splices(..), noSplices, codeStatementsGrammar, ParsedCode, withDefinedFunctions, withCommon)
+import Language.Code.Syntax (Stmt(..), StmtF(..))
 import Actor.Event (toolBlocksGrammar, ParsedToolBlock)
 import Actor.Layout (Dimensions(..), parseDimensions)
 
@@ -178,6 +179,11 @@ data ParsedStanza
         -- preparation script at all.
       , vsCode        :: ParsedCode
       }
+  | CommonStanza
+      { cmBody :: ParsedCode
+        -- ^ Declarations and function definitions to prepend to every
+        -- viewer and tool script (see 'Language.Code.Parser.withCommon').
+      }
   | ToolStanza
       { tsName     :: String
       , tsFor      :: Maybe String
@@ -226,9 +232,26 @@ parseScript input = do
   let setupBodies = [ b | (_, SetupStanza _ b) <- setupResults ]
       splices     = buildSplicesFromSetups setupBodies
 
-  otherResults <- traverse (\(i, c) -> (i,) <$> parseChunk splices c) otherChunks
+  otherResults <- parseNonSetupChunks splices otherChunks
 
   pure (assignViewerPositions (fillDefaultSrcs input (map snd (sortOn fst (setupResults ++ otherResults)))))
+
+-- | Parse the non-@\@setup@ stanzas, given the splices from @\@setup@.
+-- @\@common@ stanzas are parsed first, since their statements (and the
+-- names of the functions they define) have to be known to parse the
+-- other stanzas' scripts. Keeps each stanza's index, for putting the
+-- stanzas back in source order.
+parseNonSetupChunks :: Splices -> [(Int, [SRToken])] -> Either (SourceRange, String) [(Int, ParsedStanza)]
+parseNonSetupChunks splices chunks = do
+  let commonChunks = [ ic | ic@(_, c) <- chunks, isChunk "common" c ]
+      restChunks   = [ ic | ic@(_, c) <- chunks, not (isChunk "common" c) ]
+      -- every stanza can call the functions defined in any @common stanza
+      withCommonFuns = withDefinedFunctions (concatMap snd commonChunks) splices
+  commonResults <- traverse (\(i, c) -> (i,) <$> parseChunk withCommonFuns c) commonChunks
+  let common = concat [ stmts | (_, CommonStanza (Stmt _ (SBlock stmts))) <- commonResults ]
+      splices' = withCommonFuns { commonCode = commonCode splices ++ common }
+  restResults <- traverse (\(i, c) -> (i,) <$> parseChunk splices' c) restChunks
+  pure (sortOn fst (commonResults ++ restResults))
 
 -- | A synthesized @\@config@ stanza providing `max_iters`\/`escape_radius`\/
 -- `vanishing_radius`, meant to be appended to a parsed script's own stanzas
@@ -308,7 +331,7 @@ reparseNonSetupStanzas currentSplices input = do
                   , valueSplices = valueSplices currentSplices
                   }
 
-  otherResults <- traverse (parseChunk splices) otherChunks
+  otherResults <- map snd <$> parseNonSetupChunks splices (zip [0 ..] otherChunks)
   pure (assignViewerPositions (fillDefaultSrcs input otherResults))
 
 -- | Fill in every 'ConfigDecl's 'cdDefaultSrc' (the raw text of its own
@@ -327,6 +350,7 @@ fillDefaultSrcs input = map onStanza
       ConfigStanza t b -> ConfigStanza t (map onStmt b)
       t@ToolStanza{..} -> t { tsConfig = map onStmt tsConfig }
       v@ViewerStanza{} -> v
+      c@CommonStanza{} -> c
 
     onStmt = \case
       d@ConfigDecl{..} -> d { cdDefaultSrc = sliceLine input cdDefaultRange }
@@ -391,8 +415,12 @@ parseChunk splices chunk =
 -- | Does this stanza's own token span (as produced by 'splitStanzas')
 -- start with @\@setup@?
 isSetupChunk :: [SRToken] -> Bool
-isSetupChunk (_ : kw : _) = baseToken kw == Identifier "setup"
-isSetupChunk _            = False
+isSetupChunk = isChunk "setup"
+
+-- | Does this stanza's own token span start with @\@@ and the given keyword?
+isChunk :: String -> [SRToken] -> Bool
+isChunk name (_ : kw : _) = baseToken kw == Identifier name
+isChunk _ _               = False
 
 -- | Split a unified script's token stream (as produced by
 -- 'tokenizeWithIndentation', which wraps the whole file in one outer
@@ -453,6 +481,7 @@ buildSplicesFromSetups stmtLists = Splices
   , valueSplices = Map.fromList
       [ (cdName, cdDefault) | stmts <- stmtLists, ConfigDecl{..} <- concatMap flatten stmts ]
   , funNames = Set.empty
+  , commonCode = []
   }
   where
     flatten = \case
@@ -549,6 +578,11 @@ scriptGrammar splices@Splices{valueSplices} = mdo
     withSourceRange $
       (\title as sr -> validateViewerHeader sr title as)
       <$> (token At *> tok "viewer" *> quotedP) <*> (attrs <* nl)
+
+  commonHeader <- rule $
+    withSourceRange $
+      (\as sr -> validateNoAttrs sr as)
+      <$> (token At *> tok "common" *> attrs <* nl)
 
   toolHeader <- rule $
     withSourceRange $
@@ -661,7 +695,7 @@ scriptGrammar splices@Splices{valueSplices} = mdo
 
   prepareBlock <- rule $
     (\enames code -> (\names -> (names, code)) <$> enames)
-    <$> prepareHeader <*> (token Indent *> viewerBody <* token Dedent)
+    <$> prepareHeader <*> (token Indent *> (withCommon splices <$> viewerBody) <* token Dedent)
 
   ------------------------------------------------------------
   -- Stanzas
@@ -682,7 +716,7 @@ scriptGrammar splices@Splices{valueSplices} = mdo
                          vhPixelVar vhResizable (fromMaybe (Dimensions (100, 100)) vhPosition)
                          (isJust vhPosition) mprep code)
         <$> ehdr <*> sequence mprepE)
-    <$> viewerHeader <*> optional prepareBlock <*> viewerBody
+    <$> viewerHeader <*> optional prepareBlock <*> (withCommon splices <$> viewerBody)
 
   toolStanza <- rule $
     (\ehdr edecls blocks -> (\ToolHeader{..} decls ->
@@ -691,13 +725,32 @@ scriptGrammar splices@Splices{valueSplices} = mdo
         <$> ehdr <*> sequence edecls)
     <$> toolHeader <*> many configStmt <*> toolBody
 
-  stanza <- ruleChoice [setupStanza, configStanza, viewerStanza, toolStanza]
+  commonStanza <- rule $
+    (\ehdr body -> ehdr >> CommonStanza <$> validateCommonBody body)
+    <$> commonHeader <*> viewerBody
+
+  stanza <- ruleChoice [setupStanza, configStanza, viewerStanza, toolStanza, commonStanza]
 
   rule ((token Indent *> many stanza <* token Dedent) <?> "a unified project script")
 
 ------------------------------------------------------------
 -- Header attribute validation
 ------------------------------------------------------------
+
+-- | A @\@common@ stanza may only define things: its statements are
+-- prepended to every viewer and tool script, so anything else (drawing,
+-- assignments, loops) would run surprisingly often.
+validateCommonBody :: ParsedCode -> Either (SourceRange, String) ParsedCode
+validateCommonBody body = case body of
+  Stmt _ (SBlock stmts) -> body <$ mapM_ check stmts
+  _ -> body <$ check body
+  where
+    check (Stmt sr node) = case node of
+      SDecl{} -> pure ()
+      SFun{}  -> pure ()
+      SPass   -> pure ()
+      _ -> Left (sr, "A @common stanza can only contain variable declarations "
+                     ++ "(x := ... or x : T <- ...) and function definitions (let f(x) = ...).")
 
 validateNoAttrs :: SourceRange -> [(String, String)] -> Either (SourceRange, String) ()
 validateNoAttrs sr = checkKnownAttrs sr []

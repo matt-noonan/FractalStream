@@ -319,6 +319,15 @@ scenarios:
 `@config` declarations always need a type (it determines the UI widget); code
 in `@viewer` / `@tool` bodies can use `x := e` to have a type inferred.
 
+`@common` stanzas (no title or attributes) hold declarations and function
+definitions that are prepended to every viewer body, prep script, and tool
+handler (`withCommon`, via `Splices{commonCode}`), and so are typechecked
+separately in each. Only the definitions a script mentions (transitively,
+by name; `stmtNames`) are prepended, so a definition using e.g. the viewer
+coordinate doesn't break prep scripts or refresh handlers, which lack it. `parseScript` parses `@setup` stanzas first, then
+`@common` ones (`parseNonSetupChunks`), then the rest, since the others'
+grammars need the common statements and function names.
+
 ## Scripting Language
 
 See `LANGUAGE.md` for full docs. Key points:

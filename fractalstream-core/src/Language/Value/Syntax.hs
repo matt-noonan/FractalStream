@@ -17,7 +17,11 @@ module Language.Value.Syntax
   , mkExpr
   , exprType
   , stripTypes
+  , exprNames
   ) where
+
+import qualified Data.Set as Set
+import Data.Set (Set)
 
 
 import Language.Type
@@ -109,3 +113,14 @@ exprType = snd . synAnn
 
 stripTypes :: TExpr -> Expr
 stripTypes = fmap fst
+
+-- | Every variable and function name mentioned in an expression (an
+-- over-approximation of what it depends on: binders are ignored).
+exprNames :: Syn ExprF a -> Set String
+exprNames (Syn _ node) = here <> foldMap exprNames node
+  where
+    here = case node of
+      EVar n -> Set.singleton n
+      ECall f _ -> Set.singleton f
+      EDerivCall f _ _ -> Set.singleton f
+      _ -> Set.empty
