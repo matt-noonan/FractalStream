@@ -280,8 +280,16 @@ Text (`TextOp`) is a NUL-terminated UTF-8 `i8*`, built in the per-call arena
 gives the empty string plus the overflow flag). Only tool handlers can
 convert numbers to text: they call back into the host's `showValue` (the
 `text.format` parameter), so output matches the interpreter exactly. `write`
-calls the `draw.write` callback, which forwards to `dsWrite`. Text config
-variables are in/out for tools. `test/Backend/LLVMSpec.hs` checks compiled
+calls the `draw.write` callback, which forwards to `dsWrite`. Text and list
+config variables are in/out for tools (a cell holding the string/head-node
+pointer; compiled list ops never mutate nodes in place, so a changed pointer
+means a changed list, read back with `peekList`).
+
+Tools don't use the viewers' arena pool: each call gets its own arena,
+starting at 1 MB and doubling on overflow (rerunning the handler) up to
+256 MB. Draw commands are buffered and replayed only after a run that didn't
+overflow, and write-back is skipped on overflow, so a rerun has no
+duplicated effects. (Repeated `append` is quadratic in arena use.) `test/Backend/LLVMSpec.hs` checks compiled
 tools against `Actor.Event.interpretedToolExec` on the same scripts.
 
 ### Headless overlay text

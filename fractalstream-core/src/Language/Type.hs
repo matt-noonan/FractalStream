@@ -20,6 +20,7 @@ module Language.Type
   , showValue
   , ppType
   , toUserString
+  , quoteText
   , KnownType(..)
   , withKnownType
   , withType
@@ -276,8 +277,13 @@ instance An SomeType where
 instance KnownType t => An (TypeProxy t) where
   an = an . SomeType
 
+-- | Show a value the way a user would type it into a text box (see
+-- 'Language.Value.Parser.parseInputValue', which reads it back). Text is
+-- shown as it is, except inside a list, where each item is quoted.
 toUserString :: TypeProxy t -> HaskellType t -> String
-toUserString ty0 = tidy . go ty0
+toUserString ty0 = case ty0 of
+  TextType -> id
+  _        -> tidy . go ty0
   where
     tidy :: String -> String
     tidy s = case ty0 of
@@ -299,4 +305,17 @@ toUserString ty0 = tidy . go ty0
                       (fromIntegral b / 255.0 :: Double)
       PairType ty1 ty2 -> concat ["(", go ty1 (fst v), ", ", go ty2 (snd v), ")"]
       ListType ity -> "[" ++ intercalate ", " (map (go ity) v) ++ "]"
+      TextType -> quoteText v
       _ -> showValue ty v
+
+-- | Quote text as a literal, escaping quotes, backslashes, line breaks, and
+-- tabs as the tokenizer expects.
+quoteText :: String -> String
+quoteText str = "\"" ++ concatMap escape str ++ "\""
+  where
+    escape = \case
+      '"'  -> "\\\""
+      '\\' -> "\\\\"
+      '\n' -> "\\n"
+      '\t' -> "\\t"
+      c    -> [c]

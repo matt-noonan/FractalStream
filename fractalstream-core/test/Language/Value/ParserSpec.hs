@@ -120,6 +120,28 @@ spec = do
       parses2 `shouldBe` Right 1
       parses3 `shouldBe` Right 1
 
+  describe "when reading back a value's displayed form" $ do
+
+    let roundTrip :: forall t. KnownType t => TypeProxy t -> HaskellType t -> Either String (HaskellType t)
+        roundTrip ty v =
+          let shown = toUserString ty v
+          in bimap (`P.ppFullError` shown) (`evaluate` EmptyContext)
+                   (P.parseInputValue @'[] @t shown)
+
+    it "reads back lists of numbers" $ do
+      roundTrip (ListType ComplexType) [1 :+ 2, 3 :+ 0, 0 :+ (-1)]
+        `shouldBe` Right [1 :+ 2, 3 :+ 0, 0 :+ (-1)]
+      roundTrip (ListType IntegerType) [] `shouldBe` Right []
+
+    it "reads back lists of lists" $ do
+      let legs = [[1 :+ 2, 0.25 :+ 0], [], [0 :+ (-1)]]
+      roundTrip (ListType (ListType ComplexType)) legs `shouldBe` Right legs
+      roundTrip (ListType (ListType RealType)) [] `shouldBe` Right []
+
+    it "reads back lists of text" $
+      roundTrip (ListType TextType) ["a", "say \"hi\"", ""]
+        `shouldBe` Right ["a", "say \"hi\"", ""]
+
   describe "when using common notational quirks" $ do
 
     let eval = fmap (`evaluate` EmptyContext)

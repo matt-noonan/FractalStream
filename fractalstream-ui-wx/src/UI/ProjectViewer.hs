@@ -1112,7 +1112,7 @@ paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
              , brush := brushSolid initialColor
              , textColor := initialColor ]
 
-      forM_ cmds $ \case
+      forM_ (filter finiteDrawCommand cmds) $ \case
 
         DrawPoint _ pt -> do
           pt' <- modelToView pt
@@ -1133,8 +1133,8 @@ paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
           withFill fil (circle dc pt' r')
 
         DrawRect _ fil pt1 pt3 -> do
-          let pt2 = (fst pt1, snd pt2)
-              pt4 = (snd pt1, fst pt2)
+          let pt2 = (fst pt1, snd pt3)
+              pt4 = (fst pt3, snd pt1)
           pt1' <- modelToView pt1
           pt2' <- modelToView pt2
           pt3' <- modelToView pt3

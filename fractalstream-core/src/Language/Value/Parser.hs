@@ -180,7 +180,7 @@ valueAndArithGrammar funs = mdo
 
   scalar <- ruleChoice [ list, pair ]
 
-  -- One argument in a comma-separated argument list, like text(a, b, c):
+  -- One item in a comma-separated list, like text(a, b, c) or [a, b, c]:
   -- any expression except an unparenthesized pair, which would make
   -- `a, b, c` ambiguous.
   argument <- ruleChoice
@@ -199,7 +199,7 @@ valueAndArithGrammar funs = mdo
   list <- rule (node (EList <$> (token OpenBracket *> list' <* token CloseBracket)))
 
   list' <- ruleChoice
-    [ (:) <$> pOr <*> many (token Comma *> pOr)
+    [ (:) <$> argument <*> many (token Comma *> argument)
     , pure []
     ]
 

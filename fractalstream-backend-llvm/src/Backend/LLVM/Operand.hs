@@ -236,6 +236,7 @@ typedOperandPtr t op = do
                                 <*> gep op[int32 0, int32 1]
                                 <*> gep op[int32 0, int32 2])
            TextType -> pure (PtrOp (TextOp op))
+           ListType _ -> pure (PtrOp (ListOp op))
            _ -> throwError "TODO: typedOperandPtr"
 
 typedOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)

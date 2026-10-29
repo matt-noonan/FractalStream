@@ -29,6 +29,22 @@ spec = describe "compositeDrawLayers" $ do
     -- and it's roughly the size of a 13 pixel font
     (maximum ys - minimum ys) `shouldSatisfy` (\h -> h >= 9 && h <= 16)
 
+  it "skips shapes at non-finite points, rather than crashing" $ do
+    let nan = 0 / 0 :: Double
+        inf = 1 / 0 :: Double
+    painted <- paintedPixels
+      [ DrawPoint EmptyEnvProxy (nan, 0)
+      , DrawLine EmptyEnvProxy (0, 0) (inf, 1)
+      , DrawCircle EmptyEnvProxy True nan (0, 0)
+      , DrawCircle EmptyEnvProxy False 3 (0, nan)
+      , DrawRect EmptyEnvProxy True (0, 0) (nan, nan)
+      , Write EmptyEnvProxy "x" (nan, nan)
+      ]
+    painted `shouldBe` []
+    -- and finite shapes after them are still drawn
+    paintedPixels [DrawPoint EmptyEnvProxy (nan, 0), DrawPoint EmptyEnvProxy (0, 0)]
+      >>= (`shouldSatisfy` (not . null))
+
   it "draws nothing for the empty string" $
     paintedPixels [Write EmptyEnvProxy "" (0, 0)] >>= (`shouldBe` [])
 

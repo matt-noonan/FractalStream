@@ -118,6 +118,12 @@ drawCenteredText font (V2 x y) txt =
       baseline = y + (_yMax lineBox + _yMin lineBox) / 2
   in printTextAt font textSize (V2 (x - width / 2) baseline) txt
 
+-- | Run a drawing only if all the given points and lengths are finite.
+whenFinite :: [Point] -> [Float] -> Drawing PixelRGBA8 () -> Drawing PixelRGBA8 ()
+whenFinite pts lens action =
+  when (all finite (lens ++ concat [ [x, y] | V2 x y <- pts ])) action
+  where finite v = not (isNaN v || isInfinite v)
+
 -- | Draw every layer's commands, in order. Each layer starts with the pen
 -- and fill reset to white, matching @UI.ProjectViewer.paintToolLayer@.
 drawLayers :: ((Double, Double) -> Point) -> Double -> [[DrawCommand]] -> Drawing PixelRGBA8 ()
@@ -139,22 +145,28 @@ drawLayer toPixel pixelSize = go white white
       -- reset here.
       Clear _ -> go strokeColor fillColor cmds
 
+      -- Rasterific throws an arithmetic exception on a NaN or infinite
+      -- coordinate (which a script can easily produce, e.g. from an
+      -- escaping orbit), so shapes at such points are skipped.
       DrawPoint _ pt -> do
-        withTexture (uniformTexture fillColor) $
-          fill (circle (toPixel pt) 2)
+        whenFinite [toPixel pt] [] $
+          withTexture (uniformTexture fillColor) $
+            fill (circle (toPixel pt) 2)
         go strokeColor fillColor cmds
 
       DrawLine _ pt1 pt2 -> do
-        withTexture (uniformTexture strokeColor) $
-          stroke 2 JoinRound (CapRound, CapRound) (line (toPixel pt1) (toPixel pt2))
+        whenFinite [toPixel pt1, toPixel pt2] [] $
+          withTexture (uniformTexture strokeColor) $
+            stroke 2 JoinRound (CapRound, CapRound) (line (toPixel pt1) (toPixel pt2))
         go strokeColor fillColor cmds
 
       DrawCircle _ filled r pt -> do
         let rpx = realToFrac (r / pixelSize)
             prim = circle (toPixel pt) rpx
-        if filled
-          then withTexture (uniformTexture fillColor) (fill prim)
-          else withTexture (uniformTexture strokeColor) (stroke 2 JoinRound (CapRound, CapRound) prim)
+        whenFinite [toPixel pt] [rpx] $
+          if filled
+            then withTexture (uniformTexture fillColor) (fill prim)
+            else withTexture (uniformTexture strokeColor) (stroke 2 JoinRound (CapRound, CapRound) prim)
         go strokeColor fillColor cmds
 
       DrawRect _ filled pt1 pt2 -> do
@@ -164,14 +176,16 @@ drawLayer toPixel pixelSize = go white white
             rectW    = abs (x2 - x1)
             rectH    = abs (y2 - y1)
             prim = rectangle topLeft rectW rectH
-        if filled
-          then withTexture (uniformTexture fillColor) (fill prim)
-          else withTexture (uniformTexture strokeColor) (stroke 2 JoinRound (CapRound, CapRound) prim)
+        whenFinite [toPixel pt1, toPixel pt2] [] $
+          if filled
+            then withTexture (uniformTexture fillColor) (fill prim)
+            else withTexture (uniformTexture strokeColor) (stroke 2 JoinRound (CapRound, CapRound) prim)
         go strokeColor fillColor cmds
 
       -- Text is drawn in the stroke color, like the live app's textColor.
       Write _ txt pt -> do
         forM_ overlayFont $ \font ->
-          withTexture (uniformTexture strokeColor) $
-            drawCenteredText font (toPixel pt) txt
+          whenFinite [toPixel pt] [] $
+            withTexture (uniformTexture strokeColor) $
+              drawCenteredText font (toPixel pt) txt
         go strokeColor fillColor cmds

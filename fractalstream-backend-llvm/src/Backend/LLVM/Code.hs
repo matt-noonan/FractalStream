@@ -918,7 +918,7 @@ allocaArg t op = do
 -- kernel a pointer to a cell, so a 'Set' of a config variable is visible to the
 -- host after the call (write-back; e.g. the Select tool sets a coordinate,
 -- newton3's \"Move roots\" tool sets @drag_target@, or spider builds up its
--- @kneading_seq@ text).  Lists are passed by value (read-only — no write-back).  This predicate must agree between
+-- @kneading_seq@ text, and its @spider@ list of legs).  This predicate must agree between
 -- 'toToolParameterList' (param types), 'bindToolArg', and the host's marshaller.
 toolInOut :: TypeProxy t -> Bool
 toolInOut = \case
@@ -928,6 +928,7 @@ toolInOut = \case
   ComplexType -> True
   ColorType   -> True
   TextType    -> True
+  ListType _  -> True
   _           -> False
 
 -- | Parameter types for a tool handler's environment: in/out types become

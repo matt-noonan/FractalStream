@@ -290,8 +290,7 @@ synth env (Syn sr node) = case node of
       Syn lsr (EList []) -> pure (Syn (lsr, ListT BooleanT) (EList []))
       _ -> synth env lst
     case exprType lst' of
-      ListT t | t `elem` [BooleanT, IntegerT, RealT, ComplexT, ColorT] ->
-        done IntegerT (ELength lst')
+      ListT _ -> done IntegerT (ELength lst')
       _ -> advise sr "The argument to `length` should be a list."
 
   EIndex cyc lst ix -> do

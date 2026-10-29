@@ -94,20 +94,56 @@ spec = do
               compiled `shouldBe` interpreted)
           scripts
 
+  describe "when compiling tool handlers that use lists" $ do
+
+    let scripts =
+          [ ("appending to a list", "pts <- append(pts, z)")
+          , ("transforming a list", "pts <- transform(pts, p ⟼ p p + z)")
+          , ("removing everything", "pts <- remove(pts, p ⟼ true)")
+          , ("a list of lists, like spider's legs",
+             "legs <- append(legs, [z, 2z])\nlegs <- prepend(legs, pts)\n"
+             ++ "legs <- transform(legs, leg ⟼ append(leg, 0))")
+          , ("drawing from a list of lists",
+             "for each leg in legs:\n  for each p in leg:\n    draw point at p")
+          , ("a list of text", "words <- append(words, text(\"n=\", n))\n"
+             ++ "for each w in words:\n  write w at 0")
+          , ("leaving lists alone", "write length(legs) at 0")
+            -- 600 appends copy ~4 MB of list nodes, overflowing the first
+            -- arenas; draw commands must still happen exactly once
+          , ("outgrowing the first arenas",
+             "draw point at z\nks := range(1, 600)\nfor each k in ks:\n  pts <- append(pts, z)\n"
+             ++ "write length(pts) at 0")
+          ]
+
+    mapM_ (\(name, src) ->
+            it ("matches the interpreter: " ++ name) $ withJIT $ \jit -> do
+              compiled    <- runTool (compiledToolExec jit) src
+              interpreted <- runTool interpretedToolExec src
+              compiled `shouldBe` interpreted)
+          scripts
+
 type ToolTestEnv =
   '[ '("msg", 'TextT), '("n", 'IntegerT), '("x", 'RealT), '("z", 'ComplexT)
+   , '("pts", 'ListT 'ComplexT), '("legs", 'ListT ('ListT 'ComplexT))
+   , '("words", 'ListT 'TextT)
    , '("[internal] iteration count", 'IntegerT)
    , '("[internal] iteration limit", 'IntegerT)
    , '("[internal] stuck", 'BooleanT) ]
 
 -- | Run a tool handler with the given executor, returning everything it drew
 -- and the final values of the variables it can set.
-runTool :: (DrawSink -> ToolExec) -> String -> IO ([String], (String, Int64, Double))
+runTool :: (DrawSink -> ToolExec) -> String
+        -> IO ( [String]
+              , (String, Int64, Double)
+              , ([Complex Double], [[Complex Double]], [String]) )
 runTool exec src = do
   vMsg <- newVariable "start"
   vN   <- newVariable (2 :: Int64)
   vX   <- newVariable (0.01 :: Double)
   vZ   <- newVariable (1 :+ 0.5 :: Complex Double)
+  vPts <- newVariable [1 :+ 1, 0 :+ (-2) :: Complex Double]
+  vLegs <- newVariable [[0 :+ 0, 1 :+ 0], [], [0 :+ 1 :: Complex Double]]
+  vWords <- newVariable ["one", "★"]
   vI   <- newVariable (0 :: Int64)
   vL   <- newVariable (100 :: Int64)
   vS   <- newVariable False
@@ -116,6 +152,9 @@ runTool exec src = do
           $ Bind (Proxy @"n") IntegerType (mutableVar vN)
           $ Bind (Proxy @"x") RealType (mutableVar vX)
           $ Bind (Proxy @"z") ComplexType (mutableVar vZ)
+          $ Bind (Proxy @"pts") (ListType ComplexType) (mutableVar vPts)
+          $ Bind (Proxy @"legs") (ListType (ListType ComplexType)) (mutableVar vLegs)
+          $ Bind (Proxy @"words") (ListType TextType) (mutableVar vWords)
           $ Bind (Proxy @"[internal] iteration count") IntegerType (mutableVar vI)
           $ Bind (Proxy @"[internal] iteration limit") IntegerType (mutableVar vL)
           $ Bind (Proxy @"[internal] stuck") BooleanType (mutableVar vS)
@@ -138,4 +177,5 @@ runTool exec src = do
   invoker ctx
   drawn <- reverse <$> readIORef events
   final <- (,,) <$> getDynamic vMsg <*> getDynamic vN <*> getDynamic vX
-  pure (drawn, final)
+  lists <- (,,) <$> getDynamic vPts <*> getDynamic vLegs <*> getDynamic vWords
+  pure (drawn, final, lists)
