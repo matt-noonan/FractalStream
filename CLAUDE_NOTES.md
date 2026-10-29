@@ -230,6 +230,13 @@ implicit multiplication, so each stanza's tokens are pre-scanned for
 (`ELet`, e.g. from inlined calls) are handled by the chain rule, and
 subexpressions that don't mention `x` have derivative 0.
 
+Code blocks (`define name(x, y):` + block, `SProc`; `run name(a, b)`, `SRun`)
+are expanded by `Language.Code.Procedures.expandRuns`, the first step of
+`runParsedCode` (before inference): each `run` becomes a block declaring
+fresh `[internal] name.x #k := arg` variables, then the renamed body. Other
+names in the body resolve at the run site; a definition sees only the code
+blocks defined before it (no recursion).
+
 `Language.Value.Typecheck.atType` (typing + elaboration at a requested type)
 is the entry point used throughout the actors.
 
@@ -248,6 +255,7 @@ Key modules:
 - `Language.Value.Differentiate` - symbolic differentiation (`diff`)
 - `Language.Value.Typecheck` - `atType` entry point
 - `Language.Code.Infer` - inference for `:=` declarations
+- `Language.Code.Procedures` - `define` / `run` expansion
 - `Language.Code.Typecheck` (+ `.Functions`) - code elaboration, functions
 - `Language.Typecheck` - `TC` monad, `TCError`, shared helpers
 
@@ -319,8 +327,8 @@ scenarios:
 `@config` declarations always need a type (it determines the UI widget); code
 in `@viewer` / `@tool` bodies can use `x := e` to have a type inferred.
 
-`@common` stanzas (no title or attributes) hold declarations and function
-definitions that are prepended to every viewer body, prep script, and tool
+`@common` stanzas (no title or attributes) hold declarations, function
+definitions, and code definitions (`define`) that are prepended to every viewer body, prep script, and tool
 handler (`withCommon`, via `Splices{commonCode}`), and so are typechecked
 separately in each. Only the definitions a script mentions (transitively,
 by name; `stmtNames`) are prepended, so a definition using e.g. the viewer

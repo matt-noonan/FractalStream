@@ -148,6 +148,13 @@ codeStatementsGrammar Splices{..} = mdo
              <*> pure Nothing
              <*> (token ColonEquals *> value <* nl)) <?> "variable initialization"
     , node
+      (SProc <$> (lit "define" *> ident)
+             <*> (fromMaybe [] <$> optional argList)
+             <*> (colon *> nl *> block)) <?> "code definition"
+    , node
+      (SRun <$> (lit "run" *> ident)
+            <*> (optional value <* nl)) <?> "run"
+    , node
       (SFun <$> (token Let_ *> ident)
             <*> argList
             <*> (token Equal *> value <* nl)) <?> "function definition"

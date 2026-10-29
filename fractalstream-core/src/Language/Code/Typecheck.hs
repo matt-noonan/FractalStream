@@ -23,6 +23,7 @@ import Language.Code
 import Language.Code.Syntax
 import Language.Code.Typecheck.Functions
 import Language.Code.Infer
+import Language.Code.Procedures
 import Language.Draw
 import Language.Parser.SourceRange
 
@@ -39,7 +40,7 @@ type ParsedCode = Stmt
 -- | Check parsed code in the given environment.
 runParsedCode :: EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
 runParsedCode env c =
-  case withEnvironment env (elab Map.empty env (inferDeclarations (typeEnvOf env) Map.empty c)) of
+  case withEnvironment env (expandRuns c >>= elab Map.empty env . inferDeclarations (typeEnvOf env) Map.empty) of
     TC x -> x
 
 ------------------------------------------------------
@@ -77,6 +78,10 @@ elab funs env stmt@(Stmt sr node) = case node of
                                   cond upto (Stmt sr (SSet var expr))))
 
   SPass -> pure NoOp
+
+  -- these are expanded away before elaboration
+  SProc{} -> throwError (Internal (Advice sr "unexpanded code definition"))
+  SRun name _ -> throwError (Internal (Advice sr ("unexpanded run of " ++ name)))
 
   SDraw d -> DrawCommand <$> case d of
     DrawPointAt p -> DrawPoint env <$> point funs env p

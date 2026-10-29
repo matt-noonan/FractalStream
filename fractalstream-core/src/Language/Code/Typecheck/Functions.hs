@@ -7,6 +7,8 @@ module Language.Code.Typecheck.Functions
   , FunDef(..)
   , defineFunction
   , expandCalls
+  , splitArgs
+  , rename
   ) where
 
 import FractalStream.Prelude

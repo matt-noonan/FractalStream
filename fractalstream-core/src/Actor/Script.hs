@@ -748,9 +748,11 @@ validateCommonBody body = case body of
     check (Stmt sr node) = case node of
       SDecl{} -> pure ()
       SFun{}  -> pure ()
+      SProc{} -> pure ()
       SPass   -> pure ()
       _ -> Left (sr, "A @common stanza can only contain variable declarations "
-                     ++ "(x := ... or x : T <- ...) and function definitions (let f(x) = ...).")
+                     ++ "(x := ... or x : T <- ...), function definitions (let f(x) = ...), "
+                     ++ "and code definitions (define name: ...).")
 
 validateNoAttrs :: SourceRange -> [(String, String)] -> Either (SourceRange, String) ()
 validateNoAttrs sr = checkKnownAttrs sr []

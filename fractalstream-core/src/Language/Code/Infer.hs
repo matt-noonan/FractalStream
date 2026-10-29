@@ -93,6 +93,9 @@ collect scope funs (Stmt sr node) = (Stmt sr .) <$> case node of
   SIterate n e _ _ _ -> assign scope funs n e $> const node
 
   SPass -> pure (const node)
+  -- (expanded away before inference)
+  SProc{} -> pure (const node)
+  SRun{} -> pure (const node)
   SDraw{} -> pure (const node)
 
   SForEach item list body -> do

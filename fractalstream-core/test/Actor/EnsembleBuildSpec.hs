@@ -1389,3 +1389,32 @@ let f(z) = z
 @viewer "V" var=z size="100x100"
 pass
 |] "bogus"
+
+    it "can define code for viewers and tools to run" $ do
+      let src = [r|
+@common
+define shade(c):
+  if stuck:
+    color <- black
+  else:
+    color <- blend(iterations / 20, light c, dark c)
+define trace:
+  erase
+  repeat up to 10 times:
+    draw point at z
+    z <- z^2 + 0.25
+  until z escapes
+
+@viewer "V" var=z size="100x100"
+iterate z -> z^2 + 0.25 until z escapes
+run shade(blue)
+
+@tool "T" for="V"
+on click:
+  run trace
+|]
+      accepts src
+      code <- viewerCode src
+      code `shouldSatisfy` isInfixOf "blend("
+      -- `trace` uses drawing commands, but only the tool runs it
+      code `shouldNotSatisfy` isInfixOf "point"

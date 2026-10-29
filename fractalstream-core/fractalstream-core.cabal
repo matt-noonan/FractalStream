@@ -87,6 +87,7 @@ library
                        Language.Code.Typecheck
                        Language.Code.Syntax
                        Language.Code.Infer
+                       Language.Code.Procedures
                        Language.Code.Typecheck.Functions
                        Language.Type
                        Language.Environment

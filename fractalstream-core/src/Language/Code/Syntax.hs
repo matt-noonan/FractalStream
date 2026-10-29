@@ -48,6 +48,11 @@ data StmtF
     -- ^ @for each item in list: body@
   | SWithFirst String Expr String Stmt (Maybe Stmt)
     -- ^ @with first item matching p in list: body else: fallback@
+  | SProc String [String] Stmt
+    -- ^ @define name(x, y):@ followed by a block of code
+  | SRun String (Maybe Expr)
+    -- ^ @run name@, or @run name(a, b)@ (with the arguments parsed as one
+    -- expression, a tuple when there are several, like a function call)
   deriving Show
 
 data DrawStmt
@@ -85,10 +90,13 @@ stmtNames (Stmt _ node) = case node of
   SForEach item list body -> Set.fromList [item, list] <> stmtNames body
   SWithFirst item p list body fallback ->
     Set.fromList [item, list] <> exprNames p <> stmtNames body <> foldMap stmtNames fallback
+  SProc name _ body -> Set.insert name (stmtNames body)
+  SRun name arg -> Set.insert name (foldMap exprNames arg)
 
 -- | The name a declaration or function definition defines.
 definedName :: Stmt -> Maybe String
 definedName (Stmt _ node) = case node of
   SDecl n _ _ -> Just n
   SFun f _ _ -> Just f
+  SProc name _ _ -> Just name
   _ -> Nothing

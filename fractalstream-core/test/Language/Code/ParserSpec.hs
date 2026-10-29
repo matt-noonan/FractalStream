@@ -293,3 +293,78 @@ x <- g'(1)|] `shouldBe` Right 5.0
     it "suggests diff for f' of functions of several variables" $
       runWithX (Scalar RealType 0) "let f(a, b) = a b\nx <- f'(1, 2)" `shouldSatisfy`
         either ("use diff instead, like diff(a, f(a, b))" `isInfixOf`) (const False)
+
+  describe "when defining and running code" $ do
+
+    let failsWith input needle =
+          runWithX (Scalar RealType 0) input `shouldSatisfy` either (needle `isInfixOf`) (const False)
+
+    it "runs code without parameters" $
+      runWithX (Scalar RealType 0) [r|
+define bump:
+  x <- x + 1
+  x <- 2 x
+run bump
+run bump|] `shouldBe` Right 6.0
+
+    it "runs code with parameters" $ do
+      runWithX (Scalar RealType 1) [r|
+define add(k):
+  x <- x + k
+run add(2.5)|] `shouldBe` Right 3.5
+      runWithX (Scalar RealType 3) [r|
+define affine(a, b):
+  x <- a x + b
+run affine(2, 1)|] `shouldBe` Right 7.0
+
+    it "passes arguments as local copies" $ do
+      runWithX (Scalar RealType 1) [r|
+define inc(c):
+  c <- c + 1
+  x <- c
+run inc(x)
+run inc(x)|] `shouldBe` Right 3.0
+      -- a parameter may share a name with a variable where the code is run
+      runWithX (Scalar RealType 3) [r|
+define clobber(x):
+  x <- 7
+run clobber(5)|] `shouldBe` Right 3.0
+
+    it "keeps the code's own declarations local to each run" $
+      runWithX (Scalar RealType 0) [r|
+define p:
+  t := x + 1
+  x <- t
+run p
+run p|] `shouldBe` Right 2.0
+
+    it "runs code from inside code, loops, and conditionals" $
+      runWithX (Scalar RealType 0) [r|
+define a:
+  x <- x + 1
+define b:
+  run a
+  run a
+if true:
+  repeat up to 3 times:
+    run b
+  while true|] `shouldBe` Right 6.0
+
+    it "infers parameter types from the arguments" $
+      runWithXYC (Scalar RealType 0) (Scalar RealType 0) [r|
+define paint(c):
+  color <- blend(0.5, light c, dark c)
+run paint(red)|] `shouldBe` runWithXYC (Scalar RealType 0) (Scalar RealType 0)
+        "color <- blend(0.5, light red, dark red)"
+
+    it "reports code that isn't defined" $ do
+      failsWith "run q" "No code named q"
+      -- code can't run itself
+      failsWith "define p:\n  run p\nrun p" "No code named p"
+      -- definitions are scoped to the rest of their block
+      failsWith "if true:\n  define p:\n    pass\nrun p" "No code named p"
+
+    it "reports the wrong number of arguments" $ do
+      failsWith "define p:\n  pass\nrun p(1)" "p takes no arguments"
+      failsWith "define p(a):\n  pass\nrun p" "p takes 1 argument"
+      failsWith "define p(a, b):\n  pass\nrun p(1)" "p takes 2 arguments"

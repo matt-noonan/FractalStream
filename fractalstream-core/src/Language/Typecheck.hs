@@ -37,6 +37,7 @@ data TCError
   = Surprise SourceRange String String (Expected String)
   | MissingName SourceRange String
   | MissingFunction SourceRange String
+  | MissingCode SourceRange String
   | AlreadyDefined SourceRange String
   | BadConversion SourceRange SomeType (Expected SomeType)
   | Advice SourceRange String
@@ -65,6 +66,7 @@ instance HasErrorLocation TCError where
     Surprise sr _ _ _          -> sr
     MissingName sr _           -> sr
     MissingFunction sr _       -> sr
+    MissingCode sr _           -> sr
     AlreadyDefined sr _        -> sr
     BadConversion sr _ _       -> sr
     Advice sr _                -> sr
@@ -83,6 +85,8 @@ ppError = concat .  \case
     ["No variable named ", name, " is defined here."]
   MissingFunction _ name ->
     ["No function named ", name, " is defined here."]
+  MissingCode _ name ->
+    ["No code named ", name, " is defined here. (Code to run is defined with `define ", name, ":`.)"]
   AlreadyDefined _ name ->
     ["The variable ", name, " is already defined, and would be re-defined here."]
   BadConversion _ ty (Expected ety) ->

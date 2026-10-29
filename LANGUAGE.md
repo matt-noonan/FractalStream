@@ -177,6 +177,31 @@ let f(z) = z^3 - 1
 iterate z -> z - f(z) / f'(z) until f(z) vanishes
 ```
 
+### Defining code to run
+
+A block of code can be given a name with `define`, and then run (as many
+times as you like) with `run`:
+
+```
+define shade(c):
+  if stuck:
+    color <- black
+  else:
+    color <- blend(iterations / 20, light c, dark c)
+
+iterate z -> z^2 + C until z escapes
+run shade(blue)
+```
+
+The parameters, like `c` here, are optional (`define shade:` ... `run
+shade`). Each one acts like a new variable holding the value it is given,
+with its type worked out from that value, so changing it inside the code
+doesn't change anything outside. Everything else the code mentions, like
+`color` and `iterations` above, refers to whatever is in scope where it is
+run, and any variables the code declares are local to each run. A `define`
+can be used in the rest of the block it appears in, and code can run
+other code defined before it.
+
 ### Sharing definitions between scripts
 
 In a project, an `@common` stanza holds definitions that every viewer and
@@ -202,8 +227,8 @@ on click:
   until f(z) vanishes
 ```
 
-An `@common` stanza can only contain function definitions and variable
-declarations. Each script gets just the common definitions it uses (and
+An `@common` stanza can only contain function definitions, code definitions
+(`define`), and variable declarations. Each script gets just the common definitions it uses (and
 whatever those use), checked against its own variables, so they can use
 anything in scope there: here, the configuration variable `a`, and each
 script's own `z`. A definition that mentions a variable some scripts don't
