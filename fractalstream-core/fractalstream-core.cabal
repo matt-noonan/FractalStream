@@ -85,6 +85,7 @@ library
                        Language.Code.InterpretIO
                        Language.Code.Parser
                        Language.Code.Typecheck
+                       Language.Code.Syntax
                        Language.Type
                        Language.Environment
                        Language.Value

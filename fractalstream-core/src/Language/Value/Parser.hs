@@ -8,6 +8,7 @@ module Language.Value.Parser
   , parseConstant
   , valueGrammar
   , valueGrammarWithNoSplices
+  , valueGrammarWithFunctions
   , arithGrammar
   , arithGrammarWithNoSplices
   , atType
@@ -137,7 +138,15 @@ valueGrammarWithNoSplices = valueGrammar Map.empty
 valueGrammar :: forall r
               . ValueSplices
              -> Grammar r (Prod r ParsedValue)
-valueGrammar splices = fst <$> valueAndArithGrammar splices
+valueGrammar = valueGrammarWithFunctions Set.empty
+
+-- | The value grammar, also accepting calls to the named user-defined
+-- functions. Those names are reserved: they can't be used as variables.
+valueGrammarWithFunctions :: forall r
+                           . Set String
+                          -> ValueSplices
+                          -> Grammar r (Prod r ParsedValue)
+valueGrammarWithFunctions funs splices = fst <$> valueAndArithGrammar funs splices
 
 -- | A self-contained arithmetic\/complex-valued expression grammar --
 -- @+ - * / ^@, unary minus, implicit-multiplication concatenation, named
@@ -167,12 +176,13 @@ arithGrammarWithNoSplices = arithGrammar Map.empty
 arithGrammar :: forall r
               . ValueSplices
              -> Grammar r (Prod r ParsedValue)
-arithGrammar splices = snd <$> valueAndArithGrammar splices
+arithGrammar splices = snd <$> valueAndArithGrammar Set.empty splices
 
 valueAndArithGrammar :: forall r
-                       . ValueSplices
+                       . Set String
+                      -> ValueSplices
                       -> Grammar r (Prod r ParsedValue, Prod r ParsedValue)
-valueAndArithGrammar splices = mdo
+valueAndArithGrammar funs splices = mdo
 
   let toplevel = cast
 
@@ -284,6 +294,9 @@ valueAndArithGrammar splices = mdo
         <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n complexFunctions;
                                  _ -> Nothing }))
         <*> atomOrFunAp)
+    , node (ECall
+        <$> (tokenMatch (\case { Identifier n | Set.member n funs -> Just n; _ -> Nothing }))
+        <*> ((:[]) <$> atomOrFunAp))
     , node (EBin OpMod
         <$> (token (Identifier "mod") *> token OpenParen *> arith)
         <*> (token Comma *> arith <* token CloseParen))
@@ -492,6 +505,7 @@ valueAndArithGrammar splices = mdo
         `Set.union` Map.keysSet complexFunctions
         `Set.union` Map.keysSet roundingFunctions
         `Set.union` Map.keysSet splices
+        `Set.union` funs
 
   pure (toplevel, addOrSubNp)
 

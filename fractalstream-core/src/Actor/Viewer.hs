@@ -339,7 +339,7 @@ parseViewerScript :: forall env
                   -> ViewerContext env
                   -> ParsedCode
                   -> Either (SourceRange, String) (Code (ViewerEnv env))
-parseViewerScript mpx ViewerContext{..} (ParsedCode c) = do
+parseViewerScript mpx ViewerContext{..} c = do
   let env = contextToEnv vcContext
   withEnvironment env $ do
 
@@ -386,7 +386,7 @@ parseViewerScript mpx ViewerContext{..} (ParsedCode c) = do
         Found pf -> case lookupEnv px RealType env' of
           Absent pf' -> do
             let env2 = recallIsAbsent pf' $ BindingProxy px RealType env'
-            code0 <- case evalStateT (c env2) initialCTCState of TC r -> left (errorLocation &&& unlines . pp) r
+            code0 <- left (errorLocation &&& unlines . pp) (runParsedCode env2 c)
             -- Set the viewer variable to x + i y
             x <- getVar InternalX RealType env'
             y <- getVar InternalY RealType env'
@@ -402,7 +402,7 @@ parseViewerScript mpx ViewerContext{..} (ParsedCode c) = do
               Absent pf' -> do
                 let env3 = recallIsAbsent pf' $ BindingProxy px RealType env2
 
-                code0 <- case evalStateT (c env3) initialCTCState of TC r -> left (errorLocation &&& unlines . pp) r
+                code0 <- left (errorLocation &&& unlines . pp) (runParsedCode env3 c)
                 x  <- getVar InternalX  RealType env'
                 y  <- getVar InternalY  RealType env'
                 dx <- getVar InternalDX RealType env2

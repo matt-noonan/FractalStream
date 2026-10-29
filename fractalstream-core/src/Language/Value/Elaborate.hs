@@ -202,6 +202,12 @@ elabOwn t (Syn (sr, _) node) = case node of
 
   EIndex cyc lst ix -> Index t cyc <$> el (ListType t) lst <*> el IntegerType ix
 
+  ELet n v body -> withType (exprType v) $ \vty -> withBinder @env sr n vty $ \name pf -> do
+    v' <- el vty v
+    LocalLet name vty pf v' t <$> elaborate t body
+
+  ECall{} -> inconsistent sr
+
   EAdvice{} -> inconsistent sr
 
   where

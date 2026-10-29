@@ -80,6 +80,11 @@ data ExprF r
   | ERange r r
   | ELength r
   | EIndex Bool r r
+  | ELet String r r
+    -- ^ A local binding, scoped over the second expression
+  | ECall String [r]
+    -- ^ A call to a user-defined function; these are expanded into 'ELet's
+    -- (see "Language.Code.Typecheck") before typing
   | EAdvice String
     -- ^ A parse that is accepted only to produce a helpful error
   deriving (Show, Functor, Foldable, Traversable)

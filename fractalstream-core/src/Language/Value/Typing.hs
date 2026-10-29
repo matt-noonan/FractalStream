@@ -130,6 +130,10 @@ pushdown env ty (Syn sr node) = fmap (fmap (Syn (sr, ty))) $ case (node, ty) of
     t1 <- listItemType lst'
     env' <- bind sr n t1 env
     ETransform lst' n <$> check env' t2 f
+  (ELet n v body, _) -> Just $ do
+    v' <- synth env v
+    env' <- bind sr n (exprType v') env
+    ELet n v' <$> check env' ty body
   (EIndex cyc lst ix, _) -> Just $
     EIndex cyc <$> check env (ListT ty) lst <*> check env IntegerT ix
   _ -> Nothing
@@ -270,6 +274,14 @@ synth env (Syn sr node) = case node of
     t <- listItemType lst'
     ix' <- check env IntegerT ix
     done t (EIndex cyc lst' ix')
+
+  ELet n v body -> do
+    v' <- synth env v
+    env' <- bind sr n (exprType v') env
+    body' <- synth env' body
+    done (exprType body') (ELet n v' body')
+
+  ECall f _ -> throwError (Internal (Advice sr ("unexpanded call to " ++ f)))
 
   EAdvice msg -> advise sr msg
 
@@ -468,4 +480,6 @@ describe = \case
   ERange{} -> "the result of a range operation"
   ELength{} -> "the result of a length operation"
   EIndex{} -> "this list item"
+  ELet{} -> "the result of this expression"
+  ECall f _ -> "the result of " ++ f
   EAdvice{} -> "this expression"

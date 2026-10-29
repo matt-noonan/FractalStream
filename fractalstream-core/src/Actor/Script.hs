@@ -38,7 +38,7 @@ import Language.Parser
 import Language.Parser.Tokenizer
 import Language.Parser.SourceRange
 import Language.Value.Parser
-import Language.Code.Parser (Splices(..), noSplices, codeStatementsGrammar, ParsedCode)
+import Language.Code.Parser (Splices(..), noSplices, codeStatementsGrammar, ParsedCode, withDefinedFunctions)
 import Actor.Event (toolBlocksGrammar, ParsedToolBlock)
 import Actor.Layout (Dimensions(..), parseDimensions)
 
@@ -380,7 +380,7 @@ assignViewerPositions = go (0 :: Int)
 -- without the enclosing file-level Indent\/Dedent) into its 'ParsedStanza'.
 parseChunk :: Splices -> [SRToken] -> Either (SourceRange, String) ParsedStanza
 parseChunk splices chunk =
-  case parse (scriptGrammar splices) wrapped of
+  case parse (scriptGrammar (withDefinedFunctions chunk splices)) wrapped of
     Left err        -> Left (errorLocation &&& unlines . pp $ err)
     Right [estanza] -> estanza
     Right _         -> Left (NoSourceRange,
@@ -451,6 +451,7 @@ buildSplicesFromSetups stmtLists = Splices
       [ (ccName, ccBody) | stmts <- stmtLists, ConfigCode{..} <- concatMap flatten stmts ]
   , valueSplices = Map.fromList
       [ (cdName, cdDefault) | stmts <- stmtLists, ConfigDecl{..} <- concatMap flatten stmts ]
+  , funNames = Set.empty
   }
   where
     flatten = \case

@@ -157,3 +157,54 @@ else:
       runMandel 0 `shouldBe` Right black
       runMandel (1 :+ 1) `shouldBe` Right yellow
       runMandel (1 :+ (-1)) `shouldBe` Right red
+
+  describe "when declaring variables with :=" $ do
+
+    it "takes the variable's type from its initial value" $ do
+      runWithX (Scalar RealType 0) "k := 3\nx <- k / 2" `shouldBe` Right 1.5
+      runWithX (Scalar ComplexType 0) "w := 1 + 2i\nx <- w" `shouldBe` Right (1 :+ 2)
+
+    it "rejects assignments that don't fit the inferred type" $
+      runWithX (Scalar RealType 0) "k := 3\nk <- 0.5\nx <- k"
+        `shouldSatisfy` isLeft
+
+    it "rejects redeclaring a variable" $
+      runWithX (Scalar RealType 0) "x := 3" `shouldSatisfy` isLeft
+
+  describe "when defining functions" $ do
+
+    it "inlines calls" $
+      runWithX (Scalar RealType 0) "let f(t) = 2 t + 1\nx <- f(3) + f(0.5)" `shouldBe` Right 9.0
+
+    it "specializes each call at its own argument types" $
+      runWithXY (Scalar IntegerType 0) (Scalar ComplexType (0 :+ 1)) [r|
+let sq(t) = t * t
+x <- sq(3)
+y <- sq(y)|] `shouldBe` Right 9
+
+    it "supports several parameters, nested calls, and calls between functions" $
+      runWithX (Scalar RealType 0) [r|
+let f(a, b) = a - b
+let g(t) = f(t, f(1, t))
+x <- g(f(5, 2))|] `shouldBe` Right 5.0
+
+    it "lets parameters shadow variables in scope" $
+      runWithX (Scalar RealType 2) "let f(x) = x + 1\nx <- f(10)" `shouldBe` Right 11.0
+
+    it "captures variables in scope at the definition" $
+      runWithX (Scalar RealType 0) "c : R <- 4\nlet f(t) = t + c\nx <- f(1)" `shouldBe` Right 5.0
+
+    it "scopes functions to the rest of their block" $
+      runWithX (Scalar RealType 0) [r|
+if true:
+  let f(t) = t
+x <- f(1)|] `shouldSatisfy` isLeft
+
+    it "rejects bodies that refer to undefined variables" $
+      runWithX (Scalar RealType 0) "let f(t) = t + q\nx <- f(1)" `shouldSatisfy` isLeft
+
+    it "rejects calls with the wrong number of arguments" $
+      runWithX (Scalar RealType 0) "let f(a, b) = a + b\nx <- f(1)" `shouldSatisfy` isLeft
+
+    it "rejects function names that clash with variables" $
+      runWithX (Scalar RealType 0) "let x(t) = t\npass" `shouldSatisfy` isLeft

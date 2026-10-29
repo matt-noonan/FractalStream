@@ -366,7 +366,7 @@ withBookkeeping env splices (pMaxIters, pMaxRadius, pMinRadius) action = withEnv
 -- source string.
 runParsedBody :: EnvironmentProxy env -> ParsedCode
               -> Either (Either ParseError TCError) (Code env)
-runParsedBody env (ParsedCode f) = case evalStateT (f env) initialCTCState of TC x -> first Right x
+runParsedBody env body = first Right (runParsedCode env body)
 
 parseClickScript :: Splices
                  -> Coordinate
