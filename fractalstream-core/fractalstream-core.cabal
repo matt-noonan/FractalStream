@@ -86,6 +86,8 @@ library
                        Language.Code.Parser
                        Language.Code.Typecheck
                        Language.Code.Syntax
+                       Language.Code.Infer
+                       Language.Code.Typecheck.Functions
                        Language.Type
                        Language.Environment
                        Language.Value

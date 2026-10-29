@@ -16,8 +16,11 @@
 -- that elaboration produces the same typed ASTs it did (down to the
 -- placement of conversions).
 module Language.Value.Typing
-  ( TypeEnv
+  ( TypeEnv(..)
   , typeEnvOf
+  , strictTypeEnv
+  , lenientTypeEnv
+  , structuralJoin
   , synth
   , check
   , coercible
@@ -37,10 +40,22 @@ import Language.Value.Syntax
 import Language.Value.Builtins
 
 -- | The types of the variables in scope.
-type TypeEnv = Map String FSType
+data TypeEnv = TypeEnv
+  { tyVars :: Map String FSType
+  , tyLenient :: Bool
+    -- ^ In lenient mode, used during type inference, a list-valued
+    -- subexpression that would need to be widened to a larger item type is
+    -- just assumed to have that type, and branches are joined structurally.
+    -- These are what the inferred variables involved will need to be raised
+    -- to; elaboration checks the final result in the usual, strict mode.
+  }
 
 typeEnvOf :: EnvironmentProxy env -> TypeEnv
-typeEnvOf = Map.map (\(SomeType t) -> typeToFS t) . envToMap
+typeEnvOf = strictTypeEnv . Map.map (\(SomeType t) -> typeToFS t) . envToMap
+
+strictTypeEnv, lenientTypeEnv :: Map String FSType -> TypeEnv
+strictTypeEnv vs = TypeEnv vs False
+lenientTypeEnv vs = TypeEnv vs True
 
 anType :: FSType -> String
 anType t = withType t (an . SomeType)
@@ -147,7 +162,7 @@ synth env (Syn sr node) = case node of
 
   ELit d c@(SomeHaskellType t _) -> done (typeToFS t) (ELit d c)
 
-  EVar n -> case Map.lookup n env of
+  EVar n -> case Map.lookup n (tyVars env) of
     Just t  -> done t (EVar n)
     Nothing -> throwError (MissingName sr n)
 
@@ -159,7 +174,7 @@ synth env (Syn sr node) = case node of
     c' <- check env BooleanT c
     yes' <- synth env yes
     no' <- synth env no
-    case joinType (exprType yes') (exprType no') of
+    case joinIn env (exprType yes') (exprType no') of
       Just t  -> done t (EITE c' yes' no')
       Nothing -> throwError (mismatch no' (exprType yes'))
 
@@ -171,7 +186,7 @@ synth env (Syn sr node) = case node of
   EList [] -> advise sr "I can't tell what type of items this empty list should hold."
   EList xs -> do
     xs' <- traverse (synth env) xs
-    t <- joinAll xs'
+    t <- joinAll env xs'
     done (ListT t) (EList xs')
 
   EBin op x y -> synthBin env sr op x y
@@ -221,9 +236,9 @@ synth env (Syn sr node) = case node of
 
   EJoin xs -> do
     xs' <- traverse (synth env) xs
-    t <- joinAll =<< traverse listItem xs'
+    t <- joinAll env =<< traverse listItem xs'
     let ty = ListT t
-    xs'' <- sequence [ if exprType x' == ty then pure x' else check env ty x
+    xs'' <- sequence [ refit env ty x x'
                      | (x, x') <- zip xs xs' ]
     done ty (EJoin xs'')
 
@@ -241,8 +256,8 @@ synth env (Syn sr node) = case node of
     lst' <- synth env lst
     d' <- synth env d
     tl <- listItemType lst'
-    t <- maybe (throwError (mismatch d' tl)) pure (joinType tl (exprType d'))
-    lst'' <- if t == tl then pure lst' else check env (ListT t) lst
+    t <- maybe (throwError (mismatch d' tl)) pure (joinIn env tl (exprType d'))
+    lst'' <- refit env (ListT t) lst lst'
     env' <- bind sr n t env
     p' <- check env' BooleanT p
     done t (EFind lst'' n p' d')
@@ -293,8 +308,8 @@ synth env (Syn sr node) = case node of
       lst' <- synth env lst
       x' <- synth env x
       tl <- listItemType lst'
-      t <- maybe (throwError (mismatch x' tl)) pure (joinType tl (exprType x'))
-      lst'' <- if t == tl then pure lst' else check env (ListT t) lst
+      t <- maybe (throwError (mismatch x' tl)) pure (joinIn env tl (exprType x'))
+      lst'' <- refit env (ListT t) lst lst'
       done (ListT t) (mk lst'' x')
 
 synthBin :: TypeEnv -> SourceRange -> BinOp -> Expr -> Expr -> TC TExpr
@@ -374,7 +389,7 @@ synthBin env sr op x y = case op of
         (IntegerT, IntegerT) -> done BooleanT x' y'
         (BooleanT, BooleanT) -> done BooleanT x' y'
         (tx, ty) | Just t <- joinType tx ty, isNumeric t -> do
-          unless (Map.member internalVanishingRadius env) $
+          unless (Map.member internalVanishingRadius (tyVars env)) $
             throwError (MissingName sr internalVanishingRadius)
           let delta = Syn (sr, t) (EBin OpSub x' y')
               norm  = Syn (sr, if t == IntegerT then IntegerT else RealT) (EUn OpAbs delta)
@@ -413,7 +428,7 @@ synthUn env sr op x = case op of
     radius name kw = do
       x' <- check env ComplexT x `catchTypeError` \_ ->
         advise sr ("The argument to `" ++ kw ++ "` should be a real or complex number.")
-      case Map.lookup name env of
+      case Map.lookup name (tyVars env) of
         Just RealT -> done BooleanT x'
         Just t -> throwError (Surprise sr name (anType t) (Expected (anType RealT)))
         Nothing -> throwError (MissingName sr name)
@@ -424,8 +439,8 @@ synthUn env sr op x = case op of
 
 bind :: SourceRange -> String -> FSType -> TypeEnv -> TC TypeEnv
 bind sr n t env
-  | Map.member n env = throwError (AlreadyDefined sr n)
-  | otherwise = pure (Map.insert n t env)
+  | Map.member n (tyVars env) = throwError (AlreadyDefined sr n)
+  | otherwise = pure env { tyVars = Map.insert n t (tyVars env) }
 
 listItem :: TExpr -> TC TExpr
 listItem t = case exprType t of
@@ -437,12 +452,32 @@ listItemType :: TExpr -> TC FSType
 listItemType = fmap exprType . listItem
 
 -- | Join the types of a non-empty list of typed nodes.
-joinAll :: [TExpr] -> TC FSType
-joinAll = \case
+joinAll :: TypeEnv -> [TExpr] -> TC FSType
+joinAll env = \case
   [] -> throwError (Internal (Advice NoSourceRange "joinAll: no items"))
   (x : xs) -> foldM step (exprType x) xs
   where
-    step t x = maybe (throwError (mismatch x t)) pure (joinType t (exprType x))
+    step t x = maybe (throwError (mismatch x t)) pure (joinIn env t (exprType x))
+
+joinIn :: TypeEnv -> FSType -> FSType -> Maybe FSType
+joinIn env = if tyLenient env then structuralJoin else joinType
+
+-- | Like 'joinType', but also joining the item types of lists and the
+-- components of pairs.
+structuralJoin :: FSType -> FSType -> Maybe FSType
+structuralJoin a b = case (a, b) of
+  (ListT x, ListT y) -> ListT <$> structuralJoin x y
+  (Pair x1 x2, Pair y1 y2) -> Pair <$> structuralJoin x1 y1 <*> structuralJoin x2 y2
+  _ -> joinType a b
+
+-- | Make an already-synthesized node fit a (larger) type, by checking the
+-- original expression again at that type. In lenient mode, a node that
+-- can't be made to fit is assumed to have the type anyway.
+refit :: TypeEnv -> FSType -> Expr -> TExpr -> TC TExpr
+refit env ty x x'
+  | exprType x' == ty = pure x'
+  | otherwise = check env ty x `catchError` \err ->
+      if tyLenient env then pure (Syn (synRange x', ty) (synNode x')) else throwError err
 
 -- | How to refer to a node in an error message.
 describe :: ExprF r -> String

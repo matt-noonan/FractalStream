@@ -166,8 +166,69 @@ else:
       runWithX (Scalar ComplexType 0) "w := 1 + 2i\nx <- w" `shouldBe` Right (1 :+ 2)
 
     it "rejects assignments that don't fit the inferred type" $
-      runWithX (Scalar RealType 0) "k := 3\nk <- 0.5\nx <- k"
-        `shouldSatisfy` isLeft
+      runWithX (Scalar RealType 0) "k := 3\nk <- true\nx <- k"
+        `shouldSatisfy` either ("I expected an integer here, but `true` is a truth value" `isInfixOf`) (const False)
+
+  describe "when inferring the types of := declarations" $ do
+
+    it "accounts for later assignments" $
+      runWithX (Scalar RealType 0) "k := 3\nk <- 0.5\nx <- k" `shouldBe` Right 0.5
+
+    it "infers complex iterates" $
+      runWithXY (Scalar ComplexType 0) (Scalar ComplexType (0 :+ 1)) [r|
+z := 0
+repeat up to 3 times:
+  z <- z*z + y
+until false
+x <- z|] `shouldBe` Right (0 :+ (-1))
+
+    it "infers through iterate statements" $
+      runWithXY (Scalar ComplexType 0) (Scalar ComplexType (0 :+ 1)) [r|
+z := 0
+iterate z -> z*z + y until false up to 2 times
+x <- z|] `shouldBe` Right ((-1) :+ 1)
+
+    it "propagates through other inferred variables" $
+      runWithX (Scalar RealType 0) [r|
+a := 1
+b := a
+a <- 0.25
+b <- b + a
+x <- b|] `shouldBe` Right 1.25
+
+    it "widens list item types" $
+      runWithX (Scalar RealType 0) [r|
+xs := [1, 2]
+xs <- append(xs, 0.5)
+x <- xs @ 3|] `shouldBe` Right 0.5
+
+    it "infers through function calls" $
+      runWithX (Scalar RealType 0) [r|
+let half(t) = t / 2
+k := 1
+k <- half(k)
+x <- k|] `shouldBe` Right 0.5
+
+    it "keeps separate declarations in separate scopes apart" $
+      runWithXY (Scalar IntegerType 0) (Scalar RealType 0) [r|
+if true:
+  k := 1
+  x <- k
+else:
+  k := 1
+  k <- 0.5
+  y <- k|] `shouldBe` Right 1
+
+    it "reports uses that conflict with the inferred type" $
+      runWithX (Scalar RealType 0) [r|
+k := 1
+k <- k + 0.5
+j : Z <- k // 2
+x <- j|] `shouldSatisfy` isLeft
+
+    it "rejects declarations whose type can't be determined" $
+      runWithX (Scalar RealType 0) "xs := []\nx <- 1" `shouldSatisfy`
+        either ("can't tell what type" `isInfixOf`) (const False)
 
     it "rejects redeclaring a variable" $
       runWithX (Scalar RealType 0) "x := 3" `shouldSatisfy` isLeft
