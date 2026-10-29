@@ -175,7 +175,7 @@ defineFunction sr funs env f params body = do
   forM_ (Map.toList (freeVars body `Map.withoutKeys` Set.fromList params)) $ \(n, vsr) ->
     unless (Map.member n tenv) $ throwError (MissingName vsr n)
   forM_ (Map.toList (calledFunctions body)) $ \(g, gsr) ->
-    unless (Map.member g funs) $ throwError (MissingName gsr g)
+    unless (Map.member g funs) $ throwError (MissingFunction gsr g)
   pure (Map.insert f (FunDef params body funs) funs)
 
 -- | Replace each call to a user-defined function with local bindings of
@@ -186,7 +186,7 @@ expandCalls funs0 e0 = evalStateT (go funs0 e0) (0 :: Int)
     go funs (Syn sr node) = case node of
       ECall f args -> do
         FunDef params body bodyFuns <-
-          maybe (throwError (MissingName sr f)) pure (Map.lookup f funs)
+          maybe (throwError (MissingFunction sr f)) pure (Map.lookup f funs)
         args' <- traverse (go funs) =<< lift (splitArgs sr f (length params) args)
         k <- get
         put (k + 1)

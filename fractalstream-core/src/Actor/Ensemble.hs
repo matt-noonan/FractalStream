@@ -938,8 +938,6 @@ zeroHaskellValue = \case
   ListType _     -> []
   TextType       -> ""
   PairType x y   -> (zeroHaskellValue x, zeroHaskellValue y)
-  FunctionType NoArgs y -> zeroHaskellValue y
-  FunctionType (Arg _ xs) y -> \_ -> zeroHaskellValue (FunctionType xs y)
 
 -- | Declare one more name in an environment, for use in a 'Kleisli'
 -- chain (@declareE p1 t1 \<=\< declareE p2 t2 \<=\< ...@) building up a
@@ -1490,3 +1488,4 @@ allTemplates =
          Right ens -> pure ens
      _ -> error ("Internal error: template " ++ show name ++
                  " doesn't have a top-level `script:` key.")
+

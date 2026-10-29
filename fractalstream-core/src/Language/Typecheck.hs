@@ -38,6 +38,7 @@ newtype Expected t = Expected t
 data TCError
   = Surprise SourceRange String String (Expected String)
   | MissingName SourceRange String
+  | MissingFunction SourceRange String
   | AlreadyDefined SourceRange String
   | BadConversion SourceRange SomeType (Expected SomeType)
   | Advice SourceRange String
@@ -79,6 +80,7 @@ instance HasErrorLocation TCError where
   errorLocation = \case
     Surprise sr _ _ _          -> sr
     MissingName sr _           -> sr
+    MissingFunction sr _       -> sr
     AlreadyDefined sr _        -> sr
     BadConversion sr _ _       -> sr
     Advice sr _                -> sr
@@ -95,6 +97,8 @@ ppError = concat .  \case
     ["I expected ", wanted, " here, but ", thing, " is ", got, "."]
   MissingName _ name ->
     ["No variable named ", name, " is defined here."]
+  MissingFunction _ name ->
+    ["No function named ", name, " is defined here."]
   AlreadyDefined _ name ->
     ["The variable ", name, " is already defined, and would be re-defined here."]
   BadConversion _ ty (Expected ety) ->

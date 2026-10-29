@@ -12,9 +12,6 @@ module Language.Value
   , typeOfValue
   , getValue
   , pprint
-  , NameIsPresentProof
-  , EnvToArgList
-  , ArgValues(..)
   ) where
 
 import FractalStream.Prelude
@@ -27,7 +24,6 @@ import Language.Environment
 
 ---------------------------------------------------------------------------------
 -- Value
---
 ---------------------------------------------------------------------------------
 
 --type Value = Fix ValueF
@@ -49,37 +45,6 @@ data SomeConstantValue where
                     -> SomeConstantValue
 
 type Value = ValueF (FIX ValueF)
-
-type family EnvToArgList (e :: Environment) :: [FSType] where
-  EnvToArgList '[] = '[]
-  EnvToArgList ( '(_, t) ': e) = t ': EnvToArgList e
-
-data NameIsPresentProof (env :: Environment) (name :: Symbol) (ty :: FSType) :: Exp Type
-type instance Eval (NameIsPresentProof env name ty) = NameIsPresent name ty env
-
-data ArgValues (value :: (Environment, FSType) -> Exp Type) (env :: Environment) (args :: [FSType]) where
-  ArgValues :: forall value env arg args
-             . TypeProxy arg
-            -> Eval (value '(env, arg))
-            -> ArgValues value env args
-            -> ArgValues value env (arg ': args)
-  EndOfArgValues :: forall value env
-                  . ArgValues value env '[]
-
-imapArgs :: EnvironmentProxy env
-         -> (forall j. EnvTypeProxy j -> Eval (a j) -> Eval (b j))
-         -> ArgValues a env args
-         -> ArgValues b env args
-imapArgs env f = \case
-  EndOfArgValues -> EndOfArgValues
-  ArgValues ty arg args -> ArgValues ty (f (envTypeProxy env ty) arg) (imapArgs env f args)
-
-isequenceArgs :: Applicative m
-              => ArgValues (m :.: a) env args
-              -> m (ArgValues a env args)
-isequenceArgs = \case
-  EndOfArgValues -> pure EndOfArgValues
-  ArgValues ty marg args -> ArgValues ty <$> marg <*> isequenceArgs args
 
 data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FSType)) where
 
@@ -105,26 +70,6 @@ data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FS
            -> TypeProxy ty
            -> Eval (value '( '(name, vty) ': env,  ty))
            -> ValueF value '(env, ty)
-
-  Function :: forall boundEnv paramEnv innerEnv env args resultTy value
-            . ( KnownEnvironment boundEnv, KnownEnvironment paramEnv, KnownEnvironment innerEnv
-              , CanAppendTo paramEnv boundEnv, EnvAppend paramEnv boundEnv ~ innerEnv
-              , EnvToArgList paramEnv ~ args, KnownArgs args
-              , KnownType resultTy
-              , KnownEnvironment env)
-           => TypeProxy resultTy
-           -> EnvironmentProxy paramEnv
-           -> EnvironmentProxy boundEnv
-           -> Context (NameIsPresentProof env) boundEnv
-           -> Value '(innerEnv, resultTy)
-           -> ValueF value '(env, 'FunctionT args resultTy)
-
-  Apply :: forall resultTy args env value
-         . (KnownEnvironment env)
-        => TypeProxy ('FunctionT args resultTy)
-        -> Eval (value '(env, 'FunctionT args resultTy))
-        -> ArgValues value env args
-        -> ValueF value '(env, resultTy)
 
   -- Product types and projections
   PairV :: forall t1 t2 env value
@@ -422,8 +367,7 @@ instance IFunctor ValueF where
     Const (Scalar t _) -> EnvType t
     Var _ t _ -> EnvType t
     LocalLet _ _ _ _ t _ -> EnvType t
-    Function t _ _ _ _ -> EnvType (FunctionType argsProxy t)
-    Apply (FunctionType _ rty) _ _ -> EnvType rty
+
     PairV t _ _ -> EnvType t
     ProjV1 t _ -> case t of { PairType t1 _ -> EnvType t1 }
     ProjV2 t _ -> case t of { PairType _ t2 -> EnvType t2 }
@@ -536,8 +480,7 @@ instance IFunctor ValueF where
       LocalLet name vt pf v ty e -> recallIsAbsent pf $
         let innerEnvTy = envTypeProxy (BindingProxy name vt env) ty
         in LocalLet name vt pf (f (withEnv vt) v) ty (f innerEnvTy e)
-      Function rty params bound proofs body -> Function rty params bound proofs body
-      Apply fty fun args -> Apply fty (f (withEnv fty) fun) (imapArgs env f args)
+
       PairV t x y ->
         let (t1, t2) = case t of { PairType tx ty -> (tx, ty) }
         in PairV t (f (withEnv t1) x) (f (withEnv t2) y)
@@ -659,8 +602,6 @@ instance ITraversable ValueF  where
     Var name v pf -> pure (Var name v pf)
     LocalLet name vty pf v ty e ->
       LocalLet name vty pf <$> v <*> pure ty <*> e
-    Function rty param bound proofs body -> pure (Function rty param bound proofs body)
-    Apply fty mfun margs -> Apply fty <$> mfun <*> isequenceArgs margs
 
     PairV t mx my -> PairV t <$> mx <*> my
     ProjV1 t mp   -> ProjV1 t <$> mp
@@ -791,14 +732,9 @@ pprint = indexedFold @PrecString @ValueF go
                   , go @'(Env et', t2) (Const (Scalar t2 y)), ")"]
       ListType (it :: TypeProxy it) ->
         "[" <> intercalate "; " (map (go @'(Env et', it) . Const . Scalar it) c) <> "]"
-      FunctionType _ _ -> showValue t c
-
     Var name _ _ -> symbolVal name
     LocalLet name _ _ v _ e -> concat
       ["let ", symbolVal name, " = ", v, " in ", e]
-    Function _ _ _ _ body -> "function[" ++ pprint body ++ "]"
-    Apply _ f args -> "apply[" ++ f ++ ", " ++ pprintArgs args ++ "]"
-
     PairV _ x y  -> concat ["(", x, ", ", y, ")"]
     ProjV1 _ p   -> concat ["(1st ", p, ")"]
     ProjV2 _ p   -> concat ["(2nd ", p, ")"]
@@ -884,14 +820,6 @@ pprint = indexedFold @PrecString @ValueF go
 
   fun f args = concat [f, "(", intercalate ", " args, ")"]
   binop op x y = concat ["(", x, " ", op, " ", y, ")"]
-
-pprintArgs :: forall env args. ArgValues PrecString env args -> String
-pprintArgs = intercalate ", " . go
-  where
-    go :: forall xs. ArgValues PrecString env xs -> [String]
-    go = \case
-      EndOfArgValues -> []
-      ArgValues _ a xs -> a : go xs
 
 ---------------------------------------------------------------------------------
 -- Utility functions

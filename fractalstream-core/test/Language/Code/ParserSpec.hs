@@ -4,6 +4,7 @@ module Language.Code.ParserSpec (spec) where
 import Test.Hspec
 
 import FractalStream.Prelude
+import Data.List (isInfixOf)
 
 import Language.Type
 import Language.Value
@@ -198,7 +199,7 @@ x <- g(f(5, 2))|] `shouldBe` Right 5.0
       runWithX (Scalar RealType 0) [r|
 if true:
   let f(t) = t
-x <- f(1)|] `shouldSatisfy` isLeft
+x <- f(1)|] `shouldSatisfy` either ("No function named f" `isInfixOf`) (const False)
 
     it "rejects bodies that refer to undefined variables" $
       runWithX (Scalar RealType 0) "let f(t) = t + q\nx <- f(1)" `shouldSatisfy` isLeft

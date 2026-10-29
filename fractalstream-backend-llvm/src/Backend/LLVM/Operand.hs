@@ -161,7 +161,6 @@ toLLVMType = \case
   -- A list is passed as an i8* pointing to the head node (null = empty list).
   ListType {}    -> AST.ptr AST.i8
   TextType       -> AST.i32 -- fixme
-  FunctionType {} -> AST.i32 -- placeholder
 
 toLLVMPtrType :: forall t. TypeProxy t -> AST.Type
 toLLVMPtrType = \case
@@ -178,7 +177,6 @@ toLLVMPtrType = \case
   -- A list slot holds a single i8* (the head pointer).
   ListType {}    -> AST.ptr (AST.ptr AST.i8)
   TextType       -> AST.ptr AST.i32
-  FunctionType {} -> AST.ptr AST.i32
 
 allocaOp :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
          => TypeProxy t

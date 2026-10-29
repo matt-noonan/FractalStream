@@ -140,21 +140,6 @@ evaluate =
     case lemmaEnvTy' (toIndex v) of
       Refl -> evaluator v)
 
-withParams :: TypeProxy ty
-           -> EnvironmentProxy args
-           -> (Context HaskellValue args -> HaskellType ty)
-           -> HaskellType ('FunctionT (EnvToArgList args) ty)
-withParams rt args k = case args of
-  EmptyEnvProxy -> k EmptyContext
-  BindingProxy name ty args' -> \x -> withParams rt args' (\ctx -> k (Bind name ty x ctx))
-
-feed :: TypeProxy resultTy
-     -> ArgValues ScalarFromContext env args
-     -> Eval (ScalarFromContext '(env, FunctionT args resultTy))
-     -> Eval (ScalarFromContext '(env, resultTy))
-feed _ EndOfArgValues fn = fn
-feed rty (ArgValues _ x xs) fn = feed rty xs (\ctx -> fn ctx (x ctx))
-
 -- | Evaluation algebra
 evaluator :: forall et
            . ValueF ScalarFromContext et
@@ -166,12 +151,6 @@ evaluator v0 ctx = case v0 of
     Var _name ty pf -> withKnownType ty (getBinding ctx pf)
     LocalLet name vty pf v _ e ->
       e (recallIsAbsent pf (Bind name vty (v ctx) ctx))
-    Function rty args _ proofs body ->
-      withParams rty args $ \argCtx ->
-        evaluate body (contextAppend argCtx $
-                       mapContext (\(_ :: Proxy name) (ty :: TypeProxy ty) pf ->
-                                      withKnownType ty $ getBinding @name @ty ctx pf) proofs)
-    Apply (FunctionType _ resultTy) fun args -> feed resultTy args fun ctx
 
     PairV _ x y -> (x ctx, y ctx)
     ProjV1 _ p  -> let (x, _) = p ctx in x

@@ -78,9 +78,6 @@ buildValue getExtern arena = indexedFold go'
       Const (Scalar t _) ->
         throwError ("The LLVM backend can not compile constants of type " ++ showType t)
 
-      Function {} -> throwError ("The LLVM backend can not compile bare functions")
-      Apply {} -> throwError ("The LLVM backend can not compile non-inlined function applications")
-
       -- ------------------------------------------------------------------ --
       -- List literal: allocate one node per element in the arena, link them.
       -- ------------------------------------------------------------------ --
