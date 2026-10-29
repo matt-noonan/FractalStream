@@ -63,6 +63,12 @@ Functions that can be used only on complex values are
 `re`, `im`, `arg`, and `conj`. These can also be spelled in capitalized form
 (e.g. `re` -> `Re`)
 
+### Derivatives
+
+`diff(x, expr)` is the derivative of `expr` with respect to the real or
+complex variable `x`. For example, `diff(z, z^3 - 1)` is `3 z^2`.
+Derivatives are computed symbolically, so they are exact.
+
 ### Syntax quirks
 
 FractalStream supports some syntactical shortcuts common in mathematics.
@@ -160,6 +166,16 @@ name can't also be used as a variable.
 
 Functions don't need type annotations: each use of a function works with
 whatever kinds of numbers it is given, so `f(2)` and `f(z)` are both fine.
+
+The derivative of a function of one variable can be written with a prime:
+`f'(z)` means the same as `diff(z, f(z))`, and `f''(z)` is the second
+derivative. (You can also use `′`.) Derivatives of your own functions also
+work inside `diff`, so Newton's method can be written as
+
+```
+let f(z) = z^3 - 1
+iterate z -> z - f(z) / f'(z) until f(z) vanishes
+```
 
 ### Line continuations
 

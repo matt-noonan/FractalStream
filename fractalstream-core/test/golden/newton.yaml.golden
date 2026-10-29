@@ -18,7 +18,7 @@ let `[internal] vanishing radius` = tol in:
                               block:
                                 block:
                                   set `lastZ` := z
-                                  set `z` := (z - (((z ^ 3:R:C) - 1:R:C) / (((3:R:C * exp((log(z) * (3:R:C - 1.0 :+ 0.0)))) * 1.0 :+ 0.0) - 0:R:C)))
+                                  set `z` := (z - (((z ^ 3:R:C) - 1:R:C) / (3:R:C * (z ^ 2:R:C))))
                                 set `[internal] fresh #17` := ([internal] fresh #17 + 1)
                           else:
                             no-op
@@ -58,7 +58,7 @@ let `[internal] vanishing radius` = tol in:
                               block:
                                 block:
                                   set `lastZ` := z
-                                  set `z` := (z - (((z ^ 3:R:C) - 1:R:C) / (((3:R:C * exp((log(z) * (3:R:C - 1.0 :+ 0.0)))) * 1.0 :+ 0.0) - 0:R:C)))
+                                  set `z` := (z - (((z ^ 3:R:C) - 1:R:C) / (3:R:C * (z ^ 2:R:C))))
                                   draw point at lastZ:R^2
                                   draw line from lastZ:R^2 to z:R^2
                                 set `[internal] fresh #15` := ([internal] fresh #15 + 1)
@@ -89,7 +89,7 @@ let `[internal] vanishing radius` = tol in:
                                 block:
                                   block:
                                     set `lastZ` := z
-                                    set `z` := (z - (((z ^ 3:R:C) - 1:R:C) / (((3:R:C * exp((log(z) * (3:R:C - 1.0 :+ 0.0)))) * 1.0 :+ 0.0) - 0:R:C)))
+                                    set `z` := (z - (((z ^ 3:R:C) - 1:R:C) / (3:R:C * (z ^ 2:R:C))))
                                     draw point at lastZ:R^2
                                     draw line from lastZ:R^2 to z:R^2
                                   set `[internal] fresh #18` := ([internal] fresh #18 + 1)

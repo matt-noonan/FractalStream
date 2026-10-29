@@ -259,3 +259,37 @@ x <- f(1)|] `shouldSatisfy` either ("No function named f" `isInfixOf`) (const Fa
 
     it "rejects function names that clash with variables" $
       runWithX (Scalar RealType 0) "let x(t) = t\npass" `shouldSatisfy` isLeft
+
+  describe "when differentiating user-defined functions" $ do
+
+    it "differentiates calls inside diff" $
+      runWithX (Scalar RealType 2) "let f(t) = t^3\nx <- diff(x, f(x))" `shouldBe` Right 12.0
+
+    it "desugars f' to a derivative, at any numeric argument" $ do
+      runWithX (Scalar RealType 0) "let f(t) = t^3\nx <- f'(2)" `shouldBe` Right 12.0
+      runWithX (Scalar RealType 0) "let f(t) = t^3\nx <- f'(0.5)" `shouldBe` Right 0.75
+      runWithXY (Scalar ComplexType 0) (Scalar ComplexType (0 :+ 1)) [r|
+let f(t) = t*t + 1
+x <- f'(y)|] `shouldBe` Right (0 :+ 2)
+
+    it "supports higher derivatives" $
+      runWithX (Scalar RealType 0) "let f(t) = t^3\nx <- f''(2)" `shouldBe` Right 12.0
+
+    it "differentiates through calls to other functions" $
+      runWithX (Scalar RealType 0) [r|
+let f(t) = t^3
+let g(s) = f(s) + 2 s
+x <- g'(1)|] `shouldBe` Right 5.0
+
+    it "differentiates derivatives inside diff" $
+      runWithX (Scalar RealType 2) "let f(t) = t^3\nx <- diff(x, f'(x))" `shouldBe` Right 12.0
+
+    it "differentiates through local bindings by the chain rule" $ do
+      -- f'(2x) = 12 x^2, so its derivative at x = 1 is 24
+      runWithX (Scalar RealType 1) "let f(t) = t^3\nx <- diff(x, f'(2x))" `shouldBe` Right 24.0
+      runWithX (Scalar RealType 1) "let f(t) = t^3\nx <- diff(x, 1 + x f'(2x))" `shouldBe` Right 36.0
+      runWithX (Scalar RealType 2) "let f(t) = t^3\nlet g(s) = f(s + 1)\nx <- diff(x, g(x x))" `shouldBe` Right 300.0
+
+    it "suggests diff for f' of functions of several variables" $
+      runWithX (Scalar RealType 0) "let f(a, b) = a b\nx <- f'(1, 2)" `shouldSatisfy`
+        either ("use diff instead, like diff(a, f(a, b))" `isInfixOf`) (const False)

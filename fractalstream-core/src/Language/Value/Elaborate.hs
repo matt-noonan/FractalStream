@@ -2,8 +2,8 @@
 -- "Language.Value.Typing") into a typed 'Value'. Every node already knows
 -- its own type, so there are no choices left to make here: each node is
 -- built at its own type and then converted to the type its parent wants.
--- Errors raised here (other than from 'derivative') indicate a typing-pass
--- bug, and are reported as internal errors.
+-- Errors raised here indicate a typing-pass bug, and are reported as
+-- internal errors.
 module Language.Value.Elaborate
   ( elaborate
   ) where
@@ -16,7 +16,6 @@ import qualified Data.Map as Map
 import Language.Value
 import Language.Value.Syntax
 import Language.Value.Builtins
-import Language.Value.Derivative
 import Language.Typecheck
 import Language.Parser.SourceRange
 import Data.Color
@@ -152,10 +151,8 @@ elabOwn t (Syn (sr, _) node) = case node of
     OpRGB   -> RGB <$> el RealType x <*> el RealType y <*> el RealType z
     OpCycle -> el RealType x >>= \x' -> cycleColors sr x' y z
 
-  EDiff x f -> do
-    xv <- el t x
-    fv <- el t f
-    derivative (synRange x) xv (synRange f) fv
+  -- replaced by the derivative itself during typing
+  EDiff{} -> inconsistent sr
 
   EText xs -> same sr t TextType $ ConcatText <$> traverse (el t) xs
 
@@ -205,6 +202,9 @@ elabOwn t (Syn (sr, _) node) = case node of
     LocalLet name vty pf v' t <$> elaborate t body
 
   ECall{} -> inconsistent sr
+  EDerivCall{} -> inconsistent sr
+
+  EWiden _ x -> el t x
 
   EAdvice{} -> inconsistent sr
 

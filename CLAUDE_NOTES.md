@@ -217,10 +217,18 @@ Source text goes through three stages before it becomes a typed AST:
 
 User functions (`let f(x, y) = e`, `Language.Code.Typecheck.Functions`) are
 inlined at each call as `ELet`s (typed `LocalLet`s) binding freshly renamed
-parameters, so each call is typechecked at its own argument types. The
+parameters, so each call is typechecked at its own argument types. `f'(a)` /
+`f''(a)` (`EDerivCall`) expands to `let t = a in diff(t, f(t))` with `t` fresh
+and widened to at least real (`EWiden`). The
 grammar must know function names to parse `f(z)` as a call rather than an
 implicit multiplication, so each stanza's tokens are pre-scanned for
 `let NAME(` (`withDefinedFunctions`, stored in `Splices{funNames}`).
+
+`diff(x, e)` is differentiated symbolically on the surface AST
+(`Language.Value.Differentiate`), during typing: the typing pass replaces the
+`EDiff` node by the derivative expression and types that. Local bindings
+(`ELet`, e.g. from inlined calls) are handled by the chain rule, and
+subexpressions that don't mention `x` have derivative 0.
 
 `Language.Value.Typecheck.atType` (typing + elaboration at a requested type)
 is the entry point used throughout the actors.
@@ -237,6 +245,7 @@ Key modules:
 - `Language.Value.Builtins` - builtin function/color tables, internal names
 - `Language.Value.Typing` - typing pass for values
 - `Language.Value.Elaborate` - typed surface AST -> `Value`
+- `Language.Value.Differentiate` - symbolic differentiation (`diff`)
 - `Language.Value.Typecheck` - `atType` entry point
 - `Language.Code.Infer` - inference for `:=` declarations
 - `Language.Code.Typecheck` (+ `.Functions`) - code elaboration, functions
@@ -314,7 +323,7 @@ in `@viewer` / `@tool` bodies can use `x := e` to have a type inferred.
 
 See `LANGUAGE.md` for full docs. Key points:
 - Assignment: `z <- z^2 + C`; new vars: `z : C <- 0`, or `z := 0` (type inferred)
-- Functions: `let f(z) = z^2 + C` (inlined at each call)
+- Functions: `let f(z) = z^2 + C` (inlined at each call); `f'(z)` = `diff(z, f(z))`
 - Types: `Z` (integer), `R` (real), `C` (complex), `Color`, `Boolean`, `Text`, `List of T`
 - Loops: `while`, `until`, `repeat...while`, `iterate z -> expr until/while cond`
 - Special vars: `iterations` (loop count), `stuck` (hit iteration limit)

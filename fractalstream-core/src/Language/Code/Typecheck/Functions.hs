@@ -11,6 +11,7 @@ module Language.Code.Typecheck.Functions
 
 import FractalStream.Prelude
 
+import Language.Type
 import Language.Typecheck
 import Language.Environment (EnvironmentProxy)
 import Language.Value.Syntax
@@ -50,21 +51,57 @@ defineFunction sr funs env f params body = do
   pure (Map.insert f (FunDef params body funs) funs)
 
 -- | Replace each call to a user-defined function with local bindings of
--- its (freshly renamed) parameters around a copy of its body.
+-- its (freshly renamed) parameters around a copy of its body, and each
+-- derivative call @f'(a)@ with @diff(t, f(t))@ where @t@ is a fresh
+-- variable bound to @a@.
 expandCalls :: Funs -> Expr -> TC Expr
 expandCalls funs0 e0 = evalStateT (go funs0 e0) (0 :: Int)
   where
     go funs (Syn sr node) = case node of
       ECall f args -> do
-        FunDef params body bodyFuns <-
-          maybe (throwError (MissingFunction sr f)) pure (Map.lookup f funs)
+        (params, body, bodyFuns) <- lookupFun sr f funs
         args' <- traverse (go funs) =<< lift (splitArgs sr f (length params) args)
-        k <- get
-        put (k + 1)
-        let names = [ "[internal] " ++ f ++ "." ++ p ++ " #" ++ show k | p <- params ]
+        names <- freshNames f params
         body' <- go bodyFuns (rename (Map.fromList (zip params names)) body)
         pure (foldr (\(n, a) b -> Syn sr (ELet n a b)) body' (zip names args'))
+
+      EDerivCall f order args -> do
+        (params, body, bodyFuns) <- lookupFun sr f funs
+        let f' = f ++ replicate order '\''
+        param <- case params of
+          [p] -> pure p
+          p : _ -> advise sr ("Only a function of one variable can be differentiated with "
+                              ++ f' ++ ". To differentiate " ++ f
+                              ++ " with respect to one of its arguments, use diff instead, like "
+                              ++ "diff(" ++ p ++ ", " ++ f
+                              ++ "(" ++ intercalate ", " params ++ ")).")
+          [] -> throwError (Internal (Advice sr (f ++ " has no parameters")))
+        arg <- lift (splitArgs sr f 1 args) >>= \case
+          [a] -> go funs a
+          _ -> throwError (Internal (Advice sr "splitArgs: wrong number of arguments"))
+        t <- freshName f' param
+        let x = Syn sr (EVar t)
+        body' <- go bodyFuns (rename (Map.singleton param t) body)
+        -- the variable must be at least real to differentiate by it
+        pure (Syn sr (ELet t (Syn (synRange arg) (EWiden RealT arg))
+                             (iterate (Syn sr . EDiff x) body' !! order)))
+
       _ -> Syn sr <$> traverse (go funs) node
+
+    lookupFun sr f funs = case Map.lookup f funs of
+      Just (FunDef params body bodyFuns) -> pure (params, body, bodyFuns)
+      Nothing -> throwError (MissingFunction sr f)
+
+    -- fresh names for a function's parameters, for one expansion of a call
+    freshNames f params = do
+      k <- get
+      put (k + 1)
+      pure [ "[internal] " ++ f ++ "." ++ p ++ " #" ++ show k | p <- params ]
+
+    freshName f param = do
+      k <- get
+      put (k + 1)
+      pure ("[internal] " ++ f ++ "." ++ param ++ " #" ++ show k)
 
 -- | A call @f(a, b, c)@ is parsed as @f@ applied to the tuple @(a, b, c)@;
 -- split the tuple according to the number of parameters.
@@ -102,5 +139,6 @@ freeVars (Syn sr node) = case node of
 calledFunctions :: Expr -> Map String SourceRange
 calledFunctions (Syn sr node) = case node of
   ECall f args -> Map.singleton f sr <> foldMap calledFunctions args
+  EDerivCall f _ args -> Map.singleton f sr <> foldMap calledFunctions args
   _ -> foldMap calledFunctions node
 

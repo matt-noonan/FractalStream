@@ -85,6 +85,12 @@ data ExprF r
   | ECall String [r]
     -- ^ A call to a user-defined function; these are expanded into 'ELet's
     -- (see "Language.Code.Typecheck") before typing
+  | EDerivCall String Int [r]
+    -- ^ @f'(x)@, @f''(x)@, ...: a derivative of a user-defined function of
+    -- one variable, by the number of primes; expanded into a 'EDiff' (see
+    -- "Language.Code.Typecheck.Functions") before typing
+  | EWiden FSType r
+    -- ^ The value, converted to at least the given type
   | EAdvice String
     -- ^ A parse that is accepted only to produce a helpful error
   deriving (Show, Functor, Foldable, Traversable)

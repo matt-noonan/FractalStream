@@ -47,7 +47,7 @@ let `[internal] vanishing radius` = minRadius in:
                                               block:
                                                 block:
                                                   set `z` := ((z ^ 2:R:C) + c)
-                                                  set `λ` := ((((2:R:C * exp((log(z) * (2:R:C - 1.0 :+ 0.0)))) * 1.0 :+ 0.0) + 0.0 :+ 0.0) * λ)
+                                                  set `λ` := ((2:R:C * z) * λ)
                                                 set `[internal] fresh #26` := ([internal] fresh #26 + 1)
                                             set `[internal] iteration count` := [internal] fresh #26
                                             set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
@@ -147,7 +147,7 @@ let `[internal] vanishing radius` = minRadius in:
                                           block:
                                             block:
                                               set `z` := ((z ^ 2:R:C) + c)
-                                              set `λ` := ((((2:R:C * exp((log(z) * (2:R:C - 1.0 :+ 0.0)))) * 1.0 :+ 0.0) + 0.0 :+ 0.0) * λ)
+                                              set `λ` := ((2:R:C * z) * λ)
                                             set `[internal] fresh #26` := ([internal] fresh #26 + 1)
                                         set `[internal] iteration count` := [internal] fresh #26
                                         set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)

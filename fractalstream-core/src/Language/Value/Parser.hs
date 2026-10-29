@@ -295,7 +295,11 @@ valueAndArithGrammar funs splices = mdo
                                  _ -> Nothing }))
         <*> atomOrFunAp)
     , node (ECall
-        <$> (tokenMatch (\case { Identifier n | Set.member n funs -> Just n; _ -> Nothing }))
+        <$> funName
+        <*> ((:[]) <$> atomOrFunAp))
+    , node (EDerivCall
+        <$> funName
+        <*> (length <$> some (token Prime))
         <*> ((:[]) <$> atomOrFunAp))
     , node (EBin OpMod
         <$> (token (Identifier "mod") *> token OpenParen *> arith)
@@ -318,6 +322,9 @@ valueAndArithGrammar funs splices = mdo
     ]
 
   atomOrFunAp <- ruleChoice [funAp, atom]
+
+  funName <- rule $
+    tokenMatch (\case { Identifier n | Set.member n funs -> Just n; _ -> Nothing })
 
   atom <- ruleChoice
     [ simpleAtom

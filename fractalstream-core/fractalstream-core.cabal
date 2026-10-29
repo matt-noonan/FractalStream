@@ -91,7 +91,7 @@ library
                        Language.Type
                        Language.Environment
                        Language.Value
-                       Language.Value.Derivative
+                       Language.Value.Differentiate
                        Language.Value.Evaluator
                        Language.Value.Parser
                        Language.Value.Typecheck

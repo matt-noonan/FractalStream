@@ -41,6 +41,7 @@ import Language.Typecheck
 import Language.Parser.SourceRange
 import Language.Value.Syntax
 import Language.Value.Builtins
+import Language.Value.Differentiate
 
 -- | The types of the variables in scope.
 data TypeEnv = TypeEnv
@@ -229,9 +230,15 @@ synth env (Syn sr node) = case node of
     f' <- synth env f
     case filter (not . isNumeric . exprType) [x', f'] of
       bad : _ -> throwError (mismatch bad RealT)
-      [] -> case joinType RealT =<< joinType (exprType x') (exprType f') of
-        Just t -> done t (EDiff x' f')
-        Nothing -> throwError (Internal (Advice sr "unexpected derivative type"))
+      [] -> pure ()
+    var <- case synNode x of
+      EVar n | exprType x' `elem` [RealT, ComplexT] -> pure n
+      _ -> throwError (DiffInputMustBeVariable (synRange x))
+    -- The derivative is at least real, and at least as big as the types
+    -- of the variable and the function.
+    let t = fromMaybe ComplexT (joinType RealT =<< joinType (exprType x') (exprType f'))
+    df <- differentiate var f
+    synth env (Syn sr (EWiden t df))
 
   EText xs -> do
     xs' <- traverse (check env TextT) xs
@@ -300,6 +307,13 @@ synth env (Syn sr node) = case node of
     done (exprType body') (ELet n v' body')
 
   ECall f _ -> throwError (Internal (Advice sr ("unexpanded call to " ++ f)))
+  EDerivCall f _ _ -> throwError (Internal (Advice sr ("unexpanded call to " ++ f ++ "'")))
+
+  EWiden t x -> do
+    x' <- synth env x
+    case joinType t (exprType x') of
+      Just t' -> done t' (EWiden t x')
+      Nothing -> throwError (mismatch x' t)
 
   EAdvice msg -> advise sr msg
 
@@ -521,4 +535,6 @@ describe = \case
   EIndex{} -> "this list item"
   ELet{} -> "the result of this expression"
   ECall f _ -> "the result of " ++ f
+  EDerivCall f order _ -> "the result of " ++ f ++ replicate order '\''
+  EWiden{} -> "this value"
   EAdvice{} -> "this expression"

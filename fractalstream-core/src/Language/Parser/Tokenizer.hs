@@ -62,6 +62,7 @@ data Token
   | Not_
   | Let_
   | ColonEquals
+  | Prime
   | LeftArrow
   | RightArrow
   | Escapes
@@ -189,6 +190,7 @@ opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
   , ("{", OpenBrace), ("}", CloseBrace)
   , (",", Comma), (":", Colon), (";", Semicolon)
   , (":=", ColonEquals), ("≔", ColonEquals)
+  , ("'", Prime), ("′", Prime)
   , (">", GreaterThan), ("<", LessThan)
   , ("===", ExactlyEqual), ("≡", ExactlyEqual)
   , ("==", Equal), ("=", Equal)
