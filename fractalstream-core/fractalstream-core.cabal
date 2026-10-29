@@ -92,6 +92,10 @@ library
                        Language.Value.Evaluator
                        Language.Value.Parser
                        Language.Value.Typecheck
+                       Language.Value.Syntax
+                       Language.Value.Builtins
+                       Language.Value.Typing
+                       Language.Value.Elaborate
                        Language.Value.Transform
                        Language.Draw
                        Language.Parser

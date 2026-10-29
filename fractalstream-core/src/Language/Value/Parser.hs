@@ -13,8 +13,7 @@ module Language.Value.Parser
   , atType
   , typeGrammar
   , envGrammar
-  , ParsedValue(..)
-  , CheckedValue
+  , ParsedValue
   , ValueSplices
   -- * Re-exports
   , TCError
@@ -30,6 +29,7 @@ import qualified Data.Set as Set
 
 import Language.Value
 import Language.Value.Typecheck
+import Language.Value.Syntax
 import Language.Parser
 import Language.Typecheck
 import Language.Parser.Tokenizer
@@ -177,12 +177,12 @@ valueAndArithGrammar splices = mdo
   let toplevel = cast
 
   cast <- ruleChoice
-    [ check (tcCast <$> ite <*> (token Colon *> typ))
+    [ node (ECast <$> ite <*> (token Colon *> typ))
     , ite
     ]
 
   ite <- ruleChoice
-    [ check (tcITE <$> (token If *> scalar)
+    [ node (EITE <$> (token If *> scalar)
                              <*> (token Then *> scalar)
                              <*> (token Else *> ite))
     , scalar
@@ -190,7 +190,7 @@ valueAndArithGrammar splices = mdo
 
   scalar <- ruleChoice [ list, pair ]
 
-  list <- rule (check (tcList <$> (token OpenBracket *> list' <* token CloseBracket)))
+  list <- rule (node (EList <$> (token OpenBracket *> list' <* token CloseBracket)))
 
   list' <- ruleChoice
     [ (:) <$> pOr <*> many (token Comma *> pOr)
@@ -198,110 +198,109 @@ valueAndArithGrammar splices = mdo
     ]
 
   pair <- ruleChoice
-    [ check (tcPair <$> (ite <* token Comma) <*> pair)
+    [ node (EPair <$> (ite <* token Comma) <*> pair)
     , pOr
     ]
 
   pOr <- ruleChoice
-    [ check (tcOr <$> (pAnd <* token Or_) <*> pOr <?> "disjunction")
+    [ node (EBin OpOr <$> (pAnd <* token Or_) <*> pOr <?> "disjunction")
     , pAnd
     ]
 
   pAnd <- ruleChoice
-    [ check (tcAnd <$> (pNot <* token And_) <*> pAnd <?> "conjunction")
+    [ node (EBin OpAnd <$> (pNot <* token And_) <*> pAnd <?> "conjunction")
     , pNot
     ]
 
   pNot <- ruleChoice
-    [ check (tcNot <$> (token Not_ *> arith))
+    [ node (EUn OpNot <$> (token Not_ *> arith))
     , comparison
     ]
 
   comparison <- ruleChoice
-    [ check (tcEql <$> (arith <* token ExactlyEqual) <*> arith)
-    , check (tcAppxEql <$> (arith <* token Equal) <*> arith)
-    , check (tcAppxNEq <$> (arith <* token NotEqual) <*> arith)
-    , check (tcLT  <$> (arith <* token LessThan) <*> arith)
-    , check (tcGT  <$> (arith <* token GreaterThan) <*> arith)
-    , check (tcGTE <$> (arith <* token GreaterThanOrEqual) <*> arith)
-    , check (tcLTE <$> (arith <* token LessThanOrEqual) <*> arith)
-    , check (tcEscapes <$> (arith <* token Escapes))
-    , check (tcVanishes <$> (arith <* token Vanishes))
+    [ node (EBin OpExactEq <$> (arith <* token ExactlyEqual) <*> arith)
+    , node (EBin OpApproxEq <$> (arith <* token Equal) <*> arith)
+    , node (EBin OpApproxNEq <$> (arith <* token NotEqual) <*> arith)
+    , node (EBin OpLt  <$> (arith <* token LessThan) <*> arith)
+    , node (EBin OpGt  <$> (arith <* token GreaterThan) <*> arith)
+    , node (EBin OpGe <$> (arith <* token GreaterThanOrEqual) <*> arith)
+    , node (EBin OpLe <$> (arith <* token LessThanOrEqual) <*> arith)
+    , node (EUn OpEscapes <$> (arith <* token Escapes))
+    , node (EUn OpVanishes <$> (arith <* token Vanishes))
     , arith
     ]
 
   let arith = addOrSub
 
   addOrSub <- ruleChoice
-    [ check (tcAdd <$> (addOrSub <* token Plus)  <*> mulOrDiv)
-    , check (tcSub <$> (addOrSub <* token Minus) <*> mulOrDiv)
+    [ node (EBin OpAdd <$> (addOrSub <* token Plus)  <*> mulOrDiv)
+    , node (EBin OpSub <$> (addOrSub <* token Minus) <*> mulOrDiv)
     , mulOrDiv
     ]
 
   mulOrDiv <- ruleChoice
-    [ check (tcMul <$> (mulOrDiv <* token Times) <*> negated)
-    , check (tcMul <$> concatenatedFunAps <*> funAp)
-    , check (tcMul <$> concatenatedAtoms <*> noFunPower)
-    , check (tcNeg <$> (token Minus *> concatenatedAtoms'))
-    , check (tcDiv <$> (mulOrDiv <* token Divide) <*> negated)
-    , check (tcIDiv <$> (mulOrDiv <* token IntegerDivide) <*> negated)
+    [ node (EBin OpMul <$> (mulOrDiv <* token Times) <*> negated)
+    , node (EBin OpMul <$> concatenatedFunAps <*> funAp)
+    , node (EBin OpMul <$> concatenatedAtoms <*> noFunPower)
+    , node (EUn OpNeg <$> (token Minus *> concatenatedAtoms'))
+    , node (EBin OpDiv <$> (mulOrDiv <* token Divide) <*> negated)
+    , node (EBin OpIDiv <$> (mulOrDiv <* token IntegerDivide) <*> negated)
     , negated
     ]
 
-  concatenatedAtoms' <- rule $ check
-    (tcMul <$> concatenatedAtoms <*> noFunPower)
+  concatenatedAtoms' <- rule $ node
+    (EBin OpMul <$> concatenatedAtoms <*> noFunPower)
 
   concatenatedAtoms <- ruleChoice
-    [ check (tcMul <$> concatenatedAtoms <*> noFunPower)
+    [ node (EBin OpMul <$> concatenatedAtoms <*> noFunPower)
     , noFunPower
-    , check (funAp $> \sr _ ->
-                advise sr "To avoid ambiguity when using implicit multiplication, functions must go to the left of other values")
+    , node (funAp $> EAdvice "To avoid ambiguity when using implicit multiplication, functions must go to the left of other values")
     ]
 
   concatenatedFunAps <- ruleChoice
-    [ check (tcMul <$> concatenatedFunAps <*> funAp)
-    , check (tcMul <$> concatenatedAtoms <*> atom)
+    [ node (EBin OpMul <$> concatenatedFunAps <*> funAp)
+    , node (EBin OpMul <$> concatenatedAtoms <*> atom)
     , funAp
     , atom
     ]
 
   funAp <- ruleChoice
-    [ check (tcCommonFun
+    [ node (EApp . fst
         <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n commonFunctions;
                                  _ -> Nothing }))
         <*> atomOrFunAp)
 
-    , check (tcRealFun
+    , node (EApp . fst
         <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n realFunctions;
                                  _ -> Nothing }))
         <*> atomOrFunAp)
 
-    , check (tcRoundingFun
+    , node (EApp . fst
         <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n roundingFunctions;
                                  _ -> Nothing }))
         <*> atomOrFunAp)
 
-    , check (tcComplexFun
+    , node (EApp . fst
         <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n complexFunctions;
                                  _ -> Nothing }))
         <*> atomOrFunAp)
-    , check (tcMod
+    , node (EBin OpMod
         <$> (token (Identifier "mod") *> token OpenParen *> arith)
         <*> (token Comma *> arith <* token CloseParen))
     ]
 
   negated <- ruleChoice
-    [ check (tcNeg <$> (token Minus *> negated))
+    [ node (EUn OpNeg <$> (token Minus *> negated))
     , power
     ]
 
   power <- ruleChoice
-    [ check (tcPow <$> (atomOrFunAp <* token Caret) <*> power)
+    [ node (EBin OpPow <$> (atomOrFunAp <* token Caret) <*> power)
     , atomOrFunAp
     ]
 
   noFunPower <- ruleChoice
-    [ check (tcPow <$> (atom <* token Caret) <*> power)
+    [ node (EBin OpPow <$> (atom <* token Caret) <*> power)
     , atom
     ]
 
@@ -314,21 +313,21 @@ valueAndArithGrammar splices = mdo
     ]
 
   simpleAtom <- ruleChoice
-    [ check (tcScalar "`true`"  BooleanType True  <$ token True_)
-    , check (tcScalar "`false`" BooleanType False <$ token False_)
-    , check (tcScalar "𝑖" ComplexType (0.0 :+ 1.0) <$ token I)
-    , check (tcScalar "𝑒" RealType (exp 1.0) <$ token Euler)
-    , check (tcScalar "π" RealType pi <$ token Pi)
-    , check (tcScalar "text" TextType <$> quoted)
-    , check (tcIterations <$ token Iterations)
-    , check (tcStuck <$ token Stuck)
-    , check (
-        (\n -> tcScalar (show n) IntegerType (fromIntegral n))
+    [ node (literal "`true`"  BooleanType True  <$ token True_)
+    , node (literal "`false`" BooleanType False <$ token False_)
+    , node (literal "𝑖" ComplexType (0.0 :+ 1.0) <$ token I)
+    , node (literal "𝑒" RealType (exp 1.0) <$ token Euler)
+    , node (literal "π" RealType pi <$ token Pi)
+    , node (literal "text" TextType <$> quoted)
+    , node (EVar internalIterations <$ token Iterations)
+    , node (EVar internalStuck <$ token Stuck)
+    , node (
+        (\n -> literal (show n) IntegerType (fromIntegral n))
         <$> tokenMatch (\case { NumberI n -> Just n; _ -> Nothing }))
-    , check (
-        (\n -> tcScalar (show n) RealType n)
+    , node (
+        (\n -> literal (show n) RealType n)
         <$> tokenMatch (\case { NumberF n -> Just n; _ -> Nothing }))
-    , check (tcAbs <$> (token Bar *> arith <* token Bar))
+    , node (EUn OpAbs <$> (token Bar *> arith <* token Bar))
 
     , splicedValue
 
@@ -346,117 +345,69 @@ valueAndArithGrammar splices = mdo
     (tokenMatch $ \case { Identifier n -> Map.lookup n splices; _ -> Nothing })
     <* token CloseSplice
 
-  var <- rule $ check (
-    fmap tcVar . tokenMatch $ \case
+  var <- rule $ node (
+    fmap EVar . tokenMatch $ \case
         Identifier n | not (reserved n) -> Just n;
         _ -> Nothing)
 
   color <- ruleChoice
-    [ check (
-        fmap (\(n,c) -> tcScalar n ColorType c) . tokenMatch $ \case
+    [ node (
+        fmap (\(n,c) -> literal n ColorType c) . tokenMatch $ \case
             Identifier n -> ("`" ++ n ++ "`",) <$> Map.lookup n colors
             _ -> Nothing)
 
-    , check (tcDark <$> (token (Identifier "dark") *> atom))
-    , check (tcLight <$> (token (Identifier "light") *> atom))
-    , check (tcInvert <$> (token (Identifier "invert") *> atom))
-    , check (
-        tcBlend <$> (token (Identifier "blend") *> (token OpenParen *> arith))
+    , node (EUn OpDark <$> (token (Identifier "dark") *> atom))
+    , node (EUn OpLight <$> (token (Identifier "light") *> atom))
+    , node (EUn OpInvert <$> (token (Identifier "invert") *> atom))
+    , node (
+        EColor3 OpBlend <$> (token (Identifier "blend") *> (token OpenParen *> arith))
                 <*> (token Comma *> atom)
                 <*> (token Comma *> atom <* token CloseParen))
-    , check (
-        tcCycle <$> (token (Identifier "cycle") *> (token OpenParen *> arith))
+    , node (
+        EColor3 OpCycle <$> (token (Identifier "cycle") *> (token OpenParen *> arith))
                 <*> (token Comma *> atom)
                 <*> (token Comma *> atom <* token CloseParen))
-    , check (
-        tcRainbow <$> (token (Identifier "rainbow") *>
-                       (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcArenberg <$> (token (Identifier "arenberg") *>
-                       (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcRoma <$> (token (Identifier "romao") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcBam <$> (token (Identifier "bamo") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcBroc <$> (token (Identifier "broco") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcCork <$> (token (Identifier "corko") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcVik <$> (token (Identifier "viko") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcIce <$> (token (Identifier "ice") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcFire <$> (token (Identifier "fire") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcRose <$> (token (Identifier "rose") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcWheat <$> (token (Identifier "wheat") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcForest <$> (token (Identifier "forest") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcOcean <$> (token (Identifier "ocean") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcWinter <$> (token (Identifier "winter") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcSpring <$> (token (Identifier "spring") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcSummer <$> (token (Identifier "summer") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcFall <$> (token (Identifier "fall") *>
-                     (token OpenParen *> arith <* token CloseParen)))
-    , check (
-        tcRGB <$> (token (Identifier "rgb") *> (token OpenParen *> arith))
+    , node (
+        EApp <$> tokenMatch (\case { Identifier n | Map.member n wheels -> Just n; _ -> Nothing })
+             <*> (token OpenParen *> arith <* token CloseParen))
+    , node (
+        EColor3 OpRGB <$> (token (Identifier "rgb") *> (token OpenParen *> arith))
               <*> (token Comma *> arith)
               <*> (token Comma *> arith <* token CloseParen))
     ]
 
-  textConcat <- rule $ check $
-    tcText <$> ((:) <$> (token TextKeyword *> token OpenParen *> toplevel)
+  textConcat <- rule $ node $
+    EText <$> ((:) <$> (token TextKeyword *> token OpenParen *> toplevel)
                     <*> (some (token Comma *> toplevel) <* token CloseParen))
 
   listOp <- ruleChoice
-    [ check (tcJoin <$>
+    [ node (EJoin <$>
              ((:) <$> (token JoinKeyword *> token OpenParen *> toplevel)
                   <*> (some (token Comma *> toplevel) <* token CloseParen)))
-    , check (tcAppend <$> (token AppendKeyword *> token OpenParen *> toplevel)
+    , node (EAppend <$> (token AppendKeyword *> token OpenParen *> toplevel)
                       <*> (token Comma *> toplevel <* token CloseParen))
-    , check (tcPrepend <$> (token PrependKeyword *> token OpenParen *> toplevel)
+    , node (EPrepend <$> (token PrependKeyword *> token OpenParen *> toplevel)
                        <*> (token Comma *> toplevel <* token CloseParen))
-    , check (tcRemove <$> (token RemoveKeyword *> token OpenParen *> toplevel)
+    , node (ERemove <$> (token RemoveKeyword *> token OpenParen *> toplevel)
                       <*> (token Comma *> ident <* token RightArrow)
                       <*> (toplevel <* token CloseParen))
-    , check (tcFind <$> (token FindKeyword *> token OpenParen *> toplevel)
+    , node (EFind <$> (token FindKeyword *> token OpenParen *> toplevel)
                     <*> (token Comma *> ident <* token RightArrow)
                     <*> toplevel
                     <*> (token Comma *> toplevel <* token CloseParen))
-    , check (tcTransform <$> (token TransformKeyword *> token OpenParen *> toplevel)
+    , node (ETransform <$> (token TransformKeyword *> token OpenParen *> toplevel)
                          <*> (token Comma *> ident <* token RightArrow)
                          <*> (toplevel <* token CloseParen))
-    , check (tcRange <$> (token RangeKeyword *> token OpenParen *> toplevel)
+    , node (ERange <$> (token RangeKeyword *> token OpenParen *> toplevel)
                      <*> (token Comma *> toplevel <* token CloseParen))
-    , check (tcLength <$>
+    , node (ELength <$>
              (token LengthKeyword *> token OpenParen *> toplevel <* token CloseParen))
-    , check (tcIndex False <$> (toplevel <* token At) <*> toplevel)
-    , check (tcIndex True  <$> (toplevel <* token AtAt) <*> toplevel)
+    , node (EIndex False <$> (toplevel <* token At) <*> toplevel)
+    , node (EIndex True  <$> (toplevel <* token AtAt) <*> toplevel)
     ]
 
-  diff <- rule $ check $
-    tcDiff <$> (token DiffKeyword *> (token OpenParen *> toplevel))
+  diff <- rule $ node $
+    EDiff <$> (token DiffKeyword *> (token OpenParen *> toplevel))
            <*> (token Comma *> toplevel <* token CloseParen)
 
   ------------------------------------------------------
@@ -472,50 +423,49 @@ valueAndArithGrammar splices = mdo
   ------------------------------------------------------
 
   addOrSubNp <- ruleChoice
-    [ check (tcAdd <$> (addOrSubNp <* token Plus)  <*> mulOrDivNp)
-    , check (tcSub <$> (addOrSubNp <* token Minus) <*> mulOrDivNp)
+    [ node (EBin OpAdd <$> (addOrSubNp <* token Plus)  <*> mulOrDivNp)
+    , node (EBin OpSub <$> (addOrSubNp <* token Minus) <*> mulOrDivNp)
     , mulOrDivNp
     ]
 
   mulOrDivNp <- ruleChoice
-    [ check (tcMul <$> (mulOrDivNp <* token Times) <*> negatedNp)
-    , check (tcMul <$> concatenatedFunApsNp <*> funAp)
-    , check (tcMul <$> concatenatedAtomsNp <*> noFunPowerNp)
-    , check (tcNeg <$> (token Minus *> concatenatedAtomsNp'))
-    , check (tcDiv <$> (mulOrDivNp <* token Divide) <*> negatedNp)
-    , check (tcIDiv <$> (mulOrDivNp <* token IntegerDivide) <*> negatedNp)
+    [ node (EBin OpMul <$> (mulOrDivNp <* token Times) <*> negatedNp)
+    , node (EBin OpMul <$> concatenatedFunApsNp <*> funAp)
+    , node (EBin OpMul <$> concatenatedAtomsNp <*> noFunPowerNp)
+    , node (EUn OpNeg <$> (token Minus *> concatenatedAtomsNp'))
+    , node (EBin OpDiv <$> (mulOrDivNp <* token Divide) <*> negatedNp)
+    , node (EBin OpIDiv <$> (mulOrDivNp <* token IntegerDivide) <*> negatedNp)
     , negatedNp
     ]
 
-  concatenatedAtomsNp' <- rule $ check
-    (tcMul <$> concatenatedAtomsNp <*> noFunPowerNp)
+  concatenatedAtomsNp' <- rule $ node
+    (EBin OpMul <$> concatenatedAtomsNp <*> noFunPowerNp)
 
   concatenatedAtomsNp <- ruleChoice
-    [ check (tcMul <$> concatenatedAtomsNp <*> noFunPowerNp)
+    [ node (EBin OpMul <$> concatenatedAtomsNp <*> noFunPowerNp)
     , noFunPowerNp
-    , check (funAp $> \sr _ ->
-                advise sr "To avoid ambiguity when using implicit multiplication, functions must go to the left of other values")
+    , node (funAp $> EAdvice "To avoid ambiguity when using implicit multiplication, functions must go to the left of other values")
     ]
 
   concatenatedFunApsNp <- ruleChoice
-    [ check (tcMul <$> concatenatedFunApsNp <*> funAp)
-    , check (tcMul <$> concatenatedAtomsNp <*> atomNp)
+    [ node (EBin OpMul <$> concatenatedFunApsNp <*> funAp)
+    , node (EBin OpMul <$> concatenatedAtomsNp <*> atomNp)
     , funAp
     , atomNp
     ]
 
   negatedNp <- ruleChoice
-    [ check (tcNeg <$> (token Minus *> negatedNp))
+    [ node (EUn OpNeg <$> (token Minus *> negatedNp))
     , powerNp
     ]
 
   powerNp <- ruleChoice
-    [ check (tcPow <$> (atomOrFunApNp <* token Caret) <*> powerNp)
+    [ node (EBin OpPow <$> (atomOrFunApNp <* token Caret) <*> powerNp)
     , atomOrFunApNp
     ]
 
   noFunPowerNp <- ruleChoice
-    [ check (tcPow <$> (atomNp <* token Caret) <*> powerNp)
+    [ node (EBin OpPow <$> (atomNp <* token Caret) <*> powerNp)
     , atomNp
     ]
 
@@ -545,6 +495,8 @@ valueAndArithGrammar splices = mdo
 
   pure (toplevel, addOrSubNp)
 
-check :: Prod r CheckedValue -> Prod r ParsedValue
-check = withSourceRange
-      . fmap @_ @CheckedValue (\v sr -> ParsedValue sr (\ty -> withKnownType ty $ v sr ty))
+node :: Prod r (ExprF ParsedValue) -> Prod r ParsedValue
+node = withSourceRange . fmap (flip mkExpr)
+
+literal :: String -> TypeProxy t -> HaskellType t -> ExprF ParsedValue
+literal d ty v = ELit d (SomeHaskellType ty v)

@@ -10,7 +10,8 @@ import qualified Language.Value.Parser as LVP
 import Language.Code
 import Language.Draw
 import Language.Parser.SourceRange
-import Language.Value.Typecheck (tcVar, internalIterationLimit, InternalIterations, InternalStuck)
+import Language.Value.Typecheck (internalIterationLimit, InternalIterations, InternalStuck)
+import Language.Value.Syntax (Syn(..), ExprF(..), synRange)
 
 import qualified Data.Map as Map
 
@@ -76,9 +77,7 @@ tcGenericLoop :: Bool
 tcGenericLoop negateCondition mkLoop mlimit body cond sr (env :: EnvironmentProxy env) =
   withFresh sr env  IntegerType 0 $ \env' (counterName :: Proxy counterName) pf0 -> recallIsAbsent pf0 $ do
 
-  limitValue <- case mlimit of
-    Just (ParsedValue _ limitFun) -> lift $ limitFun IntegerType
-    Nothing -> lift $ tcVar internalIterationLimit sr IntegerType
+  limitValue <- atType (fromMaybe (Syn sr (EVar internalIterationLimit)) mlimit) IntegerType
 
   withFresh sr env' IntegerType limitValue $ \env'' (limitName :: Proxy limitName) pf' -> recallIsAbsent pf' $ do
 
@@ -125,8 +124,8 @@ tcIterate var expr isWhile cond upto sr env = do
 
 tcPoint :: KnownEnvironment env
         => ParsedValue -> StateT CTCState TC (Value '(env, 'Pair 'RealT 'RealT))
-tcPoint p@(ParsedValue sr _) =
-  tryEachType (Surprise sr "this"
+tcPoint p =
+  tryEachType (Surprise (synRange p) "this"
                "not a complex number or pair of real numbers"
                (Expected "something point-like"))
     [ atType p (PairType RealType RealType)

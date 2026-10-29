@@ -34,11 +34,11 @@ import Data.DynamicValue
 import Data.Codec
 import Language.Value
 import Language.Value.Parser
+import Language.Value.Syntax (mkExpr, ExprF(..))
 import Language.Code hiding (End)
 import Language.Code.Parser
 import Language.Value.Evaluator (evaluate)
 import Language.Parser.SourceRange
-import Language.Typecheck
 
 import Data.Aeson hiding (Value)
 import qualified Data.Map as Map
@@ -303,9 +303,8 @@ layoutToSplices = fmap (fmap finish) . go
       Selection _ var ix _ -> do
         name <- dyn var
         v <- dyn ix
-        let value = Right $ ParsedValue NoSourceRange $ \case
-              IntegerType -> pure (Const (Scalar IntegerType v))
-              t -> throwError (Surprise NoSourceRange "a selection value" "an integer" (Expected $ an t))
+        let value = Right $ mkExpr NoSourceRange
+              (ELit "a selection value" (SomeHaskellType IntegerType v))
         pure (Right <$> ((,) <$> name <*> value) <&> (:[]))
       TextBox _ UIVariable{..} -> do
         name  <- dyn exprName

@@ -25,6 +25,7 @@ module Language.Type
   , KnownArgs(..)
   , withKnownType
   , withType
+  , typeToFS
   ) where
 
 import FractalStream.Prelude
@@ -227,6 +228,27 @@ withType t k = case t of
   RationalT  -> k RationalType
   Pair t1 t2 -> withType t1 $ \ty1 -> withType t2 $ \ty2 -> k (PairType ty1 ty2)
   FunctionT xs y -> withArgs xs $ \xst -> withType y $ \yt -> k (FunctionType xst yt)
+
+-- | Forget the type-level index of a 'TypeProxy'; inverse of 'withType'.
+typeToFS :: TypeProxy t -> FSType
+typeToFS = \case
+  VoidType     -> VoidT
+  BooleanType  -> BooleanT
+  IntegerType  -> IntegerT
+  RealType     -> RealT
+  ComplexType  -> ComplexT
+  ColorType    -> ColorT
+  ImageType    -> ImageT
+  TextType     -> TextT
+  RationalType -> RationalT
+  ListType t   -> ListT (typeToFS t)
+  PairType x y -> Pair (typeToFS x) (typeToFS y)
+  FunctionType xs y -> FunctionT (argsToFS xs) (typeToFS y)
+  where
+    argsToFS :: ArgsProxy xs -> [FSType]
+    argsToFS = \case
+      NoArgs -> []
+      Arg x xs -> typeToFS x : argsToFS xs
 
 withArgs :: forall a. [FSType] -> (forall args. KnownArgs args => ArgsProxy args -> a) -> a
 withArgs [] k = k NoArgs
