@@ -53,6 +53,12 @@ spec = do
           evalAt ty = fmap (`evaluate` EmptyContext) . parseValue EmptyEnvProxy ty
       evalAt TextType "text(\"a\", 1, \"b\", 2.5)" `shouldBe` Right "a1b2.5"
       evalAt (ListType IntegerType) "join([1], [2, 3], [4])" `shouldBe` Right [1, 2, 3, 4]
+      -- escape sequences in text literals
+      evalAt TextType "\"a\\\"b\\\\c\\nd\"" `shouldBe` Right "a\"b\\c\nd"
+      -- a text box's input is the text itself, quotes and all
+      either (const Nothing) (Just . (`evaluate` EmptyContext))
+             (P.parseInputValue @'[] @'TextT "★ \"x\" \\")
+        `shouldBe` Just "★ \"x\" \\"
       -- a pair argument still works, in parentheses
       evalAt TextType "text(\"p\", if true then \"x\" else \"y\", \"q\")" `shouldBe` Right "pxq"
 

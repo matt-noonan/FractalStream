@@ -192,6 +192,11 @@ button "Reset"
           ]] -> typeName cdType `shouldBe` "ℤ"
         other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
 
+    it "decodes escape sequences in text" $
+      shouldParseTo "@config \"C\"\ntext \"say \\\"hi\\\" \\\\ bye\"\n" $ \case
+        [ConfigStanza "C" [ConfigText t]] -> t `shouldBe` "say \"hi\" \\ bye"
+        other -> expectationFailure ("unexpected stanzas: " ++ show (length other))
+
     it "accepts a row: block grouping declarations side by side" $
       shouldParseTo [r|
 @config "Configuration"

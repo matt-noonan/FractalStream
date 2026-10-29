@@ -275,6 +275,22 @@ Key modules:
 The JIT kernel signature (`KernelFun`) takes a pixel buffer, dimensions, step size,
 start coordinates, and an opaque context pointer.
 
+Text (`TextOp`) is a NUL-terminated UTF-8 `i8*`, built in the per-call arena
+(literals and `text(...)` concatenation via strlen/memcpy; arena overflow
+gives the empty string plus the overflow flag). Only tool handlers can
+convert numbers to text: they call back into the host's `showValue` (the
+`text.format` parameter), so output matches the interpreter exactly. `write`
+calls the `draw.write` callback, which forwards to `dsWrite`. Text config
+variables are in/out for tools. `test/Backend/LLVMSpec.hs` checks compiled
+tools against `Actor.Event.interpretedToolExec` on the same scripts.
+
+### Headless overlay text
+
+`Actor.Viewer.Overlay` draws `write` with FontyFruity/Rasterific, using a
+copy of DejaVu Sans embedded via `include-file` in `Actor.Viewer.Overlay.Font`
+(`fractalstream-core/fonts/`). It approximates the wx viewer: 13px text in
+the stroke color, centered on the point (vertically on the line height).
+
 ## UI (`fractalstream-ui-wx`)
 
 Built on `wxWidgets` via the `wx`/`wxcore`/`wxHaskell` Haskell bindings.

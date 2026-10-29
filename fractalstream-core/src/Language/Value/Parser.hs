@@ -70,7 +70,8 @@ parseInputValue :: forall env ty. (KnownEnvironment env, KnownType ty)
                 => String
                 -> Either (Either ParseError TCError) (Value '(env, ty))
 parseInputValue input = case typeProxy @ty of
-  TextType     -> parseValue (show input)
+  -- a text box's contents are the text itself
+  TextType     -> pure (Const (Scalar TextType input))
   ListType ity -> case filter (not . (flip (elem @[]) " \t\n\r")) input of
     "" -> pure (List ity [])
     _  -> parseValue ("[" ++ input ++ "]")

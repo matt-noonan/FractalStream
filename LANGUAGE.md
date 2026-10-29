@@ -593,6 +593,13 @@ concatenates its arguments together:
 write text("Here is ", z) at z
 ```
 
+Inside quoted text, write `\"` for a quotation mark, `\\` for a backslash,
+`\n` for a line break, and `\t` for a tab:
+
+```
+write "She said \"hi\"" at z
+```
+
 
 ### Lists
 

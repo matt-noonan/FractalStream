@@ -162,6 +162,15 @@ tokenizeWithIndentation
             in Group (tokenize' s) is : block ss'
       _ -> error "bad indent"
 
+-- | Decode the escape sequences in a quoted string: a backslash followed by
+-- a quote, another backslash, @n@, or @t@. Any other backslash is kept.
+unescape :: String -> String
+unescape = \case
+  '\\' : c : rest | Just c' <- lookup c escapes -> c' : unescape rest
+  c : rest -> c : unescape rest
+  [] -> []
+  where escapes = [('"', '"'), ('\\', '\\'), ('n', '\n'), ('t', '\t')]
+
 skipString :: SRString -> (SRString, SRString)
 skipString = go []
   where go acc = \case
@@ -254,7 +263,7 @@ tokenize' = \case
   -- Tokenize quotes
   (('"', srq) : etc) ->
     let (body, etc') = skipString etc
-        txt = map fst $ take (length body - 1) body
+        txt = unescape $ map fst $ take (length body - 1) body
         sr = mconcat (srq : map snd body)
     in SRToken (Quoted txt) sr : tokenize' etc'
 
