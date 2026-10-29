@@ -98,7 +98,7 @@ spec = do
 
     let scripts =
           [ ("appending to a list", "pts <- append(pts, z)")
-          , ("transforming a list", "pts <- transform(pts, p ⟼ p p + z)")
+          , ("transforming a list", "pts <- transform(pts, p ⟼ p^2 + z)")
           , ("removing everything", "pts <- remove(pts, p ⟼ true)")
           , ("a list of lists, like spider's legs",
              "legs <- append(legs, [z, 2z])\nlegs <- prepend(legs, pts)\n"

@@ -319,12 +319,6 @@ script: |
       zero_winding := if encloses_zero then 1 else -1
       sqrt_sign := if im integral > 0 then 1 else -1
 
-      if j = 1:
-        use black for line
-        write text("w: ", w) at 1
-        write text("zero_winding: ", zero_winding) at 1 - 0.3 i
-        write text("sqrt_sign: ", sqrt_sign) at 1 - 0.6 i
-
       # Determine if we should pick the preimage inside or outside
       # the contour based on the jth term of the kneading sequence.
       # If it was A, pick the preimage with sqrt_sign. If it was
@@ -340,9 +334,6 @@ script: |
         last_pre <- -2 + 2 sqrt_sign zero_winding sqrt(z_jp1 / z_2)
       else if symbol = B:
         last_pre <- -2 - 2 sqrt_sign zero_winding sqrt(z_jp1 / z_2)
-
-      if j = 1:
-        write text ("last_pre: ", last_pre) at 1 - 0.9 i
 
       # Try to rescale the new spider so that it is roughly
       # the same size as the old one

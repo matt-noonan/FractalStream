@@ -890,9 +890,8 @@ buildComplexViewer contextDyn myTools ViewerFields{..} =
     -- the UI, when the project is opened). A deep typecheck error inside
     -- a lazily-deferred 'Mapped' value that nothing has forced yet would
     -- otherwise surface as a silently-empty/broken viewer rather than a
-    -- build error here -- exactly the failure mode this project has been
-    -- bitten by once before with the migrated-example YAML files (see
-    -- CLAUDE_TODO.md's "Post-hoc bug" writeup).
+    -- build error here -- a failure mode this project has been bitten by
+    -- before, when opening a migrated example silently did nothing.
     codeResult <- getDynamic cvCodeM
     case codeResult of
       Left err -> pure (Left err)

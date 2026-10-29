@@ -47,6 +47,7 @@ import Language.Code.Parser
 import Language.Parser hiding (many)
 import Language.Parser.Tokenizer (Token(..), tokenizeWithIndentation)
 import Language.Value.Evaluator (HaskellValue)
+import Language.Value.Transform (backendRewrites)
 import Language.Code.InterpretIO hiding (update)
 import Language.Draw
 import qualified Data.Map as Map
@@ -270,7 +271,9 @@ defaultToolRunner = ToolRunner $ \sink layer ctx script ->
 
 -- | Run tool handlers in the interpreter, drawing into the given sink.
 interpretedToolExec :: DrawSink -> ToolExec
-interpretedToolExec sink _ code = pure (\c -> run (drawHandlerForSink sink) c code)
+interpretedToolExec sink _ code =
+  let code' = transformValues backendRewrites code
+  in pure (\c -> run (drawHandlerForSink sink) c code')
 
 -- | Adapt a 'DrawSink' into an interpreter 'DrawHandler': evaluate each draw
 -- command's value arguments and forward the concrete values to the sink.

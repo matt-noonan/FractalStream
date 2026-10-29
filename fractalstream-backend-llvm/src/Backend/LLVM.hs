@@ -379,7 +379,7 @@ withJittedViewer :: forall env t. (MissingViewerArgs env, KnownEnvironment env)
                  -> (ViewerFunction env -> IO t) -> IO t
 withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript code0 action = do
   -- Do some basic AST-level optimizations first
-  let code = transformValues (integerPowers . avoidSqrt) code0
+  let code = transformValues backendRewrites code0
   name <- modifyMVar nextId (\n -> pure (n + 1, "kernel_" ++ show n))
   withPrepEnvProxy mPrepScript $ \prepEnvProxy -> do
     m <- either error pure (compileRenderer' prepEnvProxy (fromString name) code)
@@ -571,7 +571,7 @@ compiledToolExec (dylib, session, compileLayer, nextId, _) sink =
     -- Same AST pre-pass as viewers: turn constant-exponent powers (e.g. z²)
     -- into multiplications instead of generic exp/log complex powers, which
     -- otherwise lose precision and shift a Newton iteration off course.
-    let code' = transformValues (integerPowers . avoidSqrt) code
+    let code' = transformValues backendRewrites code
 
     m <- either error pure (compileToolHandler envp (fromString name) code')
     fn <- withContext $ \llctx ->
@@ -707,7 +707,7 @@ withCompiledCode outputProxy outputTy env src run = do
   -- exponent powers (e.g. z^2) must become multiplications rather than
   -- the generic complex power (exp(n*log(z))), which is NaN at z=0 --
   -- exactly the z=0 starting point a Mandelbrot-style iteration uses.
-  let code = transformValues (integerPowers . avoidSqrt) code0
+  let code = transformValues backendRewrites code0
   m <- either error pure (compile outputProxy outputTy code)
   loadLibraryPermanently Nothing
   withContext $ \ctx ->

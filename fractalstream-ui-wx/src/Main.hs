@@ -123,8 +123,6 @@ main = withBackend $ \backend -> start $ do
         | sessionHandle s == h = setValue (sessionVisible s) yn
         | otherwise = pure ()
 
-      editSession _ = putStrLn "TODO, editSession"
-
   welcome ProjectActions{..}
 
 -- | The starting point for "New project": the smallest script that's
@@ -142,9 +140,6 @@ newProjectScript = unlines
   , "else:"
   , "  color <- rainbow(iterations / 20)"
   ]
-
-runTemplate :: a -> b -> c -> IO ()
-runTemplate _ _ _ = putStrLn "TODO: runTemplate"
 
 badYaml :: Frame a -> FilePath -> YAML.ParseException -> IO ()
 badYaml w path e = badProjectFile w path (BadProject "Bad YAML file" (show e))

@@ -12,5 +12,4 @@ data ProjectActions = ProjectActions
   , closeSession :: SessionInfo -> IO ()
   , hideSession  :: SessionInfo -> IO ()
   , showSession  :: SessionInfo -> IO ()
-  , editSession  :: SessionInfo -> IO ()
   }

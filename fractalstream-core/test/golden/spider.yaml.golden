@@ -257,14 +257,6 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                   block:
                                                                     let `sqrt_sign` = if (0:R < im(integral)) then 1 else -1 in:
                                                                       block:
-                                                                        if (j = 1) then:
-                                                                          block:
-                                                                            use Color 0 0 0 for line
-                                                                            write text("w: ", w:Text) at 1:R:C:R^2
-                                                                            write text("zero_winding: ", zero_winding:Text) at (1:R:C - (0.3:C * 0.0 :+ 1.0)):R^2
-                                                                            write text("sqrt_sign: ", sqrt_sign:Text) at (1:R:C - (0.6:C * 0.0 :+ 1.0)):R^2
-                                                                        else:
-                                                                          no-op
                                                                         let `S1` = 0 in:
                                                                           block:
                                                                             let `S2` = 1 in:
@@ -286,11 +278,6 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                       set `last_pre` := (-2:R:C - (((2 * sqrt_sign) * zero_winding):R:C * sqrt((z_jp1 / z_2))))
                                                                                                   else:
                                                                                                     no-op
-                                                                                                if (j = 1) then:
-                                                                                                  block:
-                                                                                                    write text("last_pre: ", last_pre:Text) at (1:R:C - (0.9:C * 0.0 :+ 1.0)):R^2
-                                                                                                else:
-                                                                                                  no-op
                                                                                                 let `scale` = sqrt(10:R) in:
                                                                                                   block:
                                                                                                     let `new_leg` = [(scale:C * last_pre)] in:
