@@ -18,7 +18,7 @@ let `[internal] vanishing radius` = minRadius in:
                             let `[internal] fresh #25` = 0 in:
                               let `[internal] fresh #26` = [internal] iteration limit in:
                                 block:
-                                  do-while (!((||(z - w)|:C| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #25 < [internal] fresh #26)):
+                                  do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #25 < [internal] fresh #26)):
                                     block:
                                       block:
                                         set `z` := ((z ^ 2:R:C) + c)
@@ -43,7 +43,7 @@ let `[internal] vanishing radius` = minRadius in:
                                       let `[internal] fresh #26` = 0 in:
                                         let `[internal] fresh #27` = [internal] iteration limit in:
                                           block:
-                                            do-while (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
+                                            do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
                                               block:
                                                 block:
                                                   set `z` := ((z ^ 2:R:C) + c)
@@ -58,8 +58,8 @@ let `[internal] vanishing radius` = minRadius in:
                                               let `[internal] fresh #28` = 0 in:
                                                 let `[internal] fresh #29` = [internal] iteration limit in:
                                                   block:
-                                                    if ((counter:R < (extra_iterations * period):R) and ([internal] fresh #28 < [internal] fresh #29)) then:
-                                                      do-while ((counter:R < (extra_iterations * period):R) and ([internal] fresh #28 < [internal] fresh #29)):
+                                                    if ((counter < (extra_iterations * period)) and ([internal] fresh #28 < [internal] fresh #29)) then:
+                                                      do-while ((counter < (extra_iterations * period)) and ([internal] fresh #28 < [internal] fresh #29)):
                                                         block:
                                                           block:
                                                             set `w` := ((((w ^ 2:R:C) + c) ^ 2:R:C) + c)
@@ -72,8 +72,8 @@ let `[internal] vanishing radius` = minRadius in:
                                               let `[internal] fresh #28` = 0 in:
                                                 let `[internal] fresh #29` = [internal] iteration limit in:
                                                   block:
-                                                    if (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)) then:
-                                                      do-while (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)):
+                                                    if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)) then:
+                                                      do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)):
                                                         block:
                                                           block:
                                                             set `z` := ((z ^ 2:R:C) + c)
@@ -118,7 +118,7 @@ let `[internal] vanishing radius` = minRadius in:
                         let `[internal] fresh #25` = 0 in:
                           let `[internal] fresh #26` = [internal] iteration limit in:
                             block:
-                              do-while (!((||(z - w)|:C| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #25 < [internal] fresh #26)):
+                              do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #25 < [internal] fresh #26)):
                                 block:
                                   block:
                                     set `z` := ((z ^ 2:R:C) + c)
@@ -143,7 +143,7 @@ let `[internal] vanishing radius` = minRadius in:
                                   let `[internal] fresh #26` = 0 in:
                                     let `[internal] fresh #27` = [internal] iteration limit in:
                                       block:
-                                        do-while (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
+                                        do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
                                           block:
                                             block:
                                               set `z` := ((z ^ 2:R:C) + c)
@@ -158,8 +158,8 @@ let `[internal] vanishing radius` = minRadius in:
                                           let `[internal] fresh #28` = 0 in:
                                             let `[internal] fresh #29` = [internal] iteration limit in:
                                               block:
-                                                if ((counter:R < (extra_iterations * period):R) and ([internal] fresh #28 < [internal] fresh #29)) then:
-                                                  do-while ((counter:R < (extra_iterations * period):R) and ([internal] fresh #28 < [internal] fresh #29)):
+                                                if ((counter < (extra_iterations * period)) and ([internal] fresh #28 < [internal] fresh #29)) then:
+                                                  do-while ((counter < (extra_iterations * period)) and ([internal] fresh #28 < [internal] fresh #29)):
                                                     block:
                                                       block:
                                                         set `w` := ((((w ^ 2:R:C) + c) ^ 2:R:C) + c)
@@ -172,8 +172,8 @@ let `[internal] vanishing radius` = minRadius in:
                                           let `[internal] fresh #28` = 0 in:
                                             let `[internal] fresh #29` = [internal] iteration limit in:
                                               block:
-                                                if (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)) then:
-                                                  do-while (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)):
+                                                if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)) then:
+                                                  do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)):
                                                     block:
                                                       block:
                                                         set `z` := ((z ^ 2:R:C) + c)
@@ -220,7 +220,7 @@ let `[internal] vanishing radius` = minRadius in:
                         let `[internal] fresh #23` = 0 in:
                           let `[internal] fresh #24` = [internal] iteration limit in:
                             block:
-                              do-while (!((||(z - w)|:C| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #23 < [internal] fresh #24)):
+                              do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #23 < [internal] fresh #24)):
                                 block:
                                   block:
                                     set `z` := ((z ^ 2:R:C) + c)
@@ -228,14 +228,14 @@ let `[internal] vanishing radius` = minRadius in:
                                   set `[internal] fresh #23` := ([internal] fresh #23 + 1)
                               set `[internal] iteration count` := [internal] fresh #23
                               set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
-                        if (||(z - w)|:C| < [internal] vanishing radius) then:
+                        if (||(z - w)|| < [internal] vanishing radius) then:
                           block:
                             set `z` := lastZ
                             let `[internal] fresh #23` = 0 in:
                               let `[internal] fresh #24` = [internal] iteration limit in:
                                 block:
-                                  if (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #23 < [internal] fresh #24)) then:
-                                    do-while (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #23 < [internal] fresh #24)):
+                                  if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #23 < [internal] fresh #24)) then:
+                                    do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #23 < [internal] fresh #24)):
                                       block:
                                         block:
                                           set `lastZ` := z
@@ -271,7 +271,7 @@ let `[internal] vanishing radius` = minRadius in:
                           let `[internal] fresh #26` = 0 in:
                             let `[internal] fresh #27` = [internal] iteration limit in:
                               block:
-                                do-while (!((||(z - w)|:C| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #26 < [internal] fresh #27)):
+                                do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #26 < [internal] fresh #27)):
                                   block:
                                     block:
                                       set `z` := ((z ^ 2:R:C) + c)
@@ -279,14 +279,14 @@ let `[internal] vanishing radius` = minRadius in:
                                     set `[internal] fresh #26` := ([internal] fresh #26 + 1)
                                 set `[internal] iteration count` := [internal] fresh #26
                                 set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
-                          if (||(z - w)|:C| < [internal] vanishing radius) then:
+                          if (||(z - w)|| < [internal] vanishing radius) then:
                             block:
                               set `z` := lastZ
                               let `[internal] fresh #26` = 0 in:
                                 let `[internal] fresh #27` = [internal] iteration limit in:
                                   block:
-                                    if (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)) then:
-                                      do-while (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
+                                    if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)) then:
+                                      do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
                                         block:
                                           block:
                                             set `lastZ` := z
@@ -321,7 +321,7 @@ let `[internal] vanishing radius` = minRadius in:
                           let `[internal] fresh #21` = 0 in:
                             let `[internal] fresh #22` = [internal] iteration limit in:
                               block:
-                                do-while (!((||(z - w)|:C| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #21 < [internal] fresh #22)):
+                                do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #21 < [internal] fresh #22)):
                                   block:
                                     block:
                                       set `z` := ((z ^ 2:R:C) + c)
@@ -329,14 +329,14 @@ let `[internal] vanishing radius` = minRadius in:
                                     set `[internal] fresh #21` := ([internal] fresh #21 + 1)
                                 set `[internal] iteration count` := [internal] fresh #21
                                 set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
-                          if (||(z - w)|:C| < [internal] vanishing radius) then:
+                          if (||(z - w)|| < [internal] vanishing radius) then:
                             block:
                               set `z` := lastZ
                               let `[internal] fresh #21` = 0 in:
                                 let `[internal] fresh #22` = [internal] iteration limit in:
                                   block:
-                                    if (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)) then:
-                                      do-while (!(||(z - w)|:C| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
+                                    if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)) then:
+                                      do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
                                         block:
                                           block:
                                             set `lastZ` := z

@@ -233,7 +233,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                           set `r1` := |(z - twist_center)|
                       else:
                         no-op
-                      if (0:R < drag_target:R) then:
+                      if (0 < drag_target) then:
                         block:
                           erase
                           use Color 255 0 0 for line

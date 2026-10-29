@@ -324,9 +324,9 @@ newtype ViewerCompiler = ViewerCompiler
                        -> (ViewerFunction env -> IO t)
                        -> IO t }
 
--- | Resolve a viewer's already-parsed body code ('ParsedCode', deferred
--- over environment the same way 'Language.Code.Parser.parseParsedCode'
--- always produces) against a specific 'ViewerContext'. Takes a
+-- | Resolve a viewer's already-parsed body code ('ParsedCode', the untyped
+-- statement syntax 'Language.Code.Parser.parseParsedCode' produces) against
+-- a specific 'ViewerContext', typechecking it there. Takes a
 -- 'ParsedCode' rather than a raw source string so that a caller which
 -- already has one in hand (e.g. the unified-script builder, which parsed
 -- the whole project file in a single Earley pass) never needs to

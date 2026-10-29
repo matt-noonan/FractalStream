@@ -439,9 +439,10 @@ splitStanzas allToks = case allToks of
 
 -- | Build the splices map that every @\@setup@ stanza's own declarations
 -- make available to the rest of the script, recursing into @row:@
--- blocks. A declaration's raw, not-yet-resolved 'ParsedValue' is what's
--- stored -- 'ParsedValue' is already deferred over both the environment
--- and the type it's checked at, so the same splice works whether it's
+-- blocks. A declaration's raw, not-yet-typechecked 'ParsedValue' is what's
+-- stored -- 'ParsedValue' is untyped syntax, only typechecked where it is
+-- spliced in, against that site's environment and expected type, so the
+-- same splice works whether it's
 -- referenced somewhere expecting its "natural" type or needing a cast,
 -- and whether the reference site's environment is empty or not (that's
 -- what makes a `using`-clause formula field spliceable at all).

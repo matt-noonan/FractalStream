@@ -139,15 +139,20 @@ value :: forall env ty. (KnownEnvironment env, KnownType ty)
       => Funs -> EnvironmentProxy env -> Expr -> TypeProxy ty -> TC (Value '(env, ty))
 value funs _ v ty = expandCalls funs v >>= \v' -> atType v' ty
 
--- | Something point-like: a pair of real numbers, or a complex number.
+-- | Something point-like: a pair of real numbers, or a (real or complex)
+-- number, converted to a pair of reals.
 point :: forall env. KnownEnvironment env
       => Funs -> EnvironmentProxy env -> Expr -> TC (Value '(env, 'Pair 'RealT 'RealT))
-point funs env p =
-  tryEachType (Surprise (synRange p) "this"
-               "not a complex number or pair of real numbers"
-               (Expected "something point-like"))
-    [ value funs env p (PairType RealType RealType)
-    , C2R2 <$> value funs env p ComplexType ]
+point funs env p = do
+  p' <- expandCalls funs p
+  isNumber <- (synth (typeEnvOf env) p' <&> \t -> exprType t `elem` [IntegerT, RealT, ComplexT])
+                `catchError` \_ -> pure False
+  if isNumber
+    then C2R2 <$> atType p' ComplexType
+    else atType p' (PairType RealType RealType) `catchTypeError` \_ ->
+      throwError (Surprise (synRange p) "this"
+                   "not a complex number or pair of real numbers"
+                   (Expected "something point-like"))
 
 ------------------------------------------------------
 -- Loops

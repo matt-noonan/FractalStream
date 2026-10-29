@@ -17,7 +17,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                             let `[internal] fresh #18` = 0 in:
                               let `[internal] fresh #19` = [internal] iteration limit in:
                                 block:
-                                  do-while (!((||(x - 0:R:C)|:C| < [internal] vanishing radius) and (||(y - 1:R:C)|:C| < [internal] vanishing radius)) and ([internal] fresh #18 < [internal] fresh #19)):
+                                  do-while (!((|(x - 0:R:C)| < [internal] vanishing radius) and (|(y - 1:R:C)| < [internal] vanishing radius)) and ([internal] fresh #18 < [internal] fresh #19)):
                                     block:
                                       block:
                                         set `x` := (((y ^ 2:R:C) - 1:R:C) / (y ^ 2:R:C))

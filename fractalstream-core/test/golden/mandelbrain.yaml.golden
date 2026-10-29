@@ -22,7 +22,7 @@ let `[internal] vanishing radius` = tol in:
                                     let `[internal] fresh #21` = 0 in:
                                       let `[internal] fresh #22` = [internal] iteration limit in:
                                         block:
-                                          do-while (!(||(z - lastZ)|:C| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
+                                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
                                             block:
                                               block:
                                                 set `lastZ` := z
@@ -36,22 +36,22 @@ let `[internal] vanishing radius` = tol in:
                                           set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
                                     let `c` = Color 128 128 128 in:
                                       block:
-                                        if (||(z - r1)|:C| < [internal] vanishing radius) then:
+                                        if (|(z - r1)| < [internal] vanishing radius) then:
                                           block:
                                             set `c` := Color 255 0 0
                                         else:
-                                          if (||(z - r2)|:C| < [internal] vanishing radius) then:
+                                          if (|(z - r2)| < [internal] vanishing radius) then:
                                             block:
                                               set `c` := Color 0 180 0
                                           else:
-                                            if (||(z - r3)|:C| < [internal] vanishing radius) then:
+                                            if (|(z - r3)| < [internal] vanishing radius) then:
                                               block:
                                                 set `c` := Color 0 0 255
                                             else:
                                               no-op
                                         let `s` = (cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R) in:
                                           block:
-                                            set `color` := if (||(z - lastZ)|:C| < [internal] vanishing radius) then blend(s, blend(0.333, Color 0 0 0, c), blend(0.333, Color 255 255 255, c)) else Color 0 0 0
+                                            set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, blend(0.333, Color 0 0 0, c), blend(0.333, Color 255 255 255, c)) else Color 0 0 0
 
 
 === viewer 1: Newton's method dynamics
@@ -75,7 +75,7 @@ let `[internal] vanishing radius` = tol in:
                                 let `[internal] fresh #21` = 0 in:
                                   let `[internal] fresh #22` = [internal] iteration limit in:
                                     block:
-                                      do-while (!(||(z - lastZ)|:C| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
+                                      do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
                                         block:
                                           block:
                                             set `lastZ` := z
@@ -89,22 +89,22 @@ let `[internal] vanishing radius` = tol in:
                                       set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
                                 let `c` = Color 128 128 128 in:
                                   block:
-                                    if (||(z - r1)|:C| < [internal] vanishing radius) then:
+                                    if (|(z - r1)| < [internal] vanishing radius) then:
                                       block:
                                         set `c` := Color 255 0 0
                                     else:
-                                      if (||(z - r2)|:C| < [internal] vanishing radius) then:
+                                      if (|(z - r2)| < [internal] vanishing radius) then:
                                         block:
                                           set `c` := Color 0 180 0
                                       else:
-                                        if (||(z - r3)|:C| < [internal] vanishing radius) then:
+                                        if (|(z - r3)| < [internal] vanishing radius) then:
                                           block:
                                             set `c` := Color 0 0 255
                                         else:
                                           no-op
                                     let `s` = (cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R) in:
                                       block:
-                                        set `color` := if (||(z - lastZ)|:C| < [internal] vanishing radius) then blend(s, blend(0.333, Color 0 0 0, c), blend(0.333, Color 255 255 255, c)) else Color 0 0 0
+                                        set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, blend(0.333, Color 0 0 0, c), blend(0.333, Color 255 255 255, c)) else Color 0 0 0
 
 
 --- tool Trace
@@ -129,8 +129,8 @@ let `[internal] vanishing radius` = tol in:
                                 let `[internal] fresh #19` = 0 in:
                                   let `[internal] fresh #20` = [internal] iteration limit in:
                                     block:
-                                      if (!(||(z - lastZ)|:C| < [internal] vanishing radius) and ([internal] fresh #19 < [internal] fresh #20)) then:
-                                        do-while (!(||(z - lastZ)|:C| < [internal] vanishing radius) and ([internal] fresh #19 < [internal] fresh #20)):
+                                      if (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #19 < [internal] fresh #20)) then:
+                                        do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #19 < [internal] fresh #20)):
                                           block:
                                             block:
                                               set `lastZ` := z
@@ -170,8 +170,8 @@ let `[internal] vanishing radius` = tol in:
                                   let `[internal] fresh #22` = 0 in:
                                     let `[internal] fresh #23` = [internal] iteration limit in:
                                       block:
-                                        if (!(||(z - lastZ)|:C| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)) then:
-                                          do-while (!(||(z - lastZ)|:C| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)):
+                                        if (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)) then:
+                                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)):
                                             block:
                                               block:
                                                 set `lastZ` := z

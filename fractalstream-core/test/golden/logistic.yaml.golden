@@ -31,8 +31,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                 let `[internal] fresh #21` = 0 in:
                                   let `[internal] fresh #22` = [internal] iteration limit in:
                                     block:
-                                      if (!(||(x - x0)|:C| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)) then:
-                                        do-while (!(||(x - x0)|:C| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
+                                      if (!(|(x - x0)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)) then:
+                                        do-while (!(|(x - x0)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
                                           block:
                                             block:
                                               set `x` := ((r * x) * (1:R - x))

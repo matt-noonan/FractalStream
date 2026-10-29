@@ -12,9 +12,12 @@
 -- fallback; "Language.Value.Elaborate" then builds the typed AST from the
 -- decorated tree, inserting the conversions at node boundaries.
 --
--- The rules deliberately mirror the older closure-based typechecker, so
--- that elaboration produces the same typed ASTs it did (down to the
--- placement of conversions).
+-- The rules mirror the older closure-based typechecker (which these
+-- replaced), so that elaboration produces the same typed ASTs it did, down
+-- to the placement of conversions -- except for comparisons, which now use
+-- integer comparison for integers, and `escapes`/`vanishes`/@=@, which now
+-- take real absolute values of real numbers rather than first converting
+-- them to complex numbers.
 module Language.Value.Typing
   ( TypeEnv(..)
   , typeEnvOf
@@ -381,7 +384,7 @@ synthBin env sr op x y = case op of
     notReal = advise sr "Arguments to a comparison must be integers or real numbers."
 
     -- Integers and truth values are compared exactly; other numbers are
-    -- compared up to the vanishing radius, as @|x - y| vanishes@.
+    -- compared up to the vanishing radius, as @(x - y) vanishes@.
     approx wrap = do
       x' <- synth env x
       y' <- synth env y
@@ -392,8 +395,7 @@ synthBin env sr op x y = case op of
           unless (Map.member internalVanishingRadius (tyVars env)) $
             throwError (MissingName sr internalVanishingRadius)
           let delta = Syn (sr, t) (EBin OpSub x' y')
-              norm  = Syn (sr, if t == IntegerT then IntegerT else RealT) (EUn OpAbs delta)
-          pure (wrap (Syn (sr, BooleanT) (EUn OpVanishes norm)))
+          pure (wrap (Syn (sr, BooleanT) (EUn OpVanishes delta)))
         _ -> advise sr ("Arguments to " ++ (if op == OpApproxEq then "=" else "≠")
                         ++ " must be of some comparable type.")
 
@@ -426,8 +428,10 @@ synthUn env sr op x = case op of
     done t x' = pure (Syn (sr, t) (EUn op x'))
 
     radius name kw = do
-      x' <- check env ComplexT x `catchTypeError` \_ ->
-        advise sr ("The argument to `" ++ kw ++ "` should be a real or complex number.")
+      let notNumber :: TC a
+          notNumber = advise sr ("The argument to `" ++ kw ++ "` should be a real or complex number.")
+      x' <- (synth env x >>= \x' -> if isNumeric (exprType x') then pure x' else notNumber)
+              `catchTypeError` \_ -> notNumber
       case Map.lookup name (tyVars env) of
         Just RealT -> done BooleanT x'
         Just t -> throwError (Surprise sr name (anType t) (Expected (anType RealT)))

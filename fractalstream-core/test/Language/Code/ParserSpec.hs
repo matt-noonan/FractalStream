@@ -16,17 +16,6 @@ import Data.Color
 
 import Text.RawString.QQ
 
-{-
-splices :: Splices
-splices = Map.singleton internalIterationLimit (ParsedValue NoSourceRange f)
-  where
-    f :: (forall env ty. (KnownEnvironment env, KnownType ty)
-      => TypeProxy ty
-      -> TC (Value '(env, ty)))
-    f = \case
-      IntegerType -> pure (Const $ Scalar IntegerType 100)
-      _ -> error "internal error"
--}
 runWithX :: forall xt
           . Scalar xt
          -> String

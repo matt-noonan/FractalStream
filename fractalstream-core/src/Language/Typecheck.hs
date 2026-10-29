@@ -3,8 +3,6 @@ module Language.Typecheck
   , Expected(..)
   , TCError(..)
   , internal
-  , tryEach
-  , tryEachType
   , isTypeError
   , catchTypeError
   , advise
@@ -51,20 +49,6 @@ internal :: TCError -> TCError
 internal e = case e of
   Internal _ -> e
   _ -> Internal e
-
-tryEach :: MonadError TCError m => TCError -> [m a] -> m a
-tryEach failure = go
-  where
-    go = \case
-      [] -> throwError failure
-      (x:xs) -> catchError x (\_ -> go xs)
-
-tryEachType :: MonadError TCError m => TCError -> [m a] -> m a
-tryEachType failure = go
-  where
-    go = \case
-      [] -> throwError failure
-      (x:xs) -> catchError x (\e -> if isTypeError e then go xs else throwError e)
 
 catchTypeError :: MonadError TCError m => m a -> (TCError -> m a) -> m a
 catchTypeError x action =

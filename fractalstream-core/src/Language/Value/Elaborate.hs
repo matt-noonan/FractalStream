@@ -97,20 +97,18 @@ elabOwn t (Syn (sr, _) node) = case node of
       _ -> inconsistent sr
     OpOr  -> same sr t BooleanType $ Or  <$> el t x <*> el t y
     OpAnd -> same sr t BooleanType $ And <$> el t x <*> el t y
-    OpExactEq -> same sr t BooleanType $
-      case joinType' (exprType x) (exprType y) of
-        ComplexT -> Eql ComplexType <$> el ComplexType x <*> el ComplexType y
-        _        -> Eql RealType    <$> el RealType x    <*> el RealType y
+    OpExactEq -> same sr t BooleanType $ withType (joinType' (exprType x) (exprType y)) $ \et ->
+      Eql et <$> el et x <*> el et y
     -- Only exact (integer / truth value) comparisons are left at this
     -- point; the typing pass rewrote the rest in terms of `vanishes`.
     OpApproxEq  -> same sr t BooleanType $ withType (exprType x) $ \et ->
       Eql et <$> el et x <*> el et y
     OpApproxNEq -> same sr t BooleanType $ withType (exprType x) $ \et ->
       NEq et <$> el et x <*> el et y
-    OpLt -> same sr t BooleanType $ LTF <$> el RealType x <*> el RealType y
-    OpGt -> same sr t BooleanType $ LTF <$> el RealType y <*> el RealType x
-    OpGe -> same sr t BooleanType $ Not <$> (LTF <$> el RealType x <*> el RealType y)
-    OpLe -> same sr t BooleanType $ Not <$> (LTF <$> el RealType y <*> el RealType x)
+    OpLt -> same sr t BooleanType $ lessThan x y
+    OpGt -> same sr t BooleanType $ lessThan y x
+    OpGe -> same sr t BooleanType $ Not <$> lessThan x y
+    OpLe -> same sr t BooleanType $ Not <$> lessThan y x
 
   EUn op x -> case op of
     OpNeg -> case t of
@@ -125,9 +123,9 @@ elabOwn t (Syn (sr, _) node) = case node of
       ComplexT -> same sr t RealType    $ AbsC <$> el ComplexType x
       _ -> inconsistent sr
     OpEscapes -> same sr t BooleanType $
-      LTF <$> variable sr internalEscapeRadius RealType <*> (AbsC <$> el ComplexType x)
+      LTF <$> variable sr internalEscapeRadius RealType <*> absValue x
     OpVanishes -> same sr t BooleanType $
-      LTF <$> (AbsC <$> el ComplexType x) <*> variable sr internalVanishingRadius RealType
+      LTF <$> absValue x <*> variable sr internalVanishingRadius RealType
     OpDark -> same sr t ColorType $
       Blend (Const $ Scalar RealType 0.333) (Const $ Scalar ColorType black) <$> el t x
     OpLight -> same sr t ColorType $
@@ -213,6 +211,18 @@ elabOwn t (Syn (sr, _) node) = case node of
   where
     el :: forall u. TypeProxy u -> TExpr -> TC (Value '(env, u))
     el = elaborate
+
+    -- integers are compared as integers, anything else as real numbers
+    lessThan :: TExpr -> TExpr -> TC (Value '(env, 'BooleanT))
+    lessThan a b
+      | exprType a == IntegerT && exprType b == IntegerT =
+          LTI <$> el IntegerType a <*> el IntegerType b
+      | otherwise = LTF <$> el RealType a <*> el RealType b
+
+    absValue :: TExpr -> TC (Value '(env, 'RealT))
+    absValue a
+      | exprType a == ComplexT = AbsC <$> el ComplexType a
+      | otherwise = AbsF <$> el RealType a
 
     arith :: ArithFun 'IntegerT -> ArithFun 'RealT -> ArithFun 'ComplexT
           -> TExpr -> TExpr -> TC (Value '(env, t))

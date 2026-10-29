@@ -358,8 +358,8 @@ withBookkeeping env splices (pMaxIters, pMaxRadius, pMinRadius) action = withEnv
     code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
     pure code'
 
--- | Apply an already-'Earley'-parsed script body to a concrete environment,
--- running its (deferred) typechecking phase. This is the tail end of
+-- | Typecheck an already-'Earley'-parsed script body in a concrete
+-- environment. This is the tail end of
 -- 'parseCode', minus the tokenize-and-parse step, for use when the body's
 -- 'ParsedCode' was already recovered as part of a larger single parse (e.g.
 -- a whole multi-block tool script) rather than from its own separate
@@ -638,8 +638,8 @@ parseUnitScript _splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx body
 ------------------------------------------------------------
 
 -- | One block's contribution to a tool's combined event handler. Deferred
--- not just over the final environment (the tool's variable context), the
--- same way 'ParsedCode' defers over its environment, but also over the
+-- not just over the final environment (the tool's variable context), which
+-- the block's 'ParsedCode' is typechecked against, but also over the
 -- default coordinate\/iteration-limits\/pixel-size-variable that a header
 -- omitting @at ...@\/@from ... to ...@ falls back on -- so that
 -- 'toolBlocksGrammar' can be built /once/, independent of which viewer a

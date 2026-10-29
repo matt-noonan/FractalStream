@@ -123,6 +123,44 @@ the unicode blackboard bold variants `ℤ`, `ℝ`, and `ℂ`, or the full names 
 
 Lists of values of type `x` have the type `List of x`.
 
+You can also leave the type out, and let FractalStream work it out, by
+using `:=` (or `≔`) instead:
+
+```
+z := 0
+iterate z -> z^2 + C until z escapes
+```
+
+The variable's type is the smallest one that fits both its initial value
+*and* everything that is later assigned to it, so here `z` is complex
+(assuming `C` is), even though its initial value `0` is an integer.
+Similarly, a list starting out as `xs := [1, 2]` becomes a list of reals if
+you later `append(xs, 0.5)` to it. An empty list `[]` gives no clue about
+what kind of items it will hold, so a variable starting out empty needs a
+type annotation, like `xs : List of R <- []`.
+
+A new variable can be used in the rest of the block it is declared in.
+
+### Defining functions
+
+To define your own function, use `let`:
+
+```
+let f(z) = z^2 + C
+let g(a, b) = a * f(b) - b
+iterate z -> g(2, z) until z escapes
+```
+
+The body of a function is a single expression, and it can use any variables
+and functions that are defined where the function is defined. A function's
+parameters are separate from any variables with the same name, so `f`'s
+parameter `z` above has nothing to do with the viewer's own variable `z`.
+A function can be used in the rest of the block it is defined in, and its
+name can't also be used as a variable.
+
+Functions don't need type annotations: each use of a function works with
+whatever kinds of numbers it is given, so `f(2)` and `f(z)` are both fine.
+
 ### Line continuations
 
 If you have a very long command, it might be convenient to split it across
