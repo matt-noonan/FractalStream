@@ -356,8 +356,8 @@ See `LANGUAGE.md` for full docs. Key points:
 - Each package has its own `stack.yaml` (resolver `lts-24.12`); build and test
   from a package directory, e.g. `cd fractalstream-core && stack test`.
   `cd fractalstream-ui-headless && stack test` runs the core, LLVM backend, and
-  headless suites together. (The top-level `stack.yaml`, still on `lts-17.5`,
-  is stale.)
+  headless suites together. There is no top-level `stack.yaml`; CI builds the
+  app from `fractalstream-ui-wx` (see `.github/workflows/`).
 - wxHaskell is a local path dependency: `../wxHaskell/wx`, `../wxHaskell/wxcore`, etc.
 - LLVM backend requires shared LLVM (`shared-llvm: true` flag on `llvm-hs`)
 - `-threaded -rtsopts -with-rtsopts=-N` for parallel rendering
