@@ -17,7 +17,7 @@ let `[internal] vanishing radius` = tol in:
                             block:
                               block:
                                 set `lastZ` := z
-                                set `z` := (z - ((((z - a) * (z - b)) * (z - c)) / (((z - c) * ((z - b) + (z - a))) + ((z - a) * (z - b)))))
+                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - a) * ([internal] f.z #1 - b)) * ([internal] f.z #1 - c)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - c) * (([internal] f'.z #2 - b) + ([internal] f'.z #2 - a))) + (([internal] f'.z #2 - a) * ([internal] f'.z #2 - b)))))
                               set `[internal] fresh #22` := ([internal] fresh #22 + 1)
                           set `[internal] iteration count` := [internal] fresh #22
                           set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
@@ -64,7 +64,7 @@ let `[internal] vanishing radius` = tol in:
                             block:
                               block:
                                 set `lastZ` := z
-                                set `z` := (z - ((((z - a) * (z - b)) * (z - c)) / (((z - c) * ((z - b) + (z - a))) + ((z - a) * (z - b)))))
+                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - a) * ([internal] f.z #1 - b)) * ([internal] f.z #1 - c)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - c) * (([internal] f'.z #2 - b) + ([internal] f'.z #2 - a))) + (([internal] f'.z #2 - a) * ([internal] f'.z #2 - b)))))
                                 draw point at lastZ:R^2
                                 draw line from lastZ:R^2 to z:R^2
                               set `[internal] fresh #20` := ([internal] fresh #20 + 1)
@@ -92,7 +92,7 @@ let `[internal] vanishing radius` = tol in:
                               block:
                                 block:
                                   set `lastZ` := z
-                                  set `z` := (z - ((((z - a) * (z - b)) * (z - c)) / (((z - c) * ((z - b) + (z - a))) + ((z - a) * (z - b)))))
+                                  set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - a) * ([internal] f.z #1 - b)) * ([internal] f.z #1 - c)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - c) * (([internal] f'.z #2 - b) + ([internal] f'.z #2 - a))) + (([internal] f'.z #2 - a) * ([internal] f'.z #2 - b)))))
                                   draw point at lastZ:R^2
                                   draw line from lastZ:R^2 to z:R^2
                                 set `[internal] fresh #23` := ([internal] fresh #23 + 1)

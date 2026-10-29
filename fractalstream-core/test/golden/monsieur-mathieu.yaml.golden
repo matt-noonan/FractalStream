@@ -16,11 +16,11 @@ let `[internal] vanishing radius` = tol in:
                           block:
                             let `ee` = (((-1573:R:C * a) / 567:R:C) + (605:R / 1701:R):C) in:
                               block:
-                                let `f` = (-17:R / 9:R):C in:
+                                let `f` = (-17:R / 9:R) in:
                                   block:
                                     let `k` = (((-16192:R:C * a) / 301327047:R:C) + (10880:R / 903981141:R):C) in:
                                       block:
-                                        set `z` := (((((((z ^ 3:R:C) - (z ^ 2:R:C)) + (a * z)) + b) ^ 3:R:C) * ((((z ^ 3:R:C) + (f * (z ^ 2:R:C))) + (d * z)) + ee)) / (k * z))
+                                        set `z` := (((((((z ^ 3:R:C) - (z ^ 2:R:C)) + (a * z)) + b) ^ 3:R:C) * ((((z ^ 3:R:C) + (f:C * (z ^ 2:R:C))) + (d * z)) + ee)) / (k * z))
                                         if (|(z - tol:C)| < [internal] vanishing radius) then:
                                           block:
                                             set `color` := Color 0 0 255

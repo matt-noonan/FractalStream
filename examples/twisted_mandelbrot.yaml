@@ -4,6 +4,33 @@ script: |
   let f(z) = z^2 + C
   let stop(z) = |z| > escape_radius
 
+  # one step of f, followed by a Dehn twist in the annulus around
+  # twist_center with radii r0 and r1
+  define twist_step:
+    z ⭠ f(z)
+    d ≔ |z - twist_center|
+    if d > r0 and d < r1:
+      theta ≔ 2π (d - r0) / (r1 - r0)
+      z ⭠ e^(i theta) (z - twist_center) + twist_center
+
+  define shade:
+    if stuck:
+      color ⭠ black
+    else:
+      c1 ≔ if im(z) > 0 then blue else yellow
+      c2 ≔ if im(z) > 0 then green else red
+      s ≔ iterations + 1 - (log (log (|z|²) / (2 log escape_radius))) / log 2
+      s ⭠ cos (s π / 10)²
+      color ⭠ blend (s, c1, c2)
+
+  # show the twist's center and annulus
+  define draw_twist:
+    use red for stroke
+    draw point at twist_center
+    use white for stroke
+    draw circle at twist_center with radius r0
+    draw circle at twist_center with radius r1
+
   @config "Configuration"
   C : C as "Selected value of C:" <- -0.1226 + 0.7449i
   drag_target : Z as "Dehn tool drag target: " <- 0
@@ -14,71 +41,38 @@ script: |
     r0 : R as "Inner radius" <- 0.2
     r1 : R as "Outer radius" <- 0.5
 
-  @viewer "Parameter space" var=C size=512x512
-  z : ℂ ⭠ 0
+  @viewer "Parameter space" var=C
+  z ≔ 0
   until stop(z):
-    z ⭠ f(z)
-    d : ℝ ⭠ |z - twist_center|
-    if d > r0 and d < r1:
-      theta : ℝ ⭠ 2 pi (d - r0) / (r1 - r0)
-      z ⭠ e^(i theta) (z - twist_center) + twist_center
+    run twist_step
+  run shade
 
-  if stuck:
-    color ⭠ black
-  else:
-    c1 : Color ⭠ if im(z) > 0 then blue else yellow
-    c2 : Color ⭠ if im(z) > 0 then green else red
-    s : ℝ ⭠ iterations + 1 - (log (log (|z|²) / (2 log escape_radius))) / log 2
-    s ⭠ cos (s π / 10)²
-    color ⭠ blend (s, c1, c2)
-
-  @viewer "Twisted dynamical plane" var=z size=512x512 position=620x104
+  @viewer "Twisted dynamical plane" position=620x104
   until stop(z):
-    z ⭠ f(z)
-    d : ℝ ⭠ |z - twist_center|
-    if d > r0 and d < r1:
-      theta : ℝ ⭠ 2π (d - r0) / (r1 - r0)
-      z ⭠ e^(i theta) (z - twist_center) + twist_center
-
-  if stuck:
-    color ⭠ black
-  else:
-    c1 : Color ⭠ if im(z) > 0 then blue else yellow
-    c2 : Color ⭠ if im(z) > 0 then green else red
-    s : ℝ ⭠ iterations + 1 - (log (log (|z|²) / (2 log escape_radius))) / log 2
-    s ⭠ cos (s π / 10)²
-    color ⭠ blend (s, c1, c2)
+    run twist_step
+  run shade
 
   @tool "Trace" for="Twisted dynamical plane" shortcut=t
   on deactivated:
     erase
   on click-or-drag:
-    prevZ : ℂ ⭠ z
-    k : ℤ ⭠ 0
+    prevZ ≔ z
     erase
     until stop(z) up to 100 times:
       prevZ ⭠ z
       draw point at z
-      z ⭠ f(z)
-      d : ℝ ⭠ |z - twist_center|
-      if d > r0 and d < r1:
-        theta : ℝ ⭠ 2π (d - r0) / (r1 - r0)
-        z ⭠ e^(i theta) (z - twist_center) + twist_center
+      run twist_step
       draw line from z to prevZ
 
   @tool "Dehn twist" for="Twisted dynamical plane" shortcut=d
   on activated:
-    use red for stroke
-    draw point at twist_center
-    use white for stroke
-    draw circle at twist_center with radius r0
-    draw circle at twist_center with radius r1
+    run draw_twist
   on deactivated:
     erase
   on drag-finished:
     drag_target ⭠ 0
   on drag from z0 to z:
-    eps : ℝ ⭠ 5 pixel_size
+    eps ≔ 5 pixel_size
     if drag_target = 0:
       if |z0 - twist_center| < eps:
         drag_target ⭠ 1
@@ -95,8 +89,4 @@ script: |
       r1 ⭠ |z - twist_center|
     if drag_target > 0:
       erase
-      use red for stroke
-      draw point at twist_center
-      use white for stroke
-      draw circle at twist_center with radius r0
-      draw circle at twist_center with radius r1
+      run draw_twist

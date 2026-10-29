@@ -9,33 +9,37 @@ let `[internal] vanishing radius` = tol in:
             set `t` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
             let `pixel_size` = [internal] dx in:
               block:
-                let `[internal] fresh #24` = 0 in:
-                  let `[internal] fresh #25` = [internal] iteration limit in:
-                    block:
-                      if (!(|((t ^ 3:R:C) - 1:R:C)| < [internal] vanishing radius) and ([internal] fresh #24 < [internal] fresh #25)) then:
-                        do-while (!(|((t ^ 3:R:C) - 1:R:C)| < [internal] vanishing radius) and ([internal] fresh #24 < [internal] fresh #25)):
-                          block:
-                            block:
-                              set `t` := ((t * (2:R:C + (t ^ 3:R:C))) / ((2:R:C * (t ^ 3:R:C)) + 1:R:C))
-                            set `[internal] fresh #24` := ([internal] fresh #24 + 1)
-                      else:
-                        no-op
-                      set `[internal] iteration count` := [internal] fresh #24
-                      set `[internal] stuck` := ([internal] fresh #24 = [internal] fresh #25)
-                if (|(t - 1:R:C)| < [internal] vanishing radius) then:
+                let `j` = ((-1:R / 2:R):C + ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
                   block:
-                    set `color` := tcolor1
-                else:
-                  if (|(t - ((-1:R / 2:R):C + ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)))| < [internal] vanishing radius) then:
-                    block:
-                      set `color` := tcolor2
-                  else:
-                    if (|(t - ((-1:R / 2:R):C - ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)))| < [internal] vanishing radius) then:
+                    let `jbar` = ((-1:R / 2:R):C - ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
                       block:
-                        set `color` := tcolor3
-                    else:
-                      block:
-                        set `color` := Color 0 0 0
+                        let `[internal] fresh #26` = 0 in:
+                          let `[internal] fresh #27` = [internal] iteration limit in:
+                            block:
+                              if (!(|((t ^ 3:R:C) - 1:R:C)| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)) then:
+                                do-while (!(|((t ^ 3:R:C) - 1:R:C)| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
+                                  block:
+                                    block:
+                                      set `t` := ((t * (2:R:C + (t ^ 3:R:C))) / ((2:R:C * (t ^ 3:R:C)) + 1:R:C))
+                                    set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                              else:
+                                no-op
+                              set `[internal] iteration count` := [internal] fresh #26
+                              set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                        if (|(t - 1:R:C)| < [internal] vanishing radius) then:
+                          block:
+                            set `color` := tcolor1
+                        else:
+                          if (|(t - j)| < [internal] vanishing radius) then:
+                            block:
+                              set `color` := tcolor2
+                          else:
+                            if (|(t - jbar)| < [internal] vanishing radius) then:
+                              block:
+                                set `color` := tcolor3
+                            else:
+                              block:
+                                set `color` := Color 0 0 0
 
 
 === viewer 1: z-plane
@@ -48,13 +52,13 @@ let `[internal] vanishing radius` = tol in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
               block:
-                let `y` = (0.5:C / z) in:
+                let `j` = ((-1:R / 2:R):C + ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
                   block:
-                    let `x` = ((0.5:C * t) / z) in:
+                    let `jbar` = ((-1:R / 2:R):C - ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
                       block:
-                        let `j` = ((-1:R / 2:R):C + ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
+                        let `y` = (0.5:C / z) in:
                           block:
-                            let `jbar` = ((-1:R / 2:R):C - ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
+                            let `x` = ((0.5:C * t) / z) in:
                               block:
                                 let `[internal] fresh #29` = 0 in:
                                   let `[internal] fresh #30` = [internal] iteration limit in:

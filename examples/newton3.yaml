@@ -9,14 +9,19 @@ script: |
   rad : R as "grab radius (px)" <- 5
   drag_target : Z as "Drag target: " <- 0
 
-  @viewer "Roots of {f}" var=z size=512x512 vanish=tol
-  lastZ : C <- 0
+  @common
+  let f(z) = (z - a) (z - b) (z - c)
+  # one step of Newton's method
+  let newton(z) = z - f(z) / f'(z)
+
+  @viewer "Roots of {f}" vanish=tol
+  lastZ := 0
   repeat:
     lastZ <- z
-    z <- z - (z - a) (z - b) (z - c) / diff(z, (z - a) (z - b) (z - c))
+    z <- newton(z)
   while z != lastZ
 
-  col : Color <- yellow
+  col := yellow
   if z = a:
     col <- red
   else if z = b:
@@ -33,11 +38,11 @@ script: |
     erase
 
   on click-or-drag:
-    lastZ : C <- 0
+    lastZ := 0
     erase
     repeat:
       lastZ <- z
-      z <- z - (z - a) (z - b) (z - c) / diff(z, (z - a) (z - b) (z - c))
+      z <- newton(z)
       draw point at lastZ
       draw line from lastZ to z
     while z != lastZ

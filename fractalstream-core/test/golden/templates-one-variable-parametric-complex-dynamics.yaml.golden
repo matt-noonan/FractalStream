@@ -9,11 +9,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
             set `C` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
             let `pixel_size` = [internal] dx in:
               block:
-                let `z0` = 0:R:C in:
+                let `z0` = 0 in:
                   block:
                     let `dynamic` = False in:
                       block:
-                        let `z` = z0 in:
+                        let `z` = z0:R:C in:
                           block:
                             block:
                               block:

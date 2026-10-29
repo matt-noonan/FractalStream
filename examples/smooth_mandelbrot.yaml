@@ -1,11 +1,11 @@
 script: |
-  @viewer "Mandelbrot set with smooth coloring" var=C size=512x512
-  z : ℂ ⭠ 0
+  @viewer "Mandelbrot set with smooth coloring" var=C
+  z ≔ 0
   iterate z ⟼ z² + C until z escapes
 
   if z escaped:
     # see https://linas.org/art-gallery/escape/ray.html
-    m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log escape_radius)) / log 2
+    m ≔ iterations + 1 - log (log (|z|²) / (2 log escape_radius)) / log 2
     color ⭠ blend (2 arctan (m / 20) / pi, red, white)
   else:
     color ⭠ black

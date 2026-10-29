@@ -8,7 +8,7 @@ script: |
   offset : R as "Vertical offset" <- 0.5
 
   @viewer "Mandelbrot set + logistic map bifurcations" var=C size=700x500 center="-0.8 + 0.3 i" pixelSize=0.005
-  z : C <- 0
+  z := 0
 
   # Draw the Mandelbrot set
   iterate z -> z^2 + C until z escapes
@@ -18,11 +18,11 @@ script: |
 
   # Overlay a bifurcation diagram for the logistic map
   if re C >= -2 and re C <= 1/4 and im C > offset and im C < offset + 1:
-    r : R <- 1 + sqrt(1 - 4 re C)
-    x : R <- im C - offset
-    x0 : R <- x
+    r := 1 + sqrt(1 - 4 re C)
+    x := im C - offset
+    x0 := x
     iterate x -> r x (1 - x) while true up to warmup times
-    hit : Boolean <- false
+    hit := false
     until hit up to cycle_length times:
       if |x - x0| < pixel_size:
         hit <- true

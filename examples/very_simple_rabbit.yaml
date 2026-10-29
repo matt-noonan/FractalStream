@@ -1,4 +1,4 @@
 script: |
-  @viewer "Douady rabbit" var=z size=400x425
+  @viewer "Douady rabbit" size=400x425
   iterate z ⟼ z² + -0.12256 + 0.74486 𝑖 until z escapes
   color ⭠ if z escaped then white else black

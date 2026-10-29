@@ -4,8 +4,12 @@ script: |
   collatz_escape_radius : R as "Escape radius:" <- 100
   p : R as "Brightness: " <- 0.5
 
-  @viewer "Collatz sequence" var=z size=512x512 escape=collatz_escape_radius
-  iterate z -> (z/2) (cos (pi z / 2))^2 + (3z + C) (sin (pi z / 2))^2 until z = 1 or z = 0 or z = -1 or z = -5 or z = -17 or z escapes
+  @common
+  # a complex extension of the Collatz map, z/2 or 3z + c depending on parity
+  let step(z, c) = (z/2) (cos (pi z / 2))^2 + (3z + c) (sin (pi z / 2))^2
+
+  @viewer "Collatz sequence" escape=collatz_escape_radius
+  iterate z -> step(z, C) until z = 1 or z = 0 or z = -1 or z = -5 or z = -17 or z escapes
   color <- black
   if z = 1:
     color <- red
@@ -24,10 +28,10 @@ script: |
 
   @tool "Trace" for="Collatz sequence" shortcut=t
   on click-or-drag:
-    prevZ : C <- z
+    prevZ := z
     erase
     until z vanishes:
       prevZ <- z
       draw point at z
-      z <- (z/2) (cos (pi z / 2))^2 + (3z + 1) (sin (pi z / 2))^2
+      z <- step(z, 1)
       draw line from z to prevZ

@@ -1,5 +1,5 @@
 script: |
-  @viewer "Circle" var=z size=512x512
+  @viewer "Circle"
   if |z| < 1:
     color <- red
   else if im z > 0:

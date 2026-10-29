@@ -15,35 +15,37 @@ script: |
   color10 : Color as "jbar" <- blue
   exceptional : Color as "exceptional" <- rgb(1,0.7,0.7)
 
-  @viewer "t-plane" var=t size=512x512 vanish=tol
+  @common
+  # the primitive cube roots of 1
+  j := -1/2 + i sqrt(3) / 2
+  jbar := -1/2 - i sqrt(3) / 2
+
+  @viewer "t-plane" var=t vanish=tol
   while t^3 != 1:
     t <- t (2 + t^3) / (2 t^3 + 1)
 
   if t = 1:
     color <- tcolor1
-  else if t = -1/2 + i sqrt(3) / 2:
+  else if t = j:
     color <- tcolor2
-  else if t = -1/2 - i sqrt(3) / 2:
+  else if t = jbar:
     color <- tcolor3
   else:
     color <- black
 
-  @viewer "z-plane" var=z size=512x512 vanish=tol
-  y : C <- 0.5 / z
-  x : C <- 0.5 * t / z
-
-  j : C <- -1/2 + i sqrt(3) / 2
-  jbar : C <- -1/2 - i sqrt(3) / 2
+  @viewer "z-plane" vanish=tol
+  y := 0.5 / z
+  x := 0.5 * t / z
 
   until x = 0 or x^3 = -1 or x^3 = 1/8:
-    w : C <- -3 x (2 y^3 + x^3) / ((1 - 6 x y) - 4 (x^3 + y^3) + 6 x^2 y^2)
+    w := -3 x (2 y^3 + x^3) / ((1 - 6 x y) - 4 (x^3 + y^3) + 6 x^2 y^2)
     y <- -3 y (2 x^3 + y^3) / ((1 - 6 x y) - 4 (x^3 + y^3) + 6 x^2 y^2)
     x <- w
 
   if x = 0:
     color <- zcol
   else if x = -1:
-    w : C <- (y + 1) / (x - y)
+    w := (y + 1) / (x - y)
     iterate w -> 2 w^3 / 3 + w^2 + 2w + 1/3 until ...
       w escapes or w = j or w = jbar
 
@@ -56,7 +58,7 @@ script: |
     else:
       color <- black
   else if x = -j:
-    w : C <- (y / jbar + 1)/(x/j - y/jbar)
+    w := (y / jbar + 1)/(x/j - y/jbar)
     iterate w -> 2 w^3 / 3 + w^2 + 2w + w/3 until ...
       w escapes or w = j or w = jbar
     if w escapes:
@@ -68,7 +70,7 @@ script: |
     else:
       color <- black
   else if x = -jbar:
-    w : C <- (y/j + 1) / (x/jbar - y/j)
+    w := (y/j + 1) / (x/jbar - y/j)
     iterate w ->  2 w^3 / 3 + w^2 + 2w + 1/3 until ...
       w escapes or w = j or j = jbar
     if w escapes:

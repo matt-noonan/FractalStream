@@ -9,7 +9,7 @@ let `[internal] vanishing radius` = tol in:
             set `a` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
             let `pixel_size` = [internal] dx in:
               block:
-                let `r1` = 1:R:C in:
+                let `r1` = 1 in:
                   block:
                     let `r2` = (-0.5:C + a) in:
                       block:
@@ -26,17 +26,66 @@ let `[internal] vanishing radius` = tol in:
                                             block:
                                               block:
                                                 set `lastZ` := z
-                                                let `f` = (((z - r1) * (z - r2)) * (z - r3)) in:
-                                                  block:
-                                                    let `df` = ((((z - r2) * (z - r3)) + ((z - r1) * (z - r3))) + ((z - r1) * (z - r2))) in:
-                                                      block:
-                                                        set `z` := (z - (f / df))
+                                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
                                               set `[internal] fresh #21` := ([internal] fresh #21 + 1)
                                           set `[internal] iteration count` := [internal] fresh #21
                                           set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
+                                    block:
+                                      block:
+                                        let `c` = Color 128 128 128 in:
+                                          block:
+                                            if (|(z - r1:R:C)| < [internal] vanishing radius) then:
+                                              block:
+                                                set `c` := Color 255 0 0
+                                            else:
+                                              if (|(z - r2)| < [internal] vanishing radius) then:
+                                                block:
+                                                  set `c` := Color 0 180 0
+                                              else:
+                                                if (|(z - r3)| < [internal] vanishing radius) then:
+                                                  block:
+                                                    set `c` := Color 0 0 255
+                                                else:
+                                                  no-op
+                                            let `s` = (cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R) in:
+                                              block:
+                                                set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, blend(0.333, Color 0 0 0, c), blend(0.333, Color 255 255 255, c)) else Color 0 0 0
+
+
+=== viewer 1: Newton's method dynamics
+--- body
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `r1` = 1 in:
+                  block:
+                    let `r2` = (-0.5:C + a) in:
+                      block:
+                        let `r3` = (-0.5:C - a) in:
+                          block:
+                            let `lastZ` = 0:R:C in:
+                              block:
+                                let `[internal] fresh #21` = 0 in:
+                                  let `[internal] fresh #22` = [internal] iteration limit in:
+                                    block:
+                                      do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
+                                        block:
+                                          block:
+                                            set `lastZ` := z
+                                            set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
+                                          set `[internal] fresh #21` := ([internal] fresh #21 + 1)
+                                      set `[internal] iteration count` := [internal] fresh #21
+                                      set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
+                                block:
+                                  block:
                                     let `c` = Color 128 128 128 in:
                                       block:
-                                        if (|(z - r1)| < [internal] vanishing radius) then:
+                                        if (|(z - r1:R:C)| < [internal] vanishing radius) then:
                                           block:
                                             set `c` := Color 255 0 0
                                         else:
@@ -54,59 +103,6 @@ let `[internal] vanishing radius` = tol in:
                                             set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, blend(0.333, Color 0 0 0, c), blend(0.333, Color 255 255 255, c)) else Color 0 0 0
 
 
-=== viewer 1: Newton's method dynamics
---- body
-let `[internal] vanishing radius` = tol in:
-  let `[internal] escape radius` = escape_radius in:
-    let `[internal] iteration limit` = max_iters in:
-      let `[internal] stuck` = False in:
-        let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `pixel_size` = [internal] dx in:
-              block:
-                let `lastZ` = 0:R:C in:
-                  block:
-                    let `r1` = 1:R:C in:
-                      block:
-                        let `r2` = (-0.5:C + a) in:
-                          block:
-                            let `r3` = (-0.5:C - a) in:
-                              block:
-                                let `[internal] fresh #21` = 0 in:
-                                  let `[internal] fresh #22` = [internal] iteration limit in:
-                                    block:
-                                      do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
-                                        block:
-                                          block:
-                                            set `lastZ` := z
-                                            let `f` = (((z - r1) * (z - r2)) * (z - r3)) in:
-                                              block:
-                                                let `df` = ((((z - r2) * (z - r3)) + ((z - r1) * (z - r3))) + ((z - r1) * (z - r2))) in:
-                                                  block:
-                                                    set `z` := (z - (f / df))
-                                          set `[internal] fresh #21` := ([internal] fresh #21 + 1)
-                                      set `[internal] iteration count` := [internal] fresh #21
-                                      set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
-                                let `c` = Color 128 128 128 in:
-                                  block:
-                                    if (|(z - r1)| < [internal] vanishing radius) then:
-                                      block:
-                                        set `c` := Color 255 0 0
-                                    else:
-                                      if (|(z - r2)| < [internal] vanishing radius) then:
-                                        block:
-                                          set `c` := Color 0 180 0
-                                      else:
-                                        if (|(z - r3)| < [internal] vanishing radius) then:
-                                          block:
-                                            set `c` := Color 0 0 255
-                                        else:
-                                          no-op
-                                    let `s` = (cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R) in:
-                                      block:
-                                        set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, blend(0.333, Color 0 0 0, c), blend(0.333, Color 255 255 255, c)) else Color 0 0 0
-
-
 --- tool Trace
   -- on click
 let `[internal] vanishing radius` = tol in:
@@ -117,13 +113,13 @@ let `[internal] vanishing radius` = tol in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] px in:
               block:
-                let `lastZ` = 0:R:C in:
+                let `r1` = 1 in:
                   block:
-                    let `r1` = 1:R:C in:
+                    let `r2` = (-0.5:C + a) in:
                       block:
-                        let `r2` = (-0.5:C + a) in:
+                        let `r3` = (-0.5:C - a) in:
                           block:
-                            let `r3` = (-0.5:C - a) in:
+                            let `lastZ` = 0:R:C in:
                               block:
                                 erase
                                 let `[internal] fresh #19` = 0 in:
@@ -134,13 +130,9 @@ let `[internal] vanishing radius` = tol in:
                                           block:
                                             block:
                                               set `lastZ` := z
-                                              let `f` = (((z - r1) * (z - r2)) * (z - r3)) in:
-                                                block:
-                                                  let `df` = ((((z - r2) * (z - r3)) + ((z - r1) * (z - r3))) + ((z - r1) * (z - r2))) in:
-                                                    block:
-                                                      set `z` := (z - (f / df))
-                                                      draw point at lastZ:R^2
-                                                      draw line from lastZ:R^2 to z:R^2
+                                              set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
+                                              draw point at lastZ:R^2
+                                              draw line from lastZ:R^2 to z:R^2
                                             set `[internal] fresh #19` := ([internal] fresh #19 + 1)
                                       else:
                                         no-op
@@ -158,13 +150,13 @@ let `[internal] vanishing radius` = tol in:
             let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
               let `pixel_size` = [internal] px in:
                 block:
-                  let `lastZ` = 0:R:C in:
+                  let `r1` = 1 in:
                     block:
-                      let `r1` = 1:R:C in:
+                      let `r2` = (-0.5:C + a) in:
                         block:
-                          let `r2` = (-0.5:C + a) in:
+                          let `r3` = (-0.5:C - a) in:
                             block:
-                              let `r3` = (-0.5:C - a) in:
+                              let `lastZ` = 0:R:C in:
                                 block:
                                   erase
                                   let `[internal] fresh #22` = 0 in:
@@ -175,13 +167,9 @@ let `[internal] vanishing radius` = tol in:
                                             block:
                                               block:
                                                 set `lastZ` := z
-                                                let `f` = (((z - r1) * (z - r2)) * (z - r3)) in:
-                                                  block:
-                                                    let `df` = ((((z - r2) * (z - r3)) + ((z - r1) * (z - r3))) + ((z - r1) * (z - r2))) in:
-                                                      block:
-                                                        set `z` := (z - (f / df))
-                                                        draw point at lastZ:R^2
-                                                        draw line from lastZ:R^2 to z:R^2
+                                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
+                                                draw point at lastZ:R^2
+                                                draw line from lastZ:R^2 to z:R^2
                                               set `[internal] fresh #22` := ([internal] fresh #22 + 1)
                                         else:
                                           no-op

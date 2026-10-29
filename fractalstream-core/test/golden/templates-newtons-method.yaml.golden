@@ -17,7 +17,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                             block:
                               block:
                                 set `lastZ` := z
-                                set `z` := (z - (let [internal] f.z #0 = z in (([internal] f.z #0 ^ 3:R:C) - 1:R:C) / let [internal] f.z #1 = z in (3:R:C * ([internal] f.z #1 ^ 2:R:C))))
+                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
                               set `[internal] fresh #17` := ([internal] fresh #17 + 1)
                           set `[internal] iteration count` := [internal] fresh #17
                           set `[internal] stuck` := ([internal] fresh #17 = [internal] fresh #18)
@@ -56,7 +56,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                               block:
                                 set `prevZ` := z
                                 draw point at z:R^2
-                                set `z` := (z - (let [internal] f.z #0 = z in (([internal] f.z #0 ^ 3:R:C) - 1:R:C) / let [internal] f.z #1 = z in (3:R:C * ([internal] f.z #1 ^ 2:R:C))))
+                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
                                 draw line from z:R^2 to prevZ:R^2
                               set `[internal] fresh #15` := ([internal] fresh #15 + 1)
                           set `[internal] iteration count` := [internal] fresh #15
@@ -84,7 +84,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                 block:
                                   set `prevZ` := z
                                   draw point at z:R^2
-                                  set `z` := (z - (let [internal] f.z #0 = z in (([internal] f.z #0 ^ 3:R:C) - 1:R:C) / let [internal] f.z #1 = z in (3:R:C * ([internal] f.z #1 ^ 2:R:C))))
+                                  set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
                                   draw line from z:R^2 to prevZ:R^2
                                 set `[internal] fresh #18` := ([internal] fresh #18 + 1)
                             set `[internal] iteration count` := [internal] fresh #18

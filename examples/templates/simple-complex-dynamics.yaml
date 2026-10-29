@@ -8,7 +8,7 @@ script: |
   let on_success(z) = rainbow(iterations / 20)
   let on_failure(z) = black
 
-  @viewer "Simple complex dynamics" var=z size=600x600
+  @viewer "Simple complex dynamics"
   iterate z -> expression(z) until exit_condition(z)
   color <- if stuck then on_failure(z) else on_success(z)
 
@@ -20,7 +20,7 @@ script: |
   on click-or-drag:
     use white for line
     erase
-    prevZ : C <- z
+    prevZ := z
     until exit_condition(z):
       prevZ <- z
       draw point at z

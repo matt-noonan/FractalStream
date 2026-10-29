@@ -1,7 +1,10 @@
 script: |
-  @viewer "Mandelbrot set" var=C size=512x512
-  z : C <- 0
-  iterate z -> z^2 + C until z escapes
+  @common
+  let f(z) = z^2 + C
+
+  @viewer "Mandelbrot set" var=C
+  z := 0
+  iterate z -> f(z) until z escapes
 
   if z escaped:
     color <- rainbow (iterations / 20)
@@ -20,13 +23,13 @@ script: |
     erase
 
   on click:
-    z : C <- 0
-    iterate z -> z^2 + C until z escapes up to warmup times
+    z := 0
+    iterate z -> f(z) until z escapes up to warmup times
 
     if not (z escaped):
-      target : C <- z
+      target := z
       repeat up to max_period times:
-        z <- z^2 + C
+        z <- f(z)
       until |z - target| < tol
       if stuck:
         write "?" at C

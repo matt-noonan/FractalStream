@@ -11,6 +11,40 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 let `z` = 0:R:C in:
                   block:
+                    block:
+                      block:
+                        let `[internal] fresh #16` = 0 in:
+                          let `[internal] fresh #17` = [internal] iteration limit in:
+                            block:
+                              if (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)) then:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)):
+                                  block:
+                                    set `z` := ((z ^ 2:R:C) + C)
+                                    set `[internal] fresh #16` := ([internal] fresh #16 + 1)
+                              else:
+                                no-op
+                              set `[internal] iteration count` := [internal] fresh #16
+                              set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
+                        if ([internal] escape radius < |z|) then:
+                          block:
+                            set `color` := let #cycle-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), Color 255 0 0, Color 255 255 0)
+                        else:
+                          block:
+                            set `color` := Color 0 0 0
+
+
+=== viewer 1: Julia set
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                block:
+                  block:
                     let `[internal] fresh #16` = 0 in:
                       let `[internal] fresh #17` = [internal] iteration limit in:
                         block:
@@ -29,35 +63,5 @@ let `[internal] vanishing radius` = vanishing_radius in:
                     else:
                       block:
                         set `color` := Color 0 0 0
-
-
-=== viewer 1: Julia set
---- body
-let `[internal] vanishing radius` = vanishing_radius in:
-  let `[internal] escape radius` = escape_radius in:
-    let `[internal] iteration limit` = max_iters in:
-      let `[internal] stuck` = False in:
-        let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `pixel_size` = [internal] dx in:
-              block:
-                let `[internal] fresh #16` = 0 in:
-                  let `[internal] fresh #17` = [internal] iteration limit in:
-                    block:
-                      if (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)) then:
-                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)):
-                          block:
-                            set `z` := ((z ^ 2:R:C) + C)
-                            set `[internal] fresh #16` := ([internal] fresh #16 + 1)
-                      else:
-                        no-op
-                      set `[internal] iteration count` := [internal] fresh #16
-                      set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
-                if ([internal] escape radius < |z|) then:
-                  block:
-                    set `color` := let #cycle-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), Color 255 0 0, Color 255 255 0)
-                else:
-                  block:
-                    set `color` := Color 0 0 0
 
 

@@ -17,7 +17,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                           if (!([internal] escape radius < |z|) and ([internal] fresh #18 < [internal] fresh #19)) then:
                             do-while (!([internal] escape radius < |z|) and ([internal] fresh #18 < [internal] fresh #19)):
                               block:
-                                set `z` := (((z ^ 2:R:C) - C) / ((z ^ 2:R:C) - 1:R:C))
+                                set `z` := let [internal] f.z #0 = z in ((([internal] f.z #0 ^ 2:R:C) - C) / (([internal] f.z #0 ^ 2:R:C) - 1:R:C))
                                 set `[internal] fresh #18` := ([internal] fresh #18 + 1)
                           else:
                             no-op
@@ -47,7 +47,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                       if (!([internal] escape radius < |z|) and ([internal] fresh #18 < [internal] fresh #19)) then:
                         do-while (!([internal] escape radius < |z|) and ([internal] fresh #18 < [internal] fresh #19)):
                           block:
-                            set `z` := (((z ^ 2:R:C) - C) / ((z ^ 2:R:C) - 1:R:C))
+                            set `z` := let [internal] f.z #0 = z in ((([internal] f.z #0 ^ 2:R:C) - C) / (([internal] f.z #0 ^ 2:R:C) - 1:R:C))
                             set `[internal] fresh #18` := ([internal] fresh #18 + 1)
                       else:
                         no-op
@@ -74,8 +74,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                 erase
                 use color1 for line
                 draw point at z:R^2
-                set `pre1` := sqrt(((-C + z) / (z - 1:R:C)))
-                set `pre2` := -sqrt(((-C + z) / (z - 1:R:C)))
+                set `pre1` := let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
+                set `pre2` := -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
                 use color2 for line
                 draw point at pre1:R^2
                 use color3 for line
@@ -94,8 +94,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   erase
                   use color1 for line
                   draw point at z:R^2
-                  set `pre1` := sqrt(((-C + z) / (z - 1:R:C)))
-                  set `pre2` := -sqrt(((-C + z) / (z - 1:R:C)))
+                  set `pre1` := let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
+                  set `pre2` := -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
                   use color2 for line
                   draw point at pre1:R^2
                   use color3 for line
@@ -113,7 +113,50 @@ let `[internal] vanishing radius` = vanishing_radius in:
 
 
 --- tool Mark orbit of critical point
-ERROR: No variable named z is defined here.
+  -- on button Erase postcritical points
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+              use one_color for line
+              draw point at 1:R:C:R^2
+              use zero_orbit_color for line
+              let `z` = 0:R:C in:
+                block:
+                  let `last_z` = z in:
+                    block:
+                      let `[internal] fresh #18` = 0 in:
+                        let `[internal] fresh #19` = [internal] iteration limit in:
+                          block:
+                            do-while (!(|(z - 0:R:C)| < [internal] vanishing radius) and ([internal] fresh #18 < [internal] fresh #19)):
+                              block:
+                                block:
+                                  draw point at z:R^2
+                                  if follow then:
+                                    block:
+                                      draw line from last_z:R^2 to z:R^2
+                                      set `last_z` := z
+                                  else:
+                                    no-op
+                                  set `z` := let [internal] f.z #0 = z in ((([internal] f.z #0 ^ 2:R:C) - C) / (([internal] f.z #0 ^ 2:R:C) - 1:R:C))
+                                set `[internal] fresh #18` := ([internal] fresh #18 + 1)
+                            set `[internal] iteration count` := [internal] fresh #18
+                            set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
+
 
 --- tool Pullback
   -- on drag
@@ -126,9 +169,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
             let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
               let `pixel_size` = [internal] px in:
                 block:
-                  let `pre1` = sqrt(((-C + z) / (z - 1:R:C))) in:
+                  let `pre1` = let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C))) in:
                     block:
-                      let `pre2` = -sqrt(((-C + z) / (z - 1:R:C))) in:
+                      let `pre2` = -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C))) in:
                         block:
                           if follow then:
                             block:

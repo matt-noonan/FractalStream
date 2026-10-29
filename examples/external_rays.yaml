@@ -2,16 +2,20 @@ script: |
   @config "Configuration"
   C : C as "f(z) = z² +" <- -0.11 + 0.78i
 
-  @viewer "Parameter plane" var=C size=512x512 center=0 pixelSize=1/128
-  z : ℂ ⭠ 0
-  iterate z ⟼ z² + C until z escapes
+  @common
+  define draw:
+    iterate z ⟼ z² + C until z escapes
 
-  color ⭠ black
-  if z escapes:
-    m : ℝ ⭠ iterations + 1 ...
-             - log (log (|z|²) / (2 log escape_radius)) / log 2
-    base_color : Color ⭠ if im z > 0 then dark purple else dark green
-    color ⭠ blend (cos (π m / 20)², base_color, light base_color)
+    color ⭠ black
+    if z escaped:
+      m ≔ iterations + 1 ...
+           - log (log (|z|²) / (2 log escape_radius)) / log 2
+      base_color ≔ if im z > 0 then dark purple else dark green
+      color ⭠ blend (cos (π m / 20)², base_color, light base_color)
+
+  @viewer "Parameter plane" var=C center=0 pixelSize=1/128
+  z ≔ 0
+  run draw
 
   @tool "Parameter plane external rays" for="Parameter plane" shortcut=r
   row:
@@ -23,27 +27,27 @@ script: |
   on refresh:
     erase
     for each p in ps:
-      R : ℝ ⭠ escape_radius
-      theta : ℝ ⭠ p / q
-      z : ℂ ⭠ R e^{2 π 𝑖 theta}
-      dist : ℝ ⭠ error
-      k : ℤ ⭠ 0
+      R ≔ escape_radius
+      theta ≔ p / q
+      z ≔ R e^{2 π 𝑖 theta}
+      dist ≔ error
+      k ≔ 0
       while dist >= error:
         k ⭠ k + 1
-        j : ℤ ⭠ 0
+        j ≔ 0
         while j < S and dist >= error:
           j ⭠ j + 1
-          m : ℝ ⭠ (k - 1) S + j
-          r_m : ℝ ⭠ R^(2^(-m / S))
-          t_m : ℂ ⭠ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
-          temp_c : ℂ ⭠ z
-          difference : ℝ ⭠ error
-          C_k : ℂ ⭠ temp_c
-          D_k : ℂ ⭠ 1
-          n : ℤ ⭠ 0
+          m ≔ (k - 1) S + j
+          r_m ≔ R^(2^(-m / S))
+          t_m ≔ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
+          temp_c ≔ z
+          difference ≔ error
+          C_k ≔ temp_c
+          D_k ≔ 1
+          n ≔ 0
           while difference >= error up to iter_limit times:
             n ⭠ n + 1
-            old_c : ℂ ⭠ temp_c
+            old_c ≔ temp_c
             C_k ⭠ old_c
             D_k ⭠ 1
             while true up to k times:
@@ -61,15 +65,8 @@ script: |
   on deactivated:
     erase
 
-  @viewer "Dynamical plane" var=z size=512x512 center=0 pixelSize=1/128
-  iterate z ⟼ z² + C until z escapes
-
-  color ⭠ black
-  if z escaped:
-    m : ℝ ⭠ iterations + 1 ...
-             - log (log (|z|²) / (2 log escape_radius)) / log 2
-    base_color : Color ⭠ if im z > 0 then dark purple else dark green
-    color ⭠ blend (cos (π m / 20)², base_color, light base_color)
+  @viewer "Dynamical plane" center=0 pixelSize=1/128
+  run draw
 
   @tool "Dynamical plane external rays" for="Dynamical plane" shortcut=r
   row:
@@ -81,28 +78,28 @@ script: |
   on refresh:
     erase
     for each p in ps:
-      R : ℝ ⭠ escape_radius
-      theta : ℝ ⭠ p / q
-      z : ℂ ⭠ R e^{2 π 𝑖 theta}
-      dist : ℝ ⭠ error
-      k : ℤ ⭠ 0
+      R ≔ escape_radius
+      theta ≔ p / q
+      z ≔ R e^{2 π 𝑖 theta}
+      dist ≔ error
+      k ≔ 0
       while dist >= error:
         k ⭠ k + 1
-        j : ℤ ⭠ 0
+        j ≔ 0
         while dist >= error up to S times:
           j ⭠ j + 1
-          m : ℝ ⭠ (k - 1) S + j
-          r_m : ℝ ⭠ R^(2^(-m / S))
-          t_m : ℂ ⭠ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
-          difference : ℝ ⭠ error
-          temp_z : ℂ ⭠ z
-          z_k : ℂ ⭠ 0
-          dz_k : ℂ ⭠ 0
+          m ≔ (k - 1) S + j
+          r_m ≔ R^(2^(-m / S))
+          t_m ≔ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
+          difference ≔ error
+          temp_z ≔ z
+          z_k ≔ 0
+          dz_k ≔ 0
           while difference >= error up to iter_limit times:
-            old_z : ℂ ⭠ temp_z
+            old_z ≔ temp_z
             z_k ⭠ temp_z
             dz_k ⭠ 1
-            t : ℤ ⭠ 0
+            t ≔ 0
             while t < k:
               t ⭠ t + 1
               dz_k ⭠ 2 dz_k z_k

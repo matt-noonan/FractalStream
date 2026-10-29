@@ -3,8 +3,11 @@ script: |
   C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
   p : R as "Brightness: " <- 0.5
 
-  @viewer "Julia set" var=z size=512x512
-  iterate z -> z^2 + C until z escapes
+  @common
+  let f(z) = z^2 + C
+
+  @viewer "Julia set"
+  iterate z -> f(z) until z escapes
   if stuck:
     color <- black
   else:
@@ -24,10 +27,10 @@ script: |
 
   @tool "Trace" for="Julia set" shortcut=t
   on click-or-drag:
-    prevZ : C <- z
+    prevZ := z
     erase
     while |z| < 10 escape_radius up to 100 times:
       prevZ <- z
       draw point at z
-      z <- z^2 + C
+      z <- f(z)
       draw line from z to prevZ

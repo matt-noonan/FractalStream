@@ -14,7 +14,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                       if (!([internal] escape radius < |z|) and ([internal] fresh #17 < [internal] fresh #18)) then:
                         do-while (!([internal] escape radius < |z|) and ([internal] fresh #17 < [internal] fresh #18)):
                           block:
-                            set `z` := ((z ^ 2:R:C) + C)
+                            set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                             set `[internal] fresh #17` := ([internal] fresh #17 + 1)
                       else:
                         no-op
@@ -50,7 +50,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                 block:
                                   set `prevZ` := z
                                   draw point at z:R^2
-                                  set `z` := ((z ^ 2:R:C) + C)
+                                  set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                                   draw line from z:R^2 to prevZ:R^2
                                 set `[internal] fresh #16` := ([internal] fresh #16 + 1)
                           else:
@@ -80,7 +80,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   block:
                                     set `prevZ` := z
                                     draw point at z:R^2
-                                    set `z` := ((z ^ 2:R:C) + C)
+                                    set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                                     draw line from z:R^2 to prevZ:R^2
                                   set `[internal] fresh #19` := ([internal] fresh #19 + 1)
                             else:

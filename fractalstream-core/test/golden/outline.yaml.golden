@@ -11,36 +11,38 @@ let `[internal] vanishing radius` = tiny in:
               block:
                 let `z` = 0:R:C in:
                   block:
-                    let `dz` = 1:R:C in:
+                    let `tol` = ((pixel_size * fatness) / 2:R) in:
                       block:
-                        let `tol` = ((pixel_size * fatness) / 2:R) in:
+                        let `dzdc` = 0:R:C in:
                           block:
-                            let `dzdc` = 0:R:C in:
+                            let `der` = 1:R:C in:
                               block:
-                                let `der` = 1:R:C in:
-                                  block:
-                                    let `[internal] fresh #25` = 0 in:
-                                      let `[internal] fresh #26` = [internal] iteration limit in:
+                                let `[internal] fresh #24` = 0 in:
+                                  let `[internal] fresh #25` = [internal] iteration limit in:
+                                    block:
+                                      do-while (!((|(z / dzdc)| < tol) or (([internal] escape radius < |z|) or (|der| < [internal] vanishing radius))) and ([internal] fresh #24 < [internal] fresh #25)):
                                         block:
-                                          do-while (!((|(z / dzdc)| < tol) or (([internal] escape radius < |z|) or (|der| < [internal] vanishing radius))) and ([internal] fresh #25 < [internal] fresh #26)):
-                                            block:
-                                              block:
-                                                set `dzdc` := (1:R:C + ((2:R:C * z) * dzdc))
-                                                set `z` := ((z ^ 2:R:C) + C)
-                                                set `der` := ((2:R:C * z) * der)
-                                              set `[internal] fresh #25` := ([internal] fresh #25 + 1)
-                                          set `[internal] iteration count` := [internal] fresh #25
-                                          set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
-                                    if ([internal] escape radius < |z|) then:
+                                          block:
+                                            set `dzdc` := (1:R:C + ((2:R:C * z) * dzdc))
+                                            set `z` := ((z ^ 2:R:C) + C)
+                                            set `der` := ((2:R:C * z) * der)
+                                          set `[internal] fresh #24` := ([internal] fresh #24 + 1)
+                                      set `[internal] iteration count` := [internal] fresh #24
+                                      set `[internal] stuck` := ([internal] fresh #24 = [internal] fresh #25)
+                                block:
+                                  let `[internal] shade.on_boundary #0` = (|(z / dzdc)| < tol) in:
+                                    block:
                                       block:
-                                        set `color` := exterior_color
-                                    else:
-                                      if (|(z / dzdc)| < tol) then:
-                                        block:
-                                          set `color` := boundary_color
-                                      else:
-                                        block:
-                                          set `color` := interior_color
+                                        if ([internal] escape radius < |z|) then:
+                                          block:
+                                            set `color` := exterior_color
+                                        else:
+                                          if [internal] shade.on_boundary #0 then:
+                                            block:
+                                              set `color` := boundary_color
+                                          else:
+                                            block:
+                                              set `color` := interior_color
 
 
 === viewer 1: Dynamical plane
@@ -70,15 +72,19 @@ let `[internal] vanishing radius` = tiny in:
                                       set `[internal] fresh #24` := ([internal] fresh #24 + 1)
                                   set `[internal] iteration count` := [internal] fresh #24
                                   set `[internal] stuck` := ([internal] fresh #24 = [internal] fresh #25)
-                            if ([internal] escape radius < |z|) then:
-                              block:
-                                set `color` := exterior_color
-                            else:
-                              if (|((z / dz) - (w / dz))| < tol) then:
+                            block:
+                              let `[internal] shade.on_boundary #0` = (|((z / dz) - (w / dz))| < tol) in:
                                 block:
-                                  set `color` := boundary_color
-                              else:
-                                block:
-                                  set `color` := interior_color
+                                  block:
+                                    if ([internal] escape radius < |z|) then:
+                                      block:
+                                        set `color` := exterior_color
+                                    else:
+                                      if [internal] shade.on_boundary #0 then:
+                                        block:
+                                          set `color` := boundary_color
+                                      else:
+                                        block:
+                                          set `color` := interior_color
 
 

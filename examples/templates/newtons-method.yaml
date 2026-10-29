@@ -2,6 +2,8 @@ script: |
   @common
   # find the roots of f with Newton's method
   let f(z) = z^3 - 1
+  # one step of Newton's method
+  let newton(z) = z - f(z) / f'(z)
   # colors for the basins of attraction, and for failure to converge;
   # these can use color names like `red` or `black`, or color functions
   # involving `z` and `iterations`
@@ -11,11 +13,11 @@ script: |
   @config "Configuration"
   shade_convergence : Boolean as "Shade by convergence speed: " <- true
 
-  @viewer "Newton's method on ℂ" var=z size=600x600
-  lastZ : C <- 0
+  @viewer "Newton's method on ℂ"
+  lastZ := 0
   repeat:
     lastZ <- z
-    z <- z - f(z) / diff(z, f(z))
+    z <- newton(z)
   until z = lastZ
 
   if stuck:
@@ -33,10 +35,10 @@ script: |
   on click-or-drag:
     use white for line
     erase
-    prevZ : C <- z
+    prevZ := z
     repeat:
       prevZ <- z
       draw point at z
-      z <- z - f(z) / diff(z, f(z))
+      z <- newton(z)
       draw line from z to prevZ
     until z = prevZ

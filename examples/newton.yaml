@@ -1,18 +1,18 @@
 script: |
   @common
   let f(z) = z^3 - 1
+  # one step of Newton's method
+  let newton(z) = z - f(z) / f'(z)
 
   @config "Newton's method configuration"
   tol : R as "closeness" <- 0.01
 
-  @viewer "Roots of f" var=z size=512x512 vanish=tol center=0 pixelSize=1/128
-  lastZ : C <- 0
+  @viewer "Roots of f" vanish=tol center=0 pixelSize=1/128
+  lastZ := 0
   while z != lastZ:
     lastZ <- z
-    z <- z - f(z) / diff(z, f(z))
+    z <- newton(z)
   if z = lastZ:
-    c : Color <- if re(z) > 0 then red else if im(z) > 0 then yellow else blue
-    s : R <- (cos (iterations pi / 10))^2
     color <- rainbow(arg z / (2π))
     color <- cycle(iterations / 20, dark color, light color)
   else:
@@ -22,11 +22,11 @@ script: |
   on deactivated:
     erase
   on click-or-drag:
-    lastZ : C <- 0
+    lastZ := 0
     erase
     while z != lastZ:
       lastZ <- z
-      z <- z - f(z) / diff(z, f(z))
+      z <- newton(z)
       draw point at lastZ
       draw line from lastZ to z
     draw point at z

@@ -4,69 +4,39 @@ script: |
   c : C as "c = " <- 0.6 + 0.2i
   zoom : R as "zoom = " <- 0.001
 
-  @viewer "a-plane" var=a size=512x512
-  z : C <- 0
-  aa : C <- (a + 1) / 2
-  disc : C <- aa^2 - c
-  p : C <- sqrt(disc) + aa
-  disc <- p^2 - a
-  lambda : C <- sqrt(disc) + p
-  save : C <- z * zoom
-  x : C <- p + lambda * save
-  y : C <- p + save
+  @common
+  # Iterate the Hénon map (x, y) -> (x^2 + c - a y, x), starting near its
+  # saddle fixed point (p, p), displaced along the unstable direction by
+  # `start`, until x escapes; then color by the escape time.
+  define draw_henon(start, use_rainbow):
+    aa := (a + 1) / 2
+    p := sqrt(aa^2 - c) + aa
+    lambda := sqrt(p^2 - a) + p
+    save := start * zoom
+    x := p + lambda * save
+    y := p + save
 
-  repeat:
-    t : C <- x
-    x <- x^2 + c - a y
-    y <- t
-  until x escapes
-  if x escaped:
-    color <- cycle (iterations / 10, blue, white)
-  else:
-    color <- black
+    repeat:
+      t := x
+      x <- x^2 + c - a y
+      y <- t
+    until x escapes
 
-  @viewer "c-plane" var=c size=512x512
-  z : C <- 0
-  aa : C <- (a + 1) / 2
-  disc : C <- aa^2 - c
-  p : C <- sqrt(disc) + aa
-  disc <- p^2 - a
-  lambda : C <- sqrt(disc) + p
-  save : C <- z * zoom
-  x : C <- p + lambda * save
-  y : C <- p + save
+    if not (x escaped):
+      color <- black
+    else if use_rainbow:
+      color <- rainbow (iterations / 10)
+    else:
+      color <- cycle (iterations / 10, blue, white)
 
-  repeat:
-    t : C <- x
-    x <- x^2 + c - a y
-    y <- t
-  until x escapes
+  @viewer "a-plane" var=a
+  run draw_henon(0, false)
 
-  if x escaped:
-    color <- cycle (iterations / 10, blue, white)
-  else:
-    color <- black
+  @viewer "c-plane" var=c
+  run draw_henon(0, false)
 
-  @viewer "Hénon dynamics" var=z size=512x512
-  aa : C <- (a + 1) / 2
-  disc : C <- aa^2 - c
-  p : C <- sqrt(disc) + aa
-  disc <- p^2 - a
-  lambda : C <- sqrt(disc) + p
-  save : C <- z * zoom
-  x : C <- p + lambda * save
-  y : C <- p + save
-
-  repeat:
-    t : C <- x
-    x <- x^2 + c - a y
-    y <- t
-  until x escapes
-
-  if x escaped:
-    color <- rainbow (iterations / 10)
-  else:
-    color <- black
+  @viewer "Hénon dynamics"
+  run draw_henon(z, true)
 
   @tool "Select saddle" for="Hénon dynamics" shortcut=s
   on click-or-drag:

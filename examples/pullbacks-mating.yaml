@@ -4,16 +4,21 @@ script: |
   p : R as "Brightness: " <- 0.5
   color1 : Color as "Selected point" <- white
 
-  @viewer "C-plane" var=C size=512x512 center=0 pixelSize=1/128
-  z : C <- C
-  iterate z -> (z^2 - C)/(z^2 - 1) until z escapes
+  @common
+  let f(z) = (z^2 - C)/(z^2 - 1)
+  # one of the two preimages of z under f (the other is its negative)
+  let preimage(z) = sqrt((-C + z) / (z - 1))
+
+  @viewer "C-plane" var=C center=0 pixelSize=1/128
+  z := C
+  iterate z -> f(z) until z escapes
   if stuck:
     color <- black
   else:
     color <- rainbow (iterations / 20)
 
-  @viewer "Dynamics" var=z size=512x512 center=0 pixelSize=1/128
-  iterate z -> (z^2 - C)/(z^2 - 1) until z escapes
+  @viewer "Dynamics" center=0 pixelSize=1/128
+  iterate z -> f(z) until z escapes
   if stuck:
     color <- black
   else:
@@ -30,8 +35,8 @@ script: |
     erase
     use color1 for line
     draw point at z
-    pre1 <- sqrt((-C + z) / (z - 1))
-    pre2 <- -sqrt((-C + z) / (z - 1))
+    pre1 <- preimage(z)
+    pre2 <- -preimage(z)
     use color2 for line
     draw point at pre1
     use color3 for line
@@ -49,14 +54,14 @@ script: |
     use one_color for line
     draw point at 1
     use zero_orbit_color for line
-    z <- 0
-    last_z : C <- z
+    z := 0
+    last_z := z
     repeat:
       draw point at z
       if follow:
         draw line from last_z to z
         last_z <- z
-      z <- (z^2 - C) / (z^2 - 1)
+      z <- f(z)
     while z != 0
 
   @tool "Pullback" for=Dynamics shortcut=p drawLayer=12
@@ -73,8 +78,8 @@ script: |
   on drag-finished:
     follow <- false
   on drag:
-    pre1 : C <- sqrt((-C + z) / (z - 1))
-    pre2 : C <- -sqrt((-C + z) / (z - 1))
+    pre1 := preimage(z)
+    pre2 := -preimage(z)
 
     if follow:
       use color1 for line
@@ -84,7 +89,7 @@ script: |
       # Make sure that pre1 is the preimage that
       # is closest to last_pre1
       if |last_pre1 - pre2| < |last_pre1 - pre1|:
-        tmp : C <- pre1
+        tmp := pre1
         pre1 <- pre2
         pre2 <- tmp
 

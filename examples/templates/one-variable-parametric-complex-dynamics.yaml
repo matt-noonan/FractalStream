@@ -5,7 +5,7 @@ script: |
   # the `color` variable to indicate what color to use for that pixel.
   # Use the `dynamic` variable to test if the script is running in the
   # z-plane.
-  z0 : C <- 0
+  z0 := 0
   define script:
     iterate z -> z^2 + C until z escapes
     if stuck:
@@ -18,11 +18,11 @@ script: |
   @config "Configuration"
   C : C as "C =" <- 0
 
-  @viewer "Parametric complex dynamics parameter plane" var=C size=600x600 pixelSize=1/100
-  dynamic : Boolean <- false
-  z : C <- z0
+  @viewer "Parametric complex dynamics parameter plane" var=C pixelSize=1/100
+  dynamic := false
+  z := z0
   run script
 
-  @viewer "Parametric complex dynamics dynamical plane" var=z size=600x600 pixelSize=1/100
-  dynamic : Boolean <- true
+  @viewer "Parametric complex dynamics dynamical plane" pixelSize=1/100
+  dynamic := true
   run script

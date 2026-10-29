@@ -13,12 +13,12 @@ script: |
   @config "Configuration"
   C : C as "Selected value of C:" <- -0.1226 + 0.7449i
 
-  @viewer "Parametric complex dynamics parameter plane" var=C size=600x600
-  z : C <- initialZ(C)
+  @viewer "Parametric complex dynamics parameter plane" var=C
+  z := initialZ(C)
   iterate z -> expression(z) until exit_condition(z)
   color <- if stuck then on_failure(z) else on_success(z)
 
-  @viewer "Parametric complex dynamics" var=z size=600x600
+  @viewer "Parametric complex dynamics"
   iterate z -> expression(z) until exit_condition(z)
   color <- if stuck then on_failure(z) else on_success(z)
 
@@ -30,7 +30,7 @@ script: |
   on click-or-drag:
     use white for line
     erase
-    prevZ : C <- z
+    prevZ := z
     until exit_condition(z):
       prevZ <- z
       draw point at z

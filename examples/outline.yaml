@@ -9,14 +9,21 @@ script: |
   exterior_color : Color as "Exterior" <- white
   interior_color : Color as "Interior" <- rgb(0.926, 0.863, 0.927)
 
-  @viewer "Parameter plane" var=C size=512x512 vanish=tiny
-  z : C <- 0
-  dz : C <- 1
+  @common
+  define shade(on_boundary):
+    if z escaped:
+      color <- exterior_color
+    else if on_boundary:
+      color <- boundary_color
+    else:
+      color <- interior_color
 
-  tol : R <- pixel_size fatness / 2
+  @viewer "Parameter plane" var=C vanish=tiny
+  z := 0
+  tol := pixel_size fatness / 2
 
-  dzdc : C <- 0
-  der : C <- 1
+  dzdc := 0
+  der := 1
 
   repeat:
     dzdc <- 1 + 2 z dzdc
@@ -24,26 +31,16 @@ script: |
     der <- 2 z der
   until |z / dzdc| < tol or z escapes or der vanishes
 
-  if z escaped:
-    color <- exterior_color
-  else if |z / dzdc| < tol:
-    color <- boundary_color
-  else:
-    color <- interior_color
+  run shade(|z / dzdc| < tol)
 
-  @viewer "Dynamical plane" var=z size=512x512 vanish=tiny
-  dz : C <- 1
-  w : C <- z
-  tol : R <- 2 pixel_size fatness
+  @viewer "Dynamical plane" vanish=tiny
+  dz := 1
+  w := z
+  tol := 2 pixel_size fatness
 
   repeat:
     dz <- 2 z dz
     z <- z^2 + C
   until z escapes or |z/dz - w/dz| < tol or dz vanishes
 
-  if z escaped:
-    color <- exterior_color
-  else if |z/dz - w/dz| < tol:
-    color <- boundary_color
-  else:
-    color <- interior_color
+  run shade(|z/dz - w/dz| < tol)

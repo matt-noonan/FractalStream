@@ -23,61 +23,57 @@ let `[internal] vanishing radius` = custom_vanishing_radius in:
             set `t` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
             let `pixel_size` = [internal] dx in:
               block:
-                let `crit1` = 1:R:C in:
+                let `z` = 1:R:C in:
                   block:
-                    let `crit2` = -1:R:C in:
+                    let `[internal] fresh #18` = 0 in:
+                      let `[internal] fresh #19` = [internal] iteration limit in:
+                        block:
+                          if (!(|z| < [internal] vanishing radius) and ([internal] fresh #18 < [internal] fresh #19)) then:
+                            do-while (!(|z| < [internal] vanishing radius) and ([internal] fresh #18 < [internal] fresh #19)):
+                              block:
+                                set `z` := let [internal] f.z #0 = z in ((λ * [internal] f.z #0) / ((([internal] f.z #0 ^ 2:R:C) + (t * [internal] f.z #0)) + 1:R:C))
+                                set `[internal] fresh #18` := ([internal] fresh #18 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #18
+                          set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
+                    let `crit1_went_to_0` = (|z| < [internal] vanishing radius) in:
                       block:
-                        let `z` = crit1 in:
+                        let `iters1` = [internal] iteration count in:
                           block:
+                            set `z` := -1:R:C
                             let `[internal] fresh #20` = 0 in:
                               let `[internal] fresh #21` = [internal] iteration limit in:
                                 block:
                                   if (!(|z| < [internal] vanishing radius) and ([internal] fresh #20 < [internal] fresh #21)) then:
                                     do-while (!(|z| < [internal] vanishing radius) and ([internal] fresh #20 < [internal] fresh #21)):
                                       block:
-                                        set `z` := ((λ * z) / (((z ^ 2:R:C) + (t * z)) + 1:R:C))
+                                        set `z` := let [internal] f.z #0 = z in ((λ * [internal] f.z #0) / ((([internal] f.z #0 ^ 2:R:C) + (t * [internal] f.z #0)) + 1:R:C))
                                         set `[internal] fresh #20` := ([internal] fresh #20 + 1)
                                   else:
                                     no-op
                                   set `[internal] iteration count` := [internal] fresh #20
                                   set `[internal] stuck` := ([internal] fresh #20 = [internal] fresh #21)
-                            let `crit1_went_to_0` = (|z| < [internal] vanishing radius) in:
+                            let `crit2_went_to_0` = (|z| < [internal] vanishing radius) in:
                               block:
-                                let `iters1` = [internal] iteration count in:
+                                let `iters2` = [internal] iteration count in:
                                   block:
-                                    set `z` := crit2
-                                    let `[internal] fresh #22` = 0 in:
-                                      let `[internal] fresh #23` = [internal] iteration limit in:
-                                        block:
-                                          if (!(|z| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)) then:
-                                            do-while (!(|z| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)):
-                                              block:
-                                                set `z` := ((λ * z) / (((z ^ 2:R:C) + (t * z)) + 1:R:C))
-                                                set `[internal] fresh #22` := ([internal] fresh #22 + 1)
-                                          else:
-                                            no-op
-                                          set `[internal] iteration count` := [internal] fresh #22
-                                          set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
-                                    let `crit2_went_to_0` = (|z| < [internal] vanishing radius) in:
+                                    set `color` := Color 255 255 255
+                                    if crit1_went_to_0 then:
                                       block:
-                                        let `iters2` = [internal] iteration count in:
+                                        if crit2_went_to_0 then:
                                           block:
-                                            set `color` := Color 255 255 255
-                                            if crit1_went_to_0 then:
-                                              block:
-                                                if crit2_went_to_0 then:
-                                                  block:
-                                                    set `color` := Color 128 0 128
-                                                else:
-                                                  block:
-                                                    set `color` := let #wheel-arg = ((iters1:R / 20:R) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 123 57, Color 255 61 61)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 171 71, Color 255 123 57)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 255 212 103, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.375)), (Color 255 250 148, Color 255 212 103)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 255 212 103, Color 255 250 148)) else ((8.0 * (#wheel-arg - 0.625)), (Color 255 171 71, Color 255 212 103)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 123 57, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 61 61, Color 255 123 57))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 123 57, Color 255 61 61)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 171 71, Color 255 123 57)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 255 212 103, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.375)), (Color 255 250 148, Color 255 212 103)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 255 212 103, Color 255 250 148)) else ((8.0 * (#wheel-arg - 0.625)), (Color 255 171 71, Color 255 212 103)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 123 57, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 61 61, Color 255 123 57)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 123 57, Color 255 61 61)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 171 71, Color 255 123 57)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 255 212 103, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.375)), (Color 255 250 148, Color 255 212 103)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 255 212 103, Color 255 250 148)) else ((8.0 * (#wheel-arg - 0.625)), (Color 255 171 71, Color 255 212 103)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 123 57, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 61 61, Color 255 123 57)))))
-                                            else:
-                                              no-op
-                                            if crit2_went_to_0 then:
-                                              block:
-                                                set `color` := let #wheel-arg = ((iters2:R / 20:R) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 95 216 251, Color 30 203 255)) else ((8.0 * (#wheel-arg - 0.125)), (Color 137 227 249, Color 95 216 251)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 173 239 249, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.375)), (Color 207 249 252, Color 173 239 249)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 173 239 249, Color 207 249 252)) else ((8.0 * (#wheel-arg - 0.625)), (Color 137 227 249, Color 173 239 249)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 95 216 251, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.875)), (Color 30 203 255, Color 95 216 251))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 95 216 251, Color 30 203 255)) else ((8.0 * (#wheel-arg - 0.125)), (Color 137 227 249, Color 95 216 251)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 173 239 249, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.375)), (Color 207 249 252, Color 173 239 249)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 173 239 249, Color 207 249 252)) else ((8.0 * (#wheel-arg - 0.625)), (Color 137 227 249, Color 173 239 249)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 95 216 251, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.875)), (Color 30 203 255, Color 95 216 251)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 95 216 251, Color 30 203 255)) else ((8.0 * (#wheel-arg - 0.125)), (Color 137 227 249, Color 95 216 251)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 173 239 249, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.375)), (Color 207 249 252, Color 173 239 249)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 173 239 249, Color 207 249 252)) else ((8.0 * (#wheel-arg - 0.625)), (Color 137 227 249, Color 173 239 249)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 95 216 251, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.875)), (Color 30 203 255, Color 95 216 251)))))
-                                            else:
-                                              no-op
+                                            set `color` := Color 128 0 128
+                                        else:
+                                          block:
+                                            set `color` := let #wheel-arg = ((iters1:R / 20:R) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 123 57, Color 255 61 61)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 171 71, Color 255 123 57)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 255 212 103, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.375)), (Color 255 250 148, Color 255 212 103)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 255 212 103, Color 255 250 148)) else ((8.0 * (#wheel-arg - 0.625)), (Color 255 171 71, Color 255 212 103)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 123 57, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 61 61, Color 255 123 57))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 123 57, Color 255 61 61)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 171 71, Color 255 123 57)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 255 212 103, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.375)), (Color 255 250 148, Color 255 212 103)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 255 212 103, Color 255 250 148)) else ((8.0 * (#wheel-arg - 0.625)), (Color 255 171 71, Color 255 212 103)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 123 57, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 61 61, Color 255 123 57)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 123 57, Color 255 61 61)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 171 71, Color 255 123 57)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 255 212 103, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.375)), (Color 255 250 148, Color 255 212 103)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 255 212 103, Color 255 250 148)) else ((8.0 * (#wheel-arg - 0.625)), (Color 255 171 71, Color 255 212 103)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 123 57, Color 255 171 71)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 61 61, Color 255 123 57)))))
+                                    else:
+                                      no-op
+                                    if crit2_went_to_0 then:
+                                      block:
+                                        set `color` := let #wheel-arg = ((iters2:R / 20:R) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 95 216 251, Color 30 203 255)) else ((8.0 * (#wheel-arg - 0.125)), (Color 137 227 249, Color 95 216 251)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 173 239 249, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.375)), (Color 207 249 252, Color 173 239 249)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 173 239 249, Color 207 249 252)) else ((8.0 * (#wheel-arg - 0.625)), (Color 137 227 249, Color 173 239 249)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 95 216 251, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.875)), (Color 30 203 255, Color 95 216 251))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 95 216 251, Color 30 203 255)) else ((8.0 * (#wheel-arg - 0.125)), (Color 137 227 249, Color 95 216 251)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 173 239 249, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.375)), (Color 207 249 252, Color 173 239 249)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 173 239 249, Color 207 249 252)) else ((8.0 * (#wheel-arg - 0.625)), (Color 137 227 249, Color 173 239 249)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 95 216 251, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.875)), (Color 30 203 255, Color 95 216 251)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 95 216 251, Color 30 203 255)) else ((8.0 * (#wheel-arg - 0.125)), (Color 137 227 249, Color 95 216 251)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 173 239 249, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.375)), (Color 207 249 252, Color 173 239 249)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 173 239 249, Color 207 249 252)) else ((8.0 * (#wheel-arg - 0.625)), (Color 137 227 249, Color 173 239 249)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 95 216 251, Color 137 227 249)) else ((8.0 * (#wheel-arg - 0.875)), (Color 30 203 255, Color 95 216 251)))))
+                                    else:
+                                      no-op
 
 
 === viewer 2: Dynamics
@@ -96,7 +92,7 @@ let `[internal] vanishing radius` = custom_vanishing_radius in:
                       if (!(|z| < [internal] vanishing radius) and ([internal] fresh #18 < [internal] fresh #19)) then:
                         do-while (!(|z| < [internal] vanishing radius) and ([internal] fresh #18 < [internal] fresh #19)):
                           block:
-                            set `z` := ((λ * z) / (((z ^ 2:R:C) + (t * z)) + 1:R:C))
+                            set `z` := let [internal] f.z #0 = z in ((λ * [internal] f.z #0) / ((([internal] f.z #0 ^ 2:R:C) + (t * [internal] f.z #0)) + 1:R:C))
                             set `[internal] fresh #18` := ([internal] fresh #18 + 1)
                       else:
                         no-op
@@ -127,7 +123,7 @@ let `[internal] vanishing radius` = custom_vanishing_radius in:
                                 block:
                                   set `prevZ` := z
                                   draw point at z:R^2
-                                  set `z` := ((λ * z) / (((z ^ 2:R:C) + (t * z)) + 1:R:C))
+                                  set `z` := let [internal] f.z #0 = z in ((λ * [internal] f.z #0) / ((([internal] f.z #0 ^ 2:R:C) + (t * [internal] f.z #0)) + 1:R:C))
                                   draw line from z:R^2 to prevZ:R^2
                                 set `[internal] fresh #17` := ([internal] fresh #17 + 1)
                           else:
@@ -157,7 +153,7 @@ let `[internal] vanishing radius` = custom_vanishing_radius in:
                                   block:
                                     set `prevZ` := z
                                     draw point at z:R^2
-                                    set `z` := ((λ * z) / (((z ^ 2:R:C) + (t * z)) + 1:R:C))
+                                    set `z` := let [internal] f.z #0 = z in ((λ * [internal] f.z #0) / ((([internal] f.z #0 ^ 2:R:C) + (t * [internal] f.z #0)) + 1:R:C))
                                     draw line from z:R^2 to prevZ:R^2
                                   set `[internal] fresh #20` := ([internal] fresh #20 + 1)
                             else:
