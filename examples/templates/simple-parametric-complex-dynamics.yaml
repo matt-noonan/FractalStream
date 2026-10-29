@@ -1,23 +1,26 @@
 script: |
-  @setup "Setup"
-  expression : C as "iterate z ⟼ " using z:C, C:C <- z^2 + C
-  exit_condition : Boolean as "until" using z:C, C:C <- z escapes
-  initialZ : C as "Initial expression for z in parameter plane:" using C:C <- 0
-  text "Color expressions can use color names like `red` or `black`, or color functions involving the variables `z`, `C`, and `iterations`."
-  on_success : Color as "Color expression for success:" using z:C, C:C <- rainbow(iterations / 20)
-  on_failure : Color as "Color expression for failure:" using z:C, C:C <- black
+  @common
+  # iterate z ⟼ expression(z) until exit_condition(z), starting from
+  # initialZ(C) in the parameter plane
+  let expression(z) = z^2 + C
+  let exit_condition(z) = z escapes
+  let initialZ(C) = 0
+  # colors can use color names like `red` or `black`, or color functions
+  # involving the variables `z`, `C`, and `iterations`
+  let on_success(z) = rainbow(iterations / 20)
+  let on_failure(z) = black
 
   @config "Configuration"
   C : C as "Selected value of C:" <- -0.1226 + 0.7449i
 
   @viewer "Parametric complex dynamics parameter plane" var=C size=600x600
-  z : C <- «initialZ»
-  iterate z -> «expression» until «exit_condition»
-  color <- if stuck then «on_failure» else «on_success»
+  z : C <- initialZ(C)
+  iterate z -> expression(z) until exit_condition(z)
+  color <- if stuck then on_failure(z) else on_success(z)
 
   @viewer "Parametric complex dynamics" var=z size=600x600
-  iterate z -> «expression» until «exit_condition»
-  color <- if stuck then «on_failure» else «on_success»
+  iterate z -> expression(z) until exit_condition(z)
+  color <- if stuck then on_failure(z) else on_success(z)
 
   @tool "Trace" shortcut=t for="Parametric complex dynamics"
   on refresh:
@@ -28,8 +31,8 @@ script: |
     use white for line
     erase
     prevZ : C <- z
-    until «exit_condition»:
+    until exit_condition(z):
       prevZ <- z
       draw point at z
-      z <- «expression»
+      z <- expression(z)
       draw line from z to prevZ

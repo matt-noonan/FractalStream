@@ -7,15 +7,12 @@ module Language.Value.Parser
   , parseEnvironment
   , parseConstant
   , valueGrammar
-  , valueGrammarWithNoSplices
   , valueGrammarWithFunctions
   , arithGrammar
-  , arithGrammarWithNoSplices
   , atType
   , typeGrammar
   , envGrammar
   , ParsedValue
-  , ValueSplices
   -- * Re-exports
   , TCError
   , ParseError
@@ -41,8 +38,6 @@ import Language.Value.Evaluator (evaluateInContext)
 -- Main functions for parsing Values
 ------------------------------------------------------
 
-type ValueSplices = Map String ParsedValue
-
 parseType :: String -> Either ParseError SomeType
 parseType = fmap (`withType` SomeType) . parse typeGrammar . tokenize
 
@@ -55,35 +50,31 @@ parseConstant :: forall ty
               -> String
               -> Either (Either ParseError TCError) (HaskellType ty)
 parseConstant ty input = withKnownType ty $
-  parseValue @'[] @ty Map.empty input >>= \v ->
+  parseValue @'[] @ty input >>= \v ->
     case sameHaskellType (typeOfValue v) ty of
       Just Refl -> Right (evaluateInContext EmptyContext v)
       Nothing   -> Left . Right $ Surprise NoSourceRange
         "this expression" (an $ typeOfValue v) (Expected $ an ty)
 
 parseValue :: forall env ty. (KnownEnvironment env, KnownType ty)
-           => ValueSplices
-           -> String
+           => String
            -> Either (Either ParseError TCError) (Value '(env, ty))
-parseValue splices input = do
-  tv <- first Left (parseParsedValue splices input)
+parseValue input = do
+  tv <- first Left (parseParsedValue input)
   case atType tv typeProxy of TC x -> first Right x
 
-parseParsedValue :: Map String ParsedValue
-                 -> String
-                 -> Either ParseError ParsedValue
-parseParsedValue splices = parse (valueGrammar splices) . tokenize
+parseParsedValue :: String -> Either ParseError ParsedValue
+parseParsedValue = parse valueGrammar . tokenize
 
 parseInputValue :: forall env ty. (KnownEnvironment env, KnownType ty)
-                => ValueSplices
-                -> String
+                => String
                 -> Either (Either ParseError TCError) (Value '(env, ty))
-parseInputValue splices input = case typeProxy @ty of
-  TextType     -> parseValue splices (show input)
+parseInputValue input = case typeProxy @ty of
+  TextType     -> parseValue (show input)
   ListType ity -> case filter (not . (flip (elem @[]) " \t\n\r")) input of
     "" -> pure (List ity [])
-    _  -> parseValue splices ("[" ++ input ++ "]")
-  _ -> parseValue splices input
+    _  -> parseValue ("[" ++ input ++ "]")
+  _ -> parseValue input
 
 ------------------------------------------------------
 -- Type and Value grammars
@@ -132,27 +123,21 @@ typeGrammar = mdo
 
   pure toplevel
 
-valueGrammarWithNoSplices :: forall r. Grammar r (Prod r ParsedValue)
-valueGrammarWithNoSplices = valueGrammar Map.empty
-
-valueGrammar :: forall r
-              . ValueSplices
-             -> Grammar r (Prod r ParsedValue)
+valueGrammar :: forall r. Grammar r (Prod r ParsedValue)
 valueGrammar = valueGrammarWithFunctions Set.empty
 
 -- | The value grammar, also accepting calls to the named user-defined
 -- functions. Those names are reserved: they can't be used as variables.
 valueGrammarWithFunctions :: forall r
                            . Set String
-                          -> ValueSplices
                           -> Grammar r (Prod r ParsedValue)
-valueGrammarWithFunctions funs splices = fst <$> valueAndArithGrammar funs splices
+valueGrammarWithFunctions funs = fst <$> valueAndArithGrammar funs
 
 -- | A self-contained arithmetic\/complex-valued expression grammar --
 -- @+ - * / ^@, unary minus, implicit-multiplication concatenation, named
 -- functions and constants, and grouping parentheses\/braces at any depth
 -- (so e.g. @e^(2 pi i / 5)@ still works) -- deliberately missing two
--- things 'valueGrammarWithNoSplices' has: comparisons\/booleans (not
+-- things 'valueGrammar' has: comparisons\/booleans (not
 -- meaningful for a bare numeric value), and 'Pair's\/'List's. The latter
 -- is what makes this safe to offer as an unparenthesized alternative
 -- alongside a @(expr, expr)@ Cartesian-pair syntax without introducing a
@@ -170,19 +155,13 @@ valueGrammarWithFunctions funs splices = fst <$> valueAndArithGrammar funs splic
 -- to parameterize an existing rule over which lower rule it bottoms out
 -- at. 'funAp' and 'simpleAtom' are reused unchanged, since neither can
 -- ever start with a bare @(@.
-arithGrammarWithNoSplices :: forall r. Grammar r (Prod r ParsedValue)
-arithGrammarWithNoSplices = arithGrammar Map.empty
-
-arithGrammar :: forall r
-              . ValueSplices
-             -> Grammar r (Prod r ParsedValue)
-arithGrammar splices = snd <$> valueAndArithGrammar Set.empty splices
+arithGrammar :: forall r. Grammar r (Prod r ParsedValue)
+arithGrammar = snd <$> valueAndArithGrammar Set.empty
 
 valueAndArithGrammar :: forall r
                        . Set String
-                      -> ValueSplices
                       -> Grammar r (Prod r ParsedValue, Prod r ParsedValue)
-valueAndArithGrammar funs splices = mdo
+valueAndArithGrammar funs = mdo
 
   let toplevel = cast
 
@@ -349,7 +328,6 @@ valueAndArithGrammar funs splices = mdo
         <$> tokenMatch (\case { NumberF n -> Just n; _ -> Nothing }))
     , node (EUn OpAbs <$> (token Bar *> arith <* token Bar))
 
-    , splicedValue
 
     , textConcat
     , var
@@ -359,11 +337,6 @@ valueAndArithGrammar funs splices = mdo
     ]
 
   quoted <- rule $ tokenMatch (\case { Quoted txt -> Just txt; _ -> Nothing })
-
-  splicedValue <- rule $
-    token OpenSplice *>
-    (tokenMatch $ \case { Identifier n -> Map.lookup n splices; _ -> Nothing })
-    <* token CloseSplice
 
   var <- rule $ node (
     fmap EVar . tokenMatch $ \case
@@ -511,7 +484,6 @@ valueAndArithGrammar funs splices = mdo
         `Set.union` Map.keysSet realFunctions
         `Set.union` Map.keysSet complexFunctions
         `Set.union` Map.keysSet roundingFunctions
-        `Set.union` Map.keysSet splices
         `Set.union` funs
 
   pure (toplevel, addOrSubNp)

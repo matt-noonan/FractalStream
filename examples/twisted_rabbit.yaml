@@ -1,7 +1,8 @@
 script: |
-  @setup "Parametric complex dynamics"
-  f : C as "Iterate f(z) = " using z:C, C:C <- z^2 + C
-  stop : Boolean as "until" using z:C, C:C, escape_radius:R <- |z| > escape_radius
+  @common
+  # iterate f until stop is true
+  let f(z) = z^2 + C
+  let stop(z) = |z| > escape_radius
 
   @config "Configuration"
   C : C as "C" <- -0.1226 + 0.7449i
@@ -10,8 +11,8 @@ script: |
   r1 : R as "Outer radius" <- 0.5
 
   @viewer "Twisted rabbit" var=z size=512x512 center=0 pixelSize=1/128
-  until «stop»:
-    z <- «f»
+  until stop(z):
+    z <- f(z)
     d : R <- |z - twist_center|
     if d > r0 and d < r1:
       theta : R <- 2 pi (d - r0) / (r1 - r0)

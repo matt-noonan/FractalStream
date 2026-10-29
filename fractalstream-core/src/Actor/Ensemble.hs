@@ -1,4 +1,4 @@
-{-# language OverloadedStrings, TemplateHaskell #-}
+{-# language OverloadedStrings #-}
 module Actor.Ensemble
   ( Ensemble(..)
   , NamedScenario(..)
@@ -8,8 +8,6 @@ module Actor.Ensemble
   , encodeEnsemble
   , formatScriptError
   , runEnsemble
-  , runEnsembleFromSetup
-  , rebuildWithCurrentSetup
 
   , contextValuesChanged
   , layoutToArgs
@@ -17,7 +15,6 @@ module Actor.Ensemble
 
   , BadEnsemble(..)
 
-  , allTemplates
 
   ) where
 
@@ -40,7 +37,7 @@ import Language.Value.Typecheck
    InternalIterations, InternalStuck, InternalIterationLimit)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv, checkDefiniteAssignment)
-import Language.Code.Parser (Splices(..), noSplices, ParsedCode, parseCode)
+import Language.Code.Parser (noCommonDefs, ParsedCode)
 import Language.Parser.SourceRange
 import Data.Color (black)
 
@@ -50,15 +47,15 @@ import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Yaml as YAML
 import qualified Data.Text as Text
 import qualified Data.ByteString as BS
+import Data.ByteString (ByteString)
 import qualified Data.ByteString.UTF8 as UTF8
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.List (nub, (\\))
 import Data.Typeable (Typeable)
 
-import Language.Code (usedVarsInCode, SomeCode(..))
+import Language.Code (usedVarsInCode)
 import Language.Value.Evaluator (evaluate, evaluateInContext)
-import Development.IncludeFile
 
 import Control.Exception (Exception, IOException, throwIO, try)
 
@@ -88,9 +85,7 @@ instance Codec NamedScenario where
     build NamedScenario name commands
 
 data Ensemble = Ensemble
-  { ensembleSetup         :: Variable (Maybe Configuration)
-  , ensembleSplices       :: Dynamic (Either String Splices)
-  , ensembleConfiguration :: Variable (Maybe Configuration)
+  { ensembleConfiguration :: Variable (Maybe Configuration)
   , ensembleViewers       :: Variable [ComplexViewer]
   , ensembleScenarios     :: Variable [NamedScenario]
   , ensembleSourceScript  :: Variable String
@@ -210,7 +205,6 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
   Left err -> pure (Left err)
   Right stanzas0 -> do
     let stanzas       = stanzas0 ++ [implicitBookkeepingStanza]
-        setupGroups   = [ (t, b) | SetupStanza t b <- stanzas ]
         configGroups  = [ (t, b) | ConfigStanza t b <- stanzas ]
         viewers       = mapMaybe viewerFields stanzas
         tools         = mapMaybe toolFields stanzas
@@ -218,7 +212,7 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
 
     case checkTitlesAndTargets viewerTitles tools of
       Left err -> pure (Left err)
-      Right () -> buildWithValidTargets setupGroups configGroups viewers tools viewerTitles >>= \case
+      Right () -> buildWithValidTargets configGroups viewers tools viewerTitles >>= \case
         Left err  -> pure (Left err)
         Right ens -> do
           setValue' (ensembleSourceScript ens) scriptText
@@ -227,9 +221,9 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
 -- | A pure, allocation-free check of a unified project script: parses
 -- it, validates its cross-stanza references (a duplicate @\@viewer@
 -- title, a tool's unresolved @for=@ target), validates every
--- @\@setup@\/@\@config@ declaration's default value against its
--- declared type, and type-checks every @\@viewer@'s own code against
--- the environment\/splices its declarations would produce -- all
+-- @\@config@ declaration's default value against its declared type,
+-- and type-checks every @\@viewer@'s own code against the environment
+-- its declarations would produce -- all
 -- without building any runtime 'Ensemble'. This recovers, purely, the
 -- same type errors 'buildEnsembleFromScript' catches: per-declaration
 -- type-checking was never actually entangled with allocation in this
@@ -257,7 +251,6 @@ checkScript :: String -> Either (SourceRange, String) ()
 checkScript scriptText = do
   stanzas0 <- parseScript scriptText
   let stanzas      = stanzas0 ++ [implicitBookkeepingStanza]
-      setupGroups  = [ (t, b) | SetupStanza t b <- stanzas ]
       configGroups = [ (t, b) | ConfigStanza t b <- stanzas ]
       viewers      = mapMaybe viewerFields stanzas
       tools        = mapMaybe toolFields stanzas
@@ -265,24 +258,12 @@ checkScript scriptText = do
 
   checkTitlesAndTargets viewerTitles tools
 
-  -- '@setup@ contributes splices only (its values are only ever
-  -- spliced into viewer\/tool code as @«name»@, never bound as plain
-  -- variables -- 'buildWithValidTargets' wires it the same
-  -- asymmetric way: 'ensembleSetup' feeds only this ensemble's
-  -- splices, never its context); '@config@ contributes the ordinary-
-  -- variable environment only. Mirrors that same split, computed
-  -- directly from the parsed declarations' defaults rather than from
-  -- an allocated 'Layout's current values (nothing has been edited
-  -- yet at check time, so a field's current value is always still
-  -- its declared default).
-  (_, setupSplices) <- checkConfigGroup setupGroups
-  (configEnv, _)     <- checkConfigGroup configGroups
+  configEnv <- checkConfigGroup configGroups
   checkNoDuplicateNames configEnv
-  let splices = noSplices { valueSplices = Map.fromList setupSplices }
 
   withEnvFromMap (Map.fromList configEnv) $ \env ->
     forM_ viewers $ \v ->
-      checkViewer configEnv env splices
+      checkViewer configEnv env
         [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ] v
 
 -- | Mirrors '<#>'s own duplicate-name rejection -- the same check
@@ -298,42 +279,28 @@ checkNoDuplicateNames entries = case names \\ nub names of
   []    -> Right ()
   where names = map fst entries
 
--- | Validate every declaration in a group of @\@setup@\/@\@config@
--- stanzas, and extract, for each, the ordinary-variable environment
--- entry it contributes (every declaration except a @using@ formula
--- field, which can only ever be referenced as a splice -- see
--- 'buildConfigDecl's own doc comment on 'buildFormulaField') and the
--- splice entry it always contributes. The allocation-free counterpart
--- of 'buildMaybeConfiguration' feeding 'Actor.Layout.layoutContext'\/
--- 'layoutToSplices'.
+-- | Validate every declaration in a group of @\@config@ stanzas, and
+-- extract the environment entry each contributes. The allocation-free
+-- counterpart of 'buildMaybeConfiguration' feeding
+-- 'Actor.Layout.layoutContext'.
 checkConfigGroup :: [(String, [ConfigStmt])]
-                  -> Either (SourceRange, String) ([(String, SomeType)], [(String, ParsedValue)])
+                  -> Either (SourceRange, String) [(String, SomeType)]
 checkConfigGroup = checkConfigStmts . concatMap snd
 
-checkConfigStmts :: [ConfigStmt] -> Either (SourceRange, String) ([(String, SomeType)], [(String, ParsedValue)])
-checkConfigStmts stmts = do
-  parts <- traverse checkConfigStmt stmts
-  pure (concatMap fst parts, concatMap snd parts)
+checkConfigStmts :: [ConfigStmt] -> Either (SourceRange, String) [(String, SomeType)]
+checkConfigStmts = fmap concat . traverse checkConfigStmt
 
-checkConfigStmt :: ConfigStmt -> Either (SourceRange, String) ([(String, SomeType)], [(String, ParsedValue)])
+checkConfigStmt :: ConfigStmt -> Either (SourceRange, String) [(String, SomeType)]
 checkConfigStmt = \case
-  ConfigText{}     -> Right ([], [])
-  ConfigButton{}   -> Right ([], [])
-  ConfigCode{}     -> Right ([], [])
-    -- Contributes to `codeSplices` instead, already resolved by the
-    -- time `checkScript` ever sees a parsed stanza -- any `«name»`
-    -- code-splice reference is substituted at parse time, so there's
-    -- nothing left for this live check to do with it here.
+  ConfigText{}     -> Right []
+  ConfigButton{}   -> Right []
   ConfigRow stmts' -> checkConfigStmts stmts'
   ConfigDecl{..}    -> do
-    checkConfigDecl cdRange cdName cdType cdDefault cdChoices cdUsing
-    case cdUsing of
-      Just _  -> pure ([], [(cdName, cdDefault)])
-      Nothing -> pure ([(cdName, cdType)], [(cdName, cdDefault)])
+    checkConfigDecl cdRange cdName cdType cdDefault cdChoices
+    pure [(cdName, cdType)]
 
 -- | The pure, allocation-free counterpart of 'buildConfigDecl': the
--- exact same validation (a plain field's default against its declared
--- type, or a @using@ formula's default against its own environment,
+-- exact same validation (a field's default against its declared type,
 -- or a choice index against its list of choices), minus every
 -- subsequent 'newVariable' call -- those build a 'Layout' for display
 -- and don't change whether this declaration is valid. Keep this in
@@ -341,44 +308,23 @@ checkConfigStmt = \case
 -- and 'buildEnsembleFromScript' reject the same scripts, to catch
 -- drift between them).
 checkConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue
-                -> Maybe [String] -> Maybe [(String, FSType)]
+                -> Maybe [String]
                 -> Either (SourceRange, String) ()
-checkConfigDecl sr name (SomeType ty) defaultValue mchoices mUsing = withKnownType ty $
+checkConfigDecl sr name (SomeType ty) defaultValue mchoices = withKnownType ty $
   let evalDefault = case atType @'[] defaultValue ty of
         TC (Left err) -> Left (sr, "The default value for `" ++ name ++
                                     "` doesn't match its declared type: " ++ ppError err)
         TC (Right v)  -> Right (evaluateInContext EmptyContext v)
 
-      checkFormulaField envSpec =
-        withEnvFromMap (Map.fromList [ (n, withType t SomeType) | (n, t) <- envSpec ]) $
-          \(env0 :: EnvironmentProxy env0) -> withEnvironment env0 $
-            case atType @env0 defaultValue ty of
-              TC (Right _)  -> Right ()
-              TC (Left err0) ->
-                -- Fall back to also offering the bookkeeping names that
-                -- `escapes`/`vanishes`/`iterations`/`stuck` resolve to,
-                -- in case that (and not anything else) is why this
-                -- failed -- see 'declareFormulaBookkeeping'.
-                case declareFormulaBookkeeping env0 of
-                  Left _ -> Left (sr, "The formula for `" ++ name ++
-                                       "` doesn't typecheck: " ++ ppError err0)
-                  Right (env1 :: EnvironmentProxy env1) -> withEnvironment env1 $
-                    case atType @env1 defaultValue ty of
-                      TC (Right _) -> Right ()
-                      TC (Left _)  -> Left (sr, "The formula for `" ++ name ++
-                                                 "` doesn't typecheck: " ++ ppError err0)
-
-  in case mUsing of
-       Just envSpec -> checkFormulaField envSpec
-       Nothing -> case (ty, mchoices) of
-         (IntegerType, Just choices) -> evalDefault >>= \ix ->
-           if ix < 0 || ix >= fromIntegral (length choices)
-           then Left (sr, "The choice index " ++ show ix ++ " for `" ++ name ++
-                           "` is out of range (there " ++
-                           (if length choices == 1 then "is 1 choice" else
-                            "are " ++ show (length choices) ++ " choices") ++ ").")
-           else Right ()
-         _ -> evalDefault >> Right ()
+  in case (ty, mchoices) of
+       (IntegerType, Just choices) -> evalDefault >>= \ix ->
+         if ix < 0 || ix >= fromIntegral (length choices)
+         then Left (sr, "The choice index " ++ show ix ++ " for `" ++ name ++
+                         "` is out of range (there " ++
+                         (if length choices == 1 then "is 1 choice" else
+                          "are " ++ show (length choices) ++ " choices") ++ ").")
+         else Right ()
+       _ -> evalDefault >> Right ()
 
 -- | The pure, allocation-free counterpart of 'buildComplexViewer's own
 -- type-check of a viewer's code (mirroring its internal @runBuild@
@@ -394,9 +340,9 @@ checkConfigDecl sr name (SomeType ty) defaultValue mchoices mUsing = withKnownTy
 -- this check-only path ever forces it. (If that invariant ever
 -- changes, this will fail loudly -- including in the test suite --
 -- rather than silently.)
-checkViewer :: forall env. [(String, SomeType)] -> EnvironmentProxy env -> Splices
+checkViewer :: forall env. [(String, SomeType)] -> EnvironmentProxy env
             -> [ToolFields] -> ViewerFields -> Either (SourceRange, String) ()
-checkViewer configEnv env splices myTools ViewerFields{..} = do
+checkViewer configEnv env myTools ViewerFields{..} = do
   _ <- parseConstantE ComplexType (fromMaybe "0" vfCenter)
   _ <- parseConstantE RealType (fromMaybe "1/128" vfPixelSize)
   mIterPV <- parseMaybeAttrValue vfIterLimit
@@ -417,7 +363,7 @@ checkViewer configEnv env splices myTools ViewerFields{..} = do
           assertMissingViewerArgs someEnv $ do
             let dummyCtx :: Context DynamicValue someEnv
                 dummyCtx = envToContext someEnv (\_ _ -> error "checkViewer: dummy context value forced unexpectedly")
-            vc <- left (NoSourceRange,) (buildViewerContext someEnv dummyCtx splices vfVar mIterPV mEscPV mVanPV)
+            vc <- left (NoSourceRange,) (buildViewerContext someEnv dummyCtx vfVar mIterPV mEscPV mVanPV)
             _  <- parseViewerScript vfPixelVar vc vfCode
             pure ()
 
@@ -459,7 +405,7 @@ checkViewer configEnv env splices myTools ViewerFields{..} = do
 checkTool :: [(String, SomeType)] -> Coordinate -> (ParsedValue, ParsedValue, ParsedValue)
           -> Maybe String -> ToolFields -> Either (SourceRange, String) ()
 checkTool ensembleEnv coord limits mpixel ToolFields{..} = do
-  (toolEnvEntries, _) <- checkConfigStmts tfConfig
+  toolEnvEntries <- checkConfigStmts tfConfig
   checkNoDuplicateNames (ensembleEnv ++ toolEnvEntries)
   withEnvFromMap (Map.fromList (ensembleEnv ++ toolEnvEntries)) $ \(env :: EnvironmentProxy env) ->
     assertMissingClickArgs env $
@@ -470,43 +416,11 @@ checkTool ensembleEnv coord limits mpixel ToolFields{..} = do
       Right _  -> Right ()
 
 buildWithValidTargets :: [(String, [ConfigStmt])]
-                       -> [(String, [ConfigStmt])]
                        -> [ViewerFields]
                        -> [ToolFields]
                        -> [String]
                        -> IO (Either (SourceRange, String) Ensemble)
-buildWithValidTargets setupGroups configGroups viewers tools viewerTitles = do
-  eSetupConfig <- buildMaybeConfiguration "Setup" setupGroups
-  case eSetupConfig of
-    Left err -> pure (Left err)
-    Right setupConfig -> do
-      setupVar <- newVariable setupConfig
-      let splicesDyn :: Dynamic (Either String Splices)
-          splicesDyn = dyn setupVar >>= \case
-            Nothing                -> pure (Right noSplices)
-            Just Configuration{..} -> layoutToSplices coContents
-
-      buildConfigAndViewers splicesDyn configGroups viewers tools viewerTitles >>= \case
-        Left err -> pure (Left err)
-        Right (configVar, viewersVar) -> do
-          scenariosVar     <- newVariable []
-          sourceScriptVar  <- newVariable ""
-          pure (Right (Ensemble setupVar splicesDyn configVar viewersVar scenariosVar sourceScriptVar))
-
--- | Build @\@config@'s own 'Configuration' plus every viewer and tool,
--- given a @\@setup@'s splices rather than building them from a fresh
--- @\@setup@ parse -- factored out of 'buildWithValidTargets' so
--- 'rebuildWithCurrentSetup' can reuse the *existing*, live setup (and
--- its current, possibly-edited splices) instead of discarding it and
--- building a brand new one from the original script text.
-buildConfigAndViewers :: Dynamic (Either String Splices)
-                       -> [(String, [ConfigStmt])]
-                       -> [ViewerFields]
-                       -> [ToolFields]
-                       -> [String]
-                       -> IO (Either (SourceRange, String)
-                                (Variable (Maybe Configuration), Variable [ComplexViewer]))
-buildConfigAndViewers splicesDyn configGroups viewers tools viewerTitles = do
+buildWithValidTargets configGroups viewers tools viewerTitles = do
   eConfigConfig <- buildMaybeConfiguration "Configuration" configGroups
   case eConfigConfig of
     Left err -> pure (Left err)
@@ -519,54 +433,17 @@ buildConfigAndViewers splicesDyn configGroups viewers tools viewerTitles = do
             Just Configuration{..} -> layoutContext coContents
 
       eViewers <- forM viewers $ \v ->
-        buildComplexViewer splicesDyn contextDyn
+        buildComplexViewer contextDyn
           [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ]
           v
 
       case sequence eViewers of
         Left err -> pure (Left err)
         Right viewerList -> do
-          viewersVar <- newVariable viewerList
-          pure (Right (configVar, viewersVar))
-
--- | Rebuild @\@config@ and every viewer\/tool from a script's *current*
--- state -- used by the Setup wizard's "Go!" button to make an edited
--- @\@setup@ field's value actually take effect. A @\@viewer@\/@\@tool@\/
--- @\@config@ body's own @«name»@ references are otherwise always
--- whatever the *original* script text's @\@setup@ declarations said,
--- resolved once at parse time by 'Actor.Script.parseScript' -- editing
--- a Setup panel widget afterward never reaches them, since nothing
--- re-parses anything in response. Re-parses just the non-@\@setup@
--- stanzas (@\@config@\/@\@viewer@\/@\@tool@, via
--- 'Actor.Script.reparseNonSetupStanzas') against @\@setup@'s *current*
--- splices (reflecting whatever's live in its widgets right now) and
--- rebuilds @\@config@ and every viewer\/tool from the result, replacing
--- this 'Ensemble's own 'ensembleConfiguration'\/'ensembleViewers' in
--- place. Deliberately doesn't touch @\@setup@ itself -- see
--- 'reparseNonSetupStanzas's own doc comment for why.
-rebuildWithCurrentSetup :: Ensemble -> IO (Either (SourceRange, String) Ensemble)
-rebuildWithCurrentSetup ens@Ensemble{..} = do
-  scriptText <- getDynamic ensembleSourceScript
-  getDynamic ensembleSplices >>= \case
-    Left err -> pure (Left (NoSourceRange, err))
-    Right splices -> case reparseNonSetupStanzas splices scriptText of
-      Left err -> pure (Left err)
-      Right stanzas0 -> do
-        let stanzas       = stanzas0 ++ [implicitBookkeepingStanza]
-            configGroups = [ (t, b) | ConfigStanza t b <- stanzas ]
-            viewers       = mapMaybe viewerFields stanzas
-            tools         = mapMaybe toolFields stanzas
-            viewerTitles  = [ vfTitle v | v <- viewers ]
-
-        case checkTitlesAndTargets viewerTitles tools of
-          Left err -> pure (Left err)
-          Right () ->
-            buildConfigAndViewers ensembleSplices configGroups viewers tools viewerTitles >>= \case
-              Left err -> pure (Left err)
-              Right (configVar, viewersVar) -> do
-                getDynamic configVar  >>= setValue' ensembleConfiguration
-                getDynamic viewersVar >>= setValue' ensembleViewers
-                pure (Right ens)
+          viewersVar      <- newVariable viewerList
+          scenariosVar    <- newVariable []
+          sourceScriptVar <- newVariable ""
+          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar))
 
 ------------------------------------------------------------
 -- Stanza field extraction (total, so no incomplete-pattern risk)
@@ -689,53 +566,8 @@ reactiveSomeValue env ty initial = do
   -- parsing) is exactly what 'toUserString's own list rendering expects
   -- on the other end -- 'toUserString' strips the brackets back off a
   -- list value for display, matching this.
-  let f src = bimap (`ppFullError` src) (SomeValue env ty) (parseInputValue @env @ty Map.empty src)
+  let f src = bimap (`ppFullError` src) (SomeValue env ty) (parseInputValue @env @ty src)
   newVariable initial >>= newMapped (pure f)
-
--- | Like 'reactiveSomeValue', but for a @using@-clause formula field's
--- own text box: re-parses as a plain DSL expression via 'atType' (same
--- as the formula's initial default value already is), not via
--- 'parseInputValue's classic-UI-text-entry conventions (e.g. its
--- bracket-free list rendering) -- those would double up a list-typed
--- formula's own brackets, since the initial text (the formula's own
--- 'Actor.Script.cdDefaultSrc', exactly as the user wrote it) and any
--- later re-parse need to agree on the same convention.
-reactiveFormulaValue :: forall env ty. (KnownEnvironment env, KnownType ty)
-                      => EnvironmentProxy env -> TypeProxy ty -> String -> IO (Parsed SomeValue)
-reactiveFormulaValue env ty initial = do
-  let f src = case parseParsedValue Map.empty src of
-        Left err -> Left (ppFullError err src)
-        Right pv -> case atType @env pv ty of
-          TC (Left err) -> Left (ppFullError err src)
-          TC (Right v)  -> Right (SomeValue env ty v)
-  newVariable initial >>= newMapped (pure f)
-
--- | A @code «name»:@ declaration's own preview\/edit widget (only
--- built when it has a @using@ clause -- see 'buildConfigCode'):
--- re-parses as a whole statement block via 'parseCode', falling back
--- to also offering 'PrepBookkeeping's names (same shape as
--- 'declareFormulaBookkeeping', but reused as-is here rather than
--- redefined: a statement block can also want to *set* @color@, which
--- 'FormulaBookkeeping' doesn't include, and the rest of
--- 'PrepBookkeeping' -- @x@\/@y@\/@dx@\/@dy@ -- is harmless if unused)
--- if the plain declared environment doesn't typecheck on its own.
--- Purely for this widget's own benefit: the actual splice substitution
--- (see 'Actor.Script.ccUsing's doc comment) never calls this, and
--- isn't affected by whether it would succeed or fail here.
-reactiveCodeValue :: forall env. KnownEnvironment env
-                  => EnvironmentProxy env -> String
-                  -> IO (Mapped CodeString (Either (SourceRange, String) SomeCode))
-reactiveCodeValue env initial = do
-  let render = errorLocation &&& unlines . pp
-      f src = case parseCode env noSplices src of
-        Right code -> Right (SomeCode code)
-        Left err0 -> case declareBookkeeping env of
-          Left _ -> Left (render err0)
-          Right (env1 :: EnvironmentProxy env1) -> withEnvironment env1 $
-            case parseCode env1 noSplices src of
-              Right code -> Right (SomeCode code)
-              Left _     -> Left (render err0)
-  newVariable (CodeString initial) >>= newMapped (pure (\(CodeString src) -> f src))
 
 parseConstantE :: TypeProxy ty -> String -> Either (SourceRange, String) (HaskellType ty)
 parseConstantE ty s = left (errorLocation &&& unlines . pp) (parseConstant ty s)
@@ -743,7 +575,7 @@ parseConstantE ty s = left (errorLocation &&& unlines . pp) (parseConstant ty s)
 parseMaybeAttrValue :: Maybe String -> Either (SourceRange, String) (Maybe ParsedValue)
 parseMaybeAttrValue Nothing = Right Nothing
 parseMaybeAttrValue (Just s) =
-  Just <$> left (errorLocation &&& unlines . pp) (parseParsedValue Map.empty s)
+  Just <$> left (errorLocation &&& unlines . pp) (parseParsedValue s)
 
 -- | Chain a pure validation step into an IO-returning continuation,
 -- short-circuiting on 'Left'.
@@ -752,22 +584,21 @@ ea >>=? f = either (pure . Left) f ea
 infixl 1 >>=?
 
 ------------------------------------------------------------
--- Configuration\/setup -> Layout
+-- Configuration -> Layout
 ------------------------------------------------------------
 
 configStmtToLayout :: ConfigStmt -> IO (Either (SourceRange, String) Layout)
 configStmtToLayout = \case
   ConfigText s   -> Right . PlainText <$> newVariable s
   ConfigButton s -> Right . Button <$> newVariable s
-  ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdDefaultSrc cdLabel cdChoices cdUsing
-  ConfigCode{..} -> buildConfigCode ccName ccBodySrc ccUsing
+  ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdLabel cdChoices
   ConfigRow stmts -> do
     results <- mapM configStmtToLayout stmts
     case sequence results of
       Left err      -> pure (Left err)
       Right layouts -> Right . Horizontal <$> newVariable layouts
 
--- | The names of every variable a config\/setup\/tool statement declares,
+-- | The names of every variable a config\/tool statement declares,
 -- recursing into @\@row@ blocks (used for 'Actor.Tool.toolVars').
 configStmtNames :: ConfigStmt -> [String]
 configStmtNames = \case
@@ -775,31 +606,10 @@ configStmtNames = \case
   ConfigRow stmts    -> concatMap configStmtNames stmts
   ConfigText{}       -> []
   ConfigButton{}     -> []
-  ConfigCode{}       -> []
 
--- | A @code «name»:@ declaration's own Setup-panel Layout. Without a
--- @using@ clause, there's no environment to type-check against, so
--- this stays the same invisible, empty placeholder it's always been
--- -- a code splice is never itself a user-facing field; only once
--- spliced into a real @\@viewer@\/@\@tool@ body does it mean anything.
--- With one, builds a real 'ScriptBox' preview\/edit widget (via
--- 'reactiveCodeValue') instead, purely for that widget's own benefit
--- -- see 'Actor.Script.ccUsing's doc comment for why this can never
--- affect the actual splice substitution either way.
-buildConfigCode :: String -> String -> Maybe [(String, FSType)] -> IO (Either (SourceRange, String) Layout)
-buildConfigCode _ _ Nothing = Right . Vertical <$> newVariable []
-buildConfigCode name bodySrc (Just envSpec) =
-  withEnvFromMap (Map.fromList [ (n, withType t SomeType) | (n, t) <- envSpec ]) $
-    \(env :: EnvironmentProxy env) -> withEnvironment env $ do
-      nameP <- constParsed name (Right name)
-      envV  <- newVariable (SomeEnvironment env)
-      codeM <- reactiveCodeValue env bodySrc
-      pure (Right (ScriptBox (UIScript nameP envV codeM)))
-
-buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> String -> Maybe String -> Maybe [String]
-                -> Maybe [(String, FSType)]
+buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> Maybe String -> Maybe [String]
                 -> IO (Either (SourceRange, String) Layout)
-buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue defaultSrc mlabel mchoices mUsing = withKnownType ty $
+buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoices = withKnownType ty $
   let lbl = Label (fromMaybe name mlabel)
 
       evalDefault = case atType @'[] defaultValue ty of
@@ -807,88 +617,41 @@ buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue defaultSrc m
                                     "` doesn't match its declared type: " ++ ppError err)
         TC (Right v)  -> Right (evaluateInContext EmptyContext v)
 
-      -- A formula field (`using z:C, C:C <- ...`), regardless of its
-      -- declared type -- a boolean stopping condition or a color rule is
-      -- just as legitimate a formula as a numeric one. Its default-value
-      -- expression is typechecked against the `using` environment instead
-      -- of the empty one, and the resulting Value AST (with its free
-      -- variables left unresolved) is what gets stored under this
-      -- declaration's name in the splices map built by 'Actor.Script.
-      -- parseScript', for `@viewer`/`@tool` bodies to reference via
-      -- `«name»`. The displayed text box shows (and lets the user edit)
-      -- `defaultSrc` -- the formula's own raw source text, via
-      -- 'reactiveFormulaValue' -- rather than 'cdDefault'/this `v`
-      -- (already-parsed, no longer textual): editing it here has no
-      -- effect on any *already-spliced* body (those were resolved once,
-      -- at parse time), so this is purely a readable/correct display, not
-      -- a live hook into anything downstream.
-      buildFormulaField envSpec =
-        withEnvFromMap (Map.fromList [ (n, withType t SomeType) | (n, t) <- envSpec ]) $
-          \(env0 :: EnvironmentProxy env0) -> withEnvironment env0 $
-            let finish :: forall e. KnownEnvironment e
-                       => EnvironmentProxy e -> IO (Either (SourceRange, String) Layout)
-                finish env = do
-                  labelV     <- newVariable lbl
-                  exprNameP  <- constParsed name (Right name)
-                  exprTypeP  <- constParsed (ppType ty) (Right (SomeType ty))
-                  exprEnvV   <- newVariable (SomeEnvironment env)
-                  exprValueP <- reactiveFormulaValue env ty defaultSrc
-                  pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprEnvV exprValueP)))
-            in case atType @env0 defaultValue ty of
-                 TC (Right _) -> finish env0
-                 TC (Left err0) ->
-                   -- Fall back to also offering the bookkeeping names
-                   -- that `escapes`/`vanishes`/`iterations`/`stuck`
-                   -- resolve to, in case that (and not anything else)
-                   -- is why this failed -- see
-                   -- 'declareFormulaBookkeeping'.
-                   case declareFormulaBookkeeping env0 of
-                     Left _ -> pure (Left (sr, "The formula for `" ++ name ++
-                                                "` doesn't typecheck: " ++ ppError err0))
-                     Right (env1 :: EnvironmentProxy env1) -> withEnvironment env1 $
-                       case atType @env1 defaultValue ty of
-                         TC (Right _) -> finish env1
-                         TC (Left _)  -> pure (Left (sr, "The formula for `" ++ name ++
-                                                          "` doesn't typecheck: " ++ ppError err0))
+  in case (ty, mchoices) of
 
-  in case mUsing of
-    Just envSpec -> buildFormulaField envSpec
-    Nothing -> case (ty, mchoices) of
+    (BooleanType, _) -> evalDefault >>=? \v -> do
+      labelV <- newVariable lbl
+      varP   <- constParsed name (Right name)
+      valueV <- newVariable v
+      pure (Right (CheckBox labelV varP valueV))
 
-      (BooleanType, _) -> evalDefault >>=? \v -> do
-        labelV <- newVariable lbl
-        varP   <- constParsed name (Right name)
-        valueV <- newVariable v
-        pure (Right (CheckBox labelV varP valueV))
+    (ColorType, _) -> evalDefault >>=? \v -> do
+      labelV <- newVariable lbl
+      varP   <- constParsed name (Right name)
+      valueP <- constParsed name (Right v)
+      pure (Right (ColorPicker labelV varP valueP))
 
-      (ColorType, _) -> evalDefault >>=? \v -> do
-        labelV <- newVariable lbl
-        varP   <- constParsed name (Right name)
-        valueP <- constParsed name (Right v)
-        pure (Right (ColorPicker labelV varP valueP))
+    (IntegerType, Just choices) -> evalDefault >>=? \ix ->
+      if ix < 0 || ix >= fromIntegral (length choices)
+      then pure (Left (sr, "The choice index " ++ show ix ++ " for `" ++ name ++
+                            "` is out of range (there " ++
+                            (if length choices == 1 then "is 1 choice" else
+                             "are " ++ show (length choices) ++ " choices") ++ ")."))
+      else do
+        labelV    <- newVariable lbl
+        varP      <- constParsed name (Right name)
+        ixV       <- newVariable ix
+        choicesV  <- newVariable choices
+        pure (Right (Selection labelV varP ixV choicesV))
 
-      (IntegerType, Just choices) -> evalDefault >>=? \ix ->
-        if ix < 0 || ix >= fromIntegral (length choices)
-        then pure (Left (sr, "The choice index " ++ show ix ++ " for `" ++ name ++
-                              "` is out of range (there " ++
-                              (if length choices == 1 then "is 1 choice" else
-                               "are " ++ show (length choices) ++ " choices") ++ ")."))
-        else do
-          labelV    <- newVariable lbl
-          varP      <- constParsed name (Right name)
-          ixV       <- newVariable ix
-          choicesV  <- newVariable choices
-          pure (Right (Selection labelV varP ixV choicesV))
+    (_, _) -> evalDefault >>=? \v -> do
+      labelV     <- newVariable lbl
+      exprNameP  <- constParsed name (Right name)
+      exprTypeP  <- constParsed (ppType ty) (Right (SomeType ty))
+      exprValueP <- reactiveSomeValue EmptyEnvProxy ty (toUserString ty v)
+      pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprValueP)))
 
-      (_, _) -> evalDefault >>=? \v -> do
-        labelV     <- newVariable lbl
-        exprNameP  <- constParsed name (Right name)
-        exprTypeP  <- constParsed (ppType ty) (Right (SomeType ty))
-        exprEnvV   <- newVariable (SomeEnvironment EmptyEnvProxy)
-        exprValueP <- reactiveSomeValue EmptyEnvProxy ty (toUserString ty v)
-        pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprEnvV exprValueP)))
-
--- | One @\@setup@\/@\@config@ stanza's statements, combined into a single
+-- | One @\@config@ stanza's statements, combined into a single
 -- titled 'Panel'.
 buildStanzaPanel :: (String, [ConfigStmt]) -> IO (Either (SourceRange, String) Layout)
 buildStanzaPanel (title, stmts) = do
@@ -901,10 +664,9 @@ buildStanzaPanel (title, stmts) = do
       bodyV      <- newVariable bodyLayout
       pure (Right (Panel titleV bodyV))
 
--- | All of a project's @\@setup@ (or @\@config@) stanzas, combined into
--- one 'Configuration'. 'Nothing' when there are no such stanzas at all
--- (so the ensemble ends up with no setup\/configuration panel, same as a
--- classic YAML project with no @setup:@\/@configuration:@ key).
+-- | All of a project's @\@config@ stanzas, combined into one
+-- 'Configuration'. 'Nothing' when there are no such stanzas at all (so
+-- the ensemble ends up with no configuration panel).
 buildMaybeConfiguration :: String -> [(String, [ConfigStmt])]
                          -> IO (Either (SourceRange, String) (Maybe Configuration))
 buildMaybeConfiguration _ [] = pure (Right Nothing)
@@ -951,30 +713,6 @@ declareE :: forall n t e. KnownSymbol n
 declareE _ t e = case lookupEnv' (Proxy @n) e of
   Found' _ _ -> Left (NoSourceRange, "Internal error: duplicate `" ++ symbolVal (Proxy @n) ++ "`.")
   Absent' pf -> Right (recallIsAbsent pf $ declare t e)
-
--- | The bookkeeping names a @using@-clause formula field's default
--- expression can reach for (on top of whatever environment its own
--- @using@ clause declares) if it uses one of the @escapes@\/@vanishes@\/
--- @iterations@\/@stuck@ keywords -- the same ones always implicitly
--- available inside a real @\@viewer@\/@\@tool@ body. A plain variable
--- reference still only ever sees the @using@ clause's own declared
--- names; this is consulted only as a fallback, once a formula fails to
--- typecheck against that smaller environment -- see 'checkConfigDecl'\/
--- 'buildConfigDecl's own @checkFormulaField@\/@buildFormulaField@.
-type FormulaBookkeeping e =
-  '(InternalIterations, 'IntegerT) ': '(InternalStuck, 'BooleanT) ':
-  '(InternalIterationLimit, 'IntegerT) ': '(InternalEscapeRadius, 'RealT) ':
-  '(InternalVanishingRadius, 'RealT) ': e
-
-declareFormulaBookkeeping :: forall e. EnvironmentProxy e
-                          -> Either (SourceRange, String) (EnvironmentProxy (FormulaBookkeeping e))
-declareFormulaBookkeeping e0 =
-      declareE (Proxy @InternalIterations)      IntegerType
-  <=< declareE (Proxy @InternalStuck)           BooleanType
-  <=< declareE (Proxy @InternalIterationLimit)  IntegerType
-  <=< declareE (Proxy @InternalEscapeRadius)    RealType
-  <=< declareE (Proxy @InternalVanishingRadius) RealType
-  $ e0
 
 -- | The bookkeeping names a preparation script's own code can see,
 -- on top of whatever environment it's declared against: per-pixel
@@ -1028,12 +766,11 @@ checkPrepCode outputNames env prepParsedCode = do
   left (NoSourceRange,) (checkDefiniteAssignment (Set.fromList outputNames) prepCode0)
   pure (env', prepCode0)
 
-buildComplexViewer :: Dynamic (Either String Splices)
-                    -> Dynamic (Either String (SomeContext DynamicValue))
+buildComplexViewer :: Dynamic (Either String (SomeContext DynamicValue))
                     -> [ToolFields]
                     -> ViewerFields
                     -> IO (Either (SourceRange, String) ComplexViewer)
-buildComplexViewer splicesDyn contextDyn myTools ViewerFields{..} =
+buildComplexViewer contextDyn myTools ViewerFields{..} =
   parseConstantE ComplexType (fromMaybe "0" vfCenter) >>=? \centerVal ->
   parseConstantE RealType (fromMaybe "1/128" vfPixelSize) >>=? \pixelVal ->
   parseMaybeAttrValue vfIterLimit >>=? \mIterPV ->
@@ -1063,13 +800,13 @@ buildComplexViewer splicesDyn contextDyn myTools ViewerFields{..} =
         -- 'ViewerContext' before its prep code for the same reason.
         finishBuild :: forall someEnv prepOutputEnv. KnownEnvironment someEnv
                      => Maybe (EnvironmentProxy prepOutputEnv, [String], ParsedCode)
-                     -> Context DynamicValue someEnv -> Splices
+                     -> Context DynamicValue someEnv
                      -> Either (SourceRange, String) SomeViewerWithContext
-        finishBuild mprepInfo ctx splices =
+        finishBuild mprepInfo ctx =
           let env = contextToEnv ctx
           in fromMaybe (Left (NoSourceRange, "INTERNAL ERROR: redefined internal argument")) $
              assertMissingViewerArgs env $ do
-               vc <- left (NoSourceRange,) (buildViewerContext env ctx splices vfVar mIterPV mEscPV mVanPV)
+               vc <- left (NoSourceRange,) (buildViewerContext env ctx vfVar mIterPV mEscPV mVanPV)
                mprep <- case mprepInfo of
                  Nothing -> pure Nothing
                  Just (prepOutputEnvProxy, outputNames, prepParsedCode) ->
@@ -1119,14 +856,12 @@ buildComplexViewer splicesDyn contextDyn myTools ViewerFields{..} =
           withEnvironment prepOutputEnvProxy $ pure (PrepScript prepOutputEnvProxy prepCode)
 
         runBuild :: Either String (SomeContext DynamicValue)
-                 -> Either String Splices
                  -> Either (SourceRange, String) SomeViewerWithContext
-        runBuild ectx esplices = case (ectx, esplices) of
-          (Left err, _) -> Left (NoSourceRange, err)
-          (_, Left err) -> Left (NoSourceRange, err)
-          (Right (SomeContext (configCtx :: Context DynamicValue cEnv)), Right splices) ->
+        runBuild = \case
+          Left err -> Left (NoSourceRange, err)
+          Right (SomeContext (configCtx :: Context DynamicValue cEnv)) ->
             case vfPrepare of
-              Nothing -> finishBuild Nothing configCtx splices
+              Nothing -> finishBuild Nothing configCtx
               Just (outputSpecs, prepParsedCode) ->
                 case buildPrepOutputCtx outputSpecs of
                   Left err -> Left (NoSourceRange, err)
@@ -1136,10 +871,10 @@ buildComplexViewer splicesDyn contextDyn myTools ViewerFields{..} =
                       Right (combinedCtx :: Context DynamicValue combinedEnv) ->
                         withEnvironment (contextToEnv combinedCtx) $
                           finishBuild (Just (contextToEnv prepCtx, map fst outputSpecs, prepParsedCode))
-                            combinedCtx splices
+                            combinedCtx
 
         codeMapper :: Dynamic (CodeString -> Either (SourceRange, String) SomeViewerWithContext)
-        codeMapper = (\ectx esplices -> const (runBuild ectx esplices)) <$> contextDyn <*> splicesDyn
+        codeMapper = const . runBuild <$> contextDyn
 
     cvCodeSourceV <- newVariable (CodeString "")
     cvCodeM       <- newMapped codeMapper cvCodeSourceV
@@ -1240,51 +975,18 @@ buildTool coord limits mpixel ToolFields{..} = do
 data HaskellValueOrError :: Symbol -> FSType -> Exp Type
 type instance Eval (HaskellValueOrError name t) = Either String (HaskellType t)
 
-runEnsembleFromSetup :: Backend -> UI -> Ensemble -> IO ()
-runEnsembleFromSetup backend UI{..} ens@Ensemble{..} = do
-
-  -- Get a handle for the ensemble
-  project <- newEnsemble
-  let rerunSetup = pure ()
-
-  -- Run the setup panel
-  getDynamic ensembleSetup >>= \case
-    Nothing -> runEnsemblePostSetup project backend makeLayout makeViewer rerunSetup ens
-    Just Configuration{..} -> do
-      title <- either (throwIO . BadEnsemble) pure =<< getDynamic coTitle
-      -- "Go!" re-splices and re-parses @config/@viewer/@tool against
-      -- @setup's *current* (possibly-edited) values before building
-      -- anything -- see 'rebuildWithCurrentSetup's own doc comment.
-      let runPostSetup = rebuildWithCurrentSetup ens >>= \case
-            Left (_, err) -> throwIO (BadEnsemble err)
-            Right ens'    -> runEnsemblePostSetup project backend makeLayout makeViewer rerunSetup ens'
-      runSetup project title coContents runPostSetup
-
 runEnsemble :: Backend -> UI -> Ensemble -> IO ()
 runEnsemble backend UI{..} Ensemble{..} = do
 
   -- Get a handle for the ensemble
   project <- newEnsemble
-  let rerunSetup = pure ()
-  runEnsemblePostSetup project backend makeLayout makeViewer rerunSetup Ensemble{..}
-
-
-runEnsemblePostSetup :: forall ensembleHandle
-                      . ensembleHandle
-                     -> Backend
-                     -> (ensembleHandle -> String -> Layout -> IO (IO ()))
-                     -> (ensembleHandle -> IO () -> Dynamic (Either String SomeEnvironment) -> SomeContext EventArgument_ -> IO () -> IO () -> Viewer -> IO (IO ()))
-                     -> IO ()
-                     -> Ensemble
-                     -> IO ()
-runEnsemblePostSetup project backend mkLayout mkViewer rerunSetup Ensemble{..} = do
 
   -- Make the configuration panel
   (someContext, configArgs, showConfig) <- getDynamic ensembleConfiguration >>= \case
     Nothing -> pure (SomeContext EmptyContext, SomeContext EmptyContext, pure ())
     Just Configuration{..} -> do
       title <- fromRight "???" <$> getDynamic coTitle
-      showConfig <- mkLayout project title coContents
+      showConfig <- makeLayout project title coContents
       layoutContext' coContents >>= \case
         Left err -> throwIO (BadEnsemble err)
         Right c  -> layoutToArgs coContents >>= \case
@@ -1293,23 +995,22 @@ runEnsemblePostSetup project backend mkLayout mkViewer rerunSetup Ensemble{..} =
 
   let env = maybe (pure $ Right $ SomeEnvironment EmptyEnvProxy) (layoutEnv . coContents) =<< dyn ensembleConfiguration
   watchDynamic env $ \env' -> putStrLn ("ENV: " ++ show env')
-  let mkViewer' x1 x2 = mkViewer x1 x2 env
+  let mkViewer' x1 x2 = makeViewer x1 x2 env
 
   -- Make the viewers
   viewers <- getDynamic ensembleViewers
-  forM_ viewers $ makeComplexViewer project backend mkViewer' someContext configArgs showConfig rerunSetup
+  forM_ viewers $ makeComplexViewer project backend mkViewer' someContext configArgs showConfig
 
 makeComplexViewer :: forall ensembleHandle
                    . ensembleHandle
                   -> Backend
-                  -> (ensembleHandle -> IO () -> SomeContext EventArgument_ -> IO () -> IO () -> Viewer -> IO (IO ()))
+                  -> (ensembleHandle -> IO () -> SomeContext EventArgument_ -> IO () -> Viewer -> IO (IO ()))
                   -> SomeContext DynamicValue'
                   -> SomeContext EventArgument_
                   -> IO ()
-                  -> IO ()
                   -> ComplexViewer
                   -> IO ()
-makeComplexViewer project backend mkViewer someContext configArgs showConfig rerunSetup ComplexViewer{..} = do
+makeComplexViewer project backend mkViewer someContext configArgs showConfig ComplexViewer{..} = do
    rebuildScript
   where
    rebuildScript = do
@@ -1342,7 +1043,7 @@ makeComplexViewer project backend mkViewer someContext configArgs showConfig rer
             vListen = const (pure $ pure ())
 
         putStrLn ("Can't build viewer: " ++ err)
-        void $ mkViewer project showConfig configArgs rerunSetup rebuildScript Viewer{..}
+        void $ mkViewer project showConfig configArgs rebuildScript Viewer{..}
 
       Right (SomeViewerWithContext context mprep code) -> do
 
@@ -1395,7 +1096,7 @@ makeComplexViewer project backend mkViewer someContext configArgs showConfig rer
           withCompiledViewer (bViewerCompiler backend) mprep code $ \fun -> do
             let vCodeWithArgs = CodeWithArgs vGetArgs (Just code) (pure fun)
             -- FIXME, we should grab the "close this window" action and do something with it
-            void $ mkViewer project showConfig configArgs rerunSetup rebuildScript Viewer{..}
+            void $ mkViewer project showConfig configArgs rebuildScript Viewer{..}
 
 layoutToArgs :: Layout -> IO (SomeContext' EventArgument_)
 layoutToArgs = \case
@@ -1420,7 +1121,6 @@ layoutToArgs = \case
     Right name0 -> case someSymbolVal name0 of
       SomeSymbol name ->
         SomeContext' $ Right $ SomeContext $ Bind name ColorType (mutableArg c) EmptyContext
-  ScriptBox {} -> pure $ SomeContext' (Left "Tools cannot accept scripts as configuration variables")
   TextBox _ UIVariable{..} -> getDynamic (dyn exprName) >>= \case
     Left err -> pure $ SomeContext' (Left err)
     Right name0 -> case someSymbolVal name0 of
@@ -1446,7 +1146,7 @@ layoutToArgs = \case
   -- | A standard tool for selecting the clicked point
 makeSelectTool :: String -> IO Tool
 makeSelectTool coord = do
-  let dep1 = pure (Right noSplices)
+  let dep1 = pure (Right noCommonDefs)
       dep2 = pure (Right (ComplexCoordinate coord))
       dep3 = pure (Right (defaultIterLimit, defaultMaxRadius, defaultMinRadius))
       dep4 = pure (Right Nothing)
@@ -1455,37 +1155,3 @@ makeSelectTool coord = do
 
 selectToolJson :: String -> ByteString
 selectToolJson n = "{ \"name\": \"Select " <> UTF8.fromString n <> "\", \"shortcut\": \"S\", \"script\": \"on click-or-drag:\\n  pass\\n\" }"
-
-$(includeFileInSource "../examples/templates/simple-complex-dynamics.yaml"
-  "simpleComplexDynamicsTemplate")
-
-$(includeFileInSource "../examples/templates/simple-parametric-complex-dynamics.yaml"
-  "simpleParametricComplexDynamicsTemplate")
-
-$(includeFileInSource "../examples/templates/one-variable-complex-dynamics.yaml"
-  "complexDynamicsTemplate")
-
-$(includeFileInSource "../examples/templates/one-variable-parametric-complex-dynamics.yaml"
-  "parametricComplexDynamicsTemplate")
-
-allTemplates :: [(String, IO Ensemble)]
-allTemplates =
-  [ template "Simplified complex dynamics" simpleComplexDynamicsTemplate
-  , template "Simplified parametric complex dynamics" simpleParametricComplexDynamicsTemplate
-  , template "General complex dynamics" complexDynamicsTemplate
-  , template "General parametric complex dynamics" parametricComplexDynamicsTemplate
-  ]
- where
-   -- Each embedded template carries its whole project as a unified
-   -- script under one top-level `script:` key -- the same shape
-   -- 'parseEnsembleFromFile' recognizes and hands to
-   -- 'buildEnsembleFromScript'.
-   template name bs = (name,) $ case YAML.decodeEither' bs of
-     Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
-       buildEnsembleFromScript (Text.unpack scriptText) >>= \case
-         Left err  -> error ("Internal error when parsing a template: " ++
-                              formatScriptError (Text.unpack scriptText) err)
-         Right ens -> pure ens
-     _ -> error ("Internal error: template " ++ show name ++
-                 " doesn't have a top-level `script:` key.")
-

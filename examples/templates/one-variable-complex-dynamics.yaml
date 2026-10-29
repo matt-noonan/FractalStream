@@ -1,8 +1,9 @@
 script: |
-  @setup "Setup"
-  text "This template can be used to make a script that draws in the z-plane."
-  text "The script runs once per pixel in the view, and should use the `color` variable to indicate what color to use for that pixel."
-  code script using z:C:
+  @common
+  # This script draws in the z-plane. It runs once per pixel in the view,
+  # and should use the `color` variable to indicate what color to use for
+  # that pixel.
+  define script:
     iterate z -> z^2 + i until z escapes
     if stuck:
       color <- black
@@ -12,4 +13,4 @@ script: |
       color <- dark rainbow(iterations / 20)
 
   @viewer "One-variable complex dynamics" var=z size=600x600 pixelSize=1/100
-  «script»
+  run script

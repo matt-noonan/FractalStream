@@ -1,6 +1,6 @@
 {-# language RecursiveDo, OverloadedStrings #-}
 -- | Layer 2 of the unified project-script format: a grammar for a whole
--- project file written as a single script with @\@setup@\/@\@config@\/
+-- project file written as a single script with @\@config@\/@\@common@\/
 -- @\@viewer@\/@\@tool@ stanzas, e.g.
 --
 -- > @viewer "Mandelbrot Set" var=C size=500x500
@@ -26,7 +26,6 @@ module Actor.Script
   ( ConfigStmt(..)
   , ParsedStanza(..)
   , parseScript
-  , reparseNonSetupStanzas
   , implicitBookkeepingStanza
   , scriptGrammar
   ) where
@@ -38,25 +37,24 @@ import Language.Parser
 import Language.Parser.Tokenizer
 import Language.Parser.SourceRange
 import Language.Value.Parser
-import Language.Code.Parser (Splices(..), noSplices, codeStatementsGrammar, ParsedCode, withDefinedFunctions, withCommon)
+import Language.Code.Parser (CommonDefs(..), noCommonDefs, codeStatementsGrammar, ParsedCode, withDefinedFunctions, withCommon)
 import Language.Code.Syntax (Stmt(..), StmtF(..))
 import Actor.Event (toolBlocksGrammar, ParsedToolBlock)
 import Actor.Layout (Dimensions(..), parseDimensions)
 
-import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
-import Data.Char (isSpace, isDigit)
+import Data.Char (isDigit)
 import Numeric (showFFloat)
 
 ------------------------------------------------------------
 -- Parsed stanza bodies
 ------------------------------------------------------------
 
--- | One statement inside an @\@setup@\/@\@config@ stanza's body: either a
--- variable declaration (which becomes a config\/setup field in the UI),
--- a line of explanatory text, a plain button, or a @code «name»:@
--- code-splice declaration.
+-- | One statement inside an @\@config@ stanza's body (or at the top of a
+-- @\@tool@ stanza): either a variable declaration (which becomes a config
+-- field in the UI), a line of explanatory text, a plain button, or a row
+-- of these.
 data ConfigStmt
   = ConfigDecl
       { cdRange   :: SourceRange
@@ -74,73 +72,25 @@ data ConfigStmt
         -- 'fillDefaultSrcs' post-processing pass fills it in (the
         -- grammar itself has no access to the original string, only
         -- to already-tokenized input). Lets a caller display\/re-edit
-        -- a @using@-clause formula field's own text (e.g.
-        -- 'Actor.Ensemble.buildFormulaField'), unlike 'cdDefault',
-        -- which is already-parsed and no longer textual.
+        -- the field's own text, unlike 'cdDefault', which is
+        -- already-parsed and no longer textual.
       , cdLabel   :: Maybe String
         -- ^ Overrides the default label (the variable name) when present.
       , cdChoices :: Maybe [String]
         -- ^ When present, this declaration is shown as a dropdown with
         -- these choices; only valid when 'cdType' is @ℤ@, in which case
         -- the variable's value is the chosen index.
-      , cdUsing   :: Maybe [(String, FSType)]
-        -- ^ When present (@using z:C, C:C@), this declaration is a
-        -- *formula*: its default-value expression is typechecked against
-        -- this environment instead of the empty one, and the formula's
-        -- free variables are left unresolved so it can be spliced (via
-        -- @«name»@) into a @\@viewer@\/@\@tool@ body that binds them.
       }
   | ConfigText String
   | ConfigButton String
   | ConfigRow [ConfigStmt]
     -- ^ An indented @row:@ block; its statements are laid out side by
     -- side instead of stacked vertically.
-  | ConfigCode
-      { ccRange :: SourceRange
-      , ccName  :: String
-      , ccBody  :: ParsedCode
-      , ccUsing :: Maybe [(String, FSType)]
-        -- ^ When present (@code «name» using z:C, color:Color:@), this
-        -- declaration also gets a real, type-checked preview\/edit
-        -- widget in its Setup panel (a 'ScriptBox'), type-checking
-        -- 'ccBody' against this environment -- purely for that
-        -- widget's own benefit. The actual splice substitution is
-        -- unaffected either way: a code splice's body is always
-        -- spliced in raw\/untyped, re-checked wherever it actually
-        -- ends up, since that's the only environment that could ever
-        -- be correct for it (unlike a 'using'-clause formula's fixed
-        -- environment).
-      , ccBodyRange :: SourceRange
-        -- ^ The span of just the indented block (not the @code
-        -- «name»:@ header @ccRange@ also covers). Only used
-        -- transiently, to fill in 'ccBodySrc' below -- see
-        -- 'fillDefaultSrcs'.
-      , ccBodySrc :: String
-        -- ^ The raw text of the indented block, exactly as the user
-        -- wrote it -- empty until 'parseScript's own 'fillDefaultSrcs'
-        -- post-processing pass fills it in (the grammar itself has no
-        -- access to the original string, only to already-tokenized
-        -- input). Seeds the preview\/edit widget above, when built.
-      }
-    -- ^ A @code «name»:@ declaration: a whole block of statements,
-    -- parsed exactly like a @\@viewer@\/@\@tool@ body (so it can use
-    -- the full statement language -- assignments, loops, conditionals,
-    -- draw commands), spliced as code (via @«name»@, not as a value)
-    -- into whichever @\@viewer@\/@\@tool@ body binds its free
-    -- variables. Only meaningful under @\@setup@ (mirroring every
-    -- other splice-contributing declaration): the two-pass parse that
-    -- builds the splices map only ever looks at @\@setup@ stanzas, so
-    -- one declared under @\@config@ parses fine but never becomes a
-    -- usable splice, the same as a @using@-clause formula field would.
 
 -- | One stanza of a unified project script, with its body already parsed
 -- but not yet resolved against any other stanza.
 data ParsedStanza
-  = SetupStanza
-      { ssTitle :: String
-      , ssBody  :: [ConfigStmt]
-      }
-  | ConfigStanza
+  = ConfigStanza
       { csTitle :: String
       , csBody  :: [ConfigStmt]
       }
@@ -166,7 +116,7 @@ data ParsedStanza
       , vsPosition    :: Dimensions
       , vsPositionGiven :: Bool
         -- ^ 'False' when @position=@ was omitted, so 'vsPosition' is
-        -- only a placeholder ('parseScript'\/'reparseNonSetupStanzas'
+        -- only a placeholder ('parseScript's
         -- own 'assignViewerPositions' pass replaces it with a value
         -- staggered against this script's other un-positioned
         -- viewers, same timing as 'fillDefaultSrcs').
@@ -208,58 +158,32 @@ data ParsedStanza
 -- resolve cross-stanza references (a tool's @for=@, a viewer's
 -- @limit=@\/@escape=@\/@vanish=@); see the module header.
 --
--- Internally, this is a two-pass parse over one tokenization: @\@setup@
--- stanzas are parsed first (against no splices -- a setup field can't
--- reference another setup field), to build the real 'Splices' map that
--- their own declarations make available; then every other stanza is
--- parsed against that map, so a @\@viewer@\/@\@tool@ body can reference a
--- setup-declared name via @«name»@. This has to be two passes over two
--- separate 'parse' calls, not one 'mdo'-tied-together grammar: deciding
--- whether a `«name»` token is even a valid splice reference is a
--- *recognition*-time question for Earley (it needs a yes\/no answer to
--- build its chart), not a lazily-deferred *semantic-value* one, so it
--- can't be answered by a splices map that depends on the very parse
--- result it's deciding inside of.
+-- @\@common@ stanzas are parsed first, since their statements (and the
+-- names of the functions they define) have to be known to parse the other
+-- stanzas' scripts. This has to be two separate 'parse' calls, not one
+-- 'mdo'-tied-together grammar: whether an identifier is a function name
+-- is a *recognition*-time question for Earley (it needs a yes\/no answer
+-- to build its chart), so it can't depend on the very parse result it's
+-- deciding inside of.
 parseScript :: String -> Either (SourceRange, String) [ParsedStanza]
 parseScript input = do
-  let allToks = tokenizeWithIndentation input
-      indexed = zip [(0 :: Int) ..] (splitStanzas allToks)
-      setupChunks = [ ic | ic@(_, c) <- indexed, isSetupChunk c ]
-      otherChunks = [ ic | ic@(_, c) <- indexed, not (isSetupChunk c) ]
-
-  setupResults <- traverse (\(i, c) -> (i,) <$> parseChunk noSplices c) setupChunks
-
-  let setupBodies = [ b | (_, SetupStanza _ b) <- setupResults ]
-      splices     = buildSplicesFromSetups setupBodies
-
-  otherResults <- parseNonSetupChunks splices otherChunks
-
-  pure (assignViewerPositions (fillDefaultSrcs input (map snd (sortOn fst (setupResults ++ otherResults)))))
-
--- | Parse the non-@\@setup@ stanzas, given the splices from @\@setup@.
--- @\@common@ stanzas are parsed first, since their statements (and the
--- names of the functions they define) have to be known to parse the
--- other stanzas' scripts. Keeps each stanza's index, for putting the
--- stanzas back in source order.
-parseNonSetupChunks :: Splices -> [(Int, [SRToken])] -> Either (SourceRange, String) [(Int, ParsedStanza)]
-parseNonSetupChunks splices chunks = do
-  let commonChunks = [ ic | ic@(_, c) <- chunks, isChunk "common" c ]
+  let chunks = zip [(0 :: Int) ..] (splitStanzas (tokenizeWithIndentation input))
+      commonChunks = [ ic | ic@(_, c) <- chunks, isChunk "common" c ]
       restChunks   = [ ic | ic@(_, c) <- chunks, not (isChunk "common" c) ]
       -- every stanza can call the functions defined in any @common stanza
-      withCommonFuns = withDefinedFunctions (concatMap snd commonChunks) splices
-  commonResults <- traverse (\(i, c) -> (i,) <$> parseChunk withCommonFuns c) commonChunks
+      defs0 = withDefinedFunctions (concatMap snd commonChunks) noCommonDefs
+  commonResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs0 c) commonChunks
   let common = concat [ stmts | (_, CommonStanza (Stmt _ (SBlock stmts))) <- commonResults ]
-      splices' = withCommonFuns { commonCode = commonCode splices ++ common }
-  restResults <- traverse (\(i, c) -> (i,) <$> parseChunk splices' c) restChunks
-  pure (sortOn fst (commonResults ++ restResults))
+      defs = defs0 { commonCode = common }
+  restResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs c) restChunks
+  pure (assignViewerPositions (fillDefaultSrcs input (map snd (sortOn fst (commonResults ++ restResults)))))
 
 -- | A synthesized @\@config@ stanza providing `max_iters`\/`escape_radius`\/
 -- `vanishing_radius`, meant to be appended to a parsed script's own stanzas
--- by 'Actor.Ensemble.buildEnsembleFromScript'\/'Actor.Ensemble.checkScript'\/
--- 'Actor.Ensemble.rebuildWithCurrentSetup' (not by 'parseScript' or
--- 'reparseNonSetupStanzas' themselves, which stay pure grammar-level
--- parses with no semantic additions -- 'Actor.Script.ScriptSpec's own
--- tests check their *exact* stanza shape), so a project gets a real,
+-- by 'Actor.Ensemble.buildEnsembleFromScript'\/'Actor.Ensemble.checkScript'
+-- (not by 'parseScript' itself, which stays a pure grammar-level parse
+-- with no semantic additions -- 'Actor.Script.ScriptSpec's own tests
+-- check its *exact* stanza shape), so a project gets a real,
 -- editable, auto-generated panel for these without the script author
 -- declaring or wiring anything. A viewer's own `limit=`\/`escape=`\/
 -- `vanish=` header attributes default to referencing these names now
@@ -281,63 +205,16 @@ implicitBookkeepingStanza = ConfigStanza "Iteration settings"
       , cdName
       , cdType = withType fsTy SomeType
       , cdDefault = either (error . ("INTERNAL ERROR: implicitBookkeepingStanza: " ++) . show)
-                           id (parseParsedValue Map.empty defaultSrc)
+                           id (parseParsedValue defaultSrc)
       , cdDefaultRange = NoSourceRange
       , cdDefaultSrc = defaultSrc
       , cdLabel = Just label
       , cdChoices = Nothing
-      , cdUsing = Nothing
       }
 
--- | Re-parse just a script's non-@\@setup@ stanzas (@\@config@\/
--- @\@viewer@\/@\@tool@), against the given *value* splices instead of
--- whatever its own @\@setup@ stanzas would otherwise contribute --
--- used to make an edited @\@setup@ field's value actually take effect
--- (the Setup wizard's "Go!" button): a @\@viewer@\/@\@tool@\/@\@config@
--- body's own @«name»@ reference to a @using@-clause formula is
--- resolved once, at parse time, into whatever the given splices say,
--- so re-parsing with the *current* ones (reflecting whatever's live in
--- the Setup panel's widgets right now, via
--- 'Actor.Layout.layoutToSplices') is what makes the edit actually
--- reach them.
---
--- Also re-derives @\@setup@'s own *code* splices (@code «name»:@
--- declarations) fresh from its text, but only as a fallback for a
--- name the caller's splices don't already have: a @code «name»:@
--- declaration with no @using@ clause has no Setup-panel widget at all
--- to read an edit back from (see 'Actor.Ensemble.configStmtToLayout's
--- own @ConfigCode@ case) -- 'Actor.Layout.layoutToSplices' never sees
--- it, so a splices value computed that way is always missing it,
--- which would otherwise make its @«name»@ reference unrecognizable
--- here. One *with* a @using@ clause does have a widget, and
--- 'Actor.Layout.layoutToSplices' does see it -- so the caller's own
--- version (reflecting whatever's live in it right now) wins for that
--- one, same as a formula field's value splice. Not re-parsing @\@setup@
--- for its *value* splices at all, since those are already live data
--- (the widgets the given splices were themselves just computed from)
--- -- nothing to recover there by parsing their text again.
-reparseNonSetupStanzas :: Splices -> String -> Either (SourceRange, String) [ParsedStanza]
-reparseNonSetupStanzas currentSplices input = do
-  let allToks      = tokenizeWithIndentation input
-      chunks        = splitStanzas allToks
-      setupChunks   = [ c | c <- chunks, isSetupChunk c ]
-      otherChunks   = [ c | c <- chunks, not (isSetupChunk c) ]
-
-  setupResults <- traverse (parseChunk noSplices) setupChunks
-  let setupBodies = [ b | SetupStanza _ b <- setupResults ]
-      freshSplices = buildSplicesFromSetups setupBodies
-      splices = freshSplices
-                  { codeSplices  = Map.union (codeSplices currentSplices) (codeSplices freshSplices)
-                  , valueSplices = valueSplices currentSplices
-                  }
-
-  otherResults <- map snd <$> parseNonSetupChunks splices (zip [0 ..] otherChunks)
-  pure (assignViewerPositions (fillDefaultSrcs input otherResults))
-
 -- | Fill in every 'ConfigDecl's 'cdDefaultSrc' (the raw text of its own
--- @<- value@ expression) and every 'ConfigCode's 'ccBodySrc' (the raw
--- text of its own indented block), sliced out of the original script
--- via 'cdDefaultRange'\/'ccBodyRange' respectively. A post-processing
+-- @<- value@ expression), sliced out of the original script via
+-- 'cdDefaultRange'. A post-processing
 -- pass over the whole parse result, rather than something the grammar
 -- does directly, because the grammar operates purely over
 -- already-tokenized input -- it never has the original string in hand
@@ -346,7 +223,6 @@ fillDefaultSrcs :: String -> [ParsedStanza] -> [ParsedStanza]
 fillDefaultSrcs input = map onStanza
   where
     onStanza = \case
-      SetupStanza t b  -> SetupStanza t (map onStmt b)
       ConfigStanza t b -> ConfigStanza t (map onStmt b)
       t@ToolStanza{..} -> t { tsConfig = map onStmt tsConfig }
       v@ViewerStanza{} -> v
@@ -354,7 +230,6 @@ fillDefaultSrcs input = map onStanza
 
     onStmt = \case
       d@ConfigDecl{..} -> d { cdDefaultSrc = sliceLine input cdDefaultRange }
-      c@ConfigCode{..}  -> c { ccBodySrc = sliceBlock input ccBodyRange }
       ConfigRow stmts  -> ConfigRow (map onStmt stmts)
       other            -> other
 
@@ -364,24 +239,6 @@ fillDefaultSrcs input = map onStanza
         (line:_) -> take (e + 1 - s) (drop s line)
         []       -> ""
       _ -> ""
-
-    -- A code block's own range always spans whole lines (the
-    -- indentation-aware tokenizer guarantees a statement never starts
-    -- or ends mid-line), so 'InRows' is the expected case here -- but
-    -- a one-statement block is still a single line, i.e. 'InLine',
-    -- so that's handled too. Dedents by the block's own common
-    -- leading whitespace, so the result reads naturally on its own,
-    -- independent of how deeply nested under @\@setup@ it was.
-    sliceBlock :: String -> SourceRange -> String
-    sliceBlock src sr = case spanOfSourceRange sr of
-      Just (InLine i _ _)  -> dedent (take 1 (drop i (lines src)))
-      Just (InRows s e)    -> dedent (take (e + 1 - s) (drop s (lines src)))
-      Nothing              -> ""
-
-    dedent ls =
-      let indents = [ length (takeWhile isSpace l) | l <- ls, not (all isSpace l) ]
-          commonIndent = if null indents then 0 else minimum indents
-      in intercalate "\n" (map (drop commonIndent) ls)
 
 -- | Stagger the placeholder @100x100@ position 'validateViewerHeader'
 -- gave every @\@viewer@ that omitted its own @position=@, so that
@@ -402,20 +259,15 @@ assignViewerPositions = go (0 :: Int)
 
 -- | Parse one stanza's own token span (as produced by 'splitStanzas',
 -- without the enclosing file-level Indent\/Dedent) into its 'ParsedStanza'.
-parseChunk :: Splices -> [SRToken] -> Either (SourceRange, String) ParsedStanza
-parseChunk splices chunk =
-  case parse (scriptGrammar (withDefinedFunctions chunk splices)) wrapped of
+parseChunk :: CommonDefs -> [SRToken] -> Either (SourceRange, String) ParsedStanza
+parseChunk defs chunk =
+  case parse (scriptGrammar (withDefinedFunctions chunk defs)) wrapped of
     Left err        -> Left (errorLocation &&& unlines . pp $ err)
     Right [estanza] -> estanza
     Right _         -> Left (NoSourceRange,
       "INTERNAL ERROR: Actor.Script.parseChunk was given a token span containing other than exactly one stanza.")
   where
     wrapped = SRToken Indent NoSourceRange : chunk ++ [SRToken Dedent NoSourceRange]
-
--- | Does this stanza's own token span (as produced by 'splitStanzas')
--- start with @\@setup@?
-isSetupChunk :: [SRToken] -> Bool
-isSetupChunk = isChunk "setup"
 
 -- | Does this stanza's own token span start with @\@@ and the given keyword?
 isChunk :: String -> [SRToken] -> Bool
@@ -465,42 +317,19 @@ splitStanzas allToks = case allToks of
           Dedent -> depth - 1
           _      -> depth
 
--- | Build the splices map that every @\@setup@ stanza's own declarations
--- make available to the rest of the script, recursing into @row:@
--- blocks. A declaration's raw, not-yet-typechecked 'ParsedValue' is what's
--- stored -- 'ParsedValue' is untyped syntax, only typechecked where it is
--- spliced in, against that site's environment and expected type, so the
--- same splice works whether it's
--- referenced somewhere expecting its "natural" type or needing a cast,
--- and whether the reference site's environment is empty or not (that's
--- what makes a `using`-clause formula field spliceable at all).
-buildSplicesFromSetups :: [[ConfigStmt]] -> Splices
-buildSplicesFromSetups stmtLists = Splices
-  { codeSplices  = Map.fromList
-      [ (ccName, ccBody) | stmts <- stmtLists, ConfigCode{..} <- concatMap flatten stmts ]
-  , valueSplices = Map.fromList
-      [ (cdName, cdDefault) | stmts <- stmtLists, ConfigDecl{..} <- concatMap flatten stmts ]
-  , funNames = Set.empty
-  , commonCode = []
-  }
-  where
-    flatten = \case
-      ConfigRow rs -> concatMap flatten rs
-      s            -> [s]
-
 ------------------------------------------------------------
 -- Top-level grammar
 ------------------------------------------------------------
 
-scriptGrammar :: forall r. Splices -> Grammar r (Prod r [Either (SourceRange, String) ParsedStanza])
-scriptGrammar splices@Splices{valueSplices} = mdo
+scriptGrammar :: forall r. CommonDefs -> Grammar r (Prod r [Either (SourceRange, String) ParsedStanza])
+scriptGrammar defs = mdo
 
   -- Reuse the existing statement-level grammars for stanza bodies, rather
   -- than re-deriving assignment\/loop\/draw-command syntax here.
-  viewerBody <- codeStatementsGrammar splices
-  toolBody   <- toolBlocksGrammar splices
+  viewerBody <- codeStatementsGrammar defs
+  toolBody   <- toolBlocksGrammar defs
 
-  value <- valueGrammar valueSplices
+  value <- valueGrammar
   ty    <- typeGrammar
 
   colon <- rule (token Colon <?> ":")
@@ -564,11 +393,6 @@ scriptGrammar splices@Splices{valueSplices} = mdo
 
   attrs <- rule (many attr)
 
-  setupHeader <- rule $
-    withSourceRange $
-      (\title as sr -> validateNoAttrs sr as >> pure title)
-      <$> (token At *> tok "setup" *> quotedP) <*> (attrs <* nl)
-
   configHeader <- rule $
     withSourceRange $
       (\title as sr -> validateNoAttrs sr as >> pure title)
@@ -590,7 +414,7 @@ scriptGrammar splices@Splices{valueSplices} = mdo
       <$> (token At *> tok "tool" *> quotedP) <*> (attrs <* nl)
 
   ------------------------------------------------------------
-  -- @setup@\/@config@ stanza bodies: variable declarations, text, buttons
+  -- @config@ stanza bodies: variable declarations, text, buttons
   ------------------------------------------------------------
 
   choiceList <- rule $
@@ -598,17 +422,15 @@ scriptGrammar splices@Splices{valueSplices} = mdo
     ((:) <$> quotedP <*> many (token Comma *> quotedP))
     <* token CloseBrace
 
-  -- NOTE: `as "label"`, `choice { ... }`, and `using <env>` all come
+  -- NOTE: `as "label"` and `choice { ... }` both come
   -- *before* the `<-`, so the default-value expression is always the
   -- last thing on the line (immediately followed by `nl`), exactly like
   -- an ordinary `Let` statement's value. Putting them after the value
   -- instead would be genuinely ambiguous: since plain identifiers like
-  -- `as`/`choice`/`using` are not reserved words, `value`'s own grammar
+  -- `as`/`choice` are not reserved words, `value`'s own grammar
   -- is happy to treat e.g. `0 as "L"` as the implicit-multiplication/
   -- concatenation of `0`, the bare variable `as`, and the text literal
   -- `"L"` -- a second, equally valid parse of the same tokens.
-  usingEnv <- envGrammar
-
   -- Captures the value expression's own span, separately from the
   -- whole declaration's ('configDecl's own `withSourceRange`) -- so a
   -- later caller with the original script text in hand can recover
@@ -619,13 +441,12 @@ scriptGrammar splices@Splices{valueSplices} = mdo
 
   configDecl <- rule $
     withSourceRange $
-      (\name fsTy mlabel mchoices museEnv (valRange, val) sr ->
-          validateConfigDecl sr name fsTy val valRange mlabel mchoices museEnv)
+      (\name fsTy mlabel mchoices (valRange, val) sr ->
+          validateConfigDecl sr name fsTy val valRange mlabel mchoices)
       <$> ident
       <*> (colon *> ty)
       <*> optional (tok "as" *> quotedP)
       <*> optional (tok "choice" *> choiceList)
-      <*> optional (tok "using" *> usingEnv)
       <*> (token LeftArrow *> valueWithRange <* nl)
 
   configText <- rule $
@@ -641,30 +462,7 @@ scriptGrammar splices@Splices{valueSplices} = mdo
     (\estmts -> ConfigRow <$> sequence estmts) <$>
     (tok "row" *> colon *> nl *> token Indent *> many configStmt <* token Dedent)
 
-  -- A `code «name»:` declaration: reuses `viewerBody` (the exact same
-  -- statement-level grammar a `@viewer`\/`@tool` body parses with), so
-  -- this can use the full statement language, not just expressions.
-  -- Its free variables are left unresolved, same as a `using`-clause
-  -- formula field's default -- they're only bound once this is
-  -- spliced (via `«name»`, as code rather than a value) into whatever
-  -- body actually declares them. An optional `using <env>` clause
-  -- (same grammar as a formula field's own) doesn't change that --
-  -- see 'ConfigStmt's own 'ccUsing' doc comment for what it's for.
-  configCodeHeader <- rule $
-    withSourceRange $
-      (\name museEnv sr -> (name, museEnv, sr))
-      <$> (tok "code" *> ident) <*> (optional (tok "using" *> usingEnv) <* colon <* nl)
-
-  configCodeBody <- rule $
-    withSourceRange $
-      (\body sr -> (sr, body))
-      <$> (token Indent *> viewerBody <* token Dedent)
-
-  configCode <- rule $
-    (\(name, museEnv, sr) (bodySr, body) -> Right (ConfigCode sr name body museEnv bodySr ""))
-    <$> configCodeHeader <*> configCodeBody
-
-  configStmt <- ruleChoice [configDecl, configText, configButton, configRow, configCode]
+  configStmt <- ruleChoice [configDecl, configText, configButton, configRow]
 
   ------------------------------------------------------------
   -- @\@viewer@ preparation-script header: `prepare name1 : Ty1, ...:`
@@ -695,15 +493,11 @@ scriptGrammar splices@Splices{valueSplices} = mdo
 
   prepareBlock <- rule $
     (\enames code -> (\names -> (names, code)) <$> enames)
-    <$> prepareHeader <*> (token Indent *> (withCommon splices <$> viewerBody) <* token Dedent)
+    <$> prepareHeader <*> (token Indent *> (withCommon defs <$> viewerBody) <* token Dedent)
 
   ------------------------------------------------------------
   -- Stanzas
   ------------------------------------------------------------
-
-  setupStanza <- rule $
-    (\etitle estmts -> SetupStanza <$> etitle <*> sequence estmts)
-    <$> setupHeader <*> many configStmt
 
   configStanza <- rule $
     (\etitle estmts -> ConfigStanza <$> etitle <*> sequence estmts)
@@ -716,7 +510,7 @@ scriptGrammar splices@Splices{valueSplices} = mdo
                          vhPixelVar vhResizable (fromMaybe (Dimensions (100, 100)) vhPosition)
                          (isJust vhPosition) mprep code)
         <$> ehdr <*> sequence mprepE)
-    <$> viewerHeader <*> optional prepareBlock <*> (withCommon splices <$> viewerBody)
+    <$> viewerHeader <*> optional prepareBlock <*> (withCommon defs <$> viewerBody)
 
   toolStanza <- rule $
     (\ehdr edecls blocks -> (\ToolHeader{..} decls ->
@@ -729,7 +523,7 @@ scriptGrammar splices@Splices{valueSplices} = mdo
     (\ehdr body -> ehdr >> CommonStanza <$> validateCommonBody body)
     <$> commonHeader <*> viewerBody
 
-  stanza <- ruleChoice [setupStanza, configStanza, viewerStanza, toolStanza, commonStanza]
+  stanza <- ruleChoice [configStanza, viewerStanza, toolStanza, commonStanza]
 
   rule ((token Indent *> many stanza <* token Dedent) <?> "a unified project script")
 
@@ -890,7 +684,7 @@ validateToolHeader sr thName attrs = do
     }
 
 ------------------------------------------------------------
--- Config\/setup declaration validation
+-- Config declaration validation
 ------------------------------------------------------------
 
 validateConfigDecl :: SourceRange
@@ -900,26 +694,17 @@ validateConfigDecl :: SourceRange
                     -> SourceRange
                     -> Maybe String
                     -> Maybe [String]
-                    -> Maybe [(String, FSType)]
                     -> Either (SourceRange, String) ConfigStmt
-validateConfigDecl sr name fsTy val valRange mlabel mchoices museEnv = do
+validateConfigDecl sr name fsTy val valRange mlabel mchoices = do
   case mchoices of
     Just _ | fsTy /= IntegerT ->
       Left (sr, "`choice { ... }` can only be used with a ℤ-typed declaration (`" ++
                 name ++ "` has type " ++ withType fsTy ppType ++ ").")
     _ -> Right ()
-  case (mchoices, museEnv) of
-    (Just _, Just _) ->
-      Left (sr, "`" ++ name ++ "` cannot use both `choice { ... }` and `using`.")
-    _ -> Right ()
-  case museEnv of
-    Just env | Just dup <- firstDuplicate (map fst env) ->
-      Left (sr, "`" ++ name ++ "`'s `using` clause declares `" ++ dup ++ "` more than once.")
-    _ -> Right ()
   pure ConfigDecl
     { cdRange = sr, cdName = name, cdType = withType fsTy SomeType
     , cdDefault = val, cdDefaultRange = valRange, cdDefaultSrc = ""
-    , cdLabel = mlabel, cdChoices = mchoices, cdUsing = museEnv
+    , cdLabel = mlabel, cdChoices = mchoices
     }
 
 ------------------------------------------------------------

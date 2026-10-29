@@ -43,7 +43,7 @@ import Language.Value
 import Language.Value.Evaluator (HaskellValue)
 import Language.Value.Transform
 import Language.Code
-import Language.Code.Parser (parseCode, noSplices, ppFullError)
+import Language.Code.Parser (parseCode, noCommonDefs, ppFullError)
 import Language.Code.InterpretIO (interpretToIOWithLastValues, ScalarIORefM)
 import Language.Draw
 import Actor.Viewer
@@ -563,7 +563,7 @@ withCompiledCode :: forall env output t a
                   -> (JITFun env t -> IO a)
                   -> IO a
 withCompiledCode outputProxy outputTy env src run = do
-  code0 <- case parseCode env noSplices src of
+  code0 <- case parseCode env noCommonDefs src of
     Left (Left parseErr) -> error (ppFullError parseErr src)
     Left (Right tcErr)   -> error (ppFullError tcErr src)
     Right c               -> pure c

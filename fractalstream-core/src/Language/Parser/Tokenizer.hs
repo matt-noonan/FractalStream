@@ -83,8 +83,6 @@ data Token
   | At
   | AtAt
   | LengthKeyword
-  | OpenSplice
-  | CloseSplice
   deriving (Eq, Ord, Show)
 
 instance IsString Token where fromString = Identifier
@@ -202,8 +200,6 @@ opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
   , ("→", RightArrow), ("←", LeftArrow)
   , ("⟼", RightArrow), ("↦", RightArrow)
   , ("@", At), ("@@", AtAt)
-  , ("<<", OpenSplice), (">>", CloseSplice)
-  , ("«", OpenSplice), ("»", CloseSplice)
   ]
 
 longestMatchingOperator :: SRString -> Maybe (SRToken, SRString)

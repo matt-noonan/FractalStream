@@ -8,20 +8,16 @@ module Actor.Layout
   , parseDimensions
   , Parsed
   , UIVariable(..)
-  , UIScript(..)
   , SomeUIValue(..)
   , SomeUIExpr(..)
   , layoutBindings
   , layoutEnv
-  , layoutToSplices
   , layoutContext
   , layoutContext'
   , nonEmptyString
   , parseType'
   , parseConstant'
   , parseEnv'
-  , parseScript'
-  , ScriptDependencies
   , DynamicValue'
   ) where
 
@@ -34,11 +30,7 @@ import Data.DynamicValue
 import Data.Codec
 import Language.Value
 import Language.Value.Parser
-import Language.Value.Syntax (mkExpr, ExprF(..))
-import Language.Code hiding (End)
-import Language.Code.Parser
 import Language.Value.Evaluator (evaluate)
-import Language.Parser.SourceRange
 
 import Data.Aeson hiding (Value)
 import qualified Data.Map as Map
@@ -84,7 +76,6 @@ data Layout
   | ColorPicker (Variable Label) (Parsed String) (Parsed Color)
   | Selection (Variable Label) (Parsed String) (Variable Int64) (Variable [String])
   | TextBox (Variable Label) UIVariable
-  | ScriptBox UIScript
 
 data TabItem = TabItem
   { tiLabel :: Variable Label
@@ -94,14 +85,7 @@ data TabItem = TabItem
 data UIVariable = UIVariable
   { exprName  :: Parsed String
   , exprType  :: Parsed SomeType
-  , exprEnv   :: Variable SomeEnvironment
   , exprValue :: Parsed SomeValue
-  }
-
-data UIScript = UIScript
-  { scriptName :: Parsed String
-  , scriptEnv  :: Variable SomeEnvironment
-  , scriptCode :: Mapped CodeString (Either (SourceRange, String) SomeCode)
   }
 
 nonEmptyString :: String -> Either String String
@@ -118,17 +102,6 @@ parseConstant' ty s = left (\err -> ppFullError err s) (parseConstant ty s)
 parseEnv' :: String -> Either String SomeEnvironment
 parseEnv' s =
   bimap (`ppFullError` s) (`withEnvFromMap` SomeEnvironment) (parseEnvironment s)
-
-type ScriptDependencies =
-  (Dynamic (Either String (SomeContext DynamicValue)),
-   Dynamic (Either String Splices))
-
-parseScript' :: SomeEnvironment
-             -> Splices
-             -> CodeString
-             -> Either (SourceRange, String) SomeCode
-parseScript' (SomeEnvironment env) splices (CodeString src) = withEnvironment env $
-    bimap (errorLocation &&& unlines . pp) SomeCode (parseCode env splices src)
 
 newtype Dimensions = Dimensions { dimToPair :: (Int, Int) }
   deriving Eq
@@ -177,7 +150,6 @@ layoutContext = fmap (\(SomeContext' ctx) -> ctx) . go
         mconcat <$> mapM go parts
       PlainText{} -> pure mempty
       Button{}    -> pure mempty
-      ScriptBox{} -> pure (SomeContext' $ Left "Unexpected script")
       Selection _ var x _ -> dyn var >>= \case
         Left e -> pure (SomeContext' $ Left e)
         Right v -> single v IntegerType (dyn x)
@@ -218,7 +190,6 @@ layoutContext' = fmap (\(SomeContext' x) -> x) . go
         mconcat <$> mapM (go <=< getDynamic) parts
       PlainText{} -> pure mempty
       Button{}    -> pure mempty
-      ScriptBox{} -> pure (SomeContext' $ Left "Unexpected script")
       Selection _ var x _ -> getDynamic var <&> \case
         Left e -> SomeContext' $ Left e
         Right v -> single v IntegerType (Right <$> dyn x)
@@ -255,7 +226,6 @@ layoutBindings = \case
     fmap concat . sequence <$> (mapM layoutBindings parts)
   PlainText{} -> pure (pure [])
   Button{} -> pure (pure [])
-  ScriptBox {} -> pure (pure [])
   Selection _ var _ _ -> fmap (:[]) <$> (fmap (, SomeType IntegerType) <$> dyn var)
   CheckBox    _ var _ -> fmap (:[]) <$> (fmap (, SomeType BooleanType) <$> dyn var)
   ColorPicker _ var _ -> fmap (:[]) <$> (fmap (, SomeType ColorType)   <$> dyn var)
@@ -264,50 +234,3 @@ layoutBindings = \case
     ty <- dyn (exprType var)
     pure (((,) <$> name <*> ty) <&> (:[]))
 
-layoutToSplices :: Layout -> Dynamic (Either String Splices)
-layoutToSplices = fmap (fmap finish) . go
-  where
-    finish :: [Either (String, ParsedCode) (String, ParsedValue)] -> Splices
-    finish = (\(xs, ys) -> noSplices { codeSplices = Map.fromList xs, valueSplices = Map.fromList ys }) . partitionEithers
-
-    go :: Layout -> Dynamic (Either String [Either (String, ParsedCode) (String, ParsedValue)])
-    go = \case
-      Vertical xs -> do
-        parts <- dyn xs
-        fmap concat . sequence <$> mapM go parts
-      Horizontal xs -> do
-        parts <- dyn xs
-        fmap concat . sequence <$> mapM go parts
-      Panel _ lo -> go =<< dyn lo
-      Tabbed items -> do
-        parts <- mapM (dyn . tiBody) =<< dyn items
-        fmap concat . sequence <$> mapM go parts
-      PlainText{} -> pure (pure [])
-      Button{} -> pure (pure [])
-      ScriptBox UIScript{..} -> do
-        name   <- dyn scriptName
-        script <- dyn (source scriptCode) <&> \(CodeString src) ->
-          bimap (`ppFullError` src) id (parseParsedCode noSplices src)
-        pure (Left <$> ((,) <$> name <*> script) <&> (:[]))
-      CheckBox _ var val -> do
-        name <- dyn var
-        value <- dyn val <&> \b ->
-          let src = if b then "true" else "false"
-          in bimap (`ppFullError` src) id (parseParsedValue Map.empty src)
-        pure (Right <$> ((,) <$> name <*> value) <&> (:[]))
-      ColorPicker _ var val -> do
-        name <- dyn var
-        value <- dyn (source val) <&> \src ->
-          bimap (`ppFullError` src) id (parseParsedValue Map.empty src)
-        pure (Right <$> ((,) <$> name <*> value) <&> (:[]))
-      Selection _ var ix _ -> do
-        name <- dyn var
-        v <- dyn ix
-        let value = Right $ mkExpr NoSourceRange
-              (ELit "a selection value" (SomeHaskellType IntegerType v))
-        pure (Right <$> ((,) <$> name <*> value) <&> (:[]))
-      TextBox _ UIVariable{..} -> do
-        name  <- dyn exprName
-        value <- dyn (source exprValue) <&> \src ->
-          bimap (`ppFullError` src) id (parseParsedValue Map.empty src)
-        pure (Right <$> ((,) <$> name <*> value) <&> (:[]))

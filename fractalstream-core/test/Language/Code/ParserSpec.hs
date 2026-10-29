@@ -34,7 +34,7 @@ runWithX (Scalar xt x) input = withKnownType xt $
   in first (`ppFullError` input)
      $ fmap ((`evalState` (ctx, ()))
              . (\c -> simulate noDraw c >> eval (Var (Proxy @"x") xt bindingEvidence)))
-     $ parseCode env noSplices ("n : Z <- 0\n" ++ input)
+     $ parseCode env noCommonDefs ("n : Z <- 0\n" ++ input)
 
 runWithXY :: forall xt yt
            . Scalar xt
@@ -51,7 +51,7 @@ runWithXY (Scalar xt x) (Scalar yt y) input = withKnownType xt $ withKnownType y
   in first (`ppFullError` input)
      $ fmap ((`evalState` (ctx, ()))
              . (\c -> simulate noDraw c >> eval (Var (Proxy @"x") xt bindingEvidence)))
-     $ parseCode (envProxy Proxy) noSplices ("n : Z <- 0\n" ++ input)
+     $ parseCode (envProxy Proxy) noCommonDefs ("n : Z <- 0\n" ++ input)
 
 runWithXYC :: forall xt yt
            . Scalar xt
@@ -70,7 +70,7 @@ runWithXYC (Scalar xt x) (Scalar yt y) input =
   in first (`ppFullError` input)
      $ fmap ((`evalState` (ctx, ()))
              . (\c -> simulate noDraw c >> eval (Var (Proxy @"color") ColorType bindingEvidence)))
-     $ parseCode (envProxy Proxy) noSplices ("n : Z <- 0\n" ++ input)
+     $ parseCode (envProxy Proxy) noCommonDefs ("n : Z <- 0\n" ++ input)
 
 noDraw :: DrawHandler (HaskellTypeM ())
 noDraw = DrawHandler (const $ pure ())

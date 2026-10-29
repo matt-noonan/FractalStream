@@ -59,30 +59,6 @@ viewProject :: Window ()
 viewProject projectWindow addMenuBar saveSession editProjectScript = UI
   { newEnsemble = pure ()
 
-  , runSetup = \_ title setupUI continue -> do
-      f <- frameEx frameDefaultStyle [ text := title
-                 , on resize := propagateEvent
-                 ] projectWindow
-
-      addMenuBar f []
-      WX.windowOnClose f (set f [ visible := False ])
-
-      p <- panel f []
-      (stopListening, innerLayout) <- generateWxLayout (\_ -> pure ()) p setupUI
-      compileButton <- button p [ text := "Go!"
-                                , on command := do
-                                    set f [ visible := False ]
-                                    continue
-                                ]
-      set f [ layout := margin 5 . container p $ fill $ column 5
-              $ [ expand $ innerLayout, hfloatRight $ widget compileButton ]
-            ]
-      -- Hooks `windowOnDestroy`, not `on closing` -- see the note on
-      -- 'UI.Widgets.wxWatchDynamic'.
-      previousOnDestroy <- WX.windowGetOnDestroy f
-      WX.windowOnDestroy f (stopListening >> previousOnDestroy)
-      windowReLayout f
-
   , makeLayout = \_ title ui -> do
       f <- frameEx frameDefaultStyle [ text := title
                  , on resize := propagateEvent
@@ -117,10 +93,9 @@ makeWxComplexViewer :: Window ()
                     -> Dynamic (Either String SomeEnvironment)
                     -> SomeContext EventArgument_
                     -> IO ()
-                    -> IO ()
                     -> Viewer
                     -> IO (IO ())
-makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raiseConfigWindow configEnv (SomeContext configValues) _rerunSetup remakeViewer theViewer@Viewer{..} = do
+makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raiseConfigWindow configEnv (SomeContext configValues) remakeViewer theViewer@Viewer{..} = do
 
     {- let clone = cloneViewer theViewer >>= void . makeWxComplexViewer projectWindow addMenuBar saveSessi         on raiseConfigWindow (SomeContext configValues)
     -}

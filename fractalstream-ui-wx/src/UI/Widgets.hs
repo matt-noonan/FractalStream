@@ -295,11 +295,8 @@ genericExpressionWidget _canEditEnvironment p l UIVariable{..} = liftIO $ do
 -- | Everything about editing a piece of unified-script text that comes
 -- "for free" from a reactive 'Mapped': live syntax coloring (comments)
 -- and an inline error indicator at the first error's source span, kept
--- in sync as the text changes. Takes the 'Mapped' directly rather than
--- a 'UIScript' (the only one of 'UIScript's fields this ever actually
--- used), so any pure text -> @'Either' ('SourceRange', 'String') t@
--- check can drive it -- not just parsing a single viewer's code into a
--- 'SomeCode', which is all 'UIScript' itself can express.
+-- in sync as the text changes. Any pure text -> @'Either' ('SourceRange',
+-- 'String') t@ check can drive it.
 scriptWidget :: MonadIO io
              => Window a
              -> Mapped CodeString (Either (SourceRange, String) t)

@@ -9,7 +9,6 @@ import Language.Type
 import Language.Value
 import Language.Value.Evaluator
 
-import qualified Data.Map as Map
 
 import qualified Language.Value.Parser as P
 
@@ -18,7 +17,7 @@ parseValue :: EnvironmentProxy env
            -> String
            -> Either String (Value '(env, t))
 parseValue env ty i = withEnvironment env $ withKnownType ty $
-  first (`P.ppFullError` i) (P.parseValue Map.empty i)
+  first (`P.ppFullError` i) (P.parseValue i)
 
 spec :: Spec
 spec = do
@@ -246,12 +245,11 @@ spec = do
             $ Bind (Proxy @"[internal] escape radius") RealType big
             $ Bind (Proxy @"[internal] vanishing radius") RealType tiny
             $ EmptyContext
-        splices = Map.empty
         test z x big tiny input =
             let c = ctx z x big tiny
             in (evaluateInContext @_ @'BooleanT $ ctx z x big tiny)
                <$> first (`P.ppFullError` input) (withEnvironment (contextToEnv c)
-                                                  $ P.parseValue splices input)
+                                                  $ P.parseValue input)
 
     it "Can use the escape radius and vanishing radius comparisons" $ do
       test 1 0    2 0.1 "z escapes" `shouldBe` Right False

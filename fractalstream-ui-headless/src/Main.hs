@@ -141,9 +141,8 @@ runSnapshot backend ensemble viewerName outputFile = do
 snapshotUI :: String -> FilePath -> IORef Bool -> IORef (Maybe (Maybe String)) -> IORef [String] -> UI
 snapshotUI viewerName outputFile found result seenTitles = UI
   { newEnsemble = pure ()
-  , runSetup    = \_ _ _ proceed -> proceed
   , makeLayout  = \_ _ _ -> pure (pure ())
-  , makeViewer  = \_ _ _ _ _ _ viewer -> do
+  , makeViewer  = \_ _ _ _ _ viewer -> do
       title <- getDynamic (vTitle viewer)
       modifyIORef' seenTitles (title :)
       when (title == viewerName) $ do

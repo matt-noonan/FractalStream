@@ -37,9 +37,8 @@ main = withBackend $ \backend -> start $ do
 
   let -- A brand-new project has no file of its own yet, and nothing
       -- worth looking at until the user writes one -- so, unlike
-      -- `projectOpen`/`projectOpenTemplate`, this skips straight to
-      -- the whole-project script editor instead of calling
-      -- `runEnsemble`/`runEnsembleFromSetup`, with `editProjectScript`'s
+      -- `projectOpen`, this skips straight to the whole-project script
+      -- editor instead of calling `runEnsemble`, with `editProjectScript`'s
       -- own "Rebuild" button as the only way any viewer ever gets
       -- built. `newProjectScript` is a fixed, known-valid starting
       -- point (a project needs at least one `@viewer`), so the
@@ -106,21 +105,6 @@ main = withBackend $ \backend -> start $ do
               si = SessionInfo{..}
           modifyValue activeSessions (si :)
           runEnsemble backend ui prj
-
-      projectOpenTemplate = \name prj -> do
-        projectWindow <- frame [ visible := False ]
-        currentEnsemble <- newVariable prj
-
-        sessionName <- newVariable name
-        let sessionHandle = SessionHandle projectWindow
-        sessionVisible <- newVariable True
-        sessionUnsaved <- newVariable False
-        let sessionSave = save currentEnsemble projectWindow sessionUnsaved
-            ui = viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..})
-                   sessionSave (editProjectScript backend projectWindow currentEnsemble ui)
-            si = SessionInfo{..}
-        modifyValue activeSessions (si :)
-        runEnsembleFromSetup backend ui prj
 
       closeSession SessionInfo{..} = case sessionHandle of
         SessionHandle f -> close f

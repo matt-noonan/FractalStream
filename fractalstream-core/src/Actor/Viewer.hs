@@ -58,7 +58,6 @@ import qualified Data.Map as Map
 
 data ViewerContext env = ViewerContext
   { vcContext :: Context DynamicValue env
-  , vcSplices :: Splices
   , vcCoord   :: String
   , vcIterLimit :: Maybe (Value
       '( '(InternalEscapeRadius, RealT) ':
@@ -82,13 +81,12 @@ data ViewerContext env = ViewerContext
 buildViewerContext :: forall env
                      . EnvironmentProxy env
                     -> Context DynamicValue env
-                    -> Splices
                     -> String
                     -> Maybe ParsedValue
                     -> Maybe ParsedValue
                     -> Maybe ParsedValue
                     -> Either String (ViewerContext env)
-buildViewerContext env vcContext vcSplices vcCoord mIterLimit mEscape mVanish =
+buildViewerContext env vcContext vcCoord mIterLimit mEscape mVanish =
   withEnvironment env $ do
     let assertAbsentViewerArgs :: forall e t
                                  . EnvironmentProxy e
@@ -453,9 +451,9 @@ allGrey = ViewerFunction $ \ViewerArgs{..} -> do
       pokeElemOff vaBuffer (3 * j * w + 3 * i + 2) 0x7f
 
 defaultIterLimit, defaultMaxRadius, defaultMinRadius :: ParsedValue
-defaultIterLimit = fromRight (error "INTERNAL ERROR: defaultIterLimit") $ parseParsedValue Map.empty "100"
-defaultMaxRadius = fromRight (error "INTERNAL ERROR: defaultMaxRadius") $ parseParsedValue Map.empty "10"
-defaultMinRadius = fromRight (error "INTERNAL ERROR: defaultMinRadius") $ parseParsedValue Map.empty "0.0001"
+defaultIterLimit = fromRight (error "INTERNAL ERROR: defaultIterLimit") $ parseParsedValue "100"
+defaultMaxRadius = fromRight (error "INTERNAL ERROR: defaultMaxRadius") $ parseParsedValue "10"
+defaultMinRadius = fromRight (error "INTERNAL ERROR: defaultMinRadius") $ parseParsedValue "0.0001"
 
 ------------------------------------------------------------------------
 -- Backend

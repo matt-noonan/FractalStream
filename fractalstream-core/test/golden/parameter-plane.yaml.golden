@@ -14,16 +14,16 @@ let `[internal] vanishing radius` = vanishing_radius in:
                     let `[internal] fresh #16` = 0 in:
                       let `[internal] fresh #17` = [internal] iteration limit in:
                         block:
-                          if (!(escape_radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)) then:
-                            do-while (!(escape_radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)):
+                          if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #16 < [internal] fresh #17)) then:
+                            do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #16 < [internal] fresh #17)):
                               block:
-                                set `z` := ((z ^ 2:R:C) + C)
+                                set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                                 set `[internal] fresh #16` := ([internal] fresh #16 + 1)
                           else:
                             no-op
                           set `[internal] iteration count` := [internal] fresh #16
                           set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
-                    if (escape_radius < |z|) then:
+                    if let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) then:
                       block:
                         let `c1` = if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0 in:
                           block:
@@ -51,16 +51,16 @@ let `[internal] vanishing radius` = vanishing_radius in:
                 let `[internal] fresh #16` = 0 in:
                   let `[internal] fresh #17` = [internal] iteration limit in:
                     block:
-                      if (!(escape_radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)) then:
-                        do-while (!(escape_radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)):
+                      if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #16 < [internal] fresh #17)) then:
+                        do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #16 < [internal] fresh #17)):
                           block:
-                            set `z` := ((z ^ 2:R:C) + C)
+                            set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                             set `[internal] fresh #16` := ([internal] fresh #16 + 1)
                       else:
                         no-op
                       set `[internal] iteration count` := [internal] fresh #16
                       set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
-                if (escape_radius < |z|) then:
+                if let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) then:
                   block:
                     let `c1` = if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0 in:
                       block:
@@ -91,13 +91,13 @@ let `[internal] vanishing radius` = vanishing_radius in:
                     let `[internal] fresh #15` = 0 in:
                       let `[internal] fresh #16` = [internal] iteration limit in:
                         block:
-                          if (!(escape_radius < |z|) and ([internal] fresh #15 < [internal] fresh #16)) then:
-                            do-while (!(escape_radius < |z|) and ([internal] fresh #15 < [internal] fresh #16)):
+                          if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #15 < [internal] fresh #16)) then:
+                            do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #15 < [internal] fresh #16)):
                               block:
                                 block:
                                   set `prevZ` := z
                                   draw point at z:R^2
-                                  set `z` := ((z ^ 2:R:C) + C)
+                                  set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                                   draw line from z:R^2 to prevZ:R^2
                                 set `[internal] fresh #15` := ([internal] fresh #15 + 1)
                           else:
@@ -121,13 +121,13 @@ let `[internal] vanishing radius` = vanishing_radius in:
                       let `[internal] fresh #18` = 0 in:
                         let `[internal] fresh #19` = [internal] iteration limit in:
                           block:
-                            if (!(escape_radius < |z|) and ([internal] fresh #18 < [internal] fresh #19)) then:
-                              do-while (!(escape_radius < |z|) and ([internal] fresh #18 < [internal] fresh #19)):
+                            if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #18 < [internal] fresh #19)) then:
+                              do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #18 < [internal] fresh #19)):
                                 block:
                                   block:
                                     set `prevZ` := z
                                     draw point at z:R^2
-                                    set `z` := ((z ^ 2:R:C) + C)
+                                    set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                                     draw line from z:R^2 to prevZ:R^2
                                   set `[internal] fresh #18` := ([internal] fresh #18 + 1)
                             else:

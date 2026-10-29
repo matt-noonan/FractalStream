@@ -1,9 +1,12 @@
 script: |
-  @setup "Setup"
-  f : C as "0 = " using z:C <- z^3 - 1
-  text "Color expressions can use color names like `red` or `black`, color functions involving the variables `z` and `iterations`."
-  basin_color : Color as "Color expression for basins:" using z:C <- rainbow(arg z / (2π))
-  on_failure : Color as "Color expression for failure to converge:" using z:C <- black
+  @common
+  # find the roots of f with Newton's method
+  let f(z) = z^3 - 1
+  # colors for the basins of attraction, and for failure to converge;
+  # these can use color names like `red` or `black`, or color functions
+  # involving `z` and `iterations`
+  let basin_color(z) = rainbow(arg z / (2π))
+  let on_failure(z) = black
 
   @config "Configuration"
   shade_convergence : Boolean as "Shade by convergence speed: " <- true
@@ -12,13 +15,13 @@ script: |
   lastZ : C <- 0
   repeat:
     lastZ <- z
-    z <- z - «f» / diff(z, «f»)
+    z <- z - f(z) / diff(z, f(z))
   until z = lastZ
 
   if stuck:
-    color <- «on_failure»
+    color <- on_failure(z)
   else:
-    color <- «basin_color»
+    color <- basin_color(z)
     if shade_convergence:
       color <- blend(iterations / 20, dark color, light color)
 
@@ -34,6 +37,6 @@ script: |
     repeat:
       prevZ <- z
       draw point at z
-      z <- z - «f» / diff(z, «f»)
+      z <- z - f(z) / diff(z, f(z))
       draw line from z to prevZ
     until z = prevZ

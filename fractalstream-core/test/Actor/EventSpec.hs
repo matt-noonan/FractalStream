@@ -7,7 +7,7 @@ import FractalStream.Prelude
 
 import Language.Type
 import Language.Environment
-import Language.Code.Parser (noSplices)
+import Language.Code.Parser (noCommonDefs)
 import Language.Value.Typecheck (ParsedValue)
 import Language.Parser.SourceRange (SourceRange)
 
@@ -29,7 +29,7 @@ limits = (defaultIterLimit, defaultMaxRadius, defaultMinRadius)
 
 runScript :: String -> Either (SourceRange, String) (CombinedEventHandler TestEnv)
 runScript src =
-  case parseToolScript noSplices (ComplexCoordinate "z") limits Nothing src of
+  case parseToolScript noCommonDefs (ComplexCoordinate "z") limits Nothing src of
     Left err     -> Left err
     Right script -> runParsedToolScript script testEnv
 
@@ -150,7 +150,7 @@ on click-or-drag at z:
 |]
 
     it "reports a parse error for a malformed header" $
-      case parseToolScript noSplices (ComplexCoordinate "z") limits Nothing [r|
+      case parseToolScript noCommonDefs (ComplexCoordinate "z") limits Nothing [r|
 on clickety at z:
   pass
 |] of

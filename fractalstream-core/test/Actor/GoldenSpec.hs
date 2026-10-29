@@ -1,7 +1,7 @@
 module Actor.GoldenSpec (spec) where
 
 -- | Golden tests pinning down the fully-typechecked 'Code' produced for
--- every example project and built-in template: each viewer body, its
+-- every example project (including those under @examples/templates/@): each viewer body, its
 -- preparation script (if any), and every tool event handler, pretty-printed
 -- with 'pprintCode'. These exist to guard the move from the closure-based
 -- typechecker to the surface-AST + inference + elaboration pipeline: the
@@ -27,7 +27,7 @@ import Control.Monad (forM, forM_)
 import Data.List (isSuffixOf, sort)
 import qualified Data.Map as Map
 import System.Directory (doesFileExist, listDirectory, createDirectoryIfMissing)
-import System.FilePath ((</>), takeFileName)
+import System.FilePath ((</>))
 
 examplesDir, goldenDir :: FilePath
 examplesDir = "../examples"
@@ -35,17 +35,18 @@ goldenDir   = "test/golden"
 
 spec :: Spec
 spec = describe "typed AST golden tests" $ do
-  examples <- runIO $
-    sort . filter (".yaml" `isSuffixOf`) <$> listDirectory examplesDir
-  forM_ examples $ \file ->
+  let yamlFiles dir = runIO $
+        sort . filter (".yaml" `isSuffixOf`) <$> listDirectory (examplesDir </> dir)
+  examples  <- yamlFiles ""
+  templates <- map ("templates" </>) <$> yamlFiles "templates"
+  forM_ (examples ++ templates) $ \file ->
     it ("example " ++ file) $
       parseEnsembleFromFile (examplesDir </> file) >>= \case
-        Left err  -> golden file ("BUILD ERROR\n" ++ err)
-        Right ens -> dumpEnsemble ens >>= golden file
-
-  forM_ allTemplates $ \(name, mkEns) ->
-    it ("template " ++ name) $
-      (mkEns >>= dumpEnsemble) >>= golden ("template-" ++ takeFileName name)
+        Left err  -> golden (goldenName file) ("BUILD ERROR\n" ++ err)
+        Right ens -> dumpEnsemble ens >>= golden (goldenName file)
+  where
+    -- e.g. "templates/newtons-method.yaml" -> "templates-newtons-method.yaml"
+    goldenName = map (\c -> if c == '/' then '-' else c)
 
 golden :: String -> String -> Expectation
 golden name actual = do

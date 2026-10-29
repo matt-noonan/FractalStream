@@ -7,7 +7,7 @@ import Actor.Ensemble
 import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Tool (Tool(..), ToolInfo(..))
-import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), UIScript(..), CodeString(..))
+import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..))
 import Actor.Configuration (Configuration(..))
 import Actor.Event (runParsedToolScript)
 import Language.Environment (SomeContext(..), SomeContext'(..), Context(EmptyContext), EnvironmentProxy(..), contextToEnv)
@@ -223,30 +223,6 @@ c : Z <- 3
               other -> expectationFailure ("expected two Panels (the script's own, plus the implicit one), got " ++ show (length other))
             _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
 
-    it "builds a @setup panel distinct from @config" $
-      shouldBuild [r|
-@setup "Setup"
-title : Text <- "hello"
-
-@viewer "V" var=z size="100x100"
-pass
-|] $ \ens -> do
-        msetup <- getDynamic (ensembleSetup ens)
-        case msetup of
-          Nothing -> expectationFailure "expected a setup Configuration"
-          Just _  -> pure ()
-        -- No explicit @config stanza at all, but ensembleConfiguration
-        -- is never Nothing anymore: every ensemble always gets at
-        -- least the automatically-provided "Iteration settings" panel
-        -- (max_iters/escape_radius/vanishing_radius), distinct from @setup's
-        -- own Configuration either way.
-        mcfg <- getDynamic (ensembleConfiguration ens)
-        case mcfg of
-          Nothing  -> expectationFailure "expected the implicit \"Iteration settings\" Configuration"
-          Just cfg -> case coContents cfg of
-            Vertical panelsV -> getDynamic panelsV >>= \ps -> length ps `shouldBe` 1
-            _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
-
     it "makes a @config field's text box genuinely reactive to edits \
        \(regression: a frozen Mapped used to silently ignore them)" $
       shouldBuild [r|
@@ -393,319 +369,6 @@ color <- black
 on refresh:
   scale : R <- pixel_size * 2
 |] $ \_ -> pure ()
-
-    it "builds a `using`-clause formula field and splices it into a viewer's code" $
-      shouldBuild [r|
-@setup "Setup"
-f : C using z:C, C:C <- z^2 + C
-
-@viewer "Mandelbrot" var=C size="100x100"
-z : C <- 0
-iterate z -> «f» until z escapes
-|] $ \ens -> do
-        [viewer] <- getDynamic (ensembleViewers ens)
-        title <- getDynamic (cvTitle viewer)
-        title `shouldBe` Right "Mandelbrot"
-
-    it "rejects a formula field whose expression uses a variable missing from `using`" $
-      [r|
-@setup "Setup"
-f : C using z:C <- z^2 + C
-
-@viewer "V" var=C size="100x100"
-pass
-|] `shouldFailWith` "doesn't typecheck"
-
-    it "shows a `using`-clause formula field's own source text in its Setup \
-       \panel, not a placeholder (regression: used to show `name (defined \
-       \in script)` -- constParsed, unlike reactiveFormulaValue, never \
-       \updates on an edit either), and re-parses it reactively on edit" $
-      shouldBuild [r|
-@setup "Setup"
-f : C using z:C, C:C <- z^2 + C
-
-@viewer "Mandelbrot" var=C size="100x100"
-z : C <- 0
-iterate z -> «f» until z escapes
-|] $ \ens -> do
-        Just setupCfg <- getDynamic (ensembleSetup ens)
-        case coContents setupCfg of
-          Vertical panelsV -> getDynamic panelsV >>= \case
-            [Panel _ bodyV] -> getDynamic bodyV >>= \case
-              Vertical itemsV -> getDynamic itemsV >>= \case
-                [TextBox _ UIVariable{exprValue}] -> do
-                  initialText <- getDynamic (source exprValue)
-                  initialText `shouldBe` "z^2 + C"
-                  getDynamic (dyn exprValue) >>= \case
-                    Left err -> expectationFailure ("expected the initial formula to parse, got: " ++ err)
-                    Right _  -> pure ()
-                  setValue (source exprValue) "z^3"
-                  getDynamic (dyn exprValue) >>= \case
-                    Left err -> expectationFailure ("expected the edited formula to parse, got: " ++ err)
-                    Right _  -> pure ()
-                  setValue (source exprValue) "z +"
-                  getDynamic (dyn exprValue) >>= \case
-                    Right _ -> expectationFailure "expected the malformed edit to be rejected"
-                    Left _  -> pure ()
-                other -> expectationFailure ("expected a single formula TextBox, got " ++ show (length other))
-              _ -> expectationFailure "expected the panel body to be Vertical"
-            other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
-          _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
-
-    it "rebuildWithCurrentSetup actually splices an edited `using`-clause \
-       \formula field's new text into the viewer it's spliced into (regression: \
-       \the Setup wizard's \"Go!\" button used to just reveal the viewer(s) \
-       \already built from the original script text, with rerunSetup wired \
-       \to a no-op, so an edit never reached anything downstream)" $
-      shouldBuild [r|
-@setup "Setup"
-f : C using z:C, C:C <- z^2 + C
-
-@viewer "Mandelbrot" var=C size="100x100"
-z : C <- 0
-iterate z -> «f» until z escapes
-|] $ \ens -> do
-        Just setupCfg <- getDynamic (ensembleSetup ens)
-        case coContents setupCfg of
-          Vertical panelsV -> getDynamic panelsV >>= \case
-            [Panel _ bodyV] -> getDynamic bodyV >>= \case
-              Vertical itemsV -> getDynamic itemsV >>= \case
-                [TextBox _ UIVariable{exprValue}] -> do
-                  setValue (source exprValue) "z^3 + 42"
-                  rebuildWithCurrentSetup ens >>= \case
-                    Left err -> expectationFailure ("expected the rebuild to succeed, got: " ++ show err)
-                    Right _  -> pure ()
-                  [viewer] <- getDynamic (ensembleViewers ens)
-                  getDynamic (cvCode viewer) >>= \case
-                    Left (_, err) -> expectationFailure ("expected the rebuilt viewer's code to build, got: " ++ err)
-                    Right (SomeViewerWithContext _ _ code) ->
-                      pprintCode code `shouldSatisfy` isInfixOf "z ^ 3"
-                other -> expectationFailure ("expected a single formula TextBox, got " ++ show (length other))
-              _ -> expectationFailure "expected the panel body to be Vertical"
-            other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
-          _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
-
-    it "rebuildWithCurrentSetup rejects a malformed edit instead of building \
-       \a viewer with it" $
-      shouldBuild [r|
-@setup "Setup"
-f : C using z:C, C:C <- z^2 + C
-
-@viewer "Mandelbrot" var=C size="100x100"
-z : C <- 0
-iterate z -> «f» until z escapes
-|] $ \ens -> do
-        Just setupCfg <- getDynamic (ensembleSetup ens)
-        case coContents setupCfg of
-          Vertical panelsV -> getDynamic panelsV >>= \case
-            [Panel _ bodyV] -> getDynamic bodyV >>= \case
-              Vertical itemsV -> getDynamic itemsV >>= \case
-                [TextBox _ UIVariable{exprValue}] -> do
-                  setValue (source exprValue) "z +"
-                  rebuildWithCurrentSetup ens >>= \case
-                    Right _   -> expectationFailure "expected the rebuild to be rejected"
-                    Left _    -> pure ()
-                other -> expectationFailure ("expected a single formula TextBox, got " ++ show (length other))
-              _ -> expectationFailure "expected the panel body to be Vertical"
-            other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
-          _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
-
-    it "rebuildWithCurrentSetup succeeds, even with no edits at all, when \
-       \@setup has a `code «name»:` splice (regression: a code splice has no \
-       \Setup-panel widget -- its own Layout is an invisible empty Vertical \
-       \-- so layoutToSplices's recomputed Splices always had an empty \
-       \codeSplices, making «name» unrecognizable on re-parse and crashing \
-       \\"Go!\" outright, independently of any edit)" $
-      shouldBuild [r|
-@setup "Setup"
-code script:
-  iterate z -> z^2 + i until z escapes
-  color <- if stuck then black else white
-
-@viewer "V" var=z size="100x100"
-«script»
-|] $ \ens ->
-        rebuildWithCurrentSetup ens >>= \case
-          Left (_, err) -> expectationFailure ("expected the rebuild to succeed, got: " ++ err)
-          Right _        -> pure ()
-
-    it "a `code «name» using <env>:` declaration gets a real ScriptBox \
-       \preview/edit widget, showing the block's own raw text and \
-       \type-checking it (falling back to offering the bookkeeping names \
-       \`escapes`/`stuck` resolve to, same as a formula field's `using` \
-       \fallback, since the declared env alone doesn't have them)" $
-      shouldBuild [r|
-@setup "Setup"
-code script using z:C:
-  iterate z -> z^2 + i until z escapes
-  color <- if stuck then black else white
-
-@viewer "V" var=z size="100x100"
-«script»
-|] $ \ens -> do
-        Just setupCfg <- getDynamic (ensembleSetup ens)
-        case coContents setupCfg of
-          Vertical panelsV -> getDynamic panelsV >>= \case
-            [Panel _ bodyV] -> getDynamic bodyV >>= \case
-              Vertical itemsV -> getDynamic itemsV >>= \case
-                [ScriptBox UIScript{scriptCode}] -> do
-                  initialText <- getDynamic (source scriptCode)
-                  initialText `shouldBe`
-                    CodeString "iterate z -> z^2 + i until z escapes\ncolor <- if stuck then black else white"
-                  getDynamic (dyn scriptCode) >>= \case
-                    Left err -> expectationFailure ("expected the block to typecheck, got: " ++ show err)
-                    Right _  -> pure ()
-                other -> expectationFailure ("expected a single ScriptBox, got " ++ show (length other))
-              _ -> expectationFailure "expected the panel body to be Vertical"
-            other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
-          _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
-
-    it "a `code «name»:` declaration with no `using` clause still gets the \
-       \old invisible, empty placeholder (unchanged)" $
-      shouldBuild [r|
-@setup "Setup"
-code script:
-  color <- black
-
-@viewer "V" var=z size="100x100"
-«script»
-|] $ \ens -> do
-        Just setupCfg <- getDynamic (ensembleSetup ens)
-        case coContents setupCfg of
-          Vertical panelsV -> getDynamic panelsV >>= \case
-            [Panel _ bodyV] -> getDynamic bodyV >>= \case
-              Vertical itemsV -> getDynamic itemsV >>= \case
-                [Vertical emptyV] -> getDynamic emptyV >>= \ls ->
-                  length ls `shouldBe` 0
-                other -> expectationFailure ("expected a single empty Vertical, got " ++ show (length other))
-              _ -> expectationFailure "expected the panel body to be Vertical"
-            other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
-          _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
-
-    it "editing a `code «name» using <env>:` declaration's ScriptBox and \
-       \calling rebuildWithCurrentSetup actually splices the edit into the \
-       \viewer it's spliced into (same as an edited `using`-clause formula \
-       \field already does)" $
-      shouldBuild [r|
-@setup "Setup"
-code script using z:C:
-  iterate z -> z^2 + i until z escapes
-  color <- if stuck then black else white
-
-@viewer "V" var=z size="100x100"
-«script»
-|] $ \ens -> do
-        Just setupCfg <- getDynamic (ensembleSetup ens)
-        case coContents setupCfg of
-          Vertical panelsV -> getDynamic panelsV >>= \case
-            [Panel _ bodyV] -> getDynamic bodyV >>= \case
-              Vertical itemsV -> getDynamic itemsV >>= \case
-                [ScriptBox UIScript{scriptCode}] -> do
-                  setValue (source scriptCode) $ CodeString
-                    "iterate z -> z^2 + 99 until z escapes\ncolor <- if stuck then black else white"
-                  rebuildWithCurrentSetup ens >>= \case
-                    Left (_, err) -> expectationFailure ("expected the rebuild to succeed, got: " ++ err)
-                    Right _       -> pure ()
-                  [viewer] <- getDynamic (ensembleViewers ens)
-                  getDynamic (cvCode viewer) >>= \case
-                    Left (_, err) -> expectationFailure ("expected the rebuilt viewer's code to build, got: " ++ err)
-                    Right (SomeViewerWithContext _ _ code) ->
-                      pprintCode code `shouldSatisfy` isInfixOf "99"
-                other -> expectationFailure ("expected a single ScriptBox, got " ++ show (length other))
-              _ -> expectationFailure "expected the panel body to be Vertical"
-            other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
-          _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
-
-    it "the actual splice substitution stays raw/untyped: an edit that \
-       \fails the ScriptBox's own preview typecheck (because the declared \
-       \`using` env doesn't happen to cover what's needed) can still \
-       \rebuild fine, as long as it typechecks against the real viewer \
-       \it's spliced into" $
-      shouldBuild [r|
-@setup "Setup"
-code script using dummy:Z:
-  color <- black
-
-@viewer "V" var=z size="100x100"
-«script»
-|] $ \ens -> do
-        Just setupCfg <- getDynamic (ensembleSetup ens)
-        case coContents setupCfg of
-          Vertical panelsV -> getDynamic panelsV >>= \case
-            [Panel _ bodyV] -> getDynamic bodyV >>= \case
-              Vertical itemsV -> getDynamic itemsV >>= \case
-                [ScriptBox UIScript{scriptCode}] -> do
-                  -- `z` isn't in the declared `using dummy:Z` env, so the
-                  -- preview itself should fail even with the bookkeeping
-                  -- fallback (z is a real, ensemble-specific name, not
-                  -- bookkeeping) -- but the splice substitution doesn't
-                  -- care, since `z` *is* in the real viewer's own env.
-                  setValue (source scriptCode) (CodeString "color <- if re z > 0 then white else black")
-                  getDynamic (dyn scriptCode) >>= \case
-                    Right _ -> expectationFailure "expected the preview typecheck to fail"
-                    Left _  -> pure ()
-                  rebuildWithCurrentSetup ens >>= \case
-                    Left (_, err) -> expectationFailure ("expected the rebuild to succeed, got: " ++ err)
-                    Right _       -> pure ()
-                other -> expectationFailure ("expected a single ScriptBox, got " ++ show (length other))
-              _ -> expectationFailure "expected the panel body to be Vertical"
-            other -> expectationFailure ("expected a single Panel, got " ++ show (length other))
-          _ -> expectationFailure "expected the Setup panel's top-level layout to be Vertical"
-
-    it "builds a boolean-typed `using`-clause formula and splices it as a stopping condition" $
-      shouldBuild [r|
-@setup "Setup"
-stop : Boolean using z:C <- |z| > 1
-
-@viewer "V" var=z size="100x100"
-until «stop»:
-  pass
-color <- black
-|] $ \ens -> do
-        [viewer] <- getDynamic (ensembleViewers ens)
-        title <- getDynamic (cvTitle viewer)
-        title `shouldBe` Right "V"
-
-    it "builds a `using`-clause formula whose default expression uses the \
-       \`escapes` keyword, even though `using` never declares the internal \
-       \escape-radius name it resolves to -- falling back to offering the \
-       \viewer bookkeeping names, the same way a real viewer body always can" $
-      shouldBuild [r|
-@setup "Setup"
-stop : Boolean using z:C <- z escapes
-
-@viewer "V" var=z size="100x100"
-until «stop»:
-  pass
-color <- black
-|] $ \ens -> do
-        [viewer] <- getDynamic (ensembleViewers ens)
-        title <- getDynamic (cvTitle viewer)
-        title `shouldBe` Right "V"
-
-    it "builds a `using`-clause formula whose default expression uses the \
-       \`iterations`/`stuck` keywords" $
-      shouldBuild [r|
-@setup "Setup"
-col : Color using z:C <- if stuck then black else rainbow(iterations / 20)
-
-@viewer "V" var=z size="100x100"
-iterate z -> z^2 until z escapes
-color <- «col»
-|] $ \ens -> do
-        [viewer] <- getDynamic (ensembleViewers ens)
-        title <- getDynamic (cvTitle viewer)
-        title `shouldBe` Right "V"
-
-    it "still rejects a formula field whose expression uses a variable \
-       \missing from `using`, even once the bookkeeping fallback is tried" $
-      [r|
-@setup "Setup"
-f : C using z:C <- w
-
-@viewer "V" var=C size="100x100"
-pass
-|] `shouldFailWith` "doesn't typecheck"
 
     it "remembers its own source text, for a frontend's save path to write back out" $
       let src = "@viewer \"V\" var=z size=\"100x100\"\npass\n"
@@ -894,34 +557,6 @@ prepare computed : Color:
 color <- computed
 |] `shouldFailWith` "defined twice"
 
-    it "splices a `code «name»:` declaration -- a whole block of statements \
-       \-- into a viewer's own body" $
-      shouldBuild [r|
-@setup "Setup"
-code script:
-  iterate z -> z^2 + i until z escapes
-  color <- if stuck then black else white
-
-@viewer "V" var=z size="100x100"
-«script»
-|] $ \ens -> do
-        [viewer] <- getDynamic (ensembleViewers ens)
-        cc <- getDynamic (cvCode viewer)
-        case cc of
-          Left (_, err) -> expectationFailure ("expected the spliced code to build, got: " ++ err)
-          Right _        -> pure ()
-
-    it "rejects a `code «name»:` declaration whose body references an \
-       \undeclared variable, once spliced into a viewer" $
-      [r|
-@setup "Setup"
-code script:
-  color <- badvar
-
-@viewer "V" var=z size="100x100"
-«script»
-|] `shouldFailWith` "No variable named"
-
   describe "checkScript" $ do
 
     let checkFailsWith :: String -> String -> Expectation
@@ -983,16 +618,6 @@ radius : R <- 2
 color <- if |z| > radius then black else white
 |]
 
-    it "accepts a viewer body that references a `@setup` formula splice" $
-      checkAccepts [r|
-@setup "Setup"
-f : C using z:C, C:C <- z^2 + C
-
-@viewer "Mandelbrot" var=C size="100x100"
-z : C <- 0
-iterate z -> «f» until z escapes
-|]
-
     it "catches a `@config` declaration whose default doesn't match its type" $
       checkFailsWith [r|
 @config "C"
@@ -1007,40 +632,6 @@ foo : Z as "Pick" choice {"a", "b"} <- 5
 @viewer "V" var=z size="100x100"
 pass
 |] "out of range"
-
-    it "catches a `using`-clause formula whose expression uses a variable \
-       \missing from `using`" $
-      checkFailsWith [r|
-@setup "Setup"
-f : C using z:C <- z^2 + C
-
-@viewer "V" var=C size="100x100"
-pass
-|] "doesn't typecheck"
-
-    it "accepts a `using`-clause formula whose default expression uses the \
-       \`escapes`/`iterations`/`stuck` bookkeeping keywords, agreeing with \
-       \the real build's own bookkeeping fallback" $
-      agree [r|
-@setup "Setup"
-stop : Boolean using z:C <- z escapes
-col : Color using z:C <- if stuck then black else rainbow(iterations / 20)
-
-@viewer "V" var=z size="100x100"
-until «stop»:
-  pass
-color <- «col»
-|]
-
-    it "still rejects a `using`-clause formula missing an ordinary variable, \
-       \agreeing with the real build even once the bookkeeping fallback is tried" $
-      agree [r|
-@setup "Setup"
-f : C using z:C <- w
-
-@viewer "V" var=C size="100x100"
-pass
-|]
 
     it "still catches cross-stanza errors (unchanged from before this was extended)" $ do
       checkFailsWith [r|
@@ -1089,12 +680,12 @@ foo : Z as "Pick" choice {"a", "b"} <- 5
 pass
 |]
       agree [r|
-@setup "Setup"
-f : C using z:C, C:C <- z^2 + C
+@common
+let f(z) = z^2 + C
 
 @viewer "Mandelbrot" var=C size="100x100"
 z : C <- 0
-iterate z -> «f» until z escapes
+iterate z -> f(z) until z escapes
 |]
 
     it "catches a tool body referencing an undeclared variable" $
@@ -1212,34 +803,6 @@ computed : Color <- white
 prepare computed : Color:
   computed <- black
 color <- computed
-|]
-
-    -- A `code «name»:` declaration's own body is already fully resolved
-    -- into the splicing viewer's own ParsedCode by parseScript itself
-    -- (splicing happens at parse time), so checkViewer's existing
-    -- vfCode check already covers it -- no extra wiring needed, and no
-    -- "new coverage" asymmetry to call out, same as `prepare`.
-
-    it "accepts a `code «name»:` declaration spliced into a viewer" $
-      agree [r|
-@setup "Setup"
-code script:
-  iterate z -> z^2 + i until z escapes
-  color <- if stuck then black else white
-
-@viewer "V" var=z size="100x100"
-«script»
-|]
-
-    it "catches a `code «name»:` declaration referencing an undeclared \
-       \variable, once spliced into a viewer" $
-      agree [r|
-@setup "Setup"
-code script:
-  color <- badvar
-
-@viewer "V" var=z size="100x100"
-«script»
 |]
 
   describe "@common stanzas" $ do

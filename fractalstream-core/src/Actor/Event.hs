@@ -281,7 +281,7 @@ drawHandlerForSink sink = DrawHandler $ \case
   Write _ tv pv           -> do txt <- eval tv; pt <- eval pv; liftIO (dsWrite sink txt pt)
 
 type EventDependencies =
-  (Dynamic (Either String Splices),
+  (Dynamic (Either String CommonDefs),
    Dynamic (Either String Coordinate),
    Dynamic (Either String (ParsedValue, ParsedValue, ParsedValue)),
    Dynamic (Either String (Maybe String))
@@ -332,14 +332,14 @@ type Bookkeeping env =
 
 withBookkeeping :: forall env
                  . EnvironmentProxy env
-                -> Splices
+                -> CommonDefs
                 -> (ParsedValue, ParsedValue, ParsedValue)
                 -> (KnownEnvironment (Bookkeeping env) =>
                     EnvironmentProxy (Bookkeeping env) ->
-                    Splices ->
+                    CommonDefs ->
                     Either (SourceRange, String) (Code (Bookkeeping env)))
                 -> Either (SourceRange, String) (Code env)
-withBookkeeping env splices (pMaxIters, pMaxRadius, pMinRadius) action = withEnvironment env $ do
+withBookkeeping env defs (pMaxIters, pMaxRadius, pMinRadius) action = withEnvironment env $ do
   env' :: EnvironmentProxy (Bookkeeping env) <-
       (     declareE InternalIterations      IntegerType
         <=< declareE InternalStuck           BooleanType
@@ -348,7 +348,7 @@ withBookkeeping env splices (pMaxIters, pMaxRadius, pMinRadius) action = withEnv
         <=< declareE InternalVanishingRadius RealType
       ) env
   withEnvironment env' $ do
-    code <- action env' splices
+    code <- action env' defs
     -- Now bind all of the bookkeeping variables
     let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
           (env', code) & letInEnv (Const (Scalar typeProxy 0))
@@ -368,14 +368,14 @@ runParsedBody :: EnvironmentProxy env -> ParsedCode
               -> Either (Either ParseError TCError) (Code env)
 runParsedBody env body = first Right (runParsedCode env body)
 
-parseClickScript :: Splices
+parseClickScript :: CommonDefs
                  -> Coordinate
                 -> (ParsedValue, ParsedValue, ParsedValue)
                  -> Maybe String
                  -> ParsedCode
                  -> (forall env. EnvironmentProxy env
                      -> Either (SourceRange, String) (Code (ClickHandlerEnv env)))
-parseClickScript splices0 clickCoord limits mpixel body
+parseClickScript defs0 clickCoord limits mpixel body
   (env0 :: EnvironmentProxy env) = do
 
   env1 <- (declareE InternalX  RealType
@@ -385,7 +385,7 @@ parseClickScript splices0 clickCoord limits mpixel body
   case clickCoord of
     RealCoordinates p q -> case (someSymbolVal p, someSymbolVal q) of
       (SomeSymbol xcoord, SomeSymbol ycoord) -> do
-        withBookkeeping env1 splices0 limits $ \env _splices -> do
+        withBookkeeping env1 defs0 limits $ \env _defs -> do
           x <- getVar InternalX RealType env
           bindOrDeclare xcoord RealType x env $ \env' -> do
             y <- getVar InternalY RealType env'
@@ -402,7 +402,7 @@ parseClickScript splices0 clickCoord limits mpixel body
     ComplexCoordinate c -> case someSymbolVal c of
       SomeSymbol coord -> do
 
-        withBookkeeping env1 splices0 limits $ \env _splices -> do
+        withBookkeeping env1 defs0 limits $ \env _defs -> do
           let i = Const (Scalar ComplexType (0 :+ 1))
           x <- getVar InternalX RealType env
           y <- getVar InternalY RealType env
@@ -474,7 +474,7 @@ bindOrDeclare name ty v env action = case lookupEnv name ty env of
     code <- withEnvironment env' $ action env'
     pure (snd $ letInEnv @name v (env', code))
 
-parseDragScript :: Splices
+parseDragScript :: CommonDefs
                 -> Coordinate
                 -> Coordinate
                 -> (ParsedValue, ParsedValue, ParsedValue)
@@ -482,7 +482,7 @@ parseDragScript :: Splices
                 -> ParsedCode
                 -> (forall env. EnvironmentProxy env
                     -> Either (SourceRange, String) (Code (DragHandlerEnv env)))
-parseDragScript _splices curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mpixel body
+parseDragScript _defs curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mpixel body
   (env :: EnvironmentProxy env) = do
   withEnvironment env $ do
     -- Bind all of the internal bookkeeping variables
@@ -571,14 +571,14 @@ assertMissingUnitArgs :: forall env a
                       -> a
 assertMissingUnitArgs = assertAbsent (Proxy @InternalPx) RealType
 
-parseUnitScript :: Splices
+parseUnitScript :: CommonDefs
                 -> (ParsedValue, ParsedValue, ParsedValue)
                 -> Coordinate
                 -> Maybe String
                 -> ParsedCode
                 -> (forall env. EnvironmentProxy env
                     -> Either (SourceRange, String) (Code (UnitHandlerEnv env)))
-parseUnitScript _splices (pMaxIters, pMaxRadius, pMinRadius) _vc mpx body
+parseUnitScript _defs (pMaxIters, pMaxRadius, pMinRadius) _vc mpx body
   (env :: EnvironmentProxy env) = do
 
   withEnvironment env $ do
@@ -672,25 +672,25 @@ emptyToolScript :: ParsedToolScript
 emptyToolScript = ParsedToolScript $ const (Right noHandlers)
 
 -- | Parse a tool's whole @script:@ text into its combined event handler.
-parseToolScript :: Splices
+parseToolScript :: CommonDefs
                  -> Coordinate                              -- ^ default coordinate (the viewer's z-coord)
                  -> (ParsedValue, ParsedValue, ParsedValue)  -- ^ iteration\/escape\/vanishing limits
                  -> Maybe String                             -- ^ pixel-size variable name, if any
                  -> String                                   -- ^ the whole script source
                  -> Either (SourceRange, String) ParsedToolScript
-parseToolScript splices defaultCoord limits mpixel input =
+parseToolScript defs defaultCoord limits mpixel input =
   bimap (errorLocation &&& unlines . pp) (\blocks -> mergeToolBlocks blocks defaultCoord limits mpixel)
-    (parse (toolScriptGrammar splices) (tokenizeWithIndentation input))
+    (parse (toolScriptGrammar defs) (tokenizeWithIndentation input))
 
 -- | The grammar for a whole tool script: a sequence of @on <event>:@ blocks,
 -- surrounded by the @Indent@\/@Dedent@ pair that delimits the tool's own
 -- @script:@ field. Thin wrapper around 'toolBlocksGrammar', the same way
 -- 'Language.Code.Parser.codeBlockGrammar' wraps 'codeStatementsGrammar'.
 toolScriptGrammar :: forall r
-                   . Splices
+                   . CommonDefs
                   -> Grammar r (Prod r [ParsedToolBlock])
-toolScriptGrammar splices = do
-  blocks <- toolBlocksGrammar splices
+toolScriptGrammar defs = do
+  blocks <- toolBlocksGrammar defs
   rule (token Indent *> blocks <* token Dedent)
 
 -- | The grammar for a bare sequence of @on <event>:@ blocks with no
@@ -700,12 +700,12 @@ toolScriptGrammar splices = do
 -- flush with the stanza's own header rather than nested beneath it) can
 -- reuse the full set of event-block headers without re-deriving them.
 toolBlocksGrammar :: forall r
-                   . Splices
+                   . CommonDefs
                   -> Grammar r (Prod r [ParsedToolBlock])
-toolBlocksGrammar splices = mdo
+toolBlocksGrammar defs = mdo
 
   -- Each handler's body, with the project's @common statements prepended.
-  codeBlock <- rule . fmap (withCommon splices) =<< codeBlockGrammar splices
+  codeBlock <- rule . fmap (withCommon defs) =<< codeBlockGrammar defs
 
   colon <- rule (token Colon <?> ":")
   nl    <- rule (token Newline <?> "end of line")
@@ -727,32 +727,32 @@ toolBlocksGrammar splices = mdo
   onRefresh' <- rule $
     (\body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         second (\u -> noHandlers { onRefresh = Just u })
-          (parseUnitScript splices limits defaultCoord mpixel body env))
+          (parseUnitScript defs limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "refresh" *> colon *> nl *> codeBlock)
 
   onActivated' <- rule $
     (\body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         second (\u -> noHandlers { onActivated = Just u })
-          (parseUnitScript splices limits defaultCoord mpixel body env))
+          (parseUnitScript defs limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "activated" *> colon *> nl *> codeBlock)
 
   onDeactivated' <- rule $
     (\body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         second (\u -> noHandlers { onDeactivated = Just u })
-          (parseUnitScript splices limits defaultCoord mpixel body env))
+          (parseUnitScript defs limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "deactivated" *> colon *> nl *> codeBlock)
 
   onButton' <- rule $
     (\label body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         second (\u -> noHandlers { onButton = Map.singleton label u })
-          (parseUnitScript splices limits defaultCoord mpixel body env))
+          (parseUnitScript defs limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "button" *> quoted <* colon <* nl)
     <*> codeBlock
 
   onTimer' <- rule $
     (\name interval body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         second (\u -> noHandlers { onTimer = Map.singleton name (interval, u) })
-          (parseUnitScript splices limits defaultCoord mpixel body env))
+          (parseUnitScript defs limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "timer" *> quoted)
     <*> (tok "every" *> intLit <* tok "ms" <* colon <* nl)
     <*> codeBlock
@@ -760,14 +760,14 @@ toolBlocksGrammar splices = mdo
   onClick' <- rule $
     (\mc body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         second (\c -> noHandlers { onClick = Just c })
-          (parseClickScript splices (fromMaybe defaultCoord mc) limits mpixel body env))
+          (parseClickScript defs (fromMaybe defaultCoord mc) limits mpixel body env))
     <$> (tok "on" *> tok "click" *> optional (tok "at" *> coordSpec) <* colon <* nl)
     <*> codeBlock
 
   onDoubleClick' <- rule $
     (\mc body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         second (\c -> noHandlers { onDoubleClick = Just c })
-          (parseClickScript splices (fromMaybe defaultCoord mc) limits mpixel body env))
+          (parseClickScript defs (fromMaybe defaultCoord mc) limits mpixel body env))
     <$> (tok "on" *> tok "double" *> token Minus *> tok "click"
           *> optional (tok "at" *> coordSpec) <* colon <* nl)
     <*> codeBlock
@@ -776,8 +776,8 @@ toolBlocksGrammar splices = mdo
     (\mc body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         let c = fromMaybe defaultCoord mc
         in second (\(ch, dh) -> noHandlers { onClick = Just ch, onDrag = Just dh })
-             ((,) <$> parseClickScript splices c limits mpixel body env
-                  <*> parseDragScript  splices c dummyStart limits mpixel body env))
+             ((,) <$> parseClickScript defs c limits mpixel body env
+                  <*> parseDragScript  defs c dummyStart limits mpixel body env))
     <$> (tok "on" *> tok "click" *> token Minus *> token Or_ *> token Minus *> tok "drag"
           *> optional (tok "at" *> coordSpec) <* colon <* nl)
     <*> codeBlock
@@ -786,7 +786,7 @@ toolBlocksGrammar splices = mdo
     (\mft body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
         in second (\d -> noHandlers { onDrag = Just d })
-             (parseDragScript splices curC startC limits mpixel body env))
+             (parseDragScript defs curC startC limits mpixel body env))
     <$> (tok "on" *> tok "drag" *> optional fromTo <* colon <* nl)
     <*> codeBlock
 
@@ -794,7 +794,7 @@ toolBlocksGrammar splices = mdo
     (\mft body -> ParsedToolBlock $ \defaultCoord limits mpixel env ->
         let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
         in second (\d -> noHandlers { onDragDone = Just d })
-             (parseDragScript splices curC startC limits mpixel body env))
+             (parseDragScript defs curC startC limits mpixel body env))
     <$> (tok "on" *> tok "drag" *> token Minus *> tok "finished" *> optional fromTo <* colon <* nl)
     <*> codeBlock
 

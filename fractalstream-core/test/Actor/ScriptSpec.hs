@@ -216,19 +216,6 @@ row:
         [ConfigStanza "Configuration" [ConfigRow [ConfigText "hi", ConfigButton "Go"]]] -> pure ()
         other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
 
-    it "accepts a `code «name»:` declaration, parsed with the full statement \
-       \language (assignments, conditionals), not just expressions" $
-      shouldParseTo [r|
-@setup "Setup"
-code script:
-  if z escapes:
-    color <- black
-  else:
-    color <- white
-|] $ \case
-        [SetupStanza "Setup" [ConfigCode{ccName = "script"}]] -> pure ()
-        other -> expectationFailure ("did not match expected setup stanza: " ++ show (length other) ++ " stanzas")
-
     it "allows a plain declaration named `row` outside of a row: block" $
       shouldParseTo [r|
 @config "Configuration"
@@ -243,14 +230,6 @@ row : Z <- 5
 foo : R <- 1.5
 |] $ \case
         [ConfigStanza "Configuration" [ConfigDecl{cdLabel = Nothing}]] -> pure ()
-        other -> expectationFailure ("unexpected stanzas: " ++ show (length other))
-
-    it "accepts a setup stanza (same body grammar as config)" $
-      shouldParseTo [r|
-@setup "Simple complex dynamics"
-title : Text <- "Complex dynamics"
-|] $ \case
-        [SetupStanza "Simple complex dynamics" [ConfigDecl{cdName = "title"}]] -> pure ()
         other -> expectationFailure ("unexpected stanzas: " ++ show (length other))
 
     it "rejects attributes on a config stanza header" $
@@ -357,15 +336,15 @@ on refresh:
 
     it "parses a full multi-stanza project script" $
       shouldParseTo [r|
-@setup "Simple complex dynamics"
-title : Text <- "Complex dynamics"
+@common
+let f(z) = z^2 + C
 
 @config "Configuration"
 maxIters : Z as "Iteration limit:" <- 100
 
 @viewer "Mandelbrot Set" var=C size="500x500" limit="maxIters"
 z : C <- 0
-iterate z -> z^2 + C until z escapes
+iterate z -> f(z) until z escapes
 
 @tool "Trace" for="Mandelbrot Set" shortcut="T"
 on refresh:
@@ -374,75 +353,18 @@ on click-or-drag:
   pass
 |] $ \stanzas -> length stanzas `shouldBe` 4
 
-    it "accepts a `using` clause on a config declaration, making it a formula field" $
-      shouldParseTo [r|
+    it "no longer accepts @setup stanzas or splices" $ do
+      [r|
 @setup "Setup"
-f : C using z:C, C:C <- z^2 + C
-|] $ \case
-        [SetupStanza "Setup" [ConfigDecl{cdName = "f", cdUsing = Just env}]] ->
-          env `shouldBe` [("z", ComplexT), ("C", ComplexT)]
-        other -> expectationFailure ("did not match expected setup stanza: " ++ show (length other) ++ " stanzas")
-
-    it "rejects both `choice` and `using` on the same declaration" $
-      shouldFailWith [r|
-@setup "Setup"
-f : Z choice {"a", "b"} using z:C <- 0
-|] "cannot use both"
-
-    it "accepts `using` on a boolean-typed declaration (a formula stopping condition)" $
-      shouldParseTo [r|
-@setup "Setup"
-f : Boolean using z:C <- |z| > 1
-|] $ \case
-        [SetupStanza "Setup" [ConfigDecl{cdName = "f", cdUsing = Just [("z", ComplexT)]}]] -> pure ()
-        other -> expectationFailure ("did not match expected setup stanza: " ++ show (length other) ++ " stanzas")
-
-    it "rejects a `using` clause with a duplicate variable name" $
-      shouldFailWith [r|
-@setup "Setup"
-f : C using z:C, z:R <- z
-|] "more than once"
-
-    it "resolves a `«name»` splice reference across stanzas, from a `using`-clause formula" $
-      shouldParseTo [r|
-@setup "Setup"
-f : C using z:C, C:C <- z^2 + C
-
-@viewer "V" var=C size="100x100"
-z : C <- «f»
-iterate z -> «f» until z escapes
-|] $ \stanzas -> length stanzas `shouldBe` 2
-
-    it "fails to parse when a splice reference is undeclared" $
-      shouldFailWith [r|
-@viewer "V" var=C size="100x100"
-z : C <- «nope»
-pass
-|] "couldn't parse"
-
-    it "resolves a `«name»` code splice -- a whole block of statements, \
-       \not just an expression -- from a `code «name»:` declaration" $
-      shouldParseTo [r|
-@setup "Setup"
-code script:
-  if |z| < 1:
-    color <- black
-  else:
-    color <- white
+f : C as "f(z) =" <- 0
 
 @viewer "V" var=z size="100x100"
-«script»
-|] $ \stanzas -> length stanzas `shouldBe` 2
-
-    it "allows stanzas in any order -- a `@viewer` before the `@setup` it splices from" $
-      shouldParseTo [r|
-@viewer "V" var=C size="100x100"
-z : C <- «f»
 pass
-
-@setup "Setup"
-f : C using z:C, C:C <- z^2 + C
-|] $ \stanzas -> length stanzas `shouldBe` 2
+|] `shouldFailWith` "couldn't parse"
+      [r|
+@viewer "V" var=z size="100x100"
+z <- «f»
+|] `shouldFailWith` "couldn't parse"
 
     it "finds the stanza boundary right after a nested block closes \
        \(regression: Indent/Dedent used to wrongly reset line-start status)" $
@@ -457,14 +379,6 @@ else:
 on refresh:
   pass
 |] $ \stanzas -> length stanzas `shouldBe` 2
-
-    it "allows a plain declaration named `using` outside of a `using` clause" $
-      shouldParseTo [r|
-@config "Configuration"
-using : Z <- 5
-|] $ \case
-        [ConfigStanza "Configuration" [ConfigDecl{cdName = "using"}]] -> pure ()
-        other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
 
     it "allows a stanza body ending in a variable declaration (the Let-slurp case)" $
       shouldParseTo [r|

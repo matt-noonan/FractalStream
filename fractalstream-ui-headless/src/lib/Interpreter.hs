@@ -86,9 +86,8 @@ runScenario backend ensemble cmds = do
 collectingUI :: IORef (Map String Viewer) -> IORef (Maybe (SomeContext EventArgument_)) -> UI
 collectingUI viewersRef ctxRef = UI
   { newEnsemble = pure ()
-  , runSetup    = \_ _ _ proceed -> proceed
   , makeLayout  = \_ _ _ -> pure (pure ())
-  , makeViewer  = \_ _ _ ctx _ _ viewer -> do
+  , makeViewer  = \_ _ _ ctx _ viewer -> do
       title <- getDynamic (vTitle viewer)
       modifyIORef' viewersRef (Map.insert title viewer)
       writeIORef ctxRef (Just ctx)

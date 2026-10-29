@@ -1,11 +1,12 @@
 script: |
-  @setup "Setup"
-  text "This template can be used to make a script that draws in the z-plane and in the C-plane, where C is a complex parameter."
-  text "The script runs once per pixel in the view, and should use the `color` variable to indicate what color to use for that pixel."
-  text "Use the `dynamic` variable to test if the script is running in the `z`-plane."
-  z0 : C as "Initial value for z in the C plane:" <- 0
-  initialC : C as "Initial value for C:" <- 0
-  code script using z:C, C:C:
+  @common
+  # This script draws in the z-plane and in the C-plane, where C is a
+  # complex parameter. It runs once per pixel in the view, and should use
+  # the `color` variable to indicate what color to use for that pixel.
+  # Use the `dynamic` variable to test if the script is running in the
+  # z-plane.
+  z0 : C <- 0
+  define script:
     iterate z -> z^2 + C until z escapes
     if stuck:
       color <- black
@@ -15,13 +16,13 @@ script: |
       color <- dark rainbow(iterations / 20)
 
   @config "Configuration"
-  C : C as "C =" <- «initialC»
+  C : C as "C =" <- 0
 
   @viewer "Parametric complex dynamics parameter plane" var=C size=600x600 pixelSize=1/100
   dynamic : Boolean <- false
-  z : C <- «z0»
-  «script»
+  z : C <- z0
+  run script
 
   @viewer "Parametric complex dynamics dynamical plane" var=z size=600x600 pixelSize=1/100
   dynamic : Boolean <- true
-  «script»
+  run script

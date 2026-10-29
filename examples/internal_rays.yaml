@@ -1,9 +1,10 @@
 script: |
-  @setup "Internal Rays Setup"
-  f : C as "f_c(z) = " using z:C, c:C <- z^2 + c
-  f2 : C as "(f_c)²(w) = " using w:C, c:C <- (w^2 + c)^2 + c
-  critical_point : C as "critical_point(c) = " using c:C <- 0
-  degree : Z as "Degree" <- 2
+  @common
+  # the map, its second iterate, and its critical point
+  let f(z) = z^2 + c
+  let f2(w) = (w^2 + c)^2 + c
+  let critical_point(c) = 0
+  degree : Z <- 2
 
   @config "Internal Rays"
   continuous : Boolean as "continuous = " <- false
@@ -20,13 +21,13 @@ script: |
   start : C as "orbit start = " <- 0
 
   @viewer "Parameter space" var=c size=800x800 limit=maxIters escape=maxRadius vanish=minRadius center=-0.5 pixelSize=1/200
-  z : C <- «critical_point»
+  z : C <- critical_point(c)
   w : C <- z
   z0 : C <- z
 
   repeat:
-    z <- «f»
-    w <- «f2»
+    z <- f(z)
+    w <- f2(w)
   until |z-w| vanishes or z escapes
 
   if stuck:
@@ -35,26 +36,26 @@ script: |
   else if z escaped:
     color <- if im(z) > 0 then blue else yellow
 
-    s : R <- iterations + 1 - (log (log |z|)) / (log «degree»)
+    s : R <- iterations + 1 - (log (log |z|)) / (log degree)
     color <- blend (cos (s pi)^2, light color, dark color)
 
   else:
     λ: C <- 1
 
     repeat:
-      z <- «f»
-      λ <- diff(z, «f») λ
+      z <- f(z)
+      λ <- diff(z, f(z)) λ
     until |z-w| vanishes
 
     period: Z <- iterations
 
     counter : Z <- 0
     while counter < extra_iterations period:
-      w <- «f2»
+      w <- f2(w)
 
     z <- z0
     while not (|z-w| vanishes):
-      z <- «f»
+      z <- f(z)
 
     preperiod: Z <- iterations
 
@@ -75,8 +76,8 @@ script: |
   z0 : C <- z
 
   repeat:
-    z <- «f»
-    w <- «f2»
+    z <- f(z)
+    w <- f2(w)
   until |z-w| vanishes or z escapes
 
   if stuck:
@@ -85,26 +86,26 @@ script: |
   else if z escaped:
     color <- if im(z) > 0 then blue else yellow
 
-    s : R <- iterations + 1 - (log (log |z|)) / (log «degree»)
+    s : R <- iterations + 1 - (log (log |z|)) / (log degree)
     color <- blend (cos (s pi)^2, light color, dark color)
 
   else:
     λ: C <- 1
 
     repeat:
-      z <- «f»
-      λ <- diff(z, «f») λ
+      z <- f(z)
+      λ <- diff(z, f(z)) λ
     until |z-w| vanishes
 
     period: Z <- iterations
 
     counter : Z <- 0
     while counter < extra_iterations period:
-      w <- «f2»
+      w <- f2(w)
 
     z <- z0
     while not (|z-w| vanishes):
-      z <- «f»
+      z <- f(z)
 
     preperiod: Z <- iterations
 
@@ -128,8 +129,8 @@ script: |
     erase
 
     repeat:
-      z <- «f»
-      w <- «f2»
+      z <- f(z)
+      w <- f2(w)
     until |z-w| vanishes or z escapes
 
     if |z-w| vanishes:
@@ -137,7 +138,7 @@ script: |
 
       while not (|z-w| vanishes):
         lastZ <- z
-        z <- «f»
+        z <- f(z)
 
         draw point at lastZ
         draw line from lastZ to z
@@ -152,8 +153,8 @@ script: |
     erase
 
     repeat:
-      z <- «f»
-      w <- «f2»
+      z <- f(z)
+      w <- f2(w)
     until |z-w| vanishes or z escapes
 
     if |z-w| vanishes:
@@ -161,7 +162,7 @@ script: |
 
       while not (|z-w| vanishes):
         lastZ <- z
-        z <- «f»
+        z <- f(z)
 
         draw point at lastZ
         draw line from lastZ to z

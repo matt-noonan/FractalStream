@@ -4,8 +4,8 @@ module Language.Code.Parser
   , parseParsedCode
   , codeBlockGrammar
   , codeStatementsGrammar
-  , Splices(..)
-  , noSplices
+  , CommonDefs(..)
+  , noCommonDefs
   -- * Re-exports
   , TCError
   , ParseError
@@ -27,17 +27,16 @@ import Language.Parser.Tokenizer
 import Language.Code.Syntax
 import Language.Code.Typecheck
 
-import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 ------------------------------------------------------
 -- Main function for parsing Code
 ------------------------------------------------------
 
-data Splices = Splices
-  { codeSplices  :: Map String ParsedCode
-  , valueSplices :: Map String ParsedValue
-  , funNames     :: Set String
+-- | What a script's grammar needs to know about the project's shared
+-- definitions.
+data CommonDefs = CommonDefs
+  { funNames     :: Set String
     -- ^ The names of the user-defined functions, which the grammar
     -- parses as function calls rather than as variables.
   , commonCode   :: [Stmt]
@@ -45,8 +44,8 @@ data Splices = Splices
     -- every viewer and tool script; see 'withCommon'.
   }
 
-noSplices :: Splices
-noSplices = Splices Map.empty Map.empty Set.empty []
+noCommonDefs :: CommonDefs
+noCommonDefs = CommonDefs Set.empty []
 
 -- | Prepend the common statements that a script body uses (directly, or
 -- through other common definitions) to it, so that their declarations
@@ -54,8 +53,8 @@ noSplices = Splices Map.empty Map.empty Set.empty []
 -- are left out, so a definition that mentions a variable some scripts
 -- don't have (like a viewer's coordinate, which preparation scripts and
 -- tool refresh handlers don't see) only matters where it is used.
-withCommon :: Splices -> ParsedCode -> ParsedCode
-withCommon Splices{commonCode} body = case (used, body) of
+withCommon :: CommonDefs -> ParsedCode -> ParsedCode
+withCommon CommonDefs{commonCode} body = case (used, body) of
   ([], _) -> body
   (_, Stmt sr (SBlock stmts)) -> Stmt sr (SBlock (used ++ stmts))
   _ -> Stmt (stmtRange body) (SBlock (used ++ [body]))
@@ -71,9 +70,9 @@ withCommon Splices{commonCode} body = case (used, body) of
 -- | Record the names of the functions defined (by @let f(...) = ...@)
 -- anywhere in the given tokens, so that the grammar can parse calls to
 -- them.
-withDefinedFunctions :: [SRToken] -> Splices -> Splices
-withDefinedFunctions toks splices =
-  splices { funNames = funNames splices `Set.union` Set.fromList (go (map baseToken toks)) }
+withDefinedFunctions :: [SRToken] -> CommonDefs -> CommonDefs
+withDefinedFunctions toks defs =
+  defs { funNames = funNames defs `Set.union` Set.fromList (go (map baseToken toks)) }
   where
     go = \case
       Let_ : Identifier f : OpenParen : rest -> f : go rest
@@ -82,17 +81,17 @@ withDefinedFunctions toks splices =
 
 parseCode :: forall env
            . EnvironmentProxy env
-          -> Splices
+          -> CommonDefs
           -> String
           -> Either (Either ParseError TCError) (Code env)
-parseCode env splices input = do
-  c <- parseParsedCode splices input
+parseCode env defs input = do
+  c <- parseParsedCode defs input
   first Right (runParsedCode env c)
 
-parseParsedCode :: Splices -> String -> Either (Either ParseError TCError) ParsedCode
-parseParsedCode splices input =
+parseParsedCode :: CommonDefs -> String -> Either (Either ParseError TCError) ParsedCode
+parseParsedCode defs input =
   let toks = tokenizeWithIndentation input
-  in first Left (parse (codeBlockGrammar (withDefinedFunctions toks splices)) toks)
+  in first Left (parse (codeBlockGrammar (withDefinedFunctions toks defs)) toks)
 
 ------------------------------------------------------
 -- Code grammar
@@ -105,10 +104,10 @@ parseParsedCode splices input =
 -- recurse into statement-block parsing from their own 'Grammar' computation,
 -- the same way this grammar itself calls into 'valueGrammar'.
 codeBlockGrammar :: forall r
-                  . Splices
+                  . CommonDefs
                  -> Grammar r (Prod r ParsedCode)
-codeBlockGrammar splices = do
-  statements <- codeStatementsGrammar splices
+codeBlockGrammar defs = do
+  statements <- codeStatementsGrammar defs
   rule ((token Indent *> statements <* token Dedent) <?> "indented statements")
 
 -- | The grammar for a bare sequence of statements with no surrounding
@@ -121,9 +120,9 @@ codeBlockGrammar splices = do
 -- language -- declarations, assignments, function definitions, loops,
 -- conditionals, and draw commands -- without re-deriving any of it.
 codeStatementsGrammar :: forall r
-                        . Splices
+                        . CommonDefs
                        -> Grammar r (Prod r ParsedCode)
-codeStatementsGrammar Splices{..} = mdo
+codeStatementsGrammar CommonDefs{..} = mdo
 
   toplevel <- ruleChoice
     [ block
@@ -138,7 +137,6 @@ codeStatementsGrammar Splices{..} = mdo
 
   lineStatement <- ruleChoice
     [ simpleStatement <* nl
-    , spliced <* nl
     , node
       (SDecl <$> ident
              <*> (Just <$> (colon *> typ))
@@ -215,12 +213,7 @@ codeStatementsGrammar Splices{..} = mdo
     , node (SPass <$ lit "pass") <?> "pass"
     ]
 
-  value <- valueGrammarWithFunctions funNames valueSplices
-
-  spliced <- rule $
-    token OpenSplice *>
-    (tokenMatch $ \case { Identifier n -> Map.lookup n codeSplices; _ -> Nothing })
-    <* token CloseSplice
+  value <- valueGrammarWithFunctions funNames
 
   effect <- ruleChoice
     [ toplevelDrawCommand

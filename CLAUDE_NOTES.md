@@ -140,7 +140,6 @@ tool info), but projects themselves are not encoded through a `Codec`: see
 - `Tabbed` - tabbed interface
 - `TextBox` - text entry for a named variable
 - `Button`, `CheckBox`, `Selection`, `ColorPicker`
-- `ScriptBox` - embedded script editor
 
 `layoutContext` converts a `Layout` into a `SomeContext DynamicValue` (live values for
 each named variable in the layout).
@@ -148,13 +147,11 @@ each named variable in the layout).
 ### Configuration (`Actor.Configuration`)
 
 `Configuration` bundles a title, size (`Dimensions`), and `Layout` into a panel.
-Each `Ensemble` has an optional setup `Configuration` and an optional main `Configuration`.
+Each `Ensemble` has an optional `Configuration` (from its `@config` stanzas).
 
 ### Ensemble (`Actor.Ensemble`)
 
 An `Ensemble` is a loaded project:
-- `ensembleSetup` - optional setup panel shown before the main UI
-- `ensembleSplices` - values/code that `@setup` stanzas splice into the rest
 - `ensembleConfiguration` - optional configuration panel
 - `ensembleViewers` - list of `ComplexViewer`s
 - `ensembleScenarios` - named scenarios (for `fsrun`)
@@ -163,7 +160,7 @@ An `Ensemble` is a loaded project:
 `buildEnsembleFromScript` builds one from a unified script (grammar in
 `Actor.Script`); `parseEnsembleFromFile :: FilePath -> IO (Either String Ensemble)`
 loads a `.yaml` file, and `encodeEnsemble` saves one.
-`runEnsemble` / `runEnsembleFromSetup` launch the UI for an ensemble.
+`runEnsemble` launches the UI for an ensemble.
 
 ### Viewer (`Actor.Viewer`, `Actor.Viewer.Complex`)
 
@@ -222,7 +219,7 @@ parameters, so each call is typechecked at its own argument types. `f'(a)` /
 and widened to at least real (`EWiden`). The
 grammar must know function names to parse `f(z)` as a call rather than an
 implicit multiplication, so each stanza's tokens are pre-scanned for
-`let NAME(` (`withDefinedFunctions`, stored in `Splices{funNames}`).
+`let NAME(` (`withDefinedFunctions`, stored in `CommonDefs{funNames}`).
 
 `diff(x, e)` is differentiated symbolically on the surface AST
 (`Language.Value.Differentiate`), during typing: the typing pass replaces the
@@ -242,7 +239,8 @@ is the entry point used throughout the actors.
 
 Golden tests (`fractalstream-core/test/Actor/GoldenSpec.hs`, files in
 `test/golden/`) pin the pretty-printed typed code of every example and
-template; delete a golden file to regenerate it, and review the diff.
+project under `examples/templates/`; delete a golden file to regenerate it,
+and review the diff.
 
 Key modules:
 - `Language.Parser.Tokenizer` - tokenizer
@@ -282,8 +280,8 @@ start coordinates, and an opaque context pointer.
 Built on `wxWidgets` via the `wx`/`wxcore`/`wxHaskell` Haskell bindings.
 
 Key modules:
-- `Main` - entry point; opens welcome screen, handles open/new/template
-- `UI.Welcome` - welcome screen with recent files and templates
+- `Main` - entry point; opens welcome screen, handles open/new
+- `UI.Welcome` - welcome screen (new project / open project)
 - `UI.ProjectViewer` - renders an `Ensemble`'s viewers as wx windows
 - `UI.ProjectScriptEditor` - source editor for a project's unified script
 - `UI.ProjectActions` - open/save/new-project actions
@@ -295,13 +293,13 @@ Key modules:
 - `UI.Menu` - menu bar construction
 - `UI.Session` - session management (open windows)
 
-A frontend supplies a `UI` record (`Actor.UI`: `newEnsemble`, `runSetup`,
-`makeLayout`, `makeViewer`, ...); the wx and headless frontends each provide one.
+A frontend supplies a `UI` record (`Actor.UI`: `newEnsemble`, `makeLayout`,
+`makeViewer`); the wx and headless frontends each provide one.
 
 ## Project File Format
 
 Projects are YAML files with a single top-level `script:` key holding a unified
-script made of `@setup`, `@config`, `@viewer`, and `@tool` stanzas, plus an
+script made of `@config`, `@common`, `@viewer`, and `@tool` stanzas, plus an
 optional `scenarios:` key for `fsrun`. (The older multi-key `setup:` /
 `configuration:` / `viewer(s):` format is no longer supported.)
 
@@ -329,12 +327,17 @@ in `@viewer` / `@tool` bodies can use `x := e` to have a type inferred.
 
 `@common` stanzas (no title or attributes) hold declarations, function
 definitions, and code definitions (`define`) that are prepended to every viewer body, prep script, and tool
-handler (`withCommon`, via `Splices{commonCode}`), and so are typechecked
+handler (`withCommon`, via `CommonDefs{commonCode}`), and so are typechecked
 separately in each. Only the definitions a script mentions (transitively,
 by name; `stmtNames`) are prepended, so a definition using e.g. the viewer
-coordinate doesn't break prep scripts or refresh handlers, which lack it. `parseScript` parses `@setup` stanzas first, then
-`@common` ones (`parseNonSetupChunks`), then the rest, since the others'
-grammars need the common statements and function names.
+coordinate doesn't break prep scripts or refresh handlers, which lack it.
+`parseScript` parses `@common` stanzas first, then the rest, since the
+others' grammars need the common statements and function names.
+
+The older `@setup` stanzas, `«name»` splices, `using` formula fields, and
+`code` blocks were removed in favor of `@common`; the Welcome screen's
+template flow went with them (the old templates are now ordinary example
+projects under `examples/templates/`).
 
 ## Scripting Language
 
@@ -362,7 +365,7 @@ See `LANGUAGE.md` for full docs. Key points:
 | `fractalstream-core/src/Data/Indexed/Functor.hs` | `IFunctor`, `ITraversable`, `FIX`, catamorphisms |
 | `fractalstream-core/src/Data/DynamicValue.hs` | `Variable`, `Dynamic`, reactive system |
 | `fractalstream-core/src/Data/Codec.hs` | Bidirectional YAML/JSON serialization |
-| `fractalstream-core/src/Actor/Script.hs` | Unified-script (`@setup`/`@config`/`@viewer`/`@tool`) grammar |
+| `fractalstream-core/src/Actor/Script.hs` | Unified-script (`@config`/`@common`/`@viewer`/`@tool`) grammar |
 | `fractalstream-core/src/Actor/Ensemble.hs` | `Ensemble`, project loading, viewer setup |
 | `fractalstream-core/src/Actor/Layout.hs` | `Layout` ADT, UI panel structure |
 | `fractalstream-core/src/Actor/Viewer.hs` | `Viewer`, `ViewerCompiler`, rendering types |

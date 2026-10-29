@@ -100,11 +100,6 @@ generateWxLayout buttonPress frame0 wLayout = do
           cb <- checkboxWidget p l v b
           pure (hstretch . expand . margin 5 $ widget cb)
 
-        ScriptBox v -> do
-          p' <- liftIO $ panel p []
-          (ce, errorText) <- scriptWidget p' (scriptCode v)
-          pure (container p' $ fill $ column 5 [ fill $ widget ce, hstretch $ expand $ widget errorText ])
-
         TextBox l v -> do
           (labelTxt, te, errorMessage) <- expressionWidget p l v
           pure (hstretch $ expand $ margin 5 $ row 5 [ margin 3 (widget labelTxt)
