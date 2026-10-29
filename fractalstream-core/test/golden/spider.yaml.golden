@@ -1,0 +1,222 @@
+=== viewer 0: Standard spider
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                set `color` := Color 255 255 255
+
+
+--- tool Draw standard spider
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              let `savedP` = p in:
+                block:
+                  let `savedQ` = q in:
+                    block:
+                      let `h2` = p in:
+                        block:
+                          let `h1` = (p + q) in:
+                            block:
+                              set `p` := (2 * p)
+                              set `q` := (2 * q)
+                              erase
+                              use Color 128 128 128 for line
+                              draw circle at 0:R:C:R^2 with radius 1:R
+                              let `star1` = (2.718281828459045:C ^ ((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * h1:R:C) / q:R:C)) in:
+                                block:
+                                  let `star2` = (2.718281828459045:C ^ ((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * h2:R:C) / q:R:C)) in:
+                                    block:
+                                      draw line from star1:R^2 to star2:R^2
+                                      use Color 0 0 0 for line
+                                      write "A" at ((0.0 :+ 1.0 * star2) / 2:R:C):R^2
+                                      write "B" at (-(0.0 :+ 1.0 * star2) / 2:R:C):R^2
+                                      let `power` = 1 in:
+                                        block:
+                                          set `λ` := 1
+                                          let `tortoise` = p in:
+                                            block:
+                                              let `hare` = ((2 * p) mod q) in:
+                                                block:
+                                                  let `[internal] fresh #31` = 0 in:
+                                                    let `[internal] fresh #32` = [internal] iteration limit in:
+                                                      block:
+                                                        if ((tortoise ≠ hare) and ([internal] fresh #31 < [internal] fresh #32)) then:
+                                                          do-while ((tortoise ≠ hare) and ([internal] fresh #31 < [internal] fresh #32)):
+                                                            block:
+                                                              block:
+                                                                if (power = λ) then:
+                                                                  block:
+                                                                    set `tortoise` := hare
+                                                                    set `power` := (2 * power)
+                                                                    set `λ` := 0
+                                                                else:
+                                                                  no-op
+                                                                set `hare` := ((2 * hare) mod q)
+                                                                set `λ` := (λ + 1)
+                                                              set `[internal] fresh #31` := ([internal] fresh #31 + 1)
+                                                        else:
+                                                          no-op
+                                                        set `[internal] iteration count` := [internal] fresh #31
+                                                        set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
+                                                  set `tortoise` := p
+                                                  set `hare` := p
+                                                  let `[internal] fresh #31` = 0 in:
+                                                    let `[internal] fresh #32` = λ in:
+                                                      block:
+                                                        if (True and ([internal] fresh #31 < [internal] fresh #32)) then:
+                                                          do-while (True and ([internal] fresh #31 < [internal] fresh #32)):
+                                                            block:
+                                                              set `hare` := ((2 * hare) mod q)
+                                                              set `[internal] fresh #31` := ([internal] fresh #31 + 1)
+                                                        else:
+                                                          no-op
+                                                        set `[internal] iteration count` := [internal] fresh #31
+                                                        set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
+                                                  set `μ` := 0
+                                                  let `[internal] fresh #31` = 0 in:
+                                                    let `[internal] fresh #32` = [internal] iteration limit in:
+                                                      block:
+                                                        if ((tortoise ≠ hare) and ([internal] fresh #31 < [internal] fresh #32)) then:
+                                                          do-while ((tortoise ≠ hare) and ([internal] fresh #31 < [internal] fresh #32)):
+                                                            block:
+                                                              block:
+                                                                set `tortoise` := ((2 * tortoise) mod q)
+                                                                set `hare` := ((2 * hare) mod q)
+                                                                set `μ` := (μ + 1)
+                                                              set `[internal] fresh #31` := ([internal] fresh #31 + 1)
+                                                        else:
+                                                          no-op
+                                                        set `[internal] iteration count` := [internal] fresh #31
+                                                        set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
+                                                  let `delta` = (1:R / (λ + μ):R) in:
+                                                    block:
+                                                      let `ci` = 0:R in:
+                                                        block:
+                                                          let `t` = p in:
+                                                            block:
+                                                              set `iters` := []
+                                                              let `S1` = 0 in:
+                                                                block:
+                                                                  let `S2` = 1 in:
+                                                                    block:
+                                                                      let `A` = 2 in:
+                                                                        block:
+                                                                          let `B` = 3 in:
+                                                                            block:
+                                                                              set `kneading_seq` := ""
+                                                                              set `t` := p
+                                                                              let `[internal] fresh #38` = 0 in:
+                                                                                let `[internal] fresh #39` = μ in:
+                                                                                  block:
+                                                                                    if (True and ([internal] fresh #38 < [internal] fresh #39)) then:
+                                                                                      do-while (True and ([internal] fresh #38 < [internal] fresh #39)):
+                                                                                        block:
+                                                                                          block:
+                                                                                            let `omega` = (2.718281828459045:C ^ ((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * t:R:C) / q:R:C)) in:
+                                                                                              block:
+                                                                                                let `c` = let #wheel-arg = (ci mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))))) in:
+                                                                                                  block:
+                                                                                                    set `ci` := (ci + delta)
+                                                                                                    use blend(0.333, Color 0 0 0, c) for line
+                                                                                                    use blend(0.333, Color 255 255 255, c) for line
+                                                                                                    if (t = h1) then:
+                                                                                                      block:
+                                                                                                        set `iters` := join(iters, [S1])
+                                                                                                        set `kneading_seq` := text(kneading_seq, "\9733\8321")
+                                                                                                    else:
+                                                                                                      if (t = h2) then:
+                                                                                                        block:
+                                                                                                          set `iters` := join(iters, [S2])
+                                                                                                          set `kneading_seq` := text(kneading_seq, "\9733\8322")
+                                                                                                      else:
+                                                                                                        if (0:R < re(((0.0 :+ 1.0 * star2) * bar(omega)))) then:
+                                                                                                          block:
+                                                                                                            set `iters` := join(iters, [A])
+                                                                                                            set `kneading_seq` := text(kneading_seq, "A")
+                                                                                                        else:
+                                                                                                          block:
+                                                                                                            set `iters` := join(iters, [B])
+                                                                                                            set `kneading_seq` := text(kneading_seq, "B")
+                                                                                                    draw line from omega:R^2 to (10:R:C * omega):R^2
+                                                                                                    draw filled circle at omega:R^2 with radius foot
+                                                                                                    set `t` := ((2 * t) mod q)
+                                                                                          set `[internal] fresh #38` := ([internal] fresh #38 + 1)
+                                                                                    else:
+                                                                                      no-op
+                                                                                    set `[internal] iteration count` := [internal] fresh #38
+                                                                                    set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
+                                                                              set `kneading_seq` := text(kneading_seq, "[")
+                                                                              let `[internal] fresh #38` = 0 in:
+                                                                                let `[internal] fresh #39` = λ in:
+                                                                                  block:
+                                                                                    if (True and ([internal] fresh #38 < [internal] fresh #39)) then:
+                                                                                      do-while (True and ([internal] fresh #38 < [internal] fresh #39)):
+                                                                                        block:
+                                                                                          block:
+                                                                                            let `omega` = (2.718281828459045:C ^ ((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * t:R:C) / q:R:C)) in:
+                                                                                              block:
+                                                                                                if (t = h1) then:
+                                                                                                  block:
+                                                                                                    set `iters` := join(iters, [S1])
+                                                                                                    set `kneading_seq` := text(kneading_seq, "\9733\8321")
+                                                                                                else:
+                                                                                                  if (t = h2) then:
+                                                                                                    block:
+                                                                                                      set `iters` := join(iters, [S2])
+                                                                                                      set `kneading_seq` := text(kneading_seq, "\9733\8322")
+                                                                                                  else:
+                                                                                                    if (0:R < re(((0.0 :+ 1.0 * star2) * bar(omega)))) then:
+                                                                                                      block:
+                                                                                                        set `iters` := join(iters, [A])
+                                                                                                        set `kneading_seq` := text(kneading_seq, "A")
+                                                                                                    else:
+                                                                                                      block:
+                                                                                                        set `iters` := join(iters, [B])
+                                                                                                        set `kneading_seq` := text(kneading_seq, "B")
+                                                                                                let `c` = let #wheel-arg = (ci mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))))) in:
+                                                                                                  block:
+                                                                                                    set `ci` := (ci + delta)
+                                                                                                    use blend(0.333, Color 0 0 0, c) for line
+                                                                                                    use blend(0.333, Color 255 255 255, c) for line
+                                                                                                    draw line from omega:R^2 to (10:R:C * omega):R^2
+                                                                                                    draw filled circle at omega:R^2 with radius foot
+                                                                                                    set `t` := ((2 * t) mod q)
+                                                                                          set `[internal] fresh #38` := ([internal] fresh #38 + 1)
+                                                                                    else:
+                                                                                      no-op
+                                                                                    set `[internal] iteration count` := [internal] fresh #38
+                                                                                    set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
+                                                                              set `kneading_seq` := text(kneading_seq, "]")
+                                                                              set `spider` := []
+                                                                              set `spider_ready` := False
+                                                                              set `p` := savedP
+                                                                              set `q` := savedQ
+
+
+=== viewer 1: Iterated spider
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                set `color` := Color 255 255 255
+
+
+--- tool Reset spider
+ERROR: The variable next_leg is already defined, and would be re-defined here.
+

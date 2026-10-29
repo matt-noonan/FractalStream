@@ -1,0 +1,91 @@
+=== viewer 0: Mandelbrot set
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `C` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `z` = 0:R:C in:
+                  block:
+                    let `[internal] fresh #16` = 0 in:
+                      let `[internal] fresh #17` = [internal] iteration limit in:
+                        block:
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)):
+                              block:
+                                set `z` := ((z ^ 2:R:C) + C)
+                                set `[internal] fresh #16` := ([internal] fresh #16 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #16
+                          set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
+                    if ([internal] escape radius < |z|) then:
+                      block:
+                        set `color` := let #wheel-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 174 0, Color 255 80 81)) else ((8.0 * (#wheel-arg - 0.125)), (Color 152 190 0, Color 255 174 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 183 74, Color 152 190 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 237 232, Color 0 183 74)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 172 255, Color 0 237 232)) else ((8.0 * (#wheel-arg - 0.625)), (Color 184 161 255, Color 0 172 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 134 226, Color 184 161 255)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 80 81, Color 255 134 226))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 174 0, Color 255 80 81)) else ((8.0 * (#wheel-arg - 0.125)), (Color 152 190 0, Color 255 174 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 183 74, Color 152 190 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 237 232, Color 0 183 74)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 172 255, Color 0 237 232)) else ((8.0 * (#wheel-arg - 0.625)), (Color 184 161 255, Color 0 172 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 134 226, Color 184 161 255)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 80 81, Color 255 134 226)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 174 0, Color 255 80 81)) else ((8.0 * (#wheel-arg - 0.125)), (Color 152 190 0, Color 255 174 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 183 74, Color 152 190 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 237 232, Color 0 183 74)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 172 255, Color 0 237 232)) else ((8.0 * (#wheel-arg - 0.625)), (Color 184 161 255, Color 0 172 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 134 226, Color 184 161 255)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 80 81, Color 255 134 226)))))
+                    else:
+                      block:
+                        set `color` := Color 0 0 0
+
+
+--- tool Bulb info
+  -- on click
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `C` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] px in:
+              block:
+                let `z` = 0:R:C in:
+                  block:
+                    let `[internal] fresh #17` = 0 in:
+                      let `[internal] fresh #18` = warmup in:
+                        block:
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #17 < [internal] fresh #18)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #17 < [internal] fresh #18)):
+                              block:
+                                set `z` := ((z ^ 2:R:C) + C)
+                                set `[internal] fresh #17` := ([internal] fresh #17 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #17
+                          set `[internal] stuck` := ([internal] fresh #17 = [internal] fresh #18)
+                    if !([internal] escape radius < |z|) then:
+                      block:
+                        let `target` = z in:
+                          block:
+                            let `[internal] fresh #18` = 0 in:
+                              let `[internal] fresh #19` = max_period in:
+                                block:
+                                  do-while (!(|(z - target)| < tol) and ([internal] fresh #18 < [internal] fresh #19)):
+                                    block:
+                                      block:
+                                        set `z` := ((z ^ 2:R:C) + C)
+                                      set `[internal] fresh #18` := ([internal] fresh #18 + 1)
+                                  set `[internal] iteration count` := [internal] fresh #18
+                                  set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
+                            if [internal] stuck then:
+                              block:
+                                write "?" at C:R^2
+                            else:
+                              block:
+                                write [internal] iteration count:Text at C:R^2
+                    else:
+                      block:
+                        write "X" at C:R^2
+
+  -- on button Erase annotations
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+

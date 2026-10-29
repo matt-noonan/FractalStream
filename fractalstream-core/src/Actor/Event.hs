@@ -19,7 +19,7 @@ module Actor.Event
   , toUserString
   , snapshotEventArgs
 
-  , CombinedEventHandler
+  , CombinedEventHandler(..)
   , ParsedToolBlock
   , ParsedToolScript(..)
   , parseToolScript

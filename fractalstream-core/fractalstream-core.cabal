@@ -158,6 +158,8 @@ test-suite spec
                     , yaml
                     , text
                     , vector
+                    , directory
+                    , filepath
   other-modules:      Data.Indexed.FunctorSpec
                     , Language.Value.DerivativeSpec
                     , Language.Value.EvaluatorSpec
@@ -167,4 +169,5 @@ test-suite spec
                     , Actor.EventSpec
                     , Actor.ScriptSpec
                     , Actor.EnsembleBuildSpec
+                    , Actor.GoldenSpec
   build-tool-depends: hspec-discover:hspec-discover == 2.*

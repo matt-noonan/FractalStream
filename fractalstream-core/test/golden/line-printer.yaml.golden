@@ -1,0 +1,39 @@
+=== viewer 0: Mandelbrot set throwback
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `ysize` = (1.66 * xsize) in:
+                  block:
+                    let `C` = ((xsize * floor((re(w) / xsize)):R):C + ((0.0 :+ 1.0 * ysize:C) * floor((im(w) / ysize)):R:C)) in:
+                      block:
+                        let `r` = (((2:R:C * ((w - C) / xsize:C)) - 1:R:C) - (1.66:C * 0.0 :+ 1.0)) in:
+                          block:
+                            set `C` := (C + shift:C)
+                            let `z` = 0:R:C in:
+                              block:
+                                let `[internal] fresh #21` = 0 in:
+                                  let `[internal] fresh #22` = [internal] iteration limit in:
+                                    block:
+                                      if (!([internal] escape radius < |z|) and ([internal] fresh #21 < [internal] fresh #22)) then:
+                                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #21 < [internal] fresh #22)):
+                                          block:
+                                            set `z` := ((z ^ 2:R:C) + C)
+                                            set `[internal] fresh #21` := ([internal] fresh #21 + 1)
+                                      else:
+                                        no-op
+                                      set `[internal] iteration count` := [internal] fresh #21
+                                      set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
+                                set `color` := rgb(0.98, 0.976, 0.965)
+                                if ([internal] stuck and ((|r| ^ 2:R) < ((1.5 - cos((6:R * arg(r)))) / 3:R))) then:
+                                  block:
+                                    set `color` := Color 0 0 0
+                                else:
+                                  no-op
+
+

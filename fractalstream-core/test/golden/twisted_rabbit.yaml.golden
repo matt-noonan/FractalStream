@@ -1,0 +1,47 @@
+=== viewer 0: Twisted rabbit
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `[internal] fresh #19` = 0 in:
+                  let `[internal] fresh #20` = [internal] iteration limit in:
+                    block:
+                      if (!(escape_radius < |z|) and ([internal] fresh #19 < [internal] fresh #20)) then:
+                        do-while (!(escape_radius < |z|) and ([internal] fresh #19 < [internal] fresh #20)):
+                          block:
+                            block:
+                              set `z` := ((z ^ 2:R:C) + C)
+                              let `d` = |(z - twist_center)| in:
+                                block:
+                                  if ((r0 < d) and (d < r1)) then:
+                                    block:
+                                      let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
+                                        block:
+                                          set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
+                                  else:
+                                    no-op
+                            set `[internal] fresh #19` := ([internal] fresh #19 + 1)
+                      else:
+                        no-op
+                      set `[internal] iteration count` := [internal] fresh #19
+                      set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
+                if [internal] stuck then:
+                  block:
+                    set `color` := Color 0 0 0
+                else:
+                  block:
+                    let `c1` = if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0 in:
+                      block:
+                        let `c2` = if (0:R < im(z)) then Color 0 180 0 else Color 255 0 0 in:
+                          block:
+                            let `s` = (([internal] iteration count + 1):R - (log(log(((|z| ^ 2:R) / 2:R))) / log(2:R))) in:
+                              block:
+                                set `s` := (cos(((s * 3.141592653589793) / 10:R)) ^ 2:R)
+                                set `color` := blend(s, c1, c2)
+
+

@@ -1,0 +1,283 @@
+=== viewer 0: Parameter space
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          block:
+            set `C` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `z` = 0:R:C in:
+                  block:
+                    let `[internal] fresh #20` = 0 in:
+                      let `[internal] fresh #21` = [internal] iteration limit in:
+                        block:
+                          if (!(escape_radius < |z|) and ([internal] fresh #20 < [internal] fresh #21)) then:
+                            do-while (!(escape_radius < |z|) and ([internal] fresh #20 < [internal] fresh #21)):
+                              block:
+                                block:
+                                  set `z` := ((z ^ 2:R:C) + C)
+                                  let `d` = |(z - twist_center)| in:
+                                    block:
+                                      if ((r0 < d) and (d < r1)) then:
+                                        block:
+                                          let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
+                                            block:
+                                              set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
+                                      else:
+                                        no-op
+                                set `[internal] fresh #20` := ([internal] fresh #20 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #20
+                          set `[internal] stuck` := ([internal] fresh #20 = [internal] fresh #21)
+                    if [internal] stuck then:
+                      block:
+                        set `color` := Color 0 0 0
+                    else:
+                      block:
+                        let `c1` = if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0 in:
+                          block:
+                            let `c2` = if (0:R < im(z)) then Color 0 180 0 else Color 255 0 0 in:
+                              block:
+                                let `s` = (([internal] iteration count + 1):R - (log((log((|z| ^ 2:R)) / (2:R * log(escape_radius)))) / log(2:R))) in:
+                                  block:
+                                    set `s` := (cos(((s * 3.141592653589793) / 10:R)) ^ 2:R)
+                                    set `color` := blend(s, c1, c2)
+
+
+=== viewer 1: Twisted dynamical plane
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `[internal] fresh #20` = 0 in:
+                  let `[internal] fresh #21` = [internal] iteration limit in:
+                    block:
+                      if (!(escape_radius < |z|) and ([internal] fresh #20 < [internal] fresh #21)) then:
+                        do-while (!(escape_radius < |z|) and ([internal] fresh #20 < [internal] fresh #21)):
+                          block:
+                            block:
+                              set `z` := ((z ^ 2:R:C) + C)
+                              let `d` = |(z - twist_center)| in:
+                                block:
+                                  if ((r0 < d) and (d < r1)) then:
+                                    block:
+                                      let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
+                                        block:
+                                          set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
+                                  else:
+                                    no-op
+                            set `[internal] fresh #20` := ([internal] fresh #20 + 1)
+                      else:
+                        no-op
+                      set `[internal] iteration count` := [internal] fresh #20
+                      set `[internal] stuck` := ([internal] fresh #20 = [internal] fresh #21)
+                if [internal] stuck then:
+                  block:
+                    set `color` := Color 0 0 0
+                else:
+                  block:
+                    let `c1` = if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0 in:
+                      block:
+                        let `c2` = if (0:R < im(z)) then Color 0 180 0 else Color 255 0 0 in:
+                          block:
+                            let `s` = (([internal] iteration count + 1):R - (log((log((|z| ^ 2:R)) / (2:R * log(escape_radius)))) / log(2:R))) in:
+                              block:
+                                set `s` := (cos(((s * 3.141592653589793) / 10:R)) ^ 2:R)
+                                set `color` := blend(s, c1, c2)
+
+
+--- tool Trace
+  -- on click
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] px in:
+              block:
+                let `prevZ` = z in:
+                  block:
+                    let `k` = 0 in:
+                      block:
+                        erase
+                        let `[internal] fresh #20` = 0 in:
+                          let `[internal] fresh #21` = 100 in:
+                            block:
+                              if (!(escape_radius < |z|) and ([internal] fresh #20 < [internal] fresh #21)) then:
+                                do-while (!(escape_radius < |z|) and ([internal] fresh #20 < [internal] fresh #21)):
+                                  block:
+                                    block:
+                                      set `prevZ` := z
+                                      draw point at z:R^2
+                                      set `z` := ((z ^ 2:R:C) + C)
+                                      let `d` = |(z - twist_center)| in:
+                                        block:
+                                          if ((r0 < d) and (d < r1)) then:
+                                            block:
+                                              let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
+                                                block:
+                                                  set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
+                                          else:
+                                            no-op
+                                          draw line from z:R^2 to prevZ:R^2
+                                    set `[internal] fresh #20` := ([internal] fresh #20 + 1)
+                              else:
+                                no-op
+                              set `[internal] iteration count` := [internal] fresh #20
+                              set `[internal] stuck` := ([internal] fresh #20 = [internal] fresh #21)
+
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  let `prevZ` = z in:
+                    block:
+                      let `k` = 0 in:
+                        block:
+                          erase
+                          let `[internal] fresh #23` = 0 in:
+                            let `[internal] fresh #24` = 100 in:
+                              block:
+                                if (!(escape_radius < |z|) and ([internal] fresh #23 < [internal] fresh #24)) then:
+                                  do-while (!(escape_radius < |z|) and ([internal] fresh #23 < [internal] fresh #24)):
+                                    block:
+                                      block:
+                                        set `prevZ` := z
+                                        draw point at z:R^2
+                                        set `z` := ((z ^ 2:R:C) + C)
+                                        let `d` = |(z - twist_center)| in:
+                                          block:
+                                            if ((r0 < d) and (d < r1)) then:
+                                              block:
+                                                let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
+                                                  block:
+                                                    set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
+                                            else:
+                                              no-op
+                                            draw line from z:R^2 to prevZ:R^2
+                                      set `[internal] fresh #23` := ([internal] fresh #23 + 1)
+                                else:
+                                  no-op
+                                set `[internal] iteration count` := [internal] fresh #23
+                                set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+
+--- tool Dehn twist
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `z0` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  let `eps` = (5:R * pixel_size) in:
+                    block:
+                      if (drag_target = 0) then:
+                        block:
+                          if (|(z0 - twist_center)| < eps) then:
+                            block:
+                              set `drag_target` := 1
+                          else:
+                            if (|(|(z0 - twist_center)| - r0)| < eps) then:
+                              block:
+                                set `drag_target` := 2
+                            else:
+                              if (|(|(z0 - twist_center)| - r1)| < eps) then:
+                                block:
+                                  set `drag_target` := 3
+                              else:
+                                no-op
+                      else:
+                        no-op
+                      if (drag_target = 1) then:
+                        block:
+                          set `twist_center` := z
+                      else:
+                        no-op
+                      if (drag_target = 2) then:
+                        block:
+                          set `r0` := |(z - twist_center)|
+                      else:
+                        no-op
+                      if (drag_target = 3) then:
+                        block:
+                          set `r1` := |(z - twist_center)|
+                      else:
+                        no-op
+                      if (0:R < drag_target:R) then:
+                        block:
+                          erase
+                          use Color 255 0 0 for line
+                          draw point at twist_center:R^2
+                          use Color 255 255 255 for line
+                          draw circle at twist_center:R^2 with radius r0
+                          draw circle at twist_center:R^2 with radius r1
+                      else:
+                        no-op
+
+  -- on drag-done
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  set `drag_target` := 0
+
+  -- on activated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              use Color 255 0 0 for line
+              draw point at twist_center:R^2
+              use Color 255 255 255 for line
+              draw circle at twist_center:R^2 with radius r0
+              draw circle at twist_center:R^2 with radius r1
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+
