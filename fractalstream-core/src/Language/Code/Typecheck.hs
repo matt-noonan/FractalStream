@@ -5,11 +5,14 @@ import FractalStream.Prelude
 import Language.Type
 import Language.Value
 import Language.Typecheck
-import Language.Value.Parser
+import Language.Value.Parser hiding (atType)
+import qualified Language.Value.Parser as LVP
 import Language.Code
 import Language.Draw
 import Language.Parser.SourceRange
 import Language.Value.Typecheck (tcVar, internalIterationLimit, InternalIterations, InternalStuck)
+
+import qualified Data.Map as Map
 
 ------------------------------------------------------
 -- Parsed code
@@ -18,14 +21,30 @@ import Language.Value.Typecheck (tcVar, internalIterationLimit, InternalIteratio
 -- | Parse code, which has not yet been checked for
 -- type correctness, scope correctness, etc
 newtype ParsedCode = ParsedCode
-  (forall env. EnvironmentProxy env -> TC (Code env))
+  (forall env. EnvironmentProxy env -> StateT CTCState TC (Code env))
+
+-- | Code typechecking state
+data CTCState = CTCState
+  { ctcsFuns :: Map String ([String], ParsedValue)
+  }
+
+initialCTCState :: CTCState
+initialCTCState = CTCState Map.empty
 
 -- | Code which has been checked for type & scope
 -- correctness.
-type CheckedCode = SourceRange -> (forall env. KnownEnvironment env => EnvironmentProxy env -> TC (Code env))
+type CheckedCode = SourceRange ->
+                  (forall env. KnownEnvironment env
+                   => EnvironmentProxy env -> StateT CTCState TC (Code env))
 
-atEnv :: EnvironmentProxy env -> ParsedCode -> TC (Code env)
+atEnv :: EnvironmentProxy env -> ParsedCode -> StateT CTCState TC (Code env)
 atEnv env (ParsedCode f) = f env
+
+atType :: (KnownEnvironment env, KnownType ty)
+       => ParsedValue
+       -> TypeProxy ty
+       -> StateT CTCState TC (Value '(env, ty))
+atType v = lift . LVP.atType v
 
 ------------------------------------------------------
 -- Code environment checking
@@ -46,6 +65,10 @@ tcSet n v sr env = do
   FoundVar ty pf <- findVar sr name env
   Set pf name <$> atType v ty
 
+tcFunLet :: String -> [String] -> ParsedValue -> CheckedCode
+tcFunLet _f _args _body _sr _env = do
+  error "TODO tcFunLet"
+
 tcGenericLoop :: Bool
               -> (forall env. KnownEnvironment env =>
                     Value '(env, 'BooleanT) -> Code env -> Code env)
@@ -54,8 +77,8 @@ tcGenericLoop negateCondition mkLoop mlimit body cond sr (env :: EnvironmentProx
   withFresh sr env  IntegerType 0 $ \env' (counterName :: Proxy counterName) pf0 -> recallIsAbsent pf0 $ do
 
   limitValue <- case mlimit of
-    Just (ParsedValue _ limitFun) -> limitFun IntegerType
-    Nothing -> tcVar internalIterationLimit sr IntegerType
+    Just (ParsedValue _ limitFun) -> lift $ limitFun IntegerType
+    Nothing -> lift $ tcVar internalIterationLimit sr IntegerType
 
   withFresh sr env' IntegerType limitValue $ \env'' (limitName :: Proxy limitName) pf' -> recallIsAbsent pf' $ do
 
@@ -100,7 +123,8 @@ tcIterate var expr isWhile cond upto sr env = do
       tc = if isWhile then tcWhile else tcUntil
   tc cond upto body sr env
 
-tcPoint :: KnownEnvironment env => ParsedValue -> TC (Value '(env, 'Pair 'RealT 'RealT))
+tcPoint :: KnownEnvironment env
+        => ParsedValue -> StateT CTCState TC (Value '(env, 'Pair 'RealT 'RealT))
 tcPoint p@(ParsedValue sr _) =
   tryEachType (Surprise sr "this"
                "not a complex number or pair of real numbers"
@@ -172,27 +196,28 @@ data ListExists name env where
              -> NameIsPresent name ('ListT itemTy) env
              -> ListExists name env
 
-getListType :: KnownSymbol name
+getListType :: (MonadError TCError m, KnownSymbol name)
             => SourceRange
             -> Proxy name
             -> EnvironmentProxy env
-            -> TC (ListExists name env)
+            -> m (ListExists name env)
 getListType sr name env = case lookupEnv' name env of
   Absent'{} -> throwError (MissingName sr (symbolVal name))
   Found' ty pf -> case ty of
     ListType itemTy -> pure (ListExists itemTy pf)
     _ -> throwError (Surprise sr (symbolVal name) (an $ SomeType ty) (Expected "a list"))
 
-withFresh :: forall ty env
-           . SourceRange
+withFresh :: forall ty env m
+           . MonadError TCError m
+          => SourceRange
           -> EnvironmentProxy env
           -> TypeProxy ty
           -> Value '(env, ty)
           -> (forall fresh. KnownSymbol fresh => EnvironmentProxy ( '(fresh, ty) ': env)
                                               -> Proxy fresh
                                               -> NameIsAbsent fresh env
-                                              -> TC (Code ( '(fresh, ty) ': env)))
-          -> TC (Code env)
+                                              -> m (Code ( '(fresh, ty) ': env)))
+          -> m (Code env)
 withFresh sr env ty value action = withEnvironment env $ do
   let tmpName = "[internal] fresh #" ++
         show (length $ fromEnvironment env (\_ _ -> ()))

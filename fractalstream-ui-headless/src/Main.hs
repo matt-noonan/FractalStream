@@ -107,7 +107,7 @@ parseFlags = \case
 run :: FilePath -> Mode -> IO ()
 run projectFile mode = withBackend $ \backend ->
   parseEnsembleFromFile projectFile >>= \case
-    Left err -> dieWith ("Could not load " ++ projectFile ++ ": " ++ err)
+    Left err -> dieWith ("Could not load " ++ projectFile ++ ":\n" ++ err)
     Right ensemble -> case mode of
       Snapshot viewerName outputFile -> runSnapshot backend ensemble viewerName outputFile
       RunCommandsFile path           -> runCommandsFile backend ensemble path
@@ -129,7 +129,7 @@ runSnapshot backend ensemble viewerName outputFile = do
       dieWith ("No viewer named " ++ show viewerName ++ ".\n" ++
                "Viewers in this project: " ++ show titles)
     True -> readIORef result >>= \case
-      Just (Just err) -> dieWith ("Error rendering viewer: " ++ err)
+      Just (Just err) -> dieWith ("Error rendering viewer:\n" ++ err)
       _                -> putStrLn ("Wrote " ++ outputFile)
 
 -- | The snapshot-mode 'UI': every callback other than @makeViewer@ is a
@@ -196,5 +196,5 @@ runCommandsText backend ensemble label src = case parseScenario src of
     unlines (pp (Indicated sr src)) ++
     err
   Right cmds -> runScenario backend ensemble cmds >>= \case
-    Left err -> dieWith ("Scenario failed: " ++ err)
+    Left err -> dieWith ("Scenario failed:\n" ++ err)
     Right () -> putStrLn (label ++ ": all " ++ show (length cmds) ++ " command(s) succeeded.")

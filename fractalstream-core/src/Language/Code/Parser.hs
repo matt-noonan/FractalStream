@@ -11,6 +11,7 @@ module Language.Code.Parser
   , ParseError
   , ppFullError
   , ParsedCode(..)
+  , initialCTCState
   ) where
 
 import FractalStream.Prelude
@@ -44,7 +45,7 @@ parseCode :: forall env
           -> Either (Either ParseError TCError) (Code env)
 parseCode env splices input = do
   ParsedCode c <- parseParsedCode splices input
-  case c env of TC x -> first Right x
+  case evalStateT (c env) initialCTCState of TC x -> first Right x
 
 parseParsedCode :: Splices -> String -> Either (Either ParseError TCError) ParsedCode
 parseParsedCode splices input =
@@ -117,6 +118,7 @@ codeStatementsGrammar Splices{..} = mdo
   lineStatement <- ruleChoice
     [ simpleStatement <* nl
     , spliced <* nl
+    , funLetStatement <* nl
     , check
       (tcIfThenElse <$> (token If *> value <* (colon <* nl))
                     <*> block
@@ -143,6 +145,16 @@ codeStatementsGrammar Splices{..} = mdo
         <*> (lit "until" *> value <* nl)) <?> "repeat...until loop"
     , effect <?> "extended operation"
     ]
+
+  funLetStatement <- rule $
+    check (tcFunLet <$> (token Let_ *> ident)
+                    <*> argList
+                    <*> (token Equal *> value)
+            <?> "function definition")
+
+  argList <- rule $
+    ((:) <$> (token OpenParen *> ident)
+         <*> ((many (token Comma *> ident)) <* token CloseParen))
 
   upTo <- rule (lit "up" *> lit "to" *> value <* token TimesKeyword)
 

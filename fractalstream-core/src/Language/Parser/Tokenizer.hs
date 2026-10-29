@@ -60,6 +60,7 @@ data Token
   | Or_
   | And_
   | Not_
+  | Let_
   | LeftArrow
   | RightArrow
   | Escapes
@@ -215,6 +216,7 @@ wordlikeTokens = Map.fromList
   , ("i", I), ("𝑖", I)
   , ("true", True_), ("false", False_)
   , ("or", Or_), ("and", And_), ("not", Not_)
+  , ("let", Let_)
   , ("escapes", Escapes), ("escaped", Escapes)
   , ("vanishes", Vanishes), ("vanished", Vanishes)
   , ("iterations", Iterations), ("times", TimesKeyword)

@@ -1,10 +1,11 @@
-{-# language OverloadedStrings #-}
+{-# language OverloadedStrings, UndecidableInstances #-}
 module Language.Type
   ( FSType(..)
   , type HaskellType
   , SomeHaskellType(..)
   , Scalar(..)
   , TypeProxy(..)
+  , ArgsProxy(..)
   , SomeType(..)
   , sameHaskellType
   , Int64
@@ -21,6 +22,7 @@ module Language.Type
   , ppType
   , toUserString
   , KnownType(..)
+  , KnownArgs(..)
   , withKnownType
   , withType
   ) where
@@ -38,6 +40,7 @@ data FSType
   | ComplexT
   | RationalT
   | Pair FSType FSType
+  | FunctionT [FSType] FSType
   | ColorT
   | ImageT
   | ListT FSType
@@ -53,6 +56,8 @@ type family HaskellType (t :: FSType) :: Type where
   HaskellType 'RationalT  = (Int64, Int64)
   HaskellType 'ColorT     = Color
   HaskellType ('Pair x y) = (HaskellType x, HaskellType y)
+  HaskellType ('FunctionT '[] t) = HaskellType t
+  HaskellType ('FunctionT (x ': xs) t) = HaskellType x -> HaskellType ('FunctionT xs t)
   HaskellType 'VoidT      = ()
   HaskellType 'ImageT     = Int
   HaskellType ('ListT x)  = [HaskellType x]
@@ -85,6 +90,7 @@ instance Eq (Scalar t) where
     ImageType    -> x == y
     ListType it  -> map (Scalar it) x == map (Scalar it) y
     TextType     -> x == y
+    FunctionType _ _ -> error "cannot compare functions for equality"
 
 instance Ord (Scalar t) where
   compare (Scalar t x) (Scalar _ y) = case t of
@@ -102,6 +108,7 @@ instance Ord (Scalar t) where
     ImageType    -> compare x y
     ListType it  -> compare (map (Scalar it) x) (map (Scalar it) y)
     TextType     -> compare x y
+    FunctionType _ _ -> error "cannot compare functions for order"
 
 sameHaskellType :: TypeProxy t1 -> TypeProxy t2 -> Maybe (t1 :~: t2)
 sameHaskellType v1 v2 = case v1 of
@@ -124,6 +131,19 @@ sameHaskellType v1 v2 = case v1 of
       Just Refl -> Just Refl
       Nothing   -> Nothing
     _ -> Nothing
+  FunctionType args y -> case v2 of
+    FunctionType args' y' -> case (,) <$> sameHaskellTypes args args' <*> sameHaskellType y y' of
+      Just (Refl, Refl) -> Just Refl
+      Nothing           -> Nothing
+    _ -> Nothing
+
+sameHaskellTypes :: ArgsProxy xs -> ArgsProxy ys -> Maybe (xs :~: ys)
+sameHaskellTypes args1 args2 = case (args1, args2) of
+  (Arg x xs, Arg x' xs') -> case (,) <$> sameHaskellType x x' <*> sameHaskellTypes xs xs' of
+    Just (Refl, Refl) -> Just Refl
+    Nothing -> Nothing
+  (NoArgs, NoArgs) -> Just Refl
+  _ -> Nothing
 
 -- | Singleton values reflecting the type-level parameter @t@.
 data TypeProxy (t :: FSType) where
@@ -133,11 +153,19 @@ data TypeProxy (t :: FSType) where
   ComplexType  :: TypeProxy 'ComplexT
   RationalType :: TypeProxy 'RationalT
   ColorType    :: TypeProxy 'ColorT
-  PairType     :: (KnownType x, KnownType y) => TypeProxy x -> TypeProxy y -> TypeProxy ('Pair x y)
+  PairType     :: (KnownType x, KnownType y)
+               => TypeProxy x -> TypeProxy y -> TypeProxy ('Pair x y)
   VoidType     :: TypeProxy 'VoidT
   ImageType    :: TypeProxy 'ImageT
-  ListType     :: KnownType x => TypeProxy x -> TypeProxy ('ListT x)
+  ListType     :: (KnownType x)
+               => TypeProxy x -> TypeProxy ('ListT x)
   TextType     :: TypeProxy 'TextT
+  FunctionType :: (KnownArgs xs, KnownType y)
+               => ArgsProxy xs -> TypeProxy y -> TypeProxy ('FunctionT xs y)
+
+data ArgsProxy (xs :: [FSType]) where
+  NoArgs :: ArgsProxy '[]
+  Arg :: forall x xs. KnownArgs xs => TypeProxy x -> ArgsProxy xs -> ArgsProxy (x ': xs)
 
 data SomeType where
   SomeType :: forall t. TypeProxy t -> SomeType
@@ -162,6 +190,13 @@ instance KnownType x => KnownType ('ListT x) where
   typeProxy = ListType (typeProxy @x)
 instance (KnownType x, KnownType y) => KnownType ('Pair x y) where
   typeProxy = PairType (typeProxy @x) (typeProxy @y)
+instance (KnownType y, KnownArgs xs) => KnownType ('FunctionT xs y) where
+  typeProxy = FunctionType (argsProxy @xs) (typeProxy @y)
+
+class KnownArgs (ts :: [FSType]) where argsProxy :: ArgsProxy ts
+instance KnownArgs '[] where argsProxy = NoArgs
+instance (KnownType t, KnownArgs ts) => KnownArgs (t ': ts) where
+  argsProxy = Arg (typeProxy @t) (argsProxy @ts)
 
 withKnownType :: TypeProxy t -> (KnownType t => a) -> a
 withKnownType ty k = case ty of
@@ -176,6 +211,7 @@ withKnownType ty k = case ty of
   TextType     -> k
   PairType {}  -> k
   ListType {}  -> k
+  FunctionType {} -> k
 
 withType :: forall a. FSType -> (forall ty. KnownType ty => TypeProxy ty -> a) -> a
 withType t k = case t of
@@ -190,7 +226,11 @@ withType t k = case t of
   ListT lt -> withType lt $ \ty -> k (ListType ty)
   RationalT  -> k RationalType
   Pair t1 t2 -> withType t1 $ \ty1 -> withType t2 $ \ty2 -> k (PairType ty1 ty2)
+  FunctionT xs y -> withArgs xs $ \xst -> withType y $ \yt -> k (FunctionType xst yt)
 
+withArgs :: forall a. [FSType] -> (forall args. KnownArgs args => ArgsProxy args -> a) -> a
+withArgs [] k = k NoArgs
+withArgs (x : xs) k = withType x $ \t -> withArgs xs $ \xst -> k (Arg t xst)
 
 pattern Boolean_ :: forall (t :: FSType). () => (t ~ 'BooleanT) => HaskellType t -> Scalar t
 pattern Boolean_ x = Scalar BooleanType x
@@ -223,6 +263,7 @@ showType = \case
   TextType     -> "text"
   PairType x y -> "(" <> showType x <> " x " <> showType y <> ")"
   ListType x   -> "list of " <> showType x
+  FunctionType {} -> "function"
 
 ppType :: TypeProxy t -> String
 ppType = \case
@@ -237,6 +278,7 @@ ppType = \case
   TextType     -> "Text"
   PairType{}   -> error "TODO"
   ListType t   -> "List of " ++ ppType t
+  FunctionType {} -> "Function"
 
 showValue :: TypeProxy t -> HaskellType t -> String
 showValue ty v = case ty of
@@ -254,6 +296,7 @@ showValue ty v = case ty of
   PairType xt yt -> let (x, y) = v
                      in showValue xt x <> " , " <> showValue yt y
   ListType xt -> "[" ++ intercalate ", " (map (showValue xt) v) ++ "]"
+  FunctionType {} -> "(function)"
 
 instance An SomeType where
   an = an . show
