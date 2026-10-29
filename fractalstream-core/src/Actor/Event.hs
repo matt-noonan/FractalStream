@@ -15,6 +15,7 @@ module Actor.Event
 
   , constArg
   , mutableVar
+  , interpretedToolExec
   , mutableArg
   , toUserString
   , snapshotEventArgs
@@ -265,7 +266,11 @@ newtype ToolRunner = ToolRunner
 -- interpreter and emit them into the given layer's 'DrawSink'.
 defaultToolRunner :: ToolRunner
 defaultToolRunner = ToolRunner $ \sink layer ctx script ->
-  buildHandlerWith (\_ code -> pure (\c -> run (drawHandlerForSink (sink layer)) c code)) ctx script
+  buildHandlerWith (interpretedToolExec (sink layer)) ctx script
+
+-- | Run tool handlers in the interpreter, drawing into the given sink.
+interpretedToolExec :: DrawSink -> ToolExec
+interpretedToolExec sink _ code = pure (\c -> run (drawHandlerForSink sink) c code)
 
 -- | Adapt a 'DrawSink' into an interpreter 'DrawHandler': evaluate each draw
 -- command's value arguments and forward the concrete values to the sink.

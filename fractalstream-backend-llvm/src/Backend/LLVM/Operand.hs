@@ -23,11 +23,15 @@ module Backend.LLVM.Operand
   , storeListElem
   , ArenaState(..)
   , arenaAlloc
+  , arenaAllocDyn
+  , utf8Bytes
   -- * Re-exports
   , Operand
   ) where
 
 import FractalStream.Prelude
+import Data.Bits (shiftR, (.&.), (.|.))
+import Data.Char (ord)
 
 import Language.Type
 import Language.Value
@@ -67,7 +71,9 @@ data Op (t :: FSType) where
   --   bytes 0-7:  next pointer (i8*, null = end of list)
   --   bytes 8+:   element data (type-dependent, see listNodeStride)
   ListOp    :: forall t. Operand -> Op ('ListT t)
-  TextOp    :: Op 'TextT
+  -- | Text is a pointer to a NUL-terminated UTF-8 string, normally in the
+  -- arena (see 'Backend.LLVM.Value').
+  TextOp    :: Operand -> Op 'TextT
 
 deriving instance (Show (Op t))
 
@@ -98,7 +104,7 @@ storeOperand op (PtrOp ptrOp) = case (op, ptrOp) of
     store ptrG 0 g
     store ptrB 0 b
   (ListOp headPtr, ListOp ptrSlot) -> store ptrSlot 0 headPtr
-  (TextOp, TextOp) -> pure ()
+  (TextOp v, TextOp ptr) -> store ptr 0 v
   _ -> throwError "TODO: Unhandled store type"
 
 detypeOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
@@ -123,7 +129,7 @@ detypeOperand _t = \case
     insertValue c2 b [2]
   PairOp _op1 _op2 -> throwError "TODO: detypeOperand PairOp"
   ListOp headPtr -> pure headPtr
-  TextOp -> throwError "TODO: detypeOperand TextOp"
+  TextOp op -> pure op
 
 derefOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
              => PtrOp t -> m (Op t)
@@ -142,7 +148,7 @@ derefOperand (PtrOp ptrOp) = case ptrOp of
   PairOp t1 t2 ->
     PairOp <$> derefOperand (PtrOp t1) <*> derefOperand (PtrOp t2)
   ListOp ptrSlot -> ListOp <$> load ptrSlot 0
-  TextOp -> throwError "TODO: derefOperand TextOp"
+  TextOp ptr -> TextOp <$> load ptr 0
 
 -- | Get the LLVM function argument type corresponding to
 -- a FractalStream type.
@@ -160,7 +166,7 @@ toLLVMType = \case
   ImageType      -> AST.i32
   -- A list is passed as an i8* pointing to the head node (null = empty list).
   ListType {}    -> AST.ptr AST.i8
-  TextType       -> AST.i32 -- fixme
+  TextType       -> AST.ptr AST.i8
 
 toLLVMPtrType :: forall t. TypeProxy t -> AST.Type
 toLLVMPtrType = \case
@@ -176,7 +182,7 @@ toLLVMPtrType = \case
   ImageType      -> AST.ptr AST.i32
   -- A list slot holds a single i8* (the head pointer).
   ListType {}    -> AST.ptr (AST.ptr AST.i8)
-  TextType       -> AST.ptr AST.i32
+  TextType       -> AST.ptr (AST.ptr AST.i8)
 
 allocaOp :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
          => TypeProxy t
@@ -202,7 +208,10 @@ allocaOp = \case
     store ptrSlot 0 nullI8Ptr
     pure (PtrOp (ListOp ptrSlot))
 
-  TextType -> pure (PtrOp TextOp)
+  TextType -> do
+    slot <- alloca (AST.ptr AST.i8) Nothing 0
+    store slot 0 nullI8Ptr
+    pure (PtrOp (TextOp slot))
 
   ty -> throwError ("Unhandled type in LLVM backend: " ++ showType ty)
 
@@ -226,7 +235,7 @@ typedOperandPtr t op = do
              PtrOp <$> (ColorOp <$> gep op[int32 0, int32 0]
                                 <*> gep op[int32 0, int32 1]
                                 <*> gep op[int32 0, int32 2])
-           TextType -> pure (PtrOp TextOp)
+           TextType -> pure (PtrOp (TextOp op))
            _ -> throwError "TODO: typedOperandPtr"
 
 typedOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
@@ -260,7 +269,7 @@ typedOperand t op = do
 
            -- The argument IS the head pointer; wrap it directly.
            ListType _ -> pure (ListOp op)
-           TextType -> pure TextOp
+           TextType -> pure (TextOp op)
            _ -> throwError ("TODO: missing case in typedOperand for type " ++ showType t)
 
 -- | A null i8* constant (used as the empty-list sentinel).
@@ -323,6 +332,9 @@ loadListElem t nodePtr = do
     ListType _ -> do
       p <- bitcast elemI8 (AST.ptr (AST.ptr AST.i8))
       ListOp <$> load p 0
+    TextType -> do
+      p <- bitcast elemI8 (AST.ptr (AST.ptr AST.i8))
+      TextOp <$> load p 0
     _ -> throwError ("loadListElem: unsupported element type " ++ showType t)
 
 -- | Write element data into a list node at the given byte offset (offset 8 past
@@ -361,6 +373,9 @@ storeListElem t nodePtr op = do
     (ListType _, ListOp headPtr) -> do
       p <- bitcast elemI8 (AST.ptr (AST.ptr AST.i8))
       store p 0 headPtr
+    (TextType, TextOp str) -> do
+      p <- bitcast elemI8 (AST.ptr (AST.ptr AST.i8))
+      store p 0 str
     _ -> throwError ("storeListElem: unsupported type " ++ showType t)
 
 -- | Arena state threaded through LLVM IR generation for dynamic list allocation.
@@ -372,6 +387,13 @@ data ArenaState = ArenaState
   { asBumpAlloca   :: Operand  -- ^ i8** stack slot holding the current bump pointer
   , asArenaEnd     :: Operand  -- ^ i8* constant end of the arena (base + capacity)
   , asOverflowFlag :: Operand  -- ^ i1* stack slot; set to 1 on overflow
+  , asEmptyText    :: Operand  -- ^ i8* to a constant empty string, used as
+                               --   the value of any text that didn't fit
+  , asTextFormat   :: Maybe Operand
+    -- ^ The host's number formatter, a function pointer of type
+    -- @i32 (i8 tag, double x, double y, i8* buf, i32 capacity)@ that writes
+    -- the text form of an integer (tag 0), real (1), or complex number (2)
+    -- into @buf@. Only tool handlers have one.
   }
 
 -- | Emit inline bump-allocation of 'size' bytes (must be a multiple of 8).
@@ -398,3 +420,39 @@ arenaAlloc ArenaState{..} size = mdo
 
   mergeBb <- block
   phi [(bump, okBb), (nullI8Ptr, overflowBb)]
+
+-- | Like 'arenaAlloc', but for a byte count only known at run time (an
+-- i64), which is rounded up to a multiple of 8.
+arenaAllocDyn :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
+              => ArenaState
+              -> Operand    -- ^ i64 byte count
+              -> m Operand
+arenaAllocDyn ArenaState{..} size = mdo
+  rounded <- add size (int64 7) >>= \s7 -> LLVM.IRBuilder.Instruction.and s7 (int64 (-8))
+  bump    <- load asBumpAlloca 0
+  newBump <- gep bump [rounded]
+  overflow <- icmp P.UGT newBump asArenaEnd
+  condBr overflow overflowBb okBb
+
+  okBb <- block
+  store asBumpAlloca 0 newBump
+  br mergeBb
+
+  overflowBb <- block
+  store asOverflowFlag 0 (bit 1)  -- signal overflow
+  br mergeBb
+
+  mergeBb <- block
+  phi [(bump, okBb), (nullI8Ptr, overflowBb)]
+
+-- | The UTF-8 encoding of a string.
+utf8Bytes :: String -> [Word8]
+utf8Bytes = concatMap (encode . ord)
+  where
+    encode c
+      | c < 0x80    = [fromIntegral c]
+      | c < 0x800   = [0xC0 .|. hi 6 c, cont 0 c]
+      | c < 0x10000 = [0xE0 .|. hi 12 c, cont 6 c, cont 0 c]
+      | otherwise   = [0xF0 .|. hi 18 c, cont 12 c, cont 6 c, cont 0 c]
+    hi n c = fromIntegral (c `shiftR` n)
+    cont n c = 0x80 .|. (fromIntegral (c `shiftR` n) .&. 0x3F)

@@ -179,6 +179,22 @@ valueAndArithGrammar funs = mdo
 
   scalar <- ruleChoice [ list, pair ]
 
+  -- One argument in a comma-separated argument list, like text(a, b, c):
+  -- any expression except an unparenthesized pair, which would make
+  -- `a, b, c` ambiguous.
+  argument <- ruleChoice
+    [ node (ECast <$> argumentIte <*> (token Colon *> typ))
+    , argumentIte
+    ]
+
+  argumentIte <- ruleChoice
+    [ node (EITE <$> (token If *> scalar)
+                 <*> (token Then *> scalar)
+                 <*> (token Else *> argumentIte))
+    , list
+    , pOr
+    ]
+
   list <- rule (node (EList <$> (token OpenBracket *> list' <* token CloseBracket)))
 
   list' <- ruleChoice
@@ -370,13 +386,13 @@ valueAndArithGrammar funs = mdo
     ]
 
   textConcat <- rule $ node $
-    EText <$> ((:) <$> (token TextKeyword *> token OpenParen *> toplevel)
-                    <*> (some (token Comma *> toplevel) <* token CloseParen))
+    EText <$> ((:) <$> (token TextKeyword *> token OpenParen *> argument)
+                    <*> (some (token Comma *> argument) <* token CloseParen))
 
   listOp <- ruleChoice
     [ node (EJoin <$>
-             ((:) <$> (token JoinKeyword *> token OpenParen *> toplevel)
-                  <*> (some (token Comma *> toplevel) <* token CloseParen)))
+             ((:) <$> (token JoinKeyword *> token OpenParen *> argument)
+                  <*> (some (token Comma *> argument) <* token CloseParen)))
     , node (EAppend <$> (token AppendKeyword *> token OpenParen *> toplevel)
                       <*> (token Comma *> toplevel <* token CloseParen))
     , node (EPrepend <$> (token PrependKeyword *> token OpenParen *> toplevel)

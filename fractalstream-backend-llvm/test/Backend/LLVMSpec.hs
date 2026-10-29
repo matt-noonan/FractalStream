@@ -3,7 +3,12 @@ module Backend.LLVMSpec (spec) where
 import Test.Hspec
 
 import Language.Value
+import Language.Draw
+import Language.Code.Parser (parseCode, noCommonDefs)
+import Actor.Event (EventArgument_, mutableVar, interpretedToolExec, ToolExec)
+import Data.DynamicValue
 import Data.Color
+import Data.IORef
 import Backend.LLVM
 
 -- Deliberately plain string literals here, not a 'Text.RawString.QQ'
@@ -66,3 +71,71 @@ spec = do
         v2 `shouldBe` blue
         v3 <- invoke' env ColorType f (-0.123) 0.745 10 100 black 0 0 False 0 0
         v3 `shouldBe` blue
+
+  describe "when compiling tool handlers that use text" $ do
+
+    let scripts =
+          [ ("a literal", "write \"hello\" at 1 + 2i")
+          , ("numbers of each type",
+             "write n at 0\nwrite x at 0\nwrite z at 0\nwrite 0.1 + x at 0")
+          , ("concatenation", "write text(\"z = \", z, \", n = \", n) at 0.5")
+          , ("non-ASCII text, set back on the host", "msg <- text(msg, \"★₁\", \"γ\")")
+          , ("text built up in a loop",
+             "repeat up to 3 times:\n  msg <- text(msg, \" A\")\n  n <- n + 1\nwhile true\nwrite msg at 0")
+          , ("if/then/else", "write (if n > 2 then \"big\" else \"small\") at 0")
+          , ("the empty string", "msg <- \"\"\nwrite text(msg, msg) at 0")
+          , ("a local text variable", "t := text(\"k=\", n)\nwrite t at 0\nmsg <- t")
+          ]
+
+    mapM_ (\(name, src) ->
+            it ("matches the interpreter: " ++ name) $ withJIT $ \jit -> do
+              compiled    <- runTool (compiledToolExec jit) src
+              interpreted <- runTool interpretedToolExec src
+              compiled `shouldBe` interpreted)
+          scripts
+
+type ToolTestEnv =
+  '[ '("msg", 'TextT), '("n", 'IntegerT), '("x", 'RealT), '("z", 'ComplexT)
+   , '("[internal] iteration count", 'IntegerT)
+   , '("[internal] iteration limit", 'IntegerT)
+   , '("[internal] stuck", 'BooleanT) ]
+
+-- | Run a tool handler with the given executor, returning everything it drew
+-- and the final values of the variables it can set.
+runTool :: (DrawSink -> ToolExec) -> String -> IO ([String], (String, Int64, Double))
+runTool exec src = do
+  vMsg <- newVariable "start"
+  vN   <- newVariable (2 :: Int64)
+  vX   <- newVariable (0.01 :: Double)
+  vZ   <- newVariable (1 :+ 0.5 :: Complex Double)
+  vI   <- newVariable (0 :: Int64)
+  vL   <- newVariable (100 :: Int64)
+  vS   <- newVariable False
+  let ctx :: Context EventArgument_ ToolTestEnv
+      ctx = Bind (Proxy @"msg") TextType (mutableVar vMsg)
+          $ Bind (Proxy @"n") IntegerType (mutableVar vN)
+          $ Bind (Proxy @"x") RealType (mutableVar vX)
+          $ Bind (Proxy @"z") ComplexType (mutableVar vZ)
+          $ Bind (Proxy @"[internal] iteration count") IntegerType (mutableVar vI)
+          $ Bind (Proxy @"[internal] iteration limit") IntegerType (mutableVar vL)
+          $ Bind (Proxy @"[internal] stuck") BooleanType (mutableVar vS)
+          $ EmptyContext
+      env = contextToEnv ctx
+  code <- either (fail . show) pure (parseCode env noCommonDefs src)
+  events <- newIORef []
+  let record e = modifyIORef events (e :)
+      sink = DrawSink
+        { dsClear  = record "clear"
+        , dsStroke = \c -> record ("stroke " ++ show c)
+        , dsFill   = \c -> record ("fill " ++ show c)
+        , dsPoint  = \p -> record ("point " ++ show p)
+        , dsLine   = \p q -> record ("line " ++ show (p, q))
+        , dsCircle = \f r p -> record ("circle " ++ show (f, r, p))
+        , dsRect   = \f p q -> record ("rect " ++ show (f, p, q))
+        , dsWrite  = \t p -> record ("write " ++ show t ++ " at " ++ show p)
+        }
+  invoker <- exec sink env code
+  invoker ctx
+  drawn <- reverse <$> readIORef events
+  final <- (,,) <$> getDynamic vMsg <*> getDynamic vN <*> getDynamic vX
+  pure (drawn, final)

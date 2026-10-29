@@ -22,6 +22,8 @@ import qualified LLVM.AST.IntegerPredicate as IP
 import qualified LLVM.AST.FloatingPointPredicate as P
 import qualified LLVM.IRBuilder.Instruction as I
 import qualified LLVM.AST.Type as AST
+import qualified LLVM.AST.Constant as AC
+import LLVM.AST.Operand (Operand(ConstantOperand))
 
 import Control.Monad.Fix
 import qualified Data.Map as Map
@@ -74,6 +76,8 @@ buildValue getExtern arena = indexedFold go'
 
       Const (Scalar (PairType t1 t2) (x,y)) ->
         PairOp <$> go @env' (Const (Scalar t1 x)) <*> go @env' (Const (Scalar t2 y))
+
+      Const (Scalar TextType str) -> lift (textLiteral arena str)
 
       Const (Scalar t _) ->
         throwError ("The LLVM backend can not compile constants of type " ++ showType t)
@@ -162,7 +166,9 @@ buildValue getExtern arena = indexedFold go'
             hiOp = case hi of IntegerOp v -> v
         lift $ buildRange arena loOp hiOp
 
-      ConcatText {} -> throwError "The LLVM backend can not compile text values"
+      ConcatText mparts -> do
+        parts <- sequence mparts
+        lift (concatText getExtern arena [ p | TextOp p <- parts ])
 
       And x y -> ((,) <$> x <*> y) >>= \case
         (BooleanOp lhs, BooleanOp rhs) -> BooleanOp <$> I.and lhs rhs
@@ -173,7 +179,16 @@ buildValue getExtern arena = indexedFold go'
       R2C r -> r <&> \case { RealOp    x -> ComplexOp x (C.double 0.0) }
       I2R i -> i >>= \case { IntegerOp x -> RealOp <$> sitofp x AST.double }
       C2R2 z -> z <&> \case { ComplexOp x y -> PairOp (RealOp x) (RealOp y) }
-      ToText {} -> pure TextOp
+      ToText ty mx -> case asTextFormat arena of
+        Nothing -> throwError "Text can only be computed in tool scripts"
+        Just fmt -> do
+          x <- mx
+          (tag, re', im') <- case (ty, x) of
+            (IntegerType, IntegerOp v) -> (\d -> (0, d, C.double 0)) <$> sitofp v AST.double
+            (RealType, RealOp v)       -> pure (1, v, C.double 0)
+            (ComplexType, ComplexOp a b) -> pure (2, a, b)
+            _ -> throwError ("The LLVM backend can not convert " ++ showType ty ++ " to text")
+          lift (formatNumber arena fmt tag re' im')
 
       ReC z -> z <&> \case { ComplexOp x _ -> RealOp x }
       ImC z -> z <&> \case { ComplexOp _ y -> RealOp y }
@@ -242,6 +257,9 @@ buildValue getExtern arena = indexedFold go'
       ITE ColorType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
         (BooleanOp cond, ColorOp r g b, ColorOp r' g' b') ->
           ColorOp <$> select cond r r' <*> select cond g g' <*> select cond b b'
+
+      ITE TextType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
+        (BooleanOp cond, TextOp yes, TextOp no) -> TextOp <$> select cond yes no
 
       ITE t _ _ _ ->
         throwError ("In an if/then/else expression, the LLVM backend cannot handle the type " ++
@@ -938,8 +956,76 @@ getGetExtern = do
     , ("acosh", extern "acosh" [AST.double] AST.double)
     , ("asinh", extern "asinh" [AST.double] AST.double)
     , ("atanh", extern "atanh" [AST.double] AST.double)
+    , ("strlen", extern "strlen" [AST.ptr AST.i8] AST.i64)
+    , ("memcpy", extern "llvm.memcpy.p0i8.p0i8.i64"
+                   [AST.ptr AST.i8, AST.ptr AST.i8, AST.i64, AST.i1] AST.void)
     , ("stacksave", extern "llvm.stacksave" [] (AST.ptr AST.i8))
     , ("stackrestore", extern "llvm.stackrestore" [AST.ptr AST.i8] AST.void)
     ]
   let m = Map.fromList es
   pure (m Map.!)
+
+------------------------------------------------------------------------
+-- Text
+------------------------------------------------------------------------
+
+-- | Allocate a text buffer of the given (i64) size in the arena, and fill it
+-- if the allocation succeeded. Text that doesn't fit becomes the empty
+-- string (and the arena's overflow flag is set, as for lists).
+withTextBuffer :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
+               => ArenaState
+               -> Operand              -- ^ i64 size, including the NUL
+               -> (Operand -> m ())    -- ^ fill the (i8*) buffer
+               -> m (Op 'TextT)
+withTextBuffer arena size fill = mdo
+  buf <- arenaAllocDyn arena size
+  isNull <- icmp P.EQ buf nullI8Ptr
+  entryBb <- currentBlock
+  condBr isNull mergeBb fillBb
+
+  fillBb <- block `named` "text_fill"
+  fill buf
+  fillEnd <- currentBlock
+  br mergeBb
+
+  mergeBb <- block `named` "text_done"
+  TextOp <$> phi [(asEmptyText arena, entryBb), (buf, fillEnd)]
+
+-- | A text literal, copied into the arena.
+textLiteral :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
+            => ArenaState -> String -> m (Op 'TextT)
+textLiteral arena str = do
+  let bytes = utf8Bytes str ++ [0]
+      n = length bytes
+      arr = AC.Array AST.i8 (map (AC.Int 8 . fromIntegral) bytes)
+  withTextBuffer arena (C.int64 (fromIntegral n)) $ \buf -> do
+    p <- bitcast buf (AST.ptr (AST.ArrayType (fromIntegral n) AST.i8))
+    store p 0 (ConstantOperand arr)
+
+-- | The concatenation of several texts.
+concatText :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
+           => (String -> Operand) -> ArenaState -> [Operand] -> m (Op 'TextT)
+concatText getExtern arena parts = do
+  lens <- mapM (\p -> call (getExtern "strlen") [(p, [])]) parts
+  total <- foldM add (C.int64 1) lens
+  withTextBuffer arena total $ \buf -> do
+    end <- foldM (\offset (p, len) -> do
+                    dst <- gep buf [offset]
+                    _ <- call (getExtern "memcpy") [(dst, []), (p, []), (len, []), (C.bit 0, [])]
+                    add offset len)
+                 (C.int64 0) (zip parts lens)
+    nul <- gep buf [end]
+    store nul 0 (C.int8 0)
+
+-- | The text form of a number, written by the host's formatter (so that it
+-- matches the interpreter's exactly).
+formatNumber :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
+             => ArenaState -> Operand -> Integer -> Operand -> Operand -> m (Op 'TextT)
+formatNumber arena fmt tag x y =
+  withTextBuffer arena (C.int64 textNumberCapacity) $ \buf ->
+    void $ call fmt [ (C.int8 tag, []), (x, []), (y, []), (buf, [])
+                    , (C.int32 textNumberCapacity, []) ]
+
+-- | Room for any number's text form (a complex number is at most ~50 bytes).
+textNumberCapacity :: Integer
+textNumberCapacity = 64

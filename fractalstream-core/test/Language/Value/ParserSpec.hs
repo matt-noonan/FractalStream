@@ -48,6 +48,14 @@ spec = do
           parses = parseValue EmptyEnvProxy ty "(1 + 2, 3 * 4)"
       eval parses `shouldBe` Right (3, 12)
 
+    it "parses argument lists of any length unambiguously" $ do
+      let evalAt :: forall t. KnownType t => TypeProxy t -> String -> Either String (HaskellType t)
+          evalAt ty = fmap (`evaluate` EmptyContext) . parseValue EmptyEnvProxy ty
+      evalAt TextType "text(\"a\", 1, \"b\", 2.5)" `shouldBe` Right "a1b2.5"
+      evalAt (ListType IntegerType) "join([1], [2, 3], [4])" `shouldBe` Right [1, 2, 3, 4]
+      -- a pair argument still works, in parentheses
+      evalAt TextType "text(\"p\", if true then \"x\" else \"y\", \"q\")" `shouldBe` Right "pxq"
+
     it "parses with expected precedence" $ do
       let parses1 = parseI "1 + 2 * 3 + 4"
           parses2 = parseI "1 + 12 // 2 * 3"

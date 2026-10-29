@@ -9,6 +9,7 @@ module Backend.LLVM
   , withJIT
   , withJittedViewer
   , llvmToolRunner
+  , compiledToolExec
   , runJX
   , type JX
   , mkKernelFun
@@ -35,6 +36,9 @@ import Control.Exception (bracket, finally)
 
 import Foreign.LibFFI
 import Foreign.C.Types
+import Foreign.C.String (CString)
+import qualified GHC.Foreign as GHC
+import GHC.IO.Encoding (utf8)
 
 import Backend.LLVM.Code
 import Backend.LLVM.Operand (listNodeStride)
@@ -137,7 +141,9 @@ toFFIArg _ t v = case t of
   ListType itemTy -> do
     (headPtr, cleanup) <- buildListBuffer itemTy v
     pure (argPtr headPtr, cleanup)
-  TextType -> pure (argInt32 0, pure ())
+  TextType -> do
+    str <- GHC.newCString utf8 v
+    pure (argPtr str, free str)
   BooleanType -> pure (argInt8 (if v then 1 else 0), pure ())
   _ -> error ("todo: toFFIArg " ++ showType t)
 
@@ -146,8 +152,10 @@ toFFIArg _ t v = case t of
 -- bound in/out by the compiled kernel, so the caller's cell holds the final
 -- value after the call.  The returned write-back action reads that cell and, if
 -- the value changed and the argument is settable, propagates it back to the
--- host.  Lists and text are passed by value (no write-back).  The set of in/out
--- types must match 'Backend.LLVM.Code.toolInOut'.
+-- host.  Text is passed as a pointer to a cell holding a C string pointer,
+-- which the kernel may redirect to a string in the arena.  Lists are passed by
+-- value (no write-back).  The set of in/out types must match
+-- 'Backend.LLVM.Code.toolInOut'.
 toFFIArgInOut :: TypeProxy ty
               -> EventArgument ty
               -> HaskellType ty
@@ -181,6 +189,14 @@ toFFIArgInOut t earg v = case t of
           [r', g', b'] -> setBack ColorType (rgbToColor (r', g', b'))
           _            -> pure ()
     pure (argPtr c, free c, writeBack)
+  TextType -> do
+    str <- GHC.newCString utf8 v
+    cell <- malloc :: IO (Ptr CString)
+    poke cell str
+    -- Must run while the arena (which may hold the new string) is still live.
+    let writeBack = peek cell >>= \str' ->
+          when (str' /= str) (GHC.peekCString utf8 str' >>= setBack TextType)
+    pure (argPtr cell, free cell >> free str, writeBack)
   _ -> do
     (arg, free') <- toFFIArg (Proxy @"tool-arg") t v
     pure (arg, free', pure ())
@@ -438,9 +454,33 @@ foreign import ccall "wrapper"
 foreign import ccall "wrapper"
   wrapRect :: (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
            -> IO (FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()))
+foreign import ccall "wrapper"
+  wrapWrite :: (CString -> CDouble -> CDouble -> IO ())
+            -> IO (FunPtr (CString -> CDouble -> CDouble -> IO ()))
+foreign import ccall "wrapper"
+  wrapFormat :: (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32)
+             -> IO (FunPtr (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32))
 
--- | Build the seven C callbacks for a 'DrawSink', run the action with them, and
--- free them afterwards.
+-- | The number formatter compiled tool code calls for 'ToText' (see
+-- 'Backend.LLVM.Operand.ArenaState'): writes the text form of an integer
+-- (tag 0), real number (1), or complex number (2) as a NUL-terminated UTF-8
+-- string into the given buffer, truncated to fit, and returns its length.
+-- Uses 'showValue', exactly as the interpreter does.
+formatNumber :: Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32
+formatNumber tag (CDouble x) (CDouble y) buf cap =
+  GHC.withCStringLen utf8 str $ \(src, len) -> do
+    let n = min len (fromIntegral cap - 1)
+    copyBytes buf (castPtr src) n
+    pokeByteOff buf n (0 :: Word8)
+    pure (fromIntegral n)
+  where
+    str = case tag of
+      0 -> showValue IntegerType (round x)
+      1 -> showValue RealType x
+      _ -> showValue ComplexType (x :+ y)
+
+-- | Build the C callbacks for a 'DrawSink' (plus the number formatter), run the
+-- action with them, and free them afterwards.
 withDrawVTablePtrs
   :: DrawSink
   -> ( ( FunPtr (IO ())
@@ -449,7 +489,9 @@ withDrawVTablePtrs
        , FunPtr (CDouble -> CDouble -> IO ())
        , FunPtr (CDouble -> CDouble -> CDouble -> CDouble -> IO ())
        , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> IO ())
-       , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()) )
+       , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
+       , FunPtr (CString -> CDouble -> CDouble -> IO ())
+       , FunPtr (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32) )
        -> IO a )
   -> IO a
 withDrawVTablePtrs sink action = do
@@ -466,11 +508,16 @@ withDrawVTablePtrs sink action = do
   rectFP   <- wrapRect   (\f x1 y1 x2 y2 ->
                             dsRect sink (f /= 0) (realToFrac x1, realToFrac y1)
                                         (realToFrac x2, realToFrac y2))
-  action (clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP)
+  writeFP  <- wrapWrite  (\txt x y -> do
+                            str <- GHC.peekCString utf8 txt
+                            dsWrite sink str (realToFrac x, realToFrac y))
+  formatFP <- wrapFormat formatNumber
+  action (clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP)
     `finally` (   freeHaskellFunPtr clearFP  >> freeHaskellFunPtr strokeFP
                >> freeHaskellFunPtr fillFP   >> freeHaskellFunPtr pointFP
                >> freeHaskellFunPtr lineFP   >> freeHaskellFunPtr circleFP
-               >> freeHaskellFunPtr rectFP )
+               >> freeHaskellFunPtr rectFP   >> freeHaskellFunPtr writeFP
+               >> freeHaskellFunPtr formatFP )
 
 -- | Execute a tool event handler by JIT-compiling it and calling it, with draw
 -- commands routed back to the given sink.  Compiles once per invocation for now.
@@ -514,7 +561,7 @@ compiledToolExec (dylib, session, compileLayer, nextId, arenaPool) sink =
     pure $ \ctx -> snapshotEventArgs ctx >>= \case
       Nothing -> pure ()
       Just haskArgs ->
-        withDrawVTablePtrs sink $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP) ->
+        withDrawVTablePtrs sink $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP) ->
         bracket (readChan arenaPool) (writeChan arenaPool) $ \arena ->
         allocaBytes 1 $ \overflowPtr -> do
           poke overflowPtr (0 :: Word8)
@@ -529,6 +576,8 @@ compiledToolExec (dylib, session, compileLayer, nextId, arenaPool) sink =
                 , argPtr (castFunPtrToPtr lineFP)
                 , argPtr (castFunPtrToPtr circleFP)
                 , argPtr (castFunPtrToPtr rectFP)
+                , argPtr (castFunPtrToPtr writeFP)
+                , argPtr (castFunPtrToPtr formatFP)
                 , argPtr arena
                 , argInt32 (fromIntegral arenaCapacity)
                 , argPtr overflowPtr ]
