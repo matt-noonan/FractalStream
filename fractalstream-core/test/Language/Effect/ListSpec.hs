@@ -66,7 +66,7 @@ if |x - y| < 2:
     it "indexes before comparing or adding" $ do
       let p1 = [r|
 x <- 0
-if test @ 2 > 1.5 and test @@ 0 > 4.5:
+if test @ 2 > 1.5 and test @@ 0 > 4.5 and [7, 8] @ 2 > 7.5:
   x <- test @ 1 + 10
 test <- [x]|]
       runWithXY 0 0 [1,2,3,4,5] p1 `shouldBe` Right [11]

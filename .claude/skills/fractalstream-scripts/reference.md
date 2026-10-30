@@ -368,10 +368,10 @@ Command language (one per line, `#` comments): `select viewer "T"`,
 Points are `x + y i` or `(x, y)`. Pixel (0, 0) is the top-left corner; with
 the defaults, model point 0 is pixel (300, 300) and one unit is 128 pixels.
 
-Errors: a parse or type error anywhere except tool handlers stops loading
-with a message pointing at the line (shown with a caret). **Tool handlers
-are type-checked only when the tool is selected**, so a project can load
-fine and still have broken tools; `select tool` each one. A failed assert
+Errors: a parse or type error anywhere, including in tool handlers, stops
+loading with a message pointing at the line (shown with a caret). Runtime
+errors in a tool (e.g. a list index out of range) only show up when the
+handler runs, so exercise each tool. A failed assert
 prints the actual color, which is a handy way to probe values: make the
 viewer color a pixel by a condition and assert on it.
 
@@ -387,5 +387,5 @@ viewer color a pixel by a condition and assert on it.
 | `I expected a real number here, but z is a complex number.` | assigning a wider type to a declared variable; use `re`, `|…|`, or declare it wider |
 | `I expected an integer here, but the result of an arithmetic operation is a real number.` | `/` on integers; use `//` or `round(...)` |
 | `No function named f is defined here.` | recursion, or using a function before its `let` |
-| `couldn't select tool "T": ...` (from fsrun) | a type error inside that tool's handlers |
+| `A list index was out of range, so this tool's changes were discarded.` (from fsrun, or a dialog in the app) | a tool handler indexed a list out of range; the app switches back to Navigate |
 | `warning: viewer "V": Magenta pixels: ...` | list index out of range, or list/text scratch memory exhausted, in some pixels |

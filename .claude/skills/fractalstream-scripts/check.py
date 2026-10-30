@@ -3,11 +3,11 @@
 
     python3 check.py project.yaml [output-dir]
 
-Renders every viewer, then for each tool selects it on its viewer (which is
-when a tool's handlers are type-checked -- loading the project does not check
-them), clicks, double-clicks, drags and refreshes at the viewer's center,
-and captures the viewer with the tool's drawings. Prints fsrun's output
-(errors, and warnings about magenta pixels) and the PNG paths to inspect.
+Renders every viewer, then for each tool selects it on its viewer, clicks,
+double-clicks, drags and refreshes at the viewer's center (so runtime errors
+in its handlers show up), and captures the viewer with the tool's drawings.
+Prints fsrun's output (errors, and warnings about magenta pixels) and the
+PNG paths to inspect.
 
 fsrun is found from $FSRUN, else via `stack exec which fsrun` in the repo's
 fractalstream-ui-headless directory (build it there with `stack build`).

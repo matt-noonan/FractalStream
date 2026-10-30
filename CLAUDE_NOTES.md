@@ -394,6 +394,10 @@ with a snapshot taken after the last refresh); with `refreshCanUpdate=true`
 the snapshot is taken before the refresh instead, so a refresh handler that
 changes its own fields keeps running (an animation).
 
+Tool handlers are type-checked at load: `buildEnsembleFromScript` runs
+`checkViewerTools` (the same pure check `checkScript` uses) on every tool
+before building, since `buildTool` only stores a tool's parsed handlers.
+
 `for each x in <expr>` / `with first ... in <expr>` accept any list
 expression: the parser (`withListVar`) stores a non-variable list in a
 hidden variable named after its source position, since the typed AST needs

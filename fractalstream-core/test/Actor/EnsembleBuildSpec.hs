@@ -802,10 +802,8 @@ on click:
   draw point at center
 |] "is defined twice"
 
-    it "catches a tool error that buildEnsembleFromScript itself doesn't \
-       \catch eagerly -- new coverage, not something the drift guard above \
-       \expects parity on (see checkScript's own doc comment on this gap)" $ do
-      let src = [r|
+    it "catches a tool error at build time, not only when the tool is first used" $
+      agree [r|
 @viewer "V" var=z size="100x100"
 pass
 
@@ -813,16 +811,9 @@ pass
 on click:
   draw point at badvar
 |]
-      checkFailsWith src "No variable named"
-      build src >>= \case
-        Left err -> expectationFailure ("expected buildEnsembleFromScript to still accept this (the gap this test documents), got: " ++ err)
-        Right _  -> pure ()
 
-    -- Unlike tool code (above), a `prepare` block's own code *is*
-    -- eagerly checked by buildEnsembleFromScript (it's forced as part
-    -- of the main viewer's own ComplexViewer code field), so checkScript
-    -- and buildEnsembleFromScript should agree on every case here --
-    -- no "new coverage" asymmetry to call out.
+    -- A `prepare` block's own code is also checked by
+    -- buildEnsembleFromScript, so the two should agree here too.
 
     it "accepts a `prepare` block whose declared output is correctly assigned \
        \and used by the main viewer code" $

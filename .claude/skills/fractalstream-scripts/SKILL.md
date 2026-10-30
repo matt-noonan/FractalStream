@@ -37,9 +37,9 @@ Hénon, bifurcation diagrams...).
    ```
 
    This renders every viewer, selects every tool and exercises it with
-   clicks, drags and refreshes (tool handlers are only type-checked when a
-   tool is selected, so loading alone proves little), and prints errors,
-   magenta-pixel warnings, and the PNGs it wrote. **Look at the PNGs**
+   clicks, drags and refreshes (catching runtime errors such as a bad list
+   index), and prints errors, magenta-pixel warnings, and the PNGs it
+   wrote. **Look at the PNGs**
    (read them as images). A script that runs is not necessarily right:
    compare against what the paper's figures or the math predict. For
    finer checks, write a `--commands` file with `set parameter`, `click`,
