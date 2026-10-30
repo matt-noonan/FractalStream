@@ -147,7 +147,11 @@ each named variable in the layout).
 ### Configuration (`Actor.Configuration`)
 
 `Configuration` bundles a title, size (`Dimensions`), and `Layout` into a panel.
-Each `Ensemble` has an optional `Configuration` (from its `@config` stanzas).
+Each `Ensemble` has an optional `Configuration` (from its `@config` stanzas):
+a `Tabbed` layout with one tab per stanza title (stanzas sharing a title are
+merged), ending with the implicit "Iteration settings" tab. A tool's own
+declarations instead become a single titled `Panel`
+(`buildMaybeConfiguration AsTabs`/`AsPanels`).
 
 ### Ensemble (`Actor.Ensemble`)
 
@@ -370,6 +374,14 @@ scenarios:
 
 `@config` declarations always need a type (it determines the UI widget); code
 in `@viewer` / `@tool` bodies can use `x := e` to have a type inferred.
+
+Config statements (in `@config`, and at the top of `@tool`) can be grouped
+with indented `row:` blocks (side by side) and `tab "Label":` blocks. Each
+`tab` parses as its own one-page `ConfigTabs`, and `configStmts` merges runs
+of consecutive ones, so the grammar stays unambiguous; a group becomes a
+`Tabbed` layout (a wx notebook). Color fields re-parse their text like text
+boxes do; they used to be frozen `constParsed` values, which silently
+ignored the color picker and `set parameter`.
 
 `@common` stanzas (no title or attributes) hold declarations, function
 definitions, and code definitions (`define`) that are prepended to every viewer body, prep script, and tool

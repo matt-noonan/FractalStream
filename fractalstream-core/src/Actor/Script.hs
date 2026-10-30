@@ -54,7 +54,7 @@ import Numeric (showFFloat)
 -- | One statement inside an @\@config@ stanza's body (or at the top of a
 -- @\@tool@ stanza): either a variable declaration (which becomes a config
 -- field in the UI), a line of explanatory text, a plain button, or a row
--- of these.
+-- or tabs of these.
 data ConfigStmt
   = ConfigDecl
       { cdRange   :: SourceRange
@@ -86,6 +86,19 @@ data ConfigStmt
   | ConfigRow [ConfigStmt]
     -- ^ An indented @row:@ block; its statements are laid out side by
     -- side instead of stacked vertically.
+  | ConfigTabs [(String, [ConfigStmt])]
+    -- ^ A run of consecutive @tab "Label":@ blocks, shown as one group
+    -- of tabs with one page per block.
+
+-- | Collect a block's parsed statements, merging each run of consecutive
+-- @tab@ blocks into a single tab group.
+configStmts :: [Either e ConfigStmt] -> Either e [ConfigStmt]
+configStmts = fmap mergeTabs . sequence
+  where
+    mergeTabs = \case
+      ConfigTabs xs : ConfigTabs ys : rest -> mergeTabs (ConfigTabs (xs ++ ys) : rest)
+      stmt : rest -> stmt : mergeTabs rest
+      [] -> []
 
 -- | One stanza of a unified project script, with its body already parsed
 -- but not yet resolved against any other stanza.
@@ -231,6 +244,7 @@ fillDefaultSrcs input = map onStanza
     onStmt = \case
       d@ConfigDecl{..} -> d { cdDefaultSrc = sliceLine input cdDefaultRange }
       ConfigRow stmts  -> ConfigRow (map onStmt stmts)
+      ConfigTabs tabs  -> ConfigTabs [ (l, map onStmt stmts) | (l, stmts) <- tabs ]
       other            -> other
 
     sliceLine :: String -> SourceRange -> String
@@ -459,10 +473,18 @@ scriptGrammar defs = mdo
   -- introduce an indented block elsewhere in this language -- its
   -- statements lay out side by side instead of stacked vertically.
   configRow <- rule $
-    (\estmts -> ConfigRow <$> sequence estmts) <$>
+    (\estmts -> ConfigRow <$> configStmts estmts) <$>
     (tok "row" *> colon *> nl *> token Indent *> many configStmt <* token Dedent)
 
-  configStmt <- ruleChoice [configDecl, configText, configButton, configRow]
+  -- A `tab "Label":` block, holding one page of a tab group. Each block
+  -- parses as a group of its own; 'configStmts' then merges consecutive
+  -- groups, which keeps the grammar itself unambiguous.
+  configTab <- rule $
+    (\label estmts -> (\stmts -> ConfigTabs [(label, stmts)]) <$> configStmts estmts) <$>
+    (tok "tab" *> quotedP) <*>
+    (colon *> nl *> token Indent *> many configStmt <* token Dedent)
+
+  configStmt <- ruleChoice [configDecl, configText, configButton, configRow, configTab]
 
   ------------------------------------------------------------
   -- @\@viewer@ preparation-script header: `prepare name1 : Ty1, ...:`
@@ -500,7 +522,7 @@ scriptGrammar defs = mdo
   ------------------------------------------------------------
 
   configStanza <- rule $
-    (\etitle estmts -> ConfigStanza <$> etitle <*> sequence estmts)
+    (\etitle estmts -> ConfigStanza <$> etitle <*> configStmts estmts)
     <$> configHeader <*> many configStmt
 
   viewerStanza <- rule $
@@ -516,7 +538,7 @@ scriptGrammar defs = mdo
     (\ehdr edecls blocks -> (\ToolHeader{..} decls ->
         ToolStanza thName thFor thShortcut thIcon
                    thDrawLayer thRefreshOnActivate thRefreshCanUpdate decls blocks)
-        <$> ehdr <*> sequence edecls)
+        <$> ehdr <*> configStmts edecls)
     <$> toolHeader <*> many configStmt <*> toolBody
 
   commonStanza <- rule $

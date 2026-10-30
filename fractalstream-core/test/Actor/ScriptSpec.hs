@@ -221,6 +221,48 @@ row:
         [ConfigStanza "Configuration" [ConfigRow [ConfigText "hi", ConfigButton "Go"]]] -> pure ()
         other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
 
+    it "groups consecutive tab: blocks into one set of tabs" $
+      shouldParseTo [r|
+@config "Configuration"
+tab "First":
+  a : Z <- 1
+  row:
+    b : Z <- 2
+tab "Second":
+  text "hi"
+c : Z <- 3
+tab "Third":
+  d : Z <- 4
+|] $ \case
+        [ConfigStanza "Configuration"
+          [ ConfigTabs [ ("First", [ConfigDecl{cdName = "a"}, ConfigRow [ConfigDecl{cdName = "b"}]])
+                       , ("Second", [ConfigText "hi"]) ]
+          , ConfigDecl{cdName = "c"}
+          , ConfigTabs [ ("Third", [ConfigDecl{cdName = "d"}]) ]
+          ]] -> pure ()
+        other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
+
+    it "accepts tab: blocks in a tool's configuration" $
+      shouldParseTo [r|
+@tool "T"
+tab "A":
+  a : Z <- 1
+tab "B":
+  b : Z <- 2
+on click:
+  a <- b
+|] $ \case
+        [ToolStanza{tsConfig = [ConfigTabs [("A", [_]), ("B", [_])]]}] -> pure ()
+        other -> expectationFailure ("did not match expected tool stanza: " ++ show (length other) ++ " stanzas")
+
+    it "allows a plain declaration named `tab`" $
+      shouldParseTo [r|
+@config "Configuration"
+tab : Z <- 5
+|] $ \case
+        [ConfigStanza "Configuration" [ConfigDecl{cdName = "tab"}]] -> pure ()
+        other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
+
     it "allows a plain declaration named `row` outside of a row: block" $
       shouldParseTo [r|
 @config "Configuration"

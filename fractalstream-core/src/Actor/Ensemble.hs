@@ -295,6 +295,7 @@ checkConfigStmt = \case
   ConfigText{}     -> Right []
   ConfigButton{}   -> Right []
   ConfigRow stmts' -> checkConfigStmts stmts'
+  ConfigTabs tabs  -> checkConfigStmts (concatMap snd tabs)
   ConfigDecl{..}    -> do
     checkConfigDecl cdRange cdName cdType cdDefault cdChoices
     pure [(cdName, cdType)]
@@ -421,7 +422,7 @@ buildWithValidTargets :: [(String, [ConfigStmt])]
                        -> [String]
                        -> IO (Either (SourceRange, String) Ensemble)
 buildWithValidTargets configGroups viewers tools viewerTitles = do
-  eConfigConfig <- buildMaybeConfiguration "Configuration" configGroups
+  eConfigConfig <- buildMaybeConfiguration AsTabs "Configuration" configGroups
   case eConfigConfig of
     Left err -> pure (Left err)
     Right configConfig -> do
@@ -597,6 +598,16 @@ configStmtToLayout = \case
     case sequence results of
       Left err      -> pure (Left err)
       Right layouts -> Right . Horizontal <$> newVariable layouts
+  ConfigTabs tabs -> do
+    results <- forM tabs $ \(label, stmts) -> do
+      pages <- sequence <$> mapM configStmtToLayout stmts
+      forM pages $ \layouts -> do
+        tiLabel <- newVariable (Label label)
+        tiBody  <- newVariable . Vertical =<< newVariable layouts
+        pure TabItem{..}
+    case sequence results of
+      Left err    -> pure (Left err)
+      Right items -> Right . Tabbed <$> newVariable items
 
 -- | The names of every variable a config\/tool statement declares,
 -- recursing into @\@row@ blocks (used for 'Actor.Tool.toolVars').
@@ -604,6 +615,7 @@ configStmtNames :: ConfigStmt -> [String]
 configStmtNames = \case
   ConfigDecl{cdName} -> [cdName]
   ConfigRow stmts    -> concatMap configStmtNames stmts
+  ConfigTabs tabs    -> concatMap (concatMap configStmtNames . snd) tabs
   ConfigText{}       -> []
   ConfigButton{}     -> []
 
@@ -628,7 +640,10 @@ buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoi
     (ColorType, _) -> evalDefault >>=? \v -> do
       labelV <- newVariable lbl
       varP   <- constParsed name (Right name)
-      valueP <- constParsed name (Right v)
+      -- Re-parsed on every write, so that the color picker (and a
+      -- script or headless command setting this variable) can change it.
+      valueP <- newVariable (toUserString ColorType v)
+                  >>= newMapped (pure (parseConstant' ColorType))
       pure (Right (ColorPicker labelV varP valueP))
 
     (IntegerType, Just choices) -> evalDefault >>=? \ix ->
@@ -651,33 +666,40 @@ buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoi
       exprValueP <- reactiveSomeValue EmptyEnvProxy ty (toUserString ty v)
       pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprValueP)))
 
--- | One @\@config@ stanza's statements, combined into a single
--- titled 'Panel'.
-buildStanzaPanel :: (String, [ConfigStmt]) -> IO (Either (SourceRange, String) Layout)
-buildStanzaPanel (title, stmts) = do
+-- | One @\@config@ stanza's statements, stacked vertically.
+buildStanzaBody :: [ConfigStmt] -> IO (Either (SourceRange, String) Layout)
+buildStanzaBody stmts = do
   results <- mapM configStmtToLayout stmts
   case sequence results of
-    Left err -> pure (Left err)
-    Right layouts -> do
-      bodyLayout <- Vertical <$> newVariable layouts
-      titleV     <- newVariable (Label title)
-      bodyV      <- newVariable bodyLayout
-      pure (Right (Panel titleV bodyV))
+    Left err      -> pure (Left err)
+    Right layouts -> Right . Vertical <$> newVariable layouts
 
--- | All of a project's @\@config@ stanzas, combined into one
--- 'Configuration'. 'Nothing' when there are no such stanzas at all (so
--- the ensemble ends up with no configuration panel).
-buildMaybeConfiguration :: String -> [(String, [ConfigStmt])]
+-- | How a configuration window arranges its titled groups: the
+-- project's own window shows one tab per @\@config@ title, while a
+-- tool's panel shows its one group in a titled box.
+data ConfigArrangement = AsTabs | AsPanels
+
+-- | Titled groups of config statements, combined into one
+-- 'Configuration'. 'Nothing' when there are no groups at all (so the
+-- ensemble ends up with no configuration panel). Groups sharing a title
+-- are merged, in order, into the first one's place.
+buildMaybeConfiguration :: ConfigArrangement -> String -> [(String, [ConfigStmt])]
                          -> IO (Either (SourceRange, String) (Maybe Configuration))
-buildMaybeConfiguration _ [] = pure (Right Nothing)
-buildMaybeConfiguration overallTitle stanzaGroups = do
-  panelResults <- mapM buildStanzaPanel stanzaGroups
-  case sequence panelResults of
+buildMaybeConfiguration _ _ [] = pure (Right Nothing)
+buildMaybeConfiguration arrangement overallTitle stanzaGroups = do
+  let titles = nub (map fst stanzaGroups)
+      merged = [ (t, concat [ b | (t', b) <- stanzaGroups, t' == t ]) | t <- titles ]
+  bodyResults <- mapM (buildStanzaBody . snd) merged
+  case sequence bodyResults of
     Left err -> pure (Left err)
-    Right panels -> do
+    Right bodies -> do
       titleP   <- constParsed overallTitle (Right overallTitle)
       sizeV    <- newVariable (Dimensions (400, 400))
-      contents <- Vertical <$> newVariable panels
+      groups   <- forM (zip titles bodies) $ \(t, body) ->
+                    (,) <$> newVariable (Label t) <*> newVariable body
+      contents <- case arrangement of
+        AsTabs   -> Tabbed <$> newVariable [ TabItem l b | (l, b) <- groups ]
+        AsPanels -> Vertical <$> newVariable [ Panel l b | (l, b) <- groups ]
       pure (Right (Just (Configuration titleP sizeV contents)))
 
 ------------------------------------------------------------
@@ -937,7 +959,7 @@ buildTool :: Coordinate -> (ParsedValue, ParsedValue, ParsedValue) -> Maybe Stri
 buildTool coord limits mpixel ToolFields{..} = do
   eToolConfig <- if null tfConfig
                  then pure (Right Nothing)
-                 else buildMaybeConfiguration tfName [(tfName, tfConfig)]
+                 else buildMaybeConfiguration AsPanels tfName [(tfName, tfConfig)]
   case eToolConfig of
     Left err -> pure (Left err)
     Right toolConfigValue -> do

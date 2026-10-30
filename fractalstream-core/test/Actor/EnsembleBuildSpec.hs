@@ -7,7 +7,8 @@ import Actor.Ensemble
 import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Tool (Tool(..), ToolInfo(..))
-import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..))
+import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..))
+import Data.Color (red, blue)
 import Actor.Configuration (Configuration(..))
 import Actor.Event (runParsedToolScript)
 import Language.Environment (SomeContext(..), SomeContext'(..), Context(EmptyContext), EnvironmentProxy(..), contextToEnv)
@@ -188,13 +189,26 @@ a : Z <- 1
 @config "Coloring"
 b : Z <- 2
 
+@config "Dynamics"
+c : Z <- 3
+
 @viewer "V" var=z size="100x100"
 pass
 |] $ \ens -> do
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
           Nothing -> expectationFailure "expected a Configuration"
-          Just _  -> pure ()
+          -- One tab per title, in order of first appearance, with
+          -- stanzas sharing a title merged into one tab.
+          Just cfg -> case coContents cfg of
+            Tabbed tabsV -> do
+              tabs <- getDynamic tabsV
+              labels <- mapM (getDynamic . tiLabel) tabs
+              [ l | Label l <- labels ] `shouldBe` ["Dynamics", "Coloring", "Iteration settings"]
+              pages <- mapM (getDynamic . tiBody) tabs
+              sizes <- mapM (\case { Vertical v -> length <$> getDynamic v; _ -> pure (-1) }) pages
+              sizes `shouldBe` [2, 1, 3]
+            _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
 
     it "builds a row: block into a Horizontal layout" $
       shouldBuild [r|
@@ -207,21 +221,71 @@ c : Z <- 3
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
           Nothing -> expectationFailure "expected a Configuration"
-          -- Two panels, not one: every ensemble now also gets an
-          -- automatically-provided "Iteration settings" panel
+          -- Two tabs, not one: every ensemble now also gets an
+          -- automatically-provided "Iteration settings" tab
           -- (max_iters/escape_radius/vanishing_radius) appended after whatever
           -- the script's own @config declares.
           Just cfg -> case coContents cfg of
-            Vertical panelsV -> getDynamic panelsV >>= \case
-              [Panel _ bodyV, _implicitPanel] -> getDynamic bodyV >>= \case
+            Tabbed tabsV -> getDynamic tabsV >>= \case
+              [TabItem _ bodyV, _implicitTab] -> getDynamic bodyV >>= \case
                 Vertical itemsV -> getDynamic itemsV >>= \case
                   [Horizontal rowV, _declItem] -> do
                     rowItems <- getDynamic rowV
                     length rowItems `shouldBe` 2
-                  other -> expectationFailure ("unexpected panel body items: " ++ show (length other))
-                _ -> expectationFailure "expected the panel body to be Vertical"
-              other -> expectationFailure ("expected two Panels (the script's own, plus the implicit one), got " ++ show (length other))
-            _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
+                  other -> expectationFailure ("unexpected tab body items: " ++ show (length other))
+                _ -> expectationFailure "expected the tab body to be Vertical"
+              other -> expectationFailure ("expected two tabs (the script's own, plus the implicit one), got " ++ show (length other))
+            _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
+
+    it "builds consecutive tab: blocks into one Tabbed layout" $
+      shouldBuild [r|
+@config "Configuration"
+tab "First":
+  a : Z <- 1
+  b : Z <- 2
+tab "Second":
+  c : Z <- 3
+|] $ \ens -> do
+        mcfg <- getDynamic (ensembleConfiguration ens)
+        case mcfg of
+          Nothing -> expectationFailure "expected a Configuration"
+          Just cfg -> case coContents cfg of
+            Tabbed tabsV -> getDynamic tabsV >>= \case
+              [TabItem _ bodyV, _implicitTab] -> getDynamic bodyV >>= \case
+                Vertical itemsV -> getDynamic itemsV >>= \case
+                  [Tabbed innerTabsV] -> do
+                    tabs <- getDynamic innerTabsV
+                    labels <- mapM (getDynamic . tiLabel) tabs
+                    [ l | Label l <- labels ] `shouldBe` ["First", "Second"]
+                    pages <- mapM (getDynamic . tiBody) tabs
+                    sizes <- mapM (\case { Vertical v -> length <$> getDynamic v; _ -> pure (-1) }) pages
+                    sizes `shouldBe` [2, 1]
+                  other -> expectationFailure ("unexpected tab body items: " ++ show (length other))
+                _ -> expectationFailure "expected the tab body to be Vertical"
+              other -> expectationFailure ("expected two tabs (the script's own, plus the implicit one), got " ++ show (length other))
+            _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
+
+    it "makes a @config color picker reactive to edits \
+       \(regression: a frozen Mapped used to silently ignore them)" $
+      shouldBuild [r|
+@config "Configuration"
+c : Color <- red
+|] $ \ens -> do
+        mcfg <- getDynamic (ensembleConfiguration ens)
+        case mcfg of
+          Nothing -> expectationFailure "expected a Configuration"
+          Just cfg -> case coContents cfg of
+            Tabbed tabsV -> getDynamic tabsV >>= \case
+              [TabItem _ bodyV, _implicitTab] -> getDynamic bodyV >>= \case
+                Vertical itemsV -> getDynamic itemsV >>= \case
+                  [ColorPicker _ _ colorP] -> do
+                    getDynamic (dyn colorP) >>= (`shouldBe` Right red)
+                    setValue (source colorP) "blue"
+                    getDynamic (dyn colorP) >>= (`shouldBe` Right blue)
+                  other -> expectationFailure ("unexpected tab body items: " ++ show (length other))
+                _ -> expectationFailure "expected the tab body to be Vertical"
+              other -> expectationFailure ("expected two tabs (the script's own, plus the implicit one), got " ++ show (length other))
+            _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
 
     it "makes a @config field's text box genuinely reactive to edits \
        \(regression: a frozen Mapped used to silently ignore them)" $
@@ -233,8 +297,8 @@ maxIters : Z <- 100
         case mcfg of
           Nothing -> expectationFailure "expected a Configuration"
           Just cfg -> case coContents cfg of
-            Vertical panelsV -> getDynamic panelsV >>= \case
-              [Panel _ bodyV, _implicitPanel] -> getDynamic bodyV >>= \case
+            Tabbed tabsV -> getDynamic tabsV >>= \case
+              [TabItem _ bodyV, _implicitTab] -> getDynamic bodyV >>= \case
                 Vertical itemsV -> getDynamic itemsV >>= \case
                   [TextBox _ UIVariable{exprValue}] -> do
                     initialValue <- getDynamic (dyn exprValue)
@@ -247,10 +311,10 @@ maxIters : Z <- 100
                       Right _ -> expectationFailure
                         "editing the text box didn't re-parse (or re-parsed and accepted invalid input) -- the value never changed"
                       Left _  -> pure ()
-                  other -> expectationFailure ("unexpected panel body items: " ++ show (length other))
-                _ -> expectationFailure "expected the panel body to be Vertical"
-              other -> expectationFailure ("expected two Panels (the script's own, plus the implicit one), got " ++ show (length other))
-            _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
+                  other -> expectationFailure ("unexpected tab body items: " ++ show (length other))
+                _ -> expectationFailure "expected the tab body to be Vertical"
+              other -> expectationFailure ("expected two tabs (the script's own, plus the implicit one), got " ++ show (length other))
+            _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
 
     it "renders a small Real default as fixed-point text, not scientific notation \
        \that silently mis-parses via implicit multiplication with e \
@@ -263,8 +327,8 @@ x : R <- 0.05
         case mcfg of
           Nothing -> expectationFailure "expected a Configuration"
           Just cfg -> case coContents cfg of
-            Vertical panelsV -> getDynamic panelsV >>= \case
-              [Panel _ bodyV, _implicitPanel] -> getDynamic bodyV >>= \case
+            Tabbed tabsV -> getDynamic tabsV >>= \case
+              [TabItem _ bodyV, _implicitTab] -> getDynamic bodyV >>= \case
                 Vertical itemsV -> getDynamic itemsV >>= \case
                   [TextBox _ UIVariable{exprValue}] -> do
                     initialText <- getDynamic (source exprValue)
@@ -274,10 +338,10 @@ x : R <- 0.05
                       Right (SomeValue EmptyEnvProxy RealType v) ->
                         evaluateInContext EmptyContext v `shouldBe` 0.05
                       Right _ -> expectationFailure "expected an empty-environment Real value"
-                  other -> expectationFailure ("unexpected panel body items: " ++ show (length other))
-                _ -> expectationFailure "expected the panel body to be Vertical"
-              other -> expectationFailure ("expected two Panels (the script's own, plus the implicit one), got " ++ show (length other))
-            _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
+                  other -> expectationFailure ("unexpected tab body items: " ++ show (length other))
+                _ -> expectationFailure "expected the tab body to be Vertical"
+              other -> expectationFailure ("expected two tabs (the script's own, plus the implicit one), got " ++ show (length other))
+            _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
 
     it "round-trips a List-typed config field's default value \
        \(regression: toUserString strips brackets for display, so re-parsing \
@@ -290,8 +354,8 @@ xs : List of Z <- [1, 2, 3]
         case mcfg of
           Nothing -> expectationFailure "expected a Configuration"
           Just cfg -> case coContents cfg of
-            Vertical panelsV -> getDynamic panelsV >>= \case
-              [Panel _ bodyV, _implicitPanel] -> getDynamic bodyV >>= \case
+            Tabbed tabsV -> getDynamic tabsV >>= \case
+              [TabItem _ bodyV, _implicitTab] -> getDynamic bodyV >>= \case
                 Vertical itemsV -> getDynamic itemsV >>= \case
                   [TextBox _ UIVariable{exprValue}] ->
                     getDynamic (dyn exprValue) >>= \case
@@ -299,13 +363,13 @@ xs : List of Z <- [1, 2, 3]
                       Right (SomeValue EmptyEnvProxy (ListType IntegerType) v) ->
                         evaluateInContext EmptyContext v `shouldBe` [1, 2, 3]
                       Right _ -> expectationFailure "expected an empty-environment List of Integer value"
-                  other -> expectationFailure ("unexpected panel body items: " ++ show (length other))
-                _ -> expectationFailure "expected the panel body to be Vertical"
-              other -> expectationFailure ("expected two Panels (the script's own, plus the implicit one), got " ++ show (length other))
-            _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
+                  other -> expectationFailure ("unexpected tab body items: " ++ show (length other))
+                _ -> expectationFailure "expected the tab body to be Vertical"
+              other -> expectationFailure ("expected two tabs (the script's own, plus the implicit one), got " ++ show (length other))
+            _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
 
     it "automatically provides max_iters/escape_radius/vanishing_radius in an \
-       \\"Iteration settings\" panel, with the right types and defaults, \
+       \\"Iteration settings\" tab, with the right types and defaults, \
        \even when the script declares no @config at all" $
       shouldBuild [r|
 @viewer "V" var=z size="100x100"
@@ -313,8 +377,8 @@ pass
 |] $ \ens -> do
         Just cfg <- getDynamic (ensembleConfiguration ens)
         case coContents cfg of
-          Vertical panelsV -> getDynamic panelsV >>= \case
-            [Panel titleV bodyV] -> do
+          Tabbed tabsV -> getDynamic tabsV >>= \case
+            [TabItem titleV bodyV] -> do
               Label title <- getDynamic titleV
               title `shouldBe` "Iteration settings"
               getDynamic bodyV >>= \case
@@ -331,9 +395,9 @@ pass
                       evaluateInContext EmptyContext r1 `shouldBe` 10
                       evaluateInContext EmptyContext r2 `shouldBe` 0.0001
                     _ -> expectationFailure ("expected Z, R, R defaults 100/10/0.0001, got: " ++ show (length values) ++ " values")
-                _ -> expectationFailure "expected the panel body to be Vertical"
-            other -> expectationFailure ("expected a single implicit Panel, got " ++ show (length other))
-          _ -> expectationFailure "expected the top-level Configuration layout to be Vertical"
+                _ -> expectationFailure "expected the tab body to be Vertical"
+            other -> expectationFailure ("expected a single implicit tab, got " ++ show (length other))
+          _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
 
     it "lets an explicit `limit=`/`escape=`/`vanish=`/`pixelVar=` override \
        \still point at the script's own custom-named variable instead of \
