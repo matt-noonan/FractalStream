@@ -219,6 +219,12 @@ jobs:
         "$LLVM_BIN/llvm-config" --cxxflags
         "$LLVM_BIN/llvm-config" --system-libs --link-static
 
+        # GHC's toolchain has its own llvm-config (LLVM 14), which can come
+        # first on the PATH. llvm-hs looks for llvm-config-12 before plain
+        # llvm-config, so install ours under that name too.
+        cp "$LLVM_BIN/llvm-config.exe" "$LLVM_BIN/llvm-config-12.exe"
+        "$LLVM_BIN/llvm-config-12" --version
+
         # llvm-hs.cabal asks for libstdc++, which GHC's toolchain doesn't
         # have (it uses libc++, which llvm-hs's Setup.hs also adds). Give it
         # an empty stand-in.
