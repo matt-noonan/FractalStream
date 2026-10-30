@@ -47,7 +47,7 @@ jobs:
 
     - name: Get cached build of wxc
       id: cache-wxc
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         key: ${{ runner.os }}-cache-wxc
         path: wxHaskell-3.2
@@ -63,6 +63,13 @@ jobs:
         cmake -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=ON ..
         cmake --build .
 
+    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
+      name: Save build of wxc
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-cache-wxc
+        path: wxHaskell-3.2
+
     - name: Install wxc
       run: |
         pwd
@@ -76,19 +83,21 @@ jobs:
         sudo apt update
         sudo apt install llvm-12-dev
 
+    # Restore the newest saved .stack, and save a new one after every run,
+    # even a failed one, so that a failure late in the build doesn't throw
+    # away the dependencies that were built.
     - name: Get cached .stack
-      id: cache-dot-stack
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
-        key: ${{ runner.os }}-cache-dot-stack
+        key: ${{ runner.os }}-cache-dot-stack-${{ github.run_id }}
+        restore-keys: ${{ runner.os }}-cache-dot-stack
         path: ~/.stack
 
     - name: Apply patch
       run: |
         git apply patches/shared-llvm.patch
 
-    - if: ${{ steps.cache-dot-stack.outputs.cache-hit != 'true' }}
-      name: Build Haskell dependencies
+    - name: Build Haskell dependencies
       run: |
         cd fractalstream-ui-wx
         stack build --only-snapshot
@@ -98,6 +107,13 @@ jobs:
         cd fractalstream-ui-wx
         icns2png -x FS.icns
         stack build
+
+    - if: ${{ always() }}
+      name: Save .stack
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-cache-dot-stack-${{ github.run_id }}
+        path: ~/.stack
 
     - name: Archive app image
       env:
