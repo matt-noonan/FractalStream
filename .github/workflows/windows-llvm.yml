@@ -1,0 +1,273 @@
+name: Windows build (LLVM)
+
+on:
+  workflow_dispatch:
+  # Temporary, while getting this build working; remove before merging.
+  push:
+    branches:
+      - windows-build
+
+# Like windows.yml, but with the LLVM 12 backend.
+#
+# llvm-hs compiles its C++ shims with GHC's own toolchain, which on Windows
+# (GHC 9.4+) is clang with libc++. So LLVM 12 is built from source with that
+# same clang and libc++ (LLVM_ENABLE_LIBCXX=ON, which also makes llvm-config
+# report -stdlib=libc++, so llvm-hs links libc++). Only the X86 target is
+# built: llvm-hs initializes whichever targets LLVM was built with.
+
+jobs:
+  build:
+
+    runs-on: windows-2022
+    timeout-minutes: 360
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    env:
+      # Keep stack's paths short: Windows has a 260 character path limit.
+      STACK_ROOT: C:\sr
+      LLVM_PREFIX: C:\llvm12
+
+    steps:
+
+    - name: Allow long paths in git
+      shell: pwsh
+      run: git config --system core.longpaths true
+
+    - uses: actions/checkout@v4
+
+    - name: Install MSYS2 and wxWidgets 3.2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        # Keep the Windows PATH, so that the runner's stack is visible.
+        path-type: inherit
+        # No MSYS2 git: it reports paths like /d/a/..., which breaks the
+        # githash Template Haskell in fractalstream-core. The runner's
+        # Windows git (on the inherited PATH) reports D:/a/... instead.
+        install: >-
+          zip
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-pkgconf
+          mingw-w64-ucrt-x86_64-wxwidgets3.2-msw
+          mingw-w64-ucrt-x86_64-cmake
+          mingw-w64-ucrt-x86_64-ninja
+
+    - name: Check tools
+      run: |
+        set -euo pipefail
+        # MSYS2 may only install the versioned wx-config; wxc's version
+        # script wants the unversioned one.
+        if ! command -v wx-config >/dev/null; then
+          ln -s "$(command -v wx-config-3.2)" /ucrt64/bin/wx-config
+        fi
+        wx-config --version-full
+        pkg-config --version
+        command -v git
+        git rev-parse --show-toplevel
+        if ! command -v stack >/dev/null; then
+          curl -sSL -o stack.zip https://get.haskellstack.org/stable/windows-x86_64.zip
+          mkdir -p /usr/local/bin
+          unzip -o stack.zip stack.exe -d /usr/local/bin
+        fi
+        stack --version
+
+    - name: Get cached build of wxc
+      id: cache-wxc
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-cache-wxc-dll
+        path: wxc-prefix
+
+    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
+      name: Build wxc from wxHaskell
+      run: |
+        set -euo pipefail
+        PREFIX="$PWD/wxc-prefix"
+        mkdir -p "$PREFIX/bin" "$PREFIX/lib" "$PREFIX/include"
+
+        git clone https://github.com/matt-noonan/wxHaskell-3.2.git
+        cd wxHaskell-3.2/wxc
+        ./generate-version-header.sh
+
+        # Build the same sources that wxc's CMakeLists.txt does, but call g++
+        # directly: CMake's FindwxWidgets is unreliable under MSYS2.
+        export CXXFLAGS="$(wx-config --cxxflags) -std=c++14 -O2 -DwxcREFUSE_MEDIACTRL -Iinclude"
+        mkdir -p obj
+        grep -o 'src/cpp/[A-Za-z_]*\.cpp' CMakeLists.txt \
+          | xargs -P 4 -I{} sh -c 'echo "$1"; g++ $CXXFLAGS -c "$1" -o "obj/$(basename "$1" .cpp).o"' _ {}
+
+        # Some wxc functions are marked dllexport and some aren't, so export
+        # everything.
+        g++ -shared -o "$PREFIX/bin/wxc.dll" obj/*.o \
+          -Wl,--export-all-symbols \
+          -Wl,--out-implib,"$PREFIX/lib/libwxc.dll.a" \
+          $(wx-config --libs gl,base,core,richtext,stc,xrc,propgrid,qa,html,adv,aui,ribbon,net)
+
+        cp -r include/wxc "$PREFIX/include/"
+
+    - name: Install wxc
+      run: |
+        set -euo pipefail
+        # Install into MSYS2's own prefix. MSYS2's login profile resets
+        # PKG_CONFIG_PATH in every step, and its pkg-config replaces a .pc
+        # file's prefix with the one the file is installed under, so wxc has
+        # to live in /ucrt64 alongside wxWidgets. (/ucrt64/bin is also on the
+        # PATH, which GHC needs to load wxc.dll when running Template Haskell.)
+        cp wxc-prefix/bin/wxc.dll /ucrt64/bin/
+        cp wxc-prefix/lib/libwxc.dll.a /ucrt64/lib/
+        cp -r wxc-prefix/include/wxc /ucrt64/include/
+        cat > /ucrt64/lib/pkgconfig/wxc.pc <<EOF
+        prefix=$(cygpath -m /ucrt64)
+        libdir=\${prefix}/lib
+        includedir=\${prefix}/include
+
+        Name: wxc
+        Description: A C wrapper library around wxWidgets.
+        Version: 1.0.0.2
+        Cflags: -I"\${includedir}"
+        Libs: -L"\${libdir}"
+        EOF
+        cat /ucrt64/lib/pkgconfig/wxc.pc
+        pkg-config --cflags --libs wxc
+        ls /ucrt64/include/wxc/wxc.h
+
+    # Restore the newest saved stack root (falling back to the pure build's,
+    # which has the same snapshot packages), and save a new one after every
+    # run, even a failed one.
+    - name: Get cached stack root
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ runner.os }}-cache-stack-root-llvm-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-cache-stack-root-llvm-
+          ${{ runner.os }}-cache-stack-root-pure-
+        path: C:\sr
+
+    - name: Install GHC and find its toolchain
+      run: |
+        set -euo pipefail
+        cd fractalstream-ui-wx
+        stack --skip-msys setup
+        GHC_BIN="$(cygpath -u "$(stack --skip-msys path --compiler-bin)")"
+        GHC_MINGW="$(cd "$GHC_BIN/../mingw" && pwd)"
+        echo "GHC_MINGW=$GHC_MINGW" >> $GITHUB_ENV
+        ls "$GHC_MINGW" "$GHC_MINGW/bin"
+        "$GHC_MINGW/bin/clang++" --version
+        "$GHC_BIN/ghc" --info | grep -i "C compiler\|C++ compiler\|ld command\|ar command\|target platform"
+        ls "$GHC_MINGW/lib" | grep -i "c++\|stdc\|unwind" || true
+
+    - name: Get cached build of LLVM 12
+      id: cache-llvm
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ runner.os }}-cache-llvm-12-x86-ghc-9.10.3
+        path: C:\llvm12
+
+    - if: ${{ steps.cache-llvm.outputs.cache-hit != 'true' }}
+      name: Build LLVM 12 with GHC's clang
+      run: |
+        set -euo pipefail
+        curl -sSL -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.1/llvm-12.0.1.src.tar.xz
+        tar xf llvm.tar.xz || true   # a few test symlinks can't be made on Windows
+        PREFIX="$(cygpath -m "$LLVM_PREFIX")"
+        cmake -G Ninja -S llvm-12.0.1.src -B llvm-build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+          -DCMAKE_C_COMPILER="$(cygpath -m "$GHC_MINGW/bin/clang.exe")" \
+          -DCMAKE_CXX_COMPILER="$(cygpath -m "$GHC_MINGW/bin/clang++.exe")" \
+          -DCMAKE_AR="$(cygpath -m "$GHC_MINGW/bin/llvm-ar.exe")" \
+          -DCMAKE_RANLIB="$(cygpath -m "$GHC_MINGW/bin/llvm-ranlib.exe")" \
+          -DLLVM_USE_LINKER=lld \
+          -DLLVM_HOST_TRIPLE=x86_64-w64-windows-gnu \
+          -DLLVM_TARGETS_TO_BUILD=X86 \
+          -DLLVM_ENABLE_LIBCXX=ON \
+          -DLLVM_ENABLE_ZLIB=OFF \
+          -DLLVM_ENABLE_TERMINFO=OFF \
+          -DLLVM_ENABLE_LIBXML2=OFF \
+          -DLLVM_INCLUDE_TESTS=OFF \
+          -DLLVM_INCLUDE_EXAMPLES=OFF \
+          -DLLVM_INCLUDE_BENCHMARKS=OFF \
+          -DLLVM_INCLUDE_DOCS=OFF \
+          -DLLVM_BUILD_TOOLS=OFF \
+          -DLLVM_BUILD_UTILS=OFF
+        # Only the libraries, headers and llvm-config, which is all llvm-hs uses.
+        ninja -C llvm-build install-llvm-headers install-llvm-libraries llvm-config
+        mkdir -p "$(cygpath -u "$LLVM_PREFIX")/bin"
+        cp llvm-build/bin/llvm-config.exe "$(cygpath -u "$LLVM_PREFIX")/bin/"
+
+    - if: ${{ steps.cache-llvm.outputs.cache-hit != 'true' }}
+      name: Save build of LLVM 12
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-cache-llvm-12-x86-ghc-9.10.3
+        path: C:\llvm12
+
+    - name: Check LLVM 12
+      run: |
+        set -euo pipefail
+        LLVM_BIN="$(cygpath -u "$LLVM_PREFIX")/bin"
+        echo "$(cygpath -w "$LLVM_BIN")" >> $GITHUB_PATH
+        "$LLVM_BIN/llvm-config" --version
+        "$LLVM_BIN/llvm-config" --cxxflags
+        "$LLVM_BIN/llvm-config" --system-libs --link-static
+
+        # llvm-hs.cabal asks for libstdc++, which GHC's toolchain doesn't
+        # have (it uses libc++, which llvm-hs's Setup.hs also adds). Give it
+        # an empty stand-in.
+        mkdir -p stub-libs
+        "$GHC_MINGW/bin/llvm-ar" rc stub-libs/libstdc++.a
+        echo "STUB_LIBS=$(cygpath -w "$PWD/stub-libs")" >> $GITHUB_ENV
+
+    - name: Build Haskell dependencies
+      run: |
+        cd fractalstream-ui-wx
+        stack --skip-msys build --only-snapshot --extra-lib-dirs="$STUB_LIBS"
+
+    - name: Build FractalStream
+      run: |
+        cd fractalstream-ui-wx
+        stack --skip-msys build --extra-lib-dirs="$STUB_LIBS"
+
+    - if: ${{ always() }}
+      name: Save stack root
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-cache-stack-root-llvm-${{ github.run_id }}
+        path: C:\sr
+
+    - name: Collect the executable and its DLLs
+      env:
+        TARGET_BUNDLE_NAME: FractalStream-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}-llvm
+      run: |
+        set -euo pipefail
+        BIN="$(cd fractalstream-ui-wx && cygpath -u "$(stack --skip-msys path --local-install-root)")/bin"
+        mkdir -p FractalStream
+        cp "$BIN/FractalStream.exe" FractalStream/
+
+        # Bundle every DLL that isn't part of Windows itself. GHC's toolchain
+        # directory is on the PATH here so that its runtime DLLs (if the
+        # executable uses any) are found too.
+        export PATH="$PATH:$GHC_MINGW/bin:$GHC_MINGW/x86_64-w64-mingw32/bin"
+        ldd FractalStream/FractalStream.exe
+        if ldd FractalStream/FractalStream.exe | grep -q "not found"; then
+          echo "Some DLLs were not found"; exit 1
+        fi
+        ldd FractalStream/FractalStream.exe \
+          | awk '{ print $3 }' \
+          | grep -vi '^/c/windows/' \
+          | grep -i '\.dll$' \
+          | sort -u \
+          | xargs -I{} cp {} FractalStream/
+        ls -l FractalStream
+
+        zip -r "$TARGET_BUNDLE_NAME.zip" FractalStream
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: FractalStream-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}-llvm.zip
+        path: FractalStream-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}-llvm.zip

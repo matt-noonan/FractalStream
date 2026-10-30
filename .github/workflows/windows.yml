@@ -1,11 +1,7 @@
 name: Windows build
 
 on:
-  workflow_dispatch:
-  # Temporary, while getting this build working; remove before merging.
-  push:
-    branches:
-      - windows-build
+  - workflow_dispatch
 
 # Everything runs inside an MSYS2 UCRT64 shell. GHC 9.4+ on Windows targets
 # the UCRT, so it can link against MSYS2's UCRT64 packages. wxWidgets comes
