@@ -60,6 +60,11 @@ macApp = MacApp "FractalStream"
 fsConfHook :: (GenericPackageDescription, HookedBuildInfo)
            -> ConfigFlags
            -> IO LocalBuildInfo
+fsConfHook (pkg_descr, hooked_bi) flags
+  -- On Windows, wxc is a DLL that already links wxWidgets, so the executable
+  -- only needs -lwxc (which wxcore provides). We also can't run wx-config
+  -- there: it is a shell script, which Cabal can't execute directly.
+  | System.os == "mingw32" = confHook simpleUserHooks (pkg_descr, hooked_bi) flags
 fsConfHook (pkg_descr, hooked_bi) flags = do
   -- Get wx-config --libs output
   wxConfig <- getWxConfig flags
