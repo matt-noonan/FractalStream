@@ -107,8 +107,9 @@ jobs:
       run: |
         set -euo pipefail
         PREFIX="$(cygpath -m "$PWD/wxc-prefix")"
-        mkdir -p wxc-prefix/lib/pkgconfig
-        cat > wxc-prefix/lib/pkgconfig/wxc.pc <<EOF
+        # MSYS2's login profile resets PKG_CONFIG_PATH in every step, so
+        # install wxc.pc where MSYS2's pkg-config always looks.
+        cat > /ucrt64/lib/pkgconfig/wxc.pc <<EOF
         prefix=$PREFIX
         libdir=\${prefix}/lib
         includedir=\${prefix}/include
@@ -119,12 +120,10 @@ jobs:
         Cflags: -I"\${includedir}"
         Libs: -L"\${libdir}"
         EOF
-        cat wxc-prefix/lib/pkgconfig/wxc.pc
+        cat /ucrt64/lib/pkgconfig/wxc.pc
 
-        # Later steps need pkg-config to find wxc, and wxc.dll on the PATH
-        # (GHC loads it when running Template Haskell).
-        export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig;$(cygpath -m /ucrt64/lib/pkgconfig)"
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
+        # Later steps need wxc.dll on the PATH (GHC loads it when running
+        # Template Haskell).
         echo "$(cygpath -w "$PWD/wxc-prefix/bin")" >> $GITHUB_PATH
         pkg-config --cflags --libs wxc
 
