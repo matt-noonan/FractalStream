@@ -57,7 +57,9 @@ interpretViewer mPrepScript body0 action = do
         pokeByteOff vaBuffer (offset + 1) g
         pokeByteOff vaBuffer (offset + 2) b
 
-    pure ()
+    -- The interpreter has no arena to run out of, and a bad list index
+    -- is an exception instead.
+    pure mempty
 
 noDrawing :: DrawHandler ScalarIORefM
 noDrawing = DrawHandler (\_ -> pure ())

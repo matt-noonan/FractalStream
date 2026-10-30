@@ -45,7 +45,7 @@ import Language.Code.InterpretIO
 import Language.Value.Evaluator (HaskellValue)
 
 import Data.DynamicValue hiding (clone)
-import Task.Block (BlockComputeAction)
+import Foreign.Ptr (Ptr)
 
 import Text.Printf
 import Text.Read (readMaybe)
@@ -114,6 +114,26 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                                    ] projectWindow
     WX.windowOnClose f (set f [ visible := False ])
 
+    -- A status bar, for reporting problems the viewer's script ran into
+    -- while rendering. It's hidden while there's nothing to report.
+    statusText <- statusField [ text := "" ]
+    set f [ statusBar := [statusText] ]
+    statusBarWindow <- frameGetStatusBar f
+    void (windowHide statusBarWindow)
+
+    -- Show a message in the status bar, or hide the bar for an empty
+    -- message. The frame grows or shrinks to fit the bar, so that the
+    -- image keeps its size and doesn't need to be re-rendered.
+    let setStatusMessage msg = do
+          shown <- get statusText text
+          when (msg /= shown) $ do
+            set statusText [ text := msg ]
+            isShown <- windowIsShown statusBarWindow
+            when (isShown == null msg) $ do
+              oldSize <- get f clientSize
+              void (if null msg then windowHide statusBarWindow
+                                else windowShow statusBarWindow)
+              set f [ clientSize := oldSize ]
 
     p <- scrolledWindow f [ scrollRate := sz 10 10, visible := True ]
 
@@ -381,7 +401,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
     -- Main view
     -------------------------------------------------------
 
-    lastRenderAction <- newMVar (\_ _ _ _ _ _ -> pure ())
+    lastRenderAction <- newMVar (\_ _ _ _ _ _ -> pure mempty)
 
     let getRenderAction = case vCodeWithArgs of
           CodeWithArgs vGetArgs _ vCode -> do
@@ -404,12 +424,14 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                 pure action
 
     renderId <- newIORef (0 :: Int)
+    -- The issues reported so far by the current render, and its id.
+    renderIssues <- newIORef (0 :: Int, mempty :: ViewerIssues)
 
     pendingResize <- variable [value := False]
 
     viewerTile     <- do
       renderAction <- getRenderAction
-      renderTile' renderId True renderAction (width, height) model
+      renderTile' renderId renderIssues True renderAction (width, height) model
     currentTile    <- variable [value := viewerTile]
     savedTileImage <- variable [value := Nothing]
     lastTileImage  <- variable [value := Nothing]
@@ -441,7 +463,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
           get currentTile value >>= cancelTile
           renderAction <- getRenderAction
           smoothing <- get useSmoothing value
-          newViewerTile <- renderTile' renderId smoothing renderAction (w, h) model
+          newViewerTile <- renderTile' renderId renderIssues smoothing renderAction (w, h) model
           set currentTile [ value := newViewerTile ]
           startAnimatingFrom oldModel
           void $ tryPutMVar needToSendRefreshEvent ()
@@ -742,6 +764,14 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                          saved <- imageCopy tileImage
                          set savedTileImage [value := Just saved]
                          triggerRepaint
+                       -- Report the current render's issues, if any. The
+                       -- previous message stays up until the render either
+                       -- finds an issue or finishes, so that the bar doesn't
+                       -- flicker away at the start of every render.
+                       (_, issues) <- readIORef renderIssues
+                       finished <- tileFinished curTile
+                       when (finished || issues /= mempty) $
+                         setStatusMessage (fromMaybe "" (describeViewerIssues issues))
                    ]
 
     -- Add a timer which will check for repainting requests from off the main
@@ -775,7 +805,13 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                               needResize <- get pendingResize value
                               when needResize $ do
                                   set pendingResize [value := False]
-                                  jumpViewTo =<< get model value
+                                  -- Showing or hiding the status bar resizes
+                                  -- the frame but not the image; only
+                                  -- re-render if the image's size changed.
+                                  Size w h <- get f clientSize
+                                  tileSize <- tileRect <$> get currentTile value
+                                  when (tileSize /= (w, h)) $
+                                    jumpViewTo =<< get model value
                       ]
 
     -- Add a timer which checks if the tool layer should receive a refresh event.
@@ -1052,17 +1088,26 @@ interpolateModel t m1 m2 = m2
 -- matches the current ID value.
 renderTile' :: Valued w
             => IORef Int
+            -> IORef (Int, ViewerIssues)
             -> Bool
-            -> BlockComputeAction
+            -> (Word32 -> Word32 -> Word32 -> Complex Double -> Complex Double
+                -> Ptr Word8 -> IO ViewerIssues)
             -> (Int, Int)
             -> w Model
             -> IO Tile
-renderTile' renderId smooth action dim model = do
+renderTile' renderId renderIssues smooth action dim model = do
     iD <- atomicModifyIORef' renderId (\x -> (x + 1, x + 1))
+    -- A new render starts out with no issues; each block adds its own,
+    -- unless a newer render has started since.
+    atomicWriteIORef renderIssues (iD, mempty)
     modelRect <- modelToRect dim <$> get model value
     let action' p q r x y c = do
             curId <- readIORef renderId
-            if (curId == iD) then action p q r x y c else pure ()
+            when (curId == iD) $ do
+              issues <- action p q r x y c
+              unless (issues == mempty) $
+                atomicModifyIORef' renderIssues $ \(i, old) ->
+                  ((i, if i == iD then old <> issues else old), ())
     renderTile smooth action' dim modelRect
 
 drawCenteredImage :: Image b -> DC d -> Rect -> (Int,Int) -> IO ()

@@ -297,6 +297,16 @@ viewer renders the pixel magenta (as for an overflow), a tool fails with
 since truncated lists can cause bad indices). The tool's status byte has
 bit 0 = overflow, bit 1 = bad index.
 
+Viewer kernels report the same two problems through an `#issuesOut` byte
+(same bits), sticky across the block: `ViewerFunction` returns
+`Actor.Viewer.ViewerIssues`, the wx viewer collects them per render (by
+render id, in `renderTile'`) and shows `describeViewerIssues` in the
+window's status bar. The bar is hidden when there's nothing to report; it
+is cleared only once a render finishes clean (`tileFinished`), and showing
+or hiding it resizes the frame to keep the image's client size, with the
+resize timer skipping the re-render when the size is unchanged. Also,
+headless `capture` prints it as a warning on stderr.
+
 The wx viewer runs every tool handler through `guardTool`
 (`UI/ProjectViewer.hs`): on an exception it switches to Navigate first
 (skipping the failed tool's Deactivated handler, hiding its config, and

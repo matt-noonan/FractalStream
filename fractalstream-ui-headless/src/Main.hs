@@ -33,7 +33,7 @@ import FractalStream.Prelude
 
 import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble)
 import Actor.UI (UI(..))
-import Actor.Viewer (Backend, Viewer(..), snapshotToFile)
+import Actor.Viewer (Backend, Viewer(..), snapshotToFile, describeViewerIssues)
 import Data.DynamicValue (getDynamic)
 import Backend (withBackend)
 import Scenario (parseScenario)
@@ -161,7 +161,11 @@ snapshotUI viewerName outputFile found result seenTitles = UI
 -- to composite. A scenario's own @capture@ command is what reaches
 -- 'Actor.Viewer.Overlay.compositeDrawLayersToFile' (see "Interpreter").
 renderViewer :: Viewer -> FilePath -> IO (Maybe String)
-renderViewer viewer outputFile = snapshotToFile viewer True outputFile
+renderViewer viewer outputFile = snapshotToFile viewer True outputFile >>= \case
+  Left err     -> pure (Just err)
+  Right issues -> do
+    forM_ (describeViewerIssues issues) (hPutStrLn stderr . ("warning: " ++))
+    pure Nothing
 
 -- | Parse a standalone commands file and run it against the already-loaded
 -- project.

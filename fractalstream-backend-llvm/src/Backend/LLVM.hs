@@ -436,7 +436,7 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
                     h = fromIntegral vaHeight :: Int
                     (x0, y0) = vaPoint
                     (dx, dy) = vaStep
-                withPrepArrays prepEnvProxy nPixels $ \prepPtrs -> do
+                issues <- withPrepArrays prepEnvProxy nPixels $ \prepPtrs -> allocaBytes 1 $ \issuesPtr -> do
                   -- Haskell prep pass: populate prep arrays before LLVM kernel
                   case mPrepScript of
                     Nothing -> pure ()
@@ -463,6 +463,7 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
                                : argInt32 vaSubsamples
                                : argPtr   arena
                                : argInt32 (fromIntegral arenaCapacity)
+                               : argPtr   issuesPtr
                                : argCDouble (CDouble $ fst vaPoint)
                                : argCDouble (CDouble $ snd vaPoint)
                                : argCDouble (CDouble $ fst vaStep)
@@ -470,7 +471,11 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
                                : colorArg
                                : args ++ map argPtr prepPtrs
                   callFFI fn retVoid fullArgs
+                  status <- peek (issuesPtr :: Ptr Word8)
+                  pure ViewerIssues { viOutOfMemory = testBit status 0
+                                    , viBadIndex    = testBit status 1 }
                 sequence_ (colorFree : frees)
+                pure issues
 
 ------------------------------------------------------------------------
 -- Compiled tools

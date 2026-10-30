@@ -411,7 +411,8 @@ compileRenderer' prepOutputEnv name code = runExcept $
         -- First 3 params are the internal render args; the rest are ViewerEnv.
         (internalRenderParams, viewerEnvParams) = splitAt 3 allEnvParams
         arenaParams  = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
-                       , (AST.i32,        ParameterName "#arenaSize") ]
+                       , (AST.i32,        ParameterName "#arenaSize")
+                       , (AST.ptr AST.i8, ParameterName "#issuesOut") ]
         params       = internalRenderParams ++ arenaParams ++ viewerEnvParams
         prepParams   = toPrepParamList prepOutputEnv
         pfX      = bindingEvidence @InternalX   @'RealT  @(ViewerEnv env)
@@ -422,7 +423,7 @@ compileRenderer' prepOutputEnv name code = runExcept $
         nViewerEnvArgs = envLength (envProxy (Proxy @(ViewerEnv env)))
     function name (retParam : params ++ prepParams) AST.void $ \allArgs -> do
       let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg
-                  : arenaPtrArg : arenaSizeArg : rest) = allArgs
+                  : arenaPtrArg : arenaSizeArg : issuesOutArg : rest) = allArgs
           (rawArgs, prepArrayPtrs) = splitAt nViewerEnvArgs rest
       getExtern <- getGetExtern
       mdo
@@ -442,6 +443,12 @@ compileRenderer' prepOutputEnv name code = runExcept $
         store overflowFlag 0 (C.bit 0)
         indexError <- alloca AST.i1 Nothing 0
         store indexError 0 (C.bit 0)
+        -- Whether any subsample in this block overflowed, or indexed a list
+        -- out of range; reported to the host through #issuesOut.
+        anyOverflow <- alloca AST.i1 Nothing 0
+        store anyOverflow 0 (C.bit 0)
+        anyIndexError <- alloca AST.i1 Nothing 0
+        store anyIndexError 0 (C.bit 0)
         emptyText <- emptyTextGlobal
         let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing
 
@@ -522,8 +529,11 @@ compileRenderer' prepOutputEnv name code = runExcept $
           overwritePrepOutputs prepOutputEnv prepArrayPtrs pixelIndex argMap
 
           runReaderT (compileCode getExtern arenaState Nothing code) args
-          overflowed <- (,) <$> load overflowFlag 0 <*> load indexError 0
-                           >>= uncurry LLVM.IRBuilder.Instruction.or
+          ovf <- load overflowFlag 0
+          bad <- load indexError 0
+          load anyOverflow 0 >>= LLVM.IRBuilder.Instruction.or ovf >>= store anyOverflow 0
+          load anyIndexError 0 >>= LLVM.IRBuilder.Instruction.or bad >>= store anyIndexError 0
+          overflowed <- LLVM.IRBuilder.Instruction.or ovf bad
           (cr0, cg0, cb0) <- case getBinding args pfOutput of
             PtrOp (ColorOp outputR outputG outputB) ->
               (,,) <$> load outputR 0 <*> load outputG 0 <*> load outputB 0
@@ -616,6 +626,11 @@ compileRenderer' prepOutputEnv name code = runExcept $
           condBr continue pixelLoopY exitPixelLoopY
 
         exitPixelLoopY <- block `named` "end i loop"
+        -- The issues byte: bit 0 for an arena overflow, bit 1 for a list
+        -- indexed out of range, as for tool handlers.
+        ovf8 <- load anyOverflow 0 >>= (`zext` AST.i8)
+        bad8 <- load anyIndexError 0 >>= (`zext` AST.i8) >>= (`shl` C.int8 1)
+        LLVM.IRBuilder.Instruction.or ovf8 bad8 >>= store issuesOutArg 0
         retVoid
 
 

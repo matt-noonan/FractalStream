@@ -16,6 +16,8 @@ module Actor.Viewer
   , ViewerCompiler(..)
   , ViewerArgs(..)
   , ViewerFunction(..)
+  , ViewerIssues(..)
+  , describeViewerIssues
   , Viewer(..)
   , CodeWithArgs(..)
   , cloneViewer
@@ -224,7 +226,7 @@ withRenderedViewerBuffer
   :: Viewer
   -> Bool
   -> ((Double, Double) -> Double -> (Word32, Word32) -> Ptr Word8 -> IO a)
-  -> IO (Either String a)
+  -> IO (Either String (ViewerIssues, a))
 withRenderedViewerBuffer Viewer{..} downsample withBuffer = case vCodeWithArgs of
   CodeWithArgs vGetArgs _ vCode -> vGetArgs >>= \case
     Left err -> pure (Left err)
@@ -240,7 +242,7 @@ withRenderedViewerBuffer Viewer{..} downsample withBuffer = case vCodeWithArgs o
       let vaPoint = (cx - fromIntegral vaWidth * px / 2, cy + fromIntegral vaHeight * px / 2)
       ViewerFunction fn <- getDynamic vCode
       allocaBytes (fromIntegral $ 3 * vaWidth * vaHeight) $ \vaBuffer -> do
-        fn ViewerArgs{..}
+        issues <- fn ViewerArgs{..}
         if downsample
           then do
             let width  = fromIntegral (vaWidth `div` 2)
@@ -259,20 +261,47 @@ withRenderedViewerBuffer Viewer{..} downsample withBuffer = case vCodeWithArgs o
                     c4 :: Word16 <- fromIntegral <$>
                       peekElemOff vaBuffer (inputIx + 3 + 6 * width)
                     pokeElemOff buf (3 * i + 3 * width * j + k) (fromIntegral $ (c1 + c2 + c3 + c4) `div` 4)
-              Right <$> withBuffer center pixelSize (fromIntegral width, fromIntegral height) buf
+              Right . (issues,) <$> withBuffer center pixelSize (fromIntegral width, fromIntegral height) buf
           else
-            Right <$> withBuffer center pixelSize (fromIntegral vaWidth, fromIntegral vaHeight) vaBuffer
+            Right . (issues,) <$> withBuffer center pixelSize (fromIntegral vaWidth, fromIntegral vaHeight) vaBuffer
 
-snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Maybe String)
+-- | Render a viewer to a PNG file, returning any issues the render ran into.
+snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Either String ViewerIssues)
 snapshotToFile viewer downsample path =
-  either Just (const Nothing) <$>
+  fmap fst <$>
     withRenderedViewerBuffer viewer downsample (\_ _ dim buf -> encodeBufferToPngFile dim buf path)
 
 onParameterChanges :: Viewer -> IO () -> IO (IO ())
 onParameterChanges = vListen
 
+-- | Render a block of pixels, reporting any problems the viewer's script
+-- ran into along the way.
 newtype ViewerFunction env =
-  ViewerFunction (ViewerArgs env -> IO ())
+  ViewerFunction (ViewerArgs env -> IO ViewerIssues)
+
+-- | Problems a viewer's script ran into while rendering. A pixel that hit
+-- one of them is drawn magenta.
+data ViewerIssues = ViewerIssues
+  { viOutOfMemory :: Bool  -- ^ some pixel's lists or text didn't fit in
+                           --   its scratch memory
+  , viBadIndex    :: Bool  -- ^ some pixel indexed a list out of range
+  } deriving (Eq, Show)
+
+instance Semigroup ViewerIssues where
+  ViewerIssues a b <> ViewerIssues c d = ViewerIssues (a || c) (b || d)
+
+instance Monoid ViewerIssues where
+  mempty = ViewerIssues False False
+
+-- | A message for the user explaining a render's issues, if there were any.
+describeViewerIssues :: ViewerIssues -> Maybe String
+describeViewerIssues ViewerIssues{..}
+  | null problems = Nothing
+  | otherwise = Just ("Magenta pixels: the script " ++ intercalate ", and " problems ++ ".")
+  where
+    problems =
+      [ "ran out of scratch memory for its lists or text" | viOutOfMemory ]
+      ++ [ "indexed a list out of range" | viBadIndex ]
 
 assertMissingViewerArgs :: forall env t
                          . EnvironmentProxy env
@@ -303,7 +332,7 @@ invokeViewerFunction :: MissingViewerArgs env
                      -> Complex Double
                      -> Complex Double
                      -> Ptr Word8
-                     -> IO ()
+                     -> IO ViewerIssues
 invokeViewerFunction (ViewerFunction fn) vaArgs =
   \w h subsamples (dx :+ dy) (x :+ y) vaBuffer -> do
     let vaPoint = (x, y)
@@ -449,6 +478,7 @@ allGrey = ViewerFunction $ \ViewerArgs{..} -> do
       pokeElemOff vaBuffer (3 * j * w + 3 * i + 0) 0x7f
       pokeElemOff vaBuffer (3 * j * w + 3 * i + 1) 0x7f
       pokeElemOff vaBuffer (3 * j * w + 3 * i + 2) 0x7f
+  pure mempty
 
 defaultIterLimit, defaultMaxRadius, defaultMinRadius :: ParsedValue
 defaultIterLimit = fromRight (error "INTERNAL ERROR: defaultIterLimit") $ parseParsedValue "100"

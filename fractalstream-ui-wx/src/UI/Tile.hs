@@ -5,6 +5,7 @@ Description : Creation and execution of viewer tiles.
 module UI.Tile ( Tile()
                , renderTile
                , cancelTile
+               , tileFinished
                , tileRect
                , ifModified
                , ifElseModified
@@ -46,6 +47,10 @@ data Tile = Tile
 -- | Cancel the tile, but don't wait for it to finish
 cancelTile :: Tile -> IO ()
 cancelTile = void . forkIO . cancel . tileWorker
+
+-- | Has the tile finished drawing (or been cancelled)?
+tileFinished :: Tile -> IO Bool
+tileFinished = fmap isJust . poll . tileWorker
 
 withSynchedTileBuffer :: Tile -> (Ptr Word8 -> IO b) -> IO b
 withSynchedTileBuffer tile action = synchedWith (tileBuffer tile) (`withForeignPtr` action)

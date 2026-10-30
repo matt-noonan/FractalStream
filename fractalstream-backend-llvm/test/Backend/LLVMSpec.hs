@@ -11,6 +11,9 @@ import Data.Color
 import Data.IORef
 import Data.List (isInfixOf)
 import Control.Exception (IOException, ErrorCall(..))
+import Actor.Viewer (ViewerFunction(..), ViewerArgs(..), ViewerIssues(..))
+import Actor.Viewer.Types (ViewerEnv)
+import Foreign (allocaBytes, peekArray, Word8)
 import Backend.LLVM
 
 -- Deliberately plain string literals here, not a 'Text.RawString.QQ'
@@ -140,6 +143,44 @@ spec = do
       compiled    <- runTool (compiledToolExec jit) src
       interpreted <- runTool interpretedToolExec src
       compiled `shouldBe` interpreted
+
+  describe "when rendering a viewer" $ do
+
+    let -- Render a 4x4 block of a script that's fine for n = 0, indexes a
+        -- list out of range for n = 1, and runs out of its 1 MB of
+        -- scratch memory for n = 2 (a 100000-element list takes 1.6 MB).
+        render :: LLVMJit -> Int64 -> IO (ViewerIssues, [Word8])
+        render jit n = do
+          let env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
+              src = "color <- blue\nxs := [1, 2, 3]\n"
+                 ++ "if n = 1:\n  k := xs @ 5\n  color <- if k > 0 then red else green\n"
+                 ++ "if n = 2:\n  ks := range(1, 100000)\n"
+                 ++ "  color <- if length(ks) > 0 then red else green"
+          code <- either (fail . show) pure (parseCode env noCommonDefs src)
+          withJittedViewer jit Nothing code $ \(ViewerFunction vf) ->
+            allocaBytes (3 * 4 * 4) $ \buf -> do
+              issues <- vf ViewerArgs
+                { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+                , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+                , vaBuffer = buf
+                , vaArgs = Bind (Proxy @"n") IntegerType n EmptyContext }
+              (issues,) <$> peekArray (3 * 4 * 4) buf
+        allPixels (r, g, b) = concat (replicate 16 [r, g, b])
+
+    it "reports no issues for a script without problems" $ withJIT $ \jit -> do
+      (issues, pixels) <- render jit 0
+      issues `shouldBe` mempty
+      pixels `shouldBe` allPixels (colorToRGB blue)
+
+    it "reports a list indexed out of range, drawn in magenta" $ withJIT $ \jit -> do
+      (issues, pixels) <- render jit 1
+      issues `shouldBe` ViewerIssues { viOutOfMemory = False, viBadIndex = True }
+      pixels `shouldBe` allPixels (255, 0, 255)
+
+    it "reports running out of scratch memory, drawn in magenta" $ withJIT $ \jit -> do
+      (issues, pixels) <- render jit 2
+      issues `shouldBe` ViewerIssues { viOutOfMemory = True, viBadIndex = False }
+      pixels `shouldBe` allPixels (255, 0, 255)
 
 type ToolTestEnv =
   '[ '("msg", 'TextT), '("n", 'IntegerT), '("x", 'RealT), '("z", 'ComplexT)
