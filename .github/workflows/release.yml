@@ -1,0 +1,62 @@
+name: Release
+
+# Pushing a tag like v2.0.0 builds signed and notarized macOS binaries for
+# Apple Silicon and Intel, and attaches them to a draft GitHub Release:
+#   FractalStream-<version>-macos-<arch>.zip   the app (for the Homebrew cask)
+#   fsrun-<version>-macos-<arch>.tar.gz        fsrun (for the Homebrew formula)
+# The release notes list each file's sha256, for updating the Homebrew tap.
+# Review the draft and publish it by hand; Homebrew can only download the
+# files once the release is published.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  macos:
+    strategy:
+      matrix:
+        runner:
+          - macos-15
+          - macos-15-intel
+    uses: ./.github/workflows/macos-build.yml
+    with:
+      runner: ${{ matrix.runner }}
+      wxwidgets: build-static
+      notarize: true
+      version: ${{ github.ref_name }}
+    secrets: inherit
+
+  release:
+    needs: macos
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download the macOS builds
+      uses: actions/download-artifact@v4
+      with:
+        pattern: macos-*
+        merge-multiple: true
+        path: dist
+
+    - name: Create a draft release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        cd dist
+        ls -l
+        {
+          echo "## sha256"
+          echo
+          echo '```'
+          sha256sum *
+          echo '```'
+        } > notes.md
+        cat notes.md
+        gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft \
+          --title "FractalStream ${TAG#v}" --notes-file notes.md \
+          FractalStream-* fsrun-*
