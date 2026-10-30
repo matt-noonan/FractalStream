@@ -80,8 +80,10 @@ compile _ outputTy code = runExcept $
       arenaEnd <- gep arenaBase [C.int32 65536]
       overflowFlag <- alloca AST.i1 Nothing 0
       store overflowFlag 0 (C.bit 0)
+      indexError <- alloca AST.i1 Nothing 0
+      store indexError 0 (C.bit 0)
       emptyText <- emptyTextGlobal
-      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag emptyText Nothing
+      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing
 
       runReaderT (compileCode getExtern arenaState Nothing code) args
       rv <- derefOperand (getBinding args (bindingEvidence @output @t @env))
@@ -438,8 +440,10 @@ compileRenderer' prepOutputEnv name code = runExcept $
         arenaEnd <- gep arenaPtrArg [arenaSizeArg]
         overflowFlag <- alloca AST.i1 Nothing 0
         store overflowFlag 0 (C.bit 0)
+        indexError <- alloca AST.i1 Nothing 0
+        store indexError 0 (C.bit 0)
         emptyText <- emptyTextGlobal
-        let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag emptyText Nothing
+        let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing
 
         args <- allocaArgs (envProxy (Proxy @(ViewerEnv env))) rawArgs
         x0 <- derefOperand (getBinding args pfX)  >>= \case RealOp v -> pure v
@@ -511,17 +515,20 @@ compileRenderer' prepOutputEnv name code = runExcept $
           -- dynamic list allocations are independent.
           store bumpAlloca 0 arenaPtrArg
           store overflowFlag 0 (C.bit 0)
+          store indexError 0 (C.bit 0)
 
           -- Load prep output vars from their flat arrays before the kernel.
           pixelIndex <- load pixelIndexPtr 0
           overwritePrepOutputs prepOutputEnv prepArrayPtrs pixelIndex argMap
 
           runReaderT (compileCode getExtern arenaState Nothing code) args
-          overflowed <- load overflowFlag 0
+          overflowed <- (,) <$> load overflowFlag 0 <*> load indexError 0
+                           >>= uncurry LLVM.IRBuilder.Instruction.or
           (cr0, cg0, cb0) <- case getBinding args pfOutput of
             PtrOp (ColorOp outputR outputG outputB) ->
               (,,) <$> load outputR 0 <*> load outputG 0 <*> load outputB 0
-          -- On arena overflow, render the pixel magenta so it's visually obvious.
+          -- On arena overflow or a bad list index, render the pixel magenta
+          -- so it's visually obvious.
           cr0' <- select overflowed (C.int8 255) cr0
           cg0' <- select overflowed (C.int8 0)   cg0
           cb0' <- select overflowed (C.int8 255) cb0
@@ -631,10 +638,10 @@ data DrawVTable = DrawVTable
 -- viewer kernel there is no pixel loop: the body runs once.  ABI (in order):
 -- eight draw-callback function pointers and the host's number formatter (all
 -- passed as i8*; see 'ArenaState' for the formatter), the arena pointer and
--- size, a 1-byte overflow-out pointer, then the handler's environment values
--- (see 'toolInOut').  Draw commands in the body
--- 'call' the vtable; list allocations use the arena; on overflow the kernel
--- writes 1 to the overflow byte.
+-- size, a 1-byte status-out pointer, then the handler's environment values
+-- (see 'toolInOut').  Draw commands in the body 'call' the vtable; list
+-- allocations use the arena.  The status byte gets bit 0 set if the arena
+-- overflowed, and bit 1 if a list was indexed out of range.
 compileToolHandler :: forall e
                     . EnvironmentProxy e
                    -> AST.Name
@@ -669,10 +676,12 @@ compileToolHandler envp name code = runExcept $
       arenaEnd <- gep arenaPtrArg [arenaSizeArg]
       overflowFlag <- alloca AST.i1 Nothing 0
       store overflowFlag 0 (C.bit 0)
+      indexError <- alloca AST.i1 Nothing 0
+      store indexError 0 (C.bit 0)
       formatF <- bitcast formatP
                    (fnPtrTy AST.i32 [AST.i8, AST.double, AST.double, AST.ptr AST.i8, AST.i32])
       emptyText <- emptyTextGlobal
-      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag emptyText (Just formatF)
+      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText (Just formatF)
 
       clearF  <- bitcast clearP  (fnPtrTy AST.void [])
       strokeF <- bitcast strokeP (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
@@ -692,9 +701,12 @@ compileToolHandler envp name code = runExcept $
       args <- allocaToolArgs envp rawEnvArgs
       runReaderT (compileCode getExtern arenaState (Just vt) code) args
 
-      ovf  <- load overflowFlag 0
-      ovf8 <- zext ovf AST.i8
-      store overflowArg 0 ovf8
+      -- The status byte: bit 0 for an arena overflow, bit 1 for a list
+      -- indexed out of range.
+      ovf8 <- load overflowFlag 0 >>= (`zext` AST.i8)
+      idx8 <- load indexError 0 >>= (`zext` AST.i8) >>= (`shl` C.int8 1)
+      status <- LLVM.IRBuilder.Instruction.or ovf8 idx8
+      store overflowArg 0 status
       retVoid
 
 compileCode :: forall m env

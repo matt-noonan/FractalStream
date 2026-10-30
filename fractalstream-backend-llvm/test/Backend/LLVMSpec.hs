@@ -9,6 +9,8 @@ import Actor.Event (EventArgument_, mutableVar, interpretedToolExec, ToolExec)
 import Data.DynamicValue
 import Data.Color
 import Data.IORef
+import Data.List (isInfixOf)
+import Control.Exception (IOException, ErrorCall(..))
 import Backend.LLVM
 
 -- Deliberately plain string literals here, not a 'Text.RawString.QQ'
@@ -121,6 +123,23 @@ spec = do
               interpreted <- runTool interpretedToolExec src
               compiled `shouldBe` interpreted)
           scripts
+
+  describe "when a compiled tool handler fails" $ do
+
+    it "reports a bad list index as such, like the interpreter" $ withJIT $ \jit -> do
+      let src = "draw point at z\nx <- re(pts @ 5)"
+      runTool (compiledToolExec jit) src
+        `shouldThrow` (\e -> "list index was out of range" `isInfixOf` show (e :: IOException))
+      runTool interpretedToolExec src
+        `shouldThrow` (\(ErrorCall msg) -> msg == "List index 5 is out of range")
+
+    it "retries after an overflow, even if it also caused a bad index" $ withJIT $ \jit -> do
+      -- the first arena overflows while building ks, leaving it (and so
+      -- big) cut short, so `big @ 50000` is out of range in that run
+      let src = "ks := range(1, 100000)\nbig := transform(ks, k ⟼ z)\nx <- re(big @ 50000)"
+      compiled    <- runTool (compiledToolExec jit) src
+      interpreted <- runTool interpretedToolExec src
+      compiled `shouldBe` interpreted
 
 type ToolTestEnv =
   '[ '("msg", 'TextT), '("n", 'IntegerT), '("x", 'RealT), '("z", 'ComplexT)

@@ -778,8 +778,8 @@ buildLength inputHead _elemTy = do
 
 -- | 1-based list indexing.  For cyclic = False: positive indices count from
 -- the front, negative from the back.  For cyclic = True: wraps around.
--- Out-of-bounds (and indexing an empty list) sets the overflow flag, which the
--- renderer surfaces as a magenta pixel.  This mirrors the interpreter, which
+-- Out-of-bounds (and indexing an empty list) sets the index-error flag, which
+-- the renderer surfaces as a magenta pixel, and which makes a tool fail.  This mirrors the interpreter, which
 -- terminates on out-of-range indices (see LANGUAGE.md); a JIT pixel kernel
 -- can't abort per pixel, so we signal instead of silently returning a value.
 buildIndex :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
@@ -834,7 +834,7 @@ buildIndex arena ty cyclic inputHead iOp = do
   mdo
     condBr isNull oobBb elemBb
     oobBb <- block `named` "index_oob"
-    store (asOverflowFlag arena) 0 (C.bit 1)  -- out-of-bounds → signal (magenta)
+    store (asIndexError arena) 0 (C.bit 1)    -- out-of-bounds → signal
     br mergeBb                                 -- resultSlot stays zero-initialised
     elemBb <- block `named` "index_elem"
     curr2 <- load currSlot 0

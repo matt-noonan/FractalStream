@@ -602,8 +602,10 @@ compiledToolExec (dylib, session, compileLayer, nextId, _) sink =
       Nothing -> pure ()
       Just haskArgs ->
         let attempt capacity = runToolOnce fn sink capacity ctx haskArgs >>= \case
-              True -> pure ()
-              False
+              ToolSucceeded -> pure ()
+              ToolBadIndex -> fail
+                "A list index was out of range, so this tool's changes were discarded."
+              ToolOverflowed
                 | capacity < toolArenaMaxCapacity -> attempt (2 * capacity)
                 | otherwise -> fail $ concat
                     [ "This tool's text and lists used more than "
@@ -619,14 +621,17 @@ toolArenaInitialCapacity, toolArenaMaxCapacity :: Int
 toolArenaInitialCapacity = 1024 * 1024
 toolArenaMaxCapacity     = 256 * 1024 * 1024
 
+-- | How a single run of a compiled tool handler went.
+data ToolRun = ToolSucceeded | ToolOverflowed | ToolBadIndex
+
 -- | Run a compiled tool handler once, with an arena of the given size.
--- Returns 'False', having had no effect at all, if the arena overflowed:
--- the handler's draw commands are held back until it has finished, and
--- its variable changes are only written back after a successful run, so
--- the handler can simply be run again with a bigger arena.
+-- Unless it succeeded, the run has no effect at all: the handler's draw
+-- commands are held back until it has finished, and its variable changes
+-- are only written back after a successful run, so after an overflow the
+-- handler can simply be run again with a bigger arena.
 runToolOnce :: FunPtr () -> DrawSink -> Int
             -> Context EventArgument_ env -> Context HaskellValue env
-            -> IO Bool
+            -> IO ToolRun
 runToolOnce fn sink capacity ctx haskArgs = do
   drawn <- newIORef []
   withDrawVTablePtrs (bufferedSink drawn sink) $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP) ->
@@ -651,14 +656,19 @@ runToolOnce fn sink capacity ctx haskArgs = do
             , argPtr overflowPtr ]
             ++ envArgs
       callFFI fn retVoid fullArgs
-      ok <- (== 0) <$> peek overflowPtr
+      status <- peek overflowPtr
+      let ok = status == 0
       -- Propagate any config-variable Sets back to the host (e.g. the
       -- Select tool sets the coordinate) while the arena is still live,
       -- then free, then draw.
       when ok (sequence_ envWriteBacks)
       sequence_ envFrees
       when ok (readIORef drawn >>= sequence_ . reverse)
-      pure ok
+      -- An overflow takes priority: lists cut short by it can easily
+      -- cause a bad index later on, which a bigger arena would avoid.
+      pure $ if | ok               -> ToolSucceeded
+                | testBit status 0 -> ToolOverflowed
+                | otherwise        -> ToolBadIndex
 
 -- | A sink that records draw commands (newest first) instead of drawing
 -- them, to be replayed on the given sink later.

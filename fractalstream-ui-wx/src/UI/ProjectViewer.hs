@@ -9,6 +9,8 @@ import FractalStream.Prelude hiding (get)
 
 import Data.Color (Color, colorToRGB, grey)
 import Control.Concurrent.MVar
+import Control.Exception (try, throwIO, SomeException, SomeAsyncException, ErrorCall(..), fromException, displayException)
+import System.IO.Error (isUserError, ioeGetErrorString)
 
 import Graphics.UI.WX hiding ((#), grey, pt, glue, when, tool, Object, Dimensions, Horizontal, Vertical, Layout, Color)
 import qualified Graphics.UI.WXCore.Events as WX
@@ -149,6 +151,10 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
           in set pointerLocationText [ text := txt ]
 
     currentTool <- variable [value := Left NavTool ]
+    -- Where the left mouse button went down, and where it has been dragged
+    -- to since; both are Nothing when there's no click in progress.
+    draggedTo <- variable [value := Nothing]
+    lastClick <- variable [value := Nothing]
     toolPanel <- panel f [ bgcolor := overlayBackground
                          , position := Point 5 5 ]
     toolpick <- staticText toolPanel [ text := "▼ Navigate", textColor := overlayForeground ]
@@ -278,10 +284,39 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
 
     let getToolEventHandler :: Tool -> IO (Double -> Actor.Event.Event -> Maybe (IO ()))
         getToolEventHandler Tool{..} = getDynamic (dyn toolEventHandler)
+
+        -- Run one of a tool's event handlers, returning whether it
+        -- succeeded. If it fails, switch back to the Navigate tool *before*
+        -- reporting the error, so that a tool which fails on every event
+        -- (each step of a drag, or every refresh) can't produce an endless
+        -- stream of error dialogs. The failed tool's Deactivated handler
+        -- isn't run, since it may well fail too.
+        guardTool :: Tool -> IO () -> IO Bool
+        guardTool Tool{..} action = try action >>= \case
+          Right () -> pure True
+          Left (err :: SomeException)
+            | Just (_ :: SomeAsyncException) <- fromException err -> throwIO err
+            | otherwise -> do
+                set currentTool [ value := Left NavTool ]
+                -- If it failed partway through a click or drag, forget it,
+                -- so that releasing the mouse doesn't zoom or recenter.
+                set lastClick [ value := Nothing ]
+                set draggedTo [ value := Nothing ]
+                set toolpick [ text := "▼ Navigate" ]
+                showToolConfig <- getDynamic (dyn toolShowConfig)
+                showToolConfig False
+                vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
+                tname <- getDynamic (tiName toolInfo) <&> fromRight "--"
+                errorDialog f "Tool error" $ concat
+                  [ "The \"", tname, "\" tool stopped because of an error:\n\n"
+                  , describeToolError err
+                  , "\n\nSwitching back to the Navigate tool." ]
+                pure False
+
         runToolEventHandler theTool e = do
           handle <- getToolEventHandler theTool
           Model _ (px, _) <- get model value
-          fromMaybe (pure ()) (handle px e)
+          maybe (pure True) (guardTool theTool) (handle px e)
 
     let activateTool thisTool@Tool{..} = do
           deactivateCurrentTool
@@ -291,9 +326,9 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
           set currentTool [ value := Right thisTool ]
           showToolConfig <- getDynamic (dyn toolShowConfig)
           showToolConfig True
-          runToolEventHandler thisTool Activated
+          activated <- runToolEventHandler thisTool Activated
           shouldRefresh <- getDynamic toolRefreshOnActivate
-          when shouldRefresh (runToolEventHandler thisTool Refresh)
+          when (activated && shouldRefresh) (void $ runToolEventHandler thisTool Refresh)
           vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
 
         activateNavTool = do
@@ -313,7 +348,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
           Left NavTool -> pure ()
           Left DebugTool -> set debugger [ visible := False ]
           Right oldTool -> do
-            runToolEventHandler oldTool Deactivated
+            void $ runToolEventHandler oldTool Deactivated
             showToolConfig <- getDynamic (dyn $ toolShowConfig oldTool)
             showToolConfig False
             vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
@@ -370,8 +405,6 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
 
     renderId <- newIORef (0 :: Int)
 
-    draggedTo <- variable [value := Nothing]
-    lastClick <- variable [value := Nothing]
     pendingResize <- variable [value := False]
 
     viewerTile     <- do
@@ -535,9 +568,14 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
     lastKnownMouse <- newIORef Nothing
 
     -- Set click and drag event handlers
-    set p [ on mouse   := \case
+    set p [ on mouse   := \event -> get lastClick value >>= \lastClickNow -> case event of
               MouseLeftDown pt modifiers | isNoShiftAltControlDown modifiers -> do
                 set lastClick [value := Just $ Viewport (pointX pt, pointY pt)]
+                propagateEvent
+
+              MouseLeftUp _ _ | Nothing <- lastClickNow ->
+                -- No click in progress (e.g. a tool failed partway through
+                -- one), so there's nothing to finish.
                 propagateEvent
 
               MouseLeftUp pt modifiers | isNoShiftAltControlDown modifiers -> do
@@ -560,7 +598,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                     case handle px (Click ptz) of
                       Nothing -> recenterAction
                       Just action -> do
-                        action
+                        void (guardTool tool action)
                         vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
 
                 case dragBox of
@@ -594,7 +632,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                               handle <- getToolEventHandler tool
                               case handle px (DragDone z zstart) of
                                 Just action -> do
-                                  action
+                                  void (guardTool tool action)
                                   vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
                                 Nothing -> finishDrag
                         Left NavTool -> finishDrag
@@ -629,7 +667,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                          handle <- getToolEventHandler tool
                          case handle px (Drag z zstart) of
                            Just action -> do
-                             action
+                             void (guardTool tool action)
                              vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
                            Nothing -> dragAction
                      propagateEvent
@@ -646,7 +684,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                    Left _ -> pure ()
                    Right tool -> do
                      z <- viewToModel pt
-                     runToolEventHandler tool (DoubleClick z)
+                     void $ runToolEventHandler tool (DoubleClick z)
                      vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
                      propagateEvent
 
@@ -748,7 +786,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                        when needToSendRefresh $ get currentTool value >>= \case
                          Left _ -> pure ()
                          Right tool -> do
-                           runToolEventHandler tool Refresh
+                           void $ runToolEventHandler tool Refresh
                            vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
                    ]
 
@@ -921,7 +959,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                           ] f
           WX.windowOnClose tf (set tf [ visible := False ])
           let buttonPress txt = do
-                runToolEventHandler Tool{..} (ButtonPressed txt)
+                void $ runToolEventHandler Tool{..} (ButtonPressed txt)
                 vDrawCmdsChanged >>= \yn -> when yn triggerRepaint
           (stopListening, tlo) <- generateWxLayout buttonPress tf (coContents tcfg)
           set tf [ layout := margin 10 $ fill $ tlo ]
@@ -1156,6 +1194,13 @@ paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
           Size tw th <- getTextExtent dc txt
           let pt' = Point (x0 - tw `div` 2) (y0 - th `div` 2)
           withFill False (drawText dc txt pt')
+
+-- | A tool's error, as a message for the user.
+describeToolError :: SomeException -> String
+describeToolError err
+  | Just ioe <- fromException err, isUserError ioe = ioeGetErrorString ioe
+  | Just (ErrorCall msg) <- fromException err = msg
+  | otherwise = displayException err
 
 -- | Convert a FractalStream color to a WxWidgets color
 fsColorToWxColor :: Color -> WX.Color

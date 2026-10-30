@@ -289,7 +289,19 @@ Tools don't use the viewers' arena pool: each call gets its own arena,
 starting at 1 MB and doubling on overflow (rerunning the handler) up to
 256 MB. Draw commands are buffered and replayed only after a run that didn't
 overflow, and write-back is skipped on overflow, so a rerun has no
-duplicated effects. (Repeated `append` is quadratic in arena use.) `test/Backend/LLVMSpec.hs` checks compiled
+duplicated effects. (Repeated `append` is quadratic in arena use.)
+
+A compiled list index out of range sets a separate `asIndexError` flag: a
+viewer renders the pixel magenta (as for an overflow), a tool fails with
+"A list index was out of range" (no retry, unless the run also overflowed,
+since truncated lists can cause bad indices). The tool's status byte has
+bit 0 = overflow, bit 1 = bad index.
+
+The wx viewer runs every tool handler through `guardTool`
+(`UI/ProjectViewer.hs`): on an exception it switches to Navigate first
+(skipping the failed tool's Deactivated handler, hiding its config, and
+clearing any click/drag in progress), then shows an error dialog, so a tool
+that fails on every event can't produce an endless stream of dialogs. `test/Backend/LLVMSpec.hs` checks compiled
 tools against `Actor.Event.interpretedToolExec` on the same scripts.
 
 ### Headless overlay text

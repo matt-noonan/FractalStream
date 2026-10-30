@@ -383,11 +383,15 @@ storeListElem t nodePtr op = do
 -- The arena is a flat byte buffer; a bump pointer is advanced on each allocation
 -- and reset to the base at the start of each pixel/subsample computation.
 -- asOverflowFlag is an i1* stack slot set to 1 on the first failed allocation;
--- checked after compileCode to render the pixel magenta.
+-- checked after compileCode to render the pixel magenta (or, in a tool, to
+-- rerun it with a bigger arena).
 data ArenaState = ArenaState
   { asBumpAlloca   :: Operand  -- ^ i8** stack slot holding the current bump pointer
   , asArenaEnd     :: Operand  -- ^ i8* constant end of the arena (base + capacity)
   , asOverflowFlag :: Operand  -- ^ i1* stack slot; set to 1 on overflow
+  , asIndexError   :: Operand  -- ^ i1* stack slot; set to 1 when a list is
+                               --   indexed out of range (a viewer renders
+                               --   the pixel magenta, a tool fails)
   , asEmptyText    :: Operand  -- ^ i8* to a constant empty string, used as
                                --   the value of any text that didn't fit
   , asTextFormat   :: Maybe Operand
