@@ -45,8 +45,10 @@ jobs:
         update: true
         # Keep the Windows PATH, so that the runner's stack is visible.
         path-type: inherit
+        # No MSYS2 git: it reports paths like /d/a/..., which breaks the
+        # githash Template Haskell in fractalstream-core. The runner's
+        # Windows git (on the inherited PATH) reports D:/a/... instead.
         install: >-
-          git
           zip
           mingw-w64-ucrt-x86_64-gcc
           mingw-w64-ucrt-x86_64-pkgconf
@@ -62,6 +64,8 @@ jobs:
         fi
         wx-config --version-full
         pkg-config --version
+        command -v git
+        git rev-parse --show-toplevel
         if ! command -v stack >/dev/null; then
           curl -sSL -o stack.zip https://get.haskellstack.org/stable/windows-x86_64.zip
           mkdir -p /usr/local/bin
