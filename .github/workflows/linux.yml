@@ -6,7 +6,7 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
 
@@ -16,12 +16,12 @@ jobs:
       run: |
         # Install libffi6
         sudo apt update
-        curl -LO http://archive.ubuntu.com/ubuntu/pool/main/libf/libffi/libffi6_3.2.1-8_amd64.deb
+        curl -LO https://mirrors.kernel.org/ubuntu/pool/main/libf/libffi/libffi6_3.2.1-8_amd64.deb
         sudo dpkg -i libffi6_3.2.1-8_amd64.deb
 
         # Install libtinfo5
-        wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb
-        sudo apt install ./libtinfo5_6.3-2ubuntu0.1_amd64.deb
+        wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.3_amd64.deb
+        sudo apt install ./libtinfo5_6.3-2ubuntu0.3_amd64.deb
 
         # Install fuse for appimage and icnsutils for converting the macos icns file
         sudo apt install libfuse2 icnsutils
