@@ -82,7 +82,9 @@ data ConfigStmt
         -- the variable's value is the chosen index.
       }
   | ConfigText String
-  | ConfigButton String
+  | ConfigButton SourceRange String
+    -- ^ A button; only meaningful in a @\@tool@, whose @on button@
+    -- handlers it triggers (a @\@config@ stanza rejects it).
   | ConfigRow [ConfigStmt]
     -- ^ An indented @row:@ block; its statements are laid out side by
     -- side instead of stacked vertically.
@@ -99,6 +101,19 @@ configStmts = fmap mergeTabs . sequence
       ConfigTabs xs : ConfigTabs ys : rest -> mergeTabs (ConfigTabs (xs ++ ys) : rest)
       stmt : rest -> stmt : mergeTabs rest
       [] -> []
+
+-- | Reject buttons in a @\@config@ stanza: only a tool's @on button@
+-- handlers respond to buttons, and only to the tool's own.
+noButtons :: [ConfigStmt] -> Either (SourceRange, String) [ConfigStmt]
+noButtons stmts = stmts <$ mapM_ check stmts
+  where
+    check = \case
+      ConfigButton sr _ -> Left (sr, "A @config stanza can't have a button, since nothing "
+                                  ++ "would respond to it. Put the button in a @tool's "
+                                  ++ "declarations, and handle it there with `on button \"...\":`.")
+      ConfigRow xs  -> mapM_ check xs
+      ConfigTabs ts -> mapM_ (mapM_ check . snd) ts
+      _ -> pure ()
 
 -- | One stanza of a unified project script, with its body already parsed
 -- but not yet resolved against any other stanza.
@@ -467,7 +482,7 @@ scriptGrammar defs = mdo
     (\s -> Right (ConfigText s)) <$> (token TextKeyword *> quotedP <* nl)
 
   configButton <- rule $
-    (\s -> Right (ConfigButton s)) <$> (tok "button" *> quotedP <* nl)
+    withSourceRange ((\s sr -> Right (ConfigButton sr s)) <$> (tok "button" *> quotedP <* nl))
 
   -- An indented `row:` block, the same shape as `on <event>:`/`if ...:`
   -- introduce an indented block elsewhere in this language -- its
@@ -522,7 +537,7 @@ scriptGrammar defs = mdo
   ------------------------------------------------------------
 
   configStanza <- rule $
-    (\etitle estmts -> ConfigStanza <$> etitle <*> configStmts estmts)
+    (\etitle estmts -> ConfigStanza <$> etitle <*> (configStmts estmts >>= noButtons))
     <$> configHeader <*> many configStmt
 
   viewerStanza <- rule $

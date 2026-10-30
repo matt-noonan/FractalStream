@@ -148,9 +148,10 @@ drawLayer toPixel pixelSize = go white white
       -- Rasterific throws an arithmetic exception on a NaN or infinite
       -- coordinate (which a script can easily produce, e.g. from an
       -- escaping orbit), so shapes at such points are skipped.
+      -- Points are drawn in the stroke color, like the live app does.
       DrawPoint _ pt -> do
         whenFinite [toPixel pt] [] $
-          withTexture (uniformTexture fillColor) $
+          withTexture (uniformTexture strokeColor) $
             fill (circle (toPixel pt) 2)
         go strokeColor fillColor cmds
 

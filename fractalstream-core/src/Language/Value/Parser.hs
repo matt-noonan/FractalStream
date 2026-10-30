@@ -244,8 +244,12 @@ valueAndArithGrammar funs = mdo
     , mulOrDiv
     ]
 
+  -- List indexing (`@`, and cyclic `@@`) binds like multiplication, so
+  -- `xs @ k = 3` and `xs @ k + 1` index first.
   mulOrDiv <- ruleChoice
     [ node (EBin OpMul <$> (mulOrDiv <* token Times) <*> negated)
+    , node (EIndex False <$> (mulOrDiv <* token At) <*> negated)
+    , node (EIndex True  <$> (mulOrDiv <* token AtAt) <*> negated)
     , node (EBin OpMul <$> concatenatedFunAps <*> funAp)
     , node (EBin OpMul <$> concatenatedAtoms <*> noFunPower)
     , node (EUn OpNeg <$> (token Minus *> concatenatedAtoms'))
@@ -412,8 +416,6 @@ valueAndArithGrammar funs = mdo
                      <*> (token Comma *> toplevel <* token CloseParen))
     , node (ELength <$>
              (token LengthKeyword *> token OpenParen *> toplevel <* token CloseParen))
-    , node (EIndex False <$> (toplevel <* token At) <*> toplevel)
-    , node (EIndex True  <$> (toplevel <* token AtAt) <*> toplevel)
     ]
 
   diff <- rule $ node $

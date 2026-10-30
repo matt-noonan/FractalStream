@@ -5,7 +5,7 @@ import Test.Hspec
 import Actor.Viewer.Overlay
 import Language.Draw
 import Language.Environment
-import Data.Color (red)
+import Data.Color (red, blue)
 
 import Codec.Picture (PixelRGBA8(..), imageWidth, imageHeight, pixelAt)
 import Foreign.Marshal.Array (allocaArray, pokeArray)
@@ -28,6 +28,13 @@ spec = describe "compositeDrawLayers" $ do
     center ys `shouldSatisfy` (\y -> abs (y - 20) <= 3)
     -- and it's roughly the size of a 13 pixel font
     (maximum ys - minimum ys) `shouldSatisfy` (\h -> h >= 9 && h <= 16)
+
+  it "draws points in the stroke color, not the fill color" $ do
+    painted <- paintedPixels [ SetStroke EmptyEnvProxy red
+                             , SetFill EmptyEnvProxy blue
+                             , DrawPoint EmptyEnvProxy (0, 0) ]
+    painted `shouldSatisfy` (not . null)
+    all (\(_, _, PixelRGBA8 _ g b _) -> g == 0 && b == 0) painted `shouldBe` True
 
   it "skips shapes at non-finite points, rather than crashing" $ do
     let nan = 0 / 0 :: Double

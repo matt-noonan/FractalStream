@@ -62,3 +62,32 @@ if |x - y| < 2:
 
       runWithXY 1 10 [1,2,3,4,5] p3 `shouldBe` Right [1,2,3,4,5]
       runWithXY 1 4 [1,2,3,4,5] p3  `shouldBe` Right []
+
+    it "indexes before comparing or adding" $ do
+      let p1 = [r|
+x <- 0
+if test @ 2 > 1.5 and test @@ 0 > 4.5:
+  x <- test @ 1 + 10
+test <- [x]|]
+      runWithXY 0 0 [1,2,3,4,5] p1 `shouldBe` Right [11]
+
+    it "loops over list expressions, not just list variables" $ do
+      let p1 = [r|
+x <- 0
+for each a in [1, 2, 3]:
+  for each b in range(1, 2):
+    x <- x + a b
+for each a in append(test, 10):
+  x <- x + a
+test <- [x]|]
+      runWithXY 0 0 [1,2] p1 `shouldBe` Right [31]
+
+      let p2 = [r|
+x <- 0
+with first a matching a > 2 in transform(test, t -> t + 1):
+  x <- a
+else:
+  x <- -1
+test <- [x]|]
+      runWithXY 0 0 [1,2,3] p2 `shouldBe` Right [3]
+

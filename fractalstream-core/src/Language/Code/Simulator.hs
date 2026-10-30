@@ -82,7 +82,10 @@ simulate draw = indexedFold @(HaskellTypeM s) $ \case
                     (matches, (Bind _ _ _ ctx'', s')) = runState (eval predicate) (ctx', s)
                 put (ctx'', s')
                 case matches of
-                  True -> lift (evalStateT action (ctx', s))
+                  True -> do
+                    let (Bind _ _ _ ctx''', s'') =
+                          execState action (Bind itemName itemTy item ctx'', s')
+                    put (ctx''', s'')
                   False -> go items
         go =<< eval (withEnvironment env $ Var listName listTy pfList)
 

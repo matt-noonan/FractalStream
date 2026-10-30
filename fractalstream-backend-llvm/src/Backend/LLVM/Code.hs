@@ -315,9 +315,10 @@ contextToArgMap = \case
 
 -- | Load a value of type @t@ from a flat byte array (@ptr i8@) at the given
 -- pixel index.  Byte stride per pixel: Bool=1, Int=4, Real=8, Complex=16,
--- Color=3.
+-- Color=3, and 8 for the pointer to a List or Text.
 loadFromPrepArrayAt
-  :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+  :: forall m t
+   . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
   => TypeProxy t
   -> Operand    -- ^ base @ptr i8@ of the prep array
   -> Operand    -- ^ flat pixel index (i32)
@@ -361,7 +362,17 @@ loadFromPrepArrayAt ty arrayPtr pixelIdx = case ty of
     g <- load gPtr 0
     b <- load bPtr 0
     pure (ColorOp r g b)
+  ListType _ -> ListOp <$> loadPointer
+  TextType   -> TextOp <$> loadPointer
   t -> throwError ("loadFromPrepArrayAt: unsupported type " ++ showType t)
+  where
+    -- Lists and text are stored as one pointer per pixel.
+    loadPointer :: m Operand
+    loadPointer = do
+      byteOff <- mul pixelIdx (C.int32 8)
+      ptr     <- gep arrayPtr [byteOff]
+      ptr'    <- bitcast ptr (AST.ptr (AST.ptr AST.i8))
+      load ptr' 0
 
 -- | For each variable in @prepOutputEnv@, load its value from the
 -- corresponding prep array at the given pixel index and overwrite its slot in

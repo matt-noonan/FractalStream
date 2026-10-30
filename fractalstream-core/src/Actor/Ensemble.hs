@@ -591,7 +591,7 @@ infixl 1 >>=?
 configStmtToLayout :: ConfigStmt -> IO (Either (SourceRange, String) Layout)
 configStmtToLayout = \case
   ConfigText s   -> Right . PlainText <$> newVariable s
-  ConfigButton s -> Right . Button <$> newVariable s
+  ConfigButton _ s -> Right . Button <$> newVariable s
   ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdLabel cdChoices
   ConfigRow stmts -> do
     results <- mapM configStmtToLayout stmts
@@ -978,6 +978,7 @@ buildTool coord limits mpixel ToolFields{..} = do
       showConfigV        <- newVariable (const (pure ()))
       scriptM            <- constMapped (CodeString "") (mergeToolBlocks tfBlocks coord limits mpixel)
       handlerV           <- newVariable (\_ _ -> Nothing)
+      timersV            <- newVariable (toolBlockTimers tfBlocks)
 
       let toolVarNames = Set.fromList (concatMap configStmtNames tfConfig)
 
@@ -991,6 +992,7 @@ buildTool coord limits mpixel ToolFields{..} = do
         , toolScript = scriptM
         , toolEventHandler = handlerV
         , toolVars = pure toolVarNames
+        , toolTimers = timersV
         }
 
 data HaskellValueOrError :: Symbol -> FSType -> Exp Type

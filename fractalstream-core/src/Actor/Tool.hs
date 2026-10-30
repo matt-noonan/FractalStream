@@ -25,6 +25,9 @@ data Tool = Tool
   , toolScript :: Mapped CodeString ParsedToolScript
   , toolEventHandler :: Variable (Double -> Event -> Maybe (IO ()))
   , toolVars :: Dynamic (Set String)
+  , toolTimers :: Variable [(String, Int)]
+    -- ^ The tool's @on timer@ handlers, by name, with their intervals in
+    -- milliseconds; they run while the tool is selected.
   }
 
 data ToolInfo = ToolInfo
@@ -82,7 +85,8 @@ instance CodecWith EventDependencies Tool where
       cfg <- dyn (use config)
       maybe (pure []) (fmap (either (const []) (map fst)) . layoutBindings . coContents) cfg
     handler <-toolEventHandler-< newOf (pure $ pure (\_ _ -> Nothing))
-    build Tool ti layer refreshOnActivate refreshCanUpdate config showConfig script handler tvars
+    timers <-toolTimers-< newOf (pure $ pure [])
+    build Tool ti layer refreshOnActivate refreshCanUpdate config showConfig script handler tvars timers
 
 -- | A @script:@ field whose default (when the field is absent) is an empty
 -- script with no event handlers.

@@ -53,7 +53,7 @@ name : Type <- default                      # a field; the type is required
 name : Type as "Label" <- default           # with a display label
 mode : Z as "Mode" choice { "A", "B", "C" } <- 0   # dropdown; value is 0-based index
 text "Some explanatory text"
-button "Label"                              # only useful inside a @tool (see below)
+button "Label"                              # @tool declarations only (an error in @config)
 row:                                        # lay out the indented fields side by side
   a : R <- 1
   b : R <- 2
@@ -119,8 +119,8 @@ color <- if |z - center| < scale then red else blue
 ```
 
 It declares outputs with types, assigns them, and the main body reads them.
-It can't see the pixel coordinate. Outputs must be scalars (Z, R, C,
-Boolean, Color): a list output crashes the compiled backend. Rarely needed.
+It can't see the pixel coordinate; use it for values derived only from the
+configuration. Rarely needed.
 
 ### `@tool "Name" attrs`
 
@@ -134,7 +134,8 @@ viewers then re-render).
 | `shortcut=` | none | single-key shortcut, e.g. `shortcut=t` |
 | `refreshOnActivate=` | `true` | run `on refresh` right after `on activated` |
 | `drawLayer=` | `100` | stacking order of this tool's drawings among tools |
-| `icon=`, `refreshCanUpdate=` | | accepted, currently unused |
+| `refreshCanUpdate=` | `false` | whether changes that `on refresh` makes to the tool's own fields trigger another refresh. `true` makes a refresh handler that changes its fields run repeatedly (about 20 times a second): an animation. |
+| `icon=` | | accepted, currently unused |
 
 Body: first any config-style declarations (the tool's own panel, shown while
 the tool is selected; these variables persist between events and can be
@@ -147,10 +148,10 @@ changed by the handlers), then event blocks:
 | `on drag [from s to w]:` | repeatedly while dragging |
 | `on drag-finished [from s to w]:` | when a drag ends |
 | `on click-or-drag [at ...]:` | one body for click and drag |
-| `on refresh:` | after activation (see `refreshOnActivate`) and every time the viewer re-renders (pan, zoom, resize, or a change to a config variable the viewer uses). Editing only the tool's own fields does **not** trigger it. |
+| `on refresh:` | after activation (see `refreshOnActivate`), every time the viewer re-renders (pan, zoom, resize, or a change to a config variable the viewer uses), and when the tool's own fields change, whether edited in its panel or by another handler (see `refreshCanUpdate`). |
 | `on activated:` / `on deactivated:` | tool selected / deselected (use `on deactivated: erase` to clean up) |
-| `on button "Label":` | a `button "Label"` declared **in this tool's own declarations** was pressed. Buttons in `@config` are not connected to anything in the app. |
-| `on timer "name" every N ms:` | parsed, and triggerable from `fsrun`, but **never fired by the app**; avoid |
+| `on button "Label":` | a `button "Label"` in this tool's own declarations was pressed |
+| `on timer "name" every N ms:` | repeatedly while the tool is selected (from `fsrun`: `trigger timer "name"`) |
 
 At most one block per event kind, except `button` (one per label).
 
@@ -190,8 +191,8 @@ write 3.5 at p                          # numbers are converted automatically
 
 Drawings accumulate until `erase`; most handlers start with `erase`. The pen
 starts white and keeps the last `use` color from earlier events, so set the
-colors explicitly in each handler that draws. Points are drawn in the stroke
-color in the app but the fill color by `fsrun`; set both if it matters.
+colors explicitly in each handler that draws. Points, lines, outlines and
+text use the stroke color; filled shapes use the fill color.
 
 ## 2. Types
 
@@ -225,17 +226,15 @@ the color-wheel names, and the built-in function names. In particular,
 can be called `e`**. Also avoid `C` as a type-vs-variable confusion: `C : C
 <- 0` is legal and common (a complex variable named C).
 
-Pair variables crash the compiled viewer backend; in viewers, use complex
-numbers or two reals instead. (Pairs are fine in tools, e.g. for points.)
-
 ## 3. Expressions
 
 Arithmetic: `+ - * / // ^`, unary `-`. Implicit multiplication by
 juxtaposition: `2 z`, `x y`, `2 pi i theta`, `r x (1 - x)`. Functions apply
 to a simple following argument without parentheses (`cos z`, `log |z|`),
-but `cos x + y` is `(cos x) + y`, and `cos 2z` is rejected as ambiguous:
-write `cos(2 z)`. When juxtaposing, a function must come first: `2 cos z`
-is fine, `cos z 2` is not.
+but `cos x + y` is `(cos x) + y`, and `cos 2z` is rejected:
+write `cos(2 z)`. When juxtaposing, a function application must be the
+last factor: `2 cos z` and `z cos z` are fine, `cos z 2` and `cos(z) 2` are
+not (write `2 cos z`).
 
 Powers: `z^2`, `z²` (superscript digits, `z⁻¹`), `2^(-m / S)`, `z^(1/3)`
 (principal branch). `e^(...)` and `e^{...}` for exponentials. Any of
@@ -288,8 +287,8 @@ Lists (1-based):
 - `join(xs, ys, ...)`, `append(xs, x)`, `prepend(xs, x)`
 - `remove(xs, x -> pred)`, `transform(xs, x -> expr)` (same element type),
   `find(xs, x -> pred, fallback)`
-- **Parenthesize indexing inside larger expressions**: `(xs @ 2) = 3`, not
-  `xs @ 2 = 3` (rejected as ambiguous).
+- `@` and `@@` bind like multiplication: `xs @ k = 3` compares the item,
+  and `xs @ k + 1` is `(xs @ k) + 1`; write `xs @ (k + 1)` for the next one.
 - An empty list needs a declared type: `xs : List of C <- []`.
 
 ## 4. Statements
@@ -310,7 +309,7 @@ repeat:                   # body runs at least once; ends with while/until
 until cond                # (or `while cond`); `repeat up to N times:` too
 iterate z -> f(z) until cond          # shorthand loop on one variable
 iterate z -> f(z) while cond up to N times
-for each x in xs:         # xs must be a variable, not a literal or expression
+for each x in xs:         # any list expression: [1, 2, 3], range(1, n), ...
   ...
 with first x matching pred in xs:
   ...
@@ -380,8 +379,9 @@ viewer color a pixel by a condition and assert on it.
 
 | Message | Usual cause |
 |---|---|
-| `I got stuck and couldn't parse the input here, where I was expecting ...` | a reserved word as a variable (`i := 0`), a list literal after `for each ... in`, a statement where an expression should be, bad indentation, `text(x)` with one argument |
-| `I got stuck because the grammar is ambiguous here.` | unparenthesized `xs @ k` inside a comparison/arithmetic, `cos 2z` |
+| `I got stuck and couldn't parse the input here, where I was expecting ...` | a reserved word as a variable (`i := 0`), a statement where an expression should be, bad indentation, `text(x)` with one argument |
+| `To avoid ambiguity when using implicit multiplication, functions must go to the left of other values` | `cos 2z` (write `cos(2 z)`) |
+| `A @config stanza can't have a button ...` | move the button into the `@tool` whose `on button` handles it |
 | `The variable z is already defined, and would be re-defined here.` | `:=` on an existing name; use `<-` |
 | `No variable named w is defined here.` | out of scope (declared inside an `if`/loop), typo, or a refresh handler using the viewer coordinate |
 | `I expected a real number here, but z is a complex number.` | assigning a wider type to a declared variable; use `re`, `|…|`, or declare it wider |

@@ -21,10 +21,11 @@ import FractalStream.Prelude
 import Language.Parser hiding (many)
 import Language.Typecheck
 import Language.Value.Parser
-import Language.Parser.SourceRange (SourceRange(..))
+import Language.Parser.SourceRange (SourceRange(..), Pos(..))
 import Language.Code
 import Language.Parser.Tokenizer
 import Language.Code.Syntax
+import Language.Value.Syntax (Syn(..), ExprF(..))
 import Language.Code.Typecheck
 
 import qualified Data.Set as Set
@@ -257,22 +258,38 @@ codeStatementsGrammar CommonDefs{..} = mdo
     draw (WriteAt <$> value <*> (tok "at" *> value))
 
   listCommand <- ruleChoice
-    [ node (SForEach
+    [ withSourceRange
+      ((\item list body sr -> withListVar sr list (\l -> SForEach item l body))
       <$> (tok "for" *> tok "each" *> ident)
-      <*> (tok "in" *> ident)
+      <*> (tok "in" *> value)
       <*> (colon *> nl *> block))
-    , node (SWithFirst
+    , withSourceRange
+      ((\item p list body fallback sr ->
+          withListVar sr list (\l -> SWithFirst item p l body fallback))
       <$> (tok "with" *> tok "first" *> ident)
       <*> (tok "matching" *> value)
-      <*> (tok "in" *> ident)
+      <*> (tok "in" *> value)
       <*> (colon *> nl *> block)
-      <*> optional (tok "else" *> colon *> nl *> block))
+      <*> optional (token Else *> colon *> nl *> block))
     ]
 
   colon <- rule (token Colon <?> ":")
   nl <- rule (token Newline <?> "end of line")
 
   pure statements
+
+-- | Build a statement that loops over a list, which the typed AST needs to
+-- be a variable. Any other list expression is first stored in a hidden
+-- variable, named after the statement's position so that nested loops get
+-- different names, and scoped to a block around the statement.
+withListVar :: SourceRange -> ParsedValue -> (String -> StmtF) -> ParsedCode
+withListVar sr list mk = case list of
+  Syn _ (EVar v) -> Stmt sr (mk v)
+  _ -> Stmt sr (SBlock [ Stmt sr (SDecl hidden Nothing list), Stmt sr (mk hidden) ])
+  where
+    hidden = case sr of
+      SourceRange (Pos r c) _ -> "[list at " ++ show r ++ ":" ++ show c ++ "]"
+      NoSourceRange -> "[list]"
 
 node :: Prod r StmtF -> Prod r ParsedCode
 node = withSourceRange . fmap (flip Stmt)

@@ -36,8 +36,8 @@ import Actor.Tool
 import Actor.Layout
 import Actor.Configuration
 import Actor.Viewer
-import Actor.Ensemble (buildToolContext)
-import Actor.Event (Event(..), EventArgument_)
+import Actor.Ensemble (buildToolContext, layoutToArgs)
+import Actor.Event (Event(..), EventArgument_, EventArgument(..))
 import Language.Type
 import Language.Draw
 import Language.Environment
@@ -302,6 +302,17 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
     -------------------------------------------------------
     -- Get the tools
 
+    -- The timers of the selected tool's `on timer` handlers, which run
+    -- only while it is selected.
+    runningTimers <- newIORef []
+    -- The selected tool's own field values as of its last refresh, so that
+    -- editing them can trigger another one.
+    lastToolFields <- newIORef Nothing
+    let stopToolTimers = do
+          timers <- readIORef runningTimers
+          writeIORef runningTimers []
+          forM_ timers $ \t -> set t [ enabled := False ]
+
     let getToolEventHandler :: Tool -> IO (Double -> Actor.Event.Event -> Maybe (IO ()))
         getToolEventHandler Tool{..} = getDynamic (dyn toolEventHandler)
 
@@ -317,6 +328,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
           Left (err :: SomeException)
             | Just (_ :: SomeAsyncException) <- fromException err -> throwIO err
             | otherwise -> do
+                stopToolTimers
                 set currentTool [ value := Left NavTool ]
                 -- If it failed partway through a click or drag, forget it,
                 -- so that releasing the mouse doesn't zoom or recenter.
@@ -348,8 +360,21 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
           showToolConfig True
           activated <- runToolEventHandler thisTool Activated
           shouldRefresh <- getDynamic toolRefreshOnActivate
-          when (activated && shouldRefresh) (void $ runToolEventHandler thisTool Refresh)
+          refreshed <- if activated && shouldRefresh
+                         then runToolEventHandler thisTool Refresh
+                         else pure activated
           vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
+          writeIORef lastToolFields . Just =<< toolFieldValues thisTool
+          -- Start the tool's timers, unless it already failed.
+          when refreshed $ do
+            timers <- getDynamic toolTimers
+            ts <- forM timers $ \(name, ms) ->
+              wxTimer f [ interval := max 10 ms
+                        , enabled := True
+                        , on command := do
+                            void $ runToolEventHandler thisTool (Actor.Event.Timer name)
+                            vDrawCmdsChanged >>= \tf -> when tf triggerRepaint ]
+            writeIORef runningTimers ts
 
         activateNavTool = do
           deactivateCurrentTool
@@ -364,7 +389,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
           focusOn p
           set currentTool [ value := Left DebugTool ]
 
-        deactivateCurrentTool = get currentTool value >>= \case
+        deactivateCurrentTool = stopToolTimers >> get currentTool value >>= \case
           Left NavTool -> pure ()
           Left DebugTool -> set debugger [ visible := False ]
           Right oldTool -> do
@@ -814,16 +839,25 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
                                     jumpViewTo =<< get model value
                       ]
 
-    -- Add a timer which checks if the tool layer should receive a refresh event.
+    -- Add a timer which checks if the tool layer should receive a refresh
+    -- event: when the view changed, or the tool's own fields did. Changes
+    -- the refresh handler itself makes to those fields don't count, unless
+    -- the tool says they should (refreshCanUpdate=true, e.g. to animate).
     _ <- wxTimer f [ interval := 50
                    , enabled := True
                    , on command := do
                        needToSendRefresh <- isJust <$> tryTakeMVar needToSendRefreshEvent
-                       when needToSendRefresh $ get currentTool value >>= \case
+                       get currentTool value >>= \case
                          Left _ -> pure ()
                          Right tool -> do
-                           void $ runToolEventHandler tool Refresh
-                           vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
+                           fields <- toolFieldValues tool
+                           lastFields <- readIORef lastToolFields
+                           when (needToSendRefresh || lastFields /= Just fields) $ do
+                             void $ runToolEventHandler tool Refresh
+                             vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
+                             canUpdate <- getDynamic (toolRefreshCanUpdate tool)
+                             fields' <- if canUpdate then pure fields else toolFieldValues tool
+                             writeIORef lastToolFields (Just fields')
                    ]
 
     set f [ on resize := do
@@ -1086,6 +1120,16 @@ interpolateModel t m1 m2 = m2
 -- | A wrapper around UI.Tile.renderTile that tags each rendering
 -- action with an ID, and will stop rendering when the ID no longer
 -- matches the current ID value.
+-- | The current values of a tool's own fields, as text, to tell when they
+-- change.
+toolFieldValues :: Tool -> IO [String]
+toolFieldValues Tool{..} = getDynamic toolConfig >>= \case
+  Nothing -> pure []
+  Just cfg -> layoutToArgs (coContents cfg) >>= \case
+    SomeContext' (Left err) -> pure [err]
+    SomeContext' (Right (SomeContext ctx)) -> sequence $
+      fromContext (\_ ty arg -> maybe "" (toUserString ty) <$> argGetValue arg) ctx
+
 renderTile' :: Valued w
             => IORef Int
             -> IORef (Int, ViewerIssues)

@@ -109,14 +109,11 @@ script: |
   name; on a parameter-plane viewer (`var=C` where `C` is in `@config`)
   that **sets the parameter** to the clicked point. Use `at w` unless
   that's the point of the tool.
-- `for each x in xs` needs a list *variable*. Parenthesize indexing inside
-  expressions: `(xs @ k) = 0`. Lists are 1-based.
+- Lists are 1-based. `xs @ k` binds like multiplication: `xs @ k + 1` is
+  `(xs @ k) + 1`, so write `xs @ (k + 1)` for the next item.
 - Tool persistent state must be a tool declaration (it shows in the tool's
-  panel); handler locals are reset on each event. Put `button "Label"`
-  declarations in the tool, not in `@config`. `on timer` never fires in
-  the app.
-- Don't create pair variables in viewers (crashes the compiled backend);
-  use complex numbers.
+  panel); handler locals are reset on each event. `button "Label"` belongs
+  in a tool's declarations (a `@config` button is an error).
 - `text(...)` needs at least two arguments: `text("n = ", n)`.
 
 ## From a paper to a project
