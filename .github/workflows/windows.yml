@@ -106,11 +106,16 @@ jobs:
     - name: Install wxc
       run: |
         set -euo pipefail
-        PREFIX="$(cygpath -m "$PWD/wxc-prefix")"
-        # MSYS2's login profile resets PKG_CONFIG_PATH in every step, so
-        # install wxc.pc where MSYS2's pkg-config always looks.
+        # Install into MSYS2's own prefix. MSYS2's login profile resets
+        # PKG_CONFIG_PATH in every step, and its pkg-config replaces a .pc
+        # file's prefix with the one the file is installed under, so wxc has
+        # to live in /ucrt64 alongside wxWidgets. (/ucrt64/bin is also on the
+        # PATH, which GHC needs to load wxc.dll when running Template Haskell.)
+        cp wxc-prefix/bin/wxc.dll /ucrt64/bin/
+        cp wxc-prefix/lib/libwxc.dll.a /ucrt64/lib/
+        cp -r wxc-prefix/include/wxc /ucrt64/include/
         cat > /ucrt64/lib/pkgconfig/wxc.pc <<EOF
-        prefix=$PREFIX
+        prefix=$(cygpath -m /ucrt64)
         libdir=\${prefix}/lib
         includedir=\${prefix}/include
 
@@ -121,21 +126,20 @@ jobs:
         Libs: -L"\${libdir}"
         EOF
         cat /ucrt64/lib/pkgconfig/wxc.pc
-
-        # Later steps need wxc.dll on the PATH (GHC loads it when running
-        # Template Haskell).
-        echo "$(cygpath -w "$PWD/wxc-prefix/bin")" >> $GITHUB_PATH
         pkg-config --cflags --libs wxc
+        ls /ucrt64/include/wxc/wxc.h
 
+    # Restore the newest saved stack root, and save a new one after every
+    # run, even a failed one, so that a failure late in the build doesn't
+    # throw away the dependencies that were built.
     - name: Get cached stack root
-      id: cache-dot-stack
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
-        key: ${{ runner.os }}-cache-stack-root-pure
+        key: ${{ runner.os }}-cache-stack-root-pure-${{ github.run_id }}
+        restore-keys: ${{ runner.os }}-cache-stack-root-pure-
         path: C:\sr
 
-    - if: ${{ steps.cache-dot-stack.outputs.cache-hit != 'true' }}
-      name: Build Haskell dependencies
+    - name: Build Haskell dependencies
       run: |
         cd fractalstream-ui-wx
         stack --skip-msys --stack-yaml stack.pure.yaml build --only-snapshot
@@ -144,6 +148,13 @@ jobs:
       run: |
         cd fractalstream-ui-wx
         stack --skip-msys --stack-yaml stack.pure.yaml build
+
+    - if: ${{ always() }}
+      name: Save stack root
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-cache-stack-root-pure-${{ github.run_id }}
+        path: C:\sr
 
     - name: Collect the executable and its DLLs
       env:
