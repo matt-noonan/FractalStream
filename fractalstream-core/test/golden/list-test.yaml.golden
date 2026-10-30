@@ -1,0 +1,35 @@
+=== viewer 0: Circle
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                if (|z| < 1:R) then:
+                  block:
+                    set `color` := Color 255 0 0
+                else:
+                  if (0:R < im(z)) then:
+                    block:
+                      set `color` := Color 0 180 0
+                  else:
+                    block:
+                      set `color` := Color 0 0 255
+
+
+--- tool Show circles
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+              {TODO: ForEach}
+
+

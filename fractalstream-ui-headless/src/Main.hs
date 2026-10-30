@@ -33,7 +33,7 @@ import FractalStream.Prelude
 
 import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble)
 import Actor.UI (UI(..))
-import Actor.Viewer (Backend, Viewer(..), snapshotToFile)
+import Actor.Viewer (Backend, Viewer(..), snapshotToFile, describeViewerIssues)
 import Data.DynamicValue (getDynamic)
 import Backend (withBackend)
 import Scenario (parseScenario)
@@ -107,7 +107,7 @@ parseFlags = \case
 run :: FilePath -> Mode -> IO ()
 run projectFile mode = withBackend $ \backend ->
   parseEnsembleFromFile projectFile >>= \case
-    Left err -> dieWith ("Could not load " ++ projectFile ++ ": " ++ err)
+    Left err -> dieWith ("Could not load " ++ projectFile ++ ":\n" ++ err)
     Right ensemble -> case mode of
       Snapshot viewerName outputFile -> runSnapshot backend ensemble viewerName outputFile
       RunCommandsFile path           -> runCommandsFile backend ensemble path
@@ -129,7 +129,7 @@ runSnapshot backend ensemble viewerName outputFile = do
       dieWith ("No viewer named " ++ show viewerName ++ ".\n" ++
                "Viewers in this project: " ++ show titles)
     True -> readIORef result >>= \case
-      Just (Just err) -> dieWith ("Error rendering viewer: " ++ err)
+      Just (Just err) -> dieWith ("Error rendering viewer:\n" ++ err)
       _                -> putStrLn ("Wrote " ++ outputFile)
 
 -- | The snapshot-mode 'UI': every callback other than @makeViewer@ is a
@@ -141,9 +141,8 @@ runSnapshot backend ensemble viewerName outputFile = do
 snapshotUI :: String -> FilePath -> IORef Bool -> IORef (Maybe (Maybe String)) -> IORef [String] -> UI
 snapshotUI viewerName outputFile found result seenTitles = UI
   { newEnsemble = pure ()
-  , runSetup    = \_ _ _ proceed -> proceed
   , makeLayout  = \_ _ _ -> pure (pure ())
-  , makeViewer  = \_ _ _ _ _ _ viewer -> do
+  , makeViewer  = \_ _ _ _ _ viewer -> do
       title <- getDynamic (vTitle viewer)
       modifyIORef' seenTitles (title :)
       when (title == viewerName) $ do
@@ -162,7 +161,11 @@ snapshotUI viewerName outputFile found result seenTitles = UI
 -- to composite. A scenario's own @capture@ command is what reaches
 -- 'Actor.Viewer.Overlay.compositeDrawLayersToFile' (see "Interpreter").
 renderViewer :: Viewer -> FilePath -> IO (Maybe String)
-renderViewer viewer outputFile = snapshotToFile viewer True outputFile
+renderViewer viewer outputFile = snapshotToFile viewer True outputFile >>= \case
+  Left err     -> pure (Just err)
+  Right issues -> do
+    forM_ (describeViewerIssues issues) (hPutStrLn stderr . ("warning: " ++))
+    pure Nothing
 
 -- | Parse a standalone commands file and run it against the already-loaded
 -- project.
@@ -196,5 +199,5 @@ runCommandsText backend ensemble label src = case parseScenario src of
     unlines (pp (Indicated sr src)) ++
     err
   Right cmds -> runScenario backend ensemble cmds >>= \case
-    Left err -> dieWith ("Scenario failed: " ++ err)
+    Left err -> dieWith ("Scenario failed:\n" ++ err)
     Right () -> putStrLn (label ++ ": all " ++ show (length cmds) ++ " command(s) succeeded.")

@@ -1,0 +1,116 @@
+=== viewer 0: Collatz sequence
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = collatz_escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `[internal] fresh #18` = 0 in:
+                  let `[internal] fresh #19` = [internal] iteration limit in:
+                    block:
+                      if (!((|(z - 1:R:C)| < [internal] vanishing radius) or ((|(z - 0:R:C)| < [internal] vanishing radius) or ((|(z - -1:R:C)| < [internal] vanishing radius) or ((|(z - -5:R:C)| < [internal] vanishing radius) or ((|(z - -17:R:C)| < [internal] vanishing radius) or ([internal] escape radius < |z|)))))) and ([internal] fresh #18 < [internal] fresh #19)) then:
+                        do-while (!((|(z - 1:R:C)| < [internal] vanishing radius) or ((|(z - 0:R:C)| < [internal] vanishing radius) or ((|(z - -1:R:C)| < [internal] vanishing radius) or ((|(z - -5:R:C)| < [internal] vanishing radius) or ((|(z - -17:R:C)| < [internal] vanishing radius) or ([internal] escape radius < |z|)))))) and ([internal] fresh #18 < [internal] fresh #19)):
+                          block:
+                            set `z` := let [internal] step.z #0 = z in let [internal] step.c #0 = C in ((([internal] step.z #0 / 2:R:C) * (cos(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)) + (((3:R:C * [internal] step.z #0) + [internal] step.c #0) * (sin(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)))
+                            set `[internal] fresh #18` := ([internal] fresh #18 + 1)
+                      else:
+                        no-op
+                      set `[internal] iteration count` := [internal] fresh #18
+                      set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
+                set `color` := Color 0 0 0
+                if (|(z - 1:R:C)| < [internal] vanishing radius) then:
+                  block:
+                    set `color` := Color 255 0 0
+                else:
+                  if (|(z - 0:R:C)| < [internal] vanishing radius) then:
+                    block:
+                      set `color` := Color 255 255 0
+                  else:
+                    if (|(z - -1:R:C)| < [internal] vanishing radius) then:
+                      block:
+                        set `color` := Color 0 180 0
+                    else:
+                      if (|(z - -5:R:C)| < [internal] vanishing radius) then:
+                        block:
+                          set `color` := Color 0 0 255
+                      else:
+                        if (|(z - -17:R:C)| < [internal] vanishing radius) then:
+                          block:
+                            set `color` := Color 128 0 128
+                        else:
+                          if ([internal] escape radius < |z|) then:
+                            block:
+                              set `color` := Color 128 128 128
+                          else:
+                            no-op
+                if ![internal] stuck then:
+                  block:
+                    set `color` := let #cycle-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 255 255 255, color), blend(0.333, Color 0 0 0, color))
+                else:
+                  no-op
+
+
+--- tool Trace
+  -- on click
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = collatz_escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] px in:
+              block:
+                let `prevZ` = z in:
+                  block:
+                    erase
+                    let `[internal] fresh #17` = 0 in:
+                      let `[internal] fresh #18` = [internal] iteration limit in:
+                        block:
+                          if (!(|z| < [internal] vanishing radius) and ([internal] fresh #17 < [internal] fresh #18)) then:
+                            do-while (!(|z| < [internal] vanishing radius) and ([internal] fresh #17 < [internal] fresh #18)):
+                              block:
+                                block:
+                                  set `prevZ` := z
+                                  draw point at z:R^2
+                                  set `z` := let [internal] step.z #0 = z in let [internal] step.c #0 = C in ((([internal] step.z #0 / 2:R:C) * (cos(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)) + (((3:R:C * [internal] step.z #0) + [internal] step.c #0) * (sin(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)))
+                                  draw line from z:R^2 to prevZ:R^2
+                                set `[internal] fresh #17` := ([internal] fresh #17 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #17
+                          set `[internal] stuck` := ([internal] fresh #17 = [internal] fresh #18)
+
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = collatz_escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  let `prevZ` = z in:
+                    block:
+                      erase
+                      let `[internal] fresh #20` = 0 in:
+                        let `[internal] fresh #21` = [internal] iteration limit in:
+                          block:
+                            if (!(|z| < [internal] vanishing radius) and ([internal] fresh #20 < [internal] fresh #21)) then:
+                              do-while (!(|z| < [internal] vanishing radius) and ([internal] fresh #20 < [internal] fresh #21)):
+                                block:
+                                  block:
+                                    set `prevZ` := z
+                                    draw point at z:R^2
+                                    set `z` := let [internal] step.z #0 = z in let [internal] step.c #0 = C in ((([internal] step.z #0 / 2:R:C) * (cos(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)) + (((3:R:C * [internal] step.z #0) + [internal] step.c #0) * (sin(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)))
+                                    draw line from z:R^2 to prevZ:R^2
+                                  set `[internal] fresh #20` := ([internal] fresh #20 + 1)
+                            else:
+                              no-op
+                            set `[internal] iteration count` := [internal] fresh #20
+                            set `[internal] stuck` := ([internal] fresh #20 = [internal] fresh #21)
+
+

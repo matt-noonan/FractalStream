@@ -7,8 +7,9 @@ import FractalStream.Prelude
 
 import Language.Type
 import Language.Environment
-import Language.Code.Parser (noSplices)
+import Language.Code.Parser (noCommonDefs)
 import Language.Value.Typecheck (ParsedValue)
+import Language.Parser.SourceRange (SourceRange)
 
 import Actor.Event
 import Actor.Viewer (defaultIterLimit, defaultMaxRadius, defaultMinRadius)
@@ -26,21 +27,21 @@ testEnv = BindingProxy (Proxy @"z") ComplexType EmptyEnvProxy
 limits :: (ParsedValue, ParsedValue, ParsedValue)
 limits = (defaultIterLimit, defaultMaxRadius, defaultMinRadius)
 
-runScript :: String -> Either String (CombinedEventHandler TestEnv)
+runScript :: String -> Either (SourceRange, String) (CombinedEventHandler TestEnv)
 runScript src =
-  case parseToolScript noSplices (ComplexCoordinate "z") limits Nothing src of
-    Left (_, err) -> Left err
-    Right script  -> runParsedToolScript script testEnv
+  case parseToolScript noCommonDefs (ComplexCoordinate "z") limits Nothing src of
+    Left err     -> Left err
+    Right script -> runParsedToolScript script testEnv
 
 shouldParse :: String -> Expectation
 shouldParse src = case runScript src of
-  Left err -> expectationFailure ("expected success, got error: " ++ err)
-  Right _  -> pure ()
+  Left (_, err) -> expectationFailure ("expected success, got error: " ++ err)
+  Right _       -> pure ()
 
 shouldFailWith :: String -> String -> Expectation
 shouldFailWith src needle = case runScript src of
-  Left err -> err `shouldSatisfy` isInfixOf needle
-  Right _  -> expectationFailure "expected a parse/typecheck error, but it succeeded"
+  Left (_, err) -> err `shouldSatisfy` isInfixOf needle
+  Right _       -> expectationFailure "expected a parse/typecheck error, but it succeeded"
 
 spec :: Spec
 spec = do
@@ -149,7 +150,7 @@ on click-or-drag at z:
 |]
 
     it "reports a parse error for a malformed header" $
-      case parseToolScript noSplices (ComplexCoordinate "z") limits Nothing [r|
+      case parseToolScript noCommonDefs (ComplexCoordinate "z") limits Nothing [r|
 on clickety at z:
   pass
 |] of

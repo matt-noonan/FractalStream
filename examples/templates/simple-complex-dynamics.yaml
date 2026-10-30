@@ -1,106 +1,28 @@
-setup:
-  title: Simple complex dynamics
-  size: 200x200
-  vertical-contents:
-    - text-entry:
-        label: "Title:"
-        value: "Complex dynamics"
-        type: Text
-        variable: title
-    - panel:
-        title: "Dynamical system"
-        vertical-contents:
-          - horizontal-contents:
-              - text-entry:
-                  label: "iterate z ⟼ "
-                  value: "z² + i"
-                  type: C
-                  environment:
-                    z: C
-                    C: C
-                  variable: "expression"
-              - text-entry:
-                  label: "until"
-                  value: "z escapes"
-                  type: Boolean
-                  environment:
-                    z: C
-                    C: C
-                  variable: "exit_condition"
-    - panel:
-        title: "Coloring"
-        vertical-contents:
-          - text: |
-              Color expressions can use color names like `red` or `black`,
-              color functions involving the variables `z`, `C`, and `iterations`,
-              or the color variables `color1` and `color2`.
-          - text-entry:
-              label: "Color expression for success:"
-              value: "rainbow(iterations / 20)"
-              type: Color
-              environment:
-                z: C
-                C: C
-              variable: "on_success"
-          - text-entry:
-              label: "Color expression for failure:"
-              value: "black"
-              type: Color
-              environment:
-                z: C
-                C: C
-              variable: "on_failure"
+script: |
+  @common
+  # iterate z ⟼ expression(z) until exit_condition(z)
+  let expression(z) = z^2 + i
+  let exit_condition(z) = z escapes
+  # colors can use color names like `red` or `black`, or color functions
+  # involving the variables `z`, `C`, and `iterations`
+  let on_success(z) = rainbow(iterations / 20)
+  let on_failure(z) = black
 
-viewers:
-  - title: "«title» of «expression»"
-    style: complex-plane
-    size: 600x600
-    resizable: true
-    z-coord: z
-    iteration-limit: maxIters
-    escape-radius: maxRadius
-    vanishing-radius: minRadius
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      iterate z -> «expression» until «exit_condition»
-      color <- if stuck then «on_failure» else «on_success»
+  @viewer "Simple complex dynamics"
+  iterate z -> expression(z) until exit_condition(z)
+  color <- if stuck then on_failure(z) else on_success(z)
 
-    tools:
-      - name: Trace
-        shortcut: t
-        script: |
-          on refresh:
-            erase
-
-          on deactivated:
-            erase
-
-          on click-or-drag:
-            use white for line
-            erase
-            prevZ : C <- z
-            until «exit_condition»:
-              prevZ <- z
-              draw point at z
-              z <- «expression»
-              draw line from z to prevZ
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "Iteration limit: "
-        value: "100"
-        type: Z
-        variable: maxIters
-    - text-entry:
-        label: "Escape radius: "
-        value: "10"
-        type: R
-        variable: maxRadius
-    - text-entry:
-        label: "Vanishing radius: "
-        value: "0.0001"
-        type: R
-        variable: minRadius
+  @tool "Trace" shortcut=t
+  on refresh:
+    erase
+  on deactivated:
+    erase
+  on click-or-drag:
+    use white for line
+    erase
+    prevZ := z
+    until exit_condition(z):
+      prevZ <- z
+      draw point at z
+      z <- expression(z)
+      draw line from z to prevZ

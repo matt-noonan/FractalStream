@@ -20,9 +20,11 @@ module Language.Type
   , showValue
   , ppType
   , toUserString
+  , quoteText
   , KnownType(..)
   , withKnownType
   , withType
+  , typeToFS
   ) where
 
 import FractalStream.Prelude
@@ -191,6 +193,20 @@ withType t k = case t of
   RationalT  -> k RationalType
   Pair t1 t2 -> withType t1 $ \ty1 -> withType t2 $ \ty2 -> k (PairType ty1 ty2)
 
+-- | Forget the type-level index of a 'TypeProxy'; inverse of 'withType'.
+typeToFS :: TypeProxy t -> FSType
+typeToFS = \case
+  VoidType     -> VoidT
+  BooleanType  -> BooleanT
+  IntegerType  -> IntegerT
+  RealType     -> RealT
+  ComplexType  -> ComplexT
+  ColorType    -> ColorT
+  ImageType    -> ImageT
+  TextType     -> TextT
+  RationalType -> RationalT
+  ListType t   -> ListT (typeToFS t)
+  PairType x y -> Pair (typeToFS x) (typeToFS y)
 
 pattern Boolean_ :: forall (t :: FSType). () => (t ~ 'BooleanT) => HaskellType t -> Scalar t
 pattern Boolean_ x = Scalar BooleanType x
@@ -261,8 +277,13 @@ instance An SomeType where
 instance KnownType t => An (TypeProxy t) where
   an = an . SomeType
 
+-- | Show a value the way a user would type it into a text box (see
+-- 'Language.Value.Parser.parseInputValue', which reads it back). Text is
+-- shown as it is, except inside a list, where each item is quoted.
 toUserString :: TypeProxy t -> HaskellType t -> String
-toUserString ty0 = tidy . go ty0
+toUserString ty0 = case ty0 of
+  TextType -> id
+  _        -> tidy . go ty0
   where
     tidy :: String -> String
     tidy s = case ty0 of
@@ -284,4 +305,17 @@ toUserString ty0 = tidy . go ty0
                       (fromIntegral b / 255.0 :: Double)
       PairType ty1 ty2 -> concat ["(", go ty1 (fst v), ", ", go ty2 (snd v), ")"]
       ListType ity -> "[" ++ intercalate ", " (map (go ity) v) ++ "]"
+      TextType -> quoteText v
       _ -> showValue ty v
+
+-- | Quote text as a literal, escaping quotes, backslashes, line breaks, and
+-- tabs as the tokenizer expects.
+quoteText :: String -> String
+quoteText str = "\"" ++ concatMap escape str ++ "\""
+  where
+    escape = \case
+      '"'  -> "\\\""
+      '\\' -> "\\\\"
+      '\n' -> "\\n"
+      '\t' -> "\\t"
+      c    -> [c]

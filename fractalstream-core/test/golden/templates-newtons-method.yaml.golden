@@ -1,0 +1,113 @@
+=== viewer 0: Newton's method on ℂ
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `lastZ` = 0:R:C in:
+                  block:
+                    let `[internal] fresh #17` = 0 in:
+                      let `[internal] fresh #18` = [internal] iteration limit in:
+                        block:
+                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #17 < [internal] fresh #18)):
+                            block:
+                              block:
+                                set `lastZ` := z
+                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
+                              set `[internal] fresh #17` := ([internal] fresh #17 + 1)
+                          set `[internal] iteration count` := [internal] fresh #17
+                          set `[internal] stuck` := ([internal] fresh #17 = [internal] fresh #18)
+                    if [internal] stuck then:
+                      block:
+                        set `color` := let [internal] on_failure.z #0 = z in Color 0 0 0
+                    else:
+                      block:
+                        set `color` := let [internal] basin_color.z #0 = z in let #wheel-arg = ((arg([internal] basin_color.z #0) / (2:R * 3.141592653589793)) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))))
+                        if shade_convergence then:
+                          block:
+                            set `color` := blend(([internal] iteration count:R / 20:R), blend(0.333, Color 0 0 0, color), blend(0.333, Color 255 255 255, color))
+                        else:
+                          no-op
+
+
+--- tool Trace
+  -- on click
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] px in:
+              block:
+                use Color 255 255 255 for line
+                erase
+                let `prevZ` = z in:
+                  block:
+                    let `[internal] fresh #15` = 0 in:
+                      let `[internal] fresh #16` = [internal] iteration limit in:
+                        block:
+                          do-while (!(|(z - prevZ)| < [internal] vanishing radius) and ([internal] fresh #15 < [internal] fresh #16)):
+                            block:
+                              block:
+                                set `prevZ` := z
+                                draw point at z:R^2
+                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
+                                draw line from z:R^2 to prevZ:R^2
+                              set `[internal] fresh #15` := ([internal] fresh #15 + 1)
+                          set `[internal] iteration count` := [internal] fresh #15
+                          set `[internal] stuck` := ([internal] fresh #15 = [internal] fresh #16)
+
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  use Color 255 255 255 for line
+                  erase
+                  let `prevZ` = z in:
+                    block:
+                      let `[internal] fresh #18` = 0 in:
+                        let `[internal] fresh #19` = [internal] iteration limit in:
+                          block:
+                            do-while (!(|(z - prevZ)| < [internal] vanishing radius) and ([internal] fresh #18 < [internal] fresh #19)):
+                              block:
+                                block:
+                                  set `prevZ` := z
+                                  draw point at z:R^2
+                                  set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
+                                  draw line from z:R^2 to prevZ:R^2
+                                set `[internal] fresh #18` := ([internal] fresh #18 + 1)
+                            set `[internal] iteration count` := [internal] fresh #18
+                            set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
+
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+

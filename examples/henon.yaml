@@ -1,121 +1,39 @@
-viewers:
-  - title: a-plane
-    style: complex-plane
-    size: 512x512
-    resizable: true
-    z-coord: a
-    escape-radius: escape_radius
-    iteration-limit: max_iters
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      z : C <- 0
-      aa : C <- (a + 1) / 2
-      disc : C <- aa^2 - b
-      p : C <- sqrt(disc) + aa
-      disc <- p^2 - a
-      lambda : C <- sqrt(disc) + p
-      save : C <- z * zoom
-      x : C <- p + lambda * save
-      y : C <- p + save
+script: |
+  @config "Configuration"
+  a : C as "a = " <- 0.3
+  b : C as "b = " <- 0.6 + 0.2i
+  zoom : R as "zoom = " <- 0.001
 
-      repeat:
-        t : C <- x
-        x <- x^2 + b - a y
-        y <- t
-      until x escapes
-      if x escaped:
-        color <- cycle (iterations / 10, blue, white)
-      else:
-        color <- black
+  @common
+  # Iterate the Hénon map (x, y) -> (x^2 + b - a y, x), starting near its
+  # saddle fixed point (p, p), displaced along the unstable direction by
+  # `start`, until x escapes; then color by the escape time.
+  define draw_henon(start, use_rainbow):
+    aa := (a + 1) / 2
+    p := sqrt(aa^2 - b) + aa
+    lambda := sqrt(p^2 - a) + p
+    save := start * zoom
+    x := p + lambda * save
+    y := p + save
 
-  - title: b-plane
-    style: complex-plane
-    size: 512x512
-    resizable: true
-    z-coord: b
-    escape-radius: escape_radius
-    iteration-limit: max_iters
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      z : C <- 0
-      aa : C <- (a + 1) / 2
-      disc : C <- aa^2 - b
-      p : C <- sqrt(disc) + aa
-      disc <- p^2 - a
-      lambda : C <- sqrt(disc) + p
-      save : C <- z * zoom
-      x : C <- p + lambda * save
-      y : C <- p + save
+    repeat:
+      t := x
+      x <- x^2 + b - a y
+      y <- t
+    until x escapes
 
-      repeat:
-        t : C <- x
-        x <- x^2 + b - a y
-        y <- t
-      until x escapes
+    if not (x escaped):
+      color <- black
+    else if use_rainbow:
+      color <- rainbow (iterations / 10)
+    else:
+      color <- cycle (iterations / 10, blue, white)
 
-      if x escaped:
-        color <- cycle (iterations / 10, blue, white)
-      else:
-        color <- black
+  @viewer "a-plane" var=a
+  run draw_henon(0, false)
 
-  - title: Hénon dynamics
-    style: complex-plane
-    size: 512x512
-    resizable: true
-    z-coord: z
-    escape-radius: escape_radius
-    iteration-limit: max_iters
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      aa : C <- (a + 1) / 2
-      disc : C <- aa^2 - b
-      p : C <- sqrt(disc) + aa
-      disc <- p^2 - a
-      lambda : C <- sqrt(disc) + p
-      save : C <- z * zoom
-      x : C <- p + lambda * save
-      y : C <- p + save
+  @viewer "b-plane" var=b
+  run draw_henon(0, false)
 
-      repeat:
-        t : C <- x
-        x <- x^2 + b - a y
-        y <- t
-      until x escapes
-
-      if x escaped:
-        color <- rainbow (iterations / 10)
-      else:
-        color <- black
-
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "a = "
-        value: "0.3"
-        type: C
-        variable: a
-    - text-entry:
-        label: "b = "
-        value: "0.6 + 0.2i"
-        type: C
-        variable: b
-    - text-entry:
-        label: "zoom = "
-        value: "0.001"
-        type: R
-        variable: zoom
-    - text-entry:
-        label: "Max. iterations:"
-        value: "100"
-        type: Z
-        variable: max_iters
-    - text-entry:
-        label: "Escape radius:"
-        value: 10
-        type: R
-        variable: escape_radius
+  @viewer "Hénon dynamics"
+  run draw_henon(z, true)

@@ -1,0 +1,206 @@
+=== viewer 0: Roots of {f}
+--- body
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `lastZ` = 0:R:C in:
+                  block:
+                    let `[internal] fresh #22` = 0 in:
+                      let `[internal] fresh #23` = [internal] iteration limit in:
+                        block:
+                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)):
+                            block:
+                              block:
+                                set `lastZ` := z
+                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - a) * ([internal] f.z #1 - b)) * ([internal] f.z #1 - c)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - c) * (([internal] f'.z #2 - b) + ([internal] f'.z #2 - a))) + (([internal] f'.z #2 - a) * ([internal] f'.z #2 - b)))))
+                              set `[internal] fresh #22` := ([internal] fresh #22 + 1)
+                          set `[internal] iteration count` := [internal] fresh #22
+                          set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
+                    let `col` = Color 255 255 0 in:
+                      block:
+                        if (|(z - a)| < [internal] vanishing radius) then:
+                          block:
+                            set `col` := Color 255 0 0
+                        else:
+                          if (|(z - b)| < [internal] vanishing radius) then:
+                            block:
+                              set `col` := Color 0 180 0
+                          else:
+                            if (|(z - c)| < [internal] vanishing radius) then:
+                              block:
+                                set `col` := Color 0 0 255
+                            else:
+                              no-op
+                        if (|(z - lastZ)| < [internal] vanishing radius) then:
+                          block:
+                            set `color` := blend((cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R), blend(0.333, Color 0 0 0, col), blend(0.333, Color 255 255 255, col))
+                        else:
+                          block:
+                            set `color` := Color 0 0 0
+
+
+--- tool Trace
+  -- on click
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] px in:
+              block:
+                let `lastZ` = 0:R:C in:
+                  block:
+                    erase
+                    let `[internal] fresh #20` = 0 in:
+                      let `[internal] fresh #21` = [internal] iteration limit in:
+                        block:
+                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #20 < [internal] fresh #21)):
+                            block:
+                              block:
+                                set `lastZ` := z
+                                set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - a) * ([internal] f.z #1 - b)) * ([internal] f.z #1 - c)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - c) * (([internal] f'.z #2 - b) + ([internal] f'.z #2 - a))) + (([internal] f'.z #2 - a) * ([internal] f'.z #2 - b)))))
+                                draw point at lastZ:R^2
+                                draw line from lastZ:R^2 to z:R^2
+                              set `[internal] fresh #20` := ([internal] fresh #20 + 1)
+                          set `[internal] iteration count` := [internal] fresh #20
+                          set `[internal] stuck` := ([internal] fresh #20 = [internal] fresh #21)
+                    draw point at z:R^2
+
+  -- on drag
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  let `lastZ` = 0:R:C in:
+                    block:
+                      erase
+                      let `[internal] fresh #23` = 0 in:
+                        let `[internal] fresh #24` = [internal] iteration limit in:
+                          block:
+                            do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #23 < [internal] fresh #24)):
+                              block:
+                                block:
+                                  set `lastZ` := z
+                                  set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - a) * ([internal] f.z #1 - b)) * ([internal] f.z #1 - c)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - c) * (([internal] f'.z #2 - b) + ([internal] f'.z #2 - a))) + (([internal] f'.z #2 - a) * ([internal] f'.z #2 - b)))))
+                                  draw point at lastZ:R^2
+                                  draw line from lastZ:R^2 to z:R^2
+                                set `[internal] fresh #23` := ([internal] fresh #23 + 1)
+                            set `[internal] iteration count` := [internal] fresh #23
+                            set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
+                      draw point at z:R^2
+
+  -- on deactivated
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+
+--- tool Move roots
+  -- on drag
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `z0` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  if (drag_target = 0) then:
+                    block:
+                      if (|(z0 - a)| < (rad * pixel_size)) then:
+                        block:
+                          set `drag_target` := 1
+                      else:
+                        if (|(z0 - b)| < (rad * pixel_size)) then:
+                          block:
+                            set `drag_target` := 2
+                        else:
+                          if (|(z0 - c)| < (rad * pixel_size)) then:
+                            block:
+                              set `drag_target` := 3
+                          else:
+                            no-op
+                  else:
+                    if (drag_target = 1) then:
+                      block:
+                        set `a` := z
+                    else:
+                      if (drag_target = 2) then:
+                        block:
+                          set `b` := z
+                      else:
+                        if (drag_target = 3) then:
+                          block:
+                            set `c` := z
+                        else:
+                          no-op
+                  erase
+                  draw point at a:R^2
+                  draw point at b:R^2
+                  draw point at c:R^2
+
+  -- on drag-done
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  set `drag_target` := 0
+
+  -- on refresh
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+              draw point at a:R^2
+              draw point at b:R^2
+              draw point at c:R^2
+
+  -- on activated
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              draw point at a:R^2
+              draw point at b:R^2
+              draw point at c:R^2
+
+  -- on deactivated
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+

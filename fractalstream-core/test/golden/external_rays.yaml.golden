@@ -1,0 +1,121 @@
+=== viewer 0: Parameter plane
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          block:
+            set `C` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `z` = 0:R:C in:
+                  block:
+                    block:
+                      block:
+                        let `[internal] fresh #16` = 0 in:
+                          let `[internal] fresh #17` = [internal] iteration limit in:
+                            block:
+                              if (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)) then:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)):
+                                  block:
+                                    set `z` := ((z ^ 2:R:C) + C)
+                                    set `[internal] fresh #16` := ([internal] fresh #16 + 1)
+                              else:
+                                no-op
+                              set `[internal] iteration count` := [internal] fresh #16
+                              set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
+                        set `color` := Color 0 0 0
+                        if ([internal] escape radius < |z|) then:
+                          block:
+                            let `m` = (([internal] iteration count + 1):R - (log((log((|z| ^ 2:R)) / (2:R * log(escape_radius)))) / log(2:R))) in:
+                              block:
+                                let `base_color` = if (0:R < im(z)) then blend(0.333, Color 0 0 0, Color 128 0 128) else blend(0.333, Color 0 0 0, Color 0 180 0) in:
+                                  block:
+                                    set `color` := blend((cos(((3.141592653589793 * m) / 20:R)) ^ 2:R), base_color, blend(0.333, Color 255 255 255, base_color))
+                        else:
+                          no-op
+
+
+--- tool Parameter plane external rays
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+              {TODO: ForEach}
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+
+=== viewer 1: Dynamical plane
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                block:
+                  block:
+                    let `[internal] fresh #16` = 0 in:
+                      let `[internal] fresh #17` = [internal] iteration limit in:
+                        block:
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)):
+                              block:
+                                set `z` := ((z ^ 2:R:C) + C)
+                                set `[internal] fresh #16` := ([internal] fresh #16 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #16
+                          set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
+                    set `color` := Color 0 0 0
+                    if ([internal] escape radius < |z|) then:
+                      block:
+                        let `m` = (([internal] iteration count + 1):R - (log((log((|z| ^ 2:R)) / (2:R * log(escape_radius)))) / log(2:R))) in:
+                          block:
+                            let `base_color` = if (0:R < im(z)) then blend(0.333, Color 0 0 0, Color 128 0 128) else blend(0.333, Color 0 0 0, Color 0 180 0) in:
+                              block:
+                                set `color` := blend((cos(((3.141592653589793 * m) / 20:R)) ^ 2:R), base_color, blend(0.333, Color 255 255 255, base_color))
+                    else:
+                      no-op
+
+
+--- tool Dynamical plane external rays
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+              {TODO: ForEach}
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+

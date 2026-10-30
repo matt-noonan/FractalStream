@@ -1,80 +1,36 @@
-viewer:
-  title: Mandelbrot set + logistic map bifurcations
-  style: complex-plane
-  resizable: true
-  z-coord: C
-  escape-radius: escape_radius
-  iteration-limit: max_iters
-  pixel-size: px
-  size: 700x500
-  initial-center: "-0.8 + 0.3 i"
-  initial-pixel-size: "0.005"
-  code: |
-    z : C <- 0
+script: |
+  @config "About"
+  text "Use the \"Vertical line\" tool (shortcut v) to compare points between the Mandelbrot set and the logistic map bifurcation diagram."
 
-    # Draw the Mandelbrot set
-    iterate z -> z^2 + C until z escapes
-    color <- if z escaped ...
-      then blend (0.2, rainbow(iterations/20), white) ...
-      else black
+  @config "Bifurcation diagram"
+  warmup : Z as "Warmup iterations" <- 500
+  cycle_length : Z as "Cycle check iterations" <- 200
+  offset : R as "Vertical offset" <- 0.5
 
-    # Overlay a bifurcation diagram for the logistic map
-    if re C >= -2 and re C <= 1/4 and im C > offset and im C < offset + 1:
-      r : R <- 1 + sqrt(1 - 4 re C)
-      x : R <- im C - offset
-      x0 : R <- x
-      iterate x -> r x (1 - x) while true up to warmup times
-      hit : Boolean <- false
-      until hit up to cycle_length times:
-        if |x - x0| < px:
-          hit <- true
-        x <- x r (1 - x)
-      color <- if hit then invert(color) else color
+  @viewer "Mandelbrot set + logistic map bifurcations" var=C size=700x500 center="-0.8 + 0.3 i" pixelSize=0.005
+  z := 0
 
-  tools:
-    - name: Vertical line
-      shortcut: v
-      script: |
-        on click-or-drag:
-          erase
-          use red for line
-          draw line from re C + 2 i to re C - 2 i
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text: |
-        Use the "Vertical line" tool (shortcut `v`) to
-        compare points between the Mandelbrot set and
-        the logistic map bifurcation diagram.
-    - panel:
-        title: Mandelbrot set
-        vertical-contents:
-          - text-entry:
-              label: "Max. iterations:"
-              value: "1000"
-              type: Z
-              variable: max_iters
-          - text-entry:
-              label: "Escape radius:"
-              value: "10"
-              type: R
-              variable: escape_radius
-    - panel:
-        title: Bifurcation diagram
-        vertical-contents:
-          - text-entry:
-              label: "Warmup iterations"
-              value: "500"
-              type: Z
-              variable: warmup
-          - text-entry:
-              label: "Cycle check iterations"
-              value: "200"
-              type: Z
-              variable: cycle_length
-          - text-entry:
-              label: "Vertical offset"
-              value: "0.5"
-              type: R
-              variable: offset
+  # Draw the Mandelbrot set
+  iterate z -> z^2 + C until z escapes
+  color <- if z escaped ...
+    then blend (0.2, rainbow(iterations/20), white) ...
+    else black
+
+  # Overlay a bifurcation diagram for the logistic map
+  if re C >= -2 and re C <= 1/4 and im C > offset and im C < offset + 1:
+    r := 1 + sqrt(1 - 4 re C)
+    x := im C - offset
+    x0 := x
+    iterate x -> r x (1 - x) while true up to warmup times
+    hit := false
+    until hit up to cycle_length times:
+      if |x - x0| < pixel_size:
+        hit <- true
+      x <- x r (1 - x)
+    color <- if hit then invert(color) else color
+
+  @tool "Vertical line" for="Mandelbrot set + logistic map bifurcations" shortcut=v
+  on click-or-drag:
+    erase
+    use red for line
+    draw line from re C + 2 i to re C - 2 i

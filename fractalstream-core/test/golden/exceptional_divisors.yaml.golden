@@ -1,0 +1,183 @@
+=== viewer 0: t-plane
+--- body
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          block:
+            set `t` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `j` = ((-1:R / 2:R):C + ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
+                  block:
+                    let `jbar` = ((-1:R / 2:R):C - ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
+                      block:
+                        let `[internal] fresh #26` = 0 in:
+                          let `[internal] fresh #27` = [internal] iteration limit in:
+                            block:
+                              if (!(|((t ^ 3:R:C) - 1:R:C)| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)) then:
+                                do-while (!(|((t ^ 3:R:C) - 1:R:C)| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
+                                  block:
+                                    block:
+                                      set `t` := ((t * (2:R:C + (t ^ 3:R:C))) / ((2:R:C * (t ^ 3:R:C)) + 1:R:C))
+                                    set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                              else:
+                                no-op
+                              set `[internal] iteration count` := [internal] fresh #26
+                              set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                        if (|(t - 1:R:C)| < [internal] vanishing radius) then:
+                          block:
+                            set `color` := tcolor1
+                        else:
+                          if (|(t - j)| < [internal] vanishing radius) then:
+                            block:
+                              set `color` := tcolor2
+                          else:
+                            if (|(t - jbar)| < [internal] vanishing radius) then:
+                              block:
+                                set `color` := tcolor3
+                            else:
+                              block:
+                                set `color` := Color 0 0 0
+
+
+=== viewer 1: z-plane
+--- body
+let `[internal] vanishing radius` = tol in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `j` = ((-1:R / 2:R):C + ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
+                  block:
+                    let `jbar` = ((-1:R / 2:R):C - ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
+                      block:
+                        let `y` = (0.5:C / z) in:
+                          block:
+                            let `x` = ((0.5:C * t) / z) in:
+                              block:
+                                let `[internal] fresh #29` = 0 in:
+                                  let `[internal] fresh #30` = [internal] iteration limit in:
+                                    block:
+                                      if (!((|(x - 0:R:C)| < [internal] vanishing radius) or ((|((x ^ 3:R:C) - -1:R:C)| < [internal] vanishing radius) or (|((x ^ 3:R:C) - (1:R / 8:R):C)| < [internal] vanishing radius))) and ([internal] fresh #29 < [internal] fresh #30)) then:
+                                        do-while (!((|(x - 0:R:C)| < [internal] vanishing radius) or ((|((x ^ 3:R:C) - -1:R:C)| < [internal] vanishing radius) or (|((x ^ 3:R:C) - (1:R / 8:R):C)| < [internal] vanishing radius))) and ([internal] fresh #29 < [internal] fresh #30)):
+                                          block:
+                                            block:
+                                              let `w` = (-((3:R:C * x) * ((2:R:C * (y ^ 3:R:C)) + (x ^ 3:R:C))) / (((1:R:C - ((6:R:C * x) * y)) - (4:R:C * ((x ^ 3:R:C) + (y ^ 3:R:C)))) + ((6:R:C * (x ^ 2:R:C)) * (y ^ 2:R:C)))) in:
+                                                block:
+                                                  set `y` := (-((3:R:C * y) * ((2:R:C * (x ^ 3:R:C)) + (y ^ 3:R:C))) / (((1:R:C - ((6:R:C * x) * y)) - (4:R:C * ((x ^ 3:R:C) + (y ^ 3:R:C)))) + ((6:R:C * (x ^ 2:R:C)) * (y ^ 2:R:C))))
+                                                  set `x` := w
+                                            set `[internal] fresh #29` := ([internal] fresh #29 + 1)
+                                      else:
+                                        no-op
+                                      set `[internal] iteration count` := [internal] fresh #29
+                                      set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                                if (|(x - 0:R:C)| < [internal] vanishing radius) then:
+                                  block:
+                                    set `color` := zcol
+                                else:
+                                  if (|(x - -1:R:C)| < [internal] vanishing radius) then:
+                                    block:
+                                      let `w` = ((y + 1:R:C) / (x - y)) in:
+                                        block:
+                                          let `[internal] fresh #30` = 0 in:
+                                            let `[internal] fresh #31` = [internal] iteration limit in:
+                                              block:
+                                                if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)) then:
+                                                  do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)):
+                                                    block:
+                                                      set `w` := (((((2:R:C * (w ^ 3:R:C)) / 3:R:C) + (w ^ 2:R:C)) + (2:R:C * w)) + (1:R / 3:R):C)
+                                                      set `[internal] fresh #30` := ([internal] fresh #30 + 1)
+                                                else:
+                                                  no-op
+                                                set `[internal] iteration count` := [internal] fresh #30
+                                                set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
+                                          if ([internal] escape radius < |w|) then:
+                                            block:
+                                              set `color` := color8
+                                          else:
+                                            if (|(w - j)| < [internal] vanishing radius) then:
+                                              block:
+                                                set `color` := color9
+                                            else:
+                                              if (|(w - jbar)| < [internal] vanishing radius) then:
+                                                block:
+                                                  set `color` := color10
+                                              else:
+                                                block:
+                                                  set `color` := Color 0 0 0
+                                  else:
+                                    if (|(x - -j)| < [internal] vanishing radius) then:
+                                      block:
+                                        let `w` = (((y / jbar) + 1:R:C) / ((x / j) - (y / jbar))) in:
+                                          block:
+                                            let `[internal] fresh #30` = 0 in:
+                                              let `[internal] fresh #31` = [internal] iteration limit in:
+                                                block:
+                                                  if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)) then:
+                                                    do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)):
+                                                      block:
+                                                        set `w` := (((((2:R:C * (w ^ 3:R:C)) / 3:R:C) + (w ^ 2:R:C)) + (2:R:C * w)) + (1:R / 3:R):C)
+                                                        set `[internal] fresh #30` := ([internal] fresh #30 + 1)
+                                                  else:
+                                                    no-op
+                                                  set `[internal] iteration count` := [internal] fresh #30
+                                                  set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
+                                            if ([internal] escape radius < |w|) then:
+                                              block:
+                                                set `color` := color8
+                                            else:
+                                              if (|(w - j)| < [internal] vanishing radius) then:
+                                                block:
+                                                  set `color` := color9
+                                              else:
+                                                if (|(w - jbar)| < [internal] vanishing radius) then:
+                                                  block:
+                                                    set `color` := color10
+                                                else:
+                                                  block:
+                                                    set `color` := Color 0 0 0
+                                    else:
+                                      if (|(x - -jbar)| < [internal] vanishing radius) then:
+                                        block:
+                                          let `w` = (((y / j) + 1:R:C) / ((x / jbar) - (y / j))) in:
+                                            block:
+                                              let `[internal] fresh #30` = 0 in:
+                                                let `[internal] fresh #31` = [internal] iteration limit in:
+                                                  block:
+                                                    if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)) then:
+                                                      do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #30 < [internal] fresh #31)):
+                                                        block:
+                                                          set `w` := (((((2:R:C * (w ^ 3:R:C)) / 3:R:C) + (w ^ 2:R:C)) + (2:R:C * w)) + (1:R / 3:R):C)
+                                                          set `[internal] fresh #30` := ([internal] fresh #30 + 1)
+                                                    else:
+                                                      no-op
+                                                    set `[internal] iteration count` := [internal] fresh #30
+                                                    set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
+                                              if ([internal] escape radius < |w|) then:
+                                                block:
+                                                  set `color` := color8
+                                              else:
+                                                if (|(w - j)| < [internal] vanishing radius) then:
+                                                  block:
+                                                    set `color` := color9
+                                                else:
+                                                  if (|(w - jbar)| < [internal] vanishing radius) then:
+                                                    block:
+                                                      set `color` := color10
+                                                  else:
+                                                    block:
+                                                      set `color` := Color 0 0 0
+                                      else:
+                                        if (|((x ^ 3:R:C) - (1:R / 8:R):C)| < [internal] vanishing radius) then:
+                                          block:
+                                            set `color` := exceptional
+                                        else:
+                                          block:
+                                            set `color` := Color 0 0 0
+
+

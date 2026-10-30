@@ -8,7 +8,9 @@ image, using Rasterific (<https://hackage.haskell.org/package/Rasterific>)
 for the actual rasterization rather than hand-rolling line\/circle drawing.
 Both Rasterific and its JuicyPixels dependency are pure Haskell, adding no
 new system-library dependency -- the point of a headless frontend is to
-avoid exactly that kind of weight.
+avoid exactly that kind of weight. For the same reason, text is drawn
+with a copy of DejaVu Sans (@fonts/@) embedded in the library, rather
+than with a font located at run time.
 -}
 module Actor.Viewer.Overlay
   ( compositeDrawLayers
@@ -20,6 +22,9 @@ import FractalStream.Prelude
 import Language.Draw
 import Data.Color (colorToRGB)
 import qualified Data.Planar as Planar
+
+import Actor.Viewer.Overlay.Font (overlayFont)
+import Graphics.Text.TrueType (Font, BoundingBox(..), stringBoundingBox)
 
 import Codec.Picture (Image, PixelRGBA8(..), writePng)
 import Codec.Picture.Types (newMutableImage, writePixel, unsafeFreezeImage)
@@ -95,6 +100,30 @@ modelToPixel (cx, cy) pixelSize (w, h) pt =
       (px, py) = Planar.convertRect modelRect pixelRect pt
   in V2 (realToFrac px) (realToFrac py)
 
+-- | Roughly the size of the live app's default GUI font: 13 pixels.
+textSize :: PointSize
+textSize = PointSize 10
+
+textDpi :: Int
+textDpi = 96
+
+-- | Draw text centered on a point, like @UI.ProjectViewer@ does: centered
+-- horizontally on the string's own width, and vertically on the font's
+-- line height (here, the extent of a tall-and-deep reference string), so
+-- that a string's position doesn't depend on which letters it contains.
+drawCenteredText :: Font -> Point -> String -> Drawing PixelRGBA8 ()
+drawCenteredText font (V2 x y) txt =
+  let width = _xMax (stringBoundingBox font textDpi textSize txt)
+      lineBox = stringBoundingBox font textDpi textSize "Ág"
+      baseline = y + (_yMax lineBox + _yMin lineBox) / 2
+  in printTextAt font textSize (V2 (x - width / 2) baseline) txt
+
+-- | Run a drawing only if all the given points and lengths are finite.
+whenFinite :: [Point] -> [Float] -> Drawing PixelRGBA8 () -> Drawing PixelRGBA8 ()
+whenFinite pts lens action =
+  when (all finite (lens ++ concat [ [x, y] | V2 x y <- pts ])) action
+  where finite v = not (isNaN v || isInfinite v)
+
 -- | Draw every layer's commands, in order. Each layer starts with the pen
 -- and fill reset to white, matching @UI.ProjectViewer.paintToolLayer@.
 drawLayers :: ((Double, Double) -> Point) -> Double -> [[DrawCommand]] -> Drawing PixelRGBA8 ()
@@ -116,22 +145,28 @@ drawLayer toPixel pixelSize = go white white
       -- reset here.
       Clear _ -> go strokeColor fillColor cmds
 
+      -- Rasterific throws an arithmetic exception on a NaN or infinite
+      -- coordinate (which a script can easily produce, e.g. from an
+      -- escaping orbit), so shapes at such points are skipped.
       DrawPoint _ pt -> do
-        withTexture (uniformTexture fillColor) $
-          fill (circle (toPixel pt) 2)
+        whenFinite [toPixel pt] [] $
+          withTexture (uniformTexture fillColor) $
+            fill (circle (toPixel pt) 2)
         go strokeColor fillColor cmds
 
       DrawLine _ pt1 pt2 -> do
-        withTexture (uniformTexture strokeColor) $
-          stroke 2 JoinRound (CapRound, CapRound) (line (toPixel pt1) (toPixel pt2))
+        whenFinite [toPixel pt1, toPixel pt2] [] $
+          withTexture (uniformTexture strokeColor) $
+            stroke 2 JoinRound (CapRound, CapRound) (line (toPixel pt1) (toPixel pt2))
         go strokeColor fillColor cmds
 
       DrawCircle _ filled r pt -> do
         let rpx = realToFrac (r / pixelSize)
             prim = circle (toPixel pt) rpx
-        if filled
-          then withTexture (uniformTexture fillColor) (fill prim)
-          else withTexture (uniformTexture strokeColor) (stroke 2 JoinRound (CapRound, CapRound) prim)
+        whenFinite [toPixel pt] [rpx] $
+          if filled
+            then withTexture (uniformTexture fillColor) (fill prim)
+            else withTexture (uniformTexture strokeColor) (stroke 2 JoinRound (CapRound, CapRound) prim)
         go strokeColor fillColor cmds
 
       DrawRect _ filled pt1 pt2 -> do
@@ -141,13 +176,16 @@ drawLayer toPixel pixelSize = go white white
             rectW    = abs (x2 - x1)
             rectH    = abs (y2 - y1)
             prim = rectangle topLeft rectW rectH
-        if filled
-          then withTexture (uniformTexture fillColor) (fill prim)
-          else withTexture (uniformTexture strokeColor) (stroke 2 JoinRound (CapRound, CapRound) prim)
+        whenFinite [toPixel pt1, toPixel pt2] [] $
+          if filled
+            then withTexture (uniformTexture fillColor) (fill prim)
+            else withTexture (uniformTexture strokeColor) (stroke 2 JoinRound (CapRound, CapRound) prim)
         go strokeColor fillColor cmds
 
-      -- Text isn't rasterized yet: that needs a font (via FontyFruity or
-      -- similar) and bundling/locating a .ttf at runtime, which is a
-      -- separate decision from the rasterizer itself. Silently skipped
-      -- for now rather than faking it.
-      Write _ _ _ -> go strokeColor fillColor cmds
+      -- Text is drawn in the stroke color, like the live app's textColor.
+      Write _ txt pt -> do
+        forM_ overlayFont $ \font ->
+          whenFinite [toPixel pt] [] $
+            withTexture (uniformTexture strokeColor) $
+              drawCenteredText font (toPixel pt) txt
+        go strokeColor fillColor cmds

@@ -16,6 +16,11 @@ import Backend.LLVM.Value
 
 import qualified LLVM.AST as AST
 import qualified LLVM.AST.Type as AST
+import qualified LLVM.AST.Constant as AC
+import qualified LLVM.AST.Global as G
+import qualified LLVM.AST.Linkage as L
+import qualified LLVM.AST.Visibility as V
+import qualified LLVM.AST.AddrSpace as AS
 import LLVM.IRBuilder.Module
 import LLVM.IRBuilder.Instruction
 import LLVM.IRBuilder.Monad
@@ -75,7 +80,10 @@ compile _ outputTy code = runExcept $
       arenaEnd <- gep arenaBase [C.int32 65536]
       overflowFlag <- alloca AST.i1 Nothing 0
       store overflowFlag 0 (C.bit 0)
-      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag
+      indexError <- alloca AST.i1 Nothing 0
+      store indexError 0 (C.bit 0)
+      emptyText <- emptyTextGlobal
+      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing
 
       runReaderT (compileCode getExtern arenaState Nothing code) args
       rv <- derefOperand (getBinding args (bindingEvidence @output @t @env))
@@ -403,7 +411,8 @@ compileRenderer' prepOutputEnv name code = runExcept $
         -- First 3 params are the internal render args; the rest are ViewerEnv.
         (internalRenderParams, viewerEnvParams) = splitAt 3 allEnvParams
         arenaParams  = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
-                       , (AST.i32,        ParameterName "#arenaSize") ]
+                       , (AST.i32,        ParameterName "#arenaSize")
+                       , (AST.ptr AST.i8, ParameterName "#issuesOut") ]
         params       = internalRenderParams ++ arenaParams ++ viewerEnvParams
         prepParams   = toPrepParamList prepOutputEnv
         pfX      = bindingEvidence @InternalX   @'RealT  @(ViewerEnv env)
@@ -414,7 +423,7 @@ compileRenderer' prepOutputEnv name code = runExcept $
         nViewerEnvArgs = envLength (envProxy (Proxy @(ViewerEnv env)))
     function name (retParam : params ++ prepParams) AST.void $ \allArgs -> do
       let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg
-                  : arenaPtrArg : arenaSizeArg : rest) = allArgs
+                  : arenaPtrArg : arenaSizeArg : issuesOutArg : rest) = allArgs
           (rawArgs, prepArrayPtrs) = splitAt nViewerEnvArgs rest
       getExtern <- getGetExtern
       mdo
@@ -432,7 +441,16 @@ compileRenderer' prepOutputEnv name code = runExcept $
         arenaEnd <- gep arenaPtrArg [arenaSizeArg]
         overflowFlag <- alloca AST.i1 Nothing 0
         store overflowFlag 0 (C.bit 0)
-        let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag
+        indexError <- alloca AST.i1 Nothing 0
+        store indexError 0 (C.bit 0)
+        -- Whether any subsample in this block overflowed, or indexed a list
+        -- out of range; reported to the host through #issuesOut.
+        anyOverflow <- alloca AST.i1 Nothing 0
+        store anyOverflow 0 (C.bit 0)
+        anyIndexError <- alloca AST.i1 Nothing 0
+        store anyIndexError 0 (C.bit 0)
+        emptyText <- emptyTextGlobal
+        let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing
 
         args <- allocaArgs (envProxy (Proxy @(ViewerEnv env))) rawArgs
         x0 <- derefOperand (getBinding args pfX)  >>= \case RealOp v -> pure v
@@ -504,17 +522,23 @@ compileRenderer' prepOutputEnv name code = runExcept $
           -- dynamic list allocations are independent.
           store bumpAlloca 0 arenaPtrArg
           store overflowFlag 0 (C.bit 0)
+          store indexError 0 (C.bit 0)
 
           -- Load prep output vars from their flat arrays before the kernel.
           pixelIndex <- load pixelIndexPtr 0
           overwritePrepOutputs prepOutputEnv prepArrayPtrs pixelIndex argMap
 
           runReaderT (compileCode getExtern arenaState Nothing code) args
-          overflowed <- load overflowFlag 0
+          ovf <- load overflowFlag 0
+          bad <- load indexError 0
+          load anyOverflow 0 >>= LLVM.IRBuilder.Instruction.or ovf >>= store anyOverflow 0
+          load anyIndexError 0 >>= LLVM.IRBuilder.Instruction.or bad >>= store anyIndexError 0
+          overflowed <- LLVM.IRBuilder.Instruction.or ovf bad
           (cr0, cg0, cb0) <- case getBinding args pfOutput of
             PtrOp (ColorOp outputR outputG outputB) ->
               (,,) <$> load outputR 0 <*> load outputG 0 <*> load outputB 0
-          -- On arena overflow, render the pixel magenta so it's visually obvious.
+          -- On arena overflow or a bad list index, render the pixel magenta
+          -- so it's visually obvious.
           cr0' <- select overflowed (C.int8 255) cr0
           cg0' <- select overflowed (C.int8 0)   cg0
           cb0' <- select overflowed (C.int8 255) cb0
@@ -602,6 +626,11 @@ compileRenderer' prepOutputEnv name code = runExcept $
           condBr continue pixelLoopY exitPixelLoopY
 
         exitPixelLoopY <- block `named` "end i loop"
+        -- The issues byte: bit 0 for an arena overflow, bit 1 for a list
+        -- indexed out of range, as for tool handlers.
+        ovf8 <- load anyOverflow 0 >>= (`zext` AST.i8)
+        bad8 <- load anyIndexError 0 >>= (`zext` AST.i8) >>= (`shl` C.int8 1)
+        LLVM.IRBuilder.Instruction.or ovf8 bad8 >>= store issuesOutArg 0
         retVoid
 
 
@@ -617,15 +646,17 @@ data DrawVTable = DrawVTable
   , dvLine   :: Operand   -- ^ void(double x1, double y1, double x2, double y2)
   , dvCircle :: Operand   -- ^ void(i8 fill, double r, double x, double y)
   , dvRect   :: Operand   -- ^ void(i8 fill, double x1, double y1, double x2, double y2)
+  , dvWrite  :: Operand   -- ^ void(i8* text, double x, double y)
   }
 
 -- | Compile a single tool event handler into a native function.  Unlike a
 -- viewer kernel there is no pixel loop: the body runs once.  ABI (in order):
--- seven draw-callback function pointers (passed as i8*), the arena pointer and
--- size, a 1-byte overflow-out pointer, then the handler's environment values
--- (read-only inputs, marshalled like viewer args).  Draw commands in the body
--- 'call' the vtable; list allocations use the arena; on overflow the kernel
--- writes 1 to the overflow byte.
+-- eight draw-callback function pointers and the host's number formatter (all
+-- passed as i8*; see 'ArenaState' for the formatter), the arena pointer and
+-- size, a 1-byte status-out pointer, then the handler's environment values
+-- (see 'toolInOut').  Draw commands in the body 'call' the vtable; list
+-- allocations use the arena.  The status byte gets bit 0 set if the arena
+-- overflowed, and bit 1 if a list was indexed out of range.
 compileToolHandler :: forall e
                     . EnvironmentProxy e
                    -> AST.Name
@@ -640,7 +671,9 @@ compileToolHandler envp name code = runExcept $
           , (AST.ptr AST.i8, ParameterName "draw.point")
           , (AST.ptr AST.i8, ParameterName "draw.line")
           , (AST.ptr AST.i8, ParameterName "draw.circle")
-          , (AST.ptr AST.i8, ParameterName "draw.rect") ]
+          , (AST.ptr AST.i8, ParameterName "draw.rect")
+          , (AST.ptr AST.i8, ParameterName "draw.write")
+          , (AST.ptr AST.i8, ParameterName "text.format") ]
         arenaParams    = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
                          , (AST.i32,        ParameterName "#arenaSize") ]
         overflowParams = [ (AST.ptr AST.i8, ParameterName "#overflowOut") ]
@@ -649,16 +682,21 @@ compileToolHandler envp name code = runExcept $
     function name params AST.void $ \allArgs -> do
       getExtern <- getGetExtern
       _entry <- block `named` "tool_entry"
-      let (drawArgs, afterDraw) = splitAt 7 allArgs
+      let (drawArgs, afterDraw) = splitAt 9 allArgs
           (arenaPtrArg : arenaSizeArg : overflowArg : rawEnvArgs) = afterDraw
-          [clearP, strokeP, fillP, pointP, lineP, circleP, rectP] = drawArgs
+          [clearP, strokeP, fillP, pointP, lineP, circleP, rectP, writeP, formatP] = drawArgs
 
       bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
       store bumpAlloca 0 arenaPtrArg
       arenaEnd <- gep arenaPtrArg [arenaSizeArg]
       overflowFlag <- alloca AST.i1 Nothing 0
       store overflowFlag 0 (C.bit 0)
-      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag
+      indexError <- alloca AST.i1 Nothing 0
+      store indexError 0 (C.bit 0)
+      formatF <- bitcast formatP
+                   (fnPtrTy AST.i32 [AST.i8, AST.double, AST.double, AST.ptr AST.i8, AST.i32])
+      emptyText <- emptyTextGlobal
+      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText (Just formatF)
 
       clearF  <- bitcast clearP  (fnPtrTy AST.void [])
       strokeF <- bitcast strokeP (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
@@ -670,16 +708,20 @@ compileToolHandler envp name code = runExcept $
                    (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double])
       rectF   <- bitcast rectP
                    (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double, AST.double])
+      writeF  <- bitcast writeP  (fnPtrTy AST.void [AST.ptr AST.i8, AST.double, AST.double])
       let vt = DrawVTable { dvClear = clearF, dvStroke = strokeF, dvFill = fillF
                           , dvPoint = pointF, dvLine = lineF, dvCircle = circleF
-                          , dvRect = rectF }
+                          , dvRect = rectF, dvWrite = writeF }
 
       args <- allocaToolArgs envp rawEnvArgs
       runReaderT (compileCode getExtern arenaState (Just vt) code) args
 
-      ovf  <- load overflowFlag 0
-      ovf8 <- zext ovf AST.i8
-      store overflowArg 0 ovf8
+      -- The status byte: bit 0 for an arena overflow, bit 1 for a list
+      -- indexed out of range.
+      ovf8 <- load overflowFlag 0 >>= (`zext` AST.i8)
+      idx8 <- load indexError 0 >>= (`zext` AST.i8) >>= (`shl` C.int8 1)
+      status <- LLVM.IRBuilder.Instruction.or ovf8 idx8
+      store overflowArg 0 status
       retVoid
 
 compileCode :: forall m env
@@ -843,9 +885,36 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
         DrawRect _ fill p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
           void $ call (dvRect vt)
             [(C.int8 (if fill then 1 else 0),[]),(x1,[]),(y1,[]),(x2,[]),(y2,[])]
-        Write _ _ _ ->
-          throwError "The LLVM backend cannot compile `write` (text) yet"
+        Write _ tv pv -> value_ getExtern arena tv >>= \case
+          TextOp txt -> withPt pv $ \x y ->
+            void $ call (dvWrite vt) [(txt,[]),(x,[]),(y,[])]
 
+
+-- | A module-local constant empty string, the value of any text that didn't
+-- fit in the arena. (Private, since every tool handler is a separate module
+-- in the same JIT session.)
+emptyTextGlobal :: MonadModuleBuilder m => m Operand
+emptyTextGlobal = do
+  let nm = "fs.empty_text"
+      ty = AST.ArrayType 1 AST.i8
+  emitDefn $ AST.GlobalDefinition G.GlobalVariable
+    { G.name            = nm
+    , G.linkage         = L.Private
+    , G.visibility      = V.Default
+    , G.dllStorageClass = Nothing
+    , G.threadLocalMode = Nothing
+    , G.unnamedAddr     = Nothing
+    , G.isConstant      = True
+    , G.type'           = ty
+    , G.addrSpace       = AS.AddrSpace 0
+    , G.initializer     = Just (AC.Array AST.i8 [AC.Int 8 0])
+    , G.section         = Nothing
+    , G.comdat          = Nothing
+    , G.alignment       = 0
+    , G.metadata        = []
+    }
+  pure $ AST.ConstantOperand $
+    AC.GetElementPtr True (AC.GlobalReference (AST.ptr ty) nm) [AC.Int 32 0, AC.Int 32 0]
 
 data OperandPtrContext :: (* -> *) -> Environment -> Exp *
 type instance Eval (OperandPtrContext m env) =
@@ -874,9 +943,9 @@ allocaArg t op = do
 
 -- | Scalar tool-handler arguments are passed in/out: the caller hands the
 -- kernel a pointer to a cell, so a 'Set' of a config variable is visible to the
--- host after the call (write-back; e.g. the Select tool sets a coordinate, or
--- newton3's \"Move roots\" tool sets @drag_target@).  Lists and text are passed
--- by value (read-only — no write-back).  This predicate must agree between
+-- host after the call (write-back; e.g. the Select tool sets a coordinate,
+-- newton3's \"Move roots\" tool sets @drag_target@, or spider builds up its
+-- @kneading_seq@ text, and its @spider@ list of legs).  This predicate must agree between
 -- 'toToolParameterList' (param types), 'bindToolArg', and the host's marshaller.
 toolInOut :: TypeProxy t -> Bool
 toolInOut = \case
@@ -885,6 +954,8 @@ toolInOut = \case
   BooleanType -> True
   ComplexType -> True
   ColorType   -> True
+  TextType    -> True
+  ListType _  -> True
   _           -> False
 
 -- | Parameter types for a tool handler's environment: in/out types become

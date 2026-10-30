@@ -1,66 +1,24 @@
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - checkbox:
-        label: "Use Arenberg rainbow"
-        value: false
-        variable: use_arenberg
-    - text-entry:
-        label: "Iterations per color cycle: "
-        value: 20
-        type: R
-        variable: speed
-    - text-entry:
-        label: "f(z) = z² +"
-        value: "-0.11 + 0.78i"
-        type: ℂ
-        variable: C
+script: |
+  @config "Configuration"
+  use_arenberg : Boolean as "Use Arenberg rainbow" <- false
+  speed : R as "Iterations per color cycle: " <- 20
+  C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
 
-viewers:
-  - title: Reference
-    style: complex-plane
-    size: 640x32
-    resizable: true
-    z-coord: z
-    escape-radius: "10"
-    iteration-limit: "100"
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-        color ⭠ if use_arenberg then arenberg(re z / 4) else rainbow(re z / 4)
+  @common
+  let palette(t) = if use_arenberg then arenberg(t) else rainbow(t)
+  define draw:
+    iterate z -> z^2 + C until z escapes
+    color <- black
+    if z escaped:
+      m := iterations + 1 - log (log (|z|^2) / (2 log 10)) / log 2
+      color <- palette(m / speed)
 
-  - title: Parameter plane
-    style: complex-plane
-    size: 512x512
-    resizable: true
-    z-coord: C
-    escape-radius: "10"
-    iteration-limit: "100"
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      z : ℂ ⭠ 0
-      iterate z ⟼ z² + C until z escapes
+  @viewer "Reference" size=640x32
+  color <- palette(re z / 4)
 
-      color ⭠ black
-      if z escapes:
-        m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log 10)) / log 2
-        color ⭠ if use_arenberg then arenberg(m / speed) else rainbow(m / speed)
+  @viewer "Parameter plane" var=C
+  z := 0
+  run draw
 
-  - title: Dynamical plane
-    style: complex-plane
-    size: 512x512
-    resizable: true
-    z-coord: z
-    escape-radius: "10"
-    iteration-limit: "100"
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-      iterate z ⟼ z² + C until z escapes
-
-      color ⭠ black
-      if z escaped:
-        m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log 10)) / log 2
-        color ⭠ if use_arenberg then arenberg(m / speed) else rainbow(m / speed)
+  @viewer "Dynamical plane"
+  run draw

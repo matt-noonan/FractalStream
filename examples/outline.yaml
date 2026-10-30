@@ -1,106 +1,46 @@
-viewers:
-  - title: Parameter plane
-    style: complex-plane
-    size: 512x512
-    resizable: true
-    z-coord: C
-    pixel-size: px
-    iteration-limit: maxIters
-    escape-radius: big
-    vanishing-radius: tiny
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-        z : C <- 0
-        dz : C <- 1
+script: |
+  @config "Configuration"
+  C : C as "Selected value of C:" <- -0.1226 + 0.7449i
+  tiny : R as "Min. radius: " <- 0.001
+  fatness : R as "Fatness" <- 0.1
 
-        tol : R <- px fatness / 2
+  @config "Colors"
+  boundary_color : Color as "Boundary" <- black
+  exterior_color : Color as "Exterior" <- white
+  interior_color : Color as "Interior" <- rgb(0.926, 0.863, 0.927)
 
-        dzdc : C <- 0
-        der : C <- 1
+  @common
+  define shade(on_boundary):
+    if z escaped:
+      color <- exterior_color
+    else if on_boundary:
+      color <- boundary_color
+    else:
+      color <- interior_color
 
-        repeat:
-          dzdc <- 1 + 2 z dzdc
-          z <- z^2 + C
-          der <- 2 z der
-        until |z / dzdc| < tol or z escapes or der vanishes
+  @viewer "Parameter plane" var=C vanish=tiny
+  z := 0
+  tol := pixel_size fatness / 2
 
-        if z escaped:
-          color <- exterior_color
-        else if |z / dzdc| < tol:
-          color <- boundary_color
-        else:
-          color <- interior_color
+  dzdc := 0
+  der := 1
 
-  - title: Dynamical plane
-    style: complex-plane
-    size: 512x512
-    resizable: true
-    z-coord: z
-    pixel-size: px
-    iteration-limit: maxIters
-    escape-radius: big
-    vanishing-radius: tiny
-    initial-center: 0
-    initial-pixel-size: 1/128
-    code: |
-        dz : C <- 1
-        w : C <- z
-        tol : R <- 2 px fatness
+  repeat:
+    dzdc <- 1 + 2 z dzdc
+    z <- z^2 + C
+    der <- 2 z der
+  until |z / dzdc| < tol or z escapes or der vanishes
 
-        repeat:
-          dz <- 2 z dz
-          z <- z^2 + C
-        until z escapes or |z/dz - w/dz| < tol or dz vanishes
+  run shade(|z / dzdc| < tol)
 
-        if z escaped:
-          color <- exterior_color
-        else if |z/dz - w/dz| < tol:
-          color <- boundary_color
-        else:
-          color <- interior_color
+  @viewer "Dynamical plane" vanish=tiny
+  dz := 1
+  w := z
+  tol := 2 pixel_size fatness
 
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "Selected value of C:"
-        value: -0.1226 + 0.7449i
-        type: C
-        variable: C
-    - text-entry:
-        label: "Max. iterations: "
-        value: "100"
-        type: Z
-        variable: maxIters
-    - text-entry:
-        label: "Max. radius: "
-        value: "10"
-        type: R
-        variable: big
-    - text-entry:
-        label: "Min. radius: "
-        value: "0.001"
-        type: R
-        variable: tiny
-    - text-entry:
-        label: "Fatness"
-        value: "0.1"
-        type: R
-        variable: fatness
-    - panel:
-        title: "Colors"
-        vertical-contents:
-          - color-picker:
-              label: "Boundary"
-              value: black
-              variable: boundary_color
-          - color-picker:
-              label: "Exterior"
-              value: white
-              variable: exterior_color
-          - color-picker:
-              label: "Interior"
-              value: rgb(0.926, 0.863, 0.927)
-              variable: interior_color
+  repeat:
+    dz <- 2 z dz
+    z <- z^2 + C
+  until z escapes or |z/dz - w/dz| < tol or dz vanishes
+
+  run shade(|z/dz - w/dz| < tol)

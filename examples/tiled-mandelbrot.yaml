@@ -1,54 +1,20 @@
-viewer:
-  title: Mandelbrot set tiled by Julia sets
-  style: complex-plane
-  size: 512x512
-  resizable: true
-  z-coord: w
-  iteration-limit: max_iters
-  escape-radius: R
-  initial-center: 0
-  initial-pixel-size: 1/128
-  code: |
-      x : ℝ <- mod(re w, size)
-      y : ℝ <- mod(im w, size)
+script: |
+  @config "Configuration"
+  size : R as "Julia set size" <- 0.05
+  scale : R as "Julia set zoom level" <- 2.5
+  dummy : R as "Dummy" <- 123
 
-      C : ℂ ⭠ w - (x + i y) + (1 + i) size / 2
-      z : ℂ ⭠ (x + i y - (1 + i) size / 2) * scale / size
+  @viewer "Mandelbrot set tiled by Julia sets" var=w
+  x := mod(re w, size)
+  y := mod(im w, size)
 
-      iterate z ⟼ z² + C until z escapes
+  C := w - (x + i y) + (1 + i) size / 2
+  z := (x + i y - (1 + i) size / 2) * scale / size
 
-      if stuck:
-        color ⭠ black
-      else:
-        m : ℝ ⭠ iterations + 1 - log (log (|z|²) / (2 log R)) / log 2
-        color ⭠ rainbow(m / 20) #blend (2 arctan (m / 20) / pi, dark blue, white)
+  iterate z -> z^2 + C until z escapes
 
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "Iteration limit"
-        value: "100"
-        type: ℤ
-        variable: max_iters
-    - text-entry:
-        label: "Escape radius"
-        value: "10"
-        type: ℝ
-        variable: R
-    - text-entry:
-        label: "Julia set size"
-        value: "0.05"
-        type: ℝ
-        variable: size
-    - text-entry:
-        label: "Julia set zoom level"
-        value: "2.5"
-        type: ℝ
-        variable: scale
-    - text-entry:
-        label: "Dummy"
-        value: "123"
-        type: ℝ
-        variable: dummy
+  if stuck:
+    color <- black
+  else:
+    m := iterations + 1 - log (log (|z|^2) / (2 log escape_radius)) / log 2
+    color <- rainbow(m / 20) #blend (2 arctan (m / 20) / pi, dark blue, white)

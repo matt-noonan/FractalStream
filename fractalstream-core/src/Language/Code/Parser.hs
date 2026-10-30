@@ -3,51 +3,95 @@ module Language.Code.Parser
   ( parseCode
   , parseParsedCode
   , codeBlockGrammar
-  , Splices(..)
-  , noSplices
+  , codeStatementsGrammar
+  , CommonDefs(..)
+  , noCommonDefs
   -- * Re-exports
   , TCError
   , ParseError
   , ppFullError
-  , ParsedCode(..)
+  , ParsedCode
+  , withDefinedFunctions
+  , withCommon
+  , runParsedCode
   ) where
 
 import FractalStream.Prelude
 
 import Language.Parser hiding (many)
 import Language.Typecheck
-import Language.Value
 import Language.Value.Parser
+import Language.Parser.SourceRange (SourceRange(..))
 import Language.Code
 import Language.Parser.Tokenizer
+import Language.Code.Syntax
 import Language.Code.Typecheck
 
-import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 ------------------------------------------------------
 -- Main function for parsing Code
 ------------------------------------------------------
 
-data Splices = Splices
-  { codeSplices  :: Map String ParsedCode
-  , valueSplices :: Map String ParsedValue
+-- | What a script's grammar needs to know about the project's shared
+-- definitions.
+data CommonDefs = CommonDefs
+  { funNames     :: Set String
+    -- ^ The names of the user-defined functions, which the grammar
+    -- parses as function calls rather than as variables.
+  , commonCode   :: [Stmt]
+    -- ^ Statements (from a project's @\@common@ stanzas) to prepend to
+    -- every viewer and tool script; see 'withCommon'.
   }
 
-noSplices :: Splices
-noSplices = Splices Map.empty Map.empty
+noCommonDefs :: CommonDefs
+noCommonDefs = CommonDefs Set.empty []
+
+-- | Prepend the common statements that a script body uses (directly, or
+-- through other common definitions) to it, so that their declarations
+-- and function definitions scope over the whole body. Unused definitions
+-- are left out, so a definition that mentions a variable some scripts
+-- don't have (like a viewer's coordinate, which preparation scripts and
+-- tool refresh handlers don't see) only matters where it is used.
+withCommon :: CommonDefs -> ParsedCode -> ParsedCode
+withCommon CommonDefs{commonCode} body = case (used, body) of
+  ([], _) -> body
+  (_, Stmt sr (SBlock stmts)) -> Stmt sr (SBlock (used ++ stmts))
+  _ -> Stmt (stmtRange body) (SBlock (used ++ [body]))
+  where
+    -- Walk the common statements backwards, keeping each one that
+    -- defines something needed later (by the body, or by a kept
+    -- definition after it).
+    used = fst (foldr keep ([], stmtNames body) commonCode)
+    keep stmt (kept, needed) = case definedName stmt of
+      Just n | n `Set.member` needed -> (stmt : kept, needed <> stmtNames stmt)
+      _ -> (kept, needed)
+
+-- | Record the names of the functions defined (by @let f(...) = ...@)
+-- anywhere in the given tokens, so that the grammar can parse calls to
+-- them.
+withDefinedFunctions :: [SRToken] -> CommonDefs -> CommonDefs
+withDefinedFunctions toks defs =
+  defs { funNames = funNames defs `Set.union` Set.fromList (go (map baseToken toks)) }
+  where
+    go = \case
+      Let_ : Identifier f : OpenParen : rest -> f : go rest
+      _ : rest -> go rest
+      [] -> []
 
 parseCode :: forall env
            . EnvironmentProxy env
-          -> Splices
+          -> CommonDefs
           -> String
           -> Either (Either ParseError TCError) (Code env)
-parseCode env splices input = do
-  ParsedCode c <- parseParsedCode splices input
-  case c env of TC x -> first Right x
+parseCode env defs input = do
+  c <- parseParsedCode defs input
+  first Right (runParsedCode env c)
 
-parseParsedCode :: Splices -> String -> Either (Either ParseError TCError) ParsedCode
-parseParsedCode splices input =
-  first Left (parse (codeBlockGrammar splices) (tokenizeWithIndentation input))
+parseParsedCode :: CommonDefs -> String -> Either (Either ParseError TCError) ParsedCode
+parseParsedCode defs input =
+  let toks = tokenizeWithIndentation input
+  in first Left (parse (codeBlockGrammar (withDefinedFunctions toks defs)) toks)
 
 ------------------------------------------------------
 -- Code grammar
@@ -60,103 +104,116 @@ parseParsedCode splices input =
 -- recurse into statement-block parsing from their own 'Grammar' computation,
 -- the same way this grammar itself calls into 'valueGrammar'.
 codeBlockGrammar :: forall r
-                  . Splices
+                  . CommonDefs
                  -> Grammar r (Prod r ParsedCode)
-codeBlockGrammar Splices{..} = mdo
+codeBlockGrammar defs = do
+  statements <- codeStatementsGrammar defs
+  rule ((token Indent *> statements <* token Dedent) <?> "indented statements")
+
+-- | The grammar for a bare sequence of statements with no surrounding
+-- @Indent@\/@Dedent@ tokens -- i.e. the part of 'codeBlockGrammar' that
+-- comes after its own @Indent@ is consumed and before its @Dedent@.
+-- Exported so that a grammar whose statement sequences aren't indentation-
+-- delimited (e.g. a future unified project-script grammar, where a
+-- @\@viewer@\/@\@tool@ stanza's body sits flush with its own header rather
+-- than nested beneath it) can still reuse the full statement-level
+-- language -- declarations, assignments, function definitions, loops,
+-- conditionals, and draw commands -- without re-deriving any of it.
+codeStatementsGrammar :: forall r
+                        . CommonDefs
+                       -> Grammar r (Prod r ParsedCode)
+codeStatementsGrammar CommonDefs{..} = mdo
 
   toplevel <- ruleChoice
     [ block
     , lineStatement
     ]
 
-  block <- ruleChoice
-    [ check (tcBlock <$> (token Indent *> many toplevel <* token Dedent)) <?> "indented statements"
-    -- Grammar hack so that Let statements slurp up the remainder
-    -- of the block into their scope.
-    , check (
-        ((\xs x -> tcBlock (xs ++ [x]))
-         <$> (token Indent *> many toplevel)
-         <*> (letStatement <* token Dedent)) <?> "indented statements")
-    ]
+  statements <- rule (node (SBlock <$> many toplevel) <?> "statements")
 
-  letStatement <- rule $
-    check (
-     tcLet <$> ident
-           <*> (colon *> typ)
-           <*> (token LeftArrow *> value <* nl)
-           <*> (check (tcBlock <$> blockTail)) <?> "variable initialization")
-
-  blockTail <- ruleChoice
-    [ (\xs x -> xs ++ [x])
-      <$> many lineStatement
-      <*> letStatement
-    , many lineStatement
-    ]
+  block <- rule ((token Indent *> statements <* token Dedent) <?> "indented statements")
 
   typ <- typeGrammar
 
   lineStatement <- ruleChoice
     [ simpleStatement <* nl
-    , spliced <* nl
-    , check
-      (tcIfThenElse <$> (token If *> value <* (colon <* nl))
-                    <*> block
-                    <*> elseIf) <?> "if statement"
-    , check
-      (tcWhile
+    , node
+      (SDecl <$> ident
+             <*> (Just <$> (colon *> typ))
+             <*> (token LeftArrow *> value <* nl)) <?> "variable initialization"
+    , node
+      (SDecl <$> ident
+             <*> pure Nothing
+             <*> (token ColonEquals *> value <* nl)) <?> "variable initialization"
+    , node
+      (SProc <$> (lit "define" *> ident)
+             <*> (fromMaybe [] <$> optional argList)
+             <*> (colon *> nl *> block)) <?> "code definition"
+    , node
+      (SRun <$> (lit "run" *> ident)
+            <*> (optional value <* nl)) <?> "run"
+    , node
+      (SFun <$> (token Let_ *> ident)
+            <*> argList
+            <*> (token Equal *> value <* nl)) <?> "function definition"
+    , node
+      (SIf <$> (token If *> value <* (colon <* nl))
+           <*> block
+           <*> elseIf) <?> "if statement"
+    , node
+      ((\c l b -> SLoop LoopWhile c l b)
         <$> (lit "while" *> value)
         <*> (optional upTo <* colon <* nl)
         <*> block) <?> "while loop"
-    , check
-      (tcDoWhile
+    , node
+      ((\l b c -> SLoop LoopDoWhile c l b)
         <$> (lit "repeat" *> optional upTo <* colon <* nl)
         <*> block
         <*> (lit "while" *> value <* nl)) <?> "repeat...while loop"
-    , check
-      (tcUntil
+    , node
+      ((\c l b -> SLoop LoopUntil c l b)
         <$> (lit "until" *> value)
         <*> (optional upTo <* colon <* nl)
         <*> block) <?> "until loop"
-    , check
-      (tcDoUntil
+    , node
+      ((\l b c -> SLoop LoopDoUntil c l b)
         <$> (lit "repeat" *> optional upTo <* colon <* nl)
         <*> block
         <*> (lit "until" *> value <* nl)) <?> "repeat...until loop"
     , effect <?> "extended operation"
     ]
 
+  argList <- rule $
+    ((:) <$> (token OpenParen *> ident)
+         <*> ((many (token Comma *> ident)) <* token CloseParen))
+
   upTo <- rule (lit "up" *> lit "to" *> value <* token TimesKeyword)
 
   elseIf <- ruleChoice
     [ ((token Else *> colon *> nl) *> block) <?> "else clause"
-    , check
-      (tcIfThenElse <$> ((token Else *> token If) *> value <* (colon <* nl))
-                    <*> block
-                    <*> elseIf) <?> "else if clause"
-    , pure (ParsedCode $ \env -> withEnvironment env $ pure NoOp) <?> "end of block"
+    , node
+      (SIf <$> ((token Else *> token If) *> value <* (colon <* nl))
+           <*> block
+           <*> elseIf) <?> "else if clause"
+    , pure (Stmt NoSourceRange SPass) <?> "end of block"
     ]
 
   let lit = token . Identifier
 
   simpleStatement <- ruleChoice
-    [ check
-      (tcSet <$> ident <*> (token LeftArrow *> value)) <?> "variable assignment"
-    , check
-      (tcIterate
+    [ node
+      (SSet <$> ident <*> (token LeftArrow *> value)) <?> "variable assignment"
+    , node
+      (SIterate
         <$> (lit "iterate" *> ident <* token RightArrow)
         <*> value
         <*> ((lit "while" $> True) <|> (lit "until" $> False))
         <*> value
         <*> optional upTo)
-    , check ((\_ _ -> pure NoOp) <$ lit "pass") <?> "pass"
+    , node (SPass <$ lit "pass") <?> "pass"
     ]
 
-  value <- valueGrammar valueSplices
-
-  spliced <- rule $
-    token OpenSplice *>
-    (tokenMatch $ \case { Identifier n -> Map.lookup n codeSplices; _ -> Nothing })
-    <* token CloseSplice
+  value <- valueGrammarWithFunctions funNames
 
   effect <- ruleChoice
     [ toplevelDrawCommand
@@ -170,41 +227,41 @@ codeBlockGrammar Splices{..} = mdo
     , (tok "write" *> writeCommand <* nl)
     ]
 
-  eraseCommand <- ruleChoice [check (pure tcClear)]
+  eraseCommand <- ruleChoice [draw (pure EraseAll)]
 
   drawCommand <- ruleChoice
-    [ check
-      (tcDrawPoint <$> ((tok "point" *> tok "at") *> value))
-    , check
-      (tcDrawCircle <$> (isJust <$> optional (tok "filled"))
+    [ draw
+      (DrawPointAt <$> ((tok "point" *> tok "at") *> value))
+    , draw
+      (DrawCircleAt <$> (isJust <$> optional (tok "filled"))
                     <*> ((tok "circle" *> tok "at") *> value)
                     <*> ((tok "with" *> tok "radius") *> value))
-    , check
-      (tcDrawRect <$> (isJust <$> optional (tok "filled"))
-                  <*> ((tok "rectangle" *> tok "from") *> value)
-                  <*> (tok "to" *> value))
-    , check
-      (tcDrawLine <$> ((tok "line" *> tok "from") *> value)
-                  <*> (tok "to" *> value))
+    , draw
+      (DrawRectFrom <$> (isJust <$> optional (tok "filled"))
+                    <*> ((tok "rectangle" *> tok "from") *> value)
+                    <*> (tok "to" *> value))
+    , draw
+      (DrawLineFrom <$> ((tok "line" *> tok "from") *> value)
+                    <*> (tok "to" *> value))
     ]
 
   strokeOrLine <- ruleChoice
     [ tok "stroke", tok "line" ]
 
   penCommand <- ruleChoice
-    [ check (tcSetFill   <$> (value <* (tok "for" *> tok "fill")))
-    , check (tcSetStroke <$> (value <* (tok "for" *> strokeOrLine)))
+    [ draw (UseFill   <$> (value <* (tok "for" *> tok "fill")))
+    , draw (UseStroke <$> (value <* (tok "for" *> strokeOrLine)))
     ]
 
   writeCommand <- rule $
-    check (tcWrite <$> value <*> (tok "at" *> value))
+    draw (WriteAt <$> value <*> (tok "at" *> value))
 
   listCommand <- ruleChoice
-    [ check (tcListFor
+    [ node (SForEach
       <$> (tok "for" *> tok "each" *> ident)
       <*> (tok "in" *> ident)
       <*> (colon *> nl *> block))
-    , check (tcListWith
+    , node (SWithFirst
       <$> (tok "with" *> tok "first" *> ident)
       <*> (tok "matching" *> value)
       <*> (tok "in" *> ident)
@@ -215,8 +272,10 @@ codeBlockGrammar Splices{..} = mdo
   colon <- rule (token Colon <?> ":")
   nl <- rule (token Newline <?> "end of line")
 
-  pure block
+  pure statements
 
-check :: Prod r CheckedCode -> Prod r ParsedCode
-check = withSourceRange
-      . fmap @_ @CheckedCode (\c sr -> ParsedCode (\env -> withEnvironment env $ c sr env))
+node :: Prod r StmtF -> Prod r ParsedCode
+node = withSourceRange . fmap (flip Stmt)
+
+draw :: Prod r DrawStmt -> Prod r ParsedCode
+draw = node . fmap SDraw

@@ -1,0 +1,50 @@
+=== viewer 0: Sarah thing
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `p` = z in:
+                  block:
+                    let `x` = (z + 1:R:C) in:
+                      block:
+                        let `y` = ((z * ((z + 1:R:C) ^ 2:R:C)) + 1:R:C) in:
+                          block:
+                            let `[internal] fresh #18` = 0 in:
+                              let `[internal] fresh #19` = [internal] iteration limit in:
+                                block:
+                                  do-while (!((|(x - 0:R:C)| < [internal] vanishing radius) and (|(y - 1:R:C)| < [internal] vanishing radius)) and ([internal] fresh #18 < [internal] fresh #19)):
+                                    block:
+                                      block:
+                                        set `x` := (((y ^ 2:R:C) - 1:R:C) / (y ^ 2:R:C))
+                                        set `y` := (((y ^ 2:R:C) - (x ^ 2:R:C)) / (y ^ 2:R:C))
+                                      set `[internal] fresh #18` := ([internal] fresh #18 + 1)
+                                  set `[internal] iteration count` := [internal] fresh #18
+                                  set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
+                            let `saved_count` = [internal] iteration count in:
+                              block:
+                                set `z` := 0:R:C
+                                let `[internal] fresh #19` = 0 in:
+                                  let `[internal] fresh #20` = [internal] iteration limit in:
+                                    block:
+                                      if (!([internal] escape radius < |z|) and ([internal] fresh #19 < [internal] fresh #20)) then:
+                                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #19 < [internal] fresh #20)):
+                                          block:
+                                            set `z` := ((p * (z ^ 2:R:C)) + 1:R:C)
+                                            set `[internal] fresh #19` := ([internal] fresh #19 + 1)
+                                      else:
+                                        no-op
+                                      set `[internal] iteration count` := [internal] fresh #19
+                                      set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
+                                if ([internal] escape radius < |z|) then:
+                                  block:
+                                    set `color` := let #cycle-arg = ((saved_count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 255 0 0), blend(0.333, Color 255 255 255, Color 255 0 0))
+                                else:
+                                  block:
+                                    set `color` := let #cycle-arg = ((saved_count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 0 180 0), blend(0.333, Color 255 255 255, Color 0 180 0))
+
+

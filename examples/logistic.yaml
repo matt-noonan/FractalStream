@@ -1,49 +1,18 @@
-viewer:
-  title: Bifurcation diagram for the logistic map
-  style: complex-plane
-  size: 512x512
-  resizable: true
-  z-coord: z
-  pixel-size: px
-  iteration-limit: max_iters
-  vanishing-radius: tol
-  initial-center: 0
-  initial-pixel-size: 1/128
-  code: |
-      x : R <- im(z)
-      x0 : R <- x
-      r : R <- re(z)
-      best : R <- outer
+script: |
+  @config "Configuration"
+  outer : R as "outer tolerance: " <- 0.01
+  warmup : Z as "Warmup iterations:" <- 1000
 
-      iterate x -> r x (1 - x) while true up to warmup times
+  @viewer "Bifurcation diagram for the logistic map"
+  x := im(z)
+  x0 := x
+  r := re(z)
+  best := outer
 
-      until x = x0:
-        x <- r x (1 - x)
-        if |x - x0| < best:
-          best <- |x - x0|
-      color <- blend(best / outer, white, black)
+  iterate x -> r x (1 - x) while true up to warmup times
 
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "tolerance: "
-        value: "0.0001"
-        type: R
-        variable: tol
-    - text-entry:
-        label: "outer tolerance: "
-        value: "0.01"
-        type: R
-        variable: outer
-    - text-entry:
-        label: "Max. iterations:"
-        value: "1000"
-        type: Z
-        variable: max_iters
-    - text-entry:
-        label: "Warmup iterations:"
-        value: "1000"
-        type: Z
-        variable: warmup
+  until x = x0:
+    x <- r x (1 - x)
+    if |x - x0| < best:
+      best <- |x - x0|
+  color <- blend(best / outer, white, black)

@@ -2,7 +2,9 @@
 module Data.Codec
   ( deserialize
   , deserializeWith
+  , deserializeValue
   , serialize
+  , encodeValue
   , deserializeYAML
   , serializeYAML
   , Codec(..)
@@ -351,6 +353,14 @@ serialize x =
   let E f = codec @a
   in BS.toStrict . encode <$> unE f x
 
+-- | Like 'serialize', but for a caller that's building a larger
+-- 'Value' by hand (e.g. assembling several top-level keys itself) and
+-- just needs one piece's encoding, not the final serialized bytes.
+encodeValue :: forall a. Codec a => a -> IO Value
+encodeValue x =
+  let E f = codec @a
+  in unE f x
+
 serializeYAML :: forall a. Codec a => a -> IO ByteString
 serializeYAML x =
   let E f = codec @a
@@ -361,6 +371,14 @@ deserialize bs = case eitherDecodeStrict' bs of
   Left err -> pure (Left err)
   Right v  -> let D (ReaderT f) = codec @a
               in runExceptT (f v <&> unD)
+
+-- | Like 'deserialize', but for a caller that already has an
+-- 'Data.Aeson.Value' in hand (e.g. because it decoded the surrounding
+-- document for some other reason) and doesn't need the
+-- 'ByteString'-to-'Value' step repeated.
+deserializeValue :: forall a. Codec a => Value -> IO (Either String a)
+deserializeValue v = let D (ReaderT f) = codec @a
+                      in runExceptT (f v <&> unD)
 
 deserializeWith :: forall ctx a. CodecWith ctx a => ctx -> ByteString -> IO (Either String a)
 deserializeWith ctx bs = case eitherDecodeStrict' bs of

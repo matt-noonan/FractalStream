@@ -60,6 +60,9 @@ data Token
   | Or_
   | And_
   | Not_
+  | Let_
+  | ColonEquals
+  | Prime
   | LeftArrow
   | RightArrow
   | Escapes
@@ -80,8 +83,6 @@ data Token
   | At
   | AtAt
   | LengthKeyword
-  | OpenSplice
-  | CloseSplice
   deriving (Eq, Ord, Show)
 
 instance IsString Token where fromString = Identifier
@@ -161,6 +162,15 @@ tokenizeWithIndentation
             in Group (tokenize' s) is : block ss'
       _ -> error "bad indent"
 
+-- | Decode the escape sequences in a quoted string: a backslash followed by
+-- a quote, another backslash, @n@, or @t@. Any other backslash is kept.
+unescape :: String -> String
+unescape = \case
+  '\\' : c : rest | Just c' <- lookup c escapes -> c' : unescape rest
+  c : rest -> c : unescape rest
+  [] -> []
+  where escapes = [('"', '"'), ('\\', '\\'), ('n', '\n'), ('t', '\t')]
+
 skipString :: SRString -> (SRString, SRString)
 skipString = go []
   where go acc = \case
@@ -186,6 +196,8 @@ opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
   , ("[", OpenBracket), ("]", CloseBracket)
   , ("{", OpenBrace), ("}", CloseBrace)
   , (",", Comma), (":", Colon), (";", Semicolon)
+  , (":=", ColonEquals), ("≔", ColonEquals)
+  , ("'", Prime), ("′", Prime)
   , (">", GreaterThan), ("<", LessThan)
   , ("===", ExactlyEqual), ("≡", ExactlyEqual)
   , ("==", Equal), ("=", Equal)
@@ -197,8 +209,6 @@ opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
   , ("→", RightArrow), ("←", LeftArrow)
   , ("⟼", RightArrow), ("↦", RightArrow)
   , ("@", At), ("@@", AtAt)
-  , ("<<", OpenSplice), (">>", CloseSplice)
-  , ("«", OpenSplice), ("»", CloseSplice)
   ]
 
 longestMatchingOperator :: SRString -> Maybe (SRToken, SRString)
@@ -215,6 +225,7 @@ wordlikeTokens = Map.fromList
   , ("i", I), ("𝑖", I)
   , ("true", True_), ("false", False_)
   , ("or", Or_), ("and", And_), ("not", Not_)
+  , ("let", Let_)
   , ("escapes", Escapes), ("escaped", Escapes)
   , ("vanishes", Vanishes), ("vanished", Vanishes)
   , ("iterations", Iterations), ("times", TimesKeyword)
@@ -252,7 +263,7 @@ tokenize' = \case
   -- Tokenize quotes
   (('"', srq) : etc) ->
     let (body, etc') = skipString etc
-        txt = map fst $ take (length body - 1) body
+        txt = unescape $ map fst $ take (length body - 1) body
         sr = mconcat (srq : map snd body)
     in SRToken (Quoted txt) sr : tokenize' etc'
 

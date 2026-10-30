@@ -17,7 +17,7 @@ import Language.Type
 import Data.DynamicValue
 import Data.Color hiding (black, white)
 import Actor.Layout
-import Language.Parser.SourceRange (spanOfSourceRange, SourceSpan(..))
+import Language.Parser.SourceRange (SourceRange, spanOfSourceRange, SourceSpan(..))
 import Language.Parser.Tokenizer (commentRanges)
 
 import UI.CodeEditor
@@ -26,6 +26,7 @@ import Graphics.UI.WX hiding (pt, when, grey, Color)
 import Graphics.UI.WXCore.Events
 import Graphics.UI.WXCore.WxcClassesAL
 import Graphics.UI.WXCore.WxcClassesMZ
+import Graphics.UI.WXCore.Frame (windowGetFrameParent)
 import Graphics.UI.WXCore.WxcClassTypes (ColourPickerCtrl)
 import Control.Concurrent
 import Data.Char (toUpper)
@@ -291,11 +292,16 @@ genericExpressionWidget _canEditEnvironment p l UIVariable{..} = liftIO $ do
 
   pure (labelTxt, te, errorMessage)
 
+-- | Everything about editing a piece of unified-script text that comes
+-- "for free" from a reactive 'Mapped': live syntax coloring (comments)
+-- and an inline error indicator at the first error's source span, kept
+-- in sync as the text changes. Any pure text -> @'Either' ('SourceRange',
+-- 'String') t@ check can drive it.
 scriptWidget :: MonadIO io
              => Window a
-             -> UIScript
+             -> Mapped CodeString (Either (SourceRange, String) t)
              -> io (StyledTextCtrl (), StaticText ())
-scriptWidget p UIScript{..} = do
+scriptWidget p scriptCode = do
   ce <- liftIO $ codeEditor p scriptCode
   txt <- unCodeString <$> getDynamic (source scriptCode)
   lastText <- liftIO $ newIORef txt
@@ -333,18 +339,30 @@ scriptWidget p UIScript{..} = do
     ]
 
   -- Check for script changes periodically. TODO: make this event-driven instead
-  void $ wxTimer p [ interval := 200, enabled := True
+  --
+  -- Owned by the enclosing frame, not `p`: 'wxTimer's cleanup hooks
+  -- into the owner's "closing" event, which wxWidgets only ever
+  -- generates for a top-level window (a frame/dialog), never for a
+  -- plain panel like `p`, regardless of what happens to its parent --
+  -- a panel-owned timer's cleanup can't ever fire, so it leaks and
+  -- keeps polling this now-destroyed StyledTextCtrl every 200ms for
+  -- as long as the process runs, every time the enclosing window
+  -- (and so this widget) is closed.
+  enclosingFrame <- liftIO (windowGetFrameParent p)
+  void $ wxTimer enclosingFrame [ interval := 200, enabled := True
                    , on command := do
                        new <- styledTextCtrlGetText ce
                        old <- readIORef lastText
                        when (new /= old) $ do
                          writeIORef lastText new
+                         updateFoldLevels ce new
                          setValue (source scriptCode) (CodeString new) ]
   wxWatchDynamic p (source scriptCode) $ \(CodeString newText) -> do
     oldText <- styledTextCtrlGetText ce
     when (oldText /= newText) $ do
       writeIORef lastText newText
       styledTextCtrlSetText ce newText
+      updateFoldLevels ce newText
   isError <- liftIO ((isLeft <$> getDynamic scriptCode) >>= \startError ->
                         variable [ value := startError ])
   wxWatchDynamic p scriptCode $ \case
@@ -393,8 +411,20 @@ lineOffset input = let m = Map.fromList
 
 -- | Like `watchDynamic`, but ensures that the action
 -- runs on the main UI thread. Automatically attaches
--- the halt action to the closing of `p`, and runs the
+-- the halt action to the destruction of `p`, and runs the
 -- action once on construction.
+--
+-- Deliberately hooks `windowOnDestroy` (`wxEVT_DESTROY`) rather than
+-- `on closing` (`wxEVT_CLOSE_WINDOW`, a vetoable close *request*):
+-- `windowDestroy` -- used by a viewer rebuild's own teardown, see
+-- [[project-rebuild-hang-bug]] -- never fires `closing` at all, so a
+-- `closing`-only hook here would silently leak a timer and a
+-- `Dynamic`'s listener closure on every rebuild, compounding with
+-- every widget `wxWatchDynamic`/`wxWatchDynamic1` ever attached to a
+-- rebuilt window. `wxEVT_DESTROY` fires on *every* real destruction
+-- path (ordinary user-initiated close included, since the default
+-- `closing` behavior itself just calls `windowDestroy`), so this is a
+-- strict superset of what hooking `closing` ever covered.
 wxWatchDynamic :: (AsDynamic f, MonadIO io) => Window b -> f a -> (a -> IO ()) -> io ()
 wxWatchDynamic p dv action = liftIO $ do
   todo <- newMVar []
@@ -407,7 +437,8 @@ wxWatchDynamic p dv action = liftIO $ do
                        putMVar todo []
                        sequence_ (reverse actions)
                  ]
-  set p [ on closing :~ \previous -> halt >> previous ]
+  previous <- windowGetOnDestroy p
+  windowOnDestroy p (halt >> previous)
 
 -- | Same as `wxWatchDynamic`, but also
 wxWatchDynamic1 :: (AsDynamic f, MonadIO io) => Window b -> f a -> (a -> IO ()) -> io ()
@@ -416,8 +447,11 @@ wxWatchDynamic1 p dv action = do
   -- Run the action once
   liftIO (getDynamic dv >>= action)
 
+-- | See 'wxWatchDynamic's doc comment for why this hooks
+-- `windowOnDestroy` rather than `on closing`.
 wxTimer :: MonadIO io => Window a -> [Prop Timer] -> io Timer
 wxTimer w props = liftIO $ do
   t <- timer w props
-  set w [ on closing :~ \previous -> timerStop t >> previous ]
+  previous <- windowGetOnDestroy w
+  windowOnDestroy w (timerStop t >> previous)
   pure t

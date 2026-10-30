@@ -13,7 +13,7 @@ interpreter, built on top of 'Actor.Ensemble'/'Actor.Viewer').
 Following the same approach as the tool-script grammar
 ("Actor.Event"'s @toolScriptGrammar@): one Earley pass over the whole
 input, reusing the existing tokenizer and the real value-expression
-grammar ('valueGrammarWithNoSplices') for every numeric\/arithmetic
+grammar ('valueGrammar') for every numeric\/arithmetic
 position, rather than a separate hand-rolled syntax or re-tokenizing
 substrings.
 -}
@@ -27,7 +27,7 @@ module Scenario
 import FractalStream.Prelude
 
 import Language.Value.Typecheck (ParsedValue)
-import Language.Value.Parser (valueGrammarWithNoSplices, arithGrammarWithNoSplices)
+import Language.Value.Parser (valueGrammar, arithGrammar)
 import Data.Char (isDigit)
 import Language.Parser hiding (many)
 import Language.Parser.Tokenizer (Token(..), tokenizeWithIndentation)
@@ -79,8 +79,8 @@ parseScenario input =
 scenarioGrammar :: forall r. Grammar r (Prod r [Command])
 scenarioGrammar = mdo
 
-  value <- valueGrammarWithNoSplices
-  arith <- arithGrammarWithNoSplices
+  value <- valueGrammar
+  arith <- arithGrammar
 
   str    <- rule (tokenMatch (\case { Quoted s -> Just s; _ -> Nothing }) <?> "a quoted string")
   intLit <- rule (tokenMatch (\case { NumberI n -> Just (fromIntegral n); _ -> Nothing }) <?> "a whole number")

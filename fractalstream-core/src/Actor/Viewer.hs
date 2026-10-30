@@ -1,5 +1,6 @@
 module Actor.Viewer
   ( ViewerContext(..)
+  , buildViewerContext
   , parseViewerScript
   , InternalX
   , InternalY
@@ -15,6 +16,8 @@ module Actor.Viewer
   , ViewerCompiler(..)
   , ViewerArgs(..)
   , ViewerFunction(..)
+  , ViewerIssues(..)
+  , describeViewerIssues
   , Viewer(..)
   , CodeWithArgs(..)
   , cloneViewer
@@ -39,10 +42,11 @@ import FractalStream.Prelude
 
 import Actor.Viewer.Types
 import Data.DynamicValue
-import Actor.Layout (CodeString(..), Dimensions(..), UIScript)
+import Actor.Layout (Dimensions(..))
 import Actor.Tool
 import Actor.Event (ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript, Event)
 import Language.Environment
+import Language.Typecheck (TC(..), ppError)
 import Language.Value.Parser
 import Language.Code
 import Language.Draw
@@ -56,7 +60,6 @@ import qualified Data.Map as Map
 
 data ViewerContext env = ViewerContext
   { vcContext :: Context DynamicValue env
-  , vcSplices :: Splices
   , vcCoord   :: String
   , vcIterLimit :: Maybe (Value
       '( '(InternalEscapeRadius, RealT) ':
@@ -68,6 +71,61 @@ data ViewerContext env = ViewerContext
   , vcVanishes   :: Maybe (Value
       '( ViewerEnv env, 'RealT))
   }
+
+-- | Build a 'ViewerContext' from already-resolved (non-reactive) pieces:
+-- the config context, the coordinate variable's name, and the raw
+-- iteration-limit\/escape-radius\/vanishing-radius expressions (if given).
+-- Extracted from 'Actor.Viewer.Complex.ComplexViewer's @code:@ codec so
+-- that a caller which has already resolved these values some other way
+-- (e.g. the unified-script builder, which has no 'Dynamic' dependencies
+-- to wait on) can build the same 'ViewerContext' without duplicating the
+-- internal-argument bookkeeping below.
+buildViewerContext :: forall env
+                     . EnvironmentProxy env
+                    -> Context DynamicValue env
+                    -> String
+                    -> Maybe ParsedValue
+                    -> Maybe ParsedValue
+                    -> Maybe ParsedValue
+                    -> Either String (ViewerContext env)
+buildViewerContext env vcContext vcCoord mIterLimit mEscape mVanish =
+  withEnvironment env $ do
+    let assertAbsentViewerArgs :: forall e t
+                                 . EnvironmentProxy e
+                                -> (MissingViewerArgs e => Either String t)
+                                -> Either String t
+        assertAbsentViewerArgs e action =
+          fromMaybe (Left "Internal error") (assertMissingViewerArgs e action)
+
+    vcIterLimit <- case mIterLimit of
+      Nothing -> Right Nothing
+      Just pv -> assertAbsentViewerArgs env $
+        case lookupEnv (Proxy @InternalVanishingRadius) RealType env of
+          Absent pf -> recallIsAbsent pf $
+            case lookupEnv (Proxy @InternalEscapeRadius) RealType env of
+              Absent pf' -> recallIsAbsent pf' $ case pv `atType` IntegerType of
+                TC (Left err) -> Left ("Error with internal iteration limit: " ++ ppError err)
+                TC (Right x)  -> Right (Just x)
+              _ -> Left "Internal error"
+          _ -> Left "Internal error"
+
+    vcEscapes <- case mEscape of
+      Nothing -> Right Nothing
+      Just pv -> assertAbsentViewerArgs env $
+        case lookupEnv (Proxy @InternalVanishingRadius) RealType env of
+          Absent pf -> recallIsAbsent pf $ case pv `atType` RealType of
+            TC (Left err) -> Left ("Error with internal escape radius: " ++ ppError err)
+            TC (Right x)  -> Right (Just x)
+          _ -> Left "Internal error"
+
+    vcVanishes <- case mVanish of
+      Nothing -> Right Nothing
+      Just pv -> assertAbsentViewerArgs env $
+        case pv `atType` RealType of
+          TC (Left err) -> Left ("Error with internal vanishing radius: " ++ ppError err)
+          TC (Right x)  -> Right (Just x)
+
+    Right ViewerContext{..}
 
 data SomeViewerWithContext where
   SomeViewerWithContext :: forall env
@@ -134,7 +192,6 @@ data Viewer = Viewer
   , vDrawCmdsChanged :: IO Bool
   , vCodeWithArgs :: CodeWithArgs
   , vTools     :: Dynamic [Tool]
-  , vScript    :: UIScript
   , vBuildToolHandler
       :: Int
       -> SomeContext EventArgument_
@@ -169,7 +226,7 @@ withRenderedViewerBuffer
   :: Viewer
   -> Bool
   -> ((Double, Double) -> Double -> (Word32, Word32) -> Ptr Word8 -> IO a)
-  -> IO (Either String a)
+  -> IO (Either String (ViewerIssues, a))
 withRenderedViewerBuffer Viewer{..} downsample withBuffer = case vCodeWithArgs of
   CodeWithArgs vGetArgs _ vCode -> vGetArgs >>= \case
     Left err -> pure (Left err)
@@ -185,7 +242,7 @@ withRenderedViewerBuffer Viewer{..} downsample withBuffer = case vCodeWithArgs o
       let vaPoint = (cx - fromIntegral vaWidth * px / 2, cy + fromIntegral vaHeight * px / 2)
       ViewerFunction fn <- getDynamic vCode
       allocaBytes (fromIntegral $ 3 * vaWidth * vaHeight) $ \vaBuffer -> do
-        fn ViewerArgs{..}
+        issues <- fn ViewerArgs{..}
         if downsample
           then do
             let width  = fromIntegral (vaWidth `div` 2)
@@ -204,20 +261,47 @@ withRenderedViewerBuffer Viewer{..} downsample withBuffer = case vCodeWithArgs o
                     c4 :: Word16 <- fromIntegral <$>
                       peekElemOff vaBuffer (inputIx + 3 + 6 * width)
                     pokeElemOff buf (3 * i + 3 * width * j + k) (fromIntegral $ (c1 + c2 + c3 + c4) `div` 4)
-              Right <$> withBuffer center pixelSize (fromIntegral width, fromIntegral height) buf
+              Right . (issues,) <$> withBuffer center pixelSize (fromIntegral width, fromIntegral height) buf
           else
-            Right <$> withBuffer center pixelSize (fromIntegral vaWidth, fromIntegral vaHeight) vaBuffer
+            Right . (issues,) <$> withBuffer center pixelSize (fromIntegral vaWidth, fromIntegral vaHeight) vaBuffer
 
-snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Maybe String)
+-- | Render a viewer to a PNG file, returning any issues the render ran into.
+snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Either String ViewerIssues)
 snapshotToFile viewer downsample path =
-  either Just (const Nothing) <$>
+  fmap fst <$>
     withRenderedViewerBuffer viewer downsample (\_ _ dim buf -> encodeBufferToPngFile dim buf path)
 
 onParameterChanges :: Viewer -> IO () -> IO (IO ())
 onParameterChanges = vListen
 
+-- | Render a block of pixels, reporting any problems the viewer's script
+-- ran into along the way.
 newtype ViewerFunction env =
-  ViewerFunction (ViewerArgs env -> IO ())
+  ViewerFunction (ViewerArgs env -> IO ViewerIssues)
+
+-- | Problems a viewer's script ran into while rendering. A pixel that hit
+-- one of them is drawn magenta.
+data ViewerIssues = ViewerIssues
+  { viOutOfMemory :: Bool  -- ^ some pixel's lists or text didn't fit in
+                           --   its scratch memory
+  , viBadIndex    :: Bool  -- ^ some pixel indexed a list out of range
+  } deriving (Eq, Show)
+
+instance Semigroup ViewerIssues where
+  ViewerIssues a b <> ViewerIssues c d = ViewerIssues (a || c) (b || d)
+
+instance Monoid ViewerIssues where
+  mempty = ViewerIssues False False
+
+-- | A message for the user explaining a render's issues, if there were any.
+describeViewerIssues :: ViewerIssues -> Maybe String
+describeViewerIssues ViewerIssues{..}
+  | null problems = Nothing
+  | otherwise = Just ("Magenta pixels: the script " ++ intercalate ", and " problems ++ ".")
+  where
+    problems =
+      [ "ran out of scratch memory for its lists or text" | viOutOfMemory ]
+      ++ [ "indexed a list out of range" | viBadIndex ]
 
 assertMissingViewerArgs :: forall env t
                          . EnvironmentProxy env
@@ -248,7 +332,7 @@ invokeViewerFunction :: MissingViewerArgs env
                      -> Complex Double
                      -> Complex Double
                      -> Ptr Word8
-                     -> IO ()
+                     -> IO ViewerIssues
 invokeViewerFunction (ViewerFunction fn) vaArgs =
   \w h subsamples (dx :+ dy) (x :+ y) vaBuffer -> do
     let vaPoint = (x, y)
@@ -267,12 +351,22 @@ newtype ViewerCompiler = ViewerCompiler
                        -> (ViewerFunction env -> IO t)
                        -> IO t }
 
+-- | Resolve a viewer's already-parsed body code ('ParsedCode', the untyped
+-- statement syntax 'Language.Code.Parser.parseParsedCode' produces) against
+-- a specific 'ViewerContext', typechecking it there. Takes a
+-- 'ParsedCode' rather than a raw source string so that a caller which
+-- already has one in hand (e.g. the unified-script builder, which parsed
+-- the whole project file in a single Earley pass) never needs to
+-- re-serialize and re-tokenize it -- the normal, string-sourced YAML path
+-- (see 'Actor.Viewer.Complex.ComplexViewer') just parses its @code:@
+-- string into a 'ParsedCode' once and passes that in here, same as
+-- before.
 parseViewerScript :: forall env
                    . Maybe String
                   -> ViewerContext env
-                  -> CodeString
+                  -> ParsedCode
                   -> Either (SourceRange, String) (Code (ViewerEnv env))
-parseViewerScript mpx ViewerContext{..} (CodeString src) = do
+parseViewerScript mpx ViewerContext{..} c = do
   let env = contextToEnv vcContext
   withEnvironment env $ do
 
@@ -319,7 +413,7 @@ parseViewerScript mpx ViewerContext{..} (CodeString src) = do
         Found pf -> case lookupEnv px RealType env' of
           Absent pf' -> do
             let env2 = recallIsAbsent pf' $ BindingProxy px RealType env'
-            code0 <- left (errorLocation &&& unlines . pp) (parseCode env2 vcSplices src)
+            code0 <- left (errorLocation &&& unlines . pp) (runParsedCode env2 c)
             -- Set the viewer variable to x + i y
             x <- getVar InternalX RealType env'
             y <- getVar InternalY RealType env'
@@ -335,7 +429,7 @@ parseViewerScript mpx ViewerContext{..} (CodeString src) = do
               Absent pf' -> do
                 let env3 = recallIsAbsent pf' $ BindingProxy px RealType env2
 
-                code0 <- left (errorLocation &&& unlines . pp) (parseCode env3 vcSplices src)
+                code0 <- left (errorLocation &&& unlines . pp) (runParsedCode env3 c)
                 x  <- getVar InternalX  RealType env'
                 y  <- getVar InternalY  RealType env'
                 dx <- getVar InternalDX RealType env2
@@ -373,7 +467,6 @@ cloneViewer v = do
     , vDrawCmds = vDrawCmds v
     , vDrawCmdsChanged = vDrawCmdsChanged v
     , vBuildToolHandler = vBuildToolHandler v
-    , vScript = vScript v
     }
 
 -- | A fallback viewer function that paints every point grey
@@ -385,11 +478,12 @@ allGrey = ViewerFunction $ \ViewerArgs{..} -> do
       pokeElemOff vaBuffer (3 * j * w + 3 * i + 0) 0x7f
       pokeElemOff vaBuffer (3 * j * w + 3 * i + 1) 0x7f
       pokeElemOff vaBuffer (3 * j * w + 3 * i + 2) 0x7f
+  pure mempty
 
 defaultIterLimit, defaultMaxRadius, defaultMinRadius :: ParsedValue
-defaultIterLimit = fromRight (error "INTERNAL ERROR: defaultIterLimit") $ parseParsedValue Map.empty "100"
-defaultMaxRadius = fromRight (error "INTERNAL ERROR: defaultMaxRadius") $ parseParsedValue Map.empty "10"
-defaultMinRadius = fromRight (error "INTERNAL ERROR: defaultMinRadius") $ parseParsedValue Map.empty "0.0001"
+defaultIterLimit = fromRight (error "INTERNAL ERROR: defaultIterLimit") $ parseParsedValue "100"
+defaultMaxRadius = fromRight (error "INTERNAL ERROR: defaultMaxRadius") $ parseParsedValue "10"
+defaultMinRadius = fromRight (error "INTERNAL ERROR: defaultMinRadius") $ parseParsedValue "0.0001"
 
 ------------------------------------------------------------------------
 -- Backend

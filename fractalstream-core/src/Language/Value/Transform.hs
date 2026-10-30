@@ -1,5 +1,6 @@
 module Language.Value.Transform
-  ( integerPowers
+  ( backendRewrites
+  , integerPowers
   , avoidSqrt
   ) where
 
@@ -19,6 +20,14 @@ pattern ConstIntF n = I2R (Const (Scalar IntegerType n))
 pattern ConstIntC :: forall env. KnownEnvironment env
                   => Int64 -> Value '(env, 'ComplexT)
 pattern ConstIntC n = R2C (I2R (Const (Scalar IntegerType n)))
+
+-- | The rewrites every backend applies to a viewer's or tool's code before
+-- running it. They don't change what the code means, but they do change
+-- its arithmetic (e.g. @z^2@ becomes @z * z@, not a general complex power),
+-- so the compiled and interpreted backends must apply the same ones to
+-- get identical results.
+backendRewrites :: Value et -> Value et
+backendRewrites = integerPowers . avoidSqrt
 
 integerPowers :: Value et0 -> Value et0
 integerPowers = indexedFold @(FIX ValueF) phi

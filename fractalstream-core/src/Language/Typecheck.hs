@@ -3,8 +3,6 @@ module Language.Typecheck
   , Expected(..)
   , TCError(..)
   , internal
-  , tryEach
-  , tryEachType
   , isTypeError
   , catchTypeError
   , advise
@@ -38,6 +36,8 @@ newtype Expected t = Expected t
 data TCError
   = Surprise SourceRange String String (Expected String)
   | MissingName SourceRange String
+  | MissingFunction SourceRange String
+  | MissingCode SourceRange String
   | AlreadyDefined SourceRange String
   | BadConversion SourceRange SomeType (Expected SomeType)
   | Advice SourceRange String
@@ -51,21 +51,7 @@ internal e = case e of
   Internal _ -> e
   _ -> Internal e
 
-tryEach :: TCError -> [TC a] -> TC a
-tryEach failure = go
-  where
-    go = \case
-      [] -> throwError failure
-      (x:xs) -> catchError x (\_ -> go xs)
-
-tryEachType :: TCError -> [TC a] -> TC a
-tryEachType failure = go
-  where
-    go = \case
-      [] -> throwError failure
-      (x:xs) -> catchError x (\e -> if isTypeError e then go xs else throwError e)
-
-catchTypeError :: TC a -> (TCError -> TC a) -> TC a
+catchTypeError :: MonadError TCError m => m a -> (TCError -> m a) -> m a
 catchTypeError x action =
   catchError x (\e -> if isTypeError e then action e else throwError e)
 
@@ -79,6 +65,8 @@ instance HasErrorLocation TCError where
   errorLocation = \case
     Surprise sr _ _ _          -> sr
     MissingName sr _           -> sr
+    MissingFunction sr _       -> sr
+    MissingCode sr _           -> sr
     AlreadyDefined sr _        -> sr
     BadConversion sr _ _       -> sr
     Advice sr _                -> sr
@@ -95,6 +83,10 @@ ppError = concat .  \case
     ["I expected ", wanted, " here, but ", thing, " is ", got, "."]
   MissingName _ name ->
     ["No variable named ", name, " is defined here."]
+  MissingFunction _ name ->
+    ["No function named ", name, " is defined here."]
+  MissingCode _ name ->
+    ["No code named ", name, " is defined here. (Code to run is defined with `define ", name, ":`.)"]
   AlreadyDefined _ name ->
     ["The variable ", name, " is already defined, and would be re-defined here."]
   BadConversion _ ty (Expected ety) ->
@@ -107,7 +99,7 @@ ppError = concat .  \case
       "https://github.com/matt-noonan/FractalStream/issues:\n",
       ppError e]
 
-advise :: SourceRange -> String -> TC a
+advise :: MonadError TCError m => SourceRange -> String -> m a
 advise sr = throwError . Advice sr
 
 data DeclaredVar name ty env where
@@ -117,13 +109,13 @@ data DeclaredVar name ty env where
               -> EnvironmentProxy ( '(name, ty) ': env )
               -> DeclaredVar name ty env
 
-declareVar :: forall name ty env
-            . (KnownSymbol name, KnownType ty)
+declareVar :: forall name ty env m
+            . (KnownSymbol name, KnownType ty, MonadError TCError m)
            => SourceRange
            -> Proxy name
            -> TypeProxy ty
            -> EnvironmentProxy env
-           -> TC (DeclaredVar name ty env)
+           -> m (DeclaredVar name ty env)
 declareVar sr name ty env = case lookupEnv' name env of
   Absent' pf -> pure $
     withKnownType ty $ recallIsAbsent pf $ DeclaredVar pf (declare ty env)
@@ -136,23 +128,23 @@ data FoundVar name env where
            -> NameIsPresent name ty env
            -> FoundVar name env
 
-findVar :: forall name env
-         . (KnownSymbol name)
+findVar :: forall name env m
+         . (KnownSymbol name, MonadError TCError m)
         => SourceRange
         -> Proxy name
         -> EnvironmentProxy env
-        -> TC (FoundVar name env)
+        -> m (FoundVar name env)
 findVar sr name env = case lookupEnv' name env of
   Found' ty pf -> withKnownType ty $ pure (FoundVar ty pf)
   Absent'{} -> throwError (MissingName sr (symbolVal name))
 
-findVarAtType :: forall name ty env
-         . (KnownSymbol name)
+findVarAtType :: forall name ty env m
+         . (KnownSymbol name, MonadError TCError m)
         => SourceRange
         -> Proxy name
         -> TypeProxy ty
         -> EnvironmentProxy env
-        -> TC (NameIsPresent name ty env)
+        -> m (NameIsPresent name ty env)
 findVarAtType sr name ty env = case lookupEnv name ty env of
   Found pf -> pure pf
   Absent{} -> throwError (MissingName sr (symbolVal name))

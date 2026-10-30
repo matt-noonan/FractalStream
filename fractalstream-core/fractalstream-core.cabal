@@ -10,6 +10,8 @@ maintainer:          matt.noonan@gmail.com
 copyright:           2021, Matt Noonan
 category:            Math
 build-type:          Simple
+extra-source-files:  fonts/DejaVuSans.ttf
+                     fonts/DejaVuSans-LICENSE
 
 common FractalStream-common
   ghc-options:         -Wall -Werror -O2
@@ -72,7 +74,9 @@ library
                        Actor.Viewer.Types
                        Actor.Viewer.Complex
                        Actor.Viewer.Overlay
+                       Actor.Viewer.Overlay.Font
                        Actor.Event
+                       Actor.Script
 
                        Event
 
@@ -84,13 +88,21 @@ library
                        Language.Code.InterpretIO
                        Language.Code.Parser
                        Language.Code.Typecheck
+                       Language.Code.Syntax
+                       Language.Code.Infer
+                       Language.Code.Procedures
+                       Language.Code.Typecheck.Functions
                        Language.Type
                        Language.Environment
                        Language.Value
-                       Language.Value.Derivative
+                       Language.Value.Differentiate
                        Language.Value.Evaluator
                        Language.Value.Parser
                        Language.Value.Typecheck
+                       Language.Value.Syntax
+                       Language.Value.Builtins
+                       Language.Value.Typing
+                       Language.Value.Elaborate
                        Language.Value.Transform
                        Language.Draw
                        Language.Parser
@@ -139,6 +151,7 @@ library
                        zlib,
                        JuicyPixels,
                        Rasterific,
+                       FontyFruity,
   hs-source-dirs:      src
 
 test-suite spec
@@ -153,6 +166,13 @@ test-suite spec
                     , raw-strings-qq
                     , mtl
                     , containers
+                    , aeson
+                    , yaml
+                    , text
+                    , vector
+                    , directory
+                    , filepath
+                    , JuicyPixels
   other-modules:      Data.Indexed.FunctorSpec
                     , Language.Value.DerivativeSpec
                     , Language.Value.EvaluatorSpec
@@ -160,4 +180,8 @@ test-suite spec
                     , Language.Code.ParserSpec
                     , Language.Effect.ListSpec
                     , Actor.EventSpec
+                    , Actor.ScriptSpec
+                    , Actor.EnsembleBuildSpec
+                    , Actor.GoldenSpec
+                    , Actor.OverlaySpec
   build-tool-depends: hspec-discover:hspec-discover == 2.*

@@ -78,9 +78,9 @@ executable FractalStream
 
   other-modules:       UI.Tile
                        UI.ProjectViewer
-                       UI.ProjectEditor
                        UI.ConfigEditor
                        UI.CodeEditor
+                       UI.ProjectScriptEditor
                        UI.Layout
                        UI.Menu
                        UI.ProjectActions

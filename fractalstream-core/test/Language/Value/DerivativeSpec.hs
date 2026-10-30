@@ -8,14 +8,13 @@ import Language.Type
 import Language.Value
 import Language.Value.Evaluator
 
-import qualified Data.Map as Map
 import qualified Language.Value.Parser as P
 
 parseValue :: EnvironmentProxy env
            -> TypeProxy t
            -> String
            -> Either String (Value '(env, t))
-parseValue env ty i = withEnvironment env $ withKnownType ty $ first (`P.ppFullError` i) (P.parseValue Map.empty i)
+parseValue env ty i = withEnvironment env $ withKnownType ty $ first (`P.ppFullError` i) (P.parseValue i)
 
 spec :: Spec
 spec = do
@@ -43,6 +42,20 @@ spec = do
       parseR pi "diff(x, sin(x))" `shouldBe` Right (-1)
       parseR 0 "diff(x, exp(x))" `shouldBe` Right 1
       parseR 1 "diff(x, log(x))" `shouldBe` Right 1
+
+    it "can differentiate inverse trigonometric functions" $ do
+      parseR 0.5 "diff(x, arcsin(x))" `shouldBe` Right (1 / sqrt 0.75)
+      parseR 0.5 "diff(x, arccos(x))" `shouldBe` Right (-1 / sqrt 0.75)
+      parseR 1 "diff(x, arctan(x))" `shouldBe` Right 0.5
+      parseR 1 "diff(x, arcsinh(x))" `shouldBe` Right (1 / sqrt 2)
+      parseR 2 "diff(x, arccosh(x))" `shouldBe` Right (1 / sqrt 3)
+      parseR 0.5 "diff(x, arctanh(x))" `shouldBe` Right (1 / 0.75)
+
+    it "treats parts that don't depend on the variable as constants" $
+      parseR 3 "diff(x, x |2 - 7|)" `shouldBe` Right 5
+
+    it "can differentiate powers with variable exponents" $
+      parseR 2 "diff(x, x^x)" `shouldBe` Right (4 * (log 2 + 1))
 
     it "can apply the chain rule correctly" $ do
       parseR 4 "diff(x, 8 * log(sqrt x))" `shouldBe` Right 1

@@ -63,6 +63,12 @@ Functions that can be used only on complex values are
 `re`, `im`, `arg`, and `conj`. These can also be spelled in capitalized form
 (e.g. `re` -> `Re`)
 
+### Derivatives
+
+`diff(x, expr)` is the derivative of `expr` with respect to the real or
+complex variable `x`. For example, `diff(z, z^3 - 1)` is `3 z^2`.
+Derivatives are computed symbolically, so they are exact.
+
 ### Syntax quirks
 
 FractalStream supports some syntactical shortcuts common in mathematics.
@@ -122,6 +128,112 @@ real numbers, `C` for the complex numbers, `Color` for a color, and
 the unicode blackboard bold variants `ℤ`, `ℝ`, and `ℂ`, or the full names `Integer`, `Real`, and `Complex`.
 
 Lists of values of type `x` have the type `List of x`.
+
+You can also leave the type out, and let FractalStream work it out, by
+using `:=` (or `≔`) instead:
+
+```
+z := 0
+iterate z -> z^2 + C until z escapes
+```
+
+The variable's type is the smallest one that fits both its initial value
+*and* everything that is later assigned to it, so here `z` is complex
+(assuming `C` is), even though its initial value `0` is an integer.
+Similarly, a list starting out as `xs := [1, 2]` becomes a list of reals if
+you later `append(xs, 0.5)` to it. An empty list `[]` gives no clue about
+what kind of items it will hold, so a variable starting out empty needs a
+type annotation, like `xs : List of R <- []`.
+
+A new variable can be used in the rest of the block it is declared in.
+
+### Defining functions
+
+To define your own function, use `let`:
+
+```
+let f(z) = z^2 + C
+let g(a, b) = a * f(b) - b
+iterate z -> g(2, z) until z escapes
+```
+
+The body of a function is a single expression, and it can use any variables
+and functions that are defined where the function is defined. A function's
+parameters are separate from any variables with the same name, so `f`'s
+parameter `z` above has nothing to do with the viewer's own variable `z`.
+A function can be used in the rest of the block it is defined in, and its
+name can't also be used as a variable.
+
+Functions don't need type annotations: each use of a function works with
+whatever kinds of numbers it is given, so `f(2)` and `f(z)` are both fine.
+
+The derivative of a function of one variable can be written with a prime:
+`f'(z)` means the same as `diff(z, f(z))`, and `f''(z)` is the second
+derivative. (You can also use `′`.) Derivatives of your own functions also
+work inside `diff`, so Newton's method can be written as
+
+```
+let f(z) = z^3 - 1
+iterate z -> z - f(z) / f'(z) until f(z) vanishes
+```
+
+### Defining code to run
+
+A block of code can be given a name with `define`, and then run (as many
+times as you like) with `run`:
+
+```
+define shade(c):
+  if stuck:
+    color <- black
+  else:
+    color <- blend(iterations / 20, light c, dark c)
+
+iterate z -> z^2 + C until z escapes
+run shade(blue)
+```
+
+The parameters, like `c` here, are optional (`define shade:` ... `run
+shade`). Each one acts like a new variable holding the value it is given,
+with its type worked out from that value, so changing it inside the code
+doesn't change anything outside. Everything else the code mentions, like
+`color` and `iterations` above, refers to whatever is in scope where it is
+run, and any variables the code declares are local to each run. A `define`
+can be used in the rest of the block it appears in, and code can run
+other code defined before it.
+
+### Sharing definitions between scripts
+
+In a project, an `@common` stanza holds definitions that every viewer and
+tool script can use, as if they were written at the top of each one:
+
+```
+@config "Configuration"
+a : C as "a =" <- 1
+
+@common
+let f(z) = z^3 - a
+let newton(z) = z - f(z) / f'(z)
+
+@viewer "Newton's method" var=z size=512x512
+iterate z -> newton(z) until f(z) vanishes
+
+@tool "Trace" for="Newton's method"
+on click:
+  erase
+  repeat up to 20 times:
+    draw point at z
+    z <- newton(z)
+  until f(z) vanishes
+```
+
+An `@common` stanza can only contain function definitions, code definitions
+(`define`), and variable declarations. Each script gets just the common definitions it uses (and
+whatever those use), checked against its own variables, so they can use
+anything in scope there: here, the configuration variable `a`, and each
+script's own `z`. A definition that mentions a variable some scripts don't
+have is only a problem in scripts that use it. A project can have several
+`@common` stanzas, anywhere in the script.
 
 ### Line continuations
 
@@ -479,6 +591,13 @@ concatenates its arguments together:
 
 ```
 write text("Here is ", z) at z
+```
+
+Inside quoted text, write `\"` for a quotation mark, `\\` for a backslash,
+`\n` for a line break, and `\t` for a tab:
+
+```
+write "She said \"hi\"" at z
 ```
 
 

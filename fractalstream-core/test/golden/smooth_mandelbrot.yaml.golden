@@ -1,0 +1,34 @@
+=== viewer 0: Mandelbrot set with smooth coloring
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `C` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `z` = 0:R:C in:
+                  block:
+                    let `[internal] fresh #16` = 0 in:
+                      let `[internal] fresh #17` = [internal] iteration limit in:
+                        block:
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)):
+                              block:
+                                set `z` := ((z ^ 2:R:C) + C)
+                                set `[internal] fresh #16` := ([internal] fresh #16 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #16
+                          set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
+                    if ([internal] escape radius < |z|) then:
+                      block:
+                        let `m` = (([internal] iteration count + 1):R - (log((log((|z| ^ 2:R)) / (2:R * log(escape_radius)))) / log(2:R))) in:
+                          block:
+                            set `color` := blend(((2:R * atan((m / 20:R))) / 3.141592653589793), Color 255 0 0, Color 255 255 255)
+                    else:
+                      block:
+                        set `color` := Color 0 0 0
+
+

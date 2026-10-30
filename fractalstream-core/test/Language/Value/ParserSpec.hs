@@ -9,7 +9,6 @@ import Language.Type
 import Language.Value
 import Language.Value.Evaluator
 
-import qualified Data.Map as Map
 
 import qualified Language.Value.Parser as P
 
@@ -18,7 +17,7 @@ parseValue :: EnvironmentProxy env
            -> String
            -> Either String (Value '(env, t))
 parseValue env ty i = withEnvironment env $ withKnownType ty $
-  first (`P.ppFullError` i) (P.parseValue Map.empty i)
+  first (`P.ppFullError` i) (P.parseValue i)
 
 spec :: Spec
 spec = do
@@ -48,6 +47,20 @@ spec = do
       let ty = PairType IntegerType IntegerType
           parses = parseValue EmptyEnvProxy ty "(1 + 2, 3 * 4)"
       eval parses `shouldBe` Right (3, 12)
+
+    it "parses argument lists of any length unambiguously" $ do
+      let evalAt :: forall t. KnownType t => TypeProxy t -> String -> Either String (HaskellType t)
+          evalAt ty = fmap (`evaluate` EmptyContext) . parseValue EmptyEnvProxy ty
+      evalAt TextType "text(\"a\", 1, \"b\", 2.5)" `shouldBe` Right "a1b2.5"
+      evalAt (ListType IntegerType) "join([1], [2, 3], [4])" `shouldBe` Right [1, 2, 3, 4]
+      -- escape sequences in text literals
+      evalAt TextType "\"a\\\"b\\\\c\\nd\"" `shouldBe` Right "a\"b\\c\nd"
+      -- a text box's input is the text itself, quotes and all
+      either (const Nothing) (Just . (`evaluate` EmptyContext))
+             (P.parseInputValue @'[] @'TextT "★ \"x\" \\")
+        `shouldBe` Just "★ \"x\" \\"
+      -- a pair argument still works, in parentheses
+      evalAt TextType "text(\"p\", if true then \"x\" else \"y\", \"q\")" `shouldBe` Right "pxq"
 
     it "parses with expected precedence" $ do
       let parses1 = parseI "1 + 2 * 3 + 4"
@@ -106,6 +119,28 @@ spec = do
       parses1 `shouldBe` Right 4
       parses2 `shouldBe` Right 1
       parses3 `shouldBe` Right 1
+
+  describe "when reading back a value's displayed form" $ do
+
+    let roundTrip :: forall t. KnownType t => TypeProxy t -> HaskellType t -> Either String (HaskellType t)
+        roundTrip ty v =
+          let shown = toUserString ty v
+          in bimap (`P.ppFullError` shown) (`evaluate` EmptyContext)
+                   (P.parseInputValue @'[] @t shown)
+
+    it "reads back lists of numbers" $ do
+      roundTrip (ListType ComplexType) [1 :+ 2, 3 :+ 0, 0 :+ (-1)]
+        `shouldBe` Right [1 :+ 2, 3 :+ 0, 0 :+ (-1)]
+      roundTrip (ListType IntegerType) [] `shouldBe` Right []
+
+    it "reads back lists of lists" $ do
+      let legs = [[1 :+ 2, 0.25 :+ 0], [], [0 :+ (-1)]]
+      roundTrip (ListType (ListType ComplexType)) legs `shouldBe` Right legs
+      roundTrip (ListType (ListType RealType)) [] `shouldBe` Right []
+
+    it "reads back lists of text" $
+      roundTrip (ListType TextType) ["a", "say \"hi\"", ""]
+        `shouldBe` Right ["a", "say \"hi\"", ""]
 
   describe "when using common notational quirks" $ do
 
@@ -246,12 +281,11 @@ spec = do
             $ Bind (Proxy @"[internal] escape radius") RealType big
             $ Bind (Proxy @"[internal] vanishing radius") RealType tiny
             $ EmptyContext
-        splices = Map.empty
         test z x big tiny input =
             let c = ctx z x big tiny
             in (evaluateInContext @_ @'BooleanT $ ctx z x big tiny)
                <$> first (`P.ppFullError` input) (withEnvironment (contextToEnv c)
-                                                  $ P.parseValue splices input)
+                                                  $ P.parseValue input)
 
     it "Can use the escape radius and vanishing radius comparisons" $ do
       test 1 0    2 0.1 "z escapes" `shouldBe` Right False

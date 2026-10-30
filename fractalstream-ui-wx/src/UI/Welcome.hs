@@ -4,7 +4,6 @@ module UI.Welcome
 
 import Graphics.UI.WX
 
-import Actor.Ensemble (allTemplates)
 
 import UI.ProjectActions
 import UI.Menu
@@ -27,31 +26,15 @@ welcome ProjectActions{..} = do
                 ] "" ""
         maybe (pure ()) action mprj
 
-  template <- chooseTemplate ProjectActions{..} p
+  new <- button p [ text := "New project"
+                  , on command := projectNew ]
 
   open <- button p [ text := "Open existing project..."
                    , on command := getProject "Open" projectOpen
                    ]
-  edit <- button p [ text := "Edit project"
-                   , on command := getProject "Edit" projectEdit
-                   , enabled := False
-                   ]
   set f [ layout := margin 10 $ fill $ container p $ floatCenter $ column 10
-                    [ widget template
+                    [ widget new
                     , widget open
-                    , widget edit
                     ]
         ]
   windowReLayout f
-
-chooseTemplate :: ProjectActions -> Window a -> IO (Choice ())
-chooseTemplate pa f = do
-  c <- choice f [ items := "New project from template..." : map fst allTemplates ]
-  set c [ on select := get c selection >>= \case
-            0 -> pure ()
-            ix -> do
-              set c [ selection := 0 ]
-              let (name, make) = allTemplates !! (ix - 1)
-              make >>= projectOpenTemplate pa name
-        ]
-  pure c

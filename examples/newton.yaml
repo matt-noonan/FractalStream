@@ -1,68 +1,32 @@
-viewer:
-  style: complex-plane
-  title: Roots of «f»
-  size: 512x512
-  resizable: true
-  z-coord: z
-  iteration-limit: maxIters
-  vanishing-radius: tol
-  initial-center: 0
-  initial-pixel-size: 1/128
-  code: |
-    lastZ : C <- 0
+script: |
+  @common
+  let f(z) = z^3 - 1
+  # one step of Newton's method
+  let newton(z) = z - f(z) / f'(z)
 
+  @config "Newton's method configuration"
+  tol : R as "closeness" <- 0.01
+
+  @viewer "Roots of f" vanish=tol center=0 pixelSize=1/128
+  lastZ := 0
+  while z != lastZ:
+    lastZ <- z
+    z <- newton(z)
+  if z = lastZ:
+    color <- rainbow(arg z / (2π))
+    color <- cycle(iterations / 20, dark color, light color)
+  else:
+    color <- black
+
+  @tool "Trace" for="Roots of f" shortcut=t
+  on deactivated:
+    erase
+  on click-or-drag:
+    lastZ := 0
+    erase
     while z != lastZ:
       lastZ <- z
-      z <- z - «f» / diff(z, «f»)
-
-    if z = lastZ:
-      c : Color <- if re(z) > 0 then red else if im(z) > 0 then yellow else blue
-      s : R <- (cos (iterations pi / 10))^2
-      #color <- blend (s, dark c, light c)
-      color <- rainbow(arg z / (2π))
-      color <- cycle(iterations / 20, dark color, light color)
-    else:
-      color <- black
-
-  tools:
-    - name: Trace
-      shortcut: t
-      script: |
-        on deactivated:
-          erase
-
-        on click-or-drag:
-          lastZ : C <- 0
-          erase
-          while z != lastZ:
-            lastZ <- z
-            z <- z - «f» / diff(z, «f»)
-            draw point at lastZ
-            draw line from lastZ to z
-          draw point at z
-setup:
-  title: Newton's method setup
-  size: 200x200
-  vertical-contents:
-    - text-entry:
-        label: "f(z) = "
-        value: "z^3 - 1"
-        type: C
-        environment:
-          z: C
-        variable: f
-
-configuration:
-  title: Newton's method configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "closeness"
-        value: "0.01"
-        type: R
-        variable: tol
-    - text-entry:
-        label: "Max. iterations: "
-        value: "100"
-        type: Z
-        variable: maxIters
+      z <- newton(z)
+      draw point at lastZ
+      draw line from lastZ to z
+    draw point at z

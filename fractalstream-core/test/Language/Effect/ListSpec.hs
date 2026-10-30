@@ -30,7 +30,7 @@ runWithXY x y lst input = do
     _ -> Left "impossible"
   first (`ppFullError` input)
     $ fmap ((`evalState` (ctx, ())) . (\c -> simulate noDraw c >> eval testVar))
-    $ parseCode (envProxy Proxy) noSplices input
+    $ parseCode (envProxy Proxy) noCommonDefs input
 
 noDraw :: DrawHandler (HaskellTypeM ())
 noDraw = DrawHandler (const $ pure ())

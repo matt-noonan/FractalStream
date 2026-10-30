@@ -24,6 +24,7 @@ import Actor.UI (UI(..))
 import Actor.Viewer
   ( Backend, Viewer(..)
   , withRenderedViewerBuffer, snapshotToFile
+  , ViewerIssues, describeViewerIssues
   )
 import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
 import Actor.Tool (Tool(..), ToolInfo(..))
@@ -49,6 +50,7 @@ import Codec.Picture (Image, PixelRGBA8(..), imageWidth, imageHeight, pixelAt)
 
 import qualified Data.Map as Map
 import Data.IORef
+import System.IO (hPutStrLn, stderr)
 
 -- | Everything the interpreter threads from one command to the next.
 data InterpState = InterpState
@@ -86,9 +88,8 @@ runScenario backend ensemble cmds = do
 collectingUI :: IORef (Map String Viewer) -> IORef (Maybe (SomeContext EventArgument_)) -> UI
 collectingUI viewersRef ctxRef = UI
   { newEnsemble = pure ()
-  , runSetup    = \_ _ _ proceed -> proceed
   , makeLayout  = \_ _ _ -> pure (pure ())
-  , makeViewer  = \_ _ _ ctx _ _ viewer -> do
+  , makeViewer  = \_ _ _ ctx _ viewer -> do
       title <- getDynamic (vTitle viewer)
       modifyIORef' viewersRef (Map.insert title viewer)
       writeIORef ctxRef (Just ctx)
@@ -184,12 +185,10 @@ execCommand st = \case
     r <- withRenderedViewerBuffer viewer True $ \center pixelSize dims buf -> do
       layers <- vDrawCmds viewer
       compositeDrawLayersToFile center pixelSize layers dims buf path
-    pure (either Left (const (Right st)) r)
+    traverse (warnIssues name . fst) r <&> (st <$)
 
   CaptureViewerBase name path -> withNamedViewer st name $ \viewer ->
-    snapshotToFile viewer True path >>= \case
-      Nothing  -> pure (Right st)
-      Just err -> pure (Left err)
+    snapshotToFile viewer True path >>= traverse (warnIssues name) <&> (st <$)
 
   AssertPixel name (px, py) expected mtol -> withNamedViewer st name $ \viewer -> do
     r <- withRenderedViewerBuffer viewer True $ \center pixelSize dims buf -> do
@@ -197,7 +196,12 @@ execCommand st = \case
       compositeDrawLayers center pixelSize layers dims buf
     case r of
       Left err  -> pure (Left err)
-      Right img -> pure (checkPixel name img (px, py) expected mtol st)
+      Right (_, img) -> pure (checkPixel name img (px, py) expected mtol st)
+
+-- | Warn (on stderr) about any issues a viewer's render ran into.
+warnIssues :: String -> ViewerIssues -> IO ()
+warnIssues name issues = forM_ (describeViewerIssues issues) $ \msg ->
+  hPutStrLn stderr ("warning: viewer " ++ show name ++ ": " ++ msg)
 
 ---------------------------------------------------------------------------
 -- Current viewer / current tool plumbing

@@ -8,10 +8,9 @@ module Main where
 import UI.ProjectActions
 import UI.Menu
 import UI.ProjectViewer (viewProject)
-import UI.ProjectEditor (editProject)
+import UI.ProjectScriptEditor (editProjectScript)
 import UI.Session
 import Data.DynamicValue
-import Data.Codec
 import Actor.Ensemble
 
 import qualified Data.Yaml as YAML
@@ -36,15 +35,45 @@ main = withBackend $ \backend -> start $ do
 
   activeSessions <- newVariable []
 
-  let projectNew = putStrLn "TODO"
+  let -- A brand-new project has no file of its own yet, and nothing
+      -- worth looking at until the user writes one -- so, unlike
+      -- `projectOpen`, this skips straight to the whole-project script
+      -- editor instead of calling `runEnsemble`, with `editProjectScript`'s
+      -- own "Rebuild" button as the only way any viewer ever gets
+      -- built. `newProjectScript` is a fixed, known-valid starting
+      -- point (a project needs at least one `@viewer`), so the
+      -- `either error id` here can only ever fire from a programming
+      -- mistake in that constant, not from anything the user did.
+      projectNew = do
+        projectWindow <- frame [ visible := False ]
+        prj <- either (error . formatScriptError newProjectScript) id
+               <$> buildEnsembleFromScript newProjectScript
+        currentEnsemble <- newVariable prj
 
-      save prj f isUnsaved = do
+        sessionName <- newVariable "Untitled"
+        let sessionHandle = SessionHandle projectWindow
+        sessionVisible <- newVariable True
+        sessionUnsaved <- newVariable True
+        let sessionSave = save currentEnsemble projectWindow sessionUnsaved
+            ui = viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..})
+                   sessionSave (editProjectScript backend projectWindow currentEnsemble ui)
+            si = SessionInfo{..}
+        modifyValue activeSessions (si :)
+        editProjectScript backend projectWindow currentEnsemble ui
+
+      -- `currentEnsemble` holds whichever `Ensemble` the session is
+      -- currently running -- fixed at open time, but replaced in place
+      -- by a successful rebuild from `editProjectScript`, so `save`
+      -- (and any later rebuild) always acts on the live one rather
+      -- than a value that was only ever accurate at open time.
+      save currentEnsemble f isUnsaved = do
         result <- fileSaveDialog f True True "Save FractalStream project"
                   [ ("FractalStream project files",["*.fs"]), ("All files", ["*.*"])] "" ".fs"
         case result of
           Nothing -> pure ()
           Just file -> do
-            serializeYAML prj >>= BS.writeFile file
+            prj <- getDynamic currentEnsemble
+            encodeEnsemble prj >>= BS.writeFile file
             setValue isUnsaved False
 
       projectOpen = \yamlFile -> do
@@ -57,33 +86,25 @@ main = withBackend $ \backend -> start $ do
         withRecoveryActions $ do
 
           prj <- either error id <$> parseEnsembleFromFile yamlFile
+          currentEnsemble <- newVariable prj
 
           sessionName <- newVariable yamlFile
           let sessionHandle = SessionHandle projectWindow
           sessionVisible <- newVariable True
           sessionUnsaved <- newVariable False
-          let sessionSave = save prj projectWindow sessionUnsaved
-          let si = SessionInfo{..}
+          let sessionSave = save currentEnsemble projectWindow sessionUnsaved
+              -- `ui` and `editProjectScript` refer to each other: a
+              -- rebuild needs a `UI` to hand `runEnsemble` for the
+              -- *next* round of viewer windows, and that same `UI`
+              -- needs the rebuild action for its own menus. Fine in
+              -- Haskell as an ordinary lazy `let` -- `editProjectScript`
+              -- only forces `ui` when the user actually picks the menu
+              -- item, by which point it's long since finished building.
+              ui = viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..})
+                     sessionSave (editProjectScript backend projectWindow currentEnsemble ui)
+              si = SessionInfo{..}
           modifyValue activeSessions (si :)
-          runEnsemble backend
-            (viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..}) sessionSave)
-            prj
-
-      projectOpenTemplate = \name prj -> do
-        projectWindow <- frame [ visible := False ]
-
-        sessionName <- newVariable name
-        let sessionHandle = SessionHandle projectWindow
-        sessionVisible <- newVariable True
-        sessionUnsaved <- newVariable False
-        let sessionSave = save prj projectWindow sessionUnsaved
-        let si = SessionInfo{..}
-        modifyValue activeSessions (si :)
-        runEnsembleFromSetup backend
-            (viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..}) sessionSave)
-            prj
-
-      projectEdit = editProject
+          runEnsemble backend ui prj
 
       closeSession SessionInfo{..} = case sessionHandle of
         SessionHandle f -> close f
@@ -102,12 +123,23 @@ main = withBackend $ \backend -> start $ do
         | sessionHandle s == h = setValue (sessionVisible s) yn
         | otherwise = pure ()
 
-      editSession _ = putStrLn "TODO, editSession"
-
   welcome ProjectActions{..}
 
-runTemplate :: a -> b -> c -> IO ()
-runTemplate _ _ _ = putStrLn "TODO: runTemplate"
+-- | The starting point for "New project": the smallest script that's
+-- actually valid (an ensemble needs at least one @\@viewer@), so a
+-- brand-new project's editor opens with something to immediately
+-- rebuild and see, rather than empty text.
+newProjectScript :: String
+newProjectScript = unlines
+  [ "@viewer \"z plane\""
+  , ""
+  , "# Put your script here"
+  , ""
+  , "if stuck:"
+  , "  color <- black"
+  , "else:"
+  , "  color <- rainbow(iterations / 20)"
+  ]
 
 badYaml :: Frame a -> FilePath -> YAML.ParseException -> IO ()
 badYaml w path e = badProjectFile w path (BadProject "Bad YAML file" (show e))

@@ -3,6 +3,7 @@ module Language.Draw
   ( type Draw
   , Draw_(..)
   , type DrawCommand
+  , finiteDrawCommand
   , transformDrawValues
   , transformDrawValuesM
   , DrawHandler(..)
@@ -24,8 +25,7 @@ type instance Eval (ConcreteValue env t) = HaskellType t
 
 -- | A backend-agnostic sink for draw commands, in concrete (plane-coordinate)
 -- Haskell values.  The interpreter adapts a 'DrawHandler' onto one of these;
--- the LLVM backend wraps each field as a C callback for compiled tools.  There
--- is no compiled support for 'dsWrite' (text) yet — only the interpreter uses it.
+-- the LLVM backend wraps each field as a C callback for compiled tools.
 data DrawSink = DrawSink
   { dsClear  :: IO ()
   , dsStroke :: HaskellType 'ColorT -> IO ()
@@ -111,6 +111,23 @@ data Draw_ (value :: Environment -> FSType -> Exp Type)
         -> Draw_ value env
 
 deriving instance Show DrawCommand
+
+-- | Are all of a draw command's coordinates and lengths finite? A script
+-- can easily produce NaN or infinite points (e.g. from an escaping orbit);
+-- frontends skip such commands instead of drawing garbage, or crashing.
+finiteDrawCommand :: DrawCommand -> Bool
+finiteDrawCommand = \case
+  DrawPoint _ p        -> finitePt p
+  DrawLine _ p q       -> finitePt p && finitePt q
+  DrawCircle _ _ r p   -> finite r && finitePt p
+  DrawRect _ _ p q     -> finitePt p && finitePt q
+  Write _ _ p          -> finitePt p
+  SetStroke {}         -> True
+  SetFill {}           -> True
+  Clear {}             -> True
+  where
+    finite x = not (isNaN x || isInfinite x)
+    finitePt (x, y) = finite x && finite y
 
 transformDrawValues :: forall env
                      . (forall et. Value et -> Value et)

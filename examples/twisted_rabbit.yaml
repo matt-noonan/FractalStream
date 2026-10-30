@@ -1,83 +1,28 @@
-viewer:
-  style: complex-plane
-  title: Twisted rabbit
-  size: 512x512
-  resizable: true
-  z-coord: z
-  iteration-limit: maxIters
-  escape-radius: maxRadius
-  initial-center: 0
-  initial-pixel-size: 1/128
-  code: |
-        until «stop»:
-          z <- «f»
-          d : R <- |z - twist_center|
-          if d > r0 and d < r1:
-            theta : R <- 2 pi (d - r0) / (r1 - r0)
-            z <- e^(i theta) (z - twist_center) + twist_center
+script: |
+  @common
+  # iterate f until stop is true
+  let f(z) = z^2 + C
+  let stop(z) = |z| > escape_radius
 
-        if stuck:
-          color <- black
-        else:
-          c1 : Color <- if im(z) > 0 then blue else yellow
-          c2 : Color <- if im(z) > 0 then green else red
-          s : R <- iterations + 1 - (log (log (|z|^2 / 2))) / log 2
-          s <- cos (s pi / 10)^2
-          color <- blend (s, c1, c2)
+  @config "Configuration"
+  C : C as "C" <- -0.1226 + 0.7449i
+  twist_center : C as "Center of twist:" <- -0.267 + 0.478i
+  r0 : R as "Inner radius" <- 0.2
+  r1 : R as "Outer radius" <- 0.5
 
-setup:
-  title: Parametric complex dynamics
-  size: 200x200
-  vertical-contents:
-    - text-entry:
-        label: "Iterate f(z) = "
-        value: "z^2 + C"
-        type: C
-        environment:
-          z: C
-          C: C
-        variable: f
-    - text-entry:
-        label: "until"
-        value: "|z| > maxRadius"
-        environment:
-          z: C
-          C: C
-          maxRadius: R
-        type: Boolean
-        variable: stop
+  @viewer "Twisted rabbit" center=0 pixelSize=1/128
+  until stop(z):
+    z <- f(z)
+    d := |z - twist_center|
+    if d > r0 and d < r1:
+      theta := 2 pi (d - r0) / (r1 - r0)
+      z <- e^(i theta) (z - twist_center) + twist_center
 
-configuration:
-  title: Configuration
-  size: 400x200
-  vertical-contents:
-    - text-entry:
-        label: "C"
-        value: -0.1226 + 0.7449i
-        type: C
-        variable: C
-    - text-entry:
-        label: "Center of twist:"
-        value: -0.267 + 0.478i
-        type: C
-        variable: twist_center
-    - text-entry:
-        label: "Inner radius"
-        value: 0.2
-        type: R
-        variable: r0
-    - text-entry:
-        label: "Outer radius"
-        value: 0.5
-        type: R
-        variable: r1
-    - text-entry:
-        label: "Max. iterations: "
-        value: "100"
-        type: Z
-        variable: maxIters
-    - text-entry:
-        label: "Max. radius: "
-        value: 10
-        type: R
-        variable: maxRadius
+  if stuck:
+    color <- black
+  else:
+    c1 := if im(z) > 0 then blue else yellow
+    c2 := if im(z) > 0 then green else red
+    s := iterations + 1 - (log (log (|z|^2 / 2))) / log 2
+    s <- cos (s pi / 10)^2
+    color <- blend (s, c1, c2)

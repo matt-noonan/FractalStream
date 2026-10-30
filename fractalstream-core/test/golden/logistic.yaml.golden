@@ -1,0 +1,51 @@
+=== viewer 0: Bifurcation diagram for the logistic map
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `x` = im(z) in:
+                  block:
+                    let `x0` = x in:
+                      block:
+                        let `r` = re(z) in:
+                          block:
+                            let `best` = outer in:
+                              block:
+                                let `[internal] fresh #21` = 0 in:
+                                  let `[internal] fresh #22` = warmup in:
+                                    block:
+                                      if (True and ([internal] fresh #21 < [internal] fresh #22)) then:
+                                        do-while (True and ([internal] fresh #21 < [internal] fresh #22)):
+                                          block:
+                                            set `x` := ((r * x) * (1:R - x))
+                                            set `[internal] fresh #21` := ([internal] fresh #21 + 1)
+                                      else:
+                                        no-op
+                                      set `[internal] iteration count` := [internal] fresh #21
+                                      set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
+                                let `[internal] fresh #21` = 0 in:
+                                  let `[internal] fresh #22` = [internal] iteration limit in:
+                                    block:
+                                      if (!(|(x - x0)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)) then:
+                                        do-while (!(|(x - x0)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
+                                          block:
+                                            block:
+                                              set `x` := ((r * x) * (1:R - x))
+                                              if (|(x - x0)| < best) then:
+                                                block:
+                                                  set `best` := |(x - x0)|
+                                              else:
+                                                no-op
+                                            set `[internal] fresh #21` := ([internal] fresh #21 + 1)
+                                      else:
+                                        no-op
+                                      set `[internal] iteration count` := [internal] fresh #21
+                                      set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
+                                set `color` := blend((best / outer), Color 255 255 255, Color 0 0 0)
+
+

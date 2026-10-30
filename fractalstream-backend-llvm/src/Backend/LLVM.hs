@@ -9,6 +9,7 @@ module Backend.LLVM
   , withJIT
   , withJittedViewer
   , llvmToolRunner
+  , compiledToolExec
   , runJX
   , type JX
   , mkKernelFun
@@ -35,6 +36,9 @@ import Control.Exception (bracket, finally)
 
 import Foreign.LibFFI
 import Foreign.C.Types
+import Foreign.C.String (CString)
+import qualified GHC.Foreign as GHC
+import GHC.IO.Encoding (utf8)
 
 import Backend.LLVM.Code
 import Backend.LLVM.Operand (listNodeStride)
@@ -43,14 +47,14 @@ import Language.Value
 import Language.Value.Evaluator (HaskellValue)
 import Language.Value.Transform
 import Language.Code
-import Language.Code.Parser (parseCode, noSplices, ppFullError)
+import Language.Code.Parser (parseCode, noCommonDefs, ppFullError)
 import Language.Code.InterpretIO (interpretToIOWithLastValues, ScalarIORefM)
 import Language.Draw
 import Actor.Viewer
-import Actor.Event (ToolExec, buildHandlerWith, snapshotEventArgs, EventArgument(..))
+import Actor.Event (ToolExec, buildHandlerWith, snapshotEventArgs, EventArgument(..), EventArgument_)
 import Data.Color
 
-import Data.IORef (newIORef)
+import Data.IORef (IORef, newIORef, modifyIORef', readIORef)
 import qualified Data.Map.Strict as Map
 
 import Foreign hiding (void)
@@ -137,7 +141,9 @@ toFFIArg _ t v = case t of
   ListType itemTy -> do
     (headPtr, cleanup) <- buildListBuffer itemTy v
     pure (argPtr headPtr, cleanup)
-  TextType -> pure (argInt32 0, pure ())
+  TextType -> do
+    str <- GHC.newCString utf8 v
+    pure (argPtr str, free str)
   BooleanType -> pure (argInt8 (if v then 1 else 0), pure ())
   _ -> error ("todo: toFFIArg " ++ showType t)
 
@@ -146,8 +152,10 @@ toFFIArg _ t v = case t of
 -- bound in/out by the compiled kernel, so the caller's cell holds the final
 -- value after the call.  The returned write-back action reads that cell and, if
 -- the value changed and the argument is settable, propagates it back to the
--- host.  Lists and text are passed by value (no write-back).  The set of in/out
--- types must match 'Backend.LLVM.Code.toolInOut'.
+-- host.  Text and lists are passed as a pointer to a cell holding a pointer
+-- (to a C string, or to the list's head node), which the kernel may redirect
+-- to a new string or list in the arena.  The set of in/out types must match
+-- 'Backend.LLVM.Code.toolInOut'.
 toFFIArgInOut :: TypeProxy ty
               -> EventArgument ty
               -> HaskellType ty
@@ -181,6 +189,24 @@ toFFIArgInOut t earg v = case t of
           [r', g', b'] -> setBack ColorType (rgbToColor (r', g', b'))
           _            -> pure ()
     pure (argPtr c, free c, writeBack)
+  TextType -> do
+    str <- GHC.newCString utf8 v
+    cell <- malloc :: IO (Ptr CString)
+    poke cell str
+    -- Must run while the arena (which may hold the new string) is still live.
+    let writeBack = peek cell >>= \str' ->
+          when (str' /= str) (GHC.peekCString utf8 str' >>= setBack TextType)
+    pure (argPtr cell, free cell >> free str, writeBack)
+  ListType itemTy -> do
+    (headPtr, cleanup) <- buildListBuffer itemTy v
+    cell <- malloc :: IO (Ptr (Ptr Word8))
+    poke cell headPtr
+    -- Compiled code never modifies a list's nodes in place, so the list
+    -- only changed if the cell now points somewhere else. Must run while
+    -- the arena (which may hold the new list) is still live.
+    let writeBack = peek cell >>= \headPtr' ->
+          when (headPtr' /= headPtr) (peekList itemTy headPtr' >>= setBack t)
+    pure (argPtr cell, free cell >> cleanup, writeBack)
   _ -> do
     (arg, free') <- toFFIArg (Proxy @"tool-arg") t v
     pure (arg, free', pure ())
@@ -200,39 +226,68 @@ buildListBuffer itemTy items = do
   let n      = length items
       stride = listNodeStride itemTy
   buf <- mallocBytes (n * stride) :: IO (Ptr Word8)
-  forM_ (zip [0 .. n - 1] items) $ \(i, item) -> do
+  cleanups <- forM (zip [0 .. n - 1] items) $ \(i, item) -> do
     let nodeBase = buf `plusPtr` (i * stride)
         nextRaw  = if i == n - 1
                    then nullPtr
                    else buf `plusPtr` ((i + 1) * stride) :: Ptr Word8
     poke (castPtr nodeBase :: Ptr (Ptr Word8)) nextRaw
     pokeListElem itemTy (nodeBase `plusPtr` 8) item
-  pure (buf, free buf)
+  pure (buf, sequence_ cleanups >> free buf)
 
 -- | Write element data for a single list node at the given byte address.
--- Returns an optional cleanup action for recursively allocated sub-lists.
-pokeListElem :: TypeProxy t -> Ptr Word8 -> HaskellType t -> IO ()
+-- Returns a cleanup action for anything it allocated (sub-lists and text).
+pokeListElem :: TypeProxy t -> Ptr Word8 -> HaskellType t -> IO (IO ())
 pokeListElem t ptr item = case t of
-  BooleanType -> poke (castPtr ptr :: Ptr Word8)
-                      (if item then 1 else 0 :: Word8)
-  IntegerType -> poke (castPtr ptr :: Ptr Int32)
-                      (fromIntegral item :: Int32)
-  RealType    -> poke (castPtr ptr :: Ptr Double) item
-  ComplexType -> do
+  BooleanType -> done $ poke (castPtr ptr :: Ptr Word8)
+                             (if item then 1 else 0 :: Word8)
+  IntegerType -> done $ poke (castPtr ptr :: Ptr Int32)
+                             (fromIntegral item :: Int32)
+  RealType    -> done $ poke (castPtr ptr :: Ptr Double) item
+  ComplexType -> done $ do
     let x :+ y = item
     poke (castPtr ptr              :: Ptr Double) x
     poke (castPtr (ptr `plusPtr` 8) :: Ptr Double) y
-  ColorType   -> do
+  ColorType   -> done $ do
     let (r, g, b) = colorToRGB item
     poke ptr r
     poke (ptr `plusPtr` 1) g
     poke (ptr `plusPtr` 2) b
   ListType itemTy' -> do
     -- Nested list: recursively build and store the head pointer.
-    (headPtr, _cleanup) <- buildListBuffer itemTy' item
-    -- Note: _cleanup leaks for now; nested lists are uncommon.
+    (headPtr, cleanup) <- buildListBuffer itemTy' item
     poke (castPtr ptr :: Ptr (Ptr Word8)) headPtr
-  _ -> pure ()  -- unsupported element types: leave zeroed
+    pure cleanup
+  TextType -> do
+    str <- GHC.newCString utf8 item
+    poke (castPtr ptr :: Ptr CString) str
+    pure (free str)
+  _ -> done (pure ())  -- unsupported element types: leave zeroed
+ where
+  done action = action >> pure (pure ())
+
+-- | Read back a list built by 'buildListBuffer' or by compiled code (in the
+-- arena), starting from its head node (null for the empty list).
+peekList :: TypeProxy t -> Ptr Word8 -> IO [HaskellType t]
+peekList itemTy node
+  | node == nullPtr = pure []
+  | otherwise = (:) <$> peekListElem itemTy (node `plusPtr` 8)
+                    <*> (peek (castPtr node) >>= peekList itemTy)
+
+-- | Read the element data of a single list node; the inverse of
+-- 'pokeListElem'.
+peekListElem :: TypeProxy t -> Ptr Word8 -> IO (HaskellType t)
+peekListElem t ptr = case t of
+  BooleanType -> (/= 0) <$> peek (castPtr ptr :: Ptr Word8)
+  IntegerType -> fromIntegral <$> peek (castPtr ptr :: Ptr Int32)
+  RealType    -> peek (castPtr ptr)
+  ComplexType -> (:+) <$> peek (castPtr ptr) <*> peek (castPtr (ptr `plusPtr` 8))
+  ColorType   -> do
+    [r, g, b] <- peekArray 3 ptr
+    pure (rgbToColor (r, g, b))
+  ListType itemTy' -> peek (castPtr ptr) >>= peekList itemTy'
+  TextType -> peek (castPtr ptr) >>= GHC.peekCString utf8
+  _ -> error ("internal error: can't read a list of " ++ showType t)
 
 fromFFIRetArg :: TypeProxy ty
               -> Ptr Double
@@ -324,7 +379,7 @@ withJittedViewer :: forall env t. (MissingViewerArgs env, KnownEnvironment env)
                  -> (ViewerFunction env -> IO t) -> IO t
 withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript code0 action = do
   -- Do some basic AST-level optimizations first
-  let code = transformValues (integerPowers . avoidSqrt) code0
+  let code = transformValues backendRewrites code0
   name <- modifyMVar nextId (\n -> pure (n + 1, "kernel_" ++ show n))
   withPrepEnvProxy mPrepScript $ \prepEnvProxy -> do
     m <- either error pure (compileRenderer' prepEnvProxy (fromString name) code)
@@ -381,7 +436,7 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
                     h = fromIntegral vaHeight :: Int
                     (x0, y0) = vaPoint
                     (dx, dy) = vaStep
-                withPrepArrays prepEnvProxy nPixels $ \prepPtrs -> do
+                issues <- withPrepArrays prepEnvProxy nPixels $ \prepPtrs -> allocaBytes 1 $ \issuesPtr -> do
                   -- Haskell prep pass: populate prep arrays before LLVM kernel
                   case mPrepScript of
                     Nothing -> pure ()
@@ -408,6 +463,7 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
                                : argInt32 vaSubsamples
                                : argPtr   arena
                                : argInt32 (fromIntegral arenaCapacity)
+                               : argPtr   issuesPtr
                                : argCDouble (CDouble $ fst vaPoint)
                                : argCDouble (CDouble $ snd vaPoint)
                                : argCDouble (CDouble $ fst vaStep)
@@ -415,7 +471,11 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
                                : colorArg
                                : args ++ map argPtr prepPtrs
                   callFFI fn retVoid fullArgs
+                  status <- peek (issuesPtr :: Ptr Word8)
+                  pure ViewerIssues { viOutOfMemory = testBit status 0
+                                    , viBadIndex    = testBit status 1 }
                 sequence_ (colorFree : frees)
+                pure issues
 
 ------------------------------------------------------------------------
 -- Compiled tools
@@ -438,9 +498,33 @@ foreign import ccall "wrapper"
 foreign import ccall "wrapper"
   wrapRect :: (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
            -> IO (FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()))
+foreign import ccall "wrapper"
+  wrapWrite :: (CString -> CDouble -> CDouble -> IO ())
+            -> IO (FunPtr (CString -> CDouble -> CDouble -> IO ()))
+foreign import ccall "wrapper"
+  wrapFormat :: (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32)
+             -> IO (FunPtr (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32))
 
--- | Build the seven C callbacks for a 'DrawSink', run the action with them, and
--- free them afterwards.
+-- | The number formatter compiled tool code calls for 'ToText' (see
+-- 'Backend.LLVM.Operand.ArenaState'): writes the text form of an integer
+-- (tag 0), real number (1), or complex number (2) as a NUL-terminated UTF-8
+-- string into the given buffer, truncated to fit, and returns its length.
+-- Uses 'showValue', exactly as the interpreter does.
+formatNumber :: Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32
+formatNumber tag (CDouble x) (CDouble y) buf cap =
+  GHC.withCStringLen utf8 str $ \(src, len) -> do
+    let n = min len (fromIntegral cap - 1)
+    copyBytes buf (castPtr src) n
+    pokeByteOff buf n (0 :: Word8)
+    pure (fromIntegral n)
+  where
+    str = case tag of
+      0 -> showValue IntegerType (round x)
+      1 -> showValue RealType x
+      _ -> showValue ComplexType (x :+ y)
+
+-- | Build the C callbacks for a 'DrawSink' (plus the number formatter), run the
+-- action with them, and free them afterwards.
 withDrawVTablePtrs
   :: DrawSink
   -> ( ( FunPtr (IO ())
@@ -449,7 +533,9 @@ withDrawVTablePtrs
        , FunPtr (CDouble -> CDouble -> IO ())
        , FunPtr (CDouble -> CDouble -> CDouble -> CDouble -> IO ())
        , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> IO ())
-       , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()) )
+       , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
+       , FunPtr (CString -> CDouble -> CDouble -> IO ())
+       , FunPtr (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32) )
        -> IO a )
   -> IO a
 withDrawVTablePtrs sink action = do
@@ -466,16 +552,21 @@ withDrawVTablePtrs sink action = do
   rectFP   <- wrapRect   (\f x1 y1 x2 y2 ->
                             dsRect sink (f /= 0) (realToFrac x1, realToFrac y1)
                                         (realToFrac x2, realToFrac y2))
-  action (clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP)
+  writeFP  <- wrapWrite  (\txt x y -> do
+                            str <- GHC.peekCString utf8 txt
+                            dsWrite sink str (realToFrac x, realToFrac y))
+  formatFP <- wrapFormat formatNumber
+  action (clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP)
     `finally` (   freeHaskellFunPtr clearFP  >> freeHaskellFunPtr strokeFP
                >> freeHaskellFunPtr fillFP   >> freeHaskellFunPtr pointFP
                >> freeHaskellFunPtr lineFP   >> freeHaskellFunPtr circleFP
-               >> freeHaskellFunPtr rectFP )
+               >> freeHaskellFunPtr rectFP   >> freeHaskellFunPtr writeFP
+               >> freeHaskellFunPtr formatFP )
 
 -- | Execute a tool event handler by JIT-compiling it and calling it, with draw
 -- commands routed back to the given sink.  Compiles once per invocation for now.
 compiledToolExec :: LLVMJit -> DrawSink -> ToolExec
-compiledToolExec (dylib, session, compileLayer, nextId, arenaPool) sink =
+compiledToolExec (dylib, session, compileLayer, nextId, _) sink =
   \envp code -> do
     -- Compile the handler ONCE, when the dispatcher is built.  OrcJIT's
     -- 'addModule' hands a clone of the module to the session-wide JIT, so the
@@ -485,7 +576,7 @@ compiledToolExec (dylib, session, compileLayer, nextId, arenaPool) sink =
     -- Same AST pre-pass as viewers: turn constant-exponent powers (e.g. z²)
     -- into multiplications instead of generic exp/log complex powers, which
     -- otherwise lose precision and shift a Newton iteration off course.
-    let code' = transformValues (integerPowers . avoidSqrt) code
+    let code' = transformValues backendRewrites code
 
     m <- either error pure (compileToolHandler envp (fromString name) code')
     fn <- withContext $ \llctx ->
@@ -510,34 +601,94 @@ compiledToolExec (dylib, session, compileLayer, nextId, arenaPool) sink =
             Right (JITSymbol fnPtr _) ->
               pure (castPtrToFunPtr (wordPtrToPtr fnPtr) :: FunPtr ())
 
-    -- The per-event invoker: snapshot args, marshal, call, write back.
+    -- The per-event invoker: snapshot args, then run the handler, retrying
+    -- with a bigger arena if it runs out.
     pure $ \ctx -> snapshotEventArgs ctx >>= \case
       Nothing -> pure ()
       Just haskArgs ->
-        withDrawVTablePtrs sink $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP) ->
-        bracket (readChan arenaPool) (writeChan arenaPool) $ \arena ->
-        allocaBytes 1 $ \overflowPtr -> do
-          poke overflowPtr (0 :: Word8)
-          (envArgs, envFrees, envWriteBacks) <-
-            unzip3 <$> fromContextM (\_ ty (earg, v) -> toFFIArgInOut ty earg v)
-                                    (zipContext ctx haskArgs)
-          let fullArgs =
-                [ argPtr (castFunPtrToPtr clearFP)
-                , argPtr (castFunPtrToPtr strokeFP)
-                , argPtr (castFunPtrToPtr fillFP)
-                , argPtr (castFunPtrToPtr pointFP)
-                , argPtr (castFunPtrToPtr lineFP)
-                , argPtr (castFunPtrToPtr circleFP)
-                , argPtr (castFunPtrToPtr rectFP)
-                , argPtr arena
-                , argInt32 (fromIntegral arenaCapacity)
-                , argPtr overflowPtr ]
-                ++ envArgs
-          callFFI fn retVoid fullArgs
-          -- Propagate any config-variable Sets back to the host
-          -- (e.g. the Select tool sets the coordinate), then free.
-          sequence_ envWriteBacks
-          sequence_ envFrees
+        let attempt capacity = runToolOnce fn sink capacity ctx haskArgs >>= \case
+              ToolSucceeded -> pure ()
+              ToolBadIndex -> fail
+                "A list index was out of range, so this tool's changes were discarded."
+              ToolOverflowed
+                | capacity < toolArenaMaxCapacity -> attempt (2 * capacity)
+                | otherwise -> fail $ concat
+                    [ "This tool's text and lists used more than "
+                    , show (toolArenaMaxCapacity `div` (1024 * 1024))
+                    , " MB of scratch memory, so its changes were discarded." ]
+        in attempt toolArenaInitialCapacity
+
+-- | Tools get their own arena, separate from the viewers' pool: it starts
+-- at 1 MB and doubles whenever a call runs out, up to 256 MB. (Tool code
+-- that builds up a list with repeated @append@s uses memory quadratic in
+-- the list's length, since each append copies the list.)
+toolArenaInitialCapacity, toolArenaMaxCapacity :: Int
+toolArenaInitialCapacity = 1024 * 1024
+toolArenaMaxCapacity     = 256 * 1024 * 1024
+
+-- | How a single run of a compiled tool handler went.
+data ToolRun = ToolSucceeded | ToolOverflowed | ToolBadIndex
+
+-- | Run a compiled tool handler once, with an arena of the given size.
+-- Unless it succeeded, the run has no effect at all: the handler's draw
+-- commands are held back until it has finished, and its variable changes
+-- are only written back after a successful run, so after an overflow the
+-- handler can simply be run again with a bigger arena.
+runToolOnce :: FunPtr () -> DrawSink -> Int
+            -> Context EventArgument_ env -> Context HaskellValue env
+            -> IO ToolRun
+runToolOnce fn sink capacity ctx haskArgs = do
+  drawn <- newIORef []
+  withDrawVTablePtrs (bufferedSink drawn sink) $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP) ->
+    bracket (mallocBytes capacity) free $ \arena ->
+    allocaBytes 1 $ \overflowPtr -> do
+      poke overflowPtr (0 :: Word8)
+      (envArgs, envFrees, envWriteBacks) <-
+        unzip3 <$> fromContextM (\_ ty (earg, v) -> toFFIArgInOut ty earg v)
+                                (zipContext ctx haskArgs)
+      let fullArgs =
+            [ argPtr (castFunPtrToPtr clearFP)
+            , argPtr (castFunPtrToPtr strokeFP)
+            , argPtr (castFunPtrToPtr fillFP)
+            , argPtr (castFunPtrToPtr pointFP)
+            , argPtr (castFunPtrToPtr lineFP)
+            , argPtr (castFunPtrToPtr circleFP)
+            , argPtr (castFunPtrToPtr rectFP)
+            , argPtr (castFunPtrToPtr writeFP)
+            , argPtr (castFunPtrToPtr formatFP)
+            , argPtr arena
+            , argInt32 (fromIntegral capacity)
+            , argPtr overflowPtr ]
+            ++ envArgs
+      callFFI fn retVoid fullArgs
+      status <- peek overflowPtr
+      let ok = status == 0
+      -- Propagate any config-variable Sets back to the host (e.g. the
+      -- Select tool sets the coordinate) while the arena is still live,
+      -- then free, then draw.
+      when ok (sequence_ envWriteBacks)
+      sequence_ envFrees
+      when ok (readIORef drawn >>= sequence_ . reverse)
+      -- An overflow takes priority: lists cut short by it can easily
+      -- cause a bad index later on, which a bigger arena would avoid.
+      pure $ if | ok               -> ToolSucceeded
+                | testBit status 0 -> ToolOverflowed
+                | otherwise        -> ToolBadIndex
+
+-- | A sink that records draw commands (newest first) instead of drawing
+-- them, to be replayed on the given sink later.
+bufferedSink :: IORef [IO ()] -> DrawSink -> DrawSink
+bufferedSink ref sink = DrawSink
+  { dsClear  = later (dsClear sink)
+  , dsStroke = later . dsStroke sink
+  , dsFill   = later . dsFill sink
+  , dsPoint  = later . dsPoint sink
+  , dsLine   = \p q -> later (dsLine sink p q)
+  , dsCircle = \f r p -> later (dsCircle sink f r p)
+  , dsRect   = \f p q -> later (dsRect sink f p q)
+  , dsWrite  = \t p -> later (dsWrite sink t p)
+  }
+  where later action = modifyIORef' ref (action :)
 
 -- | A 'ToolRunner' that JIT-compiles tool event handlers via this JIT session.
 llvmToolRunner :: LLVMJit -> ToolRunner
@@ -563,7 +714,7 @@ withCompiledCode :: forall env output t a
                   -> (JITFun env t -> IO a)
                   -> IO a
 withCompiledCode outputProxy outputTy env src run = do
-  code0 <- case parseCode env noSplices src of
+  code0 <- case parseCode env noCommonDefs src of
     Left (Left parseErr) -> error (ppFullError parseErr src)
     Left (Right tcErr)   -> error (ppFullError tcErr src)
     Right c               -> pure c
@@ -571,7 +722,7 @@ withCompiledCode outputProxy outputTy env src run = do
   -- exponent powers (e.g. z^2) must become multiplications rather than
   -- the generic complex power (exp(n*log(z))), which is NaN at z=0 --
   -- exactly the z=0 starting point a Mandelbrot-style iteration uses.
-  let code = transformValues (integerPowers . avoidSqrt) code0
+  let code = transformValues backendRewrites code0
   m <- either error pure (compile outputProxy outputTy code)
   loadLibraryPermanently Nothing
   withContext $ \ctx ->
