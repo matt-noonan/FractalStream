@@ -210,7 +210,16 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
         tools         = mapMaybe toolFields stanzas
         viewerTitles  = [ vfTitle v | v <- viewers ]
 
-    case checkTitlesAndTargets viewerTitles tools of
+    -- Type-check every tool up front: building one only stores its
+    -- handlers, which would otherwise be checked when the tool is first
+    -- used, hiding a broken tool until then.
+    let checkTools = do
+          checkTitlesAndTargets viewerTitles tools
+          configEnv <- checkConfigGroup configGroups
+          forM_ viewers $ \v ->
+            checkViewerTools configEnv [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ] v
+
+    case checkTools of
       Left err -> pure (Left err)
       Right () -> buildWithValidTargets configGroups viewers tools viewerTitles >>= \case
         Left err  -> pure (Left err)
@@ -239,14 +248,8 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
 -- Also checks every @\@tool@'s own code, against the ensemble's
 -- @\@config@ environment combined with that tool's own declarations
 -- (mirroring 'Actor.Event.buildHandlerWith's own
--- 'Actor.Event.runParsedToolScript' call, also already pure) -- this
--- is *more* than 'buildEnsembleFromScript' itself catches at build
--- time, since 'buildTool' stores a tool's
--- 'Actor.Event.ParsedToolScript' unapplied and only runs it against a
--- real environment when the tool is actually activated. So a tool
--- error caught here is new coverage, not something
--- 'buildEnsembleFromScript' would also reject today -- the drift-guard
--- test only compares the two when both agree, not full parity.
+-- 'Actor.Event.runParsedToolScript' call, also already pure), the same
+-- check 'buildEnsembleFromScript' runs before building.
 checkScript :: String -> Either (SourceRange, String) ()
 checkScript scriptText = do
   stanzas0 <- parseScript scriptText
@@ -382,27 +385,30 @@ checkViewer configEnv env myTools ViewerFields{..} = do
             _ <- checkPrepCode (map fst outputSpecs) combinedEnv prepParsedCode
             checkMainAndTools combinedEnv
   viewerCheck
+  checkViewerTools configEnv myTools ViewerFields{..}
 
+-- | Type-check the tools targeting a viewer, with the coordinate and
+-- limits 'buildComplexViewer' gives them.
+checkViewerTools :: [(String, SomeType)] -> [ToolFields] -> ViewerFields
+                 -> Either (SourceRange, String) ()
+checkViewerTools configEnv myTools ViewerFields{..} = do
+  mIterPV <- parseMaybeAttrValue vfIterLimit
+  mEscPV  <- parseMaybeAttrValue vfEscape
+  mVanPV  <- parseMaybeAttrValue vfVanish
   let toolLimits = ( fromMaybe defaultIterLimit mIterPV
                     , fromMaybe defaultMaxRadius mEscPV
                     , fromMaybe defaultMinRadius mVanPV
                     )
   forM_ myTools (checkTool configEnv (ComplexCoordinate vfVar) toolLimits vfPixelVar)
 
--- | The pure, allocation-free counterpart of a tool's own code getting
--- type-checked -- in the real app, this first happens inside
--- 'Actor.Event.buildHandlerWith' (itself already pure past its
--- 'SomeContext' argument), only once the tool is actually activated.
+-- | The pure, allocation-free check of a tool's own code, which in the
+-- app is otherwise first type-checked by 'Actor.Event.buildHandlerWith'.
 -- Combines the ensemble's own @\@config@ environment with this tool's
 -- own declarations (mirroring 'buildToolContext's
 -- 'Language.Environment.<#>'-based combining, including its rejection
 -- of a name defined on both sides -- see 'checkNoDuplicateNames')
 -- before type-checking its merged event-handler blocks against the
 -- result, the same way 'mergeToolBlocks' feeds 'buildTool'.
--- 'runParsedToolScript's errors already carry a real 'SourceRange'
--- (threaded through since -- unlike when this was first written --
--- 'ParsedToolBlock'\/'CombinedEventHandler' no longer discard it), so
--- there's no need to tag anything with 'NoSourceRange' here.
 checkTool :: [(String, SomeType)] -> Coordinate -> (ParsedValue, ParsedValue, ParsedValue)
           -> Maybe String -> ToolFields -> Either (SourceRange, String) ()
 checkTool ensembleEnv coord limits mpixel ToolFields{..} = do
@@ -591,7 +597,7 @@ infixl 1 >>=?
 configStmtToLayout :: ConfigStmt -> IO (Either (SourceRange, String) Layout)
 configStmtToLayout = \case
   ConfigText s   -> Right . PlainText <$> newVariable s
-  ConfigButton s -> Right . Button <$> newVariable s
+  ConfigButton _ s -> Right . Button <$> newVariable s
   ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdLabel cdChoices
   ConfigRow stmts -> do
     results <- mapM configStmtToLayout stmts
@@ -978,6 +984,7 @@ buildTool coord limits mpixel ToolFields{..} = do
       showConfigV        <- newVariable (const (pure ()))
       scriptM            <- constMapped (CodeString "") (mergeToolBlocks tfBlocks coord limits mpixel)
       handlerV           <- newVariable (\_ _ -> Nothing)
+      timersV            <- newVariable (toolBlockTimers tfBlocks)
 
       let toolVarNames = Set.fromList (concatMap configStmtNames tfConfig)
 
@@ -991,6 +998,7 @@ buildTool coord limits mpixel ToolFields{..} = do
         , toolScript = scriptM
         , toolEventHandler = handlerV
         , toolVars = pure toolVarNames
+        , toolTimers = timersV
         }
 
 data HaskellValueOrError :: Symbol -> FSType -> Exp Type

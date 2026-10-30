@@ -41,7 +41,7 @@ import qualified GHC.Foreign as GHC
 import GHC.IO.Encoding (utf8)
 
 import Backend.LLVM.Code
-import Backend.LLVM.Operand (listNodeStride)
+import Backend.LLVM.Operand (listNodeStride, pairSecondOffset)
 
 import Language.Value
 import Language.Value.Evaluator (HaskellValue)
@@ -262,6 +262,11 @@ pokeListElem t ptr item = case t of
     str <- GHC.newCString utf8 item
     poke (castPtr ptr :: Ptr CString) str
     pure (free str)
+  PairType a b -> do
+    let (x, y) = item
+    freeX <- pokeListElem a ptr x
+    freeY <- pokeListElem b (ptr `plusPtr` pairSecondOffset a) y
+    pure (freeX >> freeY)
   _ -> done (pure ())  -- unsupported element types: leave zeroed
  where
   done action = action >> pure (pure ())
@@ -287,6 +292,8 @@ peekListElem t ptr = case t of
     pure (rgbToColor (r, g, b))
   ListType itemTy' -> peek (castPtr ptr) >>= peekList itemTy'
   TextType -> peek (castPtr ptr) >>= GHC.peekCString utf8
+  PairType a b -> (,) <$> peekListElem a ptr
+                      <*> peekListElem b (ptr `plusPtr` pairSecondOffset a)
   _ -> error ("internal error: can't read a list of " ++ showType t)
 
 fromFFIRetArg :: TypeProxy ty
@@ -314,7 +321,9 @@ prepArrayStride = \case
   RealType    -> 8
   ComplexType -> 16
   ColorType   -> 3
-  _           -> 4  -- stub for List/Text
+  ListType _  -> 8  -- a pointer to the list's head node
+  TextType    -> 8  -- a pointer to a C string
+  _           -> 4  -- stub for other types
 
 -- | Run @action@ with one zeroed @Ptr Word8@ prep array per variable in
 -- @prepOutputEnv@.  The arrays are stack-allocated and zero-initialised.
@@ -327,19 +336,31 @@ withPrepArrays (BindingProxy _name ty env') nPixels action =
     withPrepArrays env' nPixels $ \restPtrs ->
       action (ptr : restPtrs)
 
--- | Write a single Haskell value into a prep array at the given byte offset.
-writeToPrepArray :: TypeProxy t -> Ptr Word8 -> Int -> HaskellType t -> IO ()
+-- | Write a single Haskell value into a prep array at the given byte offset,
+-- returning an action that frees anything allocated for it. Lists and text
+-- are built outside the arena, the same way 'toFFIArg' passes them, and
+-- the array holds a pointer to them.
+writeToPrepArray :: TypeProxy t -> Ptr Word8 -> Int -> HaskellType t -> IO (IO ())
 writeToPrepArray ty ptr offset val = case ty of
-  BooleanType -> pokeByteOff ptr offset (if val then (1 :: Word8) else 0)
-  IntegerType -> pokeByteOff ptr offset (fromIntegral val :: Int32)
-  RealType    -> pokeByteOff ptr offset (val :: Double)
+  BooleanType -> noFree $ pokeByteOff ptr offset (if val then (1 :: Word8) else 0)
+  IntegerType -> noFree $ pokeByteOff ptr offset (fromIntegral val :: Int32)
+  RealType    -> noFree $ pokeByteOff ptr offset (val :: Double)
   ComplexType -> let re :+ im = val
-                 in pokeByteOff ptr offset re >> pokeByteOff ptr (offset + 8) im
+                 in noFree $ pokeByteOff ptr offset re >> pokeByteOff ptr (offset + 8) im
   ColorType   -> let (r, g, b) = colorToRGB val
-                 in pokeByteOff ptr offset r
-                 >> pokeByteOff ptr (offset + 1) g
-                 >> pokeByteOff ptr (offset + 2) b
-  _ -> pure ()
+                 in noFree $ pokeByteOff ptr offset r
+                          >> pokeByteOff ptr (offset + 1) g
+                          >> pokeByteOff ptr (offset + 2) b
+  ListType itemTy -> do
+    (headPtr, cleanup) <- buildListBuffer itemTy val
+    pokeByteOff ptr offset headPtr
+    pure cleanup
+  TextType -> do
+    str <- GHC.newCString utf8 val
+    pokeByteOff ptr offset str
+    pure (free str)
+  _ -> pure (pure ())
+  where noFree act = act >> pure (pure ())
 
 -- | For each variable in @prepOutputEnv@, look up its last-assigned value
 -- from the interpreter's tracking map and write it to the corresponding
@@ -349,16 +370,16 @@ writePrepOutputsFromMap
   -> [Ptr Word8]
   -> Map.Map String SomeHaskellType
   -> Int
-  -> IO ()
-writePrepOutputsFromMap EmptyEnvProxy [] _ _ = pure ()
+  -> IO (IO ())
+writePrepOutputsFromMap EmptyEnvProxy [] _ _ = pure (pure ())
 writePrepOutputsFromMap (BindingProxy name ty env') (ptr:ptrs) vals pixelIdx = do
   let n = symbolVal name
       byteOffset = pixelIdx * prepArrayStride ty
-  case Map.lookup n vals of
+  cleanup <- case Map.lookup n vals of
     Just (SomeHaskellType ty' val) -> writeToPrepArray ty' ptr byteOffset val
-    Nothing                        -> pure ()
-  writePrepOutputsFromMap env' ptrs vals pixelIdx
-writePrepOutputsFromMap _ _ _ _ = pure ()
+    Nothing                        -> pure (pure ())
+  (cleanup >>) <$> writePrepOutputsFromMap env' ptrs vals pixelIdx
+writePrepOutputsFromMap _ _ _ _ = pure (pure ())
 
 -- | No-op draw handler for use in the Haskell prep pass.
 noPrepDraw :: DrawHandler ScalarIORefM
@@ -438,11 +459,11 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
                     (dx, dy) = vaStep
                 issues <- withPrepArrays prepEnvProxy nPixels $ \prepPtrs -> allocaBytes 1 $ \issuesPtr -> do
                   -- Haskell prep pass: populate prep arrays before LLVM kernel
-                  case mPrepScript of
-                    Nothing -> pure ()
+                  prepFrees <- case mPrepScript of
+                    Nothing -> pure []
                     Just (PrepScript _ prepCode) -> do
-                      forM_ (zip [0 .. h - 1] [y0, y0 - dy ..]) $ \(row, y) ->
-                        forM_ (zip [0 .. w - 1] [x0, x0 + dx ..]) $ \(col, x) -> do
+                      fmap concat $ forM (zip [0 .. h - 1] [y0, y0 - dy ..]) $ \(row, y) ->
+                        forM (zip [0 .. w - 1] [x0, x0 + dx ..]) $ \(col, x) -> do
                           let pixelCtx :: Context HaskellValue (ViewerEnv env)
                               pixelCtx = Bind (Proxy @InternalX)  RealType  x
                                        $ Bind (Proxy @InternalY)  RealType  y
@@ -471,6 +492,7 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
                                : colorArg
                                : args ++ map argPtr prepPtrs
                   callFFI fn retVoid fullArgs
+                  sequence_ prepFrees
                   status <- peek (issuesPtr :: Ptr Word8)
                   pure ViewerIssues { viOutOfMemory = testBit status 0
                                     , viBadIndex    = testBit status 1 }

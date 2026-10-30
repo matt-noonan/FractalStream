@@ -381,7 +381,27 @@ with indented `row:` blocks (side by side) and `tab "Label":` blocks. Each
 of consecutive ones, so the grammar stays unambiguous; a group becomes a
 `Tabbed` layout (a wx notebook). Color fields re-parse their text like text
 boxes do; they used to be frozen `constParsed` values, which silently
-ignored the color picker and `set parameter`.
+ignored the color picker and `set parameter`. A `button` is only allowed in
+a `@tool` (`noButtons` rejects it in `@config`, since only a tool's own
+panel delivers `ButtonPressed`).
+
+Tool behavior in the wx viewer: `on timer` handlers run while the tool is
+selected (`toolTimers`, from `toolBlockTimers` on the parsed blocks; the
+`runningTimers` are stopped on deactivation and when `guardTool` gives up
+on a failing tool). `on refresh` also runs when the selected tool's own
+field values change (the 50 ms refresh timer compares `toolFieldValues`
+with a snapshot taken after the last refresh); with `refreshCanUpdate=true`
+the snapshot is taken before the refresh instead, so a refresh handler that
+changes its own fields keeps running (an animation).
+
+Tool handlers are type-checked at load: `buildEnsembleFromScript` runs
+`checkViewerTools` (the same pure check `checkScript` uses) on every tool
+before building, since `buildTool` only stores a tool's parsed handlers.
+
+`for each x in <expr>` / `with first ... in <expr>` accept any list
+expression: the parser (`withListVar`) stores a non-variable list in a
+hidden variable named after its source position, since the typed AST needs
+a list variable. `@`/`@@` parse at multiplication precedence.
 
 `@common` stanzas (no title or attributes) hold declarations, function
 definitions, and code definitions (`define`) that are prepended to every viewer body, prep script, and tool

@@ -178,19 +178,29 @@ pass
 pass
 |] `shouldFailWith` "dimension descriptor"
 
-    it "accepts a config stanza with declarations, text, and a button" $
+    it "accepts a config stanza with declarations and text" $
       shouldParseTo [r|
 @config "Configuration"
 maxIters : Z as "Iteration limit:" <- 100
 text "Here is some text"
-button "Reset"
 |] $ \case
         [ConfigStanza "Configuration"
           [ ConfigDecl{cdName = "maxIters", cdType, cdLabel = Just "Iteration limit:", cdChoices = Nothing}
           , ConfigText "Here is some text"
-          , ConfigButton "Reset"
           ]] -> typeName cdType `shouldBe` "ℤ"
         other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
+
+    it "rejects a button in a config stanza, even inside a row or tab" $ do
+      [r|
+@config "Configuration"
+button "Reset"
+|] `shouldFailWith` "can't have a button"
+      [r|
+@config "Configuration"
+tab "A":
+  row:
+    button "Reset"
+|] `shouldFailWith` "can't have a button"
 
     it "decodes escape sequences in text" $
       shouldParseTo "@config \"C\"\ntext \"say \\\"hi\\\" \\\\ bye\"\n" $ \case
@@ -211,15 +221,17 @@ c : Z <- 3
           ]] -> pure ()
         other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
 
-    it "accepts text and button statements inside a row:" $
+    it "accepts text and button statements inside a tool's row:" $
       shouldParseTo [r|
-@config "Configuration"
+@tool "T"
 row:
   text "hi"
   button "Go"
+on button "Go":
+  pass
 |] $ \case
-        [ConfigStanza "Configuration" [ConfigRow [ConfigText "hi", ConfigButton "Go"]]] -> pure ()
-        other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
+        [ToolStanza{tsConfig = [ConfigRow [ConfigText "hi", ConfigButton _ "Go"]]}] -> pure ()
+        other -> expectationFailure ("did not match expected tool stanza: " ++ show (length other) ++ " stanzas")
 
     it "groups consecutive tab: blocks into one set of tabs" $
       shouldParseTo [r|

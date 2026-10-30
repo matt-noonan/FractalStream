@@ -18,6 +18,8 @@ module Backend.LLVM.Operand
   , allocaOp
   , nullI8Ptr
   , listNodeStride
+  , listElemBytes
+  , pairSecondOffset
   , loadListNext
   , loadListElem
   , storeListElem
@@ -103,9 +105,11 @@ storeOperand op (PtrOp ptrOp) = case (op, ptrOp) of
     store ptrR 0 r
     store ptrG 0 g
     store ptrB 0 b
+  (PairOp x y, PairOp ptrX ptrY) -> do
+    storeOperand x (PtrOp ptrX)
+    storeOperand y (PtrOp ptrY)
   (ListOp headPtr, ListOp ptrSlot) -> store ptrSlot 0 headPtr
   (TextOp v, TextOp ptr) -> store ptr 0 v
-  _ -> throwError "TODO: Unhandled store type"
 
 detypeOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
               => TypeProxy t
@@ -280,16 +284,28 @@ nullI8Ptr = ConstantOperand (AST.Null (AST.ptr AST.i8))
 -- | Byte stride between consecutive nodes in a serialized list buffer.
 -- Layout: 8 bytes (next i8* pointer) + element data, rounded up to 8-byte alignment.
 listNodeStride :: TypeProxy t -> Int
-listNodeStride t = roundUp8 (8 + elemBytes t)
-  where
-    roundUp8 n  = ((n + 7) `div` 8) * 8
-    elemBytes BooleanType  = 1
-    elemBytes IntegerType  = 4
-    elemBytes RealType     = 8
-    elemBytes ComplexType  = 16  -- two doubles
-    elemBytes ColorType    = 3
-    elemBytes (ListType _) = 8   -- nested list: a head pointer
-    elemBytes _            = 8   -- fallback for unsupported types
+listNodeStride t = roundUp8 (8 + listElemBytes t)
+
+-- | The size in bytes of a list element's data.
+listElemBytes :: TypeProxy t -> Int
+listElemBytes = \case
+  BooleanType  -> 1
+  IntegerType  -> 4
+  RealType     -> 8
+  ComplexType  -> 16  -- two doubles
+  ColorType    -> 3
+  ListType _   -> 8   -- nested list: a head pointer
+  TextType     -> 8   -- a pointer to a C string
+  PairType a b -> pairSecondOffset a + listElemBytes b
+  _            -> 8   -- fallback for unsupported types
+
+-- | Where a pair element's second component starts, relative to its first:
+-- the first component's size, rounded up to 8-byte alignment.
+pairSecondOffset :: TypeProxy t -> Int
+pairSecondOffset = roundUp8 . listElemBytes
+
+roundUp8 :: Int -> Int
+roundUp8 n = ((n + 7) `div` 8) * 8
 
 -- | Emit LLVM IR to load the 'next' pointer from a list node.
 -- The node pointer is an i8*; the next field lives at byte offset 0.
@@ -307,8 +323,14 @@ loadListElem :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
              => TypeProxy t
              -> Operand     -- ^ i8* pointing to the current node
              -> m (Op t)
-loadListElem t nodePtr = do
-  elemI8 <- gep nodePtr [int32 8]
+loadListElem t nodePtr = gep nodePtr [int32 8] >>= loadElemAt t
+
+-- | Load element data starting at the given address.
+loadElemAt :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+           => TypeProxy t
+           -> Operand     -- ^ i8* pointing to the element data
+           -> m (Op t)
+loadElemAt t elemI8 =
   case t of
     BooleanType -> do
       p <- bitcast elemI8 (AST.ptr AST.i1)
@@ -336,6 +358,9 @@ loadListElem t nodePtr = do
     TextType -> do
       p <- bitcast elemI8 (AST.ptr (AST.ptr AST.i8))
       TextOp <$> load p 0
+    PairType a b -> do
+      secondI8 <- gep elemI8 [int32 (fromIntegral (pairSecondOffset a))]
+      PairOp <$> loadElemAt a elemI8 <*> loadElemAt b secondI8
     _ -> throwError ("loadListElem: unsupported element type " ++ showType t)
 
 -- | Write element data into a list node at the given byte offset (offset 8 past
@@ -347,6 +372,15 @@ storeListElem :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
               -> m ()
 storeListElem t nodePtr op = do
   elemI8 <- gep nodePtr [int32 8]
+  storeElemAt t elemI8 op
+
+-- | Store element data starting at the given address.
+storeElemAt :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+            => TypeProxy t
+            -> Operand   -- ^ i8* pointing to the element data
+            -> Op t
+            -> m ()
+storeElemAt t elemI8 op =
   case (t, op) of
     (BooleanType, BooleanOp v) -> do
       p <- bitcast elemI8 (AST.ptr AST.i1)
@@ -377,6 +411,10 @@ storeListElem t nodePtr op = do
     (TextType, TextOp str) -> do
       p <- bitcast elemI8 (AST.ptr (AST.ptr AST.i8))
       store p 0 str
+    (PairType a b, PairOp x y) -> do
+      secondI8 <- gep elemI8 [int32 (fromIntegral (pairSecondOffset a))]
+      storeElemAt a elemI8 x
+      storeElemAt b secondI8 y
     _ -> throwError ("storeListElem: unsupported type " ++ showType t)
 
 -- | Arena state threaded through LLVM IR generation for dynamic list allocation.

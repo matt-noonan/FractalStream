@@ -11,7 +11,7 @@ import Data.Color
 import Data.IORef
 import Data.List (isInfixOf)
 import Control.Exception (IOException, ErrorCall(..))
-import Actor.Viewer (ViewerFunction(..), ViewerArgs(..), ViewerIssues(..))
+import Actor.Viewer (ViewerFunction(..), ViewerArgs(..), ViewerIssues(..), PrepScript(..))
 import Actor.Viewer.Types (ViewerEnv)
 import Foreign (allocaBytes, peekArray, Word8)
 import Backend.LLVM
@@ -181,6 +181,48 @@ spec = do
       (issues, pixels) <- render jit 2
       issues `shouldBe` ViewerIssues { viOutOfMemory = True, viBadIndex = False }
       pixels `shouldBe` allPixels (255, 0, 255)
+
+    it "supports pairs, and lists of pairs" $ withJIT $ \jit -> do
+      let env = envProxy (Proxy @(ViewerEnv '[]))
+          src = unlines
+            [ "p := (1.0, 2.0)"
+            , "p <- (2.0, 3.0)"
+            , "ps := [(1.0, 2.0), (3.0, 4.0)]"
+            , "ps <- append(ps, p)"
+            , "bs : List of (Boolean x C) <- [(true, 1 + i)]"
+            , "count := 0"
+            , "for each q in ps:"
+            , "  count <- count + 1"
+            , "color <- if count = 3 and length(bs) = 1 then green else red" ]
+      code <- either (fail . show) pure (parseCode env noCommonDefs src)
+      pixels <- withJittedViewer jit Nothing code $ \(ViewerFunction vf) ->
+        allocaBytes (3 * 4 * 4) $ \buf -> do
+          _ <- vf ViewerArgs
+            { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+            , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+            , vaBuffer = buf, vaArgs = EmptyContext }
+          peekArray (3 * 4 * 4) buf
+      pixels `shouldBe` allPixels (colorToRGB green)
+
+    it "passes list and text outputs from a prepare block to the kernel" $ withJIT $ \jit -> do
+      let env = envProxy (Proxy @(ViewerEnv PrepTestEnv))
+          prepSrc = "table <- [1, i, 2]\nlabel <- text(\"ab\", \"c\")"
+          src = "l := label\ncolor <- if length(table) = 3 and re(table @ 3) > 1.5 then green else red"
+      prepCode <- either (fail . show) pure (parseCode env noCommonDefs prepSrc)
+      code <- either (fail . show) pure (parseCode env noCommonDefs src)
+      let prep = PrepScript (envProxy (Proxy @PrepTestEnv)) prepCode
+      pixels <- withJittedViewer jit (Just prep) code $ \(ViewerFunction vf) ->
+        allocaBytes (3 * 4 * 4) $ \buf -> do
+          _ <- vf ViewerArgs
+            { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+            , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+            , vaBuffer = buf
+            , vaArgs = Bind (Proxy @"table") (ListType ComplexType) []
+                     $ Bind (Proxy @"label") TextType "" EmptyContext }
+          peekArray (3 * 4 * 4) buf
+      pixels `shouldBe` allPixels (colorToRGB green)
+
+type PrepTestEnv = '[ '("table", 'ListT 'ComplexT), '("label", 'TextT) ]
 
 type ToolTestEnv =
   '[ '("msg", 'TextT), '("n", 'IntegerT), '("x", 'RealT), '("z", 'ComplexT)
