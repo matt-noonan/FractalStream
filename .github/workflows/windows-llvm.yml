@@ -298,3 +298,27 @@ jobs:
       with:
         name: FractalStream-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}-llvm.zip
         path: FractalStream-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}-llvm.zip
+
+    # Check that the LLVM JIT actually works on Windows: the backend's tests
+    # compile and run kernels, and fsrun renders a small project with it.
+    - name: Test the LLVM backend
+      run: |
+        export PATH="$PATH:$GHC_MINGW/bin"   # llvm-config needs libc++.dll
+        cd fractalstream-backend-llvm
+        stack --skip-msys test --extra-lib-dirs="$STUB_LIBS"
+
+    - name: Render a project with fsrun
+      run: |
+        set -euo pipefail
+        export PATH="$PATH:$GHC_MINGW/bin"
+        cd fractalstream-ui-headless
+        stack --skip-msys build --extra-lib-dirs="$STUB_LIBS"
+        printf 'script: |\n  @viewer "Plane" var=z\n  color <- if |z| < 1 then blue else black\n' > plane.yaml
+        stack --skip-msys exec -- fsrun plane.yaml --snapshot Plane --output plane.png
+        ls -l plane.png
+
+    - name: Upload the rendered image
+      uses: actions/upload-artifact@v4
+      with:
+        name: fsrun-plane-windows.png
+        path: fractalstream-ui-headless/plane.png
