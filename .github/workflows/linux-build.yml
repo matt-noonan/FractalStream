@@ -1,0 +1,199 @@
+name: Linux build (reusable)
+
+# The Linux build, shared by linux.yml and release.yml. Builds the
+# FractalStream AppImage and the fsrun command-line tool, and uploads them as
+# one artifact named linux-x86_64, holding
+#   FractalStream-<suffix>.AppImage   the app
+#   fsrun-<suffix>.tar.gz             fsrun, with the shared libraries it needs
+# where <suffix> is <version>-linux-x86_64 when a version is given, and
+# <commit>-linux-x86_64 otherwise.
+#
+# LLVM 12 comes from apt.llvm.org's xenial packages, which need that era's
+# libffi6 and libtinfo5, and is linked as a shared library. So fsrun is
+# shipped with every shared library it uses except glibc's own, found next
+# to it by an $ORIGIN rpath. Building on Ubuntu 24.04 means both need glibc
+# 2.39 or newer.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'The release version (a leading "v" is dropped); empty for a development build'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build:
+
+    runs-on: ubuntu-24.04
+
+    steps:
+
+    - uses: actions/checkout@v1
+
+    - name: Install dependencies
+      run: |
+        # Install libffi6
+        sudo apt update
+        curl -LO https://mirrors.kernel.org/ubuntu/pool/main/libf/libffi/libffi6_3.2.1-8_amd64.deb
+        sudo dpkg -i libffi6_3.2.1-8_amd64.deb
+
+        # Install libtinfo5
+        wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.3_amd64.deb
+        sudo apt install ./libtinfo5_6.3-2ubuntu0.3_amd64.deb
+
+        # Install fuse for appimage, icnsutils for converting the macos icns
+        # file, and patchelf for fsrun's bundled libraries
+        sudo apt install libfuse2 icnsutils patchelf
+
+        # Install appimagetool and linuxbuilder
+        wget https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+        sudo mv appimagetool-x86_64.AppImage /usr/bin/appimagetool
+        sudo chmod +x /usr/bin/appimagetool
+        wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+        sudo mv linuxdeploy-x86_64.AppImage /usr/bin/linuxdeploy
+        sudo chmod +x /usr/bin/linuxdeploy
+        echo "/usr/bin" >> $GITHUB_PATH
+
+        # Install Haskell stack
+        #     (nope, already installed in this runner)
+        #curl -sSL https://get.haskellstack.org/ | sh
+
+    - name: Install wxWidgets 3.2
+      run: |
+        sudo apt install libwxgtk3.2-dev
+        sudo apt install libwxgtk-media3.2-dev
+        sudo ln -s /usr/bin/wx-config /usr/bin/wx-config-3.2
+
+    - name: Get cached build of wxc
+      id: cache-wxc
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ runner.os }}-cache-wxc
+        path: wxHaskell-3.2
+
+    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
+      name: Build wxc from wxHaskell
+      run: |
+        git clone https://github.com/matt-noonan/wxHaskell-3.2.git
+        cd wxHaskell-3.2/wxc
+        ./generate-version-header.sh
+        mkdir build
+        cd build
+        cmake -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=ON ..
+        cmake --build .
+
+    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
+      name: Save build of wxc
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-cache-wxc
+        path: wxHaskell-3.2
+
+    - name: Install wxc
+      run: |
+        pwd
+        cd wxHaskell-3.2/wxc/build
+        sudo cmake --install .
+
+    - name: Install LLVM 12
+      run: |
+        printf "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" |sudo tee /etc/apt/sources.list.d/llvm-toolchain-xenial-12.list
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key |sudo apt-key add -
+        sudo apt update
+        sudo apt install llvm-12-dev
+
+    # Restore the newest saved .stack, and save a new one after every run,
+    # even a failed one, so that a failure late in the build doesn't throw
+    # away the dependencies that were built.
+    - name: Get cached .stack
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ runner.os }}-cache-dot-stack-${{ github.run_id }}
+        restore-keys: ${{ runner.os }}-cache-dot-stack
+        path: ~/.stack
+
+    - name: Apply patch
+      run: |
+        git apply patches/shared-llvm.patch
+        # fsrun links LLVM the same way.
+        sed -i 's/shared-llvm: false/shared-llvm: true/' fractalstream-ui-headless/stack.yaml
+
+    - name: Build Haskell dependencies
+      run: |
+        cd fractalstream-ui-wx
+        stack build --only-snapshot
+
+    - name: Build FractalStream
+      run: |
+        cd fractalstream-ui-wx
+        icns2png -x FS.icns
+        stack build
+
+    - name: Build fsrun
+      run: |
+        set -euo pipefail
+        cd fractalstream-ui-headless
+        stack build
+        mkdir -p ../fsrun-dist/bin ../fsrun-dist/lib
+        cp "$(stack path --local-install-root)/bin/fsrun" ../fsrun-dist/bin/
+        cd ../fsrun-dist
+        strip bin/fsrun
+
+        # Bundle every shared library fsrun uses (ldd lists them all,
+        # transitively), except glibc's own, and have each find the others
+        # next to itself.
+        ldd bin/fsrun \
+          | awk '/=> \// { print $3 }' \
+          | grep -vE '/(libc|libm|libdl|libpthread|librt|libresolv|libutil|ld-linux[^/]*)\.so' \
+          | xargs -I{} cp -L {} lib/
+        patchelf --set-rpath '$ORIGIN/../lib' bin/fsrun
+        for l in lib/*; do patchelf --set-rpath '$ORIGIN' "$l"; done
+        ls -l bin lib
+
+    - name: Check fsrun without the build machine's LLVM
+      run: |
+        set -euo pipefail
+        sudo apt remove -y llvm-12-dev llvm-12 libllvm12
+        ldd fsrun-dist/bin/fsrun
+        if ldd fsrun-dist/bin/fsrun | grep -q "not found"; then
+          echo "Some libraries were not found"; exit 1
+        fi
+        fsrun-dist/bin/fsrun --version
+        printf 'script: |\n  @viewer "Plane" var=z\n  color <- if |z| < 1 then blue else black\n' > plane.yaml
+        fsrun-dist/bin/fsrun plane.yaml --snapshot Plane --output plane.png
+        ls -l plane.png
+
+    - if: ${{ always() }}
+      name: Save .stack
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-cache-dot-stack-${{ github.run_id }}
+        path: ~/.stack
+
+    - name: Archive the AppImage and fsrun
+      id: archive
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ -n "$VERSION" ]; then
+          SUFFIX="${VERSION#v}-linux-x86_64"
+        else
+          SUFFIX="$GITHUB_SHA-linux-x86_64"
+        fi
+        (cd fractalstream-ui-wx &&
+         cp "$(stack path --dist-dir)/build/FractalStream-x86_64.AppImage" "../FractalStream-$SUFFIX.AppImage")
+        mv fsrun-dist "fsrun-$SUFFIX"
+        tar czf "fsrun-$SUFFIX.tar.gz" "fsrun-$SUFFIX"
+        sha256sum "FractalStream-$SUFFIX.AppImage" "fsrun-$SUFFIX.tar.gz"
+        echo "suffix=$SUFFIX" >> $GITHUB_OUTPUT
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-x86_64
+        path: |
+          FractalStream-${{ steps.archive.outputs.suffix }}.AppImage
+          fsrun-${{ steps.archive.outputs.suffix }}.tar.gz
