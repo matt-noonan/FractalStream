@@ -40,7 +40,6 @@ import Language.Value.Parser
 import Language.Code.Parser (CommonDefs(..), noCommonDefs, codeStatementsGrammar, ParsedCode, withDefinedFunctions, withCommon)
 import Language.Code.Syntax (Stmt(..), StmtF(..))
 import Actor.Event (toolBlocksGrammar, ParsedToolBlock)
-import Actor.Layout (Dimensions(..), parseDimensions)
 
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
@@ -126,7 +125,6 @@ data ParsedStanza
       { vsTitle       :: String
       , vsVar         :: String
         -- ^ The name of the viewer's complex coordinate variable.
-      , vsSize        :: Dimensions
       , vsCenter      :: Maybe String
       , vsPixelSize   :: Maybe String
       , vsIterLimit   :: Maybe String
@@ -140,14 +138,6 @@ data ParsedStanza
       , vsPixelVar    :: Maybe String
         -- ^ The name of a variable to bind to the per-pixel step size, if
         -- given (mirrors the classic YAML's @pixel-size:@ key).
-      , vsResizable   :: Bool
-      , vsPosition    :: Dimensions
-      , vsPositionGiven :: Bool
-        -- ^ 'False' when @position=@ was omitted, so 'vsPosition' is
-        -- only a placeholder ('parseScript's
-        -- own 'assignViewerPositions' pass replaces it with a value
-        -- staggered against this script's other un-positioned
-        -- viewers, same timing as 'fillDefaultSrcs').
       , vsPrepare     :: Maybe ([(String, SomeType)], ParsedCode)
         -- ^ An optional @prepare name1 : Type1, name2 : Type2, ...:@
         -- block, naming this viewer's preparation-script output
@@ -204,7 +194,7 @@ parseScript input = do
   let common = concat [ stmts | (_, CommonStanza (Stmt _ (SBlock stmts))) <- commonResults ]
       defs = defs0 { commonCode = common }
   restResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs c) restChunks
-  pure (assignViewerPositions (fillDefaultSrcs input (map snd (sortOn fst (commonResults ++ restResults)))))
+  pure (fillDefaultSrcs input (map snd (sortOn fst (commonResults ++ restResults))))
 
 -- | A synthesized @\@config@ stanza providing `max_iters`\/`escape_radius`\/
 -- `vanishing_radius`, meant to be appended to a parsed script's own stanzas
@@ -268,23 +258,6 @@ fillDefaultSrcs input = map onStanza
         (line:_) -> take (e + 1 - s) (drop s line)
         []       -> ""
       _ -> ""
-
--- | Stagger the placeholder @100x100@ position 'validateViewerHeader'
--- gave every @\@viewer@ that omitted its own @position=@, so that
--- several such viewers don't all open stacked exactly on top of one
--- another: the first keeps @100x100@, the second becomes @130x130@,
--- the third @160x160@, and so on, 30 pixels further each time. A
--- viewer with an explicit @position=@ ('vsPositionGiven') is left
--- alone and doesn't consume a step in that sequence, so an explicit
--- viewer sitting between two un-positioned ones doesn't shift their
--- stagger.
-assignViewerPositions :: [ParsedStanza] -> [ParsedStanza]
-assignViewerPositions = go (0 :: Int)
-  where
-    go _ [] = []
-    go n (v@ViewerStanza{vsPositionGiven = False} : rest) =
-      v { vsPosition = Dimensions (100 + 30 * n, 100 + 30 * n) } : go (n + 1) rest
-    go n (s : rest) = s : go n rest
 
 -- | Parse one stanza's own token span (as produced by 'splitStanzas',
 -- without the enclosing file-level Indent\/Dedent) into its 'ParsedStanza'.
@@ -402,10 +375,12 @@ scriptGrammar defs = mdo
   fractionValue <- rule
     ((\n d -> n ++ "/" ++ d) <$> signedNumber <*> (token Divide *> signedNumber))
 
-  -- Dimensions (`size=`/`position=`) are always whole, non-negative
-  -- pixel counts -- parsed downstream by `parseDimensions`, which
-  -- never accepts a decimal -- so this deliberately doesn't go
-  -- through `numberLiteral`/`signedNumber` above.
+  -- Dimensions (`size=600x600`) are always whole, non-negative pixel
+  -- counts, so this deliberately doesn't go through
+  -- `numberLiteral`/`signedNumber` above. No attribute takes one any
+  -- more, but still parsing them lets an old `@viewer size=...`
+  -- header reach 'validateViewerHeader's explanation of where window
+  -- geometry went, rather than failing as a bare parse error.
   dimWidth <- rule (tokenMatch (\case { NumberI n -> Just n; _ -> Nothing }))
 
   dimensionValue <- rule
@@ -543,9 +518,8 @@ scriptGrammar defs = mdo
   viewerStanza <- rule $
     (\ehdr mprepE code ->
         (\ViewerHeader{..} mprep ->
-            ViewerStanza vhTitle vhVar vhSize vhCenter vhPixelSize vhIterLimit vhEscape vhVanish
-                         vhPixelVar vhResizable (fromMaybe (Dimensions (100, 100)) vhPosition)
-                         (isJust vhPosition) mprep code)
+            ViewerStanza vhTitle vhVar vhCenter vhPixelSize vhIterLimit vhEscape vhVanish
+                         vhPixelVar mprep code)
         <$> ehdr <*> sequence mprepE)
     <$> viewerHeader <*> optional prepareBlock <*> (withCommon defs <$> viewerBody)
 
@@ -621,19 +595,12 @@ negateNumberLiteral = either (Left . negate) (Right . negate)
 data ViewerHeader = ViewerHeader
   { vhTitle     :: String
   , vhVar       :: String
-  , vhSize      :: Dimensions
   , vhCenter    :: Maybe String
   , vhPixelSize :: Maybe String
   , vhIterLimit :: Maybe String
   , vhEscape    :: Maybe String
   , vhVanish    :: Maybe String
   , vhPixelVar  :: Maybe String
-  , vhResizable :: Bool
-  , vhPosition  :: Maybe Dimensions
-    -- ^ 'Nothing' when @position=@ is omitted -- a concrete default is
-    -- assigned later, by 'assignViewerPositions', which staggers it
-    -- against any other viewer in the same script that also omitted
-    -- it. An explicit @position=@ always wins and is never staggered.
   }
 
 data ToolHeader = ToolHeader
@@ -665,30 +632,35 @@ parseIntAttr sr k v = case readMaybe v of
 optionalBoolAttr :: SourceRange -> String -> Bool -> [(String, String)] -> Either (SourceRange, String) Bool
 optionalBoolAttr sr k def attrs = maybe (Right def) (parseBoolAttr sr k) (lookupAttr k attrs)
 
-optionalDimensionsAttr :: SourceRange -> String -> Dimensions -> [(String, String)]
-                        -> Either (SourceRange, String) Dimensions
-optionalDimensionsAttr sr k def attrs =
-  maybe (Right def) (left (sr,) . parseDimensions) (lookupAttr k attrs)
 
 validateViewerHeader :: SourceRange
                       -> String
                       -> [(String, String)]
                       -> Either (SourceRange, String) ViewerHeader
 validateViewerHeader sr vhTitle attrs = do
+  -- Window geometry used to be set here too, but it belongs to the
+  -- frontend showing the viewer rather than to the script, so it now
+  -- lives in the project file's frontend-specific keys instead (e.g.
+  -- `wx-properties:`). Explain that, rather than just calling the
+  -- attribute unknown.
+  forM_ attrs $ \(k, _) ->
+    when (k `elem` ["size", "position", "resizable"]) $
+      Left (sr, "The `" ++ k ++ "` attribute is no longer part of a `@viewer` \
+                \header: window size, position, and resizability are saved \
+                \by the user interface itself (for the wx UI, under the \
+                \project file's `wx-properties:` key).")
   checkKnownAttrs sr
-    ["var", "size", "center", "pixelSize", "limit", "escape", "vanish", "pixelVar", "resizable", "position"]
+    ["var", "center", "pixelSize", "limit", "escape", "vanish", "pixelVar"]
     attrs
   -- A beginner's first viewer doesn't need to think about a
-  -- coordinate-variable name or a window size at all -- `z` and
-  -- 600x600 are reasonable defaults, and both stay available as
-  -- explicit overrides for anyone who wants something else.
+  -- coordinate-variable name at all -- `z` is a reasonable default,
+  -- and stays available as an explicit override for anyone who wants
+  -- something else.
   let vhVar = fromMaybe "z" (lookupAttr "var" attrs)
-  vhSize     <- optionalDimensionsAttr sr "size" (Dimensions (600, 600)) attrs
-  vhResizable <- optionalBoolAttr sr "resizable" True attrs
-  vhPosition  <- traverse (left (sr,) . parseDimensions) (lookupAttr "position" attrs)
   pure ViewerHeader
-    { vhTitle, vhVar, vhSize, vhResizable, vhPosition
-    , vhCenter    = lookupAttr "center" attrs
+    { vhTitle, vhVar
+    , vhCenter
+    = lookupAttr "center" attrs
     , vhPixelSize = lookupAttr "pixelSize" attrs
     -- An omitted `limit=`/`escape=`/`vanish=`/`pixelVar=` falls back to
     -- a reference to the automatically-provided `max_iters`/

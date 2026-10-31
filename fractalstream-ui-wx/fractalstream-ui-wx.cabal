@@ -87,6 +87,7 @@ executable FractalStream
                        UI.Session
                        UI.Welcome
                        UI.Widgets
+                       UI.WxProperties
 
   build-depends:       base >=4.8 && <5
                      , fractalstream-core

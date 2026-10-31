@@ -6,7 +6,7 @@ import Test.Hspec
 import Language.Type
 
 import Actor.Script
-import Actor.Layout (Dimensions(..))
+
 
 import Data.List (isInfixOf)
 import Text.RawString.QQ
@@ -36,14 +36,13 @@ spec = do
 
     it "accepts a single viewer stanza" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" var=C size="500x500"
+@viewer "Mandelbrot Set" var=C
 z : C <- 0
 iterate z -> z^2 + C until z escapes
 |] $ \case
         [ViewerStanza{..}] -> do
           vsTitle `shouldBe` "Mandelbrot Set"
           vsVar `shouldBe` "C"
-          vsSize `shouldBe` Dimensions (500, 500)
           vsCenter `shouldBe` Nothing
           -- Omitted, so defaults to a reference to the automatically
           -- provided `max_iters` (see 'validateViewerHeader') --
@@ -53,7 +52,7 @@ iterate z -> z^2 + C until z escapes
 
     it "accepts optional viewer attributes" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" var=C size="500x500" center="0" pixelSize="1/128" limit="maxIters" escape="maxRadius" vanish="minRadius" pixelVar=px resizable="false" position="10x20"
+@viewer "Mandelbrot Set" var=C center="0" pixelSize="1/128" limit="maxIters" escape="maxRadius" vanish="minRadius" pixelVar=px
 pass
 |] $ \case
         [ViewerStanza{..}] -> do
@@ -63,88 +62,58 @@ pass
           vsEscape `shouldBe` Just "maxRadius"
           vsVanish `shouldBe` Just "minRadius"
           vsPixelVar `shouldBe` Just "px"
-          vsResizable `shouldBe` False
-          vsPosition `shouldBe` Dimensions (10, 20)
         other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
 
-    it "defaults resizable to true, position to 100x100, and pixelVar to \
-       \a reference to the automatically-provided `pixel_size`" $
+    it "defaults pixelVar to a reference to the automatically-provided \
+       \`pixel_size`" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" var=C size="500x500"
+@viewer "Mandelbrot Set" var=C
 pass
 |] $ \case
         [ViewerStanza{..}] -> do
-          vsResizable `shouldBe` True
-          vsPosition `shouldBe` Dimensions (100, 100)
           vsPixelVar `shouldBe` Just "pixel_size"
         other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
 
-    it "staggers each viewer's defaulted position 30 pixels further than \
-       \the last, so several don't all open stacked on top of each other, \
-       \but leaves an explicit `position=` alone and doesn't let it \
-       \consume a step in that sequence" $
-      shouldParseTo [r|
-@viewer "A"
-pass
-
-@viewer "B"
-pass
-
-@viewer "C" position="5x5"
-pass
-
-@viewer "D"
-pass
-|] $ \case
-        [ ViewerStanza{vsPosition = posA}
-          , ViewerStanza{vsPosition = posB}
-          , ViewerStanza{vsPosition = posC}
-          , ViewerStanza{vsPosition = posD} ] -> do
-          posA `shouldBe` Dimensions (100, 100)
-          posB `shouldBe` Dimensions (130, 130)
-          posC `shouldBe` Dimensions (5, 5)
-          posD `shouldBe` Dimensions (160, 160)
-        other -> expectationFailure ("expected 4 viewer stanzas, got " ++ show (length other))
-
-    it "rejects a non-boolean resizable attribute" $
+    it "rejects the window-geometry attributes `size`, `position`, and \
+       \`resizable`, pointing at where that state is saved now" $ do
       [r|
-@viewer "Mandelbrot Set" var=C size="500x500" resizable="sideways"
+@viewer "Mandelbrot Set" var=C size=500x500
 pass
-|] `shouldFailWith` "must be `true` or `false`"
-
-    it "rejects a malformed position attribute" $
+|] `shouldFailWith` "`size` attribute is no longer part of a `@viewer` header"
       [r|
-@viewer "Mandelbrot Set" var=C size="500x500" position="notasize"
+@viewer "Mandelbrot Set" var=C position="10x20"
 pass
-|] `shouldFailWith` "dimension descriptor"
+|] `shouldFailWith` "wx-properties"
+      [r|
+@viewer "Mandelbrot Set" var=C resizable=false
+pass
+|] `shouldFailWith` "wx-properties"
 
-    it "defaults a viewer's `var` to `z` and `size` to 600x600 when \
-       \both attributes are omitted" $
+    it "defaults a viewer's `var` to `z` when the attribute is omitted" $
       shouldParseTo [r|
 @viewer "Mandelbrot Set"
 pass
 |] $ \case
         [ViewerStanza{..}] -> do
           vsVar `shouldBe` "z"
-          vsSize `shouldBe` Dimensions (600, 600)
         other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
 
-    it "accepts unquoted attribute values: a dimension, a whole number \
-       \(negative too), a whole-number fraction, and a boolean" $
+    it "accepts unquoted attribute values: a whole number (negative \
+       \too), a whole-number fraction, and a boolean" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" var=C size=500x500 center=-2 pixelSize=1/128 resizable=false
+@viewer "Mandelbrot Set" var=C center=-2 pixelSize=1/128
 pass
 
-@tool "Demo" drawLayer=-1
+
+@tool "Demo" drawLayer=-1 refreshOnActivate=false
 on click:
   pass
 |] $ \case
         [ViewerStanza{..}, ToolStanza{..}] -> do
-          vsSize `shouldBe` Dimensions (500, 500)
           vsCenter `shouldBe` Just "-2"
           vsPixelSize `shouldBe` Just "1/128"
-          vsResizable `shouldBe` False
           tsDrawLayer `shouldBe` (-1)
+          tsRefreshOnActivate `shouldBe` False
         other -> expectationFailure ("expected a viewer and a tool stanza, got " ++ show (length other) ++ " stanzas")
 
     it "accepts an unquoted decimal attribute value, rendered back \
@@ -162,21 +131,17 @@ pass
 
     it "rejects a viewer stanza with an unknown attribute" $
       [r|
-@viewer "Mandelbrot Set" var=C size="500x500" bogus="1"
+@viewer "Mandelbrot Set" var=C bogus="1"
 pass
 |] `shouldFailWith` "Unknown attribute `bogus`"
 
     it "rejects a viewer stanza with a duplicate attribute" $
       [r|
-@viewer "Mandelbrot Set" var=C var=z size="500x500"
+@viewer "Mandelbrot Set" var=C var=z
 pass
 |] `shouldFailWith` "Duplicate attribute `var`"
 
-    it "rejects a malformed size attribute" $
-      [r|
-@viewer "Mandelbrot Set" var=C size=notasize
-pass
-|] `shouldFailWith` "dimension descriptor"
+
 
     it "accepts a config stanza with declarations and text" $
       shouldParseTo [r|
@@ -401,7 +366,7 @@ let f(z) = z^2 + C
 @config "Configuration"
 maxIters : Z as "Iteration limit:" <- 100
 
-@viewer "Mandelbrot Set" var=C size="500x500" limit="maxIters"
+@viewer "Mandelbrot Set" var=C limit="maxIters"
 z : C <- 0
 iterate z -> f(z) until z escapes
 
@@ -417,18 +382,18 @@ on click-or-drag:
 @setup "Setup"
 f : C as "f(z) =" <- 0
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 |] `shouldFailWith` "couldn't parse"
       [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 z <- «f»
 |] `shouldFailWith` "couldn't parse"
 
     it "finds the stanza boundary right after a nested block closes \
        \(regression: Indent/Dedent used to wrongly reset line-start status)" $
       shouldParseTo [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 if z = 0:
   color <- black
 else:
@@ -441,7 +406,7 @@ on refresh:
 
     it "allows a stanza body ending in a variable declaration (the Let-slurp case)" $
       shouldParseTo [r|
-@viewer "Mandelbrot Set" var=C size="500x500"
+@viewer "Mandelbrot Set" var=C
 color : Color <- black
 
 @tool "Trace" for="Mandelbrot Set"

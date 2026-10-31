@@ -2,9 +2,15 @@ script: |
   @config "Configuration"
   palette : List of Color as "Palette (4 colors)" <- [red, green, blue, yellow]
 
-  @viewer "List of Color Elements" var=z size="512x512" pixelSize="1/64"
+  @viewer "List of Color Elements" var=z pixelSize="1/64"
   # Pick quadrant index (1-based, cycling through 4 colors)
   qx : Z <- if re z >= 0 then 1 else 0
   qy : Z <- if im z >= 0 then 1 else 0
   idx : Z <- qx + 2 * qy + 1
   color <- palette @@ idx
+
+wx-properties:
+  viewers:
+    "List of Color Elements":
+      width: 512
+      height: 512

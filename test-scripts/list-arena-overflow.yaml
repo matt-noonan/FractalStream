@@ -1,5 +1,5 @@
 script: |
-  @viewer "Arena overflow test" var=z size="512x512" pixelSize="1/128"
+  @viewer "Arena overflow test" var=z pixelSize="1/128"
   # Arena overflow visual test
   # ─────────────────────────
   # Arena capacity : 1 MB = 1 048 576 bytes
@@ -29,3 +29,9 @@ script: |
     # Shade by traversed length: confirms list was actually walked, not just allocated.
     # blend clamps to [0,1] so large-but-not-overflow values stay in the green band.
     color ⭠ blend(re z / 2.0 + 0.5, light green, dark green)
+
+wx-properties:
+  viewers:
+    "Arena overflow test":
+      width: 512
+      height: 512

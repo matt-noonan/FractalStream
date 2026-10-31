@@ -1,5 +1,5 @@
 script: |
-  @viewer "Douady rabbit" size=400x425
+  @viewer "Douady rabbit"
   # Iterate until we escape or loop 100 times
   while |z| < 10:
     z ⭠ z² + -0.12256 …
@@ -12,3 +12,9 @@ script: |
     color ⭠ black
   else:
     color ⭠ white
+
+wx-properties:
+  viewers:
+    "Douady rabbit":
+      width: 400
+      height: 425

@@ -215,7 +215,7 @@ a : C as "a =" <- 1
 let f(z) = z^3 - a
 let newton(z) = z - f(z) / f'(z)
 
-@viewer "Newton's method" var=z size=512x512
+@viewer "Newton's method" var=z
 iterate z -> newton(z) until f(z) vanishes
 
 @tool "Trace" for="Newton's method"

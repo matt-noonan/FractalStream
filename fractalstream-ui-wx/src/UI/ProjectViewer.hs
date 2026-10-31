@@ -28,6 +28,7 @@ import Data.Planar
 import UI.Tile
 import UI.Layout
 import UI.Widgets
+import UI.WxProperties
 
 import Data.IORef
 
@@ -54,11 +55,12 @@ import Data.Char (toLower)
 import qualified System.Info as System
 
 viewProject :: Window ()
+            -> WxLayout
             -> (forall a. Frame a -> [Menu ()] -> IO ())
             -> IO ()
             -> IO ()
             -> UI
-viewProject projectWindow addMenuBar saveSession editProjectScript = UI
+viewProject projectWindow wxLayout addMenuBar saveSession editProjectScript = UI
   { newEnsemble = pure ()
 
   , makeLayout = \_ title ui -> do
@@ -71,6 +73,14 @@ viewProject projectWindow addMenuBar saveSession editProjectScript = UI
 
       WX.windowOnClose f (set f [ visible := False ])
 
+      (restoredConfig, clampConfig) <- restoreConfigWindow wxLayout
+      forM_ restoredConfig $ \WindowProperties{..} -> do
+        Point x0 y0 <- get f position
+        set f [ position := Point (fromMaybe x0 wpX) (fromMaybe y0 wpY) ]
+      forgetConfigWindow <- registerConfigWindow wxLayout $ do
+        Point x y <- get f position
+        pure (WindowProperties (Just x) (Just y))
+
       addMenuBar f []
 
       (stopListening, innerLayout) <- generateWxLayout (\_ -> pure ()) f ui
@@ -78,16 +88,18 @@ viewProject projectWindow addMenuBar saveSession editProjectScript = UI
       -- Hooks `windowOnDestroy`, not `on closing` -- see the note on
       -- 'UI.Widgets.wxWatchDynamic'.
       previousOnDestroy <- WX.windowGetOnDestroy f
-      WX.windowOnDestroy f (stopListening >> previousOnDestroy)
+      WX.windowOnDestroy f (forgetConfigWindow >> stopListening >> previousOnDestroy)
       windowReLayout f
+      when clampConfig (keepOnPrimaryDisplay f)
       pure (windowShow f >> windowRaise f)
 
-  , makeViewer = const (makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript)
+  , makeViewer = const (makeWxComplexViewer projectWindow wxLayout addMenuBar saveSession editProjectScript)
   }
 
 data BuiltinTool = NavTool | DebugTool
 
 makeWxComplexViewer :: Window ()
+                    -> WxLayout
                     -> (forall a. Frame a -> [Menu ()] -> IO ())
                     -> IO ()
                     -> IO ()
@@ -97,7 +109,7 @@ makeWxComplexViewer :: Window ()
                     -> IO ()
                     -> Viewer
                     -> IO (IO ())
-makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raiseConfigWindow configEnv (SomeContext configValues) remakeViewer theViewer@Viewer{..} = do
+makeWxComplexViewer projectWindow wxLayout addMenuBar saveSession editProjectScript raiseConfigWindow configEnv (SomeContext configValues) remakeViewer theViewer@Viewer{..} = do
 
     {- let clone = cloneViewer theViewer >>= void . makeWxComplexViewer projectWindow addMenuBar saveSessi         on raiseConfigWindow (SomeContext configValues)
     -}
@@ -105,10 +117,26 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
           "darwin" -> 14
           _        -> 10
 
+    -- Pick up wherever this viewer's window was last left, if that was
+    -- remembered: its size, position, and current view all replace the
+    -- defaults the viewer was built with.
+    title0 <- getDynamic vTitle
+    (restored, clampViewer) <- restoreViewer wxLayout title0
+    forM_ restored $ \ViewerProperties{..} -> do
+      Dimensions (w0, h0) <- getDynamic vSize
+      setValue' vSize (Dimensions (fromMaybe w0 vpWidth, fromMaybe h0 vpHeight))
+      Dimensions (x0, y0) <- getDynamic vPosition
+      setValue' vPosition (Dimensions (fromMaybe x0 vpX, fromMaybe y0 vpY))
+      mapM_ (setValue' vCenter) vpCenter
+      mapM_ (setValue' vPixelSize) vpPixelSize
+    let canResize = fromMaybe vCanResize (restored >>= vpResizable)
+        startVisible = fromMaybe True (restored >>= vpVisible)
+        frameStyle | canResize = frameDefaultStyle
+                   | otherwise = frameDefaultStyle .-. wxRESIZE_BORDER .-. wxMAXIMIZE_BOX
+
     Dimensions (width, height) <- getDynamic vSize
     Dimensions (xpos, ypos) <- getDynamic vPosition
-    title0 <- getDynamic vTitle
-    f <- frameEx frameDefaultStyle [ text := title0
+    f <- frameEx frameStyle [ text := title0
                                    , position := Point xpos ypos
                                    , on resize := propagateEvent
                                    ] projectWindow
@@ -137,8 +165,24 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
 
     p <- scrolledWindow f [ scrollRate := sz 10 10, visible := True ]
 
+    (rememberViewer, forgetViewer) <- registerViewer wxLayout title0 $ do
+      Dimensions (x, y) <- getDynamic vPosition
+      Dimensions (w, h) <- getDynamic vSize
+      viewCenter <- getDynamic vCenter
+      pixelSize <- getDynamic vPixelSize
+      shown <- windowIsShown f
+      -- Leave out what's the same as the default anyway, so that a
+      -- saved project file only says what's special about each window.
+      pure ViewerProperties
+        { vpX = Just x, vpY = Just y, vpWidth = Just w, vpHeight = Just h
+        , vpResizable = if canResize then Nothing else Just False
+        , vpVisible = if shown then Nothing else Just False
+        , vpCenter = Just viewCenter, vpPixelSize = Just pixelSize
+        }
+
     wxWatchDynamic f configEnv $ \_ -> do
       putStrLn "remake"
+      rememberViewer
       void $ windowClose f True
       remakeViewer
 
@@ -230,6 +274,12 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
               propagateEvent
           ]
     windowReLayout f
+    when clampViewer (keepOnPrimaryDisplay f)
+
+    -- A viewer whose window was closed when the project was saved
+
+    -- stays closed (just hidden, as closing it does) until asked for.
+    unless startVisible (set f [ visible := False ])
 
 
     -- `requestRefresh` can be used from any thread to queue up a
@@ -892,7 +942,7 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
     -- never fires `closing` at all; see the note on
     -- 'UI.Widgets.wxWatchDynamic'.
     do previousOnDestroy <- WX.windowGetOnDestroy f
-       WX.windowOnDestroy f (stopListening' >> previousOnDestroy)
+       WX.windowOnDestroy f (forgetViewer >> stopListening' >> previousOnDestroy)
 
     -------------------------------------------------------
     -- Navigation actions
@@ -907,11 +957,12 @@ makeWxComplexViewer projectWindow addMenuBar saveSession editProjectScript raise
           Just (h', m') -> do
             writeIORef history h'
             jumpViewTo m'
-        goHome = (historyFirst <$> readIORef history) >>= \case
-          Nothing -> requestRefresh
-          Just (h', m') -> do
-            writeIORef history h'
-            jumpViewTo m'
+        -- Back to the view the script itself describes, which needn't
+        -- be where this window started out if a saved view was restored
+        -- over it. Recorded as a new step in the history, like any other
+        -- move, so "Last view" can still undo it.
+        goHome = changeViewTo
+          (Model vOriginalCenter (vOriginalPixelSize, vOriginalPixelSize))
 
         jumpToView = do
           oldModel <- get model value
@@ -1308,10 +1359,6 @@ historyForward (History olds m news) = case news of
   (m':news') -> Just (History (m:olds) m' news', m')
   _ -> Nothing
 
-historyFirst :: History -> Maybe (History, Model)
-historyFirst (History olds m news) = case reverse olds of
-  (m':olds') -> Just (History [] m' (olds' ++ [m] ++ news), m')
-  [] -> Nothing
 
 historyAppend :: Model -> History -> History
 historyAppend m h@(History olds m' _)
@@ -1351,6 +1398,7 @@ takePicture f v0 = do
 
       mpath <- fileSaveDialog f True True "Save a picture of the current view"
         [("PNG files",["*.png"]), ("Any file",["*.*"])] "" ".png"
+
       case mpath of
         Nothing   -> pure ()
         Just path -> void $ snapshotToFile vi smooth path

@@ -13,7 +13,7 @@ script: |
       m := iterations + 1 - log (log (|z|^2) / (2 log 10)) / log 2
       color <- palette(m / speed)
 
-  @viewer "Reference" size=640x32
+  @viewer "Reference"
   color <- palette(re z / 4)
 
   @viewer "Parameter plane" var=C
@@ -22,3 +22,9 @@ script: |
 
   @viewer "Dynamical plane"
   run draw
+
+wx-properties:
+  viewers:
+    "Reference":
+      width: 640
+      height: 32

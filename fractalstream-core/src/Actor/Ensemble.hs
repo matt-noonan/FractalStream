@@ -95,6 +95,14 @@ data Ensemble = Ensemble
     -- 'buildWithValidTargets' constructing the 'Ensemble' and
     -- 'buildEnsembleFromScript' (its only caller) setting the real
     -- text right after -- never observable outside this module.
+  , ensembleFrontendProperties :: Variable (KM.KeyMap Aeson.Value)
+    -- ^ Every top-level key of the project file other than @script:@
+    -- and @scenarios:@, kept verbatim so that 'encodeEnsemble' writes
+    -- it back out. These hold state belonging to a particular
+    -- frontend rather than to the script itself -- e.g. the wx UI's
+    -- window geometry and current views, under @wx-properties:@ --
+    -- which the core never interprets: each frontend reads and
+    -- replaces its own key.
   }
 
 contextValuesChanged :: SomeContext DynamicValue -> Dynamic ()
@@ -140,7 +148,10 @@ parseEnsembleFromFile path = try (BS.readFile path) >>= \case
       Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
         buildEnsembleFromScript (Text.unpack scriptText) >>= \case
           Left err  -> pure (Left (formatScriptError (Text.unpack scriptText) err))
-          Right ens -> attachScenarios o ens
+          Right ens -> do
+            setValue' (ensembleFrontendProperties ens)
+              (KM.delete "script" (KM.delete "scenarios" o))
+            attachScenarios o ens
       Right _  -> pure (Left (path ++ " doesn't have a top-level `script:` key -- \
                                \this file isn't in a format FractalStream can open \
                                \(the classic setup:/configuration:/viewer(s): project \
@@ -165,17 +176,20 @@ attachScenarios o ens = case KM.lookup "scenarios" o of
 
 -- | Serialize an 'Ensemble' back to project-file bytes: its own
 -- unified-script text, verbatim, under a @script:@ key (alongside a
--- @scenarios:@ key if there are any). Every frontend's save path
+-- @scenarios:@ key if there are any, and any frontend-specific keys
+-- from 'ensembleFrontendProperties'). Every frontend's save path
 -- should go through this rather than hand-rolling the YAML itself.
 encodeEnsemble :: Ensemble -> IO ByteString
 encodeEnsemble ens = do
   scriptText <- getDynamic (ensembleSourceScript ens)
   scenarios <- getDynamic (ensembleScenarios ens)
+  frontendProperties <- getDynamic (ensembleFrontendProperties ens)
   scenariosKV <- if null scenarios
     then pure []
     else (\v -> [("scenarios", v)]) <$> encodeValue scenarios
-  pure $ YAML.encode $ Object $ KM.fromList $
-    ("script", String (Text.pack scriptText)) : scenariosKV
+  pure $ YAML.encode $ Object $ KM.union
+    (KM.fromList (("script", String (Text.pack scriptText)) : scenariosKV))
+    frontendProperties
 
 -- | Render a unified-script build error the same way every other
 -- source-range-tagged parse\/typecheck error in this codebase is shown:
@@ -439,10 +453,10 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
             Nothing                -> pure (Right (SomeContext EmptyContext))
             Just Configuration{..} -> layoutContext coContents
 
-      eViewers <- forM viewers $ \v ->
+      eViewers <- forM (zip [0 ..] viewers) $ \(n, v) ->
         buildComplexViewer contextDyn
           [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ]
-          v
+          n v
 
       case sequence eViewers of
         Left err -> pure (Left err)
@@ -450,7 +464,8 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
           viewersVar      <- newVariable viewerList
           scenariosVar    <- newVariable []
           sourceScriptVar <- newVariable ""
-          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar))
+          frontendVar     <- newVariable KM.empty
+          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar frontendVar))
 
 ------------------------------------------------------------
 -- Stanza field extraction (total, so no incomplete-pattern risk)
@@ -459,15 +474,12 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
 data ViewerFields = ViewerFields
   { vfTitle     :: String
   , vfVar       :: String
-  , vfSize      :: Dimensions
   , vfCenter    :: Maybe String
   , vfPixelSize :: Maybe String
   , vfIterLimit :: Maybe String
   , vfEscape    :: Maybe String
   , vfVanish    :: Maybe String
   , vfPixelVar  :: Maybe String
-  , vfResizable :: Bool
-  , vfPosition  :: Dimensions
   , vfPrepare   :: Maybe ([(String, SomeType)], ParsedCode)
   , vfCode      :: ParsedCode
   }
@@ -475,10 +487,10 @@ data ViewerFields = ViewerFields
 viewerFields :: ParsedStanza -> Maybe ViewerFields
 viewerFields = \case
   ViewerStanza{..} -> Just ViewerFields
-    { vfTitle = vsTitle, vfVar = vsVar, vfSize = vsSize
+    { vfTitle = vsTitle, vfVar = vsVar
     , vfCenter = vsCenter, vfPixelSize = vsPixelSize
     , vfIterLimit = vsIterLimit, vfEscape = vsEscape, vfVanish = vsVanish
-    , vfPixelVar = vsPixelVar, vfResizable = vsResizable, vfPosition = vsPosition
+    , vfPixelVar = vsPixelVar
     , vfPrepare = vsPrepare
     , vfCode = vsCode
     }
@@ -794,11 +806,19 @@ checkPrepCode outputNames env prepParsedCode = do
   left (NoSourceRange,) (checkDefiniteAssignment (Set.fromList outputNames) prepCode0)
   pure (env', prepCode0)
 
+-- | Build the @n@th (counting from 0) @\@viewer@ of a script. Its
+-- window's size, position, and resizability start from fixed defaults
+-- here; a frontend that remembers them (the wx UI, via
+-- @wx-properties:@) replaces them before showing the viewer. The
+-- default positions are staggered by @n@ -- the first viewer opens at
+-- @100x100@, the next at @130x130@, and so on -- so that several
+-- viewers don't all open stacked exactly on top of one another.
 buildComplexViewer :: Dynamic (Either String (SomeContext DynamicValue))
                     -> [ToolFields]
+                    -> Int
                     -> ViewerFields
                     -> IO (Either (SourceRange, String) ComplexViewer)
-buildComplexViewer contextDyn myTools ViewerFields{..} =
+buildComplexViewer contextDyn myTools n ViewerFields{..} =
   parseConstantE ComplexType (fromMaybe "0" vfCenter) >>=? \centerVal ->
   parseConstantE RealType (fromMaybe "1/128" vfPixelSize) >>=? \pixelVal ->
   parseMaybeAttrValue vfIterLimit >>=? \mIterPV ->
@@ -806,9 +826,10 @@ buildComplexViewer contextDyn myTools ViewerFields{..} =
   parseMaybeAttrValue vfVanish >>=? \mVanPV -> do
 
     cvTitleP     <- constParsed vfTitle (Right vfTitle)
-    cvSizeV      <- newVariable vfSize
-    cvPositionV  <- newVariable vfPosition
-    cvCanResizeV <- newVariable vfResizable
+    cvSizeV      <- newVariable (Dimensions (600, 600))
+    cvPositionV  <- newVariable (Dimensions (100 + 30 * n, 100 + 30 * n))
+    cvCanResizeV <- newVariable True
+
     cvCenterP    <- constParsed (fromMaybe "0" vfCenter) (Right centerVal)
     cvPixelSizeP <- constParsed (fromMaybe "1/128" vfPixelSize) (Right pixelVal)
     cvCoordP     <- constParsed vfVar (Right vfVar)
@@ -1056,8 +1077,11 @@ makeComplexViewer project backend mkViewer someContext configArgs showConfig Com
 
     vCanResize <- getDynamic cvCanResize
     x0 :+ y0 <- throwLeft (getDynamic cvCenter)
-    vCenter <- newVariable (x0, y0)
-    vPixelSize <- throwLeft (getDynamic cvPixelSize) >>= newVariable
+    let vOriginalCenter = (x0, y0)
+    vOriginalPixelSize <- throwLeft (getDynamic cvPixelSize)
+    vCenter <- newVariable vOriginalCenter
+    vPixelSize <- newVariable vOriginalPixelSize
+
     let vSaveView = pure ()
 
     (vDrawCmds, vDrawCmdsChanged, vDrawSink) <- makeToolRunnerForLayer (bToolRunnerFactory backend)

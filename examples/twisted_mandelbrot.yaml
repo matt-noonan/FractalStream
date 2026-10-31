@@ -47,7 +47,7 @@ script: |
     run twist_step
   run shade
 
-  @viewer "Twisted dynamical plane" position=620x104
+  @viewer "Twisted dynamical plane"
   until stop(z):
     run twist_step
   run shade
@@ -90,3 +90,9 @@ script: |
     if drag_target > 0:
       erase
       run draw_twist
+
+wx-properties:
+  viewers:
+    "Twisted dynamical plane":
+      x: 620
+      y: 104

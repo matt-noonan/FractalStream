@@ -96,7 +96,7 @@ file.png`.)
 
 | Command | Effect |
 |---|---|
-| `resize viewer to <W>x<H>` | Change the viewer's pixel dimensions (`WxH`, same bare token form as a project file's `size:` field). |
+| `resize viewer to <W>x<H>` | Change the viewer's pixel dimensions (`WxH`, e.g. `800x600`; viewers start at `600x600`). |
 | `set viewer center to <point>` | Change the model-space point the view is centered on. |
 | `set viewer pixel size to <value-expr>` | Change the model-space size of one pixel (zoom level). |
 

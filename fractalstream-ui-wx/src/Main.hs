@@ -11,6 +11,7 @@ import UI.Menu
 import UI.ProjectViewer (viewProject)
 import UI.ProjectScriptEditor (editProjectScript)
 import UI.Session
+import UI.WxProperties
 import Data.DynamicValue
 import Actor.Ensemble
 
@@ -28,6 +29,7 @@ import Graphics.UI.WXCore.WxcClasses ( styledTextCtrlStyleSetFont
 
 import Control.Exception (Exception, catch, ErrorCall(..))
 import qualified Data.ByteString as BS
+
 
 #if defined(mingw32_HOST_OS)
 import Control.Exception (IOException, try)
@@ -80,30 +82,39 @@ runApp = withBackend $ \backend -> start $ do
         prj <- either (error . formatScriptError newProjectScript) id
                <$> buildEnsembleFromScript newProjectScript
         currentEnsemble <- newVariable prj
+        wxLayout <- newWxLayout (WxProperties mempty Nothing)
 
         sessionName <- newVariable "Untitled"
         let sessionHandle = SessionHandle projectWindow
         sessionVisible <- newVariable True
         sessionUnsaved <- newVariable True
-        let sessionSave = save currentEnsemble projectWindow sessionUnsaved
-            ui = viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..})
-                   sessionSave (editProjectScript backend projectWindow currentEnsemble ui)
+        let sessionSave = save currentEnsemble wxLayout projectWindow sessionUnsaved
+            ui = viewProject (objectCast projectWindow) wxLayout (makeMenuBar ProjectActions{..})
+                   sessionSave (editProjectScript backend projectWindow wxLayout currentEnsemble ui)
             si = SessionInfo{..}
         modifyValue activeSessions (si :)
-        editProjectScript backend projectWindow currentEnsemble ui
+        editProjectScript backend projectWindow wxLayout currentEnsemble ui
 
       -- `currentEnsemble` holds whichever `Ensemble` the session is
       -- currently running -- fixed at open time, but replaced in place
       -- by a successful rebuild from `editProjectScript`, so `save`
       -- (and any later rebuild) always acts on the live one rather
       -- than a value that was only ever accurate at open time.
-      save currentEnsemble f isUnsaved = do
+      --
+      -- Window positions, sizes, and current views are saved along
+      -- with the script, under `wx-properties:`. Changing them doesn't
+      -- count as an unsaved change, though: they shift constantly, and
+      -- being asked to save on every close just because a window was
+      -- nudged would be more annoying than useful.
+      save currentEnsemble wxLayout f isUnsaved = do
         result <- fileSaveDialog f True True "Save FractalStream project"
                   [ ("FractalStream project files",["*.fs"]), ("All files", ["*.*"])] "" ".fs"
         case result of
           Nothing -> pure ()
           Just file -> do
             prj <- getDynamic currentEnsemble
+            props <- captureLayout wxLayout
+            modifyValue (ensembleFrontendProperties prj) (writeWxProperties props)
             encodeEnsemble prj >>= BS.writeFile file
             setValue isUnsaved False
 
@@ -118,12 +129,21 @@ runApp = withBackend $ \backend -> start $ do
 
           prj <- either error id <$> parseEnsembleFromFile yamlFile
           currentEnsemble <- newVariable prj
+          -- A malformed `wx-properties:` only costs the remembered
+          -- window layout, not the whole project, so it's reported
+          -- and then ignored rather than refusing to open the file.
+          wxProps <- readWxProperties <$> getDynamic (ensembleFrontendProperties prj) >>= \case
+            Right props -> pure props
+            Left err -> do
+              putStrLn ("Ignoring unreadable `wx-properties:` in " ++ yamlFile ++ ": " ++ err)
+              pure (WxProperties mempty Nothing)
+          wxLayout <- newWxLayout wxProps
 
           sessionName <- newVariable yamlFile
           let sessionHandle = SessionHandle projectWindow
           sessionVisible <- newVariable True
           sessionUnsaved <- newVariable False
-          let sessionSave = save currentEnsemble projectWindow sessionUnsaved
+          let sessionSave = save currentEnsemble wxLayout projectWindow sessionUnsaved
               -- `ui` and `editProjectScript` refer to each other: a
               -- rebuild needs a `UI` to hand `runEnsemble` for the
               -- *next* round of viewer windows, and that same `UI`
@@ -131,8 +151,9 @@ runApp = withBackend $ \backend -> start $ do
               -- Haskell as an ordinary lazy `let` -- `editProjectScript`
               -- only forces `ui` when the user actually picks the menu
               -- item, by which point it's long since finished building.
-              ui = viewProject (objectCast projectWindow) (makeMenuBar ProjectActions{..})
-                     sessionSave (editProjectScript backend projectWindow currentEnsemble ui)
+              ui = viewProject (objectCast projectWindow) wxLayout (makeMenuBar ProjectActions{..})
+                     sessionSave (editProjectScript backend projectWindow wxLayout currentEnsemble ui)
+
               si = SessionInfo{..}
           modifyValue activeSessions (si :)
           runEnsemble backend ui prj

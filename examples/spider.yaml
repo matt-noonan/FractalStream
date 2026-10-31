@@ -20,7 +20,7 @@ script: |
   encloses_zero : Boolean as "Encloses 0?" <- false
   foot : R as "Foot radius:" <- 0.03
 
-  @viewer "Standard spider" size=512x512 resizable=false center=0 pixelSize=1/128
+  @viewer "Standard spider" center=0 pixelSize=1/128
   color <- white
 
   @tool "Draw standard spider" for="Standard spider" shortcut=s refreshCanUpdate=true
@@ -145,7 +145,7 @@ script: |
     p <- savedP
     q <- savedQ
 
-  @viewer "Iterated spider" size=512x512 resizable=false center=0 pixelSize=1/128
+  @viewer "Iterated spider" center=0 pixelSize=1/128
   color <- white
 
   @tool "Reset spider" for="Iterated spider" shortcut=r
@@ -452,3 +452,14 @@ script: |
     draw point at -2
     write "-2" at -2.2
     write "γ" at first_pt - 0.15i
+
+wx-properties:
+  viewers:
+    "Standard spider":
+      width: 512
+      height: 512
+      resizable: false
+    "Iterated spider":
+      width: 512
+      height: 512
+      resizable: false
