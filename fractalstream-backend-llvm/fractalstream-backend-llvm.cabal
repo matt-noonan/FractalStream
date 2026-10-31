@@ -75,6 +75,12 @@ library
                      , disassembler
   hs-source-dirs:      src
 
+  -- On Windows, lld reports some inline functions from LLVM's ORC headers
+  -- (e.g. JITDylib's destructor) as defined both by llvm-hs and by LLVM's
+  -- own libraries. They come from the same header code, so either will do.
+  if os(windows)
+    ld-options:        -Wl,--allow-multiple-definition
+
 test-suite spec
   import: FractalStream-common
   hs-source-dirs: test
