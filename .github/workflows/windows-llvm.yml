@@ -240,24 +240,17 @@ jobs:
         cp "$LLVM_BIN/llvm-config.exe" "$LLVM_BIN/llvm-config-12.exe"
         "$LLVM_BIN/llvm-config-12" --version
 
-        # llvm-hs.cabal asks for libstdc++, which GHC's toolchain doesn't
-        # have (it uses libc++, which llvm-hs's Setup.hs also adds). Give it
-        # an empty stand-in.
-        mkdir -p stub-libs
-        "$GHC_MINGW/bin/llvm-ar" rc stub-libs/libstdc++.a
-        echo "STUB_LIBS=$(cygpath -w "$PWD/stub-libs")" >> $GITHUB_ENV
-
     - name: Build Haskell dependencies
       run: |
         export PATH="$PATH:$GHC_MINGW/bin"   # llvm-config needs libc++.dll
         cd fractalstream-ui-wx
-        stack --skip-msys build --only-snapshot --extra-lib-dirs="$STUB_LIBS"
+        stack --skip-msys build --only-snapshot
 
     - name: Build FractalStream
       run: |
         export PATH="$PATH:$GHC_MINGW/bin"   # llvm-config needs libc++.dll
         cd fractalstream-ui-wx
-        stack --skip-msys build --extra-lib-dirs="$STUB_LIBS"
+        stack --skip-msys build
 
     - if: ${{ always() }}
       name: Save stack root
@@ -305,14 +298,14 @@ jobs:
       run: |
         export PATH="$PATH:$GHC_MINGW/bin"   # llvm-config needs libc++.dll
         cd fractalstream-backend-llvm
-        stack --skip-msys test --extra-lib-dirs="$STUB_LIBS"
+        stack --skip-msys test
 
     - name: Render a project with fsrun
       run: |
         set -euo pipefail
         export PATH="$PATH:$GHC_MINGW/bin"
         cd fractalstream-ui-headless
-        stack --skip-msys build --extra-lib-dirs="$STUB_LIBS"
+        stack --skip-msys build
         printf 'script: |\n  @viewer "Plane" var=z\n  color <- if |z| < 1 then blue else black\n' > plane.yaml
         stack --skip-msys exec -- fsrun plane.yaml --snapshot Plane --output plane.png
         ls -l plane.png

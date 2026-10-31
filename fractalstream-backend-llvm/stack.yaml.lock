@@ -5,20 +5,20 @@
 
 packages:
 - completed:
-    commit: 46fbe902a83a4198f296e2062c767b34ecc6be65
+    commit: 0746a412c4018667f897b1382625f9a7239167ec
     git: https://github.com/matt-noonan/llvm-hs.git
     name: llvm-hs
     pantry-tree:
-      sha256: 52cea17749087be87c1b739b2a38d7f02bc9f86a80cbd8b6b141f6d1b55efcf7
+      sha256: b6bbd6379d5d438fd20f4d777fc7726fa2d41c600e397bb34fb9a9187bdf1bb3
       size: 12781
     subdir: llvm-hs
     version: 12.1.0
   original:
-    commit: 46fbe902a83a4198f296e2062c767b34ecc6be65
+    commit: 0746a412c4018667f897b1382625f9a7239167ec
     git: https://github.com/matt-noonan/llvm-hs.git
     subdir: llvm-hs
 - completed:
-    commit: 46fbe902a83a4198f296e2062c767b34ecc6be65
+    commit: 0746a412c4018667f897b1382625f9a7239167ec
     git: https://github.com/matt-noonan/llvm-hs.git
     name: llvm-hs-pure
     pantry-tree:
@@ -27,7 +27,7 @@ packages:
     subdir: llvm-hs-pure
     version: 12.1.0
   original:
-    commit: 46fbe902a83a4198f296e2062c767b34ecc6be65
+    commit: 0746a412c4018667f897b1382625f9a7239167ec
     git: https://github.com/matt-noonan/llvm-hs.git
     subdir: llvm-hs-pure
 - completed:

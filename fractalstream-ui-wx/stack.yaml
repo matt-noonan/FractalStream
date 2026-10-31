@@ -11,7 +11,7 @@ extra-deps:
   commit: 7e892fbeb761f4adb29d52b5377e6a1869faf48d
 
 - git: https://github.com/matt-noonan/llvm-hs.git
-  commit: 46fbe902a83a4198f296e2062c767b34ecc6be65
+  commit: 0746a412c4018667f897b1382625f9a7239167ec
   subdirs:
     - llvm-hs
     - llvm-hs-pure
