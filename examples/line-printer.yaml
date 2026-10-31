@@ -3,7 +3,7 @@ script: |
   xsize : R as "Cell width" <- 3.5e-2
   shift : R as "Parameter shift" <- -5.0e-2
 
-  @viewer "Mandelbrot set throwback" var=w size=752x546 center=-0.75 pixelSize=1/220 position=100x99
+  @viewer "Mandelbrot set throwback" var=w center=-0.75 pixelSize=1/220
   ysize := 1.66 xsize
 
   C := xsize * floor(re w / xsize) + i * ysize * floor(im w / ysize)
@@ -16,3 +16,11 @@ script: |
   color <- rgb(0.980, 0.976, 0.965)
   if stuck and |r|^2 < (1.5 - cos (6 arg r)) / 3:
       color <- black
+
+wx-properties:
+  viewers:
+    "Mandelbrot set throwback":
+      x: 100
+      y: 99
+      width: 752
+      height: 546

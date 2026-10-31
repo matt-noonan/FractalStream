@@ -23,6 +23,7 @@ import Actor.Layout (CodeString(..))
 import Backend (Backend)
 import UI.CodeEditor (stanzaHeaderStyle, editorOffsetMap)
 import UI.Widgets (scriptWidget, wxWatchDynamic)
+import UI.WxProperties (WxLayout, rememberLayout)
 import Data.DynamicValue
 
 import Graphics.UI.WX hiding (pt, when, grey, Color, Object, Layout, Vertical, Horizontal)
@@ -79,8 +80,8 @@ import qualified Data.Map as Map
 -- might be GUI reentrancy from closing `f` inside one of its own
 -- widget's event handlers. See git history on this file if that
 -- pattern is ever wanted again for something else.)
-editProjectScript :: Backend -> Window a -> Variable Ensemble -> UI -> IO ()
-editProjectScript backend projectWindow currentEnsemble ui = do
+editProjectScript :: Backend -> Window a -> WxLayout -> Variable Ensemble -> UI -> IO ()
+editProjectScript backend projectWindow wxLayout currentEnsemble ui = do
   prj <- getDynamic currentEnsemble
   srcText <- getDynamic (ensembleSourceScript prj)
 
@@ -145,8 +146,18 @@ editProjectScript backend projectWindow currentEnsemble ui = do
           -- one actually wants, unlike a user's own accidental
           -- click. `f` is itself a child of `projectWindow`, so
           -- it's already included in this sweep.
+          --
+          -- Remember how every window was left first, so that the
+          -- rebuilt ones come back the same way rather than at their
+          -- defaults; and carry the old ensemble's frontend-specific
+          -- project file keys over, since a script alone has none.
+          rememberLayout wxLayout
           windowChildren projectWindow >>= mapM_ windowDestroy
+          oldEns <- getDynamic currentEnsemble
+          setValue' (ensembleFrontendProperties newEns)
+            =<< getDynamic (ensembleFrontendProperties oldEns)
           setValue' currentEnsemble newEns
+
           runEnsemble backend ui newEns
     ]
 

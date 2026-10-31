@@ -186,6 +186,13 @@ data Viewer = Viewer
   , vCanResize :: Bool
   , vCenter    :: Variable (Double, Double)
   , vPixelSize :: Variable Double
+  , vOriginalCenter    :: (Double, Double)
+  , vOriginalPixelSize :: Double
+    -- ^ The view the script's own @center=@\/@pixelSize=@ attributes
+    -- describe (or the defaults, without them). 'vCenter' and
+    -- 'vPixelSize' start out here too, unless a frontend restores a
+    -- saved view over them; either way, a frontend's "original view"
+    -- action comes back to this one.
   , vSaveView  :: IO ()
   , vListen    :: IO () -> IO (IO ())
   , vDrawCmds  :: IO [[DrawCommand]]
@@ -460,7 +467,10 @@ cloneViewer v = do
     , vCanResize = vCanResize v
     , vCenter = newCenter
     , vPixelSize = newPixelSize
+    , vOriginalCenter = vOriginalCenter v
+    , vOriginalPixelSize = vOriginalPixelSize v
     , vSaveView = vSaveView v
+
     , vListen = vListen v
     , vTools = vTools v
     , vCodeWithArgs = vCodeWithArgs v

@@ -354,12 +354,28 @@ script made of `@config`, `@common`, `@viewer`, and `@tool` stanzas, plus an
 optional `scenarios:` key for `fsrun`. (The older multi-key `setup:` /
 `configuration:` / `viewer(s):` format is no longer supported.)
 
+Any other top-level key belongs to a frontend: the core keeps it verbatim in
+`ensembleFrontendProperties` and `encodeEnsemble` writes it back out, but never
+interprets it. The wx UI saves its window layout under `wx-properties:` (see
+`UI.WxProperties`): for each viewer, by title, its window's `x`/`y`, image
+`width`/`height`, `resizable`, `visible`, and its *current* `center`/
+`pixel-size`; and the configuration window's `x`/`y`. A viewer's own
+`center=`/`pixelSize=` attributes give only its *original* view, which "Original
+view" returns to. Window size, position, and resizability are not part of the
+script at all: `fsrun` renders at 600x600 unless a scenario says
+`resize viewer to`. A rebuild from the script editor keeps every window's
+layout and view (`rememberLayout`). Positions read from the project file are clamped onto the
+primary display (`keepOnPrimaryDisplay`), since wxHaskell can't tell us about
+any other display: a layout saved with a projector attached must still open
+visibly elsewhere. Positions carried over within a session (rebuilds) aren't
+clamped, so a window on a second display stays there.
+
 ```yaml
 script: |
   @config "Configuration"
   C : C as "C =" <- -0.11 + 0.78i
 
-  @viewer "Julia set" var=z size=512x512
+  @viewer "Julia set" var=z
   iterate z -> z^2 + C until z escapes
   color <- if stuck then black else rainbow(iterations / 20)
 
@@ -371,7 +387,15 @@ scenarios:
   - name: simple
     commands: |
       capture viewer "Julia set" to "julia.png"
+wx-properties:
+  viewers:
+    Julia set:
+      width: 512
+      height: 512
+      center: [0, 0]
+      pixel-size: 0.0078125
 ```
+
 
 `@config` declarations always need a type (it determines the UI widget); code
 in `@viewer` / `@tool` bodies can use `x := e` to have a type inferred.
