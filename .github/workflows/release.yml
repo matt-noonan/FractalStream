@@ -53,7 +53,7 @@ jobs:
           echo "## sha256"
           echo
           echo '```'
-          sha256sum *
+          sha256sum FractalStream-* fsrun-*
           echo '```'
         } > notes.md
         cat notes.md
