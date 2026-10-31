@@ -1,4 +1,4 @@
-{-# language TemplateHaskell, ForeignFunctionInterface #-}
+{-# language TemplateHaskell #-}
 module FractalStream.Metadata
   ( contributors
   , gitHash
@@ -6,12 +6,14 @@ module FractalStream.Metadata
   , gitDirty
   ) where
 
-import Development.IncludeFile
+import Data.ByteString (ByteString)
+import Data.FileEmbed (embedFile)
 import GitHash
 
 import qualified Data.ByteString.UTF8 as UTF8
 
-$(includeFileInSource "../CONTRIBUTORS" "contributorsFileContents")
+contributorsFileContents :: ByteString
+contributorsFileContents = $(embedFile "../CONTRIBUTORS")
 
 contributors :: [String]
 contributors = lines (UTF8.toString contributorsFileContents)

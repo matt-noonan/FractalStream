@@ -12,11 +12,13 @@ module Actor.Viewer.Overlay.Font
   ( overlayFont
   ) where
 
-import Development.IncludeFile
+import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LB
+import Data.FileEmbed (embedFile)
 import Graphics.Text.TrueType (Font, decodeFont)
 
-$(includeFileInSource "fonts/DejaVuSans.ttf" "dejaVuSansFile")
+dejaVuSansFile :: ByteString
+dejaVuSansFile = $(embedFile "fonts/DejaVuSans.ttf")
 
 -- | The font text is drawn in, or 'Nothing' (so text is skipped) if the
 -- embedded font somehow fails to decode.

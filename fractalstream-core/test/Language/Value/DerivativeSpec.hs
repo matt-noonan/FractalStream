@@ -27,6 +27,12 @@ spec = do
         ctxC x = Bind (Proxy @"z") ComplexType x $ EmptyContext
         parseC z s = (`evaluate` (ctxC z)) <$> (parseValue envC ComplexType s)
 
+        -- exp and log round slightly differently on different platforms
+        -- (e.g. 4.000000000000001 on Windows), so allow for that.
+        shouldBeNear actual expected = case actual of
+          Right z | magnitude (z - expected) < 1.0e-12 -> pure ()
+          _ -> actual `shouldBe` Right expected
+
     it "can differentiate constants" $ do
       parseR 2 "diff(x, 42)" `shouldBe` Right 0
       parseR 1 "diff(x, pi)" `shouldBe` Right 0
@@ -59,7 +65,7 @@ spec = do
 
     it "can apply the chain rule correctly" $ do
       parseR 4 "diff(x, 8 * log(sqrt x))" `shouldBe` Right 1
-      parseC 2 "diff(z, exp(z^2) / e^4)" `shouldBe` Right (4 :+ 0)
+      parseC 2 "diff(z, exp(z^2) / e^4)" `shouldBeNear` (4 :+ 0)
       parseC 2 "diff(z, log(z^2))" `shouldBe` Right (1.0 :+ 0.0)
 
     it "throws errors when trying to differentiate non-numeric variables" $ do

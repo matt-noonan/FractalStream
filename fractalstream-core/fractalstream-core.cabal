@@ -145,7 +145,7 @@ library
                        first-class-families,
                        bifunctors,
                        Earley,
-                       include-file,
+                       file-embed,
                        utf8-string,
                        githash,
                        zlib,
