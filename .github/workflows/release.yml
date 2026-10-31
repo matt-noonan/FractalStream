@@ -17,6 +17,11 @@ name: Release
 # The release notes list each file's sha256, for updating the Homebrew tap.
 # Review the draft and publish it by hand; Homebrew can only download the
 # files once the release is published.
+#
+# Tags must look like v1.2.3 or v1.2.3-beta.1 (ASCII only): GitHub rewrites
+# other characters in the release's file names, and Homebrew's version
+# checks only understand these. Once the release is drafted, the caches the
+# builds saved for this tag are deleted, since nothing else can use them.
 
 on:
   push:
@@ -24,7 +29,20 @@ on:
       - 'v*'
 
 jobs:
+  check-tag:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Check the tag's name
+      env:
+        TAG: ${{ github.ref_name }}
+      run: |
+        if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[A-Za-z0-9]+(\.[A-Za-z0-9]+)*)?$ ]]; then
+          echo "::error::Release tags must look like v1.2.3 or v1.2.3-beta.1, not $TAG"
+          exit 1
+        fi
+
   macos:
+    needs: check-tag
     strategy:
       matrix:
         runner:
@@ -39,11 +57,13 @@ jobs:
     secrets: inherit
 
   linux:
+    needs: check-tag
     uses: ./.github/workflows/linux-build.yml
     with:
       version: ${{ github.ref_name }}
 
   windows:
+    needs: check-tag
     uses: ./.github/workflows/windows-build.yml
     with:
       backend: llvm
@@ -81,3 +101,26 @@ jobs:
         gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft \
           --title "FractalStream ${TAG#v}" --notes-file notes.md \
           FractalStream-* fsrun-*
+
+  # Runs only once the draft exists, so a failed build can still be re-run
+  # with its caches.
+  delete-tag-caches:
+    needs: release
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+
+    steps:
+    - name: Delete this tag's caches
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        # A tag's caches are listed with refs/heads/refs/tags/<tag> as
+        # their ref, so match on the end.
+        gh cache list --repo "$GITHUB_REPOSITORY" --limit 1000 --json id,key,ref \
+          --jq ".[] | select(.ref | endswith(\"refs/tags/$TAG\")) | \"\\(.id) \\(.key)\"" |
+        while read -r id key; do
+          echo "Deleting $key"
+          gh cache delete --repo "$GITHUB_REPOSITORY" "$id"
+        done
