@@ -374,9 +374,9 @@ Built from `fractalstream-ui-headless` (`stack build` there; locate it with
 `stack exec which fsrun`).
 
 ```
-fsrun project.yaml --snapshot "Viewer title" --output out.png
-fsrun project.yaml --commands commands.txt
-fsrun project.yaml --scenario "name"      # from the project's scenarios:
+fsrun project.fs --snapshot "Viewer title" --output out.png
+fsrun project.fs --commands commands.txt
+fsrun project.fs --scenario "name"      # from the project's scenarios:
 ```
 
 Command language (one per line, `#` comments): `select viewer "T"`,

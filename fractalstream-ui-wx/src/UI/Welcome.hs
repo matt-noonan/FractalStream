@@ -21,9 +21,7 @@ welcome ProjectActions{..} = do
   let getProject verb action = do
         mprj <- fileOpenDialog objectNull True True
                 (verb ++ " a FractalStream project")
-                [ ("FractalStream project files", ["*.yaml"])
-                , ("All files", ["*.*"])
-                ] "" ""
+                projectFileTypes "" ""
         maybe (pure ()) action mprj
 
   new <- button p [ text := "New project"

@@ -1396,8 +1396,12 @@ takePicture f v0 = do
       modifyValue (vSize vi) (\(Dimensions (w, h)) -> Dimensions (w * multiplier, h * multiplier))
       modifyValue (vPixelSize vi) (/ fromIntegral multiplier)
 
+      -- Named after the viewer to start with, minus any characters
+      -- that can't go in a filename.
+      title <- getDynamic (vTitle v0)
+      let safeName = map (\c -> if c `elem` ("/\\:*?\"<>|" :: String) then '-' else c) title
       mpath <- fileSaveDialog f True True "Save a picture of the current view"
-        [("PNG files",["*.png"]), ("Any file",["*.*"])] "" ".png"
+        [("PNG files",["*.png"]), ("Any file",["*.*"])] "" (safeName ++ ".png")
 
       case mpath of
         Nothing   -> pure ()

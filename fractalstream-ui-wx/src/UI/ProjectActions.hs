@@ -1,5 +1,6 @@
 module UI.ProjectActions
   ( ProjectActions(..)
+  , projectFileTypes
   ) where
 
 import Data.DynamicValue
@@ -13,3 +14,12 @@ data ProjectActions = ProjectActions
   , hideSession  :: SessionInfo -> IO ()
   , showSession  :: SessionInfo -> IO ()
   }
+
+-- | The file types to offer in every dialog that opens or saves a
+-- project.
+projectFileTypes :: [(String, [String])]
+projectFileTypes =
+  [ ("FractalStream project files", ["*.fs"])
+  , ("All files", ["*.*"])
+  ]
+

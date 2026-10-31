@@ -113,6 +113,7 @@ executable FractalStream
                      , utf8-string
                      , microlens
                      , microlens-th
+                     , filepath
 
   -- A GUI program, without a console window. GHC's default manifest is left
   -- out, since the Windows resources Setup.hs links in (windows/*.rc)

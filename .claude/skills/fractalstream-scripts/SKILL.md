@@ -1,6 +1,6 @@
 ---
 name: fractalstream-scripts
-description: Write, fix, or explain FractalStream project scripts (the @config/@common/@viewer/@tool language for exploring real and complex dynamical systems), including implementing an algorithm from a paper as a FractalStream project and checking it headlessly. Use whenever a task involves a FractalStream .yaml project or its scripting language.
+description: Write, fix, or explain FractalStream project scripts (the @config/@common/@viewer/@tool language for exploring real and complex dynamical systems), including implementing an algorithm from a paper as a FractalStream project and checking it headlessly. Use whenever a task involves a FractalStream .fs project or its scripting language.
 ---
 
 # Writing FractalStream scripts
@@ -18,7 +18,7 @@ The language is small, typed, indentation-based, and math-flavored
 (`z^2 + C`, `2 pi i`, `|z|`, `f'(z)`). Read `reference.md` (next to this
 file) before writing anything non-trivial; it is the complete, verified
 language reference. `examples/` holds tested projects to copy from, and the
-repo's `examples/*.yaml` has ~35 more (spider, external rays, Newton,
+repo's `examples/*.fs` has ~35 more (spider, external rays, Newton,
 Hénon, bifurcation diagrams...).
 
 ## Workflow
@@ -28,12 +28,12 @@ Hénon, bifurcation diagrams...).
    both?), what each pixel's color should mean, and what interaction would
    help (trace an orbit, pick a parameter, draw rays, mark periodic points).
 2. **Map it onto FractalStream** (see "From a paper to a project" below).
-3. **Write the project** in one `.yaml` file. Start from the skeleton below
+3. **Write the project** in one `.fs` file. Start from the skeleton below
    or from the closest example.
 4. **Check it headlessly**, every time you change it:
 
    ```
-   python3 .claude/skills/fractalstream-scripts/check.py project.yaml [outdir]
+   python3 .claude/skills/fractalstream-scripts/check.py project.fs [outdir]
    ```
 
    This renders every viewer, selects every tool and exercises it with
@@ -125,30 +125,30 @@ script: |
   critical point as a function of the parameter). Add a "Pick C" tool on
   the parameter plane (`on click-or-drag: pass`) so the dynamical plane
   follows the chosen parameter, and a Trace tool on the dynamical plane.
-  See `examples/mandelbrot-julia.yaml`.
+  See `examples/mandelbrot-julia.fs`.
 - **Derivatives.** `f'(z)` and `diff(z, expr)` are exact and symbolic; use
   them for Newton's method, multipliers (`|f'(z)|` along a cycle), and
   critical points. Track an orbit derivative alongside the orbit in a loop
   body (`dz <- 2 z dz + 1` for d/dC of z^2 + C; `dz <- 2 z dz` for d/dz).
 - **Distance estimation, potentials, smooth coloring.** See
-  `examples/distance-estimate.yaml` and the smooth-coloring `define shade`
-  in `examples/mandelbrot-julia.yaml`. Use a large escape radius
+  `examples/distance-estimate.fs` and the smooth-coloring `define shade`
+  in `examples/mandelbrot-julia.fs`. Use a large escape radius
   (`escape=` attribute) when the formula assumes one, and `pixel_size` for
   pixel-relative thresholds.
 - **Basins of attraction / root finding.** Iterate until two successive
   iterates agree (`|z - old| < tol`), then color by which attractor was
   reached (`rainbow(arg z / (2 pi))` or by an index), shaded by
-  `iterations`. See `examples/newton-roots.yaml` (roots in a configurable
+  `iterations`. See `examples/newton-roots.fs` (roots in a configurable
   list, edited by clicking).
 - **Real maps and real 2-D systems.** Viewers are complex; use `x :=
   re(z)`, `y := im(z)` and loop over both. Tools can bind `at (x, y)` and
-  draw at `(x, y)`. See `examples/real-map.yaml`. A 1-D real family can be
+  draw at `(x, y)`. See `examples/real-map.fs`. A 1-D real family can be
   a bifurcation-style picture with the parameter on one axis (repo example
-  `logistic.yaml`).
+  `logistic.fs`).
 - **Things computed once, not per pixel** (periodic points, rays,
   landing points, orbit diagrams): do them in a tool's `on refresh`
   handler and draw the result, with the tool's declarations as its
-  inputs (repo example `external_rays.yaml`). Tools can use lists freely
+  inputs (repo example `external_rays.fs`). Tools can use lists freely
   (they get up to 256 MB of scratch space; viewers get 1 MB per pixel).
 - **Shared logic** between viewers and tools goes in `@common` (`let` for
   formulas, `define`/`run` for multi-statement code like coloring).

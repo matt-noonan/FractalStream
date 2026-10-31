@@ -474,7 +474,7 @@ on refresh:
     it "keeps a project file's other top-level keys (e.g. a frontend's \
        \`wx-properties:`) and writes them back out unchanged" $ do
       dir <- getTemporaryDirectory
-      let path = dir </> "fractalstream-frontend-properties-test.yaml"
+      let path = dir </> "fractalstream-frontend-properties-test.fs"
       writeFile path (unlines
         [ "script: |"
         , "  @viewer \"V\" var=z"

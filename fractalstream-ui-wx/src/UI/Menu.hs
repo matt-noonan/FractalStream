@@ -24,9 +24,7 @@ makeMenuBar ProjectActions{..} f addlMenus = do
   let getProject verb k = maybe (pure ()) k =<<
         fileOpenDialog objectNull True True
            (verb ++ " a FractalStream project")
-           [ ("FractalStream project files", ["*.yaml"])
-           , ("All files", ["*.*"])
-           ] "" ""
+           projectFileTypes "" ""
 
   -- Build the project menu
   prj <- menuPane [ text := "&Project" ]

@@ -29,6 +29,7 @@ import Graphics.UI.WXCore.WxcClasses ( styledTextCtrlStyleSetFont
 
 import Control.Exception (Exception, catch, ErrorCall(..))
 import qualified Data.ByteString as BS
+import System.FilePath (takeDirectory, takeFileName)
 
 
 #if defined(mingw32_HOST_OS)
@@ -85,10 +86,11 @@ runApp = withBackend $ \backend -> start $ do
         wxLayout <- newWxLayout (WxProperties mempty Nothing)
 
         sessionName <- newVariable "Untitled"
+        sessionFile <- newVariable Nothing
         let sessionHandle = SessionHandle projectWindow
         sessionVisible <- newVariable True
         sessionUnsaved <- newVariable True
-        let sessionSave = save currentEnsemble wxLayout projectWindow sessionUnsaved
+        let sessionSave = save currentEnsemble wxLayout sessionFile sessionName projectWindow sessionUnsaved
             ui = viewProject (objectCast projectWindow) wxLayout (makeMenuBar ProjectActions{..})
                    sessionSave (editProjectScript backend projectWindow wxLayout currentEnsemble ui)
             si = SessionInfo{..}
@@ -106,9 +108,15 @@ runApp = withBackend $ \backend -> start $ do
       -- count as an unsaved change, though: they shift constantly, and
       -- being asked to save on every close just because a window was
       -- nudged would be more annoying than useful.
-      save currentEnsemble wxLayout f isUnsaved = do
+      --
+      -- The dialog starts out on the session's own file, if it has one
+      -- yet, and a successful save makes the chosen file the session's
+      -- own from then on.
+      save currentEnsemble wxLayout sessionFile sessionName f isUnsaved = do
+        (dir, name) <- maybe ("", "Untitled.fs") (\p -> (takeDirectory p, takeFileName p))
+                       <$> getDynamic sessionFile
         result <- fileSaveDialog f True True "Save FractalStream project"
-                  [ ("FractalStream project files",["*.fs"]), ("All files", ["*.*"])] "" ".fs"
+                  projectFileTypes dir name
         case result of
           Nothing -> pure ()
           Just file -> do
@@ -117,6 +125,8 @@ runApp = withBackend $ \backend -> start $ do
             modifyValue (ensembleFrontendProperties prj) (writeWxProperties props)
             encodeEnsemble prj >>= BS.writeFile file
             setValue isUnsaved False
+            setValue sessionFile (Just file)
+            setValue sessionName file
 
       projectOpen = \yamlFile -> do
         projectWindow <- frame [ visible := False ]
@@ -140,10 +150,11 @@ runApp = withBackend $ \backend -> start $ do
           wxLayout <- newWxLayout wxProps
 
           sessionName <- newVariable yamlFile
+          sessionFile <- newVariable (Just yamlFile)
           let sessionHandle = SessionHandle projectWindow
           sessionVisible <- newVariable True
           sessionUnsaved <- newVariable False
-          let sessionSave = save currentEnsemble wxLayout projectWindow sessionUnsaved
+          let sessionSave = save currentEnsemble wxLayout sessionFile sessionName projectWindow sessionUnsaved
               -- `ui` and `editProjectScript` refer to each other: a
               -- rebuild needs a `UI` to hand `runEnsemble` for the
               -- *next* round of viewer windows, and that same `UI`

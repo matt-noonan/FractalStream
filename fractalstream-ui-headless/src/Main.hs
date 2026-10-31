@@ -6,9 +6,9 @@ A frontend analogous to fractalstream-ui-wx: it implements the same
 'Actor.UI.UI' interface that drives 'Actor.Ensemble.runEnsemble', but with
 no actual GUI. Three modes:
 
-  fsrun <project.yaml> --snapshot <viewer-name> --output <file.png>
-  fsrun <project.yaml> --commands <commands-file>
-  fsrun <project.yaml> --scenario <name>
+  fsrun <project.fs> --snapshot <viewer-name> --output <file.png>
+  fsrun <project.fs> --commands <commands-file>
+  fsrun <project.fs> --scenario <name>
 
 Snapshot mode renders one named viewer's base per-pixel script to a PNG
 and exits. The other two both drive a project through a sequence of
@@ -54,9 +54,9 @@ data Mode
 usage :: String
 usage = unlines
   [ "usage:"
-  , "  fsrun <project.yaml> --snapshot <viewer-name> --output <file.png>"
-  , "  fsrun <project.yaml> --commands <commands-file>"
-  , "  fsrun <project.yaml> --scenario <name>"
+  , "  fsrun <project.fs> --snapshot <viewer-name> --output <file.png>"
+  , "  fsrun <project.fs> --commands <commands-file>"
+  , "  fsrun <project.fs> --scenario <name>"
   , "  fsrun --version"
   ]
 
