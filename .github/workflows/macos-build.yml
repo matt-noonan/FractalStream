@@ -1,0 +1,353 @@
+name: macOS build (reusable)
+
+# The macOS build, shared by macos.yml, macos-intel.yml and release.yml.
+# Builds the FractalStream app bundle and the fsrun command-line tool, signs
+# both (and optionally notarizes them), and uploads them as one artifact
+# named macos-<arch>, holding
+#   FractalStream-<suffix>.zip   the app bundle
+#   fsrun-<suffix>.tar.gz        fsrun
+# where <suffix> is <version>-macos-<arch> when a version is given, and
+# <commit>-macos-<arch>-wx-<wxwidgets> otherwise.
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'The GitHub runner to build on (this picks the architecture)'
+        required: true
+        type: string
+      wxwidgets:
+        description: 'How should we get the wxWidgets 3.2 dependency? (homebrew, build-static, or build-dynamic)'
+        required: false
+        default: 'build-static'
+        type: string
+      notarize:
+        description: 'Submit the signed app bundle and fsrun to the Apple notary service?'
+        required: false
+        default: false
+        type: boolean
+      jemalloc:
+        description: 'Link against jemalloc?'
+        required: false
+        default: false
+        type: boolean
+      version:
+        description: 'The release version (a leading "v" is dropped); empty for a development build'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build:
+
+    runs-on: ${{ inputs.runner }}
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install homebrew packages for dependencies
+      run: |
+        ##################################################################
+        # Install the developer tools and homebrew (already done in CI)
+        ##################################################################
+
+        #xcode-select --install
+        #/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+        ##################################################################
+        # Prerequisites
+        ##################################################################
+
+        brew install wget
+        brew install haskell-stack
+        brew install libffi
+        brew install jemalloc
+
+        ##################################################################
+        # wxWidgets dependencies
+        ##################################################################
+
+        brew install pkgconf
+        brew install libtiff
+        brew install libpng
+        brew install jpeg-turbo
+        brew install pcre2
+
+    - if: ${{ inputs.wxwidgets != 'homebrew' }}
+      name: Get cached build of wxWidgets 3.2
+      id: cache-wxwidgets
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ runner.os }}-${{ runner.arch }}-cache-wxwidgets-${{ inputs.wxwidgets }}
+        path: wxWidgets-3.2.9
+
+    - if: ${{ inputs.wxwidgets == 'homebrew' }}
+      name: Install wxWidgets@3.2 from Homebrew
+      run: |
+        brew install wxwidgets@3.2
+        ln -s `which wx-config-3.2` /usr/local/bin/wx-config
+        ln -s `which wxrc-3.2` /usr/local/bin/wxrc
+
+
+        wx-config --list
+        wx-config --version
+        wx-config --version-full
+        wx-config --libs
+
+
+    - if: ${{ inputs.wxwidgets == 'build-static' && steps.cache-wxwidgets.outputs.cache-hit != 'true' }}
+      name: Build wxWidgets 3.2 for static linking
+      run: |
+        wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.9/wxWidgets-3.2.9.tar.bz2
+        tar xvf wxWidgets-3.2.9.tar.bz2
+        cd wxWidgets-3.2.9
+        git apply ../patches/atomic-refcounts.patch && echo Applied patch
+        mkdir build-cocoa
+        cd build-cocoa
+        cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=OFF -DwxBUILD_MONOLITHIC=ON ..
+        cmake --build .
+
+    - if: ${{ inputs.wxwidgets == 'build-dynamic' && steps.cache-wxwidgets.outputs.cache-hit != 'true' }}
+      name: Build wxWidgets 3.2 for dynamic linking
+      run: |
+        wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.9/wxWidgets-3.2.9.tar.bz2
+        tar xvf wxWidgets-3.2.9.tar.bz2
+        cd wxWidgets-3.2.9
+        git apply ../patches/atomic-refcounts.patch && echo Applied patch
+        mkdir build-cocoa
+        cd build-cocoa
+        cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=ON -DwxBUILD_MONOLITHIC=ON ..
+        cmake --build .
+
+    - if: ${{ inputs.wxwidgets != 'homebrew' && steps.cache-wxwidgets.outputs.cache-hit != 'true' }}
+      name: Save build of wxWidgets 3.2
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-${{ runner.arch }}-cache-wxwidgets-${{ inputs.wxwidgets }}
+        path: wxWidgets-3.2.9
+
+    - if: ${{ inputs.wxwidgets != 'homebrew' }}
+      name: Install wxWidgets 3.2
+      run: |
+        cd wxWidgets-3.2.9/build-cocoa
+        ln -s wx-config /usr/local/bin/wx-config-3.2
+        ln -s lib/wxrc /usr/local/bin/wxrc-3.2
+        sudo cmake --build . --target=install
+
+    - name: Get cached build of wxc
+      id: cache-wxc
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ runner.os }}-${{ runner.arch }}-cache-wxc-for-${{ inputs.wxwidgets }}
+        path: wxHaskell-3.2
+
+    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
+      name: Build wxc from wxHaskell
+      run: |
+        ##################################################################
+        # Before building wxHaskell we need to manually build the wxc
+        # program and make it available on the path.
+        ##################################################################
+
+        git clone https://github.com/matt-noonan/wxHaskell-3.2.git
+        cd wxHaskell-3.2
+        cd wxc
+        ./generate-version-header.sh
+        mkdir build
+        cd build
+        cmake ..
+        cmake --build .
+
+    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
+      name: Save build of wxc
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-${{ runner.arch }}-cache-wxc-for-${{ inputs.wxwidgets }}
+        path: wxHaskell-3.2
+
+    - name: Install wxc
+      run: |
+        ##################################################################
+        # Install wxc
+        ##################################################################
+        pwd
+        cd wxHaskell-3.2/wxc/build
+        sudo cmake --install .
+
+    - name: Get cached build of LLVM 12
+      id: cache-llvm-12-static
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ runner.os }}-${{ runner.arch }}-cache-llvm-12-static
+        path: llvm-12.0.1.src
+
+    - if: ${{ steps.cache-llvm-12-static.outputs.cache-hit != 'true' }}
+      name: Build LLVM 12
+      run: |
+        ##################################################################
+        # Build LLVM 12
+        ##################################################################
+
+        # Worked locally but failed in CI
+        #brew install llvm-hs/llvm/llvm-12
+
+        # Fails, deprecated in homebrew
+        #brew install llvm@12
+
+        # Try building from source
+        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.1/llvm-12.0.1.src.tar.xz
+        tar xvf llvm-12.0.1.src.tar.xz
+        cd llvm-12.0.1.src
+        mkdir build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_BUILD_LLVM_DYLIB=ON ..
+        cmake --build .
+
+    - if: ${{ steps.cache-llvm-12-static.outputs.cache-hit != 'true' }}
+      name: Save build of LLVM 12
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-${{ runner.arch }}-cache-llvm-12-static
+        path: llvm-12.0.1.src
+
+    - name: Install LLVM 12
+      run: |
+        ##################################################################
+        # Install LLVM 12
+        ##################################################################
+        cd llvm-12.0.1.src/build
+        sudo cmake --build . --target install
+        sudo ln -s /usr/local/lib/libLLVM.dylib /usr/local/lib/libLLVM-12.dylib
+
+    # Restore the newest saved .stack, and save a new one after every run,
+    # even a failed one, so that a failure late in the build doesn't throw
+    # away the dependencies that were built.
+    - name: Get cached .stack
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ runner.os }}-${{ runner.arch }}-cache-dot-stack-for-${{ inputs.wxwidgets }}-${{ github.run_id }}
+        restore-keys: ${{ runner.os }}-${{ runner.arch }}-cache-dot-stack-for-${{ inputs.wxwidgets }}
+        path: ~/.stack
+
+    - name: Build Haskell dependencies
+      run: |
+        cd fractalstream-ui-wx
+        stack build --only-snapshot
+
+    - name: Build FractalStream
+      env:
+        USE_JEMALLOC: ${{ inputs.jemalloc && '--flag fractalstream-ui-wx:use-jemalloc' || '' }}
+      run: |
+        cd fractalstream-ui-wx
+        stack build $USE_JEMALLOC
+        mv `find . -name "FractalStream.app"` ../FractalStream.app
+        mv ../FractalStream.app/PkgInfo ../FractalStream.app/Contents/PkgInfo
+
+        cd ../FractalStream.app
+        ls -Ra
+
+    - if: ${{ inputs.version != '' }}
+      name: Set the app bundle's version
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        VERSION="${VERSION#v}"
+        /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" FractalStream.app/Contents/Info.plist
+        /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" FractalStream.app/Contents/Info.plist
+
+    - name: Build fsrun
+      run: |
+        cd fractalstream-ui-headless
+        stack build
+        cp "$(stack path --local-install-root)/bin/fsrun" ../fsrun
+        cd ..
+        strip fsrun
+        ls -l fsrun
+
+    - if: ${{ always() }}
+      name: Save .stack
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ runner.os }}-${{ runner.arch }}-cache-dot-stack-for-${{ inputs.wxwidgets }}-${{ github.run_id }}
+        path: ~/.stack
+
+    - name: Sign app bundle and fsrun
+      env:
+        MACOS_CERTIFICATE: ${{ secrets.PROD_MACOS_CERTIFICATE }}
+        MACOS_CERTIFICATE_PWD: ${{ secrets.PROD_MACOS_CERTIFICATE_PWD }}
+        MACOS_CERTIFICATE_NAME: ${{ secrets.PROD_MACOS_CERTIFICATE_NAME }}
+        MACOS_CI_KEYCHAIN_PWD: ${{ secrets.PROD_MACOS_CI_KEYCHAIN_PWD }}
+      run: |
+        # Turn our base64-encoded certificate back to a regular .p12 file
+        echo $MACOS_CERTIFICATE | base64 --decode > certificate.p12
+
+        # We need to create a new keychain, otherwise using the certificate will prompt
+        # with a UI dialog asking for the certificate password, which we can't
+        # use in a headless CI environment
+        security create-keychain -p "$MACOS_CI_KEYCHAIN_PWD" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "$MACOS_CI_KEYCHAIN_PWD" build.keychain
+        security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_CI_KEYCHAIN_PWD" build.keychain
+        # We finally codesign our app bundle, specifying the Hardened runtime option
+        /usr/bin/codesign --deep --force -s "$MACOS_CERTIFICATE_NAME" --options runtime --entitlements macos/Entitlements.plist FractalStream.app -v
+        # fsrun gets the same entitlements, since the LLVM backend JITs code.
+        /usr/bin/codesign --force -s "$MACOS_CERTIFICATE_NAME" --options runtime --entitlements macos/Entitlements.plist fsrun -v
+
+    - if: ${{ inputs.notarize }}
+      name: Notarize app bundle and fsrun
+      env:
+        PROD_MACOS_NOTARIZATION_APPLE_ID: ${{ secrets.PROD_MACOS_NOTARIZATION_APPLE_ID }}
+        PROD_MACOS_NOTARIZATION_TEAM_ID: ${{ secrets.PROD_MACOS_NOTARIZATION_TEAM_ID }}
+        PROD_MACOS_NOTARIZATION_PWD: ${{ secrets.PROD_MACOS_NOTARIZATION_PWD }}
+      run: |
+        # Store the notarization credentials so that we can prevent a UI password dialog
+        # from blocking the CI
+        echo "Create keychain profile"
+        xcrun notarytool store-credentials "notarytool-profile" --apple-id "$PROD_MACOS_NOTARIZATION_APPLE_ID" --team-id "$PROD_MACOS_NOTARIZATION_TEAM_ID" --password "$PROD_MACOS_NOTARIZATION_PWD"
+
+        # We can't notarize an app bundle directly, but we need to compress it as an archive.
+        # Therefore, we create a zip file containing our app bundle and fsrun, so that we can
+        # send them to the notarization service
+        echo "Creating temp notarization archive"
+        mkdir notarization
+        cp -R FractalStream.app fsrun notarization/
+        ditto -c -k notarization "notarization.zip"
+
+        # Here we send the notarization request to the Apple's Notarization service, waiting for the result.
+        # This typically takes a few seconds inside a CI environment, but it might take more depending on the App
+        # characteristics. Visit the Notarization docs for more information and strategies on how to optimize it if
+        # you're curious
+        echo "Notarize app"
+        xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
+
+        # Finally, we need to "attach the staple" to our executable, which will allow our app to be
+        # validated by macOS even when an internet connection is not available. (A bare executable
+        # like fsrun can't be stapled; Gatekeeper checks its notarization online instead.)
+        echo "Attach staple"
+        xcrun stapler staple "FractalStream.app"
+
+    - name: Archive app bundle and fsrun
+      id: archive
+      env:
+        VERSION: ${{ inputs.version }}
+        WXWIDGETS: ${{ inputs.wxwidgets }}
+      run: |
+        ARCH="$(uname -m)"
+        if [ -n "$VERSION" ]; then
+          SUFFIX="${VERSION#v}-macos-$ARCH"
+        else
+          SUFFIX="$GITHUB_SHA-macos-$ARCH-wx-$WXWIDGETS"
+        fi
+        ditto -c -k --keepParent FractalStream.app "FractalStream-$SUFFIX.zip"
+        tar czf "fsrun-$SUFFIX.tar.gz" fsrun
+        shasum -a 256 "FractalStream-$SUFFIX.zip" "fsrun-$SUFFIX.tar.gz"
+        echo "arch=$ARCH" >> $GITHUB_OUTPUT
+        echo "suffix=$SUFFIX" >> $GITHUB_OUTPUT
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-${{ steps.archive.outputs.arch }}
+        path: |
+          FractalStream-${{ steps.archive.outputs.suffix }}.zip
+          fsrun-${{ steps.archive.outputs.suffix }}.tar.gz
