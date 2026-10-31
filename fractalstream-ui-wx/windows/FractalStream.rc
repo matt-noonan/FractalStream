@@ -1,0 +1,10 @@
+// Windows resources for FractalStream.exe, compiled by Setup.hs with windres.
+//
+// The application icon ("aaaa" so that it sorts first, which makes it the
+// icon Explorer shows), and wxWidgets' standard resources, including the
+// manifest that turns on themed controls and per-monitor DPI awareness.
+
+aaaa ICON "FS.ico"
+
+#define wxUSE_DPI_AWARE_MANIFEST 2
+#include "wx/msw/wx.rc"

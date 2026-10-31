@@ -1,4 +1,5 @@
 
+{-# language CPP #-}
 {- |
 Module       : Main
 Description  : Main entry point into FractalStream
@@ -28,8 +29,38 @@ import Graphics.UI.WXCore.WxcClasses ( styledTextCtrlStyleSetFont
 import Control.Exception (Exception, catch, ErrorCall(..))
 import qualified Data.ByteString as BS
 
+#if defined(mingw32_HOST_OS)
+import Control.Exception (IOException, try)
+import GHC.IO.Handle (hDuplicateTo)
+import System.Directory (getTemporaryDirectory)
+import System.FilePath ((</>))
+import System.IO ( IOMode(..), BufferMode(..), openFile, hSetEncoding, utf8
+                 , hSetBuffering, stdout, stderr )
+#endif
+
 main :: IO ()
-main = withBackend $ \backend -> start $ do
+main = redirectOutputOnWindows >> runApp
+
+-- | On Windows, FractalStream is a GUI program (linked with -mwindows), so
+-- it has no console, and writing to stdout or stderr would throw. Send them
+-- to FractalStream.log in the temporary directory instead (or, if that
+-- can't be opened, nowhere).
+redirectOutputOnWindows :: IO ()
+#if defined(mingw32_HOST_OS)
+redirectOutputOnWindows = do
+  tmp <- getTemporaryDirectory
+  logFile <- try (openFile (tmp </> "FractalStream.log") WriteMode)
+             >>= either (\(_ :: IOException) -> openFile "NUL" WriteMode) pure
+  hSetEncoding logFile utf8
+  hSetBuffering logFile LineBuffering
+  hDuplicateTo logFile stdout
+  hDuplicateTo logFile stderr
+#else
+redirectOutputOnWindows = pure ()
+#endif
+
+runApp :: IO ()
+runApp = withBackend $ \backend -> start $ do
 
   wxcAppSetAppName "FractalStream"
 
