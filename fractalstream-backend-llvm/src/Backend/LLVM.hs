@@ -1,4 +1,4 @@
-{-# language OverloadedStrings, ForeignFunctionInterface, AllowAmbiguousTypes, UndecidableInstances, RankNTypes #-}
+{-# language CPP, OverloadedStrings, ForeignFunctionInterface, AllowAmbiguousTypes, UndecidableInstances, RankNTypes #-}
 module Backend.LLVM
   ( JITFun(..)
   , ToForeignFun(..)
@@ -760,6 +760,7 @@ withCompiledCode outputProxy outputTy env src run = do
             linker <- createRTDyldObjectLinkingLayer session
             compileLayer <- createIRCompileLayer session linker tm
             addDynamicLibrarySearchGeneratorForCurrentProcess compileLayer dylib
+            defineRuntimeSymbols compileLayer dylib
             addModule tsm dylib compileLayer
             lookupSymbol session compileLayer dylib "kernel" >>= \case
               Left err -> error ("error JITing kernel: " ++ show err)
@@ -786,6 +787,7 @@ withJIT action = do
       linker <- createRTDyldObjectLinkingLayer session --resolve
       compileLayer <- createIRCompileLayer session linker tm
       addDynamicLibrarySearchGeneratorForCurrentProcess compileLayer dylib
+      defineRuntimeSymbols compileLayer dylib
       nextId <- newMVar 0
 
       -- Fixed pool of arenas (one per capability), shared by all viewers.
@@ -801,6 +803,25 @@ withJIT action = do
             replicateM numWorkers (readChan arenaPool) >>= mapM_ free
       action (dylib, session, compileLayer, nextId, arenaPool)
         `finally` drainAndFreeArenas
+
+-- | Define symbols that JIT'd code may need but that the JIT can't find by
+-- searching the current process. On Windows, that search only sees symbols a
+-- module exports, and LLVM calls the C runtime's stack probe ___chkstk_ms
+-- from any function whose stack frame is bigger than a page; the probe is
+-- linked statically into the executable, not exported.
+defineRuntimeSymbols :: IRCompileLayer -> JITDylib -> IO ()
+#if defined(mingw32_HOST_OS)
+defineRuntimeSymbols compileLayer dylib =
+  withMangledSymbol compileLayer "___chkstk_ms" $ \name ->
+    defineAbsoluteSymbols dylib
+      [ (name, JITSymbol (ptrToWordPtr (castFunPtrToPtr chkstkMs))
+                         defaultJITSymbolFlags { jitSymbolExported = True
+                                               , jitSymbolCallable = True }) ]
+
+foreign import ccall "&___chkstk_ms" chkstkMs :: FunPtr (IO ())
+#else
+defineRuntimeSymbols _ _ = pure ()
+#endif
 
 withHostTargetMachine' :: (TargetMachine -> IO a) -> IO a
 withHostTargetMachine' f = do
