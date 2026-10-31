@@ -36,17 +36,17 @@ goldenDir   = "test/golden"
 
 spec :: Spec
 spec = describe "typed AST golden tests" $ do
-  let yamlFiles dir = runIO $
-        sort . filter (".yaml" `isSuffixOf`) <$> listDirectory (examplesDir </> dir)
-  examples  <- yamlFiles ""
-  templates <- map ("templates" </>) <$> yamlFiles "templates"
+  let projectFiles dir = runIO $
+        sort . filter (".fs" `isSuffixOf`) <$> listDirectory (examplesDir </> dir)
+  examples  <- projectFiles ""
+  templates <- map ("templates" </>) <$> projectFiles "templates"
   forM_ (examples ++ templates) $ \file ->
     it ("example " ++ file) $
       parseEnsembleFromFile (examplesDir </> file) >>= \case
         Left err  -> golden (goldenName file) ("BUILD ERROR\n" ++ err)
         Right ens -> dumpEnsemble ens >>= golden (goldenName file)
   where
-    -- e.g. "templates/newtons-method.yaml" -> "templates-newtons-method.yaml"
+    -- e.g. "templates/newtons-method.fs" -> "templates-newtons-method.fs"
     goldenName = map (\c -> if isPathSeparator c then '-' else c)
 
 golden :: String -> String -> Expectation

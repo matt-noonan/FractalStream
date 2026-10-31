@@ -13,19 +13,19 @@ separate CLI argument, so the same scenario vocabulary is meaningful
 across any project. Commands can come from a standalone file:
 
 ```
-fsrun project.yaml --commands scenario.txt
+fsrun project.fs --commands scenario.txt
 ```
 
 or from a scenario embedded directly in the project file itself (see
 "Embedding scenarios in a project file" below), selected by name:
 
 ```
-fsrun project.yaml --scenario "basic trace"
+fsrun project.fs --scenario "basic trace"
 ```
 
 (A third, unrelated mode exists for the simple case of just rendering
 one viewer with no tool interaction at all:
-`fsrun project.yaml --snapshot "<viewer name>" --output
+`fsrun project.fs --snapshot "<viewer name>" --output
 file.png`.)
 
 ## Design principles
@@ -205,7 +205,7 @@ scenarios:
       capture viewer "Mandelbrot set" base to "zoomed.png"
 ```
 
-run with `fsrun project.yaml --scenario "basic trace"`.
+run with `fsrun project.fs --scenario "basic trace"`.
 This is the natural home for a project's own regression\/smoke-test
 scenarios -- checked in alongside the project file itself, rather than
 kept as separate files that can drift out of sync with it. A project

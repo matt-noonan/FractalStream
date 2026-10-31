@@ -19,7 +19,7 @@ fractalstream-ui-wx/          # wxWidgets UI (the main executable: FractalStream
 fractalstream-ui-headless/    # Headless frontend (`fsrun`), no GUI dependencies
 ```
 
-`fsrun project.yaml --scenario NAME` runs a project's scripted scenario
+`fsrun project.fs --scenario NAME` runs a project's scripted scenario
 (clicks, parameter changes, viewer captures to PNG) without a GUI; see
 `SCENARIO_LANGUAGE.md`. It is the easiest way to check a change end to end,
 e.g. by rendering a viewer before and after and comparing the PNGs.
@@ -163,7 +163,7 @@ An `Ensemble` is a loaded project:
 
 `buildEnsembleFromScript` builds one from a unified script (grammar in
 `Actor.Script`); `parseEnsembleFromFile :: FilePath -> IO (Either String Ensemble)`
-loads a `.yaml` file, and `encodeEnsemble` saves one.
+loads a `.fs` file, and `encodeEnsemble` saves one.
 `runEnsemble` launches the UI for an ensemble.
 
 ### Viewer (`Actor.Viewer`, `Actor.Viewer.Complex`)
