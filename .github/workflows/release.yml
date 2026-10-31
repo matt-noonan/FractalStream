@@ -1,9 +1,19 @@
 name: Release
 
-# Pushing a tag like v2.0.0 builds signed and notarized macOS binaries for
-# Apple Silicon and Intel, and attaches them to a draft GitHub Release:
-#   FractalStream-<version>-macos-<arch>.zip   the app (for the Homebrew cask)
-#   fsrun-<version>-macos-<arch>.tar.gz        fsrun (for the Homebrew formula)
+# Pushing a tag like v2.0.0 builds FractalStream for macOS, Linux and
+# Windows, and attaches the results to a draft GitHub Release:
+#   FractalStream-<version>-macos-<arch>.zip          the app, signed and
+#                                                     notarized (for the
+#                                                     Homebrew cask)
+#   fsrun-<version>-macos-<arch>.tar.gz               fsrun (for the Homebrew
+#                                                     formula)
+#   FractalStream-<version>-linux-x86_64.AppImage     the app
+#   fsrun-<version>-linux-x86_64.tar.gz               fsrun, with the shared
+#                                                     libraries it needs
+#   FractalStream-<version>-windows-x86_64-setup.exe  an installer for the app
+#                                                     and fsrun
+#   FractalStream-<version>-windows-x86_64.zip        the same, as a portable
+#                                                     folder
 # The release notes list each file's sha256, for updating the Homebrew tap.
 # Review the draft and publish it by hand; Homebrew can only download the
 # files once the release is published.
@@ -28,17 +38,28 @@ jobs:
       version: ${{ github.ref_name }}
     secrets: inherit
 
+  linux:
+    uses: ./.github/workflows/linux-build.yml
+    with:
+      version: ${{ github.ref_name }}
+
+  windows:
+    uses: ./.github/workflows/windows-build.yml
+    with:
+      backend: llvm
+      version: ${{ github.ref_name }}
+
   release:
-    needs: macos
+    needs: [macos, linux, windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
 
     steps:
-    - name: Download the macOS builds
+    - name: Download the builds
       uses: actions/download-artifact@v4
       with:
-        pattern: macos-*
+        pattern: '{macos,linux,windows}-*'
         merge-multiple: true
         path: dist
 
