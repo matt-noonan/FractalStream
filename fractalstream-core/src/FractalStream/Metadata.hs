@@ -2,6 +2,7 @@
 module FractalStream.Metadata
   ( contributors
   , gitHash
+  , gitTag
   , gitBranch
   , gitDirty
   ) where
@@ -23,6 +24,9 @@ gitInfo = $$tGitInfoCwd
 
 gitHash :: String
 gitHash = giHash gitInfo
+
+gitTag :: String
+gitTag = giTag gitInfo
 
 gitBranch :: String
 gitBranch = giBranch gitInfo

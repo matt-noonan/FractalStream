@@ -82,7 +82,8 @@ makeMenuBar ProjectActions{..} f addlMenus = do
   set f [ menuBar := menuBarItems
         , on (menu about) :=
           infoDialog f "About FractalStream" $ unlines
-          ("Contributors:" : contributors ++
+          ( ("FractalStream " ++ gitTag) : "" :
+            "Contributors:" : map ("  " ++) contributors ++
             ["", "Build info:", gitBranch ++ "@" ++ take 8 gitHash])
         ]
   -- Hooks `windowOnDestroy` (`wxEVT_DESTROY`) rather than `on closing`

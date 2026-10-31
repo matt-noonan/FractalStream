@@ -31,6 +31,7 @@ module Main where
 
 import FractalStream.Prelude
 
+import FractalStream.Metadata (gitTag)
 import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble)
 import Actor.UI (UI(..))
 import Actor.Viewer (Backend, Viewer(..), snapshotToFile, describeViewerIssues)
@@ -56,6 +57,7 @@ usage = unlines
   , "  fsrun <project.yaml> --snapshot <viewer-name> --output <file.png>"
   , "  fsrun <project.yaml> --commands <commands-file>"
   , "  fsrun <project.yaml> --scenario <name>"
+  , "  fsrun --version"
   ]
 
 -- | Report a failure on stderr and exit non-zero. Every error path in
@@ -67,6 +69,7 @@ dieWith msg = hPutStrLn stderr msg >> exitFailure
 
 main :: IO ()
 main = getArgs >>= \case
+  ["--version"] -> putStrLn gitTag
   (projectFile : rest) -> case parseMode rest of
     Right mode -> run projectFile mode
     Left err   -> dieWith (err ++ "\n" ++ usage)
