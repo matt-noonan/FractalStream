@@ -21,6 +21,6 @@ flags:
 
 ghc-options:
   llvm-hs:
-    -optcxx=-std=c++17
+    -optcxx=-std=c++17 -optcxx=-DNDEBUG
 
 allow-newer: true
