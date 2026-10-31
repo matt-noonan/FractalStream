@@ -141,9 +141,9 @@ jobs:
     - name: Get cached stack root
       uses: actions/cache/restore@v4
       with:
-        key: ${{ runner.os }}-cache-stack-root-llvm-${{ github.run_id }}
+        key: ${{ runner.os }}-cache-stack-root-llvm2-${{ github.run_id }}
         restore-keys: |
-          ${{ runner.os }}-cache-stack-root-llvm-
+          ${{ runner.os }}-cache-stack-root-llvm2-
           ${{ runner.os }}-cache-stack-root-pure-
         path: C:\sr
 
@@ -159,6 +159,21 @@ jobs:
         "$GHC_MINGW/bin/clang++" --version
         "$GHC_BIN/ghc" --info | grep -i "C compiler\|C++ compiler\|ld command\|ar command\|target platform"
         ls "$GHC_MINGW/lib" | grep -i "c++\|stdc\|unwind" || true
+
+        # GHC's toolchain includes LLVM 14's own static libraries and headers.
+        # GHC puts its mingw/lib and mingw/include ahead of package
+        # directories, so llvm-hs would link against them instead of LLVM 12.
+        # GHC's clang and lld don't need them, so move them out of the way.
+        mkdir -p "$GHC_MINGW/llvm14-unused/lib" "$GHC_MINGW/llvm14-unused/include"
+        ls "$GHC_MINGW/lib" | grep -i "^libLLVM\|^libLTO\|^libRemarks" || true
+        find "$GHC_MINGW/lib" -maxdepth 1 \( -name 'libLLVM*' -o -name 'libLTO*' -o -name 'libRemarks*' \) \
+          -exec mv {} "$GHC_MINGW/llvm14-unused/lib/" \;
+        for d in llvm llvm-c; do
+          if [ -d "$GHC_MINGW/include/$d" ]; then
+            echo "moving include/$d"
+            mv "$GHC_MINGW/include/$d" "$GHC_MINGW/llvm14-unused/include/"
+          fi
+        done
 
     - name: Get cached build of LLVM 12
       id: cache-llvm
@@ -248,7 +263,7 @@ jobs:
       name: Save stack root
       uses: actions/cache/save@v4
       with:
-        key: ${{ runner.os }}-cache-stack-root-llvm-${{ github.run_id }}
+        key: ${{ runner.os }}-cache-stack-root-llvm2-${{ github.run_id }}
         path: C:\sr
 
     - name: Collect the executable and its DLLs
