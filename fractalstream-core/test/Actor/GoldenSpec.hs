@@ -27,7 +27,8 @@ import Control.Monad (forM, forM_)
 import Data.List (isSuffixOf, sort)
 import qualified Data.Map as Map
 import System.Directory (doesFileExist, listDirectory, createDirectoryIfMissing)
-import System.FilePath ((</>))
+import System.FilePath ((</>), isPathSeparator)
+import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStr)
 
 examplesDir, goldenDir :: FilePath
 examplesDir = "../examples"
@@ -46,7 +47,7 @@ spec = describe "typed AST golden tests" $ do
         Right ens -> dumpEnsemble ens >>= golden (goldenName file)
   where
     -- e.g. "templates/newtons-method.yaml" -> "templates-newtons-method.yaml"
-    goldenName = map (\c -> if c == '/' then '-' else c)
+    goldenName = map (\c -> if isPathSeparator c then '-' else c)
 
 golden :: String -> String -> Expectation
 golden name actual = do
@@ -55,9 +56,11 @@ golden name actual = do
   exists <- doesFileExist path
   if exists
     then do
-      expected <- readFile path
-      length expected `seq` (actual `shouldBe` expected)
-    else writeFile path actual
+      -- Golden files are UTF-8, whatever the locale's encoding (on
+      -- Windows it usually isn't UTF-8).
+      expected <- withFile path ReadMode $ \h -> hSetEncoding h utf8 >> hGetContents' h
+      actual `shouldBe` expected
+    else withFile path WriteMode $ \h -> hSetEncoding h utf8 >> hPutStr h actual
 
 -- | Pretty-print all typed code reachable from an ensemble.
 dumpEnsemble :: Ensemble -> IO String

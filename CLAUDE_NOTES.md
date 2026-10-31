@@ -321,8 +321,9 @@ tools against `Actor.Event.interpretedToolExec` on the same scripts.
 ### Headless overlay text
 
 `Actor.Viewer.Overlay` draws `write` with FontyFruity/Rasterific, using a
-copy of DejaVu Sans embedded via `include-file` in `Actor.Viewer.Overlay.Font`
-(`fractalstream-core/fonts/`). It approximates the wx viewer: 13px text in
+copy of DejaVu Sans embedded via `file-embed` in `Actor.Viewer.Overlay.Font`
+(`fractalstream-core/fonts/`). (It used `include-file`, which took ~15 minutes to
+compile the font module on Windows and failed outright at -O0.) It approximates the wx viewer: 13px text in
 the stroke color, centered on the point (vertically on the line height).
 
 ## UI (`fractalstream-ui-wx`)

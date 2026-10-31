@@ -43,7 +43,7 @@ import Language.Parser.SourceRange (Indicated(..))
 import Data.IORef
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
-import System.IO (hPutStrLn, stderr)
+import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStrLn, stderr)
 
 data Mode
   = Snapshot { snapshotViewer :: String, snapshotOutput :: FilePath }
@@ -171,7 +171,8 @@ renderViewer viewer outputFile = snapshotToFile viewer True outputFile >>= \case
 -- project.
 runCommandsFile :: Backend -> Ensemble -> FilePath -> IO ()
 runCommandsFile backend ensemble path = do
-  src <- readFile path
+  -- Read as UTF-8, like project files, whatever the locale's encoding.
+  src <- withFile path ReadMode $ \h -> hSetEncoding h utf8 >> hGetContents' h
   runCommandsText backend ensemble path src
 
 -- | Find a scenario by name among the project's own top-level

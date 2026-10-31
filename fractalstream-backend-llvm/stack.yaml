@@ -7,7 +7,7 @@ packages:
 extra-deps:
 
 - git: https://github.com/matt-noonan/llvm-hs.git
-  commit: 46fbe902a83a4198f296e2062c767b34ecc6be65
+  commit: 0746a412c4018667f897b1382625f9a7239167ec
   subdirs:
     - llvm-hs
     - llvm-hs-pure
@@ -21,6 +21,6 @@ flags:
 
 ghc-options:
   llvm-hs:
-    -optcxx=-std=c++17
+    -optcxx=-std=c++17 -optcxx=-DNDEBUG
 
 allow-newer: true

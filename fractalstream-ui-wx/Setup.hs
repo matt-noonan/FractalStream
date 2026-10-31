@@ -11,7 +11,9 @@ import Distribution.Simple.Program
 import Distribution.Simple.Setup hiding (Flag)
 import qualified System.Info as System
 import Data.Either (partitionEithers)
-import Data.List (isSuffixOf)
+import Data.List (isPrefixOf, isSuffixOf)
+import System.Directory (getCurrentDirectory)
+import System.FilePath ((</>))
 
 main :: IO ()
 main = do
@@ -60,6 +62,15 @@ macApp = MacApp "FractalStream"
 fsConfHook :: (GenericPackageDescription, HookedBuildInfo)
            -> ConfigFlags
            -> IO LocalBuildInfo
+fsConfHook (pkg_descr, hooked_bi) flags
+  -- On Windows, wxc is a DLL that already links wxWidgets, so the executable
+  -- only needs -lwxc (which wxcore provides). We also can't run wx-config
+  -- there: it is a shell script, which Cabal can't execute directly. What
+  -- the executable does need is its Windows resources (icon and manifest).
+  | System.os == "mingw32" = do
+      resources <- compileWindowsResources flags
+      let pkg_descr' = updatePackageDescription [] [resources] [] [] [] pkg_descr
+      confHook simpleUserHooks (pkg_descr', hooked_bi) flags
 fsConfHook (pkg_descr, hooked_bi) flags = do
   -- Get wx-config --libs output
   wxConfig <- getWxConfig flags
@@ -86,6 +97,26 @@ fsConfHook (pkg_descr, hooked_bi) flags = do
     _ -> pure (wxLibs0, wxLdDirs0)
   let pkg_descr' = updatePackageDescription wxLibs wxLdOpts wxLdDirs includes cxxOpts pkg_descr
   confHook simpleUserHooks (pkg_descr', hooked_bi) flags
+
+-- | Compile windows/FractalStream.rc (the icon, and wxWidgets' standard
+-- resources) with windres, returning the object file to link into the
+-- executable. wx.rc needs wxWidgets' include directories and defines, which
+-- come from wx-config, run by way of sh.
+compileWindowsResources :: ConfigFlags -> IO FilePath
+compileWindowsResources flags = do
+  let verbosity = fromFlag $ configVerbosity flags
+      programs  = configPrograms flags
+  sh      <- fst <$> requireProgram verbosity (simpleProgram "sh") programs
+  windres <- fst <$> requireProgram verbosity (simpleProgram "windres") programs
+  wxFlags <- filter isPreprocessorFlag . words
+             <$> getProgramOutput verbosity sh ["-c", "wx-config --cxxflags"]
+  dir <- getCurrentDirectory
+  let object = dir </> "windows" </> "FractalStream-res.o"
+  runProgram verbosity windres $
+    wxFlags ++ ["-I", "windows", "-i", "windows/FractalStream.rc", "-O", "coff", "-o", object]
+  pure object
+  where
+    isPreprocessorFlag f = "-I" `isPrefixOf` f || "-D" `isPrefixOf` f
 
 splitLdOptions :: String -> [Either String (Either String String)]
 splitLdOptions opt = case opt of
