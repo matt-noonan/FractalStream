@@ -645,10 +645,29 @@ on refresh:
       applySavedValues fresh expected >>= (`shouldBe` [])
       changedValues fresh >>= (`shouldBe` expected)
       (fieldText =<< field fresh ProjectConfig "b") >>= (`shouldBe` "e^(2 pi i / 3)")
-      -- reset goes back to the script's defaults
+      -- reset goes back to the script's defaults, as the script writes them
       resetValues fresh
       changedValues fresh >>= (`shouldBe` noSavedValues)
-      (fieldCanonical =<< field fresh ProjectConfig "a") >>= (`shouldBe` Just "0.50000000000000")
+      (fieldText =<< field fresh ProjectConfig "a") >>= (`shouldBe` "1/2")
+
+    it "starts each text field with its default as the script writes it, \
+       \except text and lists, whose fields write them differently" $ do
+      Right ens <- buildEnsembleFromScript $ unlines
+        [ "@config \"Configuration\""
+        , "a : R as \"a\" <- 1/2"
+        , "b : C as \"b\" <- e^(2 pi i / 3)"
+        , "p : R x R as \"p\" <- (1, 2.5)"
+        , "t : Text as \"t\" <- \"hello\""
+        , "xs : List of Z as \"xs\" <- [1, 2, 3]"
+        , "@viewer \"V\" var=z"
+        , "pass"
+        ]
+      fields <- ensembleFields ens
+      texts <- mapM (\(_, f) -> (fieldName f,) <$> fieldText f) fields
+      texts `shouldBe`
+        [ ("a", "1/2"), ("b", "e^(2 pi i / 3)"), ("p", "(1, 2.5)")
+        , ("t", "hello"), ("xs", "1, 2, 3")
+        , ("max_iters", "100"), ("escape_radius", "10"), ("vanishing_radius", "0.0001") ]
 
     it "reports saved values it can't put back, and leaves those fields alone" $ do
 
@@ -671,7 +690,8 @@ on refresh:
       changedValues new >>= (`shouldBe` SavedValues (Map.singleton "a" "10") Map.empty)
       newFields <- ensembleFields new
       forM_ [ f | (ProjectConfig, f) <- newFields, fieldName f == "b" ] $ \f ->
-        fieldCanonical f >>= (`shouldBe` Just "3.00000000000000")
+        fieldText f >>= (`shouldBe` "3")
+
 
 
     it "gives viewers default window geometry, staggering each one's \
