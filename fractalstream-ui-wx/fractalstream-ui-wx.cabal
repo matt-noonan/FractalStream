@@ -92,6 +92,7 @@ executable FractalStream
                        UI.PreviewImage
                        UI.LibraryGrid
                        UI.ShowInFileManager
+                       UI.Preferences
 
   build-depends:       base >=4.8 && <5
                      , fractalstream-core

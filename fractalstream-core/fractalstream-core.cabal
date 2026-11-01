@@ -77,6 +77,7 @@ library
                        Actor.Viewer.Preview
                        Actor.Metadata
                        Actor.SavedValues
+                       FractalStream.Settings
                        Actor.Viewer.Overlay.Font
                        Actor.Event
                        Actor.Script
@@ -149,6 +150,8 @@ library
                        bifunctors,
                        Earley,
                        file-embed,
+                       directory,
+                       filepath,
                        utf8-string,
                        githash,
                        zlib,
@@ -190,4 +193,5 @@ test-suite spec
                     , Actor.EnsembleBuildSpec
                     , Actor.GoldenSpec
                     , Actor.OverlaySpec
+                    , FractalStream.SettingsSpec
   build-tool-depends: hspec-discover:hspec-discover == 2.*

@@ -35,7 +35,10 @@ import Graphics.UI.WXCore.WxcClasses ( styledTextCtrlStyleSetFont
 import Control.Exception (Exception, catch, ErrorCall(..))
 import qualified Data.ByteString as BS
 import System.FilePath (takeDirectory, takeFileName)
-import FractalStream.Library (LibraryEntry(..), myProjectsDirectory)
+import FractalStream.Library (LibraryEntry(..), projectsDirectory)
+import FractalStream.Settings (loadSettings)
+import UI.Preferences (preferencesWindow)
+
 import System.Directory (createDirectoryIfMissing)
 
 import Data.IORef
@@ -80,6 +83,13 @@ runApp = withBackend $ \backend -> start $ do
 
   activeSessions <- newVariable []
   libraryWindow <- newIORef Nothing
+  preferencesFrame <- newIORef Nothing
+
+  -- FractalStream's own settings: whatever in them can't be read is
+  -- reported and left at its default.
+  (initialSettings, settingsWarnings) <- loadSettings
+  mapM_ (putStrLn . ("Settings: " ++)) settingsWarnings
+  settings <- newVariable initialSettings
 
   let -- A new project starts from one of the library's starting points
       -- (including a blank one), chosen in the library browser.
@@ -106,7 +116,7 @@ runApp = withBackend $ \backend -> start $ do
         (dir, name) <- getDynamic sessionFile >>= \case
           Just p -> pure (takeDirectory p, takeFileName p)
           Nothing -> do
-            mine <- myProjectsDirectory
+            mine <- projectsFolder
             createDirectoryIfMissing True mine
             pure (mine, suggestedName)
         result <- fileSaveDialog f True True "Save FractalStream project"
@@ -253,6 +263,16 @@ runApp = withBackend $ \backend -> start $ do
         SessionHandle f -> do
           windowChildren f >>= mapM_ (\child -> set child [visible := True])
           mapM_ (markVisible sessionHandle True) =<< getDynamic activeSessions
+
+      projectsFolder = getDynamic settings >>= projectsDirectory
+
+      -- At most one Preferences window at a time.
+      showPreferences = readIORef preferencesFrame >>= \case
+        Just f -> WX.windowRaise f
+        Nothing -> do
+          f <- preferencesWindow settings
+          writeIORef preferencesFrame (Just f)
+          WX.windowOnDestroy f (writeIORef preferencesFrame Nothing)
 
       markVisible h yn s
         | sessionHandle s == h = setValue (sessionVisible s) yn
