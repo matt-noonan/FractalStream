@@ -88,6 +88,7 @@ executable FractalStream
                        UI.Welcome
                        UI.Widgets
                        UI.WxProperties
+                       UI.ProjectInfo
 
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
@@ -114,6 +115,7 @@ executable FractalStream
                      , microlens
                      , microlens-th
                      , filepath
+                     , JuicyPixels
 
   -- A GUI program, without a console window. GHC's default manifest is left
   -- out, since the Windows resources Setup.hs links in (windows/*.rc)

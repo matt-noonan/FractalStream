@@ -347,6 +347,22 @@ Key modules:
 A frontend supplies a `UI` record (`Actor.UI`: `newEnsemble`, `makeLayout`,
 `makeViewer`); the wx and headless frontends each provide one.
 
+wxHaskell layout rules that are easy to get wrong (see `UI.ProjectInfo` for a
+worked example):
+
+- Each layout has two independent properties: *stretch* (may its cell be given
+  more room than it needs?) and *fill mode* (does it grow to fill its cell, or
+  sit in it at its own size, aligned?). `expand` sets fill; `hstretch`/
+  `vstretch`/`stretch` set stretch; `hfill = hstretch . expand`, `fill =
+  stretch . expand`, `hfloatCentre = hstretch . alignCentre`.
+- The stretch setters *replace* both directions: `hstretch` also turns
+  vertical stretch off.
+- `row` and `column` are grids, and a grid column widens only if *every* item
+  in it stretches horizontally (rows likewise, vertically). One plain `label`
+  in a `column` pins the whole column's width. Give items that shouldn't grow
+  `hstretch` (or `hfloatCentre` etc.) so they get the room without filling it.
+- Grids and `container` work out their own stretch from their children, so
+  wrapping them in `fill` is unnecessary (and overrides that).
 
 ## Project File Format
 

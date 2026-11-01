@@ -149,13 +149,13 @@ editProjectScript backend projectWindow wxLayout currentEnsemble ui = do
           --
           -- Remember how every window was left first, so that the
           -- rebuilt ones come back the same way rather than at their
-          -- defaults; and carry the old ensemble's frontend-specific
-          -- project file keys over, since a script alone has none.
+          -- defaults; and carry over everything about the project that
+          -- isn't in its script (scenarios, metadata, frontends' own
+          -- keys), since a script alone has none of it.
           rememberLayout wxLayout
           windowChildren projectWindow >>= mapM_ windowDestroy
           oldEns <- getDynamic currentEnsemble
-          setValue' (ensembleFrontendProperties newEns)
-            =<< getDynamic (ensembleFrontendProperties oldEns)
+          carryOverProjectState oldEns newEns
           setValue' currentEnsemble newEns
 
           runEnsemble backend ui newEns

@@ -8,7 +8,9 @@ module Main where
 
 import UI.ProjectActions
 import UI.Menu
-import UI.ProjectViewer (viewProject)
+import UI.ProjectViewer (viewProject, ProjectMenuActions(..))
+import UI.ProjectInfo (editProjectInfo)
+import Actor.Metadata (ProjectMetadata(..))
 import UI.ProjectScriptEditor (editProjectScript)
 import UI.Session
 import UI.WxProperties
@@ -92,7 +94,8 @@ runApp = withBackend $ \backend -> start $ do
         sessionUnsaved <- newVariable True
         let sessionSave = save currentEnsemble wxLayout sessionFile sessionName projectWindow sessionUnsaved
             ui = viewProject (objectCast projectWindow) wxLayout (makeMenuBar ProjectActions{..})
-                   sessionSave (editProjectScript backend projectWindow wxLayout currentEnsemble ui)
+                   (projectMenuActions currentEnsemble sessionUnsaved sessionSave
+                      (editProjectScript backend projectWindow wxLayout currentEnsemble ui))
             si = SessionInfo{..}
         modifyValue activeSessions (si :)
         editProjectScript backend projectWindow wxLayout currentEnsemble ui
@@ -128,7 +131,21 @@ runApp = withBackend $ \backend -> start $ do
             setValue sessionFile (Just file)
             setValue sessionName file
 
+      -- Setting the preview or editing the project's info changes what
+      -- gets saved, unlike moving windows around, so it marks the
+      -- project as having unsaved changes.
+      projectMenuActions currentEnsemble sessionUnsaved pmSave pmEditScript =
+        ProjectMenuActions
+          { pmSave, pmEditScript
+          , pmEditInfo = \owner -> editProjectInfo owner currentEnsemble (setValue sessionUnsaved True)
+          , pmSetPreview = \png -> do
+              prj <- getDynamic currentEnsemble
+              modifyValue (ensembleMetadata prj) (\md -> md { mdPreview = Just png })
+              setValue sessionUnsaved True
+          }
+
       projectOpen = \yamlFile -> do
+
         projectWindow <- frame [ visible := False ]
         let withRecoveryActions
               = (`catch` badProjectFile projectWindow yamlFile)
@@ -163,7 +180,8 @@ runApp = withBackend $ \backend -> start $ do
               -- only forces `ui` when the user actually picks the menu
               -- item, by which point it's long since finished building.
               ui = viewProject (objectCast projectWindow) wxLayout (makeMenuBar ProjectActions{..})
-                     sessionSave (editProjectScript backend projectWindow wxLayout currentEnsemble ui)
+                     (projectMenuActions currentEnsemble sessionUnsaved sessionSave
+                        (editProjectScript backend projectWindow wxLayout currentEnsemble ui))
 
               si = SessionInfo{..}
           modifyValue activeSessions (si :)
