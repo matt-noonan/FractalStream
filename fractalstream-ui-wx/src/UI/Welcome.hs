@@ -35,7 +35,7 @@ welcome ProjectActions{..} = do
   f <- frame [ text := "FractalStream"
              , on resize := propagateEvent ]
 
-  makeMenuBar ProjectActions{..} f []
+  makeMenuBar ProjectActions{..} Nothing f []
 
   p <- panel f []
 

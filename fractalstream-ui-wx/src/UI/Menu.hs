@@ -1,5 +1,6 @@
 module UI.Menu
   ( makeMenuBar
+  , ThisProject(..)
   , distinctNames
   ) where
 
@@ -20,8 +21,18 @@ import Graphics.UI.WXCore.WxcClassesMZ (menuDestroyByItem)
 -- | Make a standard menu bar for `f`, plus any additional
 -- menus we are given. Apparently this should be run after
 -- setting the layout of `f`?
-makeMenuBar :: ProjectActions -> Frame a -> [Menu ()] -> IO ()
-makeMenuBar ProjectActions{..} f addlMenus = do
+-- | What a window that belongs to a project can do to that project,
+-- from its menu bar (where, unlike in a viewer's own pop-up menu, a
+-- menu item's keyboard shortcut actually works).
+data ThisProject = ThisProject
+  { tpSave       :: IO ()
+  , tpEditScript :: IO ()
+  , tpEditInfo   :: Window () -> IO ()
+  , tpClose      :: IO ()
+  }
+
+makeMenuBar :: ProjectActions -> Maybe ThisProject -> Frame a -> [Menu ()] -> IO ()
+makeMenuBar ProjectActions{..} thisProject f addlMenus = do
 
   let getProject verb k = maybe (pure ()) k =<<
         fileOpenDialog objectNull True True
@@ -42,6 +53,15 @@ makeMenuBar ProjectActions{..} f addlMenus = do
   -- The standard preferences id, so that on macOS it goes in the
   -- application menu, where people look for it.
   prefs <- menuItemEx prj wxID_PREFERENCES "&Preferences...\tCtrl+," wxITEM_NORMAL []
+
+  -- In a project's own windows: that project's commands.
+  forM_ thisProject $ \ThisProject{..} -> do
+    menuLine prj
+    menuItem prj [ text := "Save...\tCtrl+S", on command := tpSave ]
+    menuItem prj [ text := "Edit Project Script...\tCtrl+E", on command := tpEditScript ]
+    menuItem prj [ text := "Project Info...\tCtrl+I", on command := tpEditInfo (objectCast f) ]
+    menuItem prj [ text := "Close\tCtrl+W", on command := tpClose ]
+
 
 
   menuLine prj

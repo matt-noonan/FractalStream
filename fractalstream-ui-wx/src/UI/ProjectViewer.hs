@@ -689,7 +689,18 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     lastKnownMouse <- newIORef Nothing
 
     -- Set click and drag event handlers
-    set p [ on mouse   := \event -> get lastClick value >>= \lastClickNow -> case event of
+    -- The viewer's single-key shortcuts (`<`, `=`, a tool's letter, ...)
+    -- reach it only while it has the keyboard focus, so clicking on it
+    -- takes the focus. That's already so on macOS, where clicking a
+    -- window gives the focus back to whichever part of it last had it,
+    -- but not on GTK, where these shortcuts otherwise stop working once
+    -- the focus has been anywhere else.
+    let focusWhenClicked = \case
+          MouseLeftDown{}  -> focusOn p
+          MouseRightDown{} -> focusOn p
+          _ -> pure ()
+    set p [ on mouse   := \event -> focusWhenClicked event >> get lastClick value >>= \lastClickNow -> case event of
+
               MouseLeftDown pt modifiers | isNoShiftAltControlDown modifiers -> do
                 set lastClick [value := Just $ Viewport (pointX pt, pointY pt)]
                 propagateEvent
@@ -1059,12 +1070,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                               , checkable := True, checked := False ]
     menuLine hamburgerMenu
     menuItem hamburgerMenu [ text := "Save...\tCtrl+S", enabled := True, on command := pmSave ]
-    menuItem hamburgerMenu [ text := "Edit project script...\tCtrl+Shift+E"
+    menuItem hamburgerMenu [ text := "Edit project script...\tCtrl+E"
                            , enabled := True
                            , on command := pmEditScript
                            ]
-    menuItem hamburgerMenu [ text := "Project info...", on command := pmEditInfo (objectCast f) ]
-    menuItem hamburgerMenu [ text := "Close project", on command := pmClose ]
+    menuItem hamburgerMenu [ text := "Project info...\tCtrl+I", on command := pmEditInfo (objectCast f) ]
+    menuItem hamburgerMenu [ text := "Close project\tCtrl+W", on command := pmClose ]
 
 
 
