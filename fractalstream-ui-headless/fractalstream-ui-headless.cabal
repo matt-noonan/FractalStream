@@ -72,6 +72,7 @@ library
                      , fractalstream-core
                      , containers
                      , JuicyPixels
+                     , bytestring
   hs-source-dirs:      src/lib
 
 executable fsrun
@@ -83,6 +84,8 @@ executable fsrun
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
                      , fractalstream-ui-headless
+                     , bytestring
+                     , directory
 
   if flag(use-llvm)
      build-depends: fractalstream-backend-llvm

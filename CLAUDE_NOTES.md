@@ -347,12 +347,23 @@ Key modules:
 A frontend supplies a `UI` record (`Actor.UI`: `newEnsemble`, `makeLayout`,
 `makeViewer`); the wx and headless frontends each provide one.
 
+
 ## Project File Format
 
 Projects are YAML files with a single top-level `script:` key holding a unified
 script made of `@config`, `@common`, `@viewer`, and `@tool` stanzas, plus an
 optional `scenarios:` key for `fsrun`. (The older multi-key `setup:` /
 `configuration:` / `viewer(s):` format is no longer supported.)
+
+A `metadata:` key (`Actor.Metadata`, `ensembleMetadata`) holds a `title`, a
+`description`, `preview-commands` (scenario commands, run by
+`fsrun --update-preview`, the only `fsrun` mode that writes the project file),
+and `preview` (a base64 PNG, from `Actor.Viewer.Preview.renderPreview`, also
+used by the wx viewer menu's "Use this as preview"). Unknown keys under it
+are kept. `encodeEnsemble` writes keys in a fixed, readable order (script,
+metadata, scenarios, then the rest); see `projectYamlConfig`. A rebuild from
+an edited script uses `carryOverProjectState` to keep scenarios, metadata,
+and frontend keys.
 
 Any other top-level key belongs to a frontend: the core keeps it verbatim in
 `ensembleFrontendProperties` and `encodeEnsemble` writes it back out, but never

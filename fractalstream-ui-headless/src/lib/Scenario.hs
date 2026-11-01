@@ -68,6 +68,10 @@ data Command
 
   | CaptureViewer String FilePath
   | CaptureViewerBase String FilePath
+  | CaptureViewerAsPreview String Bool
+    -- ^ The viewer's title, and whether to leave out tools' drawings
+    -- (@capture viewer "..." base as preview@). Only allowed in a
+    -- project's @metadata: preview-commands:@.
 
   | AssertPixel String (Int, Int) RGB (Maybe Int)
 
@@ -154,6 +158,9 @@ scenarioGrammar = mdo
     CaptureViewerBase <$> (kw "capture" *> kw "viewer" *> str) <*> (kw "base" *> kw "to" *> str <* nl)
   captureViewer <- rule $
     CaptureViewer <$> (kw "capture" *> kw "viewer" *> str) <*> (kw "to" *> str <* nl)
+  captureViewerAsPreview <- rule $
+    CaptureViewerAsPreview <$> (kw "capture" *> kw "viewer" *> str)
+                           <*> (isJust <$> optional (kw "base") <* kw "as" <* kw "preview" <* nl)
 
   assertPixel <- rule $
     AssertPixel
@@ -169,7 +176,8 @@ scenarioGrammar = mdo
     , clickAt, doubleClickAt, dragFromTo
     , pressButton, triggerRefresh, triggerTimer
     , waitForViewer
-    , captureViewerBase, captureViewer
+    , captureViewerBase, captureViewer, captureViewerAsPreview
+
     , assertPixel
     ]
 

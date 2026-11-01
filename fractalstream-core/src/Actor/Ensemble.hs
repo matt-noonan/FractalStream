@@ -6,6 +6,7 @@ module Actor.Ensemble
   , buildEnsembleFromScript
   , checkScript
   , encodeEnsemble
+  , carryOverProjectState
   , formatScriptError
   , runEnsemble
 
@@ -28,6 +29,7 @@ import Actor.Event
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Viewer
 import Actor.Viewer.Complex
+import Actor.Metadata
 import Actor.Script
 import Language.Environment
 import Language.Value hiding (Join)
@@ -45,6 +47,9 @@ import Data.Aeson (Value(..))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Yaml as YAML
+import qualified Data.Yaml.Pretty as YAMLPretty
+import Data.List (elemIndex)
+import Data.Ord (comparing)
 import qualified Data.Text as Text
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
@@ -58,6 +63,7 @@ import Language.Code (usedVarsInCode)
 import Language.Value.Evaluator (evaluate, evaluateInContext)
 
 import Control.Exception (Exception, IOException, throwIO, try)
+import System.IO (hPutStrLn, stderr)
 
 import Data.Codec
 
@@ -95,9 +101,11 @@ data Ensemble = Ensemble
     -- 'buildWithValidTargets' constructing the 'Ensemble' and
     -- 'buildEnsembleFromScript' (its only caller) setting the real
     -- text right after -- never observable outside this module.
+  , ensembleMetadata :: Variable ProjectMetadata
+    -- ^ The project file's @metadata:@: title, description, preview.
   , ensembleFrontendProperties :: Variable (KM.KeyMap Aeson.Value)
-    -- ^ Every top-level key of the project file other than @script:@
-    -- and @scenarios:@, kept verbatim so that 'encodeEnsemble' writes
+    -- ^ Every top-level key of the project file other than @script:@,
+    -- @scenarios:@, and @metadata:@, kept verbatim so that 'encodeEnsemble' writes
     -- it back out. These hold state belonging to a particular
     -- frontend rather than to the script itself -- e.g. the wx UI's
     -- window geometry and current views, under @wx-properties:@ --
@@ -150,8 +158,10 @@ parseEnsembleFromFile path = try (BS.readFile path) >>= \case
           Left err  -> pure (Left (formatScriptError (Text.unpack scriptText) err))
           Right ens -> do
             setValue' (ensembleFrontendProperties ens)
-              (KM.delete "script" (KM.delete "scenarios" o))
-            attachScenarios o ens
+              (foldr KM.delete o ["script", "scenarios", "metadata"])
+            attachMetadata path o ens >>= \case
+              Left err -> pure (Left err)
+              Right () -> attachScenarios o ens
       Right _  -> pure (Left (path ++ " doesn't have a top-level `script:` key -- \
                                \this file isn't in a format FractalStream can open \
                                \(the classic setup:/configuration:/viewer(s): project \
@@ -174,22 +184,65 @@ attachScenarios o ens = case KM.lookup "scenarios" o of
       setValue' (ensembleScenarios ens) scenarios
       pure (Right ens)
 
+-- | A project's @metadata:@ key, if it has one. A preview that has to
+-- be ignored is reported on stderr, but doesn't stop the project from
+-- opening.
+attachMetadata :: FilePath -> KM.KeyMap Aeson.Value -> Ensemble -> IO (Either String ())
+attachMetadata path o ens = case KM.lookup "metadata" o of
+  Nothing -> pure (Right ())
+  Just v -> case readMetadata v of
+    Left err -> pure (Left ("could not read `metadata:`: " ++ err))
+    Right (md, warnings) -> do
+      forM_ warnings $ \w -> hPutStrLn stderr ("warning: " ++ path ++ ": " ++ w)
+      setValue' (ensembleMetadata ens) md
+      pure (Right ())
+
+-- | Copy everything about a project that doesn't come from its script
+-- -- its scenarios, metadata, and frontends' own keys -- from one
+-- 'Ensemble' to another, for when the project is rebuilt from an
+-- edited script, so that saving the rebuilt project doesn't lose them.
+carryOverProjectState :: Ensemble -> Ensemble -> IO ()
+carryOverProjectState from to = do
+  setValue' (ensembleScenarios to) =<< getDynamic (ensembleScenarios from)
+  setValue' (ensembleMetadata to) =<< getDynamic (ensembleMetadata from)
+  setValue' (ensembleFrontendProperties to) =<< getDynamic (ensembleFrontendProperties from)
+
 -- | Serialize an 'Ensemble' back to project-file bytes: its own
 -- unified-script text, verbatim, under a @script:@ key (alongside a
--- @scenarios:@ key if there are any, and any frontend-specific keys
--- from 'ensembleFrontendProperties'). Every frontend's save path
+-- @scenarios:@ key if there are any, its @metadata:@ if it has any,
+-- and any frontend-specific keys from 'ensembleFrontendProperties').
+-- Every frontend's save path
 -- should go through this rather than hand-rolling the YAML itself.
 encodeEnsemble :: Ensemble -> IO ByteString
 encodeEnsemble ens = do
   scriptText <- getDynamic (ensembleSourceScript ens)
   scenarios <- getDynamic (ensembleScenarios ens)
   frontendProperties <- getDynamic (ensembleFrontendProperties ens)
+  metadataKV <- maybe [] (\v -> [("metadata", v)]) . writeMetadata
+                <$> getDynamic (ensembleMetadata ens)
   scenariosKV <- if null scenarios
     then pure []
     else (\v -> [("scenarios", v)]) <$> encodeValue scenarios
-  pure $ YAML.encode $ Object $ KM.union
-    (KM.fromList (("script", String (Text.pack scriptText)) : scenariosKV))
+  pure $ YAMLPretty.encodePretty projectYamlConfig $ Object $ KM.union
+    (KM.fromList (("script", String (Text.pack scriptText)) : metadataKV ++ scenariosKV))
     frontendProperties
+
+-- | Write a project file's keys in an order meant for people reading
+-- it: the script first, then what describes it, then everything else;
+-- and within those, the more important keys first. Keys not listed
+-- here come after the listed ones, alphabetically.
+projectYamlConfig :: YAMLPretty.Config
+projectYamlConfig = YAMLPretty.setConfCompare (comparing rank) YAMLPretty.defConfig
+  where
+    rank k = (fromMaybe (length keyOrder) (elemIndex k keyOrder), k)
+    keyOrder =
+      [ "script", "metadata", "scenarios"
+      , "title", "description", "preview-commands", "preview"
+      , "name", "commands"
+      , "viewers", "configuration"
+      , "x", "y", "width", "height"
+      ]
+
 
 -- | Render a unified-script build error the same way every other
 -- source-range-tagged parse\/typecheck error in this codebase is shown:
@@ -464,8 +517,10 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
           viewersVar      <- newVariable viewerList
           scenariosVar    <- newVariable []
           sourceScriptVar <- newVariable ""
+          metadataVar     <- newVariable noMetadata
           frontendVar     <- newVariable KM.empty
-          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar frontendVar))
+          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar metadataVar frontendVar))
+
 
 ------------------------------------------------------------
 -- Stanza field extraction (total, so no incomplete-pattern risk)

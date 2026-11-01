@@ -29,6 +29,13 @@ import qualified Data.Text as Text
 import qualified Data.Vector as V
 import System.Directory (getTemporaryDirectory, removeFile)
 import System.FilePath ((</>))
+import Actor.Metadata (ProjectMetadata(..))
+import Codec.Picture (encodePng, generateImage, PixelRGB8(..))
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS8
+import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Base64 as B64
+
 
 
 build :: String -> IO (Either String Ensemble)
@@ -497,6 +504,87 @@ on refresh:
             Right (Object o) ->
               KM.lookup "wx-properties" o `shouldBe` KM.lookup "wx-properties" props
             _ -> expectationFailure "expected a YAML object"
+
+    it "reads and writes a project's metadata, keeping unknown metadata \
+       \keys, and writes the script first" $ do
+      let png = BSL.toStrict (encodePng (generateImage (\_ _ -> PixelRGB8 1 2 3) 2 2))
+      result <- withProjectFile (unlines
+        [ "metadata:"
+        , "  title: A title"
+        , "  description: |"
+        , "    Line one."
+        , "    Line two."
+        , "  preview-commands: |"
+        , "    capture viewer \"V\" as preview"
+        , "  preview: " ++ BS8.unpack (B64.encode png)
+        , "  author: Someone"
+        , "script: |"
+        , "  @viewer \"V\" var=z"
+        , "  pass"
+        ]) parseEnsembleFromFile
+      case result of
+        Left err -> expectationFailure err
+        Right ens -> do
+          md <- getDynamic (ensembleMetadata ens)
+          mdTitle md `shouldBe` Just "A title"
+          mdDescription md `shouldBe` Just "Line one.\nLine two.\n"
+          mdPreviewCommands md `shouldBe` Just "capture viewer \"V\" as preview\n"
+          mdPreview md `shouldBe` Just png
+          KM.keys (mdOther md) `shouldBe` ["author"]
+          props <- getDynamic (ensembleFrontendProperties ens)
+          KM.keys props `shouldBe` []
+          bytes <- encodeEnsemble ens
+          BS8.unpack (BS.take 7 bytes) `shouldBe` "script:"
+          reread <- withProjectFile (BS8.unpack bytes) parseEnsembleFromFile
+          case reread of
+            Left err -> expectationFailure err
+            Right ens' -> do
+              md' <- getDynamic (ensembleMetadata ens')
+              md' `shouldBe` md
+
+    it "drops a metadata preview that isn't a base64 PNG, but still opens \
+       \the project" $ do
+      result <- withProjectFile (unlines
+        [ "script: |"
+        , "  @viewer \"V\" var=z"
+        , "  pass"
+        , "metadata:"
+        , "  title: Still here"
+        , "  preview: " ++ BS8.unpack (B64.encode "not a png")
+        ]) parseEnsembleFromFile
+      case result of
+        Left err -> expectationFailure err
+        Right ens -> do
+          md <- getDynamic (ensembleMetadata ens)
+          mdTitle md `shouldBe` Just "Still here"
+          mdPreview md `shouldBe` Nothing
+
+    it "carries a project's scenarios, metadata, and frontend keys over \
+       \to a rebuilt ensemble" $ do
+      result <- withProjectFile (unlines
+        [ "script: |"
+        , "  @viewer \"V\" var=z"
+        , "  pass"
+        , "metadata:"
+        , "  title: Carried"
+        , "scenarios:"
+        , "  - name: s"
+        , "    commands: |"
+        , "      select viewer \"V\""
+        , "wx-properties:"
+        , "  viewers: {}"
+        ]) parseEnsembleFromFile
+      Right rebuilt <- buildEnsembleFromScript "@viewer \"V\" var=z\npass\n"
+      case result of
+        Left err -> expectationFailure err
+        Right ens -> do
+          carryOverProjectState ens rebuilt
+          md <- getDynamic (ensembleMetadata rebuilt)
+          mdTitle md `shouldBe` Just "Carried"
+          scenarios <- getDynamic (ensembleScenarios rebuilt)
+          length scenarios `shouldBe` 1
+          props <- getDynamic (ensembleFrontendProperties rebuilt)
+          KM.keys props `shouldBe` ["wx-properties"]
 
     it "gives viewers default window geometry, staggering each one's \
        \position 30 pixels further than the last" $
@@ -1082,3 +1170,14 @@ on click:
       code `shouldSatisfy` isInfixOf "blend("
       -- `trace` uses drawing commands, but only the tool runs it
       code `shouldNotSatisfy` isInfixOf "point"
+
+-- | Write a project file's text to a temporary file, run an action on
+-- its path, and remove it again.
+withProjectFile :: String -> (FilePath -> IO a) -> IO a
+withProjectFile contents action = do
+  dir <- getTemporaryDirectory
+  let path = dir </> "fractalstream-ensemble-build-test.fs"
+  writeFile path contents
+  result <- action path
+  removeFile path
+  pure result
