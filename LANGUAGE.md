@@ -22,6 +22,11 @@ use `//` instead. A power of integers used as a real number is computed as
 one, so `3.5 * 10^(-2)` is 0.035; a power of integers that stays an integer
 is rounded to one (`2^(-1)` as an integer is 0).
 
+Numbers aren't written in scientific notation: `e` is Euler's number, so
+`2e` means 2·e. Something like `3.5e-2`, which could be read either way, is
+an error that suggests how to write what you meant: `0.035` (or
+`3.5 * 10^(-2)`), or `3.5 e - 2` with spaces to multiply by e.
+
 
 ### Comparisons
 

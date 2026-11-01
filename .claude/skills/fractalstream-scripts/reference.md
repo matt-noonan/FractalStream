@@ -236,8 +236,12 @@ Numbers widen automatically Z → R → C wherever needed (`k := 0` then
 `/` always produces a real (`7 / 2` is 3.5); `//` is integer division;
 `mod(a, b)` works on integers and reals. A cast is written `(e : T)`.
 
-**No scientific notation**: `1e-6` parses as `1·e − 6` (e is Euler's
-number) without any error. Write `0.000001` or `1/1000000`.
+**No scientific notation**: `1e-6` (or `3.5e-2`, `2e5`, `1E-6`) is an error,
+since `e` is Euler's number; the message says what to write instead. Write
+`0.000001` or `10^(-6)`. (`2e`, `2e - 1`, and `2e^x` still mean Euler's
+number.) A power of integers used as a real is computed as a real:
+`3.5 * 10^(-2)` is 0.035, while `2^(-1)` as an integer is 0.
+
 
 **Reserved words** that can't be variable or function names: `e`, `i`,
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`, `let`,
