@@ -3,6 +3,7 @@
 
 module UI.ProjectViewer
   ( viewProject
+  , ProjectMenuActions(..)
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -30,6 +31,9 @@ import UI.Layout
 import UI.Widgets
 import UI.WxProperties
 
+import Actor.Viewer.Preview (renderPreview)
+import Data.ByteString (ByteString)
+
 import Data.IORef
 
 import Actor.UI
@@ -54,13 +58,25 @@ import qualified Data.Map as Map
 import Data.Char (toLower)
 import qualified System.Info as System
 
+-- | What a viewer's menu can do to the project as a whole.
+data ProjectMenuActions = ProjectMenuActions
+  { pmSave          :: IO ()
+  , pmEditScript    :: IO ()
+  , pmEditInfo      :: Window () -> IO ()
+    -- ^ Show the project info dialog, over the given window. That must
+    -- be a visible window, such as the viewer it was opened from -- not
+    -- the session's hidden project window, which wx would show again
+    -- once the dialog closed.
+  , pmSetPreview    :: ByteString -> IO ()
+    -- ^ Make this PNG image the project's preview.
+  }
+
 viewProject :: Window ()
             -> WxLayout
             -> (forall a. Frame a -> [Menu ()] -> IO ())
-            -> IO ()
-            -> IO ()
+            -> ProjectMenuActions
             -> UI
-viewProject projectWindow wxLayout addMenuBar saveSession editProjectScript = UI
+viewProject projectWindow wxLayout addMenuBar projectActions = UI
   { newEnsemble = pure ()
 
   , makeLayout = \_ title ui -> do
@@ -93,7 +109,7 @@ viewProject projectWindow wxLayout addMenuBar saveSession editProjectScript = UI
       when clampConfig (keepOnPrimaryDisplay f)
       pure (windowShow f >> windowRaise f)
 
-  , makeViewer = const (makeWxComplexViewer projectWindow wxLayout addMenuBar saveSession editProjectScript)
+  , makeViewer = const (makeWxComplexViewer projectWindow wxLayout addMenuBar projectActions)
   }
 
 data BuiltinTool = NavTool | DebugTool
@@ -101,15 +117,14 @@ data BuiltinTool = NavTool | DebugTool
 makeWxComplexViewer :: Window ()
                     -> WxLayout
                     -> (forall a. Frame a -> [Menu ()] -> IO ())
-                    -> IO ()
-                    -> IO ()
+                    -> ProjectMenuActions
                     -> IO ()
                     -> Dynamic (Either String SomeEnvironment)
                     -> SomeContext EventArgument_
                     -> IO ()
                     -> Viewer
                     -> IO (IO ())
-makeWxComplexViewer projectWindow wxLayout addMenuBar saveSession editProjectScript raiseConfigWindow configEnv (SomeContext configValues) remakeViewer theViewer@Viewer{..} = do
+makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} raiseConfigWindow configEnv (SomeContext configValues) remakeViewer theViewer@Viewer{..} = do
 
     {- let clone = cloneViewer theViewer >>= void . makeWxComplexViewer projectWindow addMenuBar saveSessi         on raiseConfigWindow (SomeContext configValues)
     -}
@@ -1023,7 +1038,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar saveSession editProjectScr
     menuLine hamburgerMenu
     menuItem hamburgerMenu [ text := "Take a picture..."
                            , on command := takePicture f theViewer ]
-    menuItem hamburgerMenu [ text := "Use as preview", enabled := False ]
+    menuItem hamburgerMenu [ text := "Use this as preview"
+                           , on command := renderPreview False theViewer >>= \case
+                               Left err -> errorDialog f "Couldn't make a preview" err
+                               Right png -> pmSetPreview png ]
     menuLine hamburgerMenu
     menuLine hamburgerMenu
     showToolPicker  <- menuItem hamburgerMenu [ text := "Show tool picker"
@@ -1031,11 +1049,14 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar saveSession editProjectScr
     showPtrPosition <- menuItem hamburgerMenu [ text := "Show pointer position"
                                               , checkable := True, checked := False ]
     menuLine hamburgerMenu
-    menuItem hamburgerMenu [ text := "Save...\tCtrl+S", enabled := True, on command := saveSession ]
+    menuItem hamburgerMenu [ text := "Save...\tCtrl+S", enabled := True, on command := pmSave ]
     menuItem hamburgerMenu [ text := "Edit project script...\tCtrl+Shift+E"
                            , enabled := True
-                           , on command := editProjectScript
+                           , on command := pmEditScript
                            ]
+    menuItem hamburgerMenu [ text := "Project info...", on command := pmEditInfo (objectCast f) ]
+
+
     menuLine hamburgerMenu
     smoothingSelection <- menuItem hamburgerMenu [ text := "Use subpixel smoothing"
                                                  , checkable := True
