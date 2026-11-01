@@ -22,13 +22,25 @@ import Data.Color
 
 -- | Elaborate a typed expression at the given type, inserting an implicit
 -- conversion from the expression's own type if needed.
+--
+-- An integer power used where a real or complex number is expected is
+-- the one exception: it's computed as a real power, converting its
+-- operands rather than its result. Otherwise @3.5 * 10^(-2)@ would come
+-- out as 0, since an integer power with a negative exponent has to be
+-- rounded to an integer (to 0) before it could be converted.
 elaborate :: forall env ty
            . KnownEnvironment env
           => TypeProxy ty
           -> TExpr
           -> TC (Value '(env, ty))
-elaborate ty e = withType (exprType e) $ \own ->
-  elabOwn own e >>= convert (synRange e) own ty
+elaborate ty e = case (synNode e, exprType e, ty) of
+  (EBin OpPow x y, IntegerT, RealType) ->
+    PowF <$> elaborate RealType x <*> elaborate RealType y
+  (EBin OpPow x y, IntegerT, ComplexType) ->
+    R2C <$> (PowF <$> elaborate RealType x <*> elaborate RealType y)
+  _ -> withType (exprType e) $ \own ->
+    elabOwn own e >>= convert (synRange e) own ty
+
 
 convert :: forall env a b
          . KnownEnvironment env

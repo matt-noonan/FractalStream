@@ -18,7 +18,10 @@ is a very simple script that tells FractalStream to update the value of
 
 The usual arithmetic operators `+`, `-`, `*` (multiplication), `/`, and `^` (exponentiation) are available for real and complex types. With the exception of
 `/`, these are also available for integer types. For integer division,
-use `//` instead.
+use `//` instead. A power of integers used as a real number is computed as
+one, so `3.5 * 10^(-2)` is 0.035; a power of integers that stays an integer
+is rounded to one (`2^(-1)` as an integer is 0).
+
 
 ### Comparisons
 
