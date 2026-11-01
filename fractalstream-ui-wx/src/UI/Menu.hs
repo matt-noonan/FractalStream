@@ -1,9 +1,10 @@
 module UI.Menu
   ( makeMenuBar
+  , distinctNames
   ) where
 
+import qualified Data.Map as Map
 import UI.Widgets (wxWatchDynamic1)
-import System.FilePath (isAbsolute, takeFileName)
 import Graphics.UI.WXCore.WxcDefs (wxID_PREFERENCES, wxITEM_NORMAL)
 import FractalStream.Prelude hiding (get)
 import FractalStream.Metadata
@@ -57,24 +58,23 @@ makeMenuBar ProjectActions{..} f addlMenus = do
   closeItem <- menuSub prj closeMenu [ text := "Close project" ]
   projectItems <- variable [ value := [] ]
 
-  let -- Every open project, with its name and whether it's shown: any
-      -- change to these rebuilds the submenus.
+  let -- Every open project (in the order they were opened), with its
+      -- name and whether it's shown: any change to these rebuilds the
+      -- submenus.
       sessionStates = do
-        sessions <- dyn activeSessions
+        sessions <- reverse <$> dyn activeSessions
         forM sessions $ \s -> (s,,) <$> dyn (sessionName s) <*> dyn (sessionVisible s)
-
-      -- A project's name, for a menu: the file's name, for one with a
-      -- file (rather than the whole path).
-      menuName name = if isAbsolute name then takeFileName name else name
 
       rebuildProjectMenus states = do
         mapM_ (\(sub, mi) -> menuDestroyByItem sub mi) =<< get projectItems value
-        newItems <- fmap concat . forM states $ \(s, name, shown) -> do
+        let itemNames = distinctNames [ name | (_, name, _) <- states ]
+        newItems <- fmap concat . forM (zip states itemNames) $ \((s, _, shown), itemName) -> do
           toggle <- if shown
-            then (hideMenu,) <$> menuItem hideMenu [ text := menuName name, on command := hideSession s ]
-            else (showMenu,) <$> menuItem showMenu [ text := menuName name, on command := showSession s ]
-          closer <- (closeMenu,) <$> menuItem closeMenu [ text := menuName name, on command := closeSession s ]
+            then (hideMenu,) <$> menuItem hideMenu [ text := itemName, on command := hideSession s ]
+            else (showMenu,) <$> menuItem showMenu [ text := itemName, on command := showSession s ]
+          closer <- (closeMenu,) <$> menuItem closeMenu [ text := itemName, on command := closeSession s ]
           pure [toggle, closer]
+
         set projectItems [ value := newItems ]
         set showItem  [ enabled := any (\(_, _, shown) -> not shown) states ]
         set hideItem  [ enabled := any (\(_, _, shown) -> shown) states ]
@@ -104,3 +104,14 @@ makeMenuBar ProjectActions{..} f addlMenus = do
             ["", "Build info:", gitBranch ++ "@" ++ take 8 gitHash])
         ]
 
+-- | Names for a list of projects that tell them all apart: a name that
+-- several share is numbered after its first, as in "Untitled",
+-- "Untitled (2)", "Untitled (3)".
+distinctNames :: [String] -> [String]
+distinctNames = go Map.empty
+  where
+    go _ [] = []
+    go seen (name : rest) =
+      let n = Map.findWithDefault (0 :: Int) name seen + 1
+      in (if n == 1 then name else name ++ " (" ++ show n ++ ")")
+         : go (Map.insert name n seen) rest

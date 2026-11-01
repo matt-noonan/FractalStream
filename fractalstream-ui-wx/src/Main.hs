@@ -35,6 +35,7 @@ import Graphics.UI.WXCore.WxcClasses ( styledTextCtrlStyleSetFont
 import Control.Exception (Exception, catch, ErrorCall(..))
 import qualified Data.ByteString as BS
 import System.FilePath (takeDirectory, takeFileName)
+import Data.Char (isSpace)
 import FractalStream.Library (LibraryEntry(..), projectsDirectory)
 import FractalStream.Settings (loadSettings)
 import UI.Preferences (preferencesWindow)
@@ -112,7 +113,7 @@ runApp = withBackend $ \backend -> start $ do
       -- (made if need be), where the library browser will show it; and
       -- a successful save makes the chosen file the session's own from
       -- then on.
-      save currentEnsemble wxLayout sessionFile suggestedName sessionName f isUnsaved = do
+      save currentEnsemble wxLayout sessionFile suggestedName f isUnsaved = do
         (dir, name) <- getDynamic sessionFile >>= \case
           Just p -> pure (takeDirectory p, takeFileName p)
           Nothing -> do
@@ -137,7 +138,6 @@ runApp = withBackend $ \backend -> start $ do
             encodeEnsemble prj >>= BS.writeFile file
             setValue isUnsaved False
             setValue sessionFile (Just file)
-            setValue sessionName file
 
       -- Setting the preview or editing the project's info changes what
       -- gets saved, unlike moving windows around, so it marks the
@@ -218,8 +218,20 @@ runApp = withBackend $ \backend -> start $ do
               pure (WxProperties mempty Nothing)
           wxLayout <- newWxLayout wxProps
 
-          sessionName <- newVariable name
           sessionFile <- newVariable file
+          -- The project's name, as the menus and messages show it: its
+          -- title, if it has one, or else its file's name, or else
+          -- "Untitled" -- kept up to date as its title is edited (in
+          -- Project info) or it's saved under a new name.
+          let currentName = do
+                ens <- dyn currentEnsemble
+                title <- mdTitle <$> dyn (ensembleMetadata ens)
+                savedAs <- dyn sessionFile
+                pure $ case title of
+                  Just t | not (all isSpace t) -> t
+                  _ -> maybe "Untitled" takeFileName savedAs
+          sessionName <- newVariable =<< getDynamic currentName
+          void (watchDynamic currentName (setValue sessionName))
           let sessionHandle = SessionHandle projectWindow
           sessionVisible <- newVariable True
           sessionUnsaved <- newVariable False
@@ -234,7 +246,8 @@ runApp = withBackend $ \backend -> start $ do
                   setValue sessionUnsaved True
                   trackValues ens)
 
-          let sessionSave = save currentEnsemble wxLayout sessionFile suggestedName sessionName projectWindow sessionUnsaved
+          let sessionSave = save currentEnsemble wxLayout sessionFile suggestedName projectWindow sessionUnsaved
+
               -- `ui` and `editProjectScript` refer to each other: a
               -- rebuild needs a `UI` to hand `runEnsemble` for the
               -- *next* round of viewer windows, and that same `UI`
