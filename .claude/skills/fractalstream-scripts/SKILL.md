@@ -90,8 +90,9 @@ script: |
   variable `i` or `e`** (loop counters: `k`, `j`, `n`). Other reserved
   words include `text`, `length`, `range`, `times`, `mod`, `diff`, color
   names, and function names (full list in reference.md).
-- **No scientific notation.** `1e-6` silently means `1·e − 6`. Write
-  `0.000001` or `1/1000000`.
+- **No scientific notation.** `1e-6` is an error (`e` is Euler's
+  number). Write `0.000001` or `10^(-6)`.
+
 - `=` and `!=` on reals/complex numbers are approximate (within
   `vanishing_radius`, default 0.0001); use `===` for exact.
 - `x := ...` declares and `x <- ...` assigns. Redeclaring an existing name

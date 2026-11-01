@@ -217,7 +217,13 @@ capture viewer "Mandelbrot set" to "trace.png"
       Left (_, err) -> expectationFailure ("parse failed: " ++ err)
       Right cmds -> length cmds `shouldBe` 5
 
+  it "rejects a number in scientific notation, saying how to write it" $
+    case parseScenario "set viewer pixel size to 3.86e-4\n" of
+      Left (_, err) -> err `shouldContain` "Write 0.000386 (or 3.86 * 10^(-4)) for the number"
+      Right _ -> expectationFailure "expected `3.86e-4` to be rejected"
+
   it "rejects an unknown command" $
+
     shouldFailToParse [r|frobnicate viewer "x"
 |]
 
