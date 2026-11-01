@@ -89,6 +89,23 @@ editProjectScript backend projectWindow wxLayout currentEnsemble ui = do
          [ text := "Edit project script", visible := False ] projectWindow
   p <- panel f []
 
+  -- A project whose script has never built (one opened with an error
+  -- in its script) has no windows but this editor, so closing the
+  -- editor closes the project, rather than leave it open with nothing
+  -- to show for it. The project is closed just after the editor, by a
+  -- one-shot timer, rather than from inside the editor's own closing.
+  -- (A rebuild destroys the editor without "closing" it, so this never
+  -- fires for a project that's just been successfully rebuilt.)
+  set f [ on closing := do
+            built <- ensembleBuilt <$> getDynamic currentEnsemble
+            unless built $ do
+              closer <- timer projectWindow [ interval := 1 ]
+              set closer [ on command := do
+                             set closer [ enabled := False ]
+                             void (windowClose projectWindow True) ]
+            propagateEvent ]
+
+
   -- 'checkScript' is pure (parse + cross-stanza-reference check,
   -- no allocation), so -- unlike 'buildEnsembleFromScript' -- it
   -- can drive a reactive 'Mapped', giving this editor the same
