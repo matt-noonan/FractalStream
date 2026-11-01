@@ -827,7 +827,7 @@ configStmtToLayout :: ConfigStmt -> IO (Either (SourceRange, String) Layout)
 configStmtToLayout = \case
   ConfigText s   -> Right . PlainText <$> newVariable s
   ConfigButton _ s -> Right . Button <$> newVariable s
-  ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdLabel cdChoices
+  ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdDefaultSrc cdLabel cdChoices
   ConfigRow stmts -> do
     results <- mapM configStmtToLayout stmts
     case sequence results of
@@ -854,9 +854,9 @@ configStmtNames = \case
   ConfigText{}       -> []
   ConfigButton{}     -> []
 
-buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> Maybe String -> Maybe [String]
+buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> String -> Maybe String -> Maybe [String]
                 -> IO (Either (SourceRange, String) Layout)
-buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoices = withKnownType ty $
+buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue defaultSrc mlabel mchoices = withKnownType ty $
   let lbl = Label (fromMaybe name mlabel)
 
       evalDefault = case atType @'[] defaultValue ty of
@@ -898,8 +898,22 @@ buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoi
       labelV     <- newVariable lbl
       exprNameP  <- constParsed name (Right name)
       exprTypeP  <- constParsed (ppType ty) (Right (SomeType ty))
-      exprValueP <- reactiveSomeValue EmptyEnvProxy ty (toUserString ty v)
+      -- The field starts out showing the default as the script writes it
+      -- (`1/2`, not `0.50000000000000`), except where a field's text is
+      -- written differently from a script's: text (no quotes) and lists
+      -- (no brackets). Or if the script's text is spread over several
+      -- lines, or somehow doesn't read back in the field.
+      let rendered = toUserString ty v
+          asWritten = case ty of
+            TextType -> False
+            ListType _ -> False
+            _ -> not (null defaultSrc) && '\n' `notElem` defaultSrc
+      exprValueP <- reactiveSomeValue EmptyEnvProxy ty (if asWritten then defaultSrc else rendered)
+      getDynamic (dyn exprValueP) >>= \case
+        Right _ -> pure ()
+        Left _ -> setValue' (source exprValueP) rendered
       pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprValueP)))
+
 
 -- | One @\@config@ stanza's statements, stacked vertically.
 buildStanzaBody :: [ConfigStmt] -> IO (Either (SourceRange, String) Layout)
