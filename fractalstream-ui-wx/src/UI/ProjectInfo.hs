@@ -14,10 +14,9 @@ import Data.DynamicValue
 
 import Graphics.UI.WX hiding (pt, when, Color, Object, Layout, Vertical, Horizontal)
 import qualified Graphics.UI.WX as WX
-import qualified Graphics.UI.WXCore.WxcClassTypes as WXC
 
-import Codec.Picture (decodePng, convertRGB8, Image(..), PixelRGB8(..), pixelAt)
-import Data.ByteString (ByteString)
+import UI.PreviewImage (previewImage)
+
 import Data.Char (isSpace)
 
 -- | Show the dialog for whichever 'Ensemble' the session is currently
@@ -75,14 +74,3 @@ editProjectInfo owner currentEnsemble markUnsaved = do
     markUnsaved
   where
     nonEmpty s = if all isSpace s then Nothing else Just s
-
--- | A preview, as a wx image with its size, if its PNG can be decoded.
-previewImage :: ByteString -> Maybe (Int, Int, IO (WXC.Image ()))
-previewImage png = case decodePng png of
-  Left _ -> Nothing
-  Right decoded -> Just (imageWidth img, imageHeight img, makeImage)
-    where
-      img = convertRGB8 decoded
-      makeImage = imageCreateFromPixels (sz (imageWidth img) (imageHeight img))
-        [ rgb r g b | y <- [0 .. imageHeight img - 1], x <- [0 .. imageWidth img - 1]
-                    , let PixelRGB8 r g b = pixelAt img x y ]

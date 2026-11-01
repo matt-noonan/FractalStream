@@ -3,6 +3,8 @@ module Actor.Ensemble
   ( Ensemble(..)
   , NamedScenario(..)
   , parseEnsembleFromFile
+  , parseEnsembleFromBytes
+  , readProjectMetadata
   , buildEnsembleFromScript
   , checkScript
   , encodeEnsemble
@@ -148,25 +150,32 @@ parseEnsembleFromFile path = try (BS.readFile path) >>= \case
   Left (e :: IOException) -> pure (Left ("could not read " ++ path ++ ": " ++ show e))
   Right contents -> do
     BS.length contents `seq` pure ()
-    -- A project's whole text lives under one top-level `script:` key
-    -- (the unified @setup@/@config@/@viewer@/@tool@ script format --
-    -- the older classic `setup:`/`configuration:`/`viewer(s):` shape
-    -- is no longer supported).
-    case YAML.decodeEither' contents of
-      Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
-        buildEnsembleFromScript (Text.unpack scriptText) >>= \case
-          Left err  -> pure (Left (formatScriptError (Text.unpack scriptText) err))
-          Right ens -> do
-            setValue' (ensembleFrontendProperties ens)
-              (foldr KM.delete o ["script", "scenarios", "metadata"])
-            attachMetadata path o ens >>= \case
-              Left err -> pure (Left err)
-              Right () -> attachScenarios o ens
-      Right _  -> pure (Left (path ++ " doesn't have a top-level `script:` key -- \
-                               \this file isn't in a format FractalStream can open \
-                               \(the classic setup:/configuration:/viewer(s): project \
-                               \format is no longer supported)."))
-      Left err -> pure (Left (path ++ " isn't valid YAML: " ++ show err))
+    parseEnsembleFromBytes path contents
+
+-- | Load an 'Ensemble' from a project file's contents, which needn't
+-- have come from a file on disk at all (e.g. a project embedded in the
+-- app itself). @path@ says where they came from, in messages.
+parseEnsembleFromBytes :: String -> ByteString -> IO (Either String Ensemble)
+parseEnsembleFromBytes path contents =
+  -- A project's whole text lives under one top-level `script:` key
+  -- (the unified @setup@/@config@/@viewer@/@tool@ script format --
+  -- the older classic `setup:`/`configuration:`/`viewer(s):` shape
+  -- is no longer supported).
+  case YAML.decodeEither' contents of
+    Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
+      buildEnsembleFromScript (Text.unpack scriptText) >>= \case
+        Left err  -> pure (Left (formatScriptError (Text.unpack scriptText) err))
+        Right ens -> do
+          setValue' (ensembleFrontendProperties ens)
+            (foldr KM.delete o ["script", "scenarios", "metadata"])
+          attachMetadata path o ens >>= \case
+            Left err -> pure (Left err)
+            Right () -> attachScenarios o ens
+    Right _  -> pure (Left (path ++ " doesn't have a top-level `script:` key -- \
+                             \this file isn't in a format FractalStream can open \
+                             \(the classic setup:/configuration:/viewer(s): project \
+                             \format is no longer supported)."))
+    Left err -> pure (Left (path ++ " isn't valid YAML: " ++ show err))
 
 -- | A unified-script project can still carry a sibling top-level
 -- `scenarios:` key. Reading it has nothing to do with the unified-script
@@ -184,7 +193,20 @@ attachScenarios o ens = case KM.lookup "scenarios" o of
       setValue' (ensembleScenarios ens) scenarios
       pure (Right ens)
 
+-- | Just a project file's metadata, without building the project --
+-- for showing what a project is about (in a library of them, say)
+-- without the cost of compiling its script. A project without a
+-- @metadata:@ key has empty metadata.
+readProjectMetadata :: ByteString -> Either String ProjectMetadata
+readProjectMetadata contents = case YAML.decodeEither' contents of
+  Left err -> Left ("isn't valid YAML: " ++ show err)
+  Right (Object o) -> case KM.lookup "metadata" o of
+    Nothing -> Right noMetadata
+    Just v -> fst <$> readMetadata v
+  Right _ -> Left "isn't a FractalStream project"
+
 -- | A project's @metadata:@ key, if it has one. A preview that has to
+
 -- be ignored is reported on stderr, but doesn't stop the project from
 -- opening.
 attachMetadata :: FilePath -> KM.KeyMap Aeson.Value -> Ensemble -> IO (Either String ())

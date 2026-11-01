@@ -17,6 +17,7 @@ import Test.Hspec
 
 import Actor.Ensemble
 import Actor.Metadata (ProjectMetadata(..))
+import FractalStream.Library
 import Data.DynamicValue
 
 import Control.Monad (filterM, forM_)
@@ -27,7 +28,8 @@ import qualified Data.Aeson.KeyMap as KM
 import Data.List (isSuffixOf, sort)
 import Data.Maybe (isJust)
 import System.Directory (doesDirectoryExist, listDirectory)
-import System.FilePath ((</>))
+import System.FilePath ((</>), takeBaseName)
+import Data.Char (isDigit)
 
 libraryDir :: FilePath
 libraryDir = "../library"
@@ -38,6 +40,17 @@ spec = describe "the built-in project library" $ do
     listDirectory libraryDir >>= filterM (doesDirectoryExist . (libraryDir </>)) . sort
   it "has at least one section" $
     sections `shouldNotBe` []
+
+  it "is all embedded in the app, sections in order and named without \
+     \their ordering numbers, each project titled by its metadata" $ do
+    let embedded = [ (lsName s, length (lsEntries s)) | s <- librarySections ]
+    onDisk <- mapM (\s -> (,) s . length . filter (".fs" `isSuffixOf`)
+                            <$> listDirectory (libraryDir </> s)) sections
+    map snd embedded `shouldBe` map snd onDisk
+    map fst embedded `shouldBe` map (dropOrdering . fst) onDisk
+    [ leTitle e | s <- librarySections, e <- lsEntries s, leTitle e == takeBaseName (leFileName e) ]
+      `shouldBe` []
+
   forM_ sections $ \section -> do
     projects <- runIO $ sort . filter (".fs" `isSuffixOf`) <$> listDirectory (libraryDir </> section)
     describe section $ do
@@ -66,3 +79,9 @@ savedViews props = case KM.lookup "wx-properties" props of
     , not (null viewKeys) ]
   _ -> []
 
+
+-- | A section directory's name without its leading ordering number.
+dropOrdering :: String -> String
+dropOrdering name = case span isDigit name of
+  (_ : _, ' ' : rest) -> rest
+  _ -> name

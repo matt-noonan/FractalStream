@@ -5,9 +5,16 @@ module UI.ProjectActions
 
 import Data.DynamicValue
 import UI.Session
+import FractalStream.Library (LibraryEntry)
 
 data ProjectActions = ProjectActions
   { projectOpen :: FilePath -> IO ()
+  , projectOpenLibrary :: LibraryEntry -> IO ()
+    -- ^ Open a copy of a project from the built-in library: it has no
+    -- file of its own until it's saved.
+  , showLibrary :: IO ()
+    -- ^ Show the library browser, opening it again if it was closed.
+
   , projectNew  :: IO ()
   , activeSessions :: Variable [SessionInfo]
   , closeSession :: SessionInfo -> IO ()

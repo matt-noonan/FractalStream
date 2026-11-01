@@ -76,6 +76,7 @@ library
                        Actor.Viewer.Overlay
                        Actor.Viewer.Preview
                        Actor.Metadata
+                       FractalStream.Library
                        Actor.Viewer.Overlay.Font
                        Actor.Event
                        Actor.Script
@@ -148,6 +149,7 @@ library
                        bifunctors,
                        Earley,
                        file-embed,
+                       filepath,
                        utf8-string,
                        githash,
                        zlib,

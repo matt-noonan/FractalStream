@@ -381,6 +381,20 @@ metadata, scenarios, then the rest); see `projectYamlConfig`. A rebuild from
 an edited script uses `carryOverProjectState` to keep scenarios, metadata,
 and frontend keys.
 
+The built-in project library is the top-level `library/` directory, one
+subdirectory per section (an optional leading number orders the sections and
+isn't shown). `FractalStream.Library` embeds it into the core at compile time
+(Template Haskell has to run in a package without the LLVM backend, whose
+static libraries GHC's loader can't handle); `LibrarySpec` checks every entry
+has a title, description, preview, and preview commands, and no saved view.
+After *adding or removing* a library file, run `stack build --force-dirty`
+in each project you build (e.g. `fractalstream-ui-wx`; each has its own
+work-dir, so its own copy of core's build): neither Stack nor GHC notices
+otherwise, and `LibrarySpec` fails if the embedded copy is stale. The wx
+welcome window (`UI.Welcome`) is the library browser;
+opening an entry gives an untitled copy whose first save suggests its
+filename.
+
 Any other top-level key belongs to a frontend: the core keeps it verbatim in
 `ensembleFrontendProperties` and `encodeEnsemble` writes it back out, but never
 interprets it. The wx UI saves its window layout under `wx-properties:` (see
