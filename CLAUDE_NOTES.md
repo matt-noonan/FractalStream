@@ -390,11 +390,18 @@ backend (whose static libraries GHC's loader can't handle), and so that `fsrun`
 doesn't carry it. Its cabal file lists `projects/**/*.fs` as extra source
 files, so adding, removing, or changing a project rebuilds it automatically.
 `LibrarySpec` (in that package: `cd fractalstream-library && stack test`)
-checks every entry has a title, description, preview, and preview commands,
-and no saved view, and that the embedded copy matches the directory.
+checks every entry has a title, description, preview, and preview commands
+(except a hand-drawn preview listed in `handMadePreviews`, like the Blank
+project's icon), and no saved view, and that the embedded copy matches the
+directory. Previews may be transparent; the wx UI draws them over its
+background color.
 
 The wx welcome window (`UI.Welcome`) is the library browser. Opening an entry
-gives an untitled copy whose first save suggests its filename.
+gives an untitled copy whose first save suggests its filename. The section
+called "Starting points" is special (`lsStartingPoints`): its projects are
+templates, so opening one gives a new "Untitled" project without the
+template's metadata, with the script editor open; "New project" shows that
+section.
 
 Any other top-level key belongs to a frontend: the core keeps it verbatim in
 `ensembleFrontendProperties` and `encodeEnsemble` writes it back out, but never

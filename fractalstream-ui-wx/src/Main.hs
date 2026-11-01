@@ -10,7 +10,8 @@ import UI.ProjectActions
 import UI.Menu
 import UI.ProjectViewer (viewProject, ProjectMenuActions(..))
 import UI.ProjectInfo (editProjectInfo)
-import Actor.Metadata (ProjectMetadata(..))
+import Actor.Metadata (ProjectMetadata(..), noMetadata)
+import Control.Monad (void)
 import UI.ProjectScriptEditor (editProjectScript)
 import UI.Session
 import UI.WxProperties
@@ -76,34 +77,9 @@ runApp = withBackend $ \backend -> start $ do
   activeSessions <- newVariable []
   libraryWindow <- newIORef Nothing
 
-  let -- A brand-new project has no file of its own yet, and nothing
-      -- worth looking at until the user writes one -- so, unlike
-      -- `projectOpen`, this skips straight to the whole-project script
-      -- editor instead of calling `runEnsemble`, with `editProjectScript`'s
-      -- own "Rebuild" button as the only way any viewer ever gets
-      -- built. `newProjectScript` is a fixed, known-valid starting
-      -- point (a project needs at least one `@viewer`), so the
-      -- `either error id` here can only ever fire from a programming
-      -- mistake in that constant, not from anything the user did.
-      projectNew = do
-        projectWindow <- frame [ visible := False ]
-        prj <- either (error . formatScriptError newProjectScript) id
-               <$> buildEnsembleFromScript newProjectScript
-        currentEnsemble <- newVariable prj
-        wxLayout <- newWxLayout (WxProperties mempty Nothing)
-
-        sessionName <- newVariable "Untitled"
-        sessionFile <- newVariable Nothing
-        let sessionHandle = SessionHandle projectWindow
-        sessionVisible <- newVariable True
-        sessionUnsaved <- newVariable True
-        let sessionSave = save currentEnsemble wxLayout sessionFile "Untitled.fs" sessionName projectWindow sessionUnsaved
-            ui = viewProject (objectCast projectWindow) wxLayout (makeMenuBar ProjectActions{..})
-                   (projectMenuActions currentEnsemble sessionUnsaved sessionSave
-                      (editProjectScript backend projectWindow wxLayout currentEnsemble ui))
-            si = SessionInfo{..}
-        modifyValue activeSessions (si :)
-        editProjectScript backend projectWindow wxLayout currentEnsemble ui
+  let -- A new project starts from one of the library's starting points
+      -- (including a blank one), chosen in the library browser.
+      projectNew = libraryBrowser >>= id
 
       -- `currentEnsemble` holds whichever `Ensemble` the session is
       -- currently running -- fixed at open time, but replaced in place
@@ -150,19 +126,27 @@ runApp = withBackend $ \backend -> start $ do
           }
 
       projectOpen = \path ->
-        openProject path (Just path) (takeFileName path) (parseEnsembleFromFile path)
+        openProject path (Just path) (takeFileName path) False (parseEnsembleFromFile path)
 
       -- A library project opens as a copy with no file of its own, so
       -- that saving it never tries to write into the app itself; the
-      -- first save suggests the library project's own filename.
+      -- first save suggests the library project's own filename. A
+      -- starting point opens as a new, untitled project instead, with
+      -- the script editor open, ready to write.
       projectOpenLibrary = \LibraryEntry{..} ->
-        openProject leTitle Nothing leFileName (parseEnsembleFromBytes leTitle leContents)
+        let load = parseEnsembleFromBytes leTitle leContents
+        in if leStartingPoint
+             then openProject "Untitled" Nothing "Untitled.fs" True load
+             else openProject leTitle Nothing leFileName False load
 
       -- Open a project as a new session: @name@ is what to call it (in
       -- messages and the Project menu), @file@ the file it's saved to,
       -- if it has one yet, and @suggestedName@ what to suggest calling
-      -- that file when it doesn't.
-      openProject name file suggestedName load = do
+      -- that file when it doesn't. A project that's @fromStartingPoint@
+      -- doesn't keep the starting point's metadata (its title,
+      -- description, and preview describe the starting point, not the
+      -- project made from it), and opens with its script editor.
+      openProject name file suggestedName fromStartingPoint load = do
 
         projectWindow <- frame [ visible := False ]
         let withRecoveryActions
@@ -173,6 +157,7 @@ runApp = withBackend $ \backend -> start $ do
         withRecoveryActions $ do
 
           prj <- either error id <$> load
+          when fromStartingPoint $ setValue' (ensembleMetadata prj) noMetadata
           currentEnsemble <- newVariable prj
           -- A malformed `wx-properties:` only costs the remembered
           -- window layout, not the whole project, so it's reported
@@ -204,6 +189,8 @@ runApp = withBackend $ \backend -> start $ do
               si = SessionInfo{..}
           modifyValue activeSessions (si :)
           runEnsemble backend ui prj
+          when fromStartingPoint $
+            editProjectScript backend projectWindow wxLayout currentEnsemble ui
 
       closeSession SessionInfo{..} = case sessionHandle of
         SessionHandle f -> close f
@@ -223,31 +210,21 @@ runApp = withBackend $ \backend -> start $ do
         | otherwise = pure ()
 
       -- There's at most one library browser at a time: showing it
-      -- again just brings the open one to the front.
-      showLibrary = readIORef libraryWindow >>= \case
-        Just f -> WX.windowRaise f
+      -- again just brings the open one to the front. Returns the
+      -- action that switches it to the starting points.
+      libraryBrowser = readIORef libraryWindow >>= \case
+        Just (f, showStartingPoints) -> do
+          WX.windowRaise f
+          pure showStartingPoints
         Nothing -> do
-          f <- welcome ProjectActions{..}
-          writeIORef libraryWindow (Just f)
+          browser@(f, showStartingPoints) <- welcome ProjectActions{..}
+          writeIORef libraryWindow (Just browser)
           WX.windowOnDestroy f (writeIORef libraryWindow Nothing)
+          pure showStartingPoints
+
+      showLibrary = void libraryBrowser
 
   showLibrary
-
--- | The starting point for "New project": the smallest script that's
--- actually valid (an ensemble needs at least one @\@viewer@), so a
--- brand-new project's editor opens with something to immediately
--- rebuild and see, rather than empty text.
-newProjectScript :: String
-newProjectScript = unlines
-  [ "@viewer \"z plane\""
-  , ""
-  , "# Put your script here"
-  , ""
-  , "if stuck:"
-  , "  color <- black"
-  , "else:"
-  , "  color <- rainbow(iterations / 20)"
-  ]
 
 badYaml :: Frame a -> FilePath -> YAML.ParseException -> IO ()
 badYaml w path e = badProjectFile w path (BadProject "Bad YAML file" (show e))

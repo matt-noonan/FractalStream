@@ -4,7 +4,8 @@
 -- (this package's @projects/@ directory, one subdirectory per section):
 -- every one must open, and must have everything the library browser
 -- shows -- a title, a description, and a preview -- along with the
--- preview commands that remake its preview (@fsrun --update-preview@).
+-- preview commands that remake its preview (@fsrun --update-preview@),
+-- unless its preview is drawn by hand ('handMadePreviews').
 --
 -- A library project may remember where its windows go (in
 -- @wx-properties:@), but not a current view (a viewer's @center@ or
@@ -33,6 +34,12 @@ import Data.Char (isDigit)
 
 libraryDir :: FilePath
 libraryDir = "projects"
+
+-- | The projects whose preview is drawn by hand (an icon, rather than a
+-- picture of the project), and so has no preview commands to remake it.
+handMadePreviews :: [FilePath]
+handMadePreviews = [ "0 Starting points" </> "blank-project.fs" ]
+
 
 spec :: Spec
 spec = describe "the built-in project library" $ do
@@ -63,8 +70,9 @@ spec = describe "the built-in project library" $ do
             md <- getDynamic (ensembleMetadata ens)
             (isJust (mdTitle md), isJust (mdDescription md))
               `shouldBe` (True, True)
-            (isJust (mdPreviewCommands md), isJust (mdPreview md))
-              `shouldBe` (True, True)
+            isJust (mdPreview md) `shouldBe` True
+            isJust (mdPreviewCommands md)
+              `shouldBe` ((section </> project) `notElem` handMadePreviews)
             props <- getDynamic (ensembleFrontendProperties ens)
             savedViews props `shouldBe` []
 

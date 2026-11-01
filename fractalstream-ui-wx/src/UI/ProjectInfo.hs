@@ -33,7 +33,8 @@ editProjectInfo owner currentEnsemble markUnsaved = do
   titleEntry <- textEntry p [ text := fromMaybe "" (mdTitle md) ]
   descriptionEntry <- textCtrl p [ text := fromMaybe "" (mdDescription md) ]
 
-  previewWidget <- case mdPreview md >>= previewImage of
+  background <- get p bgcolor
+  previewWidget <- case mdPreview md >>= previewImage background of
     Nothing -> fmap widget . staticText p $ [ text :=
       "No preview yet. To make one, choose \"Use this as preview\" from a viewer's menu." ]
     Just (w, h, makeImage) -> do

@@ -12,6 +12,10 @@
 -- isn't part of the name shown. Within a section, projects are in
 -- order of title.
 --
+-- The section called "Starting points" is special: its projects are
+-- templates for new projects, rather than finished ones to explore (see
+-- 'lsStartingPoints').
+--
 -- This is a package of its own, rather than part of a frontend, for two
 -- reasons. Embedding runs Template Haskell, which has GHC load the
 -- module's dependencies while compiling it, and loading the LLVM
@@ -41,6 +45,10 @@ import System.FilePath (splitDirectories, takeBaseName, takeExtension)
 
 data LibrarySection = LibrarySection
   { lsName    :: String
+  , lsStartingPoints :: Bool
+    -- ^ Whether this is the "Starting points" section, whose projects
+    -- are for starting a new project from: opening one should give a
+    -- new, untitled project to edit, not a copy of a finished one.
   , lsEntries :: [LibraryEntry]
   }
 
@@ -54,6 +62,8 @@ data LibraryEntry = LibraryEntry
     -- ^ A PNG image.
   , leContents    :: ByteString
     -- ^ The whole project file.
+  , leStartingPoint :: Bool
+    -- ^ Whether it's in the "Starting points" section.
   }
 
 embeddedLibrary :: [(FilePath, ByteString)]
@@ -61,14 +71,16 @@ embeddedLibrary = $(embedDir "projects")
 
 librarySections :: [LibrarySection]
 librarySections =
-  [ LibrarySection (sectionName dir) (sortOn leTitle (map (entry . snd) files))
-  | files@((dir, _) : _) <- groupBy ((==) `on` fst) (sortOn fst projects) ]
+  [ LibrarySection name isStart (sortOn leTitle (map (entry isStart . snd) files))
+  | files@((dir, _) : _) <- groupBy ((==) `on` fst) (sortOn fst projects)
+  , let name = sectionName dir
+        isStart = name == "Starting points" ]
   where
     projects = [ (dir, (name, contents))
                | (path, contents) <- embeddedLibrary
                , [dir, name] <- [splitDirectories path]
                , takeExtension name == ".fs" ]
-    entry (name, contents) =
+    entry isStart (name, contents) =
       -- Every library project is checked to have its metadata (see the
       -- LibrarySpec), so falling back to the filename here is
       -- only ever a safety net.
@@ -79,7 +91,9 @@ librarySections =
            , leDescription = fromMaybe "" (md >>= mdDescription)
            , lePreview = md >>= mdPreview
            , leContents = contents
+           , leStartingPoint = isStart
            }
+
     sectionName dir = case span isDigit dir of
       (_ : _, ' ' : rest) -> rest
       _ -> dir
