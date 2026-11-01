@@ -232,6 +232,11 @@ runApp = withBackend $ \backend -> start $ do
 
               si = SessionInfo{..}
           modifyValue activeSessions (si :)
+          -- Once the project's window is gone (however it went), the
+          -- project is too: the Project menu mustn't go on offering to
+          -- show or hide it.
+          previousOnDestroy <- WX.windowGetOnDestroy projectWindow
+          WX.windowOnDestroy projectWindow (forgetSession sessionHandle >> previousOnDestroy)
           when scriptBuilds $ runEnsemble backend ui prj
           when (fromStartingPoint || not scriptBuilds) $
             editProjectScript backend projectWindow wxLayout currentEnsemble ui
@@ -252,6 +257,9 @@ runApp = withBackend $ \backend -> start $ do
       markVisible h yn s
         | sessionHandle s == h = setValue (sessionVisible s) yn
         | otherwise = pure ()
+
+      forgetSession h = modifyValue activeSessions (filter ((/= h) . sessionHandle))
+
 
       -- There's at most one library browser at a time: showing it
       -- again just brings the open one to the front. Returns the
