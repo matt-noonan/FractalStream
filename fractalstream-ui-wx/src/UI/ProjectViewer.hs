@@ -69,6 +69,9 @@ data ProjectMenuActions = ProjectMenuActions
     -- once the dialog closed.
   , pmSetPreview    :: ByteString -> IO ()
     -- ^ Make this PNG image the project's preview.
+  , pmResetValues   :: IO ()
+    -- ^ Put every configuration value (the project's and its tools')
+    -- back to its default from the script.
   }
 
 viewProject :: Window ()
@@ -100,7 +103,11 @@ viewProject projectWindow wxLayout addMenuBar projectActions = UI
       addMenuBar f []
 
       (stopListening, innerLayout) <- generateWxLayout (\_ -> pure ()) f ui
-      set f [ layout := fill . margin 5 . column 5 $ [ innerLayout ] ]
+      resetButton <- button f [ text := "Reset to defaults"
+                              , on command := pmResetValues projectActions ]
+      set f [ layout := fill . margin 5 . column 5 $
+                [ innerLayout, hfloatRight (widget resetButton) ] ]
+
       -- Hooks `windowOnDestroy`, not `on closing` -- see the note on
       -- 'UI.Widgets.wxWatchDynamic'.
       previousOnDestroy <- WX.windowGetOnDestroy f

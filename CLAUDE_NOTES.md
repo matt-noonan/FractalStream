@@ -403,6 +403,19 @@ templates, so opening one gives a new "Untitled" project without the
 template's metadata, with the script editor open; "New project" shows that
 section.
 
+A `values:` key (`Actor.SavedValues`) holds the configuration values a
+project was left with, where they differ (by value) from its script's
+defaults: `config:` by variable name, and `tool:` by viewer title, then tool
+name, then variable name (a tool without `for=` has separate values in each
+viewer). Values are the text entered in each field (`Actor.Layout.Field`).
+Like views, these are where a project was left, so the wx app restores them
+(`applySavedValues`, before the first render) and saves them (`changedValues`),
+while `fsrun` ignores them; the core keeps the key with the frontend keys. An
+ensemble remembers its defaults when built (`ensembleValueDefaults`);
+`carryOverProjectState` carries changed values through a rebuild, and
+`resetValues` (the config window's "Reset to defaults") goes back to them.
+Library projects may not carry `values:` (`LibrarySpec`).
+
 Any other top-level key belongs to a frontend: the core keeps it verbatim in
 `ensembleFrontendProperties` and `encodeEnsemble` writes it back out, but never
 interprets it. The wx UI saves its window layout under `wx-properties:` (see

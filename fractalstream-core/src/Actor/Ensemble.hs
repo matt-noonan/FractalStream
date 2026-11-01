@@ -9,6 +9,12 @@ module Actor.Ensemble
   , checkScript
   , encodeEnsemble
   , carryOverProjectState
+  , FieldOwner(..)
+  , ensembleFields
+  , changedValues
+  , applySavedValues
+  , resetValues
+  , watchValues
   , formatScriptError
   , runEnsemble
 
@@ -32,6 +38,7 @@ import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Viewer
 import Actor.Viewer.Complex
 import Actor.Metadata
+import Actor.SavedValues
 import Actor.Script
 import Language.Environment
 import Language.Value hiding (Join)
@@ -103,6 +110,11 @@ data Ensemble = Ensemble
     -- 'buildWithValidTargets' constructing the 'Ensemble' and
     -- 'buildEnsembleFromScript' (its only caller) setting the real
     -- text right after -- never observable outside this module.
+  , ensembleValueDefaults :: Variable (Map.Map (FieldOwner, String) (String, Maybe String))
+    -- ^ Each configuration field's value just after the project was
+    -- built from its script (as 'fieldText', and as 'fieldCanonical'):
+    -- what 'changedValues' compares against, and 'resetValues' goes
+    -- back to.
   , ensembleMetadata :: Variable ProjectMetadata
     -- ^ The project file's @metadata:@: title, description, preview.
   , ensembleFrontendProperties :: Variable (KM.KeyMap Aeson.Value)
@@ -220,14 +232,98 @@ attachMetadata path o ens = case KM.lookup "metadata" o of
       pure (Right ())
 
 -- | Copy everything about a project that doesn't come from its script
--- -- its scenarios, metadata, and frontends' own keys -- from one
--- 'Ensemble' to another, for when the project is rebuilt from an
--- edited script, so that saving the rebuilt project doesn't lose them.
+-- -- its scenarios, metadata, frontends' own keys, and the configuration
+-- values that differ from the old script's defaults -- from one
+-- 'Ensemble' to another, for when the project is rebuilt from an edited
+-- script, so that rebuilding (or saving the rebuilt project) doesn't
+-- lose them. A value the edited script no longer has a place for is
+-- dropped; a value that was still its default follows the edited
+-- script's default.
 carryOverProjectState :: Ensemble -> Ensemble -> IO ()
 carryOverProjectState from to = do
   setValue' (ensembleScenarios to) =<< getDynamic (ensembleScenarios from)
   setValue' (ensembleMetadata to) =<< getDynamic (ensembleMetadata from)
   setValue' (ensembleFrontendProperties to) =<< getDynamic (ensembleFrontendProperties from)
+  void (changedValues from >>= applySavedValues to)
+
+-- | Which configuration panel a field is in: the project's own, or one
+-- of its tools' (by viewer title, then tool name).
+data FieldOwner = ProjectConfig | ToolConfig String String
+  deriving (Eq, Ord, Show)
+
+-- | Every configuration field in a project, with where it is.
+ensembleFields :: Ensemble -> IO [(FieldOwner, Field)]
+ensembleFields Ensemble{..} = do
+  own <- getDynamic ensembleConfiguration >>= maybe (pure []) (layoutFields . coContents)
+  viewers <- getDynamic ensembleViewers
+  tools <- fmap concat . forM viewers $ \cv -> do
+    title <- fromRight "" <$> getDynamic (dyn (cvTitle cv))
+    fmap concat . mapM (\t -> do
+      name <- getDynamic (source (tiName (toolInfo t)))
+      getDynamic (toolConfig t) >>= \case
+        Nothing -> pure []
+        Just cfg -> map (ToolConfig title name,) <$> layoutFields (coContents cfg))
+      =<< getDynamic (cvTools cv)
+  pure (map (ProjectConfig,) own ++ tools)
+
+-- | The configuration values that differ from the project script's
+-- defaults (by value, not just as written: @1/2@ is the same as @0.5@).
+changedValues :: Ensemble -> IO SavedValues
+changedValues ens = do
+  defaults <- getDynamic (ensembleValueDefaults ens)
+  fields <- ensembleFields ens
+  changed <- fmap catMaybes . forM fields $ \(owner, f) -> do
+    canonical <- fieldCanonical f
+    if Just canonical == fmap snd (Map.lookup (owner, fieldName f) defaults)
+      then pure Nothing
+      else Just . (owner, fieldName f,) <$> fieldText f
+  pure SavedValues
+    { svConfig = Map.fromList [ (n, t) | (ProjectConfig, n, t) <- changed ]
+    , svTools = Map.fromListWith (Map.unionWith Map.union)
+        [ (viewer, Map.singleton tool (Map.singleton n t))
+        | (ToolConfig viewer tool, n, t) <- changed ]
+    }
+
+-- | Put saved configuration values back into a project's fields,
+-- returning a warning for each one that couldn't be (because the
+-- project no longer has that variable, or the value no longer fits it).
+applySavedValues :: Ensemble -> SavedValues -> IO [String]
+applySavedValues ens SavedValues{..} = do
+  fields <- Map.fromList . map (\(owner, f) -> ((owner, fieldName f), f)) <$> ensembleFields ens
+  let saved = [ (ProjectConfig, n, t) | (n, t) <- Map.toList svConfig ]
+           ++ [ (ToolConfig viewer tool, n, t)
+              | (viewer, tools) <- Map.toList svTools
+              , (tool, values) <- Map.toList tools
+              , (n, t) <- Map.toList values ]
+      describeField owner n = case owner of
+        ProjectConfig -> "`" ++ n ++ "`"
+        ToolConfig viewer tool -> "`" ++ n ++ "` (of the " ++ show tool
+                                  ++ " tool, in " ++ show viewer ++ ")"
+  fmap catMaybes . forM saved $ \(owner, n, t) -> case Map.lookup (owner, n) fields of
+    Nothing -> pure (Just ("ignoring a saved value for " ++ describeField owner n
+                           ++ ", which the project no longer has"))
+    Just f -> setFieldText f t <&> \case
+      Right () -> Nothing
+      Left err -> Just ("ignoring the saved value of " ++ describeField owner n
+                        ++ ", " ++ show t ++ ": " ++ err)
+
+-- | Put every configuration field back to its default from the script.
+resetValues :: Ensemble -> IO ()
+resetValues ens = do
+  defaults <- getDynamic (ensembleValueDefaults ens)
+  fields <- ensembleFields ens
+  forM_ fields $ \(owner, f) ->
+    forM_ (Map.lookup (owner, fieldName f) defaults) $ \(txt, _) ->
+      void (setFieldText f txt)
+
+-- | Run an action whenever any configuration value changes; returns an
+-- action that stops it.
+watchValues :: Ensemble -> IO () -> IO (IO ())
+watchValues ens k = do
+  fields <- ensembleFields ens
+  stops <- mapM (\(_, f) -> watchField f k) fields
+  pure (sequence_ stops)
+
 
 -- | Serialize an 'Ensemble' back to project-file bytes: its own
 -- unified-script text, verbatim, under a @script:@ key (alongside a
@@ -294,9 +390,11 @@ projectYamlConfig = YAMLPretty.setConfCompare (comparing rank) YAMLPretty.defCon
   where
     rank k = (fromMaybe (length keyOrder) (elemIndex k keyOrder), k)
     keyOrder =
-      [ "script", "metadata", "scenarios"
+      [ "script", "metadata", "scenarios", "values"
       , "title", "description", "preview-commands", "preview"
       , "name", "commands"
+      , "config", "tool"
+
       , "viewers", "configuration"
       , "x", "y", "width", "height"
       ]
@@ -350,6 +448,11 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
         Left err  -> pure (Left err)
         Right ens -> do
           setValue' (ensembleSourceScript ens) scriptText
+          defaults <- ensembleFields ens >>= mapM (\(owner, f) -> do
+            txt <- fieldText f
+            canonical <- fieldCanonical f
+            pure ((owner, fieldName f), (txt, canonical)))
+          setValue' (ensembleValueDefaults ens) (Map.fromList defaults)
           pure (Right ens)
 
 -- | A pure, allocation-free check of a unified project script: parses
@@ -575,9 +678,10 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
           viewersVar      <- newVariable viewerList
           scenariosVar    <- newVariable []
           sourceScriptVar <- newVariable ""
+          defaultsVar     <- newVariable Map.empty
           metadataVar     <- newVariable noMetadata
           frontendVar     <- newVariable KM.empty
-          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar metadataVar frontendVar))
+          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar defaultsVar metadataVar frontendVar))
 
 
 ------------------------------------------------------------

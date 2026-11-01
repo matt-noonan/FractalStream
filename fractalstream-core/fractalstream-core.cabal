@@ -76,6 +76,7 @@ library
                        Actor.Viewer.Overlay
                        Actor.Viewer.Preview
                        Actor.Metadata
+                       Actor.SavedValues
                        Actor.Viewer.Overlay.Font
                        Actor.Event
                        Actor.Script
