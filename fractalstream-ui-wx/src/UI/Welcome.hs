@@ -21,8 +21,9 @@ import UI.Menu
 import UI.PreviewImage (paddedPreviewImage)
 import UI.ProjectActions
 
--- | Show the welcome window, returning it.
-welcome :: ProjectActions -> IO (Frame ())
+-- | Show the welcome window. Returns it, along with an action that
+-- switches it to the "Starting points" section (for "New project").
+welcome :: ProjectActions -> IO (Frame (), IO ())
 welcome ProjectActions{..} = do
 
   f <- frame [ text := "FractalStream"
@@ -107,9 +108,17 @@ welcome ProjectActions{..} = do
             ]
         ]
 
-  unless (null librarySections) $ do
-    set sectionList [ selection := 0 ]
-    showSection 0
+  let selectSection i = do
+        set sectionList [ selection := i ]
+        showSection i
+      sectionIndices which = [ i | (i, s) <- zip [0 ..] librarySections, which s ]
+
+  -- Open on the first section of finished projects to explore; "New
+  -- project" switches to the starting points.
+  case sectionIndices (not . lsStartingPoints) ++ sectionIndices (const True) of
+    i : _ -> selectSection i
+    [] -> pure ()
 
   windowReLayout f
-  pure f
+  pure (f, mapM_ selectSection (take 1 (sectionIndices lsStartingPoints)))
+
