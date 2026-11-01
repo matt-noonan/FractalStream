@@ -188,5 +188,6 @@ test-suite spec
                     , Actor.ScriptSpec
                     , Actor.EnsembleBuildSpec
                     , Actor.GoldenSpec
+                    , Actor.LibrarySpec
                     , Actor.OverlaySpec
   build-tool-depends: hspec-discover:hspec-discover == 2.*
