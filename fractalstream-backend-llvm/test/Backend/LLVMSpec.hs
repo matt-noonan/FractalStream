@@ -182,6 +182,24 @@ spec = do
       issues `shouldBe` ViewerIssues { viOutOfMemory = True, viBadIndex = False }
       pixels `shouldBe` allPixels (255, 0, 255)
 
+    it "starts each pixel's color at grey" $ withJIT $ \jit -> do
+      -- Only the first pixel sets the color, since n is changed afterwards
+      -- (and stays changed for the rest of the block).
+      let env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
+          src = "if n = 0:\n  color <- red\nn <- 1"
+      code <- either (fail . show) pure (parseCode env noCommonDefs src)
+      pixels <- withJittedViewer jit Nothing code $ \(ViewerFunction vf) ->
+        allocaBytes (3 * 4 * 4) $ \buf -> do
+          _ <- vf ViewerArgs
+            { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+            , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+            , vaBuffer = buf
+            , vaArgs = Bind (Proxy @"n") IntegerType 0 EmptyContext }
+          peekArray (3 * 4 * 4) buf
+      let (r, g, b) = colorToRGB red
+          (gr, gg, gb) = colorToRGB grey
+      pixels `shouldBe` [r, g, b] ++ concat (replicate 15 [gr, gg, gb])
+
     it "supports pairs, and lists of pairs" $ withJIT $ \jit -> do
       let env = envProxy (Proxy @(ViewerEnv '[]))
           src = unlines

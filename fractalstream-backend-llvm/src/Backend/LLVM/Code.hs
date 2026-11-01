@@ -36,6 +36,7 @@ import Language.Type
 import Language.Code
 import Language.Draw
 import Data.Indexed.Functor
+import Data.Color (colorToRGB, grey)
 
 toParameterList :: EnvironmentProxy env -> [(AST.Type, ParameterName)]
 toParameterList = \case
@@ -538,6 +539,16 @@ compileRenderer' prepOutputEnv name code = runExcept $
           -- Load prep output vars from their flat arrays before the kernel.
           pixelIndex <- load pixelIndexPtr 0
           overwritePrepOutputs prepOutputEnv prepArrayPtrs pixelIndex argMap
+
+          -- Start each subsample with `color` set to grey, as the pure backend
+          -- does; otherwise a pixel the script leaves uncolored would get the
+          -- previous subsample's color.
+          case getBinding args pfOutput of
+            PtrOp (ColorOp outputR outputG outputB) -> do
+              let (greyR, greyG, greyB) = colorToRGB grey
+              store outputR 0 (C.int8 (fromIntegral greyR))
+              store outputG 0 (C.int8 (fromIntegral greyG))
+              store outputB 0 (C.int8 (fromIntegral greyB))
 
           runReaderT (compileCode getExtern arenaState Nothing code) args
           ovf <- load overflowFlag 0
