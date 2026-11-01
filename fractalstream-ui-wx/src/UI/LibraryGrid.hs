@@ -71,9 +71,11 @@ libraryGrid parent onSelect onActivate = do
   selection <- newIORef Nothing
   let grid = LibraryGrid sw tiles selection onSelect
 
-      itemAt pos = do
-        Point x y <- scrolledWindowCalcUnscrolledPosition sw pos
+      -- (wxHaskell already gives a mouse event's position in the grid's
+      -- own coordinates, scrolling included.)
+      itemAt (Point x y) = do
         g <- geometry grid
+
         n <- length <$> readIORef tiles
         let col = (x - gLeft g) `div` cellWidth
             row = (y - gridMargin) `div` gCellHeight g
