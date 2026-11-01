@@ -7,7 +7,9 @@ import Actor.Ensemble
 import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Tool (Tool(..), ToolInfo(..))
-import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..))
+import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..), Field(..))
+import Actor.SavedValues
+import qualified Data.Map as Map
 import Data.Color (red, blue)
 import Actor.Configuration (Configuration(..))
 import Actor.Event (runParsedToolScript)
@@ -29,7 +31,7 @@ import qualified Data.Text as Text
 import qualified Data.Vector as V
 import System.Directory (getTemporaryDirectory, removeFile)
 import System.FilePath ((</>))
-import Control.Monad (forM_)
+import Control.Monad (forM_, void)
 import Actor.Metadata (ProjectMetadata(..))
 import Codec.Picture (encodePng, generateImage, PixelRGB8(..))
 import qualified Data.ByteString as BS
@@ -604,7 +606,76 @@ on refresh:
           props <- getDynamic (ensembleFrontendProperties rebuilt)
           KM.keys props `shouldBe` ["wx-properties"]
 
+    it "saves the configuration values that differ from the script's \
+       \defaults (by value), and puts them back, along with tools' values" $ do
+      let src = unlines
+            [ "@config \"Configuration\""
+            , "a : R as \"a\" <- 1/2"
+            , "b : C as \"b\" <- 0"
+            , "show_it : Boolean as \"Show it\" <- false"
+            , "@viewer \"V\" var=z"
+            , "pass"
+            , "@tool \"T\" for=\"V\""
+            , "n : Z as \"n\" <- 3"
+            , "on click:"
+            , "  pass"
+            ]
+          field ens owner name = do
+            fs <- ensembleFields ens
+            case [ f | (o, f) <- fs, o == owner, fieldName f == name ] of
+              [f] -> pure f
+              _ -> fail ("no field " ++ name)
+      Right ens <- buildEnsembleFromScript src
+      changedValues ens >>= (`shouldBe` noSavedValues)
+      -- the same value written differently isn't a change
+      (\f -> void (setFieldText f "0.5")) =<< field ens ProjectConfig "a"
+      changedValues ens >>= (`shouldBe` noSavedValues)
+      (\f -> void (setFieldText f "e^(2 pi i / 3)")) =<< field ens ProjectConfig "b"
+      (\f -> void (setFieldText f "true")) =<< field ens ProjectConfig "show_it"
+      (\f -> void (setFieldText f "7")) =<< field ens (ToolConfig "V" "T") "n"
+      let expected = SavedValues
+            (Map.fromList [("b", "e^(2 pi i / 3)"), ("show_it", "true")])
+            (Map.singleton "V" (Map.singleton "T" (Map.singleton "n" "7")))
+      changedValues ens >>= (`shouldBe` expected)
+      -- written to the file and read back
+      props <- writeSavedValues <$> changedValues ens <*> pure KM.empty
+      readSavedValues props `shouldBe` Right expected
+      -- and put back into a freshly built copy of the project
+      Right fresh <- buildEnsembleFromScript src
+      applySavedValues fresh expected >>= (`shouldBe` [])
+      changedValues fresh >>= (`shouldBe` expected)
+      (fieldText =<< field fresh ProjectConfig "b") >>= (`shouldBe` "e^(2 pi i / 3)")
+      -- reset goes back to the script's defaults
+      resetValues fresh
+      changedValues fresh >>= (`shouldBe` noSavedValues)
+      (fieldCanonical =<< field fresh ProjectConfig "a") >>= (`shouldBe` Just "0.50000000000000")
+
+    it "reports saved values it can't put back, and leaves those fields alone" $ do
+
+      Right ens <- buildEnsembleFromScript
+        "@config \"Configuration\"\na : R as \"a\" <- 1\n@viewer \"V\" var=z\npass\n"
+      warnings <- applySavedValues ens
+        (SavedValues (Map.fromList [("a", "not a number"), ("gone", "1")]) Map.empty)
+      length warnings `shouldBe` 2
+      changedValues ens >>= (`shouldBe` noSavedValues)
+
+    it "carries changed configuration values over to a rebuilt project, \
+       \leaving untouched ones to the edited script's defaults" $ do
+      let script defaultB = "@config \"Configuration\"\na : R as \"a\" <- 1\nb : R as \"b\" <- "
+                            ++ defaultB ++ "\n@viewer \"V\" var=z\npass\n"
+      Right old <- buildEnsembleFromScript (script "2")
+      fs <- ensembleFields old
+      forM_ [ f | (ProjectConfig, f) <- fs, fieldName f == "a" ] $ \f -> void (setFieldText f "10")
+      Right new <- buildEnsembleFromScript (script "3")
+      carryOverProjectState old new
+      changedValues new >>= (`shouldBe` SavedValues (Map.singleton "a" "10") Map.empty)
+      newFields <- ensembleFields new
+      forM_ [ f | (ProjectConfig, f) <- newFields, fieldName f == "b" ] $ \f ->
+        fieldCanonical f >>= (`shouldBe` Just "3.00000000000000")
+
+
     it "gives viewers default window geometry, staggering each one's \
+
        \position 30 pixels further than the last" $
       shouldBuild [r|
 @viewer "A"

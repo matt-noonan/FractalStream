@@ -11,6 +11,8 @@ import UI.Menu
 import UI.ProjectViewer (viewProject, ProjectMenuActions(..))
 import UI.ProjectInfo (editProjectInfo)
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
+import Actor.SavedValues (readSavedValues, writeSavedValues)
+
 import Control.Monad (void)
 import UI.ProjectScriptEditor (editProjectScript)
 import UI.Session
@@ -107,6 +109,8 @@ runApp = withBackend $ \backend -> start $ do
             prj <- getDynamic currentEnsemble
             props <- captureLayout wxLayout
             modifyValue (ensembleFrontendProperties prj) (writeWxProperties props)
+            values <- changedValues prj
+            modifyValue (ensembleFrontendProperties prj) (writeSavedValues values)
             encodeEnsemble prj >>= BS.writeFile file
             setValue isUnsaved False
             setValue sessionFile (Just file)
@@ -119,6 +123,7 @@ runApp = withBackend $ \backend -> start $ do
         ProjectMenuActions
           { pmSave, pmEditScript
           , pmEditInfo = \owner -> editProjectInfo owner currentEnsemble (setValue sessionUnsaved True)
+          , pmResetValues = getDynamic currentEnsemble >>= resetValues
           , pmSetPreview = \png -> do
               prj <- getDynamic currentEnsemble
               modifyValue (ensembleMetadata prj) (\md -> md { mdPreview = Just png })
@@ -158,6 +163,14 @@ runApp = withBackend $ \backend -> start $ do
 
           prj <- either error id <$> load
           when fromStartingPoint $ setValue' (ensembleMetadata prj) noMetadata
+          -- Put back the configuration values the project was saved
+          -- with, where they differ from its script's defaults, before
+          -- anything is drawn with them. Like a malformed
+          -- `wx-properties:`, one that no longer fits is reported and
+          -- skipped rather than refusing to open the project.
+          readSavedValues <$> getDynamic (ensembleFrontendProperties prj) >>= \case
+            Left err -> putStrLn ("Ignoring unreadable `values:` in " ++ name ++ ": " ++ err)
+            Right saved -> applySavedValues prj saved >>= mapM_ (putStrLn . (("In " ++ name ++ ", ") ++))
           currentEnsemble <- newVariable prj
           -- A malformed `wx-properties:` only costs the remembered
           -- window layout, not the whole project, so it's reported
@@ -174,6 +187,12 @@ runApp = withBackend $ \backend -> start $ do
           let sessionHandle = SessionHandle projectWindow
           sessionVisible <- newVariable True
           sessionUnsaved <- newVariable False
+          -- Changing a configuration value changes what gets saved, so
+          -- it marks the project as having unsaved changes -- following
+          -- the project through rebuilds, which replace its ensemble.
+          let trackValues ens = void (watchValues ens (setValue sessionUnsaved True))
+          trackValues prj
+          void (watchDynamic currentEnsemble trackValues)
           let sessionSave = save currentEnsemble wxLayout sessionFile suggestedName sessionName projectWindow sessionUnsaved
               -- `ui` and `editProjectScript` refer to each other: a
               -- rebuild needs a `UI` to hand `runEnsemble` for the

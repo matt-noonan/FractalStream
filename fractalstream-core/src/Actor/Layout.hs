@@ -10,6 +10,8 @@ module Actor.Layout
   , UIVariable(..)
   , SomeUIValue(..)
   , SomeUIExpr(..)
+  , Field(..)
+  , layoutFields
   , layoutBindings
   , layoutEnv
   , layoutContext
@@ -168,6 +170,90 @@ layoutContext = fmap (\(SomeContext' ctx) -> ctx) . go
           Right n -> case env of
             EmptyEnvProxy -> withKnownType ty $ single n ty (pure $ evaluate v EmptyContext)
             _ -> pure (SomeContext' $ Left "expected an empty environment")
+
+-- | One named field of a configuration panel, as text: what a project
+-- file saves of it, and how to put a saved value back.
+data Field = Field
+  { fieldName      :: String
+  , fieldText      :: IO String
+    -- ^ The field's value as text: what's typed in a text box (exactly,
+    -- so that @e^(2 pi i / 3)@ stays just that), @true@ or @false@ for
+    -- a checkbox, or the chosen option of a selection.
+  , fieldCanonical :: IO (Maybe String)
+    -- ^ The field's value, written the same way however it was typed
+    -- (@1/2@ and @0.5@ alike), for telling whether it's changed; or
+    -- 'Nothing' if what's typed isn't valid.
+  , setFieldText   :: String -> IO (Either String ())
+    -- ^ Put a value (as 'fieldText' gives it) into the field, or say why
+    -- it doesn't fit, leaving the field as it was.
+  , watchField     :: IO () -> IO (IO ())
+    -- ^ Run an action whenever the field changes; returns an action
+    -- that stops it.
+  }
+
+-- | Every named field in a panel, in order.
+layoutFields :: Layout -> IO [Field]
+layoutFields = \case
+  Vertical xs -> concat <$> (mapM layoutFields =<< getDynamic xs)
+  Horizontal xs -> concat <$> (mapM layoutFields =<< getDynamic xs)
+  Panel _ lo -> layoutFields =<< getDynamic lo
+  Tabbed items -> concat <$> (mapM (layoutFields <=< getDynamic . tiBody) =<< getDynamic items)
+  PlainText{} -> pure []
+  Button{} -> pure []
+  CheckBox _ name b -> named name $ \n -> Field
+    { fieldName = n
+    , fieldText = showBool <$> getDynamic b
+    , fieldCanonical = Just . showBool <$> getDynamic b
+    , setFieldText = \case
+        "true"  -> Right <$> setValue b True
+        "false" -> Right <$> setValue b False
+        other   -> pure (Left ("expected true or false, not " ++ show other))
+    , watchField = \k -> watchDynamic b (const k)
+    }
+  Selection _ name ix options -> named name $ \n ->
+    let chosen = do
+          opts <- getDynamic options
+          i <- fromIntegral <$> getDynamic ix
+          pure (if i >= 0 && i < length opts then Just (opts !! i) else Nothing)
+    in Field
+      { fieldName = n
+      , fieldText = fromMaybe "" <$> chosen
+      , fieldCanonical = chosen
+      , setFieldText = \choice -> getDynamic options >>= \opts ->
+          case lookup choice (zip opts [0 ..]) of
+            Just i  -> Right <$> setValue ix i
+            Nothing -> pure (Left ("no option named " ++ show choice))
+      , watchField = \k -> watchDynamic ix (const k)
+      }
+  ColorPicker _ name c -> named name $ \n -> textField n c $ \case
+    Right col -> Just (toUserString ColorType col)
+    Left _ -> Nothing
+  TextBox _ UIVariable{..} -> named exprName $ \n -> textField n exprValue $ \case
+    Right (SomeValue EmptyEnvProxy ty v) -> Just (toUserString ty (evaluate v EmptyContext))
+    _ -> Nothing
+  where
+    showBool b = if b then "true" else "false"
+    named :: Parsed String -> (String -> Field) -> IO [Field]
+    named name k = getDynamic (dyn name) <&> \case
+      Right n -> [k n]
+      Left _  -> []
+    -- A field whose value is parsed from its text: setting the text
+    -- re-parses it, and a value that doesn't parse is taken back out.
+    textField :: String -> Parsed a -> (Either String a -> Maybe String) -> Field
+    textField n p canonical = Field
+      { fieldName = n
+      , fieldText = getDynamic (source p)
+      , fieldCanonical = canonical <$> getDynamic (dyn p)
+      , setFieldText = \txt -> do
+          old <- getDynamic (source p)
+          setValue (source p) txt
+          getDynamic (dyn p) >>= \case
+            Right _ -> pure (Right ())
+            Left err -> do
+              setValue (source p) old
+              pure (Left err)
+      , watchField = \k -> watchDynamic (source p) (const k)
+      }
 
 data DynamicValue' :: Symbol -> FSType -> Exp Type
 type instance Eval (DynamicValue' n t) = Dynamic (Either String (HaskellType t))

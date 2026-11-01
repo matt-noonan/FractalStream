@@ -9,9 +9,11 @@
 --
 -- A library project may remember where its windows go (in
 -- @wx-properties:@), but not a current view (a viewer's @center@ or
--- @pixel-size@ there): opening it from the library should start at the
--- view its script describes. Saving a project from the app records the
--- current view, so this catches one saved back into the library as is.
+-- @pixel-size@ there), nor configuration values (@values:@): opening it
+-- from the library should start at the view and values its script
+-- describes. Saving a project from the app records both, so this catches
+-- one saved back into the library as is.
+
 module LibrarySpec (spec) where
 
 import Test.Hspec
@@ -75,6 +77,7 @@ spec = describe "the built-in project library" $ do
               `shouldBe` ((section </> project) `notElem` handMadePreviews)
             props <- getDynamic (ensembleFrontendProperties ens)
             savedViews props `shouldBe` []
+            KM.member "values" props `shouldBe` False
 
 -- | Every viewer (by title) whose @wx-properties:@ entry records a
 -- current view, with the keys that do.
