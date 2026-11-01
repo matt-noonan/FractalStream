@@ -243,9 +243,9 @@ blocks defined before it (no recursion).
 is the entry point used throughout the actors.
 
 Golden tests (`fractalstream-core/test/Actor/GoldenSpec.hs`, files in
-`test/golden/`) pin the pretty-printed typed code of every example and
-project under `examples/templates/`; delete a golden file to regenerate it,
-and review the diff.
+`test/golden/`) pin the pretty-printed typed code of every example and every
+library project (`fractalstream-library/projects/`); delete a golden file to
+regenerate it, and review the diff.
 
 Key modules:
 - `Language.Parser.Tokenizer` - tokenizer
@@ -488,8 +488,8 @@ others' grammars need the common statements and function names.
 
 The older `@setup` stanzas, `«name»` splices, `using` formula fields, and
 `code` blocks were removed in favor of `@common`; the Welcome screen's
-template flow went with them (the old templates are now ordinary example
-projects under `examples/templates/`).
+template flow went with them (the old templates are now the library's
+"Starting points", in `fractalstream-library/projects/0 Starting points/`).
 
 ## Scripting Language
 

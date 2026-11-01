@@ -966,7 +966,8 @@ allocaArg t op = do
 -- | Scalar tool-handler arguments are passed in/out: the caller hands the
 -- kernel a pointer to a cell, so a 'Set' of a config variable is visible to the
 -- host after the call (write-back; e.g. the Select tool sets a coordinate,
--- newton3's \"Move roots\" tool sets @drag_target@, or spider builds up its
+-- the movable-roots Newton's method project's \"Move roots\" tool sets
+-- @drag_target@, or spider builds up its
 -- @kneading_seq@ text, and its @spider@ list of legs).  This predicate must agree between
 -- 'toToolParameterList' (param types), 'bindToolArg', and the host's marshaller.
 toolInOut :: TypeProxy t -> Bool

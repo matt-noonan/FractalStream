@@ -17,9 +17,10 @@ YAML file whose `script:` holds stanzas:
 The language is small, typed, indentation-based, and math-flavored
 (`z^2 + C`, `2 pi i`, `|z|`, `f'(z)`). Read `reference.md` (next to this
 file) before writing anything non-trivial; it is the complete, verified
-language reference. `examples/` holds tested projects to copy from, and the
-repo's `examples/*.fs` has ~35 more (spider, external rays, Newton,
-Hénon, bifurcation diagrams...).
+language reference. `examples/` holds tested projects to copy from, the
+repo's `fractalstream-library/projects/` has the projects FractalStream
+ships with (external rays, Newton, Hénon, bifurcation diagrams...), and the
+repo's `examples/*.fs` has more (spider, tests, experiments).
 
 ## Workflow
 
@@ -143,12 +144,12 @@ script: |
 - **Real maps and real 2-D systems.** Viewers are complex; use `x :=
   re(z)`, `y := im(z)` and loop over both. Tools can bind `at (x, y)` and
   draw at `(x, y)`. See `examples/real-map.fs`. A 1-D real family can be
-  a bifurcation-style picture with the parameter on one axis (repo example
-  `logistic.fs`).
+  a bifurcation-style picture with the parameter on one axis (library
+  project `4 More maps/logistic-map.fs`).
 - **Things computed once, not per pixel** (periodic points, rays,
   landing points, orbit diagrams): do them in a tool's `on refresh`
   handler and draw the result, with the tool's declarations as its
-  inputs (repo example `external_rays.fs`). Tools can use lists freely
+  inputs (library project `2 Quadratic family/external-rays.fs`). Tools can use lists freely
   (they get up to 256 MB of scratch space; viewers get 1 MB per pixel).
 - **Shared logic** between viewers and tools goes in `@common` (`let` for
   formulas, `define`/`run` for multi-statement code like coloring).
