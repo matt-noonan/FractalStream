@@ -7,7 +7,7 @@ Description  : Main entry point into FractalStream
 module Main where
 
 import UI.ProjectActions
-import UI.Menu
+import UI.Menu (makeMenuBar, ThisProject(..))
 import UI.ProjectViewer (viewProject, ProjectMenuActions(..))
 import UI.ProjectInfo (editProjectInfo)
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
@@ -255,10 +255,20 @@ runApp = withBackend $ \backend -> start $ do
               -- Haskell as an ordinary lazy `let` -- `editProjectScript`
               -- only forces `ui` when the user actually picks the menu
               -- item, by which point it's long since finished building.
-              ui = viewProject (objectCast projectWindow) wxLayout (makeMenuBar ProjectActions{..})
-                     (projectMenuActions currentEnsemble sessionUnsaved sessionSave
-                        (editProjectScript backend projectWindow showLibraryAfterClosing wxLayout currentEnsemble ui)
-                        (closeSession si))
+              -- The same actions serve a viewer's own pop-up menu and
+              -- the menu bar of each of the project's windows.
+              menuActions = projectMenuActions currentEnsemble sessionUnsaved sessionSave
+                              (editProjectScript backend projectWindow showLibraryAfterClosing wxLayout currentEnsemble ui)
+                              (closeSession si)
+              thisProject = ThisProject
+                { tpSave = pmSave menuActions
+                , tpEditScript = pmEditScript menuActions
+                , tpEditInfo = pmEditInfo menuActions
+                , tpClose = pmClose menuActions
+                }
+              ui = viewProject (objectCast projectWindow) wxLayout
+                     (makeMenuBar ProjectActions{..} (Just thisProject)) menuActions
+
 
               si = SessionInfo{..}
           modifyValue activeSessions (si :)
