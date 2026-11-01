@@ -41,6 +41,9 @@ import qualified Data.Map as Map
 -- function, so a window opened after a rebuild can itself trigger
 -- another one.
 --
+-- @afterClosingProject@ runs if closing this editor closes the whole
+-- project (see below).
+--
 -- FORMERLY A CRITICAL BUG, believed fixed (see the comment on the
 -- `windowDestroy` call below for the root cause and fix; confirmed
 -- against the deterministic repro described there, though not yet
@@ -80,8 +83,8 @@ import qualified Data.Map as Map
 -- might be GUI reentrancy from closing `f` inside one of its own
 -- widget's event handlers. See git history on this file if that
 -- pattern is ever wanted again for something else.)
-editProjectScript :: Backend -> Window a -> WxLayout -> Variable Ensemble -> UI -> IO ()
-editProjectScript backend projectWindow wxLayout currentEnsemble ui = do
+editProjectScript :: Backend -> Window a -> IO () -> WxLayout -> Variable Ensemble -> UI -> IO ()
+editProjectScript backend projectWindow afterClosingProject wxLayout currentEnsemble ui = do
   prj <- getDynamic currentEnsemble
   srcText <- getDynamic (ensembleSourceScript prj)
 
@@ -102,7 +105,8 @@ editProjectScript backend projectWindow wxLayout currentEnsemble ui = do
               closer <- timer projectWindow [ interval := 1 ]
               set closer [ on command := do
                              set closer [ enabled := False ]
-                             void (windowClose projectWindow True) ]
+                             void (windowClose projectWindow True)
+                             afterClosingProject ]
             propagateEvent ]
 
 
