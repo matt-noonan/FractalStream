@@ -142,9 +142,10 @@ runApp = withBackend $ \backend -> start $ do
       -- Setting the preview or editing the project's info changes what
       -- gets saved, unlike moving windows around, so it marks the
       -- project as having unsaved changes.
-      projectMenuActions currentEnsemble sessionUnsaved pmSave pmEditScript =
+      projectMenuActions currentEnsemble sessionUnsaved pmSave pmEditScript pmClose =
         ProjectMenuActions
-          { pmSave, pmEditScript
+          { pmSave, pmEditScript, pmClose
+
           , pmEditInfo = \owner -> editProjectInfo owner currentEnsemble (setValue sessionUnsaved True)
           , pmResetValues = getDynamic currentEnsemble >>= resetValues
           , pmSetPreview = \png -> do
@@ -225,9 +226,14 @@ runApp = withBackend $ \backend -> start $ do
           -- Changing a configuration value changes what gets saved, so
           -- it marks the project as having unsaved changes -- following
           -- the project through rebuilds, which replace its ensemble.
+          -- Rebuilding from an edited script (which replaces the
+          -- project's ensemble) is a change to save, too.
           let trackValues ens = void (watchValues ens (setValue sessionUnsaved True))
           trackValues prj
-          void (watchDynamic currentEnsemble trackValues)
+          void (watchDynamic currentEnsemble $ \ens -> do
+                  setValue sessionUnsaved True
+                  trackValues ens)
+
           let sessionSave = save currentEnsemble wxLayout sessionFile suggestedName sessionName projectWindow sessionUnsaved
               -- `ui` and `editProjectScript` refer to each other: a
               -- rebuild needs a `UI` to hand `runEnsemble` for the
@@ -238,7 +244,8 @@ runApp = withBackend $ \backend -> start $ do
               -- item, by which point it's long since finished building.
               ui = viewProject (objectCast projectWindow) wxLayout (makeMenuBar ProjectActions{..})
                      (projectMenuActions currentEnsemble sessionUnsaved sessionSave
-                        (editProjectScript backend projectWindow wxLayout currentEnsemble ui))
+                        (editProjectScript backend projectWindow showLibraryAfterClosing wxLayout currentEnsemble ui)
+                        (closeSession si))
 
               si = SessionInfo{..}
           modifyValue activeSessions (si :)
@@ -249,10 +256,28 @@ runApp = withBackend $ \backend -> start $ do
           WX.windowOnDestroy projectWindow (forgetSession sessionHandle >> previousOnDestroy)
           when scriptBuilds $ runEnsemble backend ui prj
           when (fromStartingPoint || not scriptBuilds) $
-            editProjectScript backend projectWindow wxLayout currentEnsemble ui
+            editProjectScript backend projectWindow showLibraryAfterClosing wxLayout currentEnsemble ui
 
+      -- Close a project (all its windows), first offering to save it if
+      -- it has unsaved changes. Saving and then cancelling the save
+      -- dialog, or answering Cancel, leaves it open. The question has
+      -- no parent window: the project's own is hidden, and wx would
+      -- show it again once a dialog over it closed.
       closeSession SessionInfo{..} = case sessionHandle of
-        SessionHandle f -> close f
+        SessionHandle f -> do
+          unsaved <- getDynamic sessionUnsaved
+          proceed <- if not unsaved then pure True else do
+            name <- getDynamic sessionName
+            answer <- WX.messageDialog objectNull "Close project"
+                        ("Save the changes to " ++ name ++ " before closing it?")
+                        (WX.wxYES_NO .+. WX.wxCANCEL .+. WX.wxICON_QUESTION)
+            if | answer == WX.wxID_YES -> sessionSave >> not <$> getDynamic sessionUnsaved
+               | answer == WX.wxID_NO  -> pure True
+               | otherwise             -> pure False
+          when proceed $ do
+            void (WX.windowClose f True)
+            showLibraryAfterClosing
+
 
       hideSession SessionInfo{..} = case sessionHandle of
         SessionHandle f -> do
@@ -295,6 +320,29 @@ runApp = withBackend $ \backend -> start $ do
           pure showStartingPoints
 
       showLibrary = void libraryBrowser
+
+      -- On macOS, the menu bar is the key window's, so once a project's
+      -- windows are gone, another has to show its menu bar, or there's
+      -- none to speak of until the user clicks on a window. So the
+      -- library browser is brought forward -- but that isn't enough by
+      -- itself: wx (3.2) takes the menu bar down whenever a frame is
+      -- hidden or destroyed, which the project's frames are only once
+      -- the event that closed them is over, and it only puts a frame's
+      -- menu bar up again when that frame is activated, which the
+      -- browser, already in front by then, isn't. Re-attaching the
+      -- browser's menu bar a moment later puts it up directly (wx does
+      -- that for the frontmost window's).
+      showLibraryAfterClosing = do
+        showLibrary
+        readIORef libraryWindow >>= mapM_ (\(b, _) -> do
+          again <- timer b [ interval := 150 ]
+          set again [ on command := do
+                        set again [ enabled := False ]
+                        WX.windowRaise b
+                        menus <- WX.frameGetMenuBar b
+                        WX.frameSetMenuBar b WX.objectNull
+                        WX.frameSetMenuBar b menus ])
+
 
   showLibrary
 

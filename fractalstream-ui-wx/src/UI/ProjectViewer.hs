@@ -69,6 +69,8 @@ data ProjectMenuActions = ProjectMenuActions
     -- once the dialog closed.
   , pmSetPreview    :: ByteString -> IO ()
     -- ^ Make this PNG image the project's preview.
+  , pmClose         :: IO ()
+    -- ^ Close the project, after offering to save any unsaved changes.
   , pmResetValues   :: IO ()
     -- ^ Put every configuration value (the project's and its tools')
     -- back to its default from the script.
@@ -1062,6 +1064,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                            , on command := pmEditScript
                            ]
     menuItem hamburgerMenu [ text := "Project info...", on command := pmEditInfo (objectCast f) ]
+    menuItem hamburgerMenu [ text := "Close project", on command := pmClose ]
+
 
 
     menuLine hamburgerMenu

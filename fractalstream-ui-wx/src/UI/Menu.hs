@@ -2,6 +2,8 @@ module UI.Menu
   ( makeMenuBar
   ) where
 
+import UI.Widgets (wxWatchDynamic1)
+import System.FilePath (isAbsolute, takeFileName)
 import Graphics.UI.WXCore.WxcDefs (wxID_PREFERENCES, wxITEM_NORMAL)
 import FractalStream.Prelude hiding (get)
 import FractalStream.Metadata
@@ -13,8 +15,6 @@ import Data.DynamicValue
 import Graphics.UI.WX hiding (when)
 import Graphics.UI.WXCore.WxcClassesMZ (menuDestroyByItem)
 
-import Graphics.UI.WXCore.Events
-import Control.Concurrent.MVar
 
 -- | Make a standard menu bar for `f`, plus any additional
 -- menus we are given. Apparently this should be run after
@@ -45,38 +45,47 @@ makeMenuBar ProjectActions{..} f addlMenus = do
 
   menuLine prj
 
-  isActive <- newMVar True
-  windowAddOnDelete f (modifyMVar_ isActive (pure . const False))
 
-  sessionItems <- variable [ value := [] ]
+  -- Showing, hiding, and closing open projects: a submenu each, listing
+  -- the projects it applies to (and disabled when there are none), so
+  -- that many open projects don't crowd the menu itself.
+  showMenu  <- menuPane []
+  hideMenu  <- menuPane []
+  closeMenu <- menuPane []
+  showItem  <- menuSub prj showMenu  [ text := "Show project" ]
+  hideItem  <- menuSub prj hideMenu  [ text := "Hide project" ]
+  closeItem <- menuSub prj closeMenu [ text := "Close project" ]
+  projectItems <- variable [ value := [] ]
 
-  let updateSessionMenuItems sessions = do
-        forM_ sessions $ \s@SessionInfo{..} -> do
-          name <- getDynamic sessionName
-          getDynamic sessionVisible >>= \case
-            True  -> do
-              mis <- get sessionItems value
-              mi <- menuItem prj [ text := "Hide " ++ name
-                                 , on command := hideSession s ]
-              set sessionItems [ value := mi : mis ]
+  let -- Every open project, with its name and whether it's shown: any
+      -- change to these rebuilds the submenus.
+      sessionStates = do
+        sessions <- dyn activeSessions
+        forM sessions $ \s -> (s,,) <$> dyn (sessionName s) <*> dyn (sessionVisible s)
 
-            False -> do
-              mis <- get sessionItems value
-              mi <- menuItem prj [ text := "Show " ++ name
-                                 , on command := showSession s ]
-              set sessionItems [ value := mi : mis ]
+      -- A project's name, for a menu: the file's name, for one with a
+      -- file (rather than the whole path).
+      menuName name = if isAbsolute name then takeFileName name else name
 
-      destroySessionMenuItems = do
-        mis <- get sessionItems value
-        set sessionItems [ value := [] ]
-        mapM_ (menuDestroyByItem prj) mis
+      rebuildProjectMenus states = do
+        mapM_ (\(sub, mi) -> menuDestroyByItem sub mi) =<< get projectItems value
+        newItems <- fmap concat . forM states $ \(s, name, shown) -> do
+          toggle <- if shown
+            then (hideMenu,) <$> menuItem hideMenu [ text := menuName name, on command := hideSession s ]
+            else (showMenu,) <$> menuItem showMenu [ text := menuName name, on command := showSession s ]
+          closer <- (closeMenu,) <$> menuItem closeMenu [ text := menuName name, on command := closeSession s ]
+          pure [toggle, closer]
+        set projectItems [ value := newItems ]
+        set showItem  [ enabled := any (\(_, _, shown) -> not shown) states ]
+        set hideItem  [ enabled := any (\(_, _, shown) -> shown) states ]
+        set closeItem [ enabled := not (null states) ]
 
-  getDynamic activeSessions >>= updateSessionMenuItems
-  stopWatchingSessions <- watchDynamic activeSessions $ \newSessions -> do
-    active <- readMVar isActive
-    when active $ do
-      destroySessionMenuItems
-      updateSessionMenuItems newSessions
+  -- Rebuilt on the main thread ('wxWatchDynamic'): watching a value
+  -- made of several variables runs its action on another thread, and
+  -- AppKit (at least) throws if a menu is changed from any thread but
+  -- the main one. 'wxWatchDynamic' also stops when `f` is destroyed.
+  wxWatchDynamic1 f sessionStates rebuildProjectMenus
+
 
   _quit <- menuQuit prj [] -- text := "Quit FractalStream" ]
 
@@ -94,10 +103,4 @@ makeMenuBar ProjectActions{..} f addlMenus = do
             "Contributors:" : map ("  " ++) contributors ++
             ["", "Build info:", gitBranch ++ "@" ++ take 8 gitHash])
         ]
-  -- Hooks `windowOnDestroy` (`wxEVT_DESTROY`) rather than `on closing`
-  -- (`wxEVT_CLOSE_WINDOW`) -- `windowDestroy` never fires `closing` at
-  -- all, so a `closing`-only hook here would silently never run this
-  -- cleanup if `f` were ever torn down that way. See the same note on
-  -- 'UI.Widgets.wxWatchDynamic'.
-  previousOnDestroy <- windowGetOnDestroy f
-  windowOnDestroy f (stopWatchingSessions >> previousOnDestroy)
+
