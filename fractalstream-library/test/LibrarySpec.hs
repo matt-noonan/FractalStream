@@ -1,7 +1,7 @@
 {-# language OverloadedStrings #-}
 
 -- | Checks on the library of projects that ships with FractalStream
--- (the top-level @library/@ directory, one subdirectory per section):
+-- (this package's @projects/@ directory, one subdirectory per section):
 -- every one must open, and must have everything the library browser
 -- shows -- a title, a description, and a preview -- along with the
 -- preview commands that remake its preview (@fsrun --update-preview@).
@@ -11,7 +11,7 @@
 -- @pixel-size@ there): opening it from the library should start at the
 -- view its script describes. Saving a project from the app records the
 -- current view, so this catches one saved back into the library as is.
-module Actor.LibrarySpec (spec) where
+module LibrarySpec (spec) where
 
 import Test.Hspec
 
@@ -32,7 +32,7 @@ import System.FilePath ((</>), takeBaseName)
 import Data.Char (isDigit)
 
 libraryDir :: FilePath
-libraryDir = "../library"
+libraryDir = "projects"
 
 spec :: Spec
 spec = describe "the built-in project library" $ do

@@ -2,28 +2,26 @@
 {-# options_ghc -fforce-recomp #-}
 
 -- | The library of projects that ships with FractalStream: every
--- project under the repository's top-level @library/@ directory,
+-- project under this package's @projects/@ directory,
 -- compiled right into the app (so there are no files to find at run
 -- time, wherever and however the app was installed).
 --
--- Each subdirectory of @library/@ is a section. A section's directory
+-- Each subdirectory of @projects/@ is a section. A section's directory
 -- name can start with a number and a space, to put the sections in
 -- order (@1 Getting started@, @2 Quadratic family@, ...); the number
 -- isn't part of the name shown. Within a section, projects are in
 -- order of title.
 --
--- This lives in the core rather than in a frontend because embedding
--- runs Template Haskell, which has GHC load the module's dependencies
--- at compile time -- and loading the LLVM backend's static libraries
--- that way fails. (The core's other embedded files are here for the
--- same reason.)
+-- This is a package of its own, rather than part of a frontend, for two
+-- reasons. Embedding runs Template Haskell, which has GHC load the
+-- module's dependencies while compiling it, and loading the LLVM
+-- backend's static libraries that way fails; and a frontend that has no
+-- use for the library (like fsrun) needn't carry it.
 --
--- Note: neither Stack nor GHC notices a project being /added to/ or
--- /removed from/ @library/@ (it's outside this package, and GHC only
--- tracks the files this module already embedded), so after adding or
--- removing one, run @stack build --force-dirty@ here; the
--- @-fforce-recomp@ above then makes sure this module is rebuilt. (The
--- core's LibrarySpec fails if the embedded library is out of date.)
+-- The package's cabal file lists the projects as extra source files, so
+-- Stack rebuilds the package when one is added, removed, or changed; and
+-- @-fforce-recomp@ makes GHC rebuild this module when it does (GHC
+-- itself only notices changes to the files it already embedded).
 module FractalStream.Library
   ( LibrarySection(..)
   , LibraryEntry(..)
@@ -59,7 +57,7 @@ data LibraryEntry = LibraryEntry
   }
 
 embeddedLibrary :: [(FilePath, ByteString)]
-embeddedLibrary = $(embedDir "../library")
+embeddedLibrary = $(embedDir "projects")
 
 librarySections :: [LibrarySection]
 librarySections =
@@ -72,7 +70,7 @@ librarySections =
                , takeExtension name == ".fs" ]
     entry (name, contents) =
       -- Every library project is checked to have its metadata (see the
-      -- core's LibrarySpec), so falling back to the filename here is
+      -- LibrarySpec), so falling back to the filename here is
       -- only ever a safety net.
       let md = either (const Nothing) Just (readProjectMetadata contents)
       in LibraryEntry

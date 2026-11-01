@@ -8,6 +8,7 @@ work-dir: .stack-work-ui-wx
 packages:
 - .
 - ../fractalstream-core
+- ../fractalstream-library
 - ../fractalstream-backend-llvm
 
 extra-deps:

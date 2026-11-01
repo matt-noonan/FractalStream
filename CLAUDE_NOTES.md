@@ -9,12 +9,13 @@ Projects are saved as YAML files.
 
 ## Package Structure
 
-Five Cabal packages, built with Stack (GHC 9.10.x):
+Six Cabal packages, built with Stack (GHC 9.10.x):
 
 ```
 fractalstream-core/           # Core library: ASTs, parsing, type system, actors, dynamic values
 fractalstream-backend-pure/   # Pure Haskell interpreter backend
 fractalstream-backend-llvm/   # LLVM JIT compiler backend (default)
+fractalstream-library/        # The built-in project library (projects/), compiled in
 fractalstream-ui-wx/          # wxWidgets UI (the main executable: FractalStream)
 fractalstream-ui-headless/    # Headless frontend (`fsrun`), no GUI dependencies
 ```
@@ -381,19 +382,19 @@ metadata, scenarios, then the rest); see `projectYamlConfig`. A rebuild from
 an edited script uses `carryOverProjectState` to keep scenarios, metadata,
 and frontend keys.
 
-The built-in project library is the top-level `library/` directory, one
+The built-in project library is `fractalstream-library/projects/`, one
 subdirectory per section (an optional leading number orders the sections and
-isn't shown). `FractalStream.Library` embeds it into the core at compile time
-(Template Haskell has to run in a package without the LLVM backend, whose
-static libraries GHC's loader can't handle); `LibrarySpec` checks every entry
-has a title, description, preview, and preview commands, and no saved view.
-After *adding or removing* a library file, run `stack build --force-dirty`
-in each project you build (e.g. `fractalstream-ui-wx`; each has its own
-work-dir, so its own copy of core's build): neither Stack nor GHC notices
-otherwise, and `LibrarySpec` fails if the embedded copy is stale. The wx
-welcome window (`UI.Welcome`) is the library browser;
-opening an entry gives an untitled copy whose first save suggests its
-filename.
+isn't shown). `FractalStream.Library` embeds it at compile time; it's a package
+of its own because Template Haskell has to run in a package without the LLVM
+backend (whose static libraries GHC's loader can't handle), and so that `fsrun`
+doesn't carry it. Its cabal file lists `projects/**/*.fs` as extra source
+files, so adding, removing, or changing a project rebuilds it automatically.
+`LibrarySpec` (in that package: `cd fractalstream-library && stack test`)
+checks every entry has a title, description, preview, and preview commands,
+and no saved view, and that the embedded copy matches the directory.
+
+The wx welcome window (`UI.Welcome`) is the library browser. Opening an entry
+gives an untitled copy whose first save suggests its filename.
 
 Any other top-level key belongs to a frontend: the core keeps it verbatim in
 `ensembleFrontendProperties` and `encodeEnsemble` writes it back out, but never
