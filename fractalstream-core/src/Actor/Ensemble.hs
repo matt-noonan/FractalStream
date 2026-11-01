@@ -245,9 +245,45 @@ encodeEnsemble ens = do
   scenariosKV <- if null scenarios
     then pure []
     else (\v -> [("scenarios", v)]) <$> encodeValue scenarios
-  pure $ YAMLPretty.encodePretty projectYamlConfig $ Object $ KM.union
-    (KM.fromList (("script", String (Text.pack scriptText)) : metadataKV ++ scenariosKV))
-    frontendProperties
+  let rest = KM.union (KM.fromList (metadataKV ++ scenariosKV)) frontendProperties
+  pure $ scriptKey scriptText
+      <> (if KM.null rest then mempty
+          else YAMLPretty.encodePretty projectYamlConfig (Object rest))
+
+-- | The project file's @script:@ key, written as a YAML literal block, so
+-- that the script reads in the file just as it was written. This isn't
+-- left to the YAML encoder, because libyaml falls back to a double-quoted
+-- string, with every newline escaped, for any text containing a character
+-- it doesn't count as printable -- which includes every character outside
+-- Unicode's Basic Multilingual Plane, like the mathematical italic letters
+-- (e.g. U+1D456, 𝑖) a script can use as names. The encoder still handles
+-- the rare script a literal block can't hold at all (a carriage return,
+-- say, or other control characters).
+scriptKey :: String -> ByteString
+scriptKey src
+  | null src || any unsuitable src = YAML.encode (Object (KM.singleton "script" (String (Text.pack src))))
+  | otherwise = UTF8.fromString $
+      "script: |" ++ indentation ++ chomping ++ "\n" ++ concatMap indent ls
+  where
+    ls = lines src
+    unsuitable c = (c < ' ' && c /= '\n' && c /= '\t')
+                || c `elem` ['\DEL', '\x85', '\xFEFF', '\x2028', '\x2029']
+    -- A literal block keeps exactly one final newline, unless told to
+    -- strip it ("-") or keep all of them ("+").
+    chomping = case length (takeWhile (== '\n') (reverse src)) of
+      0 -> "-"
+      1 -> ""
+      _ -> "+"
+    -- YAML works out a block's indentation from its first line with
+    -- anything on it; if that line itself starts with a space (or a line
+    -- before it is all spaces), the indentation has to be given instead.
+    (blankLines, contentLines) = span (all (== ' ')) ls
+    indentation
+      | any (not . null) blankLines = "2"
+      | (c : _) : _ <- contentLines, c == ' ' || c == '\t' = "2"
+      | otherwise = ""
+    indent l = (if null l then "" else "  " ++ l) ++ "\n"
+
 
 -- | Write a project file's keys in an order meant for people reading
 -- it: the script first, then what describes it, then everything else;

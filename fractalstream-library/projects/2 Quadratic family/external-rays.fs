@@ -1,42 +1,120 @@
-script: "@config \"Configuration\"\nC : C as \"f(z) = z² +\" <- -0.11 + 0.78i\n\n@common\ndefine
-  draw:\n  iterate z ⟼ z² + C until z escapes\n\n  color ⭠ black\n  if z escaped:\n
-  \   m ≔ iterations + 1 ...\n         - log (log (|z|²) / (2 log escape_radius))
-  / log 2\n    base_color ≔ if im z > 0 then dark purple else dark green\n    color
-  ⭠ blend (cos (π m / 20)², base_color, light base_color)\n\n@viewer \"Parameter plane\"
-  var=C center=0 pixelSize=1/128\nz ≔ 0\nrun draw\n\n@tool \"Parameter plane external
-  rays\" for=\"Parameter plane\" shortcut=r\nrow:\n  ps : List of Z as \"Numerators:
-  \" <- [0, 1, 2]\n  q : Z as \"Denominator: \" <- 3\nS : Z as \"Subdivisions per
-  level set: \" <- 10\nerror : R as \"Step size\" <- 0.0001\niter_limit : Z as \"Newton
-  iteration limit\" <- 100\non refresh:\n  erase\n  for each p in ps:\n    R ≔ escape_radius\n
-  \   theta ≔ p / q\n    z ≔ R e^{2 π \U0001D456 theta}\n    dist ≔ error\n    k ≔
-  0\n    while dist >= error:\n      k ⭠ k + 1\n      j ≔ 0\n      while j < S and
-  dist >= error:\n        j ⭠ j + 1\n        m ≔ (k - 1) S + j\n        r_m ≔ R^(2^(-m
-  / S))\n        t_m ≔ r_m^(2^k) e^{2^{k+1} π \U0001D456 theta}\n        temp_c ≔
-  z\n        difference ≔ error\n        C_k ≔ temp_c\n        D_k ≔ 1\n        n
-  ≔ 0\n        while difference >= error up to iter_limit times:\n          n ⭠ n
-  + 1\n          old_c ≔ temp_c\n          C_k ⭠ old_c\n          D_k ⭠ 1\n          while
-  true up to k times:\n            D_k ⭠ 2 D_k C_k + 1\n            C_k ⭠ C_k² + old_c\n
-  \         temp_c ⭠ old_c - (C_k - t_m) / D_k\n          difference ⭠ |old_c - temp_c|\n
-  \       if difference < error:\n          dist ⭠ 2 |C_k| log |C_k| / |D_k|\n          draw
-  line from z to temp_c\n          z ⭠ temp_c\n        else:\n          dist ⭠ 0\n
-  \         draw filled circle at z with radius error\non deactivated:\n  erase\n\n@viewer
-  \"Dynamical plane\" center=0 pixelSize=1/128\nrun draw\n\n@tool \"Dynamical plane
-  external rays\" for=\"Dynamical plane\" shortcut=r\nrow:\n  ps : List of Z as \"Numerators:\"
-  <- [1, 2, 4]\n  q : Z as \"Denominator:\" <- 7\nS : Z as \"Subdivisions per level
-  set: \" <- 10\nerror : R as \"Step size\" <- 0.0001\niter_limit : Z as \"Newton
-  iteration limit\" <- 100\non refresh:\n  erase\n  for each p in ps:\n    R ≔ escape_radius\n
-  \   theta ≔ p / q\n    z ≔ R e^{2 π \U0001D456 theta}\n    dist ≔ error\n    k ≔
-  0\n    while dist >= error:\n      k ⭠ k + 1\n      j ≔ 0\n      while dist >= error
-  up to S times:\n        j ⭠ j + 1\n        m ≔ (k - 1) S + j\n        r_m ≔ R^(2^(-m
-  / S))\n        t_m ≔ r_m^(2^k) e^{2^{k+1} π \U0001D456 theta}\n        difference
-  ≔ error\n        temp_z ≔ z\n        z_k ≔ 0\n        dz_k ≔ 0\n        while difference
-  >= error up to iter_limit times:\n          old_z ≔ temp_z\n          z_k ⭠ temp_z\n
-  \         dz_k ⭠ 1\n          t ≔ 0\n          while t < k:\n            t ⭠ t +
-  1\n            dz_k ⭠ 2 dz_k z_k\n            z_k ⭠ z_k² + C\n          temp_z ⭠
-  old_z - (z_k - t_m) / dz_k\n          difference ⭠ |old_z - temp_z|\n        if
-  difference < error:\n          dist ⭠ |z - temp_z|\n          draw line from z to
-  temp_z\n          z ⭠ temp_z\n        else:\n          dist ⭠ 0\n          draw
-  filled circle at z with radius error\non deactivated:\n  erase\n"
+script: |
+  @config "Configuration"
+  C : C as "f(z) = z² +" <- -0.11 + 0.78i
+
+  @common
+  define draw:
+    iterate z ⟼ z² + C until z escapes
+
+    color ⭠ black
+    if z escaped:
+      m ≔ iterations + 1 ...
+           - log (log (|z|²) / (2 log escape_radius)) / log 2
+      base_color ≔ if im z > 0 then dark purple else dark green
+      color ⭠ blend (cos (π m / 20)², base_color, light base_color)
+
+  @viewer "Parameter plane" var=C center=0 pixelSize=1/128
+  z ≔ 0
+  run draw
+
+  @tool "Parameter plane external rays" for="Parameter plane" shortcut=r
+  row:
+    ps : List of Z as "Numerators: " <- [0, 1, 2]
+    q : Z as "Denominator: " <- 3
+  S : Z as "Subdivisions per level set: " <- 10
+  error : R as "Step size" <- 0.0001
+  iter_limit : Z as "Newton iteration limit" <- 100
+  on refresh:
+    erase
+    for each p in ps:
+      R ≔ escape_radius
+      theta ≔ p / q
+      z ≔ R e^{2 π 𝑖 theta}
+      dist ≔ error
+      k ≔ 0
+      while dist >= error:
+        k ⭠ k + 1
+        j ≔ 0
+        while j < S and dist >= error:
+          j ⭠ j + 1
+          m ≔ (k - 1) S + j
+          r_m ≔ R^(2^(-m / S))
+          t_m ≔ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
+          temp_c ≔ z
+          difference ≔ error
+          C_k ≔ temp_c
+          D_k ≔ 1
+          n ≔ 0
+          while difference >= error up to iter_limit times:
+            n ⭠ n + 1
+            old_c ≔ temp_c
+            C_k ⭠ old_c
+            D_k ⭠ 1
+            while true up to k times:
+              D_k ⭠ 2 D_k C_k + 1
+              C_k ⭠ C_k² + old_c
+            temp_c ⭠ old_c - (C_k - t_m) / D_k
+            difference ⭠ |old_c - temp_c|
+          if difference < error:
+            dist ⭠ 2 |C_k| log |C_k| / |D_k|
+            draw line from z to temp_c
+            z ⭠ temp_c
+          else:
+            dist ⭠ 0
+            draw filled circle at z with radius error
+  on deactivated:
+    erase
+
+  @viewer "Dynamical plane" center=0 pixelSize=1/128
+  run draw
+
+  @tool "Dynamical plane external rays" for="Dynamical plane" shortcut=r
+  row:
+    ps : List of Z as "Numerators:" <- [1, 2, 4]
+    q : Z as "Denominator:" <- 7
+  S : Z as "Subdivisions per level set: " <- 10
+  error : R as "Step size" <- 0.0001
+  iter_limit : Z as "Newton iteration limit" <- 100
+  on refresh:
+    erase
+    for each p in ps:
+      R ≔ escape_radius
+      theta ≔ p / q
+      z ≔ R e^{2 π 𝑖 theta}
+      dist ≔ error
+      k ≔ 0
+      while dist >= error:
+        k ⭠ k + 1
+        j ≔ 0
+        while dist >= error up to S times:
+          j ⭠ j + 1
+          m ≔ (k - 1) S + j
+          r_m ≔ R^(2^(-m / S))
+          t_m ≔ r_m^(2^k) e^{2^{k+1} π 𝑖 theta}
+          difference ≔ error
+          temp_z ≔ z
+          z_k ≔ 0
+          dz_k ≔ 0
+          while difference >= error up to iter_limit times:
+            old_z ≔ temp_z
+            z_k ⭠ temp_z
+            dz_k ⭠ 1
+            t ≔ 0
+            while t < k:
+              t ⭠ t + 1
+              dz_k ⭠ 2 dz_k z_k
+              z_k ⭠ z_k² + C
+            temp_z ⭠ old_z - (z_k - t_m) / dz_k
+            difference ⭠ |old_z - temp_z|
+          if difference < error:
+            dist ⭠ |z - temp_z|
+            draw line from z to temp_z
+            z ⭠ temp_z
+          else:
+            dist ⭠ 0
+            draw filled circle at z with radius error
+  on deactivated:
+    erase
 metadata:
   title: External rays
   description: |
