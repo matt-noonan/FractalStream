@@ -35,7 +35,9 @@ import Graphics.UI.WXCore.WxcClasses ( styledTextCtrlStyleSetFont
 import Control.Exception (Exception, catch, ErrorCall(..))
 import qualified Data.ByteString as BS
 import System.FilePath (takeDirectory, takeFileName)
-import FractalStream.Library (LibraryEntry(..))
+import FractalStream.Library (LibraryEntry(..), myProjectsDirectory)
+import System.Directory (createDirectoryIfMissing)
+
 import Data.IORef
 import qualified Graphics.UI.WXCore as WX
 
@@ -96,11 +98,17 @@ runApp = withBackend $ \backend -> start $ do
       -- nudged would be more annoying than useful.
       --
       -- The dialog starts out on the session's own file, if it has one
-      -- yet (or else on @suggestedName@), and a successful save makes
-      -- the chosen file the session's own from then on.
+      -- yet, or else on @suggestedName@ in the user's projects folder
+      -- (made if need be), where the library browser will show it; and
+      -- a successful save makes the chosen file the session's own from
+      -- then on.
       save currentEnsemble wxLayout sessionFile suggestedName sessionName f isUnsaved = do
-        (dir, name) <- maybe ("", suggestedName) (\p -> (takeDirectory p, takeFileName p))
-                       <$> getDynamic sessionFile
+        (dir, name) <- getDynamic sessionFile >>= \case
+          Just p -> pure (takeDirectory p, takeFileName p)
+          Nothing -> do
+            mine <- myProjectsDirectory
+            createDirectoryIfMissing True mine
+            pure (mine, suggestedName)
         result <- fileSaveDialog f True True "Save FractalStream project"
                   projectFileTypes dir name
         case result of
@@ -137,12 +145,15 @@ runApp = withBackend $ \backend -> start $ do
       -- that saving it never tries to write into the app itself; the
       -- first save suggests the library project's own filename. A
       -- starting point opens as a new, untitled project instead, with
-      -- the script editor open, ready to write.
+      -- the script editor open, ready to write. One of the user's own
+      -- projects just opens, as itself.
       projectOpenLibrary = \LibraryEntry{..} ->
         let load = parseEnsembleFromBytes leTitle leContents
-        in if leStartingPoint
-             then openProject "Untitled" Nothing "Untitled.fs" True load
-             else openProject leTitle Nothing leFileName False load
+        in case leFile of
+             Just path -> projectOpen path
+             Nothing
+               | leStartingPoint -> openProject "Untitled" Nothing "Untitled.fs" True load
+               | otherwise -> openProject leTitle Nothing leFileName False load
 
       -- Open a project as a new session: @name@ is what to call it (in
       -- messages and the Project menu), @file@ the file it's saved to,

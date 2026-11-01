@@ -397,7 +397,19 @@ directory. Previews may be transparent; the wx UI draws them over its
 background color.
 
 The wx welcome window (`UI.Welcome`) is the library browser. Opening an entry
-gives an untitled copy whose first save suggests its filename. The section
+gives an untitled copy whose first save suggests its filename.
+
+The browser also shows the user's own projects, from `~/Documents/FractalStream`
+(`myProjectsDirectory`, via `getUserDocumentsDirectory`), laid out like the
+library: files directly in it under "My projects", each subfolder a section.
+`scanProjectsIn` reads it at run time: lazily, when one of those sections is
+first selected (reading Documents can make macOS ask permission, which should
+happen in context), and again when the window is brought to the front. These
+open in place; one without metadata is titled by its filename and shown with
+`placeholderPreview`; one that can't be read, or whose script has an error
+(`checkProjectBytes`, which type-checks without building), is listed with the
+reason. A
+project without a file is first saved into that folder by default. The section
 called "Starting points" is special (`lsStartingPoints`): its projects are
 templates, so opening one gives a new "Untitled" project without the
 template's metadata, with the script editor open; "New project" shows that
