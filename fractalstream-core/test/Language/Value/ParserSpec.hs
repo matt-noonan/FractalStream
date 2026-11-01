@@ -43,7 +43,18 @@ spec = do
       parses5 `shouldBe` Right 42
       parses6 `shouldBe` Right 3
 
+    it "computes an integer power used as a real or complex number as a \
+       \real power, so a negative exponent doesn't round it to 0" $ do
+      parseF "10^(-2)" `shouldBe` Right 0.01
+      parseF "1 / 2^(-1)" `shouldBe` Right 2
+      parseF "(-2)^3" `shouldBe` Right (-8)
+      eval (parseValue endOfDecls ComplexType "10^(-2)") `shouldBe` Right (0.01 :+ 0)
+      -- an integer power that stays an integer is unchanged
+      parseI "2^10" `shouldBe` Right 1024
+      parseI "2^(-1)" `shouldBe` Right 0
+
     it "can parse tuples" $ do
+
       let ty = PairType IntegerType IntegerType
           parses = parseValue EmptyEnvProxy ty "(1 + 2, 3 * 4)"
       eval parses `shouldBe` Right (3, 12)
@@ -84,7 +95,10 @@ spec = do
       parseI "3² + 1" `shouldBe` Right 10
       parseI "2¹⁰" `shouldBe` Right 1024
       parseF "2.0⁻¹" `shouldBe` Right 0.5
-      parseF "2⁻¹" `shouldBe` Right 0
+      -- an integer power used as a real number is computed as one
+      parseF "2⁻¹" `shouldBe` Right 0.5
+      parseI "2⁻¹" `shouldBe` Right 0
+
 
     it "parses boolean expressions with expected precedence" $ do
       let parses1 = parseB "true or false and false"
