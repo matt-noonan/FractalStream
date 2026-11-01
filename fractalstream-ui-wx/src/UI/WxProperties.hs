@@ -210,12 +210,17 @@ captureLayout WxLayout{..} = do
 -- | Capture every open window's state as the properties to restore,
 -- then forget the windows themselves -- for just before tearing every
 -- window down to rebuild the project, so that the rebuilt windows come
--- back the way they were.
+-- back the way they were. A viewer that has no window just now keeps
+-- whatever was remembered for it before (such as the file's layout for
+-- a project whose script didn't build, and so has no windows at all
+-- until it's fixed).
 rememberLayout :: WxLayout -> IO ()
 rememberLayout wl@WxLayout{..} = do
-  props <- captureLayout wl
-  writeIORef wlSaved props
-  writeIORef wlCarried (Map.keysSet (wxViewers props))
+  live <- captureLayout wl
+  saved <- readIORef wlSaved
+  writeIORef wlSaved live { wxViewers = Map.union (wxViewers live) (wxViewers saved) }
+  modifyIORef' wlCarried (Set.union (Map.keysSet (wxViewers live)))
+
   readIORef wlConfig >>= \case
     Just _  -> writeIORef wlConfigCarried True
     Nothing -> pure ()

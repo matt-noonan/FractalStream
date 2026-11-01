@@ -4,6 +4,9 @@ module Actor.Ensemble
   , NamedScenario(..)
   , parseEnsembleFromFile
   , parseEnsembleFromBytes
+  , LoadedProject(..)
+  , loadProjectFile
+  , loadProjectBytes
   , readProjectMetadata
   , checkProjectBytes
   , buildEnsembleFromScript
@@ -116,6 +119,12 @@ data Ensemble = Ensemble
     -- built from its script (as 'fieldText', and as 'fieldCanonical'):
     -- what 'changedValues' compares against, and 'resetValues' goes
     -- back to.
+  , ensembleBuilt :: Bool
+    -- ^ 'False' for a project whose script didn't build
+    -- ('loadProjectBytes'): it has the script's text and the project
+    -- file's other keys, but no configuration or viewers yet, so its
+    -- window layout and configuration values can't be read from it
+    -- (only kept as the file had them) until a fixed script is built.
   , ensembleMetadata :: Variable ProjectMetadata
     -- ^ The project file's @metadata:@: title, description, preview.
   , ensembleFrontendProperties :: Variable (KM.KeyMap Aeson.Value)
@@ -169,26 +178,63 @@ parseEnsembleFromFile path = try (BS.readFile path) >>= \case
 -- have come from a file on disk at all (e.g. a project embedded in the
 -- app itself). @path@ says where they came from, in messages.
 parseEnsembleFromBytes :: String -> ByteString -> IO (Either String Ensemble)
-parseEnsembleFromBytes path contents =
+parseEnsembleFromBytes path contents = loadProjectBytes path contents <&> \case
+  Left err -> Left err
+  Right (Built ens) -> Right ens
+  Right (BrokenScript _ err) -> Left err
+
+-- | A project file, as loaded: either built and ready to run, or, if its
+-- script doesn't build, as much of it as can be had without its script
+-- (see 'ensembleBuilt'), along with what's wrong with the script -- so
+-- that a frontend can still offer to fix it.
+data LoadedProject
+  = Built Ensemble
+  | BrokenScript Ensemble String
+
+-- | Load a project file, like 'loadProjectBytes'.
+loadProjectFile :: FilePath -> IO (Either String LoadedProject)
+loadProjectFile path = try (BS.readFile path) >>= \case
+  Left (e :: IOException) -> pure (Left ("could not read " ++ path ++ ": " ++ show e))
+  Right contents -> do
+    BS.length contents `seq` pure ()
+    loadProjectBytes path contents
+
+-- | Load a project file's contents (@path@ says where they came from, in
+-- messages). Only a file that can't be read as a project at all is an
+-- error ('Left'); one whose script doesn't build is a 'BrokenScript'.
+loadProjectBytes :: String -> ByteString -> IO (Either String LoadedProject)
+loadProjectBytes path contents =
   -- A project's whole text lives under one top-level `script:` key
   -- (the unified @setup@/@config@/@viewer@/@tool@ script format --
   -- the older classic `setup:`/`configuration:`/`viewer(s):` shape
   -- is no longer supported).
   case YAML.decodeEither' contents of
-    Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
-      buildEnsembleFromScript (Text.unpack scriptText) >>= \case
-        Left err  -> pure (Left (formatScriptError (Text.unpack scriptText) err))
-        Right ens -> do
-          setValue' (ensembleFrontendProperties ens)
-            (foldr KM.delete o ["script", "scenarios", "metadata"])
-          attachMetadata path o ens >>= \case
-            Left err -> pure (Left err)
-            Right () -> attachScenarios o ens
+    Right (Object o) | Just (String scriptText) <- KM.lookup "script" o -> do
+      let src = Text.unpack scriptText
+      built <- buildEnsembleFromScript src
+      (ens, loaded) <- case built of
+        Right ens -> pure (ens, Built ens)
+        Left err -> do
+          ens <- scriptOnlyEnsemble src
+          pure (ens, BrokenScript ens (formatScriptError src err))
+      setValue' (ensembleFrontendProperties ens)
+        (foldr KM.delete o ["script", "scenarios", "metadata"])
+      attachMetadata path o ens >>= \case
+        Left err -> pure (Left err)
+        Right () -> attachScenarios o ens <&> fmap (const loaded)
     Right _  -> pure (Left (path ++ " doesn't have a top-level `script:` key -- \
                              \this file isn't in a format FractalStream can open \
                              \(the classic setup:/configuration:/viewer(s): project \
                              \format is no longer supported)."))
     Left err -> pure (Left (path ++ " isn't valid YAML: " ++ show err))
+
+-- | A project with just a script's text, and nothing built from it (see
+-- 'ensembleBuilt').
+scriptOnlyEnsemble :: String -> IO Ensemble
+scriptOnlyEnsemble src =
+  Ensemble <$> newVariable Nothing <*> newVariable [] <*> newVariable []
+           <*> newVariable src <*> newVariable Map.empty <*> pure False
+           <*> newVariable noMetadata <*> newVariable KM.empty
 
 -- | A unified-script project can still carry a sibling top-level
 -- `scenarios:` key. Reading it has nothing to do with the unified-script
@@ -259,7 +305,14 @@ carryOverProjectState from to = do
   setValue' (ensembleScenarios to) =<< getDynamic (ensembleScenarios from)
   setValue' (ensembleMetadata to) =<< getDynamic (ensembleMetadata from)
   setValue' (ensembleFrontendProperties to) =<< getDynamic (ensembleFrontendProperties from)
-  void (changedValues from >>= applySavedValues to)
+  -- A project whose script hadn't built has no values of its own to
+  -- carry over, only the ones its file was saved with: those are the
+  -- ones to put in place, now that there's somewhere to put them.
+  if ensembleBuilt from
+    then void (changedValues from >>= applySavedValues to)
+    else getDynamic (ensembleFrontendProperties from) >>= \props ->
+      either (const (pure ())) (void . applySavedValues to) (readSavedValues props)
+
 
 -- | Which configuration panel a field is in: the project's own, or one
 -- of its tools' (by viewer title, then tool name).
@@ -696,7 +749,7 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
           defaultsVar     <- newVariable Map.empty
           metadataVar     <- newVariable noMetadata
           frontendVar     <- newVariable KM.empty
-          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar defaultsVar metadataVar frontendVar))
+          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar defaultsVar True metadataVar frontendVar))
 
 
 ------------------------------------------------------------

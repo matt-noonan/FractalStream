@@ -17,7 +17,7 @@ import Graphics.UI.WXCore hiding (Event)
 import Control.Monad (forM, unless)
 import Data.Functor ((<&>))
 import Data.IORef
-import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Maybe (fromMaybe, isJust)
 import System.Directory (createDirectoryIfMissing)
 
 import FractalStream.Library
@@ -89,7 +89,7 @@ welcome ProjectActions{..} = do
             -- font.
             set descriptionText [ font := if isJust leProblem then fontFixed else fontDefault
                                 , text := fromMaybe leDescription leProblem ]
-            set openButton [ enabled := isNothing leProblem ]
+            set openButton [ enabled := leCanOpen ]
 
       emptyMine = "Your own projects go in " ++ myProjectsDir ++ ". Save a project \
                   \there (or in a folder inside it, to give it a section of its \
@@ -100,7 +100,8 @@ welcome ProjectActions{..} = do
 
   projectGrid <- libraryGrid p
     (\mi -> maybe (pure Nothing) entryAt mi >>= selectEntry)
-    (\i -> entryAt i >>= mapM_ (\e -> unless (isJust (leProblem e)) (projectOpenLibrary e)))
+    (\i -> entryAt i >>= mapM_ (\e -> when (leCanOpen e) (projectOpenLibrary e)))
+
 
   -- Every built-in project's tile is made up front. Previews come in
   -- different shapes, so each is centered on a square of the grid's

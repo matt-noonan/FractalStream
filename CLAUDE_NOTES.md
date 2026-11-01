@@ -399,6 +399,14 @@ background color.
 The wx welcome window (`UI.Welcome`) is the library browser. Opening an entry
 gives an untitled copy whose first save suggests its filename.
 
+A project whose script doesn't build still opens (`loadProjectBytes` /
+`loadProjectFile` give a `BrokenScript` with an ensemble that has the script's
+text and the file's other keys, but `ensembleBuilt = False`): the wx app opens
+it straight into the script editor, and applies its saved layout and values
+when the fixed script is rebuilt (`carryOverProjectState`). Until then, saving
+writes the edited script and keeps the layout and values as the file had them.
+Only a file that can't be read as a project at all fails to open.
+
 The browser also shows the user's own projects, from `~/Documents/FractalStream`
 (`myProjectsDirectory`, via `getUserDocumentsDirectory`), laid out like the
 library: files directly in it under "My projects", each subfolder a section.
