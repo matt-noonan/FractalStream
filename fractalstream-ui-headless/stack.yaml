@@ -3,7 +3,7 @@ resolver: lts-24.12
 # Each project builds its packages (including ../fractalstream-core and the
 # backends) in its own folder, so that a change built by one project isn't
 # treated as already built by the others.
-work-dir: .stack-work/headless
+work-dir: .stack-work-headless
 
 packages:
 - .

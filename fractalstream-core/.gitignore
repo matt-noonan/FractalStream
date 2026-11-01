@@ -1,5 +1,5 @@
 dist
-.stack-work/
+.stack-work*/
 cabal-dev
 *~
 *.o

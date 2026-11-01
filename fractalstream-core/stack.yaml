@@ -3,7 +3,7 @@ resolver: lts-24.12
 # Each project that builds this package (the others' stack.yaml files list
 # it too) uses its own work folder, so that a change built by one project
 # isn't treated as already built by the others.
-work-dir: .stack-work/core
+work-dir: .stack-work-core
 
 packages:
 - .
