@@ -1,7 +1,8 @@
 module Actor.GoldenSpec (spec) where
 
 -- | Golden tests pinning down the fully-typechecked 'Code' produced for
--- every example project (including those under @examples/templates/@): each viewer body, its
+-- every example project, and every project in the built-in library
+-- (@fractalstream-library/projects/@): each viewer body, its
 -- preparation script (if any), and every tool event handler, pretty-printed
 -- with 'pprintCode'. These exist to guard the move from the closure-based
 -- typechecker to the surface-AST + inference + elaboration pipeline: the
@@ -23,31 +24,37 @@ import Language.Code (Code, pprintCode)
 import Data.DynamicValue
 
 import Control.Exception (SomeException, try, evaluate)
-import Control.Monad (forM, forM_)
+import Control.Monad (filterM, forM, forM_)
 import Data.List (isSuffixOf, sort)
 import qualified Data.Map as Map
-import System.Directory (doesFileExist, listDirectory, createDirectoryIfMissing)
+import System.Directory (doesDirectoryExist, doesFileExist, listDirectory, createDirectoryIfMissing)
 import System.FilePath ((</>), isPathSeparator)
 import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStr)
 
-examplesDir, goldenDir :: FilePath
+examplesDir, libraryDir, goldenDir :: FilePath
 examplesDir = "../examples"
+libraryDir  = "../fractalstream-library/projects"
 goldenDir   = "test/golden"
 
 spec :: Spec
 spec = describe "typed AST golden tests" $ do
   let projectFiles dir = runIO $
-        sort . filter (".fs" `isSuffixOf`) <$> listDirectory (examplesDir </> dir)
-  examples  <- projectFiles ""
-  templates <- map ("templates" </>) <$> projectFiles "templates"
-  forM_ (examples ++ templates) $ \file ->
-    it ("example " ++ file) $
-      parseEnsembleFromFile (examplesDir </> file) >>= \case
-        Left err  -> golden (goldenName file) ("BUILD ERROR\n" ++ err)
-        Right ens -> dumpEnsemble ens >>= golden (goldenName file)
+        sort . filter (".fs" `isSuffixOf`) <$> listDirectory dir
+  examples <- projectFiles examplesDir
+  sections <- runIO $ sort <$> (listDirectory libraryDir >>= filterM (doesDirectoryExist . (libraryDir </>)))
+  library <- concat <$> forM sections (\section ->
+    map (section </>) <$> projectFiles (libraryDir </> section))
+  forM_ ([ ("example " ++ file, examplesDir </> file, file) | file <- examples ] ++
+         [ ("library " ++ file, libraryDir </> file, "library" </> file) | file <- library ]) $
+    \(label, path, name) -> it label $
+      parseEnsembleFromFile path >>= \case
+        Left err  -> golden (goldenName name) ("BUILD ERROR\n" ++ err)
+        Right ens -> dumpEnsemble ens >>= golden (goldenName name)
   where
-    -- e.g. "templates/newtons-method.fs" -> "templates-newtons-method.fs"
+    -- e.g. "library/1 Getting started/julia-set.fs"
+    --   -> "library-1 Getting started-julia-set.fs"
     goldenName = map (\c -> if isPathSeparator c then '-' else c)
+
 
 golden :: String -> String -> Expectation
 golden name actual = do
