@@ -669,7 +669,43 @@ on refresh:
         , ("t", "hello"), ("xs", "1, 2, 3")
         , ("max_iters", "100"), ("escape_radius", "10"), ("vanishing_radius", "0.0001") ]
 
+    it "loads a project whose script doesn't build, keeping its file's \
+       \other keys, and puts its saved values in place once it's fixed" $ do
+      let file script = BS8.pack $ unlines
+            [ "script: |"
+            , "  @config \"Configuration\""
+            , "  a : R as \"a\" <- 1"
+            , "  @viewer \"V\" var=z"
+            , "  " ++ script
+            , "metadata:"
+            , "  title: Kept"
+            , "values:"
+            , "  config:"
+            , "    a: \"5\""
+            ]
+      loadProjectBytes "broken.fs" (file "letz x = 1") >>= \case
+        Right (BrokenScript ens err) -> do
+          err `shouldContain` "letz"
+          ensembleBuilt ens `shouldBe` False
+          getDynamic (ensembleSourceScript ens) >>= (`shouldContain` "letz x = 1")
+          mdTitle <$> getDynamic (ensembleMetadata ens) >>= (`shouldBe` Just "Kept")
+          KM.keys <$> getDynamic (ensembleFrontendProperties ens) >>= (`shouldBe` ["values"])
+          -- fixed and rebuilt: the file's saved value goes in
+          Right fixed <- buildEnsembleFromScript
+            "@config \"Configuration\"\na : R as \"a\" <- 1\n@viewer \"V\" var=z\npass\n"
+          carryOverProjectState ens fixed
+          changedValues fixed >>= (`shouldBe` SavedValues (Map.singleton "a" "5") Map.empty)
+        Right (Built _) -> expectationFailure "expected the script not to build"
+        Left err -> expectationFailure err
+      loadProjectBytes "fine.fs" (file "pass") >>= \case
+        Right (Built ens) -> ensembleBuilt ens `shouldBe` True
+        _ -> expectationFailure "expected the project to build"
+      loadProjectBytes "junk.fs" "script: [unclosed\n" >>= \case
+        Left _ -> pure ()
+        Right _ -> expectationFailure "expected a file that isn't valid YAML to be an error"
+
     it "reports saved values it can't put back, and leaves those fields alone" $ do
+
 
       Right ens <- buildEnsembleFromScript
         "@config \"Configuration\"\na : R as \"a\" <- 1\n@viewer \"V\" var=z\npass\n"

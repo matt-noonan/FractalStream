@@ -88,7 +88,11 @@ data LibraryEntry = LibraryEntry
     -- ^ Where the project is, for one of the user's own projects, which
     -- opens in place rather than as a copy.
   , leProblem     :: Maybe String
-    -- ^ Why the file couldn't be read as a project, if it couldn't.
+    -- ^ What's wrong with the project, if anything.
+  , leCanOpen     :: Bool
+    -- ^ Whether it can be opened anyway: a project whose script has an
+    -- error can (to fix it), one that can't be read as a project at all
+    -- can't.
   }
 
 embeddedLibrary :: [(FilePath, ByteString)]
@@ -177,12 +181,14 @@ scanProjectsIn dir = doesDirectoryExist dir >>= \case
         let path = folder </> name
         try (BS.readFile path) <&> \case
           Left (e :: IOException) -> (libraryEntry False (Just path) name BS.empty)
-                                       { leProblem = Just ("This file couldn't be read: " ++ show e) }
+                                       { leProblem = Just ("This file couldn't be read: " ++ show e)
+                                       , leCanOpen = False }
           Right contents ->
             let entry = libraryEntry False (Just path) name contents
             in case (leProblem entry, checkProjectBytes contents) of
                  (Nothing, Left err) -> entry
-                   { leProblem = Just ("This project has an error in its script:\n\n" ++ err) }
+                   { leProblem = Just ("This project has an error in its script (open it \
+                                       \to fix it):\n\n" ++ err) }
                  _ -> entry)
 
 
@@ -198,7 +204,9 @@ libraryEntry isStart file name contents = LibraryEntry
   , leFile = file
   , leProblem = either (\err -> Just ("This file couldn't be read as a FractalStream project: it " ++ err ++ "."))
                        (const Nothing) parsed
+  , leCanOpen = either (const False) (const True) parsed
   }
+
   where
     parsed = readProjectMetadata contents
     md = either (const Nothing) Just parsed

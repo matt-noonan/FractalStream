@@ -24,15 +24,16 @@ spec = describe "scanning the user's projects folder" $ do
         ]
       all lsMine sections `shouldBe` True
 
-  it "opens projects in place, and says which can't be read" $
+  it "opens projects in place, says which have problems, and which of \
+     \those can still be opened (to fix their scripts)" $
     withFolder $ \dir -> do
       root : basics : _ <- scanProjectsIn dir
-      [ (leTitle e, isJust (leProblem e)) | e <- lsEntries basics ] `shouldBe`
-        [ ("broken", True), ("d", False) ]
-      [ (leTitle e, leFile e, isJust (leProblem e)) | e <- lsEntries root ] `shouldBe`
-        [ ("A titled project", Just (dir </> "titled.fs"), False)
-        , ("bad", Just (dir </> "bad.fs"), True)
-        , ("untitled", Just (dir </> "untitled.fs"), False)
+      [ (leTitle e, isJust (leProblem e), leCanOpen e) | e <- lsEntries basics ] `shouldBe`
+        [ ("broken", True, True), ("d", False, True) ]
+      [ (leTitle e, leFile e, isJust (leProblem e), leCanOpen e) | e <- lsEntries root ] `shouldBe`
+        [ ("A titled project", Just (dir </> "titled.fs"), False, True)
+        , ("bad", Just (dir </> "bad.fs"), True, False)
+        , ("untitled", Just (dir </> "untitled.fs"), False, True)
         ]
 
   it "finds the documents folder a Linux desktop's user-dirs.dirs names" $ do

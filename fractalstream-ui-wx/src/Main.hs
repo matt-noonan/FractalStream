@@ -115,10 +115,15 @@ runApp = withBackend $ \backend -> start $ do
           Nothing -> pure ()
           Just file -> do
             prj <- getDynamic currentEnsemble
-            props <- captureLayout wxLayout
-            modifyValue (ensembleFrontendProperties prj) (writeWxProperties props)
-            values <- changedValues prj
-            modifyValue (ensembleFrontendProperties prj) (writeSavedValues values)
+            -- Until a project's script builds, it has no windows or
+            -- configuration to read its layout and values from, so
+            -- they're saved just as its file had them.
+            when (ensembleBuilt prj) $ do
+              props <- captureLayout wxLayout
+              modifyValue (ensembleFrontendProperties prj) (writeWxProperties props)
+              values <- changedValues prj
+              modifyValue (ensembleFrontendProperties prj) (writeSavedValues values)
+
             encodeEnsemble prj >>= BS.writeFile file
             setValue isUnsaved False
             setValue sessionFile (Just file)
@@ -139,7 +144,7 @@ runApp = withBackend $ \backend -> start $ do
           }
 
       projectOpen = \path ->
-        openProject path (Just path) (takeFileName path) False (parseEnsembleFromFile path)
+        openProject path (Just path) (takeFileName path) False (loadProjectFile path)
 
       -- A library project opens as a copy with no file of its own, so
       -- that saving it never tries to write into the app itself; the
@@ -148,7 +153,7 @@ runApp = withBackend $ \backend -> start $ do
       -- the script editor open, ready to write. One of the user's own
       -- projects just opens, as itself.
       projectOpenLibrary = \LibraryEntry{..} ->
-        let load = parseEnsembleFromBytes leTitle leContents
+        let load = loadProjectBytes leTitle leContents
         in case leFile of
              Just path -> projectOpen path
              Nothing
@@ -172,16 +177,25 @@ runApp = withBackend $ \backend -> start $ do
 
         withRecoveryActions $ do
 
-          prj <- either error id <$> load
+          -- A project whose script doesn't build still opens, straight
+          -- into its script editor (which shows what's wrong), so that
+          -- it can be fixed; its viewers appear, with its saved layout
+          -- and values, when the fixed script is rebuilt. Only a file
+          -- that can't be read as a project at all is an error here.
+          loaded <- either error id <$> load
+          let (prj, scriptBuilds) = case loaded of
+                Built ens -> (ens, True)
+                BrokenScript ens _ -> (ens, False)
           when fromStartingPoint $ setValue' (ensembleMetadata prj) noMetadata
           -- Put back the configuration values the project was saved
           -- with, where they differ from its script's defaults, before
           -- anything is drawn with them. Like a malformed
           -- `wx-properties:`, one that no longer fits is reported and
           -- skipped rather than refusing to open the project.
-          readSavedValues <$> getDynamic (ensembleFrontendProperties prj) >>= \case
-            Left err -> putStrLn ("Ignoring unreadable `values:` in " ++ name ++ ": " ++ err)
-            Right saved -> applySavedValues prj saved >>= mapM_ (putStrLn . (("In " ++ name ++ ", ") ++))
+          when scriptBuilds $
+            readSavedValues <$> getDynamic (ensembleFrontendProperties prj) >>= \case
+              Left err -> putStrLn ("Ignoring unreadable `values:` in " ++ name ++ ": " ++ err)
+              Right saved -> applySavedValues prj saved >>= mapM_ (putStrLn . (("In " ++ name ++ ", ") ++))
           currentEnsemble <- newVariable prj
           -- A malformed `wx-properties:` only costs the remembered
           -- window layout, not the whole project, so it's reported
@@ -218,8 +232,8 @@ runApp = withBackend $ \backend -> start $ do
 
               si = SessionInfo{..}
           modifyValue activeSessions (si :)
-          runEnsemble backend ui prj
-          when fromStartingPoint $
+          when scriptBuilds $ runEnsemble backend ui prj
+          when (fromStartingPoint || not scriptBuilds) $
             editProjectScript backend projectWindow wxLayout currentEnsemble ui
 
       closeSession SessionInfo{..} = case sessionHandle of
