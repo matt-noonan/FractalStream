@@ -29,6 +29,7 @@ import qualified Data.Text as Text
 import qualified Data.Vector as V
 import System.Directory (getTemporaryDirectory, removeFile)
 import System.FilePath ((</>))
+import Control.Monad (forM_)
 import Actor.Metadata (ProjectMetadata(..))
 import Codec.Picture (encodePng, generateImage, PixelRGB8(..))
 import qualified Data.ByteString as BS
@@ -457,7 +458,24 @@ on refresh:
                _ -> expectationFailure "expected a `script:` key with a string value"
              Right _ -> expectationFailure "expected a YAML object"
 
+    it "encodeEnsemble writes the script as a readable block that reads back \
+       \exactly, even with characters libyaml won't put in one by itself" $
+      forM_ [ ("a character outside the Basic Multilingual Plane",
+                 "@viewer \"V\" var=z\n# 𝑖 is U+1D456\npass\n", True)
+            , ("no final newline", "@viewer \"V\" var=z\npass", True)
+            , ("extra final newlines", "@viewer \"V\" var=z\npass\n\n\n", True)
+            , ("trailing spaces", "@viewer \"V\" var=z   \npass  \n", True)
+            , ("a tab", "@viewer \"V\" var=z\n# a\ttab\npass\n", True)
+            , ("a carriage return", "@viewer \"V\" var=z\r\npass\r\n", False)
+            ] $ \(what, src, readable) -> shouldBuild src $ \ens -> do
+        bytes <- encodeEnsemble ens
+        (what, BS.isPrefixOf "script: |" bytes) `shouldBe` (what, readable)
+        case YAML.decodeEither' bytes of
+          Right (Object o) -> (what, KM.lookup "script" o) `shouldBe` (what, Just (String (Text.pack src)))
+          other -> expectationFailure (what ++ ": " ++ show (fmap (const ()) other))
+
     it "encodeEnsemble omits scenarios: when there are none, and includes it \
+
        \with the scenario's name and commands when there are" $
       let src = "@viewer \"V\" var=z\npass\n"
       in shouldBuild src $ \ens -> do
