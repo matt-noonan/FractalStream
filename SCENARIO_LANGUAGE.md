@@ -28,6 +28,11 @@ one viewer with no tool interaction at all:
 `fsrun project.fs --snapshot "<viewer name>" --output
 file.png`.)
 
+A fourth mode, `fsrun project.fs --update-preview`, runs the commands in
+the project's own `metadata: preview-commands:` and saves the preview
+image they capture into the project file; see "Making a project's
+preview" below. It is the only mode that ever changes the project file.
+
 ## Design principles
 
 - **Current-context commands vs. explicitly-addressed commands.** Every
@@ -141,6 +146,8 @@ untrue later.
 |---|---|
 | `capture viewer "<name>" to "<file.png>"` | Render the named viewer, composite every tool's drawn layers on top (`Actor.Viewer.Overlay.compositeDrawLayersToFile`), and write a PNG. |
 | `capture viewer "<name>" base to "<file.png>"` | Same, but the per-pixel script only -- no tool overlays. |
+| `capture viewer "<name>" as preview` | Render the named viewer (with tool overlays; add `base` before `as` for without) as the project's preview image: the viewer's current view, scaled so the longer side is 128 pixels. Only allowed in a project's `metadata: preview-commands:`; anywhere else it's an error. |
+
 
 ### Assertions
 
@@ -234,3 +241,29 @@ the scenario language's own parser lives in
 `fractalstream-ui-headless` (`Scenario.parseScenario`), specific to
 that frontend, not something every consumer of a project file needs to
 know about.
+
+## Making a project's preview
+
+A project file's `metadata:` key can hold a title, a description, and a
+small preview image, for a library of projects to show without opening
+each one. The preview is made by commands kept right next to it:
+
+```yaml
+metadata:
+  title: The Douady rabbit
+  description: |
+    A filled Julia set for z^2 + C, with a tool for tracing orbits.
+  preview-commands: |
+    set parameter C to -0.1226 + 0.7449i
+    select viewer "Julia set"
+    resize viewer to 600x400
+    set viewer pixel size to 1/150
+    capture viewer "Julia set" as preview
+```
+
+`fsrun project.fs --update-preview` runs `preview-commands`, which must
+capture exactly one preview, and writes the image (a base64 PNG) into the
+file as `metadata: preview:`. The file is only replaced once everything
+has succeeded. The preview's shape follows the viewer's, so use
+`resize viewer` to choose it. (In the app, a viewer's "Use this as
+preview" menu item does the same for whatever it's showing at the time.)

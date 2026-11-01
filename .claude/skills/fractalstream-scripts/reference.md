@@ -377,6 +377,7 @@ Built from `fractalstream-ui-headless` (`stack build` there; locate it with
 fsrun project.fs --snapshot "Viewer title" --output out.png
 fsrun project.fs --commands commands.txt
 fsrun project.fs --scenario "name"      # from the project's scenarios:
+fsrun project.fs --update-preview       # runs metadata: preview-commands:
 ```
 
 Command language (one per line, `#` comments): `select viewer "T"`,
@@ -388,6 +389,25 @@ Command language (one per line, `#` comments): `select viewer "T"`,
 `capture viewer "T" to "f.png"` (with tool drawings),
 `capture viewer "T" base to "f.png"` (without),
 `assert viewer "T" pixel (px, py) is (r, g, b) [within tol]`.
+
+A project can also carry a `metadata:` key, for FractalStream's library of
+projects: a `title`, a plain-text `description`, and `preview-commands`
+that make its preview image. Give a new project all three:
+
+```yaml
+metadata:
+  title: Newton's method for z^3 - 1
+  description: |
+    Basins of attraction of Newton's method, colored by root.
+  preview-commands: |
+    select viewer "Newton basins"
+    capture viewer "Newton basins" as preview
+```
+
+then run `fsrun project.fs --update-preview`, which renders the preview
+(128 px on the long side) and writes it into the file as `preview:`
+(base64 PNG; never write that by hand). `capture viewer "T" as preview`
+(or `... base as preview`) is only allowed in `preview-commands`.
 Points are `x + y i` or `(x, y)`. Pixel (0, 0) is the top-left corner; with
 the defaults, model point 0 is pixel (300, 300) and one unit is 128 pixels.
 

@@ -175,7 +175,20 @@ spec = describe "parseScenario" $ do
       CaptureViewerBase n f -> (n, f) `shouldBe` ("Mandelbrot set", "out.png")
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
+  it "parses capture viewer ... as preview" $
+    onlyCommand [r|capture viewer "Mandelbrot set" as preview
+|] $ \case
+      CaptureViewerAsPreview n baseOnly -> (n, baseOnly) `shouldBe` ("Mandelbrot set", False)
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses capture viewer ... base as preview" $
+    onlyCommand [r|capture viewer "Mandelbrot set" base as preview
+|] $ \case
+      CaptureViewerAsPreview n baseOnly -> (n, baseOnly) `shouldBe` ("Mandelbrot set", True)
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
   it "parses assert ... is ... without a tolerance" $
+
     onlyCommand [r|assert viewer "Mandelbrot set" pixel (128, 128) is (0, 0, 0)
 |] $ \case
       AssertPixel n px color tol -> do
@@ -231,4 +244,5 @@ describeShape = \case
   WaitForViewer{}      -> "WaitForViewer"
   CaptureViewer{}      -> "CaptureViewer"
   CaptureViewerBase{}  -> "CaptureViewerBase"
+  CaptureViewerAsPreview{} -> "CaptureViewerAsPreview"
   AssertPixel{}        -> "AssertPixel"

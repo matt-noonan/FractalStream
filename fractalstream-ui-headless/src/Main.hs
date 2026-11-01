@@ -4,11 +4,12 @@ Description  : Headless FractalStream frontend
 
 A frontend analogous to fractalstream-ui-wx: it implements the same
 'Actor.UI.UI' interface that drives 'Actor.Ensemble.runEnsemble', but with
-no actual GUI. Three modes:
+no actual GUI. Four modes:
 
   fsrun <project.fs> --snapshot <viewer-name> --output <file.png>
   fsrun <project.fs> --commands <commands-file>
   fsrun <project.fs> --scenario <name>
+  fsrun <project.fs> --update-preview
 
 Snapshot mode renders one named viewer's base per-pixel script to a PNG
 and exits. The other two both drive a project through a sequence of
@@ -18,6 +19,12 @@ configuration and the viewport, and capturing or asserting on what got
 rendered -- taken either from a standalone commands file (@--commands@)
 or from one of the project file's own top-level @scenarios:@ entries, by
 name (@--scenario@).
+
+@--update-preview@ is the one mode that changes the project file: it runs
+the project's @metadata: preview-commands:@, which must end up capturing
+exactly one viewer with @capture viewer "..." as preview@, and saves that
+image as the project's preview. Only those commands can capture a
+preview, so no other mode ever writes to the project.
 
 Every failure path reports via 'dieWith': printed to /stderr/ (not
 stdout, where every success message goes) and a non-zero exit code --
@@ -32,16 +39,20 @@ module Main where
 import FractalStream.Prelude
 
 import FractalStream.Metadata (gitTag)
-import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble)
+import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble, encodeEnsemble)
+import Actor.Metadata (ProjectMetadata(..))
 import Actor.UI (UI(..))
 import Actor.Viewer (Backend, Viewer(..), snapshotToFile, describeViewerIssues)
-import Data.DynamicValue (getDynamic)
+import Data.DynamicValue (getDynamic, setValue')
 import Backend (withBackend)
 import Scenario (parseScenario)
-import Interpreter (runScenario)
+import Interpreter (runScenario, runPreviewCommands)
 import Language.Parser.SourceRange (Indicated(..))
 
 import Data.IORef
+import qualified Data.ByteString as BS
+import System.Directory (renameFile)
+
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStrLn, stderr)
@@ -50,6 +61,7 @@ data Mode
   = Snapshot { snapshotViewer :: String, snapshotOutput :: FilePath }
   | RunCommandsFile { commandsFile :: FilePath }
   | RunNamedScenario { scenarioName :: String }
+  | UpdatePreview
 
 usage :: String
 usage = unlines
@@ -57,6 +69,7 @@ usage = unlines
   , "  fsrun <project.fs> --snapshot <viewer-name> --output <file.png>"
   , "  fsrun <project.fs> --commands <commands-file>"
   , "  fsrun <project.fs> --scenario <name>"
+  , "  fsrun <project.fs> --update-preview"
   , "  fsrun --version"
   ]
 
@@ -86,12 +99,15 @@ parseMode args = do
       snapshot = lookup "snapshot" flags
       output   = lookup "output"   flags
   case (scenario, commands, snapshot, output) of
+    _ | Just _ <- lookup "update-preview" flags ->
+          if length flags == 1 then Right UpdatePreview
+          else Left "--update-preview can't be combined with other options."
     (Just name, Nothing, Nothing, Nothing)    -> Right (RunNamedScenario name)
     (Nothing, Just file, Nothing, Nothing)    -> Right (RunCommandsFile file)
     (Nothing, Nothing, Just viewer, Just out) -> Right (Snapshot viewer out)
     (Nothing, Nothing, Just _, Nothing)       -> Left "--snapshot requires --output as well."
     (Nothing, Nothing, Nothing, Just _)       -> Left "--output requires --snapshot as well."
-    (Nothing, Nothing, Nothing, Nothing)      -> Left "specify one of --snapshot/--output, --commands, or --scenario."
+    (Nothing, Nothing, Nothing, Nothing)      -> Left "specify one of --snapshot/--output, --commands, --scenario, or --update-preview."
     _ -> Left "--snapshot/--output, --commands, and --scenario are mutually exclusive."
 
 parseFlags :: [String] -> Either String [(String, String)]
@@ -101,6 +117,7 @@ parseFlags = \case
   ("--output"   : v : rest) -> (("output", v)   :) <$> parseFlags rest
   ("--commands" : v : rest) -> (("commands", v) :) <$> parseFlags rest
   ("--scenario" : v : rest) -> (("scenario", v) :) <$> parseFlags rest
+  ("--update-preview" : rest) -> (("update-preview", "") :) <$> parseFlags rest
   (flag@"--snapshot" : []) -> Left ("missing value for " ++ flag)
   (flag@"--output"   : []) -> Left ("missing value for " ++ flag)
   (flag@"--commands" : []) -> Left ("missing value for " ++ flag)
@@ -115,6 +132,7 @@ run projectFile mode = withBackend $ \backend ->
       Snapshot viewerName outputFile -> runSnapshot backend ensemble viewerName outputFile
       RunCommandsFile path           -> runCommandsFile backend ensemble path
       RunNamedScenario name          -> runNamedScenario backend ensemble name
+      UpdatePreview                  -> runUpdatePreview backend ensemble projectFile
 
 runSnapshot :: Backend -> Ensemble -> String -> FilePath -> IO ()
 runSnapshot backend ensemble viewerName outputFile = do
@@ -196,6 +214,28 @@ runNamedScenario backend ensemble name = do
 -- project, reporting the outcome the same way regardless of whether the
 -- commands came from a standalone file or an embedded named scenario
 -- (@label@ is just used in the messages, to say which).
+-- | Run the project's preview commands and save the image they capture
+-- as its preview. The file is only written once that has all
+-- succeeded, and then by writing a new file and renaming it over the
+-- old one, so a failure part-way never leaves a damaged project behind.
+runUpdatePreview :: Backend -> Ensemble -> FilePath -> IO ()
+runUpdatePreview backend ensemble projectFile = do
+  md <- getDynamic (ensembleMetadata ensemble)
+  case mdPreviewCommands md of
+    Nothing -> dieWith (projectFile ++ " has no `metadata: preview-commands:` to make a preview with.")
+    Just src -> case parseScenario src of
+      Left (sr, err) -> dieWith $
+        "Could not parse the preview commands:\n" ++ unlines (pp (Indicated sr src)) ++ err
+      Right cmds -> runPreviewCommands backend ensemble cmds >>= \case
+        Left err -> dieWith ("Could not make a preview:\n" ++ err)
+        Right png -> do
+          setValue' (ensembleMetadata ensemble) md { mdPreview = Just png }
+          bytes <- encodeEnsemble ensemble
+          let tmp = projectFile ++ ".tmp"
+          BS.writeFile tmp bytes
+          renameFile tmp projectFile
+          putStrLn ("Updated the preview in " ++ projectFile)
+
 runCommandsText :: Backend -> Ensemble -> String -> String -> IO ()
 runCommandsText backend ensemble label src = case parseScenario src of
   Left (sr, err) -> dieWith $

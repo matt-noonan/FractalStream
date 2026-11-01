@@ -74,6 +74,8 @@ library
                        Actor.Viewer.Types
                        Actor.Viewer.Complex
                        Actor.Viewer.Overlay
+                       Actor.Viewer.Preview
+                       Actor.Metadata
                        Actor.Viewer.Overlay.Font
                        Actor.Event
                        Actor.Script
@@ -150,6 +152,7 @@ library
                        githash,
                        zlib,
                        JuicyPixels,
+                       base64-bytestring,
                        Rasterific,
                        FontyFruity,
   hs-source-dirs:      src
@@ -173,6 +176,8 @@ test-suite spec
                     , directory
                     , filepath
                     , JuicyPixels
+                    , bytestring
+                    , base64-bytestring
   other-modules:      Data.Indexed.FunctorSpec
                     , Language.Value.DerivativeSpec
                     , Language.Value.EvaluatorSpec
