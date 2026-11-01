@@ -14,6 +14,10 @@ data ProjectActions = ProjectActions
     -- file of its own until it's saved.
   , showLibrary :: IO ()
     -- ^ Show the library browser, opening it again if it was closed.
+  , showPreferences :: IO ()
+  , projectsFolder :: IO FilePath
+    -- ^ Where the user's own projects are, as the settings have it now.
+
 
   , projectNew  :: IO ()
   , activeSessions :: Variable [SessionInfo]

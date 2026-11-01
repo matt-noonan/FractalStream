@@ -365,6 +365,17 @@ worked example):
 - Grids and `container` work out their own stretch from their children, so
   wrapping them in `fill` is unnecessary (and overrides that).
 
+FractalStream's own settings (`FractalStream.Settings`) are a plain YAML file,
+not wx's config: `~/Library/Application Support/FractalStream/settings.yaml`
+on macOS, `%APPDATA%\FractalStream\settings.yaml` on Windows, and
+`~/.config/fractalstream/settings.yaml` elsewhere. Every setting has a default
+and is left out of the file when it's the default; anything unreadable is a
+warning and the default; unknown keys are kept. So far there's one setting,
+`projects-folder` (the library browser's "My projects"; default
+`~/Documents/FractalStream`, see `FractalStream.Library.projectsDirectory`).
+The wx app's Preferences window (`UI.Preferences`, under the standard
+preferences menu id, so in the app menu on macOS) saves each change at once.
+
 ## Project File Format
 
 Projects are YAML files with a single top-level `script:` key holding a unified
@@ -578,6 +589,28 @@ See `LANGUAGE.md` for full docs. Key points:
 - GHC extensions used heavily: `DataKinds`, `GADTs`, `TypeFamilies`, `RankNTypes`,
   `KindSignatures`, `TypeOperators`, `ScopedTypeVariables`, `TypeApplications`
 - `-Wall -Werror` enforced in all packages
+
+## Deferred Work
+
+Things looked into and deliberately put off, with what was found, for whoever
+picks them up:
+
+- **Light / dark / follow-the-system appearance setting.** Wanted as a
+  Preferences choice (the settings file, `FractalStream.Settings`, is ready
+  for another key). Every platform's build uses wxWidgets 3.2, which can't
+  set an app's appearance: `wxApp::SetAppearance` arrived in 3.3, and 3.2 on
+  Windows has no dark mode at all (wxHaskell exposes nothing for it either).
+  Options found: on 3.2, set the app's `NSAppearance` on macOS through a
+  little Objective-C runtime FFI (applies immediately), and `GTK_THEME` on
+  Linux before wx starts (next launch, and only for themes with a dark
+  variant), with no setting offered on Windows; or move every build to
+  wxWidgets 3.3 (CI and the macOS static build; check wxHaskell against it)
+  and use `SetAppearance` everywhere. Either way, the viewer's on-screen
+  overlay hard-codes dark (`isDarkMode = True` in `UI.ProjectViewer`) and
+  must follow the chosen appearance too.
+- **Better parse error messages.** Errors like "I got stuck and couldn't
+  parse the input here, where I was expecting :" (for a typo like `letz`)
+  say little; improving them probably needs changes to the Earley package.
 
 ## Current Branch
 

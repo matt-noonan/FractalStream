@@ -35,6 +35,7 @@ module FractalStream.Library
   , LibraryEntry(..)
   , librarySections
   , myProjectsDirectory
+  , projectsDirectory
   , xdgDocumentsDirectory
   , scanProjectsIn
   , placeholderPreview
@@ -42,6 +43,8 @@ module FractalStream.Library
 
 import Actor.Ensemble (readProjectMetadata, checkProjectBytes)
 import Actor.Metadata (ProjectMetadata(..))
+import FractalStream.Settings (Settings(..))
+
 
 import Control.Exception (IOException, try)
 import Control.Monad (filterM, forM)
@@ -115,10 +118,15 @@ librarySections =
                , [dir, name] <- [splitDirectories path]
                , takeExtension name == ".fs" ]
 
--- | Where a user's own projects go: a @FractalStream@ folder in their
--- documents folder (which needn't exist yet).
+-- | Where a user's own projects go by default: a @FractalStream@ folder
+-- in their documents folder (which needn't exist yet).
 myProjectsDirectory :: IO FilePath
 myProjectsDirectory = (</> "FractalStream") <$> documentsDirectory
+
+-- | Where a user's own projects go: the folder their settings name, or
+-- else the default ('myProjectsDirectory').
+projectsDirectory :: Settings -> IO FilePath
+projectsDirectory = maybe myProjectsDirectory pure . setProjectsFolder
 
 -- | The user's documents folder. 'getUserDocumentsDirectory' only finds
 -- it on Windows: everywhere else, it gives the home folder itself. So on

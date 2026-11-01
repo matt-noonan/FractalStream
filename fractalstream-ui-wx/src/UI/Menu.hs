@@ -2,6 +2,7 @@ module UI.Menu
   ( makeMenuBar
   ) where
 
+import Graphics.UI.WXCore.WxcDefs (wxID_PREFERENCES, wxITEM_NORMAL)
 import FractalStream.Prelude hiding (get)
 import FractalStream.Metadata
 
@@ -37,6 +38,10 @@ makeMenuBar ProjectActions{..} f addlMenus = do
   menuItem prj [ text := "Open from library...\tCtrl+L"
                , help := "Browse the projects that come with FractalStream"
                , on command := showLibrary ]
+  -- The standard preferences id, so that on macOS it goes in the
+  -- application menu, where people look for it.
+  prefs <- menuItemEx prj wxID_PREFERENCES "&Preferences...\tCtrl+," wxITEM_NORMAL []
+
 
   menuLine prj
 
@@ -82,6 +87,7 @@ makeMenuBar ProjectActions{..} f addlMenus = do
   let menuBarItems = concat [ [prj], addlMenus, [hlp] ]
 
   set f [ menuBar := menuBarItems
+        , on (menu prefs) := showPreferences
         , on (menu about) :=
           infoDialog f "About FractalStream" $ unlines
           ( ("FractalStream " ++ gitTag) : "" :

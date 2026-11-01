@@ -53,7 +53,6 @@ welcome ProjectActions{..} = do
                                  >>= mapM_ projectOpen ]
   showFolderButton <- button p [ text := "Show folder", enabled := False ]
 
-  myProjectsDir <- myProjectsDirectory
 
   -- The projects in the section being shown, which of them (if any) is
   -- selected, and the user's own sections: not read until one of them
@@ -79,7 +78,8 @@ welcome ProjectActions{..} = do
             set descriptionText [ font := fontDefault ]
 
             inMine <- readIORef showingMine
-            set descriptionText [ text := if inMine then emptyMine else
+            folder <- projectsFolder
+            set descriptionText [ text := if inMine then emptyMine folder else
                                     "Choose a project to see what it's about." ]
             set openButton [ enabled := False ]
           Just LibraryEntry{..} -> do
@@ -91,7 +91,7 @@ welcome ProjectActions{..} = do
                                 , text := fromMaybe leDescription leProblem ]
             set openButton [ enabled := leCanOpen ]
 
-      emptyMine = "Your own projects go in " ++ myProjectsDir ++ ". Save a project \
+      emptyMine folder = "Your own projects go in " ++ folder ++ ". Save a project \
                   \there (or in a folder inside it, to give it a section of its \
                   \own) to see it here."
 
@@ -111,7 +111,7 @@ welcome ProjectActions{..} = do
       isMine i = i >= builtInCount
 
       readMine = do
-        sections <- scanProjectsIn myProjectsDir
+        sections <- scanProjectsIn =<< projectsFolder
         scanned <- forM sections $ \s -> (s,) <$> tilesFor (lsEntries s)
         writeIORef mine (Just scanned)
         pure scanned
@@ -151,8 +151,10 @@ welcome ProjectActions{..} = do
   set sectionList [ on select := get sectionList selection >>= showSection ]
   set openButton [ on command := readIORef selected >>= mapM_ projectOpenLibrary ]
   set showFolderButton [ on command := do
-                           createDirectoryIfMissing True myProjectsDir
-                           showInFileManager myProjectsDir ]
+                           folder <- projectsFolder
+                           createDirectoryIfMissing True folder
+                           showInFileManager folder ]
+
   set f [ on activate :~ \previous active -> do
             -- Back in front: pick up any changes made to the user's
             -- projects folder meanwhile (if it's been read at all yet).
