@@ -13,10 +13,12 @@ build-type:          Simple
 -- Listing the projects here is what makes Stack rebuild this package
 -- when one is added, removed, or changed.
 extra-source-files:  projects/**/*.fs
+                     assets/no-preview.png
 
 common FractalStream-common
   ghc-options:         -Wall -Werror -O2
   default-extensions:  LambdaCase
+                     , ScopedTypeVariables
                      , RecordWildCards
                      , TupleSections
   default-language:    Haskell2010
@@ -29,6 +31,7 @@ library
                      , bytestring
                      , file-embed
                      , filepath
+                     , directory
   hs-source-dirs:      src
 
 test-suite spec
@@ -44,4 +47,5 @@ test-suite spec
                     , directory
                     , filepath
   other-modules:      LibrarySpec
+                    , MyProjectsSpec
   build-tool-depends: hspec-discover:hspec-discover == 2.*

@@ -5,6 +5,7 @@ module Actor.Ensemble
   , parseEnsembleFromFile
   , parseEnsembleFromBytes
   , readProjectMetadata
+  , checkProjectBytes
   , buildEnsembleFromScript
   , checkScript
   , encodeEnsemble
@@ -205,7 +206,21 @@ attachScenarios o ens = case KM.lookup "scenarios" o of
       setValue' (ensembleScenarios ens) scenarios
       pure (Right ens)
 
+-- | Check a project file's contents without building the project: that
+-- it's a project at all, and that its script reads and type-checks
+-- ('checkScript'). For saying what's wrong with a project before anyone
+-- tries to open it. The error, when there is one, shows where in the
+-- script it is, as 'formatScriptError' does.
+checkProjectBytes :: ByteString -> Either String ()
+checkProjectBytes contents = case YAML.decodeEither' contents of
+  Left err -> Left ("isn't valid YAML: " ++ show err)
+  Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
+    let src = Text.unpack scriptText
+    in left (formatScriptError src) (checkScript src)
+  Right _ -> Left "doesn't have a top-level `script:` key"
+
 -- | Just a project file's metadata, without building the project --
+
 -- for showing what a project is about (in a library of them, say)
 -- without the cost of compiling its script. A project without a
 -- @metadata:@ key has empty metadata.
