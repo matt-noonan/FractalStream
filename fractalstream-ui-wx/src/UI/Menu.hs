@@ -34,6 +34,10 @@ makeMenuBar ProjectActions{..} f addlMenus = do
   menuItem prj [ text := "Open project\tCtrl+O"
                , help := "Open an existing FractalStream project"
                , on command := getProject "Open" projectOpen ]
+  menuItem prj [ text := "Open from library...\tCtrl+L"
+               , help := "Browse the projects that come with FractalStream"
+               , on command := showLibrary ]
+
   menuLine prj
 
   isActive <- newMVar True

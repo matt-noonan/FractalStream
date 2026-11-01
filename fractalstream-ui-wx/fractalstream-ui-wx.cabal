@@ -89,6 +89,8 @@ executable FractalStream
                        UI.Widgets
                        UI.WxProperties
                        UI.ProjectInfo
+                       UI.PreviewImage
+                       UI.LibraryGrid
 
   build-depends:       base >=4.8 && <5
                      , fractalstream-core

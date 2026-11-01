@@ -32,6 +32,10 @@ import Graphics.UI.WXCore.WxcClasses ( styledTextCtrlStyleSetFont
 import Control.Exception (Exception, catch, ErrorCall(..))
 import qualified Data.ByteString as BS
 import System.FilePath (takeDirectory, takeFileName)
+import FractalStream.Library (LibraryEntry(..))
+import Data.IORef
+import qualified Graphics.UI.WXCore as WX
+
 
 
 #if defined(mingw32_HOST_OS)
@@ -70,6 +74,7 @@ runApp = withBackend $ \backend -> start $ do
   wxcAppSetAppName "FractalStream"
 
   activeSessions <- newVariable []
+  libraryWindow <- newIORef Nothing
 
   let -- A brand-new project has no file of its own yet, and nothing
       -- worth looking at until the user writes one -- so, unlike
@@ -92,7 +97,7 @@ runApp = withBackend $ \backend -> start $ do
         let sessionHandle = SessionHandle projectWindow
         sessionVisible <- newVariable True
         sessionUnsaved <- newVariable True
-        let sessionSave = save currentEnsemble wxLayout sessionFile sessionName projectWindow sessionUnsaved
+        let sessionSave = save currentEnsemble wxLayout sessionFile "Untitled.fs" sessionName projectWindow sessionUnsaved
             ui = viewProject (objectCast projectWindow) wxLayout (makeMenuBar ProjectActions{..})
                    (projectMenuActions currentEnsemble sessionUnsaved sessionSave
                       (editProjectScript backend projectWindow wxLayout currentEnsemble ui))
@@ -113,10 +118,10 @@ runApp = withBackend $ \backend -> start $ do
       -- nudged would be more annoying than useful.
       --
       -- The dialog starts out on the session's own file, if it has one
-      -- yet, and a successful save makes the chosen file the session's
-      -- own from then on.
-      save currentEnsemble wxLayout sessionFile sessionName f isUnsaved = do
-        (dir, name) <- maybe ("", "Untitled.fs") (\p -> (takeDirectory p, takeFileName p))
+      -- yet (or else on @suggestedName@), and a successful save makes
+      -- the chosen file the session's own from then on.
+      save currentEnsemble wxLayout sessionFile suggestedName sessionName f isUnsaved = do
+        (dir, name) <- maybe ("", suggestedName) (\p -> (takeDirectory p, takeFileName p))
                        <$> getDynamic sessionFile
         result <- fileSaveDialog f True True "Save FractalStream project"
                   projectFileTypes dir name
@@ -144,17 +149,30 @@ runApp = withBackend $ \backend -> start $ do
               setValue sessionUnsaved True
           }
 
-      projectOpen = \yamlFile -> do
+      projectOpen = \path ->
+        openProject path (Just path) (takeFileName path) (parseEnsembleFromFile path)
+
+      -- A library project opens as a copy with no file of its own, so
+      -- that saving it never tries to write into the app itself; the
+      -- first save suggests the library project's own filename.
+      projectOpenLibrary = \LibraryEntry{..} ->
+        openProject leTitle Nothing leFileName (parseEnsembleFromBytes leTitle leContents)
+
+      -- Open a project as a new session: @name@ is what to call it (in
+      -- messages and the Project menu), @file@ the file it's saved to,
+      -- if it has one yet, and @suggestedName@ what to suggest calling
+      -- that file when it doesn't.
+      openProject name file suggestedName load = do
 
         projectWindow <- frame [ visible := False ]
         let withRecoveryActions
-              = (`catch` badProjectFile projectWindow yamlFile)
+              = (`catch` badProjectFile projectWindow name)
               . (`catch` errorCalled projectWindow)
-              . (`catch` badYaml projectWindow yamlFile)
+              . (`catch` badYaml projectWindow name)
 
         withRecoveryActions $ do
 
-          prj <- either error id <$> parseEnsembleFromFile yamlFile
+          prj <- either error id <$> load
           currentEnsemble <- newVariable prj
           -- A malformed `wx-properties:` only costs the remembered
           -- window layout, not the whole project, so it's reported
@@ -162,16 +180,16 @@ runApp = withBackend $ \backend -> start $ do
           wxProps <- readWxProperties <$> getDynamic (ensembleFrontendProperties prj) >>= \case
             Right props -> pure props
             Left err -> do
-              putStrLn ("Ignoring unreadable `wx-properties:` in " ++ yamlFile ++ ": " ++ err)
+              putStrLn ("Ignoring unreadable `wx-properties:` in " ++ name ++ ": " ++ err)
               pure (WxProperties mempty Nothing)
           wxLayout <- newWxLayout wxProps
 
-          sessionName <- newVariable yamlFile
-          sessionFile <- newVariable (Just yamlFile)
+          sessionName <- newVariable name
+          sessionFile <- newVariable file
           let sessionHandle = SessionHandle projectWindow
           sessionVisible <- newVariable True
           sessionUnsaved <- newVariable False
-          let sessionSave = save currentEnsemble wxLayout sessionFile sessionName projectWindow sessionUnsaved
+          let sessionSave = save currentEnsemble wxLayout sessionFile suggestedName sessionName projectWindow sessionUnsaved
               -- `ui` and `editProjectScript` refer to each other: a
               -- rebuild needs a `UI` to hand `runEnsemble` for the
               -- *next* round of viewer windows, and that same `UI`
@@ -204,7 +222,16 @@ runApp = withBackend $ \backend -> start $ do
         | sessionHandle s == h = setValue (sessionVisible s) yn
         | otherwise = pure ()
 
-  welcome ProjectActions{..}
+      -- There's at most one library browser at a time: showing it
+      -- again just brings the open one to the front.
+      showLibrary = readIORef libraryWindow >>= \case
+        Just f -> WX.windowRaise f
+        Nothing -> do
+          f <- welcome ProjectActions{..}
+          writeIORef libraryWindow (Just f)
+          WX.windowOnDestroy f (writeIORef libraryWindow Nothing)
+
+  showLibrary
 
 -- | The starting point for "New project": the smallest script that's
 -- actually valid (an ensemble needs at least one @\@viewer@), so a
