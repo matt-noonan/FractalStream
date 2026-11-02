@@ -12,8 +12,12 @@
 -- reactive).
 module UI.ProjectScriptEditor
   ( editProjectScript
+  , ScriptEditorHooks(..)
   ) where
 
+import Data.IORef
+import Data.Unique (Unique, newUnique)
+import Graphics.UI.WXCore.Events (windowGetOnDestroy, windowOnDestroy)
 import FractalStream.Prelude hiding (get)
 
 import Actor.UI (UI)
@@ -34,6 +38,19 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as Utf8
 import qualified Data.Map as Map
 
+-- | How the script editor reaches the rest of its project's session.
+data ScriptEditorHooks = ScriptEditorHooks
+  { sehAfterClosingProject :: IO ()
+    -- ^ Run if closing this editor closes the whole project (see below).
+  , sehDraft :: IORef (Maybe (Unique, IO String))
+    -- ^ Where the open editor (if any) offers its text, for saving.
+  , sehMarkUnsaved :: IO ()
+  , sehAddMenuBar :: forall a. Frame a -> IO ()
+    -- ^ Give the editor its project's menu bar (on macOS, where Command+S
+    -- then saves this project rather than whichever one's menu bar was
+    -- showing) or just its keyboard shortcuts (elsewhere).
+  }
+
 -- | Open the whole-project script editor, or explain why there isn't
 -- one to open. The project's own session keeps the live 'Ensemble' in
 -- @currentEnsemble@ (not a fixed value: a successful rebuild here
@@ -41,8 +58,8 @@ import qualified Data.Map as Map
 -- function, so a window opened after a rebuild can itself trigger
 -- another one.
 --
--- @afterClosingProject@ runs if closing this editor closes the whole
--- project (see below).
+-- @hooks@ connect the editor to the rest of its project's session (see
+-- 'ScriptEditorHooks').
 --
 -- FORMERLY A CRITICAL BUG, believed fixed (see the comment on the
 -- `windowDestroy` call below for the root cause and fix; confirmed
@@ -83,8 +100,8 @@ import qualified Data.Map as Map
 -- might be GUI reentrancy from closing `f` inside one of its own
 -- widget's event handlers. See git history on this file if that
 -- pattern is ever wanted again for something else.)
-editProjectScript :: Backend -> Window a -> IO () -> WxLayout -> Variable Ensemble -> UI -> IO ()
-editProjectScript backend projectWindow afterClosingProject wxLayout currentEnsemble ui = do
+editProjectScript :: Backend -> Window a -> ScriptEditorHooks -> WxLayout -> Variable Ensemble -> UI -> IO ()
+editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEnsemble ui = do
   prj <- getDynamic currentEnsemble
   srcText <- getDynamic (ensembleSourceScript prj)
 
@@ -106,7 +123,8 @@ editProjectScript backend projectWindow afterClosingProject wxLayout currentEnse
               set closer [ on command := do
                              set closer [ enabled := False ]
                              void (windowClose projectWindow True)
-                             afterClosingProject ]
+                             sehAfterClosingProject ]
+
             propagateEvent ]
 
 
@@ -118,6 +136,23 @@ editProjectScript backend projectWindow afterClosingProject wxLayout currentEnse
   srcVar <- newVariable (CodeString srcText)
   scriptCheck <- newMapped (pure (\(CodeString s) -> checkScript s)) srcVar
   (ce, liveErrorText) <- scriptWidget p scriptCheck
+
+  -- While this editor is open, what's in it is the project's script, as
+  -- far as saving goes, whether or not it's been rebuilt yet (saving
+  -- and running are separate, as in any editor); so editing it is an
+  -- unsaved change, and the project's shortcuts (Ctrl+S, or Command+S,
+  -- to save, ...) work from here.
+  token <- newUnique
+  writeIORef sehDraft (Just (token, styledTextCtrlGetText ce))
+  previousOnDestroy <- windowGetOnDestroy f
+  windowOnDestroy f $ do
+    -- (Unless another editor for this project has taken over since.)
+    modifyIORef' sehDraft $ \case
+      Just (t, _) | t == token -> Nothing
+      other -> other
+    previousOnDestroy
+  void (watchDynamic srcVar (const sehMarkUnsaved))
+  sehAddMenuBar f
 
   -- Stanza-header styling has no counterpart in a single viewer's
   -- own code (which never has `@`-lines), so 'scriptWidget' can't

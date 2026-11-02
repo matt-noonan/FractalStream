@@ -16,7 +16,8 @@ import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 
 import Control.Monad (void)
-import UI.ProjectScriptEditor (editProjectScript)
+import UI.ProjectScriptEditor (editProjectScript, ScriptEditorHooks(..))
+
 import UI.Session
 import UI.WxProperties
 import Data.DynamicValue
@@ -115,7 +116,10 @@ runApp = withBackend $ \backend -> start $ do
       -- (made if need be), where the library browser will show it; and
       -- a successful save makes the chosen file the session's own from
       -- then on.
-      save currentEnsemble wxLayout sessionFile suggestedName f isUnsaved = do
+      --
+      -- An open script editor's text is what's saved as the script, even
+      -- if it hasn't been rebuilt yet: saving and running are separate.
+      save currentEnsemble wxLayout scriptDraft sessionFile suggestedName f isUnsaved = do
         (dir, name) <- getDynamic sessionFile >>= \case
           Just p -> pure (takeDirectory p, takeFileName p)
           Nothing -> do
@@ -128,7 +132,10 @@ runApp = withBackend $ \backend -> start $ do
           Nothing -> pure ()
           Just file -> do
             prj <- getDynamic currentEnsemble
+            readIORef scriptDraft >>= mapM_ (\(_, editorText) ->
+              editorText >>= setValue' (ensembleSourceScript prj))
             -- Until a project's script builds, it has no windows or
+
             -- configuration to read its layout and values from, so
             -- they're saved just as its file had them.
             when (ensembleBuilt prj) $ do
@@ -238,6 +245,7 @@ runApp = withBackend $ \backend -> start $ do
           let sessionHandle = SessionHandle projectWindow
           sessionVisible <- newVariable True
           sessionUnsaved <- newVariable False
+          scriptDraft <- newIORef Nothing
           -- Changing a configuration value changes what gets saved, so
           -- it marks the project as having unsaved changes -- following
           -- the project through rebuilds, which replace its ensemble.
@@ -249,7 +257,13 @@ runApp = withBackend $ \backend -> start $ do
                   setValue sessionUnsaved True
                   trackValues ens)
 
-          let sessionSave = save currentEnsemble wxLayout sessionFile suggestedName projectWindow sessionUnsaved
+          let sessionSave = save currentEnsemble wxLayout scriptDraft sessionFile suggestedName projectWindow sessionUnsaved
+              editorHooks = ScriptEditorHooks
+                { sehAfterClosingProject = showLibraryAfterClosing
+                , sehDraft = scriptDraft
+                , sehMarkUnsaved = setValue sessionUnsaved True
+                , sehAddMenuBar = \fr -> makeMenuBar ProjectActions{..} (Just thisProject) fr []
+                }
 
               -- `ui` and `editProjectScript` refer to each other: a
               -- rebuild needs a `UI` to hand `runEnsemble` for the
@@ -261,7 +275,7 @@ runApp = withBackend $ \backend -> start $ do
               -- The same actions serve a viewer's own pop-up menu and
               -- the menu bar of each of the project's windows.
               menuActions = projectMenuActions currentEnsemble sessionUnsaved sessionSave
-                              (editProjectScript backend projectWindow showLibraryAfterClosing wxLayout currentEnsemble ui)
+                              (editProjectScript backend projectWindow editorHooks wxLayout currentEnsemble ui)
                               (closeSession si) closeFromWindow
               -- A viewer's own close button closes the project, asking
               -- first if that takes other viewers with it.
@@ -287,7 +301,7 @@ runApp = withBackend $ \backend -> start $ do
           WX.windowOnDestroy projectWindow (forgetSession sessionHandle >> previousOnDestroy)
           when scriptBuilds $ runEnsemble backend ui prj
           when (fromStartingPoint || not scriptBuilds) $
-            editProjectScript backend projectWindow showLibraryAfterClosing wxLayout currentEnsemble ui
+            editProjectScript backend projectWindow editorHooks wxLayout currentEnsemble ui
 
       -- Close a project (all its windows), first offering to save it if
       -- it has unsaved changes. Saving and then cancelling the save

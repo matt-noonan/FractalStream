@@ -1,6 +1,7 @@
 module UI.Menu
   ( makeMenuBar
   , ThisProject(..)
+  , keyboardShortcuts
   , distinctNames
   ) where
 
@@ -51,16 +52,21 @@ makeMenuBar actions thisProject f addlMenus = case thisProject of
 -- menu bar to hold them: Ctrl+S to save, Ctrl+E to edit the script,
 -- Ctrl+I for the project's info, and Ctrl+W to close it.
 projectShortcuts :: ThisProject -> Frame a -> IO ()
-projectShortcuts ThisProject{..} f = do
-  entries <- forM [ ('S', tpSave), ('E', tpEditScript)
-                  , ('I', tpEditInfo (objectCast f)), ('W', tpClose) ] $ \(letter, action) -> do
+projectShortcuts ThisProject{..} f = keyboardShortcuts f
+  [ ('S', tpSave), ('E', tpEditScript), ('I', tpEditInfo (objectCast f)), ('W', tpClose) ]
+
+-- | Ctrl+letter (Command+letter, on macOS) keyboard shortcuts for a
+-- window, without a menu to hold them.
+keyboardShortcuts :: Frame a -> [(Char, IO ())] -> IO ()
+keyboardShortcuts f shortcuts = do
+  entries <- forM shortcuts $ \(letter, action) -> do
     commandId <- idCreate
     evtHandlerOnMenuCommand f commandId action
     acceleratorEntryCreate wxACCEL_CTRL (fromEnum letter) commandId
   -- wxc wants an array of pointers to the entries.
   let withPointers [] k = k []
       withPointers (e : es) k =
-        withObjectRef "projectShortcuts" e $ \p -> withPointers es (k . (p :))
+        withObjectRef "keyboardShortcuts" e $ \p -> withPointers es (k . (p :))
   table <- withPointers entries $ \pointers ->
     withArray pointers (acceleratorTableCreate (length pointers))
   windowSetAcceleratorTable f table
