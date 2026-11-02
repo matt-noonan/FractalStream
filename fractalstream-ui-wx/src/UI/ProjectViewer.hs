@@ -56,6 +56,7 @@ import Text.Printf
 import Text.Read (readMaybe)
 import qualified Data.Map as Map
 import Data.Char (toLower)
+import Data.List (find)
 import qualified System.Info as System
 
 -- | What a viewer's menu can do to the project as a whole.
@@ -233,90 +234,125 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       void (windowDestroy f)
 
 
-    -- HUD
+    -- HUD: the tool picker, the viewer's menu, the pointer's location,
+    -- and the "Viewer paused" warning are drawn over the view by the
+    -- viewer itself ('paintHud', below), and a click on one is found by
+    -- where it was last drawn. (They used to be child windows over the
+    -- view, but wx doesn't support child windows that overlap, or that
+    -- can be seen through, on Windows: there the view painted over them,
+    -- and their backgrounds were opaque.)
     let isDarkMode = True
         overlayBackground = if isDarkMode then rgba 0 0 0 (80 :: Int) else rgba 255 255 255 (180 :: Int)
         overlayForeground = if isDarkMode then white else black
+        hudFont = fontDefault { _fontSize = baseFontSize }
+        menuFont = fontDefault { _fontSize = baseFontSize + 6 }
+        pointerFont = fontFixed { _fontSize = baseFontSize, _fontWeight = WeightBold }
 
-    pointerLocation <- panel f [ bgcolor := overlayBackground
-                               , position := Point (width `div` 2 - 155) (height - 30)
-                               , visible := False
-                               ]
+    hudToolLabel <- newIORef "▼ Navigate"
+    hudPointer <- newIORef ""
+    hudWarning <- newIORef (Nothing :: Maybe String)
+    hudActive <- newIORef True
+    hudSpots <- newIORef ([] :: [(Rect, HudSpot)])
+    hudTooltip <- newIORef ""
     shouldShowPointerLocation <- variable [ value := False ]
-    plp <- panel pointerLocation [ bgcolor := rgba 0 0 0 (0 :: Int) ]
-    pointerLocationText <- staticText plp [ text := ""
-                                          , textColor := overlayForeground
-                                          , font := fontFixed
-                                          , fontSize := baseFontSize
-                                          , fontWeight := WeightBold
-                                          ]
-    set pointerLocation [ layout := minsize (sz 310 20) $ floatCentre $ container plp $
-                          widget pointerLocationText
-                        ]
+    shouldShowToolPicker <- variable [value := True]
+    toolPickerMenu <- menuPane [ text := "Tool" ]
+    hamburgerMenu <- menuPane [ text := "Viewer" ]
 
-    let setPointerLocation (x,y) =
+    let refreshHud = windowRefresh p False
+
+        setPointerLocation (x,y) = do
           let txt0
                 | y < 0     = printf "%.14f - %.14f𝑖" x (negate y)
                 | otherwise = printf "%.14f + %.14f𝑖" x y
-              txt = if x < 0 then txt0 else ' ' : txt0
-          in set pointerLocationText [ text := txt ]
+          writeIORef hudPointer (if x < 0 then txt0 else ' ' : txt0)
+          showPtr <- get shouldShowPointerLocation value
+          when showPtr $ do
+            Size w h <- get p clientSize
+            windowRefreshRect p False (Rect 0 (h - 40) w 40)
+
+        setToolLabel name = writeIORef hudToolLabel ("▼ " ++ name) >> refreshHud
+
+        setWarning mw = do
+          old <- readIORef hudWarning
+          when (old /= mw) (writeIORef hudWarning mw >> refreshHud)
+
+        hudSpotAt pt' = fmap snd . find (\(r, _) -> rectContains r pt') <$> readIORef hudSpots
+
+        -- Draw the HUD (while the window's active), remembering where.
+        paintHud dc = do
+          active <- readIORef hudActive
+          spots <- if not active then pure [] else do
+            Size w h <- get p clientSize
+            showTools <- get shouldShowToolPicker value
+            showPtr <- get shouldShowPointerLocation value
+            let measure fnt txt = set dc [ font := fnt ] >> getTextExtent dc txt
+                box bg r = drawRect dc r [ brush := brushSolid bg, pen := penTransparent ]
+                -- Text centered in a box.
+                labelBox bg fg fnt r@(Rect x y bw bh) txt = do
+                  box bg r
+                  Size tw th <- measure fnt txt
+                  drawText dc txt (Point (x + (bw - tw) `div` 2) (y + (bh - th) `div` 2))
+                    [ font := fnt, textColor := fg ]
+
+            toolSpot <- if not showTools then pure [] else do
+              toolLabel <- readIORef hudToolLabel
+              Size tw th <- measure hudFont toolLabel
+              let r = Rect 5 5 (tw + 10) (th + 10)
+              labelBox overlayBackground overlayForeground hudFont r toolLabel
+              pure [(r, ToolPickerSpot)]
+
+            let menuRect = Rect (w - 30) 5 25 25
+            labelBox overlayBackground overlayForeground menuFont menuRect "☰"
+
+            when showPtr $ do
+              txt <- readIORef hudPointer
+              Size tw th <- measure pointerFont txt
+              let bw = max 310 (tw + 10)
+              labelBox overlayBackground overlayForeground pointerFont
+                    (Rect ((w - bw) `div` 2) (h - 30) bw (max 20 (th + 4))) txt
+
+            warningSpot <- readIORef hudWarning >>= \case
+              Nothing -> pure []
+              Just err -> do
+                let txt = "Viewer paused"
+                Size tw th <- measure hudFont txt
+                let r = Rect ((w - tw - 10) `div` 2) ((h - th - 10) `div` 2) (tw + 10) (th + 10)
+                labelBox (rgba 255 0 0 (50 :: Int)) white hudFont r txt
+                pure [(r, WarningSpot err)]
+
+            pure (toolSpot ++ [(menuRect, MenuSpot)] ++ warningSpot)
+          writeIORef hudSpots spots
+
+        -- A click on the HUD (which it says it handled), or the pointer
+        -- moving over it (showing the warning's details as a tooltip).
+        hudMouse = \case
+          MouseLeftDown pt' _ -> hudSpotAt pt' >>= \case
+            Just ToolPickerSpot -> True <$ menuPopup toolPickerMenu pt' p
+            Just MenuSpot -> True <$ menuPopup hamburgerMenu pt' p
+            _ -> pure False
+          MouseMotion pt' _ -> do
+            tip <- hudSpotAt pt' <&> \case
+              Just (WarningSpot err) -> err
+              _ -> ""
+            old <- readIORef hudTooltip
+            when (tip /= old) $ do
+              writeIORef hudTooltip tip
+              set p [ tooltip := tip ]
+            pure False
+          _ -> pure False
 
     currentTool <- variable [value := Left NavTool ]
     -- Where the left mouse button went down, and where it has been dragged
     -- to since; both are Nothing when there's no click in progress.
     draggedTo <- variable [value := Nothing]
     lastClick <- variable [value := Nothing]
-    toolPanel <- panel f [ bgcolor := overlayBackground
-                         , position := Point 5 5 ]
-    toolpick <- staticText toolPanel [ text := "▼ Navigate", textColor := overlayForeground ]
-    toolPickerMenu <- menuPane [ text := "Tool" ]
-    set toolPanel [ layout := margin 5 (widget toolpick) ]
-    windowFit toolPanel
-
-    set toolpick [ on click := \(Point px py) -> do
-                      Point wx wy <- get toolPanel position
-                      menuPopup toolPickerMenu (Point (px + wx) (py + wy)) f
-                  ]
-    warningPanel <- panel f [ bgcolor := rgba 255 0 0 (50 :: Int)
-                            , position := Point 250 5
-                            , visible := False ]
-
-    warning <- staticText warningPanel [ text := "Viewer paused"
-                                       , color := white ]
-    set warningPanel [ layout := fill $ margin 5 $ widget warning ]
-
-    hamburgerPanel <- panel f [ bgcolor := overlayBackground
-                              , position := Point (width - 30) 5 ]
-    hp <-  panel hamburgerPanel []
-    hamburgerMenu <- menuPane [ text := "Viewer" ]
-    hamburger <- staticText hp [ text := "☰"
-                               , textColor := overlayForeground
-                               , fontSize := baseFontSize + 6
-                               , size := Size 20 20
-                               ]
-    set hamburger [ on click := \(Point px py) -> do
-                      Point wx wy <- get hamburgerPanel position
-                      menuPopup hamburgerMenu (Point (px + wx) (py + wy)) f ]
-
-    set hamburgerPanel [ layout := minsize (sz 25 25) $ container hp $ alignCentre $ widget hamburger ]
-
-    shouldShowToolPicker <- variable [value := True]
-
-    let repositionButtons = do
-          Size w h <- get f clientSize
-          set pointerLocation [ position := Point (w `div` 2 - 155) (h - 30) ]
-          set hamburgerPanel [ position := Point (w - 30) 5 ]
-          Size ww wh <- get warningPanel outerSize
-          set warningPanel [ position := Point ((w - ww) `div` 2) ((h - wh) `div` 2) ]
 
     set f [ layout := fill $ widget p
           , clientSize := sz width height
           , on activate :~ \old vis -> do
-              shouldShowTools <- get shouldShowToolPicker value
-              set toolPanel [ visible := vis && shouldShowTools ]
-              set hamburgerPanel [ visible := vis ]
-              showPtr <- get shouldShowPointerLocation value
-              set pointerLocation [ visible := vis && showPtr ]
+              writeIORef hudActive vis
+              refreshHud
               old vis
               propagateEvent
           ]
@@ -431,7 +467,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 -- so that releasing the mouse doesn't zoom or recenter.
                 set lastClick [ value := Nothing ]
                 set draggedTo [ value := Nothing ]
-                set toolpick [ text := "▼ Navigate" ]
+                setToolLabel "Navigate"
                 showToolConfig <- getDynamic (dyn toolShowConfig)
                 showToolConfig False
                 vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
@@ -450,8 +486,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     let activateTool thisTool@Tool{..} = do
           deactivateCurrentTool
           tname <- getDynamic (tiName toolInfo) <&> fromRight "--"
-          set toolpick [ text := "▼ " ++ tname]
-          windowFit toolPanel
+          setToolLabel tname
           set currentTool [ value := Right thisTool ]
           showToolConfig <- getDynamic (dyn toolShowConfig)
           showToolConfig True
@@ -475,12 +510,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
         activateNavTool = do
           deactivateCurrentTool
-          set toolpick [ text := "▼ Navigate" ]
+          setToolLabel "Navigate"
           set currentTool [ value := Left NavTool ]
 
         activateDebugTool = do
           deactivateCurrentTool
-          set toolpick [ text := "▼ Debug" ]
+          setToolLabel "Debug"
           set debugger [ visible := True ]
           windowRaise f
           focusOn p
@@ -529,11 +564,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           CodeWithArgs vGetArgs _ vCode -> do
             vGetArgs >>= \case
               Left err   -> do
-                set warningPanel [ visible := True ]
-                set warning [ tooltip := err ]
+                setWarning (Just err)
                 readMVar lastRenderAction
               Right vaArgs -> do
-                set warningPanel [ visible := False ]
+                setWarning Nothing
                 ViewerFunction vf <- getDynamic vCode
                 let action = \(w :: Word32) (h :: Word32) (subsamples :: Word32) (dx :+ dy) (x :+ y) vaBuffer -> do
                       let vaWidth  = fromIntegral w
@@ -556,6 +590,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       renderTile' renderId renderIssues True renderAction (width, height) model
     currentTile    <- variable [value := viewerTile]
     savedTileImage <- variable [value := Nothing]
+    -- The same, ready to draw (making a bitmap from an image is too slow
+    -- to do at every paint, which can come at every mouse movement).
+    savedTileBitmap <- variable [value := Nothing]
     lastTileImage  <- variable [value := Nothing]
     animate        <- variable [value := Nothing]
     useSmoothing <- variable [value := True]
@@ -610,25 +647,30 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           pure (point px py)
 
     -- Set paint handlers
-    set p [ on paintRaw := \dc r _dirty -> get animate value >>= \case
+    -- Everything is drawn through one graphics context (a wxGCDC around
+    -- the paint DC), so that the animation's transforms and fades, and
+    -- see-through colors, apply to all of it. (On macOS and GTK a paint DC
+    -- draws through a graphics context anyway, but on Windows it's GDI,
+    -- which ignores both: there the animation jumped, its first frame
+    -- was drawn offset by half the window, and see-through colors were
+    -- opaque.)
+    set p [ on paintRaw := \paintDC r _dirty -> withGraphicsDC paintDC $ \dc gc -> do
+            get animate value >>= \case
               Nothing -> do
-                gc <- graphicsContextCreate dc
                 -- Normal paint. Draw current rendering, then layer
                 -- tool imagery on top.
                 viewRect <- windowGetViewRect f
                 curTile <- get currentTile value
                 let (w, h) = tileRect curTile
-                get savedTileImage value >>= \case
+                get savedTileBitmap value >>= \case
                   Nothing -> pure ()
-                  Just im -> drawCenteredImage im dc viewRect (w, h)
+                  Just bmp -> drawCenteredBitmap bmp dc viewRect (w, h)
 
                 mdl <- get model value
 
                 get currentTool value >>= \case
                   Left NavTool -> paintToolLayerWithDragBox (modelToView mdl) (modelPixelDim mdl) vDrawCmds lastClick draggedTo dc r viewRect
                   _  -> paintToolLayer (modelToView mdl) (modelPixelDim mdl) vDrawCmds dc
-                -- Flush the graphics context
-                graphicsContextDelete gc
 
               Just (startTime, oldModel, oldImage) -> do
                 -- Animated paint. Zoom and blend smoothly between
@@ -642,7 +684,6 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 curTile <- get currentTile value
                 let (w, h) = tileRect curTile
 
-                gc <- graphicsContextCreate dc
                 newModel <- get model value
                 let midModel = interpolateModel t oldModel newModel
                     withLayer (opacity :: Double) action = do
@@ -704,9 +745,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                               (round $ negate viewCenterX)
                                               (round $ negate viewCenterY)) []
                 paintToolLayer (modelToView midModel) (modelPixelDim midModel) vDrawCmds dc
-
-                -- Flush the graphics context
-                graphicsContextDelete gc
+            paintHud dc
           ]
 
     lastKnownMouse <- newIORef Nothing
@@ -722,7 +761,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           MouseLeftDown{}  -> focusOn p
           MouseRightDown{} -> focusOn p
           _ -> pure ()
-    set p [ on mouse   := \event -> focusWhenClicked event >> get lastClick value >>= \lastClickNow -> case event of
+    set p [ on mouse   := \event -> focusWhenClicked event >> hudMouse event >>= \handled -> unless handled $ get lastClick value >>= \lastClickNow -> case event of
 
               MouseLeftDown pt modifiers | isNoShiftAltControlDown modifiers -> do
                 set lastClick [value := Just $ Viewport (pointX pt, pointY pt)]
@@ -896,6 +935,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                          tileImage <- generateTileImage curTile viewRect
                          saved <- imageCopy tileImage
                          set savedTileImage [value := Just saved]
+                         bmp <- bitmapCreateFromImage saved (-1)
+                         set savedTileBitmap [value := Just bmp]
                          triggerRepaint
                        -- Report the current render's issues, if any. The
                        -- previous message stays up until the render either
@@ -972,7 +1013,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               set onResizeTimer [enabled := False]
               set pendingResize [value   := True]
               set onResizeTimer [enabled := True]
-              repositionButtons
+              refreshHud
               propagateEvent ]
 
     -- wxHaskell doesn't seem to expose an "on move" event, so we'll just set up
@@ -1117,13 +1158,13 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     set showToolPicker [ on command := do
                            isChecked <- get showToolPicker checked
                            set shouldShowToolPicker [ value := isChecked ]
-                           set toolPanel [ visible := isChecked ]
+                           refreshHud
                        ]
 
     set showPtrPosition [ on command := do
                             isChecked <- get showPtrPosition checked
                             set shouldShowPointerLocation [ value := isChecked ]
-                            set pointerLocation [ visible := isChecked ]
+                            refreshHud
                         ]
 
     -- Build the configuration window and the event handlers for each tool
@@ -1271,12 +1312,23 @@ renderTile' renderId renderIssues smooth action dim model = do
                   ((i, if i == iD then old <> issues else old), ())
     renderTile smooth action' dim modelRect
 
-drawCenteredImage :: Image b -> DC d -> Rect -> (Int,Int) -> IO ()
-drawCenteredImage img dc windowRect (width, height) = do
+drawCenteredBitmap :: Bitmap () -> DC d -> Rect -> (Int,Int) -> IO ()
+drawCenteredBitmap bmp dc windowRect (width, height) = do
     let Point { pointX = fWidth, pointY = fHeight } = rectBottomRight windowRect
     let (x0, y0) = ( (fWidth  + width ) `div` 2 - width  ,
                      (fHeight + height) `div` 2 - height )
-    drawImage dc img (WX.pt x0 y0) []
+    drawBitmap dc bmp (WX.pt x0 y0) False []
+
+-- | What's at a place on a viewer's HUD.
+data HudSpot = ToolPickerSpot | MenuSpot | WarningSpot String
+
+-- | Paint through a graphics context: a wxGCDC around a paint DC, and
+-- its graphics context (for transforms and layers).
+withGraphicsDC :: DC a -> (GCDC () -> GraphicsContext () -> IO ()) -> IO ()
+withGraphicsDC paintDC action = do
+  dc <- gcdcCreate (objectCast paintDC)
+  gc <- gcdcGetGraphicsContext dc
+  action dc gc `finally` gcdcDelete dc
 
 viewportToPoint :: Viewport -> Point
 viewportToPoint (Viewport (x,y)) = Point { pointX = x, pointY = y }
