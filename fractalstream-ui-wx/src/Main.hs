@@ -142,9 +142,10 @@ runApp = withBackend $ \backend -> start $ do
       -- Setting the preview or editing the project's info changes what
       -- gets saved, unlike moving windows around, so it marks the
       -- project as having unsaved changes.
-      projectMenuActions currentEnsemble sessionUnsaved pmSave pmEditScript pmClose =
+      projectMenuActions currentEnsemble sessionUnsaved pmSave pmEditScript pmClose pmCloseWindow =
         ProjectMenuActions
-          { pmSave, pmEditScript, pmClose
+          { pmSave, pmEditScript, pmClose, pmCloseWindow
+
 
           , pmEditInfo = \owner -> editProjectInfo owner currentEnsemble (setValue sessionUnsaved True)
           , pmResetValues = getDynamic currentEnsemble >>= resetValues
@@ -259,7 +260,12 @@ runApp = withBackend $ \backend -> start $ do
               -- the menu bar of each of the project's windows.
               menuActions = projectMenuActions currentEnsemble sessionUnsaved sessionSave
                               (editProjectScript backend projectWindow showLibraryAfterClosing wxLayout currentEnsemble ui)
-                              (closeSession si)
+                              (closeSession si) closeFromWindow
+              -- A viewer's own close button closes the project, asking
+              -- first if that takes other viewers with it.
+              closeFromWindow = do
+                viewers <- getDynamic . ensembleViewers =<< getDynamic currentEnsemble
+                closeProject (length viewers > 1) si
               thisProject = ThisProject
                 { tpSave = pmSave menuActions
                 , tpEditScript = pmEditScript menuActions
@@ -286,17 +292,31 @@ runApp = withBackend $ \backend -> start $ do
       -- dialog, or answering Cancel, leaves it open. The question has
       -- no parent window: the project's own is hidden, and wx would
       -- show it again once a dialog over it closed.
-      closeSession SessionInfo{..} = case sessionHandle of
+      closeSession = closeProject False
+
+      -- Close a project, as 'closeSession' does; but if @confirmAll@
+      -- (for a window's own close button, when the project has other
+      -- windows that will go with it), ask first even when there's
+      -- nothing to save, since that's more than the user might expect.
+      closeProject confirmAll SessionInfo{..} = case sessionHandle of
         SessionHandle f -> do
           unsaved <- getDynamic sessionUnsaved
-          proceed <- if not unsaved then pure True else do
-            name <- getDynamic sessionName
-            answer <- WX.messageDialog objectNull "Close project"
-                        ("Save the changes to " ++ name ++ " before closing it?")
-                        (WX.wxYES_NO .+. WX.wxCANCEL .+. WX.wxICON_QUESTION)
-            if | answer == WX.wxID_YES -> sessionSave >> not <$> getDynamic sessionUnsaved
-               | answer == WX.wxID_NO  -> pure True
-               | otherwise             -> pure False
+          name <- getDynamic sessionName
+          proceed <- if
+            | unsaved -> do
+                answer <- WX.messageDialog objectNull "Close project"
+                            ("Save the changes to " ++ name ++ " before closing it?")
+                            (WX.wxYES_NO .+. WX.wxCANCEL .+. WX.wxICON_QUESTION)
+                if | answer == WX.wxID_YES -> sessionSave >> not <$> getDynamic sessionUnsaved
+                   | answer == WX.wxID_NO  -> pure True
+                   | otherwise             -> pure False
+            | confirmAll -> do
+                answer <- WX.messageDialog objectNull "Close project"
+                            ("Closing this window closes the whole project, " ++ name
+                             ++ ", and its other windows. Close it?")
+                            (WX.wxOK .+. WX.wxCANCEL .+. WX.wxICON_QUESTION)
+                pure (answer == WX.wxID_OK)
+            | otherwise -> pure True
           when proceed $ do
             void (WX.windowClose f True)
             showLibraryAfterClosing
