@@ -608,6 +608,13 @@ picks them up:
   and use `SetAppearance` everywhere. Either way, the viewer's on-screen
   overlay hard-codes dark (`isDarkMode = True` in `UI.ProjectViewer`) and
   must follow the chosen appearance too.
+- **Asking to save when macOS quits the app by other means.** The Quit
+  menu item (Cmd+Q) offers to save each project with unsaved changes
+  (`quitApp` in `Main.hs`), but quitting from the Dock, or at logout or
+  shutdown, doesn't go through it: wx closes the windows directly
+  (`wxApp::OSXOnShouldTerminate`), and nothing asks. Covering those needs
+  a hook into that application-level request, which wxHaskell doesn't
+  expose (likely a binding to add to the wxHaskell fork).
 - **Better parse error messages.** Errors like "I got stuck and couldn't
   parse the input here, where I was expecting :" (for a typo like `letz`)
   say little; improving them probably needs changes to the Earley package.

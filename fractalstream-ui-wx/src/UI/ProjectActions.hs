@@ -15,6 +15,8 @@ data ProjectActions = ProjectActions
   , showLibrary :: IO ()
     -- ^ Show the library browser, opening it again if it was closed.
   , showPreferences :: IO ()
+  , quitApp :: IO ()
+    -- ^ Quit, after offering to save any project with unsaved changes.
   , projectsFolder :: IO FilePath
     -- ^ Where the user's own projects are, as the settings have it now.
 

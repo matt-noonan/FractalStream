@@ -45,15 +45,16 @@ data ThisProject = ThisProject
 -- just get their project's keyboard shortcuts ('projectShortcuts').
 makeMenuBar :: ProjectActions -> Maybe ThisProject -> Frame a -> [Menu ()] -> IO ()
 makeMenuBar actions thisProject f addlMenus = case thisProject of
-  Just project | os /= "darwin" -> projectShortcuts project f
+  Just project | os /= "darwin" -> projectShortcuts actions project f
   _ -> menuBarFor actions thisProject f addlMenus
 
 -- | Keyboard shortcuts for a project's commands, for a window without a
 -- menu bar to hold them: Ctrl+S to save, Ctrl+E to edit the script,
--- Ctrl+I for the project's info, and Ctrl+W to close it.
-projectShortcuts :: ThisProject -> Frame a -> IO ()
-projectShortcuts ThisProject{..} f = keyboardShortcuts f
-  [ ('S', tpSave), ('E', tpEditScript), ('I', tpEditInfo (objectCast f)), ('W', tpClose) ]
+-- Ctrl+I for the project's info, Ctrl+W to close it, and Ctrl+Q to quit.
+projectShortcuts :: ProjectActions -> ThisProject -> Frame a -> IO ()
+projectShortcuts ProjectActions{quitApp} ThisProject{..} f = keyboardShortcuts f
+  [ ('S', tpSave), ('E', tpEditScript), ('I', tpEditInfo (objectCast f)), ('W', tpClose)
+  , ('Q', quitApp) ]
 
 -- | Ctrl+letter (Command+letter, on macOS) keyboard shortcuts for a
 -- window, without a menu to hold them.
@@ -148,7 +149,7 @@ menuBarFor ProjectActions{..} thisProject f addlMenus = do
   wxWatchDynamic1 f sessionStates rebuildProjectMenus
 
 
-  _quit <- menuQuit prj [] -- text := "Quit FractalStream" ]
+  quit <- menuQuit prj []
 
   -- Build the help menu
   hlp   <- menuHelp      [ text := "&Help" ]
@@ -158,6 +159,7 @@ menuBarFor ProjectActions{..} thisProject f addlMenus = do
 
   set f [ menuBar := menuBarItems
         , on (menu prefs) := showPreferences
+        , on (menu quit) := quitApp
         , on (menu about) :=
           infoDialog f "About FractalStream" $ unlines
           ( ("FractalStream " ++ gitTag) : "" :

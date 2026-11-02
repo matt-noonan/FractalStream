@@ -314,18 +314,12 @@ runApp = withBackend $ \backend -> start $ do
       -- (for a window's own close button, when the project has other
       -- windows that will go with it), ask first even when there's
       -- nothing to save, since that's more than the user might expect.
-      closeProject confirmAll SessionInfo{..} = case sessionHandle of
+      closeProject confirmAll session@SessionInfo{..} = case sessionHandle of
         SessionHandle f -> do
           unsaved <- getDynamic sessionUnsaved
           name <- getDynamic sessionName
           proceed <- if
-            | unsaved -> do
-                answer <- WX.messageDialog objectNull "Close project"
-                            ("Save the changes to " ++ quoted name ++ " before closing it?")
-                            (WX.wxYES_NO .+. WX.wxCANCEL .+. WX.wxICON_QUESTION)
-                if | answer == WX.wxID_YES -> sessionSave >> not <$> getDynamic sessionUnsaved
-                   | answer == WX.wxID_NO  -> pure True
-                   | otherwise             -> pure False
+            | unsaved -> offerToSave "Close project" "closing it" session
             | confirmAll -> do
                 answer <- WX.messageDialog objectNull "Close project"
                             ("Closing this window closes the whole project, " ++ quoted name
@@ -358,7 +352,36 @@ runApp = withBackend $ \backend -> start $ do
           writeIORef preferencesFrame (Just f)
           WX.windowOnDestroy f (writeIORef preferencesFrame Nothing)
 
+      -- Offer to save a project with unsaved changes (if it has any)
+      -- before @what@ ("closing it", "quitting"), and say whether to go
+      -- ahead: not if the user cancels, or cancels saving. The question
+      -- has no parent window: a project's own is hidden, and wx would
+      -- show it again once a dialog over it closed.
+      offerToSave title what SessionInfo{..} = do
+        unsaved <- getDynamic sessionUnsaved
+        if not unsaved then pure True else do
+          name <- getDynamic sessionName
+          answer <- WX.messageDialog objectNull title
+                      ("Save the changes to " ++ quoted name ++ " before " ++ what ++ "?")
+                      (WX.wxYES_NO .+. WX.wxCANCEL .+. WX.wxICON_QUESTION)
+          if | answer == WX.wxID_YES -> sessionSave >> not <$> getDynamic sessionUnsaved
+             | answer == WX.wxID_NO  -> pure True
+             | otherwise             -> pure False
+
+      -- Quit, after offering to save each project with unsaved changes,
+      -- in the order they were opened; cancelling any of those questions
+      -- cancels quitting.
+      quitApp = do
+        sessions <- reverse <$> getDynamic activeSessions
+        let offerAll [] = pure True
+            offerAll (s : rest) = offerToSave "Quit FractalStream" "quitting" s >>= \case
+              True -> offerAll rest
+              False -> pure False
+        proceed <- offerAll sessions
+        when proceed WX.wxcAppExitMainLoop
+
       markVisible h yn s
+
         | sessionHandle s == h = setValue (sessionVisible s) yn
         | otherwise = pure ()
 
