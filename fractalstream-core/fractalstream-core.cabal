@@ -79,6 +79,7 @@ library
                        Actor.SavedValues
                        FractalStream.Settings
                        FractalStream.Quoted
+                       FractalStream.Console
                        Actor.Viewer.Overlay.Font
                        Actor.Event
                        Actor.Script
@@ -195,4 +196,5 @@ test-suite spec
                     , Actor.GoldenSpec
                     , Actor.OverlaySpec
                     , FractalStream.SettingsSpec
+                    , SpecHook
   build-tool-depends: hspec-discover:hspec-discover == 2.*

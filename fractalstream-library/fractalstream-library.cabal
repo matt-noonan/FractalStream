@@ -48,4 +48,5 @@ test-suite spec
                     , filepath
   other-modules:      LibrarySpec
                     , MyProjectsSpec
+                    , SpecHook
   build-tool-depends: hspec-discover:hspec-discover == 2.*

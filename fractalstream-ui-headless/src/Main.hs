@@ -37,6 +37,7 @@ genuinely printed is never actually seen.
 module Main where
 
 import FractalStream.Quoted (quoted)
+import FractalStream.Console (transliterateConsole)
 import FractalStream.Prelude
 
 import FractalStream.Metadata (gitTag)
@@ -82,7 +83,7 @@ dieWith :: String -> IO a
 dieWith msg = hPutStrLn stderr msg >> exitFailure
 
 main :: IO ()
-main = getArgs >>= \case
+main = transliterateConsole >> getArgs >>= \case
   ["--version"] -> putStrLn gitTag
   (projectFile : rest) -> case parseMode rest of
     Right mode -> run projectFile mode
