@@ -9,13 +9,16 @@ module Main where
 import FractalStream.Quoted (quoted)
 import UI.ProjectActions
 import UI.Menu (makeMenuBar, ThisProject(..))
-import UI.OpenFiles (onOpenFiles)
+import UI.OpenFiles (onOpenFiles, commandLineFiles)
+import UI.SingleInstance (handOffFiles, listenForFiles)
 import UI.ProjectViewer (viewProject, ProjectMenuActions(..))
 import UI.ProjectInfo (editProjectInfo)
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 
-import Control.Monad (void)
+import Control.Monad (unless, void)
+import Control.Concurrent.MVar (newMVar, modifyMVar, modifyMVar_)
+import qualified System.Info
 import UI.ProjectScriptEditor (editProjectScript, ScriptEditorHooks(..))
 
 import UI.Session
@@ -60,7 +63,14 @@ import System.IO ( IOMode(..), BufferMode(..), openFile, hSetEncoding, utf8
 #endif
 
 main :: IO ()
-main = redirectOutputOnWindows >> runApp
+main = do
+  redirectOutputOnWindows
+  -- Projects opened from the file manager go to the FractalStream that's
+  -- already running, if there is one (see "UI.SingleInstance"; on macOS,
+  -- the Finder sends them there itself).
+  files <- commandLineFiles
+  handedOff <- if null files || System.Info.os == "darwin" then pure False else handOffFiles files
+  unless handedOff runApp
 
 -- | On Windows, FractalStream is a GUI program (linked with -mwindows), so
 -- it has no console, and writing to stdout or stderr would throw. Send them
@@ -398,7 +408,14 @@ runApp = withBackend $ \backend -> start $ do
         Nothing -> do
           browser@(f, showStartingPoints) <- welcome ProjectActions{..}
           writeIORef libraryWindow (Just browser)
-          WX.windowOnDestroy f (writeIORef libraryWindow Nothing)
+          WX.windowOnDestroy f $ do
+            writeIORef libraryWindow Nothing
+            -- Closing the library browser with no projects open quits,
+            -- since it's the last window -- except for the hidden one
+            -- that opens projects handed over from the file manager,
+            -- which (except on macOS) would keep FractalStream running.
+            noneOpen <- null <$> getDynamic activeSessions
+            when (noneOpen && System.Info.os /= "darwin") WX.wxcAppExitMainLoop
           pure showStartingPoints
 
       showLibrary = void libraryBrowser
@@ -426,10 +443,24 @@ runApp = withBackend $ \backend -> start $ do
                         WX.frameSetMenuBar b menus ])
 
 
-  showLibrary
-
-  -- Projects opened from the file manager (or given on the command line).
+  -- Projects opened from the file manager (or given on the command line),
+  -- and the library browser, unless that opened something.
   onOpenFiles projectOpen
+  noProjects <- null <$> getDynamic activeSessions
+  when noProjects showLibrary
+
+  -- Projects opened from the file manager while this is running, which
+  -- (except on macOS) come from a FractalStream started to open them,
+  -- on another thread. A hidden window's timer opens them here. (wx only
+  -- quits once every window is gone, hidden ones too, so closing the
+  -- library browser quits explicitly; see 'libraryBrowser'.)
+  unless (System.Info.os == "darwin") $ do
+    forwarded <- newMVar []
+    listenForFiles (\paths -> modifyMVar_ forwarded (pure . (++ paths)))
+    dispatcher <- frame [ visible := False ]
+    void $ timer dispatcher
+      [ interval := 200
+      , on command := modifyMVar forwarded (\paths -> pure ([], paths)) >>= mapM_ projectOpen ]
 
 badYaml :: Frame a -> FilePath -> YAML.ParseException -> IO ()
 badYaml w path e = badProjectFile w path (BadProject "Bad YAML file" (show e))
