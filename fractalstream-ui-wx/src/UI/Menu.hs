@@ -4,9 +4,15 @@ module UI.Menu
   , distinctNames
   ) where
 
+import Foreign.Marshal.Array (withArray)
+import Graphics.UI.WXCore.WxcClassesAL (acceleratorEntryCreate, acceleratorTableCreate)
+import Graphics.UI.WXCore.WxcClassesMZ (windowSetAcceleratorTable)
+import Graphics.UI.WXCore.Events (evtHandlerOnMenuCommand)
+import Graphics.UI.WXCore.WxcTypes (withObjectRef)
+import System.Info (os)
 import qualified Data.Map as Map
 import UI.Widgets (wxWatchDynamic1)
-import Graphics.UI.WXCore.WxcDefs (wxID_PREFERENCES, wxITEM_NORMAL)
+import Graphics.UI.WXCore.WxcDefs (wxID_PREFERENCES, wxITEM_NORMAL, wxACCEL_CTRL)
 import FractalStream.Prelude hiding (get)
 import FractalStream.Metadata
 
@@ -31,8 +37,37 @@ data ThisProject = ThisProject
   , tpClose      :: IO ()
   }
 
+-- | Give a window its menu bar. On Linux and Windows, where a menu bar
+-- is part of each window rather than one at the top of the screen, a
+-- project's own windows don't get one (it would only repeat the
+-- library browser's in every viewer and configuration window); they
+-- just get their project's keyboard shortcuts ('projectShortcuts').
 makeMenuBar :: ProjectActions -> Maybe ThisProject -> Frame a -> [Menu ()] -> IO ()
-makeMenuBar ProjectActions{..} thisProject f addlMenus = do
+makeMenuBar actions thisProject f addlMenus = case thisProject of
+  Just project | os /= "darwin" -> projectShortcuts project f
+  _ -> menuBarFor actions thisProject f addlMenus
+
+-- | Keyboard shortcuts for a project's commands, for a window without a
+-- menu bar to hold them: Ctrl+S to save, Ctrl+E to edit the script,
+-- Ctrl+I for the project's info, and Ctrl+W to close it.
+projectShortcuts :: ThisProject -> Frame a -> IO ()
+projectShortcuts ThisProject{..} f = do
+  entries <- forM [ ('S', tpSave), ('E', tpEditScript)
+                  , ('I', tpEditInfo (objectCast f)), ('W', tpClose) ] $ \(letter, action) -> do
+    commandId <- idCreate
+    evtHandlerOnMenuCommand f commandId action
+    acceleratorEntryCreate wxACCEL_CTRL (fromEnum letter) commandId
+  -- wxc wants an array of pointers to the entries.
+  let withPointers [] k = k []
+      withPointers (e : es) k =
+        withObjectRef "projectShortcuts" e $ \p -> withPointers es (k . (p :))
+  table <- withPointers entries $ \pointers ->
+    withArray pointers (acceleratorTableCreate (length pointers))
+  windowSetAcceleratorTable f table
+
+menuBarFor :: ProjectActions -> Maybe ThisProject -> Frame a -> [Menu ()] -> IO ()
+menuBarFor ProjectActions{..} thisProject f addlMenus = do
+
 
   let getProject verb k = maybe (pure ()) k =<<
         fileOpenDialog objectNull True True
