@@ -172,18 +172,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- own closing questions. That happens just after this close event,
     -- from a one-shot timer, rather than from inside it, since it tears
     -- down this very window.
-    --
-    -- The exception is this viewer replacing its own window with a new
-    -- one (see `rememberViewer` below), which "closes" the old window
-    -- just to put it away.
-    replacingWindow <- newIORef False
-    WX.windowOnClose f $ readIORef replacingWindow >>= \case
-      True -> set f [ visible := False ]
-      False -> do
-        closer <- timer f [ interval := 1 ]
-        set closer [ on command := do
-                       set closer [ enabled := False ]
-                       pmCloseWindow ]
+    WX.windowOnClose f $ do
+      closer <- timer f [ interval := 1 ]
+      set closer [ on command := do
+                     set closer [ enabled := False ]
+                     pmCloseWindow ]
 
     -- A status bar, for reporting problems the viewer's script ran into
 
@@ -224,13 +217,21 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         , vpCenter = Just viewCenter, vpPixelSize = Just pixelSize
         }
 
+    -- When the configuration's variables change (which ones there are,
+    -- or their types; not their values), the viewer is rebuilt in a new
+    -- window, starting from where this one was left ('rememberViewer'),
+    -- and this one is destroyed. (It used to be hidden instead, and went
+    -- on watching, listening, and re-rendering -- and rebuilt itself
+    -- again at the next such change, so windows multiplied.) Destroying
+    -- it runs everything hooked to that: its listeners and timers stop,
+    -- and the layout forgets it. wx finishes destroying a frame once the
+    -- current event is over, so doing it from this window's own watcher
+    -- is safe.
     wxWatchDynamic f configEnv $ \_ -> do
-      putStrLn "remake"
       rememberViewer
-      writeIORef replacingWindow True
-      void $ windowClose f True
-
       remakeViewer
+      void (windowDestroy f)
+
 
     -- HUD
     let isDarkMode = True
