@@ -593,6 +593,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- The same, ready to draw (making a bitmap from an image is too slow
     -- to do at every paint, which can come at every mouse movement).
     savedTileBitmap <- variable [value := Nothing]
+    -- Whether the saved image is from the current tile yet, rather than
+    -- still the one from before the view last changed.
+    savedTileIsCurrent <- newIORef True
     lastTileImage  <- variable [value := Nothing]
     animate        <- variable [value := Nothing]
     useSmoothing <- variable [value := True]
@@ -625,6 +628,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           newViewerTile <- renderTile' renderId renderIssues smoothing renderAction (w, h) model
           set currentTile [ value := newViewerTile ]
           startAnimatingFrom oldModel
+          writeIORef savedTileIsCurrent False
           void $ tryPutMVar needToSendRefreshEvent ()
           triggerRepaint
 
@@ -731,8 +735,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                            (round $ negate viewCenterX)
                                            (round $ negate viewCenterY))
                             []
-                  -- draw the new image
-                  withLayer (min 1 t) $ do
+                  -- draw the new image, once there is one: until the new
+                  -- render's first update, the saved image is still the
+                  -- old view, which would be faded in at the new view's
+                  -- place.
+                  newImageReady <- readIORef savedTileIsCurrent
+                  when newImageReady $ withLayer (min 1 t) $ do
                     let zoomRatioX = fst (modelPixelDim newModel) / fst (modelPixelDim oldModel)
                         zoomRatioY = snd (modelPixelDim newModel) / snd (modelPixelDim oldModel)
                     restoringContext $ do
@@ -937,6 +945,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                          set savedTileImage [value := Just saved]
                          bmp <- bitmapCreateFromImage saved (-1)
                          set savedTileBitmap [value := Just bmp]
+                         writeIORef savedTileIsCurrent True
                          triggerRepaint
                        -- Report the current render's issues, if any. The
                        -- previous message stays up until the render either
