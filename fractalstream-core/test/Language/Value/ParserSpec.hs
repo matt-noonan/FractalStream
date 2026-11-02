@@ -61,10 +61,14 @@ spec = do
 
     it "computes an integer power used as a real or complex number as a \
        \real power, so a negative exponent doesn't round it to 0" $ do
-      parseF "10^(-2)" `shouldBe` Right 0.01
+      -- (to within an ulp or so: it's computed by C's pow, which on
+      -- Windows gives 10^(-2) as 0.010000000000000002)
+      let near expected x = abs (x - expected) < 1e-15
+      near 0.01 <$> parseF "10^(-2)" `shouldBe` Right True
       parseF "1 / 2^(-1)" `shouldBe` Right 2
       parseF "(-2)^3" `shouldBe` Right (-8)
-      eval (parseValue endOfDecls ComplexType "10^(-2)") `shouldBe` Right (0.01 :+ 0)
+      (\(re :+ im) -> near 0.01 re && im == 0) <$> eval (parseValue endOfDecls ComplexType "10^(-2)")
+        `shouldBe` Right True
       -- an integer power that stays an integer is unchanged
       parseI "2^10" `shouldBe` Right 1024
       parseI "2^(-1)" `shouldBe` Right 0
