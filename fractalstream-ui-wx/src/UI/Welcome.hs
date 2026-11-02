@@ -197,5 +197,14 @@ welcome ProjectActions{..} = do
     [] -> pure ()
 
   windowReLayout f
+  -- On GTK, a frame's menu bar only has a height once the frame is on
+  -- screen, so the layout above leaves the window (and the smallest it
+  -- can be made) short by the menu bar's height, hiding the bottom row
+  -- of buttons. Laying it out again once it's showing puts that right.
+  relayout <- timer f [ interval := 100 ]
+  set relayout [ on command := do
+                   set relayout [ enabled := False ]
+                   windowReLayout f ]
   pure (f, mapM_ selectSection (take 1 (sectionIndices lsStartingPoints)))
+
 
