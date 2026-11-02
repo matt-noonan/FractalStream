@@ -71,6 +71,9 @@ data ProjectMenuActions = ProjectMenuActions
     -- ^ Make this PNG image the project's preview.
   , pmClose         :: IO ()
     -- ^ Close the project, after offering to save any unsaved changes.
+  , pmCloseWindow   :: IO ()
+    -- ^ The same, for a viewer's own close button: which also asks
+    -- before closing a project with other viewers.
   , pmResetValues   :: IO ()
     -- ^ Put every configuration value (the project's and its tools')
     -- back to its default from the script.
@@ -164,9 +167,26 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                    , position := Point xpos ypos
                                    , on resize := propagateEvent
                                    ] projectWindow
-    WX.windowOnClose f (set f [ visible := False ])
+    -- Closing a viewer's window closes its project (there'd be no easy
+    -- way to get the viewer back otherwise), going through the project's
+    -- own closing questions. That happens just after this close event,
+    -- from a one-shot timer, rather than from inside it, since it tears
+    -- down this very window.
+    --
+    -- The exception is this viewer replacing its own window with a new
+    -- one (see `rememberViewer` below), which "closes" the old window
+    -- just to put it away.
+    replacingWindow <- newIORef False
+    WX.windowOnClose f $ readIORef replacingWindow >>= \case
+      True -> set f [ visible := False ]
+      False -> do
+        closer <- timer f [ interval := 1 ]
+        set closer [ on command := do
+                       set closer [ enabled := False ]
+                       pmCloseWindow ]
 
     -- A status bar, for reporting problems the viewer's script ran into
+
     -- while rendering. It's hidden while there's nothing to report.
     statusText <- statusField [ text := "" ]
     set f [ statusBar := [statusText] ]
@@ -207,7 +227,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     wxWatchDynamic f configEnv $ \_ -> do
       putStrLn "remake"
       rememberViewer
+      writeIORef replacingWindow True
       void $ windowClose f True
+
       remakeViewer
 
     -- HUD
