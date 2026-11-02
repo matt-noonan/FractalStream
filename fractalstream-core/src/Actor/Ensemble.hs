@@ -31,6 +31,7 @@ module Actor.Ensemble
 
   ) where
 
+import FractalStream.Quoted (quoted)
 import FractalStream.Prelude
 
 import Data.DynamicValue
@@ -169,7 +170,7 @@ buildToolContext ensembleCtx = \case
 -- not a programming error.
 parseEnsembleFromFile :: FilePath -> IO (Either String Ensemble)
 parseEnsembleFromFile path = try (BS.readFile path) >>= \case
-  Left (e :: IOException) -> pure (Left ("could not read " ++ path ++ ": " ++ show e))
+  Left (e :: IOException) -> pure (Left ("could not read " ++ quoted path ++ ": " ++ show e))
   Right contents -> do
     BS.length contents `seq` pure ()
     parseEnsembleFromBytes path contents
@@ -194,7 +195,7 @@ data LoadedProject
 -- | Load a project file, like 'loadProjectBytes'.
 loadProjectFile :: FilePath -> IO (Either String LoadedProject)
 loadProjectFile path = try (BS.readFile path) >>= \case
-  Left (e :: IOException) -> pure (Left ("could not read " ++ path ++ ": " ++ show e))
+  Left (e :: IOException) -> pure (Left ("could not read " ++ quoted path ++ ": " ++ show e))
   Right contents -> do
     BS.length contents `seq` pure ()
     loadProjectBytes path contents
@@ -222,11 +223,11 @@ loadProjectBytes path contents =
       attachMetadata path o ens >>= \case
         Left err -> pure (Left err)
         Right () -> attachScenarios o ens <&> fmap (const loaded)
-    Right _  -> pure (Left (path ++ " doesn't have a top-level `script:` key -- \
+    Right _  -> pure (Left (quoted path ++ " doesn't have a top-level `script:` key -- \
                              \this file isn't in a format FractalStream can open \
                              \(the classic setup:/configuration:/viewer(s): project \
                              \format is no longer supported)."))
-    Left err -> pure (Left (path ++ " isn't valid YAML: " ++ show err))
+    Left err -> pure (Left (quoted path ++ " isn't valid YAML: " ++ show err))
 
 -- | A project with just a script's text, and nothing built from it (see
 -- 'ensembleBuilt').
@@ -288,7 +289,7 @@ attachMetadata path o ens = case KM.lookup "metadata" o of
   Just v -> case readMetadata v of
     Left err -> pure (Left ("could not read `metadata:`: " ++ err))
     Right (md, warnings) -> do
-      forM_ warnings $ \w -> hPutStrLn stderr ("warning: " ++ path ++ ": " ++ w)
+      forM_ warnings $ \w -> hPutStrLn stderr ("warning: " ++ quoted path ++ ": " ++ w)
       setValue' (ensembleMetadata ens) md
       pure (Right ())
 

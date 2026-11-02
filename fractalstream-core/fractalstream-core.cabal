@@ -78,6 +78,7 @@ library
                        Actor.Metadata
                        Actor.SavedValues
                        FractalStream.Settings
+                       FractalStream.Quoted
                        Actor.Viewer.Overlay.Font
                        Actor.Event
                        Actor.Script

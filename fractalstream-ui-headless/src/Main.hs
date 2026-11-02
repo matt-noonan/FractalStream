@@ -36,6 +36,7 @@ genuinely printed is never actually seen.
 -}
 module Main where
 
+import FractalStream.Quoted (quoted)
 import FractalStream.Prelude
 
 import FractalStream.Metadata (gitTag)
@@ -127,7 +128,7 @@ parseFlags = \case
 run :: FilePath -> Mode -> IO ()
 run projectFile mode = withBackend $ \backend ->
   parseEnsembleFromFile projectFile >>= \case
-    Left err -> dieWith ("Could not load " ++ projectFile ++ ":\n" ++ err)
+    Left err -> dieWith ("Could not load " ++ quoted projectFile ++ ":\n" ++ err)
     Right ensemble -> case mode of
       Snapshot viewerName outputFile -> runSnapshot backend ensemble viewerName outputFile
       RunCommandsFile path           -> runCommandsFile backend ensemble path
@@ -222,7 +223,7 @@ runUpdatePreview :: Backend -> Ensemble -> FilePath -> IO ()
 runUpdatePreview backend ensemble projectFile = do
   md <- getDynamic (ensembleMetadata ensemble)
   case mdPreviewCommands md of
-    Nothing -> dieWith (projectFile ++ " has no `metadata: preview-commands:` to make a preview with.")
+    Nothing -> dieWith (quoted projectFile ++ " has no `metadata: preview-commands:` to make a preview with.")
     Just src -> case parseScenario src of
       Left (sr, err) -> dieWith $
         "Could not parse the preview commands:\n" ++ unlines (pp (Indicated sr src)) ++ err
@@ -234,7 +235,7 @@ runUpdatePreview backend ensemble projectFile = do
           let tmp = projectFile ++ ".tmp"
           BS.writeFile tmp bytes
           renameFile tmp projectFile
-          putStrLn ("Updated the preview in " ++ projectFile)
+          putStrLn ("Updated the preview in " ++ quoted projectFile)
 
 runCommandsText :: Backend -> Ensemble -> String -> String -> IO ()
 runCommandsText backend ensemble label src = case parseScenario src of

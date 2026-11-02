@@ -11,6 +11,7 @@ module UI.Welcome
   ( welcome
   ) where
 
+import FractalStream.Quoted (quoted)
 import Graphics.UI.WX
 import Graphics.UI.WXCore hiding (Event)
 
@@ -91,7 +92,7 @@ welcome ProjectActions{..} = do
                                 , text := fromMaybe leDescription leProblem ]
             set openButton [ enabled := leCanOpen ]
 
-      emptyMine folder = "Your own projects go in " ++ folder ++ ". Save a project \
+      emptyMine folder = "Your own projects go in " ++ quoted folder ++ ". Save a project \
                   \there (or in a folder inside it, to give it a section of its \
                   \own) to see it here."
 

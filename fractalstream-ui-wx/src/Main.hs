@@ -6,6 +6,7 @@ Description  : Main entry point into FractalStream
 -}
 module Main where
 
+import FractalStream.Quoted (quoted)
 import UI.ProjectActions
 import UI.Menu (makeMenuBar, ThisProject(..))
 import UI.OpenFiles (onOpenFiles)
@@ -207,8 +208,8 @@ runApp = withBackend $ \backend -> start $ do
           -- skipped rather than refusing to open the project.
           when scriptBuilds $
             readSavedValues <$> getDynamic (ensembleFrontendProperties prj) >>= \case
-              Left err -> putStrLn ("Ignoring unreadable `values:` in " ++ name ++ ": " ++ err)
-              Right saved -> applySavedValues prj saved >>= mapM_ (putStrLn . (("In " ++ name ++ ", ") ++))
+              Left err -> putStrLn ("Ignoring unreadable `values:` in " ++ quoted name ++ ": " ++ err)
+              Right saved -> applySavedValues prj saved >>= mapM_ (putStrLn . (("In " ++ quoted name ++ ", ") ++))
           currentEnsemble <- newVariable prj
           -- A malformed `wx-properties:` only costs the remembered
           -- window layout, not the whole project, so it's reported
@@ -216,7 +217,7 @@ runApp = withBackend $ \backend -> start $ do
           wxProps <- readWxProperties <$> getDynamic (ensembleFrontendProperties prj) >>= \case
             Right props -> pure props
             Left err -> do
-              putStrLn ("Ignoring unreadable `wx-properties:` in " ++ name ++ ": " ++ err)
+              putStrLn ("Ignoring unreadable `wx-properties:` in " ++ quoted name ++ ": " ++ err)
               pure (WxProperties mempty Nothing)
           wxLayout <- newWxLayout wxProps
 
@@ -306,14 +307,14 @@ runApp = withBackend $ \backend -> start $ do
           proceed <- if
             | unsaved -> do
                 answer <- WX.messageDialog objectNull "Close project"
-                            ("Save the changes to " ++ name ++ " before closing it?")
+                            ("Save the changes to " ++ quoted name ++ " before closing it?")
                             (WX.wxYES_NO .+. WX.wxCANCEL .+. WX.wxICON_QUESTION)
                 if | answer == WX.wxID_YES -> sessionSave >> not <$> getDynamic sessionUnsaved
                    | answer == WX.wxID_NO  -> pure True
                    | otherwise             -> pure False
             | confirmAll -> do
                 answer <- WX.messageDialog objectNull "Close project"
-                            ("Closing this window closes the whole project, " ++ name
+                            ("Closing this window closes the whole project, " ++ quoted name
                              ++ ", and its other windows. Close it?")
                             (WX.wxOK .+. WX.wxCANCEL .+. WX.wxICON_QUESTION)
                 pure (answer == WX.wxID_OK)
@@ -401,7 +402,7 @@ badProjectFile projectWindow path (BadProject why wher) =
   fatalErrorDialog projectWindow "Could not load project file" $ \p -> withFontStyle fontFixed $ \fnt -> do
     txt <- staticText p
         [ text := unlines
-          [ "I was unable to load the project from " ++ path
+          [ "I was unable to load the project from " ++ quoted path
           , "because " ++ why
           , ""
           ]]

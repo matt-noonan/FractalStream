@@ -21,6 +21,7 @@ module FractalStream.Settings
   , writeSettings
   ) where
 
+import FractalStream.Quoted (quoted)
 import Control.Exception (IOException, try)
 import Data.Aeson
 import qualified Data.Aeson.KeyMap as KM
@@ -63,14 +64,14 @@ loadSettings = do
   doesFileExist path >>= \case
     False -> pure (defaultSettings, [])
     True -> try (BS.readFile path) >>= \case
-      Left (e :: IOException) -> pure (defaultSettings, ["couldn't read " ++ path ++ ": " ++ show e])
+      Left (e :: IOException) -> pure (defaultSettings, ["couldn't read " ++ quoted path ++ ": " ++ show e])
       Right contents -> pure (readSettings path contents)
 
 -- | Read settings from a settings file's contents (@path@ says where
 -- they came from, in warnings).
 readSettings :: FilePath -> ByteString -> (Settings, [String])
 readSettings path contents = case YAML.decodeEither' contents of
-  Left err -> (defaultSettings, [path ++ " isn't valid YAML, so it's being ignored: " ++ show err])
+  Left err -> (defaultSettings, [quoted path ++ " isn't valid YAML, so it's being ignored: " ++ show err])
   Right Null -> (defaultSettings, [])
   Right (Object o) ->
     let (folder, folderWarnings) = case KM.lookup "projects-folder" o of
@@ -79,8 +80,8 @@ readSettings path contents = case YAML.decodeEither' contents of
           Just _ -> (Nothing, ["ignoring the projects-folder setting, which should be a folder's path"])
         other = KM.delete "projects-folder" o
     in ( Settings folder other
-       , map (("In " ++ path ++ ", ") ++) folderWarnings )
-  Right _ -> (defaultSettings, [path ++ " isn't a set of settings, so it's being ignored"])
+       , map (("In " ++ quoted path ++ ", ") ++) folderWarnings )
+  Right _ -> (defaultSettings, [quoted path ++ " isn't a set of settings, so it's being ignored"])
 
 -- | The settings file's contents for these settings. A setting that's
 -- the same as its default is left out.
