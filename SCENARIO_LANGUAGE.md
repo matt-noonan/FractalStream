@@ -13,20 +13,25 @@ separate CLI argument, so the same scenario vocabulary is meaningful
 across any project. Commands can come from a standalone file:
 
 ```
-fsrun project.yaml --commands scenario.txt
+fsrun project.fs --commands scenario.txt
 ```
 
 or from a scenario embedded directly in the project file itself (see
 "Embedding scenarios in a project file" below), selected by name:
 
 ```
-fsrun project.yaml --scenario "basic trace"
+fsrun project.fs --scenario "basic trace"
 ```
 
 (A third, unrelated mode exists for the simple case of just rendering
 one viewer with no tool interaction at all:
-`fsrun project.yaml --snapshot "<viewer name>" --output
+`fsrun project.fs --snapshot "<viewer name>" --output
 file.png`.)
+
+A fourth mode, `fsrun project.fs --update-preview`, runs the commands in
+the project's own `metadata: preview-commands:` and saves the preview
+image they capture into the project file; see "Making a project's
+preview" below. It is the only mode that ever changes the project file.
 
 ## Design principles
 
@@ -96,7 +101,7 @@ file.png`.)
 
 | Command | Effect |
 |---|---|
-| `resize viewer to <W>x<H>` | Change the viewer's pixel dimensions (`WxH`, same bare token form as a project file's `size:` field). |
+| `resize viewer to <W>x<H>` | Change the viewer's pixel dimensions (`WxH`, e.g. `800x600`; viewers start at `600x600`). |
 | `set viewer center to <point>` | Change the model-space point the view is centered on. |
 | `set viewer pixel size to <value-expr>` | Change the model-space size of one pixel (zoom level). |
 
@@ -141,6 +146,8 @@ untrue later.
 |---|---|
 | `capture viewer "<name>" to "<file.png>"` | Render the named viewer, composite every tool's drawn layers on top (`Actor.Viewer.Overlay.compositeDrawLayersToFile`), and write a PNG. |
 | `capture viewer "<name>" base to "<file.png>"` | Same, but the per-pixel script only -- no tool overlays. |
+| `capture viewer "<name>" as preview` | Render the named viewer (with tool overlays; add `base` before `as` for without) as the project's preview image: the viewer's current view, scaled so the longer side is 128 pixels. Only allowed in a project's `metadata: preview-commands:`; anywhere else it's an error. |
+
 
 ### Assertions
 
@@ -205,7 +212,7 @@ scenarios:
       capture viewer "Mandelbrot set" base to "zoomed.png"
 ```
 
-run with `fsrun project.yaml --scenario "basic trace"`.
+run with `fsrun project.fs --scenario "basic trace"`.
 This is the natural home for a project's own regression\/smoke-test
 scenarios -- checked in alongside the project file itself, rather than
 kept as separate files that can drift out of sync with it. A project
@@ -234,3 +241,29 @@ the scenario language's own parser lives in
 `fractalstream-ui-headless` (`Scenario.parseScenario`), specific to
 that frontend, not something every consumer of a project file needs to
 know about.
+
+## Making a project's preview
+
+A project file's `metadata:` key can hold a title, a description, and a
+small preview image, for a library of projects to show without opening
+each one. The preview is made by commands kept right next to it:
+
+```yaml
+metadata:
+  title: The Douady rabbit
+  description: |
+    A filled Julia set for z^2 + C, with a tool for tracing orbits.
+  preview-commands: |
+    set parameter C to -0.1226 + 0.7449i
+    select viewer "Julia set"
+    resize viewer to 600x400
+    set viewer pixel size to 1/150
+    capture viewer "Julia set" as preview
+```
+
+`fsrun project.fs --update-preview` runs `preview-commands`, which must
+capture exactly one preview, and writes the image (a base64 PNG) into the
+file as `metadata: preview:`. The file is only replaced once everything
+has succeeded. The preview's shape follows the viewer's, so use
+`resize viewer` to choose it. (In the app, a viewer's "Use this as
+preview" menu item does the same for whatever it's showing at the time.)

@@ -74,6 +74,12 @@ library
                        Actor.Viewer.Types
                        Actor.Viewer.Complex
                        Actor.Viewer.Overlay
+                       Actor.Viewer.Preview
+                       Actor.Metadata
+                       Actor.SavedValues
+                       FractalStream.Settings
+                       FractalStream.Quoted
+                       FractalStream.Console
                        Actor.Viewer.Overlay.Font
                        Actor.Event
                        Actor.Script
@@ -146,10 +152,13 @@ library
                        bifunctors,
                        Earley,
                        file-embed,
+                       directory,
+                       filepath,
                        utf8-string,
                        githash,
                        zlib,
                        JuicyPixels,
+                       base64-bytestring,
                        Rasterific,
                        FontyFruity,
   hs-source-dirs:      src
@@ -173,6 +182,8 @@ test-suite spec
                     , directory
                     , filepath
                     , JuicyPixels
+                    , bytestring
+                    , base64-bytestring
   other-modules:      Data.Indexed.FunctorSpec
                     , Language.Value.DerivativeSpec
                     , Language.Value.EvaluatorSpec
@@ -184,4 +195,6 @@ test-suite spec
                     , Actor.EnsembleBuildSpec
                     , Actor.GoldenSpec
                     , Actor.OverlaySpec
+                    , FractalStream.SettingsSpec
+                    , SpecHook
   build-tool-depends: hspec-discover:hspec-discover == 2.*

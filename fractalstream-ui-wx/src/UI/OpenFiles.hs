@@ -4,6 +4,7 @@ Description  : Open the projects the operating system asks FractalStream to open
 -}
 module UI.OpenFiles
   ( onOpenFiles
+  , commandLineFiles
   ) where
 
 import Data.List (isPrefixOf)
@@ -20,12 +21,16 @@ import System.IO (utf8)
 -- which wxc passes on through its open-file handler.
 onOpenFiles :: (FilePath -> IO ()) -> IO ()
 onOpenFiles open = do
-  -- Skip options, such as the -psn_... argument that older versions of
-  -- macOS pass to programs launched from the Finder.
-  mapM_ open . filter (not . ("-" `isPrefixOf`)) =<< getArgs
+  mapM_ open =<< commandLineFiles
   -- The handler is never freed: wxc keeps it for as long as the app runs.
   handler <- wrapOpenFileHandler (\path -> GHC.peekCString utf8 path >>= open)
   setOpenFileHandler (castFunPtrToPtr handler)
+
+-- | The files FractalStream was started with. Options are skipped, such
+-- as the -psn_... argument that older versions of macOS pass to programs
+-- launched from the Finder.
+commandLineFiles :: IO [FilePath]
+commandLineFiles = filter (not . ("-" `isPrefixOf`)) <$> getArgs
 
 foreign import ccall "wrapper"
   wrapOpenFileHandler :: (CString -> IO ()) -> IO (FunPtr (CString -> IO ()))

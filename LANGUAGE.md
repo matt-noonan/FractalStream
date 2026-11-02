@@ -18,7 +18,15 @@ is a very simple script that tells FractalStream to update the value of
 
 The usual arithmetic operators `+`, `-`, `*` (multiplication), `/`, and `^` (exponentiation) are available for real and complex types. With the exception of
 `/`, these are also available for integer types. For integer division,
-use `//` instead.
+use `//` instead. A power of integers used as a real number is computed as
+one, so `3.5 * 10^(-2)` is 0.035; a power of integers that stays an integer
+is rounded to one (`2^(-1)` as an integer is 0).
+
+Numbers aren't written in scientific notation: `e` is Euler's number, so
+`2e` means 2·e. Something like `3.5e-2`, which could be read either way, is
+an error that suggests how to write what you meant: `0.035` (or
+`3.5 * 10^(-2)`), or `3.5 e - 2` with spaces to multiply by e.
+
 
 ### Comparisons
 
@@ -215,7 +223,7 @@ a : C as "a =" <- 1
 let f(z) = z^3 - a
 let newton(z) = z - f(z) / f'(z)
 
-@viewer "Newton's method" var=z size=512x512
+@viewer "Newton's method" var=z
 iterate z -> newton(z) until f(z) vanishes
 
 @tool "Trace" for="Newton's method"

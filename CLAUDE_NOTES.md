@@ -9,17 +9,18 @@ Projects are saved as YAML files.
 
 ## Package Structure
 
-Five Cabal packages, built with Stack (GHC 9.10.x):
+Six Cabal packages, built with Stack (GHC 9.10.x):
 
 ```
 fractalstream-core/           # Core library: ASTs, parsing, type system, actors, dynamic values
 fractalstream-backend-pure/   # Pure Haskell interpreter backend
 fractalstream-backend-llvm/   # LLVM JIT compiler backend (default)
+fractalstream-library/        # The built-in project library (projects/), compiled in
 fractalstream-ui-wx/          # wxWidgets UI (the main executable: FractalStream)
 fractalstream-ui-headless/    # Headless frontend (`fsrun`), no GUI dependencies
 ```
 
-`fsrun project.yaml --scenario NAME` runs a project's scripted scenario
+`fsrun project.fs --scenario NAME` runs a project's scripted scenario
 (clicks, parameter changes, viewer captures to PNG) without a GUI; see
 `SCENARIO_LANGUAGE.md`. It is the easiest way to check a change end to end,
 e.g. by rendering a viewer before and after and comparing the PNGs.
@@ -163,7 +164,7 @@ An `Ensemble` is a loaded project:
 
 `buildEnsembleFromScript` builds one from a unified script (grammar in
 `Actor.Script`); `parseEnsembleFromFile :: FilePath -> IO (Either String Ensemble)`
-loads a `.yaml` file, and `encodeEnsemble` saves one.
+loads a `.fs` file, and `encodeEnsemble` saves one.
 `runEnsemble` launches the UI for an ensemble.
 
 ### Viewer (`Actor.Viewer`, `Actor.Viewer.Complex`)
@@ -242,9 +243,9 @@ blocks defined before it (no recursion).
 is the entry point used throughout the actors.
 
 Golden tests (`fractalstream-core/test/Actor/GoldenSpec.hs`, files in
-`test/golden/`) pin the pretty-printed typed code of every example and
-project under `examples/templates/`; delete a golden file to regenerate it,
-and review the diff.
+`test/golden/`) pin the pretty-printed typed code of every example and every
+library project (`fractalstream-library/projects/`); delete a golden file to
+regenerate it, and review the diff.
 
 Key modules:
 - `Language.Parser.Tokenizer` - tokenizer
@@ -347,6 +348,34 @@ Key modules:
 A frontend supplies a `UI` record (`Actor.UI`: `newEnsemble`, `makeLayout`,
 `makeViewer`); the wx and headless frontends each provide one.
 
+wxHaskell layout rules that are easy to get wrong (see `UI.ProjectInfo` for a
+worked example):
+
+- Each layout has two independent properties: *stretch* (may its cell be given
+  more room than it needs?) and *fill mode* (does it grow to fill its cell, or
+  sit in it at its own size, aligned?). `expand` sets fill; `hstretch`/
+  `vstretch`/`stretch` set stretch; `hfill = hstretch . expand`, `fill =
+  stretch . expand`, `hfloatCentre = hstretch . alignCentre`.
+- The stretch setters *replace* both directions: `hstretch` also turns
+  vertical stretch off.
+- `row` and `column` are grids, and a grid column widens only if *every* item
+  in it stretches horizontally (rows likewise, vertically). One plain `label`
+  in a `column` pins the whole column's width. Give items that shouldn't grow
+  `hstretch` (or `hfloatCentre` etc.) so they get the room without filling it.
+- Grids and `container` work out their own stretch from their children, so
+  wrapping them in `fill` is unnecessary (and overrides that).
+
+FractalStream's own settings (`FractalStream.Settings`) are a plain YAML file,
+not wx's config: `~/Library/Application Support/FractalStream/settings.yaml`
+on macOS, `%APPDATA%\FractalStream\settings.yaml` on Windows, and
+`~/.config/fractalstream/settings.yaml` elsewhere. Every setting has a default
+and is left out of the file when it's the default; anything unreadable is a
+warning and the default; unknown keys are kept. So far there's one setting,
+`projects-folder` (the library browser's "My projects"; default
+`~/Documents/FractalStream`, see `FractalStream.Library.projectsDirectory`).
+The wx app's Preferences window (`UI.Preferences`, under the standard
+preferences menu id, so in the app menu on macOS) saves each change at once.
+
 ## Project File Format
 
 Projects are YAML files with a single top-level `script:` key holding a unified
@@ -354,12 +383,92 @@ script made of `@config`, `@common`, `@viewer`, and `@tool` stanzas, plus an
 optional `scenarios:` key for `fsrun`. (The older multi-key `setup:` /
 `configuration:` / `viewer(s):` format is no longer supported.)
 
+A `metadata:` key (`Actor.Metadata`, `ensembleMetadata`) holds a `title`, a
+`description`, `preview-commands` (scenario commands, run by
+`fsrun --update-preview`, the only `fsrun` mode that writes the project file),
+and `preview` (a base64 PNG, from `Actor.Viewer.Preview.renderPreview`, also
+used by the wx viewer menu's "Use this as preview"). Unknown keys under it
+are kept. `encodeEnsemble` writes keys in a fixed, readable order (script,
+metadata, scenarios, then the rest); see `projectYamlConfig`. A rebuild from
+an edited script uses `carryOverProjectState` to keep scenarios, metadata,
+and frontend keys.
+
+The built-in project library is `fractalstream-library/projects/`, one
+subdirectory per section (an optional leading number orders the sections and
+isn't shown). `FractalStream.Library` embeds it at compile time; it's a package
+of its own because Template Haskell has to run in a package without the LLVM
+backend (whose static libraries GHC's loader can't handle), and so that `fsrun`
+doesn't carry it. Its cabal file lists `projects/**/*.fs` as extra source
+files, so adding, removing, or changing a project rebuilds it automatically.
+`LibrarySpec` (in that package: `cd fractalstream-library && stack test`)
+checks every entry has a title, description, preview, and preview commands
+(except a hand-drawn preview listed in `handMadePreviews`, like the Blank
+project's icon), and no saved view, and that the embedded copy matches the
+directory. Previews may be transparent; the wx UI draws them over its
+background color.
+
+The wx welcome window (`UI.Welcome`) is the library browser. Opening an entry
+gives an untitled copy whose first save suggests its filename.
+
+A project whose script doesn't build still opens (`loadProjectBytes` /
+`loadProjectFile` give a `BrokenScript` with an ensemble that has the script's
+text and the file's other keys, but `ensembleBuilt = False`): the wx app opens
+it straight into the script editor, and applies its saved layout and values
+when the fixed script is rebuilt (`carryOverProjectState`). Until then, saving
+writes the edited script and keeps the layout and values as the file had them.
+Only a file that can't be read as a project at all fails to open.
+
+The browser also shows the user's own projects, from `~/Documents/FractalStream`
+(`myProjectsDirectory`, via `getUserDocumentsDirectory`), laid out like the
+library: files directly in it under "My projects", each subfolder a section.
+`scanProjectsIn` reads it at run time: lazily, when one of those sections is
+first selected (reading Documents can make macOS ask permission, which should
+happen in context), and again when the window is brought to the front. These
+open in place; one without metadata is titled by its filename and shown with
+`placeholderPreview`; one that can't be read, or whose script has an error
+(`checkProjectBytes`, which type-checks without building), is listed with the
+reason. A
+project without a file is first saved into that folder by default. The section
+called "Starting points" is special (`lsStartingPoints`): its projects are
+templates, so opening one gives a new "Untitled" project without the
+template's metadata, with the script editor open; "New project" shows that
+section.
+
+A `values:` key (`Actor.SavedValues`) holds the configuration values a
+project was left with, where they differ (by value) from its script's
+defaults: `config:` by variable name, and `tool:` by viewer title, then tool
+name, then variable name (a tool without `for=` has separate values in each
+viewer). Values are the text entered in each field (`Actor.Layout.Field`).
+Like views, these are where a project was left, so the wx app restores them
+(`applySavedValues`, before the first render) and saves them (`changedValues`),
+while `fsrun` ignores them; the core keeps the key with the frontend keys. An
+ensemble remembers its defaults when built (`ensembleValueDefaults`);
+`carryOverProjectState` carries changed values through a rebuild, and
+`resetValues` (the config window's "Reset to defaults") goes back to them.
+Library projects may not carry `values:` (`LibrarySpec`).
+
+Any other top-level key belongs to a frontend: the core keeps it verbatim in
+`ensembleFrontendProperties` and `encodeEnsemble` writes it back out, but never
+interprets it. The wx UI saves its window layout under `wx-properties:` (see
+`UI.WxProperties`): for each viewer, by title, its window's `x`/`y`, image
+`width`/`height`, `resizable`, `visible`, and its *current* `center`/
+`pixel-size`; and the configuration window's `x`/`y`. A viewer's own
+`center=`/`pixelSize=` attributes give only its *original* view, which "Original
+view" returns to. Window size, position, and resizability are not part of the
+script at all: `fsrun` renders at 600x600 unless a scenario says
+`resize viewer to`. A rebuild from the script editor keeps every window's
+layout and view (`rememberLayout`). Positions read from the project file are clamped onto the
+primary display (`keepOnPrimaryDisplay`), since wxHaskell can't tell us about
+any other display: a layout saved with a projector attached must still open
+visibly elsewhere. Positions carried over within a session (rebuilds) aren't
+clamped, so a window on a second display stays there.
+
 ```yaml
 script: |
   @config "Configuration"
   C : C as "C =" <- -0.11 + 0.78i
 
-  @viewer "Julia set" var=z size=512x512
+  @viewer "Julia set" var=z
   iterate z -> z^2 + C until z escapes
   color <- if stuck then black else rainbow(iterations / 20)
 
@@ -371,7 +480,15 @@ scenarios:
   - name: simple
     commands: |
       capture viewer "Julia set" to "julia.png"
+wx-properties:
+  viewers:
+    Julia set:
+      width: 512
+      height: 512
+      center: [0, 0]
+      pixel-size: 0.0078125
 ```
+
 
 `@config` declarations always need a type (it determines the UI widget); code
 in `@viewer` / `@tool` bodies can use `x := e` to have a type inferred.
@@ -415,8 +532,8 @@ others' grammars need the common statements and function names.
 
 The older `@setup` stanzas, `«name»` splices, `using` formula fields, and
 `code` blocks were removed in favor of `@common`; the Welcome screen's
-template flow went with them (the old templates are now ordinary example
-projects under `examples/templates/`).
+template flow went with them (the old templates are now the library's
+"Starting points", in `fractalstream-library/projects/0 Starting points/`).
 
 ## Scripting Language
 
@@ -472,6 +589,35 @@ See `LANGUAGE.md` for full docs. Key points:
 - GHC extensions used heavily: `DataKinds`, `GADTs`, `TypeFamilies`, `RankNTypes`,
   `KindSignatures`, `TypeOperators`, `ScopedTypeVariables`, `TypeApplications`
 - `-Wall -Werror` enforced in all packages
+
+## Deferred Work
+
+Things looked into and deliberately put off, with what was found, for whoever
+picks them up:
+
+- **Light / dark / follow-the-system appearance setting.** Wanted as a
+  Preferences choice (the settings file, `FractalStream.Settings`, is ready
+  for another key). Every platform's build uses wxWidgets 3.2, which can't
+  set an app's appearance: `wxApp::SetAppearance` arrived in 3.3, and 3.2 on
+  Windows has no dark mode at all (wxHaskell exposes nothing for it either).
+  Options found: on 3.2, set the app's `NSAppearance` on macOS through a
+  little Objective-C runtime FFI (applies immediately), and `GTK_THEME` on
+  Linux before wx starts (next launch, and only for themes with a dark
+  variant), with no setting offered on Windows; or move every build to
+  wxWidgets 3.3 (CI and the macOS static build; check wxHaskell against it)
+  and use `SetAppearance` everywhere. Either way, the viewer's on-screen
+  overlay hard-codes dark (`isDarkMode = True` in `UI.ProjectViewer`) and
+  must follow the chosen appearance too.
+- **Asking to save when macOS quits the app by other means.** The Quit
+  menu item (Cmd+Q) offers to save each project with unsaved changes
+  (`quitApp` in `Main.hs`), but quitting from the Dock, or at logout or
+  shutdown, doesn't go through it: wx closes the windows directly
+  (`wxApp::OSXOnShouldTerminate`), and nothing asks. Covering those needs
+  a hook into that application-level request, which wxHaskell doesn't
+  expose (likely a binding to add to the wxHaskell fork).
+- **Better parse error messages.** Errors like "I got stuck and couldn't
+  parse the input here, where I was expecting :" (for a typo like `letz`)
+  say little; improving them probably needs changes to the Earley package.
 
 ## Current Branch
 

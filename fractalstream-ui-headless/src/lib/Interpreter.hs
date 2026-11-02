@@ -13,6 +13,7 @@ See @SCENARIO_LANGUAGE.md@ for what each command means.
 -}
 module Interpreter
   ( runScenario
+  , runPreviewCommands
   ) where
 
 import FractalStream.Prelude
@@ -27,6 +28,7 @@ import Actor.Viewer
   , ViewerIssues, describeViewerIssues
   )
 import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
+import Actor.Viewer.Preview (renderPreview)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
 import Actor.Event (Event(..), EventArgument_, EventArgument(..))
@@ -49,6 +51,7 @@ import Control.Exception (SomeException, try, displayException)
 import Codec.Picture (Image, PixelRGBA8(..), imageWidth, imageHeight, pixelAt)
 
 import qualified Data.Map as Map
+import Data.ByteString (ByteString)
 import Data.IORef
 import System.IO (hPutStrLn, stderr)
 
@@ -62,19 +65,38 @@ data InterpState = InterpState
     -- (built once on selection, not re-built per event -- matters more
     -- than it might look, since building it JIT-compiles the tool's
     -- script under the LLVM backend).
+  , isPreviews      :: Maybe (IORef [ByteString])
+    -- ^ Where @capture ... as preview@ puts its image, when running a
+    -- project's @preview-commands@ ('runPreviewCommands'); 'Nothing'
+    -- for an ordinary scenario, where that command is an error.
   }
 
 -- | Run every command in order against the given project, stopping at
 -- (and reporting) the first failure.
 runScenario :: Backend -> Ensemble -> [Command] -> IO (Either String ())
-runScenario backend ensemble cmds = do
+runScenario backend ensemble = runCommands backend ensemble Nothing
+
+-- | Run a project's @metadata: preview-commands:@, returning the image
+-- its @capture ... as preview@ command made. It must make exactly one.
+runPreviewCommands :: Backend -> Ensemble -> [Command] -> IO (Either String ByteString)
+runPreviewCommands backend ensemble cmds = do
+  previews <- newIORef []
+  runCommands backend ensemble (Just previews) cmds >>= \case
+    Left err -> pure (Left err)
+    Right () -> readIORef previews >>= \case
+      [png] -> pure (Right png)
+      []    -> pure (Left "the preview commands never ran `capture viewer \"...\" as preview`")
+      _     -> pure (Left "the preview commands ran `capture viewer \"...\" as preview` more than once")
+
+runCommands :: Backend -> Ensemble -> Maybe (IORef [ByteString]) -> [Command] -> IO (Either String ())
+runCommands backend ensemble previews cmds = do
   viewersRef <- newIORef Map.empty
   ctxRef     <- newIORef Nothing
   runEnsemble backend (collectingUI viewersRef ctxRef) ensemble
   viewers <- readIORef viewersRef
   readIORef ctxRef >>= \case
     Nothing  -> pure (Left "this project has no viewers")
-    Just ctx -> go (InterpState viewers ctx Nothing Nothing) cmds
+    Just ctx -> go (InterpState viewers ctx Nothing Nothing previews) cmds
   where
     go _  []           = pure (Right ())
     go st (cmd : rest) = execCommand st cmd >>= \case
@@ -189,6 +211,17 @@ execCommand st = \case
 
   CaptureViewerBase name path -> withNamedViewer st name $ \viewer ->
     snapshotToFile viewer True path >>= traverse (warnIssues name) <&> (st <$)
+
+  CaptureViewerAsPreview name baseOnly -> case isPreviews st of
+    Nothing -> pure (Left "`capture viewer \"...\" as preview` can only be used in a project's \
+                          \`metadata: preview-commands:`, run with `fsrun <project.fs> --update-preview`")
+    Just previews -> withNamedViewer st name $ \viewer ->
+      renderPreview baseOnly viewer >>= \case
+        Left err  -> pure (Left err)
+        Right png -> do
+          modifyIORef' previews (png :)
+          pure (Right st)
+
 
   AssertPixel name (px, py) expected mtol -> withNamedViewer st name $ \viewer -> do
     r <- withRenderedViewerBuffer viewer True $ \center pixelSize dims buf -> do

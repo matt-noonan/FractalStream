@@ -3,9 +3,22 @@ module Actor.Ensemble
   ( Ensemble(..)
   , NamedScenario(..)
   , parseEnsembleFromFile
+  , parseEnsembleFromBytes
+  , LoadedProject(..)
+  , loadProjectFile
+  , loadProjectBytes
+  , readProjectMetadata
+  , checkProjectBytes
   , buildEnsembleFromScript
   , checkScript
   , encodeEnsemble
+  , carryOverProjectState
+  , FieldOwner(..)
+  , ensembleFields
+  , changedValues
+  , applySavedValues
+  , resetValues
+  , watchValues
   , formatScriptError
   , runEnsemble
 
@@ -18,6 +31,7 @@ module Actor.Ensemble
 
   ) where
 
+import FractalStream.Quoted (quoted)
 import FractalStream.Prelude
 
 import Data.DynamicValue
@@ -28,6 +42,8 @@ import Actor.Event
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Viewer
 import Actor.Viewer.Complex
+import Actor.Metadata
+import Actor.SavedValues
 import Actor.Script
 import Language.Environment
 import Language.Value hiding (Join)
@@ -45,6 +61,9 @@ import Data.Aeson (Value(..))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Yaml as YAML
+import qualified Data.Yaml.Pretty as YAMLPretty
+import Data.List (elemIndex)
+import Data.Ord (comparing)
 import qualified Data.Text as Text
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
@@ -58,6 +77,7 @@ import Language.Code (usedVarsInCode)
 import Language.Value.Evaluator (evaluate, evaluateInContext)
 
 import Control.Exception (Exception, IOException, throwIO, try)
+import System.IO (hPutStrLn, stderr)
 
 import Data.Codec
 
@@ -67,7 +87,7 @@ instance Exception BadEnsemble
 
 -- | A named, headless-runnable sequence of commands, embedded directly in
 -- a project file under a top-level @scenarios:@ list -- e.g. so a CI run
--- can do @fsrun project.yaml --scenario NAME@ instead of
+-- can do @fsrun project.fs --scenario NAME@ instead of
 -- pointing at a separate commands file. The commands themselves are kept
 -- as raw text here: the scenario language's parser
 -- (@Scenario.parseScenario@) lives in @fractalstream-ui-headless@, not
@@ -95,6 +115,27 @@ data Ensemble = Ensemble
     -- 'buildWithValidTargets' constructing the 'Ensemble' and
     -- 'buildEnsembleFromScript' (its only caller) setting the real
     -- text right after -- never observable outside this module.
+  , ensembleValueDefaults :: Variable (Map.Map (FieldOwner, String) (String, Maybe String))
+    -- ^ Each configuration field's value just after the project was
+    -- built from its script (as 'fieldText', and as 'fieldCanonical'):
+    -- what 'changedValues' compares against, and 'resetValues' goes
+    -- back to.
+  , ensembleBuilt :: Bool
+    -- ^ 'False' for a project whose script didn't build
+    -- ('loadProjectBytes'): it has the script's text and the project
+    -- file's other keys, but no configuration or viewers yet, so its
+    -- window layout and configuration values can't be read from it
+    -- (only kept as the file had them) until a fixed script is built.
+  , ensembleMetadata :: Variable ProjectMetadata
+    -- ^ The project file's @metadata:@: title, description, preview.
+  , ensembleFrontendProperties :: Variable (KM.KeyMap Aeson.Value)
+    -- ^ Every top-level key of the project file other than @script:@,
+    -- @scenarios:@, and @metadata:@, kept verbatim so that 'encodeEnsemble' writes
+    -- it back out. These hold state belonging to a particular
+    -- frontend rather than to the script itself -- e.g. the wx UI's
+    -- window geometry and current views, under @wx-properties:@ --
+    -- which the core never interprets: each frontend reads and
+    -- replaces its own key.
   }
 
 contextValuesChanged :: SomeContext DynamicValue -> Dynamic ()
@@ -129,23 +170,72 @@ buildToolContext ensembleCtx = \case
 -- not a programming error.
 parseEnsembleFromFile :: FilePath -> IO (Either String Ensemble)
 parseEnsembleFromFile path = try (BS.readFile path) >>= \case
-  Left (e :: IOException) -> pure (Left ("could not read " ++ path ++ ": " ++ show e))
+  Left (e :: IOException) -> pure (Left ("could not read " ++ quoted path ++ ": " ++ show e))
   Right contents -> do
     BS.length contents `seq` pure ()
-    -- A project's whole text lives under one top-level `script:` key
-    -- (the unified @setup@/@config@/@viewer@/@tool@ script format --
-    -- the older classic `setup:`/`configuration:`/`viewer(s):` shape
-    -- is no longer supported).
-    case YAML.decodeEither' contents of
-      Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
-        buildEnsembleFromScript (Text.unpack scriptText) >>= \case
-          Left err  -> pure (Left (formatScriptError (Text.unpack scriptText) err))
-          Right ens -> attachScenarios o ens
-      Right _  -> pure (Left (path ++ " doesn't have a top-level `script:` key -- \
-                               \this file isn't in a format FractalStream can open \
-                               \(the classic setup:/configuration:/viewer(s): project \
-                               \format is no longer supported)."))
-      Left err -> pure (Left (path ++ " isn't valid YAML: " ++ show err))
+    parseEnsembleFromBytes path contents
+
+-- | Load an 'Ensemble' from a project file's contents, which needn't
+-- have come from a file on disk at all (e.g. a project embedded in the
+-- app itself). @path@ says where they came from, in messages.
+parseEnsembleFromBytes :: String -> ByteString -> IO (Either String Ensemble)
+parseEnsembleFromBytes path contents = loadProjectBytes path contents <&> \case
+  Left err -> Left err
+  Right (Built ens) -> Right ens
+  Right (BrokenScript _ err) -> Left err
+
+-- | A project file, as loaded: either built and ready to run, or, if its
+-- script doesn't build, as much of it as can be had without its script
+-- (see 'ensembleBuilt'), along with what's wrong with the script -- so
+-- that a frontend can still offer to fix it.
+data LoadedProject
+  = Built Ensemble
+  | BrokenScript Ensemble String
+
+-- | Load a project file, like 'loadProjectBytes'.
+loadProjectFile :: FilePath -> IO (Either String LoadedProject)
+loadProjectFile path = try (BS.readFile path) >>= \case
+  Left (e :: IOException) -> pure (Left ("could not read " ++ quoted path ++ ": " ++ show e))
+  Right contents -> do
+    BS.length contents `seq` pure ()
+    loadProjectBytes path contents
+
+-- | Load a project file's contents (@path@ says where they came from, in
+-- messages). Only a file that can't be read as a project at all is an
+-- error ('Left'); one whose script doesn't build is a 'BrokenScript'.
+loadProjectBytes :: String -> ByteString -> IO (Either String LoadedProject)
+loadProjectBytes path contents =
+  -- A project's whole text lives under one top-level `script:` key
+  -- (the unified @setup@/@config@/@viewer@/@tool@ script format --
+  -- the older classic `setup:`/`configuration:`/`viewer(s):` shape
+  -- is no longer supported).
+  case YAML.decodeEither' contents of
+    Right (Object o) | Just (String scriptText) <- KM.lookup "script" o -> do
+      let src = Text.unpack scriptText
+      built <- buildEnsembleFromScript src
+      (ens, loaded) <- case built of
+        Right ens -> pure (ens, Built ens)
+        Left err -> do
+          ens <- scriptOnlyEnsemble src
+          pure (ens, BrokenScript ens (formatScriptError src err))
+      setValue' (ensembleFrontendProperties ens)
+        (foldr KM.delete o ["script", "scenarios", "metadata"])
+      attachMetadata path o ens >>= \case
+        Left err -> pure (Left err)
+        Right () -> attachScenarios o ens <&> fmap (const loaded)
+    Right _  -> pure (Left (quoted path ++ " doesn't have a top-level `script:` key -- \
+                             \this file isn't in a format FractalStream can open \
+                             \(the classic setup:/configuration:/viewer(s): project \
+                             \format is no longer supported)."))
+    Left err -> pure (Left (quoted path ++ " isn't valid YAML: " ++ show err))
+
+-- | A project with just a script's text, and nothing built from it (see
+-- 'ensembleBuilt').
+scriptOnlyEnsemble :: String -> IO Ensemble
+scriptOnlyEnsemble src =
+  Ensemble <$> newVariable Nothing <*> newVariable [] <*> newVariable []
+           <*> newVariable src <*> newVariable Map.empty <*> pure False
+           <*> newVariable noMetadata <*> newVariable KM.empty
 
 -- | A unified-script project can still carry a sibling top-level
 -- `scenarios:` key. Reading it has nothing to do with the unified-script
@@ -163,19 +253,221 @@ attachScenarios o ens = case KM.lookup "scenarios" o of
       setValue' (ensembleScenarios ens) scenarios
       pure (Right ens)
 
+-- | Check a project file's contents without building the project: that
+-- it's a project at all, and that its script reads and type-checks
+-- ('checkScript'). For saying what's wrong with a project before anyone
+-- tries to open it. The error, when there is one, shows where in the
+-- script it is, as 'formatScriptError' does.
+checkProjectBytes :: ByteString -> Either String ()
+checkProjectBytes contents = case YAML.decodeEither' contents of
+  Left err -> Left ("isn't valid YAML: " ++ show err)
+  Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
+    let src = Text.unpack scriptText
+    in left (formatScriptError src) (checkScript src)
+  Right _ -> Left "doesn't have a top-level `script:` key"
+
+-- | Just a project file's metadata, without building the project --
+
+-- for showing what a project is about (in a library of them, say)
+-- without the cost of compiling its script. A project without a
+-- @metadata:@ key has empty metadata.
+readProjectMetadata :: ByteString -> Either String ProjectMetadata
+readProjectMetadata contents = case YAML.decodeEither' contents of
+  Left err -> Left ("isn't valid YAML: " ++ show err)
+  Right (Object o) -> case KM.lookup "metadata" o of
+    Nothing -> Right noMetadata
+    Just v -> fst <$> readMetadata v
+  Right _ -> Left "isn't a FractalStream project"
+
+-- | A project's @metadata:@ key, if it has one. A preview that has to
+
+-- be ignored is reported on stderr, but doesn't stop the project from
+-- opening.
+attachMetadata :: FilePath -> KM.KeyMap Aeson.Value -> Ensemble -> IO (Either String ())
+attachMetadata path o ens = case KM.lookup "metadata" o of
+  Nothing -> pure (Right ())
+  Just v -> case readMetadata v of
+    Left err -> pure (Left ("could not read `metadata:`: " ++ err))
+    Right (md, warnings) -> do
+      forM_ warnings $ \w -> hPutStrLn stderr ("warning: " ++ quoted path ++ ": " ++ w)
+      setValue' (ensembleMetadata ens) md
+      pure (Right ())
+
+-- | Copy everything about a project that doesn't come from its script
+-- -- its scenarios, metadata, frontends' own keys, and the configuration
+-- values that differ from the old script's defaults -- from one
+-- 'Ensemble' to another, for when the project is rebuilt from an edited
+-- script, so that rebuilding (or saving the rebuilt project) doesn't
+-- lose them. A value the edited script no longer has a place for is
+-- dropped; a value that was still its default follows the edited
+-- script's default.
+carryOverProjectState :: Ensemble -> Ensemble -> IO ()
+carryOverProjectState from to = do
+  setValue' (ensembleScenarios to) =<< getDynamic (ensembleScenarios from)
+  setValue' (ensembleMetadata to) =<< getDynamic (ensembleMetadata from)
+  setValue' (ensembleFrontendProperties to) =<< getDynamic (ensembleFrontendProperties from)
+  -- A project whose script hadn't built has no values of its own to
+  -- carry over, only the ones its file was saved with: those are the
+  -- ones to put in place, now that there's somewhere to put them.
+  if ensembleBuilt from
+    then void (changedValues from >>= applySavedValues to)
+    else getDynamic (ensembleFrontendProperties from) >>= \props ->
+      either (const (pure ())) (void . applySavedValues to) (readSavedValues props)
+
+
+-- | Which configuration panel a field is in: the project's own, or one
+-- of its tools' (by viewer title, then tool name).
+data FieldOwner = ProjectConfig | ToolConfig String String
+  deriving (Eq, Ord, Show)
+
+-- | Every configuration field in a project, with where it is.
+ensembleFields :: Ensemble -> IO [(FieldOwner, Field)]
+ensembleFields Ensemble{..} = do
+  own <- getDynamic ensembleConfiguration >>= maybe (pure []) (layoutFields . coContents)
+  viewers <- getDynamic ensembleViewers
+  tools <- fmap concat . forM viewers $ \cv -> do
+    title <- fromRight "" <$> getDynamic (dyn (cvTitle cv))
+    fmap concat . mapM (\t -> do
+      name <- getDynamic (source (tiName (toolInfo t)))
+      getDynamic (toolConfig t) >>= \case
+        Nothing -> pure []
+        Just cfg -> map (ToolConfig title name,) <$> layoutFields (coContents cfg))
+      =<< getDynamic (cvTools cv)
+  pure (map (ProjectConfig,) own ++ tools)
+
+-- | The configuration values that differ from the project script's
+-- defaults (by value, not just as written: @1/2@ is the same as @0.5@).
+changedValues :: Ensemble -> IO SavedValues
+changedValues ens = do
+  defaults <- getDynamic (ensembleValueDefaults ens)
+  fields <- ensembleFields ens
+  changed <- fmap catMaybes . forM fields $ \(owner, f) -> do
+    canonical <- fieldCanonical f
+    if Just canonical == fmap snd (Map.lookup (owner, fieldName f) defaults)
+      then pure Nothing
+      else Just . (owner, fieldName f,) <$> fieldText f
+  pure SavedValues
+    { svConfig = Map.fromList [ (n, t) | (ProjectConfig, n, t) <- changed ]
+    , svTools = Map.fromListWith (Map.unionWith Map.union)
+        [ (viewer, Map.singleton tool (Map.singleton n t))
+        | (ToolConfig viewer tool, n, t) <- changed ]
+    }
+
+-- | Put saved configuration values back into a project's fields,
+-- returning a warning for each one that couldn't be (because the
+-- project no longer has that variable, or the value no longer fits it).
+applySavedValues :: Ensemble -> SavedValues -> IO [String]
+applySavedValues ens SavedValues{..} = do
+  fields <- Map.fromList . map (\(owner, f) -> ((owner, fieldName f), f)) <$> ensembleFields ens
+  let saved = [ (ProjectConfig, n, t) | (n, t) <- Map.toList svConfig ]
+           ++ [ (ToolConfig viewer tool, n, t)
+              | (viewer, tools) <- Map.toList svTools
+              , (tool, values) <- Map.toList tools
+              , (n, t) <- Map.toList values ]
+      describeField owner n = case owner of
+        ProjectConfig -> "`" ++ n ++ "`"
+        ToolConfig viewer tool -> "`" ++ n ++ "` (of the " ++ show tool
+                                  ++ " tool, in " ++ show viewer ++ ")"
+  fmap catMaybes . forM saved $ \(owner, n, t) -> case Map.lookup (owner, n) fields of
+    Nothing -> pure (Just ("ignoring a saved value for " ++ describeField owner n
+                           ++ ", which the project no longer has"))
+    Just f -> setFieldText f t <&> \case
+      Right () -> Nothing
+      Left err -> Just ("ignoring the saved value of " ++ describeField owner n
+                        ++ ", " ++ show t ++ ": " ++ err)
+
+-- | Put every configuration field back to its default from the script.
+resetValues :: Ensemble -> IO ()
+resetValues ens = do
+  defaults <- getDynamic (ensembleValueDefaults ens)
+  fields <- ensembleFields ens
+  forM_ fields $ \(owner, f) ->
+    forM_ (Map.lookup (owner, fieldName f) defaults) $ \(txt, _) ->
+      void (setFieldText f txt)
+
+-- | Run an action whenever any configuration value changes; returns an
+-- action that stops it.
+watchValues :: Ensemble -> IO () -> IO (IO ())
+watchValues ens k = do
+  fields <- ensembleFields ens
+  stops <- mapM (\(_, f) -> watchField f k) fields
+  pure (sequence_ stops)
+
+
 -- | Serialize an 'Ensemble' back to project-file bytes: its own
 -- unified-script text, verbatim, under a @script:@ key (alongside a
--- @scenarios:@ key if there are any). Every frontend's save path
+-- @scenarios:@ key if there are any, its @metadata:@ if it has any,
+-- and any frontend-specific keys from 'ensembleFrontendProperties').
+-- Every frontend's save path
 -- should go through this rather than hand-rolling the YAML itself.
 encodeEnsemble :: Ensemble -> IO ByteString
 encodeEnsemble ens = do
   scriptText <- getDynamic (ensembleSourceScript ens)
   scenarios <- getDynamic (ensembleScenarios ens)
+  frontendProperties <- getDynamic (ensembleFrontendProperties ens)
+  metadataKV <- maybe [] (\v -> [("metadata", v)]) . writeMetadata
+                <$> getDynamic (ensembleMetadata ens)
   scenariosKV <- if null scenarios
     then pure []
     else (\v -> [("scenarios", v)]) <$> encodeValue scenarios
-  pure $ YAML.encode $ Object $ KM.fromList $
-    ("script", String (Text.pack scriptText)) : scenariosKV
+  let rest = KM.union (KM.fromList (metadataKV ++ scenariosKV)) frontendProperties
+  pure $ scriptKey scriptText
+      <> (if KM.null rest then mempty
+          else YAMLPretty.encodePretty projectYamlConfig (Object rest))
+
+-- | The project file's @script:@ key, written as a YAML literal block, so
+-- that the script reads in the file just as it was written. This isn't
+-- left to the YAML encoder, because libyaml falls back to a double-quoted
+-- string, with every newline escaped, for any text containing a character
+-- it doesn't count as printable -- which includes every character outside
+-- Unicode's Basic Multilingual Plane, like the mathematical italic letters
+-- (e.g. U+1D456, 𝑖) a script can use as names. The encoder still handles
+-- the rare script a literal block can't hold at all (a carriage return,
+-- say, or other control characters).
+scriptKey :: String -> ByteString
+scriptKey src
+  | null src || any unsuitable src = YAML.encode (Object (KM.singleton "script" (String (Text.pack src))))
+  | otherwise = UTF8.fromString $
+      "script: |" ++ indentation ++ chomping ++ "\n" ++ concatMap indent ls
+  where
+    ls = lines src
+    unsuitable c = (c < ' ' && c /= '\n' && c /= '\t')
+                || c `elem` ['\DEL', '\x85', '\xFEFF', '\x2028', '\x2029']
+    -- A literal block keeps exactly one final newline, unless told to
+    -- strip it ("-") or keep all of them ("+").
+    chomping = case length (takeWhile (== '\n') (reverse src)) of
+      0 -> "-"
+      1 -> ""
+      _ -> "+"
+    -- YAML works out a block's indentation from its first line with
+    -- anything on it; if that line itself starts with a space (or a line
+    -- before it is all spaces), the indentation has to be given instead.
+    (blankLines, contentLines) = span (all (== ' ')) ls
+    indentation
+      | any (not . null) blankLines = "2"
+      | (c : _) : _ <- contentLines, c == ' ' || c == '\t' = "2"
+      | otherwise = ""
+    indent l = (if null l then "" else "  " ++ l) ++ "\n"
+
+
+-- | Write a project file's keys in an order meant for people reading
+-- it: the script first, then what describes it, then everything else;
+-- and within those, the more important keys first. Keys not listed
+-- here come after the listed ones, alphabetically.
+projectYamlConfig :: YAMLPretty.Config
+projectYamlConfig = YAMLPretty.setConfCompare (comparing rank) YAMLPretty.defConfig
+  where
+    rank k = (fromMaybe (length keyOrder) (elemIndex k keyOrder), k)
+    keyOrder =
+      [ "script", "metadata", "scenarios", "values"
+      , "title", "description", "preview-commands", "preview"
+      , "name", "commands"
+      , "config", "tool"
+
+      , "viewers", "configuration"
+      , "x", "y", "width", "height"
+      ]
+
 
 -- | Render a unified-script build error the same way every other
 -- source-range-tagged parse\/typecheck error in this codebase is shown:
@@ -225,6 +517,11 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
         Left err  -> pure (Left err)
         Right ens -> do
           setValue' (ensembleSourceScript ens) scriptText
+          defaults <- ensembleFields ens >>= mapM (\(owner, f) -> do
+            txt <- fieldText f
+            canonical <- fieldCanonical f
+            pure ((owner, fieldName f), (txt, canonical)))
+          setValue' (ensembleValueDefaults ens) (Map.fromList defaults)
           pure (Right ens)
 
 -- | A pure, allocation-free check of a unified project script: parses
@@ -439,10 +736,10 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
             Nothing                -> pure (Right (SomeContext EmptyContext))
             Just Configuration{..} -> layoutContext coContents
 
-      eViewers <- forM viewers $ \v ->
+      eViewers <- forM (zip [0 ..] viewers) $ \(n, v) ->
         buildComplexViewer contextDyn
           [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ]
-          v
+          n v
 
       case sequence eViewers of
         Left err -> pure (Left err)
@@ -450,7 +747,11 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
           viewersVar      <- newVariable viewerList
           scenariosVar    <- newVariable []
           sourceScriptVar <- newVariable ""
-          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar))
+          defaultsVar     <- newVariable Map.empty
+          metadataVar     <- newVariable noMetadata
+          frontendVar     <- newVariable KM.empty
+          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar defaultsVar True metadataVar frontendVar))
+
 
 ------------------------------------------------------------
 -- Stanza field extraction (total, so no incomplete-pattern risk)
@@ -459,15 +760,12 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
 data ViewerFields = ViewerFields
   { vfTitle     :: String
   , vfVar       :: String
-  , vfSize      :: Dimensions
   , vfCenter    :: Maybe String
   , vfPixelSize :: Maybe String
   , vfIterLimit :: Maybe String
   , vfEscape    :: Maybe String
   , vfVanish    :: Maybe String
   , vfPixelVar  :: Maybe String
-  , vfResizable :: Bool
-  , vfPosition  :: Dimensions
   , vfPrepare   :: Maybe ([(String, SomeType)], ParsedCode)
   , vfCode      :: ParsedCode
   }
@@ -475,10 +773,10 @@ data ViewerFields = ViewerFields
 viewerFields :: ParsedStanza -> Maybe ViewerFields
 viewerFields = \case
   ViewerStanza{..} -> Just ViewerFields
-    { vfTitle = vsTitle, vfVar = vsVar, vfSize = vsSize
+    { vfTitle = vsTitle, vfVar = vsVar
     , vfCenter = vsCenter, vfPixelSize = vsPixelSize
     , vfIterLimit = vsIterLimit, vfEscape = vsEscape, vfVanish = vsVanish
-    , vfPixelVar = vsPixelVar, vfResizable = vsResizable, vfPosition = vsPosition
+    , vfPixelVar = vsPixelVar
     , vfPrepare = vsPrepare
     , vfCode = vsCode
     }
@@ -598,7 +896,7 @@ configStmtToLayout :: ConfigStmt -> IO (Either (SourceRange, String) Layout)
 configStmtToLayout = \case
   ConfigText s   -> Right . PlainText <$> newVariable s
   ConfigButton _ s -> Right . Button <$> newVariable s
-  ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdLabel cdChoices
+  ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdDefaultSrc cdLabel cdChoices
   ConfigRow stmts -> do
     results <- mapM configStmtToLayout stmts
     case sequence results of
@@ -625,9 +923,9 @@ configStmtNames = \case
   ConfigText{}       -> []
   ConfigButton{}     -> []
 
-buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> Maybe String -> Maybe [String]
+buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> String -> Maybe String -> Maybe [String]
                 -> IO (Either (SourceRange, String) Layout)
-buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoices = withKnownType ty $
+buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue defaultSrc mlabel mchoices = withKnownType ty $
   let lbl = Label (fromMaybe name mlabel)
 
       evalDefault = case atType @'[] defaultValue ty of
@@ -669,8 +967,22 @@ buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue mlabel mchoi
       labelV     <- newVariable lbl
       exprNameP  <- constParsed name (Right name)
       exprTypeP  <- constParsed (ppType ty) (Right (SomeType ty))
-      exprValueP <- reactiveSomeValue EmptyEnvProxy ty (toUserString ty v)
+      -- The field starts out showing the default as the script writes it
+      -- (`1/2`, not `0.50000000000000`), except where a field's text is
+      -- written differently from a script's: text (no quotes) and lists
+      -- (no brackets). Or if the script's text is spread over several
+      -- lines, or somehow doesn't read back in the field.
+      let rendered = toUserString ty v
+          asWritten = case ty of
+            TextType -> False
+            ListType _ -> False
+            _ -> not (null defaultSrc) && '\n' `notElem` defaultSrc
+      exprValueP <- reactiveSomeValue EmptyEnvProxy ty (if asWritten then defaultSrc else rendered)
+      getDynamic (dyn exprValueP) >>= \case
+        Right _ -> pure ()
+        Left _ -> setValue' (source exprValueP) rendered
       pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprValueP)))
+
 
 -- | One @\@config@ stanza's statements, stacked vertically.
 buildStanzaBody :: [ConfigStmt] -> IO (Either (SourceRange, String) Layout)
@@ -794,11 +1106,19 @@ checkPrepCode outputNames env prepParsedCode = do
   left (NoSourceRange,) (checkDefiniteAssignment (Set.fromList outputNames) prepCode0)
   pure (env', prepCode0)
 
+-- | Build the @n@th (counting from 0) @\@viewer@ of a script. Its
+-- window's size, position, and resizability start from fixed defaults
+-- here; a frontend that remembers them (the wx UI, via
+-- @wx-properties:@) replaces them before showing the viewer. The
+-- default positions are staggered by @n@ -- the first viewer opens at
+-- @100x100@, the next at @130x130@, and so on -- so that several
+-- viewers don't all open stacked exactly on top of one another.
 buildComplexViewer :: Dynamic (Either String (SomeContext DynamicValue))
                     -> [ToolFields]
+                    -> Int
                     -> ViewerFields
                     -> IO (Either (SourceRange, String) ComplexViewer)
-buildComplexViewer contextDyn myTools ViewerFields{..} =
+buildComplexViewer contextDyn myTools n ViewerFields{..} =
   parseConstantE ComplexType (fromMaybe "0" vfCenter) >>=? \centerVal ->
   parseConstantE RealType (fromMaybe "1/128" vfPixelSize) >>=? \pixelVal ->
   parseMaybeAttrValue vfIterLimit >>=? \mIterPV ->
@@ -806,9 +1126,10 @@ buildComplexViewer contextDyn myTools ViewerFields{..} =
   parseMaybeAttrValue vfVanish >>=? \mVanPV -> do
 
     cvTitleP     <- constParsed vfTitle (Right vfTitle)
-    cvSizeV      <- newVariable vfSize
-    cvPositionV  <- newVariable vfPosition
-    cvCanResizeV <- newVariable vfResizable
+    cvSizeV      <- newVariable (Dimensions (600, 600))
+    cvPositionV  <- newVariable (Dimensions (100 + 30 * n, 100 + 30 * n))
+    cvCanResizeV <- newVariable True
+
     cvCenterP    <- constParsed (fromMaybe "0" vfCenter) (Right centerVal)
     cvPixelSizeP <- constParsed (fromMaybe "1/128" vfPixelSize) (Right pixelVal)
     cvCoordP     <- constParsed vfVar (Right vfVar)
@@ -1056,8 +1377,11 @@ makeComplexViewer project backend mkViewer someContext configArgs showConfig Com
 
     vCanResize <- getDynamic cvCanResize
     x0 :+ y0 <- throwLeft (getDynamic cvCenter)
-    vCenter <- newVariable (x0, y0)
-    vPixelSize <- throwLeft (getDynamic cvPixelSize) >>= newVariable
+    let vOriginalCenter = (x0, y0)
+    vOriginalPixelSize <- throwLeft (getDynamic cvPixelSize)
+    vCenter <- newVariable vOriginalCenter
+    vPixelSize <- newVariable vOriginalPixelSize
+
     let vSaveView = pure ()
 
     (vDrawCmds, vDrawCmdsChanged, vDrawSink) <- makeToolRunnerForLayer (bToolRunnerFactory backend)

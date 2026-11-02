@@ -7,7 +7,9 @@ import Actor.Ensemble
 import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Tool (Tool(..), ToolInfo(..))
-import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..))
+import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..), Field(..))
+import Actor.SavedValues
+import qualified Data.Map as Map
 import Data.Color (red, blue)
 import Actor.Configuration (Configuration(..))
 import Actor.Event (runParsedToolScript)
@@ -27,6 +29,17 @@ import Data.Aeson (Value(..))
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Text as Text
 import qualified Data.Vector as V
+import System.Directory (getTemporaryDirectory, removeFile)
+import System.FilePath ((</>))
+import Control.Monad (forM_, void)
+import Actor.Metadata (ProjectMetadata(..))
+import Codec.Picture (encodePng, generateImage, PixelRGB8(..))
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS8
+import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Base64 as B64
+
+
 
 build :: String -> IO (Either String Ensemble)
 build src = buildEnsembleFromScript src >>= \case
@@ -50,7 +63,7 @@ spec = do
 
     it "builds a single viewer with no config/setup/tools" $
       shouldBuild [r|
-@viewer "Mandelbrot Set" var=C size="500x500"
+@viewer "Mandelbrot Set" var=C
 z : C <- 0
 iterate z -> z^2 + C until z escapes
 color <- if stuck then black else rainbow(iterations / 20)
@@ -63,7 +76,7 @@ color <- if stuck then black else rainbow(iterations / 20)
 
     it "attaches a tool to its named viewer" $
       shouldBuild [r|
-@viewer "Mandelbrot Set" var=C size="500x500"
+@viewer "Mandelbrot Set" var=C
 z : C <- 0
 iterate z -> z^2 + C until z escapes
 
@@ -82,7 +95,7 @@ on click-or-drag:
 
     it "wires the new viewer/tool attributes through to the built values" $
       shouldBuild [r|
-@viewer "Mandelbrot Set" var=C size="500x500" pixelVar=px resizable="false" position="10x20"
+@viewer "Mandelbrot Set" var=C pixelVar=px
 z : C <- 0
 iterate z -> z^2 + C until z escapes
 
@@ -91,10 +104,6 @@ on refresh:
   pass
 |] $ \ens -> do
         [viewer] <- getDynamic (ensembleViewers ens)
-        resizable <- getDynamic (cvCanResize viewer)
-        resizable `shouldBe` False
-        position <- getDynamic (cvPosition viewer)
-        position `shouldBe` Dimensions (10, 20)
         pixelVar <- getDynamic (cvPixel viewer)
         pixelVar `shouldBe` Right (Just "px")
         [tool] <- getDynamic (cvTools viewer)
@@ -107,7 +116,7 @@ on refresh:
 
     it "builds a tool's own declarations into its own configuration panel" $
       shouldBuild [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 
 @tool "Demo" for="V" shortcut="x"
@@ -152,7 +161,7 @@ on refresh:
 
     it "defaults a tool with no declarations to no configuration panel" $
       shouldBuild [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 
 @tool "Demo" for="V"
@@ -170,7 +179,7 @@ on refresh:
 
     it "defaults a tool's target to the sole viewer when `for=` is omitted" $
       shouldBuild [r|
-@viewer "Only One" var=z size="100x100"
+@viewer "Only One" var=z
 pass
 
 @tool "T"
@@ -192,7 +201,7 @@ b : Z <- 2
 @config "Dynamics"
 c : Z <- 3
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 |] $ \ens -> do
         mcfg <- getDynamic (ensembleConfiguration ens)
@@ -372,7 +381,7 @@ xs : List of Z <- [1, 2, 3]
        \\"Iteration settings\" tab, with the right types and defaults, \
        \even when the script declares no @config at all" $
       shouldBuild [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 |] $ \ens -> do
         Just cfg <- getDynamic (ensembleConfiguration ens)
@@ -408,7 +417,7 @@ myLimit : Z <- 50
 myEscape : R <- 5
 myVanish : R <- 0.01
 
-@viewer "V" var=z size="100x100" limit="myLimit" escape="myEscape" vanish="myVanish" pixelVar="myPixel"
+@viewer "V" var=z limit="myLimit" escape="myEscape" vanish="myVanish" pixelVar="myPixel"
 color <- if myPixel > 0 then black else white
 |] $ \_ -> pure ()
 
@@ -418,7 +427,7 @@ color <- if myPixel > 0 then black else white
 @config "Configuration"
 max_iters : Z <- 50
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 |] `shouldFailWith` "defined twice"
 
@@ -426,7 +435,7 @@ pass
        \automatically-provided `pixel_size` (regression: it previously had \
        \no way to name the per-pixel scale at all for this handler kind)" $
       shouldBuild [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 color <- black
 
 @tool "T" shortcut="t"
@@ -435,13 +444,13 @@ on refresh:
 |] $ \_ -> pure ()
 
     it "remembers its own source text, for a frontend's save path to write back out" $
-      let src = "@viewer \"V\" var=z size=\"100x100\"\npass\n"
+      let src = "@viewer \"V\" var=z\npass\n"
       in shouldBuild src $ \ens -> do
            msrc <- getDynamic (ensembleSourceScript ens)
            msrc `shouldBe` src
 
     it "encodeEnsemble writes a script-built ensemble's text back out verbatim" $
-      let src = "@viewer \"V\" var=z size=\"100x100\"\npass\n"
+      let src = "@viewer \"V\" var=z\npass\n"
       in shouldBuild src $ \ens -> do
            bytes <- encodeEnsemble ens
            case YAML.decodeEither' bytes of
@@ -451,9 +460,26 @@ on refresh:
                _ -> expectationFailure "expected a `script:` key with a string value"
              Right _ -> expectationFailure "expected a YAML object"
 
+    it "encodeEnsemble writes the script as a readable block that reads back \
+       \exactly, even with characters libyaml won't put in one by itself" $
+      forM_ [ ("a character outside the Basic Multilingual Plane",
+                 "@viewer \"V\" var=z\n# 𝑖 is U+1D456\npass\n", True)
+            , ("no final newline", "@viewer \"V\" var=z\npass", True)
+            , ("extra final newlines", "@viewer \"V\" var=z\npass\n\n\n", True)
+            , ("trailing spaces", "@viewer \"V\" var=z   \npass  \n", True)
+            , ("a tab", "@viewer \"V\" var=z\n# a\ttab\npass\n", True)
+            , ("a carriage return", "@viewer \"V\" var=z\r\npass\r\n", False)
+            ] $ \(what, src, readable) -> shouldBuild src $ \ens -> do
+        bytes <- encodeEnsemble ens
+        (what, BS.isPrefixOf "script: |" bytes) `shouldBe` (what, readable)
+        case YAML.decodeEither' bytes of
+          Right (Object o) -> (what, KM.lookup "script" o) `shouldBe` (what, Just (String (Text.pack src)))
+          other -> expectationFailure (what ++ ": " ++ show (fmap (const ()) other))
+
     it "encodeEnsemble omits scenarios: when there are none, and includes it \
+
        \with the scenario's name and commands when there are" $
-      let src = "@viewer \"V\" var=z size=\"100x100\"\npass\n"
+      let src = "@viewer \"V\" var=z\npass\n"
       in shouldBuild src $ \ens -> do
            bytesEmpty <- encodeEnsemble ens
            case YAML.decodeEither' bytesEmpty of
@@ -472,9 +498,262 @@ on refresh:
                other -> expectationFailure ("expected a one-element scenarios list, got " ++ show other)
              _ -> expectationFailure "expected a YAML object"
 
+    it "keeps a project file's other top-level keys (e.g. a frontend's \
+       \`wx-properties:`) and writes them back out unchanged" $ do
+      dir <- getTemporaryDirectory
+      let path = dir </> "fractalstream-frontend-properties-test.fs"
+      writeFile path (unlines
+        [ "script: |"
+        , "  @viewer \"V\" var=z"
+        , "  pass"
+        , "wx-properties:"
+        , "  viewers:"
+        , "    V:"
+        , "      width: 320"
+        , "      center: [1.5, -2]"
+        ])
+      result <- parseEnsembleFromFile path
+      removeFile path
+      case result of
+        Left err -> expectationFailure err
+        Right ens -> do
+          props <- getDynamic (ensembleFrontendProperties ens)
+          KM.keys props `shouldBe` ["wx-properties"]
+          bytes <- encodeEnsemble ens
+          case YAML.decodeEither' bytes of
+            Right (Object o) ->
+              KM.lookup "wx-properties" o `shouldBe` KM.lookup "wx-properties" props
+            _ -> expectationFailure "expected a YAML object"
+
+    it "reads and writes a project's metadata, keeping unknown metadata \
+       \keys, and writes the script first" $ do
+      let png = BSL.toStrict (encodePng (generateImage (\_ _ -> PixelRGB8 1 2 3) 2 2))
+      result <- withProjectFile (unlines
+        [ "metadata:"
+        , "  title: A title"
+        , "  description: |"
+        , "    Line one."
+        , "    Line two."
+        , "  preview-commands: |"
+        , "    capture viewer \"V\" as preview"
+        , "  preview: " ++ BS8.unpack (B64.encode png)
+        , "  author: Someone"
+        , "script: |"
+        , "  @viewer \"V\" var=z"
+        , "  pass"
+        ]) parseEnsembleFromFile
+      case result of
+        Left err -> expectationFailure err
+        Right ens -> do
+          md <- getDynamic (ensembleMetadata ens)
+          mdTitle md `shouldBe` Just "A title"
+          mdDescription md `shouldBe` Just "Line one.\nLine two.\n"
+          mdPreviewCommands md `shouldBe` Just "capture viewer \"V\" as preview\n"
+          mdPreview md `shouldBe` Just png
+          KM.keys (mdOther md) `shouldBe` ["author"]
+          props <- getDynamic (ensembleFrontendProperties ens)
+          KM.keys props `shouldBe` []
+          bytes <- encodeEnsemble ens
+          BS8.unpack (BS.take 7 bytes) `shouldBe` "script:"
+          reread <- withProjectFile (BS8.unpack bytes) parseEnsembleFromFile
+          case reread of
+            Left err -> expectationFailure err
+            Right ens' -> do
+              md' <- getDynamic (ensembleMetadata ens')
+              md' `shouldBe` md
+
+    it "drops a metadata preview that isn't a base64 PNG, but still opens \
+       \the project" $ do
+      result <- withProjectFile (unlines
+        [ "script: |"
+        , "  @viewer \"V\" var=z"
+        , "  pass"
+        , "metadata:"
+        , "  title: Still here"
+        , "  preview: " ++ BS8.unpack (B64.encode "not a png")
+        ]) parseEnsembleFromFile
+      case result of
+        Left err -> expectationFailure err
+        Right ens -> do
+          md <- getDynamic (ensembleMetadata ens)
+          mdTitle md `shouldBe` Just "Still here"
+          mdPreview md `shouldBe` Nothing
+
+    it "carries a project's scenarios, metadata, and frontend keys over \
+       \to a rebuilt ensemble" $ do
+      result <- withProjectFile (unlines
+        [ "script: |"
+        , "  @viewer \"V\" var=z"
+        , "  pass"
+        , "metadata:"
+        , "  title: Carried"
+        , "scenarios:"
+        , "  - name: s"
+        , "    commands: |"
+        , "      select viewer \"V\""
+        , "wx-properties:"
+        , "  viewers: {}"
+        ]) parseEnsembleFromFile
+      Right rebuilt <- buildEnsembleFromScript "@viewer \"V\" var=z\npass\n"
+      case result of
+        Left err -> expectationFailure err
+        Right ens -> do
+          carryOverProjectState ens rebuilt
+          md <- getDynamic (ensembleMetadata rebuilt)
+          mdTitle md `shouldBe` Just "Carried"
+          scenarios <- getDynamic (ensembleScenarios rebuilt)
+          length scenarios `shouldBe` 1
+          props <- getDynamic (ensembleFrontendProperties rebuilt)
+          KM.keys props `shouldBe` ["wx-properties"]
+
+    it "saves the configuration values that differ from the script's \
+       \defaults (by value), and puts them back, along with tools' values" $ do
+      let src = unlines
+            [ "@config \"Configuration\""
+            , "a : R as \"a\" <- 1/2"
+            , "b : C as \"b\" <- 0"
+            , "show_it : Boolean as \"Show it\" <- false"
+            , "@viewer \"V\" var=z"
+            , "pass"
+            , "@tool \"T\" for=\"V\""
+            , "n : Z as \"n\" <- 3"
+            , "on click:"
+            , "  pass"
+            ]
+          field ens owner name = do
+            fs <- ensembleFields ens
+            case [ f | (o, f) <- fs, o == owner, fieldName f == name ] of
+              [f] -> pure f
+              _ -> fail ("no field " ++ name)
+      Right ens <- buildEnsembleFromScript src
+      changedValues ens >>= (`shouldBe` noSavedValues)
+      -- the same value written differently isn't a change
+      (\f -> void (setFieldText f "0.5")) =<< field ens ProjectConfig "a"
+      changedValues ens >>= (`shouldBe` noSavedValues)
+      (\f -> void (setFieldText f "e^(2 pi i / 3)")) =<< field ens ProjectConfig "b"
+      (\f -> void (setFieldText f "true")) =<< field ens ProjectConfig "show_it"
+      (\f -> void (setFieldText f "7")) =<< field ens (ToolConfig "V" "T") "n"
+      let expected = SavedValues
+            (Map.fromList [("b", "e^(2 pi i / 3)"), ("show_it", "true")])
+            (Map.singleton "V" (Map.singleton "T" (Map.singleton "n" "7")))
+      changedValues ens >>= (`shouldBe` expected)
+      -- written to the file and read back
+      props <- writeSavedValues <$> changedValues ens <*> pure KM.empty
+      readSavedValues props `shouldBe` Right expected
+      -- and put back into a freshly built copy of the project
+      Right fresh <- buildEnsembleFromScript src
+      applySavedValues fresh expected >>= (`shouldBe` [])
+      changedValues fresh >>= (`shouldBe` expected)
+      (fieldText =<< field fresh ProjectConfig "b") >>= (`shouldBe` "e^(2 pi i / 3)")
+      -- reset goes back to the script's defaults, as the script writes them
+      resetValues fresh
+      changedValues fresh >>= (`shouldBe` noSavedValues)
+      (fieldText =<< field fresh ProjectConfig "a") >>= (`shouldBe` "1/2")
+
+    it "starts each text field with its default as the script writes it, \
+       \except text and lists, whose fields write them differently" $ do
+      Right ens <- buildEnsembleFromScript $ unlines
+        [ "@config \"Configuration\""
+        , "a : R as \"a\" <- 1/2"
+        , "b : C as \"b\" <- e^(2 pi i / 3)"
+        , "p : R x R as \"p\" <- (1, 2.5)"
+        , "t : Text as \"t\" <- \"hello\""
+        , "xs : List of Z as \"xs\" <- [1, 2, 3]"
+        , "@viewer \"V\" var=z"
+        , "pass"
+        ]
+      fields <- ensembleFields ens
+      texts <- mapM (\(_, f) -> (fieldName f,) <$> fieldText f) fields
+      texts `shouldBe`
+        [ ("a", "1/2"), ("b", "e^(2 pi i / 3)"), ("p", "(1, 2.5)")
+        , ("t", "hello"), ("xs", "1, 2, 3")
+        , ("max_iters", "100"), ("escape_radius", "10"), ("vanishing_radius", "0.0001") ]
+
+    it "loads a project whose script doesn't build, keeping its file's \
+       \other keys, and puts its saved values in place once it's fixed" $ do
+      let file script = BS8.pack $ unlines
+            [ "script: |"
+            , "  @config \"Configuration\""
+            , "  a : R as \"a\" <- 1"
+            , "  @viewer \"V\" var=z"
+            , "  " ++ script
+            , "metadata:"
+            , "  title: Kept"
+            , "values:"
+            , "  config:"
+            , "    a: \"5\""
+            ]
+      loadProjectBytes "broken.fs" (file "letz x = 1") >>= \case
+        Right (BrokenScript ens err) -> do
+          err `shouldContain` "letz"
+          ensembleBuilt ens `shouldBe` False
+          getDynamic (ensembleSourceScript ens) >>= (`shouldContain` "letz x = 1")
+          mdTitle <$> getDynamic (ensembleMetadata ens) >>= (`shouldBe` Just "Kept")
+          KM.keys <$> getDynamic (ensembleFrontendProperties ens) >>= (`shouldBe` ["values"])
+          -- fixed and rebuilt: the file's saved value goes in
+          Right fixed <- buildEnsembleFromScript
+            "@config \"Configuration\"\na : R as \"a\" <- 1\n@viewer \"V\" var=z\npass\n"
+          carryOverProjectState ens fixed
+          changedValues fixed >>= (`shouldBe` SavedValues (Map.singleton "a" "5") Map.empty)
+        Right (Built _) -> expectationFailure "expected the script not to build"
+        Left err -> expectationFailure err
+      loadProjectBytes "fine.fs" (file "pass") >>= \case
+        Right (Built ens) -> ensembleBuilt ens `shouldBe` True
+        _ -> expectationFailure "expected the project to build"
+      loadProjectBytes "junk.fs" "script: [unclosed\n" >>= \case
+        Left _ -> pure ()
+        Right _ -> expectationFailure "expected a file that isn't valid YAML to be an error"
+
+    it "reports saved values it can't put back, and leaves those fields alone" $ do
+
+
+      Right ens <- buildEnsembleFromScript
+        "@config \"Configuration\"\na : R as \"a\" <- 1\n@viewer \"V\" var=z\npass\n"
+      warnings <- applySavedValues ens
+        (SavedValues (Map.fromList [("a", "not a number"), ("gone", "1")]) Map.empty)
+      length warnings `shouldBe` 2
+      changedValues ens >>= (`shouldBe` noSavedValues)
+
+    it "carries changed configuration values over to a rebuilt project, \
+       \leaving untouched ones to the edited script's defaults" $ do
+      let script defaultB = "@config \"Configuration\"\na : R as \"a\" <- 1\nb : R as \"b\" <- "
+                            ++ defaultB ++ "\n@viewer \"V\" var=z\npass\n"
+      Right old <- buildEnsembleFromScript (script "2")
+      fs <- ensembleFields old
+      forM_ [ f | (ProjectConfig, f) <- fs, fieldName f == "a" ] $ \f -> void (setFieldText f "10")
+      Right new <- buildEnsembleFromScript (script "3")
+      carryOverProjectState old new
+      changedValues new >>= (`shouldBe` SavedValues (Map.singleton "a" "10") Map.empty)
+      newFields <- ensembleFields new
+      forM_ [ f | (ProjectConfig, f) <- newFields, fieldName f == "b" ] $ \f ->
+        fieldText f >>= (`shouldBe` "3")
+
+
+
+    it "gives viewers default window geometry, staggering each one's \
+
+       \position 30 pixels further than the last" $
+      shouldBuild [r|
+@viewer "A"
+pass
+
+@viewer "B"
+pass
+
+@viewer "C"
+pass
+|] $ \ens -> do
+        viewers <- getDynamic (ensembleViewers ens)
+        positions <- mapM (getDynamic . cvPosition) viewers
+        positions `shouldBe` map Dimensions [(100, 100), (130, 130), (160, 160)]
+        sizes <- mapM (getDynamic . cvSize) viewers
+        sizes `shouldBe` replicate 3 (Dimensions (600, 600))
+        resizable <- mapM (getDynamic . cvCanResize) viewers
+        resizable `shouldBe` replicate 3 True
+
     it "rejects a tool targeting an unknown viewer" $
       [r|
-@viewer "A" var=z size="100x100"
+@viewer "A" var=z
 pass
 
 @tool "T" for="B"
@@ -484,10 +763,10 @@ on refresh:
 
     it "rejects a tool with no `for=` when there's more than one viewer" $
       [r|
-@viewer "A" var=z size="100x100"
+@viewer "A" var=z
 pass
 
-@viewer "B" var=z size="100x100"
+@viewer "B" var=z
 pass
 
 @tool "T"
@@ -497,10 +776,10 @@ on refresh:
 
     it "rejects two viewers sharing a title" $
       [r|
-@viewer "A" var=z size="100x100"
+@viewer "A" var=z
 pass
 
-@viewer "A" var=w size="100x100"
+@viewer "A" var=w
 pass
 |] `shouldFailWith` "share the title `A`"
 
@@ -515,13 +794,13 @@ foo : Z <- "hello"
 @config "C"
 foo : Z as "Pick" choice {"a", "b"} <- 5
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 |] `shouldFailWith` "out of range"
 
     it "rejects a viewer body that references an undeclared variable" $
       [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 w <- w + 1
 |] `shouldFailWith` "No variable named"
 
@@ -531,7 +810,7 @@ w <- w + 1
 @config "C"
 myColor : Color <- white
 
-@viewer "Voronoi" var=z size="150x150"
+@viewer "Voronoi" var=z
 prepare computed : Color:
   computed <- myColor
 color <- if |z| < 1 then black else computed
@@ -547,7 +826,7 @@ color <- if |z| < 1 then black else computed
     it "accepts a `prepare` block whose output is assigned conditionally, in both \
        \branches of an if/else" $
       shouldBuild [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color:
   if 1 < 2:
     computed <- black
@@ -565,7 +844,7 @@ color <- computed
 
     it "rejects a `prepare` output that's never assigned" $
       [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color:
   pass
 color <- black
@@ -573,7 +852,7 @@ color <- black
 
     it "rejects a `prepare` output read before it's assigned" $
       [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color:
   color <- computed
   computed <- black
@@ -582,7 +861,7 @@ color <- black
 
     it "rejects a `prepare` output only assigned in one branch of an if/else" $
       [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color:
   if 1 < 2:
     computed <- black
@@ -594,7 +873,7 @@ color <- black
     it "rejects a `prepare` output only assigned inside a loop (conservative: no \
        \credit for a loop body even though this one always runs)" $
       [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color:
   repeat:
     computed <- black
@@ -604,7 +883,7 @@ color <- black
 
     it "rejects two `prepare` outputs sharing a name" $
       [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color, computed : Color:
   computed <- black
 color <- black
@@ -615,7 +894,7 @@ color <- black
 @config "C"
 computed : Color <- white
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color:
   computed <- black
 color <- computed
@@ -651,7 +930,7 @@ color <- computed
 
     it "accepts a simple, valid single-viewer script" $
       checkAccepts [r|
-@viewer "Mandelbrot Set" var=C size="500x500"
+@viewer "Mandelbrot Set" var=C
 z : C <- 0
 iterate z -> z^2 + C until z escapes
 color <- if stuck then black else rainbow(iterations / 20)
@@ -660,7 +939,7 @@ color <- if stuck then black else rainbow(iterations / 20)
     it "catches a viewer body referencing an undeclared variable, live, \
        \without building an Ensemble" $
       checkFailsWith [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 w <- w + 1
 |] "No variable named"
 
@@ -669,7 +948,7 @@ w <- w + 1
 @config "C"
 radius : R <- 2
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 color <- if |z| > raduis then black else white
 |] "No variable named"
 
@@ -678,7 +957,7 @@ color <- if |z| > raduis then black else white
 @config "C"
 radius : R <- 2
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 color <- if |z| > radius then black else white
 |]
 
@@ -693,13 +972,13 @@ foo : Z <- "hello"
 @config "C"
 foo : Z as "Pick" choice {"a", "b"} <- 5
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 |] "out of range"
 
     it "still catches cross-stanza errors (unchanged from before this was extended)" $ do
       checkFailsWith [r|
-@viewer "A" var=z size="100x100"
+@viewer "A" var=z
 pass
 
 @tool "T" for="B"
@@ -707,17 +986,17 @@ on refresh:
   pass
 |] "targets an unknown viewer `B`"
       checkFailsWith [r|
-@viewer "A" var=z size="100x100"
+@viewer "A" var=z
 pass
 
-@viewer "A" var=w size="100x100"
+@viewer "A" var=w
 pass
 |] "share the title `A`"
 
     it "agrees with buildEnsembleFromScript on acceptance/rejection, across a \
        \mix of valid and invalid scripts" $ do
       agree [r|
-@viewer "Mandelbrot Set" var=C size="500x500"
+@viewer "Mandelbrot Set" var=C
 z : C <- 0
 iterate z -> z^2 + C until z escapes
 |]
@@ -725,11 +1004,11 @@ iterate z -> z^2 + C until z escapes
 @config "C"
 radius : R <- 2
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 color <- if |z| > radius then black else white
 |]
       agree [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 w <- w + 1
 |]
       agree [r|
@@ -740,21 +1019,21 @@ foo : Z <- "hello"
 @config "C"
 foo : Z as "Pick" choice {"a", "b"} <- 5
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 |]
       agree [r|
 @common
 let f(z) = z^2 + C
 
-@viewer "Mandelbrot" var=C size="100x100"
+@viewer "Mandelbrot" var=C
 z : C <- 0
 iterate z -> f(z) until z escapes
 |]
 
     it "catches a tool body referencing an undeclared variable" $
       checkFailsWith [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 
 @tool "T" for="V"
@@ -767,7 +1046,7 @@ on click:
 @config "C"
 center : C <- 0
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 
 @tool "T" for="V"
@@ -777,7 +1056,7 @@ on click:
 
     it "accepts a tool body that references the tool's own declaration" $
       checkAccepts [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 
 @tool "T" for="V"
@@ -793,7 +1072,7 @@ on click:
 @config "C"
 center : C <- 0
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 
 @tool "T" for="V"
@@ -804,7 +1083,7 @@ on click:
 
     it "catches a tool error at build time, not only when the tool is first used" $
       agree [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 
 @tool "T" for="V"
@@ -818,7 +1097,7 @@ on click:
     it "accepts a `prepare` block whose declared output is correctly assigned \
        \and used by the main viewer code" $
       agree [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color:
   computed <- black
 color <- computed
@@ -826,7 +1105,7 @@ color <- computed
 
     it "catches a `prepare` output that's never assigned" $
       agree [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color:
   pass
 color <- black
@@ -834,7 +1113,7 @@ color <- black
 
     it "catches a `prepare` output read before it's assigned" $
       agree [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color:
   color <- computed
   computed <- black
@@ -843,7 +1122,7 @@ color <- black
 
     it "catches two `prepare` outputs sharing a name" $
       agree [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color, computed : Color:
   computed <- black
 color <- black
@@ -854,7 +1133,7 @@ color <- black
 @config "C"
 computed : Color <- white
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare computed : Color:
   computed <- black
 color <- computed
@@ -890,7 +1169,7 @@ a : C as "a =" <- 1
 let f(z) = z^3 - a
 step := 1
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 iterate z -> z - step * f(z) / f'(z) until f(z) vanishes
 
 @tool "T" for="V"
@@ -903,7 +1182,7 @@ on click:
 
     it "can come after the stanzas that use it, and can be split up" $
       accepts [r|
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 color <- if g(z) < 1 then black else white
 
 @common
@@ -918,7 +1197,7 @@ let g(w) = f(w) / 2
 @common
 let f(z) = |z|
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare r : R:
   r <- f(-2)
 color <- if |z| < r then black else white
@@ -929,7 +1208,7 @@ color <- if |z| < r then black else white
 @common
 k := 2
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 
 @tool "T" for="V"
@@ -946,7 +1225,7 @@ on click:
 let g(w) = w + z
 c := 2
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare r : R:
   r <- c
 color <- if |g(z)| < r then black else white
@@ -962,7 +1241,7 @@ on click:
 @common
 let g(w) = w + z
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 prepare r : R:
   r <- |g(1)|
 color <- if r < 1 then black else white
@@ -976,7 +1255,7 @@ unused := 4
 let f(t) = a t
 let g(t) = f(t) + 1
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 color <- if |g(z)| < 1 then black else white
 |]
       code `shouldSatisfy` isInfixOf "let `a` = 3"
@@ -987,7 +1266,7 @@ color <- if |g(z)| < 1 then black else white
 @common
 erase
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 |] "can only contain variable declarations"
       rejects [r|
@@ -995,7 +1274,7 @@ pass
 let f(z) = z
 color <- black
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 |] "can only contain variable declarations"
 
@@ -1004,7 +1283,7 @@ pass
 @common bogus=1
 let f(z) = z
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 pass
 |] "bogus"
 
@@ -1023,7 +1302,7 @@ define trace:
     z <- z^2 + 0.25
   until z escapes
 
-@viewer "V" var=z size="100x100"
+@viewer "V" var=z
 iterate z -> z^2 + 0.25 until z escapes
 run shade(blue)
 
@@ -1036,3 +1315,14 @@ on click:
       code `shouldSatisfy` isInfixOf "blend("
       -- `trace` uses drawing commands, but only the tool runs it
       code `shouldNotSatisfy` isInfixOf "point"
+
+-- | Write a project file's text to a temporary file, run an action on
+-- its path, and remove it again.
+withProjectFile :: String -> (FilePath -> IO a) -> IO a
+withProjectFile contents action = do
+  dir <- getTemporaryDirectory
+  let path = dir </> "fractalstream-ensemble-build-test.fs"
+  writeFile path contents
+  result <- action path
+  removeFile path
+  pure result

@@ -12,8 +12,12 @@
 -- reactive).
 module UI.ProjectScriptEditor
   ( editProjectScript
+  , ScriptEditorHooks(..)
   ) where
 
+import Data.IORef
+import Data.Unique (Unique, newUnique)
+import Graphics.UI.WXCore.Events (windowGetOnDestroy, windowOnDestroy)
 import FractalStream.Prelude hiding (get)
 
 import Actor.UI (UI)
@@ -23,6 +27,7 @@ import Actor.Layout (CodeString(..))
 import Backend (Backend)
 import UI.CodeEditor (stanzaHeaderStyle, editorOffsetMap)
 import UI.Widgets (scriptWidget, wxWatchDynamic)
+import UI.WxProperties (WxLayout, rememberLayout)
 import Data.DynamicValue
 
 import Graphics.UI.WX hiding (pt, when, grey, Color, Object, Layout, Vertical, Horizontal)
@@ -33,12 +38,28 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as Utf8
 import qualified Data.Map as Map
 
+-- | How the script editor reaches the rest of its project's session.
+data ScriptEditorHooks = ScriptEditorHooks
+  { sehAfterClosingProject :: IO ()
+    -- ^ Run if closing this editor closes the whole project (see below).
+  , sehDraft :: IORef (Maybe (Unique, IO String))
+    -- ^ Where the open editor (if any) offers its text, for saving.
+  , sehMarkUnsaved :: IO ()
+  , sehAddMenuBar :: forall a. Frame a -> IO ()
+    -- ^ Give the editor its project's menu bar (on macOS, where Command+S
+    -- then saves this project rather than whichever one's menu bar was
+    -- showing) or just its keyboard shortcuts (elsewhere).
+  }
+
 -- | Open the whole-project script editor, or explain why there isn't
 -- one to open. The project's own session keeps the live 'Ensemble' in
 -- @currentEnsemble@ (not a fixed value: a successful rebuild here
 -- replaces it) and @ui@ is built lazily, referring to this very
 -- function, so a window opened after a rebuild can itself trigger
 -- another one.
+--
+-- @hooks@ connect the editor to the rest of its project's session (see
+-- 'ScriptEditorHooks').
 --
 -- FORMERLY A CRITICAL BUG, believed fixed (see the comment on the
 -- `windowDestroy` call below for the root cause and fix; confirmed
@@ -79,14 +100,33 @@ import qualified Data.Map as Map
 -- might be GUI reentrancy from closing `f` inside one of its own
 -- widget's event handlers. See git history on this file if that
 -- pattern is ever wanted again for something else.)
-editProjectScript :: Backend -> Window a -> Variable Ensemble -> UI -> IO ()
-editProjectScript backend projectWindow currentEnsemble ui = do
+editProjectScript :: Backend -> Window a -> ScriptEditorHooks -> WxLayout -> Variable Ensemble -> UI -> IO ()
+editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEnsemble ui = do
   prj <- getDynamic currentEnsemble
   srcText <- getDynamic (ensembleSourceScript prj)
 
   f <- frameEx frameDefaultStyle
          [ text := "Edit project script", visible := False ] projectWindow
   p <- panel f []
+
+  -- A project whose script has never built (one opened with an error
+  -- in its script) has no windows but this editor, so closing the
+  -- editor closes the project, rather than leave it open with nothing
+  -- to show for it. The project is closed just after the editor, by a
+  -- one-shot timer, rather than from inside the editor's own closing.
+  -- (A rebuild destroys the editor without "closing" it, so this never
+  -- fires for a project that's just been successfully rebuilt.)
+  set f [ on closing := do
+            built <- ensembleBuilt <$> getDynamic currentEnsemble
+            unless built $ do
+              closer <- timer projectWindow [ interval := 1 ]
+              set closer [ on command := do
+                             set closer [ enabled := False ]
+                             void (windowClose projectWindow True)
+                             sehAfterClosingProject ]
+
+            propagateEvent ]
+
 
   -- 'checkScript' is pure (parse + cross-stanza-reference check,
   -- no allocation), so -- unlike 'buildEnsembleFromScript' -- it
@@ -96,6 +136,23 @@ editProjectScript backend projectWindow currentEnsemble ui = do
   srcVar <- newVariable (CodeString srcText)
   scriptCheck <- newMapped (pure (\(CodeString s) -> checkScript s)) srcVar
   (ce, liveErrorText) <- scriptWidget p scriptCheck
+
+  -- While this editor is open, what's in it is the project's script, as
+  -- far as saving goes, whether or not it's been rebuilt yet (saving
+  -- and running are separate, as in any editor); so editing it is an
+  -- unsaved change, and the project's shortcuts (Ctrl+S, or Command+S,
+  -- to save, ...) work from here.
+  token <- newUnique
+  writeIORef sehDraft (Just (token, styledTextCtrlGetText ce))
+  previousOnDestroy <- windowGetOnDestroy f
+  windowOnDestroy f $ do
+    -- (Unless another editor for this project has taken over since.)
+    modifyIORef' sehDraft $ \case
+      Just (t, _) | t == token -> Nothing
+      other -> other
+    previousOnDestroy
+  void (watchDynamic srcVar (const sehMarkUnsaved))
+  sehAddMenuBar f
 
   -- Stanza-header styling has no counterpart in a single viewer's
   -- own code (which never has `@`-lines), so 'scriptWidget' can't
@@ -145,8 +202,18 @@ editProjectScript backend projectWindow currentEnsemble ui = do
           -- one actually wants, unlike a user's own accidental
           -- click. `f` is itself a child of `projectWindow`, so
           -- it's already included in this sweep.
+          --
+          -- Remember how every window was left first, so that the
+          -- rebuilt ones come back the same way rather than at their
+          -- defaults; and carry over everything about the project that
+          -- isn't in its script (scenarios, metadata, frontends' own
+          -- keys), since a script alone has none of it.
+          rememberLayout wxLayout
           windowChildren projectWindow >>= mapM_ windowDestroy
+          oldEns <- getDynamic currentEnsemble
+          carryOverProjectState oldEns newEns
           setValue' currentEnsemble newEns
+
           runEnsemble backend ui newEns
     ]
 

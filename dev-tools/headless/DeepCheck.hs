@@ -13,7 +13,7 @@
 -- Not wired into any package/build yet -- run via, from
 -- fractalstream-backend-pure/:
 --
---   echo ':main /path/to/project1.yaml /path/to/project2.yaml' | \
+--   echo ':main /path/to/project1.fs /path/to/project2.fs' | \
 --     stack ghci fractalstream-backend-pure:lib \
 --       --ghci-options /path/to/this/file/DeepCheck.hs
 --

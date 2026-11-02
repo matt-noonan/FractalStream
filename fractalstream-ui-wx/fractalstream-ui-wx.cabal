@@ -84,13 +84,21 @@ executable FractalStream
                        UI.Layout
                        UI.Menu
                        UI.OpenFiles
+                       UI.SingleInstance
                        UI.ProjectActions
                        UI.Session
                        UI.Welcome
                        UI.Widgets
+                       UI.WxProperties
+                       UI.ProjectInfo
+                       UI.PreviewImage
+                       UI.LibraryGrid
+                       UI.ShowInFileManager
+                       UI.Preferences
 
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
+                     , fractalstream-library
                      , random
                      , array
                      , wxcore
@@ -113,6 +121,11 @@ executable FractalStream
                      , utf8-string
                      , microlens
                      , microlens-th
+                     , filepath
+                     , JuicyPixels
+                     , process
+                     , directory
+                     , network
 
   -- A GUI program, without a console window. GHC's default manifest is left
   -- out, since the Windows resources Setup.hs links in (windows/*.rc)

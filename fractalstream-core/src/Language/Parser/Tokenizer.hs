@@ -30,6 +30,11 @@ data Token
   | Bar
   | Identifier String
   | Junk Char
+  | ScientificNotation String
+    -- ^ A number written like @3.5e-2@: what scientific notation would
+    -- make of it isn't what it means here (where e is Euler's number,
+    -- so it reads as 3.5e - 2), so no grammar accepts it, and
+    -- 'Language.Parser.parse' reports it with an explanation instead.
   | OpenParen
   | CloseParen
   | OpenBracket
@@ -267,6 +272,14 @@ tokenize' = \case
         sr = mconcat (srq : map snd body)
     in SRToken (Quoted txt) sr : tokenize' etc'
 
+  -- Something that looks like scientific notation (@3.5e-2@, @2e5@, no
+  -- spaces anywhere) gets a token of its own, so that it can be
+  -- reported rather than silently read as 3.5e - 2.
+  cs@(d:_)
+    | isDigit (fst d)
+    , Just (sci, rest) <- scientific cs ->
+        SRToken (ScientificNotation (map fst sci)) (mconcat (map snd sci)) : tokenize' rest
+
   -- Tokenize positive numbers
   cs@(d:_)
     | isDigit (fst d) ->
@@ -279,6 +292,7 @@ tokenize' = \case
                    : tokenize' (dropWhile (isDigit . fst) cs')
           cs' -> SRToken (NumberI (read $ map fst ds)) (mconcat $ map snd ds)
                  : tokenize' cs'
+
 
   -- Tokenize the ⁻, ⁰, ¹, ², ³, ⁴, ⁵, ⁶, ⁷, ⁸, ⁹ superscripts
   (('⁻',sr):cs@(d:_))
@@ -353,3 +367,26 @@ hasLineContinuation line = case dropWhile (isSpace . fst) (reverse line) of
   ('.',_):('.',_):('.',_):line' -> Just (reverse line')
   ('…',_):line' -> Just (reverse line')
   _ -> Nothing
+
+-- | Split a number that looks like scientific notation off the front of
+-- the input: digits, optionally a decimal point and more digits, then an
+-- @e@ or @E@, optionally a sign, and at least one digit, all with no
+-- spaces (e.g. @3.5e-2@ or @2e5@). Written with spaces, as in @3.5 e - 2@,
+-- it's ordinary arithmetic with Euler's number, and isn't split off.
+scientific :: SRString -> Maybe (SRString, SRString)
+scientific cs =
+  let (whole, afterWhole) = span (isDigit . fst) cs
+      (fraction, afterNumber) = case afterWhole of
+        (p@('.', _) : more@(d : _))
+          | isDigit (fst d) -> let (ds, rest) = span (isDigit . fst) more in (p : ds, rest)
+        _ -> ([], afterWhole)
+  in case afterNumber of
+       (e : afterE) | fst e `elem` ("eE" :: String) ->
+         let (sign, afterSign) = case afterE of
+               (s : rest) | fst s `elem` ("+-" :: String) -> ([s], rest)
+               _ -> ([], afterE)
+         in case span (isDigit . fst) afterSign of
+              (digits@(_ : _), rest) | not (null whole) ->
+                Just (whole ++ fraction ++ [e] ++ sign ++ digits, rest)
+              _ -> Nothing
+       _ -> Nothing

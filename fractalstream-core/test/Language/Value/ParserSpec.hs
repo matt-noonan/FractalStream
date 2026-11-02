@@ -43,7 +43,46 @@ spec = do
       parses5 `shouldBe` Right 42
       parses6 `shouldBe` Right 3
 
+    it "rejects numbers in scientific notation, explaining how to write \
+       \the number (or arithmetic with e) instead" $ do
+      let err s = either id (const "parsed") (parseF s)
+      err "3.5e-2" `shouldContain` "`3.5e-2` looks like scientific notation"
+      err "3.5e-2" `shouldContain` "Write 0.035 (or 3.5 * 10^(-2)) for the number, \
+                                    \or add spaces, `3.5 e - 2`, to multiply by e."
+      err "1 + 2e5" `shouldContain` "Write 200000 (or 2 * 10^5) for the number."
+      err "4.57763671875e-5" `shouldContain` "Write 0.0000457763671875 "
+      err "1E+3" `shouldContain` "Write 1000 (or 1 * 10^3) for the number, \
+                                  \or add spaces, `1 E + 3`, to multiply by E."
+      -- and what the message suggests writing does mean that
+      parseF "0.035" `shouldBe` Right 0.035
+      (\x -> abs (x - 0.035) < 1e-15) <$> parseF "3.5 * 10^(-2)" `shouldBe` Right True
+
+      parseF "3.5 e - 2" `shouldBe` Right (3.5 * exp 1 - 2)
+
+    it "computes an integer power used as a real or complex number as a \
+       \real power, so a negative exponent doesn't round it to 0" $ do
+      -- (to within an ulp or so: it's computed by C's pow, which on
+      -- Windows gives 10^(-2) as 0.010000000000000002)
+      let near expected x = abs (x - expected) < 1e-15
+      near 0.01 <$> parseF "10^(-2)" `shouldBe` Right True
+      parseF "1 / 2^(-1)" `shouldBe` Right 2
+      parseF "(-2)^3" `shouldBe` Right (-8)
+      (\(re :+ im) -> near 0.01 re && im == 0) <$> eval (parseValue endOfDecls ComplexType "10^(-2)")
+        `shouldBe` Right True
+      -- an integer power that stays an integer is unchanged
+      parseI "2^10" `shouldBe` Right 1024
+      parseI "2^(-1)" `shouldBe` Right 0
+
+    it "still reads e next to a number, with no exponent, as Euler's number" $ do
+
+      parseF "2e" `shouldBe` Right (2 * exp 1)
+      parseF "2e - 1" `shouldBe` Right (2 * exp 1 - 1)
+      parseF "2 e-1" `shouldBe` Right (2 * exp 1 - 1)
+      (\x -> abs (x - 2 * exp 2) < 1e-9) <$> parseF "2e^2" `shouldBe` Right True
+
+
     it "can parse tuples" $ do
+
       let ty = PairType IntegerType IntegerType
           parses = parseValue EmptyEnvProxy ty "(1 + 2, 3 * 4)"
       eval parses `shouldBe` Right (3, 12)
@@ -84,7 +123,10 @@ spec = do
       parseI "3² + 1" `shouldBe` Right 10
       parseI "2¹⁰" `shouldBe` Right 1024
       parseF "2.0⁻¹" `shouldBe` Right 0.5
-      parseF "2⁻¹" `shouldBe` Right 0
+      -- an integer power used as a real number is computed as one
+      parseF "2⁻¹" `shouldBe` Right 0.5
+      parseI "2⁻¹" `shouldBe` Right 0
+
 
     it "parses boolean expressions with expected precedence" $ do
       let parses1 = parseB "true or false and false"

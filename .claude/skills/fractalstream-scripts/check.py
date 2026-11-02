@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check a FractalStream project headlessly, the way a person would try it.
 
-    python3 check.py project.yaml [output-dir]
+    python3 check.py project.fs [output-dir]
 
 Renders every viewer, then for each tool selects it on its viewer, clicks,
 double-clicks, drags and refreshes at the viewer's center (so runtime errors

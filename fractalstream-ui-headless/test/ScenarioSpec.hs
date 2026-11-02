@@ -175,7 +175,20 @@ spec = describe "parseScenario" $ do
       CaptureViewerBase n f -> (n, f) `shouldBe` ("Mandelbrot set", "out.png")
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
+  it "parses capture viewer ... as preview" $
+    onlyCommand [r|capture viewer "Mandelbrot set" as preview
+|] $ \case
+      CaptureViewerAsPreview n baseOnly -> (n, baseOnly) `shouldBe` ("Mandelbrot set", False)
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses capture viewer ... base as preview" $
+    onlyCommand [r|capture viewer "Mandelbrot set" base as preview
+|] $ \case
+      CaptureViewerAsPreview n baseOnly -> (n, baseOnly) `shouldBe` ("Mandelbrot set", True)
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
   it "parses assert ... is ... without a tolerance" $
+
     onlyCommand [r|assert viewer "Mandelbrot set" pixel (128, 128) is (0, 0, 0)
 |] $ \case
       AssertPixel n px color tol -> do
@@ -204,7 +217,13 @@ capture viewer "Mandelbrot set" to "trace.png"
       Left (_, err) -> expectationFailure ("parse failed: " ++ err)
       Right cmds -> length cmds `shouldBe` 5
 
+  it "rejects a number in scientific notation, saying how to write it" $
+    case parseScenario "set viewer pixel size to 3.86e-4\n" of
+      Left (_, err) -> err `shouldContain` "Write 0.000386 (or 3.86 * 10^(-4)) for the number"
+      Right _ -> expectationFailure "expected `3.86e-4` to be rejected"
+
   it "rejects an unknown command" $
+
     shouldFailToParse [r|frobnicate viewer "x"
 |]
 
@@ -231,4 +250,5 @@ describeShape = \case
   WaitForViewer{}      -> "WaitForViewer"
   CaptureViewer{}      -> "CaptureViewer"
   CaptureViewerBase{}  -> "CaptureViewerBase"
+  CaptureViewerAsPreview{} -> "CaptureViewerAsPreview"
   AssertPixel{}        -> "AssertPixel"

@@ -86,13 +86,36 @@ with the pixel's point bound to a complex variable, and must set `color`.
 | Attribute | Default | Meaning |
 |---|---|---|
 | `var=` | `z` | name of the pixel's complex coordinate. Can be a `@config` variable's name (e.g. `var=C` with `C` in `@config`): inside this viewer, it then means the pixel instead of the config value. This is how parameter-plane viewers are made. |
-| `center=` | `0` | initial center; quote anything but a plain number: `center="-0.75 + 0.1i"` |
-| `pixelSize=` | `1/128` | model width of one pixel (zoom); `1/200`, `0.005` |
-| `size=` | `600x600` | window size in pixels |
+| `center=` | `0` | original center ("Original view" returns here); quote anything but a plain number: `center="-0.75 + 0.1i"` |
+| `pixelSize=` | `1/128` | model width of one pixel (zoom) in the original view; `1/200`, `0.005` |
 | `limit=`, `escape=`, `vanish=` | `max_iters`, `escape_radius`, `vanishing_radius` | name a different (config) variable to use as the loop limit / escape radius / vanishing radius in this viewer |
 | `pixelVar=` | `pixel_size` | name under which the current pixel size is visible |
-| `resizable=` | `true` | |
-| `position=` | staggered | window position, `100x50` |
+
+There are no `size=`, `position=`, or `resizable=` attributes (they're
+rejected): window geometry isn't part of the script. Viewers open at 600x600;
+the wx app saves each window's size, position, and current view in the project
+file under a top-level `wx-properties:` key, e.g.
+
+```yaml
+wx-properties:
+  viewers:
+    "Julia set":          # viewer title
+      width: 512          # image size in pixels
+      height: 512
+      x: 100              # window position
+      y: 50
+      resizable: false    # default true
+      visible: false      # window closed; default true
+      center: [-0.75, 0.1]   # current view (the script's center= is the original)
+      pixel-size: 0.005
+  configuration: { x: 40, y: 80 }
+```
+
+Every field is optional, and the app moves windows back onto the primary display
+if `x`/`y` would put them off it. `fsrun` ignores all of it: a scenario that needs a
+particular size or view says `resize viewer to 512x512`, `set viewer center
+to ...`, `set viewer pixel size to ...`.
+
 
 Inside a viewer:
 - in scope: the coordinate (`z` or `var=`), all `@config` variables
@@ -213,8 +236,12 @@ Numbers widen automatically Z → R → C wherever needed (`k := 0` then
 `/` always produces a real (`7 / 2` is 3.5); `//` is integer division;
 `mod(a, b)` works on integers and reals. A cast is written `(e : T)`.
 
-**No scientific notation**: `1e-6` parses as `1·e − 6` (e is Euler's
-number) without any error. Write `0.000001` or `1/1000000`.
+**No scientific notation**: `1e-6` (or `3.5e-2`, `2e5`, `1E-6`) is an error,
+since `e` is Euler's number; the message says what to write instead. Write
+`0.000001` or `10^(-6)`. (`2e`, `2e - 1`, and `2e^x` still mean Euler's
+number.) A power of integers used as a real is computed as a real:
+`3.5 * 10^(-2)` is 0.035, while `2^(-1)` as an integer is 0.
+
 
 **Reserved words** that can't be variable or function names: `e`, `i`,
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`, `let`,
@@ -351,9 +378,10 @@ Built from `fractalstream-ui-headless` (`stack build` there; locate it with
 `stack exec which fsrun`).
 
 ```
-fsrun project.yaml --snapshot "Viewer title" --output out.png
-fsrun project.yaml --commands commands.txt
-fsrun project.yaml --scenario "name"      # from the project's scenarios:
+fsrun project.fs --snapshot "Viewer title" --output out.png
+fsrun project.fs --commands commands.txt
+fsrun project.fs --scenario "name"      # from the project's scenarios:
+fsrun project.fs --update-preview       # runs metadata: preview-commands:
 ```
 
 Command language (one per line, `#` comments): `select viewer "T"`,
@@ -365,6 +393,25 @@ Command language (one per line, `#` comments): `select viewer "T"`,
 `capture viewer "T" to "f.png"` (with tool drawings),
 `capture viewer "T" base to "f.png"` (without),
 `assert viewer "T" pixel (px, py) is (r, g, b) [within tol]`.
+
+A project can also carry a `metadata:` key, for FractalStream's library of
+projects: a `title`, a plain-text `description`, and `preview-commands`
+that make its preview image. Give a new project all three:
+
+```yaml
+metadata:
+  title: Newton's method for z^3 - 1
+  description: |
+    Basins of attraction of Newton's method, colored by root.
+  preview-commands: |
+    select viewer "Newton basins"
+    capture viewer "Newton basins" as preview
+```
+
+then run `fsrun project.fs --update-preview`, which renders the preview
+(128 px on the long side) and writes it into the file as `preview:`
+(base64 PNG; never write that by hand). `capture viewer "T" as preview`
+(or `... base as preview`) is only allowed in `preview-commands`.
 Points are `x + y i` or `(x, y)`. Pixel (0, 0) is the top-left corner; with
 the defaults, model point 0 is pixel (300, 300) and one unit is 128 pixels.
 
