@@ -83,6 +83,7 @@ executable FractalStream
                        UI.ProjectScriptEditor
                        UI.Layout
                        UI.Menu
+                       UI.OpenFiles
                        UI.ProjectActions
                        UI.Session
                        UI.Welcome

@@ -40,13 +40,26 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ChangesEnvironment=yes
+ChangesAssociations=yes
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "addtopath"; Description: "Add the fsrun command-line tool to the PATH"; GroupDescription: "Command-line tool:"
+Name: "fileassoc"; Description: "Open .fs files with FractalStream"; GroupDescription: "File associations:"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+
+; FractalStream projects (.fs files). FractalStream is always offered under
+; "Open with"; the fileassoc task also makes it the default for .fs files
+; (which are F# source files too, so the user may prefer to leave that off).
+; HKA is HKLM for all-users installs and HKCU for per-user ones.
+[Registry]
+Root: HKA; Subkey: "Software\Classes\FractalStream.Project"; ValueType: string; ValueName: ""; ValueData: "FractalStream project"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\FractalStream.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\FractalStream.exe,0"
+Root: HKA; Subkey: "Software\Classes\FractalStream.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\FractalStream.exe"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\.fs\OpenWithProgids"; ValueType: string; ValueName: "FractalStream.Project"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.fs"; ValueType: string; ValueName: ""; ValueData: "FractalStream.Project"; Flags: uninsdeletevalue; Tasks: fileassoc
 
 [Icons]
 Name: "{autoprograms}\FractalStream"; Filename: "{app}\FractalStream.exe"

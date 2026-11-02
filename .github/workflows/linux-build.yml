@@ -23,6 +23,11 @@ on:
         default: ''
         type: string
 
+env:
+  # The commit of github.com/matt-noonan/wxHaskell-3.2 to build wxc from.
+  # wxc's cache is keyed on it, so changing it rebuilds wxc.
+  WXC_COMMIT: bcee48ccf51e013f1b65127f785fb96f9306b311
+
 jobs:
   build:
 
@@ -70,13 +75,14 @@ jobs:
       id: cache-wxc
       uses: actions/cache/restore@v4
       with:
-        key: ${{ runner.os }}-cache-wxc
+        key: ${{ runner.os }}-cache-wxc-${{ env.WXC_COMMIT }}
         path: wxHaskell-3.2
 
     - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
       name: Build wxc from wxHaskell
       run: |
         git clone https://github.com/matt-noonan/wxHaskell-3.2.git
+        git -C wxHaskell-3.2 checkout -q "$WXC_COMMIT"
         cd wxHaskell-3.2/wxc
         ./generate-version-header.sh
         mkdir build
@@ -88,7 +94,7 @@ jobs:
       name: Save build of wxc
       uses: actions/cache/save@v4
       with:
-        key: ${{ runner.os }}-cache-wxc
+        key: ${{ runner.os }}-cache-wxc-${{ env.WXC_COMMIT }}
         path: wxHaskell-3.2
 
     - name: Install wxc

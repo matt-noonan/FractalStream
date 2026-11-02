@@ -33,5 +33,45 @@
       <key>MallocNanoZone</key>
       <string>0</string>
     </dict>
+    <!-- FractalStream projects (.fs files): declare the type, and open it. -->
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+      <dict>
+        <key>UTTypeIdentifier</key>
+        <string>org.haskell.FractalStream.project</string>
+        <key>UTTypeDescription</key>
+        <string>FractalStream project</string>
+        <key>UTTypeConformsTo</key>
+        <array>
+          <string>public.plain-text</string>
+        </array>
+        <key>UTTypeIconFile</key>
+        <string>FS.icns</string>
+        <key>UTTypeTagSpecification</key>
+        <dict>
+          <key>public.filename-extension</key>
+          <array>
+            <string>fs</string>
+          </array>
+        </dict>
+      </dict>
+    </array>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleTypeName</key>
+        <string>FractalStream project</string>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>LSHandlerRank</key>
+        <string>Owner</string>
+        <key>CFBundleTypeIconFile</key>
+        <string>FS.icns</string>
+        <key>LSItemContentTypes</key>
+        <array>
+          <string>org.haskell.FractalStream.project</string>
+        </array>
+      </dict>
+    </array>
   </dict>
 </plist>

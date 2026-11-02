@@ -38,6 +38,11 @@ on:
 # with. The LLVM build then runs the backend's tests and renders a project
 # with fsrun, to check that the JIT works on Windows.
 
+env:
+  # The commit of github.com/matt-noonan/wxHaskell-3.2 to build wxc from.
+  # wxc's cache is keyed on it, so changing it rebuilds wxc.
+  WXC_COMMIT: bcee48ccf51e013f1b65127f785fb96f9306b311
+
 jobs:
   build:
 
@@ -104,7 +109,7 @@ jobs:
       id: cache-wxc
       uses: actions/cache@v4
       with:
-        key: ${{ runner.os }}-cache-wxc-dll
+        key: ${{ runner.os }}-cache-wxc-dll-${{ env.WXC_COMMIT }}
         path: wxc-prefix
 
     - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
@@ -115,6 +120,8 @@ jobs:
         mkdir -p "$PREFIX/bin" "$PREFIX/lib" "$PREFIX/include"
 
         git clone https://github.com/matt-noonan/wxHaskell-3.2.git
+
+        git -C wxHaskell-3.2 checkout -q "$WXC_COMMIT"
         cd wxHaskell-3.2/wxc
         ./generate-version-header.sh
 

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The MIME type for FractalStream projects (.fs files), for Linux desktops.
+     .fs is also used for F# source files (text/x-fsharp), so this glob has a
+     higher weight than the default 50. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-fractalstream-project">
+    <comment>FractalStream project</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.fs" weight="60"/>
+  </mime-type>
+</mime-info>
