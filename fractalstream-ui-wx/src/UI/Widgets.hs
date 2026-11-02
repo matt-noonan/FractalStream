@@ -357,9 +357,18 @@ scriptWidget p scriptCode = do
                          writeIORef lastText new
                          updateFoldLevels ce new
                          setValue (source scriptCode) (CodeString new) ]
-  wxWatchDynamic p (source scriptCode) $ \(CodeString newText) -> do
+  -- Show the script when it's changed from elsewhere. wxWatchDynamic
+  -- runs this up to 100ms after the change, so it also hears, late, about
+  -- the changes this editor made itself, by which time there may be more
+  -- typing in the editor; replacing the editor's text then would throw
+  -- that typing away, and put the cursor at the start. So the script's
+  -- current text (not the text this was called with, which may be older)
+  -- is only shown if it's something this editor didn't write.
+  wxWatchDynamic p (source scriptCode) $ \_ -> do
+    CodeString newText <- getDynamic (source scriptCode)
+    ours <- readIORef lastText
     oldText <- styledTextCtrlGetText ce
-    when (oldText /= newText) $ do
+    when (newText /= ours && newText /= oldText) $ do
       writeIORef lastText newText
       styledTextCtrlSetText ce newText
       updateFoldLevels ce newText
