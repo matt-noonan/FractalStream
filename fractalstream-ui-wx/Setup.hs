@@ -12,7 +12,7 @@ import Distribution.Simple.Setup hiding (Flag)
 import qualified System.Info as System
 import Data.Either (partitionEithers)
 import Data.List (isPrefixOf, isSuffixOf)
-import System.Directory (getCurrentDirectory)
+import System.Directory (createDirectoryIfMissing, copyFile, getCurrentDirectory)
 import System.FilePath ((</>))
 
 main :: IO ()
@@ -30,8 +30,17 @@ linuxApp = AppImage
   , Linux.appDesktop = "FractalStream.desktop"
   , Linux.appIcons = ["FS_64x64x32.png", "FS_128x128x32.png", "FS_256x256x32.png"]
   , Linux.appResources = []
-  , Linux.appDirCustomize = Nothing
+  , Linux.appDirCustomize = Just installMimeType
   }
+
+-- | Put the MIME type for FractalStream projects (.fs files), which
+-- FractalStream.desktop says it opens, where desktop integration tools
+-- (appimaged, AppImageLauncher) look for it in the AppImage.
+installMimeType :: Linux.AppDirCustomize
+installMimeType appDir _ _ _ _ = do
+  let dir = appDir </> "usr" </> "share" </> "mime" </> "packages"
+  createDirectoryIfMissing True dir
+  copyFile "fractalstream-mime.xml" (dir </> "fractalstream.xml")
 
 macApp :: MacApp
 macApp = MacApp "FractalStream"

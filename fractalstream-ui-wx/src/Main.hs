@@ -8,6 +8,7 @@ module Main where
 
 import UI.ProjectActions
 import UI.Menu
+import UI.OpenFiles (onOpenFiles)
 import UI.ProjectViewer (viewProject)
 import UI.ProjectScriptEditor (editProjectScript)
 import UI.Session
@@ -155,6 +156,9 @@ runApp = withBackend $ \backend -> start $ do
         | otherwise = pure ()
 
   welcome ProjectActions{..}
+
+  -- Projects opened from the file manager (or given on the command line).
+  onOpenFiles projectOpen
 
 -- | The starting point for "New project": the smallest script that's
 -- actually valid (an ensemble needs at least one @\@viewer@), so a

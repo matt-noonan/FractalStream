@@ -2,7 +2,7 @@
 Type=Application
 
 Name=FractalStream
-Exec=FractalStream
+Exec=FractalStream %f
 Icon=FS_128x128x32
 
 Comment=
@@ -11,3 +11,4 @@ Categories=
 Keywords=
 
 NoDisplay=false
+MimeType=application/x-fractalstream-project;
