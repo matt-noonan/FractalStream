@@ -628,7 +628,13 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           newViewerTile <- renderTile' renderId renderIssues smoothing renderAction (w, h) model
           set currentTile [ value := newViewerTile ]
           startAnimatingFrom oldModel
-          writeIORef savedTileIsCurrent False
+          -- Until the new render's first update, the saved image is the
+          -- old one; that only matters if it's of a different view, since
+          -- then it'd be drawn in the wrong place. (A parameter change
+          -- re-renders the same view, and hiding the saved image until
+          -- each render's first update would hide most of them while a
+          -- parameter is dragged.)
+          when (newModel /= oldModel) (writeIORef savedTileIsCurrent False)
           void $ tryPutMVar needToSendRefreshEvent ()
           triggerRepaint
 
