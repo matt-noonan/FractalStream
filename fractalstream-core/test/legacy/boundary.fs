@@ -10,6 +10,10 @@ script: |
   dynamical_plane_color : Color as "Dynamical Plane" <- green
   boundary_of_julia_set_color : Color as "Boundary of Julia Set" <- orange
 
+  @common
+  let shade(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
+    else blend(-sin(2 pi t), light c, c)
+
   @viewer "Parameter plane" var=C
   z := 0
   flag_color := default_exit_condition_color
@@ -21,7 +25,7 @@ script: |
   until z escapes or |z / dzdc| < pixel_size * fatness
   if |z / dzdc| < pixel_size * fatness:
     flag_color <- boundary_of_mandelbrot_set_color
-  color <- if stuck then black else cycle(iterations / 20, dark flag_color, light flag_color)
+  color <- if stuck then black else shade(flag_color, iterations / 20)
 
   @viewer "Dynamical plane"
   flag_color := default_exit_condition_color
@@ -34,7 +38,7 @@ script: |
   until z escapes or |z / dz - w / dz| < pixel_size * fatness * 2
   if |z / dz - w / dz| < pixel_size * fatness * 2:
     flag_color <- boundary_of_julia_set_color
-  color <- if stuck then black else cycle(iterations / 20, dark flag_color, light flag_color)
+  color <- if stuck then black else shade(flag_color, iterations / 20)
 
   @tool "Dynamics" for="Parameter plane" shortcut=d
   on click-or-drag:

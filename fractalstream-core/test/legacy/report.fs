@@ -3,11 +3,15 @@ script: |
   @config "Colors"
   default_exit_condition_color : Color as "Default Exit Condition" <- blue
 
+  @common
+  let shade(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
+    else blend(-sin(2 pi t), light c, c)
+
   @viewer "Dynamical plane"
   flag_color := default_exit_condition_color
   x := z
   iterate x -> x - (x^3 - 1) / (3 * x^2) until x stops
-  color <- if stuck then black else cycle(iterations / 20, dark flag_color, light flag_color)
+  color <- if stuck then black else shade(flag_color, iterations / 20)
 metadata:
   title: "report"
   description: Translated from a script for the original FractalStream.

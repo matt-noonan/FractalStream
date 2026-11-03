@@ -9,6 +9,10 @@ script: |
   black_color : Color as "black" <- black
   white_color : Color as "white" <- white
 
+  @common
+  let shade(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
+    else blend(-sin(2 pi t), light c, c)
+
   @viewer "Parameter plane" var=C
   z := 0
   flag_color := default_exit_condition_color
@@ -30,7 +34,7 @@ script: |
     flag_color <- white_color
   iters <- 0
   gave_up <- false
-  color <- if gave_up then black else cycle(iters / 20, dark flag_color, light flag_color)
+  color <- if gave_up then black else shade(flag_color, iters / 20)
 
   @viewer "Dynamical plane"
   flag_color := default_exit_condition_color
@@ -50,7 +54,7 @@ script: |
     flag_color <- white_color
   iters <- 0
   gave_up <- false
-  color <- if gave_up then black else cycle(iters / 20, dark flag_color, light flag_color)
+  color <- if gave_up then black else shade(flag_color, iters / 20)
 
   @tool "Dynamics" for="Parameter plane" shortcut=d
   on click-or-drag:

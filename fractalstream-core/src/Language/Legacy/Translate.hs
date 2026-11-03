@@ -17,8 +17,8 @@ to go on editing rather than to reproduce the old pictures exactly:
   parameter plane picks @C@, like the old Dynamics tool.
 * Coloring: each flag (@[name]@, @[name | color]@) gets a color in a
   @\@config "Colors"@ tab, and a point is drawn in a dark-to-light
-  gradient of its flag's color, by iterations (period 20), or black if
-  its last loop gave up.
+  gradient of its flag's color, by iterations (period 20: the color at
+  0, then darker, then lighter), or black if its last loop gave up.
 * Each probe becomes a tool on each viewer, showing the value it reports
   in a field of the tool's panel.
 * Names keep the spelling they're first written with (the old language
@@ -324,7 +324,8 @@ translateT title src body = do
     warn ("The color `" ++ h ++ "` for flag " ++ show n ++ " isn't one FractalStream knows, so it starts as "
           ++ flagColor n ++ ".")
   let flagVar = freshIn used1 "flag_color"
-      used2 = Set.insert flagVar used1
+      shadeFn = freshIn (Set.insert flagVar used1) "shade"
+      used2 = foldr Set.insert used1 [flagVar, shadeFn]
       ctx0 = Ctx { cxName = nameOf, cxTy = tyOf, cxFlags = Map.fromList flagVars
                  , cxFlagVar = flagVar, cxOutcome = Nothing, cxIsProbe = False, cxUsed = used2
                  , cxNonNegative = Set.fromList [ v | (v, e) <- defaults, exprTy (tyOf . nameOf) e == TReal
@@ -362,10 +363,8 @@ translateT title src body = do
               ++ [ Line (flagVar ++ " := " ++ fromMaybe "" (Map.lookup "Default Exit Condition" (Map.fromList flagVars))) ]
               ++ concat [ [Line (a ++ " := 0"), Line (b ++ " := false")] | Just (a, b) <- [outcome] ]
         finish = case outcome of
-          Nothing -> "color <- if stuck then black else cycle(iterations / 20, dark "
-                     ++ flagVar ++ ", light " ++ flagVar ++ ")"
-          Just (a, b) -> "color <- if " ++ b ++ " then black else cycle(" ++ a ++ " / 20, dark "
-                         ++ flagVar ++ ", light " ++ flagVar ++ ")"
+          Nothing -> "color <- if stuck then black else " ++ shadeFn ++ "(" ++ flagVar ++ ", iterations / 20)"
+          Just (a, b) -> "color <- if " ++ b ++ " then black else " ++ shadeFn ++ "(" ++ flagVar ++ ", " ++ a ++ " / 20)"
     bodyDocs <- translateBody ctx predeclared cmds
     pure (Line header : start' ++ bodyDocs ++ [Line finish])
 
@@ -402,7 +401,13 @@ translateT title src body = do
            , Line ("on click at " ++ clicked ++ ":")
            , Nest (start' ++ bodyDocs ++ [Line (field ++ " <- " ++ fieldValue)]) ]
 
-  let stanzas = [parameters | not (null paramFields)] ++ [colorsTab] ++ viewers ++ dynamicsTool ++ probeTools
+  -- a flag's gradient: its color at t = 0, then darker, back, lighter,
+  -- and back again at t = 1
+  let common =
+        [ Line "@common"
+        , Line ("let " ++ shadeFn ++ "(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...")
+        , Line "  else blend(-sin(2 pi t), light c, c)" ]
+      stanzas = [parameters | not (null paramFields)] ++ [colorsTab, common] ++ viewers ++ dynamicsTool ++ probeTools
       scriptLines = intercalate [""] (map (render 0) stanzas)
   pure . unlines $
     [ "# Translated from a script for the original FractalStream."

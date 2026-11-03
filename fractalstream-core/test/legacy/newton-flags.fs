@@ -6,6 +6,10 @@ script: |
   z_is_omega_color : Color as "z is omega" <- green
   z_is_omegabar_color : Color as "z is omegabar" <- orange
 
+  @common
+  let shade(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
+    else blend(-sin(2 pi t), light c, c)
+
   @viewer "Dynamical plane"
   flag_color := default_exit_condition_color
   iterate z -> z - (z^3 - 1) / (3 * z^2) until z stops
@@ -15,7 +19,7 @@ script: |
     flag_color <- z_is_omega_color
   if z = (-1 - sqrt(3) * i) / 2:
     flag_color <- z_is_omegabar_color
-  color <- if stuck then black else cycle(iterations / 20, dark flag_color, light flag_color)
+  color <- if stuck then black else shade(flag_color, iterations / 20)
 metadata:
   title: "newton-flags"
   description: Translated from a script for the original FractalStream.
