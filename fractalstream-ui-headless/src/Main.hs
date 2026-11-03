@@ -57,9 +57,11 @@ import System.Directory (renameFile)
 
 import Options.Applicative
   ( Parser, ParserInfo, customExecParser, prefs, showHelpOnEmpty, info, helper, infoOption
-  , hsubparser, command, strOption, long, short, metavar, help
+  , hsubparser, command, strOption, option, eitherReader, long, short, metavar, help
   , fullDesc, progDesc, footer )
+import Control.Concurrent (setNumCapabilities)
 import System.Exit (exitFailure)
+import Text.Read (readMaybe)
 import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStrLn, stderr)
 
 data Mode
@@ -80,10 +82,20 @@ dieWith msg = hPutStrLn stderr msg >> exitFailure
 main :: IO ()
 main = do
   transliterateConsole
-  (projectFile, mode) <- customExecParser (prefs showHelpOnEmpty) cliInfo
-  run projectFile mode
+  Invocation{..} <- customExecParser (prefs showHelpOnEmpty) cliInfo
+  -- Before the backend starts: the LLVM backend sizes its pool of
+  -- per-render scratch arenas by the number of capabilities then.
+  forM_ invJobs setNumCapabilities
+  run invProject invMode
 
-cliInfo :: ParserInfo (FilePath, Mode)
+-- | A parsed command line.
+data Invocation = Invocation
+  { invJobs    :: Maybe Int   -- ^ @-j@, if given (otherwise every core, from @-N@)
+  , invProject :: FilePath
+  , invMode    :: Mode
+  }
+
+cliInfo :: ParserInfo Invocation
 cliInfo = info (helper <*> versionOption <*> cliParser) $
   fullDesc <>
   progDesc "Run a FractalStream project without a GUI: render a viewer, \
@@ -94,9 +106,9 @@ cliInfo = info (helper <*> versionOption <*> cliParser) $
       (long "version" <> help "Show the FractalStream version and exit")
 
 -- | Each mode is its own subcommand. Every input is a named option
--- (@--project@ in all of them), never a positional argument, so a
--- command line reads the same whatever order its options come in.
-cliParser :: Parser (FilePath, Mode)
+-- (@--project@ and @--jobs@ in all of them), never a positional argument,
+-- so a command line reads the same whatever order its options come in.
+cliParser :: Parser Invocation
 cliParser = hsubparser $ mconcat
   [ subcommand "snapshot"
       "Render one viewer's base image to a PNG file"
@@ -118,8 +130,15 @@ cliParser = hsubparser $ mconcat
   ]
   where
     subcommand name desc modeArgs = command name $
-      info ((,) <$> projectOption <*> modeArgs) (progDesc desc)
+      info (Invocation <$> jobsOption <*> projectOption <*> modeArgs) (progDesc desc)
     projectOption = strOption (long "project" <> short 'p' <> metavar "PROJECT.fs" <> help "The project file")
+    jobsOption = optional $ option positive
+      (long "jobs" <> short 'j' <> metavar "N" <>
+       help "Render with N threads (default: one per core). Use -j 1 to make \
+            \autocolor groups that aren't locked color the same way every run.")
+    positive = eitherReader $ \str -> case readMaybe str of
+      Just n | n >= 1 -> Right n
+      _ -> Left ("expected a positive number of jobs, not " ++ show str)
 
 run :: FilePath -> Mode -> IO ()
 run projectFile mode = withBackend $ \backend ->

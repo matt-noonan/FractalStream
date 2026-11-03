@@ -33,6 +33,14 @@ the project's own `metadata: preview-commands:` and saves the preview
 image they capture into the project file; see "Making a project's
 preview" below. It is the only mode that ever changes the project file.
 
+Every mode renders on all cores by default; `-j N` (`--jobs N`) limits
+it to N threads. Use `-j 1` when a scenario asserts on, or captures to
+compare, a viewer that adds points to an autocolor group that isn't
+locked: a new point gets the next color in the order points are first
+seen, which varies from run to run when several threads render at once.
+A project whose saved `autocolor:` tables are locked, or already hold
+every point its viewers find, renders the same either way.
+
 ## Design principles
 
 - **Current-context commands vs. explicitly-addressed commands.** Every

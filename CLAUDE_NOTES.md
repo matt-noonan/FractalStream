@@ -566,9 +566,14 @@ project script editor's), with live error display, driven by a `Mapped`
 over it, as the script editor's is by `checkScriptWithColorizers`. `pathAnimation` moves one complex variable along a polyline by
 arclength (`pathPointAt`). `recordMovie` renders from a `cloneViewer`
 copy (so a window resized mid-recording can't change the frame size) with
-`renderViewerImage`: like `withRenderedViewerBuffer`, but in horizontal
+`renderViewerImage`, which adds tool drawings (if asked for) to
+`Actor.Viewer.renderViewerBuffer`'s render. That renders in horizontal
 strips over every capability with `forPool_`, downsampling each strip as
-it goes. `withFieldsRestored` puts every field's *text* back afterwards
+it goes; `withRenderedViewerBuffer` (snapshots, `fsrun` captures,
+previews) uses it too, so `fsrun` renders on every core unless `-j N`
+says otherwise (`-j 1` for repeatable colors from unlocked autocolor
+groups, which depend on render order). `compositeDrawLayers` returns the
+base image as is when there are no drawings, skipping Rasterific. `withFieldsRestored` puts every field's *text* back afterwards
 (so `1/3` stays `1/3`).
 
 `Data.Movie` writes the frames as Motion-JPEG (JuicyPixels' encoder) into
@@ -866,7 +871,7 @@ See `LANGUAGE.md` for full docs. Key points:
   app from `fractalstream-ui-wx` (see `.github/workflows/`).
 - wxHaskell is a local path dependency: `../wxHaskell/wx`, `../wxHaskell/wxcore`, etc.
 - LLVM backend requires shared LLVM (`shared-llvm: true` flag on `llvm-hs`)
-- `-threaded -rtsopts -with-rtsopts=-N` for parallel rendering
+- `-threaded -rtsopts -with-rtsopts=-N` for parallel rendering (the wx app and `fsrun`)
 - GHC extensions used heavily: `DataKinds`, `GADTs`, `TypeFamilies`, `RankNTypes`,
   `KindSignatures`, `TypeOperators`, `ScopedTypeVariables`, `TypeApplications`
 - `-Wall -Werror` enforced in all packages

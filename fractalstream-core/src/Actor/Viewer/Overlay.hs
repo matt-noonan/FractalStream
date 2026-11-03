@@ -57,9 +57,13 @@ compositeDrawLayers center pixelSize layers (w32, h32) buf = do
       h = fromIntegral h32
   baseImage <- bufferToImage w h buf
   let toPixel = modelToPixel center pixelSize (w, h)
-  pure $ renderDrawing w h (PixelRGBA8 0 0 0 255) $ do
-    drawImage baseImage 0 (V2 0 0)
-    drawLayers toPixel pixelSize layers
+  -- With nothing to draw, the result is just the base image: skip
+  -- Rasterific, which would otherwise redraw every pixel of it, on one
+  -- thread, to no effect.
+  pure $ if all null layers then baseImage
+    else renderDrawing w h (PixelRGBA8 0 0 0 255) $ do
+      drawImage baseImage 0 (V2 0 0)
+      drawLayers toPixel pixelSize layers
 
 -- | 'compositeDrawLayers', written out to a PNG file.
 compositeDrawLayersToFile

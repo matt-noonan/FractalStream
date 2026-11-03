@@ -26,6 +26,8 @@ module Actor.Viewer
   , assertMissingViewerArgs
   , snapshotToFile
   , withRenderedViewerBuffer
+  , RenderedBuffer(..)
+  , renderViewerBuffer
   , allGrey
   , defaultIterLimit
   , defaultMaxRadius
@@ -52,7 +54,9 @@ import Language.Value.Parser
 import Language.Code
 import Language.Draw
 import Language.Code.Parser
+import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.MVar
+import Task.Concurrent (forPool_)
 import Language.Parser.SourceRange
 import Language.Value.Evaluator
 import Foreign
@@ -213,15 +217,14 @@ data Viewer = Viewer
 -- (already downsampled, if requested) and hand it, with the model-space
 -- center and pixel size it corresponds to and its pixel dimensions, to the
 -- given continuation. This is the shared rendering step behind
--- 'snapshotToFile'; it's a separate entry point so that a caller wanting to
--- draw something /on top of/ the base render -- e.g. a tool's recorded
--- 'DrawCommand's, once a headless frontend grows the ability to run event
--- handlers before taking a picture -- can do so by drawing into the
+-- 'snapshotToFile' (and 'renderViewerBuffer'); it's a separate entry point
+-- so that a caller wanting to draw something /on top of/ the base render
+-- -- e.g. a tool's recorded 'DrawCommand's -- can do so by drawing into the
 -- continuation's buffer before encoding it, without re-deriving any of this
 -- per-pixel setup.
 --
 -- Note that the center\/pixel-size passed to the continuation is always the
--- viewer's own nominal 'vCenter'\/'vPixelSize' ((relative to the *final*
+-- viewer's own nominal 'vCenter'\/'vPixelSize' (relative to the *final*
 -- buffer, whatever its dimensions): downsampling supersamples internally at
 -- twice the resolution and half the pixel size, then averages back down,
 -- so the buffer handed to the continuation always covers the same
@@ -235,43 +238,83 @@ withRenderedViewerBuffer
   -> Bool
   -> ((Double, Double) -> Double -> (Word32, Word32) -> Ptr Word8 -> IO a)
   -> IO (Either String (ViewerIssues, a))
-withRenderedViewerBuffer Viewer{..} downsample withBuffer = case vCodeWithArgs of
-  CodeWithArgs vGetArgs _ vCode -> vGetArgs >>= \case
+withRenderedViewerBuffer viewer downsample withBuffer =
+  renderViewerBuffer downsample viewer >>= \case
+    Left err -> pure (Left err)
+    Right RenderedBuffer{..} -> withForeignPtr rbPixels $ \buf ->
+      Right . (rbIssues,) <$>
+        withBuffer rbCenter rbPixelSize (fromIntegral rbWidth, fromIntegral rbHeight) buf
+
+-- | A viewer's base render: @3 * rbWidth * rbHeight@ bytes of RGB8, with
+-- the model-space center and pixel size it was drawn at.
+data RenderedBuffer = RenderedBuffer
+  { rbPixels    :: ForeignPtr Word8
+  , rbWidth     :: Int
+  , rbHeight    :: Int
+  , rbCenter    :: (Double, Double)
+  , rbPixelSize :: Double
+  , rbIssues    :: ViewerIssues
+  }
+
+-- | Render a viewer's base per-pixel script at its current size and view,
+-- supersampled at twice the size and averaged down when @downsample@ is
+-- set. The image is split into horizontal strips, rendered concurrently
+-- across every capability (so a program built without @-threaded@, or
+-- run with one capability, renders them one after another). Every
+-- pixel comes out the same whatever the split, except that a viewer
+-- adding points to an unlocked autocolor group colors them in the order
+-- they're first seen, which then varies from run to run (see
+-- "Actor.Autocolor").
+renderViewerBuffer :: Bool -> Viewer -> IO (Either String RenderedBuffer)
+renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
+  CodeWithArgs getArgs _ code -> getArgs >>= \case
     Left err -> pure (Left err)
     Right vaArgs -> do
       Dimensions (w, h) <- getDynamic vSize
-      let vaWidth  = fromIntegral w * if downsample then 2 else 1
-          vaHeight = fromIntegral h * if downsample then 2 else 1
-          vaSubsamples = 1
       pixelSize <- getDynamic vPixelSize
-      let px = if downsample then pixelSize / 2 else pixelSize
-      let vaStep = (px, px)
       center@(cx, cy) <- getDynamic vCenter
-      let vaPoint = (cx - fromIntegral vaWidth * px / 2, cy + fromIntegral vaHeight * px / 2)
-      ViewerFunction fn <- getDynamic vCode
-      allocaBytes (fromIntegral $ 3 * vaWidth * vaHeight) $ \vaBuffer -> do
-        issues <- fn ViewerArgs{..}
-        if downsample
-          then do
-            let width  = fromIntegral (vaWidth `div` 2)
-                height = fromIntegral (vaHeight `div` 2)
-            allocaBytes (3 * width * height) $ \buf -> do
-              forM_ [0 .. width - 1] $ \i ->
-                forM_ [0 .. height - 1] $ \j ->
-                  forM_ [0,1,2] $ \k -> do
-                    let inputIx = 6 * i + 6 * width * 2 * j + k
-                    c1 :: Word16 <- fromIntegral <$>
-                      peekElemOff vaBuffer inputIx
-                    c2 :: Word16 <- fromIntegral <$>
-                      peekElemOff vaBuffer (inputIx + 6 * width)
-                    c3 :: Word16 <- fromIntegral <$>
-                      peekElemOff vaBuffer (inputIx + 3)
-                    c4 :: Word16 <- fromIntegral <$>
-                      peekElemOff vaBuffer (inputIx + 3 + 6 * width)
-                    pokeElemOff buf (3 * i + 3 * width * j + k) (fromIntegral $ (c1 + c2 + c3 + c4) `div` 4)
-              Right . (issues,) <$> withBuffer center pixelSize (fromIntegral width, fromIntegral height) buf
-          else
-            Right . (issues,) <$> withBuffer center pixelSize (fromIntegral vaWidth, fromIntegral vaHeight) vaBuffer
+      ViewerFunction fn <- getDynamic code
+      let s = if downsample then 2 else 1
+          bigW = w * s
+          px = pixelSize / fromIntegral s
+          (x0, y0) = (cx - fromIntegral bigW * px / 2, cy + fromIntegral (h * s) * px / 2)
+          -- strips of output rows; enough of them to keep every
+          -- capability busy even if some strips are slower than others
+          stripRows = max 1 (min 16 (h `div` 64))
+          strips = [ (r, min stripRows (h - r)) | r <- [0, stripRows .. h - 1] ]
+      caps <- getNumCapabilities
+      out <- mallocForeignPtrBytes (3 * w * h)
+      issuesVar <- newMVar mempty
+      withForeignPtr out $ \outPtr ->
+        forPool_ caps strips $ \(row, rows) ->
+          allocaBytes (3 * bigW * rows * s) $ \big -> do
+            issues <- fn ViewerArgs
+              { vaPoint = (x0, y0 - fromIntegral (row * s) * px)
+              , vaStep = (px, px)
+              , vaWidth = fromIntegral bigW
+              , vaHeight = fromIntegral (rows * s)
+              , vaSubsamples = 1
+              , vaBuffer = big
+              , vaArgs }
+            modifyMVar_ issuesVar (pure . (<> issues))
+            let dest = outPtr `plusPtr` (3 * w * row)
+            if downsample then downsampleRows bigW w rows big dest
+                          else copyBytes dest big (3 * w * rows)
+      issues <- readMVar issuesVar
+      pure (Right (RenderedBuffer out w h center pixelSize issues))
+
+-- | Average each 2x2 block of a @bigW@-pixel-wide RGB8 buffer down to
+-- one pixel of a @w@-pixel-wide one, for @rows@ output rows.
+downsampleRows :: Int -> Int -> Int -> Ptr Word8 -> Ptr Word8 -> IO ()
+downsampleRows bigW w rows big dest =
+  forM_ [0 .. rows - 1] $ \j -> forM_ [0 .. w - 1] $ \i -> forM_ [0, 1, 2] $ \k -> do
+    let ix = 3 * (2 * i) + 3 * bigW * (2 * j) + k
+        at o = fromIntegral <$> peekElemOff big o :: IO Word16
+    c1 <- at ix
+    c2 <- at (ix + 3)
+    c3 <- at (ix + 3 * bigW)
+    c4 <- at (ix + 3 * bigW + 3)
+    pokeElemOff dest (3 * i + 3 * w * j + k) (fromIntegral ((c1 + c2 + c3 + c4 + 2) `div` 4))
 
 -- | Render a viewer to a PNG file, returning any issues the render ran into.
 snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Either String ViewerIssues)

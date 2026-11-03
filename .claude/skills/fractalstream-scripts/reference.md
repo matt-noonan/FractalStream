@@ -471,6 +471,10 @@ fsrun update-preview --project project.fs           # runs metadata: preview-com
 fsrun COMMAND --help                                # options for one subcommand
 ```
 
+Each subcommand also takes `-j N` / `--jobs N` (default: every core).
+Pass `-j 1` when asserting on a viewer that adds points to an unlocked
+autocolor group, whose colors otherwise depend on render order.
+
 Command language (one per line, `#` comments): `select viewer "T"`,
 `select tool "N"`, `deselect tool`, `set parameter x to <expr>`,
 `set tool parameter x to <expr>`,
