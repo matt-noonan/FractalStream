@@ -417,6 +417,12 @@ Key modules:
 - `Language.Code.Infer` - inference for `:=` declarations
 - `Language.Code.Procedures` - `define` / `run` expansion
 - `Language.Code.Stops` - `x stops` in loop conditions, rewritten away
+- `Language.Legacy.Syntax`, `.Parser`, `.Translate` - scripts for the
+  original (2009, Mac OS X) FractalStream, and their translation into a
+  project (`fsrun translate`); see `Language.Legacy.Translate`'s header
+  for how each part maps. Tested by `test/Language/LegacySpec.hs` against
+  `test/legacy/` (each guide example's `.txt` and its expected `.fs`:
+  delete a `.fs` to regenerate it). `{real}` scripts aren't translated yet.
 - `Language.Code.Typecheck` (+ `.Functions`) - code elaboration, functions
 - `Language.Typecheck` - `TC` monad, `TCError`, shared helpers
 

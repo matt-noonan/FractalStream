@@ -1,0 +1,2 @@
+default p to -0.125 + 0.75i.
+iterate z^2 + p until z escapes.

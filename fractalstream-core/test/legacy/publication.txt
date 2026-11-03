@@ -1,0 +1,22 @@
+default fatness to 1/10.
+par block
+set x to 0.
+set der to 1.
+do
+set dxdc to 1+2*x*dxdc.
+set x to x^2+c.
+set der to der*2*x.
+until (x/dxdc) < pixel*fatness/2 or x escapes or der vanishes.
+if (x/dxdc) < pixel*fatness/2 then [black]. else [white].
+succeed.
+end.
+dyn block
+set d to 1.
+set w to z.
+do
+set d to 2*z*d.
+set z to z^2+c.
+until z escapes or (z/d-w/d) < pixel*fatness or d vanishes.
+if (z/d-w/d) < pixel*fatness/2 then [black]. else [white].
+succeed.
+end.

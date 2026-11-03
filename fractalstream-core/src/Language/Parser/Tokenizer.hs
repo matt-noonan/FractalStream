@@ -4,6 +4,7 @@ module Language.Parser.Tokenizer
   , tokenize
   , tokenizeWithIndentation
   , commentRanges
+  , wordlikeTokens
   ) where
 
 import FractalStream.Prelude
@@ -223,6 +224,7 @@ longestMatchingOperator cs =
                 , drop (length s) cs)
               | (s, t) <- opTokens, s `isPrefixOf` (map fst cs) ]
 
+-- | The words with a meaning of their own, which can't name variables.
 wordlikeTokens :: Map String Token
 wordlikeTokens = Map.fromList
   [ ("if", If), ("then", Then), ("else", Else)

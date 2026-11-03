@@ -1,0 +1,3 @@
+(Checkers on the exterior approximate external rays.)
+iterate z^2 - 1 until z escapes.
+if im(z) > 0 then [Checkered | red].

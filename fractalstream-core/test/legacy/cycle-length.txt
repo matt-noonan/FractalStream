@@ -1,0 +1,11 @@
+probe integer "Cycle Length":
+  repeat 500 times set z to z^2 + c.
+  set count to 0.
+  set savedZ to z.
+  do
+    set count to count + 1.
+    set z to z^2 + c.
+  until z = savedZ.
+  report count.
+end.
+iterate z^2 + c until z escapes.

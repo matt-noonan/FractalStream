@@ -101,6 +101,9 @@ library
                        Language.Code.Infer
                        Language.Code.Procedures
                        Language.Code.Stops
+                       Language.Legacy.Syntax
+                       Language.Legacy.Parser
+                       Language.Legacy.Translate
                        Language.Code.Typecheck.Functions
                        Language.Type
                        Language.Environment
@@ -197,6 +200,7 @@ test-suite spec
                     , Language.Value.EvaluatorSpec
                     , Language.Value.ParserSpec
                     , Language.Code.ParserSpec
+                    , Language.LegacySpec
                     , Language.Effect.ListSpec
                     , Actor.EventSpec
                     , Actor.ScriptSpec
