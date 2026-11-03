@@ -67,6 +67,8 @@ library
 
                        Actor.Tool
                        Actor.Configuration
+                       Actor.Colorizer
+                       Actor.Autocolor
                        Actor.Ensemble
                        Actor.Layout
                        Actor.UI
@@ -193,6 +195,8 @@ test-suite spec
                     , Actor.EventSpec
                     , Actor.ScriptSpec
                     , Actor.EnsembleBuildSpec
+                    , Actor.ColorizerSpec
+                    , Actor.AutocolorSpec
                     , Actor.GoldenSpec
                     , Actor.OverlaySpec
                     , FractalStream.SettingsSpec

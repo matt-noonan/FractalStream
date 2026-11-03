@@ -96,6 +96,7 @@ preview" below. It is the only mode that ever changes the project file.
 |---|---|
 | `set parameter <var> to <value-expr>` | Set an ensemble-level `configuration:` variable (e.g. `max_iters`, `C`). There is no separate "viewer parameter" concept: a `ComplexViewer` doesn't carry its own configuration panel distinct from the ensemble's -- `z-coord:`, `iteration-limit:`, etc. just name ensemble-level variables. |
 | `set tool parameter <var> to <value-expr>` | Set a variable in the *current tool's own* `configuration:` panel. |
+| `set colorizer parameter <var> to <value-expr>` | Set a setting of the *current viewer's* colorizer (e.g. Rainbow's `color_speed`), by the name its `@colorizer` stanza declares it with. Each viewer has its own copy of its colorizer's settings. A choice can be given by its label in quotes, as its field shows it: `set colorizer parameter palette to "Two colors"`. |
 
 ### Viewport (current viewer)
 

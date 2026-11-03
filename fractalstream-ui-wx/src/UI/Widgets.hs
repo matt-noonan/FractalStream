@@ -1,5 +1,6 @@
 module UI.Widgets
   ( wxTimer
+  , onOwnDestroy
   , wxWatchDynamic1
   , wxWatchDynamic
   , checkboxWidget
@@ -27,7 +28,7 @@ import Graphics.UI.WXCore.Events
 import Graphics.UI.WXCore.WxcClassesAL
 import Graphics.UI.WXCore.WxcClassesMZ
 import Graphics.UI.WXCore.Frame (windowGetFrameParent)
-import Graphics.UI.WXCore.WxcClassTypes (ColourPickerCtrl)
+import Graphics.UI.WXCore.WxcClassTypes (ColourPickerCtrl, WxObject)
 import Control.Concurrent
 import Data.Char (toUpper)
 import Data.IORef
@@ -446,8 +447,7 @@ wxWatchDynamic p dv action = liftIO $ do
                        putMVar todo []
                        sequence_ (reverse actions)
                  ]
-  previous <- windowGetOnDestroy p
-  windowOnDestroy p (halt >> previous)
+  onOwnDestroy p halt
 
 -- | Same as `wxWatchDynamic`, but also
 wxWatchDynamic1 :: (AsDynamic f, MonadIO io) => Window b -> f a -> (a -> IO ()) -> io ()
@@ -461,6 +461,25 @@ wxWatchDynamic1 p dv action = do
 wxTimer :: MonadIO io => Window a -> [Prop Timer] -> io Timer
 wxTimer w props = liftIO $ do
   t <- timer w props
-  previous <- windowGetOnDestroy w
-  windowOnDestroy w (timerStop t >> previous)
+  onOwnDestroy w (timerStop t)
   pure t
+
+-- | Run an action when a window is destroyed, along with the destroy
+-- handlers installed before it.
+--
+-- Unlike a plain `windowOnDestroy`, this only acts on the window's /own/
+-- destruction: `wxWindowDestroyEvent` is a command event, so it propagates
+-- up from child windows, and a plain handler runs whenever any child is
+-- destroyed -- which, for 'wxWatchDynamic' and 'wxTimer', meant a window
+-- that rebuilds some of its widgets (the autocolor window's list) silently
+-- stopped every watch and timer on it.
+onOwnDestroy :: Window a -> IO () -> IO ()
+onOwnDestroy w action = do
+  previous <- windowGetOnDestroy w
+  let both = action >> previous
+  windowOnEvent w [wxEVT_DESTROY] both $ \ev -> do
+    src <- eventGetEventObject ev
+    when (src == (objectCast w :: WxObject ())) both
+    -- (let any ancestors see a child's destruction too, as they would
+    -- without this handler)
+    eventSkip ev

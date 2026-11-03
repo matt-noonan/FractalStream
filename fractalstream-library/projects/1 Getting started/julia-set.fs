@@ -1,17 +1,12 @@
 script: |
-  @config "Configuration"
+  @config "Parameter value"
   C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
-  p : R as "Brightness: " <- 0.5
 
   @common
   let f(z) = z^2 + C
 
-  @viewer "Julia set"
+  @viewer "Julia set" colorizer="Glow"
   iterate z -> f(z) until z escapes
-  if stuck:
-    color <- black
-  else:
-    color <- blend ((iterations / max_iters)^p, dark blue, white)
 
   @tool "Trace" for="Julia set" shortcut=t
   on click-or-drag:

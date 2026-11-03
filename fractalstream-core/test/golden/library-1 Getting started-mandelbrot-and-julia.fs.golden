@@ -11,33 +11,35 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 let `z` = 0:R:C in:
                   block:
-                    block:
-                      block:
-                        let `[internal] fresh #16` = 0 in:
-                          let `[internal] fresh #17` = [internal] iteration limit in:
-                            block:
-                              if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #16 < [internal] fresh #17)) then:
-                                do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #16 < [internal] fresh #17)):
-                                  block:
-                                    set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                                    set `[internal] fresh #16` := ([internal] fresh #16 + 1)
-                              else:
-                                no-op
-                              set `[internal] iteration count` := [internal] fresh #16
-                              set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
-                        if let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) then:
-                          block:
-                            let `c1` = if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0 in:
+                    let `[internal] fresh #32` = 0 in:
+                      let `[internal] fresh #33` = [internal] iteration limit in:
+                        block:
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)):
                               block:
-                                let `c2` = if (0:R < im(z)) then Color 0 180 0 else Color 255 0 0 in:
-                                  block:
-                                    let `s` = (([internal] iteration count + 1):R - (log(log(((|z| ^ 2:R) / 2:R))) / log(2:R))) in:
-                                      block:
-                                        set `s` := (cos(((s * 3.141592653589793) / 10:R)) ^ 2:R)
-                                        set `color` := blend(s, c1, c2)
-                        else:
+                                set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
+                                set `[internal] fresh #32` := ([internal] fresh #32 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #32
+                          set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+                    block:
+                      let `[colorizer] Parameter plane: z` = z in:
+                        block:
                           block:
-                            set `color` := Color 0 0 0
+                            if [internal] stuck then:
+                              block:
+                                set `color` := [colorizer] Parameter plane: gives_up
+                            else:
+                              block:
+                                let `[colorizer] Parameter plane: s` = [internal] iteration count:R in:
+                                  block:
+                                    if ([colorizer] Parameter plane: smooth and ([internal] escape radius < |[colorizer] Parameter plane: z|)) then:
+                                      block:
+                                        set `[colorizer] Parameter plane: s` := (([internal] iteration count + 1):R - (log((log(|[colorizer] Parameter plane: z|) / log(escape_radius))) / log([colorizer] Parameter plane: degree)))
+                                    else:
+                                      no-op
+                                    set `color` := if (0:R < im([colorizer] Parameter plane: z)) then let #cycle-arg = (([colorizer] Parameter plane: s / [colorizer] Parameter plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Parameter plane: upper1, [colorizer] Parameter plane: upper2) else let #cycle-arg = (([colorizer] Parameter plane: s / [colorizer] Parameter plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Parameter plane: lower1, [colorizer] Parameter plane: lower2)
 
 
 === viewer 1: Dynamical plane
@@ -50,33 +52,35 @@ let `[internal] vanishing radius` = vanishing_radius in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
               block:
-                block:
-                  block:
-                    let `[internal] fresh #16` = 0 in:
-                      let `[internal] fresh #17` = [internal] iteration limit in:
-                        block:
-                          if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #16 < [internal] fresh #17)) then:
-                            do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #16 < [internal] fresh #17)):
-                              block:
-                                set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                                set `[internal] fresh #16` := ([internal] fresh #16 + 1)
-                          else:
-                            no-op
-                          set `[internal] iteration count` := [internal] fresh #16
-                          set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
-                    if let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) then:
-                      block:
-                        let `c1` = if (0:R < im(z)) then Color 0 0 255 else Color 255 255 0 in:
+                let `[internal] fresh #32` = 0 in:
+                  let `[internal] fresh #33` = [internal] iteration limit in:
+                    block:
+                      if (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)) then:
+                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)):
                           block:
-                            let `c2` = if (0:R < im(z)) then Color 0 180 0 else Color 255 0 0 in:
-                              block:
-                                let `s` = (([internal] iteration count + 1):R - (log(log(((|z| ^ 2:R) / 2:R))) / log(2:R))) in:
-                                  block:
-                                    set `s` := (cos(((s * 3.141592653589793) / 10:R)) ^ 2:R)
-                                    set `color` := blend(s, c1, c2)
-                    else:
+                            set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
+                            set `[internal] fresh #32` := ([internal] fresh #32 + 1)
+                      else:
+                        no-op
+                      set `[internal] iteration count` := [internal] fresh #32
+                      set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+                block:
+                  let `[colorizer] Dynamical plane: z` = z in:
+                    block:
                       block:
-                        set `color` := Color 0 0 0
+                        if [internal] stuck then:
+                          block:
+                            set `color` := [colorizer] Dynamical plane: gives_up
+                        else:
+                          block:
+                            let `[colorizer] Dynamical plane: s` = [internal] iteration count:R in:
+                              block:
+                                if ([colorizer] Dynamical plane: smooth and ([internal] escape radius < |[colorizer] Dynamical plane: z|)) then:
+                                  block:
+                                    set `[colorizer] Dynamical plane: s` := (([internal] iteration count + 1):R - (log((log(|[colorizer] Dynamical plane: z|) / log(escape_radius))) / log([colorizer] Dynamical plane: degree)))
+                                else:
+                                  no-op
+                                set `color` := if (0:R < im([colorizer] Dynamical plane: z)) then let #cycle-arg = (([colorizer] Dynamical plane: s / [colorizer] Dynamical plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Dynamical plane: upper1, [colorizer] Dynamical plane: upper2) else let #cycle-arg = (([colorizer] Dynamical plane: s / [colorizer] Dynamical plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Dynamical plane: lower1, [colorizer] Dynamical plane: lower2)
 
 
 --- tool Trace
@@ -92,22 +96,22 @@ let `[internal] vanishing radius` = vanishing_radius in:
                 let `prevZ` = z in:
                   block:
                     erase
-                    let `[internal] fresh #15` = 0 in:
-                      let `[internal] fresh #16` = [internal] iteration limit in:
+                    let `[internal] fresh #31` = 0 in:
+                      let `[internal] fresh #32` = [internal] iteration limit in:
                         block:
-                          if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #15 < [internal] fresh #16)) then:
-                            do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #15 < [internal] fresh #16)):
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #31 < [internal] fresh #32)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #31 < [internal] fresh #32)):
                               block:
                                 block:
                                   set `prevZ` := z
                                   draw point at z:R^2
                                   set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                                   draw line from z:R^2 to prevZ:R^2
-                                set `[internal] fresh #15` := ([internal] fresh #15 + 1)
+                                set `[internal] fresh #31` := ([internal] fresh #31 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #15
-                          set `[internal] stuck` := ([internal] fresh #15 = [internal] fresh #16)
+                          set `[internal] iteration count` := [internal] fresh #31
+                          set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -122,22 +126,22 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   let `prevZ` = z in:
                     block:
                       erase
-                      let `[internal] fresh #18` = 0 in:
-                        let `[internal] fresh #19` = [internal] iteration limit in:
+                      let `[internal] fresh #34` = 0 in:
+                        let `[internal] fresh #35` = [internal] iteration limit in:
                           block:
-                            if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #18 < [internal] fresh #19)) then:
-                              do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #18 < [internal] fresh #19)):
+                            if (!([internal] escape radius < |z|) and ([internal] fresh #34 < [internal] fresh #35)) then:
+                              do-while (!([internal] escape radius < |z|) and ([internal] fresh #34 < [internal] fresh #35)):
                                 block:
                                   block:
                                     set `prevZ` := z
                                     draw point at z:R^2
                                     set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                                     draw line from z:R^2 to prevZ:R^2
-                                  set `[internal] fresh #18` := ([internal] fresh #18 + 1)
+                                  set `[internal] fresh #34` := ([internal] fresh #34 + 1)
                             else:
                               no-op
-                            set `[internal] iteration count` := [internal] fresh #18
-                            set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
+                            set `[internal] iteration count` := [internal] fresh #34
+                            set `[internal] stuck` := ([internal] fresh #34 = [internal] fresh #35)
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

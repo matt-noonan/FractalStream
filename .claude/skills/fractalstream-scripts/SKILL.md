@@ -64,9 +64,8 @@ script: |
   @common
   let f(z) = z^2 + C
 
-  @viewer "Dynamical plane" center=0 pixelSize=1/150
+  @viewer "Dynamical plane" center=0 pixelSize=1/150 colorizer=Smooth
   iterate z -> f(z) until z escapes
-  color <- if stuck then black else cycle(iterations / 20, dark blue, white)
 
   @tool "Trace" for="Dynamical plane" shortcut=t
   on click-or-drag at w:
@@ -117,6 +116,10 @@ script: |
   panel); handler locals are reset on each event. `button "Label"` belongs
   in a tool's declarations (a `@config` button is an error).
 - `text(...)` needs at least two arguments: `text("n = ", n)`.
+- A viewer whose body never assigns `color` is colored by its colorizer
+  (`Rainbow` unless `colorizer=` says otherwise); assigning `color`
+  anywhere switches it to `Manual`. Don't hand-write escape-time
+  coloring a built-in colorizer already does (reference.md lists them).
 
 ## From a paper to a project
 

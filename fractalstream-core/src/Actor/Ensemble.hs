@@ -10,7 +10,11 @@ module Actor.Ensemble
   , readProjectMetadata
   , checkProjectBytes
   , buildEnsembleFromScript
+  , buildEnsembleWithColorizers
   , checkScript
+  , checkScriptWithColorizers
+  , ViewerColorizer(..)
+  , Colorizer(..)
   , encodeEnsemble
   , carryOverProjectState
   , FieldOwner(..)
@@ -45,6 +49,8 @@ import Actor.Viewer.Complex
 import Actor.Metadata
 import Actor.SavedValues
 import Actor.Script
+import Actor.Colorizer (ViewerColorizer(..), Colorizer(..), Colorized(..), applyColorizers)
+import Actor.Autocolor
 import Language.Environment
 import Language.Value hiding (Join)
 import Language.Value.Parser
@@ -60,6 +66,7 @@ import Data.Color (black)
 import Data.Aeson (Value(..))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as KM
+import qualified Data.Aeson.Key as Key
 import qualified Data.Yaml as YAML
 import qualified Data.Yaml.Pretty as YAMLPretty
 import Data.List (elemIndex)
@@ -128,9 +135,25 @@ data Ensemble = Ensemble
     -- (only kept as the file had them) until a fixed script is built.
   , ensembleMetadata :: Variable ProjectMetadata
     -- ^ The project file's @metadata:@: title, description, preview.
+  , ensembleColorizerChoices :: Variable (Map.Map String String)
+    -- ^ The colorizers chosen interactively, by viewer title (the
+    -- project file's @colorizers:@ key), overriding the viewers'
+    -- defaults. See "Actor.Colorizer". These are what the project was
+    -- built with: changing them means building it again
+    -- ('buildEnsembleWithColorizers').
+  , ensembleViewerColorizers :: Map.Map String ViewerColorizer
+    -- ^ How each viewer is colorized, by title: by which colorizer, and
+    -- by which one without an interactive choice.
+  , ensembleAvailableColorizers :: [Colorizer]
+    -- ^ The colorizers the project's viewers can use: the script's own
+    -- (from its @\@colorizer@ stanzas), then the built-in ones.
+  , ensembleAutocolor :: Variable AutocolorState
+    -- ^ The project's autocolor tables (the project file's @autocolor:@
+    -- key; see "Actor.Autocolor"), which a rebuilt project takes over
+    -- ('carryOverProjectState').
   , ensembleFrontendProperties :: Variable (KM.KeyMap Aeson.Value)
     -- ^ Every top-level key of the project file other than @script:@,
-    -- @scenarios:@, and @metadata:@, kept verbatim so that 'encodeEnsemble' writes
+    -- @scenarios:@, @metadata:@, and @colorizers:@, kept verbatim so that 'encodeEnsemble' writes
     -- it back out. These hold state belonging to a particular
     -- frontend rather than to the script itself -- e.g. the wx UI's
     -- window geometry and current views, under @wx-properties:@ --
@@ -212,14 +235,22 @@ loadProjectBytes path contents =
   case YAML.decodeEither' contents of
     Right (Object o) | Just (String scriptText) <- KM.lookup "script" o -> do
       let src = Text.unpack scriptText
-      built <- buildEnsembleFromScript src
+      choices <- readColorizerChoices path o
+      built <- buildEnsembleWithColorizers choices src
       (ens, loaded) <- case built of
         Right ens -> pure (ens, Built ens)
         Left err -> do
-          ens <- scriptOnlyEnsemble src
+          ens <- scriptOnlyEnsemble src choices
           pure (ens, BrokenScript ens (formatScriptError src err))
       setValue' (ensembleFrontendProperties ens)
-        (foldr KM.delete o ["script", "scenarios", "metadata"])
+        (foldr KM.delete o coreKeys)
+      -- An unreadable `autocolor:` only costs its colors, which will be
+      -- given out again as they're needed.
+      forM_ (KM.lookup "autocolor" o) $ \v -> do
+        st <- getDynamic (ensembleAutocolor ens)
+        readAutocolorState st v >>= \case
+          Right () -> pure ()
+          Left err -> hPutStrLn stderr ("warning: " ++ quoted path ++ ": ignoring `autocolor:`: " ++ err)
       attachMetadata path o ens >>= \case
         Left err -> pure (Left err)
         Right () -> attachScenarios o ens <&> fmap (const loaded)
@@ -229,13 +260,34 @@ loadProjectBytes path contents =
                              \format is no longer supported)."))
     Left err -> pure (Left (quoted path ++ " isn't valid YAML: " ++ show err))
 
+-- | The top-level keys of a project file that the core reads itself;
+-- the rest belong to frontends ('ensembleFrontendProperties').
+coreKeys :: [KM.Key]
+coreKeys = ["script", "scenarios", "metadata", "colorizers", "autocolor"]
+
+-- | A project file's @colorizers:@ key: the colorizer chosen for each
+-- viewer, by title. Anything unreadable in it is a warning (on stderr),
+-- and ignored, as for a choice that names a colorizer this version of
+-- FractalStream doesn't have.
+readColorizerChoices :: FilePath -> KM.KeyMap Aeson.Value -> IO (Map.Map String String)
+readColorizerChoices path o = case KM.lookup "colorizers" o of
+  Nothing -> pure Map.empty
+  Just (Object m) -> fmap (Map.fromList . catMaybes) . forM (KM.toList m) $ \case
+    (k, String v) -> pure (Just (Text.unpack (Key.toText k), Text.unpack v))
+    (k, _) -> Nothing <$ warn ("ignoring the colorizer for the viewer "
+                                ++ show (Key.toText k) ++ ", which isn't text")
+  Just _ -> Map.empty <$ warn "ignoring `colorizers:`, which should map viewer titles to colorizers"
+  where
+    warn w = hPutStrLn stderr ("warning: " ++ quoted path ++ ": " ++ w)
+
 -- | A project with just a script's text, and nothing built from it (see
 -- 'ensembleBuilt').
-scriptOnlyEnsemble :: String -> IO Ensemble
-scriptOnlyEnsemble src =
+scriptOnlyEnsemble :: String -> Map.Map String String -> IO Ensemble
+scriptOnlyEnsemble src choices =
   Ensemble <$> newVariable Nothing <*> newVariable [] <*> newVariable []
            <*> newVariable src <*> newVariable Map.empty <*> pure False
-           <*> newVariable noMetadata <*> newVariable KM.empty
+           <*> newVariable noMetadata <*> newVariable choices <*> pure Map.empty
+           <*> pure [] <*> (newAutocolorState >>= newVariable) <*> newVariable KM.empty
 
 -- | A unified-script project can still carry a sibling top-level
 -- `scenarios:` key. Reading it has nothing to do with the unified-script
@@ -306,6 +358,7 @@ carryOverProjectState from to = do
   setValue' (ensembleScenarios to) =<< getDynamic (ensembleScenarios from)
   setValue' (ensembleMetadata to) =<< getDynamic (ensembleMetadata from)
   setValue' (ensembleFrontendProperties to) =<< getDynamic (ensembleFrontendProperties from)
+  setValue' (ensembleAutocolor to) =<< getDynamic (ensembleAutocolor from)
   -- A project whose script hadn't built has no values of its own to
   -- carry over, only the ones its file was saved with: those are the
   -- ones to put in place, now that there's somewhere to put them.
@@ -407,10 +460,15 @@ encodeEnsemble ens = do
   frontendProperties <- getDynamic (ensembleFrontendProperties ens)
   metadataKV <- maybe [] (\v -> [("metadata", v)]) . writeMetadata
                 <$> getDynamic (ensembleMetadata ens)
+  choices <- getDynamic (ensembleColorizerChoices ens)
+  let colorizersKV = [ ("colorizers", Aeson.toJSON choices) | not (Map.null choices) ]
+  autocolorKV <- maybe [] (\v -> [("autocolor", v)])
+                 <$> (getDynamic (ensembleAutocolor ens) >>= writeAutocolorState)
   scenariosKV <- if null scenarios
     then pure []
     else (\v -> [("scenarios", v)]) <$> encodeValue scenarios
-  let rest = KM.union (KM.fromList (metadataKV ++ scenariosKV)) frontendProperties
+  let rest = KM.union (KM.fromList (metadataKV ++ colorizersKV ++ autocolorKV ++ scenariosKV))
+                      frontendProperties
   pure $ scriptKey scriptText
       <> (if KM.null rest then mempty
           else YAMLPretty.encodePretty projectYamlConfig (Object rest))
@@ -459,10 +517,11 @@ projectYamlConfig = YAMLPretty.setConfCompare (comparing rank) YAMLPretty.defCon
   where
     rank k = (fromMaybe (length keyOrder) (elemIndex k keyOrder), k)
     keyOrder =
-      [ "script", "metadata", "scenarios", "values"
+      [ "script", "metadata", "colorizers", "autocolor", "scenarios", "values"
       , "title", "description", "preview-commands", "preview"
       , "name", "commands"
       , "config", "tool"
+      , "tolerance", "locked", "miss-color", "next-hue", "entries", "point", "color"
 
       , "viewers", "configuration"
       , "x", "y", "width", "height"
@@ -492,11 +551,25 @@ formatScriptError src (range, msg) = unlines (pp (Indicated range src) ++ [""] +
 
 -- | Parse a unified project script and compile it into a runnable
 -- 'Ensemble', resolving every cross-stanza reference along the way.
+--
+-- Every viewer gets its default colorizer; see
+-- 'buildEnsembleWithColorizers'.
 buildEnsembleFromScript :: String -> IO (Either (SourceRange, String) Ensemble)
-buildEnsembleFromScript scriptText = case parseScript scriptText of
+buildEnsembleFromScript = buildEnsembleWithColorizers Map.empty
+
+-- | Like 'buildEnsembleFromScript', with the colorizers chosen
+-- interactively for some viewers, by title (see "Actor.Colorizer").
+-- A choice that can't be used is a warning, on stderr; a choice for a
+-- viewer the script doesn't have is dropped.
+buildEnsembleWithColorizers :: Map.Map String String -> String
+                            -> IO (Either (SourceRange, String) Ensemble)
+buildEnsembleWithColorizers choices0 scriptText = case parseColorized choices0 scriptText of
   Left err -> pure (Left err)
-  Right stanzas0 -> do
-    let stanzas       = stanzas0 ++ [implicitBookkeepingStanza]
+  Right Colorized{ colorizedStanzas = stanzas0, colorizedViewers = viewerColorizers
+                 , colorizedAvailable = available, colorizedWarnings = warnings } -> do
+    forM_ warnings $ \w -> hPutStrLn stderr ("warning: " ++ w)
+    let choices       = Map.restrictKeys choices0 (Map.keysSet viewerColorizers)
+        stanzas       = stanzas0 ++ [implicitBookkeepingStanza]
         configGroups  = [ (t, b) | ConfigStanza t b <- stanzas ]
         viewers       = mapMaybe viewerFields stanzas
         tools         = mapMaybe toolFields stanzas
@@ -515,7 +588,11 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
       Left err -> pure (Left err)
       Right () -> buildWithValidTargets configGroups viewers tools viewerTitles >>= \case
         Left err  -> pure (Left err)
-        Right ens -> do
+        Right ens0 -> do
+          choicesVar <- newVariable choices
+          let ens = ens0 { ensembleColorizerChoices = choicesVar
+                         , ensembleViewerColorizers = viewerColorizers
+                         , ensembleAvailableColorizers = available }
           setValue' (ensembleSourceScript ens) scriptText
           defaults <- ensembleFields ens >>= mapM (\(owner, f) -> do
             txt <- fieldText f
@@ -547,9 +624,17 @@ buildEnsembleFromScript scriptText = case parseScript scriptText of
 -- (mirroring 'Actor.Event.buildHandlerWith's own
 -- 'Actor.Event.runParsedToolScript' call, also already pure), the same
 -- check 'buildEnsembleFromScript' runs before building.
+--
+-- Checks every viewer with its default colorizer; see
+-- 'checkScriptWithColorizers'.
 checkScript :: String -> Either (SourceRange, String) ()
-checkScript scriptText = do
-  stanzas0 <- parseScript scriptText
+checkScript = checkScriptWithColorizers Map.empty
+
+-- | Like 'checkScript', with the colorizers chosen interactively for
+-- some viewers, as for 'buildEnsembleWithColorizers'.
+checkScriptWithColorizers :: Map.Map String String -> String -> Either (SourceRange, String) ()
+checkScriptWithColorizers choices scriptText = do
+  stanzas0 <- colorizedStanzas <$> parseColorized choices scriptText
   let stanzas      = stanzas0 ++ [implicitBookkeepingStanza]
       configGroups = [ (t, b) | ConfigStanza t b <- stanzas ]
       viewers      = mapMaybe viewerFields stanzas
@@ -565,6 +650,11 @@ checkScript scriptText = do
     forM_ viewers $ \v ->
       checkViewer configEnv env
         [ t | t <- tools, toolTargets viewerTitles (vfTitle v) t ] v
+
+-- | Parse a script, and add each viewer's colorizer to it
+-- ('applyColorizers').
+parseColorized :: Map.Map String String -> String -> Either (SourceRange, String) Colorized
+parseColorized choices scriptText = parseScript scriptText >>= applyColorizers choices
 
 -- | Mirrors '<#>'s own duplicate-name rejection -- the same check
 -- 'Actor.Layout.layoutContext' hits (via its 'SomeContext'' 'Monoid'
@@ -749,8 +839,11 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
           sourceScriptVar <- newVariable ""
           defaultsVar     <- newVariable Map.empty
           metadataVar     <- newVariable noMetadata
+          choicesVar      <- newVariable Map.empty
+          autocolorVar    <- newAutocolorState >>= newVariable
           frontendVar     <- newVariable KM.empty
-          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar defaultsVar True metadataVar frontendVar))
+          pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar defaultsVar True
+                                metadataVar choicesVar Map.empty [] autocolorVar frontendVar))
 
 
 ------------------------------------------------------------
@@ -1349,18 +1442,20 @@ runEnsemble backend UI{..} Ensemble{..} = do
 
   -- Make the viewers
   viewers <- getDynamic ensembleViewers
-  forM_ viewers $ makeComplexViewer project backend mkViewer' someContext configArgs showConfig
+  autocolorState <- getDynamic ensembleAutocolor
+  forM_ viewers $ makeComplexViewer project backend autocolorState mkViewer' someContext configArgs showConfig
 
 makeComplexViewer :: forall ensembleHandle
                    . ensembleHandle
                   -> Backend
+                  -> AutocolorState
                   -> (ensembleHandle -> IO () -> SomeContext EventArgument_ -> IO () -> Viewer -> IO (IO ()))
                   -> SomeContext DynamicValue'
                   -> SomeContext EventArgument_
                   -> IO ()
                   -> ComplexViewer
                   -> IO ()
-makeComplexViewer project backend mkViewer someContext configArgs showConfig ComplexViewer{..} = do
+makeComplexViewer project backend autocolorState mkViewer someContext configArgs showConfig ComplexViewer{..} = do
    rebuildScript
   where
    rebuildScript = do
@@ -1386,7 +1481,8 @@ makeComplexViewer project backend mkViewer someContext configArgs showConfig Com
 
     (vDrawCmds, vDrawCmdsChanged, vDrawSink) <- makeToolRunnerForLayer (bToolRunnerFactory backend)
 
-    let vBuildToolHandler = runTool (bToolRunner backend) vDrawSink
+    let lookupAutocolor = autocolorLookup autocolorState
+        vBuildToolHandler = runTool (bToolRunner backend) lookupAutocolor vDrawSink
 
     getDynamic cvCode >>= \case
 
@@ -1416,7 +1512,11 @@ makeComplexViewer project backend mkViewer someContext configArgs showConfig Com
                       | otherwise -> changed ctx'
                     EmptyContext  -> pure ()
               let cc = (\(SomeContext c) -> changed c) someContext
-              watchDynamic cc (\_ -> action)
+              -- (and redraw when colors already given out by autocolor
+              -- tables change)
+              stopValues <- watchDynamic cc (\_ -> action)
+              stopAutocolor <- watchDynamic (autocolorEdits autocolorState) (\_ -> action)
+              pure (stopValues >> stopAutocolor)
 
         withEnvironment env $ do
 
@@ -1446,7 +1546,7 @@ makeComplexViewer project backend mkViewer someContext configArgs showConfig Com
           withSelectTool <- if coord `Map.member` envToMap env then (:) <$> makeSelectTool coord else pure id
           let vTools = withSelectTool <$> dyn cvTools
 
-          withCompiledViewer (bViewerCompiler backend) mprep code $ \fun -> do
+          withCompiledViewer (bViewerCompiler backend) lookupAutocolor mprep code $ \fun -> do
             let vCodeWithArgs = CodeWithArgs vGetArgs (Just code) (pure fun)
             -- FIXME, we should grab the "close this window" action and do something with it
             void $ mkViewer project showConfig configArgs rebuildScript Viewer{..}

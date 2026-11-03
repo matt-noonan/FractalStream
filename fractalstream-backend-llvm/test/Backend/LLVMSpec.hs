@@ -15,6 +15,7 @@ import Actor.Viewer (ViewerFunction(..), ViewerArgs(..), ViewerIssues(..), PrepS
 import Actor.Viewer.Types (ViewerEnv)
 import Foreign (allocaBytes, peekArray, Word8)
 import Backend.LLVM
+import Actor.Autocolor (AutocolorLookup)
 
 -- Deliberately plain string literals here, not a 'Text.RawString.QQ'
 -- quasiquote: quasiquotes require Template Haskell, which forces GHC to
@@ -94,7 +95,7 @@ spec = do
 
     mapM_ (\(name, src) ->
             it ("matches the interpreter: " ++ name) $ withJIT $ \jit -> do
-              compiled    <- runTool (compiledToolExec jit) src
+              compiled    <- runTool (compiledToolExec jit noAutocolor) src
               interpreted <- runTool interpretedToolExec src
               compiled `shouldBe` interpreted)
           scripts
@@ -122,7 +123,7 @@ spec = do
 
     mapM_ (\(name, src) ->
             it ("matches the interpreter: " ++ name) $ withJIT $ \jit -> do
-              compiled    <- runTool (compiledToolExec jit) src
+              compiled    <- runTool (compiledToolExec jit noAutocolor) src
               interpreted <- runTool interpretedToolExec src
               compiled `shouldBe` interpreted)
           scripts
@@ -131,7 +132,7 @@ spec = do
 
     it "reports a bad list index as such, like the interpreter" $ withJIT $ \jit -> do
       let src = "draw point at z\nx <- re(pts @ 5)"
-      runTool (compiledToolExec jit) src
+      runTool (compiledToolExec jit noAutocolor) src
         `shouldThrow` (\e -> "list index was out of range" `isInfixOf` show (e :: IOException))
       runTool interpretedToolExec src
         `shouldThrow` (\(ErrorCall msg) -> msg == "List index 5 is out of range")
@@ -140,7 +141,7 @@ spec = do
       -- the first arena overflows while building ks, leaving it (and so
       -- big) cut short, so `big @ 50000` is out of range in that run
       let src = "ks := range(1, 100000)\nbig := transform(ks, k ⟼ z)\nx <- re(big @ 50000)"
-      compiled    <- runTool (compiledToolExec jit) src
+      compiled    <- runTool (compiledToolExec jit noAutocolor) src
       interpreted <- runTool interpretedToolExec src
       compiled `shouldBe` interpreted
 
@@ -157,7 +158,7 @@ spec = do
                  ++ "if n = 2:\n  ks := range(1, 100000)\n"
                  ++ "  color <- if length(ks) > 0 then red else green"
           code <- either (fail . show) pure (parseCode env noCommonDefs src)
-          withJittedViewer jit Nothing code $ \(ViewerFunction vf) ->
+          withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) ->
             allocaBytes (3 * 4 * 4) $ \buf -> do
               issues <- vf ViewerArgs
                 { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -182,13 +183,35 @@ spec = do
       issues `shouldBe` ViewerIssues { viOutOfMemory = True, viBadIndex = False }
       pixels `shouldBe` allPixels (255, 0, 255)
 
+    it "asks the host for autocolors" $ withJIT $ \jit -> do
+      calls <- newIORef []
+      let lookupAc adds n x y = do
+            atomicModifyIORef' calls (\cs -> ((adds, n, x, y) : cs, ()))
+            pure (rgbToColor (10, 20, 30))
+          env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
+          src = "c := get_autocolor(4, 1)\ncolor <- autocolor(3, 0.5 + 0.25 i)"
+      code <- either (fail . show) pure (parseCode env noCommonDefs src)
+      pixels <- withJittedViewer jit lookupAc Nothing code $ \(ViewerFunction vf) ->
+        allocaBytes (3 * 4 * 4) $ \buf -> do
+          _ <- vf ViewerArgs
+            { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+            , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+            , vaBuffer = buf
+            , vaArgs = Bind (Proxy @"n") IntegerType 0 EmptyContext }
+          peekArray (3 * 4 * 4) buf
+      pixels `shouldBe` concat (replicate 16 [10, 20, 30])
+      made <- readIORef calls
+      length made `shouldBe` 32
+      filter (\(a, _, _, _) -> a) made `shouldSatisfy` all (== (True, 3, 0.5, 0.25))
+      filter (\(a, _, _, _) -> not a) made `shouldSatisfy` all (== (False, 4, 1, 0))
+
     it "starts each pixel's color at grey" $ withJIT $ \jit -> do
       -- Only the first pixel sets the color, since n is changed afterwards
       -- (and stays changed for the rest of the block).
       let env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
           src = "if n = 0:\n  color <- red\nn <- 1"
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
-      pixels <- withJittedViewer jit Nothing code $ \(ViewerFunction vf) ->
+      pixels <- withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- vf ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -213,7 +236,7 @@ spec = do
             , "  count <- count + 1"
             , "color <- if count = 3 and length(bs) = 1 then green else red" ]
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
-      pixels <- withJittedViewer jit Nothing code $ \(ViewerFunction vf) ->
+      pixels <- withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- vf ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -229,7 +252,7 @@ spec = do
       prepCode <- either (fail . show) pure (parseCode env noCommonDefs prepSrc)
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
       let prep = PrepScript (envProxy (Proxy @PrepTestEnv)) prepCode
-      pixels <- withJittedViewer jit (Just prep) code $ \(ViewerFunction vf) ->
+      pixels <- withJittedViewer jit noAutocolor (Just prep) code $ \(ViewerFunction vf) ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- vf ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -299,3 +322,7 @@ runTool exec src = do
   final <- (,,) <$> getDynamic vMsg <*> getDynamic vN <*> getDynamic vX
   lists <- (,,) <$> getDynamic vPts <*> getDynamic vLegs <*> getDynamic vWords
   pure (drawn, final, lists)
+
+-- | For code that doesn't use autocolor.
+noAutocolor :: AutocolorLookup
+noAutocolor _ _ _ _ = pure grey

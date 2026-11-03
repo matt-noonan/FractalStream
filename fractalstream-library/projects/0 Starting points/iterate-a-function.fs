@@ -1,16 +1,9 @@
 script: |
   @common
-  # iterate z ⟼ expression(z) until exit_condition(z)
-  let expression(z) = z^2 + i
-  let exit_condition(z) = z escapes
-  # colors can use color names like `red` or `black`, or color functions
-  # involving the variables `z`, `C`, and `iterations`
-  let on_success(z) = rainbow(iterations / 20)
-  let on_failure(z) = black
+  let f(z) = z^2 + i
 
   @viewer "Simple complex dynamics"
-  iterate z -> expression(z) until exit_condition(z)
-  color <- if stuck then on_failure(z) else on_success(z)
+  iterate z -> f(z) until z escapes
 
   @tool "Trace" shortcut=t
   on refresh:
@@ -21,17 +14,15 @@ script: |
     use white for line
     erase
     prevZ := z
-    until exit_condition(z):
+    until z escapes:
       prevZ <- z
       draw point at z
-      z <- expression(z)
+      z <- f(z)
       draw line from z to prevZ
 metadata:
   title: Iterate a function
   description: |
-    Iterates z ↦ f(z) for a function f of your choosing, and colors each
-    point by whether its orbit escapes. The function, the stopping condition,
-    and the colors are defined at the top of the script, ready to edit.
+    Iterates z ↦ f(z) for a function f of your choosing, and colors each point by whether its orbit escapes. The function to iterate is defined at the top of the script, ready to edit.
   preview-commands: |
     capture viewer "Simple complex dynamics" as preview
   preview: |

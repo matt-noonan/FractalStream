@@ -185,6 +185,95 @@ a `Code` into a `ViewerFunction` using the active backend.
 A `Tool` has a name, keyboard shortcut, and a list of event-handler actions.
 Each action maps an `Event` to a `Code` block that runs in response.
 
+### Colorizers (`Actor.Colorizer`)
+
+A colorizer is a named piece of viewer code that sets `color`, run at the
+end of a viewer's body, so a viewer script can just say what to compute.
+Built-ins (`builtinColorizers`): Manual (no code), Rainbow, Escape time,
+Smooth, Binary decomposition, Glow, Autocolor (always group 0, since a
+colorizer parameter would be a variable, not the literal group number
+`autocolor` needs); each is written as `@colorizer` source
+text, parsed by `parseScript` (the test suite builds every one). A script
+adds its own with `@colorizer "Name"` stanzas (`ColorizerStanza`: config
+declarations, then `define colorize(params):`); one with a built-in's name
+replaces it, with a warning on stderr.
+
+`applyColorizers` is a stanza-to-stanza pass that runs right after
+`parseScript` in both `buildEnsembleWithColorizers` and
+`checkScriptWithColorizers` (`buildEnsembleFromScript`/`checkScript` are
+these with no interactive choices). For each viewer it picks the colorizer
+(interactive choice by title, from `colorizers:`; else `colorizer=`; else
+Manual if the body assigns `color` (`setsColor`, after `define`/`run`
+expansion) and Rainbow if not), appends its code to the viewer's code, and
+adds its settings as a `ConfigStanza` (tab "Coloring", or "<title>
+coloring" with several viewers). Every name the colorizer declares
+(settings, parameters, locals) is renamed `[colorizer] <title>: <name>`,
+so it can't clash with the script's names and each viewer has its own
+settings. Its `@common` dependencies (`czCommon`) are added unless the
+viewer already has them. A parameter without an argument gets its
+default (`t = iterations / period`, read in the colorizer's renamed
+scope), else the viewer's variable of the same name (read in the
+viewer's scope; `ViewerColorizer.colorizerScope` approximates what's in
+scope, for the wx menu). Arguments are split at top-level commas
+(`splitArguments`) and parsed with `argumentGrammarWithFunctions`, which
+excludes top-level pairs (`a, b`), with the viewer's function names. A
+viewer's `coloring:` block (`vsColoring`) replaces the default colorizer's
+setting defaults (`configure`; a choice by its quoted label), only when
+that colorizer is in use. Built-ins' source ranges are stripped; a script
+colorizer keeps its own, so its errors point into its stanza.
+
+The ensemble keeps the interactive choices (`ensembleColorizerChoices`),
+how each viewer is colorized (`ensembleViewerColorizers`: in use, default,
+scope), and the available colorizers (`ensembleAvailableColorizers`).
+Changing a choice means building the project again.
+
+### Autocolor (`Actor.Autocolor`)
+
+`autocolor(n, p)` / `get_autocolor(n, p)` (surface `EAutocolor`, value
+`Autocolor Bool Int`) look point `p` up in autocolor group `n` (a literal;
+typing rejects anything else, via `integerLiteral`), giving the color of
+the nearest entry within the group's tolerance; `autocolor` adds a new
+entry, with the next golden-angle hue, when none is near (unless the
+group is locked or has `maxAutocolorEntries` = 256 entries), and a miss
+otherwise gives the group's `agMissColor`. Lookups read the table without
+the lock; a miss takes `agTableWriteMutex` and looks again before
+inserting, so concurrent misses can't insert near-duplicates.
+
+**Not deterministic:** which point gets which hue depends on the order
+points are first seen, which varies with tile scheduling and threads, so
+an unsaved project's colors (and so `fsrun` output from a project
+without an `autocolor:` key) can differ from run to run. Saved tables
+(and locked groups) make them stable.
+
+The `Ensemble` owns an `AutocolorState` (`ensembleAutocolor`, carried
+over by `carryOverProjectState`, saved under a core-owned `autocolor:`
+key that `fsrun` honors). Backends get an `AutocolorLookup` (`Bool -> Int
+-> Double -> Double -> IO Color`): `withCompiledViewer` and `runTool`
+take one. The LLVM backend passes it to viewer kernels (`#autocolor`,
+after `#issuesOut`) and tool handlers (after `text.format`) as a
+`"wrapper"` function pointer, `i32 (i8 add, i32 group, double x, double
+y)` returning `0x00RRGGBB`, reached through `ArenaState.asAutocolor`. A
+viewer's pointer is never freed (the kernel outlives
+`withJittedViewer`'s action). The pure evaluator can't compute it (it's
+pure); it raises an error. Viewers redraw when `autocolorEdits` changes
+(recoloring, moving, adding by hand, or deleting entries; clearing,
+locking, tolerance or miss color changes), not when a render adds points.
+
+In the `autocolor:` key, points are complex literals in ASCII
+(`showAutocolorPoint`: 10 decimals, |x| < 1e-9 written as 0; a plain
+YAML number is accepted too) and colors are written by `toUserString`,
+both read back with `parseConstant`. The wx "Autocolor..." window
+(`UI.AutocolorEditor`, one per project, from the viewer menu) shows a group
+selector, each entry's point (edited in place, committed on Enter or
+leaving the field) and color picker with a Delete button, an add-a-point
+field, "Clear all", a lock checkbox, the group's tolerance (a positive
+real, committed like a point), and its miss color. It watches the list of
+groups and each group's table with `wxWatchDynamic` (tables change on
+render threads; the watches run on the GUI thread; each table is watched
+once, from when its group appears, for the window's life), and rebuilds
+its list only when the selected group's set of points changes, so a field
+being edited isn't wiped by a render that adds points elsewhere.
+
 ### Events (`Event`)
 
 `Event args` is parameterized by the environment the event carries:
@@ -348,6 +437,18 @@ Key modules:
 A frontend supplies a `UI` record (`Actor.UI`: `newEnsemble`, `makeLayout`,
 `makeViewer`); the wx and headless frontends each provide one.
 
+Destroy handlers: `wxWindowDestroyEvent` is a command event, so it
+propagates up from child windows (stopping at a top-level window), and a
+plain `windowOnDestroy` handler runs whenever *any* child of the window is
+destroyed, not just the window itself. Use `UI.Widgets.onOwnDestroy`,
+which checks the event's source and chains the handlers installed before
+it; every destroy hook in the app does (including those in
+`wxWatchDynamic` and `wxTimer`). Before it, a window that rebuilt some of
+its widgets (the autocolor window's list) silently stopped every watch and
+timer on it, since their cleanup ran on the first child destroyed. Mixing
+in a plain handler would bring that back: it would run on a child's
+destruction and call the chained cleanups unconditionally.
+
 wxHaskell layout rules that are easy to get wrong (see `UI.ProjectInfo` for a
 worked example):
 
@@ -389,7 +490,7 @@ A `metadata:` key (`Actor.Metadata`, `ensembleMetadata`) holds a `title`, a
 and `preview` (a base64 PNG, from `Actor.Viewer.Preview.renderPreview`, also
 used by the wx viewer menu's "Use this as preview"). Unknown keys under it
 are kept. `encodeEnsemble` writes keys in a fixed, readable order (script,
-metadata, scenarios, then the rest); see `projectYamlConfig`. A rebuild from
+metadata, colorizers, autocolor, scenarios, then the rest); see `projectYamlConfig`. A rebuild from
 an edited script uses `carryOverProjectState` to keep scenarios, metadata,
 and frontend keys.
 
@@ -447,6 +548,19 @@ ensemble remembers its defaults when built (`ensembleValueDefaults`);
 `resetValues` (the config window's "Reset to defaults") goes back to them.
 Library projects may not carry `values:` (`LibrarySpec`).
 
+A `colorizers:` key maps viewer titles to the colorizers chosen
+interactively (`ensembleColorizerChoices`; see "Colorizers" above),
+written as chosen: `Smooth`, `Rainbow(arg z / (2 pi))`. Unlike `values:`,
+this is part of what the project draws, so the core reads it and `fsrun`
+honors it. Only choices that differ from a viewer's default are saved
+(choosing the default removes the entry); an unreadable or unusable entry
+is a warning and the viewer's default, and is kept. Entries for viewers
+the script no longer has are dropped on build. A library project should
+use `colorizer=` and `coloring:` in its script instead, so that "Reset to
+defaults" and the preview agree. Scenarios set a colorizer's settings with
+`set colorizer parameter <name> to <value or "choice">`, for the selected
+viewer (the hidden name is `[colorizer] <title>: <name>`).
+
 Any other top-level key belongs to a frontend: the core keeps it verbatim in
 `ensembleFrontendProperties` and `encodeEnsemble` writes it back out, but never
 interprets it. The wx UI saves its window layout under `wx-properties:` (see
@@ -502,6 +616,21 @@ boxes do; they used to be frozen `constParsed` values, which silently
 ignored the color picker and `set parameter`. A `button` is only allowed in
 a `@tool` (`noButtons` rejects it in `@config`, since only a tool's own
 panel delivers `ButtonPressed`).
+
+Colorizers in the wx viewer: the hamburger menu's "Colorizer" submenu
+lists `ensembleAvailableColorizers`, checking the one in use. Picking one
+whose parameters all have defaults or same-named variables in scope
+switches at once; otherwise its item says "..." and it asks for the
+arguments (`askColorizerArguments`: one field per parameter, an empty
+field meaning its default or same-named variable). "Arguments..." edits
+the one in use. Switching calls `pmSetColorizer`, which rebuilds the
+project with `UI.ProjectScriptEditor.rebuildColorizers`: it builds at once
+(an error is a dialog and leaves the project alone), then replaces the
+windows from a one-shot timer, since the menu's own viewer is among them,
+leaving an open script editor (`sehEditor`) and its draft in place. The
+config window's "Reset to defaults" also clears the interactive choices
+(rebuilding first, then resetting values). The script editor's Rebuild
+and live check keep the current choices.
 
 Tool behavior in the wx viewer: `on timer` handlers run while the tool is
 selected (`toolTimers`, from `toolBlockTimers` on the parsed blocks; the
@@ -561,7 +690,8 @@ See `LANGUAGE.md` for full docs. Key points:
 | `fractalstream-core/src/Data/Indexed/Functor.hs` | `IFunctor`, `ITraversable`, `FIX`, catamorphisms |
 | `fractalstream-core/src/Data/DynamicValue.hs` | `Variable`, `Dynamic`, reactive system |
 | `fractalstream-core/src/Data/Codec.hs` | Bidirectional YAML/JSON serialization |
-| `fractalstream-core/src/Actor/Script.hs` | Unified-script (`@config`/`@common`/`@viewer`/`@tool`) grammar |
+| `fractalstream-core/src/Actor/Script.hs` | Unified-script (`@config`/`@common`/`@viewer`/`@tool`/`@colorizer`) grammar |
+| `fractalstream-core/src/Actor/Colorizer.hs` | Built-in colorizers, `applyColorizers` |
 | `fractalstream-core/src/Actor/Ensemble.hs` | `Ensemble`, project loading, viewer setup |
 | `fractalstream-core/src/Actor/Layout.hs` | `Layout` ADT, UI panel structure |
 | `fractalstream-core/src/Actor/Viewer.hs` | `Viewer`, `ViewerCompiler`, rendering types |

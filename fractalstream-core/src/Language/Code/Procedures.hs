@@ -10,6 +10,7 @@
 -- the blocks defined before it (so never itself).
 module Language.Code.Procedures
   ( expandRuns
+  , renameStmt
   ) where
 
 import FractalStream.Prelude

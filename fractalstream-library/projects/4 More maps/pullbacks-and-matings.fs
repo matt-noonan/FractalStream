@@ -12,17 +12,9 @@ script: |
   @viewer "C-plane" var=C center=0 pixelSize=1/128
   z := C
   iterate z -> f(z) until z escapes
-  if stuck:
-    color <- black
-  else:
-    color <- rainbow (iterations / 20)
 
   @viewer "Dynamics" center=0 pixelSize=1/128
   iterate z -> f(z) until z escapes
-  if stuck:
-    color <- black
-  else:
-    color <- dark rainbow (iterations / 20)
 
   @tool "Preimages" for=Dynamics shortcut="i" drawLayer=10
   pre1 : C as "Value" <- 0
