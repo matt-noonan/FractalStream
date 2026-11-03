@@ -505,8 +505,12 @@ Key modules:
 - `UI.Widgets` - custom wx widgets
 - `UI.CodeEditor` - script code editor (uses `StyledTextCtrl`)
 - `UI.EditorKeys` - code editor keys: Return indents the new line
-  (`Language.Editor.newLineIndent`; the indent unit is 2), and emacs
-  movement keys, always on macOS and the `emacs-keys` setting elsewhere. On macOS, Control-letter reaches
+  (`Language.Editor.newLineIndent`; the indent unit is 2), paste
+  re-indents (`pasteIndented`), Cmd/Ctrl+/ toggles comments
+  (`toggleComments`), and emacs movement keys, always on macOS and the
+  `emacs-keys` setting elsewhere. Return, paste and comment keys are
+  handled on key-down (Scintilla acts on Return then, with no character
+  event after); on macOS the slash key goes down as `KeyDivide`. On macOS, Control-letter reaches
   the key handler as its control character (Control-E is ENQ, 5) with no
   modifiers set, so control codes 1-26 are read as Control-letters.
 - `UI.AppSettings` - the app-wide `Variable Settings` (`appSettings`),
