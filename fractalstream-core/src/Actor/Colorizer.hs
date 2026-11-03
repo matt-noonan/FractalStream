@@ -58,6 +58,7 @@ import Data.Char (isSpace, toLower)
 import Data.List (unzip4, find, dropWhileEnd, nub, (\\))
 
 import Actor.Script
+import Actor.Layout (AppAction(..))
 import Language.Parser (ParseError, parse)
 import Language.Parser.Tokenizer (tokenize)
 import Language.Parser.SourceRange
@@ -172,7 +173,7 @@ builtinColorizers =
       , "      s <- " ++ smoothIterations
       , "    color <- if im z > 0 then cycle(s / period, upper1, upper2) else cycle(s / period, lower1, lower2)"
       ]
-  , builtin $ unlines
+  , withSettingsButton $ builtin $ unlines
       [ "@colorizer \"Autocolor\" description=\"Gives each point its argument ends up \
         \at a color of its own, the first time it's seen: each root a Newton's \
         \method converges to, say. Viewers using it share its colors (it uses \
@@ -258,6 +259,13 @@ builtin src = case parseScript src of
   Left (_, err) -> broken err
   where
     broken why = error ("A built-in colorizer is broken: " ++ why ++ "\n" ++ src)
+
+-- | Add a button to a colorizer's settings that opens the autocolor
+-- window, where its colors are kept.
+withSettingsButton :: Colorizer -> Colorizer
+withSettingsButton c = c
+  { colorizerConfig = colorizerConfig c
+      ++ [ConfigAction OpenAutocolorSettings "Open autocolor settings..."] }
 
 -- | The colorizer a @\@colorizer@ stanza defines.
 fromStanza :: ParsedStanza -> Maybe Colorizer

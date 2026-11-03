@@ -42,6 +42,7 @@ import Language.Value.Parser
 import Language.Code.Parser (CommonDefs(..), noCommonDefs, codeStatementsGrammar, codeBlockGrammar, ParsedCode, withDefinedFunctions, withCommon)
 import Language.Code.Syntax (Stmt(..), StmtF(..))
 import Actor.Event (toolBlocksGrammar, ParsedToolBlock)
+import Actor.Layout (AppAction(..))
 
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
@@ -86,6 +87,9 @@ data ConfigStmt
   | ConfigButton SourceRange String
     -- ^ A button; only meaningful in a @\@tool@, whose @on button@
     -- handlers it triggers (a @\@config@ stanza rejects it).
+  | ConfigAction AppAction String
+    -- ^ A button that does something in the app (no script can write
+    -- one: a built-in colorizer adds it to its settings)
   | ConfigRow [ConfigStmt]
     -- ^ An indented @row:@ block; its statements are laid out side by
     -- side instead of stacked vertically.

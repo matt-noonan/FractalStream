@@ -159,10 +159,13 @@ seen in, and the app draws in pieces, on several threads at once: so
 starts from scratch**. Saving a project saves its groups' colors, and
 then they stay put.
 
-"Autocolor..." in a viewer's menu opens a window for a project's groups:
+"Autocolor settings..." in a viewer's Colorizer menu (or the "Open
+autocolor settings..." button in the Autocolor colorizer's settings) opens
+a window for a project's groups:
 pick a group to see its points and their colors, and change a point or
-its color, add or delete points, clear the group, lock it, or change its
-tolerance or the color it gives points it doesn't have.
+its color, add or delete points, clear the group, lock it, change its
+tolerance or the color it gives points it doesn't have, or choose whether
+it blends its colors for those points.
 
 Only the LLVM backend (the default) can compute `autocolor`,
 `nearest_autocolor`, and `get_autocolor`. They can be used in viewers and

@@ -121,7 +121,7 @@ viewProject projectWindow wxLayout addMenuBar projectActions = UI
 
       addMenuBar f []
 
-      (stopListening, innerLayout) <- generateWxLayout (\_ -> pure ()) f ui
+      (stopListening, innerLayout) <- generateWxLayout (runAppAction projectActions) (\_ -> pure ()) f ui
       resetButton <- button f [ text := "Reset to defaults"
                               , on command := pmResetValues projectActions ]
       set f [ layout := fill . margin 5 . column 5 $
@@ -158,6 +158,11 @@ askColorizerArguments f name params = do
   showModal d $ \onDone -> do
     set cancel [ on command := onDone Nothing ]
     set ok [ on command := mapM (`get` text) fields >>= onDone . Just ]
+
+-- | Do what an 'ActionButton' in a layout asks.
+runAppAction :: ProjectMenuActions -> AppAction -> IO ()
+runAppAction pm = \case
+  OpenAutocolorSettings -> pmEditAutocolor pm
 
 makeWxComplexViewer :: Window ()
                     -> WxLayout
@@ -1147,7 +1152,6 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     menuItem hamburgerMenu [ text := "Jump to view...\t@", on command := jumpToView ]
     menuItem hamburgerMenu [ text := "Original view\t^", on command := goHome ]
     menuItem hamburgerMenu [ text := "Show configuration\t=", on command := raiseConfigWindow ]
-    menuItem hamburgerMenu [ text := "Autocolor...", on command := pmEditAutocolor ]
 
     -- The colorizers this viewer can use, with the one it uses checked.
     -- Picking another rebuilds the project, replacing this window. One
@@ -1221,6 +1225,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         [ text := "Arguments..."
         , enabled := not (null inUseParams)
         , on command := mapM_ (\c -> askArguments c (argsOf colorizerInUse)) inUseColorizer ]
+      -- (not really about this viewer's colorizer, since every viewer's
+      -- autocolor groups are the project's; but kept here so that the
+      -- viewer menu stays short)
+      void $ menuItem colorizerMenu
+        [ text := "Autocolor settings...", on command := pmEditAutocolor ]
       void (menuSub hamburgerMenu colorizerMenu [ text := "Colorizer" ]))
     set p [ on keyboard :~ \old k -> do
               let mods = keyModifiers k
@@ -1307,10 +1316,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                           , style := wxFRAME_TOOL_WINDOW .+. wxRESIZE_BORDER .+. wxCAPTION .+. wxCLOSE_BOX
                           ] f
           WX.windowOnClose tf (set tf [ visible := False ])
-          let buttonPress txt = do
+          let appAction = \case
+                OpenAutocolorSettings -> pmEditAutocolor
+              buttonPress txt = do
                 void $ runToolEventHandler Tool{..} (ButtonPressed txt)
                 vDrawCmdsChanged >>= \yn -> when yn triggerRepaint
-          (stopListening, tlo) <- generateWxLayout buttonPress tf (coContents tcfg)
+          (stopListening, tlo) <- generateWxLayout appAction buttonPress tf (coContents tcfg)
           set tf [ layout := margin 10 $ fill $ tlo ]
           -- Hooks `windowOnDestroy`, not `on closing` -- see the note
           -- on 'UI.Widgets.wxWatchDynamic'.

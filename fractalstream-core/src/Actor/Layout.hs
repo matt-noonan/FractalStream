@@ -1,6 +1,7 @@
 {-# language UndecidableInstances, OverloadedStrings, TemplateHaskell #-}
 module Actor.Layout
   ( Layout(..)
+  , AppAction(..)
   , Label(..)
   , TabItem(..)
   , CodeString(..)
@@ -74,10 +75,19 @@ data Layout
   | Tabbed (Variable [TabItem])
   | PlainText (Variable String)
   | Button (Variable String)
+  | ActionButton AppAction String
+    -- ^ A button that does something in the app itself, rather than run
+    -- a tool's handler (see 'AppAction')
   | CheckBox (Variable Label) (Parsed String) (Variable Bool)
   | ColorPicker (Variable Label) (Parsed String) (Parsed Color)
   | Selection (Variable Label) (Parsed String) (Variable Int64) (Variable [String])
   | TextBox (Variable Label) UIVariable
+
+-- | Things an 'ActionButton' can do in the app.
+data AppAction
+  = OpenAutocolorSettings
+    -- ^ show the project's autocolor window
+  deriving (Eq, Show)
 
 data TabItem = TabItem
   { tiLabel :: Variable Label
@@ -152,6 +162,7 @@ layoutContext = fmap (\(SomeContext' ctx) -> ctx) . go
         mconcat <$> mapM go parts
       PlainText{} -> pure mempty
       Button{}    -> pure mempty
+      ActionButton{} -> pure mempty
       Selection _ var x _ -> dyn var >>= \case
         Left e -> pure (SomeContext' $ Left e)
         Right v -> single v IntegerType (dyn x)
@@ -200,6 +211,7 @@ layoutFields = \case
   Tabbed items -> concat <$> (mapM (layoutFields <=< getDynamic . tiBody) =<< getDynamic items)
   PlainText{} -> pure []
   Button{} -> pure []
+  ActionButton{} -> pure []
   CheckBox _ name b -> named name $ \n -> Field
     { fieldName = n
     , fieldText = showBool <$> getDynamic b
@@ -276,6 +288,7 @@ layoutContext' = fmap (\(SomeContext' x) -> x) . go
         mconcat <$> mapM (go <=< getDynamic) parts
       PlainText{} -> pure mempty
       Button{}    -> pure mempty
+      ActionButton{} -> pure mempty
       Selection _ var x _ -> getDynamic var <&> \case
         Left e -> SomeContext' $ Left e
         Right v -> single v IntegerType (Right <$> dyn x)
@@ -312,6 +325,7 @@ layoutBindings = \case
     fmap concat . sequence <$> (mapM layoutBindings parts)
   PlainText{} -> pure (pure [])
   Button{} -> pure (pure [])
+  ActionButton{} -> pure (pure [])
   Selection _ var _ _ -> fmap (:[]) <$> (fmap (, SomeType IntegerType) <$> dyn var)
   CheckBox    _ var _ -> fmap (:[]) <$> (fmap (, SomeType BooleanType) <$> dyn var)
   ColorPicker _ var _ -> fmap (:[]) <$> (fmap (, SomeType ColorType)   <$> dyn var)

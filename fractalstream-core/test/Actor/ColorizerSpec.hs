@@ -5,7 +5,8 @@ import Test.Hspec
 
 import Actor.Colorizer
 import Actor.Ensemble
-import Actor.Layout (Field(..))
+import Actor.Layout (Field(..), AppAction(..))
+import Actor.Script (ConfigStmt(..))
 import Actor.SavedValues (noSavedValues)
 import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
@@ -57,6 +58,11 @@ spec = do
       let names = map colorizerName builtinColorizers
       sort names `shouldBe` sort (Map.keys (Map.fromList (map (,()) names)))
       map colorizerName builtinColorizers `shouldContain` [manualColorizerName, rainbowColorizerName]
+
+    it "include a button to the autocolor window in Autocolor's settings, and only there" $ do
+      let actions c = [ a | ConfigAction a _ <- colorizerConfig c ]
+      forM_ builtinColorizers $ \c -> map show (actions c) `shouldBe`
+        [ show OpenAutocolorSettings | colorizerName c == "Autocolor" ]
 
     it "each build, on a Julia set's viewer and on a Mandelbrot set's" $
       forM_ builtinColorizers $ \c -> do

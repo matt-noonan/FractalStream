@@ -297,8 +297,12 @@ the viewer that added them finds nothing new the second time.
 In the `autocolor:` key, points are complex literals in ASCII
 (`showAutocolorPoint`: 10 decimals, |x| < 1e-9 written as 0; a plain
 YAML number is accepted too) and colors are written by `toUserString`,
-both read back with `parseConstant`. The wx "Autocolor..." window
-(`UI.AutocolorEditor`, one per project, from the viewer menu) shows a group
+both read back with `parseConstant`. The wx autocolor window
+(`UI.AutocolorEditor`, one per project, from "Autocolor settings..." in
+the viewer's Colorizer menu, or the Autocolor colorizer's "Open autocolor
+settings..." button: a `ConfigAction OpenAutocolorSettings` statement,
+which no script can write, that becomes a `Layout` `ActionButton`, run by
+`generateWxLayout`'s `AppAction` handler) shows a group
 selector, each entry's point (edited in place, committed on Enter or
 leaving the field) and color picker with a Delete button, an add-a-point
 field, "Clear all", a lock checkbox, the group's tolerance (a positive
