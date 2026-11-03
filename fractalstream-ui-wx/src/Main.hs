@@ -50,6 +50,7 @@ import System.FilePath (takeDirectory, takeFileName)
 import Data.Char (isSpace)
 import FractalStream.Library (LibraryEntry(..), projectsDirectory)
 import FractalStream.Settings (loadSettings)
+import UI.AppSettings (appSettings)
 import UI.Preferences (preferencesWindow)
 
 import System.Directory (createDirectoryIfMissing)
@@ -109,7 +110,8 @@ runApp = withBackend $ \backend -> start $ do
   -- reported and left at its default.
   (initialSettings, settingsWarnings) <- loadSettings
   mapM_ (putStrLn . ("Settings: " ++)) settingsWarnings
-  settings <- newVariable initialSettings
+  let settings = appSettings
+  setValue' settings initialSettings
 
   let -- A new project starts from one of the library's starting points
       -- (including a blank one), chosen in the library browser.

@@ -39,13 +39,17 @@ data Settings = Settings
   { setProjectsFolder :: Maybe FilePath
     -- ^ Where the user's own projects are, or 'Nothing' for the default
     -- (a @FractalStream@ folder in their documents folder).
+  , setEmacsKeys      :: Bool
+    -- ^ Whether code editors have emacs-style movement keys (Control-A,
+    -- Control-E, ...) where Control is the standard shortcut key, as on
+    -- Windows and Linux. (On macOS they always do.)
   , setOther          :: KM.KeyMap Value
     -- ^ Keys this version doesn't know, kept as they are.
   }
   deriving (Eq, Show)
 
 defaultSettings :: Settings
-defaultSettings = Settings Nothing KM.empty
+defaultSettings = Settings Nothing False KM.empty
 
 -- | Where the settings are kept: in the user's application support
 -- folder on macOS, their roaming application data on Windows, and
@@ -78,9 +82,13 @@ readSettings path contents = case YAML.decodeEither' contents of
           Nothing -> (Nothing, [])
           Just (String t) | not (Text.null t) -> (Just (Text.unpack t), [])
           Just _ -> (Nothing, ["ignoring the projects-folder setting, which should be a folder's path"])
-        other = KM.delete "projects-folder" o
-    in ( Settings folder other
-       , map (("In " ++ quoted path ++ ", ") ++) folderWarnings )
+        (emacs, emacsWarnings) = case KM.lookup "emacs-keys" o of
+          Nothing -> (False, [])
+          Just (Bool b) -> (b, [])
+          Just _ -> (False, ["ignoring the emacs-keys setting, which should be true or false"])
+        other = KM.delete "emacs-keys" (KM.delete "projects-folder" o)
+    in ( Settings folder emacs other
+       , map (("In " ++ quoted path ++ ", ") ++) (folderWarnings ++ emacsWarnings) )
   Right _ -> (defaultSettings, [quoted path ++ " isn't a set of settings, so it's being ignored"])
 
 -- | The settings file's contents for these settings. A setting that's
@@ -89,6 +97,7 @@ writeSettings :: Settings -> ByteString
 writeSettings Settings{..} = YAML.encode $ Object $ KM.union
   (KM.fromList (catMaybes
     [ ("projects-folder",) . String . Text.pack <$> setProjectsFolder
+    , if setEmacsKeys then Just ("emacs-keys", Bool True) else Nothing
     ]))
   setOther
 

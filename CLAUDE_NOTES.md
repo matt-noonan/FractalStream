@@ -504,6 +504,12 @@ Key modules:
 - `UI.ConfigEditor` - renders a `Configuration` / `Layout` as wx widgets
 - `UI.Widgets` - custom wx widgets
 - `UI.CodeEditor` - script code editor (uses `StyledTextCtrl`)
+- `UI.EmacsKeys` - emacs movement keys in code editors: always on macOS,
+  the `emacs-keys` setting elsewhere. On macOS, Control-letter reaches
+  the key handler as its control character (Control-E is ENQ, 5) with no
+  modifiers set, so control codes 1-26 are read as Control-letters.
+- `UI.AppSettings` - the app-wide `Variable Settings` (`appSettings`),
+  set by `Main` at startup and changed by the Preferences window
 - `UI.Layout` - wx layout helpers
 - `UI.Tile` - tiled rendering of viewer pixels (parallelized)
 - `UI.Menu` - menu bar construction

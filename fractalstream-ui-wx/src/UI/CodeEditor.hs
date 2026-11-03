@@ -12,6 +12,9 @@ import FractalStream.Prelude hiding (get)
 import Language.Parser.SourceRange (SourceRange(..))
 import Data.DynamicValue
 import Actor.Layout (CodeString(..))
+import UI.EmacsKeys
+import UI.AppSettings (appSettings)
+import FractalStream.Settings (Settings(..))
 
 import Graphics.UI.WX hiding (Vertical, Horizontal)
 import Graphics.UI.WXCore.WxcClasses
@@ -126,6 +129,11 @@ codeEditorWithText cep txt = do
         lineNum <- styledTextCtrlLineFromPosition stc pos
         styledTextCtrlToggleFold stc lineNum
       _ -> pure ()
+
+    -- (on platforms where they're a preference, it's checked on each
+    -- key, so changing it applies to editors that are already open)
+    handleEmacsKeys stc $ if emacsKeysByDefault then pure True
+                          else setEmacsKeys <$> getDynamic appSettings
 
     styledTextCtrlSetText stc txt
     updateFoldLevels stc txt

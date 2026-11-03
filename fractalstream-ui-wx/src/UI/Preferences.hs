@@ -9,6 +9,7 @@ import FractalStream.Prelude hiding (get)
 import Data.DynamicValue
 import FractalStream.Library (projectsDirectory)
 import FractalStream.Settings
+import UI.EmacsKeys (emacsKeysByDefault)
 
 import Graphics.UI.WX hiding (pt, when, Color, Object, Layout, Vertical, Horizontal)
 import Graphics.UI.WXCore (windowRaise)
@@ -27,12 +28,19 @@ preferencesWindow settingsVar = do
   useDefaultButton <- button p [ text := "Use the default" ]
   note <- staticText p [ text := "Changing the folder doesn't move any projects: it only \
                                  \changes where the library browser looks for them." ]
+  -- On macOS, the script editor's emacs keys are always on (see
+  -- "UI.EmacsKeys"); elsewhere they take over Control shortcuts, so
+  -- they're up to the user.
+  emacsBox <- if emacsKeysByDefault then pure Nothing else
+    Just <$> checkBox p [ text := "Emacs-style movement keys in script editors \
+                                  \(Control-A, Control-E, ...)" ]
 
   let showSettings = do
         settings <- getDynamic settingsVar
         folder <- projectsDirectory settings
         set folderText [ text := folder ++ maybe " (the default)" (const "") (setProjectsFolder settings) ]
         set useDefaultButton [ enabled := isJust (setProjectsFolder settings) ]
+        forM_ emacsBox $ \box -> set box [ checked := setEmacsKeys settings ]
         windowReLayout f
       change k = do
         modifyValue settingsVar k
@@ -49,15 +57,20 @@ preferencesWindow settingsVar = do
                        dirOpenDialog f True "Choose the folder for your own projects" current
                          >>= mapM_ (\folder -> change (\s -> s { setProjectsFolder = Just folder })) ]
   set useDefaultButton [ on command := change (\s -> s { setProjectsFolder = Nothing }) ]
+  forM_ emacsBox $ \box ->
+    set box [ on command := do
+                on' <- get box checked
+                change (\s -> s { setEmacsKeys = on' }) ]
 
   -- The folder's path can grow and wrap sideways; the buttons and the
   -- note keep their size. (See CLAUDE_NOTES.md on wxHaskell's layout.)
-  set f [ layout := container p $ margin 12 $ column 8
+  set f [ layout := container p $ margin 12 $ column 8 $
             [ label "My projects folder:"
             , hfill (widget folderText)
             , row 6 [ widget chooseButton, widget useDefaultButton, hglue ]
             , hstretch (widget note)
-            ]
+            ] ++
+            [ widget box | Just box <- [emacsBox] ]
         ]
   showSettings
   windowRaise f
