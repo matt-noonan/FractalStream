@@ -141,7 +141,8 @@ script: |
   (`escape=` attribute) when the formula assumes one, and `pixel_size` for
   pixel-relative thresholds.
 - **Basins of attraction / root finding.** Iterate until two successive
-  iterates agree (`|z - old| < tol`), then color by which attractor was
+  iterates agree (`until z stops`, which compares within
+  `vanishing_radius`; or `|z - old| < tol` for a tolerance of your own), then color by which attractor was
   reached (`rainbow(arg z / (2 pi))` or by an index), shaded by
   `iterations`. See `examples/newton-roots.fs` (roots in a configurable
   list, edited by clicking). When the roots aren't known in closed form,

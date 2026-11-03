@@ -24,6 +24,7 @@ import Language.Code.Syntax
 import Language.Code.Typecheck.Functions
 import Language.Code.Infer
 import Language.Code.Procedures
+import Language.Code.Stops
 import Language.Draw
 import Language.Parser.SourceRange
 
@@ -40,7 +41,7 @@ type ParsedCode = Stmt
 -- | Check parsed code in the given environment.
 runParsedCode :: EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
 runParsedCode env c =
-  case withEnvironment env (expandRuns c >>= elab Map.empty env . inferDeclarations (typeEnvOf env) Map.empty) of
+  case withEnvironment env (expandRuns c >>= expandStops >>= elab Map.empty env . inferDeclarations (typeEnvOf env) Map.empty) of
     TC x -> x
 
 ------------------------------------------------------

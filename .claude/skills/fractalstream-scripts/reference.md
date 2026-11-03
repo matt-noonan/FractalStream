@@ -329,7 +329,7 @@ number.) A power of integers used as a real is computed as a real:
 
 **Reserved words** that can't be variable or function names: `e`, `i`,
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`, `let`,
-`times`, `text`, `escapes`, `vanishes`, `iterations`, `stuck`, `append`,
+`times`, `text`, `escapes`, `vanishes`, `stops`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
 `mod`, `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
 the color-wheel names, and the built-in function names. In particular,
@@ -357,7 +357,10 @@ complex numbers: `x = y` means `x - y vanishes`, i.e. within
 `vanishing_radius`. They're exact on integers and booleans. Use `===`
 (`≡`) for exact numeric equality. `z escapes` / `z escaped` means
 abs(z) > escape radius, and `z vanishes` / `z vanished` means abs(z) <
-vanishing radius.
+vanishing radius. In a loop's condition (only there), `x stops` / `x
+stopped` means `x` (any expression) is `=` to its value at the start of
+the latest pass through the body: `iterate z -> newton(z) until z stops`.
+It's false at the first check of a `while`/`until`/`iterate` loop.
 
 Boolean: `and`, `or`, `not`. Parenthesize mixtures.
 

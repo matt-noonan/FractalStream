@@ -72,6 +72,7 @@ data Token
   | RightArrow
   | Escapes
   | Vanishes
+  | Stops
   | Iterations
   | TimesKeyword
   | Stuck
@@ -233,6 +234,7 @@ wordlikeTokens = Map.fromList
   , ("let", Let_)
   , ("escapes", Escapes), ("escaped", Escapes)
   , ("vanishes", Vanishes), ("vanished", Vanishes)
+  , ("stops", Stops), ("stopped", Stops)
   , ("iterations", Iterations), ("times", TimesKeyword)
   , ("stuck", Stuck)
   , ("text", TextKeyword)

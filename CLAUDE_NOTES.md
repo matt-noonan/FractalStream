@@ -389,6 +389,13 @@ fresh `[internal] name.x #k := arg` variables, then the renamed body. Other
 names in the body resolve at the run site; a definition sees only the code
 blocks defined before it (no recursion).
 
+`x stops` in a loop's condition is rewritten away next, by
+`Language.Code.Stops.expandStops`, so typing never sees it: the loop gets
+a fresh `[internal] stops.prev #k := x` (and, for loops that check first,
+an `[internal] stops.started #k := false`), set at the start of each pass,
+and the condition compares `x = prev` (`started and x = prev`). A `stops`
+left anywhere else reaches typing, which reports it.
+
 `Language.Value.Typecheck.atType` (typing + elaboration at a requested type)
 is the entry point used throughout the actors.
 
@@ -409,6 +416,7 @@ Key modules:
 - `Language.Value.Typecheck` - `atType` entry point
 - `Language.Code.Infer` - inference for `:=` declarations
 - `Language.Code.Procedures` - `define` / `run` expansion
+- `Language.Code.Stops` - `x stops` in loop conditions, rewritten away
 - `Language.Code.Typecheck` (+ `.Functions`) - code elaboration, functions
 - `Language.Typecheck` - `TC` monad, `TCError`, shared helpers
 
