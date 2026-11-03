@@ -87,6 +87,7 @@ executable fsrun
                      , fractalstream-ui-headless
                      , bytestring
                      , directory
+                     , optparse-applicative
 
   if flag(use-llvm)
      build-depends: fractalstream-backend-llvm

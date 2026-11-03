@@ -464,10 +464,11 @@ Built from `fractalstream-ui-headless` (`stack build` there; locate it with
 `stack exec which fsrun`).
 
 ```
-fsrun project.fs --snapshot "Viewer title" --output out.png
-fsrun project.fs --commands commands.txt
-fsrun project.fs --scenario "name"      # from the project's scenarios:
-fsrun project.fs --update-preview       # runs metadata: preview-commands:
+fsrun snapshot -p project.fs --viewer "Viewer title" -o out.png
+fsrun commands --project project.fs --commands commands.txt
+fsrun scenario --project project.fs --name "name"   # from the project's scenarios:
+fsrun update-preview --project project.fs           # runs metadata: preview-commands:
+fsrun COMMAND --help                                # options for one subcommand
 ```
 
 Command language (one per line, `#` comments): `select viewer "T"`,
@@ -496,7 +497,7 @@ metadata:
     capture viewer "Newton basins" as preview
 ```
 
-then run `fsrun project.fs --update-preview`, which renders the preview
+then run `fsrun update-preview --project project.fs`, which renders the preview
 (128 px on the long side) and writes it into the file as `preview:`
 (base64 PNG; never write that by hand). `capture viewer "T" as preview`
 (or `... base as preview`) is only allowed in `preview-commands`.

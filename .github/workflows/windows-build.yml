@@ -387,7 +387,7 @@ jobs:
         set -euo pipefail
         printf 'script: |\n  @viewer "Plane" var=z\n  color <- if |z| < 1 then blue else black\n' > plane.yaml
         FractalStream/cli/fsrun.exe --version
-        FractalStream/cli/fsrun.exe plane.yaml --snapshot Plane --output plane.png
+        FractalStream/cli/fsrun.exe snapshot --project plane.yaml --viewer Plane --output plane.png
         ls -l plane.png
 
     - if: ${{ inputs.backend == 'llvm' }}

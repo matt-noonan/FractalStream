@@ -3,7 +3,7 @@
 -- | A project file's @metadata:@ key: what a library of projects shows
 -- about one without opening it -- a title, a plain-text description,
 -- and a small preview image -- plus the scenario commands that produce
--- that preview (run by @fsrun --update-preview@).
+-- that preview (run by @fsrun update-preview@).
 --
 -- Unlike a frontend's own keys (e.g. @wx-properties:@), this means the
 -- same thing to every frontend, so the core reads and writes it itself.

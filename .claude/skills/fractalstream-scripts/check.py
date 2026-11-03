@@ -91,7 +91,7 @@ def main():
     cmdfile = os.path.join(outdir, "check.cmds")
     with open(cmdfile, "w") as f:
         f.write("\n".join(cmds) + "\n")
-    p = subprocess.run([find_fsrun(), project, "--commands", cmdfile],
+    p = subprocess.run([find_fsrun(), "commands", "--project", project, "--commands", cmdfile],
                        capture_output=True, text=True)
     print((p.stdout + p.stderr).strip())
     print()

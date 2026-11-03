@@ -1,7 +1,7 @@
 -- | The "Project info" dialog: view and edit a project's
 -- @metadata:@ title and description, and see its current preview image.
 -- (Its preview commands are left alone: they're edited along with the
--- rest of the project file, and run by @fsrun --update-preview@.)
+-- rest of the project file, and run by @fsrun update-preview@.)
 module UI.ProjectInfo
   ( editProjectInfo
   ) where

@@ -4,23 +4,23 @@ Description  : Headless FractalStream frontend
 
 A frontend analogous to fractalstream-ui-wx: it implements the same
 'Actor.UI.UI' interface that drives 'Actor.Ensemble.runEnsemble', but with
-no actual GUI. Four modes:
+no actual GUI. Four subcommands:
 
-  fsrun <project.fs> --snapshot <viewer-name> --output <file.png>
-  fsrun <project.fs> --commands <commands-file>
-  fsrun <project.fs> --scenario <name>
-  fsrun <project.fs> --update-preview
+  fsrun snapshot --project <project.fs> --viewer <title> --output <file.png>
+  fsrun commands --project <project.fs> --commands <file>
+  fsrun scenario --project <project.fs> --name <name>
+  fsrun update-preview --project <project.fs>
 
 Snapshot mode renders one named viewer's base per-pixel script to a PNG
 and exits. The other two both drive a project through a sequence of
 commands (see @SCENARIO_LANGUAGE.md@, "Scenario", and "Interpreter") --
 selecting viewers and tools, injecting synthetic events, changing
 configuration and the viewport, and capturing or asserting on what got
-rendered -- taken either from a standalone commands file (@--commands@)
+rendered -- taken either from a standalone commands file (@fsrun commands@)
 or from one of the project file's own top-level @scenarios:@ entries, by
-name (@--scenario@).
+name (@fsrun scenario@).
 
-@--update-preview@ is the one mode that changes the project file: it runs
+@fsrun update-preview@ is the one mode that changes the project file: it runs
 the project's @metadata: preview-commands:@, which must end up capturing
 exactly one viewer with @capture viewer "..." as preview@, and saves that
 image as the project's preview. Only those commands can capture a
@@ -55,7 +55,10 @@ import Data.IORef
 import qualified Data.ByteString as BS
 import System.Directory (renameFile)
 
-import System.Environment (getArgs)
+import Options.Applicative
+  ( Parser, ParserInfo, customExecParser, prefs, showHelpOnEmpty, info, helper, infoOption
+  , hsubparser, command, strOption, long, short, metavar, help
+  , fullDesc, progDesc, footer )
 import System.Exit (exitFailure)
 import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStrLn, stderr)
 
@@ -65,66 +68,58 @@ data Mode
   | RunNamedScenario { scenarioName :: String }
   | UpdatePreview
 
-usage :: String
-usage = unlines
-  [ "usage:"
-  , "  fsrun <project.fs> --snapshot <viewer-name> --output <file.png>"
-  , "  fsrun <project.fs> --commands <commands-file>"
-  , "  fsrun <project.fs> --scenario <name>"
-  , "  fsrun <project.fs> --update-preview"
-  , "  fsrun --version"
-  ]
-
 -- | Report a failure on stderr and exit non-zero. Every error path in
 -- this module goes through this (not a bare @putStrLn@), so errors are
 -- never competing with ordinary output on the same stream -- see the
--- module header.
+-- module header. (Command-line errors are reported by
+-- "Options.Applicative" itself, which also uses stderr and a non-zero
+-- exit code; only @--help@ goes to stdout.)
 dieWith :: String -> IO a
 dieWith msg = hPutStrLn stderr msg >> exitFailure
 
 main :: IO ()
-main = transliterateConsole >> getArgs >>= \case
-  ["--version"] -> putStrLn gitTag
-  (projectFile : rest) -> case parseMode rest of
-    Right mode -> run projectFile mode
-    Left err   -> dieWith (err ++ "\n" ++ usage)
-  [] -> dieWith usage
+main = do
+  transliterateConsole
+  (projectFile, mode) <- customExecParser (prefs showHelpOnEmpty) cliInfo
+  run projectFile mode
 
--- | Parse the flags following the project file into a 'Mode'. Hand-rolled
--- rather than pulling in an argument-parsing library, since there are
--- only a few mutually exclusive shapes to recognize.
-parseMode :: [String] -> Either String Mode
-parseMode args = do
-  flags <- parseFlags args
-  let scenario = lookup "scenario" flags
-      commands = lookup "commands" flags
-      snapshot = lookup "snapshot" flags
-      output   = lookup "output"   flags
-  case (scenario, commands, snapshot, output) of
-    _ | Just _ <- lookup "update-preview" flags ->
-          if length flags == 1 then Right UpdatePreview
-          else Left "--update-preview can't be combined with other options."
-    (Just name, Nothing, Nothing, Nothing)    -> Right (RunNamedScenario name)
-    (Nothing, Just file, Nothing, Nothing)    -> Right (RunCommandsFile file)
-    (Nothing, Nothing, Just viewer, Just out) -> Right (Snapshot viewer out)
-    (Nothing, Nothing, Just _, Nothing)       -> Left "--snapshot requires --output as well."
-    (Nothing, Nothing, Nothing, Just _)       -> Left "--output requires --snapshot as well."
-    (Nothing, Nothing, Nothing, Nothing)      -> Left "specify one of --snapshot/--output, --commands, --scenario, or --update-preview."
-    _ -> Left "--snapshot/--output, --commands, and --scenario are mutually exclusive."
+cliInfo :: ParserInfo (FilePath, Mode)
+cliInfo = info (helper <*> versionOption <*> cliParser) $
+  fullDesc <>
+  progDesc "Run a FractalStream project without a GUI: render a viewer, \
+           \run scripted commands against it, or remake its preview." <>
+  footer "Run `fsrun COMMAND --help` for help on one command."
+  where
+    versionOption = infoOption gitTag
+      (long "version" <> help "Show the FractalStream version and exit")
 
-parseFlags :: [String] -> Either String [(String, String)]
-parseFlags = \case
-  [] -> Right []
-  ("--snapshot" : v : rest) -> (("snapshot", v) :) <$> parseFlags rest
-  ("--output"   : v : rest) -> (("output", v)   :) <$> parseFlags rest
-  ("--commands" : v : rest) -> (("commands", v) :) <$> parseFlags rest
-  ("--scenario" : v : rest) -> (("scenario", v) :) <$> parseFlags rest
-  ("--update-preview" : rest) -> (("update-preview", "") :) <$> parseFlags rest
-  (flag@"--snapshot" : []) -> Left ("missing value for " ++ flag)
-  (flag@"--output"   : []) -> Left ("missing value for " ++ flag)
-  (flag@"--commands" : []) -> Left ("missing value for " ++ flag)
-  (flag@"--scenario" : []) -> Left ("missing value for " ++ flag)
-  (bad : _) -> Left ("unrecognized argument: " ++ bad)
+-- | Each mode is its own subcommand. Every input is a named option
+-- (@--project@ in all of them), never a positional argument, so a
+-- command line reads the same whatever order its options come in.
+cliParser :: Parser (FilePath, Mode)
+cliParser = hsubparser $ mconcat
+  [ subcommand "snapshot"
+      "Render one viewer's base image to a PNG file"
+      (Snapshot <$> strOption (long "viewer" <> metavar "TITLE"
+                               <> help "The title of the viewer to render")
+                <*> strOption (long "output" <> short 'o' <> metavar "FILE.png"
+                               <> help "Where to write the image"))
+  , subcommand "commands"
+      "Run a file of scenario-language commands against the project"
+      (RunCommandsFile <$> strOption (long "commands" <> metavar "FILE"
+                                      <> help "The commands to run (see SCENARIO_LANGUAGE.md)"))
+  , subcommand "scenario"
+      "Run one of the project's own scenarios, by name"
+      (RunNamedScenario <$> strOption (long "name" <> metavar "NAME"
+                                       <> help "The name of an entry in the project's `scenarios:`"))
+  , subcommand "update-preview"
+      "Remake the project's preview image by running its `metadata: preview-commands:`"
+      (pure UpdatePreview)
+  ]
+  where
+    subcommand name desc modeArgs = command name $
+      info ((,) <$> projectOption <*> modeArgs) (progDesc desc)
+    projectOption = strOption (long "project" <> short 'p' <> metavar "PROJECT.fs" <> help "The project file")
 
 run :: FilePath -> Mode -> IO ()
 run projectFile mode = withBackend $ \backend ->

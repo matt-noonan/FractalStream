@@ -239,7 +239,7 @@ execCommand st = \case
 
   CaptureViewerAsPreview name baseOnly -> case isPreviews st of
     Nothing -> pure (Left "`capture viewer \"...\" as preview` can only be used in a project's \
-                          \`metadata: preview-commands:`, run with `fsrun <project.fs> --update-preview`")
+                          \`metadata: preview-commands:`, run with `fsrun update-preview --project <project.fs>`")
     Just previews -> withNamedViewer st name $ \viewer ->
       renderPreview baseOnly viewer >>= \case
         Left err  -> pure (Left err)

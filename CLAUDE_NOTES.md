@@ -20,7 +20,7 @@ fractalstream-ui-wx/          # wxWidgets UI (the main executable: FractalStream
 fractalstream-ui-headless/    # Headless frontend (`fsrun`), no GUI dependencies
 ```
 
-`fsrun project.fs --scenario NAME` runs a project's scripted scenario
+`fsrun scenario --project project.fs --name NAME` runs a project's scripted scenario
 (clicks, parameter changes, viewer captures to PNG) without a GUI; see
 `SCENARIO_LANGUAGE.md`. It is the easiest way to check a change end to end,
 e.g. by rendering a viewer before and after and comparing the PNGs.
@@ -630,7 +630,7 @@ optional `scenarios:` key for `fsrun`. (The older multi-key `setup:` /
 
 A `metadata:` key (`Actor.Metadata`, `ensembleMetadata`) holds a `title`, a
 `description`, `preview-commands` (scenario commands, run by
-`fsrun --update-preview`, the only `fsrun` mode that writes the project file),
+`fsrun update-preview`, the only `fsrun` mode that writes the project file),
 and `preview` (a base64 PNG, from `Actor.Viewer.Preview.renderPreview`, also
 used by the wx viewer menu's "Use this as preview"). Unknown keys under it
 are kept. `encodeEnsemble` writes keys in a fixed, readable order (script,

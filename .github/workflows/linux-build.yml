@@ -168,7 +168,7 @@ jobs:
         fi
         fsrun-dist/bin/fsrun --version
         printf 'script: |\n  @viewer "Plane" var=z\n  color <- if |z| < 1 then blue else black\n' > plane.yaml
-        fsrun-dist/bin/fsrun plane.yaml --snapshot Plane --output plane.png
+        fsrun-dist/bin/fsrun snapshot --project plane.yaml --viewer Plane --output plane.png
         ls -l plane.png
 
     - if: ${{ always() }}
