@@ -263,13 +263,21 @@ execCommand st = \case
               { msFrames = moFrames, msFps = moFps, msLoop = moLoop
               , msWithDrawings = not moBase, msFormat = fmt }
         anim <- case animation of
-          MovieScript script -> ensembleCommonDefs (isEnsemble st) >>= \case
-            Left err -> pure (Left err)
-            Right defs -> scriptAnimation defs (isEnsembleCtx st) script
-          MoviePath var pts -> pure (mapM resolvePoint pts >>= pathAnimation (isEnsembleCtx st) var moLoop)
+          MovieScript script -> case moInset of
+            Just _ -> pure (Left "an inset marks where along a path each frame is, so it needs a path (`moving ... along ...`)")
+            Nothing -> ensembleCommonDefs (isEnsemble st) >>= \case
+              Left err -> pure (Left err)
+              Right defs -> fmap (, Nothing) <$> scriptAnimation defs (isEnsembleCtx st) script
+          MoviePath var pts -> pure $ do
+            path' <- mapM resolvePoint pts
+            animate <- pathAnimation (isEnsembleCtx st) var moLoop path'
+            inset <- forM moInset $ \(insetName, corner) -> case Map.lookup insetName (isViewers st) of
+              Nothing -> Left ("no viewer named " ++ show insetName ++ " for the inset")
+              Just v -> Right (MovieInset v (pathPoint moLoop path') corner)
+            pure (animate, inset)
         case anim of
           Left err -> pure (Left ("couldn't record a movie of viewer " ++ show name ++ ": " ++ err))
-          Right animate -> recordMovie settings viewer animate (const (pure ())) path >>= \case
+          Right (animate, inset) -> recordMovie settings viewer inset animate (const (pure ())) path >>= \case
             Left err -> pure (Left ("couldn't record a movie of viewer " ++ show name ++ ": " ++ err))
             Right issues -> warnIssues name issues >> pure (Right st)
       _ -> pure (Left ("a movie's file name must end in .mov (QuickTime) or .avi, not " ++ show path))

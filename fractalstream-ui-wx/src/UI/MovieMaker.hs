@@ -81,6 +81,8 @@ data LastMovie = LastMovie
   , lmSmooth   :: Bool
   , lmDrawings :: Bool
   , lmLoop     :: Bool
+  , lmInset    :: Bool
+  , lmCorner   :: InsetCorner
   }
 
 newMovieSupport :: IO MovieSupport
@@ -129,6 +131,7 @@ data MovieJob = MovieJob
   , mjTitle     :: String
   , mjSettings  :: MovieSettings
   , mjAnimation :: Animation
+  , mjInset     :: Maybe MovieInset
   }
 
 -- | Ask how to make a movie, from the viewer with the given title (the
@@ -196,6 +199,20 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
       let loopTip = case source of
             ScriptSource -> "Leave out the last frame (t = 1), since a movie playing in a loop goes back to the first next."
             PathSource{} -> "Come back to the start along a straight line, and leave out the last frame, since a movie playing in a loop goes back to the first next."
+      -- For a path: showing the viewer it was drawn in, in a corner of
+      -- each frame, marking where along the path the frame is.
+      insetControls <- case source of
+        ScriptSource -> pure Nothing
+        PathSource drawnIn var _ -> do
+          box <- checkBox p [ text := "Show " ++ quoted drawnIn ++ " as an inset, marking " ++ var
+                            , checked := lastOr lmInset False ]
+          -- which corner it goes in, chosen only while it's to be shown
+          let corners = [minBound .. maxBound] :: [InsetCorner]
+          cornerChoice <- choice p [ items := map describeInsetCorner corners
+                                   , selection := fromEnum (lastOr lmCorner BottomRight)
+                                   , enabled := lastOr lmInset False ]
+          set box [ on command := get box checked >>= \on' -> set cornerChoice [ enabled := on' ] ]
+          pure (Just (box, cornerChoice))
       loopBox    <- checkBox p [ text := "Loop back to start"
                                , tooltip := loopTip
                                , checked := lastOr lmLoop (isClosedPath source) ]
@@ -217,7 +234,7 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
       set viewerChoice [ on select := updateSizeNote ]
       set scaleBox [ on update := updateSizeNote ]
 
-      set d [ layout := margin 10 $ fill $ container p $ column 8
+      set d [ layout := margin 10 $ fill $ container p $ column 8 $
               [ row 5 [ margin 3 (label "Record the viewer"), minsize (sz 220 (-1)) (widget viewerChoice), hglue ]
               , animationLayout
               , row 5 [ margin 3 (label "Length:"), minsize (sz 60 (-1)) (widget secondsBox)
@@ -228,7 +245,13 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
               , widget smoothBox
               , widget drawingsBox
               , widget loopBox
-              , row 5 [ margin 5 (widget cancelButton), hglue, margin 5 (widget ok) ] ] ]
+              -- (each item centered in the row's height, which is the
+              -- choice's: by default they'd sit at the top of it)
+              ] ++ [ row 5 [ vfloatCentre (widget b), vfloatCentre (label "in the")
+                           , vfloatCentre (minsize (sz 140 (-1)) (widget c))
+                           , vfloatCentre (label "corner"), hglue ]
+                   | Just (b, c) <- [insetControls] ] ++
+              [ row 5 [ margin 5 (widget cancelButton), hglue, margin 5 (widget ok) ] ] ]
 
       result <- showModal d $ \done -> do
         set cancelButton [ on command := done Nothing ]
@@ -240,11 +263,15 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
           smooth <- get smoothBox checked
           drawings <- get drawingsBox checked
           loop <- get loopBox checked
+          withInset <- traverse (\(b, c) -> (,) <$> get b checked <*> (toEnum <$> get c selection))
+                                insetControls
           script <- chosenScript
           writeIORef (msLast mpSupport) . Just $ LastMovie
             { lmViewer = fromMaybe "" (listToMaybe (drop ix titles)), lmScript = script
             , lmSeconds = seconds, lmFps = fps, lmScale = scale
-            , lmSmooth = smooth, lmDrawings = drawings, lmLoop = loop }
+            , lmSmooth = smooth, lmDrawings = drawings, lmLoop = loop
+            , lmInset = maybe (lastOr lmInset False) fst withInset
+            , lmCorner = maybe (lastOr lmCorner BottomRight) snd withInset }
           let problem = errorDialog d "Can't make this movie"
           case ( readNumber seconds :: Maybe Double, readNumber fps :: Maybe Int
                , readNumber scale :: Maybe Int, drop ix viewers ) of
@@ -265,7 +292,12 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
                       { msFrames = max 1 (round (secs * fromIntegral rate))
                       , msFps = rate, msLoop = loop, msSmooth = smooth
                       , msWithDrawings = drawings }
-                  , mjAnimation = animation } ]
+                  , mjAnimation = animation
+                  , mjInset = case source of
+                      PathSource drawnIn _ path | Just (True, corner) <- withInset ->
+                        (\v -> MovieInset v (pathPoint loop path) corner)
+                          <$> lookup drawnIn (zip titles viewers)
+                      _ -> Nothing } ]
 
       forM_ result (recordWithProgress project)
 
@@ -321,7 +353,7 @@ recordWithProgress MovieProject{..} MovieJob{..} = do
       -- The project's values go back to how they were afterwards, and so
       -- does whether it has unsaved changes.
       record = withFieldsRestored fields
-                 (recordMovie mjSettings mjViewer mjAnimation (writeIORef progress) path)
+                 (recordMovie mjSettings mjViewer mjInset mjAnimation (writeIORef progress) path)
                `finally` unless wasUnsaved (setValue' mpUnsaved False)
   worker <- async record
 

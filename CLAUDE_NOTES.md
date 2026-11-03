@@ -586,7 +586,12 @@ is a complex configuration variable, i.e. those with a "Select ..."
 tool) records a dragged path in model coordinates and then asks how to
 make a movie moving that variable along it (defaulting to recording
 another viewer; "Loop back to start" closes the path with a straight
-line and leaves out the last frame). Any of
+line and leaves out the last frame; "Show ... as an inset" passes a
+`MovieInset` of the dragged viewer to `recordMovie`, which renders it
+once, at its current view (`prepareInset`, like a preview), and puts it
+in the chosen corner of each frame (`InsetCorner`, a choice beside the
+dialog's checkbox) with an inverted-color crosshair at
+`pathPoint`, the same point `pathAnimation` sets: `withInset`). Any of
 the project's viewers can be recorded: windows register themselves in
 the session's `MovieSupport` (`pmMovies`), which also remembers the last
 dialog's settings. Recording runs on a background thread (setting values

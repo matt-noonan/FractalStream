@@ -35,6 +35,10 @@ module Actor.Movie
   , pathAnimation
   , complexVariables
   , pathPointAt
+  , pathPoint
+  , MovieInset(..)
+  , InsetCorner(..)
+  , describeInsetCorner
   , renderViewerImage
   , recordMovie
   , withFieldsRestored
@@ -48,7 +52,7 @@ import Actor.Ensemble (formatScriptError)
 import Actor.Layout (Dimensions(..), Field(..))
 import Actor.Viewer
 import Actor.Viewer.Overlay (compositeDrawLayers)
-import Data.DynamicValue (getDynamic)
+import Data.DynamicValue (getDynamic, setValue', modifyValue)
 import Data.Movie
 import Language.Code (Code)
 import Language.Code.Syntax (Stmt(..), StmtF(..))
@@ -61,7 +65,7 @@ import Language.Draw (DrawSink(..))
 import Language.Environment
 import Language.Type
 
-import Codec.Picture (Image(..), PixelRGB8(..), PixelRGBA8(..), pixelMap)
+import Codec.Picture (Image(..), PixelRGB8(..), PixelRGBA8(..), pixelMap, pixelAt, generateImage)
 import Control.Concurrent (getNumCapabilities)
 import Control.Exception (Exception, throwIO, try, finally)
 import Control.Concurrent.MVar
@@ -230,17 +234,21 @@ complexVariables (SomeContext ctx) = catMaybes $ fromContext
 -- back to the start (for a movie made to loop, 'msLoop'), the path is
 -- closed by a straight line from its end back to its start.
 pathAnimation :: SomeContext EventArgument_ -> String -> Bool -> [(Double, Double)] -> Either String Animation
-pathAnimation ctx var backToStart path0 = do
-  when (null path0) (Left "The path has no points.")
-  -- (going back to the start along one more straight line)
-  let path = if backToStart then path0 ++ take 1 path0 else path0
+pathAnimation ctx var backToStart path = do
+  when (null path) (Left "The path has no points.")
   case lookupSomeContextByName var ctx of
     Nothing -> Left ("The project has no variable named `" ++ var ++ "`.")
     Just (FoundBinding ty arg) -> case (ty, argSetValue arg) of
       (ComplexType, Just setter) -> Right $ \t ->
-        let (x, y) = pathPointAt path t in setter ComplexType (x :+ y)
+        let (x, y) = pathPoint backToStart path t in setter ComplexType (x :+ y)
       (ComplexType, Nothing) -> Left ("`" ++ var ++ "` can't be changed.")
       _ -> Left ("`" ++ var ++ "` isn't a complex variable, so a path can't set it.")
+
+-- | Where 'pathAnimation' puts its variable at time @t@: the point the
+-- fraction @t@ of the way along the path, which, to go back to the
+-- start, is closed by one more straight line from its end.
+pathPoint :: Bool -> [(Double, Double)] -> Double -> (Double, Double)
+pathPoint backToStart path = pathPointAt (if backToStart then path ++ take 1 path else path)
 
 -- | The point the fraction @t@ (from 0 to 1) of the way along a path
 -- (a list of points joined by straight lines), measured by length.
@@ -346,28 +354,126 @@ copyBytes' n src dst = forM_ [0 .. n - 1] $ \i -> peekElemOff src i >>= pokeElem
 newtype MovieFailed = MovieFailed String deriving Show
 instance Exception MovieFailed
 
+-- | Another viewer to show in a corner of each frame, picture in
+-- picture, with a point marked on it by a crosshair: for a movie along
+-- a path drawn in a parameter plane, the parameter plane, marking where
+-- along the path each frame is.
+--
+-- It's rendered once, when the movie starts, at its current view: so
+-- it suits a viewer the animation doesn't change (a parameter plane
+-- doesn't depend on the parameter it's a plane of, which its own
+-- coordinate shadows).
+data MovieInset = MovieInset
+  { miViewer :: Viewer
+  , miPoint  :: Double -> (Double, Double)
+    -- ^ the point to mark at each time, in the inset viewer's coordinates
+  , miCorner :: InsetCorner
+  }
+
+-- | Which corner of the frame an inset goes in.
+data InsetCorner = TopLeft | TopRight | BottomLeft | BottomRight
+  deriving (Eq, Show, Enum, Bounded)
+
+-- | A corner's name, as the movie dialog and @fsrun@ write it.
+describeInsetCorner :: InsetCorner -> String
+describeInsetCorner = \case
+  TopLeft -> "top left"
+  TopRight -> "top right"
+  BottomLeft -> "bottom left"
+  BottomRight -> "bottom right"
+
+-- | An inset, rendered and ready to put into frames.
+data PreparedInset = PreparedInset
+  { piImage     :: Image PixelRGB8
+  , piCenter    :: (Double, Double)
+  , piPixelSize :: Double
+  , piPoint     :: Double -> (Double, Double)
+  , piCorner    :: InsetCorner
+  }
+
+-- | Render an inset for frames of the given size: the longer side of
+-- the inset is 30% of the frame's shorter side, and it shows the same
+-- part of the plane as its viewer does now (the pixel size grows as the
+-- image shrinks), like "Actor.Viewer.Preview".
+prepareInset :: Bool -> (Int, Int) -> MovieInset -> IO (Either String PreparedInset)
+prepareInset smooth (fw, fh) MovieInset{..} = do
+  inset <- cloneViewer miViewer
+  Dimensions (w, h) <- getDynamic (vSize inset)
+  let long = max 16 (round (0.3 * fromIntegral (min fw fh) :: Double)) :: Int
+      scale = fromIntegral long / fromIntegral (max 1 (max w h)) :: Double
+      scaled n = max 1 (round (fromIntegral n * scale))
+  setValue' (vSize inset) (Dimensions (scaled w, scaled h))
+  modifyValue (vPixelSize inset) (/ scale)
+  center <- getDynamic (vCenter inset)
+  px <- getDynamic (vPixelSize inset)
+  renderViewerImage smooth False inset <&> \case
+    Left err -> Left err
+    Right (_, img) -> Right (PreparedInset img center px miPoint miCorner)
+
+-- | Put an inset into its corner of a frame, with a thin
+-- white border, and a crosshair (in inverted colors, with a gap where
+-- the lines would cross, so that the point itself shows) at the time's
+-- point. The crosshair's lines go right across the inset; a point off
+-- the inset's view just moves them off its edge.
+withInset :: PreparedInset -> Double -> Image PixelRGB8 -> Image PixelRGB8
+withInset PreparedInset{..} t frame = generateImage pixel fw fh
+  where
+    (fw, fh) = (imageWidth frame, imageHeight frame)
+    (iw, ih) = (imageWidth piImage, imageHeight piImage)
+    short = min fw fh
+    margin = max 4 (short `div` 40)
+    border = max 1 (short `div` 300)
+    (x0, y0) = case piCorner of
+      TopLeft     -> (margin, margin)
+      TopRight    -> (fw - margin - iw, margin)
+      BottomLeft  -> (margin, fh - margin - ih)
+      BottomRight -> (fw - margin - iw, fh - margin - ih)
+    (mx, my) = piPoint t
+    (cx, cy) = piCenter
+    crossX = floor ((mx - cx) / piPixelSize + fromIntegral iw / 2) :: Int
+    crossY = floor ((cy - my) / piPixelSize + fromIntegral ih / 2) :: Int
+    thick = max 1 (iw `div` 150)
+    gap = max 3 (iw `div` 30)
+    onCrosshair i j =
+      (abs (i - crossX) < thick && abs (j - crossY) > gap) ||
+      (abs (j - crossY) < thick && abs (i - crossX) > gap)
+    invert (PixelRGB8 r g b) = PixelRGB8 (255 - r) (255 - g) (255 - b)
+    pixel x y
+      | i >= 0 && i < iw && j >= 0 && j < ih =
+          let p = pixelAt piImage i j in if onCrosshair i j then invert p else p
+      | i >= negate border && i < iw + border && j >= negate border && j < ih + border =
+          PixelRGB8 255 255 255
+      | otherwise = pixelAt frame x y
+      where (i, j) = (x - x0, y - y0)
+
 -- | Record a movie of a viewer into a file: for each frame, step the
--- animation to the frame's time, render the viewer, and add the image.
+-- animation to the frame's time, render the viewer, and add the image
+-- (with the inset, if there is one).
 -- After each frame, the number of frames done so far is reported. Any
 -- problem the renders ran into is returned with the result (like a
 -- snapshot's), and a failure leaves no file behind.
 --
 -- The animation's changes aren't undone here; see 'withFieldsRestored'.
-recordMovie :: MovieSettings -> Viewer -> Animation -> (Int -> IO ()) -> FilePath
+recordMovie :: MovieSettings -> Viewer -> Maybe MovieInset -> Animation -> (Int -> IO ()) -> FilePath
             -> IO (Either String ViewerIssues)
-recordMovie settings@MovieSettings{..} viewer0 animate progress path = do
+recordMovie settings@MovieSettings{..} viewer0 minset animate progress path = do
   -- Every frame must be the same size, and show the same view, even if
   -- the viewer's window is resized or moved around while the movie is
   -- recorded: so it's recorded from a copy of the viewer, as it is now.
   viewer <- cloneViewer viewer0
   Dimensions size <- getDynamic (vSize viewer)
-  try (withMovieFile msFormat path size msFps $ \mf ->
+  try (do
+    inset <- forM minset $ \mi -> prepareInset msSmooth size mi >>= \case
+      Left err -> throwIO (MovieFailed ("Couldn't draw the inset: " ++ err))
+      Right ready -> pure ready
+    withMovieFile msFormat path size msFps $ \mf ->
          foldM (\issues (i, t) -> do
                    animate t
                    renderViewerImage msSmooth msWithDrawings viewer >>= \case
                      Left err -> throwIO (MovieFailed err)
                      Right (frameIssues, img) -> do
-                       addMovieFrame mf (encodeJpegFrame msQuality img)
+                       let img' = maybe img (\ins -> withInset ins t img) inset
+                       addMovieFrame mf (encodeJpegFrame msQuality img')
                        progress i
                        pure (issues <> frameIssues))
                mempty (zip [1 ..] (movieFrameTimes settings)))

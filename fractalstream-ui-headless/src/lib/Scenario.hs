@@ -29,6 +29,7 @@ module Scenario
 import FractalStream.Prelude
 
 import Language.Value.Typecheck (ParsedValue)
+import Actor.Movie (InsetCorner(..))
 import Language.Value.Parser (valueGrammar, arithGrammar)
 import Language.Value.Syntax (textLiteral)
 import Data.Char (isDigit)
@@ -90,6 +91,10 @@ data MovieOptions = MovieOptions
   , moFps    :: Int
   , moLoop   :: Bool  -- ^ leave out the frame at @t = 1@
   , moBase   :: Bool  -- ^ leave out tools' drawings, as @capture ... base@ does
+  , moInset  :: Maybe (String, InsetCorner)
+    -- ^ a viewer to show in a corner of each frame (the bottom right,
+    -- unless it says otherwise), marking where along the path the frame
+    -- is (only for a path)
   }
 
 -- | What changes from one frame of a movie to the next.
@@ -197,9 +202,14 @@ scenarioGrammar = mdo
       <*> (optional (kw "within" *> intLit) <* nl)
 
   points <- rule ((:) <$> point <*> many (token Comma *> point))
+  corner <- rule $
+        (kw "top" *> ((TopLeft <$ kw "left") <|> (TopRight <$ kw "right")))
+    <|> (kw "bottom" *> ((BottomLeft <$ kw "left") <|> (BottomRight <$ kw "right")))
   movieOptions <- rule $
     MovieOptions <$> (kw "frames" *> intLit) <*> (kw "fps" *> intLit)
                  <*> (isJust <$> optional (kw "loop")) <*> (isJust <$> optional (kw "base"))
+                 <*> optional ((,) <$> (kw "inset" *> str)
+                                   <*> (fromMaybe BottomRight <$> optional (kw "at" *> corner)))
   movieAnimation <- rule $
         (MovieScript <$> (kw "using" *> str))
     <|> (MoviePath <$> (kw "moving" *> ident') <*> (kw "along" *> points))

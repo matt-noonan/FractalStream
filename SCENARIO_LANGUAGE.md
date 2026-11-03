@@ -149,7 +149,7 @@ untrue later.
 | `capture viewer "<name>" base to "<file.png>"` | Same, but the per-pixel script only -- no tool overlays. |
 | `capture viewer "<name>" as preview` | Render the named viewer (with tool overlays; add `base` before `as` for without) as the project's preview image: the viewer's current view, scaled so the longer side is 128 pixels. Only allowed in a project's `metadata: preview-commands:`; anywhere else it's an error. |
 | `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] using "<script>"` | Record a movie of the named viewer (see "Recording movies" below): before each of the `N` frames, run the script's `animate` block with the time, going from 0 to 1. |
-| `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] moving <var> along <point>, <point>, ...` | The same, but moving the complex configuration variable `var` along the path through the given points, at a steady speed. |
+| `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] [inset "<viewer>" [at <corner>]] moving <var> along <point>, <point>, ...` | The same, but moving the complex configuration variable `var` along the path through the given points, at a steady speed. With `inset`, the named viewer (a parameter plane, say) is shown in a corner of each frame (`at top left`, `top right`, `bottom left`, or `bottom right`, the default), with a crosshair at the path's current point. |
 
 #### Recording movies
 
@@ -174,6 +174,13 @@ so that an animation that comes back to where it started plays
 smoothly in a loop; a path, with `loop`, also comes back to its start
 along a straight line. After recording, the values are left where the
 last frame put them (unlike in the app, which puts them back).
+
+An inset is rendered once, at its viewer's current view, with its
+longer side 30% of the frame's shorter side; its crosshair is drawn in
+inverted colors, across the whole inset, with a gap where its lines
+would cross so that the point itself shows. It's only for a path
+(the viewer a path is drawn in doesn't depend on the variable the path
+moves, which its own coordinate shadows, so it never needs redrawing).
 
 The app's "Capture > Movie..." (in a viewer's menu) and its "Animate
 along path" tool (a path dragged out in a viewer) do the same.

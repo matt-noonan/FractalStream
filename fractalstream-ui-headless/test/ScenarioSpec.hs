@@ -13,6 +13,7 @@ import Language.Value.Evaluator (evaluate)
 import Language.Typecheck (TC(..), TCError)
 
 import Scenario
+import Actor.Movie (InsetCorner(..))
 
 import Text.RawString.QQ
 
@@ -262,6 +263,20 @@ capture viewer "Mandelbrot set" to "trace.png"
             x `shouldResolveTo` 0
             y `shouldResolveTo` 0.5
           _ -> expectationFailure "expected complex, Cartesian, complex points"
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses record viewer with an inset" $
+    onlyCommand [r|record viewer "Julia set" to "julia.mov" frames 10 fps 5 loop inset "Mandelbrot set" moving C along -1, 0
+|] $ \case
+      RecordMovie _ _ MovieOptions{..} (MoviePath "C" [_, _]) -> do
+        (moLoop, moBase, moInset) `shouldBe` (True, False, Just ("Mandelbrot set", BottomRight))
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses record viewer with an inset in a chosen corner" $
+    onlyCommand [r|record viewer "Julia set" to "julia.mov" frames 10 fps 5 inset "Mandelbrot set" at top left moving C along -1, 0
+|] $ \case
+      RecordMovie _ _ MovieOptions{..} MoviePath{} ->
+        moInset `shouldBe` Just ("Mandelbrot set", TopLeft)
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
   it "rejects record viewer without frames and fps" $
