@@ -21,6 +21,8 @@ module Scenario
   ( Command(..)
   , Point(..)
   , RGB
+  , MovieAnimation(..)
+  , MovieOptions(..)
   , parseScenario
   ) where
 
@@ -78,6 +80,24 @@ data Command
     -- project's @metadata: preview-commands:@.
 
   | AssertPixel String (Int, Int) RGB (Maybe Int)
+
+  | RecordMovie String FilePath MovieOptions MovieAnimation
+    -- ^ Record a movie of the named viewer into a file (see "Actor.Movie").
+
+-- | How a scenario's movie is recorded.
+data MovieOptions = MovieOptions
+  { moFrames :: Int
+  , moFps    :: Int
+  , moLoop   :: Bool  -- ^ leave out the frame at @t = 1@
+  , moBase   :: Bool  -- ^ leave out tools' drawings, as @capture ... base@ does
+  }
+
+-- | What changes from one frame of a movie to the next.
+data MovieAnimation
+  = MovieScript String
+    -- ^ a script run each frame, with @t@ going from 0 to 1
+  | MoviePath String [Point]
+    -- ^ a complex variable, moved along a path through these points
 
 -- | Parse a whole scenario file into its list of commands.
 parseScenario :: String -> Either (SourceRange, String) [Command]
@@ -176,6 +196,17 @@ scenarioGrammar = mdo
       <*> (kw "is" *> rgb)
       <*> (optional (kw "within" *> intLit) <* nl)
 
+  points <- rule ((:) <$> point <*> many (token Comma *> point))
+  movieOptions <- rule $
+    MovieOptions <$> (kw "frames" *> intLit) <*> (kw "fps" *> intLit)
+                 <*> (isJust <$> optional (kw "loop")) <*> (isJust <$> optional (kw "base"))
+  movieAnimation <- rule $
+        (MovieScript <$> (kw "using" *> str))
+    <|> (MoviePath <$> (kw "moving" *> ident') <*> (kw "along" *> points))
+  recordMovie <- rule $
+    RecordMovie <$> (kw "record" *> kw "viewer" *> str) <*> (kw "to" *> str)
+                <*> movieOptions <*> (movieAnimation <* nl)
+
   command <- ruleChoice
     [ selectViewer, selectTool, deselectTool
     , setParameter, setToolParameter, setColorizerParameter
@@ -186,6 +217,7 @@ scenarioGrammar = mdo
     , captureViewerBase, captureViewer, captureViewerAsPreview
 
     , assertPixel
+    , recordMovie
     ]
 
   rule (token Indent *> many command <* token Dedent)

@@ -30,6 +30,8 @@ import UI.Tile
 import UI.Layout
 import UI.Widgets
 import UI.WxProperties
+import UI.MovieMaker
+import Actor.Movie (complexVariables)
 
 import Actor.Viewer.Preview (renderPreview)
 import Data.ByteString (ByteString)
@@ -48,6 +50,7 @@ import Language.Type
 import Language.Draw
 import Language.Environment
 import Language.Code.InterpretIO
+import Language.Code.Parser (CommonDefs)
 import Language.Value.Evaluator (HaskellValue)
 
 import Data.DynamicValue hiding (clone)
@@ -86,6 +89,17 @@ data ProjectMenuActions = ProjectMenuActions
     -- colorized now.
   , pmEditAutocolor :: IO ()
     -- ^ Show the project's autocolor window (see "UI.AutocolorEditor").
+  , pmMovies        :: MovieSupport
+    -- ^ The project's viewers, for making movies of (see "UI.MovieMaker").
+  , pmCommonDefs    :: IO (Either String CommonDefs)
+    -- ^ The definitions the project's @\@common@ stanzas make.
+  , pmConfigFields  :: IO [Field]
+    -- ^ The fields of the project's configuration.
+  , pmUnsaved       :: Variable Bool
+    -- ^ Whether the project has unsaved changes.
+  , pmViewerCoordinate :: String -> IO (Maybe String)
+    -- ^ The coordinate variable of the viewer with this title.
+  , pmProjectName   :: IO String
   , pmSetColorizer  :: String -> String -> IO (Either String ())
     -- ^ Colorize the viewer with this title with this colorizer (written
     -- as in a project file: @Rainbow@, @Smooth(z)@), rebuilding the
@@ -137,7 +151,7 @@ viewProject projectWindow wxLayout addMenuBar projectActions = UI
   , makeViewer = const (makeWxComplexViewer projectWindow wxLayout addMenuBar projectActions)
   }
 
-data BuiltinTool = NavTool | DebugTool
+data BuiltinTool = NavTool | DebugTool | MoviePathTool
 
 -- | Ask for the arguments to give a colorizer with parameters, as they'd
 -- be written between its parentheses.
@@ -210,6 +224,23 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- own closing questions. That happens just after this close event,
     -- from a one-shot timer, rather than from inside it, since it tears
     -- down this very window.
+    let movieProject = MovieProject
+          { mpSupport = pmMovies
+          , mpConfig = SomeContext configValues
+          , mpCommonDefs = pmCommonDefs
+          , mpFields = pmConfigFields
+          , mpUnsaved = pmUnsaved
+          , mpCoordinate = pmViewerCoordinate
+          , mpProjectName = pmProjectName
+          , mpOwner = projectWindow }
+    forgetMovieViewer <- registerMovieViewer pmMovies theViewer
+    -- The configuration variable the "Animate along path" tool moves,
+    -- if it can be used here: the viewer's coordinate, if that's one.
+    animatedVariable <- pmViewerCoordinate title0 <&> \case
+      Just c | c `elem` complexVariables (SomeContext configValues) -> Just c
+      _ -> Nothing
+    onOwnDestroy f forgetMovieViewer
+
     WX.windowOnClose f $ do
       closer <- timer f [ interval := 1 ]
       set closer [ on command := do
@@ -380,6 +411,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           _ -> pure False
 
     currentTool <- variable [value := Left NavTool ]
+    -- The path the Animate along path tool is drawing (in model coordinates,
+    -- newest point first), and whether a drag is drawing it now.
+    moviePath <- newIORef ([] :: [(Double, Double)])
+    drawingMoviePath <- newIORef False
     -- Where the left mouse button went down, and where it has been dragged
     -- to since; both are Nothing when there's no click in progress.
     draggedTo <- variable [value := Nothing]
@@ -558,8 +593,17 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           focusOn p
           set currentTool [ value := Left DebugTool ]
 
+        activateMoviePathTool = do
+          deactivateCurrentTool
+          setToolLabel "Animate along path: drag out a path"
+          set currentTool [ value := Left MoviePathTool ]
+
         deactivateCurrentTool = stopToolTimers >> get currentTool value >>= \case
           Left NavTool -> pure ()
+          Left MoviePathTool -> do
+            writeIORef moviePath []
+            writeIORef drawingMoviePath False
+            triggerRepaint
           Left DebugTool -> set debugger [ visible := False ]
           Right oldTool -> do
             void $ runToolEventHandler oldTool Deactivated
@@ -579,6 +623,13 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             menuItem toolPickerMenu [ text := tname ++ shorty
                                     , on command := activateTool thisTool ]
 
+          -- (only where the viewer's coordinate is a configuration
+          -- variable, which the path can move: where there's a
+          -- "Select ..." tool)
+          when (isJust animatedVariable) $
+            void $ menuItem toolPickerMenu [ text := "Animate along path"
+                                           , on command := activateMoviePathTool
+                                           ]
           void $ menuItem toolPickerMenu [ text := "Debug\t?"
                                          , on command := activateDebugTool
                                          ]
@@ -717,6 +768,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
                 get currentTool value >>= \case
                   Left NavTool -> paintToolLayerWithDragBox (modelToView mdl) (modelPixelDim mdl) vDrawCmds lastClick draggedTo dc r viewRect
+                  Left MoviePathTool -> do
+                    paintToolLayer (modelToView mdl) (modelPixelDim mdl) vDrawCmds dc
+                    pts <- mapM (modelToView mdl) . reverse =<< readIORef moviePath
+                    paintMoviePath dc pts
                   _  -> paintToolLayer (modelToView mdl) (modelPixelDim mdl) vDrawCmds dc
 
               Just (startTime, oldModel, oldImage) -> do
@@ -812,7 +867,46 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           MouseLeftDown{}  -> focusOn p
           MouseRightDown{} -> focusOn p
           _ -> pure ()
-    set p [ on mouse   := \event -> focusWhenClicked event >> hudMouse event >>= \handled -> unless handled $ get lastClick value >>= \lastClickNow -> case event of
+    -- The Animate along path tool: a drag draws a path, and letting go asks
+    -- how to make a movie along it (just after this event, from a
+    -- one-shot timer, rather than from a modal dialog inside it).
+    let moviePathMouse event = get currentTool value >>= \case
+          Left MoviePathTool -> case event of
+            MouseLeftDown pt' _ -> do
+              z <- viewToModel pt'
+              writeIORef moviePath [z]
+              writeIORef drawingMoviePath True
+              triggerRepaint
+              propagateEvent
+              pure True
+            MouseLeftDrag pt' _ -> do
+              drawing <- readIORef drawingMoviePath
+              when drawing $ do
+                z <- viewToModel pt'
+                setPointerLocation z
+                Model _ (px, _) <- get model value
+                readIORef moviePath >>= \case
+                  (x, y) : _ | sqrt ((fst z - x) ^ (2 :: Int) + (snd z - y) ^ (2 :: Int)) < 2 * px -> pure ()
+                  _ -> modifyIORef' moviePath (z :) >> triggerRepaint
+              propagateEvent
+              pure True
+            MouseLeftUp _ _ -> do
+              drawing <- readIORef drawingMoviePath
+              writeIORef drawingMoviePath False
+              pts <- reverse <$> readIORef moviePath
+              when (drawing && length pts >= 2) $ do
+                asker <- timer f [ interval := 1 ]
+                set asker [ on command := do
+                              set asker [ enabled := False ]
+                              title <- getDynamic vTitle
+                              forM_ animatedVariable $ \var ->
+                                makeMovieDialog f movieProject title (PathSource title var pts) ]
+              propagateEvent
+              pure True
+            _ -> pure False
+          _ -> pure False
+
+    set p [ on mouse   := \event -> focusWhenClicked event >> hudMouse event >>= \handled -> unless handled $ moviePathMouse event >>= \handledPath -> unless handledPath $ get lastClick value >>= \lastClickNow -> case event of
 
               MouseLeftDown pt modifiers | isNoShiftAltControlDown modifiers -> do
                 set lastClick [value := Just $ Viewport (pointX pt, pointY pt)]
@@ -833,6 +927,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 ptz <- viewToModel pt
                 toolClickAction <- get currentTool value <&> \case
                   Left NavTool -> recenterAction
+                  Left MoviePathTool -> pure ()
                   Left DebugTool -> do
                     (x, y) <- viewToModel pt
                     Model _ (dx, dy) <- get model value
@@ -882,6 +977,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                 Nothing -> finishDrag
                         Left NavTool -> finishDrag
                         Left DebugTool -> pure ()
+                        Left MoviePathTool -> pure ()
 
                 set draggedTo [value := Nothing]
                 set lastClick [value := Nothing]
@@ -902,6 +998,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 get currentTool value >>= \case
                   Left NavTool -> dragAction
                   Left DebugTool -> pure ()
+                  Left MoviePathTool -> pure ()
                   Right tool -> do
                      get lastClick value >>= \case
                        Nothing -> pure ()
@@ -1250,8 +1347,16 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           ]
 --    menuItem hamburgerMenu [ text := "Clone viewer\t2", on command := clone ]
     menuLine hamburgerMenu
-    menuItem hamburgerMenu [ text := "Take a picture..."
-                           , on command := takePicture f theViewer ]
+    -- Capturing what the viewer shows: a picture, or a movie of it as
+    -- the project's values change (see "UI.MovieMaker").
+    captureMenu <- menuPane [ text := "Capture" ]
+    menuItem captureMenu [ text := "Image..."
+                         , on command := takePicture f theViewer ]
+    menuItem captureMenu [ text := "Movie..."
+                         , on command := do
+                             title <- getDynamic vTitle
+                             makeMovieDialog f movieProject title ScriptSource ]
+    void (menuSub hamburgerMenu captureMenu [ text := "Capture" ])
     menuItem hamburgerMenu [ text := "Use this as preview"
                            , on command := renderPreview False theViewer >>= \case
                                Left err -> errorDialog f "Couldn't make a preview" err
@@ -1514,6 +1619,21 @@ paintToolLayerWithDragBox modelToView pxDim getDrawCommands lastClick draggedTo 
         Just box -> do
             let boxPts = map viewportToPoint (rectPoints box)
             drawBox dc (rgba @Word8 0 128 255 128) white boxPts
+
+-- | Draw the Animate along path tool's path: a white line with a dark edge, so
+-- that it shows up over anything, from a green dot at its start to a
+-- red one at its end.
+paintMoviePath :: DC d -> [Point] -> IO ()
+paintMoviePath _ [] = pure ()
+paintMoviePath dc pts@(firstPoint : _) = dcEncapsulate dc $ do
+  let segments = zip pts (drop 1 pts)
+  set dc [ pen := penColored (rgba @Word8 0 0 0 160) 5 ]
+  forM_ segments $ \(a, b) -> line dc a b []
+  set dc [ pen := penColored white 2 ]
+  forM_ segments $ \(a, b) -> line dc a b []
+  let dot c pt' = circle dc pt' 5 [ pen := penColored black 1, brush := brushSolid c ]
+  dot green firstPoint
+  dot red (last pts)
 
 -- | Read draw commands for each tool layer and paint them into the
 -- given device context
