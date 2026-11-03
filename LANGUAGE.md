@@ -505,7 +505,7 @@ The built-in colorizers are:
 | `Smooth` | `z` | Continuous color by escape time, without bands, from a choice of palettes. |
 | `Binary decomposition` | `z` | Smooth or banded color by escape time, in different colors where `z` ends up in the upper and lower half-planes; this outlines the external rays. |
 | `Glow` | | Blends between two colors by how close the iteration count came to the iteration limit. |
-| `Autocolor` | `z` | Gives each point `z` ends up at its own color, the first time it's seen (see "Automatic colors"), shaded by iteration count: the basins of a Newton's method, without knowing its roots. Every viewer using it shares the same colors. |
+| `Autocolor` | `z` | Gives each point `z` ends up at its own color, the first time it's seen (see "Automatic colors"), shaded by iteration count: the basins of a Newton's method, without knowing its roots. Every viewer using it shares the same colors. Turn off its "Allow new autocolor entries" setting (`allow_new ⭠ false` in a `coloring:` block) for a viewer that should only use the colors other viewers found, like a parameter plane, whose points are all different. |
 
 Points where the loop gave up (`stuck`) are black by default; most
 colorizers have a "Color when the loop gives up" setting.

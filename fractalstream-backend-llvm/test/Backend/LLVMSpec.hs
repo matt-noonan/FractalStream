@@ -15,7 +15,8 @@ import Actor.Viewer (ViewerFunction(..), ViewerArgs(..), ViewerIssues(..), PrepS
 import Actor.Viewer.Types (ViewerEnv)
 import Foreign (allocaBytes, peekArray, Word8)
 import Backend.LLVM
-import Actor.Autocolor (AutocolorLookup)
+import Actor.Autocolor (AutocolorLookup, autocolorLookupFromFunction)
+import System.IO.Unsafe (unsafePerformIO)
 
 -- Deliberately plain string literals here, not a 'Text.RawString.QQ'
 -- quasiquote: quasiquotes require Template Haskell, which forces GHC to
@@ -191,7 +192,8 @@ spec = do
           env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
           src = "c := get_autocolor(4, 1)\ncolor <- autocolor(3, 0.5 + 0.25 i)"
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
-      pixels <- withJittedViewer jit lookupAc Nothing code $ \(ViewerFunction vf) ->
+      acLookup <- autocolorLookupFromFunction lookupAc
+      pixels <- withJittedViewer jit acLookup Nothing code $ \(ViewerFunction vf) ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- vf ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -204,6 +206,25 @@ spec = do
       length made `shouldBe` 32
       filter (\(a, _, _, _) -> a) made `shouldSatisfy` all (== (True, 3, 0.5, 0.25))
       filter (\(a, _, _, _) -> not a) made `shouldSatisfy` all (== (False, 4, 1, 0))
+
+    it "evaluates only the branch an if/then/else takes" $ withJIT $ \jit -> do
+      calls <- newIORef []
+      let lookupAc adds n x y = do
+            atomicModifyIORef' calls (\cs -> ((adds, n, x, y) : cs, ()))
+            pure (rgbToColor (10, 20, 30))
+          env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
+          src = "color <- if n = 1 then autocolor(3, 0) else get_autocolor(4, 0)"
+      code <- either (fail . show) pure (parseCode env noCommonDefs src)
+      acLookup <- autocolorLookupFromFunction lookupAc
+      _ <- withJittedViewer jit acLookup Nothing code $ \(ViewerFunction vf) ->
+        allocaBytes (3 * 4 * 4) $ \buf -> vf ViewerArgs
+          { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+          , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+          , vaBuffer = buf
+          , vaArgs = Bind (Proxy @"n") IntegerType 0 EmptyContext }
+      made <- readIORef calls
+      length made `shouldBe` 16
+      made `shouldSatisfy` all (\(adds, _, _, _) -> not adds)
 
     it "starts each pixel's color at grey" $ withJIT $ \jit -> do
       -- Only the first pixel sets the color, since n is changed afterwards
@@ -325,4 +346,5 @@ runTool exec src = do
 
 -- | For code that doesn't use autocolor.
 noAutocolor :: AutocolorLookup
-noAutocolor _ _ _ _ = pure grey
+noAutocolor = unsafePerformIO (autocolorLookupFromFunction (\_ _ _ _ -> pure grey))
+{-# NOINLINE noAutocolor #-}

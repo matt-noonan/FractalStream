@@ -57,7 +57,7 @@ import Data.Color
 import Data.IORef (IORef, newIORef, modifyIORef', readIORef)
 import qualified Data.Map.Strict as Map
 
-import Actor.Autocolor (AutocolorLookup)
+import Actor.Autocolor (AutocolorLookup(..), autocolorCacheLookup)
 import Foreign hiding (void)
 
 import Text.Disassembler.X86Disassembler
@@ -446,18 +446,13 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocol
 
             let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
 
-            -- The kernel's autocolor callback. Like the kernel itself, it
-            -- has to outlive this action (rendering goes on after it
-            -- returns), so it's never freed: one small closure per
-            -- compiled viewer.
-            autocolorFP <- wrapAutocolor (autocolorCallback lookupAutocolor)
-
             -- Borrow an arena from the session-wide pool for the duration of each
             -- kernel call; bracket returns it even if AsyncCancelled is thrown.
             -- The pool (and the arena lifetime) is owned by withJIT, not here,
             -- because rendering outlives this action (see LLVMJit).
             action $ ViewerFunction $ \ViewerArgs{..} ->
-              bracket (readChan arenaPool) (writeChan arenaPool) $ \arena -> do
+              bracket (readChan arenaPool) (writeChan arenaPool) $ \arena ->
+              withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir -> do
                 (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
                 (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
                 let nPixels = fromIntegral vaWidth * fromIntegral vaHeight :: Int
@@ -493,7 +488,8 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocol
                                : argPtr   arena
                                : argInt32 (fromIntegral arenaCapacity)
                                : argPtr   issuesPtr
-                               : argPtr   (castFunPtrToPtr autocolorFP)
+                               : argPtr   (castFunPtrToPtr autocolorCacheLookup)
+                               : argPtr   autocolorDir
                                : argCDouble (CDouble $ fst vaPoint)
                                : argCDouble (CDouble $ snd vaPoint)
                                : argCDouble (CDouble $ fst vaStep)
@@ -535,18 +531,7 @@ foreign import ccall "wrapper"
 foreign import ccall "wrapper"
   wrapFormat :: (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32)
              -> IO (FunPtr (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32))
-foreign import ccall "wrapper"
-  wrapAutocolor :: (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
-                -> IO (FunPtr (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32))
 
--- | The autocolor lookup compiled code calls (see
--- 'Backend.LLVM.Operand.asAutocolor'): whether to add a new point, the
--- group, and the point, giving the color as @0x00RRGGBB@.
-autocolorCallback :: AutocolorLookup -> Word8 -> Int32 -> CDouble -> CDouble -> IO Word32
-autocolorCallback lookupAutocolor add n (CDouble x) (CDouble y) = do
-  c <- lookupAutocolor (add /= 0) (fromIntegral n) x y
-  let (r, g, b) = colorToRGB c
-  pure (shiftL (fromIntegral r) 16 .|. shiftL (fromIntegral g) 8 .|. fromIntegral b)
 
 -- | The number formatter compiled tool code calls for 'ToText' (see
 -- 'Backend.LLVM.Operand.ArenaState'): writes the text form of an integer
@@ -683,7 +668,7 @@ runToolOnce :: FunPtr () -> AutocolorLookup -> DrawSink -> Int
 runToolOnce fn lookupAutocolor sink capacity ctx haskArgs = do
   drawn <- newIORef []
   withDrawVTablePtrs (bufferedSink drawn sink) $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP) ->
-    bracket (wrapAutocolor (autocolorCallback lookupAutocolor)) freeHaskellFunPtr $ \autocolorFP ->
+    withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir ->
     bracket (mallocBytes capacity) free $ \arena ->
     allocaBytes 1 $ \overflowPtr -> do
       poke overflowPtr (0 :: Word8)
@@ -700,7 +685,8 @@ runToolOnce fn lookupAutocolor sink capacity ctx haskArgs = do
             , argPtr (castFunPtrToPtr rectFP)
             , argPtr (castFunPtrToPtr writeFP)
             , argPtr (castFunPtrToPtr formatFP)
-            , argPtr (castFunPtrToPtr autocolorFP)
+            , argPtr (castFunPtrToPtr autocolorCacheLookup)
+            , argPtr autocolorDir
             , argPtr arena
             , argInt32 (fromIntegral capacity)
             , argPtr overflowPtr ]

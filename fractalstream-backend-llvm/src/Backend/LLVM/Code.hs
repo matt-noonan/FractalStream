@@ -425,7 +425,8 @@ compileRenderer' prepOutputEnv name code = runExcept $
         arenaParams  = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
                        , (AST.i32,        ParameterName "#arenaSize")
                        , (AST.ptr AST.i8, ParameterName "#issuesOut")
-                       , (AST.ptr AST.i8, ParameterName "#autocolor") ]
+                       , (AST.ptr AST.i8, ParameterName "#autocolor")
+                       , (AST.ptr AST.i8, ParameterName "#autocolorDir") ]
         params       = internalRenderParams ++ arenaParams ++ viewerEnvParams
         prepParams   = toPrepParamList prepOutputEnv
         pfX      = bindingEvidence @InternalX   @'RealT  @(ViewerEnv env)
@@ -436,7 +437,8 @@ compileRenderer' prepOutputEnv name code = runExcept $
         nViewerEnvArgs = envLength (envProxy (Proxy @(ViewerEnv env)))
     function name (retParam : params ++ prepParams) AST.void $ \allArgs -> do
       let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg
-                  : arenaPtrArg : arenaSizeArg : issuesOutArg : autocolorArg : rest) = allArgs
+                  : arenaPtrArg : arenaSizeArg : issuesOutArg : autocolorArg : autocolorDirArg
+                  : rest) = allArgs
           (rawArgs, prepArrayPtrs) = splitAt nViewerEnvArgs rest
       getExtern <- getGetExtern
       mdo
@@ -464,7 +466,8 @@ compileRenderer' prepOutputEnv name code = runExcept $
         store anyIndexError 0 (C.bit 0)
         emptyText <- emptyTextGlobal
         autocolorF <- bitcast autocolorArg autocolorFnType
-        let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing (Just autocolorF)
+        let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing
+                                    (Just (autocolorF, autocolorDirArg))
 
         args <- allocaArgs (envProxy (Proxy @(ViewerEnv env))) rawArgs
         x0 <- derefOperand (getBinding args pfX)  >>= \case RealOp v -> pure v
@@ -698,7 +701,8 @@ compileToolHandler envp name code = runExcept $
           , (AST.ptr AST.i8, ParameterName "draw.rect")
           , (AST.ptr AST.i8, ParameterName "draw.write")
           , (AST.ptr AST.i8, ParameterName "text.format")
-          , (AST.ptr AST.i8, ParameterName "autocolor") ]
+          , (AST.ptr AST.i8, ParameterName "autocolor")
+          , (AST.ptr AST.i8, ParameterName "autocolor.dir") ]
         arenaParams    = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
                          , (AST.i32,        ParameterName "#arenaSize") ]
         overflowParams = [ (AST.ptr AST.i8, ParameterName "#overflowOut") ]
@@ -707,9 +711,9 @@ compileToolHandler envp name code = runExcept $
     function name params AST.void $ \allArgs -> do
       getExtern <- getGetExtern
       _entry <- block `named` "tool_entry"
-      let (drawArgs, afterDraw) = splitAt 10 allArgs
+      let (drawArgs, afterDraw) = splitAt 11 allArgs
           (arenaPtrArg : arenaSizeArg : overflowArg : rawEnvArgs) = afterDraw
-          [clearP, strokeP, fillP, pointP, lineP, circleP, rectP, writeP, formatP, autocolorP] = drawArgs
+          [clearP, strokeP, fillP, pointP, lineP, circleP, rectP, writeP, formatP, autocolorP, autocolorDirP] = drawArgs
 
       bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
       store bumpAlloca 0 arenaPtrArg
@@ -722,7 +726,8 @@ compileToolHandler envp name code = runExcept $
                    (fnPtrTy AST.i32 [AST.i8, AST.double, AST.double, AST.ptr AST.i8, AST.i32])
       emptyText <- emptyTextGlobal
       autocolorF <- bitcast autocolorP autocolorFnType
-      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText (Just formatF) (Just autocolorF)
+      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText (Just formatF)
+                                  (Just (autocolorF, autocolorDirP))
 
       clearF  <- bitcast clearP  (fnPtrTy AST.void [])
       strokeF <- bitcast strokeP (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
@@ -752,7 +757,8 @@ compileToolHandler envp name code = runExcept $
 
 -- | The type of the host's autocolor lookup (see 'asAutocolor').
 autocolorFnType :: AST.Type
-autocolorFnType = AST.ptr (AST.FunctionType AST.i32 [AST.i8, AST.i32, AST.double, AST.double] False)
+autocolorFnType = AST.ptr (AST.FunctionType AST.i32
+  [AST.ptr AST.i8, AST.i8, AST.i32, AST.double, AST.double] False)
 
 compileCode :: forall m env
              . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)

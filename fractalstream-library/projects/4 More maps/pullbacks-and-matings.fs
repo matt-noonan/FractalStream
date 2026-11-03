@@ -1,7 +1,6 @@
 script: |
   @config "Configuration"
   C : C as "C = " <- 0.5000000000 + 0.8660254038*i
-  p : R as "Brightness: " <- 0.5
   color1 : Color as "Selected point" <- white
 
   @common

@@ -19,8 +19,10 @@ module Actor.Autocolor
   , newAutocolorState
   , AutocolorGroup(..)
   , AutocolorGroupId(..)
-  , AutocolorLookup
+  , AutocolorLookup(..)
   , autocolorLookup
+  , autocolorLookupFromFunction
+  , autocolorCacheLookup
   , autocolorEdits
   , autocolor
   , getAutocolor
@@ -66,6 +68,12 @@ import Language.Type (TypeProxy(..), HaskellType, toUserString)
 import Language.Value.Parser (parseConstant)
 
 import qualified Data.Map as Map
+import Data.IORef
+import Data.Bits (shiftL, (.|.))
+import Foreign (Ptr, FunPtr, ForeignPtr, nullPtr, mallocBytes, free, pokeByteOff, freeHaskellFunPtr, withForeignPtr)
+import qualified Foreign.Concurrent as FC
+import Foreign.C.Types (CDouble(..))
+import System.IO (fixIO)
 
 newtype AutocolorGroupId = AutocolorGroupId Int
   deriving (Eq, Ord, Show)
@@ -78,8 +86,13 @@ data AutocolorState = AutocolorState
     -- ^ held to add a group, so that two renderers looking for the same
     -- new group don't each add one
   , acEdits :: Variable Int
-    -- ^ counts changes to the colors already given out (see
-    -- 'autocolorEdits')
+    -- ^ counts changes to the colors (see 'autocolorEdits')
+  , acCache :: ForeignPtr ()
+    -- ^ the snapshot directory compiled code reads (see 'autocolorCacheLookup')
+  , acPublishLock :: MVar ()
+    -- ^ held to publish a snapshot, so that the latest state always wins
+  , acAddPending :: IORef Bool
+    -- ^ whether a redraw for newly added points is already on its way
   }
 
 data AutocolorGroup = AutocolorGroup
@@ -92,12 +105,53 @@ data AutocolorGroup = AutocolorGroup
   , agTableWriteMutex :: MVar ()
   -- ^ the key set of agTable should not be changed without taking this mutex
   , agFullWarned :: Variable Bool
+  , agAdded :: IORef (IO ())
+    -- ^ run after a point is added to the table (by its state: publish a
+    -- new snapshot, and redraw)
   }
 
 -- | How compiled code looks colors up: whether to add a point that isn't
 -- in the table yet (@autocolor@) or not (@get_autocolor@), the group's
 -- number, and the point.
-type AutocolorLookup = Bool -> Int -> Double -> Double -> IO Color
+--
+-- Compiled code calls 'autocolorCacheLookup' (C, @fs_ac_lookup@) with
+-- 'autocolorCache', which finds the colors of points a group already has
+-- in a snapshot, without calling back into Haskell or taking any lock;
+-- only a point to add goes on to 'autocolorFunction'.
+data AutocolorLookup = AutocolorLookup
+  { autocolorFunction :: Bool -> Int -> Double -> Double -> IO Color
+  , autocolorCache    :: ForeignPtr ()
+  }
+
+foreign import ccall "&fs_ac_lookup"
+  autocolorCacheLookup :: FunPtr (Ptr () -> Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
+
+foreign import ccall "fs_ac_publish"
+  publishSnapshot :: Ptr () -> Ptr () -> IO ()
+
+foreign import ccall "wrapper"
+  wrapAddFunction :: (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
+                  -> IO (FunPtr (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32))
+
+-- | A snapshot directory, with no snapshot yet (so that every lookup goes
+-- to the function), freed along with the function's callback once nothing
+-- refers to it.
+newCache :: (Bool -> Int -> Double -> Double -> IO Color) -> IO (ForeignPtr ())
+newCache f = do
+  fp <- wrapAddFunction $ \add n (CDouble x) (CDouble y) ->
+    packColor <$> f (add /= 0) (fromIntegral n) x y
+  dir <- mallocBytes 16
+  pokeByteOff dir 0 nullPtr
+  pokeByteOff dir 8 fp
+  FC.newForeignPtr dir (freeHaskellFunPtr fp >> free dir)
+
+packColor :: Color -> Word32
+packColor c = let (r, g, b) = colorToRGB c
+              in shiftL (fromIntegral r) 16 .|. shiftL (fromIntegral g) 8 .|. fromIntegral b
+
+-- | A lookup that always calls the given function (for tests).
+autocolorLookupFromFunction :: (Bool -> Int -> Double -> Double -> IO Color) -> IO AutocolorLookup
+autocolorLookupFromFunction f = AutocolorLookup f <$> newCache f
 
 -- | The most points a group's table holds. A script that gives
 -- @autocolor@ points that never repeat (every pixel's own @z@, say) would
@@ -107,19 +161,77 @@ maxAutocolorEntries :: Int
 maxAutocolorEntries = 256
 
 newAutocolorState :: MonadIO io => io AutocolorState
-newAutocolorState = liftIO $
-  AutocolorState <$> newVariable Map.empty <*> newMVar 0 <*> newMVar () <*> newVariable 0
+newAutocolorState = liftIO $ fixIO $ \st -> do
+  groups <- newVariable Map.empty
+  nextId <- newMVar 0
+  groupsMutex <- newMVar ()
+  edits <- newVariable 0
+  cache <- newCache (lookupColor st)
+  publishLock <- newMVar ()
+  pending <- newIORef False
+  pure (AutocolorState groups nextId groupsMutex edits cache publishLock pending)
 
--- | A 'Dynamic' that changes whenever a color that's already been given
--- out may have changed (an entry recolored or deleted, a group's tolerance
--- or miss color changed, a group deleted), so that viewers using them can
--- be redrawn. Adding a point doesn't count: the pixels already drawn
--- don't change.
+-- | A 'Dynamic' that changes whenever colors may have changed, so that
+-- viewers using them can be redrawn: an entry recolored, moved, or
+-- deleted; a group's tolerance, lock, or miss color changed; a group
+-- cleared or deleted -- and points added. (Points added during a render
+-- are counted together, shortly after the first: a render that finds a
+-- few new points causes one more render of each viewer, not one for each
+-- point. The viewer that found them finds no more the second time.)
 autocolorEdits :: AutocolorState -> Dynamic Int
 autocolorEdits = dyn . acEdits
 
 bumpEdits :: AutocolorState -> IO ()
-bumpEdits st = modifyValue (acEdits st) (+ 1)
+bumpEdits st = publishAutocolor st >> modifyValue (acEdits st) (+ 1)
+
+-- | After a point is added: publish it, and redraw soon (once for every
+-- point added in the meantime).
+pointAdded :: AutocolorState -> IO ()
+pointAdded st = do
+  publishAutocolor st
+  alreadyPending <- atomicModifyIORef' (acAddPending st) (True,)
+  unless alreadyPending $ void $ forkIO $ do
+    threadDelay 200000
+    writeIORef (acAddPending st) False
+    modifyValue (acEdits st) (+ 1)
+
+-- | Publish a snapshot of every group for compiled code (see
+-- @autocolor_cache.c@ for its layout). Snapshots aren't freed, since a
+-- render may still be reading an old one; they're small, and only made
+-- when something changes.
+publishAutocolor :: AutocolorState -> IO ()
+publishAutocolor AutocolorState{..} = withMVar acPublishLock $ \_ -> do
+  groups <- Map.toList <$> getDynamic acGroups
+  infos <- forM groups $ \(AutocolorGroupId n, AutocolorGroup{..}) -> do
+    tol <- getDynamic agTolerance
+    locked <- getDynamic agLocked
+    miss <- getDynamic agMissColor
+    entries <- getDynamic agTable >>= traverse getDynamic
+    pure (n, not locked && Map.size entries < maxAutocolorEntries, miss, tol, Map.toList entries)
+  let headerSize = 8
+      groupSize = 32
+      entrySize = 24
+      entriesStart = headerSize + groupSize * length infos
+      offsets = scanl (+) entriesStart [ entrySize * length es | (_, _, _, _, es) <- infos ]
+      total = last offsets
+  buf <- mallocBytes total
+  pokeByteOff buf 0 (fromIntegral (length infos) :: Int32)
+  pokeByteOff buf 4 (0 :: Int32)
+  forM_ (zip3 [0 ..] infos offsets) $ \(k, (n, canAdd, miss, tol, es), off) -> do
+    let g = headerSize + groupSize * k
+    pokeByteOff buf g (fromIntegral n :: Int32)
+    pokeByteOff buf (g + 4) (if canAdd then 1 else 0 :: Int32)
+    pokeByteOff buf (g + 8) (packColor miss)
+    pokeByteOff buf (g + 12) (fromIntegral (length es) :: Int32)
+    pokeByteOff buf (g + 16) (CDouble (tol * tol))
+    pokeByteOff buf (g + 24) (fromIntegral off :: Int64)
+    forM_ (zip [0 ..] es) $ \(i, ((x, y), c)) -> do
+      let e = off + entrySize * i
+      pokeByteOff buf e (CDouble x)
+      pokeByteOff buf (e + 8) (CDouble y)
+      pokeByteOff buf (e + 16) (packColor c)
+      pokeByteOff buf (e + 20) (0 :: Word32)
+  withForeignPtr acCache $ \dir -> publishSnapshot dir buf
 
 makeEmptyAutocolorGroup :: MonadIO io => io AutocolorGroup
 makeEmptyAutocolorGroup = liftIO $ do
@@ -130,18 +242,29 @@ makeEmptyAutocolorGroup = liftIO $ do
   agTable <- newVariable Map.empty
   agTableWriteMutex <- newMVar ()
   agFullWarned <- newVariable False
+  agAdded <- newIORef (pure ())
   pure AutocolorGroup{..}
 
 addAutocolorGroup :: MonadIO io => AutocolorState -> io AutocolorGroupId
-addAutocolorGroup AutocolorState{..} = liftIO $ withMVar acGroupsMutex $ \_ -> do
-  groups <- getDynamic acGroups
-  let used = Map.keys groups
-  gId <- modifyMVar acNextGroupId $ \n ->
-    let n' = until (\k -> AutocolorGroupId k `notElem` used) (+ 1) n
-    in pure (n' + 1, AutocolorGroupId n')
-  group <- makeEmptyAutocolorGroup
-  modifyValue acGroups (Map.insert gId group)
+addAutocolorGroup st@AutocolorState{..} = liftIO $ do
+  gId <- withMVar acGroupsMutex $ \_ -> do
+    groups <- getDynamic acGroups
+    let used = Map.keys groups
+    gId <- modifyMVar acNextGroupId $ \n ->
+      let n' = until (\k -> AutocolorGroupId k `notElem` used) (+ 1) n
+      in pure (n' + 1, AutocolorGroupId n')
+    group <- newGroupOf st
+    modifyValue acGroups (Map.insert gId group)
+    pure gId
+  publishAutocolor st
   pure gId
+
+-- | An empty group belonging to this state.
+newGroupOf :: AutocolorState -> IO AutocolorGroup
+newGroupOf st = do
+  g <- makeEmptyAutocolorGroup
+  writeIORef (agAdded g) (pointAdded st)
+  pure g
 
 deleteAutocolorGroup :: MonadIO io => AutocolorState -> AutocolorGroupId -> io ()
 deleteAutocolorGroup st@AutocolorState{..} gId = liftIO $ do
@@ -151,17 +274,20 @@ deleteAutocolorGroup st@AutocolorState{..} gId = liftIO $ do
 
 -- | The group with this number, adding an empty one if there isn't one.
 autocolorGroup :: MonadIO io => AutocolorState -> AutocolorGroupId -> io AutocolorGroup
-autocolorGroup AutocolorState{..} gId = liftIO $
+autocolorGroup st@AutocolorState{..} gId = liftIO $
   Map.lookup gId <$> getDynamic acGroups >>= \case
     Just g -> pure g
-    Nothing -> withMVar acGroupsMutex $ \_ ->
-      -- (again: someone else may have added it while we waited)
-      Map.lookup gId <$> getDynamic acGroups >>= \case
-        Just g -> pure g
-        Nothing -> do
-          g <- makeEmptyAutocolorGroup
-          modifyValue acGroups (Map.insert gId g)
-          pure g
+    Nothing -> do
+      (g, isNew) <- withMVar acGroupsMutex $ \_ ->
+        -- (again: someone else may have added it while we waited)
+        Map.lookup gId <$> getDynamic acGroups >>= \case
+          Just g -> pure (g, False)
+          Nothing -> do
+            g <- newGroupOf st
+            modifyValue acGroups (Map.insert gId g)
+            pure (g, True)
+      when isNew (publishAutocolor st)
+      pure g
 
 autocolorGroups :: MonadIO io => AutocolorState -> io (Map AutocolorGroupId AutocolorGroup)
 autocolorGroups = liftIO . getDynamic . acGroups
@@ -173,7 +299,10 @@ autocolorGroupsDynamic = dyn . acGroups
 
 -- | The lookup to give compiled code.
 autocolorLookup :: AutocolorState -> AutocolorLookup
-autocolorLookup st add n x y = do
+autocolorLookup st = AutocolorLookup (lookupColor st) (acCache st)
+
+lookupColor :: AutocolorState -> Bool -> Int -> Double -> Double -> IO Color
+lookupColor st add n x y = do
   g <- autocolorGroup st (AutocolorGroupId n)
   if add then autocolor g x y else getAutocolor g x y
 
@@ -213,28 +342,32 @@ deleteAutocolor st AutocolorGroup{..} x y = liftIO $ do
 autocolor :: MonadIO io => AutocolorGroup -> Double -> Double -> io Color
 autocolor ag@AutocolorGroup{..} x y = liftIO $ maybeGetAutocolor ag x y >>= \case
   Just c -> pure c
-  Nothing -> withMVar agTableWriteMutex $ \_ -> do
-    isLocked <- getDynamic agLocked
-    size <- Map.size <$> getDynamic agTable
-    maybeGetAutocolor ag x y >>= \case
-      Just c  -> pure c
-      Nothing
-        | isLocked -> getDynamic agMissColor
-        | size >= maxAutocolorEntries -> do
-            warned <- getDynamic agFullWarned
-            unless warned $ do
-              setValue agFullWarned True
-              hPutStrLn stderr ("warning: an autocolor group has " ++ show maxAutocolorEntries
-                                ++ " points already, so no more will be added; the points \
-                                   \given to autocolor may never repeat")
-            getDynamic agMissColor
-        | otherwise -> do
-            angle <- getDynamic agNextColorAngle
-            modifyValue agNextColorAngle (+ 0.3821592356687898)
-            let c0 = hsvToColor (angle, 1, 1)
-            c <- newVariable c0
-            modifyValue agTable (Map.insert (x, y) c)
-            pure c0
+  Nothing -> do
+    (c0, added) <- withMVar agTableWriteMutex $ \_ -> do
+      isLocked <- getDynamic agLocked
+      size <- Map.size <$> getDynamic agTable
+      maybeGetAutocolor ag x y >>= \case
+        Just c  -> pure (c, False)
+        Nothing
+          | isLocked || size >= maxAutocolorEntries -> (, False) <$> getDynamic agMissColor
+          | otherwise -> do
+              angle <- getDynamic agNextColorAngle
+              modifyValue agNextColorAngle (+ 0.3821592356687898)
+              let c0 = hsvToColor (angle, 1, 1)
+              c <- newVariable c0
+              modifyValue agTable (Map.insert (x, y) c)
+              -- (warned of once it fills up: after that, compiled code
+              -- doesn't even ask)
+              when (size + 1 == maxAutocolorEntries) $ do
+                warned <- getDynamic agFullWarned
+                unless warned $ do
+                  setValue agFullWarned True
+                  hPutStrLn stderr ("warning: an autocolor group has " ++ show maxAutocolorEntries
+                                    ++ " points now, so no more will be added; the points \
+                                       \given to autocolor may never repeat")
+              pure (c0, True)
+    when added (join (readIORef agAdded))
+    pure c0
 
 setAutocolorEntryColor :: MonadIO io => AutocolorState -> AutocolorGroup -> (Double, Double) -> Color -> io ()
 setAutocolorEntryColor st AutocolorGroup{..} p c = liftIO $ do
@@ -361,7 +494,7 @@ readAutocolorState st v = liftIO $ case parseEither parseGroups v of
     setValue (agNextColorAngle g) hue
     setValue (agMissColor g) miss
     table <- Map.fromList <$> traverse (\(p, c) -> (p,) <$> newVariable c) entries
-    setValue (agTable g) table)
+    setValue (agTable g) table) <* publishAutocolor st
   where
     parseGroups = withObject "autocolor" $ \o -> forM (KM.toList o) $ \(k, gv) ->
       case readMaybe (Text.unpack (Key.toText k)) of

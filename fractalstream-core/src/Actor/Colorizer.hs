@@ -177,6 +177,7 @@ builtinColorizers =
         \at a color of its own, the first time it's seen: each root a Newton's \
         \method converges to, say. Viewers using it share its colors (it uses \
         \autocolor group 0). Its argument is the variable that converges.\""
+      , "allow_new : Boolean as \"Allow new autocolor entries\" <- true"
       , "shade : Boolean as \"Shade by iteration count\" <- true"
       , "period : R as \"Iterations per shading cycle:\" <- 20"
       , givesUpDecl
@@ -184,7 +185,7 @@ builtinColorizers =
       , "  if stuck:"
       , "    color <- gives_up"
       , "  else:"
-      , "    color <- autocolor(0, z)"
+      , "    color <- if allow_new then autocolor(0, z) else get_autocolor(0, z)"
       , "    if shade:"
       , "      color <- cycle(iterations / period, dark color, light color)"
       ]

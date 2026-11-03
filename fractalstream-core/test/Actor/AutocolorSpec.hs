@@ -1,4 +1,4 @@
-{-# language OverloadedStrings #-}
+{-# language OverloadedStrings, ForeignFunctionInterface, RecordWildCards #-}
 module Actor.AutocolorSpec (spec) where
 
 import Test.Hspec
@@ -9,10 +9,19 @@ import Data.Color
 import Data.DynamicValue
 
 import Control.Concurrent
+import Data.Bits (shiftR)
+import Data.Int (Int32)
+import Data.Word (Word8, Word32)
+import Foreign (FunPtr, Ptr, withForeignPtr)
+import Foreign.C.Types (CDouble(..))
 import Control.Monad (forM_, replicateM_)
 import Data.List (isInfixOf)
 import qualified Data.Map as Map
 import qualified Data.ByteString.Char8 as BS8
+
+foreign import ccall "dynamic"
+  callCacheLookup :: FunPtr (Ptr () -> Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
+                  -> Ptr () -> Word8 -> Int32 -> CDouble -> CDouble -> IO Word32
 
 tableSize :: AutocolorGroup -> IO Int
 tableSize g = Map.size <$> getDynamic (agTable g)
@@ -86,15 +95,37 @@ spec = do
       getAutocolor g' 1 0.5 >>= (`shouldBe` c)
       getAutocolor g' 9 9 >>= (`shouldBe` blue)
 
-    it "counts edits, but not new points" $ do
+    it "counts edits at once, and a burst of new points as one, shortly after" $ do
       st <- newAutocolorState
       g <- autocolorGroup st (AutocolorGroupId 0)
       e0 <- getDynamic (autocolorEdits st)
-      _ <- autocolor g 1 0
+      forM_ [1 .. 5] $ \k -> autocolor g (fromIntegral (k :: Int)) 0
       getDynamic (autocolorEdits st) >>= (`shouldBe` e0)
+      threadDelay 500000
+      e1 <- getDynamic (autocolorEdits st)
+      e1 `shouldBe` e0 + 1
       setAutocolorEntryColor st g (1, 0) red
-      getDynamic (autocolorEdits st) >>= (`shouldSatisfy` (> e0))
+      getDynamic (autocolorEdits st) >>= (`shouldSatisfy` (> e1))
       getAutocolor g 1 0 >>= (`shouldBe` red)
+
+    it "answers compiled code's lookups from its snapshot" $ do
+      st <- newAutocolorState
+      g <- autocolorGroup st (AutocolorGroupId 3)
+      c <- autocolor g 1 0
+      let AutocolorLookup{..} = autocolorLookup st
+          viaC add n x y = withForeignPtr autocolorCache $ \dir ->
+            unpack <$> callCacheLookup autocolorCacheLookup dir (if add then 1 else 0) n x y
+          unpack w = rgbToColor ( fromIntegral (w `shiftR` 16), fromIntegral (w `shiftR` 8)
+                                , fromIntegral w )
+      -- a point it has (near enough), without adding one
+      viaC True 3 1.0005 0 >>= (`shouldBe` c)
+      tableSize g >>= (`shouldBe` 1)
+      -- a point it doesn't have, in a locked group: its miss color
+      setAutocolorLocked st g True
+      setAutocolorMissColor st g blue
+      viaC True 3 7 7 >>= (`shouldBe` blue)
+      viaC False 3 7 7 >>= (`shouldBe` blue)
+      tableSize g >>= (`shouldBe` 1)
 
   describe "a project's autocolor:" $ do
     it "is read from the project file and written back" $ do

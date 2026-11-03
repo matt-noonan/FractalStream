@@ -169,7 +169,7 @@ doesn't. Prefer letting a colorizer do the coloring when one fits; write
 | `Smooth` | `z` | `palette`, `period` (20), `degree` (2), `color1`/`color2`, `gives_up` |
 | `Binary decomposition` | `z` | `period` (10), `degree` (2), `upper1`/`upper2`, `lower1`/`lower2`, `smooth` (true), `gives_up` |
 | `Glow` | | `brightness` (0.5), `near`/`far` colors, `gives_up`. Uses `iterations / max_iters`. |
-| `Autocolor` | `z` | `shade` (true), `period` (20), `gives_up`. `autocolor(0, z)` (group 0, shared by all its viewers): Newton basins without known roots. |
+| `Autocolor` | `z` | `allow_new` (true), `shade` (true), `period` (20), `gives_up`. `autocolor(0, z)`, or `get_autocolor(0, z)` with `allow_new` off (group 0, shared by all its viewers): Newton basins without known roots. Set `allow_new <- false` in a parameter plane, so it reads the dynamical plane's colors instead of adding a point per pixel. |
 
 A parameter without an argument uses its default, else the viewer's
 variable of the same name (so `Smooth` needs a `z` in scope at the end of

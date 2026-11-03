@@ -192,7 +192,8 @@ end of a viewer's body, so a viewer script can just say what to compute.
 Built-ins (`builtinColorizers`): Manual (no code), Rainbow, Escape time,
 Smooth, Binary decomposition, Glow, Autocolor (always group 0, since a
 colorizer parameter would be a variable, not the literal group number
-`autocolor` needs); each is written as `@colorizer` source
+`autocolor` needs; its `allow_new` setting switches to `get_autocolor`,
+for a parameter plane); each is written as `@colorizer` source
 text, parsed by `parseScript` (the test suite builds every one). A script
 adds its own with `@colorizer "Name"` stanzas (`ColorizerStanza`: config
 declarations, then `define colorize(params):`); one with a built-in's name
@@ -247,17 +248,34 @@ without an `autocolor:` key) can differ from run to run. Saved tables
 
 The `Ensemble` owns an `AutocolorState` (`ensembleAutocolor`, carried
 over by `carryOverProjectState`, saved under a core-owned `autocolor:`
-key that `fsrun` honors). Backends get an `AutocolorLookup` (`Bool -> Int
--> Double -> Double -> IO Color`): `withCompiledViewer` and `runTool`
-take one. The LLVM backend passes it to viewer kernels (`#autocolor`,
-after `#issuesOut`) and tool handlers (after `text.format`) as a
-`"wrapper"` function pointer, `i32 (i8 add, i32 group, double x, double
-y)` returning `0x00RRGGBB`, reached through `ArenaState.asAutocolor`. A
-viewer's pointer is never freed (the kernel outlives
-`withJittedViewer`'s action). The pure evaluator can't compute it (it's
-pure); it raises an error. Viewers redraw when `autocolorEdits` changes
-(recoloring, moving, adding by hand, or deleting entries; clearing,
-locking, tolerance or miss color changes), not when a render adds points.
+key that `fsrun` honors). Backends get an `AutocolorLookup`: the Haskell
+lookup function, and `autocolorCache`, a snapshot directory for compiled
+code. `withCompiledViewer` and `runTool` take one.
+
+Compiled code doesn't call back into Haskell for each lookup (that
+roughly doubled render times): viewer kernels (`#autocolor`,
+`#autocolorDir`, after `#issuesOut`) and tool handlers (`autocolor`,
+`autocolor.dir`, after `text.format`) get a pointer to the C function
+`fs_ac_lookup` (`src/Actor/autocolor_cache.c`) and the directory, reached
+through `ArenaState.asAutocolor`. It reads an immutable snapshot of every
+group (points with their colors, squared tolerance, miss color, and
+whether the group can add a point) without any lock, and calls back into
+Haskell only to add a point it doesn't have. The Haskell side publishes a
+new snapshot (`publishAutocolor`, under `acPublishLock` so the newest
+state always wins) after every change: a point added, a group added, any
+edit, a project file read. Old snapshots are never freed, since a render
+may still be reading one; they're small, and only made on changes. A
+group's "full" warning is printed when it fills up, since afterwards
+compiled code no longer asks.
+
+The pure evaluator can't compute autocolor (it's pure); it raises an
+error. Viewers redraw when `autocolorEdits` changes: at once for an edit
+(an entry recolored, moved, added by hand, or deleted; a group cleared,
+locked or unlocked, or its tolerance or miss color changed), and 200 ms
+after a render adds points, once for the whole burst (`pointAdded`). That
+redraws a viewer that only reads (a parameter plane with
+`allow_new <- false`) once another viewer has found the points it needs;
+the viewer that added them finds nothing new the second time.
 
 In the `autocolor:` key, points are complex literals in ASCII
 (`showAutocolorPoint`: 10 decimals, |x| < 1e-9 written as 0; a plain
@@ -273,6 +291,14 @@ render threads; the watches run on the GUI thread; each table is watched
 once, from when its group appears, for the window's life), and rebuilds
 its list only when the selected group's set of points changes, so a field
 being edited isn't wiped by a render that adds points elsewhere.
+
+The LLVM backend compiles an expression `if c then x else y` (`ITE`) as a
+branch, with each side in its own block and a `phi` per operand
+(`mergeBranches`), not as `select` over both sides computed: `autocolor`
+has a side effect, so the side not taken mustn't run. (With `select`,
+`if stuck then black else autocolor(0, z)` added every stuck point.)
+LLVM's optimizer turns branches between cheap, pure values back into
+`select`s.
 
 ### Events (`Event`)
 

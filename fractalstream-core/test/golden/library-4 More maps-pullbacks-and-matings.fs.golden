@@ -11,18 +11,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 let `z` = C in:
                   block:
-                    let `[internal] fresh #22` = 0 in:
-                      let `[internal] fresh #23` = [internal] iteration limit in:
+                    let `[internal] fresh #21` = 0 in:
+                      let `[internal] fresh #22` = [internal] iteration limit in:
                         block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #22 < [internal] fresh #23)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #22 < [internal] fresh #23)):
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #21 < [internal] fresh #22)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #21 < [internal] fresh #22)):
                               block:
                                 set `z` := let [internal] f.z #0 = z in ((([internal] f.z #0 ^ 2:R:C) - C) / (([internal] f.z #0 ^ 2:R:C) - 1:R:C))
-                                set `[internal] fresh #22` := ([internal] fresh #22 + 1)
+                                set `[internal] fresh #21` := ([internal] fresh #21 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #22
-                          set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
+                          set `[internal] iteration count` := [internal] fresh #21
+                          set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
                     block:
                       let `[colorizer] C-plane: t` = ([internal] iteration count:R / [colorizer] C-plane: color_speed) in:
                         block:
@@ -45,18 +45,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
               block:
-                let `[internal] fresh #22` = 0 in:
-                  let `[internal] fresh #23` = [internal] iteration limit in:
+                let `[internal] fresh #21` = 0 in:
+                  let `[internal] fresh #22` = [internal] iteration limit in:
                     block:
-                      if (!([internal] escape radius < |z|) and ([internal] fresh #22 < [internal] fresh #23)) then:
-                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #22 < [internal] fresh #23)):
+                      if (!([internal] escape radius < |z|) and ([internal] fresh #21 < [internal] fresh #22)) then:
+                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #21 < [internal] fresh #22)):
                           block:
                             set `z` := let [internal] f.z #0 = z in ((([internal] f.z #0 ^ 2:R:C) - C) / (([internal] f.z #0 ^ 2:R:C) - 1:R:C))
-                            set `[internal] fresh #22` := ([internal] fresh #22 + 1)
+                            set `[internal] fresh #21` := ([internal] fresh #21 + 1)
                       else:
                         no-op
-                      set `[internal] iteration count` := [internal] fresh #22
-                      set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
+                      set `[internal] iteration count` := [internal] fresh #21
+                      set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
                 block:
                   let `[colorizer] Dynamics: t` = ([internal] iteration count:R / [colorizer] Dynamics: color_speed) in:
                     block:
@@ -147,10 +147,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                 block:
                   let `last_z` = z in:
                     block:
-                      let `[internal] fresh #22` = 0 in:
-                        let `[internal] fresh #23` = [internal] iteration limit in:
+                      let `[internal] fresh #21` = 0 in:
+                        let `[internal] fresh #22` = [internal] iteration limit in:
                           block:
-                            do-while (!(|(z - 0:R:C)| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)):
+                            do-while (!(|(z - 0:R:C)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
                               block:
                                 block:
                                   draw point at z:R^2
@@ -161,9 +161,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   else:
                                     no-op
                                   set `z` := let [internal] f.z #0 = z in ((([internal] f.z #0 ^ 2:R:C) - C) / (([internal] f.z #0 ^ 2:R:C) - 1:R:C))
-                                set `[internal] fresh #22` := ([internal] fresh #22 + 1)
-                            set `[internal] iteration count` := [internal] fresh #22
-                            set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
+                                set `[internal] fresh #21` := ([internal] fresh #21 + 1)
+                            set `[internal] iteration count` := [internal] fresh #21
+                            set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
 
 
 --- tool Pullback
