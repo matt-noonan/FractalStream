@@ -88,6 +88,8 @@ executable fsrun
                      , fractalstream-ui-headless
                      , bytestring
                      , directory
+                     , filepath
+                     , text
                      , optparse-applicative
 
   if flag(use-llvm)

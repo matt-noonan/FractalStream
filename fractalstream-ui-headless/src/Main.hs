@@ -4,12 +4,17 @@ Description  : Headless FractalStream frontend
 
 A frontend analogous to fractalstream-ui-wx: it implements the same
 'Actor.UI.UI' interface that drives 'Actor.Ensemble.runEnsemble', but with
-no actual GUI. Four subcommands:
+no actual GUI. Four subcommands run a project:
 
   fsrun snapshot --project <project.fs> --viewer <title> --output <file.png>
   fsrun commands --project <project.fs> --commands <file>
   fsrun scenario --project <project.fs> --name <name>
   fsrun update-preview --project <project.fs>
+
+and one makes a project, from a script for the original FractalStream
+("Language.Legacy.Translate"):
+
+  fsrun translate --input <script.txt> --output <project.fs>
 
 Snapshot mode renders one named viewer's base per-pixel script to a PNG
 and exits. The other two both drive a project through a sequence of
@@ -41,7 +46,8 @@ import FractalStream.Console (transliterateConsole)
 import FractalStream.Prelude
 
 import FractalStream.Metadata (gitTag)
-import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble, encodeEnsemble)
+import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble, encodeEnsemble, checkProjectBytes)
+import Language.Legacy.Translate (Translation(..), translateLegacyScript)
 import Actor.Metadata (ProjectMetadata(..))
 import Actor.UI (UI(..))
 import Actor.Viewer (Backend, Viewer(..), snapshotToFile, describeViewerIssues)
@@ -53,7 +59,10 @@ import Language.Parser.SourceRange (Indicated(..))
 
 import Data.IORef
 import qualified Data.ByteString as BS
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import System.Directory (renameFile)
+import System.FilePath (takeBaseName)
 
 import Options.Applicative
   ( Parser, ParserInfo, customExecParser, prefs, showHelpOnEmpty, info, helper, infoOption
@@ -62,7 +71,7 @@ import Options.Applicative
 import Control.Concurrent (setNumCapabilities)
 import System.Exit (exitFailure)
 import Text.Read (readMaybe)
-import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStrLn, stderr)
+import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStr, hPutStrLn, stderr)
 
 data Mode
   = Snapshot { snapshotViewer :: String, snapshotOutput :: FilePath }
@@ -82,18 +91,26 @@ dieWith msg = hPutStrLn stderr msg >> exitFailure
 main :: IO ()
 main = do
   transliterateConsole
-  Invocation{..} <- customExecParser (prefs showHelpOnEmpty) cliInfo
-  -- Before the backend starts: the LLVM backend sizes its pool of
-  -- per-render scratch arenas by the number of capabilities then.
-  forM_ invJobs setNumCapabilities
-  run invProject invMode
+  customExecParser (prefs showHelpOnEmpty) cliInfo >>= \case
+    RunProject{..} -> do
+      -- Before the backend starts: the LLVM backend sizes its pool of
+      -- per-render scratch arenas by the number of capabilities then.
+      forM_ invJobs setNumCapabilities
+      run invProject invMode
+    Translate{..} -> runTranslate invInput invOutput invTitle
 
 -- | A parsed command line.
-data Invocation = Invocation
-  { invJobs    :: Maybe Int   -- ^ @-j@, if given (otherwise every core, from @-N@)
-  , invProject :: FilePath
-  , invMode    :: Mode
-  }
+data Invocation
+  = RunProject
+    { invJobs    :: Maybe Int   -- ^ @-j@, if given (otherwise every core, from @-N@)
+    , invProject :: FilePath
+    , invMode    :: Mode
+    }
+  | Translate
+    { invInput  :: FilePath     -- ^ @-@ for stdin
+    , invOutput :: FilePath     -- ^ @-@ for stdout
+    , invTitle  :: Maybe String
+    }
 
 cliInfo :: ParserInfo Invocation
 cliInfo = info (helper <*> versionOption <*> cliParser) $
@@ -106,8 +123,9 @@ cliInfo = info (helper <*> versionOption <*> cliParser) $
       (long "version" <> help "Show the FractalStream version and exit")
 
 -- | Each mode is its own subcommand. Every input is a named option
--- (@--project@ and @--jobs@ in all of them), never a positional argument,
--- so a command line reads the same whatever order its options come in.
+-- (@--project@ and @--jobs@ in all but @translate@), never a positional
+-- argument, so a command line reads the same whatever order its options
+-- come in.
 cliParser :: Parser Invocation
 cliParser = hsubparser $ mconcat
   [ subcommand "snapshot"
@@ -127,10 +145,18 @@ cliParser = hsubparser $ mconcat
   , subcommand "update-preview"
       "Remake the project's preview image by running its `metadata: preview-commands:`"
       (pure UpdatePreview)
+  , command "translate" $ info
+      (Translate <$> strOption (long "input" <> short 'i' <> metavar "SCRIPT"
+                                <> help "The original-FractalStream script, as text (- for stdin)")
+                 <*> strOption (long "output" <> short 'o' <> metavar "PROJECT.fs"
+                                <> help "Where to write the project (- for stdout)")
+                 <*> optional (strOption (long "title" <> metavar "TITLE"
+                                <> help "The project's title (default: the script file's name)")))
+      (progDesc "Translate a script for the original FractalStream into a project")
   ]
   where
     subcommand name desc modeArgs = command name $
-      info (Invocation <$> jobsOption <*> projectOption <*> modeArgs) (progDesc desc)
+      info (RunProject <$> jobsOption <*> projectOption <*> modeArgs) (progDesc desc)
     projectOption = strOption (long "project" <> short 'p' <> metavar "PROJECT.fs" <> help "The project file")
     jobsOption = optional $ option positive
       (long "jobs" <> short 'j' <> metavar "N" <>
@@ -139,6 +165,25 @@ cliParser = hsubparser $ mconcat
     positive = eitherReader $ \str -> case readMaybe str of
       Just n | n >= 1 -> Right n
       _ -> Left ("expected a positive number of jobs, not " ++ show str)
+
+-- | Translate an original-FractalStream script into a project. The
+-- translation is checked (parsed and type-checked) before it's written;
+-- if that fails, it's written anyway, since it's meant to be edited, but
+-- the problem is reported and the exit code is non-zero.
+runTranslate :: FilePath -> FilePath -> Maybe String -> IO ()
+runTranslate input output mtitle = do
+  src <- if input == "-" then getContents
+         else withFile input ReadMode $ \h -> hSetEncoding h utf8 >> hGetContents' h
+  let title = fromMaybe (if input == "-" then "Translated script" else takeBaseName input) mtitle
+  case translateLegacyScript title src of
+    Left err -> dieWith ("Could not translate " ++ (if input == "-" then "the script" else quoted input) ++ ":\n" ++ err)
+    Right Translation{..} -> do
+      forM_ translationWarnings (hPutStrLn stderr . ("warning: " ++))
+      if output == "-" then putStr translatedProject
+        else withFile output WriteMode $ \h -> hSetEncoding h utf8 >> hPutStr h translatedProject
+      case checkProjectBytes (T.encodeUtf8 (T.pack translatedProject)) of
+        Left err -> dieWith ("The translation doesn't load as it is:\n" ++ err)
+        Right () -> when (output /= "-") $ putStrLn ("Wrote " ++ output)
 
 run :: FilePath -> Mode -> IO ()
 run projectFile mode = withBackend $ \backend ->
