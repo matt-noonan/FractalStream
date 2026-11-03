@@ -1,6 +1,9 @@
 {-# language OverloadedStrings #-}
 module Language.Type
   ( FSType(..)
+  , AutocolorMode(..)
+  , autocolorModeName
+  , autocolorModeCode
   , type HaskellType
   , SomeHaskellType(..)
   , Scalar(..)
@@ -319,3 +322,31 @@ quoteText str = "\"" ++ concatMap escape str ++ "\""
       '\n' -> "\\n"
       '\t' -> "\\t"
       c    -> [c]
+
+
+-- | How an autocolor lookup treats a point (see "Actor.Autocolor").
+data AutocolorMode
+  = AddPoint
+    -- ^ @autocolor@: the nearest entry's color, adding the point (with a
+    -- new color) if no entry is near enough
+  | NearestPoint
+    -- ^ @nearest_autocolor@: the nearest entry's color, or else the
+    -- group's miss color
+  | BlendPoints
+    -- ^ @get_autocolor@: the nearest entry's color, or else a blend of
+    -- every entry's color, weighted by nearness
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
+-- | The function a script calls for each mode.
+autocolorModeName :: AutocolorMode -> String
+autocolorModeName = \case
+  AddPoint -> "autocolor"
+  NearestPoint -> "nearest_autocolor"
+  BlendPoints -> "get_autocolor"
+
+-- | How compiled code passes the mode to the host (see @autocolor_cache.c@).
+autocolorModeCode :: AutocolorMode -> Integer
+autocolorModeCode = \case
+  NearestPoint -> 0
+  AddPoint -> 1
+  BlendPoints -> 2

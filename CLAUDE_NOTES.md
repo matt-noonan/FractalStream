@@ -192,8 +192,9 @@ end of a viewer's body, so a viewer script can just say what to compute.
 Built-ins (`builtinColorizers`): Manual (no code), Rainbow, Escape time,
 Smooth, Binary decomposition, Glow, Autocolor (always group 0, since a
 colorizer parameter would be a variable, not the literal group number
-`autocolor` needs; its `allow_new` setting switches to `get_autocolor`,
-for a parameter plane); each is written as `@colorizer` source
+`autocolor` needs; its `allow_new` setting switches to `get_autocolor`'s blend,
+for a parameter plane, or `nearest_autocolor` with `blend_misses` off --
+not `blend`, which is a built-in function's name); each is written as `@colorizer` source
 text, parsed by `parseScript` (the test suite builds every one). A script
 adds its own with `@colorizer "Name"` stanzas (`ColorizerStanza`: config
 declarations, then `define colorize(params):`); one with a built-in's name
@@ -230,13 +231,20 @@ Changing a choice means building the project again.
 
 ### Autocolor (`Actor.Autocolor`)
 
-`autocolor(n, p)` / `get_autocolor(n, p)` (surface `EAutocolor`, value
-`Autocolor Bool Int`) look point `p` up in autocolor group `n` (a literal;
-typing rejects anything else, via `integerLiteral`), giving the color of
-the nearest entry within the group's tolerance; `autocolor` adds a new
-entry, with the next golden-angle hue, when none is near (unless the
-group is locked or has `maxAutocolorEntries` = 256 entries), and a miss
-otherwise gives the group's `agMissColor`. Lookups read the table without
+`autocolor(n, p)`, `nearest_autocolor(n, p)`, and `get_autocolor(n, p)`
+(surface `EAutocolor`, value `Autocolor AutocolorMode Int`; the mode is
+in `Language.Type`, since the language can't depend on `Actor`) look point
+`p` up in autocolor group `n` (a literal; typing rejects anything else,
+via `integerLiteral`), giving the color of the nearest entry within the
+group's tolerance. Otherwise: `autocolor` adds a new entry, with the next
+golden-angle hue (unless the group is locked or has
+`maxAutocolorEntries` = 256 entries, when it gives `get_autocolor`'s blend,
+or the miss color if the group's `agBlendMisses` is off -- saved as
+`blend-misses: false`, published in the C snapshot's group record);
+`nearest_autocolor` gives the group's `agMissColor`; `get_autocolor`
+gives a blend of every entry's color weighted by 1/distance² (the miss
+color for an empty group), computed identically in C (`fs_ac_lookup`)
+and Haskell (`blendAutocolor`), rounding half up. Lookups read the table without
 the lock; a miss takes `agTableWriteMutex` and looks again before
 inserting, so concurrent misses can't insert near-duplicates.
 

@@ -252,7 +252,7 @@ evaluator v0 ctx = case v0 of
 
     ITE _ b yes no -> if b ctx then yes ctx else no ctx
 
-    Autocolor{} -> error "`autocolor` and `get_autocolor` need the LLVM backend: \
+    Autocolor{} -> error "`autocolor`, `nearest_autocolor`, and `get_autocolor` need the LLVM backend: \
                          \this backend can't compute them"
     RGB r g b     -> rgbToColor ( round (255 * r ctx)
                                 , round (255 * g ctx)

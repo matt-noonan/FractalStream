@@ -169,7 +169,7 @@ doesn't. Prefer letting a colorizer do the coloring when one fits; write
 | `Smooth` | `z` | `palette`, `period` (20), `degree` (2), `color1`/`color2`, `gives_up` |
 | `Binary decomposition` | `z` | `period` (10), `degree` (2), `upper1`/`upper2`, `lower1`/`lower2`, `smooth` (true), `gives_up` |
 | `Glow` | | `brightness` (0.5), `near`/`far` colors, `gives_up`. Uses `iterations / max_iters`. |
-| `Autocolor` | `z` | `allow_new` (true), `shade` (true), `period` (20), `gives_up`. `autocolor(0, z)`, or `get_autocolor(0, z)` with `allow_new` off (group 0, shared by all its viewers): Newton basins without known roots. Set `allow_new <- false` in a parameter plane, so it reads the dynamical plane's colors instead of adding a point per pixel. |
+| `Autocolor` | `z` | `allow_new` (true), `blend_misses` (true), `shade` (true), `period` (20), `gives_up`. `autocolor(0, z)`, or with `allow_new` off `get_autocolor(0, z)` (the blend; `nearest_autocolor` with `blend_misses` off) (group 0, shared by all its viewers): Newton basins without known roots. Set `allow_new <- false` in a parameter plane, so it reads the dynamical plane's colors instead of adding a point per pixel. |
 
 A parameter without an argument uses its default, else the viewer's
 variable of the same name (so `Smooth` needs a `z` in scope at the end of
@@ -197,8 +197,11 @@ choice is an error on that line.
 
 `autocolor(n, p)` (n: a literal ℤ group number, p: ℂ) returns a color for
 point `p`, adding it to group `n`'s table with a new hue if no entry is
-within the group's tolerance (0.001); `get_autocolor(n, p)` never adds
-(a miss gives the group's miss color, grey). For Newton basins without
+within the group's tolerance (0.001). Never adding: `nearest_autocolor(n, p)`
+(a miss gives the group's miss color, grey) and `get_autocolor(n, p)` (a
+miss gives a blend of all the group's colors, weighted by 1/distance²). A
+locked (or full, 256-point) group's `autocolor` blends too, unless the group's
+`blend-misses: false` (Autocolor window: "Blend when no matching point"). For Newton basins without
 known roots: `color <- if stuck then black else autocolor(0, z)`.
 Viewers naming the same group share colors. Usable in viewers and tools;
 LLVM backend only. Colors depend on the order points are first seen, so

@@ -198,11 +198,11 @@ buildValue getExtern arena = indexedFold go'
       ProjV1 _ p  -> p <&> \case { PairOp x _ -> x }
       ProjV2 _ p  -> p <&> \case { PairOp _ y -> y }
 
-      Autocolor adds n mp -> case asAutocolor arena of
+      Autocolor mode n mp -> case asAutocolor arena of
         Nothing -> throwError "`autocolor` can't be used here"
         Just (f, dir) -> mp >>= \case
           ComplexOp x y -> do
-            rgb <- call f [ (dir, []), (C.int8 (if adds then 1 else 0), [])
+            rgb <- call f [ (dir, []), (C.int8 (autocolorModeCode mode), [])
                           , (C.int32 (fromIntegral n), []), (x, []), (y, []) ]
             let byte k = lshr rgb (C.int32 k) >>= (`trunc` AST.i8)
             ColorOp <$> byte 16 <*> byte 8 <*> byte 0

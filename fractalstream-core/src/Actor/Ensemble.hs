@@ -521,7 +521,7 @@ projectYamlConfig = YAMLPretty.setConfCompare (comparing rank) YAMLPretty.defCon
       , "title", "description", "preview-commands", "preview"
       , "name", "commands"
       , "config", "tool"
-      , "tolerance", "locked", "miss-color", "next-hue", "entries", "point", "color"
+      , "tolerance", "locked", "miss-color", "blend-misses", "next-hue", "entries", "point", "color"
 
       , "viewers", "configuration"
       , "x", "y", "width", "height"

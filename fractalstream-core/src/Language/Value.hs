@@ -191,13 +191,14 @@ data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FS
       -> Eval (value '(env, t))
       -> ValueF value '(env, t)
 
-  -- | @autocolor(n, p)@ ('True') or @get_autocolor(n, p)@ ('False'): the
-  -- color of point @p@ in autocolor group @n@ (see "Actor.Autocolor").
+  -- | @autocolor(n, p)@, @nearest_autocolor(n, p)@, or @get_autocolor(n, p)@
+  -- (by mode): the color of point @p@ in autocolor group @n@ (see
+  -- "Actor.Autocolor").
   -- Only compiled code can compute it: it needs the project's autocolor
   -- tables, which the backend is given.
   Autocolor :: forall env value
              . KnownEnvironment env
-            => Bool
+            => AutocolorMode
             -> Int
             -> Eval (value '(env, 'ComplexT))
             -> ValueF value '(env, 'ColorT)
@@ -578,7 +579,7 @@ instance IFunctor ValueF where
       ITE t b yes no -> ITE t (f (withEnv BooleanType) b) (f (withEnv t) yes) (f (withEnv t) no)
 
       RGB r g b -> RGB (f (withEnv RealType) r) (f (withEnv RealType) g) (f (withEnv RealType) b)
-      Autocolor add n p -> Autocolor add n (f (withEnv ComplexType) p)
+      Autocolor mode n p -> Autocolor mode n (f (withEnv ComplexType) p)
       Blend s c1 c2 -> Blend (f (withEnv RealType) s) (f (withEnv ColorType) c1) (f (withEnv ColorType) c2)
       InvertRGB c -> InvertRGB (f (withEnv ColorType) c)
 
@@ -700,7 +701,7 @@ instance ITraversable ValueF  where
     ITE t mb myes mno -> ITE t <$> mb <*> myes <*> mno
 
     RGB mr mg mb -> RGB <$> mr <*> mg <*> mb
-    Autocolor add n mp -> Autocolor add n <$> mp
+    Autocolor mode n mp -> Autocolor mode n <$> mp
     Blend ms mc1 mc2 -> Blend <$> ms <*> mc1 <*> mc2
     InvertRGB mc -> InvertRGB <$> mc
 
@@ -774,7 +775,7 @@ pprint = indexedFold @PrecString @ValueF go
     LTF x y  -> binop "<" x y
     ITE _ c x y -> unwords ["if", c, "then", x, "else", y]
     RGB r g b     -> fun "rgb" [r,g,b]
-    Autocolor add n p -> fun (if add then "autocolor" else "get_autocolor") [show n, p]
+    Autocolor mode n p -> fun (autocolorModeName mode) [show n, p]
     Blend s c1 c2 -> fun "blend" [s,c1,c2]
     InvertRGB c   -> fun "invert" [c]
     AddF x y -> binop "+" x y

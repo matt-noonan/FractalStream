@@ -176,8 +176,10 @@ builtinColorizers =
       [ "@colorizer \"Autocolor\" description=\"Gives each point its argument ends up \
         \at a color of its own, the first time it's seen: each root a Newton's \
         \method converges to, say. Viewers using it share its colors (it uses \
-        \autocolor group 0). Its argument is the variable that converges.\""
+        \autocolor group 0). Without new entries, a point near none of the \
+        \group's points blends their colors, or (if not blending) gets its miss color. Its argument is the variable that converges.\""
       , "allow_new : Boolean as \"Allow new autocolor entries\" <- true"
+      , "blend_misses : Boolean as \"Blend when no matching point\" <- true"
       , "shade : Boolean as \"Shade by iteration count\" <- true"
       , "period : R as \"Iterations per shading cycle:\" <- 20"
       , givesUpDecl
@@ -185,7 +187,12 @@ builtinColorizers =
       , "  if stuck:"
       , "    color <- gives_up"
       , "  else:"
-      , "    color <- if allow_new then autocolor(0, z) else get_autocolor(0, z)"
+      , "    if allow_new:"
+      , "      color <- autocolor(0, z)"
+      , "    else if blend_misses:"
+      , "      color <- get_autocolor(0, z)"
+      , "    else:"
+      , "      color <- nearest_autocolor(0, z)"
       , "    if shade:"
       , "      color <- cycle(iterations / period, dark color, light color)"
       ]

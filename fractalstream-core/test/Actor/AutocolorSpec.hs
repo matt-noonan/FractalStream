@@ -6,6 +6,7 @@ import Test.Hspec
 import Actor.Autocolor
 import Actor.Ensemble
 import Data.Color
+import Language.Type (autocolorModeCode)
 import Data.DynamicValue
 
 import Control.Concurrent
@@ -15,7 +16,7 @@ import Data.Int (Int32)
 import Data.Word (Word8, Word32)
 import Foreign (FunPtr, Ptr, withForeignPtr)
 import Foreign.C.Types (CDouble(..))
-import Control.Monad (forM_, replicateM_, unless)
+import Control.Monad (forM_, replicateM_, unless, void)
 import Data.List (isInfixOf)
 import qualified Data.Map as Map
 import qualified Data.ByteString.Char8 as BS8
@@ -54,20 +55,39 @@ spec = do
       autocolor g 0.4 0 >>= (`shouldBe` b)
       autocolor g 0.1 0 >>= (`shouldBe` a)
 
-    it "adds nothing when locked, giving its miss color instead" $ do
+    it "adds nothing when locked, blending its colors or giving its miss color instead" $ do
       g <- makeEmptyAutocolorGroup
-      _ <- autocolor g 1 0
       st <- newAutocolorState
+      void (addAutocolorEntry st g (1, 0) (Just red))
+      void (addAutocolorEntry st g (-1, 0) (Just blue))
       setAutocolorLocked st g True
-      autocolor g 5 5 >>= (`shouldBe` grey)
-      setAutocolorMissColor st g red
-      autocolor g 5 5 >>= (`shouldBe` red)
-      tableSize g >>= (`shouldBe` 1)
+      -- blending misses, by default
+      autocolor g 0 0 >>= (`shouldBe` rgbToColor (128, 0, 128))
+      -- or not
+      setAutocolorBlendMisses st g False
+      autocolor g 0 0 >>= (`shouldBe` grey)
+      setAutocolorMissColor st g green
+      autocolor g 0 0 >>= (`shouldBe` green)
+      tableSize g >>= (`shouldBe` 2)
 
-    it "get_autocolor never adds a point" $ do
+    it "nearest_autocolor never adds a point" $ do
       g <- makeEmptyAutocolorGroup
-      getAutocolor g 1 0 >>= (`shouldBe` grey)
+      nearestAutocolor g 1 0 >>= (`shouldBe` grey)
       tableSize g >>= (`shouldBe` 0)
+
+    it "get_autocolor blends the colors of the points it isn't near, by nearness" $ do
+      st <- newAutocolorState
+      g <- makeEmptyAutocolorGroup
+      blendAutocolor g 0 0 >>= (`shouldBe` grey)
+      void (addAutocolorEntry st g (1, 0) (Just red))
+      void (addAutocolorEntry st g (-1, 0) (Just blue))
+      -- near enough to one: its color
+      blendAutocolor g 1.0005 0 >>= (`shouldBe` red)
+      -- halfway: half of each
+      blendAutocolor g 0 0 >>= (`shouldBe` rgbToColor (128, 0, 128))
+      -- nearer one: more of it (weights 1/0.25 and 1/2.25: 90% red)
+      blendAutocolor g 0.5 0 >>= (`shouldBe` rgbToColor (230, 0, 25))
+      tableSize g >>= (`shouldBe` 2)
 
     it "stops adding points once full" $ do
       g <- makeEmptyAutocolorGroup
@@ -91,13 +111,15 @@ spec = do
       c <- autocolor g 1 0.5
       setAutocolorLocked st g True
       setAutocolorMissColor st g blue
+      setAutocolorBlendMisses st g False
       Just v <- writeAutocolorState st
       st' <- newAutocolorState
       readAutocolorState st' v >>= (`shouldBe` Right ())
       g' <- autocolorGroup st' (AutocolorGroupId 2)
       getDynamic (agLocked g') >>= (`shouldBe` True)
-      getAutocolor g' 1 0.5 >>= (`shouldBe` c)
-      getAutocolor g' 9 9 >>= (`shouldBe` blue)
+      getDynamic (agBlendMisses g') >>= (`shouldBe` False)
+      nearestAutocolor g' 1 0.5 >>= (`shouldBe` c)
+      nearestAutocolor g' 9 9 >>= (`shouldBe` blue)
 
     it "counts edits at once, and a burst of new points as one, shortly after" $ do
       st <- newAutocolorState
@@ -110,26 +132,41 @@ spec = do
       e1 `shouldBe` e0 + 1
       setAutocolorEntryColor st g (1, 0) red
       getDynamic (autocolorEdits st) >>= (`shouldSatisfy` (> e1))
-      getAutocolor g 1 0 >>= (`shouldBe` red)
+      nearestAutocolor g 1 0 >>= (`shouldBe` red)
 
     it "answers compiled code's lookups from its snapshot" $ do
       st <- newAutocolorState
       g <- autocolorGroup st (AutocolorGroupId 3)
       c <- autocolor g 1 0
       let AutocolorLookup{..} = autocolorLookup st
-          viaC add n x y = withForeignPtr autocolorCache $ \dir ->
-            unpack <$> callCacheLookup autocolorCacheLookup dir (if add then 1 else 0) n x y
+          viaC mode n x y = withForeignPtr autocolorCache $ \dir ->
+            unpack <$> callCacheLookup autocolorCacheLookup dir (fromIntegral (autocolorModeCode mode)) n x y
           unpack w = rgbToColor ( fromIntegral (w `shiftR` 16), fromIntegral (w `shiftR` 8)
                                 , fromIntegral w )
       -- a point it has (near enough), without adding one
-      viaC True 3 1.0005 0 >>= (`shouldBe` c)
+      viaC AddPoint 3 1.0005 0 >>= (`shouldBe` c)
       tableSize g >>= (`shouldBe` 1)
-      -- a point it doesn't have, in a locked group: its miss color
+      -- a point it doesn't have, in a locked group that doesn't blend
+      -- misses: its miss color
       setAutocolorLocked st g True
+      setAutocolorBlendMisses st g False
       setAutocolorMissColor st g blue
-      viaC True 3 7 7 >>= (`shouldBe` blue)
-      viaC False 3 7 7 >>= (`shouldBe` blue)
+      viaC AddPoint 3 7 7 >>= (`shouldBe` blue)
+      viaC NearestPoint 3 7 7 >>= (`shouldBe` blue)
       tableSize g >>= (`shouldBe` 1)
+      -- and the blend, computed in C the same way as in Haskell
+      _ <- addAutocolorEntry st g (-1, 0) (Just green)
+      forM_ [(0, 0), (0.5, 0.25), (-3, 2)] $ \(x, y) -> do
+        expected <- blendAutocolor g x y
+        viaC BlendPoints 3 (CDouble x) (CDouble y) >>= (`shouldBe` expected)
+      -- and a locked group that blends misses blends for autocolor too, the
+      -- same in C as in Haskell
+      setAutocolorBlendMisses st g True
+      forM_ [(0, 0), (0.5, 0.25)] $ \(x, y) -> do
+        expected <- autocolor g x y
+        expected `shouldNotBe` blue
+        viaC AddPoint 3 (CDouble x) (CDouble y) >>= (`shouldBe` expected)
+      tableSize g >>= (`shouldBe` 2)
 
     it "frees old snapshots only once no lookup can be reading them" $ do
       -- Lookups on four threads while snapshots are replaced as fast as
@@ -189,8 +226,8 @@ spec = do
         Right (Built ens) -> do
           st <- getDynamic (ensembleAutocolor ens)
           g <- autocolorGroup st (AutocolorGroupId 0)
-          getAutocolor g 1.005 0 >>= (`shouldBe` red)
-          getAutocolor g (-0.5) 0.25 >>= (`shouldBe` blue)
+          nearestAutocolor g 1.005 0 >>= (`shouldBe` red)
+          nearestAutocolor g (-0.5) 0.25 >>= (`shouldBe` blue)
           bytes <- BS8.unpack <$> encodeEnsemble ens
           bytes `shouldSatisfy` isInfixOf "autocolor:"
           bytes `shouldSatisfy` isInfixOf "locked: true"

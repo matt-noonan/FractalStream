@@ -75,9 +75,9 @@ data ExprF r
   | EApp String r
     -- ^ A named unary builtin function (@sin@, @re@, @round@, @rainbow@, ...)
   | EColor3 Color3Op r r r
-  | EAutocolor Bool r r
-    -- ^ @autocolor(n, p)@ ('True': adds @p@ to group @n@'s table if it's
-    -- new) or @get_autocolor(n, p)@ ('False'); see "Actor.Autocolor".
+  | EAutocolor AutocolorMode r r
+    -- ^ @autocolor(n, p)@, @nearest_autocolor(n, p)@, or
+    -- @get_autocolor(n, p)@ (by mode); see "Actor.Autocolor".
     -- The group number @n@ has to be an integer literal, which typing
     -- checks (see 'integerLiteral')
   | EDiff r r

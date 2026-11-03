@@ -193,7 +193,7 @@ spec = do
             atomicModifyIORef' calls (\cs -> ((adds, n, x, y) : cs, ()))
             pure (rgbToColor (10, 20, 30))
           env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
-          src = "c := get_autocolor(4, 1)\ncolor <- autocolor(3, 0.5 + 0.25 i)"
+          src = "c := nearest_autocolor(4, 1)\nd := get_autocolor(5, 1)\ncolor <- autocolor(3, 0.5 + 0.25 i)"
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
       acLookup <- autocolorLookupFromFunction lookupAc
       pixels <- withJittedViewer jit acLookup Nothing code $ \(ViewerFunction vf) ->
@@ -206,9 +206,10 @@ spec = do
           peekArray (3 * 4 * 4) buf
       pixels `shouldBe` concat (replicate 16 [10, 20, 30])
       made <- readIORef calls
-      length made `shouldBe` 32
-      filter (\(a, _, _, _) -> a) made `shouldSatisfy` all (== (True, 3, 0.5, 0.25))
-      filter (\(a, _, _, _) -> not a) made `shouldSatisfy` all (== (False, 4, 1, 0))
+      length made `shouldBe` 48
+      filter (\(m, _, _, _) -> m == AddPoint) made `shouldSatisfy` all (== (AddPoint, 3, 0.5, 0.25))
+      filter (\(m, _, _, _) -> m == NearestPoint) made `shouldSatisfy` all (== (NearestPoint, 4, 1, 0))
+      filter (\(m, _, _, _) -> m == BlendPoints) made `shouldSatisfy` all (== (BlendPoints, 5, 1, 0))
 
     it "evaluates only the branch an if/then/else takes" $ withJIT $ \jit -> do
       calls <- newIORef []
@@ -216,7 +217,7 @@ spec = do
             atomicModifyIORef' calls (\cs -> ((adds, n, x, y) : cs, ()))
             pure (rgbToColor (10, 20, 30))
           env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
-          src = "color <- if n = 1 then autocolor(3, 0) else get_autocolor(4, 0)"
+          src = "color <- if n = 1 then autocolor(3, 0) else nearest_autocolor(4, 0)"
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
       acLookup <- autocolorLookupFromFunction lookupAc
       _ <- withJittedViewer jit acLookup Nothing code $ \(ViewerFunction vf) ->
@@ -227,7 +228,7 @@ spec = do
           , vaArgs = Bind (Proxy @"n") IntegerType 0 EmptyContext }
       made <- readIORef calls
       length made `shouldBe` 16
-      made `shouldSatisfy` all (\(adds, _, _, _) -> not adds)
+      made `shouldSatisfy` all (\(m, _, _, _) -> m == NearestPoint)
 
     it "gets every arena back, however often renders are cancelled" $ do
       -- Renders on many threads, killed at random moments over and over (as

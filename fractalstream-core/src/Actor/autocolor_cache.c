@@ -12,7 +12,7 @@
  * block of memory:
  *
  *   fs_ac_header                      8 bytes
- *   fs_ac_group  x header.ngroups     32 bytes each
+ *   fs_ac_group  x header.ngroups     40 bytes each
  *   fs_ac_entry  x (sum of counts)    24 bytes each, at each group's offset
  *
  * Reclaiming old snapshots: a render may still be reading a snapshot after
@@ -55,6 +55,8 @@ typedef struct {
   int32_t count;
   double tol2;       /* the tolerance, squared */
   int64_t offset;    /* of this group's entries, from the snapshot's start */
+  int32_t blend_misses; /* when it can't add a point: blend, or the miss color? */
+  int32_t pad;
 } fs_ac_group;
 
 typedef struct {
@@ -64,7 +66,13 @@ typedef struct {
   uint32_t pad;
 } fs_ac_entry;
 
-typedef uint32_t (*fs_ac_add_fn)(uint8_t add, int32_t group, double x, double y);
+/* How a lookup treats a point (Language.Type.AutocolorMode):
+   the nearest entry's color, or else ... */
+#define FS_AC_NEAREST 0  /* ... the group's miss color (nearest_autocolor) */
+#define FS_AC_ADD     1  /* ... a new entry, if it can add one (autocolor) */
+#define FS_AC_BLEND   2  /* ... a blend of every entry's color (get_autocolor) */
+
+typedef uint32_t (*fs_ac_add_fn)(uint8_t mode, int32_t group, double x, double y);
 
 typedef struct {
   fs_ac_header *snapshot;  /* read and written atomically */
@@ -122,7 +130,29 @@ void fs_ac_publish(fs_ac_dir *dir, fs_ac_header *snapshot)
   }
 }
 
-uint32_t fs_ac_lookup(fs_ac_dir *dir, uint8_t add, int32_t group, double x, double y)
+/* Every entry's color, weighted by one over its squared distance from
+   (x, y), rounded half up (as Actor.Autocolor.blendAutocolor does). */
+static uint32_t blend(const fs_ac_entry *entries, int32_t count, double x, double y)
+{
+  double total = 0, r = 0, gr = 0, b = 0;
+  for (int32_t i = 0; i < count; i++) {
+    double dx = entries[i].x - x, dy = entries[i].y - y;
+    double w = 1.0 / (dx * dx + dy * dy);
+    uint32_t c = entries[i].rgb;
+    total += w;
+    r += w * ((c >> 16) & 0xff);
+    gr += w * ((c >> 8) & 0xff);
+    b += w * (c & 0xff);
+  }
+  uint32_t rr = (uint32_t)(r / total + 0.5), gg = (uint32_t)(gr / total + 0.5),
+           bb = (uint32_t)(b / total + 0.5);
+  if (rr > 255) rr = 255;
+  if (gg > 255) gg = 255;
+  if (bb > 255) bb = 255;
+  return (rr << 16) | (gg << 8) | bb;
+}
+
+uint32_t fs_ac_lookup(fs_ac_dir *dir, uint8_t mode, int32_t group, double x, double y)
 {
   /* join the readers of the current epoch */
   uint64_t parity;
@@ -152,7 +182,15 @@ uint32_t fs_ac_lookup(fs_ac_dir *dir, uint8_t add, int32_t group, double x, doub
         if (d <= bestd && (best < 0 || d < bestd)) { best = i; bestd = d; }
       }
       if (best >= 0) { found = 1; result = entries[best].rgb; }
-      else if (!add || !g->can_add) { found = 1; result = g->miss; }
+      else if (mode == FS_AC_ADD && g->can_add) { /* to add: ask Haskell */ }
+      else {
+        /* no entry near enough, and none to be added: get_autocolor
+           blends; so does autocolor, in a locked (or full) group that
+           blends misses; otherwise, the miss color */
+        int blends = mode == FS_AC_BLEND || (mode == FS_AC_ADD && g->blend_misses);
+        found = 1;
+        result = (blends && g->count > 0) ? blend(entries, g->count, x, y) : g->miss;
+      }
       break;
     }
   }
@@ -161,5 +199,5 @@ uint32_t fs_ac_lookup(fs_ac_dir *dir, uint8_t add, int32_t group, double x, doub
   __atomic_sub_fetch(&dir->readers[parity], 1, __ATOMIC_SEQ_CST);
   if (found) return result;
   /* a point to add, or a group the snapshot doesn't have yet */
-  return dir->add(add, group, x, y);
+  return dir->add(mode, group, x, y);
 }

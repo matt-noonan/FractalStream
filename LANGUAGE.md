@@ -129,10 +129,20 @@ Viewers that use the same group share its colors, so a parameter plane
 and a dynamical plane can agree on what color each root is. A point gets
 the color of the nearest point in its group within the group's tolerance
 (0.001 to begin with), or else a new color.
-`get_autocolor(n, p)` looks a point up the same way, but never adds one;
-a point that isn't in the group gets the group's "miss" color (grey to
-begin with). A group stops adding points once it's locked, or once it has
-256 of them.
+Two other functions look a point up the same way, but never add one:
+
+- `nearest_autocolor(n, p)` gives a point that isn't near any point in
+  the group the group's "miss" color (grey to begin with).
+- `get_autocolor(n, p)` gives it a blend of all the group's colors
+  instead, each weighted by how near its point is (by one over the
+  squared distance): the more useful picture in a viewer that only reads
+  colors other viewers found, like a parameter plane, or with a locked
+  group. (A group with no points gives the miss color.)
+
+A group stops adding points once it's locked, or once it has 256 of them;
+`autocolor` then works like `get_autocolor`, or, if the group's "Blend when
+no matching point" setting (in the Autocolor window) is off, like
+`nearest_autocolor`.
 
 Which point gets which color depends on the order the points are first
 seen in, and the app draws in pieces, on several threads at once: so
@@ -145,8 +155,9 @@ pick a group to see its points and their colors, and change a point or
 its color, add or delete points, clear the group, lock it, or change its
 tolerance or the color it gives points it doesn't have.
 
-Only the LLVM backend (the default) can compute `autocolor` and
-`get_autocolor`. They can be used in viewers and in tools.
+Only the LLVM backend (the default) can compute `autocolor`,
+`nearest_autocolor`, and `get_autocolor`. They can be used in viewers and
+in tools.
 
 ## Script commands
 
@@ -505,7 +516,7 @@ The built-in colorizers are:
 | `Smooth` | `z` | Continuous color by escape time, without bands, from a choice of palettes. |
 | `Binary decomposition` | `z` | Smooth or banded color by escape time, in different colors where `z` ends up in the upper and lower half-planes; this outlines the external rays. |
 | `Glow` | | Blends between two colors by how close the iteration count came to the iteration limit. |
-| `Autocolor` | `z` | Gives each point `z` ends up at its own color, the first time it's seen (see "Automatic colors"), shaded by iteration count: the basins of a Newton's method, without knowing its roots. Every viewer using it shares the same colors. Turn off its "Allow new autocolor entries" setting (`allow_new ⭠ false` in a `coloring:` block) for a viewer that should only use the colors other viewers found, like a parameter plane, whose points are all different. |
+| `Autocolor` | `z` | Gives each point `z` ends up at its own color, the first time it's seen (see "Automatic colors"), shaded by iteration count: the basins of a Newton's method, without knowing its roots. Every viewer using it shares the same colors. Turn off its "Allow new autocolor entries" setting (`allow_new ⭠ false` in a `coloring:` block) for a viewer that should only use the colors other viewers found, like a parameter plane, whose points are all different; such a viewer blends the colors for a point near none of them, or, with "Blend when no matching point" (`blend_misses`) off, gives it the group's miss color. |
 
 Points where the loop gave up (`stuck`) are black by default; most
 colorizers have a "Color when the loop gives up" setting.

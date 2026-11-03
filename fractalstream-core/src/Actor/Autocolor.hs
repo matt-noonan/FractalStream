@@ -3,7 +3,12 @@
 -- own, the first time it's seen, for coloring by points that aren't known
 -- in advance (the roots a Newton's method converges to, say). Scripts use
 -- them with @autocolor(group, point)@, which adds a point that isn't in the
--- group's table yet, and @get_autocolor(group, point)@, which doesn't.
+-- group's table yet; @nearest_autocolor(group, point)@, which doesn't (a
+-- point that isn't near an entry gets the group's miss color); and
+-- @get_autocolor(group, point)@, which doesn't either, but gives a point
+-- that isn't near an entry a blend of all the entries' colors, weighted by
+-- how near they are (more useful when a group is locked, or a viewer only
+-- reads it).
 --
 -- Each group is a table of points and their colors, numbered as scripts
 -- name them; viewers that name the same group share its colors (a
@@ -24,8 +29,10 @@ module Actor.Autocolor
   , autocolorLookupFromFunction
   , autocolorCacheLookup
   , autocolorEdits
+  , AutocolorMode(..)
   , autocolor
-  , getAutocolor
+  , nearestAutocolor
+  , blendAutocolor
   , maybeGetAutocolor
   , autocolorGroup
   , autocolorGroups
@@ -42,6 +49,7 @@ module Actor.Autocolor
   , setAutocolorTolerance
   , setAutocolorLocked
   , setAutocolorMissColor
+  , setAutocolorBlendMisses
   , maxAutocolorEntries
   , writeAutocolorState
   , readAutocolorState
@@ -64,7 +72,7 @@ import System.IO (hPutStrLn, stderr)
 import Text.Read (readMaybe)
 import Text.Printf (printf)
 import qualified Data.Aeson.Types as Aeson (Parser)
-import Language.Type (TypeProxy(..), HaskellType, toUserString)
+import Language.Type (TypeProxy(..), HaskellType, toUserString, AutocolorMode(..), autocolorModeCode)
 import Language.Value.Parser (parseConstant)
 
 import qualified Data.Map as Map
@@ -98,6 +106,10 @@ data AutocolorState = AutocolorState
 data AutocolorGroup = AutocolorGroup
   { agTolerance :: Variable Double
   , agLocked :: Variable Bool
+  , agBlendMisses :: Variable Bool
+    -- ^ whether a locked (or full) group gives @autocolor@'s points that
+    -- aren't near an entry a blend of its colors (as @get_autocolor@
+    -- does), rather than its miss color
   , agMissColor :: Variable Color
     -- ^ the color of a point that isn't in a locked (or full) group's table
   , agNextColorAngle :: Variable Double
@@ -110,16 +122,15 @@ data AutocolorGroup = AutocolorGroup
     -- new snapshot, and redraw)
   }
 
--- | How compiled code looks colors up: whether to add a point that isn't
--- in the table yet (@autocolor@) or not (@get_autocolor@), the group's
--- number, and the point.
+-- | How compiled code looks colors up: how (see 'AutocolorMode'), the
+-- group's number, and the point.
 --
 -- Compiled code calls 'autocolorCacheLookup' (C, @fs_ac_lookup@) with
 -- 'autocolorCache', which finds the colors of points a group already has
 -- in a snapshot, without calling back into Haskell or taking any lock;
 -- only a point to add goes on to 'autocolorFunction'.
 data AutocolorLookup = AutocolorLookup
-  { autocolorFunction :: Bool -> Int -> Double -> Double -> IO Color
+  { autocolorFunction :: AutocolorMode -> Int -> Double -> Double -> IO Color
   , autocolorCache    :: ForeignPtr ()
   }
 
@@ -144,10 +155,10 @@ foreign import ccall "wrapper"
 -- function's callback, once nothing refers to it -- by then no compiled
 -- code can be using it either, since that only happens inside
 -- 'withForeignPtr'.
-newCache :: (Bool -> Int -> Double -> Double -> IO Color) -> IO (ForeignPtr ())
+newCache :: (AutocolorMode -> Int -> Double -> Double -> IO Color) -> IO (ForeignPtr ())
 newCache f = do
-  fp <- wrapAddFunction $ \add n (CDouble x) (CDouble y) ->
-    packColor <$> f (add /= 0) (fromIntegral n) x y
+  fp <- wrapAddFunction $ \code n (CDouble x) (CDouble y) ->
+    packColor <$> f (modeOf code) (fromIntegral n) x y
   dir <- newDirectory fp
   when (dir == nullPtr) (fail "out of memory for an autocolor directory")
   FC.newForeignPtr dir (freeDirectory dir >> freeHaskellFunPtr fp)
@@ -156,8 +167,12 @@ packColor :: Color -> Word32
 packColor c = let (r, g, b) = colorToRGB c
               in shiftL (fromIntegral r) 16 .|. shiftL (fromIntegral g) 8 .|. fromIntegral b
 
+-- | The mode compiled code passed (see 'autocolorModeCode').
+modeOf :: Word8 -> AutocolorMode
+modeOf code = fromMaybe NearestPoint (lookup (fromIntegral code) [ (autocolorModeCode m, m) | m <- [minBound .. maxBound] ])
+
 -- | A lookup that always calls the given function (for tests).
-autocolorLookupFromFunction :: (Bool -> Int -> Double -> Double -> IO Color) -> IO AutocolorLookup
+autocolorLookupFromFunction :: (AutocolorMode -> Int -> Double -> Double -> IO Color) -> IO AutocolorLookup
 autocolorLookupFromFunction f = AutocolorLookup f <$> newCache f
 
 -- | The most points a group's table holds. A script that gives
@@ -212,18 +227,20 @@ publishAutocolor AutocolorState{..} = withMVar acPublishLock $ \_ -> do
     tol <- getDynamic agTolerance
     locked <- getDynamic agLocked
     miss <- getDynamic agMissColor
+    blendMisses <- getDynamic agBlendMisses
     entries <- getDynamic agTable >>= traverse getDynamic
-    pure (n, not locked && Map.size entries < maxAutocolorEntries, miss, tol, Map.toList entries)
+    pure ( n, not locked && Map.size entries < maxAutocolorEntries, blendMisses, miss, tol
+         , Map.toList entries )
   let headerSize = 8
-      groupSize = 32
+      groupSize = 40
       entrySize = 24
       entriesStart = headerSize + groupSize * length infos
-      offsets = scanl (+) entriesStart [ entrySize * length es | (_, _, _, _, es) <- infos ]
+      offsets = scanl (+) entriesStart [ entrySize * length es | (_, _, _, _, _, es) <- infos ]
       total = last offsets
   buf <- mallocBytes total
   pokeByteOff buf 0 (fromIntegral (length infos) :: Int32)
   pokeByteOff buf 4 (0 :: Int32)
-  forM_ (zip3 [0 ..] infos offsets) $ \(k, (n, canAdd, miss, tol, es), off) -> do
+  forM_ (zip3 [0 ..] infos offsets) $ \(k, (n, canAdd, blendMisses, miss, tol, es), off) -> do
     let g = headerSize + groupSize * k
     pokeByteOff buf g (fromIntegral n :: Int32)
     pokeByteOff buf (g + 4) (if canAdd then 1 else 0 :: Int32)
@@ -231,6 +248,8 @@ publishAutocolor AutocolorState{..} = withMVar acPublishLock $ \_ -> do
     pokeByteOff buf (g + 12) (fromIntegral (length es) :: Int32)
     pokeByteOff buf (g + 16) (CDouble (tol * tol))
     pokeByteOff buf (g + 24) (fromIntegral off :: Int64)
+    pokeByteOff buf (g + 32) (if blendMisses then 1 else 0 :: Int32)
+    pokeByteOff buf (g + 36) (0 :: Int32)
     forM_ (zip [0 ..] es) $ \(i, ((x, y), c)) -> do
       let e = off + entrySize * i
       pokeByteOff buf e (CDouble x)
@@ -244,6 +263,7 @@ makeEmptyAutocolorGroup = liftIO $ do
   agTolerance <- newVariable 0.001
   agLocked <- newVariable False
   agMissColor <- newVariable grey
+  agBlendMisses <- newVariable True
   agNextColorAngle <- newVariable 0
   agTable <- newVariable Map.empty
   agTableWriteMutex <- newMVar ()
@@ -307,17 +327,43 @@ autocolorGroupsDynamic = dyn . acGroups
 autocolorLookup :: AutocolorState -> AutocolorLookup
 autocolorLookup st = AutocolorLookup (lookupColor st) (acCache st)
 
-lookupColor :: AutocolorState -> Bool -> Int -> Double -> Double -> IO Color
-lookupColor st add n x y = do
+lookupColor :: AutocolorState -> AutocolorMode -> Int -> Double -> Double -> IO Color
+lookupColor st mode n x y = do
   g <- autocolorGroup st (AutocolorGroupId n)
-  if add then autocolor g x y else getAutocolor g x y
+  case mode of
+    AddPoint -> autocolor g x y
+    NearestPoint -> nearestAutocolor g x y
+    BlendPoints -> blendAutocolor g x y
 
 -- | Find the color for this (x,y) pair, or the group's miss color if (x,y)
--- is not within the tolerance of any known point in the autocolor table.
-getAutocolor :: MonadIO io => AutocolorGroup -> Double -> Double -> io Color
-getAutocolor ag x y = liftIO $ maybeGetAutocolor ag x y >>= \case
+-- is not within the tolerance of any known point in the autocolor table
+-- (@nearest_autocolor@).
+nearestAutocolor :: MonadIO io => AutocolorGroup -> Double -> Double -> io Color
+nearestAutocolor ag x y = liftIO $ maybeGetAutocolor ag x y >>= \case
   Just c  -> pure c
   Nothing -> getDynamic (agMissColor ag)
+
+-- | Find the color for this (x,y) pair; or, if (x,y) is not within the
+-- tolerance of any known point, a blend of every point's color, each
+-- weighted by one over its squared distance from (x,y); or the group's
+-- miss color if it has no points (@get_autocolor@). The same as
+-- @fs_ac_lookup@ computes, in @autocolor_cache.c@.
+blendAutocolor :: MonadIO io => AutocolorGroup -> Double -> Double -> io Color
+blendAutocolor ag x y = liftIO $ maybeGetAutocolor ag x y >>= \case
+  Just c -> pure c
+  Nothing -> do
+    entries <- getDynamic (agTable ag) >>= traverse getDynamic
+    if Map.null entries then getDynamic (agMissColor ag) else do
+      let weighted = [ (1 / ((cx - x)^(2 :: Int) + (cy - y)^(2 :: Int)), colorToRGB c)
+                     | ((cx, cy), c) <- Map.toList entries ]
+          total = sum (map fst weighted)
+          -- (rounded half up, as the C does)
+          channel f = fromIntegral (max 0 (min 255 (floor
+            (sum [ w * fromIntegral (f rgb) | (w, rgb) <- weighted ] / total + 0.5) :: Int)))
+          fst3 (a, _, _) = a
+          snd3 (_, b, _) = b
+          thd3 (_, _, c) = c
+      pure (rgbToColor (channel fst3, channel snd3, channel thd3))
 
 -- | Find the color of the nearest point in the autocolor table to (x,y),
 -- or Nothing if none is within the tolerance.
@@ -338,7 +384,10 @@ deleteAutocolor st AutocolorGroup{..} x y = liftIO $ do
   bumpEdits st
 
 -- | Find the color for this point, adding it to the table with the next
--- color if it isn't there and the group isn't locked (or full).
+-- color if it isn't there and the group isn't locked (or full). In a
+-- locked (or full) group, a point that isn't near an entry gets a blend
+-- of the group's colors if it blends misses ('agBlendMisses'), and its
+-- miss color if not.
 --
 -- The table is read without the lock first: once a group knows its points,
 -- nearly every lookup finds one, and render threads shouldn't queue up on a
@@ -355,7 +404,10 @@ autocolor ag@AutocolorGroup{..} x y = liftIO $ maybeGetAutocolor ag x y >>= \cas
       maybeGetAutocolor ag x y >>= \case
         Just c  -> pure (c, False)
         Nothing
-          | isLocked || size >= maxAutocolorEntries -> (, False) <$> getDynamic agMissColor
+          | isLocked || size >= maxAutocolorEntries -> do
+              blendMisses <- getDynamic agBlendMisses
+              (, False) <$> if blendMisses then blendAutocolor ag x y
+                                           else getDynamic agMissColor
           | otherwise -> do
               angle <- getDynamic agNextColorAngle
               modifyValue agNextColorAngle (+ 0.3821592356687898)
@@ -444,6 +496,11 @@ showAutocolorPoint (x, y)
                 s1 = reverse (dropWhile (== '0') (reverse s0))
             in if last s1 == '.' then init s1 else s1
 
+-- | Whether a locked (or full) group blends its colors for @autocolor@'s
+-- points that aren't near an entry (see 'agBlendMisses').
+setAutocolorBlendMisses :: MonadIO io => AutocolorState -> AutocolorGroup -> Bool -> io ()
+setAutocolorBlendMisses st ag b = liftIO (setValue (agBlendMisses ag) b >> bumpEdits st)
+
 setAutocolorMissColor :: MonadIO io => AutocolorState -> AutocolorGroup -> Color -> io ()
 setAutocolorMissColor st ag c = liftIO (setValue (agMissColor ag) c >> bumpEdits st)
 
@@ -478,10 +535,12 @@ writeAutocolorState AutocolorState{..} = liftIO $ do
       locked <- getDynamic agLocked
       hue <- getDynamic agNextColorAngle
       miss <- getDynamic agMissColor
+      blendMisses <- getDynamic agBlendMisses
       table <- getDynamic agTable >>= traverse getDynamic
       pure (Key.fromString (show n), Aeson.object $
         [ "tolerance" .= tol, "locked" .= locked, "next-hue" .= hue ]
         ++ [ "miss-color" .= showColor miss | miss /= grey ]
+        ++ [ "blend-misses" .= blendMisses | not blendMisses ]
         ++ [ "entries" .= [ Aeson.object [ "point" .= showAutocolorPoint p, "color" .= showColor c ]
                           | (p, c) <- Map.toList table ] ])
     pure (Just (Object (KM.fromList entries)))
@@ -493,12 +552,13 @@ writeAutocolorState AutocolorState{..} = liftIO $ do
 readAutocolorState :: MonadIO io => AutocolorState -> Value -> io (Either String ())
 readAutocolorState st v = liftIO $ case parseEither parseGroups v of
   Left err -> pure (Left err)
-  Right groups -> Right <$> forM_ groups (\(n, (tol, locked, hue, miss, entries)) -> do
+  Right groups -> Right <$> forM_ groups (\(n, (tol, locked, hue, miss, blendMisses, entries)) -> do
     g <- autocolorGroup st (AutocolorGroupId n)
     setValue (agTolerance g) tol
     setValue (agLocked g) locked
     setValue (agNextColorAngle g) hue
     setValue (agMissColor g) miss
+    setValue (agBlendMisses g) blendMisses
     table <- Map.fromList <$> traverse (\(p, c) -> (p,) <$> newVariable c) entries
     setValue (agTable g) table) <* publishAutocolor st
   where
@@ -506,11 +566,12 @@ readAutocolorState st v = liftIO $ case parseEither parseGroups v of
       case readMaybe (Text.unpack (Key.toText k)) of
         Nothing -> fail ("autocolor group " ++ show (Key.toText k) ++ " isn't numbered")
         Just n -> (n,) <$> parseGroup gv
-    parseGroup = withObject "autocolor group" $ \o -> (,,,,)
+    parseGroup = withObject "autocolor group" $ \o -> (,,,,,)
       <$> o .:? "tolerance" .!= 0.001
       <*> o .:? "locked" .!= False
       <*> o .:? "next-hue" .!= 0
       <*> (maybe (pure grey) (constant ColorType "color") =<< o .:? "miss-color")
+      <*> o .:? "blend-misses" .!= True
       <*> (mapM parseEntry =<< o .:? "entries" .!= [])
     parseEntry = withObject "autocolor entry" $ \o -> do
       -- (a real point can be written as a plain number, which YAML reads

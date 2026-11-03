@@ -408,8 +408,8 @@ valueAndArithGrammar funs = mdo
                    <*> (token Comma *> arith <* token CloseParen))
     ]
 
-  autocolorName <- rule $
-    (True <$ token (Identifier "autocolor")) <|> (False <$ token (Identifier "get_autocolor"))
+  autocolorName <- ruleChoice
+    [ mode <$ token (Identifier (autocolorModeName mode)) | mode <- [minBound .. maxBound] ]
 
   textConcat <- rule $ node $
     EText <$> ((:) <$> (token TextKeyword *> token OpenParen *> argument)
@@ -518,7 +518,8 @@ valueAndArithGrammar funs = mdo
         , "romao", "bamo", "broco", "corko", "viko"
         , "ice", "fire", "rose", "wheat", "forest", "ocean"
         , "winter", "spring", "summer", "fall"
-        , "rgb", "mod", "diff", "autocolor", "get_autocolor"]
+        , "rgb", "mod", "diff"]
+        `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions
         `Set.union` Map.keysSet realFunctions

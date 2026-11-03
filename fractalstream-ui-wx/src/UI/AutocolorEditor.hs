@@ -38,6 +38,10 @@ editAutocolor owner st changed closed = do
 
   groupChoice <- choice p []
   lockBox <- checkBox p [ text := "Lock", tooltip := "Add no new points to this group" ]
+  blendBox <- checkBox p [ text := "Blend when no matching point"
+                         , tooltip := "When the group is locked (or full), give points that aren't \
+                                      \near any of its points a blend of its colors, rather than \
+                                      \the color for points not in the group" ]
   clearBtn <- button p [ text := "Clear all" ]
   toleranceEntry <- textEntry p [ text := "", processEnter := True
                                 , tooltip := "How near a point has to be to an entry to get its color" ]
@@ -130,11 +134,12 @@ editAutocolor owner st changed closed = do
         writeIORef selected mg
         forM_ mg $ \g -> do
           getDynamic (agLocked g) >>= \b -> set lockBox [ checked := b ]
+          getDynamic (agBlendMisses g) >>= \b -> set blendBox [ checked := b ]
           showTolerance g
           (r, gr, b) <- colorToRGB <$> getDynamic (agMissColor g)
           colorPickerCtrlSetColour missPicker (rgb r gr b)
         mapM_ (\w -> set w [ enabled := isJust mg ])
-              [ objectCast lockBox, objectCast clearBtn, objectCast newPoint, objectCast addBtn
+              [ objectCast lockBox, objectCast blendBox, objectCast clearBtn, objectCast newPoint, objectCast addBtn
               , objectCast toleranceEntry, objectCast missPicker :: Window () ]
         showEntries
 
@@ -179,6 +184,10 @@ editAutocolor owner st changed closed = do
   writeIORef missAction $ \c -> readIORef selected >>= mapM_ (\g -> do
     setAutocolorMissColor st g c
     madeChange)
+  set blendBox [ on command := readIORef selected >>= mapM_ (\g -> do
+                   b <- get blendBox checked
+                   setAutocolorBlendMisses st g b
+                   madeChange) ]
   set lockBox [ on command := readIORef selected >>= mapM_ (\g -> do
                   b <- get lockBox checked
                   setAutocolorLocked st g b
@@ -195,6 +204,7 @@ editAutocolor owner st changed closed = do
             , hfill $ grid 5 5
                 [ [ margin 3 (label "Tolerance:"), hfill (widget toleranceEntry) ]
                 , [ margin 3 (label "Color for points not in the group:"), hfloatLeft (widget missPicker) ] ]
+            , hfill $ row 5 [ widget blendBox, hglue ]
             , fill (widget list)
             , hfill $ row 5 [ margin 3 (label "New point:"), hfill (widget newPoint), widget addBtn ]
             , hfill (widget status) ]

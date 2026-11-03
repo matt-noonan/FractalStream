@@ -225,16 +225,16 @@ synth env (Syn sr node) = case node of
       _   -> (,) <$> check env ColorT y <*> check env ColorT z
     done ColorT (EColor3 op x' y' z')
 
-  EAutocolor add g p -> do
+  EAutocolor mode g p -> do
     -- The group number has to be written as a number, so that which
     -- groups a project uses is fixed by its script.
     g' <- case integerLiteral g of
       Just _ -> check env IntegerT g
-      Nothing -> advise (synRange g) "The group number of `autocolor` or `get_autocolor` has \
-                                     \to be a plain number, like `autocolor(0, z)`: it can't \
-                                     \be computed."
+      Nothing -> advise (synRange g) ("The group number of `" ++ autocolorModeName mode ++ "` has \
+                                      \to be a plain number, like `" ++ autocolorModeName mode ++ "(0, z)`: \
+                                      \it can't be computed.")
     p' <- check env ComplexT p
-    done ColorT (EAutocolor add g' p')
+    done ColorT (EAutocolor mode g' p')
 
   EDiff x f -> do
     x' <- synth env x

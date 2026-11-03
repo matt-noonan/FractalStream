@@ -163,8 +163,8 @@ elabOwn t (Syn (sr, _) node) = case node of
     OpRGB   -> RGB <$> el RealType x <*> el RealType y <*> el RealType z
     OpCycle -> el RealType x >>= \x' -> cycleColors sr x' y z
 
-  EAutocolor add g p -> case integerLiteral g of
-    Just n -> same sr t ColorType $ Autocolor add (fromInteger n) <$> el ComplexType p
+  EAutocolor mode g p -> case integerLiteral g of
+    Just n -> same sr t ColorType $ Autocolor mode (fromInteger n) <$> el ComplexType p
     Nothing -> inconsistent sr
 
   -- replaced by the derivative itself during typing
