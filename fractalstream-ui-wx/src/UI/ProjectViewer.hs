@@ -595,7 +595,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
         activateMoviePathTool = do
           deactivateCurrentTool
-          setToolLabel "Animate along path: drag out a path"
+          setToolLabel "Animate along path"
           set currentTool [ value := Left MoviePathTool ]
 
         deactivateCurrentTool = stopToolTimers >> get currentTool value >>= \case

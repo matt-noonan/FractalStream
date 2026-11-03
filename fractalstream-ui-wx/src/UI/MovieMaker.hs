@@ -174,7 +174,7 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
           (editor, problem) <- scriptWidget p scriptCheck
           let getScript = styledTextCtrlGetText editor
           pure ( column 5
-                   [ hfill (label "Each frame, run this script, with t going from 0 (the first frame) to 1 (the last):")
+                   [ hfill (label "Run this script for each frame, with the argument going from 0 to 1:")
                    , fill (minsize (sz 460 110) (widget editor))
                    , hfill (widget problem) ]
                , \_ -> case defsOrError of
@@ -197,8 +197,8 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
       drawingsBox <- checkBox p [ text := "Include what the viewer's tools have drawn"
                                 , checked := lastOr lmDrawings False ]
       let loopTip = case source of
-            ScriptSource -> "Leave out the last frame (t = 1), since a movie playing in a loop goes back to the first next."
-            PathSource{} -> "Come back to the start along a straight line, and leave out the last frame, since a movie playing in a loop goes back to the first next."
+            ScriptSource -> "Leave out the last frame, since a movie playing in a loop goes back to the first frame."
+            PathSource{} -> "Come back to the start along a straight line, and leave out the last frame, since a movie playing in a loop goes back to the first frame."
       -- For a path: showing the viewer it was drawn in, in a corner of
       -- each frame, marking where along the path the frame is.
       insetControls <- case source of
