@@ -20,7 +20,8 @@ import FractalStream.Prelude
 
 import Scenario (Command(..), Point(..), RGB)
 
-import Actor.Ensemble (Ensemble, runEnsemble, buildToolContext, layoutToArgs)
+import Actor.Ensemble (Ensemble(..), runEnsemble, buildToolContext, layoutToArgs, ensembleFields, FieldOwner(..))
+import Actor.Layout (Field(..))
 import Actor.UI (UI(..))
 import Actor.Viewer
   ( Backend, Viewer(..)
@@ -65,6 +66,7 @@ data InterpState = InterpState
     -- (built once on selection, not re-built per event -- matters more
     -- than it might look, since building it JIT-compiles the tool's
     -- script under the LLVM backend).
+  , isEnsemble      :: Ensemble
   , isPreviews      :: Maybe (IORef [ByteString])
     -- ^ Where @capture ... as preview@ puts its image, when running a
     -- project's @preview-commands@ ('runPreviewCommands'); 'Nothing'
@@ -96,7 +98,7 @@ runCommands backend ensemble previews cmds = do
   viewers <- readIORef viewersRef
   readIORef ctxRef >>= \case
     Nothing  -> pure (Left "this project has no viewers")
-    Just ctx -> go (InterpState viewers ctx Nothing Nothing previews) cmds
+    Just ctx -> go (InterpState viewers ctx Nothing Nothing ensemble previews) cmds
   where
     go _  []           = pure (Right ())
     go st (cmd : rest) = execCommand st cmd >>= \case
@@ -156,6 +158,24 @@ execCommand st = \case
           SomeContext' (Right toolCtx) -> case lookupSomeContextByName var toolCtx of
             Nothing -> pure (Left ("tool " ++ show toolName ++ " has no parameter named " ++ show var))
             Just (FoundBinding ty arg) -> setArgument var ty arg pv >> pure (Right st)
+
+  -- A colorizer's settings are configuration variables with names no
+  -- script can write (see "Actor.Colorizer"), one set per viewer.
+  SetColorizerParameter var value -> withCurrentViewer st $ \viewer -> do
+    title <- getDynamic (vTitle viewer)
+    let hidden = "[colorizer] " ++ title ++ ": " ++ var
+        noSuch = Left ("the colorizer of viewer " ++ show title ++ " has no parameter named " ++ show var)
+    case value of
+      Right pv -> case lookupSomeContextByName hidden (isEnsembleCtx st) of
+        Nothing -> pure noSuch
+        Just (FoundBinding ty arg) -> fmap (const st) <$> setArgument var ty arg pv
+      Left txt -> do
+        fields <- ensembleFields (isEnsemble st)
+        case [ f | (ProjectConfig, f) <- fields, fieldName f == hidden ] of
+          [] -> pure noSuch
+          f : _ -> setFieldText f txt <&> \case
+            Left err -> Left ("couldn't set " ++ var ++ ": " ++ err)
+            Right () -> Right st
 
   ResizeViewer w h -> withCurrentViewer st $ \viewer -> do
     setValue' (vSize viewer) (Dimensions (w, h))

@@ -19,12 +19,15 @@ import Actor.SavedValues (readSavedValues, writeSavedValues)
 import Control.Monad (unless, void)
 import Control.Concurrent.MVar (newMVar, modifyMVar, modifyMVar_)
 import qualified System.Info
-import UI.ProjectScriptEditor (editProjectScript, ScriptEditorHooks(..))
+import UI.ProjectScriptEditor (editProjectScript, ScriptEditorHooks(..), rebuildColorizers)
+import UI.AutocolorEditor (editAutocolor)
+import UI.Widgets (onOwnDestroy)
 
 import UI.Session
 import UI.WxProperties
 import Data.DynamicValue
 import Actor.Ensemble
+import qualified Data.Map as Map
 
 import qualified Data.Yaml as YAML
 
@@ -161,13 +164,37 @@ runApp = withBackend $ \backend -> start $ do
       -- Setting the preview or editing the project's info changes what
       -- gets saved, unlike moving windows around, so it marks the
       -- project as having unsaved changes.
-      projectMenuActions currentEnsemble sessionUnsaved pmSave pmEditScript pmClose pmCloseWindow =
+      --
+      -- @rebuild@ rebuilds the project with changed colorizer choices
+      -- (see 'rebuildColorizers').
+      projectMenuActions currentEnsemble sessionUnsaved pmSave pmEditScript pmClose pmCloseWindow rebuild pmEditAutocolor =
         ProjectMenuActions
-          { pmSave, pmEditScript, pmClose, pmCloseWindow
+          { pmSave, pmEditScript, pmClose, pmCloseWindow, pmEditAutocolor
 
 
           , pmEditInfo = \owner -> editProjectInfo owner currentEnsemble (setValue sessionUnsaved True)
-          , pmResetValues = getDynamic currentEnsemble >>= resetValues
+          , pmResetValues = do
+              prj <- getDynamic currentEnsemble
+              choices <- getDynamic (ensembleColorizerChoices prj)
+              -- Going back to the default colorizers means rebuilding;
+              -- the values are reset once that's done.
+              if Map.null choices
+                then resetValues prj
+                else rebuild (const Map.empty) resetValues >>= \case
+                  Left err -> putStrLn ("Couldn't go back to the default colorizers: " ++ err)
+                  Right () -> pure ()
+          , pmColorizers = \title -> do
+              prj <- getDynamic currentEnsemble
+              pure ((ensembleAvailableColorizers prj,) <$> Map.lookup title (ensembleViewerColorizers prj))
+          , pmSetColorizer = \title chosen -> do
+              prj <- getDynamic currentEnsemble
+              -- Choosing a viewer's default colorizer is the same as
+              -- not choosing one, which keeps the project file tidy.
+              let isDefault = (Just chosen ==) . fmap colorizerDefault
+                                $ Map.lookup title (ensembleViewerColorizers prj)
+                  change | isDefault = Map.delete title
+                         | otherwise = Map.insert title chosen
+              rebuild change (const (pure ()))
           , pmSetPreview = \png -> do
               prj <- getDynamic currentEnsemble
               modifyValue (ensembleMetadata prj) (\md -> md { mdPreview = Just png })
@@ -256,6 +283,8 @@ runApp = withBackend $ \backend -> start $ do
           sessionVisible <- newVariable True
           sessionUnsaved <- newVariable False
           scriptDraft <- newIORef Nothing
+          scriptEditorWindow <- newIORef Nothing
+          autocolorWindow <- newIORef Nothing
           -- Changing a configuration value changes what gets saved, so
           -- it marks the project as having unsaved changes -- following
           -- the project through rebuilds, which replace its ensemble.
@@ -271,6 +300,7 @@ runApp = withBackend $ \backend -> start $ do
               editorHooks = ScriptEditorHooks
                 { sehAfterClosingProject = showLibraryAfterClosing
                 , sehDraft = scriptDraft
+                , sehEditor = scriptEditorWindow
                 , sehMarkUnsaved = setValue sessionUnsaved True
                 , sehAddMenuBar = \fr -> makeMenuBar ProjectActions{..} (Just thisProject) fr []
                 }
@@ -287,6 +317,16 @@ runApp = withBackend $ \backend -> start $ do
               menuActions = projectMenuActions currentEnsemble sessionUnsaved sessionSave
                               (editProjectScript backend projectWindow editorHooks wxLayout currentEnsemble ui)
                               (closeSession si) closeFromWindow
+                              (rebuildColorizers backend projectWindow editorHooks wxLayout currentEnsemble ui)
+                              editAutocolorWindow
+              -- One autocolor window per project: asking again raises it.
+              editAutocolorWindow = readIORef autocolorWindow >>= \case
+                Just w -> void (WX.windowShow w) >> WX.windowRaise w
+                Nothing -> do
+                  st <- getDynamic . ensembleAutocolor =<< getDynamic currentEnsemble
+                  w <- editAutocolor projectWindow st (setValue sessionUnsaved True)
+                                     (writeIORef autocolorWindow Nothing)
+                  writeIORef autocolorWindow (Just w)
               -- A viewer's own close button closes the project, asking
               -- first if that takes other viewers with it.
               closeFromWindow = do
@@ -307,8 +347,7 @@ runApp = withBackend $ \backend -> start $ do
           -- Once the project's window is gone (however it went), the
           -- project is too: the Project menu mustn't go on offering to
           -- show or hide it.
-          previousOnDestroy <- WX.windowGetOnDestroy projectWindow
-          WX.windowOnDestroy projectWindow (forgetSession sessionHandle >> previousOnDestroy)
+          onOwnDestroy projectWindow (forgetSession sessionHandle)
           when scriptBuilds $ runEnsemble backend ui prj
           when (fromStartingPoint || not scriptBuilds) $
             editProjectScript backend projectWindow editorHooks wxLayout currentEnsemble ui
@@ -360,7 +399,7 @@ runApp = withBackend $ \backend -> start $ do
         Nothing -> do
           f <- preferencesWindow settings
           writeIORef preferencesFrame (Just f)
-          WX.windowOnDestroy f (writeIORef preferencesFrame Nothing)
+          onOwnDestroy f (writeIORef preferencesFrame Nothing)
 
       -- Offer to save a project with unsaved changes (if it has any)
       -- before @what@ ("closing it", "quitting"), and say whether to go
@@ -408,7 +447,7 @@ runApp = withBackend $ \backend -> start $ do
         Nothing -> do
           browser@(f, showStartingPoints) <- welcome ProjectActions{..}
           writeIORef libraryWindow (Just browser)
-          WX.windowOnDestroy f $ do
+          onOwnDestroy f $ do
             writeIORef libraryWindow Nothing
             -- Closing the library browser with no projects open quits,
             -- since it's the last window -- except for the hidden one

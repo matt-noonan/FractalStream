@@ -437,6 +437,12 @@ data ArenaState = ArenaState
     -- @i32 (i8 tag, double x, double y, i8* buf, i32 capacity)@ that writes
     -- the text form of an integer (tag 0), real (1), or complex number (2)
     -- into @buf@. Only tool handlers have one.
+  , asAutocolor    :: Maybe (Operand, Operand)
+    -- ^ The host's autocolor lookup (@fs_ac_lookup@, see "Actor.Autocolor"),
+    -- a function pointer of type
+    -- @i32 (i8* dir, i8 mode, i32 group, double x, double y)@ returning the
+    -- color as @0x00RRGGBB@, and the @dir@ to give it. Viewers and tool
+    -- handlers have one.
   }
 
 -- | Emit inline bump-allocation of 'size' bytes (must be a multiple of 8).

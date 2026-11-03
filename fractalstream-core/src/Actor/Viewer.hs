@@ -41,6 +41,7 @@ module Actor.Viewer
 import FractalStream.Prelude
 
 import Actor.Viewer.Types
+import Actor.Autocolor (AutocolorLookup)
 import Data.DynamicValue
 import Actor.Layout (Dimensions(..))
 import Actor.Tool
@@ -350,10 +351,13 @@ invokeViewerFunction (ViewerFunction fn) vaArgs =
     fn ViewerArgs{..}
 
 
+-- | Compiles a viewer's code, given the project's autocolor lookup (for
+-- @autocolor@ and @get_autocolor@; see "Actor.Autocolor").
 newtype ViewerCompiler = ViewerCompiler
   { withCompiledViewer :: forall env t
                         . (MissingViewerArgs env, KnownEnvironment env)
-                       => Maybe (PrepScript env)
+                       => AutocolorLookup
+                       -> Maybe (PrepScript env)
                        -> Code (ViewerEnv env)
                        -> (ViewerFunction env -> IO t)
                        -> IO t }

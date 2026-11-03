@@ -1,4 +1,4 @@
-=== viewer 0: Roots of {f}
+=== viewer 0: Roots of f
 --- body
 let `[internal] vanishing radius` = tol in:
   let `[internal] escape radius` = escape_radius in:

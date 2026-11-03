@@ -24,6 +24,7 @@ import qualified LLVM.IRBuilder.Instruction as I
 import qualified LLVM.AST.Type as AST
 import qualified LLVM.AST.Constant as AC
 import LLVM.AST.Operand (Operand(ConstantOperand))
+import LLVM.AST.Name (Name)
 
 import Control.Monad.Fix
 import qualified Data.Map as Map
@@ -197,6 +198,15 @@ buildValue getExtern arena = indexedFold go'
       ProjV1 _ p  -> p <&> \case { PairOp x _ -> x }
       ProjV2 _ p  -> p <&> \case { PairOp _ y -> y }
 
+      Autocolor mode n mp -> case asAutocolor arena of
+        Nothing -> throwError "`autocolor` can't be used here"
+        Just (f, dir) -> mp >>= \case
+          ComplexOp x y -> do
+            rgb <- call f [ (dir, []), (C.int8 (autocolorModeCode mode), [])
+                          , (C.int32 (fromIntegral n), []), (x, []), (y, []) ]
+            let byte k = lshr rgb (C.int32 k) >>= (`trunc` AST.i8)
+            ColorOp <$> byte 16 <*> byte 8 <*> byte 0
+
       RGB mr mg mb -> ((,,) <$> mr <*> mg <*> mb) >>= \case
         (RealOp r, RealOp g, RealOp b) -> do
           -- Round to the nearest byte, matching the pure interpreter's
@@ -233,37 +243,26 @@ buildValue getExtern arena = indexedFold go'
           cb <- fadd bb bb'
           ColorOp <$> fptoui cr AST.i8 <*> fptoui cg AST.i8 <*> fptoui cb AST.i8
 
-      ITE BooleanType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
-        (BooleanOp cond, BooleanOp yes, BooleanOp no) ->
-          BooleanOp <$> select cond yes no
-
-      ITE RealType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
-        (BooleanOp cond, RealOp yes, RealOp no) ->
-          RealOp <$> select cond yes no
-
-      ITE IntegerType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
-        (BooleanOp cond, IntegerOp yes, IntegerOp no) ->
-          IntegerOp <$> select cond yes no
-
-      ITE ComplexType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
-        (BooleanOp cond, ComplexOp yesX yesY, ComplexOp noX noY) ->
-          ComplexOp <$> select cond yesX noX <*> select cond yesY noY
-
-      ITE (PairType t1 t2) cond mx my -> ((,) <$> mx <*> my) >>= \case
-        (PairOp x1 x2, PairOp y1 y2) ->
-          PairOp <$> go @env' (ITE t1 cond (pure x1) (pure y1))
-                 <*> go @env' (ITE t2 cond (pure x2) (pure y2))
-
-      ITE ColorType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
-        (BooleanOp cond, ColorOp r g b, ColorOp r' g' b') ->
-          ColorOp <$> select cond r r' <*> select cond g g' <*> select cond b b'
-
-      ITE TextType mc myes mno -> ((,,) <$> mc <*> myes <*> mno) >>= \case
-        (BooleanOp cond, TextOp yes, TextOp no) -> TextOp <$> select cond yes no
-
-      ITE t _ _ _ ->
-        throwError ("In an if/then/else expression, the LLVM backend cannot handle the type " ++
-                   showType t)
+      -- Only the branch taken is evaluated: some values have side effects
+      -- (`autocolor` adds to a table), so both can't be computed and one
+      -- picked with `select`. (LLVM turns a branch between cheap, pure
+      -- values back into a `select` anyway.)
+      ITE t mc myes mno -> mc >>= \case
+        BooleanOp cond -> do
+          yesBlock <- freshName "ite.yes"
+          noBlock <- freshName "ite.no"
+          mergeBlock <- freshName "ite.merge"
+          condBr cond yesBlock noBlock
+          emitBlockStart yesBlock
+          yes <- myes
+          yesEnd <- currentBlock
+          br mergeBlock
+          emitBlockStart noBlock
+          no <- mno
+          noEnd <- currentBlock
+          br mergeBlock
+          emitBlockStart mergeBlock
+          lift (mergeBranches t (yes, yesEnd) (no, noEnd))
 
       Eql BooleanType x y -> ((,) <$> x <*> y) >>= \case
         (BooleanOp lhs, BooleanOp rhs) ->
@@ -1025,6 +1024,28 @@ formatNumber arena fmt tag x y =
   withTextBuffer arena (C.int64 textNumberCapacity) $ \buf ->
     void $ call fmt [ (C.int8 tag, []), (x, []), (y, []), (buf, [])
                     , (C.int32 textNumberCapacity, []) ]
+
+-- | The value of an if/then/else, at the block where its two branches
+-- meet: a @phi@ for each operand making it up.
+mergeBranches :: forall m t. (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
+              => TypeProxy t -> (Op t, Name) -> (Op t, Name) -> m (Op t)
+mergeBranches ty (a, aEnd) (b, bEnd) = case ty of
+  BooleanType -> case (a, b) of (BooleanOp x, BooleanOp y) -> BooleanOp <$> merge x y
+  IntegerType -> case (a, b) of (IntegerOp x, IntegerOp y) -> IntegerOp <$> merge x y
+  RealType    -> case (a, b) of (RealOp x, RealOp y) -> RealOp <$> merge x y
+  ComplexType -> case (a, b) of
+    (ComplexOp x1 y1, ComplexOp x2 y2) -> ComplexOp <$> merge x1 x2 <*> merge y1 y2
+  ColorType -> case (a, b) of
+    (ColorOp r1 g1 b1, ColorOp r2 g2 b2) -> ColorOp <$> merge r1 r2 <*> merge g1 g2 <*> merge b1 b2
+  TextType -> case (a, b) of (TextOp x, TextOp y) -> TextOp <$> merge x y
+  PairType t1 t2 -> case (a, b) of
+    (PairOp x1 x2, PairOp y1 y2) ->
+      PairOp <$> mergeBranches t1 (x1, aEnd) (y1, bEnd) <*> mergeBranches t2 (x2, aEnd) (y2, bEnd)
+  _ -> throwError ("In an if/then/else expression, the LLVM backend cannot handle the type "
+                   ++ showType ty)
+  where
+    merge :: Operand -> Operand -> m Operand
+    merge x y = phi [(x, aEnd), (y, bEnd)]
 
 -- | Room for any number's text form (a complex number is at most ~50 bytes).
 textNumberCapacity :: Integer

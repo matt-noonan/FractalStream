@@ -24,6 +24,8 @@
 -- @\@tool@) directly, rather than re-tokenizing an extracted substring.
 module Actor.Script
   ( ConfigStmt(..)
+  , ColorizerParam(..)
+  , ColorizerSetting(..)
   , ParsedStanza(..)
   , parseScript
   , implicitBookkeepingStanza
@@ -37,9 +39,10 @@ import Language.Parser
 import Language.Parser.Tokenizer
 import Language.Parser.SourceRange
 import Language.Value.Parser
-import Language.Code.Parser (CommonDefs(..), noCommonDefs, codeStatementsGrammar, ParsedCode, withDefinedFunctions, withCommon)
+import Language.Code.Parser (CommonDefs(..), noCommonDefs, codeStatementsGrammar, codeBlockGrammar, ParsedCode, withDefinedFunctions, withCommon)
 import Language.Code.Syntax (Stmt(..), StmtF(..))
 import Actor.Event (toolBlocksGrammar, ParsedToolBlock)
+import Actor.Layout (AppAction(..))
 
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
@@ -84,6 +87,9 @@ data ConfigStmt
   | ConfigButton SourceRange String
     -- ^ A button; only meaningful in a @\@tool@, whose @on button@
     -- handlers it triggers (a @\@config@ stanza rejects it).
+  | ConfigAction AppAction String
+    -- ^ A button that does something in the app (no script can write
+    -- one: a built-in colorizer adds it to its settings)
   | ConfigRow [ConfigStmt]
     -- ^ An indented @row:@ block; its statements are laid out side by
     -- side instead of stacked vertically.
@@ -138,6 +144,14 @@ data ParsedStanza
       , vsPixelVar    :: Maybe String
         -- ^ The name of a variable to bind to the per-pixel step size, if
         -- given (mirrors the classic YAML's @pixel-size:@ key).
+      , vsColorizer   :: Maybe String
+        -- ^ The @colorizer=@ attribute, if given: the colorizer this
+        -- viewer uses by default (see "Actor.Colorizer"), as written,
+        -- e.g. @Rainbow@ or @Smooth(z)@.
+      , vsColoring    :: [ColorizerSetting]
+        -- ^ The settings of an optional @coloring:@ block: values for its
+        -- default colorizer's settings, in place of the colorizer's own
+        -- defaults.
       , vsPrepare     :: Maybe ([(String, SomeType)], ParsedCode)
         -- ^ An optional @prepare name1 : Type1, name2 : Type2, ...:@
         -- block, naming this viewer's preparation-script output
@@ -146,11 +160,29 @@ data ParsedStanza
         -- code to compute them. 'Nothing' when the viewer has no
         -- preparation script at all.
       , vsCode        :: ParsedCode
+      , vsFunctions   :: Set String
+        -- ^ The user-defined functions in scope at the end of the
+        -- viewer's code, which is where its colorizer's arguments are
+        -- read.
       }
   | CommonStanza
       { cmBody :: ParsedCode
         -- ^ Declarations and function definitions to prepend to every
         -- viewer and tool script (see 'Language.Code.Parser.withCommon').
+      }
+  | ColorizerStanza
+      { czName        :: String
+      , czDescription :: Maybe String
+      , czConfig      :: [ConfigStmt]
+        -- ^ Declarations at the top of the stanza, before its code: each
+        -- viewer using this colorizer gets a copy of these fields.
+      , czParams      :: [ColorizerParam]
+      , czCommon      :: [Stmt]
+        -- ^ The @\@common@ statements its code uses (see
+        -- 'Language.Code.Parser.withCommon'), to be added along with it
+        -- to a viewer that doesn't already have them.
+      , czCode        :: ParsedCode
+        -- ^ The body of its @define colorize(...):@ block.
       }
   | ToolStanza
       { tsName     :: String
@@ -167,6 +199,28 @@ data ParsedStanza
         -- way a @\@config@ stanza's declarations do.
       , tsBlocks   :: [ParsedToolBlock]
       }
+
+-- | One line of a viewer's @coloring:@ block: @name <- value@.
+data ColorizerSetting = ColorizerSetting
+  { czsRange      :: SourceRange
+  , czsName       :: String
+  , czsValue      :: ParsedValue
+  , czsValueRange :: SourceRange
+  , czsValueSrc   :: String
+    -- ^ The value's text, as written (filled in like 'cdDefaultSrc').
+  }
+
+-- | One of a colorizer's parameters: @t@, or @t = expression@.
+data ColorizerParam = ColorizerParam
+  { cpName         :: String
+  , cpDefault      :: Maybe ParsedValue
+    -- ^ Its default value, used when it isn't given an argument;
+    -- without one, it gets the viewer's variable of the same name.
+  , cpDefaultRange :: SourceRange
+  , cpDefaultSrc   :: String
+    -- ^ The default value's text, as written (filled in like
+    -- 'cdDefaultSrc').
+  }
 
 ------------------------------------------------------------
 -- Entry point
@@ -243,7 +297,11 @@ fillDefaultSrcs input = map onStanza
     onStanza = \case
       ConfigStanza t b -> ConfigStanza t (map onStmt b)
       t@ToolStanza{..} -> t { tsConfig = map onStmt tsConfig }
-      v@ViewerStanza{} -> v
+      c@ColorizerStanza{..} -> c { czConfig = map onStmt czConfig
+                                 , czParams = [ p { cpDefaultSrc = sliceLine input (cpDefaultRange p) }
+                                              | p <- czParams ] }
+      v@ViewerStanza{..} -> v { vsColoring = [ c { czsValueSrc = sliceLine input (czsValueRange c) }
+                                             | c <- vsColoring ] }
       c@CommonStanza{} -> c
 
     onStmt = \case
@@ -515,13 +573,28 @@ scriptGrammar defs = mdo
     (\etitle estmts -> ConfigStanza <$> etitle <*> (configStmts estmts >>= noButtons))
     <$> configHeader <*> many configStmt
 
+  -- A `coloring:` block, at the start of a viewer's code: one
+  -- `name <- value` line for each setting of its colorizer to change.
+  coloringSetting <- rule $
+    withSourceRange $
+      (\name (valRange, val) sr -> ColorizerSetting sr name val valRange "")
+      <$> ident <*> (token LeftArrow *> valueWithRange <* nl)
+
+  coloringBlock <- rule $
+    withSourceRange $
+      (\settings sr -> case firstDuplicate (map czsName settings) of
+          Just dup -> Left (sr, "The `coloring:` block sets `" ++ dup ++ "` more than once.")
+          Nothing -> Right settings)
+      <$> (tok "coloring" *> colon *> nl *> token Indent *> many coloringSetting <* token Dedent)
+
   viewerStanza <- rule $
-    (\ehdr mprepE code ->
-        (\ViewerHeader{..} mprep ->
+    (\ehdr mcoloringE mprepE code ->
+        (\ViewerHeader{..} mcoloring mprep ->
             ViewerStanza vhTitle vhVar vhCenter vhPixelSize vhIterLimit vhEscape vhVanish
-                         vhPixelVar mprep code)
-        <$> ehdr <*> sequence mprepE)
-    <$> viewerHeader <*> optional prepareBlock <*> (withCommon defs <$> viewerBody)
+                         vhPixelVar vhColorizer (fromMaybe [] mcoloring) mprep code (funNames defs))
+        <$> ehdr <*> sequence mcoloringE <*> sequence mprepE)
+    <$> viewerHeader <*> optional coloringBlock <*> optional prepareBlock
+    <*> (withCommon defs <$> viewerBody)
 
   toolStanza <- rule $
     (\ehdr edecls blocks -> (\ToolHeader{..} decls ->
@@ -534,7 +607,50 @@ scriptGrammar defs = mdo
     (\ehdr body -> ehdr >> CommonStanza <$> validateCommonBody body)
     <$> commonHeader <*> viewerBody
 
-  stanza <- ruleChoice [configStanza, viewerStanza, toolStanza, commonStanza]
+  colorizerHeader <- rule $
+    withSourceRange $
+      (\name as sr -> validateColorizerHeader sr name as)
+      <$> (token At *> tok "colorizer" *> quotedP) <*> (attrs <* nl)
+
+  -- (Not a top-level pair, `a, b`: the comma is between parameters.)
+  paramDefault <- argumentGrammarWithFunctions (funNames defs)
+
+  colorizerParam <- rule $
+    (\name mdef -> case mdef of
+        Nothing -> ColorizerParam name Nothing NoSourceRange ""
+        Just (sr, v) -> ColorizerParam name (Just v) sr "")
+    <$> ident
+    <*> optional (token Equal *> withSourceRange ((\v sr -> (sr, v)) <$> paramDefault))
+
+  colorizerParams <- rule $
+    (:) <$> (token OpenParen *> colorizerParam)
+        <*> (many (token Comma *> colorizerParam) <* token CloseParen)
+
+  colorizerBlock <- codeBlockGrammar defs
+
+  -- `define colorize(v, w):` and its block. Only one name is allowed, so
+  -- that the stanza says plainly which code is the colorizer's.
+  colorizerDefine <- rule $
+    withSourceRange $
+      (\params code sr -> case firstDuplicate (map cpName params) of
+          Just dup -> Left (sr, "The colorizer's code has two parameters called `" ++ dup ++ "`.")
+          Nothing -> Right (params, code))
+      <$> (tok "define" *> tok "colorize" *> (fromMaybe [] <$> optional colorizerParams))
+      <*> (colon *> nl *> colorizerBlock)
+
+  colorizerStanza <- rule $
+    (\ehdr estmts edef -> do
+        (name, desc) <- ehdr
+        stmts <- configStmts estmts >>= noButtons
+        (params, code) <- edef
+        -- (The @common statements its parameters' defaults use, too.)
+        let withDefaults = Stmt NoSourceRange $ SBlock $
+              [ Stmt NoSourceRange (SDecl (cpName p) Nothing v) | p <- params, Just v <- [cpDefault p] ]
+              ++ [code]
+        pure (ColorizerStanza name desc stmts params (commonUsedBy defs withDefaults) code))
+    <$> colorizerHeader <*> many configStmt <*> (colorizerDefine <?> "the colorizer's code, `define colorize:`")
+
+  stanza <- ruleChoice [configStanza, viewerStanza, toolStanza, commonStanza, colorizerStanza]
 
   rule ((token Indent *> many stanza <* token Dedent) <?> "a unified project script")
 
@@ -601,6 +717,7 @@ data ViewerHeader = ViewerHeader
   , vhEscape    :: Maybe String
   , vhVanish    :: Maybe String
   , vhPixelVar  :: Maybe String
+  , vhColorizer :: Maybe String
   }
 
 data ToolHeader = ToolHeader
@@ -650,7 +767,7 @@ validateViewerHeader sr vhTitle attrs = do
                 \by the user interface itself (for the wx UI, under the \
                 \project file's `wx-properties:` key).")
   checkKnownAttrs sr
-    ["var", "center", "pixelSize", "limit", "escape", "vanish", "pixelVar"]
+    ["var", "center", "pixelSize", "limit", "escape", "vanish", "pixelVar", "colorizer"]
     attrs
   -- A beginner's first viewer doesn't need to think about a
   -- coordinate-variable name at all -- `z` is a reasonable default,
@@ -674,7 +791,22 @@ validateViewerHeader sr vhTitle attrs = do
     , vhEscape    = lookupAttr "escape"   attrs <|> Just "escape_radius"
     , vhVanish    = lookupAttr "vanish"   attrs <|> Just "vanishing_radius"
     , vhPixelVar  = lookupAttr "pixelVar" attrs <|> Just "pixel_size"
+    , vhColorizer = lookupAttr "colorizer" attrs
     }
+
+validateColorizerHeader :: SourceRange -> String -> [(String, String)]
+                        -> Either (SourceRange, String) (String, Maybe String)
+validateColorizerHeader sr name attrs = do
+  checkKnownAttrs sr ["description"] attrs
+  when (null name || '(' `elem` name) $
+    Left (sr, "A colorizer's name can't be empty, or contain `(`.")
+  pure (name, lookupAttr "description" attrs)
+
+-- | The @\@common@ statements some code uses.
+commonUsedBy :: CommonDefs -> ParsedCode -> [Stmt]
+commonUsedBy defs code = case withCommon defs (Stmt NoSourceRange (SBlock [code])) of
+  Stmt _ (SBlock stmts) -> take (length stmts - 1) stmts
+  _ -> []
 
 validateToolHeader :: SourceRange
                     -> String

@@ -8,6 +8,7 @@ module Language.Value.Parser
   , parseConstant
   , valueGrammar
   , valueGrammarWithFunctions
+  , argumentGrammarWithFunctions
   , arithGrammar
   , atType
   , typeGrammar
@@ -132,7 +133,15 @@ valueGrammar = valueGrammarWithFunctions Set.empty
 valueGrammarWithFunctions :: forall r
                            . Set String
                           -> Grammar r (Prod r ParsedValue)
-valueGrammarWithFunctions funs = fst <$> valueAndArithGrammar funs
+valueGrammarWithFunctions funs = (\(v, _, _) -> v) <$> valueAndArithGrammar funs
+
+-- | Like 'valueGrammarWithFunctions', but without unparenthesized pairs
+-- (@a, b@) at the top level: for one of several comma-separated
+-- arguments.
+argumentGrammarWithFunctions :: forall r
+                              . Set String
+                             -> Grammar r (Prod r ParsedValue)
+argumentGrammarWithFunctions funs = (\(_, _, a) -> a) <$> valueAndArithGrammar funs
 
 -- | A self-contained arithmetic\/complex-valued expression grammar --
 -- @+ - * / ^@, unary minus, implicit-multiplication concatenation, named
@@ -157,11 +166,11 @@ valueGrammarWithFunctions funs = fst <$> valueAndArithGrammar funs
 -- at. 'funAp' and 'simpleAtom' are reused unchanged, since neither can
 -- ever start with a bare @(@.
 arithGrammar :: forall r. Grammar r (Prod r ParsedValue)
-arithGrammar = snd <$> valueAndArithGrammar Set.empty
+arithGrammar = (\(_, a, _) -> a) <$> valueAndArithGrammar Set.empty
 
 valueAndArithGrammar :: forall r
                        . Set String
-                      -> Grammar r (Prod r ParsedValue, Prod r ParsedValue)
+                      -> Grammar r (Prod r ParsedValue, Prod r ParsedValue, Prod r ParsedValue)
 valueAndArithGrammar funs = mdo
 
   let toplevel = cast
@@ -391,7 +400,24 @@ valueAndArithGrammar funs = mdo
         EColor3 OpRGB <$> (token (Identifier "rgb") *> (token OpenParen *> arith))
               <*> (token Comma *> arith)
               <*> (token Comma *> arith <* token CloseParen))
+    , node (
+        EColor3 OpHSV <$> (token (Identifier "hsv") *> (token OpenParen *> arith))
+              <*> (token Comma *> arith)
+              <*> (token Comma *> arith <* token CloseParen))
+    , node (
+        EColor3 OpHSL <$> (token (Identifier "hsl") *> (token OpenParen *> arith))
+              <*> (token Comma *> arith)
+              <*> (token Comma *> arith <* token CloseParen))
+    -- `autocolor(n, p)` and `get_autocolor(n, p)` (typing checks that
+    -- the group number is a plain number)
+    , node (
+        EAutocolor <$> autocolorName
+                   <*> (token OpenParen *> arith)
+                   <*> (token Comma *> arith <* token CloseParen))
     ]
+
+  autocolorName <- ruleChoice
+    [ mode <$ token (Identifier (autocolorModeName mode)) | mode <- [minBound .. maxBound] ]
 
   textConcat <- rule $ node $
     EText <$> ((:) <$> (token TextKeyword *> token OpenParen *> argument)
@@ -500,7 +526,8 @@ valueAndArithGrammar funs = mdo
         , "romao", "bamo", "broco", "corko", "viko"
         , "ice", "fire", "rose", "wheat", "forest", "ocean"
         , "winter", "spring", "summer", "fall"
-        , "rgb", "mod", "diff"]
+        , "rgb", "hsv", "hsl", "mod", "diff"]
+        `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions
         `Set.union` Map.keysSet realFunctions
@@ -508,7 +535,7 @@ valueAndArithGrammar funs = mdo
         `Set.union` Map.keysSet roundingFunctions
         `Set.union` funs
 
-  pure (toplevel, addOrSubNp)
+  pure (toplevel, addOrSubNp, argument)
 
 node :: Prod r (ExprF ParsedValue) -> Prod r ParsedValue
 node = withSourceRange . fmap (flip mkExpr)

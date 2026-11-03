@@ -16,6 +16,7 @@ module Task.Concurrent
 import FractalStream.Prelude
 
 import           Control.Concurrent
+import           Control.Exception (mask, uninterruptibleMask_, finally)
 import           Control.Concurrent.Async
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
@@ -81,30 +82,29 @@ synchronizedTo res obj = obj { resource = res }
 -- | Execute an action on a synchronized resource, perhaps
 --   concurrently with other threads.
 with :: Synchronizable a -> (a -> IO b) -> IO b
-with obj action = do
+with obj action = mask $ \restore -> do
   let usrs = users obj
-  -- Block until general access is allowed.
+  -- Block until general access is allowed. (If this is interrupted, we
+  -- haven't taken anything yet.)
   _ <- takeMVar (available obj)
 
-  -- Increment the number of active users, and
-  -- flag the resource as not finished if we are
-  -- the first worker.
-  takeMVar usrs >>= \n -> do
+  -- Increment the number of active users, and flag the resource as not
+  -- finished if we are the first worker. Uninterruptibly: we hold
+  -- 'available', and must give it back.
+  uninterruptibleMask_ $ do
+    takeMVar usrs >>= \n -> do
       when (n == 0) $ void $ tryTakeMVar (finished obj)
       putMVar usrs (n + 1)
+    putMVar (available obj) ()
 
-  putMVar (available obj) ()
-
-  -- Perform the action
-  result <- action $ resource obj
-
-  -- Decrement the number of users and, if we were the last
-  -- active user, flag the resource as finished.
-  takeMVar usrs >>= \n -> do
+  -- Perform the action; then, however it ended (a render worker is
+  -- cancelled on every redraw), decrement the number of users and, if we
+  -- were the last active user, flag the resource as finished. A user that
+  -- didn't would keep 'synchedWith' waiting forever.
+  restore (action (resource obj)) `finally` uninterruptibleMask_ (
+    takeMVar usrs >>= \n -> do
       when (n == 1) $ void $ tryPutMVar (finished obj) ()
-      putMVar usrs (n - 1)
-
-  return result
+      putMVar usrs (n - 1))
 
 -- | Execute an action on a synchronized resource while
 --   preventing concurrent access to the resource.  synchedWith
@@ -112,14 +112,11 @@ with obj action = do
 --   executing the given action, and will prevent new actions
 --   from beginning.
 synchedWith :: Synchronizable a -> (a -> IO b) -> IO b
-synchedWith obj action = do
+synchedWith obj action = mask $ \restore -> do
   -- Prevent anybody else from beginning new work with this resource.
   void $ takeMVar (available obj)
 
-  -- Wait until there are no users of the resource, then run the action.
-  readMVar (finished obj)
-  result <- action (resource obj)
-
-  -- Allow others to access the resource again.
-  putMVar (available obj) ()
-  return result
+  -- Wait until there are no users of the resource, then run the action;
+  -- and allow others to access the resource again however that ended.
+  (restore (readMVar (finished obj)) >> restore (action (resource obj)))
+    `finally` uninterruptibleMask_ (putMVar (available obj) ())

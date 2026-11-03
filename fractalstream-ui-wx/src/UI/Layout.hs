@@ -13,12 +13,15 @@ import           Graphics.UI.WXCore.WxcClassesMZ
 
 import UI.Widgets
 
-generateWxLayout :: (String -> IO ())
+-- | Build a layout's widgets. Its buttons run @buttonPress@ with their
+-- text (for a tool's handlers), and its 'ActionButton's run @appAction@.
+generateWxLayout :: (AppAction -> IO ())
+                 -> (String -> IO ())
                  -> Window a
                  -> Layout
                  -> IO (IO (), WX.Layout)
 
-generateWxLayout buttonPress frame0 wLayout = do
+generateWxLayout appAction buttonPress frame0 wLayout = do
   panel0 <- panel frame0 []
 
   let go :: Window a -> Layout -> StateT (IO ()) IO WX.Layout
@@ -85,6 +88,11 @@ generateWxLayout buttonPress frame0 wLayout = do
           btn <- buttonWidget p' tv
           set btn [ on command := get btn text >>= buttonPress ]
           pure (hstretch . expand . container p' $ floatCentre $ margin 5 $ widget btn)
+
+        ActionButton action txt -> liftIO $ do
+          p' <- panel p []
+          btn <- button p' [ text := txt, on command := appAction action ]
+          pure (hstretch . expand . container p' $ floatLeft $ margin 5 $ widget btn)
 
         Selection _l v pick options -> do
           p' <- liftIO $ panel p []

@@ -11,10 +11,15 @@ import Data.Color
 import Data.IORef
 import Data.List (isInfixOf)
 import Control.Exception (IOException, ErrorCall(..))
+import Control.Concurrent (forkIO, killThread, threadDelay)
+import Control.Monad (forM_, forever, replicateM, replicateM_, void)
+import System.Timeout (timeout)
 import Actor.Viewer (ViewerFunction(..), ViewerArgs(..), ViewerIssues(..), PrepScript(..))
 import Actor.Viewer.Types (ViewerEnv)
 import Foreign (allocaBytes, peekArray, Word8)
 import Backend.LLVM
+import Actor.Autocolor (AutocolorLookup, autocolorLookupFromFunction)
+import System.IO.Unsafe (unsafePerformIO)
 
 -- Deliberately plain string literals here, not a 'Text.RawString.QQ'
 -- quasiquote: quasiquotes require Template Haskell, which forces GHC to
@@ -47,6 +52,33 @@ spec = do
         f2 <- invoke' env ColorType f 1.5 2 black 0 0 False 0 0
         f1 `shouldBe` (rgbToColor (round (255 * 5 / 5.5 :: Double), 0, 0))
         f2 `shouldBe` (rgbToColor (round (255 * 2 / 2.5 :: Double), 0, 0))
+
+    it "computes hsv and hsl colors as Data.Color does" $ do
+      let env = declare @"x" RealType
+              $ declare @"y" RealType
+              $ declare @"color" ColorType
+              $ declare @"[internal] iteration count" IntegerType
+              $ declare @"[internal] iteration limit" IntegerType
+              $ declare @"[internal] stuck" BooleanType
+              $ declare @"[internal] escape radius" RealType
+              $ declare @"[internal] vanishing radius" RealType
+              $ endOfDecls
+          -- (rounding to a byte may go the other way: compiled code rounds
+          -- halves up, the interpreter to even)
+          within1 c1 c2 =
+            let (r1, g1, b1) = colorToRGB c1
+                (r2, g2, b2) = colorToRGB c2
+                d a b = abs (fromIntegral a - fromIntegral b :: Int)
+            in maximum [d r1 r2, d g1 g2, d b1 b2] <= 1
+          points = [ (h, a) | h <- [-0.3, 0, 0.1, 0.45, 0.7, 1.2], a <- [-1, 0, 0.3, 0.8, 1, 2] ]
+      withCompiledCode (Proxy @"color") ColorType env "color <- hsv(x, y, 0.8)" $ \f ->
+        forM_ points $ \(h, a) -> do
+          c <- invoke' env ColorType f h a black 0 0 False 0 0
+          c `shouldSatisfy` within1 (hsvToColor (h, max 0 (min 1 a), 0.8))
+      withCompiledCode (Proxy @"color") ColorType env "color <- hsl(x, 0.7, y)" $ \f ->
+        forM_ points $ \(h, a) -> do
+          c <- invoke' env ColorType f h a black 0 0 False 0 0
+          c `shouldSatisfy` within1 (hslToColor (h, 0.7, a))
 
     it "can compile a basic Mandelbrot set program" $ do
       let env = declare @"x" RealType
@@ -94,7 +126,7 @@ spec = do
 
     mapM_ (\(name, src) ->
             it ("matches the interpreter: " ++ name) $ withJIT $ \jit -> do
-              compiled    <- runTool (compiledToolExec jit) src
+              compiled    <- runTool (compiledToolExec jit noAutocolor) src
               interpreted <- runTool interpretedToolExec src
               compiled `shouldBe` interpreted)
           scripts
@@ -122,7 +154,7 @@ spec = do
 
     mapM_ (\(name, src) ->
             it ("matches the interpreter: " ++ name) $ withJIT $ \jit -> do
-              compiled    <- runTool (compiledToolExec jit) src
+              compiled    <- runTool (compiledToolExec jit noAutocolor) src
               interpreted <- runTool interpretedToolExec src
               compiled `shouldBe` interpreted)
           scripts
@@ -131,7 +163,7 @@ spec = do
 
     it "reports a bad list index as such, like the interpreter" $ withJIT $ \jit -> do
       let src = "draw point at z\nx <- re(pts @ 5)"
-      runTool (compiledToolExec jit) src
+      runTool (compiledToolExec jit noAutocolor) src
         `shouldThrow` (\e -> "list index was out of range" `isInfixOf` show (e :: IOException))
       runTool interpretedToolExec src
         `shouldThrow` (\(ErrorCall msg) -> msg == "List index 5 is out of range")
@@ -140,7 +172,7 @@ spec = do
       -- the first arena overflows while building ks, leaving it (and so
       -- big) cut short, so `big @ 50000` is out of range in that run
       let src = "ks := range(1, 100000)\nbig := transform(ks, k ⟼ z)\nx <- re(big @ 50000)"
-      compiled    <- runTool (compiledToolExec jit) src
+      compiled    <- runTool (compiledToolExec jit noAutocolor) src
       interpreted <- runTool interpretedToolExec src
       compiled `shouldBe` interpreted
 
@@ -157,7 +189,7 @@ spec = do
                  ++ "if n = 2:\n  ks := range(1, 100000)\n"
                  ++ "  color <- if length(ks) > 0 then red else green"
           code <- either (fail . show) pure (parseCode env noCommonDefs src)
-          withJittedViewer jit Nothing code $ \(ViewerFunction vf) ->
+          withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) ->
             allocaBytes (3 * 4 * 4) $ \buf -> do
               issues <- vf ViewerArgs
                 { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -182,13 +214,75 @@ spec = do
       issues `shouldBe` ViewerIssues { viOutOfMemory = True, viBadIndex = False }
       pixels `shouldBe` allPixels (255, 0, 255)
 
+    it "asks the host for autocolors" $ withJIT $ \jit -> do
+      calls <- newIORef []
+      let lookupAc adds n x y = do
+            atomicModifyIORef' calls (\cs -> ((adds, n, x, y) : cs, ()))
+            pure (rgbToColor (10, 20, 30))
+          env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
+          src = "c := nearest_autocolor(4, 1)\nd := get_autocolor(5, 1)\ncolor <- autocolor(3, 0.5 + 0.25 i)"
+      code <- either (fail . show) pure (parseCode env noCommonDefs src)
+      acLookup <- autocolorLookupFromFunction lookupAc
+      pixels <- withJittedViewer jit acLookup Nothing code $ \(ViewerFunction vf) ->
+        allocaBytes (3 * 4 * 4) $ \buf -> do
+          _ <- vf ViewerArgs
+            { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+            , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+            , vaBuffer = buf
+            , vaArgs = Bind (Proxy @"n") IntegerType 0 EmptyContext }
+          peekArray (3 * 4 * 4) buf
+      pixels `shouldBe` concat (replicate 16 [10, 20, 30])
+      made <- readIORef calls
+      length made `shouldBe` 48
+      filter (\(m, _, _, _) -> m == AddPoint) made `shouldSatisfy` all (== (AddPoint, 3, 0.5, 0.25))
+      filter (\(m, _, _, _) -> m == NearestPoint) made `shouldSatisfy` all (== (NearestPoint, 4, 1, 0))
+      filter (\(m, _, _, _) -> m == BlendPoints) made `shouldSatisfy` all (== (BlendPoints, 5, 1, 0))
+
+    it "evaluates only the branch an if/then/else takes" $ withJIT $ \jit -> do
+      calls <- newIORef []
+      let lookupAc adds n x y = do
+            atomicModifyIORef' calls (\cs -> ((adds, n, x, y) : cs, ()))
+            pure (rgbToColor (10, 20, 30))
+          env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
+          src = "color <- if n = 1 then autocolor(3, 0) else nearest_autocolor(4, 0)"
+      code <- either (fail . show) pure (parseCode env noCommonDefs src)
+      acLookup <- autocolorLookupFromFunction lookupAc
+      _ <- withJittedViewer jit acLookup Nothing code $ \(ViewerFunction vf) ->
+        allocaBytes (3 * 4 * 4) $ \buf -> vf ViewerArgs
+          { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+          , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+          , vaBuffer = buf
+          , vaArgs = Bind (Proxy @"n") IntegerType 0 EmptyContext }
+      made <- readIORef calls
+      length made `shouldBe` 16
+      made `shouldSatisfy` all (\(m, _, _, _) -> m == NearestPoint)
+
+    it "gets every arena back, however often renders are cancelled" $ do
+      -- Renders on many threads, killed at random moments over and over (as
+      -- a redraw cancels a tile's render). Closing the JIT session collects
+      -- every arena back, so if a cancelled render lost one -- its release
+      -- interrupted while waiting to return it -- this would never finish.
+      let env = envProxy (Proxy @(ViewerEnv '[]))
+      code <- either (fail . show) pure (parseCode env noCommonDefs "color <- blue")
+      finished <- timeout 20000000 $ withJIT $ \jit ->
+        withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) -> do
+          let renderOnce = allocaBytes (3 * 8 * 8) $ \buf -> void $ vf ViewerArgs
+                { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+                , vaWidth = 8, vaHeight = 8, vaSubsamples = 1
+                , vaBuffer = buf, vaArgs = EmptyContext }
+          replicateM_ 300 $ do
+            threads <- replicateM 16 (forkIO (forever renderOnce))
+            threadDelay 300
+            mapM_ killThread threads
+      finished `shouldBe` Just ()
+
     it "starts each pixel's color at grey" $ withJIT $ \jit -> do
       -- Only the first pixel sets the color, since n is changed afterwards
       -- (and stays changed for the rest of the block).
       let env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
           src = "if n = 0:\n  color <- red\nn <- 1"
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
-      pixels <- withJittedViewer jit Nothing code $ \(ViewerFunction vf) ->
+      pixels <- withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- vf ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -213,7 +307,7 @@ spec = do
             , "  count <- count + 1"
             , "color <- if count = 3 and length(bs) = 1 then green else red" ]
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
-      pixels <- withJittedViewer jit Nothing code $ \(ViewerFunction vf) ->
+      pixels <- withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- vf ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -229,7 +323,7 @@ spec = do
       prepCode <- either (fail . show) pure (parseCode env noCommonDefs prepSrc)
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
       let prep = PrepScript (envProxy (Proxy @PrepTestEnv)) prepCode
-      pixels <- withJittedViewer jit (Just prep) code $ \(ViewerFunction vf) ->
+      pixels <- withJittedViewer jit noAutocolor (Just prep) code $ \(ViewerFunction vf) ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- vf ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -299,3 +393,8 @@ runTool exec src = do
   final <- (,,) <$> getDynamic vMsg <*> getDynamic vN <*> getDynamic vX
   lists <- (,,) <$> getDynamic vPts <*> getDynamic vLegs <*> getDynamic vWords
   pure (drawn, final, lists)
+
+-- | For code that doesn't use autocolor.
+noAutocolor :: AutocolorLookup
+noAutocolor = unsafePerformIO (autocolorLookupFromFunction (\_ _ _ _ -> pure grey))
+{-# NOINLINE noAutocolor #-}

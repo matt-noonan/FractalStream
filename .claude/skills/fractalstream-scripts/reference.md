@@ -22,6 +22,8 @@ script: |
   ...
   @tool "Name" attrs       # mouse-driven interaction with one viewer
   ...
+  @colorizer "Name"        # a project's own colorizer (rarely needed)
+  ...
 scenarios:                 # optional: named headless test runs
   - name: smoke
     commands: |
@@ -81,7 +83,8 @@ scripts that actually use it where those names don't exist.
 
 A window over the complex plane. Its body runs once per pixel (several
 times per pixel, in fact: the app renders progressively and supersamples),
-with the pixel's point bound to a complex variable, and must set `color`.
+with the pixel's point bound to a complex variable, and produces `color`:
+either the body sets it, or the viewer's *colorizer* does (see below).
 
 | Attribute | Default | Meaning |
 |---|---|---|
@@ -90,6 +93,7 @@ with the pixel's point bound to a complex variable, and must set `color`.
 | `pixelSize=` | `1/128` | model width of one pixel (zoom) in the original view; `1/200`, `0.005` |
 | `limit=`, `escape=`, `vanish=` | `max_iters`, `escape_radius`, `vanishing_radius` | name a different (config) variable to use as the loop limit / escape radius / vanishing radius in this viewer |
 | `pixelVar=` | `pixel_size` | name under which the current pixel size is visible |
+| `colorizer=` | automatic | the viewer's default colorizer, e.g. `colorizer=Smooth`, `colorizer="Rainbow(arg z / (2 pi))"` (quote anything but a bare name) |
 
 There are no `size=`, `position=`, or `resizable=` attributes (they're
 rejected): window geometry isn't part of the script. Viewers open at 600x600;
@@ -124,7 +128,9 @@ Inside a viewer:
   `iterations` and `stuck` (see Loops).
 - viewers can't change the configuration: assigning a config variable
   only changes that pixel's local copy. Only `color` is output.
-- a viewer that never assigns `color` renders grey (128, 128, 128).
+- a viewer that never assigns `color` gets the `Rainbow` colorizer (see
+  below), unless its `colorizer=` says otherwise. With `colorizer=Manual`
+  it renders grey (128, 128, 128).
 - a pixel whose script indexes a list out of range, or runs out of its
   1 MB of scratch memory for lists/text, is drawn magenta (255, 0, 255);
   the app shows why in a status bar, and `fsrun` prints a warning.
@@ -144,6 +150,84 @@ color <- if |z - center| < scale then red else blue
 It declares outputs with types, assigns them, and the main body reads them.
 It can't see the pixel coordinate; use it for values derived only from the
 configuration. Rarely needed.
+
+#### Colorizers
+
+A colorizer is code that runs after the viewer's body and sets `color`.
+Which one a viewer uses: the one chosen in the app's viewer menu (saved
+under a top-level `colorizers:` key, by viewer title; `fsrun` honors it
+too), else the `colorizer=` attribute, else `Manual` if the body assigns
+`color` anywhere (including in code it `run`s) and `Rainbow` if it
+doesn't. Prefer letting a colorizer do the coloring when one fits; write
+`color <- ...` yourself only for coloring a colorizer can't express.
+
+| Colorizer | Parameters | Settings (in a "Coloring" config tab, one copy per viewer) |
+|---|---|---|
+| `Manual` | | none: the body sets `color` |
+| `Rainbow` | `t = iterations / color_speed` | `color_speed` (20), `use_arenberg` (false). Stuck points are black. |
+| `Escape time` | `t = iterations / period` | `palette` (choice: "Rainbow", "Arenberg", "Romao", "Bamo", "Broco", "Corko", "Viko", "Fire", "Ice", "Ocean", "Forest", "Rose", "Wheat", "Two colors"), `period` (20), `shade` (false), `color1`/`color2` (for "Two colors"), `gives_up` (black) |
+| `Smooth` | `z` | `palette`, `period` (20), `degree` (2), `color1`/`color2`, `gives_up` |
+| `Binary decomposition` | `z` | `period` (10), `degree` (2), `upper1`/`upper2`, `lower1`/`lower2`, `smooth` (true), `gives_up` |
+| `Glow` | | `brightness` (0.5), `near`/`far` colors, `gives_up`. Uses `iterations / max_iters`. |
+| `Autocolor` | `z` | `allow_new` (true), `blend_misses` (true), `shade` (true), `period` (20), `gives_up`. `autocolor(0, z)`, or with `allow_new` off `get_autocolor(0, z)` (the blend; `nearest_autocolor` with `blend_misses` off) (group 0, shared by all its viewers): Newton basins without known roots. Set `allow_new <- false` in a parameter plane, so it reads the dynamical plane's colors instead of adding a point per pixel. |
+
+A parameter without an argument uses its default, else the viewer's
+variable of the same name (so `Smooth` needs a `z` in scope at the end of
+the body, or an argument: `Smooth(w)`). Arguments are expressions in the
+viewer's scope: `colorizer="Rainbow(arg z / (2 pi))"` colors Newton basins
+by the angle of the root.
+
+Change a colorizer's setting defaults with a `coloring:` block, first in
+the body (before `prepare`); choices are given by their quoted label:
+
+```
+@viewer "M" var=C colorizer=Smooth
+coloring:
+  palette <- "Two colors"
+  color1 <- red
+  period <- 100
+z := 0
+iterate z -> z^2 + C until z escapes
+```
+
+It applies to the viewer's default colorizer only; an unknown setting or
+choice is an error on that line.
+
+#### Autocolor
+
+`autocolor(n, p)` (n: a literal ℤ group number, p: ℂ) returns a color for
+point `p`, adding it to group `n`'s table with a new hue if no entry is
+within the group's tolerance (0.001). Never adding: `nearest_autocolor(n, p)`
+(a miss gives the group's miss color, grey) and `get_autocolor(n, p)` (a
+miss gives a blend of all the group's colors, weighted by 1/distance²). A
+locked (or full, 256-point) group's `autocolor` blends too, unless the group's
+`blend-misses: false` (Autocolor window: "Blend when no matching point"). For Newton basins without
+known roots: `color <- if stuck then black else autocolor(0, z)`.
+Viewers naming the same group share colors. Usable in viewers and tools;
+LLVM backend only. Colors depend on the order points are first seen, so
+they aren't reproducible between runs of an unsaved project (the project
+file's `autocolor:` key saves them; a locked group, or one with 256
+entries, adds no more). Don't use it on points that never repeat (every
+pixel's escaping `z`): the group fills up and the rest get grey.
+
+### `@colorizer "Name" attrs`
+
+A project's own colorizer: settings declared like `@config` fields, then
+`define colorize(params):` and its block. Optional `description="..."`.
+
+```
+@colorizer "Escaped"
+inside : Color as "Inside" <- black
+define colorize(z, t = iterations / 20):
+  color <- if z escaped then rainbow(t) else inside
+```
+
+Its code runs at the end of the viewer's code (sees `iterations`,
+`stuck`, config, `@common`). Everything it declares (settings, parameters,
+locals) is renamed privately per viewer, so it never clashes with the
+viewer's names. Parameter defaults can use the colorizer's settings and
+earlier parameters. A `@colorizer` with a built-in's name replaces it.
+Its code is only type-checked in viewers that use it.
 
 ### `@tool "Name" attrs`
 
@@ -296,6 +380,8 @@ Constants: `pi`/`π`, `e`/`𝑒`, `i`/`𝑖`, `true`, `false`.
 Colors:
 - names: `red green blue black white grey gray orange yellow purple violet pink`
 - `rgb(r, g, b)` with components in [0, 1]
+- `hsv(h, s, v)`, `hsl(h, s, l)`: hue h mod 1 (0 red, 1/3 green, 2/3 blue),
+  s/v/l clamped to [0, 1]; hsl's l = 0.5 is the full color, 1 white
 - `dark c`, `light c`, `invert c` (stackable: `light light red`)
 - `blend(t, c1, c2)`: t·c1 + (1 − t)·c2 (so t = 1 gives c1)
 - `cycle(t, c1, c2)`: period 1 in t, c2 at integers, c1 at half-integers
@@ -386,7 +472,9 @@ fsrun project.fs --update-preview       # runs metadata: preview-commands:
 
 Command language (one per line, `#` comments): `select viewer "T"`,
 `select tool "N"`, `deselect tool`, `set parameter x to <expr>`,
-`set tool parameter x to <expr>`, `resize viewer to 800x600`,
+`set tool parameter x to <expr>`,
+`set colorizer parameter x to <expr or "choice">` (the selected viewer's
+colorizer's setting), `resize viewer to 800x600`,
 `set viewer center to <point>`, `set viewer pixel size to <expr>`,
 `click at <point>`, `double-click at <point>`, `drag from <p> to <q>`,
 `press button "L"`, `trigger refresh`, `trigger timer "name"`,

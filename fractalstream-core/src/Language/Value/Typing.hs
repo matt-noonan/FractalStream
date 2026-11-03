@@ -222,8 +222,21 @@ synth env (Syn sr node) = case node of
     x' <- check env RealT x
     (y', z') <- case op of
       OpRGB -> (,) <$> check env RealT y <*> check env RealT z
+      OpHSV -> (,) <$> check env RealT y <*> check env RealT z
+      OpHSL -> (,) <$> check env RealT y <*> check env RealT z
       _   -> (,) <$> check env ColorT y <*> check env ColorT z
     done ColorT (EColor3 op x' y' z')
+
+  EAutocolor mode g p -> do
+    -- The group number has to be written as a number, so that which
+    -- groups a project uses is fixed by its script.
+    g' <- case integerLiteral g of
+      Just _ -> check env IntegerT g
+      Nothing -> advise (synRange g) ("The group number of `" ++ autocolorModeName mode ++ "` has \
+                                      \to be a plain number, like `" ++ autocolorModeName mode ++ "(0, z)`: \
+                                      \it can't be computed.")
+    p' <- check env ComplexT p
+    done ColorT (EAutocolor mode g' p')
 
   EDiff x f -> do
     x' <- synth env x
@@ -521,6 +534,7 @@ describe = \case
     _ -> "this color"
   EApp f _ -> "the result of " ++ f
   EColor3{} -> "this color"
+  EAutocolor{} -> "this color"
   EDiff{} -> "the result of a derivative"
   EText{} -> "this text"
   EJoin{} -> "the result of a join operation"

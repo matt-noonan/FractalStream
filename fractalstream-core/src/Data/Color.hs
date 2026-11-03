@@ -7,6 +7,8 @@ module Data.Color (
       Color
     , colorToRGB
     , rgbToColor
+    , hsvToColor
+    , hslToColor
 -- * Basic colors
     , black
     , red
@@ -36,6 +38,7 @@ module Data.Color (
 import Data.Word
 import Foreign.Storable
 import Foreign.Ptr
+import Numeric.Extras (fmod)
 
 -- | @Color@ represents 24-bit colors, with 8 bits per R//G//B channel.
 data Color = Color Word8 Word8 Word8
@@ -48,6 +51,47 @@ colorToRGB (Color r g b) = (r, g, b)
 -- | Construct a color from its red//green//blue channels
 rgbToColor :: (Word8, Word8, Word8) -> Color
 rgbToColor (r,g,b) = Color r g b
+
+-- | Construct a color from its hue//saturation//lightness components: the
+-- hue is taken mod 1 (0 and 1 are both red), and the saturation and
+-- lightness are clamped to [0, 1]. Lightness 0 is black, 1 is white, and
+-- 0.5 the fully saturated color (at saturation 1). The same as the
+-- scripting language's @hsl(h, s, l)@.
+hslToColor :: (Double, Double, Double) -> Color
+hslToColor (h0, s0, l0) = Color (byte (channel r1)) (byte (channel g1)) (byte (channel b1))
+  where
+    h1 = h0 `fmod` 1
+    h6 = 6 * (if h1 < 0 then 1 + h1 else h1)
+    clamp01 = max 0 . min 1
+    s = clamp01 s0
+    l = clamp01 l0
+    r1 = clamp01 (abs (h6 - 3) - 1)
+    g1 = clamp01 (2 - abs (h6 - 2))
+    b1 = clamp01 (2 - abs (h6 - 4))
+    channel c = l + (1 - abs (2 * l - 1)) * s * (c - 0.5)
+    byte t = fromIntegral (max 0 (min 255 (round (t * 255) :: Int)))
+
+-- | Construct a color from its hue//saturation//value components
+hsvToColor :: (Double, Double, Double) -> Color
+hsvToColor (h0, s, v) = Color r g b
+  where
+    h1 = h0 `fmod` 1
+    h = if h1 < 0 then 1 + h1 else h1
+    c = v * s
+    m = v - c
+    x = c * (1 - abs (((6 * h) `fmod` 2) - 1))
+    (r1, g1, b1)
+      | h < 1 / 6 = (c, x, 0)
+      | h < 2 / 6 = (x, c, 0)
+      | h < 3 / 6 = (0, c, x)
+      | h < 4 / 6 = (0, x, c)
+      | h < 5 / 6 = (x, 0, c)
+      | otherwise = (c, 0, x)
+    -- (rounded, and clamped: a rounding error must not make 255 into 256)
+    byte t = fromIntegral (max 0 (min 255 (round (t * 255) :: Int)))
+    r = byte (r1 + m)
+    g = byte (g1 + m)
+    b = byte (b1 + m)
 
 -- | Black color.
 black  :: Color

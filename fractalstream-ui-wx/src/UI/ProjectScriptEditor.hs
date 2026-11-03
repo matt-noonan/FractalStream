@@ -13,11 +13,12 @@
 module UI.ProjectScriptEditor
   ( editProjectScript
   , ScriptEditorHooks(..)
+  , replaceProject
+  , rebuildColorizers
   ) where
 
 import Data.IORef
 import Data.Unique (Unique, newUnique)
-import Graphics.UI.WXCore.Events (windowGetOnDestroy, windowOnDestroy)
 import FractalStream.Prelude hiding (get)
 
 import Actor.UI (UI)
@@ -26,7 +27,7 @@ import Actor.Layout (CodeString(..))
 
 import Backend (Backend)
 import UI.CodeEditor (stanzaHeaderStyle, editorOffsetMap)
-import UI.Widgets (scriptWidget, wxWatchDynamic)
+import UI.Widgets (scriptWidget, wxWatchDynamic, onOwnDestroy)
 import UI.WxProperties (WxLayout, rememberLayout)
 import Data.DynamicValue
 
@@ -44,6 +45,9 @@ data ScriptEditorHooks = ScriptEditorHooks
     -- ^ Run if closing this editor closes the whole project (see below).
   , sehDraft :: IORef (Maybe (Unique, IO String))
     -- ^ Where the open editor (if any) offers its text, for saving.
+  , sehEditor :: IORef (Maybe (Window ()))
+    -- ^ The open editor's window, if any: rebuilding the project for
+    -- some other reason (a new colorizer) leaves it open.
   , sehMarkUnsaved :: IO ()
   , sehAddMenuBar :: forall a. Frame a -> IO ()
     -- ^ Give the editor its project's menu bar (on macOS, where Command+S
@@ -133,8 +137,10 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
   -- can drive a reactive 'Mapped', giving this editor the same
   -- live syntax-coloring and inline error squiggles a single
   -- viewer's own code editor gets from 'scriptWidget', for free.
+  -- (Checked with the colorizers chosen when the editor was opened.)
+  choices0 <- getDynamic (ensembleColorizerChoices prj)
   srcVar <- newVariable (CodeString srcText)
-  scriptCheck <- newMapped (pure (\(CodeString s) -> checkScript s)) srcVar
+  scriptCheck <- newMapped (pure (\(CodeString s) -> checkScriptWithColorizers choices0 s)) srcVar
   (ce, liveErrorText) <- scriptWidget p scriptCheck
 
   -- While this editor is open, what's in it is the project's script, as
@@ -144,13 +150,15 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
   -- to save, ...) work from here.
   token <- newUnique
   writeIORef sehDraft (Just (token, styledTextCtrlGetText ce))
-  previousOnDestroy <- windowGetOnDestroy f
-  windowOnDestroy f $ do
+  writeIORef sehEditor (Just (objectCast f))
+  onOwnDestroy f $ do
     -- (Unless another editor for this project has taken over since.)
     modifyIORef' sehDraft $ \case
       Just (t, _) | t == token -> Nothing
       other -> other
-    previousOnDestroy
+    modifyIORef' sehEditor $ \case
+      Just w | w == objectCast f -> Nothing
+      other -> other
   void (watchDynamic srcVar (const sehMarkUnsaved))
   sehAddMenuBar f
 
@@ -179,7 +187,8 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
 
   set rebuildBtn [ on command := do
       newText <- styledTextCtrlGetText ce
-      buildEnsembleFromScript newText >>= \case
+      choices <- getDynamic . ensembleColorizerChoices =<< getDynamic currentEnsemble
+      buildEnsembleWithColorizers choices newText >>= \case
         Left err -> do
           set rebuildErrorText [ text := formatScriptError newText err, visible := True ]
           windowReLayout f
@@ -208,13 +217,7 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
           -- defaults; and carry over everything about the project that
           -- isn't in its script (scenarios, metadata, frontends' own
           -- keys), since a script alone has none of it.
-          rememberLayout wxLayout
-          windowChildren projectWindow >>= mapM_ windowDestroy
-          oldEns <- getDynamic currentEnsemble
-          carryOverProjectState oldEns newEns
-          setValue' currentEnsemble newEns
-
-          runEnsemble backend ui newEns
+          replaceProject backend projectWindow wxLayout currentEnsemble ui [] newEns
     ]
 
   set f [ layout := fill $ container p $ fill $ margin 5 $ column 5
@@ -226,6 +229,49 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
         , clientSize := sz 700 500
         ]
   void (windowShow f)
+
+-- | Replace a project's windows (all but the given ones) with those of a
+-- newly built 'Ensemble': remembering how each window was left first, so
+-- that the new ones come back the same way rather than at their
+-- defaults, and carrying over everything about the project that isn't
+-- in its script (scenarios, metadata, values, frontends' own keys). See
+-- the Rebuild button in 'editProjectScript' for why this is
+-- 'windowDestroy' rather than 'windowClose'.
+replaceProject :: Backend -> Window a -> WxLayout -> Variable Ensemble -> UI
+               -> [Window ()] -> Ensemble -> IO ()
+replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns = do
+  rememberLayout wxLayout
+  windowChildren projectWindow >>= mapM_ windowDestroy . filter (`notElem` keep)
+  oldEns <- getDynamic currentEnsemble
+  carryOverProjectState oldEns newEns
+  setValue' currentEnsemble newEns
+  runEnsemble backend ui newEns
+
+-- | Rebuild a project from its script with changed colorizer choices
+-- (by viewer title), then run @after@ on the rebuilt project. The new
+-- project is built at once, so that a choice that doesn't work can be
+-- reported (as 'Left', leaving the project as it was); but its windows
+-- replace the old ones just afterwards, from a one-shot timer, since
+-- this is called from one of the windows it replaces (from a viewer's
+-- menu, say). An open script editor stays open, with its draft.
+rebuildColorizers :: Backend -> Window a -> ScriptEditorHooks -> WxLayout -> Variable Ensemble -> UI
+                  -> (Map.Map String String -> Map.Map String String)
+                  -> (Ensemble -> IO ())
+                  -> IO (Either String ())
+rebuildColorizers backend projectWindow ScriptEditorHooks{sehEditor} wxLayout currentEnsemble ui change after = do
+  prj <- getDynamic currentEnsemble
+  src <- getDynamic (ensembleSourceScript prj)
+  choices <- change <$> getDynamic (ensembleColorizerChoices prj)
+  buildEnsembleWithColorizers choices src >>= \case
+    Left err -> pure (Left (formatScriptError src err))
+    Right newEns -> do
+      replacer <- timer projectWindow [ interval := 1 ]
+      set replacer [ on command := do
+                       set replacer [ enabled := False ]
+                       keep <- maybeToList <$> readIORef sehEditor
+                       replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns
+                       after newEns ]
+      pure (Right ())
 
 -- | Apply 'stanzaHeaderStyle' to every line that starts with @\@@ --
 -- a unified script's @\@setup@\/@\@config@\/@\@viewer@\/@\@tool@ stanza

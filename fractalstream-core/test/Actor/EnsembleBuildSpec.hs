@@ -201,7 +201,7 @@ b : Z <- 2
 @config "Dynamics"
 c : Z <- 3
 
-@viewer "V" var=z
+@viewer "V" var=z colorizer=Manual
 pass
 |] $ \ens -> do
         mcfg <- getDynamic (ensembleConfiguration ens)
@@ -381,7 +381,7 @@ xs : List of Z <- [1, 2, 3]
        \\"Iteration settings\" tab, with the right types and defaults, \
        \even when the script declares no @config at all" $
       shouldBuild [r|
-@viewer "V" var=z
+@viewer "V" var=z colorizer=Manual
 pass
 |] $ \ens -> do
         Just cfg <- getDynamic (ensembleConfiguration ens)
@@ -659,7 +659,7 @@ on refresh:
         , "p : R x R as \"p\" <- (1, 2.5)"
         , "t : Text as \"t\" <- \"hello\""
         , "xs : List of Z as \"xs\" <- [1, 2, 3]"
-        , "@viewer \"V\" var=z"
+        , "@viewer \"V\" var=z colorizer=Manual"
         , "pass"
         ]
       fields <- ensembleFields ens

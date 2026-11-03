@@ -67,6 +67,8 @@ library
 
                        Actor.Tool
                        Actor.Configuration
+                       Actor.Colorizer
+                       Actor.Autocolor
                        Actor.Ensemble
                        Actor.Layout
                        Actor.UI
@@ -127,6 +129,7 @@ library
                        Data.PNG
 
   c-sources: src/FractalStream/find_jemalloc.c
+             src/Actor/autocolor_cache.c
 
   build-depends:       base >=4.8 && <5,
                        random,
@@ -168,6 +171,8 @@ test-suite spec
   hs-source-dirs: test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
+  -- (threaded, as the app is: some tests run lookups on several OS threads)
+  ghc-options:        -threaded -rtsopts -with-rtsopts=-N4
   build-depends:      base >=4.8 && <5
                     , fractalstream-core
                     , hspec
@@ -193,6 +198,9 @@ test-suite spec
                     , Actor.EventSpec
                     , Actor.ScriptSpec
                     , Actor.EnsembleBuildSpec
+                    , Actor.ColorizerSpec
+                    , Actor.AutocolorSpec
+                    , Task.ConcurrentSpec
                     , Actor.GoldenSpec
                     , Actor.OverlaySpec
                     , FractalStream.SettingsSpec

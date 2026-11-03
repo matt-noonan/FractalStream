@@ -1,26 +1,19 @@
 script: |
   @common
-  # iterate z ⟼ expression(z) until exit_condition(z), starting from
+  # iterate z ⟼ f(z) until z escapes, starting from
   # initialZ(C) in the parameter plane
-  let expression(z) = z^2 + C
-  let exit_condition(z) = z escapes
+  let f(z) = z^2 + C
   let initialZ(C) = 0
-  # colors can use color names like `red` or `black`, or color functions
-  # involving the variables `z`, `C`, and `iterations`
-  let on_success(z) = rainbow(iterations / 20)
-  let on_failure(z) = black
 
   @config "Configuration"
   C : C as "Selected value of C:" <- -0.1226 + 0.7449i
 
   @viewer "Parametric complex dynamics parameter plane" var=C
   z := initialZ(C)
-  iterate z -> expression(z) until exit_condition(z)
-  color <- if stuck then on_failure(z) else on_success(z)
+  iterate z -> f(z) until z escapes
 
   @viewer "Parametric complex dynamics"
-  iterate z -> expression(z) until exit_condition(z)
-  color <- if stuck then on_failure(z) else on_success(z)
+  iterate z -> f(z) until z escapes
 
   @tool "Trace" shortcut=t for="Parametric complex dynamics"
   on refresh:
@@ -31,18 +24,15 @@ script: |
     use white for line
     erase
     prevZ := z
-    until exit_condition(z):
+    until z escapes:
       prevZ <- z
       draw point at z
-      z <- expression(z)
+      z <- f(z)
       draw line from z to prevZ
 metadata:
   title: Iterate a family of functions
   description: |
-    Like "Iterate a function", but for a family of functions depending on a
-    parameter C: a parameter plane shows how each C behaves, and a dynamical
-    plane shows the selected C's dynamics. Edit the family and the colors at
-    the top of the script.
+    Like "Iterate a function", but for a family of functions depending on a parameter C: a parameter plane shows how each C behaves, and a dynamical plane shows the selected C's dynamics. Edit the family and initial condition at the top of the script.
   preview-commands: |
     capture viewer "Parametric complex dynamics parameter plane" as preview
   preview: |

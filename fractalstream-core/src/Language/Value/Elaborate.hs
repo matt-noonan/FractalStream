@@ -161,7 +161,13 @@ elabOwn t (Syn (sr, _) node) = case node of
   EColor3 op x y z -> same sr t ColorType $ case op of
     OpBlend -> Blend <$> el RealType x <*> el t y <*> el t z
     OpRGB   -> RGB <$> el RealType x <*> el RealType y <*> el RealType z
+    OpHSV   -> join (hueColor sr HSV <$> el RealType x <*> el RealType y <*> el RealType z)
+    OpHSL   -> join (hueColor sr HSL <$> el RealType x <*> el RealType y <*> el RealType z)
     OpCycle -> el RealType x >>= \x' -> cycleColors sr x' y z
+
+  EAutocolor mode g p -> case integerLiteral g of
+    Just n -> same sr t ColorType $ Autocolor mode (fromInteger n) <$> el ComplexType p
+    Nothing -> inconsistent sr
 
   -- replaced by the derivative itself during typing
   EDiff{} -> inconsistent sr
@@ -294,6 +300,73 @@ cycleColors sr t c1 c2 = do
           expr = ITE RealType (argVar `LTF` 0.5) (2 * argVar) (2 - 2 * argVar)
       blend <- Blend expr <$> elaborate ColorType c1 <*> elaborate ColorType c2
       pure (LocalLet argName RealType pf argVal ColorType blend)
+
+data HueModel = HSV | HSL
+
+type HueTriple = 'Pair 'RealT ('Pair 'RealT 'RealT)
+type HueArgEnv env = '("#hue-arg", HueTriple) ': env
+type HuePartsEnv env = '("#hue-parts", HueTriple) ': HueArgEnv env
+
+-- | @hsv(h, s, v)@ or @hsl(h, s, l)@, as an 'RGB' color: the hue is taken
+-- mod 1 (so 0 and 1 are both red), and the other two are clamped to
+-- [0, 1]. The same as 'Data.Color.hsvToColor' and 'Data.Color.hslToColor'.
+--
+-- The arguments are bound once, and then the hue (times 6, mod 6), the
+-- saturation, and the value or lightness, ready to use, are bound again,
+-- so neither the arguments nor their clamping are computed more than once.
+hueColor :: forall env
+          . KnownEnvironment env
+         => SourceRange
+         -> HueModel
+         -> Value '(env, 'RealT)
+         -> Value '(env, 'RealT)
+         -> Value '(env, 'RealT)
+         -> TC (Value '(env, 'ColorT))
+hueColor sr model h s w = do
+  let argName = Proxy @"#hue-arg"
+      partsName = Proxy @"#hue-parts"
+      tripleType = PairType RealType (PairType RealType RealType)
+      first3 :: forall e. KnownEnvironment e
+             => Value '(e, HueTriple) -> Value '(e, 'RealT)
+      first3 = ProjV1 tripleType
+      second3, third3 :: forall e. KnownEnvironment e
+                      => Value '(e, HueTriple) -> Value '(e, 'RealT)
+      second3 = ProjV1 (PairType RealType RealType) . ProjV2 tripleType
+      third3 = ProjV2 (PairType RealType RealType) . ProjV2 tripleType
+      triple :: forall e. KnownEnvironment e
+             => Value '(e, 'RealT) -> Value '(e, 'RealT) -> Value '(e, 'RealT)
+             -> Value '(e, HueTriple)
+      triple a b c = PairV tripleType a (PairV (PairType RealType RealType) b c)
+      clamp01 :: forall e. KnownEnvironment e => Value '(e, 'RealT) -> Value '(e, 'RealT)
+      clamp01 x = ITE RealType (LTF x 0) 0 (ITE RealType (LTF 1 x) 1 x)
+  case lookupEnv' argName (envProxy (Proxy @env)) of
+    Found' {} -> throwError (internal $ AlreadyDefined sr (symbolVal argName))
+    Absent' pf -> recallIsAbsent pf $ do
+      let argVar :: Value '(HueArgEnv env, HueTriple)
+          argVar = Var argName tripleType bindingEvidence
+          parts :: Value '(HueArgEnv env, HueTriple)
+          parts = triple (6 * ModF (first3 argVar) 1)
+                         (clamp01 (second3 argVar))
+                         (clamp01 (third3 argVar))
+      case lookupEnv' partsName (envProxy (Proxy @(HueArgEnv env))) of
+        Found' {} -> throwError (internal $ AlreadyDefined sr (symbolVal partsName))
+        Absent' pf' -> recallIsAbsent pf' $ do
+          let partsVar :: Value '(HuePartsEnv env, HueTriple)
+              partsVar = Var partsName tripleType bindingEvidence
+              hue6 = first3 partsVar
+              sat = second3 partsVar
+              w' = third3 partsVar
+              -- the fully saturated color of this hue: each channel in [0, 1]
+              red' = clamp01 (abs (hue6 - 3) - 1)
+              green' = clamp01 (2 - abs (hue6 - 2))
+              blue' = clamp01 (2 - abs (hue6 - 4))
+              channel :: Value '(HuePartsEnv env, 'RealT) -> Value '(HuePartsEnv env, 'RealT)
+              channel c = case model of
+                HSV -> w' * (1 - sat + sat * c)
+                HSL -> w' + (1 - abs (2 * w' - 1)) * sat * (c - 0.5)
+              color = RGB (channel red') (channel green') (channel blue')
+          pure (LocalLet argName tripleType pf (triple h s w) ColorType
+                  (LocalLet partsName tripleType pf' parts ColorType color))
 
 wheel :: forall env
        . KnownEnvironment env

@@ -39,6 +39,7 @@ module Actor.Event
 import FractalStream.Prelude
 
 import Language.Type
+import Actor.Autocolor (AutocolorLookup)
 import Language.Environment
 import Language.Typecheck
 import Language.Code
@@ -258,7 +259,9 @@ buildHandlerWith exec (SomeContext ctx) script = do
 -- uses 'defaultToolRunner'; the LLVM backend supplies one that JIT-compiles the
 -- handlers.
 newtype ToolRunner = ToolRunner
-  { runTool :: (Int -> DrawSink)
+  { runTool :: AutocolorLookup
+              -- ^ the project's autocolor tables (see "Actor.Autocolor")
+            -> (Int -> DrawSink)
             -> Int
             -> SomeContext EventArgument_
             -> ParsedToolScript
@@ -267,7 +270,7 @@ newtype ToolRunner = ToolRunner
 -- | The interpreter tool runner: evaluate draw values through the pure
 -- interpreter and emit them into the given layer's 'DrawSink'.
 defaultToolRunner :: ToolRunner
-defaultToolRunner = ToolRunner $ \sink layer ctx script ->
+defaultToolRunner = ToolRunner $ \_ sink layer ctx script ->
   buildHandlerWith (interpretedToolExec (sink layer)) ctx script
 
 -- | Run tool handlers in the interpreter, drawing into the given sink.

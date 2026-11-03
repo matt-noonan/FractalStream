@@ -28,6 +28,7 @@ import FractalStream.Prelude
 
 import Language.Value.Typecheck (ParsedValue)
 import Language.Value.Parser (valueGrammar, arithGrammar)
+import Language.Value.Syntax (textLiteral)
 import Data.Char (isDigit)
 import Language.Parser hiding (many)
 import Language.Parser.Tokenizer (Token(..), tokenizeWithIndentation)
@@ -52,6 +53,9 @@ data Command
 
   | SetParameter String ParsedValue
   | SetToolParameter String ParsedValue
+  | SetColorizerParameter String (Either String ParsedValue)
+    -- ^ A setting of the current viewer's colorizer, to a quoted choice
+    -- (as its field shows it, e.g. @"Two colors"@: 'Left') or a value.
 
   | ResizeViewer Int Int
   | SetViewerCenter Point
@@ -119,6 +123,9 @@ scenarioGrammar = mdo
     SetParameter <$> (kw "set" *> kw "parameter" *> ident') <*> (kw "to" *> value <* nl)
   setToolParameter <- rule $
     SetToolParameter <$> (kw "set" *> kw "tool" *> kw "parameter" *> ident') <*> (kw "to" *> value <* nl)
+  setColorizerParameter <- rule $
+    SetColorizerParameter <$> (kw "set" *> kw "colorizer" *> kw "parameter" *> ident')
+                          <*> (kw "to" *> (asChoice <$> value) <* nl)
 
   -- "800x600" tokenizes as a single number followed by one identifier
   -- token "x600" (identifiers here may contain digits after the first
@@ -171,7 +178,7 @@ scenarioGrammar = mdo
 
   command <- ruleChoice
     [ selectViewer, selectTool, deselectTool
-    , setParameter, setToolParameter
+    , setParameter, setToolParameter, setColorizerParameter
     , resizeViewer, setViewerCenter, setViewerPixelSize
     , clickAt, doubleClickAt, dragFromTo
     , pressButton, triggerRefresh, triggerTimer
@@ -182,3 +189,8 @@ scenarioGrammar = mdo
     ]
 
   rule (token Indent *> many command <* token Dedent)
+
+-- | A text literal, as the text of a field (a choice's label, say); any
+-- other value, as a value.
+asChoice :: ParsedValue -> Either String ParsedValue
+asChoice pv = maybe (Right pv) Left (textLiteral pv)

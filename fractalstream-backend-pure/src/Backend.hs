@@ -9,7 +9,7 @@ import Backend.Pure
 withBackend :: (Backend -> IO a) -> IO a
 withBackend action =
   action Backend
-    { bViewerCompiler    = ViewerCompiler interpretViewer
+    { bViewerCompiler    = ViewerCompiler (const interpretViewer)
     , bToolRunnerFactory = defaultToolRunnerFactory
     , bToolRunner        = defaultToolRunner
     }

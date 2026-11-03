@@ -8,24 +8,26 @@ let `[internal] vanishing radius` = vanishing_radius in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
               block:
-                let `[internal] fresh #17` = 0 in:
-                  let `[internal] fresh #18` = [internal] iteration limit in:
+                let `[internal] fresh #20` = 0 in:
+                  let `[internal] fresh #21` = [internal] iteration limit in:
                     block:
-                      if (!([internal] escape radius < |z|) and ([internal] fresh #17 < [internal] fresh #18)) then:
-                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #17 < [internal] fresh #18)):
+                      if (!([internal] escape radius < |z|) and ([internal] fresh #20 < [internal] fresh #21)) then:
+                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #20 < [internal] fresh #21)):
                           block:
                             set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                            set `[internal] fresh #17` := ([internal] fresh #17 + 1)
+                            set `[internal] fresh #20` := ([internal] fresh #20 + 1)
                       else:
                         no-op
-                      set `[internal] iteration count` := [internal] fresh #17
-                      set `[internal] stuck` := ([internal] fresh #17 = [internal] fresh #18)
-                if [internal] stuck then:
+                      set `[internal] iteration count` := [internal] fresh #20
+                      set `[internal] stuck` := ([internal] fresh #20 = [internal] fresh #21)
+                block:
                   block:
-                    set `color` := Color 0 0 0
-                else:
-                  block:
-                    set `color` := blend((([internal] iteration count:R / max_iters:R) ^ p), blend(0.333, Color 0 0 0, Color 0 0 255), Color 255 255 255)
+                    if [internal] stuck then:
+                      block:
+                        set `color` := [colorizer] Julia set: gives_up
+                    else:
+                      block:
+                        set `color` := blend((([internal] iteration count:R / max_iters:R) ^ [colorizer] Julia set: brightness), [colorizer] Julia set: near, [colorizer] Julia set: far)
 
 
 --- tool Trace
@@ -41,22 +43,22 @@ let `[internal] vanishing radius` = vanishing_radius in:
                 let `prevZ` = z in:
                   block:
                     erase
-                    let `[internal] fresh #16` = 0 in:
-                      let `[internal] fresh #17` = [internal] iteration limit in:
+                    let `[internal] fresh #19` = 0 in:
+                      let `[internal] fresh #20` = [internal] iteration limit in:
                         block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #16 < [internal] fresh #17)):
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #19 < [internal] fresh #20)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #19 < [internal] fresh #20)):
                               block:
                                 block:
                                   set `prevZ` := z
                                   draw point at z:R^2
                                   set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                                   draw line from z:R^2 to prevZ:R^2
-                                set `[internal] fresh #16` := ([internal] fresh #16 + 1)
+                                set `[internal] fresh #19` := ([internal] fresh #19 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #16
-                          set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
+                          set `[internal] iteration count` := [internal] fresh #19
+                          set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -71,21 +73,21 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   let `prevZ` = z in:
                     block:
                       erase
-                      let `[internal] fresh #19` = 0 in:
-                        let `[internal] fresh #20` = [internal] iteration limit in:
+                      let `[internal] fresh #22` = 0 in:
+                        let `[internal] fresh #23` = [internal] iteration limit in:
                           block:
-                            if (!([internal] escape radius < |z|) and ([internal] fresh #19 < [internal] fresh #20)) then:
-                              do-while (!([internal] escape radius < |z|) and ([internal] fresh #19 < [internal] fresh #20)):
+                            if (!([internal] escape radius < |z|) and ([internal] fresh #22 < [internal] fresh #23)) then:
+                              do-while (!([internal] escape radius < |z|) and ([internal] fresh #22 < [internal] fresh #23)):
                                 block:
                                   block:
                                     set `prevZ` := z
                                     draw point at z:R^2
                                     set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
                                     draw line from z:R^2 to prevZ:R^2
-                                  set `[internal] fresh #19` := ([internal] fresh #19 + 1)
+                                  set `[internal] fresh #22` := ([internal] fresh #22 + 1)
                             else:
                               no-op
-                            set `[internal] iteration count` := [internal] fresh #19
-                            set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
+                            set `[internal] iteration count` := [internal] fresh #22
+                            set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
 
 

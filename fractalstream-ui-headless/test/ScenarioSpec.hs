@@ -87,6 +87,20 @@ spec = describe "parseScenario" $ do
         pv `shouldResolveTo` 2
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
+  it "parses set colorizer parameter, to a value or a quoted choice" $ do
+    onlyCommand [r|set colorizer parameter period to 40
+|] $ \case
+      SetColorizerParameter n (Right pv) -> do
+        n `shouldBe` "period"
+        pv `shouldResolveTo` 40
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+    onlyCommand [r|set colorizer parameter palette to "Two colors"
+|] $ \case
+      SetColorizerParameter n (Left choice) -> do
+        n `shouldBe` "palette"
+        choice `shouldBe` "Two colors"
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
   it "parses resize viewer" $
     onlyCommand [r|resize viewer to 800x600
 |] $ \case
@@ -238,6 +252,7 @@ describeShape = \case
   DeselectTool         -> "DeselectTool"
   SetParameter{}       -> "SetParameter"
   SetToolParameter{}   -> "SetToolParameter"
+  SetColorizerParameter{} -> "SetColorizerParameter"
   ResizeViewer{}       -> "ResizeViewer"
   SetViewerCenter{}    -> "SetViewerCenter"
   SetViewerPixelSize{} -> "SetViewerPixelSize"

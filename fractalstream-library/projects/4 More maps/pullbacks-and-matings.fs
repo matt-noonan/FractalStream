@@ -1,7 +1,6 @@
 script: |
   @config "Configuration"
   C : C as "C = " <- 0.5000000000 + 0.8660254038*i
-  p : R as "Brightness: " <- 0.5
   color1 : Color as "Selected point" <- white
 
   @common
@@ -12,17 +11,9 @@ script: |
   @viewer "C-plane" var=C center=0 pixelSize=1/128
   z := C
   iterate z -> f(z) until z escapes
-  if stuck:
-    color <- black
-  else:
-    color <- rainbow (iterations / 20)
 
   @viewer "Dynamics" center=0 pixelSize=1/128
   iterate z -> f(z) until z escapes
-  if stuck:
-    color <- black
-  else:
-    color <- dark rainbow (iterations / 20)
 
   @tool "Preimages" for=Dynamics shortcut="i" drawLayer=10
   pre1 : C as "Value" <- 0

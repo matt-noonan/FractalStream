@@ -18,6 +18,8 @@ module Language.Value.Syntax
   , exprType
   , stripTypes
   , exprNames
+  , textLiteral
+  , integerLiteral
   ) where
 
 import qualified Data.Set as Set
@@ -57,7 +59,7 @@ data UnOp
   | OpDark | OpLight | OpInvert
   deriving (Eq, Show)
 
-data Color3Op = OpBlend | OpCycle | OpRGB
+data Color3Op = OpBlend | OpCycle | OpRGB | OpHSV | OpHSL
   deriving (Eq, Show)
 
 data ExprF r
@@ -73,6 +75,11 @@ data ExprF r
   | EApp String r
     -- ^ A named unary builtin function (@sin@, @re@, @round@, @rainbow@, ...)
   | EColor3 Color3Op r r r
+  | EAutocolor AutocolorMode r r
+    -- ^ @autocolor(n, p)@, @nearest_autocolor(n, p)@, or
+    -- @get_autocolor(n, p)@ (by mode); see "Actor.Autocolor".
+    -- The group number @n@ has to be an integer literal, which typing
+    -- checks (see 'integerLiteral')
   | EDiff r r
   | EText [r]
   | EJoin [r]
@@ -124,3 +131,13 @@ exprNames (Syn _ node) = here <> foldMap exprNames node
       ECall f _ -> Set.singleton f
       EDerivCall f _ _ -> Set.singleton f
       _ -> Set.empty
+
+-- | The value of an expression that's just an integer literal.
+integerLiteral :: Syn ExprF a -> Maybe Integer
+integerLiteral (Syn _ (ELit _ (SomeHaskellType IntegerType n))) = Just (fromIntegral n)
+integerLiteral _ = Nothing
+
+-- | The text of an expression that's just a text literal (@"like this"@).
+textLiteral :: Syn ExprF a -> Maybe String
+textLiteral (Syn _ (ELit _ (SomeHaskellType TextType s))) = Just s
+textLiteral _ = Nothing

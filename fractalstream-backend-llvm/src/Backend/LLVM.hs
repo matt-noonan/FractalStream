@@ -32,7 +32,7 @@ import qualified LLVM.Relocation as Reloc
 import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
-import Control.Exception (bracket, finally)
+import Control.Exception (bracket, finally, uninterruptibleMask_)
 
 import Foreign.LibFFI
 import Foreign.C.Types
@@ -57,6 +57,7 @@ import Data.Color
 import Data.IORef (IORef, newIORef, modifyIORef', readIORef)
 import qualified Data.Map.Strict as Map
 
+import Actor.Autocolor (AutocolorLookup(..), autocolorCacheLookup)
 import Foreign hiding (void)
 
 import Text.Disassembler.X86Disassembler
@@ -395,10 +396,11 @@ withPrepEnvProxy (Just (PrepScript proxy _))   k = k proxy
 
 withJittedViewer :: forall env t. (MissingViewerArgs env, KnownEnvironment env)
                  => LLVMJit
+                 -> AutocolorLookup
                  -> Maybe (PrepScript env)
                  -> Code (ViewerEnv env)
                  -> (ViewerFunction env -> IO t) -> IO t
-withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript code0 action = do
+withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocolor mPrepScript code0 action = do
   -- Do some basic AST-level optimizations first
   let code = transformValues backendRewrites code0
   name <- modifyMVar nextId (\n -> pure (n + 1, "kernel_" ++ show n))
@@ -448,8 +450,16 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
             -- kernel call; bracket returns it even if AsyncCancelled is thrown.
             -- The pool (and the arena lifetime) is owned by withJIT, not here,
             -- because rendering outlives this action (see LLVMJit).
+            -- The arena goes back with exceptions masked *uninterruptibly*:
+            -- 'writeChan' can block for a moment (on other threads
+            -- returning arenas), and with 'bracket''s ordinary
+            -- (interruptible) mask an asynchronous exception there --
+            -- such as cancelling a tile's render, which happens on every
+            -- redraw -- would abandon the release and lose the arena for
+            -- good. Lost arenas made quitting hang, waiting to free them.
             action $ ViewerFunction $ \ViewerArgs{..} ->
-              bracket (readChan arenaPool) (writeChan arenaPool) $ \arena -> do
+              bracket (readChan arenaPool) (uninterruptibleMask_ . writeChan arenaPool) $ \arena ->
+              withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir -> do
                 (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
                 (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
                 let nPixels = fromIntegral vaWidth * fromIntegral vaHeight :: Int
@@ -485,6 +495,8 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) mPrepScript c
                                : argPtr   arena
                                : argInt32 (fromIntegral arenaCapacity)
                                : argPtr   issuesPtr
+                               : argPtr   (castFunPtrToPtr autocolorCacheLookup)
+                               : argPtr   autocolorDir
                                : argCDouble (CDouble $ fst vaPoint)
                                : argCDouble (CDouble $ snd vaPoint)
                                : argCDouble (CDouble $ fst vaStep)
@@ -526,6 +538,7 @@ foreign import ccall "wrapper"
 foreign import ccall "wrapper"
   wrapFormat :: (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32)
              -> IO (FunPtr (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32))
+
 
 -- | The number formatter compiled tool code calls for 'ToText' (see
 -- 'Backend.LLVM.Operand.ArenaState'): writes the text form of an integer
@@ -587,8 +600,8 @@ withDrawVTablePtrs sink action = do
 
 -- | Execute a tool event handler by JIT-compiling it and calling it, with draw
 -- commands routed back to the given sink.  Compiles once per invocation for now.
-compiledToolExec :: LLVMJit -> DrawSink -> ToolExec
-compiledToolExec (dylib, session, compileLayer, nextId, _) sink =
+compiledToolExec :: LLVMJit -> AutocolorLookup -> DrawSink -> ToolExec
+compiledToolExec (dylib, session, compileLayer, nextId, _) lookupAutocolor sink =
   \envp code -> do
     -- Compile the handler ONCE, when the dispatcher is built.  OrcJIT's
     -- 'addModule' hands a clone of the module to the session-wide JIT, so the
@@ -628,7 +641,7 @@ compiledToolExec (dylib, session, compileLayer, nextId, _) sink =
     pure $ \ctx -> snapshotEventArgs ctx >>= \case
       Nothing -> pure ()
       Just haskArgs ->
-        let attempt capacity = runToolOnce fn sink capacity ctx haskArgs >>= \case
+        let attempt capacity = runToolOnce fn lookupAutocolor sink capacity ctx haskArgs >>= \case
               ToolSucceeded -> pure ()
               ToolBadIndex -> fail
                 "A list index was out of range, so this tool's changes were discarded."
@@ -656,12 +669,13 @@ data ToolRun = ToolSucceeded | ToolOverflowed | ToolBadIndex
 -- commands are held back until it has finished, and its variable changes
 -- are only written back after a successful run, so after an overflow the
 -- handler can simply be run again with a bigger arena.
-runToolOnce :: FunPtr () -> DrawSink -> Int
+runToolOnce :: FunPtr () -> AutocolorLookup -> DrawSink -> Int
             -> Context EventArgument_ env -> Context HaskellValue env
             -> IO ToolRun
-runToolOnce fn sink capacity ctx haskArgs = do
+runToolOnce fn lookupAutocolor sink capacity ctx haskArgs = do
   drawn <- newIORef []
   withDrawVTablePtrs (bufferedSink drawn sink) $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP) ->
+    withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir ->
     bracket (mallocBytes capacity) free $ \arena ->
     allocaBytes 1 $ \overflowPtr -> do
       poke overflowPtr (0 :: Word8)
@@ -678,6 +692,8 @@ runToolOnce fn sink capacity ctx haskArgs = do
             , argPtr (castFunPtrToPtr rectFP)
             , argPtr (castFunPtrToPtr writeFP)
             , argPtr (castFunPtrToPtr formatFP)
+            , argPtr (castFunPtrToPtr autocolorCacheLookup)
+            , argPtr autocolorDir
             , argPtr arena
             , argInt32 (fromIntegral capacity)
             , argPtr overflowPtr ]
@@ -714,8 +730,8 @@ bufferedSink ref sink = DrawSink
 
 -- | A 'ToolRunner' that JIT-compiles tool event handlers via this JIT session.
 llvmToolRunner :: LLVMJit -> ToolRunner
-llvmToolRunner jit = ToolRunner $ \sink layer ctx handlers ->
-  buildHandlerWith (compiledToolExec jit (sink layer)) ctx handlers
+llvmToolRunner jit = ToolRunner $ \lookupAutocolor sink layer ctx handlers ->
+  buildHandlerWith (compiledToolExec jit lookupAutocolor (sink layer)) ctx handlers
 
 -- | Compile a closed script to a 'JITFun' and hand it to the given
 -- continuation -- generic over the input environment and a single

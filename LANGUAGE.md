@@ -104,9 +104,72 @@ is a shade of purple.
 
 Custom colors can be made with the `rgb(r,g,b)` operation, where
 `r`, `g`, and `b` are values representing real numbers from `0` to `1`.
+Colors can also be made from a hue, with `hsv(h, s, v)` (hue, saturation,
+and value) or `hsl(h, s, l)` (hue, saturation, and lightness). The hue goes
+around the color wheel once as `h` goes from `0` to `1`: `0` is red, `1/3`
+green, `2/3` blue, and `1` red again (so `hsv(arg z / (2 pi), 1, 1)` colors
+by the angle of `z`). The saturation, value, and lightness run from `0` to
+`1` (anything outside that is treated as `0` or `1`). With `hsv`, value `1`
+is the brightest the color gets, and `0` is black. With `hsl`, lightness
+`0.5` is the full color, `0` is black, and `1` is white; saturation `0`
+gives a grey, in either.
 Two different colors can be blended by `blend(t, c1, c2)` where `t`
 is a real number from `0` to `1` representing the percentage to take
 from `c1`, with `(1 - t)` taken from `c2`.
+
+#### Automatic colors
+
+`autocolor(n, p)` gives each distinct point `p` a color of its own, the
+first time it sees that point. It's for coloring by points you don't
+know in advance, such as the root a Newton's method converges to:
+
+```
+lastZ ≔ 0
+repeat:
+  lastZ ⭠ z
+  z ⭠ z - p(z) / p'(z)
+until z = lastZ
+color ⭠ if stuck then black else autocolor(0, z)
+```
+
+Points are kept in numbered *groups*; `n` is the group's number, and has
+to be written as a number (`autocolor(0, z)`, not `autocolor(k, z)`).
+Viewers that use the same group share its colors, so a parameter plane
+and a dynamical plane can agree on what color each root is. A point gets
+the color of the nearest point in its group within the group's tolerance
+(0.001 to begin with), or else a new color.
+Two other functions look a point up the same way, but never add one:
+
+- `nearest_autocolor(n, p)` gives a point that isn't near any point in
+  the group the group's "miss" color (grey to begin with).
+- `get_autocolor(n, p)` gives it a blend of all the group's colors
+  instead, each weighted by how near its point is (by one over the
+  squared distance): the more useful picture in a viewer that only reads
+  colors other viewers found, like a parameter plane, or with a locked
+  group. (A group with no points gives the miss color.)
+
+A group stops adding points once it's locked, or once it has 256 of them;
+`autocolor` then works like `get_autocolor`, or, if the group's "Blend when
+no matching point" setting (in the Autocolor window) is off, like
+`nearest_autocolor`.
+
+Which point gets which color depends on the order the points are first
+seen in, and the app draws in pieces, on several threads at once: so
+**the same script can give the same points different colors each time it
+starts from scratch**. Saving a project saves its groups' colors, and
+then they stay put.
+
+"Autocolor settings..." in a viewer's Colorizer menu (or the "Open
+autocolor settings..." button in the Autocolor colorizer's settings) opens
+a window for a project's groups:
+pick a group to see its points and their colors, and change a point or
+its color, add or delete points, clear the group, lock it, change its
+tolerance or the color it gives points it doesn't have, or choose whether
+it blends its colors for those points.
+
+Only the LLVM backend (the default) can compute `autocolor`,
+`nearest_autocolor`, and `get_autocolor`. They can be used in viewers and
+in tools.
 
 ## Script commands
 
@@ -403,8 +466,8 @@ else:
 ### Output a value from a script
 
 Some scripts will need to produce one or more values as a result. For
-example, scripts that are used to draw pictures must output a value
-to determine which color to draw. This is done using normal assignment
+example, scripts that are used to draw pictures output a value to
+determine which color to draw. This is done using normal assignment
 operators:
 
 ```
@@ -425,12 +488,137 @@ color ⭠ if stuck then black else white
 
 Different scripts may have different expected outputs.
 
-- Viewer scripts are expected to set the `color` variable. Changes
-to other variables are ignored.
+- Viewer scripts produce the `color` variable. Changes to other
+variables are ignored. A viewer script doesn't have to set `color`
+itself: if it doesn't, a *colorizer* sets it (see below).
 
 - Event handlers in tool scripts can set any configuration value. This
 is useful for building tools that directly manipulate the configuration,
 such as selecting a parameter value.
+
+### Colorizers
+
+A viewer script often only needs to say what to compute, like
+
+```
+iterate z ⟼ z² + C until z escapes
+```
+
+and leave the coloring to a *colorizer*: a small piece of script that
+runs at the end of the viewer's code and sets `color`. Each viewer has
+one, which can be changed from the viewer's menu (under "Colorizer"),
+and which the project file remembers.
+
+When nothing says which colorizer a viewer uses, it gets `Manual` if its
+script sets `color` itself, and `Rainbow` if it doesn't. A viewer can
+name its own default with the `colorizer=` attribute:
+
+```
+@viewer "Julia set" colorizer=Smooth
+iterate z ⟼ z² + C until z escapes
+```
+
+The built-in colorizers are:
+
+| Colorizer | Parameters | What it does |
+|---|---|---|
+| `Manual` | | Nothing: the viewer's script sets `color`. |
+| `Rainbow` | `t = iterations / color_speed` | Points that escape cycle through the rainbow (or the Arenberg wheel); the rest are black. |
+| `Escape time` | `t = iterations / period` | Like `Rainbow`, with a choice of palettes (or two colors of your own), optionally shaded by iteration count. |
+| `Smooth` | `z` | Continuous color by escape time, without bands, from a choice of palettes. |
+| `Binary decomposition` | `z` | Smooth or banded color by escape time, in different colors where `z` ends up in the upper and lower half-planes; this outlines the external rays. |
+| `Glow` | | Blends between two colors by how close the iteration count came to the iteration limit. |
+| `Autocolor` | `z` | Gives each point `z` ends up at its own color, the first time it's seen (see "Automatic colors"), shaded by iteration count: the basins of a Newton's method, without knowing its roots. Every viewer using it shares the same colors. Turn off its "Allow new autocolor entries" setting (`allow_new ⭠ false` in a `coloring:` block) for a viewer that should only use the colors other viewers found, like a parameter plane, whose points are all different; such a viewer blends the colors for a point near none of them, or, with "Blend when no matching point" (`blend_misses`) off, gives it the group's miss color. |
+
+Points where the loop gave up (`stuck`) are black by default; most
+colorizers have a "Color when the loop gives up" setting.
+
+#### Arguments
+
+Some colorizers have parameters, written in parentheses after the name.
+A parameter that isn't given an argument uses its default value, if it
+has one, or else the viewer's variable of the same name. So `Smooth`
+uses the viewer's `z`, and `Smooth(w)` uses `w` instead; `Rainbow`
+colors by iteration count, and `Rainbow(arg z / (2π))` colors by the
+angle of `z`, which is a good way to show the basins of a Newton's
+method:
+
+```
+@viewer "Newton's method" colorizer="Rainbow(arg z / (2π))"
+lastZ := 0
+repeat:
+  lastZ ⭠ z
+  z ⭠ z - (z³ - 1) / (3 z²)
+until z = lastZ
+```
+
+Arguments can be any expressions, using any of the viewer's variables
+and functions. Quote the attribute's value if it has anything but a name
+in it.
+
+The viewer menu's "Colorizer" submenu lists the colorizers the viewer can
+use, with the one in use checked. Picking one with parameters uses the
+viewer's variables of the same names, if it has them all; if not (its item
+ends in "..."), it asks for the arguments first. "Arguments..." changes the
+arguments of the colorizer in use.
+
+#### Colorizer settings
+
+A colorizer's settings (like `Rainbow`'s "Iterations per color cycle")
+appear in a tab of the configuration window, and each viewer has its own
+copy of them. A viewer can change their defaults with a `coloring:`
+block at the start of its script:
+
+```
+@viewer "Mandelbrot set" var=C colorizer=Smooth
+coloring:
+  palette ⭠ "Two colors"
+  color1 ⭠ red
+  period ⭠ 100
+z ≔ 0
+iterate z ⟼ z² + C until z escapes
+```
+
+A setting with a list of choices (like `palette`) is given its choice's
+name, in quotes. The `coloring:` block is for the viewer's default
+colorizer: if another one is chosen from the menu, the block is ignored.
+"Reset to defaults" in the configuration window goes back to the values
+in the `coloring:` block, and to the viewer's default colorizer.
+
+#### Writing a colorizer
+
+A project can define colorizers of its own, with `@colorizer` stanzas.
+A `@colorizer` stanza has the colorizer's settings, declared like a
+`@config` stanza's variables, followed by its code as a block called
+`colorize`:
+
+```
+@colorizer "Smooth gradient" description="Smooth color between two colors."
+period : ℝ as "Color period" ⭠ 20
+inside : Color as "Interior color" ⭠ black
+
+define colorize(z):
+  if z escaped:
+    m ≔ iterations + 1 - log (log |z| / log escape_radius) / log 2
+    color ⭠ blend (cos (π m / period)², dark blue, light yellow)
+  else:
+    color ⭠ inside
+```
+
+Its code runs at the end of the viewer's code, so it can use the
+viewer's `iterations` and `stuck`, the configuration, and anything
+defined in a `@common` stanza. Its parameters work like a code block's
+(see "Defining code to run"), and can have default values, which can use
+the colorizer's settings and its earlier parameters:
+
+```
+define colorize(t = iterations / period, u = t + offset):
+```
+
+The names a colorizer declares (its settings, parameters, and variables)
+are its own: they can't clash with the viewer's, even if the viewer uses
+the same names. A `@colorizer` can have the same name as a built-in one,
+and is used instead of it.
 
 ### Tool scripts
 

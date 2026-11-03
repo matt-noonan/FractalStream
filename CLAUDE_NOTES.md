@@ -78,6 +78,16 @@ trig functions, boolean ops, comparisons, if-then-else, color ops, list ops, tex
 
 Key constructors: `Const`, `Var`, `LocalLet`, `ITE`, `AddF/AddC/AddI`, `RGB`, `Blend`, etc.
 
+Some color syntax has no node of its own: elaboration (`Language.Value.Elaborate`)
+rewrites it into simpler values, binding its arguments with `LocalLet` under
+`#`-prefixed names no script can write. `cycle(t, c1, c2)` (`cycleColors`) and the
+wheels like `rainbow(t)` (`wheel`) become `Blend`s; `hsv(h, s, v)` and `hsl(h, s, l)`
+(surface `EColor3 OpHSV/OpHSL`; `hueColor`) become an `RGB` of real arithmetic,
+binding the arguments, then the hue (×6, mod 6) and the clamped saturation and
+value/lightness, so nothing is computed twice. `hsl` matches `Data.Color.hslToColor`
+exactly; `hsv` agrees with `hsvToColor` to within 1 per channel (a different, but
+equal, formula; `hsvToColor` is left alone since autocolor picks its hues with it).
+
 `pprint :: Value et -> String` pretty-prints values.
 
 ### Code AST (`Language.Code`)
@@ -141,6 +151,10 @@ tool info), but projects themselves are not encoded through a `Codec`: see
 - `Tabbed` - tabbed interface
 - `TextBox` - text entry for a named variable
 - `Button`, `CheckBox`, `Selection`, `ColorPicker`
+- `ActionButton` - a button that does something in the app (an `AppAction`, such as
+  `OpenAutocolorSettings`) rather than run a tool's `on button` handler; it comes
+  from a `ConfigAction` statement, which no script can write (the built-in Autocolor
+  colorizer adds one), and `UI.Layout.generateWxLayout` is given its handler
 
 `layoutContext` converts a `Layout` into a `SomeContext DynamicValue` (live values for
 each named variable in the layout).
@@ -184,6 +198,142 @@ a `Code` into a `ViewerFunction` using the active backend.
 
 A `Tool` has a name, keyboard shortcut, and a list of event-handler actions.
 Each action maps an `Event` to a `Code` block that runs in response.
+
+### Colorizers (`Actor.Colorizer`)
+
+A colorizer is a named piece of viewer code that sets `color`, run at the
+end of a viewer's body, so a viewer script can just say what to compute.
+Built-ins (`builtinColorizers`): Manual (no code), Rainbow, Escape time,
+Smooth, Binary decomposition, Glow, Autocolor (always group 0, since a
+colorizer parameter would be a variable, not the literal group number
+`autocolor` needs; its `allow_new` setting switches to `get_autocolor`'s blend,
+for a parameter plane, or `nearest_autocolor` with `blend_misses` off --
+not `blend`, which is a built-in function's name); each is written as `@colorizer` source
+text, parsed by `parseScript` (the test suite builds every one). A script
+adds its own with `@colorizer "Name"` stanzas (`ColorizerStanza`: config
+declarations, then `define colorize(params):`); one with a built-in's name
+replaces it, with a warning on stderr.
+
+`applyColorizers` is a stanza-to-stanza pass that runs right after
+`parseScript` in both `buildEnsembleWithColorizers` and
+`checkScriptWithColorizers` (`buildEnsembleFromScript`/`checkScript` are
+these with no interactive choices). For each viewer it picks the colorizer
+(interactive choice by title, from `colorizers:`; else `colorizer=`; else
+Manual if the body assigns `color` (`setsColor`, after `define`/`run`
+expansion) and Rainbow if not), appends its code to the viewer's code, and
+adds its settings as a `ConfigStanza` (tab "Coloring", or "<title>
+coloring" with several viewers). Every name the colorizer declares
+(settings, parameters, locals) is renamed `[colorizer] <title>: <name>`,
+so it can't clash with the script's names and each viewer has its own
+settings. Its `@common` dependencies (`czCommon`) are added unless the
+viewer already has them. A parameter without an argument gets its
+default (`t = iterations / period`, read in the colorizer's renamed
+scope), else the viewer's variable of the same name (read in the
+viewer's scope; `ViewerColorizer.colorizerScope` approximates what's in
+scope, for the wx menu). Arguments are split at top-level commas
+(`splitArguments`) and parsed with `argumentGrammarWithFunctions`, which
+excludes top-level pairs (`a, b`), with the viewer's function names. A
+viewer's `coloring:` block (`vsColoring`) replaces the default colorizer's
+setting defaults (`configure`; a choice by its quoted label), only when
+that colorizer is in use. Built-ins' source ranges are stripped; a script
+colorizer keeps its own, so its errors point into its stanza.
+
+The ensemble keeps the interactive choices (`ensembleColorizerChoices`),
+how each viewer is colorized (`ensembleViewerColorizers`: in use, default,
+scope), and the available colorizers (`ensembleAvailableColorizers`).
+Changing a choice means building the project again.
+
+### Autocolor (`Actor.Autocolor`)
+
+`autocolor(n, p)`, `nearest_autocolor(n, p)`, and `get_autocolor(n, p)`
+(surface `EAutocolor`, value `Autocolor AutocolorMode Int`; the mode is
+in `Language.Type`, since the language can't depend on `Actor`) look point
+`p` up in autocolor group `n` (a literal; typing rejects anything else,
+via `integerLiteral`), giving the color of the nearest entry within the
+group's tolerance. Otherwise: `autocolor` adds a new entry, with the next
+golden-angle hue (unless the group is locked or has
+`maxAutocolorEntries` = 256 entries, when it gives `get_autocolor`'s blend,
+or the miss color if the group's `agBlendMisses` is off -- saved as
+`blend-misses: false`, published in the C snapshot's group record);
+`nearest_autocolor` gives the group's `agMissColor`; `get_autocolor`
+gives a blend of every entry's color weighted by 1/distance² (the miss
+color for an empty group), computed identically in C (`fs_ac_lookup`)
+and Haskell (`blendAutocolor`), rounding half up. Lookups read the table without
+the lock; a miss takes `agTableWriteMutex` and looks again before
+inserting, so concurrent misses can't insert near-duplicates.
+
+**Not deterministic:** which point gets which hue depends on the order
+points are first seen, which varies with tile scheduling and threads, so
+an unsaved project's colors (and so `fsrun` output from a project
+without an `autocolor:` key) can differ from run to run. Saved tables
+(and locked groups) make them stable.
+
+The `Ensemble` owns an `AutocolorState` (`ensembleAutocolor`, carried
+over by `carryOverProjectState`, saved under a core-owned `autocolor:`
+key that `fsrun` honors). Backends get an `AutocolorLookup`: the Haskell
+lookup function, and `autocolorCache`, a snapshot directory for compiled
+code. `withCompiledViewer` and `runTool` take one.
+
+Compiled code doesn't call back into Haskell for each lookup (that
+roughly doubled render times): viewer kernels (`#autocolor`,
+`#autocolorDir`, after `#issuesOut`) and tool handlers (`autocolor`,
+`autocolor.dir`, after `text.format`) get a pointer to the C function
+`fs_ac_lookup` (`src/Actor/autocolor_cache.c`) and the directory, reached
+through `ArenaState.asAutocolor`. It reads an immutable snapshot of every
+group (points with their colors, squared tolerance, miss color, and
+whether the group can add a point) without any lock, and calls back into
+Haskell only to add a point it doesn't have. The Haskell side publishes a
+new snapshot (`publishAutocolor`, under `acPublishLock` so the newest
+state always wins) after every change: a point added, a group added, any
+edit, a project file read. A replaced snapshot is freed once no lookup can
+still be reading it, by a small epoch scheme (see the comment at the top
+of `autocolor_cache.c`): a lookup registers with the current epoch's
+parity before loading the snapshot and leaves before any callback, and
+`fs_ac_publish` advances the epoch and waits for the old parity's lookups
+(each a single, non-blocking lookup) before freeing. The directory, with
+its last snapshot and the callback, is freed by its `ForeignPtr`'s
+finalizer. `fs_ac_debug_quarantine` (for the stress test in
+`AutocolorSpec`, which runs lookups on several threads, so the core's test
+suite is built `-threaded`) poisons replaced snapshots and keeps them,
+so that a lookup reading one too late is caught instead of masked by
+malloc reusing the memory. A group's "full" warning is printed when it fills up, since afterwards
+compiled code no longer asks.
+
+The pure evaluator can't compute autocolor (it's pure); it raises an
+error. Viewers redraw when `autocolorEdits` changes: at once for an edit
+(an entry recolored, moved, added by hand, or deleted; a group cleared,
+locked or unlocked, or its tolerance or miss color changed), and 200 ms
+after a render adds points, once for the whole burst (`pointAdded`). That
+redraws a viewer that only reads (a parameter plane with
+`allow_new <- false`) once another viewer has found the points it needs;
+the viewer that added them finds nothing new the second time.
+
+In the `autocolor:` key, points are complex literals in ASCII
+(`showAutocolorPoint`: 10 decimals, |x| < 1e-9 written as 0; a plain
+YAML number is accepted too) and colors are written by `toUserString`,
+both read back with `parseConstant`. The wx autocolor window
+(`UI.AutocolorEditor`, one per project, from "Autocolor settings..." in
+the viewer's Colorizer menu, or the Autocolor colorizer's "Open autocolor
+settings..." button: a `ConfigAction OpenAutocolorSettings` statement,
+which no script can write, that becomes a `Layout` `ActionButton`, run by
+`generateWxLayout`'s `AppAction` handler) shows a group
+selector, each entry's point (edited in place, committed on Enter or
+leaving the field) and color picker with a Delete button, an add-a-point
+field, "Clear all", a lock checkbox, the group's tolerance (a positive
+real, committed like a point), and its miss color. It watches the list of
+groups and each group's table with `wxWatchDynamic` (tables change on
+render threads; the watches run on the GUI thread; each table is watched
+once, from when its group appears, for the window's life), and rebuilds
+its list only when the selected group's set of points changes, so a field
+being edited isn't wiped by a render that adds points elsewhere.
+
+The LLVM backend compiles an expression `if c then x else y` (`ITE`) as a
+branch, with each side in its own block and a `phi` per operand
+(`mergeBranches`), not as `select` over both sides computed: `autocolor`
+has a side effect, so the side not taken mustn't run. (With `select`,
+`if stuck then black else autocolor(0, z)` added every stuck point.)
+LLVM's optimizer turns branches between cheap, pure values back into
+`select`s.
 
 ### Events (`Event`)
 
@@ -348,6 +498,32 @@ Key modules:
 A frontend supplies a `UI` record (`Actor.UI`: `newEnsemble`, `makeLayout`,
 `makeViewer`); the wx and headless frontends each provide one.
 
+Cancellation-safe cleanup: a redraw cancels the tile's render (every
+worker in its `forPool_`), so render code must give back what it holds
+however it's interrupted. Cleanup that can block (a `writeChan`, a
+`takeMVar`) is an interruptible point even under `bracket`'s mask, where
+an async exception abandons it: the LLVM viewer's arena pool returns each
+arena under `uninterruptibleMask_` (before, cancelled renders slowly lost
+arenas, and quitting hung in `withJIT`'s teardown, which collects them all
+back), and `Task.Concurrent`'s `with` / `synchedWith` (the tile buffer's
+lock) register and unregister uninterruptibly, with the unregistering in
+`finally` (before, a cancelled worker could leave the buffer locked for
+good). `LLVMSpec` ("gets every arena back") and `Task.ConcurrentSpec`
+cancel users at random, hundreds of times, and fail (by timeout) without
+these fixes.
+
+Destroy handlers: `wxWindowDestroyEvent` is a command event, so it
+propagates up from child windows (stopping at a top-level window), and a
+plain `windowOnDestroy` handler runs whenever *any* child of the window is
+destroyed, not just the window itself. Use `UI.Widgets.onOwnDestroy`,
+which checks the event's source and chains the handlers installed before
+it; every destroy hook in the app does (including those in
+`wxWatchDynamic` and `wxTimer`). Before it, a window that rebuilt some of
+its widgets (the autocolor window's list) silently stopped every watch and
+timer on it, since their cleanup ran on the first child destroyed. Mixing
+in a plain handler would bring that back: it would run on a child's
+destruction and call the chained cleanups unconditionally.
+
 wxHaskell layout rules that are easy to get wrong (see `UI.ProjectInfo` for a
 worked example):
 
@@ -389,7 +565,7 @@ A `metadata:` key (`Actor.Metadata`, `ensembleMetadata`) holds a `title`, a
 and `preview` (a base64 PNG, from `Actor.Viewer.Preview.renderPreview`, also
 used by the wx viewer menu's "Use this as preview"). Unknown keys under it
 are kept. `encodeEnsemble` writes keys in a fixed, readable order (script,
-metadata, scenarios, then the rest); see `projectYamlConfig`. A rebuild from
+metadata, colorizers, autocolor, scenarios, then the rest); see `projectYamlConfig`. A rebuild from
 an edited script uses `carryOverProjectState` to keep scenarios, metadata,
 and frontend keys.
 
@@ -447,6 +623,19 @@ ensemble remembers its defaults when built (`ensembleValueDefaults`);
 `resetValues` (the config window's "Reset to defaults") goes back to them.
 Library projects may not carry `values:` (`LibrarySpec`).
 
+A `colorizers:` key maps viewer titles to the colorizers chosen
+interactively (`ensembleColorizerChoices`; see "Colorizers" above),
+written as chosen: `Smooth`, `Rainbow(arg z / (2 pi))`. Unlike `values:`,
+this is part of what the project draws, so the core reads it and `fsrun`
+honors it. Only choices that differ from a viewer's default are saved
+(choosing the default removes the entry); an unreadable or unusable entry
+is a warning and the viewer's default, and is kept. Entries for viewers
+the script no longer has are dropped on build. A library project should
+use `colorizer=` and `coloring:` in its script instead, so that "Reset to
+defaults" and the preview agree. Scenarios set a colorizer's settings with
+`set colorizer parameter <name> to <value or "choice">`, for the selected
+viewer (the hidden name is `[colorizer] <title>: <name>`).
+
 Any other top-level key belongs to a frontend: the core keeps it verbatim in
 `ensembleFrontendProperties` and `encodeEnsemble` writes it back out, but never
 interprets it. The wx UI saves its window layout under `wx-properties:` (see
@@ -503,6 +692,21 @@ ignored the color picker and `set parameter`. A `button` is only allowed in
 a `@tool` (`noButtons` rejects it in `@config`, since only a tool's own
 panel delivers `ButtonPressed`).
 
+Colorizers in the wx viewer: the hamburger menu's "Colorizer" submenu
+lists `ensembleAvailableColorizers`, checking the one in use. Picking one
+whose parameters all have defaults or same-named variables in scope
+switches at once; otherwise its item says "..." and it asks for the
+arguments (`askColorizerArguments`: one field per parameter, an empty
+field meaning its default or same-named variable). "Arguments..." edits
+the one in use. Switching calls `pmSetColorizer`, which rebuilds the
+project with `UI.ProjectScriptEditor.rebuildColorizers`: it builds at once
+(an error is a dialog and leaves the project alone), then replaces the
+windows from a one-shot timer, since the menu's own viewer is among them,
+leaving an open script editor (`sehEditor`) and its draft in place. The
+config window's "Reset to defaults" also clears the interactive choices
+(rebuilding first, then resetting values). The script editor's Rebuild
+and live check keep the current choices.
+
 Tool behavior in the wx viewer: `on timer` handlers run while the tool is
 selected (`toolTimers`, from `toolBlockTimers` on the parsed blocks; the
 `runningTimers` are stopped on deactivation and when `guardTool` gives up
@@ -547,6 +751,10 @@ See `LANGUAGE.md` for full docs. Key points:
 - List ops: `@` (index), `@@` (cyclic index), `join`, `append`, `prepend`,
   `remove`, `transform`, `find`, `for each ... in`
 - Unicode support: `←`, `⭠`, `→`, `⟼`, `π`, `𝑒`, `𝑖`, `ℤ`, `ℝ`, `ℂ`
+- Colors: named colors, `rgb`/`hsv`/`hsl`, `blend`, `cycle`, wheels (`rainbow(t)`, ...),
+  and `autocolor`/`nearest_autocolor`/`get_autocolor` (see "Autocolor" above)
+- A viewer that doesn't set `color` is colored by a colorizer (see "Colorizers"
+  above): `colorizer=` in its header, `coloring:` blocks, `@colorizer` stanzas
 
 ## Key Files Quick Reference
 
@@ -561,7 +769,8 @@ See `LANGUAGE.md` for full docs. Key points:
 | `fractalstream-core/src/Data/Indexed/Functor.hs` | `IFunctor`, `ITraversable`, `FIX`, catamorphisms |
 | `fractalstream-core/src/Data/DynamicValue.hs` | `Variable`, `Dynamic`, reactive system |
 | `fractalstream-core/src/Data/Codec.hs` | Bidirectional YAML/JSON serialization |
-| `fractalstream-core/src/Actor/Script.hs` | Unified-script (`@config`/`@common`/`@viewer`/`@tool`) grammar |
+| `fractalstream-core/src/Actor/Script.hs` | Unified-script (`@config`/`@common`/`@viewer`/`@tool`/`@colorizer`) grammar |
+| `fractalstream-core/src/Actor/Colorizer.hs` | Built-in colorizers, `applyColorizers` |
 | `fractalstream-core/src/Actor/Ensemble.hs` | `Ensemble`, project loading, viewer setup |
 | `fractalstream-core/src/Actor/Layout.hs` | `Layout` ADT, UI panel structure |
 | `fractalstream-core/src/Actor/Viewer.hs` | `Viewer`, `ViewerCompiler`, rendering types |
@@ -621,5 +830,11 @@ picks them up:
 
 ## Current Branch
 
-`define-functions-and-code` - user-defined functions, `:=` type inference, and the
-surface-AST / typing / elaboration pipeline (main branch is `main`)
+`builtin-colorizers` (main branch is `main`):
+- colorizers: built-in and `@colorizer` ones, chosen per viewer (menu, `colorizer=`,
+  saved under `colorizers:`), with settings tabs and `coloring:` blocks
+- autocolor: `autocolor`/`nearest_autocolor`/`get_autocolor`, groups saved under
+  `autocolor:`, the C snapshot lookup, the autocolor window (from the Colorizer menu
+  or the Autocolor colorizer's settings button), and blending misses
+- `hsv(h, s, v)` and `hsl(h, s, l)`
+- the quit hang and tile-lock fixes (see "Cancellation-safe cleanup")
