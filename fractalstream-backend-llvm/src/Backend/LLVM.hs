@@ -32,7 +32,7 @@ import qualified LLVM.Relocation as Reloc
 import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
-import Control.Exception (bracket, finally)
+import Control.Exception (bracket, finally, uninterruptibleMask_)
 
 import Foreign.LibFFI
 import Foreign.C.Types
@@ -450,8 +450,15 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocol
             -- kernel call; bracket returns it even if AsyncCancelled is thrown.
             -- The pool (and the arena lifetime) is owned by withJIT, not here,
             -- because rendering outlives this action (see LLVMJit).
+            -- The arena goes back with exceptions masked *uninterruptibly*:
+            -- 'writeChan' can block for a moment (on other threads
+            -- returning arenas), and with 'bracket''s ordinary
+            -- (interruptible) mask an asynchronous exception there --
+            -- such as cancelling a tile's render, which happens on every
+            -- redraw -- would abandon the release and lose the arena for
+            -- good. Lost arenas made quitting hang, waiting to free them.
             action $ ViewerFunction $ \ViewerArgs{..} ->
-              bracket (readChan arenaPool) (writeChan arenaPool) $ \arena ->
+              bracket (readChan arenaPool) (uninterruptibleMask_ . writeChan arenaPool) $ \arena ->
               withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir -> do
                 (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
                 (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs

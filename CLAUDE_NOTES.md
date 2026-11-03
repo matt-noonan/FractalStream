@@ -472,6 +472,20 @@ Key modules:
 A frontend supplies a `UI` record (`Actor.UI`: `newEnsemble`, `makeLayout`,
 `makeViewer`); the wx and headless frontends each provide one.
 
+Cancellation-safe cleanup: a redraw cancels the tile's render (every
+worker in its `forPool_`), so render code must give back what it holds
+however it's interrupted. Cleanup that can block (a `writeChan`, a
+`takeMVar`) is an interruptible point even under `bracket`'s mask, where
+an async exception abandons it: the LLVM viewer's arena pool returns each
+arena under `uninterruptibleMask_` (before, cancelled renders slowly lost
+arenas, and quitting hung in `withJIT`'s teardown, which collects them all
+back), and `Task.Concurrent`'s `with` / `synchedWith` (the tile buffer's
+lock) register and unregister uninterruptibly, with the unregistering in
+`finally` (before, a cancelled worker could leave the buffer locked for
+good). `LLVMSpec` ("gets every arena back") and `Task.ConcurrentSpec`
+cancel users at random, hundreds of times, and fail (by timeout) without
+these fixes.
+
 Destroy handlers: `wxWindowDestroyEvent` is a command event, so it
 propagates up from child windows (stopping at a top-level window), and a
 plain `windowOnDestroy` handler runs whenever *any* child of the window is

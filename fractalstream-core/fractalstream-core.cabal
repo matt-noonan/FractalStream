@@ -200,6 +200,7 @@ test-suite spec
                     , Actor.EnsembleBuildSpec
                     , Actor.ColorizerSpec
                     , Actor.AutocolorSpec
+                    , Task.ConcurrentSpec
                     , Actor.GoldenSpec
                     , Actor.OverlaySpec
                     , FractalStream.SettingsSpec

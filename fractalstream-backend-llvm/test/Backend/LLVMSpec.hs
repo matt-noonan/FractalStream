@@ -11,6 +11,9 @@ import Data.Color
 import Data.IORef
 import Data.List (isInfixOf)
 import Control.Exception (IOException, ErrorCall(..))
+import Control.Concurrent (forkIO, killThread, threadDelay)
+import Control.Monad (forever, replicateM, replicateM_, void)
+import System.Timeout (timeout)
 import Actor.Viewer (ViewerFunction(..), ViewerArgs(..), ViewerIssues(..), PrepScript(..))
 import Actor.Viewer.Types (ViewerEnv)
 import Foreign (allocaBytes, peekArray, Word8)
@@ -225,6 +228,25 @@ spec = do
       made <- readIORef calls
       length made `shouldBe` 16
       made `shouldSatisfy` all (\(adds, _, _, _) -> not adds)
+
+    it "gets every arena back, however often renders are cancelled" $ do
+      -- Renders on many threads, killed at random moments over and over (as
+      -- a redraw cancels a tile's render). Closing the JIT session collects
+      -- every arena back, so if a cancelled render lost one -- its release
+      -- interrupted while waiting to return it -- this would never finish.
+      let env = envProxy (Proxy @(ViewerEnv '[]))
+      code <- either (fail . show) pure (parseCode env noCommonDefs "color <- blue")
+      finished <- timeout 20000000 $ withJIT $ \jit ->
+        withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) -> do
+          let renderOnce = allocaBytes (3 * 8 * 8) $ \buf -> void $ vf ViewerArgs
+                { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+                , vaWidth = 8, vaHeight = 8, vaSubsamples = 1
+                , vaBuffer = buf, vaArgs = EmptyContext }
+          replicateM_ 300 $ do
+            threads <- replicateM 16 (forkIO (forever renderOnce))
+            threadDelay 300
+            mapM_ killThread threads
+      finished `shouldBe` Just ()
 
     it "starts each pixel's color at grey" $ withJIT $ \jit -> do
       -- Only the first pixel sets the color, since n is changed afterwards
