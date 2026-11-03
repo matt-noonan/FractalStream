@@ -18,9 +18,14 @@ module Interpreter
 
 import FractalStream.Prelude
 
-import Scenario (Command(..), Point(..), RGB)
+import Scenario (Command(..), Point(..), RGB, MovieOptions(..), MovieAnimation(..))
 
-import Actor.Ensemble (Ensemble(..), runEnsemble, buildToolContext, layoutToArgs, ensembleFields, FieldOwner(..))
+import Actor.Movie
+import Data.Movie (MovieFormat(..))
+import System.FilePath (takeExtension)
+import Data.Char (toLower)
+
+import Actor.Ensemble (Ensemble(..), runEnsemble, ensembleCommonDefs, buildToolContext, layoutToArgs, ensembleFields, FieldOwner(..))
 import Actor.Layout (Field(..))
 import Actor.UI (UI(..))
 import Actor.Viewer
@@ -250,6 +255,32 @@ execCommand st = \case
     case r of
       Left err  -> pure (Left err)
       Right (_, img) -> pure (checkPixel name img (px, py) expected mtol st)
+
+  RecordMovie name path MovieOptions{..} animation -> withNamedViewer st name $ \viewer ->
+    case map toLower (takeExtension path) of
+      ext | Just fmt <- lookup ext [(".mov", QuickTimeMJPEG), (".avi", AviMJPEG)] -> do
+        let settings = defaultMovieSettings
+              { msFrames = moFrames, msFps = moFps, msLoop = moLoop
+              , msWithDrawings = not moBase, msFormat = fmt }
+        anim <- case animation of
+          MovieScript script -> case moInset of
+            Just _ -> pure (Left "an inset marks where along a path each frame is, so it needs a path (`moving ... along ...`)")
+            Nothing -> ensembleCommonDefs (isEnsemble st) >>= \case
+              Left err -> pure (Left err)
+              Right defs -> fmap (, Nothing) <$> scriptAnimation defs (isEnsembleCtx st) script
+          MoviePath var pts -> pure $ do
+            path' <- mapM resolvePoint pts
+            animate <- pathAnimation (isEnsembleCtx st) var moLoop path'
+            inset <- forM moInset $ \(insetName, corner) -> case Map.lookup insetName (isViewers st) of
+              Nothing -> Left ("no viewer named " ++ show insetName ++ " for the inset")
+              Just v -> Right (MovieInset v (pathPoint moLoop path') corner)
+            pure (animate, inset)
+        case anim of
+          Left err -> pure (Left ("couldn't record a movie of viewer " ++ show name ++ ": " ++ err))
+          Right (animate, inset) -> recordMovie settings viewer inset animate (const (pure ())) path >>= \case
+            Left err -> pure (Left ("couldn't record a movie of viewer " ++ show name ++ ": " ++ err))
+            Right issues -> warnIssues name issues >> pure (Right st)
+      _ -> pure (Left ("a movie's file name must end in .mov (QuickTime) or .avi, not " ++ show path))
 
 -- | Warn (on stderr) about any issues a viewer's render ran into.
 warnIssues :: String -> ViewerIssues -> IO ()

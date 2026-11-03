@@ -16,11 +16,14 @@ import UI.ProjectInfo (editProjectInfo)
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 
-import Control.Monad (unless, void)
+import Control.Monad (unless, void, forM)
+import Data.Maybe (catMaybes, listToMaybe)
 import Control.Concurrent.MVar (newMVar, modifyMVar, modifyMVar_)
 import qualified System.Info
 import UI.ProjectScriptEditor (editProjectScript, ScriptEditorHooks(..), rebuildColorizers)
 import UI.AutocolorEditor (editAutocolor)
+import UI.MovieMaker (newMovieSupport)
+import Actor.Viewer.Complex (ComplexViewer(..))
 import UI.Widgets (onOwnDestroy)
 
 import UI.Session
@@ -167,9 +170,24 @@ runApp = withBackend $ \backend -> start $ do
       --
       -- @rebuild@ rebuilds the project with changed colorizer choices
       -- (see 'rebuildColorizers').
-      projectMenuActions currentEnsemble sessionUnsaved pmSave pmEditScript pmClose pmCloseWindow rebuild pmEditAutocolor =
+      projectMenuActions currentEnsemble sessionUnsaved pmMovies pmProjectName pmSave pmEditScript pmClose pmCloseWindow rebuild pmEditAutocolor =
         ProjectMenuActions
           { pmSave, pmEditScript, pmClose, pmCloseWindow, pmEditAutocolor
+          , pmMovies, pmProjectName
+          , pmUnsaved = sessionUnsaved
+          , pmCommonDefs = getDynamic currentEnsemble >>= ensembleCommonDefs
+          , pmConfigFields = do
+              prj <- getDynamic currentEnsemble
+              fields <- ensembleFields prj
+              pure [ fld | (ProjectConfig, fld) <- fields ]
+          , pmViewerCoordinate = \title -> do
+              prj <- getDynamic currentEnsemble
+              viewers <- getDynamic (ensembleViewers prj)
+              matches <- fmap catMaybes . forM viewers $ \cv -> do
+                t <- getDynamic (dyn (cvTitle cv))
+                c <- getDynamic (dyn (cvCoord cv))
+                pure (if t == Right title then either (const Nothing) Just c else Nothing)
+              pure (listToMaybe matches)
 
 
           , pmEditInfo = \owner -> editProjectInfo owner currentEnsemble (setValue sessionUnsaved True)
@@ -283,6 +301,7 @@ runApp = withBackend $ \backend -> start $ do
           sessionVisible <- newVariable True
           sessionUnsaved <- newVariable False
           scriptDraft <- newIORef Nothing
+          movieSupport <- newMovieSupport
           scriptEditorWindow <- newIORef Nothing
           autocolorWindow <- newIORef Nothing
           -- Changing a configuration value changes what gets saved, so
@@ -314,7 +333,7 @@ runApp = withBackend $ \backend -> start $ do
               -- item, by which point it's long since finished building.
               -- The same actions serve a viewer's own pop-up menu and
               -- the menu bar of each of the project's windows.
-              menuActions = projectMenuActions currentEnsemble sessionUnsaved sessionSave
+              menuActions = projectMenuActions currentEnsemble sessionUnsaved movieSupport (getDynamic sessionName) sessionSave
                               (editProjectScript backend projectWindow editorHooks wxLayout currentEnsemble ui)
                               (closeSession si) closeFromWindow
                               (rebuildColorizers backend projectWindow editorHooks wxLayout currentEnsemble ui)

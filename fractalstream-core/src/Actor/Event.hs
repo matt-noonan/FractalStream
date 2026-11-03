@@ -32,6 +32,7 @@ module Actor.Event
   , assertMissingClickArgs
   , assertMissingDragArgs
   , assertMissingUnitArgs
+  , parseUnitScript
   , runParsedBody
 
   ) where

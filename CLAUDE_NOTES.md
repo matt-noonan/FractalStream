@@ -541,6 +541,75 @@ worked example):
 - Grids and `container` work out their own stretch from their children, so
   wrapping them in `fill` is unnecessary (and overrides that).
 
+### Movies
+
+A movie of a viewer is made by stepping an *animation* (`Actor.Movie`,
+`Animation = Double -> IO ()`: put the project's values where they
+should be at time `t` in [0, 1]) and rendering a frame after each step.
+`scriptAnimation` takes a script with a `define animate(t):` block
+(any parameter name), and appends `run animate([movie] time)`, binding
+the time under that unwritable name, so `define`/`run` expansion gives
+the parameter a fresh name and it can't clash with the project's (a
+config variable named `t`, say). Otherwise it treats the code as a
+tool's `on refresh` handler with one more variable: it parses it with the project's
+`CommonDefs` (`ensembleCommonDefs`, from the script's `@common` stanzas
+via `Actor.Script.scriptCommonDefs`), prepends the common code it uses
+(`withCommon`), and typechecks it with `Actor.Event.parseUnitScript`
+against the configuration context plus a real `t` (bound with
+`constArg`; an existing variable of that name is an error), which adds
+the bookkeeping `iterate` needs, with limits from `max_iters`,
+`escape_radius`, and `vanishing_radius`. It runs with
+`interpretedToolExec` and a no-op `DrawSink`, so it assigns through the
+arguments' setters as a tool does. `checkMovieScript` is the same check,
+pure, so the movie dialog's editor is `UI.Widgets.scriptWidget` (the
+project script editor's), with live error display, driven by a `Mapped`
+over it, as the script editor's is by `checkScriptWithColorizers`. `pathAnimation` moves one complex variable along a polyline by
+arclength (`pathPointAt`). `recordMovie` renders from a `cloneViewer`
+copy (so a window resized mid-recording can't change the frame size) with
+`renderViewerImage`: like `withRenderedViewerBuffer`, but in horizontal
+strips over every capability with `forPool_`, downsampling each strip as
+it goes. `withFieldsRestored` puts every field's *text* back afterwards
+(so `1/3` stays `1/3`).
+
+`Data.Movie` writes the frames as Motion-JPEG (JuicyPixels' encoder) into
+QuickTime `.mov` (macOS's default, `defaultMovieFormat`) or AVI (`.avi`,
+elsewhere), with no external encoder; frames stream to disk and the
+indexes are written at the end (32-bit offsets, so under 4 GB). The `.mov`
+was checked with AVFoundation (`avconvert`, `AVAssetImageGenerator`); the
+AVI only structurally, not yet in a Windows or Linux player.
+
+In the wx app (`UI.MovieMaker`), "Capture > Movie..." in a viewer's menu
+(next to "Capture > Image...", the old "Take a picture...")
+asks for a script, and the built-in "Animate along path" tool
+(`MoviePathTool`, next to Navigate and Debug, in viewers whose coordinate
+is a complex configuration variable, i.e. those with a "Select ..."
+tool) records a dragged path in model coordinates and then asks how to
+make a movie moving that variable along it (defaulting to recording
+another viewer; "Loop back to start" closes the path with a straight
+line and leaves out the last frame; "Show ... as an inset" passes a
+`MovieInset` of the dragged viewer to `recordMovie`, which renders it
+once, at its current view (`prepareInset`, like a preview), and puts it
+in the chosen corner of each frame (`InsetCorner`, a choice beside the
+dialog's checkbox) with an inverted-color crosshair at
+`pathPoint`, the same point `pathAnimation` sets: `withInset`). Any of
+the project's viewers can be recorded: windows register themselves in
+the session's `MovieSupport` (`pmMovies`), which also remembers the last
+dialog's settings. Recording runs on a background thread (setting values
+from there is safe: widgets pick changes up on GUI-thread timers), into a
+temporary folder, and the result opens in the system's player
+(`openWithDefaultApp`); the progress window then offers Play/Save as.
+Cancelling marks the recording finished *before* cancelling it: wx
+destroys the window only after the current event, so its progress timer
+can fire once more in between, and used to report the worker's
+`AsyncCancelled` as a failure (a cancelled worker is never reported).
+It's an ordinary frame, not a tool window, since macOS hides tool windows
+while another app (the movie player) is in front. Recording doesn't count
+as an unsaved change (`pmUnsaved` is put back). The Animate along path tool's
+mouse handlers must `propagateEvent`, like Navigate's: without it, wx
+on macOS never delivers the drag.
+
+`fsrun` has `record viewer ...` (see `SCENARIO_LANGUAGE.md`).
+
 FractalStream's own settings (`FractalStream.Settings`) are a plain YAML file,
 not wx's config: `~/Library/Application Support/FractalStream/settings.yaml`
 on macOS, `%APPDATA%\FractalStream\settings.yaml` on Windows, and
@@ -784,6 +853,9 @@ See `LANGUAGE.md` for full docs. Key points:
 | `fractalstream-ui-wx/src/Main.hs` | Application entry point |
 | `fractalstream-ui-wx/src/UI/ProjectViewer.hs` | Renders ensemble as wx windows |
 | `fractalstream-ui-wx/src/UI/Tile.hs` | Parallel tiled pixel rendering |
+| `fractalstream-core/src/Actor/Movie.hs` | Movie animations and recording |
+| `fractalstream-core/src/Data/Movie.hs` | Motion-JPEG `.mov`/`.avi` writer |
+| `fractalstream-ui-wx/src/UI/MovieMaker.hs` | Movie dialog and progress window |
 
 ## Build Notes
 
@@ -830,11 +902,7 @@ picks them up:
 
 ## Current Branch
 
-`builtin-colorizers` (main branch is `main`):
-- colorizers: built-in and `@colorizer` ones, chosen per viewer (menu, `colorizer=`,
-  saved under `colorizers:`), with settings tabs and `coloring:` blocks
-- autocolor: `autocolor`/`nearest_autocolor`/`get_autocolor`, groups saved under
-  `autocolor:`, the C snapshot lookup, the autocolor window (from the Colorizer menu
-  or the Autocolor colorizer's settings button), and blending misses
-- `hsv(h, s, v)` and `hsl(h, s, l)`
-- the quit hang and tile-lock fixes (see "Cancellation-safe cleanup")
+`movie-tool` (main branch is `main`):
+- movies of a viewer (see "Movies" under the UI): `Actor.Movie`, the `Data.Movie`
+  Motion-JPEG writer, the wx "Capture > Movie..." dialog and "Animate along path" tool, and
+  `fsrun`'s `record viewer` command

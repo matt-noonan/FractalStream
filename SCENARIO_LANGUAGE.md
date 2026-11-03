@@ -148,6 +148,42 @@ untrue later.
 | `capture viewer "<name>" to "<file.png>"` | Render the named viewer, composite every tool's drawn layers on top (`Actor.Viewer.Overlay.compositeDrawLayersToFile`), and write a PNG. |
 | `capture viewer "<name>" base to "<file.png>"` | Same, but the per-pixel script only -- no tool overlays. |
 | `capture viewer "<name>" as preview` | Render the named viewer (with tool overlays; add `base` before `as` for without) as the project's preview image: the viewer's current view, scaled so the longer side is 128 pixels. Only allowed in a project's `metadata: preview-commands:`; anywhere else it's an error. |
+| `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] using "<script>"` | Record a movie of the named viewer (see "Recording movies" below): before each of the `N` frames, run the script's `animate` block with the time, going from 0 to 1. |
+| `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] [inset "<viewer>" [at <corner>]] moving <var> along <point>, <point>, ...` | The same, but moving the complex configuration variable `var` along the path through the given points, at a steady speed. With `inset`, the named viewer (a parameter plane, say) is shown in a corner of each frame (`at top left`, `top right`, `bottom left`, or `bottom right`, the default), with a crosshair at the path's current point. |
+
+#### Recording movies
+
+A movie is a Motion-JPEG file, written without any outside tools
+(`Data.Movie`): a QuickTime movie if the file name ends in `.mov`, an
+AVI if it ends in `.avi` (anything else is an error). Each frame is
+rendered at the viewer's current size and view, smoothed (as `capture`
+is), and, unless `base` is given, with the tools' drawings on top, as
+they were when recording started: tools don't run while it records.
+
+The script defines the animation as a code block taking the time,
+`define animate(t):` followed by its body (and may define other things
+before it); `\n` separates lines:
+`"define animate(t):\n    C <- 0.7885 e^(2 pi i t)"`. The parameter can
+have any name, even one the project already uses. The block is
+typechecked and run just like a tool's `on refresh` handler: it sees
+the project's configuration variables (and may assign to them), its
+`@common` definitions, and can use `iterate`, with the project's
+iteration settings as its limits. The time runs from 0 at the first
+frame to 1 at the last, or, with `loop`, stops one frame short of 1,
+so that an animation that comes back to where it started plays
+smoothly in a loop; a path, with `loop`, also comes back to its start
+along a straight line. After recording, the values are left where the
+last frame put them (unlike in the app, which puts them back).
+
+An inset is rendered once, at its viewer's current view, with its
+longer side 30% of the frame's shorter side; its crosshair is drawn in
+inverted colors, across the whole inset, with a gap where its lines
+would cross so that the point itself shows. It's only for a path
+(the viewer a path is drawn in doesn't depend on the variable the path
+moves, which its own coordinate shadows, so it never needs redrawing).
+
+The app's "Capture > Movie..." (in a viewer's menu) and its "Animate
+along path" tool (a path dragged out in a viewer) do the same.
 
 
 ### Assertions

@@ -73,6 +73,7 @@ library
                      , containers
                      , JuicyPixels
                      , bytestring
+                     , filepath
   hs-source-dirs:      src/lib
 
 executable fsrun

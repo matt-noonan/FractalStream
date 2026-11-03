@@ -13,6 +13,7 @@ import Language.Value.Evaluator (evaluate)
 import Language.Typecheck (TC(..), TCError)
 
 import Scenario
+import Actor.Movie (InsetCorner(..))
 
 import Text.RawString.QQ
 
@@ -241,6 +242,47 @@ capture viewer "Mandelbrot set" to "trace.png"
     shouldFailToParse [r|frobnicate viewer "x"
 |]
 
+  it "parses record viewer with a script" $
+    onlyCommand [r|record viewer "Julia set" to "julia.mov" frames 60 fps 30 loop using "define animate(t):\n    C <- e^(2 pi i t)"
+|] $ \case
+      RecordMovie v path MovieOptions{..} (MovieScript script) -> do
+        (v, path, moFrames, moFps, moLoop, moBase) `shouldBe` ("Julia set", "julia.mov", 60, 30, True, False)
+        script `shouldBe` "define animate(t):\n    C <- e^(2 pi i t)"
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses record viewer along a path" $
+    onlyCommand [r|record viewer "Julia set" to "julia.avi" frames 10 fps 5 base moving C along -1, (0, 0.5), 0.25 + 0.5i
+|] $ \case
+      RecordMovie _ _ MovieOptions{..} (MoviePath var pts) -> do
+        (moLoop, moBase) `shouldBe` (False, True)
+        var `shouldBe` "C"
+        length pts `shouldBe` 3
+        case pts of
+          [ComplexPoint a, CartesianPoint x y, ComplexPoint _] -> do
+            a `shouldResolveTo` (-1)
+            x `shouldResolveTo` 0
+            y `shouldResolveTo` 0.5
+          _ -> expectationFailure "expected complex, Cartesian, complex points"
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses record viewer with an inset" $
+    onlyCommand [r|record viewer "Julia set" to "julia.mov" frames 10 fps 5 loop inset "Mandelbrot set" moving C along -1, 0
+|] $ \case
+      RecordMovie _ _ MovieOptions{..} (MoviePath "C" [_, _]) -> do
+        (moLoop, moBase, moInset) `shouldBe` (True, False, Just ("Mandelbrot set", BottomRight))
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses record viewer with an inset in a chosen corner" $
+    onlyCommand [r|record viewer "Julia set" to "julia.mov" frames 10 fps 5 inset "Mandelbrot set" at top left moving C along -1, 0
+|] $ \case
+      RecordMovie _ _ MovieOptions{..} MoviePath{} ->
+        moInset `shouldBe` Just ("Mandelbrot set", TopLeft)
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "rejects record viewer without frames and fps" $
+    shouldFailToParse [r|record viewer "Julia set" to "julia.mov" using "C <- t"
+|]
+
   it "rejects a command missing its argument" $
     shouldFailToParse [r|select viewer
 |]
@@ -267,3 +309,4 @@ describeShape = \case
   CaptureViewerBase{}  -> "CaptureViewerBase"
   CaptureViewerAsPreview{} -> "CaptureViewerAsPreview"
   AssertPixel{}        -> "AssertPixel"
+  RecordMovie{}        -> "RecordMovie"

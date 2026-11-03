@@ -96,6 +96,7 @@ executable FractalStream
                        UI.ShowInFileManager
                        UI.Preferences
                        UI.AutocolorEditor
+                       UI.MovieMaker
 
   build-depends:       base >=4.8 && <5
                      , fractalstream-core

@@ -28,6 +28,7 @@ module Actor.Script
   , ColorizerSetting(..)
   , ParsedStanza(..)
   , parseScript
+  , scriptCommonDefs
   , implicitBookkeepingStanza
   , scriptGrammar
   ) where
@@ -240,15 +241,30 @@ data ColorizerParam = ColorizerParam
 parseScript :: String -> Either (SourceRange, String) [ParsedStanza]
 parseScript input = do
   let chunks = zip [(0 :: Int) ..] (splitStanzas (tokenizeWithIndentation input))
-      commonChunks = [ ic | ic@(_, c) <- chunks, isChunk "common" c ]
-      restChunks   = [ ic | ic@(_, c) <- chunks, not (isChunk "common" c) ]
+      restChunks = [ ic | ic@(_, c) <- chunks, not (isChunk "common" c) ]
+  (commonResults, defs) <- parseCommonChunks chunks
+  restResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs c) restChunks
+  pure (fillDefaultSrcs input (map snd (sortOn fst (commonResults ++ restResults))))
+
+-- | What a project script's @\@common@ stanzas give every other piece of
+-- its code: their statements, and the names of the functions they define.
+-- For code that isn't part of the script itself but should see the same
+-- definitions, such as a movie's script ("Actor.Movie").
+scriptCommonDefs :: String -> Either (SourceRange, String) CommonDefs
+scriptCommonDefs input =
+  snd <$> parseCommonChunks (zip [0 ..] (splitStanzas (tokenizeWithIndentation input)))
+
+-- | Parse the @\@common@ stanzas among a script's (numbered) stanzas,
+-- giving them and the definitions they make.
+parseCommonChunks :: [(Int, [SRToken])]
+                  -> Either (SourceRange, String) ([(Int, ParsedStanza)], CommonDefs)
+parseCommonChunks chunks = do
+  let commonChunks = [ ic | ic@(_, c) <- chunks, isChunk "common" c ]
       -- every stanza can call the functions defined in any @common stanza
       defs0 = withDefinedFunctions (concatMap snd commonChunks) noCommonDefs
   commonResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs0 c) commonChunks
   let common = concat [ stmts | (_, CommonStanza (Stmt _ (SBlock stmts))) <- commonResults ]
-      defs = defs0 { commonCode = common }
-  restResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs c) restChunks
-  pure (fillDefaultSrcs input (map snd (sortOn fst (commonResults ++ restResults))))
+  pure (commonResults, defs0 { commonCode = common })
 
 -- | A synthesized @\@config@ stanza providing `max_iters`\/`escape_radius`\/
 -- `vanishing_radius`, meant to be appended to a parsed script's own stanzas

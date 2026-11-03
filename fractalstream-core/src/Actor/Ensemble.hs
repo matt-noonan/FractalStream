@@ -24,6 +24,7 @@ module Actor.Ensemble
   , resetValues
   , watchValues
   , formatScriptError
+  , ensembleCommonDefs
   , runEnsemble
 
   , contextValuesChanged
@@ -59,7 +60,7 @@ import Language.Value.Typecheck
    InternalIterations, InternalStuck, InternalIterationLimit)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv, checkDefiniteAssignment)
-import Language.Code.Parser (noCommonDefs, ParsedCode)
+import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs)
 import Language.Parser.SourceRange
 import Data.Color (black)
 
@@ -533,6 +534,12 @@ projectYamlConfig = YAMLPretty.setConfCompare (comparing rank) YAMLPretty.defCon
 -- the offending span of the original text, followed by the message.
 formatScriptError :: String -> (SourceRange, String) -> String
 formatScriptError src (range, msg) = unlines (pp (Indicated range src) ++ [""] ++ [msg])
+
+-- | The definitions a project's @\@common@ stanzas make, for code that
+-- isn't part of its script but should see them (a movie's script).
+ensembleCommonDefs :: Ensemble -> IO (Either String CommonDefs)
+ensembleCommonDefs ens = getDynamic (ensembleSourceScript ens) <&> \src ->
+  first (formatScriptError src) (scriptCommonDefs src)
 
 ------------------------------------------------------------
 -- Unified project script -> Ensemble (Layers 3/4)
