@@ -12,7 +12,8 @@ import FractalStream.Prelude hiding (get)
 import Language.Parser.SourceRange (SourceRange(..))
 import Data.DynamicValue
 import Actor.Layout (CodeString(..))
-import UI.EmacsKeys
+import UI.EditorKeys
+import Language.Editor (indentUnit)
 import UI.AppSettings (appSettings)
 import FractalStream.Settings (Settings(..))
 
@@ -106,8 +107,8 @@ codeEditorWithText cep txt = do
     --styledTextCtrlSetCaretLineVisible stc True
 
     styledTextCtrlSetUseTabs stc False
-    styledTextCtrlSetTabWidth stc 4
-    styledTextCtrlSetIndent stc 4
+    styledTextCtrlSetTabWidth stc indentUnit
+    styledTextCtrlSetIndent stc indentUnit
     styledTextCtrlSetTabIndents stc True
     styledTextCtrlSetBackSpaceUnIndents stc True
     styledTextCtrlSetWrapMode stc 1
@@ -132,7 +133,7 @@ codeEditorWithText cep txt = do
 
     -- (on platforms where they're a preference, it's checked on each
     -- key, so changing it applies to editors that are already open)
-    handleEmacsKeys stc $ if emacsKeysByDefault then pure True
+    handleEditorKeys stc $ if emacsKeysByDefault then pure True
                           else setEmacsKeys <$> getDynamic appSettings
 
     styledTextCtrlSetText stc txt

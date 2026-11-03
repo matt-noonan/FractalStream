@@ -1,14 +1,21 @@
--- | Emacs-style movement keys in a code editor: Control-A and Control-E
--- for the start and end of the line, and so on.
+-- | Keys in a code editor that do more than Scintilla does by itself:
 --
--- On macOS these are always on: the standard shortcuts there are on
--- Command, so the Control key is otherwise unused (and without these, a
--- Control-letter would type an invisible control character). Elsewhere,
--- Control is the standard shortcut key (Control-A selects everything,
--- Control-V pastes, ...), so they're a preference, off by default.
-module UI.EmacsKeys
+-- * Return starts the new line indented as the language expects: as far
+--   as the line it breaks, and a level further after a line ending in
+--   @:@ ("Language.Editor"). (Backspace at the start of a line's code
+--   takes off a level, which Scintilla does itself, given the indent
+--   size.)
+--
+-- * Emacs-style movement keys: Control-A and Control-E for the start and
+--   end of the line, and so on. On macOS these are always on: the
+--   standard shortcuts there are on Command, so the Control key is
+--   otherwise unused (and without these, a Control-letter would type an
+--   invisible control character). Elsewhere, Control is the standard
+--   shortcut key (Control-A selects everything, Control-V pastes, ...),
+--   so they're a preference, off by default.
+module UI.EditorKeys
   ( emacsKeysByDefault
-  , handleEmacsKeys
+  , handleEditorKeys
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -16,23 +23,58 @@ import FractalStream.Prelude hiding (get)
 import Graphics.UI.WX hiding (Vertical, Horizontal, when)
 import Graphics.UI.WXCore.WxcClasses
 import Graphics.UI.WXCore.WxcDefs
+import Graphics.UI.WXCore.Events (windowOnKeyDown)
 import System.Info (os)
 import Data.Char (chr, ord, toLower)
+import Language.Editor (newLineIndent)
 
 -- | Whether a platform has emacs keys without asking for them.
 emacsKeysByDefault :: Bool
 emacsKeysByDefault = os == "darwin"
 
--- | Handle emacs keys in an editor while @isEnabled@ says to: each is run
--- as an editor command and goes no further; any other key is handled as
--- usual.
-handleEmacsKeys :: StyledTextCtrl a -> IO Bool -> IO ()
-handleEmacsKeys stc isEnabled =
+-- | Handle these keys in an editor, with emacs keys while @emacsKeys@
+-- says to: each is done here and goes no further; any other key is
+-- handled as usual.
+handleEditorKeys :: StyledTextCtrl a -> IO Bool -> IO ()
+handleEditorKeys stc emacsKeys = do
+  -- Return is handled as it goes down (Scintilla breaks the line then,
+  -- and no character event follows); the emacs keys as the characters
+  -- they type, which is how Control-letters arrive on macOS.
+  windowOnKeyDown stc $ \k -> case keyKey k of
+    KeyReturn | isPlain (keyModifiers k) -> newLine stc
+    _ -> propagateEvent
   set stc [ on keyboard := \k -> do
-    on' <- isEnabled
-    case (on', emacsCommand k) of
-      (True, Just action) -> action stc
+    emacs <- emacsKeys
+    case emacsCommand k of
+      Just action | emacs -> action stc
       _ -> propagateEvent ]
+  where
+    isPlain m = not (altDown m || shiftDown m || controlDown m || metaDown m)
+
+-- | Break the line, starting the new one indented as "Language.Editor"
+-- says. Spaces around the break go: the ones before it would be left
+-- trailing, and the ones after it would add to the indentation.
+newLine :: StyledTextCtrl a -> IO ()
+newLine stc = do
+  styledTextCtrlBeginUndoAction stc
+  styledTextCtrlReplaceSelection stc ""
+  pos <- styledTextCtrlGetCurrentPos stc
+  lineNum <- styledTextCtrlLineFromPosition stc pos
+  lineStart <- styledTextCtrlPositionFromLine stc lineNum
+  lineEnd <- styledTextCtrlGetLineEndPosition stc lineNum
+  before <- styledTextCtrlGetTextRange stc lineStart pos
+  after <- styledTextCtrlGetTextRange stc pos lineEnd
+  let indent = if all (== ' ') before then length before else newLineIndent before
+      -- (spaces are a byte each, so these are also byte counts)
+      trailing = length (takeWhile (== ' ') (reverse before))
+      leading = length (takeWhile (== ' ') after)
+      from = if all (== ' ') before then pos else pos - trailing
+      inserted = "\n" ++ replicate indent ' '
+  styledTextCtrlSetTargetStart stc from
+  styledTextCtrlSetTargetEnd stc (pos + leading)
+  _ <- styledTextCtrlReplaceTarget stc inserted
+  styledTextCtrlGotoPos stc (from + length inserted)
+  styledTextCtrlEndUndoAction stc
 
 -- | The editor action for a key, if it's an emacs key: a letter with the
 -- Control key (only), however the platform reports it. On macOS,

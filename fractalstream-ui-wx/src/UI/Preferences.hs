@@ -9,7 +9,7 @@ import FractalStream.Prelude hiding (get)
 import Data.DynamicValue
 import FractalStream.Library (projectsDirectory)
 import FractalStream.Settings
-import UI.EmacsKeys (emacsKeysByDefault)
+import UI.EditorKeys (emacsKeysByDefault)
 
 import Graphics.UI.WX hiding (pt, when, Color, Object, Layout, Vertical, Horizontal)
 import Graphics.UI.WXCore (windowRaise)
@@ -29,7 +29,7 @@ preferencesWindow settingsVar = do
   note <- staticText p [ text := "Changing the folder doesn't move any projects: it only \
                                  \changes where the library browser looks for them." ]
   -- On macOS, the script editor's emacs keys are always on (see
-  -- "UI.EmacsKeys"); elsewhere they take over Control shortcuts, so
+  -- "UI.EditorKeys"); elsewhere they take over Control shortcuts, so
   -- they're up to the user.
   emacsBox <- if emacsKeysByDefault then pure Nothing else
     Just <$> checkBox p [ text := "Emacs-style movement keys in script editors \

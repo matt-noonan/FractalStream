@@ -80,7 +80,7 @@ executable FractalStream
                        UI.ProjectViewer
                        UI.ConfigEditor
                        UI.CodeEditor
-                       UI.EmacsKeys
+                       UI.EditorKeys
                        UI.AppSettings
                        UI.ProjectScriptEditor
                        UI.Layout
