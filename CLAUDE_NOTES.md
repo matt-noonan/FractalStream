@@ -78,6 +78,16 @@ trig functions, boolean ops, comparisons, if-then-else, color ops, list ops, tex
 
 Key constructors: `Const`, `Var`, `LocalLet`, `ITE`, `AddF/AddC/AddI`, `RGB`, `Blend`, etc.
 
+Some color syntax has no node of its own: elaboration (`Language.Value.Elaborate`)
+rewrites it into simpler values, binding its arguments with `LocalLet` under
+`#`-prefixed names no script can write. `cycle(t, c1, c2)` (`cycleColors`) and the
+wheels like `rainbow(t)` (`wheel`) become `Blend`s; `hsv(h, s, v)` and `hsl(h, s, l)`
+(surface `EColor3 OpHSV/OpHSL`; `hueColor`) become an `RGB` of real arithmetic,
+binding the arguments, then the hue (×6, mod 6) and the clamped saturation and
+value/lightness, so nothing is computed twice. `hsl` matches `Data.Color.hslToColor`
+exactly; `hsv` agrees with `hsvToColor` to within 1 per channel (a different, but
+equal, formula; `hsvToColor` is left alone since autocolor picks its hues with it).
+
 `pprint :: Value et -> String` pretty-prints values.
 
 ### Code AST (`Language.Code`)
@@ -141,6 +151,10 @@ tool info), but projects themselves are not encoded through a `Codec`: see
 - `Tabbed` - tabbed interface
 - `TextBox` - text entry for a named variable
 - `Button`, `CheckBox`, `Selection`, `ColorPicker`
+- `ActionButton` - a button that does something in the app (an `AppAction`, such as
+  `OpenAutocolorSettings`) rather than run a tool's `on button` handler; it comes
+  from a `ConfigAction` statement, which no script can write (the built-in Autocolor
+  colorizer adds one), and `UI.Layout.generateWxLayout` is given its handler
 
 `layoutContext` converts a `Layout` into a `SomeContext DynamicValue` (live values for
 each named variable in the layout).
@@ -737,6 +751,10 @@ See `LANGUAGE.md` for full docs. Key points:
 - List ops: `@` (index), `@@` (cyclic index), `join`, `append`, `prepend`,
   `remove`, `transform`, `find`, `for each ... in`
 - Unicode support: `←`, `⭠`, `→`, `⟼`, `π`, `𝑒`, `𝑖`, `ℤ`, `ℝ`, `ℂ`
+- Colors: named colors, `rgb`/`hsv`/`hsl`, `blend`, `cycle`, wheels (`rainbow(t)`, ...),
+  and `autocolor`/`nearest_autocolor`/`get_autocolor` (see "Autocolor" above)
+- A viewer that doesn't set `color` is colored by a colorizer (see "Colorizers"
+  above): `colorizer=` in its header, `coloring:` blocks, `@colorizer` stanzas
 
 ## Key Files Quick Reference
 
@@ -812,5 +830,11 @@ picks them up:
 
 ## Current Branch
 
-`define-functions-and-code` - user-defined functions, `:=` type inference, and the
-surface-AST / typing / elaboration pipeline (main branch is `main`)
+`builtin-colorizers` (main branch is `main`):
+- colorizers: built-in and `@colorizer` ones, chosen per viewer (menu, `colorizer=`,
+  saved under `colorizers:`), with settings tabs and `coloring:` blocks
+- autocolor: `autocolor`/`nearest_autocolor`/`get_autocolor`, groups saved under
+  `autocolor:`, the C snapshot lookup, the autocolor window (from the Colorizer menu
+  or the Autocolor colorizer's settings button), and blending misses
+- `hsv(h, s, v)` and `hsl(h, s, l)`
+- the quit hang and tile-lock fixes (see "Cancellation-safe cleanup")

@@ -144,7 +144,13 @@ script: |
   iterates agree (`|z - old| < tol`), then color by which attractor was
   reached (`rainbow(arg z / (2 pi))` or by an index), shaded by
   `iterations`. See `examples/newton-roots.fs` (roots in a configurable
-  list, edited by clicking).
+  list, edited by clicking). When the roots aren't known in closed form,
+  leave `color` unset and use `colorizer=Autocolor` (it reads the viewer's
+  `z`), which gives each root a color the first time it's seen (library
+  project `3 Newton's method/newton-quintic.fs`); in a parameter plane, set
+  `allow_new <- false` in a `coloring:` block so it reuses the dynamical
+  plane's colors (`newton-cubic-parameter-plane.fs`). LLVM only, and the
+  colors depend on the order points are seen until the project is saved.
 - **Real maps and real 2-D systems.** Viewers are complex; use `x :=
   re(z)`, `y := im(z)` and loop over both. Tools can bind `at (x, y)` and
   draw at `(x, y)`. See `examples/real-map.fs`. A 1-D real family can be

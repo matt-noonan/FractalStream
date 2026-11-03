@@ -556,6 +556,12 @@ Arguments can be any expressions, using any of the viewer's variables
 and functions. Quote the attribute's value if it has anything but a name
 in it.
 
+The viewer menu's "Colorizer" submenu lists the colorizers the viewer can
+use, with the one in use checked. Picking one with parameters uses the
+viewer's variables of the same names, if it has them all; if not (its item
+ends in "..."), it asks for the arguments first. "Arguments..." changes the
+arguments of the colorizer in use.
+
 #### Colorizer settings
 
 A colorizer's settings (like `Rainbow`'s "Iterations per color cycle")
