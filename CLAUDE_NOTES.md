@@ -572,8 +572,10 @@ strips over every capability with `forPool_`, downsampling each strip as
 it goes; `withRenderedViewerBuffer` (snapshots, `fsrun` captures,
 previews) uses it too, so `fsrun` renders on every core unless `-j N`
 says otherwise (`-j 1` for repeatable colors from unlocked autocolor
-groups, which depend on render order). `compositeDrawLayers` returns the
-base image as is when there are no drawings, skipping Rasterific. `withFieldsRestored` puts every field's *text* back afterwards
+groups, which depend on render order). `compositeDrawLayers` rasterizes
+drawings onto a transparent canvas and lays it over the base image (not
+Rasterific's `drawImage`, which resamples it half a pixel off), and
+skips Rasterific entirely when there are no drawings. `withFieldsRestored` puts every field's *text* back afterwards
 (so `1/3` stays `1/3`).
 
 `Data.Movie` writes the frames as Motion-JPEG (JuicyPixels' encoder) into
