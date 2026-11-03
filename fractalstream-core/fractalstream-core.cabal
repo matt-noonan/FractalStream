@@ -171,6 +171,8 @@ test-suite spec
   hs-source-dirs: test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
+  -- (threaded, as the app is: some tests run lookups on several OS threads)
+  ghc-options:        -threaded -rtsopts -with-rtsopts=-N4
   build-depends:      base >=4.8 && <5
                     , fractalstream-core
                     , hspec

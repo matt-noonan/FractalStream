@@ -70,7 +70,7 @@ import Language.Value.Parser (parseConstant)
 import qualified Data.Map as Map
 import Data.IORef
 import Data.Bits (shiftL, (.|.))
-import Foreign (Ptr, FunPtr, ForeignPtr, nullPtr, mallocBytes, free, pokeByteOff, freeHaskellFunPtr, withForeignPtr)
+import Foreign (Ptr, FunPtr, ForeignPtr, nullPtr, mallocBytes, pokeByteOff, freeHaskellFunPtr, withForeignPtr)
 import qualified Foreign.Concurrent as FC
 import Foreign.C.Types (CDouble(..))
 import System.IO (fixIO)
@@ -129,21 +129,28 @@ foreign import ccall "&fs_ac_lookup"
 foreign import ccall "fs_ac_publish"
   publishSnapshot :: Ptr () -> Ptr () -> IO ()
 
+foreign import ccall "fs_ac_new"
+  newDirectory :: FunPtr (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32) -> IO (Ptr ())
+
+foreign import ccall "fs_ac_free"
+  freeDirectory :: Ptr () -> IO ()
+
 foreign import ccall "wrapper"
   wrapAddFunction :: (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
                   -> IO (FunPtr (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32))
 
 -- | A snapshot directory, with no snapshot yet (so that every lookup goes
--- to the function), freed along with the function's callback once nothing
--- refers to it.
+-- to the function). It's freed, with its current snapshot and the
+-- function's callback, once nothing refers to it -- by then no compiled
+-- code can be using it either, since that only happens inside
+-- 'withForeignPtr'.
 newCache :: (Bool -> Int -> Double -> Double -> IO Color) -> IO (ForeignPtr ())
 newCache f = do
   fp <- wrapAddFunction $ \add n (CDouble x) (CDouble y) ->
     packColor <$> f (add /= 0) (fromIntegral n) x y
-  dir <- mallocBytes 16
-  pokeByteOff dir 0 nullPtr
-  pokeByteOff dir 8 fp
-  FC.newForeignPtr dir (freeHaskellFunPtr fp >> free dir)
+  dir <- newDirectory fp
+  when (dir == nullPtr) (fail "out of memory for an autocolor directory")
+  FC.newForeignPtr dir (freeDirectory dir >> freeHaskellFunPtr fp)
 
 packColor :: Color -> Word32
 packColor c = let (r, g, b) = colorToRGB c
@@ -196,9 +203,8 @@ pointAdded st = do
     modifyValue (acEdits st) (+ 1)
 
 -- | Publish a snapshot of every group for compiled code (see
--- @autocolor_cache.c@ for its layout). Snapshots aren't freed, since a
--- render may still be reading an old one; they're small, and only made
--- when something changes.
+-- @autocolor_cache.c@ for its layout, and for how the snapshot it
+-- replaces is freed once no lookup can still be reading it).
 publishAutocolor :: AutocolorState -> IO ()
 publishAutocolor AutocolorState{..} = withMVar acPublishLock $ \_ -> do
   groups <- Map.toList <$> getDynamic acGroups

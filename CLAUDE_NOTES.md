@@ -263,9 +263,18 @@ whether the group can add a point) without any lock, and calls back into
 Haskell only to add a point it doesn't have. The Haskell side publishes a
 new snapshot (`publishAutocolor`, under `acPublishLock` so the newest
 state always wins) after every change: a point added, a group added, any
-edit, a project file read. Old snapshots are never freed, since a render
-may still be reading one; they're small, and only made on changes. A
-group's "full" warning is printed when it fills up, since afterwards
+edit, a project file read. A replaced snapshot is freed once no lookup can
+still be reading it, by a small epoch scheme (see the comment at the top
+of `autocolor_cache.c`): a lookup registers with the current epoch's
+parity before loading the snapshot and leaves before any callback, and
+`fs_ac_publish` advances the epoch and waits for the old parity's lookups
+(each a single, non-blocking lookup) before freeing. The directory, with
+its last snapshot and the callback, is freed by its `ForeignPtr`'s
+finalizer. `fs_ac_debug_quarantine` (for the stress test in
+`AutocolorSpec`, which runs lookups on several threads, so the core's test
+suite is built `-threaded`) poisons replaced snapshots and keeps them,
+so that a lookup reading one too late is caught instead of masked by
+malloc reusing the memory. A group's "full" warning is printed when it fills up, since afterwards
 compiled code no longer asks.
 
 The pure evaluator can't compute autocolor (it's pure); it raises an

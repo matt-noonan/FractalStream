@@ -9,12 +9,13 @@ import Data.Color
 import Data.DynamicValue
 
 import Control.Concurrent
-import Data.Bits (shiftR)
+import Data.IORef
+import Data.Bits (shiftR, shiftL, (.|.))
 import Data.Int (Int32)
 import Data.Word (Word8, Word32)
 import Foreign (FunPtr, Ptr, withForeignPtr)
 import Foreign.C.Types (CDouble(..))
-import Control.Monad (forM_, replicateM_)
+import Control.Monad (forM_, replicateM_, unless)
 import Data.List (isInfixOf)
 import qualified Data.Map as Map
 import qualified Data.ByteString.Char8 as BS8
@@ -22,6 +23,9 @@ import qualified Data.ByteString.Char8 as BS8
 foreign import ccall "dynamic"
   callCacheLookup :: FunPtr (Ptr () -> Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
                   -> Ptr () -> Word8 -> Int32 -> CDouble -> CDouble -> IO Word32
+
+foreign import ccall "fs_ac_debug_quarantine"
+  debugQuarantine :: Int32 -> IO ()
 
 tableSize :: AutocolorGroup -> IO Int
 tableSize g = Map.size <$> getDynamic (agTable g)
@@ -126,6 +130,44 @@ spec = do
       viaC True 3 7 7 >>= (`shouldBe` blue)
       viaC False 3 7 7 >>= (`shouldBe` blue)
       tableSize g >>= (`shouldBe` 1)
+
+    it "frees old snapshots only once no lookup can be reading them" $ do
+      -- Lookups on four threads while snapshots are replaced as fast as
+      -- possible. Replaced snapshots have their colors overwritten, and
+      -- (quarantined) aren't given back to malloc, so a lookup that read
+      -- one after it was replaced would see the overwritten color.
+      debugQuarantine 1
+      st <- newAutocolorState
+      g <- autocolorGroup st (AutocolorGroupId 0)
+      c <- autocolor g 1 0
+      let AutocolorLookup{..} = autocolorLookup st
+          pack col = let (r, gr, b) = colorToRGB col
+                     in (fromIntegral r `shiftL` 16) .|. (fromIntegral gr `shiftL` 8) .|. fromIntegral b :: Word32
+          valid = [pack c, pack red]
+      stop <- newIORef False
+      bad <- newIORef (0 :: Int)
+      lookups <- newIORef (0 :: Int)
+      done <- newEmptyMVar
+      let worker = do
+            let loop = do
+                  w <- withForeignPtr autocolorCache $ \dir ->
+                    callCacheLookup autocolorCacheLookup dir 0 0 1 0
+                  unless (w `elem` valid) $ atomicModifyIORef' bad (\n -> (n + 1, ()))
+                  atomicModifyIORef' lookups (\n -> (n + 1, ()))
+                  finished <- readIORef stop
+                  unless finished loop
+            loop
+            putMVar done ()
+      replicateM_ 4 (forkIO worker)
+      -- (once the lookups are well under way)
+      let warmUp = readIORef lookups >>= \n -> unless (n > 10000) (yield >> warmUp)
+      warmUp
+      forM_ [1 .. 200000 :: Int] $ \k ->
+        setAutocolorEntryColor st g (1, 0) (if even k then red else c)
+      writeIORef stop True
+      replicateM_ 4 (takeMVar done)
+      debugQuarantine 0
+      readIORef bad >>= (`shouldBe` 0)
 
   describe "a project's autocolor:" $ do
     it "is read from the project file and written back" $ do
