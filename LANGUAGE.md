@@ -104,6 +104,15 @@ is a shade of purple.
 
 Custom colors can be made with the `rgb(r,g,b)` operation, where
 `r`, `g`, and `b` are values representing real numbers from `0` to `1`.
+Colors can also be made from a hue, with `hsv(h, s, v)` (hue, saturation,
+and value) or `hsl(h, s, l)` (hue, saturation, and lightness). The hue goes
+around the color wheel once as `h` goes from `0` to `1`: `0` is red, `1/3`
+green, `2/3` blue, and `1` red again (so `hsv(arg z / (2 pi), 1, 1)` colors
+by the angle of `z`). The saturation, value, and lightness run from `0` to
+`1` (anything outside that is treated as `0` or `1`). With `hsv`, value `1`
+is the brightest the color gets, and `0` is black. With `hsl`, lightness
+`0.5` is the full color, `0` is black, and `1` is white; saturation `0`
+gives a grey, in either.
 Two different colors can be blended by `blend(t, c1, c2)` where `t`
 is a real number from `0` to `1` representing the percentage to take
 from `c1`, with `(1 - t)` taken from `c2`.

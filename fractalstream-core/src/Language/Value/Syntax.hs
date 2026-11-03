@@ -59,7 +59,7 @@ data UnOp
   | OpDark | OpLight | OpInvert
   deriving (Eq, Show)
 
-data Color3Op = OpBlend | OpCycle | OpRGB
+data Color3Op = OpBlend | OpCycle | OpRGB | OpHSV | OpHSL
   deriving (Eq, Show)
 
 data ExprF r

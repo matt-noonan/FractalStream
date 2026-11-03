@@ -380,6 +380,8 @@ Constants: `pi`/`π`, `e`/`𝑒`, `i`/`𝑖`, `true`, `false`.
 Colors:
 - names: `red green blue black white grey gray orange yellow purple violet pink`
 - `rgb(r, g, b)` with components in [0, 1]
+- `hsv(h, s, v)`, `hsl(h, s, l)`: hue h mod 1 (0 red, 1/3 green, 2/3 blue),
+  s/v/l clamped to [0, 1]; hsl's l = 0.5 is the full color, 1 white
 - `dark c`, `light c`, `invert c` (stackable: `light light red`)
 - `blend(t, c1, c2)`: t·c1 + (1 − t)·c2 (so t = 1 gives c1)
 - `cycle(t, c1, c2)`: period 1 in t, c2 at integers, c1 at half-integers

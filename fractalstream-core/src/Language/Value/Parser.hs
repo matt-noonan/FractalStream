@@ -400,6 +400,14 @@ valueAndArithGrammar funs = mdo
         EColor3 OpRGB <$> (token (Identifier "rgb") *> (token OpenParen *> arith))
               <*> (token Comma *> arith)
               <*> (token Comma *> arith <* token CloseParen))
+    , node (
+        EColor3 OpHSV <$> (token (Identifier "hsv") *> (token OpenParen *> arith))
+              <*> (token Comma *> arith)
+              <*> (token Comma *> arith <* token CloseParen))
+    , node (
+        EColor3 OpHSL <$> (token (Identifier "hsl") *> (token OpenParen *> arith))
+              <*> (token Comma *> arith)
+              <*> (token Comma *> arith <* token CloseParen))
     -- `autocolor(n, p)` and `get_autocolor(n, p)` (typing checks that
     -- the group number is a plain number)
     , node (
@@ -518,7 +526,7 @@ valueAndArithGrammar funs = mdo
         , "romao", "bamo", "broco", "corko", "viko"
         , "ice", "fire", "rose", "wheat", "forest", "ocean"
         , "winter", "spring", "summer", "fall"
-        , "rgb", "mod", "diff"]
+        , "rgb", "hsv", "hsl", "mod", "diff"]
         `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions

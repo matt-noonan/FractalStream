@@ -222,6 +222,8 @@ synth env (Syn sr node) = case node of
     x' <- check env RealT x
     (y', z') <- case op of
       OpRGB -> (,) <$> check env RealT y <*> check env RealT z
+      OpHSV -> (,) <$> check env RealT y <*> check env RealT z
+      OpHSL -> (,) <$> check env RealT y <*> check env RealT z
       _   -> (,) <$> check env ColorT y <*> check env ColorT z
     done ColorT (EColor3 op x' y' z')
 

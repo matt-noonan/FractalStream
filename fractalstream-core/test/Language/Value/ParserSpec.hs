@@ -8,6 +8,7 @@ import FractalStream.Prelude
 import Language.Type
 import Language.Value
 import Language.Value.Evaluator
+import Data.Color (Color, colorToRGB, rgbToColor, hsvToColor, hslToColor, red, white, black)
 
 
 import qualified Language.Value.Parser as P
@@ -312,6 +313,46 @@ spec = do
       parses4 1 0 0 `shouldBe` Right False
       parses4 2 0 0 `shouldBe` Right True
       parses4 3 0 0 `shouldBe` Right True
+
+  describe "when parsing hsv and hsl colors" $ do
+
+    let parseC = fmap (`evaluate` EmptyContext) . parseValue EmptyEnvProxy ColorType
+        hues = [-1.3, -0.25, 0, 0.1, 0.15, 1 / 6, 0.3, 0.5, 0.62, 0.8, 0.99, 1, 2.4]
+        amounts = [-0.5, 0, 0.2, 0.5, 0.75, 1, 1.5]
+        call f h a b = f ++ "(" ++ show h ++ ", " ++ show a ++ ", " ++ show b ++ ")"
+        -- (hsvToColor computes the same color a different way, so may round
+        -- a channel the other way)
+        within1 :: Color -> Color -> Bool
+        within1 c1 c2 =
+          let (r1, g1, b1) = colorToRGB c1
+              (r2, g2, b2) = colorToRGB c2
+              d x y = abs (fromIntegral x - fromIntegral y :: Int)
+          in maximum [d r1 r2, d g1 g2, d b1 b2] <= 1
+        clamp01 = max 0 . min 1 :: Double -> Double
+
+    it "gives the colors Data.Color does" $ do
+      forM_ hues $ \h -> forM_ amounts $ \a -> forM_ amounts $ \b -> do
+        parseC (call "hsl" h a b) `shouldBe` Right (hslToColor (h, a, b))
+        parseC (call "hsv" h a b) `shouldSatisfy` either (const False)
+          (within1 (hsvToColor (h, clamp01 a, clamp01 b)))
+
+    it "gives the expected colors" $ do
+      parseC "hsv(0, 1, 1)" `shouldBe` Right red
+      parseC "hsv(1/3, 1, 1)" `shouldBe` Right (rgbToColor (0, 255, 0))
+      parseC "hsv(2/3, 1, 1)" `shouldBe` Right (rgbToColor (0, 0, 255))
+      parseC "hsv(0.37, 0, 1)" `shouldBe` Right white
+      parseC "hsv(0.37, 1, 0)" `shouldBe` Right black
+      parseC "hsl(1, 1, 0.5)" `shouldBe` Right red
+      parseC "hsl(0.5, 1, 0.5)" `shouldBe` Right (rgbToColor (0, 255, 255))
+      parseC "hsl(0.2, 1, 1)" `shouldBe` Right white
+      parseC "hsl(0.2, 1, 0)" `shouldBe` Right black
+      parseC "hsl(0, 1, 0.75)" `shouldBe` Right (rgbToColor (255, 128, 128))
+
+    it "can be used inside other colors" $ do
+      parseC "blend(0.5, hsv(0, 1, 1), hsl(2/3, 1, 0.5))"
+        `shouldBe` parseC "blend(0.5, red, blue)"
+      parseC "cycle(0.25, hsv(1/2 + 1/2, 1, 1), hsl(0, 0, 0))"
+        `shouldBe` parseC "blend(0.5, red, black)"
 
   describe "when using keywords that require special variables" $ do
 

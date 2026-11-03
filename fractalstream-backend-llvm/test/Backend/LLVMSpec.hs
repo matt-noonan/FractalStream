@@ -12,7 +12,7 @@ import Data.IORef
 import Data.List (isInfixOf)
 import Control.Exception (IOException, ErrorCall(..))
 import Control.Concurrent (forkIO, killThread, threadDelay)
-import Control.Monad (forever, replicateM, replicateM_, void)
+import Control.Monad (forM_, forever, replicateM, replicateM_, void)
 import System.Timeout (timeout)
 import Actor.Viewer (ViewerFunction(..), ViewerArgs(..), ViewerIssues(..), PrepScript(..))
 import Actor.Viewer.Types (ViewerEnv)
@@ -52,6 +52,33 @@ spec = do
         f2 <- invoke' env ColorType f 1.5 2 black 0 0 False 0 0
         f1 `shouldBe` (rgbToColor (round (255 * 5 / 5.5 :: Double), 0, 0))
         f2 `shouldBe` (rgbToColor (round (255 * 2 / 2.5 :: Double), 0, 0))
+
+    it "computes hsv and hsl colors as Data.Color does" $ do
+      let env = declare @"x" RealType
+              $ declare @"y" RealType
+              $ declare @"color" ColorType
+              $ declare @"[internal] iteration count" IntegerType
+              $ declare @"[internal] iteration limit" IntegerType
+              $ declare @"[internal] stuck" BooleanType
+              $ declare @"[internal] escape radius" RealType
+              $ declare @"[internal] vanishing radius" RealType
+              $ endOfDecls
+          -- (rounding to a byte may go the other way: compiled code rounds
+          -- halves up, the interpreter to even)
+          within1 c1 c2 =
+            let (r1, g1, b1) = colorToRGB c1
+                (r2, g2, b2) = colorToRGB c2
+                d a b = abs (fromIntegral a - fromIntegral b :: Int)
+            in maximum [d r1 r2, d g1 g2, d b1 b2] <= 1
+          points = [ (h, a) | h <- [-0.3, 0, 0.1, 0.45, 0.7, 1.2], a <- [-1, 0, 0.3, 0.8, 1, 2] ]
+      withCompiledCode (Proxy @"color") ColorType env "color <- hsv(x, y, 0.8)" $ \f ->
+        forM_ points $ \(h, a) -> do
+          c <- invoke' env ColorType f h a black 0 0 False 0 0
+          c `shouldSatisfy` within1 (hsvToColor (h, max 0 (min 1 a), 0.8))
+      withCompiledCode (Proxy @"color") ColorType env "color <- hsl(x, 0.7, y)" $ \f ->
+        forM_ points $ \(h, a) -> do
+          c <- invoke' env ColorType f h a black 0 0 False 0 0
+          c `shouldSatisfy` within1 (hslToColor (h, 0.7, a))
 
     it "can compile a basic Mandelbrot set program" $ do
       let env = declare @"x" RealType
