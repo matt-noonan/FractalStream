@@ -250,9 +250,16 @@ foldLevelsForText codeBlocks txt =
     -- value below -- the whiteflag bit it can carry is far larger than
     -- any real indent difference and would otherwise make any blank
     -- line look like a header no matter its neighbours' actual depth.
+    --
+    -- Scintilla folds a blank line (one with the whiteflag) away with
+    -- the block before it, whatever its level. Blank lines between
+    -- stanzas, or between a stanza's top-level parts (tool handlers),
+    -- don't get it: they stay out of the fold before them, so folded
+    -- stanzas and handlers keep the space between them, rather than
+    -- stacking up.
     combine l rawIndent indent nextIndent =
       (wxSTC_FOLDLEVELBASE + indent)
-      .|. (if isNothing rawIndent then wxSTC_FOLDLEVELWHITEFLAG else 0)
+      .|. (if isNothing rawIndent && indent > stanzaBodyWeight then wxSTC_FOLDLEVELWHITEFLAG else 0)
       .|. (if nextIndent > indent && folds l then wxSTC_FOLDLEVELHEADERFLAG else 0)
 
     -- which lines can be folded: stanza headers and tool handlers' `on`
