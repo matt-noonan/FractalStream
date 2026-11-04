@@ -7,36 +7,53 @@ let `[internal] vanishing radius` = vanishing_radius in:
         let `[internal] iteration count` = 0 in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
-              block:
-                let `[internal] fresh #32` = 0 in:
-                  let `[internal] fresh #33` = [internal] iteration limit in:
-                    block:
-                      if (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)) then:
-                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)):
-                          block:
-                            set `z` := ((z ^ 2:R:C) + C)
-                            set `[internal] fresh #32` := ([internal] fresh #32 + 1)
-                      else:
-                        no-op
-                      set `[internal] iteration count` := [internal] fresh #32
-                      set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
                 block:
-                  let `[colorizer] Dynamical plane: z` = z in:
+                  if [internal] sphere view then:
                     block:
-                      block:
-                        if [internal] stuck then:
-                          block:
-                            set `color` := [colorizer] Dynamical plane: gives_up
-                        else:
-                          block:
-                            let `[colorizer] Dynamical plane: s` = [internal] iteration count:R in:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                        block:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `z` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `[internal] fresh #42` = 0 in:
+                      let `[internal] fresh #43` = [internal] iteration limit in:
+                        block:
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #42 < [internal] fresh #43)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #42 < [internal] fresh #43)):
                               block:
-                                if ([colorizer] Dynamical plane: smooth and ([internal] escape radius < |[colorizer] Dynamical plane: z|)) then:
+                                set `z` := ((z ^ 2:R:C) + C)
+                                set `[internal] fresh #42` := ([internal] fresh #42 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #42
+                          set `[internal] stuck` := ([internal] fresh #42 = [internal] fresh #43)
+                    block:
+                      let `[colorizer] Dynamical plane: z` = z in:
+                        block:
+                          block:
+                            if [internal] stuck then:
+                              block:
+                                set `color` := [colorizer] Dynamical plane: gives_up
+                            else:
+                              block:
+                                let `[colorizer] Dynamical plane: s` = [internal] iteration count:R in:
                                   block:
-                                    set `[colorizer] Dynamical plane: s` := (([internal] iteration count + 1):R - (log((log(|[colorizer] Dynamical plane: z|) / log(escape_radius))) / log([colorizer] Dynamical plane: degree)))
-                                else:
-                                  no-op
-                                set `color` := if (0:R < im([colorizer] Dynamical plane: z)) then let #cycle-arg = (([colorizer] Dynamical plane: s / [colorizer] Dynamical plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Dynamical plane: upper1, [colorizer] Dynamical plane: upper2) else let #cycle-arg = (([colorizer] Dynamical plane: s / [colorizer] Dynamical plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Dynamical plane: lower1, [colorizer] Dynamical plane: lower2)
+                                    if ([colorizer] Dynamical plane: smooth and ([internal] escape radius < |[colorizer] Dynamical plane: z|)) then:
+                                      block:
+                                        set `[colorizer] Dynamical plane: s` := (([internal] iteration count + 1):R - (log((log(|[colorizer] Dynamical plane: z|) / log(escape_radius))) / log([colorizer] Dynamical plane: degree)))
+                                    else:
+                                      no-op
+                                    set `color` := if (0:R < im([colorizer] Dynamical plane: z)) then let #cycle-arg = (([colorizer] Dynamical plane: s / [colorizer] Dynamical plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Dynamical plane: upper1, [colorizer] Dynamical plane: upper2) else let #cycle-arg = (([colorizer] Dynamical plane: s / [colorizer] Dynamical plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Dynamical plane: lower1, [colorizer] Dynamical plane: lower2)
 
 
 --- tool Dynamical plane external rays
@@ -72,38 +89,55 @@ let `[internal] vanishing radius` = vanishing_radius in:
           block:
             set `C` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
             let `pixel_size` = [internal] dx in:
-              block:
-                let `z` = 0:R:C in:
-                  block:
-                    let `[internal] fresh #32` = 0 in:
-                      let `[internal] fresh #33` = [internal] iteration limit in:
-                        block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)):
-                              block:
-                                set `z` := ((z ^ 2:R:C) + C)
-                                set `[internal] fresh #32` := ([internal] fresh #32 + 1)
-                          else:
-                            no-op
-                          set `[internal] iteration count` := [internal] fresh #32
-                          set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
                     block:
-                      let `[colorizer] Parameter plane: z` = z in:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
                         block:
-                          block:
-                            if [internal] stuck then:
-                              block:
-                                set `color` := [colorizer] Parameter plane: gives_up
-                            else:
-                              block:
-                                let `[colorizer] Parameter plane: s` = [internal] iteration count:R in:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `C` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `z` = 0:R:C in:
+                      block:
+                        let `[internal] fresh #42` = 0 in:
+                          let `[internal] fresh #43` = [internal] iteration limit in:
+                            block:
+                              if (!([internal] escape radius < |z|) and ([internal] fresh #42 < [internal] fresh #43)) then:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #42 < [internal] fresh #43)):
                                   block:
-                                    if ([colorizer] Parameter plane: smooth and ([internal] escape radius < |[colorizer] Parameter plane: z|)) then:
+                                    set `z` := ((z ^ 2:R:C) + C)
+                                    set `[internal] fresh #42` := ([internal] fresh #42 + 1)
+                              else:
+                                no-op
+                              set `[internal] iteration count` := [internal] fresh #42
+                              set `[internal] stuck` := ([internal] fresh #42 = [internal] fresh #43)
+                        block:
+                          let `[colorizer] Parameter plane: z` = z in:
+                            block:
+                              block:
+                                if [internal] stuck then:
+                                  block:
+                                    set `color` := [colorizer] Parameter plane: gives_up
+                                else:
+                                  block:
+                                    let `[colorizer] Parameter plane: s` = [internal] iteration count:R in:
                                       block:
-                                        set `[colorizer] Parameter plane: s` := (([internal] iteration count + 1):R - (log((log(|[colorizer] Parameter plane: z|) / log(escape_radius))) / log([colorizer] Parameter plane: degree)))
-                                    else:
-                                      no-op
-                                    set `color` := if (0:R < im([colorizer] Parameter plane: z)) then let #cycle-arg = (([colorizer] Parameter plane: s / [colorizer] Parameter plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Parameter plane: upper1, [colorizer] Parameter plane: upper2) else let #cycle-arg = (([colorizer] Parameter plane: s / [colorizer] Parameter plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Parameter plane: lower1, [colorizer] Parameter plane: lower2)
+                                        if ([colorizer] Parameter plane: smooth and ([internal] escape radius < |[colorizer] Parameter plane: z|)) then:
+                                          block:
+                                            set `[colorizer] Parameter plane: s` := (([internal] iteration count + 1):R - (log((log(|[colorizer] Parameter plane: z|) / log(escape_radius))) / log([colorizer] Parameter plane: degree)))
+                                        else:
+                                          no-op
+                                        set `color` := if (0:R < im([colorizer] Parameter plane: z)) then let #cycle-arg = (([colorizer] Parameter plane: s / [colorizer] Parameter plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Parameter plane: upper1, [colorizer] Parameter plane: upper2) else let #cycle-arg = (([colorizer] Parameter plane: s / [colorizer] Parameter plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Parameter plane: lower1, [colorizer] Parameter plane: lower2)
 
 
 --- tool Parameter plane external rays

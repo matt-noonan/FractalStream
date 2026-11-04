@@ -42,7 +42,7 @@ import Language.Parser.SourceRange
 import Language.Value.Parser
 import Language.Code.Parser (CommonDefs(..), noCommonDefs, codeStatementsGrammar, codeBlockGrammar, ParsedCode, withDefinedFunctions, withCommon)
 import Language.Code.Syntax (Stmt(..), StmtF(..))
-import Actor.Event (toolBlocksGrammar, ParsedToolBlock, Coordinate(..))
+import Actor.Event (toolBlocksGrammar, ParsedToolBlock, Coordinate(..), ViewKind(..))
 import Actor.Layout (AppAction(..))
 
 import qualified Data.Set as Set
@@ -136,6 +136,9 @@ data ParsedStanza
       , vsCenter      :: Maybe String
       , vsPixelSize   :: Maybe String
       , vsAspect      :: Maybe String
+      , vsView        :: ViewKind
+        -- ^ The @view=@ attribute: how the viewer starts out showing its
+        -- points, on the plane (the default) or on the Riemann sphere.
         -- ^ The @aspect=@ attribute (a real viewer's pixel height over
         -- its pixel width), as written.
       , vsIterLimit   :: Maybe String
@@ -616,7 +619,7 @@ scriptGrammar defs = mdo
   viewerStanza <- rule $
     (\ehdr mcoloringE mprepE code ->
         (\ViewerHeader{..} mcoloring mprep ->
-            ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhIterLimit vhEscape vhVanish
+            ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhView vhIterLimit vhEscape vhVanish
                          vhPixelVar vhColorizer (fromMaybe [] mcoloring) mprep code (funNames defs))
         <$> ehdr <*> sequence mcoloringE <*> sequence mprepE)
     <$> viewerHeader <*> optional coloringBlock <*> optional prepareBlock
@@ -740,6 +743,7 @@ data ViewerHeader = ViewerHeader
   , vhCenter    :: Maybe String
   , vhPixelSize :: Maybe String
   , vhAspect    :: Maybe String
+  , vhView      :: ViewKind
   , vhIterLimit :: Maybe String
   , vhEscape    :: Maybe String
   , vhVanish    :: Maybe String
@@ -794,7 +798,7 @@ validateViewerHeader sr vhTitle attrs = do
                 \by the user interface itself (for the wx UI, under the \
                 \project file's `wx-properties:` key).")
   checkKnownAttrs sr
-    [ "var", "xvar", "yvar", "center", "pixelSize", "aspect"
+    [ "var", "xvar", "yvar", "center", "pixelSize", "aspect", "view"
     , "limit", "escape", "vanish", "pixelVar", "colorizer" ]
     attrs
   -- A beginner's first viewer doesn't need to think about a
@@ -817,8 +821,18 @@ validateViewerHeader sr vhTitle attrs = do
       Left (sr, "Only a real viewer (one with `xvar=` and `yvar=`) can have an \
                 \`aspect` attribute: a complex viewer's pixels are always square.")
     _ -> Right ()
+  vhView <- case lookupAttr "view" attrs of
+    Nothing -> Right PlaneView
+    Just "plane" -> Right PlaneView
+    Just "sphere" -> Right SphereView
+    Just v -> Left (sr, "A viewer's `view` is `plane` or `sphere`, not `" ++ v ++ "`.")
+  case (vhCoord, vhView) of
+    (RealCoordinates _ _, SphereView) ->
+      Left (sr, "Only a complex viewer (one with `var=`) can be shown on the sphere \
+                \(`view=sphere`): a real viewer's points are pairs of real numbers.")
+    _ -> Right ()
   pure ViewerHeader
-    { vhTitle, vhCoord, vhAspect
+    { vhTitle, vhCoord, vhAspect, vhView
     , vhCenter
     = lookupAttr "center" attrs
     , vhPixelSize = lookupAttr "pixelSize" attrs

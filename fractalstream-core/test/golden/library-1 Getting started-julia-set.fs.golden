@@ -7,27 +7,44 @@ let `[internal] vanishing radius` = vanishing_radius in:
         let `[internal] iteration count` = 0 in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
-              block:
-                let `[internal] fresh #20` = 0 in:
-                  let `[internal] fresh #21` = [internal] iteration limit in:
-                    block:
-                      if (!([internal] escape radius < |z|) and ([internal] fresh #20 < [internal] fresh #21)) then:
-                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #20 < [internal] fresh #21)):
-                          block:
-                            set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                            set `[internal] fresh #20` := ([internal] fresh #20 + 1)
-                      else:
-                        no-op
-                      set `[internal] iteration count` := [internal] fresh #20
-                      set `[internal] stuck` := ([internal] fresh #20 = [internal] fresh #21)
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
                 block:
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                        block:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `z` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
                   block:
-                    if [internal] stuck then:
+                    let `[internal] fresh #30` = 0 in:
+                      let `[internal] fresh #31` = [internal] iteration limit in:
+                        block:
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #30 < [internal] fresh #31)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #30 < [internal] fresh #31)):
+                              block:
+                                set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
+                                set `[internal] fresh #30` := ([internal] fresh #30 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #30
+                          set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
+                    block:
                       block:
-                        set `color` := [colorizer] Julia set: gives_up
-                    else:
-                      block:
-                        set `color` := blend((([internal] iteration count:R / max_iters:R) ^ [colorizer] Julia set: brightness), [colorizer] Julia set: near, [colorizer] Julia set: far)
+                        if [internal] stuck then:
+                          block:
+                            set `color` := [colorizer] Julia set: gives_up
+                        else:
+                          block:
+                            set `color` := blend((([internal] iteration count:R / max_iters:R) ^ [colorizer] Julia set: brightness), [colorizer] Julia set: near, [colorizer] Julia set: far)
 
 
 --- tool Trace

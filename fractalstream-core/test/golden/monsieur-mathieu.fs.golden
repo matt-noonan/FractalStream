@@ -7,37 +7,54 @@ let `[internal] vanishing radius` = tol in:
         let `[internal] iteration count` = 0 in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
-              block:
-                let `a` = ((107:R:C + ((7:R * sqrt(11:R)):C * 0.0 :+ 1.0)) / 486:R:C) in:
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                        block:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `z` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
                   block:
-                    let `b` = (((-13:R:C * a) / 567:R:C) + (5:R / 1701:R):C) in:
+                    let `a` = ((107:R:C + ((7:R * sqrt(11:R)):C * 0.0 :+ 1.0)) / 486:R:C) in:
                       block:
-                        let `d` = (((23:R:C * a) / 7:R:C) + (256:R / 567:R):C) in:
+                        let `b` = (((-13:R:C * a) / 567:R:C) + (5:R / 1701:R):C) in:
                           block:
-                            let `ee` = (((-1573:R:C * a) / 567:R:C) + (605:R / 1701:R):C) in:
+                            let `d` = (((23:R:C * a) / 7:R:C) + (256:R / 567:R):C) in:
                               block:
-                                let `f` = (-17:R / 9:R) in:
+                                let `ee` = (((-1573:R:C * a) / 567:R:C) + (605:R / 1701:R):C) in:
                                   block:
-                                    let `k` = (((-16192:R:C * a) / 301327047:R:C) + (10880:R / 903981141:R):C) in:
+                                    let `f` = (-17:R / 9:R) in:
                                       block:
-                                        set `z` := (((((((z ^ 3:R:C) - (z ^ 2:R:C)) + (a * z)) + b) ^ 3:R:C) * ((((z ^ 3:R:C) + (f:C * (z ^ 2:R:C))) + (d * z)) + ee)) / (k * z))
-                                        if (|(z - tol:C)| < [internal] vanishing radius) then:
+                                        let `k` = (((-16192:R:C * a) / 301327047:R:C) + (10880:R / 903981141:R):C) in:
                                           block:
-                                            set `color` := Color 0 0 255
-                                        else:
-                                          if (|(z - 1:R:C)| < [internal] vanishing radius) then:
-                                            block:
-                                              set `color` := Color 255 0 0
-                                          else:
-                                            if ((|im(z)| < [internal] vanishing radius) and ((0:R < re(z)) and (re(z) < 1:R))) then:
+                                            set `z` := (((((((z ^ 3:R:C) - (z ^ 2:R:C)) + (a * z)) + b) ^ 3:R:C) * ((((z ^ 3:R:C) + (f:C * (z ^ 2:R:C))) + (d * z)) + ee)) / (k * z))
+                                            if (|(z - tol:C)| < [internal] vanishing radius) then:
                                               block:
-                                                set `color` := Color 0 180 0
+                                                set `color` := Color 0 0 255
                                             else:
-                                              if (0:R < im(z)) then:
+                                              if (|(z - 1:R:C)| < [internal] vanishing radius) then:
                                                 block:
-                                                  set `color` := Color 255 255 255
+                                                  set `color` := Color 255 0 0
                                               else:
-                                                block:
-                                                  set `color` := Color 0 0 0
+                                                if ((|im(z)| < [internal] vanishing radius) and ((0:R < re(z)) and (re(z) < 1:R))) then:
+                                                  block:
+                                                    set `color` := Color 0 180 0
+                                                else:
+                                                  if (0:R < im(z)) then:
+                                                    block:
+                                                      set `color` := Color 255 255 255
+                                                  else:
+                                                    block:
+                                                      set `color` := Color 0 0 0
 
 

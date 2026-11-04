@@ -1,0 +1,87 @@
+=== viewer 0: Parameter plane
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          block:
+            set `λ` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
+            let `pixel_size` = [internal] dx in:
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                        block:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `λ` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `z` = (2:R:C * sqrt(λ)) in:
+                      block:
+                        let `[internal] fresh #26` = 0 in:
+                          let `[internal] fresh #27` = [internal] iteration limit in:
+                            block:
+                              if (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)) then:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)):
+                                  block:
+                                    set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + (λ / ([internal] f.z #0 ^ 2:R:C)))
+                                    set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                              else:
+                                no-op
+                              set `[internal] iteration count` := [internal] fresh #26
+                              set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                        set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 12:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 0 0 255), Color 255 255 255)
+
+
+=== viewer 1: Julia set
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                        block:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `z` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `[internal] fresh #26` = 0 in:
+                      let `[internal] fresh #27` = [internal] iteration limit in:
+                        block:
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)):
+                              block:
+                                set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + (λ / ([internal] f.z #0 ^ 2:R:C)))
+                                set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #26
+                          set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                    set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 6:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 255 100 0), blend(0.333, Color 255 255 255, Color 255 255 0))
+
+

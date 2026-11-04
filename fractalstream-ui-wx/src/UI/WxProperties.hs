@@ -62,6 +62,13 @@ data ViewerProperties = ViewerProperties
   , vpPixelSize :: Maybe Double
   , vpAspect    :: Maybe Double
     -- ^ A real viewer's pixel height over its width, when it isn't 1.
+  , vpView      :: Maybe String
+    -- ^ @sphere@ or @plane@, for a complex viewer showing the other one
+    -- than its script starts with.
+  , vpRotation  :: Maybe [Double]
+    -- ^ On the sphere, the globe's orientation (a unit quaternion: w, x,
+    -- y, z). Its center and pixel size are then on the globe's screen
+    -- plane.
   }
 
 instance FromJSON ViewerProperties where
@@ -70,6 +77,7 @@ instance FromJSON ViewerProperties where
     <*> o .:? "width" <*> o .:? "height"
     <*> o .:? "resizable" <*> o .:? "visible"
     <*> o .:? "center" <*> o .:? "pixel-size" <*> o .:? "aspect"
+    <*> o .:? "view" <*> o .:? "rotation"
 
 instance ToJSON ViewerProperties where
   toJSON ViewerProperties{..} = object $ catMaybes
@@ -78,6 +86,7 @@ instance ToJSON ViewerProperties where
     , ("resizable" .=) <$> vpResizable, ("visible" .=) <$> vpVisible
     , ("center" .=) <$> vpCenter, ("pixel-size" .=) <$> vpPixelSize
     , ("aspect" .=) <$> vpAspect
+    , ("view" .=) <$> vpView, ("rotation" .=) <$> vpRotation
     ]
 
 -- | Where a window without anything else worth remembering sits.

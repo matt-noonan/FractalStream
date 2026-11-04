@@ -28,6 +28,9 @@ module Actor.Viewer
   , withRenderedViewerBuffer
   , RenderedBuffer(..)
   , renderViewerBuffer
+  , viewProjection
+  , switchView
+  , centerViewOn
   , allGrey
   , defaultIterLimit
   , defaultMaxRadius
@@ -48,7 +51,7 @@ import Data.DynamicValue
 import Actor.Layout (Dimensions(..))
 import Actor.Tool
 import Actor.Event ( ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript, Event
-                   , Coordinate(..), bindOrDeclare, RealIn(..), bindFreshReals
+                   , Coordinate(..), ViewKind(..), bindOrDeclare, RealIn(..), bindFreshReals
                    , pixelWidthVar, pixelHeightVar, PixelDims )
 import Language.Environment
 import Language.Typecheck (TC(..), ppError)
@@ -63,6 +66,7 @@ import Language.Parser.SourceRange
 import Language.Value.Evaluator
 import Foreign
 import Data.PNG
+import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Rotation, Projection(..), ScreenView(..), rotationFacing, rotateBy, sphereToPlane)
 import qualified Data.Map as Map
 
 data ViewerContext env = ViewerContext
@@ -208,6 +212,18 @@ data Viewer = Viewer
   , vCoordinate :: Coordinate
     -- ^ How the viewer's points are named: a complex viewer's pixels are
     -- square, while a real viewer's aspect can be changed.
+  , vView :: Variable ViewKind
+    -- ^ Whether a complex viewer shows the plane or the sphere. On the
+    -- sphere, 'vCenter' is the globe's center on the screen (0), and
+    -- 'vPixelSize' is in units of the sphere's radius.
+  , vRotation :: Variable Rotation
+    -- ^ The globe's orientation, on the sphere (see "Actor.Viewer.Sphere").
+  , vOriginalView :: ViewKind
+  , vOriginalRotation :: Rotation
+  , vOriginalPlaneView :: ((Double, Double), Double)
+    -- ^ The plane view the script describes (center and pixel size),
+    -- whichever view it starts with.
+  , vOriginalSpherePixelSize :: Double
   , vSaveView  :: IO ()
   , vListen    :: IO () -> IO (IO ())
   , vDrawCmds  :: IO [[DrawCommand]]
@@ -246,14 +262,14 @@ data Viewer = Viewer
 withRenderedViewerBuffer
   :: Viewer
   -> Bool
-  -> ((Double, Double) -> (Double, Double) -> (Word32, Word32) -> Ptr Word8 -> IO a)
+  -> (ScreenView -> (Word32, Word32) -> Ptr Word8 -> IO a)
   -> IO (Either String (ViewerIssues, a))
 withRenderedViewerBuffer viewer downsample withBuffer =
   renderViewerBuffer downsample viewer >>= \case
     Left err -> pure (Left err)
     Right RenderedBuffer{..} -> withForeignPtr rbPixels $ \buf ->
       Right . (rbIssues,) <$>
-        withBuffer rbCenter rbPixelSize (fromIntegral rbWidth, fromIntegral rbHeight) buf
+        withBuffer (ScreenView rbCenter rbPixelSize rbProjection) (fromIntegral rbWidth, fromIntegral rbHeight) buf
 
 -- | A viewer's base render: @3 * rbWidth * rbHeight@ bytes of RGB8, with
 -- the model-space center and pixel size it was drawn at.
@@ -264,6 +280,8 @@ data RenderedBuffer = RenderedBuffer
   , rbCenter    :: (Double, Double)
   , rbPixelSize :: (Double, Double)
     -- ^ the width and height of a pixel
+  , rbProjection :: Projection
+    -- ^ how model points get onto the image (on the plane, or the globe)
   , rbIssues    :: ViewerIssues
   }
 
@@ -284,6 +302,7 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
       Dimensions (w, h) <- getDynamic vSize
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
+      projection <- viewProjection vView vRotation
       center@(cx, cy) <- getDynamic vCenter
       ViewerFunction fn <- getDynamic code
       let s = if downsample then 2 else 1
@@ -314,7 +333,7 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
             if downsample then downsampleRows bigW w rows big dest
                           else copyBytes dest big (3 * w * rows)
       issues <- readMVar issuesVar
-      pure (Right (RenderedBuffer out w h center (pixelSize, pixelSize * aspect) issues))
+      pure (Right (RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection issues))
 
 -- | Average each 2x2 block of a @bigW@-pixel-wide RGB8 buffer down to
 -- one pixel of a @w@-pixel-wide one, for @rows@ output rows.
@@ -329,11 +348,47 @@ downsampleRows bigW w rows big dest =
     c4 <- at (ix + 3 * bigW + 3)
     pokeElemOff dest (3 * i + 3 * w * j + k) (fromIntegral ((c1 + c2 + c3 + c4 + 2) `div` 4))
 
+-- | Show a complex viewer's points on the plane or on the sphere,
+-- keeping the point in the middle of the view there: on the sphere,
+-- the globe turns to face it; on the plane, the view is centered on the
+-- point the globe faced (or 0, if that was ∞). Each starts at the zoom
+-- the script gives it.
+switchView :: Viewer -> ViewKind -> IO ()
+switchView v kind = do
+  old <- getDynamic (vView v)
+  when (old /= kind) $ case kind of
+    SphereView -> do
+      c <- getDynamic (vCenter v)
+      setValue' (vRotation v) (rotationFacing c)
+      setValue' (vCenter v) (0, 0)
+      setValue' (vPixelSize v) (vOriginalSpherePixelSize v)
+      setValue' (vView v) SphereView
+    PlaneView -> do
+      r <- getDynamic (vRotation v)
+      let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
+          finite a = not (isNaN a || isInfinite a) && abs a < 1e300
+      setValue' (vCenter v) (if finite cx && finite cy then c else (0, 0))
+      setValue' (vPixelSize v) (snd (vOriginalPlaneView v))
+      setValue' (vView v) PlaneView
+
+-- | Center a viewer's view on a point: on the sphere, turn the globe to
+-- face it.
+centerViewOn :: Viewer -> (Double, Double) -> IO ()
+centerViewOn v c = getDynamic (vView v) >>= \case
+  PlaneView -> setValue' (vCenter v) c
+  SphereView -> setValue' (vRotation v) (rotationFacing c)
+
+-- | How a viewer's model points get onto its screen now.
+viewProjection :: Variable ViewKind -> Variable Rotation -> IO Projection
+viewProjection viewV rotationV = getDynamic viewV >>= \case
+  PlaneView -> pure FlatProjection
+  SphereView -> GlobeProjection <$> getDynamic rotationV
+
 -- | Render a viewer to a PNG file, returning any issues the render ran into.
 snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Either String ViewerIssues)
 snapshotToFile viewer downsample path =
   fmap fst <$>
-    withRenderedViewerBuffer viewer downsample (\_ _ dim buf -> encodeBufferToPngFile dim buf path)
+    withRenderedViewerBuffer viewer downsample (\_ dim buf -> encodeBufferToPngFile dim buf path)
 
 onParameterChanges :: Viewer -> IO () -> IO (IO ())
 onParameterChanges = vListen
@@ -477,9 +532,14 @@ parseViewerScript mpx ViewerContext{..} c = do
             ComplexCoordinate _ -> []
             RealCoordinates _ _ -> [ (pixelWidthVar, internal InternalDX)
                                    , (pixelHeightVar, internal InternalDY) ]
+          -- (a complex viewer given its view can show the sphere; see
+          -- "Actor.Viewer.Sphere")
+          c' = case vcCoord of
+            ComplexCoordinate z | sphereViewName `Map.member` envToMap env -> onTheSphere z c
+            _ -> c
           body :: forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e)
           body e = bindFreshReals pixelVars e $ \e' ->
-            left (errorLocation &&& unlines . pp) (runParsedCode e' c)
+            left (errorLocation &&& unlines . pp) (runParsedCode e' c')
 
       -- Bind the viewer's coordinate(s) to the point: a variable that's
       -- already defined (a configuration value) is set, and must have
@@ -515,6 +575,8 @@ cloneViewer v = do
   newCenter    <- newVariable =<< getDynamic (vCenter v)
   newPixelSize <- newVariable =<< getDynamic (vPixelSize v)
   newAspect    <- newVariable =<< getDynamic (vAspect v)
+  newView      <- newVariable =<< getDynamic (vView v)
+  newRotation  <- newVariable =<< getDynamic (vRotation v)
   pure $ Viewer
     { vTitle = newTitle
     , vSize  = newSize
@@ -527,6 +589,12 @@ cloneViewer v = do
     , vOriginalPixelSize = vOriginalPixelSize v
     , vOriginalAspect = vOriginalAspect v
     , vCoordinate = vCoordinate v
+    , vView = newView
+    , vRotation = newRotation
+    , vOriginalView = vOriginalView v
+    , vOriginalRotation = vOriginalRotation v
+    , vOriginalPlaneView = vOriginalPlaneView v
+    , vOriginalSpherePixelSize = vOriginalSpherePixelSize v
     , vSaveView = vSaveView v
 
     , vListen = vListen v

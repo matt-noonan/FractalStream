@@ -584,6 +584,32 @@ viewer's menu has an "Aspect ratio..." item to change it. Besides
 tools can read `pixel_width` (the same) and `pixel_height`. A complex
 viewer's pixels are always square.
 
+### Viewers on the Riemann sphere
+
+A complex viewer can show its points on the Riemann sphere instead of
+the plane: as a globe, with `view=sphere`.
+
+```
+@viewer "Newton's method" var=z view=sphere
+iterate z ⟼ z - (z³ - 1) / (3 z²) until z stops
+```
+
+The script is the same as on the plane: `z` is the point of the globe
+under each pixel, by stereographic projection, so 0 is the globe's north
+pole, ∞ its south pole, and the unit circle its equator. With no
+rotation, 0 faces you, with the real axis to the right and the imaginary
+axis up, as on the plane; `center=` is the point that faces you to start
+with, and `pixelSize=` is measured on the sphere, whose radius is 1 (by
+default, the globe fills most of the window). Dragging with the Navigate
+tool turns the globe, and scrolling zooms in or out. The viewer's menu
+switches between the sphere and the plane ("Show on the sphere"), keeping
+the point in the middle of the view. Tools work the same way on the
+sphere, with what they draw placed on the globe; a click off the globe
+does nothing.
+
+Near ∞, a complex number loses precision, so a script whose interesting
+part is near ∞ may look rough there for now.
+
 ### Colorizers
 
 A viewer script often only needs to say what to compute, like

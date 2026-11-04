@@ -113,6 +113,7 @@ every point its viewers find, renders the same either way.
 | `resize viewer to <W>x<H>` | Change the viewer's pixel dimensions (`WxH`, e.g. `800x600`; viewers start at `600x600`). |
 | `set viewer center to <point>` | Change the model-space point the view is centered on. |
 | `set viewer pixel size to <value-expr>` | Change the model-space size of one pixel (zoom level): its width, in a real viewer. |
+| `set viewer view to sphere` (or `plane`) | Show a complex viewer's points on the Riemann sphere, as a globe (or back on the plane), keeping the point in the middle of the view. On the sphere, `set viewer center to <point>` turns the globe to face the point, and `set viewer pixel size to` is measured on the sphere, whose radius is 1. |
 | `set viewer aspect to <value-expr>` | Change a real viewer's aspect ratio: the height of a pixel over its width (positive). It's an error in a complex viewer, whose pixels are always square. |
 
 ### Synthetic input (current viewer/tool)

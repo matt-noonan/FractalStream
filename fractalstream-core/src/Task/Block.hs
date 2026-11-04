@@ -10,6 +10,8 @@ module Task.Block
   , BlockComputeAction
   , fillBlock
   , progressively
+  , progressivelyOver
+  , subBlockSize
   ) where
 
 import FractalStream.Prelude
@@ -115,11 +117,14 @@ fillBlock Block{..} = do
       with blockBuffer $ \buffer -> withForeignPtr buffer $ \ptr -> do
         forM_ (zip uv_points [0..]) $ \((u,v), ix) -> do
           --let index = floor $ u + v * fromIntegral xStride
+          r <- peekByteOff @Word8 tmp (3*ix + 0)
+          g <- peekByteOff @Word8 tmp (3*ix + 1)
+          b <- peekByteOff @Word8 tmp (3*ix + 2)
           forM_ [indexOf (u + du, v + dv) | dv <- [0 .. skip - 1]
                                           , du <- [0 .. skip - 1] ] $ \offset -> do
-            peekByteOff @Word8 tmp (3*ix + 0) >>= pokeByteOff ptr (3*offset + 0)
-            peekByteOff @Word8 tmp (3*ix + 1) >>= pokeByteOff ptr (3*offset + 1)
-            peekByteOff @Word8 tmp (3*ix + 2) >>= pokeByteOff ptr (3*offset + 2)
+            pokeByteOff ptr (3*offset + 0) r
+            pokeByteOff ptr (3*offset + 1) g
+            pokeByteOff ptr (3*offset + 2) b
 
       -- Completed the block, signal for a redraw
       void (tryPutMVar shouldRedraw ())
@@ -127,11 +132,24 @@ fillBlock Block{..} = do
 -- | Chop up a block into sub-blocks, delegate rendering
 --   tasks for sub-blocks, and blit the results back
 --   into an image.
-progressively :: (Block -> IO ()) -> (Block -> IO ())
-progressively render block = do
+-- | The size of the square pieces 'progressively' renders a block in.
+subBlockSize :: Int
+subBlockSize = 16
 
-    let subBlockSize = 16
-        width   = xSize block
+progressively :: (Block -> IO ()) -> (Block -> IO ())
+progressively = progressivelyOver (\_ _ -> False)
+
+-- | 'progressively', over an image that already shows something (the
+-- last render, moved into this view) in the pieces the predicate holds
+-- for (by piece, counting 'subBlockSize' squares from the top left).
+-- The pieces that show nothing yet get the coarse passes first; the
+-- others skip them (the picture they show is already better than big
+-- squares) and keep it until they're drawn at full resolution, after the
+-- new pieces are; then everything is subsampled.
+progressivelyOver :: (Int -> Int -> Bool) -> (Block -> IO ()) -> (Block -> IO ())
+progressivelyOver shown render block = do
+
+    let width   = xSize block
         height  = ySize block
         xBlocks = let (z,r) = width `divMod` subBlockSize
                   in zip [0 .. z - 1] (repeat subBlockSize) ++
@@ -150,10 +168,13 @@ progressively render block = do
 
     let rates = filter (<= logSampleRate block) [-4, -2, 0, 1]
 
-    let todo = [(rate, x, y)
-               | rate <- rates, (x,y) <- subblocks
-               , rate >= 0 || (snd x `mod` 2^(negate rate) == 0 &&
-                               snd y `mod` 2^(negate rate) == 0) ]
+    let fits rate (x, y) = rate >= 0 || (snd x `mod` 2^(negate rate) == 0 &&
+                                         snd y `mod` 2^(negate rate) == 0)
+        isShown (x, y) = shown (fst x) (fst y)
+        (fresh, kept) = (filter (not . isShown) subblocks, filter isShown subblocks)
+        todo = [ (rate, x, y) | rate <- rates, rate < 0, (x, y) <- fresh, fits rate (x, y) ]
+            ++ [ (0, x, y) | 0 `elem` rates, (x, y) <- fresh ++ kept ]
+            ++ [ (rate, x, y) | rate <- rates, rate > 0, (x, y) <- subblocks ]
     when False $ putStrLn $ "***** start @ rates=" ++ show rates
     start <- getCurrentTime
 

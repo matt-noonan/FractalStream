@@ -7,44 +7,61 @@ let `[internal] vanishing radius` = vanishing_radius in:
         let `[internal] iteration count` = 0 in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
-              block:
-                let `p` = z in:
-                  block:
-                    let `x` = (z + 1:R:C) in:
-                      block:
-                        let `y` = ((z * ((z + 1:R:C) ^ 2:R:C)) + 1:R:C) in:
-                          block:
-                            let `[internal] fresh #18` = 0 in:
-                              let `[internal] fresh #19` = [internal] iteration limit in:
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                        block:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
                                 block:
-                                  do-while (!((|(x - 0:R:C)| < [internal] vanishing radius) and (|(y - 1:R:C)| < [internal] vanishing radius)) and ([internal] fresh #18 < [internal] fresh #19)):
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
                                     block:
-                                      block:
-                                        set `x` := (((y ^ 2:R:C) - 1:R:C) / (y ^ 2:R:C))
-                                        set `y` := (((y ^ 2:R:C) - (x ^ 2:R:C)) / (y ^ 2:R:C))
-                                      set `[internal] fresh #18` := ([internal] fresh #18 + 1)
-                                  set `[internal] iteration count` := [internal] fresh #18
-                                  set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
-                            let `saved_count` = [internal] iteration count in:
+                                      set `z` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `p` = z in:
+                      block:
+                        let `x` = (z + 1:R:C) in:
+                          block:
+                            let `y` = ((z * ((z + 1:R:C) ^ 2:R:C)) + 1:R:C) in:
                               block:
-                                set `z` := 0:R:C
-                                let `[internal] fresh #19` = 0 in:
-                                  let `[internal] fresh #20` = [internal] iteration limit in:
+                                let `[internal] fresh #28` = 0 in:
+                                  let `[internal] fresh #29` = [internal] iteration limit in:
                                     block:
-                                      if (!([internal] escape radius < |z|) and ([internal] fresh #19 < [internal] fresh #20)) then:
-                                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #19 < [internal] fresh #20)):
+                                      do-while (!((|(x - 0:R:C)| < [internal] vanishing radius) and (|(y - 1:R:C)| < [internal] vanishing radius)) and ([internal] fresh #28 < [internal] fresh #29)):
+                                        block:
                                           block:
-                                            set `z` := ((p * (z ^ 2:R:C)) + 1:R:C)
-                                            set `[internal] fresh #19` := ([internal] fresh #19 + 1)
-                                      else:
-                                        no-op
-                                      set `[internal] iteration count` := [internal] fresh #19
-                                      set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
-                                if ([internal] escape radius < |z|) then:
+                                            set `x` := (((y ^ 2:R:C) - 1:R:C) / (y ^ 2:R:C))
+                                            set `y` := (((y ^ 2:R:C) - (x ^ 2:R:C)) / (y ^ 2:R:C))
+                                          set `[internal] fresh #28` := ([internal] fresh #28 + 1)
+                                      set `[internal] iteration count` := [internal] fresh #28
+                                      set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
+                                let `saved_count` = [internal] iteration count in:
                                   block:
-                                    set `color` := let #cycle-arg = ((saved_count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 255 0 0), blend(0.333, Color 255 255 255, Color 255 0 0))
-                                else:
-                                  block:
-                                    set `color` := let #cycle-arg = ((saved_count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 0 180 0), blend(0.333, Color 255 255 255, Color 0 180 0))
+                                    set `z` := 0:R:C
+                                    let `[internal] fresh #29` = 0 in:
+                                      let `[internal] fresh #30` = [internal] iteration limit in:
+                                        block:
+                                          if (!([internal] escape radius < |z|) and ([internal] fresh #29 < [internal] fresh #30)) then:
+                                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #29 < [internal] fresh #30)):
+                                              block:
+                                                set `z` := ((p * (z ^ 2:R:C)) + 1:R:C)
+                                                set `[internal] fresh #29` := ([internal] fresh #29 + 1)
+                                          else:
+                                            no-op
+                                          set `[internal] iteration count` := [internal] fresh #29
+                                          set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                                    if ([internal] escape radius < |z|) then:
+                                      block:
+                                        set `color` := let #cycle-arg = ((saved_count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 255 0 0), blend(0.333, Color 255 255 255, Color 255 0 0))
+                                    else:
+                                      block:
+                                        set `color` := let #cycle-arg = ((saved_count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 0 180 0), blend(0.333, Color 255 255 255, Color 0 180 0))
 
 

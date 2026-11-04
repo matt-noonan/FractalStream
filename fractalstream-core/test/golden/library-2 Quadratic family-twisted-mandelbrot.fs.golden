@@ -8,14 +8,101 @@ let `[internal] vanishing radius` = vanishing_radius in:
           block:
             set `C` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
             let `pixel_size` = [internal] dx in:
-              block:
-                let `z` = 0:R:C in:
-                  block:
-                    let `[internal] fresh #36` = 0 in:
-                      let `[internal] fresh #37` = [internal] iteration limit in:
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
                         block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #36 < [internal] fresh #37)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #36 < [internal] fresh #37)):
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `C` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `z` = 0:R:C in:
+                      block:
+                        let `[internal] fresh #46` = 0 in:
+                          let `[internal] fresh #47` = [internal] iteration limit in:
+                            block:
+                              if (!([internal] escape radius < |z|) and ([internal] fresh #46 < [internal] fresh #47)) then:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #46 < [internal] fresh #47)):
+                                  block:
+                                    block:
+                                      block:
+                                        block:
+                                          set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
+                                          let `d` = |(z - twist_center)| in:
+                                            block:
+                                              if ((r0 < d) and (d < r1)) then:
+                                                block:
+                                                  let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
+                                                    block:
+                                                      set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
+                                              else:
+                                                no-op
+                                    set `[internal] fresh #46` := ([internal] fresh #46 + 1)
+                              else:
+                                no-op
+                              set `[internal] iteration count` := [internal] fresh #46
+                              set `[internal] stuck` := ([internal] fresh #46 = [internal] fresh #47)
+                        block:
+                          let `[colorizer] Parameter space: z` = z in:
+                            block:
+                              block:
+                                if [internal] stuck then:
+                                  block:
+                                    set `color` := [colorizer] Parameter space: gives_up
+                                else:
+                                  block:
+                                    let `[colorizer] Parameter space: s` = [internal] iteration count:R in:
+                                      block:
+                                        if ([colorizer] Parameter space: smooth and ([internal] escape radius < |[colorizer] Parameter space: z|)) then:
+                                          block:
+                                            set `[colorizer] Parameter space: s` := (([internal] iteration count + 1):R - (log((log(|[colorizer] Parameter space: z|) / log(escape_radius))) / log([colorizer] Parameter space: degree)))
+                                        else:
+                                          no-op
+                                        set `color` := if (0:R < im([colorizer] Parameter space: z)) then let #cycle-arg = (([colorizer] Parameter space: s / [colorizer] Parameter space: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Parameter space: upper1, [colorizer] Parameter space: upper2) else let #cycle-arg = (([colorizer] Parameter space: s / [colorizer] Parameter space: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Parameter space: lower1, [colorizer] Parameter space: lower2)
+
+
+=== viewer 1: Twisted dynamical plane
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                        block:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `z` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `[internal] fresh #46` = 0 in:
+                      let `[internal] fresh #47` = [internal] iteration limit in:
+                        block:
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #46 < [internal] fresh #47)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #46 < [internal] fresh #47)):
                               block:
                                 block:
                                   block:
@@ -30,81 +117,28 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                   set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
                                           else:
                                             no-op
-                                set `[internal] fresh #36` := ([internal] fresh #36 + 1)
+                                set `[internal] fresh #46` := ([internal] fresh #46 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #36
-                          set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                          set `[internal] iteration count` := [internal] fresh #46
+                          set `[internal] stuck` := ([internal] fresh #46 = [internal] fresh #47)
                     block:
-                      let `[colorizer] Parameter space: z` = z in:
+                      let `[colorizer] Twisted dynamical plane: z` = z in:
                         block:
                           block:
                             if [internal] stuck then:
                               block:
-                                set `color` := [colorizer] Parameter space: gives_up
+                                set `color` := [colorizer] Twisted dynamical plane: gives_up
                             else:
                               block:
-                                let `[colorizer] Parameter space: s` = [internal] iteration count:R in:
+                                let `[colorizer] Twisted dynamical plane: s` = [internal] iteration count:R in:
                                   block:
-                                    if ([colorizer] Parameter space: smooth and ([internal] escape radius < |[colorizer] Parameter space: z|)) then:
+                                    if ([colorizer] Twisted dynamical plane: smooth and ([internal] escape radius < |[colorizer] Twisted dynamical plane: z|)) then:
                                       block:
-                                        set `[colorizer] Parameter space: s` := (([internal] iteration count + 1):R - (log((log(|[colorizer] Parameter space: z|) / log(escape_radius))) / log([colorizer] Parameter space: degree)))
+                                        set `[colorizer] Twisted dynamical plane: s` := (([internal] iteration count + 1):R - (log((log(|[colorizer] Twisted dynamical plane: z|) / log(escape_radius))) / log([colorizer] Twisted dynamical plane: degree)))
                                     else:
                                       no-op
-                                    set `color` := if (0:R < im([colorizer] Parameter space: z)) then let #cycle-arg = (([colorizer] Parameter space: s / [colorizer] Parameter space: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Parameter space: upper1, [colorizer] Parameter space: upper2) else let #cycle-arg = (([colorizer] Parameter space: s / [colorizer] Parameter space: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Parameter space: lower1, [colorizer] Parameter space: lower2)
-
-
-=== viewer 1: Twisted dynamical plane
---- body
-let `[internal] vanishing radius` = vanishing_radius in:
-  let `[internal] escape radius` = escape_radius in:
-    let `[internal] iteration limit` = max_iters in:
-      let `[internal] stuck` = False in:
-        let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `pixel_size` = [internal] dx in:
-              block:
-                let `[internal] fresh #36` = 0 in:
-                  let `[internal] fresh #37` = [internal] iteration limit in:
-                    block:
-                      if (!([internal] escape radius < |z|) and ([internal] fresh #36 < [internal] fresh #37)) then:
-                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #36 < [internal] fresh #37)):
-                          block:
-                            block:
-                              block:
-                                block:
-                                  set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                                  let `d` = |(z - twist_center)| in:
-                                    block:
-                                      if ((r0 < d) and (d < r1)) then:
-                                        block:
-                                          let `theta` = (((2:R * 3.141592653589793) * (d - r0)) / (r1 - r0)) in:
-                                            block:
-                                              set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
-                                      else:
-                                        no-op
-                            set `[internal] fresh #36` := ([internal] fresh #36 + 1)
-                      else:
-                        no-op
-                      set `[internal] iteration count` := [internal] fresh #36
-                      set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
-                block:
-                  let `[colorizer] Twisted dynamical plane: z` = z in:
-                    block:
-                      block:
-                        if [internal] stuck then:
-                          block:
-                            set `color` := [colorizer] Twisted dynamical plane: gives_up
-                        else:
-                          block:
-                            let `[colorizer] Twisted dynamical plane: s` = [internal] iteration count:R in:
-                              block:
-                                if ([colorizer] Twisted dynamical plane: smooth and ([internal] escape radius < |[colorizer] Twisted dynamical plane: z|)) then:
-                                  block:
-                                    set `[colorizer] Twisted dynamical plane: s` := (([internal] iteration count + 1):R - (log((log(|[colorizer] Twisted dynamical plane: z|) / log(escape_radius))) / log([colorizer] Twisted dynamical plane: degree)))
-                                else:
-                                  no-op
-                                set `color` := if (0:R < im([colorizer] Twisted dynamical plane: z)) then let #cycle-arg = (([colorizer] Twisted dynamical plane: s / [colorizer] Twisted dynamical plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Twisted dynamical plane: upper1, [colorizer] Twisted dynamical plane: upper2) else let #cycle-arg = (([colorizer] Twisted dynamical plane: s / [colorizer] Twisted dynamical plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Twisted dynamical plane: lower1, [colorizer] Twisted dynamical plane: lower2)
+                                    set `color` := if (0:R < im([colorizer] Twisted dynamical plane: z)) then let #cycle-arg = (([colorizer] Twisted dynamical plane: s / [colorizer] Twisted dynamical plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Twisted dynamical plane: upper1, [colorizer] Twisted dynamical plane: upper2) else let #cycle-arg = (([colorizer] Twisted dynamical plane: s / [colorizer] Twisted dynamical plane: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), [colorizer] Twisted dynamical plane: lower1, [colorizer] Twisted dynamical plane: lower2)
 
 
 --- tool Trace

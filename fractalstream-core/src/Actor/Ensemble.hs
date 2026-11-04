@@ -47,6 +47,7 @@ import Actor.Event
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Viewer
 import Actor.Viewer.Complex
+import Actor.Viewer.Sphere
 import Actor.Metadata
 import Actor.SavedValues
 import Actor.Script
@@ -770,15 +771,51 @@ checkViewer configEnv env myTools ViewerFields{..} = do
       -- reject one at build time) before its code -- and then the
       -- main code -- are checked against the result.
       viewerCheck :: Either (SourceRange, String) ()
+      -- (a complex viewer's code is also given its view; see
+      -- 'viewerViewEntries')
+      viewEntries = viewerViewEntries vfCoord
       viewerCheck = case vfPrepare of
-        Nothing -> checkMainAndTools env
+        Nothing
+          | null viewEntries -> checkMainAndTools env
+          | otherwise -> withEnvFromMap (Map.fromList (configEnv ++ viewEntries)) checkMainAndTools
         Just (outputSpecs, prepParsedCode) -> do
           checkNoDuplicateNames (configEnv ++ outputSpecs)
-          withEnvFromMap (Map.fromList (configEnv ++ outputSpecs)) $ \combinedEnv -> do
+          withEnvFromMap (Map.fromList (configEnv ++ viewEntries ++ outputSpecs)) $ \combinedEnv -> do
             _ <- checkPrepCode (map fst outputSpecs) combinedEnv prepParsedCode
             checkMainAndTools combinedEnv
   viewerCheck
   checkViewerTools configEnv myTools ViewerFields{..}
+
+-- | What a viewer's code is given besides its configuration: for a
+-- complex viewer, whether it's showing the sphere, and the globe's
+-- orientation (see "Actor.Viewer.Sphere").
+viewerViewEntries :: Coordinate -> [(String, SomeType)]
+viewerViewEntries = \case
+  ComplexCoordinate _ -> sphereViewEntries
+  RealCoordinates _ _ -> []
+
+-- | The live values of 'viewerViewEntries', from a viewer's view.
+viewerViewContext :: Coordinate -> Variable ViewKind -> Variable Rotation
+                  -> Either String (SomeContext DynamicValue)
+viewerViewContext coord viewV rotationV = case coord of
+  RealCoordinates _ _ -> Right (SomeContext EmptyContext)
+  ComplexCoordinate _ -> foldM addOne (SomeContext EmptyContext) entries
+  where
+    entries :: [(String, Either (Dynamic Bool) (Dynamic Double))]
+    entries = (sphereViewName, Left ((== SphereView) <$> dyn viewV))
+            : [ (n, Right ((!! k) . matrixEntries <$> dyn rotationV)) | (k, n) <- zip [0 ..] rotationNames ]
+    matrixEntries r = let ((a, b, c), (d, e, f), (g, h, i)) = rotationMatrix r in [a, b, c, d, e, f, g, h, i]
+    addOne :: SomeContext DynamicValue -> (String, Either (Dynamic Bool) (Dynamic Double))
+           -> Either String (SomeContext DynamicValue)
+    addOne (SomeContext acc) (name, value) = case someSymbolVal name of
+      SomeSymbol nameProxy -> case value of
+        Left b -> merge (Bind nameProxy BooleanType b EmptyContext)
+        Right x -> merge (Bind nameProxy RealType x EmptyContext)
+      where
+        merge :: forall e. KnownEnvironment e => Context DynamicValue e -> Either String (SomeContext DynamicValue)
+        merge one = case acc <#> one of
+          Left err -> Left err
+          Right merged -> Right (withEnvironment (contextToEnv merged) (SomeContext merged))
 
 -- | Type-check the tools targeting a viewer, with the coordinate and
 -- limits 'buildComplexViewer' gives them.
@@ -862,6 +899,7 @@ data ViewerFields = ViewerFields
   , vfCenter    :: Maybe String
   , vfPixelSize :: Maybe String
   , vfAspect    :: Maybe String
+  , vfView      :: ViewKind
   , vfIterLimit :: Maybe String
   , vfEscape    :: Maybe String
   , vfVanish    :: Maybe String
@@ -874,7 +912,7 @@ viewerFields :: ParsedStanza -> Maybe ViewerFields
 viewerFields = \case
   ViewerStanza{..} -> Just ViewerFields
     { vfTitle = vsTitle, vfCoord = vsCoord
-    , vfCenter = vsCenter, vfPixelSize = vsPixelSize, vfAspect = vsAspect
+    , vfCenter = vsCenter, vfPixelSize = vsPixelSize, vfAspect = vsAspect, vfView = vsView
     , vfIterLimit = vsIterLimit, vfEscape = vsEscape, vfVanish = vsVanish
     , vfPixelVar = vsPixelVar
     , vfPrepare = vsPrepare
@@ -1251,6 +1289,15 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
   parseMaybeAttrValue vfVanish >>=? \mVanPV -> do
 
     cvTitleP     <- constParsed vfTitle (Right vfTitle)
+    -- The view: a complex viewer can show the plane or the sphere, each
+    -- starting from the script's `center=` (and its `pixelSize=`, for
+    -- the one `view=` picks).
+    let originalRotation = rotationFacing centerVal
+        (planePixel, spherePixel) = case vfView of
+          PlaneView -> (pixelVal, defaultSpherePixelSize)
+          SphereView -> (1 / 128, maybe defaultSpherePixelSize (const pixelVal) vfPixelSize)
+    cvViewV      <- newVariable vfView
+    cvRotationV  <- newVariable originalRotation
     cvSizeV      <- newVariable (Dimensions (600, 600))
     cvPositionV  <- newVariable (Dimensions (100 + 30 * n, 100 + 30 * n))
     cvCanResizeV <- newVariable True
@@ -1330,7 +1377,17 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
                  -> Either (SourceRange, String) SomeViewerWithContext
         runBuild = \case
           Left err -> Left (NoSourceRange, err)
-          Right (SomeContext (configCtx :: Context DynamicValue cEnv)) ->
+          Right (SomeContext (configOnly :: Context DynamicValue cEnv0)) ->
+            -- (with the viewer's view, for a complex viewer)
+            case viewerViewContext vfCoord cvViewV cvRotationV of
+              Left err -> Left (NoSourceRange, err)
+              Right (SomeContext viewCtx) -> case configOnly <#> viewCtx of
+                Left err -> Left (NoSourceRange, err)
+                Right withView -> withEnvironment (contextToEnv withView) (buildIn withView)
+
+        buildIn :: forall cEnv. KnownEnvironment cEnv
+                => Context DynamicValue cEnv -> Either (SourceRange, String) SomeViewerWithContext
+        buildIn configCtx =
             case vfPrepare of
               Nothing -> finishBuild Nothing configCtx
               Just (outputSpecs, prepParsedCode) ->
@@ -1378,9 +1435,14 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvPosition = cvPositionV
               , cvCanResize = cvCanResizeV
               , cvCenter = centerVal
-              , cvPixelSize = pixelVal
+              , cvPixelSize = planePixel
               , cvAspect = aspectVal
               , cvCoord = vfCoord
+              , cvView = vfView
+              , cvViewV = cvViewV
+              , cvRotationV = cvRotationV
+              , cvOriginalRotation = originalRotation
+              , cvSpherePixelSize = spherePixel
               , cvPixel = cvPixelM
               , cvEscapeRadius = cvEscapeP
               , cvVanishRadius = cvVanishP
@@ -1496,10 +1558,18 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
         vPosition = cvPosition
 
     vCanResize <- getDynamic cvCanResize
-    let vOriginalCenter = cvCenter
-        vOriginalPixelSize = cvPixelSize
+    let vOriginalView = cvView
+        vOriginalRotation = cvOriginalRotation
+        vOriginalPlaneView = (cvCenter, cvPixelSize)
+        vOriginalSpherePixelSize = cvSpherePixelSize
+        -- (on the sphere, the globe is centered on the screen)
+        (vOriginalCenter, vOriginalPixelSize) = case cvView of
+          PlaneView -> vOriginalPlaneView
+          SphereView -> ((0, 0), cvSpherePixelSize)
         vOriginalAspect = cvAspect
         vCoordinate = cvCoord
+        vView = cvViewV
+        vRotation = cvRotationV
     vCenter <- newVariable vOriginalCenter
     vPixelSize <- newVariable vOriginalPixelSize
     vAspect <- newVariable vOriginalAspect
