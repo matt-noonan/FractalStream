@@ -331,7 +331,7 @@ tokenClass = \case
   NumberF _ -> Just NumberLiteral
   ScientificNotation _ -> Just NumberLiteral
   Quoted _ -> Just StringLiteral
-  t | t `elem` [If, Then, Else, Or_, And_, Not_, Let_, Escapes, Vanishes, TimesKeyword] -> Just Keyword
+  t | t `elem` [If, Then, Else, Or_, And_, Not_, Let_, Escapes, Vanishes, Stops, TimesKeyword] -> Just Keyword
     | t `elem` [Euler, Pi, I, True_, False_, Iterations, Stuck] -> Just BuiltinValue
     | t `elem` [TextKeyword, AppendKeyword, PrependKeyword, JoinKeyword, RemoveKeyword, FindKeyword
                , TransformKeyword, RangeKeyword, LengthKeyword, DiffKeyword] -> Just BuiltinFunction

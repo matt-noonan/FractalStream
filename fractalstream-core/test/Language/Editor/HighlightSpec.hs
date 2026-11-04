@@ -117,6 +117,11 @@ spec = describe "highlighting scripts" $ do
     classOf src "period" 0 `shouldBe` Just Parameter
     classOf src "repeat" 0 `shouldBe` Just Keyword
 
+  it "knows `stops` and `stopped`" $ do
+    let src = "iterate z -> z^2 until z stops\nrepeat:\n  pass\nuntil z stopped\n"
+    classOf src "stops" 0 `shouldBe` Just Keyword
+    classOf src "stopped" 0 `shouldBe` Just Keyword
+
   it "lets a script name a variable with a statement word" $
     classOf project "line" 0 `shouldBe` Just Variable
 
