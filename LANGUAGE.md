@@ -16,7 +16,7 @@ is a very simple script that tells FractalStream to update the value of
 
 ### Arithmetic expressions
 
-The usual arithmetic operators `+`, `-`, `*` (multiplication), `/`, and `^` (exponentiation) are available for real and complex types. With the exception of
+The usual arithmetic operators `+`, `-`, `*` (multiplication, also written `×`), `/`, and `^` (exponentiation) are available for real and complex types. With the exception of
 `/`, these are also available for integer types. For integer division,
 use `//` instead. A power of integers used as a real number is computed as
 one, so `3.5 * 10^(-2)` is 0.035; a power of integers that stays an integer
@@ -181,8 +181,12 @@ To assign a value to a pre-existing variable, use the `<-` operator.
 z <- z^2 + C
 ```
 
-You can also use the unicode versions `⭠` or `←` (or more likely, let
-the code editor automatically substitute these when you type `<-`)
+You can also use the unicode versions `⟵`, `⭠`, or `←`. The script
+editor writes `⟵` for `<-` once the script checks out, along with the
+other symbols the language accepts (`⟼` for `->`, `≔` for `:=`, `≤`,
+`≥`, `≠`, `ℝ`, `ℂ`, `ℤ`, `×`, `z²` for `z^2`, `π`, ...), unless that's
+turned off in Preferences; `fsrun normalize` does the same to a
+project file.
 
 ### Variable initialization
 

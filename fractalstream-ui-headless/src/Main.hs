@@ -4,12 +4,13 @@ Description  : Headless FractalStream frontend
 
 A frontend analogous to fractalstream-ui-wx: it implements the same
 'Actor.UI.UI' interface that drives 'Actor.Ensemble.runEnsemble', but with
-no actual GUI. Four subcommands run a project:
+no actual GUI. Five subcommands run a project:
 
   fsrun snapshot --project <project.fs> --viewer <title> --output <file.png>
   fsrun commands --project <project.fs> --commands <file>
   fsrun scenario --project <project.fs> --name <name>
   fsrun update-preview --project <project.fs>
+  fsrun normalize --project <project.fs>
 
 and one makes a project, from a script for the original FractalStream
 ("Language.Legacy.Translate"):
@@ -48,6 +49,7 @@ import FractalStream.Prelude
 import FractalStream.Metadata (gitTag)
 import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble, encodeEnsemble, checkProjectBytes)
 import Language.Legacy.Translate (Translation(..), translateLegacyScript)
+import Language.Editor.Normalize (normalize)
 import Actor.Metadata (ProjectMetadata(..))
 import Actor.UI (UI(..))
 import Actor.Viewer (Backend, Viewer(..), snapshotToFile, describeViewerIssues)
@@ -78,6 +80,7 @@ data Mode
   | RunCommandsFile { commandsFile :: FilePath }
   | RunNamedScenario { scenarioName :: String }
   | UpdatePreview
+  | Normalize
 
 -- | Report a failure on stderr and exit non-zero. Every error path in
 -- this module goes through this (not a bare @putStrLn@), so errors are
@@ -145,6 +148,9 @@ cliParser = hsubparser $ mconcat
   , subcommand "update-preview"
       "Remake the project's preview image by running its `metadata: preview-commands:`"
       (pure UpdatePreview)
+  , subcommand "normalize"
+      "Rewrite the project's script with mathematical symbols (⟵, ℝ, z², ...) for ASCII ones"
+      (pure Normalize)
   , command "translate" $ info
       (Translate <$> strOption (long "input" <> short 'i' <> metavar "SCRIPT"
                                 <> help "The original-FractalStream script, as text (- for stdin)")
@@ -194,6 +200,7 @@ run projectFile mode = withBackend $ \backend ->
       RunCommandsFile path           -> runCommandsFile backend ensemble path
       RunNamedScenario name          -> runNamedScenario backend ensemble name
       UpdatePreview                  -> runUpdatePreview backend ensemble projectFile
+      Normalize                      -> runNormalize ensemble projectFile
 
 runSnapshot :: Backend -> Ensemble -> String -> FilePath -> IO ()
 runSnapshot backend ensemble viewerName outputFile = do
@@ -296,6 +303,23 @@ runUpdatePreview backend ensemble projectFile = do
           BS.writeFile tmp bytes
           renameFile tmp projectFile
           putStrLn ("Updated the preview in " ++ quoted projectFile)
+
+-- | Rewrite the project's script with the mathematical symbols the
+-- language accepts ("Language.Editor.Normalize"), saving it (as
+-- 'runUpdatePreview' does) only if that changes anything.
+runNormalize :: Ensemble -> FilePath -> IO ()
+runNormalize ensemble projectFile = do
+  old <- getDynamic (ensembleSourceScript ensemble)
+  let new = normalize old
+  if new == old
+    then putStrLn (quoted projectFile ++ "'s script is already normalized.")
+    else do
+      setValue' (ensembleSourceScript ensemble) new
+      bytes <- encodeEnsemble ensemble
+      let tmp = projectFile ++ ".tmp"
+      BS.writeFile tmp bytes
+      renameFile tmp projectFile
+      putStrLn ("Normalized the script in " ++ quoted projectFile)
 
 runCommandsText :: Backend -> Ensemble -> String -> String -> IO ()
 runCommandsText backend ensemble label src = case parseScenario src of

@@ -2,7 +2,9 @@ module UI.CodeEditor
   ( codeEditor
   , codeEditorWithText
   , updateFoldLevels
-  , stanzaHeaderStyle
+  , refreshFolds
+  , markError
+  , clearError
   , frameIsLight
   , editorOffsetMap
   ) where
@@ -12,13 +14,19 @@ import FractalStream.Prelude hiding (get)
 import Language.Parser.SourceRange (SourceRange(..))
 import Data.DynamicValue
 import Actor.Layout (CodeString(..))
+import UI.EditorKeys
+import UI.EditorStyle (setupStyles, showLineNumbers)
+import Language.Editor (indentUnit)
+import UI.AppSettings (appSettings)
+import FractalStream.Settings (Settings(..))
 
-import Graphics.UI.WX hiding (Vertical, Horizontal)
+import Graphics.UI.WX hiding (Vertical, Horizontal, when)
 import Graphics.UI.WXCore.WxcClasses
 import Graphics.UI.WXCore.WxcDefs
 import Graphics.UI.WXCore.Events (stcOnSTCEvent, EventSTC(..))
 
-import Data.Bits ((.|.))
+import Data.Bits ((.|.), (.&.))
+import Data.List (zipWith4)
 import qualified Data.ByteString.UTF8 as Utf8
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
@@ -43,15 +51,6 @@ codeEditor cep code = do
   CodeString txt <- getDynamic (source code)
   codeEditorWithText cep txt
 
--- | The style number for a unified script's @\@setup@\/@\@config@\/
--- @\@viewer@\/@\@tool@ stanza-header lines -- a caller that wants them
--- styled distinctly (a single viewer's own code never has any, so only
--- the whole-project script editor uses this) applies it itself, since
--- recognizing a stanza header is specific to that document shape, not
--- something this generic editor setup should know about.
-stanzaHeaderStyle :: Int
-stanzaHeaderStyle = 3
-
 -- | The margin used for the fold margin (0 is line numbers; 1 is
 -- unused).
 foldMarginIndex :: Int
@@ -65,46 +64,34 @@ foldMarginIndex = 2
 codeEditorWithText :: Window a -> String -> IO (StyledTextCtrl ())
 codeEditorWithText cep txt = do
     stc <- styledTextCtrl cep [ clientSize := sz 100 100 ]
-    styledTextCtrlSetMarginWidth stc 0 30
     styledTextCtrlSetMarginWidth stc 1 0
     -- see Style Definition at https://www.scintilla.org/ScintillaDoc.html#Styling
     isLight <- frameIsLight cep
+    -- each class of span its own style ("UI.EditorStyle")
+    settings <- getDynamic appSettings
+    setupStyles stc isLight settings
+    showLineNumbers stc (setLineNumbers settings)
     if isLight
       then do
-        styledTextCtrlStyleSetSpec stc  0 "fore:#000000,back:#f8f8f8"
-        styledTextCtrlStyleSetSpec stc  1 "fore:#000000,back:#f8a0a0"
-        styledTextCtrlStyleSetSpec stc  2 "fore:#8080a0,back:#f8f8f8"
-        styledTextCtrlStyleSetSpec stc  3 "fore:#403060,back:#e8e0f8,italic"
-        styledTextCtrlStyleSetSpec stc 32 "fore:#000000,back:#f8f8f8"
-        styledTextCtrlStyleSetSpec stc 33 "fore:#a0a098,back:#f0f0e8"
         styledTextCtrlSetCaretForeground stc (rgb 0 0 (0 :: Word8))
         styledTextCtrlSetCaretLineBackground stc (rgb 240 240 (255 :: Word8))
         styledTextCtrlSetFoldMarginColour stc True (rgb 0xd0 0xd0 (0xd0 :: Word8))
         styledTextCtrlSetFoldMarginHiColour stc True (rgb 0xff 0xff (0xff :: Word8))
         defineFoldMarkers stc (rgb 0xf8 0xf8 (0xf8 :: Word8)) (rgb 0x60 0x60 (0x60 :: Word8))
       else do
-        styledTextCtrlStyleSetSpec stc  0 "fore:#dbdbdb,back:#14191e"
-        styledTextCtrlStyleSetSpec stc  1 "fore:#dbdbdb,back:#882020"
-        styledTextCtrlStyleSetSpec stc  2 "fore:#c0c0e8,back:#14191e"
-        styledTextCtrlStyleSetSpec stc  3 "fore:#c0c0e8,back:#262040,italic"
-        styledTextCtrlStyleSetSpec stc 32 "fore:#dbdbdb,back:#14191e"
-        styledTextCtrlStyleSetSpec stc 33 "fore:#a0a0a0,back:#101020"
         styledTextCtrlSetCaretForeground stc (rgb 255 255 (255 :: Word8))
         styledTextCtrlSetCaretLineBackground stc (rgb 0x20 0x30 (0x38 :: Word8))
         styledTextCtrlSetFoldMarginColour stc True (rgb 0x14 0x19 (0x1e :: Word8))
         styledTextCtrlSetFoldMarginHiColour stc True (rgb 0x14 0x19 (0x1e :: Word8))
         defineFoldMarkers stc (rgb 0x14 0x19 (0x1e :: Word8)) (rgb 0xa0 0xa0 (0xa0 :: Word8))
 
-    styledTextCtrlStyleSetFaceName stc 0 "Monaco"
-    styledTextCtrlStyleSetFaceName stc 1 "Monaco"
-    styledTextCtrlStyleSetFontAttr stc 2 12 "Monaco" False True False
     -- Set the minimum size, or else Scintilla will default to 2000 pixels(!)
     styledTextCtrlSetScrollWidth stc 10
     --styledTextCtrlSetCaretLineVisible stc True
 
     styledTextCtrlSetUseTabs stc False
-    styledTextCtrlSetTabWidth stc 4
-    styledTextCtrlSetIndent stc 4
+    styledTextCtrlSetTabWidth stc indentUnit
+    styledTextCtrlSetIndent stc indentUnit
     styledTextCtrlSetTabIndents stc True
     styledTextCtrlSetBackSpaceUnIndents stc True
     styledTextCtrlSetWrapMode stc 1
@@ -127,9 +114,54 @@ codeEditorWithText cep txt = do
         styledTextCtrlToggleFold stc lineNum
       _ -> pure ()
 
+    -- (on platforms where they're a preference, it's checked on each
+    -- key, so changing it applies to editors that are already open)
+    -- errors are underlined with a red squiggle
+    styledTextCtrlIndicatorSetStyle stc errorIndicator sciIndicSquigglePixmap
+    styledTextCtrlIndicatorSetForeground stc errorIndicator
+      (if isLight then rgb 0xd0 0x20 (0x20 :: Word8) else rgb 0xff 0x60 (0x60 :: Word8))
+
+    handleEditorKeys stc $ if emacsKeysByDefault then pure True
+                          else setEmacsKeys <$> getDynamic appSettings
+
     styledTextCtrlSetText stc txt
     updateFoldLevels stc txt
     pure stc
+
+-- | The indicator that underlines errors: the first one Scintilla leaves
+-- for containers (0 to 7 are for its lexers).
+errorIndicator :: Int
+errorIndicator = 8
+
+-- | Underline the error from byte position @from@, @len@ bytes long
+-- (at least one character, so an error at the end still shows), in
+-- place of any error underlined before.
+--
+-- Indicators are set with Scintilla's own messages, which wxHaskell has
+-- no functions for ("Graphics.UI.WXCore"'s indicator functions are for
+-- the older style-bit indicators, which Scintilla no longer draws).
+markError :: StyledTextCtrl a -> Int -> Int -> IO ()
+markError stc from len = do
+  clearError stc
+  docLen <- styledTextCtrlGetLength stc
+  when (docLen > 0) $ do
+    let start' = max 0 (min from (docLen - 1))
+    void (styledTextCtrlSendMsg stc sciSetIndicatorCurrent errorIndicator 0)
+    void (styledTextCtrlSendMsg stc sciIndicatorFillRange start' (max 1 (min len (docLen - start'))))
+
+-- | Remove the error underline, if there is one.
+clearError :: StyledTextCtrl a -> IO ()
+clearError stc = do
+  docLen <- styledTextCtrlGetLength stc
+  void (styledTextCtrlSendMsg stc sciSetIndicatorCurrent errorIndicator 0)
+  void (styledTextCtrlSendMsg stc sciIndicatorClearRange 0 docLen)
+
+-- Scintilla's numbers for these (from Scintilla.h)
+sciSetIndicatorCurrent, sciIndicatorFillRange, sciIndicatorClearRange, sciIndicSquigglePixmap :: Int
+sciSetIndicatorCurrent = 2500
+sciIndicatorFillRange = 2504
+sciIndicatorClearRange = 2505
+sciIndicSquigglePixmap = 13  -- INDIC_SQUIGGLEPIXMAP: a squiggle, drawn quickly
 
 -- | Define the standard 7-marker Scintilla fold-margin symbol set
 -- (+\/- boxes with connector lines): @fillColor@ is the inside of each
@@ -158,14 +190,32 @@ defineFoldMarkers stc fillColor lineColor = mapM_ defineOne
 -- next non-blank line is indented deeper than it is. The caller is
 -- responsible for re-running this on every edit, not just once at
 -- construction.
+--
+-- Stanzas and tool handlers (@on click:@, ...) always fold; other blocks
+-- of code only with the @fold-code-blocks@ setting. Changing that setting
+-- applies to editors already open ('refreshFolds').
 updateFoldLevels :: StyledTextCtrl a -> String -> IO ()
-updateFoldLevels stc txt =
-  forM_ (zip [0 ..] (foldLevelsForText txt)) $ \(lineNum, level) ->
+updateFoldLevels stc txt = do
+  codeBlocks <- setFoldCodeBlocks <$> getDynamic appSettings
+  forM_ (zip [0 ..] (foldLevelsForText codeBlocks txt)) $ \(lineNum, level) ->
     styledTextCtrlSetFoldLevel stc lineNum level
 
-foldLevelsForText :: String -> [Int]
-foldLevelsForText txt =
-  zipWith3 combine rawIndents effectiveIndents (drop 1 effectiveIndents ++ [0])
+-- | Recompute an editor's folds, after the setting for which blocks fold
+-- has changed. Folded blocks are opened first: one that can't be folded
+-- any more would otherwise stay hidden, with no fold box to open it.
+refreshFolds :: StyledTextCtrl a -> IO ()
+refreshFolds stc = do
+  lineCount <- styledTextCtrlGetLineCount stc
+  forM_ [0 .. lineCount - 1] $ \lineNum -> do
+    level <- styledTextCtrlGetFoldLevel stc lineNum
+    expanded <- styledTextCtrlGetFoldExpanded stc lineNum
+    when (level .&. wxSTC_FOLDLEVELHEADERFLAG /= 0 && not expanded) $
+      styledTextCtrlToggleFold stc lineNum
+  styledTextCtrlGetText stc >>= updateFoldLevels stc
+
+foldLevelsForText :: Bool -> String -> [Int]
+foldLevelsForText codeBlocks txt =
+  zipWith4 combine (lines txt) rawIndents effectiveIndents (drop 1 effectiveIndents ++ [0])
   where
     rawIndents = map indentOf (lines txt)
     indentOf l
@@ -201,7 +251,18 @@ foldLevelsForText txt =
     -- value below -- the whiteflag bit it can carry is far larger than
     -- any real indent difference and would otherwise make any blank
     -- line look like a header no matter its neighbours' actual depth.
-    combine rawIndent indent nextIndent =
+    --
+    -- Scintilla folds a blank line (one with the whiteflag) away with
+    -- the block before it, whatever its level. Blank lines between
+    -- stanzas, or between a stanza's top-level parts (tool handlers),
+    -- don't get it: they stay out of the fold before them, so folded
+    -- stanzas and handlers keep the space between them, rather than
+    -- stacking up.
+    combine l rawIndent indent nextIndent =
       (wxSTC_FOLDLEVELBASE + indent)
-      .|. (if isNothing rawIndent then wxSTC_FOLDLEVELWHITEFLAG else 0)
-      .|. (if nextIndent > indent then wxSTC_FOLDLEVELHEADERFLAG else 0)
+      .|. (if isNothing rawIndent && indent > stanzaBodyWeight then wxSTC_FOLDLEVELWHITEFLAG else 0)
+      .|. (if nextIndent > indent && folds l then wxSTC_FOLDLEVELHEADERFLAG else 0)
+
+    -- which lines can be folded: stanza headers and tool handlers' `on`
+    -- lines (both at the left margin), and others only if asked for
+    folds l = codeBlocks || "@" `isPrefixOf` l || "on " `isPrefixOf` l

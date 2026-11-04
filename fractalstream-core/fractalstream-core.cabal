@@ -104,6 +104,10 @@ library
                        Language.Legacy.Syntax
                        Language.Legacy.Parser
                        Language.Legacy.Translate
+                       Language.Editor
+                       Language.Editor.Highlight
+                       Language.Editor.Lines
+                       Language.Editor.Normalize
                        Language.Code.Typecheck.Functions
                        Language.Type
                        Language.Environment
@@ -201,6 +205,9 @@ test-suite spec
                     , Language.Value.ParserSpec
                     , Language.Code.ParserSpec
                     , Language.LegacySpec
+                    , Language.EditorSpec
+                    , Language.Editor.HighlightSpec
+                    , Language.Editor.NormalizeSpec
                     , Language.Effect.ListSpec
                     , Actor.EventSpec
                     , Actor.ScriptSpec

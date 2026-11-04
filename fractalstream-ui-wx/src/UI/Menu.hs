@@ -40,12 +40,16 @@ data ThisProject = ThisProject
 
 -- | Give a window its menu bar. On Linux and Windows, where a menu bar
 -- is part of each window rather than one at the top of the screen, a
--- project's own windows don't get one (it would only repeat the
--- library browser's in every viewer and configuration window); they
--- just get their project's keyboard shortcuts ('projectShortcuts').
+-- project's own windows don't get the project menu (it would only
+-- repeat the library browser's in every viewer and configuration
+-- window); they just get their project's keyboard shortcuts
+-- ('projectShortcuts'), and a menu bar only for menus of their own
+-- (the script editor's Edit menu).
 makeMenuBar :: ProjectActions -> Maybe ThisProject -> Frame a -> [Menu ()] -> IO ()
 makeMenuBar actions thisProject f addlMenus = case thisProject of
-  Just project | os /= "darwin" -> projectShortcuts actions project f
+  Just project | os /= "darwin" -> do
+    projectShortcuts actions project f
+    unless (null addlMenus) $ set f [ menuBar := addlMenus ]
   _ -> menuBarFor actions thisProject f addlMenus
 
 -- | Keyboard shortcuts for a project's commands, for a window without a

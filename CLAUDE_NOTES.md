@@ -504,6 +504,59 @@ Key modules:
 - `UI.ConfigEditor` - renders a `Configuration` / `Layout` as wx widgets
 - `UI.Widgets` - custom wx widgets
 - `UI.CodeEditor` - script code editor (uses `StyledTextCtrl`)
+- `Language.Editor.Highlight` - classifies a script's spans for coloring
+  (keywords, literals, and identifiers by what they name: parameter,
+  variable, function, code block, or undefined), from tokens and the
+  definitions it can see, so it works on scripts that don't parse.
+  `highlightsWith` takes names defined elsewhere (a movie's script).
+  `UI.EditorStyle` gives each class its own Scintilla style (some share
+  colors by default); `UI.Widgets.scriptWidget` applies them. The
+  `editor-colors-light` / `editor-colors-dark` settings change any of a
+  class's color, background, bold, italic, and underline (`ClassStyle`,
+  by `highlightName`), set in Preferences' Colors tab. Bold, italic and
+  underline are set with `StyleSetBold` etc. (wx's `StyleSetSpec`
+  doesn't take Scintilla's `underlined`).
+- `Language.Editor.Normalize` - rewrites ASCII spellings as symbols
+  (`<-` to `⟵`, `R` to `ℝ` in types, `z^2` to `z²`, `*` to `×`, ...),
+  token for token (tested on every library project). `scriptWidget` does
+  it with the `math-symbols` setting (on by default), once the script has
+  been edited and checks out: every line but the cursor's, and that one
+  when the cursor leaves it or the editor loses focus, keeping the cursor
+  in place (`applyEdits`). `fsrun normalize` does a project file.
+- `UI.EditorKeys` - code editor keys: Return indents the new line
+  (`Language.Editor.newLineIndent`; the indent unit is 2), paste
+  re-indents (`pasteIndented`), Cmd/Ctrl+/ toggles comments
+  (`toggleComments`), and emacs movement keys, always on macOS and the
+  `emacs-keys` setting elsewhere. Return, paste and comment keys are
+  handled on key-down (Scintilla acts on Return then, with no character
+  event after); on macOS the slash key goes down as `KeyDivide`.
+  Control-Backspace deletes the previous token (`deleteBackTo`). On
+  macOS it goes down as a plain Backspace, with no Control reported, so
+  it's recognized by the backspace character it goes on to type (a plain
+  Backspace doesn't, as Scintilla deletes on key-down). On macOS, Control-letter reaches
+  the key handler as its control character (Control-E is ENQ, 5) with no
+  modifiers set, so control codes 1-26 are read as Control-letters.
+- Errors in code editors are underlined with indicator 8, a red squiggle
+  (`UI.CodeEditor.markError`/`clearError`). wxHaskell's own indicator
+  functions are for Scintilla's old style-bit indicators, which it no
+  longer draws; the modern calls go through `styledTextCtrlSendMsg`,
+  added to our wxHaskell fork (any Scintilla message with integer
+  arguments, by its number from Scintilla.h). wxcore's bindings are
+  generated from the *installed* wxc headers when wxcore is configured,
+  and stack caches wxcore by its own sources: a new wxc function needs
+  wxc reinstalled, and a change under `wxcore/` for stack to rebuild it.
+- Code editors' font is the `editor-font` / `editor-font-size` settings
+  (`FractalStream.Settings.editorFont`; by default Monaco, Consolas, or
+  Monospace, by platform), and their line numbers the `line-numbers`
+  setting (off by default): `UI.EditorStyle.setupStyles` and
+  `showLineNumbers`, redone by `scriptWidget` when the settings change.
+- `UI.AppSettings` - the app-wide `Variable Settings` (`appSettings`),
+  set by `Main` at startup and changed by the Preferences window
+- Code editor folds (`UI.CodeEditor.updateFoldLevels`): stanza headers
+  and tool handlers' `on ...:` lines always fold; other blocks only with
+  the `fold-code-blocks` setting. `scriptWidget` watches `appSettings` and
+  calls `refreshFolds` when it changes, opening folded blocks first (a
+  fold point that goes away would otherwise leave its lines hidden).
 - `UI.Layout` - wx layout helpers
 - `UI.Tile` - tiled rendering of viewer pixels (parallelized)
 - `UI.Menu` - menu bar construction

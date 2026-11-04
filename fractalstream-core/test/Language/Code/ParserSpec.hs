@@ -431,3 +431,27 @@ x <- k|] `shouldBe` Right 4
       failsWith "if x stops:\n  pass" "`stops` can only be used in a loop's condition"
       failsWith "until false:\n  x <- if x stops then 1 else 2" "`stops` can only be used in a loop's condition"
       failsWith "b := x stops" "`stops` can only be used in a loop's condition"
+
+  describe "when writing pair types" $
+    it "accepts × as well as x" $ do
+      runWithX (Scalar RealType 0) "p : R × R <- (1.5, 2)\nx <- (1.5 : R) × 2" `shouldBe` Right 3.0
+      runWithX (Scalar RealType 0) "p : R x R <- (1.5, 2)\nx <- 2 * 1.5" `shouldBe` Right 3.0
+
+  describe "when a built-in name is used for the script's own" $ do
+
+    let failsWith input needle =
+          runWithX (Scalar RealType 0) input `shouldSatisfy` either (needle `isInfixOf`) (const False)
+
+    it "says so, rather than failing to parse what comes after" $ do
+      failsWith "define foo(bar):\n  bar <- bar + 1\nrun foo(x)"
+        "`bar` is a built-in function (the complex conjugate), so it can't also name a variable"
+      failsWith "i := 0" "`i` is the imaginary unit, so it can't also name a variable. Try another name (k, j, n, ...)."
+      failsWith "let sin(t) = t\nx <- sin(1)" "`sin` is a built-in function, so it can't also name a function"
+      failsWith "define re:\n  pass" "`re` is a built-in function (the real part), so it can't also name a code block"
+      failsWith "for each red in [1, 2]:\n  pass" "`red` is a color's name"
+      failsWith "length : Z <- 3" "`length` is a built-in function"
+      failsWith "x <- transform([1.0], arg -> arg + 1) @ 1" "`arg` is a built-in function (the argument)"
+
+    it "leaves built-ins used as built-ins alone" $ do
+      runWithX (Scalar RealType 0) "x <- re(2 + i) + cos(0)" `shouldBe` Right 3.0
+      runWithX (Scalar RealType 0) "let f(t) = t + 1\nx <- f(re(i))" `shouldBe` Right 1.0

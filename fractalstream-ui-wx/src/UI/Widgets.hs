@@ -10,6 +10,9 @@ module UI.Widgets
   , colorWidget
   , expressionWidget
   , scriptWidget
+  , scriptWidgetWith
+  , scriptEditMenu
+  , normalizeEditor
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -19,9 +22,17 @@ import Data.DynamicValue
 import Data.Color hiding (black, white)
 import Actor.Layout
 import Language.Parser.SourceRange (SourceRange, spanOfSourceRange, SourceSpan(..))
-import Language.Parser.Tokenizer (commentRanges)
+import Language.Editor.Highlight (Highlight, highlightsWith)
+import Language.Editor.Normalize (normalizations)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.UTF8 as Utf8
+import UI.EditorStyle (styleFor)
 
 import UI.CodeEditor
+import UI.AppSettings (appSettings)
+import FractalStream.Settings (Settings(..), ClassStyle, editorFont)
+import UI.EditorStyle (setupStyles, showLineNumbers)
+import UI.EditorKeys (emacsKeysByDefault, pasteFittingIndentation, toggleCommentLines)
 
 import Graphics.UI.WX hiding (pt, when, grey, Color)
 import Graphics.UI.WXCore.Events
@@ -302,40 +313,75 @@ scriptWidget :: MonadIO io
              => Window a
              -> Mapped CodeString (Either (SourceRange, String) t)
              -> io (StyledTextCtrl (), StaticText ())
-scriptWidget p scriptCode = do
+scriptWidget = scriptWidgetWith Map.empty
+
+-- | 'scriptWidget', for a script that can refer to names it doesn't
+-- define itself (the project's parameters, in a movie's script): what
+-- they are, for coloring them.
+scriptWidgetWith :: MonadIO io
+                 => Map String Highlight
+                 -> Window a
+                 -> Mapped CodeString (Either (SourceRange, String) t)
+                 -> io (StyledTextCtrl (), StaticText ())
+scriptWidgetWith known p scriptCode = do
   ce <- liftIO $ codeEditor p scriptCode
   txt <- unCodeString <$> getDynamic (source scriptCode)
   lastText <- liftIO $ newIORef txt
   errorText <- liftIO $ staticText p [ text := "" ]
 
+  -- Writing the script with mathematical symbols ("Language.Editor.
+  -- Normalize"), with the math-symbols setting: once it's been edited
+  -- here (so that just opening a script doesn't change it), and only
+  -- text that has just checked out. The cursor's line is left until the
+  -- cursor leaves it, or the editor loses focus, so that what's being
+  -- typed isn't rewritten under it (z^2 would become z², and then
+  -- typing 0 would make z²0, not z^20).
+  edited <- liftIO $ newIORef False
+  focused <- liftIO $ newIORef False
+  checkedText <- liftIO $ newIORef Nothing
+  caretLine <- liftIO $ newIORef (0 :: Int)
+  let currentLine = styledTextCtrlGetCurrentPos ce >>= styledTextCtrlLineFromPosition ce
+      normalizeExcept skip = do
+        symbols <- setMathSymbols <$> getDynamic appSettings
+        isEdited <- readIORef edited
+        good <- readIORef checkedText
+        code <- styledTextCtrlGetText ce
+        when (symbols && isEdited && good == Just code) $ do
+          let starts = scanl (\off l -> off + length l + 1) 0 (lines code)
+              lineOf i = length (takeWhile (<= i) starts) - 1
+              edits = [ e | e@(from, _, _) <- normalizations code, Just (lineOf from) /= skip ]
+          unless (null edits) $ applyEdits ce code edits
+
+  -- every span colored by what it is ("Language.Editor.Highlight"),
+  -- everything else as plain text
   let doSyntaxColoring = do
         code <- styledTextCtrlGetText ce
-        if null code
-          then pure Map.empty
-          else do
-            let m = editorOffsetMap code
-            styledTextCtrlStartStyling ce 0 0
-            case Map.lookup (length code - 1) m of
-              Nothing -> pure ()
-              Just k -> styledTextCtrlSetStyling ce (k + 1) 0
-            forM_ (commentRanges code) $ \(s, e) -> do
-              case (,) <$> Map.lookup s m <*> Map.lookup (e + 1 - s) m of
-                Nothing -> pure ()
-                Just (styleStart, styleRange) -> do
-                  styledTextCtrlStartStyling ce styleStart 0
-                  styledTextCtrlSetStyling ce styleRange 2
-            pure m
+        let m = editorOffsetMap code
+        docLen <- styledTextCtrlGetLength ce
+        let byteAt i = Map.findWithDefault docLen i m
+        styledTextCtrlStartStyling ce 0 0
+        styledTextCtrlSetStyling ce docLen 0
+        forM_ (highlightsWith known code) $ \(from, to, h) -> do
+          let start' = byteAt from
+          styledTextCtrlStartStyling ce start' 0
+          styledTextCtrlSetStyling ce (byteAt to - start') (styleFor h)
+        pure m
 
   liftIO $ set ce $
     [ on focus := \tf -> do
         case tf of
-          True -> styledTextCtrlGetText ce >>= writeIORef lastText
+          True -> do
+            writeIORef focused True
+            styledTextCtrlGetText ce >>= writeIORef lastText
           False -> do
+            writeIORef focused False
             new <- styledTextCtrlGetText ce
             old <- readIORef lastText
             when (new /= old) $ do
               writeIORef lastText new
+              writeIORef edited True
               void (setValue (source scriptCode) (CodeString new))
+            normalizeExcept Nothing
         propagateEvent
     ]
 
@@ -356,8 +402,15 @@ scriptWidget p scriptCode = do
                        old <- readIORef lastText
                        when (new /= old) $ do
                          writeIORef lastText new
+                         writeIORef edited True
                          updateFoldLevels ce new
-                         setValue (source scriptCode) (CodeString new) ]
+                         setValue (source scriptCode) (CodeString new)
+                       -- the cursor's left a line: it can be normalized now
+                       lineNow <- currentLine
+                       lineBefore <- readIORef caretLine
+                       when (lineNow /= lineBefore) $ do
+                         writeIORef caretLine lineNow
+                         normalizeExcept (Just lineNow) ]
   -- Show the script when it's changed from elsewhere. wxWatchDynamic
   -- runs this up to 100ms after the change, so it also hears, late, about
   -- the changes this editor made itself, by which time there may be more
@@ -373,26 +426,50 @@ scriptWidget p scriptCode = do
       writeIORef lastText newText
       styledTextCtrlSetText ce newText
       updateFoldLevels ce newText
+  -- Which blocks fold, the font, and line numbers are settings: when
+  -- they change, so does the editor.
+  foldsCodeBlocks <- liftIO (newIORef . setFoldCodeBlocks =<< getDynamic appSettings)
+  fontNow <- liftIO (newIORef . fontOf =<< getDynamic appSettings)
+  wxWatchDynamic p appSettings $ \settings -> do
+    was <- readIORef foldsCodeBlocks
+    when (setFoldCodeBlocks settings /= was) $ do
+      writeIORef foldsCodeBlocks (setFoldCodeBlocks settings)
+      refreshFolds ce
+    fontBefore <- readIORef fontNow
+    when (fontOf settings /= fontBefore) $ do
+      writeIORef fontNow (fontOf settings)
+      isLight <- frameIsLight p
+      setupStyles ce isLight settings
+    -- (every time: the margin's width depends on the font, too)
+    showLineNumbers ce (setLineNumbers settings)
   isError <- liftIO ((isLeft <$> getDynamic scriptCode) >>= \startError ->
                         variable [ value := startError ])
   wxWatchDynamic p scriptCode $ \case
     Left (loc, msg) -> do
+      writeIORef checkedText Nothing
       set isError [ value := True ]
       set errorText [ text := "⚠️ " ++ msg, visible := True ]
       windowReLayout p
       code <- styledTextCtrlGetText ce
+      m <- doSyntaxColoring
       case convertSourceSpan code <$> spanOfSourceRange loc of
-        Nothing -> void doSyntaxColoring
+        Nothing -> clearError ce
         Just (s, e) -> do
-          m <- doSyntaxColoring
-          case (,) <$> Map.lookup s m <*> Map.lookup (e + 1 - s) m of
-            Nothing -> pure ()
-            Just (styleStart, styleRange) -> do
-              styledTextCtrlStartStyling ce styleStart 0
-              styledTextCtrlSetStyling ce styleRange 1
+          -- (byte positions: the map is from characters to bytes, and
+          -- the end of the text maps to nothing, so it's its length)
+          docLen <- styledTextCtrlGetLength ce
+          let byteAt i = Map.findWithDefault docLen i m
+              from = byteAt s
+          markError ce from (byteAt (e + 1) - from)
     Right _ -> do
       wasError <- get isError value
       void doSyntaxColoring
+      clearError ce
+      CodeString good <- getDynamic (source scriptCode)
+      writeIORef checkedText (Just good)
+      isFocused <- readIORef focused
+      lineNow <- currentLine
+      normalizeExcept (if isFocused then Just lineNow else Nothing)
       when wasError $ do
         set isError [ value := False ]
         set errorText [ text := "", visible := False ]
@@ -400,6 +477,67 @@ scriptWidget p scriptCode = do
 
   void $ liftIO doSyntaxColoring
   pure (ce, errorText)
+
+-- | An Edit menu for a code editor: the usual commands, and toggling
+-- comments and normalizing the script. (With emacs keys where Control
+-- is the shortcut key, Select All and Paste have no shortcuts, so that
+-- Control-A and Control-V stay emacs keys.)
+scriptEditMenu :: StyledTextCtrl a -> IO (Menu ())
+scriptEditMenu ce = do
+  emacs <- setEmacsKeys <$> getDynamic appSettings
+  let shortcut letter = if emacs && not emacsKeysByDefault then "" else "\tCtrl+" ++ letter
+  m <- menuPane [ text := "&Edit" ]
+  _ <- menuItem m [ text := "Undo\tCtrl+Z", on command := styledTextCtrlUndo ce ]
+  _ <- menuItem m [ text := "Redo\tShift+Ctrl+Z", on command := styledTextCtrlRedo ce ]
+  menuLine m
+  _ <- menuItem m [ text := "Cut\tCtrl+X", on command := styledTextCtrlCut ce ]
+  _ <- menuItem m [ text := "Copy\tCtrl+C", on command := styledTextCtrlCopy ce ]
+  _ <- menuItem m [ text := "Paste" ++ shortcut "V", on command := pasteFittingIndentation ce ]
+  _ <- menuItem m [ text := "Select All" ++ shortcut "A", on command := styledTextCtrlSelectAll ce ]
+  menuLine m
+  _ <- menuItem m [ text := "Toggle Comment\tCtrl+/", on command := toggleCommentLines ce ]
+  _ <- menuItem m [ text := "Normalize Script", on command := normalizeEditor ce ]
+  pure m
+
+-- | Rewrite all of an editor's script with mathematical symbols
+-- ("Language.Editor.Normalize"), whatever the setting for doing it as
+-- it's edited, keeping the cursor where it was in the text.
+normalizeEditor :: StyledTextCtrl a -> IO ()
+normalizeEditor ce = do
+  code <- styledTextCtrlGetText ce
+  let edits = normalizations code
+  unless (null edits) (applyEdits ce code edits)
+
+-- | What editors' styles depend on: the font, its size, and the colors.
+fontOf :: Settings -> (String, Maybe Int, Map String ClassStyle, Map String ClassStyle)
+fontOf settings = ( editorFont settings, setEditorFontSize settings
+                  , setEditorColorsLight settings, setEditorColorsDark settings )
+
+-- | Make rewrites of an editor's text (given as character ranges of it,
+-- in order), as one undo step, keeping the cursor and selection where
+-- they were in the text.
+applyEdits :: StyledTextCtrl a -> String -> [(Int, Int, String)] -> IO ()
+applyEdits ce code edits = do
+  docLen <- styledTextCtrlGetLength ce
+  let m = editorOffsetMap code
+      byteAt i = Map.findWithDefault docLen i m
+      bytes = BS.length . Utf8.fromString
+      byteEdits = [ (byteAt from, byteAt to, new) | (from, to, new) <- edits ]
+      -- where a position goes: moved by the edits before it, or, inside
+      -- one, to the end of what replaces it
+      shift q = q + sum [ bytes new - (to - from) | (from, to, new) <- byteEdits, to <= q ]
+      moved q = case [ (from, new) | (from, to, new) <- byteEdits, from < q, q < to ] of
+        (from, new) : _ -> shift from + bytes new
+        [] -> shift q
+  caret <- styledTextCtrlGetCurrentPos ce
+  anchor <- styledTextCtrlGetAnchor ce
+  styledTextCtrlBeginUndoAction ce
+  forM_ (reverse byteEdits) $ \(from, to, new) -> do
+    styledTextCtrlSetTargetStart ce from
+    styledTextCtrlSetTargetEnd ce to
+    void (styledTextCtrlReplaceTarget ce new)
+  styledTextCtrlEndUndoAction ce
+  styledTextCtrlSetSelection ce (moved anchor) (moved caret)
 
 convertSourceSpan :: String -> SourceSpan -> (Int, Int)
 convertSourceSpan input = \case

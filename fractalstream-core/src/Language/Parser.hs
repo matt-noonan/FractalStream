@@ -37,6 +37,8 @@ import qualified Data.Set as Set
 import qualified Text.Earley as P
 
 import Language.Parser.Tokenizer
+import qualified Language.Value.Builtins as B
+import qualified Data.Map as Map
 import Language.Parser.SourceRange
 
 ------------------------------------------------------
@@ -101,6 +103,8 @@ parse :: (forall r. P.Grammar r (Prod r a)) -> [SRToken] -> Either ParseError a
 parse p input
   | (sr, s) : _ <- [ (sr, s) | SRToken (ScientificNotation s) sr <- input ]
   = Left (ScientificNumber sr s)
+  | b : _ <- builtinBindings input
+  = Left b
   | otherwise = case P.fullParses (P.parser (fmap snd . runProd <$> p)) input of
     ([], r)  -> Left (NoParse `onReport` r)
     ([x], _) -> pure x
@@ -111,6 +115,81 @@ parse p input
       NoSourceRange   -> Nothing
       SourceRange _ e -> Just e
 
+-- | Built-in names a script uses for its own variables, functions, and
+-- code blocks: which the grammar would otherwise read as the built-in,
+-- failing somewhere later, and confusingly. (Most of these names aren't
+-- keywords to the tokenizer, so that the grammar can take them for what
+-- they are where they're used.) A name is checked where it's defined:
+-- a @let@'s or @define@'s name and parameters, @x ≔@, a statement's
+-- @x ⟵@ and @x : T@, @x ⟼@, @for each x@, @with first x@, and the points
+-- of a handler's @on ... at x:@.
+builtinBindings :: [SRToken] -> [ParseError]
+builtinBindings = go True . map (\(SRToken t sr) -> (t, sr))
+  where
+    go _ [] = []
+    go atStart toks@((t, _) : rest) = here atStart toks ++ go (t `elem` [Newline, Indent, Dedent]) rest
+
+    here atStart = \case
+      (Let_, _) : n : rest -> named "function" n ++ params rest
+      (Identifier "define", _) : n : rest -> named "code block" n ++ params rest
+      (Identifier "each", _) : n : _ -> named "variable" n
+      (Identifier "first", _) : n : _ -> named "variable" n
+      (Identifier "on", _) : rest | atStart -> handlerPoints rest
+      n : (ColonEquals, _) : _ -> named "variable" n
+      n : (RightArrow, _) : _ -> named "variable" n
+      n : (LeftArrow, _) : _ | atStart -> named "variable" n
+      n : (Colon, _) : (next, _) : _ | atStart, next `notElem` [Newline, Indent, Dedent] -> named "variable" n
+      _ -> []
+
+    named role (t, sr) = [ BuiltinName sr name what role | Just (name, what) <- [builtin t] ]
+
+    -- a `let`'s or `define`'s parameters: each first in its slot
+    params = \case
+      (OpenParen, _) : rest -> slots rest
+      _ -> []
+    slots toks =
+      let (slot, rest) = break ((`elem` [Comma, CloseParen]) . fst) toks
+      in take 1 (concatMap (named "variable") (take 1 slot)) ++ case rest of
+           (Comma, _) : more -> slots more
+           _ -> []
+
+    -- the points of a handler's first line, up to its colon
+    handlerPoints toks =
+      let line = takeWhile ((/= Colon) . fst) toks
+      in concat [ named "variable" n
+                | ((before, _), n) <- zip line (drop 1 line)
+                , before `elem` [Identifier "at", Identifier "from", Identifier "to", OpenParen, Comma] ]
+
+-- | A built-in name, and what it is, if this token is one.
+builtin :: Token -> Maybe (String, String)
+builtin = \case
+  I -> Just ("i", "the imaginary unit")
+  Euler -> Just ("e", "Euler's number")
+  Pi -> Just ("pi", "π")
+  Iterations -> Just ("iterations", "a built-in value (the last loop's iteration count)")
+  Stuck -> Just ("stuck", "a built-in value (whether the last loop gave up)")
+  Identifier n
+    | Just what <- lookup n described -> Just (n, "a built-in function (" ++ what ++ ")")
+    | n `Map.member` B.realFunctions || n `Map.member` B.commonFunctions
+      || n `Map.member` B.complexFunctions || n `Map.member` B.roundingFunctions
+      || n `Map.member` B.wheels || n `elem` others -> Just (n, "a built-in function")
+    | n `Map.member` B.colors -> Just (n, "a color's name")
+  t | Just n <- lookup t keywordNames -> Just (n, "a built-in function")
+  _ -> Nothing
+  where
+    described =
+      [ ("bar", "the complex conjugate"), ("conj", "the complex conjugate")
+      , ("Bar", "the complex conjugate"), ("Conj", "the complex conjugate")
+      , ("re", "the real part"), ("Re", "the real part")
+      , ("im", "the imaginary part"), ("Im", "the imaginary part")
+      , ("arg", "the argument"), ("Arg", "the argument") ]
+    others = [ "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert"
+             , "autocolor", "nearest_autocolor", "get_autocolor" ]
+    keywordNames = [ (t, n) | (n, t) <- Map.toList wordlikeTokens
+                            , t `elem` [ TextKeyword, AppendKeyword, PrependKeyword, JoinKeyword
+                                       , RemoveKeyword, FindKeyword, TransformKeyword, RangeKeyword
+                                       , LengthKeyword, DiffKeyword ] ]
+
 withSourceRange :: Prod r (SourceRange -> a) -> Prod r a
 withSourceRange (Prod p) = Prod $ (\(sr, f) -> (sr, f sr)) <$> p
 
@@ -120,6 +199,9 @@ data ParseError
   | ScientificNumber SourceRange String
     -- ^ A number written in scientific notation (see
     -- 'Language.Parser.Tokenizer.ScientificNotation'), as written.
+  | BuiltinName SourceRange String String String
+    -- ^ A built-in name (as written; what it is; what it was going to name)
+    -- used for a variable, function, or code block of the script's own.
   deriving Show
 
 instance PrettyPrint ParseError where
@@ -129,6 +211,9 @@ instance PrettyPrint ParseError where
     AmbiguousParse _ prods -> "I got stuck because the grammar is ambiguous here" ++
       expectingClause prods
     ScientificNumber _ s -> scientificNumberMessage s
+    BuiltinName _ name what role ->
+      "`" ++ name ++ "` is " ++ what ++ ", so it can't also name a " ++ role ++ ". Try another name"
+      ++ (if name `elem` ["i", "e"] then " (k, j, n, ...)." else ".")
 
 -- | Explain why @3.5e-2@ (say) isn't accepted, and how to write each
 -- thing it could have meant: the number scientific notation would make
@@ -189,6 +274,7 @@ instance HasErrorLocation ParseError where
     NoParse mp _ -> maybe NoSourceRange (\p -> SourceRange p p) mp
     AmbiguousParse mp _ -> maybe NoSourceRange (\p -> SourceRange p p) mp
     ScientificNumber sr _ -> sr
+    BuiltinName sr _ _ _ -> sr
 
 
 ppFullError :: (PrettyPrint t, HasErrorLocation t) => t -> String -> String
