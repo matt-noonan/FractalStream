@@ -510,7 +510,12 @@ Key modules:
   definitions it can see, so it works on scripts that don't parse.
   `highlightsWith` takes names defined elsewhere (a movie's script).
   `UI.EditorStyle` gives each class its own Scintilla style (some share
-  colors by default); `UI.Widgets.scriptWidget` applies them.
+  colors by default); `UI.Widgets.scriptWidget` applies them. The
+  `editor-colors-light` / `editor-colors-dark` settings change any of a
+  class's color, background, bold, italic, and underline (`ClassStyle`,
+  by `highlightName`), set in Preferences' Colors tab. Bold, italic and
+  underline are set with `StyleSetBold` etc. (wx's `StyleSetSpec`
+  doesn't take Scintilla's `underlined`).
 - `Language.Editor.Normalize` - rewrites ASCII spellings as symbols
   (`<-` to `⟵`, `R` to `ℝ` in types, `z^2` to `z²`, `*` to `×`, ...),
   token for token (tested on every library project). `scriptWidget` does

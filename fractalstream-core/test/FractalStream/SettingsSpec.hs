@@ -8,6 +8,7 @@ import FractalStream.Settings
 import Data.Aeson (Value(..))
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString.Char8 as BS8
+import qualified Data.Map as Map
 
 spec :: Spec
 spec = describe "FractalStream's settings file" $ do
@@ -16,7 +17,11 @@ spec = describe "FractalStream's settings file" $ do
     let settings = defaultSettings { setProjectsFolder = Just "/somewhere/projects", setEmacsKeys = True
                                    , setFoldCodeBlocks = True, setMathSymbols = False
                                    , setEditorFont = Just "Iosevka", setEditorFontSize = Just 14
-                                   , setLineNumbers = True }
+                                   , setLineNumbers = True
+                                   , setEditorColorsDark = Map.fromList
+                                       [ ("keyword", noClassStyle { csColor = Just "#c792ea" })
+                                       , ("undefined", noClassStyle { csColor = Just "#ff8080", csItalic = Just True
+                                                                    , csBackground = Just "#202020" }) ] }
     readSettings "settings.yaml" (writeSettings settings) `shouldBe` (settings, [])
     BS8.unpack (writeSettings defaultSettings) `shouldBe` "{}\n"
 
@@ -28,7 +33,7 @@ spec = describe "FractalStream's settings file" $ do
     fst (readSettings "settings.yaml" (writeSettings settings)) `shouldBe` settings
 
   it "ignores (and warns about) settings that don't make sense" $ do
-    let (settings, warnings) = readSettings "settings.yaml" "projects-folder: 7\nemacs-keys: sometimes\nfold-code-blocks: 1\nmath-symbols: maybe\neditor-font: 12\neditor-font-size: big\nline-numbers: 3\n"
+    let (settings, warnings) = readSettings "settings.yaml" "projects-folder: 7\nemacs-keys: sometimes\nfold-code-blocks: 1\nmath-symbols: maybe\neditor-font: 12\neditor-font-size: big\nline-numbers: 3\neditor-colors-light: {keyword: blue, number: {color: \"#123456\", sparkly: true}, string: \"#00aa00\"}\n"
     setProjectsFolder settings `shouldBe` Nothing
     setEmacsKeys settings `shouldBe` False
     setFoldCodeBlocks settings `shouldBe` False
@@ -36,7 +41,8 @@ spec = describe "FractalStream's settings file" $ do
     setEditorFont settings `shouldBe` Nothing
     setEditorFontSize settings `shouldBe` Nothing
     setLineNumbers settings `shouldBe` False
-    length warnings `shouldBe` 7
+    setEditorColorsLight settings `shouldBe` Map.fromList [("string", noClassStyle { csColor = Just "#00aa00" })]
+    length warnings `shouldBe` 9
 
   it "uses the defaults for an empty file, or one that isn't YAML" $ do
     readSettings "settings.yaml" "" `shouldBe` (defaultSettings, [])

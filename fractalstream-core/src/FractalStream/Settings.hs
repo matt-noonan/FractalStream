@@ -13,6 +13,8 @@
 -- version's settings survive being saved by an older one.
 module FractalStream.Settings
   ( Settings(..)
+  , ClassStyle(..)
+  , noClassStyle
   , defaultSettings
   , defaultEditorFont
   , editorFont
@@ -31,6 +33,8 @@ import qualified Data.Aeson.KeyMap as KM
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Maybe (catMaybes)
+import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.Text as Text
 import qualified Data.Yaml as YAML
 import System.Directory (XdgDirectory(..), createDirectoryIfMissing, doesFileExist,
@@ -60,13 +64,34 @@ data Settings = Settings
   , setFoldCodeBlocks :: Bool
     -- ^ Whether code editors let blocks of code (an @if@'s body, a
     -- loop's, ...) be folded away, as well as stanzas and tool handlers.
+  , setEditorColorsLight :: Map String ClassStyle
+  , setEditorColorsDark  :: Map String ClassStyle
+    -- ^ Changes to how code editors color each class of a script's spans
+    -- ("Language.Editor.Highlight", by 'Language.Editor.Highlight.highlightName'),
+    -- in a light window and in a dark one.
   , setOther          :: KM.KeyMap Value
     -- ^ Keys this version doesn't know, kept as they are.
   }
   deriving (Eq, Show)
 
+-- | Changes to how one class of span is shown: each field is a change
+-- from the editor's own style for the class, or 'Nothing' to keep it.
+-- Colors are written @#rrggbb@.
+data ClassStyle = ClassStyle
+  { csColor      :: Maybe String
+  , csBackground :: Maybe String
+  , csBold       :: Maybe Bool
+  , csItalic     :: Maybe Bool
+  , csUnderline  :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+-- | No changes.
+noClassStyle :: ClassStyle
+noClassStyle = ClassStyle Nothing Nothing Nothing Nothing Nothing
+
 defaultSettings :: Settings
-defaultSettings = Settings Nothing Nothing Nothing False False True False KM.empty
+defaultSettings = Settings Nothing Nothing Nothing False False True False Map.empty Map.empty KM.empty
 
 -- | The platform's usual fixed-width font.
 defaultEditorFont :: String
@@ -126,12 +151,15 @@ readSettings path contents = case YAML.decodeEither' contents of
         (emacs, emacsWarnings) = flag "emacs-keys" False
         (symbols, symbolWarnings) = flag "math-symbols" True
         (folds, foldWarnings) = flag "fold-code-blocks" False
+        (lightColors, lightWarnings) = classStyles "editor-colors-light" (KM.lookup "editor-colors-light" o)
+        (darkColors, darkWarnings) = classStyles "editor-colors-dark" (KM.lookup "editor-colors-dark" o)
         other = foldr KM.delete o [ "projects-folder", "editor-font", "editor-font-size"
-                                  , "line-numbers", "emacs-keys", "math-symbols", "fold-code-blocks" ]
-    in ( Settings folder font fontSize numbers emacs symbols folds other
+                                  , "line-numbers", "emacs-keys", "math-symbols", "fold-code-blocks"
+                                  , "editor-colors-light", "editor-colors-dark" ]
+    in ( Settings folder font fontSize numbers emacs symbols folds lightColors darkColors other
        , map (("In " ++ quoted path ++ ", ") ++)
              (folderWarnings ++ fontWarnings ++ fontSizeWarnings ++ numberWarnings
-              ++ emacsWarnings ++ symbolWarnings ++ foldWarnings) )
+              ++ emacsWarnings ++ symbolWarnings ++ foldWarnings ++ lightWarnings ++ darkWarnings) )
   Right _ -> (defaultSettings, [quoted path ++ " isn't a set of settings, so it's being ignored"])
 
 -- | The settings file's contents for these settings. A setting that's
@@ -146,8 +174,60 @@ writeSettings Settings{..} = YAML.encode $ Object $ KM.union
     , if setEmacsKeys then Just ("emacs-keys", Bool True) else Nothing
     , if setMathSymbols then Nothing else Just ("math-symbols", Bool False)
     , if setFoldCodeBlocks then Just ("fold-code-blocks", Bool True) else Nothing
+    , colors "editor-colors-light" setEditorColorsLight
+    , colors "editor-colors-dark" setEditorColorsDark
     ]))
   setOther
+
+  where
+    colors key m
+      | Map.null m = Nothing
+      | otherwise = Just (key, Object (KM.fromList [ (Key.fromString c, styleValue s) | (c, s) <- Map.toList m ]))
+    -- just a color, or the changes there are
+    styleValue = \case
+      ClassStyle (Just c) Nothing Nothing Nothing Nothing -> String (Text.pack c)
+      ClassStyle{..} -> Object $ KM.fromList $ catMaybes
+        [ ("color",) . String . Text.pack <$> csColor
+        , ("background",) . String . Text.pack <$> csBackground
+        , ("bold",) . Bool <$> csBold
+        , ("italic",) . Bool <$> csItalic
+        , ("underline",) . Bool <$> csUnderline ]
+
+-- | Read changes to classes' styles: each a color, or an object with
+-- any of @color@, @background@, @bold@, @italic@, and @underline@.
+-- What doesn't make sense is ignored, with a warning.
+classStyles :: String -> Maybe Value -> (Map String ClassStyle, [String])
+classStyles key = \case
+  Nothing -> (Map.empty, [])
+  Just (Object o) ->
+    let read1 (k, v) = case style v of
+          Just s -> (Just (Key.toString k, s), [])
+          Nothing -> (Nothing, ["ignoring " ++ key ++ "'s " ++ Key.toString k
+                                ++ ", which should be a color (#rrggbb) or a style"])
+        results = map read1 (KM.toList o)
+    in (Map.fromList (catMaybes (map fst results)), concatMap snd results)
+  Just _ -> (Map.empty, ["ignoring the " ++ key ++ " setting, which should give styles by class"])
+  where
+    style = \case
+      String t | isColor (Text.unpack t) -> Just noClassStyle { csColor = Just (Text.unpack t) }
+      Object o ->
+        let colorAt k = case KM.lookup k o of
+              Nothing -> Just Nothing
+              Just (String t) | isColor (Text.unpack t) -> Just (Just (Text.unpack t))
+              Just _ -> Nothing
+            flagAt k = case KM.lookup k o of
+              Nothing -> Just Nothing
+              Just (Bool b) -> Just (Just b)
+              Just _ -> Nothing
+            known = ["color", "background", "bold", "italic", "underline"]
+        in if all (`elem` known) (map Key.toString (KM.keys o))
+             then ClassStyle <$> colorAt "color" <*> colorAt "background"
+                             <*> flagAt "bold" <*> flagAt "italic" <*> flagAt "underline"
+             else Nothing
+      _ -> Nothing
+    isColor = \case
+      '#' : hex -> length hex == 6 && all (`elem` ("0123456789abcdefABCDEF" :: String)) hex
+      _ -> False
 
 -- | Save the settings, by writing a new file and renaming it over the
 -- old one, so that a failure part-way never leaves a damaged file.

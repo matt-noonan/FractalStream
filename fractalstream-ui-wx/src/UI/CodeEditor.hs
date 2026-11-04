@@ -18,7 +18,7 @@ import UI.EditorKeys
 import UI.EditorStyle (setupStyles, showLineNumbers)
 import Language.Editor (indentUnit)
 import UI.AppSettings (appSettings)
-import FractalStream.Settings (Settings(..), editorFont)
+import FractalStream.Settings (Settings(..))
 
 import Graphics.UI.WX hiding (Vertical, Horizontal, when)
 import Graphics.UI.WXCore.WxcClasses
@@ -69,7 +69,7 @@ codeEditorWithText cep txt = do
     isLight <- frameIsLight cep
     -- each class of span its own style ("UI.EditorStyle")
     settings <- getDynamic appSettings
-    setupStyles stc isLight (editorFont settings) (setEditorFontSize settings)
+    setupStyles stc isLight settings
     showLineNumbers stc (setLineNumbers settings)
     if isLight
       then do

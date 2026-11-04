@@ -10,6 +10,13 @@ import Data.DynamicValue
 import FractalStream.Library (projectsDirectory)
 import FractalStream.Settings
 import UI.EditorKeys (emacsKeysByDefault)
+import UI.EditorStyle (Style(..), classStyle, defaultClassStyle, editorBackground)
+import UI.CodeEditor (frameIsLight)
+import Language.Editor.Highlight (Highlight, highlightName)
+import qualified Language.Editor.Highlight as H
+import qualified Graphics.UI.WX as WX
+import qualified Data.Map as Map
+import Numeric (showHex, readHex)
 
 import Graphics.UI.WX hiding (pt, when, Color, Object, Layout, Vertical, Horizontal)
 import Graphics.UI.WXCore (windowRaise)
@@ -26,6 +33,7 @@ preferencesWindow settingsVar = do
   nb <- notebook p []
   libraryTab <- panel nb []
   editorTab <- panel nb []
+  colorsTab <- panel nb []
 
   folderText <- staticText libraryTab [ text := "" ]
   chooseButton <- button libraryTab [ text := "Choose..." ]
@@ -45,6 +53,25 @@ preferencesWindow settingsVar = do
   emacsBox <- if emacsKeysByDefault then pure Nothing else
     Just <$> checkBox editorTab [ text := "Emacs-style movement keys (Control-A, Control-E, ...)" ]
 
+  -- The Colors tab: for light windows or dark ones (the kind this one
+  -- is, to start with), each class's sample, and buttons and boxes for
+  -- changing it.
+  isLight0 <- frameIsLight f
+  appearance <- choice colorsTab [ items := ["Light windows", "Dark windows"]
+                                 , selection := if isLight0 then 0 else 1 ]
+  resetAllButton <- button colorsTab [ text := "Reset all" ]
+  classRows <- forM [minBound .. maxBound] $ \h -> do
+    samplePanel <- panel colorsTab []
+    sample <- staticText samplePanel [ text := classLabel h ]
+    set samplePanel [ layout := margin 3 (widget sample) ]
+    colorButton <- button colorsTab [ text := "Color..." ]
+    backgroundButton <- button colorsTab [ text := "Background..." ]
+    boldBox <- checkBox colorsTab [ text := "Bold" ]
+    italicBox <- checkBox colorsTab [ text := "Italic" ]
+    underlineBox <- checkBox colorsTab [ text := "Underline" ]
+    resetButton <- button colorsTab [ text := "Reset" ]
+    pure (h, samplePanel, sample, colorButton, backgroundButton, boldBox, italicBox, underlineBox, resetButton)
+
   let showSettings = do
         settings <- getDynamic settingsVar
         folder <- projectsDirectory settings
@@ -59,7 +86,32 @@ preferencesWindow settingsVar = do
                                  ++ maybe "" (\n -> ", " ++ show n ++ " pt") (setEditorFontSize settings)
                                  ++ (if custom then "" else " (the default)") ]
         set defaultFontButton [ enabled := custom ]
+        showColors settings
         windowReLayout f
+      showColors settings = do
+        isLight <- (== 0) <$> get appearance selection
+        let changes = (if isLight then setEditorColorsLight else setEditorColorsDark) settings
+        set resetAllButton [ enabled := not (Map.null changes) ]
+        forM_ classRows $ \(h, samplePanel, sample, _, _, boldBox, italicBox, underlineBox, resetButton) -> do
+          let Style{..} = classStyle isLight settings h
+          set samplePanel [ bgcolor := hexColor (fromMaybe (editorBackground isLight) stBackground) ]
+          set sample [ color := hexColor stColor
+                     , bgcolor := hexColor (fromMaybe (editorBackground isLight) stBackground)
+                     , font := fontFixed { _fontFace = editorFont settings
+                                         , _fontWeight = if stBold then WeightBold else WeightNormal
+                                         , _fontShape = if stItalic then ShapeItalic else ShapeNormal
+                                         , _fontUnderline = stUnderline } ]
+          set boldBox [ checked := stBold ]
+          set italicBox [ checked := stItalic ]
+          set underlineBox [ checked := stUnderline ]
+          set resetButton [ enabled := Map.member (highlightName h) changes ]
+      -- change one class's style, for the windows being shown
+      changeClass h k = do
+        isLight <- (== 0) <$> get appearance selection
+        let tidy cs = if cs == noClassStyle then Nothing else Just cs
+            alter = Map.alter (tidy . k . fromMaybe noClassStyle) (highlightName h)
+        change $ \s -> if isLight then s { setEditorColorsLight = alter (setEditorColorsLight s) }
+                                  else s { setEditorColorsDark = alter (setEditorColorsDark s) }
       change k = do
         modifyValue settingsVar k
         settings <- getDynamic settingsVar
@@ -83,6 +135,38 @@ preferencesWindow settingsVar = do
                              change (\s -> s { setEditorFont = Just (_fontFace chosen)
                                              , setEditorFontSize = Just (_fontSize chosen) })) ]
   set defaultFontButton [ on command := change (\s -> s { setEditorFont = Nothing, setEditorFontSize = Nothing }) ]
+  set appearance [ on select := getDynamic settingsVar >>= showColors ]
+  set resetAllButton [ on command := do
+                         isLight <- (== 0) <$> get appearance selection
+                         change (\s -> if isLight then s { setEditorColorsLight = Map.empty }
+                                                 else s { setEditorColorsDark = Map.empty }) ]
+  forM_ classRows $ \(h, _, _, colorButton, backgroundButton, boldBox, italicBox, underlineBox, resetButton) -> do
+    -- (on macOS the picker has no Cancel: closing it gives back the color
+    -- it was showing, so picking the class's own color is no change)
+    let pick current k = do
+          isLight <- (== 0) <$> get appearance selection
+          settings <- getDynamic settingsVar
+          colorDialog f (hexColor (current (classStyle isLight settings h)))
+            >>= mapM_ (\c -> do
+                  let picked = colorHex c
+                      own = current (defaultClassStyle isLight h)
+                  changeClass h (k (if picked == own then Nothing else Just picked)))
+        -- a flag that's the class's own again is no change at all
+        flag field setField box = set box [ on command := do
+          on' <- get box checked
+          isLight <- (== 0) <$> get appearance selection
+          let own = field (defaultClassStyle isLight h)
+          changeClass h (setField (if on' == own then Nothing else Just on')) ]
+    set colorButton [ on command := pick stColor (\c cs -> cs { csColor = c }) ]
+    set backgroundButton [ on command := do
+                             isLight <- (== 0) <$> get appearance selection
+                             pick (fromMaybe (editorBackground isLight) . stBackground)
+                                  (\c cs -> cs { csBackground = c }) ]
+    flag stBold (\v cs -> cs { csBold = v }) boldBox
+    flag stItalic (\v cs -> cs { csItalic = v }) italicBox
+    flag stUnderline (\v cs -> cs { csUnderline = v }) underlineBox
+    set resetButton [ on command := changeClass h (const noClassStyle) ]
+
   set symbolsBox [ on command := do
                      on' <- get symbolsBox checked
                      change (\s -> s { setMathSymbols = on' }) ]
@@ -116,8 +200,48 @@ preferencesWindow settingsVar = do
                 ] ++
                 [ widget box | Just box <- [emacsBox] ] ++
                 [ glue ]
+            , tab "Colors" $ container colorsTab $ margin 12 $ column 8
+                [ row 6 [ label "Colors for", widget appearance, hglue, widget resetAllButton ]
+                , grid 8 4
+                    [ [ fill (widget samplePanel), widget colorButton, widget backgroundButton
+                      , widget boldBox, widget italicBox, widget underlineBox, widget resetButton ]
+                    | (_, samplePanel, _, colorButton, backgroundButton, boldBox, italicBox, underlineBox, resetButton) <- classRows ]
+                , glue
+                ]
             ]
         ]
   showSettings
   windowRaise f
   pure f
+
+-- | What the Colors tab calls a class.
+classLabel :: Highlight -> String
+classLabel = \case
+  H.Keyword -> "keywords"
+  H.BuiltinFunction -> "built-in functions"
+  H.BuiltinValue -> "built-in values"
+  H.TypeName -> "types"
+  H.ColorName -> "color names"
+  H.NumberLiteral -> "numbers"
+  H.StringLiteral -> "\"text\""
+  H.Comment -> "# comments"
+  H.Operator -> "operators"
+  H.StanzaHeader -> "@stanza headers"
+  H.Parameter -> "parameters"
+  H.Variable -> "variables"
+  H.Function -> "functions"
+  H.CodeBlock -> "code blocks"
+  H.Undefined -> "undefined names"
+
+-- | A color written @#rrggbb@, and back.
+hexColor :: String -> WX.Color
+hexColor s = case s of
+  '#' : r1 : r2 : g1 : g2 : b1 : b2 : _ -> rgb (hex [r1, r2]) (hex [g1, g2]) (hex [b1, b2] :: Int)
+  _ -> rgb 0 0 (0 :: Int)
+  where hex ds = case readHex ds of
+          (n, _) : _ -> n
+          [] -> 0
+
+colorHex :: WX.Color -> String
+colorHex c = '#' : concatMap two [colorRed c, colorGreen c, colorBlue c :: Int]
+  where two n = let h = showHex n "" in if length h < 2 then '0' : h else h

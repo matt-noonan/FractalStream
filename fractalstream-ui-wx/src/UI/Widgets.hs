@@ -30,7 +30,7 @@ import UI.EditorStyle (styleFor)
 
 import UI.CodeEditor
 import UI.AppSettings (appSettings)
-import FractalStream.Settings (Settings(..), editorFont)
+import FractalStream.Settings (Settings(..), ClassStyle, editorFont)
 import UI.EditorStyle (setupStyles, showLineNumbers)
 import UI.EditorKeys (emacsKeysByDefault, pasteFittingIndentation, toggleCommentLines)
 
@@ -439,7 +439,7 @@ scriptWidgetWith known p scriptCode = do
     when (fontOf settings /= fontBefore) $ do
       writeIORef fontNow (fontOf settings)
       isLight <- frameIsLight p
-      uncurry (setupStyles ce isLight) (fontOf settings)
+      setupStyles ce isLight settings
     -- (every time: the margin's width depends on the font, too)
     showLineNumbers ce (setLineNumbers settings)
   isError <- liftIO ((isLeft <$> getDynamic scriptCode) >>= \startError ->
@@ -508,9 +508,10 @@ normalizeEditor ce = do
   let edits = normalizations code
   unless (null edits) (applyEdits ce code edits)
 
--- | The font editors use, and its size.
-fontOf :: Settings -> (String, Maybe Int)
-fontOf settings = (editorFont settings, setEditorFontSize settings)
+-- | What editors' styles depend on: the font, its size, and the colors.
+fontOf :: Settings -> (String, Maybe Int, Map String ClassStyle, Map String ClassStyle)
+fontOf settings = ( editorFont settings, setEditorFontSize settings
+                  , setEditorColorsLight settings, setEditorColorsDark settings )
 
 -- | Make rewrites of an editor's text (given as character ranges of it,
 -- in order), as one undo step, keeping the cursor and selection where
