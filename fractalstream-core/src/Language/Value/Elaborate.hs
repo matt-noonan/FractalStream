@@ -225,6 +225,12 @@ elabOwn t (Syn (sr, _) node) = case node of
 
   EWiden _ x -> el t x
 
+  EProj isSecond x -> withType (exprType x) $ \pt -> case pt of
+    PairType t1 t2
+      | isSecond  -> same sr t t2 (ProjV2 pt <$> el pt x)
+      | otherwise -> same sr t t1 (ProjV1 pt <$> el pt x)
+    _ -> inconsistent sr
+
   EAdvice{} -> inconsistent sr
 
   where

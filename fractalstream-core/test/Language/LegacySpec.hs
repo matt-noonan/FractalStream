@@ -6,8 +6,7 @@ module Language.LegacySpec (spec) where
 -- program's guides) is translated and compared with the translation
 -- next to it (@*.fs@), and the translation must load. A missing @.fs@ is
 -- written out (and the test passes); delete one to regenerate it, and
--- look over the result. @torus.txt@ is a real-dynamics script, which
--- isn't translated yet.
+-- look over the result. @torus.txt@ is a real-dynamics script.
 
 import Test.Hspec
 
@@ -49,8 +48,6 @@ spec = describe "translating original-FractalStream scripts" $ do
     forM_ scripts $ \file -> it file $ do
       src <- readUtf8 (legacyDir </> file)
       case (file, translateLegacyScript (dropExtension file) src) of
-        ("torus.txt", result) ->
-          either (const True) (const False) result `shouldBe` True
         (_, Left err) -> expectationFailure err
         (_, Right t) -> do
           loads t
@@ -98,9 +95,7 @@ spec = describe "translating original-FractalStream scripts" $ do
   it "sets several variables at once" $ do
     t <- translated "set (a, b) to (b, a + b). iterate z^2 + a until z escapes."
     let s = scriptOf t
-    s `shouldSatisfy` any ("new_a := b" `isInfixOf`)
-    s `shouldSatisfy` any ("b <- a + b" `isInfixOf`)
-    s `shouldSatisfy` any ("a <- new_a" `isInfixOf`)
+    s `shouldSatisfy` any ("a, b <- b, a + b" `isInfixOf`)
     loads t
 
   it "turns xor into a comparison of truth values" $ do
@@ -123,6 +118,26 @@ spec = describe "translating original-FractalStream scripts" $ do
   it "reports scripts it can't parse" $
     translateLegacyScript "Test" "iterate z^2 + until." `shouldSatisfy` either (const True) (const False)
 
-  it "doesn't translate real-dynamics scripts yet" $ do
-    let result = translateLegacyScript "Test" "{real}\nset x to x^2 + a."
-    either ("real" `isInfixOf`) (const False) result `shouldBe` True
+  it "translates a real-dynamics script into real viewers, with a parameter plane for (a, b)" $ do
+    t <- translated $ unlines
+      [ "{real}"
+      , "iterate (x^2 - y^2 + a, 2*x*y + b) until (x, y) escapes."
+      , "probe real \"Distance\":"
+      , "  report x^2 + y^2."
+      , "end." ]
+    let s = scriptOf t
+    s `shouldSatisfy` any ("@viewer \"Dynamical plane\" xvar=x yvar=y" `isInfixOf`)
+    s `shouldSatisfy` any ("@viewer \"Parameter plane\" xvar=a yvar=b" `isInfixOf`)
+    s `shouldSatisfy` any ("a : R as \"a =\" <- 0" `isInfixOf`)
+    s `shouldSatisfy` any ("x, y := 0, 0" `isInfixOf`)
+    s `shouldSatisfy` any ("iterate (x, y) -> (x^2 - y^2 + a, 2 * x * y + b) until (x, y) escapes" `isInfixOf`)
+    -- the probe: the clicked point itself, in the dynamical plane, and
+    -- the clicked parameters, starting from (0, 0), in the parameter plane
+    s `shouldSatisfy` any ("on click at (x, y):" `isInfixOf`)
+    s `shouldSatisfy` any ("on click at (clicked_a, clicked_b):" `isInfixOf`)
+    loads t
+
+  it "compares a real-dynamics script's values as real numbers" $ do
+    t <- translated "{real}\nif x > y then [Right]. else [Left]."
+    scriptOf t `shouldSatisfy` any ("if x > y:" `isInfixOf`)
+    loads t

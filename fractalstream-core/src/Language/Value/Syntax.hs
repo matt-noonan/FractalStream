@@ -105,6 +105,10 @@ data ExprF r
     -- "Language.Code.Typecheck.Functions") before typing
   | EWiden FSType r
     -- ^ The value, converted to at least the given type
+  | EProj Bool r
+    -- ^ The first (@False@) or second (@True@) part of a pair. No script
+    -- can write one: tuple assignments and tuple norms use them (see
+    -- "Language.Code.Tuples").
   | EAdvice String
     -- ^ A parse that is accepted only to produce a helpful error
   deriving (Show, Functor, Foldable, Traversable)

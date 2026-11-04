@@ -25,6 +25,7 @@ import Language.Code.Typecheck.Functions
 import Language.Code.Infer
 import Language.Code.Procedures
 import Language.Code.Stops
+import Language.Code.Tuples
 import Language.Draw
 import Language.Parser.SourceRange
 
@@ -41,7 +42,7 @@ type ParsedCode = Stmt
 -- | Check parsed code in the given environment.
 runParsedCode :: EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
 runParsedCode env c =
-  case withEnvironment env (expandRuns c >>= expandStops >>= elab Map.empty env . inferDeclarations (typeEnvOf env) Map.empty) of
+  case withEnvironment env (expandRuns c >>= expandStops >>= expandTuples >>= elab Map.empty env . inferDeclarations (typeEnvOf env) Map.empty) of
     TC x -> x
 
 ------------------------------------------------------
@@ -74,9 +75,14 @@ elab funs env stmt@(Stmt sr node) = case node of
     LoopDoUntil -> genericLoop funs True  DoWhile mlimit body cond sr env
     where whileLoop c b = IfThenElse c (DoWhile c b) NoOp
 
-  SIterate var expr isWhile cond upto ->
+  SIterate (PVar _ var) expr isWhile cond upto ->
     elab funs env (Stmt sr (SLoop (if isWhile then LoopWhile else LoopUntil)
                                   cond upto (Stmt sr (SSet var expr))))
+
+  -- these are expanded away before elaboration ("Language.Code.Tuples")
+  SIterate PTuple{} _ _ _ _ -> throwError (Internal (Advice sr "unexpanded tuple iterate"))
+  SDeclTuple{} -> throwError (Internal (Advice sr "unexpanded tuple declaration"))
+  SSetTuple{} -> throwError (Internal (Advice sr "unexpanded tuple assignment"))
 
   SPass -> pure NoOp
 

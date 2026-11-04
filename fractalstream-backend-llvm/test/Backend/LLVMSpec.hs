@@ -5,6 +5,7 @@ import Test.Hspec
 import Language.Value
 import Language.Draw
 import Language.Code.Parser (parseCode, parseParsedCode, noCommonDefs)
+import Language.Value.Parser (parseParsedValue)
 import Actor.Event (EventArgument_, mutableVar, interpretedToolExec, ToolExec, Coordinate(..))
 import Data.DynamicValue
 import Data.Color
@@ -314,6 +315,28 @@ spec = do
           peekArray (3 * 2 * 2) buf
       let rgb c = let (r, g, b) = colorToRGB c in [r, g, b]
       pixels `shouldBe` concatMap rgb [blue, blue, green, red]
+
+    it "compiles tuple assignment, iteration, and norms" $ withJIT $ \jit -> do
+      -- (0, 0) iterates to (1, 1), (2, 2), ... and escapes (length > 4)
+      -- when x = 3; (0.1, 0) to (1.1, 1), ... when x = 3.1.
+      let src = "x, y <- y, x\n"
+             ++ "iterate (x, y) -> (x + 1, y + 1) until (x, y) escapes\n"
+             ++ "color <- if (x, y) = (3, 3) then red else if (x, y) = (3, 3.1) then green else blue"
+      four <- either (fail . show) pure (parseParsedValue "4")
+      vc <- either fail pure (buildViewerContext EmptyEnvProxy EmptyContext (RealCoordinates "x" "y")
+                                Nothing (Just four) Nothing)
+      parsed <- either (fail . show) pure (parseParsedCode noCommonDefs src)
+      code <- either (fail . snd) pure (parseViewerScript Nothing vc parsed)
+      pixels <- withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) ->
+        allocaBytes (3 * 2) $ \buf -> do
+          _ <- vf ViewerArgs
+            { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+            , vaWidth = 2, vaHeight = 1, vaSubsamples = 1
+            , vaBuffer = buf
+            , vaArgs = EmptyContext }
+          peekArray (3 * 2) buf
+      let rgb c = let (r, g, b) = colorToRGB c in [r, g, b]
+      pixels `shouldBe` concatMap rgb [red, green]
 
     it "supports pairs, and lists of pairs" $ withJIT $ \jit -> do
       let env = envProxy (Proxy @(ViewerEnv '[]))

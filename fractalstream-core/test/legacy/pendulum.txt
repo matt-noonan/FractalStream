@@ -1,0 +1,13 @@
+{real}
+
+set h to 2*π / 10.
+
+do
+	set (u,v) to (x,y).
+	set t to 0.
+	repeat 10 times:
+		set x to x + h*y.
+		set y to y + h*(cos(t) - a*y - b*sin(x)).
+		set t to t + h.
+	end.
+until (u,v) = (x,y).

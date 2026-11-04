@@ -103,9 +103,11 @@ script: |
   times`. Check `stuck` to tell "hit the limit" from "condition met".
   Deep zooms need a larger `max_iters` (users can raise it in the
   "Iteration settings" tab).
-- `iterate z -> f(z) until c` updates one variable. For systems with
-  several variables (derivatives, real 2-D maps), write an `until c:` loop
-  with a body.
+- `iterate z -> f(z) until c` updates one variable;
+  `iterate (x, y) -> (f(x, y), g(x, y)) until (x, y) escapes` updates
+  several at once (as does `x, y <- f(x, y), g(x, y)`), measuring the
+  tuple by its length. For more than that, write an `until c:` loop with
+  a body.
 - In tools, without `at w` a click binds the viewer's own coordinate
   name; on a parameter-plane viewer (`var=C` where `C` is in `@config`,
   or `xvar=a yvar=b` with real `a`, `b` there) that **sets the

@@ -77,10 +77,12 @@ renameStmt m (Stmt sr node) = Stmt sr $ case node of
   SBlock body -> SBlock (map go body)
   SDecl n ty e -> SDecl (var n) ty (expr e)
   SSet n e -> SSet (var n) (expr e)
+  SDeclTuple p e -> SDeclTuple (pat p) (expr e)
+  SSetTuple p e -> SSetTuple (pat p) (expr e)
   SFun f params e -> SFun f params (rename (Map.withoutKeys m (Set.fromList params)) e)
   SIf c yes no -> SIf (expr c) (go yes) (go no)
   SLoop kind c lim body -> SLoop kind (expr c) (expr <$> lim) (go body)
-  SIterate n e isWhile c lim -> SIterate (var n) (expr e) isWhile (expr c) (expr <$> lim)
+  SIterate p e isWhile c lim -> SIterate (pat p) (expr e) isWhile (expr c) (expr <$> lim)
   SPass -> SPass
   SDraw d -> SDraw $ case d of
     DrawPointAt p -> DrawPointAt (expr p)
@@ -101,3 +103,6 @@ renameStmt m (Stmt sr node) = Stmt sr $ case node of
     go = renameStmt m
     expr = rename m
     var n = Map.findWithDefault n n m
+    pat = \case
+      PVar r n -> PVar r (var n)
+      PTuple r a b -> PTuple r (pat a) (pat b)

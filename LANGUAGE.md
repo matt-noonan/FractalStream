@@ -35,6 +35,14 @@ and for inequality with `!=` (alternate spellings `=/=` or `≠`). Real
 and integer values can be compared with `<`, `>`, `<=` (alternate spelling
 `≤`), and `>=` (alternate spelling `≥`).
 
+Real and complex numbers are equal by `=` when they're within
+`vanishing_radius` of each other. Tuples of numbers, like a pair of reals
+`(x, y)`, are equal when the distance between them is within
+`vanishing_radius`: `(x, y) = (u, v)` when √((x − u)² + (y − v)²) is.
+Likewise, a tuple of numbers `escapes` or `vanishes` by its length, as a
+point of the plane (or of space, for a longer tuple): `(x, y) escapes`
+when √(x² + y²) is more than `escape_radius`.
+
 ### Boolean operations
 
 The boolean operators `and`, `or`, and `not` can be used, with
@@ -181,6 +189,21 @@ To assign a value to a pre-existing variable, use the `<-` operator.
 z <- z^2 + C
 ```
 
+### Assigning several variables at once
+
+A tuple of variables can be assigned all at once, from a tuple of values:
+
+```
+x, y ⭠ 1 - a x² + y, b x
+```
+
+(or with parentheses, `(x, y) ⭠ (1 - a x² + y, b x)`). Every value on
+the right is worked out before any variable is set, so `x, y ⭠ y, x`
+swaps `x` and `y`. Longer tuples work the same way, `a, b, c ⭠ b, c, a`,
+and so do nested ones, `(a, b), c ⭠ p, 0` (where `p` is a pair); the
+value on the right doesn't have to be written out as a tuple, as long as
+its parts match.
+
 You can also use the unicode versions `⟵`, `⭠`, or `←`. The script
 editor writes `⟵` for `<-` once the script checks out, along with the
 other symbols the language accepts (`⟼` for `->`, `≔` for `:=`, `≤`,
@@ -219,6 +242,9 @@ Similarly, a list starting out as `xs := [1, 2]` becomes a list of reals if
 you later `append(xs, 0.5)` to it. An empty list `[]` gives no clue about
 what kind of items it will hold, so a variable starting out empty needs a
 type annotation, like `xs : List of R <- []`.
+
+Several new variables can be made at once, each with its own type worked
+out, with a tuple: `u, v := 0, 1` (or `(u, v) := (0, 1)`).
 
 A new variable can be used in the rest of the block it is declared in.
 
@@ -399,6 +425,12 @@ while |z| < 2:
   z ⭠ z² + C
 ```
 
+A tuple of variables can be iterated too, as a tuple assignment:
+
+```
+iterate (x, y) ⟼ (1 - a x² + y, b x) until (x, y) escapes
+```
+
 ### More about loops
 
 FractalStream enforces a limit on the number of times each loop will run.
@@ -436,8 +468,9 @@ color ⭠ if stuck then black else white
 In a loop's condition, `v stops` (or `v stopped`) is true when `v` is
 the same as it was at the start of the latest pass through the loop, so
 the loop just made no further change to it. "The same" means equal by
-`=`: for real and complex numbers, within `vanishing_radius`. `v` can be
-any expression, not just a variable. This is handy for iterations that
+`=`: for real and complex numbers, within `vanishing_radius`, and for a
+tuple of numbers, like `(x, y) stops`, by the distance it moved. `v` can
+be any expression, not just a variable. This is handy for iterations that
 converge to something you don't know in advance, like Newton's method:
 
 ```
