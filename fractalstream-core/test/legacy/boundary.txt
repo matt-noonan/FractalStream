@@ -1,0 +1,19 @@
+default fatness to 0.05.
+par block
+do
+set dzdc to 1.
+set dzdc to 2 * z * dzdc + 1.
+set z to z^2 + c.
+until z escapes or z / dzdc < pixel * fatness.
+if z / dzdc < pixel * fatness then [Boundary of Mandelbrot Set].
+end.
+dyn block
+[Dynamical Plane].
+set dz to 1.
+set w to z.
+do
+set dz to 2*z*dz.
+set z to z^2+c.
+until z escapes or (z/dz-w/dz) < pixel * fatness * 2.
+if(z/dz - w/dz) < pixel * fatness * 2 then [Boundary of Julia Set].
+end.

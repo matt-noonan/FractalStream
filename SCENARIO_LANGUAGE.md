@@ -13,25 +13,33 @@ separate CLI argument, so the same scenario vocabulary is meaningful
 across any project. Commands can come from a standalone file:
 
 ```
-fsrun project.fs --commands scenario.txt
+fsrun commands --project project.fs --commands scenario.txt
 ```
 
 or from a scenario embedded directly in the project file itself (see
 "Embedding scenarios in a project file" below), selected by name:
 
 ```
-fsrun project.fs --scenario "basic trace"
+fsrun scenario --project project.fs --name "basic trace"
 ```
 
 (A third, unrelated mode exists for the simple case of just rendering
 one viewer with no tool interaction at all:
-`fsrun project.fs --snapshot "<viewer name>" --output
-file.png`.)
+`fsrun snapshot --project project.fs --viewer "<viewer name>"
+--output file.png`.)
 
-A fourth mode, `fsrun project.fs --update-preview`, runs the commands in
+A fourth mode, `fsrun update-preview --project project.fs`, runs the commands in
 the project's own `metadata: preview-commands:` and saves the preview
 image they capture into the project file; see "Making a project's
 preview" below. It is the only mode that ever changes the project file.
+
+Every mode renders on all cores by default; `-j N` (`--jobs N`) limits
+it to N threads. Use `-j 1` when a scenario asserts on, or captures to
+compare, a viewer that adds points to an autocolor group that isn't
+locked: a new point gets the next color in the order points are first
+seen, which varies from run to run when several threads render at once.
+A project whose saved `autocolor:` tables are locked, or already hold
+every point its viewers find, renders the same either way.
 
 ## Design principles
 
@@ -249,13 +257,13 @@ scenarios:
       capture viewer "Mandelbrot set" base to "zoomed.png"
 ```
 
-run with `fsrun project.fs --scenario "basic trace"`.
+run with `fsrun scenario --project project.fs --name "basic trace"`.
 This is the natural home for a project's own regression\/smoke-test
 scenarios -- checked in alongside the project file itself, rather than
 kept as separate files that can drift out of sync with it. A project
-with no `scenarios:` field just has none (`--scenario` reports which
+with no `scenarios:` field just has none (`fsrun scenario` reports which
 names, if any, are available); a standalone commands file
-(`--commands`) remains the way to run a one-off sequence that isn't
+(`fsrun commands`) remains the way to run a one-off sequence that isn't
 part of the project at all.
 
 **`commands:` must use the `|` block-literal marker**, as above --
@@ -298,7 +306,7 @@ metadata:
     capture viewer "Julia set" as preview
 ```
 
-`fsrun project.fs --update-preview` runs `preview-commands`, which must
+`fsrun update-preview --project project.fs` runs `preview-commands`, which must
 capture exactly one preview, and writes the image (a base64 PNG) into the
 file as `metadata: preview:`. The file is only replaced once everything
 has succeeded. The preview's shape follows the viewer's, so use

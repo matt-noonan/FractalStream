@@ -26,13 +26,14 @@ import qualified Data.Planar as Planar
 import Actor.Viewer.Overlay.Font (overlayFont)
 import Graphics.Text.TrueType (Font, BoundingBox(..), stringBoundingBox)
 
-import Codec.Picture (Image, PixelRGBA8(..), writePng)
+import Codec.Picture (Image(..), PixelRGBA8(..), writePng, generateImage, pixelAt)
 import Codec.Picture.Types (newMutableImage, writePixel, unsafeFreezeImage)
 import Graphics.Rasterific
 import Graphics.Rasterific.Texture (uniformTexture)
 
 import Foreign.Ptr (Ptr)
 import Foreign.Storable (peekElemOff)
+import Data.Bits (shiftR)
 
 -- | Composite a viewer's rendered base image (an RGB8 buffer, as produced
 -- by 'Actor.Viewer.withRenderedViewerBuffer') with its tools' drawn
@@ -57,9 +58,31 @@ compositeDrawLayers center pixelSize layers (w32, h32) buf = do
       h = fromIntegral h32
   baseImage <- bufferToImage w h buf
   let toPixel = modelToPixel center pixelSize (w, h)
-  pure $ renderDrawing w h (PixelRGBA8 0 0 0 255) $ do
-    drawImage baseImage 0 (V2 0 0)
-    drawLayers toPixel pixelSize layers
+  -- The drawings are rasterized onto a transparent canvas of their own
+  -- and then laid over the base image, rather than drawn on top of it
+  -- with Rasterific's 'drawImage': that samples the image half a pixel
+  -- off, blending each pixel with its neighbors. This way, a pixel no
+  -- drawing touches is exactly as rendered. With nothing to draw, the
+  -- base image is the result, and Rasterific isn't needed at all.
+  pure $ if all null layers then baseImage
+    else overImage (renderDrawing w h (PixelRGBA8 0 0 0 0) (drawLayers toPixel pixelSize layers))
+                   baseImage
+
+-- | Lay a (non-premultiplied, as Rasterific makes them) RGBA image over
+-- an opaque one of the same size, with Rasterific's own arithmetic for
+-- drawing a color of that opacity over a pixel.
+overImage :: Image PixelRGBA8 -> Image PixelRGBA8 -> Image PixelRGBA8
+overImage top bottom = generateImage at (imageWidth bottom) (imageHeight bottom)
+  where
+    at x y = case (pixelAt top x y, pixelAt bottom x y) of
+      (PixelRGBA8 _ _ _ 0, b) -> b
+      (PixelRGBA8 r g b 255, _) -> PixelRGBA8 r g b 255
+      (PixelRGBA8 r g b a, PixelRGBA8 br bg bb _) ->
+        PixelRGBA8 (mix a r br) (mix a g bg) (mix a b bb) 255
+    mix :: Word8 -> Word8 -> Word8 -> Word8
+    mix a c d =
+      let v = fromIntegral a * fromIntegral c + fromIntegral d * (255 - fromIntegral a) + 128 :: Word32
+      in fromIntegral ((v + (v `shiftR` 8)) `shiftR` 8)
 
 -- | 'compositeDrawLayers', written out to a PNG file.
 compositeDrawLayersToFile

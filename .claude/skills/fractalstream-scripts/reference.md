@@ -329,7 +329,7 @@ number.) A power of integers used as a real is computed as a real:
 
 **Reserved words** that can't be variable or function names: `e`, `i`,
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`, `let`,
-`times`, `text`, `escapes`, `vanishes`, `iterations`, `stuck`, `append`,
+`times`, `text`, `escapes`, `vanishes`, `stops`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
 `mod`, `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
 the color-wheel names, and the built-in function names. In particular,
@@ -357,7 +357,10 @@ complex numbers: `x = y` means `x - y vanishes`, i.e. within
 `vanishing_radius`. They're exact on integers and booleans. Use `===`
 (`≡`) for exact numeric equality. `z escapes` / `z escaped` means
 abs(z) > escape radius, and `z vanishes` / `z vanished` means abs(z) <
-vanishing radius.
+vanishing radius. In a loop's condition (only there), `x stops` / `x
+stopped` means `x` (any expression) is `=` to its value at the start of
+the latest pass through the body: `iterate z -> newton(z) until z stops`.
+It's false at the first check of a `while`/`until`/`iterate` loop.
 
 Boolean: `and`, `or`, `not`. Parenthesize mixtures.
 
@@ -464,11 +467,17 @@ Built from `fractalstream-ui-headless` (`stack build` there; locate it with
 `stack exec which fsrun`).
 
 ```
-fsrun project.fs --snapshot "Viewer title" --output out.png
-fsrun project.fs --commands commands.txt
-fsrun project.fs --scenario "name"      # from the project's scenarios:
-fsrun project.fs --update-preview       # runs metadata: preview-commands:
+fsrun snapshot -p project.fs --viewer "Viewer title" -o out.png
+fsrun commands --project project.fs --commands commands.txt
+fsrun scenario --project project.fs --name "name"   # from the project's scenarios:
+fsrun update-preview --project project.fs           # runs metadata: preview-commands:
+fsrun translate -i old-script.txt -o project.fs     # a script for the original FractalStream
+fsrun COMMAND --help                                # options for one subcommand
 ```
+
+Each subcommand also takes `-j N` / `--jobs N` (default: every core).
+Pass `-j 1` when asserting on a viewer that adds points to an unlocked
+autocolor group, whose colors otherwise depend on render order.
 
 Command language (one per line, `#` comments): `select viewer "T"`,
 `select tool "N"`, `deselect tool`, `set parameter x to <expr>`,
@@ -496,7 +505,7 @@ metadata:
     capture viewer "Newton basins" as preview
 ```
 
-then run `fsrun project.fs --update-preview`, which renders the preview
+then run `fsrun update-preview --project project.fs`, which renders the preview
 (128 px on the long side) and writes it into the file as `preview:`
 (base64 PNG; never write that by hand). `capture viewer "T" as preview`
 (or `... base as preview`) is only allowed in `preview-commands`.

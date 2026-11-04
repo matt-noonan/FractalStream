@@ -78,7 +78,8 @@ library
 
 executable fsrun
   import: FractalStream-common
-  ghc-options:         -Wall -Werror -O2
+  -- -N: render on every core unless -j says otherwise
+  ghc-options:         -Wall -Werror -O2 -threaded -rtsopts -with-rtsopts=-N
 
   main-is:             Main.hs
 
@@ -87,6 +88,9 @@ executable fsrun
                      , fractalstream-ui-headless
                      , bytestring
                      , directory
+                     , filepath
+                     , text
+                     , optparse-applicative
 
   if flag(use-llvm)
      build-depends: fractalstream-backend-llvm

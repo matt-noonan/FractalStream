@@ -20,7 +20,7 @@ fractalstream-ui-wx/          # wxWidgets UI (the main executable: FractalStream
 fractalstream-ui-headless/    # Headless frontend (`fsrun`), no GUI dependencies
 ```
 
-`fsrun project.fs --scenario NAME` runs a project's scripted scenario
+`fsrun scenario --project project.fs --name NAME` runs a project's scripted scenario
 (clicks, parameter changes, viewer captures to PNG) without a GUI; see
 `SCENARIO_LANGUAGE.md`. It is the easiest way to check a change end to end,
 e.g. by rendering a viewer before and after and comparing the PNGs.
@@ -389,6 +389,13 @@ fresh `[internal] name.x #k := arg` variables, then the renamed body. Other
 names in the body resolve at the run site; a definition sees only the code
 blocks defined before it (no recursion).
 
+`x stops` in a loop's condition is rewritten away next, by
+`Language.Code.Stops.expandStops`, so typing never sees it: the loop gets
+a fresh `[internal] stops.prev #k := x` (and, for loops that check first,
+an `[internal] stops.started #k := false`), set at the start of each pass,
+and the condition compares `x = prev` (`started and x = prev`). A `stops`
+left anywhere else reaches typing, which reports it.
+
 `Language.Value.Typecheck.atType` (typing + elaboration at a requested type)
 is the entry point used throughout the actors.
 
@@ -409,6 +416,13 @@ Key modules:
 - `Language.Value.Typecheck` - `atType` entry point
 - `Language.Code.Infer` - inference for `:=` declarations
 - `Language.Code.Procedures` - `define` / `run` expansion
+- `Language.Code.Stops` - `x stops` in loop conditions, rewritten away
+- `Language.Legacy.Syntax`, `.Parser`, `.Translate` - scripts for the
+  original (2009, Mac OS X) FractalStream, and their translation into a
+  project (`fsrun translate`); see `Language.Legacy.Translate`'s header
+  for how each part maps. Tested by `test/Language/LegacySpec.hs` against
+  `test/legacy/` (each guide example's `.txt` and its expected `.fs`:
+  delete a `.fs` to regenerate it). `{real}` scripts aren't translated yet.
 - `Language.Code.Typecheck` (+ `.Functions`) - code elaboration, functions
 - `Language.Typecheck` - `TC` monad, `TCError`, shared helpers
 
@@ -566,9 +580,16 @@ project script editor's), with live error display, driven by a `Mapped`
 over it, as the script editor's is by `checkScriptWithColorizers`. `pathAnimation` moves one complex variable along a polyline by
 arclength (`pathPointAt`). `recordMovie` renders from a `cloneViewer`
 copy (so a window resized mid-recording can't change the frame size) with
-`renderViewerImage`: like `withRenderedViewerBuffer`, but in horizontal
+`renderViewerImage`, which adds tool drawings (if asked for) to
+`Actor.Viewer.renderViewerBuffer`'s render. That renders in horizontal
 strips over every capability with `forPool_`, downsampling each strip as
-it goes. `withFieldsRestored` puts every field's *text* back afterwards
+it goes; `withRenderedViewerBuffer` (snapshots, `fsrun` captures,
+previews) uses it too, so `fsrun` renders on every core unless `-j N`
+says otherwise (`-j 1` for repeatable colors from unlocked autocolor
+groups, which depend on render order). `compositeDrawLayers` rasterizes
+drawings onto a transparent canvas and lays it over the base image (not
+Rasterific's `drawImage`, which resamples it half a pixel off), and
+skips Rasterific entirely when there are no drawings. `withFieldsRestored` puts every field's *text* back afterwards
 (so `1/3` stays `1/3`).
 
 `Data.Movie` writes the frames as Motion-JPEG (JuicyPixels' encoder) into
@@ -630,7 +651,7 @@ optional `scenarios:` key for `fsrun`. (The older multi-key `setup:` /
 
 A `metadata:` key (`Actor.Metadata`, `ensembleMetadata`) holds a `title`, a
 `description`, `preview-commands` (scenario commands, run by
-`fsrun --update-preview`, the only `fsrun` mode that writes the project file),
+`fsrun update-preview`, the only `fsrun` mode that writes the project file),
 and `preview` (a base64 PNG, from `Actor.Viewer.Preview.renderPreview`, also
 used by the wx viewer menu's "Use this as preview"). Unknown keys under it
 are kept. `encodeEnsemble` writes keys in a fixed, readable order (script,
@@ -866,7 +887,7 @@ See `LANGUAGE.md` for full docs. Key points:
   app from `fractalstream-ui-wx` (see `.github/workflows/`).
 - wxHaskell is a local path dependency: `../wxHaskell/wx`, `../wxHaskell/wxcore`, etc.
 - LLVM backend requires shared LLVM (`shared-llvm: true` flag on `llvm-hs`)
-- `-threaded -rtsopts -with-rtsopts=-N` for parallel rendering
+- `-threaded -rtsopts -with-rtsopts=-N` for parallel rendering (the wx app and `fsrun`)
 - GHC extensions used heavily: `DataKinds`, `GADTs`, `TypeFamilies`, `RankNTypes`,
   `KindSignatures`, `TypeOperators`, `ScopedTypeVariables`, `TypeApplications`
 - `-Wall -Werror` enforced in all packages

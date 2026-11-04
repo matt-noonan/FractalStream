@@ -56,6 +56,9 @@ data BinOp
 data UnOp
   = OpNeg | OpNot | OpAbs
   | OpEscapes | OpVanishes
+  | OpStops
+    -- ^ @x stops@: only meaningful in a loop's condition, where
+    -- "Language.Code.Stops" rewrites it away before typing
   | OpDark | OpLight | OpInvert
   deriving (Eq, Show)
 

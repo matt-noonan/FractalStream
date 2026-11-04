@@ -427,6 +427,24 @@ iterate z ⟼ z² - 1 until |z| > 10
 color ⭠ if stuck then black else white
 ```
 
+### Waiting for a value to settle down
+
+In a loop's condition, `v stops` (or `v stopped`) is true when `v` is
+the same as it was at the start of the latest pass through the loop, so
+the loop just made no further change to it. "The same" means equal by
+`=`: for real and complex numbers, within `vanishing_radius`. `v` can be
+any expression, not just a variable. This is handy for iterations that
+converge to something you don't know in advance, like Newton's method:
+
+```
+iterate z ⟼ z - (z³ - 1) / (3 z²) until z stops
+```
+
+In a loop that checks its condition before running its body (`while`,
+`until`, and `iterate`), `v stops` is `false` the first time it's
+checked, since the loop hasn't made a pass yet. `stops` can only be used
+in a loop's condition; anywhere else it's an error.
+
 ### Conditionals
 
 You can conditionally execute code with `if` and `if/else` statements.

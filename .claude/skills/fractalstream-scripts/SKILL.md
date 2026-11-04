@@ -43,7 +43,7 @@ repo's `examples/*.fs` has more (spider, tests, experiments).
    wrote. **Look at the PNGs**
    (read them as images). A script that runs is not necessarily right:
    compare against what the paper's figures or the math predict. For
-   finer checks, write a `--commands` file with `set parameter`, `click`,
+   finer checks, write a commands file (for `fsrun commands`) with `set parameter`, `click`,
    `capture`, and `assert viewer ... pixel (x, y) is (r, g, b) within 8`
    (see reference.md §5).
 5. **Report** what you implemented, any deviation from the source (e.g.
@@ -141,7 +141,8 @@ script: |
   (`escape=` attribute) when the formula assumes one, and `pixel_size` for
   pixel-relative thresholds.
 - **Basins of attraction / root finding.** Iterate until two successive
-  iterates agree (`|z - old| < tol`), then color by which attractor was
+  iterates agree (`until z stops`, which compares within
+  `vanishing_radius`; or `|z - old| < tol` for a tolerance of your own), then color by which attractor was
   reached (`rainbow(arg z / (2 pi))` or by an index), shaded by
   `iterations`. See `examples/newton-roots.fs` (roots in a configurable
   list, edited by clicking). When the roots aren't known in closed form,

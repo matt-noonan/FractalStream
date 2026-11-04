@@ -1,0 +1,5 @@
+if z < 1 then [Disc].
+probe real "Magnitude":
+  set r to sqrt(z*bar(z)).
+  report r.
+end.

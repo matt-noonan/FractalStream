@@ -1,0 +1,9 @@
+if re(z) < 1 then:
+    set a to 2.
+    set b to 3.
+end.
+else:
+    set a to -2.
+    set b to 8.
+end.
+iterate z^2 + a/b until z escapes.

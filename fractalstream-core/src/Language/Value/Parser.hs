@@ -242,6 +242,7 @@ valueAndArithGrammar funs = mdo
     , node (EBin OpLe <$> (arith <* token LessThanOrEqual) <*> arith)
     , node (EUn OpEscapes <$> (arith <* token Escapes))
     , node (EUn OpVanishes <$> (arith <* token Vanishes))
+    , node (EUn OpStops <$> (arith <* token Stops))
     , arith
     ]
 

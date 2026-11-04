@@ -1,0 +1,1 @@
+iterate z - (exp(z) - c)/exp(z) until z stops.

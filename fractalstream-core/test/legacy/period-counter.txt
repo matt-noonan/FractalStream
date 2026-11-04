@@ -1,0 +1,14 @@
+probe integer "Period Counter":
+set z to 0.
+repeat 1000 times:
+set z to z^2 + c.
+end.
+set w to z.
+set p to 0.
+do
+set z to z^2 + c.
+set p to p + 1.
+until z = w.
+report p.
+end.
+iterate z^2 + c until z escapes.

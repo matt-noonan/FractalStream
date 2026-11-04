@@ -1,0 +1,7 @@
+set a to -1/2 + c.
+set b to -1/2 -c.
+iterate z - (z-1)*(z-a)*(z-b) / ((z-a)*(z-b) + (z-1)*(z-b) + (z-1)*(z-a)) until z
+stops.
+if z = 1 then [Purple].
+if z = a then [White].
+if z = b then [Orange].

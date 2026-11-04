@@ -4,6 +4,7 @@ module Language.Parser.Tokenizer
   , tokenize
   , tokenizeWithIndentation
   , commentRanges
+  , wordlikeTokens
   ) where
 
 import FractalStream.Prelude
@@ -72,6 +73,7 @@ data Token
   | RightArrow
   | Escapes
   | Vanishes
+  | Stops
   | Iterations
   | TimesKeyword
   | Stuck
@@ -222,6 +224,7 @@ longestMatchingOperator cs =
                 , drop (length s) cs)
               | (s, t) <- opTokens, s `isPrefixOf` (map fst cs) ]
 
+-- | The words with a meaning of their own, which can't name variables.
 wordlikeTokens :: Map String Token
 wordlikeTokens = Map.fromList
   [ ("if", If), ("then", Then), ("else", Else)
@@ -233,6 +236,7 @@ wordlikeTokens = Map.fromList
   , ("let", Let_)
   , ("escapes", Escapes), ("escaped", Escapes)
   , ("vanishes", Vanishes), ("vanished", Vanishes)
+  , ("stops", Stops), ("stopped", Stops)
   , ("iterations", Iterations), ("times", TimesKeyword)
   , ("stuck", Stuck)
   , ("text", TextKeyword)

@@ -72,6 +72,27 @@ runWithXYC (Scalar xt x) (Scalar yt y) input =
              . (\c -> simulate noDraw c >> eval (Var (Proxy @"color") ColorType bindingEvidence)))
      $ parseCode (envProxy Proxy) noCommonDefs ("n : Z <- 0\n" ++ input)
 
+-- | Like 'runWithX' for a real @x@, with a vanishing radius (of 0.0001)
+-- in scope, as approximate comparisons need.
+runWithRealX :: Double -> String -> Either String Double
+runWithRealX x input =
+  let env = BindingProxy (Proxy @"x") RealType
+          $ BindingProxy (Proxy @InternalVanishingRadius) RealType
+          $ BindingProxy (Proxy @InternalIterations) IntegerType
+          $ BindingProxy (Proxy @InternalIterationLimit) IntegerType
+          $ BindingProxy (Proxy @InternalStuck) BooleanType
+          $ EmptyEnvProxy
+      ctx = Bind (Proxy @"x") RealType x
+          $ Bind (Proxy @InternalVanishingRadius) RealType 0.0001
+          $ Bind (Proxy @InternalIterations) IntegerType 0
+          $ Bind (Proxy @InternalIterationLimit) IntegerType 100
+          $ Bind (Proxy @InternalStuck) BooleanType False
+          $ EmptyContext
+  in first (`ppFullError` input)
+     $ fmap ((`evalState` (ctx, ()))
+             . (\c -> simulate noDraw c >> eval (Var (Proxy @"x") RealType bindingEvidence)))
+     $ parseCode env noCommonDefs input
+
 noDraw :: DrawHandler (HaskellTypeM ())
 noDraw = DrawHandler (const $ pure ())
 
@@ -368,3 +389,45 @@ run paint(red)|] `shouldBe` runWithXYC (Scalar RealType 0) (Scalar RealType 0)
       failsWith "define p:\n  pass\nrun p(1)" "p takes no arguments"
       failsWith "define p(a):\n  pass\nrun p" "p takes 1 argument"
       failsWith "define p(a, b):\n  pass\nrun p(1)" "p takes 2 arguments"
+
+  describe "when using `stops` in a loop's condition" $ do
+
+    let failsWith input needle =
+          runWithRealX 0 input `shouldSatisfy` either (needle `isInfixOf`) (const False)
+
+    it "stops a loop once a value stops changing" $ do
+      let newton = runWithRealX 2
+            "iterate x -> x - (x^2 - 2) / (2 x) until x stops"
+      -- successive iterates within 0.0001: then x is far closer than that
+      fmap (\v -> abs (v - sqrt 2) < 1e-6) newton `shouldBe` Right True
+      runWithRealX 2 [r|
+iterate x -> x - (x^2 - 2) / (2 x) until x stops
+x <- if stuck then -1 else iterations|] `shouldSatisfy` either (const False) (\k -> k > 1 && k < 10)
+
+    it "is false at the first check of a loop that checks first" $ do
+      runWithRealX 5 "until x stops:\n  pass\nx <- iterations" `shouldBe` Right 1
+      runWithRealX 5 "iterate x -> x until x stops\nx <- iterations" `shouldBe` Right 1
+      runWithRealX 5 "while not (x stops):\n  pass\nx <- iterations" `shouldBe` Right 1
+
+    it "compares against the start of the latest pass in repeat loops" $ do
+      runWithRealX 5 "repeat:\n  pass\nuntil x stops\nx <- iterations" `shouldBe` Right 1
+      runWithRealX 0 [r|
+repeat:
+  x <- x + 1
+  x <- x - 1
+until x stopped
+x <- iterations|] `shouldBe` Right 1
+
+    it "works on expressions, and alongside other conditions" $ do
+      runWithRealX 0 [r|
+k := 0
+repeat:
+  k <- k + 1
+  x <- if k < 3 then k else 3
+until 2 x stops or k > 50
+x <- k|] `shouldBe` Right 4
+
+    it "can't be used outside a loop's condition" $ do
+      failsWith "if x stops:\n  pass" "`stops` can only be used in a loop's condition"
+      failsWith "until false:\n  x <- if x stops then 1 else 2" "`stops` can only be used in a loop's condition"
+      failsWith "b := x stops" "`stops` can only be used in a loop's condition"

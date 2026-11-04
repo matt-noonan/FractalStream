@@ -1,0 +1,2 @@
+par set z to -c/2.
+iterate z^2 + c*z + 1 until z escapes.

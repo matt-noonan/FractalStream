@@ -17,10 +17,9 @@ provided, matching the two ways of asking for a movie:
   @t@ of the way along it, by arclength, so the parameter moves along
   it at a steady speed.
 
-Frames are rendered like 'Actor.Viewer.withRenderedViewerBuffer' renders
-a snapshot (supersampled at twice the size and averaged down, when
-smoothing), but in horizontal strips across every capability, since a
-movie renders many frames. Setting the values is what makes the
+Frames are rendered by 'Actor.Viewer.renderViewerBuffer', as a snapshot
+is (supersampled at twice the size and averaged down, when smoothing, in
+horizontal strips across every capability). Setting the values is what makes the
 project's own windows redraw, too; they go back to their old values
 afterwards ('withFieldsRestored').
 -}
@@ -66,15 +65,9 @@ import Language.Environment
 import Language.Type
 
 import Codec.Picture (Image(..), PixelRGB8(..), PixelRGBA8(..), pixelMap, pixelAt, generateImage)
-import Control.Concurrent (getNumCapabilities)
 import Control.Exception (Exception, throwIO, try, finally)
-import Control.Concurrent.MVar
 import qualified Data.Vector.Storable as VS
-import Foreign.ForeignPtr (mallocForeignPtrBytes, withForeignPtr)
-import Foreign.Ptr (Ptr, plusPtr)
-import Foreign.Storable (peekElemOff, pokeElemOff)
-import Foreign.Marshal.Alloc (allocaBytes)
-import Task.Concurrent (forPool_)
+import Foreign.ForeignPtr (withForeignPtr)
 
 -- | How a movie is to be made.
 data MovieSettings = MovieSettings
@@ -285,67 +278,20 @@ withFieldsRestored fields action = do
 -- image of the viewer's size, in parallel strips, supersampled if
 -- smoothing. Tools' drawings are included if asked for.
 renderViewerImage :: Bool -> Bool -> Viewer -> IO (Either String (ViewerIssues, Image PixelRGB8))
-renderViewerImage smooth withDrawings Viewer{..} = case vCodeWithArgs of
-  CodeWithArgs getArgs _ code -> getArgs >>= \case
-    Left err -> pure (Left err)
-    Right vaArgs -> do
-      Dimensions (w, h) <- getDynamic vSize
-      pixelSize <- getDynamic vPixelSize
-      center@(cx, cy) <- getDynamic vCenter
-      ViewerFunction fn <- getDynamic code
-      let s = if smooth then 2 else 1
-          bigW = w * s
-          px = pixelSize / fromIntegral s
-          (x0, y0) = (cx - fromIntegral bigW * px / 2, cy + fromIntegral (h * s) * px / 2)
-          -- strips of output rows; enough of them to keep every
-          -- capability busy even if some strips are slower than others
-          stripRows = max 1 (min 16 (h `div` 64))
-          strips = [ (r, min stripRows (h - r)) | r <- [0, stripRows .. h - 1] ]
-      caps <- getNumCapabilities
-      out <- mallocForeignPtrBytes (3 * w * h)
-      issuesVar <- newMVar mempty
-      withForeignPtr out $ \outPtr -> do
-        forPool_ caps strips $ \(row, rows) ->
-          allocaBytes (3 * bigW * rows * s) $ \big -> do
-            issues <- fn ViewerArgs
-              { vaPoint = (x0, y0 - fromIntegral (row * s) * px)
-              , vaStep = (px, px)
-              , vaWidth = fromIntegral bigW
-              , vaHeight = fromIntegral (rows * s)
-              , vaSubsamples = 1
-              , vaBuffer = big
-              , vaArgs }
-            modifyMVar_ issuesVar (pure . (<> issues))
-            let dest = outPtr `plusPtr` (3 * w * row)
-            if smooth then downsample bigW w rows big dest
-                      else copyBytes' (3 * w * rows) big dest
-        issues <- readMVar issuesVar
-        img <- if withDrawings
-          then do
-            layers <- vDrawCmds
-            pixelMap dropAlpha <$>
-              compositeDrawLayers center pixelSize layers (fromIntegral w, fromIntegral h) outPtr
-          else pure (Image w h (VS.unsafeFromForeignPtr0 out (3 * w * h)))
-        -- (the image's vector shares the buffer, which lives as long as it does)
-        pure (Right (issues, img))
+renderViewerImage smooth withDrawings viewer = renderViewerBuffer smooth viewer >>= \case
+  Left err -> pure (Left err)
+  Right RenderedBuffer{..} -> do
+    img <- if withDrawings
+      then do
+        layers <- vDrawCmds viewer
+        withForeignPtr rbPixels $ \buf ->
+          pixelMap dropAlpha <$>
+            compositeDrawLayers rbCenter rbPixelSize layers (fromIntegral rbWidth, fromIntegral rbHeight) buf
+      else pure (Image rbWidth rbHeight (VS.unsafeFromForeignPtr0 rbPixels (3 * rbWidth * rbHeight)))
+    -- (the image's vector shares the buffer, which lives as long as it does)
+    pure (Right (rbIssues, img))
   where
     dropAlpha (PixelRGBA8 r g b _) = PixelRGB8 r g b
-
--- | Average each 2x2 block of a buffer @2w@ pixels wide and @2 rows@
--- high into one pixel of a buffer @w@ wide.
-downsample :: Int -> Int -> Int -> Ptr Word8 -> Ptr Word8 -> IO ()
-downsample bigW w rows big dest =
-  forM_ [0 .. rows - 1] $ \j -> forM_ [0 .. w - 1] $ \i -> forM_ [0, 1, 2] $ \k -> do
-    let ix = 3 * (2 * i) + 3 * bigW * (2 * j) + k
-        at o = fromIntegral <$> peekElemOff big o :: IO Word16
-    c1 <- at ix
-    c2 <- at (ix + 3)
-    c3 <- at (ix + 3 * bigW)
-    c4 <- at (ix + 3 * bigW + 3)
-    pokeElemOff dest (3 * i + 3 * w * j + k) (fromIntegral ((c1 + c2 + c3 + c4 + 2) `div` 4))
-
-copyBytes' :: Int -> Ptr Word8 -> Ptr Word8 -> IO ()
-copyBytes' n src dst = forM_ [0 .. n - 1] $ \i -> peekElemOff src i >>= pokeElemOff dst i
 
 ---------------------------------------------------------------------------
 -- Recording

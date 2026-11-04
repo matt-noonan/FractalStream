@@ -1,6 +1,6 @@
 -- | Rendering a small preview image of a viewer, for a project's
 -- @metadata:@ (see "Actor.Metadata"). Shared by every frontend, so that
--- a preview made in the app and one made by @fsrun --update-preview@
+-- a preview made in the app and one made by @fsrun update-preview@
 -- come out the same.
 module Actor.Viewer.Preview
   ( renderPreview
