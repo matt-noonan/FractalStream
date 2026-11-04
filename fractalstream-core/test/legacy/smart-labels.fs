@@ -39,10 +39,6 @@ script: |
   if z = b:
     flag_color <- orange_color
   color <- if stuck then black else shade(flag_color, iterations / 20)
-
-  @tool "Dynamics" for="Parameter plane" shortcut=d
-  on click-or-drag:
-    pass
 metadata:
   title: "smart-labels"
   description: Translated from a script for the original FractalStream.

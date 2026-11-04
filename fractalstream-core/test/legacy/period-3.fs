@@ -41,10 +41,6 @@ script: |
   if z = last:
     flag_color <- period_3_cycle_color
   color <- if stuck then black else shade(flag_color, iterations / 20)
-
-  @tool "Dynamics" for="Parameter plane" shortcut=d
-  on click-or-drag:
-    pass
 metadata:
   title: "period-3"
   description: Translated from a script for the original FractalStream.

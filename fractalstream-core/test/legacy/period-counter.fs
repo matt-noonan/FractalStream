@@ -21,10 +21,6 @@ script: |
   iterate z -> z^2 + C until z escapes
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
-  @tool "Dynamics" for="Parameter plane" shortcut=d
-  on click-or-drag:
-    pass
-
   @tool "Period Counter" for="Parameter plane"
   period_counter : Z as "Period Counter" <- 0
   on click at clicked:

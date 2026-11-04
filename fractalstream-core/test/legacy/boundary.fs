@@ -39,10 +39,6 @@ script: |
   if |z / dz - w / dz| < pixel_size * fatness * 2:
     flag_color <- boundary_of_julia_set_color
   color <- if stuck then black else shade(flag_color, iterations / 20)
-
-  @tool "Dynamics" for="Parameter plane" shortcut=d
-  on click-or-drag:
-    pass
 metadata:
   title: "boundary"
   description: Translated from a script for the original FractalStream.

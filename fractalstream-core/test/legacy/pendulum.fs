@@ -43,10 +43,6 @@ script: |
       t <- t + h
   until (u, v) = (x, y)
   color <- if stuck then black else shade(flag_color, iterations / 20)
-
-  @tool "Dynamics" for="Parameter plane" shortcut=d
-  on click-or-drag:
-    pass
 metadata:
   title: "pendulum"
   description: Translated from a script for the original FractalStream.

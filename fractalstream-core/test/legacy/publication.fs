@@ -55,10 +55,6 @@ script: |
   iters <- 0
   gave_up <- false
   color <- if gave_up then black else shade(flag_color, iters / 20)
-
-  @tool "Dynamics" for="Parameter plane" shortcut=d
-  on click-or-drag:
-    pass
 metadata:
   title: "publication"
   description: Translated from a script for the original FractalStream.

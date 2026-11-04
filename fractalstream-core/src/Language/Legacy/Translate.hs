@@ -13,8 +13,9 @@ to go on editing rather than to reproduce the old pictures exactly:
 * There's a viewer for each plane: @\@viewer "Parameter plane" var=C@
   (starting from @z := 0@, as the old program did) and
   @\@viewer "Dynamical plane"@, each running the commands meant for it
-  (@par@ and @dyn@ are worked out here). A "Dynamics" tool on the
-  parameter plane picks @C@, like the old Dynamics tool.
+  (@par@ and @dyn@ are worked out here). Picking @C@ in the parameter
+  plane, like the old Dynamics tool, is the viewer's own "Select C"
+  tool, which every viewer over a configuration variable has.
 * Coloring: each flag (@[name]@, @[name | color]@) gets a color in a
   @\@config "Colors"@ tab, and a point is drawn in a dark-to-light
   gradient of its flag's color, by iterations (period 20: the color at
@@ -421,10 +422,8 @@ translateT isReal title src body = do
     bodyDocs <- translateBody ctx predeclared cmds
     pure (Line header : start' ++ bodyDocs ++ [Line finish])
 
-  -- tools: picking C (or (a, b)), and the probes
-  let dynamicsTool =
-        [ [ Line "@tool \"Dynamics\" for=\"Parameter plane\" shortcut=d"
-          , Line "on click-or-drag:", Nest [Line "pass"] ] | hasParamPlane ]
+  -- tools: the probes (picking C, or (a, b), is the parameter plane's
+  -- own Select tool)
   probeTools <- fmap concat . forM (probes body) $ \(fmt, title', pbody) ->
     forM planes $ \plane -> do
       let usedP = cxUsed ctx0
@@ -477,7 +476,7 @@ translateT isReal title src body = do
         [ Line "@common"
         , Line ("let " ++ shadeFn ++ "(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...")
         , Line "  else blend(-sin(2 pi t), light c, c)" ]
-      stanzas = [parameters | not (null paramFields)] ++ [colorsTab, common] ++ viewers ++ dynamicsTool ++ probeTools
+      stanzas = [parameters | not (null paramFields)] ++ [colorsTab, common] ++ viewers ++ probeTools
       scriptLines = intercalate [""] (map (render 0) stanzas)
   pure . unlines $
     [ "# Translated from a script for the original FractalStream."
