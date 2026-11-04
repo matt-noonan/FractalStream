@@ -22,6 +22,8 @@ import Language.Parser.SourceRange (SourceRange, spanOfSourceRange, SourceSpan(.
 import Language.Parser.Tokenizer (commentRanges)
 
 import UI.CodeEditor
+import UI.AppSettings (appSettings)
+import FractalStream.Settings (Settings(..))
 
 import Graphics.UI.WX hiding (pt, when, grey, Color)
 import Graphics.UI.WXCore.Events
@@ -373,6 +375,13 @@ scriptWidget p scriptCode = do
       writeIORef lastText newText
       styledTextCtrlSetText ce newText
       updateFoldLevels ce newText
+  -- Which blocks fold is a setting: when it changes, so do the folds.
+  foldsCodeBlocks <- liftIO (newIORef . setFoldCodeBlocks =<< getDynamic appSettings)
+  wxWatchDynamic p appSettings $ \settings -> do
+    was <- readIORef foldsCodeBlocks
+    when (setFoldCodeBlocks settings /= was) $ do
+      writeIORef foldsCodeBlocks (setFoldCodeBlocks settings)
+      refreshFolds ce
   isError <- liftIO ((isLeft <$> getDynamic scriptCode) >>= \startError ->
                         variable [ value := startError ])
   wxWatchDynamic p scriptCode $ \case

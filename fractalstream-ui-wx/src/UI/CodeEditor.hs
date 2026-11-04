@@ -2,6 +2,7 @@ module UI.CodeEditor
   ( codeEditor
   , codeEditorWithText
   , updateFoldLevels
+  , refreshFolds
   , stanzaHeaderStyle
   , frameIsLight
   , editorOffsetMap
@@ -17,12 +18,13 @@ import Language.Editor (indentUnit)
 import UI.AppSettings (appSettings)
 import FractalStream.Settings (Settings(..))
 
-import Graphics.UI.WX hiding (Vertical, Horizontal)
+import Graphics.UI.WX hiding (Vertical, Horizontal, when)
 import Graphics.UI.WXCore.WxcClasses
 import Graphics.UI.WXCore.WxcDefs
 import Graphics.UI.WXCore.Events (stcOnSTCEvent, EventSTC(..))
 
-import Data.Bits ((.|.))
+import Data.Bits ((.|.), (.&.))
+import Data.List (zipWith4)
 import qualified Data.ByteString.UTF8 as Utf8
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
@@ -167,14 +169,32 @@ defineFoldMarkers stc fillColor lineColor = mapM_ defineOne
 -- next non-blank line is indented deeper than it is. The caller is
 -- responsible for re-running this on every edit, not just once at
 -- construction.
+--
+-- Stanzas and tool handlers (@on click:@, ...) always fold; other blocks
+-- of code only with the @fold-code-blocks@ setting. Changing that setting
+-- applies to editors already open ('refreshFolds').
 updateFoldLevels :: StyledTextCtrl a -> String -> IO ()
-updateFoldLevels stc txt =
-  forM_ (zip [0 ..] (foldLevelsForText txt)) $ \(lineNum, level) ->
+updateFoldLevels stc txt = do
+  codeBlocks <- setFoldCodeBlocks <$> getDynamic appSettings
+  forM_ (zip [0 ..] (foldLevelsForText codeBlocks txt)) $ \(lineNum, level) ->
     styledTextCtrlSetFoldLevel stc lineNum level
 
-foldLevelsForText :: String -> [Int]
-foldLevelsForText txt =
-  zipWith3 combine rawIndents effectiveIndents (drop 1 effectiveIndents ++ [0])
+-- | Recompute an editor's folds, after the setting for which blocks fold
+-- has changed. Folded blocks are opened first: one that can't be folded
+-- any more would otherwise stay hidden, with no fold box to open it.
+refreshFolds :: StyledTextCtrl a -> IO ()
+refreshFolds stc = do
+  lineCount <- styledTextCtrlGetLineCount stc
+  forM_ [0 .. lineCount - 1] $ \lineNum -> do
+    level <- styledTextCtrlGetFoldLevel stc lineNum
+    expanded <- styledTextCtrlGetFoldExpanded stc lineNum
+    when (level .&. wxSTC_FOLDLEVELHEADERFLAG /= 0 && not expanded) $
+      styledTextCtrlToggleFold stc lineNum
+  styledTextCtrlGetText stc >>= updateFoldLevels stc
+
+foldLevelsForText :: Bool -> String -> [Int]
+foldLevelsForText codeBlocks txt =
+  zipWith4 combine (lines txt) rawIndents effectiveIndents (drop 1 effectiveIndents ++ [0])
   where
     rawIndents = map indentOf (lines txt)
     indentOf l
@@ -210,7 +230,11 @@ foldLevelsForText txt =
     -- value below -- the whiteflag bit it can carry is far larger than
     -- any real indent difference and would otherwise make any blank
     -- line look like a header no matter its neighbours' actual depth.
-    combine rawIndent indent nextIndent =
+    combine l rawIndent indent nextIndent =
       (wxSTC_FOLDLEVELBASE + indent)
       .|. (if isNothing rawIndent then wxSTC_FOLDLEVELWHITEFLAG else 0)
-      .|. (if nextIndent > indent then wxSTC_FOLDLEVELHEADERFLAG else 0)
+      .|. (if nextIndent > indent && folds l then wxSTC_FOLDLEVELHEADERFLAG else 0)
+
+    -- which lines can be folded: stanza headers and tool handlers' `on`
+    -- lines (both at the left margin), and others only if asked for
+    folds l = codeBlocks || "@" `isPrefixOf` l || "on " `isPrefixOf` l

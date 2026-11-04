@@ -24,6 +24,7 @@ module FractalStream.Settings
 import FractalStream.Quoted (quoted)
 import Control.Exception (IOException, try)
 import Data.Aeson
+import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KM
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -43,13 +44,16 @@ data Settings = Settings
     -- ^ Whether code editors have emacs-style movement keys (Control-A,
     -- Control-E, ...) where Control is the standard shortcut key, as on
     -- Windows and Linux. (On macOS they always do.)
+  , setFoldCodeBlocks :: Bool
+    -- ^ Whether code editors let blocks of code (an @if@'s body, a
+    -- loop's, ...) be folded away, as well as stanzas and tool handlers.
   , setOther          :: KM.KeyMap Value
     -- ^ Keys this version doesn't know, kept as they are.
   }
   deriving (Eq, Show)
 
 defaultSettings :: Settings
-defaultSettings = Settings Nothing False KM.empty
+defaultSettings = Settings Nothing False False KM.empty
 
 -- | Where the settings are kept: in the user's application support
 -- folder on macOS, their roaming application data on Windows, and
@@ -82,13 +86,15 @@ readSettings path contents = case YAML.decodeEither' contents of
           Nothing -> (Nothing, [])
           Just (String t) | not (Text.null t) -> (Just (Text.unpack t), [])
           Just _ -> (Nothing, ["ignoring the projects-folder setting, which should be a folder's path"])
-        (emacs, emacsWarnings) = case KM.lookup "emacs-keys" o of
+        flag key = case KM.lookup (Key.fromString key) o of
           Nothing -> (False, [])
           Just (Bool b) -> (b, [])
-          Just _ -> (False, ["ignoring the emacs-keys setting, which should be true or false"])
-        other = KM.delete "emacs-keys" (KM.delete "projects-folder" o)
-    in ( Settings folder emacs other
-       , map (("In " ++ quoted path ++ ", ") ++) (folderWarnings ++ emacsWarnings) )
+          Just _ -> (False, ["ignoring the " ++ key ++ " setting, which should be true or false"])
+        (emacs, emacsWarnings) = flag "emacs-keys"
+        (folds, foldWarnings) = flag "fold-code-blocks"
+        other = foldr KM.delete o ["projects-folder", "emacs-keys", "fold-code-blocks"]
+    in ( Settings folder emacs folds other
+       , map (("In " ++ quoted path ++ ", ") ++) (folderWarnings ++ emacsWarnings ++ foldWarnings) )
   Right _ -> (defaultSettings, [quoted path ++ " isn't a set of settings, so it's being ignored"])
 
 -- | The settings file's contents for these settings. A setting that's
@@ -98,6 +104,7 @@ writeSettings Settings{..} = YAML.encode $ Object $ KM.union
   (KM.fromList (catMaybes
     [ ("projects-folder",) . String . Text.pack <$> setProjectsFolder
     , if setEmacsKeys then Just ("emacs-keys", Bool True) else Nothing
+    , if setFoldCodeBlocks then Just ("fold-code-blocks", Bool True) else Nothing
     ]))
   setOther
 

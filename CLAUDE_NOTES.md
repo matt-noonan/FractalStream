@@ -515,6 +515,11 @@ Key modules:
   modifiers set, so control codes 1-26 are read as Control-letters.
 - `UI.AppSettings` - the app-wide `Variable Settings` (`appSettings`),
   set by `Main` at startup and changed by the Preferences window
+- Code editor folds (`UI.CodeEditor.updateFoldLevels`): stanza headers
+  and tool handlers' `on ...:` lines always fold; other blocks only with
+  the `fold-code-blocks` setting. `scriptWidget` watches `appSettings` and
+  calls `refreshFolds` when it changes, opening folded blocks first (a
+  fold point that goes away would otherwise leave its lines hidden).
 - `UI.Layout` - wx layout helpers
 - `UI.Tile` - tiled rendering of viewer pixels (parallelized)
 - `UI.Menu` - menu bar construction
