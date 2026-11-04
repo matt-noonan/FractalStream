@@ -747,7 +747,11 @@ A `metadata:` key (`Actor.Metadata`, `ensembleMetadata`) holds a `title`, a
 `fsrun update-preview`, the only `fsrun` mode that writes the project file),
 and `preview` (a base64 PNG, from `Actor.Viewer.Preview.renderPreview`, also
 used by the wx viewer menu's "Use this as preview"). Unknown keys under it
-are kept. `encodeEnsemble` writes keys in a fixed, readable order (script,
+are kept. Every YAML writer (`encodeEnsemble`, settings, `Data.Codec`) goes
+through `Data.YamlUnicode`: libyaml counts no character above U+FFFF (𝑖,
+𝝎, ...) as printable and would escape it (`\U0001D74E`) in a
+double-quoted string, so each is swapped for an unused private-use
+character before encoding and back after. `encodeEnsemble` writes keys in a fixed, readable order (script,
 metadata, colorizers, autocolor, scenarios, then the rest); see `projectYamlConfig`. A rebuild from
 an edited script uses `carryOverProjectState` to keep scenarios, metadata,
 and frontend keys.

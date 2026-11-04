@@ -28,6 +28,7 @@ import qualified Data.Yaml as YAML
 import Data.Aeson (Value(..))
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TE
 import qualified Data.Vector as V
 import System.Directory (getTemporaryDirectory, removeFile)
 import System.FilePath ((</>))
@@ -561,6 +562,27 @@ on refresh:
             Right ens' -> do
               md' <- getDynamic (ensembleMetadata ens')
               md' `shouldBe` md
+
+    it "writes metadata with characters outside the Basic Multilingual \
+       \Plane (like 𝝎) as they are, not escaped" $ do
+      let src = TE.encodeUtf8 (Text.pack (unlines
+            [ "script: |", "  @viewer \"V\" var=z", "  pass"
+            , "metadata:", "  title: 𝝎 and 𝑖", "  description: |"
+            , "    For each 𝝎_0;", "    and θ." ]))
+      loadProjectBytes "test.fs" src >>= \case
+        Right (Built ens) -> do
+          bytes <- encodeEnsemble ens
+          let out = Text.unpack (TE.decodeUtf8 bytes)
+          out `shouldSatisfy` isInfixOf "title: 𝝎 and 𝑖"
+          out `shouldSatisfy` isInfixOf "description: |\n    For each 𝝎_0;\n    and θ.\n"
+          out `shouldSatisfy` (not . isInfixOf "\\U")
+          loadProjectBytes "test.fs" bytes >>= \case
+            Right (Built ens') -> do
+              md <- getDynamic (ensembleMetadata ens)
+              md' <- getDynamic (ensembleMetadata ens')
+              md' `shouldBe` md
+            _ -> expectationFailure "the saved project didn't load"
+        _ -> expectationFailure "the project didn't load"
 
     it "drops a metadata preview that isn't a base64 PNG, but still opens \
        \the project" $ do
