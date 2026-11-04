@@ -81,6 +81,7 @@ executable FractalStream
                        UI.ConfigEditor
                        UI.CodeEditor
                        UI.EditorKeys
+                       UI.EditorStyle
                        UI.AppSettings
                        UI.ProjectScriptEditor
                        UI.Layout

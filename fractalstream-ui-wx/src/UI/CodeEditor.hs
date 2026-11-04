@@ -5,7 +5,6 @@ module UI.CodeEditor
   , refreshFolds
   , markError
   , clearError
-  , stanzaHeaderStyle
   , frameIsLight
   , editorOffsetMap
   ) where
@@ -16,6 +15,7 @@ import Language.Parser.SourceRange (SourceRange(..))
 import Data.DynamicValue
 import Actor.Layout (CodeString(..))
 import UI.EditorKeys
+import UI.EditorStyle (setupStyles)
 import Language.Editor (indentUnit)
 import UI.AppSettings (appSettings)
 import FractalStream.Settings (Settings(..))
@@ -51,15 +51,6 @@ codeEditor cep code = do
   CodeString txt <- getDynamic (source code)
   codeEditorWithText cep txt
 
--- | The style number for a unified script's @\@setup@\/@\@config@\/
--- @\@viewer@\/@\@tool@ stanza-header lines -- a caller that wants them
--- styled distinctly (a single viewer's own code never has any, so only
--- the whole-project script editor uses this) applies it itself, since
--- recognizing a stanza header is specific to that document shape, not
--- something this generic editor setup should know about.
-stanzaHeaderStyle :: Int
-stanzaHeaderStyle = 3
-
 -- | The margin used for the fold margin (0 is line numbers; 1 is
 -- unused).
 foldMarginIndex :: Int
@@ -77,35 +68,22 @@ codeEditorWithText cep txt = do
     styledTextCtrlSetMarginWidth stc 1 0
     -- see Style Definition at https://www.scintilla.org/ScintillaDoc.html#Styling
     isLight <- frameIsLight cep
+    -- each class of span its own style ("UI.EditorStyle")
+    setupStyles stc isLight
     if isLight
       then do
-        styledTextCtrlStyleSetSpec stc  0 "fore:#000000,back:#f8f8f8"
-        styledTextCtrlStyleSetSpec stc  1 "fore:#000000,back:#f8a0a0"
-        styledTextCtrlStyleSetSpec stc  2 "fore:#8080a0,back:#f8f8f8"
-        styledTextCtrlStyleSetSpec stc  3 "fore:#403060,back:#e8e0f8,italic"
-        styledTextCtrlStyleSetSpec stc 32 "fore:#000000,back:#f8f8f8"
-        styledTextCtrlStyleSetSpec stc 33 "fore:#a0a098,back:#f0f0e8"
         styledTextCtrlSetCaretForeground stc (rgb 0 0 (0 :: Word8))
         styledTextCtrlSetCaretLineBackground stc (rgb 240 240 (255 :: Word8))
         styledTextCtrlSetFoldMarginColour stc True (rgb 0xd0 0xd0 (0xd0 :: Word8))
         styledTextCtrlSetFoldMarginHiColour stc True (rgb 0xff 0xff (0xff :: Word8))
         defineFoldMarkers stc (rgb 0xf8 0xf8 (0xf8 :: Word8)) (rgb 0x60 0x60 (0x60 :: Word8))
       else do
-        styledTextCtrlStyleSetSpec stc  0 "fore:#dbdbdb,back:#14191e"
-        styledTextCtrlStyleSetSpec stc  1 "fore:#dbdbdb,back:#882020"
-        styledTextCtrlStyleSetSpec stc  2 "fore:#c0c0e8,back:#14191e"
-        styledTextCtrlStyleSetSpec stc  3 "fore:#c0c0e8,back:#262040,italic"
-        styledTextCtrlStyleSetSpec stc 32 "fore:#dbdbdb,back:#14191e"
-        styledTextCtrlStyleSetSpec stc 33 "fore:#a0a0a0,back:#101020"
         styledTextCtrlSetCaretForeground stc (rgb 255 255 (255 :: Word8))
         styledTextCtrlSetCaretLineBackground stc (rgb 0x20 0x30 (0x38 :: Word8))
         styledTextCtrlSetFoldMarginColour stc True (rgb 0x14 0x19 (0x1e :: Word8))
         styledTextCtrlSetFoldMarginHiColour stc True (rgb 0x14 0x19 (0x1e :: Word8))
         defineFoldMarkers stc (rgb 0x14 0x19 (0x1e :: Word8)) (rgb 0xa0 0xa0 (0xa0 :: Word8))
 
-    styledTextCtrlStyleSetFaceName stc 0 "Monaco"
-    styledTextCtrlStyleSetFaceName stc 1 "Monaco"
-    styledTextCtrlStyleSetFontAttr stc 2 12 "Monaco" False True False
     -- Set the minimum size, or else Scintilla will default to 2000 pixels(!)
     styledTextCtrlSetScrollWidth stc 10
     --styledTextCtrlSetCaretLineVisible stc True

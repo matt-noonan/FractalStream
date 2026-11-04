@@ -10,6 +10,7 @@ module UI.Widgets
   , colorWidget
   , expressionWidget
   , scriptWidget
+  , scriptWidgetWith
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -19,7 +20,8 @@ import Data.DynamicValue
 import Data.Color hiding (black, white)
 import Actor.Layout
 import Language.Parser.SourceRange (SourceRange, spanOfSourceRange, SourceSpan(..))
-import Language.Parser.Tokenizer (commentRanges)
+import Language.Editor.Highlight (Highlight, highlightsWith)
+import UI.EditorStyle (styleFor)
 
 import UI.CodeEditor
 import UI.AppSettings (appSettings)
@@ -304,29 +306,36 @@ scriptWidget :: MonadIO io
              => Window a
              -> Mapped CodeString (Either (SourceRange, String) t)
              -> io (StyledTextCtrl (), StaticText ())
-scriptWidget p scriptCode = do
+scriptWidget = scriptWidgetWith Map.empty
+
+-- | 'scriptWidget', for a script that can refer to names it doesn't
+-- define itself (the project's parameters, in a movie's script): what
+-- they are, for coloring them.
+scriptWidgetWith :: MonadIO io
+                 => Map String Highlight
+                 -> Window a
+                 -> Mapped CodeString (Either (SourceRange, String) t)
+                 -> io (StyledTextCtrl (), StaticText ())
+scriptWidgetWith known p scriptCode = do
   ce <- liftIO $ codeEditor p scriptCode
   txt <- unCodeString <$> getDynamic (source scriptCode)
   lastText <- liftIO $ newIORef txt
   errorText <- liftIO $ staticText p [ text := "" ]
 
+  -- every span colored by what it is ("Language.Editor.Highlight"),
+  -- everything else as plain text
   let doSyntaxColoring = do
         code <- styledTextCtrlGetText ce
-        if null code
-          then pure Map.empty
-          else do
-            let m = editorOffsetMap code
-            styledTextCtrlStartStyling ce 0 0
-            case Map.lookup (length code - 1) m of
-              Nothing -> pure ()
-              Just k -> styledTextCtrlSetStyling ce (k + 1) 0
-            forM_ (commentRanges code) $ \(s, e) -> do
-              case (,) <$> Map.lookup s m <*> Map.lookup (e + 1 - s) m of
-                Nothing -> pure ()
-                Just (styleStart, styleRange) -> do
-                  styledTextCtrlStartStyling ce styleStart 0
-                  styledTextCtrlSetStyling ce styleRange 2
-            pure m
+        let m = editorOffsetMap code
+        docLen <- styledTextCtrlGetLength ce
+        let byteAt i = Map.findWithDefault docLen i m
+        styledTextCtrlStartStyling ce 0 0
+        styledTextCtrlSetStyling ce docLen 0
+        forM_ (highlightsWith known code) $ \(from, to, h) -> do
+          let start' = byteAt from
+          styledTextCtrlStartStyling ce start' 0
+          styledTextCtrlSetStyling ce (byteAt to - start') (styleFor h)
+        pure m
 
   liftIO $ set ce $
     [ on focus := \tf -> do

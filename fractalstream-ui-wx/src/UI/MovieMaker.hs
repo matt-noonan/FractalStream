@@ -45,13 +45,18 @@ import Actor.Viewer (Viewer(..), cloneViewer, describeViewerIssues)
 import Data.DynamicValue
 import Data.Movie
 import FractalStream.Quoted (quoted)
-import Language.Environment (SomeContext(..))
-import Language.Code.Parser (CommonDefs, noCommonDefs)
+import Language.Environment (SomeContext(..), fromContext)
+import Language.Code.Parser (CommonDefs(..), noCommonDefs)
+import Language.Code.Syntax (Stmt(..), StmtF(..))
+import Language.Editor.Highlight (Highlight)
+import qualified Language.Editor.Highlight as Highlight
+import qualified Data.Map as Map
+import qualified Data.Set as Set
 import Actor.Layout (CodeString(..))
 import Graphics.UI.WXCore.WxcClasses (styledTextCtrlGetText)
 
 import UI.ShowInFileManager (openWithDefaultApp)
-import UI.Widgets (wxTimer, onOwnDestroy, scriptWidget)
+import UI.Widgets (wxTimer, onOwnDestroy, scriptWidgetWith)
 
 import Control.Concurrent.Async (async, cancel, poll, AsyncCancelled(..))
 import Control.Exception (SomeException, displayException, try, finally, fromException)
@@ -171,7 +176,7 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
           scriptSource <- newVariable (CodeString initial)
           scriptCheck <- newMapped
             (pure (\(CodeString s) -> checkMovieScript defs mpConfig s)) scriptSource
-          (editor, problem) <- scriptWidget p scriptCheck
+          (editor, problem) <- scriptWidgetWith (movieScriptNames defs mpConfig) p scriptCheck
           let getScript = styledTextCtrlGetText editor
           pure ( column 5
                    [ hfill (label "Run this script for each frame, with the argument going from 0 to 1:")
@@ -469,3 +474,17 @@ saveCopy f path = do
         Left (e :: SomeException) -> errorDialog f "Couldn't save the movie" (displayException e)
   where
     takeExtension' = reverse . takeWhile (/= '.') . reverse
+
+-- | What the names a movie's script can use (besides its own) are, for
+-- coloring it: the project's parameters, and @\@common@'s definitions.
+movieScriptNames :: CommonDefs -> SomeContext EventArgument_ -> Map.Map String Highlight
+movieScriptNames defs (SomeContext ctx) = Map.fromList $
+  [ (n, Highlight.Parameter) | n <- fromContext (\name _ _ -> symbolVal name) ctx ]
+  ++ [ (f, Highlight.Function) | f <- Set.toList (funNames defs) ]
+  ++ [ (n, k) | Stmt _ node <- commonCode defs, Just (n, k) <- [defined node] ]
+  where
+    defined = \case
+      SProc n _ _ -> Just (n, Highlight.CodeBlock)
+      SFun n _ _ -> Just (n, Highlight.Function)
+      SDecl n _ _ -> Just (n, Highlight.Variable)
+      _ -> Nothing

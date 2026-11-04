@@ -105,6 +105,7 @@ library
                        Language.Legacy.Parser
                        Language.Legacy.Translate
                        Language.Editor
+                       Language.Editor.Highlight
                        Language.Code.Typecheck.Functions
                        Language.Type
                        Language.Environment
@@ -203,6 +204,7 @@ test-suite spec
                     , Language.Code.ParserSpec
                     , Language.LegacySpec
                     , Language.EditorSpec
+                    , Language.Editor.HighlightSpec
                     , Language.Effect.ListSpec
                     , Actor.EventSpec
                     , Actor.ScriptSpec

@@ -504,6 +504,13 @@ Key modules:
 - `UI.ConfigEditor` - renders a `Configuration` / `Layout` as wx widgets
 - `UI.Widgets` - custom wx widgets
 - `UI.CodeEditor` - script code editor (uses `StyledTextCtrl`)
+- `Language.Editor.Highlight` - classifies a script's spans for coloring
+  (keywords, literals, and identifiers by what they name: parameter,
+  variable, function, code block, or undefined), from tokens and the
+  definitions it can see, so it works on scripts that don't parse.
+  `highlightsWith` takes names defined elsewhere (a movie's script).
+  `UI.EditorStyle` gives each class its own Scintilla style (some share
+  colors by default); `UI.Widgets.scriptWidget` applies them.
 - `UI.EditorKeys` - code editor keys: Return indents the new line
   (`Language.Editor.newLineIndent`; the indent unit is 2), paste
   re-indents (`pasteIndented`), Cmd/Ctrl+/ toggles comments

@@ -26,8 +26,7 @@ import Actor.Ensemble
 import Actor.Layout (CodeString(..))
 
 import Backend (Backend)
-import UI.CodeEditor (stanzaHeaderStyle, editorOffsetMap)
-import UI.Widgets (scriptWidget, wxWatchDynamic, onOwnDestroy)
+import UI.Widgets (scriptWidget, onOwnDestroy)
 import UI.WxProperties (WxLayout, rememberLayout)
 import Data.DynamicValue
 
@@ -35,8 +34,6 @@ import Graphics.UI.WX hiding (pt, when, grey, Color, Object, Layout, Vertical, H
 import Graphics.UI.WXCore.WxcClassesMZ
 import Graphics.UI.WXCore.Frame (frameDefaultStyle, windowChildren)
 
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.UTF8 as Utf8
 import qualified Data.Map as Map
 
 -- | How the script editor reaches the rest of its project's session.
@@ -162,16 +159,6 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
   void (watchDynamic srcVar (const sehMarkUnsaved))
   sehAddMenuBar f
 
-  -- Stanza-header styling has no counterpart in a single viewer's
-  -- own code (which never has `@`-lines), so 'scriptWidget' can't
-  -- know to do it -- kept as this editor's own small addition,
-  -- piggybacking on `scriptCheck`'s source (which 'scriptWidget'
-  -- itself already keeps in sync with the widget's text) rather
-  -- than a second polling timer of this editor's own.
-  restyleStanzaHeaders ce srcText
-  wxWatchDynamic f (source scriptCheck) $ \(CodeString newText) ->
-    restyleStanzaHeaders ce newText
-
   -- Separate from `liveErrorText` above: that one reflects the
   -- *current* text's live check, continuously; this one reflects
   -- the *last explicit Rebuild attempt*, and is the only place a
@@ -272,45 +259,3 @@ rebuildColorizers backend projectWindow ScriptEditorHooks{sehEditor} wxLayout cu
                        replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns
                        after newEns ]
       pure (Right ())
-
--- | Apply 'stanzaHeaderStyle' to every line that starts with @\@@ --
--- a unified script's @\@setup@\/@\@config@\/@\@viewer@\/@\@tool@ stanza
--- headers are always flush-left (the grammar requires it), so checking
--- column 0 is enough; no need to parse.
---
--- Deliberately does *not* reset the whole document to style 0 first
--- (as an earlier version did): this runs on every edit, on its own
--- timer, independently of -- and racing against -- 'UI.Widgets.
--- scriptWidget's own comment\/error-span coloring of the same
--- 'StyledTextCtrl'. A blanket reset-then-restyle would win that race
--- essentially every time (it fires far more often, on any edit at
--- all, not just when the error status actually flips) and wipe out
--- whatever 'scriptWidget' had just painted, leaving comments and
--- error spans visually invisible even though the error *text* (driven
--- separately) still showed up fine. Instead this only ever touches a
--- line that is a header now, or was one the last time this ran
--- (checked via the line's own current style, since 'stanzaHeaderStyle'
--- is never used for anything else) -- every other line, including
--- anything 'scriptWidget' has styled, is left completely alone.
-restyleStanzaHeaders :: StyledTextCtrl a -> String -> IO ()
-restyleStanzaHeaders stc txt = do
-  let totalBytes = BS.length (Utf8.fromString txt)
-      byteOffsets = editorOffsetMap txt
-      byteOffsetAt i = Map.findWithDefault totalBytes i byteOffsets
-      ls = lines txt
-      lineStarts = scanl (\off l -> off + length l + 1) 0 ls
-
-  forM_ (zip ls lineStarts) $ \(l, charStart) -> do
-    let byteStart = byteOffsetAt charStart
-        byteEnd   = byteOffsetAt (charStart + length l)
-        isHeader  = "@" `isPrefixOf` l
-    when (byteEnd > byteStart) $ do
-      currentStyle <- styledTextCtrlGetStyleAt stc byteStart
-      case (isHeader, currentStyle == stanzaHeaderStyle) of
-        (True, False) -> do
-          styledTextCtrlStartStyling stc byteStart 0
-          styledTextCtrlSetStyling stc (byteEnd - byteStart) stanzaHeaderStyle
-        (False, True) -> do
-          styledTextCtrlStartStyling stc byteStart 0
-          styledTextCtrlSetStyling stc (byteEnd - byteStart) 0
-        _ -> pure ()
