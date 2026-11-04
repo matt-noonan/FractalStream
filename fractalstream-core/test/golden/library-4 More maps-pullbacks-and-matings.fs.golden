@@ -147,10 +147,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                 block:
                   let `last_z` = z in:
                     block:
-                      let `[internal] fresh #21` = 0 in:
-                        let `[internal] fresh #22` = [internal] iteration limit in:
+                      let `[internal] fresh #22` = 0 in:
+                        let `[internal] fresh #23` = [internal] iteration limit in:
                           block:
-                            do-while (!(|(z - 0:R:C)| < [internal] vanishing radius) and ([internal] fresh #21 < [internal] fresh #22)):
+                            do-while (!(|(z - 0:R:C)| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)):
                               block:
                                 block:
                                   draw point at z:R^2
@@ -161,9 +161,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   else:
                                     no-op
                                   set `z` := let [internal] f.z #0 = z in ((([internal] f.z #0 ^ 2:R:C) - C) / (([internal] f.z #0 ^ 2:R:C) - 1:R:C))
-                                set `[internal] fresh #21` := ([internal] fresh #21 + 1)
-                            set `[internal] iteration count` := [internal] fresh #21
-                            set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
+                                set `[internal] fresh #22` := ([internal] fresh #22 + 1)
+                            set `[internal] iteration count` := [internal] fresh #22
+                            set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
 
 
 --- tool Pullback

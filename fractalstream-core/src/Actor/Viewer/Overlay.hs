@@ -48,7 +48,7 @@ import Data.Bits (shiftR)
 -- by a tool's combined 'Actor.Viewer.vDrawCmds'.
 compositeDrawLayers
   :: (Double, Double)  -- ^ model-space view center
-  -> Double             -- ^ model-space size of one pixel
+  -> (Double, Double)  -- ^ model-space width and height of one pixel
   -> [[DrawCommand]]    -- ^ draw layers, in draw order
   -> (Word32, Word32)   -- ^ buffer dimensions, in pixels
   -> Ptr Word8          -- ^ the rendered base image, as RGB8
@@ -86,7 +86,7 @@ overImage top bottom = generateImage at (imageWidth bottom) (imageHeight bottom)
 
 -- | 'compositeDrawLayers', written out to a PNG file.
 compositeDrawLayersToFile
-  :: (Double, Double) -> Double -> [[DrawCommand]] -> (Word32, Word32) -> Ptr Word8
+  :: (Double, Double) -> (Double, Double) -> [[DrawCommand]] -> (Word32, Word32) -> Ptr Word8
   -> FilePath
   -> IO ()
 compositeDrawLayersToFile center pixelSize layers dims buf path =
@@ -112,10 +112,10 @@ bufferToImage w h buf = do
 -- the interactive wx viewer uses to place its own tool overlays
 -- (@UI.ProjectViewer.modelToView@), so this can't independently drift from
 -- how the live app draws the same annotations.
-modelToPixel :: (Double, Double) -> Double -> (Int, Int) -> (Double, Double) -> Point
-modelToPixel (cx, cy) pixelSize (w, h) pt =
-  let halfW = pixelSize * fromIntegral w / 2
-      halfH = pixelSize * fromIntegral h / 2
+modelToPixel :: (Double, Double) -> (Double, Double) -> (Int, Int) -> (Double, Double) -> Point
+modelToPixel (cx, cy) (pxW, pxH) (w, h) pt =
+  let halfW = pxW * fromIntegral w / 2
+      halfH = pxH * fromIntegral h / 2
       modelRect :: Planar.Rectangle (Double, Double)
       modelRect = Planar.flippedRectangle (cx - halfW, cy - halfH) (cx + halfW, cy + halfH)
       pixelRect :: Planar.Rectangle (Double, Double)
@@ -149,11 +149,11 @@ whenFinite pts lens action =
 
 -- | Draw every layer's commands, in order. Each layer starts with the pen
 -- and fill reset to white, matching @UI.ProjectViewer.paintToolLayer@.
-drawLayers :: ((Double, Double) -> Point) -> Double -> [[DrawCommand]] -> Drawing PixelRGBA8 ()
+drawLayers :: ((Double, Double) -> Point) -> (Double, Double) -> [[DrawCommand]] -> Drawing PixelRGBA8 ()
 drawLayers toPixel pixelSize = mapM_ (drawLayer toPixel pixelSize)
 
-drawLayer :: ((Double, Double) -> Point) -> Double -> [DrawCommand] -> Drawing PixelRGBA8 ()
-drawLayer toPixel pixelSize = go white white
+drawLayer :: ((Double, Double) -> Point) -> (Double, Double) -> [DrawCommand] -> Drawing PixelRGBA8 ()
+drawLayer toPixel (pxW, pxH) = go white white
   where
     white = PixelRGBA8 255 255 255 255
 
@@ -185,9 +185,11 @@ drawLayer toPixel pixelSize = go white white
         go strokeColor fillColor cmds
 
       DrawCircle _ filled r pt -> do
-        let rpx = realToFrac (r / pixelSize)
-            prim = circle (toPixel pt) rpx
-        whenFinite [toPixel pt] [rpx] $
+        -- A circle in model space: an ellipse, when pixels aren't square.
+        let rx = realToFrac (r / pxW)
+            ry = realToFrac (r / pxH)
+            prim = ellipse (toPixel pt) rx ry
+        whenFinite [toPixel pt] [rx, ry] $
           if filled
             then withTexture (uniformTexture fillColor) (fill prim)
             else withTexture (uniformTexture strokeColor) (stroke 2 JoinRound (CapRound, CapRound) prim)

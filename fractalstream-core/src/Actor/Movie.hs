@@ -33,6 +33,7 @@ module Actor.Movie
   , movieScriptTemplate
   , pathAnimation
   , complexVariables
+  , canAnimate
   , pathPointAt
   , pathPoint
   , MovieInset(..)
@@ -194,7 +195,7 @@ withMovieScript defs (SomeContext ctx) script k = do
         code <- parseUnitScript defs movieLimits (ComplexCoordinate "") Nothing body env
         -- (the pixel size a unit handler is given: a movie's script
         -- has no pixel-size variable to read it with)
-        let withPx t = constArg 0 # withTime t
+        let withPx t = constArg 0 # constArg 0 # withTime t
         pure (k (contextToEnv (withPx 0)) code withPx)
 
 -- | The iteration limits a movie's script runs with: the project's own
@@ -221,21 +222,42 @@ complexVariables (SomeContext ctx) = catMaybes $ fromContext
       ComplexType | isJust (argSetValue arg) -> Just (symbolVal name)
       _ -> Nothing) ctx
 
--- | An animation that moves a complex variable along a path, at a
--- steady speed: at time @t@, it's the fraction @t@ of the way along the
--- path, by length. A path of a single point stays put. If it's to go
+-- | Whether a path can move a coordinate: whether it names variables
+-- of the context, of the right types, that can be set.
+canAnimate :: SomeContext EventArgument_ -> Coordinate -> Bool
+canAnimate ctx coord = isRight (coordinateSetter ctx coord)
+
+-- | How to set a coordinate to a point: a complex variable to @x + y i@,
+-- or a pair of real ones to @x@ and @y@.
+coordinateSetter :: SomeContext EventArgument_ -> Coordinate -> Either String ((Double, Double) -> IO ())
+coordinateSetter ctx = \case
+  ComplexCoordinate var -> do
+    set <- setterOf ComplexType "a complex" var
+    pure (\(x, y) -> set (x :+ y))
+  RealCoordinates xvar yvar -> do
+    setX <- setterOf RealType "a real" xvar
+    setY <- setterOf RealType "a real" yvar
+    pure (\(x, y) -> setX x >> setY y)
+  where
+    setterOf :: forall t. TypeProxy t -> String -> String -> Either String (HaskellType t -> IO ())
+    setterOf want kind var = case lookupSomeContextByName var ctx of
+      Nothing -> Left ("The project has no variable named `" ++ var ++ "`.")
+      Just (FoundBinding ty arg) -> case (sameHaskellType want ty, argSetValue arg) of
+        (Just Refl, Just setter) -> Right (setter ty)
+        (Just Refl, Nothing) -> Left ("`" ++ var ++ "` can't be changed.")
+        (Nothing, _) -> Left ("`" ++ var ++ "` isn't " ++ kind ++ " variable, so a path can't set it.")
+
+-- | An animation that moves a coordinate (a complex variable, or a pair
+-- of real ones) along a path, at a steady speed: at time @t@, it's the
+-- fraction @t@ of the way along the path, by length (in model
+-- coordinates). A path of a single point stays put. If it's to go
 -- back to the start (for a movie made to loop, 'msLoop'), the path is
 -- closed by a straight line from its end back to its start.
-pathAnimation :: SomeContext EventArgument_ -> String -> Bool -> [(Double, Double)] -> Either String Animation
-pathAnimation ctx var backToStart path = do
+pathAnimation :: SomeContext EventArgument_ -> Coordinate -> Bool -> [(Double, Double)] -> Either String Animation
+pathAnimation ctx coord backToStart path = do
   when (null path) (Left "The path has no points.")
-  case lookupSomeContextByName var ctx of
-    Nothing -> Left ("The project has no variable named `" ++ var ++ "`.")
-    Just (FoundBinding ty arg) -> case (ty, argSetValue arg) of
-      (ComplexType, Just setter) -> Right $ \t ->
-        let (x, y) = pathPoint backToStart path t in setter ComplexType (x :+ y)
-      (ComplexType, Nothing) -> Left ("`" ++ var ++ "` can't be changed.")
-      _ -> Left ("`" ++ var ++ "` isn't a complex variable, so a path can't set it.")
+  setPoint <- coordinateSetter ctx coord
+  pure (setPoint . pathPoint backToStart path)
 
 -- | Where 'pathAnimation' puts its variable at time @t@: the point the
 -- fraction @t@ of the way along the path, which, to go back to the

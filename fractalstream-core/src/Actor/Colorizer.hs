@@ -58,6 +58,7 @@ import Data.Char (isSpace, toLower)
 import Data.List (unzip4, find, dropWhileEnd, nub, (\\))
 
 import Actor.Script
+import Actor.Event (coordinateNames, realPixelVars)
 import Actor.Layout (AppAction(..))
 import Language.Parser (ParseError, parse)
 import Language.Parser.Tokenizer (tokenize)
@@ -334,7 +335,8 @@ applyColorizers choices stanzas = do
       let fallback = fromMaybe (automaticColorizer vsCode) vsColorizer
           scope = Set.unions
             [ configScope
-            , Set.fromList (vsVar : maybeToList vsPixelVar ++ maybe [] (map fst . fst) vsPrepare)
+            , Set.fromList (coordinateNames vsCoord ++ maybeToList vsPixelVar ++ realPixelVars vsCoord
+                           ++ maybe [] (map fst . fst) vsPrepare)
             , topLevelNames vsCode ]
           resolve = resolveChoice available vsFunctions scope
       defaultChoice <- left (\err -> (NoSourceRange, "The `colorizer=` attribute of the viewer "

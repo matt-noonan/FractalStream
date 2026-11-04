@@ -48,11 +48,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                             block:
                                               let `hare` = ((2 * p) mod q) in:
                                                 block:
-                                                  let `[internal] fresh #31` = 0 in:
-                                                    let `[internal] fresh #32` = [internal] iteration limit in:
+                                                  let `[internal] fresh #32` = 0 in:
+                                                    let `[internal] fresh #33` = [internal] iteration limit in:
                                                       block:
-                                                        if ((tortoise ≠ hare) and ([internal] fresh #31 < [internal] fresh #32)) then:
-                                                          do-while ((tortoise ≠ hare) and ([internal] fresh #31 < [internal] fresh #32)):
+                                                        if ((tortoise ≠ hare) and ([internal] fresh #32 < [internal] fresh #33)) then:
+                                                          do-while ((tortoise ≠ hare) and ([internal] fresh #32 < [internal] fresh #33)):
                                                             block:
                                                               block:
                                                                 if (power = λ) then:
@@ -64,41 +64,41 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                   no-op
                                                                 set `hare` := ((2 * hare) mod q)
                                                                 set `λ` := (λ + 1)
-                                                              set `[internal] fresh #31` := ([internal] fresh #31 + 1)
+                                                              set `[internal] fresh #32` := ([internal] fresh #32 + 1)
                                                         else:
                                                           no-op
-                                                        set `[internal] iteration count` := [internal] fresh #31
-                                                        set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
+                                                        set `[internal] iteration count` := [internal] fresh #32
+                                                        set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
                                                   set `tortoise` := p
                                                   set `hare` := p
-                                                  let `[internal] fresh #31` = 0 in:
-                                                    let `[internal] fresh #32` = λ in:
+                                                  let `[internal] fresh #32` = 0 in:
+                                                    let `[internal] fresh #33` = λ in:
                                                       block:
-                                                        if (True and ([internal] fresh #31 < [internal] fresh #32)) then:
-                                                          do-while (True and ([internal] fresh #31 < [internal] fresh #32)):
+                                                        if (True and ([internal] fresh #32 < [internal] fresh #33)) then:
+                                                          do-while (True and ([internal] fresh #32 < [internal] fresh #33)):
                                                             block:
                                                               set `hare` := ((2 * hare) mod q)
-                                                              set `[internal] fresh #31` := ([internal] fresh #31 + 1)
+                                                              set `[internal] fresh #32` := ([internal] fresh #32 + 1)
                                                         else:
                                                           no-op
-                                                        set `[internal] iteration count` := [internal] fresh #31
-                                                        set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
+                                                        set `[internal] iteration count` := [internal] fresh #32
+                                                        set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
                                                   set `μ` := 0
-                                                  let `[internal] fresh #31` = 0 in:
-                                                    let `[internal] fresh #32` = [internal] iteration limit in:
+                                                  let `[internal] fresh #32` = 0 in:
+                                                    let `[internal] fresh #33` = [internal] iteration limit in:
                                                       block:
-                                                        if ((tortoise ≠ hare) and ([internal] fresh #31 < [internal] fresh #32)) then:
-                                                          do-while ((tortoise ≠ hare) and ([internal] fresh #31 < [internal] fresh #32)):
+                                                        if ((tortoise ≠ hare) and ([internal] fresh #32 < [internal] fresh #33)) then:
+                                                          do-while ((tortoise ≠ hare) and ([internal] fresh #32 < [internal] fresh #33)):
                                                             block:
                                                               block:
                                                                 set `tortoise` := ((2 * tortoise) mod q)
                                                                 set `hare` := ((2 * hare) mod q)
                                                                 set `μ` := (μ + 1)
-                                                              set `[internal] fresh #31` := ([internal] fresh #31 + 1)
+                                                              set `[internal] fresh #32` := ([internal] fresh #32 + 1)
                                                         else:
                                                           no-op
-                                                        set `[internal] iteration count` := [internal] fresh #31
-                                                        set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
+                                                        set `[internal] iteration count` := [internal] fresh #32
+                                                        set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
                                                   let `delta` = (1:R / (λ + μ):R) in:
                                                     block:
                                                       let `ci` = 0:R in:
@@ -116,11 +116,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                             block:
                                                                               set `kneading_seq` := ""
                                                                               set `t` := p
-                                                                              let `[internal] fresh #38` = 0 in:
-                                                                                let `[internal] fresh #39` = μ in:
+                                                                              let `[internal] fresh #39` = 0 in:
+                                                                                let `[internal] fresh #40` = μ in:
                                                                                   block:
-                                                                                    if (True and ([internal] fresh #38 < [internal] fresh #39)) then:
-                                                                                      do-while (True and ([internal] fresh #38 < [internal] fresh #39)):
+                                                                                    if (True and ([internal] fresh #39 < [internal] fresh #40)) then:
+                                                                                      do-while (True and ([internal] fresh #39 < [internal] fresh #40)):
                                                                                         block:
                                                                                           block:
                                                                                             let `omega` = (2.718281828459045:C ^ ((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * t:R:C) / q:R:C)) in:
@@ -151,17 +151,17 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                     draw line from omega:R^2 to (10:R:C * omega):R^2
                                                                                                     draw filled circle at omega:R^2 with radius foot
                                                                                                     set `t` := ((2 * t) mod q)
-                                                                                          set `[internal] fresh #38` := ([internal] fresh #38 + 1)
+                                                                                          set `[internal] fresh #39` := ([internal] fresh #39 + 1)
                                                                                     else:
                                                                                       no-op
-                                                                                    set `[internal] iteration count` := [internal] fresh #38
-                                                                                    set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
+                                                                                    set `[internal] iteration count` := [internal] fresh #39
+                                                                                    set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
                                                                               set `kneading_seq` := text(kneading_seq, "[")
-                                                                              let `[internal] fresh #38` = 0 in:
-                                                                                let `[internal] fresh #39` = λ in:
+                                                                              let `[internal] fresh #39` = 0 in:
+                                                                                let `[internal] fresh #40` = λ in:
                                                                                   block:
-                                                                                    if (True and ([internal] fresh #38 < [internal] fresh #39)) then:
-                                                                                      do-while (True and ([internal] fresh #38 < [internal] fresh #39)):
+                                                                                    if (True and ([internal] fresh #39 < [internal] fresh #40)) then:
+                                                                                      do-while (True and ([internal] fresh #39 < [internal] fresh #40)):
                                                                                         block:
                                                                                           block:
                                                                                             let `omega` = (2.718281828459045:C ^ ((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * t:R:C) / q:R:C)) in:
@@ -192,11 +192,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                     draw line from omega:R^2 to (10:R:C * omega):R^2
                                                                                                     draw filled circle at omega:R^2 with radius foot
                                                                                                     set `t` := ((2 * t) mod q)
-                                                                                          set `[internal] fresh #38` := ([internal] fresh #38 + 1)
+                                                                                          set `[internal] fresh #39` := ([internal] fresh #39 + 1)
                                                                                     else:
                                                                                       no-op
-                                                                                    set `[internal] iteration count` := [internal] fresh #38
-                                                                                    set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
+                                                                                    set `[internal] iteration count` := [internal] fresh #39
+                                                                                    set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
                                                                               set `kneading_seq` := text(kneading_seq, "]")
                                                                               set `spider` := []
                                                                               set `spider_ready` := False
@@ -233,11 +233,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                     block:
                       let `j` = 1 in:
                         block:
-                          let `[internal] fresh #25` = 0 in:
-                            let `[internal] fresh #26` = (μ + λ) in:
+                          let `[internal] fresh #26` = 0 in:
+                            let `[internal] fresh #27` = (μ + λ) in:
                               block:
-                                if (True and ([internal] fresh #25 < [internal] fresh #26)) then:
-                                  do-while (True and ([internal] fresh #25 < [internal] fresh #26)):
+                                if (True and ([internal] fresh #26 < [internal] fresh #27)) then:
+                                  do-while (True and ([internal] fresh #26 < [internal] fresh #27)):
                                     block:
                                       block:
                                         let `gamma_jp1` = (spider@@(j + 1)) in:
@@ -291,11 +291,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                           no-op
                                                                                                         set `new_spider` := join(new_spider, [new_leg])
                                                                                                         set `j` := (j + 1)
-                                      set `[internal] fresh #25` := ([internal] fresh #25 + 1)
+                                      set `[internal] fresh #26` := ([internal] fresh #26 + 1)
                                 else:
                                   no-op
-                                set `[internal] iteration count` := [internal] fresh #25
-                                set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
+                                set `[internal] iteration count` := [internal] fresh #26
+                                set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
                           set `spider` := new_spider
                           let `delta` = (1:R / (λ + μ):R) in:
                             block:
@@ -378,11 +378,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                 block:
                                   let `leg` = [] in:
                                     block:
-                                      let `[internal] fresh #28` = 0 in:
-                                        let `[internal] fresh #29` = (μ + λ) in:
+                                      let `[internal] fresh #29` = 0 in:
+                                        let `[internal] fresh #30` = (μ + λ) in:
                                           block:
-                                            if (True and ([internal] fresh #28 < [internal] fresh #29)) then:
-                                              do-while (True and ([internal] fresh #28 < [internal] fresh #29)):
+                                            if (True and ([internal] fresh #29 < [internal] fresh #30)) then:
+                                              do-while (True and ([internal] fresh #29 < [internal] fresh #30)):
                                                 block:
                                                   block:
                                                     let `zi` = (omega + b) in:
@@ -402,11 +402,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                           block:
                                                                             draw line from (20:R:C * omega):R^2 to last_gamma:R^2
                                                                             set `leg` := []
-                                                                            let `[internal] fresh #36` = 0 in:
-                                                                              let `[internal] fresh #37` = N in:
+                                                                            let `[internal] fresh #37` = 0 in:
+                                                                              let `[internal] fresh #38` = N in:
                                                                                 block:
-                                                                                  if (True and ([internal] fresh #36 < [internal] fresh #37)) then:
-                                                                                    do-while (True and ([internal] fresh #36 < [internal] fresh #37)):
+                                                                                  if (True and ([internal] fresh #37 < [internal] fresh #38)) then:
+                                                                                    do-while (True and ([internal] fresh #37 < [internal] fresh #38)):
                                                                                       block:
                                                                                         block:
                                                                                           set `t` := (t + dt)
@@ -415,19 +415,19 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                               set `leg` := join([last_gamma], leg)
                                                                                               draw line from last_gamma:R^2 to gamma:R^2
                                                                                               set `last_gamma` := gamma
-                                                                                        set `[internal] fresh #36` := ([internal] fresh #36 + 1)
+                                                                                        set `[internal] fresh #37` := ([internal] fresh #37 + 1)
                                                                                   else:
                                                                                     no-op
-                                                                                  set `[internal] iteration count` := [internal] fresh #36
-                                                                                  set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                                                                                  set `[internal] iteration count` := [internal] fresh #37
+                                                                                  set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
                                                                             draw filled circle at zi:R^2 with radius foot
                                                                             set `omega` := (omega ^ 2:R:C)
                                                                             set `spider` := join(spider, [leg])
-                                                  set `[internal] fresh #28` := ([internal] fresh #28 + 1)
+                                                  set `[internal] fresh #29` := ([internal] fresh #29 + 1)
                                             else:
                                               no-op
-                                            set `[internal] iteration count` := [internal] fresh #28
-                                            set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
+                                            set `[internal] iteration count` := [internal] fresh #29
+                                            set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
                                       set `omega` := (2.718281828459045:C ^ ((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * p:R:C) / q:R:C))
                                       let `z2` = ((omega ^ 2:R:C) + b) in:
                                         block:

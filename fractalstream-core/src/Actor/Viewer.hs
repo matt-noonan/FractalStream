@@ -47,7 +47,9 @@ import Actor.Autocolor (AutocolorLookup)
 import Data.DynamicValue
 import Actor.Layout (Dimensions(..))
 import Actor.Tool
-import Actor.Event (ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript, Event)
+import Actor.Event ( ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript, Event
+                   , Coordinate(..), bindOrDeclare, RealIn(..), bindFreshReals
+                   , pixelWidthVar, pixelHeightVar, PixelDims )
 import Language.Environment
 import Language.Typecheck (TC(..), ppError)
 import Language.Value.Parser
@@ -65,7 +67,7 @@ import qualified Data.Map as Map
 
 data ViewerContext env = ViewerContext
   { vcContext :: Context DynamicValue env
-  , vcCoord   :: String
+  , vcCoord   :: Coordinate
   , vcIterLimit :: Maybe (Value
       '( '(InternalEscapeRadius, RealT) ':
          '(InternalVanishingRadius, RealT) ':
@@ -88,7 +90,7 @@ data ViewerContext env = ViewerContext
 buildViewerContext :: forall env
                      . EnvironmentProxy env
                     -> Context DynamicValue env
-                    -> String
+                    -> Coordinate
                     -> Maybe ParsedValue
                     -> Maybe ParsedValue
                     -> Maybe ParsedValue
@@ -191,13 +193,21 @@ data Viewer = Viewer
   , vCanResize :: Bool
   , vCenter    :: Variable (Double, Double)
   , vPixelSize :: Variable Double
+    -- ^ The width of a pixel, in model coordinates.
+  , vAspect    :: Variable Double
+    -- ^ The height of a pixel over its width. Always 1 for a complex
+    -- viewer (see 'vCoordinate'), whose pixels are square.
   , vOriginalCenter    :: (Double, Double)
   , vOriginalPixelSize :: Double
-    -- ^ The view the script's own @center=@\/@pixelSize=@ attributes
-    -- describe (or the defaults, without them). 'vCenter' and
-    -- 'vPixelSize' start out here too, unless a frontend restores a
-    -- saved view over them; either way, a frontend's "original view"
-    -- action comes back to this one.
+  , vOriginalAspect    :: Double
+    -- ^ The view the script's own @center=@\/@pixelSize=@\/@aspect=@
+    -- attributes describe (or the defaults, without them). 'vCenter',
+    -- 'vPixelSize', and 'vAspect' start out here too, unless a frontend
+    -- restores a saved view over them; either way, a frontend's
+    -- "original view" action comes back to this one.
+  , vCoordinate :: Coordinate
+    -- ^ How the viewer's points are named: a complex viewer's pixels are
+    -- square, while a real viewer's aspect can be changed.
   , vSaveView  :: IO ()
   , vListen    :: IO () -> IO (IO ())
   , vDrawCmds  :: IO [[DrawCommand]]
@@ -208,7 +218,7 @@ data Viewer = Viewer
       :: Int
       -> SomeContext EventArgument_
       -> ParsedToolScript
-      -> IO (Either String (Double -> Event -> Maybe (IO ())))
+      -> IO (Either String (PixelDims -> Event -> Maybe (IO ())))
     -- ^ Build a tool's event dispatcher for the given draw layer.  Supplied by
     --   the backend (interpreter or JIT-compiled); see 'ToolRunner'.
   }
@@ -236,7 +246,7 @@ data Viewer = Viewer
 withRenderedViewerBuffer
   :: Viewer
   -> Bool
-  -> ((Double, Double) -> Double -> (Word32, Word32) -> Ptr Word8 -> IO a)
+  -> ((Double, Double) -> (Double, Double) -> (Word32, Word32) -> Ptr Word8 -> IO a)
   -> IO (Either String (ViewerIssues, a))
 withRenderedViewerBuffer viewer downsample withBuffer =
   renderViewerBuffer downsample viewer >>= \case
@@ -252,7 +262,8 @@ data RenderedBuffer = RenderedBuffer
   , rbWidth     :: Int
   , rbHeight    :: Int
   , rbCenter    :: (Double, Double)
-  , rbPixelSize :: Double
+  , rbPixelSize :: (Double, Double)
+    -- ^ the width and height of a pixel
   , rbIssues    :: ViewerIssues
   }
 
@@ -272,12 +283,14 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
     Right vaArgs -> do
       Dimensions (w, h) <- getDynamic vSize
       pixelSize <- getDynamic vPixelSize
+      aspect <- getDynamic vAspect
       center@(cx, cy) <- getDynamic vCenter
       ViewerFunction fn <- getDynamic code
       let s = if downsample then 2 else 1
           bigW = w * s
           px = pixelSize / fromIntegral s
-          (x0, y0) = (cx - fromIntegral bigW * px / 2, cy + fromIntegral (h * s) * px / 2)
+          py = px * aspect
+          (x0, y0) = (cx - fromIntegral bigW * px / 2, cy + fromIntegral (h * s) * py / 2)
           -- strips of output rows; enough of them to keep every
           -- capability busy even if some strips are slower than others
           stripRows = max 1 (min 16 (h `div` 64))
@@ -289,8 +302,8 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
         forPool_ caps strips $ \(row, rows) ->
           allocaBytes (3 * bigW * rows * s) $ \big -> do
             issues <- fn ViewerArgs
-              { vaPoint = (x0, y0 - fromIntegral (row * s) * px)
-              , vaStep = (px, px)
+              { vaPoint = (x0, y0 - fromIntegral (row * s) * py)
+              , vaStep = (px, py)
               , vaWidth = fromIntegral bigW
               , vaHeight = fromIntegral (rows * s)
               , vaSubsamples = 1
@@ -301,7 +314,7 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
             if downsample then downsampleRows bigW w rows big dest
                           else copyBytes dest big (3 * w * rows)
       issues <- readMVar issuesVar
-      pure (Right (RenderedBuffer out w h center pixelSize issues))
+      pure (Right (RenderedBuffer out w h center (pixelSize, pixelSize * aspect) issues))
 
 -- | Average each 2x2 block of a @bigW@-pixel-wide RGB8 buffer down to
 -- one pixel of a @w@-pixel-wide one, for @rows@ output rows.
@@ -455,40 +468,34 @@ parseViewerScript mpx ViewerContext{..} c = do
                              "INTERNAL ERROR, there was a problem locating `" ++ symbolVal (Proxy @n) ++ "`")
 
       let i = Const (Scalar ComplexType (0 :+ 1))
+          internal :: forall n -> KnownSymbol n => RealIn
+          internal n = RealIn (getVar n RealType)
 
-      -- If the viewer variable is already defined in the environment, ensure that it also has
-      -- complex type. Otherwise, extend the environment with the viewer variable. Then parse
-      -- the code in this extended environment.
-      SomeSymbol (coord :: Proxy coordT) <- pure (someSymbolVal vcCoord)
-      SomeSymbol (px :: Proxy px) <- pure (someSymbolVal $ fromMaybe "[unused] pixel size" mpx)
+      -- Bind the pixel size (and a real viewer's pixel width and
+      -- height) around the body; each must be a new name.
+      let pixelVars = (fromMaybe "[unused] pixel size" mpx, internal InternalDX) : case vcCoord of
+            ComplexCoordinate _ -> []
+            RealCoordinates _ _ -> [ (pixelWidthVar, internal InternalDX)
+                                   , (pixelHeightVar, internal InternalDY) ]
+          body :: forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e)
+          body e = bindFreshReals pixelVars e $ \e' ->
+            left (errorLocation &&& unlines . pp) (runParsedCode e' c)
 
-      code :: Code (InternalViewerEnv env) <- case lookupEnv coord ComplexType env' of
-
-        Found pf -> case lookupEnv px RealType env' of
-          Absent pf' -> do
-            let env2 = recallIsAbsent pf' $ BindingProxy px RealType env'
-            code0 <- left (errorLocation &&& unlines . pp) (runParsedCode env2 c)
-            -- Set the viewer variable to x + i y
+      -- Bind the viewer's coordinate(s) to the point: a variable that's
+      -- already defined (a configuration value) is set, and must have
+      -- the right type; otherwise, it's a new variable.
+      code :: Code (InternalViewerEnv env) <- case vcCoord of
+        ComplexCoordinate z -> case someSymbolVal z of
+          SomeSymbol zp -> do
             x <- getVar InternalX RealType env'
             y <- getVar InternalY RealType env'
-            dx <- getVar InternalDX RealType env'
-            pure $ Block [ Set pf coord (R2C x + i * R2C y), (snd $ letInEnv @px dx (env2, code0)) ]
-          _ -> Left (NoSourceRange, "Duplicate definitions of pixel size variable `" ++ symbolVal px ++ "`.")
-
-        WrongType ty -> throwError (NoSourceRange,
-                                    "Viewer variable `" ++ "` should be complex, not " ++ show ty)
-        Absent pf    -> do
-            let env2 = recallIsAbsent pf $ BindingProxy coord ComplexType env'
-            case lookupEnv px RealType env2 of
-              Absent pf' -> do
-                let env3 = recallIsAbsent pf' $ BindingProxy px RealType env2
-
-                code0 <- left (errorLocation &&& unlines . pp) (runParsedCode env3 c)
-                x  <- getVar InternalX  RealType env'
-                y  <- getVar InternalY  RealType env'
-                dx <- getVar InternalDX RealType env2
-                pure (snd $ (letInEnv @coordT (R2C x + i * R2C y) $ letInEnv @px dx $ (env3, code0)))
-              _ -> Left (NoSourceRange, "Duplicate definitions of pixel size variable `" ++ symbolVal px ++ "`.")
+            bindOrDeclare zp ComplexType (R2C x + i * R2C y) env' body
+        RealCoordinates xn yn -> case (someSymbolVal xn, someSymbolVal yn) of
+          (SomeSymbol xp, SomeSymbol yp) -> do
+            x <- getVar InternalX RealType env'
+            bindOrDeclare xp RealType x env' $ \e1 -> do
+              y <- getVar InternalY RealType e1
+              bindOrDeclare yp RealType y e1 body
 
       -- Now bind all of the bookkeeping variables
       let (_, code') = (env', code)
@@ -507,6 +514,7 @@ cloneViewer v = do
   newPosition  <- newVariable =<< getDynamic (vPosition v)
   newCenter    <- newVariable =<< getDynamic (vCenter v)
   newPixelSize <- newVariable =<< getDynamic (vPixelSize v)
+  newAspect    <- newVariable =<< getDynamic (vAspect v)
   pure $ Viewer
     { vTitle = newTitle
     , vSize  = newSize
@@ -514,8 +522,11 @@ cloneViewer v = do
     , vCanResize = vCanResize v
     , vCenter = newCenter
     , vPixelSize = newPixelSize
+    , vAspect = newAspect
     , vOriginalCenter = vOriginalCenter v
     , vOriginalPixelSize = vOriginalPixelSize v
+    , vOriginalAspect = vOriginalAspect v
+    , vCoordinate = vCoordinate v
     , vSaveView = vSaveView v
 
     , vListen = vListen v

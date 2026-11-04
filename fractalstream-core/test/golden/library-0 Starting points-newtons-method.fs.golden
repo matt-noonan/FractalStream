@@ -47,19 +47,19 @@ let `[internal] vanishing radius` = vanishing_radius in:
                 erase
                 let `prevZ` = z in:
                   block:
-                    let `[internal] fresh #16` = 0 in:
-                      let `[internal] fresh #17` = [internal] iteration limit in:
+                    let `[internal] fresh #17` = 0 in:
+                      let `[internal] fresh #18` = [internal] iteration limit in:
                         block:
-                          do-while (!(|(z - prevZ)| < [internal] vanishing radius) and ([internal] fresh #16 < [internal] fresh #17)):
+                          do-while (!(|(z - prevZ)| < [internal] vanishing radius) and ([internal] fresh #17 < [internal] fresh #18)):
                             block:
                               block:
                                 set `prevZ` := z
                                 draw point at z:R^2
                                 set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
                                 draw line from z:R^2 to prevZ:R^2
-                              set `[internal] fresh #16` := ([internal] fresh #16 + 1)
-                          set `[internal] iteration count` := [internal] fresh #16
-                          set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
+                              set `[internal] fresh #17` := ([internal] fresh #17 + 1)
+                          set `[internal] iteration count` := [internal] fresh #17
+                          set `[internal] stuck` := ([internal] fresh #17 = [internal] fresh #18)
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -75,19 +75,19 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   erase
                   let `prevZ` = z in:
                     block:
-                      let `[internal] fresh #19` = 0 in:
-                        let `[internal] fresh #20` = [internal] iteration limit in:
+                      let `[internal] fresh #20` = 0 in:
+                        let `[internal] fresh #21` = [internal] iteration limit in:
                           block:
-                            do-while (!(|(z - prevZ)| < [internal] vanishing radius) and ([internal] fresh #19 < [internal] fresh #20)):
+                            do-while (!(|(z - prevZ)| < [internal] vanishing radius) and ([internal] fresh #20 < [internal] fresh #21)):
                               block:
                                 block:
                                   set `prevZ` := z
                                   draw point at z:R^2
                                   set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in (([internal] f.z #1 ^ 3:R:C) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in (3:R:C * ([internal] f'.z #2 ^ 2:R:C))))
                                   draw line from z:R^2 to prevZ:R^2
-                                set `[internal] fresh #19` := ([internal] fresh #19 + 1)
-                            set `[internal] iteration count` := [internal] fresh #19
-                            set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
+                                set `[internal] fresh #20` := ([internal] fresh #20 + 1)
+                            set `[internal] iteration count` := [internal] fresh #20
+                            set `[internal] stuck` := ([internal] fresh #20 = [internal] fresh #21)
 
   -- on refresh
 let `[internal] vanishing radius` = vanishing_radius in:

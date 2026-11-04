@@ -4,8 +4,8 @@ import Test.Hspec
 
 import Language.Value
 import Language.Draw
-import Language.Code.Parser (parseCode, noCommonDefs)
-import Actor.Event (EventArgument_, mutableVar, interpretedToolExec, ToolExec)
+import Language.Code.Parser (parseCode, parseParsedCode, noCommonDefs)
+import Actor.Event (EventArgument_, mutableVar, interpretedToolExec, ToolExec, Coordinate(..))
 import Data.DynamicValue
 import Data.Color
 import Data.IORef
@@ -14,7 +14,8 @@ import Control.Exception (IOException, ErrorCall(..))
 import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Monad (forM_, forever, replicateM, replicateM_, void)
 import System.Timeout (timeout)
-import Actor.Viewer (ViewerFunction(..), ViewerArgs(..), ViewerIssues(..), PrepScript(..))
+import Actor.Viewer (ViewerFunction(..), ViewerArgs(..), ViewerIssues(..), PrepScript(..),
+                     buildViewerContext, parseViewerScript)
 import Actor.Viewer.Types (ViewerEnv)
 import Foreign (allocaBytes, peekArray, Word8)
 import Backend.LLVM
@@ -293,6 +294,26 @@ spec = do
       let (r, g, b) = colorToRGB red
           (gr, gg, gb) = colorToRGB grey
       pixels `shouldBe` [r, g, b] ++ concat (replicate 15 [gr, gg, gb])
+
+    it "renders a real viewer, with pixels that aren't square" $ withJIT $ \jit -> do
+      -- Pixels 0.1 wide and 0.2 high, from (0, 0): the second row is at
+      -- y = -0.2, and the second column at x = 0.1.
+      let src = "color <- if pixel_height = 2 pixel_width and pixel_size = pixel_width "
+             ++ "then (if y < -0.1 then (if x > 0.05 then red else green) else blue) else black"
+      vc <- either fail pure (buildViewerContext EmptyEnvProxy EmptyContext (RealCoordinates "x" "y")
+                                Nothing Nothing Nothing)
+      parsed <- either (fail . show) pure (parseParsedCode noCommonDefs src)
+      code <- either (fail . snd) pure (parseViewerScript (Just "pixel_size") vc parsed)
+      pixels <- withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) ->
+        allocaBytes (3 * 2 * 2) $ \buf -> do
+          _ <- vf ViewerArgs
+            { vaPoint = (0, 0), vaStep = (0.1, 0.2)
+            , vaWidth = 2, vaHeight = 2, vaSubsamples = 1
+            , vaBuffer = buf
+            , vaArgs = EmptyContext }
+          peekArray (3 * 2 * 2) buf
+      let rgb c = let (r, g, b) = colorToRGB c in [r, g, b]
+      pixels `shouldBe` concatMap rgb [blue, blue, green, red]
 
     it "supports pairs, and lists of pairs" $ withJIT $ \jit -> do
       let env = envProxy (Proxy @(ViewerEnv '[]))

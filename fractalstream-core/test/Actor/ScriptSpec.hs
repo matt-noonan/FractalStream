@@ -6,6 +6,7 @@ import Test.Hspec
 import Language.Type
 
 import Actor.Script
+import Actor.Event (Coordinate(..))
 
 
 import Data.List (isInfixOf)
@@ -42,7 +43,7 @@ iterate z -> z^2 + C until z escapes
 |] $ \case
         [ViewerStanza{..}] -> do
           vsTitle `shouldBe` "Mandelbrot Set"
-          vsVar `shouldBe` "C"
+          vsCoord `shouldBe` ComplexCoordinate "C"
           vsCenter `shouldBe` Nothing
           -- Omitted, so defaults to a reference to the automatically
           -- provided `max_iters` (see 'validateViewerHeader') --
@@ -95,7 +96,7 @@ pass
 pass
 |] $ \case
         [ViewerStanza{..}] -> do
-          vsVar `shouldBe` "z"
+          vsCoord `shouldBe` ComplexCoordinate "z"
         other -> expectationFailure ("expected a single viewer stanza, got " ++ show (length other) ++ " stanzas")
 
     it "accepts unquoted attribute values: a whole number (negative \

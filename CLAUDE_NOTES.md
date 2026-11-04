@@ -187,7 +187,44 @@ loads a `.fs` file, and `encodeEnsemble` saves one.
 - `vCodeWithArgs` - compiled/interpreted code + context
 - `vTools` - the `Tool`s available in this viewer
 - `vTitle`, `vSize`, `vPosition`, `vCenter`, `vPixelSize` - view parameters
+- `vAspect` - a pixel's height over its width (always 1 for a complex viewer)
+- `vCoordinate` - how its points are named (`Actor.Event.Coordinate`)
 - `vDrawCmds` - drawing overlay commands
+
+Real viewers: a viewer's coordinate is an `Actor.Event.Coordinate`,
+`ComplexCoordinate z` (`var=`, default `z`) or `RealCoordinates x y`
+(`xvar=` and `yvar=`, both needed, not with `var=`; validated in
+`Actor.Script.validateViewerHeader`). The same type names a tool event's
+position (`on click at (p, q):`) and a movie path's variables, and is
+matched exhaustively everywhere, so another kind (a Riemann sphere
+viewer is planned) gets a compile error at each place that must decide.
+`parseViewerScript` binds the coordinate(s) to `[internal] x`/`y` with
+`Actor.Event.bindOrDeclare` (a configuration variable of that name is
+set; its type must match) and then the pixel size, plus, in a real
+viewer, `pixel_width` (= dx) and `pixel_height` (= dy) (`bindFreshReals`;
+each must be a new name). A real viewer's pixels needn't be square:
+`aspect=` (pixel height / width) gives the original `vOriginalAspect`,
+`renderViewerBuffer` steps `(px, px * aspect)`, `RenderedBuffer`'s pixel
+size is a (width, height) pair, and overlays draw a model-space circle
+as an ellipse. `center=` is a point, `center=(1, -1/2)` (an unquoted
+pair attribute value), or a complex number (`parseViewGeometry`). The
+backends needed no change: kernels always took a step per axis.
+
+Tool dispatchers take `PixelDims` (pixel width and height); every
+handler environment binds `[internal] px` and `[internal] py`, and
+`toolPixelVars` decides, from the *viewer's* coordinate kind (not the
+handler's `at` form), whether `pixel_width`/`pixel_height` are bound.
+`bindEventCoordinate` binds an event position either way; drags with
+real coordinates (`on drag from (a, b) to (c, d):`) now work.
+
+The wx viewer keeps `Model`'s `(px, py)` pixel dimensions and writes
+`vAspect` back from them; real viewers get "Aspect ratio..." in the
+viewer menu (center and pixel width kept), and `wx-properties:` saves a
+non-1 `aspect:`. Zooming keeps the aspect. "Select" is offered when both
+real coordinates are configuration variables; "Animate along path"
+moves either kind (`Actor.Movie.canAnimate`, `coordinateSetter`), by
+length in model coordinates. `fsrun` has `set viewer aspect to` and
+`record ... moving (x, y) along ...`.
 
 `ViewerCompiler` wraps a backend's compilation function. `withCompiledViewer` compiles
 a `Code` into a `ViewerFunction` using the active backend.
@@ -422,7 +459,10 @@ Key modules:
   project (`fsrun translate`); see `Language.Legacy.Translate`'s header
   for how each part maps. Tested by `test/Language/LegacySpec.hs` against
   `test/legacy/` (each guide example's `.txt` and its expected `.fs`:
-  delete a `.fs` to regenerate it). `{real}` scripts aren't translated yet.
+  delete a `.fs` to regenerate it). `{real}` scripts aren't translated yet:
+  that now needs a real viewer (`xvar=x yvar=y`), real-by-default typing
+  (the translator assumes complex), and `set (x, y) to (e1, e2)` split
+  through temporaries (`test/legacy/torus.txt`).
 - `Language.Code.Typecheck` (+ `.Functions`) - code elaboration, functions
 - `Language.Typecheck` - `TC` monad, `TCError`, shared helpers
 
@@ -976,7 +1016,6 @@ picks them up:
 
 ## Current Branch
 
-`movie-tool` (main branch is `main`):
-- movies of a viewer (see "Movies" under the UI): `Actor.Movie`, the `Data.Movie`
-  Motion-JPEG writer, the wx "Capture > Movie..." dialog and "Animate along path" tool, and
-  `fsrun`'s `record viewer` command
+`real-viewers` (main branch is `main`):
+- real-plane viewers (`xvar=`/`yvar=`, `aspect=`, `center=(x, y)`): see
+  "Real viewers" under "Viewer" above

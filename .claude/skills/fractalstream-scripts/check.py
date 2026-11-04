@@ -36,8 +36,15 @@ def find_fsrun():
 
 
 def header_attr(line, name):
-    m = re.search(name + r'=(?:"([^"]*)"|(\S+))', line)
-    return (m.group(1) or m.group(2)) if m else None
+    m = re.search(name + r'=(?:"([^"]*)"|(\([^)]*\))|(\S+))', line)
+    return (m.group(1) or m.group(2) or m.group(3)) if m else None
+
+
+def center_expr(center):
+    """A viewer's center= as a complex expression: a real viewer's is a
+    point, (x, y), which is x + y i."""
+    m = re.fullmatch(r'\s*\(([^,]*),([^)]*)\)\s*', center)
+    return "(%s) + (%s) i" % (m.group(1), m.group(2)) if m else center
 
 
 def main():
@@ -52,7 +59,7 @@ def main():
     for line in src.splitlines():
         m = re.match(r'\s*@viewer\s+"([^"]+)"(.*)', line)
         if m:
-            viewers[m.group(1)] = header_attr(m.group(2), "center") or "0"
+            viewers[m.group(1)] = center_expr(header_attr(m.group(2), "center") or "0")
     tools = []  # (name, viewer)
     for line in src.splitlines():
         m = re.match(r'\s*@tool\s+"([^"]+)"(.*)', line)

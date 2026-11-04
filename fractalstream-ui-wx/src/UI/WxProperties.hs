@@ -60,6 +60,8 @@ data ViewerProperties = ViewerProperties
   , vpVisible   :: Maybe Bool
   , vpCenter    :: Maybe (Double, Double)
   , vpPixelSize :: Maybe Double
+  , vpAspect    :: Maybe Double
+    -- ^ A real viewer's pixel height over its width, when it isn't 1.
   }
 
 instance FromJSON ViewerProperties where
@@ -67,7 +69,7 @@ instance FromJSON ViewerProperties where
     <$> o .:? "x" <*> o .:? "y"
     <*> o .:? "width" <*> o .:? "height"
     <*> o .:? "resizable" <*> o .:? "visible"
-    <*> o .:? "center" <*> o .:? "pixel-size"
+    <*> o .:? "center" <*> o .:? "pixel-size" <*> o .:? "aspect"
 
 instance ToJSON ViewerProperties where
   toJSON ViewerProperties{..} = object $ catMaybes
@@ -75,6 +77,7 @@ instance ToJSON ViewerProperties where
     , ("width" .=) <$> vpWidth, ("height" .=) <$> vpHeight
     , ("resizable" .=) <$> vpResizable, ("visible" .=) <$> vpVisible
     , ("center" .=) <$> vpCenter, ("pixel-size" .=) <$> vpPixelSize
+    , ("aspect" .=) <$> vpAspect
     ]
 
 -- | Where a window without anything else worth remembering sits.

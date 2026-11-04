@@ -107,8 +107,9 @@ script: |
   several variables (derivatives, real 2-D maps), write an `until c:` loop
   with a body.
 - In tools, without `at w` a click binds the viewer's own coordinate
-  name; on a parameter-plane viewer (`var=C` where `C` is in `@config`)
-  that **sets the parameter** to the clicked point. Use `at w` unless
+  name; on a parameter-plane viewer (`var=C` where `C` is in `@config`,
+  or `xvar=a yvar=b` with real `a`, `b` there) that **sets the
+  parameter(s)** to the clicked point. Use `at w` unless
   that's the point of the tool.
 - Lists are 1-based. `xs @ k` binds like multiplication: `xs @ k + 1` is
   `(xs @ k) + 1`, so write `xs @ (k + 1)` for the next item.
@@ -152,9 +153,11 @@ script: |
   `allow_new <- false` in a `coloring:` block so it reuses the dynamical
   plane's colors (`newton-cubic-parameter-plane.fs`). LLVM only, and the
   colors depend on the order points are seen until the project is saved.
-- **Real maps and real 2-D systems.** Viewers are complex; use `x :=
-  re(z)`, `y := im(z)` and loop over both. Tools can bind `at (x, y)` and
-  draw at `(x, y)`. See `examples/real-map.fs`. A 1-D real family can be
+- **Real maps and real 2-D systems.** Use a real viewer, `@viewer "..."
+  xvar=x yvar=y center=(0, 0)`, and loop over both coordinates (add
+  `aspect=` when the axes need different scales; read `pixel_height`
+  for the vertical pixel size). Tools can bind `at (x, y)` and draw at
+  `(x, y)`. See `examples/real-map.fs`. A 1-D real family can be
   a bifurcation-style picture with the parameter on one axis (library
   project `4 More maps/logistic-map.fs`).
 - **Things computed once, not per pixel** (periodic points, rays,

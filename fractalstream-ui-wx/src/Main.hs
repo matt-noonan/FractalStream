@@ -16,14 +16,12 @@ import UI.ProjectInfo (editProjectInfo)
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 
-import Control.Monad (unless, void, forM)
-import Data.Maybe (catMaybes, listToMaybe)
+import Control.Monad (unless, void)
 import Control.Concurrent.MVar (newMVar, modifyMVar, modifyMVar_)
 import qualified System.Info
 import UI.ProjectScriptEditor (editProjectScript, ScriptEditorHooks(..), rebuildColorizers)
 import UI.AutocolorEditor (editAutocolor)
 import UI.MovieMaker (newMovieSupport)
-import Actor.Viewer.Complex (ComplexViewer(..))
 import UI.Widgets (onOwnDestroy)
 
 import UI.Session
@@ -182,15 +180,6 @@ runApp = withBackend $ \backend -> start $ do
               prj <- getDynamic currentEnsemble
               fields <- ensembleFields prj
               pure [ fld | (ProjectConfig, fld) <- fields ]
-          , pmViewerCoordinate = \title -> do
-              prj <- getDynamic currentEnsemble
-              viewers <- getDynamic (ensembleViewers prj)
-              matches <- fmap catMaybes . forM viewers $ \cv -> do
-                t <- getDynamic (dyn (cvTitle cv))
-                c <- getDynamic (dyn (cvCoord cv))
-                pure (if t == Right title then either (const Nothing) Just c else Nothing)
-              pure (listToMaybe matches)
-
 
           , pmEditInfo = \owner -> editProjectInfo owner currentEnsemble (setValue sessionUnsaved True)
           , pmResetValues = do
