@@ -386,7 +386,7 @@ applyColorizers choices stanzas = do
               -- the @common statements the colorizer needs, that the
               -- viewer's code doesn't already have
               common = [ s | s <- colorizerCommon colorizer
-                           , maybe True (`Set.notMember` topLevelNames viewerCode) (definedName s) ]
+                           , all (`Set.notMember` topLevelNames viewerCode) (definedNames s) ]
               -- an argument is read where the viewer's code ends, and a
               -- default where the colorizer's own names are
               value = \case
@@ -447,6 +447,8 @@ setsColor code = case expandRuns code of
     go (Stmt _ node) = case node of
       SBlock body -> any go body
       SSet "color" _ -> True
+      SSetTuple p _ -> "color" `elem` patternNames p
+      SIterate p _ _ _ _ -> "color" `elem` patternNames p
       SIf _ yes no -> go yes || go no
       SLoop _ _ _ body -> go body
       SForEach _ _ body -> go body
@@ -542,8 +544,8 @@ appendStmt body s = Stmt (stmtRange body) (SBlock [body, s])
 -- its end.
 topLevelNames :: Stmt -> Set String
 topLevelNames = \case
-  Stmt _ (SBlock stmts) -> Set.fromList (mapMaybe definedName stmts)
-  s -> Set.fromList (maybeToList (definedName s))
+  Stmt _ (SBlock stmts) -> Set.fromList (concatMap definedNames stmts)
+  s -> Set.fromList (definedNames s)
 
 -- | The variables some code declares, anywhere in it.
 declaredNames :: Stmt -> [String]
@@ -583,10 +585,12 @@ stripRanges (Stmt _ node) = Stmt NoSourceRange $ case node of
   SBlock body -> SBlock (map stripRanges body)
   SDecl n t e -> SDecl n t (ex e)
   SSet n e -> SSet n (ex e)
+  SDeclTuple p e -> SDeclTuple (stripPattern p) (ex e)
+  SSetTuple p e -> SSetTuple (stripPattern p) (ex e)
   SFun f ps e -> SFun f ps (ex e)
   SIf c yes no -> SIf (ex c) (stripRanges yes) (stripRanges no)
   SLoop k c lim body -> SLoop k (ex c) (ex <$> lim) (stripRanges body)
-  SIterate n e w c lim -> SIterate n (ex e) w (ex c) (ex <$> lim)
+  SIterate p e w c lim -> SIterate (stripPattern p) (ex e) w (ex c) (ex <$> lim)
   SPass -> SPass
   SDraw d -> SDraw $ case d of
     DrawPointAt p -> DrawPointAt (ex p)
@@ -604,3 +608,6 @@ stripRanges (Stmt _ node) = Stmt NoSourceRange $ case node of
   SRun name arg -> SRun name (ex <$> arg)
   where
     ex = fmap (const NoSourceRange)
+    stripPattern = \case
+      PVar _ n -> PVar NoSourceRange n
+      PTuple _ a b -> PTuple NoSourceRange (stripPattern a) (stripPattern b)

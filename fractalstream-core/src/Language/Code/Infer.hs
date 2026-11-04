@@ -90,12 +90,15 @@ collect scope funs (Stmt sr node) = (Stmt sr .) <$> case node of
     body' <- collect scope funs body
     pure (\sol -> SLoop kind c lim (body' sol))
 
-  SIterate n e _ _ _ -> assign scope funs n e $> const node
+  SIterate (PVar _ n) e _ _ _ -> assign scope funs n e $> const node
 
   SPass -> pure (const node)
   -- (expanded away before inference)
   SProc{} -> pure (const node)
   SRun{} -> pure (const node)
+  SDeclTuple{} -> pure (const node)
+  SSetTuple{} -> pure (const node)
+  SIterate PTuple{} _ _ _ _ -> pure (const node)
   SDraw{} -> pure (const node)
 
   SForEach item list body -> do

@@ -421,6 +421,9 @@ Lists (1-based):
 x := expr                 # declare, type inferred from all later uses
 x : R <- expr             # declare with a type
 x <- expr                 # assign an existing variable
+x, y <- e1, e2            # assign several at once (right side computed first;
+                          # `x, y <- y, x` swaps); also (x, y) <- p for a pair p
+u, v := 0, 1              # declare several, each type inferred (no typed form)
 pass                      # do nothing
 if cond:                  # also `else if cond:` and `else:`
   ...
@@ -433,6 +436,7 @@ repeat:                   # body runs at least once; ends with while/until
 until cond                # (or `while cond`); `repeat up to N times:` too
 iterate z -> f(z) until cond          # shorthand loop on one variable
 iterate z -> f(z) while cond up to N times
+iterate (x, y) -> (1 - a x^2 + y, b x) until (x, y) escapes   # tuples too
 for each x in xs:         # any list expression: [1, 2, 3], range(1, n), ...
   ...
 with first x matching pred in xs:
@@ -466,8 +470,16 @@ common `let f(z) = z^2 + C` works in a viewer whose `var=C`). A function
 works at whatever numeric type it's called with. No recursion.
 
 `define`/`run`: the block runs as if pasted at the `run` site; parameters
-become local variables; it reads and assigns the caller's variables (e.g.
-`color`, `z`). Variables it declares are local to each run.
+become local variables (copies: assigning a parameter doesn't change the
+argument); it reads and assigns the caller's other variables (e.g.
+`color`, `z`), so `define step:` updating `x` and `y` directly is how to
+share a multi-variable step. Variables it declares are local to each run.
+
+Tuples: `a, b, c` is `(a, (b, c))`. Tuples of numbers compare with `=`
+by distance (within `vanishing_radius`), and `escapes`/`vanishes`/`stops`
+measure them by length (L2), so `until (x, y) escapes` means
+x² + y² > escape_radius². There is no way to take a pair apart except a
+tuple assignment.
 
 ## 5. Headless runner (`fsrun`)
 

@@ -426,6 +426,19 @@ fresh `[internal] name.x #k := arg` variables, then the renamed body. Other
 names in the body resolve at the run site; a definition sees only the code
 blocks defined before it (no recursion).
 
+Tuple statements (`x, y <- e1, e2`, `(x, y) := p`, `iterate (x, y) -> ...`;
+`SSetTuple`, `SDeclTuple`, `SIterate` over a `Pattern`) are rewritten by
+`Language.Code.Tuples.expandTuples`, after `stops`: each part into a fresh
+`[internal] tuple #k := e` (so the assignment is simultaneous), then into
+its variable, spliced into the enclosing block so declarations scope over
+the rest of it; a right side not written as a matching tuple is taken
+apart with `EProj` (internal-only, elaborated to `ProjV1`/`ProjV2`). In
+typing, tuples of numbers in `escapes`/`vanishes` (length) and `=`/`≠`
+(distance) are rewritten to sums of squares under a `#tuple k` `ELet`
+(`numericParts`, `partDifferences`), so `stops` works on them too. A
+pair's first part can't be an unparenthesized pair or if/then/else
+(`pairItem`), so `a, b, c` is only `a, (b, c)`.
+
 `x stops` in a loop's condition is rewritten away next, by
 `Language.Code.Stops.expandStops`, so typing never sees it: the loop gets
 a fresh `[internal] stops.prev #k := x` (and, for loops that check first,
@@ -454,15 +467,18 @@ Key modules:
 - `Language.Code.Infer` - inference for `:=` declarations
 - `Language.Code.Procedures` - `define` / `run` expansion
 - `Language.Code.Stops` - `x stops` in loop conditions, rewritten away
+- `Language.Code.Tuples` - tuple assignments, declarations, iterations
 - `Language.Legacy.Syntax`, `.Parser`, `.Translate` - scripts for the
   original (2009, Mac OS X) FractalStream, and their translation into a
   project (`fsrun translate`); see `Language.Legacy.Translate`'s header
   for how each part maps. Tested by `test/Language/LegacySpec.hs` against
   `test/legacy/` (each guide example's `.txt` and its expected `.fs`:
-  delete a `.fs` to regenerate it). `{real}` scripts aren't translated yet:
-  that now needs a real viewer (`xvar=x yvar=y`), real-by-default typing
-  (the translator assumes complex), and `set (x, y) to (e1, e2)` split
-  through temporaries (`test/legacy/torus.txt`).
+  delete a `.fs` to regenerate it). A `{real}` script gets real viewers
+  (`xvar=x yvar=y`, and `xvar=a yvar=b` when it mentions `a` or `b`),
+  real-by-default typing (`cxReal`: a pair stays a pair, `z`/`c` aren't
+  special), and an `iterate` without a variable iterates `(x, y)`
+  (`realIterate`); `set (x, y) to (e1, e2)` becomes `x, y <- e1, e2` in
+  either kind (`test/legacy/torus.txt`).
 - `Language.Code.Typecheck` (+ `.Functions`) - code elaboration, functions
 - `Language.Typecheck` - `TC` monad, `TCError`, shared helpers
 
@@ -1016,6 +1032,6 @@ picks them up:
 
 ## Current Branch
 
-`real-viewers` (main branch is `main`):
-- real-plane viewers (`xvar=`/`yvar=`, `aspect=`, `center=(x, y)`): see
-  "Real viewers" under "Viewer" above
+`multiple-assignment` (main branch is `main`):
+- tuple assignment/declaration/iteration and tuple norms (see "Parsing and
+  typechecking"), and `{real}` legacy translation

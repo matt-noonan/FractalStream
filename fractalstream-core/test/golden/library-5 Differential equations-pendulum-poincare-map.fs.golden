@@ -1,0 +1,100 @@
+=== viewer 0: Parameter plane
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          block:
+            set `γ` := [internal] x
+            block:
+              set `𝝎_0` := [internal] y
+              let `pixel_size` = [internal] dx in:
+                let `pixel_width` = [internal] dx in:
+                  let `pixel_height` = [internal] dy in:
+                    block:
+                      let `[internal] tuple #0` = 0.0 in:
+                        block:
+                          let `[internal] tuple #1` = 0.0 in:
+                            block:
+                              let `θ` = [internal] tuple #0 in:
+                                block:
+                                  let `dθ` = [internal] tuple #1 in:
+                                    block:
+                                      block:
+                                        block:
+                                          block:
+                                            let `[internal] stops.prev #1` = (θ, dθ) in:
+                                              block:
+                                                let `[internal] fresh #23` = 0 in:
+                                                  let `[internal] fresh #24` = [internal] iteration limit in:
+                                                    block:
+                                                      do-while (!let #tuple 0 = (θ, dθ) in let #tuple 1 = [internal] stops.prev #1 in (((|((1st #tuple 0) - (1st #tuple 1))| * |((1st #tuple 0) - (1st #tuple 1))|) + (|((2nd #tuple 0) - (2nd #tuple 1))| * |((2nd #tuple 0) - (2nd #tuple 1))|)) < ([internal] vanishing radius * [internal] vanishing radius)) and ([internal] fresh #23 < [internal] fresh #24)):
+                                                        block:
+                                                          block:
+                                                            set `[internal] stops.prev #1` := (θ, dθ)
+                                                            block:
+                                                              block:
+                                                                block:
+                                                                  let `h` = ((2:R * 3.141592653589793) / 10:R) in:
+                                                                    block:
+                                                                      let `t` = 0.0 in:
+                                                                        block:
+                                                                          block:
+                                                                            let `[list at 20:2]` = range(1, 10) in:
+                                                                              block:
+                                                                                {TODO: ForEach}
+                                                          set `[internal] fresh #23` := ([internal] fresh #23 + 1)
+                                                      set `[internal] iteration count` := [internal] fresh #23
+                                                      set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
+                                      block:
+                                        block:
+                                          set `color` := let #wheel-arg = ((θ / (12:R * 3.141592653589793)) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))))
+                                          set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, color), blend(0.333, Color 255 255 255, color))
+
+
+=== viewer 1: Dynamical plane
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `θ` = [internal] x in:
+            let `dθ` = [internal] y in:
+              let `pixel_size` = [internal] dx in:
+                let `pixel_width` = [internal] dx in:
+                  let `pixel_height` = [internal] dy in:
+                    block:
+                      block:
+                        block:
+                          block:
+                            let `[internal] stops.prev #1` = (θ, dθ) in:
+                              block:
+                                let `[internal] fresh #21` = 0 in:
+                                  let `[internal] fresh #22` = [internal] iteration limit in:
+                                    block:
+                                      do-while (!let #tuple 0 = (θ, dθ) in let #tuple 1 = [internal] stops.prev #1 in (((|((1st #tuple 0) - (1st #tuple 1))| * |((1st #tuple 0) - (1st #tuple 1))|) + (|((2nd #tuple 0) - (2nd #tuple 1))| * |((2nd #tuple 0) - (2nd #tuple 1))|)) < ([internal] vanishing radius * [internal] vanishing radius)) and ([internal] fresh #21 < [internal] fresh #22)):
+                                        block:
+                                          block:
+                                            set `[internal] stops.prev #1` := (θ, dθ)
+                                            block:
+                                              block:
+                                                block:
+                                                  let `h` = ((2:R * 3.141592653589793) / 10:R) in:
+                                                    block:
+                                                      let `t` = 0.0 in:
+                                                        block:
+                                                          block:
+                                                            let `[list at 20:2]` = range(1, 10) in:
+                                                              block:
+                                                                {TODO: ForEach}
+                                          set `[internal] fresh #21` := ([internal] fresh #21 + 1)
+                                      set `[internal] iteration count` := [internal] fresh #21
+                                      set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
+                      block:
+                        block:
+                          set `color` := let #wheel-arg = ((θ / (12:R * 3.141592653589793)) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))))
+                          set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, color), blend(0.333, Color 255 255 255, color))
+
+

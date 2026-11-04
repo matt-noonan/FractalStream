@@ -20,10 +20,6 @@ script: |
   flag_color := default_exit_condition_color
   iterate z -> z^2 + C until z escapes
   color <- if stuck then black else shade(flag_color, iterations / 20)
-
-  @tool "Dynamics" for="Parameter plane" shortcut=d
-  on click-or-drag:
-    pass
 metadata:
   title: "mandelbrot"
   description: Translated from a script for the original FractalStream.

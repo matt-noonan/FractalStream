@@ -54,10 +54,13 @@ stmt (Stmt sr node) = case node of
   SBlock body -> Stmt sr . SBlock <$> mapM stmt body
   SIf c yes no -> Stmt sr <$> (SIf c <$> stmt yes <*> stmt no)
   SLoop kind c lim body -> stmt body >>= loop sr kind c lim
-  SIterate n e isWhile c lim
+  SIterate p e isWhile c lim
     | hasStops c ->
         -- the same loop 'Language.Code.Typecheck' makes of an @iterate@
-        loop sr (if isWhile then LoopWhile else LoopUntil) c lim (Stmt sr (SSet n e))
+        -- (or "Language.Code.Tuples", of a tuple one)
+        loop sr (if isWhile then LoopWhile else LoopUntil) c lim $ Stmt sr $ case p of
+          PVar _ n -> SSet n e
+          PTuple{} -> SSetTuple p e
   SForEach item list body -> Stmt sr . SForEach item list <$> stmt body
   SWithFirst item p list body fallback ->
     Stmt sr <$> (SWithFirst item p list <$> stmt body <*> traverse stmt fallback)

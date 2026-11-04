@@ -223,8 +223,15 @@ codeDefs toks = case toks of
   Identifier "define" : Identifier f : _ -> [(f, CodeBlock)]
   Identifier "on" : rest -> handlerPoints rest
   Identifier "prepare" : rest -> [ (n, Variable) | (Identifier n, Colon) <- zip rest (drop 1 rest) ]
+  -- a tuple declaration, `x, y := ...` or `(x, y) := ...`
+  _ | (lhs@(_ : _), ColonEquals : _) <- break (== ColonEquals) toks
+    , Comma `elem` lhs, all tupleToken lhs ->
+        [ (n, Variable) | Identifier n <- lhs ] ++ everywhere toks
   _ -> everywhere toks
   where
+    tupleToken = \case
+      Identifier _ -> True
+      t -> t `elem` [Comma, OpenParen, CloseParen]
     -- `x := ...`, `x -> ...`, `for each x in`, `with first x matching`
     everywhere = \case
       Identifier n : ColonEquals : rest -> (n, Variable) : everywhere rest

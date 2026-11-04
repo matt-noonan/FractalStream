@@ -187,6 +187,14 @@ synth env (Syn sr node) = case node of
     y' <- synth env y
     done (Pair (exprType x') (exprType y')) (EPair x' y')
 
+  -- (from a tuple assignment, with its tuple of variables' source range)
+  EProj isSecond x -> do
+    x' <- synth env x
+    case exprType x' of
+      Pair t1 t2 -> done (if isSecond then t2 else t1) (EProj isSecond x')
+      t -> throwError (Surprise sr "the value for this tuple of variables" (anType t)
+                         (Expected "a pair, with a part for each"))
+
   EList [] -> advise sr "I can't tell what type of items this empty list should hold."
   EList xs -> do
     xs' <- traverse (synth env) xs
@@ -422,6 +430,16 @@ synthBin env sr op x y = case op of
             throwError (MissingName sr internalVanishingRadius)
           let delta = Syn (sr, t) (EBin OpSub x' y')
           pure (wrap (Syn (sr, BooleanT) (EUn OpVanishes delta)))
+        -- Tuples of numbers are compared by the distance between them
+        -- (as in the plane, for a pair of reals), with each value held in
+        -- a fresh local so that it's computed once.
+        (tx, ty) | a : b : _ <- freshLocals env
+                 , Just diffs <- partDifferences sr tx ty (Syn sr (EVar a)) (Syn sr (EVar b)) -> do
+          unless (Map.member internalVanishingRadius (tyVars env)) $
+            throwError (MissingName sr internalVanishingRadius)
+          let r = Syn sr (EVar internalVanishingRadius)
+              near = Syn sr (EBin OpLt (sumOfSquares sr diffs) (Syn sr (EBin OpMul r r)))
+          wrap <$> synth env (Syn sr (ELet a x (Syn sr (ELet b y near))))
         _ -> advise sr ("Arguments to " ++ (if op == OpApproxEq then "=" else "≠")
                         ++ " must be of some comparable type.")
 
@@ -458,17 +476,61 @@ synthUn env sr op x = case op of
 
     radius name kw = do
       let notNumber :: TC a
-          notNumber = advise sr ("The argument to `" ++ kw ++ "` should be a real or complex number.")
-      x' <- (synth env x >>= \x' -> if isNumeric (exprType x') then pure x' else notNumber)
-              `catchTypeError` \_ -> notNumber
+          notNumber = advise sr ("The argument to `" ++ kw ++ "` should be a real or complex number, \
+                                 \or a tuple of numbers.")
+      x' <- synth env x `catchTypeError` \_ -> notNumber
       case Map.lookup name (tyVars env) of
-        Just RealT -> done BooleanT x'
+        Just RealT -> pure ()
         Just t -> throwError (Surprise sr name (anType t) (Expected (anType RealT)))
         Nothing -> throwError (MissingName sr name)
+      if isNumeric (exprType x') then done BooleanT x' else
+        -- A tuple of numbers is measured by its length (as in the plane,
+        -- for a pair of reals), with the tuple held in a fresh local.
+        case freshLocals env of
+          n : _ | Just parts <- numericParts sr (exprType x') (Syn sr (EVar n)) -> do
+            let r = Syn sr (EVar name)
+                r2 = Syn sr (EBin OpMul r r)
+                len2 = sumOfSquares sr parts
+                cmp | op == OpEscapes = EBin OpLt r2 len2
+                    | otherwise = EBin OpLt len2 r2
+            synth env (Syn sr (ELet n x (Syn sr cmp)))
+          _ -> notNumber
 
 ------------------------------------------------------
 -- Utilities
 ------------------------------------------------------
+
+-- | Names for locals that rewrites introduce, not yet in use. (No script
+-- can write a name starting with @#@.)
+freshLocals :: TypeEnv -> [String]
+freshLocals env = [ n | k <- [0 :: Int ..], let n = "#tuple " ++ show k
+                      , Map.notMember n (tyVars env) ]
+
+-- | The numbers making up a tuple of numbers (nested pairs of integers,
+-- reals, and complex numbers) of the given type, each as an expression
+-- taking the given value apart; 'Nothing' for any other type.
+numericParts :: SourceRange -> FSType -> Expr -> Maybe [Expr]
+numericParts sr t e = case t of
+  Pair a b -> (++) <$> numericParts sr a (Syn sr (EProj False e))
+                   <*> numericParts sr b (Syn sr (EProj True e))
+  _ | isNumeric t -> Just [e]
+    | otherwise -> Nothing
+
+-- | The part-by-part differences of two tuples of numbers of the same
+-- shape.
+partDifferences :: SourceRange -> FSType -> FSType -> Expr -> Expr -> Maybe [Expr]
+partDifferences sr s t x y = case (s, t) of
+  (Pair a b, Pair c d) ->
+    (++) <$> partDifferences sr a c (proj False x) (proj False y)
+         <*> partDifferences sr b d (proj True x) (proj True y)
+  _ | isNumeric s, isNumeric t -> Just [Syn sr (EBin OpSub x y)]
+    | otherwise -> Nothing
+  where proj isSecond e = Syn sr (EProj isSecond e)
+
+-- | The sum of the squares of some numbers' absolute values.
+sumOfSquares :: SourceRange -> [Expr] -> Expr
+sumOfSquares sr = foldr1 (\a b -> Syn sr (EBin OpAdd a b)) . map square
+  where square e = let m = Syn sr (EUn OpAbs e) in Syn sr (EBin OpMul m m)
 
 bind :: SourceRange -> String -> FSType -> TypeEnv -> TC TypeEnv
 bind sr n t env
@@ -554,4 +616,5 @@ describe = \case
   ECall f _ -> "the result of " ++ f
   EDerivCall f order _ -> "the result of " ++ f ++ replicate order '\''
   EWiden{} -> "this value"
+  EProj{} -> "this part of a pair"
   EAdvice{} -> "this expression"

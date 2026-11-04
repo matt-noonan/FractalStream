@@ -20,10 +20,6 @@ script: |
   flag_color := default_exit_condition_color
   iterate z -> z - (exp(z) - C) / exp(z) until z stops
   color <- if stuck then black else shade(flag_color, iterations / 20)
-
-  @tool "Dynamics" for="Parameter plane" shortcut=d
-  on click-or-drag:
-    pass
 metadata:
   title: "exp-newton"
   description: Translated from a script for the original FractalStream.

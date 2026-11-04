@@ -213,10 +213,15 @@ valueAndArithGrammar funs = mdo
     , pure []
     ]
 
+  -- A pair's first part can't be an unparenthesized pair or if/then/else,
+  -- so that tuples nest to the right only (`a, b, c` is `a, (b, c)`), and
+  -- `if c then a else b, d` is `if c then a else (b, d)`.
   pair <- ruleChoice
-    [ node (EPair <$> (ite <* token Comma) <*> pair)
+    [ node (EPair <$> (pairItem <* token Comma) <*> pair)
     , pOr
     ]
+
+  pairItem <- ruleChoice [ list, pOr ]
 
   pOr <- ruleChoice
     [ node (EBin OpOr <$> (pAnd <* token Or_) <*> pOr <?> "disjunction")
@@ -281,11 +286,13 @@ valueAndArithGrammar funs = mdo
     , node (funAp $> EAdvice "To avoid ambiguity when using implicit multiplication, functions must go to the left of other values")
     ]
 
+  -- (what comes before a function in an implicit product can end in a
+  -- power: `ω² sin(θ)`)
   concatenatedFunAps <- ruleChoice
     [ node (EBin OpMul <$> concatenatedFunAps <*> funAp)
-    , node (EBin OpMul <$> concatenatedAtoms <*> atom)
+    , node (EBin OpMul <$> concatenatedAtoms <*> noFunPower)
     , funAp
-    , atom
+    , noFunPower
     ]
 
   funAp <- ruleChoice

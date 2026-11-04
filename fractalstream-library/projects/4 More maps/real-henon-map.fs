@@ -12,26 +12,21 @@ script: |
   # One step of the Hénon map, (x, y) ↦ (1 - a x² + y, b x), updating the
   # x and y where it's run.
   define step:
-    t := x
-    x <- 1 - a x² + y
-    y <- b t
+    x, y <- 1 - a x² + y, b x
 
   @viewer "Parameter plane" xvar=a yvar=b center=(0.6, 0) pixelSize=1/250 aspect=1/2
   # Follow the orbit of (0, 0) until it settles down; then look for the
   # period of the cycle it has settled onto.
-  x := 0
-  y := 0
-  while x² + y² < escape_radius² up to settle times:
-    run step
+  x, y := 0, 0
+  iterate (x, y) -> (1 - a x² + y, b x) until (x, y) escapes up to settle times
   if not stuck:
     color <- cycle(iterations / 20, dark blue, white)
   else:
-    x0 := x
-    y0 := y
+    x0, y0 := x, y
     repeat up to max_period times:
       run step
-    until (x - x0)² + (y - y0)² < tolerance² or x² + y² > escape_radius²
-    if x² + y² > escape_radius²:
+    until (x - x0)² + (y - y0)² < tolerance² or (x, y) escapes
+    if (x, y) escapes:
       color <- dark blue
     else if stuck:
       color <- dark grey
@@ -40,8 +35,7 @@ script: |
       color <- rainbow(log(iterations) / log(2) / 6)
 
   @viewer "Dynamical plane" xvar=x yvar=y center=(0, 0) pixelSize=1/200 aspect=1/2
-  while x² + y² < escape_radius²:
-    run step
+  iterate (x, y) -> (1 - a x² + y, b x) until (x, y) escapes
   color <- if stuck then black else cycle(iterations / 10, dark blue, white)
 
   @tool "Attractor" for="Dynamical plane" shortcut=a
@@ -49,8 +43,7 @@ script: |
   on refresh:
     erase
     use orange for stroke
-    x := 0
-    y := 0
+    x, y := 0, 0
     # (skipping the first few points, on their way to the attractor)
     n := 0
     repeat up to points + 100 times:
@@ -58,7 +51,7 @@ script: |
       n <- n + 1
       if n > 100:
         draw point at (x, y)
-    while x² + y² < escape_radius²
+    until (x, y) escapes
   on deactivated:
     erase
 
@@ -72,7 +65,7 @@ script: |
     repeat up to orbit_length times:
       run step
       draw point at (x, y)
-    while x² + y² < escape_radius²
+    until (x, y) escapes
   on deactivated:
     erase
 metadata:

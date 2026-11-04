@@ -120,6 +120,12 @@ spec = describe "highlighting scripts" $ do
     classOf src "a" 2 `shouldBe` Just Variable
     classOf src "pixel_width" 0 `shouldBe` Just Parameter
 
+  it "knows the variables of a tuple declaration" $ do
+    let src = "@viewer \"V\"\nu, (v, w) := 1, (2, 3)\ncolor <- if u + v + w > 0 then red else blue\n"
+    classOf src "u" 1 `shouldBe` Just Variable
+    classOf src "v" 1 `shouldBe` Just Variable
+    classOf src "w" 1 `shouldBe` Just Variable
+
   it "doesn't take a block's colon for a declaration" $ do
     let src = "@viewer \"V\"\ncoloring:\n  period <- 1\nrepeat:\n  pass\nuntil true\n"
     classOf src "coloring" 0 `shouldBe` Just Keyword

@@ -64,9 +64,9 @@ withCommon CommonDefs{commonCode} body = case (used, body) of
     -- defines something needed later (by the body, or by a kept
     -- definition after it).
     used = fst (foldr keep ([], stmtNames body) commonCode)
-    keep stmt (kept, needed) = case definedName stmt of
-      Just n | n `Set.member` needed -> (stmt : kept, needed <> stmtNames stmt)
-      _ -> (kept, needed)
+    keep stmt (kept, needed)
+      | any (`Set.member` needed) (definedNames stmt) = (stmt : kept, needed <> stmtNames stmt)
+      | otherwise = (kept, needed)
 
 -- | Record the names of the functions defined (by @let f(...) = ...@)
 -- anywhere in the given tokens, so that the grammar can parse calls to
@@ -147,6 +147,9 @@ codeStatementsGrammar CommonDefs{..} = mdo
              <*> pure Nothing
              <*> (token ColonEquals *> value <* nl)) <?> "variable initialization"
     , node
+      (SDeclTuple <$> tupleTargets
+                  <*> (token ColonEquals *> value <* nl)) <?> "variable initialization"
+    , node
       (SProc <$> (lit "define" *> ident)
              <*> (fromMaybe [] <$> optional argList)
              <*> (colon *> nl *> block)) <?> "code definition"
@@ -190,6 +193,23 @@ codeStatementsGrammar CommonDefs{..} = mdo
 
   upTo <- rule (lit "up" *> lit "to" *> value <* token TimesKeyword)
 
+  -- What a tuple assignment assigns to: a variable, or two or more
+  -- patterns in parentheses, nesting to the right as pairs do.
+  patternAtom <- rule $
+        withSourceRange ((\n sr -> PVar sr n) <$> ident)
+    <|> (token OpenParen *> patternTuple <* token CloseParen)
+  patternTuple <- rule $
+    withSourceRange ((\p ps sr -> nestPattern sr p ps)
+                       <$> patternAtom <*> some (token Comma *> patternAtom))
+  -- a tuple of targets, with or without its parentheses:
+  -- `x, y <- ...` or `(x, y) <- ...`
+  tupleTargets <- rule $
+    patternTuple <|> (token OpenParen *> patternTuple <* token CloseParen)
+  -- `iterate z -> ...` or `iterate (x, y) -> ...`
+  iterateTarget <- rule $
+        withSourceRange ((\n sr -> PVar sr n) <$> ident)
+    <|> (token OpenParen *> patternTuple <* token CloseParen)
+
   elseIf <- ruleChoice
     [ ((token Else *> colon *> nl) *> block) <?> "else clause"
     , node
@@ -205,8 +225,10 @@ codeStatementsGrammar CommonDefs{..} = mdo
     [ node
       (SSet <$> ident <*> (token LeftArrow *> value)) <?> "variable assignment"
     , node
+      (SSetTuple <$> tupleTargets <*> (token LeftArrow *> value)) <?> "variable assignment"
+    , node
       (SIterate
-        <$> (lit "iterate" *> ident <* token RightArrow)
+        <$> (lit "iterate" *> iterateTarget <* token RightArrow)
         <*> value
         <*> ((lit "while" $> True) <|> (lit "until" $> False))
         <*> value
@@ -296,3 +318,10 @@ node = withSourceRange . fmap (flip Stmt)
 
 draw :: Prod r DrawStmt -> Prod r ParsedCode
 draw = node . fmap SDraw
+
+-- | A tuple of patterns, nesting to the right: @(a, b, c)@ is
+-- @(a, (b, c))@.
+nestPattern :: SourceRange -> Pattern -> [Pattern] -> Pattern
+nestPattern sr p = \case
+  [] -> p
+  q : qs -> PTuple sr p (nestPattern sr q qs)
