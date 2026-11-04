@@ -22,26 +22,28 @@ preferencesWindow :: Variable Settings -> IO (Frame ())
 preferencesWindow settingsVar = do
   f <- frame [ text := "Preferences", resizeable := True ]
   p <- panel f []
+  -- a tab for each kind of setting
+  nb <- notebook p []
+  libraryTab <- panel nb []
+  editorTab <- panel nb []
 
-  folderText <- staticText p [ text := "" ]
-  chooseButton <- button p [ text := "Choose..." ]
-  useDefaultButton <- button p [ text := "Use the default" ]
-  note <- staticText p [ text := "Changing the folder doesn't move any projects: it only \
-                                 \changes where the library browser looks for them." ]
-  fontText <- staticText p [ text := "" ]
-  chooseFontButton <- button p [ text := "Choose..." ]
-  defaultFontButton <- button p [ text := "Use the default" ]
+  folderText <- staticText libraryTab [ text := "" ]
+  chooseButton <- button libraryTab [ text := "Choose..." ]
+  useDefaultButton <- button libraryTab [ text := "Use the default" ]
+  note <- staticText libraryTab [ text := "Changing the folder doesn't move any projects: it only \
+                                          \changes where the library browser looks for them." ]
+  fontText <- staticText editorTab [ text := "" ]
+  chooseFontButton <- button editorTab [ text := "Choose..." ]
+  defaultFontButton <- button editorTab [ text := "Use the default" ]
   -- On macOS, the script editor's emacs keys are always on (see
   -- "UI.EditorKeys"); elsewhere they take over Control shortcuts, so
   -- they're up to the user.
-  symbolsBox <- checkBox p [ text := "Write scripts with mathematical symbols \
+  symbolsBox <- checkBox editorTab [ text := "Write scripts with mathematical symbols \
                                      \(\x27F5, \x211D, z\xB2, ...) as they're edited" ]
-  numbersBox <- checkBox p [ text := "Show line numbers in script editors" ]
-  foldBox <- checkBox p [ text := "Fold blocks of code in script editors, \
-                                  \not just stanzas and tool handlers" ]
+  numbersBox <- checkBox editorTab [ text := "Show line numbers" ]
+  foldBox <- checkBox editorTab [ text := "Fold blocks of code, not just stanzas and tool handlers" ]
   emacsBox <- if emacsKeysByDefault then pure Nothing else
-    Just <$> checkBox p [ text := "Emacs-style movement keys in script editors \
-                                  \(Control-A, Control-E, ...)" ]
+    Just <$> checkBox editorTab [ text := "Emacs-style movement keys (Control-A, Control-E, ...)" ]
 
   let showSettings = do
         settings <- getDynamic settingsVar
@@ -97,18 +99,24 @@ preferencesWindow settingsVar = do
 
   -- The folder's path can grow and wrap sideways; the buttons and the
   -- note keep their size. (See CLAUDE_NOTES.md on wxHaskell's layout.)
-  set f [ layout := container p $ margin 12 $ column 8 $
-            [ label "My projects folder:"
-            , hfill (widget folderText)
-            , row 6 [ widget chooseButton, widget useDefaultButton, hglue ]
-            , hstretch (widget note)
-            , label "Script editor font:"
-            , row 6 [ widget fontText, widget chooseFontButton, widget defaultFontButton, hglue ]
-            , widget numbersBox
-            , widget symbolsBox
-            , widget foldBox
-            ] ++
-            [ widget box | Just box <- [emacsBox] ]
+  set f [ layout := container p $ margin 12 $ tabs nb
+            [ tab "Library" $ container libraryTab $ margin 12 $ column 8
+                [ label "My projects folder:"
+                , hfill (widget folderText)
+                , row 6 [ widget chooseButton, widget useDefaultButton, hglue ]
+                , hstretch (widget note)
+                , glue
+                ]
+            , tab "Editor" $ container editorTab $ margin 12 $ column 8 $
+                [ label "Font for scripts:"
+                , row 6 [ widget fontText, widget chooseFontButton, widget defaultFontButton, hglue ]
+                , widget numbersBox
+                , widget symbolsBox
+                , widget foldBox
+                ] ++
+                [ widget box | Just box <- [emacsBox] ] ++
+                [ glue ]
+            ]
         ]
   showSettings
   windowRaise f
