@@ -471,6 +471,7 @@ fsrun snapshot -p project.fs --viewer "Viewer title" -o out.png
 fsrun commands --project project.fs --commands commands.txt
 fsrun scenario --project project.fs --name "name"   # from the project's scenarios:
 fsrun update-preview --project project.fs           # runs metadata: preview-commands:
+fsrun normalize -p project.fs                       # ASCII spellings to symbols: <- to ⟵, R to ℝ, z^2 to z²
 fsrun translate -i old-script.txt -o project.fs     # a script for the original FractalStream
 fsrun COMMAND --help                                # options for one subcommand
 ```
