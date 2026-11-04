@@ -5,10 +5,16 @@ module Language.Editor
   , newLineIndent
   , pasteIndented
   , toggleComments
+  , deleteBackTo
   ) where
 
 import Data.Char (isSpace)
 import Data.List (dropWhileEnd, isPrefixOf)
+import Data.Maybe (isJust)
+
+import Language.Parser.Tokenizer (Token(..), SRToken(..), tokenize)
+import Language.Parser.SourceRange (SourceRange(..), Pos(..))
+import Language.Editor.Lines (commentStart)
 
 -- | How many spaces one level of indentation is.
 indentUnit :: Int
@@ -97,3 +103,36 @@ toggleComments ls
            '#' : ' ' : code -> indent ++ code
            '#' : code -> indent ++ code
            _ -> l
+
+-- | Where deleting the previous token goes back to, given the part of
+-- the line before the cursor: past any spaces, to the start of the token
+-- before them (@escapes@, @⟵@, @0.78i@, @"a string"@). In a comment, or a
+-- string not finished yet, there are no tokens, so it's to the start of
+-- the word. With only indentation before the cursor, it's the start of
+-- the line.
+deleteBackTo :: String -> Int
+deleteBackTo before
+  | null trimmed = 0
+  | inProse = wordStart
+  | otherwise = case reverse [ (t, s, e) | SRToken t (SourceRange (Pos _ s) (Pos _ e)) <- tokenize trimmed ] of
+      -- an imaginary number, like 0.78i, is one thing to delete
+      (I, s, _) : (n, s', e') : _ | isNumber n, e' + 1 == s -> s'
+      (_, s, _) : _ -> s
+      [] -> wordStart
+  where
+    isNumber = \case
+      NumberI _ -> True
+      NumberF _ -> True
+      _ -> False
+    trimmed = dropWhileEnd isSpace before
+    wordStart = length (dropWhileEnd (not . isSpace) trimmed)
+    inProse = isJust (commentStart trimmed) || inString trimmed
+    -- whether the text ends inside a string: an odd number of quotes
+    -- (not counting escaped ones)
+    inString = go False
+      where
+        go q = \case
+          [] -> q
+          '\\' : _ : rest | q -> go q rest
+          '"' : rest -> go (not q) rest
+          _ : rest -> go q rest

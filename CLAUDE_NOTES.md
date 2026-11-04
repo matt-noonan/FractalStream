@@ -524,7 +524,11 @@ Key modules:
   (`toggleComments`), and emacs movement keys, always on macOS and the
   `emacs-keys` setting elsewhere. Return, paste and comment keys are
   handled on key-down (Scintilla acts on Return then, with no character
-  event after); on macOS the slash key goes down as `KeyDivide`. On macOS, Control-letter reaches
+  event after); on macOS the slash key goes down as `KeyDivide`.
+  Control-Backspace deletes the previous token (`deleteBackTo`). On
+  macOS it goes down as a plain Backspace, with no Control reported, so
+  it's recognized by the backspace character it goes on to type (a plain
+  Backspace doesn't, as Scintilla deletes on key-down). On macOS, Control-letter reaches
   the key handler as its control character (Control-E is ENQ, 5) with no
   modifiers set, so control codes 1-26 are read as Control-letters.
 - Errors in code editors are underlined with indicator 8, a red squiggle

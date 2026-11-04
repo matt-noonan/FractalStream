@@ -6,6 +6,9 @@
 --   takes off a level, which Scintilla does itself, given the indent
 --   size.)
 --
+-- * Control-Backspace deletes the token before the cursor (and the
+--   spaces after it), as "Language.Editor.deleteBackTo" says.
+--
 -- * Pasting (Command-V on macOS, Control-V elsewhere) moves lines of
 --   code to the indentation they're pasted at, keeping their indentation
 --   relative to each other.
@@ -36,7 +39,7 @@ import Graphics.UI.WXCore.WxcDefs
 import Graphics.UI.WXCore.Events (windowOnKeyDown)
 import System.Info (os)
 import Data.Char (chr, ord, toLower)
-import Language.Editor (newLineIndent, pasteIndented, toggleComments)
+import Language.Editor (newLineIndent, pasteIndented, toggleComments, deleteBackTo)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as Utf8
 
@@ -56,6 +59,7 @@ handleEditorKeys stc emacsKeys = do
     emacs <- emacsKeys
     case keyKey k of
       KeyReturn | isPlain (keyModifiers k) -> newLine stc
+      KeyBack | isControl (keyModifiers k) -> deletePreviousToken stc
       KeyChar c
         -- (with emacs keys on where Control is the shortcut key,
         -- Control-V moves down a page instead)
@@ -67,14 +71,37 @@ handleEditorKeys stc emacsKeys = do
       _ -> propagateEvent
   set stc [ on keyboard := \k -> do
     emacs <- emacsKeys
-    case emacsCommand k of
-      Just action | emacs -> action stc
+    case (keyKey k, emacsCommand k) of
+      -- On macOS, Control-Backspace goes down as a plain Backspace (wx
+      -- reports no Control key), so it can't be told from Backspace
+      -- there; but Scintilla deletes on a plain Backspace as it goes
+      -- down, while Control-Backspace goes on to type a backspace
+      -- character: which, then, is Control-Backspace.
+      (KeyBack, _) -> deletePreviousToken stc
+      (KeyChar '\b', _) -> deletePreviousToken stc
+      (_, Just action) | emacs -> action stc
       _ -> propagateEvent ]
   where
     isPlain m = not (altDown m || shiftDown m || controlDown m || metaDown m)
     -- the shortcut key alone: Command on macOS (which wx calls
     -- "control" there), Control elsewhere
     isShortcut m = controlDown m && not (altDown m || shiftDown m || metaDown m)
+
+-- | Delete the selection, or else the token before the cursor (with the
+-- spaces after it), or at the start of a line, the line break before it.
+deletePreviousToken :: StyledTextCtrl a -> IO ()
+deletePreviousToken stc = do
+  from <- styledTextCtrlGetSelectionStart stc
+  to <- styledTextCtrlGetSelectionEnd stc
+  if from /= to then styledTextCtrlReplaceSelection stc "" else do
+    lineNum <- styledTextCtrlLineFromPosition stc from
+    lineStart <- styledTextCtrlPositionFromLine stc lineNum
+    if from == lineStart then styledTextCtrlCmdKeyExecute stc wxSTC_CMD_DELETEBACK else do
+      before <- styledTextCtrlGetTextRange stc lineStart from
+      let start' = lineStart + BS.length (Utf8.fromString (take (deleteBackTo before) before))
+      styledTextCtrlSetTargetStart stc start'
+      styledTextCtrlSetTargetEnd stc from
+      void (styledTextCtrlReplaceTarget stc "")
 
 -- | Paste what's on the clipboard over the selection, re-indented to fit
 -- where it goes ("Language.Editor.pasteIndented"); or, if the clipboard

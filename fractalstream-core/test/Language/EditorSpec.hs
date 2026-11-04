@@ -57,3 +57,23 @@ spec = describe "editing scripts" $ do
 
     it "starts a comment on a blank line" $
       toggleComments ["    "] `shouldBe` ["    # "]
+
+  describe "deleting the previous token" $ do
+
+    let deletes line = drop (deleteBackTo line) line
+
+    it "deletes the token before the cursor, and the spaces after it" $ do
+      deletes "iterate z ⟼ f(z) until z escapes" `shouldBe` "escapes"
+      deletes "  x ⟵ " `shouldBe` "⟵ "
+      deletes "  C ⟵ -0.11 + 0.78i" `shouldBe` "0.78i"
+      deletes "  w ⟵ f(z)" `shouldBe` ")"
+      deletes "  write \"done\"" `shouldBe` "\"done\""
+      deletes "  z ⟵ z²" `shouldBe` "²"
+
+    it "deletes words in comments and unfinished strings" $ do
+      deletes "  z ⟵ 1  # the start value" `shouldBe` "value"
+      deletes "  write \"hello wor" `shouldBe` "wor"
+
+    it "deletes indentation back to the start of the line" $ do
+      deleteBackTo "    " `shouldBe` 0
+      deleteBackTo "" `shouldBe` 0

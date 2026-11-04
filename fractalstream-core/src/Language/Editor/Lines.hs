@@ -5,6 +5,7 @@ module Language.Editor.Lines
   ( Line(..)
   , scriptLines
   , isStanzaHeader
+  , commentStart
   ) where
 
 import Data.List (isPrefixOf)
