@@ -312,7 +312,7 @@ text use the stroke color; filled shapes use the fill color.
 | color | `Color` | `red`, `rgb(0.2, 0.4, 1)`, ... |
 | text | `Text` | `"quoted"`, with `\"`, `\\`, `\n`, `\t` escapes |
 | list | `List of T` | `[1, 2, 3]`, `[]` |
-| pair | `T x U` | `(1.0, 2.0)` |
+| pair | `T x U`, `T × U` | `(1.0, 2.0)` |
 
 Numbers widen automatically Z → R → C wherever needed (`k := 0` then
 `k <- 0.5` makes `k` real). Nothing narrows automatically: use `round`,
@@ -339,7 +339,7 @@ can be called `e`**. Also avoid `C` as a type-vs-variable confusion: `C : C
 
 ## 3. Expressions
 
-Arithmetic: `+ - * / // ^`, unary `-`. Implicit multiplication by
+Arithmetic: `+ - * / // ^`, unary `-` (`×` is also `*`). Implicit multiplication by
 juxtaposition: `2 z`, `x y`, `2 pi i theta`, `r x (1 - x)`. Functions apply
 to a simple following argument without parentheses (`cos z`, `log |z|`),
 but `cos x + y` is `(cos x) + y`, and `cos 2z` is rejected:

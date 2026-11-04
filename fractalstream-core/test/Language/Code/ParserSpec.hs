@@ -431,3 +431,8 @@ x <- k|] `shouldBe` Right 4
       failsWith "if x stops:\n  pass" "`stops` can only be used in a loop's condition"
       failsWith "until false:\n  x <- if x stops then 1 else 2" "`stops` can only be used in a loop's condition"
       failsWith "b := x stops" "`stops` can only be used in a loop's condition"
+
+  describe "when writing pair types" $
+    it "accepts × as well as x" $ do
+      runWithX (Scalar RealType 0) "p : R × R <- (1.5, 2)\nx <- (1.5 : R) × 2" `shouldBe` Right 3.0
+      runWithX (Scalar RealType 0) "p : R x R <- (1.5, 2)\nx <- 2 * 1.5" `shouldBe` Right 3.0

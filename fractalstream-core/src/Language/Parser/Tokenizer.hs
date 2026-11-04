@@ -197,7 +197,7 @@ identChar c = (isAlphaNum c && not (c `elem` superscripts) && (c /= '⁻'))
 
 opTokens :: [(String, Token)]
 opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
-  [ ("+", Plus), ("-", Minus), ("*", Times)
+  [ ("+", Plus), ("-", Minus), ("*", Times), ("×", Times)
   , ("//", IntegerDivide), ("/", Divide)
   , ("^", Caret), ("|", Bar), ("(", OpenParen), (")", CloseParen)
   , ("[", OpenBracket), ("]", CloseBracket)

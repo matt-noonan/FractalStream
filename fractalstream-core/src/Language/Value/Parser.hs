@@ -110,7 +110,8 @@ typeGrammar = mdo
   listType' <- ruleChoice [ listType, baseType ]
 
   productType <- ruleChoice
-    [ Pair <$> (baseType <* token (Identifier "x")) <*> productType
+    -- `R x C`, or `R × C` (× is the times sign, which `*` also is)
+    [ Pair <$> (baseType <* (token (Identifier "x") <|> token Times)) <*> productType
     , baseType
     ]
 

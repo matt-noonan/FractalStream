@@ -1,6 +1,7 @@
 -- | Rewriting a script to use the mathematical symbols the language
 -- accepts in place of their ASCII spellings: @x : ℝ ⟵ 1@ for
--- @x : R <- 1@, @iterate z ⟼ z² + C@ for @iterate z -> z^2 + C@, and so
+-- @x : R <- 1@, @iterate z ⟼ z² + C@ for @iterate z -> z^2 + C@,
+-- @p : ℝ × ℂ@ for @p : R x C@, @2 × z@ for @2 * z@, and so
 -- on. Only spellings change: the rewritten script has exactly the same
 -- tokens. Stanza headers, comments, and strings are left alone.
 module Language.Editor.Normalize
@@ -42,11 +43,13 @@ normalizations src = concatMap lineEdits (scriptLines src)
       t@(from, to, tok) : rest ->
         let isType = case tok of
               Identifier "x" | afterType -> True   -- a pair type's `x` goes on with it
+              Times | afterType -> True
               Identifier n -> inTypePosition before afterType && n `elem` typeNames
               _ -> False
         in [ (from, to, new) | Just new <- [respell t isType] ] ++ go (Just tok) isType rest
 
     respell t@(_, _, tok) isType = case tok of
+      Identifier "x" | isType -> Just "×"
       Identifier n | isType -> lookup n typeSymbols
       Pi | textOf t == "pi" -> Just "π"
       _ -> lookup (textOf t) operatorSymbols
@@ -57,6 +60,7 @@ normalizations src = concatMap lineEdits (scriptLines src)
       Just Colon -> True
       Just (Identifier "of") -> True
       Just (Identifier "x") -> afterType
+      Just Times -> afterType
       _ -> False
     -- (`List` and `of` count as types, so that `List of C x R` works)
     typeNames = map fst typeSymbols ++ ["ℝ", "ℂ", "ℤ", "List", "Boolean", "Bool", "Color", "Text"]
@@ -70,7 +74,7 @@ normalize src = foldl apply src (sortOn (\(from, _, _) -> Down from) (normalizat
 operatorSymbols :: [(String, String)]
 operatorSymbols =
   [ ("<-", "⟵"), ("->", "⟼"), (":=", "≔"), ("<=", "≤"), (">=", "≥")
-  , ("!=", "≠"), ("=/=", "≠"), ("===", "≡"), ("==", "="), ("'", "′") ]
+  , ("!=", "≠"), ("=/=", "≠"), ("===", "≡"), ("==", "="), ("'", "′"), ("*", "×") ]
 
 typeSymbols :: [(String, String)]
 typeSymbols =

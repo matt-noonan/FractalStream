@@ -41,6 +41,7 @@ spec = describe "normalizing scripts" $ do
     normalize "if a <= b and a >= c or a != d or a =/= e or a === f or a == g:"
       `shouldBe` "if a ≤ b and a ≥ c or a ≠ d or a ≠ e or a ≡ f or a = g:"
     normalize "y <- f'(z)" `shouldBe` "y ⟵ f′(z)"
+    normalize "y <- 2 * x * z" `shouldBe` "y ⟵ 2 × x × z"
 
   it "writes integer powers as superscripts, and leaves others alone" $ do
     normalize "w <- z^10 + z^(3) + z^(-1)" `shouldBe` "w ⟵ z¹⁰ + z³ + z⁻¹"
@@ -49,7 +50,8 @@ spec = describe "normalizing scripts" $ do
   it "writes types with blackboard letters, but only types" $ do
     normalize "C : C <- 0" `shouldBe` "C : ℂ ⟵ 0"
     normalize "xs : List of Z <- []" `shouldBe` "xs : List of ℤ ⟵ []"
-    normalize "p : R x C <- (0, 0)" `shouldBe` "p : ℝ x ℂ ⟵ (0, 0)"
+    normalize "p : R x C <- (0, 0)" `shouldBe` "p : ℝ × ℂ ⟵ (0, 0)"
+    normalize "p : R × C x Z <- (0, 0, 1)" `shouldBe` "p : ℝ × ℂ × ℤ ⟵ (0, 0, 1)"
     normalize "q <- (k : Real)" `shouldBe` "q ⟵ (k : ℝ)"
     normalize "z <- C x R" `shouldBe` "z ⟵ C x R"
 
@@ -67,6 +69,8 @@ spec = describe "normalizing scripts" $ do
             Identifier "ℝ" -> Identifier "R"
             Identifier "ℂ" -> Identifier "C"
             Identifier "ℤ" -> Identifier "Z"
+            -- and × of both `*` and a pair type's `x`
+            Identifier "x" -> Times
             t -> t
           new = normalize src
       (file, tokens new) `shouldBe` (file, tokens src)
