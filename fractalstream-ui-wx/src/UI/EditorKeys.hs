@@ -24,6 +24,8 @@
 module UI.EditorKeys
   ( emacsKeysByDefault
   , handleEditorKeys
+  , pasteFittingIndentation
+  , toggleCommentLines
   ) where
 
 import FractalStream.Prelude hiding (get)

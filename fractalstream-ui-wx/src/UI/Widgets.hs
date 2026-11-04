@@ -11,6 +11,8 @@ module UI.Widgets
   , expressionWidget
   , scriptWidget
   , scriptWidgetWith
+  , scriptEditMenu
+  , normalizeEditor
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -30,6 +32,7 @@ import UI.CodeEditor
 import UI.AppSettings (appSettings)
 import FractalStream.Settings (Settings(..), editorFont)
 import UI.EditorStyle (setupStyles, showLineNumbers)
+import UI.EditorKeys (emacsKeysByDefault, pasteFittingIndentation, toggleCommentLines)
 
 import Graphics.UI.WX hiding (pt, when, grey, Color)
 import Graphics.UI.WXCore.Events
@@ -474,6 +477,36 @@ scriptWidgetWith known p scriptCode = do
 
   void $ liftIO doSyntaxColoring
   pure (ce, errorText)
+
+-- | An Edit menu for a code editor: the usual commands, and toggling
+-- comments and normalizing the script. (With emacs keys where Control
+-- is the shortcut key, Select All and Paste have no shortcuts, so that
+-- Control-A and Control-V stay emacs keys.)
+scriptEditMenu :: StyledTextCtrl a -> IO (Menu ())
+scriptEditMenu ce = do
+  emacs <- setEmacsKeys <$> getDynamic appSettings
+  let shortcut letter = if emacs && not emacsKeysByDefault then "" else "\tCtrl+" ++ letter
+  m <- menuPane [ text := "&Edit" ]
+  _ <- menuItem m [ text := "Undo\tCtrl+Z", on command := styledTextCtrlUndo ce ]
+  _ <- menuItem m [ text := "Redo\tShift+Ctrl+Z", on command := styledTextCtrlRedo ce ]
+  menuLine m
+  _ <- menuItem m [ text := "Cut\tCtrl+X", on command := styledTextCtrlCut ce ]
+  _ <- menuItem m [ text := "Copy\tCtrl+C", on command := styledTextCtrlCopy ce ]
+  _ <- menuItem m [ text := "Paste" ++ shortcut "V", on command := pasteFittingIndentation ce ]
+  _ <- menuItem m [ text := "Select All" ++ shortcut "A", on command := styledTextCtrlSelectAll ce ]
+  menuLine m
+  _ <- menuItem m [ text := "Toggle Comment\tCtrl+/", on command := toggleCommentLines ce ]
+  _ <- menuItem m [ text := "Normalize Script", on command := normalizeEditor ce ]
+  pure m
+
+-- | Rewrite all of an editor's script with mathematical symbols
+-- ("Language.Editor.Normalize"), whatever the setting for doing it as
+-- it's edited, keeping the cursor where it was in the text.
+normalizeEditor :: StyledTextCtrl a -> IO ()
+normalizeEditor ce = do
+  code <- styledTextCtrlGetText ce
+  let edits = normalizations code
+  unless (null edits) (applyEdits ce code edits)
 
 -- | The font editors use, and its size.
 fontOf :: Settings -> (String, Maybe Int)

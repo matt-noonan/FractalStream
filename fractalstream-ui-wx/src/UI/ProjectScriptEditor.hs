@@ -26,7 +26,7 @@ import Actor.Ensemble
 import Actor.Layout (CodeString(..))
 
 import Backend (Backend)
-import UI.Widgets (scriptWidget, onOwnDestroy)
+import UI.Widgets (scriptWidget, scriptEditMenu, onOwnDestroy)
 import UI.WxProperties (WxLayout, rememberLayout)
 import Data.DynamicValue
 
@@ -46,10 +46,11 @@ data ScriptEditorHooks = ScriptEditorHooks
     -- ^ The open editor's window, if any: rebuilding the project for
     -- some other reason (a new colorizer) leaves it open.
   , sehMarkUnsaved :: IO ()
-  , sehAddMenuBar :: forall a. Frame a -> IO ()
+  , sehAddMenuBar :: forall a. Frame a -> [Menu ()] -> IO ()
     -- ^ Give the editor its project's menu bar (on macOS, where Command+S
     -- then saves this project rather than whichever one's menu bar was
-    -- showing) or just its keyboard shortcuts (elsewhere).
+    -- showing) or just its keyboard shortcuts (elsewhere), with the
+    -- given menus of its own (an Edit menu) in either case.
   }
 
 -- | Open the whole-project script editor, or explain why there isn't
@@ -157,7 +158,8 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
       Just w | w == objectCast f -> Nothing
       other -> other
   void (watchDynamic srcVar (const sehMarkUnsaved))
-  sehAddMenuBar f
+  editMenu <- scriptEditMenu ce
+  sehAddMenuBar f [editMenu]
 
   -- Separate from `liveErrorText` above: that one reflects the
   -- *current* text's live check, continuously; this one reflects

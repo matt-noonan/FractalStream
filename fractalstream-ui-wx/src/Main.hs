@@ -323,7 +323,7 @@ runApp = withBackend $ \backend -> start $ do
                 , sehDraft = scriptDraft
                 , sehEditor = scriptEditorWindow
                 , sehMarkUnsaved = setValue sessionUnsaved True
-                , sehAddMenuBar = \fr -> makeMenuBar ProjectActions{..} (Just thisProject) fr []
+                , sehAddMenuBar = \fr menus -> makeMenuBar ProjectActions{..} (Just thisProject) fr menus
                 }
 
               -- `ui` and `editProjectScript` refer to each other: a
