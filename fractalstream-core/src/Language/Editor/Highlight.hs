@@ -272,10 +272,12 @@ lineSpans s defs l
       | n `Set.member` typeNames || n == "List", maybe False inTypePosition before = TypeName
       | n == "of", before == Just (Identifier "List") = TypeName
       | n == "x", Just (Identifier b) <- before, b `Set.member` typeNames = TypeName
-      | Just h <- Map.lookup n defs = h
-      | n `Set.member` keywords = Keyword
+      -- (a built-in can't be redefined: the parser takes it for the
+      -- built-in, and reports the definition)
       | n `Set.member` builtinFunctions = BuiltinFunction
       | n `Map.member` Builtins.colors = ColorName
+      | Just h <- Map.lookup n defs = h
+      | n `Set.member` keywords = Keyword
       | n == "color" = BuiltinValue
       | n `Set.member` unicodeTypes = TypeName
       | otherwise = Undefined

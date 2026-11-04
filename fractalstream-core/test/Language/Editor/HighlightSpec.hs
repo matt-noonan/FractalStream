@@ -122,6 +122,11 @@ spec = describe "highlighting scripts" $ do
     classOf src "stops" 0 `shouldBe` Just Keyword
     classOf src "stopped" 0 `shouldBe` Just Keyword
 
+  it "keeps built-ins built-in, even where a script tries to define them" $ do
+    let src = "define foo(bar):\n  bar <- bar + 1\n"
+    classOf src "bar" 0 `shouldBe` Just BuiltinFunction
+    classOf src "bar" 2 `shouldBe` Just BuiltinFunction
+
   it "lets a script name a variable with a statement word" $
     classOf project "line" 0 `shouldBe` Just Variable
 

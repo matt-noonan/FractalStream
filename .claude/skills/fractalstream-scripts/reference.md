@@ -332,7 +332,9 @@ number.) A power of integers used as a real is computed as a real:
 `times`, `text`, `escapes`, `vanishes`, `stops`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
 `mod`, `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
-the color-wheel names, and the built-in function names. In particular,
+the color-wheel names, and the built-in function names (including `bar`, the
+complex conjugate; using one for a variable, function, or code block is
+reported as such). In particular,
 **loop counters can't be called `i`** (use `k`, `j`, `n`) and **no variable
 can be called `e`**. Also avoid `C` as a type-vs-variable confusion: `C : C
 <- 0` is legal and common (a complex variable named C).
