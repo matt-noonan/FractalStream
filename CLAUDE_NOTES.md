@@ -210,6 +210,55 @@ as an ellipse. `center=` is a point, `center=(1, -1/2)` (an unquoted
 pair attribute value), or a complex number (`parseViewGeometry`). The
 backends needed no change: kernels always took a step per axis.
 
+Sphere viewers (`view=sphere`, `Actor.Event.ViewKind`; complex viewers
+only): the Riemann sphere as a globe, seen orthographically. All the
+geometry is in `Actor.Viewer.Sphere`: rotations are unit quaternions
+taking the viewer's frame to the sphere's; the screen plane is in units
+of the sphere's radius, centered on the globe; a point is a complex
+number by stereographic projection from the south pole, `(X + iY)/(1 + Z)`
+(so with no rotation 0 faces the viewer, axes as on the plane). The
+kernel is unchanged: a complex viewer's context also gets
+`[internal] sphere view` (a flag) and `[internal] sphere rotation ij`
+(the matrix), live values from `cvViewV`/`cvRotationV`
+(`viewerViewContext`, read like `prepare` outputs since the environment
+no longer matches the configuration's), and `parseViewerScript` wraps the
+body in `onTheSphere`: off the globe the color is `sphereBackground`, on
+it `z` is set from the rotated point, through the homogeneous pair
+`[X + iY : 1 + Z]` (kept separate so that projective coordinates or a
+second chart can come later: a plain complex `z` loses precision near
+∞). So every complex viewer's typed code carries the wrapper, and the
+view can be switched at run time (`switchView`, the wx menu's "Show on
+the sphere"). On the sphere `vCenter` stays (0, 0) and `vPixelSize` is the
+globe's zoom; `vRotation` is its orientation, and `vOriginalPlaneView` /
+`vOriginalSpherePixelSize` / `vOriginalRotation` give each view's
+original. Drawings are projected (`ScreenView`, `Projection`;
+`visibleRuns`, sampled segments and circles) in both the headless
+overlay and wx's `paintToolLayer`. In wx, `Model` has a `modelRotation`
+(`Nothing` on the plane); Navigate's drag is a trackball
+(`trackballRotation`, re-rendering live, one history step), scrolling
+zooms about the globe's center, there's no zoom box or click-to-center
+yet, and `wx-properties` saves `view:` and `rotation:`.
+
+How the wx viewer keeps view changes smooth (both views): a new view's
+render starts from the old image moved into the new view
+(`reprojectedSeed`, run on the render's worker thread, as `renderTile`'s
+seed), so a pixel not drawn yet shows the old picture; a parameter
+change's starts from scratch (`backgroundSeed`: grey, and on the sphere
+the dark background off the globe, which is final). The renderer
+(`Task.Block.progressivelyOver`) draws the pieces the seed didn't cover
+first, coarse to fine, and the covered ones only at full resolution
+(after the new ones), keeping the moved old picture until then. A globe drag's steps are coalesced like parameter
+changes (`pendingGlobe`, applied once the render has finished or had
+100ms) and aren't animated. An animated change draws the old image
+moved, then the new render fading in on top, in the same moving frame
+(so a seeded pixel agrees with the old image beneath it), and at full
+opacity where the old image doesn't reach (`rectanglesOutside`, clipped
+with `graphicsContextClipByRectangle`); snapshots of the render are
+taken during it at most every 33ms. Don't use a wx bitmap mask for
+"not drawn yet": `maskCreateColoured` takes about 150ms per 600x600
+image on macOS, on the GUI thread (that froze animations entirely). The
+pointer position shows "…" off the globe, and `(x, y)` in a real viewer.
+
 Tool dispatchers take `PixelDims` (pixel width and height); every
 handler environment binds `[internal] px` and `[internal] py`, and
 `toolPixelVars` decides, from the *viewer's* coordinate kind (not the
@@ -1036,6 +1085,6 @@ picks them up:
 
 ## Current Branch
 
-`multiple-assignment` (main branch is `main`):
-- tuple assignment/declaration/iteration and tuple norms (see "Parsing and
-  typechecking"), and `{real}` legacy translation
+`sphere-viewers` (main branch is `main`):
+- Riemann sphere viewers (`view=sphere`): see "Sphere viewers" under
+  "Viewer" above

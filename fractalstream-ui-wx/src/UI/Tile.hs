@@ -25,6 +25,7 @@ import Control.Concurrent.Async
 
 import Foreign.ForeignPtr
 import Foreign.Ptr
+import Foreign.Marshal.Utils (copyBytes)
 
 newtype ImagePoint = ImagePoint (Double,Double)
 
@@ -79,6 +80,10 @@ ifElseModified tile yes no = do
 
 -- | Construct a tile from a dynamical system, and begin drawing to it.
 renderTile :: Bool -- ^ Use smoothing?
+           -> Maybe (Ptr Word8 -> IO (Int -> Int -> Bool))
+              -- ^ What the tile shows until it's drawn: fill the
+              --   (RGB8, row by row) buffer with it, saying which of its
+              --   'subBlockSize' pieces it filled; or grey without one
            -> BlockComputeAction -- ^ The rendering action
            -> (Int, Int)   -- ^ The height and width of this tile.
            -> Rectangle (Double, Double)
@@ -87,14 +92,17 @@ renderTile :: Bool -- ^ Use smoothing?
            -> IO Tile      -- ^ An action which allocates the tile and
                            --   forks a task which draws into it.
 
-renderTile smooth renderingAction (width, height) mRect = do
+renderTile smooth seed renderingAction (width, height) mRect = do
 
     -- Allocate an red/green/blue pixel byte for each point in the tile
     buf <- mallocForeignPtrBytes (3 * width * height)
 
-    -- Initial fill of the image
-    withForeignPtr buf $ \ptr ->
-      sequence_ [ pokeColor ptr index grey | index <- [0 .. width * height - 1] ]
+    -- Initial fill of the image: nothing drawn yet (one row, then copies
+    -- of it, which is quick)
+    withForeignPtr buf $ \ptr -> when (width > 0 && height > 0) $ do
+      forM_ [0 .. width - 1] $ \index -> pokeColor ptr index grey
+      forM_ [1 .. height - 1] $ \row ->
+        copyBytes (ptr `plusPtr` (3 * width * row)) ptr (3 * width)
 
     let iRect = rectangle (ImagePoint (0,0))
                           (ImagePoint (fromIntegral width, fromIntegral height))
@@ -104,7 +112,13 @@ renderTile smooth renderingAction (width, height) mRect = do
 
     let (mRectWidth, mRectHeight) = dimensions mRect
 
-    worker <- async $ progressively fillBlock
+    -- The seed (if any) is worked out by the worker, before it renders,
+    -- so that starting a render doesn't hold up the caller.
+    worker <- async $ do
+      shown <- case seed of
+        Nothing -> pure (\_ _ -> False)
+        Just fill -> with managedBuf (`withForeignPtr` fill) <* tryPutMVar redraw ()
+      progressivelyOver shown fillBlock
                     $ Block { coordToModel = convertRect iRect mRect . fromCoords
                             , compute = renderingAction
                             , logSampleRate = if smooth then 1 else 0

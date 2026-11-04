@@ -7,19 +7,36 @@ let `[internal] vanishing radius` = vanishing_radius in:
         let `[internal] iteration count` = 0 in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
-              block:
-                let `[internal] fresh #15` = 0 in:
-                  let `[internal] fresh #16` = [internal] iteration limit in:
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
                     block:
-                      if (!([internal] escape radius < |z|) and ([internal] fresh #15 < [internal] fresh #16)) then:
-                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #15 < [internal] fresh #16)):
-                          block:
-                            set `z` := (((z ^ 2:R:C) + -0.12256:C) + (0.74486:C * 0.0 :+ 1.0))
-                            set `[internal] fresh #15` := ([internal] fresh #15 + 1)
-                      else:
-                        no-op
-                      set `[internal] iteration count` := [internal] fresh #15
-                      set `[internal] stuck` := ([internal] fresh #15 = [internal] fresh #16)
-                set `color` := if ([internal] escape radius < |z|) then Color 255 255 255 else Color 0 0 0
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                        block:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `z` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `[internal] fresh #25` = 0 in:
+                      let `[internal] fresh #26` = [internal] iteration limit in:
+                        block:
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #25 < [internal] fresh #26)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #25 < [internal] fresh #26)):
+                              block:
+                                set `z` := (((z ^ 2:R:C) + -0.12256:C) + (0.74486:C * 0.0 :+ 1.0))
+                                set `[internal] fresh #25` := ([internal] fresh #25 + 1)
+                          else:
+                            no-op
+                          set `[internal] iteration count` := [internal] fresh #25
+                          set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
+                    set `color` := if ([internal] escape radius < |z|) then Color 255 255 255 else Color 0 0 0
 
 

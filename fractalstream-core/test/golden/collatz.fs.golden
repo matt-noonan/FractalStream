@@ -7,50 +7,67 @@ let `[internal] vanishing radius` = vanishing_radius in:
         let `[internal] iteration count` = 0 in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
-              block:
-                let `[internal] fresh #18` = 0 in:
-                  let `[internal] fresh #19` = [internal] iteration limit in:
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
                     block:
-                      if (!((|(z - 1:R:C)| < [internal] vanishing radius) or ((|(z - 0:R:C)| < [internal] vanishing radius) or ((|(z - -1:R:C)| < [internal] vanishing radius) or ((|(z - -5:R:C)| < [internal] vanishing radius) or ((|(z - -17:R:C)| < [internal] vanishing radius) or ([internal] escape radius < |z|)))))) and ([internal] fresh #18 < [internal] fresh #19)) then:
-                        do-while (!((|(z - 1:R:C)| < [internal] vanishing radius) or ((|(z - 0:R:C)| < [internal] vanishing radius) or ((|(z - -1:R:C)| < [internal] vanishing radius) or ((|(z - -5:R:C)| < [internal] vanishing radius) or ((|(z - -17:R:C)| < [internal] vanishing radius) or ([internal] escape radius < |z|)))))) and ([internal] fresh #18 < [internal] fresh #19)):
-                          block:
-                            set `z` := let [internal] step.z #0 = z in let [internal] step.c #0 = C in ((([internal] step.z #0 / 2:R:C) * (cos(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)) + (((3:R:C * [internal] step.z #0) + [internal] step.c #0) * (sin(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)))
-                            set `[internal] fresh #18` := ([internal] fresh #18 + 1)
-                      else:
-                        no-op
-                      set `[internal] iteration count` := [internal] fresh #18
-                      set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
-                set `color` := Color 0 0 0
-                if (|(z - 1:R:C)| < [internal] vanishing radius) then:
-                  block:
-                    set `color` := Color 255 0 0
-                else:
-                  if (|(z - 0:R:C)| < [internal] vanishing radius) then:
-                    block:
-                      set `color` := Color 255 255 0
-                  else:
-                    if (|(z - -1:R:C)| < [internal] vanishing radius) then:
-                      block:
-                        set `color` := Color 0 180 0
-                    else:
-                      if (|(z - -5:R:C)| < [internal] vanishing radius) then:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
                         block:
-                          set `color` := Color 0 0 255
-                      else:
-                        if (|(z - -17:R:C)| < [internal] vanishing radius) then:
-                          block:
-                            set `color` := Color 128 0 128
-                        else:
-                          if ([internal] escape radius < |z|) then:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
                             block:
-                              set `color` := Color 128 128 128
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `z` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `[internal] fresh #28` = 0 in:
+                      let `[internal] fresh #29` = [internal] iteration limit in:
+                        block:
+                          if (!((|(z - 1:R:C)| < [internal] vanishing radius) or ((|(z - 0:R:C)| < [internal] vanishing radius) or ((|(z - -1:R:C)| < [internal] vanishing radius) or ((|(z - -5:R:C)| < [internal] vanishing radius) or ((|(z - -17:R:C)| < [internal] vanishing radius) or ([internal] escape radius < |z|)))))) and ([internal] fresh #28 < [internal] fresh #29)) then:
+                            do-while (!((|(z - 1:R:C)| < [internal] vanishing radius) or ((|(z - 0:R:C)| < [internal] vanishing radius) or ((|(z - -1:R:C)| < [internal] vanishing radius) or ((|(z - -5:R:C)| < [internal] vanishing radius) or ((|(z - -17:R:C)| < [internal] vanishing radius) or ([internal] escape radius < |z|)))))) and ([internal] fresh #28 < [internal] fresh #29)):
+                              block:
+                                set `z` := let [internal] step.z #0 = z in let [internal] step.c #0 = C in ((([internal] step.z #0 / 2:R:C) * (cos(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)) + (((3:R:C * [internal] step.z #0) + [internal] step.c #0) * (sin(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)))
+                                set `[internal] fresh #28` := ([internal] fresh #28 + 1)
                           else:
                             no-op
-                if ![internal] stuck then:
-                  block:
-                    set `color` := let #cycle-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 255 255 255, color), blend(0.333, Color 0 0 0, color))
-                else:
-                  no-op
+                          set `[internal] iteration count` := [internal] fresh #28
+                          set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
+                    set `color` := Color 0 0 0
+                    if (|(z - 1:R:C)| < [internal] vanishing radius) then:
+                      block:
+                        set `color` := Color 255 0 0
+                    else:
+                      if (|(z - 0:R:C)| < [internal] vanishing radius) then:
+                        block:
+                          set `color` := Color 255 255 0
+                      else:
+                        if (|(z - -1:R:C)| < [internal] vanishing radius) then:
+                          block:
+                            set `color` := Color 0 180 0
+                        else:
+                          if (|(z - -5:R:C)| < [internal] vanishing radius) then:
+                            block:
+                              set `color` := Color 0 0 255
+                          else:
+                            if (|(z - -17:R:C)| < [internal] vanishing radius) then:
+                              block:
+                                set `color` := Color 128 0 128
+                            else:
+                              if ([internal] escape radius < |z|) then:
+                                block:
+                                  set `color` := Color 128 128 128
+                              else:
+                                no-op
+                    if ![internal] stuck then:
+                      block:
+                        set `color` := let #cycle-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 255 255 255, color), blend(0.333, Color 0 0 0, color))
+                    else:
+                      no-op
 
 
 --- tool Trace

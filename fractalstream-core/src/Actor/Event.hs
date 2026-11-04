@@ -9,6 +9,7 @@ module Actor.Event
   , Coordinate(..)
   , PixelDims
   , coordinateNames
+  , ViewKind(..)
   , showCoordinate
   , bindOrDeclare
   , RealIn(..)
@@ -854,6 +855,11 @@ toolBlocksGrammar defs = mdo
 -- | How a point of a viewer (or a tool event's position) is named: one
 -- complex variable, or a pair of real ones (@x@, then @y@).
 data Coordinate = ComplexCoordinate String | RealCoordinates String String
+  deriving (Eq, Show)
+
+-- | How a viewer shows its points: on the plane, or (for a complex
+-- coordinate) on the Riemann sphere, as a globe.
+data ViewKind = PlaneView | SphereView
   deriving (Eq, Show)
 
 -- | The names a 'Coordinate' binds.

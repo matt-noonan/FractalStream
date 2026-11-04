@@ -37,6 +37,6 @@ renderPreview baseOnly viewer = do
   setValue' (vSize preview) (Dimensions (scaled w, scaled h))
   modifyValue (vPixelSize preview) (/ scale)
   fmap (BSL.toStrict . encodePng . snd) <$>
-    withRenderedViewerBuffer preview True (\center pixelSize dims buf -> do
+    withRenderedViewerBuffer preview True (\view dims buf -> do
       layers <- if baseOnly then pure [] else vDrawCmds viewer
-      compositeDrawLayers center pixelSize layers dims buf)
+      compositeDrawLayers view layers dims buf)

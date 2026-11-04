@@ -52,6 +52,7 @@ import Actor.Ensemble (formatScriptError)
 import Actor.Layout (Dimensions(..), Field(..))
 import Actor.Viewer
 import Actor.Viewer.Overlay (compositeDrawLayers)
+import Actor.Viewer.Sphere (ScreenView(..))
 import Data.DynamicValue (getDynamic, setValue', modifyValue)
 import Data.Movie
 import Language.Code (Code)
@@ -308,7 +309,7 @@ renderViewerImage smooth withDrawings viewer = renderViewerBuffer smooth viewer 
         layers <- vDrawCmds viewer
         withForeignPtr rbPixels $ \buf ->
           pixelMap dropAlpha <$>
-            compositeDrawLayers rbCenter rbPixelSize layers (fromIntegral rbWidth, fromIntegral rbHeight) buf
+            compositeDrawLayers (ScreenView rbCenter rbPixelSize rbProjection) layers (fromIntegral rbWidth, fromIntegral rbHeight) buf
       else pure (Image rbWidth rbHeight (VS.unsafeFromForeignPtr0 rbPixels (3 * rbWidth * rbHeight)))
     -- (the image's vector shares the buffer, which lives as long as it does)
     pure (Right (rbIssues, img))

@@ -14,7 +14,7 @@ import Language.Typecheck (TC(..), TCError)
 
 import Scenario
 import Actor.Movie (InsetCorner(..))
-import Actor.Event (Coordinate(..))
+import Actor.Event (Coordinate(..), ViewKind(..))
 
 import Text.RawString.QQ
 
@@ -127,6 +127,16 @@ spec = describe "parseScenario" $ do
     onlyCommand [r|set viewer aspect to 1/2
 |] $ \case
       SetViewerAspect pv -> pv `shouldResolveTo` 0.5
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses set viewer view" $ do
+    onlyCommand [r|set viewer view to sphere
+|] $ \case
+      SetViewerView v -> v `shouldBe` SphereView
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+    onlyCommand [r|set viewer view to plane
+|] $ \case
+      SetViewerView v -> v `shouldBe` PlaneView
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
   it "parses click at, Cartesian form" $
@@ -312,6 +322,7 @@ describeShape = \case
   SetViewerCenter{}    -> "SetViewerCenter"
   SetViewerPixelSize{} -> "SetViewerPixelSize"
   SetViewerAspect{}    -> "SetViewerAspect"
+  SetViewerView{}      -> "SetViewerView"
   ClickAt{}            -> "ClickAt"
   DoubleClickAt{}      -> "DoubleClickAt"
   DragFromTo{}         -> "DragFromTo"

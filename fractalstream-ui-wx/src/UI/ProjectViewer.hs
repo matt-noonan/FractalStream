@@ -27,11 +27,13 @@ import Data.Time (diffUTCTime, getCurrentTime)
 import Data.Planar
 
 import UI.Tile
+import Task.Block (subBlockSize)
 import UI.Layout
 import UI.Widgets
 import UI.WxProperties
 import UI.MovieMaker
 import Actor.Movie (canAnimate)
+import Actor.Viewer.Sphere
 
 import Actor.Viewer.Preview (renderPreview)
 import Data.ByteString (ByteString)
@@ -45,7 +47,7 @@ import Actor.Configuration
 import Actor.Viewer
 import Actor.Ensemble (buildToolContext, layoutToArgs, Colorizer(..), ViewerColorizer(..))
 import Actor.Colorizer (splitArguments)
-import Actor.Event (Event(..), EventArgument_, EventArgument(..), PixelDims, Coordinate(..))
+import Actor.Event (Event(..), EventArgument_, EventArgument(..), PixelDims, Coordinate(..), ViewKind(..))
 import Language.Value.Parser (parseConstant)
 import Language.Type
 import Language.Draw
@@ -56,6 +58,7 @@ import Language.Value.Evaluator (HaskellValue)
 
 import Data.DynamicValue hiding (clone)
 import Foreign.Ptr (Ptr)
+import Foreign.Storable (peekByteOff, pokeByteOff)
 
 import Text.Printf
 import Text.Read (readMaybe)
@@ -210,7 +213,15 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       -- (a complex viewer's pixels are always square)
       case vCoordinate of
         RealCoordinates{} -> mapM_ (setValue' vAspect) vpAspect
-        ComplexCoordinate{} -> pure ()
+        ComplexCoordinate{} -> do
+          -- (and a complex viewer's view: the plane, or the globe)
+          case vpView of
+            Just "sphere" -> setValue' vView SphereView
+            Just "plane" -> setValue' vView PlaneView
+            _ -> pure ()
+          case vpRotation of
+            Just [w, x, y, z] -> setValue' vRotation (normalizeRotation (Rotation w x y z))
+            _ -> pure ()
     let canResize = fromMaybe vCanResize (restored >>= vpResizable)
         startVisible = fromMaybe True (restored >>= vpVisible)
         frameStyle | canResize = frameDefaultStyle
@@ -280,6 +291,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       viewCenter <- getDynamic vCenter
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
+      view <- getDynamic vView
+      Rotation rw rx ry rz <- getDynamic vRotation
       shown <- windowIsShown f
       -- Leave out what's the same as the default anyway, so that a
       -- saved project file only says what's special about each window.
@@ -289,6 +302,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         , vpVisible = if shown then Nothing else Just False
         , vpCenter = Just viewCenter, vpPixelSize = Just pixelSize
         , vpAspect = if aspect == 1 then Nothing else Just aspect
+        , vpView = if view == vOriginalView then Nothing
+                   else Just (case view of { SphereView -> "sphere"; PlaneView -> "plane" })
+        , vpRotation = if view == SphereView then Just [rw, rx, ry, rz] else Nothing
         }
 
     -- When the configuration's variables change (which ones there are,
@@ -331,14 +347,23 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     shouldShowToolPicker <- variable [value := True]
     toolPickerMenu <- menuPane [ text := "Tool" ]
     hamburgerMenu <- menuPane [ text := "Viewer" ]
+    -- What to bring up to date in the menu just before it's shown (a
+    -- check mark that follows the view, whatever changed it)
+    beforeMenu <- newIORef (pure () :: IO ())
 
     let refreshHud = windowRefresh p False
 
-        setPointerLocation (x,y) = do
-          let txt0
-                | y < 0     = printf "%.14f - %.14f𝑖" x (negate y)
-                | otherwise = printf "%.14f + %.14f𝑖" x y
-          writeIORef hudPointer (if x < 0 then txt0 else ' ' : txt0)
+        -- (Nothing: the pointer isn't over the model, as off the globe)
+        setPointerLocation mxy = do
+          let shown (x, y) = case vCoordinate of
+                -- a real viewer's point is a pair of reals
+                RealCoordinates{} -> printf "(%.14f, %.14f)" x y
+                ComplexCoordinate{}
+                  | y < 0     -> printf "%.14f - %.14f𝑖" x (negate y)
+                  | otherwise -> printf "%.14f + %.14f𝑖" x y
+          writeIORef hudPointer $ case mxy of
+            Nothing -> "…"
+            Just xy@(x, _) -> let txt0 = shown xy in if x < 0 then txt0 else ' ' : txt0
           showPtr <- get shouldShowPointerLocation value
           when showPtr $ do
             Size w h <- get p clientSize
@@ -402,7 +427,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         hudMouse = \case
           MouseLeftDown pt' _ -> hudSpotAt pt' >>= \case
             Just ToolPickerSpot -> True <$ menuPopup toolPickerMenu pt' p
-            Just MenuSpot -> True <$ menuPopup hamburgerMenu pt' p
+            Just MenuSpot -> True <$ (join (readIORef beforeMenu) >> menuPopup hamburgerMenu pt' p)
             _ -> pure False
           MouseMotion pt' _ -> do
             tip <- hudSpotAt pt' <&> \case
@@ -451,8 +476,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     (initialX, initialY) <- getDynamic vCenter
     initialPx <- getDynamic vPixelSize
     initialAspect <- getDynamic vAspect
+    initialRotation <- getDynamic vView >>= \case
+      PlaneView -> pure Nothing
+      SphereView -> Just <$> getDynamic vRotation
 
-    let initialModel = Model (initialX, initialY) (initialPx, initialPx * initialAspect)
+    let initialModel = Model (initialX, initialY) (initialPx, initialPx * initialAspect) initialRotation
     model <- variable [value := initialModel]
 
     -- History tracking
@@ -558,7 +586,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
         runToolEventHandler theTool e = do
           handle <- getToolEventHandler theTool
-          Model _ pxDims <- get model value
+          Model _ pxDims _ <- get model value
           maybe (pure True) (guardTool theTool) (handle pxDims e)
 
     let activateTool thisTool@Tool{..} = do
@@ -681,7 +709,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
     viewerTile     <- do
       renderAction <- getRenderAction
-      renderTile' renderId renderIssues True renderAction (width, height) model
+      renderTile' renderId renderIssues True renderAction (backgroundSeed initialModel (width, height)) (width, height) model
     currentTile    <- variable [value := viewerTile]
     savedTileImage <- variable [value := Nothing]
     -- The same, ready to draw (making a bitmap from an image is too slow
@@ -690,6 +718,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- Whether the saved image is from the current tile yet, rather than
     -- still the one from before the view last changed.
     savedTileIsCurrent <- newIORef True
+    -- When the current render started, and a drag's next orientation for
+    -- the globe, not shown yet: a drag's steps are coalesced, as
+    -- parameter changes are, so that each render gets to show something
+    -- before the next replaces it (see the globe-drag timer below).
+    lastViewRender <- newIORef =<< getCurrentTime
+    pendingGlobe <- newIORef (Nothing :: Maybe Rotation)
     lastTileImage  <- variable [value := Nothing]
     animate        <- variable [value := Nothing]
     useSmoothing <- variable [value := True]
@@ -698,7 +732,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             alreadyAnimating <- isJust <$> get animate value
             unless alreadyAnimating $ do
               now <- getCurrentTime
-              img <- get savedTileImage value >>= traverse imageCopy
+              img <- get savedTileBitmap value
               set lastTileImage [value := img]
               set animate [value := Just (now, oldModel, img)]
 
@@ -710,26 +744,46 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           modifyIORef' history (historyAppend newModel)
           jumpViewTo newModel
 
-        jumpViewTo newModel@(Model newCenter (newPixelSize, newPixelHeight)) = do
+        jumpViewTo = jumpViewWith True
+
+        -- Go to a view, animating the change or not (a drag turning the
+        -- globe doesn't: its steps keep the last image up until the new
+        -- render's pixels arrive).
+        jumpViewWith animated newModel@(Model newCenter (newPixelSize, newPixelHeight) newRotation) = do
           oldModel <- get model value
           Size { sizeW = w, sizeH = h } <- get f clientSize
           set model [ value := newModel ]
           setValue' vCenter    newCenter
           setValue' vPixelSize newPixelSize
           setValue' vAspect (newPixelHeight / newPixelSize)
-          get currentTile value >>= cancelTile
+          case newRotation of
+            Nothing -> setValue' vView PlaneView
+            Just r -> setValue' vRotation r >> setValue' vView SphereView
+          oldTile <- get currentTile value
+          cancelTile oldTile
           renderAction <- getRenderAction
           smoothing <- get useSmoothing value
-          newViewerTile <- renderTile' renderId renderIssues smoothing renderAction (w, h) model
+          -- (a new view's render starts from the old image, moved to where
+          -- its points are in the new view, so that what it hasn't drawn
+          -- yet shows what the old image did there: during an animation,
+          -- where the new image is drawn in the old one's moving frame,
+          -- that's the same picture in the same place. A parameter
+          -- change's starts from scratch. Either way, on the sphere, the
+          -- background off the globe is already in place.)
+          let seed | newModel == oldModel = backgroundSeed newModel (w, h)
+                   | otherwise = reprojectedSeed oldTile oldModel newModel (w, h)
+                                   <|> backgroundSeed newModel (w, h)
+          newViewerTile <- renderTile' renderId renderIssues smoothing renderAction seed (w, h) model
           set currentTile [ value := newViewerTile ]
-          startAnimatingFrom oldModel
+          getCurrentTime >>= writeIORef lastViewRender
+          when animated (startAnimatingFrom oldModel)
           -- Until the new render's first update, the saved image is the
           -- old one; that only matters if it's of a different view, since
           -- then it'd be drawn in the wrong place. (A parameter change
           -- re-renders the same view, and hiding the saved image until
           -- each render's first update would hide most of them while a
           -- parameter is dragged.)
-          when (newModel /= oldModel) (writeIORef savedTileIsCurrent False)
+          when (animated && newModel /= oldModel) (writeIORef savedTileIsCurrent False)
           void $ tryPutMVar needToSendRefreshEvent ()
           triggerRepaint
 
@@ -737,13 +791,22 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- Convert back and forth between viewport coordinates and coordinates
     -- in the underlying model (e.g. viewport coordinates to C-plane coordinates in
     -- the dynamical system or parameter plane)
-    let viewToModel pt = do
+    -- (On the sphere, the screen plane is the globe's: see 'screenToModel'.)
+    let viewToScreen pt = do
             Size { sizeW = w, sizeH = h } <- get f clientSize
             let dim = (w,h)
                 fullViewRect = rectangle (Viewport (0,0)) (Viewport dim)
             modelRect <- modelToRect @(Double,Double) dim <$> get model value
             pure (convertRect fullViewRect modelRect $ Viewport (pointX pt, pointY pt))
-        modelToView mdl pt = do
+        viewToModel pt = do
+          m <- get model value
+          screenToModel m <$> viewToScreen pt
+        -- whether a point of the window shows the model (on the sphere,
+        -- whether it's on the globe)
+        showsModelAt pt = showsModel <$> get model value <*> viewToScreen pt
+        -- show the model point under the pointer, or "…" off the globe
+        showPointerAt pt m = showsModelAt pt >>= \over -> setPointerLocation (if over then Just m else Nothing)
+        screenToView mdl pt = do
           Size { sizeW = w, sizeH = h } <- get f clientSize
           let dim = (w,h)
               fullViewRect = rectangle (Viewport (0,0)) (Viewport dim)
@@ -774,21 +837,23 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 mdl <- get model value
 
                 get currentTool value >>= \case
-                  Left NavTool -> paintToolLayerWithDragBox (modelToView mdl) (modelPixelDim mdl) vDrawCmds lastClick draggedTo dc r viewRect
+                  Left NavTool | isNothing (modelRotation mdl) -> paintToolLayerWithDragBox (modelProjection mdl) (screenToView mdl) (modelPixelDim mdl) vDrawCmds lastClick draggedTo dc r viewRect
                   Left MoviePathTool -> do
-                    paintToolLayer (modelToView mdl) (modelPixelDim mdl) vDrawCmds dc
-                    pts <- mapM (modelToView mdl) . reverse =<< readIORef moviePath
+                    paintToolLayer (modelProjection mdl) (screenToView mdl) (modelPixelDim mdl) vDrawCmds dc
+                    -- (on the sphere, the parts of the path on the visible side)
+                    pts <- fmap catMaybes . mapM (traverse (screenToView mdl) . projectToScreen (modelProjection mdl))
+                             . reverse =<< readIORef moviePath
                     paintMoviePath dc pts
-                  _  -> paintToolLayer (modelToView mdl) (modelPixelDim mdl) vDrawCmds dc
+                  _  -> paintToolLayer (modelProjection mdl) (screenToView mdl) (modelPixelDim mdl) vDrawCmds dc
 
               Just (startTime, oldModel, oldImage) -> do
                 -- Animated paint. Zoom and blend smoothly between
                 -- the new and old images.
                 now <- getCurrentTime
-                let speed :: forall n. Num n => n
-                    speed = 6
-                    blend = min 255 (round (speed * 255 * toRational (diffUTCTime now startTime)) :: Integer)
-                    t = min 1.0 (speed * fromRational (toRational (diffUTCTime now startTime)) :: Double)
+                let speedD = 6 :: Double
+                    dt = realToFrac (diffUTCTime now startTime) :: Double
+                    blend = min 255 (round (speedD * 255 * dt) :: Integer)
+                    t = min 1.0 (speedD * dt)
                 when (blend >= 255) (set animate [value := Nothing])
                 curTile <- get currentTile value
                 let (w, h) = tileRect curTile
@@ -818,6 +883,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                     dy = negate (snd (modelCenter newModel) - snd (modelCenter oldModel))
                          / snd (modelPixelDim oldModel)
 
+                -- (grey where neither image has anything)
+                paintUndrawn dc =<< windowGetViewRect f
                 -- draw the old image
                 restoringContext $ do
                   let k = 1 / sqrt ( (fst (modelPixelDim oldModel) * snd (modelPixelDim oldModel))
@@ -831,37 +898,60 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                   graphicsContextTranslate gc (negate viewCenterX) (negate viewCenterY)
                   graphicsContextTranslate gc (negate $ dx * t') (negate $ dy * t')
 
-                  withLayer 1 $ restoringContext $ do
-                    zoom (1.0, 1.0) (viewCenterX, viewCenterY) $
-                      case oldImage of
-                        Nothing -> pure ()
-                        Just im -> do
-                          drawImage dc im (WX.pt
-                                           (round $ negate viewCenterX)
-                                           (round $ negate viewCenterY))
-                            []
-                  -- draw the new image, once there is one: until the new
-                  -- render's first update, the saved image is still the
-                  -- old view, which would be faded in at the new view's
-                  -- place.
+                  let drawOld = restoringContext $ do
+                        zoom (1.0, 1.0) (viewCenterX, viewCenterY) $
+                          case oldImage of
+                            Nothing -> pure ()
+                            Just im -> do
+                              drawBitmap dc im (WX.pt
+                                               (round $ negate viewCenterX)
+                                               (round $ negate viewCenterY))
+                                False []
+                      zoomRatioX = fst (modelPixelDim newModel) / fst (modelPixelDim oldModel)
+                      zoomRatioY = snd (modelPixelDim newModel) / snd (modelPixelDim oldModel)
+                      drawNew = restoringContext $ do
+                        zoom (zoomRatioX, zoomRatioY)
+                             (viewCenterX + dx, viewCenterY + dy)
+                          $ get savedTileBitmap value >>= \case
+                                Nothing -> pure ()
+                                Just im -> do
+                                  drawBitmap dc im (WX.pt
+                                                (round $ negate viewCenterX)
+                                                (round $ negate viewCenterY)) False []
+                  -- The old image, moved, then the new one fading in on top,
+                  -- once there is one (until the new render's first update,
+                  -- the saved image is still the old view). Where the new
+                  -- render hasn't drawn yet, it shows the old image moved
+                  -- into its view (see 'reprojectedSeed'), so the two agree
+                  -- there.
                   newImageReady <- readIORef savedTileIsCurrent
-                  when newImageReady $ withLayer (min 1 t) $ do
-                    let zoomRatioX = fst (modelPixelDim newModel) / fst (modelPixelDim oldModel)
-                        zoomRatioY = snd (modelPixelDim newModel) / snd (modelPixelDim oldModel)
-                    restoringContext $ do
-                      zoom (zoomRatioX, zoomRatioY)
-                           (viewCenterX + dx, viewCenterY + dy)
-                        $ get savedTileImage value >>= \case
-                              Nothing -> pure ()
-                              Just im -> do
-                                drawImage dc im (WX.pt
-                                              (round $ negate viewCenterX)
-                                              (round $ negate viewCenterY)) []
-                paintToolLayer (modelToView midModel) (modelPixelDim midModel) vDrawCmds dc
+                  withLayer 1 drawOld
+                  when newImageReady $ do
+                    withLayer (min 1 t) drawNew
+                    -- Where the old image doesn't reach, there's nothing to
+                    -- fade from: the new image shows there at once. (In
+                    -- this context's coordinates, the old image is the
+                    -- tile's own rectangle; the window is where the
+                    -- transforms above take it from.)
+                    let sx = fst (modelPixelDim oldModel) / fst (modelPixelDim midModel)
+                        sy = snd (modelPixelDim oldModel) / snd (modelPixelDim midModel)
+                        toLocal (px', py') = ( (px' - viewCenterX) / sx + viewCenterX + dx * t'
+                                             , (py' - viewCenterY) / sy + viewCenterY + dy * t' )
+                        (lx0, ly0) = toLocal (0, 0)
+                        (lx1, ly1) = toLocal (fromIntegral w, fromIntegral h)
+                    forM_ (rectanglesOutside (min lx0 lx1, min ly0 ly1, max lx0 lx1, max ly0 ly1)
+                                             (0, 0, fromIntegral w, fromIntegral h)) $ \(x, y, rw, rh) ->
+                      restoringContext $ do
+                        graphicsContextClipByRectangle gc (Rect x y rw rh)
+                        withLayer 1 drawNew
+                paintToolLayer (modelProjection midModel) (screenToView midModel) (modelPixelDim midModel) vDrawCmds dc
             paintHud dc
           ]
 
     lastKnownMouse <- newIORef Nothing
+    -- A drag turning the globe: the orientation and screen point it
+    -- started from, and whether it has moved yet.
+    globeDrag <- newIORef (Nothing :: Maybe (Rotation, (Double, Double), Bool))
 
     -- Set click and drag event handlers
     -- The viewer's single-key shortcuts (`<`, `=`, a tool's letter, ...)
@@ -890,8 +980,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               drawing <- readIORef drawingMoviePath
               when drawing $ do
                 z <- viewToModel pt'
-                setPointerLocation z
-                Model _ (px, _) <- get model value
+                showPointerAt pt' z
+                Model _ (px, _) _ <- get model value
                 readIORef moviePath >>= \case
                   (x, y) : _ | sqrt ((fst z - x) ^ (2 :: Int) + (snd z - y) ^ (2 :: Int)) < 2 * px -> pure ()
                   _ -> modifyIORef' moviePath (z :) >> triggerRepaint
@@ -913,10 +1003,14 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             _ -> pure False
           _ -> pure False
 
-    set p [ on mouse   := \event -> focusWhenClicked event >> hudMouse event >>= \handled -> unless handled $ moviePathMouse event >>= \handledPath -> unless handledPath $ get lastClick value >>= \lastClickNow -> case event of
+    set p [ on mouse   := \event -> focusWhenClicked event >> hudMouse event >>= \handled -> unless handled $ moviePathMouse event >>= \handledPath -> unless handledPath $ get lastClick value >>= \lastClickNow -> get currentTool value >>= \currentToolNow -> readIORef globeDrag >>= \globeDragNow -> case event of
 
               MouseLeftDown pt modifiers | isNoShiftAltControlDown modifiers -> do
                 set lastClick [value := Just $ Viewport (pointX pt, pointY pt)]
+                -- (on the sphere, Navigate turns the globe from here)
+                m <- get model value
+                s0 <- viewToScreen pt
+                writeIORef globeDrag ((\r -> (r, s0, False)) <$> modelRotation m)
                 propagateEvent
 
               MouseLeftUp _ _ | Nothing <- lastClickNow ->
@@ -924,23 +1018,44 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 -- one), so there's nothing to finish.
                 propagateEvent
 
+              MouseLeftUp _ modifiers
+                | isNoShiftAltControlDown modifiers
+                , Left NavTool <- currentToolNow
+                , Just _ <- globeDragNow -> do
+                    -- A drag turned the globe: one step in the history.
+                    -- (A click does nothing on the sphere, for now.)
+                    readIORef pendingGlobe >>= \case
+                      Nothing -> pure ()
+                      Just r -> do
+                        writeIORef pendingGlobe Nothing
+                        m <- get model value
+                        jumpViewWith False m { modelRotation = Just r }
+                    case globeDragNow of
+                      Just (_, _, True) -> get model value >>= \m -> modifyIORef' history (historyAppend m)
+                      _ -> pure ()
+                    writeIORef globeDrag Nothing
+                    set draggedTo [value := Nothing]
+                    set lastClick [value := Nothing]
+                    propagateEvent
+
               MouseLeftUp pt modifiers | isNoShiftAltControlDown modifiers -> do
                 dragBox <- getDragBox lastClick draggedTo
+                onModel <- showsModelAt pt
                 let recenterAction = do
                       -- Completed a click, recenter to the clicked point.
                       oldModel <- get model value
                       newCenter <- viewToModel pt
                       changeViewTo oldModel { modelCenter = toCoords newCenter }
                 ptz <- viewToModel pt
-                toolClickAction <- get currentTool value <&> \case
+                toolClickAction <- if not onModel then pure (pure ()) else get currentTool value <&> \case
                   Left NavTool -> recenterAction
                   Left MoviePathTool -> pure ()
                   Left DebugTool -> do
                     (x, y) <- viewToModel pt
-                    Model _ (dx, dy) <- get model value
+                    Model _ (dx, dy) _ <- get model value
                     debugAt (x, y) (dx, dy)
                   Right tool -> do
-                    Model _ pxDims <- get model value
+                    Model _ pxDims _ <- get model value
                     handle <- getToolEventHandler tool
                     case handle pxDims (Click ptz) of
                       Nothing -> recenterAction
@@ -966,8 +1081,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                 scale = sqrt (newArea / oldArea)
                             if scale < 0.001
                               then toolClickAction
-                              else changeViewTo Model { modelCenter = toCoords newCenter
-                                                      , modelPixelDim = (px * scale, py * scale) }
+                              else changeViewTo oldModel { modelCenter = toCoords newCenter
+                                                         , modelPixelDim = (px * scale, py * scale) }
                       get currentTool value >>= \case
                         Right tool -> do
                           get lastClick value >>= \case
@@ -975,7 +1090,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                             Just (Viewport vstart) -> do
                               zstart <- viewToModel (uncurry Point vstart)
                               z <- viewToModel pt
-                              Model _ pxDims <- get model value
+                              Model _ pxDims _ <- get model value
                               handle <- getToolEventHandler tool
                               case handle pxDims (DragDone z zstart) of
                                 Just action -> do
@@ -990,9 +1105,20 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 set lastClick [value := Nothing]
                 propagateEvent
 
+              MouseLeftDrag pt modifiers
+                | isNoShiftAltControlDown modifiers
+                , Left NavTool <- currentToolNow
+                , Just (r0, s0, _) <- globeDragNow -> do
+                    -- Turn the globe, trackball-style: the point of the
+                    -- sphere under the pointer stays under it.
+                    s1 <- viewToScreen pt
+                    writeIORef globeDrag (Just (r0, s0, True))
+                    writeIORef pendingGlobe (Just (trackballRotation r0 s0 s1))
+                    propagateEvent
+
               MouseLeftDrag pt modifiers | isNoShiftAltControlDown modifiers -> do
                 mpt <- viewToModel pt
-                setPointerLocation mpt
+                showPointerAt pt mpt
                 set draggedTo [value := Just $ Viewport (pointX pt, pointY pt)]
                 let dragAction = do
                       dragBox <- getDragBox lastClick draggedTo
@@ -1012,7 +1138,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                        Just (Viewport vstart) -> do
                          zstart <- viewToModel (uncurry Point vstart)
                          z <- viewToModel pt
-                         Model _ pxDims <- get model value
+                         Model _ pxDims _ <- get model value
                          handle <- getToolEventHandler tool
                          case handle pxDims (Drag z zstart) of
                            Just action -> do
@@ -1025,7 +1151,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               MouseMotion pt modifiers | isNoShiftAltControlDown modifiers -> do
                 mpt <- viewToModel pt
                 writeIORef lastKnownMouse (Just mpt)
-                setPointerLocation mpt
+                showPointerAt pt mpt
                 propagateEvent
 
               MouseLeftDClick pt modifiers | isNoShiftAltControlDown modifiers -> do
@@ -1074,26 +1200,35 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                       cmx' = pmx + (cmx - pmx) * scale
                       cmy' = pmy + (cmy - pmy) * scale
 
-                  changeViewTo Model { modelPixelDim = (px * scale, py * scale)
-                                     , modelCenter = (cmx', cmy') }
+                  -- (on the sphere, zooming about the globe's center)
+                  changeViewTo oldModel { modelPixelDim = (px * scale, py * scale)
+                                        , modelCenter = if isJust (modelRotation oldModel)
+                                                          then modelCenter oldModel else (cmx', cmy') }
 
         _ -> propagateEvent
 
+
+    -- Take what the current render has drawn so far, if it's drawn more
+    -- since last time, as the image to show.
+    lastCapture <- newIORef =<< getCurrentTime
+    let captureRender = do
+          curTile <- get currentTile value
+          ifModified curTile $ do
+            viewRect <- windowGetViewRect f
+            tileImage <- generateTileImage curTile viewRect
+            saved <- imageCopy tileImage
+            set savedTileImage [value := Just saved]
+            bmp <- bitmapCreateFromImage saved (-1)
+            set savedTileBitmap [value := Just bmp]
+            writeIORef savedTileIsCurrent True
+            triggerRepaint
 
     -- Add a timer which will check for repainting requests from WX, ~10Hz
     _ <- wxTimer f [ interval := 100
                    , enabled := True
                    , on command := do
                        curTile <- get currentTile value
-                       ifModified curTile $ do
-                         viewRect <- windowGetViewRect f
-                         tileImage <- generateTileImage curTile viewRect
-                         saved <- imageCopy tileImage
-                         set savedTileImage [value := Just saved]
-                         bmp <- bitmapCreateFromImage saved (-1)
-                         set savedTileBitmap [value := Just bmp]
-                         writeIORef savedTileIsCurrent True
-                         triggerRepaint
+                       captureRender
                        -- Report the current render's issues, if any. The
                        -- previous message stays up until the render either
                        -- finds an issue or finishes, so that the bar doesn't
@@ -1113,13 +1248,39 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                        when needRefresh (changeViewTo =<< get model value)
                    ]
 
+    -- The globe-drag timer: show a drag's latest orientation once the
+    -- current render has finished, or has had a tenth of a second (as
+    -- long as a parameter change's render gets), whichever comes first.
+    _ <- wxTimer f [ interval := 16
+                   , enabled := True
+                   , on command := readIORef pendingGlobe >>= \case
+                       Nothing -> pure ()
+                       Just r -> do
+                         finished <- tileFinished =<< get currentTile value
+                         started <- readIORef lastViewRender
+                         now <- getCurrentTime
+                         when (finished || diffUTCTime now started >= 0.1) $ do
+                           writeIORef pendingGlobe Nothing
+                           m <- get model value
+                           jumpViewWith False m { modelRotation = Just r }
+                   ]
+
     -- Animation timer. At ~65Hz, check if we are animating between
     -- two views. If so, step the animation and repaint.
     _ <- wxTimer f [ interval := 16
                    , enabled := True
                    , on command := get animate value >>= \case
                        Nothing -> pure ()
-                       Just _  -> triggerRepaint
+                       -- (with the render's latest, so that a view change's
+                       -- animation shows what's been drawn as it's drawn: at
+                       -- most every 33ms, since taking it isn't free)
+                       Just _  -> do
+                         now <- getCurrentTime
+                         previous <- readIORef lastCapture
+                         when (diffUTCTime now previous >= 0.033) $ do
+                           writeIORef lastCapture now
+                           captureRender
+                         triggerRepaint
                    ]
 
     -- onResizeTimer is a one-shot timer that fires 100ms after the
@@ -1216,11 +1377,19 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         -- over it. Recorded as a new step in the history, like any other
         -- move, so "Last view" can still undo it.
         goHome = changeViewTo
-          (Model vOriginalCenter (vOriginalPixelSize, vOriginalPixelSize * vOriginalAspect))
+          =<< (get model value <&> \m -> case modelRotation m of
+                 -- (the original view of the kind it shows now)
+                 Nothing -> let (c, px) = vOriginalPlaneView
+                            in Model c (px, px * vOriginalAspect) Nothing
+                 Just _ -> Model (0, 0) (vOriginalSpherePixelSize, vOriginalSpherePixelSize)
+                                 (Just vOriginalRotation))
 
         jumpToView = do
           oldModel <- get model value
-          let (oldX, oldY) = modelCenter oldModel
+          -- (on the sphere, the point the globe faces)
+          let (oldX, oldY) = case modelRotation oldModel of
+                Nothing -> modelCenter oldModel
+                Just r -> sphereToPlane (rotateBy r (0, 0, 1))
               (oldPx, oldPy) = modelPixelDim oldModel
           d <- dialog f [ text := "Jump to view..." ]
           jp <- panel d []
@@ -1241,7 +1410,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                         my <- readMaybe <$> get jCenterY text
                         mp <- readMaybe <$> get jPixel   text
                         -- (keeping the aspect ratio)
-                        onDone ((\(x,y,dz) -> Model (x, y) (dz, dz * oldPy / oldPx)) <$>
+                        -- (on the sphere, the point to face)
+                        onDone ((\(x,y,dz) -> case modelRotation oldModel of
+                                   Nothing -> Model (x, y) (dz, dz * oldPy / oldPx) Nothing
+                                   Just _ -> Model (0, 0) (dz, dz) (Just (rotationFacing (x, y)))) <$>
                                  ((,,) <$> mx <*> my <*> mp)) ]
           case result of
             Nothing -> pure ()
@@ -1282,11 +1454,31 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     menuItem hamburgerMenu [ text := "Next view\t>", on command := goForward ]
     menuItem hamburgerMenu [ text := "Jump to view...\t@", on command := jumpToView ]
     menuItem hamburgerMenu [ text := "Original view\t^", on command := goHome ]
-    -- (a complex viewer's pixels are always square)
+    -- (a complex viewer's pixels are always square; it can be shown on
+    -- the plane or on the sphere instead)
     case vCoordinate of
       RealCoordinates{} -> void $
         menuItem hamburgerMenu [ text := "Aspect ratio...", on command := setAspectRatio ]
-      ComplexCoordinate{} -> pure ()
+      ComplexCoordinate{} -> do
+        onSphere <- isJust . modelRotation <$> get model value
+        sphereItem <- menuItem hamburgerMenu [ text := "Show on the sphere", checkable := True
+                                             , checked := onSphere ]
+        set sphereItem [ on command := do
+          m <- get model value
+          -- keeping the point in the middle of the view there (see
+          -- 'Actor.Viewer.switchView'), each at its script's zoom
+          case modelRotation m of
+            Nothing -> changeViewTo (Model (0, 0) (vOriginalSpherePixelSize, vOriginalSpherePixelSize)
+                                           (Just (rotationFacing (modelCenter m))))
+            Just r -> do
+              let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
+                  finite a = not (isNaN a || isInfinite a) && abs a < 1e300
+                  px = snd vOriginalPlaneView
+              changeViewTo (Model (if finite cx && finite cy then c else (0, 0)) (px, px) Nothing)
+          isJust . modelRotation <$> get model value >>= \b -> set sphereItem [ checked := b ] ]
+        -- (whatever else changes the view: Last view and Next view, say)
+        modifyIORef' beforeMenu (>> (isJust . modelRotation <$> get model value
+                                       >>= \b -> set sphereItem [ checked := b ]))
     menuItem hamburgerMenu [ text := "Show configuration\t=", on command := raiseConfigWindow ]
 
     -- The colorizers this viewer can use, with the one it uses checked.
@@ -1523,8 +1715,31 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 data Model = Model
   { modelCenter   :: (Double, Double)
   , modelPixelDim :: (Double, Double)
+  , modelRotation :: Maybe Rotation
+    -- ^ The globe's orientation, when the viewer shows the sphere (then
+    -- the center and pixel size are on the screen plane, in units of
+    -- the sphere's radius); 'Nothing' on the plane.
   }
   deriving Eq
+
+-- | The model point under a point of the screen plane. On the sphere, a
+-- point off the globe counts as the nearest point of its rim.
+screenToModel :: Model -> (Double, Double) -> (Double, Double)
+screenToModel m s@(x, y) = case modelRotation m of
+  Nothing -> s
+  Just r ->
+    let d = sqrt (x * x + y * y)
+        s' = if d >= 1 then (0.999999 * x / d, 0.999999 * y / d) else s
+    in fromMaybe s (screenToPlane r s')
+
+-- | Whether a point of the screen plane shows the model: on the sphere,
+-- whether it's on the globe.
+showsModel :: Model -> (Double, Double) -> Bool
+showsModel m (x, y) = isNothing (modelRotation m) || x * x + y * y <= 1
+
+-- | How a model's points get onto its screen plane.
+modelProjection :: Model -> Projection
+modelProjection = maybe FlatProjection GlobeProjection . modelRotation
 
 -- | Given the dimensions of the window, work out a rectangle describing
 -- the viewport in the underlying coordinate system.
@@ -1541,6 +1756,9 @@ interpolateModel :: Double -> Model -> Model -> Model
 interpolateModel t m1 m2 = m2
     { modelCenter   = interpolate modelCenter
     , modelPixelDim = logInterpolate modelPixelDim
+    , modelRotation = case (modelRotation m1, modelRotation m2) of
+        (Just r1, Just r2) -> Just (slerp r1 r2 t)
+        (_, r2) -> r2
     }
   where
     interp p q = p + t * (q - p)
@@ -1549,6 +1767,129 @@ interpolateModel t m1 m2 = m2
     logInterp p q = p * (q/p) ** t
     logInterp2  (p1,p2) (q1,q2) = (logInterp p1 q1, logInterp p2 q2)
     logInterpolate f = logInterp2 (f m1) (f m2)
+
+-- | What a new render shows until it's drawn: the old render's image,
+-- moved to where its points are in the new view, so that a render that
+-- hasn't got far (while a parameter is dragged, or the globe turned)
+-- shows the old picture rather than grey; the pieces it covers are drawn
+-- last, without the coarse passes (see 'progressivelyOver'), so that the
+-- parts that are new to the view are drawn first. On the plane, each new pixel
+-- takes the old pixel at the same model point (the same pixel, if the
+-- view hasn't moved); on the sphere, the old pixel at the same point of
+-- the sphere, if it was on the old globe's visible side. Anything else
+-- starts grey; so does everything, when the window's size or the kind
+-- of view has changed.
+reprojectedSeed :: Tile -> Model -> Model -> (Int, Int) -> Maybe (Ptr Word8 -> IO (Int -> Int -> Bool))
+reprojectedSeed oldTile old new (w, h)
+  | tileRect oldTile /= (w, h) = Nothing
+  | isJust (modelRotation old) /= isJust (modelRotation new) = Nothing
+  | otherwise = Just $ \dest -> withSynchedTileBuffer oldTile $ \src -> do
+      -- (piece by piece, to tell which pieces it all came from the old image)
+      let n = subBlockSize
+          pieces = [ (bx, by) | by <- [0 .. (h - 1) `div` n], bx <- [0 .. (w - 1) `div` n] ]
+      uncovered <- fmap concat . forM pieces $ \(bx, by) -> do
+        missed <- fmap or . forM [ (i, j) | j <- [by * n .. min h ((by + 1) * n) - 1]
+                                           , i <- [bx * n .. min w ((bx + 1) * n) - 1] ] $ \(i, j) -> do
+          let screen = pixelToScreen new (i, j)
+              from = case (modelRotation old, modelRotation new) of
+                (Just ro, Just rn) -> do
+                  p <- screenToSphere rn screen
+                  sphereToScreen ro p >>= screenToPixel old
+                _ -> screenToPixel old screen
+              d = 3 * (j * w + i)
+          case from of
+            Just (i', j') -> do
+              forM_ [0, 1, 2] $ \k ->
+                peekByteOff src (3 * (j' * w + i') + k) >>= \(b :: Word8) -> pokeByteOff dest (d + k) b
+              pure False
+            -- (off the globe, the background, which is all there is to draw)
+            Nothing
+              | showsModel new screen -> do
+                  pokeUndrawn dest d
+                  pure True
+              | otherwise -> do
+                  pokeBackground dest d
+                  pure False
+        pure [ (bx, by) | missed ]
+      let missing = Set.fromList uncovered
+      pure (\bx by -> (bx, by) `Set.notMember` missing)
+  where
+    pixelToScreen m = pixelCenter m (w, h)
+    -- the pixel a point of a view's screen plane is in, if it's in the window
+    screenToPixel m (x, y) =
+      let (cx, cy) = modelCenter m
+          (px, py) = modelPixelDim m
+          i = floor ((x - cx) / px + fromIntegral w / 2)
+          j = floor ((cy - y) / py + fromIntegral h / 2)
+      in if i >= 0 && i < w && j >= 0 && j < h then Just (i, j) else Nothing
+
+-- | What a new sphere view's render shows until it's drawn, when it
+-- starts from scratch: grey on the globe, and the background off it,
+-- since that's all there is to draw there (so the pieces wholly off the
+-- globe are done). On the plane, the usual grey.
+backgroundSeed :: Model -> (Int, Int) -> Maybe (Ptr Word8 -> IO (Int -> Int -> Bool))
+backgroundSeed m (w, h) = case modelRotation m of
+  Nothing -> Nothing
+  Just _ -> Just $ \dest -> do
+    -- Row by row: the globe is one span of a row (left as it is, not drawn
+    -- yet), with the background on either side of it.
+    let n = subBlockSize
+        span' j =
+          let (cx, cy) = modelCenter m
+              (px, py) = modelPixelDim m
+              y = cy - (fromIntegral j + 0.5 - fromIntegral h / 2) * py
+              half = if y * y > 1 then -1 else sqrt (1 - y * y)
+              -- the pixels whose centers are within half of the globe's middle
+              -- (the globe is centered on the screen plane's origin)
+              lo = ceiling ((negate half - cx) / px + fromIntegral w / 2 - 0.5) :: Int
+              hi = floor ((half - cx) / px + fromIntegral w / 2 - 0.5) :: Int
+          in if half < 0 then (w, w - 1) else (max 0 lo, min (w - 1) hi)
+        spans = [ span' j | j <- [0 .. h - 1] ]
+    forM_ (zip [0 ..] spans) $ \(j, (lo, hi)) -> do
+      forM_ [0 .. lo - 1] $ \i -> pokeBackground dest (3 * (j * w + i))
+      forM_ [max lo (hi + 1) .. w - 1] $ \i -> pokeBackground dest (3 * (j * w + i))
+    -- a piece is done if none of its rows reach its columns with the globe
+    let onGlobe bx by = or [ lo <= hi && hi >= bx * n && lo < (bx + 1) * n
+                           | (lo, hi) <- take n (drop (by * n) spans) ]
+    pure (\bx by -> not (onGlobe bx by))
+
+-- | The center of a pixel, on a view's screen plane.
+pixelCenter :: Model -> (Int, Int) -> (Int, Int) -> (Double, Double)
+pixelCenter m (w, h) (i, j) =
+  let (cx, cy) = modelCenter m
+      (px, py) = modelPixelDim m
+  in ( cx + (fromIntegral i + 0.5 - fromIntegral w / 2) * px
+     , cy - (fromIntegral j + 0.5 - fromIntegral h / 2) * py )
+
+-- | The parts of the first rectangle outside the second (each as left,
+-- top, right, bottom; the parts as left, top, width, height).
+rectanglesOutside :: (Double, Double, Double, Double) -> (Double, Double, Double, Double)
+                  -> [(Double, Double, Double, Double)]
+rectanglesOutside (lx0, ly0, lx1, ly1) (ox0, oy0, ox1, oy1) = filter sized
+  [ (lx0, ly0, lx1 - lx0, min oy0 ly1 - ly0)                       -- above
+  , (lx0, max oy1 ly0, lx1 - lx0, ly1 - max oy1 ly0)               -- below
+  , (lx0, my0, min ox0 lx1 - lx0, my1 - my0)                       -- left
+  , (max ox1 lx0, my0, lx1 - max ox1 lx0, my1 - my0) ]             -- right
+  where
+    my0 = max ly0 oy0
+    my1 = min ly1 oy1
+    sized (_, _, rw, rh) = rw > 0 && rh > 0
+
+-- | Mark a pixel at an offset in an RGB8 buffer as not drawn yet (grey).
+pokeUndrawn :: Ptr Word8 -> Int -> IO ()
+pokeUndrawn dest d = forM_ [0, 1, 2] $ \k -> pokeByteOff dest (d + k) (128 :: Word8)
+
+-- | Grey, where a render hasn't drawn yet.
+paintUndrawn :: DC d -> Rect -> IO ()
+paintUndrawn dc r = drawRect dc r [ brush := brushSolid (rgb (128 :: Word8) 128 128), pen := penTransparent ]
+
+-- | Put the color off the globe at a pixel's offset in an RGB8 buffer.
+pokeBackground :: Ptr Word8 -> Int -> IO ()
+pokeBackground dest d = do
+  let (r, g, b) = colorToRGB sphereBackground
+  pokeByteOff dest d r
+  pokeByteOff dest (d + 1) g
+  pokeByteOff dest (d + 2) b
 
 -- | A wrapper around UI.Tile.renderTile that tags each rendering
 -- action with an ID, and will stop rendering when the ID no longer
@@ -1569,10 +1910,11 @@ renderTile' :: Valued w
             -> Bool
             -> (Word32 -> Word32 -> Word32 -> Complex Double -> Complex Double
                 -> Ptr Word8 -> IO ViewerIssues)
+            -> Maybe (Ptr Word8 -> IO (Int -> Int -> Bool))
             -> (Int, Int)
             -> w Model
             -> IO Tile
-renderTile' renderId renderIssues smooth action dim model = do
+renderTile' renderId renderIssues smooth action seed dim model = do
     iD <- atomicModifyIORef' renderId (\x -> (x + 1, x + 1))
     -- A new render starts out with no issues; each block adds its own,
     -- unless a newer render has started since.
@@ -1585,7 +1927,7 @@ renderTile' renderId renderIssues smooth action dim model = do
               unless (issues == mempty) $
                 atomicModifyIORef' renderIssues $ \(i, old) ->
                   ((i, if i == iD then old <> issues else old), ())
-    renderTile smooth action' dim modelRect
+    renderTile smooth seed action' dim modelRect
 
 drawCenteredBitmap :: Bitmap () -> DC d -> Rect -> (Int,Int) -> IO ()
 drawCenteredBitmap bmp dc windowRect (width, height) = do
@@ -1641,7 +1983,8 @@ generateTileImage viewerTile _windowRect = do
 -- | Read draw commands from each tool layer and paint them into the
 -- given device context, and then draw the zoom drag box on top.
 paintToolLayerWithDragBox
-  :: ((Double, Double) -> IO Point)
+  :: Projection
+  -> ((Double, Double) -> IO Point)
   -> (Double, Double)
   -> IO [[DrawCommand]]
   -> Var (Maybe Viewport)
@@ -1650,8 +1993,8 @@ paintToolLayerWithDragBox
   -> Rect
   -> Rect
   -> IO ()
-paintToolLayerWithDragBox modelToView pxDim getDrawCommands lastClick draggedTo dc _ _ = dcEncapsulate dc $ do
-    paintToolLayer modelToView pxDim getDrawCommands dc
+paintToolLayerWithDragBox proj screenToView pxDim getDrawCommands lastClick draggedTo dc _ _ = dcEncapsulate dc $ do
+    paintToolLayer proj screenToView pxDim getDrawCommands dc
     dragBox <- getDragBox lastClick draggedTo
     case dragBox of
         Nothing  -> return ()
@@ -1675,14 +2018,29 @@ paintMoviePath dc pts@(firstPoint : _) = dcEncapsulate dc $ do
   dot red (last pts)
 
 -- | Read draw commands for each tool layer and paint them into the
--- given device context
+-- given device context. Model points get onto the screen plane by the
+-- projection, and from there into the window by @screenToView@: on the
+-- sphere, each shape is drawn where it is on the globe (a line or a
+-- circle of the plane, sampled, as it's curved there), only on the
+-- visible side.
 paintToolLayer
-  :: ((Double, Double) -> IO Point)
+  :: Projection
+  -> ((Double, Double) -> IO Point)
   -> (Double, Double)
   -> IO [[DrawCommand]]
   -> DC d
   -> IO ()
-paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
+paintToolLayer proj screenToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
+
+    let onGlobe = proj /= FlatProjection
+        modelToView = screenToView
+        toView p = traverse screenToView (projectToScreen proj p)
+        runsOf pts = mapM (mapM screenToView) (visibleRuns proj pts)
+        -- a closed outline on the globe: filled if it's all visible,
+        -- else its visible runs
+        outline fil pts = runsOf pts >>= \case
+          [r] | fil, length r == length pts -> polygon dc r []
+          rs -> forM_ rs $ \r -> polyline dc r [ brush := brushTransparent ]
 
     cmdss <- getDrawCommands
     let initialColor = rgba 255 255 255 (255 :: Word8)
@@ -1699,19 +2057,23 @@ paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
 
       forM_ (filter finiteDrawCommand cmds) $ \case
 
-        DrawPoint _ pt -> do
-          pt' <- modelToView pt
-          pc <- get dc penColor
-          oldBrush <- get dc brush
-          set dc [ brush := brushSolid pc ]
-          withFill True (circle dc pt' 2)
-          set dc [ brush := oldBrush ]
+        DrawPoint _ pt -> toView pt >>= \case
+          Nothing -> pure ()
+          Just pt' -> do
+            pc <- get dc penColor
+            oldBrush <- get dc brush
+            set dc [ brush := brushSolid pc ]
+            withFill True (circle dc pt' 2)
+            set dc [ brush := oldBrush ]
 
-        DrawLine _ pt1 pt2 -> do
-          pt1' <- modelToView pt1
-          pt2' <- modelToView pt2
-          withFill False (line dc pt1' pt2')
+        DrawLine _ pt1 pt2
+          | onGlobe -> runsOf (sampleSegment 64 pt1 pt2) >>= mapM_ (\r -> polyline dc r [])
+          | otherwise -> do
+              pt1' <- modelToView pt1
+              pt2' <- modelToView pt2
+              withFill False (line dc pt1' pt2')
 
+        DrawCircle _ fil r pt | onGlobe -> outline fil (sampleCircle 96 pt r)
         DrawCircle _ fil r pt -> do
           -- A circle in model space: an ellipse, when a real viewer's
           -- pixels aren't square.
@@ -1720,6 +2082,9 @@ paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
               ry = round (r / snd pxDim)
           withFill fil (ellipse dc (rect (WX.pt (cx - rx) (cy - ry)) (sz (2 * rx) (2 * ry))))
 
+        DrawRect _ fil (x1, y1) (x2, y2) | onGlobe -> do
+          let corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)]
+          outline fil (concat (zipWith (\a b -> init (sampleSegment 32 a b)) corners (drop 1 corners)) ++ [(x1, y1)])
         DrawRect _ fil pt1 pt3 -> do
           let pt2 = (fst pt1, snd pt3)
               pt4 = (fst pt3, snd pt1)
@@ -1739,11 +2104,12 @@ paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
         SetFill _ c ->
           set dc [ brush := brushSolid (fsColorToWxColor c) ]
 
-        Write _ txt pt -> do
-          Point x0 y0 <- modelToView pt
-          Size tw th <- getTextExtent dc txt
-          let pt' = Point (x0 - tw `div` 2) (y0 - th `div` 2)
-          withFill False (drawText dc txt pt')
+        Write _ txt pt -> toView pt >>= \case
+          Nothing -> pure ()
+          Just (Point x0 y0) -> do
+            Size tw th <- getTextExtent dc txt
+            let pt' = Point (x0 - tw `div` 2) (y0 - th `div` 2)
+            withFill False (drawText dc txt pt')
 
 -- | A tool's error, as a message for the user.
 describeToolError :: SomeException -> String

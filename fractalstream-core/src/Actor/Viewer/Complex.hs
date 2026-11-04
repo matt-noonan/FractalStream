@@ -9,7 +9,8 @@ import FractalStream.Prelude ()
 import Actor.Viewer
 import Actor.Layout
 import Actor.Tool
-import Actor.Event (Coordinate(..))
+import Actor.Event (Coordinate(..), ViewKind(..))
+import Actor.Viewer.Sphere (Rotation)
 
 import Data.DynamicValue
 
@@ -32,6 +33,17 @@ data ComplexViewer = ComplexViewer
   , cvAspect :: Double
     -- ^ The height of a pixel over its width (always 1 for a complex viewer).
   , cvCoord :: Coordinate
+  , cvView :: ViewKind
+    -- ^ How the viewer starts out showing its points (@view=@).
+  , cvViewV :: Variable ViewKind
+    -- ^ How it shows them now: a complex viewer can switch between the
+    -- plane and the sphere.
+  , cvRotationV :: Variable Rotation
+    -- ^ The globe's orientation, when it shows the sphere.
+  , cvOriginalRotation :: Rotation
+  , cvSpherePixelSize :: Double
+    -- ^ The pixel size its sphere view starts with (in units of the
+    -- sphere's radius); 'cvPixelSize' is its plane view's.
   , cvPixel :: Mapped (Maybe String) (Either String (Maybe String))
   , cvEscapeRadius :: Parsed (Maybe ParsedValue)
   , cvVanishRadius :: Parsed (Maybe ParsedValue)

@@ -30,7 +30,7 @@ import Actor.Layout (Field(..))
 import Actor.UI (UI(..))
 import Actor.Viewer
   ( Backend, Viewer(..)
-  , withRenderedViewerBuffer, snapshotToFile
+  , withRenderedViewerBuffer, snapshotToFile, switchView, centerViewOn
   , ViewerIssues, describeViewerIssues
   )
 import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
@@ -187,9 +187,14 @@ execCommand st = \case
     pure (Right st)
 
   SetViewerCenter pt -> withCurrentViewer st $ \viewer ->
-    withResolved (resolvePoint pt) $ \(x, y) -> do
-      setValue' (vCenter viewer) (x, y)
+    withResolved (resolvePoint pt) $ \xy -> do
+      -- (on the sphere, the globe turns to face it)
+      centerViewOn viewer xy
       pure (Right st)
+
+  SetViewerView kind -> withCurrentViewer st $ \viewer -> case vCoordinate viewer of
+    RealCoordinates _ _ -> pure (Left "only a complex viewer (one with `var=`) can be shown on the sphere")
+    ComplexCoordinate _ -> switchView viewer kind >> pure (Right st)
 
   SetViewerPixelSize pv -> withCurrentViewer st $ \viewer ->
     withResolved (resolveReal pv) $ \px -> do
@@ -237,9 +242,9 @@ execCommand st = \case
     | otherwise -> pure (Left ("no viewer named " ++ show name))
 
   CaptureViewer name path -> withNamedViewer st name $ \viewer -> do
-    r <- withRenderedViewerBuffer viewer True $ \center pixelSize dims buf -> do
+    r <- withRenderedViewerBuffer viewer True $ \view dims buf -> do
       layers <- vDrawCmds viewer
-      compositeDrawLayersToFile center pixelSize layers dims buf path
+      compositeDrawLayersToFile view layers dims buf path
     traverse (warnIssues name . fst) r <&> (st <$)
 
   CaptureViewerBase name path -> withNamedViewer st name $ \viewer ->
@@ -257,9 +262,9 @@ execCommand st = \case
 
 
   AssertPixel name (px, py) expected mtol -> withNamedViewer st name $ \viewer -> do
-    r <- withRenderedViewerBuffer viewer True $ \center pixelSize dims buf -> do
+    r <- withRenderedViewerBuffer viewer True $ \view dims buf -> do
       layers <- vDrawCmds viewer
-      compositeDrawLayers center pixelSize layers dims buf
+      compositeDrawLayers view layers dims buf
     case r of
       Left err  -> pure (Left err)
       Right (_, img) -> pure (checkPixel name img (px, py) expected mtol st)

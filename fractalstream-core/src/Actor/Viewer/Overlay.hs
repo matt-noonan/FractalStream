@@ -24,6 +24,7 @@ import Data.Color (colorToRGB)
 import qualified Data.Planar as Planar
 
 import Actor.Viewer.Overlay.Font (overlayFont)
+import Actor.Viewer.Sphere (Projection(..), ScreenView(..), projectToScreen, visibleRuns, sampleSegment, sampleCircle)
 import Graphics.Text.TrueType (Font, BoundingBox(..), stringBoundingBox)
 
 import Codec.Picture (Image(..), PixelRGBA8(..), writePng, generateImage, pixelAt)
@@ -47,13 +48,13 @@ import Data.Bits (shiftR)
 -- @layers@ is one list of draw commands per draw-order layer, as returned
 -- by a tool's combined 'Actor.Viewer.vDrawCmds'.
 compositeDrawLayers
-  :: (Double, Double)  -- ^ model-space view center
-  -> (Double, Double)  -- ^ model-space width and height of one pixel
+  :: ScreenView         -- ^ where the view is, and how model points get there
   -> [[DrawCommand]]    -- ^ draw layers, in draw order
   -> (Word32, Word32)   -- ^ buffer dimensions, in pixels
   -> Ptr Word8          -- ^ the rendered base image, as RGB8
   -> IO (Image PixelRGBA8)
-compositeDrawLayers center pixelSize layers (w32, h32) buf = do
+compositeDrawLayers ScreenView{ svCenter = center, svPixelSize = pixelSize, svProjection = proj }
+                    layers (w32, h32) buf = do
   let w = fromIntegral w32
       h = fromIntegral h32
   baseImage <- bufferToImage w h buf
@@ -65,7 +66,9 @@ compositeDrawLayers center pixelSize layers (w32, h32) buf = do
   -- drawing touches is exactly as rendered. With nothing to draw, the
   -- base image is the result, and Rasterific isn't needed at all.
   pure $ if all null layers then baseImage
-    else overImage (renderDrawing w h (PixelRGBA8 0 0 0 0) (drawLayers toPixel pixelSize layers))
+    else overImage (renderDrawing w h (PixelRGBA8 0 0 0 0) $ case proj of
+           FlatProjection -> drawLayers toPixel pixelSize layers
+           GlobeProjection _ -> mapM_ (drawGlobeLayer proj toPixel) layers)
                    baseImage
 
 -- | Lay a (non-premultiplied, as Rasterific makes them) RGBA image over
@@ -86,11 +89,11 @@ overImage top bottom = generateImage at (imageWidth bottom) (imageHeight bottom)
 
 -- | 'compositeDrawLayers', written out to a PNG file.
 compositeDrawLayersToFile
-  :: (Double, Double) -> (Double, Double) -> [[DrawCommand]] -> (Word32, Word32) -> Ptr Word8
+  :: ScreenView -> [[DrawCommand]] -> (Word32, Word32) -> Ptr Word8
   -> FilePath
   -> IO ()
-compositeDrawLayersToFile center pixelSize layers dims buf path =
-  writePng path =<< compositeDrawLayers center pixelSize layers dims buf
+compositeDrawLayersToFile view layers dims buf path =
+  writePng path =<< compositeDrawLayers view layers dims buf
 
 -- | Copy an RGB8 'Ptr Word8' buffer into a JuicyPixels 'Image' (as opaque
 -- RGBA8 -- Rasterific's 'renderDrawing' needs a 'PackeablePixel' instance
@@ -146,6 +149,50 @@ whenFinite :: [Point] -> [Float] -> Drawing PixelRGBA8 () -> Drawing PixelRGBA8 
 whenFinite pts lens action =
   when (all finite (lens ++ concat [ [x, y] | V2 x y <- pts ])) action
   where finite v = not (isNaN v || isInfinite v)
+
+-- | Draw a layer's commands on the globe: each shape is projected onto
+-- the sphere (a straight line or a circle of the plane is sampled, as
+-- it's curved there), and only what's on the visible side is drawn.
+drawGlobeLayer :: Projection -> ((Double, Double) -> Point) -> [DrawCommand] -> Drawing PixelRGBA8 ()
+drawGlobeLayer proj toPixel = go white white
+  where
+    white = PixelRGBA8 255 255 255 255
+    toPixelColor c = let (r, g, b) = colorToRGB c in PixelRGBA8 r g b 255
+    at = fmap toPixel . projectToScreen proj
+    runs = map (map toPixel) . visibleRuns proj
+    strokeRuns color rs = forM_ rs $ \r -> whenFinite r [] $
+      withTexture (uniformTexture color) (stroke 2 JoinRound (CapRound, CapRound) (polyline r))
+    -- a closed outline: filled if it's all visible, else its visible runs
+    outline filled strokeColor fillColor pts = case runs pts of
+      [r] | filled, length r == length pts ->
+        whenFinite r [] $ withTexture (uniformTexture fillColor) (fill (polygon r))
+      rs -> strokeRuns (if filled then fillColor else strokeColor) rs
+
+    go :: PixelRGBA8 -> PixelRGBA8 -> [DrawCommand] -> Drawing PixelRGBA8 ()
+    go _ _ [] = pure ()
+    go strokeColor fillColor (cmd : cmds) = case cmd of
+      SetStroke _ c -> go (toPixelColor c) fillColor cmds
+      SetFill   _ c -> go strokeColor (toPixelColor c) cmds
+      Clear _ -> go strokeColor fillColor cmds
+      DrawPoint _ pt -> do
+        forM_ (at pt) $ \p -> whenFinite [p] [] $
+          withTexture (uniformTexture strokeColor) (fill (circle p 2))
+        go strokeColor fillColor cmds
+      DrawLine _ pt1 pt2 -> do
+        strokeRuns strokeColor (runs (sampleSegment 64 pt1 pt2))
+        go strokeColor fillColor cmds
+      DrawCircle _ filled r pt -> do
+        outline filled strokeColor fillColor (sampleCircle 96 pt r)
+        go strokeColor fillColor cmds
+      DrawRect _ filled (x1, y1) (x2, y2) -> do
+        let corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)]
+            edges = concat (zipWith (\a b -> init (sampleSegment 32 a b)) corners (drop 1 corners)) ++ [(x1, y1)]
+        outline filled strokeColor fillColor edges
+        go strokeColor fillColor cmds
+      Write _ txt pt -> do
+        forM_ overlayFont $ \font -> forM_ (at pt) $ \p -> whenFinite [p] [] $
+          withTexture (uniformTexture strokeColor) (drawCenteredText font p txt)
+        go strokeColor fillColor cmds
 
 -- | Draw every layer's commands, in order. Each layer starts with the pen
 -- and fill reset to white, matching @UI.ProjectViewer.paintToolLayer@.

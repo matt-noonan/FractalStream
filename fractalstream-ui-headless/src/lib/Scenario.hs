@@ -30,7 +30,7 @@ import FractalStream.Prelude
 
 import Language.Value.Typecheck (ParsedValue)
 import Actor.Movie (InsetCorner(..))
-import Actor.Event (Coordinate(..))
+import Actor.Event (Coordinate(..), ViewKind(..))
 import Language.Value.Parser (valueGrammar, arithGrammar)
 import Language.Value.Syntax (textLiteral)
 import Data.Char (isDigit)
@@ -65,6 +65,7 @@ data Command
   | SetViewerCenter Point
   | SetViewerPixelSize ParsedValue
   | SetViewerAspect ParsedValue
+  | SetViewerView ViewKind
 
   | ClickAt Point
   | DoubleClickAt Point
@@ -174,6 +175,9 @@ scenarioGrammar = mdo
     SetViewerPixelSize <$> (kw "set" *> kw "viewer" *> kw "pixel" *> kw "size" *> kw "to" *> value <* nl)
   setViewerAspect <- rule $
     SetViewerAspect <$> (kw "set" *> kw "viewer" *> kw "aspect" *> kw "to" *> value <* nl)
+  setViewerView <- rule $
+    SetViewerView <$> (kw "set" *> kw "viewer" *> kw "view" *> kw "to"
+                       *> ((PlaneView <$ kw "plane") <|> (SphereView <$ kw "sphere")) <* nl)
 
   clickAt <- rule $
     ClickAt <$> (kw "click" *> kw "at" *> point <* nl)
@@ -228,7 +232,7 @@ scenarioGrammar = mdo
   command <- ruleChoice
     [ selectViewer, selectTool, deselectTool
     , setParameter, setToolParameter, setColorizerParameter
-    , resizeViewer, setViewerCenter, setViewerPixelSize, setViewerAspect
+    , resizeViewer, setViewerCenter, setViewerPixelSize, setViewerAspect, setViewerView
     , clickAt, doubleClickAt, dragFromTo
     , pressButton, triggerRefresh, triggerTimer
     , waitForViewer

@@ -94,6 +94,7 @@ below).
 | `xvar=`, `yvar=` | none | instead of `var=`: a *real viewer*, whose pixel is the pair of real coordinates `(x, y)` with these names. Both are needed, and they can't be used with `var=`. Either can be a real `@config` variable's name, for a plane of real parameters (`xvar=a yvar=b`). |
 | `center=` | `0` | original center ("Original view" returns here); quote anything but a plain number: `center="-0.75 + 0.1i"`. A real viewer's is a point, `center=(1, -1/2)`, or a complex number. |
 | `pixelSize=` | `1/128` | model width of one pixel (zoom) in the original view; `1/200`, `0.005` |
+| `view=` | `plane` | `sphere`: show a complex viewer's points on the Riemann sphere, as a globe. `z` is still a complex number (stereographic: 0 is the north pole, ∞ the south pole); `center=` is the point facing you, and `pixelSize=` is measured on the unit sphere (default: the globe fills most of the window). Navigate's drag turns the globe; the viewer's menu switches between sphere and plane. Not for real viewers. |
 | `aspect=` | `1` | real viewers only: a pixel's height over its width in the original view (`aspect=2` fits twice as much of the y axis). A complex viewer's pixels are always square. The wx viewer's menu has "Aspect ratio..." to change it. |
 | `limit=`, `escape=`, `vanish=` | `max_iters`, `escape_radius`, `vanishing_radius` | name a different (config) variable to use as the loop limit / escape radius / vanishing radius in this viewer |
 | `pixelVar=` | `pixel_size` | name under which the current pixel size is visible |
@@ -117,6 +118,8 @@ wx-properties:
       center: [-0.75, 0.1]   # current view (the script's center= is the original)
       pixel-size: 0.005
       aspect: 2              # a real viewer's current aspect, when it isn't 1
+      view: sphere           # a complex viewer showing the other view than its script's
+      rotation: [1, 0, 0, 0] # on the sphere, the globe's orientation (a unit quaternion)
   configuration: { x: 40, y: 80 }
 ```
 

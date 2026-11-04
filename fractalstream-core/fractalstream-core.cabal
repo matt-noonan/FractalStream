@@ -76,6 +76,7 @@ library
                        Actor.Viewer.Types
                        Actor.Viewer.Complex
                        Actor.Viewer.Overlay
+                       Actor.Viewer.Sphere
                        Actor.Viewer.Preview
                        Actor.Movie
                        Actor.Metadata
@@ -216,6 +217,7 @@ test-suite spec
                     , Actor.ScriptSpec
                     , Actor.EnsembleBuildSpec
                     , Actor.RealViewerSpec
+                    , Actor.SphereSpec
                     , Actor.ColorizerSpec
                     , Actor.AutocolorSpec
                     , Task.ConcurrentSpec
