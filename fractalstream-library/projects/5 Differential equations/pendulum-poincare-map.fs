@@ -1,56 +1,59 @@
 script: |
-  # A forced, damped pendulum, x'' + a x' + b sin(x) = cos(t), where x is
-  # the pendulum's angle and y = x' its angular velocity. Its Poincaré
-  # map takes (x, y) to where the pendulum is one period of the forcing
-  # (t = 2π) later; each pixel follows the map until it comes back to
-  # where it was, at a periodic motion with the forcing's own period.
-  # Each period is ten steps of Euler's method, as in the original
-  # FractalStream's version of this script.
+  # A forced, damped pendulum,
+  #   angle'' + damping angle' + gravity sin(angle) = cos(t),
+  # and its Poincaré map, which takes the pendulum's angle and angular
+  # velocity to where they are one period of the forcing (t = 2π) later.
+  # Each pixel follows the map until the pendulum settles into a motion
+  # that repeats with every period of the forcing. Each period is ten
+  # steps of Euler's method, as in the original FractalStream's version
+  # of this script.
   @config "Pendulum"
-  a : ℝ as "Damping a =" ⟵ 0.285
-  b : ℝ as "Restoring force b =" ⟵ 1.485
+  damping : ℝ as "Damping =" ⟵ 0.285
+  gravity : ℝ as "Gravity =" ⟵ 1.485
 
   @common
-  # One period of the forcing, from t = 0 to t = 2π, in ten steps.
+  # One period of the forcing, from t = 0 to t = 2π, in ten steps. (The
+  # velocity is updated with the new angle, as the original did: two
+  # assignments, not one tuple assignment.)
   define one_period:
     h ≔ 2 π / 10
     t ≔ 0.0
     for each k in range(1, 10):
-      x ⟵ x + h y
-      y ⟵ y + h (cos(t) - a y - b sin(x))
+      angle ⟵ angle + h velocity
+      velocity ⟵ velocity + h (cos(t) - damping velocity - gravity sin(angle))
       t ⟵ t + h
 
+  # Follow the Poincaré map until it comes back to the same point.
   define settle:
-    u, v ≔ x, y
     repeat:
-      u, v ⟵ x, y
       run one_period
-    until (u, v) = (x, y)
+    until (angle, velocity) stops
 
+  # Color by the motion it settled into (which full turn the angle ends
+  # up on), shaded by how long that took.
   define color_basin:
-    color ⟵ rainbow(x / (12 π))
+    color ⟵ rainbow(angle / (12 π))
     color ⟵ if stuck then black else cycle(iterations / 20, dark color, light color)
 
-  @viewer "Parameter plane" xvar=a yvar=b center=(0.5, 1) pixelSize=1/200
+  @viewer "Parameter plane" xvar=damping yvar=gravity center=(0.5, 1) pixelSize=1/200
   # (starting from the pendulum at rest, hanging down)
-  x, y ≔ 0.0, 0.0
+  angle, velocity ≔ 0.0, 0.0
   run settle
   run color_basin
 
-  @viewer "Dynamical plane" xvar=x yvar=y center=(0, 0) pixelSize=1/64
+  @viewer "Dynamical plane" xvar=angle yvar=velocity center=(0, 0) pixelSize=1/64
   run settle
   run color_basin
 metadata:
   title: A forced pendulum's Poincaré map
   description: |
-    A damped pendulum pushed back and forth, x'' + ax' + b sin x = cos t,
-    seen once per push: its Poincaré map. Each point (angle x, angular
-    velocity y) is colored by the motion it settles into, one that
-    repeats with every push, and shaded by how long that takes; black
-    means it doesn't settle. The parameter plane does the same for the
-    pendulum starting at rest, for each damping a and restoring force b;
-    click there to choose them. From a script for the original
-    FractalStream.
+    A damped pendulum pushed back and forth, seen once per push: its
+    Poincaré map. Each point (the pendulum's angle and angular velocity)
+    is colored by the motion it settles into, one that repeats with every
+    push, and shaded by how long that takes; black means it doesn't
+    settle. The parameter plane does the same for the pendulum starting
+    at rest, for each damping and strength of gravity; click there to
+    choose them. From a script for the original FractalStream.
   preview-commands: |
     select viewer "Dynamical plane"
     set viewer center to (-4.5625, -1.796875)
