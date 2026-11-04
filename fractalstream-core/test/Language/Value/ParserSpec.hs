@@ -217,6 +217,12 @@ spec = do
       parses6 `shouldBe` Right 12
       parses7 `shouldBe` Right (-1)
 
+    it "parses a power before a function as multiplication" $ do
+      parseF "2^2 sin 1" `shouldBe` Right (4 * sin 1)
+      parseF "2² sin(1)" `shouldBe` Right (4 * sin 1)
+      parseF "3 2² cos(1) sin(1)" `shouldBe` Right (3 * 4 * cos 1 * sin 1)
+      parseF "2^cos(0) sin(1)" `shouldBe` Right (2 * sin 1)
+
   describe "when parsing parameterized values" $ do
 
     let env = declare @"x" IntegerType $ endOfDecls
