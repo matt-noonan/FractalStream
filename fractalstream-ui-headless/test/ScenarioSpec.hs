@@ -14,6 +14,7 @@ import Language.Typecheck (TC(..), TCError)
 
 import Scenario
 import Actor.Movie (InsetCorner(..))
+import Actor.Event (Coordinate(..))
 
 import Text.RawString.QQ
 
@@ -120,6 +121,12 @@ spec = describe "parseScenario" $ do
     onlyCommand [r|set viewer pixel size to 1/128
 |] $ \case
       SetViewerPixelSize pv -> pv `shouldResolveTo` (1/128)
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses set viewer aspect" $
+    onlyCommand [r|set viewer aspect to 1/2
+|] $ \case
+      SetViewerAspect pv -> pv `shouldResolveTo` 0.5
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
   it "parses click at, Cartesian form" $
@@ -255,7 +262,7 @@ capture viewer "Mandelbrot set" to "trace.png"
 |] $ \case
       RecordMovie _ _ MovieOptions{..} (MoviePath var pts) -> do
         (moLoop, moBase) `shouldBe` (False, True)
-        var `shouldBe` "C"
+        var `shouldBe` ComplexCoordinate "C"
         length pts `shouldBe` 3
         case pts of
           [ComplexPoint a, CartesianPoint x y, ComplexPoint _] -> do
@@ -268,8 +275,14 @@ capture viewer "Mandelbrot set" to "trace.png"
   it "parses record viewer with an inset" $
     onlyCommand [r|record viewer "Julia set" to "julia.mov" frames 10 fps 5 loop inset "Mandelbrot set" moving C along -1, 0
 |] $ \case
-      RecordMovie _ _ MovieOptions{..} (MoviePath "C" [_, _]) -> do
+      RecordMovie _ _ MovieOptions{..} (MoviePath (ComplexCoordinate "C") [_, _]) -> do
         (moLoop, moBase, moInset) `shouldBe` (True, False, Just ("Mandelbrot set", BottomRight))
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses record viewer moving a pair of real variables" $
+    onlyCommand [r|record viewer "Orbit" to "orbit.mov" frames 10 fps 5 moving (a, b) along (1, 0), (1.4, 0.3)
+|] $ \case
+      RecordMovie _ _ _ (MoviePath coord [_, _]) -> coord `shouldBe` RealCoordinates "a" "b"
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
   it "parses record viewer with an inset in a chosen corner" $
@@ -298,6 +311,7 @@ describeShape = \case
   ResizeViewer{}       -> "ResizeViewer"
   SetViewerCenter{}    -> "SetViewerCenter"
   SetViewerPixelSize{} -> "SetViewerPixelSize"
+  SetViewerAspect{}    -> "SetViewerAspect"
   ClickAt{}            -> "ClickAt"
   DoubleClickAt{}      -> "DoubleClickAt"
   DragFromTo{}         -> "DragFromTo"

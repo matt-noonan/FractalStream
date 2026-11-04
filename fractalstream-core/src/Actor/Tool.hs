@@ -23,7 +23,7 @@ data Tool = Tool
   , toolConfig :: Variable (Maybe Configuration)
   , toolShowConfig :: Variable (Bool -> IO ())
   , toolScript :: Mapped CodeString ParsedToolScript
-  , toolEventHandler :: Variable (Double -> Event -> Maybe (IO ()))
+  , toolEventHandler :: Variable (PixelDims -> Event -> Maybe (IO ()))
   , toolVars :: Dynamic (Set String)
   , toolTimers :: Variable [(String, Int)]
     -- ^ The tool's @on timer@ handlers, by name, with their intervals in

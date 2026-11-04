@@ -1,0 +1,242 @@
+=== viewer 0: Parameter plane
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          block:
+            set `a` := [internal] x
+            block:
+              set `b` := [internal] y
+              let `pixel_size` = [internal] dx in:
+                let `pixel_width` = [internal] dx in:
+                  let `pixel_height` = [internal] dy in:
+                    block:
+                      let `x` = 0:R in:
+                        block:
+                          let `y` = 0:R in:
+                            block:
+                              let `[internal] fresh #23` = 0 in:
+                                let `[internal] fresh #24` = settle in:
+                                  block:
+                                    if ((((x ^ 2:R) + (y ^ 2:R)) < (escape_radius ^ 2:R)) and ([internal] fresh #23 < [internal] fresh #24)) then:
+                                      do-while ((((x ^ 2:R) + (y ^ 2:R)) < (escape_radius ^ 2:R)) and ([internal] fresh #23 < [internal] fresh #24)):
+                                        block:
+                                          block:
+                                            block:
+                                              block:
+                                                let `t` = x in:
+                                                  block:
+                                                    set `x` := ((1:R - (a * (x ^ 2:R))) + y)
+                                                    set `y` := (b * t)
+                                          set `[internal] fresh #23` := ([internal] fresh #23 + 1)
+                                    else:
+                                      no-op
+                                    set `[internal] iteration count` := [internal] fresh #23
+                                    set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
+                              if ![internal] stuck then:
+                                block:
+                                  set `color` := let #cycle-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 0 0 255), Color 255 255 255)
+                              else:
+                                block:
+                                  let `x0` = x in:
+                                    block:
+                                      let `y0` = y in:
+                                        block:
+                                          let `[internal] fresh #25` = 0 in:
+                                            let `[internal] fresh #26` = max_period in:
+                                              block:
+                                                do-while (!(((((x - x0) ^ 2:R) + ((y - y0) ^ 2:R)) < (tolerance ^ 2:R)) or ((escape_radius ^ 2:R) < ((x ^ 2:R) + (y ^ 2:R)))) and ([internal] fresh #25 < [internal] fresh #26)):
+                                                  block:
+                                                    block:
+                                                      block:
+                                                        block:
+                                                          let `t` = x in:
+                                                            block:
+                                                              set `x` := ((1:R - (a * (x ^ 2:R))) + y)
+                                                              set `y` := (b * t)
+                                                    set `[internal] fresh #25` := ([internal] fresh #25 + 1)
+                                                set `[internal] iteration count` := [internal] fresh #25
+                                                set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
+                                          if ((escape_radius ^ 2:R) < ((x ^ 2:R) + (y ^ 2:R))) then:
+                                            block:
+                                              set `color` := blend(0.333, Color 0 0 0, Color 0 0 255)
+                                          else:
+                                            if [internal] stuck then:
+                                              block:
+                                                set `color` := blend(0.333, Color 0 0 0, Color 128 128 128)
+                                            else:
+                                              block:
+                                                set `color` := let #wheel-arg = (((log([internal] iteration count:R) / log(2:R)) / 6:R) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))))
+
+
+=== viewer 1: Dynamical plane
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `x` = [internal] x in:
+            let `y` = [internal] y in:
+              let `pixel_size` = [internal] dx in:
+                let `pixel_width` = [internal] dx in:
+                  let `pixel_height` = [internal] dy in:
+                    block:
+                      let `[internal] fresh #23` = 0 in:
+                        let `[internal] fresh #24` = [internal] iteration limit in:
+                          block:
+                            if ((((x ^ 2:R) + (y ^ 2:R)) < (escape_radius ^ 2:R)) and ([internal] fresh #23 < [internal] fresh #24)) then:
+                              do-while ((((x ^ 2:R) + (y ^ 2:R)) < (escape_radius ^ 2:R)) and ([internal] fresh #23 < [internal] fresh #24)):
+                                block:
+                                  block:
+                                    block:
+                                      block:
+                                        let `t` = x in:
+                                          block:
+                                            set `x` := ((1:R - (a * (x ^ 2:R))) + y)
+                                            set `y` := (b * t)
+                                  set `[internal] fresh #23` := ([internal] fresh #23 + 1)
+                            else:
+                              no-op
+                            set `[internal] iteration count` := [internal] fresh #23
+                            set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
+                      set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 10:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 0 0 255), Color 255 255 255)
+
+
+--- tool Attractor
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            let `pixel_width` = [internal] px in:
+              let `pixel_height` = [internal] py in:
+                block:
+                  erase
+                  use Color 255 100 0 for line
+                  let `x` = 0:R in:
+                    block:
+                      let `y` = 0:R in:
+                        block:
+                          let `n` = 0 in:
+                            block:
+                              let `[internal] fresh #22` = 0 in:
+                                let `[internal] fresh #23` = (points + 100) in:
+                                  block:
+                                    do-while ((((x ^ 2:R) + (y ^ 2:R)) < (escape_radius ^ 2:R)) and ([internal] fresh #22 < [internal] fresh #23)):
+                                      block:
+                                        block:
+                                          block:
+                                            block:
+                                              let `t` = x in:
+                                                block:
+                                                  set `x` := ((1:R - (a * (x ^ 2:R))) + y)
+                                                  set `y` := (b * t)
+                                          set `n` := (n + 1)
+                                          if (100 < n) then:
+                                            block:
+                                              draw point at (x, y)
+                                          else:
+                                            no-op
+                                        set `[internal] fresh #22` := ([internal] fresh #22 + 1)
+                                    set `[internal] iteration count` := [internal] fresh #22
+                                    set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            let `pixel_width` = [internal] px in:
+              let `pixel_height` = [internal] py in:
+                block:
+                  erase
+
+
+--- tool Orbit
+  -- on click
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `x` = [internal] x in:
+            let `y` = [internal] y in:
+              let `pixel_size` = [internal] px in:
+                let `pixel_width` = [internal] px in:
+                  let `pixel_height` = [internal] py in:
+                    block:
+                      erase
+                      use Color 255 255 255 for line
+                      draw point at (x, y)
+                      use Color 255 255 0 for line
+                      let `[internal] fresh #23` = 0 in:
+                        let `[internal] fresh #24` = orbit_length in:
+                          block:
+                            do-while ((((x ^ 2:R) + (y ^ 2:R)) < (escape_radius ^ 2:R)) and ([internal] fresh #23 < [internal] fresh #24)):
+                              block:
+                                block:
+                                  block:
+                                    block:
+                                      let `t` = x in:
+                                        block:
+                                          set `x` := ((1:R - (a * (x ^ 2:R))) + y)
+                                          set `y` := (b * t)
+                                  draw point at (x, y)
+                                set `[internal] fresh #23` := ([internal] fresh #23 + 1)
+                            set `[internal] iteration count` := [internal] fresh #23
+                            set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
+
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `x` = [internal] x in:
+            let `y` = [internal] y in:
+              let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+                let `pixel_size` = [internal] px in:
+                  let `pixel_width` = [internal] px in:
+                    let `pixel_height` = [internal] py in:
+                      block:
+                        erase
+                        use Color 255 255 255 for line
+                        draw point at (x, y)
+                        use Color 255 255 0 for line
+                        let `[internal] fresh #26` = 0 in:
+                          let `[internal] fresh #27` = orbit_length in:
+                            block:
+                              do-while ((((x ^ 2:R) + (y ^ 2:R)) < (escape_radius ^ 2:R)) and ([internal] fresh #26 < [internal] fresh #27)):
+                                block:
+                                  block:
+                                    block:
+                                      block:
+                                        let `t` = x in:
+                                          block:
+                                            set `x` := ((1:R - (a * (x ^ 2:R))) + y)
+                                            set `y` := (b * t)
+                                    draw point at (x, y)
+                                  set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                              set `[internal] iteration count` := [internal] fresh #26
+                              set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            let `pixel_width` = [internal] px in:
+              let `pixel_height` = [internal] py in:
+                block:
+                  erase
+
+

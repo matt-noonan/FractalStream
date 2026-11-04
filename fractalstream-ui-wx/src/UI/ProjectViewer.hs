@@ -31,7 +31,7 @@ import UI.Layout
 import UI.Widgets
 import UI.WxProperties
 import UI.MovieMaker
-import Actor.Movie (complexVariables)
+import Actor.Movie (canAnimate)
 
 import Actor.Viewer.Preview (renderPreview)
 import Data.ByteString (ByteString)
@@ -45,7 +45,8 @@ import Actor.Configuration
 import Actor.Viewer
 import Actor.Ensemble (buildToolContext, layoutToArgs, Colorizer(..), ViewerColorizer(..))
 import Actor.Colorizer (splitArguments)
-import Actor.Event (Event(..), EventArgument_, EventArgument(..))
+import Actor.Event (Event(..), EventArgument_, EventArgument(..), PixelDims, Coordinate(..))
+import Language.Value.Parser (parseConstant)
 import Language.Type
 import Language.Draw
 import Language.Environment
@@ -97,8 +98,6 @@ data ProjectMenuActions = ProjectMenuActions
     -- ^ The fields of the project's configuration.
   , pmUnsaved       :: Variable Bool
     -- ^ Whether the project has unsaved changes.
-  , pmViewerCoordinate :: String -> IO (Maybe String)
-    -- ^ The coordinate variable of the viewer with this title.
   , pmProjectName   :: IO String
   , pmSetColorizer  :: String -> String -> IO (Either String ())
     -- ^ Colorize the viewer with this title with this colorizer (written
@@ -208,6 +207,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       setValue' vPosition (Dimensions (fromMaybe x0 vpX, fromMaybe y0 vpY))
       mapM_ (setValue' vCenter) vpCenter
       mapM_ (setValue' vPixelSize) vpPixelSize
+      -- (a complex viewer's pixels are always square)
+      case vCoordinate of
+        RealCoordinates{} -> mapM_ (setValue' vAspect) vpAspect
+        ComplexCoordinate{} -> pure ()
     let canResize = fromMaybe vCanResize (restored >>= vpResizable)
         startVisible = fromMaybe True (restored >>= vpVisible)
         frameStyle | canResize = frameDefaultStyle
@@ -230,15 +233,15 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           , mpCommonDefs = pmCommonDefs
           , mpFields = pmConfigFields
           , mpUnsaved = pmUnsaved
-          , mpCoordinate = pmViewerCoordinate
           , mpProjectName = pmProjectName
           , mpOwner = projectWindow }
     forgetMovieViewer <- registerMovieViewer pmMovies theViewer
-    -- The configuration variable the "Animate along path" tool moves,
-    -- if it can be used here: the viewer's coordinate, if that's one.
-    animatedVariable <- pmViewerCoordinate title0 <&> \case
-      Just c | c `elem` complexVariables (SomeContext configValues) -> Just c
-      _ -> Nothing
+    -- The configuration variable(s) the "Animate along path" tool moves,
+    -- if it can be used here: the viewer's coordinate, if it's a
+    -- complex configuration variable or a pair of real ones.
+    let animatedVariable
+          | canAnimate (SomeContext configValues) vCoordinate = Just vCoordinate
+          | otherwise = Nothing
     onOwnDestroy f forgetMovieViewer
 
     WX.windowOnClose f $ do
@@ -276,6 +279,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       Dimensions (w, h) <- getDynamic vSize
       viewCenter <- getDynamic vCenter
       pixelSize <- getDynamic vPixelSize
+      aspect <- getDynamic vAspect
       shown <- windowIsShown f
       -- Leave out what's the same as the default anyway, so that a
       -- saved project file only says what's special about each window.
@@ -284,6 +288,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         , vpResizable = if canResize then Nothing else Just False
         , vpVisible = if shown then Nothing else Just False
         , vpCenter = Just viewCenter, vpPixelSize = Just pixelSize
+        , vpAspect = if aspect == 1 then Nothing else Just aspect
         }
 
     -- When the configuration's variables change (which ones there are,
@@ -445,8 +450,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- Build the initial view model
     (initialX, initialY) <- getDynamic vCenter
     initialPx <- getDynamic vPixelSize
+    initialAspect <- getDynamic vAspect
 
-    let initialModel = Model (initialX, initialY) (initialPx, initialPx)
+    let initialModel = Model (initialX, initialY) (initialPx, initialPx * initialAspect)
     model <- variable [value := initialModel]
 
     -- History tracking
@@ -518,7 +524,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           writeIORef runningTimers []
           forM_ timers $ \t -> set t [ enabled := False ]
 
-    let getToolEventHandler :: Tool -> IO (Double -> Actor.Event.Event -> Maybe (IO ()))
+    let getToolEventHandler :: Tool -> IO (PixelDims -> Actor.Event.Event -> Maybe (IO ()))
         getToolEventHandler Tool{..} = getDynamic (dyn toolEventHandler)
 
         -- Run one of a tool's event handlers, returning whether it
@@ -552,8 +558,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
         runToolEventHandler theTool e = do
           handle <- getToolEventHandler theTool
-          Model _ (px, _) <- get model value
-          maybe (pure True) (guardTool theTool) (handle px e)
+          Model _ pxDims <- get model value
+          maybe (pure True) (guardTool theTool) (handle pxDims e)
 
     let activateTool thisTool@Tool{..} = do
           deactivateCurrentTool
@@ -704,12 +710,13 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           modifyIORef' history (historyAppend newModel)
           jumpViewTo newModel
 
-        jumpViewTo newModel@(Model newCenter (newPixelSize, _)) = do
+        jumpViewTo newModel@(Model newCenter (newPixelSize, newPixelHeight)) = do
           oldModel <- get model value
           Size { sizeW = w, sizeH = h } <- get f clientSize
           set model [ value := newModel ]
           setValue' vCenter    newCenter
           setValue' vPixelSize newPixelSize
+          setValue' vAspect (newPixelHeight / newPixelSize)
           get currentTile value >>= cancelTile
           renderAction <- getRenderAction
           smoothing <- get useSmoothing value
@@ -933,9 +940,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                     Model _ (dx, dy) <- get model value
                     debugAt (x, y) (dx, dy)
                   Right tool -> do
-                    Model _ (px, _) <- get model value
+                    Model _ pxDims <- get model value
                     handle <- getToolEventHandler tool
-                    case handle px (Click ptz) of
+                    case handle pxDims (Click ptz) of
                       Nothing -> recenterAction
                       Just action -> do
                         void (guardTool tool action)
@@ -968,9 +975,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                             Just (Viewport vstart) -> do
                               zstart <- viewToModel (uncurry Point vstart)
                               z <- viewToModel pt
-                              Model _ (px, _) <- get model value
+                              Model _ pxDims <- get model value
                               handle <- getToolEventHandler tool
-                              case handle px (DragDone z zstart) of
+                              case handle pxDims (DragDone z zstart) of
                                 Just action -> do
                                   void (guardTool tool action)
                                   vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
@@ -1005,9 +1012,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                        Just (Viewport vstart) -> do
                          zstart <- viewToModel (uncurry Point vstart)
                          z <- viewToModel pt
-                         Model _ (px, _) <- get model value
+                         Model _ pxDims <- get model value
                          handle <- getToolEventHandler tool
-                         case handle px (Drag z zstart) of
+                         case handle pxDims (Drag z zstart) of
                            Just action -> do
                              void (guardTool tool action)
                              vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
@@ -1209,12 +1216,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         -- over it. Recorded as a new step in the history, like any other
         -- move, so "Last view" can still undo it.
         goHome = changeViewTo
-          (Model vOriginalCenter (vOriginalPixelSize, vOriginalPixelSize))
+          (Model vOriginalCenter (vOriginalPixelSize, vOriginalPixelSize * vOriginalAspect))
 
         jumpToView = do
           oldModel <- get model value
           let (oldX, oldY) = modelCenter oldModel
-              (oldPx, _)   = modelPixelDim oldModel
+              (oldPx, oldPy) = modelPixelDim oldModel
           d <- dialog f [ text := "Jump to view..." ]
           jp <- panel d []
           jOk <- button jp [ text := "Ok" ]
@@ -1233,11 +1240,38 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                         mx <- readMaybe <$> get jCenterX text
                         my <- readMaybe <$> get jCenterY text
                         mp <- readMaybe <$> get jPixel   text
-                        onDone ((\(x,y,dz) -> Model (x, y) (dz, dz)) <$>
+                        -- (keeping the aspect ratio)
+                        onDone ((\(x,y,dz) -> Model (x, y) (dz, dz * oldPy / oldPx)) <$>
                                  ((,,) <$> mx <*> my <*> mp)) ]
           case result of
             Nothing -> pure ()
             Just newModel -> changeViewTo newModel
+
+        -- A real viewer's aspect ratio (the height of a pixel over its
+        -- width), keeping the center and the width of a pixel.
+        setAspectRatio = do
+          oldModel <- get model value
+          let (px, py) = modelPixelDim oldModel
+          d <- dialog f [ text := "Aspect ratio..." ]
+          aPanel <- panel d []
+          aOk <- button aPanel [ text := "Ok" ]
+          aCancel <- button aPanel [ text := "Cancel" ]
+          aSquare <- button aPanel [ text := "Square pixels" ]
+          aEntry <- textEntry aPanel [ text := printf "%g" (py / px) ]
+          set d [ layout := margin 10 $ fill $ container aPanel $ column 5
+                  [ row 5 [ label "pixel height / pixel width = ", expand $ widget aEntry ]
+                  , row 5 [ margin 5 $ widget aSquare, hglue
+                          , margin 5 $ widget aCancel, margin 5 $ widget aOk ] ] ]
+          result <- showModal d $ \onDone -> do
+            set aCancel [ on command := onDone Nothing ]
+            set aSquare [ on command := onDone (Just 1) ]
+            set aOk [ on command := do
+                        txt <- get aEntry text
+                        case parseConstant RealType txt of
+                          Right a | a > 0, not (isInfinite a) -> onDone (Just a)
+                          _ -> errorDialog d "Aspect ratio"
+                                 "The aspect ratio should be a positive number, like 2 or 1/2." ]
+          forM_ result $ \a -> changeViewTo oldModel { modelPixelDim = (px, px * a) }
 
     -------------------------------------------------------
     -- Menus
@@ -1248,6 +1282,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     menuItem hamburgerMenu [ text := "Next view\t>", on command := goForward ]
     menuItem hamburgerMenu [ text := "Jump to view...\t@", on command := jumpToView ]
     menuItem hamburgerMenu [ text := "Original view\t^", on command := goHome ]
+    -- (a complex viewer's pixels are always square)
+    case vCoordinate of
+      RealCoordinates{} -> void $
+        menuItem hamburgerMenu [ text := "Aspect ratio...", on command := setAspectRatio ]
+      ComplexCoordinate{} -> pure ()
     menuItem hamburgerMenu [ text := "Show configuration\t=", on command := raiseConfigWindow ]
 
     -- The colorizers this viewer can use, with the one it uses checked.
@@ -1651,7 +1690,6 @@ paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
     let withFill fil action
           | fil = action []
           | otherwise = action [ brush := brushTransparent ]
-        pxSz = sqrt(fst pxDim * snd pxDim)
 
     forM_ cmdss $ \cmds -> do
       -- Reset the pen and brush for the next drawing layer
@@ -1675,9 +1713,12 @@ paintToolLayer modelToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
           withFill False (line dc pt1' pt2')
 
         DrawCircle _ fil r pt -> do
-          pt' <- modelToView pt
-          let r' = round (r / pxSz)
-          withFill fil (circle dc pt' r')
+          -- A circle in model space: an ellipse, when a real viewer's
+          -- pixels aren't square.
+          Point cx cy <- modelToView pt
+          let rx = round (r / fst pxDim)
+              ry = round (r / snd pxDim)
+          withFill fil (ellipse dc (rect (WX.pt (cx - rx) (cy - ry)) (sz (2 * rx) (2 * ry))))
 
         DrawRect _ fil pt1 pt3 -> do
           let pt2 = (fst pt1, snd pt3)

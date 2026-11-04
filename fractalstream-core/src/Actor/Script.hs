@@ -42,7 +42,7 @@ import Language.Parser.SourceRange
 import Language.Value.Parser
 import Language.Code.Parser (CommonDefs(..), noCommonDefs, codeStatementsGrammar, codeBlockGrammar, ParsedCode, withDefinedFunctions, withCommon)
 import Language.Code.Syntax (Stmt(..), StmtF(..))
-import Actor.Event (toolBlocksGrammar, ParsedToolBlock)
+import Actor.Event (toolBlocksGrammar, ParsedToolBlock, Coordinate(..))
 import Actor.Layout (AppAction(..))
 
 import qualified Data.Set as Set
@@ -130,10 +130,14 @@ data ParsedStanza
       }
   | ViewerStanza
       { vsTitle       :: String
-      , vsVar         :: String
-        -- ^ The name of the viewer's complex coordinate variable.
+      , vsCoord       :: Coordinate
+        -- ^ The viewer's coordinate: one complex variable (@var=@), or a
+        -- pair of real ones (@xvar=@ and @yvar=@).
       , vsCenter      :: Maybe String
       , vsPixelSize   :: Maybe String
+      , vsAspect      :: Maybe String
+        -- ^ The @aspect=@ attribute (a real viewer's pixel height over
+        -- its pixel width), as written.
       , vsIterLimit   :: Maybe String
       , vsEscape      :: Maybe String
       , vsVanish      :: Maybe String
@@ -464,8 +468,14 @@ scriptGrammar defs = mdo
 
   boolValue <- rule (("true" <$ token True_) <|> ("false" <$ token False_))
 
+  -- A point, `center=(1, -1/2)`, for a real viewer.
+  pairValue <- rule
+    ((\a b -> "(" ++ a ++ ", " ++ b ++ ")")
+      <$> (token OpenParen *> (fractionValue <|> signedNumber))
+      <*> (token Comma *> (fractionValue <|> signedNumber) <* token CloseParen))
+
   attrValue <- rule
-    (quotedP <|> dimensionValue <|> fractionValue <|> boolValue <|> signedNumber <|> ident)
+    (quotedP <|> dimensionValue <|> fractionValue <|> boolValue <|> signedNumber <|> pairValue <|> ident)
 
   attr <- rule ((,) <$> ident <*> (token Equal *> attrValue))
 
@@ -606,7 +616,7 @@ scriptGrammar defs = mdo
   viewerStanza <- rule $
     (\ehdr mcoloringE mprepE code ->
         (\ViewerHeader{..} mcoloring mprep ->
-            ViewerStanza vhTitle vhVar vhCenter vhPixelSize vhIterLimit vhEscape vhVanish
+            ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhIterLimit vhEscape vhVanish
                          vhPixelVar vhColorizer (fromMaybe [] mcoloring) mprep code (funNames defs))
         <$> ehdr <*> sequence mcoloringE <*> sequence mprepE)
     <$> viewerHeader <*> optional coloringBlock <*> optional prepareBlock
@@ -726,9 +736,10 @@ negateNumberLiteral = either (Left . negate) (Right . negate)
 
 data ViewerHeader = ViewerHeader
   { vhTitle     :: String
-  , vhVar       :: String
+  , vhCoord     :: Coordinate
   , vhCenter    :: Maybe String
   , vhPixelSize :: Maybe String
+  , vhAspect    :: Maybe String
   , vhIterLimit :: Maybe String
   , vhEscape    :: Maybe String
   , vhVanish    :: Maybe String
@@ -783,15 +794,31 @@ validateViewerHeader sr vhTitle attrs = do
                 \by the user interface itself (for the wx UI, under the \
                 \project file's `wx-properties:` key).")
   checkKnownAttrs sr
-    ["var", "center", "pixelSize", "limit", "escape", "vanish", "pixelVar", "colorizer"]
+    [ "var", "xvar", "yvar", "center", "pixelSize", "aspect"
+    , "limit", "escape", "vanish", "pixelVar", "colorizer" ]
     attrs
   -- A beginner's first viewer doesn't need to think about a
   -- coordinate-variable name at all -- `z` is a reasonable default,
   -- and stays available as an explicit override for anyone who wants
-  -- something else.
-  let vhVar = fromMaybe "z" (lookupAttr "var" attrs)
+  -- something else. A real viewer names both of its coordinates.
+  vhCoord <- case (lookupAttr "var" attrs, lookupAttr "xvar" attrs, lookupAttr "yvar" attrs) of
+    (Just _, Just _, _) -> Left (sr, varAndXY)
+    (Just _, _, Just _) -> Left (sr, varAndXY)
+    (mv, Nothing, Nothing) -> Right (ComplexCoordinate (fromMaybe "z" mv))
+    (Nothing, Just x, Just y)
+      | x == y -> Left (sr, "A viewer's `xvar` and `yvar` must be different variables, \
+                            \but both are `" ++ x ++ "`.")
+      | otherwise -> Right (RealCoordinates x y)
+    (Nothing, Just _, Nothing) -> Left (sr, "A viewer with `xvar=` also needs `yvar=`.")
+    (Nothing, Nothing, Just _) -> Left (sr, "A viewer with `yvar=` also needs `xvar=`.")
+  let vhAspect = lookupAttr "aspect" attrs
+  case (vhCoord, vhAspect) of
+    (ComplexCoordinate _, Just _) ->
+      Left (sr, "Only a real viewer (one with `xvar=` and `yvar=`) can have an \
+                \`aspect` attribute: a complex viewer's pixels are always square.")
+    _ -> Right ()
   pure ViewerHeader
-    { vhTitle, vhVar
+    { vhTitle, vhCoord, vhAspect
     , vhCenter
     = lookupAttr "center" attrs
     , vhPixelSize = lookupAttr "pixelSize" attrs
@@ -809,6 +836,10 @@ validateViewerHeader sr vhTitle attrs = do
     , vhPixelVar  = lookupAttr "pixelVar" attrs <|> Just "pixel_size"
     , vhColorizer = lookupAttr "colorizer" attrs
     }
+
+  where
+    varAndXY = "A viewer has either one complex coordinate (`var=`) or two \
+               \real ones (`xvar=` and `yvar=`), not both."
 
 validateColorizerHeader :: SourceRange -> String -> [(String, String)]
                         -> Either (SourceRange, String) (String, Maybe String)

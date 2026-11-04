@@ -518,6 +518,39 @@ itself: if it doesn't, a *colorizer* sets it (see below).
 is useful for building tools that directly manipulate the configuration,
 such as selecting a parameter value.
 
+### Viewers over the real plane
+
+A viewer's pixels are usually points of the complex plane, named by its
+`var=` attribute (`z` if there isn't one). A viewer with `xvar=` and
+`yvar=` instead is a *real viewer*: each pixel is a pair of real
+numbers, the first the horizontal coordinate and the second the
+vertical one, so there's no need to split a complex number into
+`re(z)` and `im(z)`:
+
+```
+@viewer "Hénon map" xvar=x yvar=y center=(0, 0) pixelSize=1/200
+until x² + y² > 100:
+  t := x
+  x ⭠ 1 - a x² + y
+  y ⭠ b t
+color ⭠ if stuck then black else rainbow(iterations / 20)
+```
+
+Either coordinate can be the name of a real configuration variable
+(`xvar=a yvar=b`, say), for a plane of parameters; inside the viewer,
+it then means the pixel's coordinate, just as `var=C` does in a complex
+viewer. With both coordinates configuration variables, the viewer gets a
+"Select" tool that sets them both to a clicked point.
+
+A real viewer's `center=` is a point, `center=(1, -1/2)` (or a complex
+number, `center="1 - 0.5i"`). Its pixels needn't be square: `aspect=`
+gives the height of a pixel over its width (`aspect=2` stretches the
+view vertically, so twice as much of the `y` axis fits), and the
+viewer's menu has an "Aspect ratio..." item to change it. Besides
+`pixel_size` (the width of a pixel), a real viewer's script and its
+tools can read `pixel_width` (the same) and `pixel_height`. A complex
+viewer's pixels are always square.
+
 ### Colorizers
 
 A viewer script often only needs to say what to compute, like
@@ -696,8 +729,11 @@ For `drag` and `drag-finished`, the first name is where the drag started
 and the second is its current position: `on drag from start to z:`.
 
 When `at`/`from ... to` is omitted, the current-position coordinate
-defaults to the viewer's own `z-coord` variable; for drags, an omitted
-start position is simply unused. `on click-or-drag` binds one coordinate
+defaults to the viewer's own coordinate: its `var=` variable, or the pair
+of its `xvar=` and `yvar=` variables in a real viewer. For drags, an
+omitted start position is simply unused. Either form can be used in
+either kind of viewer: `on click at (x, y):` in a complex viewer, or
+`on click at w:` in a real one (with `w = x + y i`). `on click-or-drag` binds one coordinate
 shared between the click and the in-progress drag.
 
 A tool script can have at most one block for each of `refresh`,

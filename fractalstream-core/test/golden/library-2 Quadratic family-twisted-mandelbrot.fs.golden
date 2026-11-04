@@ -120,11 +120,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                 let `prevZ` = z in:
                   block:
                     erase
-                    let `[internal] fresh #35` = 0 in:
-                      let `[internal] fresh #36` = 100 in:
+                    let `[internal] fresh #36` = 0 in:
+                      let `[internal] fresh #37` = 100 in:
                         block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #35 < [internal] fresh #36)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #35 < [internal] fresh #36)):
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #36 < [internal] fresh #37)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #36 < [internal] fresh #37)):
                               block:
                                 block:
                                   set `prevZ` := z
@@ -142,11 +142,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                           else:
                                             no-op
                                   draw line from z:R^2 to prevZ:R^2
-                                set `[internal] fresh #35` := ([internal] fresh #35 + 1)
+                                set `[internal] fresh #36` := ([internal] fresh #36 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #35
-                          set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
+                          set `[internal] iteration count` := [internal] fresh #36
+                          set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -161,11 +161,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   let `prevZ` = z in:
                     block:
                       erase
-                      let `[internal] fresh #38` = 0 in:
-                        let `[internal] fresh #39` = 100 in:
+                      let `[internal] fresh #39` = 0 in:
+                        let `[internal] fresh #40` = 100 in:
                           block:
-                            if (!([internal] escape radius < |z|) and ([internal] fresh #38 < [internal] fresh #39)) then:
-                              do-while (!([internal] escape radius < |z|) and ([internal] fresh #38 < [internal] fresh #39)):
+                            if (!([internal] escape radius < |z|) and ([internal] fresh #39 < [internal] fresh #40)) then:
+                              do-while (!([internal] escape radius < |z|) and ([internal] fresh #39 < [internal] fresh #40)):
                                 block:
                                   block:
                                     set `prevZ` := z
@@ -183,11 +183,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                             else:
                                               no-op
                                     draw line from z:R^2 to prevZ:R^2
-                                  set `[internal] fresh #38` := ([internal] fresh #38 + 1)
+                                  set `[internal] fresh #39` := ([internal] fresh #39 + 1)
                             else:
                               no-op
-                            set `[internal] iteration count` := [internal] fresh #38
-                            set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
+                            set `[internal] iteration count` := [internal] fresh #39
+                            set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

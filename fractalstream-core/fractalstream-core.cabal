@@ -212,6 +212,7 @@ test-suite spec
                     , Actor.EventSpec
                     , Actor.ScriptSpec
                     , Actor.EnsembleBuildSpec
+                    , Actor.RealViewerSpec
                     , Actor.ColorizerSpec
                     , Actor.AutocolorSpec
                     , Task.ConcurrentSpec

@@ -111,6 +111,15 @@ spec = describe "highlighting scripts" $ do
     let src = "@viewer \"V\" var=w\npass\n\n@tool \"T\"\non click:\n  draw point at w\n"
     classOf src "w" 1 `shouldBe` Just Variable
 
+  it "knows a real viewer's coordinates and pixel dimensions, in it and its tools" $ do
+    let src = "@viewer \"V\" xvar=a yvar=b\ncolor <- if a < b and pixel_height > 0 then red else blue\n\n"
+           ++ "@tool \"T\"\non click:\n  draw point at (a, b)\n  write text(pixel_width) at (a, b)\n"
+    classOf src "a" 1 `shouldBe` Just Variable
+    classOf src "b" 1 `shouldBe` Just Variable
+    classOf src "pixel_height" 0 `shouldBe` Just Parameter
+    classOf src "a" 2 `shouldBe` Just Variable
+    classOf src "pixel_width" 0 `shouldBe` Just Parameter
+
   it "doesn't take a block's colon for a declaration" $ do
     let src = "@viewer \"V\"\ncoloring:\n  period <- 1\nrepeat:\n  pass\nuntil true\n"
     classOf src "coloring" 0 `shouldBe` Just Keyword

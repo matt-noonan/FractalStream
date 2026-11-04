@@ -742,8 +742,7 @@ checkConfigDecl sr name (SomeType ty) defaultValue mchoices = withKnownType ty $
 checkViewer :: forall env. [(String, SomeType)] -> EnvironmentProxy env
             -> [ToolFields] -> ViewerFields -> Either (SourceRange, String) ()
 checkViewer configEnv env myTools ViewerFields{..} = do
-  _ <- parseConstantE ComplexType (fromMaybe "0" vfCenter)
-  _ <- parseConstantE RealType (fromMaybe "1/128" vfPixelSize)
+  _ <- parseViewGeometry ViewerFields{..}
   mIterPV <- parseMaybeAttrValue vfIterLimit
   mEscPV  <- parseMaybeAttrValue vfEscape
   mVanPV  <- parseMaybeAttrValue vfVanish
@@ -762,7 +761,7 @@ checkViewer configEnv env myTools ViewerFields{..} = do
           assertMissingViewerArgs someEnv $ do
             let dummyCtx :: Context DynamicValue someEnv
                 dummyCtx = envToContext someEnv (\_ _ -> error "checkViewer: dummy context value forced unexpectedly")
-            vc <- left (NoSourceRange,) (buildViewerContext someEnv dummyCtx vfVar mIterPV mEscPV mVanPV)
+            vc <- left (NoSourceRange,) (buildViewerContext someEnv dummyCtx vfCoord mIterPV mEscPV mVanPV)
             _  <- parseViewerScript vfPixelVar vc vfCode
             pure ()
 
@@ -794,7 +793,7 @@ checkViewerTools configEnv myTools ViewerFields{..} = do
                     , fromMaybe defaultMaxRadius mEscPV
                     , fromMaybe defaultMinRadius mVanPV
                     )
-  forM_ myTools (checkTool configEnv (ComplexCoordinate vfVar) toolLimits vfPixelVar)
+  forM_ myTools (checkTool configEnv vfCoord toolLimits vfPixelVar)
 
 -- | The pure, allocation-free check of a tool's own code, which in the
 -- app is otherwise first type-checked by 'Actor.Event.buildHandlerWith'.
@@ -860,9 +859,10 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
 
 data ViewerFields = ViewerFields
   { vfTitle     :: String
-  , vfVar       :: String
+  , vfCoord     :: Coordinate
   , vfCenter    :: Maybe String
   , vfPixelSize :: Maybe String
+  , vfAspect    :: Maybe String
   , vfIterLimit :: Maybe String
   , vfEscape    :: Maybe String
   , vfVanish    :: Maybe String
@@ -874,8 +874,8 @@ data ViewerFields = ViewerFields
 viewerFields :: ParsedStanza -> Maybe ViewerFields
 viewerFields = \case
   ViewerStanza{..} -> Just ViewerFields
-    { vfTitle = vsTitle, vfVar = vsVar
-    , vfCenter = vsCenter, vfPixelSize = vsPixelSize
+    { vfTitle = vsTitle, vfCoord = vsCoord
+    , vfCenter = vsCenter, vfPixelSize = vsPixelSize, vfAspect = vsAspect
     , vfIterLimit = vsIterLimit, vfEscape = vsEscape, vfVanish = vsVanish
     , vfPixelVar = vsPixelVar
     , vfPrepare = vsPrepare
@@ -977,6 +977,30 @@ reactiveSomeValue env ty initial = do
 
 parseConstantE :: TypeProxy ty -> String -> Either (SourceRange, String) (HaskellType ty)
 parseConstantE ty s = left (errorLocation &&& unlines . pp) (parseConstant ty s)
+
+-- | A viewer's original view, from its @center=@, @pixelSize=@, and
+-- @aspect=@ attributes: its center, the width of a pixel, and the
+-- height of a pixel over its width. A complex viewer's center is a
+-- complex number; a real viewer's is a point @(x, y)@, or a complex
+-- number @x + y i@.
+parseViewGeometry :: ViewerFields -> Either (SourceRange, String) ((Double, Double), Double, Double)
+parseViewGeometry ViewerFields{..} = do
+  let centerSrc = fromMaybe "0" vfCenter
+      complexCenter = (\(x :+ y) -> (x, y)) <$> parseConstantE ComplexType centerSrc
+  center <- case vfCoord of
+    ComplexCoordinate _ -> complexCenter
+    RealCoordinates _ _ -> case parseConstant (PairType RealType RealType) centerSrc of
+      Right xy -> Right xy
+      Left _ -> left (\(sr, _) -> (sr, "A real viewer's `center` must be a point, like `(1, -1/2)`, \
+                                       \or a complex number, not `" ++ centerSrc ++ "`."))
+                     complexCenter
+  pixelSize <- parseConstantE RealType (fromMaybe "1/128" vfPixelSize)
+  unless (pixelSize > 0) $
+    Left (NoSourceRange, "A viewer's `pixelSize` must be positive.")
+  aspect <- parseConstantE RealType (fromMaybe "1" vfAspect)
+  unless (aspect > 0) $
+    Left (NoSourceRange, "A viewer's `aspect` must be positive.")
+  pure (center, pixelSize, aspect)
 
 parseMaybeAttrValue :: Maybe String -> Either (SourceRange, String) (Maybe ParsedValue)
 parseMaybeAttrValue Nothing = Right Nothing
@@ -1222,8 +1246,7 @@ buildComplexViewer :: Dynamic (Either String (SomeContext DynamicValue))
                     -> ViewerFields
                     -> IO (Either (SourceRange, String) ComplexViewer)
 buildComplexViewer contextDyn myTools n ViewerFields{..} =
-  parseConstantE ComplexType (fromMaybe "0" vfCenter) >>=? \centerVal ->
-  parseConstantE RealType (fromMaybe "1/128" vfPixelSize) >>=? \pixelVal ->
+  parseViewGeometry ViewerFields{..} >>=? \(centerVal, pixelVal, aspectVal) ->
   parseMaybeAttrValue vfIterLimit >>=? \mIterPV ->
   parseMaybeAttrValue vfEscape >>=? \mEscPV ->
   parseMaybeAttrValue vfVanish >>=? \mVanPV -> do
@@ -1233,9 +1256,6 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
     cvPositionV  <- newVariable (Dimensions (100 + 30 * n, 100 + 30 * n))
     cvCanResizeV <- newVariable True
 
-    cvCenterP    <- constParsed (fromMaybe "0" vfCenter) (Right centerVal)
-    cvPixelSizeP <- constParsed (fromMaybe "1/128" vfPixelSize) (Right pixelVal)
-    cvCoordP     <- constParsed vfVar (Right vfVar)
     cvPixelM     <- constMapped vfPixelVar (Right vfPixelVar)
     cvEscapeP    <- constParsed (fromMaybe "" vfEscape) (Right mEscPV)
     cvVanishP    <- constParsed (fromMaybe "" vfVanish) (Right mVanPV)
@@ -1258,7 +1278,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
           let env = contextToEnv ctx
           in fromMaybe (Left (NoSourceRange, "INTERNAL ERROR: redefined internal argument")) $
              assertMissingViewerArgs env $ do
-               vc <- left (NoSourceRange,) (buildViewerContext env ctx vfVar mIterPV mEscPV mVanPV)
+               vc <- left (NoSourceRange,) (buildViewerContext env ctx vfCoord mIterPV mEscPV mVanPV)
                mprep <- case mprepInfo of
                  Nothing -> pure Nothing
                  Just (prepOutputEnvProxy, outputNames, prepParsedCode) ->
@@ -1348,7 +1368,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
     case codeResult of
       Left err -> pure (Left err)
       Right _ -> do
-        eTools <- mapM (buildTool (ComplexCoordinate vfVar) toolLimits vfPixelVar) myTools
+        eTools <- mapM (buildTool vfCoord toolLimits vfPixelVar) myTools
         case sequence eTools of
           Left err -> pure (Left err)
           Right toolList -> do
@@ -1358,9 +1378,10 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvSize = cvSizeV
               , cvPosition = cvPositionV
               , cvCanResize = cvCanResizeV
-              , cvCenter = cvCenterP
-              , cvPixelSize = cvPixelSizeP
-              , cvCoord = cvCoordP
+              , cvCenter = centerVal
+              , cvPixelSize = pixelVal
+              , cvAspect = aspectVal
+              , cvCoord = vfCoord
               , cvPixel = cvPixelM
               , cvEscapeRadius = cvEscapeP
               , cvVanishRadius = cvVanishP
@@ -1470,22 +1491,19 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
   where
    rebuildScript = do
 
-    let throwLeft :: IO (Either String a) -> IO a
-        throwLeft action = action >>= \case
-          Left err -> throwIO (BadEnsemble $ show err)
-          Right x  -> pure x
-
-    coord <- fromRight "?coord" <$> getDynamic cvCoord
+    let coordNames = coordinateNames cvCoord
     let vTitle    = source cvTitle
         vSize     = cvSize
         vPosition = cvPosition
 
     vCanResize <- getDynamic cvCanResize
-    x0 :+ y0 <- throwLeft (getDynamic cvCenter)
-    let vOriginalCenter = (x0, y0)
-    vOriginalPixelSize <- throwLeft (getDynamic cvPixelSize)
+    let vOriginalCenter = cvCenter
+        vOriginalPixelSize = cvPixelSize
+        vOriginalAspect = cvAspect
+        vCoordinate = cvCoord
     vCenter <- newVariable vOriginalCenter
     vPixelSize <- newVariable vOriginalPixelSize
+    vAspect <- newVariable vOriginalAspect
 
     let vSaveView = pure ()
 
@@ -1510,7 +1528,7 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
             prepUsedVars = case mprep of
               Nothing -> Set.empty
               Just (PrepScript _ prepCode) -> execState (usedVarsInCode prepCode) Set.empty
-            usedVars = Set.delete coord (execState (usedVarsInCode code) Set.empty `Set.union` prepUsedVars)
+            usedVars = (`Set.difference` Set.fromList coordNames) (execState (usedVarsInCode code) Set.empty `Set.union` prepUsedVars)
 
             vListen :: IO () -> IO (IO ())
             vListen = \action -> do
@@ -1553,7 +1571,8 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
                         context
                       pure (mapContextM (\_ _ -> id) result)
 
-          withSelectTool <- if coord `Map.member` envToMap env then (:) <$> makeSelectTool coord else pure id
+          withSelectTool <- if all (`Map.member` envToMap env) coordNames
+                              then (:) <$> makeSelectTool cvCoord else pure id
           let vTools = withSelectTool <$> dyn cvTools
 
           withCompiledViewer (bViewerCompiler backend) lookupAutocolor mprep code $ \fun -> do
@@ -1608,13 +1627,13 @@ layoutToArgs = \case
 
 
   -- | A standard tool for selecting the clicked point
-makeSelectTool :: String -> IO Tool
+makeSelectTool :: Coordinate -> IO Tool
 makeSelectTool coord = do
   let dep1 = pure (Right noCommonDefs)
-      dep2 = pure (Right (ComplexCoordinate coord))
+      dep2 = pure (Right coord)
       dep3 = pure (Right (defaultIterLimit, defaultMaxRadius, defaultMinRadius))
       dep4 = pure (Right Nothing)
-  tool <- deserializeWith (dep1, dep2, dep3, dep4) (selectToolJson coord)
+  tool <- deserializeWith (dep1, dep2, dep3, dep4) (selectToolJson (showCoordinate coord))
   either (error . ("Internal error: " ++)) pure tool
 
 selectToolJson :: String -> ByteString

@@ -42,32 +42,32 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 let `z` = 0:R:C in:
                   block:
-                    let `[internal] fresh #17` = 0 in:
-                      let `[internal] fresh #18` = warmup in:
+                    let `[internal] fresh #18` = 0 in:
+                      let `[internal] fresh #19` = warmup in:
                         block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #17 < [internal] fresh #18)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #17 < [internal] fresh #18)):
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #18 < [internal] fresh #19)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #18 < [internal] fresh #19)):
                               block:
                                 set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                                set `[internal] fresh #17` := ([internal] fresh #17 + 1)
+                                set `[internal] fresh #18` := ([internal] fresh #18 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #17
-                          set `[internal] stuck` := ([internal] fresh #17 = [internal] fresh #18)
+                          set `[internal] iteration count` := [internal] fresh #18
+                          set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
                     if !([internal] escape radius < |z|) then:
                       block:
                         let `target` = z in:
                           block:
-                            let `[internal] fresh #18` = 0 in:
-                              let `[internal] fresh #19` = max_period in:
+                            let `[internal] fresh #19` = 0 in:
+                              let `[internal] fresh #20` = max_period in:
                                 block:
-                                  do-while (!(|(z - target)| < tol) and ([internal] fresh #18 < [internal] fresh #19)):
+                                  do-while (!(|(z - target)| < tol) and ([internal] fresh #19 < [internal] fresh #20)):
                                     block:
                                       block:
                                         set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                                      set `[internal] fresh #18` := ([internal] fresh #18 + 1)
-                                  set `[internal] iteration count` := [internal] fresh #18
-                                  set `[internal] stuck` := ([internal] fresh #18 = [internal] fresh #19)
+                                      set `[internal] fresh #19` := ([internal] fresh #19 + 1)
+                                  set `[internal] iteration count` := [internal] fresh #19
+                                  set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
                             if [internal] stuck then:
                               block:
                                 write "?" at C:R^2

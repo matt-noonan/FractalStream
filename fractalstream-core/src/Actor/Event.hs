@@ -7,6 +7,15 @@ module Actor.Event
   , EventArgument(..)
 
   , Coordinate(..)
+  , PixelDims
+  , coordinateNames
+  , showCoordinate
+  , bindOrDeclare
+  , RealIn(..)
+  , bindFreshReals
+  , realPixelVars
+  , pixelWidthVar
+  , pixelHeightVar
   , buildHandlerWith
   , ToolExec
   , ToolRunner(..)
@@ -158,15 +167,15 @@ makeEventHandler :: forall env
                  => ToolExec
                  -> Context EventArgument_ env
                  -> CombinedEventHandler env
-                 -> IO (Double -> Event -> Maybe (IO ()))
+                 -> IO (PixelDims -> Event -> Maybe (IO ()))
 makeEventHandler exec ctx CombinedEventHandler{..} = do
   -- Prepare (e.g. JIT-compile) each present handler once.  The dummy contexts
   -- only serve to recover each branch's 'EnvironmentProxy'; 'contextToEnv'
   -- ignores the values.
   let dummyR     = constArg 0 :: EventArgument 'RealT
-      clickEnvP  = contextToEnv (dummyR # dummyR # dummyR # ctx)
-      dragEnvP   = contextToEnv (dummyR # dummyR # dummyR # dummyR # dummyR # ctx)
-      unitEnvP   = contextToEnv (dummyR # ctx)
+      clickEnvP  = contextToEnv (dummyR # dummyR # dummyR # dummyR # ctx)
+      dragEnvP   = contextToEnv (dummyR # dummyR # dummyR # dummyR # dummyR # dummyR # ctx)
+      unitEnvP   = contextToEnv (dummyR # dummyR # ctx)
   clickRun       <- traverse (exec clickEnvP) onClick
   dblClickRun    <- traverse (exec clickEnvP) onDoubleClick
   dragRun        <- traverse (exec dragEnvP)  onDrag
@@ -176,22 +185,22 @@ makeEventHandler exec ctx CombinedEventHandler{..} = do
   refreshRun     <- traverse (exec unitEnvP)  onRefresh
   activatedRun   <- traverse (exec unitEnvP)  onActivated
   deactivatedRun <- traverse (exec unitEnvP)  onDeactivated
-  pure $ \px -> \case
+  pure $ \(px, py) -> \case
     Click (x, y) -> clickRun <&> \invoke ->
-      invoke (constArg x # constArg y # constArg px # ctx)
+      invoke (constArg x # constArg y # constArg px # constArg py # ctx)
     DoubleClick (x, y) -> dblClickRun <&> \invoke ->
-      invoke (constArg x # constArg y # constArg px # ctx)
+      invoke (constArg x # constArg y # constArg px # constArg py # ctx)
     Drag (x, y) (x', y') -> dragRun <&> \invoke ->
-      invoke (constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx)
+      invoke (constArg x # constArg y # constArg x' # constArg y' # constArg px # constArg py # ctx)
     DragDone (x, y) (x', y') -> dragDoneRun <&> \invoke ->
-      invoke (constArg x # constArg y # constArg x' # constArg y' # constArg px # ctx)
+      invoke (constArg x # constArg y # constArg x' # constArg y' # constArg px # constArg py # ctx)
     Timer name -> Map.lookup name timerRun <&> \(_, invoke) ->
-      invoke (constArg px # ctx)
+      invoke (constArg px # constArg py # ctx)
     ButtonPressed name -> Map.lookup name buttonRun <&> \invoke ->
-      invoke (constArg px # ctx)
-    Refresh -> refreshRun <&> \invoke -> invoke (constArg px # ctx)
-    Activated -> activatedRun <&> \invoke -> invoke (constArg px # ctx)
-    Deactivated -> deactivatedRun <&> \invoke -> invoke (constArg px # ctx)
+      invoke (constArg px # constArg py # ctx)
+    Refresh -> refreshRun <&> \invoke -> invoke (constArg px # constArg py # ctx)
+    Activated -> activatedRun <&> \invoke -> invoke (constArg px # constArg py # ctx)
+    Deactivated -> deactivatedRun <&> \invoke -> invoke (constArg px # constArg py # ctx)
 
 combineEventHandlers :: forall env
                       . Either (SourceRange, String) (CombinedEventHandler env)
@@ -233,7 +242,7 @@ noHandlers = CombinedEventHandler Nothing Nothing Nothing Nothing Map.empty Map.
 buildHandlerWith :: ToolExec
                  -> SomeContext EventArgument_
                  -> ParsedToolScript
-                 -> IO (Either String (Double -> Event -> Maybe (IO ())))
+                 -> IO (Either String (PixelDims -> Event -> Maybe (IO ())))
 buildHandlerWith exec (SomeContext ctx) script = do
   let env = contextToEnv ctx
   case runParsedToolScript script env of
@@ -256,7 +265,7 @@ buildHandlerWith exec (SomeContext ctx) script = do
 -- dispatcher the UI calls.  Given the per-layer draw handler (from the tool
 -- draw-command accumulator), the layer number, the tool's variable context, and
 -- the parsed script, it produces (or fails to produce) a
--- @Double -> Event -> Maybe (IO ())@ dispatcher.  The pure/interpreter backend
+-- @PixelDims -> Event -> Maybe (IO ())@ dispatcher.  The pure/interpreter backend
 -- uses 'defaultToolRunner'; the LLVM backend supplies one that JIT-compiles the
 -- handlers.
 newtype ToolRunner = ToolRunner
@@ -266,7 +275,7 @@ newtype ToolRunner = ToolRunner
             -> Int
             -> SomeContext EventArgument_
             -> ParsedToolScript
-            -> IO (Either String (Double -> Event -> Maybe (IO ()))) }
+            -> IO (Either String (PixelDims -> Event -> Maybe (IO ()))) }
 
 -- | The interpreter tool runner: evaluate draw values through the pure
 -- interpreter and emit them into the given layer's 'DrawSink'.
@@ -319,14 +328,19 @@ getVar n t e = withEnvironment e $ case lookupEnv (Proxy @n) t e of
 ------------------------------------------------------------
 
 type InternalPx  = "[internal] px"
+type InternalPy  = "[internal] py"
+
+-- | The width and height of one pixel, in model coordinates, as a tool's
+-- event dispatcher is given them. A complex viewer's pixels are square.
+type PixelDims = (Double, Double)
 
 type ClickHandlerEnv env =
   ( '(InternalX, 'RealT) ': '(InternalY, 'RealT) ':
-    '(InternalPx, 'RealT) ': env )
+    '(InternalPx, 'RealT) ': '(InternalPy, 'RealT) ': env )
 
 type MissingClickArgs env =
   ( NotPresent InternalX  env, NotPresent InternalY  env
-  , NotPresent InternalPx env )
+  , NotPresent InternalPx env, NotPresent InternalPy env )
 
 assertMissingClickArgs :: forall env a
                        . EnvironmentProxy env
@@ -335,7 +349,8 @@ assertMissingClickArgs :: forall env a
 assertMissingClickArgs env k =
   assertAbsent (Proxy @InternalX)    RealType env $
   assertAbsent (Proxy @InternalY)    RealType env $
-  assertAbsent (Proxy @InternalPx)   RealType env k
+  assertAbsent (Proxy @InternalPx)   RealType env $
+  assertAbsent (Proxy @InternalPy)   RealType env k
 
 type Bookkeeping env =
     ( '(InternalIterations, 'IntegerT) ': '(InternalStuck, 'BooleanT) ':
@@ -381,53 +396,71 @@ runParsedBody :: EnvironmentProxy env -> ParsedCode
               -> Either (Either ParseError TCError) (Code env)
 runParsedBody env body = first Right (runParsedCode env body)
 
+-- | Typecheck a handler's body, reporting errors the way tools do.
+handlerBody :: ParsedCode -> EnvironmentProxy e -> Either (SourceRange, String) (Code e)
+handlerBody body e = left (errorLocation &&& unlines . pp) (runParsedBody e body)
+
+-- | An internal real variable, as a 'RealIn'.
+internalReal :: forall n -> KnownSymbol n => RealIn
+internalReal n = RealIn (getVar n RealType)
+
+-- | The pixel-size variables a tool's handlers see, which depend on the
+-- kind of viewer the tool is in (not on how a handler names its event's
+-- position): the pixel size (@pixelVar=@, if any), and a real viewer's
+-- pixel width and height.
+toolPixelVars :: Coordinate -> Maybe String -> [(String, RealIn)]
+toolPixelVars viewerCoord mpx =
+  [ (p, internalReal InternalPx) | p <- maybeToList mpx ] ++ case viewerCoord of
+    ComplexCoordinate _ -> []
+    RealCoordinates _ _ -> [ (pixelWidthVar,  internalReal InternalPx)
+                           , (pixelHeightVar, internalReal InternalPy) ]
+
+-- | Bind an event position, read from the given internal variables, to
+-- the coordinate a handler names it by, around some code: @z = x + i y@,
+-- or @(x, y)@ for a pair of real variables. A coordinate that's already
+-- defined (a configuration value) is set instead.
+bindEventCoordinate :: forall env
+                     . Coordinate
+                    -> RealIn
+                    -> RealIn
+                    -> EnvironmentProxy env
+                    -> (forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e))
+                    -> Either (SourceRange, String) (Code env)
+bindEventCoordinate coord (RealIn getX) (RealIn getY) env k = withEnvironment env $ case coord of
+  ComplexCoordinate c -> case someSymbolVal c of
+    SomeSymbol cp -> do
+      x <- getX env
+      y <- getY env
+      let i = Const (Scalar ComplexType (0 :+ 1))
+      bindOrDeclare cp ComplexType (R2C x + i * R2C y) env k
+  RealCoordinates p q -> case (someSymbolVal p, someSymbolVal q) of
+    (SomeSymbol xp, SomeSymbol yp) -> do
+      x <- getX env
+      bindOrDeclare xp RealType x env $ \env' -> do
+        y <- getY env'
+        bindOrDeclare yp RealType y env' k
+
 parseClickScript :: CommonDefs
                  -> Coordinate
-                -> (ParsedValue, ParsedValue, ParsedValue)
+                 -- ^ the viewer's coordinate
+                 -> Coordinate
+                 -- ^ the click's position
+                 -> (ParsedValue, ParsedValue, ParsedValue)
                  -> Maybe String
                  -> ParsedCode
                  -> (forall env. EnvironmentProxy env
                      -> Either (SourceRange, String) (Code (ClickHandlerEnv env)))
-parseClickScript defs0 clickCoord limits mpixel body
+parseClickScript defs0 viewerCoord clickCoord limits mpixel body
   (env0 :: EnvironmentProxy env) = do
 
   env1 <- (declareE InternalX  RealType
        <=< declareE InternalY  RealType
-       <=< declareE InternalPx RealType) env0
+       <=< declareE InternalPx RealType
+       <=< declareE InternalPy RealType) env0
 
-  case clickCoord of
-    RealCoordinates p q -> case (someSymbolVal p, someSymbolVal q) of
-      (SomeSymbol xcoord, SomeSymbol ycoord) -> do
-        withBookkeeping env1 defs0 limits $ \env _defs -> do
-          x <- getVar InternalX RealType env
-          bindOrDeclare xcoord RealType x env $ \env' -> do
-            y <- getVar InternalY RealType env'
-            bindOrDeclare ycoord RealType y env' $ \env'' -> do
-              SomeSymbol (px :: Proxy px) <- pure (someSymbolVal $ fromMaybe "[unused] pixel size" mpixel)
-              case lookupEnv px RealType env'' of
-                Absent pf -> recallIsAbsent pf $ do
-                  let env3 = BindingProxy px RealType env''
-                  ip <- getVar InternalPx RealType env''
-                  code <- left (errorLocation &&& unlines . pp) (runParsedBody env3 body)
-                  pure (Let (bindName px RealType pf) px ip code)
-                _ -> Left (NoSourceRange, "The pixel size variable `" ++ symbolVal px ++ "` was redefined.")
-
-    ComplexCoordinate c -> case someSymbolVal c of
-      SomeSymbol coord -> do
-
-        withBookkeeping env1 defs0 limits $ \env _defs -> do
-          let i = Const (Scalar ComplexType (0 :+ 1))
-          x <- getVar InternalX RealType env
-          y <- getVar InternalY RealType env
-          bindOrDeclare coord ComplexType (R2C x + i * R2C y) env $ \env' -> do
-              SomeSymbol (px :: Proxy px) <- pure (someSymbolVal $ fromMaybe "[unused] pixel size" mpixel)
-              case lookupEnv px RealType env' of
-                Absent pf -> recallIsAbsent pf $ do
-                  let env2 = BindingProxy px RealType env'
-                  ip <- getVar InternalPx RealType env'
-                  code <- left (errorLocation &&& unlines . pp) (runParsedBody env2 body)
-                  pure (Let (bindName px RealType pf) px ip code)
-                _ -> Left (NoSourceRange, "The pixel size variable `" ++ symbolVal px ++ "` was redefined.")
+  withBookkeeping env1 defs0 limits $ \env _defs ->
+    bindEventCoordinate clickCoord (internalReal InternalX) (internalReal InternalY) env $ \env' ->
+      bindFreshReals (toolPixelVars viewerCoord mpixel) env' (handlerBody body)
 
 ------------------------------------------------------------
 -- Drag-type event handler
@@ -439,7 +472,7 @@ type InternalOldY  = "[internal] oldy"
 type MissingDragArgs env =
   ( NotPresent InternalX  env, NotPresent InternalY  env
   , NotPresent InternalOldX env, NotPresent InternalOldY  env
-  , NotPresent InternalPx env )
+  , NotPresent InternalPx env, NotPresent InternalPy env )
 
 assertMissingDragArgs :: forall env a
                        . EnvironmentProxy env
@@ -450,12 +483,13 @@ assertMissingDragArgs env k =
   assertAbsent (Proxy @InternalY)    RealType env $
   assertAbsent (Proxy @InternalOldX) RealType env $
   assertAbsent (Proxy @InternalOldY) RealType env $
-  assertAbsent (Proxy @InternalPx)   RealType env k
+  assertAbsent (Proxy @InternalPx)   RealType env $
+  assertAbsent (Proxy @InternalPy)   RealType env k
 
 type DragHandlerEnv env =
   ( '(InternalX, 'RealT) ': '(InternalY, 'RealT) ':
     '(InternalOldX, 'RealT) ': '(InternalOldY, 'RealT) ':
-    '(InternalPx, 'RealT) ': env )
+    '(InternalPx, 'RealT) ': '(InternalPy, 'RealT) ': env )
 
 type InternalDragHandlerEnv env =
   ( '(InternalIterations, 'IntegerT) ':
@@ -476,7 +510,7 @@ bindOrDeclare :: forall name ty env
 bindOrDeclare name ty v env action = case lookupEnv name ty env of
   WrongType ty' -> withKnownType ty $
     throwError (NoSourceRange,
-                 "Expected variable `" ++ "` should be " ++ an ty ++ ", not " ++ an ty')
+                 "The variable `" ++ symbolVal name ++ "` should be " ++ an ty ++ ", not " ++ an ty' ++ ".")
 
   Found pf -> withEnvironment env $ do
     code <- action env
@@ -487,15 +521,41 @@ bindOrDeclare name ty v env action = case lookupEnv name ty env of
     code <- withEnvironment env' $ action env'
     pure (snd $ letInEnv @name v (env', code))
 
+-- | A real value, read in whatever environment it ends up used in.
+newtype RealIn = RealIn
+  (forall e. EnvironmentProxy e -> Either (SourceRange, String) (Value '(e, 'RealT)))
+
+-- | Bind each name, which mustn't be defined already, to its value
+-- around some code (the pixel size, and a real viewer's pixel width and
+-- height).
+bindFreshReals :: forall env
+                . [(String, RealIn)]
+               -> EnvironmentProxy env
+               -> (forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e))
+               -> Either (SourceRange, String) (Code env)
+bindFreshReals [] env k = withEnvironment env (k env)
+bindFreshReals ((name, RealIn getV) : rest) env k = case someSymbolVal name of
+  SomeSymbol (np :: Proxy n) -> case lookupEnv np RealType env of
+    Absent pf -> recallIsAbsent pf $ withEnvironment env $ do
+      v <- getV env
+      let env' = BindingProxy np RealType env
+      code <- bindFreshReals rest env' k
+      pure (snd (letInEnv @n v (env', code)))
+    _ -> Left (NoSourceRange, "The pixel size variable `" ++ name ++ "` was redefined.")
+
 parseDragScript :: CommonDefs
                 -> Coordinate
+                -- ^ the viewer's coordinate
                 -> Coordinate
+                -- ^ the drag's current position
+                -> Coordinate
+                -- ^ the drag's starting position
                 -> (ParsedValue, ParsedValue, ParsedValue)
                 -> Maybe String
                 -> ParsedCode
                 -> (forall env. EnvironmentProxy env
                     -> Either (SourceRange, String) (Code (DragHandlerEnv env)))
-parseDragScript _defs curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mpixel body
+parseDragScript _defs viewerCoord curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mpixel body
   (env :: EnvironmentProxy env) = do
   withEnvironment env $ do
     -- Bind all of the internal bookkeeping variables
@@ -510,37 +570,15 @@ parseDragScript _defs curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mpix
         <=< declareE InternalOldX            RealType
         <=< declareE InternalOldY            RealType
         <=< declareE InternalPx              RealType
+        <=< declareE InternalPy              RealType
       ) env
 
     withEnvironment env' $ do
 
-      SomeSymbol (coord1 :: Proxy coordT1) <- pure $ case curCoord of
-        ComplexCoordinate c -> someSymbolVal c
-        RealCoordinates{}   -> error "INTERNAL ERROR: Non-complex event coordinates are not yet implemented."
-      SomeSymbol (coord2 :: Proxy coordT2) <- pure $ case oldCoord of
-        ComplexCoordinate c -> someSymbolVal c
-        RealCoordinates{}   -> error "INTERNAL ERROR: Non-complex event coordinates are not yet implemented."
-
-      let i :: forall e. KnownEnvironment e => Value '(e, ComplexT)
-          i = Const (Scalar ComplexType (0 :+ 1))
-      x  <- getVar InternalX    RealType env'
-      y  <- getVar InternalY    RealType env'
-
       code :: Code (InternalDragHandlerEnv env) <-
-        bindOrDeclare coord1 ComplexType (R2C x  + i * R2C y ) env' $ \env1 -> do
-          x' <- getVar InternalOldX RealType env1
-          y' <- getVar InternalOldY RealType env1
-          bindOrDeclare coord2 ComplexType (R2C x' + i * R2C y') env1 $ \env2 ->
-            case someSymbolVal <$> mpixel of
-              Nothing -> left (errorLocation &&& unlines . pp) (runParsedBody env2 body)
-              Just (SomeSymbol (px :: Proxy px)) -> do
-                case lookupEnv px RealType env2 of
-                  Absent pf -> recallIsAbsent pf $ do
-                    let env3 = BindingProxy px RealType env2
-                    p <- getVar InternalPx RealType env2
-                    c <- left (errorLocation &&& unlines . pp) (runParsedBody env3 body)
-                    pure (snd $ letInEnv @px p (env3, c))
-                  _ -> Left (NoSourceRange, "The pixel size variable `" ++ symbolVal px ++ "` was redefined.")
+        bindEventCoordinate curCoord (internalReal InternalX) (internalReal InternalY) env' $ \env1 ->
+          bindEventCoordinate oldCoord (internalReal InternalOldX) (internalReal InternalOldY) env1 $ \env2 ->
+            bindFreshReals (toolPixelVars viewerCoord mpixel) env2 (handlerBody body)
 
       -- Now bind all of the bookkeeping variables
       let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
@@ -555,7 +593,7 @@ parseDragScript _defs curCoord oldCoord (pMaxIters, pMaxRadius, pMinRadius) mpix
 -- Nullary event handlers
 ------------------------------------------------------------
 
-type UnitHandlerEnv env = '(InternalPx, 'RealT) ': env
+type UnitHandlerEnv env = '(InternalPx, 'RealT) ': '(InternalPy, 'RealT) ': env
 
 type InternalUnitHandlerEnv env =
   ( '(InternalIterations, 'IntegerT) ':
@@ -565,7 +603,7 @@ type InternalUnitHandlerEnv env =
     '(InternalVanishingRadius, 'RealT) ':
     UnitHandlerEnv env)
 
-type MissingUnitArgs env = ( NotPresent InternalPx env )
+type MissingUnitArgs env = ( NotPresent InternalPx env, NotPresent InternalPy env )
 
 assertAbsent :: KnownSymbol name
              => Proxy name
@@ -582,16 +620,19 @@ assertMissingUnitArgs :: forall env a
                        . EnvironmentProxy env
                       -> (MissingUnitArgs env => a)
                       -> a
-assertMissingUnitArgs = assertAbsent (Proxy @InternalPx) RealType
+assertMissingUnitArgs env k =
+  assertAbsent (Proxy @InternalPx) RealType env $
+  assertAbsent (Proxy @InternalPy) RealType env k
 
 parseUnitScript :: CommonDefs
                 -> (ParsedValue, ParsedValue, ParsedValue)
                 -> Coordinate
+                -- ^ the viewer's coordinate
                 -> Maybe String
                 -> ParsedCode
                 -> (forall env. EnvironmentProxy env
                     -> Either (SourceRange, String) (Code (UnitHandlerEnv env)))
-parseUnitScript _defs (pMaxIters, pMaxRadius, pMinRadius) _vc mpx body
+parseUnitScript _defs (pMaxIters, pMaxRadius, pMinRadius) viewerCoord mpx body
   (env :: EnvironmentProxy env) = do
 
   withEnvironment env $ do
@@ -603,40 +644,21 @@ parseUnitScript _defs (pMaxIters, pMaxRadius, pMinRadius) _vc mpx body
         <=< declareE InternalEscapeRadius    RealType
         <=< declareE InternalVanishingRadius RealType
         <=< declareE InternalPx              RealType
+        <=< declareE InternalPy              RealType
       ) env
 
-    withEnvironment env' $ case someSymbolVal <$> mpx of
-      Nothing -> do
+    withEnvironment env' $ do
+      code <- bindFreshReals (toolPixelVars viewerCoord mpx) env' (handlerBody body)
 
-        code <- left (errorLocation &&& unlines . pp) (runParsedBody env' body)
+      let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
+            (env', code) & letInEnv (Const (Scalar typeProxy 0))
+                         & letInEnv (Const (Scalar typeProxy False))
 
-        let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), code0) =
-              (env', code) & letInEnv (Const (Scalar typeProxy 0))
-                           & letInEnv (Const (Scalar typeProxy False))
+      code1 <- snd . (`letInEnv` (env0, code0)) <$> pvAtType pMaxIters  IntegerType env1
+      code2 <- snd . (`letInEnv` (env1, code1)) <$> pvAtType pMaxRadius RealType    env2
+      code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
 
-        code1 <- snd . (`letInEnv` (env0, code0)) <$> pvAtType pMaxIters  IntegerType env1
-        code2 <- snd . (`letInEnv` (env1, code1)) <$> pvAtType pMaxRadius RealType    env2
-        code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
-
-        pure code'
-
-      Just (SomeSymbol px) -> do
-        case lookupEnv px RealType env' of
-          Absent pf -> do
-            let env'' = recallIsAbsent pf $ BindingProxy px RealType env'
-
-            code0 <- left (errorLocation &&& unlines . pp) (runParsedBody env'' body)
-            let code = Let bindingEvidence px (Var (Proxy @InternalPx) RealType bindingEvidence) code0
-            let (env0@(BindingProxy _ _ env1@(BindingProxy _ _ env2@(BindingProxy _ _ env3))), codeX) =
-                  (env', code) & letInEnv (Const (Scalar typeProxy 0))
-                               & letInEnv (Const (Scalar typeProxy False))
-
-            code1 <- snd . (`letInEnv` (env0, codeX)) <$> pvAtType pMaxIters  IntegerType env1
-            code2 <- snd . (`letInEnv` (env1, code1)) <$> pvAtType pMaxRadius RealType    env2
-            code' <- snd . (`letInEnv` (env2, code2)) <$> pvAtType pMinRadius RealType    env3
-
-            pure code'
-          _ -> Left (NoSourceRange, "Pixel variable `" ++ symbolVal px ++ "` was redefined.")
+      pure code'
 
 
 ------------------------------------------------------------
@@ -780,14 +802,14 @@ toolBlocksGrammar defs = mdo
   onClick' <- rule $
     (\mc body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
         second (\c -> noHandlers { onClick = Just c })
-          (parseClickScript defs (fromMaybe defaultCoord mc) limits mpixel body env))
+          (parseClickScript defs defaultCoord (fromMaybe defaultCoord mc) limits mpixel body env))
     <$> (tok "on" *> tok "click" *> optional (tok "at" *> coordSpec) <* colon <* nl)
     <*> codeBlock
 
   onDoubleClick' <- rule $
     (\mc body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
         second (\c -> noHandlers { onDoubleClick = Just c })
-          (parseClickScript defs (fromMaybe defaultCoord mc) limits mpixel body env))
+          (parseClickScript defs defaultCoord (fromMaybe defaultCoord mc) limits mpixel body env))
     <$> (tok "on" *> tok "double" *> token Minus *> tok "click"
           *> optional (tok "at" *> coordSpec) <* colon <* nl)
     <*> codeBlock
@@ -796,8 +818,8 @@ toolBlocksGrammar defs = mdo
     (\mc body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
         let c = fromMaybe defaultCoord mc
         in second (\(ch, dh) -> noHandlers { onClick = Just ch, onDrag = Just dh })
-             ((,) <$> parseClickScript defs c limits mpixel body env
-                  <*> parseDragScript  defs c dummyStart limits mpixel body env))
+             ((,) <$> parseClickScript defs defaultCoord c limits mpixel body env
+                  <*> parseDragScript  defs defaultCoord c dummyStart limits mpixel body env))
     <$> (tok "on" *> tok "click" *> token Minus *> token Or_ *> token Minus *> tok "drag"
           *> optional (tok "at" *> coordSpec) <* colon <* nl)
     <*> codeBlock
@@ -806,7 +828,7 @@ toolBlocksGrammar defs = mdo
     (\mft body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
         let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
         in second (\d -> noHandlers { onDrag = Just d })
-             (parseDragScript defs curC startC limits mpixel body env))
+             (parseDragScript defs defaultCoord curC startC limits mpixel body env))
     <$> (tok "on" *> tok "drag" *> optional fromTo <* colon <* nl)
     <*> codeBlock
 
@@ -814,7 +836,7 @@ toolBlocksGrammar defs = mdo
     (\mft body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
         let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
         in second (\d -> noHandlers { onDragDone = Just d })
-             (parseDragScript defs curC startC limits mpixel body env))
+             (parseDragScript defs defaultCoord curC startC limits mpixel body env))
     <$> (tok "on" *> tok "drag" *> token Minus *> tok "finished" *> optional fromTo <* colon <* nl)
     <*> codeBlock
 
@@ -829,7 +851,35 @@ toolBlocksGrammar defs = mdo
 -- Helpers
 ------------------------------------------------------------
 
+-- | How a point of a viewer (or a tool event's position) is named: one
+-- complex variable, or a pair of real ones (@x@, then @y@).
 data Coordinate = ComplexCoordinate String | RealCoordinates String String
+  deriving (Eq, Show)
+
+-- | The names a 'Coordinate' binds.
+coordinateNames :: Coordinate -> [String]
+coordinateNames = \case
+  ComplexCoordinate z -> [z]
+  RealCoordinates x y -> [x, y]
+
+-- | A coordinate as a script writes it: @z@, or @(x, y)@.
+showCoordinate :: Coordinate -> String
+showCoordinate = \case
+  ComplexCoordinate z -> z
+  RealCoordinates x y -> "(" ++ x ++ ", " ++ y ++ ")"
+
+-- | The pixel dimensions a real viewer's code (and its tools') can read,
+-- besides the pixel size (@pixel_size@, or @pixelVar=@): the width
+-- (the same as the pixel size) and height of one pixel. Their pixels
+-- needn't be square, unlike a complex viewer's.
+realPixelVars :: Coordinate -> [String]
+realPixelVars = \case
+  ComplexCoordinate _ -> []
+  RealCoordinates _ _ -> [pixelWidthVar, pixelHeightVar]
+
+pixelWidthVar, pixelHeightVar :: String
+pixelWidthVar  = "pixel_width"
+pixelHeightVar = "pixel_height"
 
 newtype MCoordinate = MC (Maybe Coordinate)
 

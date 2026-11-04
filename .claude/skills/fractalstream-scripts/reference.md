@@ -81,16 +81,20 @@ scripts that actually use it where those names don't exist.
 
 ### `@viewer "Title" attrs`
 
-A window over the complex plane. Its body runs once per pixel (several
-times per pixel, in fact: the app renders progressively and supersamples),
-with the pixel's point bound to a complex variable, and produces `color`:
-either the body sets it, or the viewer's *colorizer* does (see below).
+A window over the complex plane, or (with `xvar=` and `yvar=`) over the
+real plane. Its body runs once per pixel (several times per pixel, in
+fact: the app renders progressively and supersamples), with the pixel's
+point bound to a complex variable (or a pair of real ones), and produces
+`color`: either the body sets it, or the viewer's *colorizer* does (see
+below).
 
 | Attribute | Default | Meaning |
 |---|---|---|
 | `var=` | `z` | name of the pixel's complex coordinate. Can be a `@config` variable's name (e.g. `var=C` with `C` in `@config`): inside this viewer, it then means the pixel instead of the config value. This is how parameter-plane viewers are made. |
-| `center=` | `0` | original center ("Original view" returns here); quote anything but a plain number: `center="-0.75 + 0.1i"` |
+| `xvar=`, `yvar=` | none | instead of `var=`: a *real viewer*, whose pixel is the pair of real coordinates `(x, y)` with these names. Both are needed, and they can't be used with `var=`. Either can be a real `@config` variable's name, for a plane of real parameters (`xvar=a yvar=b`). |
+| `center=` | `0` | original center ("Original view" returns here); quote anything but a plain number: `center="-0.75 + 0.1i"`. A real viewer's is a point, `center=(1, -1/2)`, or a complex number. |
 | `pixelSize=` | `1/128` | model width of one pixel (zoom) in the original view; `1/200`, `0.005` |
+| `aspect=` | `1` | real viewers only: a pixel's height over its width in the original view (`aspect=2` fits twice as much of the y axis). A complex viewer's pixels are always square. The wx viewer's menu has "Aspect ratio..." to change it. |
 | `limit=`, `escape=`, `vanish=` | `max_iters`, `escape_radius`, `vanishing_radius` | name a different (config) variable to use as the loop limit / escape radius / vanishing radius in this viewer |
 | `pixelVar=` | `pixel_size` | name under which the current pixel size is visible |
 | `colorizer=` | automatic | the viewer's default colorizer, e.g. `colorizer=Smooth`, `colorizer="Rainbow(arg z / (2 pi))"` (quote anything but a bare name) |
@@ -112,19 +116,21 @@ wx-properties:
       visible: false      # window closed; default true
       center: [-0.75, 0.1]   # current view (the script's center= is the original)
       pixel-size: 0.005
+      aspect: 2              # a real viewer's current aspect, when it isn't 1
   configuration: { x: 40, y: 80 }
 ```
 
 Every field is optional, and the app moves windows back onto the primary display
 if `x`/`y` would put them off it. `fsrun` ignores all of it: a scenario that needs a
 particular size or view says `resize viewer to 512x512`, `set viewer center
-to ...`, `set viewer pixel size to ...`.
+to ...`, `set viewer pixel size to ...`, `set viewer aspect to ...`.
 
 
 Inside a viewer:
-- in scope: the coordinate (`z` or `var=`), all `@config` variables
-  (read-only), `pixel_size` (model size of a pixel; use it for
-  zoom-independent thickness), `color` (the output, starts grey),
+- in scope: the coordinate (`z` or `var=`; or `xvar=` and `yvar=`), all
+  `@config` variables (read-only), `pixel_size` (model width of a pixel;
+  use it for zoom-independent thickness), in a real viewer also
+  `pixel_width` (the same) and `pixel_height`, `color` (the output, starts grey),
   `iterations` and `stuck` (see Loops).
 - viewers can't change the configuration: assigning a config variable
   only changes that pixel's local copy. Only `color` is output.
@@ -263,8 +269,8 @@ changed by the handlers), then event blocks:
 At most one block per event kind, except `button` (one per label).
 
 Coordinates: `at w` binds the point as a complex `w`; `at (x, y)` binds two
-reals. Without `at`, the point is bound to the viewer's own coordinate
-name. **Caution**: if the viewer's coordinate is a `@config` variable
+reals (in either kind of viewer). Without `at`, the point is bound to the
+viewer's own coordinate name(s): `var=`, or a real viewer's `xvar=`/`yvar=`. **Caution**: if the viewer's coordinate is a `@config` variable
 (`var=C`), a handler using the default coordinate writes the clicked point
 into that config variable even if the body never assigns it. That is the
 idiomatic "click to pick a parameter" tool (`on click-or-drag: pass`), and
@@ -274,7 +280,7 @@ point and can't see the viewer coordinate.
 
 In scope in a handler: all config variables (ensemble and the tool's own;
 assigning them updates the UI and re-renders viewers that use them), the
-bound point, `pixel_size`, `max_iters` etc. Local variables are fresh on
+bound point, `pixel_size` (and a real viewer's `pixel_width`/`pixel_height`), `max_iters` etc. Local variables are fresh on
 every event; persistent tool state must be a declared tool variable.
 Loops in handlers obey the same limits as viewers.
 

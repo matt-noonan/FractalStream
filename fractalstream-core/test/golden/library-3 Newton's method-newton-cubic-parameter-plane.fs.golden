@@ -144,19 +144,19 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   block:
                     erase
                     use Color 255 255 255 for line
-                    let `[internal] fresh #25` = 0 in:
-                      let `[internal] fresh #26` = [internal] iteration limit in:
+                    let `[internal] fresh #26` = 0 in:
+                      let `[internal] fresh #27` = [internal] iteration limit in:
                         block:
-                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #25 < [internal] fresh #26)):
+                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #26 < [internal] fresh #27)):
                             block:
                               block:
                                 set `lastZ` := z
                                 set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - 1:R:C) * ([internal] f.z #1 + 1:R:C)) * ([internal] f.z #1 - a)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - a) * (([internal] f'.z #2 + 1:R:C) + ([internal] f'.z #2 - 1:R:C))) + (([internal] f'.z #2 - 1:R:C) * ([internal] f'.z #2 + 1:R:C)))))
                                 draw point at lastZ:R^2
                                 draw line from lastZ:R^2 to z:R^2
-                              set `[internal] fresh #25` := ([internal] fresh #25 + 1)
-                          set `[internal] iteration count` := [internal] fresh #25
-                          set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
+                              set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                          set `[internal] iteration count` := [internal] fresh #26
+                          set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
                     draw point at z:R^2
 
   -- on drag
@@ -173,19 +173,19 @@ let `[internal] vanishing radius` = vanishing_radius in:
                     block:
                       erase
                       use Color 255 255 255 for line
-                      let `[internal] fresh #28` = 0 in:
-                        let `[internal] fresh #29` = [internal] iteration limit in:
+                      let `[internal] fresh #29` = 0 in:
+                        let `[internal] fresh #30` = [internal] iteration limit in:
                           block:
-                            do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #28 < [internal] fresh #29)):
+                            do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #29 < [internal] fresh #30)):
                               block:
                                 block:
                                   set `lastZ` := z
                                   set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - 1:R:C) * ([internal] f.z #1 + 1:R:C)) * ([internal] f.z #1 - a)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - a) * (([internal] f'.z #2 + 1:R:C) + ([internal] f'.z #2 - 1:R:C))) + (([internal] f'.z #2 - 1:R:C) * ([internal] f'.z #2 + 1:R:C)))))
                                   draw point at lastZ:R^2
                                   draw line from lastZ:R^2 to z:R^2
-                                set `[internal] fresh #28` := ([internal] fresh #28 + 1)
-                            set `[internal] iteration count` := [internal] fresh #28
-                            set `[internal] stuck` := ([internal] fresh #28 = [internal] fresh #29)
+                                set `[internal] fresh #29` := ([internal] fresh #29 + 1)
+                            set `[internal] iteration count` := [internal] fresh #29
+                            set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
                       draw point at z:R^2
 
   -- on deactivated

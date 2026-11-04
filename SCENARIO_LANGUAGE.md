@@ -112,7 +112,8 @@ every point its viewers find, renders the same either way.
 |---|---|
 | `resize viewer to <W>x<H>` | Change the viewer's pixel dimensions (`WxH`, e.g. `800x600`; viewers start at `600x600`). |
 | `set viewer center to <point>` | Change the model-space point the view is centered on. |
-| `set viewer pixel size to <value-expr>` | Change the model-space size of one pixel (zoom level). |
+| `set viewer pixel size to <value-expr>` | Change the model-space size of one pixel (zoom level): its width, in a real viewer. |
+| `set viewer aspect to <value-expr>` | Change a real viewer's aspect ratio: the height of a pixel over its width (positive). It's an error in a complex viewer, whose pixels are always square. |
 
 ### Synthetic input (current viewer/tool)
 
@@ -157,7 +158,7 @@ untrue later.
 | `capture viewer "<name>" base to "<file.png>"` | Same, but the per-pixel script only -- no tool overlays. |
 | `capture viewer "<name>" as preview` | Render the named viewer (with tool overlays; add `base` before `as` for without) as the project's preview image: the viewer's current view, scaled so the longer side is 128 pixels. Only allowed in a project's `metadata: preview-commands:`; anywhere else it's an error. |
 | `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] using "<script>"` | Record a movie of the named viewer (see "Recording movies" below): before each of the `N` frames, run the script's `animate` block with the time, going from 0 to 1. |
-| `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] [inset "<viewer>" [at <corner>]] moving <var> along <point>, <point>, ...` | The same, but moving the complex configuration variable `var` along the path through the given points, at a steady speed. With `inset`, the named viewer (a parameter plane, say) is shown in a corner of each frame (`at top left`, `top right`, `bottom left`, or `bottom right`, the default), with a crosshair at the path's current point. |
+| `record viewer "<name>" to "<file>" frames <N> fps <F> [loop] [base] [inset "<viewer>" [at <corner>]] moving <var> along <point>, <point>, ...` | The same, but moving the complex configuration variable `var` along the path through the given points, at a steady speed (by length in model coordinates). `moving (<x>, <y>) along ...` moves a pair of real configuration variables instead, `x` along the points' first coordinates and `y` along their second. With `inset`, the named viewer (a parameter plane, say) is shown in a corner of each frame (`at top left`, `top right`, `bottom left`, or `bottom right`, the default), with a crosshair at the path's current point. |
 
 #### Recording movies
 

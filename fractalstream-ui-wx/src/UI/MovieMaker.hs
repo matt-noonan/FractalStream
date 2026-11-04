@@ -38,7 +38,7 @@ import qualified Graphics.UI.WXCore.Events as WX
 import Graphics.UI.WXCore.WxcClassesMZ (windowDestroy, windowShow, windowRaise)
 import Graphics.UI.WXCore.WxcDefs (wxCAPTION, wxCLOSE_BOX, wxSYSTEM_MENU)
 
-import Actor.Event (EventArgument_)
+import Actor.Event (EventArgument_, Coordinate, showCoordinate)
 import Actor.Layout (Dimensions(..), Field(..))
 import Actor.Movie
 import Actor.Viewer (Viewer(..), cloneViewer, describeViewerIssues)
@@ -105,9 +105,10 @@ registerMovieViewer MovieSupport{..} viewer = do
 data MovieSource
   = ScriptSource
     -- ^ a script that sets the project's values, with @t@ from 0 to 1
-  | PathSource String String [(Double, Double)]
+  | PathSource String Coordinate [(Double, Double)]
     -- ^ a path, drawn in the viewer with this title, for its coordinate
-    -- (a complex configuration variable, of this name) to move along
+    -- (a complex configuration variable, or a pair of real ones) to
+    -- move along
 
 -- | What the movie dialog needs to know about the project.
 data MovieProject = MovieProject
@@ -122,8 +123,6 @@ data MovieProject = MovieProject
   , mpUnsaved     :: Variable Bool
     -- ^ whether the project has unsaved changes: recording a movie
     -- changes values, but puts them back afterwards, so it doesn't count
-  , mpCoordinate  :: String -> IO (Maybe String)
-    -- ^ the coordinate variable of the viewer with this title
   , mpProjectName :: IO String
   , mpOwner       :: Window ()
     -- ^ the project's own (hidden) window, which the progress window
@@ -187,7 +186,7 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
                    Right _ -> getScript >>= scriptAnimation defs mpConfig
                , Just <$> getScript )
         PathSource drawnIn var path ->
-          pure ( hfill (label (var ++ " will move along the path drawn in " ++ quoted drawnIn ++ "."))
+          pure ( hfill (label (showCoordinate var ++ " will move along the path drawn in " ++ quoted drawnIn ++ "."))
                , \backToStart -> pure (pathAnimation mpConfig var backToStart path)
                , pure Nothing )
 
@@ -209,7 +208,7 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
       insetControls <- case source of
         ScriptSource -> pure Nothing
         PathSource drawnIn var _ -> do
-          box <- checkBox p [ text := "Show " ++ quoted drawnIn ++ " as an inset, marking " ++ var
+          box <- checkBox p [ text := "Show " ++ quoted drawnIn ++ " as an inset, marking " ++ showCoordinate var
                             , checked := lastOr lmInset False ]
           -- which corner it goes in, chosen only while it's to be shown
           let corners = [minBound .. maxBound] :: [InsetCorner]

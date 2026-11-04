@@ -29,7 +29,7 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Set as Set
 import Data.Set (Set)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, maybeToList)
 
 import Language.Parser.Tokenizer (Token(..))
 import Language.Editor.Lines
@@ -89,8 +89,8 @@ highlightsWith known src = concatMap spansOf stanzas
     stanzas = splitStanzas ls
     common = commonDefinitions stanzas <> known
     viewerVars = Map.fromList
-      [ (title, var) | s <- stanzas, stKind s == "viewer"
-                     , Just title <- [stTitle s], let var = viewerVar s ]
+      [ (title, viewerNames s) | s <- stanzas, stKind s == "viewer"
+                               , Just title <- [stTitle s] ]
     -- @common's code, and a colorizer's, is used in other stanzas, as if
     -- written there: so it can refer to what any of them defines
     everyStanza = Map.unions (map (stanzaDefinitions viewerVars) stanzas)
@@ -142,9 +142,15 @@ parseHeader l =
         _ -> Nothing
   in (kind, title, attrs)
 
--- | A viewer's coordinate variable.
-viewerVar :: Stanza -> String
-viewerVar s = Map.findWithDefault "z" "var" (stAttrs s)
+-- | The names a viewer defines for its code (and its tools'): its
+-- coordinate variable (@var=@, by default @z@), or both of a real
+-- viewer's (@xvar=@ and @yvar=@), along with a real viewer's pixel width
+-- and height.
+viewerNames :: Stanza -> [(String, Highlight)]
+viewerNames s = case (Map.lookup "xvar" attrs, Map.lookup "yvar" attrs) of
+  (Just x, Just y) -> [(x, Variable), (y, Variable), ("pixel_width", Parameter), ("pixel_height", Parameter)]
+  _ -> [(Map.findWithDefault "z" "var" attrs, Variable)]
+  where attrs = stAttrs s
 
 ------------------------------------------------------------------------
 -- Definitions
@@ -161,17 +167,17 @@ commonDefinitions stanzas =
 
 -- | A stanza's own definitions, and those it sees because of what it is:
 -- a viewer's coordinate and pixel size, a tool's viewer's coordinate.
-stanzaDefinitions :: Map.Map String String -> Stanza -> Defs
+stanzaDefinitions :: Map.Map String [(String, Highlight)] -> Stanza -> Defs
 stanzaDefinitions viewerVars s = definitions s <> implicit
   where
     implicit = Map.fromList $ case stKind s of
-      "viewer" -> [ (viewerVar s, Variable)
-                  , (Map.findWithDefault "pixel_size" "pixelVar" (stAttrs s), Parameter) ]
-      "tool" -> [ (v, Variable) | Just v <- [toolViewerVar] ] ++ [("pixel_size", Parameter)]
+      "viewer" -> viewerNames s
+                  ++ [(Map.findWithDefault "pixel_size" "pixelVar" (stAttrs s), Parameter)]
+      "tool" -> concat (maybeToList toolViewerNames) ++ [("pixel_size", Parameter)]
       "colorizer" -> [("pixel_size", Parameter)]
       "" -> [("z", Variable), ("pixel_size", Parameter)]
       _ -> []
-    toolViewerVar = case Map.lookup "for" (stAttrs s) of
+    toolViewerNames = case Map.lookup "for" (stAttrs s) of
       Just title -> Map.lookup title viewerVars
       Nothing -> case Map.elems viewerVars of
         [v] -> Just v

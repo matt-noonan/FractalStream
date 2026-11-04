@@ -30,6 +30,7 @@ import FractalStream.Prelude
 
 import Language.Value.Typecheck (ParsedValue)
 import Actor.Movie (InsetCorner(..))
+import Actor.Event (Coordinate(..))
 import Language.Value.Parser (valueGrammar, arithGrammar)
 import Language.Value.Syntax (textLiteral)
 import Data.Char (isDigit)
@@ -63,6 +64,7 @@ data Command
   | ResizeViewer Int Int
   | SetViewerCenter Point
   | SetViewerPixelSize ParsedValue
+  | SetViewerAspect ParsedValue
 
   | ClickAt Point
   | DoubleClickAt Point
@@ -101,8 +103,9 @@ data MovieOptions = MovieOptions
 data MovieAnimation
   = MovieScript String
     -- ^ a script run each frame, with @t@ going from 0 to 1
-  | MoviePath String [Point]
-    -- ^ a complex variable, moved along a path through these points
+  | MoviePath Coordinate [Point]
+    -- ^ a complex variable, or a pair of real ones, moved along a path
+    -- through these points
 
 -- | Parse a whole scenario file into its list of commands.
 parseScenario :: String -> Either (SourceRange, String) [Command]
@@ -169,6 +172,8 @@ scenarioGrammar = mdo
     SetViewerCenter <$> (kw "set" *> kw "viewer" *> kw "center" *> kw "to" *> point <* nl)
   setViewerPixelSize <- rule $
     SetViewerPixelSize <$> (kw "set" *> kw "viewer" *> kw "pixel" *> kw "size" *> kw "to" *> value <* nl)
+  setViewerAspect <- rule $
+    SetViewerAspect <$> (kw "set" *> kw "viewer" *> kw "aspect" *> kw "to" *> value <* nl)
 
   clickAt <- rule $
     ClickAt <$> (kw "click" *> kw "at" *> point <* nl)
@@ -210,9 +215,12 @@ scenarioGrammar = mdo
                  <*> (isJust <$> optional (kw "loop")) <*> (isJust <$> optional (kw "base"))
                  <*> optional ((,) <$> (kw "inset" *> str)
                                    <*> (fromMaybe BottomRight <$> optional (kw "at" *> corner)))
+  coordinate <- rule $
+        (ComplexCoordinate <$> ident')
+    <|> (RealCoordinates <$> (token OpenParen *> ident' <* token Comma) <*> (ident' <* token CloseParen))
   movieAnimation <- rule $
         (MovieScript <$> (kw "using" *> str))
-    <|> (MoviePath <$> (kw "moving" *> ident') <*> (kw "along" *> points))
+    <|> (MoviePath <$> (kw "moving" *> coordinate) <*> (kw "along" *> points))
   recordMovie <- rule $
     RecordMovie <$> (kw "record" *> kw "viewer" *> str) <*> (kw "to" *> str)
                 <*> movieOptions <*> (movieAnimation <* nl)
@@ -220,7 +228,7 @@ scenarioGrammar = mdo
   command <- ruleChoice
     [ selectViewer, selectTool, deselectTool
     , setParameter, setToolParameter, setColorizerParameter
-    , resizeViewer, setViewerCenter, setViewerPixelSize
+    , resizeViewer, setViewerCenter, setViewerPixelSize, setViewerAspect
     , clickAt, doubleClickAt, dragFromTo
     , pressButton, triggerRefresh, triggerTimer
     , waitForViewer

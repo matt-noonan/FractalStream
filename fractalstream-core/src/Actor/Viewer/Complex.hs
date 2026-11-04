@@ -4,11 +4,12 @@ module Actor.Viewer.Complex
 --  , listenForChanges
   ) where
 
-import FractalStream.Prelude
+import FractalStream.Prelude ()
 
 import Actor.Viewer
 import Actor.Layout
 import Actor.Tool
+import Actor.Event (Coordinate(..))
 
 import Data.DynamicValue
 
@@ -26,9 +27,11 @@ data ComplexViewer = ComplexViewer
   , cvSize :: Variable Dimensions
   , cvPosition :: Variable Dimensions
   , cvCanResize :: Variable Bool
-  , cvCenter :: Parsed (Complex Double)
-  , cvPixelSize :: Parsed Double
-  , cvCoord :: Parsed String
+  , cvCenter :: (Double, Double)
+  , cvPixelSize :: Double
+  , cvAspect :: Double
+    -- ^ The height of a pixel over its width (always 1 for a complex viewer).
+  , cvCoord :: Coordinate
   , cvPixel :: Mapped (Maybe String) (Either String (Maybe String))
   , cvEscapeRadius :: Parsed (Maybe ParsedValue)
   , cvVanishRadius :: Parsed (Maybe ParsedValue)
