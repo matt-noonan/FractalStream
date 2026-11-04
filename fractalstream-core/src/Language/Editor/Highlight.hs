@@ -31,8 +31,8 @@ import qualified Data.Set as Set
 import Data.Set (Set)
 import Data.Maybe (listToMaybe)
 
-import Language.Parser.Tokenizer (Token(..), SRToken(..), tokenize)
-import Language.Parser.SourceRange (SourceRange(..), Pos(..))
+import Language.Parser.Tokenizer (Token(..))
+import Language.Editor.Lines
 import qualified Language.Value.Builtins as Builtins
 
 -- | What a span of a script is.
@@ -101,43 +101,6 @@ highlightsWith known src = concatMap spansOf stanzas
 
 ------------------------------------------------------------------------
 -- Lines and stanzas
-
--- | A line of the script: where it starts, its tokens (before any
--- comment), where its comment starts (if it has one), and its
--- indentation.
-data Line = Line
-  { lnText    :: String
-  , lnStart   :: Int
-  , lnTokens  :: [(Int, Int, Token)]
-  , lnComment :: Maybe Int
-  , lnIndent  :: Int
-  }
-
-scriptLines :: String -> [Line]
-scriptLines src = go 0 (splitLines src)
-  where
-    go _ [] = []
-    go off (l : rest) = mkLine off l : go (off + length l + 1) rest
-    mkLine off l =
-      let commentAt = commentStart l
-          code = maybe l (`take` l) commentAt
-          toks = [ (off + s, off + e + 1, t)
-                 | SRToken t (SourceRange (Pos _ s) (Pos _ e)) <- tokenize code ]
-      in Line l off toks ((off +) <$> commentAt) (length (takeWhile (== ' ') l))
-    splitLines s = case break (== '\n') s of
-      (l, []) -> [l]
-      (l, _ : more) -> l : splitLines more
-
--- | Where a line's comment starts: its first @#@ that isn't in quotes.
-commentStart :: String -> Maybe Int
-commentStart = go 0 False
-  where
-    go _ _ [] = Nothing
-    go i quoted (c : cs) = case c of
-      '#' | not quoted -> Just i
-      '\\' | quoted, _ : more <- cs -> go (i + 2) quoted more
-      '"' -> go (i + 1) (not quoted) cs
-      _ -> go (i + 1) quoted cs
 
 -- | A stanza: its kind (@"viewer"@, @"tool"@, ...; @""@ for a script with
 -- no stanzas, like a single viewer's code), its header line, its title,

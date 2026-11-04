@@ -215,6 +215,7 @@ opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
   , ("⭢", RightArrow), ("⭠", LeftArrow)
   , ("→", RightArrow), ("←", LeftArrow)
   , ("⟼", RightArrow), ("↦", RightArrow)
+  , ("⟶", RightArrow), ("⟵", LeftArrow)
   , ("@", At), ("@@", AtAt)
   ]
 
