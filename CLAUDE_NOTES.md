@@ -536,6 +536,11 @@ Key modules:
   generated from the *installed* wxc headers when wxcore is configured,
   and stack caches wxcore by its own sources: a new wxc function needs
   wxc reinstalled, and a change under `wxcore/` for stack to rebuild it.
+- Code editors' font is the `editor-font` / `editor-font-size` settings
+  (`FractalStream.Settings.editorFont`; by default Monaco, Consolas, or
+  Monospace, by platform), and their line numbers the `line-numbers`
+  setting (off by default): `UI.EditorStyle.setupStyles` and
+  `showLineNumbers`, redone by `scriptWidget` when the settings change.
 - `UI.AppSettings` - the app-wide `Variable Settings` (`appSettings`),
   set by `Main` at startup and changed by the Preferences window
 - Code editor folds (`UI.CodeEditor.updateFoldLevels`): stanza headers

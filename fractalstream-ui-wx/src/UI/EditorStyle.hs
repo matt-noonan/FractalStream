@@ -5,6 +5,7 @@
 module UI.EditorStyle
   ( styleFor
   , setupStyles
+  , showLineNumbers
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -19,20 +20,31 @@ import Graphics.UI.WXCore.WxcClasses
 styleFor :: Highlight -> Int
 styleFor h = 1 + fromEnum h
 
--- | Set up an editor's styles, for a light window or a dark one: every
--- style in the same font, and each class's colors on top of that.
-setupStyles :: StyledTextCtrl a -> Bool -> IO ()
-setupStyles stc isLight = do
+-- | Set up an editor's styles, for a light window or a dark one, in the
+-- given font (and size, if not the editor's usual one): every style in
+-- the same font, and each class's colors on top of that. This can be
+-- done again, to change the font.
+setupStyles :: StyledTextCtrl a -> Bool -> String -> Maybe Int -> IO ()
+setupStyles stc isLight face points = do
   let (plain, background, lineNumbers) =
         if isLight then ("#000000", "#f8f8f8", "fore:#a0a098,back:#f0f0e8")
                    else ("#dbdbdb", "#14191e", "fore:#a0a0a0,back:#101020")
   -- the default style, copied to every other (so they all share its font)
   styledTextCtrlStyleSetSpec stc 32 ("fore:" ++ plain ++ ",back:" ++ background)
-  styledTextCtrlStyleSetFaceName stc 32 "Monaco"
+  styledTextCtrlStyleSetFaceName stc 32 face
+  forM_ points (styledTextCtrlStyleSetSize stc 32)
   styledTextCtrlStyleClearAll stc
   styledTextCtrlStyleSetSpec stc 33 lineNumbers
   forM_ [minBound .. maxBound] $ \h ->
     styledTextCtrlStyleSetSpec stc (styleFor h) (classSpec isLight h)
+
+-- | Show line numbers in an editor's margin, or not. (Its width depends
+-- on the font: this goes after 'setupStyles'.)
+showLineNumbers :: StyledTextCtrl a -> Bool -> IO ()
+showLineNumbers stc on' = do
+  -- wide enough for line numbers up to 999, however big the font
+  numberWidth <- styledTextCtrlTextWidth stc 33 "_999"
+  styledTextCtrlSetMarginWidth stc 0 (if on' then numberWidth + 4 else 0)
 
 -- | A class's colors (and boldness or slant), as a Scintilla style spec.
 classSpec :: Bool -> Highlight -> String

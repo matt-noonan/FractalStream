@@ -28,7 +28,8 @@ import UI.EditorStyle (styleFor)
 
 import UI.CodeEditor
 import UI.AppSettings (appSettings)
-import FractalStream.Settings (Settings(..))
+import FractalStream.Settings (Settings(..), editorFont)
+import UI.EditorStyle (setupStyles, showLineNumbers)
 
 import Graphics.UI.WX hiding (pt, when, grey, Color)
 import Graphics.UI.WXCore.Events
@@ -422,13 +423,22 @@ scriptWidgetWith known p scriptCode = do
       writeIORef lastText newText
       styledTextCtrlSetText ce newText
       updateFoldLevels ce newText
-  -- Which blocks fold is a setting: when it changes, so do the folds.
+  -- Which blocks fold, the font, and line numbers are settings: when
+  -- they change, so does the editor.
   foldsCodeBlocks <- liftIO (newIORef . setFoldCodeBlocks =<< getDynamic appSettings)
+  fontNow <- liftIO (newIORef . fontOf =<< getDynamic appSettings)
   wxWatchDynamic p appSettings $ \settings -> do
     was <- readIORef foldsCodeBlocks
     when (setFoldCodeBlocks settings /= was) $ do
       writeIORef foldsCodeBlocks (setFoldCodeBlocks settings)
       refreshFolds ce
+    fontBefore <- readIORef fontNow
+    when (fontOf settings /= fontBefore) $ do
+      writeIORef fontNow (fontOf settings)
+      isLight <- frameIsLight p
+      uncurry (setupStyles ce isLight) (fontOf settings)
+    -- (every time: the margin's width depends on the font, too)
+    showLineNumbers ce (setLineNumbers settings)
   isError <- liftIO ((isLeft <$> getDynamic scriptCode) >>= \startError ->
                         variable [ value := startError ])
   wxWatchDynamic p scriptCode $ \case
@@ -464,6 +474,10 @@ scriptWidgetWith known p scriptCode = do
 
   void $ liftIO doSyntaxColoring
   pure (ce, errorText)
+
+-- | The font editors use, and its size.
+fontOf :: Settings -> (String, Maybe Int)
+fontOf settings = (editorFont settings, setEditorFontSize settings)
 
 -- | Make rewrites of an editor's text (given as character ranges of it,
 -- in order), as one undo step, keeping the cursor and selection where

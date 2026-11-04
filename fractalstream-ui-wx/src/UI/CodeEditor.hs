@@ -15,10 +15,10 @@ import Language.Parser.SourceRange (SourceRange(..))
 import Data.DynamicValue
 import Actor.Layout (CodeString(..))
 import UI.EditorKeys
-import UI.EditorStyle (setupStyles)
+import UI.EditorStyle (setupStyles, showLineNumbers)
 import Language.Editor (indentUnit)
 import UI.AppSettings (appSettings)
-import FractalStream.Settings (Settings(..))
+import FractalStream.Settings (Settings(..), editorFont)
 
 import Graphics.UI.WX hiding (Vertical, Horizontal, when)
 import Graphics.UI.WXCore.WxcClasses
@@ -64,12 +64,13 @@ foldMarginIndex = 2
 codeEditorWithText :: Window a -> String -> IO (StyledTextCtrl ())
 codeEditorWithText cep txt = do
     stc <- styledTextCtrl cep [ clientSize := sz 100 100 ]
-    styledTextCtrlSetMarginWidth stc 0 30
     styledTextCtrlSetMarginWidth stc 1 0
     -- see Style Definition at https://www.scintilla.org/ScintillaDoc.html#Styling
     isLight <- frameIsLight cep
     -- each class of span its own style ("UI.EditorStyle")
-    setupStyles stc isLight
+    settings <- getDynamic appSettings
+    setupStyles stc isLight (editorFont settings) (setEditorFontSize settings)
+    showLineNumbers stc (setLineNumbers settings)
     if isLight
       then do
         styledTextCtrlSetCaretForeground stc (rgb 0 0 (0 :: Word8))

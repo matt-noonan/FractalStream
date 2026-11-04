@@ -14,6 +14,8 @@
 module FractalStream.Settings
   ( Settings(..)
   , defaultSettings
+  , defaultEditorFont
+  , editorFont
   , settingsFile
   , loadSettings
   , saveSettings
@@ -40,6 +42,14 @@ data Settings = Settings
   { setProjectsFolder :: Maybe FilePath
     -- ^ Where the user's own projects are, or 'Nothing' for the default
     -- (a @FractalStream@ folder in their documents folder).
+  , setEditorFont     :: Maybe String
+    -- ^ The font code editors use, by name, or 'Nothing' for the
+    -- platform's usual fixed-width font ('defaultEditorFont').
+  , setEditorFontSize :: Maybe Int
+    -- ^ The size of that font, in points, or 'Nothing' for the editor's
+    -- usual size.
+  , setLineNumbers    :: Bool
+    -- ^ Whether code editors show line numbers.
   , setEmacsKeys      :: Bool
     -- ^ Whether code editors have emacs-style movement keys (Control-A,
     -- Control-E, ...) where Control is the standard shortcut key, as on
@@ -56,7 +66,18 @@ data Settings = Settings
   deriving (Eq, Show)
 
 defaultSettings :: Settings
-defaultSettings = Settings Nothing False True False KM.empty
+defaultSettings = Settings Nothing Nothing Nothing False False True False KM.empty
+
+-- | The platform's usual fixed-width font.
+defaultEditorFont :: String
+defaultEditorFont = case os of
+  "darwin"  -> "Monaco"
+  "mingw32" -> "Consolas"
+  _         -> "Monospace"
+
+-- | The font code editors use.
+editorFont :: Settings -> String
+editorFont = maybe defaultEditorFont id . setEditorFont
 
 -- | Where the settings are kept: in the user's application support
 -- folder on macOS, their roaming application data on Windows, and
@@ -93,13 +114,24 @@ readSettings path contents = case YAML.decodeEither' contents of
           Nothing -> (def, [])
           Just (Bool b) -> (b, [])
           Just _ -> (def, ["ignoring the " ++ key ++ " setting, which should be true or false"])
+        (font, fontWarnings) = case KM.lookup "editor-font" o of
+          Nothing -> (Nothing, [])
+          Just (String t) | not (Text.null t) -> (Just (Text.unpack t), [])
+          Just _ -> (Nothing, ["ignoring the editor-font setting, which should be a font's name"])
+        (fontSize, fontSizeWarnings) = case KM.lookup "editor-font-size" o of
+          Nothing -> (Nothing, [])
+          Just (Number n) | n >= 4, n <= 200, n == fromIntegral (round n :: Int) -> (Just (round n), [])
+          Just _ -> (Nothing, ["ignoring the editor-font-size setting, which should be a whole number of points"])
+        (numbers, numberWarnings) = flag "line-numbers" False
         (emacs, emacsWarnings) = flag "emacs-keys" False
         (symbols, symbolWarnings) = flag "math-symbols" True
         (folds, foldWarnings) = flag "fold-code-blocks" False
-        other = foldr KM.delete o ["projects-folder", "emacs-keys", "math-symbols", "fold-code-blocks"]
-    in ( Settings folder emacs symbols folds other
+        other = foldr KM.delete o [ "projects-folder", "editor-font", "editor-font-size"
+                                  , "line-numbers", "emacs-keys", "math-symbols", "fold-code-blocks" ]
+    in ( Settings folder font fontSize numbers emacs symbols folds other
        , map (("In " ++ quoted path ++ ", ") ++)
-             (folderWarnings ++ emacsWarnings ++ symbolWarnings ++ foldWarnings) )
+             (folderWarnings ++ fontWarnings ++ fontSizeWarnings ++ numberWarnings
+              ++ emacsWarnings ++ symbolWarnings ++ foldWarnings) )
   Right _ -> (defaultSettings, [quoted path ++ " isn't a set of settings, so it's being ignored"])
 
 -- | The settings file's contents for these settings. A setting that's
@@ -108,6 +140,9 @@ writeSettings :: Settings -> ByteString
 writeSettings Settings{..} = YAML.encode $ Object $ KM.union
   (KM.fromList (catMaybes
     [ ("projects-folder",) . String . Text.pack <$> setProjectsFolder
+    , ("editor-font",) . String . Text.pack <$> setEditorFont
+    , ("editor-font-size",) . Number . fromIntegral <$> setEditorFontSize
+    , if setLineNumbers then Just ("line-numbers", Bool True) else Nothing
     , if setEmacsKeys then Just ("emacs-keys", Bool True) else Nothing
     , if setMathSymbols then Nothing else Just ("math-symbols", Bool False)
     , if setFoldCodeBlocks then Just ("fold-code-blocks", Bool True) else Nothing

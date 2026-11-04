@@ -14,7 +14,9 @@ spec = describe "FractalStream's settings file" $ do
 
   it "reads back what it writes, leaving out settings that are default" $ do
     let settings = defaultSettings { setProjectsFolder = Just "/somewhere/projects", setEmacsKeys = True
-                                   , setFoldCodeBlocks = True, setMathSymbols = False }
+                                   , setFoldCodeBlocks = True, setMathSymbols = False
+                                   , setEditorFont = Just "Iosevka", setEditorFontSize = Just 14
+                                   , setLineNumbers = True }
     readSettings "settings.yaml" (writeSettings settings) `shouldBe` (settings, [])
     BS8.unpack (writeSettings defaultSettings) `shouldBe` "{}\n"
 
@@ -26,12 +28,15 @@ spec = describe "FractalStream's settings file" $ do
     fst (readSettings "settings.yaml" (writeSettings settings)) `shouldBe` settings
 
   it "ignores (and warns about) settings that don't make sense" $ do
-    let (settings, warnings) = readSettings "settings.yaml" "projects-folder: 7\nemacs-keys: sometimes\nfold-code-blocks: 1\nmath-symbols: maybe\n"
+    let (settings, warnings) = readSettings "settings.yaml" "projects-folder: 7\nemacs-keys: sometimes\nfold-code-blocks: 1\nmath-symbols: maybe\neditor-font: 12\neditor-font-size: big\nline-numbers: 3\n"
     setProjectsFolder settings `shouldBe` Nothing
     setEmacsKeys settings `shouldBe` False
     setFoldCodeBlocks settings `shouldBe` False
     setMathSymbols settings `shouldBe` True
-    length warnings `shouldBe` 4
+    setEditorFont settings `shouldBe` Nothing
+    setEditorFontSize settings `shouldBe` Nothing
+    setLineNumbers settings `shouldBe` False
+    length warnings `shouldBe` 7
 
   it "uses the defaults for an empty file, or one that isn't YAML" $ do
     readSettings "settings.yaml" "" `shouldBe` (defaultSettings, [])
