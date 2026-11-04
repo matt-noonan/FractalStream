@@ -513,6 +513,15 @@ Key modules:
   event after); on macOS the slash key goes down as `KeyDivide`. On macOS, Control-letter reaches
   the key handler as its control character (Control-E is ENQ, 5) with no
   modifiers set, so control codes 1-26 are read as Control-letters.
+- Errors in code editors are underlined with indicator 8, a red squiggle
+  (`UI.CodeEditor.markError`/`clearError`). wxHaskell's own indicator
+  functions are for Scintilla's old style-bit indicators, which it no
+  longer draws; the modern calls go through `styledTextCtrlSendMsg`,
+  added to our wxHaskell fork (any Scintilla message with integer
+  arguments, by its number from Scintilla.h). wxcore's bindings are
+  generated from the *installed* wxc headers when wxcore is configured,
+  and stack caches wxcore by its own sources: a new wxc function needs
+  wxc reinstalled, and a change under `wxcore/` for stack to rebuild it.
 - `UI.AppSettings` - the app-wide `Variable Settings` (`appSettings`),
   set by `Main` at startup and changed by the Preferences window
 - Code editor folds (`UI.CodeEditor.updateFoldLevels`): stanza headers

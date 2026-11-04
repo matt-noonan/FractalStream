@@ -390,18 +390,20 @@ scriptWidget p scriptCode = do
       set errorText [ text := "⚠️ " ++ msg, visible := True ]
       windowReLayout p
       code <- styledTextCtrlGetText ce
+      m <- doSyntaxColoring
       case convertSourceSpan code <$> spanOfSourceRange loc of
-        Nothing -> void doSyntaxColoring
+        Nothing -> clearError ce
         Just (s, e) -> do
-          m <- doSyntaxColoring
-          case (,) <$> Map.lookup s m <*> Map.lookup (e + 1 - s) m of
-            Nothing -> pure ()
-            Just (styleStart, styleRange) -> do
-              styledTextCtrlStartStyling ce styleStart 0
-              styledTextCtrlSetStyling ce styleRange 1
+          -- (byte positions: the map is from characters to bytes, and
+          -- the end of the text maps to nothing, so it's its length)
+          docLen <- styledTextCtrlGetLength ce
+          let byteAt i = Map.findWithDefault docLen i m
+              from = byteAt s
+          markError ce from (byteAt (e + 1) - from)
     Right _ -> do
       wasError <- get isError value
       void doSyntaxColoring
+      clearError ce
       when wasError $ do
         set isError [ value := False ]
         set errorText [ text := "", visible := False ]

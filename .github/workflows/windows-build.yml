@@ -41,7 +41,7 @@ on:
 env:
   # The commit of github.com/matt-noonan/wxHaskell-3.2 to build wxc from.
   # wxc's cache is keyed on it, so changing it rebuilds wxc.
-  WXC_COMMIT: bcee48ccf51e013f1b65127f785fb96f9306b311
+  WXC_COMMIT: 924c894093954fb3756cf4a87b13ec8761a031c9
 
 jobs:
   build:

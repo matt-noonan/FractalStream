@@ -3,6 +3,8 @@ module UI.CodeEditor
   , codeEditorWithText
   , updateFoldLevels
   , refreshFolds
+  , markError
+  , clearError
   , stanzaHeaderStyle
   , frameIsLight
   , editorOffsetMap
@@ -135,12 +137,52 @@ codeEditorWithText cep txt = do
 
     -- (on platforms where they're a preference, it's checked on each
     -- key, so changing it applies to editors that are already open)
+    -- errors are underlined with a red squiggle
+    styledTextCtrlIndicatorSetStyle stc errorIndicator sciIndicSquigglePixmap
+    styledTextCtrlIndicatorSetForeground stc errorIndicator
+      (if isLight then rgb 0xd0 0x20 (0x20 :: Word8) else rgb 0xff 0x60 (0x60 :: Word8))
+
     handleEditorKeys stc $ if emacsKeysByDefault then pure True
                           else setEmacsKeys <$> getDynamic appSettings
 
     styledTextCtrlSetText stc txt
     updateFoldLevels stc txt
     pure stc
+
+-- | The indicator that underlines errors: the first one Scintilla leaves
+-- for containers (0 to 7 are for its lexers).
+errorIndicator :: Int
+errorIndicator = 8
+
+-- | Underline the error from byte position @from@, @len@ bytes long
+-- (at least one character, so an error at the end still shows), in
+-- place of any error underlined before.
+--
+-- Indicators are set with Scintilla's own messages, which wxHaskell has
+-- no functions for ("Graphics.UI.WXCore"'s indicator functions are for
+-- the older style-bit indicators, which Scintilla no longer draws).
+markError :: StyledTextCtrl a -> Int -> Int -> IO ()
+markError stc from len = do
+  clearError stc
+  docLen <- styledTextCtrlGetLength stc
+  when (docLen > 0) $ do
+    let start' = max 0 (min from (docLen - 1))
+    void (styledTextCtrlSendMsg stc sciSetIndicatorCurrent errorIndicator 0)
+    void (styledTextCtrlSendMsg stc sciIndicatorFillRange start' (max 1 (min len (docLen - start'))))
+
+-- | Remove the error underline, if there is one.
+clearError :: StyledTextCtrl a -> IO ()
+clearError stc = do
+  docLen <- styledTextCtrlGetLength stc
+  void (styledTextCtrlSendMsg stc sciSetIndicatorCurrent errorIndicator 0)
+  void (styledTextCtrlSendMsg stc sciIndicatorClearRange 0 docLen)
+
+-- Scintilla's numbers for these (from Scintilla.h)
+sciSetIndicatorCurrent, sciIndicatorFillRange, sciIndicatorClearRange, sciIndicSquigglePixmap :: Int
+sciSetIndicatorCurrent = 2500
+sciIndicatorFillRange = 2504
+sciIndicatorClearRange = 2505
+sciIndicSquigglePixmap = 13  -- INDIC_SQUIGGLEPIXMAP: a squiggle, drawn quickly
 
 -- | Define the standard 7-marker Scintilla fold-margin symbol set
 -- (+\/- boxes with connector lines): @fillColor@ is the inside of each
