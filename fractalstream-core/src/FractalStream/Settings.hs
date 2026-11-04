@@ -37,6 +37,7 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Text as Text
 import qualified Data.Yaml as YAML
+import Data.YamlUnicode (encodeYaml)
 import System.Directory (XdgDirectory(..), createDirectoryIfMissing, doesFileExist,
                          getHomeDirectory, getXdgDirectory, renameFile)
 import System.FilePath ((</>), takeDirectory)
@@ -165,7 +166,7 @@ readSettings path contents = case YAML.decodeEither' contents of
 -- | The settings file's contents for these settings. A setting that's
 -- the same as its default is left out.
 writeSettings :: Settings -> ByteString
-writeSettings Settings{..} = YAML.encode $ Object $ KM.union
+writeSettings Settings{..} = encodeYaml $ Object $ KM.union
   (KM.fromList (catMaybes
     [ ("projects-folder",) . String . Text.pack <$> setProjectsFolder
     , ("editor-font",) . String . Text.pack <$> setEditorFont

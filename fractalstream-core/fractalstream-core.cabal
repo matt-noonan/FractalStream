@@ -136,6 +136,7 @@ library
                        Data.Recursive
                        Data.DynamicValue
                        Data.Codec
+                       Data.YamlUnicode
                        Data.PNG
                        Data.Movie
 
@@ -221,5 +222,6 @@ test-suite spec
                     , Actor.GoldenSpec
                     , Actor.OverlaySpec
                     , FractalStream.SettingsSpec
+                    , Data.YamlUnicodeSpec
                     , SpecHook
   build-tool-depends: hspec-discover:hspec-discover == 2.*

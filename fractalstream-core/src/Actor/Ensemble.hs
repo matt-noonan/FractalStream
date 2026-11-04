@@ -69,6 +69,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Aeson.Key as Key
 import qualified Data.Yaml as YAML
+import Data.YamlUnicode (encodeYaml, encodePrettyYaml)
 import qualified Data.Yaml.Pretty as YAMLPretty
 import Data.List (elemIndex)
 import Data.Ord (comparing)
@@ -472,20 +473,18 @@ encodeEnsemble ens = do
                       frontendProperties
   pure $ scriptKey scriptText
       <> (if KM.null rest then mempty
-          else YAMLPretty.encodePretty projectYamlConfig (Object rest))
+          else encodePrettyYaml projectYamlConfig (Object rest))
 
 -- | The project file's @script:@ key, written as a YAML literal block, so
--- that the script reads in the file just as it was written. This isn't
--- left to the YAML encoder, because libyaml falls back to a double-quoted
--- string, with every newline escaped, for any text containing a character
--- it doesn't count as printable -- which includes every character outside
--- Unicode's Basic Multilingual Plane, like the mathematical italic letters
--- (e.g. U+1D456, 𝑖) a script can use as names. The encoder still handles
--- the rare script a literal block can't hold at all (a carriage return,
--- say, or other control characters).
+-- that the script reads in the file just as it was written, with exactly
+-- its own final newlines and indentation. (The rest of the file goes
+-- through 'Data.YamlUnicode', so that characters outside the Basic
+-- Multilingual Plane, like 𝑖 or 𝝎, aren't escaped there either.) The
+-- encoder still handles the rare script a literal block can't hold at
+-- all (a carriage return, say, or other control characters).
 scriptKey :: String -> ByteString
 scriptKey src
-  | null src || any unsuitable src = YAML.encode (Object (KM.singleton "script" (String (Text.pack src))))
+  | null src || any unsuitable src = encodeYaml (Object (KM.singleton "script" (String (Text.pack src))))
   | otherwise = UTF8.fromString $
       "script: |" ++ indentation ++ chomping ++ "\n" ++ concatMap indent ls
   where

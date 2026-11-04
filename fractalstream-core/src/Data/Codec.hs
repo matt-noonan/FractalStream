@@ -36,6 +36,7 @@ import qualified Data.Aeson.Key as Key
 import qualified Data.Vector as V
 import qualified Data.Map as Map
 import qualified Data.Yaml as YAML
+import Data.YamlUnicode (encodeYaml)
 import Text.Read
 import Text.Printf
 import Data.Void
@@ -364,7 +365,7 @@ encodeValue x =
 serializeYAML :: forall a. Codec a => a -> IO ByteString
 serializeYAML x =
   let E f = codec @a
-  in YAML.encode <$> unE f x
+  in encodeYaml <$> unE f x
 
 deserialize :: forall a. Codec a => ByteString -> IO (Either String a)
 deserialize bs = case eitherDecodeStrict' bs of
