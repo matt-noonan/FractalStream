@@ -44,6 +44,9 @@ data Settings = Settings
     -- ^ Whether code editors have emacs-style movement keys (Control-A,
     -- Control-E, ...) where Control is the standard shortcut key, as on
     -- Windows and Linux. (On macOS they always do.)
+  , setMathSymbols    :: Bool
+    -- ^ Whether code editors rewrite scripts with mathematical symbols
+    -- (⟵, ℝ, z², ...) in place of ASCII spellings, as they're edited.
   , setFoldCodeBlocks :: Bool
     -- ^ Whether code editors let blocks of code (an @if@'s body, a
     -- loop's, ...) be folded away, as well as stanzas and tool handlers.
@@ -53,7 +56,7 @@ data Settings = Settings
   deriving (Eq, Show)
 
 defaultSettings :: Settings
-defaultSettings = Settings Nothing False False KM.empty
+defaultSettings = Settings Nothing False True False KM.empty
 
 -- | Where the settings are kept: in the user's application support
 -- folder on macOS, their roaming application data on Windows, and
@@ -86,15 +89,17 @@ readSettings path contents = case YAML.decodeEither' contents of
           Nothing -> (Nothing, [])
           Just (String t) | not (Text.null t) -> (Just (Text.unpack t), [])
           Just _ -> (Nothing, ["ignoring the projects-folder setting, which should be a folder's path"])
-        flag key = case KM.lookup (Key.fromString key) o of
-          Nothing -> (False, [])
+        flag key def = case KM.lookup (Key.fromString key) o of
+          Nothing -> (def, [])
           Just (Bool b) -> (b, [])
-          Just _ -> (False, ["ignoring the " ++ key ++ " setting, which should be true or false"])
-        (emacs, emacsWarnings) = flag "emacs-keys"
-        (folds, foldWarnings) = flag "fold-code-blocks"
-        other = foldr KM.delete o ["projects-folder", "emacs-keys", "fold-code-blocks"]
-    in ( Settings folder emacs folds other
-       , map (("In " ++ quoted path ++ ", ") ++) (folderWarnings ++ emacsWarnings ++ foldWarnings) )
+          Just _ -> (def, ["ignoring the " ++ key ++ " setting, which should be true or false"])
+        (emacs, emacsWarnings) = flag "emacs-keys" False
+        (symbols, symbolWarnings) = flag "math-symbols" True
+        (folds, foldWarnings) = flag "fold-code-blocks" False
+        other = foldr KM.delete o ["projects-folder", "emacs-keys", "math-symbols", "fold-code-blocks"]
+    in ( Settings folder emacs symbols folds other
+       , map (("In " ++ quoted path ++ ", ") ++)
+             (folderWarnings ++ emacsWarnings ++ symbolWarnings ++ foldWarnings) )
   Right _ -> (defaultSettings, [quoted path ++ " isn't a set of settings, so it's being ignored"])
 
 -- | The settings file's contents for these settings. A setting that's
@@ -104,6 +109,7 @@ writeSettings Settings{..} = YAML.encode $ Object $ KM.union
   (KM.fromList (catMaybes
     [ ("projects-folder",) . String . Text.pack <$> setProjectsFolder
     , if setEmacsKeys then Just ("emacs-keys", Bool True) else Nothing
+    , if setMathSymbols then Nothing else Just ("math-symbols", Bool False)
     , if setFoldCodeBlocks then Just ("fold-code-blocks", Bool True) else Nothing
     ]))
   setOther

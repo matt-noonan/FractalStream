@@ -511,6 +511,13 @@ Key modules:
   `highlightsWith` takes names defined elsewhere (a movie's script).
   `UI.EditorStyle` gives each class its own Scintilla style (some share
   colors by default); `UI.Widgets.scriptWidget` applies them.
+- `Language.Editor.Normalize` - rewrites ASCII spellings as symbols
+  (`<-` to `⟵`, `R` to `ℝ` in types, `z^2` to `z²`, `*` to `×`, ...),
+  token for token (tested on every library project). `scriptWidget` does
+  it with the `math-symbols` setting (on by default), once the script has
+  been edited and checks out: every line but the cursor's, and that one
+  when the cursor leaves it or the editor loses focus, keeping the cursor
+  in place (`applyEdits`). `fsrun normalize` does a project file.
 - `UI.EditorKeys` - code editor keys: Return indents the new line
   (`Language.Editor.newLineIndent`; the indent unit is 2), paste
   re-indents (`pasteIndented`), Cmd/Ctrl+/ toggles comments

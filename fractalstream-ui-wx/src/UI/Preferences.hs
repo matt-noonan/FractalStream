@@ -31,6 +31,8 @@ preferencesWindow settingsVar = do
   -- On macOS, the script editor's emacs keys are always on (see
   -- "UI.EditorKeys"); elsewhere they take over Control shortcuts, so
   -- they're up to the user.
+  symbolsBox <- checkBox p [ text := "Write scripts with mathematical symbols \
+                                     \(\x27F5, \x211D, z\xB2, ...) as they're edited" ]
   foldBox <- checkBox p [ text := "Fold blocks of code in script editors, \
                                   \not just stanzas and tool handlers" ]
   emacsBox <- if emacsKeysByDefault then pure Nothing else
@@ -44,6 +46,7 @@ preferencesWindow settingsVar = do
         set useDefaultButton [ enabled := isJust (setProjectsFolder settings) ]
         forM_ emacsBox $ \box -> set box [ checked := setEmacsKeys settings ]
         set foldBox [ checked := setFoldCodeBlocks settings ]
+        set symbolsBox [ checked := setMathSymbols settings ]
         windowReLayout f
       change k = do
         modifyValue settingsVar k
@@ -60,6 +63,9 @@ preferencesWindow settingsVar = do
                        dirOpenDialog f True "Choose the folder for your own projects" current
                          >>= mapM_ (\folder -> change (\s -> s { setProjectsFolder = Just folder })) ]
   set useDefaultButton [ on command := change (\s -> s { setProjectsFolder = Nothing }) ]
+  set symbolsBox [ on command := do
+                     on' <- get symbolsBox checked
+                     change (\s -> s { setMathSymbols = on' }) ]
   set foldBox [ on command := do
                   on' <- get foldBox checked
                   change (\s -> s { setFoldCodeBlocks = on' }) ]
@@ -75,6 +81,7 @@ preferencesWindow settingsVar = do
             , hfill (widget folderText)
             , row 6 [ widget chooseButton, widget useDefaultButton, hglue ]
             , hstretch (widget note)
+            , widget symbolsBox
             , widget foldBox
             ] ++
             [ widget box | Just box <- [emacsBox] ]

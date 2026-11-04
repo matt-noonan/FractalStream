@@ -21,6 +21,9 @@ import Data.Color hiding (black, white)
 import Actor.Layout
 import Language.Parser.SourceRange (SourceRange, spanOfSourceRange, SourceSpan(..))
 import Language.Editor.Highlight (Highlight, highlightsWith)
+import Language.Editor.Normalize (normalizations)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.UTF8 as Utf8
 import UI.EditorStyle (styleFor)
 
 import UI.CodeEditor
@@ -322,6 +325,29 @@ scriptWidgetWith known p scriptCode = do
   lastText <- liftIO $ newIORef txt
   errorText <- liftIO $ staticText p [ text := "" ]
 
+  -- Writing the script with mathematical symbols ("Language.Editor.
+  -- Normalize"), with the math-symbols setting: once it's been edited
+  -- here (so that just opening a script doesn't change it), and only
+  -- text that has just checked out. The cursor's line is left until the
+  -- cursor leaves it, or the editor loses focus, so that what's being
+  -- typed isn't rewritten under it (z^2 would become z², and then
+  -- typing 0 would make z²0, not z^20).
+  edited <- liftIO $ newIORef False
+  focused <- liftIO $ newIORef False
+  checkedText <- liftIO $ newIORef Nothing
+  caretLine <- liftIO $ newIORef (0 :: Int)
+  let currentLine = styledTextCtrlGetCurrentPos ce >>= styledTextCtrlLineFromPosition ce
+      normalizeExcept skip = do
+        symbols <- setMathSymbols <$> getDynamic appSettings
+        isEdited <- readIORef edited
+        good <- readIORef checkedText
+        code <- styledTextCtrlGetText ce
+        when (symbols && isEdited && good == Just code) $ do
+          let starts = scanl (\off l -> off + length l + 1) 0 (lines code)
+              lineOf i = length (takeWhile (<= i) starts) - 1
+              edits = [ e | e@(from, _, _) <- normalizations code, Just (lineOf from) /= skip ]
+          unless (null edits) $ applyEdits ce code edits
+
   -- every span colored by what it is ("Language.Editor.Highlight"),
   -- everything else as plain text
   let doSyntaxColoring = do
@@ -340,13 +366,18 @@ scriptWidgetWith known p scriptCode = do
   liftIO $ set ce $
     [ on focus := \tf -> do
         case tf of
-          True -> styledTextCtrlGetText ce >>= writeIORef lastText
+          True -> do
+            writeIORef focused True
+            styledTextCtrlGetText ce >>= writeIORef lastText
           False -> do
+            writeIORef focused False
             new <- styledTextCtrlGetText ce
             old <- readIORef lastText
             when (new /= old) $ do
               writeIORef lastText new
+              writeIORef edited True
               void (setValue (source scriptCode) (CodeString new))
+            normalizeExcept Nothing
         propagateEvent
     ]
 
@@ -367,8 +398,15 @@ scriptWidgetWith known p scriptCode = do
                        old <- readIORef lastText
                        when (new /= old) $ do
                          writeIORef lastText new
+                         writeIORef edited True
                          updateFoldLevels ce new
-                         setValue (source scriptCode) (CodeString new) ]
+                         setValue (source scriptCode) (CodeString new)
+                       -- the cursor's left a line: it can be normalized now
+                       lineNow <- currentLine
+                       lineBefore <- readIORef caretLine
+                       when (lineNow /= lineBefore) $ do
+                         writeIORef caretLine lineNow
+                         normalizeExcept (Just lineNow) ]
   -- Show the script when it's changed from elsewhere. wxWatchDynamic
   -- runs this up to 100ms after the change, so it also hears, late, about
   -- the changes this editor made itself, by which time there may be more
@@ -395,6 +433,7 @@ scriptWidgetWith known p scriptCode = do
                         variable [ value := startError ])
   wxWatchDynamic p scriptCode $ \case
     Left (loc, msg) -> do
+      writeIORef checkedText Nothing
       set isError [ value := True ]
       set errorText [ text := "⚠️ " ++ msg, visible := True ]
       windowReLayout p
@@ -413,6 +452,11 @@ scriptWidgetWith known p scriptCode = do
       wasError <- get isError value
       void doSyntaxColoring
       clearError ce
+      CodeString good <- getDynamic (source scriptCode)
+      writeIORef checkedText (Just good)
+      isFocused <- readIORef focused
+      lineNow <- currentLine
+      normalizeExcept (if isFocused then Just lineNow else Nothing)
       when wasError $ do
         set isError [ value := False ]
         set errorText [ text := "", visible := False ]
@@ -420,6 +464,32 @@ scriptWidgetWith known p scriptCode = do
 
   void $ liftIO doSyntaxColoring
   pure (ce, errorText)
+
+-- | Make rewrites of an editor's text (given as character ranges of it,
+-- in order), as one undo step, keeping the cursor and selection where
+-- they were in the text.
+applyEdits :: StyledTextCtrl a -> String -> [(Int, Int, String)] -> IO ()
+applyEdits ce code edits = do
+  docLen <- styledTextCtrlGetLength ce
+  let m = editorOffsetMap code
+      byteAt i = Map.findWithDefault docLen i m
+      bytes = BS.length . Utf8.fromString
+      byteEdits = [ (byteAt from, byteAt to, new) | (from, to, new) <- edits ]
+      -- where a position goes: moved by the edits before it, or, inside
+      -- one, to the end of what replaces it
+      shift q = q + sum [ bytes new - (to - from) | (from, to, new) <- byteEdits, to <= q ]
+      moved q = case [ (from, new) | (from, to, new) <- byteEdits, from < q, q < to ] of
+        (from, new) : _ -> shift from + bytes new
+        [] -> shift q
+  caret <- styledTextCtrlGetCurrentPos ce
+  anchor <- styledTextCtrlGetAnchor ce
+  styledTextCtrlBeginUndoAction ce
+  forM_ (reverse byteEdits) $ \(from, to, new) -> do
+    styledTextCtrlSetTargetStart ce from
+    styledTextCtrlSetTargetEnd ce to
+    void (styledTextCtrlReplaceTarget ce new)
+  styledTextCtrlEndUndoAction ce
+  styledTextCtrlSetSelection ce (moved anchor) (moved caret)
 
 convertSourceSpan :: String -> SourceSpan -> (Int, Int)
 convertSourceSpan input = \case
