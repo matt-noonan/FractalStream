@@ -259,10 +259,8 @@ loadProjectBytes path contents =
         Left err -> pure (Left err)
         Right () -> attachScenarios o ens <&> fmap (const loaded)
     Right _  -> pure (Left (quoted path ++ " doesn't have a top-level `script:` key -- \
-                             \this file isn't in a format FractalStream can open \
-                             \(the classic setup:/configuration:/viewer(s): project \
-                             \format is no longer supported)."))
-    Left err -> pure (Left (quoted path ++ " isn't valid YAML: " ++ show err))
+                             \this file isn't in a format FractalStream can open"))
+    Left _   -> pure (Left (quoted path ++ " isn't a valid FractalStream project"))
 
 -- | The top-level keys of a project file that the core reads itself;
 -- the rest belong to frontends ('ensembleFrontendProperties').

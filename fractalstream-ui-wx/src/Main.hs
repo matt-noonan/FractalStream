@@ -15,6 +15,8 @@ import UI.ProjectViewer (viewProject, ProjectMenuActions(..))
 import UI.ProjectInfo (editProjectInfo)
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
+import Language.Legacy.Translate
+import Language.Legacy.Binary
 
 import Control.Monad (unless, void)
 import Control.Concurrent.MVar (newMVar, modifyMVar, modifyMVar_)
@@ -42,8 +44,10 @@ import Graphics.UI.WXCore.WxcClasses ( styledTextCtrlStyleSetFont
                                      , styledTextCtrlSetText
                                      , wxcAppSetAppName )
 
-import Control.Exception (Exception, catch, ErrorCall(..))
+import Control.Exception (Exception, try, catch, ErrorCall(..), IOException)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.UTF8 as UTF8
 import System.FilePath (takeDirectory, takeFileName)
 import Data.Char (isSpace)
 import FractalStream.Library (LibraryEntry(..), projectsDirectory)
@@ -217,7 +221,7 @@ runApp = withBackend $ \backend -> start $ do
           }
 
       projectOpen = \path ->
-        openProject path (Just path) (takeFileName path) False (loadProjectFile path)
+        openProject path (Just path) (takeFileName path) False (`loadOrTranslateProjectFile` path)
 
       -- A library project opens as a copy with no file of its own, so
       -- that saving it never tries to write into the app itself; the
@@ -226,7 +230,7 @@ runApp = withBackend $ \backend -> start $ do
       -- the script editor open, ready to write. One of the user's own
       -- projects just opens, as itself.
       projectOpenLibrary = \LibraryEntry{..} ->
-        let load = loadProjectBytes leTitle leContents
+        let load = const (loadProjectBytes leTitle leContents)
         in case leFile of
              Just path -> projectOpen path
              Nothing
@@ -240,6 +244,10 @@ runApp = withBackend $ \backend -> start $ do
       -- doesn't keep the starting point's metadata (its title,
       -- description, and preview describe the starting point, not the
       -- project made from it), and opens with its script editor.
+      --
+      -- If the project file appears to be an old FractalStream 1.0
+      -- script, attempt to extract the title and script body, translate
+      -- them, and open in the script editor.
       openProject name file suggestedName fromStartingPoint load = do
 
         projectWindow <- frame [ visible := False ]
@@ -255,7 +263,7 @@ runApp = withBackend $ \backend -> start $ do
           -- it can be fixed; its viewers appear, with its saved layout
           -- and values, when the fixed script is rebuilt. Only a file
           -- that can't be read as a project at all is an error here.
-          loaded <- either error id <$> load
+          loaded <- either error id <$> load projectWindow
           let (prj, scriptBuilds) = case loaded of
                 Built ens -> (ens, True)
                 BrokenScript ens _ -> (ens, False)
@@ -565,6 +573,34 @@ fatalErrorDialog projectWindow title mkContents = do
           column 5 (contents ++ [widget ok]) ]
   _ <- showModal d (\done -> set ok [on command := done Nothing ])
   close projectWindow
+
+loadOrTranslateProjectFile :: Frame a -> FilePath -> IO (Either String LoadedProject)
+loadOrTranslateProjectFile f path = do
+  try (BS.readFile path) >>= \case
+    Left (e :: IOException) -> pure (Left ("could not read " ++ quoted path ++ ": " ++ show e))
+    Right contents -> do
+      BS.length contents `seq` pure ()
+      -- If the body can be read as a project for the current FractalStream
+      -- version, do it. If not, see if it might be an old FractalStream
+      -- save file and try to go through the translation flow.
+      if mightBeAncientFS contents
+        then translateAncientProjectBytes f path contents
+        else loadProjectBytes path contents
+
+translateAncientProjectBytes :: Frame a -> FilePath -> ByteString -> IO (Either String LoadedProject)
+translateAncientProjectBytes f path contents = do
+  ok <- proceedDialog f "Translate ancient FractalStream script"
+        "This appears to be a saved file from a very old version of FractalStream. Would you like to translate it to modern FractalStream?"
+  if not ok
+    then pure (Left "User did not want to translate ancient script")
+    else case decodeAncientFS contents of
+           Nothing -> pure (Left "I was not able to decode this file")
+           Just (title, body) -> case translateLegacyScript title body of
+             Left err -> pure (Left err)
+             Right Translation{..} -> do
+               when (not $ null translationWarnings) $
+                 warningDialog f "Translation notes" (unlines translationWarnings)
+               loadProjectBytes path (UTF8.fromString translatedProject)
 
 data BadProject = BadProject String String deriving Show
 instance Exception BadProject
