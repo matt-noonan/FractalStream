@@ -652,6 +652,16 @@ Key modules:
   `emacs-keys` setting elsewhere. Return, paste and comment keys are
   handled on key-down (Scintilla acts on Return then, with no character
   event after); on macOS the slash key goes down as `KeyDivide`.
+  Backspace, Delete and emacs Ctrl-D delete a whole character, meaning a
+  letter with its combining marks (`lastCharacterStart`,
+  `firstCharacterLength`). They're caught on key-down only when there
+  are marks to delete; otherwise Scintilla handles them. One
+  consequence: on macOS, Ctrl-Backspace right after an accented letter
+  deletes just that letter, not the token.
+  Scintilla moves the cursor by code point, so on each STCUpdateUI
+  `keepCursorOnCharacters` moves the cursor (and the selection anchor)
+  out of a letter-plus-marks character. It goes to the start when the
+  cursor moved back and to the end otherwise (`characterBoundary`).
   Control-Backspace deletes the previous token (`deleteBackTo`). On
   macOS it goes down as a plain Backspace, with no Control reported, so
   it's recognized by the backspace character it goes on to type (a plain
@@ -678,11 +688,26 @@ Key modules:
   doesn't do it, because it only runs on text that checks out, which
   `\theta` in code doesn't, and it would rewrite existing strings like
   `"\tau"`. Escape, moving the cursor out or losing focus leaves it as
-  typed. `\\` stays literal. It works in strings and comments too.
+  typed.
+  Accents (`\hat x`, `\hat{x}`, `\hat\theta`) wait for what they go on.
+  The pending escape is a byte range (backslash to end of typed text);
+  every decision (finish, wait, leave alone) is `Symbols.escapeAt` on
+  that range's text, which paste (`replaceSymbolNames`) shares.
+- Identifiers may have combining marks after their first character
+  (`Tokenizer.identChar`), and their names are NFC-normalized
+  (`identifierName`, via `unicode-transforms`), so a precomposed `â` and
+  `a` + U+0302 are one variable. The source text keeps what was typed. `\\` stays literal. It works in strings and comments too.
   It's driven by `CodeEditor`'s STC events: `STCCharAdded`, `STCModified`
   (which moves the remembered backslash position with edits before it),
   and `STCUpdateUI` (which redraws the box and tip). The editor sets its
   own `on focus`, so `scriptWidget` chains onto it with `:~`.
+- The error squiggle (INDIC_SQUIGGLEPIXMAP) is drawn as an image as
+  wide as its range. A zero-width range, such as a combining mark with
+  no letter under it, makes `wxBitmap::Create` assert, and the assert
+  dialog can't run inside `drawRect`, so the app hangs at 100% CPU.
+  `markError` therefore underlines `Language.Editor.visibleSpan`: whole
+  visible characters, on one line. Any new indicator drawn as an image
+  (pixmap squiggle, dot box) needs the same guard.
 - Errors in code editors are underlined with indicator 8, a red squiggle
   (`UI.CodeEditor.markError`/`clearError`). wxHaskell's own indicator
   functions are for Scintilla's old style-bit indicators, which it no

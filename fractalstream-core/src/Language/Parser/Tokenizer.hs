@@ -5,11 +5,14 @@ module Language.Parser.Tokenizer
   , tokenizeWithIndentation
   , commentRanges
   , wordlikeTokens
+  , identifierName
   ) where
 
 import FractalStream.Prelude
 
 import qualified Data.Map as Map
+import qualified Data.Text as Text
+import qualified Data.Text.Normalize as Normalize
 import Data.Char
 import Data.Ord
 
@@ -191,9 +194,19 @@ skipString = go []
 -- Internals
 ------------------------------------------------------
 
+-- | What an identifier goes on with, after its first letter: letters,
+-- digits, @_@, and combining marks (so @x̂@, x with a combining hat, is
+-- an identifier).
 identChar :: Char -> Bool
 identChar c = (isAlphaNum c && not (c `elem` superscripts) && (c /= '⁻'))
-              || c == '_'
+              || c == '_' || isMark c
+
+-- | An identifier's name, as written: in Unicode's composed form (NFC),
+-- so that names that look the same are the same however they were
+-- typed (@â@ is one character, U+00E2, on most keyboards, but @a@ and a
+-- combining hat, U+0302, when it's typed as @\\hat a@).
+identifierName :: String -> String
+identifierName = Text.unpack . Normalize.normalize Normalize.NFC . Text.pack
 
 opTokens :: [(String, Token)]
 opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
@@ -325,9 +338,10 @@ tokenize' = \case
   cs@(c:_) | isAlpha (fst c) && not (fst c `elem` superscripts) && (fst c /= '⁻') ->
                let ds = takeWhile (identChar . fst) cs
                    cs' = dropWhile (identChar . fst) cs
-                   tok = case Map.lookup (map fst ds) wordlikeTokens of
+                   name = identifierName (map fst ds)
+                   tok = case Map.lookup name wordlikeTokens of
                      Just t  -> t
-                     Nothing -> Identifier (map fst ds)
+                     Nothing -> Identifier name
                in SRToken tok (mconcat (map snd ds)) : tokenize' cs'
 
   -- Otherwise, grab a junk character

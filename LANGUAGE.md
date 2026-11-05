@@ -211,6 +211,17 @@ other symbols the language accepts (`⟼` for `->`, `≔` for `:=`, `≤`,
 turned off in Preferences; `fsrun normalize` does the same to a
 project file.
 
+You can type symbols in the script editor by their LaTeX names:
+`\theta` gives `θ`, `\le` gives `≤`, `\R` gives `ℝ`, and so on. A
+preview shows what a name will become as you type it, and Tab completes
+the name. Accents work as in LaTeX: `\hat x`, `\hat{x}` and
+`\hat\theta` give `x̂`, `x̂` and `θ̂`. The other accents are `\tilde`,
+`\bar`, `\overline`, `\dot`, `\ddot`, `\dddot`, `\vec`, `\check`,
+`\breve`, `\acute`, `\grave` and `\mathring`. A variable's name can
+have accents anywhere after its first character (`ẑ`, `x̄₁`). A name
+with an accent is the same name however its letters were entered: a
+keyboard's `â` and `\hat a` give the same variable.
+
 ### Variable initialization
 
 To create a new variable in your script, use the `<-` operator but
