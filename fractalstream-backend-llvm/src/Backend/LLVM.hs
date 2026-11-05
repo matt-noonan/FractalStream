@@ -825,16 +825,24 @@ withJIT action = do
 -- module exports, and LLVM calls the C runtime's stack probe ___chkstk_ms
 -- from any function whose stack frame is bigger than a page; the probe is
 -- linked statically into the executable, not exported.
+--
+-- LLVM also merges sin(x) and cos(x) of the same x (as in complex exp, and
+-- so complex powers) into one call to sincos, which the Windows C runtime
+-- doesn't have at all; cbits/win_sincos.c supplies one.
 defineRuntimeSymbols :: IRCompileLayer -> JITDylib -> IO ()
 #if defined(mingw32_HOST_OS)
 defineRuntimeSymbols compileLayer dylib =
-  withMangledSymbol compileLayer "___chkstk_ms" $ \name ->
-    defineAbsoluteSymbols dylib
-      [ (name, JITSymbol (ptrToWordPtr (castFunPtrToPtr chkstkMs))
-                         defaultJITSymbolFlags { jitSymbolExported = True
-                                               , jitSymbolCallable = True }) ]
+  forM_ [ ("___chkstk_ms", castFunPtrToPtr chkstkMs)
+        , ("sincos",       castFunPtrToPtr fsSincos) ] $ \(sym, addr) ->
+    withMangledSymbol compileLayer sym $ \name ->
+      defineAbsoluteSymbols dylib
+        [ (name, JITSymbol (ptrToWordPtr addr)
+                           defaultJITSymbolFlags { jitSymbolExported = True
+                                                 , jitSymbolCallable = True }) ]
 
 foreign import ccall "&___chkstk_ms" chkstkMs :: FunPtr (IO ())
+foreign import ccall "&fractalstream_sincos"
+  fsSincos :: FunPtr (CDouble -> Ptr CDouble -> Ptr CDouble -> IO ())
 #else
 defineRuntimeSymbols _ _ = pure ()
 #endif

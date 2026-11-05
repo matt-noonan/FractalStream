@@ -74,6 +74,10 @@ library
                      , mtl
                      , disassembler
   hs-source-dirs:      src
+  if os(windows)
+    c-sources:         cbits/win_sincos.c
+    -- (so the C compiler doesn't turn sin and cos back into sincos)
+    cc-options:        -fno-builtin
 
 test-suite spec
   import: FractalStream-common
