@@ -42,9 +42,9 @@ welcome ProjectActions{..} = do
 
   sectionList <- singleListBox p []
 
-  titleText <- staticText p [ text := "", font := fontDefault { _fontWeight = WeightBold } ]
+  titleText <- staticText p [ text := ""
+                            , font := fontDefault { _fontWeight = WeightBold, _fontSize = 14 } ]
   descriptionText <- textCtrlEx p (wxTE_MULTILINE .+. wxTE_READONLY .+. wxNO_BORDER) []
-  openButton <- button p [ text := "Open", enabled := False ]
 
   newButton <- button p [ text := "New project"
                         , on command := projectNew ]
@@ -76,21 +76,21 @@ welcome ProjectActions{..} = do
         case mentry of
           Nothing -> do
             set titleText [ text := "" ]
-            set descriptionText [ font := fontDefault ]
+            set descriptionText [ font := fontDefault { _fontSize = 14 } ]
 
             inMine <- readIORef showingMine
             folder <- projectsFolder
             set descriptionText [ text := if inMine then emptyMine folder else
                                     "Choose a project to see what it's about." ]
-            set openButton [ enabled := False ]
           Just LibraryEntry{..} -> do
             set titleText [ text := leTitle ]
             -- A problem's script error marks where it is with a line of
             -- ^^^ under the script, which only lines up in a fixed-width
             -- font.
-            set descriptionText [ font := if isJust leProblem then fontFixed else fontDefault
-                                , text := fromMaybe leDescription leProblem ]
-            set openButton [ enabled := leCanOpen ]
+            set descriptionText [ font := (if isJust leProblem then fontFixed else fontDefault)
+                                  { _fontSize = 14 }
+                                , text := coalesceNewlines $
+                                          fromMaybe leDescription leProblem ]
 
       emptyMine folder = "Your own projects go in " ++ quoted folder ++ ". Save a project \
                   \there (or in a folder inside it, to give it a section of its \
@@ -150,7 +150,6 @@ welcome ProjectActions{..} = do
                         , selection := min current (length newItems - 1) ]
 
   set sectionList [ on select := get sectionList selection >>= showSection ]
-  set openButton [ on command := readIORef selected >>= mapM_ projectOpenLibrary ]
   set showFolderButton [ on command := do
                            folder <- projectsFolder
                            createDirectoryIfMissing True folder
@@ -179,7 +178,6 @@ welcome ProjectActions{..} = do
                 , column 5
                     [ widget titleText
                     , fill (minsize (sz 260 300) (widget descriptionText))
-                    , row 5 [ hglue, widget openButton ]
                     ]
                 ]
             , row 10 [ widget newButton, widget openFileButton, hglue, widget showFolderButton ]
@@ -208,4 +206,11 @@ welcome ProjectActions{..} = do
                    windowReLayout f ]
   pure (f, mapM_ selectSection (take 1 (sectionIndices lsStartingPoints)))
 
-
+-- | Replace single newlines with spaces, coalesce multiple newlines into one.
+coalesceNewlines :: String -> String
+coalesceNewlines s = case s of
+  ('\n' : etc@('\n' : '\n' : _)) -> coalesceNewlines etc
+  ('\n' : '\n' : etc) -> '\n' : coalesceNewlines etc
+  ('\n' : etc) -> ' ' : coalesceNewlines etc
+  (c : etc) -> c : coalesceNewlines etc
+  "" -> ""

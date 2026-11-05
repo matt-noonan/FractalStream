@@ -106,6 +106,7 @@ library
                        Language.Legacy.Syntax
                        Language.Legacy.Parser
                        Language.Legacy.Translate
+                       Language.Legacy.Binary
                        Language.Editor
                        Language.Editor.Highlight
                        Language.Editor.Lines
