@@ -53,7 +53,46 @@ shouldFailToParse src = case parseScenario src of
   Right _ -> expectationFailure "expected a parse error, but it succeeded"
 
 spec :: Spec
-spec = describe "parseScenario" $ do
+spec = parseSpec >> overridesSpec
+
+-- | The output paths of the file-writing commands, in order.
+outputPaths :: [Command] -> [FilePath]
+outputPaths = mapMaybe $ \case
+  CaptureViewer _ p     -> Just p
+  CaptureViewerBase _ p -> Just p
+  RecordMovie _ p _ _   -> Just p
+  _ -> Nothing
+
+overridesSpec :: Spec
+overridesSpec = describe "applyOverrides" $ do
+  let parsed src = either (error . snd) id (parseScenario src)
+      oneOfEach = parsed [r|select viewer "V"
+capture viewer "V" to "a.png"
+record viewer "V" to "m.mov" frames 2 fps 1 using "t = t"
+|]
+      twoCaptures = parsed [r|capture viewer "V" to "a.png"
+capture viewer "V" base to "b.png"
+|]
+
+  it "leaves the commands alone with no overrides" $
+    fmap outputPaths (applyOverrides noOverrides twoCaptures) `shouldBe` Right ["a.png", "b.png"]
+
+  it "replaces the one capture's and the one recording's paths" $
+    fmap outputPaths (applyOverrides (Overrides (Just "x.png") (Just "y.avi")) oneOfEach)
+      `shouldBe` Right ["x.png", "y.avi"]
+
+  it "counts a base capture as a capture" $
+    fmap outputPaths (applyOverrides noOverrides { captureTo = Just "x.png" } (drop 1 twoCaptures))
+      `shouldBe` Right ["x.png"]
+
+  it "rejects --capture-to with more than one capture" $
+    isLeft (applyOverrides noOverrides { captureTo = Just "x.png" } twoCaptures) `shouldBe` True
+
+  it "rejects --record-to with no recording" $
+    isLeft (applyOverrides noOverrides { recordTo = Just "y.mov" } twoCaptures) `shouldBe` True
+
+parseSpec :: Spec
+parseSpec = describe "parseScenario" $ do
 
   it "parses select viewer" $
     onlyCommand [r|select viewer "Mandelbrot set"

@@ -7,8 +7,8 @@ A frontend analogous to fractalstream-ui-wx: it implements the same
 no actual GUI. Five subcommands run a project:
 
   fsrun snapshot --project <project.fs> --viewer <title> --output <file.png>
-  fsrun commands --project <project.fs> --commands <file>
-  fsrun scenario --project <project.fs> --name <name>
+  fsrun commands --project <project.fs> --commands <file> [--capture-to <file.png>] [--record-to <file.mov>]
+  fsrun scenario --project <project.fs> --name <name> [--capture-to <file.png>] [--record-to <file.mov>]
   fsrun update-preview --project <project.fs>
   fsrun normalize --project <project.fs>
 
@@ -24,7 +24,9 @@ selecting viewers and tools, injecting synthetic events, changing
 configuration and the viewport, and capturing or asserting on what got
 rendered -- taken either from a standalone commands file (@fsrun commands@)
 or from one of the project file's own top-level @scenarios:@ entries, by
-name (@fsrun scenario@).
+name (@fsrun scenario@). Either can be told to write its one capture
+(@--capture-to@) or its one movie (@--record-to@) somewhere other than
+where the commands say ('Scenario.applyOverrides').
 
 @fsrun update-preview@ is the one mode that changes the project file: it runs
 the project's @metadata: preview-commands:@, which must end up capturing
@@ -55,7 +57,7 @@ import Actor.UI (UI(..))
 import Actor.Viewer (Backend, Viewer(..), snapshotToFile, describeViewerIssues)
 import Data.DynamicValue (getDynamic, setValue')
 import Backend (withBackend)
-import Scenario (parseScenario)
+import Scenario (parseScenario, Overrides(..), applyOverrides)
 import Interpreter (runScenario, runPreviewCommands)
 import Language.Parser.SourceRange (Indicated(..))
 
@@ -77,8 +79,8 @@ import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutS
 
 data Mode
   = Snapshot { snapshotViewer :: String, snapshotOutput :: FilePath }
-  | RunCommandsFile { commandsFile :: FilePath }
-  | RunNamedScenario { scenarioName :: String }
+  | RunCommandsFile { commandsFile :: FilePath, commandsOverrides :: Overrides }
+  | RunNamedScenario { scenarioName :: String, scenarioOverrides :: Overrides }
   | UpdatePreview
   | Normalize
 
@@ -140,11 +142,13 @@ cliParser = hsubparser $ mconcat
   , subcommand "commands"
       "Run a file of scenario-language commands against the project"
       (RunCommandsFile <$> strOption (long "commands" <> metavar "FILE"
-                                      <> help "The commands to run (see SCENARIO_LANGUAGE.md)"))
+                                      <> help "The commands to run (see SCENARIO_LANGUAGE.md)")
+                       <*> overridesOptions)
   , subcommand "scenario"
       "Run one of the project's own scenarios, by name"
       (RunNamedScenario <$> strOption (long "name" <> metavar "NAME"
-                                       <> help "The name of an entry in the project's `scenarios:`"))
+                                       <> help "The name of an entry in the project's `scenarios:`")
+                        <*> overridesOptions)
   , subcommand "update-preview"
       "Remake the project's preview image by running its `metadata: preview-commands:`"
       (pure UpdatePreview)
@@ -163,6 +167,11 @@ cliParser = hsubparser $ mconcat
   where
     subcommand name desc modeArgs = command name $
       info (RunProject <$> jobsOption <*> projectOption <*> modeArgs) (progDesc desc)
+    overridesOptions = Overrides
+      <$> optional (strOption (long "capture-to" <> metavar "FILE.png"
+            <> help "Write the scenario's one `capture` here instead"))
+      <*> optional (strOption (long "record-to" <> metavar "FILE.mov"
+            <> help "Write the scenario's one `record` here instead (.mov or .avi)"))
     projectOption = strOption (long "project" <> short 'p' <> metavar "PROJECT.fs" <> help "The project file")
     jobsOption = optional $ option positive
       (long "jobs" <> short 'j' <> metavar "N" <>
@@ -197,8 +206,8 @@ run projectFile mode = withBackend $ \backend ->
     Left err -> dieWith ("Could not load " ++ quoted projectFile ++ ":\n" ++ err)
     Right ensemble -> case mode of
       Snapshot viewerName outputFile -> runSnapshot backend ensemble viewerName outputFile
-      RunCommandsFile path           -> runCommandsFile backend ensemble path
-      RunNamedScenario name          -> runNamedScenario backend ensemble name
+      RunCommandsFile path ovs       -> runCommandsFile backend ensemble ovs path
+      RunNamedScenario name ovs      -> runNamedScenario backend ensemble ovs name
       UpdatePreview                  -> runUpdatePreview backend ensemble projectFile
       Normalize                      -> runNormalize ensemble projectFile
 
@@ -258,17 +267,17 @@ renderViewer viewer outputFile = snapshotToFile viewer True outputFile >>= \case
 
 -- | Parse a standalone commands file and run it against the already-loaded
 -- project.
-runCommandsFile :: Backend -> Ensemble -> FilePath -> IO ()
-runCommandsFile backend ensemble path = do
+runCommandsFile :: Backend -> Ensemble -> Overrides -> FilePath -> IO ()
+runCommandsFile backend ensemble ovs path = do
   -- Read as UTF-8, like project files, whatever the locale's encoding.
   src <- withFile path ReadMode $ \h -> hSetEncoding h utf8 >> hGetContents' h
-  runCommandsText backend ensemble path src
+  runCommandsText backend ensemble ovs path src
 
 -- | Find a scenario by name among the project's own top-level
 -- @scenarios:@ entries and run it, the same way 'runCommandsFile' runs
 -- one read from a standalone file.
-runNamedScenario :: Backend -> Ensemble -> String -> IO ()
-runNamedScenario backend ensemble name = do
+runNamedScenario :: Backend -> Ensemble -> Overrides -> String -> IO ()
+runNamedScenario backend ensemble ovs name = do
   scenarios <- getDynamic (ensembleScenarios ensemble)
   named <- mapM (\ns -> (, ns) <$> getDynamic (nsName ns)) scenarios
   case lookup name named of
@@ -276,12 +285,8 @@ runNamedScenario backend ensemble name = do
                          "Scenarios in this project: " ++ show (map fst named))
     Just ns -> do
       src <- getDynamic (nsCommands ns)
-      runCommandsText backend ensemble ("scenario " ++ show name) src
+      runCommandsText backend ensemble ovs ("scenario " ++ show name) src
 
--- | Parse scenario-language source and run it against the already-loaded
--- project, reporting the outcome the same way regardless of whether the
--- commands came from a standalone file or an embedded named scenario
--- (@label@ is just used in the messages, to say which).
 -- | Run the project's preview commands and save the image they capture
 -- as its preview. The file is only written once that has all
 -- succeeded, and then by writing a new file and renaming it over the
@@ -321,12 +326,20 @@ runNormalize ensemble projectFile = do
       renameFile tmp projectFile
       putStrLn ("Normalized the script in " ++ quoted projectFile)
 
-runCommandsText :: Backend -> Ensemble -> String -> String -> IO ()
-runCommandsText backend ensemble label src = case parseScenario src of
+-- | Parse scenario-language source and run it against the already-loaded
+-- project, reporting the outcome the same way regardless of whether the
+-- commands came from a standalone file or an embedded named scenario
+-- (@label@ is just used in the messages, to say which).
+-- Any output paths given in @ovs@ replace the commands' own before
+-- anything runs.
+runCommandsText :: Backend -> Ensemble -> Overrides -> String -> String -> IO ()
+runCommandsText backend ensemble ovs label src = case parseScenario src of
   Left (sr, err) -> dieWith $
     "Could not parse " ++ label ++ ":\n" ++
     unlines (pp (Indicated sr src)) ++
     err
-  Right cmds -> runScenario backend ensemble cmds >>= \case
+  Right cmds0 -> case applyOverrides ovs cmds0 of
+   Left err -> dieWith ("Can't run " ++ label ++ ": " ++ err)
+   Right cmds -> runScenario backend ensemble cmds >>= \case
     Left err -> dieWith ("Scenario failed:\n" ++ err)
     Right () -> putStrLn (label ++ ": all " ++ show (length cmds) ++ " command(s) succeeded.")
