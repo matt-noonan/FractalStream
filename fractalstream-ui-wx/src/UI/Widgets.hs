@@ -367,8 +367,9 @@ scriptWidgetWith known p scriptCode = do
           styledTextCtrlSetStyling ce (byteAt to - start') (styleFor h)
         pure m
 
+  -- (keeping the editor's own focus handling, "UI.CodeEditor")
   liftIO $ set ce $
-    [ on focus := \tf -> do
+    [ on focus :~ \editorsOwn tf -> do
         case tf of
           True -> do
             writeIORef focused True
@@ -382,7 +383,7 @@ scriptWidgetWith known p scriptCode = do
               writeIORef edited True
               void (setValue (source scriptCode) (CodeString new))
             normalizeExcept Nothing
-        propagateEvent
+        editorsOwn tf
     ]
 
   -- Check for script changes periodically. TODO: make this event-driven instead

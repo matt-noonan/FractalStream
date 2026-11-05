@@ -15,6 +15,7 @@ import Language.Parser.SourceRange (SourceRange(..))
 import Data.DynamicValue
 import Actor.Layout (CodeString(..))
 import UI.EditorKeys
+import UI.SymbolEntry
 import UI.EditorStyle (setupStyles, showLineNumbers)
 import Language.Editor (indentUnit)
 import UI.AppSettings (appSettings)
@@ -108,11 +109,22 @@ codeEditorWithText cep txt = do
     styledTextCtrlSetMarginSensitive stc foldMarginIndex True
     styledTextCtrlSetMarginWidth stc foldMarginIndex 16
     styledTextCtrlSetFoldFlags stc wxSTC_FOLDFLAG_LINEBEFORE_CONTRACTED
+
+    -- symbols typed by name ("UI.SymbolEntry")
+    symbols <- symbolEntry stc isLight
+
     stcOnSTCEvent stc $ \case
       STCMarginClick _ _ _ pos clickedMargin | clickedMargin == foldMarginIndex -> do
         lineNum <- styledTextCtrlLineFromPosition stc pos
         styledTextCtrlToggleFold stc lineNum
+      STCCharAdded c _ -> symbolCharAdded symbols c
+      STCModified pos modType _ len _ _ _ _ -> symbolTextModified symbols pos modType len
+      STCUpdateUI -> symbolUpdateUI symbols
       _ -> pure ()
+    -- (a caller that handles focus too has to keep this, with `:~`)
+    set stc [ on focus := \gained -> do
+                unless gained (void (cancelSymbol symbols))
+                propagateEvent ]
 
     -- (on platforms where they're a preference, it's checked on each
     -- key, so changing it applies to editors that are already open)
@@ -121,7 +133,7 @@ codeEditorWithText cep txt = do
     styledTextCtrlIndicatorSetForeground stc errorIndicator
       (if isLight then rgb 0xd0 0x20 (0x20 :: Word8) else rgb 0xff 0x60 (0x60 :: Word8))
 
-    handleEditorKeys stc $ if emacsKeysByDefault then pure True
+    handleEditorKeys stc symbols $ if emacsKeysByDefault then pure True
                           else setEmacsKeys <$> getDynamic appSettings
 
     styledTextCtrlSetText stc txt

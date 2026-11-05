@@ -658,6 +658,22 @@ Key modules:
   Backspace doesn't, as Scintilla deletes on key-down). On macOS, Control-letter reaches
   the key handler as its control character (Control-E is ENQ, 5) with no
   modifiers set, so control codes 1-26 are read as Control-letters.
+- `UI.SymbolEntry` - LaTeX-style symbol names (`\theta` to θ; the table
+  is `Language.Editor.Symbols`). Typing `\` starts a name, which is boxed
+  (indicator 9) with a call-tip preview. A non-letter finishes it and is
+  then typed. Tab completes the name without typing anything
+  (`completeSymbolName`): `\th` becomes θ because only one name starts
+  that way, and `\va` goes on to `\var`. Return finishes and breaks
+  the line. Pasting turns names into symbols
+  (`replaceSymbolNames`, in `pasteFittingIndentation`). Normalization
+  doesn't do it, because it only runs on text that checks out, which
+  `\theta` in code doesn't, and it would rewrite existing strings like
+  `"\tau"`. Escape, moving the cursor out or losing focus leaves it as
+  typed. `\\` stays literal. It works in strings and comments too.
+  It's driven by `CodeEditor`'s STC events: `STCCharAdded`, `STCModified`
+  (which moves the remembered backslash position with edits before it),
+  and `STCUpdateUI` (which redraws the box and tip). The editor sets its
+  own `on focus`, so `scriptWidget` chains onto it with `:~`.
 - Errors in code editors are underlined with indicator 8, a red squiggle
   (`UI.CodeEditor.markError`/`clearError`). wxHaskell's own indicator
   functions are for Scintilla's old style-bit indicators, which it no
