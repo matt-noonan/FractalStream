@@ -19,7 +19,10 @@ import qualified Data.Map as Map
 import Numeric (showHex, readHex)
 
 import Graphics.UI.WX hiding (pt, when, Color, Object, Layout, Vertical, Horizontal)
-import Graphics.UI.WXCore (windowRaise)
+import Graphics.UI.WXCore (windowRaise, wxHORIZONTAL)
+import Graphics.UI.WXCore.WxcObject (withObjectPtr, objectFromPtr)
+import Foreign.C.Types (CInt(..), CLong(..))
+import Foreign.Ptr (Ptr, castPtr)
 import System.IO (hPutStrLn, stderr)
 import Control.Exception (IOException, try)
 
@@ -34,6 +37,7 @@ preferencesWindow settingsVar = do
   libraryTab <- panel nb []
   editorTab <- panel nb []
   colorsTab <- panel nb []
+  viewersTab <- panel nb []
 
   folderText <- staticText libraryTab [ text := "" ]
   chooseButton <- button libraryTab [ text := "Choose..." ]
@@ -52,6 +56,13 @@ preferencesWindow settingsVar = do
   foldBox <- checkBox editorTab [ text := "Fold blocks of code, not just stanzas and tool handlers" ]
   emacsBox <- if emacsKeysByDefault then pure Nothing else
     Just <$> checkBox editorTab [ text := "Emacs-style movement keys (Control-A, Control-E, ...)" ]
+
+  -- The Viewers tab: how strongly a sphere viewer shades the globe, in
+  -- percent (sphere viewers draw again as it's dragged).
+  shadingSlider <- horizontalSlider viewersTab 0 100 defaultSphereShading 240
+  shadingText <- staticText viewersTab [ text := "100%" ]
+  shadingNote <- staticText viewersTab [ text := "Shades the globe as if it were lit from the upper left. \
+                                                 \At 0% it isn't shaded at all." ]
 
   -- The Colors tab: for light windows or dark ones (the kind this one
   -- is, to start with), each class's sample, and buttons and boxes for
@@ -81,6 +92,8 @@ preferencesWindow settingsVar = do
         set foldBox [ checked := setFoldCodeBlocks settings ]
         set numbersBox [ checked := setLineNumbers settings ]
         set symbolsBox [ checked := setMathSymbols settings ]
+        set shadingSlider [ selection := setSphereShading settings ]
+        set shadingText [ text := show (setSphereShading settings) ++ "%" ]
         let custom = isJust (setEditorFont settings) || isJust (setEditorFontSize settings)
         set fontText [ text := editorFont settings
                                  ++ maybe "" (\n -> ", " ++ show n ++ " pt") (setEditorFontSize settings)
@@ -167,6 +180,10 @@ preferencesWindow settingsVar = do
     flag stUnderline (\v cs -> cs { csUnderline = v }) underlineBox
     set resetButton [ on command := changeClass h (const noClassStyle) ]
 
+  set shadingSlider [ on command := do
+                        v <- get shadingSlider selection
+                        current <- setSphereShading <$> getDynamic settingsVar
+                        when (v /= current) $ change (\s -> s { setSphereShading = v }) ]
   set symbolsBox [ on command := do
                      on' <- get symbolsBox checked
                      change (\s -> s { setMathSymbols = on' }) ]
@@ -200,6 +217,12 @@ preferencesWindow settingsVar = do
                 ] ++
                 [ widget box | Just box <- [emacsBox] ] ++
                 [ glue ]
+            , tab "Viewers" $ container viewersTab $ margin 12 $ column 8
+                [ label "Shading of the Riemann sphere:"
+                , row 6 [ hfill (widget shadingSlider), widget shadingText ]
+                , hstretch (widget shadingNote)
+                , glue
+                ]
             , tab "Colors" $ container colorsTab $ margin 12 $ column 8
                 [ row 6 [ label "Colors for", widget appearance, hglue, widget resetAllButton ]
                 , grid 8 4
@@ -245,3 +268,18 @@ hexColor s = case s of
 colorHex :: WX.Color -> String
 colorHex c = '#' : concatMap two [colorRed c, colorGreen c, colorBlue c :: Int]
   where two n = let h = showHex n "" in if length h < 2 then '0' : h else h
+
+-- | A horizontal slider from a minimum to a maximum, starting at a value,
+-- of a width (in pixels). Not wxHaskell's 'hslider': its binding gets the
+-- slider's style wrong on arm64 macOS (the style, a C @long@, is the
+-- tenth argument, so it's passed on the stack, where it was read with
+-- garbage in it), and the slider came out vertical, or inverted, with
+-- labels. This calls wxc's @wxSlider_Create@ with its C types exactly.
+horizontalSlider :: Window a -> Int -> Int -> Int -> Int -> IO (Slider ())
+horizontalSlider owner lo hi initial width = withObjectPtr owner $ \p ->
+  objectFromPtr . castPtr <$>
+    wxcSliderCreate (castPtr p) (-1) (fromIntegral initial) (fromIntegral lo) (fromIntegral hi)
+                    (-1) (-1) (fromIntegral width) (-1) (fromIntegral wxHORIZONTAL)
+
+foreign import ccall unsafe "wxSlider_Create"
+  wxcSliderCreate :: Ptr () -> CInt -> CInt -> CInt -> CInt -> CInt -> CInt -> CInt -> CInt -> CLong -> IO (Ptr ())

@@ -804,6 +804,7 @@ viewerViewContext coord viewV rotationV = case coord of
   where
     entries :: [(String, Either (Dynamic Bool) (Dynamic Double))]
     entries = (sphereViewName, Left ((== SphereView) <$> dyn viewV))
+            : (sphereShadingName, Right (dyn sphereShading))
             : [ (n, Right ((!! k) . matrixEntries <$> dyn rotationV)) | (k, n) <- zip [0 ..] rotationNames ]
     matrixEntries r = let ((a, b, c), (d, e, f), (g, h, i)) = rotationMatrix r in [a, b, c, d, e, f, g, h, i]
     addOne :: SomeContext DynamicValue -> (String, Either (Dynamic Bool) (Dynamic Double))

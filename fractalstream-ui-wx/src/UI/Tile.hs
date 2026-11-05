@@ -6,10 +6,12 @@ module UI.Tile ( Tile()
                , renderTile
                , cancelTile
                , tileFinished
+               , tileCovered
                , tileRect
                , ifModified
                , ifElseModified
                , withSynchedTileBuffer
+               , StaleRender(..)
                ) where
 
 import FractalStream.Prelude
@@ -22,10 +24,11 @@ import Data.Color
 
 import Control.Concurrent
 import Control.Concurrent.Async
+import Control.Exception (Exception, handle)
 
 import Foreign.ForeignPtr
 import Foreign.Ptr
-import Foreign.Marshal.Utils (copyBytes)
+import Foreign.Marshal.Utils (copyBytes, fillBytes)
 
 newtype ImagePoint = ImagePoint (Double,Double)
 
@@ -43,7 +46,20 @@ data Tile = Tile
       -- ^ The worker thread which is drawing this tile.
     , shouldRedrawTile :: MVar ()
       -- ^ A value which signals that the tile needs to be redrawn.
+    , coveredTile      :: MVar ()
+      -- ^ Full once every part of the tile shows something (the seed's
+      --   picture, or the render's first pass).
     }
+
+-- | Thrown by a tile's rendering action, instead of computing a block,
+-- once a newer render has replaced the tile's: it stops the tile's
+-- render there. (A block whose computation is skipped mustn't be copied
+-- into the tile: its scratch buffer was never written, and a newer
+-- render may still read this tile's buffer as its seed.)
+data StaleRender = StaleRender
+  deriving Show
+
+instance Exception StaleRender
 
 -- | Cancel the tile, but don't wait for it to finish
 cancelTile :: Tile -> IO ()
@@ -55,6 +71,13 @@ tileFinished = fmap isJust . poll . tileWorker
 
 withSynchedTileBuffer :: Tile -> (Ptr Word8 -> IO b) -> IO b
 withSynchedTileBuffer tile action = synchedWith (tileBuffer tile) (`withForeignPtr` action)
+
+-- | Does every part of the tile show something yet (the seed's picture,
+-- or at least the render's coarsest pass)? So it's worth showing, rather
+-- than the last tile, which a newer render's can replace at once. (A
+-- tile that has finished is covered.)
+tileCovered :: Tile -> IO Bool
+tileCovered tile = (||) <$> (not <$> isEmptyMVar (coveredTile tile)) <*> tileFinished tile
 
 -- | Unpack the width and height of a tile.
 tileRect :: Tile -> (Int, Int)
@@ -80,10 +103,13 @@ ifElseModified tile yes no = do
 
 -- | Construct a tile from a dynamical system, and begin drawing to it.
 renderTile :: Bool -- ^ Use smoothing?
-           -> Maybe (Ptr Word8 -> IO (Int -> Int -> Bool))
+           -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
               -- ^ What the tile shows until it's drawn: fill the
               --   (RGB8, row by row) buffer with it, saying which of its
-              --   'subBlockSize' pieces it filled; or grey without one
+              --   'subBlockSize' pieces it filled; or grey without one.
+              --   It's also given a byte per pixel (zeroed, row by row)
+              --   to mark the pixels it gave their final color (nonzero),
+              --   which the coarse passes then leave alone.
            -> BlockComputeAction -- ^ The rendering action
            -> (Int, Int)   -- ^ The height and width of this tile.
            -> Rectangle (Double, Double)
@@ -107,7 +133,14 @@ renderTile smooth seed renderingAction (width, height) mRect = do
     let iRect = rectangle (ImagePoint (0,0))
                           (ImagePoint (fromIntegral width, fromIntegral height))
 
+    -- (which pixels the seed gave their final color, if there's a seed)
+    finals <- forM seed $ \_ -> do
+      m <- mallocForeignPtrBytes (width * height)
+      withForeignPtr m $ \p -> fillBytes p 0 (width * height)
+      pure m
+
     redraw     <- newMVar ()  -- used to request a redraw
+    covered    <- newEmptyMVar
     managedBuf <- synchronized buf
 
     let (mRectWidth, mRectHeight) = dimensions mRect
@@ -115,10 +148,11 @@ renderTile smooth seed renderingAction (width, height) mRect = do
     -- The seed (if any) is worked out by the worker, before it renders,
     -- so that starting a render doesn't hold up the caller.
     worker <- async $ do
-      shown <- case seed of
-        Nothing -> pure (\_ _ -> False)
-        Just fill -> with managedBuf (`withForeignPtr` fill) <* tryPutMVar redraw ()
-      progressivelyOver shown fillBlock
+      shown <- case (seed, finals) of
+        (Just fill, Just m) -> with managedBuf (\b -> withForeignPtr b $ \p -> withForeignPtr m (fill p))
+                                 <* tryPutMVar redraw ()
+        _ -> pure (\_ _ -> False)
+      handle (\StaleRender -> pure ()) $ progressivelyOver shown (void (tryPutMVar covered ())) fillBlock
                     $ Block { coordToModel = convertRect iRect mRect . fromCoords
                             , compute = renderingAction
                             , logSampleRate = if smooth then 1 else 0
@@ -131,6 +165,7 @@ renderTile smooth seed renderingAction (width, height) mRect = do
                             , xSize = width
                             , ySize = height
                             , shouldRedraw = redraw
+                            , finalPixels = finals
                             }
     link worker
 
@@ -138,4 +173,5 @@ renderTile smooth seed renderingAction (width, height) mRect = do
                 , tileBuffer = managedBuf
                 , tileWorker = worker
                 , shouldRedrawTile = redraw
+                , coveredTile = covered
                 }

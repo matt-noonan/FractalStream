@@ -28,19 +28,26 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   block:
                     let `z` = (2:R:C * sqrt(λ)) in:
                       block:
-                        let `[internal] fresh #26` = 0 in:
-                          let `[internal] fresh #27` = [internal] iteration limit in:
+                        let `[internal] fresh #27` = 0 in:
+                          let `[internal] fresh #28` = [internal] iteration limit in:
                             block:
-                              if (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)) then:
-                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)):
+                              if (!([internal] escape radius < |z|) and ([internal] fresh #27 < [internal] fresh #28)) then:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #27 < [internal] fresh #28)):
                                   block:
                                     set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + (λ / ([internal] f.z #0 ^ 2:R:C)))
-                                    set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                                    set `[internal] fresh #27` := ([internal] fresh #27 + 1)
                               else:
                                 no-op
-                              set `[internal] iteration count` := [internal] fresh #26
-                              set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                              set `[internal] iteration count` := [internal] fresh #27
+                              set `[internal] stuck` := ([internal] fresh #27 = [internal] fresh #28)
                         set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 12:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 0 0 255), Color 255 255 255)
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
+                        block:
+                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                  else:
+                    no-op
 
 
 === viewer 1: Julia set
@@ -70,18 +77,25 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    let `[internal] fresh #26` = 0 in:
-                      let `[internal] fresh #27` = [internal] iteration limit in:
+                    let `[internal] fresh #27` = 0 in:
+                      let `[internal] fresh #28` = [internal] iteration limit in:
                         block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)):
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #27 < [internal] fresh #28)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #27 < [internal] fresh #28)):
                               block:
                                 set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + (λ / ([internal] f.z #0 ^ 2:R:C)))
-                                set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                                set `[internal] fresh #27` := ([internal] fresh #27 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #26
-                          set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                          set `[internal] iteration count` := [internal] fresh #27
+                          set `[internal] stuck` := ([internal] fresh #27 = [internal] fresh #28)
                     set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 6:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 255 100 0), blend(0.333, Color 255 255 255, Color 255 255 0))
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
+                        block:
+                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                  else:
+                    no-op
 
 

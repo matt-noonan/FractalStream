@@ -30,19 +30,19 @@ let `[internal] vanishing radius` = tol in:
                       block:
                         let `jbar` = ((-1:R / 2:R):C - ((0.0 :+ 1.0 * sqrt(3:R):C) / 2:R:C)) in:
                           block:
-                            let `[internal] fresh #36` = 0 in:
-                              let `[internal] fresh #37` = [internal] iteration limit in:
+                            let `[internal] fresh #37` = 0 in:
+                              let `[internal] fresh #38` = [internal] iteration limit in:
                                 block:
-                                  if (!(|((t ^ 3:R:C) - 1:R:C)| < [internal] vanishing radius) and ([internal] fresh #36 < [internal] fresh #37)) then:
-                                    do-while (!(|((t ^ 3:R:C) - 1:R:C)| < [internal] vanishing radius) and ([internal] fresh #36 < [internal] fresh #37)):
+                                  if (!(|((t ^ 3:R:C) - 1:R:C)| < [internal] vanishing radius) and ([internal] fresh #37 < [internal] fresh #38)) then:
+                                    do-while (!(|((t ^ 3:R:C) - 1:R:C)| < [internal] vanishing radius) and ([internal] fresh #37 < [internal] fresh #38)):
                                       block:
                                         block:
                                           set `t` := ((t * (2:R:C + (t ^ 3:R:C))) / ((2:R:C * (t ^ 3:R:C)) + 1:R:C))
-                                        set `[internal] fresh #36` := ([internal] fresh #36 + 1)
+                                        set `[internal] fresh #37` := ([internal] fresh #37 + 1)
                                   else:
                                     no-op
-                                  set `[internal] iteration count` := [internal] fresh #36
-                                  set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                                  set `[internal] iteration count` := [internal] fresh #37
+                                  set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
                             if (|(t - 1:R:C)| < [internal] vanishing radius) then:
                               block:
                                 set `color` := tcolor1
@@ -57,6 +57,13 @@ let `[internal] vanishing radius` = tol in:
                                 else:
                                   block:
                                     set `color` := Color 0 0 0
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
+                        block:
+                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                  else:
+                    no-op
 
 
 === viewer 1: z-plane
@@ -94,22 +101,22 @@ let `[internal] vanishing radius` = tol in:
                               block:
                                 let `x` = ((0.5:C * t) / z) in:
                                   block:
-                                    let `[internal] fresh #39` = 0 in:
-                                      let `[internal] fresh #40` = [internal] iteration limit in:
+                                    let `[internal] fresh #40` = 0 in:
+                                      let `[internal] fresh #41` = [internal] iteration limit in:
                                         block:
-                                          if (!((|(x - 0:R:C)| < [internal] vanishing radius) or ((|((x ^ 3:R:C) - -1:R:C)| < [internal] vanishing radius) or (|((x ^ 3:R:C) - (1:R / 8:R):C)| < [internal] vanishing radius))) and ([internal] fresh #39 < [internal] fresh #40)) then:
-                                            do-while (!((|(x - 0:R:C)| < [internal] vanishing radius) or ((|((x ^ 3:R:C) - -1:R:C)| < [internal] vanishing radius) or (|((x ^ 3:R:C) - (1:R / 8:R):C)| < [internal] vanishing radius))) and ([internal] fresh #39 < [internal] fresh #40)):
+                                          if (!((|(x - 0:R:C)| < [internal] vanishing radius) or ((|((x ^ 3:R:C) - -1:R:C)| < [internal] vanishing radius) or (|((x ^ 3:R:C) - (1:R / 8:R):C)| < [internal] vanishing radius))) and ([internal] fresh #40 < [internal] fresh #41)) then:
+                                            do-while (!((|(x - 0:R:C)| < [internal] vanishing radius) or ((|((x ^ 3:R:C) - -1:R:C)| < [internal] vanishing radius) or (|((x ^ 3:R:C) - (1:R / 8:R):C)| < [internal] vanishing radius))) and ([internal] fresh #40 < [internal] fresh #41)):
                                               block:
                                                 block:
                                                   let `w` = (-((3:R:C * x) * ((2:R:C * (y ^ 3:R:C)) + (x ^ 3:R:C))) / (((1:R:C - ((6:R:C * x) * y)) - (4:R:C * ((x ^ 3:R:C) + (y ^ 3:R:C)))) + ((6:R:C * (x ^ 2:R:C)) * (y ^ 2:R:C)))) in:
                                                     block:
                                                       set `y` := (-((3:R:C * y) * ((2:R:C * (x ^ 3:R:C)) + (y ^ 3:R:C))) / (((1:R:C - ((6:R:C * x) * y)) - (4:R:C * ((x ^ 3:R:C) + (y ^ 3:R:C)))) + ((6:R:C * (x ^ 2:R:C)) * (y ^ 2:R:C))))
                                                       set `x` := w
-                                                set `[internal] fresh #39` := ([internal] fresh #39 + 1)
+                                                set `[internal] fresh #40` := ([internal] fresh #40 + 1)
                                           else:
                                             no-op
-                                          set `[internal] iteration count` := [internal] fresh #39
-                                          set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
+                                          set `[internal] iteration count` := [internal] fresh #40
+                                          set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
                                     if (|(x - 0:R:C)| < [internal] vanishing radius) then:
                                       block:
                                         set `color` := zcol
@@ -118,18 +125,18 @@ let `[internal] vanishing radius` = tol in:
                                         block:
                                           let `w` = ((y + 1:R:C) / (x - y)) in:
                                             block:
-                                              let `[internal] fresh #40` = 0 in:
-                                                let `[internal] fresh #41` = [internal] iteration limit in:
+                                              let `[internal] fresh #41` = 0 in:
+                                                let `[internal] fresh #42` = [internal] iteration limit in:
                                                   block:
-                                                    if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #40 < [internal] fresh #41)) then:
-                                                      do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #40 < [internal] fresh #41)):
+                                                    if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #41 < [internal] fresh #42)) then:
+                                                      do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #41 < [internal] fresh #42)):
                                                         block:
                                                           set `w` := (((((2:R:C * (w ^ 3:R:C)) / 3:R:C) + (w ^ 2:R:C)) + (2:R:C * w)) + (1:R / 3:R):C)
-                                                          set `[internal] fresh #40` := ([internal] fresh #40 + 1)
+                                                          set `[internal] fresh #41` := ([internal] fresh #41 + 1)
                                                     else:
                                                       no-op
-                                                    set `[internal] iteration count` := [internal] fresh #40
-                                                    set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
+                                                    set `[internal] iteration count` := [internal] fresh #41
+                                                    set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
                                               if ([internal] escape radius < |w|) then:
                                                 block:
                                                   set `color` := color8
@@ -149,18 +156,18 @@ let `[internal] vanishing radius` = tol in:
                                           block:
                                             let `w` = (((y / jbar) + 1:R:C) / ((x / j) - (y / jbar))) in:
                                               block:
-                                                let `[internal] fresh #40` = 0 in:
-                                                  let `[internal] fresh #41` = [internal] iteration limit in:
+                                                let `[internal] fresh #41` = 0 in:
+                                                  let `[internal] fresh #42` = [internal] iteration limit in:
                                                     block:
-                                                      if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #40 < [internal] fresh #41)) then:
-                                                        do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #40 < [internal] fresh #41)):
+                                                      if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #41 < [internal] fresh #42)) then:
+                                                        do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #41 < [internal] fresh #42)):
                                                           block:
                                                             set `w` := (((((2:R:C * (w ^ 3:R:C)) / 3:R:C) + (w ^ 2:R:C)) + (2:R:C * w)) + (1:R / 3:R):C)
-                                                            set `[internal] fresh #40` := ([internal] fresh #40 + 1)
+                                                            set `[internal] fresh #41` := ([internal] fresh #41 + 1)
                                                       else:
                                                         no-op
-                                                      set `[internal] iteration count` := [internal] fresh #40
-                                                      set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
+                                                      set `[internal] iteration count` := [internal] fresh #41
+                                                      set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
                                                 if ([internal] escape radius < |w|) then:
                                                   block:
                                                     set `color` := color8
@@ -180,18 +187,18 @@ let `[internal] vanishing radius` = tol in:
                                             block:
                                               let `w` = (((y / j) + 1:R:C) / ((x / jbar) - (y / j))) in:
                                                 block:
-                                                  let `[internal] fresh #40` = 0 in:
-                                                    let `[internal] fresh #41` = [internal] iteration limit in:
+                                                  let `[internal] fresh #41` = 0 in:
+                                                    let `[internal] fresh #42` = [internal] iteration limit in:
                                                       block:
-                                                        if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #40 < [internal] fresh #41)) then:
-                                                          do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #40 < [internal] fresh #41)):
+                                                        if (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #41 < [internal] fresh #42)) then:
+                                                          do-while (!(([internal] escape radius < |w|) or ((|(w - j)| < [internal] vanishing radius) or (|(w - jbar)| < [internal] vanishing radius))) and ([internal] fresh #41 < [internal] fresh #42)):
                                                             block:
                                                               set `w` := (((((2:R:C * (w ^ 3:R:C)) / 3:R:C) + (w ^ 2:R:C)) + (2:R:C * w)) + (1:R / 3:R):C)
-                                                              set `[internal] fresh #40` := ([internal] fresh #40 + 1)
+                                                              set `[internal] fresh #41` := ([internal] fresh #41 + 1)
                                                         else:
                                                           no-op
-                                                        set `[internal] iteration count` := [internal] fresh #40
-                                                        set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
+                                                        set `[internal] iteration count` := [internal] fresh #41
+                                                        set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
                                                   if ([internal] escape radius < |w|) then:
                                                     block:
                                                       set `color` := color8
@@ -213,5 +220,12 @@ let `[internal] vanishing radius` = tol in:
                                             else:
                                               block:
                                                 set `color` := Color 0 0 0
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
+                        block:
+                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                  else:
+                    no-op
 
 

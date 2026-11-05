@@ -16,6 +16,7 @@ module FractalStream.Settings
   , ClassStyle(..)
   , noClassStyle
   , defaultSettings
+  , defaultSphereShading
   , defaultEditorFont
   , editorFont
   , settingsFile
@@ -70,6 +71,10 @@ data Settings = Settings
     -- ^ Changes to how code editors color each class of a script's spans
     -- ("Language.Editor.Highlight", by 'Language.Editor.Highlight.highlightName'),
     -- in a light window and in a dark one.
+  , setSphereShading  :: Int
+    -- ^ How strongly a viewer showing the Riemann sphere shades the globe,
+    -- as if lit from the upper left, in front of it, in percent: from 0
+    -- (no shading) to 100 ("Actor.Viewer.Sphere.onTheSphere").
   , setOther          :: KM.KeyMap Value
     -- ^ Keys this version doesn't know, kept as they are.
   }
@@ -92,7 +97,12 @@ noClassStyle :: ClassStyle
 noClassStyle = ClassStyle Nothing Nothing Nothing Nothing Nothing
 
 defaultSettings :: Settings
-defaultSettings = Settings Nothing Nothing Nothing False False True False Map.empty Map.empty KM.empty
+defaultSettings = Settings Nothing Nothing Nothing False False True False Map.empty Map.empty defaultSphereShading KM.empty
+
+-- | How strongly a sphere viewer shades the globe, unless the settings
+-- say: noticeably, though the far side never goes dark.
+defaultSphereShading :: Int
+defaultSphereShading = 75
 
 -- | The platform's usual fixed-width font.
 defaultEditorFont :: String
@@ -154,13 +164,18 @@ readSettings path contents = case YAML.decodeEither' contents of
         (folds, foldWarnings) = flag "fold-code-blocks" False
         (lightColors, lightWarnings) = classStyles "editor-colors-light" (KM.lookup "editor-colors-light" o)
         (darkColors, darkWarnings) = classStyles "editor-colors-dark" (KM.lookup "editor-colors-dark" o)
+        (shading, shadingWarnings) = case KM.lookup "sphere-shading" o of
+          Nothing -> (defaultSphereShading, [])
+          Just (Number n) | n >= 0, n <= 100, n == fromIntegral (round n :: Int) -> (round n, [])
+          Just _ -> (defaultSphereShading, ["ignoring the sphere-shading setting, which should be a whole number from 0 to 100"])
         other = foldr KM.delete o [ "projects-folder", "editor-font", "editor-font-size"
                                   , "line-numbers", "emacs-keys", "math-symbols", "fold-code-blocks"
-                                  , "editor-colors-light", "editor-colors-dark" ]
-    in ( Settings folder font fontSize numbers emacs symbols folds lightColors darkColors other
+                                  , "editor-colors-light", "editor-colors-dark", "sphere-shading" ]
+    in ( Settings folder font fontSize numbers emacs symbols folds lightColors darkColors shading other
        , map (("In " ++ quoted path ++ ", ") ++)
              (folderWarnings ++ fontWarnings ++ fontSizeWarnings ++ numberWarnings
-              ++ emacsWarnings ++ symbolWarnings ++ foldWarnings ++ lightWarnings ++ darkWarnings) )
+              ++ emacsWarnings ++ symbolWarnings ++ foldWarnings ++ lightWarnings ++ darkWarnings
+              ++ shadingWarnings) )
   Right _ -> (defaultSettings, [quoted path ++ " isn't a set of settings, so it's being ignored"])
 
 -- | The settings file's contents for these settings. A setting that's
@@ -177,6 +192,8 @@ writeSettings Settings{..} = encodeYaml $ Object $ KM.union
     , if setFoldCodeBlocks then Just ("fold-code-blocks", Bool True) else Nothing
     , colors "editor-colors-light" setEditorColorsLight
     , colors "editor-colors-dark" setEditorColorsDark
+    , if setSphereShading == defaultSphereShading then Nothing
+      else Just ("sphere-shading", Number (fromIntegral setSphereShading))
     ]))
   setOther
 

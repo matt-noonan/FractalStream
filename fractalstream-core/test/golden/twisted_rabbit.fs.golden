@@ -25,11 +25,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    let `[internal] fresh #29` = 0 in:
-                      let `[internal] fresh #30` = [internal] iteration limit in:
+                    let `[internal] fresh #30` = 0 in:
+                      let `[internal] fresh #31` = [internal] iteration limit in:
                         block:
-                          if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #29 < [internal] fresh #30)) then:
-                            do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #29 < [internal] fresh #30)):
+                          if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #30 < [internal] fresh #31)) then:
+                            do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #30 < [internal] fresh #31)):
                               block:
                                 block:
                                   set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
@@ -42,11 +42,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                               set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
                                       else:
                                         no-op
-                                set `[internal] fresh #29` := ([internal] fresh #29 + 1)
+                                set `[internal] fresh #30` := ([internal] fresh #30 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #29
-                          set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                          set `[internal] iteration count` := [internal] fresh #30
+                          set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
                     if [internal] stuck then:
                       block:
                         set `color` := Color 0 0 0
@@ -60,5 +60,12 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   block:
                                     set `s` := (cos(((s * 3.141592653589793) / 10:R)) ^ 2:R)
                                     set `color` := blend(s, c1, c2)
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
+                        block:
+                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                  else:
+                    no-op
 
 
