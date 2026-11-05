@@ -1,24 +1,24 @@
 script: |
   @config "Input θ = p / q for S_θ"
   row:
-    p : Z as "" <- 9
+    p : Z as "" := 9
     text "/"
-    q : Z as "" <- 56
+    q : Z as "" := 56
 
   @config "Computed values"
-  kneading_seq : Text as "Kneading sequence" <- "42"
-  iters : List of Z as "Kneading sequence for the script's eyes only:" <- []
+  kneading_seq : Text as "Kneading sequence" := "42"
+  iters : List of Z as "Kneading sequence for the script's eyes only:" := []
   row:
-    μ : Z as "Preperiod" <- 0
-    λ : Z as "Period" <- 0
+    μ : Z as "Preperiod" := 0
+    λ : Z as "Period" := 0
 
   @config "Configuration"
-  next_leg : Z <- 0
-  spider : List of List of C as "Current spider representative" <- []
-  spider_ready : Boolean as "Spider representative ready?" <- false
-  contour : List of C as "γ =" <- []
-  encloses_zero : Boolean as "Encloses 0?" <- false
-  foot : R as "Foot radius:" <- 0.03
+  next_leg : Z := 0
+  spider : List of List of C as "Current spider representative" := []
+  spider_ready : Boolean as "Spider representative ready?" := false
+  contour : List of C as "γ =" := []
+  encloses_zero : Boolean as "Encloses 0?" := false
+  foot : R as "Foot radius:" := 0.03
 
   @viewer "Standard spider" center=0 pixelSize=1/128
   color <- white
@@ -81,8 +81,8 @@ script: |
     iters <- []
     S1 := 0
     S2 := 1
-    A  : Z <- 2
-    B  : Z <- 3
+    A  : Z := 2
+    B  : Z := 3
 
     kneading_seq <- ""
 
@@ -158,7 +158,7 @@ script: |
     erase
     spider <- []
     next_leg <- 0
-    R : R <- 10
+    R : R := 10
 
     # Move the first foot of the spider to 0
     b := -e^{2 pi i p / q}
@@ -169,7 +169,7 @@ script: |
     delta := 1 / (λ + μ)
     ci := 0
 
-    leg : List of C <- []
+    leg : List of C := []
 
     while true up to μ + λ times:
       zi := omega + b
@@ -289,7 +289,7 @@ script: |
   on button "Apply spider map":
     erase
 
-    new_spider : List of List of C <- []
+    new_spider : List of List of C := []
     z_2 := (spider @ 2) @ 1
 
     j := 1
@@ -326,8 +326,8 @@ script: |
       # TODO: deal with *s in the kneading sequence
       S1 := 0
       S2 := 1
-      A  : Z <- 2
-      B  : Z <- 3
+      A  : Z := 2
+      B  : Z := 3
       symbol := iters @ j
       last_pre := 0
       if symbol = A:

@@ -1,14 +1,14 @@
 script: |
   @common
   # iterate f until stop is true
-  let f(z) = z^2 + C
-  let stop(z) = |z| > escape_radius
+  f(z) := z^2 + C
+  stop(z) := |z| > escape_radius
 
   @config "Configuration"
-  C : C as "C" <- -0.1226 + 0.7449i
-  twist_center : C as "Center of twist:" <- -0.267 + 0.478i
-  r0 : R as "Inner radius" <- 0.2
-  r1 : R as "Outer radius" <- 0.5
+  C : C as "C" := -0.1226 + 0.7449i
+  twist_center : C as "Center of twist:" := -0.267 + 0.478i
+  r0 : R as "Inner radius" := 0.2
+  r1 : R as "Outer radius" := 0.5
 
   @viewer "Twisted rabbit" center=0 pixelSize=1/128
   until stop(z):

@@ -385,15 +385,15 @@ translateT isReal title src body = do
         | otherwise = [("C", "C")]
       configNames = Set.fromList (map fst defaults) <> Set.fromList (map fst planeParams)
       paramFields =
-        [ v ++ " : " ++ t ++ " as \"" ++ v ++ " =\" <- 0" | (v, t) <- planeParams ] ++
-        [ v ++ " : " ++ (if exprTy (tyOf . nameOf) e == TReal then "R" else "C") ++ " as \"" ++ v ++ " =\" <- "
+        [ v ++ " : " ++ t ++ " as \"" ++ v ++ " =\" := 0" | (v, t) <- planeParams ] ++
+        [ v ++ " : " ++ (if exprTy (tyOf . nameOf) e == TReal then "R" else "C") ++ " as \"" ++ v ++ " =\" := "
             ++ expr ctx0 0 e
         | (v, e) <- defaults ]
   forM_ defaults $ \(v, e) -> unless (null (exprVars e)) $
     warn ("The default for `" ++ v ++ "` mentions other variables, which a default can't do now.")
   let parameters = [ Line "@config \"Parameters\"" ] ++ map Line paramFields
       colorsTab = Line "@config \"Colors\"" :
-        [ Line (v ++ " : Color as " ++ quote n ++ " <- " ++ flagColor n) | (n, v) <- flagVars ]
+        [ Line (v ++ " : Color as " ++ quote n ++ " := " ++ flagColor n) | (n, v) <- flagVars ]
 
   -- viewers
   viewers <- forM planes $ \plane -> do
@@ -466,7 +466,7 @@ translateT isReal title src body = do
         warn ("The probe " ++ quote title' ++ " reports more than one thing; its tool shows the last one, at the end.")
       bodyDocs <- translateBody ctx predeclared cmds
       pure [ Line ("@tool " ++ quote title' ++ " for=" ++ quote viewerTitle)
-           , Line (field ++ " : " ++ fieldTy ++ " as " ++ quote title' ++ " <- " ++ fieldDefault fieldTy)
+           , Line (field ++ " : " ++ fieldTy ++ " as " ++ quote title' ++ " := " ++ fieldDefault fieldTy)
            , Line ("on click at " ++ clicked ++ ":")
            , Nest (start' ++ bodyDocs ++ [Line (field ++ " <- " ++ fieldValue)]) ]
 
@@ -474,7 +474,7 @@ translateT isReal title src body = do
   -- and back again at t = 1
   let common =
         [ Line "@common"
-        , Line ("let " ++ shadeFn ++ "(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...")
+        , Line (shadeFn ++ "(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...")
         , Line "  else blend(-sin(2 pi t), light c, c)" ]
       stanzas = [parameters | not (null paramFields)] ++ [colorsTab, common] ++ viewers ++ probeTools
       scriptLines = intercalate [""] (map (render 0) stanzas)

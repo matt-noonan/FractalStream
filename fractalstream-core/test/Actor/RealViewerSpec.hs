@@ -68,7 +68,7 @@ color <- if x < y then red else blue
     it "binds its coordinates as reals, with its pixel width and height" $
       ok [r|
 @viewer "Plane" xvar=x yvar=y
-w : R <- x + y
+w : R := x + y
 color <- if pixel_height > pixel_width + pixel_size then red else blue
 |]
 
@@ -81,8 +81,8 @@ color <- if pixel_height > 0 then red else blue
     it "sets real configuration variables named as its coordinates" $
       ok [r|
 @config "Parameters"
-a : R <- 1.4
-b : R <- 0.3
+a : R := 1.4
+b : R := 0.3
 
 @viewer "Parameter plane" xvar=a yvar=b
 color <- if a > b then red else blue
@@ -91,8 +91,8 @@ color <- if a > b then red else blue
     it "rejects a coordinate that's a complex configuration variable" $
       failsWith [r|
 @config "Parameters"
-a : C <- 0
-b : R <- 0
+a : C := 0
+b : R := 0
 
 @viewer "Parameter plane" xvar=a yvar=b
 pass
@@ -101,7 +101,7 @@ pass
     it "rejects a variable already named `pixel_height`" $
       failsWith [r|
 @config "Parameters"
-pixel_height : R <- 1
+pixel_height : R := 1
 
 @viewer "Plane" xvar=x yvar=y
 pass
@@ -137,8 +137,8 @@ on refresh:
     it "builds with its coordinates, center, and aspect" $ do
       result <- buildEnsembleFromScript [r|
 @config "Parameters"
-a : R <- 1.4
-b : R <- 0.3
+a : R := 1.4
+b : R := 0.3
 
 @viewer "Parameter plane" xvar=a yvar=b center=(1, 0.25) aspect=1/2
 pass

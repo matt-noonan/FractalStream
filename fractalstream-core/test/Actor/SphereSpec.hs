@@ -95,7 +95,7 @@ spec = do
 
     it "builds a sphere viewer, and keeps a complex viewer's names free" $ do
       checkScript "@viewer \"V\" var=z view=sphere center=\"1 + i\"\nz <- z^2\ncolor <- red\n" `shouldBe` Right ()
-      checkScript "@config \"P\"\nC : C <- 0\n\n@viewer \"V\" var=C view=sphere\nz := 0\niterate z -> z^2 + C until z escapes\n"
+      checkScript "@config \"P\"\nC : C := 0\n\n@viewer \"V\" var=C view=sphere\nz := 0\niterate z -> z^2 + C until z escapes\n"
         `shouldBe` Right ()
   where
     -- (dragging loses a little precision near the rim)

@@ -1,9 +1,9 @@
 script: |
   @common
   # the map, its second iterate, and its critical point
-  let f(z) = z^2 + c
-  let f2(w) = (w^2 + c)^2 + c
-  let critical_point(c) = 0
+  f(z) := z^2 + c
+  f2(w) := (w^2 + c)^2 + c
+  critical_point(c) := 0
   degree := 2
 
   # Color a point by the internal ray its orbit lands on (or by its escape
@@ -82,18 +82,18 @@ script: |
     draw circle at w with radius minRadius
 
   @config "Internal Rays"
-  continuous : Boolean as "continuous = " <- false
-  den : Z as "denominator = " <- 3
+  continuous : Boolean as "continuous = " := false
+  den : Z as "denominator = " := 3
 
   @config "Dynamics"
-  c : C as "c = " <- 0
-  maxIters : Z as "max iterations = " <- 300
-  maxRadius : R as "escape radius = " <- 100.0
-  minRadius : R as "vanishing radius = " <- 0.00001
-  extra_iterations : Z as "extra iterations = " <- 1
+  c : C as "c = " := 0
+  maxIters : Z as "max iterations = " := 300
+  maxRadius : R as "escape radius = " := 100.0
+  minRadius : R as "vanishing radius = " := 0.00001
+  extra_iterations : Z as "extra iterations = " := 1
 
   @config "Orbit Tracker"
-  start : C as "orbit start = " <- 0
+  start : C as "orbit start = " := 0
 
   @viewer "Parameter space" var=c limit=maxIters escape=maxRadius vanish=minRadius center=-0.5 pixelSize=1/200
   z := critical_point(c)

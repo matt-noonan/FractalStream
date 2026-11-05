@@ -51,14 +51,14 @@ Declaring any of these names yourself is an error (duplicate variable).
 Body statements:
 
 ```
-name : Type <- default                      # a field; the type is required
-name : Type as "Label" <- default           # with a display label
-mode : Z as "Mode" choice { "A", "B", "C" } <- 0   # dropdown; value is 0-based index
+name : Type := default                      # a field; the type is required
+name : Type as "Label" := default           # with a display label
+mode : Z as "Mode" choice { "A", "B", "C" } := 0   # dropdown; value is 0-based index
 text "Some explanatory text"
 button "Label"                              # @tool declarations only (an error in @config)
 row:                                        # lay out the indented fields side by side
-  a : R <- 1
-  b : R <- 2
+  a : R := 1
+  b : R := 2
 tab "Label":                                # consecutive tab blocks form one tab group
   ...
 ```
@@ -71,8 +71,8 @@ shows the raw text). Defaults are expressions (`2 pi / 3`, `-0.12 + 0.75i`,
 
 ### `@common`
 
-Holds only definitions: variable declarations (`x := ...`, `x : T <- ...`),
-functions (`let f(z) = ...`), and code blocks (`define name: ...`). No
+Holds only definitions: variable declarations (`x := ...`, `x : T := ...`),
+functions (`f(z) := ...`), and code blocks (`define name: ...`). No
 attributes. Each viewer and tool handler gets the common definitions it
 uses (and whatever those use), as if written at its top, and each is
 type-checked separately in that script. So a common definition can mention a
@@ -226,7 +226,7 @@ A project's own colorizer: settings declared like `@config` fields, then
 
 ```
 @colorizer "Escaped"
-inside : Color as "Inside" <- black
+inside : Color as "Inside" := black
 define colorize(z, t = iterations / 20):
   color <- if z escaped then rainbow(t) else inside
 ```
@@ -346,7 +346,7 @@ number.) A power of integers used as a real is computed as a real:
 
 
 **Reserved words** that can't be variable or function names: `e`, `i`,
-`pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`, `let`,
+`pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`,
 `times`, `text`, `escapes`, `vanishes`, `stops`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
 `mod`, `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
@@ -355,7 +355,7 @@ complex conjugate; using one for a variable, function, or code block is
 reported as such). In particular,
 **loop counters can't be called `i`** (use `k`, `j`, `n`) and **no variable
 can be called `e`**. Also avoid `C` as a type-vs-variable confusion: `C : C
-<- 0` is legal and common (a complex variable named C).
+:= 0` is legal and common (a complex variable named C).
 
 ## 3. Expressions
 
@@ -425,13 +425,13 @@ Lists (1-based):
   `find(xs, x -> pred, fallback)`
 - `@` and `@@` bind like multiplication: `xs @ k = 3` compares the item,
   and `xs @ k + 1` is `(xs @ k) + 1`; write `xs @ (k + 1)` for the next one.
-- An empty list needs a declared type: `xs : List of C <- []`.
+- An empty list needs a declared type: `xs : List of C := []`.
 
 ## 4. Statements
 
 ```
 x := expr                 # declare, type inferred from all later uses
-x : R <- expr             # declare with a type
+x : R := expr             # declare with a type
 x <- expr                 # assign an existing variable
 x, y <- e1, e2            # assign several at once (right side computed first;
                           # `x, y <- y, x` swaps); also (x, y) <- p for a pair p
@@ -455,8 +455,8 @@ with first x matching pred in xs:
   ...
 else:
   ...
-let f(z) = expr           # function; no recursion
-let g(a, b) = a f(b)
+f(z) := expr           # function; no recursion
+g(a, b) := a f(b)
 define shade(c):          # named code block, parameters optional
   ...
 run shade(blue)           # `run name` with no arguments, or run name(a, b)
@@ -476,9 +476,9 @@ times`. After a loop, `iterations` is how many times its body ran, and
 condition. `for each` is not limited and doesn't set them. Use `while
 true up to N times:` for a fixed number of iterations.
 
-`let` functions: the body is one expression; parameters are local; any
+Functions (`f(z) := ...`): the body is one expression; parameters are local; any
 other names refer to what's in scope where the function is *used* (so a
-common `let f(z) = z^2 + C` works in a viewer whose `var=C`). A function
+common `f(z) := z^2 + C` works in a viewer whose `var=C`). A function
 works at whatever numeric type it's called with. No recursion.
 
 `define`/`run`: the block runs as if pasted at the `run` site; parameters
@@ -563,6 +563,6 @@ viewer color a pixel by a condition and assert on it.
 | `No variable named w is defined here.` | out of scope (declared inside an `if`/loop), typo, or a refresh handler using the viewer coordinate |
 | `I expected a real number here, but z is a complex number.` | assigning a wider type to a declared variable; use `re`, `|…|`, or declare it wider |
 | `I expected an integer here, but the result of an arithmetic operation is a real number.` | `/` on integers; use `//` or `round(...)` |
-| `No function named f is defined here.` | recursion, or using a function before its `let` |
+| `No function named f is defined here.` | recursion, or using a function before its definition |
 | `A list index was out of range, so this tool's changes were discarded.` (from fsrun, or a dialog in the app) | a tool handler indexed a list out of range; the app switches back to Navigate |
 | `warning: viewer "V": Magenta pixels: ...` | list index out of range, or list/text scratch memory exhausted, in some pixels |

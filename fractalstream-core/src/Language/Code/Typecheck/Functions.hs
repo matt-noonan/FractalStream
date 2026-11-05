@@ -1,4 +1,4 @@
--- | User-defined functions (@let f(x, y) = e@), and their expansion:
+-- | User-defined functions (@f(x, y) := e@), and their expansion:
 -- each call is replaced by local bindings of the (freshly renamed)
 -- parameters around a copy of the body, so that a function is effectively
 -- typechecked anew at each call, at the argument types used there.

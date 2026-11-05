@@ -31,7 +31,7 @@ import qualified Data.Set as Set
 import Data.Set (Set)
 import Data.Maybe (listToMaybe, maybeToList)
 
-import Language.Parser.Tokenizer (Token(..))
+import Language.Parser.Tokenizer (Token(..), functionDefinitionBody)
 import Language.Editor.Lines
 import qualified Language.Value.Builtins as Builtins
 
@@ -217,8 +217,8 @@ definitions s = Map.fromListWith (\_ old -> old) (concatMap lineDefs (zip [0 :: 
 -- | Definitions that can appear in any code.
 codeDefs :: [Token] -> [(String, Highlight)]
 codeDefs toks = case toks of
-  Let_ : Identifier f : OpenParen : rest -> (f, Function) : params rest
-  Let_ : Identifier f : _ -> [(f, Function)]
+  -- `f(x, y) := ...` (before tuple declarations, which it also looks like)
+  Identifier f : rest@(OpenParen : ps) | Just _ <- functionDefinitionBody rest -> (f, Function) : params (takeWhile (/= CloseParen) ps)
   Identifier "define" : Identifier f : OpenParen : rest -> (f, CodeBlock) : params rest
   Identifier "define" : Identifier f : _ -> [(f, CodeBlock)]
   Identifier "on" : rest -> handlerPoints rest
@@ -309,7 +309,7 @@ tokenClass = \case
   NumberF _ -> Just NumberLiteral
   ScientificNotation _ -> Just NumberLiteral
   Quoted _ -> Just StringLiteral
-  t | t `elem` [If, Then, Else, Or_, And_, Not_, Let_, Escapes, Vanishes, Stops, TimesKeyword] -> Just Keyword
+  t | t `elem` [If, Then, Else, Or_, And_, Not_, Escapes, Vanishes, Stops, TimesKeyword] -> Just Keyword
     | t `elem` [Euler, Pi, I, True_, False_, Iterations, Stuck] -> Just BuiltinValue
     | t `elem` [TextKeyword, AppendKeyword, PrependKeyword, JoinKeyword, RemoveKeyword, FindKeyword
                , TransformKeyword, RangeKeyword, LengthKeyword, DiffKeyword] -> Just BuiltinFunction

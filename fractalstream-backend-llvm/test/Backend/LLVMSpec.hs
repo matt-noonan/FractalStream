@@ -94,7 +94,7 @@ spec = do
               $ declare @"[internal] escape radius" RealType
               $ declare @"[internal] vanishing radius" RealType
               $ endOfDecls
-      let mandel = "\nC : C <- x + i y\nz : C <- 0\nk : Z <- 0\n\
+      let mandel = "\nC : C := x + i y\nz : C := 0\nk : Z := 0\n\
                    \while |z|^2 < maxRadius^2 and k < maxIter up to 1000 times:\n\
                    \  z <- z^2 + C\n\
                    \  k <- k + 1\n\
@@ -388,7 +388,7 @@ spec = do
             , "p <- (2.0, 3.0)"
             , "ps := [(1.0, 2.0), (3.0, 4.0)]"
             , "ps <- append(ps, p)"
-            , "bs : List of (Boolean x C) <- [(true, 1 + i)]"
+            , "bs : List of (Boolean x C) := [(true, 1 + i)]"
             , "count := 0"
             , "for each q in ps:"
             , "  count <- count + 1"

@@ -34,7 +34,7 @@ runWithX (Scalar xt x) input = withKnownType xt $
   in first (`ppFullError` input)
      $ fmap ((`evalState` (ctx, ()))
              . (\c -> simulate noDraw c >> eval (Var (Proxy @"x") xt bindingEvidence)))
-     $ parseCode env noCommonDefs ("n : Z <- 0\n" ++ input)
+     $ parseCode env noCommonDefs ("n : Z := 0\n" ++ input)
 
 runWithXY :: forall xt yt
            . Scalar xt
@@ -51,7 +51,7 @@ runWithXY (Scalar xt x) (Scalar yt y) input = withKnownType xt $ withKnownType y
   in first (`ppFullError` input)
      $ fmap ((`evalState` (ctx, ()))
              . (\c -> simulate noDraw c >> eval (Var (Proxy @"x") xt bindingEvidence)))
-     $ parseCode (envProxy Proxy) noCommonDefs ("n : Z <- 0\n" ++ input)
+     $ parseCode (envProxy Proxy) noCommonDefs ("n : Z := 0\n" ++ input)
 
 runWithXYC :: forall xt yt
            . Scalar xt
@@ -70,7 +70,7 @@ runWithXYC (Scalar xt x) (Scalar yt y) input =
   in first (`ppFullError` input)
      $ fmap ((`evalState` (ctx, ()))
              . (\c -> simulate noDraw c >> eval (Var (Proxy @"color") ColorType bindingEvidence)))
-     $ parseCode (envProxy Proxy) noCommonDefs ("n : Z <- 0\n" ++ input)
+     $ parseCode (envProxy Proxy) noCommonDefs ("n : Z := 0\n" ++ input)
 
 -- | Like 'runWithX' for a real @x@, with a vanishing radius (of 0.0001)
 -- in scope, as approximate comparisons need.
@@ -127,7 +127,7 @@ else:
 
        let p1 = [r|
 x <- 5
-y : Z <- x - 2
+y : Z := x - 2
 if true:
   x <- 2 * y
 else:
@@ -135,7 +135,7 @@ else:
 |]
            p2 = [r|
 x <- 5
-y : Z <- x - 2
+y : Z := x - 2
 if true:
   x <- 2 * y
 |]
@@ -145,7 +145,7 @@ if true:
 
     it "can coerce variable types" $ do
         let p1 = [r|
-k : Z <- 1
+k : Z := 1
 x <- k|]
         runWithX (Scalar RealType 0) p1 `shouldBe` Right 1.0
 
@@ -153,8 +153,8 @@ x <- k|]
 
     it "can parse a checkered Mandelbrot program" $ do
       let mandel = [r|
-C : C <- x + y i
-z : C <- 0
+C : C := x + y i
+z : C := 0
 while |z| < 100:
   z <- z^2 + C
 if |z| < 100:
@@ -214,7 +214,7 @@ x <- xs @ 3|] `shouldBe` Right 0.5
 
     it "infers through function calls" $
       runWithX (Scalar RealType 0) [r|
-let half(t) = t / 2
+half(t) := t / 2
 k := 1
 k <- half(k)
 x <- k|] `shouldBe` Right 0.5
@@ -233,7 +233,7 @@ else:
       runWithX (Scalar RealType 0) [r|
 k := 1
 k <- k + 0.5
-j : Z <- k // 2
+j : Z := k // 2
 x <- j|] `shouldSatisfy` isLeft
 
     it "rejects declarations whose type can't be determined" $
@@ -246,73 +246,73 @@ x <- j|] `shouldSatisfy` isLeft
   describe "when defining functions" $ do
 
     it "inlines calls" $
-      runWithX (Scalar RealType 0) "let f(t) = 2 t + 1\nx <- f(3) + f(0.5)" `shouldBe` Right 9.0
+      runWithX (Scalar RealType 0) "f(t) := 2 t + 1\nx <- f(3) + f(0.5)" `shouldBe` Right 9.0
 
     it "specializes each call at its own argument types" $
       runWithXY (Scalar IntegerType 0) (Scalar ComplexType (0 :+ 1)) [r|
-let sq(t) = t * t
+sq(t) := t * t
 x <- sq(3)
 y <- sq(y)|] `shouldBe` Right 9
 
     it "supports several parameters, nested calls, and calls between functions" $
       runWithX (Scalar RealType 0) [r|
-let f(a, b) = a - b
-let g(t) = f(t, f(1, t))
+f(a, b) := a - b
+g(t) := f(t, f(1, t))
 x <- g(f(5, 2))|] `shouldBe` Right 5.0
 
     it "lets parameters shadow variables in scope" $
-      runWithX (Scalar RealType 2) "let f(x) = x + 1\nx <- f(10)" `shouldBe` Right 11.0
+      runWithX (Scalar RealType 2) "f(x) := x + 1\nx <- f(10)" `shouldBe` Right 11.0
 
     it "captures variables in scope at the definition" $
-      runWithX (Scalar RealType 0) "c : R <- 4\nlet f(t) = t + c\nx <- f(1)" `shouldBe` Right 5.0
+      runWithX (Scalar RealType 0) "c : R := 4\nf(t) := t + c\nx <- f(1)" `shouldBe` Right 5.0
 
     it "scopes functions to the rest of their block" $
       runWithX (Scalar RealType 0) [r|
 if true:
-  let f(t) = t
+  f(t) := t
 x <- f(1)|] `shouldSatisfy` either ("No function named f" `isInfixOf`) (const False)
 
     it "rejects bodies that refer to undefined variables" $
-      runWithX (Scalar RealType 0) "let f(t) = t + q\nx <- f(1)" `shouldSatisfy` isLeft
+      runWithX (Scalar RealType 0) "f(t) := t + q\nx <- f(1)" `shouldSatisfy` isLeft
 
     it "rejects calls with the wrong number of arguments" $
-      runWithX (Scalar RealType 0) "let f(a, b) = a + b\nx <- f(1)" `shouldSatisfy` isLeft
+      runWithX (Scalar RealType 0) "f(a, b) := a + b\nx <- f(1)" `shouldSatisfy` isLeft
 
     it "rejects function names that clash with variables" $
-      runWithX (Scalar RealType 0) "let x(t) = t\npass" `shouldSatisfy` isLeft
+      runWithX (Scalar RealType 0) "x(t) := t\npass" `shouldSatisfy` isLeft
 
   describe "when differentiating user-defined functions" $ do
 
     it "differentiates calls inside diff" $
-      runWithX (Scalar RealType 2) "let f(t) = t^3\nx <- diff(x, f(x))" `shouldBe` Right 12.0
+      runWithX (Scalar RealType 2) "f(t) := t^3\nx <- diff(x, f(x))" `shouldBe` Right 12.0
 
     it "desugars f' to a derivative, at any numeric argument" $ do
-      runWithX (Scalar RealType 0) "let f(t) = t^3\nx <- f'(2)" `shouldBe` Right 12.0
-      runWithX (Scalar RealType 0) "let f(t) = t^3\nx <- f'(0.5)" `shouldBe` Right 0.75
+      runWithX (Scalar RealType 0) "f(t) := t^3\nx <- f'(2)" `shouldBe` Right 12.0
+      runWithX (Scalar RealType 0) "f(t) := t^3\nx <- f'(0.5)" `shouldBe` Right 0.75
       runWithXY (Scalar ComplexType 0) (Scalar ComplexType (0 :+ 1)) [r|
-let f(t) = t*t + 1
+f(t) := t*t + 1
 x <- f'(y)|] `shouldBe` Right (0 :+ 2)
 
     it "supports higher derivatives" $
-      runWithX (Scalar RealType 0) "let f(t) = t^3\nx <- f''(2)" `shouldBe` Right 12.0
+      runWithX (Scalar RealType 0) "f(t) := t^3\nx <- f''(2)" `shouldBe` Right 12.0
 
     it "differentiates through calls to other functions" $
       runWithX (Scalar RealType 0) [r|
-let f(t) = t^3
-let g(s) = f(s) + 2 s
+f(t) := t^3
+g(s) := f(s) + 2 s
 x <- g'(1)|] `shouldBe` Right 5.0
 
     it "differentiates derivatives inside diff" $
-      runWithX (Scalar RealType 2) "let f(t) = t^3\nx <- diff(x, f'(x))" `shouldBe` Right 12.0
+      runWithX (Scalar RealType 2) "f(t) := t^3\nx <- diff(x, f'(x))" `shouldBe` Right 12.0
 
     it "differentiates through local bindings by the chain rule" $ do
       -- f'(2x) = 12 x^2, so its derivative at x = 1 is 24
-      runWithX (Scalar RealType 1) "let f(t) = t^3\nx <- diff(x, f'(2x))" `shouldBe` Right 24.0
-      runWithX (Scalar RealType 1) "let f(t) = t^3\nx <- diff(x, 1 + x f'(2x))" `shouldBe` Right 36.0
-      runWithX (Scalar RealType 2) "let f(t) = t^3\nlet g(s) = f(s + 1)\nx <- diff(x, g(x x))" `shouldBe` Right 300.0
+      runWithX (Scalar RealType 1) "f(t) := t^3\nx <- diff(x, f'(2x))" `shouldBe` Right 24.0
+      runWithX (Scalar RealType 1) "f(t) := t^3\nx <- diff(x, 1 + x f'(2x))" `shouldBe` Right 36.0
+      runWithX (Scalar RealType 2) "f(t) := t^3\ng(s) := f(s + 1)\nx <- diff(x, g(x x))" `shouldBe` Right 300.0
 
     it "suggests diff for f' of functions of several variables" $
-      runWithX (Scalar RealType 0) "let f(a, b) = a b\nx <- f'(1, 2)" `shouldSatisfy`
+      runWithX (Scalar RealType 0) "f(a, b) := a b\nx <- f'(1, 2)" `shouldSatisfy`
         either ("use diff instead, like diff(a, f(a, b))" `isInfixOf`) (const False)
 
   describe "when defining and running code" $ do
@@ -434,8 +434,8 @@ x <- k|] `shouldBe` Right 4
 
   describe "when writing pair types" $
     it "accepts × as well as x" $ do
-      runWithX (Scalar RealType 0) "p : R × R <- (1.5, 2)\nx <- (1.5 : R) × 2" `shouldBe` Right 3.0
-      runWithX (Scalar RealType 0) "p : R x R <- (1.5, 2)\nx <- 2 * 1.5" `shouldBe` Right 3.0
+      runWithX (Scalar RealType 0) "p : R × R := (1.5, 2)\nx <- (1.5 : R) × 2" `shouldBe` Right 3.0
+      runWithX (Scalar RealType 0) "p : R x R := (1.5, 2)\nx <- 2 * 1.5" `shouldBe` Right 3.0
 
   describe "when a built-in name is used for the script's own" $ do
 
@@ -446,12 +446,12 @@ x <- k|] `shouldBe` Right 4
       failsWith "define foo(bar):\n  bar <- bar + 1\nrun foo(x)"
         "`bar` is a built-in function (the complex conjugate), so it can't also name a variable"
       failsWith "i := 0" "`i` is the imaginary unit, so it can't also name a variable. Try another name (k, j, n, ...)."
-      failsWith "let sin(t) = t\nx <- sin(1)" "`sin` is a built-in function, so it can't also name a function"
+      failsWith "sin(t) := t\nx <- sin(1)" "`sin` is a built-in function, so it can't also name a function"
       failsWith "define re:\n  pass" "`re` is a built-in function (the real part), so it can't also name a code block"
       failsWith "for each red in [1, 2]:\n  pass" "`red` is a color's name"
-      failsWith "length : Z <- 3" "`length` is a built-in function"
+      failsWith "length : Z := 3" "`length` is a built-in function"
       failsWith "x <- transform([1.0], arg -> arg + 1) @ 1" "`arg` is a built-in function (the argument)"
 
     it "leaves built-ins used as built-ins alone" $ do
       runWithX (Scalar RealType 0) "x <- re(2 + i) + cos(0)" `shouldBe` Right 3.0
-      runWithX (Scalar RealType 0) "let f(t) = t + 1\nx <- f(re(i))" `shouldBe` Right 1.0
+      runWithX (Scalar RealType 0) "f(t) := t + 1\nx <- f(re(i))" `shouldBe` Right 1.0

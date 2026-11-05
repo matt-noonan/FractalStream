@@ -9,8 +9,8 @@ script: |
   # steps of Euler's method, as in the original FractalStream's version
   # of this script.
   @config "Pendulum"
-  γ : ℝ as "Damping γ =" ⟵ 0.285
-  𝝎_0 : ℝ as "Natural frequency 𝝎_0 =" ⟵ sqrt(1.485)
+  γ : ℝ as "Damping γ =" ≔ 0.285
+  𝝎_0 : ℝ as "Natural frequency 𝝎_0 =" ≔ sqrt(1.485)
 
   @common
   # One period of the forcing, from t = 0 to t = 2π, in ten steps. (The

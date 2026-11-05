@@ -1,11 +1,11 @@
 script: |
   @config "Configuration"
-  use_arenberg : Boolean as "Use Arenberg rainbow" <- false
-  speed : R as "Iterations per color cycle: " <- 20
-  C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
+  use_arenberg : Boolean as "Use Arenberg rainbow" := false
+  speed : R as "Iterations per color cycle: " := 20
+  C : C as "f(z) = z^2 +" := -0.11 + 0.78i
 
   @common
-  let palette(t) = if use_arenberg then arenberg(t) else rainbow(t)
+  palette(t) := if use_arenberg then arenberg(t) else rainbow(t)
   define draw:
     iterate z -> z^2 + C until z escapes
     color <- black

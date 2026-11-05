@@ -508,21 +508,21 @@ Source text goes through three stages before it becomes a typed AST:
    For code, `Language.Code.Infer` first infers the types of `x := e`
    declarations: every assignment to `x` is a lower bound, solved by fixpoint
    iteration re-running `synth` in *lenient* mode (`TypeEnv{tyLenient}`); the
-   solved types are written back as if annotated (`x : T <- e`).
+   solved types are written back as if annotated (`x : T := e`).
 3. **Elaboration**: `Language.Value.Elaborate` builds `Value '(env, t)` from a
    `TExpr` (no backtracking; conversions inserted at node boundaries), and
    `Language.Code.Typecheck` (`runParsedCode`) builds `Code env`, resolving
    scoping (a declaration or function definition scopes over the rest of its
    block) and inlining user functions.
 
-User functions (`let f(x, y) = e`, `Language.Code.Typecheck.Functions`) are
+User functions (`f(x, y) := e`, `Language.Code.Typecheck.Functions`) are
 inlined at each call as `ELet`s (typed `LocalLet`s) binding freshly renamed
 parameters, so each call is typechecked at its own argument types. `f'(a)` /
 `f''(a)` (`EDerivCall`) expands to `let t = a in diff(t, f(t))` with `t` fresh
 and widened to at least real (`EWiden`). The
 grammar must know function names to parse `f(z)` as a call rather than an
 implicit multiplication, so each stanza's tokens are pre-scanned for
-`let NAME(` (`withDefinedFunctions`, stored in `CommonDefs{funNames}`).
+a line starting `NAME(params) :=` (`withDefinedFunctions`, stored in `CommonDefs{funNames}`).
 
 `diff(x, e)` is differentiated symbolically on the surface AST
 (`Language.Value.Differentiate`), during typing: the typing pass replaces the
@@ -1019,7 +1019,7 @@ clamped, so a window on a second display stays there.
 ```yaml
 script: |
   @config "Configuration"
-  C : C as "C =" <- -0.11 + 0.78i
+  C : C as "C =" := -0.11 + 0.78i
 
   @viewer "Julia set" var=z
   iterate z -> z^2 + C until z escapes
@@ -1106,8 +1106,8 @@ template flow went with them (the old templates are now the library's
 ## Scripting Language
 
 See `LANGUAGE.md` for full docs. Key points:
-- Assignment: `z <- z^2 + C`; new vars: `z : C <- 0`, or `z := 0` (type inferred)
-- Functions: `let f(z) = z^2 + C` (inlined at each call); `f'(z)` = `diff(z, f(z))`
+- Assignment: `z <- z^2 + C`; new vars: `z : C := 0`, or `z := 0` (type inferred)
+- Functions: `f(z) := z^2 + C` (inlined at each call); `f'(z)` = `diff(z, f(z))`
 - Types: `Z` (integer), `R` (real), `C` (complex), `Color`, `Boolean`, `Text`, `List of T`
 - Loops: `while`, `until`, `repeat...while`, `iterate z -> expr until/while cond`
 - Special vars: `iterations` (loop count), `stuck` (hit iteration limit)

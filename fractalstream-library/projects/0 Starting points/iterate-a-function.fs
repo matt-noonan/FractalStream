@@ -1,6 +1,6 @@
 script: |
   @common
-  let f(z) = z^2 + i
+  f(z) := z^2 + i
 
   @viewer "Simple complex dynamics"
   iterate z -> f(z) until z escapes

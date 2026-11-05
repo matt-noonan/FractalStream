@@ -1,9 +1,9 @@
 script: |
   @common
-  let f(z) = z^2 + C
+  f(z) := z^2 + C
 
   @config "Configuration"
-  C : C as "Selected value of C:" <- -0.1226 + 0.7449i
+  C : C as "Selected value of C:" := -0.1226 + 0.7449i
 
   @viewer "Parameter plane" var=C center=0 pixelSize=1/128 colorizer="Binary decomposition"
   z := 0

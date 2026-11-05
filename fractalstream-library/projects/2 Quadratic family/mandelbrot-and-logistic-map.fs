@@ -3,9 +3,9 @@ script: |
   text "Use the \"Vertical line\" tool (shortcut v) to compare points between the Mandelbrot set and the logistic map bifurcation diagram."
 
   @config "Bifurcation diagram"
-  warmup : Z as "Warmup iterations" <- 500
-  cycle_length : Z as "Cycle check iterations" <- 200
-  offset : R as "Vertical offset" <- 0.5
+  warmup : Z as "Warmup iterations" := 500
+  cycle_length : Z as "Cycle check iterations" := 200
+  offset : R as "Vertical offset" := 0.5
 
   @viewer "Mandelbrot set + logistic map bifurcations" var=C center="-0.8 + 0.3 i" pixelSize=0.005
   z := 0

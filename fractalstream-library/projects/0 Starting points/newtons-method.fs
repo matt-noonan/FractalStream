@@ -2,10 +2,10 @@ script: |
   @common
 
   # find the roots of f with Newton's method
-  let f(z) = z^3 - 1
+  f(z) := z^3 - 1
 
   # one step of Newton's method
-  let newton(z) = z - f(z) / f'(z)
+  newton(z) := z - f(z) / f'(z)
 
   @viewer "Newton's method on ℂ" colorizer="Rainbow(arg z / (2π))"
   lastZ := 0

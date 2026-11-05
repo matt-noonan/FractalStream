@@ -6,6 +6,7 @@ module Language.Parser.Tokenizer
   , commentRanges
   , wordlikeTokens
   , identifierName
+  , functionDefinitionBody
   ) where
 
 import FractalStream.Prelude
@@ -69,7 +70,6 @@ data Token
   | Or_
   | And_
   | Not_
-  | Let_
   | ColonEquals
   | Prime
   | LeftArrow
@@ -247,7 +247,6 @@ wordlikeTokens = Map.fromList
   , ("i", I), ("𝑖", I)
   , ("true", True_), ("false", False_)
   , ("or", Or_), ("and", And_), ("not", Not_)
-  , ("let", Let_)
   , ("escapes", Escapes), ("escaped", Escapes)
   , ("vanishes", Vanishes), ("vanished", Vanishes)
   , ("stops", Stops), ("stopped", Stops)
@@ -409,3 +408,15 @@ scientific cs =
                 Just (whole ++ fraction ++ [e] ++ sign ++ digits, rest)
               _ -> Nothing
        _ -> Nothing
+
+-- | If these tokens, which follow a name, are a function definition's
+-- parameters, @(x, y) :=@, the tokens after the @:=@.
+functionDefinitionBody :: [Token] -> Maybe [Token]
+functionDefinitionBody = \case
+  OpenParen : rest -> params rest
+  _ -> Nothing
+  where
+    params = \case
+      Identifier _ : CloseParen : ColonEquals : rest -> Just rest
+      Identifier _ : Comma : rest -> params rest
+      _ -> Nothing

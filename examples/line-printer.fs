@@ -1,7 +1,7 @@
 script: |
   @config "Configuration"
-  xsize : R as "Cell width" <- 0.035
-  shift : R as "Parameter shift" <- -0.05
+  xsize : R as "Cell width" := 0.035
+  shift : R as "Parameter shift" := -0.05
 
   @viewer "Mandelbrot set throwback" var=w center=-0.75 pixelSize=1/220
   ysize := 1.66 xsize

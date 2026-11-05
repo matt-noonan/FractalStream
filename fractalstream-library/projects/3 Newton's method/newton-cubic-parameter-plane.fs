@@ -1,11 +1,11 @@
 script: |
   @config "Roots"
-  a : C as "Third root a =" <- -0.81 + 0.846i
+  a : C as "Third root a =" := -0.81 + 0.846i
 
   @common
   # Newton's method for a cubic with roots 1, -1, and a
-  let f(z) = (z - 1) (z + 1) (z - a)
-  let newton(z) = z - f(z) / f'(z)
+  f(z) := (z - 1) (z + 1) (z - a)
+  newton(z) := z - f(z) / f'(z)
   define converge:
     lastZ := 0
     repeat:

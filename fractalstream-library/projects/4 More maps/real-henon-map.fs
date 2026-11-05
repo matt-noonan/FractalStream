@@ -1,12 +1,12 @@
 script: |
   @config "Hénon map"
-  a : R as "a =" <- 1.4
-  b : R as "b =" <- 0.3
+  a : R as "a =" := 1.4
+  b : R as "b =" := 0.3
 
   @config "Parameter plane"
-  settle : Z as "Settling iterations" <- 500
-  max_period : Z as "Longest period" <- 64
-  tolerance : R as "Tolerance" <- 0.000001
+  settle : Z as "Settling iterations" := 500
+  max_period : Z as "Longest period" := 64
+  tolerance : R as "Tolerance" := 0.000001
 
   @common
   # One step of the Hénon map, (x, y) ↦ (1 - a x² + y, b x), updating the
@@ -39,7 +39,7 @@ script: |
   color <- if stuck then black else cycle(iterations / 10, dark blue, white)
 
   @tool "Attractor" for="Dynamical plane" shortcut=a
-  points : Z as "Points" <- 5000
+  points : Z as "Points" := 5000
   on refresh:
     erase
     use orange for stroke
@@ -56,7 +56,7 @@ script: |
     erase
 
   @tool "Orbit" for="Dynamical plane" shortcut=o
-  orbit_length : Z as "Orbit length" <- 1000
+  orbit_length : Z as "Orbit length" := 1000
   on click-or-drag at (x, y):
     erase
     use white for stroke

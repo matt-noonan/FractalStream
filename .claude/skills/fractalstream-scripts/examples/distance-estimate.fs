@@ -5,9 +5,9 @@ script: |
   # boundary a fixed number of pixels thick at every zoom level.
 
   @config "Distance estimation"
-  thickness : R as "Boundary thickness (pixels)" <- 1.5
+  thickness : R as "Boundary thickness (pixels)" := 1.5
   # A large escape radius makes the estimate accurate.
-  big_radius : R as "Escape radius" <- 1000
+  big_radius : R as "Escape radius" := 1000
 
   # escape= makes `escapes` use big_radius instead of escape_radius.
   @viewer "Mandelbrot boundary" var=C center=-0.75 pixelSize=1/200 escape=big_radius

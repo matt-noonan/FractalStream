@@ -224,11 +224,15 @@ keyboard's `â` and `\hat a` give the same variable.
 
 ### Variable initialization
 
-To create a new variable in your script, use the `<-` operator but
-provide a type annotation on the left-hand side.
+To create a new variable in your script, use `:=` (or `≔`). Everything
+that defines something new uses `:=`: variables, as here, and functions
+(see "Defining functions"). The arrow `<-` only changes a variable that
+already exists.
+
+You can give the new variable a type:
 
 ```
-k : Z ⭠ 0
+k : Z ≔ 0
 ```
 
 Common types you might want to use include `Z` for the integers, `R` for the
@@ -238,8 +242,7 @@ the unicode blackboard bold variants `ℤ`, `ℝ`, and `ℂ`, or the full names 
 
 Lists of values of type `x` have the type `List of x`.
 
-You can also leave the type out, and let FractalStream work it out, by
-using `:=` (or `≔`) instead:
+Or you can leave the type out, and let FractalStream work it out:
 
 ```
 z := 0
@@ -252,7 +255,7 @@ The variable's type is the smallest one that fits both its initial value
 Similarly, a list starting out as `xs := [1, 2]` becomes a list of reals if
 you later `append(xs, 0.5)` to it. An empty list `[]` gives no clue about
 what kind of items it will hold, so a variable starting out empty needs a
-type annotation, like `xs : List of R <- []`.
+type annotation, like `xs : List of R := []`.
 
 Several new variables can be made at once, each with its own type worked
 out, with a tuple: `u, v := 0, 1` (or `(u, v) := (0, 1)`).
@@ -261,11 +264,12 @@ A new variable can be used in the rest of the block it is declared in.
 
 ### Defining functions
 
-To define your own function, use `let`:
+To define your own function, write it as you would on paper, with `:=`
+(or `≔`):
 
 ```
-let f(z) = z^2 + C
-let g(a, b) = a * f(b) - b
+f(z) := z^2 + C
+g(a, b) := a * f(b) - b
 iterate z -> g(2, z) until z escapes
 ```
 
@@ -285,7 +289,7 @@ derivative. (You can also use `′`.) Derivatives of your own functions also
 work inside `diff`, so Newton's method can be written as
 
 ```
-let f(z) = z^3 - 1
+f(z) := z^3 - 1
 iterate z -> z - f(z) / f'(z) until f(z) vanishes
 ```
 
@@ -321,11 +325,11 @@ tool script can use, as if they were written at the top of each one:
 
 ```
 @config "Configuration"
-a : C as "a =" <- 1
+a : C as "a =" := 1
 
 @common
-let f(z) = z^3 - a
-let newton(z) = z - f(z) / f'(z)
+f(z) := z^3 - a
+newton(z) := z - f(z) / f'(z)
 
 @viewer "Newton's method" var=z
 iterate z -> newton(z) until f(z) vanishes
@@ -719,8 +723,8 @@ A `@colorizer` stanza has the colorizer's settings, declared like a
 
 ```
 @colorizer "Smooth gradient" description="Smooth color between two colors."
-period : ℝ as "Color period" ⭠ 20
-inside : Color as "Interior color" ⭠ black
+period : ℝ as "Color period" ≔ 20
+inside : Color as "Interior color" ≔ black
 
 define colorize(z):
   if z escaped:
@@ -767,7 +771,7 @@ tools:
       on click-or-drag at z:
         use white for line
         erase
-        prevZ : C <- z
+        prevZ : C := z
         until z escapes:
           prevZ <- z
           draw point at z
@@ -970,9 +974,9 @@ All lists in FractalStream are *homogeneous*, meaning that the elements of a lis
 The length of a list can be obtained through the `length` operator:
 
 ```
-myList : List of Z <- [3, 1, 4, 1, 5, 9, 2]
+myList : List of Z := [3, 1, 4, 1, 5, 9, 2]
 
-x : Z <- length(myList)
+x : Z := length(myList)
 # x is now 7
 ```
 
@@ -982,9 +986,9 @@ To read a specific element out of a list, use the `@` operator. **NOTE:**
 lists in FractalStream use 1-based indexing!
 
 ```
-fibs : List of Z <- [0, 1, 1, 2, 3, 5, 8]
+fibs : List of Z := [0, 1, 1, 2, 3, 5, 8]
 
-x : Z <- fibs @ 4
+x : Z := fibs @ 4
 # x is now equal to 2
 ```
 
@@ -994,9 +998,9 @@ In addition to normal list indexing, you can also cyclically index into a
 list using the `@@` operator:
 
 ```
-digits : List of Z <- [3, 1, 4, 1, 5, 9, 2]
+digits : List of Z := [3, 1, 4, 1, 5, 9, 2]
 
-x : Z <- digits @@ 10
+x : Z := digits @@ 10
 # x is now equal to 4
 
 x <- digits @@ -1
@@ -1012,9 +1016,9 @@ Several lists can be concatenated together using the `join` operator, which
 can receive two or more lists:
 
 ```
-myList1 : List of Z <- [1,2]
-myList2 : List of Z <- [3,4,5]
-myList3 : List of Z <- [6]
+myList1 : List of Z := [1,2]
+myList2 : List of Z := [3,4,5]
+myList3 : List of Z := [6]
 
 myList1 <- join(myList1, myList2, myList3)
 # myList1 is now [1,2,3,4,5,6]
@@ -1031,7 +1035,7 @@ the `remove` command. It takes two arguments: the first is a list, and the
 second is a predicate used to determine which elements are removed.
 
 ```
-myList : List of Z <- [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+myList : List of Z := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 myList <- remove(myList, item ⟼ mod(item, 2) = 0)
 
@@ -1050,7 +1054,7 @@ In the future this restriction could be lifted; please
  have a use-case for a type-changing transformation.
 
 ```
-myList : List of Z <- [1, 2, 3, 4, 5]
+myList : List of Z := [1, 2, 3, 4, 5]
 
 myList <- transform(myList, x ⟼ x^2)
 # now myList is [1, 4, 9, 16, 25]
@@ -1063,9 +1067,9 @@ that matches some predicate. You must supply a fallback value to use
 when no items in the list match your predicate.
 
 ```
-myList : List of Z <- [1, 2, 3, 4, 5]
+myList : List of Z := [1, 2, 3, 4, 5]
 
-x : Z <- find(myList, item ⟼ item^2 > 10, 17)
+x : Z := find(myList, item ⟼ item^2 > 10, 17)
 # x is now 4
 
 x <- find(myList, item ⟼ item^2 > 100, 17)
@@ -1078,10 +1082,10 @@ that matches some predicate, and optionally run some other commands if no
 such value exists.
 
 ```
-myList : List of Z <- [1, 2, 3, 4, 5]
+myList : List of Z := [1, 2, 3, 4, 5]
 
-x : Z <- 0
-y : Z <- 0
+x : Z := 0
+y : Z := 0
 
 with first item matching item^2 > 10 in myList:
   x <- item
@@ -1104,9 +1108,9 @@ To run some code for each item in a list, you can use the `for each ... in`
 command:
 
 ```
-myList : List of Z <- [1, 2, 3, 4, 5]
+myList : List of Z := [1, 2, 3, 4, 5]
 
-sum : Z <- 0
+sum : Z := 0
 for each x in myList:
   sum <- sum + x
 

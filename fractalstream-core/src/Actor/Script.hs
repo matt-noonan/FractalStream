@@ -4,11 +4,11 @@
 -- @\@viewer@\/@\@tool@ stanzas, e.g.
 --
 -- > @viewer "Mandelbrot Set" var=C size=500x500
--- > z : C <- 0
+-- > z : C := 0
 -- > iterate z -> z^2 + C until z escapes
 -- >
 -- > @config "Configuration"
--- > maxIters : Z <- 100  as "Iteration limit:"
+-- > maxIters : Z := 100  as "Iteration limit:"
 --
 -- This module only turns script text into a list of 'ParsedStanza's -- it
 -- does not yet resolve cross-stanza references (a tool's @for=@ attribute,
@@ -550,7 +550,7 @@ scriptGrammar defs = mdo
       <*> (colon *> ty)
       <*> optional (tok "as" *> quotedP)
       <*> optional (tok "choice" *> choiceList)
-      <*> (token LeftArrow *> valueWithRange <* nl)
+      <*> (token ColonEquals *> valueWithRange <* nl)
 
   configText <- rule $
     (\s -> Right (ConfigText s)) <$> (token TextKeyword *> quotedP <* nl)
@@ -721,7 +721,7 @@ validateCommonBody body = case body of
       SProc{} -> pure ()
       SPass   -> pure ()
       _ -> Left (sr, "A @common stanza can only contain variable declarations "
-                     ++ "(x := ... or x : T <- ...), function definitions (let f(x) = ...), "
+                     ++ "(x := ... or x : T := ...), function definitions (f(x) := ...), "
                      ++ "and code definitions (define name: ...).")
 
 validateNoAttrs :: SourceRange -> [(String, String)] -> Either (SourceRange, String) ()

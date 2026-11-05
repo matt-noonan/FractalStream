@@ -17,7 +17,7 @@ import Scenario (parseScenario)
 project :: String
 project = unlines
   [ "@config \"Configuration\""
-  , "p : C <- 0"
+  , "p : C := 0"
   , ""
   , "@viewer \"V\""
   , "color <- black"
