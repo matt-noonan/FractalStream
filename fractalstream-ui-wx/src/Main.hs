@@ -64,7 +64,6 @@ import qualified Graphics.UI.WXCore as WX
 
 
 #if defined(mingw32_HOST_OS)
-import Control.Exception (IOException, try)
 import GHC.IO.Handle (hDuplicateTo)
 import System.Directory (getTemporaryDirectory)
 import System.FilePath ((</>))
