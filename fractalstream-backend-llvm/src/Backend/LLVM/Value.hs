@@ -460,12 +460,9 @@ buildValue getExtern arena = indexedFold go'
       ArctanhF r -> r >>= \case
          (RealOp x) -> RealOp <$> call (getExtern "atanh") [(x, [])]
 
+      -- (hypot, so |z| neither overflows nor underflows)
       AbsC z -> z >>= \case
-        ComplexOp x y -> do
-          xx <- fmul x x
-          yy <- fmul y y
-          abs2 <- fadd xx yy
-          RealOp <$> call (getExtern "sqrt") [(abs2, [])]
+        ComplexOp x y -> RealOp <$> call (getExtern "hypot") [(x, []), (y, [])]
 
       ArgC z -> z >>= \case
         ComplexOp x y -> RealOp <$> call (getExtern "atan2") [(y, []), (x, [])]
@@ -503,11 +500,46 @@ buildValue getExtern arena = indexedFold go'
           sinhY <- call (getExtern "sinh") [(y, [])]
           ComplexOp <$> fmul sinX coshY <*> fmul cosX sinhY
 
-      PowC z p -> go (ExpC (go (MulC p (go (LogC z)))))
+      -- z^p is exp(p log z), except where that gives NaN but the
+      -- interpreter (Data.Complex's (**)) doesn't: z^0 is 1, and at
+      -- z = 0 (where log z = -inf) the result is 0, inf, or NaN as
+      -- Re p is positive, negative, or zero.
+      PowC z p -> z >>= \zOp@(ComplexOp zx zy) -> p >>= \pOp@(ComplexOp px py) -> do
+        go (ExpC (go (MulC (pure pOp) (go (LogC (pure zOp)))))) >>= \(ComplexOp gx gy) -> do
+          let inf = C.double (1 / 0)
+              nan = C.double (0 / 0)
+          zIsZero <- bothZero zx zy
+          pIsZero <- bothZero px py
+          rePos <- fcmp P.OGT px (C.double 0)
+          reNeg <- fcmp P.OLT px (C.double 0)
+          atZeroX <- select rePos (C.double 0) =<< select reNeg inf nan
+          atZeroY <- select rePos (C.double 0) =<< select reNeg (C.double 0) nan
+          rx <- select pIsZero (C.double 1) =<< select zIsZero atZeroX gx
+          ry <- select pIsZero (C.double 0) =<< select zIsZero atZeroY gy
+          pure (ComplexOp rx ry)
 
-      SqrtC z -> do
-        half <- go (R2C (pure (RealOp (C.double 0.5))))
-        go (z `PowC` pure half)
+      -- The principal square root, computed as Data.Complex's sqrt does
+      -- (exp (log z / 2) would give NaN at 0, and lose accuracy):
+      -- with u = sqrt((|z| + |x|) / 2) and v = |y| / 2u, sqrt z is
+      -- u + iv for x >= 0, v + iu for x < 0, conjugated for y < 0.
+      SqrtC z -> z >>= \case
+        ComplexOp x y -> do
+          -- (hypot, so |z| neither overflows nor underflows)
+          norm <- call (getExtern "hypot") [(x, []), (y, [])]
+          absX <- call (getExtern "fabs") [(x, [])]
+          absY <- call (getExtern "fabs") [(y, [])]
+          halfSum <- fmul (C.double 0.5) =<< fadd norm absX
+          u <- call (getExtern "sqrt") [(halfSum, [])]
+          v <- fdiv absY =<< fmul (C.double 2) u
+          xNeg <- fcmp P.OLT x (C.double 0)
+          re <- select xNeg v u
+          im0 <- select xNeg u v
+          yNeg <- fcmp P.OLT y (C.double 0)
+          negIm0 <- fsub (C.double 0) im0
+          im <- select yNeg negIm0 im0
+          isZero <- bothZero x y
+          ComplexOp <$> select isZero (C.double 0) re
+                    <*> select isZero (C.double 0) im
 
       TanC z -> z >>= \case
         ComplexOp x y -> do
@@ -947,6 +979,7 @@ getGetExtern = do
     , ("asin", extern "asin" [AST.double] AST.double)
     , ("atan", extern "atan" [AST.double] AST.double)
     , ("atan2", extern "atan2" [AST.double, AST.double] AST.double)
+    , ("hypot", extern "hypot" [AST.double, AST.double] AST.double)
     , ("sqrt", extern "llvm.sqrt.f64" [AST.double] AST.double)
     , ("fabs", extern "llvm.fabs.f64" [AST.double] AST.double)
     , ("cosh", extern "cosh" [AST.double] AST.double)
@@ -1050,3 +1083,10 @@ mergeBranches ty (a, aEnd) (b, bEnd) = case ty of
 -- | Room for any number's text form (a complex number is at most ~50 bytes).
 textNumberCapacity :: Integer
 textNumberCapacity = 64
+
+-- | Whether both parts of a complex number are (exactly) zero.
+bothZero :: (MonadModuleBuilder m, MonadIRBuilder m) => Operand -> Operand -> m Operand
+bothZero x y = do
+  xz <- fcmp P.OEQ x (C.double 0)
+  yz <- fcmp P.OEQ y (C.double 0)
+  I.and xz yz

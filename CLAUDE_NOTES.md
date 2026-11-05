@@ -285,6 +285,23 @@ a `Code` into a `ViewerFunction` using the active backend.
 A `Tool` has a name, keyboard shortcut, and a list of event-handler actions.
 Each action maps an `Event` to a `Code` block that runs in response.
 
+A viewer's overlay (`@tool overlay`, `tsOverlay`/`tfOverlay`; checked by
+`validateOverlayHeader`/`validateOverlayBody`, which read each block's
+event from `toolBlockEvent`) is built like a tool but kept out of
+`cvTools`, as `cvOverlay`, so nothing offers it for selection. Its layer is
+`overlayDrawLayer` (`minBound`: layers paint in increasing order).
+`makeComplexViewer` gives the `Viewer` `vRefreshOverlay` (builds the
+dispatcher once, from the ensemble's arguments; runs `Refresh` under a
+lock, so the window's and a movie frame's refreshes can't interleave;
+errors go to stderr) and `vListenOverlay` (fires on any configuration
+change). wx queues a refresh (`needToRefreshOverlay`) at start, on every
+view change, and from `vListenOverlay`, and runs it from its 50ms tool
+timer; `refreshOverlay` (current view) runs before drawings are
+composited anywhere else: `renderViewerImage` (movies), `renderPreview`,
+and fsrun's `capture`/`assert`. End-to-end tests that need a backend are
+in fractalstream-ui-headless's `end-to-end` suite (`test-backend/`), apart
+from `spec`, whose quasiquotes can't load LLVM.
+
 ### Colorizers (`Actor.Colorizer`)
 
 A colorizer is a named piece of viewer code that sets `color`, run at the

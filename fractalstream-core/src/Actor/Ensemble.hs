@@ -86,8 +86,9 @@ import Data.Typeable (Typeable)
 import Language.Code (usedVarsInCode)
 import Language.Value.Evaluator (evaluate, evaluateInContext)
 
-import Control.Exception (Exception, IOException, throwIO, try)
+import Control.Exception (Exception, IOException, SomeException, SomeAsyncException, fromException, displayException, throwIO, try)
 import System.IO (hPutStrLn, stderr)
+import Control.Concurrent.MVar (newMVar, modifyMVar_)
 
 import Data.Codec
 
@@ -928,6 +929,7 @@ data ToolFields = ToolFields
   , tfDrawLayer         :: Int
   , tfRefreshOnActivate :: Bool
   , tfRefreshCanUpdate  :: Bool
+  , tfOverlay  :: Bool
   , tfConfig   :: [ConfigStmt]
   , tfBlocks   :: [ParsedToolBlock]
   }
@@ -940,6 +942,7 @@ toolFields = \case
     , tfDrawLayer = tsDrawLayer
     , tfRefreshOnActivate = tsRefreshOnActivate
     , tfRefreshCanUpdate = tsRefreshCanUpdate
+    , tfOverlay = tsOverlay
     , tfConfig = tsConfig
     , tfBlocks = tsBlocks
     }
@@ -966,6 +969,10 @@ checkTitlesAndTargets viewerTitles tools = do
             (if null viewerTitles then "are no viewers" else "is more than one viewer") ++
             " to default to.")
     _ -> pure ()
+  forM_ viewerTitles $ \title ->
+    when (length [ () | t <- tools, tfOverlay t, toolTargets viewerTitles title t ] > 1) $
+      Left (NoSourceRange, "The viewer `" ++ title ++ "` has more than one `@tool overlay`; " ++
+                           "put everything it should show in one `on refresh:` block.")
 
 -- | Whether a tool (already validated by 'checkTitlesAndTargets') targets
 -- the named viewer.
@@ -1424,10 +1431,11 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
     case codeResult of
       Left err -> pure (Left err)
       Right _ -> do
-        eTools <- mapM (buildTool vfCoord toolLimits vfPixelVar) myTools
-        case sequence eTools of
+        eTools <- mapM (buildTool vfCoord toolLimits vfPixelVar) (filter (not . tfOverlay) myTools)
+        eOverlay <- mapM (buildTool vfCoord toolLimits vfPixelVar) (filter tfOverlay myTools)
+        case (,) <$> sequence eTools <*> sequence eOverlay of
           Left err -> pure (Left err)
-          Right toolList -> do
+          Right (toolList, overlays) -> do
             cvToolsV <- newVariable toolList
             pure $ Right ComplexViewer
               { cvTitle = cvTitleP
@@ -1450,6 +1458,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvPrep = cvPrepV
               , cvCode = cvCodeM
               , cvTools = cvToolsV
+              , cvOverlay = listToMaybe overlays
               }
 
 ------------------------------------------------------------
@@ -1581,6 +1590,38 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
     let lookupAutocolor = autocolorLookup autocolorState
         vBuildToolHandler = runTool (bToolRunner backend) lookupAutocolor vDrawSink
 
+    -- The overlay's dispatcher is built the first time it's needed (and
+    -- kept, as a tool's is once it's selected); the lock also keeps two
+    -- refreshes (say, the window's and a movie frame's) from interleaving
+    -- their drawings.
+    overlayDispatcher <- newMVar Nothing
+    let vRefreshOverlay pxDims = forM_ cvOverlay $ \overlay ->
+          modifyMVar_ overlayDispatcher $ \cached -> do
+            dispatcher <- case cached of
+              Just d -> pure d
+              Nothing -> do
+                script <- getDynamic (dyn (toolScript overlay))
+                d <- either (Left . displayException) id
+                       <$> tryNonAsync (vBuildToolHandler overlayDrawLayer configArgs script)
+                either (\err -> hPutStrLn stderr ("The overlay couldn't be built: " ++ err)) (const (pure ())) d
+                pure d
+            forM_ dispatcher $ \dispatch -> forM_ (dispatch pxDims Refresh) $ \refresh ->
+              tryNonAsync refresh >>= \case
+                Left err -> hPutStrLn stderr ("The overlay's `on refresh:` block failed: " ++ displayException err)
+                Right () -> pure ()
+            pure (Just dispatcher)
+
+        -- (any configuration value, not only the ones the overlay reads:
+        -- refreshing it is cheap next to re-rendering the viewer)
+        vListenOverlay action = case (cvOverlay, someContext) of
+          (Nothing, _) -> pure (pure ())
+          (Just _, SomeContext ctx) -> watchDynamic (anyChanged ctx) (\_ -> action)
+          where
+            anyChanged :: forall env. Context DynamicValue' env -> Dynamic ()
+            anyChanged = \case
+              Bind _ _ v ctx' -> (<>) <$> (const () <$> v) <*> anyChanged ctx'
+              EmptyContext -> pure ()
+
     getDynamic cvCode >>= \case
 
       Left (_, err) -> do
@@ -1707,3 +1748,10 @@ makeSelectTool coord = do
 
 selectToolJson :: String -> ByteString
 selectToolJson n = "{ \"name\": \"Select " <> UTF8.fromString n <> "\", \"shortcut\": \"S\", \"script\": \"on click-or-drag:\\n  pass\\n\" }"
+
+-- | Run an action, catching any exception it throws except an
+-- asynchronous one (a cancellation, say), which is rethrown.
+tryNonAsync :: IO a -> IO (Either SomeException a)
+tryNonAsync action = try action >>= \case
+  Left err | Just (_ :: SomeAsyncException) <- fromException err -> throwIO err
+  r -> pure r

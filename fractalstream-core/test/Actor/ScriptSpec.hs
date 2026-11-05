@@ -359,6 +359,57 @@ on refresh:
   pass
 |] `shouldFailWith` "Unknown attribute `bogus`"
 
+    it "parses `@tool overlay` as a viewer's overlay, on the lowest draw layer" $
+      shouldParseTo [r|
+@tool overlay for="V"
+on refresh:
+  erase
+|] $ \case
+        [ToolStanza{tsOverlay = True, tsFor = Just "V", tsDrawLayer = layer, tsShortcut = ""}] ->
+          layer `shouldBe` overlayDrawLayer
+        other -> expectationFailure ("unexpected stanzas: " ++ show (length other))
+
+    it "parses a tool named \"overlay\" (quoted) as an ordinary tool" $
+      shouldParseTo [r|
+@tool "overlay"
+on click:
+  pass
+|] $ \case
+        [ToolStanza{tsOverlay = False, tsName = "overlay"}] -> pure ()
+        other -> expectationFailure ("unexpected stanzas: " ++ show (length other))
+
+    it "rejects an overlay's attributes other than `for=`" $
+      [r|
+@tool overlay for="V" shortcut=o
+on refresh:
+  pass
+|] `shouldFailWith` "An overlay can only have a `for=` attribute, not `shortcut=`"
+
+    it "rejects an overlay's own declarations" $
+      [r|
+@tool overlay
+r : R <- 1
+on refresh:
+  pass
+|] `shouldFailWith` "An overlay can't declare settings of its own"
+
+    it "rejects an overlay's blocks other than `on refresh:`" $
+      [r|
+@tool overlay
+on refresh:
+  pass
+on click-or-drag:
+  pass
+|] `shouldFailWith` "it can't have an `on click-or-drag:` block"
+
+    it "rejects an overlay without an `on refresh:` block" $
+      [r|
+@tool overlay
+
+@viewer "V"
+pass
+|] `shouldFailWith` "An overlay needs an `on refresh:` block"
+
     it "parses a full multi-stanza project script" $
       shouldParseTo [r|
 @common

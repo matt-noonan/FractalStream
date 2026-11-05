@@ -305,6 +305,15 @@ write text("z = ", z, ", n = ", n) at p # text(...) needs 2+ arguments
 write 3.5 at p                          # numbers are converted automatically
 ```
 
+A viewer can also have one **overlay**, `@tool overlay for="Title"` (the
+bare word, not a quoted name): only an `on refresh:` block, no
+declarations, no attributes but `for=`. It's never selected; its drawings
+are always shown, above the viewer and below every tool's (whatever their
+`drawLayer=`), and its refresh runs when the project opens, when the view
+changes, and when any configuration value changes. Use it to mark
+parameters (e.g. the current `C` on a parameter plane) that tools or other
+viewers change. In `fsrun`, it's refreshed before each capture or assert.
+
 Drawings accumulate until `erase`; most handlers start with `erase`. The pen
 starts white and keeps the last `use` color from earlier events, so set the
 colors explicitly in each handler that draws. Points, lines, outlines and

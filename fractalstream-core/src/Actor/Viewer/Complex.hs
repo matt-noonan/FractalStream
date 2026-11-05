@@ -50,7 +50,9 @@ data ComplexViewer = ComplexViewer
   , cvIterationLimit :: Parsed (Maybe ParsedValue)
   , cvPrep :: Variable (Maybe PrepRaw)
   , cvCode :: Mapped CodeString (Either (SourceRange, String) SomeViewerWithContext)
-  --, cvOverlay :: Variable (Maybe String)
   , cvTools :: Variable [Tool]
+  , cvOverlay :: Maybe Tool
+    -- ^ Its overlay (@\@tool overlay@), if it has one: built like a tool,
+    -- but never offered for selection (see 'Actor.Viewer.vRefreshOverlay').
   }
 

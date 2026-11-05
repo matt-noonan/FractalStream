@@ -7,6 +7,7 @@ import Actor.Ensemble
 import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Tool (Tool(..), ToolInfo(..))
+import Actor.Script (overlayDrawLayer)
 import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..), Field(..))
 import Actor.SavedValues
 import qualified Data.Map as Map
@@ -93,6 +94,55 @@ on click-or-drag:
         name `shouldBe` Right "Trace"
         shortcut <- getDynamic (tiShortcut (toolInfo tool))
         shortcut `shouldBe` "T"
+
+    it "builds an overlay apart from the viewer's tools" $
+      shouldBuild [r|
+@config "C"
+p : C <- 0
+
+@viewer "V" var=z
+pass
+
+@tool overlay for="V"
+on refresh:
+  erase
+  draw point at p
+
+@tool "Trace" for="V"
+on click:
+  pass
+|] $ \ens -> do
+        [viewer] <- getDynamic (ensembleViewers ens)
+        tools <- getDynamic (cvTools viewer)
+        names <- mapM (getDynamic . tiName . toolInfo) tools
+        names `shouldBe` [Right "Trace"]
+        case cvOverlay viewer of
+          Nothing -> expectationFailure "expected an overlay"
+          Just overlay -> getDynamic (toolDrawLayer overlay) >>= (`shouldBe` overlayDrawLayer)
+
+    it "rejects two overlays for one viewer" $
+      [r|
+@viewer "V" var=z
+pass
+
+@tool overlay
+on refresh:
+  pass
+
+@tool overlay for="V"
+on refresh:
+  pass
+|] `shouldFailWith` "has more than one `@tool overlay`"
+
+    it "type-checks an overlay when the project is built" $
+      [r|
+@viewer "V" var=z
+pass
+
+@tool overlay
+on refresh:
+  draw point at nowhere
+|] `shouldFailWith` "nowhere"
 
     it "wires the new viewer/tool attributes through to the built values" $
       shouldBuild [r|

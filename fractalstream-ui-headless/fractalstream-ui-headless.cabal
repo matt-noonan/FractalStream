@@ -112,3 +112,21 @@ test-suite spec
   other-modules:      ScenarioSpec
                     , SpecHook
   build-tool-depends: hspec-discover:hspec-discover == 2.*
+
+-- Tests that run projects end to end, with a backend (see test-backend/Main.hs)
+test-suite end-to-end
+  import: FractalStream-common
+  hs-source-dirs: test-backend
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  ghc-options:        -threaded
+  build-depends:      base >=4.8 && <5
+                    , fractalstream-core
+                    , fractalstream-ui-headless
+                    , hspec
+  other-modules:      OverlaySpec
+
+  if flag(use-llvm)
+     build-depends: fractalstream-backend-llvm
+  else
+     build-depends: fractalstream-backend-pure

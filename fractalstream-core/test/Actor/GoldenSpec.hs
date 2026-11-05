@@ -22,6 +22,7 @@ import Actor.Event (runParsedToolScript, CombinedEventHandler(..))
 import Language.Environment (SomeContext(..), SomeContext'(..), Context(EmptyContext), contextToEnv)
 import Language.Code (Code, pprintCode)
 import Data.DynamicValue
+import Data.Maybe (maybeToList)
 
 import Control.Exception (SomeException, try, evaluate)
 import Control.Monad (filterM, forM, forM_)
@@ -86,7 +87,8 @@ dumpEnsemble ens = do
           Nothing -> []
           Just (PrepScript _ prep) -> [ "--- prepare", pprintCode prep ]
     tools <- getDynamic (cvTools viewer)
-    toolParts <- forM tools $ \tool -> do
+    -- (and its overlay, if it has one, after its tools)
+    toolParts <- forM (tools ++ maybeToList (cvOverlay viewer)) $ \tool -> do
       name <- getDynamic (tiName (toolInfo tool))
       script <- getDynamic (toolScript tool)
       mcfg <- getDynamic (toolConfig tool)
