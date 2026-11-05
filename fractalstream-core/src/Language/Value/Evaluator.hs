@@ -213,7 +213,7 @@ evaluator v0 ctx = case v0 of
     CoshC x -> cosh (x ctx)
     TanhC x -> tanh (x ctx)
 
-    AbsC z  -> let x :+ y = z ctx in sqrt (x ** 2 + y ** 2)
+    AbsC z  -> magnitude (z ctx)  -- (scaled, so it neither overflows nor underflows)
     ArgC z  -> let x :+ y = z ctx in atan2 y x
     ReC z   -> let x :+ _ = z ctx in x
     ImC z   -> let _ :+ y = z ctx in y

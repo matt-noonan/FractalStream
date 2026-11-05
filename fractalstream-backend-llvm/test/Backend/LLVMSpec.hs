@@ -133,6 +133,49 @@ spec = do
               compiled `shouldBe` interpreted)
           scripts
 
+  describe "when compiling complex square roots and powers" $ do
+
+    -- (`z - z` rather than a literal 0, so nothing is folded away)
+    let scripts =
+          [ ("sqrt at 0", "x <- |sqrt(z - z)|\nwrite sqrt(z - z) at 0")
+          , ("sqrt on each side of the branch cut",
+             "write sqrt(-4 + 0 (z - z)) at 0\nwrite sqrt(-4 - 0.000001 i) at 0\n\
+             \write sqrt(-4 + 0.000001 i) at 0\nwrite sqrt(3 - 4i) at 0\nwrite sqrt(z) at 0")
+          , ("powers at 0", "write (z - z)^(1/2) at 0\nwrite (z - z)^(1/3 + i) at 0\n\
+             \write (z - z)^(-1/2) at 0\nwrite (z - z)^(z - z) at 0")
+          , ("z^0", "write z^(z - z) at 0")
+          ]
+
+    mapM_ (\(name, src) ->
+            it ("matches the interpreter: " ++ name) $ withJIT $ \jit -> do
+              compiled    <- runTool (compiledToolExec jit noAutocolor) src
+              interpreted <- runTool interpretedToolExec src
+              compiled `shouldBe` interpreted)
+          scripts
+
+    it "takes sqrt(0) to 0" $ withJIT $ \jit -> do
+      (drawn, (_, _, x), _) <- runTool (compiledToolExec jit noAutocolor)
+                                       "x <- |sqrt(z - z)| + |(z - z)^(1/2)|\nwrite sqrt(z - z) at 0"
+      x `shouldBe` 0
+      drawn `shouldSatisfy` all (not . ("NaN" `isInfixOf`))
+
+    it "takes square roots of very large and very small numbers" $ withJIT $ \jit -> do
+      -- 2^(1/4) e^(i pi/8), scaled; |...| here only sees numbers near 1
+      let src = "x <- |sqrt((1 + i) * 10^200) / 10^100 - 2^(1/4) * exp(i pi / 8)|\n\
+                \x <- x + |10^100 * sqrt((1 - i) * 10^(-200)) - 2^(1/4) * exp(-i pi / 8)|"
+      (_, (_, _, compiled), _)    <- runTool (compiledToolExec jit noAutocolor) src
+      (_, (_, _, interpreted), _) <- runTool interpretedToolExec src
+      compiled `shouldSatisfy` (< 1.0e-12)
+      interpreted `shouldSatisfy` (< 1.0e-12)
+
+    it "takes absolute values of very large and very small numbers" $ withJIT $ \jit -> do
+      let src = "x <- |(3 + 4i) * 10^300| / 10^300 - 5\n\
+                \x <- |x| + |(3 - 4i) * 10^(-300)| * 10^300 - 5"
+      (_, (_, _, compiled), _)    <- runTool (compiledToolExec jit noAutocolor) src
+      (_, (_, _, interpreted), _) <- runTool interpretedToolExec src
+      abs compiled `shouldSatisfy` (< 1.0e-12)
+      abs interpreted `shouldSatisfy` (< 1.0e-12)
+
   describe "when compiling tool handlers that use lists" $ do
 
     let scripts =
