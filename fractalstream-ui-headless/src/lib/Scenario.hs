@@ -24,6 +24,9 @@ module Scenario
   , MovieAnimation(..)
   , MovieOptions(..)
   , parseScenario
+  , Overrides(..)
+  , noOverrides
+  , applyOverrides
   ) where
 
 import FractalStream.Prelude
@@ -107,6 +110,43 @@ data MovieAnimation
   | MoviePath Coordinate [Point]
     -- ^ a complex variable, or a pair of real ones, moved along a path
     -- through these points
+
+-- | Output paths given on @fsrun@'s command line (@--capture-to@,
+-- @--record-to@) to use in place of the ones a scenario's own commands
+-- name.
+data Overrides = Overrides
+  { captureTo :: Maybe FilePath
+    -- ^ for the one @capture viewer ... to@ (or @... base to@) command
+  , recordTo  :: Maybe FilePath
+    -- ^ for the one @record viewer ... to@ command
+  }
+
+noOverrides :: Overrides
+noOverrides = Overrides Nothing Nothing
+
+-- | Replace the output path of the scenario's capture and/or recording
+-- with the one given. Each override needs the scenario to have exactly
+-- one command of its kind, since otherwise which one it means is
+-- ambiguous; that's checked before anything runs.
+applyOverrides :: Overrides -> [Command] -> Either String [Command]
+applyOverrides Overrides{..} =
+  override "--capture-to" "`capture viewer \"...\" to`" captureTo setCapture
+    >=> override "--record-to" "`record viewer \"...\" to`" recordTo setRecord
+  where
+    setCapture path = \case
+      CaptureViewer name _     -> Just (CaptureViewer name path)
+      CaptureViewerBase name _ -> Just (CaptureViewerBase name path)
+      _ -> Nothing
+    setRecord path = \case
+      RecordMovie name _ opts anim -> Just (RecordMovie name path opts anim)
+      _ -> Nothing
+
+    override _ _ Nothing _ cmds = Right cmds
+    override flag what (Just path) set cmds =
+      case length (mapMaybe (set path) cmds) of
+        1 -> Right (map (\c -> fromMaybe c (set path c)) cmds)
+        n -> Left (flag ++ " needs the scenario to have exactly one " ++ what ++
+                   " command, but it has " ++ show n)
 
 -- | Parse a whole scenario file into its list of commands.
 parseScenario :: String -> Either (SourceRange, String) [Command]

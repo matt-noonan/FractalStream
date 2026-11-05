@@ -23,6 +23,13 @@ or from a scenario embedded directly in the project file itself (see
 fsrun scenario --project project.fs --name "basic trace"
 ```
 
+Either way, `--capture-to <file.png>` writes the commands' one
+`capture viewer ... to` (or `... base to`) to that file instead of the
+one it names, and `--record-to <file.mov>` does the same for their one
+`record viewer ... to`. Each needs exactly one such command to replace;
+with none, or more than one, `fsrun` stops with an error before running
+anything.
+
 (A third, unrelated mode exists for the simple case of just rendering
 one viewer with no tool interaction at all:
 `fsrun snapshot --project project.fs --viewer "<viewer name>"
