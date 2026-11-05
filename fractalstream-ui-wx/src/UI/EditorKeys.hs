@@ -6,6 +6,13 @@
 --   takes off a level, which Scintilla does itself, given the indent
 --   size.)
 --
+-- * Backspace and Delete delete whole characters: a letter with the
+--   combining marks on it (@x̂@, typed as @\\hat x@), not just the last
+--   mark. The cursor doesn't stop inside one ('keepCursorOnCharacters').
+--   (On macOS, where Control-Backspace can only be told from
+--   Backspace after it's gone down, Control-Backspace right after such a
+--   letter deletes just that.)
+--
 -- * Control-Backspace deletes the token before the cursor (and the
 --   spaces after it), as "Language.Editor.deleteBackTo" says.
 --
@@ -34,6 +41,7 @@ module UI.EditorKeys
   , handleEditorKeys
   , pasteFittingIndentation
   , toggleCommentLines
+  , keepCursorOnCharacters
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -44,9 +52,10 @@ import Graphics.UI.WXCore.WxcDefs
 import Graphics.UI.WXCore.Events (windowOnKeyDown)
 import System.Info (os)
 import Data.Char (chr, ord, toLower)
+import Data.IORef (IORef, readIORef, writeIORef)
 import UI.SymbolEntry (SymbolEntry, finishSymbol, completeSymbol, cancelSymbol)
 import Language.Editor.Symbols (replaceSymbolNames)
-import Language.Editor (newLineIndent, pasteIndented, toggleComments, deleteBackTo)
+import Language.Editor (newLineIndent, pasteIndented, toggleComments, deleteBackTo, lastCharacterStart, firstCharacterLength, characterBoundary)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as Utf8
 
@@ -73,6 +82,12 @@ handleEditorKeys stc symbols emacsKeys = do
         True -> pure ()
         False -> propagateEvent
       KeyBack | isControl (keyModifiers k) -> deletePreviousToken stc
+      KeyBack | isPlain (keyModifiers k) -> deleteCharacterBack stc >>= \case
+        True -> pure ()
+        False -> propagateEvent
+      KeyDelete | isPlain (keyModifiers k) -> deleteCharacterForward stc >>= \case
+        True -> pure ()
+        False -> propagateEvent
       KeyChar c
         -- (with emacs keys on where Control is the shortcut key,
         -- Control-V moves down a page instead)
@@ -99,6 +114,78 @@ handleEditorKeys stc symbols emacsKeys = do
     -- the shortcut key alone: Command on macOS (which wx calls
     -- "control" there), Control elsewhere
     isShortcut m = controlDown m && not (altDown m || shiftDown m || metaDown m)
+
+-- | Delete the whole character before the cursor (a letter and its
+-- combining marks), if it has marks; whether it did. (Anything else,
+-- Scintilla deletes as usual.)
+deleteCharacterBack :: StyledTextCtrl a -> IO Bool
+deleteCharacterBack stc = do
+  from <- styledTextCtrlGetSelectionStart stc
+  to <- styledTextCtrlGetSelectionEnd stc
+  lineNum <- styledTextCtrlLineFromPosition stc from
+  lineStart <- styledTextCtrlPositionFromLine stc lineNum
+  before <- styledTextCtrlGetTextRange stc lineStart from
+  let start' = lastCharacterStart before
+  if from /= to || length before - start' < 2 then pure False else do
+    deleteBytes stc (lineStart + bytes (take start' before)) from
+    pure True
+
+-- | Delete the whole character after the cursor (a letter and its
+-- combining marks), if it has marks; whether it did.
+deleteCharacterForward :: StyledTextCtrl a -> IO Bool
+deleteCharacterForward stc = do
+  from <- styledTextCtrlGetSelectionStart stc
+  to <- styledTextCtrlGetSelectionEnd stc
+  lineNum <- styledTextCtrlLineFromPosition stc from
+  lineEnd <- styledTextCtrlGetLineEndPosition stc lineNum
+  after <- styledTextCtrlGetTextRange stc from lineEnd
+  let len = firstCharacterLength after
+  if from /= to || len < 2 then pure False else do
+    deleteBytes stc from (from + bytes (take len after))
+    pure True
+
+-- | Move the cursor (and the other end of the selection) out of any whole
+-- character it's inside, between a letter and its combining marks
+-- ("Language.Editor.characterBoundary"): to the character's start if it
+-- was moving back, from where it was last time, or else to its end. For
+-- the editor's updates; @lastCursor@ is where the cursor was.
+keepCursorOnCharacters :: StyledTextCtrl a -> IORef Int -> IO ()
+keepCursorOnCharacters stc lastCursor = do
+  caret <- styledTextCtrlGetCurrentPos stc
+  anchor <- styledTextCtrlGetAnchor stc
+  was <- readIORef lastCursor
+  caret' <- onCharacters caret (caret < was)
+  -- (the selection's other end goes out of the character, away from the cursor)
+  anchor' <- if anchor == caret then pure caret' else onCharacters anchor (anchor < caret)
+  writeIORef lastCursor caret'
+  when (caret' /= caret || anchor' /= anchor) $
+    if anchor' == caret' then styledTextCtrlGotoPos stc caret'
+    else styledTextCtrlSetSelection stc anchor' caret'
+  where
+    onCharacters pos back = do
+      lineNum <- styledTextCtrlLineFromPosition stc pos
+      lineStart <- styledTextCtrlPositionFromLine stc lineNum
+      lineEnd <- styledTextCtrlGetLineEndPosition stc lineNum
+      lineText <- styledTextCtrlGetTextRange stc lineStart lineEnd
+      before <- styledTextCtrlGetTextRange stc lineStart pos
+      let i = length before
+          i' = characterBoundary lineText i back
+      pure (if i' == i then pos else lineStart + bytes (take i' lineText))
+
+-- | Delete from one byte position to another, as one undo step.
+deleteBytes :: StyledTextCtrl a -> Int -> Int -> IO ()
+deleteBytes stc from to = do
+  styledTextCtrlBeginUndoAction stc
+  styledTextCtrlSetTargetStart stc from
+  styledTextCtrlSetTargetEnd stc to
+  _ <- styledTextCtrlReplaceTarget stc ""
+  styledTextCtrlEndUndoAction stc
+  styledTextCtrlGotoPos stc from
+
+-- | How many bytes some text is, in UTF-8 (as Scintilla's positions
+-- count).
+bytes :: String -> Int
+bytes = BS.length . Utf8.fromString
 
 -- | Delete the selection, or else the token before the cursor (with the
 -- spaces after it), or at the start of a line, the line break before it.
@@ -163,7 +250,6 @@ toggleCommentLines stc = do
   linesEnd <- styledTextCtrlGetLineEndPosition stc lastLine
   old <- styledTextCtrlGetTextRange stc linesStart linesEnd
   let new = intercalate "\n" (toggleComments (splitLines old))
-      bytes = BS.length . Utf8.fromString
       grown = bytes new - bytes old
   styledTextCtrlBeginUndoAction stc
   styledTextCtrlSetTargetStart stc linesStart
@@ -225,7 +311,7 @@ emacsCommand k
       , ('b', run wxSTC_CMD_CHARLEFT)
       , ('n', run wxSTC_CMD_LINEDOWN)
       , ('p', run wxSTC_CMD_LINEUP)
-      , ('d', run wxSTC_CMD_CLEAR)
+      , ('d', \stc -> deleteCharacterForward stc >>= \done -> unless done (run wxSTC_CMD_CLEAR stc))
       , ('k', killLine)
       , ('o', openLine)
       , ('t', transpose)

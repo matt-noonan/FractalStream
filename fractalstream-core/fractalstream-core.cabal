@@ -162,6 +162,7 @@ library
                        monad-par-extras,
                        numeric-extras,
                        text,
+                       unicode-transforms,
                        time,
                        bytestring,
                        vector,
