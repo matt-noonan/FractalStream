@@ -11,7 +11,12 @@
 --
 -- * Pasting (Command-V on macOS, Control-V elsewhere) moves lines of
 --   code to the indentation they're pasted at, keeping their indentation
---   relative to each other.
+--   relative to each other, and turns symbols' names in it into the
+--   symbols (@\\theta@ into θ, "Language.Editor.Symbols").
+--
+-- * While a symbol's name is typed ("UI.SymbolEntry"), Tab turns it
+--   into its symbol (completing it, if it can), Return does that and then breaks the line, and
+--   Escape leaves it as it is.
 --
 -- * Command-\/ (Control-\/ elsewhere) comments out the selected lines,
 --   or the cursor's line, or uncomments them if they're all comments; on
@@ -39,6 +44,8 @@ import Graphics.UI.WXCore.WxcDefs
 import Graphics.UI.WXCore.Events (windowOnKeyDown)
 import System.Info (os)
 import Data.Char (chr, ord, toLower)
+import UI.SymbolEntry (SymbolEntry, finishSymbol, completeSymbol, cancelSymbol)
+import Language.Editor.Symbols (replaceSymbolNames)
 import Language.Editor (newLineIndent, pasteIndented, toggleComments, deleteBackTo)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as Utf8
@@ -50,15 +57,21 @@ emacsKeysByDefault = os == "darwin"
 -- | Handle these keys in an editor, with emacs keys while @emacsKeys@
 -- says to: each is done here and goes no further; any other key is
 -- handled as usual.
-handleEditorKeys :: StyledTextCtrl a -> IO Bool -> IO ()
-handleEditorKeys stc emacsKeys = do
+handleEditorKeys :: StyledTextCtrl a -> SymbolEntry a -> IO Bool -> IO ()
+handleEditorKeys stc symbols emacsKeys = do
   -- Return is handled as it goes down (Scintilla breaks the line then,
   -- and no character event follows); the emacs keys as the characters
   -- they type, which is how Control-letters arrive on macOS.
   windowOnKeyDown stc $ \k -> do
     emacs <- emacsKeys
     case keyKey k of
-      KeyReturn | isPlain (keyModifiers k) -> newLine stc
+      KeyReturn | isPlain (keyModifiers k) -> finishSymbol symbols >> newLine stc
+      KeyTab | isPlain (keyModifiers k) -> completeSymbol symbols >>= \case
+        True -> pure ()
+        False -> propagateEvent
+      KeyEscape -> cancelSymbol symbols >>= \case
+        True -> pure ()
+        False -> propagateEvent
       KeyBack | isControl (keyModifiers k) -> deletePreviousToken stc
       KeyChar c
         -- (with emacs keys on where Control is the shortcut key,
@@ -104,8 +117,9 @@ deletePreviousToken stc = do
       void (styledTextCtrlReplaceTarget stc "")
 
 -- | Paste what's on the clipboard over the selection, re-indented to fit
--- where it goes ("Language.Editor.pasteIndented"); or, if the clipboard
--- has no text, paste as usual.
+-- where it goes ("Language.Editor.pasteIndented") and with symbols for
+-- their names ("Language.Editor.Symbols.replaceSymbolNames"); or, if the
+-- clipboard has no text, paste as usual.
 pasteFittingIndentation :: StyledTextCtrl a -> IO ()
 pasteFittingIndentation stc = clipboardText >>= \case
   Nothing -> styledTextCtrlPaste stc
@@ -115,7 +129,7 @@ pasteFittingIndentation stc = clipboardText >>= \case
     lineStart <- styledTextCtrlPositionFromLine stc lineNum
     before <- styledTextCtrlGetTextRange stc lineStart from
     styledTextCtrlBeginUndoAction stc
-    styledTextCtrlReplaceSelection stc (pasteIndented before pasted)
+    styledTextCtrlReplaceSelection stc (pasteIndented before (replaceSymbolNames pasted))
     styledTextCtrlEndUndoAction stc
 
 -- | The text on the clipboard, if there is any.

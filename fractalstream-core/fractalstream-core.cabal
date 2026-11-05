@@ -110,6 +110,7 @@ library
                        Language.Editor.Highlight
                        Language.Editor.Lines
                        Language.Editor.Normalize
+                       Language.Editor.Symbols
                        Language.Code.Typecheck.Functions
                        Language.Type
                        Language.Environment
@@ -212,6 +213,7 @@ test-suite spec
                     , Language.EditorSpec
                     , Language.Editor.HighlightSpec
                     , Language.Editor.NormalizeSpec
+                    , Language.Editor.SymbolsSpec
                     , Language.Effect.ListSpec
                     , Actor.EventSpec
                     , Actor.ScriptSpec
