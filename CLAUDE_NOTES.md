@@ -244,12 +244,48 @@ render starts from the old image moved into the new view
 (`reprojectedSeed`, run on the render's worker thread, as `renderTile`'s
 seed), so a pixel not drawn yet shows the old picture; a parameter
 change's starts from scratch (`backgroundSeed`: grey, and on the sphere
-the dark background off the globe, which is final). The renderer
-(`Task.Block.progressivelyOver`) draws the pieces the seed didn't cover
-first, coarse to fine, and the covered ones only at full resolution
-(after the new ones), keeping the moved old picture until then. A globe drag's steps are coalesced like parameter
-changes (`pendingGlobe`, applied once the render has finished or had
-100ms) and aren't animated. An animated change draws the old image
+the dark background off the globe, which is final). `jumpViewWith` takes
+a `ViewChange` (`AnimatedChange`, `UnanimatedChange` for a globe drag's
+steps, `ParameterChange`), and the seed is chosen by it, not by whether
+the model changed: a globe drag's first step often doesn't move it. The
+renderer (`Task.Block.progressivelyOver`) gives each piece the seed
+didn't cover its first pass (the coarsest rate that fits it; an edge
+piece whose sides aren't multiples of 16 or 4 can't have the coarsest)
+before anything else, then the finer passes, and the covered pieces
+only at full resolution (after the new ones), keeping the moved old
+picture until then. Once every first pass is done it runs its
+`covered` action (`tileCovered`: the whole image shows something).
+
+On a coarse pass (`logSampleRate` < 0) a sample colors a square of
+`skip` x `skip` pixels, so the kernel's step is `skip` pixels (it was one
+pixel, which crowded a 4x4 pass's samples into each piece's corner). A
+seed is also given a byte per pixel (`Block.finalPixels`) to mark the
+pixels it gave their final color (`pokeBackground`: the background off
+the globe); a coarse square doesn't paint over them, and a square whose
+sample is final is computed again at its non-final pixel nearest its
+middle. So the globe's edge is sharp from the first pass. The seeds
+must agree with the render about which pixels are on the globe: a pixel
+is sampled at its top left corner (`pixelSample`), not its center.
+
+A stale render must stop rather than skip blocks: `renderTile'` throws
+`StaleRender` (caught by the tile's worker) once a newer render has
+started. Skipping only the kernel call left `fillBlock` copying its
+uninitialized `allocaArray` scratch into the old tile, which the next
+render's `reprojectedSeed` then copied forward (16x16 garbage blocks
+during globe drags).
+
+Parameter changes (`offThreadRefresh`, from `onParameterChanges`) are
+polled at ~60Hz and coalesced: the next render replaces the current one
+once it has finished, or is covered and has had 100ms, or after 500ms
+regardless. They aren't animated and don't add history steps. Their
+render is held back (`parameterRenderHeld`, checked in `captureRender`)
+until it has finished or 100ms have passed, so a quick script's new
+picture replaces the old one whole (no grey bursts, and no coarse
+frames: showing the render once it was covered flashed its coarse pass
+in fast viewers), and a slower one's shows its coarse passes refining,
+or grey filling in. A globe drag's steps are coalesced too (`pendingGlobe`,
+applied once the render has finished or had 100ms) and aren't animated.
+An animated change draws the old image
 moved, then the new render fading in on top, in the same moving frame
 (so a seeded pixel agrees with the old image beneath it), and at full
 opacity where the old image doesn't reach (`rectanglesOutside`, clipped

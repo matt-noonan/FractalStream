@@ -67,6 +67,11 @@ data Block =
         , shouldRedraw  :: MVar ()
           -- ^ A variable used to signal that this block is complete
           --   and the pixel buffer should be redrawn.
+        , finalPixels   :: Maybe (ForeignPtr Word8)
+          -- ^ Which pixels of the buffer already show their final color
+          --   (nonzero; one byte per pixel, with the buffer's stride),
+          --   such as the background off a globe: a coarse pass leaves
+          --   them alone, rather than painting its squares over them.
         }
 
 -- | Render the block into its output buffer.
@@ -77,16 +82,15 @@ fillBlock Block{..} = do
 
     let points    = [ (x,y) | y <- [0, skip .. ySize - 1]
                             , x <- [0, skip .. xSize - 1] ]
-        uv_points = [ (fromIntegral (x0 + x), fromIntegral (y0 + y))
-                    | (x,y) <- points ]
         indexOf (u,v) = u + v * xStride
 
-    -- Run the computation on each subsampled point.
+    -- Run the computation on each subsampled point. (On a coarse pass,
+    -- the points are a square's width apart, not a pixel's.)
     allocaArray (length points * 3 * k * k) $ \tmp -> do
       compute (fromIntegral (xSize `div` skip) * fromIntegral k)
               (fromIntegral (ySize `div` skip) * fromIntegral k)
               (fromIntegral k)
-              ((deltaX :+ deltaY) / fromIntegral k)
+              ((deltaX :+ deltaY) * fromIntegral skip / fromIntegral k)
               (let (u,v) = coordToModel (fromIntegral x0, fromIntegral y0)
                in u :+ v)
               tmp
@@ -113,31 +117,59 @@ fillBlock Block{..} = do
           pokeByteOff tmp (3*tgt + 1) g
           pokeByteOff tmp (3*tgt + 2) b
 
+      -- On a coarse pass, a square (a sample's skip x skip pixels)
+      -- doesn't cover final pixels, and a square whose sample is a final
+      -- pixel (with a different color, as the background off a globe
+      -- is) takes its color from another point of its own instead, the
+      -- one of its pixels nearest its middle that isn't final. So the
+      -- edge of what's final, such as the globe's, is as sharp in the
+      -- coarse passes as it will be in the end.
+      let coarseFinals = if skip > 1 then finalPixels else Nothing
+          square (u, v) = [ (u + du, v + dv) | dv <- [0 .. skip - 1], du <- [0 .. skip - 1] ]
+          intPoints = [ (x0 + x, y0 + y) | (x, y) <- points ]
+      isFinal <- case coarseFinals of
+        Nothing -> pure (\_ -> pure False)
+        Just m -> pure (\(u, v) -> withForeignPtr m (\mp -> (/= 0) <$> peekByteOff @Word8 mp (indexOf (u, v))))
+      when (isJust coarseFinals) $ forM_ (zip intPoints [0 ..]) $ \(uv, ix) -> do
+        sampleFinal <- isFinal uv
+        when sampleFinal $ do
+          free <- filterM (fmap not . isFinal) (square uv)
+          let (cu, cv) = (fromIntegral (fst uv) + fromIntegral skip / 2 - 0.5, fromIntegral (snd uv) + fromIntegral skip / 2 - 0.5) :: (Double, Double)
+              dist (u, v) = (fromIntegral u - cu) ^ (2 :: Int) + (fromIntegral v - cv) ^ (2 :: Int)
+          case sortOn dist free of
+            [] -> pure ()
+            (u, v) : _ -> allocaArray 3 $ \one -> do
+              compute 1 1 1 (deltaX :+ deltaY)
+                      (let (mu, mv) = coordToModel (fromIntegral u, fromIntegral v) in mu :+ mv)
+                      one
+              forM_ [0, 1, 2] $ \c -> peekByteOff @Word8 one c >>= pokeByteOff tmp (3 * ix + c)
+
       -- Fill target buffer with result colors.
       with blockBuffer $ \buffer -> withForeignPtr buffer $ \ptr -> do
-        forM_ (zip uv_points [0..]) $ \((u,v), ix) -> do
-          --let index = floor $ u + v * fromIntegral xStride
+        forM_ (zip intPoints [0..]) $ \(uv, ix) -> do
           r <- peekByteOff @Word8 tmp (3*ix + 0)
           g <- peekByteOff @Word8 tmp (3*ix + 1)
           b <- peekByteOff @Word8 tmp (3*ix + 2)
-          forM_ [indexOf (u + du, v + dv) | dv <- [0 .. skip - 1]
-                                          , du <- [0 .. skip - 1] ] $ \offset -> do
-            pokeByteOff ptr (3*offset + 0) r
-            pokeByteOff ptr (3*offset + 1) g
-            pokeByteOff ptr (3*offset + 2) b
+          forM_ (square uv) $ \pixel -> do
+            final <- isFinal pixel
+            unless final $ do
+              let offset = indexOf pixel
+              pokeByteOff ptr (3*offset + 0) r
+              pokeByteOff ptr (3*offset + 1) g
+              pokeByteOff ptr (3*offset + 2) b
 
       -- Completed the block, signal for a redraw
       void (tryPutMVar shouldRedraw ())
 
--- | Chop up a block into sub-blocks, delegate rendering
---   tasks for sub-blocks, and blit the results back
---   into an image.
 -- | The size of the square pieces 'progressively' renders a block in.
 subBlockSize :: Int
 subBlockSize = 16
 
+-- | Chop up a block into sub-blocks, delegate rendering
+--   tasks for sub-blocks, and blit the results back
+--   into an image.
 progressively :: (Block -> IO ()) -> (Block -> IO ())
-progressively = progressivelyOver (\_ _ -> False)
+progressively = progressivelyOver (\_ _ -> False) (pure ())
 
 -- | 'progressively', over an image that already shows something (the
 -- last render, moved into this view) in the pieces the predicate holds
@@ -146,8 +178,14 @@ progressively = progressivelyOver (\_ _ -> False)
 -- others skip them (the picture they show is already better than big
 -- squares) and keep it until they're drawn at full resolution, after the
 -- new pieces are; then everything is subsampled.
-progressivelyOver :: (Int -> Int -> Bool) -> (Block -> IO ()) -> (Block -> IO ())
-progressivelyOver shown render block = do
+--
+-- Each new piece's first pass is at the coarsest rate that fits it (an
+-- edge piece whose sides aren't a multiple of 16 or 4 can't have the
+-- coarsest ones), and all the first passes come before anything else, so
+-- that once they're done the whole image shows something: then the
+-- given action is run (at once, if nothing was new).
+progressivelyOver :: (Int -> Int -> Bool) -> IO () -> (Block -> IO ()) -> (Block -> IO ())
+progressivelyOver shown covered render block = do
 
     let width   = xSize block
         height  = ySize block
@@ -172,16 +210,31 @@ progressivelyOver shown render block = do
                                          snd y `mod` 2^(negate rate) == 0)
         isShown (x, y) = shown (fst x) (fst y)
         (fresh, kept) = (filter (not . isShown) subblocks, filter isShown subblocks)
-        todo = [ (rate, x, y) | rate <- rates, rate < 0, (x, y) <- fresh, fits rate (x, y) ]
-            ++ [ (0, x, y) | 0 `elem` rates, (x, y) <- fresh ++ kept ]
-            ++ [ (rate, x, y) | rate <- rates, rate > 0, (x, y) <- subblocks ]
+        -- (a new piece's first rate: the coarsest that fits, at most 0)
+        firstRate xy = case [ rate | rate <- rates, rate <= 0, fits rate xy ] of
+          rate : _ -> rate
+          [] -> 0
+        firsts = [ (True, firstRate xy, x, y) | xy@(x, y) <- fresh ]
+        todo = firsts
+            ++ [ (False, rate, x, y) | rate <- rates, rate < 0, xy@(x, y) <- fresh
+                                     , fits rate xy, rate > firstRate xy ]
+            ++ [ (False, 0, x, y) | 0 `elem` rates, xy@(x, y) <- fresh, firstRate xy < 0 ]
+            ++ [ (False, 0, x, y) | 0 `elem` rates, (x, y) <- kept ]
+            ++ [ (False, rate, x, y) | rate <- rates, rate > 0, (x, y) <- subblocks ]
     when False $ putStrLn $ "***** start @ rates=" ++ show rates
     start <- getCurrentTime
 
-    forPool_ poolSize todo $ \(rate,(x,w),(y,h)) -> do
+    -- (how many first passes are left)
+    firstsLeft <- newMVar (length firsts)
+    when (null firsts) covered
+
+    forPool_ poolSize todo $ \(isFirst,rate,(x,w),(y,h)) -> do
       render $ block { xSize = w, ySize = h,
                        x0 = subBlockSize * x, y0 = subBlockSize * y,
                        logSampleRate = rate }
+      when isFirst $ do
+        remaining <- modifyMVar firstsLeft (\n -> pure (n - 1, n - 1))
+        when (remaining == 0) covered
 
     end <- getCurrentTime
     when False $ do

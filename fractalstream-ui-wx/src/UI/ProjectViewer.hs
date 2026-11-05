@@ -23,7 +23,7 @@ import           Graphics.UI.WXCore.WxcTypes      (rgba)
 import           Graphics.UI.WXCore.WxcClassesAL
 import           Graphics.UI.WXCore.WxcClassesMZ
 import Graphics.UI.WXCore.Frame (frameDefaultStyle)
-import Data.Time (diffUTCTime, getCurrentTime)
+import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import Data.Planar
 
 import UI.Tile
@@ -724,6 +724,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- before the next replaces it (see the globe-drag timer below).
     lastViewRender <- newIORef =<< getCurrentTime
     pendingGlobe <- newIORef (Nothing :: Maybe Rotation)
+    -- When the current render, of new parameters, started, until it's
+    -- worth showing (see 'captureRender'); Nothing for any other render.
+    parameterRenderHeld <- newIORef (Nothing :: Maybe UTCTime)
     lastTileImage  <- variable [value := Nothing]
     animate        <- variable [value := Nothing]
     useSmoothing <- variable [value := True]
@@ -747,12 +750,14 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           modifyIORef' history (historyAppend newModel)
           jumpViewTo newModel
 
-        jumpViewTo = jumpViewWith True
+        jumpViewTo = jumpViewWith AnimatedChange
 
         -- Go to a view, animating the change or not (a drag turning the
         -- globe doesn't: its steps keep the last image up until the new
-        -- render's pixels arrive).
-        jumpViewWith animated newModel@(Model newCenter (newPixelSize, newPixelHeight) newRotation) = do
+        -- render's pixels arrive), or re-render the same view for new
+        -- parameters.
+        jumpViewWith how newModel@(Model newCenter (newPixelSize, newPixelHeight) newRotation) = do
+          let animated = how == AnimatedChange
           oldModel <- get model value
           Size { sizeW = w, sizeH = h } <- get f clientSize
           set model [ value := newModel ]
@@ -772,13 +777,18 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           -- where the new image is drawn in the old one's moving frame,
           -- that's the same picture in the same place. A parameter
           -- change's starts from scratch. Either way, on the sphere, the
-          -- background off the globe is already in place.)
-          let seed | newModel == oldModel = backgroundSeed newModel (w, h)
+          -- background off the globe is already in place. A view change
+          -- that doesn't change the view, such as a globe drag's first
+          -- step, keeps the image as it is.)
+          let seed | how == ParameterChange = backgroundSeed newModel (w, h)
                    | otherwise = reprojectedSeed oldTile oldModel newModel (w, h)
                                    <|> backgroundSeed newModel (w, h)
           newViewerTile <- renderTile' renderId renderIssues smoothing renderAction seed (w, h) model
           set currentTile [ value := newViewerTile ]
-          getCurrentTime >>= writeIORef lastViewRender
+          now <- getCurrentTime
+          writeIORef lastViewRender now
+          -- (new parameters' render is held back until it's worth showing)
+          writeIORef parameterRenderHeld (if how == ParameterChange then Just now else Nothing)
           when animated (startAnimatingFrom oldModel)
           -- Until the new render's first update, the saved image is the
           -- old one; that only matters if it's of a different view, since
@@ -1033,7 +1043,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                       Just r -> do
                         writeIORef pendingGlobe Nothing
                         m <- get model value
-                        jumpViewWith False m { modelRotation = Just r }
+                        jumpViewWith UnanimatedChange m { modelRotation = Just r }
                     case globeDragNow of
                       Just (_, _, True) -> get model value >>= \m -> modifyIORef' history (historyAppend m)
                       _ -> pure ()
@@ -1213,11 +1223,24 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
 
     -- Take what the current render has drawn so far, if it's drawn more
-    -- since last time, as the image to show.
+    -- since last time, as the image to show. A render of new parameters
+    -- isn't taken until it's worth showing: once it has finished (a quick
+    -- script's, straight away), or after a tenth of a second (then as it
+    -- is: a medium script's coarse passes, refining, or a slow one's
+    -- pieces arriving over grey). Until then the last image stays up,
+    -- rather than a burst of grey or a flash of a coarse pass.
     lastCapture <- newIORef =<< getCurrentTime
     let captureRender = do
           curTile <- get currentTile value
-          ifModified curTile $ do
+          held <- readIORef parameterRenderHeld >>= \case
+            Nothing -> pure False
+            Just started -> do
+              finished <- tileFinished curTile
+              now <- getCurrentTime
+              let held' = not finished && diffUTCTime now started < 0.1
+              unless held' (writeIORef parameterRenderHeld Nothing)
+              pure held'
+          unless held $ ifModified curTile $ do
             viewRect <- windowGetViewRect f
             tileImage <- generateTileImage curTile viewRect
             saved <- imageCopy tileImage
@@ -1243,13 +1266,33 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                          setStatusMessage (fromMaybe "" (describeViewerIssues issues))
                    ]
 
-    -- Add a timer which will check for repainting requests from off the main
-    -- UI thread, ~10Hz
-    _ <- wxTimer f [ interval := 100
+    -- Add a timer which will check for re-rendering requests from off the
+    -- main UI thread (new parameters), ~60Hz. They're coalesced, as a
+    -- globe drag's steps are: a new render replaces the current one once
+    -- it has finished, or once every part of it shows something and it
+    -- has had a tenth of a second, or after half a second regardless (so
+    -- a slow script doesn't fall far behind a parameter being dragged).
+    -- Until then, the latest request waits.
+    _ <- wxTimer f [ interval := 16
                    , enabled := True
                    , on command := do
-                       needRefresh <- (== Just ()) <$> tryTakeMVar offThreadRefresh
-                       when needRefresh (changeViewTo =<< get model value)
+                       -- (also showing a held render as soon as it's worth
+                       -- it; other renders are taken by the 10Hz timer, as
+                       -- taking one isn't free)
+                       readIORef parameterRenderHeld >>= \held -> when (isJust held) captureRender
+                       needRefresh <- not <$> isEmptyMVar offThreadRefresh
+                       when needRefresh $ do
+                         curTile <- get currentTile value
+                         finished <- tileFinished curTile
+                         covered <- tileCovered curTile
+                         started <- readIORef lastViewRender
+                         now <- getCurrentTime
+                         let elapsed = diffUTCTime now started
+                         when (finished || (covered && elapsed >= 0.1) || elapsed >= 0.5) $ do
+                           void (tryTakeMVar offThreadRefresh)
+                           -- (what the render being replaced has drawn, first)
+                           captureRender
+                           jumpViewWith ParameterChange =<< get model value
                    ]
 
     -- The globe-drag timer: show a drag's latest orientation once the
@@ -1266,7 +1309,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                          when (finished || diffUTCTime now started >= 0.1) $ do
                            writeIORef pendingGlobe Nothing
                            m <- get model value
-                           jumpViewWith False m { modelRotation = Just r }
+                           jumpViewWith UnanimatedChange m { modelRotation = Just r }
                    ]
 
     -- Animation timer. At ~65Hz, check if we are animating between
@@ -1790,11 +1833,11 @@ interpolateModel t m1 m2 = m2
 -- the sphere, if it was on the old globe's visible side. Anything else
 -- starts grey; so does everything, when the window's size or the kind
 -- of view has changed.
-reprojectedSeed :: Tile -> Model -> Model -> (Int, Int) -> Maybe (Ptr Word8 -> IO (Int -> Int -> Bool))
+reprojectedSeed :: Tile -> Model -> Model -> (Int, Int) -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
 reprojectedSeed oldTile old new (w, h)
   | tileRect oldTile /= (w, h) = Nothing
   | isJust (modelRotation old) /= isJust (modelRotation new) = Nothing
-  | otherwise = Just $ \dest -> withSynchedTileBuffer oldTile $ \src -> do
+  | otherwise = Just $ \dest finals -> withSynchedTileBuffer oldTile $ \src -> do
       -- (piece by piece, to tell which pieces it all came from the old image)
       let n = subBlockSize
           pieces = [ (bx, by) | by <- [0 .. (h - 1) `div` n], bx <- [0 .. (w - 1) `div` n] ]
@@ -1819,58 +1862,65 @@ reprojectedSeed oldTile old new (w, h)
                   pokeUndrawn dest d
                   pure True
               | otherwise -> do
-                  pokeBackground dest d
+                  pokeBackground dest finals d
                   pure False
         pure [ (bx, by) | missed ]
       let missing = Set.fromList uncovered
       pure (\bx by -> (bx, by) `Set.notMember` missing)
   where
-    pixelToScreen m = pixelCenter m (w, h)
-    -- the pixel a point of a view's screen plane is in, if it's in the window
+    pixelToScreen m = pixelSample m (w, h)
+    -- the pixel sampled nearest a point of a view's screen plane, if it's
+    -- in the window
     screenToPixel m (x, y) =
       let (cx, cy) = modelCenter m
           (px, py) = modelPixelDim m
-          i = floor ((x - cx) / px + fromIntegral w / 2)
-          j = floor ((cy - y) / py + fromIntegral h / 2)
+          i = round ((x - cx) / px + fromIntegral w / 2)
+          j = round ((cy - y) / py + fromIntegral h / 2)
       in if i >= 0 && i < w && j >= 0 && j < h then Just (i, j) else Nothing
 
 -- | What a new sphere view's render shows until it's drawn, when it
 -- starts from scratch: grey on the globe, and the background off it,
 -- since that's all there is to draw there (so the pieces wholly off the
 -- globe are done). On the plane, the usual grey.
-backgroundSeed :: Model -> (Int, Int) -> Maybe (Ptr Word8 -> IO (Int -> Int -> Bool))
+backgroundSeed :: Model -> (Int, Int) -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
 backgroundSeed m (w, h) = case modelRotation m of
   Nothing -> Nothing
-  Just _ -> Just $ \dest -> do
+  Just _ -> Just $ \dest finals -> do
     -- Row by row: the globe is one span of a row (left as it is, not drawn
     -- yet), with the background on either side of it.
     let n = subBlockSize
         span' j =
           let (cx, cy) = modelCenter m
               (px, py) = modelPixelDim m
-              y = cy - (fromIntegral j + 0.5 - fromIntegral h / 2) * py
+              y = cy - (fromIntegral j - fromIntegral h / 2) * py
               half = if y * y > 1 then -1 else sqrt (1 - y * y)
-              -- the pixels whose centers are within half of the globe's middle
-              -- (the globe is centered on the screen plane's origin)
-              lo = ceiling ((negate half - cx) / px + fromIntegral w / 2 - 0.5) :: Int
-              hi = floor ((half - cx) / px + fromIntegral w / 2 - 0.5) :: Int
+              -- the pixels whose sample points (see 'pixelSample') are
+              -- within half of the globe's middle (the globe is centered
+              -- on the screen plane's origin), so on the globe just where
+              -- the render will say they are
+              lo = ceiling ((negate half - cx) / px + fromIntegral w / 2) :: Int
+              hi = floor ((half - cx) / px + fromIntegral w / 2) :: Int
           in if half < 0 then (w, w - 1) else (max 0 lo, min (w - 1) hi)
         spans = [ span' j | j <- [0 .. h - 1] ]
     forM_ (zip [0 ..] spans) $ \(j, (lo, hi)) -> do
-      forM_ [0 .. lo - 1] $ \i -> pokeBackground dest (3 * (j * w + i))
-      forM_ [max lo (hi + 1) .. w - 1] $ \i -> pokeBackground dest (3 * (j * w + i))
+      forM_ [0 .. lo - 1] $ \i -> pokeBackground dest finals (3 * (j * w + i))
+      forM_ [max lo (hi + 1) .. w - 1] $ \i -> pokeBackground dest finals (3 * (j * w + i))
     -- a piece is done if none of its rows reach its columns with the globe
     let onGlobe bx by = or [ lo <= hi && hi >= bx * n && lo < (bx + 1) * n
                            | (lo, hi) <- take n (drop (by * n) spans) ]
     pure (\bx by -> not (onGlobe bx by))
 
--- | The center of a pixel, on a view's screen plane.
-pixelCenter :: Model -> (Int, Int) -> (Int, Int) -> (Double, Double)
-pixelCenter m (w, h) (i, j) =
+-- | Where a render samples a pixel, on a view's screen plane: its top
+-- left corner (the renderer steps from the window's top left corner by
+-- whole pixels). The seeds must agree with the render about which pixels
+-- are on the globe, or a coarse pass's square can take the background's
+-- color from a pixel the seed thought was on the globe.
+pixelSample :: Model -> (Int, Int) -> (Int, Int) -> (Double, Double)
+pixelSample m (w, h) (i, j) =
   let (cx, cy) = modelCenter m
       (px, py) = modelPixelDim m
-  in ( cx + (fromIntegral i + 0.5 - fromIntegral w / 2) * px
-     , cy - (fromIntegral j + 0.5 - fromIntegral h / 2) * py )
+  in ( cx + (fromIntegral i - fromIntegral w / 2) * px
+     , cy - (fromIntegral j - fromIntegral h / 2) * py )
 
 -- | The parts of the first rectangle outside the second (each as left,
 -- top, right, bottom; the parts as left, top, width, height).
@@ -1894,10 +1944,13 @@ pokeUndrawn dest d = forM_ [0, 1, 2] $ \k -> pokeByteOff dest (d + k) (128 :: Wo
 paintUndrawn :: DC d -> Rect -> IO ()
 paintUndrawn dc r = drawRect dc r [ brush := brushSolid (rgb (128 :: Word8) 128 128), pen := penTransparent ]
 
--- | Put the color off the globe at a pixel's offset in an RGB8 buffer.
-pokeBackground :: Ptr Word8 -> Int -> IO ()
-pokeBackground dest d = do
+-- | Put the color off the globe at a pixel's offset in an RGB8 buffer,
+-- marking the pixel as final in the seed's mask (a byte per pixel), so
+-- that the coarse passes don't paint over it.
+pokeBackground :: Ptr Word8 -> Ptr Word8 -> Int -> IO ()
+pokeBackground dest finals d = do
   let (r, g, b) = colorToRGB sphereBackground
+  pokeByteOff finals (d `div` 3) (1 :: Word8)
   pokeByteOff dest d r
   pokeByteOff dest (d + 1) g
   pokeByteOff dest (d + 2) b
@@ -1921,7 +1974,7 @@ renderTile' :: Valued w
             -> Bool
             -> (Word32 -> Word32 -> Word32 -> Complex Double -> Complex Double
                 -> Ptr Word8 -> IO ViewerIssues)
-            -> Maybe (Ptr Word8 -> IO (Int -> Int -> Bool))
+            -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
             -> (Int, Int)
             -> w Model
             -> IO Tile
@@ -1931,13 +1984,14 @@ renderTile' renderId renderIssues smooth action seed dim model = do
     -- unless a newer render has started since.
     atomicWriteIORef renderIssues (iD, mempty)
     modelRect <- modelToRect dim <$> get model value
+    -- (once a newer render has started, this one stops: see 'StaleRender')
     let action' p q r x y c = do
             curId <- readIORef renderId
-            when (curId == iD) $ do
-              issues <- action p q r x y c
-              unless (issues == mempty) $
-                atomicModifyIORef' renderIssues $ \(i, old) ->
-                  ((i, if i == iD then old <> issues else old), ())
+            when (curId /= iD) (throwIO StaleRender)
+            issues <- action p q r x y c
+            unless (issues == mempty) $
+              atomicModifyIORef' renderIssues $ \(i, old) ->
+                ((i, if i == iD then old <> issues else old), ())
     renderTile smooth seed action' dim modelRect
 
 drawCenteredBitmap :: Bitmap () -> DC d -> Rect -> (Int,Int) -> IO ()
@@ -1946,6 +2000,13 @@ drawCenteredBitmap bmp dc windowRect (width, height) = do
     let (x0, y0) = ( (fWidth  + width ) `div` 2 - width  ,
                      (fHeight + height) `div` 2 - height )
     drawBitmap dc bmp (WX.pt x0 y0) False []
+
+-- | How a viewer goes to a view ('jumpViewWith'): animating the change,
+-- without animating it (a drag turning the globe), or re-rendering the
+-- same view for new parameters (not animated, and not shown until it's
+-- worth showing: see 'captureRender').
+data ViewChange = AnimatedChange | UnanimatedChange | ParameterChange
+  deriving Eq
 
 -- | What's at a place on a viewer's HUD.
 data HudSpot = ToolPickerSpot | MenuSpot | WarningSpot String
