@@ -17,7 +17,7 @@ import Actor.Layout (CodeString(..))
 import UI.EditorKeys
 import UI.SymbolEntry
 import UI.EditorStyle (setupStyles, showLineNumbers)
-import Language.Editor (indentUnit)
+import Language.Editor (indentUnit, visibleSpan)
 import UI.AppSettings (appSettings)
 import FractalStream.Settings (Settings(..))
 
@@ -28,6 +28,7 @@ import Graphics.UI.WXCore.Events (stcOnSTCEvent, EventSTC(..))
 
 import Data.Bits ((.|.), (.&.))
 import Data.List (zipWith4)
+import Data.IORef (newIORef)
 import qualified Data.ByteString.UTF8 as Utf8
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
@@ -112,6 +113,8 @@ codeEditorWithText cep txt = do
 
     -- symbols typed by name ("UI.SymbolEntry")
     symbols <- symbolEntry stc isLight
+    -- where the cursor was ("UI.EditorKeys.keepCursorOnCharacters")
+    lastCursor <- newIORef 0
 
     stcOnSTCEvent stc $ \case
       STCMarginClick _ _ _ pos clickedMargin | clickedMargin == foldMarginIndex -> do
@@ -119,7 +122,9 @@ codeEditorWithText cep txt = do
         styledTextCtrlToggleFold stc lineNum
       STCCharAdded c _ -> symbolCharAdded symbols c
       STCModified pos modType _ len _ _ _ _ -> symbolTextModified symbols pos modType len
-      STCUpdateUI -> symbolUpdateUI symbols
+      STCUpdateUI -> do
+        symbolUpdateUI symbols
+        keepCursorOnCharacters stc lastCursor
       _ -> pure ()
     -- (a caller that handles focus too has to keep this, with `:~`)
     set stc [ on focus := \gained -> do
@@ -152,14 +157,36 @@ errorIndicator = 8
 -- Indicators are set with Scintilla's own messages, which wxHaskell has
 -- no functions for ("Graphics.UI.WXCore"'s indicator functions are for
 -- the older style-bit indicators, which Scintilla no longer draws).
+--
+-- An error in a line is underlined in that line, over whole characters
+-- that show ("Language.Editor.visibleSpan"): Scintilla draws the squiggle
+-- as an image as wide as what it underlines, and an image no wider than
+-- nothing (a combining mark on nothing) fails an assertion in wx, whose
+-- dialog can't be shown while the editor is drawn, which hangs the app.
 markError :: StyledTextCtrl a -> Int -> Int -> IO ()
 markError stc from len = do
   clearError stc
   docLen <- styledTextCtrlGetLength stc
   when (docLen > 0) $ do
     let start' = max 0 (min from (docLen - 1))
-    void (styledTextCtrlSendMsg stc sciSetIndicatorCurrent errorIndicator 0)
-    void (styledTextCtrlSendMsg stc sciIndicatorFillRange start' (max 1 (min len (docLen - start'))))
+        len' = max 1 (min len (docLen - start'))
+    lineNum <- styledTextCtrlLineFromPosition stc start'
+    lineStart <- styledTextCtrlPositionFromLine stc lineNum
+    lineEnd <- styledTextCtrlGetLineEndPosition stc lineNum
+    span' <- if start' >= lineEnd
+      -- (at the end of a line: the line break, as it is)
+      then pure (Just (start', len'))
+      else do
+        lineText <- styledTextCtrlGetTextRange stc lineStart lineEnd
+        let bytes = BS.length . Utf8.fromString
+            -- (character offsets in the line, from byte positions)
+            charAt pos = length (Utf8.toString (BS.take (pos - lineStart) (Utf8.fromString lineText)))
+            byteAt i = lineStart + bytes (take i lineText)
+        pure $ visibleSpan lineText (charAt start') (charAt (min lineEnd (start' + len'))) <&> \(i, j) ->
+          (byteAt i, byteAt j - byteAt i)
+    forM_ span' $ \(s, l) -> do
+      void (styledTextCtrlSendMsg stc sciSetIndicatorCurrent errorIndicator 0)
+      void (styledTextCtrlSendMsg stc sciIndicatorFillRange s l)
 
 -- | Remove the error underline, if there is one.
 clearError :: StyledTextCtrl a -> IO ()

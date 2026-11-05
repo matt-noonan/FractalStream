@@ -6,6 +6,51 @@ import Language.Editor
 
 spec :: Spec
 spec = describe "editing scripts" $ do
+  describe "whole characters" $ do
+
+    it "are a letter and the combining marks on it" $ do
+      lastCharacterStart "z + x\x302" `shouldBe` 4
+      lastCharacterStart "z + x\x307\x302" `shouldBe` 4
+      lastCharacterStart "z + x" `shouldBe` 4
+      firstCharacterLength "x\x307\x302 + z" `shouldBe` 3
+      firstCharacterLength "x + z" `shouldBe` 1
+
+    it "are combining marks, with nothing under them" $ do
+      lastCharacterStart "\x302\x303" `shouldBe` 0
+      firstCharacterLength "\x302\x303 + z" `shouldBe` 2
+      lastCharacterStart "" `shouldBe` 0
+      firstCharacterLength "" `shouldBe` 0
+
+  describe "the cursor" $ do
+
+    it "isn't left inside a whole character" $ do
+      let line = "z + x\x307\x20D7 + 1"
+      characterBoundary line 5 True `shouldBe` 4
+      characterBoundary line 6 True `shouldBe` 4
+      characterBoundary line 5 False `shouldBe` 7
+      characterBoundary line 6 False `shouldBe` 7
+
+    it "stays anywhere else" $ do
+      let line = "z + x\x307\x20D7 + 1"
+      characterBoundary line 4 True `shouldBe` 4
+      characterBoundary line 7 False `shouldBe` 7
+      characterBoundary line 0 True `shouldBe` 0
+      characterBoundary line (length line) False `shouldBe` length line
+
+  describe "what to underline" $ do
+
+    it "is the characters asked for" $
+      visibleSpan "x + y" 2 3 `shouldBe` Just (2, 3)
+
+    it "takes in a letter's combining marks, and the letter under them" $ do
+      visibleSpan "x\x302 + 1" 0 1 `shouldBe` Just (0, 2)
+      visibleSpan "x\x302 + 1" 1 2 `shouldBe` Just (0, 2)
+
+    it "goes on to something that shows, for marks on nothing" $ do
+      visibleSpan "\x302 + 1" 0 1 `shouldBe` Just (0, 2)
+      visibleSpan "ab\x302\x303" 3 4 `shouldBe` Just (1, 4)
+      visibleSpan "\x200B" 0 1 `shouldBe` Nothing
+
   describe "the indentation of a new line" $ do
 
     it "keeps the line's indentation" $ do
