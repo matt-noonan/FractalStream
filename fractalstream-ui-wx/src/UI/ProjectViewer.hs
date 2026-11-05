@@ -739,6 +739,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- Putting a value in this MVar is used to trigger a Refresh event
     -- on the currently active tool.
     needToSendRefreshEvent <- newEmptyMVar
+    -- ...and this one, on the viewer's overlay (if it has one), which
+    -- refreshes whatever tool is selected; it starts out wanting one.
+    needToRefreshOverlay <- newMVar ()
 
     let changeViewTo newModel = do
           modifyIORef' history (historyAppend newModel)
@@ -785,6 +788,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           -- parameter is dragged.)
           when (animated && newModel /= oldModel) (writeIORef savedTileIsCurrent False)
           void $ tryPutMVar needToSendRefreshEvent ()
+          void $ tryPutMVar needToRefreshOverlay ()
           triggerRepaint
 
 
@@ -1312,6 +1316,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     _ <- wxTimer f [ interval := 50
                    , enabled := True
                    , on command := do
+                       needOverlay <- isJust <$> tryTakeMVar needToRefreshOverlay
+                       when needOverlay $ do
+                         Model _ pxDims _ <- get model value
+                         vRefreshOverlay pxDims
+                         vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
                        needToSendRefresh <- isJust <$> tryTakeMVar needToSendRefreshEvent
                        get currentTool value >>= \case
                          Left _ -> pure ()
@@ -1353,11 +1362,13 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- For each variable that the viewer code depends on, trigger a repaint whenever
     -- that variable changes.
     stopListening' <- onParameterChanges theViewer requestRefresh
+    -- (the overlay's refresh is only queued here: a value is being set)
+    stopOverlayListening <- vListenOverlay (void (tryPutMVar needToRefreshOverlay ()))
     -- Hooks `windowOnDestroy`, not `on closing` -- `f` is exactly the
     -- viewer frame a rebuild tears down with `windowDestroy`, which
     -- never fires `closing` at all; see the note on
     -- 'UI.Widgets.wxWatchDynamic'.
-    onOwnDestroy f (forgetViewer >> stopListening')
+    onOwnDestroy f (forgetViewer >> stopListening' >> stopOverlayListening)
 
     -------------------------------------------------------
     -- Navigation actions

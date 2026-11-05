@@ -33,6 +33,7 @@ module Actor.Event
   , CombinedEventHandler(..)
   , ParsedToolBlock
   , toolBlockTimers
+  , toolBlockEvent
   , ParsedToolScript(..)
   , parseToolScript
   , toolBlocksGrammar
@@ -685,6 +686,8 @@ parseUnitScript _defs (pMaxIters, pMaxRadius, pMinRadius) viewerCoord mpx body
 -- entry point below ('parseToolScript') simply applies these immediately,
 -- since it already has them in hand before parsing starts.
 data ParsedToolBlock = ParsedToolBlock
+  String
+  -- ^ The event this block handles, as its header names it (@on refresh@).
   [(String, Int)]
   -- ^ The timers this block defines, with their intervals in milliseconds.
   (Coordinate -> (ParsedValue, ParsedValue, ParsedValue) -> Maybe String
@@ -693,7 +696,11 @@ data ParsedToolBlock = ParsedToolBlock
 -- | The timers a tool's blocks define, by name, with their intervals in
 -- milliseconds. A frontend runs them while the tool is selected.
 toolBlockTimers :: [ParsedToolBlock] -> [(String, Int)]
-toolBlockTimers blocks = concat [ ts | ParsedToolBlock ts _ <- blocks ]
+toolBlockTimers blocks = concat [ ts | ParsedToolBlock _ ts _ <- blocks ]
+
+-- | The event a tool block handles, as its header names it (@on refresh@).
+toolBlockEvent :: ParsedToolBlock -> String
+toolBlockEvent (ParsedToolBlock ev _ _) = ev
 
 -- | The result of parsing an entire tool script: all of its blocks already
 -- merged and checked for duplicate event definitions.
@@ -707,7 +714,7 @@ mergeToolBlocks :: [ParsedToolBlock]
                 -> ParsedToolScript
 mergeToolBlocks blocks defaultCoord limits mpixel = ParsedToolScript $ \env ->
   foldl' combineEventHandlers (Right noHandlers)
-    [ f defaultCoord limits mpixel env | ParsedToolBlock _ f <- blocks ]
+    [ f defaultCoord limits mpixel env | ParsedToolBlock _ _ f <- blocks ]
 
 -- | A tool script with no event handlers at all (e.g. a tool whose
 -- @script:@ field is absent or empty).
@@ -768,32 +775,32 @@ toolBlocksGrammar defs = mdo
   let dummyStart = ComplexCoordinate "[unused] start"
 
   onRefresh' <- rule $
-    (\body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
+    (\body -> ParsedToolBlock "on refresh" [] $ \defaultCoord limits mpixel env ->
         second (\u -> noHandlers { onRefresh = Just u })
           (parseUnitScript defs limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "refresh" *> colon *> nl *> codeBlock)
 
   onActivated' <- rule $
-    (\body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
+    (\body -> ParsedToolBlock "on activated" [] $ \defaultCoord limits mpixel env ->
         second (\u -> noHandlers { onActivated = Just u })
           (parseUnitScript defs limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "activated" *> colon *> nl *> codeBlock)
 
   onDeactivated' <- rule $
-    (\body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
+    (\body -> ParsedToolBlock "on deactivated" [] $ \defaultCoord limits mpixel env ->
         second (\u -> noHandlers { onDeactivated = Just u })
           (parseUnitScript defs limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "deactivated" *> colon *> nl *> codeBlock)
 
   onButton' <- rule $
-    (\label body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
+    (\label body -> ParsedToolBlock "on button" [] $ \defaultCoord limits mpixel env ->
         second (\u -> noHandlers { onButton = Map.singleton label u })
           (parseUnitScript defs limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "button" *> quoted <* colon <* nl)
     <*> codeBlock
 
   onTimer' <- rule $
-    (\name interval body -> ParsedToolBlock [(name, interval)] $ \defaultCoord limits mpixel env ->
+    (\name interval body -> ParsedToolBlock "on timer" [(name, interval)] $ \defaultCoord limits mpixel env ->
         second (\u -> noHandlers { onTimer = Map.singleton name (interval, u) })
           (parseUnitScript defs limits defaultCoord mpixel body env))
     <$> (tok "on" *> tok "timer" *> quoted)
@@ -801,14 +808,14 @@ toolBlocksGrammar defs = mdo
     <*> codeBlock
 
   onClick' <- rule $
-    (\mc body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
+    (\mc body -> ParsedToolBlock "on click" [] $ \defaultCoord limits mpixel env ->
         second (\c -> noHandlers { onClick = Just c })
           (parseClickScript defs defaultCoord (fromMaybe defaultCoord mc) limits mpixel body env))
     <$> (tok "on" *> tok "click" *> optional (tok "at" *> coordSpec) <* colon <* nl)
     <*> codeBlock
 
   onDoubleClick' <- rule $
-    (\mc body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
+    (\mc body -> ParsedToolBlock "on double-click" [] $ \defaultCoord limits mpixel env ->
         second (\c -> noHandlers { onDoubleClick = Just c })
           (parseClickScript defs defaultCoord (fromMaybe defaultCoord mc) limits mpixel body env))
     <$> (tok "on" *> tok "double" *> token Minus *> tok "click"
@@ -816,7 +823,7 @@ toolBlocksGrammar defs = mdo
     <*> codeBlock
 
   onClickOrDrag' <- rule $
-    (\mc body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
+    (\mc body -> ParsedToolBlock "on click-or-drag" [] $ \defaultCoord limits mpixel env ->
         let c = fromMaybe defaultCoord mc
         in second (\(ch, dh) -> noHandlers { onClick = Just ch, onDrag = Just dh })
              ((,) <$> parseClickScript defs defaultCoord c limits mpixel body env
@@ -826,7 +833,7 @@ toolBlocksGrammar defs = mdo
     <*> codeBlock
 
   onDrag' <- rule $
-    (\mft body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
+    (\mft body -> ParsedToolBlock "on drag" [] $ \defaultCoord limits mpixel env ->
         let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
         in second (\d -> noHandlers { onDrag = Just d })
              (parseDragScript defs defaultCoord curC startC limits mpixel body env))
@@ -834,7 +841,7 @@ toolBlocksGrammar defs = mdo
     <*> codeBlock
 
   onDragFinished' <- rule $
-    (\mft body -> ParsedToolBlock [] $ \defaultCoord limits mpixel env ->
+    (\mft body -> ParsedToolBlock "on drag-finished" [] $ \defaultCoord limits mpixel env ->
         let (startC, curC) = fromMaybe (dummyStart, defaultCoord) mft
         in second (\d -> noHandlers { onDragDone = Just d })
              (parseDragScript defs defaultCoord curC startC limits mpixel body env))

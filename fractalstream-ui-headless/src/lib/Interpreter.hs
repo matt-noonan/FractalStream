@@ -30,7 +30,7 @@ import Actor.Layout (Field(..))
 import Actor.UI (UI(..))
 import Actor.Viewer
   ( Backend, Viewer(..)
-  , withRenderedViewerBuffer, snapshotToFile, switchView, centerViewOn
+  , withRenderedViewerBuffer, snapshotToFile, switchView, centerViewOn, refreshOverlay
   , ViewerIssues, describeViewerIssues
   )
 import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
@@ -243,6 +243,7 @@ execCommand st = \case
 
   CaptureViewer name path -> withNamedViewer st name $ \viewer -> do
     r <- withRenderedViewerBuffer viewer True $ \view dims buf -> do
+      refreshOverlay viewer
       layers <- vDrawCmds viewer
       compositeDrawLayersToFile view layers dims buf path
     traverse (warnIssues name . fst) r <&> (st <$)
@@ -263,6 +264,7 @@ execCommand st = \case
 
   AssertPixel name (px, py) expected mtol -> withNamedViewer st name $ \viewer -> do
     r <- withRenderedViewerBuffer viewer True $ \view dims buf -> do
+      refreshOverlay viewer
       layers <- vDrawCmds viewer
       compositeDrawLayers view layers dims buf
     case r of

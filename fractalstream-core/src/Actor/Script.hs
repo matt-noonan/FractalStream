@@ -27,6 +27,7 @@ module Actor.Script
   , ColorizerParam(..)
   , ColorizerSetting(..)
   , ParsedStanza(..)
+  , overlayDrawLayer
   , parseScript
   , scriptCommonDefs
   , implicitBookkeepingStanza
@@ -42,7 +43,7 @@ import Language.Parser.SourceRange
 import Language.Value.Parser
 import Language.Code.Parser (CommonDefs(..), noCommonDefs, codeStatementsGrammar, codeBlockGrammar, ParsedCode, withDefinedFunctions, withCommon)
 import Language.Code.Syntax (Stmt(..), StmtF(..))
-import Actor.Event (toolBlocksGrammar, ParsedToolBlock, Coordinate(..), ViewKind(..))
+import Actor.Event (toolBlocksGrammar, ParsedToolBlock, toolBlockEvent, Coordinate(..), ViewKind(..))
 import Actor.Layout (AppAction(..))
 
 import qualified Data.Set as Set
@@ -201,6 +202,11 @@ data ParsedStanza
       , tsDrawLayer          :: Int
       , tsRefreshOnActivate  :: Bool
       , tsRefreshCanUpdate   :: Bool
+      , tsOverlay  :: Bool
+        -- ^ Whether this is a viewer's overlay (@\@tool overlay@): not a
+        -- tool anyone selects, but drawings always shown over the viewer,
+        -- below every tool's, redrawn by its @on refresh:@ block whenever
+        -- the view or the configuration changes.
       , tsConfig   :: [ConfigStmt]
         -- ^ Declarations at the top of the stanza, before any @on ...:@
         -- block, become this tool's own configuration panel -- the same
@@ -504,6 +510,12 @@ scriptGrammar defs = mdo
       (\name as sr -> validateToolHeader sr name as)
       <$> (token At *> tok "tool" *> quotedP) <*> (attrs <* nl)
 
+  -- `@tool overlay`: a bare word, where a tool's name is always quoted
+  overlayHeader <- rule $
+    withSourceRange $
+      (\as sr -> (sr,) <$> validateOverlayHeader sr as)
+      <$> (token At *> tok "tool" *> tok "overlay" *> attrs <* nl)
+
   ------------------------------------------------------------
   -- @config@ stanza bodies: variable declarations, text, buttons
   ------------------------------------------------------------
@@ -628,9 +640,17 @@ scriptGrammar defs = mdo
   toolStanza <- rule $
     (\ehdr edecls blocks -> (\ToolHeader{..} decls ->
         ToolStanza thName thFor thShortcut thIcon
-                   thDrawLayer thRefreshOnActivate thRefreshCanUpdate decls blocks)
+                   thDrawLayer thRefreshOnActivate thRefreshCanUpdate False decls blocks)
         <$> ehdr <*> configStmts edecls)
     <$> toolHeader <*> many configStmt <*> toolBody
+
+  overlayStanza <- rule $
+    (\ehdr edecls blocks -> do
+        (sr, target) <- ehdr
+        decls <- configStmts edecls
+        validateOverlayBody sr decls blocks
+        pure (ToolStanza "overlay" target "" Nothing overlayDrawLayer False False True [] blocks))
+    <$> overlayHeader <*> many configStmt <*> toolBody
 
   commonStanza <- rule $
     (\ehdr body -> ehdr >> CommonStanza <$> validateCommonBody body)
@@ -679,7 +699,7 @@ scriptGrammar defs = mdo
         pure (ColorizerStanza name desc stmts params (commonUsedBy defs withDefaults) code))
     <$> colorizerHeader <*> many configStmt <*> (colorizerDefine <?> "the colorizer's code, `define colorize:`")
 
-  stanza <- ruleChoice [configStanza, viewerStanza, toolStanza, commonStanza, colorizerStanza]
+  stanza <- ruleChoice [configStanza, viewerStanza, toolStanza, overlayStanza, commonStanza, colorizerStanza]
 
   rule ((token Indent *> many stanza <* token Dedent) <?> "a unified project script")
 
@@ -884,6 +904,34 @@ validateToolHeader sr thName attrs = do
     , thShortcut = fromMaybe "" (lookupAttr "shortcut" attrs)
     , thIcon     = lookupAttr "icon" attrs
     }
+
+-- | The draw layer of a viewer's overlay: below every tool's (whose
+-- @drawLayer=@ is any other 'Int'; layers are drawn in increasing order).
+overlayDrawLayer :: Int
+overlayDrawLayer = minBound
+
+-- | An overlay's header can only say which viewer it's for: it's never
+-- selected, so it has no shortcut or icon, it's always drawn below the
+-- tools, and it only ever refreshes.
+validateOverlayHeader :: SourceRange -> [(String, String)] -> Either (SourceRange, String) (Maybe String)
+validateOverlayHeader sr attrs = do
+  forM_ attrs $ \(k, _) -> when (k /= "for") $
+    Left (sr, "An overlay can only have a `for=` attribute, not `" ++ k ++ "=`: it isn't a tool " ++
+              "that gets selected, and it's always drawn above the viewer and below its tools.")
+  pure (lookupAttr "for" attrs)
+
+-- | An overlay is just an @on refresh:@ block, with no settings of its own.
+validateOverlayBody :: SourceRange -> [ConfigStmt] -> [ParsedToolBlock] -> Either (SourceRange, String) ()
+validateOverlayBody sr decls blocks = do
+  unless (null decls) $
+    Left (sr, "An overlay can't declare settings of its own: it has no panel, since it's never " ++
+              "selected. Declare them in a `@config` stanza instead.")
+  case [ ev | ev <- map toolBlockEvent blocks, ev /= "on refresh" ] of
+    ev : _ -> Left (sr, "An overlay only has an `on refresh:` block, which runs whenever its viewer's " ++
+                        "view or the configuration changes; it can't have an `" ++ ev ++ ":` block.")
+    [] -> pure ()
+  when (null blocks) $
+    Left (sr, "An overlay needs an `on refresh:` block, to draw what it shows.")
 
 ------------------------------------------------------------
 -- Config declaration validation

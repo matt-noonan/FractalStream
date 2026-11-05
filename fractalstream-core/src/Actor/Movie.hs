@@ -306,6 +306,7 @@ renderViewerImage smooth withDrawings viewer = renderViewerBuffer smooth viewer 
   Right RenderedBuffer{..} -> do
     img <- if withDrawings
       then do
+        refreshOverlay viewer
         layers <- vDrawCmds viewer
         withForeignPtr rbPixels $ \buf ->
           pixelMap dropAlpha <$>

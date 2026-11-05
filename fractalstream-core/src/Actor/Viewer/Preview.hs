@@ -38,5 +38,5 @@ renderPreview baseOnly viewer = do
   modifyValue (vPixelSize preview) (/ scale)
   fmap (BSL.toStrict . encodePng . snd) <$>
     withRenderedViewerBuffer preview True (\view dims buf -> do
-      layers <- if baseOnly then pure [] else vDrawCmds viewer
+      layers <- if baseOnly then pure [] else refreshOverlay viewer >> vDrawCmds viewer
       compositeDrawLayers view layers dims buf)

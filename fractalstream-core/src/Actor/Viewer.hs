@@ -19,6 +19,7 @@ module Actor.Viewer
   , ViewerIssues(..)
   , describeViewerIssues
   , Viewer(..)
+  , refreshOverlay
   , CodeWithArgs(..)
   , cloneViewer
   , onParameterChanges
@@ -230,6 +231,20 @@ data Viewer = Viewer
   , vDrawCmdsChanged :: IO Bool
   , vCodeWithArgs :: CodeWithArgs
   , vTools     :: Dynamic [Tool]
+  , vRefreshOverlay :: PixelDims -> IO ()
+    -- ^ Run the viewer's overlay's @on refresh:@ block (if it has an
+    --   overlay), for a view with the given pixel size: its drawings go
+    --   to a layer below every tool's. A frontend runs it whenever the
+    --   view changes, and when 'vListenOverlay' says to, and before it
+    --   draws tool drawings anywhere they can't be kept up to date that
+    --   way (a capture, a movie frame). Safe to call from any thread, and
+    --   never throws: a failing overlay only reports its error on stderr.
+  , vListenOverlay :: IO () -> IO (IO ())
+    -- ^ Run an action whenever the overlay may need refreshing because
+    --   a configuration value changed (never, without an overlay);
+    --   returns the action that stops listening. The action shouldn't
+    --   run the overlay itself, since it may be called while a value is
+    --   being set: it should ask for a refresh later.
   , vBuildToolHandler
       :: Int
       -> SomeContext EventArgument_
@@ -599,11 +614,20 @@ cloneViewer v = do
 
     , vListen = vListen v
     , vTools = vTools v
+    , vRefreshOverlay = vRefreshOverlay v
+    , vListenOverlay = vListenOverlay v
     , vCodeWithArgs = vCodeWithArgs v
     , vDrawCmds = vDrawCmds v
     , vDrawCmdsChanged = vDrawCmdsChanged v
     , vBuildToolHandler = vBuildToolHandler v
     }
+
+-- | Refresh a viewer's overlay for its current view (see 'vRefreshOverlay').
+refreshOverlay :: Viewer -> IO ()
+refreshOverlay v = do
+  px <- getDynamic (vPixelSize v)
+  aspect <- getDynamic (vAspect v)
+  vRefreshOverlay v (px, px * aspect)
 
 -- | A fallback viewer function that paints every point grey
 allGrey :: ViewerFunction '[]

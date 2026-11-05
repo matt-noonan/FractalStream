@@ -800,6 +800,28 @@ A tool script can have at most one block for each of `refresh`,
 `drag-finished`, but any number of distinctly-named `button` and `timer`
 blocks.
 
+### Overlays
+
+A viewer can have one *overlay*: drawings that are always shown over the
+viewer, whichever tool is selected (or none), below every tool's own
+drawings. It's written as a tool named with the bare word `overlay` (a
+quoted `"overlay"` is an ordinary tool), with only an `on refresh:` block:
+
+```
+@tool overlay for="Mandelbrot set"
+on refresh:
+  erase
+  use yellow for fill
+  draw filled circle at C with radius 5 pixel_size
+```
+
+Its `on refresh:` block runs when the project opens, whenever the viewer's
+view changes, and whenever any configuration value changes, so what it
+draws follows the parameters even when they're changed somewhere else
+(another viewer's tool, or the configuration window). An overlay can only
+have a `for=` attribute (it's never selected, so it has no shortcut), and
+no declarations of its own (it has no panel); a viewer has at most one.
+
 ### Drawing commands
 
 In some contexts, a script might have the ability to draw annotations
