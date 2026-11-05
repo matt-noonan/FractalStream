@@ -54,11 +54,17 @@ module Actor.Viewer.Sphere
     -- * A viewer's code, on the sphere
   , sphereViewName
   , rotationNames
+  , sphereShadingName
+  , sphereShading
+  , sphereLight
   , sphereViewEntries
   , onTheSphere
   ) where
 
-import Data.Color (Color, rgbToColor)
+import Data.Color (Color, rgbToColor, black)
+import Data.DynamicValue (Variable, newVariable)
+import FractalStream.Settings (defaultSphereShading)
+import System.IO.Unsafe (unsafePerformIO)
 import Language.Type
 import Language.Parser.SourceRange (SourceRange(..))
 import Language.Code.Syntax
@@ -259,10 +265,32 @@ sphereViewName = "[internal] sphere view"
 rotationNames :: [String]
 rotationNames = [ "[internal] sphere rotation " ++ show i ++ show j | i <- [1 .. 3 :: Int], j <- [1 .. 3 :: Int] ]
 
+-- | The name under which a complex viewer's code is told how strongly
+-- to shade the globe, from 0 to 1 (see 'onTheSphere').
+sphereShadingName :: String
+sphereShadingName = "[internal] sphere shading"
+
+-- | How strongly sphere viewers shade the globe, from 0 (not at all) to
+-- 1: a live value, read by every complex viewer's code (like its
+-- rotation, so changing it means drawing again, not compiling again).
+-- The app sets it from its settings ("FractalStream.Settings"); until
+-- then, and in @fsrun@, it's the settings' default.
+sphereShading :: Variable Double
+sphereShading = unsafePerformIO (newVariable (fromIntegral defaultSphereShading / 100))
+{-# NOINLINE sphereShading #-}
+
+-- | The direction the light comes from, in the viewer's frame (so it
+-- stays put as the globe turns): the upper left, in front of the globe.
+sphereLight :: Vec3
+sphereLight = (-1 / n, 1 / n, 1.5 / n)
+  where n = sqrt 4.25
+
 -- | What a complex viewer's code is given, besides its configuration, so
 -- that it can be shown on the plane or on the sphere.
 sphereViewEntries :: [(String, SomeType)]
-sphereViewEntries = (sphereViewName, SomeType BooleanType) : [ (n, SomeType RealType) | n <- rotationNames ]
+sphereViewEntries = (sphereViewName, SomeType BooleanType)
+                  : (sphereShadingName, SomeType RealType)
+                  : [ (n, SomeType RealType) | n <- rotationNames ]
 
 -- | A complex viewer's code (with coordinate @z@), wrapped so that while
 -- the viewer shows the sphere, @z@ is the point of the globe under the
@@ -276,12 +304,21 @@ sphereViewEntries = (sphereViewName, SomeType BooleanType) : [ (n, SomeType Real
 -- >     (X, Y, Z) := rotation × (x, y, s)
 -- >     z <- (X + Y i) / (1 + Z)      -- the homogeneous [X + iY : 1 + Z]
 -- >   body
+-- >   if sphere:
+-- >     light := ((x, y, sqrt(1 - x² - y²)) · L + 1) / 2
+-- >     color <- blend(1 - shading (1 - light), color, black)
 --
--- On the plane, it's just the body (with @z@ already @x + y i@).
+-- On the plane, it's just the body (with @z@ already @x + y i@). The
+-- shading darkens the globe away from the light ('sphereLight', @L@),
+-- by the viewer's @[internal] sphere shading@ ('sphereShading'): a
+-- "half Lambert" light, which falls off gently and never goes all the
+-- way to black on the visible side.
 onTheSphere :: String -> Stmt -> Stmt
 onTheSphere z body =
   stmt (SIf offGlobe (stmt (SSet "color" background))
-                     (stmt (SBlock [stmt (SIf sphereOn (stmt (SBlock lift)) (stmt SPass)), body])))
+                     (stmt (SBlock [ stmt (SIf sphereOn (stmt (SBlock lift)) (stmt SPass))
+                                   , body
+                                   , stmt (SIf sphereOn (stmt (SBlock shade)) (stmt SPass)) ])))
   where
     stmt = Stmt NoSourceRange
     e = Syn NoSourceRange
@@ -308,3 +345,15 @@ onTheSphere z body =
       ++ [ stmt (SDecl c (Just RealT) (row ns)) | (c, ns) <- zip [cx, cy, cz] rows ]
       ++ [ stmt (SSet z (bin OpDiv (bin OpAdd (var cx) (bin OpMul (var cy) i))
                                    (bin OpAdd (real 1) (var cz)))) ]
+    (lx, ly, lz) = sphereLight
+    light = "[internal] sphere.light"
+    shading = var sphereShadingName
+    facing = foldr1 (bin OpAdd)
+      [ bin OpMul (real lx) sx, bin OpMul (real ly) sy
+      , bin OpMul (real lz) (e (EApp "sqrt" (bin OpSub (real 1) d2))) ]
+    shade =
+      [ stmt (SDecl light (Just RealT) (bin OpDiv (bin OpAdd facing (real 1)) (real 2)))
+      , stmt (SSet "color" (e (EColor3 OpBlend
+                                 (bin OpSub (real 1) (bin OpMul shading (bin OpSub (real 1) (var light))))
+                                 (var "color")
+                                 (e (ELit "black" (SomeHaskellType ColorType black)))))) ]

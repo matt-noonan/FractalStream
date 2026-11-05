@@ -228,7 +228,16 @@ it `z` is set from the rotated point, through the homogeneous pair
 second chart can come later: a plain complex `z` loses precision near
 ∞). So every complex viewer's typed code carries the wrapper, and the
 view can be switched at run time (`switchView`, the wx menu's "Show on
-the sphere"). On the sphere `vCenter` stays (0, 0) and `vPixelSize` is the
+the sphere"). The wrapper also shades the globe after the body (so after the
+colorizer): `color <- blend(1 - k (1 - light), color, black)`, a "half
+Lambert" light from `sphereLight` (upper left, in front, in the
+viewer's frame), where `k` is `[internal] sphere shading`, a live value
+from the global `Actor.Viewer.Sphere.sphereShading` (0 to 1). The wx app
+sets it from `setSphereShading` (percent, the Preferences window's
+Viewers tab; `sphere-shading:` in settings.yaml), and a sphere viewer
+re-renders when it changes, as for a parameter change; `fsrun` keeps the
+default (75%), so captures are reproducible. Movies and previews made in
+the app use the same value, so they match the window. On the sphere `vCenter` stays (0, 0) and `vPixelSize` is the
 globe's zoom; `vRotation` is its orientation, and `vOriginalPlaneView` /
 `vOriginalSpherePixelSize` / `vOriginalRotation` give each view's
 original. Drawings are projected (`ScreenView`, `Projection`;
@@ -1191,3 +1200,11 @@ picks them up:
 `sphere-viewers` (main branch is `main`):
 - Riemann sphere viewers (`view=sphere`): see "Sphere viewers" under
   "Viewer" above
+
+wxHaskell's `hslider`/`sliderCreate` gets a slider's style wrong on arm64
+macOS: `wxSlider_Create`'s style is its tenth argument, a C `long`, so
+it's passed on the stack and was read with garbage in it (the slider
+came out vertical or inverted, with labels). `UI.Preferences`'s
+`horizontalSlider` calls wxc's `wxSlider_Create` with exact C types
+instead. Other constructors with a style past the eighth argument may
+have the same problem.

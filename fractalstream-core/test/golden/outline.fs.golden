@@ -34,18 +34,18 @@ let `[internal] vanishing radius` = tiny in:
                               block:
                                 let `der` = 1:R:C in:
                                   block:
-                                    let `[internal] fresh #34` = 0 in:
-                                      let `[internal] fresh #35` = [internal] iteration limit in:
+                                    let `[internal] fresh #35` = 0 in:
+                                      let `[internal] fresh #36` = [internal] iteration limit in:
                                         block:
-                                          do-while (!((|(z / dzdc)| < tol) or (([internal] escape radius < |z|) or (|der| < [internal] vanishing radius))) and ([internal] fresh #34 < [internal] fresh #35)):
+                                          do-while (!((|(z / dzdc)| < tol) or (([internal] escape radius < |z|) or (|der| < [internal] vanishing radius))) and ([internal] fresh #35 < [internal] fresh #36)):
                                             block:
                                               block:
                                                 set `dzdc` := (1:R:C + ((2:R:C * z) * dzdc))
                                                 set `z` := ((z ^ 2:R:C) + C)
                                                 set `der` := ((2:R:C * z) * der)
-                                              set `[internal] fresh #34` := ([internal] fresh #34 + 1)
-                                          set `[internal] iteration count` := [internal] fresh #34
-                                          set `[internal] stuck` := ([internal] fresh #34 = [internal] fresh #35)
+                                              set `[internal] fresh #35` := ([internal] fresh #35 + 1)
+                                          set `[internal] iteration count` := [internal] fresh #35
+                                          set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
                                     block:
                                       let `[internal] shade.on_boundary #0` = (|(z / dzdc)| < tol) in:
                                         block:
@@ -60,6 +60,13 @@ let `[internal] vanishing radius` = tiny in:
                                               else:
                                                 block:
                                                   set `color` := interior_color
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
+                        block:
+                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                  else:
+                    no-op
 
 
 === viewer 1: Dynamical plane
@@ -95,17 +102,17 @@ let `[internal] vanishing radius` = tiny in:
                           block:
                             let `tol` = ((2:R * pixel_size) * fatness) in:
                               block:
-                                let `[internal] fresh #34` = 0 in:
-                                  let `[internal] fresh #35` = [internal] iteration limit in:
+                                let `[internal] fresh #35` = 0 in:
+                                  let `[internal] fresh #36` = [internal] iteration limit in:
                                     block:
-                                      do-while (!(([internal] escape radius < |z|) or ((|((z / dz) - (w / dz))| < tol) or (|dz| < [internal] vanishing radius))) and ([internal] fresh #34 < [internal] fresh #35)):
+                                      do-while (!(([internal] escape radius < |z|) or ((|((z / dz) - (w / dz))| < tol) or (|dz| < [internal] vanishing radius))) and ([internal] fresh #35 < [internal] fresh #36)):
                                         block:
                                           block:
                                             set `dz` := ((2:R:C * z) * dz)
                                             set `z` := ((z ^ 2:R:C) + C)
-                                          set `[internal] fresh #34` := ([internal] fresh #34 + 1)
-                                      set `[internal] iteration count` := [internal] fresh #34
-                                      set `[internal] stuck` := ([internal] fresh #34 = [internal] fresh #35)
+                                          set `[internal] fresh #35` := ([internal] fresh #35 + 1)
+                                      set `[internal] iteration count` := [internal] fresh #35
+                                      set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
                                 block:
                                   let `[internal] shade.on_boundary #0` = (|((z / dz) - (w / dz))| < tol) in:
                                     block:
@@ -120,5 +127,12 @@ let `[internal] vanishing radius` = tiny in:
                                           else:
                                             block:
                                               set `color` := interior_color
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
+                        block:
+                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                  else:
+                    no-op
 
 

@@ -47,7 +47,8 @@ import qualified Data.ByteString as BS
 import System.FilePath (takeDirectory, takeFileName)
 import Data.Char (isSpace)
 import FractalStream.Library (LibraryEntry(..), projectsDirectory)
-import FractalStream.Settings (loadSettings)
+import FractalStream.Settings (Settings(..), loadSettings)
+import Actor.Viewer.Sphere (sphereShading)
 import UI.AppSettings (appSettings)
 import UI.Preferences (preferencesWindow)
 
@@ -110,6 +111,11 @@ runApp = withBackend $ \backend -> start $ do
   mapM_ (putStrLn . ("Settings: " ++)) settingsWarnings
   let settings = appSettings
   setValue' settings initialSettings
+  -- (sphere viewers read their shading live, from 'sphereShading', and
+  -- draw again when it changes)
+  let followShading s = setValue sphereShading (fromIntegral (setSphereShading s) / 100)
+  followShading initialSettings
+  void (watchDynamic settings followShading)
 
   let -- A new project starts from one of the library's starting points
       -- (including a blank one), chosen in the library browser.

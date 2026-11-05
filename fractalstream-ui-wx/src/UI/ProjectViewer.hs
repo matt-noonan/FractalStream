@@ -1405,13 +1405,18 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- For each variable that the viewer code depends on, trigger a repaint whenever
     -- that variable changes.
     stopListening' <- onParameterChanges theViewer requestRefresh
+    -- ...and, on the sphere, when the shading preference does (it's read
+    -- live, like the globe's orientation)
+    stopShadingListening <- watchDynamic sphereShading $ \_ -> do
+      m <- get model value
+      when (isJust (modelRotation m)) requestRefresh
     -- (the overlay's refresh is only queued here: a value is being set)
     stopOverlayListening <- vListenOverlay (void (tryPutMVar needToRefreshOverlay ()))
     -- Hooks `windowOnDestroy`, not `on closing` -- `f` is exactly the
     -- viewer frame a rebuild tears down with `windowDestroy`, which
     -- never fires `closing` at all; see the note on
     -- 'UI.Widgets.wxWatchDynamic'.
-    onOwnDestroy f (forgetViewer >> stopListening' >> stopOverlayListening)
+    onOwnDestroy f (forgetViewer >> stopListening' >> stopOverlayListening >> stopShadingListening)
 
     -------------------------------------------------------
     -- Navigation actions
