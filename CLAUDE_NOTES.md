@@ -658,6 +658,15 @@ Key modules:
   Backspace doesn't, as Scintilla deletes on key-down). On macOS, Control-letter reaches
   the key handler as its control character (Control-E is ENQ, 5) with no
   modifiers set, so control codes 1-26 are read as Control-letters.
+- wxWidgets assertions don't show dialogs. Our wxc fork's `ELJApp`
+  overrides `OnAssertFailure`, which writes a line to stderr (and on
+  macOS to the system log: `/usr/bin/log show --predicate
+  'eventMessage CONTAINS "wxWidgets assertion"'`; plain `log` in zsh is
+  a builtin) and then carries on. An assertion that fails during
+  drawing used to hang the app, because the dialog's modal loop can't
+  run inside `drawRect`. Set `WXC_ASSERT_DIALOGS=1` to get the dialogs
+  back. CI builds wxc from `WXC_COMMIT` in the workflows; locally,
+  rebuild and `sudo cmake --install` wxc, then relink the app.
 - Errors in code editors are underlined with indicator 8, a red squiggle
   (`UI.CodeEditor.markError`/`clearError`). wxHaskell's own indicator
   functions are for Scintilla's old style-bit indicators, which it no
