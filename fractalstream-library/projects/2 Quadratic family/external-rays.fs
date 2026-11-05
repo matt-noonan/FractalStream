@@ -1,6 +1,6 @@
 script: |
   @config "Configuration"
-  C : C as "f(z) = z² +" <- -0.11 + 0.78i
+  C : C as "f(z) = z² +" := -0.11 + 0.78i
 
   @viewer "Dynamical plane" center=0 pixelSize=1/128 colorizer="Binary decomposition"
   coloring:
@@ -21,11 +21,11 @@ script: |
 
   @tool "Parameter plane external rays" for="Parameter plane" shortcut=r
   row:
-    ps : List of Z as "Numerators: " <- [0, 1, 2]
-    q : Z as "Denominator: " <- 3
-  S : Z as "Subdivisions per level set: " <- 10
-  error : R as "Step size" <- 0.0001
-  iter_limit : Z as "Newton iteration limit" <- 100
+    ps : List of Z as "Numerators: " := [0, 1, 2]
+    q : Z as "Denominator: " := 3
+  S : Z as "Subdivisions per level set: " := 10
+  error : R as "Step size" := 0.0001
+  iter_limit : Z as "Newton iteration limit" := 100
   on refresh:
     erase
     for each p in ps:
@@ -69,11 +69,11 @@ script: |
 
   @tool "Dynamical plane external rays" for="Dynamical plane" shortcut=r
   row:
-    ps : List of Z as "Numerators:" <- [1, 2, 4]
-    q : Z as "Denominator:" <- 7
-  S : Z as "Subdivisions per level set: " <- 10
-  error : R as "Step size" <- 0.0001
-  iter_limit : Z as "Newton iteration limit" <- 100
+    ps : List of Z as "Numerators:" := [1, 2, 4]
+    q : Z as "Denominator:" := 7
+  S : Z as "Subdivisions per level set: " := 10
+  error : R as "Step size" := 0.0001
+  iter_limit : Z as "Newton iteration limit" := 100
   on refresh:
     erase
     for each p in ps:

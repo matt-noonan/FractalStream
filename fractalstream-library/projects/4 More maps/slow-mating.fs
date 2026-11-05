@@ -1,14 +1,14 @@
 script: |
   @config "Slow mating"
-  c1 : C as "First polynomial z² + c1, c1 =" <- -0.122561 + 0.744862i
-  c2 : C as "Second polynomial w² + c2, c2 =" <- -1
-  t : R as "Mating time t =" <- 0.5
+  c1 : C as "First polynomial z² + c1, c1 =" := -0.122561 + 0.744862i
+  c2 : C as "Second polynomial w² + c2, c2 =" := -1
+  t : R as "Mating time t =" := 0.5
   text "Each Julia set is cut along its equipotential of level t, and the two are glued there, as the equator of a sphere. As t goes to 0 this approaches the mating."
   row:
-    color1 : Color as "First Julia set" <- rgb(1, 0.8, 0.3)
-    color2 : Color as "Second Julia set" <- rgb(0.15, 0.3, 0.75)
-  show_bands : Boolean as "Shade bands between preimages of the equator" <- true
-  show_equator : Boolean as "Draw the equator" <- true
+    color1 : Color as "First Julia set" := rgb(1, 0.8, 0.3)
+    color2 : Color as "Second Julia set" := rgb(0.15, 0.3, 0.75)
+  show_bands : Boolean as "Shade bands between preimages of the equator" := true
+  show_equator : Boolean as "Draw the equator" := true
 
   @common
   # The slow mating of P1(z) = z² + c1 and P2(w) = w² + c2 (Milnor's
@@ -55,16 +55,16 @@ script: |
     # points of the orbits on the top sphere: u ≈ z/R, 1/u ≈ w/R
     a := transform(xs, p -> p exp(-top))
     b := transform(ys, p -> p exp(-top))
-    As : List of C <- []
-    Bs : List of C <- []
+    As : List of C := []
+    Bs : List of C := []
     s := top
     k := L - 1
     while k >= 1 up to 64 times:
       s <- s / 2
       A := a @ 1
       B := b @ 1
-      na : List of C <- []
-      nb : List of C <- []
+      na : List of C := []
+      nb : List of C := []
       for each j in range(1, k + 2):
         v := a @ (j + 1)
         r := sqrt((v - A) / (1 - B v))
@@ -88,7 +88,7 @@ script: |
     # push the pixel up to the top level
     # (and its derivative, for drawing the equator at a constant width)
     u := z
-    du : C <- 1
+    du : C := 1
     for each n in range(1, L):
       u2 := u^2
       A := As @ n

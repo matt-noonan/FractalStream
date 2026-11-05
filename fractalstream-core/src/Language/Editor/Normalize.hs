@@ -1,6 +1,6 @@
 -- | Rewriting a script to use the mathematical symbols the language
--- accepts in place of their ASCII spellings: @x : ℝ ⟵ 1@ for
--- @x : R <- 1@, @iterate z ⟼ z² + C@ for @iterate z -> z^2 + C@,
+-- accepts in place of their ASCII spellings: @x : ℝ ≔ 1@ for
+-- @x : R := 1@, @iterate z ⟼ z² + C@ for @iterate z -> z^2 + C@,
 -- @p : ℝ × ℂ@ for @p : R x C@, @2 × z@ for @2 * z@, and so
 -- on. Only spellings change: the rewritten script has exactly the same
 -- tokens. Stanza headers, comments, and strings are left alone.

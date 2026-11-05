@@ -1,7 +1,7 @@
 script: |
   @common
 
-  let f(z) = z^2 + C
+  f(z) := z^2 + C
 
   # one step of f, followed by a Dehn twist in the annulus around
   # twist_center with radii r0 and r1
@@ -21,14 +21,14 @@ script: |
     draw circle at twist_center with radius r1
 
   @config "Configuration"
-  C : C as "Selected value of C:" <- -0.1226 + 0.7449i
-  drag_target : Z as "Dehn tool drag target: " <- 0
+  C : C as "Selected value of C:" := -0.1226 + 0.7449i
+  drag_target : Z as "Dehn tool drag target: " := 0
 
   @config "Dehn twist"
-  twist_center : C as "Center of twist:" <- -0.267 + 0.478i
+  twist_center : C as "Center of twist:" := -0.267 + 0.478i
   row:
-    r0 : R as "Inner radius" <- 0.2
-    r1 : R as "Outer radius" <- 0.5
+    r0 : R as "Inner radius" := 0.2
+    r1 : R as "Outer radius" := 0.5
 
   @viewer "Parameter space" var=C colorizer="Binary decomposition"
   z ≔ 0

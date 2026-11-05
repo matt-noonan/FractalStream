@@ -1,8 +1,8 @@
 script: |
   @config "Configuration"
-  a : C as "a = " <- 0.3
-  b : C as "b = " <- 0.6 + 0.2i
-  zoom : R as "zoom = " <- 0.001
+  a : C as "a = " := 0.3
+  b : C as "b = " := 0.6 + 0.2i
+  zoom : R as "zoom = " := 0.001
 
   @common
   # Iterate the Hénon map (x, y) -> (x^2 + b - a y, x), starting near its

@@ -1,14 +1,14 @@
 # Translated from a script for the original FractalStream.
 script: |
   @config "Parameters"
-  C : C as "C =" <- 0
+  C : C as "C =" := 0
 
   @config "Colors"
-  default_exit_condition_color : Color as "Default Exit Condition" <- blue
-  period_3_cycle_color : Color as "Period 3 Cycle" <- red
+  default_exit_condition_color : Color as "Default Exit Condition" := blue
+  period_3_cycle_color : Color as "Period 3 Cycle" := red
 
   @common
-  let shade(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
+  shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
     else blend(-sin(2 pi t), light c, c)
 
   @viewer "Parameter plane" var=C

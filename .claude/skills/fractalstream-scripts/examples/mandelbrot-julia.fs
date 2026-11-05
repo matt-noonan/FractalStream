@@ -4,14 +4,14 @@ script: |
   # clicking the parameter plane, and an orbit-tracing tool.
 
   @config "Parameters"
-  C : C as "C =" <- -0.12 + 0.75i
+  C : C as "C =" := -0.12 + 0.75i
 
   @config "Coloring"
-  period : R as "Color period (iterations)" <- 20
-  inside : Color as "Interior color" <- black
+  period : R as "Color period (iterations)" := 20
+  inside : Color as "Interior color" := black
 
   @common
-  let f(z) = z^2 + C
+  f(z) := z^2 + C
 
   # Shared coloring: run right after an escape-time loop on z.
   define shade:

@@ -5,9 +5,9 @@ script: |
   # here, ready to color by. Instead, the viewer's Autocolor colorizer
   # gives each root a color of its own the first time Newton's method
   # finds it.
-  let f(z) = z^5 - z - 1
+  f(z) := z^5 - z - 1
   # one step of Newton's method
-  let newton(z) = z - f(z) / f'(z)
+  newton(z) := z - f(z) / f'(z)
 
   @viewer "Roots of f" colorizer=Autocolor center=0 pixelSize=1/150
   lastZ := 0

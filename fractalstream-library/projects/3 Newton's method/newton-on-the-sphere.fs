@@ -1,8 +1,8 @@
 script: |
   @common
-  let f(z) = z^3 - 2 z + 2
+  f(z) := z^3 - 2 z + 2
   # one step of Newton's method
-  let newton(z) = z - f(z) / f'(z)
+  newton(z) := z - f(z) / f'(z)
 
   @viewer "Newton's method on the sphere" var=z view=sphere center=-1.5
   iterate z -> newton(z) until z stops

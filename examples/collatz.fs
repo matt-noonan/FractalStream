@@ -1,12 +1,12 @@
 script: |
   @config "Configuration"
-  C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
-  collatz_escape_radius : R as "Escape radius:" <- 100
-  p : R as "Brightness: " <- 0.5
+  C : C as "f(z) = z^2 +" := -0.11 + 0.78i
+  collatz_escape_radius : R as "Escape radius:" := 100
+  p : R as "Brightness: " := 0.5
 
   @common
   # a complex extension of the Collatz map, z/2 or 3z + c depending on parity
-  let step(z, c) = (z/2) (cos (pi z / 2))^2 + (3z + c) (sin (pi z / 2))^2
+  step(z, c) := (z/2) (cos (pi z / 2))^2 + (3z + c) (sin (pi z / 2))^2
 
   @viewer "Collatz sequence" escape=collatz_escape_radius
   iterate z -> step(z, C) until z = 1 or z = 0 or z = -1 or z = -5 or z = -17 or z escapes

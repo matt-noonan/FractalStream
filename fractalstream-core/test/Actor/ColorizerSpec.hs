@@ -68,7 +68,7 @@ spec = do
       forM_ builtinColorizers $ \c -> do
         ens <- buildWith (Map.fromList [("J", colorizerName c), ("M", colorizerName c)]) [r|
 @config "P"
-C : C as "C" <- -1
+C : C as "C" := -1
 
 @viewer "J"
 iterate z -> z^2 + C until z escapes
@@ -145,7 +145,7 @@ color <- white
     it "never clash with a script's own" $ do
       ens <- buildWith Map.empty [r|
 @config "Mine"
-color_speed : Z as "Mine" <- 3
+color_speed : Z as "Mine" := 3
 
 @viewer "V"
 iterate z -> z^2 - 1 until z escapes
@@ -195,8 +195,8 @@ iterate z -> z^2 + 0.25 until z escapes
   describe "@colorizer stanzas" $ do
     let smooth = [r|
 @colorizer "Smooth" description="Smoothed escape time."
-period : R as "Color period" <- 20
-inside : Color as "Interior color" <- black
+period : R as "Color period" := 20
+inside : Color as "Interior color" := black
 
 define colorize(v):
   if v escaped:
@@ -209,7 +209,7 @@ define colorize(v):
     it "define a colorizer a viewer can use, with its arguments" $ do
       ens <- buildWith Map.empty (smooth ++ [r|
 @config "Parameters"
-C : C as "C =" <- -0.12 + 0.75i
+C : C as "C =" := -0.12 + 0.75i
 
 @viewer "Parameter plane" var=C colorizer="Smooth(z)"
 z := 0
@@ -238,7 +238,7 @@ iterate z -> z^2 + C until z escapes
     it "read their arguments knowing the script's functions" $ do
       _ <- buildWith Map.empty (smooth ++ [r|
 @common
-let f(w) = w^2 - 1
+f(w) := w^2 - 1
 
 @viewer "V" colorizer="Smooth(f(z))"
 iterate z -> f(z) until z escapes
@@ -248,7 +248,7 @@ iterate z -> f(z) until z escapes
     it "can use @common definitions, whether or not the viewer does" $ do
       let common = [r|
 @common
-let g(w) = w^2
+g(w) := w^2
 k := 3
 
 @colorizer "Uses common"
@@ -316,7 +316,7 @@ define colorize(z, k):
   color <- if |z| > k then white else black
 
 @config "C"
-k : R as "k" <- 2
+k : R as "k" := 2
 |]
       -- `z` is the viewer's coordinate, and `k` is in the configuration
       ens <- buildWith Map.empty (two ++ "@viewer \"V\" colorizer=Two\npass\n")
@@ -333,7 +333,7 @@ k : R as "k" <- 2
     it "use their parameters' default values when they aren't given arguments" $ do
       let defaulted = [r|
 @colorizer "Shift"
-offset : R as "Offset" <- 0.5
+offset : R as "Offset" := 0.5
 define colorize(t = iterations / 20, u = t + offset):
   color <- rainbow(u)
 |]

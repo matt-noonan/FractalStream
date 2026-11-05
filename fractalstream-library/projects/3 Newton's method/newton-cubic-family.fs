@@ -1,15 +1,15 @@
 script: |
   @config "Newton's method configuration"
-  a : C as "a =" <- 0
-  tol : R as "closeness" <- 0.01
+  a : C as "a =" := 0
+  tol : R as "closeness" := 0.01
 
   @common
   # Newton's method for the cubic with roots r1, r2, and r3
   r1 := 1
   r2 := -0.5 + a
   r3 := -0.5 - a
-  let p(z) = (z - r1) (z - r2) (z - r3)
-  let newton(z) = z - p(z) / p'(z)
+  p(z) := (z - r1) (z - r2) (z - r3)
+  newton(z) := z - p(z) / p'(z)
 
   # color by which root Newton's method converged to (if any)
   define shade:

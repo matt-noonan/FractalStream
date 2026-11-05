@@ -1,9 +1,9 @@
 script: |
   @config "Parameter value"
-  C : C as "f(z) = z^2 +" <- -0.11 + 0.78i
+  C : C as "f(z) = z^2 +" := -0.11 + 0.78i
 
   @common
-  let f(z) = z^2 + C
+  f(z) := z^2 + C
 
   @viewer "Julia set" colorizer="Glow"
   iterate z -> f(z) until z escapes

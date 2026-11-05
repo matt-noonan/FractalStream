@@ -1,19 +1,19 @@
 script: |
   @config "Configuration"
-  tol : R as "Tolerance" <- 0.01
-  t : C as "t = " <- 1+i
+  tol : R as "Tolerance" := 0.01
+  t : C as "t = " := 1+i
 
   @config "t-plane colors"
-  tcolor1 : Color as "1" <- red
-  tcolor2 : Color as "ω" <- green
-  tcolor3 : Color as "ω²" <- blue
+  tcolor1 : Color as "1" := red
+  tcolor2 : Color as "ω" := green
+  tcolor3 : Color as "ω²" := blue
 
   @config "z-plane colors"
-  zcol : Color as "escaped" <- yellow
-  color8 : Color as "inf" <- red
-  color9 : Color as "j" <- green
-  color10 : Color as "jbar" <- blue
-  exceptional : Color as "exceptional" <- rgb(1,0.7,0.7)
+  zcol : Color as "escaped" := yellow
+  color8 : Color as "inf" := red
+  color9 : Color as "j" := green
+  color10 : Color as "jbar" := blue
+  exceptional : Color as "exceptional" := rgb(1,0.7,0.7)
 
   @common
   # the primitive cube roots of 1

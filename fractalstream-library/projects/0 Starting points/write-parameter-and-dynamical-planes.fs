@@ -16,7 +16,7 @@ script: |
       color <- dark rainbow(iterations / 20)
 
   @config "Configuration"
-  C : C as "C =" <- 0
+  C : C as "C =" := 0
 
   @viewer "Parametric complex dynamics parameter plane" var=C pixelSize=1/100
   dynamic := false

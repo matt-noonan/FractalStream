@@ -59,10 +59,10 @@ If `fsrun` isn't built: `cd fractalstream-ui-headless && stack build`
 ```yaml
 script: |
   @config "Parameters"
-  C : C as "C =" <- -0.12 + 0.75i
+  C : C as "C =" := -0.12 + 0.75i
 
   @common
-  let f(z) = z^2 + C
+  f(z) := z^2 + C
 
   @viewer "Dynamical plane" center=0 pixelSize=1/150 colorizer=Smooth
   iterate z -> f(z) until z escapes
@@ -127,7 +127,7 @@ script: |
 ## From a paper to a project
 
 - **Complex polynomial / rational map.** `@config` for the parameters, the
-  map as `let f(z) = ...` in `@common`, a dynamical-plane viewer, and if
+  map as `f(z) := ...` in `@common`, a dynamical-plane viewer, and if
   the map has a parameter, a parameter-plane viewer with `var=<param>`
   starting at the critical point (`z := 0` for z^2 + C; in general, the
   critical point as a function of the parameter). Add a "Pick C" tool on
@@ -167,7 +167,7 @@ script: |
   handler and draw the result, with the tool's declarations as its
   inputs (library project `2 Quadratic family/external-rays.fs`). Tools can use lists freely
   (they get up to 256 MB of scratch space; viewers get 1 MB per pixel).
-- **Shared logic** between viewers and tools goes in `@common` (`let` for
+- **Shared logic** between viewers and tools goes in `@common` (`f(z) := ...` for
   formulas, `define`/`run` for multi-statement code like coloring).
 - **What the language can't express**: recursion, user-defined types,
   arrays with mutation in place (lists are values: `xs <- append(xs, x)`),

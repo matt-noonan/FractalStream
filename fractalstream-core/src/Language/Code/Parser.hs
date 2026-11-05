@@ -68,16 +68,22 @@ withCommon CommonDefs{commonCode} body = case (used, body) of
       | any (`Set.member` needed) (definedNames stmt) = (stmt : kept, needed <> stmtNames stmt)
       | otherwise = (kept, needed)
 
--- | Record the names of the functions defined (by @let f(...) = ...@)
+-- | Record the names of the functions defined (by @f(...) := ...@)
 -- anywhere in the given tokens, so that the grammar can parse calls to
 -- them.
 withDefinedFunctions :: [SRToken] -> CommonDefs -> CommonDefs
 withDefinedFunctions toks defs =
-  defs { funNames = funNames defs `Set.union` Set.fromList (go (map baseToken toks)) }
+  defs { funNames = funNames defs `Set.union` Set.fromList (definedFunctionNames (map baseToken toks)) }
+
+-- | The names of the functions defined in the given tokens: a definition
+-- is a name, its parameters in parentheses, then @:=@, starting a line.
+definedFunctionNames :: [Token] -> [String]
+definedFunctionNames = go True
   where
-    go = \case
-      Let_ : Identifier f : OpenParen : rest -> f : go rest
-      _ : rest -> go rest
+    go atStart = \case
+      Identifier f : rest
+        | atStart, Just _ <- functionDefinitionBody rest -> f : go False rest
+      t : rest -> go (t `elem` [Newline, Indent, Dedent]) rest
       [] -> []
 
 parseCode :: forall env
@@ -141,7 +147,7 @@ codeStatementsGrammar CommonDefs{..} = mdo
     , node
       (SDecl <$> ident
              <*> (Just <$> (colon *> typ))
-             <*> (token LeftArrow *> value <* nl)) <?> "variable initialization"
+             <*> (token ColonEquals *> value <* nl)) <?> "variable initialization"
     , node
       (SDecl <$> ident
              <*> pure Nothing
@@ -157,9 +163,9 @@ codeStatementsGrammar CommonDefs{..} = mdo
       (SRun <$> (lit "run" *> ident)
             <*> (optional value <* nl)) <?> "run"
     , node
-      (SFun <$> (token Let_ *> ident)
+      (SFun <$> ident
             <*> argList
-            <*> (token Equal *> value <* nl)) <?> "function definition"
+            <*> (token ColonEquals *> value <* nl)) <?> "function definition"
     , node
       (SIf <$> (token If *> value <* (colon <* nl))
            <*> block

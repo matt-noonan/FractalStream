@@ -128,7 +128,7 @@ spec = describe "translating original-FractalStream scripts" $ do
     let s = scriptOf t
     s `shouldSatisfy` any ("@viewer \"Dynamical plane\" xvar=x yvar=y" `isInfixOf`)
     s `shouldSatisfy` any ("@viewer \"Parameter plane\" xvar=a yvar=b" `isInfixOf`)
-    s `shouldSatisfy` any ("a : R as \"a =\" <- 0" `isInfixOf`)
+    s `shouldSatisfy` any ("a : R as \"a =\" := 0" `isInfixOf`)
     s `shouldSatisfy` any ("x, y := 0, 0" `isInfixOf`)
     s `shouldSatisfy` any ("iterate (x, y) -> (x^2 - y^2 + a, 2 * x * y + b) until (x, y) escapes" `isInfixOf`)
     -- the probe: the clicked point itself, in the dynamical plane, and

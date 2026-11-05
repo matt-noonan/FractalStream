@@ -1,6 +1,6 @@
 script: |
   @config "Configuration"
-  tol : R as "Tolerance" <- 0.01
+  tol : R as "Tolerance" := 0.01
 
   @viewer "Monsieur Mathieu" vanish=tol
   a := (107 + 7*sqrt(11)*i)/486

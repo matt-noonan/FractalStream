@@ -120,8 +120,8 @@ parse p input
 -- failing somewhere later, and confusingly. (Most of these names aren't
 -- keywords to the tokenizer, so that the grammar can take them for what
 -- they are where they're used.) A name is checked where it's defined:
--- a @let@'s or @define@'s name and parameters, @x ≔@, a statement's
--- @x ⟵@ and @x : T@, @x ⟼@, @for each x@, @with first x@, and the points
+-- a function's (@f(x) ≔@) or @define@'s name and parameters, @x ≔@, a
+-- statement's @x ⟵@ and @x : T@, @x ⟼@, @for each x@, @with first x@, and the points
 -- of a handler's @on ... at x:@.
 builtinBindings :: [SRToken] -> [ParseError]
 builtinBindings = go True . map (\(SRToken t sr) -> (t, sr))
@@ -130,7 +130,7 @@ builtinBindings = go True . map (\(SRToken t sr) -> (t, sr))
     go atStart toks@((t, _) : rest) = here atStart toks ++ go (t `elem` [Newline, Indent, Dedent]) rest
 
     here atStart = \case
-      (Let_, _) : n : rest -> named "function" n ++ params rest
+      n : rest | atStart, Just _ <- functionDefinitionBody (map fst rest) -> named "function" n ++ params rest
       (Identifier "define", _) : n : rest -> named "code block" n ++ params rest
       (Identifier "each", _) : n : _ -> named "variable" n
       (Identifier "first", _) : n : _ -> named "variable" n
@@ -143,7 +143,7 @@ builtinBindings = go True . map (\(SRToken t sr) -> (t, sr))
 
     named role (t, sr) = [ BuiltinName sr name what role | Just (name, what) <- [builtin t] ]
 
-    -- a `let`'s or `define`'s parameters: each first in its slot
+    -- a function's or `define`'s parameters: each first in its slot
     params = \case
       (OpenParen, _) : rest -> slots rest
       _ -> []

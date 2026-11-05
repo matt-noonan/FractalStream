@@ -1,13 +1,13 @@
 # Translated from a script for the original FractalStream.
 script: |
   @config "Parameters"
-  C : C as "C =" <- 0
+  C : C as "C =" := 0
 
   @config "Colors"
-  default_exit_condition_color : Color as "Default Exit Condition" <- blue
+  default_exit_condition_color : Color as "Default Exit Condition" := blue
 
   @common
-  let shade(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
+  shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
     else blend(-sin(2 pi t), light c, c)
 
   @viewer "Parameter plane" var=C
@@ -22,7 +22,7 @@ script: |
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
   @tool "Cycle Length" for="Parameter plane"
-  cycle_length : Z as "Cycle Length" <- 0
+  cycle_length : Z as "Cycle Length" := 0
   on click at clicked:
     z := 0
     for each k in range(1, 500):
@@ -36,7 +36,7 @@ script: |
     cycle_length <- round(count)
 
   @tool "Cycle Length" for="Dynamical plane"
-  cycle_length : Z as "Cycle Length" <- 0
+  cycle_length : Z as "Cycle Length" := 0
   on click at clicked:
     z := clicked
     for each k in range(1, 500):

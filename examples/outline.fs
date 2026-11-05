@@ -1,13 +1,13 @@
 script: |
   @config "Configuration"
-  C : C as "Selected value of C:" <- -0.1226 + 0.7449i
-  tiny : R as "Min. radius: " <- 0.001
-  fatness : R as "Fatness" <- 0.1
+  C : C as "Selected value of C:" := -0.1226 + 0.7449i
+  tiny : R as "Min. radius: " := 0.001
+  fatness : R as "Fatness" := 0.1
 
   @config "Colors"
-  boundary_color : Color as "Boundary" <- black
-  exterior_color : Color as "Exterior" <- white
-  interior_color : Color as "Interior" <- rgb(0.926, 0.863, 0.927)
+  boundary_color : Color as "Boundary" := black
+  exterior_color : Color as "Exterior" := white
+  interior_color : Color as "Interior" := rgb(0.926, 0.863, 0.927)
 
   @common
   define shade(on_boundary):

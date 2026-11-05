@@ -1,13 +1,13 @@
 # Translated from a script for the original FractalStream.
 script: |
   @config "Colors"
-  default_exit_condition_color : Color as "Default Exit Condition" <- blue
-  z_is_1_color : Color as "z is 1" <- red
-  z_is_omega_color : Color as "z is omega" <- green
-  z_is_omegabar_color : Color as "z is omegabar" <- orange
+  default_exit_condition_color : Color as "Default Exit Condition" := blue
+  z_is_1_color : Color as "z is 1" := red
+  z_is_omega_color : Color as "z is omega" := green
+  z_is_omegabar_color : Color as "z is omegabar" := orange
 
   @common
-  let shade(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
+  shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
     else blend(-sin(2 pi t), light c, c)
 
   @viewer "Dynamical plane"

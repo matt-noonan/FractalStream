@@ -19,7 +19,7 @@
 -- more with @\@colorizer@ stanzas:
 --
 -- > @colorizer "Smooth"
--- > period : R as "Color period" <- 20
+-- > period : R as "Color period" := 20
 -- >
 -- > define colorize(v):
 -- >   ...
@@ -109,8 +109,8 @@ builtinColorizers =
   , builtin $ unlines
       [ "@colorizer \"Rainbow\" description=\"Points that escape cycle through \
         \the rainbow by iteration count; the rest are black.\""
-      , "color_speed : R as \"Iterations per color cycle:\" <- 20"
-      , "use_arenberg : Boolean as \"Use the perceptually even Arenberg wheel\" <- false"
+      , "color_speed : R as \"Iterations per color cycle:\" := 20"
+      , "use_arenberg : Boolean as \"Use the perceptually even Arenberg wheel\" := false"
       , "define colorize(t = iterations / color_speed):"
       , "  if stuck:"
       , "    color <- black"
@@ -121,8 +121,8 @@ builtinColorizers =
       [ "@colorizer \"Escape time\" description=\"Bands of color by iteration count, \
         \from a choice of palettes.\""
       , paletteDecl
-      , "period : R as \"Iterations per color cycle:\" <- 20"
-      , "shade : Boolean as \"Shade by iteration count\" <- false"
+      , "period : R as \"Iterations per color cycle:\" := 20"
+      , "shade : Boolean as \"Shade by iteration count\" := false"
       ] ++ twoColorsDecl ++
       [ givesUpDecl
       , "define colorize(t = iterations / period):"
@@ -138,7 +138,7 @@ builtinColorizers =
         \without bands, from a choice of palettes. Its argument is the variable \
         \that escapes.\""
       , paletteDecl
-      , "period : R as \"Iterations per color cycle:\" <- 20"
+      , "period : R as \"Iterations per color cycle:\" := 20"
       , degreeDecl
       ] ++ twoColorsDecl ++
       [ givesUpDecl
@@ -155,15 +155,15 @@ builtinColorizers =
       [ "@colorizer \"Binary decomposition\" description=\"Smooth color by escape \
         \time, in different colors where the escaping variable ends up in the upper \
         \and lower half-planes. Its argument is the variable that escapes.\""
-      , "period : R as \"Iterations per color cycle:\" <- 10"
+      , "period : R as \"Iterations per color cycle:\" := 10"
       , degreeDecl
       , "row:"
-      , "  upper1 : Color as \"Upper half-plane:\" <- red"
-      , "  upper2 : Color as \"and\" <- yellow"
+      , "  upper1 : Color as \"Upper half-plane:\" := red"
+      , "  upper2 : Color as \"and\" := yellow"
       , "row:"
-      , "  lower1 : Color as \"Lower half-plane:\" <- green"
-      , "  lower2 : Color as \"and\" <- blue"
-      , "smooth : Boolean as \"Use smooth coloring?\" <- true"
+      , "  lower1 : Color as \"Lower half-plane:\" := green"
+      , "  lower2 : Color as \"and\" := blue"
+      , "smooth : Boolean as \"Use smooth coloring?\" := true"
       , givesUpDecl
       , "define colorize(z):"
       , "  if stuck:"
@@ -180,10 +180,10 @@ builtinColorizers =
         \method converges to, say. Viewers using it share its colors (it uses \
         \autocolor group 0). Without new entries, a point near none of the \
         \group's points blends their colors, or (if not blending) gets its miss color. Its argument is the variable that converges.\""
-      , "allow_new : Boolean as \"Allow new autocolor entries\" <- true"
-      , "blend_misses : Boolean as \"Blend when no matching point\" <- true"
-      , "shade : Boolean as \"Shade by iteration count\" <- true"
-      , "period : R as \"Iterations per shading cycle:\" <- 20"
+      , "allow_new : Boolean as \"Allow new autocolor entries\" := true"
+      , "blend_misses : Boolean as \"Blend when no matching point\" := true"
+      , "shade : Boolean as \"Shade by iteration count\" := true"
+      , "period : R as \"Iterations per shading cycle:\" := 20"
       , givesUpDecl
       , "define colorize(z):"
       , "  if stuck:"
@@ -201,10 +201,10 @@ builtinColorizers =
   , builtin $ unlines $
       [ "@colorizer \"Glow\" description=\"Blends between two colors by how close \
         \the iteration count came to the iteration limit.\""
-      , "brightness : R as \"Brightness exponent:\" <- 0.5"
+      , "brightness : R as \"Brightness exponent:\" := 0.5"
       , "row:"
-      , "  near : Color as \"Near the limit:\" <- dark blue"
-      , "  far : Color as \"Far from it:\" <- white"
+      , "  near : Color as \"Near the limit:\" := dark blue"
+      , "  far : Color as \"Far from it:\" := white"
       , givesUpDecl
       , "define colorize:"
       , "  if stuck:"
@@ -225,9 +225,9 @@ palettes =
 
 paletteDecl, givesUpDecl, degreeDecl, smoothIterations, paletteExpr :: String
 paletteDecl = "palette : Z as \"Palette:\" choice { "
-  ++ intercalate ", " (map (show . fst) palettes) ++ " } <- 0"
-givesUpDecl = "gives_up : Color as \"Color when the loop gives up:\" <- black"
-degreeDecl = "degree : R as \"Degree of the map:\" <- 2"
+  ++ intercalate ", " (map (show . fst) palettes) ++ " } := 0"
+givesUpDecl = "gives_up : Color as \"Color when the loop gives up:\" := black"
+degreeDecl = "degree : R as \"Degree of the map:\" := 2"
 -- | The continuous ("smoothed") iteration count of an escaping @z@: see
 -- https://linas.org/art-gallery/escape/ray.html. (With a different
 -- escape radius than @escape_radius@, it's only off by a constant.)
@@ -241,8 +241,8 @@ paletteExpr = go (zip [0 :: Int ..] (map snd palettes))
 twoColorsDecl :: [String]
 twoColorsDecl =
   [ "row:"
-  , "  color1 : Color as \"Two colors:\" <- dark blue"
-  , "  color2 : Color as \"and\" <- white"
+  , "  color1 : Color as \"Two colors:\" := dark blue"
+  , "  color2 : Color as \"and\" := white"
   ]
 
 -- | A built-in colorizer, written as a script's @\@colorizer@ stanza

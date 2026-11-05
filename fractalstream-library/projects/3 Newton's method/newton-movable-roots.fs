@@ -1,18 +1,18 @@
 script: |
   @config "Roots"
-  a : C as "a =" <- 1
-  b : C as "b =" <- e^(2 pi i / 3)
-  c : C as "c =" <- e^(-2 pi i / 3)
+  a : C as "a =" := 1
+  b : C as "b =" := e^(2 pi i / 3)
+  c : C as "c =" := e^(-2 pi i / 3)
 
   @config "Newton's method configuration"
-  tol : R as "closeness" <- 0.01
-  rad : R as "grab radius (px)" <- 5
-  drag_target : Z as "Drag target: " <- 0
+  tol : R as "closeness" := 0.01
+  rad : R as "grab radius (px)" := 5
+  drag_target : Z as "Drag target: " := 0
 
   @common
-  let f(z) = (z - a) (z - b) (z - c)
+  f(z) := (z - a) (z - b) (z - c)
   # one step of Newton's method
-  let newton(z) = z - f(z) / f'(z)
+  newton(z) := z - f(z) / f'(z)
 
   @viewer "Roots of f" vanish=tol
   lastZ := 0

@@ -1,11 +1,11 @@
 script: |
   @config "Configuration"
-  λ : C as "λ = " <- 0.9 e^{2 pi i / 3}
-  t : C as "t = " <- 0.7 - 0.6i
-  custom_vanishing_radius : R as "Tolerance:" <- 0.00001
+  λ : C as "λ = " := 0.9 e^{2 pi i / 3}
+  t : C as "t = " := 0.7 - 0.6i
+  custom_vanishing_radius : R as "Tolerance:" := 0.00001
 
   @common
-  let f(z) = λ z / (z^2 + t z + 1)
+  f(z) := λ z / (z^2 + t z + 1)
 
   @viewer "λ-plane" var=λ pixelSize=1/250
   color <- if |λ| < 1 then (if re(λ) * im(λ) > 0 then light grey else white) else black

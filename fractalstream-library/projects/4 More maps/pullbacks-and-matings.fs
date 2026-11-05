@@ -1,12 +1,12 @@
 script: |
   @config "Configuration"
-  C : C as "C = " <- 0.5000000000 + 0.8660254038*i
-  color1 : Color as "Selected point" <- white
+  C : C as "C = " := 0.5000000000 + 0.8660254038*i
+  color1 : Color as "Selected point" := white
 
   @common
-  let f(z) = (z^2 - C)/(z^2 - 1)
+  f(z) := (z^2 - C)/(z^2 - 1)
   # one of the two preimages of z under f (the other is its negative)
-  let preimage(z) = sqrt((-C + z) / (z - 1))
+  preimage(z) := sqrt((-C + z) / (z - 1))
 
   @viewer "C-plane" var=C center=0 pixelSize=1/128
   z := C
@@ -16,10 +16,10 @@ script: |
   iterate z -> f(z) until z escapes
 
   @tool "Preimages" for=Dynamics shortcut="i" drawLayer=10
-  pre1 : C as "Value" <- 0
-  color2 : Color as "Color" <- red
-  pre2 : C as "Value" <- 0
-  color3 : Color as "Color" <- yellow
+  pre1 : C as "Value" := 0
+  color2 : Color as "Color" := red
+  pre2 : C as "Value" := 0
+  color3 : Color as "Color" := yellow
   on deactivated:
     erase
   on click-or-drag:
@@ -34,9 +34,9 @@ script: |
     draw point at pre2
 
   @tool "Mark orbit of critical point" for=Dynamics shortcut=o drawLayer=11
-  follow : Boolean as "Draw lines between iterations?" <- false
-  zero_orbit_color : Color as "Orbit of 0" <- blue
-  one_color : Color as "Mark 1" <- green
+  follow : Boolean as "Draw lines between iterations?" := false
+  zero_orbit_color : Color as "Orbit of 0" := blue
+  one_color : Color as "Mark 1" := green
   button "Erase postcritical points"
   on button "Erase postcritical points":
     erase
@@ -56,12 +56,12 @@ script: |
     while z != 0
 
   @tool "Pullback" for=Dynamics shortcut=p drawLayer=12
-  follow : Boolean as "Follow previous preimages?" <- false
-  last_z : C as "Selected point" <- 0
-  last_pre1 : C as "Value" <- 0
-  color2 : Color as "Color" <- red
-  last_pre2 : C as "Value" <- 0
-  color3 : Color as "Color" <- yellow
+  follow : Boolean as "Follow previous preimages?" := false
+  last_z : C as "Selected point" := 0
+  last_pre1 : C as "Value" := 0
+  color2 : Color as "Color" := red
+  last_pre2 : C as "Value" := 0
+  color3 : Color as "Color" := yellow
   button "Erase"
   on button "Erase":
     erase

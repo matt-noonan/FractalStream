@@ -1,7 +1,7 @@
 script: |
   @config "Configuration"
-  size : R as "Julia set size" <- 0.05
-  scale : R as "Julia set zoom level" <- 2.5
+  size : R as "Julia set size" := 0.05
+  scale : R as "Julia set zoom level" := 2.5
 
   @viewer "Mandelbrot set tiled by Julia sets" var=w colorizer=Smooth
   x := mod(re w, size)

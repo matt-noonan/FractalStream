@@ -1,7 +1,7 @@
 script: |
   @config "Configuration"
-  myList : List of C as "Points" <- [0, 1, -1, i, -i]
-  radius : R as "Radius" <- 0.4
+  myList : List of C as "Points" := [0, 1, -1, i, -i]
+  radius : R as "Radius" := 0.4
 
   @viewer "List Lookup (with first matching)" var=z pixelSize="1/48"
   color <- black

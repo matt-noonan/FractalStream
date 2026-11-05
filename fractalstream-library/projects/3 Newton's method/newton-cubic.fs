@@ -1,11 +1,11 @@
 script: |
   @common
-  let f(z) = z^3 - 1
+  f(z) := z^3 - 1
   # one step of Newton's method
-  let newton(z) = z - f(z) / f'(z)
+  newton(z) := z - f(z) / f'(z)
 
   @config "Newton's method configuration"
-  tol : R as "closeness" <- 0.01
+  tol : R as "closeness" := 0.01
 
   @viewer "Roots of f" vanish=tol center=0 pixelSize=1/128
   lastZ := 0

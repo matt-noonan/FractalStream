@@ -17,14 +17,14 @@ script: |
   # If any of those rightmost pixels are NOT magenta after building with
   # the overflow-flag patch, the signal is broken.
 
-  n : ℤ ⭠ round(50000.0 * (re z + 1.5))
+  n : ℤ ≔ round(50000.0 * (re z + 1.5))
 
   # Horizontal gradient so the safe region is clearly distinguishable
   color ⭠ blend(re z / 2.0 + 0.5, green, dark blue)
 
   if n > 0:
-    xs : List of ℤ ⭠ range(1, n)
-    len : ℤ ⭠ length(xs)
+    xs : List of ℤ ≔ range(1, n)
+    len : ℤ ≔ length(xs)
 
     # Shade by traversed length: confirms list was actually walked, not just allocated.
     # blend clamps to [0,1] so large-but-not-overflow values stay in the green band.

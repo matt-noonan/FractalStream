@@ -27,11 +27,11 @@ classOf src word n =
 
 project :: String
 project = [r|@config "Parameters"
-C : C as "C =" <- -0.12 + 0.75i
-steps : Z <- 20
+C : C as "C =" := -0.12 + 0.75i
+steps : Z := 20
 
 @common
-let f(z) = z^2 + C
+f(z) := z^2 + C
 define shade(c):
   color <- blend(0.5, light c, dark c)
 
@@ -48,7 +48,7 @@ iterate z -> f(z) until z escapes
 color <- if stuck then black else white
 
 @tool "Trace" for="Julia set"
-radius : R <- 0.1
+radius : R := 0.1
 on click-or-drag at w:
   erase
   use yellow for stroke
@@ -70,7 +70,6 @@ spec = describe "highlighting scripts" $ do
     c "Z" 0 `shouldBe` Just TypeName
     c "0.75i" 0 `shouldBe` Just NumberLiteral
     c "\"C =\"" 0 `shouldBe` Just StringLiteral
-    c "let" 0 `shouldBe` Just Keyword
     c "f" 0 `shouldBe` Just Function
     c "define" 0 `shouldBe` Just Keyword
     c "shade" 0 `shouldBe` Just CodeBlock

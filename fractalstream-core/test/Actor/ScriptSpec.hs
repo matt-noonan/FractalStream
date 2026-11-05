@@ -38,7 +38,7 @@ spec = do
     it "accepts a single viewer stanza" $
       shouldParseTo [r|
 @viewer "Mandelbrot Set" var=C
-z : C <- 0
+z : C := 0
 iterate z -> z^2 + C until z escapes
 |] $ \case
         [ViewerStanza{..}] -> do
@@ -147,7 +147,7 @@ pass
     it "accepts a config stanza with declarations and text" $
       shouldParseTo [r|
 @config "Configuration"
-maxIters : Z as "Iteration limit:" <- 100
+maxIters : Z as "Iteration limit:" := 100
 text "Here is some text"
 |] $ \case
         [ConfigStanza "Configuration"
@@ -177,9 +177,9 @@ tab "A":
       shouldParseTo [r|
 @config "Configuration"
 row:
-  a : Z <- 1
-  b : Z <- 2
-c : Z <- 3
+  a : Z := 1
+  b : Z := 2
+c : Z := 3
 |] $ \case
         [ConfigStanza "Configuration"
           [ ConfigRow [ConfigDecl{cdName = "a"}, ConfigDecl{cdName = "b"}]
@@ -203,14 +203,14 @@ on button "Go":
       shouldParseTo [r|
 @config "Configuration"
 tab "First":
-  a : Z <- 1
+  a : Z := 1
   row:
-    b : Z <- 2
+    b : Z := 2
 tab "Second":
   text "hi"
-c : Z <- 3
+c : Z := 3
 tab "Third":
-  d : Z <- 4
+  d : Z := 4
 |] $ \case
         [ConfigStanza "Configuration"
           [ ConfigTabs [ ("First", [ConfigDecl{cdName = "a"}, ConfigRow [ConfigDecl{cdName = "b"}]])
@@ -224,9 +224,9 @@ tab "Third":
       shouldParseTo [r|
 @tool "T"
 tab "A":
-  a : Z <- 1
+  a : Z := 1
 tab "B":
-  b : Z <- 2
+  b : Z := 2
 on click:
   a <- b
 |] $ \case
@@ -236,7 +236,7 @@ on click:
     it "allows a plain declaration named `tab`" $
       shouldParseTo [r|
 @config "Configuration"
-tab : Z <- 5
+tab : Z := 5
 |] $ \case
         [ConfigStanza "Configuration" [ConfigDecl{cdName = "tab"}]] -> pure ()
         other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
@@ -244,7 +244,7 @@ tab : Z <- 5
     it "allows a plain declaration named `row` outside of a row: block" $
       shouldParseTo [r|
 @config "Configuration"
-row : Z <- 5
+row : Z := 5
 |] $ \case
         [ConfigStanza "Configuration" [ConfigDecl{cdName = "row"}]] -> pure ()
         other -> expectationFailure ("did not match expected config stanza: " ++ show (length other) ++ " stanzas")
@@ -252,7 +252,7 @@ row : Z <- 5
     it "defaults a declaration's label to Nothing when `as` is omitted" $
       shouldParseTo [r|
 @config "Configuration"
-foo : R <- 1.5
+foo : R := 1.5
 |] $ \case
         [ConfigStanza "Configuration" [ConfigDecl{cdLabel = Nothing}]] -> pure ()
         other -> expectationFailure ("unexpected stanzas: " ++ show (length other))
@@ -265,7 +265,7 @@ foo : R <- 1.5
     it "accepts a selection (choice) declaration on an integer type" $
       shouldParseTo [r|
 @config "Configuration"
-size : Z as "Size:" choice {"Small", "Medium", "Large"} <- 0
+size : Z as "Size:" choice {"Small", "Medium", "Large"} := 0
 |] $ \case
         [ConfigStanza "Configuration" [ConfigDecl{cdChoices = Just ["Small", "Medium", "Large"]}]] -> pure ()
         other -> expectationFailure ("unexpected stanzas: " ++ show (length other))
@@ -273,7 +273,7 @@ size : Z as "Size:" choice {"Small", "Medium", "Large"} <- 0
     it "rejects a choice list on a non-integer declaration" $
       [r|
 @config "Configuration"
-size : R as "Size:" choice {"Small", "Medium", "Large"} <- 0.0
+size : R as "Size:" choice {"Small", "Medium", "Large"} := 0.0
 |] `shouldFailWith` "can only be used with a \8484-typed declaration"
 
     it "accepts a tool stanza with multiple event blocks" $
@@ -298,8 +298,8 @@ on click-or-drag:
     it "accepts declarations before a tool's event blocks as its own config" $
       shouldParseTo [r|
 @tool "Demo" shortcut="x"
-r : R as "R =" <- 1
-theta : R as "θ =" <- pi/4
+r : R as "R =" := 1
+theta : R as "θ =" := pi/4
 on refresh:
   erase
 |] $ \case
@@ -321,7 +321,7 @@ on refresh:
 @tool "Demo"
 on refresh:
   pass
-r : R <- 1
+r : R := 1
 |] `shouldFailWith` "stuck"
 
     it "defaults drawLayer to 100, refreshOnActivate to true, refreshCanUpdate to false" $
@@ -388,7 +388,7 @@ on refresh:
     it "rejects an overlay's own declarations" $
       [r|
 @tool overlay
-r : R <- 1
+r : R := 1
 on refresh:
   pass
 |] `shouldFailWith` "An overlay can't declare settings of its own"
@@ -413,13 +413,13 @@ pass
     it "parses a full multi-stanza project script" $
       shouldParseTo [r|
 @common
-let f(z) = z^2 + C
+f(z) := z^2 + C
 
 @config "Configuration"
-maxIters : Z as "Iteration limit:" <- 100
+maxIters : Z as "Iteration limit:" := 100
 
 @viewer "Mandelbrot Set" var=C limit="maxIters"
-z : C <- 0
+z : C := 0
 iterate z -> f(z) until z escapes
 
 @tool "Trace" for="Mandelbrot Set" shortcut="T"
@@ -432,7 +432,7 @@ on click-or-drag:
     it "no longer accepts @setup stanzas or splices" $ do
       [r|
 @setup "Setup"
-f : C as "f(z) =" <- 0
+f : C as "f(z) =" := 0
 
 @viewer "V" var=z
 pass
@@ -459,7 +459,7 @@ on refresh:
     it "allows a stanza body ending in a variable declaration (the Let-slurp case)" $
       shouldParseTo [r|
 @viewer "Mandelbrot Set" var=C
-color : Color <- black
+color : Color := black
 
 @tool "Trace" for="Mandelbrot Set"
 on refresh:
@@ -468,11 +468,11 @@ on refresh:
 
   describe "fields named with built-in names" $
     it "are reported, in @config stanzas, their tabs and rows, and tools" $ do
-      "@config \"P\"\nred : Color <- blue\n" `shouldFailWith`
+      "@config \"P\"\nred : Color := blue\n" `shouldFailWith`
         "`red` is a color's name, so it can't also name a variable"
-      "@config \"P\"\nbar : C <- 0\n" `shouldFailWith`
+      "@config \"P\"\nbar : C := 0\n" `shouldFailWith`
         "`bar` is a built-in function (the complex conjugate)"
-      "@config \"P\"\ntab \"T\":\n  sin : R <- 1\n" `shouldFailWith` "`sin` is a built-in function"
-      "@config \"P\"\nrow:\n  x : R <- 1\n  re : R <- 2\n" `shouldFailWith` "`re` is a built-in function"
-      "@viewer \"V\"\ncolor <- black\n\n@tool \"T\"\nsin : R <- 1\non click:\n  pass\n"
+      "@config \"P\"\ntab \"T\":\n  sin : R := 1\n" `shouldFailWith` "`sin` is a built-in function"
+      "@config \"P\"\nrow:\n  x : R := 1\n  re : R := 2\n" `shouldFailWith` "`re` is a built-in function"
+      "@viewer \"V\"\ncolor <- black\n\n@tool \"T\"\nsin : R := 1\non click:\n  pass\n"
         `shouldFailWith` "`sin` is a built-in function"

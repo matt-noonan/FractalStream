@@ -5,14 +5,14 @@ script: |
   # list of roots by clicking.
 
   @config "Polynomial"
-  roots : List of C as "Roots" <- [1, -0.5 + 0.866i, -0.5 - 0.866i]
-  tol : R as "Convergence tolerance" <- 0.000001
+  roots : List of C as "Roots" := [1, -0.5 + 0.866i, -0.5 - 0.866i]
+  tol : R as "Convergence tolerance" := 0.000001
 
   @common
   # One Newton step for f(z) = (z - r1)(z - r2)...: since
   # f'/f = sum of 1/(z - rk), the step is z - 1 / (sum of 1/(z - rk)).
   define newton_step:
-    s : C <- 0
+    s : C := 0
     for each r in roots:
       s <- s + 1 / (z - r)
     z <- z - 1 / s

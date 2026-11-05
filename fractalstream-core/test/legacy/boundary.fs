@@ -1,17 +1,17 @@
 # Translated from a script for the original FractalStream.
 script: |
   @config "Parameters"
-  C : C as "C =" <- 0
-  fatness : R as "fatness =" <- 0.05
+  C : C as "C =" := 0
+  fatness : R as "fatness =" := 0.05
 
   @config "Colors"
-  default_exit_condition_color : Color as "Default Exit Condition" <- blue
-  boundary_of_mandelbrot_set_color : Color as "Boundary of Mandelbrot Set" <- red
-  dynamical_plane_color : Color as "Dynamical Plane" <- green
-  boundary_of_julia_set_color : Color as "Boundary of Julia Set" <- orange
+  default_exit_condition_color : Color as "Default Exit Condition" := blue
+  boundary_of_mandelbrot_set_color : Color as "Boundary of Mandelbrot Set" := red
+  dynamical_plane_color : Color as "Dynamical Plane" := green
+  boundary_of_julia_set_color : Color as "Boundary of Julia Set" := orange
 
   @common
-  let shade(c, t) = if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
+  shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
     else blend(-sin(2 pi t), light c, c)
 
   @viewer "Parameter plane" var=C

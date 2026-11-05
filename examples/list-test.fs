@@ -1,6 +1,6 @@
 script: |
   @config "Configuration"
-  myList : List of C as "Centers" <- [0, 1, i]
+  myList : List of C as "Centers" := [0, 1, i]
 
   @viewer "Circle"
   if |z| < 1:

@@ -1,7 +1,7 @@
 script: |
   @config "Configuration"
-  outer : R as "outer tolerance: " <- 0.01
-  warmup : Z as "Warmup iterations:" <- 1000
+  outer : R as "outer tolerance: " := 0.01
+  warmup : Z as "Warmup iterations:" := 1000
 
   @viewer "Bifurcation diagram for the logistic map"
   x := im(z)

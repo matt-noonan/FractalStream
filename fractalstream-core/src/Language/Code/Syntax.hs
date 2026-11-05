@@ -55,7 +55,7 @@ data StmtF
   = SBlock [Stmt]
     -- ^ A block of statements, with its own scope
   | SDecl String (Maybe FSType) Expr
-    -- ^ @x : T <- e@, or @x := e@ (with the type taken from @e@)
+    -- ^ @x : T := e@, or @x := e@ (with the type taken from @e@)
   | SSet String Expr
   | SDeclTuple Pattern Expr
     -- ^ @x, y := e@ (or @(x, y) := e@): declare each variable, with the
@@ -64,7 +64,7 @@ data StmtF
     -- ^ @x, y <- e@ (or @(x, y) <- e@): set each variable at once to the
     -- matching part of @e@'s value
   | SFun String [String] Expr
-    -- ^ @let f(x, y) = e@
+    -- ^ @f(x, y) := e@
   | SIf Expr Stmt Stmt
   | SLoop LoopKind Expr (Maybe Expr) Stmt
     -- ^ loop kind, condition, optional iteration limit, body

@@ -1,13 +1,13 @@
 script: |
   @config "Configuration"
-  myList : List of C as "Points" <- [0, 1, -1, i, -i]
+  myList : List of C as "Points" := [0, 1, -1, i, -i]
 
   @viewer "List from Config" var=z pixelSize="1/64"
   # Color each pixel by its distance to the nearest point in myList.
   # Points close to a list element are bright; far points are dark.
-  closest : R <- 1000
+  closest : R := 1000
   for each c in myList:
-    d : R <- |z - c|
+    d : R := |z - c|
     if d < closest:
       closest <- d
   color <- blend(exp(-closest * 4), white, black)

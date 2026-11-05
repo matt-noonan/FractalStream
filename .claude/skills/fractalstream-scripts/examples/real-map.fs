@@ -6,9 +6,9 @@ script: |
   # real-coordinate click binding.
 
   @config "Hénon map"
-  a : R as "a =" <- 1.4
-  b : R as "b =" <- 0.3
-  orbit_length : Z as "Orbit length" <- 2000
+  a : R as "a =" := 1.4
+  b : R as "b =" := 0.3
+  orbit_length : Z as "Orbit length" := 2000
 
   @viewer "Hénon map" xvar=x yvar=y center=(0, 0) pixelSize=1/200
   # A tuple iterates both coordinates at once, and escapes by its length.

@@ -1,9 +1,9 @@
 script: |
   @config "Parameter"
-  λ : C as "λ =" <- 0.005 + 0.1i
+  λ : C as "λ =" := 0.005 + 0.1i
 
   @common
-  let f(z) = z^2 + λ / z^2
+  f(z) := z^2 + λ / z^2
 
   # The critical points (the fourth roots of λ) all map to 2√λ, so
   # one orbit tells whether the critical points escape.

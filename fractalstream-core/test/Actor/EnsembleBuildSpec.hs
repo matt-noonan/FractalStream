@@ -66,7 +66,7 @@ spec = do
     it "builds a single viewer with no config/setup/tools" $
       shouldBuild [r|
 @viewer "Mandelbrot Set" var=C
-z : C <- 0
+z : C := 0
 iterate z -> z^2 + C until z escapes
 color <- if stuck then black else rainbow(iterations / 20)
 |] $ \ens -> do
@@ -79,7 +79,7 @@ color <- if stuck then black else rainbow(iterations / 20)
     it "attaches a tool to its named viewer" $
       shouldBuild [r|
 @viewer "Mandelbrot Set" var=C
-z : C <- 0
+z : C := 0
 iterate z -> z^2 + C until z escapes
 
 @tool "Trace" for="Mandelbrot Set" shortcut="T"
@@ -98,7 +98,7 @@ on click-or-drag:
     it "builds an overlay apart from the viewer's tools" $
       shouldBuild [r|
 @config "C"
-p : C <- 0
+p : C := 0
 
 @viewer "V" var=z
 pass
@@ -147,7 +147,7 @@ on refresh:
     it "wires the new viewer/tool attributes through to the built values" $
       shouldBuild [r|
 @viewer "Mandelbrot Set" var=C pixelVar=px
-z : C <- 0
+z : C := 0
 iterate z -> z^2 + C until z escapes
 
 @tool "Trace" for="Mandelbrot Set" drawLayer="5" refreshOnActivate="false" refreshCanUpdate="true"
@@ -171,8 +171,8 @@ on refresh:
 pass
 
 @tool "Demo" for="V" shortcut="x"
-r : R as "R =" <- 1
-theta : R as "θ =" <- pi/4
+r : R as "R =" := 1
+theta : R as "θ =" := pi/4
 on refresh:
   r <- r + theta
 |] $ \ens -> do
@@ -244,13 +244,13 @@ on refresh:
     it "combines multiple @config stanzas into one Configuration" $
       shouldBuild [r|
 @config "Dynamics"
-a : Z <- 1
+a : Z := 1
 
 @config "Coloring"
-b : Z <- 2
+b : Z := 2
 
 @config "Dynamics"
-c : Z <- 3
+c : Z := 3
 
 @viewer "V" var=z colorizer=Manual
 pass
@@ -274,9 +274,9 @@ pass
       shouldBuild [r|
 @config "Configuration"
 row:
-  a : Z <- 1
-  b : Z <- 2
-c : Z <- 3
+  a : Z := 1
+  b : Z := 2
+c : Z := 3
 |] $ \ens -> do
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
@@ -301,10 +301,10 @@ c : Z <- 3
       shouldBuild [r|
 @config "Configuration"
 tab "First":
-  a : Z <- 1
-  b : Z <- 2
+  a : Z := 1
+  b : Z := 2
 tab "Second":
-  c : Z <- 3
+  c : Z := 3
 |] $ \ens -> do
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
@@ -329,7 +329,7 @@ tab "Second":
        \(regression: a frozen Mapped used to silently ignore them)" $
       shouldBuild [r|
 @config "Configuration"
-c : Color <- red
+c : Color := red
 |] $ \ens -> do
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
@@ -351,7 +351,7 @@ c : Color <- red
        \(regression: a frozen Mapped used to silently ignore them)" $
       shouldBuild [r|
 @config "Configuration"
-maxIters : Z <- 100
+maxIters : Z := 100
 |] $ \ens -> do
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
@@ -381,7 +381,7 @@ maxIters : Z <- 100
        \(regression: show (0.05 :: Double) == \"5.0e-2\", which re-parses as 5.0 * e - 2)" $
       shouldBuild [r|
 @config "Configuration"
-x : R <- 0.05
+x : R := 0.05
 |] $ \ens -> do
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
@@ -408,7 +408,7 @@ x : R <- 0.05
        \needs parseInputValue, which re-adds them, not plain parseValue)" $
       shouldBuild [r|
 @config "Configuration"
-xs : List of Z <- [1, 2, 3]
+xs : List of Z := [1, 2, 3]
 |] $ \ens -> do
         mcfg <- getDynamic (ensembleConfiguration ens)
         case mcfg of
@@ -464,9 +464,9 @@ pass
        \the automatic max_iters/escape_radius/vanishing_radius/pixel_size" $
       shouldBuild [r|
 @config "Configuration"
-myLimit : Z <- 50
-myEscape : R <- 5
-myVanish : R <- 0.01
+myLimit : Z := 50
+myEscape : R := 5
+myVanish : R := 0.01
 
 @viewer "V" var=z limit="myLimit" escape="myEscape" vanish="myVanish" pixelVar="myPixel"
 color <- if myPixel > 0 then black else white
@@ -476,7 +476,7 @@ color <- if myPixel > 0 then black else white
        \one, same as any other duplicate config name" $
       [r|
 @config "Configuration"
-max_iters : Z <- 50
+max_iters : Z := 50
 
 @viewer "V" var=z
 pass
@@ -491,7 +491,7 @@ color <- black
 
 @tool "T" shortcut="t"
 on refresh:
-  scale : R <- pixel_size * 2
+  scale : R := pixel_size * 2
 |] $ \_ -> pure ()
 
     it "remembers its own source text, for a frontend's save path to write back out" $
@@ -682,13 +682,13 @@ on refresh:
        \defaults (by value), and puts them back, along with tools' values" $ do
       let src = unlines
             [ "@config \"Configuration\""
-            , "a : R as \"a\" <- 1/2"
-            , "b : C as \"b\" <- 0"
-            , "show_it : Boolean as \"Show it\" <- false"
+            , "a : R as \"a\" := 1/2"
+            , "b : C as \"b\" := 0"
+            , "show_it : Boolean as \"Show it\" := false"
             , "@viewer \"V\" var=z"
             , "pass"
             , "@tool \"T\" for=\"V\""
-            , "n : Z as \"n\" <- 3"
+            , "n : Z as \"n\" := 3"
             , "on click:"
             , "  pass"
             ]
@@ -726,11 +726,11 @@ on refresh:
        \except text and lists, whose fields write them differently" $ do
       Right ens <- buildEnsembleFromScript $ unlines
         [ "@config \"Configuration\""
-        , "a : R as \"a\" <- 1/2"
-        , "b : C as \"b\" <- e^(2 pi i / 3)"
-        , "p : R x R as \"p\" <- (1, 2.5)"
-        , "t : Text as \"t\" <- \"hello\""
-        , "xs : List of Z as \"xs\" <- [1, 2, 3]"
+        , "a : R as \"a\" := 1/2"
+        , "b : C as \"b\" := e^(2 pi i / 3)"
+        , "p : R x R as \"p\" := (1, 2.5)"
+        , "t : Text as \"t\" := \"hello\""
+        , "xs : List of Z as \"xs\" := [1, 2, 3]"
         , "@viewer \"V\" var=z colorizer=Manual"
         , "pass"
         ]
@@ -746,7 +746,7 @@ on refresh:
       let file script = BS8.pack $ unlines
             [ "script: |"
             , "  @config \"Configuration\""
-            , "  a : R as \"a\" <- 1"
+            , "  a : R as \"a\" := 1"
             , "  @viewer \"V\" var=z"
             , "  " ++ script
             , "metadata:"
@@ -764,7 +764,7 @@ on refresh:
           KM.keys <$> getDynamic (ensembleFrontendProperties ens) >>= (`shouldBe` ["values"])
           -- fixed and rebuilt: the file's saved value goes in
           Right fixed <- buildEnsembleFromScript
-            "@config \"Configuration\"\na : R as \"a\" <- 1\n@viewer \"V\" var=z\npass\n"
+            "@config \"Configuration\"\na : R as \"a\" := 1\n@viewer \"V\" var=z\npass\n"
           carryOverProjectState ens fixed
           changedValues fixed >>= (`shouldBe` SavedValues (Map.singleton "a" "5") Map.empty)
         Right (Built _) -> expectationFailure "expected the script not to build"
@@ -780,7 +780,7 @@ on refresh:
 
 
       Right ens <- buildEnsembleFromScript
-        "@config \"Configuration\"\na : R as \"a\" <- 1\n@viewer \"V\" var=z\npass\n"
+        "@config \"Configuration\"\na : R as \"a\" := 1\n@viewer \"V\" var=z\npass\n"
       warnings <- applySavedValues ens
         (SavedValues (Map.fromList [("a", "not a number"), ("gone", "1")]) Map.empty)
       length warnings `shouldBe` 2
@@ -788,7 +788,7 @@ on refresh:
 
     it "carries changed configuration values over to a rebuilt project, \
        \leaving untouched ones to the edited script's defaults" $ do
-      let script defaultB = "@config \"Configuration\"\na : R as \"a\" <- 1\nb : R as \"b\" <- "
+      let script defaultB = "@config \"Configuration\"\na : R as \"a\" := 1\nb : R as \"b\" := "
                             ++ defaultB ++ "\n@viewer \"V\" var=z\npass\n"
       Right old <- buildEnsembleFromScript (script "2")
       fs <- ensembleFields old
@@ -858,13 +858,13 @@ pass
     it "rejects a config declaration whose default doesn't match its type" $
       [r|
 @config "C"
-foo : Z <- "hello"
+foo : Z := "hello"
 |] `shouldFailWith` "doesn't match its declared type"
 
     it "rejects an out-of-range choice index" $
       [r|
 @config "C"
-foo : Z as "Pick" choice {"a", "b"} <- 5
+foo : Z as "Pick" choice {"a", "b"} := 5
 
 @viewer "V" var=z
 pass
@@ -880,7 +880,7 @@ w <- w + 1
        \viewer's own environment for its main code to reference" $
       shouldBuild [r|
 @config "C"
-myColor : Color <- white
+myColor : Color := white
 
 @viewer "Voronoi" var=z
 prepare computed : Color:
@@ -964,7 +964,7 @@ color <- black
     it "rejects a `prepare` output whose name collides with an ensemble `@config` variable" $
       [r|
 @config "C"
-computed : Color <- white
+computed : Color := white
 
 @viewer "V" var=z
 prepare computed : Color:
@@ -1003,7 +1003,7 @@ color <- computed
     it "accepts a simple, valid single-viewer script" $
       checkAccepts [r|
 @viewer "Mandelbrot Set" var=C
-z : C <- 0
+z : C := 0
 iterate z -> z^2 + C until z escapes
 color <- if stuck then black else rainbow(iterations / 20)
 |]
@@ -1018,7 +1018,7 @@ w <- w + 1
     it "catches a viewer body referencing a misspelled `@config` variable" $
       checkFailsWith [r|
 @config "C"
-radius : R <- 2
+radius : R := 2
 
 @viewer "V" var=z
 color <- if |z| > raduis then black else white
@@ -1027,7 +1027,7 @@ color <- if |z| > raduis then black else white
     it "accepts a viewer body that correctly references a `@config` variable" $
       checkAccepts [r|
 @config "C"
-radius : R <- 2
+radius : R := 2
 
 @viewer "V" var=z
 color <- if |z| > radius then black else white
@@ -1036,13 +1036,13 @@ color <- if |z| > radius then black else white
     it "catches a `@config` declaration whose default doesn't match its type" $
       checkFailsWith [r|
 @config "C"
-foo : Z <- "hello"
+foo : Z := "hello"
 |] "doesn't match its declared type"
 
     it "catches an out-of-range choice index" $
       checkFailsWith [r|
 @config "C"
-foo : Z as "Pick" choice {"a", "b"} <- 5
+foo : Z as "Pick" choice {"a", "b"} := 5
 
 @viewer "V" var=z
 pass
@@ -1069,12 +1069,12 @@ pass
        \mix of valid and invalid scripts" $ do
       agree [r|
 @viewer "Mandelbrot Set" var=C
-z : C <- 0
+z : C := 0
 iterate z -> z^2 + C until z escapes
 |]
       agree [r|
 @config "C"
-radius : R <- 2
+radius : R := 2
 
 @viewer "V" var=z
 color <- if |z| > radius then black else white
@@ -1085,21 +1085,21 @@ w <- w + 1
 |]
       agree [r|
 @config "C"
-foo : Z <- "hello"
+foo : Z := "hello"
 |]
       agree [r|
 @config "C"
-foo : Z as "Pick" choice {"a", "b"} <- 5
+foo : Z as "Pick" choice {"a", "b"} := 5
 
 @viewer "V" var=z
 pass
 |]
       agree [r|
 @common
-let f(z) = z^2 + C
+f(z) := z^2 + C
 
 @viewer "Mandelbrot" var=C
-z : C <- 0
+z : C := 0
 iterate z -> f(z) until z escapes
 |]
 
@@ -1116,7 +1116,7 @@ on click:
     it "accepts a tool body that correctly references a `@config` variable" $
       checkAccepts [r|
 @config "C"
-center : C <- 0
+center : C := 0
 
 @viewer "V" var=z
 pass
@@ -1132,7 +1132,7 @@ on click:
 pass
 
 @tool "T" for="V"
-center : C <- 0
+center : C := 0
 on click:
   draw point at center
 |]
@@ -1142,13 +1142,13 @@ on click:
        \runtime" $
       checkFailsWith [r|
 @config "C"
-center : C <- 0
+center : C := 0
 
 @viewer "V" var=z
 pass
 
 @tool "T" for="V"
-center : C <- 1
+center : C := 1
 on click:
   draw point at center
 |] "is defined twice"
@@ -1203,7 +1203,7 @@ color <- black
     it "catches a `prepare` output colliding with an ensemble `@config` variable" $
       agree [r|
 @config "C"
-computed : Color <- white
+computed : Color := white
 
 @viewer "V" var=z
 prepare computed : Color:
@@ -1235,10 +1235,10 @@ color <- computed
     it "makes its definitions available to viewers and tools" $ do
       let src = [r|
 @config "Configuration"
-a : C as "a =" <- 1
+a : C as "a =" := 1
 
 @common
-let f(z) = z^3 - a
+f(z) := z^3 - a
 step := 1
 
 @viewer "V" var=z
@@ -1258,16 +1258,16 @@ on click:
 color <- if g(z) < 1 then black else white
 
 @common
-let f(z) = |z|
+f(z) := |z|
 
 @common
-let g(w) = f(w) / 2
+g(w) := f(w) / 2
 |]
 
     it "is available in preparation scripts" $
       accepts [r|
 @common
-let f(z) = |z|
+f(z) := |z|
 
 @viewer "V" var=z
 prepare r : R:
@@ -1284,7 +1284,7 @@ k := 2
 pass
 
 @tool "T" for="V"
-k : Z as "k" <- 1
+k : Z as "k" := 1
 on click:
   k <- k + 1
 |] "The variable k is already defined"
@@ -1294,7 +1294,7 @@ on click:
       -- script nor the refresh handler can see; neither uses `g`.
       accepts [r|
 @common
-let g(w) = w + z
+g(w) := w + z
 c := 2
 
 @viewer "V" var=z
@@ -1311,7 +1311,7 @@ on click:
       -- ...but a script that does use it still gets the error
       rejects [r|
 @common
-let g(w) = w + z
+g(w) := w + z
 
 @viewer "V" var=z
 prepare r : R:
@@ -1324,8 +1324,8 @@ color <- if r < 1 then black else white
 @common
 a := 3
 unused := 4
-let f(t) = a t
-let g(t) = f(t) + 1
+f(t) := a t
+g(t) := f(t) + 1
 
 @viewer "V" var=z
 color <- if |g(z)| < 1 then black else white
@@ -1343,7 +1343,7 @@ pass
 |] "can only contain variable declarations"
       rejects [r|
 @common
-let f(z) = z
+f(z) := z
 color <- black
 
 @viewer "V" var=z
@@ -1353,7 +1353,7 @@ pass
     it "takes no attributes" $
       rejects [r|
 @common bogus=1
-let f(z) = z
+f(z) := z
 
 @viewer "V" var=z
 pass

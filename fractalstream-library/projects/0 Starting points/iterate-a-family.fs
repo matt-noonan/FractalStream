@@ -2,11 +2,11 @@ script: |
   @common
   # iterate z ⟼ f(z) until z escapes, starting from
   # initialZ(C) in the parameter plane
-  let f(z) = z^2 + C
-  let initialZ(C) = 0
+  f(z) := z^2 + C
+  initialZ(C) := 0
 
   @config "Configuration"
-  C : C as "Selected value of C:" <- -0.1226 + 0.7449i
+  C : C as "Selected value of C:" := -0.1226 + 0.7449i
 
   @viewer "Parametric complex dynamics parameter plane" var=C
   z := initialZ(C)
