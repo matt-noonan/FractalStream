@@ -9,8 +9,8 @@ a tool to assist research in real and complex dynamical systems.
 There are two ways to get FractalStream on a Mac:
 
 ### via GitHub releases
-For modern Macs, download [FractalStream v0.0.4 for MacOS](https://github.com/matt-noonan/FractalStream/releases/download/v0.0.4-alpha/FractalStream-0.0.4-alpha-macos-arm64.zip).
-Older Intel-based Macs should download [FractalStream v0.0.4 for Intel Macs](https://github.com/matt-noonan/FractalStream/releases/download/v0.0.4-alpha/FractalStream-0.0.4-alpha-macos-x86_64.zip).
+For modern Macs, download [FractalStream v0.0.5 for MacOS](https://github.com/matt-noonan/FractalStream/releases/download/v0.0.5-alpha/FractalStream-0.0.5-alpha-macos-arm64.zip).
+Older Intel-based Macs should download [FractalStream v0.0.5 for Intel Macs](https://github.com/matt-noonan/FractalStream/releases/download/v0.0.5-alpha/FractalStream-0.0.5-alpha-macos-x86_64.zip).
 
 ### via `homebrew`
 Instead of downloading the app directly, you can also install FractalStream via Homebrew.
@@ -23,11 +23,11 @@ brew install --cask fractalstream
 
 ## Linux
 
-For Linux, download [the FractalStream v0.0.4 AppImage for Linux](https://github.com/matt-noonan/FractalStream/releases/download/v0.0.4-alpha/FractalStream-0.0.4-alpha-linux-x86_64.AppImage).
+For Linux, download [the FractalStream v0.0.5 AppImage for Linux](https://github.com/matt-noonan/FractalStream/releases/download/v0.0.5-alpha/FractalStream-0.0.5-alpha-linux-x86_64.AppImage).
 
 ## Windows
 
-For Windows, download [the FractalStream v0.0.4 Windows installer](https://github.com/matt-noonan/FractalStream/releases/download/v0.0.4-alpha/FractalStream-0.0.4-alpha-windows-x86_64-setup.exe).
+For Windows, download [the FractalStream v0.0.5 Windows installer](https://github.com/matt-noonan/FractalStream/releases/download/v0.0.5-alpha/FractalStream-0.0.5-alpha-windows-x86_64-setup.exe).
 
 # Getting started
 
