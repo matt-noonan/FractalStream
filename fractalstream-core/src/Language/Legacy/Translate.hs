@@ -30,6 +30,9 @@ to go on editing rather than to reproduce the old pictures exactly:
   a script before any other mention, and otherwise at the top.
 * Comparisons with @<@ and so on compare complex numbers by modulus, as
   the old program did (where it can't tell a value is real).
+* The vanishing radius (for @vanishes@, @=@, and @stops@) starts at
+  0.01, as the old program's much larger tolerance did, by declaring
+  @vanishing_radius@ in the \"Iteration settings\" tab.
 
 A real-dynamics script (@{real}@) works on a plane of real points
 @(x, y)@ instead: its viewers are real viewers, @\@viewer "Dynamical
@@ -38,14 +41,18 @@ plane" xvar=x yvar=y@, and, when it mentions the parameters @a@ or @b@,
 0)@). Its values are real unless they're complex for some other reason
 (an @i@), @z@ and @c@ aren't special, a pair @(e1, e2)@ stays a pair
 (so @(x, y) escapes@ measures its length), and an @iterate@ without a
-variable iterates @(x, y)@.
+variable iterates @(x, y)@. In arithmetic, though, a pair is the
+complex number @x + y i@, as in the old program: @(x, y) * (0, 1)@
+becomes @(x + y * i) * i@.
 
 Setting several variables at once, @set (x, y) to (e1, e2).@, becomes a
 tuple assignment, @x, y <- e1, e2@.
 
 Not translated: special tools (@load@) and data sources (@using each@),
 which depended on plug-ins: these are left as TODO comments, with
-warnings.
+warnings. So are an @end.@ that ends no block and an @until c.@ with no
+@do@ before it, which the parser keeps as strays when the script
+doesn't parse otherwise, rather than guess what was meant.
 -}
 module Language.Legacy.Translate
   ( Translation(..)
@@ -60,7 +67,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 import Language.Legacy.Syntax
-import Language.Legacy.Parser (parseLegacyScript)
+import Language.Legacy.Parser (ParseNote(..), parseLegacyScript)
 import Language.Parser.Tokenizer (wordlikeTokens)
 import qualified Language.Value.Builtins as Builtins
 
@@ -73,13 +80,32 @@ data Translation = Translation
 
 -- | Translate a script into a project file, with the given title.
 translateLegacyScript :: String -> String -> Either String Translation
-translateLegacyScript title src = do
-  Script isReal body <- parseLegacyScript src
-  pure (translate isReal title src (if isReal then map realIterate body else body))
+translateLegacyScript title src0 = do
+  -- (old Mac OS scripts end their lines with a carriage return)
+  let src = normalizeNewlines src0
+  (Script isReal body, notes) <- parseLegacyScript src
+  let Translation project warnings =
+        translate isReal title src (if isReal then map realIterate body else body)
+  pure (Translation project (map noteWarning notes ++ warnings))
+
+-- | Line endings as @\\n@, from @\\r\\n@ or a lone @\\r@.
+normalizeNewlines :: String -> String
+normalizeNewlines = \case
+  '\r' : '\n' : rest -> '\n' : normalizeNewlines rest
+  '\r' : rest -> '\n' : normalizeNewlines rest
+  ch : rest -> ch : normalizeNewlines rest
+  [] -> []
+
+noteWarning :: ParseNote -> String
+noteWarning = \case
+  ThenStartsBlocks ->
+    "This script writes `if ... then` without a colon before a block of commands ending in `end.`, \
+    \so every `then` was read as `then:`; check that each `if` does what it should."
 
 -- | In a real-dynamics script, an @iterate@ without a variable iterates
 -- the point @(x, y)@: as a loop setting both (which 'stmt' writes as a
--- tuple @iterate@ where it can).
+-- tuple @iterate@ where it can, when the new point is written as a
+-- pair, and otherwise by way of a complex number).
 realIterate :: Cmd -> Cmd
 realIterate = \case
   Iterate e Nothing c -> DoUntil [Set ["x", "y"] (asPair e)] c
@@ -93,9 +119,9 @@ realIterate = \case
   c -> c
   where
     asPair = \case
-      Paren e -> asPair e
-      e@Pair{} -> e
-      e -> Pair (Call "re" e) (Call "im" e)
+      Paren e@Pair{} -> e
+      Paren e@Paren{} -> asPair e
+      e -> e
 
 ------------------------------------------------------------------------
 -- Planes
@@ -476,7 +502,12 @@ translateT isReal title src body = do
         [ Line "@common"
         , Line (shadeFn ++ "(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...")
         , Line "  else blend(-sin(2 pi t), light c, c)" ]
-      stanzas = [parameters | not (null paramFields)] ++ [colorsTab, common] ++ viewers ++ probeTools
+      -- the old program's tolerance for `vanishes`, `=`, and `stops`
+      -- was much larger than this one's default
+      settingsTab =
+        [ Line "@config \"Iteration settings\""
+        , Line "vanishing_radius : R as \"Vanishing radius: \" := 0.01" ]
+      stanzas = [parameters | not (null paramFields)] ++ [colorsTab, settingsTab, common] ++ viewers ++ probeTools
       scriptLines = intercalate [""] (map (render 0) stanzas)
   pure . unlines $
     [ "# Translated from a script for the original FractalStream."
@@ -582,22 +613,28 @@ translateBody ctx predeclared cmds = do
                     , v `Set.notMember` special ]
   forM_ hoisted $ \v -> unless (v `Set.member` setSomewhere) $
     warn ("`" ++ v ++ "` is used without ever being set; it starts at 0.")
-  docs <- evalStateT (concat <$> mapM (stmt ctx True False) cmds) firstSets
+  docs <- evalStateT (concat <$> mapM (stmt ctx True False) cmds) (Pending firstSets Set.empty)
   pure (map (\v -> Line (v ++ " := 0")) hoisted ++ docs)
 
+-- | What 'stmt' keeps track of: the variables yet to be declared, where
+-- they're first set, and the variables it has made up and declared.
+data Pending = Pending
+  { pendingDecls :: Set String
+  , madeUp :: Set String
+  }
+
 -- | Translate a command, given whether it's at the top level of its
--- script and whether it's inside a loop. The state is the variables yet
--- to be declared, where they're first set.
-stmt :: Ctx -> Bool -> Bool -> Cmd -> StateT (Set String) T [Doc]
+-- script and whether it's inside a loop.
+stmt :: Ctx -> Bool -> Bool -> Cmd -> StateT Pending T [Doc]
 stmt ctx top inLoop = \case
   Comment s -> pure (map (Line . ("# " ++) . trimStart) (lines s))
 
   Set [v] e -> do
     let v' = cxName ctx v
-    pending <- get
+    pending <- gets pendingDecls
     if top && v' `Set.member` pending
       then do
-        put (Set.delete v' pending)
+        modify (\p -> p { pendingDecls = Set.delete v' pending })
         pure [Line (v' ++ " := " ++ ex e)]
       else pure [Line (v' ++ " <- " ++ ex e)]
 
@@ -605,17 +642,17 @@ stmt ctx top inLoop = \case
     -- the new values are all worked out before any is set
     ([v1, v2], Pair a b) -> do
       let (x, y) = (cxName ctx v1, cxName ctx v2)
-      pending <- get
+      pending <- gets pendingDecls
       -- (declared here, if they're first set here)
       if top && x `Set.member` pending && y `Set.member` pending
         then do
-          put (Set.delete x (Set.delete y pending))
+          modify (\p -> p { pendingDecls = Set.delete x (Set.delete y pending) })
           pure [Line (x ++ ", " ++ y ++ " := " ++ ex a ++ ", " ++ ex b)]
         else pure [Line (x ++ ", " ++ y ++ " <- " ++ ex a ++ ", " ++ ex b)]
-    ([v1, v2], _) ->
+    ([v1, v2], _) -> do
       let (x, y) = (cxName ctx v1, cxName ctx v2)
-          tmp = fresh "new_point"
-      in pure [ Line (tmp ++ " := " ++ ex e), Line (x ++ " <- re(" ++ tmp ++ ")"), Line (y ++ " <- im(" ++ tmp ++ ")") ]
+      tmp <- freshDecl "new_point"
+      pure [ Line (tmp ++ " := " ++ ex e), Line (x ++ " <- re(" ++ tmp ++ ")"), Line (y ++ " <- im(" ++ tmp ++ ")") ]
     _ -> do
       lift (warn ("Couldn't translate setting " ++ show (length vs) ++ " variables at once."))
       pure [Line ("# TODO: set (" ++ intercalate ", " vs ++ ") to " ++ ex e)]
@@ -676,6 +713,14 @@ stmt ctx top inLoop = \case
     | cxIsProbe ctx -> pure []
     | otherwise -> pure [Line (cxFlagVar ctx ++ " <- " ++ Map.findWithDefault "" n (cxFlags ctx))]
 
+  Stray what src -> do
+    let why = case what of
+          "until" -> "with no `do` before it to end"
+          _ -> "which doesn't end any block"
+    lift (warn ("The original script has `" ++ src ++ "`, " ++ why ++ "; it's left as a comment."))
+    pure [ Line ("# NOTE: the original script has this here, " ++ why ++ ":")
+         , Line ("#   " ++ src) ]
+
   Unsupported what src -> do
     lift (warn ("`" ++ what ++ "` has no counterpart in this FractalStream, so this is left as a TODO: " ++ src))
     pure [ Line ("# TODO: `" ++ what ++ "` has no counterpart in this FractalStream:")
@@ -690,6 +735,13 @@ stmt ctx top inLoop = \case
     ex = expr ctx 0
     cnd = cond ctx 0
     fresh = freshIn (cxUsed ctx)
+
+    -- a made-up variable to declare, different from any declared before
+    freshDecl base = do
+      p <- get
+      let v = freshIn (cxUsed ctx <> madeUp p) base
+      put p { madeUp = Set.insert v (madeUp p) }
+      pure v
 
     block c = orPass <$> stmtsIn inLoop c
     stmtsIn loopy c = concat <$> mapM (stmt ctx False loopy) (flatten [c])
@@ -757,6 +809,9 @@ expr ctx = go
       Var v -> (10, cxName ctx v)
       Neg e@(Neg _) -> (8, "-(" ++ go 0 e ++ ")")
       Neg e -> (8, "-" ++ go 8 e)
+      -- in a real-dynamics script, a pair in arithmetic is a complex
+      -- number, x + y i, as the old program took it
+      e | cxReal ctx, isArithmetic e -> shown' (ctx { cxReal = False }) e
       Bin op a b -> case op of
         Add -> (6, go 6 a ++ " + " ++ rightOf 7 b)
         Sub -> (6, go 6 a ++ " - " ++ rightOf 7 b)
@@ -766,12 +821,39 @@ expr ctx = go
       Call f e -> (10, call (lower f) e)
       Pair a b
         | cxReal ctx -> (10, "(" ++ go 0 a ++ ", " ++ go 0 b ++ ")")
-        | otherwise -> (10, "(" ++ go 6 a ++ " + " ++ go 7 b ++ " * i)")
+        | otherwise -> complexPair a b
       Paren e -> (10, "(" ++ go 0 e ++ ")")
 
     call f e
       | f == "abs" = "|" ++ go 0 e ++ "|"
       | otherwise = f ++ "(" ++ go 0 e ++ ")"
+
+    shown' ctx' e = let s = expr ctx' 0 e in (precedence e, s)
+    precedence = \case
+      Bin op _ _ -> case op of
+        Add -> 6; Sub -> 6; Mul -> 7; Div -> 7; Pow -> 9
+      Neg _ -> 8
+      _ -> 10
+
+    -- (a, b) as a complex number, a + b i, leaving out a zero part
+    complexPair a b = case (zero a, b) of
+      (True, _) | zero b -> (10, "0")
+      (True, Num "1") -> (10, "i")
+      (True, _) -> (7, rightOf 7 b ++ " * i")
+      (False, _) | zero b -> shown a
+      _ -> (6, go 6 a ++ " + " ++ rightOf 7 b ++ " * i")
+    zero = \case
+      Num s -> not (null s) && all (`elem` "0.") s
+      Paren e -> zero e
+      _ -> False
+
+-- | Arithmetic, in which a pair stands for a complex number.
+isArithmetic :: Expr -> Bool
+isArithmetic = \case
+  Bin{} -> True
+  Neg _ -> True
+  Call _ _ -> True
+  _ -> False
 
 -- | A number as this FractalStream writes it: with a digit before any
 -- decimal point, and without scientific notation (where @e@ would be
@@ -814,9 +896,11 @@ cond ctx = go
       Rel Equal a b -> (3, ex a ++ " = " ++ ex b)
       Rel op a b ->
         let real = all ((== TReal) . exprTy (cxTy ctx . cxName ctx)) [a, b]
+            -- (a modulus is of a number, so a pair in it is x + y i)
+            modulus = expr ctx { cxReal = False } 0
             side e | real || nonNegative e = ex e
-                   | Paren e' <- e = "|" ++ ex e' ++ "|"
-                   | otherwise = "|" ++ ex e ++ "|"
+                   | Paren e' <- e = "|" ++ modulus e' ++ "|"
+                   | otherwise = "|" ++ modulus e ++ "|"
             o = case op of
               Less -> "<"; LessEq -> "<="; Greater -> ">"; GreaterEq -> ">="
         in (3, side a ++ " " ++ o ++ " " ++ side b)

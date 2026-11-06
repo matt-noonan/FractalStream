@@ -472,11 +472,69 @@ myVanish : R := 0.01
 color <- if myPixel > 0 then black else white
 |] $ \_ -> pure ()
 
-    it "a user-declared `max_iters` collides cleanly with the automatic \
-       \one, same as any other duplicate config name" $
+    it "lets a script declare an automatic setting itself, in the \
+       \\"Iteration settings\" tab, which then has the others too" $
+      shouldBuild [r|
+@config "Iteration settings"
+vanishing_radius : R as "Vanishing radius: " := 0.01
+
+@viewer "V" var=z colorizer=Manual
+iterate z -> z^2 until z vanishes
+|] $ \ens -> do
+        Just cfg <- getDynamic (ensembleConfiguration ens)
+        case coContents cfg of
+          Tabbed tabsV -> do
+            tabs <- getDynamic tabsV
+            labels <- mapM (getDynamic . tiLabel) tabs
+            [ l | Label l <- labels ] `shouldBe` ["Iteration settings"]
+            pages <- mapM (getDynamic . tiBody) tabs
+            case pages of
+              [Vertical itemsV] -> getDynamic itemsV >>= \items -> do
+                values <- mapM (getDynamic . dyn . exprValue) [ uv | TextBox _ uv <- items ]
+                case values of
+                  [ Right (SomeValue EmptyEnvProxy RealType v)
+                    , Right (SomeValue EmptyEnvProxy IntegerType i)
+                    , Right (SomeValue EmptyEnvProxy RealType e) ] -> do
+                    evaluateInContext EmptyContext v `shouldBe` 0.01
+                    evaluateInContext EmptyContext i `shouldBe` 100
+                    evaluateInContext EmptyContext e `shouldBe` 10
+                  _ -> expectationFailure ("expected R, Z, R settings, got " ++ show (length values))
+              _ -> expectationFailure "expected one Vertical tab body"
+          _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
+
+    it "lets a script declare an automatic setting in a tab of its own" $
+      shouldBuild [r|
+@config "Configuration"
+max_iters : Z := 50
+
+@viewer "V" var=z colorizer=Manual
+iterate z -> z^2 until z escapes
+|] $ \ens -> do
+        Just cfg <- getDynamic (ensembleConfiguration ens)
+        case coContents cfg of
+          Tabbed tabsV -> do
+            tabs <- getDynamic tabsV
+            labels <- mapM (getDynamic . tiLabel) tabs
+            [ l | Label l <- labels ] `shouldBe` ["Configuration", "Iteration settings"]
+            pages <- mapM (getDynamic . tiBody) tabs
+            sizes <- mapM (\case { Vertical v -> length <$> getDynamic v; _ -> pure (-1) }) pages
+            sizes `shouldBe` [1, 2]
+          _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
+
+    it "rejects a script's own automatic setting of the wrong type" $
+      [r|
+@config "Configuration"
+max_iters : R := 50
+
+@viewer "V" var=z
+pass
+|] `shouldFailWith` "automatic iteration settings"
+
+    it "still rejects an automatic setting declared twice by the script" $
       [r|
 @config "Configuration"
 max_iters : Z := 50
+max_iters : Z := 60
 
 @viewer "V" var=z
 pass

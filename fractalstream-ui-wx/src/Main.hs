@@ -593,8 +593,8 @@ translateAncientProjectBytes f path contents = do
   if not ok
     then pure (Left "User did not want to translate ancient script")
     else case decodeAncientFS contents of
-           Nothing -> pure (Left "I was not able to decode this file")
-           Just (title, body) -> case translateLegacyScript title body of
+           Left err -> pure (Left ("I was not able to decode this file. " ++ err))
+           Right (title, body) -> case translateLegacyScript title body of
              Left err -> pure (Left err)
              Right Translation{..} -> do
                when (not $ null translationWarnings) $

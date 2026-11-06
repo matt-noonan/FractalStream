@@ -10,6 +10,9 @@ script: |
   dynamical_plane_color : Color as "Dynamical Plane" := green
   boundary_of_julia_set_color : Color as "Boundary of Julia Set" := orange
 
+  @config "Iteration settings"
+  vanishing_radius : R as "Vanishing radius: " := 0.01
+
   @common
   shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
     else blend(-sin(2 pi t), light c, c)

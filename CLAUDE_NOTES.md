@@ -587,9 +587,27 @@ Key modules:
   delete a `.fs` to regenerate it). A `{real}` script gets real viewers
   (`xvar=x yvar=y`, and `xvar=a yvar=b` when it mentions `a` or `b`),
   real-by-default typing (`cxReal`: a pair stays a pair, `z`/`c` aren't
-  special), and an `iterate` without a variable iterates `(x, y)`
+  special, except that a pair in arithmetic is written `x + y * i`), and an
+  `iterate` without a variable iterates `(x, y)`
   (`realIterate`); `set (x, y) to (e1, e2)` becomes `x, y <- e1, e2` in
-  either kind (`test/legacy/torus.txt`).
+  either kind (`test/legacy/torus.txt`). Every translation declares
+  `vanishing_radius := 0.01` (the old program's tolerance) in its own
+  `@config "Iteration settings"`. The parser accepts flags without a
+  period and `\r` line endings; a script that fails to parse is retried
+  with every colon-less `then` read as `then:` (with a warning), then
+  also keeping an `end.` that ends no block or an `until` with no `do`
+  as a `Stray` (translated as a comment, with a warning), then strays
+  with `then` as usual (`parseLegacyScript`'s comment says why that
+  order).
+- `Language.Legacy.Binary` reads FractalStream 1.0 save files: a small
+  `bplist00` decoder (`decodeBPList`) and a walk of the NSKeyedArchiver
+  archive to the title and script (`decodeAncientFS`). The app and
+  `fsrun translate` both take these files; `test/legacy-binary/` has
+  synthetic ones made by its `make-fixtures.py`.
+- `Actor.Script.withImplicitSettings` adds the automatic `max_iters`/
+  `escape_radius`/`vanishing_radius` settings to a script's stanzas,
+  except those the script declares itself (same type required), which
+  replace them.
 - `Language.Code.Typecheck` (+ `.Functions`) - code elaboration, functions
 - `Language.Typecheck` - `TC` monad, `TCError`, shared helpers
 

@@ -4,6 +4,9 @@ script: |
   default_exit_condition_color : Color as "Default Exit Condition" := blue
   checkered_color : Color as "Checkered" := red
 
+  @config "Iteration settings"
+  vanishing_radius : R as "Vanishing radius: " := 0.01
+
   @common
   shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
     else blend(-sin(2 pi t), light c, c)

@@ -17,6 +17,8 @@ and one makes a project, from a script for the original FractalStream
 
   fsrun translate --input <script.txt> --output <project.fs>
 
+(the input can also be a FractalStream 1.0 save file).
+
 Snapshot mode renders one named viewer's base per-pixel script to a PNG
 and exits. The other two both drive a project through a sequence of
 commands (see @SCENARIO_LANGUAGE.md@, "Scenario", and "Interpreter") --
@@ -50,6 +52,7 @@ import FractalStream.Prelude
 
 import FractalStream.Metadata (gitTag)
 import Actor.Ensemble (Ensemble(..), NamedScenario(..), parseEnsembleFromFile, runEnsemble, encodeEnsemble, checkProjectBytes)
+import Language.Legacy.Binary (decodeAncientFS, mightBeAncientFS)
 import Language.Legacy.Translate (Translation(..), translateLegacyScript)
 import Language.Editor.Normalize (normalize)
 import Actor.Metadata (ProjectMetadata(..))
@@ -65,6 +68,7 @@ import Data.IORef
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import qualified Data.Text.Encoding.Error as T (lenientDecode)
 import System.Directory (renameFile)
 import System.FilePath (takeBaseName)
 
@@ -157,11 +161,11 @@ cliParser = hsubparser $ mconcat
       (pure Normalize)
   , command "translate" $ info
       (Translate <$> strOption (long "input" <> short 'i' <> metavar "SCRIPT"
-                                <> help "The original-FractalStream script, as text (- for stdin)")
+                                <> help "The original-FractalStream script: as text, or a FractalStream 1.0 save file (- for stdin)")
                  <*> strOption (long "output" <> short 'o' <> metavar "PROJECT.fs"
                                 <> help "Where to write the project (- for stdout)")
                  <*> optional (strOption (long "title" <> metavar "TITLE"
-                                <> help "The project's title (default: the script file's name)")))
+                                <> help "The project's title (default: the save file's title, or the script file's name)")))
       (progDesc "Translate a script for the original FractalStream into a project")
   ]
   where
@@ -187,11 +191,17 @@ cliParser = hsubparser $ mconcat
 -- the problem is reported and the exit code is non-zero.
 runTranslate :: FilePath -> FilePath -> Maybe String -> IO ()
 runTranslate input output mtitle = do
-  src <- if input == "-" then getContents
-         else withFile input ReadMode $ \h -> hSetEncoding h utf8 >> hGetContents' h
-  let title = fromMaybe (if input == "-" then "Translated script" else takeBaseName input) mtitle
+  bytes <- if input == "-" then BS.getContents else BS.readFile input
+  let what = if input == "-" then "the script" else quoted input
+      fileTitle = if input == "-" then "Translated script" else takeBaseName input
+  -- a FractalStream 1.0 save file, or the text of a script
+  (savedTitle, src) <- if mightBeAncientFS bytes
+    then either (\err -> dieWith ("Could not read the script in " ++ what ++ ":\n" ++ err))
+                (\(t, b) -> pure (Just t, b)) (decodeAncientFS bytes)
+    else pure (Nothing, T.unpack (T.decodeUtf8With T.lenientDecode bytes))
+  let title = fromMaybe fileTitle (mtitle <|> savedTitle)
   case translateLegacyScript title src of
-    Left err -> dieWith ("Could not translate " ++ (if input == "-" then "the script" else quoted input) ++ ":\n" ++ err)
+    Left err -> dieWith ("Could not translate " ++ what ++ ":\n" ++ err)
     Right Translation{..} -> do
       forM_ translationWarnings (hPutStrLn stderr . ("warning: " ++))
       if output == "-" then putStr translatedProject

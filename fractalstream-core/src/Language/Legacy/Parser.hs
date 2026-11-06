@@ -5,6 +5,7 @@
 -- (@(like this)@); elsewhere, parentheses group, as usual.
 module Language.Legacy.Parser
   ( parseLegacyScript
+  , ParseNote(..)
   ) where
 
 import FractalStream.Prelude hiding (many, some)
@@ -20,15 +21,64 @@ import Language.Legacy.Syntax
 
 type Parser = Parsec Void String
 
--- | Parse a script, or describe where and why it couldn't be.
-parseLegacyScript :: String -> Either String Script
-parseLegacyScript src = first errorBundlePretty (parse script "script" src)
+-- | Something worth knowing about how a script was read.
+data ParseNote
+  = ThenStartsBlocks
+    -- ^ The script only parsed when every @then@ (without a colon) was
+    -- read as @then:@, starting a block that runs to an @end.@
+  deriving (Eq, Show)
 
-script :: Parser Script
-script = do
+-- | How to read a colon-less @then@.
+data ThenMode
+  = ThenCommand  -- ^ followed by one command, as the guides write it
+  | ThenBlock    -- ^ like @then:@, starting a block
+  deriving Eq
+
+-- | How a script is being read, and where in it the parser is.
+data Mode = Mode
+  { thenMode  :: ThenMode
+  , strays    :: Bool
+    -- ^ whether an @end.@ that can't end a block, or an @until c.@ that
+    -- can't end a @do@ loop, is kept as a 'Stray' instead of failing
+  , blockOpen :: Bool  -- ^ inside a block, which an @end.@ ends
+  , inDo      :: Bool  -- ^ directly inside a @do@ loop, which an @until@ ends
+  }
+
+-- | Parse a script, or describe where and why it couldn't be.
+--
+-- A script that doesn't parse as usual is tried again more leniently,
+-- in this order, keeping the first reading that works:
+--
+-- * Some scripts write @if c then@ with no colon, followed by several
+--   commands and an @end.@, so every colon-less @then@ is read as
+--   @then:@.
+-- * Some have an @end.@ that ends no block, or an @until c.@ with no
+--   @do@, which are kept as 'Stray's: first with @then@ read as
+--   @then:@, and then as usual.
+--
+-- (Reading @then@ as @then:@ first matters: with strays allowed, a
+-- script of colon-less @then@ blocks also parses as single-command
+-- @if@s followed by strays, which nests the commands wrongly.) The error
+-- reported, if no reading works, is the usual reading's.
+parseLegacyScript :: String -> Either String (Script, [ParseNote])
+parseLegacyScript src = case parse (script (mode ThenCommand False)) "script" src of
+  Right s -> Right (s, [])
+  Left err -> case mapMaybe attempt readings of
+    s : _ -> Right s
+    [] -> Left (errorBundlePretty err)
+  where
+    mode t st = Mode { thenMode = t, strays = st, blockOpen = False, inDo = False }
+    readings =
+      [ (mode ThenBlock False, [ThenStartsBlocks])
+      , (mode ThenBlock True, [ThenStartsBlocks])
+      , (mode ThenCommand True, []) ]
+    attempt (m, notes) = either (const Nothing) (\s -> Just (s, notes)) (parse (script m) "script" src)
+
+script :: Mode -> Parser Script
+script mode = do
   space
   isReal <- option False (True <$ (symbol "{" *> keyword "real" *> symbol "}"))
-  Script isReal <$> many command <* eof
+  Script isReal <$> many (command mode) <* eof
 
 ------------------------------------------------------------------------
 -- Lexing
@@ -76,33 +126,34 @@ trim = dropWhileEnd isSpace . dropWhile isSpace
 ------------------------------------------------------------------------
 -- Commands
 
-command :: Parser Cmd
-command = choice
+command :: Mode -> Parser Cmd
+command mode = choice
   [ comment
   , setCmd
   , Default <$> (keyword "default" *> identifier) <*> (keyword "to" *> expr <* period)
-  , ifCmd
-  , Block <$> (blockStart *> blockBody)
-  , DoUntil <$> (keyword "do" *> many command) <*> (keyword "until" *> cond <* period)
+  , ifCmd mode
+  , Block <$> (blockStart *> blockBody mode)
+  , DoUntil <$> (keyword "do" *> many (command mode { inDo = True })) <*> (keyword "until" *> cond <* period)
   , Iterate <$> (keyword "iterate" *> expr)
             <*> optional (keyword "on" *> identifier)
             <*> (keyword "until" *> cond <* period)
-  , Repeat <$> (keyword "repeat" *> expr <* keyword "times") <*> command
+  , Repeat <$> (keyword "repeat" *> expr <* keyword "times") <*> command mode
   , Reduce <$> (keyword "reduce" *> identifier) <*> (keyword "mod" *> expr <* period)
   , Report <$> (keyword "report" *> expr <* period)
   , Succeed <$ keyword "succeed" <* period
   , Fail <$ keyword "fail" <* period
   , flag
-  , Par <$> (keyword "par" *> command)
-  , Dyn <$> (keyword "dyn" *> command)
-  , Probe <$> (keyword "probe" *> option ProbeComplex probeFormat) <*> quoted <*> command
+  , Par <$> (keyword "par" *> command mode)
+  , Dyn <$> (keyword "dyn" *> command mode)
+  , Probe <$> (keyword "probe" *> option ProbeComplex probeFormat) <*> quoted <*> command mode
   , unsupported "load" (keyword "load" *> textUntil "." *> period)
   , unsupported "using each" (keyword "using" *> keyword "each" *> identifier *> keyword "in"
                                 *> textUntil "\n" *> pure ())
+  , stray "end." (guard (strays mode && not (blockOpen mode)) *> keyword "end" *> period)
+  , stray "until" (guard (strays mode && not (inDo mode)) *> keyword "until" *> cond *> period)
   ] <?> "a command"
   where
     blockStart = keyword "block" <|> void (symbol ":")
-    blockBody = many command <* keyword "end" <* period
 
     probeFormat = choice
       [ ProbeComplex <$ keyword "complex", ProbeReal <$ keyword "real"
@@ -112,6 +163,14 @@ command = choice
     unsupported what p = lexeme $ do
       (src, ()) <- match p
       pure (Unsupported what (trim src))
+
+    stray what p = try $ do
+      (src, ()) <- match p
+      pure (Stray what (trim src))
+
+-- | The commands of a block, and the @end.@ ending it.
+blockBody :: Mode -> Parser [Cmd]
+blockBody mode = many (command mode { blockOpen = True, inDo = False }) <* keyword "end" <* period
 
 -- | @(a comment)@, with nested parentheses allowed inside.
 comment :: Parser Cmd
@@ -128,24 +187,29 @@ setCmd = do
   keyword "to"
   Set vars <$> expr <* period
 
-ifCmd :: Parser Cmd
-ifCmd = do
+ifCmd :: Mode -> Parser Cmd
+ifCmd mode = do
   keyword "if"
   c <- cond
   keyword "then"
   yes <- thenCommand
-  If c yes <$> optional (keyword "else" *> thenCommand)
+  If c yes <$> optional (keyword "else" *> command mode)
   where
-    -- `then:` and `else:` start a block, as `:` does anywhere
-    thenCommand = command
+    -- `then:` and `else:` start a block, as `:` does anywhere; in
+    -- `ThenBlock` mode, so does a `then` without one
+    thenCommand = case thenMode mode of
+      ThenCommand -> command mode
+      ThenBlock -> Block <$> (optional (symbol ":") *> blockBody mode)
 
+-- | @[name]@ or @[name | color]@, usually followed by a period, which
+-- some scripts leave out.
 flag :: Parser Cmd
 flag = lexeme $ do
   _ <- symbol "["
   name <- textUntil "|]"
   hint <- optional (symbol "|" *> textUntil "]")
   _ <- symbol "]"
-  period
+  optional period
   pure (Flag name hint)
 
 ------------------------------------------------------------------------

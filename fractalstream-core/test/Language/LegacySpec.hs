@@ -141,3 +141,82 @@ spec = describe "translating original-FractalStream scripts" $ do
     t <- translated "{real}\nif x > y then [Right]. else [Left]."
     scriptOf t `shouldSatisfy` any ("if x > y:" `isInfixOf`)
     loads t
+
+  it "accepts a flag without a period after it" $ do
+    t <- translated "iterate z^2 + c until z escapes.\nif z escapes then [Out]\n[In]"
+    scriptOf t `shouldSatisfy` any ("flag_color <- out_color" `isInfixOf`)
+    scriptOf t `shouldSatisfy` any ("flag_color <- in_color" `isInfixOf`)
+    loads t
+
+  it "reads `then` without a colon as `then:`, with a warning, when that's the only way it parses" $ do
+    t <- translated $ unlines
+      [ "iterate z^2 + c until z escapes or z vanishes."
+      , "if z vanishes then"
+      , "  [Small]"
+      , "  if re(z) > 0 then [Right] end."
+      , "end." ]
+    let s = scriptOf t
+    s `shouldSatisfy` any ("if z vanishes:" `isInfixOf`)
+    s `shouldSatisfy` any ("    if re(z) > 0:" `isInfixOf`)
+    translationWarnings t `shouldSatisfy` any ("`then:`" `isInfixOf`)
+    loads t
+
+  it "reads `then` as usual when the script parses that way" $ do
+    t <- translated "if re(z) > 0 then [A]. else [B]."
+    translationWarnings t `shouldNotSatisfy` any ("`then:`" `isInfixOf`)
+    loads t
+
+  it "starts the vanishing radius at 0.01, as the old program's tolerance did" $ do
+    t <- translated "iterate z^2 + c until z vanishes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("@config \"Iteration settings\"" `isInfixOf`)
+    s `shouldSatisfy` any ("vanishing_radius : R as \"Vanishing radius: \" := 0.01" `isInfixOf`)
+    loads t
+
+  it "treats a real-dynamics script's pairs in arithmetic as complex numbers" $ do
+    t <- translated $ unlines
+      [ "{real}"
+      , "set (x, y) to (x, y)*(0, 1) + (a, b)."
+      , "set (x, y) to (x, y)/2."
+      , "if (x, y) < (a, b) then [Inside]."
+      , "iterate (x, y)^2 + (a, b) until (x, y) escapes." ]
+    let s = scriptOf t
+    s `shouldSatisfy` any ("new_point := (x + y * i) * i + (a + b * i)" `isInfixOf`)
+    s `shouldSatisfy` any ("new_point_2 := (x + y * i) / 2" `isInfixOf`)
+    s `shouldSatisfy` any ("if |x + y * i| < |a + b * i|:" `isInfixOf`)
+    s `shouldSatisfy` any ("new_point_3 := (x + y * i)^2 + (a + b * i)" `isInfixOf`)
+    s `shouldSatisfy` any ("until (x, y) escapes" `isInfixOf`)
+    s `shouldNotSatisfy` any ("re((x, y)" `isInfixOf`)
+    loads t
+
+  it "keeps an `until` with no `do` as a comment, with a warning" $ do
+    t <- translated "set w to z.\nset z to z^2 + c.\nuntil z escapes.\nif z escapes then [Out]."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("#   until z escapes." `isInfixOf`)
+    s `shouldSatisfy` any ("if z escapes:" `isInfixOf`)
+    translationWarnings t `shouldSatisfy` any ("no `do`" `isInfixOf`)
+    loads t
+
+  it "keeps an `end.` that ends no block as a comment, with a warning" $ do
+    -- (not after an `if ... then`, where it would end a block, as `then:`)
+    t <- translated "iterate z^2 + c until z escapes.\n[Out].\nend."
+    scriptOf t `shouldSatisfy` any ("#   end." `isInfixOf`)
+    translationWarnings t `shouldSatisfy` any ("doesn't end any block" `isInfixOf`)
+    loads t
+
+  it "doesn't take a loop's own `until`, or a block's own `end.`, for a stray" $ do
+    t <- translated "block\ndo\nset z to z^2 + c.\nuntil z escapes.\nend.\nend."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("until z escapes" `isInfixOf`)
+    s `shouldSatisfy` any ("repeat:" `isInfixOf`)
+    s `shouldNotSatisfy` any ("#   until" `isInfixOf`)
+    s `shouldSatisfy` any ("#   end." `isInfixOf`)
+    loads t
+
+  it "reads old Mac OS line endings" $ do
+    t <- translated "set w to z.\riterate w^2 + c on w until w escapes.\r\nif w escapes then [Out]."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("iterate w -> w^2 + C until w escapes" `isInfixOf`)
+    lines (translatedProject t) `shouldSatisfy` any (== "#   iterate w^2 + c on w until w escapes.")
+    translatedProject t `shouldNotSatisfy` elem '\r'
+    loads t

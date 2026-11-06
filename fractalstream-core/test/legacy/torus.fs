@@ -6,6 +6,9 @@ script: |
   lower_basin_color : Color as "Lower Basin" := green
   upper_basin_color : Color as "Upper Basin" := orange
 
+  @config "Iteration settings"
+  vanishing_radius : R as "Vanishing radius: " := 0.01
+
   @common
   shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
     else blend(-sin(2 pi t), light c, c)
