@@ -18,30 +18,40 @@ script: |
   shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
     else blend(-sin(2 pi t), light c, c)
 
+  define script(limit, in_parameter_plane):
+    b := 0
+    a := 0
+    if not in_parameter_plane:
+      flag_color <- dynamics_color
+    if not in_parameter_plane:
+      iterate z -> z^2 + C until z escapes up to limit times
+    if not in_parameter_plane:
+      pass
+    if in_parameter_plane:
+      b <- a
+      a <- z
+      z <- z^2 + C
+      # NOTE: the original script has this here, with no `do` before it to end:
+      #   until z escapes or z vanishes.
+      if z vanishes:
+        if |a - C| < |-a - C|:
+          flag_color <- ba_color
+          if |b - C| < |-b - C|:
+            flag_color <- aa_color
+        if |-a - C| < |a - C|:
+          flag_color <- bb_color
+          if |b - C| < |-b - C|:
+            flag_color <- ab_color
+
   @viewer "Parameter plane" var=C
   z := 0
   flag_color := default_exit_condition_color
-  a := 0
-  b := a
-  a <- z
-  z <- z^2 + C
-  # NOTE: the original script has this here, with no `do` before it to end:
-  #   until z escapes or z vanishes.
-  if z vanishes:
-    if |a - C| < |-a - C|:
-      flag_color <- ba_color
-      if |b - C| < |-b - C|:
-        flag_color <- aa_color
-    if |-a - C| < |a - C|:
-      flag_color <- bb_color
-      if |b - C| < |-b - C|:
-        flag_color <- ab_color
+  run script(max_iters, true)
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
   @viewer "Dynamical plane"
   flag_color := default_exit_condition_color
-  flag_color <- dynamics_color
-  iterate z -> z^2 + C until z escapes
+  run script(max_iters, false)
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
   @tool "Trace" for="Dynamical plane" shortcut=t
@@ -53,11 +63,13 @@ script: |
   on click-or-drag at z:
     erase
     use trace_color for line
+    # (the script sets these for coloring, which the tool doesn't use)
+    flag_color := default_exit_condition_color
     draw point at z
     # each step runs the script once more, with each loop making at most one pass
     repeat up to 100 times:
       previous := z
-      iterate z -> z^2 + C until z escapes up to 1 times
+      run script(1, false)
       draw point at z
       draw line from previous to z
     until z escapes

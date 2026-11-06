@@ -10,24 +10,32 @@ to go on editing rather than to reproduce the old pictures exactly:
 
 * @default v to e.@ becomes a field of a @\@config "Parameters"@ tab; @c@
   becomes the field @C@ there when there's a parameter plane.
+* The script itself is written once, in @\@common@, as @define
+  script(limit)@: each of its loops makes at most @limit@ passes. If it
+  has @par@ or @dyn@ commands, it also takes @in_parameter_plane@, and
+  those commands check it.
 * There's a viewer for each plane: @\@viewer "Parameter plane" var=C@
   (starting from @z := 0@, as the old program did) and
-  @\@viewer "Dynamical plane"@, each running the commands meant for it
-  (@par@ and @dyn@ are worked out here). Picking @C@ in the parameter
+  @\@viewer "Dynamical plane"@, each declaring the variables the script
+  sets for coloring and then running @script(max_iters)@ (with @true@ or
+  @false@ for which plane it is, if the script needs to know). Picking @C@ in the parameter
   plane, like the old Dynamics tool, is the viewer's own "Select C"
   tool, which every viewer over a configuration variable has.
 * Coloring: each flag (@[name]@, @[name | color]@) gets a color in a
   @\@config "Colors"@ tab, and a point is drawn in a dark-to-light
   gradient of its flag's color, by iterations (period 20: the color at
   0, then darker, then lighter), or black if its last loop gave up.
-* Each probe becomes a tool on each viewer, showing the value it reports
-  in a field of the tool's panel.
+* Each probe becomes a definition in @\@common@, taking the parameter (@C@,
+  or a real script's @(a, b)@) when there's a parameter plane, and a tool
+  on each viewer running it (with @C@ in the dynamical plane and the
+  clicked point in the parameter plane), showing the value it reports in
+  a field of the tool's panel.
 * The dynamical plane gets the old Trace tool (shortcut @t@): from the
-  point clicked or dragged to, it runs the dynamical plane's commands up
-  to 100 times, each time from where the last left off and with each
-  loop making at most one pass (the old program ran the script with an
-  iteration limit of 1), marking each point and joining them with lines
-  in a color set in the tool's panel, and stopping if the point escapes.
+  point clicked or dragged to, it runs @script(1)@ up to 100 times, each
+  time from where the last left off (the old program ran the script with
+  an iteration limit of 1), marking each point and joining them with
+  lines in a color set in the tool's panel, and stopping if the point
+  escapes.
 * Names keep the spelling they're first written with (the old language
   ignored case), except @z@ and @c@ (@C@), and old names for built-in
   values (@pixel@ is @pixel_size@, @maxIter@ is @max_iters@, ...). A name
@@ -150,6 +158,29 @@ forPlane plane = concatMap go
       DoUntil cs c -> [DoUntil (concatMap go cs) c]
       Repeat n c -> [Repeat n (Block (go c))]
       c -> [c]
+
+-- | The commands meant for either plane, keeping @par@ and @dyn@ but
+-- without @default@s or probes.
+forBothPlanes :: [Cmd] -> [Cmd]
+forBothPlanes = concatMap go
+  where
+    go = \case
+      Par c -> [Par (Block (go c))]
+      Dyn c -> [Dyn (Block (go c))]
+      Default{} -> []
+      Probe{} -> []
+      Block cs -> [Block (concatMap go cs)]
+      If c yes no -> [If c (Block (go yes)) (Block . go <$> no)]
+      DoUntil cs c -> [DoUntil (concatMap go cs) c]
+      Repeat n c -> [Repeat n (Block (go c))]
+      c -> [c]
+
+-- | A command only for one plane.
+isPlaneCmd :: Cmd -> Bool
+isPlaneCmd = \case
+  Par _ -> True
+  Dyn _ -> True
+  _ -> False
 
 -- | Every command, at any depth (not looking inside probes).
 everyCmd :: [Cmd] -> [Cmd]
@@ -317,6 +348,9 @@ data Ctx = Ctx
   , cxReal :: Bool
     -- ^ a real-dynamics script, where a pair @(a, b)@ is a pair, not
     -- @a + b i@
+  , cxPlaneFlag :: Maybe String
+    -- ^ a boolean variable saying whether the script is running in the
+    -- parameter plane, if @par@ and @dyn@ commands are to check it
   , cxLoopCap :: Maybe String
     -- ^ the most passes each loop makes, if not the iteration limit
     -- (for the Trace tool, which runs a script with a limit of 1)
@@ -410,7 +444,7 @@ translateT isReal title src body = do
                  , cxFlagVar = flagVar, cxOutcome = Nothing, cxIsProbe = False, cxUsed = used2
                  , cxNonNegative = Set.fromList [ v | (v, e) <- defaults, exprTy (tyOf . nameOf) e == TReal
                                                     , nonNegativeLiteral e ]
-                 , cxReal = isReal, cxLoopCap = Nothing }
+                 , cxReal = isReal, cxLoopCap = Nothing, cxPlaneFlag = Nothing }
 
   -- @config tabs
   let -- the parameter plane's coordinates, as configuration variables
@@ -430,128 +464,166 @@ translateT isReal title src body = do
       colorsTab = Line "@config \"Colors\"" :
         [ Line (v ++ " : Color as " ++ quote n ++ " := " ++ flagColor n) | (n, v) <- flagVars ]
 
+  -- the script, shared in @common by the viewers and the Trace tool: it
+  -- takes the most passes each loop may make (the iteration limit, or 1
+  -- for the Trace tool), and, if some commands are only for one plane,
+  -- which plane it's running in
+  let splitPlanes = hasParamPlane && not (null [ () | c <- everyCmd body, isPlaneCmd c ])
+      scriptCmds = flatten (if splitPlanes then forBothPlanes body else forPlane DynPlane body)
+      usesOutcome = not (null [ () | c <- everyCmd scriptCmds, c `elem` [Succeed, Fail] ])
+      itersVar = freshIn used2 "iters"
+      gaveUpVar = freshIn (Set.insert itersVar used2) "gave_up"
+      outcome = if usesOutcome then Just (itersVar, gaveUpVar) else Nothing
+      scriptFn = freshIn (foldr Set.insert used2 [itersVar, gaveUpVar]) "script"
+      limitVar = freshIn (foldr Set.insert used2 [itersVar, gaveUpVar, scriptFn]) "limit"
+      planeVar = freshIn (foldr Set.insert used2 [itersVar, gaveUpVar, scriptFn, limitVar]) "in_parameter_plane"
+      used3 = foldr Set.insert used2 [itersVar, gaveUpVar, scriptFn, limitVar, planeVar]
+      name v | lower v == "iters" = maybe "iterations" fst outcome
+             | otherwise = nameOf v
+      scriptCtx = ctx0 { cxName = name, cxOutcome = outcome, cxUsed = used3
+                       , cxLoopCap = Just limitVar
+                       , cxPlaneFlag = if splitPlanes then Just planeVar else Nothing }
+      outcomeVars = maybe [] (\(a, b) -> [a, b]) outcome
+      predeclaredS = configNames <> Set.fromList (coordinates ++ [flagVar, limitVar, planeVar] ++ outcomeVars)
+      scriptParams = limitVar : [ planeVar | splitPlanes ]
+      runScript limit plane =
+        "run " ++ scriptFn ++ "(" ++ intercalate ", "
+          (limit : [ if plane == ParamPlane then "true" else "false" | splitPlanes ]) ++ ")"
+      -- the variables the script sets for coloring, declared where it's run
+      coloringDecls =
+        [ Line (flagVar ++ " := " ++ fromMaybe "" (Map.lookup "Default Exit Condition" (Map.fromList flagVars))) ]
+        ++ concat [ [Line (a ++ " := 0"), Line (b ++ " := false")] | Just (a, b) <- [outcome] ]
+  scriptDocs <- translateBody scriptCtx predeclaredS scriptCmds
+  let scriptDef =
+        [ Line ("define " ++ scriptFn ++ "(" ++ intercalate ", " scriptParams ++ "):")
+        , Nest (orPass scriptDocs) ]
+
   -- viewers
-  viewers <- forM planes $ \plane -> do
-    let cmds = flatten (forPlane plane body)
-        usesOutcome = not (null [ () | c <- everyCmd cmds, c `elem` [Succeed, Fail] ])
-        itersVar = freshIn used2 "iters"
-        gaveUpVar = freshIn (Set.insert itersVar used2) "gave_up"
-        outcome = if usesOutcome then Just (itersVar, gaveUpVar) else Nothing
-        used = foldr Set.insert used2 [itersVar, gaveUpVar]
-        name v | lower v == "iters" = maybe "iterations" fst outcome
-               | otherwise = nameOf v
-        ctx = ctx0 { cxName = name, cxOutcome = outcome, cxUsed = used }
-        header = case (plane, isReal) of
-          (ParamPlane, False) -> "@viewer \"Parameter plane\" var=C"
-          (DynPlane, False)   -> "@viewer \"Dynamical plane\""
-          (ParamPlane, True)  -> "@viewer \"Parameter plane\" xvar=" ++ nameOf "a" ++ " yvar=" ++ nameOf "b"
-          (DynPlane, True)    -> "@viewer \"Dynamical plane\" xvar=" ++ nameOf "x" ++ " yvar=" ++ nameOf "y"
-        predeclared = configNames <> Set.fromList (coordinates ++ [flagVar])
-                      <> maybe Set.empty (\(a, b) -> Set.fromList [a, b]) outcome
-        start' = [ Line (startingPoint ++ " := 0" ++ (if isReal then ", 0" else "")) | plane == ParamPlane ]
-              ++ [ Line (flagVar ++ " := " ++ fromMaybe "" (Map.lookup "Default Exit Condition" (Map.fromList flagVars))) ]
-              ++ concat [ [Line (a ++ " := 0"), Line (b ++ " := false")] | Just (a, b) <- [outcome] ]
-        finish = case outcome of
-          Nothing -> "color <- if stuck then black else " ++ shadeFn ++ "(" ++ flagVar ++ ", iterations / 20)"
-          Just (a, b) -> "color <- if " ++ b ++ " then black else " ++ shadeFn ++ "(" ++ flagVar ++ ", " ++ a ++ " / 20)"
-    bodyDocs <- translateBody ctx predeclared cmds
-    pure (Line header : start' ++ bodyDocs ++ [Line finish])
+  let viewers = flip map planes $ \plane ->
+        let header = case (plane, isReal) of
+              (ParamPlane, False) -> "@viewer \"Parameter plane\" var=C"
+              (DynPlane, False)   -> "@viewer \"Dynamical plane\""
+              (ParamPlane, True)  -> "@viewer \"Parameter plane\" xvar=" ++ nameOf "a" ++ " yvar=" ++ nameOf "b"
+              (DynPlane, True)    -> "@viewer \"Dynamical plane\" xvar=" ++ nameOf "x" ++ " yvar=" ++ nameOf "y"
+            start' = [ Line (startingPoint ++ " := 0" ++ (if isReal then ", 0" else "")) | plane == ParamPlane ]
+            finish = case outcome of
+              Nothing -> "color <- if stuck then black else " ++ shadeFn ++ "(" ++ flagVar ++ ", iterations / 20)"
+              Just (a, b) -> "color <- if " ++ b ++ " then black else " ++ shadeFn ++ "(" ++ flagVar ++ ", " ++ a ++ " / 20)"
+        in Line header : start' ++ coloringDecls ++ [Line (runScript "max_iters" plane), Line finish]
 
   -- tools: the probes (picking C, or (a, b), is the parameter plane's
-  -- own Select tool)
-  probeTools <- fmap concat . forM (probes body) $ \(fmt, title', pbody) ->
-    forM planes $ \plane -> do
-      let usedP = cxUsed ctx0
-          -- the clicked point: a complex number, or a real script's pair
-          -- (in the dynamical plane, the point itself)
-          clickedNames
-            | isReal && plane == DynPlane = [nameOf "x", nameOf "y"]
-            | isReal = let ca = freshIn usedP "clicked_a"
-                       in [ca, freshIn (Set.insert ca usedP) "clicked_b"]
-            | otherwise = [freshIn usedP "clicked"]
-          clicked = case clickedNames of
-            [p] -> p
-            ps -> "(" ++ intercalate ", " ps ++ ")"
-          field = freshIn (foldr Set.insert usedP clickedNames) (variableName title')
-          name v = case (plane, isReal, lower v, clickedNames) of
-            (ParamPlane, False, "c", _) -> clicked
-            (ParamPlane, True, "a", [ca, _]) -> ca
-            (ParamPlane, True, "b", [_, cb]) -> cb
-            _ -> nameOf v
-          ctx = ctx0 { cxName = name, cxIsProbe = True
-                     , cxUsed = foldr Set.insert usedP (field : clickedNames)
-                     , cxTy = \v -> if v `elem` clickedNames then (if isReal then TReal else TComplex) else tyOf v }
-          cmds = flatten (forPlane plane [pbody])
-          reports = [ e | Report e <- everyCmd cmds ]
-          reported | not (null reports) = last reports
-                   | isReal = Pair (Var "x") (Var "y")
-                   | otherwise = Var "z"
-          -- (a reported pair shows as a complex number)
-          (fieldTy, fieldValue) = probeResult fmt (exprTy (cxTy ctx . cxName ctx) reported)
-                                    (expr ctx { cxReal = False } 0 reported)
-          viewerTitle = case plane of
-            ParamPlane -> "Parameter plane"
-            DynPlane   -> "Dynamical plane"
-          predeclared = configNames <> Set.fromList (coordinates ++ field : clickedNames)
-          start' = case (plane, isReal) of
-            (ParamPlane, _) -> [Line (startingPoint ++ " := 0" ++ (if isReal then ", 0" else ""))]
-            (DynPlane, False) -> [Line ("z := " ++ clicked)]
-            (DynPlane, True) -> []
-      when (length (nub reports) > 1) $
-        warn ("The probe " ++ quote title' ++ " reports more than one thing; its tool shows the last one, at the end.")
-      bodyDocs <- translateBody ctx predeclared cmds
-      pure [ Line ("@tool " ++ quote title' ++ " for=" ++ quote viewerTitle)
-           , Line (field ++ " : " ++ fieldTy ++ " as " ++ quote title' ++ " := " ++ fieldDefault fieldTy)
-           , Line ("on click at " ++ clicked ++ ":")
-           , Nest (start' ++ bodyDocs ++ [Line (field ++ " <- " ++ fieldValue)]) ]
+  -- own Select tool). Each probe is a definition in @common, taking the
+  -- parameter (C, or a real script's (a, b)), run by a tool on each
+  -- viewer: with C itself in the dynamical plane, and the clicked point
+  -- in the parameter plane
+  let paramNames
+        | not hasParamPlane = []
+        | isReal = [nameOf "a", nameOf "b"]
+        | otherwise = ["C"]
+  probeParts <- forM (probes body) $ \(fmt, title', pbody) -> do
+    let usedP = used3
+        clickedA = freshIn usedP "clicked_a"
+        clickedB = freshIn (Set.insert clickedA usedP) "clicked_b"
+        clickedC = freshIn usedP "clicked"
+        -- the clicked point: a complex number, or a real script's pair
+        -- (in the dynamical plane, the point itself)
+        clickedNames plane
+          | isReal && plane == DynPlane = [nameOf "x", nameOf "y"]
+          | isReal = [clickedA, clickedB]
+          | otherwise = [clickedC]
+        tuple ns = case ns of
+          [n] -> n
+          _ -> "(" ++ intercalate ", " ns ++ ")"
+        usedP' = foldr Set.insert usedP [clickedA, clickedB, clickedC]
+        field = freshIn usedP' (variableName title')
+        probeFn = freshIn (Set.insert field usedP') ("probe_" ++ variableName title')
+        probeSplit = hasParamPlane && any isPlaneCmd (everyCmd [pbody])
+        ctx = ctx0 { cxIsProbe = True, cxUsed = foldr Set.insert usedP' [field, probeFn]
+                   , cxPlaneFlag = if probeSplit then Just planeVar else Nothing }
+        cmds = flatten (if probeSplit then forBothPlanes [pbody] else forPlane DynPlane [pbody])
+        reports = [ e | Report e <- everyCmd cmds ]
+        reported | not (null reports) = last reports
+                 | isReal = Pair (Var "x") (Var "y")
+                 | otherwise = Var "z"
+        -- (a reported pair shows as a complex number)
+        (fieldTy, fieldValue) = probeResult fmt (exprTy (cxTy ctx . cxName ctx) reported)
+                                  (expr ctx { cxReal = False } 0 reported)
+        predeclared = configNames <> Set.fromList (coordinates ++ field : planeVar : paramNames)
+        probeParams = paramNames ++ [ planeVar | probeSplit ]
+    when (length (nub reports) > 1) $
+      warn ("The probe " ++ quote title' ++ " reports more than one thing; its tool shows the last one, at the end.")
+    bodyDocs <- translateBody ctx predeclared cmds
+    let def = [ Line ("define " ++ withArguments probeFn probeParams ++ ":")
+              , Nest (bodyDocs ++ [Line (field ++ " <- " ++ fieldValue)]) ]
+        tool plane =
+          let clicked = tuple (clickedNames plane)
+              viewerTitle = case plane of
+                ParamPlane -> "Parameter plane"
+                DynPlane   -> "Dynamical plane"
+              start' = case (plane, isReal) of
+                (ParamPlane, _) -> [Line (startingPoint ++ " := 0" ++ (if isReal then ", 0" else ""))]
+                (DynPlane, False) -> [Line ("z := " ++ clicked)]
+                (DynPlane, True) -> []
+              arguments =
+                (case plane of
+                   ParamPlane -> clickedNames plane
+                   DynPlane -> paramNames)
+                ++ [ if plane == ParamPlane then "true" else "false" | probeSplit ]
+          in [ Line ("@tool " ++ quote title' ++ " for=" ++ quote viewerTitle)
+             , Line (field ++ " : " ++ fieldTy ++ " as " ++ quote title' ++ " := " ++ fieldDefault fieldTy)
+             , Line ("on click at " ++ clicked ++ ":")
+             , Nest (start' ++ [Line ("run " ++ withArguments probeFn arguments)]) ]
+    pure (def, map tool planes)
+  let probeDefs = map fst probeParts
+      probeTools = concatMap snd probeParts
 
   -- the Trace tool, which the old program gave every viewer: from the
   -- clicked point, run the dynamical plane's script over and over with
   -- an iteration limit of 1, each run starting where the last ended,
   -- marking each point and joining them up
-  traceTool <- do
-    let usedT = cxUsed ctx0
-        colorVar = freshIn usedT "trace_color"
-        -- the point being traced
-        traced = if isReal then [nameOf "x", nameOf "y"] else ["z"]
-        stepNames = case traced of
-          [x, y] -> let px = freshIn (Set.insert colorVar usedT) ("previous_" ++ x)
-                    in [px, freshIn (foldr Set.insert usedT [colorVar, px]) ("previous_" ++ y)]
-          _ -> [freshIn (Set.insert colorVar usedT) "previous"]
-        tuple ns = case ns of
-          [n] -> n
-          _ -> "(" ++ intercalate ", " ns ++ ")"
-        point = tuple traced
-        previous = tuple stepNames
-        toolTitle = freshIn (Set.fromList [ t | (_, t, _) <- probes body ]) "Trace"
-        ctx = ctx0 { cxIsProbe = True, cxLoopCap = Just "1"
-                   , cxUsed = foldr Set.insert usedT (colorVar : stepNames) }
-        predeclared = configNames <> Set.fromList (coordinates ++ colorVar : stepNames)
-    bodyDocs <- translateBody ctx predeclared (flatten (forPlane DynPlane body))
-    pure [ Line ("@tool " ++ quote toolTitle ++ " for=\"Dynamical plane\" shortcut=t")
-         , Line (colorVar ++ " : Color as \"Trace color\" := white")
-         , Line ""
-         , Line "on deactivated:"
-         , Nest [Line "erase"]
-         , Line ""
-         , Line ("on click-or-drag at " ++ point ++ ":")
-         , Nest [ Line "erase"
-                , Line ("use " ++ colorVar ++ " for line")
-                , Line ("draw point at " ++ point)
-                , Line "# each step runs the script once more, with each loop making at most one pass"
-                , Line "repeat up to 100 times:"
-                , Nest ([ Line (intercalate ", " stepNames ++ " := " ++ intercalate ", " traced) ]
-                        ++ bodyDocs ++
-                        [ Line ("draw point at " ++ point)
-                        , Line ("draw line from " ++ previous ++ " to " ++ point) ])
-                , Line ("until " ++ point ++ " escapes") ] ]
+  let traceTool =
+        let usedT = used3
+            colorVar = freshIn usedT "trace_color"
+            -- the point being traced
+            traced = if isReal then [nameOf "x", nameOf "y"] else ["z"]
+            stepNames = case traced of
+              [x, y] -> let px = freshIn (Set.insert colorVar usedT) ("previous_" ++ x)
+                        in [px, freshIn (foldr Set.insert usedT [colorVar, px]) ("previous_" ++ y)]
+              _ -> [freshIn (Set.insert colorVar usedT) "previous"]
+            tuple ns = case ns of
+              [n] -> n
+              _ -> "(" ++ intercalate ", " ns ++ ")"
+            point = tuple traced
+            previous = tuple stepNames
+            toolTitle = freshIn (Set.fromList [ t | (_, t, _) <- probes body ]) "Trace"
+        in [ Line ("@tool " ++ quote toolTitle ++ " for=\"Dynamical plane\" shortcut=t")
+           , Line (colorVar ++ " : Color as \"Trace color\" := white")
+           , Line ""
+           , Line "on deactivated:"
+           , Nest [Line "erase"]
+           , Line ""
+           , Line ("on click-or-drag at " ++ point ++ ":")
+           , Nest ( [ Line "erase"
+                    , Line ("use " ++ colorVar ++ " for line")
+                    , Line "# (the script sets these for coloring, which the tool doesn't use)" ]
+                    ++ coloringDecls ++
+                    [ Line ("draw point at " ++ point)
+                    , Line "# each step runs the script once more, with each loop making at most one pass"
+                    , Line "repeat up to 100 times:"
+                    , Nest [ Line (intercalate ", " stepNames ++ " := " ++ intercalate ", " traced)
+                           , Line (runScript "1" DynPlane)
+                           , Line ("draw point at " ++ point)
+                           , Line ("draw line from " ++ previous ++ " to " ++ point) ]
+                    , Line ("until " ++ point ++ " escapes") ] ) ]
 
   -- a flag's gradient: its color at t = 0, then darker, back, lighter,
   -- and back again at t = 1
   let common =
         [ Line "@common"
         , Line (shadeFn ++ "(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...")
-        , Line "  else blend(-sin(2 pi t), light c, c)" ]
+        , Line "  else blend(-sin(2 pi t), light c, c)"
+        , Line "" ]
+        ++ intercalate [Line ""] (scriptDef : probeDefs)
       -- the old program's tolerance for `vanishes`, `=`, and `stops`
       -- was much larger than this one's default
       settingsTab =
@@ -570,6 +642,13 @@ translateT isReal title src body = do
     , ""
     , "# The original script:" ]
     ++ map (\l -> if all isSpace l then "#" else "#   " ++ l) (lines src)
+
+-- | Code's name, with its arguments or parameters if it has any (code
+-- without them is written without parentheses).
+withArguments :: String -> [String] -> String
+withArguments f = \case
+  [] -> f
+  args -> f ++ "(" ++ intercalate ", " args ++ ")"
 
 -- | A number that's not negative, possibly as a fraction.
 nonNegativeLiteral :: Expr -> Bool
@@ -785,6 +864,9 @@ stmt ctx top inLoop = \case
   -- these were dealt with before getting here
   Default{} -> pure []
   Probe{} -> pure []
+  -- (in a script for both planes, which says which plane it's in)
+  Par c | Just p <- cxPlaneFlag ctx -> onlyIf p c
+  Dyn c | Just p <- cxPlaneFlag ctx -> onlyIf ("not " ++ p) c
   Par c -> stmt ctx top inLoop c
   Dyn c -> stmt ctx top inLoop c
   where
@@ -817,6 +899,10 @@ stmt ctx top inLoop = \case
         _ -> do
           b <- block c
           pure [Line "else:", Nest b]
+
+    onlyIf test c = do
+      b <- block c
+      pure [Line ("if " ++ test ++ ":"), Nest b]
 
     -- whether a command does nothing in this script
     inert = \case

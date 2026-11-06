@@ -208,7 +208,7 @@ spec = describe "translating original-FractalStream scripts" $ do
     t <- translated "block\ndo\nset z to z^2 + c.\nuntil z escapes.\nend.\nend."
     let s = scriptOf t
     s `shouldSatisfy` any ("until z escapes" `isInfixOf`)
-    s `shouldSatisfy` any ("repeat:" `isInfixOf`)
+    s `shouldSatisfy` any ("repeat up to limit times:" `isInfixOf`)
     s `shouldNotSatisfy` any ("#   until" `isInfixOf`)
     s `shouldSatisfy` any ("#   end." `isInfixOf`)
     loads t
@@ -228,16 +228,41 @@ spec = describe "translating original-FractalStream scripts" $ do
     s `shouldSatisfy` any ("trace_color : Color as \"Trace color\" := white" `isInfixOf`)
     s `shouldSatisfy` any ("on click-or-drag at z:" `isInfixOf`)
     s `shouldSatisfy` any ("repeat up to 100 times:" `isInfixOf`)
-    s `shouldSatisfy` any ("repeat up to 1 times:" `isInfixOf`)
+    s `shouldSatisfy` any ("run script(1)" `isInfixOf`)
     s `shouldSatisfy` any ("draw line from previous to z" `isInfixOf`)
     s `shouldSatisfy` any ("until z escapes" `isInfixOf`)
-    -- (the flag's `if` has nothing to do in the tool, so it's left out)
-    length (filter ("if z = w:" `isInfixOf`) s) `shouldBe` 2
+    -- (the script sets the flag, so the tool declares it too)
+    length (filter ("flag_color := default_exit_condition_color" `isInfixOf`) s) `shouldBe` 3
     loads t
 
-  it "caps an `iterate` in the Trace tool at one pass" $ do
+  it "shares the script, with its loops' limit, between the viewers and the Trace tool" $ do
     t <- translated "iterate z^2 + c until z escapes."
-    scriptOf t `shouldSatisfy` any ("iterate z -> z^2 + C until z escapes up to 1 times" `isInfixOf`)
+    let s = scriptOf t
+    s `shouldSatisfy` any ("define script(limit):" `isInfixOf`)
+    s `shouldSatisfy` any ("iterate z -> z^2 + C until z escapes up to limit times" `isInfixOf`)
+    length (filter ("run script(max_iters)" `isInfixOf`) s) `shouldBe` 2
+    s `shouldSatisfy` any ("run script(1)" `isInfixOf`)
+    length (filter ("iterate z" `isInfixOf`) s) `shouldBe` 1
+    loads t
+
+  it "tells the shared script which plane it's in, when some commands are for one plane" $ do
+    t <- translated "par set z to -c/2.\ndyn set w to z.\niterate z^2 + c until z escapes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("define script(limit, in_parameter_plane):" `isInfixOf`)
+    s `shouldSatisfy` any ("    if in_parameter_plane:" `isInfixOf`)
+    s `shouldSatisfy` any ("    if not in_parameter_plane:" `isInfixOf`)
+    s `shouldSatisfy` any ("run script(max_iters, true)" `isInfixOf`)
+    s `shouldSatisfy` any ("run script(max_iters, false)" `isInfixOf`)
+    s `shouldSatisfy` any ("run script(1, false)" `isInfixOf`)
+    loads t
+
+  it "defines each probe once, run with C or the clicked point" $ do
+    t <- translated "probe real \"Size\":\n  set r to re(z*c).\n  report r.\nend.\niterate z^2 + c until z escapes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("define probe_size(C):" `isInfixOf`)
+    s `shouldSatisfy` any ("run probe_size(C)" `isInfixOf`)
+    s `shouldSatisfy` any ("run probe_size(clicked)" `isInfixOf`)
+    length (filter ("re(z * C)" `isInfixOf`) s) `shouldBe` 1
     loads t
 
   it "traces (x, y) in a real-dynamics script" $ do

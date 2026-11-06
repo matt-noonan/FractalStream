@@ -13,46 +13,43 @@ script: |
   shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
     else blend(-sin(2 pi t), light c, c)
 
+  define script(limit):
+    iterate z -> z^2 + C until z escapes up to limit times
+
+  define probe_period_counter(C):
+    z <- 0
+    for each k in range(1, 1000):
+      z <- z^2 + C
+    w := z
+    p := 0
+    repeat:
+      z <- z^2 + C
+      p <- p + 1
+    until z = w
+    period_counter <- round(p)
+
   @viewer "Parameter plane" var=C
   z := 0
   flag_color := default_exit_condition_color
-  iterate z -> z^2 + C until z escapes
+  run script(max_iters)
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
   @viewer "Dynamical plane"
   flag_color := default_exit_condition_color
-  iterate z -> z^2 + C until z escapes
+  run script(max_iters)
   color <- if stuck then black else shade(flag_color, iterations / 20)
 
   @tool "Period Counter" for="Parameter plane"
   period_counter : Z as "Period Counter" := 0
   on click at clicked:
     z := 0
-    z <- 0
-    for each k in range(1, 1000):
-      z <- z^2 + clicked
-    w := z
-    p := 0
-    repeat:
-      z <- z^2 + clicked
-      p <- p + 1
-    until z = w
-    period_counter <- round(p)
+    run probe_period_counter(clicked)
 
   @tool "Period Counter" for="Dynamical plane"
   period_counter : Z as "Period Counter" := 0
   on click at clicked:
     z := clicked
-    z <- 0
-    for each k in range(1, 1000):
-      z <- z^2 + C
-    w := z
-    p := 0
-    repeat:
-      z <- z^2 + C
-      p <- p + 1
-    until z = w
-    period_counter <- round(p)
+    run probe_period_counter(C)
 
   @tool "Trace" for="Dynamical plane" shortcut=t
   trace_color : Color as "Trace color" := white
@@ -63,11 +60,13 @@ script: |
   on click-or-drag at z:
     erase
     use trace_color for line
+    # (the script sets these for coloring, which the tool doesn't use)
+    flag_color := default_exit_condition_color
     draw point at z
     # each step runs the script once more, with each loop making at most one pass
     repeat up to 100 times:
       previous := z
-      iterate z -> z^2 + C until z escapes up to 1 times
+      run script(1)
       draw point at z
       draw line from previous to z
     until z escapes
