@@ -48,6 +48,9 @@ data Cmd
     -- ^ A command this FractalStream has no counterpart for (@load@ of a
     -- special tool, @using each ... in@ a data source): what it is, and
     -- its source text
+  | Stray String String
+    -- ^ An @end.@ that ends no block, or an @until c.@ with no @do@
+    -- before it: which (@"end."@ or @"until"@), and its source text
   | Comment String                -- ^ @(a comment)@, where a command could start
   deriving (Eq, Show)
 

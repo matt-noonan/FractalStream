@@ -31,6 +31,7 @@ module Actor.Script
   , parseScript
   , scriptCommonDefs
   , implicitBookkeepingStanza
+  , withImplicitSettings
   , scriptGrammar
   ) where
 
@@ -46,6 +47,7 @@ import Language.Code.Syntax (Stmt(..), StmtF(..))
 import Actor.Event (toolBlocksGrammar, ParsedToolBlock, toolBlockEvent, Coordinate(..), ViewKind(..))
 import Actor.Layout (AppAction(..))
 
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Text.Read (readMaybe)
 import Data.Char (isDigit)
@@ -290,11 +292,17 @@ parseCommonChunks chunks = do
 -- `vanish=` header attributes default to referencing these names now
 -- (see 'validateViewerHeader'), rather than falling back to a
 -- hard-coded constant, unless explicitly overridden to point at a
--- different variable. A script that declares its own `max_iters` (or
--- the other two) collides with this exactly like any other duplicate
--- config name -- no special-casing needed.
+-- different variable. A script can declare its own `max_iters` (or
+-- either of the other two) to change its default or label: see
+-- 'withImplicitSettings', which is how this stanza should be added.
 implicitBookkeepingStanza :: ParsedStanza
-implicitBookkeepingStanza = ConfigStanza "Iteration settings"
+implicitBookkeepingStanza = ConfigStanza implicitSettingsTitle implicitSettings
+
+implicitSettingsTitle :: String
+implicitSettingsTitle = "Iteration settings"
+
+implicitSettings :: [ConfigStmt]
+implicitSettings =
   [ implicitDecl "max_iters"        IntegerT "Iteration limit: "  "100"
   , implicitDecl "escape_radius"    RealT    "Escape radius: "    "10"
   , implicitDecl "vanishing_radius" RealT    "Vanishing radius: " "0.0001"
@@ -312,6 +320,33 @@ implicitBookkeepingStanza = ConfigStanza "Iteration settings"
       , cdLabel = Just label
       , cdChoices = Nothing
       }
+
+-- | A script's stanzas, with the automatic settings of
+-- 'implicitBookkeepingStanza' added. A setting the script declares
+-- itself, in any @\@config@ stanza, is the script's own declaration
+-- instead (it must have the same type), so a project can start with a
+-- different vanishing radius, say. The automatic settings it doesn't
+-- declare are added in an "Iteration settings" stanza at the end, which
+-- joins the script's own @\@config "Iteration settings"@ tab if it has
+-- one (stanzas with the same title share a tab).
+withImplicitSettings :: [ParsedStanza] -> Either (SourceRange, String) [ParsedStanza]
+withImplicitSettings stanzas = do
+  let declared = Map.fromList
+        [ (cdName d, d) | ConfigStanza _ body <- stanzas, d@ConfigDecl{} <- concatMap decls body ]
+  forM_ implicitSettings $ \case
+    ConfigDecl{cdName = name, cdType = ty}
+      | Just d <- Map.lookup name declared, cdType d /= ty ->
+          Left (cdRange d, "`" ++ name ++ "` is one of the automatic iteration settings, so it must be a "
+                           ++ show ty ++ ", not a " ++ show (cdType d) ++ ".")
+    _ -> pure ()
+  let remaining = [ d | d@ConfigDecl{cdName} <- implicitSettings, cdName `Map.notMember` declared ]
+  pure (stanzas ++ [ ConfigStanza implicitSettingsTitle remaining | not (null remaining) ])
+  where
+    decls = \case
+      d@ConfigDecl{} -> [d]
+      ConfigRow xs -> concatMap decls xs
+      ConfigTabs ts -> concatMap (concatMap decls . snd) ts
+      _ -> []
 
 -- | Fill in every 'ConfigDecl's 'cdDefaultSrc' (the raw text of its own
 -- @<- value@ expression), sliced out of the original script via

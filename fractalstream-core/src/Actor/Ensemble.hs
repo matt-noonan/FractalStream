@@ -575,7 +575,7 @@ buildEnsembleWithColorizers choices0 scriptText = case parseColorized choices0 s
                  , colorizedAvailable = available, colorizedWarnings = warnings } -> do
     forM_ warnings $ \w -> hPutStrLn stderr ("warning: " ++ w)
     let choices       = Map.restrictKeys choices0 (Map.keysSet viewerColorizers)
-        stanzas       = stanzas0 ++ [implicitBookkeepingStanza]
+        stanzas       = fromRight stanzas0 (withImplicitSettings stanzas0)
         configGroups  = [ (t, b) | ConfigStanza t b <- stanzas ]
         viewers       = mapMaybe viewerFields stanzas
         tools         = mapMaybe toolFields stanzas
@@ -585,6 +585,7 @@ buildEnsembleWithColorizers choices0 scriptText = case parseColorized choices0 s
     -- handlers, which would otherwise be checked when the tool is first
     -- used, hiding a broken tool until then.
     let checkTools = do
+          _ <- withImplicitSettings stanzas0
           checkTitlesAndTargets viewerTitles tools
           configEnv <- checkConfigGroup configGroups
           forM_ viewers $ \v ->
@@ -641,8 +642,8 @@ checkScript = checkScriptWithColorizers Map.empty
 checkScriptWithColorizers :: Map.Map String String -> String -> Either (SourceRange, String) ()
 checkScriptWithColorizers choices scriptText = do
   stanzas0 <- colorizedStanzas <$> parseColorized choices scriptText
-  let stanzas      = stanzas0 ++ [implicitBookkeepingStanza]
-      configGroups = [ (t, b) | ConfigStanza t b <- stanzas ]
+  stanzas <- withImplicitSettings stanzas0
+  let configGroups = [ (t, b) | ConfigStanza t b <- stanzas ]
       viewers      = mapMaybe viewerFields stanzas
       tools        = mapMaybe toolFields stanzas
       viewerTitles = [ vfTitle v | v <- viewers ]

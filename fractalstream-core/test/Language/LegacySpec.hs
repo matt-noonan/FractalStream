@@ -141,3 +141,142 @@ spec = describe "translating original-FractalStream scripts" $ do
     t <- translated "{real}\nif x > y then [Right]. else [Left]."
     scriptOf t `shouldSatisfy` any ("if x > y:" `isInfixOf`)
     loads t
+
+  it "accepts a flag without a period after it" $ do
+    t <- translated "iterate z^2 + c until z escapes.\nif z escapes then [Out]\n[In]"
+    scriptOf t `shouldSatisfy` any ("flag_color <- out_color" `isInfixOf`)
+    scriptOf t `shouldSatisfy` any ("flag_color <- in_color" `isInfixOf`)
+    loads t
+
+  it "reads `then` without a colon as `then:`, with a warning, when that's the only way it parses" $ do
+    t <- translated $ unlines
+      [ "iterate z^2 + c until z escapes or z vanishes."
+      , "if z vanishes then"
+      , "  [Small]"
+      , "  if re(z) > 0 then [Right] end."
+      , "end." ]
+    let s = scriptOf t
+    s `shouldSatisfy` any ("if z vanishes:" `isInfixOf`)
+    s `shouldSatisfy` any ("    if re(z) > 0:" `isInfixOf`)
+    translationWarnings t `shouldSatisfy` any ("`then:`" `isInfixOf`)
+    loads t
+
+  it "reads `then` as usual when the script parses that way" $ do
+    t <- translated "if re(z) > 0 then [A]. else [B]."
+    translationWarnings t `shouldNotSatisfy` any ("`then:`" `isInfixOf`)
+    loads t
+
+  it "starts the vanishing radius at 0.01, as the old program's tolerance did" $ do
+    t <- translated "iterate z^2 + c until z vanishes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("@config \"Iteration settings\"" `isInfixOf`)
+    s `shouldSatisfy` any ("vanishing_radius : R as \"Vanishing radius: \" := 0.01" `isInfixOf`)
+    loads t
+
+  it "treats a real-dynamics script's pairs in arithmetic as complex numbers" $ do
+    t <- translated $ unlines
+      [ "{real}"
+      , "set (x, y) to (x, y)*(0, 1) + (a, b)."
+      , "set (x, y) to (x, y)/2."
+      , "if (x, y) < (a, b) then [Inside]."
+      , "iterate (x, y)^2 + (a, b) until (x, y) escapes." ]
+    let s = scriptOf t
+    s `shouldSatisfy` any ("new_point := (x + y * i) * i + (a + b * i)" `isInfixOf`)
+    s `shouldSatisfy` any ("new_point_2 := (x + y * i) / 2" `isInfixOf`)
+    s `shouldSatisfy` any ("if |x + y * i| < |a + b * i|:" `isInfixOf`)
+    s `shouldSatisfy` any ("new_point_3 := (x + y * i)^2 + (a + b * i)" `isInfixOf`)
+    s `shouldSatisfy` any ("until (x, y) escapes" `isInfixOf`)
+    s `shouldNotSatisfy` any ("re((x, y)" `isInfixOf`)
+    loads t
+
+  it "keeps an `until` with no `do` as a comment, with a warning" $ do
+    t <- translated "set w to z.\nset z to z^2 + c.\nuntil z escapes.\nif z escapes then [Out]."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("#   until z escapes." `isInfixOf`)
+    s `shouldSatisfy` any ("if z escapes:" `isInfixOf`)
+    translationWarnings t `shouldSatisfy` any ("no `do`" `isInfixOf`)
+    loads t
+
+  it "keeps an `end.` that ends no block as a comment, with a warning" $ do
+    -- (not after an `if ... then`, where it would end a block, as `then:`)
+    t <- translated "iterate z^2 + c until z escapes.\n[Out].\nend."
+    scriptOf t `shouldSatisfy` any ("#   end." `isInfixOf`)
+    translationWarnings t `shouldSatisfy` any ("doesn't end any block" `isInfixOf`)
+    loads t
+
+  it "doesn't take a loop's own `until`, or a block's own `end.`, for a stray" $ do
+    t <- translated "block\ndo\nset z to z^2 + c.\nuntil z escapes.\nend.\nend."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("until z escapes" `isInfixOf`)
+    s `shouldSatisfy` any ("repeat up to limit times:" `isInfixOf`)
+    s `shouldNotSatisfy` any ("#   until" `isInfixOf`)
+    s `shouldSatisfy` any ("#   end." `isInfixOf`)
+    loads t
+
+  it "reads old Mac OS line endings" $ do
+    t <- translated "set w to z.\riterate w^2 + c on w until w escapes.\r\nif w escapes then [Out]."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("iterate w -> w^2 + C until w escapes" `isInfixOf`)
+    lines (translatedProject t) `shouldSatisfy` any (== "#   iterate w^2 + c on w until w escapes.")
+    translatedProject t `shouldNotSatisfy` elem '\r'
+    loads t
+
+  it "gives the dynamical plane a Trace tool, running the script one pass at a time" $ do
+    t <- translated "set w to z.\ndo\nset z to z^2 + c.\nuntil z escapes or z = w.\nif z = w then [Back]."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("@tool \"Trace\" for=\"Dynamical plane\" shortcut=t" `isInfixOf`)
+    s `shouldSatisfy` any ("trace_color : Color as \"Trace color\" := white" `isInfixOf`)
+    s `shouldSatisfy` any ("on click-or-drag at z:" `isInfixOf`)
+    s `shouldSatisfy` any ("repeat up to 100 times:" `isInfixOf`)
+    s `shouldSatisfy` any ("run script(1)" `isInfixOf`)
+    s `shouldSatisfy` any ("draw line from previous to z" `isInfixOf`)
+    s `shouldSatisfy` any ("until z escapes" `isInfixOf`)
+    -- (the script sets the flag, so the tool declares it too)
+    length (filter ("flag_color := default_exit_condition_color" `isInfixOf`) s) `shouldBe` 3
+    loads t
+
+  it "shares the script, with its loops' limit, between the viewers and the Trace tool" $ do
+    t <- translated "iterate z^2 + c until z escapes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("define script(limit):" `isInfixOf`)
+    s `shouldSatisfy` any ("iterate z -> z^2 + C until z escapes up to limit times" `isInfixOf`)
+    length (filter ("run script(max_iters)" `isInfixOf`) s) `shouldBe` 2
+    s `shouldSatisfy` any ("run script(1)" `isInfixOf`)
+    length (filter ("iterate z" `isInfixOf`) s) `shouldBe` 1
+    loads t
+
+  it "tells the shared script which plane it's in, when some commands are for one plane" $ do
+    t <- translated "par set z to -c/2.\ndyn set w to z.\niterate z^2 + c until z escapes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("define script(limit, in_parameter_plane):" `isInfixOf`)
+    s `shouldSatisfy` any ("    if in_parameter_plane:" `isInfixOf`)
+    s `shouldSatisfy` any ("    if not in_parameter_plane:" `isInfixOf`)
+    s `shouldSatisfy` any ("run script(max_iters, true)" `isInfixOf`)
+    s `shouldSatisfy` any ("run script(max_iters, false)" `isInfixOf`)
+    s `shouldSatisfy` any ("run script(1, false)" `isInfixOf`)
+    loads t
+
+  it "defines each probe once, run with C or the clicked point" $ do
+    t <- translated "probe real \"Size\":\n  set r to re(z*c).\n  report r.\nend.\niterate z^2 + c until z escapes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("define probe_size(C):" `isInfixOf`)
+    s `shouldSatisfy` any ("run probe_size(C)" `isInfixOf`)
+    s `shouldSatisfy` any ("run probe_size(clicked)" `isInfixOf`)
+    length (filter ("re(z * C)" `isInfixOf`) s) `shouldBe` 1
+    loads t
+
+  it "traces (x, y) in a real-dynamics script" $ do
+    t <- translated "{real}\niterate (y, -x + a) until (x, y) escapes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("on click-or-drag at (x, y):" `isInfixOf`)
+    s `shouldSatisfy` any ("previous_x, previous_y := x, y" `isInfixOf`)
+    s `shouldSatisfy` any ("draw line from (previous_x, previous_y) to (x, y)" `isInfixOf`)
+    s `shouldSatisfy` any ("until (x, y) escapes" `isInfixOf`)
+    loads t
+
+  it "names the Trace tool differently from a probe called Trace" $ do
+    t <- translated "probe real \"Trace\":\n  report re(z).\nend.\niterate z^2 + c until z escapes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("@tool \"Trace\" for=\"Dynamical plane\"" `isInfixOf`)
+    s `shouldSatisfy` any ("@tool \"Trace_2\" for=\"Dynamical plane\" shortcut=t" `isInfixOf`)
+    loads t

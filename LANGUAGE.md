@@ -452,6 +452,19 @@ FractalStream enforces a limit on the number of times each loop will run.
 This limit is configured in the script and often is exposed to the script's
 user, so they can easily change the iteration limit while exploring.
 
+Every project automatically gets an "Iteration settings" tab with three
+settings: `max_iters` (the iteration limit, an integer, 100 to start),
+`escape_radius` (for `escapes`, 10), and `vanishing_radius` (for
+`vanishes`, `=`, and `stops`, 0.0001). To start one of them at a different
+value, or give it a different label, declare it yourself in any `@config`
+stanza, with the same type; the others stay in the "Iteration settings"
+tab, which your declaration joins if it is in a stanza by that name:
+
+```
+@config "Iteration settings"
+vanishing_radius : R as "Vanishing radius: " := 0.01
+```
+
 The special variable `iterations` always holds the number of iterations
 performed by the last loop that finished. There is also a special predicate
 `stuck` which is `true` if the last loop halted because it reached the
