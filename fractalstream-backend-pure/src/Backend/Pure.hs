@@ -36,8 +36,8 @@ interpretViewer mPrepScript body0 action = do
                 $ Bind (Proxy @"color")    ColorType grey
                 $ vaArgs
 
-    forM_ (zip [0 .. vaWidth - 1] [y0, y0 - dy ..]) $ \(j, y) -> do
-      forM_ (zip [0 .. vaHeight - 1] [x0, x0 + dx ..]) $ \(i, x) -> do
+    forM_ (zip [0 .. vaHeight - 1] [y0, y0 - dy ..]) $ \(j, y) -> do
+      forM_ (zip [0 .. vaWidth - 1] [x0, x0 + dx ..]) $ \(i, x) -> do
 
         iorefs :: Context IORefTypeOfBinding (ViewerEnv env) <-
           mapContextM (\_ _ -> newIORef) context
