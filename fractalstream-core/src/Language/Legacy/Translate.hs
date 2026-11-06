@@ -22,6 +22,12 @@ to go on editing rather than to reproduce the old pictures exactly:
   0, then darker, then lighter), or black if its last loop gave up.
 * Each probe becomes a tool on each viewer, showing the value it reports
   in a field of the tool's panel.
+* The dynamical plane gets the old Trace tool (shortcut @t@): from the
+  point clicked or dragged to, it runs the dynamical plane's commands up
+  to 100 times, each time from where the last left off and with each
+  loop making at most one pass (the old program ran the script with an
+  iteration limit of 1), marking each point and joining them with lines
+  in a color set in the tool's panel, and stopping if the point escapes.
 * Names keep the spelling they're first written with (the old language
   ignored case), except @z@ and @c@ (@C@), and old names for built-in
   values (@pixel@ is @pixel_size@, @maxIter@ is @max_iters@, ...). A name
@@ -311,6 +317,9 @@ data Ctx = Ctx
   , cxReal :: Bool
     -- ^ a real-dynamics script, where a pair @(a, b)@ is a pair, not
     -- @a + b i@
+  , cxLoopCap :: Maybe String
+    -- ^ the most passes each loop makes, if not the iteration limit
+    -- (for the Trace tool, which runs a script with a limit of 1)
   }
 
 type T = State [String]   -- warnings, newest first
@@ -401,7 +410,7 @@ translateT isReal title src body = do
                  , cxFlagVar = flagVar, cxOutcome = Nothing, cxIsProbe = False, cxUsed = used2
                  , cxNonNegative = Set.fromList [ v | (v, e) <- defaults, exprTy (tyOf . nameOf) e == TReal
                                                     , nonNegativeLiteral e ]
-                 , cxReal = isReal }
+                 , cxReal = isReal, cxLoopCap = Nothing }
 
   -- @config tabs
   let -- the parameter plane's coordinates, as configuration variables
@@ -496,6 +505,47 @@ translateT isReal title src body = do
            , Line ("on click at " ++ clicked ++ ":")
            , Nest (start' ++ bodyDocs ++ [Line (field ++ " <- " ++ fieldValue)]) ]
 
+  -- the Trace tool, which the old program gave every viewer: from the
+  -- clicked point, run the dynamical plane's script over and over with
+  -- an iteration limit of 1, each run starting where the last ended,
+  -- marking each point and joining them up
+  traceTool <- do
+    let usedT = cxUsed ctx0
+        colorVar = freshIn usedT "trace_color"
+        -- the point being traced
+        traced = if isReal then [nameOf "x", nameOf "y"] else ["z"]
+        stepNames = case traced of
+          [x, y] -> let px = freshIn (Set.insert colorVar usedT) ("previous_" ++ x)
+                    in [px, freshIn (foldr Set.insert usedT [colorVar, px]) ("previous_" ++ y)]
+          _ -> [freshIn (Set.insert colorVar usedT) "previous"]
+        tuple ns = case ns of
+          [n] -> n
+          _ -> "(" ++ intercalate ", " ns ++ ")"
+        point = tuple traced
+        previous = tuple stepNames
+        toolTitle = freshIn (Set.fromList [ t | (_, t, _) <- probes body ]) "Trace"
+        ctx = ctx0 { cxIsProbe = True, cxLoopCap = Just "1"
+                   , cxUsed = foldr Set.insert usedT (colorVar : stepNames) }
+        predeclared = configNames <> Set.fromList (coordinates ++ colorVar : stepNames)
+    bodyDocs <- translateBody ctx predeclared (flatten (forPlane DynPlane body))
+    pure [ Line ("@tool " ++ quote toolTitle ++ " for=\"Dynamical plane\" shortcut=t")
+         , Line (colorVar ++ " : Color as \"Trace color\" := white")
+         , Line ""
+         , Line "on deactivated:"
+         , Nest [Line "erase"]
+         , Line ""
+         , Line ("on click-or-drag at " ++ point ++ ":")
+         , Nest [ Line "erase"
+                , Line ("use " ++ colorVar ++ " for line")
+                , Line ("draw point at " ++ point)
+                , Line "# each step runs the script once more, with each loop making at most one pass"
+                , Line "repeat up to 100 times:"
+                , Nest ([ Line (intercalate ", " stepNames ++ " := " ++ intercalate ", " traced) ]
+                        ++ bodyDocs ++
+                        [ Line ("draw point at " ++ point)
+                        , Line ("draw line from " ++ previous ++ " to " ++ point) ])
+                , Line ("until " ++ point ++ " escapes") ] ]
+
   -- a flag's gradient: its color at t = 0, then darker, back, lighter,
   -- and back again at t = 1
   let common =
@@ -508,6 +558,7 @@ translateT isReal title src body = do
         [ Line "@config \"Iteration settings\""
         , Line "vanishing_radius : R as \"Vanishing radius: \" := 0.01" ]
       stanzas = [parameters | not (null paramFields)] ++ [colorsTab, settingsTab, common] ++ viewers ++ probeTools
+                ++ [traceTool]
       scriptLines = intercalate [""] (map (render 0) stanzas)
   pure . unlines $
     [ "# Translated from a script for the original FractalStream."
@@ -657,6 +708,10 @@ stmt ctx top inLoop = \case
       lift (warn ("Couldn't translate setting " ++ show (length vs) ++ " variables at once."))
       pure [Line ("# TODO: set (" ++ intercalate ", " vs ++ ") to " ++ ex e)]
 
+  -- (an `if` with nothing to do here, like one that only sets a flag in a
+  -- tool, which has no flags: conditions do nothing, so it can go)
+  c@If{} | inert c -> pure []
+
   If c yes no -> do
     yes' <- block yes
     no' <- elsePart no
@@ -667,12 +722,13 @@ stmt ctx top inLoop = \case
   -- (an `iterate` of a pair, in a real-dynamics script)
   DoUntil [Set [v1, v2] (Pair a b)] c | checksFirstSafely c ->
     let (x, y) = (cxName ctx v1, cxName ctx v2)
-    in pure (Line ("iterate (" ++ x ++ ", " ++ y ++ ") -> (" ++ ex a ++ ", " ++ ex b ++ ") until " ++ cnd c)
+    in pure (Line ("iterate (" ++ x ++ ", " ++ y ++ ") -> (" ++ ex a ++ ", " ++ ex b ++ ") until " ++ cnd c
+                   ++ iterateCap)
              : afterLoop)
 
   DoUntil cs c -> do
     b <- block (Block cs)
-    pure ([Line "repeat:", Nest b, Line ("until " ++ cnd c)] ++ afterLoop)
+    pure ([Line repeatHeader, Nest b, Line ("until " ++ cnd c)] ++ afterLoop)
 
   Iterate e mv c -> do
     let v = cxName ctx (fromMaybe "z" mv)
@@ -681,8 +737,8 @@ stmt ctx top inLoop = \case
     -- the condition is only `escapes` and `stops`, which is false on the
     -- first check anyway, so then the shorthand reads better
     pure $ if checksFirstSafely c
-      then Line ("iterate " ++ v ++ " -> " ++ ex e ++ " until " ++ cnd c) : afterLoop
-      else [Line "repeat:", Nest [Line (v ++ " <- " ++ ex e)], Line ("until " ++ cnd c)] ++ afterLoop
+      then Line ("iterate " ++ v ++ " -> " ++ ex e ++ " until " ++ cnd c ++ iterateCap) : afterLoop
+      else [Line repeatHeader, Nest [Line (v ++ " <- " ++ ex e)], Line ("until " ++ cnd c)] ++ afterLoop
 
   Repeat n b -> do
     b' <- stmtsIn True b
@@ -736,6 +792,10 @@ stmt ctx top inLoop = \case
     cnd = cond ctx 0
     fresh = freshIn (cxUsed ctx)
 
+    -- a loop's own limit on its passes, if it has one
+    iterateCap = maybe "" (\n -> " up to " ++ n ++ " times") (cxLoopCap ctx)
+    repeatHeader = maybe "repeat:" (\n -> "repeat up to " ++ n ++ " times:") (cxLoopCap ctx)
+
     -- a made-up variable to declare, different from any declared before
     freshDecl base = do
       p <- get
@@ -757,6 +817,16 @@ stmt ctx top inLoop = \case
         _ -> do
           b <- block c
           pure [Line "else:", Nest b]
+
+    -- whether a command does nothing in this script
+    inert = \case
+      Flag{} -> cxIsProbe ctx
+      Report _ -> True
+      Succeed -> isNothing (cxOutcome ctx)
+      Fail -> isNothing (cxOutcome ctx)
+      Block cs -> all inert cs
+      If _ yes no -> all inert (yes : maybeToList no)
+      _ -> False
 
     -- remember how the last outermost loop ended, for `succeed`/`fail`
     afterLoop = case cxOutcome ctx of

@@ -23,6 +23,23 @@ script: |
     z := clicked
     r := sqrt(z * bar(z))
     magnitude <- re(r)
+
+  @tool "Trace" for="Dynamical plane" shortcut=t
+  trace_color : Color as "Trace color" := white
+
+  on deactivated:
+    erase
+
+  on click-or-drag at z:
+    erase
+    use trace_color for line
+    draw point at z
+    # each step runs the script once more, with each loop making at most one pass
+    repeat up to 100 times:
+      previous := z
+      draw point at z
+      draw line from previous to z
+    until z escapes
 metadata:
   title: "magnitude-probe"
   description: Translated from a script for the original FractalStream.

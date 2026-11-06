@@ -51,6 +51,24 @@ script: |
       z <- z^2 + C
     until z = savedZ
     cycle_length <- round(count)
+
+  @tool "Trace" for="Dynamical plane" shortcut=t
+  trace_color : Color as "Trace color" := white
+
+  on deactivated:
+    erase
+
+  on click-or-drag at z:
+    erase
+    use trace_color for line
+    draw point at z
+    # each step runs the script once more, with each loop making at most one pass
+    repeat up to 100 times:
+      previous := z
+      iterate z -> z^2 + C until z escapes up to 1 times
+      draw point at z
+      draw line from previous to z
+    until z escapes
 metadata:
   title: "cycle-length"
   description: Translated from a script for the original FractalStream.

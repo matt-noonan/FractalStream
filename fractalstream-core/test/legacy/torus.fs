@@ -27,6 +27,29 @@ script: |
     else:
       flag_color <- upper_basin_color
   color <- if stuck then black else shade(flag_color, iterations / 20)
+
+  @tool "Trace" for="Dynamical plane" shortcut=t
+  trace_color : Color as "Trace color" := white
+
+  on deactivated:
+    erase
+
+  on click-or-drag at (x, y):
+    erase
+    use trace_color for line
+    draw point at (x, y)
+    # each step runs the script once more, with each loop making at most one pass
+    repeat up to 100 times:
+      previous_x, previous_y := x, y
+      if y < 1 and y > 0 and x < pi and x > -pi:
+        repeat up to 1 times:
+          x, y <- 2 * arctan(sin(2 * x) / (cos(2 * x) + y^2)), (cos(2 * x) + 1) / (cos(2 * x) + y^2 / 2 + 1 / (2 * y^2))
+          # (reduce x mod pi: the remainder, with x's sign)
+          x <- x - pi * (if x < 0 then ceil(x / pi) else floor(x / pi))
+        until y = 0 or y = 1
+      draw point at (x, y)
+      draw line from (previous_x, previous_y) to (x, y)
+    until (x, y) escapes
 metadata:
   title: "torus"
   description: Translated from a script for the original FractalStream.

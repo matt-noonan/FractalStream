@@ -599,6 +599,11 @@ Key modules:
   as a `Stray` (translated as a comment, with a warning), then strays
   with `then` as usual (`parseLegacyScript`'s comment says why that
   order).
+  Every translation gets the old Trace tool on the dynamical plane
+  (`traceTool`): it reruns the plane's commands up to 100 times from the
+  clicked point, with every loop capped at one pass (`cxLoopCap`, written
+  as `up to 1 times`), and `if`s left with nothing to do are dropped
+  (`inert`).
 - `Language.Legacy.Binary` reads FractalStream 1.0 save files: a small
   `bplist00` decoder (`decodeBPList`) and a walk of the NSKeyedArchiver
   archive to the title and script (`decodeAncientFS`). The app and

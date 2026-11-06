@@ -46,6 +46,35 @@ script: |
       t <- t + h
   until (u, v) = (x, y)
   color <- if stuck then black else shade(flag_color, iterations / 20)
+
+  @tool "Trace" for="Dynamical plane" shortcut=t
+  trace_color : Color as "Trace color" := white
+
+  on deactivated:
+    erase
+
+  on click-or-drag at (x, y):
+    erase
+    use trace_color for line
+    draw point at (x, y)
+    # each step runs the script once more, with each loop making at most one pass
+    repeat up to 100 times:
+      previous_x, previous_y := x, y
+      u := 0
+      v := 0
+      t := 0
+      h := 2 * pi / 10
+      repeat up to 1 times:
+        u, v <- x, y
+        t <- 0
+        for each k in range(1, 10):
+          x <- x + h * y
+          y <- y + h * (cos(t) - a * y - b * sin(x))
+          t <- t + h
+      until (u, v) = (x, y)
+      draw point at (x, y)
+      draw line from (previous_x, previous_y) to (x, y)
+    until (x, y) escapes
 metadata:
   title: "pendulum"
   description: Translated from a script for the original FractalStream.

@@ -220,3 +220,38 @@ spec = describe "translating original-FractalStream scripts" $ do
     lines (translatedProject t) `shouldSatisfy` any (== "#   iterate w^2 + c on w until w escapes.")
     translatedProject t `shouldNotSatisfy` elem '\r'
     loads t
+
+  it "gives the dynamical plane a Trace tool, running the script one pass at a time" $ do
+    t <- translated "set w to z.\ndo\nset z to z^2 + c.\nuntil z escapes or z = w.\nif z = w then [Back]."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("@tool \"Trace\" for=\"Dynamical plane\" shortcut=t" `isInfixOf`)
+    s `shouldSatisfy` any ("trace_color : Color as \"Trace color\" := white" `isInfixOf`)
+    s `shouldSatisfy` any ("on click-or-drag at z:" `isInfixOf`)
+    s `shouldSatisfy` any ("repeat up to 100 times:" `isInfixOf`)
+    s `shouldSatisfy` any ("repeat up to 1 times:" `isInfixOf`)
+    s `shouldSatisfy` any ("draw line from previous to z" `isInfixOf`)
+    s `shouldSatisfy` any ("until z escapes" `isInfixOf`)
+    -- (the flag's `if` has nothing to do in the tool, so it's left out)
+    length (filter ("if z = w:" `isInfixOf`) s) `shouldBe` 2
+    loads t
+
+  it "caps an `iterate` in the Trace tool at one pass" $ do
+    t <- translated "iterate z^2 + c until z escapes."
+    scriptOf t `shouldSatisfy` any ("iterate z -> z^2 + C until z escapes up to 1 times" `isInfixOf`)
+    loads t
+
+  it "traces (x, y) in a real-dynamics script" $ do
+    t <- translated "{real}\niterate (y, -x + a) until (x, y) escapes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("on click-or-drag at (x, y):" `isInfixOf`)
+    s `shouldSatisfy` any ("previous_x, previous_y := x, y" `isInfixOf`)
+    s `shouldSatisfy` any ("draw line from (previous_x, previous_y) to (x, y)" `isInfixOf`)
+    s `shouldSatisfy` any ("until (x, y) escapes" `isInfixOf`)
+    loads t
+
+  it "names the Trace tool differently from a probe called Trace" $ do
+    t <- translated "probe real \"Trace\":\n  report re(z).\nend.\niterate z^2 + c until z escapes."
+    let s = scriptOf t
+    s `shouldSatisfy` any ("@tool \"Trace\" for=\"Dynamical plane\"" `isInfixOf`)
+    s `shouldSatisfy` any ("@tool \"Trace_2\" for=\"Dynamical plane\" shortcut=t" `isInfixOf`)
+    loads t
