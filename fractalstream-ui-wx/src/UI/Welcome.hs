@@ -28,6 +28,27 @@ import UI.PreviewImage (paddedPreviewImage)
 import UI.ShowInFileManager (showInFileManager)
 import UI.ProjectActions
 
+-- | The sash width to ask for between the projects and their details.
+-- (wxHaskell's layout does not pass this on, so wxWidgets picks the width;
+-- the resize handler below asks the splitter for the one it settled on.)
+sashWidth :: Int
+sashWidth = 6
+
+-- | How the two panes' room is shared when the window opens: the projects
+-- get the width they used to be fixed at, and the details get the rest of
+-- what the window has always needed for the two of them.
+projectsStartWidth, detailsStartWidth, panesStartWidth :: Int
+projectsStartWidth = 480
+detailsStartWidth  = 264
+panesStartWidth    = projectsStartWidth + sashWidth + detailsStartWidth
+
+-- | The narrowest the projects and the details may be made: the grid
+-- reflows, so two columns of tiles are enough for it, and the description
+-- gets no narrower than it has always been.
+projectsMinWidth, detailsMinWidth :: Int
+projectsMinWidth = 320
+detailsMinWidth  = 260
+
 -- | Show the welcome window. Returns it, along with an action that
 -- switches it to the "Starting points" section (for "New project").
 welcome :: ProjectActions -> IO (Frame (), IO ())
@@ -40,11 +61,20 @@ welcome ProjectActions{..} = do
 
   p <- panel f []
 
+  -- The sections go down the left, and the projects and their details
+  -- share the rest of the window behind a sash (see the layout at the
+  -- end), so that a description can be given as much room as it needs.
+  splitter <- splitterWindow p []
+  gridPanel <- panel splitter []
+  detailsPanel <- panel splitter []
+
   sectionList <- singleListBox p []
 
-  titleText <- staticText p [ text := ""
-                            , font := fontDefault { _fontWeight = WeightBold, _fontSize = 14 } ]
-  descriptionText <- textCtrlEx p (wxTE_MULTILINE .+. wxTE_READONLY .+. wxNO_BORDER) []
+  titleText <- staticText detailsPanel
+                 [ text := ""
+                 , font := fontDefault { _fontWeight = WeightBold, _fontSize = 14 } ]
+  descriptionText <- textCtrlEx detailsPanel
+                       (wxTE_MULTILINE .+. wxTE_READONLY .+. wxNO_BORDER) []
 
   newButton <- button p [ text := "New project"
                         , on command := projectNew ]
@@ -99,7 +129,7 @@ welcome ProjectActions{..} = do
       entryAt i = (\es -> if i >= 0 && i < length es then Just (es !! i) else Nothing)
                   <$> readIORef shown
 
-  projectGrid <- libraryGrid p
+  projectGrid <- libraryGrid gridPanel
     (\mi -> maybe (pure Nothing) entryAt mi >>= selectEntry)
     (\i -> entryAt i >>= mapM_ (\e -> when (leCanOpen e) (projectOpenLibrary e)))
 
@@ -167,18 +197,67 @@ welcome ProjectActions{..} = do
 
   sidebarItems >>= \initial -> set sectionList [ items := initial ]
 
-  -- The section list keeps its width, the grid takes up all the extra
-  -- room, and the details keep their width while the description gets
-  -- all of their extra height. (See the notes on wxHaskell's layout
-  -- rules in CLAUDE_NOTES.md.)
+  -- How the two panes share the width: until the sash is dragged they keep
+  -- their shares, so enlarging the window widens the description as well;
+  -- after a drag the details keep the width they were given, and the grid
+  -- takes up whatever the window's size leaves over. (The panes are laid out
+  -- again after this handler runs, so the width to keep is the details' width
+  -- from before the resize.)
+  chosenDetailsWidth <- newIORef (Nothing :: Maybe Int)
+  lastSash <- newIORef (Nothing :: Maybe Int)
+  set splitter [ on resize := do
+                   whole <- get splitter clientSize
+                   details <- get detailsPanel clientSize
+                   sash <- splitterWindowGetSashSize splitter
+                   current <- splitterWindowGetSashPosition splitter
+                   previous <- readIORef lastSash
+                   -- (A sash that is not where we left it has been dragged:
+                   -- from then on the details keep the width they have.
+                   -- Before the first layout they have no width of their own,
+                   -- which their minimum rules out.)
+                   case previous of
+                     Nothing -> pure ()
+                     Just was -> when (was /= current && sizeW details >= detailsMinWidth) $
+                                   writeIORef chosenDetailsWidth (Just (sizeW details))
+                   chosen <- readIORef chosenDetailsWidth
+                   -- (The sash never goes past either pane's minimum.)
+                   let shared = sizeW whole - sash
+                       keep = case chosen of
+                         Just width -> shared - width
+                         Nothing    -> (shared * projectsStartWidth) `div` panesStartWidth
+                       wanted = max projectsMinWidth (min (shared - detailsMinWidth) keep)
+                   when (wanted /= current) $
+                     splitterWindowSetSashPosition splitter wanted False
+                   -- (Where it really ended up: wxWidgets may have clamped it.)
+                   splitterWindowGetSashPosition splitter >>= \settled ->
+                     writeIORef lastSash (Just settled)
+                   propagateEvent ]
+
+  -- The section list keeps its width, the projects and the details share
+  -- the rest, and the details keep their height while the description
+  -- gets all of theirs. The sash between the two sets how the width is
+  -- shared: it starts where the projects' width used to be fixed, and the
+  -- details get the rest, as they did before. Each side has a minimum it
+  -- can't be dragged past, and the two together take the room the window
+  -- has always needed. (See the notes on wxHaskell's layout rules in
+  -- CLAUDE_NOTES.md.)
   set f [ layout := container p $ margin 10 $ column 10
             [ row 10
                 [ vfill (minsize (sz 170 360) (widget sectionList))
-                , fill (minsize (sz 480 360) (widget (gridWindow projectGrid)))
-                , column 5
-                    [ widget titleText
-                    , fill (minsize (sz 260 300) (widget descriptionText))
-                    ]
+                , fill (minsize (sz panesStartWidth 360) $
+                        vsplit splitter sashWidth projectsStartWidth
+                          (container gridPanel
+                             (fill (minsize (sz projectsMinWidth 360)
+                                            (widget (gridWindow projectGrid)))))
+                          (container detailsPanel
+                             (column 5
+                                -- (The title stretches so that its column,
+                                -- and the description in it, take the width
+                                -- the sash gives them.)
+                                [ hfill (widget titleText)
+                                , fill (minsize (sz detailsMinWidth 300)
+                                                (widget descriptionText))
+                                ])))
                 ]
             , row 10 [ widget newButton, widget openFileButton, hglue, widget showFolderButton ]
             ]
