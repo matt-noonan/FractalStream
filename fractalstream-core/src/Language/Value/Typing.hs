@@ -25,6 +25,7 @@ module Language.Value.Typing
   , lenientTypeEnv
   , structuralJoin
   , synth
+  , tupleParts
   , check
   , coercible
   , joinType
@@ -336,6 +337,21 @@ synth env (Syn sr node) = case node of
 
   ETableIndex{} -> throwError (Internal (Advice sr "unexpected table index"))
 
+  ETablePoint tbl p -> do
+    tbl' <- synth env tbl
+    case exprType tbl' of
+      TableT 2 it -> do
+        p' <- check env ComplexT p
+        done it (ETablePoint tbl' p')
+      TableT _ _ -> advise sr "Only a 2-dimensional table has points: index this one with integers."
+      _ -> advise sr "`@ point` looks up a point in a table."
+
+  ETableSize tbl -> do
+    tbl' <- synth env tbl
+    case exprType tbl' of
+      TableT d _ -> done (tableSizeType (fromIntegral d)) (ETableSize tbl')
+      _ -> advise sr "The argument to `table_size` should be a table."
+
   ELet n v body -> do
     v' <- synth env v
     env' <- bind sr n (exprType v') env
@@ -629,6 +645,8 @@ describe = \case
   ELength{} -> "the result of a length operation"
   EIndex{} -> "this list item"
   ETableIndex{} -> "this table entry"
+  ETablePoint{} -> "this table entry"
+  ETableSize{} -> "this table's size"
   ELet{} -> "the result of this expression"
   ECall f _ -> "the result of " ++ f
   EDerivCall f order _ -> "the result of " ++ f ++ replicate order '\''
@@ -644,3 +662,10 @@ tupleParts n e
   | otherwise = case e of
       Syn _ (EPair a b) -> (a :) <$> tupleParts (n - 1) b
       _ -> Nothing
+
+-- | The type of a table's size: an integer for each dimension, as a tuple
+-- (@(a, (b, c))@ for three), or just one integer.
+tableSizeType :: Int -> FSType
+tableSizeType n
+  | n <= 1 = IntegerT
+  | otherwise = Pair IntegerT (tableSizeType (n - 1))

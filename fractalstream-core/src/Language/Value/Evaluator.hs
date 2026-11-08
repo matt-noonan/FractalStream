@@ -15,7 +15,7 @@ import FractalStream.Prelude
 
 import Language.Value
 import Data.Indexed.Functor
-import Language.Table (readCell)
+import Language.Table (readCell, pointCell, Table(..))
 import Data.Color
 
 import Unsafe.Coerce
@@ -311,3 +311,18 @@ evaluator v0 ctx = case v0 of
       let ixs = map (\ix -> fromIntegral (ix ctx)) ixs_
       in fromMaybe (error ("Table index " ++ show ixs ++ " is out of range"))
                    (readCell t (tbl_ ctx) ixs)
+
+    TablePoint _ t tbl_ p_ ->
+      let tbl = tbl_ ctx
+      in fromMaybe (error ("The point " ++ show (p_ ctx) ++ " is off the table"))
+                   (pointCell tbl (p_ ctx) >>= readCell t tbl)
+
+    TableSize _ _ sz tbl_ -> sizeTuple sz (map fromIntegral (tableDims (tbl_ ctx)))
+
+-- | A table's size, as the tuple 'Language.Value.Typing.tableSizeType'
+-- describes.
+sizeTuple :: TypeProxy sz -> [Int64] -> HaskellType sz
+sizeTuple sz ns = case (sz, ns) of
+  (IntegerType, [n]) -> n
+  (PairType IntegerType rest, n : ns') -> (n, sizeTuple rest ns')
+  _ -> error "internal error: a table's size doesn't fit its type"

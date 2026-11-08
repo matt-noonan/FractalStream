@@ -18,6 +18,7 @@ import Language.Draw
 import Data.Indexed.Functor
 
 import Data.IORef
+import Language.Table
 import qualified Data.Map as Map
 
 data ScalarIORefM :: Environment -> Exp Type
@@ -87,6 +88,7 @@ interpretToIOWithLastValues draw = indexedFold @ScalarIORefM' phi
       Let pf name ve body -> recallIsAbsent (absentInTail pf) $ do
         (m, ctxRef) <- get
         value <- zoom $ eval ve
+        lift (freezeIfTable (typeOfValue ve) value)
         valueRef <- lift (newIORef value)
         let ctxRef' = Bind name (typeOfValue ve) valueRef ctxRef
         let m' = Map.insert (symbolVal name) (SomeHaskellType (typeOfValue ve) value) m
@@ -95,10 +97,35 @@ interpretToIOWithLastValues draw = indexedFold @ScalarIORefM' phi
 
       Set pf name ve -> do
         value <- zoom $ eval ve
+        lift (freezeIfTable (typeOfValue ve) value)
         modify (first $ Map.insert (symbolVal name) (SomeHaskellType (typeOfValue ve) value))
         zoom $ update pf name (typeOfValue ve) value
 
       Block stmts -> sequence_ stmts
+
+      TableAllocate pf name d ty szs p q -> withKnownType ty $ withKnownNat d $ do
+        sizes <- mapM (zoom . eval) szs
+        p' <- zoom (eval p)
+        q' <- zoom (eval q)
+        when (any (< 0) sizes) $
+          error ("A table's size can't be negative, but `" ++ symbolVal name ++ "` was given "
+                 ++ show sizes ++ ".")
+        lift (allocateTable ty (map fromIntegral sizes) p' q') >>= \case
+          Nothing -> error "internal error: not a table element type"
+          Just t -> zoom (update pf name (TableType d ty) t)
+
+      TableWrite pf name d ty cell ve -> withKnownType ty $ withKnownNat d $ do
+        v <- zoom (eval ve)
+        t0 <- zoom (eval (Var name (TableType d ty) pf))
+        ixs <- case cell of
+          CellAt ixs -> map fromIntegral <$> mapM (zoom . eval) ixs
+          CellNear z -> zoom (eval z) <&> \z' ->
+            fromMaybe (error ("The point " ++ show z' ++ " is off the table `" ++ symbolVal name ++ "`."))
+                      (pointCell t0 z')
+        t <- lift (thawForWrite ty t0)
+        ok <- lift (writeCell ty t ixs v)
+        unless ok $ error ("Table index " ++ show ixs ++ " is out of range for `" ++ symbolVal name ++ "`.")
+        when (tableBuffer t /= tableBuffer t0) $ zoom (update pf name (TableType d ty) t)
 
       NoOp -> pure ()
 
@@ -141,3 +168,9 @@ interpretToIOWithLastValues draw = indexedFold @ScalarIORefM' phi
                 lift (evalStateT body (m', ctxRef'))
                 go items
         go =<< zoom (eval (withEnvironment env $ Var listName listTy pfList))
+
+-- | Freeze a table that's about to be shared (see 'tableFrozen').
+freezeIfTable :: TypeProxy t -> HaskellType t -> IO ()
+freezeIfTable ty v = case ty of
+  TableType{} -> freezeTable v
+  _ -> pure ()

@@ -15,6 +15,11 @@ import Actor.Ensemble (buildEnsembleFromScript)
 import qualified Language.Value.Parser as P
 import qualified Control.Exception as E
 import Data.List (isInfixOf)
+import Data.IORef
+import Language.Code.Parser (parseCode, noCommonDefs)
+import Language.Code.InterpretIO (interpretToIO)
+import Language.Draw (DrawHandler(..))
+import Language.Parser (ppFullError)
 
 type TEnv = '[ '("T", 'TableT 2 'RealT) ]
 
@@ -43,7 +48,10 @@ builds :: String -> IO (Either String ())
 builds src = buildEnsembleFromScript src <&> either (Left . snd) (const (Right ()))
 
 spec :: Spec
-spec = describe "tables" $ do
+spec = readSpec >> writeSpec
+
+readSpec :: Spec
+readSpec = describe "tables" $ do
 
   it "read the element at a column and row" $ do
     t <- sample
@@ -85,3 +93,75 @@ spec = describe "tables" $ do
     let viewer = "\n@viewer \"V\"\ncolor <- red\n"
     builds ("@config \"P\"\nT : Table 1 of Color\n" ++ viewer) `shouldReturn` Right ()
     builds ("@config \"P\"\nT : Table 1 of Text\n" ++ viewer) >>= (`shouldSatisfy` isLeft)
+
+-- | Run some code with a 2-dimensional real table `T` and a real `x`,
+-- giving back their final values.
+run :: Table -> String -> IO (Table, Double)
+run t src = do
+  tRef <- newIORef t
+  xRef <- newIORef 0
+  let refs = Bind (Proxy @"T") tableType2R tRef $ Bind (Proxy @"x") RealType xRef EmptyContext
+  code <- either (fail . (`ppFullError` src)) pure (parseCode (envProxy Proxy) noCommonDefs src)
+  _ <- execStateT (interpretToIO (DrawHandler (const (pure ()))) code) refs
+  (,) <$> readIORef tRef <*> readIORef xRef
+
+frozenSample :: IO Table
+frozenSample = do { t <- sample; freezeTable t; pure t }
+
+writeSpec :: Spec
+writeSpec = describe "tables, in a tool" $ do
+
+  it "are allocated with a size and corners, and written cell by cell" $ do
+    Just t0 <- newTable RealType [0, 0] (0, 0) (1, 1)
+    (t, x) <- run t0 (unlines
+      [ "allocate T of size (3, 2) from -3/2 + i to 3/2 - i"
+      , "T @ (2, 1) <- 5"
+      , "x <- T @ (2, 1) + T @ (1, 1)" ])
+    tableDims t `shouldBe` [3, 2]
+    x `shouldBe` 5
+    -- cells are 1 wide and 1 high, and (1, 1) is centered at -1 + i/2
+    tableOrigin t `shouldBe` (-1, 0.5)
+    tableStep t `shouldBe` (1, 1)
+
+  it "are written and read at the cell nearest a point" $ do
+    t0 <- frozenSample
+    (_, x) <- run t0 "T @ point (2.2 - 0.9i) <- 7\nx <- T @ (3, 2) + T @ point (0.1 - 0.1i)"
+    -- (sample's origin is 0 and its cells are 1 wide, rows going down)
+    x `shouldBe` 7 + 11
+    run t0 "T @ point (9 + 0i) <- 7" `shouldThrow` anyErrorCall
+
+  it "copy a table a viewer may be reading before writing it" $ do
+    t0 <- frozenSample
+    (t, x) <- run t0 "T @ (1, 1) <- 9\nx <- T @ (1, 1)"
+    x `shouldBe` 9
+    readCell RealType t0 [1, 1] `shouldBe` Just 11
+    tableBuffer t `shouldNotBe` tableBuffer t0
+
+  it "write a table the tool made itself in place" $ do
+    t0 <- sample
+    (t, _) <- run t0 "T @ (1, 1) <- 9"
+    tableBuffer t `shouldBe` tableBuffer t0
+
+  it "copy a table another variable also holds" $ do
+    t0 <- sample
+    (_, x) <- run t0 "U := T\nT @ (1, 1) <- 9\nx <- U @ (1, 1)"
+    x `shouldBe` 11
+
+  it "have a size" $ do
+    t0 <- sample
+    (_, x) <- run t0 "(w, h) := table_size(T)\nx <- 10 w + h"
+    x `shouldBe` 32
+
+  it "can't be written out of range" $ do
+    t0 <- sample
+    run t0 "T @ (4, 1) <- 1" `shouldThrow` anyErrorCall
+
+  it "can only be written by tools" $ do
+    let src = unlines
+          [ "@config \"P\"", "T : Table 2 of R", ""
+          , "@viewer \"V\"", "T @ (1, 1) <- 1", "color <- red", ""
+          , "@tool \"Fill\" for=\"V\"", "on click:"
+          , "  allocate T of size (viewer_width, viewer_height)"
+          , "  T @ (1, 1) <- 2" ]
+    builds src >>= (`shouldSatisfy` either ("Only a tool" `isInfixOf`) (const False))
+    builds (unlines (filter (/= "T @ (1, 1) <- 1") (lines src))) `shouldReturn` Right ()

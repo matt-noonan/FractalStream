@@ -572,6 +572,10 @@ parseViewerScript mpx ViewerContext{..} c = do
               y <- getVar InternalY RealType e1
               bindOrDeclare yp RealType y e1 body
 
+      -- (a viewer can only read tables; see 'Language.Code.TableWrite')
+      when (writesTables code) $ throwError (NoSourceRange,
+        "Only a tool can allocate a table or write to one: a viewer can only read tables.")
+
       -- Now bind all of the bookkeeping variables
       let (_, code') = (env', code)
                      & letInEnv (Const (Scalar typeProxy 0))

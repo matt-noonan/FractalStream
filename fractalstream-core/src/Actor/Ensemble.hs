@@ -80,7 +80,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.UTF8 as UTF8
 import qualified Data.Map as Map
 import qualified GHC.TypeNats as TN
-import Language.Table (emptyTable)
+import Language.Table (emptyTable, freezeTable)
 import qualified Data.Set as Set
 import Data.List (nub, (\\))
 import Data.Typeable (Typeable)
@@ -1755,8 +1755,11 @@ layoutToArgs = \case
   Tabbed ts     -> getDynamic ts >>= mapM (getDynamic . dyn . tiBody >=> layoutToArgs) <&> mconcat
   PlainText _   -> pure mempty
   HiddenTable name0 (SomeType ty) v -> pure $ case (ty, someSymbolVal name0) of
+    -- (a table a tool hands back is frozen: viewers may now read it)
     (TableType{}, SomeSymbol name) -> withKnownType ty $
-      SomeContext' $ Right $ SomeContext $ Bind name ty (mutableVar v) EmptyContext
+      let arg = EventArgument (Just <$> getDynamic (dyn v))
+                              (Just (\_ t -> freezeTable t >> setValue' v t))
+      in SomeContext' $ Right $ SomeContext $ Bind name ty arg EmptyContext
     _ -> SomeContext' (Left "expected a table type")
   Button _      -> pure mempty
   ActionButton{} -> pure mempty

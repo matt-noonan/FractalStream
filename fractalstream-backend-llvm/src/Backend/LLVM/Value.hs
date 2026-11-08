@@ -159,6 +159,8 @@ buildValue getExtern arena = indexedFold go'
 
       -- (step 4 of TABLES_PLAN.md)
       TableIndex{} -> lift $ throwError "Tables aren't supported by the compiled backend yet."
+      TablePoint{} -> lift $ throwError "Tables aren't supported by the compiled backend yet."
+      TableSize{} -> lift $ throwError "Tables aren't supported by the compiled backend yet."
 
       -- ------------------------------------------------------------------ --
       -- Range: integer range [lo..hi].

@@ -4,6 +4,8 @@ module Language.Code
   ( module Language.Value
   , Code
   , CodeF(..)
+  , TableCell(..)
+  , writesTables
   , SomeCode(..)
   , StartOrEnd(..)
   , transformValues
@@ -114,6 +116,33 @@ data CodeF (code :: Environment -> Exp Type)
          -- ^ optional fallback action to run if there was no match
          -> CodeF code env
 
+  -- | Give a table variable a new table of some size, filled with
+  -- zeros, covering the rectangle with the given corners (top left,
+  -- then bottom right). Only tools can do this.
+  TableAllocate :: forall name n ty env code
+                 . (KnownSymbol name, KnownEnvironment env)
+                => NameIsPresent name ('TableT n ty) env
+                -> Proxy name
+                -> SNat n
+                -> TypeProxy ty
+                -> [Value '(env, 'IntegerT)]
+                -> Value '(env, 'ComplexT)
+                -> Value '(env, 'ComplexT)
+                -> CodeF code env
+
+  -- | Write one cell of a table variable: @T \@ (j, k) <- v@. Only tools
+  -- can do this; the table is copied first unless it's the tool's own
+  -- (see 'Language.Table.Buffer.tableFrozen').
+  TableWrite :: forall name n ty env code
+              . (KnownSymbol name, KnownEnvironment env)
+             => NameIsPresent name ('TableT n ty) env
+             -> Proxy name
+             -> SNat n
+             -> TypeProxy ty
+             -> TableCell env
+             -> Value '(env, ty)
+             -> CodeF code env
+
   ForEach :: forall name ty env code item
            . (KnownSymbol name, KnownSymbol item)
           => NameIsPresent name ('ListT ty) env
@@ -125,6 +154,12 @@ data CodeF (code :: Environment -> Exp Type)
           -> EnvironmentProxy ('(item, ty) ': env)
           -> Eval (code ( '( item, ty) ': env))
           -> CodeF code env
+
+-- | Which cell of a table a 'TableWrite' writes: one at some indices, or
+-- (in a 2-dimensional table) the one nearest a point.
+data TableCell env
+  = CellAt [Value '(env, 'IntegerT)]
+  | CellNear (Value '(env, 'ComplexT))
 
 data StartOrEnd = Start | End
 
@@ -144,6 +179,8 @@ instance IFunctor CodeF where
     DoWhile {} -> envProxy Proxy
     IfThenElse {} -> envProxy Proxy
     DrawCommand {} -> envProxy Proxy
+    TableAllocate {} -> envProxy Proxy
+    TableWrite {} -> envProxy Proxy
     Lookup _ _ _ _ _ _ env _ _ _ -> env
     ForEach _ _ _ _ _ env _ _ -> env
 
@@ -162,6 +199,8 @@ instance IFunctor CodeF where
       DoWhile cond body -> DoWhile cond (f env body)
       IfThenElse cond yes no -> IfThenElse cond (f env yes) (f env no)
       DrawCommand d -> DrawCommand d
+      TableAllocate pf n d t sz p q -> TableAllocate pf n d t sz p q
+      TableWrite pf n d t c v -> TableWrite pf n d t c v
       Lookup pf n t i pf' env'' env' v body alt -> Lookup pf n t i pf' env'' env' v (f env'' body) (fmap (f env') alt)
       ForEach pf n t i pf' env' env'' body -> ForEach pf n t i pf' env' env'' (f env'' body)
 
@@ -189,6 +228,11 @@ transformValuesM' f = \case
   Block cmds -> pure $ Block cmds
   NoOp -> pure NoOp
   DrawCommand d -> DrawCommand <$> transformDrawValuesM f d
+  TableAllocate pf n d t sz p q -> TableAllocate pf n d t <$> mapM f sz <*> f p <*> f q
+  TableWrite pf n d t c v -> TableWrite pf n d t <$> cell c <*> f v
+    where cell = \case
+            CellAt ixs -> CellAt <$> mapM f ixs
+            CellNear z -> CellNear <$> f z
   Lookup pf n t i pf' env' env v body alt ->
     Lookup pf n t i pf' env' env <$> f v <*> pure body <*> pure alt
   ForEach pf n t i pf' env env' body -> pure (ForEach pf n t i pf' env env' body)
@@ -212,6 +256,8 @@ instance ITraversable CodeF where
     DoWhile c body -> DoWhile c <$> body
     IfThenElse v yes no -> IfThenElse v <$> yes <*> no
     DrawCommand d -> pure (DrawCommand d)
+    TableAllocate pf n d t sz p q -> pure (TableAllocate pf n d t sz p q)
+    TableWrite pf n d t c v -> pure (TableWrite pf n d t c v)
     Lookup pf n t i pf' env' env v body alt ->
       Lookup pf n t i pf' env' env v <$> body <*> sequenceA alt
     ForEach pf n t i pf' env env' body -> ForEach pf n t i pf' env env' <$> body
@@ -275,7 +321,12 @@ gatherUsedVarsInCode = \case
   ForEach _ name _ item _ _ _ _ -> do
     modify' (Set.delete (symbolVal item) .
              Set.insert (symbolVal name))
-  other -> void (transformValuesM' (\v -> usedVarsInValue v >> pure v) other)
+  other -> do
+    case other of
+      TableAllocate _ name _ _ _ _ _ -> modify' (Set.insert (symbolVal name))
+      TableWrite _ name _ _ _ _ -> modify' (Set.insert (symbolVal name))
+      _ -> pure ()
+    void (transformValuesM' (\v -> usedVarsInValue v >> pure v) other)
 
 usedVarsInValue :: Value et -> State (Set String) ()
 usedVarsInValue = indexedFoldM @UnitET phi
@@ -390,9 +441,26 @@ pprintCode = unlines . go
         Write _ t p -> "write " ++ pprint t ++ " at " ++ pprint p
       Lookup{} -> ["{TODO: Lookup}"]
       ForEach{} -> ["{TODO: ForEach}"]
+      TableAllocate _ n _ _ sz p q ->
+        ["allocate " ++ name n ++ " of size (" ++ intercalate ", " (map pprint sz) ++ ") from "
+         ++ pprint p ++ " to " ++ pprint q]
+      TableWrite _ n _ _ c v -> [name n ++ " @ " ++ cellText c ++ " <- " ++ pprint v]
+        where cellText = \case
+                CellAt ixs -> "(" ++ intercalate ", " (map pprint ixs) ++ ")"
+                CellNear z -> "point " ++ pprint z
 
 data Unit :: Environment -> Exp Type
 type instance Eval (Unit _) = ()
 
 data UnitET :: (Environment, FSType) -> Exp Type
 type instance Eval (UnitET _) = ()
+
+-- | Whether some code allocates or writes a table (which only a tool may).
+writesTables :: Code env -> Bool
+writesTables code = execState (indexedFoldM @Unit phi code) False
+  where
+    phi :: forall env'. CodeF Unit env' -> State Bool ()
+    phi = \case
+      TableAllocate{} -> put True
+      TableWrite{} -> put True
+      _ -> pure ()

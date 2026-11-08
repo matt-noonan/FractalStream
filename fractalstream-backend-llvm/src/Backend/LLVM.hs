@@ -146,6 +146,8 @@ toFFIArg _ t v = case t of
     str <- GHC.newCString utf8 v
     pure (argPtr str, free str)
   BooleanType -> pure (argInt8 (if v then 1 else 0), pure ())
+  -- (compiled code can't read tables yet, step 4 of TABLES_PLAN.md)
+  TableType{} -> pure (argPtr nullPtr, pure ())
   _ -> error ("todo: toFFIArg " ++ showType t)
 
 -- | Like 'toFFIArg', but for tool handlers, which may /set/ config variables.

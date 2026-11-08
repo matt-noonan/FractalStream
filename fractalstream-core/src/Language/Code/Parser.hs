@@ -240,9 +240,32 @@ codeStatementsGrammar CommonDefs{..} = mdo
         <*> value
         <*> optional upTo)
     , node (SPass <$ lit "pass") <?> "pass"
+    -- writing a table's cell: `T @ (j, k) <- v`, or `T @ point z <- v`
+    , node
+      ((\n ix v -> SSetTable n False ix v) <$> ident <*> (token At *> value) <*> (token LeftArrow *> value))
+      <?> "table assignment"
+    , node
+      ((\n z v -> SSetTable n True z v) <$> ident <*> (token At *> lit "point" *> value) <*> (token LeftArrow *> value))
+      <?> "table assignment"
+    -- `allocate T of size (w, h)`, maybe `from p to q`
+    , node
+      (SAllocate <$> (lit "allocate" *> ident)
+                 <*> (lit "of" *> lit "size" *> tableSize)
+                 <*> optional ((,) <$> (lit "from" *> value) <*> (lit "to" *> value)))
+      <?> "table allocation"
     ]
 
   value <- valueGrammarWithFunctions funNames
+
+  -- A table's size, in `allocate`: in parentheses, or a single name or
+  -- number, so that what follows (`from p to q`) can't be read as part
+  -- of it (`(w, h) from p` would be an implicit product).
+  tableSize <- ruleChoice
+    [ token OpenParen *> value <* token CloseParen
+    , withSourceRange ((\n sr -> Syn sr (EVar n)) <$> ident)
+    , withSourceRange ((\n sr -> Syn sr (ELit (show n) (SomeHaskellType IntegerType (fromInteger n))))
+                       <$> tokenMatch (\case { NumberI n -> Just n; _ -> Nothing }))
+    ]
 
   effect <- ruleChoice
     [ toplevelDrawCommand

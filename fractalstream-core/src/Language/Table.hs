@@ -11,8 +11,12 @@ module Language.Table
   , elementSize
   , cellOffset
   , readCell
+  , pointCell
   , writeCell
   , newTable
+  , allocateTable
+  , freezeTable
+  , thawForWrite
   ) where
 
 import FractalStream.Prelude
@@ -23,7 +27,8 @@ import Data.Color (colorToRGB, rgbToColor)
 
 import Foreign.ForeignPtr (withForeignPtr, mallocForeignPtrBytes)
 import Foreign.Ptr (Ptr, plusPtr)
-import Foreign.Marshal.Utils (fillBytes)
+import Foreign.Marshal.Utils (fillBytes, copyBytes)
+import Data.IORef (newIORef, writeIORef, readIORef)
 import Foreign.Storable (peekByteOff, pokeByteOff)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -50,6 +55,16 @@ cellOffset t ixs
       Just (foldr (\(k, n) acc -> (k - 1) + n * acc) 0 (zip ixs dims))
   | otherwise = Nothing
   where dims = tableDims t
+
+-- | The indices of a 2-dimensional table's cell nearest a point, if the
+-- point is on the table.
+pointCell :: Table -> Complex Double -> Maybe [Int]
+pointCell t (x :+ y) = do
+  let (x0, y0) = tableOrigin t
+      (dx, dy) = tableStep t
+      ixs = [ 1 + round ((x - x0) / dx), 1 + round ((y0 - y) / dy) ]
+  _ <- cellOffset t ixs
+  pure ixs
 
 -- | The element at some 1-based indices, if they're in range.
 readCell :: TypeProxy t -> Table -> [Int] -> Maybe (HaskellType t)
@@ -97,4 +112,36 @@ newTable ty dims origin step = case elementSize ty of
     let bytes = size * product dims
     buf <- mallocForeignPtrBytes (max 1 bytes)
     withForeignPtr buf $ \p -> fillBytes p 0 bytes
-    pure (Just (Table dims origin step buf))
+    frozen <- newIORef False
+    pure (Just (Table dims origin step buf frozen))
+
+-- | A new table of the given size, filled with zeros, covering the
+-- rectangle with the given corners (top left, then bottom right): its
+-- cells split the rectangle evenly, so cell (1, 1) is centered half a
+-- cell in from the top left corner. (Only the first two dimensions are
+-- laid out in the plane.)
+allocateTable :: TypeProxy t -> [Int] -> Complex Double -> Complex Double -> IO (Maybe Table)
+allocateTable ty dims (x1 :+ y1) (x2 :+ y2) =
+  let (w, h) = case dims of
+        (a : b : _) -> (a, b)
+        [a] -> (a, 1)
+        [] -> (1, 1)
+      dx = (x2 - x1) / fromIntegral (max 1 w)
+      dy = (y1 - y2) / fromIntegral (max 1 h)
+  in newTable ty dims (x1 + dx / 2, y1 - dy / 2) (dx, dy)
+
+-- | Mark a table as one that others may be looking at (see 'tableFrozen').
+freezeTable :: Table -> IO ()
+freezeTable t = writeIORef (tableFrozen t) True
+
+-- | A table that can be written in place: this one, unless it's frozen,
+-- or else a copy of it.
+thawForWrite :: TypeProxy t -> Table -> IO Table
+thawForWrite ty t = readIORef (tableFrozen t) >>= \case
+  False -> pure t
+  True -> do
+    let bytes = maybe 0 (* tableCellCount t) (elementSize ty)
+    buf <- mallocForeignPtrBytes (max 1 bytes)
+    withForeignPtr (tableBuffer t) $ \src -> withForeignPtr buf $ \dst -> copyBytes dst src bytes
+    frozen <- newIORef False
+    pure t { tableBuffer = buf, tableFrozen = frozen }

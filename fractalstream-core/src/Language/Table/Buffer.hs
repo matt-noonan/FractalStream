@@ -18,6 +18,7 @@ import Data.Word (Word8)
 import Foreign.ForeignPtr (ForeignPtr)
 import System.IO.Unsafe (unsafePerformIO)
 import Foreign.ForeignPtr (mallocForeignPtrBytes)
+import Data.IORef (IORef, newIORef)
 
 data Table = Table
   { tableDims   :: [Int]
@@ -28,6 +29,11 @@ data Table = Table
     -- ^ A cell's model width and height: columns go right, rows go down.
   , tableBuffer :: ForeignPtr Word8
     -- ^ The elements, the first index varying fastest.
+  , tableFrozen :: IORef Bool
+    -- ^ Whether anything else may be looking at this table: once it's
+    -- the value of a configuration variable (so a viewer may be reading
+    -- it), or another variable's. Writing a frozen table writes a copy;
+    -- a table a tool has just made, or copied, it may write in place.
   }
 
 -- | Two tables are the same value when they share their storage.
@@ -42,7 +48,8 @@ instance Show Table where
 
 -- | A table with no cells, which is what a table variable starts out as.
 emptyTable :: Int -> Table
-emptyTable n = Table (replicate n 0) (0, 0) (1, 1) emptyBuffer
+emptyTable n = Table (replicate n 0) (0, 0) (1, 1) emptyBuffer frozen
+  where frozen = unsafePerformIO (newIORef True)
 
 emptyBuffer :: ForeignPtr Word8
 emptyBuffer = unsafePerformIO (mallocForeignPtrBytes 0)

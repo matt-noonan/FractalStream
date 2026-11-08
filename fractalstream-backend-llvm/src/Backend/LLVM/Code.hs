@@ -773,6 +773,10 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
 
   NoOp -> pure ()
 
+  -- (step 4 of TABLES_PLAN.md)
+  TableAllocate{} -> throwError "Tables aren't supported by the compiled backend yet."
+  TableWrite{} -> throwError "Tables aren't supported by the compiled backend yet."
+
   Set pf _ e -> do
     x <- value_ getExtern arena e
     ctx <- ask

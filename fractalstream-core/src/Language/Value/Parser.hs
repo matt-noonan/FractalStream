@@ -278,6 +278,7 @@ valueAndArithGrammar funs = mdo
   -- `xs @ k = 3` and `xs @ k + 1` index first.
   mulOrDiv <- ruleChoice
     [ node (EBin OpMul <$> (mulOrDiv <* token Times) <*> negated)
+    , node (ETablePoint <$> (mulOrDiv <* token At <* token (Identifier "point")) <*> negated)
     , node (EIndex False <$> (mulOrDiv <* token At) <*> negated)
     , node (EIndex True  <$> (mulOrDiv <* token AtAt) <*> negated)
     -- (a list literal isn't an atom, so it needs its own rule)
@@ -468,6 +469,8 @@ valueAndArithGrammar funs = mdo
                      <*> (token Comma *> toplevel <* token CloseParen))
     , node (ELength <$>
              (token LengthKeyword *> token OpenParen *> toplevel <* token CloseParen))
+    , node (ETableSize <$>
+             (token (Identifier "table_size") *> token OpenParen *> toplevel <* token CloseParen))
     ]
 
   diff <- rule $ node $
@@ -549,7 +552,7 @@ valueAndArithGrammar funs = mdo
         , "romao", "bamo", "broco", "corko", "viko"
         , "ice", "fire", "rose", "wheat", "forest", "ocean"
         , "winter", "spring", "summer", "fall"
-        , "rgb", "hsv", "hsl", "mod", "diff"]
+        , "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size"]
         `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions
