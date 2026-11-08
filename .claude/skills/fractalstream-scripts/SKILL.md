@@ -167,10 +167,17 @@ script: |
   handler and draw the result, with the tool's declarations as its
   inputs (library project `2 Quadratic family/external-rays.fs`). Tools can use lists freely
   (they get up to 256 MB of scratch space; viewers get 1 MB per pixel).
+- **Per-pixel data a pixel can't work out alone** (values carried from
+  pixel to neighboring pixel, a flood fill, continuation of a periodic
+  point across the parameter plane): a `Table 2 of T` in `@config`, which
+  a tool fills in with `allocate T of size (viewer_width, viewer_height)`
+  and `T @ (j, k) <- v`, and viewers read with `T @ point z` (reference.md,
+  Tables).
 - **Shared logic** between viewers and tools goes in `@common` (`f(z) := ...` for
   formulas, `define`/`run` for multi-statement code like coloring).
 - **What the language can't express**: recursion, user-defined types,
-  arrays with mutation in place (lists are values: `xs <- append(xs, x)`),
+  mutable arrays outside tables (lists are values: `xs <- append(xs, x)`;
+  tables are grids that only tools write),
   file I/O, randomness, and viewers over anything but a rectangle of the
   complex plane. If the algorithm needs one of these, say so and propose
   the closest faithful alternative (e.g. unroll a recursion into a loop with

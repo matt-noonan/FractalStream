@@ -67,7 +67,9 @@ Widgets by type: `Boolean` is a checkbox, `Color` a color picker, `Z` with
 `choice` a dropdown, everything else a text box that accepts any expression
 of the declared type (`List of C` shows as `1, 2, i` without brackets; `Text`
 shows the raw text). Defaults are expressions (`2 pi / 3`, `-0.12 + 0.75i`,
-`[0, 1, i]`, `dark blue`) and can't refer to other variables.
+`[0, 1, i]`, `dark blue`) and can't refer to other variables. A table,
+`T : Table 2 of C`, is declared with *no* default (it starts empty, size
+0), has no widget, and isn't saved (see Tables in §3).
 
 ### `@common`
 
@@ -337,6 +339,7 @@ text use the stroke color; filled shapes use the fill color.
 | text | `Text` | `"quoted"`, with `\"`, `\\`, `\n`, `\t` escapes |
 | list | `List of T` | `[1, 2, 3]`, `[]` |
 | pair | `T x U`, `T × U` | `(1.0, 2.0)` |
+| table | `Table N of T` (T one of Z, R, C, Boolean, Color) | none: declared in `@config`, filled by tools |
 
 Numbers widen automatically Z → R → C wherever needed (`k := 0` then
 `k <- 0.5` makes `k` real). Nothing narrows automatically: use `round`,
@@ -355,7 +358,7 @@ number.) A power of integers used as a real is computed as a real:
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`,
 `times`, `text`, `escapes`, `vanishes`, `stops`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
-`mod`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
+`mod`, `point`, `table_size`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
 names in `@config`), `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
 the color-wheel names, and the built-in function names (including `bar`, the
 complex conjugate; using one for a variable, function, or code block is
@@ -409,7 +412,7 @@ Constants: `pi`/`π`, `e`/`𝑒`, `i`/`𝑖`, `true`, `false`.
 
 Colors:
 - names: `red green blue black white grey gray orange yellow purple violet pink`
-- `rgb(r, g, b)` with components in [0, 1]
+- `rgb(r, g, b)` with components in [0, 1] (clamped to it; NaN counts as 0)
 - `hsv(h, s, v)`, `hsl(h, s, l)`: hue h mod 1 (0 red, 1/3 green, 2/3 blue),
   s/v/l clamped to [0, 1]; hsl's l = 0.5 is the full color, 1 white
 - `dark c`, `light c`, `invert c` (stackable: `light light red`)
@@ -433,6 +436,30 @@ Lists (1-based):
 - `@` and `@@` bind like multiplication: `xs @ k = 3` compares the item,
   and `xs @ k + 1` is `(xs @ k) + 1`; write `xs @ (k + 1)` for the next one.
 - An empty list needs a declared type: `xs : List of C := []`.
+
+Tables (`T : Table 2 of C` in `@config`; contiguous storage, O(1) access,
+for per-pixel data a tool works out ahead of time, e.g. by carrying values
+from pixel to neighboring pixel, which a viewer can't):
+- `T @ (j, k)`: column j, row k, 1-based, (1, 1) at the top left, rows go
+  down; n integers for n dimensions (`T @ k` for 1-D). Out of range is an
+  error (magenta / discarded tool event). No `@@`.
+- `T @ point z` (2-D only): the cell z is in (cells are small rectangles;
+  a table laid over a window has one cell per pixel). Off the table is an
+  error.
+- `table_size(T)`: Z for 1-D, else a tuple: `(w, h) := table_size(T)`.
+  0 until a tool fills the table in.
+- Tools only (a viewer that does these is an error):
+  `allocate T of size (w, h)` lays a zero-filled table over the tool's
+  viewer window (at `(viewer_width, viewer_height)`, cell (j, k) is pixel
+  (j - 1, k - 1)); `allocate T of size (w, h) from p to q` covers the
+  rectangle with top left p and bottom right q (the size must then be in
+  parentheses, or a single name or number). `T @ (j, k) <- v` and
+  `T @ point z <- v` write a cell.
+- A tool's table changes take effect when its handler succeeds, and
+  viewers that read the table redraw. Writing a table viewers may be
+  reading (or that another variable holds: `U := T`) writes a copy, so
+  renders in flight and `U` are unaffected. Filling a 600x600 table cell
+  by cell in a compiled tool is fast.
 
 ## 4. Statements
 
@@ -467,6 +494,10 @@ g(a, b) := a f(b)
 define shade(c):          # named code block, parameters optional
   ...
 run shade(blue)           # `run name` with no arguments, or run name(a, b)
+allocate T of size (w, h)   # tools only: a table over the viewer's window
+allocate T of size (w, h) from p to q   # ... or over a rectangle (corners)
+T @ (j, k) <- v           # tools only: write a table's cell
+T @ point z <- v          # ... the cell the point z is in
 ```
 
 A long line can be continued with `...` (or `…`) at the end.
@@ -571,5 +602,5 @@ viewer color a pixel by a condition and assert on it.
 | `I expected a real number here, but z is a complex number.` | assigning a wider type to a declared variable; use `re`, `|…|`, or declare it wider |
 | `I expected an integer here, but the result of an arithmetic operation is a real number.` | `/` on integers; use `//` or `round(...)` |
 | `No function named f is defined here.` | recursion, or using a function before its definition |
-| `A list index was out of range, so this tool's changes were discarded.` (from fsrun, or a dialog in the app) | a tool handler indexed a list out of range; the app switches back to Navigate |
-| `warning: viewer "V": Magenta pixels: ...` | list index out of range, or list/text scratch memory exhausted, in some pixels |
+| `A list or table index was out of range, so this tool's changes were discarded.` (from fsrun, or a dialog in the app) | a tool handler indexed a list or table out of range (or wrote off a table); the app switches back to Navigate |
+| `warning: viewer "V": Magenta pixels: ...` | list or table index out of range (or `T @ point z` off the table), or list/text scratch memory exhausted, in some pixels |

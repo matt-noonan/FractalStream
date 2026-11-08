@@ -662,7 +662,7 @@ compiledToolExec (dylib, session, compileLayer, nextId, _) lookupAutocolor sink 
         let attempt capacity = runToolOnce fn lookupAutocolor sink capacity ctx haskArgs >>= \case
               ToolSucceeded -> pure ()
               ToolBadIndex -> fail
-                "A list index was out of range, so this tool's changes were discarded."
+                "A list or table index was out of range, so this tool's changes were discarded."
               ToolOverflowed
                 | capacity < toolArenaMaxCapacity -> attempt (2 * capacity)
                 | otherwise -> fail $ concat

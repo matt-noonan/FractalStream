@@ -111,7 +111,8 @@ Colors can be inverted with the `invert` operator, so `invert green`
 is a shade of purple.
 
 Custom colors can be made with the `rgb(r,g,b)` operation, where
-`r`, `g`, and `b` are values representing real numbers from `0` to `1`.
+`r`, `g`, and `b` are values representing real numbers from `0` to `1`
+(a value below `0` counts as `0`, and one above `1` as `1`).
 Colors can also be made from a hue, with `hsv(h, s, v)` (hue, saturation,
 and value) or `hsl(h, s, l)` (hue, saturation, and lightness). The hue goes
 around the color wheel once as `h` goes from `0` to `1`: `0` is red, `1/3`
@@ -240,7 +241,8 @@ real numbers, `C` for the complex numbers, `Color` for a color, and
 `Boolean` for a truth value, and `Text` for plain text. You can also use
 the unicode blackboard bold variants `ℤ`, `ℝ`, and `ℂ`, or the full names `Integer`, `Real`, and `Complex`.
 
-Lists of values of type `x` have the type `List of x`.
+Lists of values of type `x` have the type `List of x`. Tables have types
+like `Table 2 of C` (see "Tables"), and are only declared in `@config`.
 
 Or you can leave the type out, and let FractalStream work it out:
 
@@ -1146,3 +1148,108 @@ for each x in myList:
 **NOTE:** `for each` loops are not subject to the special iteration limits
 that apply to `while`, `until`, and `iterate`. The `for each` loop will
 always process each element of the list.
+
+### Tables
+
+A *table* is a grid of values of one type, all stored together: a
+`Table 2 of C` is a 2-dimensional grid of complex numbers. Tables are for
+data that tools work out ahead of time for viewers to look up, especially
+data that one pixel can't work out on its own, like values carried over
+from neighboring points. A tool fills a table in, and every viewer can
+read it.
+
+A table can hold integers, reals, complex numbers, truth values, or
+colors, in any number of dimensions (`Table 1 of R`, `Table 3 of Z`, ...).
+It's declared in `@config`, without a default value, since it starts out
+empty (with size 0). It has no field in the configuration window, and it
+isn't saved with the project:
+
+```
+@config "Parameters"
+saddle : Table 2 of C
+```
+
+#### Reading a table
+
+`T @ (j, k)` is the value in column `j` and row `k` of a 2-dimensional
+table `T`. Like lists, tables count from 1: `T @ (1, 1)` is the cell at the
+top left, columns go to the right, and rows go down. A table with `n`
+dimensions takes `n` integers, written as a tuple (`T @ k` for a
+1-dimensional table). Reading outside the table is an error, as it is for
+a list: the pixel is drawn magenta, or a tool's changes are discarded.
+
+Every table also has a place in the plane (see "Filling in a table"), so
+`T @ point z` is the value in the cell that the point `z` is in. Each
+cell covers a small rectangle, so the cells of a table laid over a
+viewer's window are its pixels. A point outside the table is an error,
+like reading out of range. Only a 2-dimensional table has points.
+
+`table_size(T)` is the table's size: an integer for a 1-dimensional table,
+or a tuple with one integer per dimension. A table that hasn't been filled
+in yet has size 0:
+
+```
+(w, h) := table_size(saddle)
+color <- if w = 0 then grey else ...
+```
+
+#### Filling in a table
+
+Only a tool can change a table; a viewer can only read one. A tool makes a
+new table, filled with zeros (`false`, or black), with `allocate`:
+
+```
+allocate T of size (viewer_width, viewer_height)
+```
+
+This lays the table over the tool's viewer window: with the viewer's own
+size, as here, cell `(j, k)` is the pixel in column `j - 1` and row `k - 1`
+(pixels count from 0), and with another size the cells are stretched to
+cover the window. To cover some other rectangle of the plane, give its
+top left and bottom right corners:
+
+```
+allocate T of size (200, 100) from -2 + i to 2 - i
+```
+
+(The size must be in parentheses here, or be a single name or number.)
+Then the tool writes the table's cells with `<-`:
+
+```
+T @ (j, k) <- v
+T @ point z <- v
+```
+
+Writing outside the table is an error, and the tool's changes are
+discarded.
+
+A tool's changes to a table only take effect when its handler finishes
+without an error, like its changes to any other configuration variable;
+then every viewer that reads the table is drawn again. A viewer that's
+drawing while the tool runs keeps the table it started with: writing a
+table that viewers may be reading writes a copy of it. (The same goes for
+a table that another variable holds: after `U := T`, writing `T` leaves
+`U` as it was.)
+
+For example, this tool works out a value for every pixel of a parameter
+plane, and a dynamical plane looks up the value at its own parameter:
+
+```
+@config "Parameters"
+C : C := 0
+data : Table 2 of C
+
+@viewer "Parameter plane" var=C
+(w, h) := table_size(data)
+color <- if w = 0 then grey else rainbow(arg(data @ point C) / (2 pi))
+
+@viewer "Dynamical plane"
+...  # can read `data @ point C`
+
+@tool "Compute" for="Parameter plane"
+on click:
+  allocate data of size (viewer_width, viewer_height)
+  for each j in range(1, viewer_width):
+    for each k in range(1, viewer_height):
+      data @ (j, k) <- ...  # the value for pixel (j - 1, k - 1)
+```

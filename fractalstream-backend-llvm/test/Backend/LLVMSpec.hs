@@ -225,7 +225,7 @@ spec = do
     it "reports a bad list index as such, like the interpreter" $ withJIT $ \jit -> do
       let src = "draw point at z\nx <- re(pts @ 5)"
       runTool (compiledToolExec jit noAutocolor) src
-        `shouldThrow` (\e -> "list index was out of range" `isInfixOf` show (e :: IOException))
+        `shouldThrow` (\e -> "table index was out of range" `isInfixOf` show (e :: IOException))
       runTool interpretedToolExec src
         `shouldThrow` (\(ErrorCall msg) -> msg == "List index 5 is out of range")
 

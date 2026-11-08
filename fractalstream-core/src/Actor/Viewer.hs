@@ -435,7 +435,7 @@ describeViewerIssues ViewerIssues{..}
   where
     problems =
       [ "ran out of scratch memory for its lists or text" | viOutOfMemory ]
-      ++ [ "indexed a list out of range" | viBadIndex ]
+      ++ [ "indexed a list or table out of range" | viBadIndex ]
 
 assertMissingViewerArgs :: forall env t
                          . EnvironmentProxy env
