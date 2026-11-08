@@ -10,6 +10,9 @@ module Backend.LLVM.Operand
   , getBooleanOp
   , getListOp
   , getIntegerOp
+  , getTableOp
+  , getTableSlot
+  , getComplexOp
   , typedOperand
   , typedOperandPtr
   , detypeOperand
@@ -23,6 +26,8 @@ module Backend.LLVM.Operand
   , loadListNext
   , loadListElem
   , storeListElem
+  , loadElemAt
+  , storeElemAt
   , ArenaState(..)
   , arenaAlloc
   , arenaAllocDyn
@@ -89,6 +94,16 @@ getBooleanOp (BooleanOp x) = x
 
 getListOp :: Op ('ListT t) -> Operand
 getListOp (ListOp headPtr) = headPtr
+
+getTableOp :: Op ('TableT n t) -> Operand
+getTableOp (TableOp desc) = desc
+
+-- | The slot (an @i8**@) holding a table variable's descriptor.
+getTableSlot :: PtrOp ('TableT n t) -> Operand
+getTableSlot (PtrOp (TableOp slot)) = slot
+
+getComplexOp :: Op 'ComplexT -> (Operand, Operand)
+getComplexOp (ComplexOp x y) = (x, y)
 
 getIntegerOp :: Op 'IntegerT -> Operand
 getIntegerOp (IntegerOp x) = x
@@ -457,6 +472,9 @@ data ArenaState = ArenaState
     -- @i32 (i8* dir, i8 mode, i32 group, double x, double y)@ returning the
     -- color as @0x00RRGGBB@, and the @dir@ to give it. Viewers and tool
     -- handlers have one.
+  , asTables       :: Maybe (Operand, Operand)
+    -- ^ The host's table callbacks, @new@ and @thaw@ (see
+    -- "Backend.LLVM.Table"). Only tool handlers have them.
   }
 
 -- | Emit inline bump-allocation of 'size' bytes (must be a multiple of 8).

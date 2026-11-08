@@ -12,6 +12,7 @@ import FractalStream.Prelude
 import Actor.Viewer
 
 import Backend.LLVM.Operand
+import Backend.LLVM.Table
 import Backend.LLVM.Value
 
 import qualified LLVM.AST as AST
@@ -84,7 +85,7 @@ compile _ outputTy code = runExcept $
       indexError <- alloca AST.i1 Nothing 0
       store indexError 0 (C.bit 0)
       emptyText <- emptyTextGlobal
-      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing Nothing
+      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing Nothing Nothing
 
       runReaderT (compileCode getExtern arenaState Nothing code) args
       rv <- derefOperand (getBinding args (bindingEvidence @output @t @env))
@@ -467,7 +468,7 @@ compileRenderer' prepOutputEnv name code = runExcept $
         emptyText <- emptyTextGlobal
         autocolorF <- bitcast autocolorArg autocolorFnType
         let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing
-                                    (Just (autocolorF, autocolorDirArg))
+                                    (Just (autocolorF, autocolorDirArg)) Nothing
 
         args <- allocaArgs (envProxy (Proxy @(ViewerEnv env))) rawArgs
         x0 <- derefOperand (getBinding args pfX)  >>= \case RealOp v -> pure v
@@ -702,7 +703,9 @@ compileToolHandler envp name code = runExcept $
           , (AST.ptr AST.i8, ParameterName "draw.write")
           , (AST.ptr AST.i8, ParameterName "text.format")
           , (AST.ptr AST.i8, ParameterName "autocolor")
-          , (AST.ptr AST.i8, ParameterName "autocolor.dir") ]
+          , (AST.ptr AST.i8, ParameterName "autocolor.dir")
+          , (AST.ptr AST.i8, ParameterName "table.new")
+          , (AST.ptr AST.i8, ParameterName "table.thaw") ]
         arenaParams    = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
                          , (AST.i32,        ParameterName "#arenaSize") ]
         overflowParams = [ (AST.ptr AST.i8, ParameterName "#overflowOut") ]
@@ -711,9 +714,9 @@ compileToolHandler envp name code = runExcept $
     function name params AST.void $ \allArgs -> do
       getExtern <- getGetExtern
       _entry <- block `named` "tool_entry"
-      let (drawArgs, afterDraw) = splitAt 11 allArgs
+      let (drawArgs, afterDraw) = splitAt 13 allArgs
           (arenaPtrArg : arenaSizeArg : overflowArg : rawEnvArgs) = afterDraw
-          [clearP, strokeP, fillP, pointP, lineP, circleP, rectP, writeP, formatP, autocolorP, autocolorDirP] = drawArgs
+          [clearP, strokeP, fillP, pointP, lineP, circleP, rectP, writeP, formatP, autocolorP, autocolorDirP, tableNewP, tableThawP] = drawArgs
 
       bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
       store bumpAlloca 0 arenaPtrArg
@@ -726,8 +729,10 @@ compileToolHandler envp name code = runExcept $
                    (fnPtrTy AST.i32 [AST.i8, AST.double, AST.double, AST.ptr AST.i8, AST.i32])
       emptyText <- emptyTextGlobal
       autocolorF <- bitcast autocolorP autocolorFnType
+      tableNewF <- bitcast tableNewP tableNewFnType
+      tableThawF <- bitcast tableThawP tableThawFnType
       let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText (Just formatF)
-                                  (Just (autocolorF, autocolorDirP))
+                                  (Just (autocolorF, autocolorDirP)) (Just (tableNewF, tableThawF))
 
       clearF  <- bitcast clearP  (fnPtrTy AST.void [])
       strokeF <- bitcast strokeP (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
@@ -773,14 +778,30 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
 
   NoOp -> pure ()
 
-  -- (step 4 of TABLES_PLAN.md)
-  TableAllocate{} -> throwError "Tables aren't supported by the compiled backend yet."
-  TableWrite{} -> throwError "Tables aren't supported by the compiled backend yet."
+  TableAllocate pf _ d ty sizes p q -> withKnownType ty $ withKnownNat d $ do
+    (newF, _) <- maybe (throwError "Only a tool can allocate a table.") pure (asTables arena)
+    sizes' <- mapM (fmap getIntegerOp . value_ getExtern arena) sizes
+    (x1, y1) <- getComplexOp <$> value_ getExtern arena p
+    (x2, y2) <- getComplexOp <$> value_ getExtern arena q
+    ctx <- ask
+    let slot = getTableSlot (getBinding ctx pf)
+    buildTableAllocate arena newF ty slot sizes' (x1, y1) (x2, y2)
+
+  TableWrite pf _ d ty cell v -> withKnownType ty $ withKnownNat d $ do
+    (_, thawF) <- maybe (throwError "Only a tool can write to a table.") pure (asTables arena)
+    v' <- value_ getExtern arena v
+    cell' <- case cell of
+      CellAt ixs -> Left <$> mapM (fmap getIntegerOp . value_ getExtern arena) ixs
+      CellNear z -> Right . getComplexOp <$> value_ getExtern arena z
+    ctx <- ask
+    let slot = getTableSlot (getBinding ctx pf)
+    buildTableWrite getExtern arena thawF ty slot cell' v'
 
   Set pf _ e -> do
     x <- value_ getExtern arena e
     ctx <- ask
     storeOperand x (withKnownType (typeOfValue e) (getBinding ctx pf))
+    freezeIfTable x
     pure ()
 
   Let pf name val body -> do
@@ -788,6 +809,7 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
     let t = typeOfValue val
     ptr <- allocaOp t
     storeOperand x ptr
+    freezeIfTable x
     recallIsAbsent (absentInTail pf) $ do
       ctx <- Bind name t ptr <$> ask
       lift (runReaderT body ctx)
@@ -997,7 +1019,15 @@ toolInOut = \case
   ColorType   -> True
   TextType    -> True
   ListType _  -> True
+  TableType{} -> True
   _           -> False
+
+-- | A table that another variable now holds too is shared: writing either
+-- one copies it first (see "Backend.LLVM.Table").
+freezeIfTable :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m) => Op t -> m ()
+freezeIfTable = \case
+  TableOp desc -> freezeDescriptor desc
+  _ -> pure ()
 
 -- | Parameter types for a tool handler's environment: in/out types become
 -- pointers; everything else keeps its by-value representation.

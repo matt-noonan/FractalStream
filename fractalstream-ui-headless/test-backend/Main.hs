@@ -9,6 +9,7 @@ import Test.Hspec
 import FractalStream.Console (transliterateConsole)
 import qualified GeometrySpec
 import qualified OverlaySpec
+import qualified TableSpec
 
 main :: IO ()
-main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec)
+main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec >> TableSpec.spec)

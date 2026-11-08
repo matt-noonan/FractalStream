@@ -15,6 +15,9 @@ module Language.Table
   , writeCell
   , newTable
   , allocateTable
+  , allocateTableBytes
+  , copyTableBytes
+  , nearestCell
   , freezeTable
   , thawForWrite
   ) where
@@ -62,9 +65,19 @@ pointCell :: Table -> Complex Double -> Maybe [Int]
 pointCell t (x :+ y) = do
   let (x0, y0) = tableOrigin t
       (dx, dy) = tableStep t
-      ixs = [ 1 + round ((x - x0) / dx), 1 + round ((y0 - y) / dy) ]
+      ixs = [ nearestCell ((x - x0) / dx), nearestCell ((y0 - y) / dy) ]
   _ <- cellOffset t ixs
   pure ixs
+
+-- | The 1-based index of the cell nearest a position measured in cells
+-- from the center of cell 1: the cell the position is in. A position on
+-- the boundary between two cells, give or take a millionth of a cell, is
+-- in the second: viewers sample each pixel at its top left corner, which
+-- for a table laid over the window is exactly on a boundary, and rounding
+-- shouldn't push it into the cell before. Compiled code does the same
+-- ("Backend.LLVM.Table").
+nearestCell :: Double -> Int
+nearestCell u = 1 + floor (u + 0.5 + 0.000001)
 
 -- | The element at some 1-based indices, if they're in range.
 readCell :: TypeProxy t -> Table -> [Int] -> Maybe (HaskellType t)
@@ -108,12 +121,16 @@ writeCell ty t ixs v = case (,) <$> elementSize ty <*> cellOffset t ixs of
 newTable :: TypeProxy t -> [Int] -> (Double, Double) -> (Double, Double) -> IO (Maybe Table)
 newTable ty dims origin step = case elementSize ty of
   Nothing -> pure Nothing
-  Just size -> do
-    let bytes = size * product dims
-    buf <- mallocForeignPtrBytes (max 1 bytes)
-    withForeignPtr buf $ \p -> fillBytes p 0 bytes
-    frozen <- newIORef False
-    pure (Just (Table dims origin step buf frozen))
+  Just size -> Just <$> newTableBytes size dims origin step
+
+-- | 'newTable', for elements of the given size in bytes.
+newTableBytes :: Int -> [Int] -> (Double, Double) -> (Double, Double) -> IO Table
+newTableBytes size dims origin step = do
+  let bytes = size * product dims
+  buf <- mallocForeignPtrBytes (max 1 bytes)
+  withForeignPtr buf $ \p -> fillBytes p 0 bytes
+  frozen <- newIORef False
+  pure (Table dims origin step buf frozen)
 
 -- | A new table of the given size, filled with zeros, covering the
 -- rectangle with the given corners (top left, then bottom right): its
@@ -121,14 +138,20 @@ newTable ty dims origin step = case elementSize ty of
 -- cell in from the top left corner. (Only the first two dimensions are
 -- laid out in the plane.)
 allocateTable :: TypeProxy t -> [Int] -> Complex Double -> Complex Double -> IO (Maybe Table)
-allocateTable ty dims (x1 :+ y1) (x2 :+ y2) =
+allocateTable ty dims p q = case elementSize ty of
+  Nothing -> pure Nothing
+  Just size -> Just <$> allocateTableBytes size dims p q
+
+-- | 'allocateTable', for elements of the given size in bytes.
+allocateTableBytes :: Int -> [Int] -> Complex Double -> Complex Double -> IO Table
+allocateTableBytes size dims (x1 :+ y1) (x2 :+ y2) =
   let (w, h) = case dims of
         (a : b : _) -> (a, b)
         [a] -> (a, 1)
         [] -> (1, 1)
       dx = (x2 - x1) / fromIntegral (max 1 w)
       dy = (y1 - y2) / fromIntegral (max 1 h)
-  in newTable ty dims (x1 + dx / 2, y1 - dy / 2) (dx, dy)
+  in newTableBytes size dims (x1 + dx / 2, y1 - dy / 2) (dx, dy)
 
 -- | Mark a table as one that others may be looking at (see 'tableFrozen').
 freezeTable :: Table -> IO ()
@@ -139,9 +162,14 @@ freezeTable t = writeIORef (tableFrozen t) True
 thawForWrite :: TypeProxy t -> Table -> IO Table
 thawForWrite ty t = readIORef (tableFrozen t) >>= \case
   False -> pure t
-  True -> do
-    let bytes = maybe 0 (* tableCellCount t) (elementSize ty)
-    buf <- mallocForeignPtrBytes (max 1 bytes)
-    withForeignPtr (tableBuffer t) $ \src -> withForeignPtr buf $ \dst -> copyBytes dst src bytes
-    frozen <- newIORef False
-    pure t { tableBuffer = buf, tableFrozen = frozen }
+  True -> copyTableBytes (fromMaybe 0 (elementSize ty)) t
+
+-- | A copy of a table with elements of the given size in bytes, which
+-- no one else is looking at.
+copyTableBytes :: Int -> Table -> IO Table
+copyTableBytes size t = do
+  let bytes = size * tableCellCount t
+  buf <- mallocForeignPtrBytes (max 1 bytes)
+  withForeignPtr (tableBuffer t) $ \src -> withForeignPtr buf $ \dst -> copyBytes dst src bytes
+  frozen <- newIORef False
+  pure t { tableBuffer = buf, tableFrozen = frozen }

@@ -8,6 +8,7 @@ module Backend.LLVM.Value
 import FractalStream.Prelude
 
 import Backend.LLVM.Operand
+import Backend.LLVM.Table
 
 import Language.Value
 import Data.Indexed.Functor
@@ -158,9 +159,19 @@ buildValue getExtern arena = indexedFold go'
         lift $ buildIndex arena ty cyclic headPtr iOp
 
       -- (step 4 of TABLES_PLAN.md)
-      TableIndex{} -> lift $ throwError "Tables aren't supported by the compiled backend yet."
-      TablePoint{} -> lift $ throwError "Tables aren't supported by the compiled backend yet."
-      TableSize{} -> lift $ throwError "Tables aren't supported by the compiled backend yet."
+      TableIndex _ ty mtbl mixs -> do
+        desc <- getTableOp <$> mtbl
+        ixs <- mapM (fmap getIntegerOp) mixs
+        lift $ buildTableRead arena ty desc ixs
+
+      TablePoint _ ty mtbl mz -> do
+        desc <- getTableOp <$> mtbl
+        (x, y) <- getComplexOp <$> mz
+        lift $ buildTablePoint getExtern arena ty desc x y
+
+      TableSize _ _ sz mtbl -> do
+        desc <- getTableOp <$> mtbl
+        lift $ buildTableSize sz desc
 
       -- ------------------------------------------------------------------ --
       -- Range: integer range [lo..hi].
