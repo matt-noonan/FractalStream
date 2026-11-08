@@ -251,7 +251,8 @@ codeStatementsGrammar CommonDefs{..} = mdo
     , node
       (SAllocate <$> (lit "allocate" *> ident)
                  <*> (lit "of" *> lit "size" *> tableSize)
-                 <*> optional ((,) <$> (lit "from" *> value) <*> (lit "to" *> value)))
+                 <*> optional ((,) <$> (lit "from" *> value) <*> (lit "to" *> value))
+                 <*> optional (lit "filled" *> lit "with" *> value))
       <?> "table allocation"
     ]
 

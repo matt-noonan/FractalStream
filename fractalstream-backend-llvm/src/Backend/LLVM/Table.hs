@@ -265,8 +265,8 @@ buildTableWrite getExtern arena thawF ty slot cell v = do
 -- | Give the variable in a slot a new table; a negative size sets the
 -- index-error flag (so the tool's changes are discarded).
 buildTableAllocate :: Build m => ArenaState -> Operand -> TypeProxy t -> Operand
-                   -> [Operand] -> (Operand, Operand) -> (Operand, Operand) -> m ()
-buildTableAllocate arena newF ty slot sizes (x1, y1) (x2, y2) = do
+                   -> [Operand] -> (Operand, Operand) -> (Operand, Operand) -> Maybe (Op t) -> m ()
+buildTableAllocate arena newF ty slot sizes (x1, y1) (x2, y2) fill = do
   size <- elemBytes ty
   dims <- alloca AST.i32 (Just (C.int32 (fromIntegral (max 1 (length sizes))))) 0
   forM_ (zip [0 ..] sizes) $ \(k, n) -> do
@@ -279,9 +279,33 @@ buildTableAllocate arena newF ty slot sizes (x1, y1) (x2, y2) = do
     condBr isNull badB okB
     okB <- block `named` "table_allocated"
     store slot 0 desc
+    forM_ fill (fillCells ty desc sizes)
     br doneB
     badB <- block `named` "table_bad_size"
     store (asIndexError arena) 0 (C.bit 1)
     br doneB
     doneB <- block `named` "table_allocate_done"
+    pure ()
+
+-- | Store a value in every cell of a new table, with the given sizes.
+fillCells :: Build m => TypeProxy t -> Operand -> [Operand] -> Op t -> m ()
+fillCells ty desc sizes v = do
+  size <- elemBytes ty
+  count <- foldM mul (C.int32 1) sizes
+  elems <- loadField desc 0 (AST.ptr AST.i8)
+  counter <- alloca AST.i32 Nothing 0
+  store counter 0 (C.int32 0)
+  mdo
+    br testB
+    testB <- block `named` "table_fill_test"
+    k <- load counter 0
+    more <- icmp IP.SLT k count
+    condBr more bodyB doneB
+    bodyB <- block `named` "table_fill"
+    offset <- sext k AST.i64 >>= (`mul` C.int64 size)
+    p <- gep elems [offset]
+    storeElemAt ty p v
+    add k (C.int32 1) >>= store counter 0
+    br testB
+    doneB <- block `named` "table_fill_done"
     pure ()

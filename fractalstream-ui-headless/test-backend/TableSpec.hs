@@ -40,6 +40,11 @@ project = unlines
   , "on click at p:"
   , "  T @ point p <- 255"
   , ""
+  , "@tool \"Fill with 7\" for=\"Par\""
+  , "on click at p:"
+  , "  allocate T of size (viewer_width, viewer_height) filled with 7 + 3i"
+  , "  T @ (1, 1) <- 1"
+  , ""
   , "@tool \"Alias\" for=\"Par\""
   , "on click at p:"
   , "  U := T"
@@ -78,6 +83,10 @@ spec = describe "tables" $ do
     [ "select tool \"Bump\"", "click at 0.005 - 0.005i"
     , at "Par" (100, 50) "(255, 0, 0)"
     , at "Par" (101, 50) "(102, 51, 0)" ]
+
+  it "can be filled with a value when they're allocated" $ scenario
+    [ "select viewer \"Par\"", "resize viewer to 200x100", "select tool \"Fill with 7\"", "click at 0"
+    , at "Par" (0, 0) "(1, 0, 0)", at "Par" (120, 70) "(7, 3, 0)", at "Par" (199, 99) "(7, 3, 0)" ]
 
   it "are copied before being written while another variable holds them" $ scenario $ fill ++
     [ "select tool \"Alias\"", "click at 0"

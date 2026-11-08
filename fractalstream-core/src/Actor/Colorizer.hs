@@ -593,7 +593,7 @@ stripRanges (Stmt _ node) = Stmt NoSourceRange $ case node of
   SIterate p e w c lim -> SIterate (stripPattern p) (ex e) w (ex c) (ex <$> lim)
   SPass -> SPass
   SSetTable n pt ix v -> SSetTable n pt (ex ix) (ex v)
-  SAllocate n sz corners -> SAllocate n (ex sz) (bimap ex ex <$> corners)
+  SAllocate n sz corners fill -> SAllocate n (ex sz) (bimap ex ex <$> corners) (ex <$> fill)
   SDraw d -> SDraw $ case d of
     DrawPointAt p -> DrawPointAt (ex p)
     DrawCircleAt f c r -> DrawCircleAt f (ex c) (ex r)

@@ -1213,6 +1213,13 @@ allocate T of size (200, 100) from -2 + i to 2 - i
 ```
 
 (The size must be in parentheses here, or be a single name or number.)
+To start every cell with some other value than zero, add `filled with`
+at the end:
+
+```
+allocate status of size (viewer_width, viewer_height) filled with -1
+```
+
 Then the tool writes the table's cells with `<-`:
 
 ```

@@ -103,16 +103,19 @@ interpretToIOWithLastValues draw = indexedFold @ScalarIORefM' phi
 
       Block stmts -> sequence_ stmts
 
-      TableAllocate pf name d ty szs p q -> withKnownType ty $ withKnownNat d $ do
+      TableAllocate pf name d ty szs p q mfill -> withKnownType ty $ withKnownNat d $ do
         sizes <- mapM (zoom . eval) szs
         p' <- zoom (eval p)
         q' <- zoom (eval q)
+        fill <- traverse (zoom . eval) mfill
         when (any (< 0) sizes) $
           error ("A table's size can't be negative, but `" ++ symbolVal name ++ "` was given "
                  ++ show sizes ++ ".")
         lift (allocateTable ty (map fromIntegral sizes) p' q') >>= \case
           Nothing -> error "internal error: not a table element type"
-          Just t -> zoom (update pf name (TableType d ty) t)
+          Just t -> do
+            lift (forM_ fill (fillTable ty t))
+            zoom (update pf name (TableType d ty) t)
 
       TableWrite pf name d ty cell ve -> withKnownType ty $ withKnownNat d $ do
         v <- zoom (eval ve)

@@ -81,7 +81,7 @@ elab funs env stmt@(Stmt sr node) = case node of
         TableWrite pf name d ety cell <$> value funs env v ety
       _ -> throwError (Surprise sr n (an $ SomeType ty) (Expected "a table"))
 
-  SAllocate n sz corners -> do
+  SAllocate n sz corners fill -> do
     SomeSymbol name <- pure (someSymbolVal n)
     FoundVar ty pf <- findVar sr name env
     case ty of
@@ -98,7 +98,8 @@ elab funs env stmt@(Stmt sr node) = case node of
             Just (p, q) -> (,) <$> value funs env p ComplexType <*> value funs env q ComplexType
             Nothing -> throwError (Advice sr ("Only a viewer's tool knows its window: give the table's corners, `allocate "
                                               ++ n ++ " of size ... from p to q`."))
-        pure (TableAllocate pf name d ety sizes p q)
+        fill' <- withKnownType ety $ traverse (\v -> value funs env v ety) fill
+        pure (TableAllocate pf name d ety sizes p q fill')
       _ -> throwError (Surprise sr n (an $ SomeType ty) (Expected "a table"))
 
   SIf cond yes no ->

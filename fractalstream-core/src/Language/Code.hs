@@ -128,6 +128,8 @@ data CodeF (code :: Environment -> Exp Type)
                 -> [Value '(env, 'IntegerT)]
                 -> Value '(env, 'ComplexT)
                 -> Value '(env, 'ComplexT)
+                -> Maybe (Value '(env, ty))
+                -- ^ what to fill it with (otherwise zeros)
                 -> CodeF code env
 
   -- | Write one cell of a table variable: @T \@ (j, k) <- v@. Only tools
@@ -199,7 +201,7 @@ instance IFunctor CodeF where
       DoWhile cond body -> DoWhile cond (f env body)
       IfThenElse cond yes no -> IfThenElse cond (f env yes) (f env no)
       DrawCommand d -> DrawCommand d
-      TableAllocate pf n d t sz p q -> TableAllocate pf n d t sz p q
+      TableAllocate pf n d t sz p q v -> TableAllocate pf n d t sz p q v
       TableWrite pf n d t c v -> TableWrite pf n d t c v
       Lookup pf n t i pf' env'' env' v body alt -> Lookup pf n t i pf' env'' env' v (f env'' body) (fmap (f env') alt)
       ForEach pf n t i pf' env' env'' body -> ForEach pf n t i pf' env' env'' (f env'' body)
@@ -228,7 +230,7 @@ transformValuesM' f = \case
   Block cmds -> pure $ Block cmds
   NoOp -> pure NoOp
   DrawCommand d -> DrawCommand <$> transformDrawValuesM f d
-  TableAllocate pf n d t sz p q -> TableAllocate pf n d t <$> mapM f sz <*> f p <*> f q
+  TableAllocate pf n d t sz p q v -> TableAllocate pf n d t <$> mapM f sz <*> f p <*> f q <*> traverse f v
   TableWrite pf n d t c v -> TableWrite pf n d t <$> cell c <*> f v
     where cell = \case
             CellAt ixs -> CellAt <$> mapM f ixs
@@ -256,7 +258,7 @@ instance ITraversable CodeF where
     DoWhile c body -> DoWhile c <$> body
     IfThenElse v yes no -> IfThenElse v <$> yes <*> no
     DrawCommand d -> pure (DrawCommand d)
-    TableAllocate pf n d t sz p q -> pure (TableAllocate pf n d t sz p q)
+    TableAllocate pf n d t sz p q v -> pure (TableAllocate pf n d t sz p q v)
     TableWrite pf n d t c v -> pure (TableWrite pf n d t c v)
     Lookup pf n t i pf' env' env v body alt ->
       Lookup pf n t i pf' env' env v <$> body <*> sequenceA alt
@@ -323,7 +325,7 @@ gatherUsedVarsInCode = \case
              Set.insert (symbolVal name))
   other -> do
     case other of
-      TableAllocate _ name _ _ _ _ _ -> modify' (Set.insert (symbolVal name))
+      TableAllocate _ name _ _ _ _ _ _ -> modify' (Set.insert (symbolVal name))
       TableWrite _ name _ _ _ _ -> modify' (Set.insert (symbolVal name))
       _ -> pure ()
     void (transformValuesM' (\v -> usedVarsInValue v >> pure v) other)
@@ -441,9 +443,9 @@ pprintCode = unlines . go
         Write _ t p -> "write " ++ pprint t ++ " at " ++ pprint p
       Lookup{} -> ["{TODO: Lookup}"]
       ForEach{} -> ["{TODO: ForEach}"]
-      TableAllocate _ n _ _ sz p q ->
+      TableAllocate _ n _ _ sz p q v ->
         ["allocate " ++ name n ++ " of size (" ++ intercalate ", " (map pprint sz) ++ ") from "
-         ++ pprint p ++ " to " ++ pprint q]
+         ++ pprint p ++ " to " ++ pprint q ++ maybe "" ((" filled with " ++) . pprint) v]
       TableWrite _ n _ _ c v -> [name n ++ " @ " ++ cellText c ++ " <- " ++ pprint v]
         where cellText = \case
                 CellAt ixs -> "(" ++ intercalate ", " (map pprint ixs) ++ ")"

@@ -123,6 +123,15 @@ writeSpec = describe "tables, in a tool" $ do
     tableOrigin t `shouldBe` (-1, 0.5)
     tableStep t `shouldBe` (1, 1)
 
+  it "can be filled with a value when they're allocated" $ do
+    Just t0 <- newTable RealType [0, 0] (0, 0) (1, 1)
+    (t, x) <- run t0 (unlines
+      [ "allocate T of size (3, 2) from -3/2 + i to 3/2 - i filled with 7"
+      , "T @ (2, 1) <- 5"
+      , "x <- T @ (2, 1) + T @ (3, 2)" ])
+    x `shouldBe` 12
+    readCell RealType t [1, 1] `shouldBe` Just 7
+
   it "are written and read at the cell nearest a point" $ do
     t0 <- frozenSample
     (_, x) <- run t0 "T @ point (2.2 - 0.9i) <- 7\nx <- T @ (3, 2) + T @ point (0.1 - 0.1i)"

@@ -552,7 +552,7 @@ valueAndArithGrammar funs = mdo
         , "romao", "bamo", "broco", "corko", "viko"
         , "ice", "fire", "rose", "wheat", "forest", "ocean"
         , "winter", "spring", "summer", "fall"
-        , "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size"]
+        , "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size", "filled"]
         `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions

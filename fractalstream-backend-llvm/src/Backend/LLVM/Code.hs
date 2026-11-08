@@ -778,14 +778,15 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
 
   NoOp -> pure ()
 
-  TableAllocate pf _ d ty sizes p q -> withKnownType ty $ withKnownNat d $ do
+  TableAllocate pf _ d ty sizes p q mfill -> withKnownType ty $ withKnownNat d $ do
     (newF, _) <- maybe (throwError "Only a tool can allocate a table.") pure (asTables arena)
     sizes' <- mapM (fmap getIntegerOp . value_ getExtern arena) sizes
     (x1, y1) <- getComplexOp <$> value_ getExtern arena p
     (x2, y2) <- getComplexOp <$> value_ getExtern arena q
     ctx <- ask
+    fill <- traverse (value_ getExtern arena) mfill
     let slot = getTableSlot (getBinding ctx pf)
-    buildTableAllocate arena newF ty slot sizes' (x1, y1) (x2, y2)
+    buildTableAllocate arena newF ty slot sizes' (x1, y1) (x2, y2) fill
 
   TableWrite pf _ d ty cell v -> withKnownType ty $ withKnownNat d $ do
     (_, thawF) <- maybe (throwError "Only a tool can write to a table.") pure (asTables arena)

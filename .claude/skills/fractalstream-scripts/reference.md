@@ -358,7 +358,7 @@ number.) A power of integers used as a real is computed as a real:
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`,
 `times`, `text`, `escapes`, `vanishes`, `stops`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
-`mod`, `point`, `table_size`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
+`mod`, `point`, `table_size`, `filled`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
 names in `@config`), `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
 the color-wheel names, and the built-in function names (including `bar`, the
 complex conjugate; using one for a variable, function, or code block is
@@ -453,7 +453,8 @@ from pixel to neighboring pixel, which a viewer can't):
   viewer window (at `(viewer_width, viewer_height)`, cell (j, k) is pixel
   (j - 1, k - 1)); `allocate T of size (w, h) from p to q` covers the
   rectangle with top left p and bottom right q (the size must then be in
-  parentheses, or a single name or number). `T @ (j, k) <- v` and
+  parentheses, or a single name or number). Either form can end with
+  `filled with v` to start every cell at v instead of 0. `T @ (j, k) <- v` and
   `T @ point z <- v` write a cell.
 - A tool's table changes take effect when its handler succeeds, and
   viewers that read the table redraw. Writing a table viewers may be
@@ -496,6 +497,7 @@ define shade(c):          # named code block, parameters optional
 run shade(blue)           # `run name` with no arguments, or run name(a, b)
 allocate T of size (w, h)   # tools only: a table over the viewer's window
 allocate T of size (w, h) from p to q   # ... or over a rectangle (corners)
+allocate T of size (w, h) filled with v # ... starting every cell at v, not 0
 T @ (j, k) <- v           # tools only: write a table's cell
 T @ point z <- v          # ... the cell the point z is in
 ```

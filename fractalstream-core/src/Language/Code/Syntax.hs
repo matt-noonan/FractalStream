@@ -75,8 +75,9 @@ data StmtF
   | SDraw DrawStmt
   | SSetTable String Bool Expr Expr
     -- ^ @T \@ (j, k) <- v@, or (when the flag is set) @T \@ point z <- v@
-  | SAllocate String Expr (Maybe (Expr, Expr))
-    -- ^ @allocate T of size (w, h)@, maybe @from p to q@
+  | SAllocate String Expr (Maybe (Expr, Expr)) (Maybe Expr)
+    -- ^ @allocate T of size (w, h)@, maybe @from p to q@, maybe
+    -- @filled with v@
   | SForEach String String Stmt
     -- ^ @for each item in list: body@
   | SWithFirst String Expr String Stmt (Maybe Stmt)
@@ -114,7 +115,8 @@ stmtNames (Stmt _ node) = case node of
   SIterate p e _ c lim -> Set.fromList (patternNames p) <> exprNames e <> exprNames c <> foldMap exprNames lim
   SPass -> Set.empty
   SSetTable n _ ix v -> Set.insert n (exprNames ix <> exprNames v)
-  SAllocate n sz corners -> Set.insert n (exprNames sz <> foldMap (\(p, q) -> exprNames p <> exprNames q) corners)
+  SAllocate n sz corners fill -> Set.insert n (exprNames sz <> foldMap (\(p, q) -> exprNames p <> exprNames q) corners
+                                             <> foldMap exprNames fill)
   SDraw d -> case d of
     DrawPointAt p -> exprNames p
     DrawCircleAt _ c r -> exprNames c <> exprNames r

@@ -13,6 +13,7 @@ module Language.Table
   , readCell
   , pointCell
   , writeCell
+  , fillTable
   , newTable
   , allocateTable
   , allocateTableBytes
@@ -131,6 +132,12 @@ newTableBytes size dims origin step = do
   withForeignPtr buf $ \p -> fillBytes p 0 bytes
   frozen <- newIORef False
   pure (Table dims origin step buf frozen)
+
+-- | Fill every cell of a table with a value, in place (only for a table
+-- no script can see yet).
+fillTable :: TypeProxy t -> Table -> HaskellType t -> IO ()
+fillTable ty t v = forM_ (elementSize ty) $ \size -> withForeignPtr (tableBuffer t) $ \p ->
+  forM_ [0 .. tableCellCount t - 1] $ \cell -> pokeElement ty (p `plusPtr` (cell * size)) v
 
 -- | A new table of the given size, filled with zeros, covering the
 -- rectangle with the given corners (top left, then bottom right): its
