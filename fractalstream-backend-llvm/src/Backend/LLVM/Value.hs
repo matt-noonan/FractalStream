@@ -229,10 +229,18 @@ buildValue getExtern arena = indexedFold go'
           -- 'round' (Language.Value.Evaluator) -- 'fptoui' alone
           -- truncates toward zero instead, which previously made the
           -- LLVM and pure backends render RGB literals differently.
-          rr <- fmul r (C.double 255.0) >>= (`fadd` C.double 0.5)
-          gg <- fmul g (C.double 255.0) >>= (`fadd` C.double 0.5)
-          bb <- fmul b (C.double 255.0) >>= (`fadd` C.double 0.5)
-          ColorOp <$> fptoui rr AST.i8 <*> fptoui gg AST.i8 <*> fptoui bb AST.i8
+          -- Each component is clamped to [0, 1] first (NaN counts as 0,
+          -- as 'Language.Value.Evaluator.clamp01' has it): converting a
+          -- double outside [0, 256) to a byte is undefined, and made
+          -- `rgb(300/255, 0, 0)` come out dark.
+          let byte c = do
+                pos <- fcmp P.OGT c (C.double 0)
+                c0 <- select pos c (C.double 0)
+                below1 <- fcmp P.OLT c0 (C.double 1)
+                c1 <- select below1 c0 (C.double 1)
+                scaled <- fmul c1 (C.double 255.0) >>= (`fadd` C.double 0.5)
+                fptoui scaled AST.i8
+          ColorOp <$> byte r <*> byte g <*> byte b
 
       InvertRGB c -> c >>= \case
         ColorOp r g b -> ColorOp <$> sub (C.int8 255) r

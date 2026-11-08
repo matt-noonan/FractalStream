@@ -55,6 +55,22 @@ spec = do
         f1 `shouldBe` (rgbToColor (round (255 * 5 / 5.5 :: Double), 0, 0))
         f2 `shouldBe` (rgbToColor (round (255 * 2 / 2.5 :: Double), 0, 0))
 
+    it "clamps rgb's components to [0, 1]" $ do
+      let env = declare @"x" RealType
+              $ declare @"y" RealType
+              $ declare @"color" ColorType
+              $ declare @"[internal] iteration count" IntegerType
+              $ declare @"[internal] iteration limit" IntegerType
+              $ declare @"[internal] stuck" BooleanType
+              $ declare @"[internal] escape radius" RealType
+              $ declare @"[internal] vanishing radius" RealType
+              $ endOfDecls
+      withCompiledCode (Proxy @"color") ColorType env "color <- rgb(x, y, x / y)\n" $ \f -> do
+        invoke' env ColorType f 1.2 (-0.5) black 0 0 False 0 0 `shouldReturn` rgbToColor (255, 0, 0)
+        invoke' env ColorType f (300 / 255) 0.5 black 0 0 False 0 0 `shouldReturn` rgbToColor (255, 128, 255)
+        -- (0 / 0 is NaN, which counts as 0)
+        invoke' env ColorType f 0 0 black 0 0 False 0 0 `shouldReturn` rgbToColor (0, 0, 0)
+
     it "computes hsv and hsl colors as Data.Color does" $ do
       let env = declare @"x" RealType
               $ declare @"y" RealType
