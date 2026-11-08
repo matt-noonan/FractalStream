@@ -15,6 +15,7 @@ import FractalStream.Prelude
 
 import Language.Value
 import Data.Indexed.Functor
+import Language.Table (readCell, pointCell, Table(..))
 import Data.Color
 
 import Unsafe.Coerce
@@ -254,9 +255,9 @@ evaluator v0 ctx = case v0 of
 
     Autocolor{} -> error "`autocolor`, `nearest_autocolor`, and `get_autocolor` need the LLVM backend: \
                          \this backend can't compute them"
-    RGB r g b     -> rgbToColor ( round (255 * r ctx)
-                                , round (255 * g ctx)
-                                , round (255 * b ctx) )
+    RGB r g b     -> rgbToColor ( round (255 * clamp01 (r ctx))
+                                , round (255 * clamp01 (g ctx))
+                                , round (255 * clamp01 (b ctx)) )
     Blend s c1 c2 -> mixColors (s ctx) (c1 ctx) (c2 ctx)
 
     InvertRGB c   -> invertColor (c ctx)
@@ -305,3 +306,30 @@ evaluator v0 ctx = case v0 of
         _  -> xs !! (i - 1)
 
     Length _ xs -> fromIntegral $ length (xs ctx)
+
+    TableIndex _ t tbl_ ixs_ ->
+      let ixs = map (\ix -> fromIntegral (ix ctx)) ixs_
+      in fromMaybe (error ("Table index " ++ show ixs ++ " is out of range"))
+                   (readCell t (tbl_ ctx) ixs)
+
+    TablePoint _ t tbl_ p_ ->
+      let tbl = tbl_ ctx
+      in fromMaybe (error ("The point " ++ show (p_ ctx) ++ " is off the table"))
+                   (pointCell tbl (p_ ctx) >>= readCell t tbl)
+
+    TableSize _ _ sz tbl_ -> sizeTuple sz (map fromIntegral (tableDims (tbl_ ctx)))
+
+-- | A table's size, as the tuple 'Language.Value.Typing.tableSizeType'
+-- describes.
+sizeTuple :: TypeProxy sz -> [Int64] -> HaskellType sz
+sizeTuple sz ns = case (sz, ns) of
+  (IntegerType, [n]) -> n
+  (PairType IntegerType rest, n : ns') -> (n, sizeTuple rest ns')
+  _ -> error "internal error: a table's size doesn't fit its type"
+
+-- | Clamp a color component to [0, 1], taking NaN to 0 (the same way
+-- compiled code does, "Backend.LLVM.Value").
+clamp01 :: Double -> Double
+clamp01 x
+  | x > 0 = if x < 1 then x else 1
+  | otherwise = 0

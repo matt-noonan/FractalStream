@@ -1,6 +1,6 @@
 script: |
   @config "Test"
-  point : C as "test" := 0
+  clicked : C as "test" := 0
   pixelSize : R as "test2" := 0
 
   @viewer "Test"
@@ -8,7 +8,7 @@ script: |
 
   @tool "Clicky"
   on click-or-drag:
-    point <- z
+    clicked <- z
 
   on activated:
     pixelSize <- pixel_size

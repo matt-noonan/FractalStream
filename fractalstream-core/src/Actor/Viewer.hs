@@ -435,7 +435,7 @@ describeViewerIssues ViewerIssues{..}
   where
     problems =
       [ "ran out of scratch memory for its lists or text" | viOutOfMemory ]
-      ++ [ "indexed a list out of range" | viBadIndex ]
+      ++ [ "indexed a list or table out of range" | viBadIndex ]
 
 assertMissingViewerArgs :: forall env t
                          . EnvironmentProxy env
@@ -571,6 +571,10 @@ parseViewerScript mpx ViewerContext{..} c = do
             bindOrDeclare xp RealType x env' $ \e1 -> do
               y <- getVar InternalY RealType e1
               bindOrDeclare yp RealType y e1 body
+
+      -- (a viewer can only read tables; see 'Language.Code.TableWrite')
+      when (writesTables code) $ throwError (NoSourceRange,
+        "Only a tool can allocate a table or write to one: a viewer can only read tables.")
 
       -- Now bind all of the bookkeeping variables
       let (_, code') = (env', code)

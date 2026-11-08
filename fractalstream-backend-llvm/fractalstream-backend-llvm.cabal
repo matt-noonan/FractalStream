@@ -63,6 +63,7 @@ library
                        Backend.LLVM.Operand
                        Backend.LLVM.Value
                        Backend.LLVM.Code
+                       Backend.LLVM.Table
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
                      , llvm-hs == 12.1.0

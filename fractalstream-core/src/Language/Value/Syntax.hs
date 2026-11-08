@@ -94,6 +94,13 @@ data ExprF r
   | ERange r r
   | ELength r
   | EIndex Bool r r
+  | ETableIndex r [r]
+  | ETablePoint r r
+    -- ^ @T \@ point z@: a 2-dimensional table's cell nearest a point.
+  | ETableSize r
+    -- ^ @table_size(T)@: an integer, or a tuple of one per dimension.
+    -- ^ A table, indexed by one integer per dimension (made from an
+    -- 'EIndex' by type checking).
   | ELet String r r
     -- ^ A local binding, scoped over the second expression
   | ECall String [r]

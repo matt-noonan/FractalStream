@@ -41,6 +41,8 @@ import qualified GHC.Foreign as GHC
 import GHC.IO.Encoding (utf8)
 
 import Backend.LLVM.Code
+import Backend.LLVM.Table (newDescriptor, freeDescriptor, lookupDescriptor, withTableCallbacks)
+import Language.Table (tableFrozen)
 import Backend.LLVM.Operand (listNodeStride, pairSecondOffset)
 
 import Language.Value
@@ -146,6 +148,10 @@ toFFIArg _ t v = case t of
     str <- GHC.newCString utf8 v
     pure (argPtr str, free str)
   BooleanType -> pure (argInt8 (if v then 1 else 0), pure ())
+  -- (a viewer only reads tables: see "Backend.LLVM.Table")
+  TableType{} -> do
+    d <- newDescriptor v True
+    pure (argPtr d, freeDescriptor d)
   _ -> error ("todo: toFFIArg " ++ showType t)
 
 -- | Like 'toFFIArg', but for tool handlers, which may /set/ config variables.
@@ -208,6 +214,18 @@ toFFIArgInOut t earg v = case t of
     let writeBack = peek cell >>= \headPtr' ->
           when (headPtr' /= headPtr) (peekList itemTy headPtr' >>= setBack t)
     pure (argPtr cell, free cell >> cleanup, writeBack)
+  -- A table is passed like a list, as a cell holding its descriptor:
+  -- writing a frozen table, or allocating one, points the cell at a new
+  -- descriptor, made by the host's table callbacks.
+  TableType{} -> do
+    frozen <- readIORef (tableFrozen v)
+    d <- newDescriptor v frozen
+    cell <- malloc :: IO (Ptr (Ptr Word8))
+    poke cell d
+    -- (must run before 'withTableCallbacks' frees the new descriptor)
+    let writeBack = peek cell >>= \d' ->
+          when (d' /= d) (lookupDescriptor d' >>= mapM_ (setBack t))
+    pure (argPtr cell, free cell >> freeDescriptor d, writeBack)
   _ -> do
     (arg, free') <- toFFIArg (Proxy @"tool-arg") t v
     pure (arg, free', pure ())
@@ -644,7 +662,7 @@ compiledToolExec (dylib, session, compileLayer, nextId, _) lookupAutocolor sink 
         let attempt capacity = runToolOnce fn lookupAutocolor sink capacity ctx haskArgs >>= \case
               ToolSucceeded -> pure ()
               ToolBadIndex -> fail
-                "A list index was out of range, so this tool's changes were discarded."
+                "A list or table index was out of range, so this tool's changes were discarded."
               ToolOverflowed
                 | capacity < toolArenaMaxCapacity -> attempt (2 * capacity)
                 | otherwise -> fail $ concat
@@ -675,6 +693,7 @@ runToolOnce :: FunPtr () -> AutocolorLookup -> DrawSink -> Int
 runToolOnce fn lookupAutocolor sink capacity ctx haskArgs = do
   drawn <- newIORef []
   withDrawVTablePtrs (bufferedSink drawn sink) $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP) ->
+    withTableCallbacks $ \tableNewFP tableThawFP ->
     withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir ->
     bracket (mallocBytes capacity) free $ \arena ->
     allocaBytes 1 $ \overflowPtr -> do
@@ -694,6 +713,8 @@ runToolOnce fn lookupAutocolor sink capacity ctx haskArgs = do
             , argPtr (castFunPtrToPtr formatFP)
             , argPtr (castFunPtrToPtr autocolorCacheLookup)
             , argPtr autocolorDir
+            , argPtr (castFunPtrToPtr tableNewFP)
+            , argPtr (castFunPtrToPtr tableThawFP)
             , argPtr arena
             , argInt32 (fromIntegral capacity)
             , argPtr overflowPtr ]

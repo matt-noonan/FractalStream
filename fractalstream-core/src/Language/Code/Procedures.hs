@@ -84,6 +84,8 @@ renameStmt m (Stmt sr node) = Stmt sr $ case node of
   SLoop kind c lim body -> SLoop kind (expr c) (expr <$> lim) (go body)
   SIterate p e isWhile c lim -> SIterate (pat p) (expr e) isWhile (expr c) (expr <$> lim)
   SPass -> SPass
+  SSetTable n pt ix v -> SSetTable (var n) pt (expr ix) (expr v)
+  SAllocate n sz corners fill -> SAllocate (var n) (expr sz) (bimap expr expr <$> corners) (expr <$> fill)
   SDraw d -> SDraw $ case d of
     DrawPointAt p -> DrawPointAt (expr p)
     DrawCircleAt f c r -> DrawCircleAt f (expr c) (expr r)

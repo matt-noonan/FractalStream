@@ -58,6 +58,9 @@ simulate draw = indexedFold @(HaskellTypeM s) $ \case
 
   Block stmts -> sequence_ stmts
 
+  TableAllocate{} -> error "Only a tool can allocate a table."
+  TableWrite{} -> error "Only a tool can write to a table."
+
   NoOp -> pure ()
 
   DoWhile cond body -> loop

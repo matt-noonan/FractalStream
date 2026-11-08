@@ -344,6 +344,10 @@ spec = do
 
     it "gives the expected colors" $ do
       parseC "hsv(0, 1, 1)" `shouldBe` Right red
+      -- rgb clamps its components to [0, 1] (NaN counts as 0)
+      parseC "rgb(1.2, -0.5, 300 / 255)" `shouldBe` Right (rgbToColor (255, 0, 255))
+      parseC "rgb(0 / 0, 1, 0)" `shouldBe` Right (rgbToColor (0, 255, 0))
+      parseC "hsv(0, 1, 0 / 0)" `shouldBe` Right black
       parseC "hsv(1/3, 1, 1)" `shouldBe` Right (rgbToColor (0, 255, 0))
       parseC "hsv(2/3, 1, 1)" `shouldBe` Right (rgbToColor (0, 0, 255))
       parseC "hsv(0.37, 0, 1)" `shouldBe` Right white

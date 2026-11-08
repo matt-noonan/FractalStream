@@ -293,6 +293,33 @@ data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FS
         -> Eval (value '(env, 'IntegerT))
         -> ValueF value '(env, ty)
 
+-- | A table's element at some 1-based indices, one per dimension
+  -- (out of range is an error, as for a list).
+  TableIndex :: forall env n ty value. KnownEnvironment env
+             => SNat n
+             -> TypeProxy ty
+             -> Eval (value '(env, 'TableT n ty))
+             -> [Eval (value '(env, 'IntegerT))]
+             -> ValueF value '(env, ty)
+
+-- | A 2-dimensional table's cell nearest a point (off the table is an
+  -- error, as out of range is).
+  TablePoint :: forall env n ty value. KnownEnvironment env
+             => SNat n
+             -> TypeProxy ty
+             -> Eval (value '(env, 'TableT n ty))
+             -> Eval (value '(env, 'ComplexT))
+             -> ValueF value '(env, ty)
+
+  -- | A table's size: an integer for each dimension, as a tuple of type
+  -- @sz@ (or one integer).
+  TableSize :: forall env n ty sz value. KnownEnvironment env
+            => SNat n
+            -> TypeProxy ty
+            -> TypeProxy sz
+            -> Eval (value '(env, 'TableT n ty))
+            -> ValueF value '(env, sz)
+
 instance KnownEnvironment env => Num (Value '(env, 'IntegerT)) where
   (+) = AddI
   (-) = SubI
@@ -481,6 +508,9 @@ instance IFunctor ValueF where
     Range {} -> EnvType (ListType IntegerType)
     Length {} -> EnvType IntegerType
     Index t _ _ _ -> EnvType t
+    TableIndex _ t _ _ -> EnvType t
+    TablePoint _ t _ _ -> EnvType t
+    TableSize _ _ t _ -> EnvType t
 
   imap :: forall a b i
         . (forall j. EnvTypeProxy j -> Eval (a j) -> Eval (b j))
@@ -605,6 +635,12 @@ instance IFunctor ValueF where
       Length t xs -> withKnownType t $ Length t (f (withEnv (ListType t)) xs)
       Index t cyc xs i -> withKnownType t $
         Index t cyc (f (withEnv (ListType t)) xs) (f (withEnv IntegerType) i)
+      TableIndex n t tbl ixs -> withKnownType t $ withKnownNat n $
+        TableIndex n t (f (withEnv (TableType n t)) tbl) (map (f (withEnv IntegerType)) ixs)
+      TablePoint n t tbl p -> withKnownType t $ withKnownNat n $
+        TablePoint n t (f (withEnv (TableType n t)) tbl) (f (withEnv ComplexType) p)
+      TableSize n t sz tbl -> withKnownType t $ withKnownNat n $
+        TableSize n t sz (f (withEnv (TableType n t)) tbl)
 
 ---------------------------------------------------------------------------------
 -- Indexed traversable instance for values
@@ -720,6 +756,9 @@ instance ITraversable ValueF  where
     Range mlo mhi -> Range <$> mlo <*> mhi
     Length t mlst -> Length t <$> mlst
     Index t cyc mlst mi -> Index t cyc <$> mlst <*> mi
+    TableIndex n t mtbl mixs -> TableIndex n t <$> mtbl <*> sequenceA mixs
+    TablePoint n t mtbl mp -> TablePoint n t <$> mtbl <*> mp
+    TableSize n t sz mtbl -> TableSize n t sz <$> mtbl
 
 instance Show (Value et) where show = pprint
 
@@ -741,6 +780,7 @@ pprint = indexedFold @PrecString @ValueF go
       VoidType  -> show c
       ImageType -> show c
       TextType  -> show c
+      TableType{} -> show c
       PairType (t1 :: TypeProxy t1) (t2 :: TypeProxy t2) ->
         let (x,y) = c
         in concat [ "(", go @'(Env et', t1) (Const (Scalar t1 x)), ", "
@@ -833,6 +873,9 @@ pprint = indexedFold @PrecString @ValueF go
     Range lo hi -> fun "range" [lo, hi]
     Length _ x -> concat ["|", x, "|"]
     Index _ cyc lst i -> concat ["(", lst, if cyc then "@@" else "@", i, ")"]
+    TableIndex _ _ tbl ixs -> concat ["(", tbl, " @ (", intercalate ", " ixs, "))"]
+    TablePoint _ _ tbl p -> concat ["(", tbl, " @ point ", p, ")"]
+    TableSize _ _ _ tbl -> concat ["table_size(", tbl, ")"]
 
   fun f args = concat [f, "(", intercalate ", " args, ")"]
   binop op x y = concat ["(", x, " ", op, " ", y, ")"]
