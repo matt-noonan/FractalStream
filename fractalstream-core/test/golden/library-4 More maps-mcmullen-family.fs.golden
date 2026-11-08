@@ -28,18 +28,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   block:
                     let `z` = (2:R:C * sqrt(λ)) in:
                       block:
-                        let `[internal] fresh #27` = 0 in:
-                          let `[internal] fresh #28` = [internal] iteration limit in:
+                        let `[internal] fresh #30` = 0 in:
+                          let `[internal] fresh #31` = [internal] iteration limit in:
                             block:
-                              if (!([internal] escape radius < |z|) and ([internal] fresh #27 < [internal] fresh #28)) then:
-                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #27 < [internal] fresh #28)):
+                              if (!([internal] escape radius < |z|) and ([internal] fresh #30 < [internal] fresh #31)) then:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #30 < [internal] fresh #31)):
                                   block:
                                     set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + (λ / ([internal] f.z #0 ^ 2:R:C)))
-                                    set `[internal] fresh #27` := ([internal] fresh #27 + 1)
+                                    set `[internal] fresh #30` := ([internal] fresh #30 + 1)
                               else:
                                 no-op
-                              set `[internal] iteration count` := [internal] fresh #27
-                              set `[internal] stuck` := ([internal] fresh #27 = [internal] fresh #28)
+                              set `[internal] iteration count` := [internal] fresh #30
+                              set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
                         set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 12:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 0 0 255), Color 255 255 255)
                   if [internal] sphere view then:
                     block:
@@ -77,18 +77,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    let `[internal] fresh #27` = 0 in:
-                      let `[internal] fresh #28` = [internal] iteration limit in:
+                    let `[internal] fresh #30` = 0 in:
+                      let `[internal] fresh #31` = [internal] iteration limit in:
                         block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #27 < [internal] fresh #28)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #27 < [internal] fresh #28)):
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #30 < [internal] fresh #31)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #30 < [internal] fresh #31)):
                               block:
                                 set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + (λ / ([internal] f.z #0 ^ 2:R:C)))
-                                set `[internal] fresh #27` := ([internal] fresh #27 + 1)
+                                set `[internal] fresh #30` := ([internal] fresh #30 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #27
-                          set `[internal] stuck` := ([internal] fresh #27 = [internal] fresh #28)
+                          set `[internal] iteration count` := [internal] fresh #30
+                          set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
                     set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 6:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 255 100 0), blend(0.333, Color 255 255 255, Color 255 255 0))
                   if [internal] sphere view then:
                     block:

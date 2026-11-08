@@ -25,11 +25,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    let `[internal] fresh #30` = 0 in:
-                      let `[internal] fresh #31` = [internal] iteration limit in:
+                    let `[internal] fresh #33` = 0 in:
+                      let `[internal] fresh #34` = [internal] iteration limit in:
                         block:
-                          if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #30 < [internal] fresh #31)) then:
-                            do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #30 < [internal] fresh #31)):
+                          if (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #33 < [internal] fresh #34)) then:
+                            do-while (!let [internal] stop.z #0 = z in (escape_radius < |[internal] stop.z #0|) and ([internal] fresh #33 < [internal] fresh #34)):
                               block:
                                 block:
                                   set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
@@ -42,11 +42,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                               set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
                                       else:
                                         no-op
-                                set `[internal] fresh #30` := ([internal] fresh #30 + 1)
+                                set `[internal] fresh #33` := ([internal] fresh #33 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #30
-                          set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
+                          set `[internal] iteration count` := [internal] fresh #33
+                          set `[internal] stuck` := ([internal] fresh #33 = [internal] fresh #34)
                     if [internal] stuck then:
                       block:
                         set `color` := Color 0 0 0

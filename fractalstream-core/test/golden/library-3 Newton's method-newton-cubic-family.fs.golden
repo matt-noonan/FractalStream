@@ -36,17 +36,17 @@ let `[internal] vanishing radius` = tol in:
                                   block:
                                     let `lastZ` = 0:R:C in:
                                       block:
-                                        let `[internal] fresh #32` = 0 in:
-                                          let `[internal] fresh #33` = [internal] iteration limit in:
+                                        let `[internal] fresh #35` = 0 in:
+                                          let `[internal] fresh #36` = [internal] iteration limit in:
                                             block:
-                                              do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #32 < [internal] fresh #33)):
+                                              do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #35 < [internal] fresh #36)):
                                                 block:
                                                   block:
                                                     set `lastZ` := z
                                                     set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
-                                                  set `[internal] fresh #32` := ([internal] fresh #32 + 1)
-                                              set `[internal] iteration count` := [internal] fresh #32
-                                              set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+                                                  set `[internal] fresh #35` := ([internal] fresh #35 + 1)
+                                              set `[internal] iteration count` := [internal] fresh #35
+                                              set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
                                         block:
                                           block:
                                             let `c` = Color 128 128 128 in:
@@ -111,17 +111,17 @@ let `[internal] vanishing radius` = tol in:
                               block:
                                 let `lastZ` = 0:R:C in:
                                   block:
-                                    let `[internal] fresh #32` = 0 in:
-                                      let `[internal] fresh #33` = [internal] iteration limit in:
+                                    let `[internal] fresh #35` = 0 in:
+                                      let `[internal] fresh #36` = [internal] iteration limit in:
                                         block:
-                                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #32 < [internal] fresh #33)):
+                                          do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #35 < [internal] fresh #36)):
                                             block:
                                               block:
                                                 set `lastZ` := z
                                                 set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
-                                              set `[internal] fresh #32` := ([internal] fresh #32 + 1)
-                                          set `[internal] iteration count` := [internal] fresh #32
-                                          set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+                                              set `[internal] fresh #35` := ([internal] fresh #35 + 1)
+                                          set `[internal] iteration count` := [internal] fresh #35
+                                          set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
                                     block:
                                       block:
                                         let `c` = Color 128 128 128 in:

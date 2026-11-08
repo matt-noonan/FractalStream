@@ -38,17 +38,17 @@ let `[internal] vanishing radius` = minRadius in:
                                       let `[internal] draw_rays.dynamical #0` = False in:
                                         block:
                                           block:
-                                            let `[internal] fresh #38` = 0 in:
-                                              let `[internal] fresh #39` = [internal] iteration limit in:
+                                            let `[internal] fresh #41` = 0 in:
+                                              let `[internal] fresh #42` = [internal] iteration limit in:
                                                 block:
-                                                  do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #38 < [internal] fresh #39)):
+                                                  do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #41 < [internal] fresh #42)):
                                                     block:
                                                       block:
                                                         set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
                                                         set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
-                                                      set `[internal] fresh #38` := ([internal] fresh #38 + 1)
-                                                  set `[internal] iteration count` := [internal] fresh #38
-                                                  set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
+                                                      set `[internal] fresh #41` := ([internal] fresh #41 + 1)
+                                                  set `[internal] iteration count` := [internal] fresh #41
+                                                  set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
                                             if [internal] stuck then:
                                               block:
                                                 set `color` := Color 0 0 0
@@ -63,49 +63,49 @@ let `[internal] vanishing radius` = minRadius in:
                                                 block:
                                                   let `λ` = 1:R:C in:
                                                     block:
-                                                      let `[internal] fresh #39` = 0 in:
-                                                        let `[internal] fresh #40` = [internal] iteration limit in:
+                                                      let `[internal] fresh #42` = 0 in:
+                                                        let `[internal] fresh #43` = [internal] iteration limit in:
                                                           block:
-                                                            do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #39 < [internal] fresh #40)):
+                                                            do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #42 < [internal] fresh #43)):
                                                               block:
                                                                 block:
                                                                   set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
                                                                   set `λ` := (let [internal] f'.z #0 = z in (2:R:C * [internal] f'.z #0) * λ)
-                                                                set `[internal] fresh #39` := ([internal] fresh #39 + 1)
-                                                            set `[internal] iteration count` := [internal] fresh #39
-                                                            set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
+                                                                set `[internal] fresh #42` := ([internal] fresh #42 + 1)
+                                                            set `[internal] iteration count` := [internal] fresh #42
+                                                            set `[internal] stuck` := ([internal] fresh #42 = [internal] fresh #43)
                                                       let `period` = [internal] iteration count in:
                                                         block:
                                                           let `counter` = 0 in:
                                                             block:
-                                                              let `[internal] fresh #41` = 0 in:
-                                                                let `[internal] fresh #42` = [internal] iteration limit in:
+                                                              let `[internal] fresh #44` = 0 in:
+                                                                let `[internal] fresh #45` = [internal] iteration limit in:
                                                                   block:
-                                                                    if ((counter < (extra_iterations * period)) and ([internal] fresh #41 < [internal] fresh #42)) then:
-                                                                      do-while ((counter < (extra_iterations * period)) and ([internal] fresh #41 < [internal] fresh #42)):
+                                                                    if ((counter < (extra_iterations * period)) and ([internal] fresh #44 < [internal] fresh #45)) then:
+                                                                      do-while ((counter < (extra_iterations * period)) and ([internal] fresh #44 < [internal] fresh #45)):
                                                                         block:
                                                                           block:
                                                                             set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
                                                                             set `counter` := (counter + 1)
-                                                                          set `[internal] fresh #41` := ([internal] fresh #41 + 1)
+                                                                          set `[internal] fresh #44` := ([internal] fresh #44 + 1)
                                                                     else:
                                                                       no-op
-                                                                    set `[internal] iteration count` := [internal] fresh #41
-                                                                    set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
+                                                                    set `[internal] iteration count` := [internal] fresh #44
+                                                                    set `[internal] stuck` := ([internal] fresh #44 = [internal] fresh #45)
                                                               set `z` := z0
-                                                              let `[internal] fresh #41` = 0 in:
-                                                                let `[internal] fresh #42` = [internal] iteration limit in:
+                                                              let `[internal] fresh #44` = 0 in:
+                                                                let `[internal] fresh #45` = [internal] iteration limit in:
                                                                   block:
-                                                                    if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #41 < [internal] fresh #42)) then:
-                                                                      do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #41 < [internal] fresh #42)):
+                                                                    if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #44 < [internal] fresh #45)) then:
+                                                                      do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #44 < [internal] fresh #45)):
                                                                         block:
                                                                           block:
                                                                             set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                                          set `[internal] fresh #41` := ([internal] fresh #41 + 1)
+                                                                          set `[internal] fresh #44` := ([internal] fresh #44 + 1)
                                                                     else:
                                                                       no-op
-                                                                    set `[internal] iteration count` := [internal] fresh #41
-                                                                    set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
+                                                                    set `[internal] iteration count` := [internal] fresh #44
+                                                                    set `[internal] stuck` := ([internal] fresh #44 = [internal] fresh #45)
                                                               let `preperiod` = [internal] iteration count in:
                                                                 block:
                                                                   let `s` = (preperiod:R / period:R) in:
@@ -169,17 +169,17 @@ let `[internal] vanishing radius` = minRadius in:
                                   let `[internal] draw_rays.dynamical #0` = True in:
                                     block:
                                       block:
-                                        let `[internal] fresh #38` = 0 in:
-                                          let `[internal] fresh #39` = [internal] iteration limit in:
+                                        let `[internal] fresh #41` = 0 in:
+                                          let `[internal] fresh #42` = [internal] iteration limit in:
                                             block:
-                                              do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #38 < [internal] fresh #39)):
+                                              do-while (!((||(z - w)|| < [internal] vanishing radius) or ([internal] escape radius < |z|)) and ([internal] fresh #41 < [internal] fresh #42)):
                                                 block:
                                                   block:
                                                     set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
                                                     set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
-                                                  set `[internal] fresh #38` := ([internal] fresh #38 + 1)
-                                              set `[internal] iteration count` := [internal] fresh #38
-                                              set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
+                                                  set `[internal] fresh #41` := ([internal] fresh #41 + 1)
+                                              set `[internal] iteration count` := [internal] fresh #41
+                                              set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
                                         if [internal] stuck then:
                                           block:
                                             set `color` := Color 0 0 0
@@ -194,49 +194,49 @@ let `[internal] vanishing radius` = minRadius in:
                                             block:
                                               let `λ` = 1:R:C in:
                                                 block:
-                                                  let `[internal] fresh #39` = 0 in:
-                                                    let `[internal] fresh #40` = [internal] iteration limit in:
+                                                  let `[internal] fresh #42` = 0 in:
+                                                    let `[internal] fresh #43` = [internal] iteration limit in:
                                                       block:
-                                                        do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #39 < [internal] fresh #40)):
+                                                        do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #42 < [internal] fresh #43)):
                                                           block:
                                                             block:
                                                               set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
                                                               set `λ` := (let [internal] f'.z #0 = z in (2:R:C * [internal] f'.z #0) * λ)
-                                                            set `[internal] fresh #39` := ([internal] fresh #39 + 1)
-                                                        set `[internal] iteration count` := [internal] fresh #39
-                                                        set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
+                                                            set `[internal] fresh #42` := ([internal] fresh #42 + 1)
+                                                        set `[internal] iteration count` := [internal] fresh #42
+                                                        set `[internal] stuck` := ([internal] fresh #42 = [internal] fresh #43)
                                                   let `period` = [internal] iteration count in:
                                                     block:
                                                       let `counter` = 0 in:
                                                         block:
-                                                          let `[internal] fresh #41` = 0 in:
-                                                            let `[internal] fresh #42` = [internal] iteration limit in:
+                                                          let `[internal] fresh #44` = 0 in:
+                                                            let `[internal] fresh #45` = [internal] iteration limit in:
                                                               block:
-                                                                if ((counter < (extra_iterations * period)) and ([internal] fresh #41 < [internal] fresh #42)) then:
-                                                                  do-while ((counter < (extra_iterations * period)) and ([internal] fresh #41 < [internal] fresh #42)):
+                                                                if ((counter < (extra_iterations * period)) and ([internal] fresh #44 < [internal] fresh #45)) then:
+                                                                  do-while ((counter < (extra_iterations * period)) and ([internal] fresh #44 < [internal] fresh #45)):
                                                                     block:
                                                                       block:
                                                                         set `w` := let [internal] f2.w #0 = w in (((([internal] f2.w #0 ^ 2:R:C) + c) ^ 2:R:C) + c)
                                                                         set `counter` := (counter + 1)
-                                                                      set `[internal] fresh #41` := ([internal] fresh #41 + 1)
+                                                                      set `[internal] fresh #44` := ([internal] fresh #44 + 1)
                                                                 else:
                                                                   no-op
-                                                                set `[internal] iteration count` := [internal] fresh #41
-                                                                set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
+                                                                set `[internal] iteration count` := [internal] fresh #44
+                                                                set `[internal] stuck` := ([internal] fresh #44 = [internal] fresh #45)
                                                           set `z` := z0
-                                                          let `[internal] fresh #41` = 0 in:
-                                                            let `[internal] fresh #42` = [internal] iteration limit in:
+                                                          let `[internal] fresh #44` = 0 in:
+                                                            let `[internal] fresh #45` = [internal] iteration limit in:
                                                               block:
-                                                                if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #41 < [internal] fresh #42)) then:
-                                                                  do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #41 < [internal] fresh #42)):
+                                                                if (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #44 < [internal] fresh #45)) then:
+                                                                  do-while (!(||(z - w)|| < [internal] vanishing radius) and ([internal] fresh #44 < [internal] fresh #45)):
                                                                     block:
                                                                       block:
                                                                         set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                                      set `[internal] fresh #41` := ([internal] fresh #41 + 1)
+                                                                      set `[internal] fresh #44` := ([internal] fresh #44 + 1)
                                                                 else:
                                                                   no-op
-                                                                set `[internal] iteration count` := [internal] fresh #41
-                                                                set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
+                                                                set `[internal] iteration count` := [internal] fresh #44
+                                                                set `[internal] stuck` := ([internal] fresh #44 = [internal] fresh #45)
                                                           let `preperiod` = [internal] iteration count in:
                                                             block:
                                                               let `s` = (preperiod:R / period:R) in:

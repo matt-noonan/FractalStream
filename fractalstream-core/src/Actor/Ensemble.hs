@@ -786,37 +786,71 @@ checkViewer configEnv env myTools ViewerFields{..} = do
   viewerCheck
   checkViewerTools configEnv myTools ViewerFields{..}
 
--- | What a viewer's code is given besides its configuration: for a
--- complex viewer, whether it's showing the sphere, and the globe's
--- orientation (see "Actor.Viewer.Sphere").
+-- | What a viewer's code is given besides its configuration: its
+-- window's geometry (see 'viewerGeometry'), and for a complex viewer,
+-- whether it's showing the sphere, and the globe's orientation (see
+-- "Actor.Viewer.Sphere").
 viewerViewEntries :: Coordinate -> [(String, SomeType)]
-viewerViewEntries = \case
+viewerViewEntries coord = viewerGeometryEntries coord ++ case coord of
   ComplexCoordinate _ -> sphereViewEntries
   RealCoordinates _ _ -> []
 
--- | The live values of 'viewerViewEntries', from a viewer's view.
-viewerViewContext :: Coordinate -> Variable ViewKind -> Variable Rotation
-                  -> Either String (SomeContext DynamicValue)
-viewerViewContext coord viewV rotationV = case coord of
-  RealCoordinates _ _ -> Right (SomeContext EmptyContext)
-  ComplexCoordinate _ -> foldM addOne (SomeContext EmptyContext) entries
+-- | A live value of some type, for a viewer's code or its tools to read.
+data LiveValue where
+  LiveValue :: TypeProxy t -> Dynamic (HaskellType t) -> LiveValue
+
+-- | A viewer's geometry, as its code and its tools can read it: the
+-- size of its image in pixels (@viewer_width@, @viewer_height@), and
+-- its view's center (@viewer_center@ for a complex viewer, and
+-- @viewer_center_x@, @viewer_center_y@ for a real one). On the sphere,
+-- the center is the globe's on the screen, 0.
+viewerGeometry :: Coordinate -> Dynamic Dimensions -> Dynamic (Double, Double)
+               -> [(String, LiveValue)]
+viewerGeometry coord size center =
+  [ ("viewer_width",  LiveValue IntegerType (fromIntegral . fst . dimToPair <$> size))
+  , ("viewer_height", LiveValue IntegerType (fromIntegral . snd . dimToPair <$> size)) ]
+  ++ case coord of
+    ComplexCoordinate _ -> [ ("viewer_center", LiveValue ComplexType (uncurry (:+) <$> center)) ]
+    RealCoordinates _ _ -> [ ("viewer_center_x", LiveValue RealType (fst <$> center))
+                           , ("viewer_center_y", LiveValue RealType (snd <$> center)) ]
+
+-- | The names and types of 'viewerGeometry'.
+viewerGeometryEntries :: Coordinate -> [(String, SomeType)]
+viewerGeometryEntries coord =
+  [ (n, SomeType ty) | (n, LiveValue ty _) <- viewerGeometry coord (pure (Dimensions (0, 0))) (pure (0, 0)) ]
+
+-- | A viewer's geometry, as read-only arguments for its tools.
+viewerGeometryArgs :: Coordinate -> Dynamic Dimensions -> Dynamic (Double, Double)
+                   -> Either String (SomeContext EventArgument_)
+viewerGeometryArgs coord size center = foldM addOne (SomeContext EmptyContext) (viewerGeometry coord size center)
   where
-    entries :: [(String, Either (Dynamic Bool) (Dynamic Double))]
-    entries = (sphereViewName, Left ((== SphereView) <$> dyn viewV))
-            : (sphereShadingName, Right (dyn sphereShading))
-            : [ (n, Right ((!! k) . matrixEntries <$> dyn rotationV)) | (k, n) <- zip [0 ..] rotationNames ]
-    matrixEntries r = let ((a, b, c), (d, e, f), (g, h, i)) = rotationMatrix r in [a, b, c, d, e, f, g, h, i]
-    addOne :: SomeContext DynamicValue -> (String, Either (Dynamic Bool) (Dynamic Double))
-           -> Either String (SomeContext DynamicValue)
-    addOne (SomeContext acc) (name, value) = case someSymbolVal name of
-      SomeSymbol nameProxy -> case value of
-        Left b -> merge (Bind nameProxy BooleanType b EmptyContext)
-        Right x -> merge (Bind nameProxy RealType x EmptyContext)
-      where
-        merge :: forall e. KnownEnvironment e => Context DynamicValue e -> Either String (SomeContext DynamicValue)
-        merge one = case acc <#> one of
+    addOne :: SomeContext EventArgument_ -> (String, LiveValue) -> Either String (SomeContext EventArgument_)
+    addOne (SomeContext acc) (name, LiveValue ty v) = withKnownType ty $ case someSymbolVal name of
+      SomeSymbol nameProxy ->
+        case acc <#> Bind nameProxy ty (EventArgument (Just <$> getDynamic v) Nothing) EmptyContext of
           Left err -> Left err
           Right merged -> Right (withEnvironment (contextToEnv merged) (SomeContext merged))
+
+-- | The live values of 'viewerViewEntries', from a viewer's size and
+-- view.
+viewerViewContext :: Coordinate -> Variable Dimensions -> Variable (Double, Double)
+                  -> Variable ViewKind -> Variable Rotation
+                  -> Either String (SomeContext DynamicValue)
+viewerViewContext coord sizeV centerV viewV rotationV = foldM addOne (SomeContext EmptyContext) entries
+  where
+    entries :: [(String, LiveValue)]
+    entries = viewerGeometry coord (dyn sizeV) (dyn centerV) ++ case coord of
+      RealCoordinates _ _ -> []
+      ComplexCoordinate _ ->
+        (sphereViewName, LiveValue BooleanType ((== SphereView) <$> dyn viewV))
+        : (sphereShadingName, LiveValue RealType (dyn sphereShading))
+        : [ (n, LiveValue RealType ((!! k) . matrixEntries <$> dyn rotationV)) | (k, n) <- zip [0 ..] rotationNames ]
+    matrixEntries r = let ((a, b, c), (d, e, f), (g, h, i)) = rotationMatrix r in [a, b, c, d, e, f, g, h, i]
+    addOne :: SomeContext DynamicValue -> (String, LiveValue) -> Either String (SomeContext DynamicValue)
+    addOne (SomeContext acc) (name, LiveValue ty v) = withKnownType ty $ case someSymbolVal name of
+      SomeSymbol nameProxy -> case acc <#> Bind nameProxy ty v EmptyContext of
+        Left err -> Left err
+        Right merged -> Right (withEnvironment (contextToEnv merged) (SomeContext merged))
 
 -- | Type-check the tools targeting a viewer, with the coordinate and
 -- limits 'buildComplexViewer' gives them.
@@ -830,7 +864,7 @@ checkViewerTools configEnv myTools ViewerFields{..} = do
                     , fromMaybe defaultMaxRadius mEscPV
                     , fromMaybe defaultMinRadius mVanPV
                     )
-  forM_ myTools (checkTool configEnv vfCoord toolLimits vfPixelVar)
+  forM_ myTools (checkTool (configEnv ++ viewerGeometryEntries vfCoord) vfCoord toolLimits vfPixelVar)
 
 -- | The pure, allocation-free check of a tool's own code, which in the
 -- app is otherwise first type-checked by 'Actor.Event.buildHandlerWith'.
@@ -1305,6 +1339,10 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
           SphereView -> (1 / 128, maybe defaultSpherePixelSize (const pixelVal) vfPixelSize)
     cvViewV      <- newVariable vfView
     cvRotationV  <- newVariable originalRotation
+    -- (on the sphere, the globe is centered on the screen)
+    cvCenterV    <- newVariable (case vfView of
+                                   PlaneView -> centerVal
+                                   SphereView -> (0, 0))
     cvSizeV      <- newVariable (Dimensions (600, 600))
     cvPositionV  <- newVariable (Dimensions (100 + 30 * n, 100 + 30 * n))
     cvCanResizeV <- newVariable True
@@ -1386,7 +1424,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
           Left err -> Left (NoSourceRange, err)
           Right (SomeContext (configOnly :: Context DynamicValue cEnv0)) ->
             -- (with the viewer's view, for a complex viewer)
-            case viewerViewContext vfCoord cvViewV cvRotationV of
+            case viewerViewContext vfCoord cvSizeV cvCenterV cvViewV cvRotationV of
               Left err -> Left (NoSourceRange, err)
               Right (SomeContext viewCtx) -> case configOnly <#> viewCtx of
                 Left err -> Left (NoSourceRange, err)
@@ -1449,6 +1487,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvView = vfView
               , cvViewV = cvViewV
               , cvRotationV = cvRotationV
+              , cvCenterV = cvCenterV
               , cvOriginalRotation = originalRotation
               , cvSpherePixelSize = spherePixel
               , cvPixel = cvPixelM
@@ -1579,7 +1618,10 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
         vCoordinate = cvCoord
         vView = cvViewV
         vRotation = cvRotationV
-    vCenter <- newVariable vOriginalCenter
+    -- (the same variable the viewer's code and tools read the
+    -- center from, starting over from the original view on a rebuild)
+    let vCenter = cvCenterV
+    setValue' vCenter vOriginalCenter
     vPixelSize <- newVariable vOriginalPixelSize
     vAspect <- newVariable vOriginalAspect
 
@@ -1588,7 +1630,14 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
     (vDrawCmds, vDrawCmdsChanged, vDrawSink) <- makeToolRunnerForLayer (bToolRunnerFactory backend)
 
     let lookupAutocolor = autocolorLookup autocolorState
-        vBuildToolHandler = runTool (bToolRunner backend) lookupAutocolor vDrawSink
+        -- (a tool is also given its viewer's geometry)
+        vBuildToolHandler layer args script =
+          case viewerGeometryArgs cvCoord (dyn vSize) (dyn vCenter) of
+            Left err -> pure (Left err)
+            Right geometry -> case SomeContext' (Right args) <> SomeContext' (Right geometry) of
+              SomeContext' (Left err) -> pure (Left err)
+              SomeContext' (Right args') ->
+                runTool (bToolRunner backend) lookupAutocolor vDrawSink layer args' script
 
     -- The overlay's dispatcher is built the first time it's needed (and
     -- kept, as a tool's is once it's selected); the lock also keeps two

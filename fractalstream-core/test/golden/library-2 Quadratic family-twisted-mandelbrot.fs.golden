@@ -28,11 +28,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   block:
                     let `z` = 0:R:C in:
                       block:
-                        let `[internal] fresh #47` = 0 in:
-                          let `[internal] fresh #48` = [internal] iteration limit in:
+                        let `[internal] fresh #50` = 0 in:
+                          let `[internal] fresh #51` = [internal] iteration limit in:
                             block:
-                              if (!([internal] escape radius < |z|) and ([internal] fresh #47 < [internal] fresh #48)) then:
-                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #47 < [internal] fresh #48)):
+                              if (!([internal] escape radius < |z|) and ([internal] fresh #50 < [internal] fresh #51)) then:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #50 < [internal] fresh #51)):
                                   block:
                                     block:
                                       block:
@@ -47,11 +47,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                       set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
                                               else:
                                                 no-op
-                                    set `[internal] fresh #47` := ([internal] fresh #47 + 1)
+                                    set `[internal] fresh #50` := ([internal] fresh #50 + 1)
                               else:
                                 no-op
-                              set `[internal] iteration count` := [internal] fresh #47
-                              set `[internal] stuck` := ([internal] fresh #47 = [internal] fresh #48)
+                              set `[internal] iteration count` := [internal] fresh #50
+                              set `[internal] stuck` := ([internal] fresh #50 = [internal] fresh #51)
                         block:
                           let `[colorizer] Parameter space: z` = z in:
                             block:
@@ -105,11 +105,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    let `[internal] fresh #47` = 0 in:
-                      let `[internal] fresh #48` = [internal] iteration limit in:
+                    let `[internal] fresh #50` = 0 in:
+                      let `[internal] fresh #51` = [internal] iteration limit in:
                         block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #47 < [internal] fresh #48)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #47 < [internal] fresh #48)):
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #50 < [internal] fresh #51)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #50 < [internal] fresh #51)):
                               block:
                                 block:
                                   block:
@@ -124,11 +124,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                   set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
                                           else:
                                             no-op
-                                set `[internal] fresh #47` := ([internal] fresh #47 + 1)
+                                set `[internal] fresh #50` := ([internal] fresh #50 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #47
-                          set `[internal] stuck` := ([internal] fresh #47 = [internal] fresh #48)
+                          set `[internal] iteration count` := [internal] fresh #50
+                          set `[internal] stuck` := ([internal] fresh #50 = [internal] fresh #51)
                     block:
                       let `[colorizer] Twisted dynamical plane: z` = z in:
                         block:

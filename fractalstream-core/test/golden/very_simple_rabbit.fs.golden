@@ -25,18 +25,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    let `[internal] fresh #26` = 0 in:
-                      let `[internal] fresh #27` = [internal] iteration limit in:
+                    let `[internal] fresh #29` = 0 in:
+                      let `[internal] fresh #30` = [internal] iteration limit in:
                         block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)):
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #29 < [internal] fresh #30)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #29 < [internal] fresh #30)):
                               block:
                                 set `z` := (((z ^ 2:R:C) + -0.12256:C) + (0.74486:C * 0.0 :+ 1.0))
-                                set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                                set `[internal] fresh #29` := ([internal] fresh #29 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #26
-                          set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                          set `[internal] iteration count` := [internal] fresh #29
+                          set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
                     set `color` := if ([internal] escape radius < |z|) then Color 255 255 255 else Color 0 0 0
                   if [internal] sphere view then:
                     block:

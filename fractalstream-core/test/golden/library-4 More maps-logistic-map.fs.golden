@@ -33,23 +33,23 @@ let `[internal] vanishing radius` = vanishing_radius in:
                               block:
                                 let `best` = outer in:
                                   block:
-                                    let `[internal] fresh #32` = 0 in:
-                                      let `[internal] fresh #33` = warmup in:
+                                    let `[internal] fresh #35` = 0 in:
+                                      let `[internal] fresh #36` = warmup in:
                                         block:
-                                          if (True and ([internal] fresh #32 < [internal] fresh #33)) then:
-                                            do-while (True and ([internal] fresh #32 < [internal] fresh #33)):
+                                          if (True and ([internal] fresh #35 < [internal] fresh #36)) then:
+                                            do-while (True and ([internal] fresh #35 < [internal] fresh #36)):
                                               block:
                                                 set `x` := ((r * x) * (1:R - x))
-                                                set `[internal] fresh #32` := ([internal] fresh #32 + 1)
+                                                set `[internal] fresh #35` := ([internal] fresh #35 + 1)
                                           else:
                                             no-op
-                                          set `[internal] iteration count` := [internal] fresh #32
-                                          set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
-                                    let `[internal] fresh #32` = 0 in:
-                                      let `[internal] fresh #33` = [internal] iteration limit in:
+                                          set `[internal] iteration count` := [internal] fresh #35
+                                          set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
+                                    let `[internal] fresh #35` = 0 in:
+                                      let `[internal] fresh #36` = [internal] iteration limit in:
                                         block:
-                                          if (!(|(x - x0)| < [internal] vanishing radius) and ([internal] fresh #32 < [internal] fresh #33)) then:
-                                            do-while (!(|(x - x0)| < [internal] vanishing radius) and ([internal] fresh #32 < [internal] fresh #33)):
+                                          if (!(|(x - x0)| < [internal] vanishing radius) and ([internal] fresh #35 < [internal] fresh #36)) then:
+                                            do-while (!(|(x - x0)| < [internal] vanishing radius) and ([internal] fresh #35 < [internal] fresh #36)):
                                               block:
                                                 block:
                                                   set `x` := ((r * x) * (1:R - x))
@@ -58,11 +58,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                       set `best` := |(x - x0)|
                                                   else:
                                                     no-op
-                                                set `[internal] fresh #32` := ([internal] fresh #32 + 1)
+                                                set `[internal] fresh #35` := ([internal] fresh #35 + 1)
                                           else:
                                             no-op
-                                          set `[internal] iteration count` := [internal] fresh #32
-                                          set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+                                          set `[internal] iteration count` := [internal] fresh #35
+                                          set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
                                     set `color` := blend((best / outer), Color 255 255 255, Color 0 0 0)
                   if [internal] sphere view then:
                     block:

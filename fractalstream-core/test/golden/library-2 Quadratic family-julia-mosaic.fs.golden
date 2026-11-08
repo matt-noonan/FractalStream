@@ -33,18 +33,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
                               block:
                                 let `z` = ((((x:C + (0.0 :+ 1.0 * y:C)) - (((1:R:C + 0.0 :+ 1.0) * size:C) / 2:R:C)) * scale:C) / size:C) in:
                                   block:
-                                    let `[internal] fresh #38` = 0 in:
-                                      let `[internal] fresh #39` = [internal] iteration limit in:
+                                    let `[internal] fresh #41` = 0 in:
+                                      let `[internal] fresh #42` = [internal] iteration limit in:
                                         block:
-                                          if (!([internal] escape radius < |z|) and ([internal] fresh #38 < [internal] fresh #39)) then:
-                                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #38 < [internal] fresh #39)):
+                                          if (!([internal] escape radius < |z|) and ([internal] fresh #41 < [internal] fresh #42)) then:
+                                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #41 < [internal] fresh #42)):
                                               block:
                                                 set `z` := ((z ^ 2:R:C) + C)
-                                                set `[internal] fresh #38` := ([internal] fresh #38 + 1)
+                                                set `[internal] fresh #41` := ([internal] fresh #41 + 1)
                                           else:
                                             no-op
-                                          set `[internal] iteration count` := [internal] fresh #38
-                                          set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
+                                          set `[internal] iteration count` := [internal] fresh #41
+                                          set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
                                     block:
                                       let `[colorizer] Mandelbrot set tiled by Julia sets: z` = z in:
                                         block:

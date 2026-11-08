@@ -612,6 +612,19 @@ viewer's menu has an "Aspect ratio..." item to change it. Besides
 tools can read `pixel_width` (the same) and `pixel_height`. A complex
 viewer's pixels are always square.
 
+### A viewer's geometry
+
+A viewer's script and its tools can read the viewer's current geometry:
+`viewer_width` and `viewer_height` (integers: the image's size in
+pixels), and the center of the current view, `viewer_center` (complex)
+in a complex viewer or `viewer_center_x` and `viewer_center_y` (reals)
+in a real one. With `pixel_size` (and a real viewer's `pixel_height`),
+that's enough to find the pixel under a point. They follow the view as
+it's resized, panned and zoomed, and a viewer whose script reads them is
+drawn again when they change. On the sphere, `viewer_center` is the
+globe's center on the screen, 0. These names can't be declared in
+`@config`.
+
 ### Viewers on the Riemann sphere
 
 A complex viewer can show its points on the Riemann sphere instead of
