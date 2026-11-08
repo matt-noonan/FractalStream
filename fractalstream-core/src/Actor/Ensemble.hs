@@ -79,6 +79,8 @@ import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.UTF8 as UTF8
 import qualified Data.Map as Map
+import qualified GHC.TypeNats as TN
+import Language.Table (emptyTable)
 import qualified Data.Set as Set
 import Data.List (nub, (\\))
 import Data.Typeable (Typeable)
@@ -697,6 +699,7 @@ checkConfigStmt = \case
   ConfigDecl{..}    -> do
     checkConfigDecl cdRange cdName cdType cdDefault cdChoices
     pure [(cdName, cdType)]
+  ConfigTable _ name ty -> Right [(name, ty)]
 
 -- | The pure, allocation-free counterpart of 'buildConfigDecl': the
 -- exact same validation (a field's default against its declared type,
@@ -1101,6 +1104,9 @@ configStmtToLayout = \case
   ConfigButton _ s -> Right . Button <$> newVariable s
   ConfigAction a s -> pure (Right (ActionButton a s))
   ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdDefaultSrc cdLabel cdChoices
+  ConfigTable _ name t@(SomeType ty) -> case ty of
+    TableType n _ -> Right . HiddenTable name t <$> newVariable (emptyTable (fromIntegral (TN.fromSNat n)))
+    _ -> pure (Left (NoSourceRange, "INTERNAL ERROR: `" ++ name ++ "` isn't a table"))
   ConfigRow stmts -> do
     results <- mapM configStmtToLayout stmts
     case sequence results of
@@ -1122,6 +1128,7 @@ configStmtToLayout = \case
 configStmtNames :: ConfigStmt -> [String]
 configStmtNames = \case
   ConfigDecl{cdName} -> [cdName]
+  ConfigTable _ name _ -> [name]
   ConfigRow stmts    -> concatMap configStmtNames stmts
   ConfigTabs tabs    -> concatMap (concatMap configStmtNames . snd) tabs
   ConfigText{}       -> []
@@ -1245,6 +1252,7 @@ zeroHaskellValue = \case
   ListType _     -> []
   TextType       -> ""
   PairType x y   -> (zeroHaskellValue x, zeroHaskellValue y)
+  TableType n _  -> emptyTable (fromIntegral (TN.fromSNat n))
 
 -- | Declare one more name in an environment, for use in a 'Kleisli'
 -- chain (@declareE p1 t1 \<=\< declareE p2 t2 \<=\< ...@) building up a
@@ -1746,6 +1754,10 @@ layoutToArgs = \case
   Panel _ lo    -> getDynamic lo >>= layoutToArgs
   Tabbed ts     -> getDynamic ts >>= mapM (getDynamic . dyn . tiBody >=> layoutToArgs) <&> mconcat
   PlainText _   -> pure mempty
+  HiddenTable name0 (SomeType ty) v -> pure $ case (ty, someSymbolVal name0) of
+    (TableType{}, SomeSymbol name) -> withKnownType ty $
+      SomeContext' $ Right $ SomeContext $ Bind name ty (mutableVar v) EmptyContext
+    _ -> SomeContext' (Left "expected a table type")
   Button _      -> pure mempty
   ActionButton{} -> pure mempty
   Selection _ n x _ -> getDynamic (dyn n) <&> \case

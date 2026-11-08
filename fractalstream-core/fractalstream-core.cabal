@@ -114,6 +114,8 @@ library
                        Language.Editor.Symbols
                        Language.Code.Typecheck.Functions
                        Language.Type
+                       Language.Table.Buffer
+                       Language.Table
                        Language.Environment
                        Language.Value
                        Language.Value.Differentiate
@@ -221,6 +223,7 @@ test-suite spec
                     , Actor.EventSpec
                     , Actor.ScriptSpec
                     , Actor.EnsembleBuildSpec
+                    , Language.TableSpec
                     , Actor.RealViewerSpec
                     , Actor.SphereSpec
                     , Actor.ColorizerSpec

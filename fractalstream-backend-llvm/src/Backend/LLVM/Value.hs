@@ -157,6 +157,9 @@ buildValue getExtern arena = indexedFold go'
             iOp = case i of IntegerOp v -> v
         lift $ buildIndex arena ty cyclic headPtr iOp
 
+      -- (step 4 of TABLES_PLAN.md)
+      TableIndex{} -> lift $ throwError "Tables aren't supported by the compiled backend yet."
+
       -- ------------------------------------------------------------------ --
       -- Range: integer range [lo..hi].
       -- ------------------------------------------------------------------ --

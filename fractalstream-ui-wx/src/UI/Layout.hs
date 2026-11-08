@@ -89,6 +89,9 @@ generateWxLayout appAction buttonPress frame0 wLayout = do
           set btn [ on command := get btn text >>= buttonPress ]
           pure (hstretch . expand . container p' $ floatCentre $ margin 5 $ widget btn)
 
+        -- (a table has no widget)
+        HiddenTable{} -> pure Graphics.UI.WX.empty
+
         ActionButton action txt -> liftIO $ do
           p' <- panel p []
           btn <- button p' [ text := txt, on command := appAction action ]

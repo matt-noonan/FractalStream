@@ -87,6 +87,9 @@ data ConfigStmt
         -- these choices; only valid when 'cdType' is @ℤ@, in which case
         -- the variable's value is the chosen index.
       }
+  | ConfigTable SourceRange String SomeType
+    -- ^ @T : Table 2 of C@: a table, with no default (it starts out
+    -- empty) and no field in the panel; tools fill it in.
   | ConfigText String
   | ConfigButton SourceRange String
     -- ^ A button; only meaningful in a @\@tool@, whose @on button@
@@ -590,6 +593,16 @@ scriptGrammar defs = mdo
   configText <- rule $
     (\s -> Right (ConfigText s)) <$> (token TextKeyword *> quotedP <* nl)
 
+  -- `T : Table 2 of C`, with no default
+  configTable <- rule $
+    withSourceRange $
+      (\name fsTy sr -> case fsTy of
+          TableT{} -> Right (ConfigTable sr name (withType fsTy SomeType))
+          _ -> Left (sr, "`" ++ name ++ "` needs a default value: `" ++ name ++ " : "
+                         ++ withType fsTy ppType ++ " := ...`."))
+      <$> ident
+      <*> (colon *> ty <* nl)
+
   configButton <- rule $
     withSourceRange ((\s sr -> Right (ConfigButton sr s)) <$> (tok "button" *> quotedP <* nl))
 
@@ -608,7 +621,7 @@ scriptGrammar defs = mdo
     (tok "tab" *> quotedP) <*>
     (colon *> nl *> token Indent *> many configStmt <* token Dedent)
 
-  configStmt <- ruleChoice [configDecl, configText, configButton, configRow, configTab]
+  configStmt <- ruleChoice [configDecl, configTable, configText, configButton, configRow, configTab]
 
   ------------------------------------------------------------
   -- @\@viewer@ preparation-script header: `prepare name1 : Ty1, ...:`
@@ -981,6 +994,10 @@ validateConfigDecl :: SourceRange
                     -> Maybe [String]
                     -> Either (SourceRange, String) ConfigStmt
 validateConfigDecl sr name fsTy val valRange mlabel mchoices = do
+  case fsTy of
+    TableT{} -> Left (sr, "A table starts out empty, so it can't have a default value: write `"
+                          ++ name ++ " : " ++ withType fsTy ppType ++ "`.")
+    _ -> Right ()
   case mchoices of
     Just _ | fsTy /= IntegerT ->
       Left (sr, "`choice { ... }` can only be used with a ℤ-typed declaration (`" ++

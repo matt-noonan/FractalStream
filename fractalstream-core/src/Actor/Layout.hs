@@ -82,6 +82,9 @@ data Layout
   | ColorPicker (Variable Label) (Parsed String) (Parsed Color)
   | Selection (Variable Label) (Parsed String) (Variable Int64) (Variable [String])
   | TextBox (Variable Label) UIVariable
+  | HiddenTable String SomeType (Variable Table)
+    -- ^ A table: its name, its type (some 'TableType'), and its value.
+    -- It has no widget, and isn't saved with the project.
 
 -- | Things an 'ActionButton' can do in the app.
 data AppAction
@@ -174,6 +177,9 @@ layoutContext = fmap (\(SomeContext' ctx) -> ctx) . go
         Right v -> dyn c >>= \case
           Left e -> pure (SomeContext' $ Left e)
           Right c' -> single v ColorType (pure c')
+      HiddenTable n (SomeType ty) v -> case ty of
+        TableType{} -> withKnownType ty (single n ty (dyn v))
+        _ -> pure (SomeContext' $ Left "expected a table type")
       TextBox _ UIVariable{..} -> dyn exprValue >>= \case
         Left e -> pure (SomeContext' $ Left e)
         Right (SomeValue env ty v) -> dyn exprName >>= \case
@@ -212,6 +218,7 @@ layoutFields = \case
   PlainText{} -> pure []
   Button{} -> pure []
   ActionButton{} -> pure []
+  HiddenTable{} -> pure []
   CheckBox _ name b -> named name $ \n -> Field
     { fieldName = n
     , fieldText = showBool <$> getDynamic b
@@ -292,6 +299,9 @@ layoutContext' = fmap (\(SomeContext' x) -> x) . go
       Selection _ var x _ -> getDynamic var <&> \case
         Left e -> SomeContext' $ Left e
         Right v -> single v IntegerType (Right <$> dyn x)
+      HiddenTable n (SomeType ty) v -> pure $ case ty of
+        TableType{} -> withKnownType ty (single n ty (Right <$> dyn v))
+        _ -> SomeContext' (Left "expected a table type")
       CheckBox _ var b -> getDynamic var <&> \case
         Left e  -> SomeContext' $ Left e
         Right v -> single v BooleanType (Right <$> dyn b)
@@ -326,6 +336,7 @@ layoutBindings = \case
   PlainText{} -> pure (pure [])
   Button{} -> pure (pure [])
   ActionButton{} -> pure (pure [])
+  HiddenTable n t _ -> pure (Right [(n, t)])
   Selection _ var _ _ -> fmap (:[]) <$> (fmap (, SomeType IntegerType) <$> dyn var)
   CheckBox    _ var _ -> fmap (:[]) <$> (fmap (, SomeType BooleanType) <$> dyn var)
   ColorPicker _ var _ -> fmap (:[]) <$> (fmap (, SomeType ColorType)   <$> dyn var)

@@ -16,6 +16,7 @@ import qualified Data.Map as Map
 import Language.Value
 import Language.Value.Syntax
 import Language.Value.Builtins
+import qualified GHC.TypeNats as TN
 import Language.Typecheck
 import Language.Parser.SourceRange
 import Data.Color
@@ -215,6 +216,11 @@ elabOwn t (Syn (sr, _) node) = case node of
     _ -> inconsistent sr
 
   EIndex cyc lst ix -> Index t cyc <$> el (ListType t) lst <*> el IntegerType ix
+
+  ETableIndex tbl ixs -> case exprType tbl of
+    TableT d _ -> withKnownType t $ TN.withSomeSNat d $ \sn -> withKnownNat sn $
+      TableIndex sn t <$> el (TableType sn t) tbl <*> mapM (el IntegerType) ixs
+    _ -> inconsistent sr
 
   ELet n v body -> withType (exprType v) $ \vty -> withBinder @env sr n vty $ \name pf -> do
     v' <- el vty v

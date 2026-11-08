@@ -15,6 +15,7 @@ import FractalStream.Prelude
 
 import Language.Value
 import Data.Indexed.Functor
+import Language.Table (readCell)
 import Data.Color
 
 import Unsafe.Coerce
@@ -305,3 +306,8 @@ evaluator v0 ctx = case v0 of
         _  -> xs !! (i - 1)
 
     Length _ xs -> fromIntegral $ length (xs ctx)
+
+    TableIndex _ t tbl_ ixs_ ->
+      let ixs = map (\ix -> fromIntegral (ix ctx)) ixs_
+      in fromMaybe (error ("Table index " ++ show ixs ++ " is out of range"))
+                   (readCell t (tbl_ ctx) ixs)

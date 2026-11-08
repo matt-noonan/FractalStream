@@ -153,6 +153,8 @@ pushdown env ty (Syn sr node) = fmap (fmap (Syn (sr, ty))) $ case (node, ty) of
     v' <- synth env v
     env' <- bind sr n (exprType v') env
     ELet n v' <$> check env' ty body
+  (EIndex _ (Syn _ (EVar n)) _, _)
+    | Just TableT{} <- Map.lookup n (tyVars env) -> Nothing  -- (see synth)
   (EIndex cyc lst ix, _) -> Just $
     EIndex cyc <$> check env (ListT ty) lst <*> check env IntegerT ix
   _ -> Nothing
@@ -316,9 +318,23 @@ synth env (Syn sr node) = case node of
 
   EIndex cyc lst ix -> do
     lst' <- synth env lst
-    t <- listItemType lst'
-    ix' <- check env IntegerT ix
-    done t (EIndex cyc lst' ix')
+    case exprType lst' of
+      TableT d it
+        | cyc -> advise sr "A table can't be indexed cyclically (with `@@`): use `@`."
+        | otherwise -> case tupleParts (fromIntegral d) ix of
+            Just parts -> do
+              parts' <- mapM (check env IntegerT) parts
+              done it (ETableIndex lst' parts')
+            Nothing -> advise sr $ if d == 1
+              then "A 1-dimensional table is indexed by one integer: `T @ k`."
+              else "A " ++ show d ++ "-dimensional table is indexed by " ++ show d
+                   ++ " integers, written out as a tuple: `T @ (j, k)`."
+      _ -> do
+        t <- listItemType lst'
+        ix' <- check env IntegerT ix
+        done t (EIndex cyc lst' ix')
+
+  ETableIndex{} -> throwError (Internal (Advice sr "unexpected table index"))
 
   ELet n v body -> do
     v' <- synth env v
@@ -612,9 +628,19 @@ describe = \case
   ERange{} -> "the result of a range operation"
   ELength{} -> "the result of a length operation"
   EIndex{} -> "this list item"
+  ETableIndex{} -> "this table entry"
   ELet{} -> "the result of this expression"
   ECall f _ -> "the result of " ++ f
   EDerivCall f order _ -> "the result of " ++ f ++ replicate order '\''
   EWiden{} -> "this value"
   EProj{} -> "this part of a pair"
   EAdvice{} -> "this expression"
+
+-- | The parts of a tuple written out with @n@ components (@(a, b, c)@ is
+-- @(a, (b, c))@), or the expression itself when @n@ is 1.
+tupleParts :: Int -> Expr -> Maybe [Expr]
+tupleParts n e
+  | n <= 1 = Just [e]
+  | otherwise = case e of
+      Syn _ (EPair a b) -> (a :) <$> tupleParts (n - 1) b
+      _ -> Nothing

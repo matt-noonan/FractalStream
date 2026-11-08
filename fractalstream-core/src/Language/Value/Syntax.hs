@@ -94,6 +94,9 @@ data ExprF r
   | ERange r r
   | ELength r
   | EIndex Bool r r
+  | ETableIndex r [r]
+    -- ^ A table, indexed by one integer per dimension (made from an
+    -- 'EIndex' by type checking).
   | ELet String r r
     -- ^ A local binding, scoped over the second expression
   | ECall String [r]

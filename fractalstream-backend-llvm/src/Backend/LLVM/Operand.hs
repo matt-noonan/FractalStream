@@ -76,6 +76,8 @@ data Op (t :: FSType) where
   -- | Text is a pointer to a NUL-terminated UTF-8 string, normally in the
   -- arena (see 'Backend.LLVM.Value').
   TextOp    :: Operand -> Op 'TextT
+  -- | A table is a pointer to its descriptor (see "Backend.LLVM.Table").
+  TableOp   :: forall n t. Operand -> Op ('TableT n t)
 
 deriving instance (Show (Op t))
 
@@ -110,6 +112,7 @@ storeOperand op (PtrOp ptrOp) = case (op, ptrOp) of
     storeOperand y (PtrOp ptrY)
   (ListOp headPtr, ListOp ptrSlot) -> store ptrSlot 0 headPtr
   (TextOp v, TextOp ptr) -> store ptr 0 v
+  (TableOp v, TableOp ptr) -> store ptr 0 v
 
 detypeOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
               => TypeProxy t
@@ -134,6 +137,7 @@ detypeOperand _t = \case
   PairOp _op1 _op2 -> throwError "TODO: detypeOperand PairOp"
   ListOp headPtr -> pure headPtr
   TextOp op -> pure op
+  TableOp op -> pure op
 
 derefOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
              => PtrOp t -> m (Op t)
@@ -153,6 +157,7 @@ derefOperand (PtrOp ptrOp) = case ptrOp of
     PairOp <$> derefOperand (PtrOp t1) <*> derefOperand (PtrOp t2)
   ListOp ptrSlot -> ListOp <$> load ptrSlot 0
   TextOp ptr -> TextOp <$> load ptr 0
+  TableOp ptr -> TableOp <$> load ptr 0
 
 -- | Get the LLVM function argument type corresponding to
 -- a FractalStream type.
@@ -170,6 +175,7 @@ toLLVMType = \case
   ImageType      -> AST.i32
   -- A list is passed as an i8* pointing to the head node (null = empty list).
   ListType {}    -> AST.ptr AST.i8
+  TableType {}   -> AST.ptr AST.i8
   TextType       -> AST.ptr AST.i8
 
 toLLVMPtrType :: forall t. TypeProxy t -> AST.Type
@@ -186,6 +192,7 @@ toLLVMPtrType = \case
   ImageType      -> AST.ptr AST.i32
   -- A list slot holds a single i8* (the head pointer).
   ListType {}    -> AST.ptr (AST.ptr AST.i8)
+  TableType {}   -> AST.ptr (AST.ptr AST.i8)
   TextType       -> AST.ptr (AST.ptr AST.i8)
 
 allocaOp :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
@@ -217,6 +224,11 @@ allocaOp = \case
     store slot 0 nullI8Ptr
     pure (PtrOp (TextOp slot))
 
+  TableType _ _ -> do
+    slot <- alloca (AST.ptr AST.i8) Nothing 0
+    store slot 0 nullI8Ptr
+    pure (PtrOp (TableOp slot))
+
   ty -> throwError ("Unhandled type in LLVM backend: " ++ showType ty)
 
 typedOperandPtr :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
@@ -241,6 +253,7 @@ typedOperandPtr t op = do
                                 <*> gep op[int32 0, int32 2])
            TextType -> pure (PtrOp (TextOp op))
            ListType _ -> pure (PtrOp (ListOp op))
+           TableType _ _ -> pure (PtrOp (TableOp op))
            _ -> throwError "TODO: typedOperandPtr"
 
 typedOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
@@ -275,6 +288,7 @@ typedOperand t op = do
            -- The argument IS the head pointer; wrap it directly.
            ListType _ -> pure (ListOp op)
            TextType -> pure (TextOp op)
+           TableType _ _ -> pure (TableOp op)
            _ -> throwError ("TODO: missing case in typedOperand for type " ++ showType t)
 
 -- | A null i8* constant (used as the empty-list sentinel).

@@ -20,6 +20,7 @@ module Language.Value.Parser
   , ppFullError
   ) where
 
+import Language.Table (isTableElementType)
 import Prelude hiding (LT)
 import FractalStream.Prelude
 
@@ -102,7 +103,20 @@ typeGrammar = mdo
   toplevel <- ruleChoice
     [ productType
     , listType
+    , tableType
     ]
+
+  -- `Table 2 of C`: a table of scalars, with some number of dimensions
+  tableType <- rule
+    (TableT <$> (token (Identifier "Table") *> dimension) <*> (token (Identifier "of") *> tableElementType))
+
+  tableElementType <- rule $ tokenMatch $ \case
+    Identifier t | Just ft <- Map.lookup t types, isTableElementType ft -> Just ft
+    _ -> Nothing
+
+  dimension <- rule $ tokenMatch $ \case
+    NumberI n | n >= 1 -> Just (fromIntegral n)
+    _ -> Nothing
 
   listType <- rule
     (ListT <$> (token (Identifier "List") *> token (Identifier "of") *> listType'))

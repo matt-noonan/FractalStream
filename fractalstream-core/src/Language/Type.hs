@@ -28,12 +28,17 @@ module Language.Type
   , withKnownType
   , withType
   , typeToFS
+  , Table
+  , SNat
   ) where
 
 import FractalStream.Prelude
 import Text.Printf
 
 import Data.Color (Color, colorToRGB)
+import Language.Table.Buffer (Table)
+import qualified GHC.TypeNats as TN
+import Data.Type.Equality (testEquality)
 
 data FSType
   = VoidT
@@ -46,6 +51,8 @@ data FSType
   | ColorT
   | ImageT
   | ListT FSType
+  | TableT Natural FSType
+    -- ^ A table of the given number of dimensions.
   | TextT
   deriving (Eq, Ord, Show)
 
@@ -61,6 +68,7 @@ type family HaskellType (t :: FSType) :: Type where
   HaskellType 'VoidT      = ()
   HaskellType 'ImageT     = Int
   HaskellType ('ListT x)  = [HaskellType x]
+  HaskellType ('TableT n x) = Table
   HaskellType 'TextT      = String
 
 data SomeHaskellType where
@@ -89,6 +97,7 @@ instance Eq (Scalar t) where
     VoidType     -> x == y
     ImageType    -> x == y
     ListType it  -> map (Scalar it) x == map (Scalar it) y
+    TableType{}  -> x == y
     TextType     -> x == y
 
 instance Ord (Scalar t) where
@@ -106,6 +115,7 @@ instance Ord (Scalar t) where
     VoidType     -> compare x y
     ImageType    -> compare x y
     ListType it  -> compare (map (Scalar it) x) (map (Scalar it) y)
+    TableType{}  -> compare x y
     TextType     -> compare x y
 
 sameHaskellType :: TypeProxy t1 -> TypeProxy t2 -> Maybe (t1 :~: t2)
@@ -129,6 +139,11 @@ sameHaskellType v1 v2 = case v1 of
       Just Refl -> Just Refl
       Nothing   -> Nothing
     _ -> Nothing
+  TableType n x -> case v2 of
+    TableType n' x' -> case (,) <$> testEquality n n' <*> sameHaskellType x x' of
+      Just (Refl, Refl) -> Just Refl
+      Nothing           -> Nothing
+    _ -> Nothing
 
 -- | Singleton values reflecting the type-level parameter @t@.
 data TypeProxy (t :: FSType) where
@@ -142,6 +157,7 @@ data TypeProxy (t :: FSType) where
   VoidType     :: TypeProxy 'VoidT
   ImageType    :: TypeProxy 'ImageT
   ListType     :: KnownType x => TypeProxy x -> TypeProxy ('ListT x)
+  TableType    :: KnownType x => SNat n -> TypeProxy x -> TypeProxy ('TableT n x)
   TextType     :: TypeProxy 'TextT
 
 data SomeType where
@@ -165,6 +181,8 @@ instance KnownType 'ImageT    where typeProxy = ImageType
 instance KnownType 'TextT     where typeProxy = TextType
 instance KnownType x => KnownType ('ListT x) where
   typeProxy = ListType (typeProxy @x)
+instance (KnownNat n, KnownType x) => KnownType ('TableT n x) where
+  typeProxy = TableType natSing (typeProxy @x)
 instance (KnownType x, KnownType y) => KnownType ('Pair x y) where
   typeProxy = PairType (typeProxy @x) (typeProxy @y)
 
@@ -181,6 +199,7 @@ withKnownType ty k = case ty of
   TextType     -> k
   PairType {}  -> k
   ListType {}  -> k
+  TableType n _ -> withKnownNat n k
 
 withType :: forall a. FSType -> (forall ty. KnownType ty => TypeProxy ty -> a) -> a
 withType t k = case t of
@@ -193,6 +212,7 @@ withType t k = case t of
   ImageT   -> k ImageType
   TextT    -> k TextType
   ListT lt -> withType lt $ \ty -> k (ListType ty)
+  TableT n lt -> withType lt $ \ty -> TN.withSomeSNat n $ \sn -> withKnownNat sn (k (TableType sn ty))
   RationalT  -> k RationalType
   Pair t1 t2 -> withType t1 $ \ty1 -> withType t2 $ \ty2 -> k (PairType ty1 ty2)
 
@@ -209,6 +229,7 @@ typeToFS = \case
   TextType     -> TextT
   RationalType -> RationalT
   ListType t   -> ListT (typeToFS t)
+  TableType n t -> TableT (TN.fromSNat n) (typeToFS t)
   PairType x y -> Pair (typeToFS x) (typeToFS y)
 
 pattern Boolean_ :: forall (t :: FSType). () => (t ~ 'BooleanT) => HaskellType t -> Scalar t
@@ -242,6 +263,7 @@ showType = \case
   TextType     -> "text"
   PairType x y -> "(" <> showType x <> " x " <> showType y <> ")"
   ListType x   -> "list of " <> showType x
+  TableType n x -> show (TN.fromSNat n) <> "-dimensional table of " <> showType x
 
 ppType :: TypeProxy t -> String
 ppType = \case
@@ -256,6 +278,7 @@ ppType = \case
   TextType     -> "Text"
   PairType{}   -> error "TODO"
   ListType t   -> "List of " ++ ppType t
+  TableType n t -> "Table " ++ show (TN.fromSNat n) ++ " of " ++ ppType t
 
 showValue :: TypeProxy t -> HaskellType t -> String
 showValue ty v = case ty of
@@ -273,6 +296,7 @@ showValue ty v = case ty of
   PairType xt yt -> let (x, y) = v
                      in showValue xt x <> " , " <> showValue yt y
   ListType xt -> "[" ++ intercalate ", " (map (showValue xt) v) ++ "]"
+  TableType{} -> show v
 
 instance An SomeType where
   an = an . show
