@@ -67,18 +67,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
                       block:
                         block:
                           block:
-                            let `[internal] fresh #29` = 0 in:
-                              let `[internal] fresh #30` = [internal] iteration limit in:
+                            let `[internal] fresh #32` = 0 in:
+                              let `[internal] fresh #33` = [internal] iteration limit in:
                                 block:
-                                  if (!([internal] escape radius < |z|) and ([internal] fresh #29 < [internal] fresh #30)) then:
-                                    do-while (!([internal] escape radius < |z|) and ([internal] fresh #29 < [internal] fresh #30)):
+                                  if (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)) then:
+                                    do-while (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)):
                                       block:
                                         set `z` := ((z ^ 2:R:C) + C)
-                                        set `[internal] fresh #29` := ([internal] fresh #29 + 1)
+                                        set `[internal] fresh #32` := ([internal] fresh #32 + 1)
                                   else:
                                     no-op
-                                  set `[internal] iteration count` := [internal] fresh #29
-                                  set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                                  set `[internal] iteration count` := [internal] fresh #32
+                                  set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
                             set `color` := Color 0 0 0
                             if ([internal] escape radius < |z|) then:
                               block:
@@ -125,18 +125,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   block:
                     block:
                       block:
-                        let `[internal] fresh #29` = 0 in:
-                          let `[internal] fresh #30` = [internal] iteration limit in:
+                        let `[internal] fresh #32` = 0 in:
+                          let `[internal] fresh #33` = [internal] iteration limit in:
                             block:
-                              if (!([internal] escape radius < |z|) and ([internal] fresh #29 < [internal] fresh #30)) then:
-                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #29 < [internal] fresh #30)):
+                              if (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)) then:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #32 < [internal] fresh #33)):
                                   block:
                                     set `z` := ((z ^ 2:R:C) + C)
-                                    set `[internal] fresh #29` := ([internal] fresh #29 + 1)
+                                    set `[internal] fresh #32` := ([internal] fresh #32 + 1)
                               else:
                                 no-op
-                              set `[internal] iteration count` := [internal] fresh #29
-                              set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                              set `[internal] iteration count` := [internal] fresh #32
+                              set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
                         set `color` := Color 0 0 0
                         if ([internal] escape radius < |z|) then:
                           block:

@@ -40,6 +40,9 @@ data ComplexViewer = ComplexViewer
     -- plane and the sphere.
   , cvRotationV :: Variable Rotation
     -- ^ The globe's orientation, when it shows the sphere.
+  , cvCenterV :: Variable (Double, Double)
+    -- ^ The current view's center (the 'Actor.Viewer.vCenter' of the
+    -- viewer built from this), which its code and tools can read.
   , cvOriginalRotation :: Rotation
   , cvSpherePixelSize :: Double
     -- ^ The pixel size its sphere view starts with (in units of the

@@ -44,19 +44,19 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                   block:
                                                     let `y` = (p + save:C) in:
                                                       block:
-                                                        let `[internal] fresh #36` = 0 in:
-                                                          let `[internal] fresh #37` = [internal] iteration limit in:
+                                                        let `[internal] fresh #39` = 0 in:
+                                                          let `[internal] fresh #40` = [internal] iteration limit in:
                                                             block:
-                                                              do-while (!([internal] escape radius < |x|) and ([internal] fresh #36 < [internal] fresh #37)):
+                                                              do-while (!([internal] escape radius < |x|) and ([internal] fresh #39 < [internal] fresh #40)):
                                                                 block:
                                                                   block:
                                                                     let `t` = x in:
                                                                       block:
                                                                         set `x` := (((x ^ 2:R:C) + b) - (a * y))
                                                                         set `y` := t
-                                                                  set `[internal] fresh #36` := ([internal] fresh #36 + 1)
-                                                              set `[internal] iteration count` := [internal] fresh #36
-                                                              set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                                                                  set `[internal] fresh #39` := ([internal] fresh #39 + 1)
+                                                              set `[internal] iteration count` := [internal] fresh #39
+                                                              set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
                                                         if !([internal] escape radius < |x|) then:
                                                           block:
                                                             set `color` := Color 0 0 0
@@ -122,19 +122,19 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                   block:
                                                     let `y` = (p + save:C) in:
                                                       block:
-                                                        let `[internal] fresh #36` = 0 in:
-                                                          let `[internal] fresh #37` = [internal] iteration limit in:
+                                                        let `[internal] fresh #39` = 0 in:
+                                                          let `[internal] fresh #40` = [internal] iteration limit in:
                                                             block:
-                                                              do-while (!([internal] escape radius < |x|) and ([internal] fresh #36 < [internal] fresh #37)):
+                                                              do-while (!([internal] escape radius < |x|) and ([internal] fresh #39 < [internal] fresh #40)):
                                                                 block:
                                                                   block:
                                                                     let `t` = x in:
                                                                       block:
                                                                         set `x` := (((x ^ 2:R:C) + b) - (a * y))
                                                                         set `y` := t
-                                                                  set `[internal] fresh #36` := ([internal] fresh #36 + 1)
-                                                              set `[internal] iteration count` := [internal] fresh #36
-                                                              set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                                                                  set `[internal] fresh #39` := ([internal] fresh #39 + 1)
+                                                              set `[internal] iteration count` := [internal] fresh #39
+                                                              set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
                                                         if !([internal] escape radius < |x|) then:
                                                           block:
                                                             set `color` := Color 0 0 0
@@ -199,19 +199,19 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                   block:
                                                     let `y` = (p + save) in:
                                                       block:
-                                                        let `[internal] fresh #37` = 0 in:
-                                                          let `[internal] fresh #38` = [internal] iteration limit in:
+                                                        let `[internal] fresh #40` = 0 in:
+                                                          let `[internal] fresh #41` = [internal] iteration limit in:
                                                             block:
-                                                              do-while (!([internal] escape radius < |x|) and ([internal] fresh #37 < [internal] fresh #38)):
+                                                              do-while (!([internal] escape radius < |x|) and ([internal] fresh #40 < [internal] fresh #41)):
                                                                 block:
                                                                   block:
                                                                     let `t` = x in:
                                                                       block:
                                                                         set `x` := (((x ^ 2:R:C) + b) - (a * y))
                                                                         set `y` := t
-                                                                  set `[internal] fresh #37` := ([internal] fresh #37 + 1)
-                                                              set `[internal] iteration count` := [internal] fresh #37
-                                                              set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
+                                                                  set `[internal] fresh #40` := ([internal] fresh #40 + 1)
+                                                              set `[internal] iteration count` := [internal] fresh #40
+                                                              set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
                                                         if !([internal] escape radius < |x|) then:
                                                           block:
                                                             set `color` := Color 0 0 0

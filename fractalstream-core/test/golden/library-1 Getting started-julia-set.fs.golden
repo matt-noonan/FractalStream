@@ -25,18 +25,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    let `[internal] fresh #31` = 0 in:
-                      let `[internal] fresh #32` = [internal] iteration limit in:
+                    let `[internal] fresh #34` = 0 in:
+                      let `[internal] fresh #35` = [internal] iteration limit in:
                         block:
-                          if (!([internal] escape radius < |z|) and ([internal] fresh #31 < [internal] fresh #32)) then:
-                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #31 < [internal] fresh #32)):
+                          if (!([internal] escape radius < |z|) and ([internal] fresh #34 < [internal] fresh #35)) then:
+                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #34 < [internal] fresh #35)):
                               block:
                                 set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
-                                set `[internal] fresh #31` := ([internal] fresh #31 + 1)
+                                set `[internal] fresh #34` := ([internal] fresh #34 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #31
-                          set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
+                          set `[internal] iteration count` := [internal] fresh #34
+                          set `[internal] stuck` := ([internal] fresh #34 = [internal] fresh #35)
                     block:
                       block:
                         if [internal] stuck then:

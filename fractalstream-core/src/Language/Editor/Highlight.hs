@@ -145,12 +145,14 @@ parseHeader l =
 -- | The names a viewer defines for its code (and its tools'): its
 -- coordinate variable (@var=@, by default @z@), or both of a real
 -- viewer's (@xvar=@ and @yvar=@), along with a real viewer's pixel width
--- and height.
+-- and height, and the viewer's geometry (its size and center).
 viewerNames :: Stanza -> [(String, Highlight)]
 viewerNames s = case (Map.lookup "xvar" attrs, Map.lookup "yvar" attrs) of
   (Just x, Just y) -> [(x, Variable), (y, Variable), ("pixel_width", Parameter), ("pixel_height", Parameter)]
-  _ -> [(Map.findWithDefault "z" "var" attrs, Variable)]
+                      ++ geometry ["viewer_center_x", "viewer_center_y"]
+  _ -> (Map.findWithDefault "z" "var" attrs, Variable) : geometry ["viewer_center"]
   where attrs = stAttrs s
+        geometry centers = [ (n, Parameter) | n <- "viewer_width" : "viewer_height" : centers ]
 
 ------------------------------------------------------------------------
 -- Definitions

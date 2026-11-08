@@ -133,7 +133,11 @@ Inside a viewer:
 - in scope: the coordinate (`z` or `var=`; or `xvar=` and `yvar=`), all
   `@config` variables (read-only), `pixel_size` (model width of a pixel;
   use it for zoom-independent thickness), in a real viewer also
-  `pixel_width` (the same) and `pixel_height`, `color` (the output, starts grey),
+  `pixel_width` (the same) and `pixel_height`, the window's geometry
+  (`viewer_width`, `viewer_height`: Z, the image size in pixels;
+  `viewer_center`: C, the current view's center, or in a real viewer
+  `viewer_center_x`, `viewer_center_y`: R; on the sphere the center is 0),
+  `color` (the output, starts grey),
   `iterations` and `stuck` (see Loops).
 - viewers can't change the configuration: assigning a config variable
   only changes that pixel's local copy. Only `color` is output.
@@ -283,7 +287,9 @@ point and can't see the viewer coordinate.
 
 In scope in a handler: all config variables (ensemble and the tool's own;
 assigning them updates the UI and re-renders viewers that use them), the
-bound point, `pixel_size` (and a real viewer's `pixel_width`/`pixel_height`), `max_iters` etc. Local variables are fresh on
+bound point, `pixel_size` (and a real viewer's `pixel_width`/`pixel_height`),
+the viewer's `viewer_width`, `viewer_height` and `viewer_center` (or
+`viewer_center_x`/`_y`), `max_iters` etc. Local variables are fresh on
 every event; persistent tool state must be a declared tool variable.
 Loops in handlers obey the same limits as viewers.
 
@@ -349,7 +355,8 @@ number.) A power of integers used as a real is computed as a real:
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`,
 `times`, `text`, `escapes`, `vanishes`, `stops`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
-`mod`, `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
+`mod`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
+names in `@config`), `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
 the color-wheel names, and the built-in function names (including `bar`, the
 complex conjugate; using one for a variable, function, or code block is
 reported as such). In particular,

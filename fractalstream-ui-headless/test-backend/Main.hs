@@ -7,7 +7,8 @@ module Main (main) where
 import Test.Hspec
 
 import FractalStream.Console (transliterateConsole)
+import qualified GeometrySpec
 import qualified OverlaySpec
 
 main :: IO ()
-main = transliterateConsole >> hspec OverlaySpec.spec
+main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec)

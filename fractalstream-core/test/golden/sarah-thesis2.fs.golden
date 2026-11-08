@@ -31,32 +31,32 @@ let `[internal] vanishing radius` = vanishing_radius in:
                           block:
                             let `y` = ((z * ((z + 1:R:C) ^ 2:R:C)) + 1:R:C) in:
                               block:
-                                let `[internal] fresh #29` = 0 in:
-                                  let `[internal] fresh #30` = [internal] iteration limit in:
+                                let `[internal] fresh #32` = 0 in:
+                                  let `[internal] fresh #33` = [internal] iteration limit in:
                                     block:
-                                      do-while (!((|(x - 0:R:C)| < [internal] vanishing radius) and (|(y - 1:R:C)| < [internal] vanishing radius)) and ([internal] fresh #29 < [internal] fresh #30)):
+                                      do-while (!((|(x - 0:R:C)| < [internal] vanishing radius) and (|(y - 1:R:C)| < [internal] vanishing radius)) and ([internal] fresh #32 < [internal] fresh #33)):
                                         block:
                                           block:
                                             set `x` := (((y ^ 2:R:C) - 1:R:C) / (y ^ 2:R:C))
                                             set `y` := (((y ^ 2:R:C) - (x ^ 2:R:C)) / (y ^ 2:R:C))
-                                          set `[internal] fresh #29` := ([internal] fresh #29 + 1)
-                                      set `[internal] iteration count` := [internal] fresh #29
-                                      set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                                          set `[internal] fresh #32` := ([internal] fresh #32 + 1)
+                                      set `[internal] iteration count` := [internal] fresh #32
+                                      set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
                                 let `saved_count` = [internal] iteration count in:
                                   block:
                                     set `z` := 0:R:C
-                                    let `[internal] fresh #30` = 0 in:
-                                      let `[internal] fresh #31` = [internal] iteration limit in:
+                                    let `[internal] fresh #33` = 0 in:
+                                      let `[internal] fresh #34` = [internal] iteration limit in:
                                         block:
-                                          if (!([internal] escape radius < |z|) and ([internal] fresh #30 < [internal] fresh #31)) then:
-                                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #30 < [internal] fresh #31)):
+                                          if (!([internal] escape radius < |z|) and ([internal] fresh #33 < [internal] fresh #34)) then:
+                                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #33 < [internal] fresh #34)):
                                               block:
                                                 set `z` := ((p * (z ^ 2:R:C)) + 1:R:C)
-                                                set `[internal] fresh #30` := ([internal] fresh #30 + 1)
+                                                set `[internal] fresh #33` := ([internal] fresh #33 + 1)
                                           else:
                                             no-op
-                                          set `[internal] iteration count` := [internal] fresh #30
-                                          set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
+                                          set `[internal] iteration count` := [internal] fresh #33
+                                          set `[internal] stuck` := ([internal] fresh #33 = [internal] fresh #34)
                                     if ([internal] escape radius < |z|) then:
                                       block:
                                         set `color` := let #cycle-arg = ((saved_count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 255 0 0), blend(0.333, Color 255 255 255, Color 255 0 0))

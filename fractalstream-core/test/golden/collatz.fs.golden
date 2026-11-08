@@ -25,18 +25,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    let `[internal] fresh #29` = 0 in:
-                      let `[internal] fresh #30` = [internal] iteration limit in:
+                    let `[internal] fresh #32` = 0 in:
+                      let `[internal] fresh #33` = [internal] iteration limit in:
                         block:
-                          if (!((|(z - 1:R:C)| < [internal] vanishing radius) or ((|(z - 0:R:C)| < [internal] vanishing radius) or ((|(z - -1:R:C)| < [internal] vanishing radius) or ((|(z - -5:R:C)| < [internal] vanishing radius) or ((|(z - -17:R:C)| < [internal] vanishing radius) or ([internal] escape radius < |z|)))))) and ([internal] fresh #29 < [internal] fresh #30)) then:
-                            do-while (!((|(z - 1:R:C)| < [internal] vanishing radius) or ((|(z - 0:R:C)| < [internal] vanishing radius) or ((|(z - -1:R:C)| < [internal] vanishing radius) or ((|(z - -5:R:C)| < [internal] vanishing radius) or ((|(z - -17:R:C)| < [internal] vanishing radius) or ([internal] escape radius < |z|)))))) and ([internal] fresh #29 < [internal] fresh #30)):
+                          if (!((|(z - 1:R:C)| < [internal] vanishing radius) or ((|(z - 0:R:C)| < [internal] vanishing radius) or ((|(z - -1:R:C)| < [internal] vanishing radius) or ((|(z - -5:R:C)| < [internal] vanishing radius) or ((|(z - -17:R:C)| < [internal] vanishing radius) or ([internal] escape radius < |z|)))))) and ([internal] fresh #32 < [internal] fresh #33)) then:
+                            do-while (!((|(z - 1:R:C)| < [internal] vanishing radius) or ((|(z - 0:R:C)| < [internal] vanishing radius) or ((|(z - -1:R:C)| < [internal] vanishing radius) or ((|(z - -5:R:C)| < [internal] vanishing radius) or ((|(z - -17:R:C)| < [internal] vanishing radius) or ([internal] escape radius < |z|)))))) and ([internal] fresh #32 < [internal] fresh #33)):
                               block:
                                 set `z` := let [internal] step.z #0 = z in let [internal] step.c #0 = C in ((([internal] step.z #0 / 2:R:C) * (cos(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)) + (((3:R:C * [internal] step.z #0) + [internal] step.c #0) * (sin(((3.141592653589793:C * [internal] step.z #0) / 2:R:C)) ^ 2:R:C)))
-                                set `[internal] fresh #29` := ([internal] fresh #29 + 1)
+                                set `[internal] fresh #32` := ([internal] fresh #32 + 1)
                           else:
                             no-op
-                          set `[internal] iteration count` := [internal] fresh #29
-                          set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                          set `[internal] iteration count` := [internal] fresh #32
+                          set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
                     set `color` := Color 0 0 0
                     if (|(z - 1:R:C)| < [internal] vanishing radius) then:
                       block:

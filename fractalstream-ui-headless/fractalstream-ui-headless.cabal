@@ -125,6 +125,7 @@ test-suite end-to-end
                     , fractalstream-ui-headless
                     , hspec
   other-modules:      OverlaySpec
+                    , GeometrySpec
 
   if flag(use-llvm)
      build-depends: fractalstream-backend-llvm

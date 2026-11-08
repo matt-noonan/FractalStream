@@ -21,11 +21,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                 block:
                                   let `y` = [internal] tuple #1:R in:
                                     block:
-                                      let `[internal] fresh #25` = 0 in:
-                                        let `[internal] fresh #26` = settle in:
+                                      let `[internal] fresh #29` = 0 in:
+                                        let `[internal] fresh #30` = settle in:
                                           block:
-                                            if (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #25 < [internal] fresh #26)) then:
-                                              do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #25 < [internal] fresh #26)):
+                                            if (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #29 < [internal] fresh #30)) then:
+                                              do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #29 < [internal] fresh #30)):
                                                 block:
                                                   block:
                                                     let `[internal] tuple #2` = ((1:R - (a * (x ^ 2:R))) + y) in:
@@ -34,11 +34,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                           block:
                                                             set `x` := [internal] tuple #2
                                                             set `y` := [internal] tuple #3
-                                                  set `[internal] fresh #25` := ([internal] fresh #25 + 1)
+                                                  set `[internal] fresh #29` := ([internal] fresh #29 + 1)
                                             else:
                                               no-op
-                                            set `[internal] iteration count` := [internal] fresh #25
-                                            set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
+                                            set `[internal] iteration count` := [internal] fresh #29
+                                            set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
                                       if ![internal] stuck then:
                                         block:
                                           set `color` := let #cycle-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 0 0 255), Color 255 255 255)
@@ -52,10 +52,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                     block:
                                                       let `y0` = [internal] tuple #5 in:
                                                         block:
-                                                          let `[internal] fresh #29` = 0 in:
-                                                            let `[internal] fresh #30` = max_period in:
+                                                          let `[internal] fresh #33` = 0 in:
+                                                            let `[internal] fresh #34` = max_period in:
                                                               block:
-                                                                do-while (!(((((x - x0) ^ 2:R) + ((y - y0) ^ 2:R)) < (tolerance ^ 2:R)) or let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|)))) and ([internal] fresh #29 < [internal] fresh #30)):
+                                                                do-while (!(((((x - x0) ^ 2:R) + ((y - y0) ^ 2:R)) < (tolerance ^ 2:R)) or let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|)))) and ([internal] fresh #33 < [internal] fresh #34)):
                                                                   block:
                                                                     block:
                                                                       block:
@@ -66,9 +66,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                 block:
                                                                                   set `x` := [internal] tuple #6
                                                                                   set `y` := [internal] tuple #7
-                                                                    set `[internal] fresh #29` := ([internal] fresh #29 + 1)
-                                                                set `[internal] iteration count` := [internal] fresh #29
-                                                                set `[internal] stuck` := ([internal] fresh #29 = [internal] fresh #30)
+                                                                    set `[internal] fresh #33` := ([internal] fresh #33 + 1)
+                                                                set `[internal] iteration count` := [internal] fresh #33
+                                                                set `[internal] stuck` := ([internal] fresh #33 = [internal] fresh #34)
                                                           if let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) then:
                                                             block:
                                                               set `color` := blend(0.333, Color 0 0 0, Color 0 0 255)
@@ -94,11 +94,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                 let `pixel_width` = [internal] dx in:
                   let `pixel_height` = [internal] dy in:
                     block:
-                      let `[internal] fresh #23` = 0 in:
-                        let `[internal] fresh #24` = [internal] iteration limit in:
+                      let `[internal] fresh #27` = 0 in:
+                        let `[internal] fresh #28` = [internal] iteration limit in:
                           block:
-                            if (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #23 < [internal] fresh #24)) then:
-                              do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #23 < [internal] fresh #24)):
+                            if (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #27 < [internal] fresh #28)) then:
+                              do-while (!let #tuple 0 = (x, y) in (([internal] escape radius * [internal] escape radius) < ((|(1st #tuple 0)| * |(1st #tuple 0)|) + (|(2nd #tuple 0)| * |(2nd #tuple 0)|))) and ([internal] fresh #27 < [internal] fresh #28)):
                                 block:
                                   block:
                                     let `[internal] tuple #0` = ((1:R - (a * (x ^ 2:R))) + y) in:
@@ -107,11 +107,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                           block:
                                             set `x` := [internal] tuple #0
                                             set `y` := [internal] tuple #1
-                                  set `[internal] fresh #23` := ([internal] fresh #23 + 1)
+                                  set `[internal] fresh #27` := ([internal] fresh #27 + 1)
                             else:
                               no-op
-                            set `[internal] iteration count` := [internal] fresh #23
-                            set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
+                            set `[internal] iteration count` := [internal] fresh #27
+                            set `[internal] stuck` := ([internal] fresh #27 = [internal] fresh #28)
                       set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 10:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 0 0 255), Color 255 255 255)
 
 
