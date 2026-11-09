@@ -1,109 +1,274 @@
 <!DOCTYPE html>
 <html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download FractalStream </title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+        }
 
-  <head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --primary-color: #3b82f6;
+                --primary-hover: #2563eb;
+                --bg-color: #0f172a;
+                --card-bg: #1e293b;
+                --text-main: #f8fafc;
+                --text-muted: #94a3b8;
+            }
+        }
 
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-    <title>FractalStream Development Blog - Home</title>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
 
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
-    <link rel="stylesheet" type="text/css" href="./css/bootstrap-blog.css">
+        .container {
+            width: 100%;
+            max-width: 500px;
+            padding: 40px 20px;
+            box-sizing: border-box;
+        }
 
-  </head>
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 16px;
+            padding: 32px;
+            text-align: center;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
 
-  <body>
+        .app-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--primary-color), #a855f7);
+            border-radius: 20px;
+            margin: 0 auto 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 2rem;
+            font-weight: bold;
+        }
 
-    <div class="blog-masthead">
-      <div class="container">
-	<nav class="blog-nav">
-          <a class="blog-nav-item" href="./">Home</a>
-          <a class="blog-nav-item" href="./about.html">About</a>
-          <a class="blog-nav-item" href="./contact.html">Contact</a>
-          <a class="blog-nav-item" href="./archive.html">Archive</a>
-	  </nav>
-      </div>
-    </div>
+        h1 {
+            margin: 0 0 8px 0;
+            font-size: 1.75rem;
+        }
+
+        .muted {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+        }
+
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background-color: var(--primary-color);
+            color: white;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: background-color 0.2s, transform 0.1s;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .download-btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .download-btn:active {
+            transform: scale(0.98);
+        }
+
+        .link-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            background-color: var(--primary-color);
+            color: white;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-weight: 400;
+            font-size: 1rem;
+            transition: background-color 0.2s, transform 0.1s;
+            width: 80%;
+            box-sizing: border-box;
+        }
+
+        .link-btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .link-btn:active {
+            transform: scale(0.98);
+        }
+
+        .detected-os {
+            margin-top: 12px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .other-links {
+            margin-top: 32px;
+            border-top: 1px solid var(--text-muted);
+            padding-top: 20px;
+            opacity: 0.7;
+        }
+
+        .other-links p {
+            font-size: 0.85rem;
+            margin-bottom: 12px;
+            color: var(--text-muted);
+        }
+
+        .links-grid {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .links-grid a {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+
+        .links-grid a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
 
     <div class="container">
+        <div class="card">
+            <!-- App Icon Placeholder -->
+            <div class="app-icon"><img src="images/fslogo.jpg" width="100" height="100"></div>
 
-      <div class="blog-header">
-	<h1 class="blog-title">FractalStream Development Blog</h1>
-	<p class="lead blog-description">
-	    Building a tool in Haskell for dynamical systems research.
-	    </p>
-      </div>
+            <h1 id="app-name">FractalStream </h1>
+            <div class="muted"><span>A tool for research in dynamical systems</span></div>
 
-      <div class="row">
-	<div class="col-sm-8 blog-main">
-	    <h2>Welcome</h2>
+            <!-- Core Dynamic/Reactive Button -->
+            <div id="download_buttons"></div>
 
-<img src="./images/fslogo.jpg" style="float: right; margin: 10px;" />
+            <a href="#" id="download-link" class="download-btn">
+                <span>Download for Your OS</span>
+            </a>
 
-<p>Welcome to the FractalStream development blog!</p>
+            <div class="other-links">
+                <p>Not the right version? Download for other platforms:</p>
+                <div class="links-grid">
+                    <a href="https://github.com/matt-noonan/FractalStream/releases/download/v0.0.5-alpha/FractalStream-0.0.5-alpha-windows-x86_64-setup.exe" data-os="Windows">Windows (Intel)</a>
+                    <a href="https://github.com/matt-noonan/FractalStream/releases/download/v0.0.5-alpha/FractalStream-0.0.5-alpha-macos-arm64.zip" data-os="macOS">macOS (ARM)</a>
+                    <a href="https://github.com/matt-noonan/FractalStream/releases/download/v0.0.5-alpha/FractalStream-0.0.5-alpha-macos-x86_64.zip" data-os="macOS">macOS (Intel)</a>
+                    <a href="https://github.com/matt-noonan/FractalStream/releases/download/v0.0.5-alpha/FractalStream-0.0.5-alpha-linux-x86_64.AppImage" data-os="Linux">Linux (Intel)</a>
+                </div>
+            </div>
 
-<h2>Recent Posts</h2>
-<ul>
-    
-        <li>
-            <a href="./posts/2015-09-10-why-haskell.html">FractalStream, meet Haskell</a> - September 10, 2015
-        </li>
-    
-        <li>
-            <a href="./posts/2015-09-09-fractalstream-1.0.html">FractalStream 1.0</a> - September  9, 2015
-        </li>
-    
-</ul>
-
-
-<p>…or you can find more in the <a href="./archive.html">archives</a>.</p>
-
-	    </div>
-
-	<div class="col-sm-3 col-sm-offset-1 blog-sidebar">
-	    <div class="sidebar-module sidebar-module-inset">
-	          <h4>About</h4>
-		      <p>Updates on the trials and tribulations of developing an interactive,
-			 performace-critical, GUI-based application in Haskell.</p>
-		        </div>
-	      <div class="sidebar-module">
-		    <h4>Archives</h4>
-		        <ol class="list-unstyled">
-			        <li><a href="#">June 2015</a></li>
-				    </ol>
-			  </div>
-	        <div class="sidebar-module">
-		      <h4>Elsewhere</h4>
-		          <ol class="list-unstyled">
-			          <li>
-				    <a href="#">GitHub</a>
-				          </li>
-				        <li>
-					  <a href="#">Twitter</a>
-					        </li>
-					      <li>
-						<a href="#">Facebook</a>
-						      </li>
-					          </ol>
-			    </div>
-		  <div class="sidebar-module">
-		        <a href="./atom.xml">Atom</a> - <a href="./rss.xml">RSS</a>
-			  </div>
-		  </div>
-
-      </div>
-
+            <div class="other-links">
+              <p>Need help writing FractalStream scripts?<br>
+              Have other questions or ideas?</p>
+              <a href="https://github.com/matt-noonan/FractalStream/discussions" class="link-btn" id="discussion"><span>FractalStream discussion page</span></a>
+              <p>Interested in helping out?</p>
+              <a href="https://github.com/matt-noonan/FractalStream" class="link-btn" id="github"><span>FractalStream on GitHub</span></a>
+            </div>
+        </div>
     </div>
 
-    <footer class="blog-footer">
-      <p>
-	Site proudly generated by
-	<a href="http://jaspervdj.be/hakyll">Hakyll</a>
-      </p>
-    </footer>
+    <script>
+        const version = "0.0.5-alpha";
+        const releases = "https://github.com/matt-noonan/FractalStream/releases"
+        const download_prefix = releases + '/download/v' + version + '/'
 
-  </body>
+        function isAppleSiliconBrowser() {
+            try {
+                const canvas = document.createElement("canvas");
+                const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+                if (!gl) return false;
 
+                const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+                if (!debugInfo) return false;
+
+                const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || "";
+
+                // Apple Silicon devices typically return "Apple GPU" or "Apple M1/M2/M3..."
+                // While older Intel Macs return "Intel..." or "AMD..."
+                return /Apple/.test(renderer) && !/Apple iTunes/.test(renderer);
+            } catch (e) {
+                return false;
+            }
+        };
+
+        // Simple reactive system detection script
+        const downloads = {
+            'Windows': { filename: `FractalStream-${version}-windows-x86_64-setup.exe`,
+                         label: `Download v${version} installer for Windows` },
+            'macOS': { filename: `FractalStream-${version}-macos-arm64.zip`,
+                       label: `Download v${version} for macOS` },
+            'macOS (Intel)': { filename: `FractalStream-${version}-macos-x86_64.zip`,
+                               label: `Download v${version} for macOS (Intel)` },
+            'Linux': { filename: `FractalStream-${version}-linux-x86_64.AppImage`,
+                       label: `Download v${version} AppImage for Linux` },
+            'Fallback': { url: releases,
+                          label: 'View all releases' }
+        };
+
+      function detectOS() {
+            const platform = navigator.platform.toLowerCase();
+            const userAgent = navigator.userAgent.toLowerCase();
+
+            if (platform.includes('win') || userAgent.includes('windows')) return 'Windows';
+            if (platform.includes('mac') || userAgent.includes('macintosh')) {
+              if (isAppleSiliconBrowser()) {
+                  return 'macOS';
+              }
+              else {
+                  return 'macOS (Intel)'
+              }
+            }
+            if (platform.includes('linux') || userAgent.includes('linux')) return 'Linux';
+            return 'Fallback';
+        }
+
+        // Initialize state reactively on load
+        window.addEventListener('DOMContentLoaded', () => {
+            const currentOS = detectOS();
+            const downloadBtn = document.getElementById('download-link');
+            const osInfo = document.getElementById('os-info');
+
+            const config = downloads[currentOS] || downloads['Fallback'];
+
+            // Update DOM properties dynamically
+            downloadBtn.href = download_prefix + config.filename;
+            downloadBtn.querySelector('span').textContent = config.label;
+
+        });
+    </script>
+</body>
 </html>
