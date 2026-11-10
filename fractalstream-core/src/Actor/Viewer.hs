@@ -23,7 +23,7 @@ module Actor.Viewer
   , CodeWithArgs(..)
   , cloneViewer
   , onParameterChanges
-  , invokeViewerFunction
+  , runViewerFunction
   , assertMissingViewerArgs
   , snapshotToFile
   , withRenderedViewerBuffer
@@ -173,14 +173,14 @@ data PrepArrays where
              -> Context PrepArrayPtr prepOutputEnv
              -> PrepArrays
 
-data ViewerArgs env = ViewerArgs
+-- | A block of pixels for a viewer to render (see 'ViewerFunction').
+data ViewerArgs = ViewerArgs
   { vaPoint      :: (Double, Double)
   , vaStep       :: (Double, Double)
   , vaWidth      :: Int32
   , vaHeight     :: Int32
   , vaSubsamples :: Int32
   , vaBuffer     :: Ptr Word8
-  , vaArgs       :: Context HaskellValue env
   }
 
 data CodeWithArgs where
@@ -319,7 +319,8 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
       aspect <- getDynamic vAspect
       projection <- viewProjection vView vRotation
       center@(cx, cy) <- getDynamic vCenter
-      ViewerFunction fn <- getDynamic code
+      ViewerFunction bind <- getDynamic code
+      fn <- bind vaArgs
       let s = if downsample then 2 else 1
           bigW = w * s
           px = pixelSize / fromIntegral s
@@ -341,8 +342,7 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
               , vaWidth = fromIntegral bigW
               , vaHeight = fromIntegral (rows * s)
               , vaSubsamples = 1
-              , vaBuffer = big
-              , vaArgs }
+              , vaBuffer = big }
             modifyMVar_ issuesVar (pure . (<> issues))
             let dest = outPtr `plusPtr` (3 * w * row)
             if downsample then downsampleRows bigW w rows big dest
@@ -408,10 +408,20 @@ snapshotToFile viewer downsample path =
 onParameterChanges :: Viewer -> IO () -> IO (IO ())
 onParameterChanges = vListen
 
--- | Render a block of pixels, reporting any problems the viewer's script
--- ran into along the way.
+-- | A viewer's compiled script. Given the configuration's values, it
+-- gives a function rendering a block of pixels with them, reporting any
+-- problems the script ran into along the way. A render binds the values
+-- once and then renders its many blocks, often concurrently: the backend
+-- prepares the values for its code (say, copying a list into the layout
+-- compiled code reads) when they're bound, not for every block. What's
+-- prepared lives as long as the block function does.
 newtype ViewerFunction env =
-  ViewerFunction (ViewerArgs env -> IO ViewerIssues)
+  ViewerFunction (Context HaskellValue env -> IO (ViewerArgs -> IO ViewerIssues))
+
+-- | Render one block with a viewer function, binding the values just for
+-- it. (A render of many blocks should bind them once instead.)
+runViewerFunction :: ViewerFunction env -> Context HaskellValue env -> ViewerArgs -> IO ViewerIssues
+runViewerFunction (ViewerFunction bind) args block = bind args >>= ($ block)
 
 -- | Problems a viewer's script ran into while rendering. A pixel that hit
 -- one of them is drawn magenta.
@@ -456,25 +466,6 @@ assertMissingViewerArgs env ok = do
 
 data AssertAbsent name env where
   AssertAbsent :: forall name env. NotPresent name env => AssertAbsent name env
-
-invokeViewerFunction :: MissingViewerArgs env
-                     => ViewerFunction env
-                     -> Context HaskellValue env
-                     -> Word32
-                     -> Word32
-                     -> Word32
-                     -> Complex Double
-                     -> Complex Double
-                     -> Ptr Word8
-                     -> IO ViewerIssues
-invokeViewerFunction (ViewerFunction fn) vaArgs =
-  \w h subsamples (dx :+ dy) (x :+ y) vaBuffer -> do
-    let vaPoint = (x, y)
-        vaStep  = (dx, dy)
-        vaWidth = fromIntegral w
-        vaHeight = fromIntegral h
-        vaSubsamples = fromIntegral subsamples
-    fn ViewerArgs{..}
 
 
 -- | Compiles a viewer's code, given the project's autocolor lookup (for
@@ -635,7 +626,7 @@ refreshOverlay v = do
 
 -- | A fallback viewer function that paints every point grey
 allGrey :: ViewerFunction '[]
-allGrey = ViewerFunction $ \ViewerArgs{..} -> do
+allGrey = ViewerFunction $ \_ -> pure $ \ViewerArgs{..} -> do
   let (w, h) = (fromIntegral vaWidth, fromIntegral vaHeight)
   forM_ [0..w - 1] $ \j ->
     forM_ [0..h - 1] $ \i -> do

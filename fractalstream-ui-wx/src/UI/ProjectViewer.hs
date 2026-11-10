@@ -690,7 +690,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 readMVar lastRenderAction
               Right vaArgs -> do
                 setWarning Nothing
-                ViewerFunction vf <- getDynamic vCode
+                -- (the values are bound once, for every block of the render)
+                ViewerFunction bind <- getDynamic vCode
+                vf <- bind vaArgs
                 let action = \(w :: Word32) (h :: Word32) (subsamples :: Word32) (dx :+ dy) (x :+ y) vaBuffer -> do
                       let vaWidth  = fromIntegral w
                           vaHeight = fromIntegral h
