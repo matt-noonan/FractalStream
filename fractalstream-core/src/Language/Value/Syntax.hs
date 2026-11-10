@@ -99,6 +99,19 @@ data ExprF r
     -- ^ @T \@ point z@: a 2-dimensional table's cell nearest a point.
   | ETableSize r
     -- ^ @table_size(T)@: an integer, or a tuple of one per dimension.
+  | ETablePointOr r r r
+    -- ^ @T \@ point z else v@: the cell's value, or @v@ for a point off
+    -- the table. Type checking makes it @if z in T then T \@ point z else
+    -- v@.
+  | ETableHas r r
+    -- ^ @z in T@: whether a point is on a 2-dimensional table (the
+    -- table, then the point).
+  | ETableCell r r
+    -- ^ @table_cell(T, z)@: the indices of the cell a point is in, as a
+    -- pair (on the table or not).
+  | ETableCellPoint r [r]
+    -- ^ @table_point(T, (j, k))@: the point at the center of a cell (its
+    -- indices: one tuple, split into integers by type checking).
     -- ^ A table, indexed by one integer per dimension (made from an
     -- 'EIndex' by type checking).
   | ELet String r r

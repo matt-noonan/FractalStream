@@ -278,6 +278,7 @@ valueAndArithGrammar funs = mdo
     , node (EBin OpGt  <$> (arith <* token GreaterThan) <*> arith)
     , node (EBin OpGe <$> (arith <* token GreaterThanOrEqual) <*> arith)
     , node (EBin OpLe <$> (arith <* token LessThanOrEqual) <*> arith)
+    , node ((\p tbl -> ETableHas tbl p) <$> (arith <* token (Identifier "in")) <*> arith)
     , node (EUn OpEscapes <$> (arith <* token Escapes))
     , node (EUn OpVanishes <$> (arith <* token Vanishes))
     , node (EUn OpStops <$> (arith <* token Stops))
@@ -297,6 +298,9 @@ valueAndArithGrammar funs = mdo
   mulOrDiv <- ruleChoice
     [ node (EBin OpMul <$> (mulOrDiv <* token Times) <*> negated)
     , node (ETablePoint <$> (mulOrDiv <* token At <* token (Identifier "point")) <*> negated)
+    -- `T @ point z else v`: the cell's value, or `v` off the table
+    , node (ETablePointOr <$> (mulOrDiv <* token At <* token (Identifier "point"))
+                          <*> (negated <* token Else) <*> negated)
     , node (EIndex False <$> (mulOrDiv <* token At) <*> negated)
     , node (EIndex True  <$> (mulOrDiv <* token AtAt) <*> negated)
     -- (a list literal isn't an atom, so it needs its own rule)
@@ -489,6 +493,11 @@ valueAndArithGrammar funs = mdo
              (token LengthKeyword *> token OpenParen *> toplevel <* token CloseParen))
     , node (ETableSize <$>
              (token (Identifier "table_size") *> token OpenParen *> toplevel <* token CloseParen))
+    , node (ETableCell <$> (token (Identifier "table_cell") *> token OpenParen *> toplevel)
+                       <*> (token Comma *> toplevel <* token CloseParen))
+    , node ((\tbl ix -> ETableCellPoint tbl [ix])
+             <$> (token (Identifier "table_point") *> token OpenParen *> toplevel)
+             <*> (token Comma *> toplevel <* token CloseParen))
     ]
 
   diff <- rule $ node $
@@ -570,7 +579,8 @@ valueAndArithGrammar funs = mdo
         , "romao", "bamo", "broco", "corko", "viko"
         , "ice", "fire", "rose", "wheat", "forest", "ocean"
         , "winter", "spring", "summer", "fall"
-        , "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size", "filled"]
+        , "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size", "filled"
+        , "table_cell", "table_point", "in" ]
         `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions

@@ -320,6 +320,35 @@ data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FS
             -> Eval (value '(env, 'TableT n ty))
             -> ValueF value '(env, sz)
 
+  -- | Whether a point is on a 2-dimensional table (its nearest cell is
+  -- in range).
+  TableContains :: forall env n ty value. KnownEnvironment env
+                => SNat n
+                -> TypeProxy ty
+                -> Eval (value '(env, 'TableT n ty))
+                -> Eval (value '(env, 'ComplexT))
+                -> ValueF value '(env, 'BooleanT)
+
+  -- | The indices of a 2-dimensional table's cell nearest a point, as a
+  -- tuple of type @sz@ (a pair of integers), whether or not it's in range.
+  TableCell :: forall env n ty sz value. KnownEnvironment env
+            => SNat n
+            -> TypeProxy ty
+            -> TypeProxy sz
+            -> Eval (value '(env, 'TableT n ty))
+            -> Eval (value '(env, 'ComplexT))
+            -> ValueF value '(env, sz)
+
+  -- | The point at the center of a 2-dimensional table's cell (given by
+  -- its column and row, in range or not).
+  TableCellPoint :: forall env n ty value. KnownEnvironment env
+                 => SNat n
+                 -> TypeProxy ty
+                 -> Eval (value '(env, 'TableT n ty))
+                 -> Eval (value '(env, 'IntegerT))
+                 -> Eval (value '(env, 'IntegerT))
+                 -> ValueF value '(env, 'ComplexT)
+
 instance KnownEnvironment env => Num (Value '(env, 'IntegerT)) where
   (+) = AddI
   (-) = SubI
@@ -511,6 +540,9 @@ instance IFunctor ValueF where
     TableIndex _ t _ _ -> EnvType t
     TablePoint _ t _ _ -> EnvType t
     TableSize _ _ t _ -> EnvType t
+    TableContains{} -> EnvType BooleanType
+    TableCell _ _ t _ _ -> EnvType t
+    TableCellPoint{} -> EnvType ComplexType
 
   imap :: forall a b i
         . (forall j. EnvTypeProxy j -> Eval (a j) -> Eval (b j))
@@ -641,6 +673,13 @@ instance IFunctor ValueF where
         TablePoint n t (f (withEnv (TableType n t)) tbl) (f (withEnv ComplexType) p)
       TableSize n t sz tbl -> withKnownType t $ withKnownNat n $
         TableSize n t sz (f (withEnv (TableType n t)) tbl)
+      TableContains n t tbl p -> withKnownType t $ withKnownNat n $
+        TableContains n t (f (withEnv (TableType n t)) tbl) (f (withEnv ComplexType) p)
+      TableCell n t sz tbl p -> withKnownType t $ withKnownNat n $
+        TableCell n t sz (f (withEnv (TableType n t)) tbl) (f (withEnv ComplexType) p)
+      TableCellPoint n t tbl j k -> withKnownType t $ withKnownNat n $
+        TableCellPoint n t (f (withEnv (TableType n t)) tbl)
+                       (f (withEnv IntegerType) j) (f (withEnv IntegerType) k)
 
 ---------------------------------------------------------------------------------
 -- Indexed traversable instance for values
@@ -759,6 +798,9 @@ instance ITraversable ValueF  where
     TableIndex n t mtbl mixs -> TableIndex n t <$> mtbl <*> sequenceA mixs
     TablePoint n t mtbl mp -> TablePoint n t <$> mtbl <*> mp
     TableSize n t sz mtbl -> TableSize n t sz <$> mtbl
+    TableContains n t mtbl mp -> TableContains n t <$> mtbl <*> mp
+    TableCell n t sz mtbl mp -> TableCell n t sz <$> mtbl <*> mp
+    TableCellPoint n t mtbl mj mk -> TableCellPoint n t <$> mtbl <*> mj <*> mk
 
 instance Show (Value et) where show = pprint
 
@@ -876,6 +918,9 @@ pprint = indexedFold @PrecString @ValueF go
     TableIndex _ _ tbl ixs -> concat ["(", tbl, " @ (", intercalate ", " ixs, "))"]
     TablePoint _ _ tbl p -> concat ["(", tbl, " @ point ", p, ")"]
     TableSize _ _ _ tbl -> concat ["table_size(", tbl, ")"]
+    TableContains _ _ tbl p -> concat ["(", p, " in ", tbl, ")"]
+    TableCell _ _ _ tbl p -> concat ["table_cell(", tbl, ", ", p, ")"]
+    TableCellPoint _ _ tbl j k -> concat ["table_point(", tbl, ", (", j, ", ", k, "))"]
 
   fun f args = concat [f, "(", intercalate ", " args, ")"]
   binop op x y = concat ["(", x, " ", op, " ", y, ")"]

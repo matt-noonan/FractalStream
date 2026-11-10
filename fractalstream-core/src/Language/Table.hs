@@ -12,6 +12,8 @@ module Language.Table
   , cellOffset
   , readCell
   , pointCell
+  , pointIndices
+  , cellPoint
   , writeCell
   , fillTable
   , newTable
@@ -63,12 +65,26 @@ cellOffset t ixs
 -- | The indices of a 2-dimensional table's cell nearest a point, if the
 -- point is on the table.
 pointCell :: Table -> Complex Double -> Maybe [Int]
-pointCell t (x :+ y) = do
-  let (x0, y0) = tableOrigin t
-      (dx, dy) = tableStep t
-      ixs = [ nearestCell ((x - x0) / dx), nearestCell ((y0 - y) / dy) ]
+pointCell t z = do
+  let ixs = pointIndices t z
   _ <- cellOffset t ixs
   pure ixs
+
+-- | The column and row of a 2-dimensional table's cell that a point is
+-- in, whether or not that's in range.
+pointIndices :: Table -> Complex Double -> [Int]
+pointIndices t (x :+ y) =
+  let (x0, y0) = tableOrigin t
+      (dx, dy) = tableStep t
+  in [ nearestCell ((x - x0) / dx), nearestCell ((y0 - y) / dy) ]
+
+-- | The point at the center of a 2-dimensional table's cell, by its
+-- column and row (in range or not).
+cellPoint :: Table -> Int -> Int -> Complex Double
+cellPoint t j k =
+  let (x0, y0) = tableOrigin t
+      (dx, dy) = tableStep t
+  in (x0 + fromIntegral (j - 1) * dx) :+ (y0 - fromIntegral (k - 1) * dy)
 
 -- | The 1-based index of the cell nearest a position measured in cells
 -- from the center of cell 1: the cell the position is in. A position on

@@ -501,6 +501,34 @@ spec = do
       length results `shouldBe` 16 * 50
       results `shouldSatisfy` all (== (mempty, greenPixels))
 
+    it "looks points up on a table, with `in`, `table_cell`, `table_point` and `else`" $ withJIT $ \jit -> do
+      -- (a 4 x 3 table whose cell (j, k) is centered on (j - 1) - (k - 1) i)
+      let env = envProxy (Proxy @(ViewerEnv '[ '("T", 'TableT 2 'RealT) ]))
+          src = unlines
+            [ "(cj, ck) := table_cell(T, 2 - i)"
+            , "(oj, ok) := table_cell(T, 5 + 3 i)"
+            , "p := table_point(T, (3, 2))"
+            , "color <- if (1 - i) in T and not ((9 + 0 i) in T)"
+              ++ " and cj > 2 and cj < 4 and ck > 1 and ck < 3"
+              ++ " and oj > 5 and oj < 7 and ok > -3 and ok < -1"
+              ++ " and re(p) > 1.9 and re(p) < 2.1 and im(p) > -1.1 and im(p) < -0.9"
+              ++ " and T @ point (2 - i) else 0 > 22 and T @ point (9 + 0 i) else -1 < -0.5"
+              ++ " then green else red" ]
+          greenPixels = concat (replicate 16 (let (r, g, b) = colorToRGB green in [r, g, b]))
+      code <- either (fail . show) pure (parseCode env noCommonDefs src)
+      t <- maybe (fail "couldn't make the table") pure =<< newTable RealType [4, 3] (0, 0) (1, 1)
+      _ <- writeCell RealType t [3, 2] 23
+      freezeTable t
+      (issues, pixels) <- withJittedViewer jit noAutocolor Nothing code $ \vf ->
+        allocaBytes (3 * 4 * 4) $ \buf -> do
+          issues <- runViewerFunction vf (Bind (Proxy @"T") typeProxy t EmptyContext) ViewerArgs
+            { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+            , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+            , vaBuffer = buf }
+          (issues,) <$> peekArray (3 * 4 * 4) buf
+      issues `shouldBe` mempty
+      pixels `shouldBe` greenPixels
+
 type SharedArgsEnv = '[ '("T", 'TableT 2 'RealT), '("xs", 'ListT 'ComplexT), '("w", 'ComplexT) ]
 
 type PrepTestEnv = '[ '("table", 'ListT 'ComplexT), '("label", 'TextT) ]

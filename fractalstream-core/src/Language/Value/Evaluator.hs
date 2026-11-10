@@ -15,7 +15,7 @@ import FractalStream.Prelude
 
 import Language.Value
 import Data.Indexed.Functor
-import Language.Table (readCell, pointCell, Table(..))
+import Language.Table (readCell, pointCell, pointIndices, cellPoint, Table(..))
 import Data.Color
 
 import Unsafe.Coerce
@@ -318,6 +318,12 @@ evaluator v0 ctx = case v0 of
                    (pointCell tbl (p_ ctx) >>= readCell t tbl)
 
     TableSize _ _ sz tbl_ -> sizeTuple sz (map fromIntegral (tableDims (tbl_ ctx)))
+
+    TableContains _ _ tbl_ p_ -> isJust (pointCell (tbl_ ctx) (p_ ctx))
+
+    TableCell _ _ sz tbl_ p_ -> sizeTuple sz (map fromIntegral (pointIndices (tbl_ ctx) (p_ ctx)))
+
+    TableCellPoint _ _ tbl_ j_ k_ -> cellPoint (tbl_ ctx) (fromIntegral (j_ ctx)) (fromIntegral (k_ ctx))
 
 -- | A table's size, as the tuple 'Language.Value.Typing.tableSizeType'
 -- describes.

@@ -173,6 +173,22 @@ buildValue getExtern arena = indexedFold go'
         desc <- getTableOp <$> mtbl
         lift $ buildTableSize sz desc
 
+      TableContains _ ty mtbl mz -> do
+        desc <- getTableOp <$> mtbl
+        (x, y) <- getComplexOp <$> mz
+        lift $ buildTableContains getExtern ty desc x y
+
+      TableCell _ _ sz mtbl mz -> do
+        desc <- getTableOp <$> mtbl
+        (x, y) <- getComplexOp <$> mz
+        lift $ buildTableCell getExtern sz desc x y
+
+      TableCellPoint _ _ mtbl mj mk -> do
+        desc <- getTableOp <$> mtbl
+        j <- getIntegerOp <$> mj
+        k <- getIntegerOp <$> mk
+        lift $ buildTableCellPoint desc j k
+
       -- ------------------------------------------------------------------ --
       -- Range: integer range [lo..hi].
       -- ------------------------------------------------------------------ --
