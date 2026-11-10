@@ -71,6 +71,9 @@ import qualified System.Info as System
 -- | What a viewer's menu can do to the project as a whole.
 data ProjectMenuActions = ProjectMenuActions
   { pmSave          :: IO ()
+    -- ^ Save the project to its file, or ask where to if it has none yet.
+  , pmSaveAs        :: IO ()
+    -- ^ Ask where to save the project, and save it there.
   , pmEditScript    :: IO ()
   , pmEditInfo      :: Window () -> IO ()
     -- ^ Show the project info dialog, over the given window. That must
@@ -1658,7 +1661,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     showPtrPosition <- menuItem hamburgerMenu [ text := "Show pointer position"
                                               , checkable := True, checked := False ]
     menuLine hamburgerMenu
-    menuItem hamburgerMenu [ text := "Save...\tCtrl+S", enabled := True, on command := pmSave ]
+    menuItem hamburgerMenu [ text := "Save\tCtrl+S", enabled := True, on command := pmSave ]
+    menuItem hamburgerMenu [ text := "Save as...\tCtrl+Shift+S", enabled := True, on command := pmSaveAs ]
     menuItem hamburgerMenu [ text := "Edit project script...\tCtrl+E"
                            , enabled := True
                            , on command := pmEditScript

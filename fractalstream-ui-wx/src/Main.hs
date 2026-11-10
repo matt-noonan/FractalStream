@@ -48,7 +48,7 @@ import Control.Exception (Exception, try, catch, ErrorCall(..), IOException)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
-import System.FilePath (takeDirectory, takeFileName)
+import System.FilePath (takeDirectory, takeFileName, takeBaseName, (<.>))
 import Data.Char (isSpace)
 import FractalStream.Library (LibraryEntry(..), projectsDirectory)
 import FractalStream.Settings (Settings(..), loadSettings)
@@ -136,23 +136,29 @@ runApp = withBackend $ \backend -> start $ do
       -- being asked to save on every close just because a window was
       -- nudged would be more annoying than useful.
       --
-      -- The dialog starts out on the session's own file, if it has one
-      -- yet, or else on @suggestedName@ in the user's projects folder
-      -- (made if need be), where the library browser will show it; and
-      -- a successful save makes the chosen file the session's own from
-      -- then on.
+      -- "Save" writes to the session's own file, if it has one yet;
+      -- "Save as..." (@askWhere@), or "Save" without a file, asks where
+      -- to save first. The dialog starts out on the session's own file,
+      -- if it has one, or else on @suggestedName@ in the user's projects
+      -- folder (made if need be), where the library browser will show
+      -- it; and a successful save makes the chosen file the session's
+      -- own from then on.
       --
       -- An open script editor's text is what's saved as the script, even
       -- if it hasn't been rebuilt yet: saving and running are separate.
-      save currentEnsemble wxLayout scriptDraft sessionFile suggestedName f isUnsaved = do
-        (dir, name) <- getDynamic sessionFile >>= \case
-          Just p -> pure (takeDirectory p, takeFileName p)
-          Nothing -> do
-            mine <- projectsFolder
-            createDirectoryIfMissing True mine
-            pure (mine, suggestedName)
-        result <- fileSaveDialog f True True "Save FractalStream project"
-                  projectFileTypes dir name
+      save askWhere currentEnsemble wxLayout scriptDraft sessionFile suggestedName f isUnsaved = do
+        current <- getDynamic sessionFile
+        result <- case current of
+          Just p | not askWhere -> pure (Just p)
+          _ -> do
+            (dir, name) <- case current of
+              Just p -> pure (takeDirectory p, takeFileName p)
+              Nothing -> do
+                mine <- projectsFolder
+                createDirectoryIfMissing True mine
+                pure (mine, suggestedName)
+            fileSaveDialog f True True "Save FractalStream project"
+              projectFileTypes dir name
         case result of
           Nothing -> pure ()
           Just file -> do
@@ -179,9 +185,9 @@ runApp = withBackend $ \backend -> start $ do
       --
       -- @rebuild@ rebuilds the project with changed colorizer choices
       -- (see 'rebuildColorizers').
-      projectMenuActions currentEnsemble sessionUnsaved pmMovies pmProjectName pmSave pmEditScript pmClose pmCloseWindow rebuild pmEditAutocolor =
+      projectMenuActions currentEnsemble sessionUnsaved pmMovies pmProjectName pmSave pmSaveAs pmEditScript pmClose pmCloseWindow rebuild pmEditAutocolor =
         ProjectMenuActions
-          { pmSave, pmEditScript, pmClose, pmCloseWindow, pmEditAutocolor
+          { pmSave, pmSaveAs, pmEditScript, pmClose, pmCloseWindow, pmEditAutocolor
           , pmMovies, pmProjectName
           , pmUnsaved = sessionUnsaved
           , pmCommonDefs = getDynamic currentEnsemble >>= ensembleCommonDefs
@@ -222,6 +228,10 @@ runApp = withBackend $ \backend -> start $ do
       projectOpen = \path ->
         openProject path (Just path) (takeFileName path) False (`loadOrTranslateProjectFile` path)
 
+      -- (a project loaded as it is, rather than translated from an old
+      -- FractalStream 1.0 file: see 'loadOrTranslateProjectFile')
+      asItIs = fmap (fmap (, False))
+
       -- A library project opens as a copy with no file of its own, so
       -- that saving it never tries to write into the app itself; the
       -- first save suggests the library project's own filename. A
@@ -229,7 +239,7 @@ runApp = withBackend $ \backend -> start $ do
       -- the script editor open, ready to write. One of the user's own
       -- projects just opens, as itself.
       projectOpenLibrary = \LibraryEntry{..} ->
-        let load = const (loadProjectBytes leTitle leContents)
+        let load = const (asItIs (loadProjectBytes leTitle leContents))
         in case leFile of
              Just path -> projectOpen path
              Nothing
@@ -246,7 +256,10 @@ runApp = withBackend $ \backend -> start $ do
       --
       -- If the project file appears to be an old FractalStream 1.0
       -- script, attempt to extract the title and script body, translate
-      -- them, and open in the script editor.
+      -- them, and open in the script editor. The translation is a new
+      -- project, with no file of its own yet: saving it asks where to
+      -- (suggesting the old file's name, as a .fs file), rather than
+      -- writing over the old file.
       openProject name file suggestedName fromStartingPoint load = do
 
         projectWindow <- frame [ visible := False ]
@@ -262,7 +275,7 @@ runApp = withBackend $ \backend -> start $ do
           -- it can be fixed; its viewers appear, with its saved layout
           -- and values, when the fixed script is rebuilt. Only a file
           -- that can't be read as a project at all is an error here.
-          loaded <- either error id <$> load projectWindow
+          (loaded, translated) <- either error id <$> load projectWindow
           let (prj, scriptBuilds) = case loaded of
                 Built ens -> (ens, True)
                 BrokenScript ens _ -> (ens, False)
@@ -287,7 +300,10 @@ runApp = withBackend $ \backend -> start $ do
               pure (WxProperties mempty Nothing)
           wxLayout <- newWxLayout wxProps
 
-          sessionFile <- newVariable file
+          sessionFile <- newVariable (if translated then Nothing else file)
+          let suggestedFileName
+                | translated = takeBaseName suggestedName <.> "fs"
+                | otherwise = suggestedName
           -- The project's name, as the menus and messages show it: its
           -- title, if it has one, or else its file's name, or else
           -- "Untitled" -- kept up to date as its title is edited (in
@@ -319,7 +335,8 @@ runApp = withBackend $ \backend -> start $ do
                   setValue sessionUnsaved True
                   trackValues ens)
 
-          let sessionSave = save currentEnsemble wxLayout scriptDraft sessionFile suggestedName projectWindow sessionUnsaved
+          let sessionSave = save False currentEnsemble wxLayout scriptDraft sessionFile suggestedFileName projectWindow sessionUnsaved
+              sessionSaveAs = save True currentEnsemble wxLayout scriptDraft sessionFile suggestedFileName projectWindow sessionUnsaved
               editorHooks = ScriptEditorHooks
                 { sehAfterClosingProject = showLibraryAfterClosing
                 , sehDraft = scriptDraft
@@ -337,7 +354,7 @@ runApp = withBackend $ \backend -> start $ do
               -- item, by which point it's long since finished building.
               -- The same actions serve a viewer's own pop-up menu and
               -- the menu bar of each of the project's windows.
-              menuActions = projectMenuActions currentEnsemble sessionUnsaved movieSupport (getDynamic sessionName) sessionSave
+              menuActions = projectMenuActions currentEnsemble sessionUnsaved movieSupport (getDynamic sessionName) sessionSave sessionSaveAs
                               (editProjectScript backend projectWindow editorHooks wxLayout currentEnsemble ui)
                               (closeSession si) closeFromWindow
                               (rebuildColorizers backend projectWindow editorHooks wxLayout currentEnsemble ui)
@@ -357,6 +374,7 @@ runApp = withBackend $ \backend -> start $ do
                 closeProject (length viewers > 1) si
               thisProject = ThisProject
                 { tpSave = pmSave menuActions
+                , tpSaveAs = pmSaveAs menuActions
                 , tpEditScript = pmEditScript menuActions
                 , tpEditInfo = pmEditInfo menuActions
                 , tpClose = pmClose menuActions
@@ -573,7 +591,9 @@ fatalErrorDialog projectWindow title mkContents = do
   _ <- showModal d (\done -> set ok [on command := done Nothing ])
   close projectWindow
 
-loadOrTranslateProjectFile :: Frame a -> FilePath -> IO (Either String LoadedProject)
+-- | Load a project file, or translate it if it's an old FractalStream 1.0
+-- file; with whether it was translated.
+loadOrTranslateProjectFile :: Frame a -> FilePath -> IO (Either String (LoadedProject, Bool))
 loadOrTranslateProjectFile f path = do
   try (BS.readFile path) >>= \case
     Left (e :: IOException) -> pure (Left ("could not read " ++ quoted path ++ ": " ++ show e))
@@ -583,8 +603,8 @@ loadOrTranslateProjectFile f path = do
       -- version, do it. If not, see if it might be an old FractalStream
       -- save file and try to go through the translation flow.
       if mightBeAncientFS contents
-        then translateAncientProjectBytes f path contents
-        else loadProjectBytes path contents
+        then fmap (, True) <$> translateAncientProjectBytes f path contents
+        else fmap (, False) <$> loadProjectBytes path contents
 
 translateAncientProjectBytes :: Frame a -> FilePath -> ByteString -> IO (Either String LoadedProject)
 translateAncientProjectBytes f path contents = do

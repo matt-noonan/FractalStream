@@ -13,7 +13,7 @@ import Graphics.UI.WXCore.WxcTypes (withObjectRef)
 import System.Info (os)
 import qualified Data.Map as Map
 import UI.Widgets (wxWatchDynamic1)
-import Graphics.UI.WXCore.WxcDefs (wxID_PREFERENCES, wxITEM_NORMAL, wxACCEL_CTRL)
+import Graphics.UI.WXCore.WxcDefs (wxID_PREFERENCES, wxITEM_NORMAL, wxACCEL_CTRL, wxACCEL_SHIFT)
 import FractalStream.Prelude hiding (get)
 import FractalStream.Metadata
 
@@ -33,6 +33,7 @@ import Graphics.UI.WXCore.WxcClassesMZ (menuDestroyByItem)
 -- menu item's keyboard shortcut actually works).
 data ThisProject = ThisProject
   { tpSave       :: IO ()
+  , tpSaveAs     :: IO ()
   , tpEditScript :: IO ()
   , tpEditInfo   :: Window () -> IO ()
   , tpClose      :: IO ()
@@ -53,21 +54,28 @@ makeMenuBar actions thisProject f addlMenus = case thisProject of
   _ -> menuBarFor actions thisProject f addlMenus
 
 -- | Keyboard shortcuts for a project's commands, for a window without a
--- menu bar to hold them: Ctrl+S to save, Ctrl+E to edit the script,
--- Ctrl+I for the project's info, Ctrl+W to close it, and Ctrl+Q to quit.
+-- menu bar to hold them: Ctrl+S to save, Ctrl+Shift+S to save as,
+-- Ctrl+E to edit the script, Ctrl+I for the project's info, Ctrl+W to
+-- close it, and Ctrl+Q to quit.
 projectShortcuts :: ProjectActions -> ThisProject -> Frame a -> IO ()
-projectShortcuts ProjectActions{quitApp} ThisProject{..} f = keyboardShortcuts f
-  [ ('S', tpSave), ('E', tpEditScript), ('I', tpEditInfo (objectCast f)), ('W', tpClose)
-  , ('Q', quitApp) ]
+projectShortcuts ProjectActions{quitApp} ThisProject{..} f = keyboardShortcutsWith f
+  [ (wxACCEL_CTRL, 'S', tpSave), (wxACCEL_CTRL .+. wxACCEL_SHIFT, 'S', tpSaveAs)
+  , (wxACCEL_CTRL, 'E', tpEditScript), (wxACCEL_CTRL, 'I', tpEditInfo (objectCast f))
+  , (wxACCEL_CTRL, 'W', tpClose), (wxACCEL_CTRL, 'Q', quitApp) ]
 
 -- | Ctrl+letter (Command+letter, on macOS) keyboard shortcuts for a
 -- window, without a menu to hold them.
 keyboardShortcuts :: Frame a -> [(Char, IO ())] -> IO ()
-keyboardShortcuts f shortcuts = do
-  entries <- forM shortcuts $ \(letter, action) -> do
+keyboardShortcuts f shortcuts = keyboardShortcutsWith f [ (wxACCEL_CTRL, c, a) | (c, a) <- shortcuts ]
+
+-- | Keyboard shortcuts for a window, without a menu to hold them, each
+-- with its modifier keys (such as Ctrl, or Ctrl and Shift).
+keyboardShortcutsWith :: Frame a -> [(Int, Char, IO ())] -> IO ()
+keyboardShortcutsWith f shortcuts = do
+  entries <- forM shortcuts $ \(modifiers, letter, action) -> do
     commandId <- idCreate
     evtHandlerOnMenuCommand f commandId action
-    acceleratorEntryCreate wxACCEL_CTRL (fromEnum letter) commandId
+    acceleratorEntryCreate modifiers (fromEnum letter) commandId
   -- wxc wants an array of pointers to the entries.
   let withPointers [] k = k []
       withPointers (e : es) k =
@@ -103,7 +111,8 @@ menuBarFor ProjectActions{..} thisProject f addlMenus = do
   -- In a project's own windows: that project's commands.
   forM_ thisProject $ \ThisProject{..} -> do
     menuLine prj
-    menuItem prj [ text := "Save...\tCtrl+S", on command := tpSave ]
+    menuItem prj [ text := "Save\tCtrl+S", on command := tpSave ]
+    menuItem prj [ text := "Save as...\tCtrl+Shift+S", on command := tpSaveAs ]
     menuItem prj [ text := "Edit Project Script...\tCtrl+E", on command := tpEditScript ]
     menuItem prj [ text := "Project Info...\tCtrl+I", on command := tpEditInfo (objectCast f) ]
     menuItem prj [ text := "Close\tCtrl+W", on command := tpClose ]
