@@ -392,7 +392,12 @@ stopped` means `x` (any expression) is `=` to its value at the start of
 the latest pass through the body: `iterate z -> newton(z) until z stops`.
 It's false at the first check of a `while`/`until`/`iterate` loop.
 
-Boolean: `and`, `or`, `not`. Parenthesize mixtures.
+Boolean: `and`, `or`, `not`. Chains of one (`p and q and r`) are fine,
+but mixing `and` with `or` without parentheses is a parse error ("`and`
+and `or` can't be mixed without parentheses"): write `(p and q) or r`.
+`and` and `or` short-circuit (in every backend): `p and q` evaluates `q`
+only if `p` is true, `p or q` only if `p` is false, so
+`length(xs) > 5 and xs @ 6 = 0` is safe on a short list.
 
 Conditional expression: `if c then a else b` (chains: `if ... then ... else
 if ... then ... else ...`).
@@ -598,6 +603,7 @@ viewer color a pixel by a condition and assert on it.
 |---|---|
 | `I got stuck and couldn't parse the input here, where I was expecting ...` | a reserved word as a variable (`i := 0`), a statement where an expression should be, bad indentation, `text(x)` with one argument |
 | `To avoid ambiguity when using implicit multiplication, functions must go to the left of other values` | `cos 2z` (write `cos(2 z)`) |
+| `` `and` and `or` can't be mixed without parentheses ... `` | `p and q or r`; write `(p and q) or r` or `p and (q or r)` |
 | `A @config stanza can't have a button ...` | move the button into the `@tool` whose `on button` handles it |
 | `The variable z is already defined, and would be re-defined here.` | `:=` on an existing name; use `<-` |
 | `No variable named w is defined here.` | out of scope (declared inside an `if`/loop), typo, or a refresh handler using the viewer coordinate |

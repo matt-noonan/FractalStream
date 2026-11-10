@@ -45,11 +45,17 @@ when √(x² + y²) is more than `escape_radius`.
 
 ### Boolean operations
 
-The boolean operators `and`, `or`, and `not` can be used, with
-`or` taking precedence over `and`, and `and` taking precedence over
-`not`. That is, `not p and q or r` would be parsed as `((not p) and q) or r`.
-This can be confusing, so as a general recommendation you should not
-mix `and`s and `or`s without parentheses.
+The boolean operators `and`, `or`, and `not` can be used. `not` applies
+to what follows it directly, so `not p and q` means `(not p) and q`.
+`and`s can be chained (`p and q and r`), and so can `or`s, but mixing
+them needs parentheses to say which goes first: `(p and q) or r`, or
+`p and (q or r)`. Without them, `p and q or r` is an error.
+
+`and` and `or` only evaluate their right side when the left side doesn't
+already decide the answer: in `p and q`, `q` is evaluated only if `p` is
+true, and in `p or q`, only if `p` is false. So the right side can rely on
+the left one, as in `length(xs) > 5 and xs @ 6 = 0`, which doesn't index
+`xs` out of range when it's too short.
 
 ### Constants
 

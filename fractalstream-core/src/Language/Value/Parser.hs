@@ -237,15 +237,33 @@ valueAndArithGrammar funs = mdo
 
   pairItem <- ruleChoice [ list, pOr ]
 
+  -- `and`s and `or`s can each be chained, but not mixed without
+  -- parentheses: `a and b or c` is accepted only to say so. (The mixed
+  -- chain's first operator picks its branch, and its first switch to the
+  -- other operator is where the run of the first one ends, so it parses
+  -- only one way.)
   pOr <- ruleChoice
-    [ node (EBin OpOr <$> (pAnd <* token Or_) <*> pOr <?> "disjunction")
-    , pAnd
-    ]
-
-  pAnd <- ruleChoice
-    [ node (EBin OpAnd <$> (pNot <* token And_) <*> pAnd <?> "conjunction")
+    [ orChain
+    , andChain
+    , node (mixedAndOr $> EAdvice "`and` and `or` can't be mixed without parentheses, \
+                                  \which say which goes first: write `(a and b) or c` \
+                                  \or `a and (b or c)`")
     , pNot
     ]
+
+  orChain <- rule (node (EBin OpOr <$> (pNot <* token Or_) <*> orTail <?> "disjunction"))
+  orTail <- ruleChoice [ orChain, pNot ]
+
+  andChain <- rule (node (EBin OpAnd <$> (pNot <* token And_) <*> andTail <?> "conjunction"))
+  andTail <- ruleChoice [ andChain, pNot ]
+
+  let -- operands separated by @sep@s
+      runOf' sep = pNot *> many (sep *> pNot)
+      runOf op = runOf' (token op)
+      anyOp = token And_ <|> token Or_
+  mixedAndOr <- rule
+    (   (pNot *> token And_ *> runOf And_ *> token Or_ *> runOf' anyOp)
+    <|> (pNot *> token Or_ *> runOf Or_ *> token And_ *> runOf' anyOp) )
 
   pNot <- ruleChoice
     [ node (EUn OpNot <$> (token Not_ *> arith))
