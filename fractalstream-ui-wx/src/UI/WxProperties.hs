@@ -12,6 +12,11 @@
 -- properties read from the project file, which a window applies when
 -- it is first built, and a snapshot action for every window currently
 -- open, which saving reads to write the properties back out.
+--
+-- It also keeps the windows themselves across a rebuild of the project
+-- (see 'releaseViewerFrame'): a viewer whose title is still in the
+-- rebuilt script, and the configuration window, keep their window, and
+-- only what's inside it is rebuilt.
 module UI.WxProperties
   ( ViewerProperties(..)
   , WindowProperties(..)
@@ -27,6 +32,16 @@ module UI.WxProperties
   , captureLayout
   , rememberLayout
   , keepOnPrimaryDisplay
+    -- * Windows kept across rebuilds
+  , KeptFrame(..)
+  , SelectedTool(..)
+  , registerViewerFrame
+  , releaseViewerFrame
+  , takeSpareViewerFrame
+  , registerConfigFrame
+  , releaseConfigFrame
+  , takeSpareConfigFrame
+  , discardSpareFrames
   ) where
 
 import Control.Applicative ((<|>))
@@ -42,8 +57,11 @@ import Data.Set (Set)
 import Data.Map (Map)
 import Data.Maybe (catMaybes)
 import Data.Unique
-import Graphics.UI.WX (Window, Point2(..), Size2D(..), get, set, position, outerSize, Prop(..))
-import Graphics.UI.WXCore.WxcClassesMZ (wxcAppDisplaySize)
+import Graphics.UI.WX (Window, Frame, StatusField, Point, Point2(..), Size2D(..), get, set, position, outerSize, Prop(..))
+import Graphics.UI.WXCore.WxcClassesMZ (wxcAppDisplaySize, windowDestroy)
+import Data.Foldable (forM_)
+import Data.Functor (void)
+import UI.ViewModel (History)
 
 
 -- | Everything remembered about one viewer window. Every field is
@@ -148,11 +166,117 @@ data WxLayout = WxLayout
     -- leaves it there.
   , wlConfigCarried :: IORef Bool
     -- ^ The same, for the configuration window.
+  , wlLiveFrames  :: IORef (Map String (Unique, IO KeptFrame))
+    -- ^ Each viewer window, by title, with the action that empties it
+    -- (see 'registerViewerFrame').
+  , wlSpareFrames :: IORef (Map String KeptFrame)
+    -- ^ Emptied viewer windows, waiting for their rebuilt viewer.
+  , wlLiveConfig  :: IORef (Maybe (Unique, IO (Frame ())))
+  , wlSpareConfig :: IORef (Maybe (Frame ()))
   }
 
 newWxLayout :: WxProperties -> IO WxLayout
 newWxLayout props = WxLayout <$> newIORef props <*> newIORef Map.empty <*> newIORef Nothing
                              <*> newIORef Set.empty <*> newIORef False
+                             <*> newIORef Map.empty <*> newIORef Map.empty
+                             <*> newIORef Nothing <*> newIORef Nothing
+
+-- | A viewer's window, emptied so that its rebuilt viewer can use it:
+-- the window stays where it is, as it is (on screen, in front of or
+-- behind others), and only what's in it is replaced.
+data KeptFrame = KeptFrame
+  { kfFrame     :: Frame ()
+  , kfResizable :: Bool
+    -- ^ (a window can't change this, so a viewer that now can or can't
+    -- be resized needs a new one)
+  , kfStatus    :: StatusField
+    -- ^ the window's status bar's field (a window only gets one status
+    -- bar, so the rebuilt viewer uses this one)
+  , kfTool      :: SelectedTool
+    -- ^ the tool the viewer had selected, to select again
+  , kfHistory   :: History
+    -- ^ the viewer's history of views, for "Last view" and "Next view"
+  }
+
+-- | The tool a viewer had selected, and for one of its script's tools,
+-- where that tool's settings window was (if it had one, and it was
+-- showing).
+data SelectedTool
+  = SelectedNavigate
+  | SelectedDebug
+  | SelectedMoviePath
+  | SelectedTool String (Maybe Point)
+
+-- | Record a viewer's window, with the action that empties it and gives
+-- it back for reuse ('releaseViewerFrame'). Returns the action that
+-- forgets it again, for when the window itself goes; that leaves alone
+-- any newer registration for the same title.
+registerViewerFrame :: WxLayout -> String -> IO KeptFrame -> IO (IO ())
+registerViewerFrame WxLayout{..} title release = do
+  token <- newUnique
+  modifyIORef' wlLiveFrames (Map.insert title (token, release))
+  pure $ modifyIORef' wlLiveFrames $ \live -> case Map.lookup title live of
+    Just (token', _) | token' == token -> Map.delete title live
+    _ -> live
+
+-- | Empty the window of the viewer with this title, if it has one, and
+-- keep it for the viewer's next build ('takeSpareViewerFrame'). Gives
+-- the window back, so that a caller sweeping away a project's windows
+-- can leave it alone.
+releaseViewerFrame :: WxLayout -> String -> IO (Maybe (Frame ()))
+releaseViewerFrame WxLayout{..} title = do
+  live <- readIORef wlLiveFrames
+  case Map.lookup title live of
+    Nothing -> pure Nothing
+    Just (_, release) -> do
+      modifyIORef' wlLiveFrames (Map.delete title)
+      kept <- release
+      modifyIORef' wlSpareFrames (Map.insert title kept)
+      pure (Just (kfFrame kept))
+
+-- | The emptied window kept for the viewer with this title, if there is
+-- one (it's then no longer spare).
+takeSpareViewerFrame :: WxLayout -> String -> IO (Maybe KeptFrame)
+takeSpareViewerFrame WxLayout{..} title = do
+  spare <- Map.lookup title <$> readIORef wlSpareFrames
+  modifyIORef' wlSpareFrames (Map.delete title)
+  pure spare
+
+-- | 'registerViewerFrame', for the configuration window.
+registerConfigFrame :: WxLayout -> IO (Frame ()) -> IO (IO ())
+registerConfigFrame WxLayout{..} release = do
+  token <- newUnique
+  writeIORef wlLiveConfig (Just (token, release))
+  pure $ modifyIORef' wlLiveConfig $ \case
+    Just (token', _) | token' == token -> Nothing
+    other -> other
+
+-- | 'releaseViewerFrame', for the configuration window.
+releaseConfigFrame :: WxLayout -> IO (Maybe (Frame ()))
+releaseConfigFrame WxLayout{..} = readIORef wlLiveConfig >>= \case
+  Nothing -> pure Nothing
+  Just (_, release) -> do
+    writeIORef wlLiveConfig Nothing
+    f <- release
+    writeIORef wlSpareConfig (Just f)
+    pure (Just f)
+
+-- | 'takeSpareViewerFrame', for the configuration window.
+takeSpareConfigFrame :: WxLayout -> IO (Maybe (Frame ()))
+takeSpareConfigFrame WxLayout{..} = do
+  spare <- readIORef wlSpareConfig
+  writeIORef wlSpareConfig Nothing
+  pure spare
+
+-- | Destroy the emptied windows no rebuilt viewer took (one whose build
+-- failed, say), and the configuration window's, if it wasn't taken.
+discardSpareFrames :: WxLayout -> IO ()
+discardSpareFrames WxLayout{..} = do
+  spares <- readIORef wlSpareFrames
+  writeIORef wlSpareFrames Map.empty
+  forM_ spares (void . windowDestroy . kfFrame)
+  readIORef wlSpareConfig >>= mapM_ (void . windowDestroy)
+  writeIORef wlSpareConfig Nothing
 
 -- | The properties a viewer window being built for the given title
 -- should start from, if any are remembered for it, and whether its

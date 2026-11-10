@@ -23,11 +23,12 @@ import FractalStream.Prelude hiding (get)
 
 import Actor.UI (UI)
 import Actor.Ensemble
+import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Layout (CodeString(..))
 
 import Backend (Backend)
 import UI.Widgets (scriptWidget, scriptEditMenu, onOwnDestroy)
-import UI.WxProperties (WxLayout, rememberLayout)
+import UI.WxProperties (WxLayout, rememberLayout, releaseViewerFrame, releaseConfigFrame, discardSpareFrames)
 import Data.DynamicValue
 
 import Graphics.UI.WX hiding (pt, when, grey, Color, Object, Layout, Vertical, Horizontal)
@@ -45,6 +46,9 @@ data ScriptEditorHooks = ScriptEditorHooks
   , sehEditor :: IORef (Maybe (Window ()))
     -- ^ The open editor's window, if any: rebuilding the project for
     -- some other reason (a new colorizer) leaves it open.
+  , sehKeep :: IO [Window ()]
+    -- ^ Other windows of the project that outlast its rebuilds (its
+    -- autocolor editor): they aren't built from its script.
   , sehMarkUnsaved :: IO ()
   , sehAddMenuBar :: forall a. Frame a -> [Menu ()] -> IO ()
     -- ^ Give the editor its project's menu bar (on macOS, where Command+S
@@ -206,7 +210,8 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
           -- defaults; and carry over everything about the project that
           -- isn't in its script (scenarios, metadata, frontends' own
           -- keys), since a script alone has none of it.
-          replaceProject backend projectWindow wxLayout currentEnsemble ui [] newEns
+          keep <- sehKeep
+          replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns
     ]
 
   set f [ layout := fill $ container p $ fill $ margin 5 $ column 5
@@ -226,15 +231,27 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
 -- in its script (scenarios, metadata, values, frontends' own keys). See
 -- the Rebuild button in 'editProjectScript' for why this is
 -- 'windowDestroy' rather than 'windowClose'.
+--
+-- A viewer the new script still has (by its title), and the
+-- configuration window, keep their windows: those are emptied
+-- ('releaseViewerFrame'), and the rebuilt project fills them again,
+-- so they stay where they are, in front of or behind the others.
+-- Emptied windows that nothing took are destroyed afterwards.
 replaceProject :: Backend -> Window a -> WxLayout -> Variable Ensemble -> UI
                -> [Window ()] -> Ensemble -> IO ()
 replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns = do
   rememberLayout wxLayout
-  windowChildren projectWindow >>= mapM_ windowDestroy . filter (`notElem` keep)
+  titles <- getDynamic (ensembleViewers newEns)
+              >>= mapM (\cv -> fromRight "" <$> getDynamic (dyn (cvTitle cv)))
+  keptViewers <- catMaybes <$> mapM (releaseViewerFrame wxLayout) titles
+  keptConfig <- releaseConfigFrame wxLayout
+  let kept = keep ++ map objectCast keptViewers ++ map objectCast (maybeToList keptConfig)
+  windowChildren projectWindow >>= mapM_ windowDestroy . filter (`notElem` kept)
   oldEns <- getDynamic currentEnsemble
   carryOverProjectState oldEns newEns
   setValue' currentEnsemble newEns
   runEnsemble backend ui newEns
+  discardSpareFrames wxLayout
 
 -- | Rebuild a project from its script with changed colorizer choices
 -- (by viewer title), then run @after@ on the rebuilt project. The new
@@ -247,7 +264,7 @@ rebuildColorizers :: Backend -> Window a -> ScriptEditorHooks -> WxLayout -> Var
                   -> (Map.Map String String -> Map.Map String String)
                   -> (Ensemble -> IO ())
                   -> IO (Either String ())
-rebuildColorizers backend projectWindow ScriptEditorHooks{sehEditor} wxLayout currentEnsemble ui change after = do
+rebuildColorizers backend projectWindow ScriptEditorHooks{sehEditor, sehKeep} wxLayout currentEnsemble ui change after = do
   prj <- getDynamic currentEnsemble
   src <- getDynamic (ensembleSourceScript prj)
   choices <- change <$> getDynamic (ensembleColorizerChoices prj)
@@ -257,7 +274,7 @@ rebuildColorizers backend projectWindow ScriptEditorHooks{sehEditor} wxLayout cu
       replacer <- timer projectWindow [ interval := 1 ]
       set replacer [ on command := do
                        set replacer [ enabled := False ]
-                       keep <- maybeToList <$> readIORef sehEditor
+                       keep <- (++) <$> (maybeToList <$> readIORef sehEditor) <*> sehKeep
                        replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns
                        after newEns ]
       pure (Right ())

@@ -1043,7 +1043,30 @@ interprets it. The wx UI saves its window layout under `wx-properties:` (see
 view" returns to. Window size, position, and resizability are not part of the
 script at all: `fsrun` renders at 600x600 unless a scenario says
 `resize viewer to`. A rebuild from the script editor keeps every window's
-layout and view (`rememberLayout`). Positions read from the project file are clamped onto the
+layout and view (`rememberLayout`).
+
+A rebuild (`UI.ProjectScriptEditor.replaceProject`) also keeps the windows
+themselves: a viewer whose title the new script still has, and the
+configuration window, keep their wx frame (and so their place on screen,
+in the stacking order, on a Space), and only what's inside is rebuilt. Each
+of these windows builds everything in `host`, a panel filling the frame,
+or hooks it to `host`: timers, watchers, cleanup, the debugger and tool
+settings windows. Emptying a window (`WxProperties.releaseViewerFrame`,
+`releaseConfigFrame`) destroys `host`, resets the frame's own handlers, and
+keeps the frame as a spare that the rebuilt viewer takes
+(`takeSpareViewerFrame`); spares nobody took are destroyed
+(`discardSpareFrames`). Rules that keep this from leaking: set the frame's
+handlers with `:=` (never `:~`, which would chain the last build's); give
+`wxTimer`/`timer`/`wxWatchDynamic`/`onOwnDestroy` `host`, not the frame;
+and install anything per-frame once (the menu bar, whose `wxWatchDynamic1`
+would otherwise pile up one timer per rebuild). A frame's status bar is
+also per frame (wx won't make a second one), so it's kept in the
+`KeptFrame`. The selected tool, and where its settings window was, come
+back after a rebuild (`SelectedTool`), and so does the viewer's history of
+views for "Last view"/"Next view" (`kfHistory`; `Model` and `History` live in
+`UI.ViewModel` so that `UI.WxProperties` can hold one). The autocolor editor outlasts a
+rebuild (`sehKeep`); the script editor and a movie's progress window
+don't. Positions read from the project file are clamped onto the
 primary display (`keepOnPrimaryDisplay`), since wxHaskell can't tell us about
 any other display: a layout saved with a projector attached must still open
 visibly elsewhere. Positions carried over within a session (rebuilds) aren't

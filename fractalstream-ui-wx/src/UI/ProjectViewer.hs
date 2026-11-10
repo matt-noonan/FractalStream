@@ -31,6 +31,7 @@ import Task.Block (subBlockSize)
 import UI.Layout
 import UI.Widgets
 import UI.WxProperties
+import UI.ViewModel
 import UI.MovieMaker
 import Actor.Movie (canAnimate)
 import Actor.Viewer.Sphere
@@ -121,36 +122,50 @@ viewProject projectWindow wxLayout addMenuBar projectActions = UI
   { newEnsemble = pure ()
 
   , makeLayout = \_ title ui -> do
-      f <- frameEx frameDefaultStyle [ text := title
-                 , on resize := propagateEvent
-                 , style := wxFRAME_TOOL_WINDOW .+. wxRESIZE_BORDER .+.
-                            wxCAPTION .+. wxCLOSE_BOX
-                 , visible := False
-                 ] projectWindow
-
-      WX.windowOnClose f (set f [ visible := False ])
-
+      -- The configuration window from before the project was rebuilt
+      -- (emptied: see 'releaseConfigFrame'), if there is one, or a new
+      -- one. Its fields go in `host`, a panel filling it, so that
+      -- emptying it for the next build is destroying `host`.
+      spare <- takeSpareConfigFrame wxLayout
       (restoredConfig, clampConfig) <- restoreConfigWindow wxLayout
-      forM_ restoredConfig $ \WindowProperties{..} -> do
-        Point x0 y0 <- get f position
-        set f [ position := Point (fromMaybe x0 wpX) (fromMaybe y0 wpY) ]
+      f <- case spare of
+        Just f' -> f' <$ set f' [ text := title ]
+        Nothing -> do
+          f' <- frameEx frameDefaultStyle [ text := title
+                     , on resize := propagateEvent
+                     , style := wxFRAME_TOOL_WINDOW .+. wxRESIZE_BORDER .+.
+                                wxCAPTION .+. wxCLOSE_BOX
+                     , visible := False
+                     ] projectWindow
+          WX.windowOnClose f' (set f' [ visible := False ])
+          forM_ restoredConfig $ \WindowProperties{..} -> do
+            Point x0 y0 <- get f' position
+            set f' [ position := Point (fromMaybe x0 wpX) (fromMaybe y0 wpY) ]
+          pure f'
+      host <- panel f []
+
       forgetConfigWindow <- registerConfigWindow wxLayout $ do
         Point x y <- get f position
         pure (WindowProperties (Just x) (Just y))
 
-      addMenuBar f []
+      -- (a reused window keeps its menu bar: see 'makeWxComplexViewer')
+      when (isNothing spare) (addMenuBar f [])
 
-      (stopListening, innerLayout) <- generateWxLayout (runAppAction projectActions) (\_ -> pure ()) f ui
-      resetButton <- button f [ text := "Reset to defaults"
-                              , on command := pmResetValues projectActions ]
-      set f [ layout := fill . margin 5 . column 5 $
-                [ innerLayout, hfloatRight (widget resetButton) ] ]
+      (stopListening, innerLayout) <- generateWxLayout (runAppAction projectActions) (\_ -> pure ()) host ui
+      resetButton <- button host [ text := "Reset to defaults"
+                                 , on command := pmResetValues projectActions ]
+      set host [ layout := fill . margin 5 . column 5 $
+                   [ innerLayout, hfloatRight (widget resetButton) ] ]
+      set f [ layout := fill $ widget host ]
 
       -- Hooks `windowOnDestroy`, not `on closing` -- see the note on
       -- 'UI.Widgets.wxWatchDynamic'.
-      onOwnDestroy f (forgetConfigWindow >> stopListening)
+      onOwnDestroy host (forgetConfigWindow >> stopListening)
+      forgetFrame <- registerConfigFrame wxLayout (f <$ windowDestroy host)
+      onOwnDestroy f forgetFrame
+      -- (a reused window fits its new fields, but stays where it is)
       windowReLayout f
-      when clampConfig (keepOnPrimaryDisplay f)
+      when (clampConfig && isNothing spare) (keepOnPrimaryDisplay f)
       pure (windowShow f >> windowRaise f)
 
   , makeViewer = const (makeWxComplexViewer projectWindow wxLayout addMenuBar projectActions)
@@ -232,10 +247,32 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
     Dimensions (width, height) <- getDynamic vSize
     Dimensions (xpos, ypos) <- getDynamic vPosition
-    f <- frameEx frameStyle [ text := title0
-                                   , position := Point xpos ypos
-                                   , on resize := propagateEvent
-                                   ] projectWindow
+
+    -- The viewer's window: the one it had before the project was rebuilt
+    -- (emptied: see 'releaseViewerFrame'), if there is one that suits,
+    -- or a new one. Everything the viewer itself makes goes in `host`, a
+    -- panel filling the window, or is hooked to it: its timers, watchers,
+    -- and other windows. Emptying the window for the viewer's next build
+    -- ('releaseFrame', below) is destroying `host`.
+    spare <- takeSpareViewerFrame wxLayout title0 >>= \case
+      Just kept | kfResizable kept == canResize -> pure (Just kept)
+                | otherwise -> Nothing <$ windowDestroy (kfFrame kept)
+      Nothing -> pure Nothing
+    let reused = isJust spare
+    -- A status bar, for reporting problems the viewer's script ran into
+    -- while rendering. It's hidden while there's nothing to report. (A
+    -- window only gets one, so a reused window keeps its own.)
+    (f, statusText) <- case spare of
+      Just kept -> pure (kfFrame kept, kfStatus kept)
+      Nothing -> do
+        f' <- frameEx frameStyle [ text := title0
+                                 , position := Point xpos ypos
+                                 , on resize := propagateEvent
+                                 ] projectWindow
+        statusText' <- statusField [ text := "" ]
+        set f' [ statusBar := [statusText'] ]
+        pure (f', statusText')
+    host <- panel f []
     -- Closing a viewer's window closes its project (there'd be no easy
     -- way to get the viewer back otherwise), going through the project's
     -- own closing questions. That happens just after this close event,
@@ -256,7 +293,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     let animatedVariable
           | canAnimate (SomeContext configValues) vCoordinate = Just vCoordinate
           | otherwise = Nothing
-    onOwnDestroy f forgetMovieViewer
+    onOwnDestroy host forgetMovieViewer
 
     WX.windowOnClose f $ do
       closer <- timer f [ interval := 1 ]
@@ -264,11 +301,6 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                      set closer [ enabled := False ]
                      pmCloseWindow ]
 
-    -- A status bar, for reporting problems the viewer's script ran into
-
-    -- while rendering. It's hidden while there's nothing to report.
-    statusText <- statusField [ text := "" ]
-    set f [ statusBar := [statusText] ]
     statusBarWindow <- frameGetStatusBar f
     void (windowHide statusBarWindow)
 
@@ -286,7 +318,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                 else windowShow statusBarWindow)
               set f [ clientSize := oldSize ]
 
-    p <- scrolledWindow f [ scrollRate := sz 10 10, visible := True ]
+    p <- scrolledWindow host [ scrollRate := sz 10 10, visible := True ]
 
     (rememberViewer, forgetViewer) <- registerViewer wxLayout title0 $ do
       Dimensions (x, y) <- getDynamic vPosition
@@ -311,19 +343,21 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         }
 
     -- When the configuration's variables change (which ones there are,
-    -- or their types; not their values), the viewer is rebuilt in a new
-    -- window, starting from where this one was left ('rememberViewer'),
-    -- and this one is destroyed. (It used to be hidden instead, and went
-    -- on watching, listening, and re-rendering -- and rebuilt itself
-    -- again at the next such change, so windows multiplied.) Destroying
-    -- it runs everything hooked to that: its listeners and timers stop,
-    -- and the layout forgets it. wx finishes destroying a frame once the
-    -- current event is over, so doing it from this window's own watcher
-    -- is safe.
-    wxWatchDynamic f configEnv $ \_ -> do
-      rememberViewer
-      remakeViewer
-      void (windowDestroy f)
+    -- or their types; not their values), the viewer is rebuilt, in this
+    -- same window, starting from where it was left ('rememberViewer').
+    -- Emptying the window destroys `host`, which runs everything hooked
+    -- to it: its listeners and timers stop, and the layout forgets it.
+    -- That happens from a one-shot timer of the window's, rather than
+    -- from this watcher, which runs from one of `host`'s own timers.
+    wxWatchDynamic host configEnv $ \_ -> do
+      later <- timer f [ interval := 1 ]
+      set later [ on command := do
+                    set later [ enabled := False ]
+                    rememberViewer
+                    void (releaseViewerFrame wxLayout title0)
+                    remakeViewer
+                    -- (in case the rebuilt viewer didn't take it)
+                    discardSpareFrames wxLayout ]
 
 
     -- HUD: the tool picker, the viewer's menu, the pointer's location,
@@ -470,21 +504,26 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     draggedTo <- variable [value := Nothing]
     lastClick <- variable [value := Nothing]
 
-    set f [ layout := fill $ widget p
-          , clientSize := sz width height
-          , on activate :~ \old vis -> do
+    -- (The window's own handlers are replaced, not added to, since a
+    -- reused window still has the last build's.)
+    set host [ layout := fill $ widget p ]
+    set f [ layout := fill $ widget host
+          , on activate := \vis -> do
               writeIORef hudActive vis
               refreshHud
-              old vis
               propagateEvent
           ]
+    -- (sized for the image: a reused window's is the one it had, which
+    -- is what was remembered for it, while laying it out again would
+    -- shrink it to fit an empty panel)
+    set f [ clientSize := sz width height ]
     windowReLayout f
-    when clampViewer (keepOnPrimaryDisplay f)
+    set f [ clientSize := sz width height ]
+    when (clampViewer && not reused) (keepOnPrimaryDisplay f)
 
     -- A viewer whose window was closed when the project was saved
-
     -- stays closed (just hidden, as closing it does) until asked for.
-    unless startVisible (set f [ visible := False ])
+    unless (startVisible || reused) (set f [ visible := False ])
 
 
     -- `requestRefresh` can be used from any thread to queue up a
@@ -503,8 +542,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     let initialModel = Model (initialX, initialY) (initialPx, initialPx * initialAspect) initialRotation
     model <- variable [value := initialModel]
 
-    -- History tracking
-    history <- newIORef (History [] initialModel [])
+    -- History tracking: carried over from before the project was rebuilt,
+    -- if the window was (its current view is the one the window was left
+    -- showing, which the restored properties gave)
+    history <- newIORef $ case spare of
+      Just kept | History olds _ news <- kfHistory kept -> History olds initialModel news
+      _ -> History [] initialModel []
 
     -- trigger repaint
     let triggerRepaint = do
@@ -522,6 +565,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                           , style := wxFRAME_TOOL_WINDOW .+. wxRESIZE_BORDER .+. wxCAPTION .+. wxCLOSE_BOX
                           ] f
     WX.windowOnClose debugger (set debugger [ visible := False ])
+    onOwnDestroy host (void (windowDestroy debugger))
     debugPanel <- panel debugger []
     debugResult <- textCtrl debugPanel
       [ text := "Click in the viewer to see the final value of each variable" ]
@@ -627,7 +671,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           when refreshed $ do
             timers <- getDynamic toolTimers
             ts <- forM timers $ \(name, ms) ->
-              wxTimer f [ interval := max 10 ms
+              wxTimer host [ interval := max 10 ms
                         , enabled := True
                         , on command := do
                             void $ runToolEventHandler thisTool (Actor.Event.Timer name)
@@ -688,7 +732,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                          , on command := activateDebugTool
                                          ]
 
-    wxWatchDynamic1 f vTools setupToolPicker
+    wxWatchDynamic1 host vTools setupToolPicker
 
     toolShortcuts <- fmap Map.unions $ do
       tools <- getDynamic vTools
@@ -1028,7 +1072,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               writeIORef drawingMoviePath False
               pts <- reverse <$> readIORef moviePath
               when (drawing && length pts >= 2) $ do
-                asker <- timer f [ interval := 1 ]
+                asker <- timer host [ interval := 1 ]
                 set asker [ on command := do
                               set asker [ enabled := False ]
                               title <- getDynamic vTitle
@@ -1273,7 +1317,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             triggerRepaint
 
     -- Add a timer which will check for repainting requests from WX, ~10Hz
-    _ <- wxTimer f [ interval := 100
+    _ <- wxTimer host [ interval := 100
                    , enabled := True
                    , on command := do
                        curTile <- get currentTile value
@@ -1295,7 +1339,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- has had a tenth of a second, or after half a second regardless (so
     -- a slow script doesn't fall far behind a parameter being dragged).
     -- Until then, the latest request waits.
-    _ <- wxTimer f [ interval := 16
+    _ <- wxTimer host [ interval := 16
                    , enabled := True
                    , on command := do
                        -- (also showing a held render as soon as it's worth
@@ -1324,7 +1368,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- The globe-drag timer: show a drag's latest orientation once the
     -- current render has finished, or has had a tenth of a second (as
     -- long as a parameter change's render gets), whichever comes first.
-    _ <- wxTimer f [ interval := 16
+    _ <- wxTimer host [ interval := 16
                    , enabled := True
                    , on command := readIORef pendingGlobe >>= \case
                        Nothing -> pure ()
@@ -1340,7 +1384,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
     -- Animation timer. At ~65Hz, check if we are animating between
     -- two views. If so, step the animation and repaint.
-    _ <- wxTimer f [ interval := 16
+    _ <- wxTimer host [ interval := 16
                    , enabled := True
                    , on command := get animate value >>= \case
                        Nothing -> pure ()
@@ -1362,7 +1406,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- we kick off a new rendering task to build the contents of the
     -- window. Using a timer lets us avoid starting hundreds of rendering
     -- tasks while the user adjusts their window size.
-    onResizeTimer <- wxTimer f [ interval := 100
+    onResizeTimer <- wxTimer host [ interval := 100
                                , enabled := False ]
     set onResizeTimer [ on command := do
                               set onResizeTimer [enabled := False] -- one-shot
@@ -1382,7 +1426,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- event: when the view changed, or the tool's own fields did. Changes
     -- the refresh handler itself makes to those fields don't count, unless
     -- the tool says they should (refreshCanUpdate=true, e.g. to animate).
-    _ <- wxTimer f [ interval := 50
+    _ <- wxTimer host [ interval := 50
                    , enabled := True
                    , on command := do
                        -- (the overlay, too, waits for a movie's values to
@@ -1417,7 +1461,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
     -- wxHaskell doesn't seem to expose an "on move" event, so we'll just set up
     -- a timer to update the viewer's position every so often.
-    _ <- wxTimer f [ interval := 200, enabled := True
+    _ <- wxTimer host [ interval := 200, enabled := True
                    , on command := do
                        Point xpos' ypos' <- get f position
                        setValue vPosition (Dimensions (xpos', ypos'))
@@ -1442,11 +1486,13 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       when (isJust (modelRotation m)) requestRefresh
     -- (the overlay's refresh is only queued here: a value is being set)
     stopOverlayListening <- vListenOverlay (void (tryPutMVar needToRefreshOverlay ()))
-    -- Hooks `windowOnDestroy`, not `on closing` -- `f` is exactly the
-    -- viewer frame a rebuild tears down with `windowDestroy`, which
-    -- never fires `closing` at all; see the note on
-    -- 'UI.Widgets.wxWatchDynamic'.
-    onOwnDestroy f (forgetViewer >> stopListening' >> stopOverlayListening >> stopShadingListening)
+    -- Hooks `windowOnDestroy`, not `on closing` -- `host` is torn down
+    -- with `windowDestroy` (along with its window, or by itself for a
+    -- rebuild), which never fires `closing` at all; see the note on
+    -- 'UI.Widgets.wxWatchDynamic'. (The render under way stops, too.)
+    onOwnDestroy host $ do
+      forgetViewer >> stopListening' >> stopOverlayListening >> stopShadingListening
+      cancelTile =<< get currentTile value
 
     -------------------------------------------------------
     -- Navigation actions
@@ -1724,6 +1770,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                         ]
 
     -- Build the configuration window and the event handlers for each tool
+    -- (remembering each tool's settings window, by the tool's name)
+    toolWindows <- newIORef (Map.empty :: Map.Map String (Frame ()))
     tools <- getDynamic vTools
     forM_ tools $ \Tool{..} -> do
       layer <- getDynamic toolDrawLayer
@@ -1742,6 +1790,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                           , style := wxFRAME_TOOL_WINDOW .+. wxRESIZE_BORDER .+. wxCAPTION .+. wxCLOSE_BOX
                           ] f
           WX.windowOnClose tf (set tf [ visible := False ])
+          onOwnDestroy host (void (windowDestroy tf))
+          modifyIORef' toolWindows (Map.insert n tf)
           let appAction = \case
                 OpenAutocolorSettings -> pmEditAutocolor
               buttonPress txt = do
@@ -1797,20 +1847,57 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                                 void $ tryPutMVar needToSendRefreshEvent ()))) ctx
 -}
 
-    addMenuBar f []
+    -- Emptying the window for the viewer's next build, when the project
+    -- is rebuilt (see 'releaseViewerFrame'): remembering which tool was
+    -- selected (and where its settings window was), and putting the
+    -- window's own handlers back to doing nothing until the next build
+    -- sets its own.
+    let selectedTool = get currentTool value >>= \case
+          Left NavTool -> pure SelectedNavigate
+          Left DebugTool -> pure SelectedDebug
+          Left MoviePathTool -> pure SelectedMoviePath
+          Right Tool{..} -> do
+            name <- getDynamic (tiName toolInfo) <&> fromRight "--"
+            settings <- Map.lookup name <$> readIORef toolWindows
+            at <- forM settings $ \tf -> get tf visible >>= \case
+              True -> Just <$> get tf position
+              False -> pure Nothing
+            pure (SelectedTool name (join at))
+        releaseFrame = do
+          tool <- selectedTool
+          set f [ on resize := propagateEvent
+                , on activate := \_ -> propagateEvent ]
+          setStatusMessage ""
+          void (windowDestroy host)
+          viewHistory <- readIORef history
+          pure KeptFrame { kfFrame = f, kfResizable = canResize
+                         , kfStatus = statusText, kfTool = tool
+                         , kfHistory = viewHistory }
+    forgetFrame <- registerViewerFrame wxLayout title0 releaseFrame
+    onOwnDestroy f forgetFrame
+
+    -- Select the tool the viewer had selected before the project was
+    -- rebuilt, if it still has it (its settings window coming back where
+    -- it was).
+    forM_ spare $ \kept -> case kfTool kept of
+      SelectedNavigate -> pure ()
+      SelectedDebug -> activateDebugTool
+      SelectedMoviePath -> when (isJust animatedVariable) activateMoviePathTool
+      SelectedTool name at -> do
+        let named Tool{..} = (== Right name) <$> getDynamic (tiName toolInfo)
+        filterM named tools >>= \case
+          tool : _ -> do
+            settings <- Map.lookup name <$> readIORef toolWindows
+            forM_ ((,) <$> at <*> settings) $ \(pt, tf) -> set tf [ position := pt ]
+            activateTool tool
+          [] -> pure ()
+
+    -- (A reused window keeps its menu bar: it's the project's, not the
+    -- viewer's, and making another would leave the old one's watcher
+    -- running.)
+    unless reused (addMenuBar f [])
     focusOn p
     pure (void $ windowClose f True)
-
--- | A model of the view, in terms of the underlying coordinate system.
-data Model = Model
-  { modelCenter   :: (Double, Double)
-  , modelPixelDim :: (Double, Double)
-  , modelRotation :: Maybe Rotation
-    -- ^ The globe's orientation, when the viewer shows the sphere (then
-    -- the center and pixel size are on the screen plane, in units of
-    -- the sphere's radius); 'Nothing' on the plane.
-  }
-  deriving Eq
 
 -- | The model point under a point of the screen plane. On the sphere, a
 -- point off the globe counts as the nearest point of its rim.
@@ -2230,24 +2317,6 @@ describeToolError err
 fsColorToWxColor :: Color -> WX.Color
 fsColorToWxColor c =
   let (r,g,b) = colorToRGB c in rgba r g b 255
-
-data History = History [Model] Model [Model]
-
-historyBack :: History -> Maybe (History, Model)
-historyBack (History olds m news) = case olds of
-  (m':olds') -> Just (History olds' m' (m:news), m')
-  _ -> Nothing
-
-historyForward :: History -> Maybe (History, Model)
-historyForward (History olds m news) = case news of
-  (m':news') -> Just (History (m:olds) m' news', m')
-  _ -> Nothing
-
-
-historyAppend :: Model -> History -> History
-historyAppend m h@(History olds m' _)
-  | m == m'   = h
-  | otherwise = History (m' : olds) m []
 
 takePicture :: Window a -> Viewer -> IO ()
 takePicture f v0 = do

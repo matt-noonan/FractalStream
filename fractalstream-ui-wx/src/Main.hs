@@ -341,6 +341,7 @@ runApp = withBackend $ \backend -> start $ do
                 { sehAfterClosingProject = showLibraryAfterClosing
                 , sehDraft = scriptDraft
                 , sehEditor = scriptEditorWindow
+                , sehKeep = maybe [] (pure . objectCast) <$> readIORef autocolorWindow
                 , sehMarkUnsaved = setValue sessionUnsaved True
                 , sehAddMenuBar = \fr menus -> makeMenuBar ProjectActions{..} (Just thisProject) fr menus
                 }
