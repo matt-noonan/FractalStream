@@ -1,0 +1,108 @@
+name: Landing page
+
+# Builds the landing page from site/ and deploys it to GitHub Pages, with
+# @VERSION@ in site/index.html replaced by a release's version (its tag
+# without the leading v). Nothing is committed: the rewritten copy is
+# uploaded as a Pages artifact and deployed from there.
+#
+# It deploys when:
+#   - a release is published (pre-releases too), pointing the page at that
+#     release. This is publishing, not release.yml drafting the release:
+#     a draft's files can't be downloaded yet, so the links would 404.
+#   - site/ changes on main, pointing the page at the newest published
+#     release.
+#   - it is run by hand from the Actions tab, pointing the page at the tag
+#     given, or at the newest published release if left blank.
+#
+# The page is always built from site/ on main, even for a release, so a
+# release tagged before a change to the page still gets the change.
+#
+# Repository settings this needs:
+#   - Settings > Pages > Source: GitHub Actions.
+#   - Settings > Environments > github-pages > Deployment branches and
+#     tags: allow the main branch and tags matching v*. A release runs
+#     this workflow from its tag, so without the tag rule its deploy is
+#     refused.
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to point the page at, like v1.2.3 (blank: the newest published release)'
+        required: false
+
+# One deploy at a time, and never cancel one partway through.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+    - name: Check out main
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.repository.default_branch }}
+
+    - name: Fill in the version
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      run: |
+        if [[ -z "$TAG" ]]; then
+          TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts \
+                   --limit 1 --json tagName --jq '.[0].tagName')"
+          if [[ -z "$TAG" ]]; then
+            echo "::error::There is no published release to point the page at"
+            exit 1
+          fi
+        fi
+        # The same rule as release.yml's check-tag job; it also keeps the
+        # version safe to put in the sed expression below.
+        if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[A-Za-z0-9]+(\.[A-Za-z0-9]+)*)?$ ]]; then
+          echo "::error::Release tags must look like v1.2.3 or v1.2.3-beta.1, not $TAG"
+          exit 1
+        fi
+        if [[ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" != false ]]; then
+          echo "::error::$TAG is not a published release"
+          exit 1
+        fi
+
+        echo "Pointing the page at $TAG"
+        if ! grep -q '@VERSION@' site/index.html; then
+          echo "::error::site/index.html has no @VERSION@ to fill in"
+          exit 1
+        fi
+        sed -i "s/@VERSION@/${TAG#v}/g" site/index.html
+        grep -n "${TAG#v}" site/index.html
+
+    - uses: actions/configure-pages@v5
+
+    - uses: actions/upload-pages-artifact@v3
+      with:
+        path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+    - id: deploy
+      uses: actions/deploy-pages@v4
