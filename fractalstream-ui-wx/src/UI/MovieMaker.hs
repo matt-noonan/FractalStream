@@ -20,12 +20,16 @@ There are two ways to ask for a movie ('MovieSource'):
 Either way, any viewer of the project can be recorded, so the project's
 viewers are kept in a 'MovieSupport' as their windows come and go. It
 also remembers the last movie's settings, so that the next one can
-start from them.
+start from them, and says whether a movie is being recorded: the
+project's windows don't redraw for new values meanwhile, since the
+animation changes them every frame, and a redraw would only be thrown
+away at the next one while taking time from the movie's.
 -}
 module UI.MovieMaker
   ( MovieSupport
   , newMovieSupport
   , registerMovieViewer
+  , movieRecording
   , MovieSource(..)
   , MovieProject(..)
   , makeMovieDialog
@@ -60,6 +64,7 @@ import UI.Widgets (wxTimer, onOwnDestroy, scriptWidgetWith)
 
 import Control.Concurrent.Async (async, cancel, poll, AsyncCancelled(..))
 import Control.Exception (SomeException, displayException, try, finally, fromException)
+import qualified Control.Exception as E
 import Data.IORef
 import Data.Time (getCurrentTime, diffUTCTime, getZonedTime, formatTime, defaultTimeLocale)
 import Data.Unique (Unique, newUnique)
@@ -72,8 +77,10 @@ import Text.Read (readMaybe)
 -- | What a project keeps for making movies: its viewers, and the last
 -- movie's settings.
 data MovieSupport = MovieSupport
-  { msViewers :: IORef [(Unique, Viewer)]
-  , msLast    :: IORef (Maybe LastMovie)
+  { msViewers   :: IORef [(Unique, Viewer)]
+  , msLast      :: IORef (Maybe LastMovie)
+  , msRecording :: IORef Int
+    -- ^ how many movies are being recorded
   }
 
 -- | What was asked for last time, to start the next dialog from.
@@ -91,7 +98,13 @@ data LastMovie = LastMovie
   }
 
 newMovieSupport :: IO MovieSupport
-newMovieSupport = MovieSupport <$> newIORef [] <*> newIORef Nothing
+newMovieSupport = MovieSupport <$> newIORef [] <*> newIORef Nothing <*> newIORef 0
+
+-- | Whether a movie of the project is being recorded. Until it's done, and
+-- the values it changed are back, the project's windows hold off redrawing
+-- for changed values (they still redraw for a new view, such as a zoom).
+movieRecording :: MovieSupport -> IO Bool
+movieRecording MovieSupport{..} = (> 0) <$> readIORef msRecording
 
 -- | Make a viewer available for movies; returns the action that takes
 -- it away again (when its window goes).
@@ -355,9 +368,14 @@ recordWithProgress MovieProject{..} MovieJob{..} = do
 
   let total = msFrames mjSettings
       -- The project's values go back to how they were afterwards, and so
-      -- does whether it has unsaved changes.
-      record = withFieldsRestored fields
-                 (recordMovie mjSettings mjViewer mjInset mjAnimation (writeIORef progress) path)
+      -- does whether it has unsaved changes. Meanwhile its windows don't
+      -- redraw for the values the animation sets ('movieRecording'); once
+      -- the values are back, they redraw (if they changed) for those.
+      recording = msRecording mpSupport
+      record = E.bracket_ (atomicModifyIORef' recording (\n -> (n + 1, ())))
+                          (atomicModifyIORef' recording (\n -> (n - 1, ())))
+                 (withFieldsRestored fields
+                    (recordMovie mjSettings mjViewer mjInset mjAnimation (writeIORef progress) path))
                `finally` unless wasUnsaved (setValue' mpUnsaved False)
   worker <- async record
 

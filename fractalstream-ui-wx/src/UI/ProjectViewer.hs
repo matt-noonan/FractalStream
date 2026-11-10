@@ -340,6 +340,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     hudToolLabel <- newIORef "▼ Navigate"
     hudPointer <- newIORef ""
     hudWarning <- newIORef (Nothing :: Maybe String)
+    -- Whether the viewer is paused while a movie is recorded (see
+    -- 'movieRecording'); shown like a configuration problem's pause.
+    hudMoviePaused <- newIORef False
     hudActive <- newIORef True
     hudSpots <- newIORef ([] :: [(Rect, HudSpot)])
     hudTooltip <- newIORef ""
@@ -375,23 +378,29 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           old <- readIORef hudWarning
           when (old /= mw) (writeIORef hudWarning mw >> refreshHud)
 
+        setMoviePaused paused = do
+          old <- readIORef hudMoviePaused
+          when (old /= paused) (writeIORef hudMoviePaused paused >> refreshHud)
+
         hudSpotAt pt' = fmap snd . find (\(r, _) -> rectContains r pt') <$> readIORef hudSpots
 
-        -- Draw the HUD (while the window's active), remembering where.
+        -- Draw the HUD (while the window's active), remembering where. A
+        -- paused viewer says so even while its window isn't active (say,
+        -- while a movie is recorded, with its progress window in front).
         paintHud dc = do
           active <- readIORef hudActive
-          spots <- if not active then pure [] else do
-            Size w h <- get p clientSize
+          Size w h <- get p clientSize
+          let measure fnt txt = set dc [ font := fnt ] >> getTextExtent dc txt
+              box bg r = drawRect dc r [ brush := brushSolid bg, pen := penTransparent ]
+              -- Text centered in a box.
+              labelBox bg fg fnt r@(Rect x y bw bh) txt = do
+                box bg r
+                Size tw th <- measure fnt txt
+                drawText dc txt (Point (x + (bw - tw) `div` 2) (y + (bh - th) `div` 2))
+                  [ font := fnt, textColor := fg ]
+          activeSpots <- if not active then pure [] else do
             showTools <- get shouldShowToolPicker value
             showPtr <- get shouldShowPointerLocation value
-            let measure fnt txt = set dc [ font := fnt ] >> getTextExtent dc txt
-                box bg r = drawRect dc r [ brush := brushSolid bg, pen := penTransparent ]
-                -- Text centered in a box.
-                labelBox bg fg fnt r@(Rect x y bw bh) txt = do
-                  box bg r
-                  Size tw th <- measure fnt txt
-                  drawText dc txt (Point (x + (bw - tw) `div` 2) (y + (bh - th) `div` 2))
-                    [ font := fnt, textColor := fg ]
 
             toolSpot <- if not showTools then pure [] else do
               toolLabel <- readIORef hudToolLabel
@@ -410,17 +419,25 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               labelBox overlayBackground overlayForeground pointerFont
                     (Rect ((w - bw) `div` 2) (h - 30) bw (max 20 (th + 4))) txt
 
-            warningSpot <- readIORef hudWarning >>= \case
-              Nothing -> pure []
-              Just err -> do
-                let txt = "Viewer paused"
-                Size tw th <- measure hudFont txt
-                let r = Rect ((w - tw - 10) `div` 2) ((h - th - 10) `div` 2) (tw + 10) (th + 10)
-                labelBox (rgba 255 0 0 (50 :: Int)) white hudFont r txt
-                pure [(r, WarningSpot err)]
+            pure (toolSpot ++ [(menuRect, MenuSpot)])
 
-            pure (toolSpot ++ [(menuRect, MenuSpot)] ++ warningSpot)
-          writeIORef hudSpots spots
+          -- (a problem with the configuration comes first: it's what
+          -- needs doing something about)
+          moviePaused <- readIORef hudMoviePaused
+          warning <- readIORef hudWarning <&> \case
+            Just err -> Just err
+            Nothing | moviePaused -> Just "Paused while a movie is recorded: the viewer will \
+                                          \redraw once the recording is done."
+                    | otherwise -> Nothing
+          warningSpot <- case warning of
+            Nothing -> pure []
+            Just err -> do
+              let txt = "Viewer paused"
+              Size tw th <- measure hudFont txt
+              let r = Rect ((w - tw - 10) `div` 2) ((h - th - 10) `div` 2) (tw + 10) (th + 10)
+              labelBox (rgba 255 0 0 (50 :: Int)) white hudFont r txt
+              pure [(r, WarningSpot err)]
+          writeIORef hudSpots (activeSpots ++ warningSpot)
 
         -- A click on the HUD (which it says it handled), or the pointer
         -- moving over it (showing the warning's details as a tooltip).
@@ -1280,8 +1297,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                        -- it; other renders are taken by the 10Hz timer, as
                        -- taking one isn't free)
                        readIORef parameterRenderHeld >>= \held -> when (isJust held) captureRender
+                       -- (while a movie is recorded, the request waits:
+                       -- see 'movieRecording')
                        needRefresh <- not <$> isEmptyMVar offThreadRefresh
-                       when needRefresh $ do
+                       recordingMovie <- movieRecording pmMovies
+                       setMoviePaused recordingMovie
+                       when (needRefresh && not recordingMovie) $ do
                          curTile <- get currentTile value
                          finished <- tileFinished curTile
                          covered <- tileCovered curTile
@@ -1359,7 +1380,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     _ <- wxTimer f [ interval := 50
                    , enabled := True
                    , on command := do
-                       needOverlay <- isJust <$> tryTakeMVar needToRefreshOverlay
+                       -- (the overlay, too, waits for a movie's values to
+                       -- be put back, so it goes with the picture)
+                       recordingMovie <- movieRecording pmMovies
+                       needOverlay <- if recordingMovie then pure False
+                                      else isJust <$> tryTakeMVar needToRefreshOverlay
                        when needOverlay $ do
                          Model _ pxDims _ <- get model value
                          vRefreshOverlay pxDims
