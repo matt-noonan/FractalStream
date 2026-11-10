@@ -232,6 +232,25 @@ elabOwn t (Syn (sr, _) node) = case node of
       withKnownType t $ TableSize sn ity t <$> el (TableType sn ity) tbl
     _ -> inconsistent sr
 
+  -- (made an `if` by type checking)
+  ETablePointOr{} -> inconsistent sr
+
+  ETableHas tbl p -> case exprType tbl of
+    TableT d it -> withType it $ \ity -> TN.withSomeSNat d $ \sn -> withKnownNat sn $
+      same sr t BooleanType $ TableContains sn ity <$> el (TableType sn ity) tbl <*> el ComplexType p
+    _ -> inconsistent sr
+
+  ETableCell tbl p -> case exprType tbl of
+    TableT d it -> withType it $ \ity -> TN.withSomeSNat d $ \sn -> withKnownNat sn $
+      withKnownType t $ TableCell sn ity t <$> el (TableType sn ity) tbl <*> el ComplexType p
+    _ -> inconsistent sr
+
+  ETableCellPoint tbl ixs -> case (exprType tbl, ixs) of
+    (TableT d it, [j, k]) -> withType it $ \ity -> TN.withSomeSNat d $ \sn -> withKnownNat sn $
+      same sr t ComplexType $ TableCellPoint sn ity <$> el (TableType sn ity) tbl
+                                                     <*> el IntegerType j <*> el IntegerType k
+    _ -> inconsistent sr
+
   ELet n v body -> withType (exprType v) $ \vty -> withBinder @env sr n vty $ \name pf -> do
     v' <- el vty v
     LocalLet name vty pf v' t <$> elaborate t body

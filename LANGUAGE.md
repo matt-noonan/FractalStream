@@ -1168,7 +1168,9 @@ A table can hold integers, reals, complex numbers, truth values, or
 colors, in any number of dimensions (`Table 1 of R`, `Table 3 of Z`, ...).
 It's declared in `@config`, without a default value, since it starts out
 empty (with size 0). It has no field in the configuration window, and it
-isn't saved with the project:
+isn't saved with the project, though it's kept when the project is rebuilt
+(after editing its script, say) if the new script declares it with the
+same name and type:
 
 ```
 @config "Parameters"
@@ -1189,6 +1191,38 @@ Every table also has a place in the plane (see "Filling in a table"), so
 cell covers a small rectangle, so the cells of a table laid over a
 viewer's window are its pixels. A point outside the table is an error,
 like reading out of range. Only a 2-dimensional table has points.
+
+To look up a point that may be off the table, give a value to use there
+instead with `else`:
+
+```
+color <- rainbow(saddle @ point C else 0)
+```
+
+`T @ point z else v` is `v` when `z` is off the table, and the cell's
+value otherwise. The `else` part is a single value, like the right side of
+`*`: `T @ point z else 0 + 1` adds 1 to whichever it is, so put anything
+longer in parentheses. (An `if c then T @ point z else v` is still an
+ordinary if/then/else.)
+
+There's more about where a table is in the plane:
+
+- `z in T` is whether the point `z` is on the table.
+- `table_cell(T, z)` is the cell that `z` is in, as a pair of indices
+  `(j, k)`, even for a point off the table (then `j` or `k` is less than 1,
+  or more than the table's size).
+- `table_point(T, (j, k))` is the point at the center of the cell `(j, k)`,
+  for any `j` and `k`.
+
+So a tool can find the cell a point is in, and the point a cell is at,
+without working them out from the table's corners:
+
+```
+if crit_c in T:
+  (j, k) := table_cell(T, crit_c)
+  z := table_point(T, (j + 1, k))   # the center of the next cell to the right
+  ...
+```
 
 `table_size(T)` is the table's size: an integer for a 1-dimensional table,
 or a tuple with one integer per dimension. A table that hasn't been filled

@@ -28,6 +28,9 @@ module Backend.LLVM.Table
   , buildTableRead
   , buildTablePoint
   , buildTableSize
+  , buildTableContains
+  , buildTableCell
+  , buildTableCellPoint
   , buildTableWrite
   , buildTableAllocate
   , freezeDescriptor
@@ -39,7 +42,7 @@ import FractalStream.Prelude
 
 import Backend.LLVM.Operand
 import Language.Type
-import Language.Table
+import Language.Table hiding (pointIndices)
 
 import qualified Data.Map as Map
 import Data.IORef
@@ -224,6 +227,38 @@ buildTableSize sz0 desc = go sz0 0
       IntegerType -> IntegerOp <$> loadField desc (48 + 4 * k) AST.i32
       PairType IntegerType rest -> PairOp <$> go IntegerType k <*> go rest (k + 1)
       _ -> throwError "internal error: a table's size doesn't fit its type"
+
+-- | Whether a point is on a 2-dimensional table: whether the cell nearest
+-- it is in range (as 'Language.Table.pointCell'; no index error).
+buildTableContains :: Build m => (String -> Operand) -> TypeProxy t -> Operand -> Operand -> Operand -> m (Op 'BooleanT)
+buildTableContains getExtern ty desc x y = do
+  ixs <- pointIndices getExtern desc x y
+  (inRange, _) <- tableCell ty desc ixs
+  pure (BooleanOp inRange)
+
+-- | The indices of the cell nearest a point, in range or not, as an
+-- integer or nested pairs of them (as 'buildTableSize').
+buildTableCell :: Build m => (String -> Operand) -> TypeProxy sz -> Operand -> Operand -> Operand -> m (Op sz)
+buildTableCell getExtern sz0 desc x y = pointIndices getExtern desc x y >>= go sz0
+  where
+    go :: Build m => TypeProxy s -> [Operand] -> m (Op s)
+    go sz ixs = case (sz, ixs) of
+      (IntegerType, [i]) -> pure (IntegerOp i)
+      (PairType IntegerType rest, i : is) -> PairOp (IntegerOp i) <$> go rest is
+      _ -> throwError "internal error: a table's cell doesn't fit its type"
+
+-- | The point at the center of a 2-dimensional table's cell, given its
+-- column and row (as 'Language.Table.cellPoint').
+buildTableCellPoint :: Build m => Operand -> Operand -> Operand -> m (Op 'ComplexT)
+buildTableCellPoint desc j k = do
+  ox <- loadField desc 16 AST.double
+  oy <- loadField desc 24 AST.double
+  sx <- loadField desc 32 AST.double
+  sy <- loadField desc 40 AST.double
+  let steps n = sub n (C.int32 1) >>= (`sitofp` AST.double)
+  x <- steps j >>= (`fmul` sx) >>= fadd ox
+  y <- steps k >>= (`fmul` sy) >>= fsub oy
+  pure (ComplexOp x y)
 
 -- | Mark the table a descriptor describes as shared (see 'tableFrozen').
 freezeDescriptor :: Build m => Operand -> m ()

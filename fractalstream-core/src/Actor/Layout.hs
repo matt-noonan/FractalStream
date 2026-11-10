@@ -13,6 +13,7 @@ module Actor.Layout
   , SomeUIExpr(..)
   , Field(..)
   , layoutFields
+  , layoutTables
   , layoutBindings
   , layoutEnv
   , layoutContext
@@ -207,6 +208,17 @@ data Field = Field
     -- ^ Run an action whenever the field changes; returns an action
     -- that stops it.
   }
+
+-- | Every table declared in a panel: its name, its type, and its value.
+-- (Tables have no field: see 'HiddenTable'.)
+layoutTables :: Layout -> IO [(String, SomeType, Variable Table)]
+layoutTables = \case
+  Vertical xs -> concat <$> (mapM layoutTables =<< getDynamic xs)
+  Horizontal xs -> concat <$> (mapM layoutTables =<< getDynamic xs)
+  Panel _ lo -> layoutTables =<< getDynamic lo
+  Tabbed items -> concat <$> (mapM (layoutTables <=< getDynamic . tiBody) =<< getDynamic items)
+  HiddenTable name ty v -> pure [(name, ty, v)]
+  _ -> pure []
 
 -- | Every named field in a panel, in order.
 layoutFields :: Layout -> IO [Field]

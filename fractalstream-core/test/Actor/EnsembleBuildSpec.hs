@@ -8,7 +8,8 @@ import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Script (overlayDrawLayer)
-import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..), Field(..))
+import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..), Field(..), layoutTables)
+import Language.Table (newTable, tableCellCount)
 import Actor.SavedValues
 import qualified Data.Map as Map
 import Data.Color (red, blue)
@@ -735,6 +736,28 @@ on refresh:
           length scenarios `shouldBe` 1
           props <- getDynamic (ensembleFrontendProperties rebuilt)
           KM.keys props `shouldBe` ["wx-properties"]
+
+    it "carries a table over to a rebuilt ensemble that declares it with \
+       \the same name and type, and only then" $ do
+      let tablesOf ens = getDynamic (ensembleConfiguration ens)
+                           >>= maybe (pure []) (layoutTables . coContents)
+          tableNamed ens n = tablesOf ens >>= \ts -> case [ v | (n', _, v) <- ts, n' == n ] of
+            v : _ -> pure v
+            [] -> fail ("no table named " ++ n)
+          declares decls = unlines (["@config \"Configuration\""] ++ decls ++ ["@viewer \"V\" var=z", "pass"])
+      Right old <- buildEnsembleFromScript (declares
+        [ "T : Table 2 of C", "U : Table 1 of Z", "W : Table 2 of R" ])
+      Right new <- buildEnsembleFromScript (declares
+        [ "T : Table 2 of C", "U : Table 1 of R", "W2 : Table 2 of R" ])
+      Just t <- newTable ComplexType [3, 2] (0, 0) (1, 1)
+      Just u <- newTable IntegerType [4] (0, 0) (1, 1)
+      Just w <- newTable RealType [2, 2] (0, 0) (1, 1)
+      forM_ [("T", t), ("U", u), ("W", w)] $ \(n, tbl) -> tableNamed old n >>= \v -> setValue' v tbl
+      carryOverProjectState old new
+      -- (same name and type: carried; another type, or another name: not)
+      (getDynamic . dyn =<< tableNamed new "T") >>= (`shouldBe` t)
+      (tableCellCount <$> (getDynamic . dyn =<< tableNamed new "U")) >>= (`shouldBe` 0)
+      (tableCellCount <$> (getDynamic . dyn =<< tableNamed new "W2")) >>= (`shouldBe` 0)
 
     it "saves the configuration values that differ from the script's \
        \defaults (by value), and puts them back, along with tools' values" $ do

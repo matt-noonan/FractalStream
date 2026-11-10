@@ -81,6 +81,38 @@ readSpec = describe "tables" $ do
   it "can't be indexed cyclically" $
     parseIn RealType "T @@ (1, 1)" `shouldSatisfy` isLeft
 
+  -- (the sample's cell (j, k) is centered on (j - 1) - (k - 1) i)
+  it "tell whether a point is on them" $ do
+    t <- sample
+    evalIn t BooleanType "(1 - i) in T" `shouldReturn` True
+    evalIn t BooleanType "(0.4 + 0.4 i) in T" `shouldReturn` True
+    evalIn t BooleanType "(5 + 0 i) in T" `shouldReturn` False
+    evalIn t BooleanType "(1 + 2 i) in T" `shouldReturn` False
+
+  it "give the cell a point is in, on the table or not" $ do
+    t <- sample
+    evalIn t (PairType IntegerType IntegerType) "table_cell(T, 2 - i)" `shouldReturn` (3, 2)
+    evalIn t (PairType IntegerType IntegerType) "table_cell(T, 5 + 3 i)" `shouldReturn` (6, -2)
+
+  it "give the point at the center of a cell" $ do
+    t <- sample
+    evalIn t ComplexType "table_point(T, (3, 2))" `shouldReturn` (2 :+ (-1))
+    evalIn t ComplexType "table_point(T, (0, 0))" `shouldReturn` ((-1) :+ 1)
+
+  it "look a point up, or give a fallback for a point off the table" $ do
+    t <- sample
+    evalIn t RealType "T @ point (2 - i) else 0" `shouldReturn` 23
+    evalIn t RealType "T @ point (9 + 0 i) else -1" `shouldReturn` (-1)
+    -- (binding like `@`: the fallback is a single operand)
+    evalIn t RealType "T @ point (9 + 0 i) else 0 + 1" `shouldReturn` 1
+    -- (and an if/then/else with a lookup in it is just that)
+    evalIn t RealType "if true then T @ point (2 - i) else 0" `shouldReturn` 23
+
+  it "have points only in two dimensions" $ do
+    parseIn BooleanType "1 in 2" `shouldSatisfy` isLeft
+    parseIn (PairType IntegerType IntegerType) "table_cell(1, 0)" `shouldSatisfy` isLeft
+    parseIn ComplexType "table_point(T, 1)" `shouldSatisfy` isLeft
+
   it "are declared in @config with no default" $ do
     let viewer = "\n@viewer \"V\"\ncolor <- if re(T @ (1, 1)) > 0 then red else blue\n"
     builds ("@config \"P\"\nT : Table 2 of C\n" ++ viewer) `shouldReturn` Right ()

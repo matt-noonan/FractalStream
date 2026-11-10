@@ -69,7 +69,8 @@ of the declared type (`List of C` shows as `1, 2, i` without brackets; `Text`
 shows the raw text). Defaults are expressions (`2 pi / 3`, `-0.12 + 0.75i`,
 `[0, 1, i]`, `dark blue`) and can't refer to other variables. A table,
 `T : Table 2 of C`, is declared with *no* default (it starts empty, size
-0), has no widget, and isn't saved (see Tables in §3).
+0), has no widget, and isn't saved, though it's kept when the project is
+rebuilt if the new script declares it the same way (see Tables in §3).
 
 ### `@common`
 
@@ -358,7 +359,7 @@ number.) A power of integers used as a real is computed as a real:
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`,
 `times`, `text`, `escapes`, `vanishes`, `stops`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
-`mod`, `point`, `table_size`, `filled`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
+`mod`, `point`, `table_size`, `table_cell`, `table_point`, `in`, `filled`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
 names in `@config`), `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
 the color-wheel names, and the built-in function names (including `bar`, the
 complex conjugate; using one for a variable, function, or code block is
@@ -450,7 +451,14 @@ from pixel to neighboring pixel, which a viewer can't):
   error (magenta / discarded tool event). No `@@`.
 - `T @ point z` (2-D only): the cell z is in (cells are small rectangles;
   a table laid over a window has one cell per pixel). Off the table is an
-  error.
+  error; `T @ point z else v` gives `v` there instead (it's
+  `if z in T then T @ point z else v`; `v` is a single operand, like the
+  right side of `*`, so `T @ point z else 0 + 1` adds 1 to the result).
+- `z in T` (2-D only): whether the point z is on the table.
+- `table_cell(T, z)` (2-D only): the cell z is in, as `(j, k)`, even off
+  the table (indices may then be < 1 or > the size): `(j, k) := table_cell(T, z)`.
+- `table_point(T, (j, k))` (2-D only): the point at the center of cell
+  (j, k), for any j and k.
 - `table_size(T)`: Z for 1-D, else a tuple: `(w, h) := table_size(T)`.
   0 until a tool fills the table in.
 - Tools only (a viewer that does these is an error):

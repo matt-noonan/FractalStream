@@ -352,6 +352,39 @@ synth env (Syn sr node) = case node of
       TableT d _ -> done (tableSizeType (fromIntegral d)) (ETableSize tbl')
       _ -> advise sr "The argument to `table_size` should be a table."
 
+  ETablePointOr tbl p v ->
+    synth env (Syn sr (EITE (Syn sr (ETableHas tbl p)) (Syn sr (ETablePoint tbl p)) v))
+
+  ETableHas tbl p -> do
+    tbl' <- synth env tbl
+    case exprType tbl' of
+      TableT 2 _ -> do
+        p' <- check env ComplexT p
+        done BooleanT (ETableHas tbl' p')
+      TableT _ _ -> advise sr "Only a 2-dimensional table has points."
+      _ -> advise sr "`z in T` asks whether a point is on a table: `T` should be a table."
+
+  ETableCell tbl p -> do
+    tbl' <- synth env tbl
+    case exprType tbl' of
+      TableT 2 _ -> do
+        p' <- check env ComplexT p
+        done (tableSizeType 2) (ETableCell tbl' p')
+      TableT _ _ -> advise sr "Only a 2-dimensional table has points."
+      _ -> advise sr "The first argument to `table_cell` should be a table."
+
+  ETableCellPoint tbl ixs -> do
+    tbl' <- synth env tbl
+    case (exprType tbl', ixs) of
+      (TableT 2 _, [ix]) -> case tupleParts 2 ix of
+        Just parts -> do
+          parts' <- mapM (check env IntegerT) parts
+          done ComplexT (ETableCellPoint tbl' parts')
+        Nothing -> advise sr "A cell of a 2-dimensional table is given by two integers: `table_point(T, (j, k))`."
+      (TableT 2 _, _) -> throwError (Internal (Advice sr "unexpected table_point"))
+      (TableT _ _, _) -> advise sr "Only a 2-dimensional table has points."
+      _ -> advise sr "The first argument to `table_point` should be a table."
+
   ELet n v body -> do
     v' <- synth env v
     env' <- bind sr n (exprType v') env
@@ -647,6 +680,10 @@ describe = \case
   ETableIndex{} -> "this table entry"
   ETablePoint{} -> "this table entry"
   ETableSize{} -> "this table's size"
+  ETablePointOr{} -> "this table entry"
+  ETableHas{} -> "whether this point is on the table"
+  ETableCell{} -> "this table cell"
+  ETableCellPoint{} -> "this table cell's point"
   ELet{} -> "the result of this expression"
   ECall f _ -> "the result of " ++ f
   EDerivCall f order _ -> "the result of " ++ f ++ replicate order '\''
