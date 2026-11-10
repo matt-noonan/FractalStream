@@ -12,6 +12,7 @@ import Data.Color (Color, colorToRGB, rgbToColor, hsvToColor, hslToColor, red, w
 
 
 import qualified Language.Value.Parser as P
+import Data.List (isInfixOf)
 
 parseValue :: EnvironmentProxy env
            -> TypeProxy t
@@ -129,15 +130,22 @@ spec = do
       parseI "2⁻¹" `shouldBe` Right 0
 
 
-    it "parses boolean expressions with expected precedence" $ do
-      let parses1 = parseB "true or false and false"
-          parses2 = parseB "(true or false) and false"
-          parses3 = parseB "not true or false and not false"
-          parses4 = parseB "not (true or false) and not false"
-      parses1 `shouldBe` Right True
-      parses2 `shouldBe` Right False
-      parses3 `shouldBe` Right False
-      parses4 `shouldBe` Right False
+    it "parses chains of `and`s, or of `or`s" $ do
+      parseB "true and true and false" `shouldBe` Right False
+      parseB "false or false or true" `shouldBe` Right True
+      parseB "not true or false or not false" `shouldBe` Right True
+
+    it "parses `and`s and `or`s mixed with parentheses" $ do
+      parseB "(true or false) and false" `shouldBe` Right False
+      parseB "true or (false and false)" `shouldBe` Right True
+      parseB "not (true or false) and not false" `shouldBe` Right False
+      parseB "(true and false) or (false and true) or true" `shouldBe` Right True
+
+    it "asks for parentheses when `and`s and `or`s are mixed without them" $
+      forM_ [ "true or false and false", "true and false or true"
+            , "not true or false and not false"
+            , "true and true and false or true or false" ] $ \src ->
+        parseB src `shouldSatisfy` either ("can't be mixed without parentheses" `isInfixOf`) (const False)
 
     it "parses if/then/else expressions with expected precedence" $ do
       let parses1 = parseI "if true and false then 1 + 2 else 4 * 5"
