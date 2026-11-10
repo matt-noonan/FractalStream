@@ -16,7 +16,8 @@ name: Release
 #                                                     folder
 # The release notes list each file's sha256, for updating the Homebrew tap.
 # Review the draft and publish it by hand; Homebrew can only download the
-# files once the release is published.
+# files once the release is published. Publishing it also points the
+# landing page at it (see pages.yml).
 #
 # Tags must look like v1.2.3 or v1.2.3-beta.1 (ASCII only): GitHub rewrites
 # other characters in the release's file names, and Homebrew's version
