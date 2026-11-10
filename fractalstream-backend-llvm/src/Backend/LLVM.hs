@@ -32,7 +32,7 @@ import qualified LLVM.Relocation as Reloc
 import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
-import Control.Exception (bracket, finally, uninterruptibleMask_)
+import Control.Exception (bracket, finally, uninterruptibleMask_, throwIO)
 
 import Foreign.LibFFI
 import Foreign.C.Types
@@ -53,10 +53,11 @@ import Language.Code.Parser (parseCode, noCommonDefs, ppFullError)
 import Language.Code.InterpretIO (interpretToIOWithLastValues, ScalarIORefM)
 import Language.Draw
 import Actor.Viewer
-import Actor.Event (ToolExec, buildHandlerWith, snapshotEventArgs, EventArgument(..), EventArgument_)
+import Actor.Event (ToolExec, buildHandlerWith, snapshotEventArgs, EventArgument(..), EventArgument_,
+                   HandlerRun(..), HandlerCancelled(..), CancelFlag, withCancelFlagPtr)
 import Data.Color
 
-import Data.IORef (IORef, newIORef, modifyIORef', readIORef)
+import Data.IORef (newIORef, readIORef)
 import qualified Data.Map.Strict as Map
 
 import Actor.Autocolor (AutocolorLookup(..), autocolorCacheLookup)
@@ -167,25 +168,25 @@ toFFIArg _ t v = case t of
 toFFIArgInOut :: TypeProxy ty
               -> EventArgument ty
               -> HaskellType ty
-              -> IO (Arg, IO () {- free -}, IO () {- write-back -})
+              -> IO (Arg, IO () {- free -}, IO (IO ()) {- write-back -})
 toFFIArgInOut t earg v = case t of
   IntegerType -> do
     p <- malloc :: IO (Ptr Int32)
     poke p (fromIntegral v)
-    pure (argPtr p, free p, peek p >>= \v' -> setBack IntegerType (fromIntegral v'))
+    pure (argPtr p, free p, peek p <&> \v' -> setBack IntegerType (fromIntegral v'))
   RealType -> do
     p <- malloc :: IO (Ptr Double)
     poke p v
-    pure (argPtr p, free p, peek p >>= \v' -> setBack RealType v')
+    pure (argPtr p, free p, peek p <&> \v' -> setBack RealType v')
   BooleanType -> do
     p <- malloc :: IO (Ptr Word8)
     poke p (if v then 1 else 0)
-    pure (argPtr p, free p, peek p >>= \w -> setBack BooleanType (w /= 0))
+    pure (argPtr p, free p, peek p <&> \w -> setBack BooleanType (w /= 0))
   ComplexType -> do
     let x :+ y = v
     z <- mallocArray 2
     pokeArray z [x, y]
-    let writeBack = peekArray 2 z >>= \case
+    let writeBack = peekArray 2 z <&> \case
           [x', y'] -> setBack ComplexType (x' :+ y')
           _        -> pure ()
     pure (argPtr z, free z, writeBack)
@@ -193,7 +194,7 @@ toFFIArgInOut t earg v = case t of
     let (r, g, b) = colorToRGB v
     c <- mallocArray 3
     pokeArray c [r, g, b]
-    let writeBack = peekArray 3 c >>= \case
+    let writeBack = peekArray 3 c <&> \case
           [r', g', b'] -> setBack ColorType (rgbToColor (r', g', b'))
           _            -> pure ()
     pure (argPtr c, free c, writeBack)
@@ -203,7 +204,7 @@ toFFIArgInOut t earg v = case t of
     poke cell str
     -- Must run while the arena (which may hold the new string) is still live.
     let writeBack = peek cell >>= \str' ->
-          when (str' /= str) (GHC.peekCString utf8 str' >>= setBack TextType)
+          if str' /= str then setBack TextType <$> GHC.peekCString utf8 str' else pure (pure ())
     pure (argPtr cell, free cell >> free str, writeBack)
   ListType itemTy -> do
     (headPtr, cleanup) <- buildListBuffer itemTy v
@@ -213,7 +214,7 @@ toFFIArgInOut t earg v = case t of
     -- only changed if the cell now points somewhere else. Must run while
     -- the arena (which may hold the new list) is still live.
     let writeBack = peek cell >>= \headPtr' ->
-          when (headPtr' /= headPtr) (peekList itemTy headPtr' >>= setBack t)
+          if headPtr' /= headPtr then setBack t <$> peekList itemTy headPtr' else pure (pure ())
     pure (argPtr cell, free cell >> cleanup, writeBack)
   -- A table is passed like a list, as a cell holding its descriptor:
   -- writing a frozen table, or allocating one, points the cell at a new
@@ -225,11 +226,11 @@ toFFIArgInOut t earg v = case t of
     poke cell d
     -- (must run before 'withTableCallbacks' frees the new descriptor)
     let writeBack = peek cell >>= \d' ->
-          when (d' /= d) (lookupDescriptor d' >>= mapM_ (setBack t))
+          if d' /= d then maybe (pure ()) (setBack t) <$> lookupDescriptor d' else pure (pure ())
     pure (argPtr cell, free cell >> freeDescriptor d, writeBack)
   _ -> do
     (arg, free') <- toFFIArg (Proxy @"tool-arg") t v
-    pure (arg, free', pure ())
+    pure (arg, free', pure (pure ()))
  where
   setBack ty newV = case argSetValue earg of
     Just setter | Scalar ty v /= Scalar ty newV -> setter ty newV
@@ -666,11 +667,12 @@ compiledToolExec (dylib, session, compileLayer, nextId, _) lookupAutocolor sink 
 
     -- The per-event invoker: snapshot args, then run the handler, retrying
     -- with a bigger arena if it runs out.
-    pure $ \ctx -> snapshotEventArgs ctx >>= \case
-      Nothing -> pure ()
+    pure $ \ctx -> HandlerRun $ \cancelFlag -> snapshotEventArgs ctx >>= \case
+      Nothing -> pure (pure ())
       Just haskArgs ->
-        let attempt capacity = runToolOnce fn lookupAutocolor sink capacity ctx haskArgs >>= \case
-              ToolSucceeded -> pure ()
+        let attempt capacity = runToolOnce fn lookupAutocolor sink cancelFlag capacity ctx haskArgs >>= \case
+              ToolSucceeded commit -> pure commit
+              ToolCancelled -> throwIO HandlerCancelled
               ToolBadIndex -> fail
                 "A list or table index was out of range, so this tool's changes were discarded."
               ToolOverflowed
@@ -690,22 +692,24 @@ toolArenaInitialCapacity = 1024 * 1024
 toolArenaMaxCapacity     = 256 * 1024 * 1024
 
 -- | How a single run of a compiled tool handler went.
-data ToolRun = ToolSucceeded | ToolOverflowed | ToolBadIndex
+data ToolRun = ToolSucceeded (IO ()) | ToolOverflowed | ToolBadIndex | ToolCancelled
 
--- | Run a compiled tool handler once, with an arena of the given size.
--- Unless it succeeded, the run has no effect at all: the handler's draw
--- commands are held back until it has finished, and its variable changes
--- are only written back after a successful run, so after an overflow the
--- handler can simply be run again with a bigger arena.
-runToolOnce :: FunPtr () -> AutocolorLookup -> DrawSink -> Int
+-- | Run a compiled tool handler once, with an arena of the given size,
+-- stopping early if its cancel flag is set. Nothing it does takes effect
+-- here: a successful run gives back its effects (its variable changes,
+-- read out of the arena now, and its draw commands, held back), to be
+-- applied later on the UI thread (see 'HandlerRun'). So after an
+-- overflow the handler can simply be run again with a bigger arena.
+runToolOnce :: FunPtr () -> AutocolorLookup -> DrawSink -> CancelFlag -> Int
             -> Context EventArgument_ env -> Context HaskellValue env
             -> IO ToolRun
-runToolOnce fn lookupAutocolor sink capacity ctx haskArgs = do
+runToolOnce fn lookupAutocolor sink cancelFlag capacity ctx haskArgs = do
   drawn <- newIORef []
   withDrawVTablePtrs (bufferedSink drawn sink) $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP) ->
     withTableCallbacks $ \tableNewFP tableThawFP ->
     withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir ->
     bracket (mallocBytes capacity) free $ \arena ->
+    withCancelFlagPtr cancelFlag $ \cancelPtr ->
     allocaBytes 1 $ \overflowPtr -> do
       poke overflowPtr (0 :: Word8)
       (envArgs, envFrees, envWriteBacks) <-
@@ -727,37 +731,25 @@ runToolOnce fn lookupAutocolor sink capacity ctx haskArgs = do
             , argPtr (castFunPtrToPtr tableThawFP)
             , argPtr arena
             , argInt32 (fromIntegral capacity)
-            , argPtr overflowPtr ]
+            , argPtr overflowPtr
+            , argPtr cancelPtr ]
             ++ envArgs
       callFFI fn retVoid fullArgs
       status <- peek overflowPtr
       let ok = status == 0
-      -- Propagate any config-variable Sets back to the host (e.g. the
-      -- Select tool sets the coordinate) while the arena is still live,
-      -- then free, then draw.
-      when ok (sequence_ envWriteBacks)
+      -- Read the changes to config variables (e.g. the Select tool sets
+      -- the coordinate) out of the arena while it's still live, then
+      -- free; setting them, and drawing, is left for the caller.
+      sets <- if ok then sequence envWriteBacks else pure []
       sequence_ envFrees
-      when ok (readIORef drawn >>= sequence_ . reverse)
-      -- An overflow takes priority: lists cut short by it can easily
-      -- cause a bad index later on, which a bigger arena would avoid.
-      pure $ if | ok               -> ToolSucceeded
+      let commit = sequence_ sets >> (readIORef drawn >>= sequence_ . reverse)
+      -- Stopping takes priority, then an overflow: lists cut short by it
+      -- can easily cause a bad index later on, which a bigger arena would
+      -- avoid.
+      pure $ if | ok               -> ToolSucceeded commit
+                | testBit status 2 -> ToolCancelled
                 | testBit status 0 -> ToolOverflowed
                 | otherwise        -> ToolBadIndex
-
--- | A sink that records draw commands (newest first) instead of drawing
--- them, to be replayed on the given sink later.
-bufferedSink :: IORef [IO ()] -> DrawSink -> DrawSink
-bufferedSink ref sink = DrawSink
-  { dsClear  = later (dsClear sink)
-  , dsStroke = later . dsStroke sink
-  , dsFill   = later . dsFill sink
-  , dsPoint  = later . dsPoint sink
-  , dsLine   = \p q -> later (dsLine sink p q)
-  , dsCircle = \f r p -> later (dsCircle sink f r p)
-  , dsRect   = \f p q -> later (dsRect sink f p q)
-  , dsWrite  = \t p -> later (dsWrite sink t p)
-  }
-  where later action = modifyIORef' ref (action :)
 
 -- | A 'ToolRunner' that JIT-compiles tool event handlers via this JIT session.
 llvmToolRunner :: LLVMJit -> ToolRunner

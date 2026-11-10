@@ -85,7 +85,7 @@ compile _ outputTy code = runExcept $
       indexError <- alloca AST.i1 Nothing 0
       store indexError 0 (C.bit 0)
       emptyText <- emptyTextGlobal
-      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing Nothing Nothing
+      let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing Nothing Nothing Nothing
 
       runReaderT (compileCode getExtern arenaState Nothing code) args
       rv <- derefOperand (getBinding args (bindingEvidence @output @t @env))
@@ -468,7 +468,7 @@ compileRenderer' prepOutputEnv name code = runExcept $
         emptyText <- emptyTextGlobal
         autocolorF <- bitcast autocolorArg autocolorFnType
         let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText Nothing
-                                    (Just (autocolorF, autocolorDirArg)) Nothing
+                                    (Just (autocolorF, autocolorDirArg)) Nothing Nothing
 
         args <- allocaArgs (envProxy (Proxy @(ViewerEnv env))) rawArgs
         x0 <- derefOperand (getBinding args pfX)  >>= \case RealOp v -> pure v
@@ -708,14 +708,15 @@ compileToolHandler envp name code = runExcept $
           , (AST.ptr AST.i8, ParameterName "table.thaw") ]
         arenaParams    = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
                          , (AST.i32,        ParameterName "#arenaSize") ]
-        overflowParams = [ (AST.ptr AST.i8, ParameterName "#overflowOut") ]
+        overflowParams = [ (AST.ptr AST.i8, ParameterName "#overflowOut")
+                         , (AST.ptr AST.i8, ParameterName "#cancel") ]
         params = drawParams ++ arenaParams ++ overflowParams ++ toToolParameterList envp
         fnPtrTy rTy aTys = AST.ptr (AST.FunctionType rTy aTys False)
     function name params AST.void $ \allArgs -> do
       getExtern <- getGetExtern
       _entry <- block `named` "tool_entry"
       let (drawArgs, afterDraw) = splitAt 13 allArgs
-          (arenaPtrArg : arenaSizeArg : overflowArg : rawEnvArgs) = afterDraw
+          (arenaPtrArg : arenaSizeArg : overflowArg : cancelArg : rawEnvArgs) = afterDraw
           [clearP, strokeP, fillP, pointP, lineP, circleP, rectP, writeP, formatP, autocolorP, autocolorDirP, tableNewP, tableThawP] = drawArgs
 
       bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
@@ -733,6 +734,7 @@ compileToolHandler envp name code = runExcept $
       tableThawF <- bitcast tableThawP tableThawFnType
       let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText (Just formatF)
                                   (Just (autocolorF, autocolorDirP)) (Just (tableNewF, tableThawF))
+                                  (Just (cancelArg, overflowArg))
 
       clearF  <- bitcast clearP  (fnPtrTy AST.void [])
       strokeF <- bitcast strokeP (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
@@ -753,12 +755,28 @@ compileToolHandler envp name code = runExcept $
       runReaderT (compileCode getExtern arenaState (Just vt) code) args
 
       -- The status byte: bit 0 for an arena overflow, bit 1 for a list
-      -- indexed out of range.
+      -- indexed out of range. (Bit 2 means the run stopped early, when it
+      -- was asked to: see 'checkCancelled'.)
       ovf8 <- load overflowFlag 0 >>= (`zext` AST.i8)
       idx8 <- load indexError 0 >>= (`zext` AST.i8) >>= (`shl` C.int8 1)
       status <- LLVM.IRBuilder.Instruction.or ovf8 idx8
       store overflowArg 0 status
       retVoid
+
+-- | In a tool handler, stop at once if its run has been asked to stop
+-- (see 'asCancel'): set the status byte's bit 2, and return. The flag is
+-- read with a volatile load, since another thread sets it, so that it
+-- isn't hoisted out of the loop that checks it.
+checkCancelled :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m) => ArenaState -> m ()
+checkCancelled arena = forM_ (asCancel arena) $ \(flagPtr, statusPtr) -> mdo
+  flag <- emitInstr AST.i8 (AST.Load True flagPtr Nothing 1 [])
+  stop <- icmp P.NE flag (C.int8 0)
+  condBr stop stopB goB
+  stopB <- block `named` "tool_cancelled"
+  store statusPtr 0 (C.int8 4)
+  retVoid
+  goB <- block `named` "tool_continue"
+  pure ()
 
 -- | The type of the host's autocolor lookup (see 'asAutocolor').
 autocolorFnType :: AST.Type
@@ -841,6 +859,7 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
     br loop
 
     loop <- block
+    lift (checkCancelled arena)
     void body
     _ <- call (getExtern "stackrestore") [(stackPtr, [])]
     test <- value_ getExtern arena cond >>= detypeOperand BooleanType
@@ -869,6 +888,7 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
       lift $ condBr isNull loopExit loopBody
 
       loopBody <- block `named` "foreach_body"
+      lift (checkCancelled arena)
       elem_ <- lift $ loadListElem itemTy currPtr
       lift $ storeOperand elem_ elemSlot
       -- Run the body with the element bound in the context.
@@ -899,6 +919,7 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
       lift $ condBr isNull notFound loopBody
 
       loopBody <- block `named` "lookup_body"
+      lift (checkCancelled arena)
       elem_ <- lift $ loadListElem itemTy currPtr
       lift $ storeOperand elem_ elemSlot
       -- Evaluate the predicate in the extended context.

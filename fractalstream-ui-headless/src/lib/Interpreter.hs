@@ -37,7 +37,8 @@ import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
 import Actor.Viewer.Preview (renderPreview)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
-import Actor.Event (Event(..), EventArgument_, EventArgument(..), PixelDims, Coordinate(..))
+import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..),
+                    ToolDispatcher, runHandlerNow)
 import Actor.Layout (Dimensions(..))
 
 import Language.Environment
@@ -66,7 +67,7 @@ data InterpState = InterpState
   { isViewers       :: Map String Viewer
   , isEnsembleCtx   :: SomeContext EventArgument_
   , isCurrentViewer :: Maybe String
-  , isCurrentTool   :: Maybe (String, PixelDims -> Event -> Maybe (IO ()))
+  , isCurrentTool   :: Maybe (String, ToolDispatcher)
     -- ^ the selected tool's name, and its already-built event dispatcher
     -- (built once on selection, not re-built per event -- matters more
     -- than it might look, since building it JIT-compiles the tool's
@@ -319,7 +320,7 @@ withCurrentTool st k = case (isCurrentViewer st, isCurrentTool st) of
 
 withCurrentDispatcher
   :: InterpState
-  -> (Viewer -> (PixelDims -> Event -> Maybe (IO ())) -> IO (Either String InterpState))
+  -> (Viewer -> ToolDispatcher -> IO (Either String InterpState))
   -> IO (Either String InterpState)
 withCurrentDispatcher st k = case (isCurrentViewer st, isCurrentTool st) of
   (Just vname, Just (_, dispatcher)) -> k (isViewers st Map.! vname) dispatcher
@@ -354,7 +355,7 @@ findTool viewer name = do
 -- @Either String@ result, so without this a scenario selecting such a
 -- tool would otherwise take the whole process down instead of failing
 -- that one command cleanly.
-buildDispatcher :: SomeContext EventArgument_ -> Viewer -> Tool -> IO (Either String (PixelDims -> Event -> Maybe (IO ())))
+buildDispatcher :: SomeContext EventArgument_ -> Viewer -> Tool -> IO (Either String ToolDispatcher)
 buildDispatcher ensembleCtx viewer tool = safely $ do
   mcfg <- getDynamic (toolConfig tool)
   buildToolContext ensembleCtx mcfg >>= \case
@@ -376,11 +377,12 @@ safely action = try action >>= \case
 -- | Fire an event on a dispatcher, with the current viewer's pixel size
 -- (every event handler gets this, regardless of event kind -- see
 -- 'Actor.Event.makeEventHandler').
-fireOn :: Viewer -> (PixelDims -> Event -> Maybe (IO ())) -> Event -> IO ()
+fireOn :: Viewer -> ToolDispatcher -> Event -> IO ()
 fireOn viewer dispatcher ev = do
   px <- getDynamic (vPixelSize viewer)
   aspect <- getDynamic (vAspect viewer)
-  sequence_ (dispatcher (px, px * aspect) ev)
+  -- (run at once: a scenario has no one to show progress to, or stop it)
+  mapM_ runHandlerNow (dispatcher (px, px * aspect) ev)
 
 ---------------------------------------------------------------------------
 -- Resolving value expressions

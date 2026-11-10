@@ -1127,6 +1127,24 @@ config window's "Reset to defaults" also clears the interactive choices
 (rebuilding first, then resetting values). The script editor's Rebuild
 and live check keep the current choices.
 
+Tool handler runs are two-phase (`Actor.Event.HandlerRun`): starting one
+with a `CancelFlag` works it out, on any thread, and gives back its effects
+(the variable changes it made, and its drawing, buffered) to apply on the UI
+thread; a run that fails or is stopped throws (`HandlerCancelled` when
+stopped) and has no effect. A dispatcher (`ToolDispatcher`) gives a
+`HandlerRun` per event; `runHandlerNow` does both steps at once (fsrun,
+tests, overlays, movie scripts). Compiled handlers poll the flag at the top
+of every loop (`checkCancelled` in Backend.LLVM.Code: a volatile load, so
+it isn't hoisted; status bit 2), and read their variable changes out of the
+arena right after the call (`toFFIArgInOut`'s write-back is `IO (IO ())`:
+read now, set later); interpreted ones stop at an async exception. The wx
+viewer runs every handler through `UI.ToolProgress.runWithProgress`: it
+waits 250 ms, then shows a modal "Running a tool" window with Stop and
+"Stop and switch to Navigate" (`dropToNavigate`, which skips the tool's
+Deactivated handler). Only one handler runs at a time, app-wide: wx timers
+still fire during the modal window, and another run asked for meanwhile is
+skipped (`RunSkipped`).
+
 Tool behavior in the wx viewer: `on timer` handlers run while the tool is
 selected (`toolTimers`, from `toolBlockTimers` on the parsed blocks; the
 `runningTimers` are stopped on deactivation and when `guardTool` gives up

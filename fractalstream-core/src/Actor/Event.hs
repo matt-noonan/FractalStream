@@ -19,6 +19,15 @@ module Actor.Event
   , pixelHeightVar
   , buildHandlerWith
   , ToolExec
+  , ToolDispatcher
+  , HandlerRun(..)
+  , runHandlerNow
+  , CancelFlag
+  , newCancelFlag
+  , cancelRun
+  , runCancelled
+  , withCancelFlagPtr
+  , HandlerCancelled(..)
   , ToolRunner(..)
   , defaultToolRunner
   , makeEventHandler
@@ -67,6 +76,10 @@ import Language.Draw
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.IORef
+import Foreign.ForeignPtr (ForeignPtr, mallocForeignPtrBytes, withForeignPtr)
+import Foreign.Ptr (Ptr)
+import Foreign.Storable (peek, poke)
+import Control.Exception (Exception)
 --import Control.Monad.Trans.Maybe
 
 import Data.DynamicValue
@@ -127,23 +140,73 @@ mutableArg var = EventArgument getter setter
 data MaybeHaskellValue :: Symbol -> FSType -> Exp Type
 type instance Eval (MaybeHaskellValue _ t) = Maybe (HaskellType t)
 
-run :: forall env. DrawHandler ScalarIORefM -> Context EventArgument_ env -> Code env -> IO ()
-run draw ctx script = do
+-- | Run a tool handler in the interpreter: work it out (drawing into a
+-- buffer), then give back what applies its effects, its changes to the
+-- arguments that it set and its drawing (see 'HandlerRun'). It's stopped
+-- by an asynchronous exception rather than its 'CancelFlag'.
+run :: forall env. DrawSink -> Context EventArgument_ env -> Code env -> HandlerRun
+run sink ctx script = HandlerRun $ \_ -> do
 
   -- Snapshot the arguments
   (mapContextM @MaybeHaskellValue @HaskellValue (\_ _ -> id) <$> mapContextM (\_ _ -> argGetValue) ctx) >>= \case
-    Nothing -> pure ()
+    Nothing -> pure (pure ())
     Just (initialArgs :: Context HaskellValue env) -> do
       args :: Context IORefTypeOfBinding env <- mapContextM (\_ _ -> newIORef) initialArgs
-      execStateT (interpretToIO draw script) args
+      drawn <- newIORef []
+      execStateT (interpretToIO (drawHandlerForSink (bufferedSink drawn sink)) script) args
       finalArgs <- mapContextM @_ @HaskellValue (\_ _ -> readIORef) args
 
-      -- Update any arguments that have been changed by the script
+      -- Then update any arguments that have been changed by the script,
+      -- and draw
       let ctx' = zipContext (zipContext initialArgs finalArgs) ctx
-      fromContextM_ (\_ ty ((old, new), arg) -> case argSetValue arg of
-                        Nothing -> pure ()
-                        Just setter -> when (Scalar ty old /= Scalar ty new) (setter ty new)
-                    ) ctx'
+      pure $ do
+        fromContextM_ (\_ ty ((old, new), arg) -> case argSetValue arg of
+                          Nothing -> pure ()
+                          Just setter -> when (Scalar ty old /= Scalar ty new) (setter ty new)
+                      ) ctx'
+        readIORef drawn >>= sequence_ . reverse
+
+-- | Whether a tool handler's run should stop: a byte that compiled code
+-- polls (in its loops), set once the run should stop.
+newtype CancelFlag = CancelFlag (ForeignPtr Word8)
+
+newCancelFlag :: IO CancelFlag
+newCancelFlag = do
+  fp <- mallocForeignPtrBytes 1
+  withForeignPtr fp (\p -> poke p 0)
+  pure (CancelFlag fp)
+
+-- | Ask the run to stop.
+cancelRun :: CancelFlag -> IO ()
+cancelRun (CancelFlag fp) = withForeignPtr fp (\p -> poke p 1)
+
+runCancelled :: CancelFlag -> IO Bool
+runCancelled (CancelFlag fp) = withForeignPtr fp (fmap (/= 0) . peek)
+
+withCancelFlagPtr :: CancelFlag -> (Ptr Word8 -> IO a) -> IO a
+withCancelFlagPtr (CancelFlag fp) = withForeignPtr fp
+
+-- | Thrown by a tool handler's run that stopped because it was asked to
+-- (its 'CancelFlag').
+data HandlerCancelled = HandlerCancelled
+  deriving Show
+
+instance Exception HandlerCancelled
+
+-- | One run of a tool's event handler, in two steps. First it's worked
+-- out, on any thread, stopping early once its 'CancelFlag' is set: that
+-- gives back the run's effects, its changes to the tool's variables and
+-- its drawing, which are applied second, on the UI thread. A run that
+-- fails, or is stopped, throws instead, and has no effect at all.
+newtype HandlerRun = HandlerRun { startHandlerRun :: CancelFlag -> IO (IO ()) }
+
+-- | Run a handler and apply its effects at once, on this thread.
+runHandlerNow :: HandlerRun -> IO ()
+runHandlerNow r = newCancelFlag >>= startHandlerRun r >>= id
+
+-- | A tool's event dispatcher: the run for an event, if the tool handles
+-- it.
+type ToolDispatcher = PixelDims -> Event -> Maybe HandlerRun
 
 -- | Read the current value of every argument in a tool's event context,
 -- yielding a concrete 'HaskellValue' context (or 'Nothing' if any argument is
@@ -162,14 +225,14 @@ snapshotEventArgs ctx =
 type ToolExec =
   forall e. EnvironmentProxy e
          -> Code e
-         -> IO (Context EventArgument_ e -> IO ())
+         -> IO (Context EventArgument_ e -> HandlerRun)
 
 makeEventHandler :: forall env
                   . (MissingClickArgs env, MissingDragArgs env, MissingUnitArgs env)
                  => ToolExec
                  -> Context EventArgument_ env
                  -> CombinedEventHandler env
-                 -> IO (PixelDims -> Event -> Maybe (IO ()))
+                 -> IO ToolDispatcher
 makeEventHandler exec ctx CombinedEventHandler{..} = do
   -- Prepare (e.g. JIT-compile) each present handler once.  The dummy contexts
   -- only serve to recover each branch's 'EnvironmentProxy'; 'contextToEnv'
@@ -244,7 +307,7 @@ noHandlers = CombinedEventHandler Nothing Nothing Nothing Nothing Map.empty Map.
 buildHandlerWith :: ToolExec
                  -> SomeContext EventArgument_
                  -> ParsedToolScript
-                 -> IO (Either String (PixelDims -> Event -> Maybe (IO ())))
+                 -> IO (Either String ToolDispatcher)
 buildHandlerWith exec (SomeContext ctx) script = do
   let env = contextToEnv ctx
   case runParsedToolScript script env of
@@ -277,7 +340,7 @@ newtype ToolRunner = ToolRunner
             -> Int
             -> SomeContext EventArgument_
             -> ParsedToolScript
-            -> IO (Either String (PixelDims -> Event -> Maybe (IO ()))) }
+            -> IO (Either String ToolDispatcher) }
 
 -- | The interpreter tool runner: evaluate draw values through the pure
 -- interpreter and emit them into the given layer's 'DrawSink'.
@@ -289,7 +352,7 @@ defaultToolRunner = ToolRunner $ \_ sink layer ctx script ->
 interpretedToolExec :: DrawSink -> ToolExec
 interpretedToolExec sink _ code =
   let code' = transformValues backendRewrites code
-  in pure (\c -> run (drawHandlerForSink sink) c code')
+  in pure (\c -> run sink c code')
 
 -- | Adapt a 'DrawSink' into an interpreter 'DrawHandler': evaluate each draw
 -- command's value arguments and forward the concrete values to the sink.

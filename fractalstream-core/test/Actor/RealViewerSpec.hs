@@ -186,7 +186,7 @@ runRealTool coord src event = do
               (parseToolScript noCommonDefs coord limits (Just "pixel_size") src)
   dispatch <- buildHandlerWith (interpretedToolExec noDrawing) (SomeContext ctx) script
                 >>= either fail pure
-  sequence_ (dispatch (0.5, 2) event)
+  mapM_ runHandlerNow (dispatch (0.5, 2) event)
   (,,) <$> getDynamic va <*> getDynamic vb <*> getDynamic vh
 
 noDrawing :: DrawSink
