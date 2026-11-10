@@ -356,13 +356,23 @@ attachMetadata path o ens = case KM.lookup "metadata" o of
 -- script, so that rebuilding (or saving the rebuilt project) doesn't
 -- lose them. A value the edited script no longer has a place for is
 -- dropped; a value that was still its default follows the edited
--- script's default.
+-- script's default. Tables carry over too, by name and type.
 carryOverProjectState :: Ensemble -> Ensemble -> IO ()
 carryOverProjectState from to = do
   setValue' (ensembleScenarios to) =<< getDynamic (ensembleScenarios from)
   setValue' (ensembleMetadata to) =<< getDynamic (ensembleMetadata from)
   setValue' (ensembleFrontendProperties to) =<< getDynamic (ensembleFrontendProperties from)
   setValue' (ensembleAutocolor to) =<< getDynamic (ensembleAutocolor from)
+  -- A table the edited script still declares, with the same name and
+  -- type, keeps what it holds. (Tables have no field, so the values
+  -- carried over below don't include them.)
+  let tablesOf ens = getDynamic (ensembleConfiguration ens)
+                       >>= maybe (pure []) (layoutTables . coContents)
+  oldTables <- tablesOf from
+  newTables <- tablesOf to
+  forM_ newTables $ \(name, ty, var) ->
+    forM_ [ old | (name', ty', old) <- oldTables, name' == name, ty' == ty ] $ \old ->
+      getDynamic (dyn old) >>= setValue' var
   -- A project whose script hadn't built has no values of its own to
   -- carry over, only the ones its file was saved with: those are the
   -- ones to put in place, now that there's somewhere to put them.
