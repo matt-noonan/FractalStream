@@ -282,12 +282,12 @@ spec = do
           let env = envProxy (Proxy @(ViewerEnv '[]))
               src = "xs := [1, 2, 3]\ncolor <- if " ++ cond ++ " then green else red"
           code <- either (fail . show) pure (parseCode env noCommonDefs src)
-          withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) ->
+          withJittedViewer jit noAutocolor Nothing code $ \vf ->
             allocaBytes (3 * 4 * 4) $ \buf -> do
-              issues <- vf ViewerArgs
+              issues <- runViewerFunction vf EmptyContext ViewerArgs
                 { vaPoint = (0, 0), vaStep = (0.1, 0.1)
                 , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
-                , vaBuffer = buf, vaArgs = EmptyContext }
+                , vaBuffer = buf }
               (issues,) <$> peekArray (3 * 4 * 4) buf
         badIndex = ViewerIssues { viOutOfMemory = False, viBadIndex = True }
 
