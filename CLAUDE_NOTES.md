@@ -321,7 +321,14 @@ length in model coordinates. `fsrun` has `set viewer aspect to` and
 `record ... moving (x, y) along ...`.
 
 `ViewerCompiler` wraps a backend's compilation function. `withCompiledViewer` compiles
-a `Code` into a `ViewerFunction` using the active backend.
+a `Code` into a `ViewerFunction` using the active backend. A `ViewerFunction` is
+bound to the configuration's values once per render, giving the function that
+renders each block (`ViewerArgs`); the LLVM backend marshals the values there
+(lists, table descriptors, ...), and a finalizer frees them once the block
+function is garbage. Don't marshal per block: a render makes thousands of
+calls on many threads, and per-call marshalling (table descriptors going
+through one shared registry) once made each call cost ~0.5 ms. One-off
+renders can use `runViewerFunction`.
 
 `ComplexViewer` is the YAML-serializable viewer config (extends to complex-plane viewers).
 

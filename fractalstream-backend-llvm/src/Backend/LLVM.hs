@@ -61,6 +61,7 @@ import qualified Data.Map.Strict as Map
 
 import Actor.Autocolor (AutocolorLookup(..), autocolorCacheLookup)
 import Foreign hiding (void)
+import qualified Foreign.Concurrent as FC
 
 import Text.Disassembler.X86Disassembler
 
@@ -475,11 +476,21 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocol
             -- such as cancelling a tile's render, which happens on every
             -- redraw -- would abandon the release and lose the arena for
             -- good. Lost arenas made quitting hang, waiting to free them.
-            action $ ViewerFunction $ \ViewerArgs{..} ->
-              bracket (readChan arenaPool) (uninterruptibleMask_ . writeChan arenaPool) $ \arena ->
-              withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir -> do
-                (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
-                (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
+            --
+            -- The configuration's values are marshalled once, when they're
+            -- bound, and shared by every block the render draws (on many
+            -- threads at once: the kernel only reads them). They're freed
+            -- once the block function is garbage, by the finalizer of
+            -- 'bound', which each call keeps alive while it runs.
+            action $ ViewerFunction $ \vaArgs -> do
+              (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
+              (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
+              anchor <- mallocBytes 1 :: IO (Ptr Word8)
+              bound <- FC.newForeignPtr anchor (sequence_ (colorFree : frees) >> free anchor)
+              pure $ \ViewerArgs{..} ->
+               withForeignPtr bound $ \_ ->
+               bracket (readChan arenaPool) (uninterruptibleMask_ . writeChan arenaPool) $ \arena ->
+               withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir -> do
                 let nPixels = fromIntegral vaWidth * fromIntegral vaHeight :: Int
                     w = fromIntegral vaWidth  :: Int
                     h = fromIntegral vaHeight :: Int
@@ -526,7 +537,6 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocol
                   status <- peek (issuesPtr :: Ptr Word8)
                   pure ViewerIssues { viOutOfMemory = testBit status 0
                                     , viBadIndex    = testBit status 1 }
-                sequence_ (colorFree : frees)
                 pure issues
 
 ------------------------------------------------------------------------

@@ -25,7 +25,7 @@ interpretViewer mPrepScript body0 action = do
   -- The same rewrites the LLVM backend applies, so both render alike.
   let body = transformValues backendRewrites body0
       env = toIndex body
-  withEnvironment env $ action $ ViewerFunction $ \ViewerArgs{..} -> do
+  withEnvironment env $ action $ ViewerFunction $ \vaArgs -> pure $ \ViewerArgs{..} -> do
     let (x0, y0) = vaPoint
         (dx, dy) = vaStep
         context :: Context HaskellValue (ViewerEnv env)
