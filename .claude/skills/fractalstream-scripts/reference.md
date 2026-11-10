@@ -392,7 +392,10 @@ stopped` means `x` (any expression) is `=` to its value at the start of
 the latest pass through the body: `iterate z -> newton(z) until z stops`.
 It's false at the first check of a `while`/`until`/`iterate` loop.
 
-Boolean: `and`, `or`, `not`. Parenthesize mixtures.
+Boolean: `and`, `or`, `not`. Parenthesize mixtures. `and` and `or`
+short-circuit (in every backend): `p and q` evaluates `q`
+only if `p` is true, `p or q` only if `p` is false, so
+`length(xs) > 5 and xs @ 6 = 0` is safe on a short list.
 
 Conditional expression: `if c then a else b` (chains: `if ... then ... else
 if ... then ... else ...`).

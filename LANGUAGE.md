@@ -51,6 +51,12 @@ The boolean operators `and`, `or`, and `not` can be used, with
 This can be confusing, so as a general recommendation you should not
 mix `and`s and `or`s without parentheses.
 
+`and` and `or` only evaluate their right side when the left side doesn't
+already decide the answer: in `p and q`, `q` is evaluated only if `p` is
+true, and in `p or q`, only if `p` is false. So the right side can rely on
+the left one, as in `length(xs) > 5 and xs @ 6 = 0`, which doesn't index
+`xs` out of range when it's too short.
+
 ### Constants
 
 FractalStream knows about the real constants `pi` and `e` (also spelled

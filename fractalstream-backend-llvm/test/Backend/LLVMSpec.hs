@@ -208,6 +208,10 @@ spec = do
           , ("leaving lists alone", "write length(legs) at 0")
             -- 600 appends copy ~4 MB of list nodes, overflowing the first
             -- arenas; draw commands must still happen exactly once
+            -- (pts has 2 elements: `pts @ 6` would be out of range)
+          , ("`and` and `or` skipping their right side",
+             "if length(pts) > 5 and re(pts @ 6) > 0:\n  n <- 7\n"
+             ++ "x <- if length(pts) < 5 or re(pts @ 6) > 0 then 1 else 2")
           , ("outgrowing the first arenas",
              "draw point at z\nks := range(1, 600)\nfor each k in ks:\n  pts <- append(pts, z)\n"
              ++ "write length(pts) at 0")
@@ -269,6 +273,40 @@ spec = do
       (issues, pixels) <- render jit 1
       issues `shouldBe` ViewerIssues { viOutOfMemory = False, viBadIndex = True }
       pixels `shouldBe` allPixels (255, 0, 255)
+
+    -- `and` and `or` only evaluate their right side when the left doesn't
+    -- decide (xs has 3 elements, so `xs @ 5` is out of range).
+    let shortCircuit :: LLVMJit -> String -> IO (ViewerIssues, [Word8])
+        shortCircuit jit cond = do
+          let env = envProxy (Proxy @(ViewerEnv '[]))
+              src = "xs := [1, 2, 3]\ncolor <- if " ++ cond ++ " then green else red"
+          code <- either (fail . show) pure (parseCode env noCommonDefs src)
+          withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction vf) ->
+            allocaBytes (3 * 4 * 4) $ \buf -> do
+              issues <- vf ViewerArgs
+                { vaPoint = (0, 0), vaStep = (0.1, 0.1)
+                , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+                , vaBuffer = buf, vaArgs = EmptyContext }
+              (issues,) <$> peekArray (3 * 4 * 4) buf
+        badIndex = ViewerIssues { viOutOfMemory = False, viBadIndex = True }
+
+    it "skips the right side of `and` when the left is false" $ withJIT $ \jit -> do
+      (issues, pixels) <- shortCircuit jit "not (length(xs) > 5 and re(xs @ 5) > 0)"
+      issues `shouldBe` mempty
+      pixels `shouldBe` allPixels (colorToRGB green)
+
+    it "skips the right side of `or` when the left is true" $ withJIT $ \jit -> do
+      (issues, pixels) <- shortCircuit jit "length(xs) < 5 or re(xs @ 5) > 0"
+      issues `shouldBe` mempty
+      pixels `shouldBe` allPixels (colorToRGB green)
+
+    it "still evaluates the right side of `and` when the left is true" $ withJIT $ \jit -> do
+      (issues, _) <- shortCircuit jit "length(xs) < 5 and re(xs @ 5) > 0"
+      issues `shouldBe` badIndex
+
+    it "still evaluates the right side of `or` when the left is false" $ withJIT $ \jit -> do
+      (issues, _) <- shortCircuit jit "length(xs) > 5 or re(xs @ 5) > 0"
+      issues `shouldBe` badIndex
 
     it "reports running out of scratch memory, drawn in magenta" $ withJIT $ \jit -> do
       (issues, pixels) <- render jit 2

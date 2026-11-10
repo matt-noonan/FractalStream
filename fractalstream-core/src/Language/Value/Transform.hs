@@ -2,6 +2,7 @@ module Language.Value.Transform
   ( backendRewrites
   , integerPowers
   , avoidSqrt
+  , shortCircuit
   ) where
 
 import Data.Indexed.Functor
@@ -25,9 +26,24 @@ pattern ConstIntC n = R2C (I2R (Const (Scalar IntegerType n)))
 -- running it. They don't change what the code means, but they do change
 -- its arithmetic (e.g. @z^2@ becomes @z * z@, not a general complex power),
 -- so the compiled and interpreted backends must apply the same ones to
--- get identical results.
+-- get identical results. They also settle what gets evaluated, such as
+-- 'shortCircuit'ing @and@ and @or@, so that every backend does the same.
 backendRewrites :: Value et -> Value et
-backendRewrites = integerPowers . avoidSqrt
+backendRewrites = shortCircuit . integerPowers . avoidSqrt
+
+-- | @a and b@ evaluates @b@ only if @a@ is true, and @a or b@ only if @a@
+-- is false: they become @if a then b else false@ and @if a then true else
+-- b@, and every backend evaluates only the branch of an @if@ that's
+-- taken. So @b@ can rely on @a@: in @length(xs) > 5 and xs \@ 6 = 0@, the
+-- list isn't indexed out of range (which is an error) when it's too short.
+shortCircuit :: Value et0 -> Value et0
+shortCircuit = indexedFold @(FIX ValueF) phi
+  where
+    phi :: forall et. Value et -> Value et
+    phi = \case
+      And x y -> ITE BooleanType x y (Const (Scalar BooleanType False))
+      Or x y  -> ITE BooleanType x (Const (Scalar BooleanType True)) y
+      etc -> etc
 
 integerPowers :: Value et0 -> Value et0
 integerPowers = indexedFold @(FIX ValueF) phi
