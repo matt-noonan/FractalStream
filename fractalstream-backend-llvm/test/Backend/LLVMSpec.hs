@@ -6,7 +6,8 @@ import Language.Value
 import Language.Draw
 import Language.Code.Parser (parseCode, parseParsedCode, noCommonDefs)
 import Language.Value.Parser (parseParsedValue)
-import Actor.Event (EventArgument_, mutableVar, interpretedToolExec, ToolExec, Coordinate(..))
+import Actor.Event (EventArgument_, mutableVar, interpretedToolExec, ToolExec, Coordinate(..), runHandlerNow,
+                    HandlerRun(..), HandlerCancelled(..), newCancelFlag, cancelRun)
 import Data.DynamicValue
 import Data.Color
 import Language.Table (newTable, writeCell, freezeTable)
@@ -225,6 +226,56 @@ spec = do
               interpreted <- runTool interpretedToolExec src
               compiled `shouldBe` interpreted)
           scripts
+
+  describe "when a tool handler runs in two steps" $ do
+    -- (a tool with one variable, n = 2; it doesn't draw)
+    let oneVar :: (DrawSink -> ToolExec) -> String -> IO (Variable Int64, HandlerRun)
+        oneVar exec src = do
+          vN <- newVariable (2 :: Int64)
+          let ctx = Bind (Proxy @"n") IntegerType (mutableVar vN) EmptyContext
+          code <- either (fail . show) pure (parseCode (contextToEnv ctx) noCommonDefs src)
+          invoker <- exec noDrawing (contextToEnv ctx) code
+          pure (vN, invoker ctx)
+        changesOnlyWhenApplied :: (DrawSink -> ToolExec) -> IO ()
+        changesOnlyWhenApplied exec = do
+          (vN, r) <- oneVar exec "n <- 7"
+          apply <- startHandlerRun r =<< newCancelFlag
+          getDynamic vN `shouldReturn` 2
+          apply
+          getDynamic vN `shouldReturn` 7
+
+    it "changes nothing until its effects are applied (compiled)" $ withJIT $ \jit ->
+      changesOnlyWhenApplied (compiledToolExec jit noAutocolor)
+
+    it "changes nothing until its effects are applied (interpreted)" $
+      changesOnlyWhenApplied interpretedToolExec
+
+    it "stops a compiled handler's loop when asked to, changing nothing" $ withJIT $ \jit -> do
+      -- (a loop that would run for a long time: the iteration limit is
+      -- huge, for integers in compiled code, which have 32 bits)
+      vN <- newVariable (2 :: Int64)
+      vI <- newVariable (0 :: Int64)
+      vL <- newVariable (2 ^ (30 :: Int) :: Int64)
+      vS <- newVariable False
+      let ctx = Bind (Proxy @"n") IntegerType (mutableVar vN)
+              $ Bind (Proxy @"[internal] iteration count") IntegerType (mutableVar vI)
+              $ Bind (Proxy @"[internal] iteration limit") IntegerType (mutableVar vL)
+              $ Bind (Proxy @"[internal] stuck") BooleanType (mutableVar vS)
+              $ EmptyContext
+      code <- either (fail . show) pure
+                (parseCode (contextToEnv ctx) noCommonDefs "while true:\n  n <- n + 1")
+      invoker <- compiledToolExec jit noAutocolor noDrawing (contextToEnv ctx) code
+      let r = invoker ctx
+      flag <- newCancelFlag
+      result <- newEmptyMVar
+      _ <- forkIO (try @HandlerCancelled (startHandlerRun r flag) >>= putMVar result)
+      threadDelay 100000
+      cancelRun flag
+      timeout 5000000 (takeMVar result) >>= \case
+        Nothing -> expectationFailure "it didn't stop"
+        Just (Left HandlerCancelled) -> pure ()
+        Just (Right _) -> expectationFailure "it finished instead of stopping"
+      getDynamic vN `shouldReturn` 2
 
   describe "when a compiled tool handler fails" $ do
 
@@ -585,7 +636,7 @@ runTool exec src = do
         , dsWrite  = \t p -> record ("write " ++ show t ++ " at " ++ show p)
         }
   invoker <- exec sink env code
-  invoker ctx
+  runHandlerNow (invoker ctx)
   drawn <- reverse <$> readIORef events
   final <- (,,) <$> getDynamic vMsg <*> getDynamic vN <*> getDynamic vX
   lists <- (,,) <$> getDynamic vPts <*> getDynamic vLegs <*> getDynamic vWords
@@ -595,3 +646,10 @@ runTool exec src = do
 noAutocolor :: AutocolorLookup
 noAutocolor = unsafePerformIO (autocolorLookupFromFunction (\_ _ _ _ -> pure grey))
 {-# NOINLINE noAutocolor #-}
+
+-- | A sink that draws nothing.
+noDrawing :: DrawSink
+noDrawing = DrawSink
+  { dsClear = pure (), dsStroke = const (pure ()), dsFill = const (pure ())
+  , dsPoint = const (pure ()), dsLine = \_ _ -> pure (), dsCircle = \_ _ _ -> pure ()
+  , dsRect = \_ _ _ -> pure (), dsWrite = \_ _ -> pure () }

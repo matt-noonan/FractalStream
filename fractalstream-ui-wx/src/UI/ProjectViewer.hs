@@ -33,6 +33,7 @@ import UI.Widgets
 import UI.WxProperties
 import UI.ViewModel
 import UI.MovieMaker
+import UI.ToolProgress
 import Actor.Movie (canAnimate)
 import Actor.Viewer.Sphere
 
@@ -48,7 +49,7 @@ import Actor.Configuration
 import Actor.Viewer
 import Actor.Ensemble (buildToolContext, layoutToArgs, Colorizer(..), ViewerColorizer(..))
 import Actor.Colorizer (splitArguments)
-import Actor.Event (Event(..), EventArgument_, EventArgument(..), PixelDims, Coordinate(..), ViewKind(..))
+import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..), ToolDispatcher, HandlerRun)
 import Language.Value.Parser (parseConstant)
 import Language.Type
 import Language.Draw
@@ -616,31 +617,37 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           writeIORef runningTimers []
           forM_ timers $ \t -> set t [ enabled := False ]
 
-    let getToolEventHandler :: Tool -> IO (PixelDims -> Actor.Event.Event -> Maybe (IO ()))
+    let getToolEventHandler :: Tool -> IO ToolDispatcher
         getToolEventHandler Tool{..} = getDynamic (dyn toolEventHandler)
 
-        -- Run one of a tool's event handlers, returning whether it
-        -- succeeded. If it fails, switch back to the Navigate tool *before*
+        -- Switch back to the Navigate tool from a tool whose handler failed
+        -- or was stopped, without running its Deactivated handler (which
+        -- may well fail, or be slow, too).
+        dropToNavigate :: Tool -> IO ()
+        dropToNavigate Tool{..} = do
+          stopToolTimers
+          set currentTool [ value := Left NavTool ]
+          -- If it stopped partway through a click or drag, forget it,
+          -- so that releasing the mouse doesn't zoom or recenter.
+          set lastClick [ value := Nothing ]
+          set draggedTo [ value := Nothing ]
+          setToolLabel "Navigate"
+          showToolConfig <- getDynamic (dyn toolShowConfig)
+          showToolConfig False
+          vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
+
+        -- Apply a tool handler's effects, returning whether that worked. If
+        -- the handler failed, switch back to the Navigate tool *before*
         -- reporting the error, so that a tool which fails on every event
         -- (each step of a drag, or every refresh) can't produce an endless
-        -- stream of error dialogs. The failed tool's Deactivated handler
-        -- isn't run, since it may well fail too.
+        -- stream of error dialogs.
         guardTool :: Tool -> IO () -> IO Bool
-        guardTool Tool{..} action = try action >>= \case
+        guardTool theTool@Tool{..} action = try action >>= \case
           Right () -> pure True
           Left (err :: SomeException)
             | Just (_ :: SomeAsyncException) <- fromException err -> throwIO err
             | otherwise -> do
-                stopToolTimers
-                set currentTool [ value := Left NavTool ]
-                -- If it failed partway through a click or drag, forget it,
-                -- so that releasing the mouse doesn't zoom or recenter.
-                set lastClick [ value := Nothing ]
-                set draggedTo [ value := Nothing ]
-                setToolLabel "Navigate"
-                showToolConfig <- getDynamic (dyn toolShowConfig)
-                showToolConfig False
-                vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
+                dropToNavigate theTool
                 tname <- getDynamic (tiName toolInfo) <&> fromRight "--"
                 errorDialog f "Tool error" $ concat
                   [ "The \"", tname, "\" tool stopped because of an error:\n\n"
@@ -648,10 +655,24 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                   , "\n\nSwitching back to the Navigate tool." ]
                 pure False
 
+        -- Run one of a tool's event handlers (with a way to stop it, if
+        -- it's slow: see "UI.ToolProgress"), returning whether it
+        -- succeeded.
         runToolEventHandler theTool e = do
           handle <- getToolEventHandler theTool
           Model _ pxDims _ <- get model value
-          maybe (pure True) (guardTool theTool) (handle pxDims e)
+          maybe (pure True) (runToolHandler theTool) (handle pxDims e)
+
+        -- Run a tool's handler for an event, as 'runToolEventHandler'.
+        runToolHandler :: Tool -> HandlerRun -> IO Bool
+        runToolHandler theTool@Tool{..} run = do
+          tname <- getDynamic (tiName toolInfo) <&> fromRight "--"
+          runWithProgress f tname run >>= \case
+            RunFinished apply -> guardTool theTool apply
+            RunFailed err -> guardTool theTool (throwIO err)
+            RunStopped toNavigate -> False <$ when toNavigate (dropToNavigate theTool)
+            -- (another tool's handler was running)
+            RunSkipped -> pure True
 
     let activateTool thisTool@Tool{..} = do
           deactivateCurrentTool
@@ -1140,7 +1161,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                     case handle pxDims (Click ptz) of
                       Nothing -> recenterAction
                       Just action -> do
-                        void (guardTool tool action)
+                        void (runToolHandler tool action)
                         vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
 
                 case dragBox of
@@ -1174,7 +1195,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                               handle <- getToolEventHandler tool
                               case handle pxDims (DragDone z zstart) of
                                 Just action -> do
-                                  void (guardTool tool action)
+                                  void (runToolHandler tool action)
                                   vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
                                 Nothing -> finishDrag
                         Left NavTool -> finishDrag
@@ -1222,7 +1243,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                          handle <- getToolEventHandler tool
                          case handle pxDims (Drag z zstart) of
                            Just action -> do
-                             void (guardTool tool action)
+                             void (runToolHandler tool action)
                              vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
                            Nothing -> dragAction
                      propagateEvent

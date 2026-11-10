@@ -475,6 +475,11 @@ data ArenaState = ArenaState
   , asTables       :: Maybe (Operand, Operand)
     -- ^ The host's table callbacks, @new@ and @thaw@ (see
     -- "Backend.LLVM.Table"). Only tool handlers have them.
+  , asCancel       :: Maybe (Operand, Operand)
+    -- ^ A tool handler's cancel flag (an @i8*@, nonzero once the run
+    -- should stop; see 'Actor.Event.CancelFlag'), and its status byte
+    -- (an @i8*@), whose bit 2 says that it stopped. Only tool handlers
+    -- have them; every loop checks the flag ('checkCancelled').
   }
 
 -- | Emit inline bump-allocation of 'size' bytes (must be a multiple of 8).

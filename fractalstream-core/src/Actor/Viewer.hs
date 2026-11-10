@@ -51,9 +51,9 @@ import Actor.Autocolor (AutocolorLookup)
 import Data.DynamicValue
 import Actor.Layout (Dimensions(..))
 import Actor.Tool
-import Actor.Event ( ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript, Event
+import Actor.Event ( ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript
                    , Coordinate(..), ViewKind(..), bindOrDeclare, RealIn(..), bindFreshReals
-                   , pixelWidthVar, pixelHeightVar, PixelDims )
+                   , pixelWidthVar, pixelHeightVar, PixelDims, ToolDispatcher )
 import Language.Environment
 import Language.Typecheck (TC(..), ppError)
 import Language.Value.Parser
@@ -249,7 +249,7 @@ data Viewer = Viewer
       :: Int
       -> SomeContext EventArgument_
       -> ParsedToolScript
-      -> IO (Either String (PixelDims -> Event -> Maybe (IO ())))
+      -> IO (Either String ToolDispatcher)
     -- ^ Build a tool's event dispatcher for the given draw layer.  Supplied by
     --   the backend (interpreter or JIT-compiled); see 'ToolRunner'.
   }

@@ -1673,7 +1673,7 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
                 either (\err -> hPutStrLn stderr ("The overlay couldn't be built: " ++ err)) (const (pure ())) d
                 pure d
             forM_ dispatcher $ \dispatch -> forM_ (dispatch pxDims Refresh) $ \refresh ->
-              tryNonAsync refresh >>= \case
+              tryNonAsync (runHandlerNow refresh) >>= \case
                 Left err -> hPutStrLn stderr ("The overlay's `on refresh:` block failed: " ++ displayException err)
                 Right () -> pure ()
             pure (Just dispatcher)

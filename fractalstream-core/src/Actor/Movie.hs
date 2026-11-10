@@ -47,7 +47,7 @@ module Actor.Movie
 import FractalStream.Prelude
 
 import Actor.Event (EventArgument_, EventArgument(..), Coordinate(..), constArg, interpretedToolExec,
-                   assertMissingUnitArgs, parseUnitScript)
+                   assertMissingUnitArgs, parseUnitScript, runHandlerNow)
 import Actor.Ensemble (formatScriptError)
 import Actor.Layout (Dimensions(..), Field(..))
 import Actor.Viewer
@@ -145,7 +145,7 @@ scriptAnimation defs ctx script =
   where
     prepare env code withPx = do
       exec <- interpretedToolExec noDrawing env code
-      pure (exec . withPx)
+      pure (runHandlerNow . exec . withPx)
 
 -- | Check a movie's script, as 'scriptAnimation' would, without
 -- preparing to run it: pure, so it can drive an editor's live error

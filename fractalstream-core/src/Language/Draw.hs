@@ -9,12 +9,14 @@ module Language.Draw
   , DrawHandler(..)
   , runDrawHandler
   , DrawSink(..)
+  , bufferedSink
   ) where
 
 import FractalStream.Prelude
 
 import Language.Value
 import Control.Monad.Identity (runIdentity)
+import Data.IORef (IORef, modifyIORef')
 
 type Draw = Draw_ Value_
 
@@ -40,6 +42,22 @@ data DrawSink = DrawSink
   , dsWrite  :: HaskellType 'TextT
              -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
   }
+
+-- | A sink that records draw commands (newest first) instead of drawing
+-- them, to be replayed on the given sink later: so that a tool handler's
+-- run only draws once it has finished without an error.
+bufferedSink :: IORef [IO ()] -> DrawSink -> DrawSink
+bufferedSink ref sink = DrawSink
+  { dsClear  = later (dsClear sink)
+  , dsStroke = later . dsStroke sink
+  , dsFill   = later . dsFill sink
+  , dsPoint  = later . dsPoint sink
+  , dsLine   = \p q -> later (dsLine sink p q)
+  , dsCircle = \f r p -> later (dsCircle sink f r p)
+  , dsRect   = \f p q -> later (dsRect sink f p q)
+  , dsWrite  = \t p -> later (dsWrite sink t p)
+  }
+  where later action = modifyIORef' ref (action :)
 
 data DrawHandler (code :: Environment -> Exp Type) where
   DrawHandler :: forall code
