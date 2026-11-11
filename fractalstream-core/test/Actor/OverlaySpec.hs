@@ -39,6 +39,26 @@ spec = describe "compositeDrawLayers" $ do
     painted `shouldSatisfy` (not . null)
     all (\(_, _, PixelRGBA8 _ g b _) -> g == 0 && b == 0) painted `shouldBe` True
 
+  it "fills shapes with the fill color and outlines them in the stroke color, as the app does" $ do
+    let colorAt painted xy = [ (r, g, b) | (x, y, PixelRGBA8 r g b _) <- painted, (x, y) == xy ]
+        shapes = [ DrawCircle EmptyEnvProxy True 10 (0, 0)
+                 , DrawRect EmptyEnvProxy True (-50, -15) (-30, 15) ]
+    painted <- paintedPixels ([ SetStroke EmptyEnvProxy red, SetFill EmptyEnvProxy blue ] ++ shapes)
+    -- inside: the fill color
+    colorAt painted (60, 20) `shouldBe` [(0, 0, 255)]
+    colorAt painted (20, 20) `shouldBe` [(0, 0, 255)]
+    -- on the edge: the stroke color
+    colorAt painted (70, 20) `shouldBe` [(255, 0, 0)]
+    colorAt painted (10, 20) `shouldBe` [(255, 0, 0)]
+
+  it "draws a point as a dot outlined by the pen, as the app does" $ do
+    painted <- paintedPixels [DrawPoint EmptyEnvProxy (0, 0)]
+    -- (a dot of radius 2 and a pen 2 pixels wide reach 3 pixels out, so
+    -- from x = 57 to 62 around the middle, 60; a bare dot would reach 58
+    -- to 61)
+    let xs = [ x | (x, _, _) <- painted ]
+    (minimum xs, maximum xs) `shouldBe` (57, 62)
+
   it "skips shapes at non-finite points, rather than crashing" $ do
     let nan = 0 / 0 :: Double
         inf = 1 / 0 :: Double

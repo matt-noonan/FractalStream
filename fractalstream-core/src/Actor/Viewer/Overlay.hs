@@ -163,15 +163,28 @@ strokePolyline image color pts
   | near image pts = strokeWith color (polyline (map toPoint pts))
   | otherwise = forM_ (clipPolyline (cutBox image) pts) (strokeWith color . polyline . map toPoint)
 
--- | Fill a polygon: as it is near the image, or else the part of it near
--- the image.
-fillPolygon :: Box -> PixelRGBA8 -> [Px] -> Drawing PixelRGBA8 ()
-fillPolygon image color pts
+-- | Fill a shape, then outline it with the pen, as the live app does (a
+-- wxWidgets brush fills a shape, and its pen draws the edge).
+fillAndOutline :: Geometry g => PixelRGBA8 -> PixelRGBA8 -> g -> Drawing PixelRGBA8 ()
+fillAndOutline fillColor strokeColor shape = do
+  fillWith fillColor shape
+  strokeWith strokeColor shape
+
+-- | Fill a polygon and outline it ('fillAndOutline'): as it is near the
+-- image, or else the part of it near the image. (The edges the cut makes
+-- are outside the image, so their outline doesn't show.)
+fillPolygon :: Box -> PixelRGBA8 -> PixelRGBA8 -> [Px] -> Drawing PixelRGBA8 ()
+fillPolygon image fillColor strokeColor pts
   | not (all finitePx pts) = pure ()
-  | near image pts = fillWith color (polygon (map toPoint pts))
+  | near image pts = fillAndOutline fillColor strokeColor (polygon (map toPoint pts))
   | otherwise = case clipPolygon (cutBox image) pts of
-      clipped@(_ : _ : _ : _) -> fillWith color (polygon (map toPoint clipped))
+      clipped@(_ : _ : _ : _) -> fillAndOutline fillColor strokeColor (polygon (map toPoint clipped))
       _ -> pure ()
+
+-- | A point: a dot of radius 2 in the pen's color, outlined by the pen (2
+-- pixels wide), as the live app draws it.
+drawDot :: PixelRGBA8 -> Point -> Drawing PixelRGBA8 ()
+drawDot color p = fillAndOutline color color (circle p 2)
 
 -- | Draw something centered on a point, if the point is near the image.
 nearPoint :: Box -> Px -> (Point -> Drawing PixelRGBA8 ()) -> Drawing PixelRGBA8 ()
@@ -191,10 +204,11 @@ drawGlobeLayer image proj toPx = go white white
     at = fmap toPx . projectToScreen proj
     runs = map (map toPx) . visibleRuns proj
     strokeRuns color = mapM_ (strokePolyline image color)
-    -- a closed outline: filled if it's all visible, else its visible runs
+    -- a closed outline: filled (and outlined) if it's all visible, else
+    -- its visible runs, in the pen's color
     outline filled strokeColor fillColor pts = case runs pts of
-      [r] | filled, length r == length pts -> fillPolygon image fillColor r
-      rs -> strokeRuns (if filled then fillColor else strokeColor) rs
+      [r] | filled, length r == length pts -> fillPolygon image fillColor strokeColor r
+      rs -> strokeRuns strokeColor rs
 
     go :: PixelRGBA8 -> PixelRGBA8 -> [DrawCommand] -> Drawing PixelRGBA8 ()
     go _ _ [] = pure ()
@@ -203,7 +217,7 @@ drawGlobeLayer image proj toPx = go white white
       SetFill   _ c -> go strokeColor (toPixelColor c) cmds
       Clear _ -> go strokeColor fillColor cmds
       DrawPoint _ pt -> do
-        forM_ (at pt) $ \p -> nearPoint image p $ \p' -> fillWith strokeColor (circle p' 2)
+        forM_ (at pt) $ \p -> nearPoint image p (drawDot strokeColor)
         go strokeColor fillColor cmds
       DrawLine _ pt1 pt2 -> do
         strokeRuns strokeColor (runs (sampleSegment 64 pt1 pt2))
@@ -247,7 +261,7 @@ drawLayer image toPx (pxW, pxH) = go white white
       -- escaping orbit), so shapes at such points are skipped.
       -- Points are drawn in the stroke color, like the live app does.
       DrawPoint _ pt -> do
-        nearPoint image (toPx pt) $ \p -> fillWith strokeColor (circle p 2)
+        nearPoint image (toPx pt) (drawDot strokeColor)
         go strokeColor fillColor cmds
 
       DrawLine _ pt1 pt2 -> do
@@ -264,18 +278,17 @@ drawLayer image toPx (pxW, pxH) = go white white
         let c@(cx, cy) = toPx pt
             rx = r / pxW
             ry = r / pxH
-            color = if filled then fillColor else strokeColor
         when (finitePx c && finitePx (rx, ry)) $
           if near image [(cx - rx, cy - ry), (cx + rx, cy + ry)]
             then let prim = ellipse (toPoint c) (realToFrac rx) (realToFrac ry)
-                 in if filled then fillWith color prim else strokeWith color prim
+                 in if filled then fillAndOutline fillColor strokeColor prim else strokeWith strokeColor prim
             else case ellipseNear (cutBox image) c (abs rx) (abs ry) of
               Nothing -> pure ()
               -- (the image is all inside it)
-              Just [] -> when filled $ fillPolygon image color (boxCorners (cutBox image))
+              Just [] -> when filled $ fillPolygon image fillColor strokeColor (boxCorners (cutBox image))
               Just arc
-                | filled -> fillPolygon image color (arc ++ [c])
-                | otherwise -> strokePolyline image color arc
+                | filled -> fillPolygon image fillColor strokeColor (arc ++ [c])
+                | otherwise -> strokePolyline image strokeColor arc
         go strokeColor fillColor cmds
 
       DrawRect _ filled pt1 pt2 -> do
@@ -287,10 +300,10 @@ drawLayer image toPx (pxW, pxH) = go white white
               let V2 fx1 fy1 = toPoint (x1, y1)
                   V2 fx2 fy2 = toPoint (x2, y2)
                   prim = rectangle (V2 (min fx1 fx2) (min fy1 fy2)) (abs (fx2 - fx1)) (abs (fy2 - fy1))
-              in if filled then fillWith fillColor prim else strokeWith strokeColor prim
+              in if filled then fillAndOutline fillColor strokeColor prim else strokeWith strokeColor prim
             else
               let corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
-              in if filled then fillPolygon image fillColor corners
+              in if filled then fillPolygon image fillColor strokeColor corners
                            else strokePolyline image strokeColor (corners ++ take 1 corners)
         go strokeColor fillColor cmds
 
