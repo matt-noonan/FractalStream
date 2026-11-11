@@ -1168,15 +1168,21 @@ A table can hold integers, reals, complex numbers, truth values, or
 colors, or tuples of them, in any number of dimensions (`Table 1 of R`,
 `Table 3 of Z`, `Table 2 of C x Z`, ...).
 It's declared in `@config`, without a default value, since it starts out
-empty (with size 0). It has no field in the configuration window, and it
-isn't saved with the project, though it's kept when the project is rebuilt
-(after editing its script, say) if the new script declares it with the
-same name and type:
+empty (with size 0). It has no field in the configuration window. It's kept
+when the project is rebuilt (after editing its script, say) if the new
+script declares it with the same name and type:
 
 ```
 @config "Parameters"
 saddle : Table 2 of C
 ```
+
+Saving a project can save what its tables hold, too: when any table holds
+something, the app asks whether to, and says how big they are. A table
+that's saved is put back when the project is opened again, as long as the
+script still declares it with the same name and type. (Running a project
+with `fsrun` doesn't load saved tables, just as it doesn't load saved
+configuration values: it always starts from the script.)
 
 #### Reading a table
 

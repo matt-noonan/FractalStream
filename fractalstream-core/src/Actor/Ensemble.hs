@@ -23,6 +23,7 @@ module Actor.Ensemble
   , applySavedValues
   , resetValues
   , watchValues
+  , ensembleTables
   , formatScriptError
   , ensembleCommonDefs
   , runEnsemble
@@ -50,6 +51,7 @@ import Actor.Viewer.Complex
 import Actor.Viewer.Sphere
 import Actor.Metadata
 import Actor.SavedValues
+import Actor.SavedTables (readSavedTables, applySavedTables)
 import Actor.Script
 import Actor.Colorizer (ViewerColorizer(..), Colorizer(..), Colorized(..), applyColorizers)
 import Actor.Autocolor
@@ -366,20 +368,20 @@ carryOverProjectState from to = do
   -- A table the edited script still declares, with the same name and
   -- type, keeps what it holds. (Tables have no field, so the values
   -- carried over below don't include them.)
-  let tablesOf ens = getDynamic (ensembleConfiguration ens)
-                       >>= maybe (pure []) (layoutTables . coContents)
-  oldTables <- tablesOf from
-  newTables <- tablesOf to
+  oldTables <- ensembleTables from
+  newTables <- ensembleTables to
   forM_ newTables $ \(name, ty, var) ->
     forM_ [ old | (name', ty', old) <- oldTables, name' == name, ty' == ty ] $ \old ->
       getDynamic (dyn old) >>= setValue' var
   -- A project whose script hadn't built has no values of its own to
   -- carry over, only the ones its file was saved with: those are the
   -- ones to put in place, now that there's somewhere to put them.
+  -- (and the same for its tables)
   if ensembleBuilt from
     then void (changedValues from >>= applySavedValues to)
-    else getDynamic (ensembleFrontendProperties from) >>= \props ->
+    else getDynamic (ensembleFrontendProperties from) >>= \props -> do
       either (const (pure ())) (void . applySavedValues to) (readSavedValues props)
+      either (const (pure ())) (\saved -> void (applySavedTables newTables saved)) (readSavedTables props)
 
 
 -- | Which configuration panel a field is in: the project's own, or one
@@ -452,13 +454,21 @@ resetValues ens = do
     forM_ (Map.lookup (owner, fieldName f) defaults) $ \(txt, _) ->
       void (setFieldText f txt)
 
--- | Run an action whenever any configuration value changes; returns an
--- action that stops it.
+-- | Run an action whenever any configuration value changes, or a table
+-- does; returns an action that stops it.
 watchValues :: Ensemble -> IO () -> IO (IO ())
 watchValues ens k = do
   fields <- ensembleFields ens
   stops <- mapM (\(_, f) -> watchField f k) fields
-  pure (sequence_ stops)
+  tables <- ensembleTables ens
+  tableStops <- mapM (\(_, _, var) -> watchDynamic var (const k)) tables
+  pure (sequence_ stops >> sequence_ tableStops)
+
+-- | The tables a project declares (in its own configuration): their
+-- names, types, and values.
+ensembleTables :: Ensemble -> IO [(String, SomeType, Variable Table)]
+ensembleTables ens = getDynamic (ensembleConfiguration ens)
+  >>= maybe (pure []) (layoutTables . coContents)
 
 
 -- | Serialize an 'Ensemble' back to project-file bytes: its own
@@ -527,13 +537,17 @@ scriptKey src
 projectYamlConfig :: YAMLPretty.Config
 projectYamlConfig = YAMLPretty.setConfCompare (comparing rank) YAMLPretty.defConfig
   where
-    rank k = (fromMaybe (length keyOrder) (elemIndex k keyOrder), k)
+    -- (saved tables last of all, after even the frontends' keys: they
+    -- can be long, and aren't for reading)
+    rank k | k == "tables" = (length keyOrder + 1, k)
+           | otherwise = (fromMaybe (length keyOrder) (elemIndex k keyOrder), k)
     keyOrder =
       [ "script", "metadata", "colorizers", "autocolor", "scenarios", "values"
       , "title", "description", "preview-commands", "preview"
       , "name", "commands"
       , "config", "tool"
       , "tolerance", "locked", "miss-color", "blend-misses", "next-hue", "entries", "point", "color"
+      , "type", "size", "origin", "step", "data"
 
       , "viewers", "configuration"
       , "x", "y", "width", "height"

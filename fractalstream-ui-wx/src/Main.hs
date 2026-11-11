@@ -15,10 +15,15 @@ import UI.ProjectViewer (viewProject, ProjectMenuActions(..))
 import UI.ProjectInfo (editProjectInfo)
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
+import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables, summarizeTables)
+import UI.SaveTables (askSaveTables)
+import qualified Data.Aeson.KeyMap as KM
+import qualified Data.Aeson.Key as Key
 import Language.Legacy.Translate
 import Language.Legacy.Binary
 
-import Control.Monad (unless, void)
+import Control.Monad (unless, void, forM_)
+import Data.Maybe (fromMaybe, isNothing)
 import Control.Concurrent.MVar (newMVar, modifyMVar, modifyMVar_)
 import qualified System.Info
 import UI.ProjectScriptEditor (editProjectScript, ScriptEditorHooks(..), rebuildColorizers)
@@ -146,10 +151,32 @@ runApp = withBackend $ \backend -> start $ do
       --
       -- An open script editor's text is what's saved as the script, even
       -- if it hasn't been rebuilt yet: saving and running are separate.
-      save askWhere currentEnsemble wxLayout scriptDraft sessionFile suggestedName f isUnsaved = do
+      --
+      -- Whether to save what the project's tables hold is asked, if any
+      -- of them hold anything ('askSaveTables'): every time the file is
+      -- chosen (before choosing it, so that the file dialog's "Save" is
+      -- the last step), and the first time it isn't; the answer is
+      -- remembered for the session's plain saves from then on
+      -- (@saveTables@: it starts out as whether the project's file had
+      -- tables saved in it).
+      save askWhere currentEnsemble wxLayout scriptDraft sessionFile saveTables suggestedName f isUnsaved = do
         current <- getDynamic sessionFile
-        result <- case current of
-          Just p | not askWhere -> pure (Just p)
+        prj <- getDynamic currentEnsemble
+        let choosing = askWhere || isNothing current
+        -- Whether to save the tables, and the answer to remember, if one
+        -- was asked for: Nothing if the save was cancelled, and Nothing
+        -- for whether to save them to leave them as the file had them,
+        -- for a script that doesn't build.
+        tablesChoice <- if not (ensembleBuilt prj) then pure (Just (Nothing, Nothing)) else do
+          tables <- ensembleTables prj >>= summarizeTables
+          remembered <- readIORef saveTables
+          if null tables then pure (Just (Just False, Nothing)) else
+            case remembered of
+              Just b | not choosing -> pure (Just (Just b, Nothing))
+              _ -> fmap (\b -> (Just b, Just b)) <$> askSaveTables tables (fromMaybe True remembered)
+        result <- case (tablesChoice, current) of
+          (Nothing, _) -> pure Nothing
+          (_, Just p) | not askWhere -> pure (Just p)
           _ -> do
             (dir, name) <- case current of
               Just p -> pure (takeDirectory p, takeFileName p)
@@ -159,10 +186,10 @@ runApp = withBackend $ \backend -> start $ do
                 pure (mine, suggestedName)
             fileSaveDialog f True True "Save FractalStream project"
               projectFileTypes dir name
-        case result of
+        case (,) <$> result <*> tablesChoice of
           Nothing -> pure ()
-          Just file -> do
-            prj <- getDynamic currentEnsemble
+          Just (file, (withTables, answer)) -> do
+            forM_ answer (writeIORef saveTables . Just)
             readIORef scriptDraft >>= mapM_ (\(_, editorText) ->
               editorText >>= setValue' (ensembleSourceScript prj))
             -- Until a project's script builds, it has no windows or
@@ -174,6 +201,10 @@ runApp = withBackend $ \backend -> start $ do
               modifyValue (ensembleFrontendProperties prj) (writeWxProperties props)
               values <- changedValues prj
               modifyValue (ensembleFrontendProperties prj) (writeSavedValues values)
+            -- (and until then its tables are saved as its file had them)
+            forM_ withTables $ \b -> do
+              tables <- if b then ensembleTables prj >>= captureTables else pure Map.empty
+              modifyValue (ensembleFrontendProperties prj) (writeSavedTables tables)
 
             encodeEnsemble prj >>= BS.writeFile file
             setValue isUnsaved False
@@ -289,6 +320,15 @@ runApp = withBackend $ \backend -> start $ do
             readSavedValues <$> getDynamic (ensembleFrontendProperties prj) >>= \case
               Left err -> putStrLn ("Ignoring unreadable `values:` in " ++ quoted name ++ ": " ++ err)
               Right saved -> applySavedValues prj saved >>= mapM_ (putStrLn . (("In " ++ quoted name ++ ", ") ++))
+          -- And the same for what its tables held, if that was saved.
+          when scriptBuilds $
+            readSavedTables <$> getDynamic (ensembleFrontendProperties prj) >>= \case
+              Left err -> putStrLn ("Ignoring unreadable `tables:` in " ++ quoted name ++ ": " ++ err)
+              Right saved -> do
+                tables <- ensembleTables prj
+                applySavedTables tables saved >>= mapM_ (putStrLn . (("In " ++ quoted name ++ ", ") ++))
+          saveTables <- newIORef . (\props -> if KM.member (Key.fromString "tables") props then Just True else Nothing)
+                          =<< getDynamic (ensembleFrontendProperties prj)
           currentEnsemble <- newVariable prj
           -- A malformed `wx-properties:` only costs the remembered
           -- window layout, not the whole project, so it's reported
@@ -335,8 +375,8 @@ runApp = withBackend $ \backend -> start $ do
                   setValue sessionUnsaved True
                   trackValues ens)
 
-          let sessionSave = save False currentEnsemble wxLayout scriptDraft sessionFile suggestedFileName projectWindow sessionUnsaved
-              sessionSaveAs = save True currentEnsemble wxLayout scriptDraft sessionFile suggestedFileName projectWindow sessionUnsaved
+          let sessionSave = save False currentEnsemble wxLayout scriptDraft sessionFile saveTables suggestedFileName projectWindow sessionUnsaved
+              sessionSaveAs = save True currentEnsemble wxLayout scriptDraft sessionFile saveTables suggestedFileName projectWindow sessionUnsaved
               editorHooks = ScriptEditorHooks
                 { sehAfterClosingProject = showLibraryAfterClosing
                 , sehDraft = scriptDraft
