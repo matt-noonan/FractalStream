@@ -36,6 +36,7 @@ import UI.MovieMaker
 import UI.ToolProgress
 import Actor.Movie (canAnimate)
 import Actor.Viewer.Sphere
+import Actor.Viewer.Clip
 
 import Actor.Viewer.Preview (renderPreview)
 import Data.ByteString (ByteString)
@@ -907,13 +908,17 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         showsModelAt pt = showsModel <$> get model value <*> viewToScreen pt
         -- show the model point under the pointer, or "…" off the globe
         showPointerAt pt m = showsModelAt pt >>= \over -> setPointerLocation (if over then Just m else Nothing)
-        screenToView mdl pt = do
+        -- (where a point of the screen plane is in the window, in pixels
+        -- but not rounded to them, and the box of the window)
+        screenToViewD mdl pt = do
           Size { sizeW = w, sizeH = h } <- get f clientSize
-          let dim = (w,h)
-              fullViewRect = rectangle (Viewport (0,0)) (Viewport dim)
-          let modelRect = modelToRect @(Double,Double) dim mdl
-          let Viewport (px, py) = convertRect modelRect fullViewRect pt
-          pure (point px py)
+          let fullViewRect = rectangle (0, 0) (fromIntegral w, fromIntegral h) :: Rectangle (Double, Double)
+              modelRect = modelToRect @(Double,Double) (w, h) mdl
+          pure (convertRect modelRect fullViewRect pt)
+        viewBox = do
+          Size { sizeW = w, sizeH = h } <- get f clientSize
+          pure (Box 0 0 (fromIntegral w) (fromIntegral h))
+        screenToView mdl pt = toViewPoint <$> screenToViewD mdl pt
 
     -- Set paint handlers
     -- Everything is drawn through one graphics context (a wxGCDC around
@@ -937,15 +942,16 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
                 mdl <- get model value
 
+                box <- viewBox
                 get currentTool value >>= \case
-                  Left NavTool | isNothing (modelRotation mdl) -> paintToolLayerWithDragBox (modelProjection mdl) (screenToView mdl) (modelPixelDim mdl) vDrawCmds lastClick draggedTo dc r viewRect
+                  Left NavTool | isNothing (modelRotation mdl) -> paintToolLayerWithDragBox (modelProjection mdl) (screenToViewD mdl) box (modelPixelDim mdl) vDrawCmds lastClick draggedTo dc r viewRect
                   Left MoviePathTool -> do
-                    paintToolLayer (modelProjection mdl) (screenToView mdl) (modelPixelDim mdl) vDrawCmds dc
+                    paintToolLayer (modelProjection mdl) (screenToViewD mdl) box (modelPixelDim mdl) vDrawCmds dc
                     -- (on the sphere, the parts of the path on the visible side)
                     pts <- fmap catMaybes . mapM (traverse (screenToView mdl) . projectToScreen (modelProjection mdl))
                              . reverse =<< readIORef moviePath
                     paintMoviePath dc pts
-                  _  -> paintToolLayer (modelProjection mdl) (screenToView mdl) (modelPixelDim mdl) vDrawCmds dc
+                  _  -> paintToolLayer (modelProjection mdl) (screenToViewD mdl) box (modelPixelDim mdl) vDrawCmds dc
 
               Just (startTime, oldModel, oldImage) -> do
                 -- Animated paint. Zoom and blend smoothly between
@@ -1045,7 +1051,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                       restoringContext $ do
                         graphicsContextClipByRectangle gc (Rect x y rw rh)
                         withLayer 1 drawNew
-                paintToolLayer (modelProjection midModel) (screenToView midModel) (modelPixelDim midModel) vDrawCmds dc
+                box <- viewBox
+                paintToolLayer (modelProjection midModel) (screenToViewD midModel) box (modelPixelDim midModel) vDrawCmds dc
             paintHud dc
           ]
 
@@ -2200,7 +2207,8 @@ generateTileImage viewerTile _windowRect = do
 -- given device context, and then draw the zoom drag box on top.
 paintToolLayerWithDragBox
   :: Projection
-  -> ((Double, Double) -> IO Point)
+  -> ((Double, Double) -> IO Px)
+  -> Box
   -> (Double, Double)
   -> IO [[DrawCommand]]
   -> Var (Maybe Viewport)
@@ -2209,8 +2217,8 @@ paintToolLayerWithDragBox
   -> Rect
   -> Rect
   -> IO ()
-paintToolLayerWithDragBox proj screenToView pxDim getDrawCommands lastClick draggedTo dc _ _ = dcEncapsulate dc $ do
-    paintToolLayer proj screenToView pxDim getDrawCommands dc
+paintToolLayerWithDragBox proj screenToView viewBox pxDim getDrawCommands lastClick draggedTo dc _ _ = dcEncapsulate dc $ do
+    paintToolLayer proj screenToView viewBox pxDim getDrawCommands dc
     dragBox <- getDragBox lastClick draggedTo
     case dragBox of
         Nothing  -> return ()
@@ -2241,22 +2249,38 @@ paintMoviePath dc pts@(firstPoint : _) = dcEncapsulate dc $ do
 -- visible side.
 paintToolLayer
   :: Projection
-  -> ((Double, Double) -> IO Point)
+  -> ((Double, Double) -> IO Px)
+  -> Box
   -> (Double, Double)
   -> IO [[DrawCommand]]
   -> DC d
   -> IO ()
-paintToolLayer proj screenToView pxDim getDrawCommands dc = dcEncapsulate dc $ do
+paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc $ do
 
+    -- A shape is worked out in pixels unrounded, and drawn as it always
+    -- was if it stays near the window; one reaching further is first cut
+    -- down to the part near the window, since wxWidgets's coordinates are
+    -- 32-bit integers, which wrap around (see "Actor.Viewer.Clip").
     let onGlobe = proj /= FlatProjection
-        modelToView = screenToView
+        cut = cutBox box
         toView p = traverse screenToView (projectToScreen proj p)
         runsOf pts = mapM (mapM screenToView) (visibleRuns proj pts)
+        polylinePx attrs pts
+          | not (all finitePx pts) = pure ()
+          | near box pts = polyline dc (map toViewPoint pts) attrs
+          | otherwise = forM_ (clipPolyline cut pts) $ \r -> polyline dc (map toViewPoint r) attrs
+        polygonPx attrs pts
+          | not (all finitePx pts) = pure ()
+          | near box pts = polygon dc (map toViewPoint pts) attrs
+          | otherwise = case clipPolygon cut pts of
+              clipped@(_ : _ : _ : _) -> polygon dc (map toViewPoint clipped) attrs
+              _ -> pure ()
+        nearPoint p = finitePx p && near box [p]
         -- a closed outline on the globe: filled if it's all visible,
         -- else its visible runs
         outline fil pts = runsOf pts >>= \case
-          [r] | fil, length r == length pts -> polygon dc r []
-          rs -> forM_ rs $ \r -> polyline dc r [ brush := brushTransparent ]
+          [r] | fil, length r == length pts -> polygonPx [] r
+          rs -> forM_ rs (polylinePx [ brush := brushTransparent ])
 
     cmdss <- getDrawCommands
     let initialColor = rgba 255 255 255 (255 :: Word8)
@@ -2274,29 +2298,46 @@ paintToolLayer proj screenToView pxDim getDrawCommands dc = dcEncapsulate dc $ d
       forM_ (filter finiteDrawCommand cmds) $ \case
 
         DrawPoint _ pt -> toView pt >>= \case
-          Nothing -> pure ()
-          Just pt' -> do
+          Just p | nearPoint p -> do
             pc <- get dc penColor
             oldBrush <- get dc brush
             set dc [ brush := brushSolid pc ]
-            withFill True (circle dc pt' 2)
+            withFill True (circle dc (toViewPoint p) 2)
             set dc [ brush := oldBrush ]
+          _ -> pure ()
 
         DrawLine _ pt1 pt2
-          | onGlobe -> runsOf (sampleSegment 64 pt1 pt2) >>= mapM_ (\r -> polyline dc r [])
+          | onGlobe -> runsOf (sampleSegment 64 pt1 pt2) >>= mapM_ (polylinePx [])
           | otherwise -> do
-              pt1' <- modelToView pt1
-              pt2' <- modelToView pt2
-              withFill False (line dc pt1' pt2')
+              p <- screenToView pt1
+              q <- screenToView pt2
+              when (finitePx p && finitePx q) $
+                if near box [p, q]
+                  then withFill False (line dc (toViewPoint p) (toViewPoint q))
+                  else forM_ (clipSegment cut p q) $ \(p', q') ->
+                         withFill False (line dc (toViewPoint p') (toViewPoint q'))
 
         DrawCircle _ fil r pt | onGlobe -> outline fil (sampleCircle 96 pt r)
         DrawCircle _ fil r pt -> do
           -- A circle in model space: an ellipse, when a real viewer's
           -- pixels aren't square.
-          Point cx cy <- modelToView pt
-          let rx = round (r / fst pxDim)
-              ry = round (r / snd pxDim)
-          withFill fil (ellipse dc (rect (WX.pt (cx - rx) (cy - ry)) (sz (2 * rx) (2 * ry))))
+          c@(cx, cy) <- screenToView pt
+          let rx = r / fst pxDim
+              ry = r / snd pxDim
+          when (finitePx c && finitePx (rx, ry)) $
+            if near box [(cx - rx, cy - ry), (cx + rx, cy + ry)]
+              then do
+                let Point icx icy = toViewPoint c
+                    irx = round rx
+                    iry = round ry
+                withFill fil (ellipse dc (rect (WX.pt (icx - irx) (icy - iry)) (sz (2 * irx) (2 * iry))))
+              else case ellipseNear cut c (abs rx) (abs ry) of
+                Nothing -> pure ()
+                -- (the window is all inside it)
+                Just [] -> when fil (polygonPx [] (boxCorners cut))
+                Just edge
+                  | fil -> polygonPx [] (edge ++ [c])
+                  | otherwise -> polylinePx [ brush := brushTransparent ] edge
 
         DrawRect _ fil (x1, y1) (x2, y2) | onGlobe -> do
           let corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)]
@@ -2304,12 +2345,10 @@ paintToolLayer proj screenToView pxDim getDrawCommands dc = dcEncapsulate dc $ d
         DrawRect _ fil pt1 pt3 -> do
           let pt2 = (fst pt1, snd pt3)
               pt4 = (fst pt3, snd pt1)
-          pt1' <- modelToView pt1
-          pt2' <- modelToView pt2
-          pt3' <- modelToView pt3
-          pt4' <- modelToView pt4
-          let boxpts = [pt1', pt2', pt3', pt4']
-          withFill fil (polygon dc boxpts)
+          boxpts <- mapM screenToView [pt1, pt2, pt3, pt4]
+          if fil || near box boxpts
+            then withFill fil (\attrs -> polygonPx attrs boxpts)
+            else polylinePx [ brush := brushTransparent ] (boxpts ++ take 1 boxpts)
 
         Clear {} -> pure () -- clear operations should be handled upstream,
                             -- by truncating the draw command list
@@ -2321,11 +2360,16 @@ paintToolLayer proj screenToView pxDim getDrawCommands dc = dcEncapsulate dc $ d
           set dc [ brush := brushSolid (fsColorToWxColor c) ]
 
         Write _ txt pt -> toView pt >>= \case
-          Nothing -> pure ()
-          Just (Point x0 y0) -> do
+          Just p | nearPoint p -> do
+            let Point x0 y0 = toViewPoint p
             Size tw th <- getTextExtent dc txt
             let pt' = Point (x0 - tw `div` 2) (y0 - th `div` 2)
             withFill False (drawText dc txt pt')
+          _ -> pure ()
+
+-- | A point of the window, in whole pixels, as wxWidgets takes it.
+toViewPoint :: Px -> Point
+toViewPoint (x, y) = point (floor x) (floor y)
 
 -- | A tool's error, as a message for the user.
 describeToolError :: SomeException -> String
