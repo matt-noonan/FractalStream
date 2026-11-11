@@ -1,0 +1,12 @@
+{
+  "name": "fractalstream-web",
+  "private": true,
+  "description": "FractalStream in the browser (see WEB_PLAN.md). Build with dev-tools/web/build.sh.",
+  "type": "module",
+  "dependencies": {
+    "@bjorn3/browser_wasi_shim": "0.4.2"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  }
+}

@@ -13,6 +13,7 @@ packages:
   fractalstream-backend-wasm
   fractalstream-library
   fractalstream-ui-headless
+  fractalstream-ui-web
 
 -- The same package versions as the desktop build's Stackage snapshot.
 import: cabal/lts-24.12.config
