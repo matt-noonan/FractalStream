@@ -227,7 +227,7 @@ wasmtime.
 - [x] TypeScript UI renders `Layout`s as config panels (colors as text so far).
 - [x] Viewers with pan and zoom (in the page for now; R2 still to do).
 - [x] The built-in library.
-- [ ] Open and save local `.fs` files.
+- [x] Open and save local `.fs` files (with `values:` and `tables:`, as the desktop app; Save writes back where the browser allows it, else downloads).
 - [ ] Basic window management: viewers as windows to rearrange and
   resize; the configuration as a panel that pops in and out; hiding and
   showing the library. (Nice to have.)
