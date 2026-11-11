@@ -223,10 +223,14 @@ wasmtime.
 ### Phase 3: Minimal web app
 
 - [ ] R1 (platform record), with browser implementations.
-- [ ] Engine worker and RPC; `fractalstream-ui-web` implements `UI`.
-- [ ] TypeScript UI renders `Layout`s as config panels.
-- [ ] R2 (view logic in core); one viewer with pan, zoom and resize.
-- [ ] The built-in library; open and save local `.fs` files.
+- [x] Engine worker and RPC; `fractalstream-ui-web` implements `UI`.
+- [x] TypeScript UI renders `Layout`s as config panels (colors as text so far).
+- [x] Viewers with pan and zoom (in the page for now; R2 still to do).
+- [x] The built-in library.
+- [ ] Open and save local `.fs` files.
+- [ ] Resizing viewers; high-DPI canvases; smoothing (fsrun's captures are
+  rendered at 2× and averaged, the web's at 1×).
+- [ ] Try it in Safari and Firefox (so far only headless Chromium).
 - [ ] Deployed as a static site (`site/`, or a separate app directory).
 
 ### Phase 4: Tools and overlays
@@ -273,6 +277,38 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-11: A first web app
+
+To try it:
+```
+cd web && npm install   # once
+dev-tools/web/build.sh
+node dev-tools/web/serve.mjs   # http://localhost:8000
+```
+
+How it fits together:
+- **The engine:** `fractalstream-ui-web`, a 14.6 MB reactor module, runs
+  in a Web Worker. It implements `UI`, sets fields by name through the
+  core's `Field`s, and runs a coalescing render loop per viewer. It posts
+  JSON and RGB frames that carry the view they show.
+- **The page:** TypeScript, plain DOM, in `web/src`. It shows the library
+  with previews, the configuration panel built from the layout, and a
+  canvas per viewer: drag to move, wheel to zoom about the pointer, with
+  the old frame moving at once until the new one arrives.
+- **The browser's WASI:** `@bjorn3/browser_wasi_shim` 0.4.2.
+
+**Results:**
+- **Every project opens:** `dev-tools/web/check.mjs` opens all 32 library
+  projects in headless Chromium (Playwright from the toolchain). Every
+  viewer draws with no errors, most in 55–300 ms; the forced pendulum
+  takes 2.0 s and period 5 takes 1.0 s.
+- **Edits, zooms and drags** each give a new frame in about 150 ms.
+- **A bad input** marks its field; the parse error also shows in the
+  status line, because that render fails.
+- **Against `fsrun`:** the Julia set's canvas differs from `fsrun`'s
+  capture only along edges, because captures are smoothed (rendered at 2×
+  and averaged) and the web app renders at 1×.
 
 ### 2026-11-11: Autocolor in Backend.Wasm: every library viewer compiles
 
