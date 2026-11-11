@@ -195,6 +195,20 @@ spec = do
       abs compiled `shouldSatisfy` (< 1.0e-12)
       abs interpreted `shouldSatisfy` (< 1.0e-12)
 
+    it "rounds a negative power of an integer toward zero, as the interpreter does" $ withJIT $ \jit -> do
+      -- (k is a variable, so these powers are integers: 2^k is 1/8, so 0;
+      -- 1^k is 1; (-1)^k is -1, and (-1)^(k - 1) is 1; 0^k is 0)
+      let src = "k := 0 - 3\n\
+                \n <- 10000 * (2^k) + 1000 * (1^k) + 100 * ((-1)^k) + 10 * ((-1)^(k - 1)) + (0^k)\n\
+                \x <- 2^k"
+      (_, (_, compiledN, compiledX), _)       <- runTool (compiledToolExec jit noAutocolor) src
+      (_, (_, interpretedN, interpretedX), _) <- runTool interpretedToolExec src
+      compiledN `shouldBe` 910
+      interpretedN `shouldBe` 910
+      -- (and used as a real, it's the fraction)
+      compiledX `shouldBe` 0.125
+      interpretedX `shouldBe` 0.125
+
   describe "when compiling tool handlers that use lists" $ do
 
     let scripts =

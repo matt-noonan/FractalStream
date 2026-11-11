@@ -63,11 +63,10 @@ integerPowers = indexedFold @(FIX ValueF) phi
                          (phi (PowF x (ConstIntF (-n))))
         | otherwise -> mkPow RealType MulF x (fromIntegral n)
 
+      -- (a negative power of an integer is left to 'intPower')
       PowI x (ConstIntI n)
         | n == 0 -> ConstIntI 1
-        | n < 0  -> DivI (ConstIntI 1)
-                         (phi (PowI x (ConstIntI (-n))))
-        | otherwise -> mkPow IntegerType MulI x (fromIntegral n)
+        | n > 0  -> mkPow IntegerType MulI x (fromIntegral n)
 
       -- TODO: |z|^2k -> (x^2 + y^2)^k, |z|^(2k+1) -> |z| * (x^2 + y^2)^k
 

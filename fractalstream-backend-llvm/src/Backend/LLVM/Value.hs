@@ -1035,12 +1035,13 @@ appendNode headSlot prevSlot newNode = do
     pure ()
   store prevSlot 0 newNode
 
--- | Emit a loop computing @base ^ expo@ for a non-negative integer exponent by
--- repeated multiplication.  This matches the interpreter's integer power and
--- replaces a bogus @llvm.powi.i32@ "intrinsic" (LLVM's @llvm.powi@ only takes a
--- floating-point base, so the old declaration produced garbage when actually
--- called — which only happened from tools, since viewer code's constant
--- exponents are rewritten to multiplications).  A negative exponent yields 1.
+-- | Emit a loop computing @base ^ expo@ by repeated multiplication. This
+-- replaces a bogus @llvm.powi.i32@ "intrinsic" (LLVM's @llvm.powi@ only takes
+-- a floating-point base, so the old declaration produced garbage when
+-- actually called). A negative exponent gives what the interpreter's
+-- 'Language.Value.Evaluator.intPower' does: the fraction rounded toward
+-- zero, so 1 for a base of 1, 1 or -1 for -1 (by the exponent's parity),
+-- and 0 otherwise.
 intPow :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
        => Operand -> Operand -> m Operand
 intPow base expo = mdo
@@ -1061,7 +1062,15 @@ intPow base expo = mdo
   store eSlot 0 e'
   br powHead
   powExit <- block `named` "ipow_exit"
-  load resultSlot 0
+  power <- load resultSlot 0
+  negative <- icmp P.SLT expo (C.int32 0)
+  isOne <- icmp P.EQ base (C.int32 1)
+  isMinusOne <- icmp P.EQ base (C.int32 (-1))
+  parity <- I.and expo (C.int32 1)
+  odd' <- icmp P.NE parity (C.int32 0)
+  minusOnePower <- select odd' (C.int32 (-1)) (C.int32 1)
+  fraction <- select isMinusOne minusOnePower (C.int32 0) >>= select isOne (C.int32 1)
+  select negative fraction power
 
 getGetExtern :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
              => m (String -> Operand)

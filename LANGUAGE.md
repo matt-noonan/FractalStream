@@ -18,9 +18,17 @@ is a very simple script that tells FractalStream to update the value of
 
 The usual arithmetic operators `+`, `-`, `*` (multiplication, also written `×`), `/`, and `^` (exponentiation) are available for real and complex types. With the exception of
 `/`, these are also available for integer types. For integer division,
-use `//` instead. A power of integers used as a real number is computed as
-one, so `3.5 * 10^(-2)` is 0.035; a power of integers that stays an integer
-is rounded to one (`2^(-1)` as an integer is 0).
+use `//` instead.
+
+A power of integers is an integer (`2^10` is 1024), except that a negative
+power is a fraction, so it's a real number: `10^(-2)` is 0.01, and
+`3.5 * 10^(-2)` is 0.035. That's decided by the exponent as it's written:
+a negative constant, like `-2` or `1 - 3`, makes the power real. With a
+variable exponent, like `2^k`, the power is an integer, unless it's used
+as a real number (`x : R := 2^k`, or `2^k / 3`), where it's computed as a
+real power. If `k` turns out to be negative where the power has to stay
+an integer, it's rounded toward zero: 0, except that `1^k` is 1 and
+`(-1)^k` is 1 or -1.
 
 Numbers aren't written in scientific notation: `e` is Euler's number, so
 `2e` means 2·e. Something like `3.5e-2`, which could be read either way, is

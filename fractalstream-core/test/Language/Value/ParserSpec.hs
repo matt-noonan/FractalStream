@@ -73,7 +73,21 @@ spec = do
         `shouldBe` Right True
       -- an integer power that stays an integer is unchanged
       parseI "2^10" `shouldBe` Right 1024
-      parseI "2^(-1)" `shouldBe` Right 0
+
+    it "makes a power of integers real when its exponent is a negative constant" $ do
+      let near expected x = abs (x - expected) < 1e-15
+          isReal = either (const False) (const True) . parseF
+      near 0.01 <$> parseF "10^(-2)" `shouldBe` Right True
+      near 0.25 <$> parseF "2^(1 - 3)" `shouldBe` Right True
+      -- as part of a larger expression too, not just where a real is wanted
+      near (-0.24999998) <$> parseF "2 * 10^(-8) - 0.25" `shouldBe` Right True
+      near 1e-10 <$> parseF "1 * 10^(-10)" `shouldBe` Right True
+      isReal "(10^(-8) : R)" `shouldBe` True
+      -- so it can't be used as an integer
+      parseI "2^(-1)" `shouldSatisfy` either ("this power is a real number" `isInfixOf`) (const False)
+      -- but a power of integers with any other exponent is an integer
+      parseI "2^(3 - 1)" `shouldBe` Right 4
+      parseI "(-2)^3" `shouldBe` Right (-8)
 
     it "still reads e next to a number, with no exponent, as Euler's number" $ do
 
@@ -125,9 +139,9 @@ spec = do
       parseI "3² + 1" `shouldBe` Right 10
       parseI "2¹⁰" `shouldBe` Right 1024
       parseF "2.0⁻¹" `shouldBe` Right 0.5
-      -- an integer power used as a real number is computed as one
+      -- a negative power of an integer is real
       parseF "2⁻¹" `shouldBe` Right 0.5
-      parseI "2⁻¹" `shouldBe` Right 0
+      parseI "2⁻¹" `shouldSatisfy` either ("this power is a real number" `isInfixOf`) (const False)
 
 
     it "parses chains of `and`s, or of `or`s" $ do

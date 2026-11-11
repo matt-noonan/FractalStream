@@ -429,12 +429,33 @@ synth env (Syn sr node) = case node of
       lst'' <- refit env (ListT t) lst lst'
       done (ListT t) (mk lst'' x')
 
+-- | The value of an integer expression made of integer constants alone
+-- (like @-8@, or @1 - 3@), if it is one.
+constantInteger :: Expr -> Maybe Integer
+constantInteger e = case synNode e of
+  _ | Just n <- integerLiteral e -> Just n
+  EUn OpNeg x -> negate <$> constantInteger x
+  EBin op x y -> do
+    a <- constantInteger x
+    b <- constantInteger y
+    case op of
+      OpAdd -> Just (a + b)
+      OpSub -> Just (a - b)
+      OpMul -> Just (a * b)
+      OpIDiv | b /= 0 -> Just (a `div` b)
+      _ -> Nothing
+  _ -> Nothing
+
 synthBin :: TypeEnv -> SourceRange -> BinOp -> Expr -> Expr -> TC TExpr
 synthBin env sr op x y = case op of
   OpAdd -> arith Nothing
   OpSub -> arith Nothing
   OpMul -> arith Nothing
-  OpPow -> arith Nothing
+  -- (a power of integers is an integer, unless its exponent is a
+  -- negative constant: then it's a fraction, so it's real)
+  OpPow -> do
+    (x', y', t) <- numericPair
+    done (if t == IntegerT && maybe False (< 0) (constantInteger y) then RealT else t) x' y'
   OpDiv -> arith (Just RealT)
 
   OpIDiv -> do
@@ -670,6 +691,7 @@ describe = \case
     OpOr -> "the result of a disjunction"
     OpAnd -> "the result of a conjunction"
     OpMod -> "the result of a modulo operation"
+    OpPow -> "this power"
     _ | op `elem` [OpExactEq, OpApproxEq, OpApproxNEq] -> "the result of an equality check"
       | op `elem` [OpLt, OpGt, OpLe, OpGe] -> "the result of a comparison"
       | otherwise -> "the result of an arithmetic operation"

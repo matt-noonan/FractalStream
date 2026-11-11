@@ -9,6 +9,7 @@ module Language.Value.Evaluator
   , constantFold
   , evaluateInContext
   , type ScalarFromContext
+  , intPower
   ) where
 
 import FractalStream.Prelude
@@ -239,11 +240,7 @@ evaluator v0 ctx = case v0 of
       in if yy == 0
          then error "Integer modulo by 0"
          else x ctx `mod` yy
-    PowI x y -> case (x ctx, y ctx) of
-      (_, 0) -> 1
-      (1, _) -> 1
-      (n, p) | p < 0     -> 0
-             | otherwise -> n ^ p
+    PowI x y -> intPower (x ctx) (y ctx)
     AbsI x   -> abs (x ctx)
     NegI x   -> negate (x ctx)
 
@@ -347,4 +344,17 @@ sizeTuple sz ns = case (sz, ns) of
 clamp01 :: Double -> Double
 clamp01 x
   | x > 0 = if x < 1 then x else 1
+  | otherwise = 0
+
+-- | A power of integers, as an integer. A negative power of an integer is
+-- a fraction, which is rounded toward zero to the nearest integer: so 1
+-- for 1, 1 or -1 for -1 (as the exponent is even or odd), and 0 for the
+-- rest (0 among them, rather than dividing by zero). The compiled code
+-- does the same ('Backend.LLVM.Value.intPow'). (Where the fraction itself
+-- is wanted, the power is real: see "Language.Value.Typing".)
+intPower :: Integral a => a -> a -> a
+intPower n p
+  | p >= 0 = n ^ p
+  | n == 1 = 1
+  | n == -1 = if odd p then -1 else 1
   | otherwise = 0
