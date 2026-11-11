@@ -166,13 +166,6 @@ data ParsedStanza
         -- ^ The settings of an optional @coloring:@ block: values for its
         -- default colorizer's settings, in place of the colorizer's own
         -- defaults.
-      , vsPrepare     :: Maybe ([(String, SomeType)], ParsedCode)
-        -- ^ An optional @prepare name1 : Type1, name2 : Type2, ...:@
-        -- block, naming this viewer's preparation-script output
-        -- variables and their types (mirroring the classic YAML
-        -- @preparation: outputs:@ list), followed by the block's own
-        -- code to compute them. 'Nothing' when the viewer has no
-        -- preparation script at all.
       , vsCode        :: ParsedCode
       , vsFunctions   :: Set String
         -- ^ The user-defined functions in scope at the end of the
@@ -624,37 +617,6 @@ scriptGrammar defs = mdo
   configStmt <- ruleChoice [configDecl, configTable, configText, configButton, configRow, configTab]
 
   ------------------------------------------------------------
-  -- @\@viewer@ preparation-script header: `prepare name1 : Ty1, ...:`
-  ------------------------------------------------------------
-
-  -- Each output's type is given right here in the header (rather than
-  -- inferred from a `Let` inside the block, as a first design pass
-  -- tried): the block's own body type-checks against an environment
-  -- that already has every declared output bound, so its statements
-  -- are ordinary assignments (`computed <- ...`), not declarations --
-  -- exactly like the main viewer code's own `color <- ...` already
-  -- works. That also sidesteps a real type-system wall a Let-based
-  -- design hits: this block's own code could never be typed against
-  -- the *combined* (config + prep outputs) environment the main code
-  -- needs to see, since a `Let` requires the name to be absent first,
-  -- and there's no "widen this Code into a bigger environment"
-  -- operation in this language to reconcile the two afterward.
-  prepareOutputDecl <- rule $
-    (\name fsTy -> (name, withType fsTy SomeType)) <$> ident <*> (colon *> ty)
-
-  prepareNames <- rule $
-    (:) <$> prepareOutputDecl <*> many (token Comma *> prepareOutputDecl)
-
-  prepareHeader <- rule $
-    withSourceRange $
-      (\names sr -> validatePrepareNames sr names)
-      <$> (tok "prepare" *> prepareNames <* colon <* nl)
-
-  prepareBlock <- rule $
-    (\enames code -> (\names -> (names, code)) <$> enames)
-    <$> prepareHeader <*> (token Indent *> (withCommon defs <$> viewerBody) <* token Dedent)
-
-  ------------------------------------------------------------
   -- Stanzas
   ------------------------------------------------------------
 
@@ -677,12 +639,12 @@ scriptGrammar defs = mdo
       <$> (tok "coloring" *> colon *> nl *> token Indent *> many coloringSetting <* token Dedent)
 
   viewerStanza <- rule $
-    (\ehdr mcoloringE mprepE code ->
-        (\ViewerHeader{..} mcoloring mprep ->
+    (\ehdr mcoloringE code ->
+        (\ViewerHeader{..} mcoloring ->
             ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhView vhIterLimit vhEscape vhVanish
-                         vhPixelVar vhColorizer (fromMaybe [] mcoloring) mprep code (funNames defs))
-        <$> ehdr <*> sequence mcoloringE <*> sequence mprepE)
-    <$> viewerHeader <*> optional coloringBlock <*> optional prepareBlock
+                         vhPixelVar vhColorizer (fromMaybe [] mcoloring) code (funNames defs))
+        <$> ehdr <*> sequence mcoloringE)
+    <$> viewerHeader <*> optional coloringBlock
     <*> (withCommon defs <$> viewerBody)
 
   toolStanza <- rule $
@@ -1008,15 +970,6 @@ validateConfigDecl sr name fsTy val valRange mlabel mchoices = do
     , cdDefault = val, cdDefaultRange = valRange, cdDefaultSrc = ""
     , cdLabel = mlabel, cdChoices = mchoices
     }
-
-------------------------------------------------------------
--- Preparation-script header validation
-------------------------------------------------------------
-
-validatePrepareNames :: SourceRange -> [(String, SomeType)] -> Either (SourceRange, String) [(String, SomeType)]
-validatePrepareNames sr names = case firstDuplicate (map fst names) of
-  Just dup -> Left (sr, "`prepare` declares `" ++ dup ++ "` more than once.")
-  Nothing  -> Right names
 
 firstDuplicate :: Ord a => [a] -> Maybe a
 firstDuplicate = go Set.empty

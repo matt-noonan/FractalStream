@@ -5,6 +5,6 @@ script: |
   myColor : Color as "My color" := yellow
 
   @viewer "Voronoi"
-  prepare computed : Color:
-    computed <- myColor
+  # (the same for every pixel, so worked out once per render)
+  computed := myColor
   color <- if |z| < radius then blue else computed

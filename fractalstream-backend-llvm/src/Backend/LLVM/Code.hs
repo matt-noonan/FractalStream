@@ -30,8 +30,6 @@ import qualified LLVM.AST.IntegerPredicate as P
 
 import Control.Monad.Fix
 
-import qualified Data.Map.Strict as Map
-import Unsafe.Coerce (unsafeCoerce)
 
 import Language.Type
 import Language.Code
@@ -290,125 +288,12 @@ assertAbsent name env action = case lookupEnv' name env of
     Absent' pf -> recallIsAbsent pf action
     _ -> throwError ("INTERNAL ERROR: llvm-internal argument `" ++ symbolVal name ++ "` re-defined.")
 
--- | Count the number of bindings in an environment proxy.
-envLength :: EnvironmentProxy env -> Int
-envLength = \case
-  EmptyEnvProxy      -> 0
-  BindingProxy _ _ e -> 1 + envLength e
-
--- | Generate one @ptr i8@ LLVM parameter per prep output variable.
-toPrepParamList :: EnvironmentProxy env -> [(AST.Type, ParameterName)]
-toPrepParamList = \case
-  EmptyEnvProxy -> []
-  BindingProxy name _t env ->
-    ( AST.ptr AST.i8
-    , ParameterName (fromString (symbolVal name ++ "_prep_array"))
-    ) : toPrepParamList env
-
--- | An existential wrapping a typed operand pointer, for name-based lookup.
-data SomePtrOp where
-  SomePtrOp :: TypeProxy t -> PtrOp t -> SomePtrOp
-
--- | Build a map from variable name to its LLVM alloca pointer.
-contextToArgMap :: Context OperandPtr env -> Map.Map String SomePtrOp
-contextToArgMap = \case
-  EmptyContext             -> Map.empty
-  Bind name ty ptrOp rest -> Map.insert (symbolVal name) (SomePtrOp ty ptrOp) (contextToArgMap rest)
-
--- | Load a value of type @t@ from a flat byte array (@ptr i8@) at the given
--- pixel index.  Byte stride per pixel: Bool=1, Int=4, Real=8, Complex=16,
--- Color=3, and 8 for the pointer to a List or Text.
-loadFromPrepArrayAt
-  :: forall m t
-   . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
-  => TypeProxy t
-  -> Operand    -- ^ base @ptr i8@ of the prep array
-  -> Operand    -- ^ flat pixel index (i32)
-  -> m (Op t)
-loadFromPrepArrayAt ty arrayPtr pixelIdx = case ty of
-  BooleanType -> do
-    ptr <- gep arrayPtr [pixelIdx]
-    val <- load ptr 0
-    bit <- trunc val AST.i1
-    pure (BooleanOp bit)
-  IntegerType -> do
-    byteOff <- mul pixelIdx (C.int32 4)
-    ptr     <- gep arrayPtr [byteOff]
-    ptr'    <- bitcast ptr (AST.ptr AST.i32)
-    val     <- load ptr' 0
-    pure (IntegerOp val)
-  RealType -> do
-    byteOff <- mul pixelIdx (C.int32 8)
-    ptr     <- gep arrayPtr [byteOff]
-    ptr'    <- bitcast ptr (AST.ptr AST.double)
-    val     <- load ptr' 0
-    pure (RealOp val)
-  ComplexType -> do
-    byteOff <- mul pixelIdx (C.int32 16)
-    rePtr0  <- gep arrayPtr [byteOff]
-    rePtr   <- bitcast rePtr0 (AST.ptr AST.double)
-    reVal   <- load rePtr 0
-    imOff   <- add byteOff (C.int32 8)
-    imPtr0  <- gep arrayPtr [imOff]
-    imPtr   <- bitcast imPtr0 (AST.ptr AST.double)
-    imVal   <- load imPtr 0
-    pure (ComplexOp reVal imVal)
-  ColorType -> do
-    byteOff <- mul pixelIdx (C.int32 3)
-    rPtr    <- gep arrayPtr [byteOff]
-    gOff    <- add byteOff (C.int32 1)
-    gPtr    <- gep arrayPtr [gOff]
-    bOff    <- add byteOff (C.int32 2)
-    bPtr    <- gep arrayPtr [bOff]
-    r <- load rPtr 0
-    g <- load gPtr 0
-    b <- load bPtr 0
-    pure (ColorOp r g b)
-  ListType _ -> ListOp <$> loadPointer
-  TextType   -> TextOp <$> loadPointer
-  t -> throwError ("loadFromPrepArrayAt: unsupported type " ++ showType t)
-  where
-    -- Lists and text are stored as one pointer per pixel.
-    loadPointer :: m Operand
-    loadPointer = do
-      byteOff <- mul pixelIdx (C.int32 8)
-      ptr     <- gep arrayPtr [byteOff]
-      ptr'    <- bitcast ptr (AST.ptr (AST.ptr AST.i8))
-      load ptr' 0
-
--- | For each variable in @prepOutputEnv@, load its value from the
--- corresponding prep array at the given pixel index and overwrite its slot in
--- the arg context.
-overwritePrepOutputs
-  :: forall prepOutputEnv m
-   . (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
-  => EnvironmentProxy prepOutputEnv
-  -> [Operand]                 -- ^ one @ptr i8@ per var in @prepOutputEnv@
-  -> Operand                   -- ^ flat pixel index (i32)
-  -> Map.Map String SomePtrOp  -- ^ from 'contextToArgMap'
-  -> m ()
-overwritePrepOutputs EmptyEnvProxy [] _ _ = pure ()
-overwritePrepOutputs (BindingProxy name ty env') (ptr:ptrs) pixelIdx argMap = do
-  let n = symbolVal name
-  case Map.lookup n argMap of
-    Nothing -> (throwError ("INTERNAL ERROR: prep output `" ++ n ++ "` not in args") :: m ())
-    Just (SomePtrOp ty' ptrOp) -> case sameHaskellType ty ty' of
-      Nothing -> (throwError ("INTERNAL ERROR: prep output `" ++ n ++ "` type mismatch") :: m ())
-      Just Refl -> do
-        op <- loadFromPrepArrayAt ty ptr pixelIdx
-        -- sameHaskellType proved t ~ t', so this coercion is safe.
-        storeOperand op (unsafeCoerce ptrOp)
-  overwritePrepOutputs env' ptrs pixelIdx argMap
-overwritePrepOutputs _ _ _ _ =
-  throwError "INTERNAL ERROR: mismatched prep output env/ptrs"
-
-compileRenderer' :: forall env prepOutputEnv
+compileRenderer' :: forall env
                  . KnownEnvironment env
-                => EnvironmentProxy prepOutputEnv
-                -> AST.Name
+                => AST.Name
                 -> Code (ViewerEnv env)
                 -> Either String AST.Module
-compileRenderer' prepOutputEnv name code = runExcept $
+compileRenderer' name code = runExcept $
   assertAbsent (Proxy @InternalBlockWidth)  (envProxy (Proxy @env)) $
   assertAbsent (Proxy @InternalBlockHeight) (envProxy (Proxy @env)) $
   assertAbsent (Proxy @InternalSubsamples)  (envProxy (Proxy @env)) $
@@ -429,18 +314,15 @@ compileRenderer' prepOutputEnv name code = runExcept $
                        , (AST.ptr AST.i8, ParameterName "#autocolor")
                        , (AST.ptr AST.i8, ParameterName "#autocolorDir") ]
         params       = internalRenderParams ++ arenaParams ++ viewerEnvParams
-        prepParams   = toPrepParamList prepOutputEnv
         pfX      = bindingEvidence @InternalX   @'RealT  @(ViewerEnv env)
         pfY      = bindingEvidence @InternalY   @'RealT  @(ViewerEnv env)
         pfdX     = bindingEvidence @InternalDX  @'RealT  @(ViewerEnv env)
         pfdY     = bindingEvidence @InternalDY  @'RealT  @(ViewerEnv env)
         pfOutput = bindingEvidence @"color"     @'ColorT @(ViewerEnv env)
-        nViewerEnvArgs = envLength (envProxy (Proxy @(ViewerEnv env)))
-    function name (retParam : params ++ prepParams) AST.void $ \allArgs -> do
+    function name (retParam : params) AST.void $ \allArgs -> do
       let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg
                   : arenaPtrArg : arenaSizeArg : issuesOutArg : autocolorArg : autocolorDirArg
-                  : rest) = allArgs
-          (rawArgs, prepArrayPtrs) = splitAt nViewerEnvArgs rest
+                  : rawArgs) = allArgs
       getExtern <- getGetExtern
       mdo
 
@@ -478,9 +360,7 @@ compileRenderer' prepOutputEnv name code = runExcept $
         blockWidth  <- derefOperand blockWidthPtr  >>= \case IntegerOp v -> pure v
         blockHeight <- derefOperand blockHeightPtr >>= \case IntegerOp v -> pure v
         subsamples  <- derefOperand subsamplesPtr  >>= \case IntegerOp v -> pure v
-        let argMap = contextToArgMap args
         indexPtr      <- alloca AST.i32 Nothing 0 `named` "set up loop indices"
-        pixelIndexPtr <- alloca AST.i32 Nothing 0
         iPtr <- alloca AST.i32 Nothing 0
         jPtr <- alloca AST.i32 Nothing 0
         kPtr <- alloca AST.i32 Nothing 0
@@ -490,7 +370,6 @@ compileRenderer' prepOutputEnv name code = runExcept $
 
         beginLoops <- block `named` "begin i loop"
         store indexPtr 0 (C.int32 0)
-        store pixelIndexPtr 0 (C.int32 0)
         store yPtr 0 y0
         store iPtr 0 (C.int32 0)
         br pixelLoopY
@@ -512,7 +391,7 @@ compileRenderer' prepOutputEnv name code = runExcept $
         -- Not doing this would incur a memory cost proportional to the number
         -- of pixels, which was enough to make the SaddleDrop script crash.
         --
-        -- Loop counters, the argument context and the prep pointers are
+        -- Loop counters and the argument context are
         -- allocated in the entry block, so the restore does not disturb them.
         --
         -- The less brittle alternative would be to hoist all allocations to
@@ -541,10 +420,6 @@ compileRenderer' prepOutputEnv name code = runExcept $
           store bumpAlloca 0 arenaPtrArg
           store overflowFlag 0 (C.bit 0)
           store indexError 0 (C.bit 0)
-
-          -- Load prep output vars from their flat arrays before the kernel.
-          pixelIndex <- load pixelIndexPtr 0
-          overwritePrepOutputs prepOutputEnv prepArrayPtrs pixelIndex argMap
 
           -- Start each subsample with `color` set to grey, as the pure backend
           -- does; otherwise a pixel the script leaves uncolored would get the
@@ -619,10 +494,6 @@ compileRenderer' prepOutputEnv name code = runExcept $
 
           index' <- add index (C.int32 3)
           store indexPtr 0 index'
-          -- Advance the flat pixel index once per output pixel.
-          pixelIndex <- load pixelIndexPtr 0
-          pixelIndex' <- add pixelIndex (C.int32 1)
-          store pixelIndexPtr 0 pixelIndex'
 
         -- Release this pixel's stack. This has to come after the accumulators
         -- above have been read and written out (because they will be cleared).

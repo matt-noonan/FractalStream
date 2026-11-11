@@ -3,7 +3,7 @@ module Actor.GoldenSpec (spec) where
 -- | Golden tests pinning down the fully-typechecked 'Code' produced for
 -- every example project, and every project in the built-in library
 -- (@fractalstream-library/projects/@): each viewer body, its
--- preparation script (if any), and every tool event handler, pretty-printed
+-- part run once per render (if any), and every tool event handler, pretty-printed
 -- with 'pprintCode'. These exist to guard the move from the closure-based
 -- typechecker to the surface-AST + inference + elaboration pipeline: the
 -- elaborated ASTs should come out identical, down to conversion placement.
@@ -16,7 +16,7 @@ module Actor.GoldenSpec (spec) where
 import Test.Hspec
 
 import Actor.Ensemble
-import Actor.Viewer (SomeViewerWithContext(..), PrepScript(..))
+import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
@@ -89,12 +89,9 @@ dumpEnsemble ens = do
     let header = "=== viewer " ++ show i ++ ": " ++ either id id title
     viewerPart <- safely $ case code of
       Left (_, err) -> "ERROR: " ++ err
-      Right (SomeViewerWithContext _ mprep body mprefix) -> unlines $
+      Right (SomeViewerWithContext _ body mprefix) -> unlines $
         maybe [] (\prefix -> [ "--- once per render", pprintCode prefix ]) mprefix ++
-        [ "--- body", pprintCode body ] ++
-        case mprep of
-          Nothing -> []
-          Just (PrepScript _ prep) -> [ "--- prepare", pprintCode prep ]
+        [ "--- body", pprintCode body ]
     tools <- getDynamic (cvTools viewer)
     -- (and its overlay, if it has one, after its tools)
     toolParts <- forM (tools ++ maybeToList (cvOverlay viewer)) $ \tool -> do

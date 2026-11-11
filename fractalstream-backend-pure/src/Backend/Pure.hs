@@ -18,10 +18,9 @@ import Foreign hiding (void)
 import Data.IORef
 
 interpretViewer :: forall env t. MissingViewerArgs env
-                => Maybe (PrepScript env)
-                -> Code (ViewerEnv env)
+                => Code (ViewerEnv env)
                 -> (ViewerFunction env -> IO t) -> IO t
-interpretViewer mPrepScript body0 action = do
+interpretViewer body0 action = do
   -- The same rewrites the LLVM backend applies, so both render alike.
   let body = transformValues backendRewrites body0
       env = toIndex body
@@ -45,10 +44,6 @@ interpretViewer mPrepScript body0 action = do
         (r, g, b) <- fmap colorToRGB . flip evalStateT iorefs $ do
           update bindingEvidence (Proxy @InternalX) RealType x
           update bindingEvidence (Proxy @InternalY) RealType y
-          -- Run prep script first (can Set prep output variables in context)
-          case mPrepScript of
-            Nothing -> pure ()
-            Just (PrepScript _ prepCode) -> interpretToIO noDrawing prepCode
           interpretToIO noDrawing body
           eval (Var (Proxy @"color") ColorType bindingEvidence)
 

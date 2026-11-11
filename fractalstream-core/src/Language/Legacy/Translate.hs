@@ -284,7 +284,7 @@ reserved = Set.fromList $ concat
     , "to", "for", "each", "in", "while", "until", "repeat", "iterate", "up"
     , "define", "run", "with", "first", "matching", "pass", "use", "draw"
     , "erase", "write", "on", "at", "from", "as", "choice", "row", "tab"
-    , "button", "prepare", "coloring", "point", "line", "circle"
+    , "button", "coloring", "point", "line", "circle"
     , "rectangle", "filled", "stroke", "fill" ] ]
 
 -- | A name like the given one that isn't in the set.

@@ -335,8 +335,7 @@ applyColorizers choices stanzas = do
       let fallback = fromMaybe (automaticColorizer vsCode) vsColorizer
           scope = Set.unions
             [ configScope
-            , Set.fromList (coordinateNames vsCoord ++ maybeToList vsPixelVar ++ realPixelVars vsCoord
-                           ++ maybe [] (map fst . fst) vsPrepare)
+            , Set.fromList (coordinateNames vsCoord ++ maybeToList vsPixelVar ++ realPixelVars vsCoord)
             , topLevelNames vsCode ]
           resolve = resolveChoice available vsFunctions scope
       defaultChoice <- left (\err -> (NoSourceRange, "The `colorizer=` attribute of the viewer "
