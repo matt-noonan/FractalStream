@@ -70,9 +70,8 @@ import Language.Value.Parser
 import Language.Code
 import Language.Draw
 import Language.Code.Parser
-import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.MVar
-import Task.Concurrent (forPool_)
+import Task.Concurrent (forPool_, renderConcurrency)
 import Language.Parser.SourceRange
 import Language.Value.Evaluator
 import Foreign
@@ -323,7 +322,7 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
           -- capability busy even if some strips are slower than others
           stripRows = max 1 (min 16 (h `div` 64))
           strips = [ (r, min stripRows (h - r)) | r <- [0, stripRows .. h - 1] ]
-      caps <- getNumCapabilities
+      caps <- renderConcurrency
       out <- mallocForeignPtrBytes (3 * w * h)
       issuesVar <- newMVar mempty
       withForeignPtr out $ \outPtr ->

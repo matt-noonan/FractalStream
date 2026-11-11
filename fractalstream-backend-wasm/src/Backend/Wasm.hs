@@ -1,11 +1,15 @@
 -- | The WebAssembly backend: viewers are compiled to wasm kernels at run
--- time (see "Backend.Wasm.Code"), loaded through the JavaScript FFI, and
--- run over the engine's own memory, so a kernel writes its pixels straight
--- into the block's buffer. A viewer whose code the backend can't compile
+-- time (see "Backend.Wasm.Code") and loaded through the JavaScript FFI.
+-- If the host gave the engine a pool of workers (@js/worker-pool.mjs@, at
+-- @globalThis.fractalstreamWorkers@), a render's blocks are rendered there,
+-- several at once (see 'workerPoolSize'); otherwise the kernel runs on the
+-- engine's own thread, over its memory, writing a block's pixels straight
+-- into its buffer. A viewer whose code the backend can't compile
 -- yet is interpreted instead (by "Backend.Pure"), with a note on stderr.
 -- Tools, and code that runs once per render, are interpreted.
 module Backend.Wasm
   ( withWasmViewer
+  , workerPoolSize
   ) where
 
 import FractalStream.Prelude
@@ -22,6 +26,7 @@ import Language.Type
 import Language.Value.Transform (backendRewrites)
 import Data.Color (colorToRGB)
 
+import Control.Exception (evaluate)
 import Data.Bits (testBit)
 import Foreign.ForeignPtr (mallocForeignPtrBytes, withForeignPtr)
 import Foreign.Marshal.Array (withArrayLen)
@@ -43,6 +48,35 @@ foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, 
   runKernel :: JSVal -> Ptr Word8 -> Int32 -> Int32 -> Int32 -> Ptr Word8
             -> Double -> Double -> Double -> Double -> IO Int32
 
+-- | How many workers the host's pool has (0 without one).
+foreign import javascript unsafe
+  "globalThis.fractalstreamWorkers ? globalThis.fractalstreamWorkers.size : 0"
+  workerPoolSize :: IO Int
+
+foreign import javascript unsafe
+  "new WebAssembly.Module(new Uint8Array(__exports.memory.buffer, $1, $2).slice())"
+  compileKernel :: Ptr Word8 -> Int -> IO JSVal
+
+foreign import javascript unsafe "globalThis.fractalstreamWorkers.addKernel($1)"
+  addKernel :: JSVal -> IO Int
+
+-- | Render a block on a worker, with a copy of the arguments; gives back
+-- its result, to read with 'resultIssues' and 'copyPixels'. (The pixels
+-- are copied into the engine's memory only after the result is forced,
+-- by the thread that asked for it: a render cancelled while it waits must
+-- not write into a buffer that's been freed.)
+foreign import javascript safe
+  "return await globalThis.fractalstreamWorkers.run($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice(), $4, $5, $6, $7, $8, $9, $10)"
+  runOnWorker :: Int -> Ptr Word8 -> Int -> Int32 -> Int32 -> Int32
+              -> Double -> Double -> Double -> Double -> IO JSVal
+
+foreign import javascript unsafe "$1.issues"
+  resultIssues :: JSVal -> IO Int32
+
+foreign import javascript unsafe
+  "new Uint8Array(__exports.memory.buffer, $2, $1.pixels.length).set($1.pixels)"
+  copyPixels :: JSVal -> Ptr Word8 -> IO ()
+
 withWasmViewer :: forall env t. (MissingViewerArgs env, KnownEnvironment env)
                => AutocolorLookup
                -> Code (ViewerEnv env)
@@ -54,7 +88,21 @@ withWasmViewer _ code0 action = do
       hPutStrLn stderr ("note: " ++ err ++ "; interpreting this viewer instead")
       interpretViewer code0 action
     Right bytes -> do
-      inst <- withArrayLen bytes $ \n p -> instantiate p n
+      workers <- workerPoolSize
+      runBlock <- if workers > 0
+        then do
+          kernel <- withArrayLen bytes (\n p -> compileKernel p n) >>= addKernel
+          pure $ \args argsLen ViewerArgs{..} -> do
+            result <- runOnWorker kernel args argsLen vaWidth vaHeight vaSubsamples
+                        (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep)
+                      >>= evaluate
+            copyPixels result vaBuffer
+            resultIssues result
+        else do
+          inst <- withArrayLen bytes $ \n p -> instantiate p n
+          pure $ \args _ ViewerArgs{..} ->
+            runKernel inst vaBuffer vaWidth vaHeight vaSubsamples args
+                      (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep)
       action $ ViewerFunction $ \vaArgs -> do
         -- The configuration's values, once for the whole render.
         let size = sum (fromContext (\_ ty _ -> fromMaybe 0 (argSize ty)) vaArgs)
@@ -62,9 +110,8 @@ withWasmViewer _ code0 action = do
         withForeignPtr args $ \p ->
           foldM_ (\off (SomeArg ty v) -> pokeArg p off ty v) 0
                  (fromContext (\_ ty v -> SomeArg ty v) vaArgs)
-        pure $ \ViewerArgs{..} -> withForeignPtr args $ \p -> do
-          issues <- runKernel inst vaBuffer vaWidth vaHeight vaSubsamples p
-                              (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep)
+        pure $ \block -> withForeignPtr args $ \p -> do
+          issues <- runBlock p size block
           pure ViewerIssues { viOutOfMemory = testBit issues 0
                             , viBadIndex = testBit issues 1 }
 

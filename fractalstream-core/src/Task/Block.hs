@@ -198,7 +198,7 @@ progressivelyOver shown covered render block = do
 
     subblocks <- shuffle [(x,y) | x <- xBlocks, y <- yBlocks]
 
-    poolSize <- subtract 1 <$> getNumCapabilities
+    poolSize <- subtract 1 <$> renderConcurrency
 
     when False $ do
       caps <- getNumCapabilities

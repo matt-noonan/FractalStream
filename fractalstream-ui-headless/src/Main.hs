@@ -78,6 +78,7 @@ import Options.Applicative
   , hsubparser, command, strOption, option, eitherReader, long, short, metavar, help
   , fullDesc, progDesc, footer )
 import Control.Concurrent (setNumCapabilities)
+import Task.Concurrent (setRenderConcurrency)
 import System.Exit (exitFailure)
 import Text.Read (readMaybe)
 import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStr, hPutStrLn, stderr)
@@ -111,7 +112,9 @@ main = do
     RunProject{..} -> do
       -- Before the backend starts: the LLVM backend sizes its pool of
       -- per-render scratch arenas by the number of capabilities then.
-      forM_ invJobs setNumCapabilities
+      -- (And on wasm, where there's one capability, -j is how many
+      -- workers a render uses: see 'renderConcurrency'.)
+      forM_ invJobs $ \n -> setNumCapabilities n >> setRenderConcurrency n
       run invProject invMode
     Translate{..} -> runTranslate invInput invOutput invTitle
 
