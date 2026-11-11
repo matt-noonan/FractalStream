@@ -20,11 +20,6 @@ flag use-llvm
   default: True
   manual: True
 
-flag use-jemalloc
-  description: Link against the jemalloc library
-  default: False
-  manual: True
-
 common FractalStream-common
   ghc-options:         -Wall -Werror -O2 -Wno-star-is-type
   -- This is basically the list of extensions from

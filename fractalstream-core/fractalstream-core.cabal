@@ -149,8 +149,7 @@ library
                        Data.PNG
                        Data.Movie
 
-  c-sources: src/FractalStream/find_jemalloc.c
-             src/Actor/autocolor_cache.c
+  c-sources: src/Actor/autocolor_cache.c
 
   build-depends:       base >=4.8 && <5,
                        random,

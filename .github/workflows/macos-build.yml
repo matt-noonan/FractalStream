@@ -26,11 +26,6 @@ on:
         required: false
         default: false
         type: boolean
-      jemalloc:
-        description: 'Link against jemalloc?'
-        required: false
-        default: false
-        type: boolean
       version:
         description: 'The release version (a leading "v" is dropped); empty for a development build'
         required: false
@@ -65,7 +60,6 @@ jobs:
         brew install wget
         brew install haskell-stack
         brew install libffi
-        brew install jemalloc
 
         ##################################################################
         # wxWidgets dependencies
@@ -241,11 +235,9 @@ jobs:
         stack build --only-snapshot
 
     - name: Build FractalStream
-      env:
-        USE_JEMALLOC: ${{ inputs.jemalloc && '--flag fractalstream-ui-wx:use-jemalloc' || '' }}
       run: |
         cd fractalstream-ui-wx
-        stack build $USE_JEMALLOC
+        stack build
         mv `find . -name "FractalStream.app"` ../FractalStream.app
         mv ../FractalStream.app/PkgInfo ../FractalStream.app/Contents/PkgInfo
 
