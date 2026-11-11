@@ -68,7 +68,7 @@ executable fractalstream-web
   hs-source-dirs:      src
   -- (a reactor module: the page's worker calls its exports; see web/src/engine.ts)
   ghc-options:         -no-hs-main -optl-mexec-model=reactor
-                       "-optl-Wl,--export=fs_library,--export=fs_open,--export=fs_set,--export=fs_view,--export=fs_resize"
+                       "-optl-Wl,--export=fs_library,--export=fs_open,--export=fs_open_file,--export=fs_save,--export=fs_set,--export=fs_view,--export=fs_resize"
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
                      , fractalstream-library
@@ -79,3 +79,4 @@ executable fractalstream-web
                      , bytestring
                      , text
                      , containers
+                     , filepath

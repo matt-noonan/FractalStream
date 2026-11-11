@@ -9,18 +9,26 @@ worker (@web/src/engine.ts@). The worker calls these exports:
 * @fs_library()@: post the built-in library.
 * @fs_open(section, entry)@: build that project; post its panel and
   viewers, then each viewer's frames as they're rendered.
+* @fs_open_file(name, bytes)@: the same, for a project file's contents.
+* @fs_save()@: post the open project as a file (its script, changed
+  values, and so on, as the desktop app saves it).
+
+As the desktop app does (and unlike fsrun, which is for reproducible
+runs), a project opens with the configuration values (@values:@) and the
+tables (@tables:@) it was saved with, and is saved with its own.
 * @fs_set(name, text)@: set a configuration field (by name) from its text.
 * @fs_view(viewer, cx, cy, pixelSize)@: move or zoom a viewer.
 * @fs_resize(viewer, width, height)@: resize a viewer.
 
-and the engine posts JSON messages (@globalThis.fractalstreamPost@), and
+and the engine posts JSON messages (@globalThis.fractalstreamPost@),
 frames (@globalThis.fractalstreamPostFrame@: RGB pixels, with the view they
-show), which the worker forwards to the page.
+show), and saved files (@globalThis.fractalstreamPostFile@: a name and the
+contents), which the worker forwards to the page.
 
 Messages:
 
 > { "type": "library", "sections": [ { "name", "entries": [ { "title", "description", "preview" } ] } ] }
-> { "type": "project", "title", "panel": <layout> or null, "viewers": [ { "id", "title" } ] }
+> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "panel": <layout> or null, "viewers": [ { "id", "title" } ] }
 > { "type": "field", "name", "error": <message> or null }
 > { "type": "error", "message" }
 
@@ -34,7 +42,12 @@ module Main (main) where
 
 import FractalStream.Prelude
 
-import Actor.Ensemble (Ensemble(..), runEnsemble, parseEnsembleFromBytes, ensembleFields, FieldOwner(..))
+import Actor.Ensemble (Ensemble(..), runEnsemble, parseEnsembleFromBytes, ensembleFields, FieldOwner(..),
+                       encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables)
+import Actor.SavedValues (readSavedValues, writeSavedValues)
+import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables)
+import qualified Data.Aeson.KeyMap as KM
+import Actor.Metadata (ProjectMetadata(..))
 import Actor.Layout
 import Actor.UI (UI(..))
 import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges)
@@ -47,6 +60,7 @@ import Control.Concurrent.MVar
 import Control.Exception (SomeException, try, displayException)
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
@@ -54,8 +68,10 @@ import Data.IORef
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import Foreign.ForeignPtr (withForeignPtr)
-import Foreign.Ptr (Ptr)
-import GHC.Wasm.Prim (JSString(..), toJSString, fromJSString)
+import Foreign.Marshal.Alloc (allocaBytes)
+import Foreign.Ptr (Ptr, castPtr)
+import GHC.Wasm.Prim (JSString(..), JSVal, toJSString, fromJSString)
+import System.FilePath (takeBaseName)
 import System.IO.Unsafe (unsafePerformIO)
 
 ------------------------------------------------------------------------
@@ -69,6 +85,18 @@ foreign import javascript unsafe "globalThis.fractalstreamPost($1)"
 foreign import javascript unsafe
   "globalThis.fractalstreamPostFrame($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice(), $4, $5, $6, $7, $8, $9)"
   postFrame :: Int -> Ptr Word8 -> Int -> Int -> Int -> Double -> Double -> Double -> Double -> IO ()
+
+-- | A saved project file: its name, and its contents.
+foreign import javascript unsafe
+  "globalThis.fractalstreamPostFile($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice())"
+  postFile :: JSString -> Ptr Word8 -> Int -> IO ()
+
+foreign import javascript unsafe "$1.length"
+  byteLength :: JSVal -> IO Int
+
+-- | Copy a Uint8Array into the engine's memory.
+foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, $2, $1.length).set($1)"
+  copyBytes :: JSVal -> Ptr Word8 -> IO ()
 
 post :: Aeson.Value -> IO ()
 post = postRaw . toJSString . Text.unpack . Text.decodeUtf8 . LBS.toStrict . Aeson.encode
@@ -90,6 +118,7 @@ guarded act = try act >>= \case
 data Session = Session
   { sViewers :: Map.Map Int (Viewer, MVar ())
   , sEnsemble :: Ensemble
+  , sFileName :: String
   , sStop :: IO ()
   }
 
@@ -116,6 +145,8 @@ getBackend = readIORef backendRef >>= \case
 
 foreign export javascript "fs_library" library :: IO ()
 foreign export javascript "fs_open" open :: Int -> Int -> IO ()
+foreign export javascript "fs_open_file" openFile :: JSString -> JSVal -> IO ()
+foreign export javascript "fs_save" save :: IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
 foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
@@ -142,11 +173,47 @@ library = guarded $ post $ Aeson.object
 
 open :: Int -> Int -> IO ()
 open section entry = guarded $ do
-  close
   LibraryEntry{..} <- case drop section librarySections of
     s : _ | e : _ <- drop entry (lsEntries s) -> pure e
     _ -> fail "no such project"
-  ensemble <- parseEnsembleFromBytes leFileName leContents >>= either fail pure
+  openProject True leTitle leFileName leContents
+
+openFile :: JSString -> JSVal -> IO ()
+openFile name bytes = guarded $ do
+  n <- byteLength bytes
+  contents <- allocaBytes (max 1 n) $ \p -> copyBytes bytes p >> BS.packCStringLen (castPtr p, n)
+  let fileName = fromJSString name
+  -- (the project's title, if its metadata gives one; else its file's name)
+  let title = either (const (takeBaseName fileName)) (fromMaybe (takeBaseName fileName) . mdTitle)
+                     (readProjectMetadata contents)
+  openProject False title fileName contents
+
+save :: IO ()
+save = guarded $ readIORef sessionRef >>= \case
+  Nothing -> postError "there's no project to save"
+  Just Session{..} -> do
+    -- (the values it was left with; and its tables, if its file had them)
+    changedValues sEnsemble >>= modifyValue (ensembleFrontendProperties sEnsemble) . writeSavedValues
+    hasTables <- KM.member "tables" <$> getDynamic (ensembleFrontendProperties sEnsemble)
+    when hasTables $ do
+      tables <- ensembleTables sEnsemble >>= captureTables
+      modifyValue (ensembleFrontendProperties sEnsemble) (writeSavedTables tables)
+    contents <- encodeEnsemble sEnsemble
+    BS.useAsCStringLen contents $ \(p, n) -> postFile (toJSString sFileName) (castPtr p) n
+
+-- | Build a project from a file's contents, and start showing it.
+openProject :: Bool -> String -> String -> BS.ByteString -> IO ()
+openProject fromLibrary projectTitle fileName contents = do
+  ensemble <- parseEnsembleFromBytes fileName contents >>= either fail pure
+  -- The values and tables it was saved with, before anything is drawn
+  -- (any that no longer fit are skipped, and said so on the console).
+  props <- getDynamic (ensembleFrontendProperties ensemble)
+  either (\err -> putStrLn ("Ignoring unreadable `values:`: " ++ err))
+         (applySavedValues ensemble >=> mapM_ putStrLn) (readSavedValues props)
+  either (\err -> putStrLn ("Ignoring unreadable `tables:`: " ++ err))
+         (\saved -> ensembleTables ensemble >>= \ts -> applySavedTables ts saved >>= mapM_ putStrLn)
+         (readSavedTables props)
+  close
   backend <- getBackend
 
   -- Run the project, collecting its panel and viewers.
@@ -168,7 +235,7 @@ open section entry = guarded $ do
     unwatch <- onParameterChanges viewer (requestRender signal)
     pure ((k, (viewer, signal)), (tid, unwatch))
   let stop = forM_ (map snd loops) $ \(tid, unwatch) -> killThread tid >> unwatch
-  writeIORef sessionRef (Just (Session (Map.fromList (map fst loops)) ensemble stop))
+  writeIORef sessionRef (Just (Session (Map.fromList (map fst loops)) ensemble fileName stop))
 
   fields <- projectFieldTexts ensemble
   panel <- readIORef panelRef >>= traverse (\(title, lo) -> do
@@ -179,7 +246,9 @@ open section entry = guarded $ do
     pure (Aeson.object [ "id" .= k, "title" .= title ])
   post $ Aeson.object
     [ "type" .= ("project" :: Text.Text)
-    , "title" .= leTitle
+    , "title" .= projectTitle
+    , "fileName" .= fileName
+    , "library" .= fromLibrary
     , "panel" .= panel
     , "viewers" .= viewerInfo
     ]

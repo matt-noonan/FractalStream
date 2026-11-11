@@ -53,6 +53,10 @@ g.fractalstreamPostFrame = (viewer: number, rgb: Uint8Array, width: number, heig
   send(frame, [frame.pixels]);
 };
 
+g.fractalstreamPostFile = (name: string, bytes: Uint8Array) => {
+  send({ type: "file", name, bytes: bytes.buffer as ArrayBuffer }, [bytes.buffer as ArrayBuffer]);
+};
+
 // The engine.
 const wasi = new WASI(["fractalstream-web"], [], [
   new OpenFile(new File([])),
@@ -75,6 +79,8 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
     switch (r.type) {
       case "library": await engine.fs_library(); break;
       case "open": await engine.fs_open(r.section, r.entry); break;
+      case "openFile": await engine.fs_open_file(r.name, new Uint8Array(r.bytes)); break;
+      case "save": await engine.fs_save(); break;
       case "set": await engine.fs_set(r.name, r.text); break;
       case "view": await engine.fs_view(r.viewer, r.cx, r.cy, r.pixelSize); break;
       case "resize": await engine.fs_resize(r.viewer, r.width, r.height); break;

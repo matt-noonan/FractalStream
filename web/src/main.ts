@@ -3,6 +3,7 @@
 // what they say to each other.
 
 import type { Request, Message, Layout, FieldLayout, Frame, LibrarySection, ViewerInfo } from "./protocol.js";
+import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
 
 const engine = new Worker(new URL("engine.js", import.meta.url), { type: "module" });
 const send = (r: Request) => engine.postMessage(r);
@@ -10,6 +11,10 @@ const send = (r: Request) => engine.postMessage(r);
 const libraryEl = document.getElementById("library")!;
 const projectEl = document.getElementById("project")!;
 const statusEl = document.getElementById("status")!;
+const openButton = document.getElementById("open") as HTMLButtonElement;
+const saveButton = document.getElementById("save") as HTMLButtonElement;
+const saveAsButton = document.getElementById("save-as") as HTMLButtonElement;
+const fileNameEl = document.getElementById("file-name")!;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {},
                                                  ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -35,7 +40,7 @@ function showLibrary(sections: LibrarySection[]) {
           e.preview ? el("img", { src: `data:image/png;base64,${e.preview}`, alt: "" }) : "",
           el("span", { textContent: e.title }));
         item.addEventListener("click", () => {
-          for (const li of libraryEl.querySelectorAll("li.selected")) li.classList.remove("selected");
+          deselectLibrary();
           item.classList.add("selected");
           status(`Opening ${e.title}…`);
           send({ type: "open", section: si, entry: ei });
@@ -43,6 +48,65 @@ function showLibrary(sections: LibrarySection[]) {
         return item;
       })))));
 }
+
+function deselectLibrary() {
+  for (const li of libraryEl.querySelectorAll("li.selected")) li.classList.remove("selected");
+}
+
+// ---------------------------------------------------------------------
+// Files
+
+/** The open project's file: its name, whether it's from the library, and
+    where to save it back (if the browser allows that). */
+let current: { fileName: string; library: boolean; handle: FileHandle | null } | null = null;
+/** The handle of the file being opened, until its project comes. */
+let opening: FileHandle | null = null;
+/** Where the next saved file goes (see "file" messages). */
+let pendingSave: ((name: string, bytes: ArrayBuffer) => Promise<string>) | null = null;
+
+async function openFile(opened: Opened | null) {
+  if (!opened) return;
+  opening = opened.handle;
+  deselectLibrary();
+  status(`Opening ${opened.file.name}…`);
+  const bytes = await opened.file.arrayBuffer();
+  engine.postMessage({ type: "openFile", name: opened.file.name, bytes } satisfies Request, [bytes]);
+}
+
+async function save(saveAs: boolean) {
+  if (!current) return;
+  const c = current;
+  try {
+    const destination = await chooseDestination(c.library ? null : c.handle, saveAs, c.fileName, (handle) => {
+      c.handle = handle;
+      c.library = false;
+      c.fileName = handle.name;
+      showFileName();
+    });
+    if (!destination) return;
+    pendingSave = destination;
+    send({ type: "save" });
+  } catch (e) {
+    status(`Couldn't save: ${e}`, true);
+  }
+}
+
+function showFileName() {
+  fileNameEl.textContent = current ? current.fileName + (current.library ? " (from the library)" : "") : "";
+  saveButton.disabled = saveAsButton.disabled = !current;
+}
+
+openButton.addEventListener("click", async () => openFile(await pickFile()));
+saveButton.addEventListener("click", () => save(false));
+saveAsButton.addEventListener("click", () => save(true));
+document.addEventListener("keydown", async (e) => {
+  if (!(e.metaKey || e.ctrlKey)) return;
+  const key = e.key.toLowerCase();
+  if (key === "o") { e.preventDefault(); openFile(await pickFile()); }
+  else if (key === "s") { e.preventDefault(); save(e.shiftKey); }
+});
+document.addEventListener("dragover", (e) => { e.preventDefault(); });
+document.addEventListener("drop", async (e) => { e.preventDefault(); openFile(await droppedFile(e)); });
 
 // ---------------------------------------------------------------------
 // A project
@@ -283,7 +347,19 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
   switch (m.type) {
     case "ready": status("Loading the library…"); send({ type: "library" }); break;
     case "library": showLibrary(m.sections); status("Pick a project."); break;
-    case "project": showProject(m.title, m.panel, m.viewers); break;
+    case "project":
+      current = { fileName: m.fileName, library: m.library, handle: m.library ? null : opening };
+      opening = null;
+      showFileName();
+      showProject(m.title, m.panel, m.viewers);
+      break;
+    case "file": {
+      const write = pendingSave;
+      pendingSave = null;
+      if (write) write(m.name, m.bytes).then((name) => status(`Saved ${name}.`),
+                                              (e) => status(`Couldn't save: ${e}`, true));
+      break;
+    }
     case "field": fieldResult(m.name, m.error); break;
     case "error": status(m.message, true); console.error(m.message); break;
     case "frame": viewers.get(m.viewer)?.show(m); break;

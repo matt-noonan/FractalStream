@@ -6,6 +6,8 @@
 export type Request =
   | { type: "library" }
   | { type: "open"; section: number; entry: number }
+  | { type: "openFile"; name: string; bytes: ArrayBuffer }
+  | { type: "save" }
   | { type: "set"; name: string; text: string }
   | { type: "view"; viewer: number; cx: number; cy: number; pixelSize: number }
   | { type: "resize"; viewer: number; width: number; height: number };
@@ -61,7 +63,9 @@ export interface Frame {
 export type Message =
   | { type: "ready" }
   | { type: "library"; sections: LibrarySection[] }
-  | { type: "project"; title: string; panel: Layout; viewers: ViewerInfo[] }
+  | { type: "project"; title: string; fileName: string; library: boolean; panel: Layout; viewers: ViewerInfo[] }
+  /** The open project, saved: its file's name and contents. */
+  | { type: "file"; name: string; bytes: ArrayBuffer }
   | { type: "field"; name: string; error: string | null }
   | { type: "error"; message: string }
   | Frame;

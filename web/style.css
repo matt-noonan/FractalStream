@@ -74,3 +74,10 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
 }
 .field input.invalid { border-color: var(--error); }
 .field-error { color: var(--error); cursor: help; }
+#toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+#toolbar button {
+  font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+}
+#toolbar button:disabled { opacity: .5; cursor: default; }
+#file-name { margin-left: 8px; color: var(--muted); }

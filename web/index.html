@@ -10,6 +10,12 @@
 <body>
   <nav id="library" aria-label="Library"></nav>
   <main>
+    <div id="toolbar">
+      <button id="open" type="button" title="Open a project file (⌘O)">Open…</button>
+      <button id="save" type="button" title="Save (⌘S)" disabled>Save</button>
+      <button id="save-as" type="button" title="Save as (⇧⌘S)" disabled>Save as…</button>
+      <span id="file-name"></span>
+    </div>
     <div id="status" role="status"></div>
     <div id="project"></div>
   </main>
