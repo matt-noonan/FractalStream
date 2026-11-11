@@ -211,7 +211,8 @@ wasmtime.
   Backend.Wasm under Node, compared with LLVM at a small size.
 - [x] Kernel worker pool (`fractalstream-backend-wasm/js/`).
 - [ ] Tiles and progressive passes (R3).
-- [ ] Lists, text and tables in a per-worker arena; issue flags.
+- [x] Lists in a per-block arena; issue flags.
+- [ ] Text and tables.
 - [ ] Autocolor: snapshot lookup, with misses queued for the engine.
 - [ ] Decide on libm (JS `Math` or compiled libm).
 - [ ] Turn the end-to-end suite back on for wasm.
@@ -271,6 +272,41 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-11: Lists in Backend.Wasm; a V8 crash with workers
+
+**Lists** are compiled (`Backend.Wasm.List`) with the LLVM backend's
+semantics: an arena per block, reset for each subsample; overflow and bad
+indices make the pixel magenta and set the issue bits. Every list test
+script and library project compiles. At 100×100, every one renders
+byte-identical to LLVM except a few pixels in chaotic regions (math
+functions). Only the autocolor viewers still fall back.
+
+**A V8 crash.** Node (26.11.1, the toolchain's, on macOS/ARM) dies now
+and then with SIGILL in a worker thread running a kernel, when two or
+more workers run kernels at once. It happens in about 1 run in 8 of
+twisted-mandelbrot or test-scripts/list-transform-config.fs with 4
+workers, and never with 0 or 1 worker. What I found:
+- It reproduces without the engine, replaying the captured jobs on the
+  pool (`FS_WASM_DUMP`), so it isn't the engine.
+- The same jobs on the main thread never fail and never trap, so the
+  kernels themselves are valid.
+- It isn't V8 sharing compiled code between threads: distinct module
+  bytes per worker still crash.
+- V8 flags only make it rarer: no lazy compilation 2/160, no dynamic
+  tiering 0/260 on one project but 2/3 on another.
+- **It's the kernels' calls into JavaScript** (the imported `Math`
+  functions): with wasm stub imports instead, 0/60 against ~15%.
+  Wrapping `Math` in arrow functions helped on replay but not for real.
+  The Julia kernel, with 1 import call, never crashed; twisted-mandelbrot
+  has 13.
+
+**Proposed fix (to decide):** kernels import their math functions from
+a small `libm.wasm` (musl's, built with the toolchain's wasi-sdk), not
+from JavaScript. That avoids the crashing path, makes wasm-to-wasm calls
+(cheaper), and gives the same results in every browser. It settles the
+"libm" question in Phase 2. Until then, wasm renders with several
+workers can crash under Node.
 
 ### 2026-11-11: Backend.Wasm on a pool of workers
 
