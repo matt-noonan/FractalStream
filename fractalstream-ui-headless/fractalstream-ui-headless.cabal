@@ -124,6 +124,7 @@ test-suite end-to-end
                     , fractalstream-core
                     , fractalstream-ui-headless
                     , hspec
+                    , bytestring
   other-modules:      OverlaySpec
                     , GeometrySpec
                     , TableSpec

@@ -72,7 +72,8 @@ shows the raw text). Defaults are expressions (`2 pi / 3`, `-0.12 + 0.75i`,
 0), has no widget, and is kept when the project is rebuilt if the new
 script declares it the same way (see Tables in §3). The wx app can save
 tables' contents in the .fs file (`tables:` key, asked on save); fsrun
-ignores saved tables, like saved `values:`, so headless runs start empty.
+ignores saved tables (and `values:`), so headless runs start empty, unless
+a scenario runs `load saved table T[, U...]` or `load all saved tables`.
 
 ### `@common`
 

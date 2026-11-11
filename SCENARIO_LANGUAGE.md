@@ -146,6 +146,18 @@ No commands exist for `Motion`/`Resize`/`Pinch`/raw `MouseDown`/
 `MouseUp` -- those event kinds aren't addressable from a tool script's
 `on ...:` headers at all, so there's nothing for a scenario to target.
 
+### Saved tables
+
+| Command | Effect |
+|---|---|
+| `load saved table <T>` | Put back what the project file saved table `T` holding (its `tables:` key, written when the app saves a project with its tables). `load saved tables T, U` loads several. It's an error if the file saved no table by that name, or if the saved table no longer fits the script's (a different type, say). |
+| `load all saved tables` | The same, for every table the file saved; nothing, if it saved none. |
+
+`fsrun` otherwise starts from the script alone: tables start empty, and
+configuration values at the script's defaults, whatever the file saved.
+These commands are how a scenario (or a project's `preview-commands`)
+uses tables that took a tool a long time to fill.
+
 ### Synchronization
 
 | Command | Effect |
