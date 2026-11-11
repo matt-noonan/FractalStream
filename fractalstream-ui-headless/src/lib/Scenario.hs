@@ -79,6 +79,11 @@ data Command
 
   | WaitForViewer String
 
+  | LoadSavedTables (Maybe [String])
+    -- ^ Put back what the project file saved these tables holding
+    -- (@load saved table T@, @load saved tables T, U@), or every table it
+    -- saved ('Nothing': @load all saved tables@).
+
   | CaptureViewer String FilePath
   | CaptureViewerBase String FilePath
   | CaptureViewerAsPreview String Bool
@@ -235,6 +240,11 @@ scenarioGrammar = mdo
   waitForViewer <- rule $
     WaitForViewer <$> (kw "wait" *> kw "for" *> kw "viewer" *> str <* nl)
 
+  tableNames <- rule ((:) <$> ident' <*> many (token Comma *> ident'))
+  loadSavedTables <- rule $
+        (LoadSavedTables . Just <$> (kw "load" *> kw "saved" *> (kw "table" <|> kw "tables") *> tableNames <* nl))
+    <|> (LoadSavedTables Nothing <$ (kw "load" *> kw "all" *> kw "saved" *> kw "tables" <* nl))
+
   captureViewerBase <- rule $
     CaptureViewerBase <$> (kw "capture" *> kw "viewer" *> str) <*> (kw "base" *> kw "to" *> str <* nl)
   captureViewer <- rule $
@@ -276,6 +286,7 @@ scenarioGrammar = mdo
     , clickAt, doubleClickAt, dragFromTo
     , pressButton, triggerRefresh, triggerTimer
     , waitForViewer
+    , loadSavedTables
     , captureViewerBase, captureViewer, captureViewerAsPreview
 
     , assertPixel

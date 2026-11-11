@@ -25,7 +25,8 @@ import Data.Movie (MovieFormat(..))
 import System.FilePath (takeExtension)
 import Data.Char (toLower)
 
-import Actor.Ensemble (Ensemble(..), runEnsemble, ensembleCommonDefs, buildToolContext, layoutToArgs, ensembleFields, FieldOwner(..))
+import Actor.SavedTables (readSavedTables, applySavedTables)
+import Actor.Ensemble (Ensemble(..), runEnsemble, ensembleTables, ensembleCommonDefs, buildToolContext, layoutToArgs, ensembleFields, FieldOwner(..))
 import Actor.Layout (Field(..))
 import Actor.UI (UI(..))
 import Actor.Viewer
@@ -58,6 +59,7 @@ import Control.Exception (SomeException, try, displayException)
 import Codec.Picture (Image, PixelRGBA8(..), imageWidth, imageHeight, pixelAt)
 
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import Data.ByteString (ByteString)
 import Data.IORef
 import System.IO (hPutStrLn, stderr)
@@ -241,6 +243,23 @@ execCommand st = \case
   WaitForViewer name
     | Map.member name (isViewers st) -> pure (Right st)
     | otherwise -> pure (Left ("no viewer named " ++ show name))
+
+  LoadSavedTables mnames -> do
+    props <- getDynamic (ensembleFrontendProperties (isEnsemble st))
+    tables <- ensembleTables (isEnsemble st)
+    case readSavedTables props of
+      Left err -> pure (Left ("the project's saved `tables:` can't be read: " ++ err))
+      Right saved -> case mnames of
+        Nothing -> load saved
+        Just names -> case [ n | n <- names, not (Map.member n saved) ] of
+          [] -> load (Map.restrictKeys saved (Set.fromList names))
+          missing -> pure (Left ("the project file has no saved " ++ plural missing "table" "tables"
+                                 ++ " " ++ intercalate ", " (map (\n -> "`" ++ n ++ "`") missing)))
+        where
+          plural xs one many' = if length xs == 1 then one else many'
+          load which = applySavedTables tables which <&> \case
+            [] -> Right st
+            problems -> Left (intercalate "; " problems)
 
   CaptureViewer name path -> withNamedViewer st name $ \viewer -> do
     r <- withRenderedViewerBuffer viewer True $ \view dims buf -> do

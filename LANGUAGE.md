@@ -1181,8 +1181,10 @@ Saving a project can save what its tables hold, too: when any table holds
 something, the app asks whether to, and says how big they are. A table
 that's saved is put back when the project is opened again, as long as the
 script still declares it with the same name and type. (Running a project
-with `fsrun` doesn't load saved tables, just as it doesn't load saved
-configuration values: it always starts from the script.)
+with `fsrun` starts from the script alone, without the saved tables or
+configuration values, unless a scenario asks for the tables with
+`load saved table T` or `load all saved tables`: see
+[SCENARIO_LANGUAGE.md](SCENARIO_LANGUAGE.md).)
 
 #### Reading a table
 

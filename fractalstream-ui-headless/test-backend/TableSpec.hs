@@ -11,8 +11,11 @@ import Test.Hspec
 
 import Control.Exception (IOException)
 import Data.List (isInfixOf)
+import qualified Data.ByteString.Char8 as BS
 
-import Actor.Ensemble (buildEnsembleFromScript)
+import Actor.Ensemble (Ensemble(..), buildEnsembleFromScript, encodeEnsemble, ensembleTables, parseEnsembleFromBytes)
+import Actor.SavedTables (captureTables, writeSavedTables)
+import Data.DynamicValue (modifyValue)
 import Backend (withBackend)
 import Interpreter (runScenario)
 import Scenario (parseScenario)
@@ -63,8 +66,15 @@ scenario = scenarioIn project
 scenarioIn :: String -> [String] -> Expectation
 scenarioIn proj cmds = do
   ens <- buildEnsembleFromScript proj >>= either (fail . snd) pure
+  scenarioOn ens cmds
+
+scenarioOn :: Ensemble -> [String] -> Expectation
+scenarioOn ens cmds = runOn ens cmds >>= either expectationFailure pure
+
+runOn :: Ensemble -> [String] -> IO (Either String ())
+runOn ens cmds = do
   commands <- either (fail . snd) pure (parseScenario (unlines cmds))
-  withBackend (\backend -> runScenario backend ens commands) >>= either expectationFailure pure
+  withBackend (\backend -> runScenario backend ens commands)
 
 at :: String -> (Int, Int) -> String -> String
 at viewer (x, y) rgb = "assert viewer \"" ++ viewer ++ "\" pixel (" ++ show x ++ ", " ++ show y ++ ") is " ++ rgb ++ " within 1"
@@ -73,7 +83,7 @@ fill :: [String]
 fill = [ "select viewer \"Par\"", "resize viewer to 200x100", "select tool \"Fill\"", "click at 0" ]
 
 spec :: Spec
-spec = tableSpec >> layerSpec >> tupleSpec
+spec = tableSpec >> layerSpec >> tupleSpec >> savedSpec
 
 tableSpec :: Spec
 tableSpec = describe "tables" $ do
@@ -270,3 +280,80 @@ tupleSpec = describe "tables of tuples" $ do
   it "hold nested tuples of mixed sizes" $ scenarioIn tupled $ fillTuples ++
     [ "select tool \"Mixed\"", "click at 0"
     , at "Par" (10, 10) "(51, 102, 153)" ]
+
+-- | The project, saved (as the app saves it) after the given commands,
+-- with its tables, and loaded again.
+savedAfter :: String -> [String] -> IO Ensemble
+savedAfter proj cmds = do
+  ens <- buildEnsembleFromScript proj >>= either (fail . snd) pure
+  scenarioOn ens cmds
+  saved <- captureTables =<< ensembleTables ens
+  modifyValue (ensembleFrontendProperties ens) (writeSavedTables saved)
+  bytes <- encodeEnsemble ens
+  parseEnsembleFromBytes "saved.fs" bytes >>= either fail pure
+
+-- | Two tables, both filled by one tool.
+twoTables :: String
+twoTables = unlines
+  [ "@config \"P\""
+  , "T : Table 2 of C"
+  , "U : Table 2 of R"
+  , "C : C := 0"
+  , ""
+  , "@viewer \"Par\" var=C pixelSize=1/100"
+  , "(w, h) := table_size(T)"
+  , "(w2, h2) := table_size(U)"
+  , "a := if w = 0 then 0 else re(T @ point C)"
+  , "b := if w2 = 0 then 0 else U @ point C"
+  , "color <- rgb(a / 255, b / 255, 0)"
+  , ""
+  , "@tool \"Fill\" for=\"Par\""
+  , "on click at p:"
+  , "  reset T to (viewer_width, viewer_height) filled with 10"
+  , "  reset U to (viewer_width, viewer_height) filled with 20"
+  ]
+
+savedSpec :: Spec
+savedSpec = describe "saved tables" $ do
+  let filled = savedAfter twoTables fill
+      px = at "Par" (50, 50)
+
+  it "aren't loaded unless a scenario asks" $ do
+    ens <- filled
+    scenarioOn ens [ "select viewer \"Par\"", "resize viewer to 200x100", px "(0, 0, 0)" ]
+
+  it "are loaded by name" $ do
+    ens <- filled
+    scenarioOn ens [ "select viewer \"Par\"", "resize viewer to 200x100"
+                   , "load saved table U", px "(0, 20, 0)"
+                   , "load saved tables T, U", px "(10, 20, 0)" ]
+
+  it "are all loaded at once" $ do
+    ens <- filled
+    scenarioOn ens [ "select viewer \"Par\"", "resize viewer to 200x100"
+                   , "load all saved tables", px "(10, 20, 0)" ]
+
+  it "can't be loaded if the file didn't save them" $ do
+    ens <- filled
+    runOn ens [ "load saved tables T, V, W" ] >>= \case
+      Left err -> err `shouldSatisfy` ("no saved tables `V`, `W`" `isInfixOf`)
+      Right () -> expectationFailure "loaded a table that wasn't saved"
+
+  it "load nothing, without complaint, from a file that saved none" $ do
+    ens <- buildEnsembleFromScript twoTables >>= either (fail . snd) pure
+    scenarioOn ens [ "load all saved tables", "select viewer \"Par\"", px "(0, 0, 0)" ]
+
+  it "can't be loaded into a table of another type" $ do
+    ens <- savedAfter twoTables fill
+    bytes <- encodeEnsemble ens
+    let retyped = replaceAll "U : Table 2 of R" "U : Table 2 of Z" bytes
+    ens' <- parseEnsembleFromBytes "retyped.fs" retyped >>= either fail pure
+    runOn ens' [ "load saved table U" ] >>= \case
+      Left err -> err `shouldSatisfy` ("it was saved as a" `isInfixOf`)
+      Right () -> expectationFailure "loaded a table saved with another type"
+
+replaceAll :: String -> String -> BS.ByteString -> BS.ByteString
+replaceAll from to bytes = case BS.breakSubstring (BS.pack from) bytes of
+  (front, rest)
+    | BS.null rest -> front
+    | otherwise -> front <> BS.pack to <> replaceAll from to (BS.drop (length from) rest)

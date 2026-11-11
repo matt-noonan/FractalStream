@@ -234,6 +234,24 @@ parseSpec = describe "parseScenario" $ do
       WaitForViewer n -> n `shouldBe` "Mandelbrot set"
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
+  it "parses load saved table" $
+    onlyCommand [r|load saved table T
+|] $ \case
+      LoadSavedTables ns -> ns `shouldBe` Just ["T"]
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses load saved tables with several names" $
+    onlyCommand [r|load saved tables T, U
+|] $ \case
+      LoadSavedTables ns -> ns `shouldBe` Just ["T", "U"]
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
+  it "parses load all saved tables" $
+    onlyCommand [r|load all saved tables
+|] $ \case
+      LoadSavedTables ns -> ns `shouldBe` Nothing
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
   it "parses capture viewer ... to ..." $
     onlyCommand [r|capture viewer "Mandelbrot set" to "out.png"
 |] $ \case
@@ -369,6 +387,7 @@ describeShape = \case
   TriggerRefresh       -> "TriggerRefresh"
   TriggerTimer{}       -> "TriggerTimer"
   WaitForViewer{}      -> "WaitForViewer"
+  LoadSavedTables{}    -> "LoadSavedTables"
   CaptureViewer{}      -> "CaptureViewer"
   CaptureViewerBase{}  -> "CaptureViewerBase"
   CaptureViewerAsPreview{} -> "CaptureViewerAsPreview"
