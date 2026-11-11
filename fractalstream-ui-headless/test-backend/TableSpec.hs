@@ -73,7 +73,7 @@ fill :: [String]
 fill = [ "select viewer \"Par\"", "resize viewer to 200x100", "select tool \"Fill\"", "click at 0" ]
 
 spec :: Spec
-spec = tableSpec >> layerSpec
+spec = tableSpec >> layerSpec >> tupleSpec
 
 tableSpec :: Spec
 tableSpec = describe "tables" $ do
@@ -209,3 +209,64 @@ layerSpec = describe "tables with layers" $ do
   it "can't be written from a list of the wrong length" $
     scenarioIn layered (fillLayers ++ [ "select tool \"Bad\"", "click at 0.005 - 0.005i" ])
       `shouldThrow` (\e -> "out of range" `isInfixOf` show (e :: IOException))
+
+-- | Tables of tuples: the viewer shows a complex number's parts in red
+-- and green, and an integer in blue; "Mixed" shows a color from a nested
+-- tuple instead.
+tupled :: String
+tupled = unlines
+  [ "@config \"P\""
+  , "T : Table 2 of C x Z"
+  , "Q : Table 1 of (Boolean x (Color x Z))"
+  , "C : C := 0"
+  , "mixed : Boolean := false"
+  , ""
+  , "@viewer \"Par\" var=C pixelSize=1/100"
+  , "(z, k) := T @ point C else (0, 0)"
+  , "n := table_size(Q)"
+  , "(b, (col, m)) := if n = 0 then (false, (black, 0)) else Q @ 2"
+  , "color <- if mixed then (if b and m = 9 then col else red) else rgb(re(z) / 255, im(z) / 255, k / 255)"
+  , ""
+  , "@tool \"Fill\" for=\"Par\""
+  , "on click at p:"
+  , "  reset T to (viewer_width, viewer_height) filled with (10 + 20i, 30)"
+  , "  for each j in range(1, viewer_width):"
+  , "    T @ (j, 1) <- (j + 2i, j)"
+  , ""
+  , "@tool \"Copy row\" for=\"Par\""
+  , "on click at p:"
+  , "  T @ (*, 2) <- T @ (*, 1)"
+  , ""
+  , "@tool \"Grow\" for=\"Par\""
+  , "on click at p:"
+  , "  (w, h) := table_size(T)"
+  , "  resize T to (w, h + 10) filled with (5 + 6i, 7)"
+  , ""
+  , "@tool \"Mixed\" for=\"Par\""
+  , "on click at p:"
+  , "  reset Q to 3 from 0 to 1 filled with (false, (white, 1))"
+  , "  Q @ 2 <- (true, (rgb(0.2, 0.4, 0.6), 9))"
+  , "  mixed <- true"
+  ]
+
+fillTuples :: [String]
+fillTuples = [ "select viewer \"Par\"", "resize viewer to 200x100", "select tool \"Fill\"", "click at 0" ]
+
+tupleSpec :: Spec
+tupleSpec = describe "tables of tuples" $ do
+
+  it "are written and read whole" $ scenarioIn tupled $ fillTuples ++
+    [ at "Par" (10, 10) "(10, 20, 30)", at "Par" (4, 0) "(5, 2, 5)" ]
+
+  it "are copied a slice at a time" $ scenarioIn tupled $ fillTuples ++
+    [ "select tool \"Copy row\"", "click at 0"
+    , at "Par" (4, 1) "(5, 2, 5)", at "Par" (4, 2) "(10, 20, 30)" ]
+
+  it "are resized, filling new cells with a tuple" $ scenarioIn tupled $ fillTuples ++
+    [ "set viewer center to 0 - 0.1i", "select tool \"Grow\"", "click at 0"
+    -- (the view is 10 pixels lower: rows 101 to 110 are new)
+    , at "Par" (10, 89) "(10, 20, 30)", at "Par" (10, 90) "(5, 6, 7)", at "Par" (10, 99) "(5, 6, 7)" ]
+
+  it "hold nested tuples of mixed sizes" $ scenarioIn tupled $ fillTuples ++
+    [ "select tool \"Mixed\"", "click at 0"
+    , at "Par" (10, 10) "(51, 102, 153)" ]

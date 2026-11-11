@@ -16,6 +16,7 @@ import qualified Language.Value.Parser as P
 import qualified Control.Exception as E
 import Data.List (isInfixOf)
 import Data.IORef
+import Data.Color (rgbToColor)
 import Language.Code.Parser (parseCode, noCommonDefs)
 import Language.Code.InterpretIO (interpretToIO)
 import Language.Draw (DrawHandler(..))
@@ -48,7 +49,7 @@ builds :: String -> IO (Either String ())
 builds src = buildEnsembleFromScript src <&> either (Left . snd) (const (Right ()))
 
 spec :: Spec
-spec = readSpec >> writeSpec >> layerSpec
+spec = readSpec >> writeSpec >> layerSpec >> tupleSpec
 
 readSpec :: Spec
 readSpec = describe "tables" $ do
@@ -121,10 +122,14 @@ readSpec = describe "tables" $ do
     builds ("@config \"P\"\nx : C\n" ++ "\n@viewer \"V\"\ncolor <- red\n")
       >>= (`shouldSatisfy` either ("needs a default value" `isInfixOf`) (const False))
 
-  it "hold only numbers, truth values, and colors" $ do
+  it "hold only numbers, truth values, colors, and tuples of them" $ do
     let viewer = "\n@viewer \"V\"\ncolor <- red\n"
     builds ("@config \"P\"\nT : Table 1 of Color\n" ++ viewer) `shouldReturn` Right ()
+    builds ("@config \"P\"\nT : Table 2 of C x Z\n" ++ viewer) `shouldReturn` Right ()
+    builds ("@config \"P\"\nT : Table 2 of (C x (Boolean x Color))\n" ++ viewer) `shouldReturn` Right ()
     builds ("@config \"P\"\nT : Table 1 of Text\n" ++ viewer) >>= (`shouldSatisfy` isLeft)
+    builds ("@config \"P\"\nT : Table 1 of C x Text\n" ++ viewer) >>= (`shouldSatisfy` isLeft)
+    builds ("@config \"P\"\nT : Table 1 of List of C\n" ++ viewer) >>= (`shouldSatisfy` isLeft)
 
 -- | Run some code with a 2-dimensional real table `T` and a real `x`,
 -- giving back their final values.
@@ -354,3 +359,100 @@ layerSpec = describe "tables with more than two dimensions" $ do
       , "  T @ (*, *, m) <- T @ (*, *, m + 1)"
       , "resize T to (w, h, n - 1)" ])
     readSlice RealType t [Fixed 1, Fixed 1, Every] `shouldBe` Just [1, 3, 4]
+
+------------------------------------------------------------------------
+-- Tables of tuples
+
+type PEnv = '[ '("T", 'TableT 2 ('Pair 'ComplexT 'IntegerT)), '("x", 'ComplexT), '("n", 'IntegerT)
+             , '("xs", 'ListT ('Pair 'ComplexT 'IntegerT)) ]
+
+pairType :: TypeProxy ('Pair 'ComplexT 'IntegerT)
+pairType = PairType ComplexType IntegerType
+
+tableTypeP :: TypeProxy ('TableT 2 ('Pair 'ComplexT 'IntegerT))
+tableTypeP = TableType natSing pairType
+
+pairEnv :: EnvironmentProxy PEnv
+pairEnv = declare @"T" tableTypeP $ declare @"x" ComplexType $ declare @"n" IntegerType
+        $ declare @"xs" (ListType pairType) endOfDecls
+
+-- | Run some code with a table of pairs `T`, a complex `x`, an integer
+-- `n` and a list of pairs `xs`, giving back their final values.
+runP :: Table -> String -> IO (Table, Complex Double, Int64, [(Complex Double, Int64)])
+runP t src = do
+  tRef <- newIORef t
+  xRef <- newIORef 0
+  nRef <- newIORef 0
+  xsRef <- newIORef []
+  let refs = Bind (Proxy @"T") tableTypeP tRef $ Bind (Proxy @"x") ComplexType xRef
+           $ Bind (Proxy @"n") IntegerType nRef $ Bind (Proxy @"xs") (ListType pairType) xsRef EmptyContext
+  code <- either (fail . (`ppFullError` src)) pure (parseCode pairEnv noCommonDefs src)
+  _ <- execStateT (interpretToIO (DrawHandler (const (pure ()))) code) refs
+  (,,,) <$> readIORef tRef <*> readIORef xRef <*> readIORef nRef <*> readIORef xsRef
+
+tupleSpec :: Spec
+tupleSpec = describe "tables of tuples" $ do
+
+  it "lay tuples out as lists do, each in a slot of a multiple of 8 bytes" $ do
+    elementSize pairType `shouldBe` Just 24
+    elementSize (PairType BooleanType BooleanType) `shouldBe` Just 16
+    elementSize (PairType IntegerType (PairType ComplexType IntegerType)) `shouldBe` Just 32
+    elementSize (PairType ColorType RealType) `shouldBe` Just 16
+
+  it "are written and read a whole tuple at a time" $ do
+    Just t0 <- newTable pairType [0, 0] (0, 0) (1, 1)
+    (t, x, n, _) <- runP t0 (unlines
+      [ "reset T to (3, 2) from 0 to 3 - 2i filled with (0, -1)"
+      , "T @ (2, 1) <- (1 + 2i, 7)"
+      , "(z, k) := T @ (2, 1)"
+      , "(z2, m) := T @ (3, 2)"
+      , "x <- z"
+      , "n <- k + 10 m" ])
+    x `shouldBe` (1 :+ 2)
+    n `shouldBe` (7 - 10)
+    readCell pairType t [1, 2] `shouldBe` Just (0, -1)
+
+  it "keep the parts of neighboring tuples apart" $ do
+    Just t <- newTable (PairType BooleanType (PairType ColorType IntegerType)) [4] (0, 0) (1, 1)
+    forM_ [1 .. 4] $ \j -> writeCell (PairType BooleanType (PairType ColorType IntegerType)) t [j]
+                                      (odd j, (rgbToColor (fromIntegral j, 2, 3), fromIntegral (100 * j)))
+    map (fmap (\(b, (_, k)) -> (b, k)) . readCell (PairType BooleanType (PairType ColorType IntegerType)) t . pure) [1 .. 4]
+      `shouldBe` [Just (True, 100), Just (False, 200), Just (True, 300), Just (False, 400)]
+
+  it "are read at a point, and in slices, as lists of tuples" $ do
+    Just t0 <- newTable pairType [0, 0] (0, 0) (1, 1)
+    (_, x, _, xs) <- runP t0 (unlines
+      [ "reset T to (2, 2) from 0 to 2 - 2i"
+      , "T @ (1, 2) <- (i, 1)"
+      , "T @ (2, 2) <- (2i, 2)"
+      , "(z, k) := T @ point (1.5 - 1.5i) else (0, 0)"
+      , "x <- z"
+      , "xs <- T @ (*, 2)" ])
+    x `shouldBe` (0 :+ 2)
+    xs `shouldBe` [(0 :+ 1, 1), (0 :+ 2, 2)]
+
+  it "fit a fallback or another branch to their tuples" $ do
+    Just t0 <- newTable pairType [0, 0] (0, 0) (1, 1)
+    (_, x, n, _) <- runP t0 (unlines
+      [ "reset T to (2, 2) from 0 to 2 - 2i filled with (i, 3)"
+      , "(z, k) := T @ point (9 + 0i) else (0, 4)"
+      , "(w, m) := if k = 4 then (0, 1) else T @ (1, 1)"
+      , "x <- z + w"
+      , "n <- 10 k + m" ])
+    x `shouldBe` 0
+    n `shouldBe` 41
+
+  it "are written from lists of tuples, copied, and resized" $ do
+    Just t0 <- newTable pairType [0, 0] (0, 0) (1, 1)
+    (t, _, _, _) <- runP t0 (unlines
+      [ "reset T to (2, 2) from 0 to 2 - 2i"
+      , "T @ (*, 1) <- [(1, 1), (2, 2)]"
+      , "T @ (*, 2) <- T @ (*, 1)"
+      , "resize T to (3, 2) filled with (9, 9)" ])
+    readSlice pairType t [Every, Fixed 2] `shouldBe` Just [(1, 1), (2, 2), (9, 9)]
+
+  it "need whole tuples written to them" $ do
+    let bad src = first (const ()) (parseCode pairEnv noCommonDefs src) `shouldSatisfy` isLeft
+    bad "T @ (1, 1) <- 1"
+    bad "T @ (1, 1) <- (1, 2, 3)"
+    bad "reset T to (2, 2) from 0 to 1 filled with 0"

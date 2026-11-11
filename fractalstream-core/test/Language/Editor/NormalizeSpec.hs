@@ -50,6 +50,8 @@ spec = describe "normalizing scripts" $ do
   it "writes types with blackboard letters, but only types" $ do
     normalize "C : C := 0" `shouldBe` "C : ℂ ≔ 0"
     normalize "xs : List of Z := []" `shouldBe` "xs : List of ℤ ≔ []"
+    normalize "T : Table 2 of (C x Z)" `shouldBe` "T : Table 2 of (ℂ × ℤ)"
+    normalize "T : Table 2 of C x Z" `shouldBe` "T : Table 2 of ℂ × ℤ"
     normalize "p : R x C := (0, 0)" `shouldBe` "p : ℝ × ℂ ≔ (0, 0)"
     normalize "p : R × C x Z := (0, 0, 1)" `shouldBe` "p : ℝ × ℂ × ℤ ≔ (0, 0, 1)"
     normalize "q <- (k : Real)" `shouldBe` "q ⟵ (k : ℝ)"

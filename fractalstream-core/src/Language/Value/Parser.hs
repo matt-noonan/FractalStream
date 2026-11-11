@@ -106,13 +106,22 @@ typeGrammar = mdo
     , tableType
     ]
 
-  -- `Table 2 of C`: a table of scalars, with some number of dimensions
+  -- `Table 2 of C`: a table of scalars, or tuples of them (`Table 2 of
+  -- C x Z`, or `Table 2 of (C x Z)`), with some number of dimensions
   tableType <- rule
     (TableT <$> (token (Identifier "Table") *> dimension) <*> (token (Identifier "of") *> tableElementType))
 
-  tableElementType <- rule $ tokenMatch $ \case
-    Identifier t | Just ft <- Map.lookup t types, isTableElementType ft -> Just ft
-    _ -> Nothing
+  tableElementType <- ruleChoice
+    [ Pair <$> (tableScalar <* (token (Identifier "x") <|> token Times)) <*> tableElementType
+    , tableScalar
+    ]
+
+  tableScalar <- ruleChoice
+    [ tokenMatch $ \case
+        Identifier t | Just ft <- Map.lookup t types, isTableElementType ft -> Just ft
+        _ -> Nothing
+    , token OpenParen *> tableElementType <* token CloseParen
+    ]
 
   dimension <- rule $ tokenMatch $ \case
     NumberI n | n >= 1 -> Just (fromIntegral n)

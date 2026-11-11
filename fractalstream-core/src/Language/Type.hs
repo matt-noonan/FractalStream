@@ -276,7 +276,7 @@ ppType = \case
   VoidType     -> "Unit"
   ImageType    -> "Image"
   TextType     -> "Text"
-  PairType{}   -> error "TODO"
+  PairType a b -> "(" ++ ppType a ++ " × " ++ ppType b ++ ")"
   ListType t   -> "List of " ++ ppType t
   TableType n t -> "Table " ++ show (TN.fromSNat n) ++ " of " ++ ppType t
 

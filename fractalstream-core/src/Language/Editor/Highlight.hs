@@ -288,6 +288,7 @@ lineSpans s defs l
 
     identifier n before before2
       | n `Set.member` typeNames || n == "List" || n == "Table", maybe False inTypePosition before = TypeName
+      | n `Set.member` typeNames, before == Just OpenParen, maybe False inTypePosition before2 = TypeName
       | n == "of", before == Just (Identifier "List") = TypeName
       | n == "of", Just (NumberI _) <- before, before2 == Just (Identifier "Table") = TypeName
       | n == "x", Just (Identifier b) <- before, b `Set.member` typeNames = TypeName

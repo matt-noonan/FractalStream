@@ -1165,7 +1165,8 @@ from neighboring points. A tool fills a table in, and every viewer can
 read it.
 
 A table can hold integers, reals, complex numbers, truth values, or
-colors, in any number of dimensions (`Table 1 of R`, `Table 3 of Z`, ...).
+colors, or tuples of them, in any number of dimensions (`Table 1 of R`,
+`Table 3 of Z`, `Table 2 of C x Z`, ...).
 It's declared in `@config`, without a default value, since it starts out
 empty (with size 0). It has no field in the configuration window, and it
 isn't saved with the project, though it's kept when the project is rebuilt
@@ -1245,6 +1246,24 @@ in yet has size 0:
 (w, h) := table_size(saddle)
 color <- if w = 0 then grey else ...
 ```
+
+#### Tables of tuples
+
+A table of tuples, like a `Table 2 of C x Z` (or `Table 2 of (C x Z)`),
+holds a tuple in each cell, which is read and written whole. Take one
+apart as you would any tuple:
+
+```
+@config "Critical points"
+crits : Table 2 of C x Z    # a critical point, and whether it was found
+
+@viewer "c plane" var=c
+(crit, found) := crits @ point c else (0, 0)
+```
+
+and write it with a tuple, as in `crits @ (j, k) <- (w, 1)`. There's no
+way yet to write just one part of a cell's tuple: read the cell, and
+write it back with that part changed.
 
 #### Slices
 
