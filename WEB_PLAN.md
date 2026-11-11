@@ -184,7 +184,7 @@ wasmtime.
   compare with desktop. The end-to-end suite is skipped on wasm until
   Backend.Wasm exists, because its full-size renders take too long with
   the interpreter.
-- [ ] **0g.** The heart of Backend.Wasm, under Node: Haskell (in the wasm
+- [x] **0g.** The heart of Backend.Wasm, under Node: Haskell (in the wasm
   engine) emits the bytes of a small Mandelbrot kernel module, loads it
   through the JavaScript FFI (`WebAssembly.instantiate`), runs it over a
   block of pixels, and reads the result. Time it against LLVM, on one
@@ -268,6 +268,55 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-11: spike 0g (a generated kernel, under Node)
+
+Code: `dev-tools/wasm/kernel-spike/` on branch `spike/wasm-kernel`
+(`run.sh [size...]`). The engine (a reactor module using JSFFI) encodes
+a 321-byte Mandelbrot kernel itself (basic_mandelbrot's region, 100
+iterations, escape radius 10), loads it with `new WebAssembly.Module`
+plus `new WebAssembly.Instance` through a synchronous JSFFI import
+(0.07 ms), and runs it with the engine's own memory imported as
+`env.memory`, so the kernel writes pixels straight into a Haskell
+buffer.
+
+- **Single thread: native speed.** Warm times:
+
+  | Size | Generated wasm | Native C `-O2` | Compiled Haskell in wasm |
+  |---|---|---|---|
+  | 600² | 6.5 ms | 12–16 ms | 6.3 ms |
+  | 2400² | 104 ms | 101 ms | 100 ms |
+  | 4800² | 414 ms | 401 ms | 397 ms |
+
+  The pixels are identical to the Haskell version's, and to C's once C's
+  fused multiply-adds are off (`-ffp-contract=off`). We'll want FMA off
+  in the generated code too, to match the LLVM backend.
+- **First call about 3× slower** (2400²: 328 ms, then 104). V8 starts a
+  new module on its baseline compiler and switches to the optimizing
+  one. Only the first render with a new kernel pays this; whether it can
+  be avoided (say, by warming up on a tiny block) is a Phase 2 question.
+- **Workers scale well.** One shared `WebAssembly.Memory` and an
+  instance of the kernel per Node worker, rendering 16-row bands from a
+  queue, then copied into the engine's memory. 4800²: 420 ms on 1
+  worker, 217 on 2, 116 on 4, 78 on 8, 67 on 10, on 4 performance and
+  6 efficiency cores. The engine's own memory can't be shared, so the
+  workers' kernels import a separate shared memory (the module declares
+  it `shared`, with a maximum).
+- **Bands need the image's origin.** Starting each band at
+  `y0 - row * step` changed 2 of 5,760,000 pixels by rounding. The
+  backend should compute every pixel's coordinate from the image origin
+  and its index, not by stepping from the band's start. (The current
+  block API passes each block its own start point, so R3 should address
+  this.)
+- **Async JSFFI results are lazy:** a render's result has to be forced
+  (`evaluate`) before the next one starts, or they overlap.
+- **JSFFI setup notes:** link with `-no-hs-main
+  -optl-mexec-model=reactor -optl-Wl,--export=...`, then run
+  `post-link.mjs`. Node's WASI needs a non-empty `args` (a program name),
+  or the RTS exits during `_initialize`.
+
+**Conclusion:** Backend.Wasm is viable. Its kernels run at native speed
+and scale across workers, so Phase 2 can go ahead as planned.
 
 ### 2026-11-11: spike 0b (running under wasmtime), in progress
 
