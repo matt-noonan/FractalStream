@@ -273,20 +273,24 @@ Record spike results and surprises here, newest first.
   any usable web app, or the interpreter needs a much faster design (for
   example compiling `Code` to closures once, rather than a state monad
   over freshly allocated `IORef`s for every pixel).
-- **Tests:** all four suites build for wasm. That needs a *native*
-  `hspec-discover` on `PATH` (cabal builds the tool for wasm otherwise),
-  and cabal caches the search path when it first configures a suite, so
-  suites configured without it must be reconfigured. Still to go into
-  `dev-tools/wasm/build.sh`.
-  - Headless `spec`: 43 examples, 0 failures.
-  - Core and library `spec`: crash with `ffi_alloc_prep_closure failed`
-    in `createAdjustor`. `foreign import ccall "wrapper"` (making a C
-    function pointer from a Haskell function) doesn't work on wasm. The
-    only one outside the LLVM backend and wx is `Actor.Autocolor`'s
-    callback for the C cache's "add a point". Fix to discuss: on wasm,
-    drop the callback (misses queued and inserted from Haskell, much as
-    planned for Backend.Wasm anyway) or skip the C cache entirely.
-  - End-to-end suite: results not recorded yet.
+- **Tests:** all four suites build for wasm (`dev-tools/wasm/build.sh
+  --enable-tests ...`; it builds a native `hspec-discover` once, since
+  cabal would build that tool for wasm). Run each from its package's
+  folder: `wasmtime run --dir=.. --dir=. --dir=/tmp <suite>.wasm`.
+  - Core `spec`: 576 examples, 6 failures, in about 10 s. The 6 are
+    golden files that #146 left stale (the desktop fails the same six),
+    and #146's Böttcher project has no golden yet. The golden the wasm run
+    writes for it is identical to the desktop's.
+  - Library `spec`: 45 examples, 0 failures. Headless `spec`: 43, 0.
+  - The autocolor stress test passes on the single-threaded RTS.
+  - What fixed the core and library crashes: `foreign import ccall
+    "wrapper"` doesn't work on wasm, and `Actor.Autocolor` used one for
+    the C cache's "add a point" callback. On wasm the cache now has no
+    callback, and `fs_ac_lookup` gives magenta rather than call it.
+    Nothing on wasm uses the cache yet.
+  - End-to-end suite: its renders are full size, so with the interpreter
+    the run took over 50 minutes and I stopped it (it had reached
+    `tables`, all passing). It needs reduced resolutions first.
 
 ### 2026-11-11: spike 0a (build with GHC-wasm)
 
