@@ -69,8 +69,10 @@ of the declared type (`List of C` shows as `1, 2, i` without brackets; `Text`
 shows the raw text). Defaults are expressions (`2 pi / 3`, `-0.12 + 0.75i`,
 `[0, 1, i]`, `dark blue`) and can't refer to other variables. A table,
 `T : Table 2 of C`, is declared with *no* default (it starts empty, size
-0), has no widget, and isn't saved, though it's kept when the project is
-rebuilt if the new script declares it the same way (see Tables in §3).
+0), has no widget, and is kept when the project is rebuilt if the new
+script declares it the same way (see Tables in §3). The wx app can save
+tables' contents in the .fs file (`tables:` key, asked on save); fsrun
+ignores saved tables, like saved `values:`, so headless runs start empty.
 
 ### `@common`
 

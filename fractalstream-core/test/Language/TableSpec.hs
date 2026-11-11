@@ -16,6 +16,7 @@ import qualified Language.Value.Parser as P
 import qualified Control.Exception as E
 import Data.List (isInfixOf)
 import Data.IORef
+import qualified Data.ByteString as BS
 import Data.Color (rgbToColor)
 import Language.Code.Parser (parseCode, noCommonDefs)
 import Language.Code.InterpretIO (interpretToIO)
@@ -49,7 +50,7 @@ builds :: String -> IO (Either String ())
 builds src = buildEnsembleFromScript src <&> either (Left . snd) (const (Right ()))
 
 spec :: Spec
-spec = readSpec >> writeSpec >> layerSpec >> tupleSpec
+spec = readSpec >> writeSpec >> layerSpec >> tupleSpec >> packSpec
 
 readSpec :: Spec
 readSpec = describe "tables" $ do
@@ -456,3 +457,36 @@ tupleSpec = describe "tables of tuples" $ do
     bad "T @ (1, 1) <- 1"
     bad "T @ (1, 1) <- (1, 2, 3)"
     bad "reset T to (2, 2) from 0 to 1 filled with 0"
+
+packSpec :: Spec
+packSpec = describe "packing tables, for saving" $ do
+
+  it "packs each element's parts with no padding, little-endian" $ do
+    Just t <- newTable pairType [2, 1] (0, 0) (1, 1)
+    _ <- writeCell pairType t [1, 1] (1.5 :+ (-2), 7)
+    _ <- writeCell pairType t [2, 1] (0 :+ 0, -1)
+    packedElementSize pairType `shouldBe` Just 20
+    Just bytes <- pure (packTable pairType t)
+    BS.length bytes `shouldBe` 40
+    -- (1.5 is 0x3FF8000000000000; -2 is 0xC000000000000000)
+    BS.unpack (BS.take 20 bytes) `shouldBe`
+      [0, 0, 0, 0, 0, 0, 0xF8, 0x3F, 0, 0, 0, 0, 0, 0, 0, 0xC0, 7, 0, 0, 0]
+    BS.unpack (BS.drop 36 bytes) `shouldBe` [0xFF, 0xFF, 0xFF, 0xFF]
+
+  it "unpacks what it packed, for any element type" $ do
+    let nested = PairType BooleanType (PairType ColorType IntegerType)
+    packedElementSize nested `shouldBe` Just 8
+    Just t <- newTable nested [3, 2, 2] (-1, 2) (0.5, 0.25)
+    forM_ [ [j, k, l] | j <- [1 .. 3], k <- [1, 2], l <- [1, 2] ] $ \ixs -> let (j, k, l) = (ixs !! 0, ixs !! 1, ixs !! 2) in
+      writeCell nested t ixs (odd (j + k + l), (rgbToColor (fromIntegral j, fromIntegral (10 * k), 200), fromIntegral (j - 5 * l)))
+    Just bytes <- pure (packTable nested t)
+    Right t' <- unpackTable nested [3, 2, 2] (-1, 2) (0.5, 0.25) bytes
+    tableDims t' `shouldBe` [3, 2, 2]
+    tableOrigin t' `shouldBe` (-1, 2)
+    tableStep t' `shouldBe` (0.5, 0.25)
+    forM_ [ [j, k, l] | j <- [1 .. 3], k <- [1, 2], l <- [1, 2] ] $ \ixs ->
+      readCell nested t' ixs `shouldBe` readCell nested t ixs
+
+  it "refuses data of the wrong length" $ do
+    r <- unpackTable RealType [2, 2] (0, 0) (1, 1) (BS.replicate 31 0)
+    either id (const "") r `shouldSatisfy` ("expected 32 bytes" `isInfixOf`)

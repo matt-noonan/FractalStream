@@ -9,7 +9,10 @@ import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Script (overlayDrawLayer)
 import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..), Field(..), layoutTables)
-import Language.Table (newTable, tableCellCount)
+import Language.Table (newTable, tableCellCount, writeCell, readCell, tableDims, tableOrigin)
+import Actor.SavedTables
+import Data.IORef (newIORef, readIORef, modifyIORef')
+import Data.Complex (Complex(..))
 import Actor.SavedValues
 import qualified Data.Map as Map
 import Data.Color (red, blue)
@@ -758,6 +761,78 @@ on refresh:
       (getDynamic . dyn =<< tableNamed new "T") >>= (`shouldBe` t)
       (tableCellCount <$> (getDynamic . dyn =<< tableNamed new "U")) >>= (`shouldBe` 0)
       (tableCellCount <$> (getDynamic . dyn =<< tableNamed new "W2")) >>= (`shouldBe` 0)
+
+    it "saves the tables that aren't empty, and puts them back from the \
+       \project file" $ do
+      let src = unlines
+            [ "@config \"Configuration\""
+            , "T : Table 3 of C x Z"
+            , "B : Table 1 of Boolean"
+            , "E : Table 2 of R"
+            , "@viewer \"V\" var=z"
+            , "pass" ]
+          tableNamed ens n = ensembleTables ens >>= \ts -> case [ v | (n', _, v) <- ts, n' == n ] of
+            v : _ -> pure v
+            [] -> fail ("no table named " ++ n)
+          pairT = PairType ComplexType IntegerType
+      Right ens <- buildEnsembleFromScript src
+      Just t <- newTable pairT [2, 3, 2] (-1, 1) (0.5, 0.5)
+      forM_ [ [j, k, l] | j <- [1, 2], k <- [1 .. 3], l <- [1, 2] ] $ \ixs -> let (j, k, l) = (ixs !! 0, ixs !! 1, ixs !! 2) in
+        writeCell pairT t ixs (fromIntegral j :+ fromIntegral k, fromIntegral l)
+      Just b <- newTable BooleanType [3] (0, 0) (1, 1)
+      _ <- writeCell BooleanType b [2] True
+      tableNamed ens "T" >>= \v -> setValue' v t
+      tableNamed ens "B" >>= \v -> setValue' v b
+      saved <- ensembleTables ens >>= captureTables
+      Map.keys saved `shouldBe` ["B", "T"]
+      fmap stType (Map.lookup "T" saved) `shouldBe` Just "Table 3 of (ℂ × ℤ)"
+      summaries <- ensembleTables ens >>= summarizeTables
+      summaries `shouldMatchList` [TableSummary "T" [2, 3, 2] (12 * 20), TableSummary "B" [3] 3]
+      modifyValue (ensembleFrontendProperties ens) (writeSavedTables saved)
+      bytes <- encodeEnsemble ens
+      Right loaded <- parseEnsembleFromBytes "saved.fs" bytes
+      props <- getDynamic (ensembleFrontendProperties loaded)
+      Right fromFile <- pure (readSavedTables props)
+      fromFile `shouldBe` saved
+      warnings <- ensembleTables loaded >>= \ts -> applySavedTables ts fromFile
+      warnings `shouldBe` []
+      t' <- getDynamic . dyn =<< tableNamed loaded "T"
+      tableDims t' `shouldBe` [2, 3, 2]
+      tableOrigin t' `shouldBe` (-1, 1)
+      forM_ [ [j, k, l] | j <- [1, 2], k <- [1 .. 3], l <- [1, 2] ] $ \ixs ->
+        readCell pairT t' ixs `shouldBe` readCell pairT t ixs
+      b' <- getDynamic . dyn =<< tableNamed loaded "B"
+      map (readCell BooleanType b' . pure) [1, 2, 3] `shouldBe` map Just [False, True, False]
+      -- (an empty table isn't saved, and no saved tables means no key)
+      (tableCellCount <$> (getDynamic . dyn =<< tableNamed loaded "E")) >>= (`shouldBe` 0)
+      KM.member "tables" (writeSavedTables Map.empty props) `shouldBe` False
+
+    it "skips a saved table that no longer fits the project, with a warning" $ do
+      Right old <- buildEnsembleFromScript (unlines
+        [ "@config \"Configuration\"", "T : Table 1 of R", "U : Table 1 of R", "W : Table 1 of R"
+        , "@viewer \"V\" var=z", "pass" ])
+      Right new <- buildEnsembleFromScript (unlines
+        [ "@config \"Configuration\"", "T : Table 1 of Z", "W : Table 1 of R"
+        , "@viewer \"V\" var=z", "pass" ])
+      Just t <- newTable RealType [4] (0, 0) (1, 1)
+      ensembleTables old >>= mapM_ (\(_, _, v) -> setValue' v t)
+      saved <- ensembleTables old >>= captureTables
+      let damaged = Map.adjust (\st -> st { stSize = [5] }) "W" saved
+      warnings <- ensembleTables new >>= \ts -> applySavedTables ts damaged
+      warnings `shouldMatchList`
+        [ "ignoring the saved table `T`: it was saved as a Table 1 of ℝ, but it's now a Table 1 of ℤ"
+        , "ignoring the saved table `U`, which the project no longer has"
+        , "ignoring the saved table `W`: expected 40 bytes of data for a table of size [5], but there are 32" ]
+
+    it "counts a change to a table as a change to the project's values" $ do
+      Right ens <- buildEnsembleFromScript (unlines
+        [ "@config \"Configuration\"", "T : Table 1 of R", "@viewer \"V\" var=z", "pass" ])
+      changes <- newIORef (0 :: Int)
+      stop <- watchValues ens (modifyIORef' changes (+ 1))
+      Just t <- newTable RealType [4] (0, 0) (1, 1)
+      ensembleTables ens >>= mapM_ (\(_, _, v) -> setValue' v t)
+      readIORef changes >>= (`shouldSatisfy` (> 0))
+      stop
 
     it "saves the configuration values that differ from the script's \
        \defaults (by value), and puts them back, along with tools' values" $ do

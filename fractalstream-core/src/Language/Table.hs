@@ -39,6 +39,10 @@ module Language.Table
     -- * Resizing
   , resizeTable
   , resizeTableBytes
+    -- * Packing, for saving
+  , packedElementSize
+  , packTable
+  , unpackTable
   ) where
 
 import FractalStream.Prelude
@@ -54,6 +58,11 @@ import Foreign.Marshal.Alloc (allocaBytes)
 import Data.IORef (newIORef, writeIORef, readIORef)
 import Foreign.Storable (peekByteOff, pokeByteOff)
 import System.IO.Unsafe (unsafePerformIO)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BSI
+import qualified Data.ByteString.Unsafe as BSU
+import GHC.ByteOrder (ByteOrder(..), targetByteOrder)
 
 -- | The types a table can hold: numbers, truth values, colors, and
 -- tuples of them.
@@ -366,3 +375,77 @@ resizeTableBytes size t dims fill
                 copyBytes (d `plusPtr` (offset dims * size)) (s `plusPtr` (offset old * size)) (run * size)
           _ -> pure ()
       pure (Just t')
+
+------------------------------------------------------------------------
+-- Packing, for saving
+
+-- | Where each of an element's parts is in its slot, in order, as an
+-- offset and a size in bytes: one part for a number, a truth value, or a
+-- color, and a tuple's parts after one another.
+elementParts :: TypeProxy t -> Maybe [(Int, Int)]
+elementParts = \case
+  PairType a b -> do
+    off <- secondOffset a
+    (++) <$> elementParts a <*> (map (\(o, n) -> (o + off, n)) <$> elementParts b)
+  ty -> (\n -> [(0, n)]) <$> elementDataSize ty
+
+-- | How many bytes an element takes packed: its parts, with no padding.
+packedElementSize :: TypeProxy t -> Maybe Int
+packedElementSize ty = sum . map snd <$> elementParts ty
+
+-- | A table's elements, packed: each element's parts in order, with no
+-- padding between them, the first index varying fastest. Numbers are
+-- little-endian, as they're laid out in memory on the machines
+-- FractalStream runs on. ('Nothing' if the type can't be in a table, or
+-- on a big-endian machine.)
+packTable :: TypeProxy t -> Table -> Maybe ByteString
+packTable ty t = do
+  guard (targetByteOrder == LittleEndian)
+  size <- elementSize ty
+  parts <- elementParts ty
+  let packed = sum (map snd parts)
+      cells = tableCellCount t
+  pure $ unsafePerformIO $ withForeignPtr (tableBuffer t) $ \src ->
+    BSI.create (packed * cells) $ \dst ->
+      forM_ [0 .. cells - 1] $ \cell ->
+        foldM_ (\at (off, n) -> do
+                  copyBytes (dst `plusPtr` (cell * packed + at)) (src `plusPtr` (cell * size + off)) n
+                  pure (at + n))
+               0 parts
+
+-- | A table of the given size, origin, and cell step, from its packed
+-- elements (as 'packTable' packs them), or why it can't be.
+unpackTable :: TypeProxy t -> [Int] -> (Double, Double) -> (Double, Double) -> ByteString
+            -> IO (Either String Table)
+unpackTable ty dims origin step bytes
+  | targetByteOrder /= LittleEndian = pure (Left "tables can't be loaded on a big-endian machine")
+  | any (< 0) dims = pure (Left "a table's size can't be negative")
+  | otherwise = case (,) <$> elementSize ty <*> elementParts ty of
+      Nothing -> pure (Left "that type can't be in a table")
+      Just (size, parts) -> do
+        let packed = sum (map snd parts)
+            cells = product dims
+        if BS.length bytes /= packed * cells
+          then pure (Left ("expected " ++ show (packed * cells) ++ " bytes of data for a table of size "
+                           ++ show dims ++ ", but there are " ++ show (BS.length bytes)))
+          else do
+            t <- newTableBytes size dims origin step
+            withForeignPtr (tableBuffer t) $ \dst -> BSU.unsafeUseAsCString bytes $ \src ->
+              forM_ [0 .. cells - 1] $ \cell ->
+                foldM_ (\at (off, n) -> do
+                          copyBytes (dst `plusPtr` (cell * size + off)) (src `plusPtr` (cell * packed + at)) n
+                          pure (at + n))
+                       0 parts
+            -- (a truth value is 1 or 0, whatever the data's byte was)
+            forM_ (boolOffsets ty) $ \off -> withForeignPtr (tableBuffer t) $ \p ->
+              forM_ [0 .. cells - 1] $ \cell -> do
+                let q = p `plusPtr` (cell * size + off)
+                b <- peekByteOff q 0 :: IO Word8
+                pokeByteOff q 0 (if b /= 0 then 1 else 0 :: Word8)
+            pure (Right t)
+  where
+    boolOffsets :: TypeProxy t -> [Int]
+    boolOffsets = \case
+      BooleanType -> [0]
+      PairType a b -> boolOffsets a ++ maybe [] (\off -> map (+ off) (boolOffsets b)) (secondOffset a)
+      _ -> []

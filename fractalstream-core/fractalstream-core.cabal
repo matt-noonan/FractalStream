@@ -81,6 +81,7 @@ library
                        Actor.Movie
                        Actor.Metadata
                        Actor.SavedValues
+                       Actor.SavedTables
                        FractalStream.Settings
                        FractalStream.Quoted
                        FractalStream.Console
