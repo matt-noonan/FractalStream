@@ -1,4 +1,23 @@
 === viewer 0: Roots of f
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = tol in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `lastZ` = 0:R:C in:
+                        block:
+                          let `col` = Color 255 255 0 in:
+                            block:
+                              set `[hoisted] lastZ` := lastZ
+                              set `[hoisted] col` := col
+
 --- body
 let `[internal] vanishing radius` = tol in:
   let `[internal] escape radius` = escape_radius in:
@@ -25,21 +44,21 @@ let `[internal] vanishing radius` = tol in:
                   else:
                     no-op
                   block:
-                    let `lastZ` = 0:R:C in:
+                    let `lastZ` = [hoisted] lastZ in:
                       block:
-                        let `[internal] fresh #36` = 0 in:
-                          let `[internal] fresh #37` = [internal] iteration limit in:
-                            block:
-                              do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #36 < [internal] fresh #37)):
-                                block:
-                                  block:
-                                    set `lastZ` := z
-                                    set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - a) * ([internal] f.z #1 - b)) * ([internal] f.z #1 - c)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - c) * (([internal] f'.z #2 - b) + ([internal] f'.z #2 - a))) + (([internal] f'.z #2 - a) * ([internal] f'.z #2 - b)))))
-                                  set `[internal] fresh #36` := ([internal] fresh #36 + 1)
-                              set `[internal] iteration count` := [internal] fresh #36
-                              set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
-                        let `col` = Color 255 255 0 in:
+                        let `col` = [hoisted] col in:
                           block:
+                            let `[internal] fresh #39` = 0 in:
+                              let `[internal] fresh #40` = [internal] iteration limit in:
+                                block:
+                                  do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #39 < [internal] fresh #40)):
+                                    block:
+                                      block:
+                                        set `lastZ` := z
+                                        set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - a) * ([internal] f.z #1 - b)) * ([internal] f.z #1 - c)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - c) * (([internal] f'.z #2 - b) + ([internal] f'.z #2 - a))) + (([internal] f'.z #2 - a) * ([internal] f'.z #2 - b)))))
+                                      set `[internal] fresh #39` := ([internal] fresh #39 + 1)
+                                  set `[internal] iteration count` := [internal] fresh #39
+                                  set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
                             if (|(z - a)| < [internal] vanishing radius) then:
                               block:
                                 set `col` := Color 255 0 0

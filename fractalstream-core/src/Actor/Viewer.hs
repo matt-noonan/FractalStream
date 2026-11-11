@@ -10,6 +10,8 @@ module Actor.Viewer
   , InternalViewerEnv
   , MissingViewerArgs
   , SomeViewerWithContext(..)
+  , hoistViewerCode
+  , hoistedViewerFunction
   , PrepScript(..)
   , PrepArrayPtr
   , PrepArrays(..)
@@ -53,7 +55,18 @@ import Actor.Layout (Dimensions(..))
 import Actor.Tool
 import Actor.Event ( ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript
                    , Coordinate(..), ViewKind(..), bindOrDeclare, RealIn(..), bindFreshReals
-                   , pixelWidthVar, pixelHeightVar, PixelDims, ToolDispatcher )
+                   , pixelWidthVar, pixelHeightVar, PixelDims, ToolDispatcher
+                   , ToolExec, EventArgument(..), HandlerRun(..), newCancelFlag )
+import Language.Code.Hoist (Split, splitHoistable, hoistedIterations, hoistedStuck)
+import Language.Code.Typecheck (expandParsedCode)
+import Language.Code.InterpretIO (IORefTypeOfBinding)
+import Language.Value.Typing (strictTypeEnv)
+import Language.Value.Builtins ( internalIterations, internalStuck, internalIterationLimit
+                               , internalEscapeRadius, internalVanishingRadius )
+import Data.IORef (newIORef, readIORef, writeIORef)
+import Control.Exception (SomeException, try)
+import Data.List (isInfixOf)
+import qualified Data.Set as Set
 import Language.Environment
 import Language.Typecheck (TC(..), ppError)
 import Language.Value.Parser
@@ -145,6 +158,11 @@ data SomeViewerWithContext where
     => Context DynamicValue env
     -> Maybe (PrepScript env)
     -> Code (ViewerEnv env)
+    -> Maybe (Code env)
+       -- ^ The part of the viewer's code that's the same for every pixel,
+       -- to be run once per render, before the rest (see
+       -- 'hoistViewerCode' and 'hoistedViewerFunction'): its results are
+       -- variables of the context, which the rest reads.
     -> SomeViewerWithContext
 
 -- | A preparation script that runs per-pixel in Haskell before the compiled viewer
@@ -567,15 +585,79 @@ parseViewerScript mpx ViewerContext{..} c = do
       when (writesTables code) $ throwError (NoSourceRange,
         "Only a tool can reset a table or write to one: a viewer can only read tables.")
 
-      -- Now bind all of the bookkeeping variables
+      -- Now bind all of the bookkeeping variables (the iteration count
+      -- and whether a loop got stuck starting from where the hoisted part
+      -- of the code left them, if it has loops: see 'hoistViewerCode')
       let (_, code') = (env', code)
-                     & letInEnv (Const (Scalar typeProxy 0))
-                     & letInEnv (Const (Scalar typeProxy False))
+                     & letInEnv (hoistedOr hoistedIterations IntegerType 0)
+                     & letInEnv (hoistedOr hoistedStuck BooleanType False)
                      & letInEnv (fromMaybe (Const (Scalar typeProxy 100)) vcIterLimit)
                      & letInEnv (fromMaybe (Const (Scalar typeProxy 10.0)) vcEscapes)
                      & letInEnv (fromMaybe (Const (Scalar typeProxy 0.0001)) vcVanishes)
 
       pure code'
+
+-- | The value of a variable, if the environment has one by that name and
+-- type, or else a constant.
+hoistedOr :: forall e t. KnownEnvironment e => String -> TypeProxy t -> HaskellType t -> Value '(e, t)
+hoistedOr name ty dflt = case someSymbolVal name of
+  SomeSymbol n -> case lookupEnv n ty (envProxy (Proxy @e)) of
+    Found pf -> Var n ty pf
+    _ -> Const (Scalar ty dflt)
+
+-- | Split a viewer's code (see "Language.Code.Hoist") into the part that's
+-- the same for every pixel and the rest, given its pixel size variable,
+-- its coordinate, and the environment of its configuration (and view).
+-- 'Nothing' when there's nothing worth running once, or the code doesn't
+-- check (which building it as it is will report).
+hoistViewerCode :: Maybe String -> Coordinate -> EnvironmentProxy env -> ParsedCode -> Maybe Split
+hoistViewerCode mpx coord env code =
+  either (const Nothing) (splitHoistable varying) (expandParsedCode tenv code)
+  where
+    coordinates = case coord of
+      ComplexCoordinate z -> [(z, ComplexT)]
+      RealCoordinates x y -> [(x, RealT), (y, RealT)]
+    pixelSizes = fromMaybe "[unused] pixel size" mpx : case coord of
+      ComplexCoordinate _ -> []
+      RealCoordinates _ _ -> [pixelWidthVar, pixelHeightVar]
+    pixelInternals = [ symbolVal (Proxy @InternalX), symbolVal (Proxy @InternalY)
+                     , symbolVal (Proxy @InternalDX), symbolVal (Proxy @InternalDY) ]
+    varying = Set.fromList ("color" : map fst coordinates ++ pixelSizes ++ pixelInternals)
+    -- (the types of the names the viewer's code sees, as 'parseViewerScript'
+    -- binds them)
+    tenv = strictTypeEnv $ Map.unions
+      [ Map.map (\(SomeType t) -> typeToFS t) (envToMap env)
+      , Map.fromList coordinates
+      , Map.fromList [ (n, RealT) | n <- pixelSizes ++ pixelInternals ]
+      , Map.fromList [ ("color", ColorT), (internalIterations, IntegerT), (internalStuck, BooleanT)
+                     , (internalIterationLimit, IntegerT), (internalEscapeRadius, RealT)
+                     , (internalVanishingRadius, RealT) ] ]
+
+-- | A viewer function that first runs the part of a viewer's code that's
+-- the same for every pixel (compiled, or interpreted, by the given
+-- 'ToolExec'), once each time it's given the configuration's values,
+-- and then renders with the given function, with those values as that
+-- part left them. If that part fails (an index out of range, say), every
+-- pixel is magenta, as it would have been had each pixel run it.
+hoistedViewerFunction :: ToolExec -> EnvironmentProxy env -> Code env -> ViewerFunction env
+                      -> IO (ViewerFunction env)
+hoistedViewerFunction exec env prefix (ViewerFunction bind) = do
+  invoke <- exec env prefix
+  pure $ ViewerFunction $ \args -> do
+    refs <- mapContextM @HaskellValue @IORefTypeOfBinding (\_ _ -> newIORef) args
+    let eargs = mapContext @IORefTypeOfBinding @EventArgument_
+                  (\_ _ r -> EventArgument (Just <$> readIORef r) (Just (\_ v -> writeIORef r v))) refs
+    flag <- newCancelFlag
+    try (startHandlerRun (invoke eargs) flag >>= id) >>= \case
+      Right () -> mapContextM @IORefTypeOfBinding @HaskellValue (\_ _ -> readIORef) refs >>= bind
+      Left (err :: SomeException) -> pure $ \ViewerArgs{..} -> do
+        let (w, h) = (fromIntegral vaWidth, fromIntegral vaHeight) :: (Int, Int)
+        forM_ [0 .. w * h - 1] $ \k -> do
+          pokeElemOff vaBuffer (3 * k + 0) 0xff
+          pokeElemOff vaBuffer (3 * k + 1) 0x00
+          pokeElemOff vaBuffer (3 * k + 2) 0xff
+        let memory = "memory" `isInfixOf` show err
+        pure ViewerIssues { viOutOfMemory = memory, viBadIndex = not memory }
 
 cloneViewer :: Viewer -> IO Viewer
 cloneViewer v = do
@@ -663,6 +745,11 @@ data Backend = Backend
   , bToolRunner        :: ToolRunner
     -- ^ How tool event handlers are executed: 'defaultToolRunner' (interpreter)
     --   or a backend-specific JIT-compiled runner.
+  , bRunOnce           :: AutocolorLookup -> ToolExec
+    -- ^ How code that runs once and gives back its variables is run: the
+    --   part of a viewer's code that's the same for every pixel (see
+    --   'hoistedViewerFunction'). Like a tool's handler, but drawing
+    --   nothing.
   }
 
 -- | The default 'ToolRunnerFactory': tool scripts are executed by the

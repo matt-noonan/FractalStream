@@ -127,6 +127,7 @@ test-suite end-to-end
   other-modules:      OverlaySpec
                     , GeometrySpec
                     , TableSpec
+                    , HoistSpec
 
   if flag(use-llvm)
      build-depends: fractalstream-backend-llvm

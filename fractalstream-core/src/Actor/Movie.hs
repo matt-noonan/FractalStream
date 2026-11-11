@@ -62,7 +62,7 @@ import Language.Code.Parser (CommonDefs, parseParsedCode, withCommon)
 import Language.Parser.SourceRange (SourceRange(..), HasErrorLocation(..))
 import Language.Value.Parser (parseParsedValue)
 import Language.Value.Typecheck (ParsedValue)
-import Language.Draw (DrawSink(..))
+import Language.Draw (ignoreDrawing)
 import Language.Environment
 import Language.Type
 
@@ -144,7 +144,8 @@ scriptAnimation defs ctx script =
     Right action -> Right <$> action
   where
     prepare env code withPx = do
-      exec <- interpretedToolExec noDrawing env code
+      -- (a movie's script has nowhere to draw)
+      exec <- interpretedToolExec ignoreDrawing env code
       pure (runHandlerNow . exec . withPx)
 
 -- | Check a movie's script, as 'scriptAnimation' would, without
@@ -205,15 +206,6 @@ movieLimits :: (ParsedValue, ParsedValue, ParsedValue)
 movieLimits = (setting "max_iters", setting "escape_radius", setting "vanishing_radius")
   where setting name = fromRight (error ("INTERNAL ERROR: movieLimits: " ++ name))
                                  (parseParsedValue name)
-
--- | A 'DrawSink' that ignores everything: a movie's script has nowhere
--- to draw.
-noDrawing :: DrawSink
-noDrawing = DrawSink
-  { dsClear = pure (), dsStroke = const (pure ()), dsFill = const (pure ())
-  , dsPoint = const (pure ()), dsLine = \_ _ -> pure ()
-  , dsCircle = \_ _ _ -> pure (), dsRect = \_ _ _ -> pure ()
-  , dsWrite = \_ _ -> pure () }
 
 -- | The complex variables in a context that can be set, which a path
 -- can move along.

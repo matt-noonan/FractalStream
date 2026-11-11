@@ -9,7 +9,9 @@ module Actor.GoldenSpec (spec) where
 -- elaborated ASTs should come out identical, down to conversion placement.
 --
 -- A missing golden file is written out (and the test passes); delete
--- @test/golden/@ files to regenerate them.
+-- @test/golden/@ files to regenerate them, or run the tests with
+-- @GOLDEN_UPDATE=1@ in the environment to rewrite the ones that differ
+-- (and then review the changes with @git diff@).
 
 import Test.Hspec
 
@@ -31,6 +33,7 @@ import qualified Data.Map as Map
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory, createDirectoryIfMissing)
 import System.FilePath ((</>), isPathSeparator)
 import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStr)
+import System.Environment (lookupEnv)
 
 examplesDir, libraryDir, goldenDir :: FilePath
 examplesDir = "../examples"
@@ -67,8 +70,13 @@ golden name actual = do
       -- Golden files are UTF-8, whatever the locale's encoding (on
       -- Windows it usually isn't UTF-8).
       expected <- withFile path ReadMode $ \h -> hSetEncoding h utf8 >> hGetContents' h
-      actual `shouldBe` expected
-    else withFile path WriteMode $ \h -> hSetEncoding h utf8 >> hPutStr h actual
+      update <- lookupEnv "GOLDEN_UPDATE"
+      if actual /= expected && update == Just "1"
+        then write path
+        else actual `shouldBe` expected
+    else write path
+  where
+    write path = withFile path WriteMode $ \h -> hSetEncoding h utf8 >> hPutStr h actual
 
 -- | Pretty-print all typed code reachable from an ensemble.
 dumpEnsemble :: Ensemble -> IO String
@@ -81,7 +89,8 @@ dumpEnsemble ens = do
     let header = "=== viewer " ++ show i ++ ": " ++ either id id title
     viewerPart <- safely $ case code of
       Left (_, err) -> "ERROR: " ++ err
-      Right (SomeViewerWithContext _ mprep body) -> unlines $
+      Right (SomeViewerWithContext _ mprep body mprefix) -> unlines $
+        maybe [] (\prefix -> [ "--- once per render", pprintCode prefix ]) mprefix ++
         [ "--- body", pprintCode body ] ++
         case mprep of
           Nothing -> []

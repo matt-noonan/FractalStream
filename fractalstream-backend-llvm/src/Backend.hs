@@ -4,6 +4,7 @@ module Backend
   ) where
 
 import Actor.Viewer
+import Language.Draw (ignoreDrawing)
 import Backend.LLVM
 
 withBackend :: (Backend -> IO a) -> IO a
@@ -12,4 +13,5 @@ withBackend action = withJIT $ \jit ->
     { bViewerCompiler    = ViewerCompiler (withJittedViewer jit)
     , bToolRunnerFactory = defaultToolRunnerFactory
     , bToolRunner        = llvmToolRunner jit
+    , bRunOnce           = \lookupAutocolor -> compiledToolExec jit lookupAutocolor ignoreDrawing
     }

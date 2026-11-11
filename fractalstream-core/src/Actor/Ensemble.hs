@@ -62,8 +62,9 @@ import Language.Value.Typecheck
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv, checkDefiniteAssignment)
 import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs)
+import Language.Code.Hoist (Split(..))
 import Language.Parser.SourceRange
-import Data.Color (black)
+import Data.Color (black, grey)
 
 import Data.Aeson (Value(..))
 import qualified Data.Aeson as Aeson
@@ -1393,7 +1394,42 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
                  Just (prepOutputEnvProxy, outputNames, prepParsedCode) ->
                    Just <$> buildPrepScript prepOutputEnvProxy outputNames ctx vc prepParsedCode
                code <- parseViewerScript vfPixelVar vc vfCode
-               pure (SomeViewerWithContext ctx mprep code)
+               pure (SomeViewerWithContext ctx mprep code Nothing)
+
+        -- A viewer whose code has a part that's the same for every pixel
+        -- (see 'hoistViewerCode'): that part's results are added to its
+        -- context, as variables (starting out with placeholder values,
+        -- until it runs), and the rest of its code reads them. That part
+        -- is checked with the bookkeeping variables a loop needs, like a
+        -- `prepare` block, though it can't use the pixel's.
+        hoistedBuild :: forall cEnv. KnownEnvironment cEnv
+                     => Split -> Context DynamicValue cEnv
+                     -> Either (SourceRange, String) SomeViewerWithContext
+        hoistedBuild Split{..} configCtx =
+          case buildPrepOutputCtx [ (name, withType ty SomeType) | (name, ty) <- splitOutputs ] of
+            Left err -> Left (NoSourceRange, err)
+            Right (SomeContext outputCtx) -> case configCtx <#> outputCtx of
+              Left err -> Left (NoSourceRange, err)
+              Right ctx -> withEnvironment (contextToEnv ctx) $
+                let env = contextToEnv ctx
+                in fromMaybe (Left (NoSourceRange, "INTERNAL ERROR: redefined internal argument")) $
+                   assertMissingViewerArgs env $ do
+                     vc <- left (NoSourceRange,) (buildViewerContext env ctx vfCoord mIterPV mEscPV mVanPV)
+                     code <- parseViewerScript vfPixelVar vc splitRest
+                     (env', prefix0) <- checkPrepCode [] env splitPrefix
+                     let (_, prefix) = (env', prefix0)
+                           & letInEnv (Const (Scalar typeProxy 0))
+                           & letInEnv (Const (Scalar typeProxy False))
+                           & letInEnv (fromMaybe (Const (Scalar typeProxy 100)) (vcIterLimit vc))
+                           & letInEnv (fromMaybe (Const (Scalar typeProxy 10.0)) (vcEscapes vc))
+                           & letInEnv (fromMaybe (Const (Scalar typeProxy 0.0001)) (vcVanishes vc))
+                           -- (the pixel's variables, which it doesn't use)
+                           & letInEnv (Const (Scalar RealType 0))
+                           & letInEnv (Const (Scalar RealType 0))
+                           & letInEnv (Const (Scalar RealType 0))
+                           & letInEnv (Const (Scalar RealType 0))
+                           & letInEnv (Const (Scalar ColorType grey))
+                     pure (SomeViewerWithContext ctx Nothing code (Just prefix))
 
         -- A constant context entry per declared `prepare` output,
         -- holding a type-appropriate placeholder value -- never
@@ -1452,7 +1488,12 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
                 => Context DynamicValue cEnv -> Either (SourceRange, String) SomeViewerWithContext
         buildIn configCtx =
             case vfPrepare of
-              Nothing -> finishBuild Nothing configCtx
+              -- (the part of the code that's the same for every pixel
+              -- runs once per render, if there is one, and building the
+              -- viewer that way works; otherwise, it's built as it is)
+              Nothing -> case hoistViewerCode vfPixelVar vfCoord (contextToEnv configCtx) vfCode of
+                Just split | Right v <- hoistedBuild split configCtx -> Right v
+                _ -> finishBuild Nothing configCtx
               Just (outputSpecs, prepParsedCode) ->
                 case buildPrepOutputCtx outputSpecs of
                   Left err -> Left (NoSourceRange, err)
@@ -1699,12 +1740,13 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
         putStrLn ("Can't build viewer: " ++ err)
         void $ mkViewer project showConfig configArgs rebuildScript Viewer{..}
 
-      Right (SomeViewerWithContext context mprep code) -> do
+      Right (SomeViewerWithContext context mprep code mprefix) -> do
 
         let env = contextToEnv context
-            prepUsedVars = case mprep of
-              Nothing -> Set.empty
-              Just (PrepScript _ prepCode) -> execState (usedVarsInCode prepCode) Set.empty
+            prepUsedVars = (case mprep of
+                Nothing -> Set.empty
+                Just (PrepScript _ prepCode) -> execState (usedVarsInCode prepCode) Set.empty)
+              `Set.union` maybe Set.empty (\p -> execState (usedVarsInCode p) Set.empty) mprefix
             usedVars = (`Set.difference` Set.fromList coordNames) (execState (usedVarsInCode code) Set.empty `Set.union` prepUsedVars)
 
             vListen :: IO () -> IO (IO ())
@@ -1752,7 +1794,10 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
                               then (:) <$> makeSelectTool cvCoord else pure id
           let vTools = withSelectTool <$> dyn cvTools
 
-          withCompiledViewer (bViewerCompiler backend) lookupAutocolor mprep code $ \fun -> do
+          withCompiledViewer (bViewerCompiler backend) lookupAutocolor mprep code $ \fun0 -> do
+            fun <- case mprefix of
+              Nothing -> pure fun0
+              Just prefix -> hoistedViewerFunction (bRunOnce backend lookupAutocolor) env prefix fun0
             let vCodeWithArgs = CodeWithArgs vGetArgs (Just code) (pure fun)
             -- FIXME, we should grab the "close this window" action and do something with it
             void $ mkViewer project showConfig configArgs rebuildScript Viewer{..}

@@ -9,6 +9,7 @@
 module Language.Code.Typecheck
   ( ParsedCode
   , runParsedCode
+  , expandParsedCode
   ) where
 
 import FractalStream.Prelude
@@ -18,7 +19,7 @@ import Language.Value
 import Language.Typecheck
 import Language.Value.Typecheck (atType, internalIterationLimit, InternalIterations, InternalStuck)
 import Language.Value.Syntax
-import Language.Value.Typing (synth, typeEnvOf, tupleParts, tableIndexParts)
+import Language.Value.Typing (TypeEnv, synth, typeEnvOf, tupleParts, tableIndexParts)
 import qualified GHC.TypeNats as TN
 import Language.Code
 import Language.Code.Syntax
@@ -44,6 +45,15 @@ type ParsedCode = Stmt
 runParsedCode :: EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
 runParsedCode env c =
   case withEnvironment env (expandRuns c >>= expandStops >>= expandTuples >>= elab Map.empty env . inferDeclarations (typeEnvOf env) Map.empty) of
+    TC x -> x
+
+-- | The steps before elaboration, by themselves: expand @run@s, @stops@,
+-- and tuple assignments, and fill in the types of declarations, as they
+-- would be in the given environment. (Running 'runParsedCode' on the
+-- result does nothing more to it before elaborating it.)
+expandParsedCode :: TypeEnv -> ParsedCode -> Either TCError ParsedCode
+expandParsedCode tenv c =
+  case inferDeclarations tenv Map.empty <$> (expandRuns c >>= expandStops >>= expandTuples) of
     TC x -> x
 
 ------------------------------------------------------

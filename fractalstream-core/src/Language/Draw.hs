@@ -10,6 +10,7 @@ module Language.Draw
   , runDrawHandler
   , DrawSink(..)
   , bufferedSink
+  , ignoreDrawing
   ) where
 
 import FractalStream.Prelude
@@ -46,6 +47,14 @@ data DrawSink = DrawSink
 -- | A sink that records draw commands (newest first) instead of drawing
 -- them, to be replayed on the given sink later: so that a tool handler's
 -- run only draws once it has finished without an error.
+-- | A 'DrawSink' that ignores everything, for code with nowhere to draw.
+ignoreDrawing :: DrawSink
+ignoreDrawing = DrawSink
+  { dsClear = pure (), dsStroke = const (pure ()), dsFill = const (pure ())
+  , dsPoint = const (pure ()), dsLine = \_ _ -> pure ()
+  , dsCircle = \_ _ _ -> pure (), dsRect = \_ _ _ -> pure ()
+  , dsWrite = \_ _ -> pure () }
+
 bufferedSink :: IORef [IO ()] -> DrawSink -> DrawSink
 bufferedSink ref sink = DrawSink
   { dsClear  = later (dsClear sink)
