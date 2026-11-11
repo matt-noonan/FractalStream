@@ -164,10 +164,19 @@ buildValue getExtern arena = indexedFold go'
         ixs <- mapM (fmap getIntegerOp) mixs
         lift $ buildTableRead arena ty desc ixs
 
-      TablePoint _ ty mtbl mz -> do
+      TablePoint _ ty mtbl mz mixs -> do
         desc <- getTableOp <$> mtbl
         (x, y) <- getComplexOp <$> mz
-        lift $ buildTablePoint getExtern arena ty desc x y
+        rest <- mapM (fmap getIntegerOp) mixs
+        lift $ buildTablePoint getExtern arena ty desc x y rest
+
+      TableSlice _ ty mtbl mmz mixs -> do
+        desc <- getTableOp <$> mtbl
+        mz <- traverse (fmap getComplexOp) mmz
+        rest <- mapM (traverse (fmap getIntegerOp)) mixs
+        lift $ do
+          pointed <- forM mz $ \(x, y) -> map Just <$> pointIndices getExtern desc x y
+          buildTableSliceRead arena ty desc (fromMaybe [] pointed ++ rest)
 
       TableSize _ _ sz mtbl -> do
         desc <- getTableOp <$> mtbl
@@ -915,6 +924,59 @@ buildIndex arena ty cyclic inputHead iOp = do
     mergeBb <- block `named` "index_merge"
     pure ()
   derefOperand resultSlot
+
+-- | The elements of a table's slice with one @*@ (see 'buildSliceView'),
+-- as a list in the arena; out of range sets the index-error flag, and
+-- gives the empty list.
+buildTableSliceRead :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
+                    => ArenaState -> TypeProxy t -> Operand -> [Maybe Operand] -> m (Op ('ListT t))
+buildTableSliceRead arena ty desc ixs = do
+  size <- elemBytes ty
+  (inRange, base, spans) <- buildSliceView desc ixs
+  (count, stride) <- case spans of
+    [span1] -> pure span1
+    _ -> throwError "internal error: a slice read as a list has one `*`"
+  let nodeStride = listNodeStride ty
+  headSlot <- alloca (AST.ptr AST.i8) Nothing 0
+  store headSlot 0 nullI8Ptr
+  prevSlot <- alloca (AST.ptr AST.i8) Nothing 0
+  store prevSlot 0 nullI8Ptr
+  iSlot <- alloca AST.i32 Nothing 0
+  store iSlot 0 (C.int32 0)
+  mdo
+    condBr inRange sliceHead badB
+    sliceHead <- block `named` "slice_head"
+    i <- load iSlot 0
+    past <- icmp P.SGE i count
+    condBr past sliceExit sliceBody
+    sliceBody <- block `named` "slice_body"
+    newNode <- arenaAlloc arena nodeStride
+    isNull <- icmp P.EQ newNode nullI8Ptr   -- arena overflow: bail with partial list
+    condBr isNull sliceExit sliceAlloc
+    sliceAlloc <- block `named` "slice_alloc"
+    cell <- mul i stride >>= add base
+    elems <- loadTableElems desc
+    byteOffset <- sext cell AST.i64 >>= (`mul` C.int64 size)
+    p <- gep elems [byteOffset]
+    v <- loadElemAt ty p
+    nf <- bitcast newNode (AST.ptr (AST.ptr AST.i8))
+    store nf 0 nullI8Ptr
+    storeListElem ty newNode v
+    appendNode headSlot prevSlot newNode
+    add i (C.int32 1) >>= store iSlot 0
+    br sliceHead
+    badB <- block `named` "slice_out_of_range"
+    store (asIndexError arena) 0 (C.bit 1)
+    br sliceExit
+    sliceExit <- block `named` "slice_exit"
+    pure ()
+  ListOp <$> load headSlot 0
+
+-- | A table's elements (an @i8*@), from its descriptor.
+loadTableElems :: (MonadModuleBuilder m, MonadIRBuilder m) => Operand -> m Operand
+loadTableElems desc = do
+  p <- bitcast desc (AST.ptr (AST.ptr AST.i8))
+  load p 0
 
 -- | Build an integer range list [lo..hi] in the arena.
 buildRange :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)

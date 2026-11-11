@@ -15,7 +15,7 @@ import FractalStream.Prelude
 
 import Language.Value
 import Data.Indexed.Functor
-import Language.Table (readCell, pointCell, pointIndices, cellPoint, Table(..))
+import Language.Table (readCell, readSlice, pointCell, pointIndices, cellPoint, sliceIndices, Table(..))
 import Data.Color
 
 import Unsafe.Coerce
@@ -312,10 +312,19 @@ evaluator v0 ctx = case v0 of
       in fromMaybe (error ("Table index " ++ show ixs ++ " is out of range"))
                    (readCell t (tbl_ ctx) ixs)
 
-    TablePoint _ t tbl_ p_ ->
+    TablePoint _ t tbl_ p_ ixs_ ->
       let tbl = tbl_ ctx
-      in fromMaybe (error ("The point " ++ show (p_ ctx) ++ " is off the table"))
-                   (pointCell tbl (p_ ctx) >>= readCell t tbl)
+          ixs = map (\ix -> fromIntegral (ix ctx)) ixs_
+          cell = fromMaybe (error ("The point " ++ show (p_ ctx) ++ " is off the table"))
+                           (pointCell tbl (p_ ctx))
+      in fromMaybe (error ("Table index " ++ show ixs ++ " is out of range"))
+                   (readCell t tbl (cell ++ ixs))
+
+    TableSlice _ t tbl_ mp_ ixs_ ->
+      let tbl = tbl_ ctx
+          ixs = sliceIndices tbl ((\p -> p ctx) <$> mp_) (map (fmap (\ix -> fromIntegral (ix ctx))) ixs_)
+      in fromMaybe (error ("Table index " ++ show ixs ++ " is out of range"))
+                   (readSlice t tbl ixs)
 
     TableSize _ _ sz tbl_ -> sizeTuple sz (map fromIntegral (tableDims (tbl_ ctx)))
 

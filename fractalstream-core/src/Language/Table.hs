@@ -23,6 +23,18 @@ module Language.Table
   , nearestCell
   , freezeTable
   , thawForWrite
+    -- * Slices
+  , SliceIndex(..)
+  , SliceView(..)
+  , sliceIndices
+  , sliceView
+  , sliceCells
+  , readSlice
+  , writeSlice
+  , copySliceBytes
+    -- * Resizing
+  , resizeTable
+  , resizeTableBytes
   ) where
 
 import FractalStream.Prelude
@@ -34,6 +46,7 @@ import Data.Color (colorToRGB, rgbToColor)
 import Foreign.ForeignPtr (withForeignPtr, mallocForeignPtrBytes)
 import Foreign.Ptr (Ptr, plusPtr)
 import Foreign.Marshal.Utils (fillBytes, copyBytes)
+import Foreign.Marshal.Alloc (allocaBytes)
 import Data.IORef (newIORef, writeIORef, readIORef)
 import Foreign.Storable (peekByteOff, pokeByteOff)
 import System.IO.Unsafe (unsafePerformIO)
@@ -62,12 +75,13 @@ cellOffset t ixs
   | otherwise = Nothing
   where dims = tableDims t
 
--- | The indices of a 2-dimensional table's cell nearest a point, if the
--- point is on the table.
+-- | The indices (column and row) of the cell nearest a point, if the
+-- point is on the table: within its first two dimensions, which are the
+-- ones laid out in the plane.
 pointCell :: Table -> Complex Double -> Maybe [Int]
 pointCell t z = do
   let ixs = pointIndices t z
-  _ <- cellOffset t ixs
+  guard (and (zipWith (\k n -> k >= 1 && k <= n) ixs (tableDims t)) && length (tableDims t) >= 2)
   pure ixs
 
 -- | The column and row of a 2-dimensional table's cell that a point is
@@ -196,3 +210,133 @@ copyTableBytes size t = do
   withForeignPtr (tableBuffer t) $ \src -> withForeignPtr buf $ \dst -> copyBytes dst src bytes
   frozen <- newIORef False
   pure t { tableBuffer = buf, tableFrozen = frozen }
+
+------------------------------------------------------------------------
+-- Slices
+
+-- | One index of a slice: a fixed index (1-based), or every index along
+-- that dimension (a @*@).
+data SliceIndex = Fixed Int | Every
+  deriving (Eq, Show)
+
+-- | A slice's indices, one per dimension, from a point standing for the
+-- first two (if there is one; off the table is an error) and the rest,
+-- each an integer or a @*@ ('Nothing').
+sliceIndices :: Table -> Maybe (Complex Double) -> [Maybe Int] -> [SliceIndex]
+sliceIndices t mp ixs = maybe [] pointed mp ++ map (maybe Every Fixed) ixs
+  where
+    pointed p = map Fixed $ fromMaybe (error ("The point " ++ show p ++ " is off the table"))
+                                      (pointCell t p)
+
+-- | Where a slice's cells are: the first one (counting cells from 0), and
+-- for each @*@, in order, how many cells it spans and how far apart they
+-- are.
+data SliceView = SliceView
+  { sliceBase  :: Int
+  , sliceSpans :: [(Int, Int)]
+  } deriving (Eq, Show)
+
+-- | Where the slice with the given indices (one per dimension) is, or
+-- 'Nothing' if there are the wrong number of them or a fixed one is out
+-- of range.
+sliceView :: Table -> [SliceIndex] -> Maybe SliceView
+sliceView t ixs = do
+  let dims = tableDims t
+      strides = scanl (*) 1 dims
+  guard (length ixs == length dims)
+  parts <- forM (zip3 ixs dims strides) $ \case
+    (Fixed k, n, stride) | k >= 1 && k <= n -> Just (Left ((k - 1) * stride))
+                         | otherwise -> Nothing
+    (Every, n, stride) -> Just (Right (n, stride))
+  pure (SliceView (sum (lefts parts)) (rights parts))
+
+-- | The cells of a slice, counting from 0, the first @*@ varying fastest.
+sliceCells :: SliceView -> [Int]
+sliceCells (SliceView base spans) = map (base +) (go spans)
+  where
+    go [] = [0]
+    go ((n, stride) : rest) = [ i * stride + o | o <- go rest, i <- [0 .. n - 1] ]
+
+-- | The elements of a slice, if its indices are in range.
+readSlice :: TypeProxy t -> Table -> [SliceIndex] -> Maybe [HaskellType t]
+readSlice ty t ixs = do
+  size <- elementSize ty
+  view <- sliceView t ixs
+  pure $ unsafePerformIO $ withForeignPtr (tableBuffer t) $ \p ->
+    forM (sliceCells view) $ \cell -> peekElement ty (p `plusPtr` (cell * size))
+
+-- | Write a slice's elements, in place (only for a table no script can
+-- see yet, as 'writeCell'). False if its indices are out of range, or
+-- there aren't as many values as it has cells.
+writeSlice :: TypeProxy t -> Table -> [SliceIndex] -> [HaskellType t] -> IO Bool
+writeSlice ty t ixs vs = case (,) <$> elementSize ty <*> sliceView t ixs of
+  Nothing -> pure False
+  Just (size, view) -> do
+    let cells = sliceCells view
+    if length cells /= length vs
+      then pure False
+      else withForeignPtr (tableBuffer t) $ \p -> do
+        forM_ (zip cells vs) $ \(cell, v) -> pokeElement ty (p `plusPtr` (cell * size)) v
+        pure True
+
+-- | Copy one slice onto another, of elements of the given size in bytes:
+-- the destination is written in place (only for a table no script can see
+-- yet, as 'writeCell'). The source may be the same table. False if either
+-- slice's indices are out of range, or their @*@s don't span the same
+-- numbers of cells, in order.
+copySliceBytes :: Int -> Table -> [SliceIndex] -> Table -> [SliceIndex] -> IO Bool
+copySliceBytes size dst dstIxs src srcIxs = case (,) <$> sliceView dst dstIxs <*> sliceView src srcIxs of
+  Nothing -> pure False
+  Just (dv, sv)
+    | map fst (sliceSpans dv) /= map fst (sliceSpans sv) -> pure False
+    | otherwise -> do
+        let pairs = zip (sliceCells dv) (sliceCells sv)
+            count = length pairs
+        -- (through a buffer of its own, in case the slices overlap)
+        allocaBytes (max 1 (count * size)) $ \tmp ->
+          withForeignPtr (tableBuffer src) $ \s -> withForeignPtr (tableBuffer dst) $ \d -> do
+            forM_ (zip [0 ..] pairs) $ \(i, (_, from)) ->
+              copyBytes (tmp `plusPtr` (i * size)) (s `plusPtr` (from * size)) size
+            forM_ (zip [0 ..] pairs) $ \(i, (to, _)) ->
+              copyBytes (d `plusPtr` (to * size)) (tmp `plusPtr` (i * size)) size
+        pure True
+
+------------------------------------------------------------------------
+-- Resizing
+
+-- | A new table with another size, in the same place: its cell (1, 1) is
+-- where the old one's was, and its cells are the same size, so each cell
+-- the two share is in the same place and keeps its value. New cells are
+-- filled with the given value, or zeros. 'Nothing' if a size is negative
+-- (or the type can't be in a table).
+resizeTable :: TypeProxy t -> Table -> [Int] -> Maybe (HaskellType t) -> IO (Maybe Table)
+resizeTable ty t dims fill = case elementSize ty of
+  Nothing -> pure Nothing
+  Just size -> case fill of
+    Nothing -> resizeTableBytes size t dims Nothing
+    Just v -> allocaBytes size $ \p -> do
+      pokeElement ty p v
+      resizeTableBytes size t dims (Just p)
+
+-- | 'resizeTable', for elements of the given size in bytes, filling new
+-- cells with a copy of the element at the given pointer (or zeros).
+resizeTableBytes :: Int -> Table -> [Int] -> Maybe (Ptr Word8) -> IO (Maybe Table)
+resizeTableBytes size t dims fill
+  | any (< 0) dims || length dims /= length (tableDims t) = pure Nothing
+  | otherwise = do
+      t' <- newTableBytes size dims (tableOrigin t) (tableStep t)
+      withForeignPtr (tableBuffer t') $ \d -> do
+        forM_ fill $ \v -> forM_ [0 .. product dims - 1] $ \cell ->
+          copyBytes (d `plusPtr` (cell * size)) v size
+        let old = tableDims t
+            common = zipWith min old dims
+        case common of
+          (run : rest) | run > 0 && all (> 0) rest ->
+            withForeignPtr (tableBuffer t) $ \s ->
+              -- one run along the first dimension for each choice of the
+              -- other indices
+              forM_ (mapM (\n -> [0 .. n - 1]) rest) $ \others -> do
+                let offset ds = sum (zipWith (*) others (drop 1 (scanl (*) 1 ds)))
+                copyBytes (d `plusPtr` (offset dims * size)) (s `plusPtr` (offset old * size)) (run * size)
+          _ -> pure ()
+      pure (Just t')

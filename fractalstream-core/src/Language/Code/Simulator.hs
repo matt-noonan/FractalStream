@@ -58,8 +58,11 @@ simulate draw = indexedFold @(HaskellTypeM s) $ \case
 
   Block stmts -> sequence_ stmts
 
-  TableAllocate{} -> error "Only a tool can allocate a table."
+  TableAllocate{} -> error "Only a tool can reset a table."
   TableWrite{} -> error "Only a tool can write to a table."
+  TableWriteSlice{} -> error "Only a tool can write to a table."
+  TableCopySlice{} -> error "Only a tool can write to a table."
+  TableResize{} -> error "Only a tool can resize a table."
 
   NoOp -> pure ()
 

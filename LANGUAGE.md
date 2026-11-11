@@ -1190,7 +1190,19 @@ Every table also has a place in the plane (see "Filling in a table"), so
 `T @ point z` is the value in the cell that the point `z` is in. Each
 cell covers a small rectangle, so the cells of a table laid over a
 viewer's window are its pixels. A point outside the table is an error,
-like reading out of range. Only a 2-dimensional table has points.
+like reading out of range.
+
+It's a table's first two dimensions, its columns and rows, that are laid
+out in the plane. A table with more dimensions than that has *layers*
+over the plane: in a `Table 3 of C`, `T @ (j, k, m)` is column `j` and row
+`k` of layer `m`. So `point z` stands for the first two indices, and the
+others follow it:
+
+```
+crit @ (point C, m)        # layer m, at the parameter C
+```
+
+A 1-dimensional table has no points.
 
 To look up a point that may be off the table, give a value to use there
 instead with `else`:
@@ -1200,12 +1212,13 @@ color <- rainbow(saddle @ point C else 0)
 ```
 
 `T @ point z else v` is `v` when `z` is off the table, and the cell's
-value otherwise. The `else` part is a single value, like the right side of
+value otherwise; with layers, it's `T @ (point z, m) else v`. The `else` part is a single value, like the right side of
 `*`: `T @ point z else 0 + 1` adds 1 to whichever it is, so put anything
 longer in parentheses. (An `if c then T @ point z else v` is still an
 ordinary if/then/else.)
 
-There's more about where a table is in the plane:
+There's more about where a table is in the plane (with layers, these are
+about the first two dimensions):
 
 - `z in T` is whether the point `z` is on the table.
 - `table_cell(T, z)` is the cell that `z` is in, as a pair of indices
@@ -1233,13 +1246,31 @@ in yet has size 0:
 color <- if w = 0 then grey else ...
 ```
 
-#### Filling in a table
+#### Slices
 
-Only a tool can change a table; a viewer can only read one. A tool makes a
-new table, filled with zeros (`false`, or black), with `allocate`:
+A `*` in place of an index stands for every index along that dimension.
+With one `*`, the result is a list: `T @ (j, *)` is column `j` of a
+2-dimensional table, from the top down, and `crit @ (point C, *)` is the
+value at `C` in each layer, from the first. All of a 1-dimensional table
+is `T @ *`.
 
 ```
-allocate T of size (viewer_width, viewer_height)
+values := crit @ (point C, *)
+n := length(values)
+```
+
+A slice with more than one `*` isn't a value you can hold, but a tool can
+copy it onto another slice (see below).
+
+#### Filling in a table
+
+Only a tool can change a table; a viewer can only read one. A tool lays a
+table out afresh with `reset`, which gives it a size and a place in the
+plane, and fills it with zeros (`false`, or black), whatever it held
+before:
+
+```
+reset T to (viewer_width, viewer_height)
 ```
 
 This lays the table over the tool's viewer window: with the viewer's own
@@ -1249,15 +1280,18 @@ cover the window. To cover some other rectangle of the plane, give its
 top left and bottom right corners:
 
 ```
-allocate T of size (200, 100) from -2 + i to 2 - i
+reset T to (200, 100) from -2 + i to 2 - i
 ```
 
 (The size must be in parentheses here, or be a single name or number.)
+A table with layers is reset the same way, with one more size for
+each further dimension: `reset crit to (viewer_width,
+viewer_height, 4)` lays 4 layers over the window.
 To start every cell with some other value than zero, add `filled with`
 at the end:
 
 ```
-allocate status of size (viewer_width, viewer_height) filled with -1
+reset status to (viewer_width, viewer_height) filled with -1
 ```
 
 Then the tool writes the table's cells with `<-`:
@@ -1269,6 +1303,47 @@ T @ point z <- v
 
 Writing outside the table is an error, and the tool's changes are
 discarded.
+
+With layers, `T @ (j, k, m) <- v` and `T @ (point z, m) <- v` write the
+cell in layer `m`. A slice with one `*` is written from a list with one
+item for each of its cells, in order, and a list of another length is an
+error:
+
+```
+crit @ (point c, *) <- [z1, z2, z3]
+```
+
+A slice is copied onto another slice of the same shape (the same numbers
+of cells along each `*`, in order), of the same table or another one with
+the same kind of elements:
+
+```
+crit @ (*, *, 1) <- crit @ (*, *, 2)    # layer 2, copied onto layer 1
+crit @ (*, *, 3) <- saddle @ (*, *)     # a 2-dimensional table, onto layer 3
+```
+
+A tool can also change a table's size, with `resize`:
+
+```
+(w, h, n) := table_size(crit)
+resize crit to (w, h, n + 1)     # one more layer
+```
+
+The table stays where it was in the plane: cell `(1, 1)` is in the same
+place, and so is every cell it still has, with its value. New cells are
+zeros, or, with `filled with v` at the end, `v`. So more columns or rows
+are added at the right or the bottom, and fewer take them away there.
+Resizing never moves a table's top left corner; to lay it out somewhere
+else, `reset` it.
+
+To drop a layer, copy the ones after it down, and shrink the table:
+
+```
+(w, h, n) := table_size(crit)
+for each m in range(k, n - 1):
+  crit @ (*, *, m) <- crit @ (*, *, m + 1)
+resize crit to (w, h, n - 1)
+```
 
 A tool's changes to a table only take effect when its handler finishes
 without an error, like its changes to any other configuration variable;
@@ -1295,7 +1370,7 @@ color <- if w = 0 then grey else rainbow(arg(data @ point C) / (2 pi))
 
 @tool "Compute" for="Parameter plane"
 on click:
-  allocate data of size (viewer_width, viewer_height)
+  reset data to (viewer_width, viewer_height)
   for each j in range(1, viewer_width):
     for each k in range(1, viewer_height):
       data @ (j, k) <- ...  # the value for pixel (j - 1, k - 1)

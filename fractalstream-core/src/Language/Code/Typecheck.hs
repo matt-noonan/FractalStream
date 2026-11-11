@@ -18,7 +18,7 @@ import Language.Value
 import Language.Typecheck
 import Language.Value.Typecheck (atType, internalIterationLimit, InternalIterations, InternalStuck)
 import Language.Value.Syntax
-import Language.Value.Typing (synth, typeEnvOf, tupleParts)
+import Language.Value.Typing (synth, typeEnvOf, tupleParts, tableIndexParts)
 import qualified GHC.TypeNats as TN
 import Language.Code
 import Language.Code.Syntax
@@ -64,21 +64,56 @@ elab funs env stmt@(Stmt sr node) = case node of
     FoundVar ty pf <- findVar sr name env
     Set pf name <$> value funs env v ty
 
-  SSetTable n isPoint ix v -> do
+  SSetTable n ix v -> do
     SomeSymbol name <- pure (someSymbolVal n)
     FoundVar ty pf <- findVar sr name env
     case ty of
       TableType d ety -> withKnownType ety $ do
         let dims = fromIntegral (TN.fromSNat d) :: Int
-        cell <- if isPoint
-          then if dims == 2
-            then CellNear <$> value funs env ix ComplexType
-            else throwError (Advice sr "Only a 2-dimensional table has points: index this one with integers.")
-          else case tupleParts dims ix of
-            Just parts -> CellAt <$> mapM (\p -> value funs env p IntegerType) parts
-            Nothing -> throwError (Advice sr ("`" ++ n ++ "` is indexed by " ++ show dims
-                                              ++ " integers: `" ++ n ++ " @ " ++ example dims ++ " <- ...`."))
-        TableWrite pf name d ety cell <$> value funs env v ety
+        (mp, rest) <- tableIndexParts sr dims ix
+        case length (filter isNothing rest) of
+          0 -> do
+            ixs <- mapM (\p -> value funs env p IntegerType) (catMaybes rest)
+            cell <- case mp of
+              Nothing -> pure (CellAt ixs)
+              Just p -> CellNear <$> value funs env p ComplexType <*> pure ixs
+            TableWrite pf name d ety cell <$> value funs env v ety
+          1 -> TableWriteSlice pf name d ety <$> sliceAt mp rest <*> value funs env v (ListType ety)
+          stars -> case v of
+            Syn vsr (EIndex False (Syn usr (EVar u)) uix) -> do
+              SomeSymbol uname <- pure (someSymbolVal u)
+              FoundVar uty upf <- findVar usr uname env
+              case uty of
+                TableType m uety | Just Refl <- sameHaskellType ety uety -> do
+                  (ump, urest) <- tableIndexParts vsr (fromIntegral (TN.fromSNat m)) uix
+                  when (length (filter isNothing urest) /= stars) $
+                    throwError (Advice vsr ("This slice should have as many `*`s as the one it's copied onto, "
+                                            ++ show stars ++ "."))
+                  withKnownNat m $
+                    TableCopySlice pf name d ety <$> sliceAt mp rest <*> pure m
+                                                 <*> pure (Var uname uty upf) <*> sliceAt ump urest
+                _ -> throwError (Surprise usr u (an $ SomeType uty) (Expected (an $ SomeType ty)))
+            _ -> throwError (Advice sr ("A slice of `" ++ n ++ "` with more than one `*` can only be copied \
+                                        \from another one, of a table with the same kind of elements: `"
+                                        ++ n ++ " @ (*, *, k) <- U @ (*, *, m)`."))
+      _ -> throwError (Surprise sr n (an $ SomeType ty) (Expected "a table"))
+    where
+      sliceAt mp rest = SliceAt <$> traverse (\p -> value funs env p ComplexType) mp
+                                <*> mapM (traverse (\p -> value funs env p IntegerType)) rest
+
+  SResize n sz fill -> do
+    SomeSymbol name <- pure (someSymbolVal n)
+    FoundVar ty pf <- findVar sr name env
+    case ty of
+      TableType d ety -> do
+        let dims = fromIntegral (TN.fromSNat d) :: Int
+        sizes <- case tupleParts dims sz of
+          Just parts -> mapM (\p -> value funs env p IntegerType) parts
+          Nothing -> throwError (Advice sr ("`" ++ n ++ "` has " ++ show dims ++ " dimensions, so its size is "
+                                            ++ show dims ++ " integers: `resize " ++ n ++ " to "
+                                            ++ example dims ++ "`."))
+        fill' <- withKnownType ety $ traverse (\v -> value funs env v ety) fill
+        pure (TableResize pf name d ety sizes fill')
       _ -> throwError (Surprise sr n (an $ SomeType ty) (Expected "a table"))
 
   SAllocate n sz corners fill -> do
@@ -90,14 +125,14 @@ elab funs env stmt@(Stmt sr node) = case node of
         sizes <- case tupleParts dims sz of
           Just parts -> mapM (\p -> value funs env p IntegerType) parts
           Nothing -> throwError (Advice sr ("`" ++ n ++ "` has " ++ show dims ++ " dimensions, so its size is "
-                                            ++ show dims ++ " integers: `allocate " ++ n ++ " of size "
+                                            ++ show dims ++ " integers: `reset " ++ n ++ " to "
                                             ++ example dims ++ "`."))
         (p, q) <- case corners of
           Just (p, q) -> (,) <$> value funs env p ComplexType <*> value funs env q ComplexType
           Nothing -> case viewerCorners sr env of
             Just (p, q) -> (,) <$> value funs env p ComplexType <*> value funs env q ComplexType
-            Nothing -> throwError (Advice sr ("Only a viewer's tool knows its window: give the table's corners, `allocate "
-                                              ++ n ++ " of size ... from p to q`."))
+            Nothing -> throwError (Advice sr ("Only a viewer's tool knows its window: give the table's corners, `reset "
+                                              ++ n ++ " to (...) from p to q`."))
         fill' <- withKnownType ety $ traverse (\v -> value funs env v ety) fill
         pure (TableAllocate pf name d ety sizes p q fill')
       _ -> throwError (Surprise sr n (an $ SomeType ty) (Expected "a table"))

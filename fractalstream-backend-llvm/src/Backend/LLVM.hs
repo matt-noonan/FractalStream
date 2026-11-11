@@ -41,7 +41,7 @@ import qualified GHC.Foreign as GHC
 import GHC.IO.Encoding (utf8)
 
 import Backend.LLVM.Code
-import Backend.LLVM.Table (newDescriptor, freeDescriptor, lookupDescriptor, withTableCallbacks)
+import Backend.LLVM.Table (newDescriptor, freeDescriptor, lookupDescriptor, withTableCallbacks, TableCallbacks(..))
 import Language.Table (tableFrozen)
 import Backend.LLVM.Operand (listNodeStride, pairSecondOffset)
 
@@ -706,7 +706,7 @@ runToolOnce :: FunPtr () -> AutocolorLookup -> DrawSink -> CancelFlag -> Int
 runToolOnce fn lookupAutocolor sink cancelFlag capacity ctx haskArgs = do
   drawn <- newIORef []
   withDrawVTablePtrs (bufferedSink drawn sink) $ \(clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP) ->
-    withTableCallbacks $ \tableNewFP tableThawFP ->
+    withTableCallbacks $ \tables ->
     withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir ->
     bracket (mallocBytes capacity) free $ \arena ->
     withCancelFlagPtr cancelFlag $ \cancelPtr ->
@@ -727,8 +727,10 @@ runToolOnce fn lookupAutocolor sink cancelFlag capacity ctx haskArgs = do
             , argPtr (castFunPtrToPtr formatFP)
             , argPtr (castFunPtrToPtr autocolorCacheLookup)
             , argPtr autocolorDir
-            , argPtr (castFunPtrToPtr tableNewFP)
-            , argPtr (castFunPtrToPtr tableThawFP)
+            , argPtr (castFunPtrToPtr (tcNew tables))
+            , argPtr (castFunPtrToPtr (tcThaw tables))
+            , argPtr (castFunPtrToPtr (tcResize tables))
+            , argPtr (castFunPtrToPtr (tcCopy tables))
             , argPtr arena
             , argInt32 (fromIntegral capacity)
             , argPtr overflowPtr

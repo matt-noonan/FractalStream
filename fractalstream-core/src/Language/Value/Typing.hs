@@ -26,6 +26,7 @@ module Language.Value.Typing
   , structuralJoin
   , synth
   , tupleParts
+  , tableIndexParts
   , check
   , coercible
   , joinType
@@ -322,29 +323,30 @@ synth env (Syn sr node) = case node of
     case exprType lst' of
       TableT d it
         | cyc -> advise sr "A table can't be indexed cyclically (with `@@`): use `@`."
-        | otherwise -> case tupleParts (fromIntegral d) ix of
-            Just parts -> do
-              parts' <- mapM (check env IntegerT) parts
-              done it (ETableIndex lst' parts')
-            Nothing -> advise sr $ if d == 1
-              then "A 1-dimensional table is indexed by one integer: `T @ k`."
-              else "A " ++ show d ++ "-dimensional table is indexed by " ++ show d
-                   ++ " integers, written out as a tuple: `T @ (j, k)`."
+        | otherwise -> do
+            (mp, rest) <- tableIndexParts sr (fromIntegral d) ix
+            mp' <- traverse (check env ComplexT) mp
+            rest' <- mapM (traverse (check env IntegerT)) rest
+            case (length (filter isNothing rest'), mp') of
+              (0, Nothing) -> done it (ETableIndex lst' (catMaybes rest'))
+              (0, Just p') -> done it (ETablePoint lst' p' (catMaybes rest'))
+              (1, _) -> done (ListT it) (ETableSlice lst' mp' rest')
+              _ -> advise sr "A slice of a table with more than one `*` can only be copied onto \
+                             \another one, as in `T @ (*, *, k) <- U @ (*, *, m)`; with one `*`, \
+                             \it's a list."
       _ -> do
         t <- listItemType lst'
         ix' <- check env IntegerT ix
         done t (EIndex cyc lst' ix')
 
   ETableIndex{} -> throwError (Internal (Advice sr "unexpected table index"))
+  ETablePoint{} -> throwError (Internal (Advice sr "unexpected table point"))
+  ETableSlice{} -> throwError (Internal (Advice sr "unexpected table slice"))
 
-  ETablePoint tbl p -> do
-    tbl' <- synth env tbl
-    case exprType tbl' of
-      TableT 2 it -> do
-        p' <- check env ComplexT p
-        done it (ETablePoint tbl' p')
-      TableT _ _ -> advise sr "Only a 2-dimensional table has points: index this one with integers."
-      _ -> advise sr "`@ point` looks up a point in a table."
+  EPointIndex _ -> advise sr "`point z` only goes in a table's index, where it stands for the \
+                             \first two indices: `T @ point z`, or `T @ (point z, k)`."
+  ESliceAll -> advise sr "`*` stands for every index along one dimension of a table, \
+                         \in the table's index: `T @ (j, *)`."
 
   ETableSize tbl -> do
     tbl' <- synth env tbl
@@ -352,37 +354,42 @@ synth env (Syn sr node) = case node of
       TableT d _ -> done (tableSizeType (fromIntegral d)) (ETableSize tbl')
       _ -> advise sr "The argument to `table_size` should be a table."
 
-  ETablePointOr tbl p v ->
-    synth env (Syn sr (EITE (Syn sr (ETableHas tbl p)) (Syn sr (ETablePoint tbl p)) v))
+  ETablePointOr tbl ix v -> case pointOf ix of
+    Just p -> synth env (Syn sr (EITE (Syn sr (ETableHas tbl p)) (Syn sr (EIndex False tbl ix)) v))
+    Nothing -> throwError (Internal (Advice sr "unexpected table index in `else`"))
+    where pointOf = \case
+            Syn _ (EPointIndex p) -> Just p
+            Syn _ (EPair (Syn _ (EPointIndex p)) _) -> Just p
+            _ -> Nothing
 
   ETableHas tbl p -> do
     tbl' <- synth env tbl
     case exprType tbl' of
-      TableT 2 _ -> do
+      TableT d _ | d >= 2 -> do
         p' <- check env ComplexT p
         done BooleanT (ETableHas tbl' p')
-      TableT _ _ -> advise sr "Only a 2-dimensional table has points."
+      TableT _ _ -> advise sr "A 1-dimensional table has no points."
       _ -> advise sr "`z in T` asks whether a point is on a table: `T` should be a table."
 
   ETableCell tbl p -> do
     tbl' <- synth env tbl
     case exprType tbl' of
-      TableT 2 _ -> do
+      TableT d _ | d >= 2 -> do
         p' <- check env ComplexT p
         done (tableSizeType 2) (ETableCell tbl' p')
-      TableT _ _ -> advise sr "Only a 2-dimensional table has points."
+      TableT _ _ -> advise sr "A 1-dimensional table has no points."
       _ -> advise sr "The first argument to `table_cell` should be a table."
 
   ETableCellPoint tbl ixs -> do
     tbl' <- synth env tbl
     case (exprType tbl', ixs) of
-      (TableT 2 _, [ix]) -> case tupleParts 2 ix of
+      (TableT d _, [ix]) | d >= 2 -> case tupleParts 2 ix of
         Just parts -> do
           parts' <- mapM (check env IntegerT) parts
           done ComplexT (ETableCellPoint tbl' parts')
-        Nothing -> advise sr "A cell of a 2-dimensional table is given by two integers: `table_point(T, (j, k))`."
-      (TableT 2 _, _) -> throwError (Internal (Advice sr "unexpected table_point"))
-      (TableT _ _, _) -> advise sr "Only a 2-dimensional table has points."
+        Nothing -> advise sr "A cell's place in the plane is given by its column and row: `table_point(T, (j, k))`."
+      (TableT d _, _) | d >= 2 -> throwError (Internal (Advice sr "unexpected table_point"))
+      (TableT _ _, _) -> advise sr "A 1-dimensional table has no points."
       _ -> advise sr "The first argument to `table_point` should be a table."
 
   ELet n v body -> do
@@ -679,6 +686,9 @@ describe = \case
   EIndex{} -> "this list item"
   ETableIndex{} -> "this table entry"
   ETablePoint{} -> "this table entry"
+  ETableSlice{} -> "this slice of a table"
+  EPointIndex{} -> "this point"
+  ESliceAll -> "this `*`"
   ETableSize{} -> "this table's size"
   ETablePointOr{} -> "this table entry"
   ETableHas{} -> "whether this point is on the table"
@@ -699,6 +709,42 @@ tupleParts n e
   | otherwise = case e of
       Syn _ (EPair a b) -> (a :) <$> tupleParts (n - 1) b
       _ -> Nothing
+
+-- | A table's index, split into its parts: a point standing for the
+-- first two indices, if there is one, and then the rest of them, each an
+-- integer or a @*@ ('Nothing'). There must be one per dimension (the
+-- point counting for two).
+tableIndexParts :: SourceRange -> Int -> Expr -> TC (Maybe Expr, [Maybe Expr])
+tableIndexParts sr d ix = do
+  let firstPart = case ix of
+        Syn _ (EPair a _) -> a
+        _ -> ix
+      point = case firstPart of
+        Syn _ (EPointIndex p) -> Just p
+        _ -> Nothing
+      count = if isJust point then d - 1 else d
+  when (isJust point && d < 2) $
+    advise sr "A 1-dimensional table has no points: index it with an integer, `T @ k`."
+  parts <- case tupleParts count ix of
+    Just parts | count >= 1 -> pure parts
+    _ -> advise sr (howToIndex d)
+  rest <- forM (if isJust point then drop 1 parts else parts) $ \case
+    Syn _ ESliceAll -> pure Nothing
+    Syn psr (EPointIndex _) -> advise psr "`point z` stands for a table's first two indices, so it has to come first: `T @ (point z, k)`."
+    e -> pure (Just e)
+  pure (point, rest)
+
+-- | How to index a table with some number of dimensions.
+howToIndex :: Int -> String
+howToIndex d
+  | d == 1 = "A 1-dimensional table is indexed by one integer: `T @ k`."
+  | d == 2 = "A 2-dimensional table is indexed by two integers, written out as a tuple, \
+             \`T @ (j, k)`, or by a point, `T @ point z`."
+  | otherwise = "A " ++ show d ++ "-dimensional table is indexed by " ++ show d
+                ++ " integers, written out as a tuple, `T @ (" ++ intercalate ", " (take d names)
+                ++ ")`, or by a point and " ++ show (d - 2) ++ " more, `T @ (point z, "
+                ++ intercalate ", " (take (d - 2) (drop 2 names)) ++ ")`."
+  where names = map pure "jkmnpqrs" ++ [ "i" ++ show i | i <- [9 :: Int ..] ]
 
 -- | The type of a table's size: an integer for each dimension, as a tuple
 -- (@(a, (b, c))@ for three), or just one integer.

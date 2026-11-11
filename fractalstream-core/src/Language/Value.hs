@@ -302,14 +302,27 @@ data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FS
              -> [Eval (value '(env, 'IntegerT))]
              -> ValueF value '(env, ty)
 
--- | A 2-dimensional table's cell nearest a point (off the table is an
-  -- error, as out of range is).
+-- | A table's cell nearest a point, in its first two dimensions, at
+  -- 1-based indices in the others (off the table is an error, as out of
+  -- range is).
   TablePoint :: forall env n ty value. KnownEnvironment env
              => SNat n
              -> TypeProxy ty
              -> Eval (value '(env, 'TableT n ty))
              -> Eval (value '(env, 'ComplexT))
+             -> [Eval (value '(env, 'IntegerT))]
              -> ValueF value '(env, ty)
+
+  -- | A table's elements along one dimension, as a list: the index has
+  -- one 'Nothing' (a @*@) among its integers, which follow a point
+  -- standing for the first two indices, if there is one.
+  TableSlice :: forall env n ty value. KnownEnvironment env
+             => SNat n
+             -> TypeProxy ty
+             -> Eval (value '(env, 'TableT n ty))
+             -> Maybe (Eval (value '(env, 'ComplexT)))
+             -> [Maybe (Eval (value '(env, 'IntegerT)))]
+             -> ValueF value '(env, 'ListT ty)
 
   -- | A table's size: an integer for each dimension, as a tuple of type
   -- @sz@ (or one integer).
@@ -538,7 +551,8 @@ instance IFunctor ValueF where
     Length {} -> EnvType IntegerType
     Index t _ _ _ -> EnvType t
     TableIndex _ t _ _ -> EnvType t
-    TablePoint _ t _ _ -> EnvType t
+    TablePoint _ t _ _ _ -> EnvType t
+    TableSlice _ t _ _ _ -> withKnownType t (EnvType (ListType t))
     TableSize _ _ t _ -> EnvType t
     TableContains{} -> EnvType BooleanType
     TableCell _ _ t _ _ -> EnvType t
@@ -669,8 +683,12 @@ instance IFunctor ValueF where
         Index t cyc (f (withEnv (ListType t)) xs) (f (withEnv IntegerType) i)
       TableIndex n t tbl ixs -> withKnownType t $ withKnownNat n $
         TableIndex n t (f (withEnv (TableType n t)) tbl) (map (f (withEnv IntegerType)) ixs)
-      TablePoint n t tbl p -> withKnownType t $ withKnownNat n $
+      TablePoint n t tbl p ixs -> withKnownType t $ withKnownNat n $
         TablePoint n t (f (withEnv (TableType n t)) tbl) (f (withEnv ComplexType) p)
+                       (map (f (withEnv IntegerType)) ixs)
+      TableSlice n t tbl mp ixs -> withKnownType t $ withKnownNat n $
+        TableSlice n t (f (withEnv (TableType n t)) tbl) (f (withEnv ComplexType) <$> mp)
+                       (map (fmap (f (withEnv IntegerType))) ixs)
       TableSize n t sz tbl -> withKnownType t $ withKnownNat n $
         TableSize n t sz (f (withEnv (TableType n t)) tbl)
       TableContains n t tbl p -> withKnownType t $ withKnownNat n $
@@ -796,7 +814,8 @@ instance ITraversable ValueF  where
     Length t mlst -> Length t <$> mlst
     Index t cyc mlst mi -> Index t cyc <$> mlst <*> mi
     TableIndex n t mtbl mixs -> TableIndex n t <$> mtbl <*> sequenceA mixs
-    TablePoint n t mtbl mp -> TablePoint n t <$> mtbl <*> mp
+    TablePoint n t mtbl mp mixs -> TablePoint n t <$> mtbl <*> mp <*> sequenceA mixs
+    TableSlice n t mtbl mp mixs -> TableSlice n t <$> mtbl <*> sequenceA mp <*> traverse sequenceA mixs
     TableSize n t sz mtbl -> TableSize n t sz <$> mtbl
     TableContains n t mtbl mp -> TableContains n t <$> mtbl <*> mp
     TableCell n t sz mtbl mp -> TableCell n t sz <$> mtbl <*> mp
@@ -916,7 +935,9 @@ pprint = indexedFold @PrecString @ValueF go
     Length _ x -> concat ["|", x, "|"]
     Index _ cyc lst i -> concat ["(", lst, if cyc then "@@" else "@", i, ")"]
     TableIndex _ _ tbl ixs -> concat ["(", tbl, " @ (", intercalate ", " ixs, "))"]
-    TablePoint _ _ tbl p -> concat ["(", tbl, " @ point ", p, ")"]
+    TablePoint _ _ tbl p [] -> concat ["(", tbl, " @ point ", p, ")"]
+    TablePoint _ _ tbl p ixs -> concat ["(", tbl, " @ (point ", p, ", ", intercalate ", " ixs, "))"]
+    TableSlice _ _ tbl mp ixs -> concat ["(", tbl, " @ (", intercalate ", " (maybe [] (\p -> ["point " ++ p]) mp ++ map (fromMaybe "*") ixs), "))"]
     TableSize _ _ _ tbl -> concat ["table_size(", tbl, ")"]
     TableContains _ _ tbl p -> concat ["(", p, " in ", tbl, ")"]
     TableCell _ _ _ tbl p -> concat ["table_cell(", tbl, ", ", p, ")"]

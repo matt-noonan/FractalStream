@@ -40,7 +40,7 @@ data Highlight
   = Keyword          -- ^ @if@, @while@, @draw@, @on click@, @escapes@, ...
   | BuiltinFunction  -- ^ @sin@, @re@, @rainbow@, @blend@, @length@, ...
   | BuiltinValue     -- ^ @pi@, @i@, @e@, @true@, @iterations@, @stuck@, @color@
-  | TypeName         -- ^ @R@, @C@, @List of Z@, in a type
+  | TypeName         -- ^ @R@, @C@, @List of Z@, @Table 2 of C@, in a type
   | ColorName        -- ^ @red@, @blue@, ...
   | NumberLiteral
   | StringLiteral
@@ -275,17 +275,21 @@ lineSpans s defs l
       | otherwise = Set.empty
     tokenSpans =
       [ (from, to, h)
-      | ((from, to, t), before) <- zip toks (Nothing : map (\(_, _, t) -> Just t) toks)
-      , Just h <- [classify from t before] ]
-    classify from t before
+      | ((from, to, t), (before, before2)) <- zip toks (zip previous (Nothing : previous))
+      , Just h <- [classify from t before before2] ]
+    previous = Nothing : map (\(_, _, t) -> Just t) toks
+    classify from t before before2
       | from `Set.member` eventWords = Just Keyword
       | otherwise = case t of
-          Identifier n -> Just (identifier n before)
+          Identifier n -> Just (identifier n before before2)
+          -- (the number of dimensions in `Table 2 of C`)
+          NumberI _ | before == Just (Identifier "Table"), maybe False inTypePosition before2 -> Just TypeName
           _ -> tokenClass t
 
-    identifier n before
-      | n `Set.member` typeNames || n == "List", maybe False inTypePosition before = TypeName
+    identifier n before before2
+      | n `Set.member` typeNames || n == "List" || n == "Table", maybe False inTypePosition before = TypeName
       | n == "of", before == Just (Identifier "List") = TypeName
+      | n == "of", Just (NumberI _) <- before, before2 == Just (Identifier "Table") = TypeName
       | n == "x", Just (Identifier b) <- before, b `Set.member` typeNames = TypeName
       -- (a built-in can't be redefined: the parser takes it for the
       -- built-in, and reports the definition)
@@ -327,7 +331,7 @@ keywords = Set.fromList
   [ "while", "until", "repeat", "iterate", "up", "to", "for", "each", "in", "with", "first"
   , "matching", "define", "run", "pass", "draw", "use", "erase", "write", "point", "at"
   , "circle", "filled", "radius", "rectangle", "from", "line", "stroke", "fill", "on"
-  , "as", "choice", "button", "row", "tab", "prepare", "coloring" ]
+  , "as", "choice", "button", "row", "tab", "prepare", "coloring", "reset", "resize" ]
 
 builtinFunctions :: Set String
 builtinFunctions = Set.fromList $ concat

@@ -170,9 +170,11 @@ script: |
 - **Per-pixel data a pixel can't work out alone** (values carried from
   pixel to neighboring pixel, a flood fill, continuation of a periodic
   point across the parameter plane): a `Table 2 of T` in `@config`, which
-  a tool fills in with `allocate T of size (viewer_width, viewer_height)`
+  a tool fills in with `reset T to (viewer_width, viewer_height)`
   and `T @ (j, k) <- v`, and viewers read with `T @ point z` (reference.md,
-  Tables).
+  Tables). Several values per pixel (several critical points, say): a
+  `Table 3 of T` whose third index is a layer, `T @ (point z, m)`, with
+  `T @ (point z, *)` for all of them as a list and `resize` to add layers.
 - **Shared logic** between viewers and tools goes in `@common` (`f(z) := ...` for
   formulas, `define`/`run` for multi-statement code like coloring).
 - **What the language can't express**: recursion, user-defined types,

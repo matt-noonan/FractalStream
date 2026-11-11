@@ -63,7 +63,7 @@ normalizations src = concatMap lineEdits (scriptLines src)
       Just Times -> afterType
       _ -> False
     -- (`List` and `of` count as types, so that `List of C x R` works)
-    typeNames = map fst typeSymbols ++ ["ℝ", "ℂ", "ℤ", "List", "Boolean", "Bool", "Color", "Text"]
+    typeNames = map fst typeSymbols ++ ["ℝ", "ℂ", "ℤ", "List", "Table", "Boolean", "Bool", "Color", "Text"]
 
 -- | Apply all of 'normalizations'.
 normalize :: String -> String

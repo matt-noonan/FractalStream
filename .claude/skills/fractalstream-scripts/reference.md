@@ -340,7 +340,7 @@ text use the stroke color; filled shapes use the fill color.
 | text | `Text` | `"quoted"`, with `\"`, `\\`, `\n`, `\t` escapes |
 | list | `List of T` | `[1, 2, 3]`, `[]` |
 | pair | `T x U`, `T × U` | `(1.0, 2.0)` |
-| table | `Table N of T` (T one of Z, R, C, Boolean, Color) | none: declared in `@config`, filled by tools |
+| table | `Table N of T` (T one of Z, R, C, Boolean, Color) | none: declared in `@config`, filled by tools; dims 1-2 in the plane, more are layers |
 
 Numbers widen automatically Z → R → C wherever needed (`k := 0` then
 `k <- 0.5` makes `k` real). Nothing narrows automatically: use `round`,
@@ -449,26 +449,40 @@ from pixel to neighboring pixel, which a viewer can't):
 - `T @ (j, k)`: column j, row k, 1-based, (1, 1) at the top left, rows go
   down; n integers for n dimensions (`T @ k` for 1-D). Out of range is an
   error (magenta / discarded tool event). No `@@`.
-- `T @ point z` (2-D only): the cell z is in (cells are small rectangles;
-  a table laid over a window has one cell per pixel). Off the table is an
-  error; `T @ point z else v` gives `v` there instead (it's
-  `if z in T then T @ point z else v`; `v` is a single operand, like the
+- The first two dimensions are in the plane; more are *layers* over it
+  (`T : Table 3 of C`, `T @ (j, k, m)` is layer m).
+- `T @ point z` (2-D), `T @ (point z, m)` (layers): the cell z is in
+  (cells are small rectangles; a table laid over a window has one cell
+  per pixel). `point z` stands for the first two indices and must come
+  first. Off the table is an error; `T @ point z else v` /
+  `T @ (point z, m) else v` gives `v` there instead (it's
+  `if z in T then ... else v`; `v` is a single operand, like the
   right side of `*`, so `T @ point z else 0 + 1` adds 1 to the result).
-- `z in T` (2-D only): whether the point z is on the table.
-- `table_cell(T, z)` (2-D only): the cell z is in, as `(j, k)`, even off
+- Slices: `*` for every index of a dimension. With exactly one `*` it's a
+  List: `T @ (point z, *)` (z in each layer), `T @ (j, *)` (a column),
+  `T @ *` (all of a 1-D table). Two or more `*`s only as a copy (below).
+- `z in T` (2-D or more): whether the point z is on the table.
+- `table_cell(T, z)` (2-D or more): the cell z is in, as `(j, k)`, even off
   the table (indices may then be < 1 or > the size): `(j, k) := table_cell(T, z)`.
-- `table_point(T, (j, k))` (2-D only): the point at the center of cell
+- `table_point(T, (j, k))` (2-D or more): the point at the center of cell
   (j, k), for any j and k.
 - `table_size(T)`: Z for 1-D, else a tuple: `(w, h) := table_size(T)`.
   0 until a tool fills the table in.
 - Tools only (a viewer that does these is an error):
-  `allocate T of size (w, h)` lays a zero-filled table over the tool's
+  `reset T to (w, h)` lays a zero-filled table over the tool's
   viewer window (at `(viewer_width, viewer_height)`, cell (j, k) is pixel
-  (j - 1, k - 1)); `allocate T of size (w, h) from p to q` covers the
+  (j - 1, k - 1)); `reset T to (w, h) from p to q` covers the
   rectangle with top left p and bottom right q (the size must then be in
   parentheses, or a single name or number). Either form can end with
-  `filled with v` to start every cell at v instead of 0. `T @ (j, k) <- v` and
-  `T @ point z <- v` write a cell.
+  `filled with v` to start every cell at v instead of 0. `T @ (j, k) <- v`,
+  `T @ point z <- v` and `T @ (point z, m) <- v` write a cell.
+  `T @ (point z, *) <- xs` writes a one-`*` slice from a list of exactly
+  its length. `T @ (*, *, 1) <- U @ (*, *, 2)` copies a slice onto one of
+  the same shape (same table or another; U must be a table variable).
+  `resize T to (w, h, n) [filled with v]` changes the size keeping cell
+  (1, 1)'s place and the cell size: kept cells keep their values, the
+  rectangle grows/shrinks at the right/bottom, new cells are 0 (or v).
+  Drop layer k: copy layers k+1..n down one, then `resize` to n - 1.
 - A tool's table changes take effect when its handler succeeds, and
   viewers that read the table redraw. Writing a table viewers may be
   reading (or that another variable holds: `U := T`) writes a copy, so
@@ -508,11 +522,15 @@ g(a, b) := a f(b)
 define shade(c):          # named code block, parameters optional
   ...
 run shade(blue)           # `run name` with no arguments, or run name(a, b)
-allocate T of size (w, h)   # tools only: a table over the viewer's window
-allocate T of size (w, h) from p to q   # ... or over a rectangle (corners)
-allocate T of size (w, h) filled with v # ... starting every cell at v, not 0
+reset T to (w, h)   # tools only: a table over the viewer's window
+reset T to (w, h) from p to q   # ... or over a rectangle (corners)
+reset T to (w, h) filled with v # ... starting every cell at v, not 0
 T @ (j, k) <- v           # tools only: write a table's cell
 T @ point z <- v          # ... the cell the point z is in
+T @ (point z, m) <- v     # ... in layer m of a table with layers
+T @ (point z, *) <- xs    # ... a slice with one `*`, from a list as long as it
+T @ (*, *, 1) <- T @ (*, *, 2)   # ... copy a slice onto one of the same shape
+resize T to (w, h, n)     # tools only: new size, cells kept in place
 ```
 
 A long line can be continued with `...` (or `…`) at the end.

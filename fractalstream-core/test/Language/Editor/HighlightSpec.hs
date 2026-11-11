@@ -62,6 +62,33 @@ on click-or-drag at w:
 spec :: Spec
 spec = describe "highlighting scripts" $ do
 
+  it "colors list and table types as types" $ do
+    let src = "@config \"P\"\nxs : List of C := []\nT : Table 2 of R\n\n@viewer \"V\"\nk := 2\ncolor <- red\n"
+        c = classOf src
+    c "List" 0 `shouldBe` Just TypeName
+    c "of" 0 `shouldBe` Just TypeName
+    c "Table" 0 `shouldBe` Just TypeName
+    c "2" 0 `shouldBe` Just TypeName
+    c "of" 1 `shouldBe` Just TypeName
+    c "R" 0 `shouldBe` Just TypeName
+    -- (a number anywhere else is still a number)
+    c "2" 1 `shouldBe` Just NumberLiteral
+
+  it "colors the words of table statements as keywords" $ do
+    let src = unlines
+          [ "@config \"P\"", "T : Table 3 of R", ""
+          , "@viewer \"V\"", "color <- red", ""
+          , "@tool \"Fill\" for=\"V\"", "on click at p:"
+          , "  reset T to (viewer_width, viewer_height, 2) filled with 1"
+          , "  resize T to (viewer_width, viewer_height, 3)"
+          , "  T @ (point p, *) <- [1, 2, 3]" ]
+        c = classOf src
+    c "reset" 0 `shouldBe` Just Keyword
+    c "resize" 0 `shouldBe` Just Keyword
+    c "to" 0 `shouldBe` Just Keyword
+    c "filled" 0 `shouldBe` Just Keyword
+    c "point" 0 `shouldBe` Just Keyword
+
   it "classifies the parts of a script" $ do
     let c = classOf project
     c "@config" 0 `shouldBe` Just StanzaHeader
