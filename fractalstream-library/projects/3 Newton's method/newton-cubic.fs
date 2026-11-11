@@ -22,13 +22,11 @@ script: |
   on deactivated:
     erase
   on click-or-drag:
-    lastZ := 0
     erase
-    while z != lastZ:
-      lastZ <- z
+    until z stops:
       z <- newton(z)
-      draw point at lastZ
-      draw line from lastZ to z
+      draw point at previous z
+      draw line from previous z to z
     draw point at z
 metadata:
   title: Newton's method for z³ - 1

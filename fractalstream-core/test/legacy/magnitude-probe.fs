@@ -44,10 +44,9 @@ script: |
     draw point at z
     # each step runs the script once more, with each loop making at most one pass
     repeat up to 100 times:
-      previous := z
       run script(1)
       draw point at z
-      draw line from previous to z
+      draw line from previous z to z
     until z escapes
 metadata:
   title: "magnitude-probe"

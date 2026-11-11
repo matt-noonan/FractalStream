@@ -171,6 +171,10 @@ spec = describe "highlighting scripts" $ do
     classOf src "stops" 0 `shouldBe` Just Keyword
     classOf src "stopped" 0 `shouldBe` Just Keyword
 
+  it "knows `previous`" $ do
+    let src = "repeat:\n  z <- z^2\n  draw line from previous z to z\nuntil z escapes\n"
+    classOf src "previous" 0 `shouldBe` Just Keyword
+
   it "keeps built-ins built-in, even where a script tries to define them" $ do
     let src = "define foo(bar):\n  bar <- bar + 1\n"
     classOf src "bar" 0 `shouldBe` Just BuiltinFunction

@@ -518,6 +518,33 @@ In a loop that checks its condition before running its body (`while`,
 checked, since the loop hasn't made a pass yet. `stops` can only be used
 in a loop's condition; anywhere else it's an error.
 
+### The value at the start of a pass
+
+Inside a loop, `previous v` is the value the variable `v` had at the
+start of the loop's latest pass. In the loop's body, that's the pass
+running now, so a tool can draw each step of an orbit without keeping
+track of the last point itself:
+
+```
+repeat up to 50 times:
+  z ⭠ z² + C
+  draw line from previous z to z
+until z escapes
+```
+
+In the loop's condition, it's the pass that just finished:
+`repeat: ... until previous z = z` stops once a pass leaves `z` as it
+was. In a loop that checks its condition before running its body
+(`while`, `until`, and `iterate`), there's been no pass at the first
+check, and `previous v` is just `v` there. (To wait for a value to stop
+changing, use `stops`, above, which is `false` at that first check.)
+
+`previous` belongs to the innermost loop around it, including a
+`for each` loop, and `iterate`'s step and condition. A `previous` in a
+block of code that a loop `run`s belongs to that loop. `v` must be a
+variable that exists when the loop starts, not one declared inside the
+loop; and `previous` can only be used inside a loop.
+
 ### Conditionals
 
 You can conditionally execute code with `if` and `if/else` statements.

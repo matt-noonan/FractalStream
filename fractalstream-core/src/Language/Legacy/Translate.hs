@@ -586,15 +586,12 @@ translateT isReal title src body = do
             colorVar = freshIn usedT "trace_color"
             -- the point being traced
             traced = if isReal then [nameOf "x", nameOf "y"] else ["z"]
-            stepNames = case traced of
-              [x, y] -> let px = freshIn (Set.insert colorVar usedT) ("previous_" ++ x)
-                        in [px, freshIn (foldr Set.insert usedT [colorVar, px]) ("previous_" ++ y)]
-              _ -> [freshIn (Set.insert colorVar usedT) "previous"]
             tuple ns = case ns of
               [n] -> n
               _ -> "(" ++ intercalate ", " ns ++ ")"
             point = tuple traced
-            previous = tuple stepNames
+            -- (where the point was at the start of this step)
+            previous = tuple (map ("previous " ++) traced)
             toolTitle = freshIn (Set.fromList [ t | (_, t, _) <- probes body ]) "Trace"
         in [ Line ("@tool " ++ quote toolTitle ++ " for=\"Dynamical plane\" shortcut=t")
            , Line (colorVar ++ " : Color as \"Trace color\" := white")
@@ -610,8 +607,7 @@ translateT isReal title src body = do
                     [ Line ("draw point at " ++ point)
                     , Line "# each step runs the script once more, with each loop making at most one pass"
                     , Line "repeat up to 100 times:"
-                    , Nest [ Line (intercalate ", " stepNames ++ " := " ++ intercalate ", " traced)
-                           , Line (runScript "1" DynPlane)
+                    , Nest [ Line (runScript "1" DynPlane)
                            , Line ("draw point at " ++ point)
                            , Line ("draw line from " ++ previous ++ " to " ++ point) ]
                     , Line ("until " ++ point ++ " escapes") ] ) ]

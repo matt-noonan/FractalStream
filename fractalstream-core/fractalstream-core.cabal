@@ -103,6 +103,7 @@ library
                        Language.Code.Infer
                        Language.Code.Procedures
                        Language.Code.Hoist
+                       Language.Code.Previous
                        Language.Code.Stops
                        Language.Code.Tuples
                        Language.Legacy.Syntax

@@ -359,7 +359,7 @@ number.) A power of integers used as a real is computed as a real:
 
 **Reserved words** that can't be variable or function names: `e`, `i`,
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`,
-`times`, `text`, `escapes`, `vanishes`, `stops`, `iterations`, `stuck`, `append`,
+`times`, `text`, `escapes`, `vanishes`, `stops`, `previous`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
 `mod`, `point`, `table_size`, `table_cell`, `table_point`, `in`, `filled`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
 names in `@config`), `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
@@ -394,6 +394,14 @@ vanishing radius. In a loop's condition (only there), `x stops` / `x
 stopped` means `x` (any expression) is `=` to its value at the start of
 the latest pass through the body: `iterate z -> newton(z) until z stops`.
 It's false at the first check of a `while`/`until`/`iterate` loop.
+
+Inside a loop (body or condition), `previous v` is the variable `v`'s
+value at the start of the loop's latest pass: in the body, the current
+pass, so a trace tool writes `z <- f(z)` then `draw line from previous z
+to z` with no `lastZ` bookkeeping. At the first check of a
+`while`/`until`/`iterate` loop it's just `v`. It belongs to the innermost
+loop (including `for each`, and the loop around a `run`); `v` must exist
+before the loop starts.
 
 Boolean: `and`, `or`, `not`. Chains of one (`p and q and r`) are fine,
 but mixing `and` with `or` without parentheses is a parse error ("`and`

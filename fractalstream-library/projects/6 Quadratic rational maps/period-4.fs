@@ -105,12 +105,10 @@ script: |
   on click at w:
     erase
     use yellow for stroke
-    prev := w
     repeat up to 200 times:
       draw point at w
-      prev <- w
       w <- f(w)
-      draw line from prev to w
+      draw line from previous w to w
     until w escapes
   on deactivated:
     erase

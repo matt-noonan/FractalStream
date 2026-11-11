@@ -53,10 +53,9 @@ script: |
     draw point at (x, y)
     # each step runs the script once more, with each loop making at most one pass
     repeat up to 100 times:
-      previous_x, previous_y := x, y
       run script(1)
       draw point at (x, y)
-      draw line from (previous_x, previous_y) to (x, y)
+      draw line from (previous x, previous y) to (x, y)
     until (x, y) escapes
 metadata:
   title: "pendulum"

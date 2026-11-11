@@ -546,6 +546,9 @@ synthUn env sr op x = case op of
   -- every `stops` in a loop's condition was rewritten away
   -- ("Language.Code.Stops"), so this one is somewhere else
   OpStops -> advise sr "`stops` can only be used in a loop's condition, as in `until z stops`."
+  -- Similarly, every `previous` in a loop body was
+  -- rewritten away.
+  OpPrevious -> advise sr "`previous` can only be used inside a loop."
 
   OpDark   -> check env ColorT x >>= done ColorT
   OpLight  -> check env ColorT x >>= done ColorT
@@ -677,6 +680,7 @@ describe = \case
     OpEscapes -> "the result of `escapes`"
     OpVanishes -> "the result of `vanishes`"
     OpStops -> "the result of `stops`"
+    OpPrevious -> "the result of `previous`"
     _ -> "this color"
   EApp f _ -> "the result of " ++ f
   EColor3{} -> "this color"

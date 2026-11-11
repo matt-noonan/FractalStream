@@ -139,6 +139,7 @@ elabOwn t (Syn (sr, _) node) = case node of
     OpVanishes -> same sr t BooleanType $
       LTF <$> absValue x <*> variable sr internalVanishingRadius RealType
     OpStops -> inconsistent sr
+    OpPrevious -> inconsistent sr
     OpDark -> same sr t ColorType $
       Blend (Const $ Scalar RealType 0.333) (Const $ Scalar ColorType black) <$> el t x
     OpLight -> same sr t ColorType $

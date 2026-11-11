@@ -60,7 +60,6 @@ script: |
   # Draw the orbit of `z`, once it settles down to a cycle.
   define trace(initial_last):
     w := z
-    lastZ := initial_last
     erase
 
     repeat:
@@ -69,14 +68,13 @@ script: |
     until |z-w| vanishes or z escapes
 
     if |z-w| vanishes:
-      z <- lastZ
+      z <- initial_last
 
       while not (|z-w| vanishes):
-        lastZ <- z
         z <- f(z)
 
-        draw point at lastZ
-        draw line from lastZ to z
+        draw point at previous z
+        draw line from previous z to z
 
     use green for stroke
     draw circle at w with radius minRadius

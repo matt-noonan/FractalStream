@@ -38,14 +38,12 @@ script: |
     erase
 
   on click-or-drag:
-    lastZ := 0
     erase
     repeat:
-      lastZ <- z
       z <- newton(z)
-      draw point at lastZ
-      draw line from lastZ to z
-    while z != lastZ
+      draw point at previous z
+      draw line from previous z to z
+    until z stops
 
     draw point at z
 

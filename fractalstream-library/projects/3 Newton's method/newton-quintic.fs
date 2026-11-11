@@ -20,15 +20,13 @@ script: |
   on deactivated:
     erase
   on click-or-drag:
-    lastZ := 0
     erase
     use white for stroke
     repeat:
-      lastZ <- z
       z <- newton(z)
-      draw point at lastZ
-      draw line from lastZ to z
-    until z = lastZ
+      draw point at previous z
+      draw line from previous z to z
+    until z stops
     draw point at z
 metadata:
   title: Newton's method for z⁵ - z - 1

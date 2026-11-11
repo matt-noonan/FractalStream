@@ -198,21 +198,23 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 erase
                 use Color 255 255 0 for line
-                let `prev` = w in:
-                  block:
-                    let `[internal] fresh #19` = 0 in:
-                      let `[internal] fresh #20` = 200 in:
-                        block:
-                          do-while (!([internal] escape radius < |w|) and ([internal] fresh #19 < [internal] fresh #20)):
-                            block:
+                block:
+                  let `[internal] previous.w #0` = w in:
+                    block:
+                      let `[internal] fresh #19` = 0 in:
+                        let `[internal] fresh #20` = 200 in:
+                          block:
+                            do-while (!([internal] escape radius < |w|) and ([internal] fresh #19 < [internal] fresh #20)):
                               block:
-                                draw point at w:R^2
-                                set `prev` := w
-                                set `w` := let [internal] f.z #0 = w in ((((([internal] f.z #0 ^ 2:R:C) + (c ^ 3:R:C)) - c) - 1:R:C) / (([internal] f.z #0 ^ 2:R:C) - (c ^ 2:R:C)))
-                                draw line from prev:R^2 to w:R^2
-                              set `[internal] fresh #19` := ([internal] fresh #19 + 1)
-                          set `[internal] iteration count` := [internal] fresh #19
-                          set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
+                                block:
+                                  set `[internal] previous.w #0` := w
+                                  block:
+                                    draw point at w:R^2
+                                    set `w` := let [internal] f.z #0 = w in ((((([internal] f.z #0 ^ 2:R:C) + (c ^ 3:R:C)) - c) - 1:R:C) / (([internal] f.z #0 ^ 2:R:C) - (c ^ 2:R:C)))
+                                    draw line from [internal] previous.w #0:R^2 to w:R^2
+                                set `[internal] fresh #19` := ([internal] fresh #19 + 1)
+                            set `[internal] iteration count` := [internal] fresh #19
+                            set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

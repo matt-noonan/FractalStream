@@ -23,10 +23,9 @@ script: |
   on click-or-drag:
     erase
     repeat up to 60 times:
-      lastZ := z
       z <- newton(z)
-      draw point at lastZ
-      draw line from lastZ to z
+      draw point at previous z
+      draw line from previous z to z
     until z stops
     draw point at z
 metadata:
