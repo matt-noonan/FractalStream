@@ -43,7 +43,7 @@ export interface ViewerInfo {
   title: string;
 }
 
-/** A viewer's frame: RGB pixels, and the view they show. */
+/** A viewer's frame: RGBA pixels, and the view they show. */
 export interface Frame {
   type: "frame";
   viewer: number;

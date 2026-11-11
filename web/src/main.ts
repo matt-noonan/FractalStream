@@ -143,39 +143,92 @@ function fieldResult(name: string, error: string | null) {
 }
 
 // ---------------------------------------------------------------------
-// A viewer: a canvas showing its latest frame. Dragging moves the view,
-// and the wheel zooms about the pointer; the image moves at once, and the
-// new frame replaces it when the engine has drawn it.
+// A viewer: a canvas showing its latest frame, in the view the page wants.
+//
+// The page keeps the view it wants (the target: a center, and a pixel's
+// size), which dragging and the wheel change at once, and always draws
+// the latest frame where it belongs in that view (each frame says what
+// view it shows): a frame for an older view is just drawn a little moved
+// or scaled, until a frame for the new one replaces it. So the picture
+// never jumps back. The engine is asked for one view at a time: when a
+// frame comes, if the target has moved on since, it's asked for the
+// target.
+
+interface View { cx: number; cy: number; px: number; py: number }
+
+const sameView = (a: View, b: View) => {
+  const close = (x: number, y: number) => Math.abs(x - y) <= 1e-12 * Math.max(Math.abs(x), Math.abs(y), 1e-300);
+  return close(a.cx, b.cx) && close(a.cy, b.cy) && close(a.px, b.px) && close(a.py, b.py);
+};
 
 class ViewerView {
   readonly element: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
-  private frame: Frame | null = null;
-  private drag: { x: number; y: number } | null = null;
+  private readonly context: CanvasRenderingContext2D;
+  /** The latest frame, as an image to draw from. */
+  private frame: { view: View; image: HTMLCanvasElement } | null = null;
+  private target: View | null = null;
+  private requested: { view: View; at: number } | null = null;
+  private drawPending = false;
+  private dragFrom: { x: number; y: number } | null = null;
 
   constructor(private readonly info: ViewerInfo) {
     this.canvas = el("canvas", { width: 1, height: 1 });
+    this.context = this.canvas.getContext("2d")!;
     this.element = el("figure", { className: "viewer" }, this.canvas, el("figcaption", { textContent: info.title }));
     this.canvas.addEventListener("pointerdown", (e) => this.startDrag(e));
     this.canvas.addEventListener("pointermove", (e) => this.moveDrag(e));
-    this.canvas.addEventListener("pointerup", (e) => this.endDrag(e));
+    this.canvas.addEventListener("pointerup", () => (this.dragFrom = null));
+    this.canvas.addEventListener("pointercancel", () => (this.dragFrom = null));
     this.canvas.addEventListener("wheel", (e) => this.zoom(e), { passive: false });
   }
 
   show(frame: Frame) {
-    this.frame = frame;
-    const { width, height } = frame;
-    if (this.canvas.width !== width || this.canvas.height !== height) {
-      this.canvas.width = width;
-      this.canvas.height = height;
+    const image = el("canvas", { width: frame.width, height: frame.height });
+    image.getContext("2d")!.putImageData(
+      new ImageData(new Uint8ClampedArray(frame.pixels), frame.width, frame.height), 0, 0);
+    const view = { cx: frame.cx, cy: frame.cy, px: frame.px, py: frame.py };
+    this.frame = { view, image };
+    if (!this.target) {
+      this.target = { ...view };
+      this.canvas.width = frame.width;
+      this.canvas.height = frame.height;
     }
-    const rgb = new Uint8Array(frame.pixels);
-    const rgba = new Uint8ClampedArray(width * height * 4);
-    for (let i = 0, j = 0; i < rgb.length; i += 3, j += 4) {
-      rgba[j] = rgb[i]; rgba[j + 1] = rgb[i + 1]; rgba[j + 2] = rgb[i + 2]; rgba[j + 3] = 255;
-    }
-    this.canvas.getContext("2d")!.putImageData(new ImageData(rgba, width, height), 0, 0);
-    this.canvas.style.transform = "";
+    // (whichever request this answers, the engine is free again)
+    this.requested = null;
+    this.redraw();
+    this.request();
+  }
+
+  /** Draw the latest frame in the target view (once per display frame). */
+  private redraw() {
+    if (this.drawPending) return;
+    this.drawPending = true;
+    requestAnimationFrame(() => {
+      this.drawPending = false;
+      const f = this.frame, t = this.target;
+      if (!f || !t) return;
+      const W = this.canvas.width, H = this.canvas.height;
+      const fw = f.image.width, fh = f.image.height;
+      // where the frame's corners are, in the target view's pixels
+      const left = (f.view.cx - (fw / 2) * f.view.px - t.cx) / t.px + W / 2;
+      const top = (t.cy - (f.view.cy + (fh / 2) * f.view.py)) / t.py + H / 2;
+      const ctx = this.context;
+      ctx.fillStyle = "#808080";
+      ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(f.image, left, top, (fw * f.view.px) / t.px, (fh * f.view.py) / t.py);
+    });
+  }
+
+  /** Ask the engine for the target view, unless it's busy (or has it). */
+  private request() {
+    const t = this.target, f = this.frame;
+    if (!t || !f) return;
+    // (if an answer never came, ask again after a while)
+    if (this.requested && performance.now() - this.requested.at < 2000) return;
+    if (sameView(t, f.view)) return;
+    this.requested = { view: { ...t }, at: performance.now() };
+    send({ type: "view", viewer: this.info.id, cx: t.cx, cy: t.cy, pixelSize: t.px });
   }
 
   /** The pointer's position in the canvas's pixels. */
@@ -186,56 +239,40 @@ class ViewerView {
   }
 
   private startDrag(e: PointerEvent) {
-    if (!this.frame) return;
+    if (!this.target) return;
     this.canvas.setPointerCapture(e.pointerId);
-    this.drag = this.pixel(e);
+    this.dragFrom = this.pixel(e);
   }
 
   private moveDrag(e: PointerEvent) {
-    if (!this.drag) return;
+    const t = this.target;
+    if (!this.dragFrom || !t) return;
     const p = this.pixel(e);
-    const r = this.canvas.getBoundingClientRect();
-    const scale = r.width / this.canvas.width;
-    this.canvas.style.transform = `translate(${(p.x - this.drag.x) * scale}px, ${(p.y - this.drag.y) * scale}px)`;
-  }
-
-  private endDrag(e: PointerEvent) {
-    if (!this.drag || !this.frame) return;
-    const p = this.pixel(e);
-    const dx = p.x - this.drag.x, dy = p.y - this.drag.y;
-    this.drag = null;
-    if (dx === 0 && dy === 0) return;
-    const f = this.frame;
-    this.request(f.cx - dx * f.px, f.cy + dy * f.py, f.px);
+    t.cx -= (p.x - this.dragFrom.x) * t.px;
+    t.cy += (p.y - this.dragFrom.y) * t.py;
+    this.dragFrom = p;
+    this.redraw();
+    this.request();
   }
 
   private zoom(e: WheelEvent) {
     e.preventDefault();
-    if (!this.frame) return;
-    const f = this.frame;
-    const factor = Math.exp(e.deltaY * 0.002);
+    const t = this.target;
+    if (!t) return;
+    // (a line or a page of scrolling counts as more than a pixel)
+    const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    const factor = Math.exp(delta * 0.002);
     const p = this.pixel(e);
+    const W = this.canvas.width, H = this.canvas.height;
     // the model point under the pointer stays where it is
-    const mx = f.cx + (p.x - f.width / 2) * f.px;
-    const my = f.cy - (p.y - f.height / 2) * f.py;
-    const px = f.px * factor, py = f.py * factor;
-    this.request(mx - (p.x - f.width / 2) * px, my + (p.y - f.height / 2) * py, px);
-    // (until the new frame comes, the old one, scaled about the pointer)
-    this.frame = { ...f, cx: mx - (p.x - f.width / 2) * px, cy: my + (p.y - f.height / 2) * py, px, py };
-    const r = this.canvas.getBoundingClientRect();
-    const scale = r.width / this.canvas.width;
-    const s = this.currentScale() / factor;
-    this.canvas.style.transformOrigin = `${p.x * scale}px ${p.y * scale}px`;
-    this.canvas.style.transform = `scale(${s})`;
-  }
-
-  private currentScale(): number {
-    const m = /scale\(([^)]+)\)/.exec(this.canvas.style.transform);
-    return m ? Number(m[1]) : 1;
-  }
-
-  private request(cx: number, cy: number, pixelSize: number) {
-    send({ type: "view", viewer: this.info.id, cx, cy, pixelSize });
+    const mx = t.cx + (p.x - W / 2) * t.px;
+    const my = t.cy - (p.y - H / 2) * t.py;
+    t.px *= factor;
+    t.py *= factor;
+    t.cx = mx - (p.x - W / 2) * t.px;
+    t.cy = my + (p.y - H / 2) * t.py;
+    this.redraw();
+    this.request();
   }
 }
 

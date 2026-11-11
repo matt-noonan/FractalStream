@@ -42,9 +42,14 @@ g.fractalstreamAutocolor = await WebAssembly.compile(await fetchBytes("autocolor
 
 // What the engine posts.
 g.fractalstreamPost = (json: string) => send(JSON.parse(json));
-g.fractalstreamPostFrame = (viewer: number, pixels: Uint8Array, width: number, height: number,
+// (as RGBA, ready for an ImageData: done here, off the page's thread)
+g.fractalstreamPostFrame = (viewer: number, rgb: Uint8Array, width: number, height: number,
                             cx: number, cy: number, px: number, py: number) => {
-  const frame: Frame = { type: "frame", viewer, width, height, cx, cy, px, py, pixels: pixels.buffer as ArrayBuffer };
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0, j = 0; i < rgb.length; i += 3, j += 4) {
+    rgba[j] = rgb[i]; rgba[j + 1] = rgb[i + 1]; rgba[j + 2] = rgb[i + 2]; rgba[j + 3] = 255;
+  }
+  const frame: Frame = { type: "frame", viewer, width, height, cx, cy, px, py, pixels: rgba.buffer };
   send(frame, [frame.pixels]);
 };
 
