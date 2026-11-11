@@ -122,13 +122,46 @@ interpretToIOWithLastValues draw = indexedFold @ScalarIORefM' phi
         t0 <- zoom (eval (Var name (TableType d ty) pf))
         ixs <- case cell of
           CellAt ixs -> map fromIntegral <$> mapM (zoom . eval) ixs
-          CellNear z -> zoom (eval z) <&> \z' ->
-            fromMaybe (error ("The point " ++ show z' ++ " is off the table `" ++ symbolVal name ++ "`."))
-                      (pointCell t0 z')
+          CellNear z rest -> do
+            z' <- zoom (eval z)
+            rest' <- map fromIntegral <$> mapM (zoom . eval) rest
+            pure $ fromMaybe (error ("The point " ++ show z' ++ " is off the table `" ++ symbolVal name ++ "`."))
+                             (pointCell t0 z') ++ rest'
         t <- lift (thawForWrite ty t0)
         ok <- lift (writeCell ty t ixs v)
         unless ok $ error ("Table index " ++ show ixs ++ " is out of range for `" ++ symbolVal name ++ "`.")
         when (tableBuffer t /= tableBuffer t0) $ zoom (update pf name (TableType d ty) t)
+
+      TableWriteSlice pf name d ty sl ve -> withKnownType ty $ withKnownNat d $ do
+        vs <- zoom (eval ve)
+        t0 <- zoom (eval (Var name (TableType d ty) pf))
+        ixs <- sliceIndicesOf t0 sl
+        t <- lift (thawForWrite ty t0)
+        ok <- lift (writeSlice ty t ixs vs)
+        unless ok $ error ("The slice " ++ showSlice ixs ++ " of `" ++ symbolVal name ++ "` is out of range, \
+                           \or its length isn't the list's, " ++ show (length vs) ++ ".")
+        when (tableBuffer t /= tableBuffer t0) $ zoom (update pf name (TableType d ty) t)
+
+      TableCopySlice pf name d ty sl _ src srcSl -> withKnownType ty $ withKnownNat d $ do
+        s0 <- zoom (eval src)
+        srcIxs <- sliceIndicesOf s0 srcSl
+        t0 <- zoom (eval (Var name (TableType d ty) pf))
+        ixs <- sliceIndicesOf t0 sl
+        t <- lift (thawForWrite ty t0)
+        ok <- lift (copySliceBytes (fromMaybe 0 (elementSize ty)) t ixs s0 srcIxs)
+        unless ok $ error ("The slice " ++ showSlice srcIxs ++ " can't be copied onto the slice "
+                           ++ showSlice ixs ++ " of `" ++ symbolVal name ++ "`: one is out of range, \
+                           \or their sizes are different.")
+        when (tableBuffer t /= tableBuffer t0) $ zoom (update pf name (TableType d ty) t)
+
+      TableResize pf name d ty szs mfill -> withKnownType ty $ withKnownNat d $ do
+        sizes <- mapM (zoom . eval) szs
+        fill <- traverse (zoom . eval) mfill
+        t0 <- zoom (eval (Var name (TableType d ty) pf))
+        lift (resizeTable ty t0 (map fromIntegral sizes) fill) >>= \case
+          Nothing -> error ("A table's size can't be negative, but `" ++ symbolVal name ++ "` was given "
+                            ++ show sizes ++ ".")
+          Just t -> zoom (update pf name (TableType d ty) t)
 
       NoOp -> pure ()
 
@@ -177,3 +210,14 @@ freezeIfTable :: TypeProxy t -> HaskellType t -> IO ()
 freezeIfTable ty v = case ty of
   TableType{} -> freezeTable v
   _ -> pure ()
+
+-- | A slice's indices in a table, one per dimension.
+sliceIndicesOf :: Table -> TableSliceAt env
+               -> StateT (Map String SomeHaskellType, Context IORefTypeOfBinding env) IO [SliceIndex]
+sliceIndicesOf t (SliceAt mp ixs) = do
+  p <- traverse (zoom . eval) mp
+  ixs' <- mapM (traverse (fmap fromIntegral . zoom . eval)) ixs
+  pure (sliceIndices t p ixs')
+
+showSlice :: [SliceIndex] -> String
+showSlice ixs = "(" ++ intercalate ", " (map (\case { Fixed k -> show k; Every -> "*" }) ixs) ++ ")"

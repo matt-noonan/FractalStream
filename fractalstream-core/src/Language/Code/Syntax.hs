@@ -73,10 +73,13 @@ data StmtF
     -- @iterate (x, y) -> (e1, e2) ...@
   | SPass
   | SDraw DrawStmt
-  | SSetTable String Bool Expr Expr
-    -- ^ @T \@ (j, k) <- v@, or (when the flag is set) @T \@ point z <- v@
+  | SSetTable String Expr Expr
+    -- ^ @T \@ (j, k) <- v@, or @T \@ point z <- v@, or a slice: @T \@ (j, *)
+    -- <- xs@ (the index can have 'EPointIndex' and 'ESliceAll' parts)
+  | SResize String Expr (Maybe Expr)
+    -- ^ @resize T to (w, h)@, maybe @filled with v@
   | SAllocate String Expr (Maybe (Expr, Expr)) (Maybe Expr)
-    -- ^ @allocate T of size (w, h)@, maybe @from p to q@, maybe
+    -- ^ @reset T to (w, h)@, maybe @from p to q@, maybe
     -- @filled with v@
   | SForEach String String Stmt
     -- ^ @for each item in list: body@
@@ -114,7 +117,8 @@ stmtNames (Stmt _ node) = case node of
   SLoop _ c lim body -> exprNames c <> foldMap exprNames lim <> stmtNames body
   SIterate p e _ c lim -> Set.fromList (patternNames p) <> exprNames e <> exprNames c <> foldMap exprNames lim
   SPass -> Set.empty
-  SSetTable n _ ix v -> Set.insert n (exprNames ix <> exprNames v)
+  SSetTable n ix v -> Set.insert n (exprNames ix <> exprNames v)
+  SResize n sz fill -> Set.insert n (exprNames sz <> foldMap exprNames fill)
   SAllocate n sz corners fill -> Set.insert n (exprNames sz <> foldMap (\(p, q) -> exprNames p <> exprNames q) corners
                                              <> foldMap exprNames fill)
   SDraw d -> case d of

@@ -33,9 +33,18 @@ module Backend.LLVM.Table
   , buildTableCellPoint
   , buildTableWrite
   , buildTableAllocate
+  , buildSliceView
+  , buildTableWriteSlice
+  , buildTableCopySlice
+  , buildTableResize
   , freezeDescriptor
+  , pointIndices
+  , elemBytes
   , tableNewFnType
   , tableThawFnType
+  , tableResizeFnType
+  , tableCopyFnType
+  , TableCallbacks(..)
   ) where
 
 import FractalStream.Prelude
@@ -51,7 +60,7 @@ import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Foreign.Marshal.Alloc (mallocBytes, free)
 import Foreign.Marshal.Array (peekArray)
 import Foreign.Ptr
-import Foreign.Storable (pokeByteOff)
+import Foreign.Storable (pokeByteOff, peekElemOff)
 import System.IO.Unsafe (unsafePerformIO)
 import Control.Exception (bracket, finally)
 
@@ -104,11 +113,27 @@ lookupDescriptor d = Map.lookup (ptrToWordPtr d) <$> readIORef registry
 
 type TableNew = Int32 -> Int32 -> Ptr Int32 -> Double -> Double -> Double -> Double -> IO (Ptr Word8)
 type TableThaw = Int32 -> Ptr Word8 -> IO (Ptr Word8)
+type TableResize = Int32 -> Ptr Word8 -> Int32 -> Ptr Int32 -> Ptr Word8 -> IO (Ptr Word8)
+type TableCopy = Int32 -> Ptr Word8 -> Int32 -> Ptr Int32 -> Ptr Word8
+              -> Ptr Word8 -> Int32 -> Ptr Int32 -> Ptr Word8 -> IO Int32
 
 foreign import ccall "wrapper"
   wrapTableNew :: TableNew -> IO (FunPtr TableNew)
 foreign import ccall "wrapper"
   wrapTableThaw :: TableThaw -> IO (FunPtr TableThaw)
+foreign import ccall "wrapper"
+  wrapTableResize :: TableResize -> IO (FunPtr TableResize)
+foreign import ccall "wrapper"
+  wrapTableCopy :: TableCopy -> IO (FunPtr TableCopy)
+
+-- | The host's table callbacks, for a tool handler (see
+-- 'withTableCallbacks').
+data TableCallbacks = TableCallbacks
+  { tcNew    :: FunPtr TableNew
+  , tcThaw   :: FunPtr TableThaw
+  , tcResize :: FunPtr TableResize
+  , tcCopy   :: FunPtr TableCopy
+  }
 
 -- | Run a tool handler with the host's table callbacks:
 --
@@ -116,10 +141,20 @@ foreign import ccall "wrapper"
 --   table, filled with zeros, covering the rectangle from (x1, y1) (top
 --   left) to (x2, y2); null if a size is negative.
 -- * @thaw(element size, descriptor)@: a descriptor for a copy of the table.
+-- * @resize(element size, descriptor, n, sizes, fill)@: a descriptor for a
+--   copy of the table with new sizes, in the same place (see
+--   'Language.Table.resizeTableBytes'), its new cells filled with the
+--   element at @fill@ (or zeros, if it's null); null if a size is
+--   negative.
+-- * @copy(element size, to, n, indices, stars, from, m, indices, stars)@:
+--   copy a slice of the table @from@ onto one of the table @to@ (which
+--   must be the tool's own: thawed, or new), each given by its indices and
+--   which of them are @*@s (a nonzero byte); 1 if it went well, 0 if an
+--   index was out of range or the slices' shapes are different.
 --
 -- The descriptors they make are freed when the action finishes, so the
 -- action must do its write-back first.
-withTableCallbacks :: (FunPtr TableNew -> FunPtr TableThaw -> IO a) -> IO a
+withTableCallbacks :: (TableCallbacks -> IO a) -> IO a
 withTableCallbacks action = do
   made <- newIORef []
   let remember d = modifyIORef' made (d :) >> pure d
@@ -135,9 +170,33 @@ withTableCallbacks action = do
         Just t -> do
           t' <- copyTableBytes (fromIntegral size) t
           remember =<< newDescriptor t' False
+      resize size d n dimsP fillP = lookupDescriptor d >>= \case
+        Nothing -> pure nullPtr
+        Just t -> do
+          dims <- map fromIntegral <$> peekArray (fromIntegral n) dimsP
+          resizeTableBytes (fromIntegral size) t dims (if fillP == nullPtr then Nothing else Just fillP) >>= \case
+            Nothing -> pure nullPtr
+            Just t' -> remember =<< newDescriptor t' False
+      copy size dstD n dstIxP dstStarP srcD m srcIxP srcStarP = do
+        mdst <- lookupDescriptor dstD
+        msrc <- lookupDescriptor srcD
+        dstIxs <- sliceOf n dstIxP dstStarP
+        srcIxs <- sliceOf m srcIxP srcStarP
+        case (mdst, msrc) of
+          (Just dst, Just src) -> do
+            ok <- copySliceBytes (fromIntegral size) dst dstIxs src srcIxs
+            pure (if ok then 1 else 0)
+          _ -> pure 0
+      sliceOf n ixP starP = forM [0 .. fromIntegral n - 1] $ \k -> do
+        star <- peekElemOff starP k
+        ix <- peekElemOff ixP k
+        pure (if star /= 0 then Every else Fixed (fromIntegral ix))
   bracket (wrapTableNew new) freeHaskellFunPtr $ \newFP ->
     bracket (wrapTableThaw thaw) freeHaskellFunPtr $ \thawFP ->
-      action newFP thawFP `finally` (readIORef made >>= mapM_ freeDescriptor)
+    bracket (wrapTableResize resize) freeHaskellFunPtr $ \resizeFP ->
+    bracket (wrapTableCopy copy) freeHaskellFunPtr $ \copyFP ->
+      action (TableCallbacks newFP thawFP resizeFP copyFP)
+        `finally` (readIORef made >>= mapM_ freeDescriptor)
 
 ------------------------------------------------------------------------
 -- Code generation
@@ -149,6 +208,14 @@ tableNewFnType, tableThawFnType :: AST.Type
 tableNewFnType = AST.ptr (AST.FunctionType (AST.ptr AST.i8)
   [AST.i32, AST.i32, AST.ptr AST.i32, AST.double, AST.double, AST.double, AST.double] False)
 tableThawFnType = AST.ptr (AST.FunctionType (AST.ptr AST.i8) [AST.i32, AST.ptr AST.i8] False)
+
+-- | The host's @resize@ and @copy@ callbacks (see 'withTableCallbacks').
+tableResizeFnType, tableCopyFnType :: AST.Type
+tableResizeFnType = AST.ptr (AST.FunctionType (AST.ptr AST.i8)
+  [AST.i32, AST.ptr AST.i8, AST.i32, AST.ptr AST.i32, AST.ptr AST.i8] False)
+tableCopyFnType = AST.ptr (AST.FunctionType AST.i32
+  [ AST.i32, AST.ptr AST.i8, AST.i32, AST.ptr AST.i32, AST.ptr AST.i8
+  , AST.ptr AST.i8, AST.i32, AST.ptr AST.i32, AST.ptr AST.i8 ] False)
 
 field :: Build m => Operand -> Integer -> AST.Type -> m Operand
 field desc offset ty = do
@@ -214,9 +281,13 @@ pointIndices getExtern desc x y = do
   k <- fsub oy y >>= (`fdiv` sy) >>= nearest
   pure [j, k]
 
-buildTablePoint :: Build m => (String -> Operand) -> ArenaState -> TypeProxy t -> Operand -> Operand -> Operand -> m (Op t)
-buildTablePoint getExtern arena ty desc x y =
-  pointIndices getExtern desc x y >>= buildTableRead arena ty desc
+-- | Read the cell nearest a point, at some indices in the dimensions
+-- after the first two.
+buildTablePoint :: Build m => (String -> Operand) -> ArenaState -> TypeProxy t -> Operand -> Operand -> Operand
+                -> [Operand] -> m (Op t)
+buildTablePoint getExtern arena ty desc x y rest = do
+  ixs <- pointIndices getExtern desc x y
+  buildTableRead arena ty desc (ixs ++ rest)
 
 -- | A table's size, as an integer or nested pairs of them.
 buildTableSize :: Build m => TypeProxy sz -> Operand -> m (Op sz)
@@ -269,8 +340,26 @@ freezeDescriptor desc = do
 -- | Write a cell of the table in a variable's slot (an @i8**@), copying
 -- the table first if it's frozen; out of range sets the index-error flag.
 buildTableWrite :: Build m => (String -> Operand) -> ArenaState -> Operand -> TypeProxy t -> Operand
-                -> Either [Operand] (Operand, Operand) -> Op t -> m ()
+                -> Either [Operand] ((Operand, Operand), [Operand]) -> Op t -> m ()
 buildTableWrite getExtern arena thawF ty slot cell v = do
+  desc <- thawSlot thawF ty slot
+  ixs <- either pure (\((x, y), rest) -> (++ rest) <$> pointIndices getExtern desc x y) cell
+  (inRange, p) <- tableCell ty desc ixs
+  mdo
+    condBr inRange okB badB
+    okB <- block `named` "table_store"
+    storeElemAt ty p v
+    br doneB
+    badB <- block `named` "table_write_out_of_range"
+    store (asIndexError arena) 0 (C.bit 1)
+    br doneB
+    doneB <- block `named` "table_write_done"
+    pure ()
+
+-- | The table in a variable's slot (an @i8**@), copied first if it's
+-- frozen, so that the tool can write it in place.
+thawSlot :: Build m => Operand -> TypeProxy t -> Operand -> m Operand
+thawSlot thawF ty slot = do
   size <- elemBytes ty
   desc0 <- load slot 0
   frozen <- loadField desc0 12 AST.i32
@@ -283,18 +372,140 @@ buildTableWrite getExtern arena thawF ty slot cell v = do
     br writeB
     writeB <- block `named` "table_write"
     pure ()
-  desc <- load slot 0
-  ixs <- either pure (\(x, y) -> pointIndices getExtern desc x y) cell
-  (inRange, p) <- tableCell ty desc ixs
+  load slot 0
+
+-- | Where a slice of a table is (as 'Language.Table.sliceView'), given
+-- its indices, one per dimension, each an integer or a @*@ ('Nothing'):
+-- whether its integers are in range, its first cell (counting cells from
+-- 0), and for each @*@ the number of cells it spans and how far apart
+-- they are.
+buildSliceView :: Build m => Operand -> [Maybe Operand] -> m (Operand, Operand, [(Operand, Operand)])
+buildSliceView desc ixs = do
+  let step (inRange, base, stride, spans) (k, mi) = do
+        dim <- loadField desc (48 + 4 * k) AST.i32
+        stride' <- mul stride dim
+        case mi of
+          Nothing -> pure (inRange, base, stride', spans ++ [(dim, stride)])
+          Just i -> do
+            atLeast1 <- icmp IP.SGE i (C.int32 1)
+            atMost <- icmp IP.SLE i dim
+            inRange' <- I.and inRange =<< I.and atLeast1 atMost
+            term <- sub i (C.int32 1) >>= (`mul` stride)
+            base' <- add base term
+            pure (inRange', base', stride', spans)
+  (inRange, base, _, spans) <- foldM step (C.bit 1, C.int32 0, C.int32 1, []) (zip [0 ..] ixs)
+  pure (inRange, base, spans)
+
+-- | A pointer to the element of the cell with the given number (counting
+-- from 0).
+cellPtr :: Build m => TypeProxy t -> Operand -> Operand -> m Operand
+cellPtr ty desc cell = do
+  size <- elemBytes ty
+  elems <- loadField desc 0 (AST.ptr AST.i8)
+  byteOffset <- sext cell AST.i64 >>= (`mul` C.int64 size)
+  gep elems [byteOffset]
+
+-- | Write a slice with one @*@ of the table in a variable's slot, from a
+-- list (its head pointer) with one element for each of its cells; out of
+-- range, or a list of another length, sets the index-error flag.
+buildTableWriteSlice :: Build m => ArenaState -> Operand -> TypeProxy t -> Operand -> [Maybe Operand] -> Operand -> m ()
+buildTableWriteSlice arena thawF ty slot ixs listHead = do
+  desc <- thawSlot thawF ty slot
+  (inRange, base, spans) <- buildSliceView desc ixs
+  (count, stride) <- case spans of
+    [span1] -> pure span1
+    _ -> throwError "internal error: a list is written to a slice with one `*`"
+  iSlot <- alloca AST.i32 Nothing 0
+  store iSlot 0 (C.int32 0)
+  nodeSlot <- alloca (AST.ptr AST.i8) Nothing 0
+  store nodeSlot 0 listHead
   mdo
-    condBr inRange okB badB
-    okB <- block `named` "table_store"
+    condBr inRange headB badB
+    headB <- block `named` "slice_write_head"
+    i <- load iSlot 0
+    node <- load nodeSlot 0
+    atEnd <- icmp IP.EQ node nullI8Ptr
+    condBr atEnd endB moreB
+    moreB <- block `named` "slice_write_more"
+    full <- icmp IP.SGE i count
+    condBr full badB bodyB
+    bodyB <- block `named` "slice_write"
+    v <- loadListElem ty node
+    cell <- mul i stride >>= add base
+    p <- cellPtr ty desc cell
     storeElemAt ty p v
-    br doneB
-    badB <- block `named` "table_write_out_of_range"
+    add i (C.int32 1) >>= store iSlot 0
+    loadListNext node >>= store nodeSlot 0
+    br headB
+    endB <- block `named` "slice_write_end"
+    short <- icmp IP.NE i count
+    condBr short badB doneB
+    badB <- block `named` "slice_write_bad"
     store (asIndexError arena) 0 (C.bit 1)
     br doneB
-    doneB <- block `named` "table_write_done"
+    doneB <- block `named` "slice_write_done"
+    pure ()
+
+-- | Copy a slice of a table (a descriptor) onto a slice of the table in a
+-- variable's slot, each given by its indices (each an integer or a @*@),
+-- by the host's @copy@; a failure sets the index-error flag.
+buildTableCopySlice :: Build m => ArenaState -> Operand -> Operand -> TypeProxy t -> Operand -> [Maybe Operand]
+                    -> Operand -> [Maybe Operand] -> m ()
+buildTableCopySlice arena thawF copyF ty slot ixs srcDesc srcIxs = do
+  size <- elemBytes ty
+  desc <- thawSlot thawF ty slot
+  (dstIxP, dstStarP) <- sliceArrays ixs
+  (srcIxP, srcStarP) <- sliceArrays srcIxs
+  ok <- call copyF [ (C.int32 size, []), (desc, []), (C.int32 (fromIntegral (length ixs)), []), (dstIxP, []), (dstStarP, [])
+                   , (srcDesc, []), (C.int32 (fromIntegral (length srcIxs)), []), (srcIxP, []), (srcStarP, []) ]
+  failed <- icmp IP.EQ ok (C.int32 0)
+  mdo
+    condBr failed badB doneB
+    badB <- block `named` "slice_copy_bad"
+    store (asIndexError arena) 0 (C.bit 1)
+    br doneB
+    doneB <- block `named` "slice_copy_done"
+    pure ()
+  where
+    sliceArrays mixs = do
+      let n = C.int32 (fromIntegral (max 1 (length mixs)))
+      ixP <- alloca AST.i32 (Just n) 0
+      starP <- alloca AST.i8 (Just n) 0
+      forM_ (zip [0 ..] mixs) $ \(k, mi) -> do
+        p <- gep ixP [C.int32 k]
+        q <- gep starP [C.int32 k]
+        store p 0 (fromMaybe (C.int32 0) mi)
+        store q 0 (C.int8 (if isJust mi then 0 else 1))
+      pure (ixP, starP)
+
+-- | Give the variable in a slot its table with new sizes, by the host's
+-- @resize@; a negative size sets the index-error flag.
+buildTableResize :: Build m => ArenaState -> Operand -> TypeProxy t -> Operand -> [Operand] -> Maybe (Op t) -> m ()
+buildTableResize arena resizeF ty slot sizes fill = do
+  size <- elemBytes ty
+  dims <- alloca AST.i32 (Just (C.int32 (fromIntegral (max 1 (length sizes))))) 0
+  forM_ (zip [0 ..] sizes) $ \(k, n) -> do
+    p <- gep dims [C.int32 k]
+    store p 0 n
+  fillP <- case fill of
+    Nothing -> pure nullI8Ptr
+    Just v -> do
+      buf <- alloca AST.i8 (Just (C.int32 size)) 8
+      storeElemAt ty buf v
+      pure buf
+  desc0 <- load slot 0
+  desc <- call resizeF [ (C.int32 size, []), (desc0, []), (C.int32 (fromIntegral (length sizes)), [])
+                       , (dims, []), (fillP, []) ]
+  isNull <- icmp IP.EQ desc nullI8Ptr
+  mdo
+    condBr isNull badB okB
+    okB <- block `named` "table_resized"
+    store slot 0 desc
+    br doneB
+    badB <- block `named` "table_bad_resize"
+    store (asIndexError arena) 0 (C.bit 1)
+    br doneB
+    doneB <- block `named` "table_resize_done"
     pure ()
 
 -- | Give the variable in a slot a new table; a negative size sets the

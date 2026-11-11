@@ -472,9 +472,9 @@ data ArenaState = ArenaState
     -- @i32 (i8* dir, i8 mode, i32 group, double x, double y)@ returning the
     -- color as @0x00RRGGBB@, and the @dir@ to give it. Viewers and tool
     -- handlers have one.
-  , asTables       :: Maybe (Operand, Operand)
-    -- ^ The host's table callbacks, @new@ and @thaw@ (see
-    -- "Backend.LLVM.Table"). Only tool handlers have them.
+  , asTables       :: Maybe (Operand, Operand, Operand, Operand)
+    -- ^ The host's table callbacks, @new@, @thaw@, @resize@ and @copy@
+    -- (see "Backend.LLVM.Table"). Only tool handlers have them.
   , asCancel       :: Maybe (Operand, Operand)
     -- ^ A tool handler's cancel flag (an @i8*@, nonzero once the run
     -- should stop; see 'Actor.Event.CancelFlag'), and its status byte

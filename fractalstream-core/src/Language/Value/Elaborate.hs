@@ -222,10 +222,20 @@ elabOwn t (Syn (sr, _) node) = case node of
       TableIndex sn t <$> el (TableType sn t) tbl <*> mapM (el IntegerType) ixs
     _ -> inconsistent sr
 
-  ETablePoint tbl p -> case exprType tbl of
+  ETablePoint tbl p ixs -> case exprType tbl of
     TableT d _ -> withKnownType t $ TN.withSomeSNat d $ \sn -> withKnownNat sn $
-      TablePoint sn t <$> el (TableType sn t) tbl <*> el ComplexType p
+      TablePoint sn t <$> el (TableType sn t) tbl <*> el ComplexType p <*> mapM (el IntegerType) ixs
     _ -> inconsistent sr
+
+  ETableSlice tbl mp ixs -> case (t, exprType tbl) of
+    (ListType ity, TableT d _) -> withKnownType ity $ TN.withSomeSNat d $ \sn -> withKnownNat sn $
+      TableSlice sn ity <$> el (TableType sn ity) tbl <*> traverse (el ComplexType) mp
+                        <*> mapM (traverse (el IntegerType)) ixs
+    _ -> inconsistent sr
+
+  -- (only in a table's index, which type checking takes apart)
+  EPointIndex{} -> inconsistent sr
+  ESliceAll -> inconsistent sr
 
   ETableSize tbl -> case exprType tbl of
     TableT d it -> withType it $ \ity -> TN.withSomeSNat d $ \sn -> withKnownNat sn $

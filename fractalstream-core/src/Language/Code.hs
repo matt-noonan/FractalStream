@@ -5,6 +5,7 @@ module Language.Code
   , Code
   , CodeF(..)
   , TableCell(..)
+  , TableSliceAt(..)
   , writesTables
   , SomeCode(..)
   , StartOrEnd(..)
@@ -145,6 +146,49 @@ data CodeF (code :: Environment -> Exp Type)
              -> Value '(env, ty)
              -> CodeF code env
 
+  -- | Write a slice of a table variable with one @*@, from a list with
+  -- one element for each of its cells: @T \@ (j, *) <- xs@. Only tools
+  -- can do this (as 'TableWrite').
+  TableWriteSlice :: forall name n ty env code
+                   . (KnownSymbol name, KnownEnvironment env)
+                  => NameIsPresent name ('TableT n ty) env
+                  -> Proxy name
+                  -> SNat n
+                  -> TypeProxy ty
+                  -> TableSliceAt env
+                  -> Value '(env, 'ListT ty)
+                  -> CodeF code env
+
+  -- | Copy a slice of a table (of any number of dimensions) onto a slice
+  -- of a table variable, @T \@ (*, *, k) <- U \@ (*, *, m)@: their @*@s
+  -- must span the same numbers of cells, in order. Only tools can do
+  -- this (as 'TableWrite').
+  TableCopySlice :: forall name n m ty env code
+                  . (KnownSymbol name, KnownEnvironment env)
+                 => NameIsPresent name ('TableT n ty) env
+                 -> Proxy name
+                 -> SNat n
+                 -> TypeProxy ty
+                 -> TableSliceAt env
+                 -> SNat m
+                 -> Value '(env, 'TableT m ty)
+                 -> TableSliceAt env
+                 -> CodeF code env
+
+  -- | Give a table variable a new size, keeping its place in the plane
+  -- and the cells it still has (see 'Language.Table.resizeTable'); new
+  -- cells are filled with zeros, or the given value. Only tools can do
+  -- this.
+  TableResize :: forall name n ty env code
+               . (KnownSymbol name, KnownEnvironment env)
+              => NameIsPresent name ('TableT n ty) env
+              -> Proxy name
+              -> SNat n
+              -> TypeProxy ty
+              -> [Value '(env, 'IntegerT)]
+              -> Maybe (Value '(env, ty))
+              -> CodeF code env
+
   ForEach :: forall name ty env code item
            . (KnownSymbol name, KnownSymbol item)
           => NameIsPresent name ('ListT ty) env
@@ -158,10 +202,15 @@ data CodeF (code :: Environment -> Exp Type)
           -> CodeF code env
 
 -- | Which cell of a table a 'TableWrite' writes: one at some indices, or
--- (in a 2-dimensional table) the one nearest a point.
+-- the one nearest a point in the first two dimensions, at some indices in
+-- the others.
 data TableCell env
   = CellAt [Value '(env, 'IntegerT)]
-  | CellNear (Value '(env, 'ComplexT))
+  | CellNear (Value '(env, 'ComplexT)) [Value '(env, 'IntegerT)]
+
+-- | A slice of a table: maybe a point standing for the first two
+-- indices, and then the rest, each an integer or a @*@ ('Nothing').
+data TableSliceAt env = SliceAt (Maybe (Value '(env, 'ComplexT))) [Maybe (Value '(env, 'IntegerT))]
 
 data StartOrEnd = Start | End
 
@@ -183,6 +232,9 @@ instance IFunctor CodeF where
     DrawCommand {} -> envProxy Proxy
     TableAllocate {} -> envProxy Proxy
     TableWrite {} -> envProxy Proxy
+    TableWriteSlice {} -> envProxy Proxy
+    TableCopySlice {} -> envProxy Proxy
+    TableResize {} -> envProxy Proxy
     Lookup _ _ _ _ _ _ env _ _ _ -> env
     ForEach _ _ _ _ _ env _ _ -> env
 
@@ -203,6 +255,9 @@ instance IFunctor CodeF where
       DrawCommand d -> DrawCommand d
       TableAllocate pf n d t sz p q v -> TableAllocate pf n d t sz p q v
       TableWrite pf n d t c v -> TableWrite pf n d t c v
+      TableWriteSlice pf n d t c v -> TableWriteSlice pf n d t c v
+      TableCopySlice pf n d t c m src c' -> TableCopySlice pf n d t c m src c'
+      TableResize pf n d t sz v -> TableResize pf n d t sz v
       Lookup pf n t i pf' env'' env' v body alt -> Lookup pf n t i pf' env'' env' v (f env'' body) (fmap (f env') alt)
       ForEach pf n t i pf' env' env'' body -> ForEach pf n t i pf' env' env'' (f env'' body)
 
@@ -234,10 +289,17 @@ transformValuesM' f = \case
   TableWrite pf n d t c v -> TableWrite pf n d t <$> cell c <*> f v
     where cell = \case
             CellAt ixs -> CellAt <$> mapM f ixs
-            CellNear z -> CellNear <$> f z
+            CellNear z ixs -> CellNear <$> f z <*> mapM f ixs
+  TableWriteSlice pf n d t c v -> TableWriteSlice pf n d t <$> transformSliceM f c <*> f v
+  TableCopySlice pf n d t c m src c' ->
+    TableCopySlice pf n d t <$> transformSliceM f c <*> pure m <*> f src <*> transformSliceM f c'
+  TableResize pf n d t sz v -> TableResize pf n d t <$> mapM f sz <*> traverse f v
   Lookup pf n t i pf' env' env v body alt ->
     Lookup pf n t i pf' env' env <$> f v <*> pure body <*> pure alt
   ForEach pf n t i pf' env env' body -> pure (ForEach pf n t i pf' env env' body)
+
+transformSliceM :: Monad m => (forall et. Value et -> m (Value et)) -> TableSliceAt env -> m (TableSliceAt env)
+transformSliceM f (SliceAt mp ixs) = SliceAt <$> traverse f mp <*> mapM (traverse f) ixs
 
 transformValues :: forall env
                  . (forall et. Value et -> Value et)
@@ -260,6 +322,9 @@ instance ITraversable CodeF where
     DrawCommand d -> pure (DrawCommand d)
     TableAllocate pf n d t sz p q v -> pure (TableAllocate pf n d t sz p q v)
     TableWrite pf n d t c v -> pure (TableWrite pf n d t c v)
+    TableWriteSlice pf n d t c v -> pure (TableWriteSlice pf n d t c v)
+    TableCopySlice pf n d t c m src c' -> pure (TableCopySlice pf n d t c m src c')
+    TableResize pf n d t sz v -> pure (TableResize pf n d t sz v)
     Lookup pf n t i pf' env' env v body alt ->
       Lookup pf n t i pf' env' env v <$> body <*> sequenceA alt
     ForEach pf n t i pf' env env' body -> ForEach pf n t i pf' env env' <$> body
@@ -327,6 +392,9 @@ gatherUsedVarsInCode = \case
     case other of
       TableAllocate _ name _ _ _ _ _ _ -> modify' (Set.insert (symbolVal name))
       TableWrite _ name _ _ _ _ -> modify' (Set.insert (symbolVal name))
+      TableWriteSlice _ name _ _ _ _ -> modify' (Set.insert (symbolVal name))
+      TableCopySlice _ name _ _ _ _ _ _ -> modify' (Set.insert (symbolVal name))
+      TableResize _ name _ _ _ _ -> modify' (Set.insert (symbolVal name))
       _ -> pure ()
     void (transformValuesM' (\v -> usedVarsInValue v >> pure v) other)
 
@@ -444,12 +512,21 @@ pprintCode = unlines . go
       Lookup{} -> ["{TODO: Lookup}"]
       ForEach{} -> ["{TODO: ForEach}"]
       TableAllocate _ n _ _ sz p q v ->
-        ["allocate " ++ name n ++ " of size (" ++ intercalate ", " (map pprint sz) ++ ") from "
+        ["reset " ++ name n ++ " to (" ++ intercalate ", " (map pprint sz) ++ ") from "
          ++ pprint p ++ " to " ++ pprint q ++ maybe "" ((" filled with " ++) . pprint) v]
       TableWrite _ n _ _ c v -> [name n ++ " @ " ++ cellText c ++ " <- " ++ pprint v]
         where cellText = \case
                 CellAt ixs -> "(" ++ intercalate ", " (map pprint ixs) ++ ")"
-                CellNear z -> "point " ++ pprint z
+                CellNear z [] -> "point " ++ pprint z
+                CellNear z ixs -> "(point " ++ intercalate ", " (pprint z : map pprint ixs) ++ ")"
+      TableWriteSlice _ n _ _ c v -> [name n ++ " @ " ++ sliceText c ++ " <- " ++ pprint v]
+      TableCopySlice _ n _ _ c _ src c' -> [name n ++ " @ " ++ sliceText c ++ " <- " ++ pprint src ++ " @ " ++ sliceText c']
+      TableResize _ n _ _ sz v ->
+        ["resize " ++ name n ++ " to (" ++ intercalate ", " (map pprint sz) ++ ")"
+         ++ maybe "" ((" filled with " ++) . pprint) v]
+    sliceText :: forall env'. TableSliceAt env' -> String
+    sliceText (SliceAt mp ixs) =
+      "(" ++ intercalate ", " (maybe [] (\z -> ["point " ++ pprint z]) mp ++ map (maybe "*" pprint) ixs) ++ ")"
 
 data Unit :: Environment -> Exp Type
 type instance Eval (Unit _) = ()
@@ -465,4 +542,7 @@ writesTables code = execState (indexedFoldM @Unit phi code) False
     phi = \case
       TableAllocate{} -> put True
       TableWrite{} -> put True
+      TableWriteSlice{} -> put True
+      TableCopySlice{} -> put True
+      TableResize{} -> put True
       _ -> pure ()

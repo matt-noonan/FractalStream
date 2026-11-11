@@ -48,7 +48,7 @@ builds :: String -> IO (Either String ())
 builds src = buildEnsembleFromScript src <&> either (Left . snd) (const (Right ()))
 
 spec :: Spec
-spec = readSpec >> writeSpec
+spec = readSpec >> writeSpec >> layerSpec
 
 readSpec :: Spec
 readSpec = describe "tables" $ do
@@ -143,10 +143,10 @@ frozenSample = do { t <- sample; freezeTable t; pure t }
 writeSpec :: Spec
 writeSpec = describe "tables, in a tool" $ do
 
-  it "are allocated with a size and corners, and written cell by cell" $ do
+  it "are reset to a size and corners, and written cell by cell" $ do
     Just t0 <- newTable RealType [0, 0] (0, 0) (1, 1)
     (t, x) <- run t0 (unlines
-      [ "allocate T of size (3, 2) from -3/2 + i to 3/2 - i"
+      [ "reset T to (3, 2) from -3/2 + i to 3/2 - i"
       , "T @ (2, 1) <- 5"
       , "x <- T @ (2, 1) + T @ (1, 1)" ])
     tableDims t `shouldBe` [3, 2]
@@ -155,10 +155,10 @@ writeSpec = describe "tables, in a tool" $ do
     tableOrigin t `shouldBe` (-1, 0.5)
     tableStep t `shouldBe` (1, 1)
 
-  it "can be filled with a value when they're allocated" $ do
+  it "can be filled with a value when they're reset" $ do
     Just t0 <- newTable RealType [0, 0] (0, 0) (1, 1)
     (t, x) <- run t0 (unlines
-      [ "allocate T of size (3, 2) from -3/2 + i to 3/2 - i filled with 7"
+      [ "reset T to (3, 2) from -3/2 + i to 3/2 - i filled with 7"
       , "T @ (2, 1) <- 5"
       , "x <- T @ (2, 1) + T @ (3, 2)" ])
     x `shouldBe` 12
@@ -202,7 +202,155 @@ writeSpec = describe "tables, in a tool" $ do
           [ "@config \"P\"", "T : Table 2 of R", ""
           , "@viewer \"V\"", "T @ (1, 1) <- 1", "color <- red", ""
           , "@tool \"Fill\" for=\"V\"", "on click:"
-          , "  allocate T of size (viewer_width, viewer_height)"
+          , "  reset T to (viewer_width, viewer_height)"
           , "  T @ (1, 1) <- 2" ]
     builds src >>= (`shouldSatisfy` either ("Only a tool" `isInfixOf`) (const False))
     builds (unlines (filter (/= "T @ (1, 1) <- 1") (lines src))) `shouldReturn` Right ()
+
+------------------------------------------------------------------------
+-- Tables with more than two dimensions: the first two are in the plane
+
+type LEnv = '[ '("T", 'TableT 3 'RealT), '("U", 'TableT 2 'RealT), '("x", 'RealT), '("xs", 'ListT 'RealT) ]
+
+tableType3R :: TypeProxy ('TableT 3 'RealT)
+tableType3R = TableType natSing RealType
+
+-- | A 3 x 2 x 2 table whose cell (j, k, m) holds 100 m + 10 k + j, with
+-- cell (j, k) centered on (j - 1) - (k - 1) i.
+layered :: IO Table
+layered = do
+  Just t <- newTable RealType [3, 2, 2] (0, 0) (1, 1)
+  forM_ [1 .. 3] $ \j -> forM_ [1 .. 2] $ \k -> forM_ [1 .. 2] $ \m ->
+    writeCell RealType t [j, k, m] (fromIntegral (100 * m + 10 * k + j))
+  pure t
+
+parseL :: forall t. TypeProxy t -> String -> Either String (Value '(LEnv, t))
+parseL ty src = withEnvironment layerEnv $ withKnownType ty $
+  first (`P.ppFullError` src) (P.parseValue src)
+
+layerEnv :: EnvironmentProxy LEnv
+layerEnv = declare @"T" tableType3R $ declare @"U" tableType2R $ declare @"x" RealType
+         $ declare @"xs" (ListType RealType) endOfDecls
+
+evalL :: Table -> TypeProxy t -> String -> IO (HaskellType t)
+evalL t ty src = do
+  u <- sample
+  case parseL ty src of
+    Left err -> fail err
+    Right v -> E.evaluate (evaluate v (Bind (Proxy @"T") tableType3R t $ Bind (Proxy @"U") tableType2R u
+                                       $ Bind (Proxy @"x") RealType 0 $ Bind (Proxy @"xs") (ListType RealType) [] EmptyContext))
+
+-- | Run some code with `T` (the given table), `U` (the 2-dimensional
+-- sample), a real `x`, and a list of reals `xs`, giving back `T`, `x`,
+-- and `xs`.
+runL :: Table -> String -> IO (Table, Double, [Double])
+runL t src = do
+  u <- sample
+  tRef <- newIORef t
+  uRef <- newIORef u
+  xRef <- newIORef 0
+  xsRef <- newIORef []
+  let refs = Bind (Proxy @"T") tableType3R tRef $ Bind (Proxy @"U") tableType2R uRef
+           $ Bind (Proxy @"x") RealType xRef $ Bind (Proxy @"xs") (ListType RealType) xsRef EmptyContext
+  code <- either (fail . (`ppFullError` src)) pure (parseCode (envProxy Proxy) noCommonDefs src)
+  _ <- execStateT (interpretToIO (DrawHandler (const (pure ()))) code) refs
+  (,,) <$> readIORef tRef <*> readIORef xRef <*> readIORef xsRef
+
+layerSpec :: Spec
+layerSpec = describe "tables with more than two dimensions" $ do
+
+  it "look up a point in the first two dimensions, and indices in the rest" $ do
+    t <- layered
+    evalL t RealType "T @ (point (1 - i), 2)" `shouldReturn` 222
+    evalL t RealType "T @ (point (2 + 0i), 1)" `shouldReturn` 113
+    evalL t RealType "T @ (point (9 + 0i), 1) else -1" `shouldReturn` (-1)
+    evalL t RealType "T @ (point (1 - i), 2) else -1" `shouldReturn` 222
+    evalL t RealType "T @ (point (1 - i), 3)" `shouldThrow` anyErrorCall
+
+  it "have points, in their first two dimensions" $ do
+    t <- layered
+    evalL t BooleanType "(1 - i) in T" `shouldReturn` True
+    evalL t BooleanType "(1 + i) in T" `shouldReturn` False
+    evalL t (PairType IntegerType IntegerType) "table_cell(T, 2 - i)" `shouldReturn` (3, 2)
+    evalL t ComplexType "table_point(T, (3, 2))" `shouldReturn` (2 :+ (-1))
+
+  it "read a slice with one `*` as a list" $ do
+    t <- layered
+    evalL t (ListType RealType) "T @ (point (1 - i), *)" `shouldReturn` [122, 222]
+    evalL t (ListType RealType) "T @ (*, 1, 2)" `shouldReturn` [211, 212, 213]
+    evalL t (ListType RealType) "T @ (3, *, 1)" `shouldReturn` [113, 123]
+    evalL t IntegerType "length(T @ (*, 2, 1))" `shouldReturn` 3
+    evalL t (ListType RealType) "T @ (4, *, 1)" `shouldThrow` anyErrorCall
+
+  it "need the right indices" $ do
+    parseL RealType "T @ (point (1 - i))" `shouldSatisfy` isLeft
+    parseL RealType "T @ (1, point (1 - i))" `shouldSatisfy` isLeft
+    parseL RealType "T @ (1, 2)" `shouldSatisfy` isLeft
+    parseL RealType "T @ point (1 - i)" `shouldSatisfy` isLeft
+    parseL (ListType RealType) "T @ (*, *, 1)" `shouldSatisfy` isLeft
+    parseL RealType "xs @ *" `shouldSatisfy` isLeft
+    parseL RealType "point 1" `shouldSatisfy` isLeft
+
+  it "are written at a point and indices" $ do
+    t0 <- layered
+    (t, x, _) <- runL t0 "T @ (point (1 - i), 2) <- 7\nx <- T @ (2, 2, 2)"
+    x `shouldBe` 7
+    readCell RealType t [2, 2, 1] `shouldBe` Just 122
+
+  it "write a slice from a list as long as it" $ do
+    t0 <- layered
+    (t, _, xs) <- runL t0 "T @ (point (1 - i), *) <- [1, 2]\nxs <- T @ (2, 2, *)"
+    xs `shouldBe` [1, 2]
+    readSlice RealType t [Every, Fixed 1, Fixed 2] `shouldBe` Just [211, 212, 213]
+    runL t0 "T @ (point (1 - i), *) <- [1, 2, 3]" `shouldThrow` anyErrorCall
+    runL t0 "T @ (*, 1, 1) <- [1, 2]" `shouldThrow` anyErrorCall
+
+  it "copy one slice onto another" $ do
+    t0 <- layered
+    (t, _, _) <- runL t0 "T @ (*, *, 1) <- T @ (*, *, 2)"
+    readSlice RealType t [Every, Every, Fixed 1] `shouldBe` Just [211, 212, 213, 221, 222, 223]
+    -- (from another table, and between slices of other dimensions)
+    t1 <- layered
+    (t', _, _) <- runL t1 "T @ (*, *, 2) <- U @ (*, *)\nT @ (1, *, *) <- T @ (3, *, *)"
+    readSlice RealType t' [Every, Every, Fixed 2] `shouldBe` Just [13, 12, 13, 23, 22, 23]
+    readSlice RealType t' [Fixed 1, Every, Fixed 1] `shouldBe` Just [113, 123]
+
+  it "copy slices only of the same shape" $ do
+    t0 <- layered
+    runL t0 "T @ (*, *, 1) <- T @ (1, *, *)" `shouldThrow` anyErrorCall
+    first (const ()) (parseCode layerEnv noCommonDefs "T @ (*, *, 1) <- T @ (*, 1, 1)") `shouldSatisfy` isLeft
+    first (const ()) (parseCode layerEnv noCommonDefs "T @ (*, *, 1) <- xs") `shouldSatisfy` isLeft
+
+  it "copy a table a viewer may be reading before writing a slice of it" $ do
+    t0 <- layered
+    freezeTable t0
+    (t, _, _) <- runL t0 "T @ (*, *, 1) <- T @ (*, *, 2)\nT @ (1, 1, *) <- [0, 0]"
+    readCell RealType t0 [1, 1, 1] `shouldBe` Just 111
+    readCell RealType t [2, 1, 1] `shouldBe` Just 212
+    readCell RealType t [1, 1, 2] `shouldBe` Just 0
+
+  it "are resized in place, keeping their cells" $ do
+    t0 <- layered
+    freezeTable t0
+    (t, _, _) <- runL t0 "resize T to (3, 2, 3) filled with -1"
+    tableDims t `shouldBe` [3, 2, 3]
+    tableOrigin t `shouldBe` tableOrigin t0
+    tableStep t `shouldBe` tableStep t0
+    readSlice RealType t [Fixed 2, Fixed 2, Every] `shouldBe` Just [122, 222, -1]
+    tableDims t0 `shouldBe` [3, 2, 2]
+    -- (growing and shrinking in the plane, at the right and the bottom)
+    (t', _, _) <- runL t0 "resize T to (4, 1, 2)"
+    readSlice RealType t' [Every, Fixed 1, Fixed 2] `shouldBe` Just [211, 212, 213, 0]
+    -- (a new size needs one integer per dimension, and none negative)
+    runL t0 "resize T to (3, 2, -1)" `shouldThrow` anyErrorCall
+    first (const ()) (parseCode layerEnv noCommonDefs "resize T to (3, 2)") `shouldSatisfy` isLeft
+
+  it "drop a layer by copying the later ones down and shrinking" $ do
+    Just t0 <- newTable RealType [1, 1, 4] (0, 0) (1, 1)
+    forM_ [1 .. 4] $ \m -> writeCell RealType t0 [1, 1, m] (fromIntegral m)
+    (t, _, _) <- runL t0 (unlines
+      [ "(w, h, n) := table_size(T)"
+      , "for each m in range(2, n - 1):"
+      , "  T @ (*, *, m) <- T @ (*, *, m + 1)"
+      , "resize T to (w, h, n - 1)" ])
+    readSlice RealType t [Fixed 1, Fixed 1, Every] `shouldBe` Just [1, 3, 4]

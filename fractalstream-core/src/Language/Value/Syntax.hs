@@ -95,14 +95,25 @@ data ExprF r
   | ELength r
   | EIndex Bool r r
   | ETableIndex r [r]
-  | ETablePoint r r
-    -- ^ @T \@ point z@: a 2-dimensional table's cell nearest a point.
+  | ETablePoint r r [r]
+    -- ^ @T \@ point z@, or @T \@ (point z, m, ...)@: the cell nearest a
+    -- point, in the first two dimensions, at the other indices (made from
+    -- an 'EIndex' by type checking).
+  | ETableSlice r (Maybe r) [Maybe r]
+    -- ^ @T \@ (j, *)@, or @T \@ (point z, *)@: the list of a table's
+    -- elements along its one @*@ dimension (each 'Nothing'), at the
+    -- other indices, and at a point if there is one (made from an 'EIndex'
+    -- by type checking).
+  | EPointIndex r
+    -- ^ @point z@, standing for the first two indices of a table.
+  | ESliceAll
+    -- ^ @*@, standing for every index along one dimension of a table.
   | ETableSize r
     -- ^ @table_size(T)@: an integer, or a tuple of one per dimension.
   | ETablePointOr r r r
-    -- ^ @T \@ point z else v@: the cell's value, or @v@ for a point off
-    -- the table. Type checking makes it @if z in T then T \@ point z else
-    -- v@.
+    -- ^ @T \@ point z else v@, or @T \@ (point z, m) else v@ (the table,
+    -- its index, and @v@): the cell's value, or @v@ for a point off the
+    -- table. Type checking makes it @if z in T then T \@ ... else v@.
   | ETableHas r r
     -- ^ @z in T@: whether a point is on a 2-dimensional table (the
     -- table, then the point).

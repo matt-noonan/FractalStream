@@ -102,6 +102,7 @@ collect scope funs (Stmt sr node) = (Stmt sr .) <$> case node of
   SDraw{} -> pure (const node)
   SSetTable{} -> pure (const node)
   SAllocate{} -> pure (const node)
+  SResize{} -> pure (const node)
 
   SForEach item list body -> do
     body' <- collect (withItem item list) funs body

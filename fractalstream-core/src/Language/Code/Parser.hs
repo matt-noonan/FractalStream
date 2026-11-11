@@ -240,20 +240,24 @@ codeStatementsGrammar CommonDefs{..} = mdo
         <*> value
         <*> optional upTo)
     , node (SPass <$ lit "pass") <?> "pass"
-    -- writing a table's cell: `T @ (j, k) <- v`, or `T @ point z <- v`
+    -- writing a table's cell: `T @ (j, k) <- v`, or `T @ point z <- v`,
+    -- or a slice of it: `T @ (j, *) <- xs`, `T @ * <- xs`
     , node
-      ((\n ix v -> SSetTable n False ix v) <$> ident <*> (token At *> value) <*> (token LeftArrow *> value))
+      (SSetTable <$> ident <*> (token At *> value) <*> (token LeftArrow *> value))
       <?> "table assignment"
+    -- `resize T to (w, h)`, maybe `filled with v`
     , node
-      ((\n z v -> SSetTable n True z v) <$> ident <*> (token At *> lit "point" *> value) <*> (token LeftArrow *> value))
-      <?> "table assignment"
-    -- `allocate T of size (w, h)`, maybe `from p to q`
+      (SResize <$> (lit "resize" *> ident)
+               <*> (lit "to" *> tableSize)
+               <*> optional (lit "filled" *> lit "with" *> value))
+      <?> "table resize"
+    -- `reset T to (w, h)`, maybe `from p to q`, maybe `filled with v`
     , node
-      (SAllocate <$> (lit "allocate" *> ident)
-                 <*> (lit "of" *> lit "size" *> tableSize)
+      (SAllocate <$> (lit "reset" *> ident)
+                 <*> (lit "to" *> tableSize)
                  <*> optional ((,) <$> (lit "from" *> value) <*> (lit "to" *> value))
                  <*> optional (lit "filled" *> lit "with" *> value))
-      <?> "table allocation"
+      <?> "table reset"
     ]
 
   value <- valueGrammarWithFunctions funNames

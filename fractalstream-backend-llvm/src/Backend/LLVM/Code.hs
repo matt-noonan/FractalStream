@@ -705,7 +705,9 @@ compileToolHandler envp name code = runExcept $
           , (AST.ptr AST.i8, ParameterName "autocolor")
           , (AST.ptr AST.i8, ParameterName "autocolor.dir")
           , (AST.ptr AST.i8, ParameterName "table.new")
-          , (AST.ptr AST.i8, ParameterName "table.thaw") ]
+          , (AST.ptr AST.i8, ParameterName "table.thaw")
+          , (AST.ptr AST.i8, ParameterName "table.resize")
+          , (AST.ptr AST.i8, ParameterName "table.copy") ]
         arenaParams    = [ (AST.ptr AST.i8, ParameterName "#arenaPtr")
                          , (AST.i32,        ParameterName "#arenaSize") ]
         overflowParams = [ (AST.ptr AST.i8, ParameterName "#overflowOut")
@@ -715,9 +717,9 @@ compileToolHandler envp name code = runExcept $
     function name params AST.void $ \allArgs -> do
       getExtern <- getGetExtern
       _entry <- block `named` "tool_entry"
-      let (drawArgs, afterDraw) = splitAt 13 allArgs
+      let (drawArgs, afterDraw) = splitAt 15 allArgs
           (arenaPtrArg : arenaSizeArg : overflowArg : cancelArg : rawEnvArgs) = afterDraw
-          [clearP, strokeP, fillP, pointP, lineP, circleP, rectP, writeP, formatP, autocolorP, autocolorDirP, tableNewP, tableThawP] = drawArgs
+          [clearP, strokeP, fillP, pointP, lineP, circleP, rectP, writeP, formatP, autocolorP, autocolorDirP, tableNewP, tableThawP, tableResizeP, tableCopyP] = drawArgs
 
       bumpAlloca <- alloca (AST.ptr AST.i8) Nothing 0
       store bumpAlloca 0 arenaPtrArg
@@ -732,8 +734,10 @@ compileToolHandler envp name code = runExcept $
       autocolorF <- bitcast autocolorP autocolorFnType
       tableNewF <- bitcast tableNewP tableNewFnType
       tableThawF <- bitcast tableThawP tableThawFnType
+      tableResizeF <- bitcast tableResizeP tableResizeFnType
+      tableCopyF <- bitcast tableCopyP tableCopyFnType
       let arenaState = ArenaState bumpAlloca arenaEnd overflowFlag indexError emptyText (Just formatF)
-                                  (Just (autocolorF, autocolorDirP)) (Just (tableNewF, tableThawF))
+                                  (Just (autocolorF, autocolorDirP)) (Just (tableNewF, tableThawF, tableResizeF, tableCopyF))
                                   (Just (cancelArg, overflowArg))
 
       clearF  <- bitcast clearP  (fnPtrTy AST.void [])
@@ -797,7 +801,7 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
   NoOp -> pure ()
 
   TableAllocate pf _ d ty sizes p q mfill -> withKnownType ty $ withKnownNat d $ do
-    (newF, _) <- maybe (throwError "Only a tool can allocate a table.") pure (asTables arena)
+    (newF, _, _, _) <- maybe (throwError "Only a tool can reset a table.") pure (asTables arena)
     sizes' <- mapM (fmap getIntegerOp . value_ getExtern arena) sizes
     (x1, y1) <- getComplexOp <$> value_ getExtern arena p
     (x2, y2) <- getComplexOp <$> value_ getExtern arena q
@@ -807,14 +811,46 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
     buildTableAllocate arena newF ty slot sizes' (x1, y1) (x2, y2) fill
 
   TableWrite pf _ d ty cell v -> withKnownType ty $ withKnownNat d $ do
-    (_, thawF) <- maybe (throwError "Only a tool can write to a table.") pure (asTables arena)
+    (_, thawF, _, _) <- maybe (throwError "Only a tool can write to a table.") pure (asTables arena)
     v' <- value_ getExtern arena v
     cell' <- case cell of
       CellAt ixs -> Left <$> mapM (fmap getIntegerOp . value_ getExtern arena) ixs
-      CellNear z -> Right . getComplexOp <$> value_ getExtern arena z
+      CellNear z rest -> do
+        z' <- getComplexOp <$> value_ getExtern arena z
+        rest' <- mapM (fmap getIntegerOp . value_ getExtern arena) rest
+        pure (Right (z', rest'))
     ctx <- ask
     let slot = getTableSlot (getBinding ctx pf)
     buildTableWrite getExtern arena thawF ty slot cell' v'
+
+  TableWriteSlice pf _ d ty sl xs -> withKnownType ty $ withKnownNat d $ do
+    (_, thawF, _, _) <- maybe (throwError "Only a tool can write to a table.") pure (asTables arena)
+    listHead <- getListOp <$> value_ getExtern arena xs
+    ctx <- ask
+    let slot = getTableSlot (getBinding ctx pf)
+    -- (the point's cell is found in the table as it is before it's thawed,
+    -- which is in the same place)
+    desc <- lift (load slot 0)
+    ixs <- sliceIndicesOp getExtern arena desc sl
+    lift (buildTableWriteSlice arena thawF ty slot ixs listHead)
+
+  TableCopySlice pf _ d ty sl m src srcSl -> withKnownType ty $ withKnownNat d $ withKnownNat m $ do
+    (_, thawF, _, copyF) <- maybe (throwError "Only a tool can write to a table.") pure (asTables arena)
+    srcDesc <- getTableOp <$> value_ getExtern arena src
+    srcIxs <- sliceIndicesOp getExtern arena srcDesc srcSl
+    ctx <- ask
+    let slot = getTableSlot (getBinding ctx pf)
+    desc <- lift (load slot 0)
+    ixs <- sliceIndicesOp getExtern arena desc sl
+    lift (buildTableCopySlice arena thawF copyF ty slot ixs srcDesc srcIxs)
+
+  TableResize pf _ d ty sizes mfill -> withKnownType ty $ withKnownNat d $ do
+    (_, _, resizeF, _) <- maybe (throwError "Only a tool can resize a table.") pure (asTables arena)
+    sizes' <- mapM (fmap getIntegerOp . value_ getExtern arena) sizes
+    fill <- traverse (value_ getExtern arena) mfill
+    ctx <- ask
+    let slot = getTableSlot (getBinding ctx pf)
+    lift (buildTableResize arena resizeF ty slot sizes' fill)
 
   Set pf _ e -> do
     x <- value_ getExtern arena e
@@ -1078,3 +1114,15 @@ bindToolArg :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
 bindToolArg ty op
   | toolInOut ty = typedOperandPtr ty op
   | otherwise    = allocaArg ty op
+
+-- | A slice's indices in a table (a descriptor), one per dimension: a
+-- point gives the first two.
+sliceIndicesOp :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
+               => (String -> Operand) -> ArenaState -> Operand -> TableSliceAt env
+               -> ReaderT (Context OperandPtr env) m [Maybe Operand]
+sliceIndicesOp getExtern arena desc (SliceAt mz ixs) = do
+  pointed <- forM mz $ \z -> do
+    (x, y) <- getComplexOp <$> value_ getExtern arena z
+    map Just <$> lift (pointIndices getExtern desc x y)
+  rest <- mapM (traverse (fmap getIntegerOp . value_ getExtern arena)) ixs
+  pure (fromMaybe [] pointed ++ rest)

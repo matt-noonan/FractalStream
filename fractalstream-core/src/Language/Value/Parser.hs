@@ -233,9 +233,18 @@ valueAndArithGrammar funs = mdo
   pair <- ruleChoice
     [ node (EPair <$> (pairItem <* token Comma) <*> pair)
     , pOr
+    , pointIndex
+    , sliceAll
     ]
 
-  pairItem <- ruleChoice [ list, pOr ]
+  pairItem <- ruleChoice [ list, pOr, pointIndex, sliceAll ]
+
+  -- In a table's index, `point z` stands for its first two indices, and
+  -- `*` for every index along a dimension: `T @ (point z, *)`.
+  pointIndex <- rule (node (EPointIndex <$> (token (Identifier "point") *> negated)))
+  sliceAll <- rule (node (ESliceAll <$ token Times))
+  -- `(point z, ...)`, for `T @ (point z, m) else v`
+  pointTuple <- rule (token OpenParen *> node (EPair <$> (pointIndex <* token Comma) <*> pair) <* token CloseParen)
 
   -- `and`s and `or`s can each be chained, but not mixed without
   -- parentheses: `a and b or c` is accepted only to say so. (The mixed
@@ -297,10 +306,13 @@ valueAndArithGrammar funs = mdo
   -- `xs @ k = 3` and `xs @ k + 1` index first.
   mulOrDiv <- ruleChoice
     [ node (EBin OpMul <$> (mulOrDiv <* token Times) <*> negated)
-    , node (ETablePoint <$> (mulOrDiv <* token At <* token (Identifier "point")) <*> negated)
-    -- `T @ point z else v`: the cell's value, or `v` off the table
-    , node (ETablePointOr <$> (mulOrDiv <* token At <* token (Identifier "point"))
-                          <*> (negated <* token Else) <*> negated)
+    -- `T @ point z`: the cell nearest a point
+    , node (EIndex False <$> (mulOrDiv <* token At) <*> pointIndex)
+    -- `T @ *`: all of a 1-dimensional table, as a list
+    , node (EIndex False <$> (mulOrDiv <* token At) <*> sliceAll)
+    -- `T @ point z else v`, or `T @ (point z, m) else v`: the cell's
+    -- value, or `v` off the table
+    , node (ETablePointOr <$> (mulOrDiv <* token At) <*> ((pointIndex <|> pointTuple) <* token Else) <*> negated)
     , node (EIndex False <$> (mulOrDiv <* token At) <*> negated)
     , node (EIndex True  <$> (mulOrDiv <* token AtAt) <*> negated)
     -- (a list literal isn't an atom, so it needs its own rule)
