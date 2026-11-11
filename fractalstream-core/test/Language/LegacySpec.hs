@@ -229,7 +229,8 @@ spec = describe "translating original-FractalStream scripts" $ do
     s `shouldSatisfy` any ("on click-or-drag at z:" `isInfixOf`)
     s `shouldSatisfy` any ("repeat up to 100 times:" `isInfixOf`)
     s `shouldSatisfy` any ("run script(1)" `isInfixOf`)
-    s `shouldSatisfy` any ("draw line from previous to z" `isInfixOf`)
+    s `shouldSatisfy` any ("draw line from previous z to z" `isInfixOf`)
+    s `shouldNotSatisfy` any ("previous_" `isInfixOf`)
     s `shouldSatisfy` any ("until z escapes" `isInfixOf`)
     -- (the script sets the flag, so the tool declares it too)
     length (filter ("flag_color := default_exit_condition_color" `isInfixOf`) s) `shouldBe` 3
@@ -269,8 +270,8 @@ spec = describe "translating original-FractalStream scripts" $ do
     t <- translated "{real}\niterate (y, -x + a) until (x, y) escapes."
     let s = scriptOf t
     s `shouldSatisfy` any ("on click-or-drag at (x, y):" `isInfixOf`)
-    s `shouldSatisfy` any ("previous_x, previous_y := x, y" `isInfixOf`)
-    s `shouldSatisfy` any ("draw line from (previous_x, previous_y) to (x, y)" `isInfixOf`)
+    s `shouldSatisfy` any ("draw line from (previous x, previous y) to (x, y)" `isInfixOf`)
+    s `shouldNotSatisfy` any ("previous_" `isInfixOf`)
     s `shouldSatisfy` any ("until (x, y) escapes" `isInfixOf`)
     loads t
 

@@ -93,6 +93,7 @@ data Token
   | At
   | AtAt
   | LengthKeyword
+  | PreviousKeyword
   deriving (Eq, Ord, Show)
 
 instance IsString Token where fromString = Identifier
@@ -257,7 +258,7 @@ wordlikeTokens = Map.fromList
   , ("join", JoinKeyword), ("remove", RemoveKeyword)
   , ("find", FindKeyword), ("transform", TransformKeyword)
   , ("range", RangeKeyword), ("length", LengthKeyword)
-  , ("diff", DiffKeyword)
+  , ("diff", DiffKeyword), ("previous", PreviousKeyword)
   ]
 
 data TokenGroup

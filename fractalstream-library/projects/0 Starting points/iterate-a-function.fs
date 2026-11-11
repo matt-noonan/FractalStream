@@ -13,12 +13,10 @@ script: |
   on click-or-drag:
     use white for line
     erase
-    prevZ := z
     until z escapes:
-      prevZ <- z
       draw point at z
       z <- f(z)
-      draw line from z to prevZ
+      draw line from z to previous z
 metadata:
   title: Iterate a function
   description: |

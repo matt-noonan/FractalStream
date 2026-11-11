@@ -375,12 +375,10 @@ script: |
     pa := 0.0
     pb := 0.0
     run per5_param(t5)
-    prev := w
     repeat up to 200 times:
       draw point at w
-      prev <- w
       w <- 1 + (pa w + pb)/w^2
-      draw line from prev to w
+      draw line from previous w to w
     until |w| > 1000000000000000000000000.0
   on deactivated:
     erase

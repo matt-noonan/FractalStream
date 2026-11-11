@@ -16,13 +16,11 @@ script: |
   on deactivated:
     erase
   on click-or-drag:
-    prevZ := z
     erase
     until z escapes:
-      prevZ <- z
       draw point at z
       z <- f(z)
-      draw line from z to prevZ
+      draw line from z to previous z
 metadata:
   title: Mandelbrot and Julia sets together
   description: |

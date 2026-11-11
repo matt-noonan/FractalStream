@@ -22,13 +22,11 @@ script: |
   on click-or-drag:
     use white for line
     erase
-    prevZ := z
     repeat:
-      prevZ <- z
       draw point at z
       z <- newton(z)
-      draw line from z to prevZ
-    until z = prevZ
+      draw line from z to previous z
+    until z stops
 metadata:
   title: Newton's method
   description: |

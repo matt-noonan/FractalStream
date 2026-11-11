@@ -978,21 +978,23 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                 set `tmp` := ((wx + 1:R:C) * wy)
                                                                                                 set `pb` := (wx / tmp)
                                                                                                 set `pa` := ((wx * pb) - 1:R:C)
-                                    let `prev` = w in:
-                                      block:
-                                        let `[internal] fresh #26` = 0 in:
-                                          let `[internal] fresh #27` = 200 in:
-                                            block:
-                                              do-while (!(1.0e24 < |w|) and ([internal] fresh #26 < [internal] fresh #27)):
-                                                block:
+                                    block:
+                                      let `[internal] previous.w #0` = w in:
+                                        block:
+                                          let `[internal] fresh #26` = 0 in:
+                                            let `[internal] fresh #27` = 200 in:
+                                              block:
+                                                do-while (!(1.0e24 < |w|) and ([internal] fresh #26 < [internal] fresh #27)):
                                                   block:
-                                                    draw point at w:R^2
-                                                    set `prev` := w
-                                                    set `w` := (1:R:C + (((pa * w) + pb) / (w ^ 2:R:C)))
-                                                    draw line from prev:R^2 to w:R^2
-                                                  set `[internal] fresh #26` := ([internal] fresh #26 + 1)
-                                              set `[internal] iteration count` := [internal] fresh #26
-                                              set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                                                    block:
+                                                      set `[internal] previous.w #0` := w
+                                                      block:
+                                                        draw point at w:R^2
+                                                        set `w` := (1:R:C + (((pa * w) + pb) / (w ^ 2:R:C)))
+                                                        draw line from [internal] previous.w #0:R^2 to w:R^2
+                                                    set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                                                set `[internal] iteration count` := [internal] fresh #26
+                                                set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

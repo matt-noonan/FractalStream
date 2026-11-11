@@ -427,7 +427,7 @@ valueAndArithGrammar funs = mdo
         (\n -> literal (show n) RealType n)
         <$> tokenMatch (\case { NumberF n -> Just n; _ -> Nothing }))
     , node (EUn OpAbs <$> (token Bar *> arith <* token Bar))
-
+    , node (EUn OpPrevious <$> (token PreviousKeyword *> var))
 
     , textConcat
     , var

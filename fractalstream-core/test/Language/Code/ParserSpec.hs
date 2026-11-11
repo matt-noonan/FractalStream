@@ -432,6 +432,75 @@ x <- k|] `shouldBe` Right 4
       failsWith "until false:\n  x <- if x stops then 1 else 2" "`stops` can only be used in a loop's condition"
       failsWith "b := x stops" "`stops` can only be used in a loop's condition"
 
+  describe "when using `previous` in a loop" $ do
+
+    it "is the value at the start of the pass, in the loop's body" $
+      runWithRealX 0 [r|
+total := 0
+k := 0
+repeat:
+  x <- x + 2
+  total <- total + (x - previous x)
+  k <- k + 1
+until k = 5
+x <- total|] `shouldBe` Right 10
+
+    it "is the value at the start of the pass just made, in the loop's condition" $ do
+      runWithRealX 0 "repeat:\n  x <- x + 1\nuntil previous x = 3" `shouldBe` Right 4
+      runWithRealX 0 [r|
+y := 1
+iterate (x, y) -> (y, x + y) until previous x = 13|] `shouldBe` Right 21
+
+    it "is the value itself, before a loop that checks first has made a pass" $ do
+      runWithRealX 5 "until previous x = 5:\n  x <- x + 1" `shouldBe` Right 5
+      runWithRealX 0 "until previous x = 5:\n  x <- x + 1" `shouldBe` Right 6
+      runWithRealX 0 "iterate x -> x + 1 while previous x < 3" `shouldBe` Right 4
+
+    it "belongs to the innermost loop around it" $
+      runWithRealX 0 [r|
+outer := 0
+inner := 0
+k := 0
+repeat:
+  x <- x + 10
+  j := 0
+  repeat:
+    x <- x + 1
+    inner <- inner + (x - previous x)
+    j <- j + 1
+  until j = 3
+  outer <- outer + (x - previous x)
+  k <- k + 1
+until k = 2
+x <- 100 outer + inner|] `shouldBe` Right 2606
+
+    it "works in a `for each` loop" $
+      runWithRealX 0 [r|
+total := 0
+for each p in [1, 2, 3, 4]:
+  x <- x + p
+  total <- total + (x - previous x)
+x <- total|] `shouldBe` Right 10
+
+    it "belongs to the loop around a `run`" $
+      runWithRealX 0 [r|
+d := 0
+define step:
+  x <- x + 3
+  d <- x - previous x
+repeat up to 4 times:
+  run step
+while true
+x <- d|] `shouldBe` Right 3
+
+    it "can't be used outside of a loop, or of a variable declared in it" $ do
+      let failsWith input needle =
+            runWithRealX 0 input `shouldSatisfy` either (needle `isInfixOf`) (const False)
+      failsWith "if x = previous x:\n  pass" "`previous` can only be used inside a loop"
+      failsWith "y := previous x" "`previous` can only be used inside a loop"
+      failsWith "repeat:\n  y := x\n  x <- previous y\nuntil true" "`y` is declared inside the loop"
+      failsWith "for each p in [1, 2]:\n  x <- previous p" "`p` is declared inside the loop"
+
   describe "when writing pair types" $
     it "accepts × as well as x" $ do
       runWithX (Scalar RealType 0) "p : R × R := (1.5, 2)\nx <- (1.5 : R) × 2" `shouldBe` Right 3.0
