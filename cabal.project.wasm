@@ -1,0 +1,25 @@
+-- The WebAssembly build (see WEB_PLAN.md). Build with the GHC wasm
+-- toolchain from ghc-wasm-meta (FLAVOUR=9.10):
+--
+--   source ~/.ghc-wasm/env
+--   wasm32-wasi-cabal build --project-file=cabal.project.wasm all
+--
+-- The LLVM backend and the wx frontend aren't part of it.
+
+packages:
+  fractalstream-core
+  fractalstream-backend-pure
+  fractalstream-library
+  fractalstream-ui-headless
+
+-- The same package versions as the desktop build's Stackage snapshot.
+import: cabal/lts-24.12.config
+
+-- As in the stack.yaml files.
+allow-newer: all
+
+tests: False
+benchmarks: False
+
+package fractalstream-ui-headless
+  flags: -use-llvm
