@@ -66,7 +66,7 @@ script: |
   #    whose orbit lands on some other attracting cycle in a pale colour of
   #    its period instead of black.  The test looks for periods up to 64;
   #    longer or very weakly attracting cycles stay black.
-  #  * Clicking the parameter plane picks the parameter and the Julia window
+  #  * Its Select tool (S) picks the parameter by clicking, and the Julia window
   #    follows; "Trace orbit" draws the orbit of a point of a Julia set.
   # References
   #
@@ -357,10 +357,6 @@ script: |
   run per5_param(t5)
   iterate z -> 1 + (pa z + pb)/z^2 until |z| > 1000000000000000000000000.0
   run shade5
-
-  @tool "Pick t (5)" for="Parameter plane" shortcut=p
-  on click-or-drag:
-    pass
 
   @tool overlay for="Parameter plane"
   on refresh:

@@ -279,9 +279,12 @@ Coordinates: `at w` binds the point as a complex `w`; `at (x, y)` binds two
 reals (in either kind of viewer). Without `at`, the point is bound to the
 viewer's own coordinate name(s): `var=`, or a real viewer's `xvar=`/`yvar=`. **Caution**: if the viewer's coordinate is a `@config` variable
 (`var=C`), a handler using the default coordinate writes the clicked point
-into that config variable even if the body never assigns it. That is the
-idiomatic "click to pick a parameter" tool (`on click-or-drag: pass`), and
-a nasty surprise otherwise; use `on click at w:` when you don't want it.
+into that config variable even if the body never assigns it, a nasty
+surprise; use `on click at w:` when you don't want it. Such a viewer (a
+`var=` that's a config variable, or a real viewer whose `xvar=` and
+`yvar=` both are) already gets a built-in "Select ..." tool (shortcut
+`S`) that sets the parameter by clicking or dragging, so don't write a
+"pick" tool.
 `on refresh`, `activated`, `deactivated`, `button` and `timer` have no
 point and can't see the viewer coordinate.
 

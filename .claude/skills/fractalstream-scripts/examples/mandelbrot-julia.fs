@@ -31,12 +31,9 @@ script: |
   iterate z -> f(z) until z escapes
   run shade
 
-  # On a viewer whose coordinate is a @config variable (here C), a handler
-  # that uses the default coordinate writes the clicked point into that
-  # variable -- exactly what a "pick" tool wants.
-  @tool "Pick C" for="Parameter plane" shortcut=p
-  on click-or-drag:
-    pass
+  # The parameter plane's coordinate is the @config variable C, so it gets
+  # a built-in "Select C" tool (shortcut S) that sets C by clicking; no
+  # tool needs to be written for that.
 
   @tool "Trace orbit" for="Julia set" shortcut=t
   on click-or-drag at w:

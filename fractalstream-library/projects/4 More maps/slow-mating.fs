@@ -124,9 +124,11 @@ script: |
   @viewer "Slow mating" view=sphere center=1
   run mating
 
-  @viewer "Mandelbrot set" var=c center=-0.6 pixelSize=1/180
+  # Its coordinate is c1, so its built-in "Select c1" tool (shortcut S)
+  # picks c1 by clicking; "Select c2" below picks c2.
+  @viewer "Mandelbrot set" var=c1 center=-0.6 pixelSize=1/180
   z := 0
-  iterate z -> z^2 + c until z escapes
+  iterate z -> z^2 + c1 until z escapes
 
   # c1 and c2, always marked
   @tool overlay for="Mandelbrot set"
@@ -140,11 +142,7 @@ script: |
     draw filled circle at c2 with radius 5 pixel_size
     draw circle at c2 with radius 5 pixel_size
 
-  @tool "Pick c1" for="Mandelbrot set" shortcut=1
-  on click-or-drag at w:
-    c1 <- w
-
-  @tool "Pick c2" for="Mandelbrot set" shortcut=2
+  @tool "Select c2" for="Mandelbrot set" shortcut=2
   on click-or-drag at w:
     c2 <- w
 metadata:
@@ -156,7 +154,7 @@ metadata:
     sphere's equator (drawn in red); the result is shown in coordinates
     that make it a round sphere. As t decreases to 0 the picture
     approaches the mating of the two polynomials. Change t to watch it
-    happen. Pick c1 (1) and Pick c2 (2) choose the polynomials in the
+    happen. Select c1 (S) and Select c2 (2) choose the polynomials in the
     Mandelbrot set, where both are always marked.
   preview-commands: |
     capture viewer "Slow mating" base as preview

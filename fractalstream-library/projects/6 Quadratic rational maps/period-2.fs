@@ -128,12 +128,6 @@ script: |
   iterate z -> g(z) until z escapes
   run shadeM
 
-  # Clicking the plane picks c (it writes the clicked point into the config
-  # variable, and the Julia window follows).
-  @tool "Pick c" for="Parameter plane" shortcut=p
-  on click-or-drag:
-    pass
-
   @tool overlay for="Parameter plane"
   on refresh:
     erase
