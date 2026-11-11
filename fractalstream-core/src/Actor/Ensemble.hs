@@ -1666,6 +1666,7 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
 
       Left (_, err) -> do
         let vTools = dyn cvTools
+            vSelectTool = Nothing
             vCodeWithArgs = CodeWithArgs (pure $ Right EmptyContext) Nothing (pure allGrey)
             vListen = const (pure $ pure ())
 
@@ -1722,9 +1723,9 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
                         context
                       pure (mapContextM (\_ _ -> id) result)
 
-          withSelectTool <- if all (`Map.member` envToMap env) coordNames
-                              then (:) <$> makeSelectTool cvCoord else pure id
-          let vTools = withSelectTool <$> dyn cvTools
+          vSelectTool <- if all (`Map.member` envToMap env) coordNames
+                           then Just <$> makeSelectTool cvCoord else pure Nothing
+          let vTools = maybe id (:) vSelectTool <$> dyn cvTools
 
           withCompiledViewer (bViewerCompiler backend) lookupAutocolor code $ \fun0 -> do
             fun <- case mprefix of
