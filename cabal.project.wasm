@@ -10,6 +10,7 @@ packages:
   fractalstream-gitinfo
   fractalstream-core
   fractalstream-backend-pure
+  fractalstream-backend-wasm
   fractalstream-library
   fractalstream-ui-headless
 

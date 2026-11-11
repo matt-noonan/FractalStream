@@ -79,10 +79,15 @@ library
 executable fsrun
   import: FractalStream-common
   -- -N: render on every core unless -j says otherwise
-  ghc-options:         -Wall -Werror -O2 -rtsopts
-  -- (WebAssembly has no threaded RTS)
-  if !arch(wasm32)
-    ghc-options:       -threaded -with-rtsopts=-N
+  ghc-options:         -Wall -Werror -O2
+  -- (WebAssembly has no threaded RTS. There, fsrun uses the wasm backend,
+  -- which loads its kernels through the JavaScript FFI, so it's a reactor
+  -- module exporting its main as hs_start, for a JavaScript host to run:
+  -- see dev-tools/wasm/run-node.mjs.)
+  if arch(wasm32)
+    ghc-options:       -no-hs-main -optl-mexec-model=reactor -optl-Wl,--export=hs_start
+  else
+    ghc-options:       -threaded -rtsopts -with-rtsopts=-N
 
   main-is:             Main.hs
 
@@ -95,7 +100,9 @@ executable fsrun
                      , text
                      , optparse-applicative
 
-  if flag(use-llvm)
+  if arch(wasm32)
+     build-depends: fractalstream-backend-wasm
+  elif flag(use-llvm)
      build-depends: fractalstream-backend-llvm
   else
      build-depends: fractalstream-backend-pure
