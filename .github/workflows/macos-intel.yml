@@ -16,10 +16,6 @@ on:
         description: 'Submit the signed app bundle to the Apple notary service?'
         required: true
         type: boolean
-      jemalloc:
-        description: 'Link against jemalloc?'
-        required: true
-        type: boolean
 
 jobs:
   build:
@@ -28,5 +24,4 @@ jobs:
       runner: macos-15-intel
       wxwidgets: ${{ inputs.wxwidgets }}
       notarize: ${{ inputs.notarize }}
-      jemalloc: ${{ inputs.jemalloc }}
     secrets: inherit

@@ -1,4 +1,3 @@
-{-# language LambdaCase #-}
 import Distribution.MacOSX
 import Distribution.AppImage
 import qualified Distribution.MacOSX as Mac
@@ -89,22 +88,9 @@ fsConfHook (pkg_descr, hooked_bi) flags = do
   let output = if System.os == "darwin"
                then output0 ++ ["-framework", "AppKit"]
                else output0
-      (wxLibs0, wxLdDirsOrOpts) = partitionEithers (concatMap splitLdOptions output)
-      (wxLdDirs0, wxLdOpts) = partitionEithers wxLdDirsOrOpts
-
-  (wxLibs, wxLdDirs) <- case lookupFlagAssignment (mkFlagName "use-jemalloc")
-                             $ configConfigurationsFlags flags of
-    Just True -> do
-      let verbosity = fromFlag $ configVerbosity flags
-      program <- fst <$> requireProgram verbosity (simpleProgram "jemalloc-config")
-                        (configPrograms flags)
-      (words <$> getProgramOutput verbosity program ["--libdir"]) >>= \case
-        [d] -> pure ("jemalloc" : wxLibs0, d : wxLdDirs0)
-        []  -> error "jemalloc-config --libdir returned nothing"
-        _   -> error "jemalloc-config --libdir returned multiple directories"
-
-    _ -> pure (wxLibs0, wxLdDirs0)
-  let pkg_descr' = updatePackageDescription wxLibs wxLdOpts wxLdDirs includes cxxOpts pkg_descr
+      (wxLibs, wxLdDirsOrOpts) = partitionEithers (concatMap splitLdOptions output)
+      (wxLdDirs, wxLdOpts) = partitionEithers wxLdDirsOrOpts
+      pkg_descr' = updatePackageDescription wxLibs wxLdOpts wxLdDirs includes cxxOpts pkg_descr
   confHook simpleUserHooks (pkg_descr', hooked_bi) flags
 
 -- | Compile windows/FractalStream.rc (the icon, and wxWidgets' standard
