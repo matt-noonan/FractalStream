@@ -75,6 +75,7 @@ library
                        Actor.Viewer
                        Actor.Viewer.Types
                        Actor.Viewer.Complex
+                       Actor.Viewer.Clip
                        Actor.Viewer.Overlay
                        Actor.Viewer.Sphere
                        Actor.Viewer.Preview
