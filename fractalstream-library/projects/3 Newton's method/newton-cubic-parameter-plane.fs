@@ -25,10 +25,6 @@ script: |
   @viewer "Dynamical plane" colorizer=Autocolor center=0 pixelSize=1/150
   run converge
 
-  @tool "Pick a" for="Parameter plane" shortcut=p
-  on click-or-drag:
-    pass
-
   @tool "Trace" for="Dynamical plane" shortcut=t
   on deactivated:
     erase
@@ -49,8 +45,8 @@ metadata:
     or green for the roots 1 and -1, purple (blended with the others, the
     farther a is from where it starts) for the root a, and black where it
     never reaches a root at all -- in small copies of the Mandelbrot set,
-    where Newton's method fails on whole regions of starting points. Pick a
-    (p) in the parameter plane to see its basins in the dynamical plane,
+    where Newton's method fails on whole regions of starting points. Select a
+    (S) in the parameter plane to see its basins in the dynamical plane,
     and Trace (t) a point's Newton steps there. The roots' colors are saved
     and locked; to give a new a's root a color of its own, delete the old
     one in the viewer's Autocolor window (or clear the list), then turn

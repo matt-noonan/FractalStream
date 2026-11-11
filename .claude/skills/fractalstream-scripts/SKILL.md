@@ -130,9 +130,11 @@ script: |
   map as `f(z) := ...` in `@common`, a dynamical-plane viewer, and if
   the map has a parameter, a parameter-plane viewer with `var=<param>`
   starting at the critical point (`z := 0` for z^2 + C; in general, the
-  critical point as a function of the parameter). Add a "Pick C" tool on
-  the parameter plane (`on click-or-drag: pass`) so the dynamical plane
-  follows the chosen parameter, and a Trace tool on the dynamical plane.
+  critical point as a function of the parameter). Don't write a tool for
+  picking the parameter: a viewer whose coordinate is a `@config`
+  variable gets a built-in "Select C" tool (shortcut `S`) that sets it by
+  clicking, so the dynamical plane follows. Add a Trace tool on the
+  dynamical plane.
   See `examples/mandelbrot-julia.fs`.
 - **Derivatives.** `f'(z)` and `diff(z, expr)` are exact and symbolic; use
   them for Newton's method, multipliers (`|f'(z)|` along a cycle), and
