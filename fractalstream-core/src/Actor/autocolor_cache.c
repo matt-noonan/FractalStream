@@ -100,6 +100,8 @@ void fs_ac_free(fs_ac_dir *dir)
    read one anyway would give a recognizably wrong color (and fail the
    tests), rather than a plausible one. */
 #define FS_AC_FREED 0x00DEAD01u
+/* What a lookup gives when it has to ask Haskell but can't: magenta. */
+#define FS_AC_NO_CALLBACK 0x00FF00FFu
 static void poison(fs_ac_header *s)
 {
   fs_ac_group *groups = (fs_ac_group *)(s + 1);
@@ -198,6 +200,9 @@ uint32_t fs_ac_lookup(fs_ac_dir *dir, uint8_t mode, int32_t group, double x, dou
   /* done with the snapshot: leave before calling back into Haskell */
   __atomic_sub_fetch(&dir->readers[parity], 1, __ATOMIC_SEQ_CST);
   if (found) return result;
-  /* a point to add, or a group the snapshot doesn't have yet */
+  /* a point to add, or a group the snapshot doesn't have yet (a
+     directory without a callback, as on WebAssembly, gives the miss
+     color: it can't ask) */
+  if (!dir->add) return FS_AC_NO_CALLBACK;
   return dir->add(mode, group, x, y);
 }
