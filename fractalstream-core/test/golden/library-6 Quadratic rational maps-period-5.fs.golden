@@ -698,33 +698,6 @@ let `[internal] vanishing radius` = vanishing_radius in:
                     no-op
 
 
---- tool Pick t (5)
-  -- on click
-let `[internal] vanishing radius` = vanishing_radius in:
-  let `[internal] escape radius` = escape_radius in:
-    let `[internal] iteration limit` = iters in:
-      let `[internal] stuck` = False in:
-        let `[internal] iteration count` = 0 in:
-          block:
-            set `t5` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
-            let `pixel_size` = [internal] px in:
-              block:
-                no-op
-
-  -- on drag
-let `[internal] vanishing radius` = vanishing_radius in:
-  let `[internal] escape radius` = escape_radius in:
-    let `[internal] iteration limit` = iters in:
-      let `[internal] stuck` = False in:
-        let `[internal] iteration count` = 0 in:
-          block:
-            set `t5` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
-              let `pixel_size` = [internal] px in:
-                block:
-                  no-op
-
-
 --- tool overlay
   -- on refresh
 let `[internal] vanishing radius` = vanishing_radius in:

@@ -1,0 +1,843 @@
+=== viewer 0: Dynamical plane
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `v` = C in:
+                        block:
+                          let `n` = 0 in:
+                            block:
+                              let `[internal] fresh #48` = 0 in:
+                                let `[internal] fresh #49` = [internal] iteration limit in:
+                                  block:
+                                    if ((|v| < (10:R ^ 8:R)) and ([internal] fresh #48 < [internal] fresh #49)) then:
+                                      do-while ((|v| < (10:R ^ 8:R)) and ([internal] fresh #48 < [internal] fresh #49)):
+                                        block:
+                                          block:
+                                            set `v` := ((v ^ 2:R:C) + C)
+                                            set `n` := (n + 1)
+                                          set `[internal] fresh #48` := ([internal] fresh #48 + 1)
+                                    else:
+                                      no-op
+                                    set `[internal] iteration count` := [internal] fresh #48
+                                    set `[internal] stuck` := ([internal] fresh #48 = [internal] fresh #49)
+                              let `crit` = if [internal] stuck then 0:R else (log(|v|) / (2:R ^ (n + 1):R)) in:
+                                block:
+                                  let `phi` = 0:R:C in:
+                                    block:
+                                      let `grad` = 1:R in:
+                                        block:
+                                          let `found` = False in:
+                                            block:
+                                              let `[internal] boettcher.d0 #0` = 1 in:
+                                                block:
+                                                  let `[internal] boettcher.dc #0` = 0 in:
+                                                    block:
+                                                      let `b_dw` = [internal] boettcher.d0 #0:R:C in:
+                                                        block:
+                                                          let `b_scale` = 1.0 in:
+                                                            block:
+                                                              let `b_safe` = if (1:R < |C|) then (2:R * sqrt(|C|)) else 2:R in:
+                                                                block:
+                                                                  let `b_m` = 0 in:
+                                                                    block:
+                                                                      set `[hoisted] crit` := crit
+                                                                      set `[hoisted] phi` := phi
+                                                                      set `[hoisted] grad` := grad
+                                                                      set `[hoisted] found` := found
+                                                                      set `[hoisted] [internal] boettcher.dc #0` := [internal] boettcher.dc #0
+                                                                      set `[hoisted] b_dw` := b_dw
+                                                                      set `[hoisted] b_scale` := b_scale
+                                                                      set `[hoisted] b_safe` := b_safe
+                                                                      set `[hoisted] b_m` := b_m
+                                                                      set `[hoisted] iteration count` := [internal] iteration count
+                                                                      set `[hoisted] stuck` := [internal] stuck
+
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = [hoisted] stuck in:
+        let `[internal] iteration count` = [hoisted] iteration count in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                        block:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `z` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `crit` = [hoisted] crit in:
+                      block:
+                        let `phi` = [hoisted] phi in:
+                          block:
+                            let `grad` = [hoisted] grad in:
+                              block:
+                                let `found` = [hoisted] found in:
+                                  block:
+                                    let `[internal] boettcher.dc #0` = [hoisted] [internal] boettcher.dc #0 in:
+                                      block:
+                                        let `b_dw` = [hoisted] b_dw in:
+                                          block:
+                                            let `b_scale` = [hoisted] b_scale in:
+                                              block:
+                                                let `b_safe` = [hoisted] b_safe in:
+                                                  block:
+                                                    let `b_m` = [hoisted] b_m in:
+                                                      block:
+                                                        let `[internal] boettcher.start #0` = z in:
+                                                          block:
+                                                            let `b_w` = [internal] boettcher.start #0 in:
+                                                              block:
+                                                                let `[internal] fresh #59` = 0 in:
+                                                                  let `[internal] fresh #60` = [internal] iteration limit in:
+                                                                    block:
+                                                                      if (!(b_safe < |b_w|) and ([internal] fresh #59 < [internal] fresh #60)) then:
+                                                                        do-while (!(b_safe < |b_w|) and ([internal] fresh #59 < [internal] fresh #60)):
+                                                                          block:
+                                                                            block:
+                                                                              set `b_dw` := (((2:R:C * b_w) * b_dw) + [internal] boettcher.dc #0:R:C)
+                                                                              set `b_w` := ((b_w ^ 2:R:C) + C)
+                                                                              set `b_scale` := (b_scale / 2:R)
+                                                                              set `b_m` := (b_m + 1)
+                                                                            set `[internal] fresh #59` := ([internal] fresh #59 + 1)
+                                                                      else:
+                                                                        no-op
+                                                                      set `[internal] iteration count` := [internal] fresh #59
+                                                                      set `[internal] stuck` := ([internal] fresh #59 = [internal] fresh #60)
+                                                                set `found` := (b_safe < |b_w|)
+                                                                if found then:
+                                                                  block:
+                                                                    let `b_L` = 0:R:C in:
+                                                                      block:
+                                                                        let `b_s` = 0.5 in:
+                                                                          block:
+                                                                            let `[internal] fresh #61` = 0 in:
+                                                                              let `[internal] fresh #62` = 60 in:
+                                                                                block:
+                                                                                  if ((|b_w| < (10:R ^ 8:R)) and ([internal] fresh #61 < [internal] fresh #62)) then:
+                                                                                    do-while ((|b_w| < (10:R ^ 8:R)) and ([internal] fresh #61 < [internal] fresh #62)):
+                                                                                      block:
+                                                                                        block:
+                                                                                          set `b_L` := (b_L + (b_s:C * log((1:R:C + (C / (b_w ^ 2:R:C))))))
+                                                                                          set `b_dw` := (((2:R:C * b_w) * b_dw) + [internal] boettcher.dc #0:R:C)
+                                                                                          set `b_w` := ((b_w ^ 2:R:C) + C)
+                                                                                          set `b_scale` := (b_scale / 2:R)
+                                                                                          set `b_s` := (b_s / 2:R)
+                                                                                        set `[internal] fresh #61` := ([internal] fresh #61 + 1)
+                                                                                  else:
+                                                                                    no-op
+                                                                                  set `[internal] iteration count` := [internal] fresh #61
+                                                                                  set `[internal] stuck` := ([internal] fresh #61 = [internal] fresh #62)
+                                                                            let `b_r` = exp(b_L) in:
+                                                                              block:
+                                                                                let `b_k` = (b_m - 1) in:
+                                                                                  block:
+                                                                                    let `[internal] fresh #63` = 0 in:
+                                                                                      let `[internal] fresh #64` = b_m in:
+                                                                                        block:
+                                                                                          if (!(b_k < 0) and ([internal] fresh #63 < [internal] fresh #64)) then:
+                                                                                            do-while (!(b_k < 0) and ([internal] fresh #63 < [internal] fresh #64)):
+                                                                                              block:
+                                                                                                block:
+                                                                                                  let `b_u` = [internal] boettcher.start #0 in:
+                                                                                                    block:
+                                                                                                      let `[internal] fresh #66` = 0 in:
+                                                                                                        let `[internal] fresh #67` = b_k in:
+                                                                                                          block:
+                                                                                                            if (True and ([internal] fresh #66 < [internal] fresh #67)) then:
+                                                                                                              do-while (True and ([internal] fresh #66 < [internal] fresh #67)):
+                                                                                                                block:
+                                                                                                                  block:
+                                                                                                                    set `b_u` := ((b_u ^ 2:R:C) + C)
+                                                                                                                  set `[internal] fresh #66` := ([internal] fresh #66 + 1)
+                                                                                                            else:
+                                                                                                              no-op
+                                                                                                            set `[internal] iteration count` := [internal] fresh #66
+                                                                                                            set `[internal] stuck` := ([internal] fresh #66 = [internal] fresh #67)
+                                                                                                      set `b_r` := sqrt((b_r * (1:R:C + (C / (b_u ^ 2:R:C)))))
+                                                                                                      set `b_k` := (b_k - 1)
+                                                                                                set `[internal] fresh #63` := ([internal] fresh #63 + 1)
+                                                                                          else:
+                                                                                            no-op
+                                                                                          set `[internal] iteration count` := [internal] fresh #63
+                                                                                          set `[internal] stuck` := ([internal] fresh #63 = [internal] fresh #64)
+                                                                                    set `phi` := ([internal] boettcher.start #0 * b_r)
+                                                                                    set `grad` := ((b_scale * |b_dw|) / |b_w|)
+                                                                else:
+                                                                  no-op
+                                                                if found then:
+                                                                  block:
+                                                                    block:
+                                                                      let `[internal] paint.valid #1` = (crit < log(|phi|)) in:
+                                                                        block:
+                                                                          block:
+                                                                            let `t` = (arg(phi) / (2:R * 3.141592653589793)) in:
+                                                                              block:
+                                                                                if (t < 0:R) then:
+                                                                                  block:
+                                                                                    set `t` := (t + 1:R)
+                                                                                else:
+                                                                                  no-op
+                                                                                let `G` = log(|phi|) in:
+                                                                                  block:
+                                                                                    let `u` = (log(G) / log(2:R)) in:
+                                                                                      block:
+                                                                                        let `lvl` = floor(-u) in:
+                                                                                          block:
+                                                                                            let `nk` = (2 ^ if (0 < (lvl + detail)) then (lvl + detail) else 0) in:
+                                                                                              block:
+                                                                                                let `j` = floor((t * nk:R)) in:
+                                                                                                  block:
+                                                                                                    let `odd` = (((lvl + j) mod 2) = 1) in:
+                                                                                                      block:
+                                                                                                        if (style = 0) then:
+                                                                                                          block:
+                                                                                                            set `color` := if odd then color1 else color2
+                                                                                                        else:
+                                                                                                          if (style = 1) then:
+                                                                                                            block:
+                                                                                                              let `hue` = let #wheel-arg = (((j:R + 0.5) / nk:R) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))))) in:
+                                                                                                                block:
+                                                                                                                  set `color` := if odd then blend(0.333, Color 255 255 255, hue) else blend(0.333, Color 0 0 0, hue)
+                                                                                                          else:
+                                                                                                            if (style = 2) then:
+                                                                                                              block:
+                                                                                                                let `dG` = |(G - (2:R ^ round(u):R))| in:
+                                                                                                                  block:
+                                                                                                                    let `a` = (t * nk:R) in:
+                                                                                                                      block:
+                                                                                                                        let `dt` = (|(a - round(a):R)| / nk:R) in:
+                                                                                                                          block:
+                                                                                                                            let `d` = (if (dG < ((2:R * 3.141592653589793) * dt)) then dG else ((2:R * 3.141592653589793) * dt) / grad) in:
+                                                                                                                              block:
+                                                                                                                                let `bg` = blend(0.25, let #wheel-arg = (t mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))))), Color 255 255 255) in:
+                                                                                                                                  block:
+                                                                                                                                    set `color` := if (d < (line_width * pixel_size)) then Color 0 0 0 else bg
+                                                                                                            else:
+                                                                                                              block:
+                                                                                                                let `band` = (u - floor(u):R) in:
+                                                                                                                  block:
+                                                                                                                    set `color` := blend((0.35 + (0.65 * band)), let #wheel-arg = (t mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))))), Color 0 0 0)
+                                                                                                        if (dim_invalid and ![internal] paint.valid #1) then:
+                                                                                                          block:
+                                                                                                            set `color` := blend(0.35, color, Color 128 128 128)
+                                                                                                        else:
+                                                                                                          no-op
+                                                                else:
+                                                                  block:
+                                                                    set `color` := inside
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
+                        block:
+                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                  else:
+                    no-op
+
+
+--- tool Böttcher coordinate
+  -- on click
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] px in:
+              block:
+                erase
+                let `phi` = 0:R:C in:
+                  block:
+                    let `grad` = 1:R in:
+                      block:
+                        let `found` = False in:
+                          block:
+                            block:
+                              let `[internal] boettcher.start #0` = w in:
+                                block:
+                                  let `[internal] boettcher.d0 #0` = 1 in:
+                                    block:
+                                      let `[internal] boettcher.dc #0` = 0 in:
+                                        block:
+                                          block:
+                                            let `b_w` = [internal] boettcher.start #0 in:
+                                              block:
+                                                let `b_dw` = [internal] boettcher.d0 #0:R:C in:
+                                                  block:
+                                                    let `b_scale` = 1.0 in:
+                                                      block:
+                                                        let `b_safe` = if (1:R < |C|) then (2:R * sqrt(|C|)) else 2:R in:
+                                                          block:
+                                                            let `b_m` = 0 in:
+                                                              block:
+                                                                let `[internal] fresh #33` = 0 in:
+                                                                  let `[internal] fresh #34` = [internal] iteration limit in:
+                                                                    block:
+                                                                      if (!(b_safe < |b_w|) and ([internal] fresh #33 < [internal] fresh #34)) then:
+                                                                        do-while (!(b_safe < |b_w|) and ([internal] fresh #33 < [internal] fresh #34)):
+                                                                          block:
+                                                                            block:
+                                                                              set `b_dw` := (((2:R:C * b_w) * b_dw) + [internal] boettcher.dc #0:R:C)
+                                                                              set `b_w` := ((b_w ^ 2:R:C) + C)
+                                                                              set `b_scale` := (b_scale / 2:R)
+                                                                              set `b_m` := (b_m + 1)
+                                                                            set `[internal] fresh #33` := ([internal] fresh #33 + 1)
+                                                                      else:
+                                                                        no-op
+                                                                      set `[internal] iteration count` := [internal] fresh #33
+                                                                      set `[internal] stuck` := ([internal] fresh #33 = [internal] fresh #34)
+                                                                set `found` := (b_safe < |b_w|)
+                                                                if found then:
+                                                                  block:
+                                                                    let `b_L` = 0:R:C in:
+                                                                      block:
+                                                                        let `b_s` = 0.5 in:
+                                                                          block:
+                                                                            let `[internal] fresh #35` = 0 in:
+                                                                              let `[internal] fresh #36` = 60 in:
+                                                                                block:
+                                                                                  if ((|b_w| < (10:R ^ 8:R)) and ([internal] fresh #35 < [internal] fresh #36)) then:
+                                                                                    do-while ((|b_w| < (10:R ^ 8:R)) and ([internal] fresh #35 < [internal] fresh #36)):
+                                                                                      block:
+                                                                                        block:
+                                                                                          set `b_L` := (b_L + (b_s:C * log((1:R:C + (C / (b_w ^ 2:R:C))))))
+                                                                                          set `b_dw` := (((2:R:C * b_w) * b_dw) + [internal] boettcher.dc #0:R:C)
+                                                                                          set `b_w` := ((b_w ^ 2:R:C) + C)
+                                                                                          set `b_scale` := (b_scale / 2:R)
+                                                                                          set `b_s` := (b_s / 2:R)
+                                                                                        set `[internal] fresh #35` := ([internal] fresh #35 + 1)
+                                                                                  else:
+                                                                                    no-op
+                                                                                  set `[internal] iteration count` := [internal] fresh #35
+                                                                                  set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
+                                                                            let `b_r` = exp(b_L) in:
+                                                                              block:
+                                                                                let `b_k` = (b_m - 1) in:
+                                                                                  block:
+                                                                                    let `[internal] fresh #37` = 0 in:
+                                                                                      let `[internal] fresh #38` = b_m in:
+                                                                                        block:
+                                                                                          if (!(b_k < 0) and ([internal] fresh #37 < [internal] fresh #38)) then:
+                                                                                            do-while (!(b_k < 0) and ([internal] fresh #37 < [internal] fresh #38)):
+                                                                                              block:
+                                                                                                block:
+                                                                                                  let `b_u` = [internal] boettcher.start #0 in:
+                                                                                                    block:
+                                                                                                      let `[internal] fresh #40` = 0 in:
+                                                                                                        let `[internal] fresh #41` = b_k in:
+                                                                                                          block:
+                                                                                                            if (True and ([internal] fresh #40 < [internal] fresh #41)) then:
+                                                                                                              do-while (True and ([internal] fresh #40 < [internal] fresh #41)):
+                                                                                                                block:
+                                                                                                                  block:
+                                                                                                                    set `b_u` := ((b_u ^ 2:R:C) + C)
+                                                                                                                  set `[internal] fresh #40` := ([internal] fresh #40 + 1)
+                                                                                                            else:
+                                                                                                              no-op
+                                                                                                            set `[internal] iteration count` := [internal] fresh #40
+                                                                                                            set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
+                                                                                                      set `b_r` := sqrt((b_r * (1:R:C + (C / (b_u ^ 2:R:C)))))
+                                                                                                      set `b_k` := (b_k - 1)
+                                                                                                set `[internal] fresh #37` := ([internal] fresh #37 + 1)
+                                                                                          else:
+                                                                                            no-op
+                                                                                          set `[internal] iteration count` := [internal] fresh #37
+                                                                                          set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
+                                                                                    set `phi` := ([internal] boettcher.start #0 * b_r)
+                                                                                    set `grad` := ((b_scale * |b_dw|) / |b_w|)
+                                                                else:
+                                                                  no-op
+                            use Color 255 255 255 for line
+                            use Color 255 255 255 for line
+                            draw filled circle at w:R^2 with radius (3:R * pixel_size)
+                            if found then:
+                              block:
+                                let `t` = (arg(phi) / (2:R * 3.141592653589793)) in:
+                                  block:
+                                    if (t < 0:R) then:
+                                      block:
+                                        set `t` := (t + 1:R)
+                                    else:
+                                      no-op
+                                    write text("angle ", t:Text, ", G = ", log(|phi|):Text) at (w + ((14:R:C * 0.0 :+ 1.0) * pixel_size:C)):R^2
+                            else:
+                              block:
+                                write "in K (or not escaped yet)" at (w + ((14:R:C * 0.0 :+ 1.0) * pixel_size:C)):R^2
+
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  erase
+                  let `phi` = 0:R:C in:
+                    block:
+                      let `grad` = 1:R in:
+                        block:
+                          let `found` = False in:
+                            block:
+                              block:
+                                let `[internal] boettcher.start #0` = w in:
+                                  block:
+                                    let `[internal] boettcher.d0 #0` = 1 in:
+                                      block:
+                                        let `[internal] boettcher.dc #0` = 0 in:
+                                          block:
+                                            block:
+                                              let `b_w` = [internal] boettcher.start #0 in:
+                                                block:
+                                                  let `b_dw` = [internal] boettcher.d0 #0:R:C in:
+                                                    block:
+                                                      let `b_scale` = 1.0 in:
+                                                        block:
+                                                          let `b_safe` = if (1:R < |C|) then (2:R * sqrt(|C|)) else 2:R in:
+                                                            block:
+                                                              let `b_m` = 0 in:
+                                                                block:
+                                                                  let `[internal] fresh #36` = 0 in:
+                                                                    let `[internal] fresh #37` = [internal] iteration limit in:
+                                                                      block:
+                                                                        if (!(b_safe < |b_w|) and ([internal] fresh #36 < [internal] fresh #37)) then:
+                                                                          do-while (!(b_safe < |b_w|) and ([internal] fresh #36 < [internal] fresh #37)):
+                                                                            block:
+                                                                              block:
+                                                                                set `b_dw` := (((2:R:C * b_w) * b_dw) + [internal] boettcher.dc #0:R:C)
+                                                                                set `b_w` := ((b_w ^ 2:R:C) + C)
+                                                                                set `b_scale` := (b_scale / 2:R)
+                                                                                set `b_m` := (b_m + 1)
+                                                                              set `[internal] fresh #36` := ([internal] fresh #36 + 1)
+                                                                        else:
+                                                                          no-op
+                                                                        set `[internal] iteration count` := [internal] fresh #36
+                                                                        set `[internal] stuck` := ([internal] fresh #36 = [internal] fresh #37)
+                                                                  set `found` := (b_safe < |b_w|)
+                                                                  if found then:
+                                                                    block:
+                                                                      let `b_L` = 0:R:C in:
+                                                                        block:
+                                                                          let `b_s` = 0.5 in:
+                                                                            block:
+                                                                              let `[internal] fresh #38` = 0 in:
+                                                                                let `[internal] fresh #39` = 60 in:
+                                                                                  block:
+                                                                                    if ((|b_w| < (10:R ^ 8:R)) and ([internal] fresh #38 < [internal] fresh #39)) then:
+                                                                                      do-while ((|b_w| < (10:R ^ 8:R)) and ([internal] fresh #38 < [internal] fresh #39)):
+                                                                                        block:
+                                                                                          block:
+                                                                                            set `b_L` := (b_L + (b_s:C * log((1:R:C + (C / (b_w ^ 2:R:C))))))
+                                                                                            set `b_dw` := (((2:R:C * b_w) * b_dw) + [internal] boettcher.dc #0:R:C)
+                                                                                            set `b_w` := ((b_w ^ 2:R:C) + C)
+                                                                                            set `b_scale` := (b_scale / 2:R)
+                                                                                            set `b_s` := (b_s / 2:R)
+                                                                                          set `[internal] fresh #38` := ([internal] fresh #38 + 1)
+                                                                                    else:
+                                                                                      no-op
+                                                                                    set `[internal] iteration count` := [internal] fresh #38
+                                                                                    set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
+                                                                              let `b_r` = exp(b_L) in:
+                                                                                block:
+                                                                                  let `b_k` = (b_m - 1) in:
+                                                                                    block:
+                                                                                      let `[internal] fresh #40` = 0 in:
+                                                                                        let `[internal] fresh #41` = b_m in:
+                                                                                          block:
+                                                                                            if (!(b_k < 0) and ([internal] fresh #40 < [internal] fresh #41)) then:
+                                                                                              do-while (!(b_k < 0) and ([internal] fresh #40 < [internal] fresh #41)):
+                                                                                                block:
+                                                                                                  block:
+                                                                                                    let `b_u` = [internal] boettcher.start #0 in:
+                                                                                                      block:
+                                                                                                        let `[internal] fresh #43` = 0 in:
+                                                                                                          let `[internal] fresh #44` = b_k in:
+                                                                                                            block:
+                                                                                                              if (True and ([internal] fresh #43 < [internal] fresh #44)) then:
+                                                                                                                do-while (True and ([internal] fresh #43 < [internal] fresh #44)):
+                                                                                                                  block:
+                                                                                                                    block:
+                                                                                                                      set `b_u` := ((b_u ^ 2:R:C) + C)
+                                                                                                                    set `[internal] fresh #43` := ([internal] fresh #43 + 1)
+                                                                                                              else:
+                                                                                                                no-op
+                                                                                                              set `[internal] iteration count` := [internal] fresh #43
+                                                                                                              set `[internal] stuck` := ([internal] fresh #43 = [internal] fresh #44)
+                                                                                                        set `b_r` := sqrt((b_r * (1:R:C + (C / (b_u ^ 2:R:C)))))
+                                                                                                        set `b_k` := (b_k - 1)
+                                                                                                  set `[internal] fresh #40` := ([internal] fresh #40 + 1)
+                                                                                            else:
+                                                                                              no-op
+                                                                                            set `[internal] iteration count` := [internal] fresh #40
+                                                                                            set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
+                                                                                      set `phi` := ([internal] boettcher.start #0 * b_r)
+                                                                                      set `grad` := ((b_scale * |b_dw|) / |b_w|)
+                                                                  else:
+                                                                    no-op
+                              use Color 255 255 255 for line
+                              use Color 255 255 255 for line
+                              draw filled circle at w:R^2 with radius (3:R * pixel_size)
+                              if found then:
+                                block:
+                                  let `t` = (arg(phi) / (2:R * 3.141592653589793)) in:
+                                    block:
+                                      if (t < 0:R) then:
+                                        block:
+                                          set `t` := (t + 1:R)
+                                      else:
+                                        no-op
+                                      write text("angle ", t:Text, ", G = ", log(|phi|):Text) at (w + ((14:R:C * 0.0 :+ 1.0) * pixel_size:C)):R^2
+                              else:
+                                block:
+                                  write "in K (or not escaped yet)" at (w + ((14:R:C * 0.0 :+ 1.0) * pixel_size:C)):R^2
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+
+--- tool Trace orbit
+  -- on click
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] px in:
+              block:
+                erase
+                use Color 255 255 0 for line
+                use Color 255 255 0 for line
+                let `prev` = w in:
+                  block:
+                    let `[internal] fresh #23` = 0 in:
+                      let `[internal] fresh #24` = 200 in:
+                        block:
+                          do-while (!([internal] escape radius < |w|) and ([internal] fresh #23 < [internal] fresh #24)):
+                            block:
+                              block:
+                                draw point at w:R^2
+                                set `prev` := w
+                                set `w` := let [internal] f.z #0 = w in (([internal] f.z #0 ^ 2:R:C) + C)
+                                draw line from prev:R^2 to w:R^2
+                              set `[internal] fresh #23` := ([internal] fresh #23 + 1)
+                          set `[internal] iteration count` := [internal] fresh #23
+                          set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
+
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  erase
+                  use Color 255 255 0 for line
+                  use Color 255 255 0 for line
+                  let `prev` = w in:
+                    block:
+                      let `[internal] fresh #26` = 0 in:
+                        let `[internal] fresh #27` = 200 in:
+                          block:
+                            do-while (!([internal] escape radius < |w|) and ([internal] fresh #26 < [internal] fresh #27)):
+                              block:
+                                block:
+                                  draw point at w:R^2
+                                  set `prev` := w
+                                  set `w` := let [internal] f.z #0 = w in (([internal] f.z #0 ^ 2:R:C) + C)
+                                  draw line from prev:R^2 to w:R^2
+                                set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                            set `[internal] iteration count` := [internal] fresh #26
+                            set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+
+=== viewer 1: Parameter plane
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `phi` = 0:R:C in:
+                        block:
+                          let `grad` = 1:R in:
+                            block:
+                              let `found` = False in:
+                                block:
+                                  let `[internal] boettcher.d0 #0` = 1 in:
+                                    block:
+                                      let `[internal] boettcher.dc #0` = 1 in:
+                                        block:
+                                          let `b_dw` = [internal] boettcher.d0 #0:R:C in:
+                                            block:
+                                              let `b_scale` = 1.0 in:
+                                                block:
+                                                  let `b_m` = 0 in:
+                                                    block:
+                                                      set `[hoisted] phi` := phi
+                                                      set `[hoisted] grad` := grad
+                                                      set `[hoisted] found` := found
+                                                      set `[hoisted] [internal] boettcher.dc #0` := [internal] boettcher.dc #0
+                                                      set `[hoisted] b_dw` := b_dw
+                                                      set `[hoisted] b_scale` := b_scale
+                                                      set `[hoisted] b_m` := b_m
+
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          block:
+            set `C` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
+            let `pixel_size` = [internal] dx in:
+              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
+                        block:
+                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                            block:
+                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                                block:
+                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                                    block:
+                                      set `C` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                  else:
+                    no-op
+                  block:
+                    let `phi` = [hoisted] phi in:
+                      block:
+                        let `grad` = [hoisted] grad in:
+                          block:
+                            let `found` = [hoisted] found in:
+                              block:
+                                let `[internal] boettcher.dc #0` = [hoisted] [internal] boettcher.dc #0 in:
+                                  block:
+                                    let `b_dw` = [hoisted] b_dw in:
+                                      block:
+                                        let `b_scale` = [hoisted] b_scale in:
+                                          block:
+                                            let `b_m` = [hoisted] b_m in:
+                                              block:
+                                                let `[internal] boettcher.start #0` = C in:
+                                                  block:
+                                                    let `b_w` = [internal] boettcher.start #0 in:
+                                                      block:
+                                                        let `b_safe` = if (1:R < |C|) then (2:R * sqrt(|C|)) else 2:R in:
+                                                          block:
+                                                            let `[internal] fresh #53` = 0 in:
+                                                              let `[internal] fresh #54` = [internal] iteration limit in:
+                                                                block:
+                                                                  if (!(b_safe < |b_w|) and ([internal] fresh #53 < [internal] fresh #54)) then:
+                                                                    do-while (!(b_safe < |b_w|) and ([internal] fresh #53 < [internal] fresh #54)):
+                                                                      block:
+                                                                        block:
+                                                                          set `b_dw` := (((2:R:C * b_w) * b_dw) + [internal] boettcher.dc #0:R:C)
+                                                                          set `b_w` := ((b_w ^ 2:R:C) + C)
+                                                                          set `b_scale` := (b_scale / 2:R)
+                                                                          set `b_m` := (b_m + 1)
+                                                                        set `[internal] fresh #53` := ([internal] fresh #53 + 1)
+                                                                  else:
+                                                                    no-op
+                                                                  set `[internal] iteration count` := [internal] fresh #53
+                                                                  set `[internal] stuck` := ([internal] fresh #53 = [internal] fresh #54)
+                                                            set `found` := (b_safe < |b_w|)
+                                                            if found then:
+                                                              block:
+                                                                let `b_L` = 0:R:C in:
+                                                                  block:
+                                                                    let `b_s` = 0.5 in:
+                                                                      block:
+                                                                        let `[internal] fresh #55` = 0 in:
+                                                                          let `[internal] fresh #56` = 60 in:
+                                                                            block:
+                                                                              if ((|b_w| < (10:R ^ 8:R)) and ([internal] fresh #55 < [internal] fresh #56)) then:
+                                                                                do-while ((|b_w| < (10:R ^ 8:R)) and ([internal] fresh #55 < [internal] fresh #56)):
+                                                                                  block:
+                                                                                    block:
+                                                                                      set `b_L` := (b_L + (b_s:C * log((1:R:C + (C / (b_w ^ 2:R:C))))))
+                                                                                      set `b_dw` := (((2:R:C * b_w) * b_dw) + [internal] boettcher.dc #0:R:C)
+                                                                                      set `b_w` := ((b_w ^ 2:R:C) + C)
+                                                                                      set `b_scale` := (b_scale / 2:R)
+                                                                                      set `b_s` := (b_s / 2:R)
+                                                                                    set `[internal] fresh #55` := ([internal] fresh #55 + 1)
+                                                                              else:
+                                                                                no-op
+                                                                              set `[internal] iteration count` := [internal] fresh #55
+                                                                              set `[internal] stuck` := ([internal] fresh #55 = [internal] fresh #56)
+                                                                        let `b_r` = exp(b_L) in:
+                                                                          block:
+                                                                            let `b_k` = (b_m - 1) in:
+                                                                              block:
+                                                                                let `[internal] fresh #57` = 0 in:
+                                                                                  let `[internal] fresh #58` = b_m in:
+                                                                                    block:
+                                                                                      if (!(b_k < 0) and ([internal] fresh #57 < [internal] fresh #58)) then:
+                                                                                        do-while (!(b_k < 0) and ([internal] fresh #57 < [internal] fresh #58)):
+                                                                                          block:
+                                                                                            block:
+                                                                                              let `b_u` = [internal] boettcher.start #0 in:
+                                                                                                block:
+                                                                                                  let `[internal] fresh #60` = 0 in:
+                                                                                                    let `[internal] fresh #61` = b_k in:
+                                                                                                      block:
+                                                                                                        if (True and ([internal] fresh #60 < [internal] fresh #61)) then:
+                                                                                                          do-while (True and ([internal] fresh #60 < [internal] fresh #61)):
+                                                                                                            block:
+                                                                                                              block:
+                                                                                                                set `b_u` := ((b_u ^ 2:R:C) + C)
+                                                                                                              set `[internal] fresh #60` := ([internal] fresh #60 + 1)
+                                                                                                        else:
+                                                                                                          no-op
+                                                                                                        set `[internal] iteration count` := [internal] fresh #60
+                                                                                                        set `[internal] stuck` := ([internal] fresh #60 = [internal] fresh #61)
+                                                                                                  set `b_r` := sqrt((b_r * (1:R:C + (C / (b_u ^ 2:R:C)))))
+                                                                                                  set `b_k` := (b_k - 1)
+                                                                                            set `[internal] fresh #57` := ([internal] fresh #57 + 1)
+                                                                                      else:
+                                                                                        no-op
+                                                                                      set `[internal] iteration count` := [internal] fresh #57
+                                                                                      set `[internal] stuck` := ([internal] fresh #57 = [internal] fresh #58)
+                                                                                set `phi` := ([internal] boettcher.start #0 * b_r)
+                                                                                set `grad` := ((b_scale * |b_dw|) / |b_w|)
+                                                            else:
+                                                              no-op
+                                                            if found then:
+                                                              block:
+                                                                block:
+                                                                  let `[internal] paint.valid #1` = True in:
+                                                                    block:
+                                                                      block:
+                                                                        let `t` = (arg(phi) / (2:R * 3.141592653589793)) in:
+                                                                          block:
+                                                                            if (t < 0:R) then:
+                                                                              block:
+                                                                                set `t` := (t + 1:R)
+                                                                            else:
+                                                                              no-op
+                                                                            let `G` = log(|phi|) in:
+                                                                              block:
+                                                                                let `u` = (log(G) / log(2:R)) in:
+                                                                                  block:
+                                                                                    let `lvl` = floor(-u) in:
+                                                                                      block:
+                                                                                        let `nk` = (2 ^ if (0 < (lvl + detail)) then (lvl + detail) else 0) in:
+                                                                                          block:
+                                                                                            let `j` = floor((t * nk:R)) in:
+                                                                                              block:
+                                                                                                let `odd` = (((lvl + j) mod 2) = 1) in:
+                                                                                                  block:
+                                                                                                    if (style = 0) then:
+                                                                                                      block:
+                                                                                                        set `color` := if odd then color1 else color2
+                                                                                                    else:
+                                                                                                      if (style = 1) then:
+                                                                                                        block:
+                                                                                                          let `hue` = let #wheel-arg = (((j:R + 0.5) / nk:R) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))))) in:
+                                                                                                            block:
+                                                                                                              set `color` := if odd then blend(0.333, Color 255 255 255, hue) else blend(0.333, Color 0 0 0, hue)
+                                                                                                      else:
+                                                                                                        if (style = 2) then:
+                                                                                                          block:
+                                                                                                            let `dG` = |(G - (2:R ^ round(u):R))| in:
+                                                                                                              block:
+                                                                                                                let `a` = (t * nk:R) in:
+                                                                                                                  block:
+                                                                                                                    let `dt` = (|(a - round(a):R)| / nk:R) in:
+                                                                                                                      block:
+                                                                                                                        let `d` = (if (dG < ((2:R * 3.141592653589793) * dt)) then dG else ((2:R * 3.141592653589793) * dt) / grad) in:
+                                                                                                                          block:
+                                                                                                                            let `bg` = blend(0.25, let #wheel-arg = (t mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))))), Color 255 255 255) in:
+                                                                                                                              block:
+                                                                                                                                set `color` := if (d < (line_width * pixel_size)) then Color 0 0 0 else bg
+                                                                                                        else:
+                                                                                                          block:
+                                                                                                            let `band` = (u - floor(u):R) in:
+                                                                                                              block:
+                                                                                                                set `color` := blend((0.35 + (0.65 * band)), let #wheel-arg = (t mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))))), Color 0 0 0)
+                                                                                                    if (dim_invalid and ![internal] paint.valid #1) then:
+                                                                                                      block:
+                                                                                                        set `color` := blend(0.35, color, Color 128 128 128)
+                                                                                                    else:
+                                                                                                      no-op
+                                                            else:
+                                                              block:
+                                                                set `color` := inside
+                  if [internal] sphere view then:
+                    block:
+                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
+                        block:
+                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                  else:
+                    no-op
+
+
+--- tool overlay
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+              use Color 255 255 255 for line
+              draw circle at C:R^2 with radius (4:R * pixel_size)
+              use Color 0 0 0 for line
+              draw circle at C:R^2 with radius (5:R * pixel_size)
+
+
