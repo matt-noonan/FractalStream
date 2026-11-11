@@ -22,6 +22,7 @@ questions into **Decisions**.
 | D10 | **No ordering guarantees** for autocolor | GPU render order may assign hues differently; saved or locked groups stay stable. |
 | D11 | **cabal** for the wasm build; migrating everything off stack is open | See "Build". |
 | D12 | The precision toggle is an **app-level preference** | Stored per browser with the other preferences (IndexedDB), not in project files. |
+| D13 | **Backend.Wasm before the web app;** test wasm under Node from 0g on | The interpreter is about 2,500× slower than LLVM (0b), too slow even as a stopgap. |
 
 ## Architecture
 
@@ -169,34 +170,52 @@ the git metadata; see R5).
 
 ## Phases
 
-### Phase 0: Spikes (each can reshape the plan)
+Reordered after spike 0b (D13): the pure interpreter is far too slow to
+render with in the browser, so the compiled CPU backend comes before
+the web app. Generated wasm can only be loaded by a JavaScript host, so
+from spike 0g on, wasm builds are tested under Node rather than
+wasmtime.
 
-- [x] **0a.** Build `fractalstream-core` and `fractalstream-backend-pure`
-  with GHC-wasm, and list everything that breaks: C dependencies (`yaml`,
-  `zlib`), TH (R5), `async`, `monad-par`, `network`. (Branch
-  `spike/wasm-core`; see the findings log.)
-- [ ] **0b.** Run one `fsrun` scenario under Node with the wasm build and
-  compare its PNG with the desktop output.
-- [ ] **0c. df64 accuracy harness.** Compare `+ − × ÷ sqrt exp log sin
-  cos atan2` against f64 on Chrome, Safari and Firefox. **This decides how
-  much of Backend.WGSL is worth building.**
-- [ ] **0d.** A hand-written df64 Mandelbrot and a Newton's-method kernel
-  in WGSL, drawn from a worker to an OffscreenCanvas; time them against
-  `fsrun` with LLVM.
-- [ ] **0e.** A hand-written wasm kernel run in N workers over a
-  `SharedArrayBuffer`; check COOP/COEP on the intended host.
+### Phase 0: Spikes
+
+- [x] **0a.** Build the core, pure backend, library and fsrun with
+  GHC-wasm, and list what breaks (see the findings log).
+- [x] **0b.** Run fsrun scenarios and the test suites under wasmtime and
+  compare with desktop. The end-to-end suite is skipped on wasm until
+  Backend.Wasm exists, because its full-size renders take too long with
+  the interpreter.
+- [ ] **0g.** The heart of Backend.Wasm, under Node: Haskell (in the wasm
+  engine) emits the bytes of a small Mandelbrot kernel module, loads it
+  through the JavaScript FFI (`WebAssembly.instantiate`), runs it over a
+  block of pixels, and reads the result. Time it against LLVM, on one
+  thread and then with a few workers over shared memory.
 - [ ] **0f.** Measure the engine's binary size and startup time, before
-  and after `wasm-opt` (Earley, megaparsec, aeson, yaml, Rasterific and
-  the embedded library are all in it).
+  and after `wasm-opt` (25.5 MB unoptimized fsrun so far).
+- [ ] **0c / 0d** (before Phase 5): the df64 accuracy harness, and
+  hand-written WGSL kernels timed against the CPU.
 
-### Phase 1: Headless engine on the web
+### Phase 1: Headless engine (mostly done)
 
-- [ ] R5 and R6; root `cabal.project`.
-- [ ] The scenario runner under Node (wasm, pure backend).
-- [ ] The `end-to-end` suite under Node, giving a parity harness before
-  any UI exists.
+- [x] R5, R6 (git metadata; autocolor without a callback); `cabal.project.wasm`.
+- [x] The scenario runner and the core, library and headless `spec`
+  suites under wasmtime.
+- [ ] Run the wasm tests in CI.
 
-### Phase 2: Minimal web app
+### Phase 2: Backend.Wasm (default, f64)
+
+- [ ] wasm binary encoder; `Value`/`Code` codegen for arithmetic and
+  control flow.
+- [ ] Loading generated modules through JSFFI; a Node harness for fsrun
+  and the tests.
+- [ ] Kernel worker pool; tiles and progressive passes (R3).
+- [ ] Lists, text and tables in a per-worker arena; issue flags.
+- [ ] Autocolor: snapshot lookup, with misses queued for the engine.
+- [ ] Decide on libm (JS `Math` or compiled libm).
+- [ ] Turn the end-to-end suite back on for wasm.
+- [ ] Golden comparison against LLVM output across the library projects
+  (tolerance per D4).
+
+### Phase 3: Minimal web app
 
 - [ ] R1 (platform record), with browser implementations.
 - [ ] Engine worker and RPC; `fractalstream-ui-web` implements `UI`.
@@ -205,36 +224,25 @@ the git metadata; see R5).
 - [ ] The built-in library; open and save local `.fs` files.
 - [ ] Deployed as a static site (`site/`, or a separate app directory).
 
-### Phase 3: Backend.Wasm (default, f64)
+### Phase 4: Tools and overlays
 
-- [ ] wasm binary encoder; `Value`/`Code` codegen with arithmetic and
-  control flow.
-- [ ] Kernel worker pool; tiles and progressive passes (R3).
-- [ ] Lists, text and tables in a per-worker arena; issue flags.
-- [ ] Autocolor snapshot lookup and the miss queue.
-- [ ] Decide on libm (JS `Math` or compiled libm).
-- [ ] Golden comparison against LLVM output across the library projects
-  (tolerance per D4).
+- [ ] Tool events (click, drag, motion, buttons, timers) through the
+  interpreter; Backend.Wasm for tools later.
+- [ ] Overlay layer: Canvas2D painting of `DrawCommand`s, matching
+  `Actor.Viewer.Overlay`.
+- [ ] Preferences (IndexedDB), including the precision toggle (D12).
 
-### Phase 4: Backend.WGSL (df64, then f32)
+### Phase 5: Backend.WGSL (df64, then f32)
 
 Only if 0c/0d come out well.
 
-- [ ] R4 (declining and chaining backends); the precision toggle in the UI.
+- [ ] R4 (declining and chaining backends).
 - [ ] Arithmetic and control-flow subset, df64 runtime library.
 - [ ] Uniforms for hoisted values; storage buffers for tables and lists;
   scratch arena; issue flags.
 - [ ] Autocolor append buffer.
-- [ ] f32 mode (the same codegen with a different scalar module).
+- [ ] f32 mode.
 - [ ] Golden comparisons through headless Chrome, or Node with Dawn.
-
-### Phase 5: Tools and overlays
-
-- [ ] Tool events (click, drag, motion, buttons, timers) through the pure
-  interpreter; Backend.Wasm for tools later.
-- [ ] Overlay layer: Canvas2D painting of `DrawCommand`s, matching
-  `Actor.Viewer.Overlay`.
-- [ ] Preferences (IndexedDB).
 
 ### Phase 6: Script editor
 

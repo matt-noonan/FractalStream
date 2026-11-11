@@ -122,8 +122,12 @@ test-suite end-to-end
   hs-source-dirs: test-backend
   type: exitcode-stdio-1.0
   main-is: Main.hs
-  -- (WebAssembly has no threaded RTS)
-  if !arch(wasm32)
+  -- Not on WebAssembly for now: its viewers render at full size, which
+  -- takes the pure interpreter (wasm's only backend so far) far too long.
+  -- (WebAssembly has no threaded RTS either.)
+  if arch(wasm32)
+    buildable:        False
+  else
     ghc-options:      -threaded
   build-depends:      base >=4.8 && <5
                     , fractalstream-core
