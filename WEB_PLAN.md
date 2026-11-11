@@ -209,7 +209,8 @@ wasmtime.
   (`dev-tools/wasm/fsrun.sh`).
 - [x] Milestone 1: `basic_mandelbrot` and the Julia set project through
   Backend.Wasm under Node, compared with LLVM at a small size.
-- [ ] Kernel worker pool; tiles and progressive passes (R3).
+- [x] Kernel worker pool (`fractalstream-backend-wasm/js/`).
+- [ ] Tiles and progressive passes (R3).
 - [ ] Lists, text and tables in a per-worker arena; issue flags.
 - [ ] Autocolor: snapshot lookup, with misses queued for the engine.
 - [ ] Decide on libm (JS `Math` or compiled libm).
@@ -270,6 +271,37 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-11: Backend.Wasm on a pool of workers
+
+The host makes a pool of kernel workers (`fractalstream-backend-wasm/js/`;
+`run-node.mjs` uses one per core, or `FS_WASM_WORKERS`) and puts it at
+`globalThis.fractalstreamWorkers`. Each worker has its own private memory
+and instance of a kernel; a block's arguments go to it, and its pixels
+come back in a transferred buffer. So **no shared memory is needed, and
+the static site doesn't need COOP/COEP headers** (this settles 0e's
+hosting question).
+
+The engine has one capability, so the core's new `renderConcurrency`
+(`Task.Concurrent`) says how many blocks a render keeps in flight. It
+defaults to the capabilities count, the wasm backend sets it to the
+pool's size, and fsrun's `-j` sets it. Each block is an async JSFFI call
+on its own green thread. The pixels are copied into the block's buffer
+after the result is forced, so a cancelled render never writes into a
+freed buffer.
+
+A 1200² Julia set at 2,000 iterations, total wall time under Node,
+identical to LLVM at every worker count:
+
+| Workers | 1 | 2 | 4 | 8 | 10 |
+|---|---|---|---|---|---|
+| wasm | 2.35 s | 1.35 s | 0.84 s | 0.66 s | 0.61 s |
+
+LLVM takes 1.58 s with `-j 1` and 0.29 s with `-j 10`. The machine has 4
+performance and 6 efficiency cores. What's left of the gap:
+- single-threaded fixed costs (startup and PNG encoding in the engine),
+- one wasm thread being about 1.5× LLVM here, probably from calls out to
+  JavaScript's `Math` (Glow uses `log`).
 
 ### 2026-11-11: Backend.Wasm, milestone 1
 
