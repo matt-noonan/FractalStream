@@ -225,7 +225,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `c` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          block:
+            set `c1` := ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C))
             let `pixel_size` = [internal] dx in:
               if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
                 set `color` := Color 48 48 48
@@ -241,24 +242,24 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                 block:
                                   let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
                                     block:
-                                      set `c` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
+                                      set `c1` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
                   else:
                     no-op
                   block:
                     let `z` = [hoisted] z in:
                       block:
-                        let `[internal] fresh #40` = 0 in:
-                          let `[internal] fresh #41` = [internal] iteration limit in:
+                        let `[internal] fresh #39` = 0 in:
+                          let `[internal] fresh #40` = [internal] iteration limit in:
                             block:
-                              if (!([internal] escape radius < |z|) and ([internal] fresh #40 < [internal] fresh #41)) then:
-                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #40 < [internal] fresh #41)):
+                              if (!([internal] escape radius < |z|) and ([internal] fresh #39 < [internal] fresh #40)) then:
+                                do-while (!([internal] escape radius < |z|) and ([internal] fresh #39 < [internal] fresh #40)):
                                   block:
-                                    set `z` := ((z ^ 2:R:C) + c)
-                                    set `[internal] fresh #40` := ([internal] fresh #40 + 1)
+                                    set `z` := ((z ^ 2:R:C) + c1)
+                                    set `[internal] fresh #39` := ([internal] fresh #39 + 1)
                               else:
                                 no-op
-                              set `[internal] iteration count` := [internal] fresh #40
-                              set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
+                              set `[internal] iteration count` := [internal] fresh #39
+                              set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
                         let `[colorizer] Mandelbrot set: t` = ([internal] iteration count:R / [colorizer] Mandelbrot set: color_speed) in:
                           block:
                             if [internal] stuck then:
@@ -276,32 +277,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                     no-op
 
 
---- tool Pick c1
-  -- on click
-let `[internal] vanishing radius` = vanishing_radius in:
-  let `[internal] escape radius` = escape_radius in:
-    let `[internal] iteration limit` = max_iters in:
-      let `[internal] stuck` = False in:
-        let `[internal] iteration count` = 0 in:
-          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `pixel_size` = [internal] px in:
-              block:
-                set `c1` := w
-
-  -- on drag
-let `[internal] vanishing radius` = vanishing_radius in:
-  let `[internal] escape radius` = escape_radius in:
-    let `[internal] iteration limit` = max_iters in:
-      let `[internal] stuck` = False in:
-        let `[internal] iteration count` = 0 in:
-          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
-              let `pixel_size` = [internal] px in:
-                block:
-                  set `c1` := w
-
-
---- tool Pick c2
+--- tool Select c2
   -- on click
 let `[internal] vanishing radius` = vanishing_radius in:
   let `[internal] escape radius` = escape_radius in:
