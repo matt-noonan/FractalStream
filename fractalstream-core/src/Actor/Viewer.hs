@@ -12,9 +12,6 @@ module Actor.Viewer
   , SomeViewerWithContext(..)
   , hoistViewerCode
   , hoistedViewerFunction
-  , PrepScript(..)
-  , PrepArrayPtr
-  , PrepArrays(..)
   , ViewerCompiler(..)
   , ViewerArgs(..)
   , ViewerFunction(..)
@@ -156,7 +153,6 @@ data SomeViewerWithContext where
   SomeViewerWithContext :: forall env
      . MissingViewerArgs env
     => Context DynamicValue env
-    -> Maybe (PrepScript env)
     -> Code (ViewerEnv env)
     -> Maybe (Code env)
        -- ^ The part of the viewer's code that's the same for every pixel,
@@ -164,32 +160,6 @@ data SomeViewerWithContext where
        -- 'hoistViewerCode' and 'hoistedViewerFunction'): its results are
        -- variables of the context, which the rest reads.
     -> SomeViewerWithContext
-
--- | A preparation script that runs per-pixel in Haskell before the compiled viewer
--- kernel. Its outputs are written into flat arrays that the kernel reads inside its
--- pixel loop. The 'prepOutputEnv' identifies which variables are array-backed outputs;
--- the code runs in 'InternalViewerEnv env' and can 'Set' those output variables.
--- Parameterised by 'env' so callers can match on it without an existential escape.
-data PrepScript (env :: Environment) where
-  PrepScript :: forall prepOutputEnv env
-              . KnownEnvironment prepOutputEnv
-             => EnvironmentProxy prepOutputEnv
-             -> Code (ViewerEnv env)
-             -> PrepScript env
-
--- | Maps each prep output variable to a flat @Ptr Word8@ buffer.
--- The stride per element is determined by the variable's 'FSType'
--- (see 'prepArrayStride').
-data PrepArrayPtr :: Symbol -> FSType -> Exp Type
-type instance Eval (PrepArrayPtr _name _t) = Ptr Word8
-
--- | A collection of flat byte arrays, one per prep output variable.
-data PrepArrays where
-  PrepArrays :: forall prepOutputEnv
-              . KnownEnvironment prepOutputEnv
-             => EnvironmentProxy prepOutputEnv
-             -> Context PrepArrayPtr prepOutputEnv
-             -> PrepArrays
 
 -- | A block of pixels for a viewer to render (see 'ViewerFunction').
 data ViewerArgs = ViewerArgs
@@ -492,7 +462,6 @@ newtype ViewerCompiler = ViewerCompiler
   { withCompiledViewer :: forall env t
                         . (MissingViewerArgs env, KnownEnvironment env)
                        => AutocolorLookup
-                       -> Maybe (PrepScript env)
                        -> Code (ViewerEnv env)
                        -> (ViewerFunction env -> IO t)
                        -> IO t }

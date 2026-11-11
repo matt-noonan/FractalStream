@@ -1032,102 +1032,6 @@ pass
 w <- w + 1
 |] `shouldFailWith` "No variable named"
 
-    it "builds a `prepare` block's output into a real PrepScript, merged into the \
-       \viewer's own environment for its main code to reference" $
-      shouldBuild [r|
-@config "C"
-myColor : Color := white
-
-@viewer "Voronoi" var=z
-prepare computed : Color:
-  computed <- myColor
-color <- if |z| < 1 then black else computed
-|] $ \ens -> do
-        [viewer] <- getDynamic (ensembleViewers ens)
-        cc <- getDynamic (cvCode viewer)
-        case cc of
-          Left (_, err) -> expectationFailure ("expected a build-able viewer, got: " ++ err)
-          Right (SomeViewerWithContext _ mprep _ _) -> case mprep of
-            Nothing -> expectationFailure "expected a PrepScript to have been built"
-            Just _  -> pure ()
-
-    it "accepts a `prepare` block whose output is assigned conditionally, in both \
-       \branches of an if/else" $
-      shouldBuild [r|
-@viewer "V" var=z
-prepare computed : Color:
-  if 1 < 2:
-    computed <- black
-  else:
-    computed <- white
-color <- computed
-|] $ \ens -> do
-        [viewer] <- getDynamic (ensembleViewers ens)
-        cc <- getDynamic (cvCode viewer)
-        case cc of
-          Left (_, err) -> expectationFailure ("expected a build-able viewer, got: " ++ err)
-          Right (SomeViewerWithContext _ mprep _ _) -> case mprep of
-            Nothing -> expectationFailure "expected a PrepScript to have been built"
-            Just _  -> pure ()
-
-    it "rejects a `prepare` output that's never assigned" $
-      [r|
-@viewer "V" var=z
-prepare computed : Color:
-  pass
-color <- black
-|] `shouldFailWith` "is never assigned"
-
-    it "rejects a `prepare` output read before it's assigned" $
-      [r|
-@viewer "V" var=z
-prepare computed : Color:
-  color <- computed
-  computed <- black
-color <- black
-|] `shouldFailWith` "is read before"
-
-    it "rejects a `prepare` output only assigned in one branch of an if/else" $
-      [r|
-@viewer "V" var=z
-prepare computed : Color:
-  if 1 < 2:
-    computed <- black
-  else:
-    pass
-color <- black
-|] `shouldFailWith` "is never assigned"
-
-    it "rejects a `prepare` output only assigned inside a loop (conservative: no \
-       \credit for a loop body even though this one always runs)" $
-      [r|
-@viewer "V" var=z
-prepare computed : Color:
-  repeat:
-    computed <- black
-  while false
-color <- black
-|] `shouldFailWith` "is never assigned"
-
-    it "rejects two `prepare` outputs sharing a name" $
-      [r|
-@viewer "V" var=z
-prepare computed : Color, computed : Color:
-  computed <- black
-color <- black
-|] `shouldFailWith` "more than once"
-
-    it "rejects a `prepare` output whose name collides with an ensemble `@config` variable" $
-      [r|
-@config "C"
-computed : Color := white
-
-@viewer "V" var=z
-prepare computed : Color:
-  computed <- black
-color <- computed
-|] `shouldFailWith` "defined twice"
-
   describe "checkScript" $ do
 
     let checkFailsWith :: String -> String -> Expectation
@@ -1319,54 +1223,6 @@ on click:
   draw point at badvar
 |]
 
-    -- A `prepare` block's own code is also checked by
-    -- buildEnsembleFromScript, so the two should agree here too.
-
-    it "accepts a `prepare` block whose declared output is correctly assigned \
-       \and used by the main viewer code" $
-      agree [r|
-@viewer "V" var=z
-prepare computed : Color:
-  computed <- black
-color <- computed
-|]
-
-    it "catches a `prepare` output that's never assigned" $
-      agree [r|
-@viewer "V" var=z
-prepare computed : Color:
-  pass
-color <- black
-|]
-
-    it "catches a `prepare` output read before it's assigned" $
-      agree [r|
-@viewer "V" var=z
-prepare computed : Color:
-  color <- computed
-  computed <- black
-color <- black
-|]
-
-    it "catches two `prepare` outputs sharing a name" $
-      agree [r|
-@viewer "V" var=z
-prepare computed : Color, computed : Color:
-  computed <- black
-color <- black
-|]
-
-    it "catches a `prepare` output colliding with an ensemble `@config` variable" $
-      agree [r|
-@config "C"
-computed : Color := white
-
-@viewer "V" var=z
-prepare computed : Color:
-  computed <- black
-color <- computed
-|]
-
   describe "@common stanzas" $ do
 
     let accepts :: String -> Expectation
@@ -1386,7 +1242,7 @@ color <- computed
             [viewer] <- getDynamic (ensembleViewers ens)
             getDynamic (cvCode viewer) >>= \case
               Left (_, err) -> fail ("expected the viewer's code to build, got: " ++ err)
-              Right (SomeViewerWithContext _ _ code mprefix) -> pure (foldMap pprintCode mprefix ++ pprintCode code)
+              Right (SomeViewerWithContext _ code mprefix) -> pure (foldMap pprintCode mprefix ++ pprintCode code)
 
     it "makes its definitions available to viewers and tools" $ do
       let src = [r|
@@ -1420,17 +1276,6 @@ f(z) := |z|
 g(w) := f(w) / 2
 |]
 
-    it "is available in preparation scripts" $
-      accepts [r|
-@common
-f(z) := |z|
-
-@viewer "V" var=z
-prepare r : R:
-  r <- f(-2)
-color <- if |z| < r then black else white
-|]
-
     it "is typechecked where it is used" $
       rejects [r|
 @common
@@ -1446,17 +1291,15 @@ on click:
 |] "The variable k is already defined"
 
     it "only includes the definitions a script uses" $ do
-      -- `g` mentions the viewer's `z`, which neither the preparation
-      -- script nor the refresh handler can see; neither uses `g`.
+      -- `g` mentions the viewer's `z`, which the refresh handler can't
+      -- see; it doesn't use `g`.
       accepts [r|
 @common
 g(w) := w + z
 c := 2
 
 @viewer "V" var=z
-prepare r : R:
-  r <- c
-color <- if |g(z)| < r then black else white
+color <- if |g(z)| < c then black else white
 
 @tool "T" for="V"
 on refresh:
@@ -1470,9 +1313,11 @@ on click:
 g(w) := w + z
 
 @viewer "V" var=z
-prepare r : R:
-  r <- |g(1)|
-color <- if r < 1 then black else white
+pass
+
+@tool "T" for="V"
+on refresh:
+  draw point at g(1)
 |] "No variable named z"
 
     it "includes definitions used through other definitions" $ do

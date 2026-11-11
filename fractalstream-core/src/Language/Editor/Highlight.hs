@@ -224,7 +224,6 @@ codeDefs toks = case toks of
   Identifier "define" : Identifier f : OpenParen : rest -> (f, CodeBlock) : params rest
   Identifier "define" : Identifier f : _ -> [(f, CodeBlock)]
   Identifier "on" : rest -> handlerPoints rest
-  Identifier "prepare" : rest -> [ (n, Variable) | (Identifier n, Colon) <- zip rest (drop 1 rest) ]
   -- a tuple declaration, `x, y := ...` or `(x, y) := ...`
   _ | (lhs@(_ : _), ColonEquals : _) <- break (== ColonEquals) toks
     , Comma `elem` lhs, all tupleToken lhs ->
@@ -332,7 +331,7 @@ keywords = Set.fromList
   [ "while", "until", "repeat", "iterate", "up", "to", "for", "each", "in", "with", "first"
   , "matching", "define", "run", "pass", "draw", "use", "erase", "write", "point", "at"
   , "circle", "filled", "radius", "rectangle", "from", "line", "stroke", "fill", "on"
-  , "as", "choice", "button", "row", "tab", "prepare", "coloring", "reset", "resize" ]
+  , "as", "choice", "button", "row", "tab", "coloring", "reset", "resize" ]
 
 builtinFunctions :: Set String
 builtinFunctions = Set.fromList $ concat

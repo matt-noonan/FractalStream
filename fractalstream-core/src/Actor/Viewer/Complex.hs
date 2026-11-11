@@ -17,12 +17,6 @@ import Data.DynamicValue
 import Language.Value.Parser
 import Language.Parser.SourceRange
 
--- | Placeholder for the classic @preparation:@ YAML key's raw payload,
--- which no codec produces anymore -- 'cvPrep' is always 'Nothing' now,
--- kept only because removing the field would mean updating every
--- 'ComplexViewer' construction site for no present benefit.
-data PrepRaw
-
 data ComplexViewer = ComplexViewer
   { cvTitle :: Parsed String
   , cvSize :: Variable Dimensions
@@ -51,7 +45,6 @@ data ComplexViewer = ComplexViewer
   , cvEscapeRadius :: Parsed (Maybe ParsedValue)
   , cvVanishRadius :: Parsed (Maybe ParsedValue)
   , cvIterationLimit :: Parsed (Maybe ParsedValue)
-  , cvPrep :: Variable (Maybe PrepRaw)
   , cvCode :: Mapped CodeString (Either (SourceRange, String) SomeViewerWithContext)
   , cvTools :: Variable [Tool]
   , cvOverlay :: Maybe Tool

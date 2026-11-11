@@ -52,8 +52,8 @@ noCommonDefs = CommonDefs Set.empty []
 -- through other common definitions) to it, so that their declarations
 -- and function definitions scope over the whole body. Unused definitions
 -- are left out, so a definition that mentions a variable some scripts
--- don't have (like a viewer's coordinate, which preparation scripts and
--- tool refresh handlers don't see) only matters where it is used.
+-- don't have (like a viewer's coordinate, which tool refresh handlers
+-- don't see) only matters where it is used.
 withCommon :: CommonDefs -> ParsedCode -> ParsedCode
 withCommon CommonDefs{commonCode} body = case (used, body) of
   ([], _) -> body

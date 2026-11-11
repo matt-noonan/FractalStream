@@ -50,7 +50,6 @@ import Language.Value.Evaluator (HaskellValue)
 import Language.Value.Transform
 import Language.Code
 import Language.Code.Parser (parseCode, noCommonDefs, ppFullError)
-import Language.Code.InterpretIO (interpretToIOWithLastValues, ScalarIORefM)
 import Language.Draw
 import Actor.Viewer
 import Actor.Event (ToolExec, buildHandlerWith, snapshotEventArgs, EventArgument(..), EventArgument_,
@@ -58,7 +57,6 @@ import Actor.Event (ToolExec, buildHandlerWith, snapshotEventArgs, EventArgument
 import Data.Color
 
 import Data.IORef (newIORef, readIORef)
-import qualified Data.Map.Strict as Map
 
 import Actor.Autocolor (AutocolorLookup(..), autocolorCacheLookup)
 import Foreign hiding (void)
@@ -334,211 +332,104 @@ fromFFIRetArg t ptr = case t of
     pure (v /= 0)
   _ -> error ("todo: fromFFIRetArg " ++ showType t)
 
--- | Stride in bytes per pixel for each FSType in prep arrays.
-prepArrayStride :: TypeProxy t -> Int
-prepArrayStride = \case
-  BooleanType -> 1
-  IntegerType -> 4
-  RealType    -> 8
-  ComplexType -> 16
-  ColorType   -> 3
-  ListType _  -> 8  -- a pointer to the list's head node
-  TextType    -> 8  -- a pointer to a C string
-  _           -> 4  -- stub for other types
-
--- | Run @action@ with one zeroed @Ptr Word8@ prep array per variable in
--- @prepOutputEnv@.  The arrays are stack-allocated and zero-initialised.
-withPrepArrays :: EnvironmentProxy env -> Int -> ([Ptr Word8] -> IO r) -> IO r
-withPrepArrays EmptyEnvProxy _ action = action []
-withPrepArrays (BindingProxy _name ty env') nPixels action =
-  let sz = nPixels * prepArrayStride ty
-  in allocaBytes sz $ \ptr -> do
-    fillBytes ptr 0 sz
-    withPrepArrays env' nPixels $ \restPtrs ->
-      action (ptr : restPtrs)
-
--- | Write a single Haskell value into a prep array at the given byte offset,
--- returning an action that frees anything allocated for it. Lists and text
--- are built outside the arena, the same way 'toFFIArg' passes them, and
--- the array holds a pointer to them.
-writeToPrepArray :: TypeProxy t -> Ptr Word8 -> Int -> HaskellType t -> IO (IO ())
-writeToPrepArray ty ptr offset val = case ty of
-  BooleanType -> noFree $ pokeByteOff ptr offset (if val then (1 :: Word8) else 0)
-  IntegerType -> noFree $ pokeByteOff ptr offset (fromIntegral val :: Int32)
-  RealType    -> noFree $ pokeByteOff ptr offset (val :: Double)
-  ComplexType -> let re :+ im = val
-                 in noFree $ pokeByteOff ptr offset re >> pokeByteOff ptr (offset + 8) im
-  ColorType   -> let (r, g, b) = colorToRGB val
-                 in noFree $ pokeByteOff ptr offset r
-                          >> pokeByteOff ptr (offset + 1) g
-                          >> pokeByteOff ptr (offset + 2) b
-  ListType itemTy -> do
-    (headPtr, cleanup) <- buildListBuffer itemTy val
-    pokeByteOff ptr offset headPtr
-    pure cleanup
-  TextType -> do
-    str <- GHC.newCString utf8 val
-    pokeByteOff ptr offset str
-    pure (free str)
-  _ -> pure (pure ())
-  where noFree act = act >> pure (pure ())
-
--- | For each variable in @prepOutputEnv@, look up its last-assigned value
--- from the interpreter's tracking map and write it to the corresponding
--- prep array at pixel index @pixelIdx@.
-writePrepOutputsFromMap
-  :: EnvironmentProxy prepOutputEnv
-  -> [Ptr Word8]
-  -> Map.Map String SomeHaskellType
-  -> Int
-  -> IO (IO ())
-writePrepOutputsFromMap EmptyEnvProxy [] _ _ = pure (pure ())
-writePrepOutputsFromMap (BindingProxy name ty env') (ptr:ptrs) vals pixelIdx = do
-  let n = symbolVal name
-      byteOffset = pixelIdx * prepArrayStride ty
-  cleanup <- case Map.lookup n vals of
-    Just (SomeHaskellType ty' val) -> writeToPrepArray ty' ptr byteOffset val
-    Nothing                        -> pure (pure ())
-  (cleanup >>) <$> writePrepOutputsFromMap env' ptrs vals pixelIdx
-writePrepOutputsFromMap _ _ _ _ = pure (pure ())
-
--- | No-op draw handler for use in the Haskell prep pass.
-noPrepDraw :: DrawHandler ScalarIORefM
-noPrepDraw = DrawHandler (\_ -> pure ())
-
--- | CPS wrapper that exposes the prep output environment proxy from a 'PrepScript'.
--- Avoids existential escape by keeping the proxy in the continuation's scope.
-withPrepEnvProxy :: Maybe (PrepScript env)
-                 -> (forall prepOutputEnv. EnvironmentProxy prepOutputEnv -> IO r)
-                 -> IO r
-withPrepEnvProxy Nothing                       k = k EmptyEnvProxy
-withPrepEnvProxy (Just (PrepScript proxy _))   k = k proxy
-
 withJittedViewer :: forall env t. (MissingViewerArgs env, KnownEnvironment env)
                  => LLVMJit
                  -> AutocolorLookup
-                 -> Maybe (PrepScript env)
                  -> Code (ViewerEnv env)
                  -> (ViewerFunction env -> IO t) -> IO t
-withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocolor mPrepScript code0 action = do
+withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocolor code0 action = do
   -- Do some basic AST-level optimizations first
   let code = transformValues backendRewrites code0
   name <- modifyMVar nextId (\n -> pure (n + 1, "kernel_" ++ show n))
-  withPrepEnvProxy mPrepScript $ \prepEnvProxy -> do
-    m <- either error pure (compileRenderer' prepEnvProxy (fromString name) code)
-    withContext $ \ctx ->
-      withModuleFromAST ctx m $ \md -> do
-      let pm = CuratedPassSetSpec
-               { optLevel = Just 2 -- "-O2"?
-               , sizeLevel = Nothing
-               , unitAtATime = Nothing
-               , simplifyLibCalls = Just True
-               , loopVectorize = Just True
-               , superwordLevelParallelismVectorize = Nothing
-               , useInlinerWithThreshold = Nothing
-               , dataLayout = Nothing
-               , targetLibraryInfo = Nothing
-               , targetMachine = Nothing
-               }
-      withPassManager pm (`runPassManager` md)
+  m <- either error pure (compileRenderer' (fromString name) code)
+  withContext $ \ctx ->
+    withModuleFromAST ctx m $ \md -> do
+    let pm = CuratedPassSetSpec
+             { optLevel = Just 2 -- "-O2"?
+             , sizeLevel = Nothing
+             , unitAtATime = Nothing
+             , simplifyLibCalls = Just True
+             , loopVectorize = Just True
+             , superwordLevelParallelismVectorize = Nothing
+             , useInlinerWithThreshold = Nothing
+             , dataLayout = Nothing
+             , targetLibraryInfo = Nothing
+             , targetMachine = Nothing
+             }
+    withPassManager pm (`runPassManager` md)
 
-      let dumpLLVM = False
-          dumpAsm  = False
-      when dumpLLVM $ do
-        putStrLn "------------------------------------------------------------"
-        asm' <- BS.unpack <$> moduleLLVMAssembly md
-        putStrLn asm'
+    let dumpLLVM = False
+        dumpAsm  = False
+    when dumpLLVM $ do
+      putStrLn "------------------------------------------------------------"
+      asm' <- BS.unpack <$> moduleLLVMAssembly md
+      putStrLn asm'
 
-      withClonedThreadSafeModule md $ \tsm -> do
-        addModule tsm dylib compileLayer
-        lookupSymbol session compileLayer dylib (fromString name) >>= \case
-          Left err -> error ("error JITing kernel: " ++ show err)
-          Right (JITSymbol kernelFn _) -> do
-            when dumpLLVM $
-              putStrLn "------------------------------------------------------------"
+    withClonedThreadSafeModule md $ \tsm -> do
+      addModule tsm dylib compileLayer
+      lookupSymbol session compileLayer dylib (fromString name) >>= \case
+        Left err -> error ("error JITing kernel: " ++ show err)
+        Right (JITSymbol kernelFn _) -> do
+          when dumpLLVM $
+            putStrLn "------------------------------------------------------------"
 
-            when dumpAsm $ do
-              let dcfg = defaultConfig { confIn64BitMode = True }
-              instrs <- disassembleBlockWithConfig dcfg (wordPtrToPtr kernelFn) 1024
-              case instrs of
-                Left err -> putStrLn ("disassembly error: " ++ show err)
-                Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
+          when dumpAsm $ do
+            let dcfg = defaultConfig { confIn64BitMode = True }
+            instrs <- disassembleBlockWithConfig dcfg (wordPtrToPtr kernelFn) 1024
+            case instrs of
+              Left err -> putStrLn ("disassembly error: " ++ show err)
+              Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
 
-            let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
+          let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
 
-            -- Borrow an arena from the session-wide pool for the duration of each
-            -- kernel call; bracket returns it even if AsyncCancelled is thrown.
-            -- The pool (and the arena lifetime) is owned by withJIT, not here,
-            -- because rendering outlives this action (see LLVMJit).
-            -- The arena goes back with exceptions masked *uninterruptibly*:
-            -- 'writeChan' can block for a moment (on other threads
-            -- returning arenas), and with 'bracket''s ordinary
-            -- (interruptible) mask an asynchronous exception there --
-            -- such as cancelling a tile's render, which happens on every
-            -- redraw -- would abandon the release and lose the arena for
-            -- good. Lost arenas made quitting hang, waiting to free them.
-            --
-            -- The configuration's values are marshalled once, when they're
-            -- bound, and shared by every block the render draws (on many
-            -- threads at once: the kernel only reads them). They're freed
-            -- once the block function is garbage, by the finalizer of
-            -- 'bound', which each call keeps alive while it runs.
-            action $ ViewerFunction $ \vaArgs -> do
-              (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
-              (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
-              anchor <- mallocBytes 1 :: IO (Ptr Word8)
-              bound <- FC.newForeignPtr anchor (sequence_ (colorFree : frees) >> free anchor)
-              pure $ \ViewerArgs{..} ->
-               withForeignPtr bound $ \_ ->
-               bracket (readChan arenaPool) (uninterruptibleMask_ . writeChan arenaPool) $ \arena ->
-               withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir -> do
-                let nPixels = fromIntegral vaWidth * fromIntegral vaHeight :: Int
-                    w = fromIntegral vaWidth  :: Int
-                    h = fromIntegral vaHeight :: Int
-                    (x0, y0) = vaPoint
-                    (dx, dy) = vaStep
-                issues <- withPrepArrays prepEnvProxy nPixels $ \prepPtrs -> allocaBytes 1 $ \issuesPtr -> do
-                  -- Haskell prep pass: populate prep arrays before LLVM kernel
-                  prepFrees <- case mPrepScript of
-                    Nothing -> pure []
-                    Just (PrepScript _ prepCode) -> do
-                      fmap concat $ forM (zip [0 .. h - 1] [y0, y0 - dy ..]) $ \(row, y) ->
-                        forM (zip [0 .. w - 1] [x0, x0 + dx ..]) $ \(col, x) -> do
-                          let pixelCtx :: Context HaskellValue (ViewerEnv env)
-                              pixelCtx = Bind (Proxy @InternalX)  RealType  x
-                                       $ Bind (Proxy @InternalY)  RealType  y
-                                       $ Bind (Proxy @InternalDX) RealType  dx
-                                       $ Bind (Proxy @InternalDY) RealType  dy
-                                       $ Bind (Proxy @"color")    ColorType grey
-                                       $ vaArgs
-                          iorefs <- mapContextM (\_ _ -> newIORef) pixelCtx
-                          (lastVals, _) <- execStateT
-                            (interpretToIOWithLastValues noPrepDraw prepCode)
-                            (Map.empty, iorefs)
-                          writePrepOutputsFromMap prepEnvProxy prepPtrs lastVals
-                            (row * w + col)
-                  -- Call the LLVM kernel with the arena + prep arrays as raw pointers
-                  let fullArgs = argPtr   vaBuffer
-                               : argInt32 vaWidth
-                               : argInt32 vaHeight
-                               : argInt32 vaSubsamples
-                               : argPtr   arena
-                               : argInt32 (fromIntegral arenaCapacity)
-                               : argPtr   issuesPtr
-                               : argPtr   (castFunPtrToPtr autocolorCacheLookup)
-                               : argPtr   autocolorDir
-                               : argCDouble (CDouble $ fst vaPoint)
-                               : argCDouble (CDouble $ snd vaPoint)
-                               : argCDouble (CDouble $ fst vaStep)
-                               : argCDouble (CDouble $ snd vaStep)
-                               : colorArg
-                               : args ++ map argPtr prepPtrs
-                  callFFI fn retVoid fullArgs
-                  sequence_ prepFrees
-                  status <- peek (issuesPtr :: Ptr Word8)
-                  pure ViewerIssues { viOutOfMemory = testBit status 0
-                                    , viBadIndex    = testBit status 1 }
-                pure issues
+          -- Borrow an arena from the session-wide pool for the duration of each
+          -- kernel call; bracket returns it even if AsyncCancelled is thrown.
+          -- The pool (and the arena lifetime) is owned by withJIT, not here,
+          -- because rendering outlives this action (see LLVMJit).
+          -- The arena goes back with exceptions masked *uninterruptibly*:
+          -- 'writeChan' can block for a moment (on other threads
+          -- returning arenas), and with 'bracket''s ordinary
+          -- (interruptible) mask an asynchronous exception there --
+          -- such as cancelling a tile's render, which happens on every
+          -- redraw -- would abandon the release and lose the arena for
+          -- good. Lost arenas made quitting hang, waiting to free them.
+          --
+          -- The configuration's values are marshalled once, when they're
+          -- bound, and shared by every block the render draws (on many
+          -- threads at once: the kernel only reads them). They're freed
+          -- once the block function is garbage, by the finalizer of
+          -- 'bound', which each call keeps alive while it runs.
+          action $ ViewerFunction $ \vaArgs -> do
+            (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
+            (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
+            anchor <- mallocBytes 1 :: IO (Ptr Word8)
+            bound <- FC.newForeignPtr anchor (sequence_ (colorFree : frees) >> free anchor)
+            pure $ \ViewerArgs{..} ->
+             withForeignPtr bound $ \_ ->
+             bracket (readChan arenaPool) (uninterruptibleMask_ . writeChan arenaPool) $ \arena ->
+             withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir -> do
+              issues <- allocaBytes 1 $ \issuesPtr -> do
+                -- Call the LLVM kernel with the arena as a raw pointer
+                let fullArgs = argPtr   vaBuffer
+                             : argInt32 vaWidth
+                             : argInt32 vaHeight
+                             : argInt32 vaSubsamples
+                             : argPtr   arena
+                             : argInt32 (fromIntegral arenaCapacity)
+                             : argPtr   issuesPtr
+                             : argPtr   (castFunPtrToPtr autocolorCacheLookup)
+                             : argPtr   autocolorDir
+                             : argCDouble (CDouble $ fst vaPoint)
+                             : argCDouble (CDouble $ snd vaPoint)
+                             : argCDouble (CDouble $ fst vaStep)
+                             : argCDouble (CDouble $ snd vaStep)
+                             : colorArg
+                             : args
+                callFFI fn retVoid fullArgs
+                status <- peek (issuesPtr :: Ptr Word8)
+                pure ViewerIssues { viOutOfMemory = testBit status 0
+                                  , viBadIndex    = testBit status 1 }
+              pure issues
 
 ------------------------------------------------------------------------
 -- Compiled tools

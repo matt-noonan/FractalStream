@@ -156,19 +156,13 @@ Inside a viewer:
 - The coordinate is always complex. For a real 2-D system use
   `x := re(z)` and `y := im(z)`.
 
-Optional `prepare` block, first thing in the body:
-
-```
-@viewer "V"
-prepare scale : R, center : C:
-  scale <- a / 4
-  center <- i
-color <- if |z - center| < scale then red else blue
-```
-
-It declares outputs with types, assigns them, and the main body reads them.
-It can't see the pixel coordinate; use it for values derived only from the
-configuration. Rarely needed.
+Code that doesn't depend on the pixel (values derived only from the
+configuration, a list built from a critical orbit, `@common` values) is
+split off automatically and run once per render, compiled, before the
+pixels; nothing needs marking. Only statements every pixel runs are taken
+(not ones inside a pixel-dependent `if` or loop), and code reading
+`pixel_size` stays per-pixel, since it changes between the renderer's
+passes.
 
 #### Colorizers
 
@@ -197,7 +191,7 @@ viewer's scope: `colorizer="Rainbow(arg z / (2 pi))"` colors Newton basins
 by the angle of the root.
 
 Change a colorizer's setting defaults with a `coloring:` block, first in
-the body (before `prepare`); choices are given by their quoted label:
+the body; choices are given by their quoted label:
 
 ```
 @viewer "M" var=C colorizer=Smooth

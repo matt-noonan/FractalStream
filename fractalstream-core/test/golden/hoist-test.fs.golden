@@ -1,4 +1,20 @@
 === viewer 0: Voronoi
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `computed` = myColor in:
+                        block:
+                          set `[hoisted] computed` := computed
+
 --- body
 let `[internal] vanishing radius` = vanishing_radius in:
   let `[internal] escape radius` = escape_radius in:
@@ -25,7 +41,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    set `color` := if (|z| < radius) then Color 0 0 255 else computed
+                    let `computed` = [hoisted] computed in:
+                      block:
+                        set `color` := if (|z| < radius) then Color 0 0 255 else computed
                   if [internal] sphere view then:
                     block:
                       let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
@@ -33,14 +51,5 @@ let `[internal] vanishing radius` = vanishing_radius in:
                           set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
                   else:
                     no-op
-
---- prepare
-let `[internal] vanishing radius` = vanishing_radius in:
-  let `[internal] escape radius` = escape_radius in:
-    let `[internal] iteration limit` = max_iters in:
-      let `[internal] stuck` = False in:
-        let `[internal] iteration count` = 0 in:
-          block:
-            set `computed` := myColor
 
 

@@ -18,7 +18,7 @@ import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import Control.Monad (forM_, forever, replicateM, replicateM_, void, (>=>))
 import System.Timeout (timeout)
-import Actor.Viewer (ViewerFunction(..), runViewerFunction, ViewerArgs(..), ViewerIssues(..), PrepScript(..),
+import Actor.Viewer (ViewerFunction(..), runViewerFunction, ViewerArgs(..), ViewerIssues(..),
                      buildViewerContext, parseViewerScript)
 import Actor.Viewer.Types (ViewerEnv)
 import Foreign (allocaBytes, peekArray, Word8)
@@ -307,7 +307,7 @@ spec = do
                  ++ "if n = 2:\n  ks := range(1, 100000)\n"
                  ++ "  color <- if length(ks) > 0 then red else green"
           code <- either (fail . show) pure (parseCode env noCommonDefs src)
-          withJittedViewer jit noAutocolor Nothing code $ \vf ->
+          withJittedViewer jit noAutocolor code $ \vf ->
             allocaBytes (3 * 4 * 4) $ \buf -> do
               issues <- runViewerFunction vf (Bind (Proxy @"n") IntegerType n EmptyContext) ViewerArgs
                 { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -333,7 +333,7 @@ spec = do
           let env = envProxy (Proxy @(ViewerEnv '[]))
               src = "xs := [1, 2, 3]\ncolor <- if " ++ cond ++ " then green else red"
           code <- either (fail . show) pure (parseCode env noCommonDefs src)
-          withJittedViewer jit noAutocolor Nothing code $ \vf ->
+          withJittedViewer jit noAutocolor code $ \vf ->
             allocaBytes (3 * 4 * 4) $ \buf -> do
               issues <- runViewerFunction vf EmptyContext ViewerArgs
                 { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -374,7 +374,7 @@ spec = do
           src = "c := nearest_autocolor(4, 1)\nd := get_autocolor(5, 1)\ncolor <- autocolor(3, 0.5 + 0.25 i)"
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
       acLookup <- autocolorLookupFromFunction lookupAc
-      pixels <- withJittedViewer jit acLookup Nothing code $ \vf ->
+      pixels <- withJittedViewer jit acLookup code $ \vf ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- runViewerFunction vf (Bind (Proxy @"n") IntegerType 0 EmptyContext) ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -397,7 +397,7 @@ spec = do
           src = "color <- if n = 1 then autocolor(3, 0) else nearest_autocolor(4, 0)"
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
       acLookup <- autocolorLookupFromFunction lookupAc
-      _ <- withJittedViewer jit acLookup Nothing code $ \vf ->
+      _ <- withJittedViewer jit acLookup code $ \vf ->
         allocaBytes (3 * 4 * 4) $ \buf -> runViewerFunction vf (Bind (Proxy @"n") IntegerType 0 EmptyContext) ViewerArgs
           { vaPoint = (0, 0), vaStep = (0.1, 0.1)
           , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
@@ -414,7 +414,7 @@ spec = do
       let env = envProxy (Proxy @(ViewerEnv '[]))
       code <- either (fail . show) pure (parseCode env noCommonDefs "color <- blue")
       finished <- timeout 20000000 $ withJIT $ \jit ->
-        withJittedViewer jit noAutocolor Nothing code $ \vf -> do
+        withJittedViewer jit noAutocolor code $ \vf -> do
           let renderOnce = allocaBytes (3 * 8 * 8) $ \buf -> void $ runViewerFunction vf EmptyContext ViewerArgs
                 { vaPoint = (0, 0), vaStep = (0.1, 0.1)
                 , vaWidth = 8, vaHeight = 8, vaSubsamples = 1
@@ -431,7 +431,7 @@ spec = do
       let env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
           src = "if n = 0:\n  color <- red\nn <- 1"
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
-      pixels <- withJittedViewer jit noAutocolor Nothing code $ \vf ->
+      pixels <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- runViewerFunction vf (Bind (Proxy @"n") IntegerType 0 EmptyContext) ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -451,7 +451,7 @@ spec = do
                                 Nothing Nothing Nothing)
       parsed <- either (fail . show) pure (parseParsedCode noCommonDefs src)
       code <- either (fail . snd) pure (parseViewerScript (Just "pixel_size") vc parsed)
-      pixels <- withJittedViewer jit noAutocolor Nothing code $ \vf ->
+      pixels <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 2 * 2) $ \buf -> do
           _ <- runViewerFunction vf EmptyContext ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.2)
@@ -472,7 +472,7 @@ spec = do
                                 Nothing (Just four) Nothing)
       parsed <- either (fail . show) pure (parseParsedCode noCommonDefs src)
       code <- either (fail . snd) pure (parseViewerScript Nothing vc parsed)
-      pixels <- withJittedViewer jit noAutocolor Nothing code $ \vf ->
+      pixels <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 2) $ \buf -> do
           _ <- runViewerFunction vf EmptyContext ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -495,26 +495,9 @@ spec = do
             , "  count <- count + 1"
             , "color <- if count = 3 and length(bs) = 1 then green else red" ]
       code <- either (fail . show) pure (parseCode env noCommonDefs src)
-      pixels <- withJittedViewer jit noAutocolor Nothing code $ \vf ->
+      pixels <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- runViewerFunction vf EmptyContext ViewerArgs
-            { vaPoint = (0, 0), vaStep = (0.1, 0.1)
-            , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
-            , vaBuffer = buf }
-          peekArray (3 * 4 * 4) buf
-      pixels `shouldBe` allPixels (colorToRGB green)
-
-    it "passes list and text outputs from a prepare block to the kernel" $ withJIT $ \jit -> do
-      let env = envProxy (Proxy @(ViewerEnv PrepTestEnv))
-          prepSrc = "table <- [1, i, 2]\nlabel <- text(\"ab\", \"c\")"
-          src = "l := label\ncolor <- if length(table) = 3 and re(table @ 3) > 1.5 then green else red"
-      prepCode <- either (fail . show) pure (parseCode env noCommonDefs prepSrc)
-      code <- either (fail . show) pure (parseCode env noCommonDefs src)
-      let prep = PrepScript (envProxy (Proxy @PrepTestEnv)) prepCode
-      pixels <- withJittedViewer jit noAutocolor (Just prep) code $ \vf ->
-        allocaBytes (3 * 4 * 4) $ \buf -> do
-          _ <- runViewerFunction vf (Bind (Proxy @"table") (ListType ComplexType) []
-                     $ Bind (Proxy @"label") TextType "" EmptyContext) ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
             , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
             , vaBuffer = buf }
@@ -536,7 +519,7 @@ spec = do
       let args = Bind (Proxy @"T") typeProxy t
                $ Bind (Proxy @"xs") (ListType ComplexType) [1, 5, 9]
                $ Bind (Proxy @"w") ComplexType (0 :+ 7) EmptyContext
-      results <- withJittedViewer jit noAutocolor Nothing code $ \(ViewerFunction bind) -> do
+      results <- withJittedViewer jit noAutocolor code $ \(ViewerFunction bind) -> do
         renderBlock <- bind args
         dones <- replicateM 16 $ do
           done <- newEmptyMVar
@@ -570,7 +553,7 @@ spec = do
       t <- maybe (fail "couldn't make the table") pure =<< newTable RealType [4, 3] (0, 0) (1, 1)
       _ <- writeCell RealType t [3, 2] 23
       freezeTable t
-      (issues, pixels) <- withJittedViewer jit noAutocolor Nothing code $ \vf ->
+      (issues, pixels) <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           issues <- runViewerFunction vf (Bind (Proxy @"T") typeProxy t EmptyContext) ViewerArgs
             { vaPoint = (0, 0), vaStep = (0.1, 0.1)
@@ -581,8 +564,6 @@ spec = do
       pixels `shouldBe` greenPixels
 
 type SharedArgsEnv = '[ '("T", 'TableT 2 'RealT), '("xs", 'ListT 'ComplexT), '("w", 'ComplexT) ]
-
-type PrepTestEnv = '[ '("table", 'ListT 'ComplexT), '("label", 'TextT) ]
 
 type ToolTestEnv =
   '[ '("msg", 'TextT), '("n", 'IntegerT), '("x", 'RealT), '("z", 'ComplexT)

@@ -220,7 +220,7 @@ number by stereographic projection from the south pole, `(X + iY)/(1 + Z)`
 kernel is unchanged: a complex viewer's context also gets
 `[internal] sphere view` (a flag) and `[internal] sphere rotation ij`
 (the matrix), live values from `cvViewV`/`cvRotationV`
-(`viewerViewContext`, read like `prepare` outputs since the environment
+(`viewerViewContext`, read like hoisted results since the environment
 no longer matches the configuration's), and `parseViewerScript` wraps the
 body in `onTheSphere`: off the globe the color is `sphereBackground`, on
 it `z` is set from the rotated point, through the homogeneous pair
@@ -1265,6 +1265,18 @@ picks them up:
   (`wxApp::OSXOnShouldTerminate`), and nothing asks. Covering those needs
   a hook into that application-level request, which wxHaskell doesn't
   expose (likely a binding to add to the wxHaskell fork).
+- **Hoisting through `pixel_size`, and an explicit "computed once" form.**
+  The automatic hoisting (`Language.Code.Hoist`) treats `pixel_size` as
+  per-pixel. It's fixed within one kernel call but not within a render:
+  `Task.Block` passes `step * skip / k`, so a frame sees a value for each
+  coarse pass, the full pass, and the subsampled pass. Hoisting code that
+  reads it would mean running the prefix once per distinct step (a small
+  cache in `hoistedViewerFunction`). Not done because nothing would get
+  faster: every library viewer that reads `pixel_size` combines it with the
+  pixel (slow-mating's `pixel_size (1 + |z|^2) / 2`), and the other uses are
+  in tools. An explicit marker ("this is computed once; error if it depends
+  on the pixel") was put off too: automatic hoisting covers the speed, so
+  it would only be a guarantee. Revisit either if a script needs it.
 - **Better parse error messages.** Errors like "I got stuck and couldn't
   parse the input here, where I was expecting :" (for a typo like `letz`)
   say little; improving them probably needs changes to the Earley package.
