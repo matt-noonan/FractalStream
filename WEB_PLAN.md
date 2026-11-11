@@ -148,8 +148,8 @@ df64 risks:
 | R2 | **Move view logic out of `UI.ProjectViewer`** into core: history, pan/zoom, reprojected seeds, trackball, coalescing of parameter changes | `UI.ViewModel` and `UI.Tile` already import nothing from wx; the web UI shouldn't re-derive behaviour that's already been debugged. |
 | R3 | A **frame-level render API** next to `ViewerFunction`'s block API | GPU wants "render this frame (pass *k*) into this texture, async". CPU backends keep blocks. |
 | R4 | **Backends can decline, and a dispatcher chains them** | e.g. WGSL first, else Wasm; also lets the precision toggle pick. |
-| R5 | **Build-friendly TH:** replace `githash`'s `tGitInfoCwd` with a generated module or CPP define; verify `file-embed` under wasm TH | The wasm TH splice runs in an external interpreter that probably can't spawn `git`. |
-| R6 | **C pieces:** `#ifdef` a single-threaded `autocolor_cache.c`; leave out `find_jemalloc.c` | No OS threads in the engine. |
+| R5 | **Git metadata on wasm:** replace `githash`'s `tGitInfoCwd` there | The wasm TH interpreter can't spawn processes, so the splice fails (0a). `file-embed` works. Only `gitTag` (fsrun `--version`) and the wx About box use it. |
+| R6 | **C pieces:** optionally simplify `autocolor_cache.c` for one thread | It compiles unchanged for wasm (0a); the epoch scheme is just unnecessary there. `find_jemalloc.c` is gone (#149). |
 
 ## Build
 
@@ -167,9 +167,10 @@ df64 risks:
 
 ### Phase 0: Spikes (each can reshape the plan)
 
-- [ ] **0a.** Build `fractalstream-core` and `fractalstream-backend-pure`
+- [x] **0a.** Build `fractalstream-core` and `fractalstream-backend-pure`
   with GHC-wasm, and list everything that breaks: C dependencies (`yaml`,
-  `zlib`), TH (R5), `async`, `monad-par`, `network`.
+  `zlib`), TH (R5), `async`, `monad-par`, `network`. (Branch
+  `spike/wasm-core`; see the findings log.)
 - [ ] **0b.** Run one `fsrun` scenario under Node with the wasm build and
   compare its PNG with the desktop output.
 - [ ] **0c. df64 accuracy harness.** Compare `+ − × ÷ sqrt exp log sin
@@ -256,7 +257,40 @@ Only if 0c/0d come out well.
 
 Record spike results and surprises here, newest first.
 
-_(none yet)_
+### 2026-11-11: spike 0a (build with GHC-wasm)
+
+Toolchain: `ghc-wasm-meta` with `FLAVOUR=9.10` on aarch64-darwin, which
+gives `wasm32-wasi-ghc` 9.10.3.20260731 and cabal 3.14.2, installed in
+`~/.ghc-wasm`. Build: `cabal.project.wasm` (core, pure backend, library,
+headless with fsrun), pinned to Stackage `lts-24.12`
+(`cabal/lts-24.12.config`). Test suites weren't built.
+
+What worked unchanged:
+- **Every dependency** in the snapshot, including the C ones
+  (`libyaml-clib`, `zlib-clib`) and `async`, `monad-par`, Earley,
+  megaparsec, aeson, Rasterific, FontyFruity and JuicyPixels.
+- **`autocolor_cache.c`**, with its `__atomic_*` built-ins and
+  `sched_yield`.
+- **`file-embed`**: the overlay font, `CONTRIBUTORS`, and the library's
+  `embedDir`.
+- **The library's splice, which loads the core into the TH interpreter**
+  (C object included). This was the biggest unknown.
+
+What broke (two things, both small):
+1. **`githash`**: `tGitInfoCwd` fails with "runInteractiveProcess:
+   unsupported operation", since the wasm TH interpreter can't spawn
+   `git`. Stopgap on the spike branch: on wasm the metadata is
+   "unknown" (CPP on `wasm32_HOST_ARCH`). Proper fix: R5.
+2. **`-threaded`** in fsrun's `ghc-options`: the link fails because
+   there's no threaded RTS (`-lHSrts-1.0.2_thr`). Fix: pass `-threaded`
+   and `-with-rtsopts=-N` only `if !arch(wasm32)`. This is a proper fix,
+   not a stopgap. The end-to-end suite has the same `-threaded` and will
+   need it too.
+
+Result: `fsrun.wasm` links, 25.5 MB before `wasm-opt`, and
+`wasmtime run fsrun.wasm --help` prints the usage (about 3 s wall time,
+most of it wasmtime compiling the module). Nothing past `--help` has
+run yet; that is spike 0b.
 
 ## References
 
