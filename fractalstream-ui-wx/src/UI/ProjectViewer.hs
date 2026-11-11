@@ -1906,19 +1906,23 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
     -- Select the tool the viewer had selected before the project was
     -- rebuilt, if it still has it (its settings window coming back where
-    -- it was).
-    forM_ spare $ \kept -> case kfTool kept of
-      SelectedNavigate -> pure ()
-      SelectedDebug -> activateDebugTool
-      SelectedMoviePath -> when (isJust animatedVariable) activateMoviePathTool
-      SelectedTool name at -> do
-        let named Tool{..} = (== Right name) <$> getDynamic (tiName toolInfo)
-        filterM named tools >>= \case
-          tool : _ -> do
-            settings <- Map.lookup name <$> readIORef toolWindows
-            forM_ ((,) <$> at <*> settings) $ \(pt, tf) -> set tf [ position := pt ]
-            activateTool tool
-          [] -> pure ()
+    -- it was). A new window starts with its "Select ..." tool, if it has
+    -- one (clicking picks the parameter it shows), and otherwise with
+    -- Navigate.
+    case spare of
+      Nothing -> forM_ vSelectTool activateTool
+      Just kept -> case kfTool kept of
+        SelectedNavigate -> pure ()
+        SelectedDebug -> activateDebugTool
+        SelectedMoviePath -> when (isJust animatedVariable) activateMoviePathTool
+        SelectedTool name at -> do
+          let named Tool{..} = (== Right name) <$> getDynamic (tiName toolInfo)
+          filterM named tools >>= \case
+            tool : _ -> do
+              settings <- Map.lookup name <$> readIORef toolWindows
+              forM_ ((,) <$> at <*> settings) $ \(pt, tf) -> set tf [ position := pt ]
+              activateTool tool
+            [] -> pure ()
 
     -- (A reused window keeps its menu bar: it's the project's, not the
     -- viewer's, and making another would leave the old one's watcher

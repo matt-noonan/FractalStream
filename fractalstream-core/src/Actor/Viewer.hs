@@ -219,6 +219,11 @@ data Viewer = Viewer
   , vDrawCmdsChanged :: IO Bool
   , vCodeWithArgs :: CodeWithArgs
   , vTools     :: Dynamic [Tool]
+  , vSelectTool :: Maybe Tool
+    -- ^ The built-in "Select ..." tool (also in 'vTools'), when the
+    --   viewer's coordinate is a configuration variable (or a pair of
+    --   them) that clicking can set. A frontend selects it when it first
+    --   opens the viewer, instead of navigating.
   , vRefreshOverlay :: PixelDims -> IO ()
     -- ^ Run the viewer's overlay's @on refresh:@ block (if it has an
     --   overlay), for a view with the given pixel size: its drawings go
@@ -660,6 +665,7 @@ cloneViewer v = do
 
     , vListen = vListen v
     , vTools = vTools v
+    , vSelectTool = vSelectTool v
     , vRefreshOverlay = vRefreshOverlay v
     , vListenOverlay = vListenOverlay v
     , vCodeWithArgs = vCodeWithArgs v
