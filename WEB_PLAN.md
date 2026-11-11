@@ -230,7 +230,7 @@ wasmtime.
 - [ ] Open and save local `.fs` files.
 - [ ] Resizing viewers; high-DPI canvases; smoothing (fsrun's captures are
   rendered at 2× and averaged, the web's at 1×).
-- [ ] Try it in Safari and Firefox (so far only headless Chromium).
+- [x] Try it in Safari and Firefox: every project works, no console errors; panning and zooming smooth after reprojecting frames onto the page's own view.
 - [ ] Deployed as a static site (`site/`, or a separate app directory).
 
 ### Phase 4: Tools and overlays
