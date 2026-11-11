@@ -13,6 +13,18 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$root"
 
+# The test suites run hspec-discover while they're compiled. Cabal would
+# build it for wasm, which can't run here, so a native one (the
+# snapshot's version, built once with the host's cabal and GHC) goes
+# first on the PATH. It has to be there whenever a suite is configured:
+# cabal remembers the PATH from then.
+tools="$root/dist-newstyle/native-tools"
+if [ ! -x "$tools/hspec-discover" ]; then
+  echo "Building a native hspec-discover (once) in $tools"
+  cabal install --installdir="$tools" --install-method=copy hspec-discover-2.11.13
+fi
+export PATH="$tools:$PATH"
+
 if ! command -v wasm32-wasi-cabal > /dev/null; then
   # shellcheck disable=SC1091
   source "$HOME/.ghc-wasm/env"
