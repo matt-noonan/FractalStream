@@ -22,7 +22,7 @@ const wasi = new WASI({
   version: "preview1",
   // (the RTS exits while initializing without at least a program name)
   args: [path.basename(wasmPath, ".wasm"), ...args],
-  env: { PWD: process.cwd() },
+  env: { ...process.env, PWD: process.cwd() },
   preopens: { "/": "/" },
   returnOnExit: true,
 });
@@ -40,6 +40,17 @@ const pool = workerCount > 0
       };
     }))
   : null;
+// (for debugging: with FS_WASM_DUMP=folder, each job's parameters and
+// arguments go there too, as job-N.json, to replay without the engine)
+if (pool && process.env.FS_WASM_DUMP) {
+  const run = pool.run.bind(pool);
+  let n = 0;
+  pool.run = (kernel, args, ...rest) => {
+    fs.writeFileSync(`${process.env.FS_WASM_DUMP}/job-${n++}.json`,
+      JSON.stringify({ kernel, args: Array.from(args), rest }));
+    return run(kernel, args, ...rest);
+  };
+}
 if (pool) globalThis.fractalstreamWorkers = pool;
 
 const __exports = {};

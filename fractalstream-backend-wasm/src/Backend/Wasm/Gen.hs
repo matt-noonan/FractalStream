@@ -11,6 +11,9 @@ module Backend.Wasm.Gen
   , GenResult(..)
   , Loc(..)
   , WLoc
+  , Arena(..)
+  , setArena
+  , getArena
   , newLocal
   , emit
   , capture
@@ -32,8 +35,9 @@ import Data.List (elemIndex)
 
 -- | Where a value lives: in one local per part. A truth value is an i32
 -- (0 or 1), an integer an i32, a real number an f64, a complex number two
--- f64s, a color three i32s (one per byte, 0 to 255), and a pair its
--- parts' locals.
+-- f64s, a color three i32s (one per byte, 0 to 255), a pair its parts'
+-- locals, and a list an i32 (the address of its first node, or 0 for the
+-- empty list: see "Backend.Wasm.List").
 data Loc
   = LBool Int
   | LInt Int
@@ -41,7 +45,19 @@ data Loc
   | LComplex Int Int
   | LColor Int Int Int
   | LPair Loc Loc
+  | LList Int
   deriving Show
+
+-- | The locals holding a kernel's scratch memory (its arena), where lists
+-- are made: the next free address, the end, and the flags for running
+-- out of room and for indexing a list out of range (as in the LLVM
+-- backend: either makes the pixel magenta).
+data Arena = Arena
+  { arBump :: Int
+  , arEnd :: Int
+  , arOverflow :: Int
+  , arBadIndex :: Int
+  }
 
 -- | Contexts of 'Loc's, for each variable in scope.
 data WLoc :: Symbol -> FSType -> Exp Type
@@ -51,6 +67,7 @@ data GenState = GenState
   { gsNext   :: Int          -- ^ the next local's index
   , gsLocals :: [ValType]    -- ^ the locals so far, newest first
   , gsInstrs :: [Instr]      -- ^ the current block's instructions, newest first
+  , gsArena  :: Maybe Arena  -- ^ where lists can be made, if anywhere
   }
 
 newtype Gen a = Gen (StateT GenState (Either String) a)
@@ -65,8 +82,14 @@ data GenResult a = GenResult
 -- | Run a generator for a function with the given parameters.
 runGen :: [ValType] -> Gen a -> Either String (GenResult a)
 runGen params (Gen m) = do
-  (x, GenState{..}) <- runStateT m (GenState (length params) [] [])
+  (x, GenState{..}) <- runStateT m (GenState (length params) [] [] Nothing)
   pure (GenResult x (reverse gsLocals) (reverse gsInstrs))
+
+setArena :: Arena -> Gen ()
+setArena a = Gen (modify (\st -> st { gsArena = Just a }))
+
+getArena :: Gen Arena
+getArena = Gen (gets gsArena) >>= maybe (unsupported "lists here") pure
 
 newLocal :: ValType -> Gen Int
 newLocal t = Gen $ do
@@ -102,6 +125,7 @@ freshLike = \case
   LComplex _ _ -> LComplex <$> newLocal F64 <*> newLocal F64
   LColor{} -> LColor <$> newLocal I32 <*> newLocal I32 <*> newLocal I32
   LPair a b -> LPair <$> freshLike a <*> freshLike b
+  LList _ -> LList <$> newLocal I32
 
 -- | The locals a value lives in.
 locals :: Loc -> [Int]
@@ -112,6 +136,7 @@ locals = \case
   LComplex a b -> [a, b]
   LColor r g b -> [r, g, b]
   LPair a b -> locals a ++ locals b
+  LList a -> [a]
 
 -- | Copy a value into another of the same shape. (Every part is read
 -- before any is written, so it's right even if the two share locals.)

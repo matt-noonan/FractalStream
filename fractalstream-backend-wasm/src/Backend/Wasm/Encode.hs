@@ -12,13 +12,13 @@ module Backend.Wasm.Encode
     -- * Instructions
   , localGet, localSet, localTee
   , i32Const, f64Const
-  , i32Load, i32Load8U, f64Load, i32Store8
+  , i32Load, i32Load8U, f64Load, i32Store8, i32Store, f64Store
   , call
   , br, brIf
   , op
     -- ** Opcodes
-  , i32Eqz, i32Eq, i32Ne, i32LtS, i32GtS, i32LeS, i32GeS, i32LtU, i32GeU
-  , i32Add, i32Sub, i32Mul, i32DivS, i32DivU, i32RemS, i32And, i32Or, i32Xor
+  , i32Eqz, i32Eq, i32Ne, i32LtS, i32GtS, i32LeS, i32GeS, i32LtU, i32GtU, i32GeU
+  , i32Add, i32Sub, i32Mul, i32DivS, i32DivU, i32RemS, i32And, i32Or, i32Xor, i32Shl
   , f64Eq, f64Ne, f64Lt, f64Gt, f64Le, f64Ge
   , f64Abs, f64Neg, f64Ceil, f64Floor, f64Trunc, f64Sqrt
   , f64Add, f64Sub, f64Mul, f64Div
@@ -139,6 +139,11 @@ i32Load8U off = Op ([0x2d, 0x00] ++ uleb (fromIntegral off))
 f64Load off   = Op ([0x2b, 0x03] ++ uleb (fromIntegral off))
 i32Store8 off = Op ([0x3a, 0x00] ++ uleb (fromIntegral off))
 
+-- | Stores of an i32 or f64 (the address, then the value, on the stack).
+i32Store, f64Store :: Int -> Instr
+i32Store off = Op ([0x36, 0x02] ++ uleb (fromIntegral off))
+f64Store off = Op ([0x39, 0x03] ++ uleb (fromIntegral off))
+
 call :: Int -> Instr
 call f = Op (0x10 : uleb (fromIntegral f))
 
@@ -146,15 +151,15 @@ br, brIf :: Int -> Instr
 br d   = Op (0x0c : uleb (fromIntegral d))
 brIf d = Op (0x0d : uleb (fromIntegral d))
 
-i32Eqz, i32Eq, i32Ne, i32LtS, i32GtS, i32LeS, i32GeS, i32LtU, i32GeU :: Instr
+i32Eqz, i32Eq, i32Ne, i32LtS, i32GtS, i32LeS, i32GeS, i32LtU, i32GtU, i32GeU :: Instr
 i32Eqz = Op [0x45]; i32Eq = Op [0x46]; i32Ne = Op [0x47]
 i32LtS = Op [0x48]; i32LtU = Op [0x49]; i32GtS = Op [0x4a]
-i32LeS = Op [0x4c]; i32GeS = Op [0x4e]; i32GeU = Op [0x4f]
+i32GtU = Op [0x4b]; i32LeS = Op [0x4c]; i32GeS = Op [0x4e]; i32GeU = Op [0x4f]
 
-i32Add, i32Sub, i32Mul, i32DivS, i32DivU, i32RemS, i32And, i32Or, i32Xor :: Instr
+i32Add, i32Sub, i32Mul, i32DivS, i32DivU, i32RemS, i32And, i32Or, i32Xor, i32Shl :: Instr
 i32Add = Op [0x6a]; i32Sub = Op [0x6b]; i32Mul = Op [0x6c]
 i32DivS = Op [0x6d]; i32DivU = Op [0x6e]; i32RemS = Op [0x6f]
-i32And = Op [0x71]; i32Or = Op [0x72]; i32Xor = Op [0x73]
+i32And = Op [0x71]; i32Or = Op [0x72]; i32Xor = Op [0x73]; i32Shl = Op [0x74]
 
 f64Eq, f64Ne, f64Lt, f64Gt, f64Le, f64Ge :: Instr
 f64Eq = Op [0x61]; f64Ne = Op [0x62]; f64Lt = Op [0x63]

@@ -3,8 +3,8 @@
 -- "Backend.LLVM.Value" does, so that the two backends compute alike.
 -- Each value's result goes into fresh locals (see "Backend.Wasm.Gen").
 --
--- Not compiled yet (the caller falls back to the interpreter): lists,
--- text, tables, and autocolor.
+-- Not compiled yet (the caller falls back to the interpreter): text,
+-- tables, and autocolor.
 module Backend.Wasm.Value
   ( value
   ) where
@@ -13,6 +13,7 @@ import FractalStream.Prelude
 
 import Backend.Wasm.Encode
 import Backend.Wasm.Gen
+import Backend.Wasm.List
 
 import Language.Value
 import Data.Indexed.Functor
@@ -228,14 +229,32 @@ value = indexedFold go'
           _ -> lift (mismatch z)
       SqrtC z -> complex1 z complexSqrt
 
-      List{} -> lift (unsupported "lists")
-      Join{} -> lift (unsupported "lists")
-      Remove{} -> lift (unsupported "lists")
-      Transform{} -> lift (unsupported "lists")
-      Find{} -> lift (unsupported "lists")
-      Length{} -> lift (unsupported "lists")
-      Index{} -> lift (unsupported "lists")
-      Range{} -> lift (unsupported "lists")
+      List ty mElems -> do
+        elems <- sequence mElems
+        lift (listLiteral ty elems)
+      Join ty mLists -> sequence mLists >>= lift . listJoin ty
+      Remove name ty pf mxs mtest -> recallIsAbsent pf $ do
+        ctx <- ask
+        xs <- mxs
+        lift (listFilter ty xs (\e -> runReaderT mtest (Bind name ty e ctx)))
+      Transform name ty1 ty2 pf mxs mf -> recallIsAbsent pf $ do
+        ctx <- ask
+        xs <- mxs
+        lift (listMap ty1 ty2 xs (\e -> runReaderT mf (Bind name ty1 e ctx)))
+      Find name ty pf mxs mtest mdefault -> recallIsAbsent pf $ do
+        ctx <- ask
+        xs <- mxs
+        dflt <- mdefault
+        lift (listFind ty xs dflt (\e -> runReaderT mtest (Bind name ty e ctx)))
+      Length _ mxs -> mxs >>= lift . listLength
+      Index ty cyclic mxs mi -> do
+        xs <- mxs
+        i <- mi
+        lift (listIndex ty cyclic xs i)
+      Range mlo mhi -> do
+        lo <- mlo
+        hi <- mhi
+        lift (listRange lo hi)
       ConcatText{} -> lift (unsupported "text")
       ToText{} -> lift (unsupported "text")
       Autocolor{} -> lift (unsupported "autocolor")

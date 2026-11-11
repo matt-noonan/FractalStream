@@ -1,12 +1,15 @@
 -- | Compiling a viewer's code into a WebAssembly kernel module.
 --
--- The kernel is @kernel(out, width, height, subsamples, args, x0, y0, dx,
--- dy) -> issues@: it renders a block of pixels into @out@ (RGB bytes),
--- exactly as the LLVM backend's kernel does (the same loops, stepping x
--- by dx and y by -dy, and each pixel the average of its subsamples), and
--- gives the 'Actor.Viewer.ViewerIssues' bits. The configuration's values
--- are read from @args@, laid out as 'argSize' says, one slot per variable
--- in the environment's order.
+-- The kernel is @kernel(out, width, height, subsamples, args, arena,
+-- arenaSize, x0, y0, dx, dy) -> issues@: it renders a block of pixels into
+-- @out@ (RGB bytes), exactly as the LLVM backend's kernel does (the same
+-- loops, stepping x by dx and y by -dy, each pixel the average of its
+-- subsamples, and lists made in the arena, afresh for each subsample),
+-- and gives the 'Actor.Viewer.ViewerIssues' bits. A subsample that ran
+-- out of arena, or indexed a list out of range, is magenta. The
+-- configuration's values are read from @args@, laid out as 'argSize'
+-- says, one slot per variable in the environment's order (a list's slot
+-- holds its address: see "Backend.Wasm.List").
 module Backend.Wasm.Code
   ( compileViewer
   , argSize
@@ -17,6 +20,7 @@ import FractalStream.Prelude
 import Backend.Wasm.Encode hiding (Block)
 import Backend.Wasm.Gen
 import Backend.Wasm.Value
+import Backend.Wasm.List
 
 import Actor.Viewer.Types (ViewerEnv, MissingViewerArgs)
 import Language.Code
@@ -61,8 +65,36 @@ code = indexedFold @CtxCode $ \case
         l -> lift (throwError ("internal error: a condition of the wrong shape: " ++ show l))
     lift (emit [Loop loopCode])
 
-  Lookup{} -> lift (unsupported "list lookups")
-  ForEach{} -> lift (unsupported "loops over lists")
+  ForEach pfList _ (ListType itemTy) itemName pfNoItem _ _ body -> recallIsAbsent pfNoItem $ do
+    ctx <- ask
+    case withKnownType (ListType itemTy) (getBinding ctx pfList) of
+      LList h -> lift $ walkList h $ \curr _ -> do
+        e <- loadElem itemTy curr 8
+        runReaderT body (Bind itemName itemTy e ctx)
+      l -> lift (throwError ("internal error: a loop over a non-list: " ++ show l))
+
+  -- the first element for which the predicate holds: the action with it,
+  -- or the fallback (if any) when there's none
+  Lookup pfList _ (ListType itemTy) itemName pfNoItem _ _ predicate action fallback ->
+    recallIsAbsent pfNoItem $ do
+    ctx <- ask
+    case withKnownType (ListType itemTy) (getBinding ctx pfList) of
+      LList h -> do
+        found <- lift (newLocal I32)
+        item <- lift (zeroOf itemTy)
+        lift (emit [i32Const 0, localSet found])
+        lift $ walkList h $ \curr stop -> do
+          e <- loadElem itemTy curr 8
+          runReaderT (value predicate) (Bind itemName itemTy e ctx) >>= \case
+            LBool b -> do
+              (_, take') <- capture (copyInto e item)
+              emit [ localGet b
+                   , IfElse (take' ++ [i32Const 1, localSet found, i32Const 1, localSet stop]) [] ]
+            l -> throwError ("internal error: a test that isn't true or false: " ++ show l)
+        (_, yes) <- lift (capture (runReaderT action (Bind itemName itemTy item ctx)))
+        (_, no) <- lift (capture (maybe (pure ()) (`runReaderT` ctx) fallback))
+        lift (emit [localGet found, IfElse yes no])
+      l -> lift (throwError ("internal error: a lookup in a non-list: " ++ show l))
   DrawCommand{} -> lift (unsupported "drawing")
   TableAllocate{} -> lift (unsupported "tables")
   TableWrite{} -> lift (unsupported "tables")
@@ -88,6 +120,7 @@ argSize = \case
   ColorType -> Just 8
   ComplexType -> Just 16
   PairType a b -> (+) <$> argSize a <*> argSize b
+  ListType t -> elemSize t >> Just 8
   _ -> Nothing
 
 -- | Fresh locals for a variable of the given type.
@@ -99,6 +132,7 @@ locFor t = case t of
   ComplexType -> LComplex <$> newLocal F64 <*> newLocal F64
   ColorType -> LColor <$> newLocal I32 <*> newLocal I32 <*> newLocal I32
   PairType a b -> LPair <$> locFor a <*> locFor b
+  ListType i | Just _ <- elemSize i -> LList <$> newLocal I32
   _ -> unsupported ("variables of type " ++ showType t)
 
 -- | Load a variable from the arguments buffer (at param 'pArgs') into its
@@ -115,14 +149,16 @@ loadArg off = \case
     one (i32Load8U (off + 2)) b
     pure (off + 8)
   LPair a b -> loadArg off a >>= (`loadArg` b)
+  LList l -> one (i32Load off) l >> pure (off + 8)
   where one load l = emit [localGet pArgs, load, localSet l]
 
-pOut, pWidth, pHeight, pSubsamples, pArgs, pX0, pY0, pDX, pDY :: Int
+pOut, pWidth, pHeight, pSubsamples, pArgs, pArena, pArenaSize, pX0, pY0, pDX, pDY :: Int
 pOut = 0; pWidth = 1; pHeight = 2; pSubsamples = 3; pArgs = 4
-pX0 = 5; pY0 = 6; pDX = 7; pDY = 8
+pArena = 5; pArenaSize = 6
+pX0 = 7; pY0 = 8; pDX = 9; pDY = 10
 
 kernelParams :: [ValType]
-kernelParams = [I32, I32, I32, I32, I32, F64, F64, F64, F64]
+kernelParams = [I32, I32, I32, I32, I32, I32, I32, F64, F64, F64, F64]
 
 -- | Compile a viewer's code into a kernel module's bytes, or say why it
 -- can't be.
@@ -143,6 +179,12 @@ compileViewer memory body = do
           _ -> throwError "internal error: the viewer's color isn't a color"
         emit [localGet pDX, localSet dxVar, localGet pDY, localSet dyVar]
 
+        arena@Arena{..} <- Arena <$> newLocal I32 <*> newLocal I32 <*> newLocal I32 <*> newLocal I32
+        setArena arena
+        anyOverflow <- newLocal I32
+        anyBadIndex <- newLocal I32
+        emit [i32Const 0, localSet anyOverflow, i32Const 0, localSet anyBadIndex]
+
         (_, bodyCode) <- capture (runReaderT (code body) ctx)
         index <- newLocal I32
         i <- newLocal I32
@@ -162,8 +204,18 @@ compileViewer memory body = do
               [ localGet x, localSet xVar, localGet y, localSet yVar
               , i32Const (fromIntegral greyR), localSet cr
               , i32Const (fromIntegral greyG), localSet cg
-              , i32Const (fromIntegral greyB), localSet cb ]
+              , i32Const (fromIntegral greyB), localSet cb
+              -- a fresh arena
+              , localGet pArena, localSet arBump
+              , localGet pArena, localGet pArenaSize, i32Add, localSet arEnd
+              , i32Const 0, localSet arOverflow, i32Const 0, localSet arBadIndex ]
               ++ bodyCode
+              ++ [ localGet anyOverflow, localGet arOverflow, i32Or, localSet anyOverflow
+                 , localGet anyBadIndex, localGet arBadIndex, i32Or, localSet anyBadIndex
+                 -- magenta if it ran out of room or indexed out of range
+                 , localGet arOverflow, localGet arBadIndex, i32Or
+                 , IfElse [ i32Const 255, localSet cr, i32Const 0, localSet cg
+                          , i32Const 255, localSet cb ] [] ]
               ++ accumulate accR cr ++ accumulate accG cg ++ accumulate accB cb
               ++ [ localGet k, i32Const 1, i32Add, localTee k
                  , localGet pSubsamples, i32LtU, brIf 0 ]
@@ -184,8 +236,8 @@ compileViewer memory body = do
               , localGet pHeight, i32LtU, brIf 0 ]
         emit [ i32Const 0, localSet index, localGet pY0, localSet y, i32Const 0, localSet i
              , Loop row
-             -- (no lists or tables yet, so nothing to report)
-             , i32Const 0 ]
+             -- the issues: bit 0 for running out of arena, bit 1 for a bad index
+             , localGet anyOverflow, localGet anyBadIndex, i32Const 1, i32Shl, i32Or ]
   pure $ encodeModule WasmModule
     { wmMemory = memory
     , wmImports = [ Import "math" f (replicate n F64) [F64] | (f, n) <- mathImports ]

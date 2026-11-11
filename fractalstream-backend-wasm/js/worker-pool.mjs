@@ -10,14 +10,14 @@
 // terminate() }, so the pool doesn't care how the host makes them.
 //
 // pool.size        how many workers
-// pool.addKernel(module) -> id   a kernel (WebAssembly.Module) to use
+// pool.addKernel(bytes) -> id    a kernel (its module's bytes) to use
 // pool.run(id, args, width, height, subsamples, x0, y0, dx, dy)
 //                  -> Promise<{ issues, pixels }>   a block, on the next
 //                  idle worker (queued if none is)
 // pool.terminate()
 
 export function createPool(workers) {
-  const modules = new Map();     // kernel id -> module
+  const kernels = new Map();     // kernel id -> its module's bytes
   let nextKernel = 0;
   let nextJob = 0;
   const queue = [];              // jobs waiting for a worker
@@ -29,7 +29,7 @@ export function createPool(workers) {
       if (s.busy || queue.length === 0) continue;
       const job = queue.shift();
       if (!s.kernels.has(job.kernel)) {
-        s.worker.post({ kernel: job.kernel, module: modules.get(job.kernel) }, []);
+        s.worker.post({ kernel: job.kernel, bytes: kernels.get(job.kernel) }, []);
         s.kernels.add(job.kernel);
       }
       s.busy = true;
@@ -47,9 +47,9 @@ export function createPool(workers) {
 
   return {
     size: workers.length,
-    addKernel(module) {
+    addKernel(bytes) {
       const id = nextKernel++;
-      modules.set(id, module);
+      kernels.set(id, bytes);
       return id;
     },
     run(kernel, args, width, height, subsamples, x0, y0, dx, dy) {
