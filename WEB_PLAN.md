@@ -203,10 +203,12 @@ wasmtime.
 
 ### Phase 2: Backend.Wasm (default, f64)
 
-- [ ] wasm binary encoder; `Value`/`Code` codegen for arithmetic and
-  control flow.
-- [ ] Loading generated modules through JSFFI; a Node harness for fsrun
-  and the tests.
+- [x] wasm binary encoder; `Value`/`Code` codegen for arithmetic and
+  control flow (`fractalstream-backend-wasm`).
+- [x] Loading generated modules through JSFFI; a Node harness for fsrun
+  (`dev-tools/wasm/fsrun.sh`).
+- [x] Milestone 1: `basic_mandelbrot` and the Julia set project through
+  Backend.Wasm under Node, compared with LLVM at a small size.
 - [ ] Kernel worker pool; tiles and progressive passes (R3).
 - [ ] Lists, text and tables in a per-worker arena; issue flags.
 - [ ] Autocolor: snapshot lookup, with misses queued for the engine.
@@ -268,6 +270,39 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-11: Backend.Wasm, milestone 1
+
+`fractalstream-backend-wasm` (branch `wasm-backend`) compiles viewers to
+wasm kernels: arithmetic, complex numbers, colors, pairs, comparisons,
+control flow, and every math function, case by case as the LLVM backend
+does. Math functions come from JavaScript's `Math` (and `%` for `fmod`).
+Configuration values go into one buffer per render. Lists, text, tables
+and autocolor fall back to the interpreter (with a note on stderr), and
+tools run interpreted. On wasm, fsrun uses this backend, is a reactor
+module, and runs under Node with `dev-tools/wasm/fsrun.sh`.
+
+- **`basic_mandelbrot` (200²) and all three Julia set scenarios (600²):
+  byte-identical to LLVM.** Each Julia scenario takes about 0.3 s under
+  Node, startup included; the interpreter took 628 s or more. Rendering is
+  still on one thread.
+- **Library sweep, each viewer at 100×100, against LLVM:**
+  - 44 of 53 viewers compile.
+  - 38 of those are byte-identical.
+  - 6 differ in a few chaotic pixels: Newton 0, Böttcher parameter plane
+    7, twisted Mandelbrot about 50 each, Hénon planes about 200 (2%)
+    each. These look the same and are scattered like round-off noise.
+    Likely cause: JavaScript's `Math` versus the system math library in
+    the last bit. Hénon's only transcendental call is `hypot` (from
+    complex `sqrt`), and V8's `Math.hypot` isn't correctly rounded. Not
+    yet confirmed; part of the math-library decision.
+  - 9 viewers fall back: autocolor (newton-cubic-parameter-plane,
+    newton-quintic), lists (slow-mating, pendulum-poincare-map,
+    period-5). pendulum and period-5 take more than 2 minutes at 100×100
+    with the interpreter.
+- **Integer division:** where wasm would trap (division by 0, or the
+  smallest integer by -1), the kernel gives what the LLVM backend's code
+  gives on 64-bit ARM.
 
 ### 2026-11-11: spike 0g (a generated kernel, under Node)
 
