@@ -216,9 +216,9 @@ wasmtime.
 - [ ] Text and tables.
 - [x] Autocolor: snapshot lookup (shared C, `autocolor_lookup.h`), misses added by the engine, block redrawn.
 - [x] libm: musl's, compiled to `js/libm.wasm` (D14).
-- [ ] Turn the end-to-end suite back on for wasm.
-- [ ] Golden comparison against LLVM output across the library projects
-  (tolerance per D4).
+- [x] Turn the end-to-end suite back on for wasm (under Node: `dev-tools/wasm/node.sh`; its table tests wait for tables).
+- [x] Golden comparison against LLVM output across the library projects
+  (tolerance per D4): `dev-tools/wasm/compare.sh`.
 
 ### Phase 3: Minimal web app
 
