@@ -28,3 +28,5 @@ macos-build*/
 
 # Written by dev-tools/wasm/build.sh
 fractalstream-gitinfo/src/
+# Written by dev-tools/wasm/build.sh
+fractalstream-backend-wasm/js/libm.wasm

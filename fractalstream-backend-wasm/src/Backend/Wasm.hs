@@ -45,10 +45,11 @@ import qualified Data.ByteString as BS
 -- (Synchronous compilation is fine in Node and in a browser's worker,
 -- where the engine runs; a browser's main thread only allows it for
 -- small modules.)
--- (The math functions are wrappers, not Math's own: see
--- @js/kernel-worker.mjs@, which imports the same.)
+-- (The math functions are the exports of @js/libm.wasm@, which the host
+-- puts at @globalThis.fractalstreamMath@, as @js/kernel-worker.mjs@ uses
+-- them too.)
 foreign import javascript unsafe
-  "new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array(__exports.memory.buffer, $1, $2).slice()), { env: { memory: __exports.memory }, math: { sin: (x) => Math.sin(x), cos: (x) => Math.cos(x), tan: (x) => Math.tan(x), sinh: (x) => Math.sinh(x), cosh: (x) => Math.cosh(x), tanh: (x) => Math.tanh(x), asin: (x) => Math.asin(x), acos: (x) => Math.acos(x), atan: (x) => Math.atan(x), asinh: (x) => Math.asinh(x), acosh: (x) => Math.acosh(x), atanh: (x) => Math.atanh(x), exp: (x) => Math.exp(x), log: (x) => Math.log(x), pow: (x, y) => Math.pow(x, y), atan2: (y, x) => Math.atan2(y, x), hypot: (x, y) => Math.hypot(x, y), fmod: (a, b) => a % b } })"
+  "new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array(__exports.memory.buffer, $1, $2).slice()), { env: { memory: __exports.memory }, math: globalThis.fractalstreamMath })"
   instantiate :: Ptr Word8 -> Int -> IO JSVal
 
 foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"

@@ -60,5 +60,13 @@ if [ "$(cat "$file" 2> /dev/null)" != "$module" ]; then
   printf '%s\n' "$module" > "$file"
 fi
 
+# The math functions kernels import (see fractalstream-backend-wasm/libm),
+# as a wasm module of their own, for the JavaScript host to load.
+libm_src=fractalstream-backend-wasm/libm/fsmath.c
+libm=fractalstream-backend-wasm/js/libm.wasm
+if [ ! -f "$libm" ] || [ "$libm_src" -nt "$libm" ]; then
+  wasm32-wasi-clang -O2 -nostartfiles -Wl,--no-entry "$libm_src" -o "$libm" -lm
+fi
+
 if [ "$#" -eq 0 ]; then set -- all; fi
 exec wasm32-wasi-cabal build --project-file=cabal.project.wasm "$@"

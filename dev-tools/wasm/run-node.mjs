@@ -53,6 +53,11 @@ if (pool && process.env.FS_WASM_DUMP) {
 }
 if (pool) globalThis.fractalstreamWorkers = pool;
 
+// The math functions kernels import, for those on the engine's thread
+// (the workers load their own).
+globalThis.fractalstreamMath = (await WebAssembly.instantiate(fs.readFileSync(
+  new URL("../../fractalstream-backend-wasm/js/libm.wasm", import.meta.url)))).instance.exports;
+
 const __exports = {};
 const mod = await WebAssembly.compile(fs.readFileSync(wasmPath));
 const jsffi = (await import(path.resolve(jsPath))).default(__exports);

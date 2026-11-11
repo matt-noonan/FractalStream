@@ -18,21 +18,19 @@
 // Messages out:
 //   { job, issues, pixels }        or { job, error }
 
-// What a kernel imports (as Backend.Wasm's in-engine instances get).
-// These are wrappers, not Math's own functions: V8 calls an imported
-// Math.sin (and the like) from wasm by a fast path of its own, and with
-// kernels using it on two or more worker threads at once, Node (V8) on
-// macOS/ARM crashed now and then with SIGILL (9 runs in 40 of a replayed
-// twisted-mandelbrot render; none in 40 with these). See WEB_PLAN.md.
-const math = {
-  sin: (x) => Math.sin(x), cos: (x) => Math.cos(x), tan: (x) => Math.tan(x),
-  sinh: (x) => Math.sinh(x), cosh: (x) => Math.cosh(x), tanh: (x) => Math.tanh(x),
-  asin: (x) => Math.asin(x), acos: (x) => Math.acos(x), atan: (x) => Math.atan(x),
-  asinh: (x) => Math.asinh(x), acosh: (x) => Math.acosh(x), atanh: (x) => Math.atanh(x),
-  exp: (x) => Math.exp(x), log: (x) => Math.log(x),
-  pow: (x, y) => Math.pow(x, y), atan2: (y, x) => Math.atan2(y, x), hypot: (x, y) => Math.hypot(x, y),
-  fmod: (a, b) => a % b,
-};
+// What a kernel imports: the math functions, from libm.wasm (built next
+// to this file by dev-tools/wasm/build.sh), as Backend.Wasm's in-engine
+// instances get them too. Not JavaScript's Math: calling JavaScript from
+// wasm on several worker threads at once made Node (V8) on macOS/ARM
+// crash now and then (see WEB_PLAN.md), and this way every host computes
+// them alike.
+const libmUrl = new URL("./libm.wasm", import.meta.url);
+const math = (async () => {
+  const bytes = typeof process !== "undefined" && process.versions?.node
+    ? (await import("node:fs")).readFileSync(libmUrl)
+    : await (await fetch(libmUrl)).arrayBuffer();
+  return (await WebAssembly.instantiate(bytes)).instance.exports;
+})();
 
 const ARGS_BASE = 16;
 const ARENA_SIZE = 1024 * 1024;
@@ -41,7 +39,7 @@ const align8 = (n) => (n + 7) & ~7;
 const memory = new WebAssembly.Memory({ initial: 16 });
 const kernels = new Map();
 
-function handle(m) {
+function handle(m, math) {
   if (m.bytes) {
     // (each worker compiles its own copy: it takes well under a millisecond)
     const module = new WebAssembly.Module(m.bytes);
@@ -72,13 +70,13 @@ function handle(m) {
 
 if (typeof process !== "undefined" && process.versions?.node) {
   const { parentPort } = await import("node:worker_threads");
-  parentPort.on("message", (m) => {
-    const reply = handle(m);
+  parentPort.on("message", async (m) => {
+    const reply = handle(m, await math);
     if (reply) parentPort.postMessage(...reply);
   });
 } else {
-  self.onmessage = (e) => {
-    const reply = handle(e.data);
+  self.onmessage = async (e) => {
+    const reply = handle(e.data, await math);
     if (reply) self.postMessage(...reply);
   };
 }
