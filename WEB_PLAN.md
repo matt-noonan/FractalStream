@@ -261,6 +261,33 @@ Only if 0c/0d come out well.
 
 Record spike results and surprises here, newest first.
 
+### 2026-11-11: spike 0b (running under wasmtime), in progress
+
+- **Parity:** the Julia set project's three scenarios (`simple`,
+  `circle`, `trace`, the last with a tool click and overlay drawing) give
+  PNGs **byte-identical** to the desktop LLVM and pure builds.
+- **Speed (the big finding):** one 600×600 capture takes 0.1 s with LLVM,
+  263 s with the desktop pure interpreter on one thread, and 628 s under
+  wasmtime (about 2.4× the native interpreter). The interpreter can't be
+  even a stopgap renderer, so Backend.Wasm (Phase 3) has to come before
+  any usable web app, or the interpreter needs a much faster design (for
+  example compiling `Code` to closures once, rather than a state monad
+  over freshly allocated `IORef`s for every pixel).
+- **Tests:** all four suites build for wasm. That needs a *native*
+  `hspec-discover` on `PATH` (cabal builds the tool for wasm otherwise),
+  and cabal caches the search path when it first configures a suite, so
+  suites configured without it must be reconfigured. Still to go into
+  `dev-tools/wasm/build.sh`.
+  - Headless `spec`: 43 examples, 0 failures.
+  - Core and library `spec`: crash with `ffi_alloc_prep_closure failed`
+    in `createAdjustor`. `foreign import ccall "wrapper"` (making a C
+    function pointer from a Haskell function) doesn't work on wasm. The
+    only one outside the LLVM backend and wx is `Actor.Autocolor`'s
+    callback for the C cache's "add a point". Fix to discuss: on wasm,
+    drop the callback (misses queued and inserted from Haskell, much as
+    planned for Backend.Wasm anyway) or skip the C cache entirely.
+  - End-to-end suite: results not recorded yet.
+
 ### 2026-11-11: spike 0a (build with GHC-wasm)
 
 Toolchain: `ghc-wasm-meta` with `FLAVOUR=9.10` on aarch64-darwin, which
