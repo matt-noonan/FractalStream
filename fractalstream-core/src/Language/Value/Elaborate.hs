@@ -26,9 +26,10 @@ import Data.Color
 --
 -- An integer power used where a real or complex number is expected is
 -- the one exception: it's computed as a real power, converting its
--- operands rather than its result. Otherwise @3.5 * 10^(-2)@ would come
--- out as 0, since an integer power with a negative exponent has to be
--- rounded to an integer (to 0) before it could be converted.
+-- operands rather than its result, so that @x : R := 2^k@ with a
+-- negative @k@ is the fraction it should be. (A power with a constant
+-- negative exponent, like @10^(-2)@, is real to begin with; see
+-- 'Language.Value.Typing'.)
 elaborate :: forall env ty
            . KnownEnvironment env
           => TypeProxy ty
