@@ -148,10 +148,14 @@ df64 risks:
 | R2 | **Move view logic out of `UI.ProjectViewer`** into core: history, pan/zoom, reprojected seeds, trackball, coalescing of parameter changes | `UI.ViewModel` and `UI.Tile` already import nothing from wx; the web UI shouldn't re-derive behaviour that's already been debugged. |
 | R3 | A **frame-level render API** next to `ViewerFunction`'s block API | GPU wants "render this frame (pass *k*) into this texture, async". CPU backends keep blocks. |
 | R4 | **Backends can decline, and a dispatcher chains them** | e.g. WGSL first, else Wasm; also lets the precision toggle pick. |
-| R5 | **Git metadata on wasm:** replace `githash`'s `tGitInfoCwd` there | The wasm TH interpreter can't spawn processes, so the splice fails (0a). `file-embed` works. Only `gitTag` (fsrun `--version`) and the wx About box use it. |
+| R5 | ✅ **Git metadata on wasm** | Done: `dev-tools/wasm/build.sh` writes `fractalstream-gitinfo`'s one module (gitignored) from git, and the core depends on it `if arch(wasm32)` (else on `githash`). A file read by TH instead would need an `extra-source-files` entry, which can't be conditional, so every desktop build would warn that it's missing. |
 | R6 | **C pieces:** optionally simplify `autocolor_cache.c` for one thread | It compiles unchanged for wasm (0a); the epoch scheme is just unnecessary there. `find_jemalloc.c` is gone (#149). |
 
 ## Build
+
+Build the wasm targets with `dev-tools/wasm/build.sh` (it runs
+`wasm32-wasi-cabal build --project-file=cabal.project.wasm`, after writing
+the git metadata; see R5).
 
 - Use **`ghc-wasm-meta`** with the GHC 9.10/9.12 line, through a root
   `cabal.project` (plus `cabal.project.wasm` for the cross build).

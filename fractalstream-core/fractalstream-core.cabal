@@ -179,12 +179,16 @@ library
                        directory,
                        filepath,
                        utf8-string,
-                       githash,
                        zlib,
                        JuicyPixels,
                        base64-bytestring,
                        Rasterific,
                        FontyFruity,
+  -- (git metadata, for FractalStream.Metadata)
+  if arch(wasm32)
+    build-depends:     fractalstream-gitinfo
+  else
+    build-depends:     githash
   hs-source-dirs:      src
 
 test-suite spec

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Build FractalStream's WebAssembly targets (see WEB_PLAN.md), with the GHC
+# wasm toolchain from ghc-wasm-meta (FLAVOUR=9.10, in ~/.ghc-wasm).
+#
+#   dev-tools/wasm/build.sh [cabal build arguments...]   (default: all)
+#
+# The wasm build's Template Haskell can't run git (as githash does for the
+# desktop build), so this first writes what git says into the
+# fractalstream-gitinfo package's module, which FractalStream.Metadata
+# uses on wasm.
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$root"
+
+if ! command -v wasm32-wasi-cabal > /dev/null; then
+  # shellcheck disable=SC1091
+  source "$HOME/.ghc-wasm/env"
+fi
+
+# A Haskell string literal for $1.
+literal() {
+  printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+}
+
+# The same things githash reports for the desktop build.
+tag=$(git describe --always --tags)
+branch=$(git rev-parse --abbrev-ref HEAD)
+hash=$(git rev-parse HEAD)
+if [ -n "$(git status --porcelain)" ]; then dirty=True; else dirty=False; fi
+
+module="-- Written by dev-tools/wasm/build.sh; don't edit (or commit) it.
+module FractalStream.GitInfo (gitHash, gitTag, gitBranch, gitDirty) where
+
+gitHash, gitTag, gitBranch :: String
+gitHash = $(literal "$hash")
+gitTag = $(literal "$tag")
+gitBranch = $(literal "$branch")
+
+gitDirty :: Bool
+gitDirty = $dirty"
+
+# Only rewrite the module when it changes, so an unchanged checkout
+# doesn't rebuild the core.
+file=fractalstream-gitinfo/src/FractalStream/GitInfo.hs
+if [ "$(cat "$file" 2> /dev/null)" != "$module" ]; then
+  mkdir -p "$(dirname "$file")"
+  printf '%s\n' "$module" > "$file"
+fi
+
+if [ "$#" -eq 0 ]; then set -- all; fi
+exec wasm32-wasi-cabal build --project-file=cabal.project.wasm "$@"
