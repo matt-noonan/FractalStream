@@ -102,6 +102,7 @@ library
                        Language.Code.Syntax
                        Language.Code.Infer
                        Language.Code.Procedures
+                       Language.Code.Hoist
                        Language.Code.Stops
                        Language.Code.Tuples
                        Language.Legacy.Syntax
@@ -214,6 +215,7 @@ test-suite spec
                     , Language.Value.ParserSpec
                     , Language.Code.ParserSpec
                     , Language.Code.TuplesSpec
+                    , Language.Code.HoistSpec
                     , Language.LegacySpec
                     , Language.LegacyBinarySpec
                     , Language.EditorSpec

@@ -33,7 +33,7 @@ viewerCodes :: Ensemble -> IO [String]
 viewerCodes ens = getDynamic (ensembleViewers ens) >>= mapM (\v ->
   getDynamic (cvCode v) >>= \case
     Left (_, err) -> fail ("expected the viewer's code to build, got: " ++ err)
-    Right (SomeViewerWithContext _ _ code) -> pure (pprintCode code))
+    Right (SomeViewerWithContext _ _ code mprefix) -> pure (foldMap pprintCode mprefix ++ pprintCode code))
 
 fieldNames :: Ensemble -> IO [String]
 fieldNames ens = map (fieldName . snd) <$> ensembleFields ens

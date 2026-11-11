@@ -1047,7 +1047,7 @@ color <- if |z| < 1 then black else computed
         cc <- getDynamic (cvCode viewer)
         case cc of
           Left (_, err) -> expectationFailure ("expected a build-able viewer, got: " ++ err)
-          Right (SomeViewerWithContext _ mprep _) -> case mprep of
+          Right (SomeViewerWithContext _ mprep _ _) -> case mprep of
             Nothing -> expectationFailure "expected a PrepScript to have been built"
             Just _  -> pure ()
 
@@ -1066,7 +1066,7 @@ color <- computed
         cc <- getDynamic (cvCode viewer)
         case cc of
           Left (_, err) -> expectationFailure ("expected a build-able viewer, got: " ++ err)
-          Right (SomeViewerWithContext _ mprep _) -> case mprep of
+          Right (SomeViewerWithContext _ mprep _ _) -> case mprep of
             Nothing -> expectationFailure "expected a PrepScript to have been built"
             Just _  -> pure ()
 
@@ -1386,7 +1386,7 @@ color <- computed
             [viewer] <- getDynamic (ensembleViewers ens)
             getDynamic (cvCode viewer) >>= \case
               Left (_, err) -> fail ("expected the viewer's code to build, got: " ++ err)
-              Right (SomeViewerWithContext _ _ code) -> pure (pprintCode code)
+              Right (SomeViewerWithContext _ _ code mprefix) -> pure (foldMap pprintCode mprefix ++ pprintCode code)
 
     it "makes its definitions available to viewers and tools" $ do
       let src = [r|

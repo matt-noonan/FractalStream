@@ -1,4 +1,20 @@
 === viewer 0: Parameter plane
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `lastZ` = 0:R:C in:
+                        block:
+                          set `[hoisted] lastZ` := lastZ
+
 --- body
 let `[internal] vanishing radius` = vanishing_radius in:
   let `[internal] escape radius` = escape_radius in:
@@ -26,26 +42,22 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    let `z` = (a / 3:R:C) in:
+                    let `lastZ` = [hoisted] lastZ in:
                       block:
-                        block:
+                        let `z` = (a / 3:R:C) in:
                           block:
-                            let `lastZ` = 0:R:C in:
-                              block:
-                                let `[internal] fresh #41` = 0 in:
-                                  let `[internal] fresh #42` = [internal] iteration limit in:
+                            let `[internal] fresh #42` = 0 in:
+                              let `[internal] fresh #43` = [internal] iteration limit in:
+                                block:
+                                  do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #42 < [internal] fresh #43)):
                                     block:
-                                      do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #41 < [internal] fresh #42)):
-                                        block:
-                                          block:
-                                            set `lastZ` := z
-                                            set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - 1:R:C) * ([internal] f.z #1 + 1:R:C)) * ([internal] f.z #1 - a)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - a) * (([internal] f'.z #2 + 1:R:C) + ([internal] f'.z #2 - 1:R:C))) + (([internal] f'.z #2 - 1:R:C) * ([internal] f'.z #2 + 1:R:C)))))
-                                          set `[internal] fresh #41` := ([internal] fresh #41 + 1)
-                                      set `[internal] iteration count` := [internal] fresh #41
-                                      set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
-                        block:
-                          let `[colorizer] Parameter plane: z` = z in:
-                            block:
+                                      block:
+                                        set `lastZ` := z
+                                        set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - 1:R:C) * ([internal] f.z #1 + 1:R:C)) * ([internal] f.z #1 - a)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - a) * (([internal] f'.z #2 + 1:R:C) + ([internal] f'.z #2 - 1:R:C))) + (([internal] f'.z #2 - 1:R:C) * ([internal] f'.z #2 + 1:R:C)))))
+                                      set `[internal] fresh #42` := ([internal] fresh #42 + 1)
+                                  set `[internal] iteration count` := [internal] fresh #42
+                                  set `[internal] stuck` := ([internal] fresh #42 = [internal] fresh #43)
+                            let `[colorizer] Parameter plane: z` = z in:
                               block:
                                 if [internal] stuck then:
                                   block:
@@ -104,6 +116,22 @@ let `[internal] vanishing radius` = vanishing_radius in:
 
 
 === viewer 1: Dynamical plane
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `lastZ` = 0:R:C in:
+                        block:
+                          set `[hoisted] lastZ` := lastZ
+
 --- body
 let `[internal] vanishing radius` = vanishing_radius in:
   let `[internal] escape radius` = escape_radius in:
@@ -130,24 +158,20 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    block:
+                    let `lastZ` = [hoisted] lastZ in:
                       block:
-                        let `lastZ` = 0:R:C in:
-                          block:
-                            let `[internal] fresh #41` = 0 in:
-                              let `[internal] fresh #42` = [internal] iteration limit in:
+                        let `[internal] fresh #42` = 0 in:
+                          let `[internal] fresh #43` = [internal] iteration limit in:
+                            block:
+                              do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #42 < [internal] fresh #43)):
                                 block:
-                                  do-while (!(|(z - lastZ)| < [internal] vanishing radius) and ([internal] fresh #41 < [internal] fresh #42)):
-                                    block:
-                                      block:
-                                        set `lastZ` := z
-                                        set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - 1:R:C) * ([internal] f.z #1 + 1:R:C)) * ([internal] f.z #1 - a)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - a) * (([internal] f'.z #2 + 1:R:C) + ([internal] f'.z #2 - 1:R:C))) + (([internal] f'.z #2 - 1:R:C) * ([internal] f'.z #2 + 1:R:C)))))
-                                      set `[internal] fresh #41` := ([internal] fresh #41 + 1)
-                                  set `[internal] iteration count` := [internal] fresh #41
-                                  set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
-                    block:
-                      let `[colorizer] Dynamical plane: z` = z in:
-                        block:
+                                  block:
+                                    set `lastZ` := z
+                                    set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 - 1:R:C) * ([internal] f.z #1 + 1:R:C)) * ([internal] f.z #1 - a)) / let [internal] f'.z #2 = [internal] newton.z #0 in ((([internal] f'.z #2 - a) * (([internal] f'.z #2 + 1:R:C) + ([internal] f'.z #2 - 1:R:C))) + (([internal] f'.z #2 - 1:R:C) * ([internal] f'.z #2 + 1:R:C)))))
+                                  set `[internal] fresh #42` := ([internal] fresh #42 + 1)
+                              set `[internal] iteration count` := [internal] fresh #42
+                              set `[internal] stuck` := ([internal] fresh #42 = [internal] fresh #43)
+                        let `[colorizer] Dynamical plane: z` = z in:
                           block:
                             if [internal] stuck then:
                               block:

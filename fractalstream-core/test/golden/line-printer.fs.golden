@@ -1,4 +1,23 @@
 === viewer 0: Mandelbrot set throwback
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `ysize` = (1.66 * xsize) in:
+                        block:
+                          let `z` = 0:R:C in:
+                            block:
+                              set `[hoisted] ysize` := ysize
+                              set `[hoisted] z` := z
+
 --- body
 let `[internal] vanishing radius` = vanishing_radius in:
   let `[internal] escape radius` = escape_radius in:
@@ -25,27 +44,27 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   else:
                     no-op
                   block:
-                    let `ysize` = (1.66 * xsize) in:
+                    let `ysize` = [hoisted] ysize in:
                       block:
-                        let `C` = ((xsize * floor((re(w) / xsize)):R):C + ((0.0 :+ 1.0 * ysize:C) * floor((im(w) / ysize)):R:C)) in:
+                        let `z` = [hoisted] z in:
                           block:
-                            let `r` = (((2:R:C * ((w - C) / xsize:C)) - 1:R:C) - (1.66:C * 0.0 :+ 1.0)) in:
+                            let `C` = ((xsize * floor((re(w) / xsize)):R):C + ((0.0 :+ 1.0 * ysize:C) * floor((im(w) / ysize)):R:C)) in:
                               block:
-                                set `C` := (C + shift:C)
-                                let `z` = 0:R:C in:
+                                let `r` = (((2:R:C * ((w - C) / xsize:C)) - 1:R:C) - (1.66:C * 0.0 :+ 1.0)) in:
                                   block:
-                                    let `[internal] fresh #35` = 0 in:
-                                      let `[internal] fresh #36` = [internal] iteration limit in:
+                                    set `C` := (C + shift:C)
+                                    let `[internal] fresh #37` = 0 in:
+                                      let `[internal] fresh #38` = [internal] iteration limit in:
                                         block:
-                                          if (!([internal] escape radius < |z|) and ([internal] fresh #35 < [internal] fresh #36)) then:
-                                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #35 < [internal] fresh #36)):
+                                          if (!([internal] escape radius < |z|) and ([internal] fresh #37 < [internal] fresh #38)) then:
+                                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #37 < [internal] fresh #38)):
                                               block:
                                                 set `z` := ((z ^ 2:R:C) + C)
-                                                set `[internal] fresh #35` := ([internal] fresh #35 + 1)
+                                                set `[internal] fresh #37` := ([internal] fresh #37 + 1)
                                           else:
                                             no-op
-                                          set `[internal] iteration count` := [internal] fresh #35
-                                          set `[internal] stuck` := ([internal] fresh #35 = [internal] fresh #36)
+                                          set `[internal] iteration count` := [internal] fresh #37
+                                          set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
                                     set `color` := rgb(0.98, 0.976, 0.965)
                                     if ([internal] stuck and ((|r| ^ 2:R) < ((1.5 - cos((6:R * arg(r)))) / 3:R))) then:
                                       block:
