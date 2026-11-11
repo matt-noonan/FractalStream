@@ -22,6 +22,7 @@ questions into **Decisions**.
 | D10 | **No ordering guarantees** for autocolor | GPU render order may assign hues differently; saved or locked groups stay stable. |
 | D11 | **cabal** for the wasm build; migrating everything off stack is open | See "Build". |
 | D12 | The precision toggle is an **app-level preference** | Stored per browser with the other preferences (IndexedDB), not in project files. |
+| D14 | Kernels' math functions come from **musl's libm, compiled to wasm** (built each time) | Not JavaScript's `Math`: calling it from wasm on several worker threads crashed V8; and this way every host computes alike. |
 | D13 | **Backend.Wasm before the web app;** test wasm under Node from 0g on | The interpreter is about 2,500× slower than LLVM (0b), too slow even as a stopgap. |
 
 ## Architecture
@@ -214,7 +215,7 @@ wasmtime.
 - [x] Lists in a per-block arena; issue flags.
 - [ ] Text and tables.
 - [ ] Autocolor: snapshot lookup, with misses queued for the engine.
-- [ ] Decide on libm (JS `Math` or compiled libm).
+- [x] libm: musl's, compiled to `js/libm.wasm` (D14).
 - [ ] Turn the end-to-end suite back on for wasm.
 - [ ] Golden comparison against LLVM output across the library projects
   (tolerance per D4).
@@ -301,12 +302,14 @@ workers, and never with 0 or 1 worker. What I found:
   The Julia kernel, with 1 import call, never crashed; twisted-mandelbrot
   has 13.
 
-**Proposed fix (to decide):** kernels import their math functions from
-a small `libm.wasm` (musl's, built with the toolchain's wasi-sdk), not
-from JavaScript. That avoids the crashing path, makes wasm-to-wasm calls
-(cheaper), and gives the same results in every browser. It settles the
-"libm" question in Phase 2. Until then, wasm renders with several
-workers can crash under Node.
+**Fixed (D14):** kernels import their math functions from `libm.wasm`
+(musl's, compiled by `dev-tools/wasm/build.sh` from
+`fractalstream-backend-wasm/libm/fsmath.c`). It has no imports of its
+own, and workers and the engine each instantiate it once. The result: 0
+crashes in 100 runs of each project, the same speed, and the library
+sweep slightly closer to LLVM (39 of 53 identical; Hénon's differences
+fell from about 200 pixels to 71 and 26). The rest are a few pixels in
+chaotic regions, from musl versus Apple's libm.
 
 ### 2026-11-11: Backend.Wasm on a pool of workers
 
