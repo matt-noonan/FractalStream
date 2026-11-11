@@ -214,7 +214,7 @@ wasmtime.
 - [ ] Tiles and progressive passes (R3).
 - [x] Lists in a per-block arena; issue flags.
 - [ ] Text and tables.
-- [ ] Autocolor: snapshot lookup, with misses queued for the engine.
+- [x] Autocolor: snapshot lookup (shared C, `autocolor_lookup.h`), misses added by the engine, block redrawn.
 - [x] libm: musl's, compiled to `js/libm.wasm` (D14).
 - [ ] Turn the end-to-end suite back on for wasm.
 - [ ] Golden comparison against LLVM output across the library projects
@@ -273,6 +273,28 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-11: Autocolor in Backend.Wasm: every library viewer compiles
+
+The search and blend in a snapshot moved from `autocolor_cache.c` into
+`autocolor_lookup.h`. It's shared by desktop's compiled code (behaviour
+unchanged, LLVM tests pass) and `libm/fsautocolor.c`, which builds to a
+1 KB `js/autocolor.wasm` that works in the kernel's memory (the build
+checks it has no data and no stack).
+
+How a kernel handles autocolor:
+- It gets a copy of the current snapshot (a worker gets it with the job).
+- A point to add goes on a list of misses, and the pixel gets what a
+  locked group would give.
+- After the block, the engine adds the missed points through the
+  project's `AutocolorLookup`, then **redraws the block until it misses
+  nothing** (at most 8 times). So blocks come out as LLVM's do, with
+  nothing flashing, which beats the miss color we'd planned.
+
+**Library sweep (100×100): 53 of 53 viewers compile, no fallbacks.** 42
+are byte-identical to LLVM, including the autocolor ones, with and
+without saved tables and workers. The other 11 differ by a few chaotic
+pixels (musl versus Apple libm).
 
 ### 2026-11-11: Lists in Backend.Wasm; a V8 crash with workers
 
