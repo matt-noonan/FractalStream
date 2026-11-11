@@ -74,6 +74,14 @@ spec = describe "highlighting scripts" $ do
     -- (a number anywhere else is still a number)
     c "2" 1 `shouldBe` Just NumberLiteral
 
+  it "colors a parenthesized type in a table's type as a type" $ do
+    let src = "@config \"P\"\nC : C := 0\nT : Table 2 of (C x Z)\n\n@viewer \"V\"\ncolor <- red\n"
+        c = classOf src
+    c "C" 0 `shouldBe` Just Parameter
+    c "C" 2 `shouldBe` Just TypeName
+    c "x" 0 `shouldBe` Just TypeName
+    c "Z" 0 `shouldBe` Just TypeName
+
   it "colors the words of table statements as keywords" $ do
     let src = unlines
           [ "@config \"P\"", "T : Table 3 of R", ""

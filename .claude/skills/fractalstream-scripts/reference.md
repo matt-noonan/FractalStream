@@ -340,7 +340,7 @@ text use the stroke color; filled shapes use the fill color.
 | text | `Text` | `"quoted"`, with `\"`, `\\`, `\n`, `\t` escapes |
 | list | `List of T` | `[1, 2, 3]`, `[]` |
 | pair | `T x U`, `T × U` | `(1.0, 2.0)` |
-| table | `Table N of T` (T one of Z, R, C, Boolean, Color) | none: declared in `@config`, filled by tools; dims 1-2 in the plane, more are layers |
+| table | `Table N of T` (T one of Z, R, C, Boolean, Color, or a tuple of them: `Table 2 of C x Z`) | none: declared in `@config`, filled by tools; dims 1-2 in the plane, more are layers |
 
 Numbers widen automatically Z → R → C wherever needed (`k := 0` then
 `k <- 0.5` makes `k` real). Nothing narrows automatically: use `round`,
@@ -449,6 +449,9 @@ from pixel to neighboring pixel, which a viewer can't):
 - `T @ (j, k)`: column j, row k, 1-based, (1, 1) at the top left, rows go
   down; n integers for n dimensions (`T @ k` for 1-D). Out of range is an
   error (magenta / discarded tool event). No `@@`.
+- Elements can be tuples (`T : Table 2 of C x Z`), read and written whole:
+  `(z, k) := T @ point c else (0, 0)`, `T @ (j, k) <- (w, 1)`; no way to
+  write one part of a cell's tuple (read it, write it back).
 - The first two dimensions are in the plane; more are *layers* over it
   (`T : Table 3 of C`, `T @ (j, k, m)` is layer m).
 - `T @ point z` (2-D), `T @ (point z, m)` (layers): the cell z is in

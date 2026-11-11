@@ -2,7 +2,11 @@
 -- for their storage). Elements are laid out the way compiled code reads
 -- them: a truth value in 1 byte, an integer in 4 (as compiled code holds
 -- it), a real in 8, a complex number in 16 (real, then imaginary part), a
--- color in 3 (red, green, blue). The first index varies fastest.
+-- color in 3 (red, green, blue). A tuple is laid out as a list's item is
+-- ("Backend.LLVM.Operand"): its first part, then its second, starting at
+-- the next multiple of 8 bytes; and its slot in the table is rounded up
+-- to a multiple of 8 bytes, so the next one's parts are aligned too. The
+-- first index varies fastest.
 module Language.Table
   ( Table(..)
   , emptyTable
@@ -51,19 +55,39 @@ import Data.IORef (newIORef, writeIORef, readIORef)
 import Foreign.Storable (peekByteOff, pokeByteOff)
 import System.IO.Unsafe (unsafePerformIO)
 
--- | The types a table can hold.
+-- | The types a table can hold: numbers, truth values, colors, and
+-- tuples of them.
 isTableElementType :: FSType -> Bool
-isTableElementType = (`elem` [BooleanT, IntegerT, RealT, ComplexT, ColorT])
+isTableElementType = \case
+  Pair a b -> isTableElementType a && isTableElementType b
+  t -> t `elem` [BooleanT, IntegerT, RealT, ComplexT, ColorT]
 
--- | How many bytes one element takes, for the types a table can hold.
+-- | How many bytes apart a table's elements are, for the types a table
+-- can hold.
 elementSize :: TypeProxy t -> Maybe Int
 elementSize = \case
+  ty@PairType{} -> roundUp8 <$> elementDataSize ty
+  ty -> elementDataSize ty
+
+-- | How many bytes an element's data takes (without the padding after a
+-- tuple).
+elementDataSize :: TypeProxy t -> Maybe Int
+elementDataSize = \case
   BooleanType -> Just 1
   IntegerType -> Just 4
   RealType    -> Just 8
   ComplexType -> Just 16
   ColorType   -> Just 3
+  PairType a b -> (+) <$> secondOffset a <*> elementDataSize b
   _           -> Nothing
+
+-- | Where a tuple's second part starts, after a first part of the given
+-- type.
+secondOffset :: TypeProxy t -> Maybe Int
+secondOffset = fmap roundUp8 . elementDataSize
+
+roundUp8 :: Int -> Int
+roundUp8 n = ((n + 7) `div` 8) * 8
 
 -- | Where the cell at some 1-based indices is, counting cells from 0, or
 -- 'Nothing' if an index is out of range (or there are the wrong number).
@@ -125,6 +149,7 @@ peekElement ty p = case ty of
   RealType    -> peekByteOff p 0
   ComplexType -> (:+) <$> peekByteOff p 0 <*> peekByteOff p 8
   ColorType   -> (\r g b -> rgbToColor (r, g, b)) <$> peekByteOff p 0 <*> peekByteOff p 1 <*> peekByteOff p 2
+  PairType a b | Just off <- secondOffset a -> (,) <$> peekElement a p <*> peekElement b (p `plusPtr` off)
   _ -> error "peekElement: not a table element type"
 
 pokeElement :: TypeProxy t -> Ptr Word8 -> HaskellType t -> IO ()
@@ -135,6 +160,7 @@ pokeElement ty p v = case ty of
   ComplexType -> let x :+ y = v in pokeByteOff p 0 x >> pokeByteOff p 8 y
   ColorType   -> let (r, g, b) = colorToRGB v
                  in pokeByteOff p 0 r >> pokeByteOff p 1 g >> pokeByteOff p 2 b
+  PairType a b | Just off <- secondOffset a -> let (x, y) = v in pokeElement a p x >> pokeElement b (p `plusPtr` off) y
   _ -> error "pokeElement: not a table element type"
 
 -- | Write the element at some 1-based indices, in place: only for a table

@@ -184,7 +184,15 @@ synth env (Syn sr node) = case node of
     no' <- synth env no
     case joinIn env (exprType yes') (exprType no') of
       Just t  -> done t (EITE c' yes' no')
-      Nothing -> throwError (mismatch no' (exprType yes'))
+      -- (types that don't join as they are may still fit, as `(0, 0)`
+      -- fits a pair of a complex number and an integer)
+      Nothing ->
+        (do no'' <- check env (exprType yes') no
+            done (exprType yes') (EITE c' yes' no''))
+        `catchError` \_ ->
+        (do yes'' <- check env (exprType no') yes
+            done (exprType no') (EITE c' yes'' no'))
+        `catchError` \_ -> throwError (mismatch no' (exprType yes'))
 
   EPair x y -> do
     x' <- synth env x

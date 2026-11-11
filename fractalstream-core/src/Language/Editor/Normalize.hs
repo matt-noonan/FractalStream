@@ -45,6 +45,8 @@ normalizations src = concatMap lineEdits (scriptLines src)
               Identifier "x" | afterType -> True   -- a pair type's `x` goes on with it
               Times | afterType -> True
               Identifier n -> inTypePosition before afterType && n `elem` typeNames
+              -- (a parenthesized type: `Table 2 of (C x Z)`)
+              OpenParen -> inTypePosition before afterType
               _ -> False
         in [ (from, to, new) | Just new <- [respell t isType] ] ++ go (Just tok) isType rest
 
@@ -61,6 +63,7 @@ normalizations src = concatMap lineEdits (scriptLines src)
       Just (Identifier "of") -> True
       Just (Identifier "x") -> afterType
       Just Times -> afterType
+      Just OpenParen -> afterType
       _ -> False
     -- (`List` and `of` count as types, so that `List of C x R` works)
     typeNames = map fst typeSymbols ++ ["ℝ", "ℂ", "ℤ", "List", "Table", "Boolean", "Bool", "Color", "Text"]
