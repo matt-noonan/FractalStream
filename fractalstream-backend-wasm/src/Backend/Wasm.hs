@@ -19,7 +19,7 @@ import Backend.Wasm.List (nodeSize, pairSecond)
 import Backend.Wasm.Encode (MemoryImport(..))
 import Backend.Pure (interpretViewer)
 
-import Actor.Autocolor (AutocolorLookup)
+import Actor.Autocolor (AutocolorLookup(..), autocolorSnapshot)
 import Actor.Viewer
 import Language.Code (Code, transformValues)
 import Language.Environment
@@ -33,7 +33,8 @@ import Foreign.ForeignPtr (mallocForeignPtrBytes, withForeignPtr)
 import Foreign.Marshal.Array (withArrayLen)
 import Data.IORef
 import Foreign.Ptr (Ptr, ptrToWordPtr)
-import Foreign.Storable (pokeByteOff)
+import Foreign.Storable (pokeByteOff, peekByteOff)
+import Foreign.Marshal.Alloc (allocaBytes)
 import GHC.Wasm.Prim (JSVal)
 import System.IO (hPutStrLn, stderr)
 import qualified System.Environment as Env
@@ -41,19 +42,21 @@ import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.ByteString as BS
 
 -- | Compile and instantiate a kernel module from bytes in the engine's
--- memory, giving it that memory and the math functions it imports.
--- (Synchronous compilation is fine in Node and in a browser's worker,
--- where the engine runs; a browser's main thread only allows it for
--- small modules.)
--- (The math functions are the exports of @js/libm.wasm@, which the host
--- puts at @globalThis.fractalstreamMath@, as @js/kernel-worker.mjs@ uses
--- them too.)
+-- memory, giving it that memory and what it imports: the math functions
+-- (the exports of @js/libm.wasm@, which the host puts at
+-- @globalThis.fractalstreamMath@), and the autocolor lookup (an instance,
+-- over the engine's memory, of @js/autocolor.wasm@, which the host puts,
+-- compiled, at @globalThis.fractalstreamAutocolor@), as
+-- @js/kernel-worker.mjs@ gives its kernels. (Synchronous compilation is
+-- fine in Node and in a browser's worker, where the engine runs; a
+-- browser's main thread only allows it for small modules.)
 foreign import javascript unsafe
-  "new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array(__exports.memory.buffer, $1, $2).slice()), { env: { memory: __exports.memory }, math: globalThis.fractalstreamMath })"
+  "const memory = __exports.memory; return new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array(memory.buffer, $1, $2).slice()), { env: { memory }, math: globalThis.fractalstreamMath, autocolor: new WebAssembly.Instance(globalThis.fractalstreamAutocolor, { env: { memory } }).exports });"
   instantiate :: Ptr Word8 -> Int -> IO JSVal
 
-foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"
+foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"
   runKernel :: JSVal -> Ptr Word8 -> Int32 -> Int32 -> Int32 -> Ptr Word8 -> Ptr Word8 -> Int32
+            -> Ptr Word8 -> Ptr Word8
             -> Double -> Double -> Double -> Double -> IO Int32
 
 -- | How many workers the host's pool has (0 without one).
@@ -66,14 +69,15 @@ foreign import javascript unsafe
   "globalThis.fractalstreamWorkers.addKernel(new Uint8Array(__exports.memory.buffer, $1, $2).slice())"
   addKernel :: Ptr Word8 -> Int -> IO Int
 
--- | Render a block on a worker, with a copy of the arguments; gives back
--- its result, to read with 'resultIssues' and 'copyPixels'. (The pixels
--- are copied into the engine's memory only after the result is forced,
--- by the thread that asked for it: a render cancelled while it waits must
--- not write into a buffer that's been freed.)
+-- | Render a block on a worker, with copies of the arguments and of the
+-- autocolor snapshot; gives back its result, to read with
+-- 'resultIssues', 'copyPixels', and 'copyMisses'. (They're copied into
+-- the engine's memory only after the result is forced, by the thread
+-- that asked for it: a render cancelled while it waits must not write
+-- into a buffer that's been freed.)
 foreign import javascript safe
-  "return await globalThis.fractalstreamWorkers.run($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice(), $4, $5, $6, $7, $8, $9, $10)"
-  runOnWorker :: Int -> Ptr Word8 -> Int -> Int32 -> Int32 -> Int32
+  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.run($1, new Uint8Array(m, $2, $3).slice(), new Uint8Array(m, $4, $5).slice(), $6, $7, $8, $9, $10, $11, $12)"
+  runOnWorker :: Int -> Ptr Word8 -> Int -> Ptr Word8 -> Int -> Int32 -> Int32 -> Int32
               -> Double -> Double -> Double -> Double -> IO JSVal
 
 foreign import javascript unsafe "$1.issues"
@@ -83,11 +87,17 @@ foreign import javascript unsafe
   "new Uint8Array(__exports.memory.buffer, $2, $1.pixels.length).set($1.pixels)"
   copyPixels :: JSVal -> Ptr Word8 -> IO ()
 
+-- | Copy a worker's misses (as many as fit) into a misses list in the
+-- engine's memory (see 'readMisses').
+foreign import javascript unsafe
+  "const n = Math.min($1.misses.length / 24, $3); new Uint8Array(__exports.memory.buffer, $2 + 8, n * 24).set($1.misses.subarray(0, n * 24)); new Int32Array(__exports.memory.buffer, $2, 1)[0] = n;"
+  copyMisses :: JSVal -> Ptr Word8 -> Int -> IO ()
+
 withWasmViewer :: forall env t. (MissingViewerArgs env, KnownEnvironment env)
                => AutocolorLookup
                -> Code (ViewerEnv env)
                -> (ViewerFunction env -> IO t) -> IO t
-withWasmViewer _ code0 action = do
+withWasmViewer lookupAutocolor code0 action = do
   let code = transformValues backendRewrites code0
   case compileViewer UnsharedMemory code of
     Left err -> do
@@ -99,24 +109,33 @@ withWasmViewer _ code0 action = do
         n <- atomicModifyIORef' dumpCounter (\k -> (k + 1, k))
         BS.writeFile (dir ++ "/kernel-" ++ show n ++ ".wasm") (BS.pack bytes))
       workers <- workerPoolSize
-      -- (where a block's arguments will be, so lists in them can point
-      -- into them: their own address on this thread, or 'workerArgsBase')
-      (argsBase, runBlock) <- if workers > 0
+      -- How to run a block once, with the current autocolor snapshot,
+      -- leaving the points it would add in the misses list; and where a
+      -- block's arguments will be, so lists in them can point into them:
+      -- their own address on this thread, or 'workerArgsBase'.
+      (argsBase, runOnce) <- if workers > 0
         then do
           kernel <- withArrayLen bytes (\n p -> addKernel p n)
-          pure $ (,) (const workerArgsBase) $ \args argsLen ViewerArgs{..} -> do
-            result <- runOnWorker kernel args argsLen vaWidth vaHeight vaSubsamples
+          pure $ (,) (const workerArgsBase) $ \args argsLen misses ViewerArgs{..} -> do
+            (snapshot, snapshotLen) <- autocolorSnapshot lookupAutocolor
+            result <- runOnWorker kernel args argsLen snapshot snapshotLen
+                        vaWidth vaHeight vaSubsamples
                         (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep)
                       >>= evaluate
             copyPixels result vaBuffer
+            copyMisses result misses missCapacity
             resultIssues result
         else do
           inst <- withArrayLen bytes $ \n p -> instantiate p n
           -- (one block at a time on this thread, so one arena will do)
           arena <- mallocForeignPtrBytes arenaSize
-          pure $ (,) (fromIntegral . ptrToWordPtr) $ \args _ ViewerArgs{..} ->
-            withForeignPtr arena $ \a ->
+          pure $ (,) (fromIntegral . ptrToWordPtr) $ \args _ misses ViewerArgs{..} ->
+            withForeignPtr arena $ \a -> do
+              -- (the snapshot itself: nothing can replace it while the
+              -- kernel runs, on this one thread)
+              (snapshot, _) <- autocolorSnapshot lookupAutocolor
               runKernel inst vaBuffer vaWidth vaHeight vaSubsamples args a (fromIntegral arenaSize)
+                        snapshot misses
                         (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep)
       action $ ViewerFunction $ \vaArgs -> do
         -- The configuration's values, once for the whole render: a slot
@@ -129,10 +148,50 @@ withWasmViewer _ code0 action = do
           heap <- newIORef slots
           let base = argsBase p
           foldM_ (\off (SomeArg ty v) -> pokeArg p base heap off ty v) 0 values
-        pure $ \block -> withForeignPtr args $ \p -> do
-          issues <- runBlock p size block
-          pure ViewerIssues { viOutOfMemory = testBit issues 0
-                            , viBadIndex = testBit issues 1 }
+        -- A block that met points to add (autocolor) is drawn again, once
+        -- they're added, until it meets none: so it comes out as with the
+        -- LLVM backend, which adds them as it goes.
+        pure $ \block -> withForeignPtr args $ \p ->
+          allocaBytes (8 + missSize * missCapacity) $ \misses -> do
+            let go :: Int -> IO Int32
+                go tries = do
+                  pokeByteOff misses 0 (0 :: Int32)
+                  pokeByteOff misses 4 (fromIntegral missCapacity :: Int32)
+                  issues <- runOnce p size misses block
+                  missed <- readMisses misses
+                  if null missed || tries >= maxRedraws
+                    then pure issues
+                    else do
+                      forM_ missed $ \(mode, n, x, y) -> autocolorFunction lookupAutocolor mode n x y
+                      go (tries + 1)
+            issues <- go 0
+            pure ViewerIssues { viOutOfMemory = testBit issues 0
+                              , viBadIndex = testBit issues 1 }
+
+-- | How many points a block can note to add before it's drawn again, and
+-- how many times it's drawn again at most. (Each time adds every point it
+-- noted, or finds them already added; a group stops adding at 256.)
+missCapacity, maxRedraws :: Int
+missCapacity = 256
+maxRedraws = 8
+
+-- | A noted point: its group, mode, and coordinates (see
+-- @libm/fsautocolor.c@).
+missSize :: Int
+missSize = 24
+
+readMisses :: Ptr Word8 -> IO [(AutocolorMode, Int, Double, Double)]
+readMisses p = do
+  n <- peekByteOff p 0 :: IO Int32
+  forM [0 .. fromIntegral n - 1] $ \k -> do
+    let e = 8 + missSize * k
+    group <- peekByteOff p e :: IO Int32
+    code <- peekByteOff p (e + 4) :: IO Int32
+    x <- peekByteOff p (e + 8)
+    y <- peekByteOff p (e + 16)
+    let mode = fromMaybe AddPoint (lookup (fromIntegral code)
+                 [ (autocolorModeCode m, m) | m <- [minBound .. maxBound] ])
+    pure (mode, fromIntegral group, x, y)
 
 data SomeArg where
   SomeArg :: TypeProxy t -> HaskellType t -> SomeArg

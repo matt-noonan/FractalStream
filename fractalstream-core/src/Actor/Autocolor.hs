@@ -28,6 +28,7 @@ module Actor.Autocolor
   , autocolorLookup
   , autocolorLookupFromFunction
   , autocolorCacheLookup
+  , autocolorSnapshot
   , autocolorEdits
   , AutocolorMode(..)
   , autocolor
@@ -145,6 +146,23 @@ foreign import ccall "fs_ac_new"
 
 foreign import ccall "fs_ac_free"
   freeDirectory :: Ptr () -> IO ()
+
+foreign import ccall unsafe "fs_ac_current"
+  currentSnapshot :: Ptr () -> IO (Ptr Word8)
+
+foreign import ccall unsafe "fs_ac_snapshot_size"
+  snapshotSize :: Ptr Word8 -> IO Int64
+
+-- | The current snapshot of the autocolor groups (see
+-- @autocolor_lookup.h@ for its layout), and its size; a null pointer if
+-- there's none yet. Only for a single-threaded caller (the wasm backend,
+-- which copies it), and only until it next yields: publishing a new
+-- snapshot frees this one.
+autocolorSnapshot :: AutocolorLookup -> IO (Ptr Word8, Int)
+autocolorSnapshot AutocolorLookup{..} = withForeignPtr autocolorCache $ \dir -> do
+  s <- currentSnapshot dir
+  n <- snapshotSize s
+  pure (s, fromIntegral n)
 
 wrapAddFunction :: (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
                 -> IO (FunPtr (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32))

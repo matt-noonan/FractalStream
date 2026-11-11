@@ -53,10 +53,14 @@ if (pool && process.env.FS_WASM_DUMP) {
 }
 if (pool) globalThis.fractalstreamWorkers = pool;
 
-// The math functions kernels import, for those on the engine's thread
-// (the workers load their own).
-globalThis.fractalstreamMath = (await WebAssembly.instantiate(fs.readFileSync(
-  new URL("../../fractalstream-backend-wasm/js/libm.wasm", import.meta.url)))).instance.exports;
+// What kernels import, for those on the engine's thread (the workers load
+// their own): the math functions, and the autocolor lookup (compiled: the
+// engine instantiates it over its own memory).
+const jsDir = new URL("../../fractalstream-backend-wasm/js/", import.meta.url);
+globalThis.fractalstreamMath = (await WebAssembly.instantiate(
+  fs.readFileSync(new URL("libm.wasm", jsDir)))).instance.exports;
+globalThis.fractalstreamAutocolor = await WebAssembly.compile(
+  fs.readFileSync(new URL("autocolor.wasm", jsDir)));
 
 const __exports = {};
 const mod = await WebAssembly.compile(fs.readFileSync(wasmPath));

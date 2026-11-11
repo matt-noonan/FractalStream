@@ -9,14 +9,24 @@
 //
 // The memory holds a job's arguments at ARGS_BASE (lists in them point
 // into them, assuming they're there: Backend.Wasm's workerArgsBase), then
-// the block's pixels, then the kernel's arena (for lists) of ARENA_SIZE
-// bytes (Backend.Wasm's arenaSize).
+// its copy of the autocolor snapshot, the block's pixels, the kernel's
+// arena (for lists) of ARENA_SIZE bytes (Backend.Wasm's arenaSize), and
+// the list of points the kernel would add to autocolor groups (misses),
+// which go back with the pixels.
 //
 // Messages in:
 //   { kernel: id, bytes }          a kernel (its module's bytes) to keep
-//   { job, kernel: id, args, width, height, subsamples, x0, y0, dx, dy }
+//   { job, kernel: id, args, snapshot, width, height, subsamples, x0, y0, dx, dy }
 // Messages out:
-//   { job, issues, pixels }        or { job, error }
+//   { job, issues, pixels, misses } or { job, error }
+
+const ARGS_BASE = 16;
+const ARENA_SIZE = 1024 * 1024;
+const MISS_CAPACITY = 256;   // Backend.Wasm's missCapacity
+const MISS_SIZE = 24;
+const align8 = (n) => (n + 7) & ~7;
+
+const memory = new WebAssembly.Memory({ initial: 16 });
 
 // What a kernel imports: the math functions, from libm.wasm (built next
 // to this file by dev-tools/wasm/build.sh), as Backend.Wasm's in-engine
@@ -24,26 +34,28 @@
 // wasm on several worker threads at once made Node (V8) on macOS/ARM
 // crash now and then (see WEB_PLAN.md), and this way every host computes
 // them alike.
-const libmUrl = new URL("./libm.wasm", import.meta.url);
-const math = (async () => {
-  const bytes = typeof process !== "undefined" && process.versions?.node
-    ? (await import("node:fs")).readFileSync(libmUrl)
-    : await (await fetch(libmUrl)).arrayBuffer();
-  return (await WebAssembly.instantiate(bytes)).instance.exports;
-})();
+//
+// And the autocolor lookup: autocolor.wasm (also built here), over this
+// worker's memory.
+const isNode = typeof process !== "undefined" && process.versions?.node;
+async function load(name) {
+  const url = new URL(name, import.meta.url);
+  return isNode ? (await import("node:fs")).readFileSync(url)
+                : await (await fetch(url)).arrayBuffer();
+}
+const imports = (async () => ({
+  math: (await WebAssembly.instantiate(await load("./libm.wasm"))).instance.exports,
+  autocolor: (await WebAssembly.instantiate(await load("./autocolor.wasm"), { env: { memory } }))
+    .instance.exports,
+}))();
 
-const ARGS_BASE = 16;
-const ARENA_SIZE = 1024 * 1024;
-const align8 = (n) => (n + 7) & ~7;
-
-const memory = new WebAssembly.Memory({ initial: 16 });
 const kernels = new Map();
 
-function handle(m, math) {
+function handle(m, { math, autocolor }) {
   if (m.bytes) {
     // (each worker compiles its own copy: it takes well under a millisecond)
     const module = new WebAssembly.Module(m.bytes);
-    const instance = new WebAssembly.Instance(module, { env: { memory }, math });
+    const instance = new WebAssembly.Instance(module, { env: { memory }, math, autocolor });
     kernels.set(m.kernel, instance.exports.kernel);
     return null;
   }
@@ -51,18 +63,25 @@ function handle(m, math) {
     const kernel = kernels.get(m.kernel);
     if (!kernel) throw new Error(`no kernel ${m.kernel} in this worker`);
     const args = new Uint8Array(m.args);
-    const out = align8(ARGS_BASE + args.length);
+    const snapshot = new Uint8Array(m.snapshot);
+    const snap = align8(ARGS_BASE + args.length);
+    const out = align8(snap + snapshot.length);
     const size = 3 * m.width * m.height;
     const arena = align8(out + size);
-    const need = arena + ARENA_SIZE;
+    const misses = arena + ARENA_SIZE;
+    const need = misses + 8 + MISS_SIZE * MISS_CAPACITY;
     if (memory.buffer.byteLength < need) {
       memory.grow(Math.ceil((need - memory.buffer.byteLength) / 65536));
     }
     new Uint8Array(memory.buffer, ARGS_BASE, args.length).set(args);
+    new Uint8Array(memory.buffer, snap, snapshot.length).set(snapshot);
+    new Int32Array(memory.buffer, misses, 2).set([0, MISS_CAPACITY]);
     const issues = kernel(out, m.width, m.height, m.subsamples, ARGS_BASE, arena, ARENA_SIZE,
-                          m.x0, m.y0, m.dx, m.dy);
+                          snapshot.length > 0 ? snap : 0, misses, m.x0, m.y0, m.dx, m.dy);
     const pixels = new Uint8Array(memory.buffer, out, size).slice();
-    return [{ job: m.job, issues, pixels }, [pixels.buffer]];
+    const missCount = new Int32Array(memory.buffer, misses, 1)[0];
+    const missed = new Uint8Array(memory.buffer, misses + 8, MISS_SIZE * missCount).slice();
+    return [{ job: m.job, issues, pixels, misses: missed }, [pixels.buffer, missed.buffer]];
   } catch (e) {
     return [{ job: m.job, error: String(e?.stack ?? e) }, []];
   }
@@ -71,12 +90,12 @@ function handle(m, math) {
 if (typeof process !== "undefined" && process.versions?.node) {
   const { parentPort } = await import("node:worker_threads");
   parentPort.on("message", async (m) => {
-    const reply = handle(m, await math);
+    const reply = handle(m, await imports);
     if (reply) parentPort.postMessage(...reply);
   });
 } else {
   self.onmessage = async (e) => {
-    const reply = handle(e.data, await math);
+    const reply = handle(e.data, await imports);
     if (reply) self.postMessage(...reply);
   };
 }

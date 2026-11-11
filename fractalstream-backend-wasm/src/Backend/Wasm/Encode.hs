@@ -18,7 +18,7 @@ module Backend.Wasm.Encode
   , op
     -- ** Opcodes
   , i32Eqz, i32Eq, i32Ne, i32LtS, i32GtS, i32LeS, i32GeS, i32LtU, i32GtU, i32GeU
-  , i32Add, i32Sub, i32Mul, i32DivS, i32DivU, i32RemS, i32And, i32Or, i32Xor, i32Shl
+  , i32Add, i32Sub, i32Mul, i32DivS, i32DivU, i32RemS, i32And, i32Or, i32Xor, i32Shl, i32ShrU
   , f64Eq, f64Ne, f64Lt, f64Gt, f64Le, f64Ge
   , f64Abs, f64Neg, f64Ceil, f64Floor, f64Trunc, f64Sqrt
   , f64Add, f64Sub, f64Mul, f64Div
@@ -156,10 +156,10 @@ i32Eqz = Op [0x45]; i32Eq = Op [0x46]; i32Ne = Op [0x47]
 i32LtS = Op [0x48]; i32LtU = Op [0x49]; i32GtS = Op [0x4a]
 i32GtU = Op [0x4b]; i32LeS = Op [0x4c]; i32GeS = Op [0x4e]; i32GeU = Op [0x4f]
 
-i32Add, i32Sub, i32Mul, i32DivS, i32DivU, i32RemS, i32And, i32Or, i32Xor, i32Shl :: Instr
+i32Add, i32Sub, i32Mul, i32DivS, i32DivU, i32RemS, i32And, i32Or, i32Xor, i32Shl, i32ShrU :: Instr
 i32Add = Op [0x6a]; i32Sub = Op [0x6b]; i32Mul = Op [0x6c]
 i32DivS = Op [0x6d]; i32DivU = Op [0x6e]; i32RemS = Op [0x6f]
-i32And = Op [0x71]; i32Or = Op [0x72]; i32Xor = Op [0x73]; i32Shl = Op [0x74]
+i32And = Op [0x71]; i32Or = Op [0x72]; i32Xor = Op [0x73]; i32Shl = Op [0x74]; i32ShrU = Op [0x76]
 
 f64Eq, f64Ne, f64Lt, f64Gt, f64Le, f64Ge :: Instr
 f64Eq = Op [0x61]; f64Ne = Op [0x62]; f64Lt = Op [0x63]

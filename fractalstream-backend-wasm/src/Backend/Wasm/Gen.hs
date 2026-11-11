@@ -14,6 +14,10 @@ module Backend.Wasm.Gen
   , Arena(..)
   , setArena
   , getArena
+  , AutocolorParams(..)
+  , setAutocolor
+  , getAutocolor
+  , autocolorLookupFn
   , newLocal
   , emit
   , capture
@@ -63,11 +67,20 @@ data Arena = Arena
 data WLoc :: Symbol -> FSType -> Exp Type
 type instance Eval (WLoc name t) = Loc
 
+-- | The locals holding the copy of the autocolor snapshot a kernel was
+-- given (0 for none), and its list of misses (see
+-- @fractalstream-backend-wasm/libm/fsautocolor.c@).
+data AutocolorParams = AutocolorParams
+  { apSnapshot :: Int
+  , apMisses :: Int
+  }
+
 data GenState = GenState
   { gsNext   :: Int          -- ^ the next local's index
   , gsLocals :: [ValType]    -- ^ the locals so far, newest first
   , gsInstrs :: [Instr]      -- ^ the current block's instructions, newest first
   , gsArena  :: Maybe Arena  -- ^ where lists can be made, if anywhere
+  , gsAutocolor :: Maybe AutocolorParams
   }
 
 newtype Gen a = Gen (StateT GenState (Either String) a)
@@ -82,7 +95,7 @@ data GenResult a = GenResult
 -- | Run a generator for a function with the given parameters.
 runGen :: [ValType] -> Gen a -> Either String (GenResult a)
 runGen params (Gen m) = do
-  (x, GenState{..}) <- runStateT m (GenState (length params) [] [] Nothing)
+  (x, GenState{..}) <- runStateT m (GenState (length params) [] [] Nothing Nothing)
   pure (GenResult x (reverse gsLocals) (reverse gsInstrs))
 
 setArena :: Arena -> Gen ()
@@ -90,6 +103,12 @@ setArena a = Gen (modify (\st -> st { gsArena = Just a }))
 
 getArena :: Gen Arena
 getArena = Gen (gets gsArena) >>= maybe (unsupported "lists here") pure
+
+setAutocolor :: AutocolorParams -> Gen ()
+setAutocolor a = Gen (modify (\st -> st { gsAutocolor = Just a }))
+
+getAutocolor :: Gen AutocolorParams
+getAutocolor = Gen (gets gsAutocolor) >>= maybe (unsupported "autocolor here") pure
 
 newLocal :: ValType -> Gen Int
 newLocal t = Gen $ do
@@ -163,6 +182,12 @@ mathImports =
   , ("exp", 1), ("log", 1)
   , ("pow", 2), ("atan2", 2), ("hypot", 2), ("fmod", 2)
   ]
+
+-- | The index of the imported autocolor lookup (module @autocolor@, after
+-- the math functions): @lookup(snapshot, mode, group, x, y, misses) ->
+-- 0x00RRGGBB@.
+autocolorLookupFn :: Int
+autocolorLookupFn = length mathImports
 
 -- | The index of an imported math function.
 mathFn :: String -> Int

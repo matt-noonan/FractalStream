@@ -68,5 +68,19 @@ if [ ! -f "$libm" ] || [ "$libm_src" -nt "$libm" ]; then
   wasm32-wasi-clang -O2 -nostartfiles -Wl,--no-entry "$libm_src" -o "$libm" -lm
 fi
 
+# The autocolor lookup kernels import. It works in the kernel's memory, so
+# it mustn't keep data or a stack there.
+ac_src=fractalstream-backend-wasm/libm/fsautocolor.c
+ac_header=fractalstream-core/src/Actor/autocolor_lookup.h
+ac=fractalstream-backend-wasm/js/autocolor.wasm
+if [ ! -f "$ac" ] || [ "$ac_src" -nt "$ac" ] || [ "$ac_header" -nt "$ac" ]; then
+  wasm32-wasi-clang -O2 -nostdlib -Wl,--no-entry -Wl,--import-memory "$ac_src" -o "$ac"
+  if wasm-dis "$ac" | grep -qE '^ *\(data|global\.(get|set)'; then
+    rm -f "$ac"
+    echo "error: $ac_src uses memory of its own (data or a stack)" >&2
+    exit 1
+  fi
+fi
+
 if [ "$#" -eq 0 ]; then set -- all; fi
 exec wasm32-wasi-cabal build --project-file=cabal.project.wasm "$@"

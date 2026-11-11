@@ -12,6 +12,7 @@ category:            Math
 build-type:          Simple
 extra-source-files:  fonts/DejaVuSans.ttf
                      fonts/DejaVuSans-LICENSE
+                     src/Actor/autocolor_lookup.h
 
 common FractalStream-common
   ghc-options:         -Wall -Werror -O2

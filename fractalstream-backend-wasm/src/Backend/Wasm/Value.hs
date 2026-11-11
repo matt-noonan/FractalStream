@@ -3,8 +3,8 @@
 -- "Backend.LLVM.Value" does, so that the two backends compute alike.
 -- Each value's result goes into fresh locals (see "Backend.Wasm.Gen").
 --
--- Not compiled yet (the caller falls back to the interpreter): text,
--- tables, and autocolor.
+-- Not compiled yet (the caller falls back to the interpreter): text and
+-- tables.
 module Backend.Wasm.Value
   ( value
   ) where
@@ -257,7 +257,17 @@ value = indexedFold go'
         lift (listRange lo hi)
       ConcatText{} -> lift (unsupported "text")
       ToText{} -> lift (unsupported "text")
-      Autocolor{} -> lift (unsupported "autocolor")
+      -- looked up in the kernel's copy of the snapshot (a point to add goes
+      -- on its list of misses: see Backend.Wasm)
+      Autocolor mode n mp -> mp >>= \case
+        LComplex x y -> lift $ do
+          AutocolorParams{..} <- getAutocolor
+          rgb <- unaryTo I32 id
+            [ localGet apSnapshot, i32Const (autocolorModeCode mode), i32Const (fromIntegral n)
+            , localGet x, localGet y, localGet apMisses, call autocolorLookupFn ]
+          let channel k = unaryTo I32 id [ localGet rgb, i32Const k, i32ShrU, i32Const 255, i32And ]
+          LColor <$> channel 16 <*> channel 8 <*> channel 0
+        l -> lift (mismatch l)
       TableIndex{} -> lift (unsupported "tables")
       TablePoint{} -> lift (unsupported "tables")
       TableSlice{} -> lift (unsupported "tables")

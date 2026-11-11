@@ -1,7 +1,9 @@
 -- | Compiling a viewer's code into a WebAssembly kernel module.
 --
 -- The kernel is @kernel(out, width, height, subsamples, args, arena,
--- arenaSize, x0, y0, dx, dy) -> issues@: it renders a block of pixels into
+-- arenaSize, snapshot, misses, x0, y0, dx, dy) -> issues@ (@snapshot@: a
+-- copy of the autocolor groups, or 0; @misses@: where to note the points
+-- it would add, for the engine to add: see "Backend.Wasm"): it renders a block of pixels into
 -- @out@ (RGB bytes), exactly as the LLVM backend's kernel does (the same
 -- loops, stepping x by dx and y by -dy, each pixel the average of its
 -- subsamples, and lists made in the arena, afresh for each subsample),
@@ -152,13 +154,14 @@ loadArg off = \case
   LList l -> one (i32Load off) l >> pure (off + 8)
   where one load l = emit [localGet pArgs, load, localSet l]
 
-pOut, pWidth, pHeight, pSubsamples, pArgs, pArena, pArenaSize, pX0, pY0, pDX, pDY :: Int
+pOut, pWidth, pHeight, pSubsamples, pArgs, pArena, pArenaSize, pSnapshot, pMisses,
+  pX0, pY0, pDX, pDY :: Int
 pOut = 0; pWidth = 1; pHeight = 2; pSubsamples = 3; pArgs = 4
-pArena = 5; pArenaSize = 6
-pX0 = 7; pY0 = 8; pDX = 9; pDY = 10
+pArena = 5; pArenaSize = 6; pSnapshot = 7; pMisses = 8
+pX0 = 9; pY0 = 10; pDX = 11; pDY = 12
 
 kernelParams :: [ValType]
-kernelParams = [I32, I32, I32, I32, I32, I32, I32, F64, F64, F64, F64]
+kernelParams = [I32, I32, I32, I32, I32, I32, I32, I32, I32, F64, F64, F64, F64]
 
 -- | Compile a viewer's code into a kernel module's bytes, or say why it
 -- can't be.
@@ -181,6 +184,7 @@ compileViewer memory body = do
 
         arena@Arena{..} <- Arena <$> newLocal I32 <*> newLocal I32 <*> newLocal I32 <*> newLocal I32
         setArena arena
+        setAutocolor (AutocolorParams pSnapshot pMisses)
         anyOverflow <- newLocal I32
         anyBadIndex <- newLocal I32
         emit [i32Const 0, localSet anyOverflow, i32Const 0, localSet anyBadIndex]
@@ -241,6 +245,7 @@ compileViewer memory body = do
   pure $ encodeModule WasmModule
     { wmMemory = memory
     , wmImports = [ Import "math" f (replicate n F64) [F64] | (f, n) <- mathImports ]
+                  ++ [ Import "autocolor" "lookup" [I32, I32, I32, F64, F64, I32] [I32] ]
     , wmName = "kernel"
     , wmParams = kernelParams
     , wmResults = [I32]

@@ -8,12 +8,9 @@
  * them changes -- without taking any lock, and calls back into Haskell only
  * to add a point the snapshot doesn't have.
  *
- * Snapshot layout (built by Actor.Autocolor.publishAutocolor), all in one
- * block of memory:
- *
- *   fs_ac_header                      8 bytes
- *   fs_ac_group  x header.ngroups     40 bytes each
- *   fs_ac_entry  x (sum of counts)    24 bytes each, at each group's offset
+ * The snapshot's layout (built by Actor.Autocolor.publishAutocolor), and
+ * looking a point up in it, are in autocolor_lookup.h (which the wasm
+ * backend shares).
  *
  * Reclaiming old snapshots: a render may still be reading a snapshot after
  * a newer one is published, so it can only be freed once no lookup that
@@ -43,34 +40,7 @@
 #define fs_ac_yield() sched_yield()
 #endif
 
-typedef struct {
-  int32_t ngroups;
-  int32_t pad;
-} fs_ac_header;
-
-typedef struct {
-  int32_t group;
-  int32_t can_add;   /* not locked, and not full */
-  uint32_t miss;     /* 0x00RRGGBB */
-  int32_t count;
-  double tol2;       /* the tolerance, squared */
-  int64_t offset;    /* of this group's entries, from the snapshot's start */
-  int32_t blend_misses; /* when it can't add a point: blend, or the miss color? */
-  int32_t pad;
-} fs_ac_group;
-
-typedef struct {
-  double x;
-  double y;
-  uint32_t rgb;      /* 0x00RRGGBB */
-  uint32_t pad;
-} fs_ac_entry;
-
-/* How a lookup treats a point (Language.Type.AutocolorMode):
-   the nearest entry's color, or else ... */
-#define FS_AC_NEAREST 0  /* ... the group's miss color (nearest_autocolor) */
-#define FS_AC_ADD     1  /* ... a new entry, if it can add one (autocolor) */
-#define FS_AC_BLEND   2  /* ... a blend of every entry's color (get_autocolor) */
+#include "autocolor_lookup.h"
 
 typedef uint32_t (*fs_ac_add_fn)(uint8_t mode, int32_t group, double x, double y);
 
@@ -132,26 +102,17 @@ void fs_ac_publish(fs_ac_dir *dir, fs_ac_header *snapshot)
   }
 }
 
-/* Every entry's color, weighted by one over its squared distance from
-   (x, y), rounded half up (as Actor.Autocolor.blendAutocolor does). */
-static uint32_t blend(const fs_ac_entry *entries, int32_t count, double x, double y)
+/* The current snapshot (or NULL), for a single-threaded caller (the wasm
+   build, which copies it into a kernel's memory): with other threads, it
+   could be freed at any moment. */
+const fs_ac_header *fs_ac_current(fs_ac_dir *dir)
 {
-  double total = 0, r = 0, gr = 0, b = 0;
-  for (int32_t i = 0; i < count; i++) {
-    double dx = entries[i].x - x, dy = entries[i].y - y;
-    double w = 1.0 / (dx * dx + dy * dy);
-    uint32_t c = entries[i].rgb;
-    total += w;
-    r += w * ((c >> 16) & 0xff);
-    gr += w * ((c >> 8) & 0xff);
-    b += w * (c & 0xff);
-  }
-  uint32_t rr = (uint32_t)(r / total + 0.5), gg = (uint32_t)(gr / total + 0.5),
-           bb = (uint32_t)(b / total + 0.5);
-  if (rr > 255) rr = 255;
-  if (gg > 255) gg = 255;
-  if (bb > 255) bb = 255;
-  return (rr << 16) | (gg << 8) | bb;
+  return __atomic_load_n(&dir->snapshot, __ATOMIC_SEQ_CST);
+}
+
+int64_t fs_ac_snapshot_size(const fs_ac_header *s)
+{
+  return s ? fs_ac_size(s) : 0;
 }
 
 uint32_t fs_ac_lookup(fs_ac_dir *dir, uint8_t mode, int32_t group, double x, double y)
@@ -166,43 +127,16 @@ uint32_t fs_ac_lookup(fs_ac_dir *dir, uint8_t mode, int32_t group, double x, dou
     __atomic_sub_fetch(&dir->readers[parity], 1, __ATOMIC_SEQ_CST);
   }
 
-  int found = 0;
-  uint32_t result = 0;
-  fs_ac_header *s = __atomic_load_n(&dir->snapshot, __ATOMIC_SEQ_CST);
-  if (s) {
-    fs_ac_group *groups = (fs_ac_group *)(s + 1);
-    for (int32_t k = 0; k < s->ngroups; k++) {
-      fs_ac_group *g = &groups[k];
-      if (g->group != group) continue;
-      /* the nearest entry within the tolerance */
-      fs_ac_entry *entries = (fs_ac_entry *)((char *)s + g->offset);
-      int32_t best = -1;
-      double bestd = g->tol2;
-      for (int32_t i = 0; i < g->count; i++) {
-        double dx = entries[i].x - x, dy = entries[i].y - y;
-        double d = dx * dx + dy * dy;
-        if (d <= bestd && (best < 0 || d < bestd)) { best = i; bestd = d; }
-      }
-      if (best >= 0) { found = 1; result = entries[best].rgb; }
-      else if (mode == FS_AC_ADD && g->can_add) { /* to add: ask Haskell */ }
-      else {
-        /* no entry near enough, and none to be added: get_autocolor
-           blends; so does autocolor, in a locked (or full) group that
-           blends misses; otherwise, the miss color */
-        int blends = mode == FS_AC_BLEND || (mode == FS_AC_ADD && g->blend_misses);
-        found = 1;
-        result = (blends && g->count > 0) ? blend(entries, g->count, x, y) : g->miss;
-      }
-      break;
-    }
-  }
+  uint32_t result;
+  int found = fs_ac_find(__atomic_load_n(&dir->snapshot, __ATOMIC_SEQ_CST),
+                         mode, group, x, y, &result);
 
   /* done with the snapshot: leave before calling back into Haskell */
   __atomic_sub_fetch(&dir->readers[parity], 1, __ATOMIC_SEQ_CST);
   if (found) return result;
   /* a point to add, or a group the snapshot doesn't have yet (a
-     directory without a callback, as on WebAssembly, gives the miss
-     color: it can't ask) */
+     directory without a callback, as on WebAssembly, gives magenta: it
+     can't ask) */
   if (!dir->add) return FS_AC_NO_CALLBACK;
   return dir->add(mode, group, x, y);
 }
