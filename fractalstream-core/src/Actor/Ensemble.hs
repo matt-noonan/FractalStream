@@ -94,6 +94,8 @@ import Language.Value.Evaluator (evaluate, evaluateInContext)
 import Control.Exception (Exception, IOException, SomeException, SomeAsyncException, fromException, displayException, throwIO, try)
 import System.IO (hPutStrLn, stderr)
 import Control.Concurrent.MVar (newMVar, modifyMVar_)
+import Data.IORef (newIORef, readIORef, writeIORef)
+import Language.Draw (DrawSink(..))
 
 import Data.Codec
 
@@ -1635,8 +1637,11 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
     -- refreshes (say, the window's and a movie frame's) from interleaving
     -- their drawings.
     overlayDispatcher <- newMVar Nothing
-    let vRefreshOverlay pxDims = forM_ cvOverlay $ \overlay ->
-          modifyMVar_ overlayDispatcher $ \cached -> do
+    overlayStopped <- newIORef False
+    let vRefreshOverlay flag pxDims = forM_ cvOverlay $ \overlay ->
+          modifyMVar_ overlayDispatcher $ \cached -> readIORef overlayStopped >>= \case
+           True -> pure cached
+           False -> do
             dispatcher <- case cached of
               Just d -> pure d
               Nothing -> do
@@ -1646,10 +1651,18 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
                 either (\err -> hPutStrLn stderr ("The overlay couldn't be built: " ++ err)) (const (pure ())) d
                 pure d
             forM_ dispatcher $ \dispatch -> forM_ (dispatch pxDims Refresh) $ \refresh ->
-              tryNonAsync (runHandlerNow refresh) >>= \case
-                Left err -> hPutStrLn stderr ("The overlay's `on refresh:` block failed: " ++ displayException err)
+              tryNonAsync (startHandlerRun refresh flag >>= \apply ->
+                             -- (stopped meanwhile: no effect)
+                             readIORef overlayStopped >>= \stopped -> unless stopped apply) >>= \case
+                Left err
+                  | Just HandlerCancelled <- fromException err -> pure ()
+                  | otherwise -> hPutStrLn stderr ("The overlay's `on refresh:` block failed: " ++ displayException err)
                 Right () -> pure ()
             pure (Just dispatcher)
+
+        vStopOverlay = forM_ cvOverlay $ \_ -> do
+          writeIORef overlayStopped True
+          dsClear (vDrawSink overlayDrawLayer)
 
         -- (any configuration value, not only the ones the overlay reads:
         -- refreshing it is cheap next to re-rendering the viewer)

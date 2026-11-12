@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {- |
 Module       : Main
 Description  : Headless FractalStream frontend
@@ -77,6 +78,7 @@ import Options.Applicative
   , hsubparser, command, strOption, option, eitherReader, long, short, metavar, help
   , fullDesc, progDesc, footer )
 import Control.Concurrent (setNumCapabilities)
+import Task.Concurrent (setRenderConcurrency)
 import System.Exit (exitFailure)
 import Text.Read (readMaybe)
 import System.IO (IOMode(..), withFile, hSetEncoding, utf8, hGetContents', hPutStr, hPutStrLn, stderr)
@@ -97,6 +99,12 @@ data Mode
 dieWith :: String -> IO a
 dieWith msg = hPutStrLn stderr msg >> exitFailure
 
+#if defined(wasm32_HOST_ARCH)
+-- (On WebAssembly fsrun is a reactor module: a JavaScript host calls this,
+-- as dev-tools/wasm/run-node.mjs does.)
+foreign export javascript "hs_start" main :: IO ()
+#endif
+
 main :: IO ()
 main = do
   transliterateConsole
@@ -104,7 +112,9 @@ main = do
     RunProject{..} -> do
       -- Before the backend starts: the LLVM backend sizes its pool of
       -- per-render scratch arenas by the number of capabilities then.
-      forM_ invJobs setNumCapabilities
+      -- (And on wasm, where there's one capability, -j is how many
+      -- workers a render uses: see 'renderConcurrency'.)
+      forM_ invJobs $ \n -> setNumCapabilities n >> setRenderConcurrency n
       run invProject invMode
     Translate{..} -> runTranslate invInput invOutput invTitle
 
@@ -124,8 +134,8 @@ data Invocation
 cliInfo :: ParserInfo Invocation
 cliInfo = info (helper <*> versionOption <*> cliParser) $
   fullDesc <>
-  progDesc "Run a FractalStream project without a GUI: render a viewer, \
-           \run scripted commands against it, or remake its preview." <>
+  progDesc ("Run a FractalStream project without a GUI: render a viewer, "
+            ++ "run scripted commands against it, or remake its preview.") <>
   footer "Run `fsrun COMMAND --help` for help on one command."
   where
     versionOption = infoOption gitTag
@@ -179,8 +189,8 @@ cliParser = hsubparser $ mconcat
     projectOption = strOption (long "project" <> short 'p' <> metavar "PROJECT.fs" <> help "The project file")
     jobsOption = optional $ option positive
       (long "jobs" <> short 'j' <> metavar "N" <>
-       help "Render with N threads (default: one per core). Use -j 1 to make \
-            \autocolor groups that aren't locked color the same way every run.")
+       help ("Render with N threads (default: one per core). Use -j 1 to make "
+             ++ "autocolor groups that aren't locked color the same way every run."))
     positive = eitherReader $ \str -> case readMaybe str of
       Just n | n >= 1 -> Right n
       _ -> Left ("expected a positive number of jobs, not " ++ show str)

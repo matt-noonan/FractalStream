@@ -1,4 +1,4 @@
-{-# language TemplateHaskell #-}
+{-# language TemplateHaskell, CPP #-}
 module FractalStream.Metadata
   ( contributors
   , gitHash
@@ -9,7 +9,13 @@ module FractalStream.Metadata
 
 import Data.ByteString (ByteString)
 import Data.FileEmbed (embedFile)
+#if defined(wasm32_HOST_ARCH)
+-- The wasm build's Template Haskell can't run git, as githash does, so
+-- dev-tools/wasm/build.sh writes what git says into this module first.
+import FractalStream.GitInfo (gitHash, gitTag, gitBranch, gitDirty)
+#else
 import GitHash
+#endif
 
 import qualified Data.ByteString.UTF8 as UTF8
 
@@ -19,6 +25,7 @@ contributorsFileContents = $(embedFile "../CONTRIBUTORS")
 contributors :: [String]
 contributors = lines (UTF8.toString contributorsFileContents)
 
+#if !defined(wasm32_HOST_ARCH)
 gitInfo :: GitInfo
 gitInfo = $$tGitInfoCwd
 
@@ -33,3 +40,4 @@ gitBranch = giBranch gitInfo
 
 gitDirty :: Bool
 gitDirty = giDirty gitInfo
+#endif

@@ -1,0 +1,7 @@
+load all saved tables
+select viewer "V"
+resize viewer to 192x128
+capture viewer "V" to "v.png"
+set viewer center to 1 + 0.5i
+set viewer pixel size to 1/40
+capture viewer "V" to "moved.png"

@@ -13,6 +13,7 @@ module Language.Table
   , tableCellCount
   , isTableElementType
   , elementSize
+  , secondOffset
   , cellOffset
   , readCell
   , pointCell
@@ -196,7 +197,7 @@ newTableBytes size dims origin step = do
   buf <- mallocForeignPtrBytes (max 1 bytes)
   withForeignPtr buf $ \p -> fillBytes p 0 bytes
   frozen <- newIORef False
-  pure (Table dims origin step buf frozen)
+  Table dims origin step buf frozen <$> newTableVersion
 
 -- | Fill every cell of a table with a value, in place (only for a table
 -- no script can see yet).
@@ -244,7 +245,8 @@ copyTableBytes size t = do
   buf <- mallocForeignPtrBytes (max 1 bytes)
   withForeignPtr (tableBuffer t) $ \src -> withForeignPtr buf $ \dst -> copyBytes dst src bytes
   frozen <- newIORef False
-  pure t { tableBuffer = buf, tableFrozen = frozen }
+  version <- newTableVersion
+  pure t { tableBuffer = buf, tableFrozen = frozen, tableVersion = version }
 
 ------------------------------------------------------------------------
 -- Slices

@@ -1,0 +1,34 @@
+# A viewer reading tables in every way a viewer can, for comparing the wasm
+# backend with LLVM (dev-tools/wasm/tables/compare.sh). The tables are
+# saved in the file (tables-read.fs, made from this by MakeFixture.hs).
+# U isn't read: the wasm backend shouldn't send it to the workers.
+script: |
+  @config "Tables"
+  T : Table 2 of C
+  B : Table 2 of Boolean
+  P : Table 3 of R x Z
+  K : Table 2 of Color
+  L : Table 1 of Z
+  U : Table 2 of C
+
+  @viewer "V" center=0 pixelSize=1/64
+  a := T @ point z else 0
+  lit := B @ point z else false
+  (r, n) := P @ (point z, 2) else (0, 0)
+  c := K @ point z else rgb(0, 0, 0)
+  (w, h) := table_size(T)
+  (j, k) := table_cell(T, z)
+  q := table_point(T, (j, k))
+  layers := if z in P then length(P @ (point z, *)) else 0
+  xs := L @ *
+  v := xs @ 3 + L @ 2 + length(T @ (3, *))
+  color <- if lit then c else rgb(0.5 + 0.5 sin(re(a) + im(q) + w), 0.5 + 0.5 cos(r + n + layers), 0.5 + 0.4 sin(h + j + k + v))
+metadata:
+  title: Reading tables
+  description: |
+    A viewer reading tables in every way a viewer can (by index, by point,
+    with else, slices, sizes, cells, cell points), for comparing the wasm
+    backend with LLVM. The tables are saved in the file, by
+    dev-tools/wasm/tables/MakeFixture.hs; scenarios load them with
+    `load all saved tables`. U isn't read, so the wasm backend shouldn't
+    send it to the workers; nor L, which is read only once per render.

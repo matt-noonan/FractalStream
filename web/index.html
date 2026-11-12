@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FractalStream</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="main.js"></script>
+</head>
+<body>
+  <nav id="library" aria-label="Library"></nav>
+  <main>
+    <div id="toolbar">
+      <button id="toggle-library" type="button" aria-pressed="true" title="Show or hide the library">Library</button>
+      <button id="toggle-panel" type="button" aria-pressed="true" title="Show or hide the configuration">Configuration</button>
+      <label class="toggle" title="Smooth the viewers: four samples a pixel (slower)">
+        <input id="smoothing" type="checkbox"> Smooth
+      </label>
+      <span class="separator"></span>
+      <span id="tools" class="palette" role="group" aria-label="Tools"></span>
+      <span class="separator"></span>
+      <button id="open" type="button" title="Open a project file (⌘O)">Open…</button>
+      <button id="save" type="button" title="Save (⌘S)" disabled>Save</button>
+      <button id="save-as" type="button" title="Save as (⇧⌘S)" disabled>Save as…</button>
+      <span id="file-name"></span>
+    </div>
+    <div id="status" role="status"></div>
+    <div id="project"></div>
+  </main>
+</body>
+</html>

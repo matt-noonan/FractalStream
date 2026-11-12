@@ -1,0 +1,160 @@
+:root {
+  --bg: #f6f6f4;
+  --fg: #1d1d1b;
+  --muted: #6b6b66;
+  --panel: #ffffff;
+  --line: #d9d9d4;
+  --accent: #2f6fd6;
+  --error: #c0392b;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b1a;
+    --fg: #ececea;
+    --muted: #9a9a94;
+    --panel: #252524;
+    --line: #3a3a38;
+    --accent: #6ea2ff;
+    --error: #ff7a6b;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  display: flex;
+  min-height: 100vh;
+  font: 14px/1.4 system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+#library {
+  width: 260px;
+  flex: none;
+  overflow-y: auto;
+  max-height: 100vh;
+  padding: 8px 12px;
+  border-right: 1px solid var(--line);
+}
+#library h2 { font-size: 13px; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+#library ul { list-style: none; margin: 0; padding: 0; }
+#library li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 6px; border-radius: 6px; cursor: pointer;
+}
+#library li:hover { background: var(--panel); }
+#library li.selected { background: var(--accent); color: white; }
+#library img { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; flex: none; }
+main { flex: 1; min-width: 0; padding: 12px 20px; }
+#status { min-height: 1.4em; color: var(--muted); }
+#status.error { color: var(--error); white-space: pre-wrap; }
+h1 { font-size: 20px; margin: 4px 0 12px; }
+.workspace { display: flex; gap: 16px; align-items: flex-start; }
+.desk {
+  position: relative; flex: 1; min-width: 0; min-height: calc(100vh - 130px);
+  overflow: auto; border: 1px dashed var(--line); border-radius: 8px;
+}
+.window {
+  position: absolute; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .15); overflow: hidden;
+}
+.window-title {
+  padding: 4px 10px; font-size: 12px; color: var(--muted); cursor: move;
+  user-select: none; border-bottom: 1px solid var(--line); touch-action: none;
+}
+.window-body { position: relative; background: #808080; }
+.window-grip {
+  position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 60%,
+                              transparent 60%, transparent 75%, var(--muted) 75%, var(--muted) 85%, transparent 85%);
+}
+.viewer canvas { display: block; cursor: grab; touch-action: none; }
+.viewer canvas:active { cursor: grabbing; }
+.panel {
+  flex: none; width: var(--panel-width, 320px); position: relative;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px;
+}
+/* (its left edge, to drag it wider or narrower) */
+.panel-grip {
+  position: absolute; left: -9px; top: 0; bottom: 0; width: 10px; cursor: ew-resize; touch-action: none;
+}
+.panel-grip:hover, .panel-grip.dragging { border-right: 2px solid var(--accent); }
+.panel fieldset { border: none; margin: 0; padding: 0; }
+.panel legend { font-weight: 600; margin-bottom: 6px; }
+.vertical { display: flex; flex-direction: column; gap: 6px; }
+.horizontal { display: flex; flex-wrap: wrap; gap: 8px; }
+.tab-buttons { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.tab-buttons button {
+  font: inherit; padding: 3px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer;
+}
+.tab-buttons button.selected { background: var(--accent); border-color: var(--accent); color: white; }
+.field { display: flex; align-items: center; gap: 8px; }
+.field > span:first-child { flex: none; min-width: 7em; color: var(--muted); }
+.field input[type=text], .field select {
+  flex: 1; min-width: 0; font: 13px ui-monospace, monospace;
+  padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg);
+}
+.field input.invalid { border-color: var(--error); }
+.field-error { color: var(--error); cursor: help; }
+#toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+#toolbar button {
+  font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+}
+#toolbar button:disabled { opacity: .5; cursor: default; }
+#file-name { margin-left: 8px; color: var(--muted); }
+#toolbar .separator { width: 12px; }
+#toolbar button[aria-pressed=true] { border-color: var(--accent); }
+body.no-library #library { display: none; }
+body.no-panel .panel { display: none; }
+#toolbar .toggle { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; color: var(--muted); cursor: pointer; }
+.tab-chooser {
+  width: 100%; margin-bottom: 8px; font: inherit; padding: 4px 6px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);
+}
+.viewer { position: relative; }
+.viewer-error {
+  position: absolute; left: 8px; right: 8px; bottom: 8px; padding: 6px 8px; border-radius: 6px;
+  background: rgba(0, 0, 0, .7); color: #ffb3a8; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap;
+}
+.field input[type=color] { width: 32px; height: 26px; padding: 0 2px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+
+/* The tool palette: Navigate and the active viewer's tools, as one
+   segmented group; the selected one filled in. */
+@font-face { font-family: "DejaVu Sans"; src: url("DejaVuSans.ttf") format("truetype"); }
+.palette { display: inline-flex; flex-wrap: wrap; }
+#toolbar .palette button { border-radius: 0; margin-left: -1px; }
+#toolbar .palette button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+#toolbar .palette button:last-child { border-radius: 0 6px 6px 0; }
+#toolbar .palette button[aria-pressed=true] {
+  background: var(--accent); border-color: var(--accent); color: white; position: relative;
+}
+/* (with several viewers, the one the palette is for) */
+.window.active { border-color: var(--accent); }
+.window.active .window-title { color: var(--fg); }
+.viewer.tool canvas { cursor: crosshair; }
+.tool-panel:not(:empty) { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+.panel button {
+  font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
+
+/* A tool's handler (or the overlay) running for a while: along the bottom
+   of its viewer, over the picture. */
+.viewer-running {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--fg);
+  border-top: 1px solid var(--line); font-size: 13px;
+}
+.viewer-running[hidden] { display: none; }
+.viewer-running .spinner { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 4.5em; }
+.viewer-running .message { flex: 1 0 auto; white-space: nowrap; }
+.viewer-running button {
+  font: inherit; padding: 2px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
+.viewer-running button:disabled { opacity: .5; cursor: default; }

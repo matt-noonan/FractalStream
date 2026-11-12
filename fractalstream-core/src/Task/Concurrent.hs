@@ -6,6 +6,9 @@ Description : Utilities for concurrent operations
 module Task.Concurrent
        ( forPool
        , forPool_
+       , renderConcurrency
+       , setRenderConcurrency
+       , defaultRenderConcurrency
        , Synchronizable()
        , synchronized
        , synchronizedTo
@@ -18,8 +21,31 @@ import FractalStream.Prelude
 import           Control.Concurrent
 import           Control.Exception (mask, uninterruptibleMask_, finally)
 import           Control.Concurrent.Async
+import           Data.IORef
+import           System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
+
+-- | How many blocks of a render to work on at once: the number of
+-- capabilities, unless a frontend or backend said otherwise. (The wasm
+-- backend does: there's one capability, but its threads each wait on a
+-- block rendered by a worker of the JavaScript host.)
+renderConcurrency :: IO Int
+renderConcurrency = readIORef renderConcurrencyRef >>= maybe getNumCapabilities pure
+
+-- | Work on this many blocks of a render at once (see 'renderConcurrency').
+setRenderConcurrency :: Int -> IO ()
+setRenderConcurrency n = writeIORef renderConcurrencyRef (Just (max 1 n))
+
+-- | Like 'setRenderConcurrency', unless it was already set (as by a
+-- frontend's @-j@).
+defaultRenderConcurrency :: Int -> IO ()
+defaultRenderConcurrency n =
+  atomicModifyIORef' renderConcurrencyRef (\m -> (Just (fromMaybe (max 1 n) m), ()))
+
+renderConcurrencyRef :: IORef (Maybe Int)
+renderConcurrencyRef = unsafePerformIO (newIORef Nothing)
+{-# NOINLINE renderConcurrencyRef #-}
 
 -- | forPool n is similar to forM, except the actions
 --   are executed concurrently by a pool of n workers.

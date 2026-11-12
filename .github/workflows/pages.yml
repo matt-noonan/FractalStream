@@ -5,12 +5,16 @@ name: Landing page
 # without the leading v). Nothing is committed: the rewritten copy is
 # uploaded as a Pages artifact and deployed from there.
 #
+# The web app goes with it, at /app/: built and checked from main by
+# web.yml (as a job of this workflow), and deployed only if its checks
+# pass.
+#
 # It deploys when:
 #   - a release is published (pre-releases too), pointing the page at that
 #     release. This is publishing, not release.yml drafting the release:
 #     a draft's files can't be downloaded yet, so the links would 404.
-#   - site/ changes on main, pointing the page at the newest published
-#     release.
+#   - site/, or the web app, changes on main, pointing the page at the
+#     newest published release.
 #   - it is run by hand from the Actions tab, pointing the page at the tag
 #     given, or at the newest published release if left blank.
 #
@@ -32,6 +36,20 @@ on:
     paths:
       - 'site/**'
       - '.github/workflows/pages.yml'
+      # (the web app: the same as web.yml's)
+      - 'fractalstream-core/**'
+      - 'fractalstream-backend-pure/**'
+      - 'fractalstream-backend-wasm/**'
+      - 'fractalstream-library/**'
+      - 'fractalstream-ui-headless/**'
+      - 'fractalstream-ui-web/**'
+      - 'fractalstream-gitinfo/**'
+      - 'web/**'
+      - 'dev-tools/wasm/**'
+      - 'dev-tools/web/**'
+      - 'cabal.project.wasm'
+      - 'cabal/**'
+      - '.github/workflows/web.yml'
   workflow_dispatch:
     inputs:
       tag:
@@ -44,7 +62,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The web app, from main (see web.yml): its `web-app` artifact.
+  app:
+    uses: ./.github/workflows/web.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ github.event.repository.default_branch }}
+
   build:
+    needs: app
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -86,6 +113,12 @@ jobs:
         fi
         sed -i "s/@VERSION@/${TAG#v}/g" site/index.html
         grep -n "${TAG#v}" site/index.html
+
+    - name: Put the web app at /app/
+      uses: actions/download-artifact@v4
+      with:
+        name: web-app
+        path: site/app
 
     - uses: actions/configure-pages@v5
 

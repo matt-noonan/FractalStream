@@ -1,0 +1,143 @@
+name: Web app
+
+# Builds the web app (see WEB_PLAN.md) with the GHC wasm toolchain, runs
+# the wasm end-to-end tests under Node and the app's checks in headless
+# Chromium (dev-tools/web/check.mjs and check-tools.mjs), and uploads the
+# built app (web/dist) as the `web-app` artifact.
+#
+# It runs on pushes and pull requests that touch the web app or what it's
+# built from, and from pages.yml, which deploys the artifact at /app/.
+# (The comparisons with the native LLVM build, dev-tools/wasm/compare*.sh,
+# need that build, and are left out to keep this quick.)
+
+on:
+  push:
+    branches: [main, web]
+    paths:
+      - 'fractalstream-core/**'
+      - 'fractalstream-backend-pure/**'
+      - 'fractalstream-backend-wasm/**'
+      - 'fractalstream-library/**'
+      - 'fractalstream-ui-headless/**'
+      - 'fractalstream-ui-web/**'
+      - 'fractalstream-gitinfo/**'
+      - 'web/**'
+      - 'dev-tools/wasm/**'
+      - 'dev-tools/web/**'
+      - 'cabal.project.wasm'
+      - 'cabal/**'
+      - '.github/workflows/web.yml'
+  pull_request:
+    paths:
+      - 'fractalstream-core/**'
+      - 'fractalstream-backend-pure/**'
+      - 'fractalstream-backend-wasm/**'
+      - 'fractalstream-library/**'
+      - 'fractalstream-ui-headless/**'
+      - 'fractalstream-ui-web/**'
+      - 'fractalstream-gitinfo/**'
+      - 'web/**'
+      - 'dev-tools/wasm/**'
+      - 'dev-tools/web/**'
+      - 'cabal.project.wasm'
+      - 'cabal/**'
+      - '.github/workflows/web.yml'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'What to build (blank: what the calling workflow checked out)'
+        type: string
+        default: ''
+
+concurrency:
+  group: web-${{ github.workflow }}-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
+
+env:
+  # ghc-wasm-meta, pinned (its bootstrap.sh would take the newest), with
+  # GHC 9.10
+  GHC_WASM_META: 8079eb96bbc63823d99ad8acaff0765532625474
+  FLAVOUR: '9.10'
+
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 90
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref }}
+        # (for the git metadata the build writes)
+        fetch-depth: 0
+
+    # A native GHC and cabal too, for the native hspec-discover the test
+    # suites need (see dev-tools/wasm/build.sh).
+    - uses: haskell-actions/setup@v2
+      with:
+        ghc-version: '9.10.3'
+        cabal-version: 'latest'
+
+    - name: Cache the wasm toolchain
+      id: toolchain
+      uses: actions/cache@v4
+      with:
+        path: ~/.ghc-wasm
+        key: ghc-wasm-${{ runner.os }}-${{ env.GHC_WASM_META }}-${{ env.FLAVOUR }}
+
+    - name: Install the wasm toolchain
+      if: steps.toolchain.outputs.cache-hit != 'true'
+      run: |
+        dir="$(mktemp -d)"
+        curl -f -L --retry 5 "https://gitlab.haskell.org/haskell-wasm/ghc-wasm-meta/-/archive/$GHC_WASM_META/ghc-wasm-meta-$GHC_WASM_META.tar.gz" \
+          | tar xz --strip-components=1 -C "$dir"
+        (cd "$dir" && ./setup.sh)
+
+    - name: Put the wasm toolchain on the path
+      run: ~/.ghc-wasm/add_to_github_path.sh
+
+    - name: Cache the Haskell packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.ghc-wasm/.cabal/store
+          ~/.cabal/store
+          dist-newstyle
+        key: web-cabal-${{ runner.os }}-${{ env.GHC_WASM_META }}-${{ hashFiles('cabal.project.wasm', 'cabal/**', '**/*.cabal') }}
+        restore-keys: web-cabal-${{ runner.os }}-${{ env.GHC_WASM_META }}-
+
+    - name: Update the package lists
+      run: |
+        cabal update
+        wasm32-wasi-cabal update
+
+    - name: Install the page's packages
+      run: npm ci
+      working-directory: web
+
+    - name: Build the web app
+      run: dev-tools/web/build.sh
+
+    - name: Run the end-to-end tests on wasm, under Node
+      run: |
+        dev-tools/wasm/build.sh --enable-tests fractalstream-ui-headless:test:end-to-end
+        cd fractalstream-ui-headless
+        ../dev-tools/wasm/node.sh fractalstream-ui-headless:test:end-to-end
+
+    - name: Install Chromium for the checks
+      run: node ~/.ghc-wasm/nodejs/lib/node_modules/playwright/cli.js install --with-deps chromium
+
+    - name: Check every library project
+      run: node dev-tools/web/check.mjs
+
+    - name: Check the tools
+      run: node dev-tools/web/check-tools.mjs
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: web-app
+        path: web/dist
+        if-no-files-found: error

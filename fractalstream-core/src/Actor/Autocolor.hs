@@ -1,4 +1,4 @@
-{-# language OverloadedStrings #-}
+{-# language OverloadedStrings, CPP #-}
 -- | Autocolor model: tables that give each distinct point a color of its
 -- own, the first time it's seen, for coloring by points that aren't known
 -- in advance (the roots a Newton's method converges to, say). Scripts use
@@ -28,6 +28,7 @@ module Actor.Autocolor
   , autocolorLookup
   , autocolorLookupFromFunction
   , autocolorCacheLookup
+  , autocolorSnapshot
   , autocolorEdits
   , AutocolorMode(..)
   , autocolor
@@ -78,7 +79,7 @@ import Language.Value.Parser (parseConstant)
 import qualified Data.Map as Map
 import Data.IORef
 import Data.Bits (shiftL, (.|.))
-import Foreign (Ptr, FunPtr, ForeignPtr, nullPtr, mallocBytes, pokeByteOff, freeHaskellFunPtr, withForeignPtr)
+import Foreign (Ptr, FunPtr, ForeignPtr, nullPtr, nullFunPtr, mallocBytes, pokeByteOff, freeHaskellFunPtr, withForeignPtr)
 import qualified Foreign.Concurrent as FC
 import Foreign.C.Types (CDouble(..))
 import System.IO (fixIO)
@@ -146,22 +147,57 @@ foreign import ccall "fs_ac_new"
 foreign import ccall "fs_ac_free"
   freeDirectory :: Ptr () -> IO ()
 
+foreign import ccall unsafe "fs_ac_current"
+  currentSnapshot :: Ptr () -> IO (Ptr Word8)
+
+foreign import ccall unsafe "fs_ac_snapshot_size"
+  snapshotSize :: Ptr Word8 -> IO Int64
+
+-- | The current snapshot of the autocolor groups (see
+-- @autocolor_lookup.h@ for its layout), and its size; a null pointer if
+-- there's none yet. Only for a single-threaded caller (the wasm backend,
+-- which copies it), and only until it next yields: publishing a new
+-- snapshot frees this one.
+autocolorSnapshot :: AutocolorLookup -> IO (Ptr Word8, Int)
+autocolorSnapshot AutocolorLookup{..} = withForeignPtr autocolorCache $ \dir -> do
+  s <- currentSnapshot dir
+  n <- snapshotSize s
+  pure (s, fromIntegral n)
+
+wrapAddFunction :: (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
+                -> IO (FunPtr (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32))
+#if defined(wasm32_HOST_ARCH)
+-- On WebAssembly, a Haskell function can't be made into a C function
+-- pointer (@foreign import ccall "wrapper"@ fails at run time), so the
+-- directory gets no callback there (see 'newCache').
+wrapAddFunction _ = pure nullFunPtr
+#else
+wrapAddFunction = wrapAddFunction'
+
 foreign import ccall "wrapper"
-  wrapAddFunction :: (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
-                  -> IO (FunPtr (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32))
+  wrapAddFunction' :: (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
+                   -> IO (FunPtr (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32))
+#endif
 
 -- | A snapshot directory, with no snapshot yet (so that every lookup goes
 -- to the function). It's freed, with its current snapshot and the
 -- function's callback, once nothing refers to it -- by then no compiled
 -- code can be using it either, since that only happens inside
 -- 'withForeignPtr'.
+--
+-- On WebAssembly the directory has no callback (see 'wrapAddFunction').
+-- Nothing calls 'autocolorCacheLookup' on wasm yet: only compiled code
+-- does, and the wasm build has just the interpreter, which uses
+-- 'autocolorFunction'. (If something did, @fs_ac_lookup@ would give
+-- magenta for a point it had to ask about. WEB_PLAN.md: compiled wasm code
+-- will queue the points to add instead.)
 newCache :: (AutocolorMode -> Int -> Double -> Double -> IO Color) -> IO (ForeignPtr ())
 newCache f = do
   fp <- wrapAddFunction $ \code n (CDouble x) (CDouble y) ->
     packColor <$> f (modeOf code) (fromIntegral n) x y
   dir <- newDirectory fp
   when (dir == nullPtr) (fail "out of memory for an autocolor directory")
-  FC.newForeignPtr dir (freeDirectory dir >> freeHaskellFunPtr fp)
+  FC.newForeignPtr dir (freeDirectory dir >> when (fp /= nullFunPtr) (freeHaskellFunPtr fp))
 
 packColor :: Color -> Word32
 packColor c = let (r, g, b) = colorToRGB c
@@ -421,8 +457,8 @@ autocolor ag@AutocolorGroup{..} x y = liftIO $ maybeGetAutocolor ag x y >>= \cas
                 unless warned $ do
                   setValue agFullWarned True
                   hPutStrLn stderr ("warning: an autocolor group has " ++ show maxAutocolorEntries
-                                    ++ " points now, so no more will be added; the points \
-                                       \given to autocolor may never repeat")
+                                    ++ " points now, so no more will be added; the points "
+                                    ++ "given to autocolor may never repeat")
               pure (c0, True)
     when added (join (readIORef agAdded))
     pure c0

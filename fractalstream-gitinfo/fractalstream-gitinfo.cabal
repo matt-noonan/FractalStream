@@ -1,0 +1,25 @@
+cabal-version:       3.0
+name:                fractalstream-gitinfo
+version:             2.0.0.0
+synopsis:            What git says about the source, for the WebAssembly build.
+description:         The WebAssembly build's Template Haskell can't run git
+                     (as githash does for the desktop build), so
+                     dev-tools/wasm/build.sh writes the git tag, branch, hash,
+                     and whether the checkout is dirty into this package's
+                     one module, src/FractalStream/GitInfo.hs, before
+                     building. FractalStream.Metadata uses it on wasm only.
+                     The module is generated (and not in git): build with
+                     dev-tools/wasm/build.sh.
+license:             BSD-3-Clause
+author:              Matt Noonan
+maintainer:          matt.noonan@gmail.com
+copyright:           2026, Matt Noonan
+category:            Math
+build-type:          Simple
+
+library
+  exposed-modules:     FractalStream.GitInfo
+  build-depends:       base >=4.8 && <5
+  hs-source-dirs:      src
+  default-language:    Haskell2010
+  ghc-options:         -Wall -Werror
