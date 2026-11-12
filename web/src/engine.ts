@@ -71,6 +71,21 @@ g.fractalstreamPostFile = (name: string, bytes: Uint8Array) => {
   send({ type: "file", name, bytes: bytes.buffer as ArrayBuffer }, [bytes.buffer as ArrayBuffer]);
 };
 
+// A file for the page to save as it is (a picture).
+g.fractalstreamPostDownload = (name: string, bytes: Uint8Array) => {
+  send({ type: "download", name, bytes: bytes.buffer as ArrayBuffer }, [bytes.buffer as ArrayBuffer]);
+};
+
+// A movie's frame (RGB, read out of the engine's memory), as RGBA for the
+// page's encoder.
+g.fractalstreamPostMovieFrame = (index: number, total: number, width: number, height: number, rgb: Uint8Array) => {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0, j = 0; i < rgb.length; i += 3, j += 4) {
+    rgba[j] = rgb[i]; rgba[j + 1] = rgb[i + 1]; rgba[j + 2] = rgb[i + 2]; rgba[j + 3] = 255;
+  }
+  send({ type: "movieFrame", index, total, width, height, pixels: rgba.buffer }, [rgba.buffer]);
+};
+
 // The engine.
 const wasi = new WASI(["fractalstream-web"], [], [
   new OpenFile(new File([])),
@@ -109,6 +124,12 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "record": await engine.fs_record(r.viewer); break;
       case "jump": await engine.fs_jump(r.viewer, r.x, r.y, r.pixelSize); break;
       case "where": await engine.fs_where(r.viewer); break;
+      case "captureImage": await engine.fs_capture_image(r.viewer, r.multiplier, r.smooth); break;
+      case "movieTemplate": await engine.fs_movie_template(r.viewer); break;
+      case "movieCheck": await engine.fs_movie_check(r.id, r.script); break;
+      case "movieStart": await engine.fs_movie_start(r.viewer, r.script, r.frames, r.fps, r.loop, r.smooth, r.drawings); break;
+      case "movieAck": await engine.fs_movie_ack(r.frame); break;
+      case "movieStop": await engine.fs_movie_stop(); break;
       case "autocolorWatch": await engine.fs_autocolor_watch(r.on); break;
       case "autocolorEdit": await engine.fs_autocolor_edit(JSON.stringify(r.edit)); break;
       case "aspect": await engine.fs_aspect(r.viewer, r.text); break;

@@ -8,6 +8,7 @@ import { drawLayers } from "./drawing.js";
 import { ScriptEditor } from "./editor.js";
 import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
 import { Desk, type MenuItem } from "./windows.js";
+import type { Movies } from "./capture.js";
 
 const engine = new Worker(new URL("engine.js", import.meta.url), { type: "module" });
 const send = (r: Request) => engine.postMessage(r);
@@ -392,6 +393,12 @@ let scriptEditor: ScriptEditor | null = null;
 let editorOverlay: HTMLElement | null = null;
 let editorOpen = false;
 let symbolTables: [[string, string][], [string, string][]] | null = null;
+/** Capturing pictures and movies (see capture.ts): loaded the first time
+    it's used, since its video muxer (Mediabunny) is most of its size. */
+const capture = () => import("./capture.js");
+let moviesMade: Promise<Movies> | null = null;
+const movies = () => (moviesMade ??= capture().then((c) => new c.Movies(send, (text, isError) => status(text, isError))));
+
 /** The viewer (by title) whose colorizer was just chosen, if the next
     rebuild is for that (see the "project" message). */
 let colorizerChange: string | null = null;
@@ -1297,6 +1304,12 @@ class ViewerView {
     }
     items.push(
       { kind: "separator" },
+      // (what it shows: a picture, or a movie)
+      { kind: "submenu", label: "Capture", items: () => [
+        { kind: "action", label: "Image…", run: () => void capture().then((c) => c.askImage(this.info.id, send)) },
+        { kind: "action", label: "Movie…", run: () => void movies().then((m) => m.ask(this.info.id, this.info.title)) },
+      ] },
+      { kind: "separator" },
       { kind: "toggle", label: "Show pointer position", on: this.pointerShown,
         toggle: () => this.setPointerShown(!this.pointerShown) },
       { kind: "toggle", label: "Use subpixel smoothing", on: this.info.smooth,
@@ -1487,6 +1500,11 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "where": viewers.get(m.viewer)?.jumpFrom(m.x, m.y, m.pixelSize); break;
     case "aspect": viewers.get(m.viewer)?.aspectAnswered(m.error); break;
     case "tableSummary": tableSummaryWaiting?.(m); tableSummaryWaiting = null; break;
+    case "download": void capture().then((c) => c.saveDownload(m)); break;
+    case "movieTemplate": void movies().then((v) => v.template(m)); break;
+    case "movieCheck": void movies().then((v) => v.checked(m)); break;
+    case "movieFrame": void movies().then((v) => v.frame(m)); break;
+    case "movieDone": void movies().then((v) => v.done(m)); break;
     case "autocolor": autocolorGroups = m.groups; renderAutocolor(); break;
     case "autocolorError": autocolorSay(m.message); break;
     case "colorizerArguments": viewers.get(m.viewer)?.askArguments(m.name, m.fields); break;

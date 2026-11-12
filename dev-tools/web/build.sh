@@ -31,10 +31,12 @@ cp fractalstream-backend-wasm/js/kernel-worker.mjs fractalstream-backend-wasm/js
 # The page and the engine's worker: type-checked by TypeScript, and
 # bundled with their npm packages (CodeMirror, the WASI shim) by esbuild.
 # (drawing.js stands alone too, for dev-tools/web/check-tools.mjs; the
-# worker pool is copied in above.)
+# worker pool is copied in above. Split into chunks, so that what the page
+# loads only when it's used, such as capture.ts and its video muxer, isn't
+# loaded with the page.)
 (cd web && node node_modules/typescript/bin/tsc -p . --noEmit)
 (cd web && node_modules/.bin/esbuild src/main.ts src/engine.ts src/drawing.ts \
-   --bundle --format=esm --target=es2022 --sourcemap --minify-syntax \
+   --bundle --splitting --format=esm --target=es2022 --sourcemap --minify-syntax \
    --external:./worker-pool.mjs --external:./kernel-worker.mjs --outdir=dist --log-level=warning)
 rm -rf "$dist/vendor"
 cp web/index.html web/style.css "$dist/"

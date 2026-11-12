@@ -74,6 +74,21 @@ tables (@tables:@) it was saved with, and is saved with its own.
   @color@), @move@ (a point, @x@ and @y@, to @text@), @delete@ (@x@, @y@),
   @add@ (@text@), @clear@. A point or tolerance that can't be read is said
   so (@autocolorError@), as the desktop's window does.
+* @fs_capture_image(viewer, multiplier, smooth)@: a picture of the viewer,
+  as the desktop's Capture > Image... makes it: its view, at its size (in
+  CSS pixels) times the multiplier, smoothed or not, as a PNG, posted to
+  the page to save (@fractalstreamPostDownload@).
+* Movies, as the desktop's Capture > Movie... makes them from a script:
+  @fs_movie_template(viewer)@ posts a script to start with
+  (@movieTemplate@); @fs_movie_check(id, script)@ posts whether it's
+  one (@movieCheck@, with the id); @fs_movie_start(viewer, script, frames,
+  fps, loop, smooth, drawings)@ records it: each frame, the script runs
+  (with @t@ from 0 to 1) and a copy of the viewer (at its size, made even,
+  as H.264 needs) is rendered and posted (@fractalstreamPostMovieFrame@),
+  no more than two ahead of the page's @fs_movie_ack(frame)@ (the page
+  encodes them); then @movieDone@. @fs_movie_stop()@ stops it. The
+  project's values are put back afterwards, and the viewers don't redraw
+  while it's recorded (the script changes the values every frame).
 * @fs_jump(viewer, x, y, pixelSize)@: go to a view: centered on (x, y)
   (on the sphere, the globe turned to face it), with a pixel this size
   (a CSS pixel's). @fs_where(viewer)@ posts where it is now, so (@where@).
@@ -124,6 +139,9 @@ Messages:
 > { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere" }   (the engine moved the view: a pixel's size in the canvas's pixels)
 > { "type": "where", "viewer", "x", "y", "pixelSize" }
 > { "type": "aspect", "viewer", "error": <why it isn't one> or null }
+> { "type": "movieTemplate", "viewer", "script" }
+> { "type": "movieCheck", "id", "error": { "from", "to", "message" } or null }
+> { "type": "movieDone", "error": <why it failed> or null, "stopped", "issues": <what the script ran into> or null }
 > { "type": "tableSummary", "built": <whether the script builds>, "tables": [ { "name", "size": [ <each dimension> ], "bytes" } ] }
 > { "type": "autocolor", "groups": [ { "id", "locked", "blend", "tolerance": <text>, "miss": <#rrggbb>,
 >   "entries": [ { "x", "y", "point": <text>, "color": <#rrggbb> } ] } ] }
@@ -179,7 +197,7 @@ module Main (main) where
 
 import FractalStream.Prelude
 
-import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, LoadedProject(..), ensembleFields, FieldOwner(..),
+import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, LoadedProject(..), ensembleFields, FieldOwner(..), ensembleCommonDefs,
                        encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables, TableSummary(..), summarizeTables)
@@ -207,6 +225,13 @@ import Actor.Autocolor (AutocolorGroup(..), AutocolorGroupId(..), autocolorGroup
                         clearAutocolorGroup)
 import Data.Color (Color, rgbToColor)
 import Data.Char (isHexDigit, digitToInt)
+import Actor.Movie (MovieSettings(..), defaultMovieSettings, movieFrameTimes, scriptAnimation, checkMovieScript,
+                    movieScriptTemplate, complexVariables, withFieldsRestored, renderViewerImage)
+import Actor.Viewer (cloneViewer, withRenderedViewerBuffer, describeViewerIssues)
+import Language.Code.Parser (noCommonDefs)
+import Data.PNG (bufferToPng)
+import Codec.Picture (Image(..))
+import qualified Data.Vector.Storable as VS
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
 import Actor.Ensemble (buildToolContext, buildEnsembleWithColorizers, carryOverProjectState)
@@ -258,6 +283,18 @@ foreign import javascript unsafe
   "globalThis.fractalstreamPostPatch($1, $2, $3, $4, $5, $6, $7, $8, new Uint8Array(__exports.memory.buffer, $9, 3 * $3 * $4), new Int32Array(__exports.memory.buffer, $10, 4 * $11).slice(), $12)"
   postPatch :: Int -> Int -> Int -> Int -> Double -> Double -> Double -> Double
             -> Ptr Word8 -> Ptr Int32 -> Int -> Bool -> IO ()
+
+-- | A file for the page to save as it is (a picture): its name, and its
+-- contents.
+foreign import javascript unsafe
+  "globalThis.fractalstreamPostDownload($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice())"
+  postDownload :: JSString -> Ptr Word8 -> Int -> IO ()
+
+-- | A movie's frame: its number (from 1), how many there are, its width
+-- and height, and its RGB pixels.
+foreign import javascript unsafe
+  "globalThis.fractalstreamPostMovieFrame($1, $2, $3, $4, new Uint8Array(__exports.memory.buffer, $5, 3 * $3 * $4))"
+  postMovieFrame :: Int -> Int -> Int -> Int -> Ptr Word8 -> IO ()
 
 -- | A saved project file: its name, and its contents.
 foreign import javascript unsafe
@@ -434,6 +471,12 @@ foreign export javascript "fs_viewer_smoothing" setViewerSmoothing :: Int -> Boo
 foreign export javascript "fs_navigate" navigateTo :: Int -> Int -> IO ()
 foreign export javascript "fs_record" record :: Int -> IO ()
 foreign export javascript "fs_jump" jump :: Int -> Double -> Double -> Double -> IO ()
+foreign export javascript "fs_capture_image" captureImage :: Int -> Double -> Bool -> IO ()
+foreign export javascript "fs_movie_template" movieTemplate :: Int -> IO ()
+foreign export javascript "fs_movie_check" movieCheck :: Int -> JSString -> IO ()
+foreign export javascript "fs_movie_start" movieStart :: Int -> JSString -> Int -> Int -> Bool -> Bool -> Bool -> IO ()
+foreign export javascript "fs_movie_ack" movieAck :: Int -> IO ()
+foreign export javascript "fs_movie_stop" movieStop :: IO ()
 foreign export javascript "fs_autocolor_watch" autocolorWatch :: Bool -> IO ()
 foreign export javascript "fs_autocolor_edit" autocolorEdit :: JSString -> IO ()
 foreign export javascript "fs_aspect" setAspect :: Int -> JSString -> IO ()
@@ -719,6 +762,10 @@ renderHold = 0.1
 renderLoop :: ViewerState -> IO ()
 renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = forever $ do
   takeMVar signal
+  -- (while a movie's recorded, the viewers wait: its script changes the
+  -- values every frame, and the values are put back afterwards)
+  let whileRecording = readIORef recordingRef >>= \r -> when r (threadDelay 50000 >> whileRecording)
+  whileRecording
   smooth <- readIORef (vsSmooth vs)
   -- (the viewer's code sees a CSS pixel's size, as tools do: see 'densityRef')
   density <- readIORef densityRef
@@ -1019,6 +1066,122 @@ autocolorEdit edit = guarded $ readIORef sessionRef >>= mapM_ (\Session{..} -> d
       let byte k = fromIntegral (digitToInt (h !! (2 * k)) * 16 + digitToInt (h !! (2 * k + 1)))
       in Just (rgbToColor (byte 0, byte 1, byte 2))
     readHex _ = Nothing
+
+------------------------------------------------------------------------
+-- Capturing pictures and movies
+
+-- | A copy of a viewer at its size in CSS pixels, times @scale@ (made even
+-- each way, if @makeEven@), showing the same view.
+scaledCopy :: Viewer -> Double -> Bool -> IO Viewer
+scaledCopy viewer scale makeEven = do
+  d <- readIORef densityRef
+  vi <- cloneViewer viewer
+  Dimensions (w, h) <- getDynamic (vSize vi)
+  px <- getDynamic (vPixelSize vi)
+  let sized n = let x = max 1 (round (fromIntegral n / d * scale)) :: Int
+                in if makeEven then max 2 (2 * (x `div` 2)) else x
+      (nw, nh) = (sized w, sized h)
+  setValue (vSize vi) (Dimensions (nw, nh))
+  setValue (vPixelSize vi) (px * fromIntegral w / fromIntegral nw)
+  pure vi
+
+-- | A viewer's title, made fit to name a file with.
+fileTitle :: Viewer -> IO String
+fileTitle v = map (\c -> if c `elem` ("/\\:*?\"<>|" :: String) then '-' else c) <$> getDynamic (vTitle v)
+
+captureImage :: Int -> Double -> Bool -> IO ()
+captureImage k multiplier smooth = withViewerState k $ \vs -> do
+  vi <- scaledCopy (vsViewer vs) (max 0.01 multiplier) False
+  name <- fileTitle (vsViewer vs)
+  withRenderedViewerBuffer vi smooth (\_ (w, h) buf -> bufferToPng (w, h) buf) >>= \case
+    Left err -> postError ("Couldn't draw the picture: " ++ err)
+    Right (_, png) -> BS.useAsCStringLen (LBS.toStrict png) $ \(p, n) ->
+      postDownload (toJSString (name ++ ".png")) (castPtr p) n
+
+-- | A movie's script to start with, as the desktop's: moving the first
+-- complex variable around a small circle, from where it is now.
+movieTemplate :: Int -> IO ()
+movieTemplate k = guarded $ readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  fields <- ensembleFields sEnsemble
+  script <- case complexVariables sContext of
+    [] -> pure (movieScriptTemplate ["pass"])
+    var : _ -> do
+      current <- case [ f | (ProjectConfig, f) <- fields, fieldName f == var ] of
+        f : _ -> fieldText f
+        [] -> pure var
+      pure (movieScriptTemplate [var ++ " <- (" ++ current ++ ") + 0.05 e^(2 pi i t)"])
+  post $ Aeson.object [ "type" .= ("movieTemplate" :: Text.Text), "viewer" .= k, "script" .= script ])
+
+movieCheck :: Int -> JSString -> IO ()
+movieCheck reqId txt = guarded $ readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  let src = fromJSString txt
+  defs <- either (const noCommonDefs) id <$> ensembleCommonDefs sEnsemble
+  post $ Aeson.object
+    [ "type" .= ("movieCheck" :: Text.Text), "id" .= reqId
+    , "error" .= either (Just . errorJSON src) (const Nothing) (checkMovieScript defs sContext src) ])
+
+-- | Whether a movie's being recorded (the viewers don't redraw meanwhile),
+-- whether it's to stop, and the last frame the page has encoded.
+recordingRef :: IORef Bool
+recordingRef = unsafePerformIO (newIORef False)
+{-# NOINLINE recordingRef #-}
+
+movieStopRef :: IORef Bool
+movieStopRef = unsafePerformIO (newIORef False)
+{-# NOINLINE movieStopRef #-}
+
+movieAckRef :: MVar Int
+movieAckRef = unsafePerformIO (newMVar 0)
+{-# NOINLINE movieAckRef #-}
+
+movieStart :: Int -> JSString -> Int -> Int -> Bool -> Bool -> Bool -> IO ()
+movieStart k txt frames fps loop smooth drawings = withViewerState k $ \vs -> readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  let done (e :: Maybe String) stopped (issues :: Maybe String) = post $ Aeson.object
+        [ "type" .= ("movieDone" :: Text.Text), "error" .= e, "stopped" .= stopped, "issues" .= issues ]
+      settings = defaultMovieSettings { msFrames = max 1 frames, msFps = max 1 fps, msLoop = loop
+                                      , msSmooth = smooth, msWithDrawings = drawings }
+      times = movieFrameTimes settings
+  defs <- ensembleCommonDefs sEnsemble
+  animation <- either (pure . Left) (\ds -> scriptAnimation ds sContext (fromJSString txt)) defs
+  case animation of
+    Left err -> done (Just err) False Nothing
+    Right animate -> void $ forkIO $ do
+      fields <- map snd . filter ((== ProjectConfig) . fst) <$> ensembleFields sEnsemble
+      vi <- scaledCopy (vsViewer vs) 1 True
+      writeIORef movieStopRef False
+      void (swapMVar movieAckRef 0)
+      writeIORef recordingRef True
+      result <- try $ withFieldsRestored fields $
+        foldM (\acc (i, t) -> case acc of
+          Left stopped -> pure (Left stopped)
+          Right issues -> readIORef movieStopRef >>= \case
+            True -> pure (Left True)
+            False -> do
+              -- (no more than two frames ahead of the page's encoder)
+              let waitForPage = do
+                    acked <- readMVar movieAckRef
+                    stop <- readIORef movieStopRef
+                    when (acked < i - 2 && not stop) (threadDelay 5000 >> waitForPage)
+              waitForPage
+              animate t
+              renderViewerImage smooth drawings vi >>= \case
+                Left err -> throwIO (userError err)
+                Right (frameIssues, img) -> do
+                  VS.unsafeWith (imageData img) $ \p ->
+                    postMovieFrame i (length times) (imageWidth img) (imageHeight img) (castPtr p)
+                  pure (Right (issues <> frameIssues)))
+          (Right mempty) (zip [1 ..] times)
+      writeIORef recordingRef False
+      case result of
+        Left (e :: SomeException) -> done (Just (displayException e)) False Nothing
+        Right (Left _) -> done Nothing True Nothing
+        Right (Right issues) -> done Nothing False (describeViewerIssues issues))
+
+movieAck :: Int -> IO ()
+movieAck i = guarded (void (swapMVar movieAckRef i))
+
+movieStop :: IO ()
+movieStop = guarded (writeIORef movieStopRef True)
 
 -- | Where a viewer is: the point in the middle of its view (on the
 -- sphere, the one the globe faces), and a CSS pixel's size.
