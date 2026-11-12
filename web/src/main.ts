@@ -15,6 +15,7 @@ const send = (r: Request) => engine.postMessage(r);
 const libraryEl = document.getElementById("library")!;
 const projectEl = document.getElementById("project")!;
 const statusEl = document.getElementById("status")!;
+const noticesEl = document.getElementById("notices")!;
 const openButton = document.getElementById("open") as HTMLButtonElement;
 const saveButton = document.getElementById("save") as HTMLButtonElement;
 const saveAsButton = document.getElementById("save-as") as HTMLButtonElement;
@@ -56,10 +57,41 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
   return e;
 }
 
+/** What's happening, in the status line; an error is a notice instead
+    (and the status line's cleared). */
 function status(text: string, isError = false) {
+  if (isError) {
+    statusEl.textContent = "";
+    notice(text, "error");
+    return;
+  }
   statusEl.textContent = text;
-  statusEl.classList.toggle("error", isError);
 }
+
+/** A notice under the toolbar, until it's dismissed (or one of its
+    buttons is pressed): an error, or something to know or decide. The
+    newest is on top; only the latest few are kept. */
+function notice(text: string, kind: "error" | "info",
+                actions: { label: string; run: () => void }[] = []): HTMLElement {
+  const dismiss = el("button", { type: "button", className: "notice-dismiss", textContent: "×", title: "Dismiss" });
+  dismiss.setAttribute("aria-label", "Dismiss");
+  const n = el("div", { className: `notice ${kind}` }, el("div", { className: "notice-text", textContent: text }));
+  n.setAttribute("role", kind === "error" ? "alert" : "status");
+  if (actions.length) {
+    n.append(el("div", { className: "notice-actions" }, ...actions.map((a) => {
+      const b = el("button", { type: "button", textContent: a.label });
+      b.addEventListener("click", () => { n.remove(); a.run(); });
+      return b;
+    })));
+  }
+  n.append(dismiss);
+  dismiss.addEventListener("click", () => n.remove());
+  noticesEl.prepend(n);
+  while (noticesEl.children.length > 4) noticesEl.lastElementChild!.remove();
+  return n;
+}
+
+function clearNotices() { noticesEl.replaceChildren(); }
 
 // ---------------------------------------------------------------------
 // The library
@@ -196,7 +228,9 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
     const v = new ViewerView(info, place.width, place.height, saved ?? null);
     viewers.set(info.id, v);
     const win = desk.add({ title: info.title, ...place, content: v.element, minimized: saved?.minimized,
-                           onResize: (width, height) => v.resize(width, height) });
+                           onResize: (width, height) => v.resize(width, height),
+                           menu: [{ label: "Show pointer position", on: () => v.pointerShown,
+                                    toggle: () => v.setPointerShown(!v.pointerShown) }] });
     win.addEventListener("pointerdown", () => activate(v), { capture: true });
     v.window = win;
     windows.push({ title: info.title, view: v, window: win });
@@ -512,6 +546,13 @@ class ViewerView {
       behind the pointer). */
   private events: Extract<Request, { type: "event" }>[] = [];
   private eventSent = 0;
+  /** "Show pointer position": the readout (hidden unless it's on), and
+      the pointer's latest screen-plane point, waiting to be asked about
+      (one question at a time, as for tool events: the engine knows where
+      a point of the globe is). */
+  private readonly pointerEl: HTMLElement;
+  private pointerAsked = 0;
+  private pointerNext: [number, number] | null = null;
 
   constructor(readonly info: ViewerInfo, width: number, height: number,
               private readonly saved: { cx: number; cy: number; "pixel-size": number } | null) {
@@ -519,13 +560,14 @@ class ViewerView {
     this.context = this.canvas.getContext("2d")!;
     this.errorEl = el("div", { className: "viewer-error", hidden: true });
     this.runEl = el("div", { className: "viewer-running", hidden: true, role: "status" });
-    this.element = el("div", { className: "viewer" }, this.canvas, this.errorEl, this.runEl);
+    this.pointerEl = el("div", { className: "viewer-pointer", hidden: true, textContent: "…" });
+    this.element = el("div", { className: "viewer" }, this.canvas, this.errorEl, this.runEl, this.pointerEl);
     this.setSize(width, height);
     // (focusable, and focused when it's clicked: so the keyboard's for the
     // tool shortcuts again, after typing in the script editor)
     this.canvas.tabIndex = -1;
     this.canvas.addEventListener("pointerdown", (e) => { this.canvas.focus({ preventScroll: true }); this.startDrag(e); });
-    this.canvas.addEventListener("pointermove", (e) => this.moveDrag(e));
+    this.canvas.addEventListener("pointermove", (e) => { this.moveDrag(e); this.trackPointer(e); });
     this.canvas.addEventListener("pointerup", (e) => this.endDrag(e));
     this.canvas.addEventListener("pointercancel", () => { this.dragFrom = null; this.press = null; });
     this.canvas.addEventListener("dblclick", (e) => {
@@ -586,6 +628,37 @@ class ViewerView {
   showDrawing(layers: Shape[][]) {
     this.layers = layers;
     this.redraw();
+  }
+
+  get pointerShown() { return !this.pointerEl.hidden; }
+
+  setPointerShown(on: boolean) {
+    this.pointerEl.hidden = !on;
+  }
+
+  /** Where the pointer is, for the readout (if it's shown). */
+  private trackPointer(e: PointerEvent) {
+    if (this.pointerEl.hidden || !this.target) return;
+    const p = this.pixel(e);
+    this.pointerNext = this.info.sphere ? this.onScreen(p) : this.toPlane(p);
+    this.askPointer();
+  }
+
+  private askPointer() {
+    // (if an answer never came, go on after a while)
+    if (this.pointerAsked && performance.now() - this.pointerAsked < 2000) return;
+    const next = this.pointerNext;
+    if (!next) return;
+    this.pointerNext = null;
+    this.pointerAsked = performance.now();
+    send({ type: "pointer", viewer: this.info.id, x: next[0], y: next[1] });
+  }
+
+  /** The engine's answer: what the readout shows. */
+  showPointer(text: string) {
+    this.pointerEl.textContent = text;
+    this.pointerAsked = 0;
+    this.askPointer();
   }
 
   /** The engine handled the last pointer event. */
@@ -855,7 +928,9 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       if (m.rebuilt) {
         // (the same project, built again from its edited script: its
         // windows stay as they were, and so does the editor)
-        const views = viewState();
+        // (and, for one whose script hadn't built, so had no windows yet,
+        // where its file had them)
+        const views = { viewers: { ...m.views?.viewers, ...viewState().viewers } };
         showProject(m.title, m.panel, m.viewers, views);
         scriptEditor?.projectScript(m.script, true);
         // (it worked: the editor's done its job)
@@ -863,8 +938,11 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
         status("Rebuilt.");
         break;
       }
-      current = { fileName: m.fileName, library: m.library, handle: m.library ? null : opening };
+      // (a new project has no file of its own yet: not even the one it
+      // was translated from)
+      current = { fileName: m.fileName, library: m.library, handle: m.library || m.new ? null : opening };
       opening = null;
+      clearNotices();
       showFileName();
       // (a new project: a new script, and no editor until it's asked for)
       projectScript = m.script;
@@ -873,7 +951,20 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       showProject(m.title, m.panel, m.viewers, m.views);
       scriptButton.disabled = false;
       scriptButton.setAttribute("aria-pressed", "false");
+      if (m.notes.length) notice(`Translation notes:\n${m.notes.map((n) => `• ${n}`).join("\n")}`, "info");
+      if (m.edit) {
+        showEditor();
+        if (m.viewers.length === 0) status("Its script doesn't build yet: fix it, then Rebuild.");
+      }
       break;
+    case "ancient":
+      status("");
+      opening = null;
+      notice(`“${m.name}” looks like a file from an old version of FractalStream (1.0). ` +
+             `Translate it into a new project? (The old file is left as it is.)`, "info",
+             [{ label: "Translate", run: () => { status(`Translating ${m.name}…`); send({ type: "translate" }); } }]);
+      break;
+    case "pointer": viewers.get(m.viewer)?.showPointer(m.text); break;
     case "analysis": scriptEditor?.analysis(m.id, m); break;
     case "symbols": symbolTables = [m.names, m.accents]; scriptEditor?.setSymbols(m.names, m.accents); break;
     case "rebuildError": scriptEditor?.rebuildFailed(m.error); break;

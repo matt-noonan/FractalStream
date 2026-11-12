@@ -30,6 +30,7 @@ module Actor.Viewer
   , RenderedBuffer(..)
   , renderViewerBuffer
   , renderViewerBufferAt
+  , pointerText
   , viewProjection
   , switchView
   , centerViewOn
@@ -80,6 +81,7 @@ import Foreign
 import Data.PNG
 import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Rotation, Projection(..), ScreenView(..), rotationFacing, rotateBy, sphereToPlane)
 import qualified Data.Map as Map
+import Text.Printf (printf)
 
 data ViewerContext env = ViewerContext
   { vcContext :: Context DynamicValue env
@@ -319,6 +321,22 @@ data RenderedBuffer = RenderedBuffer
 -- "Actor.Autocolor").
 renderViewerBuffer :: Bool -> Viewer -> IO (Either String RenderedBuffer)
 renderViewerBuffer = renderViewerBufferAt 1
+
+-- | The point under the pointer, as a viewer's "Show pointer position"
+-- shows it: a complex number, or a real viewer's pair of reals, to 14
+-- places (lined up, whatever the sign); "…" off the model (as off the
+-- globe).
+pointerText :: Coordinate -> Maybe (Double, Double) -> String
+pointerText coord = \case
+  Nothing -> "…"
+  Just xy@(x, _) -> let txt = shown xy in if x < 0 then txt else ' ' : txt
+  where
+    shown :: (Double, Double) -> String
+    shown (x, y) = case coord of
+      RealCoordinates{} -> printf "(%.14f, %.14f)" x y
+      ComplexCoordinate{}
+        | y < 0     -> printf "%.14f - %.14f𝑖" x (negate y)
+        | otherwise -> printf "%.14f + %.14f𝑖" x y
 
 -- | 'renderViewerBuffer', for a viewer whose pixels are a fraction of the
 -- screen's (logical) pixels: @scale@ of them make one, which is what the

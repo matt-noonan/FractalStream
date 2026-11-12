@@ -1,7 +1,8 @@
 // Basic window management: a desk of windows, each with a title bar to
 // drag it by and a corner to resize it from; clicking one brings it to the
 // front. A window can be minimized to just its title bar (and back), by
-// double-clicking the title bar, or with its button there.
+// double-clicking the title bar, or with its button there. A window can
+// have a menu of options (☰, in its title bar), each one on or off.
 
 export interface WindowOptions {
   title: string;
@@ -15,6 +16,14 @@ export interface WindowOptions {
   onResize?: (width: number, height: number) => void;
   /** Whether it starts minimized. */
   minimized?: boolean;
+  /** Its menu's options: each one on or off, toggled by choosing it. */
+  menu?: MenuOption[];
+}
+
+export interface MenuOption {
+  label: string;
+  on: () => boolean;
+  toggle: () => void;
 }
 
 const MIN_SIZE = 80;
@@ -35,7 +44,9 @@ export class Desk {
     const label = Object.assign(document.createElement("span"), { className: "window-label", textContent: options.title });
     const minimize = Object.assign(document.createElement("button"), { type: "button", className: "window-minimize" });
     const title = Object.assign(document.createElement("div"), { className: "window-title" });
-    title.append(label, minimize);
+    title.append(label);
+    if (options.menu?.length) title.append(menuButton(options.menu));
+    title.append(minimize);
     const body = Object.assign(document.createElement("div"), { className: "window-body" });
     const grip = Object.assign(document.createElement("div"), { className: "window-grip", title: "Resize" });
     body.append(options.content);
@@ -110,4 +121,45 @@ function drag<S>(handle: HTMLElement, move: (dx: number, dy: number, start: S) =
     handle.addEventListener("pointerup", onUp);
     handle.addEventListener("pointercancel", onUp);
   });
+}
+
+/** A window's ☰ button, and the menu of options it opens (closed by
+    choosing one, by clicking elsewhere, or with Escape). */
+function menuButton(options: MenuOption[]): HTMLElement {
+  const button = Object.assign(document.createElement("button"), {
+    type: "button", className: "window-menu-button", textContent: "☰", title: "Options" });
+  button.setAttribute("aria-label", "Options");
+  button.setAttribute("aria-haspopup", "menu");
+  const wrap = Object.assign(document.createElement("span"), { className: "window-menu-wrap" });
+  wrap.append(button);
+  let menu: HTMLElement | null = null;
+  const close = () => {
+    menu?.remove();
+    menu = null;
+    button.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", outside, { capture: true });
+    document.removeEventListener("keydown", escape);
+  };
+  const outside = (e: Event) => { if (!wrap.contains(e.target as Node)) close(); };
+  const escape = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+  const open = () => {
+    menu = Object.assign(document.createElement("div"), { className: "window-menu" });
+    menu.setAttribute("role", "menu");
+    for (const o of options) {
+      const item = Object.assign(document.createElement("button"), { type: "button", textContent: o.label });
+      item.setAttribute("role", "menuitemcheckbox");
+      item.setAttribute("aria-checked", String(o.on()));
+      item.addEventListener("click", () => { o.toggle(); close(); });
+      menu.append(item);
+    }
+    wrap.append(menu);
+    button.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", outside, { capture: true });
+    document.addEventListener("keydown", escape);
+  };
+  // (not a drag of the title bar, nor a double click on it)
+  wrap.addEventListener("pointerdown", (e) => e.stopPropagation());
+  wrap.addEventListener("dblclick", (e) => e.stopPropagation());
+  button.addEventListener("click", () => (menu ? close() : open()));
+  return wrap;
 }

@@ -8,8 +8,21 @@ worker (@web/src/engine.ts@). The worker calls these exports:
 
 * @fs_library()@: post the built-in library.
 * @fs_open(section, entry)@: build that project; post its panel and
-  viewers, then each viewer's frames as they're rendered.
+  viewers, then each viewer's frames as they're rendered. A starting
+  point (in the library's "Starting points") opens as a new, untitled
+  project, without the starting point's title and description, and with
+  its script editor open, as on the desktop.
 * @fs_open_file(name, bytes)@: the same, for a project file's contents.
+  A project whose script doesn't build still opens, with no viewers, for
+  its script to be fixed (@"edit"@), as on the desktop. An old
+  FractalStream 1.0 save file isn't opened: the engine says so
+  (@ancient@), and keeps it for @fs_translate@.
+* @fs_translate()@: translate that old file into a new project (with no
+  file of its own yet), and open it, with its script editor and the
+  translation's notes.
+* @fs_pointer(viewer, x, y)@: what the viewer's "Show pointer position"
+  shows for a screen-plane point (as for @fs_event@): posted as
+  @pointer@.
 * @fs_save(views)@: post the open project as a file (its script, changed
   values, and so on, as the desktop app saves it), with the page's view
   state (JSON: see "web-properties" below).
@@ -65,7 +78,9 @@ contents), which the worker forwards to the page.
 Messages:
 
 > { "type": "library", "sections": [ { "name", "entries": [ { "title", "description", "preview" } ] } ] }
-> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
+> { "type": "pointer", "viewer", "text" }
 > { "type": "field", "key", "error": <message> or null, "color": <#rrggbb, for a color field> }
 > { "type": "fieldText", "key", "text", "color": <as above> }   (a tool's handler changed it)
 
@@ -96,15 +111,18 @@ module Main (main) where
 
 import FractalStream.Prelude
 
-import Actor.Ensemble (Ensemble(..), runEnsemble, parseEnsembleFromBytes, ensembleFields, FieldOwner(..),
+import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, LoadedProject(..), ensembleFields, FieldOwner(..),
                        encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables)
 import qualified Data.Aeson.KeyMap as KM
-import Actor.Metadata (ProjectMetadata(..))
+import Actor.Metadata (ProjectMetadata(..), noMetadata)
+import Language.Legacy.Binary (mightBeAncientFS, decodeAncientFS)
+import Language.Legacy.Translate (Translation(..), translateLegacyScript)
 import Actor.Layout
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBufferAt, onParameterChanges, viewProjection)
+import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBufferAt, onParameterChanges, viewProjection,
+                     pointerText)
 import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
 import Actor.Viewer.Sphere (trackballRotation, screenToPlane)
@@ -138,6 +156,7 @@ import Foreign.Ptr (Ptr, castPtr)
 import GHC.Wasm.Prim (JSString(..), JSVal, toJSString, fromJSString)
 import System.FilePath (takeBaseName)
 import System.IO.Unsafe (unsafePerformIO)
+import System.IO.Error (isUserError, ioeGetErrorString)
 
 ------------------------------------------------------------------------
 -- Talking to the page
@@ -172,7 +191,10 @@ postError msg = post (Aeson.object [ "type" .= ("error" :: Text.Text), "message"
 -- | Run an export's work, posting any exception as an error.
 guarded :: IO () -> IO ()
 guarded act = try act >>= \case
-  Left (e :: SomeException) -> postError (displayException e)
+  -- (a 'fail' says its message, without "user error (...)" around it)
+  Left (e :: SomeException)
+    | Just io <- fromException e, isUserError io -> postError (ioeGetErrorString io)
+    | otherwise -> postError (displayException e)
   Right () -> pure ()
 
 ------------------------------------------------------------------------
@@ -189,9 +211,21 @@ data Session = Session
     -- ^ each color field's value, as #rrggbb
   , sStop :: IO ()
   , sTitle :: String
-  , sLibrary :: Bool
-    -- ^ (its title, and whether it's from the library: for a rebuild)
+  , sOpening :: Opening
+    -- ^ (its title, and how it was opened: for a rebuild)
   }
+
+-- | How a project was opened: from a file, from the library (or one of
+-- its starting points, as a new project), or as the translation of an old
+-- FractalStream file (with the translation's notes).
+data Opening = FromFile | FromLibrary | FromStartingPoint | Translated [String]
+  deriving Eq
+
+-- | An old FractalStream file, waiting for @fs_translate@: its name and
+-- contents.
+ancientRef :: IORef (Maybe (String, BS.ByteString))
+ancientRef = unsafePerformIO (newIORef Nothing)
+{-# NOINLINE ancientRef #-}
 
 -- | A viewer: its render loop's request signal, and its tool (if one's
 -- selected).
@@ -276,6 +310,8 @@ getBackend = readIORef backendRef >>= \case
 foreign export javascript "fs_library" library :: IO ()
 foreign export javascript "fs_open" open :: Int -> Int -> IO ()
 foreign export javascript "fs_open_file" openFile :: JSString -> JSVal -> IO ()
+foreign export javascript "fs_translate" translateAncient :: IO ()
+foreign export javascript "fs_pointer" pointer :: Int -> Double -> Double -> IO ()
 foreign export javascript "fs_save" save :: JSString -> IO ()
 foreign export javascript "fs_rotate" rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
@@ -317,17 +353,50 @@ open section entry = guarded $ do
   LibraryEntry{..} <- case drop section librarySections of
     s : _ | e : _ <- drop entry (lsEntries s) -> pure e
     _ -> fail "no such project"
-  openProject True leTitle leFileName leContents
+  if leStartingPoint
+    then openProject FromStartingPoint "Untitled" "Untitled.fs" leContents
+    else openProject FromLibrary leTitle leFileName leContents
 
 openFile :: JSString -> JSVal -> IO ()
 openFile name bytes = guarded $ do
   n <- byteLength bytes
   contents <- allocaBytes (max 1 n) $ \p -> copyBytes bytes p >> BS.packCStringLen (castPtr p, n)
   let fileName = fromJSString name
-  -- (the project's title, if its metadata gives one; else its file's name)
-  let title = either (const (takeBaseName fileName)) (fromMaybe (takeBaseName fileName) . mdTitle)
-                     (readProjectMetadata contents)
-  openProject False title fileName contents
+  if mightBeAncientFS contents
+    then do
+      -- (the page asks whether to translate it)
+      writeIORef ancientRef (Just (fileName, contents))
+      post (Aeson.object [ "type" .= ("ancient" :: Text.Text), "name" .= fileName ])
+    else openProject FromFile (titleOf fileName contents) fileName contents
+
+-- | A project's title: its metadata's, if it has one; else its file's name.
+titleOf :: String -> BS.ByteString -> String
+titleOf fileName contents =
+  either (const (takeBaseName fileName)) (fromMaybe (takeBaseName fileName) . mdTitle)
+         (readProjectMetadata contents)
+
+-- | Translate the old FractalStream file the page was told about, and open
+-- the translation, as the desktop app does: as a new project (so saving
+-- it doesn't write over the old file), with its script editor open, and
+-- the translation's notes.
+translateAncient :: IO ()
+translateAncient = guarded $ readIORef ancientRef >>= \case
+  Nothing -> postError "there's no old FractalStream file to translate"
+  Just (fileName, contents) -> do
+    writeIORef ancientRef Nothing
+    (title, body) <- either (\err -> fail ("I was not able to decode " ++ show fileName ++ ". " ++ err)) pure
+                       (decodeAncientFS contents)
+    Translation{..} <- either fail pure (translateLegacyScript title body)
+    let translated = Text.encodeUtf8 (Text.pack translatedProject)
+        newName = takeBaseName fileName ++ ".fs"
+    openProject (Translated translationWarnings) (titleOf newName translated) newName translated
+
+-- | What "Show pointer position" shows for a screen-plane point.
+pointer :: Int -> Double -> Double -> IO ()
+pointer k x y = withViewerState k $ \vs -> do
+  p <- toModel (vsViewer vs) (x, y)
+  post $ Aeson.object [ "type" .= ("pointer" :: Text.Text), "viewer" .= k
+                      , "text" .= pointerText (vCoordinate (vsViewer vs)) p ]
 
 save :: JSString -> IO ()
 save views = guarded $ readIORef sessionRef >>= \case
@@ -347,25 +416,37 @@ save views = guarded $ readIORef sessionRef >>= \case
     BS.useAsCStringLen contents $ \(p, n) -> postFile (toJSString sFileName) (castPtr p) n
 
 -- | Build a project from a file's contents, and start showing it.
-openProject :: Bool -> String -> String -> BS.ByteString -> IO ()
-openProject fromLibrary projectTitle fileName contents = do
-  ensemble <- parseEnsembleFromBytes fileName contents >>= either fail pure
+--
+-- A project whose script doesn't build still opens, as the desktop app
+-- does: with no viewers, and its script editor open, to fix it; its
+-- viewers come, with their saved values, tables and windows, when it's
+-- rebuilt ('carryOverProjectState' puts them in place).
+openProject :: Opening -> String -> String -> BS.ByteString -> IO ()
+openProject how projectTitle fileName contents = do
+  ensemble <- loadProjectBytes fileName contents >>= \case
+    Left err -> fail err
+    Right (Built ens) -> pure ens
+    Right (BrokenScript ens _) -> pure ens
+  -- (a starting point's title, description and preview are its own, not
+  -- the new project's)
+  when (how == FromStartingPoint) $ setValue' (ensembleMetadata ensemble) noMetadata
   -- The values and tables it was saved with, before anything is drawn
   -- (any that no longer fit are skipped, and said so on the console).
-  props <- getDynamic (ensembleFrontendProperties ensemble)
-  either (\err -> putStrLn ("Ignoring unreadable `values:`: " ++ err))
-         (applySavedValues ensemble >=> mapM_ putStrLn) (readSavedValues props)
-  either (\err -> putStrLn ("Ignoring unreadable `tables:`: " ++ err))
-         (\saved -> ensembleTables ensemble >>= \ts -> applySavedTables ts saved >>= mapM_ putStrLn)
-         (readSavedTables props)
-  startProject fromLibrary projectTitle fileName False Map.empty ensemble
+  when (ensembleBuilt ensemble) $ do
+    props <- getDynamic (ensembleFrontendProperties ensemble)
+    either (\err -> putStrLn ("Ignoring unreadable `values:`: " ++ err))
+           (applySavedValues ensemble >=> mapM_ putStrLn) (readSavedValues props)
+    either (\err -> putStrLn ("Ignoring unreadable `tables:`: " ++ err))
+           (\saved -> ensembleTables ensemble >>= \ts -> applySavedTables ts saved >>= mapM_ putStrLn)
+           (readSavedTables props)
+  startProject how projectTitle fileName False Map.empty ensemble
 
 -- | Show a project, in place of the open one (if any): run it, and post
 -- its panel and viewers. On a rebuild (from an edited script), each
 -- viewer the new project still has (by its title) gets the tool it had,
 -- if it still has one by that name (or none, if it had none).
-startProject :: Bool -> String -> String -> Bool -> Map.Map String (Maybe String) -> Ensemble -> IO ()
-startProject fromLibrary projectTitle fileName rebuilt toolsBefore ensemble = do
+startProject :: Opening -> String -> String -> Bool -> Map.Map String (Maybe String) -> Ensemble -> IO ()
+startProject how projectTitle fileName rebuilt toolsBefore ensemble = do
   close
   backend <- getBackend
 
@@ -381,7 +462,8 @@ startProject fromLibrary projectTitle fileName rebuilt toolsBefore ensemble = do
             writeIORef contextRef ctx
             pure (pure ())
         }
-  runEnsemble backend ui ensemble
+  -- (a script that doesn't build has nothing to run yet)
+  when (ensembleBuilt ensemble) $ runEnsemble backend ui ensemble
   viewers <- zip [0 ..] . reverse <$> readIORef viewersRef
 
   -- A render loop for each viewer: it renders whenever asked (once for
@@ -412,7 +494,7 @@ startProject fromLibrary projectTitle fileName rebuilt toolsBefore ensemble = do
     pure (Aeson.object [ "kind" .= ("panel" :: Text.Text), "title" .= title, "body" .= body ]))
   colors <- readIORef colorsRef
   writeIORef sessionRef (Just (Session (Map.fromList (map fst loops)) context ensemble fileName colors stop
-                                       projectTitle fromLibrary))
+                                       projectTitle how))
   viewerInfo <- forM viewers $ \(k, viewer) -> do
     title <- getDynamic (vTitle viewer)
     Dimensions (w, h) <- getDynamic (vSize viewer)
@@ -425,13 +507,18 @@ startProject fromLibrary projectTitle fileName rebuilt toolsBefore ensemble = do
       pure (Aeson.object [ "name" .= name, "shortcut" .= shortcut, "help" .= help ]))
     pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere
                        , "tools" .= tools ])
+  let translated = case how of Translated _ -> True; _ -> False
   views <- KM.lookup "web-properties" <$> getDynamic (ensembleFrontendProperties ensemble)
   script <- getDynamic (ensembleSourceScript ensemble)
   post $ Aeson.object
     [ "type" .= ("project" :: Text.Text)
     , "title" .= projectTitle
     , "fileName" .= fileName
-    , "library" .= fromLibrary
+    , "library" .= (how == FromLibrary)
+    , "new" .= (how == FromStartingPoint || translated)
+      -- (a rebuild that works closes the editor, so it's only on opening)
+    , "edit" .= (not rebuilt && (how == FromStartingPoint || translated || not (ensembleBuilt ensemble)))
+    , "notes" .= (case how of Translated notes | not rebuilt -> notes; _ -> [])
     , "panel" .= panel
     , "viewers" .= viewerInfo
     , "views" .= views
@@ -808,7 +895,7 @@ rebuild text = guarded $ readIORef sessionRef >>= \case
           title <- getDynamic (vTitle (vsViewer vs))
           (title,) . fmap atName <$> readIORef (vsTool vs)
         carryOverProjectState sEnsemble new
-        startProject sLibrary sTitle sFileName True toolsBefore new
+        startProject sOpening sTitle sFileName True toolsBefore new
 
 ------------------------------------------------------------------------
 -- The panel
