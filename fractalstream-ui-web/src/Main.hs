@@ -24,6 +24,9 @@ tables (@tables:@) it was saved with, and is saved with its own.
 * @fs_view(viewer, cx, cy, pixelSize, width, height)@: move, zoom, or
   resize a viewer (all at once, for one render).
 * @fs_resize(viewer, width, height)@: resize a viewer.
+* @fs_density(d)@: how many canvas pixels the page draws a CSS pixel
+  with: tools and overlays are given a CSS pixel's size, as their
+  @pixel_size@.
 * @fs_smoothing(on)@: whether viewers are smoothed (each pixel the average
   of four samples, as fsrun's captures are), for every viewer from now on.
 * @fs_select_tool(viewer, name)@: select a viewer's tool (@""@: none, to
@@ -101,7 +104,7 @@ import qualified Data.Aeson.KeyMap as KM
 import Actor.Metadata (ProjectMetadata(..))
 import Actor.Layout
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges, refreshOverlayWith, viewProjection)
+import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges, viewProjection)
 import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
 import Actor.Viewer.Sphere (trackballRotation, screenToPlane)
@@ -231,6 +234,23 @@ sessionRef = unsafePerformIO (newIORef Nothing)
 {-# NOINLINE sessionRef #-}
 
 -- | Whether frames are smoothed (see 'renderViewerBuffer').
+-- | How many canvas pixels the page draws a CSS pixel with (2, on a
+-- high-DPI screen). A viewer's pixel size is a canvas pixel's; tools and
+-- overlays are given a CSS pixel's ('cssPixelDims'), so that what a script
+-- sizes in @pixel_size@ comes out as big as on the desktop, whose pixels
+-- are the screen's logical ones.
+densityRef :: IORef Double
+densityRef = unsafePerformIO (newIORef 1)
+{-# NOINLINE densityRef #-}
+
+-- | A viewer's pixel's width and height, in a CSS pixel (see 'densityRef').
+cssPixelDims :: Viewer -> IO (Double, Double)
+cssPixelDims viewer = do
+  d <- readIORef densityRef
+  px <- getDynamic (vPixelSize viewer)
+  aspect <- getDynamic (vAspect viewer)
+  pure (px * d, px * d * aspect)
+
 smoothingRef :: IORef Bool
 smoothingRef = unsafePerformIO (newIORef False)
 {-# NOINLINE smoothingRef #-}
@@ -261,6 +281,7 @@ foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
 foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
 foreign export javascript "fs_smoothing" setSmoothing :: Bool -> IO ()
+foreign export javascript "fs_density" setDensity :: Double -> IO ()
 foreign export javascript "fs_select_tool" selectTool :: Int -> JSString -> IO ()
 foreign export javascript "fs_event" toolEvent :: Int -> Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_button" toolButton :: Int -> JSString -> IO ()
@@ -462,7 +483,7 @@ drawingLoop :: ViewerState -> IO ()
 drawingLoop vs = forever $ do
   takeMVar (vsDraw vs)
   withMVar (vsLock vs) $ \_ ->
-    withProgress vs Nothing (\flag -> refreshOverlayWith flag (vsViewer vs))
+    withProgress vs Nothing (\flag -> cssPixelDims (vsViewer vs) >>= vRefreshOverlay (vsViewer vs) flag)
   toolToo <- atomicModifyIORef' (vsToolRefresh vs) (False,)
   when toolToo (void (fire vs Refresh))
   postDrawings vs
@@ -497,6 +518,9 @@ setView k cx cy pixelSize w h = withViewer k $ \(viewer, signal) -> do
   setValue (vCenter viewer) (cx, cy)
   setValue (vPixelSize viewer) pixelSize
   requestRender signal
+
+setDensity :: Double -> IO ()
+setDensity d = guarded (writeIORef densityRef (max 1 d))
 
 setSmoothing :: Bool -> IO ()
 setSmoothing on = guarded $ do
@@ -617,9 +641,8 @@ fire :: ViewerState -> Event -> IO Bool
 fire vs@ViewerState{..} ev = readIORef vsTool >>= \case
   Nothing -> pure True
   Just ActiveTool{..} -> do
-    px <- getDynamic (vPixelSize vsViewer)
-    aspect <- getDynamic (vAspect vsViewer)
-    case atDispatch (px, px * aspect) ev of
+    dims <- cssPixelDims vsViewer
+    case atDispatch dims ev of
       Nothing -> pure True
       -- (once it has the lock, only if the tool's still selected: it may
       -- have been dropped meanwhile, by stopping another handler)

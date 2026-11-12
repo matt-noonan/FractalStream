@@ -210,6 +210,12 @@ async function refresh() {
   await page.waitForTimeout(800);
   const m1 = await marker();
   c.check(m0 && m1 && (m0[0] !== m1[0] || m0[1] !== m1[1]), `the C marker moves with C (${JSON.stringify(m0)} -> ${JSON.stringify(m1)})`);
+  // (its radius is 4 pixel_size: 4 CSS pixels, on any screen, as on the
+  // desktop, whatever the canvas's density)
+  const frame = (await app.messages("frame")).filter((m) => m.viewer === pp).pop();
+  const r = (await app.drawing(pp)).find((s) => s.k === "circle").r / frame.px;
+  const dpr = await page.evaluate(() => Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 1))));
+  c.check(Math.abs(r - 4 * dpr) < 1e-6, `pixel_size is a CSS pixel's size: the marker's radius is ${r.toFixed(2)} canvas pixels, at ${dpr}x`);
 
   // External rays: the dynamical plane's rays (drawn on refresh) follow C
   project = await app.openLibrary("External rays");

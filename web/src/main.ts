@@ -845,6 +845,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
   switch (m.type) {
     case "ready":
       send({ type: "smoothing", on: smoothingBox.checked });
+      send({ type: "density", value: density() });
       send({ type: "symbols" });
       status("Loading the library…");
       send({ type: "library" });

@@ -5,7 +5,8 @@
 // Uses Playwright and its browsers: the GHC wasm toolchain's (in
 // ~/.ghc-wasm; install a browser with
 // ~/.ghc-wasm/nodejs/lib/node_modules/.bin/playwright install chromium).
-// Chromium, unless FS_BROWSER says firefox or webkit (Safari's engine).
+// Chromium, unless FS_BROWSER says firefox or webkit (Safari's engine);
+// with FS_DPR=2, on a high-DPI screen.
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -33,7 +34,9 @@ export async function start() {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const browser = await browserType.launch();
-  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  // (FS_DPR=2 makes it a high-DPI screen, as a Retina one is)
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 },
+                                       deviceScaleFactor: Number(process.env.FS_DPR || 1) });
   const app = new App(page, () => { browser.close(); server.close(); });
   // (every message from the engine, kept on the page; and a way to send
   // it requests directly)

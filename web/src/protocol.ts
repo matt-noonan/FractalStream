@@ -16,6 +16,9 @@ export type Request =
   | { type: "resize"; viewer: number; width: number; height: number }
   /** Whether frames are smoothed (four samples a pixel), for every viewer. */
   | { type: "smoothing"; on: boolean }
+  /** How many canvas pixels a CSS pixel is drawn with (see main.ts's
+      `density`): tools are given a CSS pixel's size, as `pixel_size`. */
+  | { type: "density"; value: number }
   /** Select a viewer's tool ("": none, to navigate). */
   | { type: "selectTool"; viewer: number; name: string }
   /** A pointer event for a viewer's tool, at screen-plane points: a click
