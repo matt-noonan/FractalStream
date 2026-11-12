@@ -317,7 +317,13 @@ compileRenderer' name code = runExcept $
                        -- InternalDY are the pixel size the code sees,
                        -- which needn't be the same: see 'vaPixel')
                        , (AST.double,     ParameterName "#stepX")
-                       , (AST.double,     ParameterName "#stepY") ]
+                       , (AST.double,     ParameterName "#stepY")
+                       -- where the block's first pixel is in the image:
+                       -- a pixel's point is the image's origin (x0, y0)
+                       -- plus its index in the image times the step
+                       -- (see 'vaOffset')
+                       , (AST.i32,        ParameterName "#offsetX")
+                       , (AST.i32,        ParameterName "#offsetY") ]
         params       = internalRenderParams ++ arenaParams ++ viewerEnvParams
         pfX      = bindingEvidence @InternalX   @'RealT  @(ViewerEnv env)
         pfY      = bindingEvidence @InternalY   @'RealT  @(ViewerEnv env)
@@ -325,7 +331,7 @@ compileRenderer' name code = runExcept $
     function name (retParam : params) AST.void $ \allArgs -> do
       let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg
                   : arenaPtrArg : arenaSizeArg : issuesOutArg : autocolorArg : autocolorDirArg
-                  : dx : dy
+                  : dx : dy : offsetX : offsetY
                   : rawArgs) = allArgs
       getExtern <- getGetExtern
       mdo
@@ -366,18 +372,14 @@ compileRenderer' name code = runExcept $
         iPtr <- alloca AST.i32 Nothing 0
         jPtr <- alloca AST.i32 Nothing 0
         kPtr <- alloca AST.i32 Nothing 0
-        xPtr <- alloca AST.double Nothing 0
-        yPtr <- alloca AST.double Nothing 0
         br beginLoops
 
         beginLoops <- block `named` "begin i loop"
         store indexPtr 0 (C.int32 0)
-        store yPtr 0 y0
         store iPtr 0 (C.int32 0)
         br pixelLoopY
 
         pixelLoopY <- block `named` "begin j loop"
-        store xPtr 0 x0
         store jPtr 0 (C.int32 0)
         br pixelLoopX
 
@@ -412,8 +414,14 @@ compileRenderer' name code = runExcept $
 
         subsampleLoop <- block `named` "k loop body"
         do
-          xVal <- load xPtr 0
-          yVal <- load yPtr 0
+          -- (the pixel's point: the image's origin plus its index in the
+          -- image times the step, not stepped to; see 'vaOffset')
+          jv <- load jPtr 0
+          iv <- load iPtr 0
+          xIndex <- add offsetX jv >>= (`sitofp` AST.double)
+          yIndex <- add offsetY iv >>= (`sitofp` AST.double)
+          xVal <- fmul xIndex dx >>= fadd x0
+          yVal <- fmul yIndex dy >>= fsub y0
           storeOperand (RealOp xVal) (getBinding args pfX)
           storeOperand (RealOp yVal) (getBinding args pfY)
 
@@ -501,10 +509,6 @@ compileRenderer' name code = runExcept $
         -- above have been read and written out (because they will be cleared).
 
         _ <- call (getExtern "stackrestore") [(pixelStack, [])]
-        do -- x += dx
-          tmp1 <- load xPtr 0
-          tmp2 <- fadd tmp1 dx
-          store xPtr 0 tmp2
         do -- j += 1
           tmp1 <- load jPtr 0
           tmp2 <- add tmp1 (C.int32 1)
@@ -514,10 +518,6 @@ compileRenderer' name code = runExcept $
           condBr continue pixelLoopX exitPixelLoopX
 
         exitPixelLoopX <- block `named` "end j loop"
-        do -- y -= dy
-          tmp1 <- load yPtr 0
-          tmp2 <- fsub tmp1 dy
-          store yPtr 0 tmp2
         do -- i += 1
           tmp1 <- load iPtr 0
           tmp2 <- add tmp1 (C.int32 1)

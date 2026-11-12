@@ -232,7 +232,7 @@ wasmtime.
 - [x] Milestone 1: `basic_mandelbrot` and the Julia set project through
   Backend.Wasm under Node, compared with LLVM at a small size.
 - [x] Kernel worker pool (`fractalstream-backend-wasm/js/`).
-- [ ] Tiles and progressive passes (R3).
+- [ ] Tiles and progressive passes (R3). (Done first: a pixel's point from the image's origin and its index, so tiles match a whole render.)
 - [x] Lists in a per-block arena; issue flags.
 - [x] Text (D17).
 - [x] Tables: viewers reading them, and tools writing them (D19).
@@ -347,6 +347,28 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: A pixel's point from the image's origin
+
+Before tiles: every backend's kernel stepped from its block's first
+point (`x += dx` along a row), so a pixel's point, to the last bit,
+depended on how the image was cut into blocks (the finding under
+"Backend.Wasm on a pool of workers"). Now `ViewerArgs` gives the image's
+origin (`vaPoint`) and where the block starts in the image
+(`vaOffset`), and the pure, LLVM and wasm kernels compute each pixel's
+point as the origin plus its index in the image times the step. So a
+tiled, progressive render matches a whole one exactly. `BlocksSpec`
+checks it (blocks cut unevenly against the whole, with a viewer colored
+by the parity of x's last bit; a control shows blocks stepped from
+their own start don't match), natively and under Node. The wasm and
+LLVM renders still compare as before (`compare.sh`: 42 of 53 viewers
+identical, the rest differing in a few chaotic pixels, from the C
+libraries' math functions). The desktop's tiles still pass each piece
+its own start (with offset 0) until they move onto the shared tiled
+renderer.
+
+(Found on the way: an integer literal too big for 32 bits, like
+`2251799813685248`, silently wraps; `2251799813685248.0` is fine.)
 
 ### 2026-11-12: Three things the desktop app did, and notices
 

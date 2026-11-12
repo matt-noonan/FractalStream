@@ -324,7 +324,7 @@ spec = do
           withJittedViewer jit noAutocolor code $ \vf ->
             allocaBytes (3 * 4 * 4) $ \buf -> do
               issues <- runViewerFunction vf (Bind (Proxy @"n") IntegerType n EmptyContext) ViewerArgs
-                { vaPoint = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+                { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
                 , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
                 , vaBuffer = buf }
               (issues,) <$> peekArray (3 * 4 * 4) buf
@@ -350,7 +350,7 @@ spec = do
           withJittedViewer jit noAutocolor code $ \vf ->
             allocaBytes (3 * 4 * 4) $ \buf -> do
               issues <- runViewerFunction vf EmptyContext ViewerArgs
-                { vaPoint = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+                { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
                 , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
                 , vaBuffer = buf }
               (issues,) <$> peekArray (3 * 4 * 4) buf
@@ -391,7 +391,7 @@ spec = do
       pixels <- withJittedViewer jit acLookup code $ \vf ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- runViewerFunction vf (Bind (Proxy @"n") IntegerType 0 EmptyContext) ViewerArgs
-            { vaPoint = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+            { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
             , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
             , vaBuffer = buf }
           peekArray (3 * 4 * 4) buf
@@ -413,7 +413,7 @@ spec = do
       acLookup <- autocolorLookupFromFunction lookupAc
       _ <- withJittedViewer jit acLookup code $ \vf ->
         allocaBytes (3 * 4 * 4) $ \buf -> runViewerFunction vf (Bind (Proxy @"n") IntegerType 0 EmptyContext) ViewerArgs
-          { vaPoint = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+          { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
           , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
           , vaBuffer = buf }
       made <- readIORef calls
@@ -430,7 +430,7 @@ spec = do
       finished <- timeout 20000000 $ withJIT $ \jit ->
         withJittedViewer jit noAutocolor code $ \vf -> do
           let renderOnce = allocaBytes (3 * 8 * 8) $ \buf -> void $ runViewerFunction vf EmptyContext ViewerArgs
-                { vaPoint = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+                { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
                 , vaWidth = 8, vaHeight = 8, vaSubsamples = 1
                 , vaBuffer = buf }
           replicateM_ 300 $ do
@@ -448,7 +448,7 @@ spec = do
       pixels <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- runViewerFunction vf (Bind (Proxy @"n") IntegerType 0 EmptyContext) ViewerArgs
-            { vaPoint = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+            { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
             , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
             , vaBuffer = buf }
           peekArray (3 * 4 * 4) buf
@@ -468,7 +468,7 @@ spec = do
       pixels <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 2 * 2) $ \buf -> do
           _ <- runViewerFunction vf EmptyContext ViewerArgs
-            { vaPoint = (0, 0), vaStep = (0.1, 0.2), vaPixel = (0.1, 0.2)
+            { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.2), vaPixel = (0.1, 0.2)
             , vaWidth = 2, vaHeight = 2, vaSubsamples = 1
             , vaBuffer = buf }
           peekArray (3 * 2 * 2) buf
@@ -489,7 +489,7 @@ spec = do
       pixels <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 2) $ \buf -> do
           _ <- runViewerFunction vf EmptyContext ViewerArgs
-            { vaPoint = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+            { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
             , vaWidth = 2, vaHeight = 1, vaSubsamples = 1
             , vaBuffer = buf }
           peekArray (3 * 2) buf
@@ -512,7 +512,7 @@ spec = do
       pixels <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           _ <- runViewerFunction vf EmptyContext ViewerArgs
-            { vaPoint = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+            { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
             , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
             , vaBuffer = buf }
           peekArray (3 * 4 * 4) buf
@@ -540,7 +540,7 @@ spec = do
           _ <- forkIO $ (try @SomeException >=> putMVar done) $ replicateM 50 $
             allocaBytes (3 * 4 * 4) $ \buf -> do
               issues <- renderBlock ViewerArgs
-                { vaPoint = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+                { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
                 , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
                 , vaBuffer = buf }
               (issues,) <$> peekArray (3 * 4 * 4) buf
@@ -570,7 +570,7 @@ spec = do
       (issues, pixels) <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 4 * 4) $ \buf -> do
           issues <- runViewerFunction vf (Bind (Proxy @"T") typeProxy t EmptyContext) ViewerArgs
-            { vaPoint = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+            { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
             , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
             , vaBuffer = buf }
           (issues,) <$> peekArray (3 * 4 * 4) buf

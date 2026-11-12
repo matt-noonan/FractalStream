@@ -11,6 +11,7 @@ import FractalStream.Console (transliterateConsole)
 import qualified DragSpec
 import qualified GeometrySpec
 import qualified PixelSizeSpec
+import qualified BlocksSpec
 import qualified TextSpec
 import qualified ToolAutocolorSpec
 import qualified OverlaySpec
@@ -22,4 +23,4 @@ foreign export javascript "hs_start" main :: IO ()
 #endif
 
 main :: IO ()
-main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec >> PixelSizeSpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec)
+main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec >> PixelSizeSpec.spec >> BlocksSpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec)
