@@ -220,7 +220,7 @@ wasmtime.
 - [x] Golden comparison against LLVM output across the library projects
   (tolerance per D4): `dev-tools/wasm/compare.sh`.
 
-### Phase 3: Minimal web app
+### Phase 3: Minimal web app (done, apart from R1 and R2)
 
 - [ ] R1 (platform record), with browser implementations.
 - [x] Engine worker and RPC; `fractalstream-ui-web` implements `UI`.
@@ -233,10 +233,12 @@ wasmtime.
   showing the library.
 - [x] High-DPI canvases (rendered at the screen's density, up to 2×).
 - [x] Smoothing: a toolbar switch, remembered; off by default on high-DPI screens, on otherwise. Smoothed frames are byte-identical to fsrun's LLVM captures.
-- [ ] Saving the view state (each viewer's center, zoom, size) in project
-  files, under a key of the web app's own.
-- [ ] Tidy-ups: color pickers; parse errors out of the status line; globe
-  dragging for sphere viewers.
+- [x] Saving the view state in project files, under `web-properties:`
+  (each window's place and size, its center, and a pixel's size per CSS
+  pixel).
+- [x] Tidy-ups: color pickers; render errors on the viewer, not the
+  status line; globe dragging for sphere viewers; faster pinch zoom; a
+  chooser for the configuration's tabs.
 - [x] Try it in Safari and Firefox: every project works, no console errors; panning and zooming smooth after reprojecting frames onto the page's own view.
 - [ ] Deployed as a static site (`site/`, or a separate app directory).
 
