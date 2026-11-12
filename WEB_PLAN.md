@@ -319,10 +319,19 @@ Only if 0c/0d come out well.
 - [x] Windows minimize to their title bar (double-click it, or its
   button), and stay so when saved.
 - [ ] Folding, line numbers, font: with preferences.
+- [x] Opening as the desktop app does: an old FractalStream 1.0 file is
+  translated if the user wants (a new project, its editor open, the
+  translation's notes); a script that doesn't build opens with no viewers
+  and its editor open, getting its saved values and windows once it's
+  fixed; a starting point opens as a new, untitled project with its
+  editor open.
 
 ### Phase 7: Polish
 
 - [x] Sphere view (trackball): done in Phase 3.
+- [x] "Show pointer position", from each viewer's ☰ menu (on the plane
+  and the sphere: the engine says what's under the pointer).
+- [x] Errors as notices, dismissed (not only the status line).
 - [ ] Autocolor editor.
 - [ ] Movies (WebCodecs).
 - [ ] Saved tables.
@@ -338,6 +347,38 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: Three things the desktop app did, and notices
+
+The user found three things the web app didn't do as the desktop does:
+
+- **An old FractalStream 1.0 file** (a binary plist, also `.fs`) failed
+  with only a line in the status bar. Now the engine says it's old
+  (`ancient`), keeping it; a notice asks whether to translate it
+  (`fs_translate`, with the core's `Language.Legacy` translator); the
+  translation opens as a new project (Save asks where, never over the
+  old file) with its editor open and its notes in a notice.
+- **A script that doesn't build** wouldn't open at all. Now, as on the
+  desktop, it opens with no viewers and its editor open
+  (`loadProjectBytes`'s `BrokenScript`, not run); rebuilt once fixed,
+  `carryOverProjectState` puts its saved values and tables in place,
+  and the page its saved windows (a rebuild keeps the windows it has,
+  and takes the file's for the rest).
+- **Starting points** opened like any library project. Now they open as
+  "Untitled" (`Untitled.fs`), without the starting point's metadata,
+  with the editor open.
+- **"Show pointer position"**, per viewer, from a new ☰ menu in each
+  window's title bar (`windows.ts`'s `menu`). The page asks the engine
+  (`fs_pointer`, one question at a time, like tool events), which knows
+  the globe's rotation; the text is the core's `pointerText`, which the
+  desktop now uses too, so they print points alike.
+
+Errors are now **notices** under the toolbar, each dismissed with ×
+(the latest four kept); the status line is for what's happening. The
+engine drops "user error (...)" from a `fail`'s message. Checks: the
+`opening` and `pointer` sections of `check-tools.mjs` (fixtures:
+`dev-tools/web/broken.fs`, and the core's `test/legacy-binary/Sarah3.fs`),
+passing in Chromium, Firefox and WebKit.
 
 ### 2026-11-12: pixel_size on high-DPI screens, and smoothed
 

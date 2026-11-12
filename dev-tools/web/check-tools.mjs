@@ -21,6 +21,14 @@
 //             rebuilding (windows, views and tools kept), or failing to
 //   density   pixel_size, in a viewer's code, is a CSS pixel's size, on any
 //             screen (dev-tools/web/pixel-size.fs; try FS_DPR=2)
+//   opening   opening projects as the desktop app does: an old FractalStream
+//             1.0 file, translated if asked (into a new project, with its
+//             editor open); a script that doesn't build (dev-tools/web/
+//             broken.fs), with its editor open, and its saved value and
+//             window once it's fixed; a starting point, as a new project;
+//             and an error, as a notice to dismiss
+//   pointer   "Show pointer position", from a viewer's menu: the point
+//             under the pointer, on the plane and on the sphere
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
@@ -28,13 +36,14 @@
 // See harness.mjs for what it needs. The exit status is 1 if any check
 // failed.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { start, Checks, kinds } from "./harness.mjs";
 
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop, editor, density, panel };
+const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -477,8 +486,9 @@ async function editor() {
   });
   await page.reload();
   await page.waitForSelector("#library li", { timeout: 60000 });
+  // (the starting point: it opens with its editor)
   await app.openLibrary("Newton's method");
-  await page.locator("#toggle-script").click();
+  if (!(await editorShown())) await page.locator("#toggle-script").click();
   await page.waitForTimeout(1000);
   await page.locator(".editor-overlay .cm-content").click();
   await page.keyboard.press("ControlOrMeta+Home");
@@ -505,4 +515,111 @@ async function density() {
   });
   c.check(Math.abs(r.dark / r.ratio - 4) <= 1,
           `a band 4 pixel_size wide is 4 CSS pixels wide (${r.dark} canvas pixels, at ${r.ratio}x)`);
+}
+
+/** Drop a file's bytes on the page (any bytes: not only a project's text). */
+async function dropBytes(file, name = path.basename(file)) {
+  await app.forgetMessages();
+  await page.evaluate(([b, name]) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(b)], name));
+    document.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, [[...fs.readFileSync(file)], name]);
+}
+
+function editorShown() { return page.locator(".editor-overlay").isVisible(); }
+
+async function opening() {
+  // an old FractalStream 1.0 file: a notice asks first
+  const legacy = new URL("../../fractalstream-core/test/legacy-binary/Sarah3.fs", import.meta.url).pathname;
+  await dropBytes(legacy);
+  const ask = page.locator(".notice", { hasText: "old version of FractalStream" });
+  await ask.waitFor({ timeout: 10000 }).catch(() => {});
+  c.check(await ask.isVisible(), "an old FractalStream file: a notice asks whether to translate it");
+  await ask.locator("button", { hasText: "Translate" }).click();
+  const translated = await app.opened().catch(() => null);
+  c.check(translated !== null && translated.new && translated.edit && translated.viewers.length > 0,
+          `translated, it opens as a new project (${translated?.fileName}), with ${translated?.viewers.length} viewer(s)`);
+  c.check(await editorShown(), "with its script editor open");
+  c.check(/Sarah3\.fs/.test(await page.locator("#file-name").textContent()) && translated?.notes !== undefined,
+          `and the old file's name (${translated?.notes.length} translation note(s))`);
+  await page.locator(".editor-close").click();
+
+  // a script that doesn't build: no viewers, its editor open; fixed, its
+  // saved value and window
+  await dropBytes(new URL("broken.fs", import.meta.url).pathname);
+  await app.waitForMessage(`(m) => m.type === "project"`, 30000);
+  const broken = (await app.messages("project")).pop();
+  c.check(broken.viewers.length === 0 && broken.edit, "a script that doesn't build opens with no viewers, for its editor");
+  c.check(await editorShown(), "with the editor open");
+  await page.waitForFunction(() => document.querySelector(".cm-script-error"), null, { timeout: 10000 }).catch(() => {});
+  c.check((await page.locator(".cm-script-error").count()) > 0, "and its error marked");
+  // (fix it: the stray ` (` ending its last line)
+  await page.locator(".editor-overlay .cm-content").click();
+  await page.keyboard.press("ControlOrMeta+End");
+  for (let i = 0; i < 2; i++) await page.keyboard.press("Backspace");
+  await page.waitForFunction(() => !document.querySelector(".editor-status.error"), null, { timeout: 10000 }).catch(() => {});
+  await app.forgetMessages();
+  await page.locator(".editor-buttons button", { hasText: "Rebuild" }).click();
+  const fixed = await app.opened().catch(() => null);
+  c.check(fixed?.viewers.length === 1 && !(await editorShown()), "fixed and rebuilt, its viewer comes, and the editor closes");
+  const field = page.locator(".panel input[type=text]").first();
+  c.check((await field.inputValue().catch(() => "")) === "0.25", `with its saved value (shade = ${await field.inputValue().catch(() => "?")})`);
+  const win = page.locator(".window").first();
+  const place = await win.evaluate((w) => [w.offsetLeft, w.offsetTop, w.querySelector(".window-body").clientWidth]);
+  c.check(place[0] === 300 && place[1] === 40 && place[2] === 220, `and its saved window (${place})`);
+
+  // a starting point: a new, untitled project, its editor open
+  const start = await app.openLibrary("Iterate a family of functions");
+  c.check(start.title === "Untitled" && start.fileName === "Untitled.fs" && start.new && !start.library,
+          `a starting point opens as a new project (${start.title}, ${start.fileName})`);
+  c.check(await editorShown(), "with its script editor open");
+  await page.locator(".editor-close").click();
+  const plain = await app.openLibrary("Mandelbrot and Julia sets together");
+  c.check(!plain.edit && !(await editorShown()), "(another library project opens without it)");
+
+  // an error: a notice, dismissed
+  fs.writeFileSync(path.join(os.tmpdir(), "not-a-project.fs"), "this: [is not a project");
+  await dropBytes(path.join(os.tmpdir(), "not-a-project.fs"));
+  const err = page.locator(".notice.error");
+  await err.first().waitFor({ timeout: 10000 }).catch(() => {});
+  c.check(await err.first().isVisible(), `a file that isn't a project: an error notice (${(await err.first().textContent().catch(() => "")).slice(0, 60)}…)`);
+  await err.first().locator(".notice-dismiss").click();
+  c.check((await err.count()) === 0, "dismissed, it's gone");
+  // (that error was on purpose)
+  app.clearErrors();
+}
+
+async function pointer() {
+  const readout = (id) => page.locator(".viewer-pointer").nth(id);
+  const showFor = async (id) => {
+    await page.locator(".window").nth(id).locator(".window-menu-button").click();
+    await page.locator(".window-menu button", { hasText: "Show pointer position" }).click();
+  };
+  const hover = async (id, fx, fy) => {
+    const box = await app.canvas(id).boundingBox();
+    await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy, { steps: 2 });
+    await page.waitForTimeout(300);
+    return (await readout(id).textContent()).trim();
+  };
+  // (the plane: pixel-size.fs, centered on 0)
+  await app.openFile(new URL("pixel-size.fs", import.meta.url).pathname);
+  c.check(!(await readout(0).isVisible()), "the pointer's position isn't shown, at first");
+  await showFor(0);
+  c.check(await readout(0).isVisible(), "chosen from the viewer's menu, it is");
+  const t = await hover(0, 0.75, 0.25);
+  const m = /^(-?\d+\.\d{14}) ([+-]) (\d+\.\d{14})𝑖$/.exec(t);
+  c.check(m && Number(m[1]) > 0 && m[2] === "+" && Number(m[3]) > 0, `up and to the right of 0, it's there (${t})`);
+  await page.locator(".window").nth(0).locator(".window-menu-button").click();
+  const checked = await page.locator(".window-menu button").getAttribute("aria-checked");
+  await page.locator(".window-menu button").click();
+  c.check(checked === "true" && !(await readout(0).isVisible()), "the menu shows it's on, and turns it off");
+
+  // the sphere: the globe's center is the view's, and off the globe, "…"
+  const project = await app.openLibrary("Newton's method on the sphere");
+  const s = project.viewers.findIndex((v) => v.sphere);
+  await showFor(s);
+  const centre = await hover(s, 0.5, 0.5);
+  const off = await hover(s, 0.01, 0.01);
+  c.check(/𝑖$/.test(centre) && off === "…", `on the sphere: ${centre} at the globe's center, and "…" off it`);
 }

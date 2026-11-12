@@ -7,6 +7,11 @@ export type Request =
   | { type: "library" }
   | { type: "open"; section: number; entry: number }
   | { type: "openFile"; name: string; bytes: ArrayBuffer }
+  /** Translate the old FractalStream file the engine said it had ("ancient"). */
+  | { type: "translate" }
+  /** What a viewer's "Show pointer position" shows for a screen-plane
+      point (as for "event"): answered by "pointer". */
+  | { type: "pointer"; viewer: number; x: number; y: number }
   | { type: "save"; views: string }
   /** Turn a sphere viewer's globe, as the pointer drags from one screen
       point to another (in units of the sphere's radius, y up). */
@@ -142,7 +147,18 @@ export type Message =
   /** A project to show: one opened, or (rebuilt) the open one, built again
       from its edited script. */
   | { type: "project"; title: string; fileName: string; library: boolean; panel: Layout;
-      viewers: ViewerInfo[]; views: SavedViews | null; script: string; rebuilt: boolean }
+      viewers: ViewerInfo[]; views: SavedViews | null; script: string; rebuilt: boolean;
+      /** A new project, with no file of its own yet (from a starting
+          point, or a translation): saving it asks where. */
+      new: boolean;
+      /** Open its script editor: it's new, or its script doesn't build
+          (it has no viewers until it does). */
+      edit: boolean;
+      /** A translation's notes. */
+      notes: string[] }
+  /** An old FractalStream 1.0 file, not opened: "translate" translates it. */
+  | { type: "ancient"; name: string }
+  | { type: "pointer"; viewer: number; text: string }
   /** An edited script, colored and checked, with how to write it with
       mathematical symbols (offsets in UTF-16 units, the end not included). */
   | { type: "analysis"; id: number; spans: [number, number, string][]; error: ScriptError | null;

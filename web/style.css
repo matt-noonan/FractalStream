@@ -47,7 +47,28 @@ body {
 #library img { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; flex: none; }
 main { flex: 1; min-width: 0; padding: 12px 20px; }
 #status { min-height: 1.4em; color: var(--muted); }
-#status.error { color: var(--error); white-space: pre-wrap; }
+/* Notices (main.ts's `notice`): errors, and things to know or decide,
+   until they're dismissed. */
+#notices { display: flex; flex-direction: column; gap: 6px; }
+#notices:not(:empty) { margin: 6px 0; }
+.notice {
+  display: flex; align-items: flex-start; gap: 10px; padding: 8px 8px 8px 12px;
+  border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px;
+  background: var(--panel); color: var(--fg);
+}
+.notice.error { border-left-color: var(--error); }
+.notice.info { border-left-color: var(--accent, var(--muted)); }
+.notice-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12em; overflow: auto; }
+.notice-actions { display: flex; gap: 6px; flex: none; }
+.notice-actions button {
+  font: inherit; padding: 2px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
+.notice-dismiss {
+  flex: none; width: 22px; height: 22px; padding: 0; font-size: 16px; line-height: 20px;
+  border: 1px solid transparent; border-radius: 4px; background: none; color: var(--muted); cursor: pointer;
+}
+.notice-dismiss:hover { border-color: var(--line); color: var(--fg); }
 h1 { font-size: 20px; margin: 4px 0 12px; }
 .workspace { display: flex; gap: 16px; align-items: flex-start; }
 .desk {
@@ -70,6 +91,25 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
   border: 1px solid transparent; border-radius: 4px; background: none; color: var(--muted); cursor: pointer;
 }
 .window-minimize:hover { border-color: var(--line); color: var(--fg); }
+/* A window's menu of options (windows.ts) */
+.window-menu-wrap { position: relative; flex: none; display: flex; }
+.window-menu-button {
+  width: 20px; height: 18px; padding: 0; line-height: 16px; font-size: 12px;
+  border: 1px solid transparent; border-radius: 4px; background: none; color: var(--muted); cursor: pointer;
+}
+.window-menu-button:hover, .window-menu-button[aria-expanded=true] { border-color: var(--line); color: var(--fg); }
+.window-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 10; min-width: 200px;
+  display: flex; flex-direction: column; padding: 4px; cursor: default;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+}
+.window-menu button {
+  font: inherit; font-size: 13px; text-align: left; padding: 4px 8px 4px 26px; position: relative;
+  border: none; border-radius: 4px; background: none; color: var(--fg); cursor: pointer;
+}
+.window-menu button:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.window-menu button[aria-checked=true]::before { content: "✓"; position: absolute; left: 9px; }
 /* (minimized: just the title bar) */
 .window.minimized .window-body, .window.minimized .window-grip { display: none; }
 .window.minimized .window-title { border-bottom: none; }
@@ -161,6 +201,16 @@ body.no-panel .panel { display: none; }
   border-top: 1px solid var(--line); font-size: 13px;
 }
 .viewer-running[hidden] { display: none; }
+/* "Show pointer position": the point under the pointer, at the bottom
+   (above the running bar, while that's shown) */
+.viewer-pointer {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+  max-width: calc(100% - 16px); padding: 2px 10px; border-radius: 6px; white-space: pre;
+  overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+  background: rgba(0, 0, 0, .65); color: #fff; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+}
+.viewer-pointer[hidden] { display: none; }
+.viewer-running:not([hidden]) ~ .viewer-pointer { bottom: 44px; }
 .viewer-running .spinner { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 4.5em; }
 .viewer-running .message { flex: 1 0 auto; white-space: nowrap; }
 .viewer-running button {

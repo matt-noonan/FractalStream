@@ -397,15 +397,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 
         -- (Nothing: the pointer isn't over the model, as off the globe)
         setPointerLocation mxy = do
-          let shown (x, y) = case vCoordinate of
-                -- a real viewer's point is a pair of reals
-                RealCoordinates{} -> printf "(%.14f, %.14f)" x y
-                ComplexCoordinate{}
-                  | y < 0     -> printf "%.14f - %.14f𝑖" x (negate y)
-                  | otherwise -> printf "%.14f + %.14f𝑖" x y
-          writeIORef hudPointer $ case mxy of
-            Nothing -> "…"
-            Just xy@(x, _) -> let txt0 = shown xy in if x < 0 then txt0 else ' ' : txt0
+          writeIORef hudPointer (pointerText vCoordinate mxy)
           showPtr <- get shouldShowPointerLocation value
           when showPtr $ do
             Size w h <- get p clientSize
