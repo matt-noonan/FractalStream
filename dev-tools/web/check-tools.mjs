@@ -17,6 +17,8 @@
 //   sweep     every tool of every library project compiles
 //   stop      a handler that never finishes (dev-tools/web/endless.fs):
 //             the bar, Stop, Stop and switch to Navigate, and an overlay
+//   editor    the script editor: coloring, an error marked, symbols, and
+//             rebuilding (windows, views and tools kept), or failing to
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
@@ -30,7 +32,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop, panel };
+const all = { drawing, tools, refresh, sweep, stop, editor, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -350,4 +352,100 @@ async function panel() {
   await app.openLibrary("Mandelbrot and Julia sets together");
   const again = (await page.locator(".panel").boundingBox()).width;
   c.check(Math.abs(again - after) <= 1, `and the width is remembered (${again})`);
+}
+
+async function editor() {
+  const project = await app.openLibrary("Mandelbrot and Julia sets together");
+  const id = (title) => project.viewers.find((v) => v.title === title).id;
+  const pp = id("Parameter plane"), dp = id("Dynamical plane");
+  await page.locator("#toggle-script").click();
+  const doc = () => page.locator(".editor-window .cm-content").innerText();
+  const status = () => page.locator(".editor-status").textContent();
+  await page.waitForFunction(() => document.querySelectorAll(".editor-window [class*=tok-]").length > 20, null, { timeout: 10000 });
+  c.check(true, `the script is colored (${await page.locator(".editor-window [class*=tok-]").count()} spans)`);
+  c.check((await doc()).includes("z^2"), "and left as it is, until it's edited");
+
+  // an error, marked, and undone
+  await page.locator(".editor-window .cm-content").click();
+  await page.keyboard.press("ControlOrMeta+End");
+  // (after characters outside the BMP, two UTF-16 units each, as the
+  // engine's offsets have to allow for)
+  await page.keyboard.insertText("\n    z <- 2𝑖 + 𝑖 + (");
+  await page.waitForFunction(() => document.querySelector(".editor-status.error") && document.querySelector(".cm-script-error"),
+                             null, { timeout: 10000 }).catch(() => {});
+  const marked = (await page.locator(".cm-script-error").allTextContents()).join("");
+  c.check(marked === "(" && /⚠/.test(await status()), `an error is marked where it is (${JSON.stringify(marked)}), and said (${(await status()).trim()})`);
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ControlOrMeta+z");
+  await page.waitForFunction(() => !document.querySelector(".editor-status.error"), null, { timeout: 10000 }).catch(() => {});
+  c.check((await page.locator(".cm-script-error").count()) === 0, "undoing it clears it");
+
+  // mathematical symbols, once it's edited (the cursor's line aside)
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n# notes: ");
+  await page.waitForFunction(() => document.querySelector(".editor-window .cm-content").innerText.includes("z²"), null, { timeout: 10000 }).catch(() => {});
+  const d = await doc();
+  c.check(d.includes("z²") && d.includes("⟼") && d.includes("≔"), "once edited, it's written with symbols (z², ⟼, ≔)");
+  // symbols typed by name: a space finishes one, Tab completes one, an accent waits
+  await page.keyboard.type("\\theta ");
+  await page.keyboard.type("\\alph");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type(" \\hat x.");
+  await page.waitForTimeout(300);
+  const line = (await doc()).split("\n").pop();
+  c.check(line === "# notes: θ α x̂.", `symbols are typed by name (${JSON.stringify(line)})`);
+
+  // rebuilding keeps windows, views and tools
+  // (the editor, moved down out of the viewers' way)
+  const edTitle = await page.locator(".editor-window .window-title").boundingBox();
+  await page.mouse.move(edTitle.x + 60, edTitle.y + edTitle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edTitle.x + 60, edTitle.y + edTitle.height / 2 + 520, { steps: 5 });
+  await page.mouse.up();
+  const ppWin = page.locator(".window", { hasText: "Parameter plane" }).first();
+  const title = await ppWin.locator(".window-title").boundingBox();
+  await page.mouse.move(title.x + 40, title.y + title.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(title.x + 40 + 30, title.y + title.height / 2 + 200, { steps: 4 });
+  await page.mouse.up();
+  const ppBefore = await ppWin.boundingBox();
+  // (the editor's over the dynamical plane: its tool, chosen directly)
+  await app.send({ type: "selectTool", viewer: dp, name: "Trace" });
+  await app.waitForMessage("(m) => m.type === 'tool' && m.name === 'Trace'", 10000);
+  const dpWin = page.locator(".window", { hasText: "Dynamical plane" }).first();
+  await dpWin.locator(".window-title").dblclick();
+  c.check(await dpWin.evaluate((w) => w.classList.contains("minimized")), "double-clicking a title bar minimizes its window");
+  // (the configuration's label, renamed)
+  const text = (await doc()).replace("Selected value of C:", "The value of C:");
+  await page.locator(".editor-window .cm-content").click();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.insertText(text);
+  await app.forgetMessages();
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await app.waitForMessage("(m) => m.type === 'project' && m.rebuilt", 30000);
+  await app.opened();
+  await page.waitForTimeout(500);
+  c.check((await page.locator(".panel").innerText()).includes("The value of C:"), "Ctrl/Cmd-Enter rebuilds the project from the script");
+  const ppAfter = await page.locator(".window", { hasText: "Parameter plane" }).first().boundingBox();
+  c.check(Math.abs(ppAfter.x - ppBefore.x) < 2 && Math.abs(ppAfter.y - ppBefore.y) < 2, `a viewer's window stays where it was (${ppBefore.x},${ppBefore.y} -> ${ppAfter.x},${ppAfter.y})`);
+  c.check(await page.locator(".window", { hasText: "Dynamical plane" }).first().evaluate((w) => w.classList.contains("minimized")), "and a minimized one stays minimized");
+  const tool = (await app.messages("tool")).filter((m) => m.viewer === dp).pop();
+  c.check(tool?.name === "Trace", `and a viewer keeps its tool (${tool?.name})`);
+  c.check(await page.locator(".editor-window").count() === 1 && (await doc()).includes("The value of C:"), "and the editor stays open, with its text");
+  c.check(/Rebuilt/.test(await status()), `saying so (${await status()})`);
+
+  // a script that doesn't build leaves the project as it was
+  await page.locator(".editor-window .cm-content").click();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n@viewer");
+  await app.forgetMessages();
+  await page.locator(".editor-buttons button", { hasText: "Rebuild" }).click();
+  await app.waitForMessage("(m) => m.type === 'rebuildError'", 30000).catch(() => {});
+  c.check((await app.messages("rebuildError")).length === 1 && (await app.messages("project")).length === 0 && /⚠|error|expected/i.test(await status()),
+          `one that doesn't build says why, and leaves the project (${await status()})`);
+  // Revert: back to the project's script
+  await page.locator(".editor-buttons button", { hasText: "Revert" }).click();
+  await page.waitForTimeout(300);
+  c.check(!(await doc()).includes("@viewer\n@viewer") && !(await doc()).trimEnd().endsWith("@viewer") && (await doc()).includes("The value of C:"),
+          "Revert goes back to the project's script");
+  await shot("editor");
 }

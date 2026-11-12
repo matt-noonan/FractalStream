@@ -92,6 +92,9 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "button": await engine.fs_button(r.viewer, r.label); break;
       case "setTool": await engine.fs_set_tool(r.viewer, r.name, r.text); break;
       case "stop": await engine.fs_stop(r.viewer, r.navigate); break;
+      case "analyze": await engine.fs_analyze(r.id, r.text); break;
+      case "symbols": await engine.fs_symbols(); break;
+      case "rebuild": await engine.fs_rebuild(r.text); break;
     }
   } catch (err) {
     send({ type: "error", message: String(err) });

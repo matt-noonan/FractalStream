@@ -4,9 +4,13 @@
   "description": "FractalStream in the browser (see WEB_PLAN.md). Build with dev-tools/web/build.sh.",
   "type": "module",
   "dependencies": {
-    "@bjorn3/browser_wasi_shim": "0.4.2"
+    "@bjorn3/browser_wasi_shim": "0.4.2",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "typescript": "5.6.3"
   }
 }
