@@ -342,7 +342,7 @@ Only if 0c/0d come out well.
 - [x] Errors as notices, dismissed (not only the status line).
 - [x] Autocolor editor: an overlay over the workspace (for now: windows are viewers), from each viewer's Colorizer submenu.
 - [ ] Movies (WebCodecs).
-- [ ] Saved tables.
+- [x] Saved tables: asked when saving, as the desktop asks (with each table's size), remembered for plain saves.
 - [ ] Open a project from a URL; shareable links.
 
 ## Open questions
@@ -355,6 +355,23 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: Saving what tables hold
+
+The web app saved a project's tables only if its file had them, and never
+asked. Now it follows the desktop's flow: when the tables hold anything,
+saving asks whether to save them (each table's name, size and bytes, and
+the total before compression; Save with tables, Save without tables,
+Cancel), before the file is chosen, so that choosing it is the last step:
+every time the file is chosen (Save as, or a first save), and the first
+time it isn't; the answer's kept for plain saves from then on (to begin
+with, whether the file had them). A script that doesn't build is saved
+with its tables as its file had them. The engine summarizes the tables
+(`fs_table_summary`) and saves with them, without them, or as they were
+(`fs_save`'s second argument). Checks: `check-tools.mjs`'s `tables`
+section (`dev-tools/web/tables.fs`, whose tool fills a table), with a
+stand-in for the browser's file picker for the plain saves, in Chromium,
+Firefox and WebKit.
 
 ### 2026-11-12: The autocolor editor
 

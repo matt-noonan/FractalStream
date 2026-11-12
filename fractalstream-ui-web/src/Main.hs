@@ -23,9 +23,14 @@ worker (@web/src/engine.ts@). The worker calls these exports:
 * @fs_pointer(viewer, x, y)@: what the viewer's "Show pointer position"
   shows for a screen-plane point (as for @fs_event@): posted as
   @pointer@.
-* @fs_save(views)@: post the open project as a file (its script, changed
-  values, and so on, as the desktop app saves it), with the page's view
-  state (JSON: see "web-properties" below).
+* @fs_save(views, tables)@: post the open project as a file (its script,
+  changed values, and so on, as the desktop app saves it), with the page's
+  view state (JSON: see "web-properties" below); and what its tables hold
+  (@tables@ 1), or not (0), or as its file had them (2: for a script that
+  doesn't build, whose tables aren't there to save).
+* @fs_table_summary()@: post the open project's tables that hold anything
+  (@tableSummary@), so that the page can ask whether to save them, as the
+  desktop does.
 * @fs_rotate(viewer, fx, fy, tx, ty)@: turn a sphere viewer's globe,
   trackball-style, as the pointer drags from one point of the screen to
   another (in units of the sphere's radius, from its center, y up).
@@ -119,6 +124,7 @@ Messages:
 > { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere" }   (the engine moved the view: a pixel's size in the canvas's pixels)
 > { "type": "where", "viewer", "x", "y", "pixelSize" }
 > { "type": "aspect", "viewer", "error": <why it isn't one> or null }
+> { "type": "tableSummary", "built": <whether the script builds>, "tables": [ { "name", "size": [ <each dimension> ], "bytes" } ] }
 > { "type": "autocolor", "groups": [ { "id", "locked", "blend", "tolerance": <text>, "miss": <#rrggbb>,
 >   "entries": [ { "x", "y", "point": <text>, "color": <#rrggbb> } ] } ] }
 > { "type": "autocolorError", "message" }
@@ -176,7 +182,7 @@ import FractalStream.Prelude
 import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, LoadedProject(..), ensembleFields, FieldOwner(..),
                        encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
-import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables)
+import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables, TableSummary(..), summarizeTables)
 import qualified Data.Aeson.KeyMap as KM
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Language.Legacy.Binary (mightBeAncientFS, decodeAncientFS)
@@ -416,7 +422,8 @@ foreign export javascript "fs_open" open :: Int -> Int -> IO ()
 foreign export javascript "fs_open_file" openFile :: JSString -> JSVal -> IO ()
 foreign export javascript "fs_translate" translateAncient :: IO ()
 foreign export javascript "fs_pointer" pointer :: Int -> Double -> Double -> IO ()
-foreign export javascript "fs_save" save :: JSString -> IO ()
+foreign export javascript "fs_save" save :: JSString -> Int -> IO ()
+foreign export javascript "fs_table_summary" tableSummary :: IO ()
 foreign export javascript "fs_rotate" rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
 foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> Int -> Int -> Int -> Int -> IO ()
@@ -513,8 +520,17 @@ pointer k x y = withViewerState k $ \vs -> do
   post $ Aeson.object [ "type" .= ("pointer" :: Text.Text), "viewer" .= k
                       , "text" .= pointerText (vCoordinate (vsViewer vs)) p ]
 
-save :: JSString -> IO ()
-save views = guarded $ readIORef sessionRef >>= \case
+-- | The open project's tables that hold anything, for the page to ask
+-- whether to save them (see 'save').
+tableSummary :: IO ()
+tableSummary = guarded $ readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  tables <- if ensembleBuilt sEnsemble then ensembleTables sEnsemble >>= summarizeTables else pure []
+  post $ Aeson.object
+    [ "type" .= ("tableSummary" :: Text.Text), "built" .= ensembleBuilt sEnsemble
+    , "tables" .= [ Aeson.object [ "name" .= tsName t, "size" .= tsSize t, "bytes" .= tsBytes t ] | t <- tables ] ])
+
+save :: JSString -> Int -> IO ()
+save views withTables = guarded $ readIORef sessionRef >>= \case
   Nothing -> postError "there's no project to save"
   Just Session{..} -> do
     -- (the page's view state, under its own key)
@@ -524,10 +540,13 @@ save views = guarded $ readIORef sessionRef >>= \case
         modifyValue (ensembleFrontendProperties sEnsemble) (KM.insert "web-properties" v')
     -- (the values it was left with; and its tables, if its file had them)
     changedValues sEnsemble >>= modifyValue (ensembleFrontendProperties sEnsemble) . writeSavedValues
-    hasTables <- KM.member "tables" <$> getDynamic (ensembleFrontendProperties sEnsemble)
-    when hasTables $ do
-      tables <- ensembleTables sEnsemble >>= captureTables
-      modifyValue (ensembleFrontendProperties sEnsemble) (writeSavedTables tables)
+    -- (what its tables hold, if the page says so: see 'tableSummary')
+    case withTables of
+      1 -> do
+        tables <- ensembleTables sEnsemble >>= captureTables
+        modifyValue (ensembleFrontendProperties sEnsemble) (writeSavedTables tables)
+      0 -> modifyValue (ensembleFrontendProperties sEnsemble) (KM.delete "tables")
+      _ -> pure ()
     contents <- encodeEnsemble sEnsemble
     BS.useAsCStringLen contents $ \(p, n) -> postFile (toJSString sFileName) (castPtr p) n
 
@@ -642,7 +661,8 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
     pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere
                        , "tools" .= tools, "complex" .= complex, "smooth" .= smooth, "colorizer" .= colorizer ])
   let translated = case how of Translated _ -> True; _ -> False
-  views <- KM.lookup "web-properties" <$> getDynamic (ensembleFrontendProperties ensemble)
+  props0 <- getDynamic (ensembleFrontendProperties ensemble)
+  let views = KM.lookup "web-properties" props0
   script <- getDynamic (ensembleSourceScript ensemble)
   post $ Aeson.object
     [ "type" .= ("project" :: Text.Text)
@@ -656,6 +676,7 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
     , "panel" .= panel
     , "viewers" .= viewerInfo
     , "views" .= views
+    , "savedTables" .= KM.member "tables" props0
     , "script" .= script
     , "rebuilt" .= rebuilt
     ]

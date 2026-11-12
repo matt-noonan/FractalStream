@@ -336,3 +336,22 @@ body.no-panel .panel { display: none; }
 .autocolor-status { color: var(--error); min-height: 1.2em; margin: 0; }
 .autocolor-status:empty { display: none; }
 .autocolor-empty { color: var(--muted); margin: 4px; }
+
+/* A question over the whole page (main.ts's askSaveTables) */
+.page-dialog {
+  position: fixed; inset: 0; z-index: 200000; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .25); padding: 16px;
+}
+.page-dialog-box {
+  width: min(460px, 100%); display: flex; flex-direction: column; gap: 8px; padding: 14px 16px;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .3); font-size: 13px;
+}
+.page-dialog-box p { margin: 0; }
+.page-dialog-box ul { margin: 0; padding-left: 20px; font: 12px ui-monospace, monospace; }
+.page-dialog-box .form-title { font-weight: 600; }
+.page-dialog-box .form-buttons { display: flex; gap: 6px; }
+.page-dialog-box .form-gap { flex: 1; }
+.page-dialog-box button { font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
+                          border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+.page-dialog-box button:focus-visible { outline: 2px solid var(--accent); }
