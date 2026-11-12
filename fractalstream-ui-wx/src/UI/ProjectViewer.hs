@@ -758,7 +758,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- Main view
     -------------------------------------------------------
 
-    lastRenderAction <- newMVar (\_ _ _ _ _ _ -> pure mempty)
+    lastRenderAction <- newMVar (\_ -> pure mempty)
 
     let getRenderAction = case vCodeWithArgs of
           CodeWithArgs vGetArgs _ vCode -> do
@@ -770,16 +770,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 setWarning Nothing
                 -- (the values are bound once, for every block of the render)
                 ViewerFunction bind <- getDynamic vCode
-                vf <- bind vaArgs
-                let action = \(w :: Word32) (h :: Word32) (subsamples :: Word32) (dx :+ dy) (x :+ y) vaBuffer -> do
-                      let vaWidth  = fromIntegral w
-                          vaHeight = fromIntegral h
-                          vaSubsamples = fromIntegral subsamples
-                          vaPoint = (x, y)
-                          vaOffset = (0, 0)
-                          vaStep  = (dx, dy)
-                          vaPixel = (dx, dy)
-                      vf ViewerArgs{..}
+                action <- bind vaArgs
                 modifyMVar_ lastRenderAction (\_ -> pure action)
                 pure action
 
@@ -1950,7 +1941,7 @@ interpolateModel t m1 m2 = m2
 -- moved to where its points are in the new view, so that a render that
 -- hasn't got far (while a parameter is dragged, or the globe turned)
 -- shows the old picture rather than grey; the pieces it covers are drawn
--- last, without the coarse passes (see 'progressivelyOver'), so that the
+-- last, without the coarse passes (see 'Task.Block.progressivePlan'), so that the
 -- parts that are new to the view are drawn first. On the plane, each new pixel
 -- takes the old pixel at the same model point (the same pixel, if the
 -- view hasn't moved); on the sphere, the old pixel at the same point of
@@ -2096,8 +2087,7 @@ renderTile' :: Valued w
             => IORef Int
             -> IORef (Int, ViewerIssues)
             -> Bool
-            -> (Word32 -> Word32 -> Word32 -> Complex Double -> Complex Double
-                -> Ptr Word8 -> IO ViewerIssues)
+            -> (ViewerArgs -> IO ViewerIssues)
             -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
             -> (Int, Int)
             -> w Model
@@ -2107,16 +2097,16 @@ renderTile' renderId renderIssues smooth action seed dim model = do
     -- A new render starts out with no issues; each block adds its own,
     -- unless a newer render has started since.
     atomicWriteIORef renderIssues (iD, mempty)
-    modelRect <- modelToRect dim <$> get model value
-    -- (once a newer render has started, this one stops: see 'StaleRender')
-    let action' p q r x y c = do
-            curId <- readIORef renderId
-            when (curId /= iD) (throwIO StaleRender)
-            issues <- action p q r x y c
+    Model viewCenter pixelDim _ <- get model value
+    let action' args = do
+            issues <- action args
             unless (issues == mempty) $
               atomicModifyIORef' renderIssues $ \(i, old) ->
                 ((i, if i == iD then old <> issues else old), ())
-    renderTile smooth seed action' dim modelRect
+            pure issues
+        -- (once a newer render has started, this one stops, between pieces)
+        stale = (/= iD) <$> readIORef renderId
+    renderTile smooth seed action' stale dim (viewCenter, pixelDim)
 
 drawCenteredBitmap :: Bitmap () -> DC d -> Rect -> (Int,Int) -> IO ()
 drawCenteredBitmap bmp dc windowRect (width, height) = do

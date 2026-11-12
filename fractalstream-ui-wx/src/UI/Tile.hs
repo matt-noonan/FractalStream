@@ -11,20 +11,19 @@ module UI.Tile ( Tile()
                , ifModified
                , ifElseModified
                , withSynchedTileBuffer
-               , StaleRender(..)
                ) where
 
 import FractalStream.Prelude
 
-import Task.Block
+import Task.Block (subBlockSize)
 import Task.Concurrent
+import Actor.Viewer (ViewerArgs, ViewerIssues, Progressive(..), ImageTarget(..), renderProgressivelyInto)
 import Data.Planar
 
 import Data.Color
 
 import Control.Concurrent
 import Control.Concurrent.Async
-import Control.Exception (Exception, handle)
 
 import Foreign.ForeignPtr
 import Foreign.Ptr
@@ -51,15 +50,6 @@ data Tile = Tile
       --   picture, or the render's first pass).
     }
 
--- | Thrown by a tile's rendering action, instead of computing a block,
--- once a newer render has replaced the tile's: it stops the tile's
--- render there. (A block whose computation is skipped mustn't be copied
--- into the tile: its scratch buffer was never written, and a newer
--- render may still read this tile's buffer as its seed.)
-data StaleRender = StaleRender
-  deriving Show
-
-instance Exception StaleRender
 
 -- | Cancel the tile, but don't wait for it to finish
 cancelTile :: Tile -> IO ()
@@ -101,7 +91,9 @@ ifElseModified tile yes no = do
         Nothing -> no
         Just _  -> yes
 
--- | Construct a tile from a dynamical system, and begin drawing to it.
+-- | Construct a tile from a viewer's block function, and begin drawing to
+-- it, progressively ('Actor.Viewer.renderProgressivelyInto', as the web
+-- app does, in 'subBlockSize' pieces).
 renderTile :: Bool -- ^ Use smoothing?
            -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
               -- ^ What the tile shows until it's drawn: fill the
@@ -110,15 +102,17 @@ renderTile :: Bool -- ^ Use smoothing?
               --   It's also given a byte per pixel (zeroed, row by row)
               --   to mark the pixels it gave their final color (nonzero),
               --   which the coarse passes then leave alone.
-           -> BlockComputeAction -- ^ The rendering action
-           -> (Int, Int)   -- ^ The height and width of this tile.
-           -> Rectangle (Double, Double)
-              -- ^ The region of the dynamical plane corresponding
-              --   to this tile.
+           -> (ViewerArgs -> IO ViewerIssues) -- ^ The viewer's block function
+           -> IO Bool      -- ^ Whether the render's no longer wanted (a
+                           --   newer one has replaced it): it stops, between
+                           --   pieces
+           -> (Int, Int)   -- ^ The width and height of this tile.
+           -> ((Double, Double), (Double, Double))
+              -- ^ The view: its center, and a pixel's width and height.
            -> IO Tile      -- ^ An action which allocates the tile and
                            --   forks a task which draws into it.
 
-renderTile smooth seed renderingAction (width, height) mRect = do
+renderTile smooth seed fn stale (width, height) (center, (px, py)) = do
 
     -- Allocate an red/green/blue pixel byte for each point in the tile
     buf <- mallocForeignPtrBytes (3 * width * height)
@@ -143,8 +137,6 @@ renderTile smooth seed renderingAction (width, height) mRect = do
     covered    <- newEmptyMVar
     managedBuf <- synchronized buf
 
-    let (mRectWidth, mRectHeight) = dimensions mRect
-
     -- The seed (if any) is worked out by the worker, before it renders,
     -- so that starting a render doesn't hold up the caller.
     worker <- async $ do
@@ -152,21 +144,17 @@ renderTile smooth seed renderingAction (width, height) mRect = do
         (Just fill, Just m) -> with managedBuf (\b -> withForeignPtr b $ \p -> withForeignPtr m (fill p))
                                  <* tryPutMVar redraw ()
         _ -> pure (\_ _ -> False)
-      handle (\StaleRender -> pure ()) $ progressivelyOver shown (void (tryPutMVar covered ())) fillBlock
-                    $ Block { coordToModel = convertRect iRect mRect . fromCoords
-                            , compute = renderingAction
-                            , logSampleRate = if smooth then 1 else 0
-                            , blockBuffer = managedBuf
-                            , x0 = 0
-                            , y0 = 0
-                            , deltaX = mRectWidth / fromIntegral width
-                            , deltaY = negate (mRectHeight / fromIntegral height)
-                            , xStride = width
-                            , xSize = width
-                            , ySize = height
-                            , shouldRedraw = redraw
-                            , finalPixels = finals
-                            }
+      concurrency <- subtract 1 <$> renderConcurrency
+      void $ renderProgressivelyInto Progressive
+        { prPieceSize = subBlockSize, prConcurrency = concurrency, prScale = 1
+        , prSmooth = smooth, prShown = shown, prStale = stale
+        , prStarted = const (pure ()), prCovered = void (tryPutMVar covered ())
+        , prDrawn = const (void (tryPutMVar redraw ())) }
+        ImageTarget { itWidth = width, itHeight = height, itCenter = center
+                    , itPixelSize = px, itAspect = py / px
+                    , itWith = \act -> with managedBuf (`withForeignPtr` act)
+                    , itFinals = finals }
+        fn
     link worker
 
     return Tile { imageRect = iRect

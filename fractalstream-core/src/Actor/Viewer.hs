@@ -33,6 +33,8 @@ module Actor.Viewer
   , Progressive(..)
   , ImagePiece(..)
   , renderProgressively
+  , ImageTarget(..)
+  , renderProgressivelyInto
   , pointerText
   , viewProjection
   , switchView
@@ -413,7 +415,8 @@ imageGeometry s w h (cx, cy) pixelSize aspect =
 data ImagePiece = ImagePiece { ipX :: !Int, ipY :: !Int, ipWidth :: !Int, ipHeight :: !Int }
   deriving (Eq, Ord, Show)
 
--- | How to render a viewer's image progressively ('renderProgressively').
+-- | How to render an image progressively ('renderProgressively',
+-- 'renderProgressivelyInto').
 data Progressive = Progressive
   { prPieceSize :: Int
     -- ^ the pieces' size (each square, but at the right and bottom edges)
@@ -431,20 +434,39 @@ data Progressive = Progressive
   , prStale :: IO Bool
     -- ^ whether the render's no longer wanted: asked before each piece's
     --   pass, and once it says so, the rest of the render is skipped
-  , prDrawn :: RenderedBuffer -> ImagePiece -> IO ()
-    -- ^ a pass of a piece is in the image (whose issues so far aren't
-    --   counted yet)
+  , prStarted :: RenderedBuffer -> IO ()
+    -- ^ ('renderProgressively' only) the image it's drawing, before it
+    --   draws anything (its issues aren't counted yet)
+  , prCovered :: IO ()
+    -- ^ every piece shows something: it's shown, or its first pass is
+    --   done (at once, if every piece is shown)
+  , prDrawn :: ImagePiece -> IO ()
+    -- ^ a pass of a piece is in the image
+  }
+
+-- | What a progressive render draws ('renderProgressivelyInto'): an
+-- image of a size, of a view (its center, a pixel's width, and its height
+-- over its width), in a buffer of RGB rows reached through 'itWith' (so a
+-- frontend can share it with whatever reads it), some of whose pixels may
+-- be final already ('itFinals': nonzero, one byte a pixel, such as the
+-- background off a globe), which coarse passes leave alone.
+data ImageTarget = ImageTarget
+  { itWidth :: Int
+  , itHeight :: Int
+  , itCenter :: (Double, Double)
+  , itPixelSize :: Double
+  , itAspect :: Double
+  , itWith :: (Ptr Word8 -> IO ()) -> IO ()
+  , itFinals :: Maybe (ForeignPtr Word8)
   }
 
 -- | Render a viewer's image progressively, in pieces and passes, as the
--- desktop app's tiles are ('Task.Block.progressivelyOver', whose order
--- this follows: coarse passes over what isn't shown yet, then every piece
--- at full resolution, then, smoothed, at twice that). Each pixel's point
--- is the image's origin plus its index ('vaOffset'), so once it's done
--- the image is just what 'renderViewerBufferAt' renders, to the byte.
--- Nothing, if it's abandoned ('prStale').
+-- desktop app's tiles are (see 'renderProgressivelyInto'). Each pixel's
+-- point is the image's origin plus its index ('vaOffset'), so once it's
+-- done the image is just what 'renderViewerBufferAt' renders, to the
+-- byte. Nothing, if it's abandoned ('prStale').
 renderProgressively :: Progressive -> Viewer -> IO (Either String (Maybe RenderedBuffer))
-renderProgressively Progressive{..} Viewer{..} = case vCodeWithArgs of
+renderProgressively pr Viewer{..} = case vCodeWithArgs of
   CodeWithArgs getArgs _ code -> getArgs >>= \case
     Left err -> pure (Left err)
     Right vaArgs -> do
@@ -456,52 +478,100 @@ renderProgressively Progressive{..} Viewer{..} = case vCodeWithArgs of
       ViewerFunction bind <- getDynamic code
       fn <- bind vaArgs
       out <- mallocForeignPtrBytes (max 1 (3 * w * h))
-      issuesVar <- newMVar mempty
-      abandoned <- newIORef False
       let image = RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection mempty
-          pixel = (pixelSize * prScale, pixelSize * prScale * aspect)
-          (origin1, (px, py)) = imageGeometry 1 w h center pixelSize aspect
-          (origin2, step2) = imageGeometry 2 w h center pixelSize aspect
-          call origin (ox, oy) step (bw, bh) buf = do
-            issues <- fn ViewerArgs { vaPoint = origin, vaOffset = (fromIntegral ox, fromIntegral oy)
-                                    , vaStep = step, vaPixel = pixel
-                                    , vaWidth = fromIntegral bw, vaHeight = fromIntegral bh
-                                    , vaSubsamples = 1, vaBuffer = buf }
-            modifyMVar_ issuesVar (pure . (<> issues))
-          piece rate (x0, pw) (y0, ph) outPtr
-            -- smoothed: the piece at twice the size, averaged down
-            | rate > 0 = allocaBytes (3 * 4 * pw * ph) $ \big -> do
-                call origin2 (2 * x0, 2 * y0) step2 (2 * pw, 2 * ph) big
-                downsampleRows (2 * pw) pw ph w big (outPtr `plusPtr` (3 * (y0 * w + x0)))
-            -- one sample a skip x skip square (a pixel, at full resolution)
-            | otherwise = do
-                let skip = 2 ^ negate rate :: Int
-                    (cw, ch) = (pw `div` skip, ph `div` skip)
-                allocaBytes (3 * cw * ch) $ \small -> allocaBytes (3 * pw) $ \line -> do
-                  call origin1 (x0 `div` skip, y0 `div` skip)
-                       (px * fromIntegral skip, py * fromIntegral skip) (cw, ch) small
+      prStarted pr image
+      renderProgressivelyInto pr (ImageTarget w h center pixelSize aspect (withForeignPtr out) Nothing) fn
+        <&> \done -> Right ((\issues -> image { rbIssues = issues }) <$> done)
+
+-- | Render an image progressively, with a viewer's block function (its
+-- values bound), in pieces and passes, for both apps (in the order of
+-- 'Task.Block.progressivePlan': coarse passes over what isn't shown yet,
+-- then every piece at full resolution, then, smoothed, at twice that). On a coarse pass, a square
+-- doesn't cover the target's final pixels, and a square whose sample is a
+-- final pixel takes its color from the one of its pixels nearest its
+-- middle that isn't, so that the edge of what's final (as a globe's) is
+-- as sharp in the coarse passes as in the end. The issues the viewer's
+-- code ran into, or Nothing if it's abandoned ('prStale').
+renderProgressivelyInto :: Progressive -> ImageTarget -> (ViewerArgs -> IO ViewerIssues) -> IO (Maybe ViewerIssues)
+renderProgressivelyInto Progressive{..} ImageTarget{..} fn = do
+  issuesVar <- newMVar mempty
+  abandoned <- newIORef False
+  let (w, h) = (itWidth, itHeight)
+      pixel = (itPixelSize * prScale, itPixelSize * prScale * itAspect)
+      (origin1, (px, py)) = imageGeometry 1 w h itCenter itPixelSize itAspect
+      (origin2, step2) = imageGeometry 2 w h itCenter itPixelSize itAspect
+      call origin (ox, oy) step (bw, bh) buf = do
+        issues <- fn ViewerArgs { vaPoint = origin, vaOffset = (fromIntegral ox, fromIntegral oy)
+                                , vaStep = step, vaPixel = pixel
+                                , vaWidth = fromIntegral bw, vaHeight = fromIntegral bh
+                                , vaSubsamples = 1, vaBuffer = buf }
+        modifyMVar_ issuesVar (pure . (<> issues))
+      isFinal :: Int -> Int -> IO Bool
+      isFinal = case itFinals of
+        Nothing -> \_ _ -> pure False
+        Just m -> \u v -> withForeignPtr m (\mp -> (/= 0) <$> peekByteOff @Word8 mp (v * w + u))
+      piece rate (x0, pw) (y0, ph)
+        -- smoothed: the piece at twice the size, averaged down
+        | rate > 0 = allocaBytes (3 * 4 * pw * ph) $ \big -> do
+            call origin2 (2 * x0, 2 * y0) step2 (2 * pw, 2 * ph) big
+            itWith $ \outPtr -> downsampleRows (2 * pw) pw ph w big (outPtr `plusPtr` (3 * (y0 * w + x0)))
+        -- at full resolution, a pixel a sample
+        | rate == 0 = allocaBytes (3 * pw * ph) $ \small -> do
+            call origin1 (x0, y0) (px, py) (pw, ph) small
+            itWith $ \outPtr -> forM_ [0 .. ph - 1] $ \j ->
+              copyBytes (outPtr `plusPtr` (3 * ((y0 + j) * w + x0))) (small `plusPtr` (3 * pw * j)) (3 * pw)
+        -- coarse: a sample a skip x skip square
+        | otherwise = do
+            let skip = 2 ^ negate rate :: Int
+                (cw, ch) = (pw `div` skip, ph `div` skip)
+            allocaBytes (3 * cw * ch) $ \small -> do
+              call origin1 (x0 `div` skip, y0 `div` skip)
+                   (px * fromIntegral skip, py * fromIntegral skip) (cw, ch) small
+              case itFinals of
+                -- (each sample's color across its square, row by row)
+                Nothing -> allocaBytes (3 * pw) $ \line -> itWith $ \outPtr ->
                   forM_ [0 .. ch - 1] $ \j -> do
                     let row = small `plusPtr` (3 * cw * j)
-                    if skip == 1 then copyBytes line row (3 * pw) else
-                      forM_ [0 .. cw - 1] $ \i -> forM_ [0 .. skip - 1] $ \d ->
-                        copyBytes (line `plusPtr` (3 * (skip * i + d))) (row `plusPtr` (3 * i)) 3
+                    forM_ [0 .. cw - 1] $ \i -> forM_ [0 .. skip - 1] $ \d ->
+                      copyBytes (line `plusPtr` (3 * (skip * i + d))) (row `plusPtr` (3 * i)) 3
                     forM_ [0 .. skip - 1] $ \d ->
                       copyBytes (outPtr `plusPtr` (3 * ((y0 + skip * j + d) * w + x0))) line (3 * pw)
-      plan <- progressivePlan prPieceSize (if prSmooth then 1 else 0) w h prShown
-      withForeignPtr out $ \outPtr ->
-        forPool_ prConcurrency plan $ \(_, rate, (x, pw), (y, ph)) -> do
-          -- (once it's stale, the rest is skipped: the pieces being
-          -- rendered still finish)
-          stop <- readIORef abandoned >>= \case
-            True -> pure True
-            False -> prStale >>= \s -> s <$ when s (writeIORef abandoned True)
-          unless stop $ do
-            let (x0, y0) = (prPieceSize * x, prPieceSize * y)
-            piece rate (x0, pw) (y0, ph) outPtr
-            prDrawn image (ImagePiece x0 y0 pw ph)
-      readIORef abandoned >>= \case
-        True -> pure (Right Nothing)
-        False -> readMVar issuesVar <&> \issues -> Right (Just image { rbIssues = issues })
+                -- (around what's final: see above)
+                Just _ -> do
+                  forM_ [ (i, j) | j <- [0 .. ch - 1], i <- [0 .. cw - 1] ] $ \(i, j) -> do
+                    let (u, v) = (x0 + skip * i, y0 + skip * j)
+                    sampleFinal <- isFinal u v
+                    when sampleFinal $ do
+                      let square = [ (u + du, v + dv) | dv <- [0 .. skip - 1], du <- [0 .. skip - 1] ]
+                          (cu, cv) = (fromIntegral u + fromIntegral skip / 2 - 0.5, fromIntegral v + fromIntegral skip / 2 - 0.5) :: (Double, Double)
+                          dist (a, b) = (fromIntegral a - cu) ^ (2 :: Int) + (fromIntegral b - cv) ^ (2 :: Int)
+                      unfinal <- filterM (fmap not . uncurry isFinal) square
+                      case sortOn dist unfinal of
+                        [] -> pure ()
+                        (fu, fv) : _ -> call origin1 (fu, fv) (px, py) (1, 1) (small `plusPtr` (3 * (j * cw + i)))
+                  itWith $ \outPtr -> forM_ [ (i, j) | j <- [0 .. ch - 1], i <- [0 .. cw - 1] ] $ \(i, j) ->
+                    forM_ [ (x0 + skip * i + du, y0 + skip * j + dv) | dv <- [0 .. skip - 1], du <- [0 .. skip - 1] ] $ \(u, v) -> do
+                      final <- isFinal u v
+                      unless final $ copyBytes (outPtr `plusPtr` (3 * (v * w + u))) (small `plusPtr` (3 * (j * cw + i))) 3
+  plan <- progressivePlan prPieceSize (if prSmooth then 1 else 0) w h prShown
+  firstsLeft <- newMVar (length [ () | (True, _, _, _) <- plan ])
+  when (null [ () | (True, _, _, _) <- plan ]) prCovered
+  forPool_ prConcurrency plan $ \(isFirst, rate, (x, pw), (y, ph)) -> do
+    -- (once it's stale, the rest is skipped: the pieces being rendered
+    -- still finish)
+    stop <- readIORef abandoned >>= \case
+      True -> pure True
+      False -> prStale >>= \s -> s <$ when s (writeIORef abandoned True)
+    unless stop $ do
+      let (x0, y0) = (prPieceSize * x, prPieceSize * y)
+      piece rate (x0, pw) (y0, ph)
+      prDrawn (ImagePiece x0 y0 pw ph)
+      when isFirst $ do
+        remaining <- modifyMVar firstsLeft (\n -> pure (n - 1, n - 1))
+        when (remaining == 0) prCovered
+  readIORef abandoned >>= \case
+    True -> pure Nothing
+    False -> Just <$> readMVar issuesVar
 
 -- | Average each 2x2 block of a @bigW@-pixel-wide RGB8 buffer down to
 -- one pixel of a @w@-pixel-wide piece of one whose rows are @stride@
