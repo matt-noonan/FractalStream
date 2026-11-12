@@ -36,8 +36,13 @@ interpretViewer body0 action = do
                 $ Bind (Proxy @"color")    ColorType grey
                 $ vaArgs
 
-    forM_ (zip [0 .. vaHeight - 1] [y0, y0 - dy ..]) $ \(j, y) -> do
-      forM_ (zip [0 .. vaWidth - 1] [x0, x0 + dx ..]) $ \(i, x) -> do
+    -- (each pixel's point from the image's origin and its index in the
+    -- image: see 'vaOffset')
+    let (ox, oy) = vaOffset
+    forM_ [0 .. vaHeight - 1] $ \j -> do
+      let y = y0 - fromIntegral (oy + j) * dy
+      forM_ [0 .. vaWidth - 1] $ \i -> do
+        let x = x0 + fromIntegral (ox + i) * dx
 
         iorefs :: Context IORefTypeOfBinding (ViewerEnv env) <-
           mapContextM (\_ _ -> newIORef) context

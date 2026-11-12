@@ -167,6 +167,15 @@ data SomeViewerWithContext where
 -- | A block of pixels for a viewer to render (see 'ViewerFunction').
 data ViewerArgs = ViewerArgs
   { vaPoint      :: (Double, Double)
+    -- ^ the point of the image's first pixel (its top left one), not
+    --   the block's: see 'vaOffset'
+  , vaOffset     :: (Int32, Int32)
+    -- ^ where the block's first pixel is in the image (its column and
+    --   row). A pixel's point is the image's first one, plus its column
+    --   (or minus its row) times the step: from the image's origin and
+    --   the pixel's index in it, not stepped to from the block's start,
+    --   so a pixel's point (to the last bit) doesn't depend on how the
+    --   image is cut into blocks.
   , vaStep       :: (Double, Double)
     -- ^ how far apart the block's pixels are, in the model
   , vaPixel      :: (Double, Double)
@@ -371,7 +380,8 @@ renderViewerBufferAt scale downsample Viewer{..} = case vCodeWithArgs of
         forPool_ caps strips $ \(row, rows) ->
           allocaBytes (3 * bigW * rows * s) $ \big -> do
             issues <- fn ViewerArgs
-              { vaPoint = (x0, y0 - fromIntegral (row * s) * py)
+              { vaPoint = (x0, y0)
+              , vaOffset = (0, fromIntegral (row * s))
               , vaStep = (px, py)
               , vaPixel = (pixelSize * scale, pixelSize * scale * aspect)
               , vaWidth = fromIntegral bigW

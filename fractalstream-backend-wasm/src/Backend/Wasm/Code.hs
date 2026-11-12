@@ -1,9 +1,13 @@
 -- | Compiling a viewer's code into a WebAssembly kernel module.
 --
 -- The kernel is @kernel(out, width, height, subsamples, args, arena,
--- arenaSize, snapshot, misses, x0, y0, dx, dy, px, py) -> issues@ (@px@,
--- @py@: the pixel size the code sees, as its @pixel_size@, which needn't
--- be the step: see 'Actor.Viewer.vaPixel') (@snapshot@: a
+-- arenaSize, snapshot, misses, x0, y0, dx, dy, px, py, offsetX, offsetY)
+-- -> issues@ (@px@, @py@: the pixel size the code sees, as its
+-- @pixel_size@, which needn't be the step: see 'Actor.Viewer.vaPixel';
+-- @x0@, @y0@ the image's first pixel's point, and @offsetX@, @offsetY@
+-- where the block's first pixel is in the image: a pixel's point is the
+-- image's origin plus its index times the step, see
+-- 'Actor.Viewer.vaOffset') (@snapshot@: a
 -- copy of the autocolor groups, or 0; @misses@: where to note the points
 -- it would add, for the engine to add: see "Backend.Wasm"): it renders a block of pixels into
 -- @out@ (RGB bytes), exactly as the LLVM backend's kernel does (the same
@@ -307,13 +311,13 @@ storeArg argsParam off = \case
   where one store l = emit [localGet argsParam, localGet l, store]
 
 pOut, pWidth, pHeight, pSubsamples, pArgs, pArena, pArenaSize, pSnapshot, pMisses,
-  pX0, pY0, pDX, pDY, pPX, pPY :: Int
+  pX0, pY0, pDX, pDY, pPX, pPY, pOffX, pOffY :: Int
 pOut = 0; pWidth = 1; pHeight = 2; pSubsamples = 3; pArgs = 4
 pArena = 5; pArenaSize = 6; pSnapshot = 7; pMisses = 8
-pX0 = 9; pY0 = 10; pDX = 11; pDY = 12; pPX = 13; pPY = 14
+pX0 = 9; pY0 = 10; pDX = 11; pDY = 12; pPX = 13; pPY = 14; pOffX = 15; pOffY = 16
 
 kernelParams :: [ValType]
-kernelParams = [I32, I32, I32, I32, I32, I32, I32, I32, I32, F64, F64, F64, F64, F64, F64]
+kernelParams = [I32, I32, I32, I32, I32, I32, I32, I32, I32, F64, F64, F64, F64, F64, F64, I32, I32]
 
 -- | Compile a viewer's code into a kernel module's bytes, or say why it
 -- can't be.
@@ -382,16 +386,20 @@ compileViewer memory body = do
               , Loop subsample ]
               ++ output 0 accR ++ output 1 accG ++ output 2 accB
               ++ [ localGet index, i32Const 3, i32Add, localSet index
-                 , localGet x, localGet pDX, f64Add, localSet x
                  , localGet j, i32Const 1, i32Add, localTee j
                  , localGet pWidth, i32LtU, brIf 0 ]
+            -- (each pixel's point: the image's origin plus its index in
+            -- the image times the step, not stepped to)
+            pointOf = [ localGet pX0, localGet pOffX, localGet j, i32Add, f64ConvertI32S
+                      , localGet pDX, f64Mul, f64Add, localSet x ]
             row =
-              [ localGet pX0, localSet x, i32Const 0, localSet j
-              , Loop pixel
-              , localGet y, localGet pDY, f64Sub, localSet y
+              [ localGet pY0, localGet pOffY, localGet i, i32Add, f64ConvertI32S
+              , localGet pDY, f64Mul, f64Sub, localSet y
+              , i32Const 0, localSet j
+              , Loop (pointOf ++ pixel)
               , localGet i, i32Const 1, i32Add, localTee i
               , localGet pHeight, i32LtU, brIf 0 ]
-        emit [ i32Const 0, localSet index, localGet pY0, localSet y, i32Const 0, localSet i
+        emit [ i32Const 0, localSet index, i32Const 0, localSet i
              , Loop row
              -- the issues: bit 0 for running out of arena, bit 1 for a bad index
              , localGet anyOverflow, localGet anyBadIndex, i32Const 1, i32Shl, i32Or ]

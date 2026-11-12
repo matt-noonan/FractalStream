@@ -421,6 +421,8 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocol
                              : argPtr   autocolorDir
                              : argCDouble (CDouble $ fst vaStep)
                              : argCDouble (CDouble $ snd vaStep)
+                             : argInt32 (fst vaOffset)
+                             : argInt32 (snd vaOffset)
                              : argCDouble (CDouble $ fst vaPoint)
                              : argCDouble (CDouble $ snd vaPoint)
                              : argCDouble (CDouble $ fst vaPixel)
