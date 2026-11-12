@@ -70,7 +70,7 @@ executable fractalstream-web
   hs-source-dirs:      src
   -- (a reactor module: the page's worker calls its exports; see web/src/engine.ts)
   ghc-options:         -no-hs-main -optl-mexec-model=reactor
-                       "-optl-Wl,--export=fs_library,--export=fs_open,--export=fs_open_file,--export=fs_translate,--export=fs_pointer,--export=fs_save,--export=fs_set,--export=fs_view,--export=fs_resize,--export=fs_smoothing,--export=fs_density,--export=fs_viewer_smoothing,--export=fs_navigate,--export=fs_record,--export=fs_jump,--export=fs_where,--export=fs_colorizer,--export=fs_colorizer_arguments,--export=fs_colorizer_answers,--export=fs_rotate,--export=fs_select_tool,--export=fs_event,--export=fs_button,--export=fs_set_tool,--export=fs_stop,--export=fs_analyze,--export=fs_symbols,--export=fs_rebuild"
+                       "-optl-Wl,--export=fs_library,--export=fs_open,--export=fs_open_file,--export=fs_translate,--export=fs_pointer,--export=fs_save,--export=fs_set,--export=fs_view,--export=fs_resize,--export=fs_smoothing,--export=fs_density,--export=fs_viewer_smoothing,--export=fs_navigate,--export=fs_record,--export=fs_jump,--export=fs_aspect,--export=fs_where,--export=fs_colorizer,--export=fs_colorizer_arguments,--export=fs_colorizer_answers,--export=fs_rotate,--export=fs_select_tool,--export=fs_event,--export=fs_button,--export=fs_set_tool,--export=fs_stop,--export=fs_analyze,--export=fs_symbols,--export=fs_rebuild"
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
                      , fractalstream-library

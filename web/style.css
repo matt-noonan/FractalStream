@@ -304,5 +304,6 @@ body.no-panel .panel { display: none; }
 .viewer-form .form-error { color: var(--error); min-height: 1em; }
 .viewer-form .form-error:empty { display: none; }
 .viewer-form .form-buttons { display: flex; justify-content: flex-end; gap: 6px; }
+.viewer-form .form-gap { flex: 1; }
 .viewer-form button { font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
                       border: 1px solid var(--line); background: var(--bg); color: var(--fg); }

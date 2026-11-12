@@ -54,6 +54,11 @@ tables (@tables:@) it was saved with, and is saved with its own.
   the plane, or back. The engine posts the view it goes to (@view@).
 * @fs_record(viewer)@: the viewer's view, as it is now, is a step in its
   history (the page says so at the end of a gesture: a drag, a zoom).
+* @fs_aspect(viewer, text)@: a real viewer's aspect ratio (a pixel's
+  height over its width, as typed: @2@, @1/2@), keeping its center and a
+  pixel's width, as the desktop does: answered with @aspect@ (an error,
+  or none). Saved in @web-properties:@ (@aspect@), when it isn't the
+  script's.
 * @fs_jump(viewer, x, y, pixelSize)@: go to a view: centered on (x, y)
   (on the sphere, the globe turned to face it), with a pixel this size
   (a CSS pixel's). @fs_where(viewer)@ posts where it is now, so (@where@).
@@ -103,6 +108,7 @@ Messages:
 > { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
 > { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere" }   (the engine moved the view: a pixel's size in the canvas's pixels)
 > { "type": "where", "viewer", "x", "y", "pixelSize" }
+> { "type": "aspect", "viewer", "error": <why it isn't one> or null }
 > { "type": "colorizerArguments", "viewer", "name", "fields": [ { "param", "note", "text" } ] }
 
 A viewer's info has, too: "complex" (whether it can show the sphere),
@@ -174,6 +180,8 @@ import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceAr
                         argumentFields, choiceWithArguments)
 import Actor.Event (Coordinate(..))
 import Data.List (find)
+import Language.Value.Parser (parseConstant)
+import Language.Type (TypeProxy(RealType))
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
 import Actor.Ensemble (buildToolContext, buildEnsembleWithColorizers, carryOverProjectState)
@@ -400,6 +408,7 @@ foreign export javascript "fs_viewer_smoothing" setViewerSmoothing :: Int -> Boo
 foreign export javascript "fs_navigate" navigateTo :: Int -> Int -> IO ()
 foreign export javascript "fs_record" record :: Int -> IO ()
 foreign export javascript "fs_jump" jump :: Int -> Double -> Double -> Double -> IO ()
+foreign export javascript "fs_aspect" setAspect :: Int -> JSString -> IO ()
 foreign export javascript "fs_where" whereIs :: Int -> IO ()
 foreign export javascript "fs_colorizer" chooseColorizer :: Int -> JSString -> IO ()
 foreign export javascript "fs_colorizer_arguments" colorizerArguments :: Int -> IO ()
@@ -859,6 +868,20 @@ jump k x y pixelSize = withViewerState k $ \vs -> do
     Nothing -> Model (x, y) (dz, dz * py / px) Nothing
     Just _ -> Model (0, 0) (dz, dz) (Just (rotationFacing (x, y)))
 
+-- | A real viewer's aspect ratio, from its text, as the desktop's Aspect
+-- ratio... sets it: keeping the center and a pixel's width, as a new
+-- step in the history.
+setAspect :: Int -> JSString -> IO ()
+setAspect k txt = withViewerState k $ \vs -> do
+  let reply (e :: Maybe String) = post $ Aeson.object
+        [ "type" .= ("aspect" :: Text.Text), "viewer" .= k, "error" .= e ]
+  case parseConstant RealType (fromJSString txt) of
+    Right a | a > 0, not (isInfinite a) -> do
+      Model c (px, _) _ <- viewerModel (vsViewer vs)
+      changeViewTo vs (Model c (px, px * a) Nothing)
+      reply Nothing
+    _ -> reply (Just "The aspect ratio should be a positive number, like 2 or 1/2.")
+
 -- | Where a viewer is: the point in the middle of its view (on the
 -- sphere, the one the globe faces), and a CSS pixel's size.
 whereIs :: Int -> IO ()
@@ -881,6 +904,9 @@ applySavedView v saved title = case saved of
         forM_ (KM.lookup "rotation" p >>= decodeValue) $ \case
           [w, x, y, z] -> setValue (vRotation v) (Rotation w x y z)
           _ -> pure ()
+        forM_ (KM.lookup "aspect" p) $ \case
+          Aeson.Number a | a > 0 -> setValue (vAspect v) (realToFrac a)
+          _ -> pure ()
         case KM.lookup "view" p of
           Just (Aeson.String "sphere") | isComplex -> setValue (vView v) SphereView
           Just (Aeson.String "plane") -> setValue (vView v) PlaneView
@@ -902,7 +928,9 @@ withViews viewers = \case
       title <- getDynamic (vTitle v)
       kind <- getDynamic (vView v)
       Rotation w x y z <- getDynamic (vRotation v)
+      aspect <- getDynamic (vAspect v)
       let extra = [ ("view", Aeson.String (if kind == SphereView then "sphere" else "plane")) | kind /= vOriginalView v ]
+               ++ [ ("aspect", Aeson.toJSON aspect) | aspect /= vOriginalAspect v ]
                ++ [ ("rotation", Aeson.toJSON [w, x, y, z]) | kind == SphereView ]
       pure $ case KM.lookup (fromString title) acc of
         Just (Aeson.Object p) -> KM.insert (fromString title) (Aeson.Object (foldr (uncurry KM.insert) p extra)) acc

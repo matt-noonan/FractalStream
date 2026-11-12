@@ -334,9 +334,11 @@ Only if 0c/0d come out well.
   and the sphere: the engine says what's under the pointer).
 - [x] The rest of the desktop's viewer menu: Last, Next and Original view
   (`<`, `>`, `^`), Jump to view (`@`), Show on the sphere, the Colorizer
-  submenu (with Arguments…), and Use subpixel smoothing (per viewer, in
-  place of the toolbar's Smooth). Not Show configuration (`=`): the web's
-  configuration is always beside the viewers.
+  submenu (with Arguments…), Use subpixel smoothing (per viewer, in
+  place of the toolbar's Smooth), and a real viewer's Aspect ratio… (with
+  Square pixels; saved as `aspect` when it isn't the script's). Not Show
+  configuration (`=`): the web's configuration is always beside the
+  viewers.
 - [x] Errors as notices, dismissed (not only the status line).
 - [ ] Autocolor editor.
 - [ ] Movies (WebCodecs).
@@ -357,7 +359,7 @@ Record spike results and surprises here, newest first.
 ### 2026-11-12: The viewer menu
 
 Each viewer's ☰ menu now has what the desktop's does (but Show
-configuration and Aspect ratio):
+configuration; Aspect ratio came just after):
 
 - **Navigating** (Last, Next, Original view; `<`, `>`, `^`), with a
   history per viewer, kept in the engine, which owns the globe's rotation

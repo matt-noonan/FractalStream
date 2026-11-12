@@ -539,6 +539,8 @@ class ViewerView {
       (see `recordSoon`). */
   private recordWanted = false;
   private recordTimer: number | undefined;
+  /** Waiting for the engine to read an aspect ratio (see `askAspect`). */
+  private aspectAnswer: ((error: string | null) => void) | null = null;
   private drawPending = false;
   private dragFrom: { x: number; y: number } | null = null;
   /** On the sphere: the screen point (in the sphere's radii) where the
@@ -1046,8 +1048,11 @@ class ViewerView {
       { kind: "action", label: "Jump to view…", shortcut: "@", run: () => this.askJump() },
       { kind: "action", label: "Original view", shortcut: "^", run: () => this.navigate(2) },
     ];
+    // (a complex viewer's pixels are square; it can show the sphere instead)
     if (this.info.complex) {
       items.push({ kind: "toggle", label: "Show on the sphere", on: this.info.sphere, toggle: () => this.navigate(3) });
+    } else {
+      items.push({ kind: "action", label: "Aspect ratio…", run: () => this.askAspect() });
     }
     if (c) {
       items.push({ kind: "separator" }, { kind: "submenu", label: "Colorizer", items: () => [
@@ -1110,6 +1115,26 @@ class ViewerView {
     });
   }
 
+  /** A real viewer's aspect ratio (a pixel's height over its width), as
+      the desktop asks for it: the engine reads it (an expression, like
+      1/2), and says if it isn't one. */
+  askAspect() {
+    const t = this.target;
+    const now = t ? String(Number((t.py / t.px).toPrecision(6))) : "1";
+    askForm(this.element, "Aspect ratio", [{ label: "pixel height / pixel width =", value: now }],
+            (values) => new Promise((resolve) => {
+              this.aspectAnswer = resolve;
+              send({ type: "aspect", viewer: this.info.id, text: values[0] });
+            }),
+            [{ label: "Square pixels", values: ["1"] }]);
+  }
+
+  /** The engine's answer to an aspect ratio: why it isn't one, if it isn't. */
+  aspectAnswered(error: string | null) {
+    this.aspectAnswer?.(error);
+    this.aspectAnswer = null;
+  }
+
   /** Ask for a colorizer's arguments, as the desktop does. */
   askArguments(name: string, fields: { param: string; note: string; text: string }[]) {
     askForm(this.element, `${name}: arguments`,
@@ -1122,26 +1147,35 @@ class ViewerView {
 }
 
 /** A small form over a viewer: each field a label, a note, and a text box;
-    OK (or Enter) gives `ok` the answers, which says what's wrong with
-    them, if anything (and then the form stays); Cancel (or Escape) closes
-    it. */
+    OK (or Enter) gives `ok` the answers, which says (or promises to say)
+    what's wrong with them, if anything (and then the form stays); Cancel
+    (or Escape) closes it. Any other buttons fill in the fields, and OK. */
 function askForm(host: HTMLElement, title: string, fields: { label: string; note?: string; value: string }[],
-                 ok: (values: string[]) => string | null) {
+                 ok: (values: string[]) => string | null | Promise<string | null>,
+                 others: { label: string; values: string[] }[] = []) {
   host.querySelector(".viewer-form")?.remove();
   const inputs = fields.map((f) => el("input", { type: "text", value: f.value, spellcheck: false }));
   const error = el("div", { className: "form-error" });
   const okButton = el("button", { type: "submit", textContent: "OK" });
   const cancel = el("button", { type: "button", textContent: "Cancel" });
+  const extra = others.map((o) => {
+    const b = el("button", { type: "button", textContent: o.label });
+    b.addEventListener("click", () => {
+      o.values.forEach((v, i) => { if (inputs[i]) inputs[i].value = v; });
+      form.requestSubmit();
+    });
+    return b;
+  });
   const form = el("form", { className: "viewer-form" },
     el("div", { className: "form-title", textContent: title }),
     ...fields.map((f, i) => el("label", { className: "form-field" },
       el("span", { textContent: f.label }), inputs[i], f.note ? el("small", { textContent: f.note }) : "")),
-    error, el("div", { className: "form-buttons" }, cancel, okButton));
+    error, el("div", { className: "form-buttons" }, ...extra, el("span", { className: "form-gap" }), cancel, okButton));
   form.setAttribute("role", "dialog");
   const close = () => form.remove();
-  form.addEventListener("submit", (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const problem = ok(inputs.map((i) => i.value));
+    const problem = await ok(inputs.map((i) => i.value));
     if (problem) error.textContent = problem; else close();
   });
   cancel.addEventListener("click", close);
@@ -1209,6 +1243,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "pointer": viewers.get(m.viewer)?.showPointer(m.text); break;
     case "view": viewers.get(m.viewer)?.moved(m); break;
     case "where": viewers.get(m.viewer)?.jumpFrom(m.x, m.y, m.pixelSize); break;
+    case "aspect": viewers.get(m.viewer)?.aspectAnswered(m.error); break;
     case "colorizerArguments": viewers.get(m.viewer)?.askArguments(m.name, m.fields); break;
     case "analysis": scriptEditor?.analysis(m.id, m); break;
     case "symbols": symbolTables = [m.names, m.accents]; scriptEditor?.setSymbols(m.names, m.accents); break;
