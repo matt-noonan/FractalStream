@@ -59,6 +59,16 @@ tables (@tables:@) it was saved with, and is saved with its own.
   pixel's width, as the desktop does: answered with @aspect@ (an error,
   or none). Saved in @web-properties:@ (@aspect@), when it isn't the
   script's.
+* @fs_autocolor_watch(on)@: whether the page's autocolor editor is open:
+  while it is, the project's autocolor groups are posted (@autocolor@)
+  whenever they change (as renders add points, say), a few times a second
+  at most.
+* @fs_autocolor_edit(edit)@: an edit to a group (JSON: @{ "op", "group",
+  ... }@): @locked@ and @blend@ (with @on@), @tolerance@ (with its
+  @text@), @miss@ (a @color@, #rrggbb), @color@ (a point's: @x@, @y@,
+  @color@), @move@ (a point, @x@ and @y@, to @text@), @delete@ (@x@, @y@),
+  @add@ (@text@), @clear@. A point or tolerance that can't be read is said
+  so (@autocolorError@), as the desktop's window does.
 * @fs_jump(viewer, x, y, pixelSize)@: go to a view: centered on (x, y)
   (on the sphere, the globe turned to face it), with a pixel this size
   (a CSS pixel's). @fs_where(viewer)@ posts where it is now, so (@where@).
@@ -109,6 +119,9 @@ Messages:
 > { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere" }   (the engine moved the view: a pixel's size in the canvas's pixels)
 > { "type": "where", "viewer", "x", "y", "pixelSize" }
 > { "type": "aspect", "viewer", "error": <why it isn't one> or null }
+> { "type": "autocolor", "groups": [ { "id", "locked", "blend", "tolerance": <text>, "miss": <#rrggbb>,
+>   "entries": [ { "x", "y", "point": <text>, "color": <#rrggbb> } ] } ] }
+> { "type": "autocolorError", "message" }
 > { "type": "colorizerArguments", "viewer", "name", "fields": [ { "param", "note", "text" } ] }
 
 A viewer's info has, too: "complex" (whether it can show the sphere),
@@ -181,7 +194,13 @@ import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceAr
 import Actor.Event (Coordinate(..))
 import Data.List (find)
 import Language.Value.Parser (parseConstant)
-import Language.Type (TypeProxy(RealType))
+import Language.Type (TypeProxy(RealType, ComplexType))
+import Actor.Autocolor (AutocolorGroup(..), AutocolorGroupId(..), autocolorGroups, showAutocolorPoint,
+                        setAutocolorLocked, setAutocolorBlendMisses, setAutocolorTolerance, setAutocolorMissColor,
+                        setAutocolorEntryColor, moveAutocolorEntry, deleteAutocolor, addAutocolorEntry,
+                        clearAutocolorGroup)
+import Data.Color (Color, rgbToColor)
+import Data.Char (isHexDigit, digitToInt)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
 import Actor.Ensemble (buildToolContext, buildEnsembleWithColorizers, carryOverProjectState)
@@ -408,6 +427,8 @@ foreign export javascript "fs_viewer_smoothing" setViewerSmoothing :: Int -> Boo
 foreign export javascript "fs_navigate" navigateTo :: Int -> Int -> IO ()
 foreign export javascript "fs_record" record :: Int -> IO ()
 foreign export javascript "fs_jump" jump :: Int -> Double -> Double -> Double -> IO ()
+foreign export javascript "fs_autocolor_watch" autocolorWatch :: Bool -> IO ()
+foreign export javascript "fs_autocolor_edit" autocolorEdit :: JSString -> IO ()
 foreign export javascript "fs_aspect" setAspect :: Int -> JSString -> IO ()
 foreign export javascript "fs_where" whereIs :: Int -> IO ()
 foreign export javascript "fs_colorizer" chooseColorizer :: Int -> JSString -> IO ()
@@ -652,6 +673,7 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
 -- | Stop the open project's render loops (if any).
 close :: IO ()
 close = readIORef sessionRef >>= mapM_ (\s -> sStop s >> writeIORef sessionRef Nothing)
+-- (an open autocolor editor goes on watching: the next project's groups)
 
 requestRender :: MVar () -> IO ()
 requestRender signal = void (tryPutMVar signal ())
@@ -883,6 +905,99 @@ setAspect k txt = withViewerState k $ \vs -> do
       changeViewTo vs (Model c (px, px * a) Nothing)
       reply Nothing
     _ -> reply (Just "The aspect ratio should be a positive number, like 2 or 1/2.")
+
+------------------------------------------------------------------------
+-- Autocolor
+
+-- | While the page's autocolor editor is open, the thread posting the
+-- groups when they change.
+autocolorWatchRef :: IORef (Maybe ThreadId)
+autocolorWatchRef = unsafePerformIO (newIORef Nothing)
+{-# NOINLINE autocolorWatchRef #-}
+
+-- | The open project's autocolor groups, as the editor shows them.
+autocolorJSON :: IO (Maybe Aeson.Value)
+autocolorJSON = readIORef sessionRef >>= traverse (\Session{..} -> do
+  st <- getDynamic (ensembleAutocolor sEnsemble)
+  groups <- autocolorGroups st
+  gs <- forM (Map.toList groups) $ \(AutocolorGroupId n, g) -> do
+    locked <- getDynamic (agLocked g)
+    blend <- getDynamic (agBlendMisses g)
+    tolerance <- getDynamic (agTolerance g)
+    miss <- getDynamic (agMissColor g)
+    table <- getDynamic (agTable g)
+    entries <- forM (Map.toList table) $ \(pt@(x, y), cv) -> do
+      c <- getDynamic cv
+      pure (Aeson.object [ "x" .= x, "y" .= y, "point" .= showAutocolorPoint pt, "color" .= hexColor c ])
+    pure (Aeson.object [ "id" .= n, "locked" .= locked, "blend" .= blend
+                       , "tolerance" .= showAutocolorPoint (tolerance, 0), "miss" .= hexColor miss
+                       , "entries" .= entries ])
+  pure (Aeson.object [ "type" .= ("autocolor" :: Text.Text), "groups" .= gs ]))
+  where
+    hexColor c = let (r, g, b) = colorToRGB c in (printf "#%02x%02x%02x" r g b :: String)
+
+-- | Post the groups now, and whenever they've changed, until the editor's
+-- closed (checking a few times a second).
+autocolorWatch :: Bool -> IO ()
+autocolorWatch on = guarded $ do
+  readIORef autocolorWatchRef >>= mapM_ killThread
+  writeIORef autocolorWatchRef Nothing
+  when on $ do
+    tid <- forkIO $ do
+      lastPosted <- newIORef Nothing
+      forever $ do
+        current <- autocolorJSON
+        before <- readIORef lastPosted
+        when (current /= before) $ do
+          writeIORef lastPosted current
+          mapM_ post current
+        threadDelay 300000
+    writeIORef autocolorWatchRef (Just tid)
+
+-- | An edit from the editor (see @fs_autocolor_edit@).
+autocolorEdit :: JSString -> IO ()
+autocolorEdit edit = guarded $ readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  st <- getDynamic (ensembleAutocolor sEnsemble)
+  groups <- autocolorGroups st
+  let say msg = post (Aeson.object [ "type" .= ("autocolorError" :: Text.Text), "message" .= msg ])
+  case Aeson.eitherDecodeStrict (Text.encodeUtf8 (Text.pack (fromJSString edit))) of
+    Left err -> say ("couldn't read the edit: " ++ err)
+    Right (Aeson.Object o) -> do
+      let str k = case KM.lookup k o of Just (Aeson.String t) -> Just (Text.unpack t); _ -> Nothing
+          num k = case KM.lookup k o of Just (Aeson.Number n) -> Just (realToFrac n :: Double); _ -> Nothing
+          bool k = case KM.lookup k o of Just (Aeson.Bool b) -> Just b; _ -> Nothing
+          readPoint txt = case parseConstant ComplexType txt of
+            Right (x :+ y) -> Right (x, y)
+            Left _ -> Left ("Couldn't read " ++ show txt ++ " as a complex number.")
+          color = str "color" >>= readHex
+          point = (,) <$> num "x" <*> num "y"
+      case num "group" >>= \n -> Map.lookup (AutocolorGroupId (round n)) groups of
+        Nothing -> say "There's no such autocolor group."
+        Just g -> case str "op" of
+          Just "locked" -> mapM_ (setAutocolorLocked st g) (bool "on")
+          Just "blend" -> mapM_ (setAutocolorBlendMisses st g) (bool "on")
+          Just "tolerance" -> case parseConstant RealType (fromMaybe "" (str "text")) of
+            Right r | r > 0 -> setAutocolorTolerance st g r
+            _ -> say ("The tolerance has to be a positive number, not " ++ show (fromMaybe "" (str "text")) ++ ".")
+          Just "miss" -> mapM_ (setAutocolorMissColor st g) color
+          Just "color" -> sequence_ (setAutocolorEntryColor st g <$> point <*> color)
+          Just "move" -> forM_ point $ \from -> case readPoint (fromMaybe "" (str "text")) of
+            Left err -> say err
+            Right to | to /= from -> moveAutocolorEntry st g from to
+                     | otherwise -> pure ()
+          Just "delete" -> forM_ point $ \(x, y) -> deleteAutocolor st g x y
+          Just "add" -> case readPoint (fromMaybe "" (str "text")) of
+            Left err -> say err
+            Right pt -> void (addAutocolorEntry st g pt Nothing)
+          Just "clear" -> clearAutocolorGroup st g
+          _ -> say "That isn't an autocolor edit."
+    Right _ -> say "That isn't an autocolor edit.")
+  where
+    readHex :: String -> Maybe Color
+    readHex ('#' : h) | length h == 6, all isHexDigit h =
+      let byte k = fromIntegral (digitToInt (h !! (2 * k)) * 16 + digitToInt (h !! (2 * k + 1)))
+      in Just (rgbToColor (byte 0, byte 1, byte 2))
+    readHex _ = Nothing
 
 -- | Where a viewer is: the point in the middle of its view (on the
 -- sphere, the one the globe faces), and a CSS pixel's size.

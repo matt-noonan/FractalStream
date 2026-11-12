@@ -37,6 +37,10 @@ export type Request =
       CSS pixel this size. "where" asks where the viewer is now. */
   | { type: "jump"; viewer: number; x: number; y: number; pixelSize: number }
   | { type: "where"; viewer: number }
+  /** Whether the autocolor editor's open (the groups are posted, as they
+      change, while it is), and an edit to a group (see Main.hs). */
+  | { type: "autocolorWatch"; on: boolean }
+  | { type: "autocolorEdit"; edit: AutocolorEdit }
   /** A real viewer's aspect ratio (a pixel's height over its width), as
       typed: answered by "aspect". */
   | { type: "aspect"; viewer: number; text: string }
@@ -67,6 +71,27 @@ export type Request =
   | { type: "analyze"; id: number; text: string }
   | { type: "symbols" }
   | { type: "rebuild"; text: string };
+
+/** An edit to an autocolor group: points by their coordinates, colors as #rrggbb. */
+export type AutocolorEdit =
+  | { op: "locked" | "blend"; group: number; on: boolean }
+  | { op: "tolerance" | "add"; group: number; text: string }
+  | { op: "miss"; group: number; color: string }
+  | { op: "color"; group: number; x: number; y: number; color: string }
+  | { op: "move"; group: number; x: number; y: number; text: string }
+  | { op: "delete"; group: number; x: number; y: number }
+  | { op: "clear"; group: number };
+
+export interface AutocolorGroup {
+  id: number;
+  locked: boolean;
+  /** Blend its colors for points not near any of its points (when it's locked or full). */
+  blend: boolean;
+  tolerance: string;
+  /** The color for points not in the group. */
+  miss: string;
+  entries: { x: number; y: number; point: string; color: string }[];
+}
 
 /** 0 the last view, 1 the next, 2 the original one, 3 the sphere or the plane. */
 export type Navigation = 0 | 1 | 2 | 3;
@@ -213,6 +238,8 @@ export type Message =
   | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean }
   | { type: "where"; viewer: number; x: number; y: number; pixelSize: number }
   | { type: "aspect"; viewer: number; error: string | null }
+  | { type: "autocolor"; groups: AutocolorGroup[] }
+  | { type: "autocolorError"; message: string }
   /** What to ask for a colorizer's arguments: each parameter, a note, and its text to start with. */
   | { type: "colorizerArguments"; viewer: number; name: string; fields: { param: string; note: string; text: string }[] }
   /** An edited script, colored and checked, with how to write it with

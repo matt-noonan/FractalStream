@@ -340,7 +340,7 @@ Only if 0c/0d come out well.
   configuration (`=`): the web's configuration is always beside the
   viewers.
 - [x] Errors as notices, dismissed (not only the status line).
-- [ ] Autocolor editor.
+- [x] Autocolor editor: an overlay over the workspace (for now: windows are viewers), from each viewer's Colorizer submenu.
 - [ ] Movies (WebCodecs).
 - [ ] Saved tables.
 - [ ] Open a project from a URL; shareable links.
@@ -355,6 +355,25 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: The autocolor editor
+
+"Autocolor settings…", at the end of each viewer's Colorizer submenu,
+opens the project's autocolor groups over the workspace (as the script
+editor is: the user chose an overlay rather than a window, since the
+desk's windows are viewers; maybe revisited later), laid out as the
+desktop's Autocolor window: a group to pick, Lock, Blend when no
+matching point, Clear all, the tolerance, the color for points not in
+the group, and the points (each moved, recolored, deleted) and new ones.
+The engine does the edits with the core's functions (`fs_autocolor_edit`,
+points and tolerance read as the desktop reads them, refused when they
+can't be), and the viewers that use autocolor are drawn again as the
+core's edit counter changes. While the editor's open, the engine checks
+the groups three times a second and posts them when they've changed
+(renders add points); the page rebuilds the list only when something in
+it changed, and not while one of its fields is being typed in. A rebuild
+keeps it open. Checks: `check-tools.mjs`'s `autocolor` section, on
+Newton's method for z⁵ - z - 1, in Chromium, Firefox and WebKit.
 
 ### 2026-11-12: The desktop on the shared renderer, with the web's pacing
 

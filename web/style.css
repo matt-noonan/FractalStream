@@ -315,3 +315,24 @@ body.no-panel .panel { display: none; }
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
 }
 .zoom-box[hidden] { display: none; }
+
+/* The autocolor editor (main.ts's showAutocolor), over the workspace as
+   the script editor is. */
+.autocolor-overlay .autocolor-body {
+  flex: 1; min-height: 0; overflow: auto; padding: 10px 12px;
+  width: 100%; max-width: 640px; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 10px; font-size: 13px;
+}
+.autocolor-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.autocolor-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; align-items: center; }
+.autocolor-list { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.autocolor-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
+.autocolor-body input[type=text] { font: 12px ui-monospace, monospace; padding: 3px 6px; min-width: 0;
+                                   border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
+.autocolor-row input[type=text] { flex: 1; }
+.autocolor-body input[type=color] { width: 36px; height: 24px; padding: 0 2px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+.autocolor-body button, .autocolor-body select { font: inherit; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+                                                  border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+.autocolor-status { color: var(--error); min-height: 1.2em; margin: 0; }
+.autocolor-status:empty { display: none; }
+.autocolor-empty { color: var(--muted); margin: 4px; }

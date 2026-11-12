@@ -38,6 +38,10 @@
 //             reopened so), its colorizer and a colorizer's arguments,
 //             subpixel smoothing, and a real viewer's aspect ratio (saved,
 //             and reopened so)
+//   autocolor the autocolor editor (from a viewer's Colorizer submenu), on
+//             Newton's method for z⁵ - z - 1: its groups and points; a
+//             point recolored (and the viewer drawn again), added, moved,
+//             deleted; lock, tolerance (and a bad one), clear; saved
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
@@ -52,7 +56,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, panel };
+const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -883,4 +887,89 @@ async function menu() {
   await page.waitForTimeout(800);
   const square = (await page.evaluate((id) => window.__messages.filter((m) => m.viewer === id && m.type === "view").pop(), rv));
   c.check(square && square.py === square.px, "Square pixels makes them square");
+}
+
+async function autocolor() {
+  const project = await app.openLibrary("Newton's method for z⁵");
+  const v = project.viewers.findIndex((x) => x.colorizer?.inUse === "Autocolor");
+  c.check(v >= 0, "a viewer colored by Autocolor");
+  await page.locator(".window").nth(v).locator(".window-menu-button").click();
+  await page.locator(".window-menu button", { hasText: "Colorizer" }).click();
+  await page.locator(".window-menu button", { hasText: "Autocolor settings" }).click();
+  const overlay = page.locator(".autocolor-overlay");
+  await overlay.locator(".autocolor-entry").first().waitFor({ timeout: 10000 }).catch(() => {});
+  const latest = async () => (await app.messages("autocolor")).pop()?.groups ?? [];
+  const groups = await latest();
+  const n0 = groups[0]?.entries.length ?? 0;
+  c.check(await overlay.isVisible() && n0 > 0 && (await overlay.locator(".autocolor-entry").count()) === n0,
+          `Autocolor settings… opens the editor: ${groups.length} group(s), ${n0} point(s)`);
+  const settle = () => page.waitForTimeout(900);
+  const entries = () => latest().then((gs) => gs[0]?.entries ?? []);
+
+  // a point recolored: the viewer's drawn again
+  const done = async () => (await app.messages("patch")).filter((m) => m.viewer === v && m.done).length;
+  const before = await done();
+  await overlay.locator(".autocolor-entry input[type=color]").first().evaluate((i) => {
+    i.value = "#ff00ff"; i.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settle();
+  c.check((await entries())[0]?.color === "#ff00ff" && (await done()) > before,
+          "a point recolored, and the viewer drawn again");
+
+  // lock, and the tolerance (a bad one is refused)
+  await overlay.locator(".autocolor-check", { hasText: "Lock" }).locator("input").click();
+  await settle();
+  c.check((await latest())[0]?.locked === true, "Lock locks the group");
+  const tolerance = overlay.locator(".autocolor-grid input[type=text]");
+  await tolerance.fill("-1");
+  await tolerance.press("Enter");
+  await settle();
+  c.check(/positive number/.test(await overlay.locator(".autocolor-status").textContent().catch(() => "")),
+          "a tolerance that isn't positive is refused, and said so");
+  await tolerance.fill("0.02");
+  await tolerance.press("Enter");
+  await page.locator(".autocolor-overlay .editor-header").click();
+  await settle();
+  c.check((await latest())[0]?.tolerance === "0.02", `and a good one's set (${(await latest())[0]?.tolerance})`);
+
+  // a point added, moved, and deleted
+  const newPoint = overlay.locator(".autocolor-row input[type=text]").last();
+  await newPoint.fill("0.5 + 0.25i");
+  await newPoint.press("Enter");
+  await page.locator(".autocolor-overlay .editor-header").click();
+  await settle();
+  let es = await entries();
+  const added = es.find((e) => e.x === 0.5 && e.y === 0.25);
+  c.check(es.length === n0 + 1 && added, `a point added (${added?.point})`);
+  // (the rows are in the entries' order)
+  const row = overlay.locator(".autocolor-entry").nth(es.indexOf(added));
+  await row.locator("input[type=text]").fill("0.75 - 0.25i");
+  await row.locator("input[type=text]").press("Enter");
+  await page.locator(".autocolor-overlay .editor-header").click();
+  await settle();
+  es = await entries();
+  c.check(es.some((e) => e.x === 0.75 && e.y === -0.25) && !es.some((e) => e.x === 0.5 && e.y === 0.25), "moved");
+  await overlay.locator(".autocolor-entry").nth(es.findIndex((e) => e.x === 0.75))
+    .locator("button", { hasText: "Delete" }).click();
+  await settle();
+  c.check((await entries()).length === n0, "and deleted");
+
+  // saved, with the edits
+  await page.evaluate(() => { window.showSaveFilePicker = undefined; });
+  const download = page.waitForEvent("download", { timeout: 10000 });
+  await page.locator("#save-as").click();
+  const saved = fs.readFileSync(await (await download).path(), "utf8");
+  const ac = saved.slice(saved.indexOf("\nautocolor:"));
+  // (the tolerance as YAML writes 0.02)
+  c.check(/locked: true/.test(ac) && /tolerance: 2\.0e-2/.test(ac), "saved, with the lock and the tolerance");
+
+  // clear, and close
+  await overlay.locator("button", { hasText: "Clear all" }).click();
+  await settle();
+  c.check((await entries()).length === 0, "Clear all empties the group");
+  await overlay.locator(".editor-close").click();
+  await app.forgetMessages();
+  await page.waitForTimeout(800);
+  c.check(!(await overlay.isVisible()) && (await app.messages("autocolor")).length === 0,
+          "Close closes it (and the groups aren't posted any more)");
 }

@@ -3,7 +3,7 @@
 // what they say to each other.
 
 import type { Request, Message, Layout, FieldLayout, Patch, LibrarySection, ViewerInfo, SavedViews,
-              Shape, Handled, EventKind, Navigation } from "./protocol.js";
+              Shape, Handled, EventKind, Navigation, AutocolorGroup, AutocolorEdit } from "./protocol.js";
 import { drawLayers } from "./drawing.js";
 import { ScriptEditor } from "./editor.js";
 import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
@@ -363,6 +363,123 @@ function hideEditor() {
 }
 
 scriptButton.addEventListener("click", () => (editorOpen ? hideEditor() : showEditor()));
+
+// ---------------------------------------------------------------------
+// The autocolor editor: the project's autocolor groups, over the
+// workspace (as the script editor is), as the desktop's Autocolor window
+// shows them: pick a group; lock it, blend its colors for points not in
+// it, clear it; its tolerance and the color for points not in it; and its
+// points, each moved, recolored or deleted, and new ones added. The
+// engine posts the groups as they change (renders add points) while it's
+// open; the list isn't rebuilt while one of its fields is being typed in.
+
+let autocolorOverlay: HTMLElement | null = null;
+let autocolorGroups: AutocolorGroup[] = [];
+let autocolorGroup: number | null = null;
+/** The groups' last rendering, to rebuild only what's changed. */
+let autocolorShown = "";
+
+function showAutocolor() {
+  if (!workspaceEl) return;
+  if (!autocolorOverlay) {
+    const close = el("button", { type: "button", className: "editor-close", textContent: "Close" });
+    close.addEventListener("click", hideAutocolor);
+    autocolorOverlay = el("div", { className: "editor-overlay autocolor-overlay", role: "dialog" },
+      el("div", { className: "editor-header" }, el("span", { className: "editor-title", textContent: "Autocolor" }), close),
+      el("div", { className: "autocolor-body" }));
+    autocolorOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") hideAutocolor(); });
+    // (a field typed in: once it's left, the list can be rebuilt)
+    autocolorOverlay.addEventListener("focusout", () => setTimeout(renderAutocolor, 0));
+  }
+  autocolorShown = "";
+  autocolorOverlay.querySelector(".autocolor-body")!.replaceChildren(
+    el("p", { className: "autocolor-status", textContent: "…" }));
+  workspaceEl.append(autocolorOverlay);
+  send({ type: "autocolorWatch", on: true });
+}
+
+function hideAutocolor() {
+  if (!autocolorOverlay?.isConnected) return;
+  autocolorOverlay.remove();
+  send({ type: "autocolorWatch", on: false });
+}
+
+function autocolorEdit(edit: AutocolorEdit) {
+  autocolorSay("");
+  send({ type: "autocolorEdit", edit });
+}
+
+function autocolorSay(text: string) {
+  const s = autocolorOverlay?.querySelector(".autocolor-status");
+  if (s) s.textContent = text;
+}
+
+function renderAutocolor() {
+  const body = autocolorOverlay?.querySelector(".autocolor-body");
+  if (!body || !autocolorOverlay!.isConnected) return;
+  // (not while a field's being typed in: it'd be wiped)
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement && active.type === "text" && autocolorOverlay!.contains(active)) return;
+  const groups = autocolorGroups;
+  if (autocolorGroup === null || !groups.some((g) => g.id === autocolorGroup)) autocolorGroup = groups[0]?.id ?? null;
+  const key = JSON.stringify([autocolorGroup, groups]);
+  if (key === autocolorShown) return;
+  autocolorShown = key;
+  const status = el("p", { className: "autocolor-status" });
+  const g = groups.find((x) => x.id === autocolorGroup);
+  if (!g) {
+    status.textContent = "No viewer has used autocolor yet: a group appears here once one does.";
+    body.replaceChildren(status);
+    return;
+  }
+  const id = g.id;
+  const chooser = el("select", {}, ...groups.map((x) => el("option", { value: String(x.id), textContent: `Group ${x.id}`, selected: x.id === id })));
+  chooser.addEventListener("change", () => { autocolorGroup = Number(chooser.value); renderAutocolor(); });
+  const check = (label: string, on: boolean, title: string, op: "locked" | "blend") => {
+    const box = el("input", { type: "checkbox", checked: on });
+    box.addEventListener("change", () => autocolorEdit({ op, group: id, on: box.checked }));
+    return el("label", { className: "autocolor-check", title }, box, ` ${label}`);
+  };
+  const clear = el("button", { type: "button", textContent: "Clear all" });
+  clear.addEventListener("click", () => autocolorEdit({ op: "clear", group: id }));
+  const tolerance = el("input", { type: "text", value: g.tolerance, spellcheck: false,
+                                  title: "How near a point has to be to an entry to get its color" });
+  const commitTolerance = () => { if (tolerance.value !== g.tolerance) autocolorEdit({ op: "tolerance", group: id, text: tolerance.value }); };
+  tolerance.addEventListener("keydown", (e) => { if (e.key === "Enter") commitTolerance(); });
+  tolerance.addEventListener("blur", commitTolerance);
+  const miss = el("input", { type: "color", value: g.miss, title: "The color for points not in the group" });
+  miss.addEventListener("change", () => autocolorEdit({ op: "miss", group: id, color: miss.value }));
+  const rows = g.entries.map((p) => {
+    const pt = el("input", { type: "text", value: p.point, spellcheck: false });
+    const commit = () => { if (pt.value !== p.point) autocolorEdit({ op: "move", group: id, x: p.x, y: p.y, text: pt.value }); };
+    pt.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
+    pt.addEventListener("blur", commit);
+    const color = el("input", { type: "color", value: p.color });
+    color.addEventListener("change", () => autocolorEdit({ op: "color", group: id, x: p.x, y: p.y, color: color.value }));
+    const del = el("button", { type: "button", textContent: "Delete" });
+    del.addEventListener("click", () => autocolorEdit({ op: "delete", group: id, x: p.x, y: p.y }));
+    return el("div", { className: "autocolor-entry" }, pt, color, del);
+  });
+  const newPoint = el("input", { type: "text", spellcheck: false, placeholder: "a point, like 0.5 + 0.25𝑖" });
+  const add = el("button", { type: "button", textContent: "Add" });
+  const addIt = () => { if (newPoint.value.trim()) { autocolorEdit({ op: "add", group: id, text: newPoint.value }); newPoint.value = ""; } };
+  add.addEventListener("click", addIt);
+  newPoint.addEventListener("keydown", (e) => { if (e.key === "Enter") addIt(); });
+  body.replaceChildren(
+    el("div", { className: "autocolor-row" }, chooser,
+       check("Lock", g.locked, "Add no new points to this group", "locked"), clear),
+    el("div", { className: "autocolor-grid" },
+       el("span", { textContent: "Tolerance:" }), tolerance,
+       el("span", { textContent: "Color for points not in the group:" }), el("span", {}, miss)),
+    el("div", { className: "autocolor-row" },
+       check("Blend when no matching point", g.blend,
+             "When the group is locked (or full), give points that aren't near any of its points a blend of its colors, rather than the color for points not in the group",
+             "blend")),
+    el("div", { className: "autocolor-list" },
+       ...(rows.length ? rows : [el("p", { className: "autocolor-empty", textContent: "No points yet." })])),
+    el("div", { className: "autocolor-row" }, el("span", { textContent: "New point:" }), newPoint, add),
+    status);
+}
 
 /** What a panel's fields and buttons do: set a field, press a button. */
 interface PanelActions {
@@ -1110,6 +1227,9 @@ class ViewerView {
         { kind: "separator" },
         { kind: "action", label: "Arguments…", enabled: c.arguments,
           run: () => send({ type: "colorizerArguments", viewer: this.info.id }) },
+        // (the project's, not this viewer's: kept here, as on the desktop,
+        // so that the menu stays short)
+        { kind: "action", label: "Autocolor settings…", run: () => showAutocolor() },
       ] });
     }
     items.push(
@@ -1256,7 +1376,10 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
         // (and, for one whose script hadn't built, so had no windows yet,
         // where its file had them)
         const views = { viewers: { ...m.views?.viewers, ...viewState().viewers } };
+        // (an open autocolor editor stays open: the groups are the same)
+        const autocolorOpen = autocolorOverlay?.isConnected ?? false;
         showProject(m.title, m.panel, m.viewers, views);
+        if (autocolorOpen && autocolorOverlay && workspaceEl) workspaceEl.append(autocolorOverlay);
         scriptEditor?.projectScript(m.script, true);
         // (it worked: the editor's done its job)
         hideEditor();
@@ -1272,7 +1395,10 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       opening = null;
       clearNotices();
       showFileName();
-      // (a new project: a new script, and no editor until it's asked for)
+      // (a new project: a new script, and no editor until it's asked for;
+      // nor the autocolor editor)
+      hideAutocolor();
+      autocolorOverlay = null;
       projectScript = m.script;
       scriptEditor = null;
       editorOpen = false;
@@ -1296,6 +1422,8 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "view": viewers.get(m.viewer)?.moved(m); break;
     case "where": viewers.get(m.viewer)?.jumpFrom(m.x, m.y, m.pixelSize); break;
     case "aspect": viewers.get(m.viewer)?.aspectAnswered(m.error); break;
+    case "autocolor": autocolorGroups = m.groups; renderAutocolor(); break;
+    case "autocolorError": autocolorSay(m.message); break;
     case "colorizerArguments": viewers.get(m.viewer)?.askArguments(m.name, m.fields); break;
     case "analysis": scriptEditor?.analysis(m.id, m); break;
     case "symbols": symbolTables = [m.names, m.accents]; scriptEditor?.setSymbols(m.names, m.accents); break;

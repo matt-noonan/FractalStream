@@ -108,6 +108,8 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "record": await engine.fs_record(r.viewer); break;
       case "jump": await engine.fs_jump(r.viewer, r.x, r.y, r.pixelSize); break;
       case "where": await engine.fs_where(r.viewer); break;
+      case "autocolorWatch": await engine.fs_autocolor_watch(r.on); break;
+      case "autocolorEdit": await engine.fs_autocolor_edit(JSON.stringify(r.edit)); break;
       case "aspect": await engine.fs_aspect(r.viewer, r.text); break;
       case "colorizer": await engine.fs_colorizer(r.viewer, r.name); break;
       case "colorizerArguments": await engine.fs_colorizer_arguments(r.viewer); break;
