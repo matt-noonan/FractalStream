@@ -10,8 +10,12 @@ worker (@web/src/engine.ts@). The worker calls these exports:
 * @fs_open(section, entry)@: build that project; post its panel and
   viewers, then each viewer's frames as they're rendered.
 * @fs_open_file(name, bytes)@: the same, for a project file's contents.
-* @fs_save()@: post the open project as a file (its script, changed
-  values, and so on, as the desktop app saves it).
+* @fs_save(views)@: post the open project as a file (its script, changed
+  values, and so on, as the desktop app saves it), with the page's view
+  state (JSON: see "web-properties" below).
+* @fs_rotate(viewer, fx, fy, tx, ty)@: turn a sphere viewer's globe,
+  trackball-style, as the pointer drags from one point of the screen to
+  another (in units of the sphere's radius, from its center, y up).
 
 As the desktop app does (and unlike fsrun, which is for reproducible
 runs), a project opens with the configuration values (@values:@) and the
@@ -31,15 +35,21 @@ contents), which the worker forwards to the page.
 Messages:
 
 > { "type": "library", "sections": [ { "name", "entries": [ { "title", "description", "preview" } ] } ] }
-> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height" } ] }
-> { "type": "field", "name", "error": <message> or null }
+> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere" } ], "views": <the file's web-properties> or null }
+> { "type": "field", "name", "error": <message> or null, "color": <#rrggbb, for a color field> }
+> { "type": "viewerError", "viewer", "message" }   (a render failed; the next frame clears it)
 > { "type": "error", "message" }
+
+The page's view state is saved in the project file under @web-properties:@
+(as the desktop app's window layout is under @wx-properties:@), as the page
+gives it to @fs_save@, and given back to it when the project is opened.
 
 where a layout is @{ "kind": "vertical" | "horizontal", "children" }@,
 @{ "kind": "panel", "title", "body" }@, @{ "kind": "tabs", "tabs": [ {
 "label", "body" } ] }@, @{ "kind": "plain", "text" }@, or a field: @{
 "kind": "text" | "check" | "select" | "color", "label", "name", "text",
-"options" }@ (options for a selection).
+"options" }@ (options for a selection; and for a color, @"color"@: its value, as
+@#rrggbb@).
 -}
 module Main (main) where
 
@@ -54,6 +64,10 @@ import Actor.Metadata (ProjectMetadata(..))
 import Actor.Layout
 import Actor.UI (UI(..))
 import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges)
+import Actor.Event (ViewKind(..))
+import Actor.Viewer.Sphere (trackballRotation)
+import Data.Color (colorToRGB)
+import Text.Printf (printf)
 import Backend (withBackend, Backend)
 import Data.DynamicValue
 import FractalStream.Library (LibrarySection(..), LibraryEntry(..), librarySections)
@@ -122,6 +136,8 @@ data Session = Session
   { sViewers :: Map.Map Int (Viewer, MVar ())
   , sEnsemble :: Ensemble
   , sFileName :: String
+  , sColors :: Map.Map String (IO (Maybe String))
+    -- ^ each color field's value, as #rrggbb
   , sStop :: IO ()
   }
 
@@ -154,7 +170,8 @@ getBackend = readIORef backendRef >>= \case
 foreign export javascript "fs_library" library :: IO ()
 foreign export javascript "fs_open" open :: Int -> Int -> IO ()
 foreign export javascript "fs_open_file" openFile :: JSString -> JSVal -> IO ()
-foreign export javascript "fs_save" save :: IO ()
+foreign export javascript "fs_save" save :: JSString -> IO ()
+foreign export javascript "fs_rotate" rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
 foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
@@ -197,10 +214,14 @@ openFile name bytes = guarded $ do
                      (readProjectMetadata contents)
   openProject False title fileName contents
 
-save :: IO ()
-save = guarded $ readIORef sessionRef >>= \case
+save :: JSString -> IO ()
+save views = guarded $ readIORef sessionRef >>= \case
   Nothing -> postError "there's no project to save"
   Just Session{..} -> do
+    -- (the page's view state, under its own key)
+    case Aeson.eitherDecodeStrict (Text.encodeUtf8 (Text.pack (fromJSString views))) of
+      Left err -> postError ("couldn't save the view: " ++ err)
+      Right (v :: Aeson.Value) -> modifyValue (ensembleFrontendProperties sEnsemble) (KM.insert "web-properties" v)
     -- (the values it was left with; and its tables, if its file had them)
     changedValues sEnsemble >>= modifyValue (ensembleFrontendProperties sEnsemble) . writeSavedValues
     hasTables <- KM.member "tables" <$> getDynamic (ensembleFrontendProperties sEnsemble)
@@ -244,16 +265,20 @@ openProject fromLibrary projectTitle fileName contents = do
     unwatch <- onParameterChanges viewer (requestRender signal)
     pure ((k, (viewer, signal)), (tid, unwatch))
   let stop = forM_ (map snd loops) $ \(tid, unwatch) -> killThread tid >> unwatch
-  writeIORef sessionRef (Just (Session (Map.fromList (map fst loops)) ensemble fileName stop))
 
   fields <- projectFieldTexts ensemble
+  colorsRef <- newIORef Map.empty
   panel <- readIORef panelRef >>= traverse (\(title, lo) -> do
-    body <- layoutJSON fields lo
+    body <- layoutJSON colorsRef fields lo
     pure (Aeson.object [ "kind" .= ("panel" :: Text.Text), "title" .= title, "body" .= body ]))
+  colors <- readIORef colorsRef
+  writeIORef sessionRef (Just (Session (Map.fromList (map fst loops)) ensemble fileName colors stop))
   viewerInfo <- forM viewers $ \(k, viewer) -> do
     title <- getDynamic (vTitle viewer)
     Dimensions (w, h) <- getDynamic (vSize viewer)
-    pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h ])
+    sphere <- (== SphereView) <$> getDynamic (vView viewer)
+    pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere ])
+  views <- KM.lookup "web-properties" <$> getDynamic (ensembleFrontendProperties ensemble)
   post $ Aeson.object
     [ "type" .= ("project" :: Text.Text)
     , "title" .= projectTitle
@@ -261,6 +286,7 @@ openProject fromLibrary projectTitle fileName contents = do
     , "library" .= fromLibrary
     , "panel" .= panel
     , "viewers" .= viewerInfo
+    , "views" .= views
     ]
 
 -- | Stop the open project's render loops (if any).
@@ -280,7 +306,8 @@ renderLoop k viewer signal = forever $ do
     Left (e :: SomeException)
       | Just (_ :: SomeAsyncException) <- fromException e -> throwIO e
       | otherwise -> postError (displayException e)
-    Right (Left err) -> postError err
+    Right (Left err) -> post $ Aeson.object
+      [ "type" .= ("viewerError" :: Text.Text), "viewer" .= k, "message" .= err ]
     Right (Right RenderedBuffer{..}) ->
       withForeignPtr rbPixels $ \p ->
         postFrame k p (3 * rbWidth * rbHeight) rbWidth rbHeight
@@ -295,11 +322,12 @@ setField name text = guarded $ readIORef sessionRef >>= \case
     result <- case [ f | (ProjectConfig, f) <- fields, fieldName f == n ] of
       f : _ -> setFieldText f (fromJSString text)
       [] -> pure (Left ("no field named " ++ n))
-    post $ Aeson.object
+    color <- maybe (pure Nothing) id (Map.lookup n sColors)
+    post $ Aeson.object $
       [ "type" .= ("field" :: Text.Text)
       , "name" .= n
       , "error" .= either Just (const Nothing) result
-      ]
+      ] ++ [ "color" .= c | Just c <- [color] ]
 
 withViewer :: Int -> ((Viewer, MVar ()) -> IO ()) -> IO ()
 withViewer k act = guarded $ readIORef sessionRef >>= \case
@@ -319,6 +347,12 @@ setSmoothing on = guarded $ do
   when (before /= on) $ readIORef sessionRef >>=
     mapM_ (\Session{..} -> mapM_ (requestRender . snd) (Map.elems sViewers))
 
+rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
+rotate k fx fy tx ty = withViewer k $ \(viewer, signal) -> do
+  r <- getDynamic (vRotation viewer)
+  setValue (vRotation viewer) (trackballRotation r (fx, fy) (tx, ty))
+  requestRender signal
+
 resize :: Int -> Int -> Int -> IO ()
 resize k w h = withViewer k $ \(viewer, signal) -> do
   setValue (vSize viewer) (Dimensions (max 1 w, max 1 h))
@@ -333,8 +367,10 @@ projectFieldTexts ens = do
   fields <- ensembleFields ens
   Map.fromList <$> forM [ f | (ProjectConfig, f) <- fields ] (\f -> (fieldName f,) <$> fieldText f)
 
-layoutJSON :: Map.Map String String -> Layout -> IO Aeson.Value
-layoutJSON texts = go
+-- | A layout, as JSON, with each field's text; and noting, in @colors@, how
+-- to get each color field's value (as #rrggbb).
+layoutJSON :: IORef (Map.Map String (IO (Maybe String))) -> Map.Map String String -> Layout -> IO Aeson.Value
+layoutJSON colors texts = go
   where
     kind :: Text.Text -> (Aeson.Key, Aeson.Value)
     kind k = "kind" .= k
@@ -363,7 +399,12 @@ layoutJSON texts = go
       ActionButton{} -> pure Aeson.Null
       HiddenTable{} -> pure Aeson.Null
       CheckBox l name _ -> field "check" l name []
-      ColorPicker l name _ -> field "color" l name []
+      ColorPicker l name col -> do
+        let hex = getDynamic col <&> either (const Nothing) (\c ->
+              let (r, g, b) = colorToRGB c in Just (printf "#%02x%02x%02x" r g b))
+        getDynamic name >>= either (const (pure ())) (\n -> modifyIORef' colors (Map.insert n hex))
+        current <- hex
+        field "color" l name [ "color" .= current ]
       Selection l name _ options -> do
         opts <- getDynamic options
         field "select" l name [ "options" .= opts ]

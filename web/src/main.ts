@@ -2,7 +2,7 @@
 // viewers. The engine runs in a worker (engine.ts); see protocol.ts for
 // what they say to each other.
 
-import type { Request, Message, Layout, FieldLayout, Frame, LibrarySection, ViewerInfo } from "./protocol.js";
+import type { Request, Message, Layout, FieldLayout, Frame, LibrarySection, ViewerInfo, SavedViews } from "./protocol.js";
 import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
 import { Desk } from "./windows.js";
 
@@ -113,7 +113,7 @@ async function save(saveAs: boolean) {
     });
     if (!destination) return;
     pendingSave = destination;
-    send({ type: "save" });
+    send({ type: "save", views: JSON.stringify(viewState()) });
   } catch (e) {
     status(`Couldn't save: ${e}`, true);
   }
@@ -139,12 +139,23 @@ document.addEventListener("drop", async (e) => { e.preventDefault(); openFile(aw
 // ---------------------------------------------------------------------
 // A project
 
-const fieldInputs = new Map<string, { input: HTMLInputElement | HTMLSelectElement; error: HTMLElement }>();
+const fieldInputs = new Map<string, { input: HTMLInputElement | HTMLSelectElement; error: HTMLElement;
+                                      swatch?: HTMLInputElement }>();
 const viewers = new Map<number, ViewerView>();
+/** The open project's viewers' windows, for saving the view state. */
+let windows: { title: string; view: ViewerView; window: HTMLElement }[] = [];
 
-function showProject(title: string, panel: Layout, infos: ViewerInfo[]) {
+function viewState(): SavedViews {
+  return {
+    viewers: Object.fromEntries(windows.map((w) =>
+      [w.title, { x: w.window.offsetLeft, y: w.window.offsetTop, ...w.view.state() }])),
+  };
+}
+
+function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: SavedViews | null) {
   fieldInputs.clear();
   viewers.clear();
+  windows = [];
   const desk = new Desk(el("div"));
   projectEl.replaceChildren(
     el("h1", { textContent: title }),
@@ -163,10 +174,15 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[]) {
   for (const info of infos) {
     const w = Math.floor(info.width * scale), h = Math.floor(info.height * scale);
     if (x > margin && x + w > margin + room + 1) { x = margin; y += rowHeight + gap; rowHeight = 0; }
-    const v = new ViewerView(info, w, h);
+    // (where it was saved, if it was)
+    const saved = views?.viewers?.[info.title];
+    const place = saved ? { x: saved.x, y: saved.y, width: saved.width, height: saved.height }
+                        : { x, y, width: w, height: h };
+    const v = new ViewerView(info, place.width, place.height, saved ?? null);
     viewers.set(info.id, v);
-    desk.add({ title: info.title, x, y, width: w, height: h, content: v.element,
-               onResize: (width, height) => v.resize(width, height) });
+    const win = desk.add({ title: info.title, ...place, content: v.element,
+                           onResize: (width, height) => v.resize(width, height) });
+    windows.push({ title: info.title, view: v, window: win });
     x += w + gap;
     rowHeight = Math.max(rowHeight, h + 30);
   }
@@ -219,7 +235,7 @@ function fieldElement(f: FieldLayout): Node {
       break;
     }
     default: {
-      // (a text box, or for now a color, as its text)
+      // (a text box; for a color, with a swatch to pick one with)
       const box = el("input", { type: "text", value: f.text, spellcheck: false });
       let committed = f.text;
       const commit = () => {
@@ -231,15 +247,28 @@ function fieldElement(f: FieldLayout): Node {
       box.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
       box.addEventListener("blur", commit);
       input = box;
+      if (f.kind === "color") {
+        const swatch = el("input", { type: "color", value: f.color ?? "#000000", title: "Pick a color" });
+        swatch.addEventListener("change", () => { box.value = rgbText(swatch.value); commit(); });
+        fieldInputs.set(f.name, { input, error, swatch });
+        return el("label", { className: "field color" }, el("span", { textContent: f.label }), swatch, input, error);
+      }
     }
   }
   fieldInputs.set(f.name, { input, error });
   return el("label", { className: `field ${f.kind}` }, el("span", { textContent: f.label }), input, error);
 }
 
-function fieldResult(name: string, error: string | null) {
+/** #rrggbb, as the scripting language writes a color. */
+function rgbText(hex: string): string {
+  const c = (k: number) => (parseInt(hex.slice(1 + 2 * k, 3 + 2 * k), 16) / 255).toFixed(3);
+  return `rgb(${c(0)}, ${c(1)}, ${c(2)})`;
+}
+
+function fieldResult(name: string, error: string | null, color?: string | null) {
   const f = fieldInputs.get(name);
   if (!f) return;
+  if (f.swatch && color) f.swatch.value = color;
   f.input.classList.toggle("invalid", error !== null);
   f.error.textContent = error ? "⚠" : "";
   f.error.title = error ?? "";
@@ -279,11 +308,17 @@ class ViewerView {
   private requested: { view: View; at: number } | null = null;
   private drawPending = false;
   private dragFrom: { x: number; y: number } | null = null;
+  /** On the sphere: the screen point (in the sphere's radii) where the
+      globe was last turned from, and where the pointer is now. */
+  private turn: { from: [number, number]; to: [number, number] } | null = null;
+  private readonly errorEl: HTMLElement;
 
-  constructor(private readonly info: ViewerInfo, width: number, height: number) {
+  constructor(private readonly info: ViewerInfo, width: number, height: number,
+              private readonly saved: { cx: number; cy: number; "pixel-size": number } | null) {
     this.canvas = el("canvas");
     this.context = this.canvas.getContext("2d")!;
-    this.element = el("div", { className: "viewer" }, this.canvas);
+    this.errorEl = el("div", { className: "viewer-error", hidden: true });
+    this.element = el("div", { className: "viewer" }, this.canvas, this.errorEl);
     this.setSize(width, height);
     this.canvas.addEventListener("pointerdown", (e) => this.startDrag(e));
     this.canvas.addEventListener("pointermove", (e) => this.moveDrag(e));
@@ -312,6 +347,18 @@ class ViewerView {
     this.canvas.style.height = `${height}px`;
   }
 
+  /** What it shows, and its size, for saving (see SavedViews). */
+  state() {
+    const t = this.target;
+    return { width: Math.round(this.canvas.width / this.density), height: Math.round(this.canvas.height / this.density),
+             cx: t?.cx ?? 0, cy: t?.cy ?? 0, "pixel-size": (t?.px ?? 0) * this.density };
+  }
+
+  showError(message: string) {
+    this.errorEl.textContent = message;
+    this.errorEl.hidden = false;
+  }
+
   resize(width: number, height: number) {
     this.setSize(width, height);
     this.redraw();
@@ -326,11 +373,18 @@ class ViewerView {
     this.frame = { view, image };
     // (how many frames it's had: for tests, and anyone curious)
     this.element.dataset.frames = String(Number(this.element.dataset.frames ?? 0) + 1);
+    this.errorEl.hidden = true;
     if (!this.target) {
-      // (the first frame, at the project's size: the same picture across
-      // the canvas, whatever its size)
-      const scale = frame.width / this.canvas.width;
-      this.target = { cx: view.cx, cy: view.cy, px: view.px * scale, py: view.py * scale };
+      if (this.saved && !this.info.sphere) {
+        // (as it was saved)
+        const ps = this.saved["pixel-size"] / this.density;
+        this.target = { cx: this.saved.cx, cy: this.saved.cy, px: ps, py: ps * (view.py / view.px) };
+      } else {
+        // (the first frame, at the project's size: the same picture across
+        // the canvas, whatever its size)
+        const scale = frame.width / this.canvas.width;
+        this.target = { cx: view.cx, cy: view.cy, px: view.px * scale, py: view.py * scale };
+      }
     }
     // (whichever request this answers, the engine is free again)
     this.requested = null;
@@ -365,6 +419,14 @@ class ViewerView {
     if (!t || !f) return;
     // (if an answer never came, ask again after a while)
     if (this.requested && performance.now() - this.requested.at < 2000) return;
+    // (turning the globe first, then any change of zoom or size)
+    if (this.turn && (this.turn.from[0] !== this.turn.to[0] || this.turn.from[1] !== this.turn.to[1])) {
+      const { from, to } = this.turn;
+      this.turn.from = to;
+      this.requested = { view: { ...t }, at: performance.now() };
+      send({ type: "rotate", viewer: this.info.id, fx: from[0], fy: from[1], tx: to[0], ty: to[1] });
+      return;
+    }
     const width = this.canvas.width, height = this.canvas.height;
     if (sameView(t, f.view) && f.image.width === width && f.image.height === height) return;
     this.requested = { view: { ...t }, at: performance.now() };
@@ -382,12 +444,30 @@ class ViewerView {
     if (!this.target) return;
     this.canvas.setPointerCapture(e.pointerId);
     this.dragFrom = this.pixel(e);
+    if (this.info.sphere) {
+      const s = this.onScreen(this.dragFrom);
+      this.turn = { from: s, to: s };
+    }
+  }
+
+  /** A point of the canvas on the screen plane: in the sphere's radii from
+      its center (the view's), y up. */
+  private onScreen(p: { x: number; y: number }): [number, number] {
+    const t = this.target!;
+    return [(p.x - this.canvas.width / 2) * t.px, (this.canvas.height / 2 - p.y) * t.py];
   }
 
   private moveDrag(e: PointerEvent) {
     const t = this.target;
     if (!this.dragFrom || !t) return;
     const p = this.pixel(e);
+    if (this.info.sphere && this.turn) {
+      // (the globe turns: the old frame can't show that, so it stays until
+      // the new one comes)
+      this.turn.to = this.onScreen(p);
+      this.request();
+      return;
+    }
     t.cx -= (p.x - this.dragFrom.x) * t.px;
     t.cy += (p.y - this.dragFrom.y) * t.py;
     this.dragFrom = p;
@@ -404,11 +484,13 @@ class ViewerView {
     this.zoomBy(Math.exp(delta * (e.ctrlKey ? 0.01 : 0.002)), this.pixel(e));
   }
 
-  /** Zoom by a factor (of the pixel size: above 1 zooms out) about a point. */
-  private zoomBy(factor: number, p: { x: number; y: number }) {
+  /** Zoom by a factor (of the pixel size: above 1 zooms out) about a point
+      (on the sphere, about the globe's center). */
+  private zoomBy(factor: number, p0: { x: number; y: number }) {
     const t = this.target;
     if (!t) return;
     const W = this.canvas.width, H = this.canvas.height;
+    const p = this.info.sphere ? { x: W / 2, y: H / 2 } : p0;
     // the model point under the pointer stays where it is
     const mx = t.cx + (p.x - W / 2) * t.px;
     const my = t.cy - (p.y - H / 2) * t.py;
@@ -436,7 +518,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       current = { fileName: m.fileName, library: m.library, handle: m.library ? null : opening };
       opening = null;
       showFileName();
-      showProject(m.title, m.panel, m.viewers);
+      showProject(m.title, m.panel, m.viewers, m.views);
       break;
     case "file": {
       const write = pendingSave;
@@ -445,7 +527,8 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
                                               (e) => status(`Couldn't save: ${e}`, true));
       break;
     }
-    case "field": fieldResult(m.name, m.error); break;
+    case "field": fieldResult(m.name, m.error, m.color); break;
+    case "viewerError": viewers.get(m.viewer)?.showError(m.message); break;
     case "error": status(m.message, true); console.error(m.message); break;
     case "frame": viewers.get(m.viewer)?.show(m); break;
   }

@@ -107,3 +107,9 @@ body.no-panel .panel { display: none; }
   width: 100%; margin-bottom: 8px; font: inherit; padding: 4px 6px;
   border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);
 }
+.viewer { position: relative; }
+.viewer-error {
+  position: absolute; left: 8px; right: 8px; bottom: 8px; padding: 6px 8px; border-radius: 6px;
+  background: rgba(0, 0, 0, .7); color: #ffb3a8; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap;
+}
+.field input[type=color] { width: 32px; height: 26px; padding: 0 2px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }

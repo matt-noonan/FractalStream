@@ -7,7 +7,10 @@ export type Request =
   | { type: "library" }
   | { type: "open"; section: number; entry: number }
   | { type: "openFile"; name: string; bytes: ArrayBuffer }
-  | { type: "save" }
+  | { type: "save"; views: string }
+  /** Turn a sphere viewer's globe, as the pointer drags from one screen
+      point to another (in units of the sphere's radius, y up). */
+  | { type: "rotate"; viewer: number; fx: number; fy: number; tx: number; ty: number }
   | { type: "set"; name: string; text: string }
   | { type: "view"; viewer: number; cx: number; cy: number; pixelSize: number; width: number; height: number }
   | { type: "resize"; viewer: number; width: number; height: number }
@@ -40,6 +43,8 @@ export interface FieldLayout {
   name: string;
   text: string;
   options?: string[];
+  /** A color field's value, as #rrggbb. */
+  color?: string | null;
 }
 
 export interface ViewerInfo {
@@ -48,6 +53,16 @@ export interface ViewerInfo {
   /** Its size, as its project gives it (in pixels). */
   width: number;
   height: number;
+  /** Whether it shows the Riemann sphere (a globe), not the plane. */
+  sphere: boolean;
+}
+
+/** The page's view state, saved in a project file (web-properties): each
+    viewer's window (in CSS pixels), and what it shows (a pixel's size is
+    per CSS pixel, so it's the same at any screen density). */
+export interface SavedViews {
+  viewers?: Record<string, { x: number; y: number; width: number; height: number;
+                             cx: number; cy: number; "pixel-size": number }>;
 }
 
 /** A viewer's frame: RGBA pixels, and the view they show. */
@@ -68,9 +83,12 @@ export interface Frame {
 export type Message =
   | { type: "ready" }
   | { type: "library"; sections: LibrarySection[] }
-  | { type: "project"; title: string; fileName: string; library: boolean; panel: Layout; viewers: ViewerInfo[] }
+  | { type: "project"; title: string; fileName: string; library: boolean; panel: Layout;
+      viewers: ViewerInfo[]; views: SavedViews | null }
   /** The open project, saved: its file's name and contents. */
   | { type: "file"; name: string; bytes: ArrayBuffer }
-  | { type: "field"; name: string; error: string | null }
+  | { type: "field"; name: string; error: string | null; color?: string | null }
+  /** A viewer couldn't be drawn (its next frame clears this). */
+  | { type: "viewerError"; viewer: number; message: string }
   | { type: "error"; message: string }
   | Frame;
