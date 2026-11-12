@@ -61,6 +61,18 @@ spec = do
 
       parseF "3.5 e - 2" `shouldBe` Right (3.5 * exp 1 - 2)
 
+    it "rejects an integer literal too big to be an integer (it would wrap \
+       \around in the compiled backends), saying how to write the real number" $ do
+      let errI s = either id (const "parsed") (parseI s)
+          errF s = either id (const "parsed") (parseF s)
+      errF "2251799813685248 * 2" `shouldContain` "`2251799813685248` is too big for an integer"
+      errF "2251799813685248 * 2" `shouldContain` "write `2251799813685248.0`"
+      errI "2147483648" `shouldContain` "too big for an integer"
+      parseI "2147483647" `shouldBe` Right 2147483647
+      parseF "2251799813685248.0" `shouldBe` Right 2251799813685248
+      -- (and scientific notation's suggestion for a big number is a real one)
+      errF "1e10" `shouldContain` "Write 10000000000.0 (or 1 * 10^10)"
+
     it "computes an integer power used as a real or complex number as a \
        \real power, so a negative exponent doesn't round it to 0" $ do
       -- (to within an ulp or so: it's computed by C's pow, which on

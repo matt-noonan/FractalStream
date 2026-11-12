@@ -694,6 +694,26 @@ async function menu() {
            "Show pointer position", "Use subpixel smoothing"].every((l) => labels.includes(l)), `the menu has: ${labels}`);
   await page.keyboard.press("Escape");
 
+  // a Shift-drag: a box to zoom into
+  {
+    const b = await app.canvas(pp).boundingBox();
+    const before = (await page.evaluate((id) => window.__sent.filter((r) => r.viewer === id && r.type === "view").pop(), pp));
+    await page.keyboard.down("Shift");
+    await page.mouse.move(b.x + b.width * 0.25, b.y + b.height * 0.25);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width * 0.5, b.y + b.height * 0.5, { steps: 5 });
+    const shown = await app.viewer(pp).locator(".zoom-box").isVisible();
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+    await page.waitForTimeout(600);
+    const after = (await page.evaluate((id) => window.__sent.filter((r) => r.viewer === id && r.type === "view").pop(), pp));
+    const ratio = before && after ? after.pixelSize / before.pixelSize : NaN;
+    c.check(shown && Math.abs(ratio - 0.25) < 0.02 && !(await app.viewer(pp).locator(".zoom-box").isVisible()),
+            `Shift-drag draws a box, and zooms into it (a pixel ${ratio.toFixed(3)} the size; a quarter of each side)`);
+    await page.keyboard.press("<");
+    await page.waitForTimeout(600);
+  }
+
   // the view, as the page wants it (its latest request, or the engine's move)
   const view = async () => (await page.evaluate((id) => {
     const vs = window.__sent.filter((r) => r.viewer === id && r.type === "view");
@@ -789,6 +809,8 @@ async function menu() {
   const rebuilt = (await app.messages("project")).pop();
   c.check(rebuilt?.rebuilt && rebuilt.viewers[pp].colorizer.inUse === "Escape time" && rebuilt.viewers[1 - pp].colorizer.inUse === "Binary decomposition",
           `choosing another rebuilds the project, with it for this viewer only (${rebuilt?.viewers[pp].colorizer.inUse})`);
+  const said = await page.locator("#status").textContent();
+  c.check(/Escape time/.test(said), `and says so (${said})`);
   await openMenu();
   await choose("Colorizer");
   await choose("Binary decomposition");
