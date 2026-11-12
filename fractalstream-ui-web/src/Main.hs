@@ -34,8 +34,12 @@ As the desktop app does (and unlike fsrun, which is for reproducible
 runs), a project opens with the configuration values (@values:@) and the
 tables (@tables:@) it was saved with, and is saved with its own.
 * @fs_set(name, text)@: set a configuration field (by name) from its text.
-* @fs_view(viewer, cx, cy, pixelSize, width, height)@: move, zoom, or
-  resize a viewer (all at once, for one render).
+* @fs_view(viewer, cx, cy, pixelSize, width, height, left, top, right,
+  bottom)@: move, zoom, or resize a viewer (all at once, for one render).
+  The rectangle (in the new view's pixels, the right and bottom not
+  included; empty for none) is where the page still shows the last
+  picture, moved into the new view: the render's pieces there skip the
+  coarse passes (see "Frames" below).
 * @fs_resize(viewer, width, height)@: resize a viewer.
 * @fs_density(d)@: how many canvas pixels the page draws a CSS pixel
   with: tools and overlays are given a CSS pixel's size, as their
@@ -71,8 +75,8 @@ they've changed (or always, on the sphere, where they move with it): see
 "Drawing".
 
 and the engine posts JSON messages (@globalThis.fractalstreamPost@),
-frames (@globalThis.fractalstreamPostFrame@: RGB pixels, with the view they
-show), and saved files (@globalThis.fractalstreamPostFile@: a name and the
+a viewer's render, as it goes (@globalThis.fractalstreamPostPatch@: see
+"Frames" below), and saved files (@globalThis.fractalstreamPostFile@: a name and the
 contents), which the worker forwards to the page.
 
 Messages:
@@ -94,6 +98,20 @@ where a field's key is its name, in the project's panel, and
 > { "type": "drawing", "viewer", "layers": [ [ <shape> ] ] }   (see "Drawing")
 > { "type": "viewerError", "viewer", "message" }   (a render failed; the next frame clears it)
 > { "type": "error", "message" }
+
+Frames: a viewer's image is rendered progressively, as the desktop app's
+are ('renderProgressively'), in 'webPieceSize' pieces: coarse passes
+first, over what the page doesn't show yet, then each piece at full
+resolution, then (smoothed) at twice that. As pieces are drawn, the
+engine posts patches (no more often than 'patchInterval'): the render's
+number (per viewer), the view and size of its image, the rectangles drawn
+since the last patch and their pixels; the last patch says the render's
+done. Every render holds its first patch back for 'renderHold' (as the
+desktop app holds a render of new parameters): one that's done by then
+comes whole, in one patch, so a quick render shows no coarse passes and
+looks just as a whole frame would. A render that's no longer wanted
+(another one's been asked for) is dropped where it is, and its patches
+stop.
 
 The page's view state is saved in the project file under @web-properties:@
 (as the desktop app's window layout is under @wx-properties:@), as the page
@@ -121,7 +139,7 @@ import Language.Legacy.Binary (mightBeAncientFS, decodeAncientFS)
 import Language.Legacy.Translate (Translation(..), translateLegacyScript)
 import Actor.Layout
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBufferAt, onParameterChanges, viewProjection,
+import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progressive(..), ImagePiece(..), onParameterChanges, viewProjection,
                      pointerText)
 import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
@@ -157,6 +175,10 @@ import GHC.Wasm.Prim (JSString(..), JSVal, toJSString, fromJSString)
 import System.FilePath (takeBaseName)
 import System.IO.Unsafe (unsafePerformIO)
 import System.IO.Error (isUserError, ioeGetErrorString)
+import GHC.Clock (getMonotonicTime)
+import qualified Data.Set as Set
+import Foreign.Marshal.Array (withArrayLen)
+import Task.Concurrent (renderConcurrency)
 
 ------------------------------------------------------------------------
 -- Talking to the page
@@ -164,11 +186,15 @@ import System.IO.Error (isUserError, ioeGetErrorString)
 foreign import javascript unsafe "globalThis.fractalstreamPost($1)"
   postRaw :: JSString -> IO ()
 
--- | A viewer's frame: its RGB pixels, size, and the view they show (the
--- center, and a pixel's width and height).
+-- | A patch of a viewer's render: the viewer, the render's number, its
+-- image's width and height and view (center, and a pixel's width and
+-- height), the image's RGB pixels (read from, for the rectangles), the
+-- rectangles drawn (x, y, width, height each), and whether the render's
+-- done. (The worker copies the rectangles' pixels out at once.)
 foreign import javascript unsafe
-  "globalThis.fractalstreamPostFrame($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice(), $4, $5, $6, $7, $8, $9)"
-  postFrame :: Int -> Ptr Word8 -> Int -> Int -> Int -> Double -> Double -> Double -> Double -> IO ()
+  "globalThis.fractalstreamPostPatch($1, $2, $3, $4, $5, $6, $7, $8, new Uint8Array(__exports.memory.buffer, $9, 3 * $3 * $4), new Int32Array(__exports.memory.buffer, $10, 4 * $11).slice(), $12)"
+  postPatch :: Int -> Int -> Int -> Int -> Double -> Double -> Double -> Double
+            -> Ptr Word8 -> Ptr Int32 -> Int -> Bool -> IO ()
 
 -- | A saved project file: its name, and its contents.
 foreign import javascript unsafe
@@ -245,6 +271,12 @@ data ViewerState = ViewerState
   , vsLock :: MVar ()
     -- ^ held while its tool's handler runs: one at a time, as on the
     -- desktop (where they all run on the GUI thread)
+  , vsCovered :: IORef (Maybe (Int, Int, Int, Int))
+    -- ^ where the page shows the last picture, for the next render (see
+    --   'setView'): Nothing, once anything else (new parameters) asks for
+    --   a render
+  , vsRenders :: IORef Int
+    -- ^ its renders' number (the latest's)
   }
 
 data ActiveTool = ActiveTool
@@ -315,7 +347,7 @@ foreign export javascript "fs_pointer" pointer :: Int -> Double -> Double -> IO 
 foreign export javascript "fs_save" save :: JSString -> IO ()
 foreign export javascript "fs_rotate" rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
-foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
+foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> Int -> Int -> Int -> Int -> IO ()
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
 foreign export javascript "fs_smoothing" setSmoothing :: Bool -> IO ()
 foreign export javascript "fs_density" setDensity :: Double -> IO ()
@@ -475,10 +507,14 @@ startProject how projectTitle fileName rebuilt toolsBefore ensemble = do
     draw <- newEmptyMVar
     toolRefresh <- newIORef False
     running <- newIORef Nothing
-    let vs = ViewerState k viewer signal tool draw toolRefresh running lock
+    covered <- newIORef Nothing
+    renders <- newIORef 0
+    let vs = ViewerState k viewer signal tool draw toolRefresh running lock covered renders
     tid <- forkIO (renderLoop vs)
     drawTid <- forkIO (drawingLoop vs)
-    unwatch <- onParameterChanges viewer (requestRender signal)
+    unwatch <- onParameterChanges viewer $ do
+      writeIORef covered Nothing
+      requestRender signal
     -- (as the desktop app does, the overlay's refreshed when any
     -- configuration value changes, whether or not the viewer re-renders)
     unlisten <- vListenOverlay viewer (void (tryPutMVar draw ()))
@@ -543,13 +579,61 @@ close = readIORef sessionRef >>= mapM_ (\s -> sStop s >> writeIORef sessionRef N
 requestRender :: MVar () -> IO ()
 requestRender signal = void (tryPutMVar signal ())
 
+-- | The size of the pieces a viewer's image is rendered in, in its pixels
+-- (the canvas's): larger than the desktop's ('Task.Block.subBlockSize'),
+-- since each is a trip to a worker and back (about 75 µs, so 1,500 or so
+-- pieces of a high-DPI screen's image cost about 12 ms a pass, across 10
+-- workers, where 16-pixel pieces would cost 200).
+webPieceSize :: Int
+webPieceSize = 64
+
+-- | How often a render posts what it's drawn, at most (in seconds).
+patchInterval :: Double
+patchInterval = 1 / 30
+
+-- | How long a render holds its first patch back (in seconds): a render
+-- quicker than this comes whole, with no coarse passes shown.
+renderHold :: Double
+renderHold = 0.1
+
 renderLoop :: ViewerState -> IO ()
 renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = forever $ do
   takeMVar signal
   smooth <- readIORef smoothingRef
   -- (the viewer's code sees a CSS pixel's size, as tools do: see 'densityRef')
   density <- readIORef densityRef
-  try (renderViewerBufferAt density smooth viewer) >>= \case
+  covered <- atomicModifyIORef' (vsCovered vs) (Nothing,)
+  renderId <- atomicModifyIORef' (vsRenders vs) (\n -> (n + 1, n + 1))
+  Dimensions (w, h) <- getDynamic (vSize viewer)
+  concurrency <- renderConcurrency
+  started <- getMonotonicTime
+  drawn <- newIORef Set.empty
+  lastPatch <- newIORef Nothing
+  let -- (a piece is shown if the page's picture covers all of it)
+      shown c r = case covered of
+        Nothing -> False
+        Just (cl, ct, cr, cb) ->
+          let x0 = webPieceSize * c; y0 = webPieceSize * r
+          in x0 >= cl && y0 >= ct && min w (x0 + webPieceSize) <= cr && min h (y0 + webPieceSize) <= cb
+      patch RenderedBuffer{..} done = do
+        rects <- atomicModifyIORef' drawn (Set.empty,)
+        let flat = concat [ [x, y, pw, ph] | ImagePiece x y pw ph <- Set.toList rects ]
+        withArrayLen (map fromIntegral flat) $ \n rp -> withForeignPtr rbPixels $ \p ->
+          postPatch k renderId rbWidth rbHeight (fst rbCenter) (snd rbCenter)
+                    (fst rbPixelSize) (snd rbPixelSize) p rp (n `div` 4) done
+      pieceDrawn image p = do
+        modifyIORef' drawn (Set.insert p)
+        now <- getMonotonicTime
+        due <- readIORef lastPatch <&> \case
+          Nothing -> now - started >= renderHold
+          Just t -> now - t >= patchInterval
+        when due $ writeIORef lastPatch (Just now) >> patch image False
+  try (renderProgressively Progressive
+        { prPieceSize = webPieceSize, prConcurrency = concurrency, prScale = density
+        , prSmooth = smooth, prShown = shown
+          -- (another render's been asked for)
+        , prStale = not <$> isEmptyMVar signal
+        , prDrawn = pieceDrawn } viewer) >>= \case
     -- (being stopped, when another project is opened, isn't an error: the
     -- loop just ends)
     Left (e :: SomeException)
@@ -557,10 +641,10 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
       | otherwise -> postError (displayException e)
     Right (Left err) -> post $ Aeson.object
       [ "type" .= ("viewerError" :: Text.Text), "viewer" .= k, "message" .= err ]
-    Right (Right RenderedBuffer{..}) -> do
-      withForeignPtr rbPixels $ \p ->
-        postFrame k p (3 * rbWidth * rbHeight) rbWidth rbHeight
-                  (fst rbCenter) (snd rbCenter) (fst rbPixelSize) (snd rbPixelSize)
+    -- (dropped: the next render's on its way)
+    Right (Right Nothing) -> pure ()
+    Right (Right (Just image)) -> do
+      patch image True
       -- (the overlay and the tool, for this view, as the desktop app
       -- refreshes them with each render)
       writeIORef (vsToolRefresh vs) True
@@ -602,12 +686,16 @@ withViewerState k act = guarded $ readIORef sessionRef >>= \case
   Nothing -> pure ()
   Just Session{..} -> mapM_ act (Map.lookup k sViewers)
 
-setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
-setView k cx cy pixelSize w h = withViewer k $ \(viewer, signal) -> do
+setView :: Int -> Double -> Double -> Double -> Int -> Int -> Int -> Int -> Int -> Int -> IO ()
+setView k cx cy pixelSize w h cl ct cr cb = withViewerState k $ \vs -> do
+  let viewer = vsViewer vs
   setValue (vSize viewer) (Dimensions (max 1 w, max 1 h))
   setValue (vCenter viewer) (cx, cy)
   setValue (vPixelSize viewer) pixelSize
-  requestRender signal
+  -- (where the page still shows the last picture, after anything the
+  -- changes above set off)
+  writeIORef (vsCovered vs) (if cr > cl && cb > ct then Just (cl, ct, cr, cb) else Nothing)
+  requestRender (vsSignal vs)
 
 setDensity :: Double -> IO ()
 setDensity d = guarded (writeIORef densityRef (max 1 d))
@@ -616,13 +704,16 @@ setSmoothing :: Bool -> IO ()
 setSmoothing on = guarded $ do
   before <- atomicModifyIORef' smoothingRef (on,)
   when (before /= on) $ readIORef sessionRef >>=
-    mapM_ (\Session{..} -> mapM_ (requestRender . vsSignal) (Map.elems sViewers))
+    mapM_ (\Session{..} -> forM_ (Map.elems sViewers) $ \vs ->
+             writeIORef (vsCovered vs) Nothing >> requestRender (vsSignal vs))
 
 rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
-rotate k fx fy tx ty = withViewer k $ \(viewer, signal) -> do
-  r <- getDynamic (vRotation viewer)
-  setValue (vRotation viewer) (trackballRotation r (fx, fy) (tx, ty))
-  requestRender signal
+rotate k fx fy tx ty = withViewerState k $ \vs -> do
+  r <- getDynamic (vRotation (vsViewer vs))
+  setValue (vRotation (vsViewer vs)) (trackballRotation r (fx, fy) (tx, ty))
+  -- (the globe's turned: the last picture shows none of it where it is now)
+  writeIORef (vsCovered vs) Nothing
+  requestRender (vsSignal vs)
 
 resize :: Int -> Int -> Int -> IO ()
 resize k w h = withViewer k $ \(viewer, signal) -> do

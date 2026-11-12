@@ -232,7 +232,7 @@ wasmtime.
 - [x] Milestone 1: `basic_mandelbrot` and the Julia set project through
   Backend.Wasm under Node, compared with LLVM at a small size.
 - [x] Kernel worker pool (`fractalstream-backend-wasm/js/`).
-- [ ] Tiles and progressive passes (R3). (Done first: a pixel's point from the image's origin and its index, so tiles match a whole render.)
+- [x] Tiles and progressive passes: `renderProgressively`, in 64-pixel pieces (a pixel's point from the image's origin and its index, so tiles match a whole render). The GPU's frame-level API (R3) is still to come.
 - [x] Lists in a per-block arena; issue flags.
 - [x] Text (D17).
 - [x] Tables: viewers reading them, and tools writing them (D19).
@@ -263,7 +263,8 @@ wasmtime.
   chooser for the configuration's tabs.
 - [x] Try it in Safari and Firefox: every project works, no console errors; panning and zooming smooth after reprojecting frames onto the page's own view.
 - [x] Deployed as a static site, at `/app/` on the project's GitHub Pages (from `main`, by `pages.yml`, once `web.yml`'s checks pass), linked from the landing page as a preview.
-- [ ] **Progressive rendering** (deferred). Today the page shows the last
+- [x] **Progressive rendering**: patches as pieces are drawn, over the
+  last picture; stale renders dropped; see the findings log. (Was: the page showed the last
   frame, moved and scaled, until the whole new render arrives, so a slow
   viewer (the forced pendulum takes about 8 s) shows nothing new until
   it's done. The desktop renders coarse passes first, sharpening to full
@@ -347,6 +348,116 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: Progressive rendering, only for slow renders
+
+The user found the first version of progressive rendering (below) felt
+worse than the whole frames before it, for viewers that render quickly:
+pans, zooms, and turns of the globe used to be very smooth. Three causes:
+the page asked for a new view every display frame, so renders were
+dropped mid-drag and few finished; a dropped render's pieces were kept
+over the picture, so a drag left a patchwork of pieces from many views,
+each on its own grid; and even a quick render showed itself filling in.
+
+Now quick renders behave just as before, and only slow ones are
+progressive:
+
+- **Every render holds its first patch back for 100 ms** (`renderHold`,
+  the desktop's hold for new parameters): one done by then comes whole.
+- **The page asks again once the engine's answered**: a render begun
+  since the request, done, or slow enough to be showing its progress
+  (only then is it dropped for the next view). So a drag of a quick
+  viewer gets whole frames, one after another.
+- **A dropped render's pieces are let go**; the picture is the last
+  render that was done.
+
+Checked at 2x, in a drag, a wheel zoom and a turn of the globe of quick
+viewers: every render shown came whole (30 of 30, 20 of 20, 23 of 23),
+none dropped.
+
+**For later:** the desktop keeps a dropped render's progress (its next
+render is seeded from the old tile, partial pieces and all), where the
+web now throws it away, for clean pictures. Revisit when the desktop
+moves onto `renderProgressively`: keep the pieces a dropped render
+finished at full resolution, reprojected, as the desktop's seed does.
+
+**For the desktop too** (the user's request, after trying it: these
+made "a significant difference to the smooth feel" on the web): when the
+desktop moves onto `renderProgressively`, give it the same techniques:
+hold every render's first update for 100 ms, not only new parameters'
+(so a quick render shows whole, with no coarse passes); pace view
+changes so a quick render isn't cancelled mid-drag (the next waits for
+it to finish, or to be slow enough to show progress); and don't seed
+from a cancelled render's partial pieces where that leaves a patchwork.
+Compare by hand, and with recordings, against the desktop as it is.
+
+**Next, for the sphere:** the desktop's `reprojectedSeed` turns the old
+picture with the globe (each new pixel: the point under it on the newly
+turned globe, then where that point was on the old one's screen), marks
+the pixels off the globe final, and leaves undrawn only what was on the
+far side. The web page only moves and scales the old frame, which can't
+follow a turn, so a slow sphere viewer still shows coarse passes after a
+turn. Porting that reprojection to the page is the fix. **Deferred**
+(2026-11-12): with the hold and pacing above, the user found the sphere
+smooth enough on every example tried; revisit if a slow sphere viewer
+turns roughly.
+
+### 2026-11-12: Progressive rendering, in tiles
+
+The web app now renders as the desktop's tiles do, and the two share
+the plan: `Task.Block.progressivePlan` (pulled out of
+`progressivelyOver`) orders the pieces (coarse passes, 16 and then 4
+pixels a sample, over what isn't shown yet; then every piece at full
+resolution; then, smoothed, at twice that), and `Actor.Viewer`'s
+`renderProgressively` renders them with a viewer's kernel, from the
+image's origin. Done, its image is `renderViewerBuffer`'s to the byte,
+smoothed or not (`BlocksSpec`, in uneven pieces, with and without pieces
+already shown).
+
+- **Pieces of 64 canvas pixels** on the web. Measured (512x512, a
+  Mandelbrot viewer): under Node with 10 workers, a kernel call costs
+  about 8 µs amortized (75 µs of round trip, spread across the workers),
+  so 16-pixel pieces took 9 ms, 32 took 4, 64 took 3 and 128 took 4 (too
+  few pieces to keep 10 workers busy). Natively a call costs about 2 µs:
+  the desktop's 16-pixel pieces cost it about 6% over 32 or more, so
+  they're fine as they are.
+- **Patches**, at most 30 a second: the rectangles drawn since the last
+  one, read straight from the engine's image by the worker (as RGBA).
+  The page writes them into the render's `ImageData`, flushes what
+  changed onto the render's canvas once per display frame, and draws
+  that over the last picture (moved into the view). Measured on the
+  page, at 2x with 100+ patches: under 1 ms a display frame, so 30 Hz
+  (or more) is cheap.
+- **Stale renders are dropped**, a piece in: a newer request (a pan, a
+  zoom, new parameters) makes the render skip its remaining pieces, and
+  the page asks at most once per display frame, without waiting. What a
+  dropped render drew stays, over the last picture. A globe's turn waits
+  until the last turn's render has begun to show, so turning shows
+  something.
+- **What the page shows already** goes with each view request (a
+  rectangle of the new view's pixels): pieces in it skip the coarse
+  passes, as the desktop's reprojected seed does. Nothing on the sphere
+  (the globe may have turned), or after new parameters.
+- **New parameters** hold their first patch back a tenth of a second, as
+  the desktop holds its capture, so a quick render shows no coarse passes.
+
+Timed, open to every viewer done at the canvas's size, before and after
+(same machine, Chromium): the forced pendulum 13.6 s to 6.8 s at 1x
+(smoothed), 6.9 s to 5.2 s at 2x; Period 5 5.1 to 2.6 s and 2.8 to
+2.1 s; the Mandelbrot set about the same (0.25 to 0.28 s). The first
+pieces show in about 150 ms. Most of the gain is the engine dropping the
+first render (at the project's size) when the page asks for the
+canvas's, where it used to finish it; the coarse passes cost about 7%
+more samples.
+
+Checks: `check-tools.mjs`'s `progressive` section (a slow viewer,
+`dev-tools/web/slow.fs`, whose loop needs `limit=work` to run past
+`max_iters`), passing in Chromium, Firefox and WebKit, at 1x and 2x.
+
+Still to do: the desktop onto `renderProgressively` (its tiles, its
+seeds and the off-globe pixels marked final, which the web doesn't do
+yet: a turned globe's coarse passes paint over the background briefly);
+and whether the desktop's 10 Hz capture should be faster.
 
 ### 2026-11-12: A pixel's point from the image's origin
 

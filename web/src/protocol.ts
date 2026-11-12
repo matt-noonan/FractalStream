@@ -17,7 +17,12 @@ export type Request =
       point to another (in units of the sphere's radius, y up). */
   | { type: "rotate"; viewer: number; fx: number; fy: number; tx: number; ty: number }
   | { type: "set"; name: string; text: string }
-  | { type: "view"; viewer: number; cx: number; cy: number; pixelSize: number; width: number; height: number }
+  /** Move, zoom, or resize a viewer: with where (in the new view's
+      pixels: left, top, right and bottom, the last two not included) the
+      page still shows the last picture, moved into the new view, if it
+      does anywhere. */
+  | { type: "view"; viewer: number; cx: number; cy: number; pixelSize: number; width: number; height: number;
+      covered: [number, number, number, number] | null }
   | { type: "resize"; viewer: number; width: number; height: number }
   /** Whether frames are smoothed (four samples a pixel), for every viewer. */
   | { type: "smoothing"; on: boolean }
@@ -126,10 +131,16 @@ export interface SavedViews {
                              cx: number; cy: number; "pixel-size": number; minimized?: boolean }>;
 }
 
-/** A viewer's frame: RGBA pixels, and the view they show. */
-export interface Frame {
-  type: "frame";
+/** Part of a viewer's render, as it goes (see "Frames" in
+    fractalstream-ui-web/src/Main.hs): which render it is (each viewer's
+    are numbered), its image's size and view, the rectangles drawn since
+    the last patch (x, y, width, height, four numbers each) and their
+    pixels (RGBA, a rectangle after another, row by row), and whether the
+    render's done. */
+export interface Patch {
+  type: "patch";
   viewer: number;
+  id: number;
   width: number;
   height: number;
   /** The center of the view, and a pixel's width and height, in model coordinates. */
@@ -137,7 +148,9 @@ export interface Frame {
   cy: number;
   px: number;
   py: number;
+  rects: number[];
   pixels: ArrayBuffer;
+  done: boolean;
 }
 
 /** From the engine to the page. */
@@ -182,4 +195,4 @@ export type Message =
   /** A viewer couldn't be drawn (its next frame clears this). */
   | { type: "viewerError"; viewer: number; message: string }
   | { type: "error"; message: string }
-  | Frame;
+  | Patch;

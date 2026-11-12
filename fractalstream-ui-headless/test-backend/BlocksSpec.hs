@@ -7,13 +7,21 @@
 -- The viewer's color is the parity of x's last bit, so a point a single
 -- ulp off shows. (As a control, blocks each stepped from their own first
 -- point, as the kernels used to step, don't match.)
+--
+-- And so a progressive render ('renderProgressively': pieces, in coarse
+-- passes, then at full resolution, then smoothed) comes out, once it's
+-- done, just as 'renderViewerBuffer' renders the image, to the byte.
 module BlocksSpec (spec) where
 
 import Test.Hspec
 
 import Actor.Ensemble (buildEnsembleFromScript, runEnsemble)
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), CodeWithArgs(..), ViewerArgs(..), ViewerFunction(..))
+import Actor.Viewer (Viewer(..), CodeWithArgs(..), ViewerArgs(..), ViewerFunction(..), RenderedBuffer(..),
+                     renderViewerBuffer, renderProgressively, Progressive(..))
+import Actor.Layout (Dimensions(..))
+import Data.DynamicValue (setValue)
+import Foreign.ForeignPtr (withForeignPtr)
 import Backend (withBackend)
 import Data.DynamicValue (getDynamic)
 
@@ -65,8 +73,11 @@ origin :: (Double, Double)
 origin = (1.0000001 - fromIntegral width / 2 * 1e-13, fromIntegral height / 2 * 1e-13)
 
 withViewer :: (Viewer -> IO a) -> IO a
-withViewer k = do
-  ens <- buildEnsembleFromScript project >>= either (fail . snd) pure
+withViewer = withViewerOf project
+
+withViewerOf :: String -> (Viewer -> IO a) -> IO a
+withViewerOf script k = do
+  ens <- buildEnsembleFromScript script >>= either (fail . snd) pure
   ref <- newIORef Nothing
   let ui = UI { newEnsemble = pure ()
               , makeLayout = \_ _ _ -> pure (pure ())
@@ -95,3 +106,39 @@ spec = describe "a viewer's image, cut into blocks" $ do
     whole <- renderBlocks v fromOrigin [(0, 0, width, height)]
     stepped <- renderBlocks v ownPoint blocks
     stepped `shouldNotBe` whole
+
+  describe "rendered progressively" $ do
+    forM_ [False, True] $ \smooth -> forM_ [(64, "nothing"), (24, "nothing"), (24, "some pieces")] $ \(size, shown) ->
+      it ("is, once done, the image " ++ (if smooth then "smoothed" else "unsmoothed")
+          ++ ", in pieces of " ++ show size ++ ", with " ++ shown ++ " shown already") $
+        forM_ [project, mandelbrot] $ \script -> withViewerOf script $ \v -> do
+          -- (an odd size: pieces at the edges smaller, and some too small
+          -- for the coarsest passes)
+          setValue (vSize v) (Dimensions (150, 101))
+          expected <- renderViewerBuffer smooth v >>= either fail pure >>= bytes
+          drawn <- newIORef (0 :: Int)
+          got <- renderProgressively Progressive
+            { prPieceSize = size, prConcurrency = 3, prScale = 1, prSmooth = smooth
+            , prShown = \c r -> shown /= "nothing" && even (c + r)
+            , prStale = pure False, prDrawn = \_ _ -> modifyIORef' drawn (+ 1) } v
+          image <- either fail (maybe (fail "abandoned") pure) got
+          bytes image >>= (`shouldBe` expected)
+          readIORef drawn >>= (`shouldSatisfy` (> 0))
+
+    it "stops, once it's stale" $ withViewerOf mandelbrot $ \v -> do
+      drawn <- newIORef (0 :: Int)
+      got <- renderProgressively Progressive
+        { prPieceSize = 16, prConcurrency = 1, prScale = 1, prSmooth = False, prShown = \_ _ -> False
+        , prStale = (> 3) <$> readIORef drawn, prDrawn = \_ _ -> modifyIORef' drawn (+ 1) } v
+      either fail (maybe (pure ()) (const (expectationFailure "it wasn't abandoned"))) got
+      readIORef drawn >>= (`shouldBe` 4)
+  where
+    bytes RenderedBuffer{..} = withForeignPtr rbPixels $ \p ->
+      BS.packCStringLen (castPtr p, 3 * rbWidth * rbHeight)
+
+mandelbrot :: String
+mandelbrot = unlines
+  [ "@viewer \"M\" var=C center=-0.75 pixelSize=1/50"
+  , "z := 0", "k := 0"
+  , "while |z| < 10 and k < 100:", "  z <- z^2 + C", "  k <- k + 1"
+  , "color <- rgb(k / 100, 0.5, 1 - k / 100)" ]
