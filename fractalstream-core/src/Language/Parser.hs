@@ -32,6 +32,7 @@ module Language.Parser
   ) where
 
 import FractalStream.Prelude
+import Data.Char (isDigit)
 
 import qualified Data.Set as Set
 import qualified Text.Earley as P
@@ -103,6 +104,8 @@ parse :: (forall r. P.Grammar r (Prod r a)) -> [SRToken] -> Either ParseError a
 parse p input
   | (sr, s) : _ <- [ (sr, s) | SRToken (ScientificNotation s) sr <- input ]
   = Left (ScientificNumber sr s)
+  | (sr, n) : _ <- [ (sr, n) | SRToken (NumberI n) sr <- input, n > maxIntegerLiteral ]
+  = Left (IntegerTooBig sr n)
   | b : _ <- builtinBindings input
   = Left b
   | otherwise = case P.fullParses (P.parser (fmap snd . runProd <$> p)) input of
@@ -202,7 +205,16 @@ data ParseError
   | BuiltinName SourceRange String String String
     -- ^ A built-in name (as written; what it is; what it was going to name)
     -- used for a variable, function, or code block of the script's own.
+  | IntegerTooBig SourceRange Integer
+    -- ^ An integer literal too big for an integer ('maxIntegerLiteral'),
+    -- which would otherwise wrap around.
   deriving Show
+
+-- | The largest integer a script can write: integers are 32 bits in the
+-- compiled backends (LLVM's and the web's), so a bigger one would wrap
+-- around there (as @2251799813685248@ did, silently).
+maxIntegerLiteral :: Integer
+maxIntegerLiteral = 2147483647
 
 instance PrettyPrint ParseError where
   pp = (:[]) . \case
@@ -211,6 +223,9 @@ instance PrettyPrint ParseError where
     AmbiguousParse _ prods -> "I got stuck because the grammar is ambiguous here" ++
       expectingClause prods
     ScientificNumber _ s -> scientificNumberMessage s
+    IntegerTooBig _ n ->
+      "`" ++ show n ++ "` is too big for an integer (they go up to " ++ show maxIntegerLiteral
+      ++ "). For the real number, write `" ++ show n ++ ".0`."
     BuiltinName _ name what role ->
       "`" ++ name ++ "` is " ++ what ++ ", so it can't also name a " ++ role ++ ". Try another name"
       ++ (if name `elem` ["i", "e"] then " (k, j, n, ...)." else ".")
@@ -237,7 +252,10 @@ scientificNumberMessage s =
       | otherwise = mantissa ++ " * 10^" ++ show exponent'
 
 
-    decimal = shiftDecimal mantissa exponent'
+    -- (a whole number too big to be an integer is written as a real one)
+    decimal = case shiftDecimal mantissa exponent' of
+      d | all isDigit d, read d > maxIntegerLiteral -> d ++ ".0"
+        | otherwise -> d
     eulerClause
       | null sign = ""
       | otherwise = ", or add spaces, `" ++ mantissa ++ " " ++ [letter] ++ " " ++ sign ++ " "
@@ -274,6 +292,7 @@ instance HasErrorLocation ParseError where
     NoParse mp _ -> maybe NoSourceRange (\p -> SourceRange p p) mp
     AmbiguousParse mp _ -> maybe NoSourceRange (\p -> SourceRange p p) mp
     ScientificNumber sr _ -> sr
+    IntegerTooBig sr _ -> sr
     BuiltinName sr _ _ _ -> sr
 
 
