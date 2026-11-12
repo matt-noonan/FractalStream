@@ -17,6 +17,9 @@
 //   sweep     every tool of every library project compiles
 //   stop      a handler that never finishes (dev-tools/web/endless.fs):
 //             the bar, Stop, Stop and switch to Navigate, and an overlay
+//   panel     the configuration panel: a text box's whole value as its
+//             tooltip, as a tool changes it; widening the panel from its
+//             left edge, remembered
 //
 // See harness.mjs for what it needs. The exit status is 1 if any check
 // failed.
@@ -27,7 +30,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop };
+const all = { drawing, tools, refresh, sweep, stop, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -321,4 +324,30 @@ async function stop() {
   await hang.check();
   await page.waitForTimeout(800);
   c.check((await bar(W).isHidden()) && (await app.drawing(W))?.length === 0, "and it stays off");
+}
+
+async function panel() {
+  await app.openLibrary("Mandelbrot and Julia sets together");
+  const box = page.locator(".panel .field", { hasText: /^Selected value of C/ }).locator("input");
+  c.check((await box.getAttribute("title")) === (await box.inputValue()), `a text box's tooltip is its value (${await box.getAttribute("title")})`);
+  // (as a tool changes it)
+  const pp = (await app.messages("project")).pop().viewers.find((v) => v.title === "Parameter plane").id;
+  const pbox = await app.canvas(pp).boundingBox();
+  await page.mouse.click(pbox.x + pbox.width * 0.3, pbox.y + pbox.height * 0.4);
+  await page.waitForTimeout(800);
+  c.check((await box.getAttribute("title")) === (await box.inputValue()), `and stays so when a tool sets it (${await box.getAttribute("title")})`);
+  const aside = page.locator(".panel");
+  const before = (await aside.boundingBox()).width;
+  const grip = await page.locator(".panel-grip").boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 - 150, grip.y + 100, { steps: 5 });
+  await page.mouse.up();
+  const after = (await aside.boundingBox()).width;
+  c.check(Math.abs(after - before - 150) <= 2, `dragging the panel's left edge widens it (${before} -> ${after})`);
+  await page.reload();
+  await page.waitForSelector("#library li", { timeout: 60000 });
+  await app.openLibrary("Mandelbrot and Julia sets together");
+  const again = (await page.locator(".panel").boundingBox()).width;
+  c.check(Math.abs(again - after) <= 1, `and the width is remembered (${again})`);
 }

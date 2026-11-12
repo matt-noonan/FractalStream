@@ -72,7 +72,15 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
 }
 .viewer canvas { display: block; cursor: grab; touch-action: none; }
 .viewer canvas:active { cursor: grabbing; }
-.panel { flex: none; width: 320px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.panel {
+  flex: none; width: var(--panel-width, 320px); position: relative;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px;
+}
+/* (its left edge, to drag it wider or narrower) */
+.panel-grip {
+  position: absolute; left: -9px; top: 0; bottom: 0; width: 10px; cursor: ew-resize; touch-action: none;
+}
+.panel-grip:hover, .panel-grip.dragging { border-right: 2px solid var(--accent); }
 .panel fieldset { border: none; margin: 0; padding: 0; }
 .panel legend { font-weight: 600; margin-bottom: 6px; }
 .vertical { display: flex; flex-direction: column; gap: 6px; }

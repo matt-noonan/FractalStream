@@ -170,7 +170,7 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
   const desk = new Desk(el("div"));
   toolPanelEl = el("div", { className: "tool-panel" });
   asideEl = el("aside", { className: "panel" },
-               panel ? layoutElement(panel, projectFields) : "", toolPanelEl);
+               panelGrip(), panel ? layoutElement(panel, projectFields) : "", toolPanelEl);
   projectEl.replaceChildren(
     el("h1", { textContent: title }),
     el("div", { className: "workspace" }, desk.element, asideEl));
@@ -248,6 +248,44 @@ document.addEventListener("keydown", (e) => {
   else if (key === "n") { e.preventDefault(); v.selectTool(null); }
 });
 
+// The configuration panel's width: dragged from its left edge, and
+// remembered (in this browser).
+const PANEL_WIDTH_KEY = "fractalstream.panelWidth";
+const MIN_PANEL_WIDTH = 240;
+function setPanelWidth(w: number) {
+  const width = Math.round(Math.max(MIN_PANEL_WIDTH, Math.min(w, window.innerWidth * 0.7)));
+  document.documentElement.style.setProperty("--panel-width", `${width}px`);
+  return width;
+}
+try {
+  const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+  if (saved > 0) setPanelWidth(saved);
+} catch { /* (the default width) */ }
+
+function panelGrip(): HTMLElement {
+  const grip = el("div", { className: "panel-grip", title: "Drag to make the panel wider or narrower" });
+  grip.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !asideEl) return;
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add("dragging");
+    const x0 = e.clientX, w0 = asideEl.getBoundingClientRect().width;
+    let width = w0;
+    const move = (m: PointerEvent) => { width = setPanelWidth(w0 - (m.clientX - x0)); };
+    const up = () => {
+      grip.classList.remove("dragging");
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      grip.removeEventListener("pointercancel", up);
+      try { localStorage.setItem(PANEL_WIDTH_KEY, String(width)); } catch { /* (not remembered) */ }
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+    grip.addEventListener("pointercancel", up);
+  });
+  return grip;
+}
+
 /** What a panel's fields and buttons do: set a field, press a button. */
 interface PanelActions {
   set(name: string, text: string): void;
@@ -313,7 +351,9 @@ function fieldElement(f: FieldLayout, actions: PanelActions): Node {
     }
     default: {
       // (a text box; for a color, with a swatch to pick one with)
-      const box = el("input", { type: "text", value: f.text, spellcheck: false });
+      // (the whole value as a tooltip too, for one too long for the box)
+      const box = el("input", { type: "text", value: f.text, spellcheck: false, title: f.text });
+      box.addEventListener("input", () => (box.title = box.value));
       let committed = f.text;
       const commit = () => {
         if (box.value !== committed) {
@@ -324,10 +364,10 @@ function fieldElement(f: FieldLayout, actions: PanelActions): Node {
       box.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
       box.addEventListener("blur", commit);
       input = box;
-      setText = (text) => { committed = text; box.value = text; };
+      setText = (text) => { committed = text; box.value = text; box.title = text; };
       if (f.kind === "color") {
         const swatch = el("input", { type: "color", value: f.color ?? "#000000", title: "Pick a color" });
-        swatch.addEventListener("change", () => { box.value = rgbText(swatch.value); commit(); });
+        swatch.addEventListener("change", () => { box.value = box.title = rgbText(swatch.value); commit(); });
         fieldInputs.set(f.key, { input, error, swatch, setText });
         return el("label", { className: "field color" }, el("span", { textContent: f.label }), swatch, input, error);
       }
