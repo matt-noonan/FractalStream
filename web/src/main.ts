@@ -203,8 +203,6 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
     x += w + gap;
     rowHeight = Math.max(rowHeight, h + 30);
   }
-  // (the script editor stays open through a rebuild)
-  if (editorOpen) showEditor();
   activate(windows[0]?.view ?? null);
   status("");
 }
@@ -294,9 +292,10 @@ function panelGrip(): HTMLElement {
 
 // ---------------------------------------------------------------------
 // The script editor: over the whole workspace (the viewers and the
-// configuration), from the toolbar's Script button (see editor.ts). It
-// stays open through a rebuild, and keeps what's typed in it while it's
-// closed, until another project is opened.
+// configuration), from the toolbar's Script button (see editor.ts). A
+// rebuild that works closes it (one that doesn't leaves it open, saying
+// why); it keeps what's typed in it while it's closed, until another
+// project is opened.
 
 let workspaceEl: HTMLElement | null = null;
 let projectTitle = "";
@@ -858,6 +857,9 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
         const views = viewState();
         showProject(m.title, m.panel, m.viewers, views);
         scriptEditor?.projectScript(m.script, true);
+        // (it worked: the editor's done its job)
+        hideEditor();
+        status("Rebuilt.");
         break;
       }
       current = { fileName: m.fileName, library: m.library, handle: m.library ? null : opening };

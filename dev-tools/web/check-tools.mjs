@@ -429,14 +429,16 @@ async function editor() {
   c.check(await page.locator(".window", { hasText: "Dynamical plane" }).first().evaluate((w) => w.classList.contains("minimized")), "and a minimized one stays minimized");
   const tool = (await app.messages("tool")).filter((m) => m.viewer === dp).pop();
   c.check(tool?.name === "Trace", `and a viewer keeps its tool (${tool?.name})`);
-  c.check(await page.locator(".editor-overlay").count() === 1 && (await doc()).includes("The value of C:"), "and the editor stays open, with its text");
-  // (and over the viewers: what's at its middle is the editor)
+  c.check(await page.locator(".editor-overlay").count() === 0, "and, since it worked, closes the editor");
+  c.check(/Rebuilt/.test(await page.locator("#status").textContent()), `saying so (${await page.locator("#status").textContent()})`);
+  await page.locator("#toggle-script").click();
+  c.check((await doc()).includes("The value of C:"), "which, reopened, has the rebuilt script");
+  // (and is over the viewers: what's at its middle is the editor)
   const onTop = await page.evaluate(() => {
     const r = document.querySelector(".editor-overlay").getBoundingClientRect();
     return !!document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest(".editor-overlay");
   });
   c.check(onTop, "over everything in the workspace");
-  c.check(/Rebuilt/.test(await status()), `saying so (${await status()})`);
 
   // a script that doesn't build leaves the project as it was
   await page.locator(".editor-overlay .cm-content").click();
@@ -447,6 +449,7 @@ async function editor() {
   await app.waitForMessage("(m) => m.type === 'rebuildError'", 30000).catch(() => {});
   c.check((await app.messages("rebuildError")).length === 1 && (await app.messages("project")).length === 0 && /⚠|error|expected/i.test(await status()),
           `one that doesn't build says why, and leaves the project (${await status()})`);
+  c.check(await page.locator(".editor-overlay").count() === 1, "with the editor still open");
   // Revert: back to the project's script
   await page.locator(".editor-buttons button", { hasText: "Revert" }).click();
   await page.waitForTimeout(300);

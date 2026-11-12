@@ -11,8 +11,9 @@
 // - Symbols can be typed by their names (symbols.ts): \theta and a space
 //   is θ and a space; Tab completes a name, Return finishes one, Escape
 //   leaves it as typed; pasted names become their symbols.
-// - Rebuild (or Ctrl/Cmd-Enter) builds the project again from it; Revert
-//   goes back to the project's script.
+// - Rebuild (or Ctrl/Cmd-Enter) builds the project again from it (and if
+//   that works, the page closes the editor); Revert goes back to the
+//   project's script.
 
 import { EditorState, StateEffect, StateField, RangeSetBuilder, Transaction, type Extension } from "@codemirror/state";
 import { EditorView, Decoration, type DecorationSet, keymap, showTooltip, type Tooltip, ViewPlugin,
