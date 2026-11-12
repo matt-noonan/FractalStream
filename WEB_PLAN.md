@@ -228,11 +228,13 @@ wasmtime.
 - [x] Viewers with pan and zoom (in the page for now; R2 still to do).
 - [x] The built-in library.
 - [x] Open and save local `.fs` files (with `values:` and `tables:`, as the desktop app; Save writes back where the browser allows it, else downloads).
-- [ ] Basic window management: viewers as windows to rearrange and
+- [x] Basic window management: viewers as windows to rearrange and
   resize; the configuration as a panel that pops in and out; hiding and
-  showing the library. (Nice to have.)
-- [ ] High-DPI canvases; smoothing (fsrun's captures are rendered at 2×
-  and averaged, the web's at 1×).
+  showing the library.
+- [x] High-DPI canvases (rendered at the screen's density, up to 2×).
+- [ ] Smoothing (fsrun's captures are rendered at 2× and averaged).
+- [ ] Saving the view state (each viewer's center, zoom, size) in project
+  files, under a key of the web app's own.
 - [ ] Tidy-ups: color pickers; parse errors out of the status line; globe
   dragging for sphere viewers.
 - [x] Try it in Safari and Firefox: every project works, no console errors; panning and zooming smooth after reprojecting frames onto the page's own view.
