@@ -50,7 +50,7 @@ import Actor.Configuration
 import Actor.Viewer
 import Actor.Ensemble (buildToolContext, layoutToArgs, Colorizer(..), ViewerColorizer(..))
 import Actor.Colorizer (splitArguments)
-import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..), ToolDispatcher, HandlerRun)
+import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..), ToolDispatcher, HandlerRun, newCancelFlag)
 import Language.Value.Parser (parseConstant)
 import Language.Type
 import Language.Draw
@@ -1464,7 +1464,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                       else isJust <$> tryTakeMVar needToRefreshOverlay
                        when needOverlay $ do
                          Model _ pxDims _ <- get model value
-                         vRefreshOverlay pxDims
+                         newCancelFlag >>= \flag -> vRefreshOverlay flag pxDims
                          vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
                        needToSendRefresh <- isJust <$> tryTakeMVar needToSendRefreshEvent
                        get currentTool value >>= \case

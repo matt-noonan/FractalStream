@@ -24,7 +24,10 @@ export type Request =
   | { type: "event"; viewer: number; kind: EventKind; x1: number; y1: number; x2: number; y2: number }
   | { type: "button"; viewer: number; label: string }
   /** Set a field of a viewer's tool's panel. */
-  | { type: "setTool"; viewer: number; name: string; text: string };
+  | { type: "setTool"; viewer: number; name: string; text: string }
+  /** Stop the viewer's running handler (its tool's, or its overlay's);
+      a tool's, also switching back to navigating, if `navigate`. */
+  | { type: "stop"; viewer: number; navigate: boolean };
 
 /** 0 a click, 1 a double click, 2 a drag so far, 3 a drag finished. */
 export type EventKind = 0 | 1 | 2 | 3;
@@ -132,6 +135,9 @@ export type Message =
   | { type: "toolError"; viewer: number; message: string }
   | { type: "drawing"; viewer: number; layers: Shape[][] }
   | { type: "eventDone"; viewer: number }
+  /** A viewer's handler has been running for a while (and until runDone). */
+  | { type: "running"; viewer: number; what: "tool" | "overlay"; name: string | null }
+  | { type: "runDone"; viewer: number }
   /** A viewer couldn't be drawn (its next frame clears this). */
   | { type: "viewerError"; viewer: number; message: string }
   | { type: "error"; message: string }

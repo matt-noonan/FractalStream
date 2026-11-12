@@ -26,7 +26,7 @@ import Backend.Wasm.Encode (MemoryImport(..))
 import Backend.Pure (interpretViewer)
 
 import Actor.Autocolor (AutocolorLookup(..), autocolorSnapshot)
-import Actor.Event (ToolExec, HandlerRun(..), EventArgument(..),
+import Actor.Event (ToolExec, HandlerRun(..), EventArgument(..), HandlerCancelled(..), runCancelled,
                     buildHandlerWith, snapshotEventArgs)
 import Actor.Viewer
 import Language.Draw (DrawSink(..))
@@ -36,7 +36,8 @@ import Language.Type
 import Language.Value.Transform (backendRewrites)
 import Data.Color (colorToRGB, rgbToColor)
 
-import Control.Exception (Exception, evaluate, throwIO, handle)
+import Control.Exception (Exception, SomeException, evaluate, throwIO, handle, try, bracket)
+import Control.Concurrent (forkIO, killThread, threadDelay)
 import Data.Bits (testBit)
 import Foreign.ForeignPtr (mallocForeignPtrBytes, withForeignPtr)
 import Foreign.Marshal.Array (withArrayLen)
@@ -72,10 +73,16 @@ foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, 
             -> Double -> Double -> Double -> Double -> IO Int32
 
 -- | Run a tool's handler on a worker, with a copy of its arguments and
--- an arena of the given size (see @js/kernel-worker.mjs@).
+-- an arena of the given size (see @js/kernel-worker.mjs@), tagged (to
+-- stop it with 'stopToolJob').
 foreign import javascript safe
-  "return await globalThis.fractalstreamWorkers.runTool($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice(), $4)"
-  runToolOnWorker :: Int -> Ptr Word8 -> Int -> Int -> IO JSVal
+  "return await globalThis.fractalstreamWorkers.runTool($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice(), $4, $5)"
+  runToolOnWorker :: Int -> Ptr Word8 -> Int -> Int -> Int -> IO JSVal
+
+-- | Stop the tool job with this tag (its worker is replaced: see
+-- @js/worker-pool.mjs@); its 'runToolOnWorker' fails.
+foreign import javascript unsafe "globalThis.fractalstreamWorkers.stop($1)"
+  stopToolJob :: Int -> IO ()
 
 foreign import javascript unsafe "$1.status"
   toolStatus :: JSVal -> IO Int32
@@ -351,7 +358,7 @@ wasmToolExec sink envp code0 = do
   let code = transformValues backendRewrites code0
   bytes <- either (throwIO . ToolNotCompiled) pure (compileTool envp code)
   kernel <- withArrayLen bytes (\n p -> addKernel p n)
-  pure $ \ctx -> HandlerRun $ \_ -> snapshotEventArgs ctx >>= \case
+  pure $ \ctx -> HandlerRun $ \cancelFlag -> snapshotEventArgs ctx >>= \case
     Nothing -> pure (pure ())
     Just vals -> do
       let values = fromContext (\_ ty v -> SomeArg ty v) vals
@@ -361,9 +368,21 @@ wasmToolExec sink envp code0 = do
       withForeignPtr args $ \p -> do
         heap <- newIORef slots
         foldM_ (\off (SomeArg ty v) -> pokeArg p workerArgsBase heap off ty v) 0 values
-        -- (with a bigger arena, if it runs out)
-        let attempt capacity = do
-              result <- runToolOnWorker kernel p size capacity >>= evaluate
+        -- (with a bigger arena, if it runs out; stopped when the flag is
+        -- set, by stopping its worker, since compiled code there can't see
+        -- the flag)
+        tag <- atomicModifyIORef' toolTags (\k -> (k + 1, k))
+        let stopped = runCancelled cancelFlag >>= \c -> when c (throwIO HandlerCancelled)
+            watch = do
+              threadDelay 20000
+              c <- runCancelled cancelFlag
+              if c then stopToolJob tag else watch
+            attempt capacity = do
+              stopped
+              result <- bracket (forkIO watch) killThread $ \_ ->
+                try (runToolOnWorker kernel p size capacity tag >>= evaluate) >>= \case
+                  Right r -> pure r
+                  Left (e :: SomeException) -> stopped >> throwIO e
               status <- toolStatus result
               if | testBit status 0 && capacity < toolArenaMaxCapacity -> attempt (2 * capacity)
                  | testBit status 0 -> fail $ concat
@@ -396,6 +415,11 @@ wasmToolExec sink envp code0 = do
                       _ -> pure ()) (zipContext ctx vals)
           drawn <- readDraws at sink draws drawsLen
           pure (sequence_ sets >> sequence_ drawn)
+
+-- | Tags for tools' jobs, to stop them by.
+toolTags :: IORef Int
+toolTags = unsafePerformIO (newIORef 0)
+{-# NOINLINE toolTags #-}
 
 -- | Tools get an arena of their own, as with the LLVM backend: it starts
 -- at 1 MB and doubles whenever a run runs out, up to 256 MB.

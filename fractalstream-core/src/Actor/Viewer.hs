@@ -19,6 +19,7 @@ module Actor.Viewer
   , describeViewerIssues
   , Viewer(..)
   , refreshOverlay
+  , refreshOverlayWith
   , CodeWithArgs(..)
   , cloneViewer
   , onParameterChanges
@@ -53,7 +54,7 @@ import Actor.Tool
 import Actor.Event ( ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript
                    , Coordinate(..), ViewKind(..), bindOrDeclare, RealIn(..), bindFreshReals
                    , pixelWidthVar, pixelHeightVar, PixelDims, ToolDispatcher
-                   , ToolExec, EventArgument(..), HandlerRun(..), newCancelFlag )
+                   , ToolExec, EventArgument(..), HandlerRun(..), newCancelFlag, CancelFlag )
 import Language.Code.Hoist (Split, splitHoistable, hoistedIterations, hoistedStuck)
 import Language.Code.Typecheck (expandParsedCode)
 import Language.Code.InterpretIO (IORefTypeOfBinding)
@@ -223,7 +224,7 @@ data Viewer = Viewer
     --   viewer's coordinate is a configuration variable (or a pair of
     --   them) that clicking can set. A frontend selects it when it first
     --   opens the viewer, instead of navigating.
-  , vRefreshOverlay :: PixelDims -> IO ()
+  , vRefreshOverlay :: CancelFlag -> PixelDims -> IO ()
     -- ^ Run the viewer's overlay's @on refresh:@ block (if it has an
     --   overlay), for a view with the given pixel size: its drawings go
     --   to a layer below every tool's. A frontend runs it whenever the
@@ -231,6 +232,13 @@ data Viewer = Viewer
     --   draws tool drawings anywhere they can't be kept up to date that
     --   way (a capture, a movie frame). Safe to call from any thread, and
     --   never throws: a failing overlay only reports its error on stderr.
+    --   Setting the flag stops the run, with no effect (see 'HandlerRun');
+    --   'refreshOverlay' runs it with a flag of its own.
+  , vStopOverlay :: IO ()
+    -- ^ Turn the overlay off: its drawings are erased, and refreshing it
+    --   does nothing from then on, for this build of the viewer (a
+    --   frontend does this when the user stops a slow overlay, which
+    --   would otherwise only run again at the next refresh).
   , vListenOverlay :: IO () -> IO (IO ())
     -- ^ Run an action whenever the overlay may need refreshing because
     --   a configuration value changed (never, without an overlay);
@@ -666,6 +674,7 @@ cloneViewer v = do
     , vTools = vTools v
     , vSelectTool = vSelectTool v
     , vRefreshOverlay = vRefreshOverlay v
+    , vStopOverlay = vStopOverlay v
     , vListenOverlay = vListenOverlay v
     , vCodeWithArgs = vCodeWithArgs v
     , vDrawCmds = vDrawCmds v
@@ -675,10 +684,14 @@ cloneViewer v = do
 
 -- | Refresh a viewer's overlay for its current view (see 'vRefreshOverlay').
 refreshOverlay :: Viewer -> IO ()
-refreshOverlay v = do
+refreshOverlay v = newCancelFlag >>= \flag -> refreshOverlayWith flag v
+
+-- | 'refreshOverlay', stopped (with no effect) when the flag is set.
+refreshOverlayWith :: CancelFlag -> Viewer -> IO ()
+refreshOverlayWith flag v = do
   px <- getDynamic (vPixelSize v)
   aspect <- getDynamic (vAspect v)
-  vRefreshOverlay v (px, px * aspect)
+  vRefreshOverlay v flag (px, px * aspect)
 
 -- | A fallback viewer function that paints every point grey
 allGrey :: ViewerFunction '[]

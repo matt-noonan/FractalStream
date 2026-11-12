@@ -39,6 +39,15 @@ tables (@tables:@) it was saved with, and is saved with its own.
 * @fs_button(viewer, label)@: a button of the viewer's tool's panel.
 * @fs_set_tool(viewer, name, text)@: set a field of the viewer's tool's
   panel; the tool is refreshed.
+* @fs_stop(viewer, navigate)@: stop the viewer's running handler (its
+  tool's, or its overlay's refresh), with no effect. A stopped tool stays
+  selected, unless @navigate@: then the viewer navigates again (without
+  running the tool's @on deactivated:@ handler, which may well be slow
+  too). A stopped overlay is turned off until the project's reopened.
+
+A tool's handler, or an overlay's refresh, that's still running after a
+quarter of a second is announced (@running@), and its end too
+(@runDone@), so the page can show it's running, and offer to stop it.
 
 After a tool's handler runs (and after each frame, with the viewer's
 overlay refreshed for its view), the viewer's drawings are posted, when
@@ -61,6 +70,8 @@ where a field's key is its name, in the project's panel, and
 @tool:<viewer>:<name>@ in a tool's.
 > { "type": "tool", "viewer", "name": <the selected tool> or null, "panel": <its layout> or null, "handles": [ "click" | "doubleClick" | "drag" | "dragDone" ] }
 > { "type": "eventDone", "viewer" }   (an fs_event has been handled)
+> { "type": "running", "viewer", "what": "tool" | "overlay", "name": <the tool's> }
+> { "type": "runDone", "viewer" }
 > { "type": "toolError", "viewer", "message" }   (a tool's handler failed: the viewer navigates again)
 > { "type": "drawing", "viewer", "layers": [ [ <shape> ] ] }   (see "Drawing")
 > { "type": "viewerError", "viewer", "message" }   (a render failed; the next frame clears it)
@@ -90,8 +101,9 @@ import qualified Data.Aeson.KeyMap as KM
 import Actor.Metadata (ProjectMetadata(..))
 import Actor.Layout
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges, refreshOverlay, viewProjection)
-import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, runHandlerNow, EventArgument_)
+import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges, refreshOverlayWith, viewProjection)
+import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
+                    CancelFlag, newCancelFlag, cancelRun)
 import Actor.Viewer.Sphere (trackballRotation, screenToPlane)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
@@ -106,7 +118,7 @@ import FractalStream.Library (LibrarySection(..), LibraryEntry(..), librarySecti
 
 import Control.Concurrent (forkIO, killThread, threadDelay, ThreadId)
 import Control.Concurrent.MVar
-import Control.Exception (SomeException, SomeAsyncException, try, displayException, fromException, throwIO)
+import Control.Exception (SomeException, SomeAsyncException, try, displayException, fromException, throwIO, finally)
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
@@ -185,6 +197,10 @@ data ViewerState = ViewerState
     -- ^ asks its drawing loop to refresh its overlay (and its tool, if
     --   'vsToolRefresh'), and post its drawings
   , vsToolRefresh :: IORef Bool
+  , vsRun :: IORef (Maybe (CancelFlag, Bool))
+    -- ^ the running handler's cancel flag, and whether it's the overlay's
+  , vsStopToNavigate :: IORef Bool
+    -- ^ whether the running tool's handler was stopped to navigate
   , vsLock :: MVar ()
     -- ^ held while its tool's handler runs: one at a time, as on the
     -- desktop (where they all run on the GUI thread)
@@ -245,6 +261,7 @@ foreign export javascript "fs_select_tool" selectTool :: Int -> JSString -> IO (
 foreign export javascript "fs_event" toolEvent :: Int -> Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_button" toolButton :: Int -> JSString -> IO ()
 foreign export javascript "fs_set_tool" setToolField :: Int -> JSString -> JSString -> IO ()
+foreign export javascript "fs_stop" stopRun :: Int -> Bool -> IO ()
 
 main :: IO ()
 main = pure ()
@@ -338,7 +355,9 @@ openProject fromLibrary projectTitle fileName contents = do
     lock <- newMVar ()
     draw <- newEmptyMVar
     toolRefresh <- newIORef False
-    let vs = ViewerState k viewer signal tool draw toolRefresh lock
+    running <- newIORef Nothing
+    toNavigate <- newIORef False
+    let vs = ViewerState k viewer signal tool draw toolRefresh running toNavigate lock
     tid <- forkIO (renderLoop vs)
     drawTid <- forkIO (drawingLoop vs)
     unwatch <- onParameterChanges viewer (requestRender signal)
@@ -417,7 +436,8 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
 drawingLoop :: ViewerState -> IO ()
 drawingLoop vs = forever $ do
   takeMVar (vsDraw vs)
-  refreshOverlay (vsViewer vs)
+  withMVar (vsLock vs) $ \_ ->
+    withProgress vs Nothing (\flag -> refreshOverlayWith flag (vsViewer vs))
   toolToo <- atomicModifyIORef' (vsToolRefresh vs) (False,)
   when toolToo (void (fire vs Refresh))
   postDrawings vs
@@ -576,11 +596,50 @@ fire vs@ViewerState{..} ev = readIORef vsTool >>= \case
     aspect <- getDynamic (vAspect vsViewer)
     case atDispatch (px, px * aspect) ev of
       Nothing -> pure True
-      Just run -> try (withMVar vsLock (const (runHandlerNow run))) >>= \case
+      Just run -> try (withMVar vsLock (const (withProgress vs (Just atName) (startHandlerRun run >=> id)))) >>= \case
         Left (e :: SomeException)
           | Just (_ :: SomeAsyncException) <- fromException e -> throwIO e
+          -- (stopped: no effect; and back to navigating, if asked)
+          | Just HandlerCancelled <- fromException e -> do
+              toNavigate <- readIORef vsStopToNavigate
+              when toNavigate $ do
+                stopTimers vs
+                writeIORef vsTool Nothing
+                postTool vs Nothing Aeson.Null
+              pure False
           | otherwise -> False <$ toolFailed vs (atName ++ ": " ++ displayException e)
         Right () -> True <$ postFieldChanges
+
+-- | Run a viewer's handler (its tool's, named, or its overlay's), with
+-- a cancel flag for 'stopRun'; and if it's still running after a quarter
+-- of a second, say so, and say when it's done.
+withProgress :: ViewerState -> Maybe String -> (CancelFlag -> IO a) -> IO a
+withProgress ViewerState{..} name act = do
+  flag <- newCancelFlag
+  writeIORef vsRun (Just (flag, isNothing name))
+  writeIORef vsStopToNavigate False
+  -- (0 running, 1 announced, 2 done: changed, and posted, under the lock,
+  -- so the page hears of them in order)
+  stage <- newMVar (0 :: Int)
+  _ <- forkIO $ do
+    threadDelay 250000
+    modifyMVar_ stage $ \case
+      0 -> do
+        post $ Aeson.object [ "type" .= ("running" :: Text.Text), "viewer" .= vsId
+                            , "what" .= (if isJust name then "tool" else "overlay" :: Text.Text)
+                            , "name" .= name ]
+        pure 1
+      st -> pure st
+  act flag `finally` do
+    writeIORef vsRun Nothing
+    modifyMVar_ stage $ \st -> do
+      when (st == 1) $ post (Aeson.object [ "type" .= ("runDone" :: Text.Text), "viewer" .= vsId ])
+      pure 2
+
+stopRun :: Int -> Bool -> IO ()
+stopRun k navigate = withViewerState k $ \ViewerState{..} -> readIORef vsRun >>= mapM_ (\(flag, overlay) -> do
+  if overlay then vStopOverlay vsViewer else writeIORef vsStopToNavigate navigate
+  cancelRun flag)
 
 -- | Tell the page of each field whose text has changed since it was last
 -- told (by a tool's handler, setting it), in the project's panel or a

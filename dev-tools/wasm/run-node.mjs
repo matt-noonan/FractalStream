@@ -30,15 +30,16 @@ const wasi = new WASI({
 const workerCount = process.env.FS_WASM_WORKERS !== undefined
   ? Number(process.env.FS_WASM_WORKERS) : os.availableParallelism();
 const workerScript = new URL("../../fractalstream-backend-wasm/js/kernel-worker.mjs", import.meta.url);
+function makeWorker() {
+  const w = new Worker(workerScript);
+  return {
+    post: (m, transfer) => w.postMessage(m, transfer),
+    onMessage: (f) => w.on("message", f),
+    terminate: () => w.terminate(),
+  };
+}
 const pool = workerCount > 0
-  ? createPool(Array.from({ length: workerCount }, () => {
-      const w = new Worker(workerScript);
-      return {
-        post: (m, transfer) => w.postMessage(m, transfer),
-        onMessage: (f) => w.on("message", f),
-        terminate: () => w.terminate(),
-      };
-    }))
+  ? createPool(Array.from({ length: workerCount }, makeWorker), makeWorker)
   : null;
 // (for debugging: with FS_WASM_DUMP=folder, each job's parameters and
 // arguments go there too, as job-N.json, to replay without the engine)

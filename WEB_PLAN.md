@@ -26,6 +26,7 @@ questions into **Decisions**.
 | D13 | **Backend.Wasm before the web app;** test wasm under Node from 0g on | The interpreter is about 2,500× slower than LLVM (0b), too slow even as a stopgap. |
 | D16 | Tools' handlers (and overlays) are **compiled by Backend.Wasm and run on the workers**; what it can't compile yet (tables, autocolor) is a tool compilation error, not interpreted | Interpreted, external rays took 7.5 s, and the engine's one thread was stuck meanwhile. On a worker the engine stays free, and Stop can come later by stopping the worker. (Without a worker pool, tools are interpreted.) |
 | D17 | Text in Backend.Wasm is a **tree of nodes in the arena** (literals, numbers, concatenations), formatted by the engine when it reads a text back | Numbers then print exactly as interpreted (`showValue`), without calling back into Haskell or reimplementing `show` for `Double`. Nothing in the language looks inside a text; if that changes (comparisons, `length`), revisit. |
+| D18 | A slow handler (a tool's, or an overlay's refresh) shows a **bar in its viewer's window** after a quarter of a second, with Stop (and, for a tool, Stop and switch to Navigate); **Stop kills the worker** running it, which the pool replaces; a stopped overlay is off until the project's reopened (or, later, recompiled) | Not a modal window, which is the wrong idiom on the web: the rest of the app stays usable. Killing the worker needs no shared memory (so no cross-origin isolation), and stops even an endless loop. |
 | D15 | Tools' drawings are drawn **by the page, with Canvas2D**, from shapes the engine sends; fsrun keeps Rasterific | Rasterific in wasm took 1.5 s for a 2,000-segment orbit; Canvas2D takes well under a millisecond, and drawings move with the view at once. Far-reaching shapes are clipped as `Actor.Viewer.Clip` does. |
 
 ## Architecture
@@ -261,8 +262,7 @@ wasmtime.
   clicked), with each tool's shortcut key, and n for Navigate.
 - [x] Drawings and overlays: Canvas2D painting of `DrawCommand`s (D15),
   matching `Actor.Viewer.Overlay`, on the plane and the sphere.
-- [ ] Progress and Stop for slow handlers (deferred). Until then a
-  handler that never finishes holds its worker for good.
+- [x] Progress and Stop for slow handlers and overlays (D18).
 - [x] Backend.Wasm for tools' handlers, run on the workers (D16);
   `dev-tools/wasm/compare-tools.sh` compares every library tool's results
   with LLVM's.
@@ -306,6 +306,27 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: Progress and Stop
+
+A handler still running after a quarter of a second gets a bar along the
+bottom of its viewer: a spinner, the seconds so far, Stop, and (for a
+tool) Stop and switch to Navigate. Handlers run one at a time per viewer,
+but different viewers' at once, and the rest of the page stays usable.
+The engine runs each with a `CancelFlag`, as the desktop app does;
+Backend.Wasm watches the flag, and stops a set one's job with
+`pool.stop(tag)`, which kills its worker and starts another (that one
+compiles kernels again as it needs them). The core's
+`vRefreshOverlay` now takes a `CancelFlag`, and `vStopOverlay` turns an
+overlay off for the viewer's build (so a recompile will bring it back).
+
+Tested with a project whose handlers never finish (a click, an `on
+refresh:`, and an overlay): the bar comes after about 280 ms; another
+viewer renders meanwhile; Stop drops the run's changes and leaves the
+tool selected, and clicks work afterwards; Stop and switch to Navigate
+ends a slow refresh for good; a stopped overlay's drawing goes, and it
+stays off. (A `while` loop stops at the iteration limit unless it says
+`up to N times`.)
 
 ### 2026-11-11: Text in Backend.Wasm
 

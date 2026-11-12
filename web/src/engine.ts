@@ -25,14 +25,15 @@ async function fetchBytes(name: string): Promise<ArrayBuffer> {
 // The kernel workers: one per core, keeping one core for this thread and
 // one for the page.
 const workerCount = Math.max(1, (navigator.hardwareConcurrency || 2) - 2);
-const pool = createPool(Array.from({ length: workerCount }, () => {
+function makeWorker() {
   const w = new Worker(here("kernel-worker.mjs"), { type: "module" });
   return {
     post: (m: unknown, transfer: Transferable[]) => w.postMessage(m, transfer),
     onMessage: (f: (m: any) => void) => w.addEventListener("message", (e) => f(e.data)),
     terminate: () => w.terminate(),
   };
-}));
+}
+const pool = createPool(Array.from({ length: workerCount }, makeWorker), makeWorker);
 
 const g = globalThis as any;
 g.fractalstreamWorkers = pool;
@@ -90,6 +91,7 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "event": await engine.fs_event(r.viewer, r.kind, r.x1, r.y1, r.x2, r.y2); break;
       case "button": await engine.fs_button(r.viewer, r.label); break;
       case "setTool": await engine.fs_set_tool(r.viewer, r.name, r.text); break;
+      case "stop": await engine.fs_stop(r.viewer, r.navigate); break;
     }
   } catch (err) {
     send({ type: "error", message: String(err) });

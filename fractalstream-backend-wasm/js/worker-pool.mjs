@@ -4,10 +4,11 @@
 // renders a viewer's blocks on it, several at once. Without one, the
 // engine renders on its own thread.
 //
-//   const pool = createPool(workers)
+//   const pool = createPool(workers, makeWorker)
 //
 // where each worker is { post(message, transfer), onMessage(callback),
-// terminate() }, so the pool doesn't care how the host makes them.
+// terminate() }, so the pool doesn't care how the host makes them; and
+// makeWorker() makes another, to replace one that's stopped.
 //
 // pool.size        how many workers
 // pool.addKernel(bytes) -> id    a kernel (its module's bytes) to use
@@ -15,18 +16,23 @@
 //                  -> Promise<{ issues, pixels, misses }>   a block (with
 //                  a copy of the autocolor snapshot), on the next idle
 //                  worker (queued if none is)
-// pool.runTool(id, args, arenaSize)
+// pool.runTool(id, args, arenaSize, tag)
 //                  -> Promise<{ status, args, arenaBase, lists, draws }>
 //                  a tool's handler, once (see kernel-worker.mjs)
+// pool.stop(tag)   stop the tool jobs with this tag: one waiting is
+//                  dropped; one running is stopped by stopping its worker
+//                  (there's no other way to stop wasm code that's
+//                  running), which is replaced by a new one. Either way
+//                  its promise is rejected with an Error("stopped").
 // pool.terminate()
 
-export function createPool(workers) {
+export function createPool(workers, makeWorker) {
   const kernels = new Map();     // kernel id -> its module's bytes
   let nextKernel = 0;
   let nextJob = 0;
   const queue = [];              // jobs waiting for a worker
   const pending = new Map();     // job -> { resolve, reject }
-  const state = workers.map((w) => ({ worker: w, busy: false, kernels: new Set() }));
+  const state = workers.map((w) => ({ worker: w, busy: false, kernels: new Set(), job: null }));
 
   function dispatch() {
     for (const s of state) {
@@ -37,18 +43,32 @@ export function createPool(workers) {
         s.kernels.add(job.kernel);
       }
       s.busy = true;
+      s.job = job;
       const { transfer, ...message } = job;
       s.worker.post(message, transfer);
     }
   }
 
-  state.forEach((s) => s.worker.onMessage((m) => {
-    s.busy = false;
-    const p = pending.get(m.job);
-    pending.delete(m.job);
-    if (m.error) p.reject(new Error(m.error)); else p.resolve(m);
-    dispatch();
-  }));
+  // (a stopped worker's messages, if any come after it's replaced, are
+  // ignored)
+  function listen(s, w) {
+    w.onMessage((m) => {
+      if (s.worker !== w) return;
+      s.busy = false;
+      s.job = null;
+      const p = pending.get(m.job);
+      pending.delete(m.job);
+      if (m.error) p.reject(new Error(m.error)); else p.resolve(m);
+      dispatch();
+    });
+  }
+  state.forEach((s) => listen(s, s.worker));
+
+  function reject(job) {
+    const p = pending.get(job.job);
+    pending.delete(job.job);
+    p?.reject(new Error("stopped"));
+  }
 
   return {
     size: workers.length,
@@ -66,12 +86,29 @@ export function createPool(workers) {
       dispatch();
       return result;
     },
-    runTool(kernel, args, arenaSize) {
+    runTool(kernel, args, arenaSize, tag) {
       const job = nextJob++;
-      queue.push({ job, kernel, tool: true, args: args.buffer, arenaSize, transfer: [args.buffer] });
+      queue.push({ job, kernel, tool: true, tag, args: args.buffer, arenaSize, transfer: [args.buffer] });
       const result = new Promise((resolve, reject) => pending.set(job, { resolve, reject }));
       dispatch();
       return result;
+    },
+    stop(tag) {
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (queue[i].tool && queue[i].tag === tag) reject(queue.splice(i, 1)[0]);
+      }
+      for (const s of state) {
+        if (!s.job?.tool || s.job.tag !== tag) continue;
+        const job = s.job;
+        s.worker.terminate();
+        s.worker = makeWorker();
+        s.kernels = new Set();
+        s.busy = false;
+        s.job = null;
+        listen(s, s.worker);
+        reject(job);
+      }
+      dispatch();
     },
     terminate() {
       for (const s of state) s.worker.terminate();

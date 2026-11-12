@@ -10,7 +10,12 @@ export interface Pool {
   size: number;
   addKernel(bytes: Uint8Array): number;
   run(...args: unknown[]): Promise<unknown>;
+  runTool(...args: unknown[]): Promise<unknown>;
+  /** Stop the tool jobs with this tag (replacing a worker running one). */
+  stop(tag: number): void;
   terminate(): void;
 }
 
-export function createPool(workers: PoolWorker[]): Pool;
+/** A pool of the given workers; `makeWorker` makes one to replace a
+    stopped worker. */
+export function createPool(workers: PoolWorker[], makeWorker: () => PoolWorker): Pool;

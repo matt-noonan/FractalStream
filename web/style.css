@@ -133,3 +133,20 @@ body.no-panel .panel { display: none; }
   font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
   border: 1px solid var(--line); background: var(--bg); color: var(--fg);
 }
+
+/* A tool's handler (or the overlay) running for a while: along the bottom
+   of its viewer, over the picture. */
+.viewer-running {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--fg);
+  border-top: 1px solid var(--line); font-size: 13px;
+}
+.viewer-running[hidden] { display: none; }
+.viewer-running .spinner { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 4.5em; }
+.viewer-running .message { flex: 1 0 auto; white-space: nowrap; }
+.viewer-running button {
+  font: inherit; padding: 2px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
+.viewer-running button:disabled { opacity: .5; cursor: default; }

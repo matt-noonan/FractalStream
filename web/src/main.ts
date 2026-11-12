@@ -400,6 +400,10 @@ class ViewerView {
       globe was last turned from, and where the pointer is now. */
   private turn: { from: [number, number]; to: [number, number] } | null = null;
   private readonly errorEl: HTMLElement;
+  /** Shown while its tool's handler (or overlay) runs for a while: what's
+      running, for how long, and buttons to stop it. */
+  private readonly runEl: HTMLElement;
+  private runTimer: number | undefined;
   /** Its window, on the desk. */
   window: HTMLElement | null = null;
 
@@ -424,7 +428,8 @@ class ViewerView {
     this.canvas = el("canvas");
     this.context = this.canvas.getContext("2d")!;
     this.errorEl = el("div", { className: "viewer-error", hidden: true });
-    this.element = el("div", { className: "viewer" }, this.canvas, this.errorEl);
+    this.runEl = el("div", { className: "viewer-running", hidden: true, role: "status" });
+    this.element = el("div", { className: "viewer" }, this.canvas, this.errorEl, this.runEl);
     this.setSize(width, height);
     this.canvas.addEventListener("pointerdown", (e) => this.startDrag(e));
     this.canvas.addEventListener("pointermove", (e) => this.moveDrag(e));
@@ -520,6 +525,47 @@ class ViewerView {
     if (!next) return;
     this.eventSent = performance.now();
     send(next);
+  }
+
+  /** A handler has been running for a while: say so, with a spinner and
+      the time since it started, and buttons to stop it. */
+  showRunning(what: "tool" | "overlay", name: string | null) {
+    const frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+    const started = performance.now() - 250;
+    const spinner = el("span", { className: "spinner" });
+    const message = el("span", { className: "message",
+      textContent: what === "tool" ? `Running the “${name}” tool…` : "Running the overlay…" });
+    const stop = el("button", { type: "button", textContent: "Stop",
+      title: what === "tool" ? "Stop it (its changes and drawing are dropped)"
+                             : "Stop it, and turn the overlay off until the project's opened again" });
+    const buttons: HTMLButtonElement[] = [stop];
+    const stopping = (navigate: boolean) => {
+      message.textContent = "Stopping…";
+      buttons.forEach((b) => (b.disabled = true));
+      send({ type: "stop", viewer: this.info.id, navigate });
+    };
+    stop.addEventListener("click", () => stopping(false));
+    if (what === "tool") {
+      const nav = el("button", { type: "button", textContent: "Stop and switch to Navigate" });
+      nav.addEventListener("click", () => stopping(true));
+      buttons.push(nav);
+    }
+    let tick = 0;
+    const update = () => {
+      spinner.textContent = `${frames[tick++ % frames.length]} ${Math.floor((performance.now() - started) / 1000)} s`;
+    };
+    update();
+    window.clearInterval(this.runTimer);
+    this.runTimer = window.setInterval(update, 100);
+    this.runEl.replaceChildren(spinner, message, ...buttons);
+    this.runEl.hidden = false;
+  }
+
+  runDone() {
+    window.clearInterval(this.runTimer);
+    this.runTimer = undefined;
+    this.runEl.hidden = true;
+    this.runEl.replaceChildren();
   }
 
   showError(message: string) {
@@ -729,6 +775,8 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "toolError": status(m.message, true); console.error(m.message); break;
     case "drawing": viewers.get(m.viewer)?.showDrawing(m.layers); break;
     case "eventDone": viewers.get(m.viewer)?.eventDone(); break;
+    case "running": viewers.get(m.viewer)?.showRunning(m.what, m.name); break;
+    case "runDone": viewers.get(m.viewer)?.runDone(); break;
     case "viewerError": viewers.get(m.viewer)?.showError(m.message); break;
     case "error": status(m.message, true); console.error(m.message); break;
     case "frame": viewers.get(m.viewer)?.show(m); break;
