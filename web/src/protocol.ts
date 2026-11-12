@@ -10,7 +10,9 @@ export type Request =
   | { type: "save" }
   | { type: "set"; name: string; text: string }
   | { type: "view"; viewer: number; cx: number; cy: number; pixelSize: number; width: number; height: number }
-  | { type: "resize"; viewer: number; width: number; height: number };
+  | { type: "resize"; viewer: number; width: number; height: number }
+  /** Whether frames are smoothed (four samples a pixel), for every viewer. */
+  | { type: "smoothing"; on: boolean };
 
 export interface LibraryEntry {
   title: string;

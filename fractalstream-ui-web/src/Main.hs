@@ -20,6 +20,8 @@ tables (@tables:@) it was saved with, and is saved with its own.
 * @fs_view(viewer, cx, cy, pixelSize, width, height)@: move, zoom, or
   resize a viewer (all at once, for one render).
 * @fs_resize(viewer, width, height)@: resize a viewer.
+* @fs_smoothing(on)@: whether viewers are smoothed (each pixel the average
+  of four samples, as fsrun's captures are), for every viewer from now on.
 
 and the engine posts JSON messages (@globalThis.fractalstreamPost@),
 frames (@globalThis.fractalstreamPostFrame@: RGB pixels, with the view they
@@ -127,6 +129,11 @@ sessionRef :: IORef (Maybe Session)
 sessionRef = unsafePerformIO (newIORef Nothing)
 {-# NOINLINE sessionRef #-}
 
+-- | Whether frames are smoothed (see 'renderViewerBuffer').
+smoothingRef :: IORef Bool
+smoothingRef = unsafePerformIO (newIORef False)
+{-# NOINLINE smoothingRef #-}
+
 backendRef :: IORef (Maybe Backend)
 backendRef = unsafePerformIO (newIORef Nothing)
 {-# NOINLINE backendRef #-}
@@ -151,6 +158,7 @@ foreign export javascript "fs_save" save :: IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
 foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
+foreign export javascript "fs_smoothing" setSmoothing :: Bool -> IO ()
 
 main :: IO ()
 main = pure ()
@@ -265,7 +273,8 @@ requestRender signal = void (tryPutMVar signal ())
 renderLoop :: Int -> Viewer -> MVar () -> IO ()
 renderLoop k viewer signal = forever $ do
   takeMVar signal
-  try (renderViewerBuffer False viewer) >>= \case
+  smooth <- readIORef smoothingRef
+  try (renderViewerBuffer smooth viewer) >>= \case
     -- (being stopped, when another project is opened, isn't an error: the
     -- loop just ends)
     Left (e :: SomeException)
@@ -303,6 +312,12 @@ setView k cx cy pixelSize w h = withViewer k $ \(viewer, signal) -> do
   setValue (vCenter viewer) (cx, cy)
   setValue (vPixelSize viewer) pixelSize
   requestRender signal
+
+setSmoothing :: Bool -> IO ()
+setSmoothing on = guarded $ do
+  before <- atomicModifyIORef' smoothingRef (on,)
+  when (before /= on) $ readIORef sessionRef >>=
+    mapM_ (\Session{..} -> mapM_ (requestRender . snd) (Map.elems sViewers))
 
 resize :: Int -> Int -> Int -> IO ()
 resize k w h = withViewer k $ \(viewer, signal) -> do

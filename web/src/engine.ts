@@ -84,6 +84,7 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "set": await engine.fs_set(r.name, r.text); break;
       case "view": await engine.fs_view(r.viewer, r.cx, r.cy, r.pixelSize, r.width, r.height); break;
       case "resize": await engine.fs_resize(r.viewer, r.width, r.height); break;
+      case "smoothing": await engine.fs_smoothing(r.on); break;
     }
   } catch (err) {
     send({ type: "error", message: String(err) });

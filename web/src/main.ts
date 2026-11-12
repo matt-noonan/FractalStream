@@ -27,6 +27,23 @@ function toggle(button: HTMLButtonElement, bodyClass: string) {
 libraryButton.addEventListener("click", () => toggle(libraryButton, "no-library"));
 panelButton.addEventListener("click", () => toggle(panelButton, "no-panel"));
 
+// Smoothing: remembered (in this browser) once chosen; until then, off on
+// a high-DPI screen (which is drawn at twice the resolution already), and
+// on otherwise.
+const smoothingBox = document.getElementById("smoothing") as HTMLInputElement;
+const SMOOTHING_KEY = "fractalstream.smoothing";
+function savedSmoothing(): boolean | null {
+  try {
+    const v = localStorage.getItem(SMOOTHING_KEY);
+    return v === null ? null : v === "true";
+  } catch { return null; }
+}
+smoothingBox.checked = savedSmoothing() ?? (window.devicePixelRatio || 1) < 1.5;
+smoothingBox.addEventListener("change", () => {
+  try { localStorage.setItem(SMOOTHING_KEY, String(smoothingBox.checked)); } catch { /* (not remembered) */ }
+  send({ type: "smoothing", on: smoothingBox.checked });
+});
+
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {},
                                                  ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = Object.assign(document.createElement(tag), props);
@@ -397,7 +414,11 @@ class ViewerView {
 engine.addEventListener("message", (e: MessageEvent<Message>) => {
   const m = e.data;
   switch (m.type) {
-    case "ready": status("Loading the library…"); send({ type: "library" }); break;
+    case "ready":
+      send({ type: "smoothing", on: smoothingBox.checked });
+      status("Loading the library…");
+      send({ type: "library" });
+      break;
     case "library": showLibrary(m.sections); status("Pick a project."); break;
     case "project":
       current = { fileName: m.fileName, library: m.library, handle: m.library ? null : opening };
