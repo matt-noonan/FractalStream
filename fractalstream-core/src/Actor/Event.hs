@@ -92,8 +92,8 @@ type Point = (Double, Double)
 data Event
   = Click Point
   | DoubleClick Point
-  | Drag Point Point -- drag from / to
-  | DragDone Point Point -- dragged from / to
+  | Drag Point Point -- where the pointer is, then where the drag started
+  | DragDone Point Point -- where the drag ended, then where it started
   | Timer String -- timer with given name
   | ButtonPressed String -- button press with given name
   | Refresh

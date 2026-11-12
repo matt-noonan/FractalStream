@@ -126,6 +126,7 @@ test-suite end-to-end
                     , hspec
                     , bytestring
   other-modules:      OverlaySpec
+                    , DragSpec
                     , GeometrySpec
                     , TableSpec
                     , HoistSpec
