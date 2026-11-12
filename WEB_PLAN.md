@@ -233,7 +233,8 @@ wasmtime.
 - [x] Kernel worker pool (`fractalstream-backend-wasm/js/`).
 - [ ] Tiles and progressive passes (R3).
 - [x] Lists in a per-block arena; issue flags.
-- [ ] Text and tables.
+- [x] Text (D17).
+- [ ] Tables.
 - [x] Autocolor: snapshot lookup (shared C, `autocolor_lookup.h`), misses added by the engine, block redrawn.
 - [x] libm: musl's, compiled to `js/libm.wasm` (D14).
 - [x] Turn the end-to-end suite back on for wasm (under Node: `dev-tools/wasm/node.sh`; its table tests wait for tables).
@@ -301,7 +302,7 @@ Only if 0c/0d come out well.
 
 ### Phase 7: Polish
 
-- [ ] Sphere view (trackball).
+- [x] Sphere view (trackball): done in Phase 3.
 - [ ] Autocolor editor.
 - [ ] Movies (WebCodecs).
 - [ ] Saved tables.
