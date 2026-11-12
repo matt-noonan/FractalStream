@@ -37,6 +37,9 @@ export type Request =
       CSS pixel this size. "where" asks where the viewer is now. */
   | { type: "jump"; viewer: number; x: number; y: number; pixelSize: number }
   | { type: "where"; viewer: number }
+  /** A real viewer's aspect ratio (a pixel's height over its width), as
+      typed: answered by "aspect". */
+  | { type: "aspect"; viewer: number; text: string }
   /** Use a colorizer for the viewer (one it can't fill in the parameters
       of asks for its arguments first: "colorizerArguments"), ask for the
       arguments of the one in use, or give the answers. */
@@ -209,6 +212,7 @@ export type Message =
   /** The engine moved a viewer's view (a pixel's size in the canvas's pixels). */
   | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean }
   | { type: "where"; viewer: number; x: number; y: number; pixelSize: number }
+  | { type: "aspect"; viewer: number; error: string | null }
   /** What to ask for a colorizer's arguments: each parameter, a note, and its text to start with. */
   | { type: "colorizerArguments"; viewer: number; name: string; fields: { param: string; note: string; text: string }[] }
   /** An edited script, colored and checked, with how to write it with

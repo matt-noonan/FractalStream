@@ -36,7 +36,8 @@
 //   menu      a viewer's menu: last, next, original view (and their keys),
 //             jump to a view, the sphere and the plane (saved, and
 //             reopened so), its colorizer and a colorizer's arguments,
-//             and subpixel smoothing
+//             subpixel smoothing, and a real viewer's aspect ratio (saved,
+//             and reopened so)
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
@@ -819,4 +820,45 @@ async function menu() {
   await page.keyboard.press("Escape");
   c.check(smooth !== smooth2 && after > before, `Use subpixel smoothing toggles it (${smooth} -> ${smooth2}), and it's rendered again`);
   c.check(await page.locator("#smoothing").count() === 0, "(and the toolbar has no Smooth switch)");
+
+  // a real viewer's aspect ratio (and no sphere)
+  project = await app.openLibrary("The real Hénon map");
+  const rv = project.viewers.find((v) => !v.complex).id;
+  const rwin = page.locator(".window").nth(rv);
+  await rwin.locator(".window-menu-button").click();
+  const rlabels = (await page.locator(".window-menu .menu-label").allTextContents()).join(" | ");
+  c.check(rlabels.includes("Aspect ratio") && !rlabels.includes("Show on the sphere"),
+          "a real viewer's menu has Aspect ratio…, not Show on the sphere");
+  await choose("Aspect ratio");
+  const ratio = page.locator(".viewer-form input");
+  await ratio.fill("-3");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(500);
+  c.check(/positive/.test(await page.locator(".viewer-form .form-error").textContent().catch(() => "")),
+          "a ratio that isn't positive is refused, in the form");
+  // (its script's is 1/2: a ratio it isn't, so it's saved)
+  await ratio.fill("3/2");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(800);
+  const moved = (await page.evaluate((id) => window.__messages.filter((m) => m.viewer === id && m.type === "view").pop(), rv));
+  c.check(await page.locator(".viewer-form").count() === 0 && moved && Math.abs(moved.py / moved.px - 1.5) < 1e-12,
+          `3/2 makes a pixel half again as high as it's wide (${moved && (moved.py / moved.px)})`);
+  await app.forgetMessages();
+  await page.evaluate(() => { window.showSaveFilePicker = undefined; });
+  const download2 = page.waitForEvent("download", { timeout: 10000 });
+  await page.locator("#save-as").click();
+  const saved2 = fs.readFileSync(await (await download2).path(), "utf8");
+  c.check(/aspect: 1\.5/.test(saved2), "saved, with it");
+  const copy2 = path.join(os.tmpdir(), "menu-aspect.fs");
+  fs.writeFileSync(copy2, saved2);
+  await app.openFile(copy2);
+  await page.waitForTimeout(800);
+  const reopened = (await app.messages("patch")).filter((m) => m.viewer === rv && m.done).pop();
+  c.check(reopened && Math.abs(reopened.py / reopened.px - 1.5) < 1e-12, `reopened, it's still 3/2 (${reopened && reopened.py / reopened.px})`);
+  await page.locator(".window").nth(rv).locator(".window-menu-button").click();
+  await choose("Aspect ratio");
+  await page.locator(".viewer-form button", { hasText: "Square pixels" }).click();
+  await page.waitForTimeout(800);
+  const square = (await page.evaluate((id) => window.__messages.filter((m) => m.viewer === id && m.type === "view").pop(), rv));
+  c.check(square && square.py === square.px, "Square pixels makes them square");
 }
