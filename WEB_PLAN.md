@@ -232,7 +232,7 @@ wasmtime.
   resize; the configuration as a panel that pops in and out; hiding and
   showing the library.
 - [x] High-DPI canvases (rendered at the screen's density, up to 2×).
-- [ ] Smoothing (fsrun's captures are rendered at 2× and averaged).
+- [x] Smoothing: a toolbar switch, remembered; off by default on high-DPI screens, on otherwise. Smoothed frames are byte-identical to fsrun's LLVM captures.
 - [ ] Saving the view state (each viewer's center, zoom, size) in project
   files, under a key of the web app's own.
 - [ ] Tidy-ups: color pickers; parse errors out of the status line; globe
