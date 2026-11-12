@@ -1,0 +1,19 @@
+resolver: lts-24.12
+
+# fsrun with the pure (interpreter) backend instead of LLVM.
+#
+# Each project builds its packages (including ../fractalstream-core and the
+# backends) in its own folder, so that a change built by one project isn't
+# treated as already built by the others.
+work-dir: .stack-work-headless-pure
+
+packages:
+- .
+- ../fractalstream-core
+- ../fractalstream-backend-pure
+
+flags:
+  fractalstream-ui-headless:
+    use-llvm: false
+
+allow-newer: true
