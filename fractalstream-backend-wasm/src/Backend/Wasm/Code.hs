@@ -1,7 +1,9 @@
 -- | Compiling a viewer's code into a WebAssembly kernel module.
 --
 -- The kernel is @kernel(out, width, height, subsamples, args, arena,
--- arenaSize, snapshot, misses, x0, y0, dx, dy) -> issues@ (@snapshot@: a
+-- arenaSize, snapshot, misses, x0, y0, dx, dy, px, py) -> issues@ (@px@,
+-- @py@: the pixel size the code sees, as its @pixel_size@, which needn't
+-- be the step: see 'Actor.Viewer.vaPixel') (@snapshot@: a
 -- copy of the autocolor groups, or 0; @misses@: where to note the points
 -- it would add, for the engine to add: see "Backend.Wasm"): it renders a block of pixels into
 -- @out@ (RGB bytes), exactly as the LLVM backend's kernel does (the same
@@ -305,13 +307,13 @@ storeArg argsParam off = \case
   where one store l = emit [localGet argsParam, localGet l, store]
 
 pOut, pWidth, pHeight, pSubsamples, pArgs, pArena, pArenaSize, pSnapshot, pMisses,
-  pX0, pY0, pDX, pDY :: Int
+  pX0, pY0, pDX, pDY, pPX, pPY :: Int
 pOut = 0; pWidth = 1; pHeight = 2; pSubsamples = 3; pArgs = 4
 pArena = 5; pArenaSize = 6; pSnapshot = 7; pMisses = 8
-pX0 = 9; pY0 = 10; pDX = 11; pDY = 12
+pX0 = 9; pY0 = 10; pDX = 11; pDY = 12; pPX = 13; pPY = 14
 
 kernelParams :: [ValType]
-kernelParams = [I32, I32, I32, I32, I32, I32, I32, I32, I32, F64, F64, F64, F64]
+kernelParams = [I32, I32, I32, I32, I32, I32, I32, I32, I32, F64, F64, F64, F64, F64, F64]
 
 -- | Compile a viewer's code into a kernel module's bytes, or say why it
 -- can't be.
@@ -330,7 +332,8 @@ compileViewer memory body = do
         (cr, cg, cb) <- case colorLoc of
           LColor r g b -> pure (r, g, b)
           _ -> throwError "internal error: the viewer's color isn't a color"
-        emit [localGet pDX, localSet dxVar, localGet pDY, localSet dyVar]
+        -- (the code's pixel size; the pixels are pDX and pDY apart)
+        emit [localGet pPX, localSet dxVar, localGet pPY, localSet dyVar]
 
         arena@Arena{..} <- Arena <$> newLocal I32 <*> newLocal I32 <*> newLocal I32 <*> newLocal I32
         setArena arena

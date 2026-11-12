@@ -785,6 +785,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                           vaSubsamples = fromIntegral subsamples
                           vaPoint = (x, y)
                           vaStep  = (dx, dy)
+                          vaPixel = (dx, dy)
                       vf ViewerArgs{..}
                 modifyMVar_ lastRenderAction (\_ -> pure action)
                 pure action

@@ -339,6 +339,25 @@ Only if 0c/0d come out well.
 
 Record spike results and surprises here, newest first.
 
+### 2026-11-12: pixel_size on high-DPI screens, and smoothed
+
+On a Retina screen the page draws a CSS pixel with two canvas pixels,
+and a viewer's pixel size was a canvas pixel's: so whatever a script
+sized in `pixel_size` came out half as big as on the desktop, whose
+pixels are the screen's logical ones (markers, label offsets, a
+crosshair's width). Smoothed renders halved it again, in fsrun's
+captures too, since they sample at twice the size.
+
+Now a viewer's code sees a pixel's size apart from its sampling step
+(`ViewerArgs`'s new `vaPixel`, which every backend binds `pixel_size`,
+`pixel_width` and `pixel_height` to; `renderViewerBufferAt` takes how
+many of the viewer's pixels make the screen's), and tools and overlays
+are given it too: a CSS pixel's, in the web app (`fs_density`), whatever
+the density or smoothing; the desktop's tiles pass their step, so
+nothing changes there. New checks: `PixelSizeSpec` (a smoothed render
+sees the unsmoothed pixel; it fails with the old binding), and the
+`density` and `refresh` sections of `check-tools.mjs` (with `FS_DPR=2`).
+
 ### 2026-11-12: The script editor
 
 The editor is a desk window (the toolbar's Script button) holding

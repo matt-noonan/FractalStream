@@ -19,6 +19,8 @@
 //             the bar, Stop, Stop and switch to Navigate, and an overlay
 //   editor    the script editor: coloring, an error marked, symbols, and
 //             rebuilding (windows, views and tools kept), or failing to
+//   density   pixel_size, in a viewer's code, is a CSS pixel's size, on any
+//             screen (dev-tools/web/pixel-size.fs; try FS_DPR=2)
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
@@ -32,7 +34,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop, editor, panel };
+const all = { drawing, tools, refresh, sweep, stop, editor, density, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -487,4 +489,20 @@ async function editor() {
   const lines = (await doc()).split("\n").filter((l) => /newton\(z\)|lastZ/.test(l));
   c.check(lines.length > 0 && lines.every((l) => !/[≔⟵⟼′][=\-'>]|[<:'-][≔⟵⟼′]/.test(l)) && lines.some((l) => l.includes("≔")),
           `typing while an analysis is out doesn't garble the script (${JSON.stringify(lines.slice(0, 3))})`);
+}
+
+async function density() {
+  await app.openFile(new URL("pixel-size.fs", import.meta.url).pathname);
+  await page.waitForTimeout(500);
+  // the band's width in the canvas's pixels, along its middle row
+  const r = await page.evaluate(() => {
+    const canvas = document.querySelector(".viewer canvas");
+    const ctx = canvas.getContext("2d");
+    const row = ctx.getImageData(0, Math.floor(canvas.height / 2), canvas.width, 1).data;
+    let dark = 0;
+    for (let i = 0; i < row.length; i += 4) if (row[i] < 128) dark++;
+    return { dark, ratio: canvas.width / canvas.getBoundingClientRect().width };
+  });
+  c.check(Math.abs(r.dark / r.ratio - 4) <= 1,
+          `a band 4 pixel_size wide is 4 CSS pixels wide (${r.dark} canvas pixels, at ${r.ratio}x)`);
 }
