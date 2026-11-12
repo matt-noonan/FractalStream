@@ -11,6 +11,8 @@ export interface Pool {
   addKernel(bytes: Uint8Array): number;
   run(...args: unknown[]): Promise<unknown>;
   runTool(...args: unknown[]): Promise<unknown>;
+  hasTable(version: number): boolean;
+  addTable(version: number, bytes: Uint8Array): void;
   /** Stop the tool jobs with this tag (replacing a worker running one). */
   stop(tag: number): void;
   terminate(): void;

@@ -30,16 +30,23 @@ import Actor.Event (ToolExec, HandlerRun(..), EventArgument(..), HandlerCancelle
                     buildHandlerWith, snapshotEventArgs)
 import Actor.Viewer
 import Language.Draw (DrawSink(..))
-import Language.Code (Code, transformValues)
+import Language.Code (Code, CodeF(..), transformValues, usedVarsInCode)
+import Data.Indexed.Functor (indexedFoldM)
+import Language.Table (Table(..), elementSize)
+import Backend.Wasm.Table (descriptorBytes)
+import qualified Data.Set as Set
 import Language.Environment
 import Language.Type
 import Language.Value.Transform (backendRewrites)
 import Data.Color (colorToRGB, rgbToColor)
 
-import Control.Exception (Exception, SomeException, evaluate, throwIO, handle, try, bracket)
+import Control.Exception (Exception, SomeException, evaluate, throwIO, handle, try, bracket, finally)
 import Control.Concurrent (forkIO, killThread, threadDelay)
 import Data.Bits (testBit)
-import Foreign.ForeignPtr (mallocForeignPtrBytes, withForeignPtr)
+import Foreign.ForeignPtr (ForeignPtr, mallocForeignPtrBytes, withForeignPtr, touchForeignPtr)
+import Language.Value.Evaluator (HaskellValue)
+import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
+import Foreign.Marshal.Utils (fillBytes)
 import Foreign.Marshal.Array (withArrayLen)
 import Data.IORef
 import Foreign.Ptr (Ptr, ptrToWordPtr, plusPtr)
@@ -76,8 +83,8 @@ foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, 
 -- an arena of the given size (see @js/kernel-worker.mjs@), tagged (to
 -- stop it with 'stopToolJob').
 foreign import javascript safe
-  "return await globalThis.fractalstreamWorkers.runTool($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice(), $4, $5)"
-  runToolOnWorker :: Int -> Ptr Word8 -> Int -> Int -> Int -> IO JSVal
+  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.runTool($1, new Uint8Array(m, $2, $3).slice(), $4, $5, new Int32Array(m, $6, 2 * $7).slice())"
+  runToolOnWorker :: Int -> Ptr Word8 -> Int -> Int -> Int -> Ptr Int32 -> Int -> IO JSVal
 
 -- | Stop the tool job with this tag (its worker is replaced: see
 -- @js/worker-pool.mjs@); its 'runToolOnWorker' fails.
@@ -122,9 +129,19 @@ foreign import javascript unsafe
 -- that asked for it: a render cancelled while it waits must not write
 -- into a buffer that's been freed.)
 foreign import javascript safe
-  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.run($1, new Uint8Array(m, $2, $3).slice(), new Uint8Array(m, $4, $5).slice(), $6, $7, $8, $9, $10, $11, $12)"
+  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.run($1, new Uint8Array(m, $2, $3).slice(), new Uint8Array(m, $4, $5).slice(), $6, $7, $8, $9, $10, $11, $12, new Int32Array(m, $13, 2 * $14).slice())"
   runOnWorker :: Int -> Ptr Word8 -> Int -> Ptr Word8 -> Int -> Int32 -> Int32 -> Int32
-              -> Double -> Double -> Double -> Double -> IO JSVal
+              -> Double -> Double -> Double -> Double -> Ptr Int32 -> Int -> IO JSVal
+
+-- | Whether the pool has a copy of the table with this version.
+foreign import javascript unsafe "globalThis.fractalstreamWorkers.hasTable($1)"
+  poolHasTable :: Int -> IO Bool
+
+-- | Give the pool a copy of a table's contents (its version's), to send
+-- to the workers that need it.
+foreign import javascript unsafe
+  "globalThis.fractalstreamWorkers.addTable($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice())"
+  poolAddTable :: Int -> Ptr Word8 -> Int -> IO ()
 
 foreign import javascript unsafe "$1.issues"
   resultIssues :: JSVal -> IO Int32
@@ -162,11 +179,12 @@ withWasmViewer lookupAutocolor code0 action = do
       (argsBase, runOnce) <- if workers > 0
         then do
           kernel <- withArrayLen bytes (\n p -> addKernel p n)
-          pure $ (,) (const workerArgsBase) $ \args argsLen misses ViewerArgs{..} -> do
+          pure $ (,) (const workerArgsBase) $ \args argsLen tables misses ViewerArgs{..} -> do
             (snapshot, snapshotLen) <- autocolorSnapshot lookupAutocolor
-            result <- runOnWorker kernel args argsLen snapshot snapshotLen
-                        vaWidth vaHeight vaSubsamples
-                        (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep)
+            result <- withTableList tables $ \tp tn ->
+                        runOnWorker kernel args argsLen snapshot snapshotLen
+                          vaWidth vaHeight vaSubsamples
+                          (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep) tp tn
                       >>= evaluate
             copyPixels result vaBuffer
             copyMisses result misses missCapacity
@@ -175,7 +193,7 @@ withWasmViewer lookupAutocolor code0 action = do
           inst <- withArrayLen bytes $ \n p -> instantiate p n
           -- (one block at a time on this thread, so one arena will do)
           arena <- mallocForeignPtrBytes arenaSize
-          pure $ (,) (fromIntegral . ptrToWordPtr) $ \args _ misses ViewerArgs{..} ->
+          pure $ (,) (fromIntegral . ptrToWordPtr) $ \args _ _ misses ViewerArgs{..} ->
             withForeignPtr arena $ \a -> do
               -- (the snapshot itself: nothing can replace it while the
               -- kernel runs, on this one thread)
@@ -183,27 +201,21 @@ withWasmViewer lookupAutocolor code0 action = do
               runKernel inst vaBuffer vaWidth vaHeight vaSubsamples args a (fromIntegral arenaSize)
                         snapshot misses
                         (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep)
+      let used = usedNames code
       action $ ViewerFunction $ \vaArgs -> do
-        -- The configuration's values, once for the whole render: a slot
-        -- for each, then the nodes of any lists.
-        let values = fromContext (\_ ty v -> SomeArg ty v) vaArgs
-            slots = sum [ fromMaybe 0 (argSize ty) | SomeArg ty _ <- values ]
-            size = slots + sum [ valueListBytes ty v | SomeArg ty v <- values ]
-        args <- mallocForeignPtrBytes (max 8 size)
-        withForeignPtr args $ \p -> do
-          heap <- newIORef slots
-          let base = argsBase p
-          foldM_ (\off (SomeArg ty v) -> pokeArg p base heap off ty v) 0 values
+        -- The configuration's values, once for the whole render.
+        Args args size tables <- makeArgs argsBase (workers == 0) used vaArgs
         -- A block that met points to add (autocolor) is drawn again, once
         -- they're added, until it meets none: so it comes out as with the
         -- LLVM backend, which adds them as it goes.
-        pure $ \block -> withForeignPtr args $ \p ->
+        pure $ \block -> (`finally` mapM_ (\(t, _, _) -> touchForeignPtr (tableBuffer t)) tables) $
+          withForeignPtr args $ \p ->
           allocaBytes (8 + missSize * missCapacity) $ \misses -> do
             let go :: Int -> IO Int32
                 go tries = do
                   pokeByteOff misses 0 (0 :: Int32)
                   pokeByteOff misses 4 (fromIntegral missCapacity :: Int32)
-                  issues <- runOnce p size misses block
+                  issues <- runOnce p size tables misses block
                   missed <- readMisses misses
                   if null missed || tries >= maxRedraws
                     then pure issues
@@ -242,6 +254,58 @@ readMisses p = do
 data SomeArg where
   SomeArg :: TypeProxy t -> HaskellType t -> SomeArg
 
+-- | A job's arguments: the buffer, its size, and the tables in it, each
+-- with where its descriptor is (from the buffer's start) and how many
+-- bytes its elements take.
+data Args = Args (ForeignPtr Word8) Int [(Table, Int, Int)]
+
+-- | The names of the variables some code reads or sets ('usedVarsInCode'
+-- has the ones it reads, and the tables it writes; a tool's write-back
+-- needs the others it sets too).
+usedNames :: Code env -> Set String
+usedNames c = execState (usedVarsInCode c >> indexedFoldM @NoResult assigned c) Set.empty
+  where
+    assigned :: CodeF NoResult env' -> State (Set String) ()
+    assigned = \case
+      Set _ name _ -> modify' (Set.insert (symbolVal name))
+      _ -> pure ()
+
+data NoResult :: Environment -> Exp Type
+type instance Eval (NoResult _) = ()
+
+-- | Lay out a context's values in an arguments buffer (see 'argSize'),
+-- with the heap after the slots: lists' nodes, texts' nodes, and tables'
+-- descriptors. What the code doesn't use is left out (zeros: an empty
+-- list, an empty text, no table). A table's elements are where its buffer
+-- is, on this thread (@here@), or else 0, for the worker to fill in.
+makeArgs :: (Ptr Word8 -> Int) -> Bool -> Set String -> Context HaskellValue env -> IO Args
+makeArgs argsBase here used ctx = do
+  let values = fromContext (\name ty v -> (symbolVal name `Set.member` used, SomeArg ty v)) ctx
+      slots = sum [ fromMaybe 0 (argSize ty) | (_, SomeArg ty _) <- values ]
+      size = slots + sum [ valueListBytes ty v | (True, SomeArg ty v) <- values ]
+  args <- mallocForeignPtrBytes (max 8 size)
+  tables <- newIORef []
+  withForeignPtr args $ \p -> do
+    fillBytes p 0 (max 8 size)
+    heap <- newIORef slots
+    let base = argsBase p
+        elems t = if here then fromIntegral (ptrToWordPtr (unsafeForeignPtrToPtr (tableBuffer t))) else 0
+        noteTable t off len = modifyIORef' tables ((t, off, len) :)
+    foldM_ (\off (u, SomeArg ty v) ->
+              if u then pokeArg p base heap (elems, noteTable) off ty v
+                   else pure (off + fromMaybe 0 (argSize ty))) 0 values
+  Args args size . reverse <$> readIORef tables
+
+-- | The tables of a job, as (version, descriptor offset) pairs for the
+-- pool (after making sure it has their contents).
+withTableList :: [(Table, Int, Int)] -> (Ptr Int32 -> Int -> IO a) -> IO a
+withTableList tables act = do
+  forM_ tables $ \(t, _, len) -> do
+    has <- poolHasTable (tableVersion t)
+    unless has $ withForeignPtr (tableBuffer t) $ \b -> poolAddTable (tableVersion t) (castPtr b) len
+  withArrayLen (concat [ [fromIntegral (tableVersion t), fromIntegral off] | (t, off, _) <- tables ]) $ \n p ->
+    act p (n `div` 2)
+
 dumpCounter :: IORef Int
 dumpCounter = unsafePerformIO (newIORef 0)
 {-# NOINLINE dumpCounter #-}
@@ -262,19 +326,38 @@ valueListBytes t v = case t of
   ListType i -> fromMaybe 0 (nodeSize i) * length v + sum (map (valueListBytes i) v)
   PairType a b -> let (x, y) = v in valueListBytes a x + valueListBytes b y
   TextType -> literalNodeBytes v
+  TableType{} -> descriptorBytes (length (tableDims v))
   _ -> 0
 
 -- | Write a value into the arguments buffer at @p@ as 'argSize' lays it
 -- out, giving the offset after it. A list's nodes go at the heap's next
 -- free offset, and the slot holds its address, where the buffer will be
 -- once it's at @base@.
-pokeArg :: Ptr Word8 -> Int -> IORef Int -> Int -> TypeProxy t -> HaskellType t -> IO Int
-pokeArg p base heap off t v = case t of
+pokeArg :: Ptr Word8 -> Int -> IORef Int -> (Table -> Int, Table -> Int -> Int -> IO ()) -> Int -> TypeProxy t
+        -> HaskellType t -> IO Int
+pokeArg p base heap tbl@(elems, noteTable) off t v = case t of
   ListType i -> do
     addr <- pokeList p base heap i v
     pokeByteOff p off (fromIntegral addr :: Int32)
     pure (off + 8)
-  PairType a b -> let (x, y) = v in pokeArg p base heap off a x >>= \off' -> pokeArg p base heap off' b y
+  PairType a b -> let (x, y) = v in pokeArg p base heap tbl off a x >>= \off' -> pokeArg p base heap tbl off' b y
+  -- (a table's descriptor: see "Backend.Wasm.Table")
+  TableType _ ety -> do
+    let n = length (tableDims v)
+        (ox, oy) = tableOrigin v
+        (sx, sy) = tableStep v
+    start <- atomicModifyIORef' heap (\h -> (h + descriptorBytes n, h))
+    pokeByteOff p start (fromIntegral (elems v) :: Int32)
+    pokeByteOff p (start + 4) (fromIntegral n :: Int32)
+    pokeByteOff p (start + 8) (1 :: Int32)
+    pokeByteOff p (start + 16) ox
+    pokeByteOff p (start + 24) oy
+    pokeByteOff p (start + 32) sx
+    pokeByteOff p (start + 40) sy
+    forM_ (zip [0 ..] (tableDims v)) $ \(k, d) -> pokeByteOff p (start + 48 + 4 * k) (fromIntegral d :: Int32)
+    noteTable v start (fromMaybe 0 (elementSize ety) * product (tableDims v))
+    pokeByteOff p off (fromIntegral (base + start) :: Int32)
+    pure (off + 8)
   TextType -> do
     addr <- pokeText p base heap v
     pokeByteOff p off (fromIntegral addr :: Int32)
@@ -358,16 +441,12 @@ wasmToolExec sink envp code0 = do
   let code = transformValues backendRewrites code0
   bytes <- either (throwIO . ToolNotCompiled) pure (compileTool envp code)
   kernel <- withArrayLen bytes (\n p -> addKernel p n)
+  let used = usedNames code
   pure $ \ctx -> HandlerRun $ \cancelFlag -> snapshotEventArgs ctx >>= \case
     Nothing -> pure (pure ())
     Just vals -> do
-      let values = fromContext (\_ ty v -> SomeArg ty v) vals
-          slots = sum [ fromMaybe 0 (argSize ty) | SomeArg ty _ <- values ]
-          size = slots + sum [ valueListBytes ty v | SomeArg ty v <- values ]
-      args <- mallocForeignPtrBytes (max 8 size)
-      withForeignPtr args $ \p -> do
-        heap <- newIORef slots
-        foldM_ (\off (SomeArg ty v) -> pokeArg p workerArgsBase heap off ty v) 0 values
+      Args args size tables <- makeArgs (const workerArgsBase) False used vals
+      (`finally` mapM_ (\(t, _, _) -> touchForeignPtr (tableBuffer t)) tables) $ withForeignPtr args $ \p -> do
         -- (with a bigger arena, if it runs out; stopped when the flag is
         -- set, by stopping its worker, since compiled code there can't see
         -- the flag)
@@ -380,7 +459,7 @@ wasmToolExec sink envp code0 = do
             attempt capacity = do
               stopped
               result <- bracket (forkIO watch) killThread $ \_ ->
-                try (runToolOnWorker kernel p size capacity tag >>= evaluate) >>= \case
+                try (withTableList tables (runToolOnWorker kernel p size capacity tag) >>= evaluate) >>= \case
                   Right r -> pure r
                   Left (e :: SomeException) -> stopped >> throwIO e
               status <- toolStatus result
@@ -406,13 +485,15 @@ wasmToolExec sink envp code0 = do
                 | addr >= workerArgsBase && addr < workerArgsBase + size = p `plusPtr` (addr - workerArgsBase)
                 | otherwise = lists `plusPtr` (addr - arenaBase)
           offset <- newIORef 0
-          sets <- fromContextM (\_ ty (arg, old) -> do
+          sets <- fromContextM (\name ty (arg, old) -> do
                     off <- readIORef offset
                     writeIORef offset (off + fromMaybe 0 (argSize ty))
-                    new <- peekArg at (p `plusPtr` off) ty
-                    pure $ case argSetValue arg of
-                      Just set | Scalar ty old /= Scalar ty new -> set ty new
-                      _ -> pure ()) (zipContext ctx vals)
+                    -- (what it doesn't use, it can't have changed)
+                    if not (symbolVal name `Set.member` used) then pure (pure ()) else do
+                      new <- peekArg at (p `plusPtr` off) ty old
+                      pure $ case argSetValue arg of
+                        Just set | Scalar ty old /= Scalar ty new -> set ty new
+                        _ -> pure ()) (zipContext ctx vals)
           drawn <- readDraws at sink draws drawsLen
           pure (sequence_ sets >> sequence_ drawn)
 
@@ -453,11 +534,14 @@ readDraws at DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize
 -- | Read a value from the arguments buffer as 'pokeArg' wrote it (the
 -- kernel writes it back the same way); @at@ finds a list's nodes from
 -- their address.
-peekArg :: (Int -> Ptr Word8) -> Ptr Word8 -> TypeProxy t -> IO (HaskellType t)
-peekArg at p t = case t of
+peekArg :: (Int -> Ptr Word8) -> Ptr Word8 -> TypeProxy t -> HaskellType t -> IO (HaskellType t)
+peekArg at p t old = case t of
   ListType i -> peekByteOff p 0 >>= \(a :: Int32) -> peekList at i (fromIntegral a)
   TextType -> peekByteOff p 0 >>= \(a :: Int32) -> peekText at (fromIntegral a)
-  PairType a b -> (,) <$> peekArg at p a <*> peekArg at (p `plusPtr` fromMaybe 0 (argSize a)) b
+  PairType a b -> let (x, y) = old in
+    (,) <$> peekArg at p a x <*> peekArg at (p `plusPtr` fromMaybe 0 (argSize a)) b y
+  -- (a tool can't change a table yet)
+  TableType{} -> pure old
   _ -> peekScalar p t
 
 peekList :: (Int -> Ptr Word8) -> TypeProxy t -> Int -> IO [HaskellType t]

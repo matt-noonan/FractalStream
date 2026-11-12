@@ -31,6 +31,9 @@ module Backend.Wasm.List
   , listRange
   , walkList
   , alloc
+  , Builder(..)
+  , newBuilder
+  , append
   ) where
 
 import FractalStream.Prelude

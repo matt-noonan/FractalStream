@@ -44,7 +44,8 @@ import Data.List (elemIndex)
 -- f64s, a color three i32s (one per byte, 0 to 255), a pair its parts'
 -- locals, and a list an i32 (the address of its first node, or 0 for the
 -- empty list: see "Backend.Wasm.List"), and a text an i32 too (the
--- address of its node, or 0 for the empty text: see "Backend.Wasm.Text").
+-- address of its node, or 0 for the empty text: see "Backend.Wasm.Text"),
+-- and a table an i32 (its descriptor's address: see "Backend.Wasm.Table").
 data Loc
   = LBool Int
   | LInt Int
@@ -54,6 +55,7 @@ data Loc
   | LPair Loc Loc
   | LList Int
   | LText Int
+  | LTable Int
   deriving Show
 
 -- | The locals holding a kernel's scratch memory (its arena), where lists
@@ -159,6 +161,7 @@ freshLike = \case
   LPair a b -> LPair <$> freshLike a <*> freshLike b
   LList _ -> LList <$> newLocal I32
   LText _ -> LText <$> newLocal I32
+  LTable _ -> LTable <$> newLocal I32
 
 -- | The locals a value lives in.
 locals :: Loc -> [Int]
@@ -171,6 +174,7 @@ locals = \case
   LPair a b -> locals a ++ locals b
   LList a -> [a]
   LText a -> [a]
+  LTable a -> [a]
 
 -- | Copy a value into another of the same shape. (Every part is read
 -- before any is written, so it's right even if the two share locals.)

@@ -52,6 +52,15 @@ if (pool && process.env.FS_WASM_DUMP) {
     return run(kernel, args, ...rest);
   };
 }
+// (for debugging: with FS_WASM_LOG_TABLES set, each table given to the
+// pool is noted on stderr: its version and size)
+if (pool && process.env.FS_WASM_LOG_TABLES) {
+  const add = pool.addTable.bind(pool);
+  pool.addTable = (version, bytes) => {
+    console.error(`table ${version}: ${bytes.length} bytes`);
+    return add(version, bytes);
+  };
+}
 if (pool) globalThis.fractalstreamWorkers = pool;
 
 // What kernels import, for those on the engine's thread (the workers load

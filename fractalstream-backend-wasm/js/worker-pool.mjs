@@ -24,15 +24,42 @@
 //                  (there's no other way to stop wasm code that's
 //                  running), which is replaced by a new one. Either way
 //                  its promise is rejected with an Error("stopped").
+// pool.addTable(version, bytes)   a table's contents (by its version), to
+//                  send to the workers that need it, once each
+// pool.hasTable(version)           whether it has them (it drops the
+//                  least recently used beyond TABLE_BUDGET bytes, unless a
+//                  job waiting or running needs them)
+//
+// A job's last argument lists its tables, as (version, offset) pairs in
+// an Int32Array: the worker puts the elements of its copy of each where
+// the descriptor at that offset in the job's arguments says (see
+// kernel-worker.mjs).
+//
 // pool.terminate()
 
+const TABLE_BUDGET = 512 * 1024 * 1024;
+
 export function createPool(workers, makeWorker) {
+  const tables = new Map();      // version -> { bytes, used }
+  let tableBytes = 0;
+  let clock = 0;
   const kernels = new Map();     // kernel id -> its module's bytes
   let nextKernel = 0;
   let nextJob = 0;
   const queue = [];              // jobs waiting for a worker
   const pending = new Map();     // job -> { resolve, reject }
-  const state = workers.map((w) => ({ worker: w, busy: false, kernels: new Set(), job: null }));
+  const state = workers.map((w) => ({ worker: w, busy: false, kernels: new Set(), tables: new Set(), job: null }));
+
+  // (version, offset) pairs, as the job's tables
+  const tableList = (pairs) => {
+    const list = [];
+    for (let i = 0; i + 1 < pairs.length; i += 2) {
+      list.push({ version: pairs[i], offset: pairs[i + 1] });
+      const t = tables.get(pairs[i]);
+      if (t) t.used = ++clock;
+    }
+    return list;
+  };
 
   function dispatch() {
     for (const s of state) {
@@ -45,6 +72,14 @@ export function createPool(workers, makeWorker) {
       s.busy = true;
       s.job = job;
       const { transfer, ...message } = job;
+      // (the contents of tables this worker doesn't have yet: copies, since
+      // the pool keeps its own for other workers)
+      message.tableData = {};
+      for (const { version } of job.tables) {
+        if (s.tables.has(version)) continue;
+        message.tableData[version] = tables.get(version).bytes;
+        s.tables.add(version);
+      }
       s.worker.post(message, transfer);
     }
   }
@@ -54,6 +89,7 @@ export function createPool(workers, makeWorker) {
   function listen(s, w) {
     w.onMessage((m) => {
       if (s.worker !== w) return;
+      for (const v of m.evicted ?? []) s.tables.delete(v);
       s.busy = false;
       s.job = null;
       const p = pending.get(m.job);
@@ -77,21 +113,40 @@ export function createPool(workers, makeWorker) {
       kernels.set(id, bytes);
       return id;
     },
-    run(kernel, args, snapshot, width, height, subsamples, x0, y0, dx, dy) {
+    run(kernel, args, snapshot, width, height, subsamples, x0, y0, dx, dy, tablePairs = []) {
       const job = nextJob++;
       // (args, snapshot: Uint8Arrays whose buffers are the job's own, to transfer)
-      queue.push({ job, kernel, args: args.buffer, snapshot: snapshot.buffer,
+      queue.push({ job, kernel, args: args.buffer, snapshot: snapshot.buffer, tables: tableList(tablePairs),
                    width, height, subsamples, x0, y0, dx, dy, transfer: [args.buffer, snapshot.buffer] });
       const result = new Promise((resolve, reject) => pending.set(job, { resolve, reject }));
       dispatch();
       return result;
     },
-    runTool(kernel, args, arenaSize, tag) {
+    runTool(kernel, args, arenaSize, tag, tablePairs = []) {
       const job = nextJob++;
-      queue.push({ job, kernel, tool: true, tag, args: args.buffer, arenaSize, transfer: [args.buffer] });
+      queue.push({ job, kernel, tool: true, tag, args: args.buffer, arenaSize, tables: tableList(tablePairs),
+                   transfer: [args.buffer] });
       const result = new Promise((resolve, reject) => pending.set(job, { resolve, reject }));
       dispatch();
       return result;
+    },
+    hasTable(version) {
+      return tables.has(version);
+    },
+    addTable(version, bytes) {
+      if (tables.has(version)) return;
+      tables.set(version, { bytes, used: ++clock });
+      tableBytes += bytes.length;
+      if (tableBytes <= TABLE_BUDGET) return;
+      // (the least recently used first, but none a job still needs)
+      const needed = new Set([...queue, ...state.map((s) => s.job)].flatMap((j) => j?.tables ?? []).map((t) => t.version));
+      needed.add(version);
+      for (const [v, t] of [...tables].sort((a, b) => a[1].used - b[1].used)) {
+        if (tableBytes <= TABLE_BUDGET) break;
+        if (needed.has(v)) continue;
+        tables.delete(v);
+        tableBytes -= t.bytes.length;
+      }
     },
     stop(tag) {
       for (let i = queue.length - 1; i >= 0; i--) {
@@ -103,6 +158,7 @@ export function createPool(workers, makeWorker) {
         s.worker.terminate();
         s.worker = makeWorker();
         s.kernels = new Set();
+        s.tables = new Set();
         s.busy = false;
         s.job = null;
         listen(s, s.worker);

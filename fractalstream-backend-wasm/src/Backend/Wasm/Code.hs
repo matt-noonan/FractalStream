@@ -41,6 +41,7 @@ import Language.Code
 import Language.Draw (Draw_(..))
 import Data.Indexed.Functor
 import Data.Color (colorToRGB, grey)
+import Language.Table (elementSize)
 
 data CtxCode :: Environment -> Exp Type
 type instance Eval (CtxCode env) = ReaderT (Context WLoc env) Gen ()
@@ -199,6 +200,7 @@ argSize = \case
   PairType a b -> (+) <$> argSize a <*> argSize b
   ListType t -> elemSize t >> Just 8
   TextType -> Just 8
+  TableType _ t -> elementSize t >> Just 8
   _ -> Nothing
 
 -- | Fresh locals for a variable of the given type.
@@ -212,6 +214,7 @@ locFor t = case t of
   PairType a b -> LPair <$> locFor a <*> locFor b
   ListType i | Just _ <- elemSize i -> LList <$> newLocal I32
   TextType -> LText <$> newLocal I32
+  TableType _ i | Just _ <- elementSize i -> LTable <$> newLocal I32
   _ -> unsupported ("variables of type " ++ showType t)
 
 -- | Load a variable from the arguments buffer (at the given param) into
@@ -230,6 +233,7 @@ loadArg argsParam off = \case
   LPair a b -> loadArg argsParam off a >>= \off' -> loadArg argsParam off' b
   LList l -> one (i32Load off) l >> pure (off + 8)
   LText l -> one (i32Load off) l >> pure (off + 8)
+  LTable l -> one (i32Load off) l >> pure (off + 8)
   where one load l = emit [localGet argsParam, load, localSet l]
 
 -- | Store a variable's locals into the arguments buffer (at the given
@@ -248,6 +252,7 @@ storeArg argsParam off = \case
   LPair a b -> storeArg argsParam off a >>= \off' -> storeArg argsParam off' b
   LList l -> one (i32Store off) l >> pure (off + 8)
   LText l -> one (i32Store off) l >> pure (off + 8)
+  LTable l -> one (i32Store off) l >> pure (off + 8)
   where one store l = emit [localGet argsParam, localGet l, store]
 
 pOut, pWidth, pHeight, pSubsamples, pArgs, pArena, pArenaSize, pSnapshot, pMisses,

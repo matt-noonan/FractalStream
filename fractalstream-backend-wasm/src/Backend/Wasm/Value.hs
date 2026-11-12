@@ -15,6 +15,7 @@ import Backend.Wasm.Encode
 import Backend.Wasm.Gen
 import Backend.Wasm.List
 import Backend.Wasm.Text
+import Backend.Wasm.Table
 
 import Language.Value
 import Data.Indexed.Functor
@@ -276,19 +277,47 @@ value = indexedFold go'
           let channel k = unaryTo I32 id [ localGet rgb, i32Const k, i32ShrU, i32Const 255, i32And ]
           LColor <$> channel 16 <*> channel 8 <*> channel 0
         l -> lift (mismatch l)
-      TableIndex{} -> lift (unsupported "tables")
-      TablePoint{} -> lift (unsupported "tables")
-      TableSlice{} -> lift (unsupported "tables")
-      TableSize{} -> lift (unsupported "tables")
-      TableContains{} -> lift (unsupported "tables")
-      TableCell{} -> lift (unsupported "tables")
-      TableCellPoint{} -> lift (unsupported "tables")
+      TableIndex _ ty mt mixs -> do
+        t <- mt >>= lift . tableOf
+        ixs <- mapM (\mi -> mi >>= lift . intOf) mixs
+        lift (tableRead ty t ixs)
+      TablePoint _ ty mt mz mixs -> do
+        t <- mt >>= lift . tableOf
+        z <- mz >>= lift . complexOf
+        ixs <- mapM (\mi -> mi >>= lift . intOf) mixs
+        lift (tablePoint ty t z ixs)
+      TableSlice _ ty mt mmz mixs -> do
+        t <- mt >>= lift . tableOf
+        z <- traverse (\mz -> mz >>= lift . complexOf) mmz
+        ixs <- mapM (traverse (\mi -> mi >>= lift . intOf)) mixs
+        lift (tableSliceRead ty t z ixs)
+      TableSize _ _ sz mt -> mt >>= lift . tableOf >>= lift . tableSize sz
+      TableContains _ _ mt mz -> do
+        t <- mt >>= lift . tableOf
+        z <- mz >>= lift . complexOf
+        lift (tableContains t z)
+      TableCell _ _ sz mt mz -> do
+        t <- mt >>= lift . tableOf
+        z <- mz >>= lift . complexOf
+        lift (tableCellIndices sz t z)
+      TableCellPoint _ _ mt mj mk -> do
+        t <- mt >>= lift . tableOf
+        j <- mj >>= lift . intOf
+        k <- mk >>= lift . intOf
+        lift (tableCellPoint t j k)
 
 ------------------------------------------------------------------------
 -- Helpers
 
 captureR :: ReaderT r Gen a -> ReaderT r Gen (a, [Instr])
 captureR m = ReaderT (capture . runReaderT m)
+
+tableOf, intOf :: Loc -> Gen Int
+tableOf = \case { LTable t -> pure t; l -> mismatch l }
+intOf = \case { LInt i -> pure i; l -> mismatch l }
+
+complexOf :: Loc -> Gen (Int, Int)
+complexOf = \case { LComplex x y -> pure (x, y); l -> mismatch l }
 
 mismatch :: Loc -> Gen a
 mismatch l = throwError ("internal error: a value of the wrong shape in the wasm backend: " ++ show l)

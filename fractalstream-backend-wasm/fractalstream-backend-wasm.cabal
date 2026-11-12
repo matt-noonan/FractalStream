@@ -72,6 +72,7 @@ library
                        Backend.Wasm.Value
                        Backend.Wasm.List
                        Backend.Wasm.Text
+                       Backend.Wasm.Table
                        Backend.Wasm.Code
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
@@ -79,4 +80,5 @@ library
                      , ghc-experimental
                      , mtl
                      , bytestring
+                     , containers
   hs-source-dirs:      src

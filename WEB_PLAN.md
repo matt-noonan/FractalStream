@@ -27,6 +27,7 @@ questions into **Decisions**.
 | D16 | Tools' handlers (and overlays) are **compiled by Backend.Wasm and run on the workers**; what it can't compile yet (tables, autocolor) is a tool compilation error, not interpreted | Interpreted, external rays took 7.5 s, and the engine's one thread was stuck meanwhile. On a worker the engine stays free, and Stop can come later by stopping the worker. (Without a worker pool, tools are interpreted.) |
 | D17 | Text in Backend.Wasm is a **tree of nodes in the arena** (literals, numbers, concatenations), formatted by the engine when it reads a text back | Numbers then print exactly as interpreted (`showValue`), without calling back into Haskell or reimplementing `show` for `Double`. Nothing in the language looks inside a text; if that changes (comparisons, `length`), revisit. |
 | D18 | A slow handler (a tool's, or an overlay's refresh) shows a **bar in its viewer's window** after a quarter of a second, with Stop (and, for a tool, Stop and switch to Navigate); **Stop kills the worker** running it, which the pool replaces; a stopped overlay is off until the project's reopened (or, later, recompiled) | Not a modal window, which is the wrong idiom on the web: the rest of the app stays usable. Killing the worker needs no shared memory (so no cross-origin isolation), and stops even an endless loop. |
+| D19 | **Tables on the workers: per-worker copies**, by version (`Table`'s new `tableVersion`): the pool keeps a copy of each version (up to 512 MB), sends it once to each worker that needs it, and a worker keeps up to 256 MB of them in its memory, above its jobs' scratch memory; only the tables a kernel reads are sent | Works without shared memory (so without cross-origin isolation); revisit if we get COOP/COEP. A tool's operations on tables will be C compiled to wasm, as autocolor is, since calling JavaScript from wasm on workers crashed V8. |
 | D15 | Tools' drawings are drawn **by the page, with Canvas2D**, from shapes the engine sends; fsrun keeps Rasterific | Rasterific in wasm took 1.5 s for a 2,000-segment orbit; Canvas2D takes well under a millisecond, and drawings move with the view at once. Far-reaching shapes are clipped as `Actor.Viewer.Clip` does. |
 
 ## Architecture
@@ -234,7 +235,7 @@ wasmtime.
 - [ ] Tiles and progressive passes (R3).
 - [x] Lists in a per-block arena; issue flags.
 - [x] Text (D17).
-- [ ] Tables.
+- [ ] Tables: viewers reading them (done, D19); tools writing them (next).
 - [x] Autocolor: snapshot lookup (shared C, `autocolor_lookup.h`), misses added by the engine, block redrawn.
 - [x] libm: musl's, compiled to `js/libm.wasm` (D14).
 - [x] Turn the end-to-end suite back on for wasm (under Node: `dev-tools/wasm/node.sh`; its table tests wait for tables).
@@ -328,6 +329,37 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: Viewers read tables in Backend.Wasm
+
+A viewer's code reading tables compiles: by index, by point (with
+`else`), slices as lists, sizes, `in`, `table_cell`, `table_point`. A
+table is the address of a descriptor laid out as the LLVM backend's (with
+a 32-bit pointer), written into the job's arguments; on a worker, the
+worker fills in where its copy of the table is (D19).
+
+**Only what a kernel reads is sent.** The core hands a viewer every
+configuration value, tables included (it uses the variables a viewer
+reads only to decide when to re-render it). The wasm backend now leaves
+out of a job's arguments the lists, texts and tables its code doesn't
+read (or, for a tool, set: `usedVarsInCode` doesn't count assignments).
+In the fixture, a 960 KB table the viewer never reads isn't sent, and nor
+is one it reads only in the part run once per render.
+
+**Checked against LLVM:** `dev-tools/wasm/tables/compare.sh` renders
+`tables-read.fs` (saved tables, made by `MakeFixture.hs` through the
+app's own save path, since fsrun can't save tables) with both builds:
+identical, including a view mostly off the tables. The library's tools
+still compare as before (`compare-tools.sh`: 34 identical, the rest the
+same few render-only pixels).
+
+**A parser oddity:** a variable named `on` followed by a line starting
+with `(` fails with "`point` is a built-in function, so it can't also
+name a variable" (it parses alone). Not looked into.
+
+**Beware stale binaries** when comparing: `compare-tools.sh` uses the
+installed native `fsrun` and the last wasm `exe:fsrun` build; rebuild
+both (`stack build`, `dev-tools/wasm/build.sh exe:fsrun`) first.
 
 ### 2026-11-12: Progress and Stop
 
