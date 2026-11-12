@@ -46,6 +46,10 @@
 //             (dev-tools/web/tables.fs): asked, with each table's size;
 //             saved with them (and reopened, filled) or without them;
 //             not asked when they're empty
+//   capture   a viewer's Capture submenu: a picture (its size times the
+//             multiplier, as a PNG), and a movie from a script (checked as
+//             it's typed; recorded, encoded and saved as an MP4; stopped;
+//             the values put back afterwards)
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
@@ -60,7 +64,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, panel };
+const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -1076,4 +1080,72 @@ async function tables() {
   const fourth = await written(3);
   c.check(askedAgain && /\ntables:/.test(third ?? "") && /\ntables:/.test(fourth ?? ""),
           "Save as asks again, and plain saves keep the new answer (with them)");
+}
+
+async function capture() {
+  const project = await app.openLibrary("Mandelbrot and Julia sets together");
+  const dp = project.viewers.find((v) => v.title === "Dynamical plane").id;
+  const win = page.locator(".window").nth(dp);
+  const capture = async (what) => {
+    await win.locator(".window-menu-button").click();
+    await page.locator(".window-menu button", { hasText: "Capture" }).click();
+    await page.locator(".window-menu button", { hasText: what }).click();
+  };
+  const dialog = page.locator(".page-dialog");
+
+  // a picture, twice the size
+  await capture("Image");
+  await dialog.locator("input[type=text]").fill("2");
+  let dl = page.waitForEvent("download", { timeout: 30000 }).catch(() => null);
+  await dialog.locator("button", { hasText: "Save" }).click();
+  const png = await dl;
+  const bytes = png ? fs.readFileSync(await png.path()) : Buffer.alloc(0);
+  const css = await app.canvas(dp).evaluate((c) => [c.getBoundingClientRect().width, c.getBoundingClientRect().height]);
+  const [w, h] = bytes.length > 24 ? [bytes.readUInt32BE(16), bytes.readUInt32BE(20)] : [0, 0];
+  c.check(png?.suggestedFilename() === "Dynamical plane.png" && w === Math.round(css[0] * 2) && h === Math.round(css[1] * 2),
+          `Capture > Image… saves a picture, twice the viewer's size (${w}x${h}, named ${png?.suggestedFilename()})`);
+
+  // a movie: its script checked as it's typed
+  const before = await page.locator(".panel input[type=text]").first().inputValue();
+  await capture("Movie");
+  const script = dialog.locator("textarea");
+  await script.waitFor({ timeout: 10000 });
+  const template = await script.inputValue();
+  c.check(/define animate\(t\):/.test(template) && /e\^\(2 pi i t\)/.test(template),
+          "Capture > Movie… starts from a script moving the first complex value around a circle");
+  await script.fill("define animate(t):\n    C <- (");
+  await page.waitForTimeout(900);
+  const problem = await dialog.locator(".form-error").textContent();
+  c.check(/⚠/.test(problem), `a script that isn't one is said so (${problem.trim().slice(0, 50)})`);
+  await script.fill(template);
+  await page.waitForTimeout(900);
+  c.check((await dialog.locator(".form-error").textContent()) === "", "and fixed, it isn't");
+  const fields = dialog.locator(".capture-grid input");
+  await fields.nth(0).fill("8");
+  await fields.nth(1).fill("4");
+  await app.forgetMessages();
+  dl = page.waitForEvent("download", { timeout: 60000 }).catch(() => null);
+  await dialog.locator("button", { hasText: "Record" }).click();
+  const mp4 = await dl;
+  const movie = mp4 ? fs.readFileSync(await mp4.path()) : Buffer.alloc(0);
+  const frames = (await app.messages("movieFrame")).length;
+  c.check(mp4?.suggestedFilename() === "Dynamical plane.mp4" && movie.toString("latin1", 4, 8) === "ftyp" && frames === 8,
+          `recorded: ${frames} frames, encoded and saved as an MP4 (${movie.length} bytes)`);
+  await page.waitForTimeout(500);
+  const after = await page.locator(".panel input[type=text]").first().inputValue();
+  c.check(after === before && !(await dialog.isVisible()), `and the values are put back (C = ${after})`);
+
+  // stopped
+  await capture("Movie");
+  await dialog.locator("textarea").waitFor({ timeout: 10000 });
+  await dialog.locator(".capture-grid input").nth(0).fill("400");
+  await app.forgetMessages();
+  dl = page.waitForEvent("download", { timeout: 4000 }).catch(() => null);
+  await dialog.locator("button", { hasText: "Record" }).click();
+  await app.waitForMessage(`(m) => m.type === "movieFrame"`, 30000).catch(() => {});
+  await dialog.locator("button", { hasText: "Stop" }).click();
+  await app.waitForMessage(`(m) => m.type === "movieDone"`, 30000).catch(() => {});
+  const stopped = (await app.messages("movieDone")).pop();
+  c.check(stopped?.stopped && (await dl) === null && (await app.messages("movieFrame")).length < 400,
+          `Stop stops it, after ${(await app.messages("movieFrame")).length} frames, and saves nothing`);
 }

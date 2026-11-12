@@ -41,6 +41,17 @@ export type Request =
       CSS pixel this size. "where" asks where the viewer is now. */
   | { type: "jump"; viewer: number; x: number; y: number; pixelSize: number }
   | { type: "where"; viewer: number }
+  /** A picture of a viewer (its size times the multiplier), as a PNG: answered by "download". */
+  | { type: "captureImage"; viewer: number; multiplier: number; smooth: boolean }
+  /** Movies (see Main.hs): a script to start with, checking one, recording
+      one (answered by "movieFrame"s and "movieDone"), the page's encoder
+      having taken a frame, and stopping. */
+  | { type: "movieTemplate"; viewer: number }
+  | { type: "movieCheck"; id: number; script: string }
+  | { type: "movieStart"; viewer: number; script: string; frames: number; fps: number; loop: boolean;
+      smooth: boolean; drawings: boolean }
+  | { type: "movieAck"; frame: number }
+  | { type: "movieStop" }
   /** Whether the autocolor editor's open (the groups are posted, as they
       change, while it is), and an edit to a group (see Main.hs). */
   | { type: "autocolorWatch"; on: boolean }
@@ -244,6 +255,13 @@ export type Message =
   | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean }
   | { type: "where"; viewer: number; x: number; y: number; pixelSize: number }
   | { type: "aspect"; viewer: number; error: string | null }
+  /** A file to save as it is (a picture). */
+  | { type: "download"; name: string; bytes: ArrayBuffer }
+  | { type: "movieTemplate"; viewer: number; script: string }
+  | { type: "movieCheck"; id: number; error: ScriptError | null }
+  /** A movie's frame (from 1, of `total`): RGBA pixels. */
+  | { type: "movieFrame"; index: number; total: number; width: number; height: number; pixels: ArrayBuffer }
+  | { type: "movieDone"; error: string | null; stopped: boolean; issues: string | null }
   | { type: "tableSummary"; built: boolean; tables: { name: string; size: number[]; bytes: number }[] }
   | { type: "autocolor"; groups: AutocolorGroup[] }
   | { type: "autocolorError"; message: string }

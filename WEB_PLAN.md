@@ -341,7 +341,7 @@ Only if 0c/0d come out well.
   viewers.
 - [x] Errors as notices, dismissed (not only the status line).
 - [x] Autocolor editor: an overlay over the workspace (for now: windows are viewers), from each viewer's Colorizer submenu.
-- [ ] Movies (WebCodecs).
+- [x] Movies (WebCodecs), and pictures: Capture > Image… and Movie… (from a script). Still to come: the Animate along path tool, and a movie's inset.
 - [x] Saved tables: asked when saving, as the desktop asks (with each table's size), remembered for plain saves.
 - [ ] Open a project from a URL; shareable links.
 
@@ -355,6 +355,45 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: Pictures and movies
+
+Each viewer's menu has a Capture submenu, as the desktop's does:
+
+- **Image…**: a size multiplier and smoothing, as the desktop asks; the
+  engine renders a copy of the viewer (its size in CSS pixels, times the
+  multiplier) and makes a PNG with the core's encoder, which the page
+  saves (named after the viewer).
+- **Movie…**: the desktop's script-driven movie: a script run for each
+  frame (with `t` from 0 to 1; to start with, the desktop's, moving the
+  first complex value around a small circle), checked as it's typed;
+  frames, frames per second, loop, smoothing, and the tools' drawings.
+  The engine runs the core's `scriptAnimation` and renders each frame
+  (`renderViewerImage`) from a copy of the viewer (made even each way,
+  as H.264 needs), posting it to the page, at most two frames ahead of
+  the page's encoder; the viewers don't redraw meanwhile, and the values
+  are put back afterwards. The page encodes the frames with the
+  browser's video encoder (WebCodecs: H.264, else VP9 or AV1) into an
+  MP4, by way of **Mediabunny** (1.62.1, MPL-2.0; the successor of
+  `mp4-muxer`, whose author deprecated it for it), and saves it. Stop
+  stops it, saving nothing.
+
+The user chose MP4 through WebCodecs over the desktop's Motion-JPEG
+writer (whose files are big, and which browsers don't play). Checked:
+movies from Chromium, Firefox and WebKit all come out as H.264 MP4s
+(ffprobe: 30 frames at 15 fps). Mediabunny is most of the capture
+code's size (370 KB), so `capture.ts` is loaded the first time it's
+used: esbuild now splits the bundle (`--splitting`), and the page loads
+637 KB as before.
+
+Still to come (the user's choice: a follow-up): the "Animate along
+path" tool (a path dragged in a parameter plane, which a movie follows),
+and a movie's inset (another viewer, in a corner).
+
+Checks: `check-tools.mjs`'s `capture` section (a picture at twice the
+size; a movie: its template, a bad script said so, 8 frames recorded and
+saved as an MP4, the values put back; Stop), in Chromium, Firefox and
+WebKit.
 
 ### 2026-11-12: Saving what tables hold
 
