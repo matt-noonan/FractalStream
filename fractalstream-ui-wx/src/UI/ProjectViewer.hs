@@ -31,7 +31,7 @@ import Task.Block (subBlockSize)
 import UI.Layout
 import UI.Widgets
 import UI.WxProperties
-import UI.ViewModel
+import Actor.Viewer.ViewModel
 import UI.MovieMaker
 import UI.ToolProgress
 import Actor.Movie (canAnimate)
@@ -49,7 +49,7 @@ import Actor.Layout
 import Actor.Configuration
 import Actor.Viewer
 import Actor.Ensemble (buildToolContext, layoutToArgs, Colorizer(..), ViewerColorizer(..))
-import Actor.Colorizer (splitArguments)
+import Actor.Colorizer (choiceName, choiceArguments, missingArguments, argumentFields, choiceWithArguments)
 import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..), ToolDispatcher, HandlerRun, newCancelFlag)
 import Language.Value.Parser (parseConstant)
 import Language.Type
@@ -67,8 +67,8 @@ import Text.Printf
 import Text.Read (readMaybe)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.Char (toLower, isSpace)
-import Data.List (find, dropWhileEnd)
+import Data.Char (toLower)
+import Data.List (find)
 import qualified System.Info as System
 
 -- | What a viewer's menu can do to the project as a whole.
@@ -1646,12 +1646,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- the one in use.
     pmColorizers title0 >>= mapM_ (\(available, ViewerColorizer{..}) -> do
       colorizerMenu <- menuPane [ text := "Colorizer" ]
-      let nameOf = takeWhile (/= '(')
-          argsOf written = case dropWhile (/= '(') written of
-            '(' : rest | not (null rest) -> init rest
-            _ -> ""
-          missingFrom Colorizer{colorizerParams = params, colorizerDefaults = defaults} =
-            [ param | param <- params, Map.notMember param defaults, param `Set.notMember` colorizerScope ]
+      let nameOf = choiceName
+          argsOf = choiceArguments
+          missingFrom = missingArguments colorizerScope
           useColorizer chosen = pmSetColorizer title0 chosen >>= \case
             Left err -> errorDialog f "Couldn't use that colorizer" err
             Right () -> pure ()
@@ -1660,31 +1657,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           -- parameter's default, or else the viewer's variable of its
           -- name; arguments that come to that, at the end, are left out
           -- (all of them: the choice is just the colorizer's name).
-          askArguments Colorizer{colorizerName = name, colorizerParams = params
-                                , colorizerDefaults = defaults} written = do
-            let given = splitArguments written
-                inScope param = param `Set.member` colorizerScope
-                current i param = case drop i given of
-                  g : _ | not (null g) -> g
-                  _ | Map.member param defaults -> ""
-                    | inScope param -> param
-                    | otherwise -> ""
-                note param = case Map.lookup param defaults of
-                  Just (_, src) -> "(default: " ++ src ++ ")"
-                  Nothing | inScope param -> ""
-                          | otherwise -> "(this viewer has no " ++ param ++ ")"
-                fields = [ (param, note param, current i param) | (i, param) <- zip [0 ..] params ]
-            askColorizerArguments f name fields >>= mapM_ (\answers -> do
-              let answer param a
-                    | all isSpace a || (a' == param && Map.notMember param defaults) = Nothing
-                    | otherwise = Just a'
-                    where a' = dropWhileEnd isSpace (dropWhile isSpace a)
-                  -- an omitted argument before a given one has to be written
-                  written' param = maybe param (\(_, src) -> "(" ++ src ++ ")") (Map.lookup param defaults)
-                  args = reverse . dropWhile (isNothing . snd) . reverse $
-                           zip params (zipWith answer params answers)
-              useColorizer (if null args then name
-                            else name ++ "(" ++ intercalate ", " [ fromMaybe (written' param) a | (param, a) <- args ] ++ ")"))
+          askArguments c written =
+            askColorizerArguments f (colorizerName c) (argumentFields colorizerScope c written)
+              >>= mapM_ (useColorizer . choiceWithArguments c)
       forM_ available $ \c@Colorizer{..} -> do
         let inUse = nameOf colorizerInUse == colorizerName
             missing = missingFrom c

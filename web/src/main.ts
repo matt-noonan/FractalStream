@@ -3,11 +3,11 @@
 // what they say to each other.
 
 import type { Request, Message, Layout, FieldLayout, Patch, LibrarySection, ViewerInfo, SavedViews,
-              Shape, Handled, EventKind } from "./protocol.js";
+              Shape, Handled, EventKind, Navigation } from "./protocol.js";
 import { drawLayers } from "./drawing.js";
 import { ScriptEditor } from "./editor.js";
 import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
-import { Desk } from "./windows.js";
+import { Desk, type MenuItem } from "./windows.js";
 
 const engine = new Worker(new URL("engine.js", import.meta.url), { type: "module" });
 const send = (r: Request) => engine.postMessage(r);
@@ -33,22 +33,10 @@ function toggle(button: HTMLButtonElement, bodyClass: string) {
 libraryButton.addEventListener("click", () => toggle(libraryButton, "no-library"));
 panelButton.addEventListener("click", () => toggle(panelButton, "no-panel"));
 
-// Smoothing: remembered (in this browser) once chosen; until then, off on
-// a high-DPI screen (which is drawn at twice the resolution already), and
-// on otherwise.
-const smoothingBox = document.getElementById("smoothing") as HTMLInputElement;
-const SMOOTHING_KEY = "fractalstream.smoothing";
-function savedSmoothing(): boolean | null {
-  try {
-    const v = localStorage.getItem(SMOOTHING_KEY);
-    return v === null ? null : v === "true";
-  } catch { return null; }
-}
-smoothingBox.checked = savedSmoothing() ?? (window.devicePixelRatio || 1) < 1.5;
-smoothingBox.addEventListener("change", () => {
-  try { localStorage.setItem(SMOOTHING_KEY, String(smoothingBox.checked)); } catch { /* (not remembered) */ }
-  send({ type: "smoothing", on: smoothingBox.checked });
-});
+// Smoothing, each viewer's to begin with ("Use subpixel smoothing", in its
+// menu, changes it; not saved, as on the desktop): off on a high-DPI
+// screen (which is drawn at twice the resolution already), on otherwise.
+const smoothingAtFirst = (window.devicePixelRatio || 1) < 1.5;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {},
                                                  ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -229,8 +217,7 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
     viewers.set(info.id, v);
     const win = desk.add({ title: info.title, ...place, content: v.element, minimized: saved?.minimized,
                            onResize: (width, height) => v.resize(width, height),
-                           menu: [{ label: "Show pointer position", on: () => v.pointerShown,
-                                    toggle: () => v.setPointerShown(!v.pointerShown) }] });
+                           menu: () => v.menu() });
     win.addEventListener("pointerdown", () => activate(v), { capture: true });
     v.window = win;
     windows.push({ title: info.title, view: v, window: win });
@@ -280,6 +267,10 @@ document.addEventListener("keydown", (e) => {
   if (!v || e.metaKey || e.ctrlKey || e.altKey) return;
   // (not while typing: in a text box, or the script editor)
   if (e.target instanceof HTMLElement && (e.target.closest("input, select, textarea") || e.target.isContentEditable)) return;
+  // (moving about: as on the desktop)
+  const navigation: Record<string, () => void> = { "<": () => v.navigate(0), ">": () => v.navigate(1),
+                                                   "^": () => v.navigate(2), "@": () => v.askJump() };
+  if (navigation[e.key]) { e.preventDefault(); navigation[e.key](); return; }
   const key = e.key.toLowerCase();
   const tool = v.info.tools.find((t) => t.shortcut && t.shortcut.toLowerCase() === key);
   if (tool) { e.preventDefault(); v.selectTool(tool.name); }
@@ -544,6 +535,10 @@ class ViewerView {
       the latest render before it): a render begun since then, done, or
       slow enough to be showing its progress (see `sendRequest`). */
   private waiting: { since: number; after: number } | null = null;
+  /** Whether to make the view a step in the history, once it's asked for
+      (see `recordSoon`). */
+  private recordWanted = false;
+  private recordTimer: number | undefined;
   private drawPending = false;
   private dragFrom: { x: number; y: number } | null = null;
   /** On the sphere: the screen point (in the sphere's radii) where the
@@ -806,8 +801,9 @@ class ViewerView {
                      data: new ImageData(m.width, m.height), dirty: null };
     this.errorEl.hidden = true;
     if (!this.target) {
-      if (this.saved && !this.info.sphere) {
-        // (as it was saved)
+      if (this.saved) {
+        // (as it was saved: on the sphere, the engine's turned the globe
+        // as it was too)
         const ps = this.saved["pixel-size"] / this.density;
         this.target = { cx: this.saved.cx, cy: this.saved.cy, px: ps, py: ps * (view.py / view.px) };
       } else {
@@ -816,6 +812,8 @@ class ViewerView {
         const scale = m.width / this.canvas.width;
         this.target = { cx: view.cx, cy: view.cy, px: view.px * scale, py: view.py * scale };
       }
+      // (where it starts: the first step in its history)
+      this.recordWanted = true;
     }
     // (the engine's rendering this, without being asked: the first
     // render, or one of new parameters)
@@ -904,7 +902,11 @@ class ViewerView {
     const width = this.canvas.width, height = this.canvas.height;
     const turned = this.turn && (this.turn.from[0] !== this.turn.to[0] || this.turn.from[1] !== this.turn.to[1]);
     const moved = !sameView(t, this.sent.view) || this.sent.width !== width || this.sent.height !== height;
-    if (!turned && !moved) return;
+    if (!turned && !moved) {
+      // (a gesture's end, once its view's been asked for and answered)
+      if (this.recordWanted) { this.recordWanted = false; send({ type: "record", viewer: this.info.id }); }
+      return;
+    }
     this.waiting = { since: performance.now(), after: this.latest };
     // (turning the globe first, then any change of zoom or size)
     if (turned) {
@@ -960,6 +962,15 @@ class ViewerView {
     const p = this.pixel(e);
     if (!press.dragging) { if (this.handles.has("click")) this.toolEvent(0, p); }
     else if (this.handles.has("dragDone")) this.toolEvent(3, press.start, p);
+    // (a pan, or a turn of the globe, done: a step in the history)
+    else if (!this.toolDrags) this.recordSoon(0);
+  }
+
+  /** Make the view, once it's been asked for, a step in the history
+      (after `delay` ms with no more zooming, for a wheel or a pinch). */
+  private recordSoon(delay: number) {
+    clearTimeout(this.recordTimer);
+    this.recordTimer = window.setTimeout(() => { this.recordWanted = true; this.request(); }, delay);
   }
 
   /** A point of the canvas on the screen plane: in the sphere's radii from
@@ -1022,7 +1033,124 @@ class ViewerView {
     t.cy = my + (p.y - H / 2) * t.py;
     this.redraw();
     this.request();
+    this.recordSoon(300);
   }
+
+  /** Its menu, as the desktop's: moving about, the sphere or the plane,
+      its colorizer, and its options. */
+  menu(): MenuItem[] {
+    const c = this.info.colorizer;
+    const items: MenuItem[] = [
+      { kind: "action", label: "Last view", shortcut: "<", run: () => this.navigate(0) },
+      { kind: "action", label: "Next view", shortcut: ">", run: () => this.navigate(1) },
+      { kind: "action", label: "Jump to view…", shortcut: "@", run: () => this.askJump() },
+      { kind: "action", label: "Original view", shortcut: "^", run: () => this.navigate(2) },
+    ];
+    if (this.info.complex) {
+      items.push({ kind: "toggle", label: "Show on the sphere", on: this.info.sphere, toggle: () => this.navigate(3) });
+    }
+    if (c) {
+      items.push({ kind: "separator" }, { kind: "submenu", label: "Colorizer", items: () => [
+        ...c.items.map((i): MenuItem => ({
+          kind: "toggle", label: i.label, on: i.inUse, help: i.description ?? undefined,
+          toggle: () => { if (!i.inUse) send({ type: "colorizer", viewer: this.info.id, name: i.name }); } })),
+        { kind: "separator" },
+        { kind: "action", label: "Arguments…", enabled: c.arguments,
+          run: () => send({ type: "colorizerArguments", viewer: this.info.id }) },
+      ] });
+    }
+    items.push(
+      { kind: "separator" },
+      { kind: "toggle", label: "Show pointer position", on: this.pointerShown,
+        toggle: () => this.setPointerShown(!this.pointerShown) },
+      { kind: "toggle", label: "Use subpixel smoothing", on: this.info.smooth,
+        toggle: () => {
+          this.info.smooth = !this.info.smooth;
+          send({ type: "viewerSmoothing", viewer: this.info.id, on: this.info.smooth });
+        } });
+    return items;
+  }
+
+  /** The last view, the next, the original one, or the sphere (or the plane). */
+  navigate(what: Navigation) {
+    send({ type: "navigate", viewer: this.info.id, what });
+  }
+
+  /** The engine moved the view (going back, say): it's the target now,
+      and what the engine's rendering. On the sphere, or turning to or
+      from it, the last picture can't be moved to fit, so it goes. */
+  moved(m: { cx: number; cy: number; px: number; py: number; sphere: boolean }) {
+    if (m.sphere || this.info.sphere) this.frame = null;
+    this.info.sphere = m.sphere;
+    const view = { cx: m.cx, cy: m.cy, px: m.px, py: m.py };
+    this.target = { ...view };
+    this.sent = { view: { ...view }, width: this.canvas.width, height: this.canvas.height };
+    this.turn = null;
+    this.redraw();
+  }
+
+  /** "Jump to view…": where it is now, first (see `jumpFrom`). */
+  askJump() {
+    send({ type: "where", viewer: this.info.id });
+  }
+
+  /** Ask where to go: a center (on the sphere, the point to face) and a
+      pixel's size, starting from where it is. */
+  jumpFrom(x: number, y: number, pixelSize: number) {
+    const sphere = this.info.sphere;
+    askForm(this.element, "Jump to view", [
+      { label: sphere ? "Face x =" : "x =", value: String(x) },
+      { label: sphere ? "Face y =" : "y =", value: String(y) },
+      { label: "pixel size =", value: String(pixelSize) },
+    ], (values) => {
+      const [nx, ny, ps] = values.map((v) => Number(v.trim()));
+      if (![nx, ny, ps].every(Number.isFinite) || !(ps > 0)) return "Each should be a number (and the pixel size more than 0).";
+      send({ type: "jump", viewer: this.info.id, x: nx, y: ny, pixelSize: ps });
+      return null;
+    });
+  }
+
+  /** Ask for a colorizer's arguments, as the desktop does. */
+  askArguments(name: string, fields: { param: string; note: string; text: string }[]) {
+    askForm(this.element, `${name}: arguments`,
+            fields.map((f) => ({ label: `${f.param} =`, note: f.note, value: f.text })),
+            (answers) => {
+              send({ type: "colorizerAnswers", viewer: this.info.id, name, answers });
+              return null;
+            });
+  }
+}
+
+/** A small form over a viewer: each field a label, a note, and a text box;
+    OK (or Enter) gives `ok` the answers, which says what's wrong with
+    them, if anything (and then the form stays); Cancel (or Escape) closes
+    it. */
+function askForm(host: HTMLElement, title: string, fields: { label: string; note?: string; value: string }[],
+                 ok: (values: string[]) => string | null) {
+  host.querySelector(".viewer-form")?.remove();
+  const inputs = fields.map((f) => el("input", { type: "text", value: f.value, spellcheck: false }));
+  const error = el("div", { className: "form-error" });
+  const okButton = el("button", { type: "submit", textContent: "OK" });
+  const cancel = el("button", { type: "button", textContent: "Cancel" });
+  const form = el("form", { className: "viewer-form" },
+    el("div", { className: "form-title", textContent: title }),
+    ...fields.map((f, i) => el("label", { className: "form-field" },
+      el("span", { textContent: f.label }), inputs[i], f.note ? el("small", { textContent: f.note }) : "")),
+    error, el("div", { className: "form-buttons" }, cancel, okButton));
+  form.setAttribute("role", "dialog");
+  const close = () => form.remove();
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const problem = ok(inputs.map((i) => i.value));
+    if (problem) error.textContent = problem; else close();
+  });
+  cancel.addEventListener("click", close);
+  form.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); close(); } });
+  // (not the viewer's: no navigating, nor tools, from inside the form)
+  form.addEventListener("pointerdown", (e) => e.stopPropagation());
+  host.append(form);
+  inputs[0]?.focus();
+  inputs[0]?.select();
 }
 
 // ---------------------------------------------------------------------
@@ -1031,7 +1159,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
   const m = e.data;
   switch (m.type) {
     case "ready":
-      send({ type: "smoothing", on: smoothingBox.checked });
+      send({ type: "smoothing", on: smoothingAtFirst });
       send({ type: "density", value: density() });
       send({ type: "symbols" });
       status("Loading the library…");
@@ -1079,6 +1207,9 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
              [{ label: "Translate", run: () => { status(`Translating ${m.name}…`); send({ type: "translate" }); } }]);
       break;
     case "pointer": viewers.get(m.viewer)?.showPointer(m.text); break;
+    case "view": viewers.get(m.viewer)?.moved(m); break;
+    case "where": viewers.get(m.viewer)?.jumpFrom(m.x, m.y, m.pixelSize); break;
+    case "colorizerArguments": viewers.get(m.viewer)?.askArguments(m.name, m.fields); break;
     case "analysis": scriptEditor?.analysis(m.id, m); break;
     case "symbols": symbolTables = [m.names, m.accents]; scriptEditor?.setSymbols(m.names, m.accents); break;
     case "rebuildError": scriptEditor?.rebuildFailed(m.error); break;

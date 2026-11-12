@@ -38,12 +38,18 @@ export async function start() {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 },
                                        deviceScaleFactor: Number(process.env.FS_DPR || 1) });
   const app = new App(page, () => { browser.close(); server.close(); });
-  // (every message from the engine, kept on the page; and a way to send
-  // it requests directly)
+  // (every message from the engine, kept on the page, and every request
+  // the page sends it; and a way to send it requests directly)
   await page.addInitScript(() => {
     const W = window.Worker;
     window.__messages = [];
+    // (and the page's requests to it)
+    window.__sent = [];
     window.Worker = class extends W {
+      postMessage(m, ...rest) {
+        if (m && typeof m === "object" && m.type !== "openFile") window.__sent.push(m);
+        return super.postMessage(m, ...rest);
+      }
       constructor(...a) {
         super(...a);
         window.__send = (m) => this.postMessage(m);

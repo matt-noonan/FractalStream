@@ -103,6 +103,14 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "resize": await engine.fs_resize(r.viewer, r.width, r.height); break;
       case "smoothing": await engine.fs_smoothing(r.on); break;
       case "density": await engine.fs_density(r.value); break;
+      case "viewerSmoothing": await engine.fs_viewer_smoothing(r.viewer, r.on); break;
+      case "navigate": await engine.fs_navigate(r.viewer, r.what); break;
+      case "record": await engine.fs_record(r.viewer); break;
+      case "jump": await engine.fs_jump(r.viewer, r.x, r.y, r.pixelSize); break;
+      case "where": await engine.fs_where(r.viewer); break;
+      case "colorizer": await engine.fs_colorizer(r.viewer, r.name); break;
+      case "colorizerArguments": await engine.fs_colorizer_arguments(r.viewer); break;
+      case "colorizerAnswers": await engine.fs_colorizer_answers(r.viewer, r.name, JSON.stringify(r.answers)); break;
       case "selectTool": await engine.fs_select_tool(r.viewer, r.name); break;
       case "event": await engine.fs_event(r.viewer, r.kind, r.x1, r.y1, r.x2, r.y2); break;
       case "button": await engine.fs_button(r.viewer, r.label); break;

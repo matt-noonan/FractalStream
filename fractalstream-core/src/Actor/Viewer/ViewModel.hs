@@ -1,8 +1,9 @@
 -- | What part of the model a viewer is looking at, and the history of
 -- its views that "Last view" and "Next view" go back and forth through.
 -- (Its own module, so that a viewer's window can carry its history
--- across a rebuild of the project: see 'UI.WxProperties.KeptFrame'.)
-module UI.ViewModel
+-- across a rebuild of the project: see the desktop's
+-- 'UI.WxProperties.KeptFrame'; the web app's engine keeps each viewer's.)
+module Actor.Viewer.ViewModel
   ( Model(..)
   , History(..)
   , historyBack

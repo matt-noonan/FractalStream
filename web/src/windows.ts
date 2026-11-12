@@ -2,7 +2,9 @@
 // drag it by and a corner to resize it from; clicking one brings it to the
 // front. A window can be minimized to just its title bar (and back), by
 // double-clicking the title bar, or with its button there. A window can
-// have a menu of options (☰, in its title bar), each one on or off.
+// have a menu (☰, in its title bar): actions (with their keyboard
+// shortcuts shown), options on or off, and submenus, which open in its
+// place (with a way back).
 
 export interface WindowOptions {
   title: string;
@@ -16,15 +18,17 @@ export interface WindowOptions {
   onResize?: (width: number, height: number) => void;
   /** Whether it starts minimized. */
   minimized?: boolean;
-  /** Its menu's options: each one on or off, toggled by choosing it. */
-  menu?: MenuOption[];
+  /** Its menu's items, as they are when it's opened. */
+  menu?: () => MenuItem[];
 }
 
-export interface MenuOption {
-  label: string;
-  on: () => boolean;
-  toggle: () => void;
-}
+export type MenuItem =
+  /** Something to do (unless it's not `enabled`). */
+  | { kind: "action"; label: string; run: () => void; shortcut?: string; enabled?: boolean; help?: string }
+  /** An option, on or off, toggled by choosing it. */
+  | { kind: "toggle"; label: string; on: boolean; toggle: () => void; shortcut?: string; help?: string }
+  | { kind: "submenu"; label: string; items: () => MenuItem[] }
+  | { kind: "separator" };
 
 const MIN_SIZE = 80;
 
@@ -45,7 +49,7 @@ export class Desk {
     const minimize = Object.assign(document.createElement("button"), { type: "button", className: "window-minimize" });
     const title = Object.assign(document.createElement("div"), { className: "window-title" });
     title.append(label);
-    if (options.menu?.length) title.append(menuButton(options.menu));
+    if (options.menu) title.append(menuButton(options.menu));
     title.append(minimize);
     const body = Object.assign(document.createElement("div"), { className: "window-body" });
     const grip = Object.assign(document.createElement("div"), { className: "window-grip", title: "Resize" });
@@ -123,9 +127,9 @@ function drag<S>(handle: HTMLElement, move: (dx: number, dy: number, start: S) =
   });
 }
 
-/** A window's ☰ button, and the menu of options it opens (closed by
-    choosing one, by clicking elsewhere, or with Escape). */
-function menuButton(options: MenuOption[]): HTMLElement {
+/** A window's ☰ button, and the menu it opens (closed by choosing an
+    item, by clicking elsewhere, or with Escape). */
+function menuButton(items: () => MenuItem[]): HTMLElement {
   const button = Object.assign(document.createElement("button"), {
     type: "button", className: "window-menu-button", textContent: "☰", title: "Options" });
   button.setAttribute("aria-label", "Options");
@@ -142,16 +146,55 @@ function menuButton(options: MenuOption[]): HTMLElement {
   };
   const outside = (e: Event) => { if (!wrap.contains(e.target as Node)) close(); };
   const escape = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+  // (a menu's items, and, for a submenu, the way back to its parent's)
+  const show = (list: MenuItem[], back: (() => void) | null) => {
+    const m = menu!;
+    m.replaceChildren();
+    const row = (label: string, role: string, shortcut?: string) => {
+      const b = Object.assign(document.createElement("button"), { type: "button" });
+      b.setAttribute("role", role);
+      b.append(Object.assign(document.createElement("span"), { className: "menu-label", textContent: label }));
+      if (shortcut) b.append(Object.assign(document.createElement("kbd"), { textContent: shortcut }));
+      m.append(b);
+      return b;
+    };
+    if (back) {
+      const b = row("‹ Back", "menuitem");
+      b.classList.add("menu-back");
+      b.addEventListener("click", back);
+    }
+    for (const item of list) {
+      switch (item.kind) {
+        case "separator":
+          m.append(Object.assign(document.createElement("hr"), { className: "menu-separator" }));
+          break;
+        case "action": {
+          const b = row(item.label, "menuitem", item.shortcut);
+          b.disabled = item.enabled === false;
+          if (item.help) b.title = item.help;
+          b.addEventListener("click", () => { close(); item.run(); });
+          break;
+        }
+        case "toggle": {
+          const b = row(item.label, "menuitemcheckbox", item.shortcut);
+          b.setAttribute("aria-checked", String(item.on));
+          if (item.help) b.title = item.help;
+          b.addEventListener("click", () => { close(); item.toggle(); });
+          break;
+        }
+        case "submenu": {
+          const b = row(item.label, "menuitem", "›");
+          b.setAttribute("aria-haspopup", "menu");
+          b.addEventListener("click", () => show(item.items(), () => show(list, back)));
+          break;
+        }
+      }
+    }
+  };
   const open = () => {
     menu = Object.assign(document.createElement("div"), { className: "window-menu" });
     menu.setAttribute("role", "menu");
-    for (const o of options) {
-      const item = Object.assign(document.createElement("button"), { type: "button", textContent: o.label });
-      item.setAttribute("role", "menuitemcheckbox");
-      item.setAttribute("aria-checked", String(o.on()));
-      item.addEventListener("click", () => { o.toggle(); close(); });
-      menu.append(item);
-    }
+    show(items(), null);
     wrap.append(menu);
     button.setAttribute("aria-expanded", "true");
     document.addEventListener("pointerdown", outside, { capture: true });

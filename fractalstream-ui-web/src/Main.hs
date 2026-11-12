@@ -45,7 +45,24 @@ tables (@tables:@) it was saved with, and is saved with its own.
   with: tools and overlays are given a CSS pixel's size, as their
   @pixel_size@.
 * @fs_smoothing(on)@: whether viewers are smoothed (each pixel the average
-  of four samples, as fsrun's captures are), for every viewer from now on.
+  of four samples, as fsrun's captures are) to begin with: each new
+  viewer's choice, until @fs_viewer_smoothing(viewer, on)@ changes it
+  ("Use subpixel smoothing", per viewer, as on the desktop; not saved).
+* @fs_navigate(viewer, what)@: 0 the last view, 1 the next one (in the
+  viewer's history), 2 its original view (the script's, of the kind it
+  shows now: plane or sphere), 3 a complex viewer on the sphere instead of
+  the plane, or back. The engine posts the view it goes to (@view@).
+* @fs_record(viewer)@: the viewer's view, as it is now, is a step in its
+  history (the page says so at the end of a gesture: a drag, a zoom).
+* @fs_jump(viewer, x, y, pixelSize)@: go to a view: centered on (x, y)
+  (on the sphere, the globe turned to face it), with a pixel this size
+  (a CSS pixel's). @fs_where(viewer)@ posts where it is now, so (@where@).
+* @fs_colorizer(viewer, name)@: use another colorizer for the viewer,
+  rebuilding the project, as the desktop does; one whose parameters the
+  viewer can't fill in asks for its arguments first (@colorizerArguments@,
+  answered with @fs_colorizer_answers(viewer, name, answers)@, a JSON list
+  of strings). @fs_colorizer_arguments(viewer)@ asks for the arguments of
+  the one in use.
 * @fs_select_tool(viewer, name)@: select a viewer's tool (@""@: none, to
   navigate), as the desktop app does: the old one's deactivated (and its
   timers stopped), the new one activated (and refreshed, if it asks to be)
@@ -84,6 +101,14 @@ Messages:
 > { "type": "library", "sections": [ { "name", "entries": [ { "title", "description", "preview" } ] } ] }
 > { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
 > { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
+> { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere" }   (the engine moved the view: a pixel's size in the canvas's pixels)
+> { "type": "where", "viewer", "x", "y", "pixelSize" }
+> { "type": "colorizerArguments", "viewer", "name", "fields": [ { "param", "note", "text" } ] }
+
+A viewer's info has, too: "complex" (whether it can show the sphere),
+"smooth", and "colorizer": null, or { "inUse", "arguments": <whether the
+one in use has parameters>, "items": [ { "name", "label", "description",
+"inUse", "asks": <whether choosing it asks for arguments> } ] }.
 > { "type": "pointer", "viewer", "text" }
 > { "type": "field", "key", "error": <message> or null, "color": <#rrggbb, for a color field> }
 > { "type": "fieldText", "key", "text", "color": <as above> }   (a tool's handler changed it)
@@ -143,7 +168,12 @@ import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progre
                      pointerText)
 import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
-import Actor.Viewer.Sphere (trackballRotation, screenToPlane)
+import Actor.Viewer.Sphere (trackballRotation, screenToPlane, Rotation(..), rotationFacing, rotateBy, sphereToPlane)
+import Actor.Viewer.ViewModel (Model(..), History(..), historyBack, historyForward, historyAppend)
+import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceArguments, missingArguments,
+                        argumentFields, choiceWithArguments)
+import Actor.Event (Coordinate(..))
+import Data.List (find)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
 import Actor.Ensemble (buildToolContext, buildEnsembleWithColorizers, carryOverProjectState)
@@ -277,6 +307,21 @@ data ViewerState = ViewerState
     --   a render
   , vsRenders :: IORef Int
     -- ^ its renders' number (the latest's)
+  , vsSmooth :: IORef Bool
+    -- ^ whether it's smoothed ("Use subpixel smoothing")
+  , vsHistory :: IORef (Maybe History)
+    -- ^ its views, for "Last view" and "Next view" (none yet, until a
+    --   step is recorded)
+  }
+
+-- | What a viewer keeps through a rebuild of the project (by its title):
+-- its tool, view (and size), smoothing, and history.
+data Carried = Carried
+  { cTool :: Maybe String
+  , cModel :: Model
+  , cSize :: Dimensions
+  , cSmooth :: Bool
+  , cHistory :: Maybe History
   }
 
 data ActiveTool = ActiveTool
@@ -351,6 +396,14 @@ foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
 foreign export javascript "fs_smoothing" setSmoothing :: Bool -> IO ()
 foreign export javascript "fs_density" setDensity :: Double -> IO ()
+foreign export javascript "fs_viewer_smoothing" setViewerSmoothing :: Int -> Bool -> IO ()
+foreign export javascript "fs_navigate" navigateTo :: Int -> Int -> IO ()
+foreign export javascript "fs_record" record :: Int -> IO ()
+foreign export javascript "fs_jump" jump :: Int -> Double -> Double -> Double -> IO ()
+foreign export javascript "fs_where" whereIs :: Int -> IO ()
+foreign export javascript "fs_colorizer" chooseColorizer :: Int -> JSString -> IO ()
+foreign export javascript "fs_colorizer_arguments" colorizerArguments :: Int -> IO ()
+foreign export javascript "fs_colorizer_answers" colorizerAnswers :: Int -> JSString -> JSString -> IO ()
 foreign export javascript "fs_select_tool" selectTool :: Int -> JSString -> IO ()
 foreign export javascript "fs_event" toolEvent :: Int -> Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_button" toolButton :: Int -> JSString -> IO ()
@@ -437,7 +490,8 @@ save views = guarded $ readIORef sessionRef >>= \case
     -- (the page's view state, under its own key)
     case Aeson.eitherDecodeStrict (Text.encodeUtf8 (Text.pack (fromJSString views))) of
       Left err -> postError ("couldn't save the view: " ++ err)
-      Right (v :: Aeson.Value) -> modifyValue (ensembleFrontendProperties sEnsemble) (KM.insert "web-properties" v)
+      Right (v :: Aeson.Value) -> withViews sViewers v >>= \v' ->
+        modifyValue (ensembleFrontendProperties sEnsemble) (KM.insert "web-properties" v')
     -- (the values it was left with; and its tables, if its file had them)
     changedValues sEnsemble >>= modifyValue (ensembleFrontendProperties sEnsemble) . writeSavedValues
     hasTables <- KM.member "tables" <$> getDynamic (ensembleFrontendProperties sEnsemble)
@@ -477,8 +531,8 @@ openProject how projectTitle fileName contents = do
 -- its panel and viewers. On a rebuild (from an edited script), each
 -- viewer the new project still has (by its title) gets the tool it had,
 -- if it still has one by that name (or none, if it had none).
-startProject :: Opening -> String -> String -> Bool -> Map.Map String (Maybe String) -> Ensemble -> IO ()
-startProject how projectTitle fileName rebuilt toolsBefore ensemble = do
+startProject :: Opening -> String -> String -> Bool -> Map.Map String Carried -> Ensemble -> IO ()
+startProject how projectTitle fileName rebuilt carried ensemble = do
   close
   backend <- getBackend
 
@@ -500,7 +554,18 @@ startProject how projectTitle fileName rebuilt toolsBefore ensemble = do
 
   -- A render loop for each viewer: it renders whenever asked (once for
   -- however many asks came while it was busy), and posts the frame.
+  saved <- KM.lookup "web-properties" <$> getDynamic (ensembleFrontendProperties ensemble)
+  defaultSmooth <- readIORef smoothingRef
   loops <- forM viewers $ \(k, viewer) -> do
+    title <- getDynamic (vTitle viewer)
+    -- (what it had before a rebuild; else, on the sphere or the plane, as
+    -- its file saved it)
+    let before = Map.lookup title carried
+    case before of
+      Just Carried{..} -> setValue (vSize viewer) cSize >> setViewerModel viewer cModel
+      Nothing -> applySavedView viewer saved title
+    smooth <- newIORef (maybe defaultSmooth cSmooth before)
+    history <- newIORef (cHistory =<< before)
     signal <- newMVar ()   -- (the first frame)
     tool <- newIORef Nothing
     lock <- newMVar ()
@@ -509,7 +574,7 @@ startProject how projectTitle fileName rebuilt toolsBefore ensemble = do
     running <- newIORef Nothing
     covered <- newIORef Nothing
     renders <- newIORef 0
-    let vs = ViewerState k viewer signal tool draw toolRefresh running lock covered renders
+    let vs = ViewerState k viewer signal tool draw toolRefresh running lock covered renders smooth history
     tid <- forkIO (renderLoop vs)
     drawTid <- forkIO (drawingLoop vs)
     unwatch <- onParameterChanges viewer $ do
@@ -535,14 +600,17 @@ startProject how projectTitle fileName rebuilt toolsBefore ensemble = do
     title <- getDynamic (vTitle viewer)
     Dimensions (w, h) <- getDynamic (vSize viewer)
     sphere <- (== SphereView) <$> getDynamic (vView viewer)
+    smooth <- maybe (pure defaultSmooth) (readIORef . vsSmooth) (lookup k (map fst loops))
+    colorizer <- colorizerInfo ensemble title
     tools <- getDynamic (vTools viewer) >>= mapM (\t -> do
       let ToolInfo{..} = toolInfo t
       name <- getDynamic (source tiName)
       shortcut <- getDynamic tiShortcut
       help <- getDynamic tiShortHelp
       pure (Aeson.object [ "name" .= name, "shortcut" .= shortcut, "help" .= help ]))
+    let complex = case vCoordinate viewer of ComplexCoordinate _ -> True; _ -> False
     pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere
-                       , "tools" .= tools ])
+                       , "tools" .= tools, "complex" .= complex, "smooth" .= smooth, "colorizer" .= colorizer ])
   let translated = case how of Translated _ -> True; _ -> False
   views <- KM.lookup "web-properties" <$> getDynamic (ensembleFrontendProperties ensemble)
   script <- getDynamic (ensembleSourceScript ensemble)
@@ -564,7 +632,7 @@ startProject how projectTitle fileName rebuilt toolsBefore ensemble = do
   forM_ (map (snd . fst) loops) $ \vs -> do
     title <- getDynamic (vTitle (vsViewer vs))
     names <- getDynamic (vTools (vsViewer vs)) >>= mapM (getDynamic . source . tiName . toolInfo)
-    case Map.lookup title toolsBefore of
+    case cTool <$> Map.lookup title carried of
       -- (its tool before the rebuild, if it still has it)
       Just (Just name) | name `elem` names -> activateTool vs name
       Just Nothing -> pure ()
@@ -599,7 +667,7 @@ renderHold = 0.1
 renderLoop :: ViewerState -> IO ()
 renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = forever $ do
   takeMVar signal
-  smooth <- readIORef smoothingRef
+  smooth <- readIORef (vsSmooth vs)
   -- (the viewer's code sees a CSS pixel's size, as tools do: see 'densityRef')
   density <- readIORef densityRef
   covered <- atomicModifyIORef' (vsCovered vs) (Nothing,)
@@ -701,11 +769,224 @@ setDensity :: Double -> IO ()
 setDensity d = guarded (writeIORef densityRef (max 1 d))
 
 setSmoothing :: Bool -> IO ()
-setSmoothing on = guarded $ do
-  before <- atomicModifyIORef' smoothingRef (on,)
-  when (before /= on) $ readIORef sessionRef >>=
-    mapM_ (\Session{..} -> forM_ (Map.elems sViewers) $ \vs ->
-             writeIORef (vsCovered vs) Nothing >> requestRender (vsSignal vs))
+setSmoothing on = guarded (writeIORef smoothingRef on)
+
+setViewerSmoothing :: Int -> Bool -> IO ()
+setViewerSmoothing k on = withViewerState k $ \vs -> do
+  before <- atomicModifyIORef' (vsSmooth vs) (on,)
+  when (before /= on) $ writeIORef (vsCovered vs) Nothing >> requestRender (vsSignal vs)
+
+------------------------------------------------------------------------
+-- Views: history, navigating, the sphere or the plane
+
+-- | A viewer's view, as the desktop's history keeps them (a pixel's size
+-- in the canvas's pixels).
+viewerModel :: Viewer -> IO Model
+viewerModel v = do
+  c <- getDynamic (vCenter v)
+  px <- getDynamic (vPixelSize v)
+  aspect <- getDynamic (vAspect v)
+  kind <- getDynamic (vView v)
+  r <- getDynamic (vRotation v)
+  pure (Model c (px, px * aspect) (if kind == SphereView then Just r else Nothing))
+
+setViewerModel :: Viewer -> Model -> IO ()
+setViewerModel v (Model c (px, py) mr) = do
+  setValue (vCenter v) c
+  setValue (vPixelSize v) px
+  setValue (vAspect v) (py / px)
+  case mr of
+    Nothing -> setValue (vView v) PlaneView
+    Just r -> setValue (vRotation v) r >> setValue (vView v) SphereView
+
+-- | Go to a view (rendering it), and tell the page.
+goTo :: ViewerState -> Model -> IO ()
+goTo vs m = do
+  setViewerModel (vsViewer vs) m
+  writeIORef (vsCovered vs) Nothing
+  requestRender (vsSignal vs)
+  let Model (cx, cy) (px, py) mr = m
+  post $ Aeson.object [ "type" .= ("view" :: Text.Text), "viewer" .= vsId vs, "cx" .= cx, "cy" .= cy
+                      , "px" .= px, "py" .= py, "sphere" .= isJust mr ]
+
+-- | Go to a view, as a new step in the history (after the view it's in).
+changeViewTo :: ViewerState -> Model -> IO ()
+changeViewTo vs m = do
+  now <- viewerModel (vsViewer vs)
+  modifyIORef' (vsHistory vs) (Just . historyAppend m . fromMaybe (History [] now []))
+  goTo vs m
+
+record :: Int -> IO ()
+record k = withViewerState k $ \vs -> do
+  now <- viewerModel (vsViewer vs)
+  modifyIORef' (vsHistory vs) (Just . maybe (History [] now []) (historyAppend now))
+
+navigateTo :: Int -> Int -> IO ()
+navigateTo k what = withViewerState k $ \vs -> do
+  let v = vsViewer vs
+  d <- readIORef densityRef
+  m <- viewerModel v
+  let step f = readIORef (vsHistory vs) >>= \h -> forM_ (h >>= f) $ \(h', m') ->
+        writeIORef (vsHistory vs) (Just h') >> goTo vs m'
+      -- (the script's views are in CSS pixels; the engine's in the canvas's)
+      originalPlane = let (c, px) = vOriginalPlaneView v in Model c (px / d, px / d * vOriginalAspect v) Nothing
+      sphereAt r = Model (0, 0) (vOriginalSpherePixelSize v / d, vOriginalSpherePixelSize v / d) (Just r)
+  case what of
+    0 -> step historyBack
+    1 -> step historyForward
+    -- (the original view of the kind it shows now)
+    2 -> changeViewTo vs (if isJust (modelRotation m) then sphereAt (vOriginalRotation v) else originalPlane)
+    -- (the point in the middle of the view stays there, at the script's
+    -- zoom for the other kind; see 'Actor.Viewer.switchView')
+    3 -> case vCoordinate v of
+      ComplexCoordinate _ -> changeViewTo vs $ case modelRotation m of
+        Nothing -> sphereAt (rotationFacing (modelCenter m))
+        Just r -> let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
+                      finite a = not (isNaN a || isInfinite a) && abs a < 1e300
+                      px = snd (vOriginalPlaneView v) / d
+                  in Model (if finite cx && finite cy then c else (0, 0)) (px, px) Nothing
+      _ -> pure ()
+    _ -> pure ()
+
+-- | Jump to a view: centered on a point (on the sphere, the globe turned
+-- to face it), with a pixel of a size (a CSS pixel's).
+jump :: Int -> Double -> Double -> Double -> IO ()
+jump k x y pixelSize = withViewerState k $ \vs -> do
+  d <- readIORef densityRef
+  Model _ (px, py) mr <- viewerModel (vsViewer vs)
+  let dz = pixelSize / d
+  changeViewTo vs $ case mr of
+    Nothing -> Model (x, y) (dz, dz * py / px) Nothing
+    Just _ -> Model (0, 0) (dz, dz) (Just (rotationFacing (x, y)))
+
+-- | Where a viewer is: the point in the middle of its view (on the
+-- sphere, the one the globe faces), and a CSS pixel's size.
+whereIs :: Int -> IO ()
+whereIs k = withViewerState k $ \vs -> do
+  d <- readIORef densityRef
+  Model c (px, _) mr <- viewerModel (vsViewer vs)
+  let (x, y) = maybe c (\r -> sphereToPlane (rotateBy r (0, 0, 1))) mr
+  post $ Aeson.object [ "type" .= ("where" :: Text.Text), "viewer" .= k, "x" .= x, "y" .= y
+                      , "pixelSize" .= (px * d) ]
+
+-- | A viewer's view as its file saved it (in @web-properties:@, with the
+-- desktop's keys): on the sphere (@view: sphere@), the globe's rotation
+-- (@rotation@: a unit quaternion, w x y z). Its center and zoom the page
+-- sets.
+applySavedView :: Viewer -> Maybe Aeson.Value -> String -> IO ()
+applySavedView v saved title = case saved of
+  Just (Aeson.Object o)
+    | Just (Aeson.Object vs) <- KM.lookup "viewers" o
+    , Just (Aeson.Object p) <- KM.lookup (fromString title) vs -> do
+        forM_ (KM.lookup "rotation" p >>= decodeValue) $ \case
+          [w, x, y, z] -> setValue (vRotation v) (Rotation w x y z)
+          _ -> pure ()
+        case KM.lookup "view" p of
+          Just (Aeson.String "sphere") | isComplex -> setValue (vView v) SphereView
+          Just (Aeson.String "plane") -> setValue (vView v) PlaneView
+          _ -> pure ()
+  _ -> pure ()
+  where
+    decodeValue :: Aeson.Value -> Maybe [Double]
+    decodeValue x = case Aeson.fromJSON x of Aeson.Success r -> Just r; _ -> Nothing
+    isComplex = case vCoordinate v of ComplexCoordinate _ -> True; _ -> False
+
+-- | The page's view state, with what the engine knows of each viewer's
+-- view: on the sphere or the plane (when it isn't the script's), and the
+-- globe's rotation.
+withViews :: Map.Map Int ViewerState -> Aeson.Value -> IO Aeson.Value
+withViews viewers = \case
+  Aeson.Object o | Just (Aeson.Object vs) <- KM.lookup "viewers" o -> do
+    vs' <- foldM (\acc st -> do
+      let v = vsViewer st
+      title <- getDynamic (vTitle v)
+      kind <- getDynamic (vView v)
+      Rotation w x y z <- getDynamic (vRotation v)
+      let extra = [ ("view", Aeson.String (if kind == SphereView then "sphere" else "plane")) | kind /= vOriginalView v ]
+               ++ [ ("rotation", Aeson.toJSON [w, x, y, z]) | kind == SphereView ]
+      pure $ case KM.lookup (fromString title) acc of
+        Just (Aeson.Object p) -> KM.insert (fromString title) (Aeson.Object (foldr (uncurry KM.insert) p extra)) acc
+        _ -> acc) vs (Map.elems viewers)
+    pure (Aeson.Object (KM.insert "viewers" (Aeson.Object vs') o))
+  other -> pure other
+
+------------------------------------------------------------------------
+-- Colorizers
+
+-- | A viewer's colorizer menu: the one in use, and those it could use
+-- (as the desktop's menu lists them).
+colorizerInfo :: Ensemble -> String -> IO Aeson.Value
+colorizerInfo ens title = pure $ case Map.lookup title (ensembleViewerColorizers ens) of
+  Nothing -> Aeson.Null
+  Just ViewerColorizer{..} ->
+    let available = ensembleAvailableColorizers ens
+        inUse c = choiceName colorizerInUse == colorizerName c
+        needsArgs c = not (null (missingArguments colorizerScope c))
+        label c | inUse c = colorizerInUse
+                | needsArgs c = colorizerName c ++ "..."
+                | otherwise = colorizerName c
+    in Aeson.object
+      [ "inUse" .= colorizerInUse
+      , "arguments" .= maybe False (not . null . colorizerParams) (find inUse available)
+      , "items" .= [ Aeson.object [ "name" .= colorizerName c, "label" .= label c
+                                  , "description" .= colorizerDescription c
+                                  , "inUse" .= inUse c, "asks" .= needsArgs c ]
+                   | c <- available ] ]
+
+-- | Choose a colorizer for a viewer, as the desktop's menu does: at once,
+-- if the viewer can fill in its parameters; else asking for its
+-- arguments first (starting from its default's, if it's the default).
+chooseColorizer :: Int -> JSString -> IO ()
+chooseColorizer k name = withColorizers k $ \vs title _ vc available -> do
+  let n = fromJSString name
+  forM_ (find ((== n) . colorizerName) available) $ \c ->
+    unless (choiceName (colorizerInUse vc) == n) $
+      if null (missingArguments (colorizerScope vc) c)
+        then useColorizer title n
+        else askArguments vs vc c (if choiceName (colorizerDefault vc) == n then choiceArguments (colorizerDefault vc) else "")
+
+-- | Ask for the arguments of the colorizer in use.
+colorizerArguments :: Int -> IO ()
+colorizerArguments k = withColorizers k $ \vs _ _ vc available ->
+  forM_ (find ((== choiceName (colorizerInUse vc)) . colorizerName) available) $ \c ->
+    askArguments vs vc c (choiceArguments (colorizerInUse vc))
+
+askArguments :: ViewerState -> ViewerColorizer -> Colorizer -> String -> IO ()
+askArguments vs vc c written = post $ Aeson.object
+  [ "type" .= ("colorizerArguments" :: Text.Text), "viewer" .= vsId vs, "name" .= colorizerName c
+  , "fields" .= [ Aeson.object [ "param" .= p, "note" .= note, "text" .= text ]
+                | (p, note, text) <- argumentFields (colorizerScope vc) c written ] ]
+
+-- | The answers to 'askArguments': use the colorizer with them.
+colorizerAnswers :: Int -> JSString -> JSString -> IO ()
+colorizerAnswers k name answers = withColorizers k $ \_ title _ _ available ->
+  case Aeson.eitherDecodeStrict (Text.encodeUtf8 (Text.pack (fromJSString answers))) of
+    Left err -> postError ("couldn't read the arguments: " ++ err)
+    Right (as :: [String]) -> forM_ (find ((== fromJSString name) . colorizerName) available) $ \c ->
+      useColorizer title (choiceWithArguments c as)
+
+withColorizers :: Int -> (ViewerState -> String -> Ensemble -> ViewerColorizer -> [Colorizer] -> IO ()) -> IO ()
+withColorizers k act = guarded $ readIORef sessionRef >>= \case
+  Nothing -> pure ()
+  Just Session{..} -> forM_ (Map.lookup k sViewers) $ \vs -> do
+    title <- getDynamic (vTitle (vsViewer vs))
+    forM_ (Map.lookup title (ensembleViewerColorizers sEnsemble)) $ \vc ->
+      act vs title sEnsemble vc (ensembleAvailableColorizers sEnsemble)
+
+-- | Rebuild the project with a viewer's colorizer chosen (choosing its
+-- default is the same as not choosing one, which keeps the project file
+-- tidy), as the desktop does. If it doesn't build, the project stays as
+-- it was, and says why.
+useColorizer :: String -> String -> IO ()
+useColorizer title chosen = readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  choices <- getDynamic (ensembleColorizerChoices sEnsemble)
+  let isDefault = (Just chosen ==) . fmap colorizerDefault $ Map.lookup title (ensembleViewerColorizers sEnsemble)
+      choices' | isDefault = Map.delete title choices
+               | otherwise = Map.insert title chosen choices
+  src <- getDynamic (ensembleSourceScript sEnsemble)
+  buildEnsembleWithColorizers choices' src >>= \case
+    Left (_, err) -> postError ("Couldn't use that colorizer: " ++ err)
+    Right new -> rebuildAs new)
 
 rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 rotate k fx fy tx ty = withViewerState k $ \vs -> do
@@ -981,12 +1262,22 @@ rebuild text = guarded $ readIORef sessionRef >>= \case
     choices <- getDynamic (ensembleColorizerChoices sEnsemble)
     buildEnsembleWithColorizers choices src >>= \case
       Left err -> post $ Aeson.object [ "type" .= ("rebuildError" :: Text.Text), "error" .= errorJSON src err ]
-      Right new -> do
-        toolsBefore <- fmap Map.fromList . forM (Map.elems sViewers) $ \vs -> do
-          title <- getDynamic (vTitle (vsViewer vs))
-          (title,) . fmap atName <$> readIORef (vsTool vs)
-        carryOverProjectState sEnsemble new
-        startProject sOpening sTitle sFileName True toolsBefore new
+      Right new -> rebuildAs new
+
+-- | Show a project rebuilt from the open one (edited, or with another
+-- colorizer), with everything about it that isn't in its script carried
+-- over (values, tables, autocolor, ...), and each viewer's tool, view,
+-- smoothing and history (by title).
+rebuildAs :: Ensemble -> IO ()
+rebuildAs new = readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  carried <- fmap Map.fromList . forM (Map.elems sViewers) $ \vs -> do
+    let v = vsViewer vs
+    title <- getDynamic (vTitle v)
+    c <- Carried <$> (fmap atName <$> readIORef (vsTool vs)) <*> viewerModel v <*> getDynamic (vSize v)
+                 <*> readIORef (vsSmooth vs) <*> readIORef (vsHistory vs)
+    pure (title, c)
+  carryOverProjectState sEnsemble new
+  startProject sOpening sTitle sFileName True carried new)
 
 ------------------------------------------------------------------------
 -- The panel
