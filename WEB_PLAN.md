@@ -381,6 +381,16 @@ web now throws it away, for clean pictures. Revisit when the desktop
 moves onto `renderProgressively`: keep the pieces a dropped render
 finished at full resolution, reprojected, as the desktop's seed does.
 
+**For the desktop too** (the user's request, after trying it: these
+made "a significant difference to the smooth feel" on the web): when the
+desktop moves onto `renderProgressively`, give it the same techniques:
+hold every render's first update for 100 ms, not only new parameters'
+(so a quick render shows whole, with no coarse passes); pace view
+changes so a quick render isn't cancelled mid-drag (the next waits for
+it to finish, or to be slow enough to show progress); and don't seed
+from a cancelled render's partial pieces where that leaves a patchwork.
+Compare by hand, and with recordings, against the desktop as it is.
+
 **Next, for the sphere:** the desktop's `reprojectedSeed` turns the old
 picture with the globe (each new pixel: the point under it on the newly
 turned globe, then where that point was on the old one's screen), marks
