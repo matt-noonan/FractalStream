@@ -397,7 +397,10 @@ turned globe, then where that point was on the old one's screen), marks
 the pixels off the globe final, and leaves undrawn only what was on the
 far side. The web page only moves and scales the old frame, which can't
 follow a turn, so a slow sphere viewer still shows coarse passes after a
-turn. Porting that reprojection to the page is the fix.
+turn. Porting that reprojection to the page is the fix. **Deferred**
+(2026-11-12): with the hold and pacing above, the user found the sphere
+smooth enough on every example tried; revisit if a slow sphere viewer
+turns roughly.
 
 ### 2026-11-12: Progressive rendering, in tiles
 
