@@ -139,7 +139,11 @@ executable FractalStream
   else
      cxx-sources: cbits/magnify.cpp
      cxx-options: -std=c++17
-     extra-libraries: c++
+     -- (the C++ runtime: clang's on macOS, GCC's elsewhere)
+     if os(darwin)
+        extra-libraries: c++
+     else
+        extra-libraries: stdc++
 
   -- A GUI program, without a console window. GHC's default manifest is left
   -- out, since the Windows resources Setup.hs links in (windows/*.rc)
