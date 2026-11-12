@@ -29,6 +29,13 @@ module Actor.Viewer
   , withRenderedViewerBuffer
   , RenderedBuffer(..)
   , renderViewerBuffer
+  , renderViewerBufferAt
+  , Progressive(..)
+  , ImagePiece(..)
+  , renderProgressively
+  , ImageTarget(..)
+  , renderProgressivelyInto
+  , pointerText
   , viewProjection
   , switchView
   , centerViewOn
@@ -73,12 +80,14 @@ import Language.Draw
 import Language.Code.Parser
 import Control.Concurrent.MVar
 import Task.Concurrent (forPool_, renderConcurrency)
+import Task.Block (progressivePlan)
 import Language.Parser.SourceRange
 import Language.Value.Evaluator
 import Foreign
 import Data.PNG
 import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Rotation, Projection(..), ScreenView(..), rotationFacing, rotateBy, sphereToPlane)
 import qualified Data.Map as Map
+import Text.Printf (printf)
 
 data ViewerContext env = ViewerContext
   { vcContext :: Context DynamicValue env
@@ -164,7 +173,23 @@ data SomeViewerWithContext where
 -- | A block of pixels for a viewer to render (see 'ViewerFunction').
 data ViewerArgs = ViewerArgs
   { vaPoint      :: (Double, Double)
+    -- ^ the point of the image's first pixel (its top left one), not
+    --   the block's: see 'vaOffset'
+  , vaOffset     :: (Int32, Int32)
+    -- ^ where the block's first pixel is in the image (its column and
+    --   row). A pixel's point is the image's first one, plus its column
+    --   (or minus its row) times the step: from the image's origin and
+    --   the pixel's index in it, not stepped to from the block's start,
+    --   so a pixel's point (to the last bit) doesn't depend on how the
+    --   image is cut into blocks.
   , vaStep       :: (Double, Double)
+    -- ^ how far apart the block's pixels are, in the model
+  , vaPixel      :: (Double, Double)
+    -- ^ a pixel's width and height as the viewer's code sees them (its
+    --   @pixel_size@, or @pixel_width@ and @pixel_height@): usually the
+    --   step, but a pixel of the screen, as the user sees one, where the
+    --   block is sampled more finely than that (a smoothed render, or a
+    --   frontend drawing at a high-DPI screen's density)
   , vaWidth      :: Int32
   , vaHeight     :: Int32
   , vaSubsamples :: Int32
@@ -310,7 +335,31 @@ data RenderedBuffer = RenderedBuffer
 -- they're first seen, which then varies from run to run (see
 -- "Actor.Autocolor").
 renderViewerBuffer :: Bool -> Viewer -> IO (Either String RenderedBuffer)
-renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
+renderViewerBuffer = renderViewerBufferAt 1
+
+-- | The point under the pointer, as a viewer's "Show pointer position"
+-- shows it: a complex number, or a real viewer's pair of reals, to 14
+-- places (lined up, whatever the sign); "…" off the model (as off the
+-- globe).
+pointerText :: Coordinate -> Maybe (Double, Double) -> String
+pointerText coord = \case
+  Nothing -> "…"
+  Just xy@(x, _) -> let txt = shown xy in if x < 0 then txt else ' ' : txt
+  where
+    shown :: (Double, Double) -> String
+    shown (x, y) = case coord of
+      RealCoordinates{} -> printf "(%.14f, %.14f)" x y
+      ComplexCoordinate{}
+        | y < 0     -> printf "%.14f - %.14f𝑖" x (negate y)
+        | otherwise -> printf "%.14f + %.14f𝑖" x y
+
+-- | 'renderViewerBuffer', for a viewer whose pixels are a fraction of the
+-- screen's (logical) pixels: @scale@ of them make one, which is what the
+-- viewer's code sees as its @pixel_size@ (a frontend drawing at a
+-- high-DPI screen's density). A smoothed render's code sees the pixel's
+-- size too, not the finer step it's sampled at.
+renderViewerBufferAt :: Double -> Bool -> Viewer -> IO (Either String RenderedBuffer)
+renderViewerBufferAt scale downsample Viewer{..} = case vCodeWithArgs of
   CodeWithArgs getArgs _ code -> getArgs >>= \case
     Left err -> pure (Left err)
     Right vaArgs -> do
@@ -318,14 +367,12 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
       projection <- viewProjection vView vRotation
-      center@(cx, cy) <- getDynamic vCenter
+      center <- getDynamic vCenter
       ViewerFunction bind <- getDynamic code
       fn <- bind vaArgs
       let s = if downsample then 2 else 1
           bigW = w * s
-          px = pixelSize / fromIntegral s
-          py = px * aspect
-          (x0, y0) = (cx - fromIntegral bigW * px / 2, cy + fromIntegral (h * s) * py / 2)
+          ((x0, y0), (px, py)) = imageGeometry s w h center pixelSize aspect
           -- strips of output rows; enough of them to keep every
           -- capability busy even if some strips are slower than others
           stripRows = max 1 (min 16 (h `div` 64))
@@ -337,23 +384,200 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
         forPool_ caps strips $ \(row, rows) ->
           allocaBytes (3 * bigW * rows * s) $ \big -> do
             issues <- fn ViewerArgs
-              { vaPoint = (x0, y0 - fromIntegral (row * s) * py)
+              { vaPoint = (x0, y0)
+              , vaOffset = (0, fromIntegral (row * s))
               , vaStep = (px, py)
+              , vaPixel = (pixelSize * scale, pixelSize * scale * aspect)
               , vaWidth = fromIntegral bigW
               , vaHeight = fromIntegral (rows * s)
               , vaSubsamples = 1
               , vaBuffer = big }
             modifyMVar_ issuesVar (pure . (<> issues))
             let dest = outPtr `plusPtr` (3 * w * row)
-            if downsample then downsampleRows bigW w rows big dest
+            if downsample then downsampleRows bigW w rows w big dest
                           else copyBytes dest big (3 * w * rows)
       issues <- readMVar issuesVar
       pure (Right (RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection issues))
 
+-- | Where a viewer's image is, @s@ times as fine as the viewer's pixels
+-- each way (2, to smooth it; @w@ by @h@ of the viewer's pixels): its
+-- first pixel's point, and the step from one pixel to the next.
+imageGeometry :: Int -> Int -> Int -> (Double, Double) -> Double -> Double
+              -> ((Double, Double), (Double, Double))
+imageGeometry s w h (cx, cy) pixelSize aspect =
+  let bigW = w * s
+      px = pixelSize / fromIntegral s
+      py = px * aspect
+  in ((cx - fromIntegral bigW * px / 2, cy + fromIntegral (h * s) * py / 2), (px, py))
+
+-- | A piece of a viewer's image: its first pixel's column and row, and
+-- its width and height, in pixels.
+data ImagePiece = ImagePiece { ipX :: !Int, ipY :: !Int, ipWidth :: !Int, ipHeight :: !Int }
+  deriving (Eq, Ord, Show)
+
+-- | How to render an image progressively ('renderProgressively',
+-- 'renderProgressivelyInto').
+data Progressive = Progressive
+  { prPieceSize :: Int
+    -- ^ the pieces' size (each square, but at the right and bottom edges)
+  , prConcurrency :: Int
+    -- ^ how many pieces to render at once
+  , prScale :: Double
+    -- ^ how many of the viewer's pixels make one of the screen's (as for
+    --   'renderViewerBufferAt')
+  , prSmooth :: Bool
+    -- ^ smoothed, as 'renderViewerBuffer' smooths: a last pass
+  , prShown :: Int -> Int -> Bool
+    -- ^ which pieces (by column and row, in pieces) already show
+    --   something (the last image, moved into this view): they skip the
+    --   coarse passes
+  , prStale :: IO Bool
+    -- ^ whether the render's no longer wanted: asked before each piece's
+    --   pass, and once it says so, the rest of the render is skipped
+  , prStarted :: RenderedBuffer -> IO ()
+    -- ^ ('renderProgressively' only) the image it's drawing, before it
+    --   draws anything (its issues aren't counted yet)
+  , prCovered :: IO ()
+    -- ^ every piece shows something: it's shown, or its first pass is
+    --   done (at once, if every piece is shown)
+  , prDrawn :: ImagePiece -> IO ()
+    -- ^ a pass of a piece is in the image
+  }
+
+-- | What a progressive render draws ('renderProgressivelyInto'): an
+-- image of a size, of a view (its center, a pixel's width, and its height
+-- over its width), in a buffer of RGB rows reached through 'itWith' (so a
+-- frontend can share it with whatever reads it), some of whose pixels may
+-- be final already ('itFinals': nonzero, one byte a pixel, such as the
+-- background off a globe), which coarse passes leave alone.
+data ImageTarget = ImageTarget
+  { itWidth :: Int
+  , itHeight :: Int
+  , itCenter :: (Double, Double)
+  , itPixelSize :: Double
+  , itAspect :: Double
+  , itWith :: (Ptr Word8 -> IO ()) -> IO ()
+  , itFinals :: Maybe (ForeignPtr Word8)
+  }
+
+-- | Render a viewer's image progressively, in pieces and passes, as the
+-- desktop app's tiles are (see 'renderProgressivelyInto'). Each pixel's
+-- point is the image's origin plus its index ('vaOffset'), so once it's
+-- done the image is just what 'renderViewerBufferAt' renders, to the
+-- byte. Nothing, if it's abandoned ('prStale').
+renderProgressively :: Progressive -> Viewer -> IO (Either String (Maybe RenderedBuffer))
+renderProgressively pr Viewer{..} = case vCodeWithArgs of
+  CodeWithArgs getArgs _ code -> getArgs >>= \case
+    Left err -> pure (Left err)
+    Right vaArgs -> do
+      Dimensions (w, h) <- getDynamic vSize
+      pixelSize <- getDynamic vPixelSize
+      aspect <- getDynamic vAspect
+      projection <- viewProjection vView vRotation
+      center <- getDynamic vCenter
+      ViewerFunction bind <- getDynamic code
+      fn <- bind vaArgs
+      out <- mallocForeignPtrBytes (max 1 (3 * w * h))
+      let image = RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection mempty
+      prStarted pr image
+      renderProgressivelyInto pr (ImageTarget w h center pixelSize aspect (withForeignPtr out) Nothing) fn
+        <&> \done -> Right ((\issues -> image { rbIssues = issues }) <$> done)
+
+-- | Render an image progressively, with a viewer's block function (its
+-- values bound), in pieces and passes, for both apps (in the order of
+-- 'Task.Block.progressivePlan': coarse passes over what isn't shown yet,
+-- then every piece at full resolution, then, smoothed, at twice that). On a coarse pass, a square
+-- doesn't cover the target's final pixels, and a square whose sample is a
+-- final pixel takes its color from the one of its pixels nearest its
+-- middle that isn't, so that the edge of what's final (as a globe's) is
+-- as sharp in the coarse passes as in the end. The issues the viewer's
+-- code ran into, or Nothing if it's abandoned ('prStale').
+renderProgressivelyInto :: Progressive -> ImageTarget -> (ViewerArgs -> IO ViewerIssues) -> IO (Maybe ViewerIssues)
+renderProgressivelyInto Progressive{..} ImageTarget{..} fn = do
+  issuesVar <- newMVar mempty
+  abandoned <- newIORef False
+  let (w, h) = (itWidth, itHeight)
+      pixel = (itPixelSize * prScale, itPixelSize * prScale * itAspect)
+      (origin1, (px, py)) = imageGeometry 1 w h itCenter itPixelSize itAspect
+      (origin2, step2) = imageGeometry 2 w h itCenter itPixelSize itAspect
+      call origin (ox, oy) step (bw, bh) buf = do
+        issues <- fn ViewerArgs { vaPoint = origin, vaOffset = (fromIntegral ox, fromIntegral oy)
+                                , vaStep = step, vaPixel = pixel
+                                , vaWidth = fromIntegral bw, vaHeight = fromIntegral bh
+                                , vaSubsamples = 1, vaBuffer = buf }
+        modifyMVar_ issuesVar (pure . (<> issues))
+      isFinal :: Int -> Int -> IO Bool
+      isFinal = case itFinals of
+        Nothing -> \_ _ -> pure False
+        Just m -> \u v -> withForeignPtr m (\mp -> (/= 0) <$> peekByteOff @Word8 mp (v * w + u))
+      piece rate (x0, pw) (y0, ph)
+        -- smoothed: the piece at twice the size, averaged down
+        | rate > 0 = allocaBytes (3 * 4 * pw * ph) $ \big -> do
+            call origin2 (2 * x0, 2 * y0) step2 (2 * pw, 2 * ph) big
+            itWith $ \outPtr -> downsampleRows (2 * pw) pw ph w big (outPtr `plusPtr` (3 * (y0 * w + x0)))
+        -- at full resolution, a pixel a sample
+        | rate == 0 = allocaBytes (3 * pw * ph) $ \small -> do
+            call origin1 (x0, y0) (px, py) (pw, ph) small
+            itWith $ \outPtr -> forM_ [0 .. ph - 1] $ \j ->
+              copyBytes (outPtr `plusPtr` (3 * ((y0 + j) * w + x0))) (small `plusPtr` (3 * pw * j)) (3 * pw)
+        -- coarse: a sample a skip x skip square
+        | otherwise = do
+            let skip = 2 ^ negate rate :: Int
+                (cw, ch) = (pw `div` skip, ph `div` skip)
+            allocaBytes (3 * cw * ch) $ \small -> do
+              call origin1 (x0 `div` skip, y0 `div` skip)
+                   (px * fromIntegral skip, py * fromIntegral skip) (cw, ch) small
+              case itFinals of
+                -- (each sample's color across its square, row by row)
+                Nothing -> allocaBytes (3 * pw) $ \line -> itWith $ \outPtr ->
+                  forM_ [0 .. ch - 1] $ \j -> do
+                    let row = small `plusPtr` (3 * cw * j)
+                    forM_ [0 .. cw - 1] $ \i -> forM_ [0 .. skip - 1] $ \d ->
+                      copyBytes (line `plusPtr` (3 * (skip * i + d))) (row `plusPtr` (3 * i)) 3
+                    forM_ [0 .. skip - 1] $ \d ->
+                      copyBytes (outPtr `plusPtr` (3 * ((y0 + skip * j + d) * w + x0))) line (3 * pw)
+                -- (around what's final: see above)
+                Just _ -> do
+                  forM_ [ (i, j) | j <- [0 .. ch - 1], i <- [0 .. cw - 1] ] $ \(i, j) -> do
+                    let (u, v) = (x0 + skip * i, y0 + skip * j)
+                    sampleFinal <- isFinal u v
+                    when sampleFinal $ do
+                      let square = [ (u + du, v + dv) | dv <- [0 .. skip - 1], du <- [0 .. skip - 1] ]
+                          (cu, cv) = (fromIntegral u + fromIntegral skip / 2 - 0.5, fromIntegral v + fromIntegral skip / 2 - 0.5) :: (Double, Double)
+                          dist (a, b) = (fromIntegral a - cu) ^ (2 :: Int) + (fromIntegral b - cv) ^ (2 :: Int)
+                      unfinal <- filterM (fmap not . uncurry isFinal) square
+                      case sortOn dist unfinal of
+                        [] -> pure ()
+                        (fu, fv) : _ -> call origin1 (fu, fv) (px, py) (1, 1) (small `plusPtr` (3 * (j * cw + i)))
+                  itWith $ \outPtr -> forM_ [ (i, j) | j <- [0 .. ch - 1], i <- [0 .. cw - 1] ] $ \(i, j) ->
+                    forM_ [ (x0 + skip * i + du, y0 + skip * j + dv) | dv <- [0 .. skip - 1], du <- [0 .. skip - 1] ] $ \(u, v) -> do
+                      final <- isFinal u v
+                      unless final $ copyBytes (outPtr `plusPtr` (3 * (v * w + u))) (small `plusPtr` (3 * (j * cw + i))) 3
+  plan <- progressivePlan prPieceSize (if prSmooth then 1 else 0) w h prShown
+  firstsLeft <- newMVar (length [ () | (True, _, _, _) <- plan ])
+  when (null [ () | (True, _, _, _) <- plan ]) prCovered
+  forPool_ prConcurrency plan $ \(isFirst, rate, (x, pw), (y, ph)) -> do
+    -- (once it's stale, the rest is skipped: the pieces being rendered
+    -- still finish)
+    stop <- readIORef abandoned >>= \case
+      True -> pure True
+      False -> prStale >>= \s -> s <$ when s (writeIORef abandoned True)
+    unless stop $ do
+      let (x0, y0) = (prPieceSize * x, prPieceSize * y)
+      piece rate (x0, pw) (y0, ph)
+      prDrawn (ImagePiece x0 y0 pw ph)
+      when isFirst $ do
+        remaining <- modifyMVar firstsLeft (\n -> pure (n - 1, n - 1))
+        when (remaining == 0) prCovered
+  readIORef abandoned >>= \case
+    True -> pure Nothing
+    False -> Just <$> readMVar issuesVar
+
 -- | Average each 2x2 block of a @bigW@-pixel-wide RGB8 buffer down to
--- one pixel of a @w@-pixel-wide one, for @rows@ output rows.
-downsampleRows :: Int -> Int -> Int -> Ptr Word8 -> Ptr Word8 -> IO ()
-downsampleRows bigW w rows big dest =
+-- one pixel of a @w@-pixel-wide piece of one whose rows are @stride@
+-- pixels apart, for @rows@ output rows.
+downsampleRows :: Int -> Int -> Int -> Int -> Ptr Word8 -> Ptr Word8 -> IO ()
+downsampleRows bigW w rows stride big dest =
   forM_ [0 .. rows - 1] $ \j -> forM_ [0 .. w - 1] $ \i -> forM_ [0, 1, 2] $ \k -> do
     let ix = 3 * (2 * i) + 3 * bigW * (2 * j) + k
         at o = fromIntegral <$> peekElemOff big o :: IO Word16
@@ -361,7 +585,7 @@ downsampleRows bigW w rows big dest =
     c2 <- at (ix + 3)
     c3 <- at (ix + 3 * bigW)
     c4 <- at (ix + 3 * bigW + 3)
-    pokeElemOff dest (3 * i + 3 * w * j + k) (fromIntegral ((c1 + c2 + c3 + c4 + 2) `div` 4))
+    pokeElemOff dest (3 * i + 3 * stride * j + k) (fromIntegral ((c1 + c2 + c3 + c4 + 2) `div` 4))
 
 -- | Show a complex viewer's points on the plane or on the sphere,
 -- keeping the point in the middle of the view there: on the sphere,

@@ -19,6 +19,25 @@
 //             the bar, Stop, Stop and switch to Navigate, and an overlay
 //   editor    the script editor: coloring, an error marked, symbols, and
 //             rebuilding (windows, views and tools kept), or failing to
+//   density   pixel_size, in a viewer's code, is a CSS pixel's size, on any
+//             screen (dev-tools/web/pixel-size.fs; try FS_DPR=2)
+//   opening   opening projects as the desktop app does: an old FractalStream
+//             1.0 file, translated if asked (into a new project, with its
+//             editor open); a script that doesn't build (dev-tools/web/
+//             broken.fs), with its editor open, and its saved value and
+//             window once it's fixed; a starting point, as a new project;
+//             and an error, as a notice to dismiss
+//   pointer   "Show pointer position", from a viewer's menu: the point
+//             under the pointer, on the plane and on the sphere
+//   progressive  a slow viewer (dev-tools/web/slow.fs) rendered in pieces:
+//             patches long before it's done; a pan drops the render going
+//             on, and the next one's done; new parameters' first patch
+//             is held back
+//   menu      a viewer's menu: last, next, original view (and their keys),
+//             jump to a view, the sphere and the plane (saved, and
+//             reopened so), its colorizer and a colorizer's arguments,
+//             subpixel smoothing, and a real viewer's aspect ratio (saved,
+//             and reopened so)
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
@@ -26,13 +45,14 @@
 // See harness.mjs for what it needs. The exit status is 1 if any check
 // failed.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { start, Checks, kinds } from "./harness.mjs";
 
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop, editor, panel };
+const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -212,7 +232,7 @@ async function refresh() {
   c.check(m0 && m1 && (m0[0] !== m1[0] || m0[1] !== m1[1]), `the C marker moves with C (${JSON.stringify(m0)} -> ${JSON.stringify(m1)})`);
   // (its radius is 4 pixel_size: 4 CSS pixels, on any screen, as on the
   // desktop, whatever the canvas's density)
-  const frame = (await app.messages("frame")).filter((m) => m.viewer === pp).pop();
+  const frame = (await app.messages("patch")).filter((m) => m.viewer === pp).pop();
   const r = (await app.drawing(pp)).find((s) => s.k === "circle").r / frame.px;
   const dpr = await page.evaluate(() => Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 1))));
   c.check(Math.abs(r - 4 * dpr) < 1e-6, `pixel_size is a CSS pixel's size: the marker's radius is ${r.toFixed(2)} canvas pixels, at ${dpr}x`);
@@ -475,8 +495,9 @@ async function editor() {
   });
   await page.reload();
   await page.waitForSelector("#library li", { timeout: 60000 });
+  // (the starting point: it opens with its editor)
   await app.openLibrary("Newton's method");
-  await page.locator("#toggle-script").click();
+  if (!(await editorShown())) await page.locator("#toggle-script").click();
   await page.waitForTimeout(1000);
   await page.locator(".editor-overlay .cm-content").click();
   await page.keyboard.press("ControlOrMeta+Home");
@@ -487,4 +508,357 @@ async function editor() {
   const lines = (await doc()).split("\n").filter((l) => /newton\(z\)|lastZ/.test(l));
   c.check(lines.length > 0 && lines.every((l) => !/[≔⟵⟼′][=\-'>]|[<:'-][≔⟵⟼′]/.test(l)) && lines.some((l) => l.includes("≔")),
           `typing while an analysis is out doesn't garble the script (${JSON.stringify(lines.slice(0, 3))})`);
+}
+
+async function density() {
+  await app.openFile(new URL("pixel-size.fs", import.meta.url).pathname);
+  await page.waitForTimeout(500);
+  // the band's width in the canvas's pixels, along its middle row
+  const r = await page.evaluate(() => {
+    const canvas = document.querySelector(".viewer canvas");
+    const ctx = canvas.getContext("2d");
+    const row = ctx.getImageData(0, Math.floor(canvas.height / 2), canvas.width, 1).data;
+    let dark = 0;
+    for (let i = 0; i < row.length; i += 4) if (row[i] < 128) dark++;
+    return { dark, ratio: canvas.width / canvas.getBoundingClientRect().width };
+  });
+  c.check(Math.abs(r.dark / r.ratio - 4) <= 1,
+          `a band 4 pixel_size wide is 4 CSS pixels wide (${r.dark} canvas pixels, at ${r.ratio}x)`);
+}
+
+/** Drop a file's bytes on the page (any bytes: not only a project's text). */
+async function dropBytes(file, name = path.basename(file)) {
+  await app.forgetMessages();
+  await page.evaluate(([b, name]) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(b)], name));
+    document.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, [[...fs.readFileSync(file)], name]);
+}
+
+function editorShown() { return page.locator(".editor-overlay").isVisible(); }
+
+async function opening() {
+  // an old FractalStream 1.0 file: a notice asks first
+  const legacy = new URL("../../fractalstream-core/test/legacy-binary/Sarah3.fs", import.meta.url).pathname;
+  await dropBytes(legacy);
+  const ask = page.locator(".notice", { hasText: "old version of FractalStream" });
+  await ask.waitFor({ timeout: 10000 }).catch(() => {});
+  c.check(await ask.isVisible(), "an old FractalStream file: a notice asks whether to translate it");
+  await ask.locator("button", { hasText: "Translate" }).click();
+  const translated = await app.opened().catch(() => null);
+  c.check(translated !== null && translated.new && translated.edit && translated.viewers.length > 0,
+          `translated, it opens as a new project (${translated?.fileName}), with ${translated?.viewers.length} viewer(s)`);
+  c.check(await editorShown(), "with its script editor open");
+  c.check(/Sarah3\.fs/.test(await page.locator("#file-name").textContent()) && translated?.notes !== undefined,
+          `and the old file's name (${translated?.notes.length} translation note(s))`);
+  await page.locator(".editor-close").click();
+
+  // a script that doesn't build: no viewers, its editor open; fixed, its
+  // saved value and window
+  await dropBytes(new URL("broken.fs", import.meta.url).pathname);
+  await app.waitForMessage(`(m) => m.type === "project"`, 30000);
+  const broken = (await app.messages("project")).pop();
+  c.check(broken.viewers.length === 0 && broken.edit, "a script that doesn't build opens with no viewers, for its editor");
+  c.check(await editorShown(), "with the editor open");
+  await page.waitForFunction(() => document.querySelector(".cm-script-error"), null, { timeout: 10000 }).catch(() => {});
+  c.check((await page.locator(".cm-script-error").count()) > 0, "and its error marked");
+  // (fix it: the stray ` (` ending its last line)
+  await page.locator(".editor-overlay .cm-content").click();
+  await page.keyboard.press("ControlOrMeta+End");
+  for (let i = 0; i < 2; i++) await page.keyboard.press("Backspace");
+  await page.waitForFunction(() => !document.querySelector(".editor-status.error"), null, { timeout: 10000 }).catch(() => {});
+  await app.forgetMessages();
+  await page.locator(".editor-buttons button", { hasText: "Rebuild" }).click();
+  const fixed = await app.opened().catch(() => null);
+  c.check(fixed?.viewers.length === 1 && !(await editorShown()), "fixed and rebuilt, its viewer comes, and the editor closes");
+  const field = page.locator(".panel input[type=text]").first();
+  c.check((await field.inputValue().catch(() => "")) === "0.25", `with its saved value (shade = ${await field.inputValue().catch(() => "?")})`);
+  const win = page.locator(".window").first();
+  const place = await win.evaluate((w) => [w.offsetLeft, w.offsetTop, w.querySelector(".window-body").clientWidth]);
+  c.check(place[0] === 300 && place[1] === 40 && place[2] === 220, `and its saved window (${place})`);
+
+  // a starting point: a new, untitled project, its editor open
+  const start = await app.openLibrary("Iterate a family of functions");
+  c.check(start.title === "Untitled" && start.fileName === "Untitled.fs" && start.new && !start.library,
+          `a starting point opens as a new project (${start.title}, ${start.fileName})`);
+  c.check(await editorShown(), "with its script editor open");
+  await page.locator(".editor-close").click();
+  const plain = await app.openLibrary("Mandelbrot and Julia sets together");
+  c.check(!plain.edit && !(await editorShown()), "(another library project opens without it)");
+
+  // an error: a notice, dismissed
+  fs.writeFileSync(path.join(os.tmpdir(), "not-a-project.fs"), "this: [is not a project");
+  await dropBytes(path.join(os.tmpdir(), "not-a-project.fs"));
+  const err = page.locator(".notice.error");
+  await err.first().waitFor({ timeout: 10000 }).catch(() => {});
+  c.check(await err.first().isVisible(), `a file that isn't a project: an error notice (${(await err.first().textContent().catch(() => "")).slice(0, 60)}…)`);
+  await err.first().locator(".notice-dismiss").click();
+  c.check((await err.count()) === 0, "dismissed, it's gone");
+  // (that error was on purpose)
+  app.clearErrors();
+}
+
+async function pointer() {
+  const readout = (id) => page.locator(".viewer-pointer").nth(id);
+  const showFor = async (id) => {
+    await page.locator(".window").nth(id).locator(".window-menu-button").click();
+    await page.locator(".window-menu button", { hasText: "Show pointer position" }).click();
+  };
+  const hover = async (id, fx, fy) => {
+    const box = await app.canvas(id).boundingBox();
+    await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy, { steps: 2 });
+    await page.waitForTimeout(300);
+    return (await readout(id).textContent()).trim();
+  };
+  // (the plane: pixel-size.fs, centered on 0)
+  await app.openFile(new URL("pixel-size.fs", import.meta.url).pathname);
+  c.check(!(await readout(0).isVisible()), "the pointer's position isn't shown, at first");
+  await showFor(0);
+  c.check(await readout(0).isVisible(), "chosen from the viewer's menu, it is");
+  const t = await hover(0, 0.75, 0.25);
+  const m = /^(-?\d+\.\d{14}) ([+-]) (\d+\.\d{14})𝑖$/.exec(t);
+  c.check(m && Number(m[1]) > 0 && m[2] === "+" && Number(m[3]) > 0, `up and to the right of 0, it's there (${t})`);
+  await page.locator(".window").nth(0).locator(".window-menu-button").click();
+  const item = page.locator(".window-menu button", { hasText: "Show pointer position" });
+  const checked = await item.getAttribute("aria-checked");
+  await item.click();
+  c.check(checked === "true" && !(await readout(0).isVisible()), "the menu shows it's on, and turns it off");
+
+  // the sphere: the globe's center is the view's, and off the globe, "…"
+  const project = await app.openLibrary("Newton's method on the sphere");
+  const s = project.viewers.findIndex((v) => v.sphere);
+  await showFor(s);
+  const centre = await hover(s, 0.5, 0.5);
+  const off = await hover(s, 0.01, 0.01);
+  c.check(/𝑖$/.test(centre) && off === "…", `on the sphere: ${centre} at the globe's center, and "…" off it`);
+}
+
+async function progressive() {
+  await app.forgetMessages();
+  const opened = Date.now();
+  await app.openFile(new URL("slow.fs", import.meta.url).pathname);
+  const took = Date.now() - opened;
+  // (the first render to be done: at a high density, the first one, at
+  // the project's size, is dropped for one at the canvas's)
+  const all0 = await app.messages("patch");
+  const doneId = all0.find((m) => m.done).id;
+  const patches = all0.filter((m) => m.id === doneId);
+  c.check(patches.length > 2 && patches.findIndex((m) => m.done) === patches.length - 1,
+          `render ${doneId} came in ${patches.length} patches, the last one done (after ${took} ms)`);
+
+  // a pan, while a render goes: it's dropped, and the next one's done
+  await app.forgetMessages();
+  await page.evaluate(() => (window.__set = performance.now()));
+  await page.locator(".panel input[type=text]").first().fill("1001");
+  await page.keyboard.press("Enter");
+  await app.waitForMessage(`(m) => m.type === "patch"`, 10000);
+  const first = await page.evaluate(() => {
+    const m = window.__messages.find((m) => m.type === "patch");
+    return { id: m.id, done: m.done };
+  });
+  const box = await app.canvas(0).boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await app.waitForMessage(`(m) => m.type === "patch" && m.done`, 60000).catch(() => {});
+  const all = await app.messages("patch");
+  const ids = [...new Set(all.map((m) => m.id))];
+  const finished = all.filter((m) => m.done).map((m) => m.id);
+  c.check(!first.done && ids.length >= 2 && !finished.includes(first.id) && finished.length >= 1,
+          `a pan dropped the render going on (render ${first.id}), and the next was done (${finished.join(", ")})`);
+
+  // new parameters: the first patch waits a tenth of a second
+  await app.forgetMessages();
+  await page.locator(".panel input[type=text]").first().fill("1002");
+  await page.evaluate(() => (window.__set = performance.now()));
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.__messages.some((m) => m.type === "patch"), null, { timeout: 10000 });
+  const wait = await page.evaluate(() => performance.now() - window.__set);
+  c.check(wait >= 100, `new parameters' first patch was held back (${wait.toFixed(0)} ms)`);
+}
+
+async function menu() {
+  let project = await app.openLibrary("Mandelbrot and Julia sets together");
+  const pp = project.viewers.find((v) => v.title === "Parameter plane").id;
+  await app.activate(pp);
+  await page.keyboard.press("n");
+  await page.waitForTimeout(500);
+  const win = page.locator(".window").nth(pp);
+  const openMenu = async () => { await win.locator(".window-menu-button").click(); };
+  const choose = async (label) => { await page.locator(".window-menu button", { hasText: label }).first().click(); };
+  await openMenu();
+  const labels = (await page.locator(".window-menu .menu-label").allTextContents()).join(" | ");
+  c.check(["Last view", "Next view", "Jump to view", "Original view", "Show on the sphere", "Colorizer",
+           "Show pointer position", "Use subpixel smoothing"].every((l) => labels.includes(l)), `the menu has: ${labels}`);
+  await page.keyboard.press("Escape");
+
+  // the view, as the page wants it (its latest request, or the engine's move)
+  const view = async () => (await page.evaluate((id) => {
+    const vs = window.__sent.filter((r) => r.viewer === id && r.type === "view");
+    const moved = window.__messages.filter((m) => m.viewer === id && m.type === "view");
+    return { sent: vs[vs.length - 1], moved: moved[moved.length - 1] };
+  }, pp));
+  const settle = () => page.waitForTimeout(700);
+  const box = await app.canvas(pp).boundingBox();
+  const drag = async (dx) => {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await settle();
+  };
+  await settle();
+  await drag(100);
+  const afterFirst = (await view()).sent;
+  await drag(100);
+  await page.keyboard.press("<");
+  await settle();
+  const back = (await view()).moved;
+  c.check(back && Math.abs(back.cx - afterFirst.cx) < 1e-12, `< goes back a step (to cx ${back?.cx.toFixed(4)}, as after the first pan: ${afterFirst.cx.toFixed(4)})`);
+  await page.keyboard.press("<");
+  await settle();
+  const start = (await view()).moved;
+  c.check(start && start.cx > afterFirst.cx, `and again, to where it started (cx ${start?.cx.toFixed(4)})`);
+  await page.keyboard.press(">");
+  await settle();
+  c.check(Math.abs((await view()).moved.cx - afterFirst.cx) < 1e-12, "> goes forward a step");
+  await drag(-50);
+  await page.keyboard.press("^");
+  await settle();
+  const home = (await view()).moved;
+  c.check(home && Math.abs(home.cx - start.cx) < 1e-12 && Math.abs(home.cy - start.cy) < 1e-12,
+          `^ goes to the original view (cx ${home?.cx.toFixed(4)})`);
+
+  // jump to a view
+  await page.keyboard.press("@");
+  await page.locator(".viewer-form").waitFor({ timeout: 5000 });
+  const inputs = page.locator(".viewer-form input");
+  c.check((await inputs.count()) === 3, `@ asks where to jump (starting from ${(await inputs.nth(0).inputValue()).slice(0, 8)}, ...)`);
+  await inputs.nth(0).fill("-1.25");
+  await inputs.nth(1).fill("0.125");
+  await inputs.nth(2).fill("0.001");
+  await page.keyboard.press("Enter");
+  await settle();
+  const jumped = (await view()).moved;
+  const dpr = await page.evaluate(() => Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 1))));
+  c.check(jumped && jumped.cx === -1.25 && jumped.cy === 0.125 && Math.abs(jumped.px * dpr - 0.001) < 1e-15,
+          `and goes there (${jumped?.cx}, ${jumped?.cy}, a pixel ${(jumped?.px * dpr).toPrecision(3)})`);
+
+  // the sphere, saved, and reopened so
+  await openMenu();
+  await choose("Show on the sphere");
+  await settle();
+  c.check((await view()).moved.sphere === true, "Show on the sphere puts it on the sphere");
+  const gb = await app.canvas(pp).boundingBox();
+  await page.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(gb.x + gb.width / 2 + 60, gb.y + gb.height / 2 + 20, { steps: 4 });
+  await page.mouse.up();
+  await settle();
+  await openMenu();
+  const onSphere = await page.locator(".window-menu button", { hasText: "Show on the sphere" }).getAttribute("aria-checked");
+  await page.keyboard.press("Escape");
+  c.check(onSphere === "true", "and the menu says so");
+  await app.forgetMessages();
+  await page.evaluate(() => { window.__saved = null; window.showSaveFilePicker = undefined; });
+  const download = page.waitForEvent("download", { timeout: 10000 });
+  await page.locator("#save-as").click();
+  const file = await (await download).path();
+  const saved = fs.readFileSync(file, "utf8");
+  const props = /Parameter plane:[\s\S]*?(?=\n {4}\S|\n\S|$)/.exec(saved.slice(saved.indexOf("web-properties:")))?.[0] ?? "";
+  c.check(/view: sphere/.test(props) && /rotation:/.test(props), "saved: on the sphere, and the globe's rotation");
+  const copy = path.join(os.tmpdir(), "menu-sphere.fs");
+  fs.writeFileSync(copy, saved);
+  project = await app.openFile(copy);
+  c.check(project.viewers[pp].sphere === true, "reopened, it's on the sphere");
+  await openMenu();
+  await choose("Show on the sphere");
+  await settle();
+  c.check((await view()).moved.sphere === false, "and Show on the sphere again puts it back on the plane");
+
+  // its colorizer
+  await openMenu();
+  await choose("Colorizer");
+  const inUse = await page.locator(".window-menu button[aria-checked=true] .menu-label").allTextContents();
+  c.check(inUse.join() === "Binary decomposition", `the Colorizer submenu has the one in use checked (${inUse.join()})`);
+  await app.forgetMessages();
+  await choose("Escape time");
+  project = await app.opened().catch(() => null);
+  const rebuilt = (await app.messages("project")).pop();
+  c.check(rebuilt?.rebuilt && rebuilt.viewers[pp].colorizer.inUse === "Escape time" && rebuilt.viewers[1 - pp].colorizer.inUse === "Binary decomposition",
+          `choosing another rebuilds the project, with it for this viewer only (${rebuilt?.viewers[pp].colorizer.inUse})`);
+  await openMenu();
+  await choose("Colorizer");
+  await choose("Binary decomposition");
+  await page.waitForTimeout(1500);
+  await openMenu();
+  await choose("Colorizer");
+  await choose("Arguments");
+  await page.locator(".viewer-form").waitFor({ timeout: 5000 });
+  const fieldLabels = await page.locator(".viewer-form .form-field span").allTextContents();
+  c.check(fieldLabels.length > 0, `Arguments… asks for them (${fieldLabels.join(" ")})`);
+  await page.locator(".viewer-form input").first().fill("12");
+  await app.forgetMessages();
+  await page.keyboard.press("Enter");
+  await app.waitForMessage(`(m) => m.type === "project"`, 30000).catch(() => {});
+  const withArgs = (await app.messages("project")).pop();
+  c.check(/^Binary decomposition\(12/.test(withArgs?.viewers[pp].colorizer.inUse ?? ""),
+          `and uses them (${withArgs?.viewers[pp].colorizer.inUse})`);
+
+  // subpixel smoothing, per viewer
+  await page.waitForTimeout(800);
+  const before = (await app.messages("patch")).filter((m) => m.viewer === pp && m.done).length;
+  await openMenu();
+  const smooth = await page.locator(".window-menu button", { hasText: "Use subpixel smoothing" }).getAttribute("aria-checked");
+  await choose("Use subpixel smoothing");
+  await page.waitForTimeout(1500);
+  const after = (await app.messages("patch")).filter((m) => m.viewer === pp && m.done).length;
+  await openMenu();
+  const smooth2 = await page.locator(".window-menu button", { hasText: "Use subpixel smoothing" }).getAttribute("aria-checked");
+  await page.keyboard.press("Escape");
+  c.check(smooth !== smooth2 && after > before, `Use subpixel smoothing toggles it (${smooth} -> ${smooth2}), and it's rendered again`);
+  c.check(await page.locator("#smoothing").count() === 0, "(and the toolbar has no Smooth switch)");
+
+  // a real viewer's aspect ratio (and no sphere)
+  project = await app.openLibrary("The real Hénon map");
+  const rv = project.viewers.find((v) => !v.complex).id;
+  const rwin = page.locator(".window").nth(rv);
+  await rwin.locator(".window-menu-button").click();
+  const rlabels = (await page.locator(".window-menu .menu-label").allTextContents()).join(" | ");
+  c.check(rlabels.includes("Aspect ratio") && !rlabels.includes("Show on the sphere"),
+          "a real viewer's menu has Aspect ratio…, not Show on the sphere");
+  await choose("Aspect ratio");
+  const ratio = page.locator(".viewer-form input");
+  await ratio.fill("-3");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(500);
+  c.check(/positive/.test(await page.locator(".viewer-form .form-error").textContent().catch(() => "")),
+          "a ratio that isn't positive is refused, in the form");
+  // (its script's is 1/2: a ratio it isn't, so it's saved)
+  await ratio.fill("3/2");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(800);
+  const moved = (await page.evaluate((id) => window.__messages.filter((m) => m.viewer === id && m.type === "view").pop(), rv));
+  c.check(await page.locator(".viewer-form").count() === 0 && moved && Math.abs(moved.py / moved.px - 1.5) < 1e-12,
+          `3/2 makes a pixel half again as high as it's wide (${moved && (moved.py / moved.px)})`);
+  await app.forgetMessages();
+  await page.evaluate(() => { window.showSaveFilePicker = undefined; });
+  const download2 = page.waitForEvent("download", { timeout: 10000 });
+  await page.locator("#save-as").click();
+  const saved2 = fs.readFileSync(await (await download2).path(), "utf8");
+  c.check(/aspect: 1\.5/.test(saved2), "saved, with it");
+  const copy2 = path.join(os.tmpdir(), "menu-aspect.fs");
+  fs.writeFileSync(copy2, saved2);
+  await app.openFile(copy2);
+  await page.waitForTimeout(800);
+  const reopened = (await app.messages("patch")).filter((m) => m.viewer === rv && m.done).pop();
+  c.check(reopened && Math.abs(reopened.py / reopened.px - 1.5) < 1e-12, `reopened, it's still 3/2 (${reopened && reopened.py / reopened.px})`);
+  await page.locator(".window").nth(rv).locator(".window-menu-button").click();
+  await choose("Aspect ratio");
+  await page.locator(".viewer-form button", { hasText: "Square pixels" }).click();
+  await page.waitForTimeout(800);
+  const square = (await page.evaluate((id) => window.__messages.filter((m) => m.viewer === id && m.type === "view").pop(), rv));
+  c.check(square && square.py === square.px, "Square pixels makes them square");
 }

@@ -61,7 +61,7 @@ import Graphics.UI.WX (Window, Frame, StatusField, Point, Point2(..), Size2D(..)
 import Graphics.UI.WXCore.WxcClassesMZ (wxcAppDisplaySize, windowDestroy)
 import Data.Foldable (forM_)
 import Data.Functor (void)
-import UI.ViewModel (History)
+import Actor.Viewer.ViewModel (History)
 
 
 -- | Everything remembered about one viewer window. Every field is

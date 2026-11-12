@@ -15,7 +15,8 @@ import Data.DynamicValue
 
 import Control.Monad (forM_)
 import qualified Data.Map as Map
-import Data.List (isInfixOf, sort)
+import Data.List (isInfixOf, isPrefixOf, sort)
+import qualified Data.Set as Set
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.Aeson.KeyMap as KM
 import Text.RawString.QQ
@@ -191,6 +192,33 @@ iterate z -> z^2 + 0.25 until z escapes
           bytes <- encodeEnsemble ens
           BS8.unpack bytes `shouldSatisfy` isInfixOf "colorizers:"
         _ -> expectationFailure "expected the script not to build"
+
+  describe "choosing a colorizer's arguments (as the viewers' menus do)" $ do
+    let named n = case [ c | c <- builtinColorizers, colorizerName c == n ] of
+          c : _ -> c
+          [] -> error ("no built-in colorizer " ++ n)
+        rainbow = named "Rainbow"
+        binary = named "Binary decomposition"
+        scope = Set.fromList
+    it "splits a choice into its name and its arguments" $ do
+      choiceName "Smooth(z, 3)" `shouldBe` "Smooth"
+      choiceArguments "Smooth(z, 3)" `shouldBe` "z, 3"
+      choiceArguments "Rainbow" `shouldBe` ""
+    it "asks for the arguments a viewer can't fill in" $ do
+      missingArguments (scope []) binary `shouldBe` ["z"]
+      missingArguments (scope ["z"]) binary `shouldBe` []
+      missingArguments (scope []) rainbow `shouldBe` []
+    it "starts each field from what's written, the viewer's variable, or nothing" $ do
+      argumentFields (scope ["z"]) binary "" `shouldBe` [("z", "", "z")]
+      argumentFields (scope []) binary "" `shouldBe` [("z", "(this viewer has no z)", "")]
+      argumentFields (scope ["z"]) binary "w" `shouldBe` [("z", "", "w")]
+      [ (p, t) | (p, _, t) <- argumentFields (scope []) rainbow "" ] `shouldBe` [("t", "")]
+      [ n | (_, n, _) <- argumentFields (scope []) rainbow "" ] `shouldSatisfy` all ("(default: " `isPrefixOf`)
+    it "leaves out the arguments that come to their defaults, or the viewer's variable" $ do
+      choiceWithArguments binary ["z"] `shouldBe` "Binary decomposition"
+      choiceWithArguments binary [" w "] `shouldBe` "Binary decomposition(w)"
+      choiceWithArguments rainbow [""] `shouldBe` "Rainbow"
+      choiceWithArguments rainbow ["5"] `shouldBe` "Rainbow(5)"
 
   describe "@colorizer stanzas" $ do
     let smooth = [r|
