@@ -58,7 +58,7 @@ import FractalStream.Library (LibrarySection(..), LibraryEntry(..), librarySecti
 
 import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.MVar
-import Control.Exception (SomeException, try, displayException)
+import Control.Exception (SomeException, SomeAsyncException, try, displayException, fromException, throwIO)
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
@@ -266,7 +266,11 @@ renderLoop :: Int -> Viewer -> MVar () -> IO ()
 renderLoop k viewer signal = forever $ do
   takeMVar signal
   try (renderViewerBuffer False viewer) >>= \case
-    Left (e :: SomeException) -> postError (displayException e)
+    -- (being stopped, when another project is opened, isn't an error: the
+    -- loop just ends)
+    Left (e :: SomeException)
+      | Just (_ :: SomeAsyncException) <- fromException e -> throwIO e
+      | otherwise -> postError (displayException e)
     Right (Left err) -> postError err
     Right (Right RenderedBuffer{..}) ->
       withForeignPtr rbPixels $ \p ->
