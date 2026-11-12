@@ -24,7 +24,7 @@ questions into **Decisions**.
 | D12 | The precision toggle is an **app-level preference** | Stored per browser with the other preferences (IndexedDB), not in project files. |
 | D14 | Kernels' math functions come from **musl's libm, compiled to wasm** (built each time) | Not JavaScript's `Math`: calling it from wasm on several worker threads crashed V8; and this way every host computes alike. |
 | D13 | **Backend.Wasm before the web app;** test wasm under Node from 0g on | The interpreter is about 2,500× slower than LLVM (0b), too slow even as a stopgap. |
-| D16 | Tools' handlers (and overlays) are **compiled by Backend.Wasm and run on the workers**; what it can't compile yet (tables, autocolor) is a tool compilation error, not interpreted | Interpreted, external rays took 7.5 s, and the engine's one thread was stuck meanwhile. On a worker the engine stays free, and Stop can come later by stopping the worker. (Without a worker pool, tools are interpreted.) |
+| D16 | Tools' handlers (and overlays) are **compiled by Backend.Wasm and run on the workers**; what it can't compile is a tool compilation error, not interpreted | Interpreted, external rays took 7.5 s, and the engine's one thread was stuck meanwhile. On a worker the engine stays free, and Stop can come later by stopping the worker. (Without a worker pool, tools are interpreted.) |
 | D17 | Text in Backend.Wasm is a **tree of nodes in the arena** (literals, numbers, concatenations), formatted by the engine when it reads a text back | Numbers then print exactly as interpreted (`showValue`), without calling back into Haskell or reimplementing `show` for `Double`. Nothing in the language looks inside a text; if that changes (comparisons, `length`), revisit. |
 | D18 | A slow handler (a tool's, or an overlay's refresh) shows a **bar in its viewer's window** after a quarter of a second, with Stop (and, for a tool, Stop and switch to Navigate); **Stop kills the worker** running it, which the pool replaces; a stopped overlay is off until the project's reopened (or, later, recompiled) | Not a modal window, which is the wrong idiom on the web: the rest of the app stays usable. Killing the worker needs no shared memory (so no cross-origin isolation), and stops even an endless loop. |
 | D19 | **Tables on the workers: per-worker copies**, by version (`Table`'s new `tableVersion`): the pool keeps a copy of each version (up to 512 MB), sends it once to each worker that needs it, and a worker keeps up to 256 MB of them in its memory, above its jobs' scratch memory; only the tables a kernel reads are sent | Works without shared memory (so without cross-origin isolation); revisit if we get COOP/COEP. A tool's operations on tables will be C compiled to wasm, as autocolor is, since calling JavaScript from wasm on workers crashed V8. |
@@ -235,7 +235,7 @@ wasmtime.
 - [ ] Tiles and progressive passes (R3).
 - [x] Lists in a per-block arena; issue flags.
 - [x] Text (D17).
-- [ ] Tables: viewers reading them (done, D19); tools writing them (next).
+- [x] Tables: viewers reading them, and tools writing them (D19).
 - [x] Autocolor: snapshot lookup (shared C, `autocolor_lookup.h`), misses added by the engine, block redrawn.
 - [x] libm: musl's, compiled to `js/libm.wasm` (D14).
 - [x] Turn the end-to-end suite back on for wasm (under Node: `dev-tools/wasm/node.sh`; its table tests wait for tables).
@@ -290,7 +290,7 @@ wasmtime.
   `dev-tools/wasm/compare-tools.sh` compares every library tool's results
   with LLVM's.
 - [x] Text in Backend.Wasm, wherever the LLVM backend has it (D17).
-- [ ] Tables and autocolor in tools.
+- [x] Tables and autocolor in tools.
 - [ ] Preferences (IndexedDB), including the precision toggle (D12).
 
 ### Phase 5: Backend.WGSL (df64, then f32)
@@ -329,6 +329,36 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: Tools write tables, and use autocolor, in Backend.Wasm
+
+**Tables.** A tool's `reset`, cell and point writes, slice writes from
+lists, slice copies, and `resize` compile. Making and copying tables is
+`libm/fstables.c`, compiled to `js/tables.wasm` (no data or stack of its
+own, and bulk memory for its copies, all checked by the build), which
+makes them in the tool's arena; the engine reads back any table a tool
+replaced, as a new version. A frozen table (a configuration's, or one
+another variable also holds) is copied before it's written, and nothing
+is written unless that copy worked, so a worker's cached tables are never
+written. The table tests (`TableSpec`), skipped under wasm until now,
+all pass there.
+
+**Autocolor.** A tool gets an autocolor snapshot and a misses list, as a
+viewer's kernel does; a run that meets points to add is run again once
+the engine has added them. New test: `ToolAutocolorSpec`.
+
+**SaddleDrop** (copies of `../saddledrop-layers.2.fs`, with its 6 MB of
+saved tables): the saved tables' layer, Add (a resize), the Critical point
+tool, and Fill all capture identically with wasm and LLVM, and as fast.
+Neither build's Fill found anything to fill from the seeds tried
+headlessly, so the flood fill itself isn't covered there yet.
+
+**A race in Stop's "switch to Navigate"**, which the new timings showed:
+when a stopped handler let go of the viewer's lock, another handler
+waiting for it (a refresh after a new frame) could start, clearing the
+shared "navigate" flag, and run with the old tool. Now each run has its
+own flag, the switch happens before the lock is let go, and a waiting
+handler checks that its tool is still selected.
 
 ### 2026-11-12: Viewers read tables in Backend.Wasm
 

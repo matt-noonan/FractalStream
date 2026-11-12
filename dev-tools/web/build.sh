@@ -22,7 +22,8 @@ wasm="$(wasm32-wasi-cabal list-bin --project-file=cabal.project.wasm exe:fractal
 cp "$wasm" "$dist/fractalstream-web.wasm"
 "$(wasm32-wasi-ghc --print-libdir)/post-link.mjs" -i "$wasm" -o "$dist/fractalstream-web.js"
 cp fractalstream-backend-wasm/js/kernel-worker.mjs fractalstream-backend-wasm/js/worker-pool.mjs \
-   fractalstream-backend-wasm/js/libm.wasm fractalstream-backend-wasm/js/autocolor.wasm "$dist/"
+   fractalstream-backend-wasm/js/libm.wasm fractalstream-backend-wasm/js/autocolor.wasm \
+   fractalstream-backend-wasm/js/tables.wasm "$dist/"
 
 # The page and the engine's worker. (Browsers don't resolve npm's bare
 # module names, so the WASI shim is copied in, and imported by path.)

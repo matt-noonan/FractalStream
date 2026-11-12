@@ -33,11 +33,11 @@
 // Messages in:
 //   { kernel: id, bytes }          a kernel or tool (its module's bytes) to keep
 //   { job, kernel: id, args, snapshot, width, height, subsamples, x0, y0, dx, dy, tables, tableData }
-//   { job, kernel: id, tool: true, args, arenaSize, tables, tableData }
+//   { job, kernel: id, tool: true, args, snapshot, arenaSize, tables, tableData }
 // (tables: [{ version, offset }], tableData: { version: bytes })
 // Messages out:
 //   { job, issues, pixels, misses, evicted }
-//   { job, status, args, arenaBase, lists, draws, evicted }   (a tool's: no lists or draws, if bit 0 is set)
+//   { job, status, args, arenaBase, lists, draws, misses, evicted }   (a tool's: no lists or draws, if bit 0 is set)
 //   or { job, error, evicted }
 
 const ARGS_BASE = 16;
@@ -140,15 +140,18 @@ const imports = (async () => ({
   math: (await WebAssembly.instantiate(await load("./libm.wasm"))).instance.exports,
   autocolor: (await WebAssembly.instantiate(await load("./autocolor.wasm"), { env: { memory } }))
     .instance.exports,
+  // (and what tools' handlers do to tables: tables.wasm, also built here)
+  tables: (await WebAssembly.instantiate(await load("./tables.wasm"), { env: { memory } }))
+    .instance.exports,
 }))();
 
 const kernels = new Map();
 
-function handle(m, { math, autocolor }) {
+function handle(m, { math, autocolor, tables }) {
   if (m.bytes) {
     // (each worker compiles its own copy: it takes well under a millisecond)
     const module = new WebAssembly.Module(m.bytes);
-    const instance = new WebAssembly.Instance(module, { env: { memory }, math, autocolor });
+    const instance = new WebAssembly.Instance(module, { env: { memory }, math, autocolor, tables });
     kernels.set(m.kernel, instance.exports);
     return null;
   }
@@ -184,18 +187,25 @@ function handle(m, { math, autocolor }) {
 
 function runTool(m, tool) {
   const args = new Uint8Array(m.args);
-  const arena = align8(ARGS_BASE + args.length);
+  const snapshot = new Uint8Array(m.snapshot ?? new ArrayBuffer(0));
+  const snap = align8(ARGS_BASE + args.length);
+  const misses = align8(snap + snapshot.length);
+  const arena = align8(misses + 8 + MISS_SIZE * MISS_CAPACITY);
   const top = arena + m.arenaSize;
   ensureMemory(top);
   placeTables(m, top);
   new Uint8Array(memory.buffer, ARGS_BASE, args.length).set(args);
+  new Uint8Array(memory.buffer, snap, snapshot.length).set(snapshot);
+  new Int32Array(memory.buffer, misses, 2).set([0, MISS_CAPACITY]);
   patchTables(m);
-  const status = tool(ARGS_BASE, arena, m.arenaSize, 0);
-  if (status & 1) return [{ job: m.job, status, evicted: takeDropped() }, []];
+  const status = tool(ARGS_BASE, arena, m.arenaSize, 0, snapshot.length > 0 ? snap : 0, misses);
+  if (status & 1) return [{ job: m.job, status, misses: new Uint8Array(0), evicted: takeDropped() }, []];
   const [bump, end] = new Int32Array(memory.buffer, 0, 2);
   const bytes = (from, to) => new Uint8Array(memory.buffer, from, to - from).slice();
   const out = bytes(ARGS_BASE, ARGS_BASE + args.length), lists = bytes(arena, bump), draws = bytes(end, top);
-  return [{ job: m.job, status, args: out, arenaBase: arena, lists, draws, evicted: takeDropped() }, [out.buffer, lists.buffer, draws.buffer]];
+  const missed = bytes(misses + 8, misses + 8 + MISS_SIZE * new Int32Array(memory.buffer, misses, 1)[0]);
+  return [{ job: m.job, status, args: out, arenaBase: arena, lists, draws, misses: missed, evicted: takeDropped() },
+          [out.buffer, lists.buffer, draws.buffer, missed.buffer]];
 }
 
 if (typeof process !== "undefined" && process.versions?.node) {

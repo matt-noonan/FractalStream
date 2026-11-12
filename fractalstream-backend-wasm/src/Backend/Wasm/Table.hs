@@ -17,6 +17,15 @@
 -- its own thread, the table's buffer; on a worker, its copy of the table.
 -- Each operation does what the LLVM backend's does: an index out of range
 -- sets the bad-index flag (and gives zero).
+--
+-- A tool's handler can also change tables, through the functions it
+-- imports from module @tables@ (@libm/fstables.c@, which makes new tables
+-- in its arena, after its lists). A table variable holds a descriptor; a
+-- table that others may be looking at (a configuration value, or another
+-- variable's too) is /frozen/, so writing it writes a copy ("thawed")
+-- first, which the variable then holds. A write is skipped unless the
+-- table is thawed: so a worker's copy of a configuration's table is never
+-- written, even if copying it ran out of room.
 module Backend.Wasm.Table
   ( descriptorBytes
   , tableRead
@@ -29,13 +38,22 @@ module Backend.Wasm.Table
   , loadTableElem
   , storeTableElem
   , tableElemBytes
+    -- * Writing (a tool's handler only)
+  , tableWrite
+  , tableWritePoint
+  , tableWriteSlice
+  , tableCopySlice
+  , tableResize
+  , tableAllocate
+  , freezeTable
+  , tableImports
   ) where
 
 import FractalStream.Prelude
 
 import Backend.Wasm.Encode
 import Backend.Wasm.Gen
-import Backend.Wasm.List (alloc, nodeStride, storeElem, newBuilder, append, Builder(..))
+import Backend.Wasm.List (alloc, nodeStride, storeElem, loadElem, newBuilder, append, Builder(..), walkList)
 
 import Language.Type
 import Language.Table (elementSize, secondOffset)
@@ -239,3 +257,199 @@ zeroOfTable t = case t of
       l <- newLocal vt
       emit [if vt == I32 then i32Const 0 else f64Const 0, localSet l]
       pure l
+
+------------------------------------------------------------------------
+-- Writing
+
+-- | What a tool imports from module @tables@ (after the math functions
+-- and the autocolor lookup): the functions of @libm/fstables.c@.
+tableImports :: [Import]
+tableImports =
+  [ Import "tables" "new" [I32, I32, I32, F64, F64, F64, F64, I32, I32, I32] [I32]
+  , Import "tables" "thaw" [I32, I32, I32, I32] [I32]
+  , Import "tables" "resize" [I32, I32, I32, I32, I32, I32, I32] [I32]
+  , Import "tables" "copy" [I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32] [I32] ]
+
+tableFn :: String -> Int
+tableFn f = length mathImports + 1 + fromMaybe 0 (lookup f (zip ["new", "thaw", "resize", "copy"] [0 ..]))
+
+-- | Mark a table as shared (frozen), when another variable gets it too.
+freezeTable :: Loc -> Gen ()
+freezeTable = \case
+  LTable d -> emit [ localGet d, IfElse [ localGet d, i32Const 1, i32Store 8 ] [] ]
+  _ -> pure ()
+
+-- | Make the table in a variable's local one the tool can write in place:
+-- a copy of it, if it's frozen.
+thaw :: TypeProxy t -> Int -> Gen ()
+thaw ty slot = do
+  Arena{..} <- getArena
+  size <- tableElemBytes ty
+  r <- newLocal I32
+  d <- newLocal I32
+  emit [ localGet slot, i32Const 0, i32Ne, localGet arOverflow, i32Eqz, i32And
+       , IfElse [ localGet slot, i32Load 8
+                , IfElse [ localGet arBump, i32Const 7, i32Add, i32Const (-8), i32And, localSet d
+                         , i32Const (fromIntegral size), localGet slot, localGet arBump, localGet arEnd
+                         , call (tableFn "thaw"), localSet r
+                         , localGet r, i32Const 0, i32LeS
+                         , IfElse [ i32Const 1, localSet arOverflow ]
+                                  [ localGet d, localSet slot, localGet r, localSet arBump ] ] [] ] [] ]
+
+-- | Whether a table can be written in place now: it's there, thawed, and
+-- the arena hasn't run out.
+writable :: Int -> Gen Int
+writable slot = do
+  Arena{..} <- getArena
+  ok <- newLocal I32
+  emit [ localGet slot
+       , IfElse [ localGet slot, i32Load 8, i32Eqz, localGet arOverflow, i32Eqz, i32And, localSet ok ]
+                [ i32Const 0, localSet ok ] ]
+  pure ok
+
+-- | Write a cell, by its 1-based indices; out of range sets the
+-- bad-index flag.
+tableWrite :: TypeProxy t -> Int -> [Int] -> Loc -> Gen ()
+tableWrite ty slot ixs v = do
+  Arena{..} <- getArena
+  thaw ty slot
+  ok <- writable slot
+  (_, write) <- capture $ do
+    (inRange, base, _) <- sliceView slot (map Just ixs)
+    (_, store) <- capture (cellAddress ty slot base >>= \p -> storeTableElem ty p 0 v)
+    emit [ localGet inRange, IfElse store [ i32Const 1, localSet arBadIndex ] ]
+  emit [ localGet ok, IfElse write [] ]
+
+-- | Write the cell nearest a point, at some indices in the dimensions
+-- after the first two.
+tableWritePoint :: TypeProxy t -> Int -> (Int, Int) -> [Int] -> Loc -> Gen ()
+tableWritePoint ty slot (x, y) rest v = do
+  thaw ty slot
+  (j, k) <- pointIndices slot x y
+  tableWrite ty slot ([j, k] ++ rest) v
+
+-- | Write a slice with one @*@ from a list, one element for each of its
+-- cells (its first two indices maybe from a point); out of range, or a
+-- list of another length, sets the bad-index flag.
+tableWriteSlice :: TypeProxy t -> Int -> Maybe (Int, Int) -> [Maybe Int] -> Loc -> Gen ()
+tableWriteSlice ty slot mz ixs xs = do
+  Arena{..} <- getArena
+  h <- case xs of { LList l -> pure l; l -> throwError ("internal error: writing a non-list to a slice: " ++ show l) }
+  thaw ty slot
+  ok <- writable slot
+  (_, write) <- capture $ do
+    pointed <- forM mz $ \(x, y) -> pointIndices slot x y <&> \(j, k) -> [Just j, Just k]
+    (inRange, base, spans) <- sliceView slot (fromMaybe [] pointed ++ ixs)
+    (count, step) <- case spans of
+      [sp] -> pure sp
+      _ -> throwError "internal error: a list is written to a slice with one `*`"
+    i <- newLocal I32
+    cell <- newLocal I32
+    (_, walk) <- capture $ walkList h $ \curr stop -> do
+      (_, store) <- capture $ do
+        e <- loadElem ty curr 8
+        emit [ localGet base, localGet i, localGet step, i32Mul, i32Add, localSet cell ]
+        p <- cellAddress ty slot cell
+        storeTableElem ty p 0 e
+        emit [ localGet i, i32Const 1, i32Add, localSet i ]
+      emit [ localGet i, localGet count, i32GeS
+           , IfElse [ i32Const 1, localSet arBadIndex, i32Const 1, localSet stop ] store ]
+    emit [ localGet inRange
+         , IfElse ([ i32Const 0, localSet i ] ++ walk
+                   ++ [ localGet i, localGet count, i32Ne, IfElse [ i32Const 1, localSet arBadIndex ] [] ])
+                  [ i32Const 1, localSet arBadIndex ] ]
+  emit [ localGet ok, IfElse write [] ]
+
+-- | Integers (in locals) as an array in the arena: its address (0, with
+-- the overflow flag set, if it doesn't fit).
+intArray :: [Int] -> Gen Int
+intArray ls = do
+  p <- alloc (4 * max 1 (length ls))
+  (_, store) <- capture $ forM_ (zip [0 ..] ls) $ \(k, l) -> emit [ localGet p, localGet l, i32Store (4 * k) ]
+  emit [ localGet p, IfElse store [] ]
+  pure p
+
+constant :: Integer -> Gen Int
+constant c = do
+  l <- newLocal I32
+  emit [ i32Const c, localSet l ]
+  pure l
+
+-- | A slice's indices, as arrays of indices and of which are @*@s.
+sliceArrays :: Int -> Maybe (Int, Int) -> [Maybe Int] -> Gen (Int, Int, Int)
+sliceArrays desc mz ixs = do
+  pointed <- forM mz $ \(x, y) -> pointIndices desc x y <&> \(j, k) -> [Just j, Just k]
+  let all' = fromMaybe [] pointed ++ ixs
+  zero <- constant 0
+  one <- constant 1
+  is <- intArray (map (fromMaybe zero) all')
+  stars <- intArray (map (maybe one (const zero)) all')
+  pure (length all', is, stars)
+
+-- | Copy a slice of a table onto a slice of the table in a variable's
+-- local (by the host's @copy@); a failure sets the bad-index flag.
+tableCopySlice :: TypeProxy t -> Int -> (Maybe (Int, Int), [Maybe Int]) -> Int -> (Maybe (Int, Int), [Maybe Int]) -> Gen ()
+tableCopySlice ty slot (mz, ixs) src (mz', ixs') = do
+  Arena{..} <- getArena
+  size <- tableElemBytes ty
+  thaw ty slot
+  ok <- writable slot
+  r <- newLocal I32
+  (_, write) <- capture $ do
+    (n, dixs, dstars) <- sliceArrays slot mz ixs
+    (m, sixs, sstars) <- sliceArrays src mz' ixs'
+    emit [ localGet arOverflow, i32Eqz
+         , IfElse [ i32Const (fromIntegral size), localGet slot, i32Const (fromIntegral n), localGet dixs, localGet dstars
+                  , localGet src, i32Const (fromIntegral m), localGet sixs, localGet sstars
+                  , localGet arBump, localGet arEnd, call (tableFn "copy"), localSet r
+                  , localGet r, i32Eqz, IfElse [ i32Const 1, localSet arBadIndex ] []
+                  , localGet r, i32Const 0, i32LtS, IfElse [ i32Const 1, localSet arOverflow ] [] ] [] ]
+  emit [ localGet ok, IfElse write [] ]
+
+-- | A fill value (if any) in the arena: its address, or 0 for none.
+fillValue :: TypeProxy t -> Maybe Loc -> Gen Int
+fillValue ty = \case
+  Nothing -> constant 0
+  Just v -> do
+    size <- tableElemBytes ty
+    p <- alloc size
+    (_, store) <- capture (storeTableElem ty p 0 v)
+    emit [ localGet p, IfElse store [] ]
+    pure p
+
+-- | Give a variable a new table, from one of the host's functions, which
+-- makes it at the arena's next free address: given the arguments before
+-- @bump@ and @end@, it gives the new free address, 0 if it didn't fit
+-- (the overflow flag), or -1 for a bad size (the bad-index flag).
+newTableBy :: Int -> String -> [Instr] -> Gen ()
+newTableBy slot f args = do
+  Arena{..} <- getArena
+  r <- newLocal I32
+  d <- newLocal I32
+  emit [ localGet arOverflow, i32Eqz
+       , IfElse ( [ localGet arBump, i32Const 7, i32Add, i32Const (-8), i32And, localSet d ]
+                  ++ args ++ [ localGet arBump, localGet arEnd, call (tableFn f), localSet r
+                  , localGet r, i32Const 0, i32GtS
+                  , IfElse [ localGet d, localSet slot, localGet r, localSet arBump ]
+                      [ localGet r, i32Eqz
+                      , IfElse [ i32Const 1, localSet arOverflow ] [ i32Const 1, localSet arBadIndex ] ] ] ) [] ]
+
+-- | @resize T to (sizes) [filled with v]@.
+tableResize :: TypeProxy t -> Int -> [Int] -> Maybe Loc -> Gen ()
+tableResize ty slot sizes fill = do
+  size <- tableElemBytes ty
+  dims <- intArray sizes
+  f <- fillValue ty fill
+  newTableBy slot "resize"
+    [ i32Const (fromIntegral size), localGet slot, i32Const (fromIntegral (length sizes)), localGet dims, localGet f ]
+
+-- | @reset T to (sizes) [filled with v]@, over the rectangle with the
+-- given corners (top left, then bottom right).
+tableAllocate :: TypeProxy t -> Int -> [Int] -> (Int, Int) -> (Int, Int) -> Maybe Loc -> Gen ()
+tableAllocate ty slot sizes (x1, y1) (x2, y2) fill = do
+  size <- tableElemBytes ty
+  dims <- intArray sizes
+  f <- fillValue ty fill
+  newTableBy slot "new"
+    [ i32Const (fromIntegral size), i32Const (fromIntegral (length sizes)), localGet dims
+    , localGet x1, localGet y1, localGet x2, localGet y2, localGet f ]

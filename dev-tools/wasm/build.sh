@@ -82,5 +82,20 @@ if [ ! -f "$ac" ] || [ "$ac_src" -nt "$ac" ] || [ "$ac_header" -nt "$ac" ]; then
   fi
 fi
 
+# What tools' handlers do to tables (new, copy, resize, slice copies),
+# which kernels import. Like the autocolor lookup, it works in the
+# kernel's memory, so it mustn't keep data or a stack there; its copies
+# are wasm's own memory.copy and memory.fill (bulk memory).
+tb_src=fractalstream-backend-wasm/libm/fstables.c
+tb=fractalstream-backend-wasm/js/tables.wasm
+if [ ! -f "$tb" ] || [ "$tb_src" -nt "$tb" ]; then
+  wasm32-wasi-clang -O2 -mbulk-memory -nostdlib -Wl,--no-entry -Wl,--import-memory "$tb_src" -o "$tb"
+  if wasm-dis "$tb" | grep -qE '^ *\(data|global\.(get|set)|\(import "env" "mem(cpy|set)'; then
+    rm -f "$tb"
+    echo "error: $tb_src uses memory of its own (data or a stack), or the C library" >&2
+    exit 1
+  fi
+fi
+
 if [ "$#" -eq 0 ]; then set -- all; fi
 exec wasm32-wasi-cabal build --project-file=cabal.project.wasm "$@"

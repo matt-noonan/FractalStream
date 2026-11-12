@@ -14,7 +14,8 @@
 -- holds its address: see "Backend.Wasm.List").
 --
 -- A tool's event handler compiles to @tool(args, arena, arenaSize,
--- result) -> status@ instead ('compileTool'): it runs its code once, with
+-- result, snapshot, misses) -> status@ instead ('compileTool'), with an
+-- autocolor snapshot and misses list as a kernel has: it runs its code once, with
 -- its variables read from @args@ as a viewer's are, and written back
 -- there when it's done (so the engine can see what it changed). Its draw
 -- commands go into the arena too, from the top down (lists are made from
@@ -35,6 +36,7 @@ import Backend.Wasm.Encode hiding (Block)
 import Backend.Wasm.Gen
 import Backend.Wasm.Value
 import Backend.Wasm.List
+import Backend.Wasm.Table (freezeTable, tableImports, tableAllocate, tableWrite, tableWritePoint, tableWriteSlice, tableCopySlice, tableResize)
 
 import Actor.Viewer.Types (ViewerEnv, MissingViewerArgs)
 import Language.Code
@@ -55,10 +57,13 @@ code = indexedFold @CtxCode $ \case
   Set pf _ e -> do
     x <- value e
     ctx <- ask
+    -- (a table another variable now holds too is shared: see "Backend.Wasm.Table")
+    lift (freezeTable x)
     lift (copyInto x (withKnownType (typeOfValue e) (getBinding ctx pf)))
 
   Let pf name val body -> do
     x <- value val
+    lift (freezeTable x)
     x' <- lift (freshLike x)
     lift (copyInto x x')
     recallIsAbsent (absentInTail pf) $ do
@@ -136,14 +141,58 @@ code = indexedFold @CtxCode $ \case
         txt <- value t >>= \case { LText l -> pure l; l -> lift (throwError ("internal error: a text of the wrong shape: " ++ show l)) }
         (x, y) <- point p
         lift (drawRecord 7 [\rec -> [localGet rec, localGet txt, i32Store 4], f64At 8 x, f64At 16 y])
-  TableAllocate{} -> lift (unsupported "tables")
-  TableWrite{} -> lift (unsupported "tables")
-  TableWriteSlice{} -> lift (unsupported "tables")
-  TableCopySlice{} -> lift (unsupported "tables")
-  TableResize{} -> lift (unsupported "tables")
+  -- (only a tool's handler can change a table)
+  TableAllocate pf _ n ty msizes mz1 mz2 mfill -> do
+    slot <- withKnownType ty (tableSlot (TableType n ty) pf)
+    sizes <- mapM (\v -> value v >>= lift . intLoc) msizes
+    z1 <- value mz1 >>= lift . complexLoc
+    z2 <- value mz2 >>= lift . complexLoc
+    fill <- traverse value mfill
+    lift (tableAllocate ty slot sizes z1 z2 fill)
+  TableWrite pf _ n ty cell mv -> do
+    slot <- withKnownType ty (tableSlot (TableType n ty) pf)
+    v <- value mv
+    case cell of
+      CellAt mixs -> do
+        ixs <- mapM (\i -> value i >>= lift . intLoc) mixs
+        lift (tableWrite ty slot ixs v)
+      CellNear mz mrest -> do
+        z <- value mz >>= lift . complexLoc
+        rest <- mapM (\i -> value i >>= lift . intLoc) mrest
+        lift (tableWritePoint ty slot z rest v)
+  TableWriteSlice pf _ n ty at mxs -> do
+    slot <- withKnownType ty (tableSlot (TableType n ty) pf)
+    (mz, ixs) <- sliceAt at
+    xs <- value mxs
+    lift (tableWriteSlice ty slot mz ixs xs)
+  TableCopySlice pf _ n ty at _ msrc srcAt -> do
+    slot <- withKnownType ty (tableSlot (TableType n ty) pf)
+    dst <- sliceAt at
+    src <- value msrc >>= \case { LTable t -> pure t; l -> lift (throwError ("internal error: copying from a non-table: " ++ show l)) }
+    from <- sliceAt srcAt
+    lift (tableCopySlice ty slot dst src from)
+  TableResize pf _ n ty msizes mfill -> do
+    slot <- withKnownType ty (tableSlot (TableType n ty) pf)
+    sizes <- mapM (\v -> value v >>= lift . intLoc) msizes
+    fill <- traverse value mfill
+    lift (tableResize ty slot sizes fill)
   where
     captured :: ReaderT r Gen a -> ReaderT r Gen (a, [Instr])
     captured m = ReaderT (capture . runReaderT m)
+    -- the local holding a table variable's descriptor
+    tableSlot :: forall env' name t. KnownSymbol name => TypeProxy t -> NameIsPresent name t env' -> ReaderT (Context WLoc env') Gen Int
+    tableSlot t pf = do
+      ctx <- ask
+      case withKnownType t (getBinding ctx pf) of
+        LTable l -> pure l
+        l -> lift (throwError ("internal error: a table variable of the wrong shape: " ++ show l))
+    sliceAt :: forall env'. TableSliceAt env' -> ReaderT (Context WLoc env') Gen (Maybe (Int, Int), [Maybe Int])
+    sliceAt (SliceAt mz mixs) = do
+      z <- traverse (\v -> value v >>= lift . complexLoc) mz
+      ixs <- mapM (traverse (\i -> value i >>= lift . intLoc)) mixs
+      pure (z, ixs)
+    intLoc = \case { LInt i -> pure i; l -> throwError ("internal error: an index of the wrong shape: " ++ show l) }
+    complexLoc = \case { LComplex x y -> pure (x, y); l -> throwError ("internal error: a point of the wrong shape: " ++ show l) }
     point :: forall env'. Value '(env', 'Pair 'RealT 'RealT) -> ReaderT (Context WLoc env') Gen (Int, Int)
     point p = value p >>= \case
       LPair (LReal x) (LReal y) -> pure (x, y)
@@ -357,19 +406,20 @@ compileViewer memory body = do
 ------------------------------------------------------------------------
 -- Tools
 
-tArgs, tArena, tArenaSize, tResult :: Int
-tArgs = 0; tArena = 1; tArenaSize = 2; tResult = 3
+tArgs, tArena, tArenaSize, tResult, tSnapshot, tMisses :: Int
+tArgs = 0; tArena = 1; tArenaSize = 2; tResult = 3; tSnapshot = 4; tMisses = 5
 
 -- | Compile a tool's event handler (its code, in its environment) into a
 -- module's bytes, exporting @tool@ (see above), or say why it can't be.
 compileTool :: EnvironmentProxy env -> Code env -> Either String [Word8]
 compileTool envp body = withEnvironment envp $ do
-  GenResult{..} <- runGen [I32, I32, I32, I32] $ do
+  GenResult{..} <- runGen [I32, I32, I32, I32, I32, I32] $ do
     ctx <- envToContextM @WLoc envp (\_ t -> locFor t)
     let vars = fromContext (\_ _ l -> l) ctx
     _ <- foldM (loadArg tArgs) 0 vars
     arena@Arena{..} <- Arena <$> newLocal I32 <*> newLocal I32 <*> newLocal I32 <*> newLocal I32
     setArena arena
+    setAutocolor (AutocolorParams tSnapshot tMisses)
     allowDrawing
     emit [ localGet tArena, localSet arBump
          , localGet tArena, localGet tArenaSize, i32Add, localSet arEnd
@@ -384,8 +434,9 @@ compileTool envp body = withEnvironment envp $ do
     { wmMemory = UnsharedMemory
     , wmImports = [ Import "math" f (replicate n F64) [F64] | (f, n) <- mathImports ]
                   ++ [ Import "autocolor" "lookup" [I32, I32, I32, F64, F64, I32] [I32] ]
+                  ++ tableImports
     , wmName = "tool"
-    , wmParams = [I32, I32, I32, I32]
+    , wmParams = [I32, I32, I32, I32, I32, I32]
     , wmResults = [I32]
     , wmLocals = grLocals
     , wmBody = grBody

@@ -32,7 +32,8 @@ import Actor.Viewer
 import Language.Draw (DrawSink(..))
 import Language.Code (Code, CodeF(..), transformValues, usedVarsInCode)
 import Data.Indexed.Functor (indexedFoldM)
-import Language.Table (Table(..), elementSize)
+import Language.Table (Table(..), elementSize, newTable, freezeTable)
+import Foreign.Marshal.Utils (copyBytes, fillBytes)
 import Backend.Wasm.Table (descriptorBytes)
 import qualified Data.Set as Set
 import Language.Environment
@@ -46,7 +47,6 @@ import Data.Bits (testBit)
 import Foreign.ForeignPtr (ForeignPtr, mallocForeignPtrBytes, withForeignPtr, touchForeignPtr)
 import Language.Value.Evaluator (HaskellValue)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
-import Foreign.Marshal.Utils (fillBytes)
 import Foreign.Marshal.Array (withArrayLen)
 import Data.IORef
 import Foreign.Ptr (Ptr, ptrToWordPtr, plusPtr)
@@ -83,8 +83,8 @@ foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, 
 -- an arena of the given size (see @js/kernel-worker.mjs@), tagged (to
 -- stop it with 'stopToolJob').
 foreign import javascript safe
-  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.runTool($1, new Uint8Array(m, $2, $3).slice(), $4, $5, new Int32Array(m, $6, 2 * $7).slice())"
-  runToolOnWorker :: Int -> Ptr Word8 -> Int -> Int -> Int -> Ptr Int32 -> Int -> IO JSVal
+  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.runTool($1, new Uint8Array(m, $2, $3).slice(), new Uint8Array(m, $4, $5).slice(), $6, $7, new Int32Array(m, $8, 2 * $9).slice())"
+  runToolOnWorker :: Int -> Ptr Word8 -> Int -> Ptr Word8 -> Int -> Int -> Int -> Ptr Int32 -> Int -> IO JSVal
 
 -- | Stop the tool job with this tag (its worker is replaced: see
 -- @js/worker-pool.mjs@); its 'runToolOnWorker' fails.
@@ -434,10 +434,10 @@ wasmToolRunner :: ToolRunner
 wasmToolRunner = ToolRunner $ \lookupAutocolor sink layer ctx script -> workerPoolSize >>= \case
   0 -> runTool defaultToolRunner lookupAutocolor sink layer ctx script
   _ -> handle (\(ToolNotCompiled err) -> pure (Left err))
-              (buildHandlerWith (wasmToolExec (sink layer)) ctx script)
+              (buildHandlerWith (wasmToolExec lookupAutocolor (sink layer)) ctx script)
 
-wasmToolExec :: DrawSink -> ToolExec
-wasmToolExec sink envp code0 = do
+wasmToolExec :: AutocolorLookup -> DrawSink -> ToolExec
+wasmToolExec lookupAutocolor sink envp code0 = do
   let code = transformValues backendRewrites code0
   bytes <- either (throwIO . ToolNotCompiled) pure (compileTool envp code)
   kernel <- withArrayLen bytes (\n p -> addKernel p n)
@@ -456,22 +456,30 @@ wasmToolExec sink envp code0 = do
               threadDelay 20000
               c <- runCancelled cancelFlag
               if c then stopToolJob tag else watch
-            attempt capacity = do
+            -- (a run that met points to add to autocolor groups is run
+            -- again once they're added, as a viewer's block is drawn again)
+            attempt :: Int -> Int -> IO JSVal
+            attempt tries capacity = do
               stopped
+              (snapshot, snapshotLen) <- autocolorSnapshot lookupAutocolor
               result <- bracket (forkIO watch) killThread $ \_ ->
-                try (withTableList tables (runToolOnWorker kernel p size capacity tag) >>= evaluate) >>= \case
+                try (withTableList tables (runToolOnWorker kernel p size snapshot snapshotLen capacity tag) >>= evaluate) >>= \case
                   Right r -> pure r
                   Left (e :: SomeException) -> stopped >> throwIO e
               status <- toolStatus result
-              if | testBit status 0 && capacity < toolArenaMaxCapacity -> attempt (2 * capacity)
+              missed <- allocaBytes (8 + missSize * missCapacity) $ \ms -> copyMisses result ms missCapacity >> readMisses ms
+              if | testBit status 0 && capacity < toolArenaMaxCapacity -> attempt tries (2 * capacity)
                  | testBit status 0 -> fail $ concat
                      [ "This tool's lists and drawing used more than "
                      , show (toolArenaMaxCapacity `div` (1024 * 1024))
                      , " MB of scratch memory, so its changes were discarded." ]
                  | testBit status 1 -> fail
                      "A list or table index was out of range, so this tool's changes were discarded."
+                 | not (null missed) && tries < maxRedraws -> do
+                     forM_ missed $ \(mode, n, x, y) -> autocolorFunction lookupAutocolor mode n x y
+                     attempt (tries + 1) capacity
                  | otherwise -> pure result
-        result <- attempt toolArenaInitialCapacity
+        result <- attempt 0 toolArenaInitialCapacity
         -- What it left: its arguments, its lists, and its drawing.
         copyToolArgs result p
         arenaBase <- toolArenaBase result
@@ -484,13 +492,15 @@ wasmToolExec sink envp code0 = do
           let at addr
                 | addr >= workerArgsBase && addr < workerArgsBase + size = p `plusPtr` (addr - workerArgsBase)
                 | otherwise = lists `plusPtr` (addr - arenaBase)
+              -- (the configuration's tables, by where their descriptors were)
+              tableAt addr = lookup addr [ (workerArgsBase + off, t) | (t, off, _) <- tables ]
           offset <- newIORef 0
           sets <- fromContextM (\name ty (arg, old) -> do
                     off <- readIORef offset
                     writeIORef offset (off + fromMaybe 0 (argSize ty))
                     -- (what it doesn't use, it can't have changed)
                     if not (symbolVal name `Set.member` used) then pure (pure ()) else do
-                      new <- peekArg at (p `plusPtr` off) ty old
+                      new <- peekArg at tableAt (p `plusPtr` off) ty old
                       pure $ case argSetValue arg of
                         Just set | Scalar ty old /= Scalar ty new -> set ty new
                         _ -> pure ()) (zipContext ctx vals)
@@ -534,14 +544,33 @@ readDraws at DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize
 -- | Read a value from the arguments buffer as 'pokeArg' wrote it (the
 -- kernel writes it back the same way); @at@ finds a list's nodes from
 -- their address.
-peekArg :: (Int -> Ptr Word8) -> Ptr Word8 -> TypeProxy t -> HaskellType t -> IO (HaskellType t)
-peekArg at p t old = case t of
+peekArg :: (Int -> Ptr Word8) -> (Int -> Maybe Table) -> Ptr Word8 -> TypeProxy t -> HaskellType t
+        -> IO (HaskellType t)
+peekArg at tableAt p t old = case t of
   ListType i -> peekByteOff p 0 >>= \(a :: Int32) -> peekList at i (fromIntegral a)
   TextType -> peekByteOff p 0 >>= \(a :: Int32) -> peekText at (fromIntegral a)
   PairType a b -> let (x, y) = old in
-    (,) <$> peekArg at p a x <*> peekArg at (p `plusPtr` fromMaybe 0 (argSize a)) b y
-  -- (a tool can't change a table yet)
-  TableType{} -> pure old
+    (,) <$> peekArg at tableAt p a x <*> peekArg at tableAt (p `plusPtr` fromMaybe 0 (argSize a)) b y
+  -- A table variable holds a configuration's table (its own, unchanged,
+  -- or another's), or one the tool made, in its arena: copied out, as a
+  -- new version, frozen (others may now look at it).
+  TableType _ ety -> peekByteOff p 0 >>= \(a :: Int32) -> case fromIntegral a of
+    0 -> pure old
+    addr | Just t' <- tableAt addr -> pure t'
+    addr -> do
+      let d = at addr
+      n <- fromIntegral <$> (peekByteOff d 4 :: IO Int32)
+      elems <- fromIntegral <$> (peekByteOff d 0 :: IO Int32)
+      origin <- (,) <$> peekByteOff d 16 <*> peekByteOff d 24
+      step <- (,) <$> peekByteOff d 32 <*> peekByteOff d 40
+      dims <- forM [0 .. n - 1] $ \k -> fromIntegral <$> (peekByteOff d (48 + 4 * k) :: IO Int32)
+      newTable ety dims origin step >>= \case
+        Nothing -> fail ("internal error: a table of " ++ showType ety ++ " can't be made")
+        Just t' -> do
+          withForeignPtr (tableBuffer t') $ \buf ->
+            copyBytes buf (at elems) (fromMaybe 0 (elementSize ety) * product dims)
+          freezeTable t'
+          pure t'
   _ -> peekScalar p t
 
 peekList :: (Int -> Ptr Word8) -> TypeProxy t -> Int -> IO [HaskellType t]

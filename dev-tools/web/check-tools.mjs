@@ -295,10 +295,12 @@ async function stop() {
   await page.mouse.wheel(0, -200);
   await bar(V).waitFor({ state: "visible", timeout: 5000 });
   c.check((await bar(V).locator("button").count()) === 2, "a slow refresh shows the bar, with both buttons");
+  const tNav = Date.now();
   await bar(V).locator("button", { hasText: "Navigate" }).click();
   await bar(V).waitFor({ state: "hidden", timeout: 5000 });
-  await page.waitForTimeout(300);
-  c.check((await app.pressed()) === "Navigate", `Stop and switch to Navigate does (${await app.pressed()})`);
+  await page.waitForFunction(() => document.querySelector("#tools button[aria-pressed=true]")?.textContent === "Navigate",
+                             null, { timeout: 5000 }).catch(() => {});
+  c.check((await app.pressed()) === "Navigate", `Stop and switch to Navigate does (${await app.pressed()}, after ${Date.now() - tNav} ms)`);
   await page.mouse.wheel(0, 200);
   await page.waitForTimeout(800);
   c.check(await bar(V).isHidden(), "and it doesn't run again");

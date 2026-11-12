@@ -31,6 +31,7 @@ fractalstream-gitinfo/src/
 # Written by dev-tools/wasm/build.sh
 fractalstream-backend-wasm/js/libm.wasm
 fractalstream-backend-wasm/js/autocolor.wasm
+fractalstream-backend-wasm/js/tables.wasm
 
 # The web app: npm packages, and what dev-tools/web/build.sh makes
 web/node_modules/

@@ -118,7 +118,7 @@ import FractalStream.Library (LibrarySection(..), LibraryEntry(..), librarySecti
 
 import Control.Concurrent (forkIO, killThread, threadDelay, ThreadId)
 import Control.Concurrent.MVar
-import Control.Exception (SomeException, SomeAsyncException, try, displayException, fromException, throwIO, finally)
+import Control.Exception (Exception, SomeException, SomeAsyncException, try, catch, displayException, fromException, throwIO, finally)
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
@@ -197,10 +197,10 @@ data ViewerState = ViewerState
     -- ^ asks its drawing loop to refresh its overlay (and its tool, if
     --   'vsToolRefresh'), and post its drawings
   , vsToolRefresh :: IORef Bool
-  , vsRun :: IORef (Maybe (CancelFlag, Bool))
-    -- ^ the running handler's cancel flag, and whether it's the overlay's
-  , vsStopToNavigate :: IORef Bool
-    -- ^ whether the running tool's handler was stopped to navigate
+  , vsRun :: IORef (Maybe (CancelFlag, Bool, IORef Bool))
+    -- ^ the running handler's cancel flag, whether it's the overlay's, and
+    --   whether it's been stopped to navigate (its own: another handler
+    --   may be waiting to run as soon as it's stopped)
   , vsLock :: MVar ()
     -- ^ held while its tool's handler runs: one at a time, as on the
     -- desktop (where they all run on the GUI thread)
@@ -356,8 +356,7 @@ openProject fromLibrary projectTitle fileName contents = do
     draw <- newEmptyMVar
     toolRefresh <- newIORef False
     running <- newIORef Nothing
-    toNavigate <- newIORef False
-    let vs = ViewerState k viewer signal tool draw toolRefresh running toNavigate lock
+    let vs = ViewerState k viewer signal tool draw toolRefresh running lock
     tid <- forkIO (renderLoop vs)
     drawTid <- forkIO (drawingLoop vs)
     unwatch <- onParameterChanges viewer (requestRender signal)
@@ -596,17 +595,22 @@ fire vs@ViewerState{..} ev = readIORef vsTool >>= \case
     aspect <- getDynamic (vAspect vsViewer)
     case atDispatch (px, px * aspect) ev of
       Nothing -> pure True
-      Just run -> try (withMVar vsLock (const (withProgress vs (Just atName) (startHandlerRun run >=> id)))) >>= \case
+      -- (once it has the lock, only if the tool's still selected: it may
+      -- have been dropped meanwhile, by stopping another handler)
+      -- (stopped: no effect; and back to navigating, if asked, before the
+      -- lock goes to another handler waiting for it)
+      Just run -> try (withMVar vsLock $ \_ -> readIORef vsTool >>= \case
+                    Just ActiveTool{ atName = current } | current == atName ->
+                      withProgress vs (Just atName) (startHandlerRun run >=> id) `catch` \(Stopped toNavigate) -> do
+                        when toNavigate $ do
+                          stopTimers vs
+                          writeIORef vsTool Nothing
+                          postTool vs Nothing Aeson.Null
+                        throwIO (Stopped toNavigate)
+                    _ -> pure ()) >>= \case
         Left (e :: SomeException)
           | Just (_ :: SomeAsyncException) <- fromException e -> throwIO e
-          -- (stopped: no effect; and back to navigating, if asked)
-          | Just HandlerCancelled <- fromException e -> do
-              toNavigate <- readIORef vsStopToNavigate
-              when toNavigate $ do
-                stopTimers vs
-                writeIORef vsTool Nothing
-                postTool vs Nothing Aeson.Null
-              pure False
+          | Just (Stopped _) <- fromException e -> pure False
           | otherwise -> False <$ toolFailed vs (atName ++ ": " ++ displayException e)
         Right () -> True <$ postFieldChanges
 
@@ -616,8 +620,8 @@ fire vs@ViewerState{..} ev = readIORef vsTool >>= \case
 withProgress :: ViewerState -> Maybe String -> (CancelFlag -> IO a) -> IO a
 withProgress ViewerState{..} name act = do
   flag <- newCancelFlag
-  writeIORef vsRun (Just (flag, isNothing name))
-  writeIORef vsStopToNavigate False
+  toNavigate <- newIORef False
+  writeIORef vsRun (Just (flag, isNothing name, toNavigate))
   -- (0 running, 1 announced, 2 done: changed, and posted, under the lock,
   -- so the page hears of them in order)
   stage <- newMVar (0 :: Int)
@@ -630,15 +634,20 @@ withProgress ViewerState{..} name act = do
                             , "name" .= name ]
         pure 1
       st -> pure st
-  act flag `finally` do
+  (act flag `catch` \HandlerCancelled -> readIORef toNavigate >>= throwIO . Stopped) `finally` do
     writeIORef vsRun Nothing
     modifyMVar_ stage $ \st -> do
       when (st == 1) $ post (Aeson.object [ "type" .= ("runDone" :: Text.Text), "viewer" .= vsId ])
       pure 2
 
+-- | A handler was stopped ('stopRun'), and whether to navigate again.
+newtype Stopped = Stopped Bool
+  deriving Show
+instance Exception Stopped
+
 stopRun :: Int -> Bool -> IO ()
-stopRun k navigate = withViewerState k $ \ViewerState{..} -> readIORef vsRun >>= mapM_ (\(flag, overlay) -> do
-  if overlay then vStopOverlay vsViewer else writeIORef vsStopToNavigate navigate
+stopRun k navigate = withViewerState k $ \ViewerState{..} -> readIORef vsRun >>= mapM_ (\(flag, overlay, toNavigate) -> do
+  if overlay then vStopOverlay vsViewer else writeIORef toNavigate navigate
   cancelRun flag)
 
 -- | Tell the page of each field whose text has changed since it was last

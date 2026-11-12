@@ -145,6 +145,7 @@ test-suite end-to-end
                     , DragSpec
                     , GeometrySpec
                     , TextSpec
+                    , ToolAutocolorSpec
                     , TableSpec
                     , HoistSpec
 

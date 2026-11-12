@@ -11,10 +11,9 @@ import FractalStream.Console (transliterateConsole)
 import qualified DragSpec
 import qualified GeometrySpec
 import qualified TextSpec
+import qualified ToolAutocolorSpec
 import qualified OverlaySpec
-#if !defined(wasm32_HOST_ARCH)
 import qualified TableSpec
-#endif
 import qualified HoistSpec
 
 #if defined(wasm32_HOST_ARCH)
@@ -22,12 +21,4 @@ foreign export javascript "hs_start" main :: IO ()
 #endif
 
 main :: IO ()
-main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec >> DragSpec.spec >> TextSpec.spec >> tables >> HoistSpec.spec)
-  where
-#if defined(wasm32_HOST_ARCH)
-    -- (not yet on WebAssembly: the wasm backend doesn't compile tables, so
-    -- their viewers are interpreted, which takes far too long at full size)
-    tables = pure ()
-#else
-    tables = TableSpec.spec
-#endif
+main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec)

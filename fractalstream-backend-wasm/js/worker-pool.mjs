@@ -16,7 +16,7 @@
 //                  -> Promise<{ issues, pixels, misses }>   a block (with
 //                  a copy of the autocolor snapshot), on the next idle
 //                  worker (queued if none is)
-// pool.runTool(id, args, arenaSize, tag)
+// pool.runTool(id, args, snapshot, arenaSize, tag)
 //                  -> Promise<{ status, args, arenaBase, lists, draws }>
 //                  a tool's handler, once (see kernel-worker.mjs)
 // pool.stop(tag)   stop the tool jobs with this tag: one waiting is
@@ -122,10 +122,10 @@ export function createPool(workers, makeWorker) {
       dispatch();
       return result;
     },
-    runTool(kernel, args, arenaSize, tag, tablePairs = []) {
+    runTool(kernel, args, snapshot, arenaSize, tag, tablePairs = []) {
       const job = nextJob++;
-      queue.push({ job, kernel, tool: true, tag, args: args.buffer, arenaSize, tables: tableList(tablePairs),
-                   transfer: [args.buffer] });
+      queue.push({ job, kernel, tool: true, tag, args: args.buffer, snapshot: snapshot.buffer, arenaSize,
+                   tables: tableList(tablePairs), transfer: [args.buffer, snapshot.buffer] });
       const result = new Promise((resolve, reject) => pending.set(job, { resolve, reject }));
       dispatch();
       return result;
