@@ -181,6 +181,10 @@ data ViewerState = ViewerState
   , vsViewer :: Viewer
   , vsSignal :: MVar ()
   , vsTool :: IORef (Maybe ActiveTool)
+  , vsDraw :: MVar ()
+    -- ^ asks its drawing loop to refresh its overlay (and its tool, if
+    --   'vsToolRefresh'), and post its drawings
+  , vsToolRefresh :: IORef Bool
   , vsLock :: MVar ()
     -- ^ held while its tool's handler runs: one at a time, as on the
     -- desktop (where they all run on the GUI thread)
@@ -332,10 +336,16 @@ openProject fromLibrary projectTitle fileName contents = do
     signal <- newMVar ()   -- (the first frame)
     tool <- newIORef Nothing
     lock <- newMVar ()
-    let vs = ViewerState k viewer signal tool lock
+    draw <- newEmptyMVar
+    toolRefresh <- newIORef False
+    let vs = ViewerState k viewer signal tool draw toolRefresh lock
     tid <- forkIO (renderLoop vs)
+    drawTid <- forkIO (drawingLoop vs)
     unwatch <- onParameterChanges viewer (requestRender signal)
-    pure ((k, vs), (tid, unwatch >> stopTimers vs))
+    -- (as the desktop app does, the overlay's refreshed when any
+    -- configuration value changes, whether or not the viewer re-renders)
+    unlisten <- vListenOverlay viewer (void (tryPutMVar draw ()))
+    pure ((k, vs), (tid, killThread drawTid >> unwatch >> unlisten >> stopTimers vs))
   let stop = forM_ (map snd loops) $ \(tid, unwatch) -> killThread tid >> unwatch
   context <- readIORef contextRef
 
@@ -396,9 +406,21 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
       withForeignPtr rbPixels $ \p ->
         postFrame k p (3 * rbWidth * rbHeight) rbWidth rbHeight
                   (fst rbCenter) (snd rbCenter) (fst rbPixelSize) (snd rbPixelSize)
-      -- (the overlay, for this view; and the drawings, if they've changed)
-      refreshOverlay viewer
-      postDrawings vs
+      -- (the overlay and the tool, for this view, as the desktop app
+      -- refreshes them with each render)
+      writeIORef (vsToolRefresh vs) True
+      void (tryPutMVar (vsDraw vs) ())
+
+-- | Refresh a viewer's overlay, and its tool after a frame, and post its
+-- drawings, whenever asked (once for however many asks came while it was
+-- busy: a slow handler doesn't fall behind).
+drawingLoop :: ViewerState -> IO ()
+drawingLoop vs = forever $ do
+  takeMVar (vsDraw vs)
+  refreshOverlay (vsViewer vs)
+  toolToo <- atomicModifyIORef' (vsToolRefresh vs) (False,)
+  when toolToo (void (fire vs Refresh))
+  postDrawings vs
 
 setField :: JSString -> JSString -> IO ()
 setField name text = guarded $ readIORef sessionRef >>= \case
