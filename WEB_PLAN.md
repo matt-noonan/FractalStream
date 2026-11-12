@@ -168,6 +168,17 @@ Build the wasm targets with `dev-tools/wasm/build.sh` (it runs
 `wasm32-wasi-cabal build --project-file=cabal.project.wasm`, after writing
 the git metadata; see R5).
 
+Build the web app with `dev-tools/web/build.sh`, and check it in headless
+Chromium with:
+
+- `node dev-tools/web/check.mjs`: every library project opens and draws.
+- `node dev-tools/web/check-tools.mjs [SECTION ...]`: the tools. Its
+  sections are `drawing` (shapes far from the view), `tools`, `refresh`,
+  `sweep` (every library tool compiles), and `stop` (handlers that never
+  finish, from `dev-tools/web/endless.fs`).
+- `dev-tools/wasm/compare-tools.sh`: every library tool's results against
+  the native LLVM build's.
+
 - Use **`ghc-wasm-meta`** with the GHC 9.10/9.12 line, through a root
   `cabal.project` (plus `cabal.project.wasm` for the cross build).
 - **Open:** whether to migrate the desktop build from stack to cabal.
