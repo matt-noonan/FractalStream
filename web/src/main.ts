@@ -190,19 +190,15 @@ function layoutElement(layout: Layout): Node {
   }
 }
 
+/** Tabs: a chooser of which one to show, and the one chosen. */
 function tabsElement(tabs: { label: string; body: Layout }[]): Node {
   const bodies = tabs.map((t) => el("div", { className: "tab-body" }, layoutElement(t.body)));
-  const buttons = tabs.map((t, i) => {
-    const b = el("button", { textContent: t.label, type: "button" });
-    b.addEventListener("click", () => select(i));
-    return b;
-  });
-  const select = (i: number) => {
-    bodies.forEach((b, k) => (b.hidden = k !== i));
-    buttons.forEach((b, k) => b.classList.toggle("selected", k === i));
-  };
+  const chooser = el("select", { className: "tab-chooser", title: "Which settings to show" },
+                     ...tabs.map((t, i) => el("option", { value: String(i), textContent: t.label })));
+  const select = (i: number) => bodies.forEach((b, k) => (b.hidden = k !== i));
+  chooser.addEventListener("change", () => select(Number(chooser.value)));
   select(0);
-  return el("div", { className: "tabs" }, el("div", { className: "tab-buttons" }, ...buttons), ...bodies);
+  return el("div", { className: "tabs" }, chooser, ...bodies);
 }
 
 function fieldElement(f: FieldLayout): Node {
@@ -293,7 +289,18 @@ class ViewerView {
     this.canvas.addEventListener("pointermove", (e) => this.moveDrag(e));
     this.canvas.addEventListener("pointerup", () => (this.dragFrom = null));
     this.canvas.addEventListener("pointercancel", () => (this.dragFrom = null));
-    this.canvas.addEventListener("wheel", (e) => this.zoom(e), { passive: false });
+    this.canvas.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
+    // (Safari's pinches: gesture events, with the scale since the pinch began)
+    let lastScale = 1;
+    this.canvas.addEventListener("gesturestart", (e) => { e.preventDefault(); lastScale = 1; });
+    this.canvas.addEventListener("gesturechange", (e) => {
+      e.preventDefault();
+      const g = e as unknown as { scale: number; clientX: number; clientY: number };
+      if (!(g.scale > 0)) return;
+      this.zoomBy(lastScale / g.scale, this.pixel(g));
+      lastScale = g.scale;
+    });
+    this.canvas.addEventListener("gestureend", (e) => e.preventDefault());
   }
 
   /** Show it at this size (in CSS pixels): the canvas has `density` times
@@ -365,7 +372,7 @@ class ViewerView {
   }
 
   /** The pointer's position in the canvas's pixels. */
-  private pixel(e: PointerEvent | WheelEvent) {
+  private pixel(e: { clientX: number; clientY: number }) {
     const r = this.canvas.getBoundingClientRect();
     return { x: (e.clientX - r.left) * this.canvas.width / r.width,
              y: (e.clientY - r.top) * this.canvas.height / r.height };
@@ -388,14 +395,19 @@ class ViewerView {
     this.request();
   }
 
-  private zoom(e: WheelEvent) {
+  /** The wheel zooms; so does pinching a trackpad, which most browsers
+      send as the wheel with Control held (and smaller steps). */
+  private wheel(e: WheelEvent) {
     e.preventDefault();
-    const t = this.target;
-    if (!t) return;
     // (a line or a page of scrolling counts as more than a pixel)
     const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
-    const factor = Math.exp(delta * 0.002);
-    const p = this.pixel(e);
+    this.zoomBy(Math.exp(delta * (e.ctrlKey ? 0.01 : 0.002)), this.pixel(e));
+  }
+
+  /** Zoom by a factor (of the pixel size: above 1 zooms out) about a point. */
+  private zoomBy(factor: number, p: { x: number; y: number }) {
+    const t = this.target;
+    if (!t) return;
     const W = this.canvas.width, H = this.canvas.height;
     // the model point under the pointer stays where it is
     const mx = t.cx + (p.x - W / 2) * t.px;

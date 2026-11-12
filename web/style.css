@@ -103,3 +103,7 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
 body.no-library #library { display: none; }
 body.no-panel .panel { display: none; }
 #toolbar .toggle { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; color: var(--muted); cursor: pointer; }
+.tab-chooser {
+  width: 100%; margin-bottom: 8px; font: inherit; padding: 4px 6px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);
+}
