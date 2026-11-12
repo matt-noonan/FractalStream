@@ -48,6 +48,11 @@ module Actor.Colorizer
   , applyColorizers
   , setsColor
   , splitArguments
+  , choiceName
+  , choiceArguments
+  , missingArguments
+  , argumentFields
+  , choiceWithArguments
   ) where
 
 import FractalStream.Prelude
@@ -530,6 +535,65 @@ splitArguments = map trim . go (0 :: Int) ""
 
 trim :: String -> String
 trim = dropWhileEnd isSpace . dropWhile isSpace
+
+-- | A viewer's colorizer choice (as written: @Name@ or @Name(args)@): the
+-- colorizer's name.
+choiceName :: String -> String
+choiceName = takeWhile (/= '(')
+
+-- | A choice's arguments, as written between its parentheses ("" for
+-- none).
+choiceArguments :: String -> String
+choiceArguments written = case dropWhile (/= '(') written of
+  '(' : rest | not (null rest) -> init rest
+  _ -> ""
+
+-- | A colorizer's parameters that a choice of it without arguments can't
+-- fill in, for a viewer with these names in scope ('colorizerScope'):
+-- those with no default, and no variable of the viewer's of their name.
+-- (Choosing one with any of these asks for its arguments.)
+missingArguments :: Set String -> Colorizer -> [String]
+missingArguments scope Colorizer{colorizerParams = params, colorizerDefaults = defaults} =
+  [ param | param <- params, Map.notMember param defaults, param `Set.notMember` scope ]
+
+-- | How to ask for a colorizer's arguments, for a viewer with these names
+-- in scope, starting from the ones written (as 'choiceArguments' gives
+-- them): for each parameter, its name, a note about it (its default, or
+-- that the viewer has no variable of its name), and its text to start
+-- with. An empty answer means the parameter's default, or else the
+-- viewer's variable of its name (see 'choiceWithArguments').
+argumentFields :: Set String -> Colorizer -> String -> [(String, String, String)]
+argumentFields scope Colorizer{colorizerParams = params, colorizerDefaults = defaults} written =
+  [ (param, note param, current i param) | (i, param) <- zip [0 :: Int ..] params ]
+  where
+    given = splitArguments written
+    inScope param = param `Set.member` scope
+    current i param = case drop i given of
+      g : _ | not (null g) -> g
+      _ | Map.member param defaults -> ""
+        | inScope param -> param
+        | otherwise -> ""
+    note param = case Map.lookup param defaults of
+      Just (_, src) -> "(default: " ++ src ++ ")"
+      Nothing | inScope param -> ""
+              | otherwise -> "(this viewer has no " ++ param ++ ")"
+
+-- | A colorizer chosen with these answers (one a parameter, as
+-- 'argumentFields' asks): the arguments that come to the parameter's
+-- default, or its name with no default (the viewer's variable), are left
+-- out at the end; if they all are, the choice is just its name.
+choiceWithArguments :: Colorizer -> [String] -> String
+choiceWithArguments Colorizer{colorizerName = name, colorizerParams = params, colorizerDefaults = defaults} answers =
+  if null args then name
+  else name ++ "(" ++ intercalate ", " [ fromMaybe (written' param) a | (param, a) <- args ] ++ ")"
+  where
+    answer param a
+      | all isSpace a || (a' == param && Map.notMember param defaults) = Nothing
+      | otherwise = Just a'
+      where a' = trim a
+    -- an omitted argument before a given one has to be written
+    written' param = maybe param (\(_, src) -> "(" ++ src ++ ")") (Map.lookup param defaults)
+    args = reverse . dropWhile (isNothing . snd) . reverse $ zip params (zipWith answer params answers)
 
 ------------------------------------------------------------
 -- Syntax helpers

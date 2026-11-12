@@ -32,7 +32,7 @@
 //
 // Messages in:
 //   { kernel: id, bytes }          a kernel or tool (its module's bytes) to keep
-//   { job, kernel: id, args, snapshot, width, height, subsamples, x0, y0, dx, dy, tables, tableData }
+//   { job, kernel: id, args, snapshot, width, height, subsamples, x0, y0, dx, dy, px, py, offsetX, offsetY, tables, tableData }
 //   { job, kernel: id, tool: true, args, snapshot, arenaSize, tables, tableData }
 // (tables: [{ version, offset }], tableData: { version: bytes })
 // Messages out:
@@ -175,7 +175,7 @@ function handle(m, { math, autocolor, tables }) {
     new Uint8Array(memory.buffer, snap, snapshot.length).set(snapshot);
     new Int32Array(memory.buffer, misses, 2).set([0, MISS_CAPACITY]);
     const issues = kernel(out, m.width, m.height, m.subsamples, ARGS_BASE, arena, ARENA_SIZE,
-                          snapshot.length > 0 ? snap : 0, misses, m.x0, m.y0, m.dx, m.dy);
+                          snapshot.length > 0 ? snap : 0, misses, m.x0, m.y0, m.dx, m.dy, m.px, m.py, m.offsetX, m.offsetY);
     const pixels = new Uint8Array(memory.buffer, out, size).slice();
     const missCount = new Int32Array(memory.buffer, misses, 1)[0];
     const missed = new Uint8Array(memory.buffer, misses + 8, MISS_SIZE * missCount).slice();

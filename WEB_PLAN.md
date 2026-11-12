@@ -232,7 +232,7 @@ wasmtime.
 - [x] Milestone 1: `basic_mandelbrot` and the Julia set project through
   Backend.Wasm under Node, compared with LLVM at a small size.
 - [x] Kernel worker pool (`fractalstream-backend-wasm/js/`).
-- [ ] Tiles and progressive passes (R3).
+- [x] Tiles and progressive passes: `renderProgressively`, in 64-pixel pieces (a pixel's point from the image's origin and its index, so tiles match a whole render). The GPU's frame-level API (R3) is still to come.
 - [x] Lists in a per-block arena; issue flags.
 - [x] Text (D17).
 - [x] Tables: viewers reading them, and tools writing them (D19).
@@ -263,7 +263,8 @@ wasmtime.
   chooser for the configuration's tabs.
 - [x] Try it in Safari and Firefox: every project works, no console errors; panning and zooming smooth after reprojecting frames onto the page's own view.
 - [x] Deployed as a static site, at `/app/` on the project's GitHub Pages (from `main`, by `pages.yml`, once `web.yml`'s checks pass), linked from the landing page as a preview.
-- [ ] **Progressive rendering** (deferred). Today the page shows the last
+- [x] **Progressive rendering**: patches as pieces are drawn, over the
+  last picture; stale renders dropped; see the findings log. (Was: the page showed the last
   frame, moved and scaled, until the whole new render arrives, so a slow
   viewer (the forced pendulum takes about 8 s) shows nothing new until
   it's done. The desktop renders coarse passes first, sharpening to full
@@ -319,10 +320,26 @@ Only if 0c/0d come out well.
 - [x] Windows minimize to their title bar (double-click it, or its
   button), and stay so when saved.
 - [ ] Folding, line numbers, font: with preferences.
+- [x] Opening as the desktop app does: an old FractalStream 1.0 file is
+  translated if the user wants (a new project, its editor open, the
+  translation's notes); a script that doesn't build opens with no viewers
+  and its editor open, getting its saved values and windows once it's
+  fixed; a starting point opens as a new, untitled project with its
+  editor open.
 
 ### Phase 7: Polish
 
 - [x] Sphere view (trackball): done in Phase 3.
+- [x] "Show pointer position", from each viewer's ☰ menu (on the plane
+  and the sphere: the engine says what's under the pointer).
+- [x] The rest of the desktop's viewer menu: Last, Next and Original view
+  (`<`, `>`, `^`), Jump to view (`@`), Show on the sphere, the Colorizer
+  submenu (with Arguments…), Use subpixel smoothing (per viewer, in
+  place of the toolbar's Smooth), and a real viewer's Aspect ratio… (with
+  Square pixels; saved as `aspect` when it isn't the script's). Not Show
+  configuration (`=`): the web's configuration is always beside the
+  viewers.
+- [x] Errors as notices, dismissed (not only the status line).
 - [ ] Autocolor editor.
 - [ ] Movies (WebCodecs).
 - [ ] Saved tables.
@@ -338,6 +355,275 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: The desktop on the shared renderer, with the web's pacing
+
+The desktop's tiles now render with the web's renderer: the core's
+`renderProgressivelyInto` draws into an `ImageTarget` (the frontend's
+buffer, its seed, and the pixels already final off a globe, which coarse
+passes leave alone, as `fillBlock` did), and `UI.Tile` calls it in its
+16-pixel pieces. `Task.Block` keeps just the plan. Recorded side by
+side, the desktop looked the same before and after (a recentring click
+and a wheel zoom, on Mandelbrot and Julia and on the forced pendulum).
+On the way, the desktop's viewer code now sees its pixel's size on every
+pass (it saw the step: 16 times that on the coarsest pass).
+
+Then the web's techniques, which the user found made it feel smoother:
+
+- **Live panning**: a plain drag on the plane moves the picture with the
+  pointer at once (the last captured picture, drawn moved, over grey),
+  and renders follow as the globe's turns do (once the current render's
+  done, or has had a tenth of a second). A drag that hasn't moved three
+  points is still a click (which recenters). A tool's own drag handlers
+  come first; a tool that handles neither drags nor their ends pans, as
+  on the web. The end of a pan is a step in the history.
+- **Shift and drag** for a box to zoom into (it was a plain drag).
+- **Every render held** for a tenth of a second before it's shown (it
+  was only new parameters'), so a quick one comes whole.
+- **A new view starts from the last finished picture**, moved, not from
+  a render stopped partway (a tile now knows whether its render was
+  done), and not across new parameters.
+- **Capturing at 30 Hz** (it was 10): a capture costs about 0.2 ms for a
+  600x600 viewer, measured.
+
+Recorded: a live pan on a quick viewer and on the slow pendulum (the
+picture follows the pointer; the new edges grey until rendered), a
+Shift-drag box zoom, a wheel zoom, and a turn of the globe (sharp
+throughout).
+
+**Pinch to zoom** on the desktop: wxWidgets 3.2.9 has it (on macOS, a
+trackpad pinch is a `wxEVT_MAGNIFY` mouse event, with its magnification),
+but our wxHaskell binds neither the event nor `GetMagnification`, so a
+little C++ (`fractalstream-ui-wx/cbits/magnify.cpp`, compiled with the
+flags `Setup.hs` already gets from wx-config; a no-op on Windows, where
+wx is a prebuilt DLL) connects it, and `UI.Magnify.onPinch` calls back
+with each event's magnification and position. A pinch zooms live about
+the pointer (on the sphere, about the globe's center), as a pan moves:
+the picture is drawn scaled at once, and the renders follow. wx 3.2's
+magnify events don't say where in the gesture they are, so a pinch is
+over (a step in the history) a third of a second after its last event,
+as on the web. Checked with a synthesized pinch (a gesture CGEvent with
+macOS's undocumented magnify fields).
+
+### 2026-11-12: The viewer menu
+
+Each viewer's ☰ menu now has what the desktop's does (but Show
+configuration; Aspect ratio came just after):
+
+- **Navigating** (Last, Next, Original view; `<`, `>`, `^`), with a
+  history per viewer, kept in the engine, which owns the globe's rotation
+  and the plane or sphere: the desktop's `UI.ViewModel` (its `Model` and
+  `History`) moved into the core, as `Actor.Viewer.ViewModel`, for both.
+  The page makes a step at the end of a gesture (a pan, a turn of the
+  globe; a zoom, once the wheel or pinch has paused for 300 ms; it's one
+  continuous motion on the web, where the desktop steps by 4x a wheel
+  notch), once the gesture's view has been asked for and answered; and
+  one for where it starts. When the engine moves a view itself (back,
+  next, home, a jump, the sphere), it tells the page (`view`).
+- **Jump to view** (`@`): a small form over the viewer (`askForm`): a
+  center (on the sphere, the point to face) and a CSS pixel's size,
+  starting from where it is (`fs_where`).
+- **Show on the sphere**, for a complex viewer: as the desktop's (the
+  point in the middle stays, at the script's zoom for the other kind).
+  Saved in `web-properties:`, with the desktop's keys (`view: sphere`,
+  `rotation`: a unit quaternion), and reopened so.
+- **Colorizer**: the colorizers the viewer can use, the one in use
+  checked; choosing one rebuilds the project (windows, views, tools,
+  smoothing and history kept), as the desktop's does; one whose
+  parameters the viewer can't fill in asks for its arguments first, and
+  Arguments… asks for the one in use's. The desktop's argument handling
+  moved into `Actor.Colorizer` (`missingArguments`, `argumentFields`,
+  `choiceWithArguments`), for both, with tests.
+- **Use subpixel smoothing**, per viewer (not saved, as on the desktop):
+  each starts off on a high-DPI screen, on otherwise; the toolbar's
+  Smooth is gone.
+
+Checks: `check-tools.mjs`'s `menu` section, in Chromium, Firefox and
+WebKit. (The harness now keeps the page's requests too, as
+`window.__sent`.)
+
+### 2026-11-12: Progressive rendering, only for slow renders
+
+The user found the first version of progressive rendering (below) felt
+worse than the whole frames before it, for viewers that render quickly:
+pans, zooms, and turns of the globe used to be very smooth. Three causes:
+the page asked for a new view every display frame, so renders were
+dropped mid-drag and few finished; a dropped render's pieces were kept
+over the picture, so a drag left a patchwork of pieces from many views,
+each on its own grid; and even a quick render showed itself filling in.
+
+Now quick renders behave just as before, and only slow ones are
+progressive:
+
+- **Every render holds its first patch back for 100 ms** (`renderHold`,
+  the desktop's hold for new parameters): one done by then comes whole.
+- **The page asks again once the engine's answered**: a render begun
+  since the request, done, or slow enough to be showing its progress
+  (only then is it dropped for the next view). So a drag of a quick
+  viewer gets whole frames, one after another.
+- **A dropped render's pieces are let go**; the picture is the last
+  render that was done.
+
+Checked at 2x, in a drag, a wheel zoom and a turn of the globe of quick
+viewers: every render shown came whole (30 of 30, 20 of 20, 23 of 23),
+none dropped.
+
+**For later:** the desktop keeps a dropped render's progress (its next
+render is seeded from the old tile, partial pieces and all), where the
+web now throws it away, for clean pictures. Revisit when the desktop
+moves onto `renderProgressively`: keep the pieces a dropped render
+finished at full resolution, reprojected, as the desktop's seed does.
+
+**For the desktop too** (the user's request, after trying it: these
+made "a significant difference to the smooth feel" on the web): when the
+desktop moves onto `renderProgressively`, give it the same techniques:
+hold every render's first update for 100 ms, not only new parameters'
+(so a quick render shows whole, with no coarse passes); pace view
+changes so a quick render isn't cancelled mid-drag (the next waits for
+it to finish, or to be slow enough to show progress); and don't seed
+from a cancelled render's partial pieces where that leaves a patchwork.
+Compare by hand, and with recordings, against the desktop as it is.
+
+**Next, for the sphere:** the desktop's `reprojectedSeed` turns the old
+picture with the globe (each new pixel: the point under it on the newly
+turned globe, then where that point was on the old one's screen), marks
+the pixels off the globe final, and leaves undrawn only what was on the
+far side. The web page only moves and scales the old frame, which can't
+follow a turn, so a slow sphere viewer still shows coarse passes after a
+turn. Porting that reprojection to the page is the fix. **Deferred**
+(2026-11-12): with the hold and pacing above, the user found the sphere
+smooth enough on every example tried; revisit if a slow sphere viewer
+turns roughly.
+
+### 2026-11-12: Progressive rendering, in tiles
+
+The web app now renders as the desktop's tiles do, and the two share
+the plan: `Task.Block.progressivePlan` (pulled out of
+`progressivelyOver`) orders the pieces (coarse passes, 16 and then 4
+pixels a sample, over what isn't shown yet; then every piece at full
+resolution; then, smoothed, at twice that), and `Actor.Viewer`'s
+`renderProgressively` renders them with a viewer's kernel, from the
+image's origin. Done, its image is `renderViewerBuffer`'s to the byte,
+smoothed or not (`BlocksSpec`, in uneven pieces, with and without pieces
+already shown).
+
+- **Pieces of 64 canvas pixels** on the web. Measured (512x512, a
+  Mandelbrot viewer): under Node with 10 workers, a kernel call costs
+  about 8 µs amortized (75 µs of round trip, spread across the workers),
+  so 16-pixel pieces took 9 ms, 32 took 4, 64 took 3 and 128 took 4 (too
+  few pieces to keep 10 workers busy). Natively a call costs about 2 µs:
+  the desktop's 16-pixel pieces cost it about 6% over 32 or more, so
+  they're fine as they are.
+- **Patches**, at most 30 a second: the rectangles drawn since the last
+  one, read straight from the engine's image by the worker (as RGBA).
+  The page writes them into the render's `ImageData`, flushes what
+  changed onto the render's canvas once per display frame, and draws
+  that over the last picture (moved into the view). Measured on the
+  page, at 2x with 100+ patches: under 1 ms a display frame, so 30 Hz
+  (or more) is cheap.
+- **Stale renders are dropped**, a piece in: a newer request (a pan, a
+  zoom, new parameters) makes the render skip its remaining pieces, and
+  the page asks at most once per display frame, without waiting. What a
+  dropped render drew stays, over the last picture. A globe's turn waits
+  until the last turn's render has begun to show, so turning shows
+  something.
+- **What the page shows already** goes with each view request (a
+  rectangle of the new view's pixels): pieces in it skip the coarse
+  passes, as the desktop's reprojected seed does. Nothing on the sphere
+  (the globe may have turned), or after new parameters.
+- **New parameters** hold their first patch back a tenth of a second, as
+  the desktop holds its capture, so a quick render shows no coarse passes.
+
+Timed, open to every viewer done at the canvas's size, before and after
+(same machine, Chromium): the forced pendulum 13.6 s to 6.8 s at 1x
+(smoothed), 6.9 s to 5.2 s at 2x; Period 5 5.1 to 2.6 s and 2.8 to
+2.1 s; the Mandelbrot set about the same (0.25 to 0.28 s). The first
+pieces show in about 150 ms. Most of the gain is the engine dropping the
+first render (at the project's size) when the page asks for the
+canvas's, where it used to finish it; the coarse passes cost about 7%
+more samples.
+
+Checks: `check-tools.mjs`'s `progressive` section (a slow viewer,
+`dev-tools/web/slow.fs`, whose loop needs `limit=work` to run past
+`max_iters`), passing in Chromium, Firefox and WebKit, at 1x and 2x.
+
+Still to do: the desktop onto `renderProgressively` (its tiles, its
+seeds and the off-globe pixels marked final, which the web doesn't do
+yet: a turned globe's coarse passes paint over the background briefly);
+and whether the desktop's 10 Hz capture should be faster.
+
+### 2026-11-12: A pixel's point from the image's origin
+
+Before tiles: every backend's kernel stepped from its block's first
+point (`x += dx` along a row), so a pixel's point, to the last bit,
+depended on how the image was cut into blocks (the finding under
+"Backend.Wasm on a pool of workers"). Now `ViewerArgs` gives the image's
+origin (`vaPoint`) and where the block starts in the image
+(`vaOffset`), and the pure, LLVM and wasm kernels compute each pixel's
+point as the origin plus its index in the image times the step. So a
+tiled, progressive render matches a whole one exactly. `BlocksSpec`
+checks it (blocks cut unevenly against the whole, with a viewer colored
+by the parity of x's last bit; a control shows blocks stepped from
+their own start don't match), natively and under Node. The wasm and
+LLVM renders still compare as before (`compare.sh`: 42 of 53 viewers
+identical, the rest differing in a few chaotic pixels, from the C
+libraries' math functions). The desktop's tiles still pass each piece
+its own start (with offset 0) until they move onto the shared tiled
+renderer.
+
+(Found on the way: an integer literal too big for 32 bits, like
+`2251799813685248`, silently wraps; `2251799813685248.0` is fine.)
+
+### 2026-11-12: Three things the desktop app did, and notices
+
+The user found three things the web app didn't do as the desktop does:
+
+- **An old FractalStream 1.0 file** (a binary plist, also `.fs`) failed
+  with only a line in the status bar. Now the engine says it's old
+  (`ancient`), keeping it; a notice asks whether to translate it
+  (`fs_translate`, with the core's `Language.Legacy` translator); the
+  translation opens as a new project (Save asks where, never over the
+  old file) with its editor open and its notes in a notice.
+- **A script that doesn't build** wouldn't open at all. Now, as on the
+  desktop, it opens with no viewers and its editor open
+  (`loadProjectBytes`'s `BrokenScript`, not run); rebuilt once fixed,
+  `carryOverProjectState` puts its saved values and tables in place,
+  and the page its saved windows (a rebuild keeps the windows it has,
+  and takes the file's for the rest).
+- **Starting points** opened like any library project. Now they open as
+  "Untitled" (`Untitled.fs`), without the starting point's metadata,
+  with the editor open.
+- **"Show pointer position"**, per viewer, from a new ☰ menu in each
+  window's title bar (`windows.ts`'s `menu`). The page asks the engine
+  (`fs_pointer`, one question at a time, like tool events), which knows
+  the globe's rotation; the text is the core's `pointerText`, which the
+  desktop now uses too, so they print points alike.
+
+Errors are now **notices** under the toolbar, each dismissed with ×
+(the latest four kept); the status line is for what's happening. The
+engine drops "user error (...)" from a `fail`'s message. Checks: the
+`opening` and `pointer` sections of `check-tools.mjs` (fixtures:
+`dev-tools/web/broken.fs`, and the core's `test/legacy-binary/Sarah3.fs`),
+passing in Chromium, Firefox and WebKit.
+
+### 2026-11-12: pixel_size on high-DPI screens, and smoothed
+
+On a Retina screen the page draws a CSS pixel with two canvas pixels,
+and a viewer's pixel size was a canvas pixel's: so whatever a script
+sized in `pixel_size` came out half as big as on the desktop, whose
+pixels are the screen's logical ones (markers, label offsets, a
+crosshair's width). Smoothed renders halved it again, in fsrun's
+captures too, since they sample at twice the size.
+
+Now a viewer's code sees a pixel's size apart from its sampling step
+(`ViewerArgs`'s new `vaPixel`, which every backend binds `pixel_size`,
+`pixel_width` and `pixel_height` to; `renderViewerBufferAt` takes how
+many of the viewer's pixels make the screen's), and tools and overlays
+are given it too: a CSS pixel's, in the web app (`fs_density`), whatever
+the density or smoothing; the desktop's tiles pass their step, so
+nothing changes there. New checks: `PixelSizeSpec` (a smoothed render
+sees the unsmoothed pixel; it fails with the old binding), and the
+`density` and `refresh` sections of `check-tools.mjs` (with `FS_DPR=2`).
 
 ### 2026-11-12: The script editor
 

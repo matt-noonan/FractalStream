@@ -12,7 +12,7 @@
 //
 // pool.size        how many workers
 // pool.addKernel(bytes) -> id    a kernel (its module's bytes) to use
-// pool.run(id, args, snapshot, width, height, subsamples, x0, y0, dx, dy)
+// pool.run(id, args, snapshot, width, height, subsamples, x0, y0, dx, dy, px, py, offsetX, offsetY, tables)
 //                  -> Promise<{ issues, pixels, misses }>   a block (with
 //                  a copy of the autocolor snapshot), on the next idle
 //                  worker (queued if none is)
@@ -113,11 +113,12 @@ export function createPool(workers, makeWorker) {
       kernels.set(id, bytes);
       return id;
     },
-    run(kernel, args, snapshot, width, height, subsamples, x0, y0, dx, dy, tablePairs = []) {
+    run(kernel, args, snapshot, width, height, subsamples, x0, y0, dx, dy, px, py, offsetX, offsetY, tablePairs = []) {
       const job = nextJob++;
       // (args, snapshot: Uint8Arrays whose buffers are the job's own, to transfer)
       queue.push({ job, kernel, args: args.buffer, snapshot: snapshot.buffer, tables: tableList(tablePairs),
-                   width, height, subsamples, x0, y0, dx, dy, transfer: [args.buffer, snapshot.buffer] });
+                   width, height, subsamples, x0, y0, dx, dy, px, py, offsetX, offsetY,
+                   transfer: [args.buffer, snapshot.buffer] });
       const result = new Promise((resolve, reject) => pending.set(job, { resolve, reject }));
       dispatch();
       return result;

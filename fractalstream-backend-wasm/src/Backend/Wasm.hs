@@ -74,10 +74,10 @@ foreign import javascript unsafe
   "const memory = __exports.memory; return new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array(memory.buffer, $1, $2).slice()), { env: { memory }, math: globalThis.fractalstreamMath, autocolor: new WebAssembly.Instance(globalThis.fractalstreamAutocolor, { env: { memory } }).exports });"
   instantiate :: Ptr Word8 -> Int -> IO JSVal
 
-foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"
+foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)"
   runKernel :: JSVal -> Ptr Word8 -> Int32 -> Int32 -> Int32 -> Ptr Word8 -> Ptr Word8 -> Int32
             -> Ptr Word8 -> Ptr Word8
-            -> Double -> Double -> Double -> Double -> IO Int32
+            -> Double -> Double -> Double -> Double -> Double -> Double -> Int32 -> Int32 -> IO Int32
 
 -- | Run a tool's handler on a worker, with a copy of its arguments and
 -- an arena of the given size (see @js/kernel-worker.mjs@), tagged (to
@@ -129,9 +129,9 @@ foreign import javascript unsafe
 -- that asked for it: a render cancelled while it waits must not write
 -- into a buffer that's been freed.)
 foreign import javascript safe
-  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.run($1, new Uint8Array(m, $2, $3).slice(), new Uint8Array(m, $4, $5).slice(), $6, $7, $8, $9, $10, $11, $12, new Int32Array(m, $13, 2 * $14).slice())"
+  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.run($1, new Uint8Array(m, $2, $3).slice(), new Uint8Array(m, $4, $5).slice(), $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, new Int32Array(m, $17, 2 * $18).slice())"
   runOnWorker :: Int -> Ptr Word8 -> Int -> Ptr Word8 -> Int -> Int32 -> Int32 -> Int32
-              -> Double -> Double -> Double -> Double -> Ptr Int32 -> Int -> IO JSVal
+              -> Double -> Double -> Double -> Double -> Double -> Double -> Int32 -> Int32 -> Ptr Int32 -> Int -> IO JSVal
 
 -- | Whether the pool has a copy of the table with this version.
 foreign import javascript unsafe "globalThis.fractalstreamWorkers.hasTable($1)"
@@ -184,7 +184,7 @@ withWasmViewer lookupAutocolor code0 action = do
             result <- withTableList tables $ \tp tn ->
                         runOnWorker kernel args argsLen snapshot snapshotLen
                           vaWidth vaHeight vaSubsamples
-                          (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep) tp tn
+                          (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep) (fst vaPixel) (snd vaPixel) (fst vaOffset) (snd vaOffset) tp tn
                       >>= evaluate
             copyPixels result vaBuffer
             copyMisses result misses missCapacity
@@ -200,7 +200,8 @@ withWasmViewer lookupAutocolor code0 action = do
               (snapshot, _) <- autocolorSnapshot lookupAutocolor
               runKernel inst vaBuffer vaWidth vaHeight vaSubsamples args a (fromIntegral arenaSize)
                         snapshot misses
-                        (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep)
+                        (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep) (fst vaPixel) (snd vaPixel)
+                        (fst vaOffset) (snd vaOffset)
       let used = usedNames code
       action $ ViewerFunction $ \vaArgs -> do
         -- The configuration's values, once for the whole render.

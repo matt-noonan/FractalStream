@@ -8,8 +8,21 @@ worker (@web/src/engine.ts@). The worker calls these exports:
 
 * @fs_library()@: post the built-in library.
 * @fs_open(section, entry)@: build that project; post its panel and
-  viewers, then each viewer's frames as they're rendered.
+  viewers, then each viewer's frames as they're rendered. A starting
+  point (in the library's "Starting points") opens as a new, untitled
+  project, without the starting point's title and description, and with
+  its script editor open, as on the desktop.
 * @fs_open_file(name, bytes)@: the same, for a project file's contents.
+  A project whose script doesn't build still opens, with no viewers, for
+  its script to be fixed (@"edit"@), as on the desktop. An old
+  FractalStream 1.0 save file isn't opened: the engine says so
+  (@ancient@), and keeps it for @fs_translate@.
+* @fs_translate()@: translate that old file into a new project (with no
+  file of its own yet), and open it, with its script editor and the
+  translation's notes.
+* @fs_pointer(viewer, x, y)@: what the viewer's "Show pointer position"
+  shows for a screen-plane point (as for @fs_event@): posted as
+  @pointer@.
 * @fs_save(views)@: post the open project as a file (its script, changed
   values, and so on, as the desktop app saves it), with the page's view
   state (JSON: see "web-properties" below).
@@ -21,14 +34,40 @@ As the desktop app does (and unlike fsrun, which is for reproducible
 runs), a project opens with the configuration values (@values:@) and the
 tables (@tables:@) it was saved with, and is saved with its own.
 * @fs_set(name, text)@: set a configuration field (by name) from its text.
-* @fs_view(viewer, cx, cy, pixelSize, width, height)@: move, zoom, or
-  resize a viewer (all at once, for one render).
+* @fs_view(viewer, cx, cy, pixelSize, width, height, left, top, right,
+  bottom)@: move, zoom, or resize a viewer (all at once, for one render).
+  The rectangle (in the new view's pixels, the right and bottom not
+  included; empty for none) is where the page still shows the last
+  picture, moved into the new view: the render's pieces there skip the
+  coarse passes (see "Frames" below).
 * @fs_resize(viewer, width, height)@: resize a viewer.
 * @fs_density(d)@: how many canvas pixels the page draws a CSS pixel
   with: tools and overlays are given a CSS pixel's size, as their
   @pixel_size@.
 * @fs_smoothing(on)@: whether viewers are smoothed (each pixel the average
-  of four samples, as fsrun's captures are), for every viewer from now on.
+  of four samples, as fsrun's captures are) to begin with: each new
+  viewer's choice, until @fs_viewer_smoothing(viewer, on)@ changes it
+  ("Use subpixel smoothing", per viewer, as on the desktop; not saved).
+* @fs_navigate(viewer, what)@: 0 the last view, 1 the next one (in the
+  viewer's history), 2 its original view (the script's, of the kind it
+  shows now: plane or sphere), 3 a complex viewer on the sphere instead of
+  the plane, or back. The engine posts the view it goes to (@view@).
+* @fs_record(viewer)@: the viewer's view, as it is now, is a step in its
+  history (the page says so at the end of a gesture: a drag, a zoom).
+* @fs_aspect(viewer, text)@: a real viewer's aspect ratio (a pixel's
+  height over its width, as typed: @2@, @1/2@), keeping its center and a
+  pixel's width, as the desktop does: answered with @aspect@ (an error,
+  or none). Saved in @web-properties:@ (@aspect@), when it isn't the
+  script's.
+* @fs_jump(viewer, x, y, pixelSize)@: go to a view: centered on (x, y)
+  (on the sphere, the globe turned to face it), with a pixel this size
+  (a CSS pixel's). @fs_where(viewer)@ posts where it is now, so (@where@).
+* @fs_colorizer(viewer, name)@: use another colorizer for the viewer,
+  rebuilding the project, as the desktop does; one whose parameters the
+  viewer can't fill in asks for its arguments first (@colorizerArguments@,
+  answered with @fs_colorizer_answers(viewer, name, answers)@, a JSON list
+  of strings). @fs_colorizer_arguments(viewer)@ asks for the arguments of
+  the one in use.
 * @fs_select_tool(viewer, name)@: select a viewer's tool (@""@: none, to
   navigate), as the desktop app does: the old one's deactivated (and its
   timers stopped), the new one activated (and refreshed, if it asks to be)
@@ -58,14 +97,25 @@ they've changed (or always, on the sphere, where they move with it): see
 "Drawing".
 
 and the engine posts JSON messages (@globalThis.fractalstreamPost@),
-frames (@globalThis.fractalstreamPostFrame@: RGB pixels, with the view they
-show), and saved files (@globalThis.fractalstreamPostFile@: a name and the
+a viewer's render, as it goes (@globalThis.fractalstreamPostPatch@: see
+"Frames" below), and saved files (@globalThis.fractalstreamPostFile@: a name and the
 contents), which the worker forwards to the page.
 
 Messages:
 
 > { "type": "library", "sections": [ { "name", "entries": [ { "title", "description", "preview" } ] } ] }
-> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
+> { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere" }   (the engine moved the view: a pixel's size in the canvas's pixels)
+> { "type": "where", "viewer", "x", "y", "pixelSize" }
+> { "type": "aspect", "viewer", "error": <why it isn't one> or null }
+> { "type": "colorizerArguments", "viewer", "name", "fields": [ { "param", "note", "text" } ] }
+
+A viewer's info has, too: "complex" (whether it can show the sphere),
+"smooth", and "colorizer": null, or { "inUse", "arguments": <whether the
+one in use has parameters>, "items": [ { "name", "label", "description",
+"inUse", "asks": <whether choosing it asks for arguments> } ] }.
+> { "type": "pointer", "viewer", "text" }
 > { "type": "field", "key", "error": <message> or null, "color": <#rrggbb, for a color field> }
 > { "type": "fieldText", "key", "text", "color": <as above> }   (a tool's handler changed it)
 
@@ -79,6 +129,20 @@ where a field's key is its name, in the project's panel, and
 > { "type": "drawing", "viewer", "layers": [ [ <shape> ] ] }   (see "Drawing")
 > { "type": "viewerError", "viewer", "message" }   (a render failed; the next frame clears it)
 > { "type": "error", "message" }
+
+Frames: a viewer's image is rendered progressively, as the desktop app's
+are ('renderProgressively'), in 'webPieceSize' pieces: coarse passes
+first, over what the page doesn't show yet, then each piece at full
+resolution, then (smoothed) at twice that. As pieces are drawn, the
+engine posts patches (no more often than 'patchInterval'): the render's
+number (per viewer), the view and size of its image, the rectangles drawn
+since the last patch and their pixels; the last patch says the render's
+done. Every render holds its first patch back for 'renderHold' (as the
+desktop app holds a render of new parameters): one that's done by then
+comes whole, in one patch, so a quick render shows no coarse passes and
+looks just as a whole frame would. A render that's no longer wanted
+(another one's been asked for) is dropped where it is, and its patches
+stop.
 
 The page's view state is saved in the project file under @web-properties:@
 (as the desktop app's window layout is under @wx-properties:@), as the page
@@ -96,18 +160,28 @@ module Main (main) where
 
 import FractalStream.Prelude
 
-import Actor.Ensemble (Ensemble(..), runEnsemble, parseEnsembleFromBytes, ensembleFields, FieldOwner(..),
+import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, LoadedProject(..), ensembleFields, FieldOwner(..),
                        encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables)
 import qualified Data.Aeson.KeyMap as KM
-import Actor.Metadata (ProjectMetadata(..))
+import Actor.Metadata (ProjectMetadata(..), noMetadata)
+import Language.Legacy.Binary (mightBeAncientFS, decodeAncientFS)
+import Language.Legacy.Translate (Translation(..), translateLegacyScript)
 import Actor.Layout
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges, viewProjection)
+import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progressive(..), ImagePiece(..), onParameterChanges, viewProjection,
+                     pointerText)
 import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
-import Actor.Viewer.Sphere (trackballRotation, screenToPlane)
+import Actor.Viewer.Sphere (trackballRotation, screenToPlane, Rotation(..), rotationFacing, rotateBy, sphereToPlane)
+import Actor.Viewer.ViewModel (Model(..), History(..), historyBack, historyForward, historyAppend)
+import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceArguments, missingArguments,
+                        argumentFields, choiceWithArguments)
+import Actor.Event (Coordinate(..))
+import Data.List (find)
+import Language.Value.Parser (parseConstant)
+import Language.Type (TypeProxy(RealType))
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
 import Actor.Ensemble (buildToolContext, buildEnsembleWithColorizers, carryOverProjectState)
@@ -138,6 +212,11 @@ import Foreign.Ptr (Ptr, castPtr)
 import GHC.Wasm.Prim (JSString(..), JSVal, toJSString, fromJSString)
 import System.FilePath (takeBaseName)
 import System.IO.Unsafe (unsafePerformIO)
+import System.IO.Error (isUserError, ioeGetErrorString)
+import GHC.Clock (getMonotonicTime)
+import qualified Data.Set as Set
+import Foreign.Marshal.Array (withArrayLen)
+import Task.Concurrent (renderConcurrency)
 
 ------------------------------------------------------------------------
 -- Talking to the page
@@ -145,11 +224,15 @@ import System.IO.Unsafe (unsafePerformIO)
 foreign import javascript unsafe "globalThis.fractalstreamPost($1)"
   postRaw :: JSString -> IO ()
 
--- | A viewer's frame: its RGB pixels, size, and the view they show (the
--- center, and a pixel's width and height).
+-- | A patch of a viewer's render: the viewer, the render's number, its
+-- image's width and height and view (center, and a pixel's width and
+-- height), the image's RGB pixels (read from, for the rectangles), the
+-- rectangles drawn (x, y, width, height each), and whether the render's
+-- done. (The worker copies the rectangles' pixels out at once.)
 foreign import javascript unsafe
-  "globalThis.fractalstreamPostFrame($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice(), $4, $5, $6, $7, $8, $9)"
-  postFrame :: Int -> Ptr Word8 -> Int -> Int -> Int -> Double -> Double -> Double -> Double -> IO ()
+  "globalThis.fractalstreamPostPatch($1, $2, $3, $4, $5, $6, $7, $8, new Uint8Array(__exports.memory.buffer, $9, 3 * $3 * $4), new Int32Array(__exports.memory.buffer, $10, 4 * $11).slice(), $12)"
+  postPatch :: Int -> Int -> Int -> Int -> Double -> Double -> Double -> Double
+            -> Ptr Word8 -> Ptr Int32 -> Int -> Bool -> IO ()
 
 -- | A saved project file: its name, and its contents.
 foreign import javascript unsafe
@@ -172,7 +255,10 @@ postError msg = post (Aeson.object [ "type" .= ("error" :: Text.Text), "message"
 -- | Run an export's work, posting any exception as an error.
 guarded :: IO () -> IO ()
 guarded act = try act >>= \case
-  Left (e :: SomeException) -> postError (displayException e)
+  -- (a 'fail' says its message, without "user error (...)" around it)
+  Left (e :: SomeException)
+    | Just io <- fromException e, isUserError io -> postError (ioeGetErrorString io)
+    | otherwise -> postError (displayException e)
   Right () -> pure ()
 
 ------------------------------------------------------------------------
@@ -189,9 +275,21 @@ data Session = Session
     -- ^ each color field's value, as #rrggbb
   , sStop :: IO ()
   , sTitle :: String
-  , sLibrary :: Bool
-    -- ^ (its title, and whether it's from the library: for a rebuild)
+  , sOpening :: Opening
+    -- ^ (its title, and how it was opened: for a rebuild)
   }
+
+-- | How a project was opened: from a file, from the library (or one of
+-- its starting points, as a new project), or as the translation of an old
+-- FractalStream file (with the translation's notes).
+data Opening = FromFile | FromLibrary | FromStartingPoint | Translated [String]
+  deriving Eq
+
+-- | An old FractalStream file, waiting for @fs_translate@: its name and
+-- contents.
+ancientRef :: IORef (Maybe (String, BS.ByteString))
+ancientRef = unsafePerformIO (newIORef Nothing)
+{-# NOINLINE ancientRef #-}
 
 -- | A viewer: its render loop's request signal, and its tool (if one's
 -- selected).
@@ -211,6 +309,27 @@ data ViewerState = ViewerState
   , vsLock :: MVar ()
     -- ^ held while its tool's handler runs: one at a time, as on the
     -- desktop (where they all run on the GUI thread)
+  , vsCovered :: IORef (Maybe (Int, Int, Int, Int))
+    -- ^ where the page shows the last picture, for the next render (see
+    --   'setView'): Nothing, once anything else (new parameters) asks for
+    --   a render
+  , vsRenders :: IORef Int
+    -- ^ its renders' number (the latest's)
+  , vsSmooth :: IORef Bool
+    -- ^ whether it's smoothed ("Use subpixel smoothing")
+  , vsHistory :: IORef (Maybe History)
+    -- ^ its views, for "Last view" and "Next view" (none yet, until a
+    --   step is recorded)
+  }
+
+-- | What a viewer keeps through a rebuild of the project (by its title):
+-- its tool, view (and size), smoothing, and history.
+data Carried = Carried
+  { cTool :: Maybe String
+  , cModel :: Model
+  , cSize :: Dimensions
+  , cSmooth :: Bool
+  , cHistory :: Maybe History
   }
 
 data ActiveTool = ActiveTool
@@ -235,10 +354,11 @@ sessionRef = unsafePerformIO (newIORef Nothing)
 
 -- | Whether frames are smoothed (see 'renderViewerBuffer').
 -- | How many canvas pixels the page draws a CSS pixel with (2, on a
--- high-DPI screen). A viewer's pixel size is a canvas pixel's; tools and
--- overlays are given a CSS pixel's ('cssPixelDims'), so that what a script
--- sizes in @pixel_size@ comes out as big as on the desktop, whose pixels
--- are the screen's logical ones.
+-- high-DPI screen). A viewer's pixel size is a canvas pixel's; its code,
+-- and its tools and overlays, are given a CSS pixel's ('cssPixelDims',
+-- 'renderViewerBufferAt'), so that what a script sizes in @pixel_size@
+-- comes out as big as on the desktop, whose pixels are the screen's
+-- logical ones.
 densityRef :: IORef Double
 densityRef = unsafePerformIO (newIORef 1)
 {-# NOINLINE densityRef #-}
@@ -275,13 +395,24 @@ getBackend = readIORef backendRef >>= \case
 foreign export javascript "fs_library" library :: IO ()
 foreign export javascript "fs_open" open :: Int -> Int -> IO ()
 foreign export javascript "fs_open_file" openFile :: JSString -> JSVal -> IO ()
+foreign export javascript "fs_translate" translateAncient :: IO ()
+foreign export javascript "fs_pointer" pointer :: Int -> Double -> Double -> IO ()
 foreign export javascript "fs_save" save :: JSString -> IO ()
 foreign export javascript "fs_rotate" rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
-foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
+foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> Int -> Int -> Int -> Int -> IO ()
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
 foreign export javascript "fs_smoothing" setSmoothing :: Bool -> IO ()
 foreign export javascript "fs_density" setDensity :: Double -> IO ()
+foreign export javascript "fs_viewer_smoothing" setViewerSmoothing :: Int -> Bool -> IO ()
+foreign export javascript "fs_navigate" navigateTo :: Int -> Int -> IO ()
+foreign export javascript "fs_record" record :: Int -> IO ()
+foreign export javascript "fs_jump" jump :: Int -> Double -> Double -> Double -> IO ()
+foreign export javascript "fs_aspect" setAspect :: Int -> JSString -> IO ()
+foreign export javascript "fs_where" whereIs :: Int -> IO ()
+foreign export javascript "fs_colorizer" chooseColorizer :: Int -> JSString -> IO ()
+foreign export javascript "fs_colorizer_arguments" colorizerArguments :: Int -> IO ()
+foreign export javascript "fs_colorizer_answers" colorizerAnswers :: Int -> JSString -> JSString -> IO ()
 foreign export javascript "fs_select_tool" selectTool :: Int -> JSString -> IO ()
 foreign export javascript "fs_event" toolEvent :: Int -> Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_button" toolButton :: Int -> JSString -> IO ()
@@ -316,17 +447,50 @@ open section entry = guarded $ do
   LibraryEntry{..} <- case drop section librarySections of
     s : _ | e : _ <- drop entry (lsEntries s) -> pure e
     _ -> fail "no such project"
-  openProject True leTitle leFileName leContents
+  if leStartingPoint
+    then openProject FromStartingPoint "Untitled" "Untitled.fs" leContents
+    else openProject FromLibrary leTitle leFileName leContents
 
 openFile :: JSString -> JSVal -> IO ()
 openFile name bytes = guarded $ do
   n <- byteLength bytes
   contents <- allocaBytes (max 1 n) $ \p -> copyBytes bytes p >> BS.packCStringLen (castPtr p, n)
   let fileName = fromJSString name
-  -- (the project's title, if its metadata gives one; else its file's name)
-  let title = either (const (takeBaseName fileName)) (fromMaybe (takeBaseName fileName) . mdTitle)
-                     (readProjectMetadata contents)
-  openProject False title fileName contents
+  if mightBeAncientFS contents
+    then do
+      -- (the page asks whether to translate it)
+      writeIORef ancientRef (Just (fileName, contents))
+      post (Aeson.object [ "type" .= ("ancient" :: Text.Text), "name" .= fileName ])
+    else openProject FromFile (titleOf fileName contents) fileName contents
+
+-- | A project's title: its metadata's, if it has one; else its file's name.
+titleOf :: String -> BS.ByteString -> String
+titleOf fileName contents =
+  either (const (takeBaseName fileName)) (fromMaybe (takeBaseName fileName) . mdTitle)
+         (readProjectMetadata contents)
+
+-- | Translate the old FractalStream file the page was told about, and open
+-- the translation, as the desktop app does: as a new project (so saving
+-- it doesn't write over the old file), with its script editor open, and
+-- the translation's notes.
+translateAncient :: IO ()
+translateAncient = guarded $ readIORef ancientRef >>= \case
+  Nothing -> postError "there's no old FractalStream file to translate"
+  Just (fileName, contents) -> do
+    writeIORef ancientRef Nothing
+    (title, body) <- either (\err -> fail ("I was not able to decode " ++ show fileName ++ ". " ++ err)) pure
+                       (decodeAncientFS contents)
+    Translation{..} <- either fail pure (translateLegacyScript title body)
+    let translated = Text.encodeUtf8 (Text.pack translatedProject)
+        newName = takeBaseName fileName ++ ".fs"
+    openProject (Translated translationWarnings) (titleOf newName translated) newName translated
+
+-- | What "Show pointer position" shows for a screen-plane point.
+pointer :: Int -> Double -> Double -> IO ()
+pointer k x y = withViewerState k $ \vs -> do
+  p <- toModel (vsViewer vs) (x, y)
+  post $ Aeson.object [ "type" .= ("pointer" :: Text.Text), "viewer" .= k
+                      , "text" .= pointerText (vCoordinate (vsViewer vs)) p ]
 
 save :: JSString -> IO ()
 save views = guarded $ readIORef sessionRef >>= \case
@@ -335,7 +499,8 @@ save views = guarded $ readIORef sessionRef >>= \case
     -- (the page's view state, under its own key)
     case Aeson.eitherDecodeStrict (Text.encodeUtf8 (Text.pack (fromJSString views))) of
       Left err -> postError ("couldn't save the view: " ++ err)
-      Right (v :: Aeson.Value) -> modifyValue (ensembleFrontendProperties sEnsemble) (KM.insert "web-properties" v)
+      Right (v :: Aeson.Value) -> withViews sViewers v >>= \v' ->
+        modifyValue (ensembleFrontendProperties sEnsemble) (KM.insert "web-properties" v')
     -- (the values it was left with; and its tables, if its file had them)
     changedValues sEnsemble >>= modifyValue (ensembleFrontendProperties sEnsemble) . writeSavedValues
     hasTables <- KM.member "tables" <$> getDynamic (ensembleFrontendProperties sEnsemble)
@@ -346,25 +511,37 @@ save views = guarded $ readIORef sessionRef >>= \case
     BS.useAsCStringLen contents $ \(p, n) -> postFile (toJSString sFileName) (castPtr p) n
 
 -- | Build a project from a file's contents, and start showing it.
-openProject :: Bool -> String -> String -> BS.ByteString -> IO ()
-openProject fromLibrary projectTitle fileName contents = do
-  ensemble <- parseEnsembleFromBytes fileName contents >>= either fail pure
+--
+-- A project whose script doesn't build still opens, as the desktop app
+-- does: with no viewers, and its script editor open, to fix it; its
+-- viewers come, with their saved values, tables and windows, when it's
+-- rebuilt ('carryOverProjectState' puts them in place).
+openProject :: Opening -> String -> String -> BS.ByteString -> IO ()
+openProject how projectTitle fileName contents = do
+  ensemble <- loadProjectBytes fileName contents >>= \case
+    Left err -> fail err
+    Right (Built ens) -> pure ens
+    Right (BrokenScript ens _) -> pure ens
+  -- (a starting point's title, description and preview are its own, not
+  -- the new project's)
+  when (how == FromStartingPoint) $ setValue' (ensembleMetadata ensemble) noMetadata
   -- The values and tables it was saved with, before anything is drawn
   -- (any that no longer fit are skipped, and said so on the console).
-  props <- getDynamic (ensembleFrontendProperties ensemble)
-  either (\err -> putStrLn ("Ignoring unreadable `values:`: " ++ err))
-         (applySavedValues ensemble >=> mapM_ putStrLn) (readSavedValues props)
-  either (\err -> putStrLn ("Ignoring unreadable `tables:`: " ++ err))
-         (\saved -> ensembleTables ensemble >>= \ts -> applySavedTables ts saved >>= mapM_ putStrLn)
-         (readSavedTables props)
-  startProject fromLibrary projectTitle fileName False Map.empty ensemble
+  when (ensembleBuilt ensemble) $ do
+    props <- getDynamic (ensembleFrontendProperties ensemble)
+    either (\err -> putStrLn ("Ignoring unreadable `values:`: " ++ err))
+           (applySavedValues ensemble >=> mapM_ putStrLn) (readSavedValues props)
+    either (\err -> putStrLn ("Ignoring unreadable `tables:`: " ++ err))
+           (\saved -> ensembleTables ensemble >>= \ts -> applySavedTables ts saved >>= mapM_ putStrLn)
+           (readSavedTables props)
+  startProject how projectTitle fileName False Map.empty ensemble
 
 -- | Show a project, in place of the open one (if any): run it, and post
 -- its panel and viewers. On a rebuild (from an edited script), each
 -- viewer the new project still has (by its title) gets the tool it had,
 -- if it still has one by that name (or none, if it had none).
-startProject :: Bool -> String -> String -> Bool -> Map.Map String (Maybe String) -> Ensemble -> IO ()
-startProject fromLibrary projectTitle fileName rebuilt toolsBefore ensemble = do
+startProject :: Opening -> String -> String -> Bool -> Map.Map String Carried -> Ensemble -> IO ()
+startProject how projectTitle fileName rebuilt carried ensemble = do
   close
   backend <- getBackend
 
@@ -380,22 +557,38 @@ startProject fromLibrary projectTitle fileName rebuilt toolsBefore ensemble = do
             writeIORef contextRef ctx
             pure (pure ())
         }
-  runEnsemble backend ui ensemble
+  -- (a script that doesn't build has nothing to run yet)
+  when (ensembleBuilt ensemble) $ runEnsemble backend ui ensemble
   viewers <- zip [0 ..] . reverse <$> readIORef viewersRef
 
   -- A render loop for each viewer: it renders whenever asked (once for
   -- however many asks came while it was busy), and posts the frame.
+  saved <- KM.lookup "web-properties" <$> getDynamic (ensembleFrontendProperties ensemble)
+  defaultSmooth <- readIORef smoothingRef
   loops <- forM viewers $ \(k, viewer) -> do
+    title <- getDynamic (vTitle viewer)
+    -- (what it had before a rebuild; else, on the sphere or the plane, as
+    -- its file saved it)
+    let before = Map.lookup title carried
+    case before of
+      Just Carried{..} -> setValue (vSize viewer) cSize >> setViewerModel viewer cModel
+      Nothing -> applySavedView viewer saved title
+    smooth <- newIORef (maybe defaultSmooth cSmooth before)
+    history <- newIORef (cHistory =<< before)
     signal <- newMVar ()   -- (the first frame)
     tool <- newIORef Nothing
     lock <- newMVar ()
     draw <- newEmptyMVar
     toolRefresh <- newIORef False
     running <- newIORef Nothing
-    let vs = ViewerState k viewer signal tool draw toolRefresh running lock
+    covered <- newIORef Nothing
+    renders <- newIORef 0
+    let vs = ViewerState k viewer signal tool draw toolRefresh running lock covered renders smooth history
     tid <- forkIO (renderLoop vs)
     drawTid <- forkIO (drawingLoop vs)
-    unwatch <- onParameterChanges viewer (requestRender signal)
+    unwatch <- onParameterChanges viewer $ do
+      writeIORef covered Nothing
+      requestRender signal
     -- (as the desktop app does, the overlay's refreshed when any
     -- configuration value changes, whether or not the viewer re-renders)
     unlisten <- vListenOverlay viewer (void (tryPutMVar draw ()))
@@ -411,26 +604,34 @@ startProject fromLibrary projectTitle fileName rebuilt toolsBefore ensemble = do
     pure (Aeson.object [ "kind" .= ("panel" :: Text.Text), "title" .= title, "body" .= body ]))
   colors <- readIORef colorsRef
   writeIORef sessionRef (Just (Session (Map.fromList (map fst loops)) context ensemble fileName colors stop
-                                       projectTitle fromLibrary))
+                                       projectTitle how))
   viewerInfo <- forM viewers $ \(k, viewer) -> do
     title <- getDynamic (vTitle viewer)
     Dimensions (w, h) <- getDynamic (vSize viewer)
     sphere <- (== SphereView) <$> getDynamic (vView viewer)
+    smooth <- maybe (pure defaultSmooth) (readIORef . vsSmooth) (lookup k (map fst loops))
+    colorizer <- colorizerInfo ensemble title
     tools <- getDynamic (vTools viewer) >>= mapM (\t -> do
       let ToolInfo{..} = toolInfo t
       name <- getDynamic (source tiName)
       shortcut <- getDynamic tiShortcut
       help <- getDynamic tiShortHelp
       pure (Aeson.object [ "name" .= name, "shortcut" .= shortcut, "help" .= help ]))
+    let complex = case vCoordinate viewer of ComplexCoordinate _ -> True; _ -> False
     pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere
-                       , "tools" .= tools ])
+                       , "tools" .= tools, "complex" .= complex, "smooth" .= smooth, "colorizer" .= colorizer ])
+  let translated = case how of Translated _ -> True; _ -> False
   views <- KM.lookup "web-properties" <$> getDynamic (ensembleFrontendProperties ensemble)
   script <- getDynamic (ensembleSourceScript ensemble)
   post $ Aeson.object
     [ "type" .= ("project" :: Text.Text)
     , "title" .= projectTitle
     , "fileName" .= fileName
-    , "library" .= fromLibrary
+    , "library" .= (how == FromLibrary)
+    , "new" .= (how == FromStartingPoint || translated)
+      -- (a rebuild that works closes the editor, so it's only on opening)
+    , "edit" .= (not rebuilt && (how == FromStartingPoint || translated || not (ensembleBuilt ensemble)))
+    , "notes" .= (case how of Translated notes | not rebuilt -> notes; _ -> [])
     , "panel" .= panel
     , "viewers" .= viewerInfo
     , "views" .= views
@@ -440,7 +641,7 @@ startProject fromLibrary projectTitle fileName rebuilt toolsBefore ensemble = do
   forM_ (map (snd . fst) loops) $ \vs -> do
     title <- getDynamic (vTitle (vsViewer vs))
     names <- getDynamic (vTools (vsViewer vs)) >>= mapM (getDynamic . source . tiName . toolInfo)
-    case Map.lookup title toolsBefore of
+    case cTool <$> Map.lookup title carried of
       -- (its tool before the rebuild, if it still has it)
       Just (Just name) | name `elem` names -> activateTool vs name
       Just Nothing -> pure ()
@@ -455,11 +656,63 @@ close = readIORef sessionRef >>= mapM_ (\s -> sStop s >> writeIORef sessionRef N
 requestRender :: MVar () -> IO ()
 requestRender signal = void (tryPutMVar signal ())
 
+-- | The size of the pieces a viewer's image is rendered in, in its pixels
+-- (the canvas's): larger than the desktop's ('Task.Block.subBlockSize'),
+-- since each is a trip to a worker and back (about 75 µs, so 1,500 or so
+-- pieces of a high-DPI screen's image cost about 12 ms a pass, across 10
+-- workers, where 16-pixel pieces would cost 200).
+webPieceSize :: Int
+webPieceSize = 64
+
+-- | How often a render posts what it's drawn, at most (in seconds).
+patchInterval :: Double
+patchInterval = 1 / 30
+
+-- | How long a render holds its first patch back (in seconds): a render
+-- quicker than this comes whole, with no coarse passes shown.
+renderHold :: Double
+renderHold = 0.1
+
 renderLoop :: ViewerState -> IO ()
 renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = forever $ do
   takeMVar signal
-  smooth <- readIORef smoothingRef
-  try (renderViewerBuffer smooth viewer) >>= \case
+  smooth <- readIORef (vsSmooth vs)
+  -- (the viewer's code sees a CSS pixel's size, as tools do: see 'densityRef')
+  density <- readIORef densityRef
+  covered <- atomicModifyIORef' (vsCovered vs) (Nothing,)
+  renderId <- atomicModifyIORef' (vsRenders vs) (\n -> (n + 1, n + 1))
+  Dimensions (w, h) <- getDynamic (vSize viewer)
+  concurrency <- renderConcurrency
+  started <- getMonotonicTime
+  drawn <- newIORef Set.empty
+  lastPatch <- newIORef Nothing
+  imageRef <- newIORef Nothing
+  let -- (a piece is shown if the page's picture covers all of it)
+      shown c r = case covered of
+        Nothing -> False
+        Just (cl, ct, cr, cb) ->
+          let x0 = webPieceSize * c; y0 = webPieceSize * r
+          in x0 >= cl && y0 >= ct && min w (x0 + webPieceSize) <= cr && min h (y0 + webPieceSize) <= cb
+      patch RenderedBuffer{..} done = do
+        rects <- atomicModifyIORef' drawn (Set.empty,)
+        let flat = concat [ [x, y, pw, ph] | ImagePiece x y pw ph <- Set.toList rects ]
+        withArrayLen (map fromIntegral flat) $ \n rp -> withForeignPtr rbPixels $ \p ->
+          postPatch k renderId rbWidth rbHeight (fst rbCenter) (snd rbCenter)
+                    (fst rbPixelSize) (snd rbPixelSize) p rp (n `div` 4) done
+      pieceDrawn p = readIORef imageRef >>= mapM_ (\image -> do
+        modifyIORef' drawn (Set.insert p)
+        now <- getMonotonicTime
+        due <- readIORef lastPatch <&> \case
+          Nothing -> now - started >= renderHold
+          Just t -> now - t >= patchInterval
+        when due $ writeIORef lastPatch (Just now) >> patch image False)
+  try (renderProgressively Progressive
+        { prPieceSize = webPieceSize, prConcurrency = concurrency, prScale = density
+        , prSmooth = smooth, prShown = shown
+          -- (another render's been asked for)
+        , prStale = not <$> isEmptyMVar signal
+        , prStarted = writeIORef imageRef . Just, prCovered = pure ()
+        , prDrawn = pieceDrawn } viewer) >>= \case
     -- (being stopped, when another project is opened, isn't an error: the
     -- loop just ends)
     Left (e :: SomeException)
@@ -467,10 +720,10 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
       | otherwise -> postError (displayException e)
     Right (Left err) -> post $ Aeson.object
       [ "type" .= ("viewerError" :: Text.Text), "viewer" .= k, "message" .= err ]
-    Right (Right RenderedBuffer{..}) -> do
-      withForeignPtr rbPixels $ \p ->
-        postFrame k p (3 * rbWidth * rbHeight) rbWidth rbHeight
-                  (fst rbCenter) (snd rbCenter) (fst rbPixelSize) (snd rbPixelSize)
+    -- (dropped: the next render's on its way)
+    Right (Right Nothing) -> pure ()
+    Right (Right (Just image)) -> do
+      patch image True
       -- (the overlay and the tool, for this view, as the desktop app
       -- refreshes them with each render)
       writeIORef (vsToolRefresh vs) True
@@ -512,27 +765,266 @@ withViewerState k act = guarded $ readIORef sessionRef >>= \case
   Nothing -> pure ()
   Just Session{..} -> mapM_ act (Map.lookup k sViewers)
 
-setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
-setView k cx cy pixelSize w h = withViewer k $ \(viewer, signal) -> do
+setView :: Int -> Double -> Double -> Double -> Int -> Int -> Int -> Int -> Int -> Int -> IO ()
+setView k cx cy pixelSize w h cl ct cr cb = withViewerState k $ \vs -> do
+  let viewer = vsViewer vs
   setValue (vSize viewer) (Dimensions (max 1 w, max 1 h))
   setValue (vCenter viewer) (cx, cy)
   setValue (vPixelSize viewer) pixelSize
-  requestRender signal
+  -- (where the page still shows the last picture, after anything the
+  -- changes above set off)
+  writeIORef (vsCovered vs) (if cr > cl && cb > ct then Just (cl, ct, cr, cb) else Nothing)
+  requestRender (vsSignal vs)
 
 setDensity :: Double -> IO ()
 setDensity d = guarded (writeIORef densityRef (max 1 d))
 
 setSmoothing :: Bool -> IO ()
-setSmoothing on = guarded $ do
-  before <- atomicModifyIORef' smoothingRef (on,)
-  when (before /= on) $ readIORef sessionRef >>=
-    mapM_ (\Session{..} -> mapM_ (requestRender . vsSignal) (Map.elems sViewers))
+setSmoothing on = guarded (writeIORef smoothingRef on)
+
+setViewerSmoothing :: Int -> Bool -> IO ()
+setViewerSmoothing k on = withViewerState k $ \vs -> do
+  before <- atomicModifyIORef' (vsSmooth vs) (on,)
+  when (before /= on) $ writeIORef (vsCovered vs) Nothing >> requestRender (vsSignal vs)
+
+------------------------------------------------------------------------
+-- Views: history, navigating, the sphere or the plane
+
+-- | A viewer's view, as the desktop's history keeps them (a pixel's size
+-- in the canvas's pixels).
+viewerModel :: Viewer -> IO Model
+viewerModel v = do
+  c <- getDynamic (vCenter v)
+  px <- getDynamic (vPixelSize v)
+  aspect <- getDynamic (vAspect v)
+  kind <- getDynamic (vView v)
+  r <- getDynamic (vRotation v)
+  pure (Model c (px, px * aspect) (if kind == SphereView then Just r else Nothing))
+
+setViewerModel :: Viewer -> Model -> IO ()
+setViewerModel v (Model c (px, py) mr) = do
+  setValue (vCenter v) c
+  setValue (vPixelSize v) px
+  setValue (vAspect v) (py / px)
+  case mr of
+    Nothing -> setValue (vView v) PlaneView
+    Just r -> setValue (vRotation v) r >> setValue (vView v) SphereView
+
+-- | Go to a view (rendering it), and tell the page.
+goTo :: ViewerState -> Model -> IO ()
+goTo vs m = do
+  setViewerModel (vsViewer vs) m
+  writeIORef (vsCovered vs) Nothing
+  requestRender (vsSignal vs)
+  let Model (cx, cy) (px, py) mr = m
+  post $ Aeson.object [ "type" .= ("view" :: Text.Text), "viewer" .= vsId vs, "cx" .= cx, "cy" .= cy
+                      , "px" .= px, "py" .= py, "sphere" .= isJust mr ]
+
+-- | Go to a view, as a new step in the history (after the view it's in).
+changeViewTo :: ViewerState -> Model -> IO ()
+changeViewTo vs m = do
+  now <- viewerModel (vsViewer vs)
+  modifyIORef' (vsHistory vs) (Just . historyAppend m . fromMaybe (History [] now []))
+  goTo vs m
+
+record :: Int -> IO ()
+record k = withViewerState k $ \vs -> do
+  now <- viewerModel (vsViewer vs)
+  modifyIORef' (vsHistory vs) (Just . maybe (History [] now []) (historyAppend now))
+
+navigateTo :: Int -> Int -> IO ()
+navigateTo k what = withViewerState k $ \vs -> do
+  let v = vsViewer vs
+  d <- readIORef densityRef
+  m <- viewerModel v
+  let step f = readIORef (vsHistory vs) >>= \h -> forM_ (h >>= f) $ \(h', m') ->
+        writeIORef (vsHistory vs) (Just h') >> goTo vs m'
+      -- (the script's views are in CSS pixels; the engine's in the canvas's)
+      originalPlane = let (c, px) = vOriginalPlaneView v in Model c (px / d, px / d * vOriginalAspect v) Nothing
+      sphereAt r = Model (0, 0) (vOriginalSpherePixelSize v / d, vOriginalSpherePixelSize v / d) (Just r)
+  case what of
+    0 -> step historyBack
+    1 -> step historyForward
+    -- (the original view of the kind it shows now)
+    2 -> changeViewTo vs (if isJust (modelRotation m) then sphereAt (vOriginalRotation v) else originalPlane)
+    -- (the point in the middle of the view stays there, at the script's
+    -- zoom for the other kind; see 'Actor.Viewer.switchView')
+    3 -> case vCoordinate v of
+      ComplexCoordinate _ -> changeViewTo vs $ case modelRotation m of
+        Nothing -> sphereAt (rotationFacing (modelCenter m))
+        Just r -> let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
+                      finite a = not (isNaN a || isInfinite a) && abs a < 1e300
+                      px = snd (vOriginalPlaneView v) / d
+                  in Model (if finite cx && finite cy then c else (0, 0)) (px, px) Nothing
+      _ -> pure ()
+    _ -> pure ()
+
+-- | Jump to a view: centered on a point (on the sphere, the globe turned
+-- to face it), with a pixel of a size (a CSS pixel's).
+jump :: Int -> Double -> Double -> Double -> IO ()
+jump k x y pixelSize = withViewerState k $ \vs -> do
+  d <- readIORef densityRef
+  Model _ (px, py) mr <- viewerModel (vsViewer vs)
+  let dz = pixelSize / d
+  changeViewTo vs $ case mr of
+    Nothing -> Model (x, y) (dz, dz * py / px) Nothing
+    Just _ -> Model (0, 0) (dz, dz) (Just (rotationFacing (x, y)))
+
+-- | A real viewer's aspect ratio, from its text, as the desktop's Aspect
+-- ratio... sets it: keeping the center and a pixel's width, as a new
+-- step in the history.
+setAspect :: Int -> JSString -> IO ()
+setAspect k txt = withViewerState k $ \vs -> do
+  let reply (e :: Maybe String) = post $ Aeson.object
+        [ "type" .= ("aspect" :: Text.Text), "viewer" .= k, "error" .= e ]
+  case parseConstant RealType (fromJSString txt) of
+    Right a | a > 0, not (isInfinite a) -> do
+      Model c (px, _) _ <- viewerModel (vsViewer vs)
+      changeViewTo vs (Model c (px, px * a) Nothing)
+      reply Nothing
+    _ -> reply (Just "The aspect ratio should be a positive number, like 2 or 1/2.")
+
+-- | Where a viewer is: the point in the middle of its view (on the
+-- sphere, the one the globe faces), and a CSS pixel's size.
+whereIs :: Int -> IO ()
+whereIs k = withViewerState k $ \vs -> do
+  d <- readIORef densityRef
+  Model c (px, _) mr <- viewerModel (vsViewer vs)
+  let (x, y) = maybe c (\r -> sphereToPlane (rotateBy r (0, 0, 1))) mr
+  post $ Aeson.object [ "type" .= ("where" :: Text.Text), "viewer" .= k, "x" .= x, "y" .= y
+                      , "pixelSize" .= (px * d) ]
+
+-- | A viewer's view as its file saved it (in @web-properties:@, with the
+-- desktop's keys): on the sphere (@view: sphere@), the globe's rotation
+-- (@rotation@: a unit quaternion, w x y z). Its center and zoom the page
+-- sets.
+applySavedView :: Viewer -> Maybe Aeson.Value -> String -> IO ()
+applySavedView v saved title = case saved of
+  Just (Aeson.Object o)
+    | Just (Aeson.Object vs) <- KM.lookup "viewers" o
+    , Just (Aeson.Object p) <- KM.lookup (fromString title) vs -> do
+        forM_ (KM.lookup "rotation" p >>= decodeValue) $ \case
+          [w, x, y, z] -> setValue (vRotation v) (Rotation w x y z)
+          _ -> pure ()
+        forM_ (KM.lookup "aspect" p) $ \case
+          Aeson.Number a | a > 0 -> setValue (vAspect v) (realToFrac a)
+          _ -> pure ()
+        case KM.lookup "view" p of
+          Just (Aeson.String "sphere") | isComplex -> setValue (vView v) SphereView
+          Just (Aeson.String "plane") -> setValue (vView v) PlaneView
+          _ -> pure ()
+  _ -> pure ()
+  where
+    decodeValue :: Aeson.Value -> Maybe [Double]
+    decodeValue x = case Aeson.fromJSON x of Aeson.Success r -> Just r; _ -> Nothing
+    isComplex = case vCoordinate v of ComplexCoordinate _ -> True; _ -> False
+
+-- | The page's view state, with what the engine knows of each viewer's
+-- view: on the sphere or the plane (when it isn't the script's), and the
+-- globe's rotation.
+withViews :: Map.Map Int ViewerState -> Aeson.Value -> IO Aeson.Value
+withViews viewers = \case
+  Aeson.Object o | Just (Aeson.Object vs) <- KM.lookup "viewers" o -> do
+    vs' <- foldM (\acc st -> do
+      let v = vsViewer st
+      title <- getDynamic (vTitle v)
+      kind <- getDynamic (vView v)
+      Rotation w x y z <- getDynamic (vRotation v)
+      aspect <- getDynamic (vAspect v)
+      let extra = [ ("view", Aeson.String (if kind == SphereView then "sphere" else "plane")) | kind /= vOriginalView v ]
+               ++ [ ("aspect", Aeson.toJSON aspect) | aspect /= vOriginalAspect v ]
+               ++ [ ("rotation", Aeson.toJSON [w, x, y, z]) | kind == SphereView ]
+      pure $ case KM.lookup (fromString title) acc of
+        Just (Aeson.Object p) -> KM.insert (fromString title) (Aeson.Object (foldr (uncurry KM.insert) p extra)) acc
+        _ -> acc) vs (Map.elems viewers)
+    pure (Aeson.Object (KM.insert "viewers" (Aeson.Object vs') o))
+  other -> pure other
+
+------------------------------------------------------------------------
+-- Colorizers
+
+-- | A viewer's colorizer menu: the one in use, and those it could use
+-- (as the desktop's menu lists them).
+colorizerInfo :: Ensemble -> String -> IO Aeson.Value
+colorizerInfo ens title = pure $ case Map.lookup title (ensembleViewerColorizers ens) of
+  Nothing -> Aeson.Null
+  Just ViewerColorizer{..} ->
+    let available = ensembleAvailableColorizers ens
+        inUse c = choiceName colorizerInUse == colorizerName c
+        needsArgs c = not (null (missingArguments colorizerScope c))
+        label c | inUse c = colorizerInUse
+                | needsArgs c = colorizerName c ++ "..."
+                | otherwise = colorizerName c
+    in Aeson.object
+      [ "inUse" .= colorizerInUse
+      , "arguments" .= maybe False (not . null . colorizerParams) (find inUse available)
+      , "items" .= [ Aeson.object [ "name" .= colorizerName c, "label" .= label c
+                                  , "description" .= colorizerDescription c
+                                  , "inUse" .= inUse c, "asks" .= needsArgs c ]
+                   | c <- available ] ]
+
+-- | Choose a colorizer for a viewer, as the desktop's menu does: at once,
+-- if the viewer can fill in its parameters; else asking for its
+-- arguments first (starting from its default's, if it's the default).
+chooseColorizer :: Int -> JSString -> IO ()
+chooseColorizer k name = withColorizers k $ \vs title _ vc available -> do
+  let n = fromJSString name
+  forM_ (find ((== n) . colorizerName) available) $ \c ->
+    unless (choiceName (colorizerInUse vc) == n) $
+      if null (missingArguments (colorizerScope vc) c)
+        then useColorizer title n
+        else askArguments vs vc c (if choiceName (colorizerDefault vc) == n then choiceArguments (colorizerDefault vc) else "")
+
+-- | Ask for the arguments of the colorizer in use.
+colorizerArguments :: Int -> IO ()
+colorizerArguments k = withColorizers k $ \vs _ _ vc available ->
+  forM_ (find ((== choiceName (colorizerInUse vc)) . colorizerName) available) $ \c ->
+    askArguments vs vc c (choiceArguments (colorizerInUse vc))
+
+askArguments :: ViewerState -> ViewerColorizer -> Colorizer -> String -> IO ()
+askArguments vs vc c written = post $ Aeson.object
+  [ "type" .= ("colorizerArguments" :: Text.Text), "viewer" .= vsId vs, "name" .= colorizerName c
+  , "fields" .= [ Aeson.object [ "param" .= p, "note" .= note, "text" .= text ]
+                | (p, note, text) <- argumentFields (colorizerScope vc) c written ] ]
+
+-- | The answers to 'askArguments': use the colorizer with them.
+colorizerAnswers :: Int -> JSString -> JSString -> IO ()
+colorizerAnswers k name answers = withColorizers k $ \_ title _ _ available ->
+  case Aeson.eitherDecodeStrict (Text.encodeUtf8 (Text.pack (fromJSString answers))) of
+    Left err -> postError ("couldn't read the arguments: " ++ err)
+    Right (as :: [String]) -> forM_ (find ((== fromJSString name) . colorizerName) available) $ \c ->
+      useColorizer title (choiceWithArguments c as)
+
+withColorizers :: Int -> (ViewerState -> String -> Ensemble -> ViewerColorizer -> [Colorizer] -> IO ()) -> IO ()
+withColorizers k act = guarded $ readIORef sessionRef >>= \case
+  Nothing -> pure ()
+  Just Session{..} -> forM_ (Map.lookup k sViewers) $ \vs -> do
+    title <- getDynamic (vTitle (vsViewer vs))
+    forM_ (Map.lookup title (ensembleViewerColorizers sEnsemble)) $ \vc ->
+      act vs title sEnsemble vc (ensembleAvailableColorizers sEnsemble)
+
+-- | Rebuild the project with a viewer's colorizer chosen (choosing its
+-- default is the same as not choosing one, which keeps the project file
+-- tidy), as the desktop does. If it doesn't build, the project stays as
+-- it was, and says why.
+useColorizer :: String -> String -> IO ()
+useColorizer title chosen = readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  choices <- getDynamic (ensembleColorizerChoices sEnsemble)
+  let isDefault = (Just chosen ==) . fmap colorizerDefault $ Map.lookup title (ensembleViewerColorizers sEnsemble)
+      choices' | isDefault = Map.delete title choices
+               | otherwise = Map.insert title chosen choices
+  src <- getDynamic (ensembleSourceScript sEnsemble)
+  buildEnsembleWithColorizers choices' src >>= \case
+    Left (_, err) -> postError ("Couldn't use that colorizer: " ++ err)
+    Right new -> rebuildAs new)
 
 rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
-rotate k fx fy tx ty = withViewer k $ \(viewer, signal) -> do
-  r <- getDynamic (vRotation viewer)
-  setValue (vRotation viewer) (trackballRotation r (fx, fy) (tx, ty))
-  requestRender signal
+rotate k fx fy tx ty = withViewerState k $ \vs -> do
+  r <- getDynamic (vRotation (vsViewer vs))
+  setValue (vRotation (vsViewer vs)) (trackballRotation r (fx, fy) (tx, ty))
+  -- (the globe's turned: the last picture shows none of it where it is now)
+  writeIORef (vsCovered vs) Nothing
+  requestRender (vsSignal vs)
 
 resize :: Int -> Int -> Int -> IO ()
 resize k w h = withViewer k $ \(viewer, signal) -> do
@@ -800,12 +1292,22 @@ rebuild text = guarded $ readIORef sessionRef >>= \case
     choices <- getDynamic (ensembleColorizerChoices sEnsemble)
     buildEnsembleWithColorizers choices src >>= \case
       Left err -> post $ Aeson.object [ "type" .= ("rebuildError" :: Text.Text), "error" .= errorJSON src err ]
-      Right new -> do
-        toolsBefore <- fmap Map.fromList . forM (Map.elems sViewers) $ \vs -> do
-          title <- getDynamic (vTitle (vsViewer vs))
-          (title,) . fmap atName <$> readIORef (vsTool vs)
-        carryOverProjectState sEnsemble new
-        startProject sLibrary sTitle sFileName True toolsBefore new
+      Right new -> rebuildAs new
+
+-- | Show a project rebuilt from the open one (edited, or with another
+-- colorizer), with everything about it that isn't in its script carried
+-- over (values, tables, autocolor, ...), and each viewer's tool, view,
+-- smoothing and history (by title).
+rebuildAs :: Ensemble -> IO ()
+rebuildAs new = readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  carried <- fmap Map.fromList . forM (Map.elems sViewers) $ \vs -> do
+    let v = vsViewer vs
+    title <- getDynamic (vTitle v)
+    c <- Carried <$> (fmap atName <$> readIORef (vsTool vs)) <*> viewerModel v <*> getDynamic (vSize v)
+                 <*> readIORef (vsSmooth vs) <*> readIORef (vsHistory vs)
+    pure (title, c)
+  carryOverProjectState sEnsemble new
+  startProject sOpening sTitle sFileName True carried new)
 
 ------------------------------------------------------------------------
 -- The panel
