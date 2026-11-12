@@ -106,10 +106,12 @@ resolution, then (smoothed) at twice that. As pieces are drawn, the
 engine posts patches (no more often than 'patchInterval'): the render's
 number (per viewer), the view and size of its image, the rectangles drawn
 since the last patch and their pixels; the last patch says the render's
-done. A render that's no longer wanted (another one's been asked for) is
-dropped where it is, and its patches stop. A render of new parameters
-(not of a new view) holds its first patch back for 'parameterHold', as
-the desktop app does, so a quick one shows no coarse passes.
+done. Every render holds its first patch back for 'renderHold' (as the
+desktop app holds a render of new parameters): one that's done by then
+comes whole, in one patch, so a quick render shows no coarse passes and
+looks just as a whole frame would. A render that's no longer wanted
+(another one's been asked for) is dropped where it is, and its patches
+stop.
 
 The page's view state is saved in the project file under @web-properties:@
 (as the desktop app's window layout is under @wx-properties:@), as the page
@@ -275,9 +277,6 @@ data ViewerState = ViewerState
     --   a render
   , vsRenders :: IORef Int
     -- ^ its renders' number (the latest's)
-  , vsNewParameters :: IORef Bool
-    -- ^ whether the next render is of new parameters (not just of a new
-    --   view): it holds its first patch back ('parameterHold')
   }
 
 data ActiveTool = ActiveTool
@@ -510,13 +509,11 @@ startProject how projectTitle fileName rebuilt toolsBefore ensemble = do
     running <- newIORef Nothing
     covered <- newIORef Nothing
     renders <- newIORef 0
-    newParameters <- newIORef False
-    let vs = ViewerState k viewer signal tool draw toolRefresh running lock covered renders newParameters
+    let vs = ViewerState k viewer signal tool draw toolRefresh running lock covered renders
     tid <- forkIO (renderLoop vs)
     drawTid <- forkIO (drawingLoop vs)
     unwatch <- onParameterChanges viewer $ do
       writeIORef covered Nothing
-      writeIORef newParameters True
       requestRender signal
     -- (as the desktop app does, the overlay's refreshed when any
     -- configuration value changes, whether or not the viewer re-renders)
@@ -594,10 +591,10 @@ webPieceSize = 64
 patchInterval :: Double
 patchInterval = 1 / 30
 
--- | How long a render of new parameters holds its first patch back (in
--- seconds): a render quicker than this shows no coarse passes.
-parameterHold :: Double
-parameterHold = 0.1
+-- | How long a render holds its first patch back (in seconds): a render
+-- quicker than this comes whole, with no coarse passes shown.
+renderHold :: Double
+renderHold = 0.1
 
 renderLoop :: ViewerState -> IO ()
 renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = forever $ do
@@ -606,7 +603,6 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
   -- (the viewer's code sees a CSS pixel's size, as tools do: see 'densityRef')
   density <- readIORef densityRef
   covered <- atomicModifyIORef' (vsCovered vs) (Nothing,)
-  hold <- atomicModifyIORef' (vsNewParameters vs) (False,) <&> \new -> if new then parameterHold else 0
   renderId <- atomicModifyIORef' (vsRenders vs) (\n -> (n + 1, n + 1))
   Dimensions (w, h) <- getDynamic (vSize viewer)
   concurrency <- renderConcurrency
@@ -629,7 +625,7 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
         modifyIORef' drawn (Set.insert p)
         now <- getMonotonicTime
         due <- readIORef lastPatch <&> \case
-          Nothing -> now - started >= hold
+          Nothing -> now - started >= renderHold
           Just t -> now - t >= patchInterval
         when due $ writeIORef lastPatch (Just now) >> patch image False
   try (renderProgressively Progressive

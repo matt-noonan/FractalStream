@@ -349,6 +349,46 @@ Only if 0c/0d come out well.
 
 Record spike results and surprises here, newest first.
 
+### 2026-11-12: Progressive rendering, only for slow renders
+
+The user found the first version of progressive rendering (below) felt
+worse than the whole frames before it, for viewers that render quickly:
+pans, zooms, and turns of the globe used to be very smooth. Three causes:
+the page asked for a new view every display frame, so renders were
+dropped mid-drag and few finished; a dropped render's pieces were kept
+over the picture, so a drag left a patchwork of pieces from many views,
+each on its own grid; and even a quick render showed itself filling in.
+
+Now quick renders behave just as before, and only slow ones are
+progressive:
+
+- **Every render holds its first patch back for 100 ms** (`renderHold`,
+  the desktop's hold for new parameters): one done by then comes whole.
+- **The page asks again once the engine's answered**: a render begun
+  since the request, done, or slow enough to be showing its progress
+  (only then is it dropped for the next view). So a drag of a quick
+  viewer gets whole frames, one after another.
+- **A dropped render's pieces are let go**; the picture is the last
+  render that was done.
+
+Checked at 2x, in a drag, a wheel zoom and a turn of the globe of quick
+viewers: every render shown came whole (30 of 30, 20 of 20, 23 of 23),
+none dropped.
+
+**For later:** the desktop keeps a dropped render's progress (its next
+render is seeded from the old tile, partial pieces and all), where the
+web now throws it away, for clean pictures. Revisit when the desktop
+moves onto `renderProgressively`: keep the pieces a dropped render
+finished at full resolution, reprojected, as the desktop's seed does.
+
+**Next, for the sphere:** the desktop's `reprojectedSeed` turns the old
+picture with the globe (each new pixel: the point under it on the newly
+turned globe, then where that point was on the old one's screen), marks
+the pixels off the globe final, and leaves undrawn only what was on the
+far side. The web page only moves and scales the old frame, which can't
+follow a turn, so a slow sphere viewer still shows coarse passes after a
+turn. Porting that reprojection to the page is the fix.
+
 ### 2026-11-12: Progressive rendering, in tiles
 
 The web app now renders as the desktop's tiles do, and the two share

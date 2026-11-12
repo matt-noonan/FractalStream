@@ -530,21 +530,20 @@ class ViewerView {
   private readonly canvas: HTMLCanvasElement;
   private readonly density = density();
   private readonly context: CanvasRenderingContext2D;
-  /** The picture: the last render that was done, or what was drawn when
-      one was dropped (where what was done covers, if anywhere). */
+  /** The picture: the last render that was done. */
   private frame: Picture | null = null;
   /** The render going on, as it's drawn (see Patch). */
   private pending: Pending | null = null;
-  /** The last render to be done. */
-  private finished = 0;
+  /** The latest render the engine's posted anything of. */
+  private latest = 0;
   private target: View | null = null;
   /** The view (and size) the engine was last asked for. */
   private sent: { view: View; width: number; height: number } | null = null;
   private requestPending = false;
-  /** On the sphere: the render the last turn of the globe was asked
-      during, and when. */
-  private turnedAt: number | null = null;
-  private turnedTime = 0;
+  /** Waiting for the engine's answer to the last request (since when, and
+      the latest render before it): a render begun since then, done, or
+      slow enough to be showing its progress (see `sendRequest`). */
+  private waiting: { since: number; after: number } | null = null;
   private drawPending = false;
   private dragFrom: { x: number; y: number } | null = null;
   /** On the sphere: the screen point (in the sphere's radii) where the
@@ -775,6 +774,11 @@ class ViewerView {
   /** Part of a render (see Patch): its rectangles into the render's
       image, which is drawn over what was there (see `redraw`). */
   patch(m: Patch) {
+    this.latest = Math.max(this.latest, m.id);
+    // (the answer to the last request: done, or slow, so it can be
+    // dropped for the next one)
+    if (this.waiting && m.id > this.waiting.after) { this.waiting = null; this.request(); }
+    if (m.id < (this.pending?.id ?? 0)) return;
     if (!this.pending || this.pending.id !== m.id) this.startRender(m);
     const p = this.pending!;
     const src = new Uint8ClampedArray(m.pixels);
@@ -792,10 +796,11 @@ class ViewerView {
   }
 
   /** A new render's first patch. A render it replaces, dropped before it
-      was done, leaves what it drew, over what was there before. */
+      was done, is let go: what it drew (in its own view, on its own grid
+      of pieces) isn't kept, and the picture is still the last render
+      that was done. */
   private startRender(m: Patch) {
     const view = { cx: m.cx, cy: m.cy, px: m.px, py: m.py };
-    if (this.pending) this.frame = this.flatten(this.pending);
     const image = el("canvas", { width: m.width, height: m.height });
     this.pending = { id: m.id, view, image, context: image.getContext("2d")!,
                      data: new ImageData(m.width, m.height), dirty: null };
@@ -821,7 +826,6 @@ class ViewerView {
   /** The render's done: it's the picture now, all of it drawn. */
   private finishRender() {
     const p = this.pending!;
-    this.finished = p.id;
     this.flush(p);
     const W = p.image.width, H = p.image.height, v = p.view;
     this.frame = { view: v, image: p.image,
@@ -839,17 +843,6 @@ class ViewerView {
     const [x0, y0, x1, y1] = p.dirty;
     p.context.putImageData(p.data, 0, 0, x0, y0, x1 - x0, y1 - y0);
     p.dirty = null;
-  }
-
-  /** A dropped render, over the picture there was: a picture in its view.
-      (What covers it all is still only what did before.) */
-  private flatten(p: Pending): Picture {
-    this.flush(p);
-    const image = el("canvas", { width: p.image.width, height: p.image.height });
-    const ctx = image.getContext("2d")!;
-    if (this.frame) this.drawPicture(ctx, this.frame.view, this.frame.image, p.view, image.width, image.height);
-    ctx.drawImage(p.image, 0, 0);
-    return { view: p.view, image, covers: this.frame?.covers ?? null };
   }
 
   /** Draw a picture (of a view) onto a canvas (of a view, and a size). */
@@ -887,8 +880,8 @@ class ViewerView {
   }
 
   /** Ask the engine for the target view, at the canvas's size, if it's
-      changed (once per display frame, at most). The engine drops a render
-      that's no longer wanted, so there's no waiting for one to finish. */
+      changed: once it's answered the last request (see `sendRequest`),
+      and once per display frame, at most. */
   private request() {
     if (this.requestPending) return;
     this.requestPending = true;
@@ -898,27 +891,32 @@ class ViewerView {
     });
   }
 
+  /** One request at a time, as the engine answers them: a render that's
+      quick (done within the engine's hold, a tenth of a second) comes
+      whole, and the next request waits for it, so a drag shows whole
+      frames; a slow one shows its progress after the hold, and then the
+      next request can go (and drop it). (If an answer never comes, the
+      next goes after a while.) */
   private sendRequest() {
     const t = this.target;
     if (!t || !this.sent) return;
-    // Turning the globe: once the last turn's render has begun showing
-    // (else each turn would drop the last one's render before it showed
-    // anything).
-    if (this.turn && (this.turn.from[0] !== this.turn.to[0] || this.turn.from[1] !== this.turn.to[1])) {
-      const lastId = this.pending?.id ?? this.finished;
-      if (this.turnedAt === null || lastId > this.turnedAt || performance.now() - this.turnedTime > 2000) {
-        const { from, to } = this.turn;
-        this.turn.from = to;
-        this.turnedAt = lastId;
-        this.turnedTime = performance.now();
-        send({ type: "rotate", viewer: this.info.id, fx: from[0], fy: from[1], tx: to[0], ty: to[1] });
-      }
-    }
+    if (this.waiting && performance.now() - this.waiting.since < 2000) return;
     const width = this.canvas.width, height = this.canvas.height;
-    if (sameView(t, this.sent.view) && this.sent.width === width && this.sent.height === height) return;
-    this.sent = { view: { ...t }, width, height };
-    send({ type: "view", viewer: this.info.id, cx: t.cx, cy: t.cy, pixelSize: t.px, width, height,
-           covered: this.covered(t, width, height) });
+    const turned = this.turn && (this.turn.from[0] !== this.turn.to[0] || this.turn.from[1] !== this.turn.to[1]);
+    const moved = !sameView(t, this.sent.view) || this.sent.width !== width || this.sent.height !== height;
+    if (!turned && !moved) return;
+    this.waiting = { since: performance.now(), after: this.latest };
+    // (turning the globe first, then any change of zoom or size)
+    if (turned) {
+      const { from, to } = this.turn!;
+      this.turn!.from = to;
+      send({ type: "rotate", viewer: this.info.id, fx: from[0], fy: from[1], tx: to[0], ty: to[1] });
+    }
+    if (moved) {
+      this.sent = { view: { ...t }, width, height };
+      send({ type: "view", viewer: this.info.id, cx: t.cx, cy: t.cy, pixelSize: t.px, width, height,
+             covered: this.covered(t, width, height) });
+    }
   }
 
   /** Where (in pixels of a view, of a size) the picture shows all of what
