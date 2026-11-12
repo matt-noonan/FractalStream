@@ -92,8 +92,9 @@ async function write(handle: FileHandle, bytes: ArrayBuffer) {
   await writable.close();
 }
 
-function download(name: string, bytes: ArrayBuffer) {
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/x-fractalstream" }));
+/** Save a file the browser's way: as a download. */
+export function download(name: string, bytes: ArrayBuffer | Blob, type = "application/x-fractalstream") {
+  const url = URL.createObjectURL(bytes instanceof Blob ? bytes : new Blob([bytes], { type }));
   const a = Object.assign(document.createElement("a"), { href: url, download: name });
   document.body.append(a);
   a.click();

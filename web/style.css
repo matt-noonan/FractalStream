@@ -355,3 +355,16 @@ body.no-panel .panel { display: none; }
 .page-dialog-box button { font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
                           border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
 .page-dialog-box button:focus-visible { outline: 2px solid var(--accent); }
+
+/* Capturing pictures and movies (capture.ts), in a page dialog */
+.page-dialog-box.movie-dialog { width: min(620px, 100%); }
+.movie-script { width: 100%; box-sizing: border-box; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+                padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); resize: vertical; }
+.capture-grid { display: grid; grid-template-columns: auto 6em auto 6em; gap: 6px 10px; align-items: center; }
+.page-dialog-box input[type=text] { font: 12px ui-monospace, monospace; padding: 3px 6px; min-width: 0;
+                                    border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
+.page-dialog-box .form-field { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center; }
+.page-dialog-box .form-error { color: var(--error); min-height: 1em; white-space: pre-wrap; }
+.page-dialog-box .form-error:empty { display: none; }
+.page-dialog-box progress { width: 100%; }
+.capture-check { display: flex; align-items: center; gap: 4px; }
