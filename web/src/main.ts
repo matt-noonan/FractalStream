@@ -5,6 +5,7 @@
 import type { Request, Message, Layout, FieldLayout, Frame, LibrarySection, ViewerInfo, SavedViews,
               Shape, Handled, EventKind } from "./protocol.js";
 import { drawLayers } from "./drawing.js";
+import { ScriptEditor } from "./editor.js";
 import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
 import { Desk } from "./windows.js";
 
@@ -21,6 +22,7 @@ const fileNameEl = document.getElementById("file-name")!;
 const libraryButton = document.getElementById("toggle-library") as HTMLButtonElement;
 const panelButton = document.getElementById("toggle-panel") as HTMLButtonElement;
 const paletteEl = document.getElementById("tools")!;
+const scriptButton = document.getElementById("toggle-script") as HTMLButtonElement;
 
 // Hiding and showing the library, and the configuration panel.
 function toggle(button: HTMLButtonElement, bodyClass: string) {
@@ -158,7 +160,8 @@ let windows: { title: string; view: ViewerView; window: HTMLElement }[] = [];
 function viewState(): SavedViews {
   return {
     viewers: Object.fromEntries(windows.map((w) =>
-      [w.title, { x: w.window.offsetLeft, y: w.window.offsetTop, ...w.view.state() }])),
+      [w.title, { x: w.window.offsetLeft, y: w.window.offsetTop, ...w.view.state(),
+                  ...(Desk.isMinimized(w.window) ? { minimized: true } : {}) }])),
   };
 }
 
@@ -171,9 +174,9 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
   toolPanelEl = el("div", { className: "tool-panel" });
   asideEl = el("aside", { className: "panel" },
                panelGrip(), panel ? layoutElement(panel, projectFields) : "", toolPanelEl);
-  projectEl.replaceChildren(
-    el("h1", { textContent: title }),
-    el("div", { className: "workspace" }, desk.element, asideEl));
+  workspaceEl = el("div", { className: "workspace" }, desk.element, asideEl);
+  projectEl.replaceChildren(el("h1", { textContent: title }), workspaceEl);
+  projectTitle = title;
   // Each viewer in a window, side by side: all scaled down alike if they
   // don't fit (each still showing its whole view), to no less than 40%,
   // and then onto more rows if they still don't fit.
@@ -192,7 +195,7 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
                         : { x, y, width: w, height: h };
     const v = new ViewerView(info, place.width, place.height, saved ?? null);
     viewers.set(info.id, v);
-    const win = desk.add({ title: info.title, ...place, content: v.element,
+    const win = desk.add({ title: info.title, ...place, content: v.element, minimized: saved?.minimized,
                            onResize: (width, height) => v.resize(width, height) });
     win.addEventListener("pointerdown", () => activate(v), { capture: true });
     v.window = win;
@@ -241,7 +244,8 @@ function showToolPanel() {
 document.addEventListener("keydown", (e) => {
   const v = activeViewer;
   if (!v || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.target instanceof HTMLElement && e.target.closest("input, select, textarea")) return;
+  // (not while typing: in a text box, or the script editor)
+  if (e.target instanceof HTMLElement && (e.target.closest("input, select, textarea") || e.target.isContentEditable)) return;
   const key = e.key.toLowerCase();
   const tool = v.info.tools.find((t) => t.shortcut && t.shortcut.toLowerCase() === key);
   if (tool) { e.preventDefault(); v.selectTool(tool.name); }
@@ -285,6 +289,52 @@ function panelGrip(): HTMLElement {
   });
   return grip;
 }
+
+// ---------------------------------------------------------------------
+// The script editor: over the whole workspace (the viewers and the
+// configuration), from the toolbar's Script button (see editor.ts). A
+// rebuild that works closes it (one that doesn't leaves it open, saying
+// why); it keeps what's typed in it while it's closed, until another
+// project is opened.
+
+let workspaceEl: HTMLElement | null = null;
+let projectTitle = "";
+let projectScript = "";
+let scriptEditor: ScriptEditor | null = null;
+let editorOverlay: HTMLElement | null = null;
+let editorOpen = false;
+let symbolTables: [[string, string][], [string, string][]] | null = null;
+
+function showEditor() {
+  if (!workspaceEl) return;
+  if (!scriptEditor) {
+    scriptEditor = new ScriptEditor(projectScript, {
+      analyze: (id, text) => send({ type: "analyze", id, text }),
+      rebuild: (text) => send({ type: "rebuild", text }),
+    });
+    if (symbolTables) scriptEditor.setSymbols(...symbolTables);
+    const close = el("button", { type: "button", className: "editor-close", textContent: "Close",
+                                 title: "Close the script (what's typed in it is kept)" });
+    close.addEventListener("click", () => hideEditor());
+    editorOverlay = el("div", { className: "editor-overlay", role: "dialog" },
+      el("div", { className: "editor-header" }, el("span", { className: "editor-title" }), close),
+      scriptEditor.element);
+  }
+  const titleEl = editorOverlay!.querySelector(".editor-title")!;
+  titleEl.textContent = `${projectTitle}: script`;
+  workspaceEl.append(editorOverlay!);
+  editorOpen = true;
+  scriptButton.setAttribute("aria-pressed", "true");
+  scriptEditor.focus();
+}
+
+function hideEditor() {
+  editorOverlay?.remove();
+  editorOpen = false;
+  scriptButton.setAttribute("aria-pressed", "false");
+}
+
+scriptButton.addEventListener("click", () => (editorOpen ? hideEditor() : showEditor()));
 
 /** What a panel's fields and buttons do: set a field, press a button. */
 interface PanelActions {
@@ -471,7 +521,10 @@ class ViewerView {
     this.runEl = el("div", { className: "viewer-running", hidden: true, role: "status" });
     this.element = el("div", { className: "viewer" }, this.canvas, this.errorEl, this.runEl);
     this.setSize(width, height);
-    this.canvas.addEventListener("pointerdown", (e) => this.startDrag(e));
+    // (focusable, and focused when it's clicked: so the keyboard's for the
+    // tool shortcuts again, after typing in the script editor)
+    this.canvas.tabIndex = -1;
+    this.canvas.addEventListener("pointerdown", (e) => { this.canvas.focus({ preventScroll: true }); this.startDrag(e); });
     this.canvas.addEventListener("pointermove", (e) => this.moveDrag(e));
     this.canvas.addEventListener("pointerup", (e) => this.endDrag(e));
     this.canvas.addEventListener("pointercancel", () => { this.dragFrom = null; this.press = null; });
@@ -792,16 +845,38 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
   switch (m.type) {
     case "ready":
       send({ type: "smoothing", on: smoothingBox.checked });
+      send({ type: "density", value: density() });
+      send({ type: "symbols" });
       status("Loading the library…");
       send({ type: "library" });
       break;
     case "library": showLibrary(m.sections); status("Pick a project."); break;
     case "project":
+      if (m.rebuilt) {
+        // (the same project, built again from its edited script: its
+        // windows stay as they were, and so does the editor)
+        const views = viewState();
+        showProject(m.title, m.panel, m.viewers, views);
+        scriptEditor?.projectScript(m.script, true);
+        // (it worked: the editor's done its job)
+        hideEditor();
+        status("Rebuilt.");
+        break;
+      }
       current = { fileName: m.fileName, library: m.library, handle: m.library ? null : opening };
       opening = null;
       showFileName();
+      // (a new project: a new script, and no editor until it's asked for)
+      projectScript = m.script;
+      scriptEditor = null;
+      editorOpen = false;
       showProject(m.title, m.panel, m.viewers, m.views);
+      scriptButton.disabled = false;
+      scriptButton.setAttribute("aria-pressed", "false");
       break;
+    case "analysis": scriptEditor?.analysis(m.id, m); break;
+    case "symbols": symbolTables = [m.names, m.accents]; scriptEditor?.setSymbols(m.names, m.accents); break;
+    case "rebuildError": scriptEditor?.rebuildFailed(m.error); break;
     case "file": {
       const write = pendingSave;
       pendingSave = null;

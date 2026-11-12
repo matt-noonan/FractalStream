@@ -24,6 +24,9 @@ tables (@tables:@) it was saved with, and is saved with its own.
 * @fs_view(viewer, cx, cy, pixelSize, width, height)@: move, zoom, or
   resize a viewer (all at once, for one render).
 * @fs_resize(viewer, width, height)@: resize a viewer.
+* @fs_density(d)@: how many canvas pixels the page draws a CSS pixel
+  with: tools and overlays are given a CSS pixel's size, as their
+  @pixel_size@.
 * @fs_smoothing(on)@: whether viewers are smoothed (each pixel the average
   of four samples, as fsrun's captures are), for every viewer from now on.
 * @fs_select_tool(viewer, name)@: select a viewer's tool (@""@: none, to
@@ -101,15 +104,16 @@ import qualified Data.Aeson.KeyMap as KM
 import Actor.Metadata (ProjectMetadata(..))
 import Actor.Layout
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges, refreshOverlayWith, viewProjection)
+import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges, viewProjection)
 import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
 import Actor.Viewer.Sphere (trackballRotation, screenToPlane)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
-import Actor.Ensemble (buildToolContext)
+import Actor.Ensemble (buildToolContext, buildEnsembleWithColorizers, carryOverProjectState)
 import Language.Environment (SomeContext(..), Context(..))
 import Drawing (drawingJSON)
+import Editor (analysisJSON, symbolsJSON, errorJSON)
 import Data.Color (colorToRGB)
 import Text.Printf (printf)
 import Backend (withBackend, Backend)
@@ -184,6 +188,9 @@ data Session = Session
   , sColors :: Map.Map String (IO (Maybe String))
     -- ^ each color field's value, as #rrggbb
   , sStop :: IO ()
+  , sTitle :: String
+  , sLibrary :: Bool
+    -- ^ (its title, and whether it's from the library: for a rebuild)
   }
 
 -- | A viewer: its render loop's request signal, and its tool (if one's
@@ -227,6 +234,23 @@ sessionRef = unsafePerformIO (newIORef Nothing)
 {-# NOINLINE sessionRef #-}
 
 -- | Whether frames are smoothed (see 'renderViewerBuffer').
+-- | How many canvas pixels the page draws a CSS pixel with (2, on a
+-- high-DPI screen). A viewer's pixel size is a canvas pixel's; tools and
+-- overlays are given a CSS pixel's ('cssPixelDims'), so that what a script
+-- sizes in @pixel_size@ comes out as big as on the desktop, whose pixels
+-- are the screen's logical ones.
+densityRef :: IORef Double
+densityRef = unsafePerformIO (newIORef 1)
+{-# NOINLINE densityRef #-}
+
+-- | A viewer's pixel's width and height, in a CSS pixel (see 'densityRef').
+cssPixelDims :: Viewer -> IO (Double, Double)
+cssPixelDims viewer = do
+  d <- readIORef densityRef
+  px <- getDynamic (vPixelSize viewer)
+  aspect <- getDynamic (vAspect viewer)
+  pure (px * d, px * d * aspect)
+
 smoothingRef :: IORef Bool
 smoothingRef = unsafePerformIO (newIORef False)
 {-# NOINLINE smoothingRef #-}
@@ -257,11 +281,15 @@ foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
 foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
 foreign export javascript "fs_smoothing" setSmoothing :: Bool -> IO ()
+foreign export javascript "fs_density" setDensity :: Double -> IO ()
 foreign export javascript "fs_select_tool" selectTool :: Int -> JSString -> IO ()
 foreign export javascript "fs_event" toolEvent :: Int -> Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_button" toolButton :: Int -> JSString -> IO ()
 foreign export javascript "fs_set_tool" setToolField :: Int -> JSString -> JSString -> IO ()
 foreign export javascript "fs_stop" stopRun :: Int -> Bool -> IO ()
+foreign export javascript "fs_analyze" analyze :: Int -> JSString -> IO ()
+foreign export javascript "fs_symbols" symbols :: IO ()
+foreign export javascript "fs_rebuild" rebuild :: JSString -> IO ()
 
 main :: IO ()
 main = pure ()
@@ -329,6 +357,14 @@ openProject fromLibrary projectTitle fileName contents = do
   either (\err -> putStrLn ("Ignoring unreadable `tables:`: " ++ err))
          (\saved -> ensembleTables ensemble >>= \ts -> applySavedTables ts saved >>= mapM_ putStrLn)
          (readSavedTables props)
+  startProject fromLibrary projectTitle fileName False Map.empty ensemble
+
+-- | Show a project, in place of the open one (if any): run it, and post
+-- its panel and viewers. On a rebuild (from an edited script), each
+-- viewer the new project still has (by its title) gets the tool it had,
+-- if it still has one by that name (or none, if it had none).
+startProject :: Bool -> String -> String -> Bool -> Map.Map String (Maybe String) -> Ensemble -> IO ()
+startProject fromLibrary projectTitle fileName rebuilt toolsBefore ensemble = do
   close
   backend <- getBackend
 
@@ -374,7 +410,8 @@ openProject fromLibrary projectTitle fileName contents = do
     body <- layoutJSON id colorsRef fields lo
     pure (Aeson.object [ "kind" .= ("panel" :: Text.Text), "title" .= title, "body" .= body ]))
   colors <- readIORef colorsRef
-  writeIORef sessionRef (Just (Session (Map.fromList (map fst loops)) context ensemble fileName colors stop))
+  writeIORef sessionRef (Just (Session (Map.fromList (map fst loops)) context ensemble fileName colors stop
+                                       projectTitle fromLibrary))
   viewerInfo <- forM viewers $ \(k, viewer) -> do
     title <- getDynamic (vTitle viewer)
     Dimensions (w, h) <- getDynamic (vSize viewer)
@@ -388,6 +425,7 @@ openProject fromLibrary projectTitle fileName contents = do
     pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere
                        , "tools" .= tools ])
   views <- KM.lookup "web-properties" <$> getDynamic (ensembleFrontendProperties ensemble)
+  script <- getDynamic (ensembleSourceScript ensemble)
   post $ Aeson.object
     [ "type" .= ("project" :: Text.Text)
     , "title" .= projectTitle
@@ -396,10 +434,19 @@ openProject fromLibrary projectTitle fileName contents = do
     , "panel" .= panel
     , "viewers" .= viewerInfo
     , "views" .= views
+    , "script" .= script
+    , "rebuilt" .= rebuilt
     ]
-  -- (as the desktop app does: a viewer with a "Select" tool starts with it)
-  forM_ (map (snd . fst) loops) $ \vs -> forM_ (vSelectTool (vsViewer vs)) $ \t ->
-    getDynamic (source (tiName (toolInfo t))) >>= activateTool vs
+  forM_ (map (snd . fst) loops) $ \vs -> do
+    title <- getDynamic (vTitle (vsViewer vs))
+    names <- getDynamic (vTools (vsViewer vs)) >>= mapM (getDynamic . source . tiName . toolInfo)
+    case Map.lookup title toolsBefore of
+      -- (its tool before the rebuild, if it still has it)
+      Just (Just name) | name `elem` names -> activateTool vs name
+      Just Nothing -> pure ()
+      -- (as the desktop app does: a viewer with a "Select" tool starts with it)
+      _ -> forM_ (vSelectTool (vsViewer vs)) $ \t ->
+             getDynamic (source (tiName (toolInfo t))) >>= activateTool vs
 
 -- | Stop the open project's render loops (if any).
 close :: IO ()
@@ -436,7 +483,7 @@ drawingLoop :: ViewerState -> IO ()
 drawingLoop vs = forever $ do
   takeMVar (vsDraw vs)
   withMVar (vsLock vs) $ \_ ->
-    withProgress vs Nothing (\flag -> refreshOverlayWith flag (vsViewer vs))
+    withProgress vs Nothing (\flag -> cssPixelDims (vsViewer vs) >>= vRefreshOverlay (vsViewer vs) flag)
   toolToo <- atomicModifyIORef' (vsToolRefresh vs) (False,)
   when toolToo (void (fire vs Refresh))
   postDrawings vs
@@ -471,6 +518,9 @@ setView k cx cy pixelSize w h = withViewer k $ \(viewer, signal) -> do
   setValue (vCenter viewer) (cx, cy)
   setValue (vPixelSize viewer) pixelSize
   requestRender signal
+
+setDensity :: Double -> IO ()
+setDensity d = guarded (writeIORef densityRef (max 1 d))
 
 setSmoothing :: Bool -> IO ()
 setSmoothing on = guarded $ do
@@ -591,9 +641,8 @@ fire :: ViewerState -> Event -> IO Bool
 fire vs@ViewerState{..} ev = readIORef vsTool >>= \case
   Nothing -> pure True
   Just ActiveTool{..} -> do
-    px <- getDynamic (vPixelSize vsViewer)
-    aspect <- getDynamic (vAspect vsViewer)
-    case atDispatch (px, px * aspect) ev of
+    dims <- cssPixelDims vsViewer
+    case atDispatch dims ev of
       Nothing -> pure True
       -- (once it has the lock, only if the tool's still selected: it may
       -- have been dropped meanwhile, by stopping another handler)
@@ -723,6 +772,40 @@ postDrawings ViewerState{..} = do
     proj <- viewProjection (vView vsViewer) (vRotation vsViewer)
     post $ Aeson.object
       [ "type" .= ("drawing" :: Text.Text), "viewer" .= vsId, "layers" .= drawingJSON proj layers ]
+
+------------------------------------------------------------------------
+-- The script editor
+
+-- | Color an edited script, check it, and say how to write it with
+-- mathematical symbols (see "Editor"), for the editor's request.
+analyze :: Int -> JSString -> IO ()
+analyze reqId text = guarded $ do
+  choices <- readIORef sessionRef >>= maybe (pure Map.empty) (getDynamic . ensembleColorizerChoices . sEnsemble)
+  post (analysisJSON reqId choices (fromJSString text))
+
+symbols :: IO ()
+symbols = guarded (post symbolsJSON)
+
+-- | Build the project again from an edited script, as the desktop app's
+-- Rebuild does: with the same colorizers, and everything about it that
+-- isn't in its script carried over (values, tables, autocolor, ...). If
+-- it doesn't build, the project stays as it was, and the error is posted:
+--
+-- > { "type": "rebuildError", "error": { "from", "to", "message" } }
+rebuild :: JSString -> IO ()
+rebuild text = guarded $ readIORef sessionRef >>= \case
+  Nothing -> postError "there's no project to rebuild"
+  Just Session{..} -> do
+    let src = fromJSString text
+    choices <- getDynamic (ensembleColorizerChoices sEnsemble)
+    buildEnsembleWithColorizers choices src >>= \case
+      Left err -> post $ Aeson.object [ "type" .= ("rebuildError" :: Text.Text), "error" .= errorJSON src err ]
+      Right new -> do
+        toolsBefore <- fmap Map.fromList . forM (Map.elems sViewers) $ \vs -> do
+          title <- getDynamic (vTitle (vsViewer vs))
+          (title,) . fmap atName <$> readIORef (vsTool vs)
+        carryOverProjectState sEnsemble new
+        startProject sLibrary sTitle sFileName True toolsBefore new
 
 ------------------------------------------------------------------------
 -- The panel

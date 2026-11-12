@@ -60,9 +60,19 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
   box-shadow: 0 2px 10px rgba(0, 0, 0, .15); overflow: hidden;
 }
 .window-title {
-  padding: 4px 10px; font-size: 12px; color: var(--muted); cursor: move;
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 4px 4px 10px; font-size: 12px; color: var(--muted); cursor: move;
   user-select: none; border-bottom: 1px solid var(--line); touch-action: none;
 }
+.window-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.window-minimize {
+  flex: none; width: 20px; height: 18px; padding: 0; line-height: 16px; font-size: 12px;
+  border: 1px solid transparent; border-radius: 4px; background: none; color: var(--muted); cursor: pointer;
+}
+.window-minimize:hover { border-color: var(--line); color: var(--fg); }
+/* (minimized: just the title bar) */
+.window.minimized .window-body, .window.minimized .window-grip { display: none; }
+.window.minimized .window-title { border-bottom: none; }
 .window-body { position: relative; background: #808080; }
 .window-grip {
   position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize;
@@ -70,7 +80,7 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
   background: linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 60%,
                               transparent 60%, transparent 75%, var(--muted) 75%, var(--muted) 85%, transparent 85%);
 }
-.viewer canvas { display: block; cursor: grab; touch-action: none; }
+.viewer canvas { display: block; cursor: grab; touch-action: none; outline: none; }
 .viewer canvas:active { cursor: grabbing; }
 .panel {
   flex: none; width: var(--panel-width, 320px); position: relative;
@@ -158,3 +168,64 @@ body.no-panel .panel { display: none; }
   border: 1px solid var(--line); background: var(--bg); color: var(--fg);
 }
 .viewer-running button:disabled { opacity: .5; cursor: default; }
+
+/* The script editor (editor.ts): CodeMirror filling its window, the
+   error or status under it, and its buttons. */
+.script-editor { display: flex; flex-direction: column; background: var(--panel); }
+.editor-text { flex: 1; min-height: 0; }
+.editor-text .cm-editor { height: 100%; font: 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
+.editor-text .cm-scroller { font-family: inherit; }
+.editor-text .cm-content { caret-color: var(--fg); }
+.editor-text .cm-editor.cm-focused { outline: none; }
+.editor-status { padding: 4px 8px; min-height: 1.4em; font-size: 12px; color: var(--muted); white-space: pre-wrap; border-top: 1px solid var(--line); }
+.editor-status.error { color: var(--error); }
+.editor-buttons { display: flex; gap: 6px; padding: 4px 8px 8px; }
+.editor-buttons button {
+  font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
+/* over the whole workspace: the viewers and the configuration */
+.workspace { position: relative; }
+.editor-overlay {
+  position: absolute; inset: 0; z-index: 100000; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, .2); overflow: hidden;
+}
+.editor-header { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--line); }
+.editor-title { flex: 1; font-weight: 600; }
+.editor-close {
+  font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
+.editor-overlay .script-editor { flex: 1; min-height: 0; }
+/* the engine's colors (Language.Editor.Highlight's classes) */
+.tok-keyword { color: #a626a4; }
+.tok-builtin-function { color: #4078f2; }
+.tok-builtin-value { color: #986801; }
+.tok-type { color: #c18401; }
+.tok-color { color: #0184bc; }
+.tok-number { color: #986801; }
+.tok-string { color: #50a14f; }
+.tok-comment { color: #8a8a85; font-style: italic; }
+.tok-operator { color: #6b6b66; }
+.tok-stanza-header { color: #2f6fd6; font-weight: 600; }
+.tok-parameter { color: #e45649; }
+.tok-function, .tok-code-block { color: #4078f2; font-style: italic; }
+.tok-undefined { text-decoration: underline dotted #c0392b; }
+@media (prefers-color-scheme: dark) {
+  .tok-keyword { color: #c678dd; }
+  .tok-builtin-function, .tok-function, .tok-code-block { color: #61afef; }
+  .tok-builtin-value, .tok-number { color: #d19a66; }
+  .tok-type { color: #e5c07b; }
+  .tok-color { color: #56b6c2; }
+  .tok-string { color: #98c379; }
+  .tok-comment { color: #7f848e; }
+  .tok-operator { color: #abb2bf; }
+  .tok-stanza-header { color: #6ea2ff; }
+  .tok-parameter { color: #e06c75; }
+}
+.cm-script-error { text-decoration: underline wavy var(--error); text-decoration-skip-ink: none; }
+/* an escape being typed (\theta), and what it would become */
+.cm-escape { outline: 1px solid var(--accent); border-radius: 2px; }
+.cm-symbol-preview { padding: 3px 8px; font: 12px ui-monospace, monospace; color: var(--muted); white-space: pre; }
+.cm-symbol-preview strong { color: var(--fg); }
