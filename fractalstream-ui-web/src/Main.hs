@@ -104,7 +104,7 @@ import qualified Data.Aeson.KeyMap as KM
 import Actor.Metadata (ProjectMetadata(..))
 import Actor.Layout
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges, viewProjection)
+import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBufferAt, onParameterChanges, viewProjection)
 import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
 import Actor.Viewer.Sphere (trackballRotation, screenToPlane)
@@ -235,10 +235,11 @@ sessionRef = unsafePerformIO (newIORef Nothing)
 
 -- | Whether frames are smoothed (see 'renderViewerBuffer').
 -- | How many canvas pixels the page draws a CSS pixel with (2, on a
--- high-DPI screen). A viewer's pixel size is a canvas pixel's; tools and
--- overlays are given a CSS pixel's ('cssPixelDims'), so that what a script
--- sizes in @pixel_size@ comes out as big as on the desktop, whose pixels
--- are the screen's logical ones.
+-- high-DPI screen). A viewer's pixel size is a canvas pixel's; its code,
+-- and its tools and overlays, are given a CSS pixel's ('cssPixelDims',
+-- 'renderViewerBufferAt'), so that what a script sizes in @pixel_size@
+-- comes out as big as on the desktop, whose pixels are the screen's
+-- logical ones.
 densityRef :: IORef Double
 densityRef = unsafePerformIO (newIORef 1)
 {-# NOINLINE densityRef #-}
@@ -459,7 +460,9 @@ renderLoop :: ViewerState -> IO ()
 renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = forever $ do
   takeMVar signal
   smooth <- readIORef smoothingRef
-  try (renderViewerBuffer smooth viewer) >>= \case
+  -- (the viewer's code sees a CSS pixel's size, as tools do: see 'densityRef')
+  density <- readIORef densityRef
+  try (renderViewerBufferAt density smooth viewer) >>= \case
     -- (being stopped, when another project is opened, isn't an error: the
     -- loop just ends)
     Left (e :: SomeException)

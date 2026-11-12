@@ -29,6 +29,7 @@ module Actor.Viewer
   , withRenderedViewerBuffer
   , RenderedBuffer(..)
   , renderViewerBuffer
+  , renderViewerBufferAt
   , viewProjection
   , switchView
   , centerViewOn
@@ -165,6 +166,13 @@ data SomeViewerWithContext where
 data ViewerArgs = ViewerArgs
   { vaPoint      :: (Double, Double)
   , vaStep       :: (Double, Double)
+    -- ^ how far apart the block's pixels are, in the model
+  , vaPixel      :: (Double, Double)
+    -- ^ a pixel's width and height as the viewer's code sees them (its
+    --   @pixel_size@, or @pixel_width@ and @pixel_height@): usually the
+    --   step, but a pixel of the screen, as the user sees one, where the
+    --   block is sampled more finely than that (a smoothed render, or a
+    --   frontend drawing at a high-DPI screen's density)
   , vaWidth      :: Int32
   , vaHeight     :: Int32
   , vaSubsamples :: Int32
@@ -310,7 +318,15 @@ data RenderedBuffer = RenderedBuffer
 -- they're first seen, which then varies from run to run (see
 -- "Actor.Autocolor").
 renderViewerBuffer :: Bool -> Viewer -> IO (Either String RenderedBuffer)
-renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
+renderViewerBuffer = renderViewerBufferAt 1
+
+-- | 'renderViewerBuffer', for a viewer whose pixels are a fraction of the
+-- screen's (logical) pixels: @scale@ of them make one, which is what the
+-- viewer's code sees as its @pixel_size@ (a frontend drawing at a
+-- high-DPI screen's density). A smoothed render's code sees the pixel's
+-- size too, not the finer step it's sampled at.
+renderViewerBufferAt :: Double -> Bool -> Viewer -> IO (Either String RenderedBuffer)
+renderViewerBufferAt scale downsample Viewer{..} = case vCodeWithArgs of
   CodeWithArgs getArgs _ code -> getArgs >>= \case
     Left err -> pure (Left err)
     Right vaArgs -> do
@@ -339,6 +355,7 @@ renderViewerBuffer downsample Viewer{..} = case vCodeWithArgs of
             issues <- fn ViewerArgs
               { vaPoint = (x0, y0 - fromIntegral (row * s) * py)
               , vaStep = (px, py)
+              , vaPixel = (pixelSize * scale, pixelSize * scale * aspect)
               , vaWidth = fromIntegral bigW
               , vaHeight = fromIntegral (rows * s)
               , vaSubsamples = 1

@@ -312,16 +312,20 @@ compileRenderer' name code = runExcept $
                        , (AST.i32,        ParameterName "#arenaSize")
                        , (AST.ptr AST.i8, ParameterName "#issuesOut")
                        , (AST.ptr AST.i8, ParameterName "#autocolor")
-                       , (AST.ptr AST.i8, ParameterName "#autocolorDir") ]
+                       , (AST.ptr AST.i8, ParameterName "#autocolorDir")
+                       -- how far apart the pixels are (InternalDX and
+                       -- InternalDY are the pixel size the code sees,
+                       -- which needn't be the same: see 'vaPixel')
+                       , (AST.double,     ParameterName "#stepX")
+                       , (AST.double,     ParameterName "#stepY") ]
         params       = internalRenderParams ++ arenaParams ++ viewerEnvParams
         pfX      = bindingEvidence @InternalX   @'RealT  @(ViewerEnv env)
         pfY      = bindingEvidence @InternalY   @'RealT  @(ViewerEnv env)
-        pfdX     = bindingEvidence @InternalDX  @'RealT  @(ViewerEnv env)
-        pfdY     = bindingEvidence @InternalDY  @'RealT  @(ViewerEnv env)
         pfOutput = bindingEvidence @"color"     @'ColorT @(ViewerEnv env)
     function name (retParam : params) AST.void $ \allArgs -> do
       let (retPtr : blockWidthArg : blockHeightArg : subsamplesArg
                   : arenaPtrArg : arenaSizeArg : issuesOutArg : autocolorArg : autocolorDirArg
+                  : dx : dy
                   : rawArgs) = allArgs
       getExtern <- getGetExtern
       mdo
@@ -355,8 +359,6 @@ compileRenderer' name code = runExcept $
         args <- allocaArgs (envProxy (Proxy @(ViewerEnv env))) rawArgs
         x0 <- derefOperand (getBinding args pfX)  >>= \case RealOp v -> pure v
         y0 <- derefOperand (getBinding args pfY)  >>= \case RealOp v -> pure v
-        dx <- derefOperand (getBinding args pfdX) >>= \case RealOp v -> pure v
-        dy <- derefOperand (getBinding args pfdY) >>= \case RealOp v -> pure v
         blockWidth  <- derefOperand blockWidthPtr  >>= \case IntegerOp v -> pure v
         blockHeight <- derefOperand blockHeightPtr >>= \case IntegerOp v -> pure v
         subsamples  <- derefOperand subsamplesPtr  >>= \case IntegerOp v -> pure v

@@ -144,6 +144,7 @@ test-suite end-to-end
   other-modules:      OverlaySpec
                     , DragSpec
                     , GeometrySpec
+                    , PixelSizeSpec
                     , TextSpec
                     , ToolAutocolorSpec
                     , TableSpec

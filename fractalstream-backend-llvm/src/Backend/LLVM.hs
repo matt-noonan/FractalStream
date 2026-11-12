@@ -419,10 +419,12 @@ withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocol
                              : argPtr   issuesPtr
                              : argPtr   (castFunPtrToPtr autocolorCacheLookup)
                              : argPtr   autocolorDir
-                             : argCDouble (CDouble $ fst vaPoint)
-                             : argCDouble (CDouble $ snd vaPoint)
                              : argCDouble (CDouble $ fst vaStep)
                              : argCDouble (CDouble $ snd vaStep)
+                             : argCDouble (CDouble $ fst vaPoint)
+                             : argCDouble (CDouble $ snd vaPoint)
+                             : argCDouble (CDouble $ fst vaPixel)
+                             : argCDouble (CDouble $ snd vaPixel)
                              : colorArg
                              : args
                 callFFI fn retVoid fullArgs

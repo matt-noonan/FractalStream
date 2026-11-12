@@ -27,11 +27,12 @@ interpretViewer body0 action = do
   withEnvironment env $ action $ ViewerFunction $ \vaArgs -> pure $ \ViewerArgs{..} -> do
     let (x0, y0) = vaPoint
         (dx, dy) = vaStep
+        -- (the pixel size the code sees, which needn't be the step)
         context :: Context HaskellValue (ViewerEnv env)
         context = Bind (Proxy @InternalX)  RealType  x0
                 $ Bind (Proxy @InternalY)  RealType  y0
-                $ Bind (Proxy @InternalDX) RealType  dx
-                $ Bind (Proxy @InternalDY) RealType  dy
+                $ Bind (Proxy @InternalDX) RealType  (fst vaPixel)
+                $ Bind (Proxy @InternalDY) RealType  (snd vaPixel)
                 $ Bind (Proxy @"color")    ColorType grey
                 $ vaArgs
 
