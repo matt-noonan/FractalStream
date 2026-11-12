@@ -42,6 +42,10 @@
 //             Newton's method for z⁵ - z - 1: its groups and points; a
 //             point recolored (and the viewer drawn again), added, moved,
 //             deleted; lock, tolerance (and a bad one), clear; saved
+//   tables    saving what a project's tables hold, as the desktop does
+//             (dev-tools/web/tables.fs): asked, with each table's size;
+//             saved with them (and reopened, filled) or without them;
+//             not asked when they're empty
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
@@ -56,7 +60,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, panel };
+const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -972,4 +976,104 @@ async function autocolor() {
   await page.waitForTimeout(800);
   c.check(!(await overlay.isVisible()) && (await app.messages("autocolor")).length === 0,
           "Close closes it (and the groups aren't posted any more)");
+}
+
+async function tables() {
+  const fixture = new URL("tables.fs", import.meta.url).pathname;
+  await app.openFile(fixture);
+  await page.evaluate(() => { window.showSaveFilePicker = undefined; });
+  const saveAs = async () => {
+    const download = page.waitForEvent("download", { timeout: 10000 }).catch(() => null);
+    await page.locator("#save-as").click();
+    return download;
+  };
+  const dialog = page.locator(".page-dialog");
+  const centre = async () => {
+    // (a pixel a quarter of the way across and down the viewer, from its
+    // canvas: the table's 64, 64 there, filled; black, empty)
+    return page.evaluate(() => {
+      const cv = document.querySelector(".viewer canvas");
+      return [...cv.getContext("2d").getImageData(cv.width / 4, cv.height / 4, 1, 1).data].slice(0, 3);
+    });
+  };
+  await page.waitForTimeout(500);
+  const empty = await centre();
+  c.check(empty.join() === "0,0,0", `empty, the viewer's black (${empty})`);
+
+  // empty tables: no question
+  let dl = await saveAs();
+  await page.waitForTimeout(500);
+  c.check(!(await dialog.isVisible()) && (await dl) !== null, "with its tables empty, saving asks nothing");
+
+  // filled by the tool: asked, with the sizes
+  await page.locator("#tools button", { hasText: "Fill" }).click();
+  await page.waitForTimeout(300);
+  const box = await app.canvas(0).boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForTimeout(1500);
+  const filled = await centre();
+  c.check(Math.abs(filled[0] - 64) <= 2 && Math.abs(filled[1] - 64) <= 2 && filled[2] === 128,
+          `the tool fills the table (the viewer shows ${filled})`);
+  dl = saveAs();
+  await dialog.waitFor({ timeout: 5000 }).catch(() => {});
+  const text = await dialog.textContent().catch(() => "");
+  c.check(/Save table data\?/.test(text) && /T:\s+\d+ × \d+,\s+[\d.]+ (KB|MB)/.test(text) && /before compression/.test(text),
+          `filled, saving asks whether to save them (${(/T:[^A]*?(KB|MB)/.exec(text) ?? [""])[0]})`);
+  await dialog.locator("button", { hasText: "Save with tables" }).click();
+  const withFile = fs.readFileSync(await (await dl).path(), "utf8");
+  c.check(/\ntables:/.test(withFile), "Save with tables saves them");
+  const copy = path.join(os.tmpdir(), "tables-saved.fs");
+  fs.writeFileSync(copy, withFile);
+  await app.openFile(copy);
+  await page.waitForTimeout(800);
+  const reopened = await centre();
+  c.check(reopened.join() === filled.join(), `reopened, the table's as it was (the viewer shows ${reopened})`);
+
+  // without them
+  dl = saveAs();
+  await dialog.waitFor({ timeout: 5000 }).catch(() => {});
+  await dialog.locator("button", { hasText: "Save without tables" }).click();
+  const withoutFile = fs.readFileSync(await (await dl).path(), "utf8");
+  c.check(!/\ntables:/.test(withoutFile), "Save without tables doesn't");
+
+  // and cancelled
+  dl = saveAs();
+  await dialog.waitFor({ timeout: 5000 }).catch(() => {});
+  await dialog.locator("button", { hasText: "Cancel" }).click();
+  c.check((await dl) === null && !(await dialog.isVisible()), "Cancel saves nothing");
+
+  // plain saves keep the answer (with a file to save back to: a stand-in
+  // for the browser's file picker, which keeps what's written)
+  await page.evaluate(() => {
+    window.__written = [];
+    const handle = { name: "tables-handle.fs", kind: "file",
+      createWritable: async () => {
+        const parts = [];
+        return { write: async (b) => parts.push(b), close: async () => window.__written.push(new Blob(parts)) };
+      } };
+    window.showSaveFilePicker = async () => handle;
+  });
+  const written = async (k) => page.evaluate(async (k) => {
+    for (let i = 0; i < 50 && window.__written.length <= k; i++) await new Promise((r) => setTimeout(r, 100));
+    return window.__written[k] ? await window.__written[k].text() : null;
+  }, k);
+  await page.locator("#save-as").click();
+  await dialog.waitFor({ timeout: 5000 }).catch(() => {});
+  await dialog.locator("button", { hasText: "Save without tables" }).click();
+  const first = await written(0);
+  await page.locator("#save").click();
+  await page.waitForTimeout(800);
+  const asked = await dialog.isVisible();
+  const second = await written(1);
+  c.check(first !== null && !/\ntables:/.test(first) && !asked && second !== null && !/\ntables:/.test(second),
+          "a plain save after it asks nothing, and keeps the answer (without them)");
+  await page.locator("#save-as").click();
+  await dialog.waitFor({ timeout: 5000 }).catch(() => {});
+  const askedAgain = await dialog.isVisible();
+  await dialog.locator("button", { hasText: "Save with tables" }).click();
+  const third = await written(2);
+  await page.locator("#save").click();
+  const fourth = await written(3);
+  c.check(askedAgain && /\ntables:/.test(third ?? "") && /\ntables:/.test(fourth ?? ""),
+          "Save as asks again, and plain saves keep the new answer (with them)");
 }

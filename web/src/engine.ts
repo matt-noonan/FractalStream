@@ -96,7 +96,8 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "openFile": await engine.fs_open_file(r.name, new Uint8Array(r.bytes)); break;
       case "translate": await engine.fs_translate(); break;
       case "pointer": await engine.fs_pointer(r.viewer, r.x, r.y); break;
-      case "save": await engine.fs_save(r.views); break;
+      case "save": await engine.fs_save(r.views, r.tables); break;
+      case "tableSummary": await engine.fs_table_summary(); break;
       case "rotate": await engine.fs_rotate(r.viewer, r.fx, r.fy, r.tx, r.ty); break;
       case "set": await engine.fs_set(r.name, r.text); break;
       case "view": await engine.fs_view(r.viewer, r.cx, r.cy, r.pixelSize, r.width, r.height, ...(r.covered ?? [0, 0, 0, 0])); break;

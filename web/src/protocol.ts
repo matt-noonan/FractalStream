@@ -12,7 +12,11 @@ export type Request =
   /** What a viewer's "Show pointer position" shows for a screen-plane
       point (as for "event"): answered by "pointer". */
   | { type: "pointer"; viewer: number; x: number; y: number }
-  | { type: "save"; views: string }
+  /** Save the open project, with its view state, and what its tables
+      hold (1), or not (0), or as its file had them (2). */
+  | { type: "save"; views: string; tables: 0 | 1 | 2 }
+  /** The tables that hold anything: answered by "tableSummary". */
+  | { type: "tableSummary" }
   /** Turn a sphere viewer's globe, as the pointer drags from one screen
       point to another (in units of the sphere's radius, y up). */
   | { type: "rotate"; viewer: number; fx: number; fy: number; tx: number; ty: number }
@@ -230,7 +234,9 @@ export type Message =
           (it has no viewers until it does). */
       edit: boolean;
       /** A translation's notes. */
-      notes: string[] }
+      notes: string[];
+      /** Whether its file had its tables saved in it. */
+      savedTables: boolean }
   /** An old FractalStream 1.0 file, not opened: "translate" translates it. */
   | { type: "ancient"; name: string }
   | { type: "pointer"; viewer: number; text: string }
@@ -238,6 +244,7 @@ export type Message =
   | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean }
   | { type: "where"; viewer: number; x: number; y: number; pixelSize: number }
   | { type: "aspect"; viewer: number; error: string | null }
+  | { type: "tableSummary"; built: boolean; tables: { name: string; size: number[]; bytes: number }[] }
   | { type: "autocolor"; groups: AutocolorGroup[] }
   | { type: "autocolorError"; message: string }
   /** What to ask for a colorizer's arguments: each parameter, a note, and its text to start with. */

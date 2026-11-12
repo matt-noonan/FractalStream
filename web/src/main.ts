@@ -109,9 +109,10 @@ function deselectLibrary() {
 // ---------------------------------------------------------------------
 // Files
 
-/** The open project's file: its name, whether it's from the library, and
-    where to save it back (if the browser allows that). */
-let current: { fileName: string; library: boolean; handle: FileHandle | null } | null = null;
+/** The open project's file: its name, whether it's from the library,
+    where to save it back (if the browser allows that), and whether to
+    save its tables' data in it, for plain saves (see `save`). */
+let current: { fileName: string; library: boolean; handle: FileHandle | null; saveTables: boolean | null } | null = null;
 /** The handle of the file being opened, until its project comes. */
 let opening: FileHandle | null = null;
 /** Where the next saved file goes (see "file" messages). */
@@ -126,10 +127,27 @@ async function openFile(opened: Opened | null) {
   engine.postMessage({ type: "openFile", name: opened.file.name, bytes } satisfies Request, [bytes]);
 }
 
+/** Save the project, as the desktop app does: whether to save what its
+    tables hold (if they hold anything) is asked every time the file is
+    chosen (before choosing it, so that choosing it is the last step), and
+    the first time it isn't; the answer's kept for plain saves from then
+    on (to begin with, whether its file had them). */
 async function save(saveAs: boolean) {
   if (!current) return;
   const c = current;
   try {
+    const choosing = saveAs || c.library || !c.handle;
+    const summary = await tableSummary();
+    let tables: 0 | 1 | 2;
+    let answer: boolean | null = null;
+    if (!summary.built) tables = 2;
+    else if (summary.tables.length === 0) tables = 0;
+    else if (c.saveTables !== null && !choosing) tables = c.saveTables ? 1 : 0;
+    else {
+      answer = await askSaveTables(summary.tables, c.saveTables ?? true);
+      if (answer === null) return;
+      tables = answer ? 1 : 0;
+    }
     const destination = await chooseDestination(c.library ? null : c.handle, saveAs, c.fileName, (handle) => {
       c.handle = handle;
       c.library = false;
@@ -137,11 +155,56 @@ async function save(saveAs: boolean) {
       showFileName();
     });
     if (!destination) return;
+    if (answer !== null) c.saveTables = answer;
     pendingSave = destination;
-    send({ type: "save", views: JSON.stringify(viewState()) });
+    send({ type: "save", views: JSON.stringify(viewState()), tables });
   } catch (e) {
     status(`Couldn't save: ${e}`, true);
   }
+}
+
+/** The tables that hold anything (see "tableSummary"). */
+type TableSummary = Extract<Message, { type: "tableSummary" }>;
+let tableSummaryWaiting: ((s: TableSummary) => void) | null = null;
+function tableSummary(): Promise<TableSummary> {
+  return new Promise((resolve) => {
+    tableSummaryWaiting = resolve;
+    send({ type: "tableSummary" });
+  });
+}
+
+/** "812 bytes", "14 KB", "2.1 MB", as the desktop says them. */
+function describeBytes(n: number): string {
+  const scaled = (unit: number, name: string) => {
+    const x = n / unit;
+    return `${x < 10 ? x.toFixed(1) : x.toFixed(0)} ${name}`;
+  };
+  return n < 1e3 ? `${n} bytes` : n < 1e6 ? scaled(1e3, "KB") : n < 1e9 ? scaled(1e6, "MB") : scaled(1e9, "GB");
+}
+
+/** Ask whether to save what the tables hold, as the desktop does: true,
+    false, or null to cancel the save. (`initially`: the default.) */
+function askSaveTables(tables: TableSummary["tables"], initially: boolean): Promise<boolean | null> {
+  return new Promise((resolve) => {
+    const total = tables.reduce((n, t) => n + t.bytes, 0);
+    const button = (label: string, value: boolean | null) => {
+      const b = el("button", { type: "button", textContent: label });
+      b.addEventListener("click", () => { dialog.remove(); resolve(value); });
+      return b;
+    };
+    const withButton = button("Save with tables", true);
+    const withoutButton = button("Save without tables", false);
+    const dialog = el("div", { className: "page-dialog", role: "dialog" },
+      el("div", { className: "page-dialog-box" },
+        el("div", { className: "form-title", textContent: "Save table data?" }),
+        el("p", { textContent: "This project's tables hold data:" }),
+        el("ul", {}, ...tables.map((t) => el("li", { textContent: `${t.name}:  ${t.size.join(" × ")},  ${describeBytes(t.bytes)}` }))),
+        el("p", { textContent: `About ${describeBytes(total)} in all, before compression. Without them, the tables are empty when the project is opened again.` }),
+        el("div", { className: "form-buttons" }, button("Cancel", null), el("span", { className: "form-gap" }), withoutButton, withButton)));
+    dialog.addEventListener("keydown", (e) => { if (e.key === "Escape") { dialog.remove(); resolve(null); } });
+    document.body.append(dialog);
+    (initially ? withButton : withoutButton).focus();
+  });
 }
 
 function showFileName() {
@@ -1391,7 +1454,8 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       }
       // (a new project has no file of its own yet: not even the one it
       // was translated from)
-      current = { fileName: m.fileName, library: m.library, handle: m.library || m.new ? null : opening };
+      current = { fileName: m.fileName, library: m.library, handle: m.library || m.new ? null : opening,
+                  saveTables: m.savedTables ? true : null };
       opening = null;
       clearNotices();
       showFileName();
@@ -1422,6 +1486,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "view": viewers.get(m.viewer)?.moved(m); break;
     case "where": viewers.get(m.viewer)?.jumpFrom(m.x, m.y, m.pixelSize); break;
     case "aspect": viewers.get(m.viewer)?.aspectAnswered(m.error); break;
+    case "tableSummary": tableSummaryWaiting?.(m); tableSummaryWaiting = null; break;
     case "autocolor": autocolorGroups = m.groups; renderAutocolor(); break;
     case "autocolorError": autocolorSay(m.message); break;
     case "colorizerArguments": viewers.get(m.viewer)?.askArguments(m.name, m.fields); break;
