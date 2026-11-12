@@ -17,6 +17,8 @@ module Backend.Wasm.Gen
   , AutocolorParams(..)
   , setAutocolor
   , getAutocolor
+  , allowDrawing
+  , drawingAllowed
   , autocolorLookupFn
   , newLocal
   , emit
@@ -81,6 +83,7 @@ data GenState = GenState
   , gsInstrs :: [Instr]      -- ^ the current block's instructions, newest first
   , gsArena  :: Maybe Arena  -- ^ where lists can be made, if anywhere
   , gsAutocolor :: Maybe AutocolorParams
+  , gsDrawing :: Bool        -- ^ whether draw commands can be compiled (a tool's handler)
   }
 
 newtype Gen a = Gen (StateT GenState (Either String) a)
@@ -95,7 +98,7 @@ data GenResult a = GenResult
 -- | Run a generator for a function with the given parameters.
 runGen :: [ValType] -> Gen a -> Either String (GenResult a)
 runGen params (Gen m) = do
-  (x, GenState{..}) <- runStateT m (GenState (length params) [] [] Nothing Nothing)
+  (x, GenState{..}) <- runStateT m (GenState (length params) [] [] Nothing Nothing False)
   pure (GenResult x (reverse gsLocals) (reverse gsInstrs))
 
 setArena :: Arena -> Gen ()
@@ -109,6 +112,14 @@ setAutocolor a = Gen (modify (\st -> st { gsAutocolor = Just a }))
 
 getAutocolor :: Gen AutocolorParams
 getAutocolor = Gen (gets gsAutocolor) >>= maybe (unsupported "autocolor here") pure
+
+-- | Let draw commands be compiled: they go into the arena (see
+-- "Backend.Wasm.Code"), so it has to be set too.
+allowDrawing :: Gen ()
+allowDrawing = Gen (modify (\st -> st { gsDrawing = True }))
+
+drawingAllowed :: Gen ()
+drawingAllowed = Gen (gets gsDrawing) >>= \ok -> unless ok (unsupported "drawing here")
 
 newLocal :: ValType -> Gen Int
 newLocal t = Gen $ do

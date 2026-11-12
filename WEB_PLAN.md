@@ -24,6 +24,7 @@ questions into **Decisions**.
 | D12 | The precision toggle is an **app-level preference** | Stored per browser with the other preferences (IndexedDB), not in project files. |
 | D14 | Kernels' math functions come from **musl's libm, compiled to wasm** (built each time) | Not JavaScript's `Math`: calling it from wasm on several worker threads crashed V8; and this way every host computes alike. |
 | D13 | **Backend.Wasm before the web app;** test wasm under Node from 0g on | The interpreter is about 2,500× slower than LLVM (0b), too slow even as a stopgap. |
+| D16 | Tools' handlers (and overlays) are **compiled by Backend.Wasm and run on the workers**; what it can't compile yet (text, tables, autocolor) is a tool compilation error, not interpreted | Interpreted, external rays took 7.5 s, and the engine's one thread was stuck meanwhile. On a worker the engine stays free, and Stop can come later by stopping the worker. (Without a worker pool, tools are interpreted.) |
 | D15 | Tools' drawings are drawn **by the page, with Canvas2D**, from shapes the engine sends; fsrun keeps Rasterific | Rasterific in wasm took 1.5 s for a 2,000-segment orbit; Canvas2D takes well under a millisecond, and drawings move with the view at once. Far-reaching shapes are clipped as `Actor.Viewer.Clip` does. |
 
 ## Architecture
@@ -42,7 +43,7 @@ questions into **Decisions**.
 │   • fractalstream-ui-web: a UI record that is RPC to the UI │
 │   • Backend.Wasm: Code → wasm module bytes (f64, CPU)       │
 │   • Backend.WGSL: Code → WGSL compute shader (df64 / f32)   │
-│   • Tools: pure interpreter at first, Backend.Wasm later    │
+│   • Tools: Backend.Wasm, on the workers (D16)               │
 └───────────────────────────────┬─────────────────────────────┘
                                 │ SharedArrayBuffer tiles
                     ┌───────────▼───────────┐
@@ -92,7 +93,12 @@ The browser analogue of the LLVM JIT, and the reference for correctness:
   rather than calling back into Haskell, since the kernel runs in another
   worker. The engine inserts and publishes, and the existing
   `pointAdded` redraw finishes the job.
-- Later, tools can run through it too, replacing the interpreter.
+- Tools' handlers compile to a `tool(args, arena, arenaSize, result)`
+  function and run on a worker, once per event: lists are made from the
+  arena's bottom, draw commands put in 40-byte records from its top, and
+  the arguments written back in place; the engine reads back what changed
+  (setting the changed values) and replays the draw commands, so nothing
+  calls back into Haskell (D16).
 
 ### Backend.WGSL (fast GPU path)
 
@@ -254,8 +260,13 @@ wasmtime.
   clicked), with each tool's shortcut key, and n for Navigate.
 - [x] Drawings and overlays: Canvas2D painting of `DrawCommand`s (D15),
   matching `Actor.Viewer.Overlay`, on the plane and the sphere.
-- [ ] Progress and Stop for slow handlers (deferred).
-- [ ] Backend.Wasm for tools' handlers.
+- [ ] Progress and Stop for slow handlers (deferred). Until then a
+  handler that never finishes holds its worker for good.
+- [x] Backend.Wasm for tools' handlers, run on the workers (D16);
+  `dev-tools/wasm/compare-tools.sh` compares every library tool's results
+  with LLVM's.
+- [ ] Text in Backend.Wasm (the Böttcher coordinate tool needs it), then
+  tables and autocolor in tools.
 - [ ] Preferences (IndexedDB), including the precision toggle (D12).
 
 ### Phase 5: Backend.WGSL (df64, then f32)
@@ -294,6 +305,29 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-11: Compiled tools
+
+Tools' handlers now compile with Backend.Wasm and run on the workers
+(D16). Selecting External rays' dynamical-plane tool, which draws its
+rays when it's refreshed, took 7.5 s interpreted, during which nothing
+rendered; compiled, it takes about 110 ms, including compiling it.
+
+Of the library's 51 tools, 50 compile; the Böttcher coordinate tool
+writes text, which Backend.Wasm can't compile yet, so it fails to build
+(as decided: no interpreter fallback).
+
+`dev-tools/wasm/compare-tools.sh` drives every library tool the same way
+in the wasm and native LLVM builds (select it, click, drag) and compares
+captures of every viewer: 34 of 48 identical, 10 differing slightly, 0
+failed. Each differing case differs as much without the drawings (base
+captures), so it's the viewers' renders (libm against the native math
+library, in chaotic regions), not the tools; a chaotic orbit (period 5)
+can move a pixel too, its tool using the same math.
+
+The fix for overlays and Refresh (as the desktop app sends them) came
+just before: overlays are refreshed when any configuration value changes,
+and the selected tool after each render.
 
 ### 2026-11-11: Tools and drawings
 

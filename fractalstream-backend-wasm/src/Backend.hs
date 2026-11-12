@@ -10,8 +10,8 @@ import Language.Draw (ignoreDrawing)
 import Backend.Wasm
 import Task.Concurrent (defaultRenderConcurrency)
 
--- | Viewers are compiled to WebAssembly; tools, and the code that runs
--- once per render, are interpreted (as with the pure backend). A render
+-- | Viewers and tools are compiled to WebAssembly; the code that runs
+-- once per render is interpreted (as with the pure backend). A render
 -- works on as many blocks at once as the host has workers (unless the
 -- frontend says otherwise, as fsrun's @-j@ does).
 withBackend :: (Backend -> IO a) -> IO a
@@ -21,6 +21,6 @@ withBackend action = do
   action Backend
     { bViewerCompiler    = ViewerCompiler withWasmViewer
     , bToolRunnerFactory = defaultToolRunnerFactory
-    , bToolRunner        = defaultToolRunner
+    , bToolRunner        = wasmToolRunner
     , bRunOnce           = \_ -> interpretedToolExec ignoreDrawing
     }

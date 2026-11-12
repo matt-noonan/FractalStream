@@ -6,10 +6,15 @@
 -- engine's own thread, over its memory, writing a block's pixels straight
 -- into its buffer. A viewer whose code the backend can't compile
 -- yet is interpreted instead (by "Backend.Pure"), with a note on stderr.
--- Tools, and code that runs once per render, are interpreted.
+--
+-- Tools' event handlers are compiled too ('wasmToolRunner'), and run on
+-- the workers, one at a time each; a tool the backend can't compile
+-- fails to build. (Without workers, tools are interpreted.) Code that
+-- runs once per render is interpreted.
 module Backend.Wasm
   ( withWasmViewer
   , workerPoolSize
+  , wasmToolRunner
   ) where
 
 import FractalStream.Prelude
@@ -20,19 +25,22 @@ import Backend.Wasm.Encode (MemoryImport(..))
 import Backend.Pure (interpretViewer)
 
 import Actor.Autocolor (AutocolorLookup(..), autocolorSnapshot)
+import Actor.Event (ToolExec, HandlerRun(..), EventArgument(..),
+                    buildHandlerWith, snapshotEventArgs)
 import Actor.Viewer
+import Language.Draw (DrawSink(..))
 import Language.Code (Code, transformValues)
 import Language.Environment
 import Language.Type
 import Language.Value.Transform (backendRewrites)
-import Data.Color (colorToRGB)
+import Data.Color (colorToRGB, rgbToColor)
 
-import Control.Exception (evaluate)
+import Control.Exception (Exception, evaluate, throwIO, handle)
 import Data.Bits (testBit)
 import Foreign.ForeignPtr (mallocForeignPtrBytes, withForeignPtr)
 import Foreign.Marshal.Array (withArrayLen)
 import Data.IORef
-import Foreign.Ptr (Ptr, ptrToWordPtr)
+import Foreign.Ptr (Ptr, ptrToWordPtr, plusPtr)
 import Foreign.Storable (pokeByteOff, peekByteOff)
 import Foreign.Marshal.Alloc (allocaBytes)
 import GHC.Wasm.Prim (JSVal)
@@ -58,6 +66,33 @@ foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, 
   runKernel :: JSVal -> Ptr Word8 -> Int32 -> Int32 -> Int32 -> Ptr Word8 -> Ptr Word8 -> Int32
             -> Ptr Word8 -> Ptr Word8
             -> Double -> Double -> Double -> Double -> IO Int32
+
+-- | Run a tool's handler on a worker, with a copy of its arguments and
+-- an arena of the given size (see @js/kernel-worker.mjs@).
+foreign import javascript safe
+  "return await globalThis.fractalstreamWorkers.runTool($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice(), $4)"
+  runToolOnWorker :: Int -> Ptr Word8 -> Int -> Int -> IO JSVal
+
+foreign import javascript unsafe "$1.status"
+  toolStatus :: JSVal -> IO Int32
+
+foreign import javascript unsafe "$1.arenaBase"
+  toolArenaBase :: JSVal -> IO Int
+
+foreign import javascript unsafe "$1.lists.length"
+  toolListsLength :: JSVal -> IO Int
+
+foreign import javascript unsafe "$1.draws.length"
+  toolDrawsLength :: JSVal -> IO Int
+
+foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, $2, $1.args.length).set($1.args)"
+  copyToolArgs :: JSVal -> Ptr Word8 -> IO ()
+
+foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, $2, $1.lists.length).set($1.lists)"
+  copyToolLists :: JSVal -> Ptr Word8 -> IO ()
+
+foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, $2, $1.draws.length).set($1.draws)"
+  copyToolDraws :: JSVal -> Ptr Word8 -> IO ()
 
 -- | How many workers the host's pool has (0 without one).
 foreign import javascript unsafe
@@ -272,3 +307,131 @@ pokeScalar p off t v = case t of
     pokeByteOff p (off + 2) b
   -- (a viewer with any other type isn't compiled: see 'argSize')
   _ -> pure ()
+
+------------------------------------------------------------------------
+-- Tools
+
+-- | A tool's handler couldn't be compiled: the tool fails to build.
+newtype ToolNotCompiled = ToolNotCompiled String
+  deriving Show
+instance Exception ToolNotCompiled
+
+-- | Tools' handlers compiled to wasm (see 'compileTool'), each when its
+-- tool's dispatcher is built, and run on the host's workers. Without a
+-- pool of workers, they're interpreted.
+wasmToolRunner :: ToolRunner
+wasmToolRunner = ToolRunner $ \lookupAutocolor sink layer ctx script -> workerPoolSize >>= \case
+  0 -> runTool defaultToolRunner lookupAutocolor sink layer ctx script
+  _ -> handle (\(ToolNotCompiled err) -> pure (Left err))
+              (buildHandlerWith (wasmToolExec (sink layer)) ctx script)
+
+wasmToolExec :: DrawSink -> ToolExec
+wasmToolExec sink envp code0 = do
+  let code = transformValues backendRewrites code0
+  bytes <- either (throwIO . ToolNotCompiled) pure (compileTool envp code)
+  kernel <- withArrayLen bytes (\n p -> addKernel p n)
+  pure $ \ctx -> HandlerRun $ \_ -> snapshotEventArgs ctx >>= \case
+    Nothing -> pure (pure ())
+    Just vals -> do
+      let values = fromContext (\_ ty v -> SomeArg ty v) vals
+          slots = sum [ fromMaybe 0 (argSize ty) | SomeArg ty _ <- values ]
+          size = slots + sum [ valueListBytes ty v | SomeArg ty v <- values ]
+      args <- mallocForeignPtrBytes (max 8 size)
+      withForeignPtr args $ \p -> do
+        heap <- newIORef slots
+        foldM_ (\off (SomeArg ty v) -> pokeArg p workerArgsBase heap off ty v) 0 values
+        -- (with a bigger arena, if it runs out)
+        let attempt capacity = do
+              result <- runToolOnWorker kernel p size capacity >>= evaluate
+              status <- toolStatus result
+              if | testBit status 0 && capacity < toolArenaMaxCapacity -> attempt (2 * capacity)
+                 | testBit status 0 -> fail $ concat
+                     [ "This tool's lists and drawing used more than "
+                     , show (toolArenaMaxCapacity `div` (1024 * 1024))
+                     , " MB of scratch memory, so its changes were discarded." ]
+                 | testBit status 1 -> fail
+                     "A list or table index was out of range, so this tool's changes were discarded."
+                 | otherwise -> pure result
+        result <- attempt toolArenaInitialCapacity
+        -- What it left: its arguments, its lists, and its drawing.
+        copyToolArgs result p
+        arenaBase <- toolArenaBase result
+        listsLen <- toolListsLength result
+        drawsLen <- toolDrawsLength result
+        allocaBytes (max 8 listsLen) $ \lists -> allocaBytes (max 8 drawsLen) $ \draws -> do
+          copyToolLists result lists
+          copyToolDraws result draws
+          -- (an address in the worker's memory, in our copies)
+          let at addr
+                | addr >= workerArgsBase && addr < workerArgsBase + size = p `plusPtr` (addr - workerArgsBase)
+                | otherwise = lists `plusPtr` (addr - arenaBase)
+          offset <- newIORef 0
+          sets <- fromContextM (\_ ty (arg, old) -> do
+                    off <- readIORef offset
+                    writeIORef offset (off + fromMaybe 0 (argSize ty))
+                    new <- peekArg at (p `plusPtr` off) ty
+                    pure $ case argSetValue arg of
+                      Just set | Scalar ty old /= Scalar ty new -> set ty new
+                      _ -> pure ()) (zipContext ctx vals)
+          drawn <- readDraws sink draws drawsLen
+          pure (sequence_ sets >> sequence_ drawn)
+
+-- | Tools get an arena of their own, as with the LLVM backend: it starts
+-- at 1 MB and doubles whenever a run runs out, up to 256 MB.
+toolArenaInitialCapacity, toolArenaMaxCapacity :: Int
+toolArenaInitialCapacity = 1024 * 1024
+toolArenaMaxCapacity = 256 * 1024 * 1024
+
+-- | A tool's draw commands (see 'drawRecord'), as what draws them into
+-- the sink: they're put in the arena from the top down, so the first is
+-- the last record.
+readDraws :: DrawSink -> Ptr Word8 -> Int -> IO [IO ()]
+readDraws DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize - 1]) $ \k -> do
+  let r = buf `plusPtr` (k * drawRecordSize)
+      f64 :: Int -> IO Double
+      f64 = peekByteOff r
+      pt o = (,) <$> f64 o <*> f64 (o + 8)
+  tag <- peekByteOff r 0 :: IO Int32
+  flag <- (/= (0 :: Int32)) <$> peekByteOff r 4
+  color <- (\a b c -> rgbToColor (a, b, c)) <$> peekByteOff r 4 <*> peekByteOff r 5 <*> peekByteOff r 6
+  case tag of
+    0 -> pure dsClear
+    1 -> pure (dsStroke color)
+    2 -> pure (dsFill color)
+    3 -> dsPoint <$> pt 8
+    4 -> dsLine <$> pt 8 <*> pt 24
+    5 -> dsCircle flag <$> f64 8 <*> pt 16
+    6 -> dsRect flag <$> pt 8 <*> pt 24
+    _ -> pure (pure ())
+
+-- | Read a value from the arguments buffer as 'pokeArg' wrote it (the
+-- kernel writes it back the same way); @at@ finds a list's nodes from
+-- their address.
+peekArg :: (Int -> Ptr Word8) -> Ptr Word8 -> TypeProxy t -> IO (HaskellType t)
+peekArg at p t = case t of
+  ListType i -> peekByteOff p 0 >>= \(a :: Int32) -> peekList at i (fromIntegral a)
+  PairType a b -> (,) <$> peekArg at p a <*> peekArg at (p `plusPtr` fromMaybe 0 (argSize a)) b
+  _ -> peekScalar p t
+
+peekList :: (Int -> Ptr Word8) -> TypeProxy t -> Int -> IO [HaskellType t]
+peekList _ _ 0 = pure []
+peekList at t addr = do
+  let node = at addr
+  next <- peekByteOff node 0 :: IO Int32
+  x <- peekElem at (node `plusPtr` 8) t
+  (x :) <$> peekList at t (fromIntegral next)
+
+peekElem :: (Int -> Ptr Word8) -> Ptr Word8 -> TypeProxy t -> IO (HaskellType t)
+peekElem at p t = case t of
+  ListType i -> peekByteOff p 0 >>= \(a :: Int32) -> peekList at i (fromIntegral a)
+  PairType a b -> (,) <$> peekElem at p a <*> peekElem at (p `plusPtr` fromMaybe 0 (pairSecond a)) b
+  _ -> peekScalar p t
+
+peekScalar :: Ptr Word8 -> TypeProxy t -> IO (HaskellType t)
+peekScalar p t = case t of
+  BooleanType -> (/= (0 :: Int32)) <$> peekByteOff p 0
+  IntegerType -> fromIntegral <$> (peekByteOff p 0 :: IO Int32)
+  RealType -> peekByteOff p 0
+  ComplexType -> (:+) <$> peekByteOff p 0 <*> peekByteOff p 8
+  ColorType -> (\r g b -> rgbToColor (r, g, b)) <$> peekByteOff p 0 <*> peekByteOff p 1 <*> peekByteOff p 2
+  _ -> fail ("internal error: a tool's value of type " ++ showType t ++ " can't be read back")

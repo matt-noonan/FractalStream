@@ -14,11 +14,22 @@
 // the list of points the kernel would add to autocolor groups (misses),
 // which go back with the pixels.
 //
+// A tool's handler (a module exporting `tool`: see Backend.Wasm.Code) runs
+// the same way, once: its arguments at ARGS_BASE, then its arena (of the
+// size the job asks for), where it makes its lists from the bottom up and
+// puts its draw commands from the top down; it writes where those end and
+// begin at addresses 0 and 4. What goes back is its arguments as it left
+// them, and the used parts of the arena (with where the arena was, since
+// lists point into it).
+//
 // Messages in:
-//   { kernel: id, bytes }          a kernel (its module's bytes) to keep
+//   { kernel: id, bytes }          a kernel or tool (its module's bytes) to keep
 //   { job, kernel: id, args, snapshot, width, height, subsamples, x0, y0, dx, dy }
+//   { job, kernel: id, tool: true, args, arenaSize }
 // Messages out:
-//   { job, issues, pixels, misses } or { job, error }
+//   { job, issues, pixels, misses }
+//   { job, status, args, arenaBase, lists, draws }   (a tool's: just status, if bit 0 is set)
+//   or { job, error }
 
 const ARGS_BASE = 16;
 const ARENA_SIZE = 1024 * 1024;
@@ -56,12 +67,14 @@ function handle(m, { math, autocolor }) {
     // (each worker compiles its own copy: it takes well under a millisecond)
     const module = new WebAssembly.Module(m.bytes);
     const instance = new WebAssembly.Instance(module, { env: { memory }, math, autocolor });
-    kernels.set(m.kernel, instance.exports.kernel);
+    kernels.set(m.kernel, instance.exports);
     return null;
   }
   try {
-    const kernel = kernels.get(m.kernel);
-    if (!kernel) throw new Error(`no kernel ${m.kernel} in this worker`);
+    const exports = kernels.get(m.kernel);
+    if (!exports) throw new Error(`no kernel ${m.kernel} in this worker`);
+    if (m.tool) return runTool(m, exports.tool);
+    const kernel = exports.kernel;
     const args = new Uint8Array(m.args);
     const snapshot = new Uint8Array(m.snapshot);
     const snap = align8(ARGS_BASE + args.length);
@@ -85,6 +98,20 @@ function handle(m, { math, autocolor }) {
   } catch (e) {
     return [{ job: m.job, error: String(e?.stack ?? e) }, []];
   }
+}
+
+function runTool(m, tool) {
+  const args = new Uint8Array(m.args);
+  const arena = align8(ARGS_BASE + args.length);
+  const top = arena + m.arenaSize;
+  if (memory.buffer.byteLength < top) memory.grow(Math.ceil((top - memory.buffer.byteLength) / 65536));
+  new Uint8Array(memory.buffer, ARGS_BASE, args.length).set(args);
+  const status = tool(ARGS_BASE, arena, m.arenaSize, 0);
+  if (status & 1) return [{ job: m.job, status }, []];
+  const [bump, end] = new Int32Array(memory.buffer, 0, 2);
+  const bytes = (from, to) => new Uint8Array(memory.buffer, from, to - from).slice();
+  const out = bytes(ARGS_BASE, ARGS_BASE + args.length), lists = bytes(arena, bump), draws = bytes(end, top);
+  return [{ job: m.job, status, args: out, arenaBase: arena, lists, draws }, [out.buffer, lists.buffer, draws.buffer]];
 }
 
 if (typeof process !== "undefined" && process.versions?.node) {

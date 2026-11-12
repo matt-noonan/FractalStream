@@ -15,6 +15,9 @@
 //                  -> Promise<{ issues, pixels, misses }>   a block (with
 //                  a copy of the autocolor snapshot), on the next idle
 //                  worker (queued if none is)
+// pool.runTool(id, args, arenaSize)
+//                  -> Promise<{ status, args, arenaBase, lists, draws }>
+//                  a tool's handler, once (see kernel-worker.mjs)
 // pool.terminate()
 
 export function createPool(workers) {
@@ -34,7 +37,8 @@ export function createPool(workers) {
         s.kernels.add(job.kernel);
       }
       s.busy = true;
-      s.worker.post(job, [job.args, job.snapshot]);
+      const { transfer, ...message } = job;
+      s.worker.post(message, transfer);
     }
   }
 
@@ -57,7 +61,14 @@ export function createPool(workers) {
       const job = nextJob++;
       // (args, snapshot: Uint8Arrays whose buffers are the job's own, to transfer)
       queue.push({ job, kernel, args: args.buffer, snapshot: snapshot.buffer,
-                   width, height, subsamples, x0, y0, dx, dy });
+                   width, height, subsamples, x0, y0, dx, dy, transfer: [args.buffer, snapshot.buffer] });
+      const result = new Promise((resolve, reject) => pending.set(job, { resolve, reject }));
+      dispatch();
+      return result;
+    },
+    runTool(kernel, args, arenaSize) {
+      const job = nextJob++;
+      queue.push({ job, kernel, tool: true, args: args.buffer, arenaSize, transfer: [args.buffer] });
       const result = new Promise((resolve, reject) => pending.set(job, { resolve, reject }));
       dispatch();
       return result;
