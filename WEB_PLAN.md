@@ -348,10 +348,15 @@ viewer's kernel does; a run that meets points to add is run again once
 the engine has added them. New test: `ToolAutocolorSpec`.
 
 **SaddleDrop** (copies of `../saddledrop-layers.2.fs`, with its 6 MB of
-saved tables): the saved tables' layer, Add (a resize), the Critical point
-tool, and Fill all capture identically with wasm and LLVM, and as fast.
-Neither build's Fill found anything to fill from the seeds tried
-headlessly, so the flood fill itself isn't covered there yet.
+saved tables): the saved tables' layer, Add (a resize), and the Critical
+point tool capture identically with wasm and LLVM, and as fast. The flood
+fill needs the file's saved values (fsrun starts from the script's
+defaults; `zoom = 0.01` matters, as do `c`, `crit`, `crit_c` and
+`crit_found`), set with `set parameter`. With them, Fill over a 200x200
+view is identical; over the full 600x600 view, 10 pixels differ, on the
+filled region's edge: 7 escape-time colors, and 3 cells where Newton's
+method converged in one build and not the other (musl's libm against
+macOS's, as elsewhere).
 
 **A race in Stop's "switch to Navigate"**, which the new timings showed:
 when a stopped handler let go of the viewer's lock, another handler
