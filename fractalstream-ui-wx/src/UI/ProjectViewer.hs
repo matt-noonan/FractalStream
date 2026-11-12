@@ -27,6 +27,7 @@ import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import Data.Planar
 
 import UI.Tile
+import UI.Magnify (onPinch)
 import Task.Block (subBlockSize)
 import UI.Layout
 import UI.Widgets
@@ -798,11 +799,14 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     lastViewRender <- newIORef =<< getCurrentTime
     pendingGlobe <- newIORef (Nothing :: Maybe Rotation)
     -- A drag panning the view (where it started, the view then, and
-    -- whether it's moved yet), and its latest view, not rendered yet: the
-    -- picture follows the pointer at once, and the renders follow as
-    -- the globe's do (see the pan timer below).
+    -- whether it's moved yet); and a pan's or a pinch's latest view, not
+    -- rendered yet: the picture follows the pointer at once (moved, or
+    -- scaled), and the renders follow as the globe's do (see the view
+    -- timer below). When the last pinch event came (a pinch is over, and a
+    -- step in the history, when they stop).
     panDrag <- newIORef (Nothing :: Maybe (Point, Model, Bool))
-    pendingPan <- newIORef (Nothing :: Maybe Model)
+    pendingView <- newIORef (Nothing :: Maybe Model)
+    lastPinch <- newIORef (Nothing :: Maybe UTCTime)
     -- The view the current tile renders, and the one the saved image
     -- shows (which the picture is drawn moved from, to the view wanted).
     currentTileModel <- newIORef =<< get model value
@@ -836,6 +840,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     needToRefreshOverlay <- newMVar ()
 
     let changeViewTo newModel = do
+          -- (it replaces any pan's or pinch's view still to render)
+          writeIORef pendingView Nothing
           modifyIORef' history (historyAppend newModel)
           jumpViewTo newModel
 
@@ -946,20 +952,33 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 let (w, h) = tileRect curTile
                 -- (the view wanted: a pan's, ahead of the renders; the
                 -- saved image drawn moved to it from its own, on grey)
-                mdl <- readIORef pendingPan >>= maybe (get model value) pure
+                mdl <- readIORef pendingView >>= maybe (get model value) pure
                 savedMdl <- readIORef savedTileModel
-                let offset = case (modelRotation savedMdl, modelRotation mdl) of
-                      (Nothing, Nothing) | modelPixelDim savedMdl == modelPixelDim mdl ->
-                        let (sx, sy) = modelCenter savedMdl
-                            (tx, ty) = modelCenter mdl
-                            (px, py) = modelPixelDim mdl
-                        in (round ((sx - tx) / px), round ((ty - sy) / py))
-                      _ -> (0, 0)
-                when (offset /= (0, 0)) $
-                  drawRect dc viewRect [ brush := brushSolid (colorRGB (128 :: Int) 128 128), pen := penTransparent ]
+                -- (the saved image's pixel at (u, v) is at w/2 + ox + s (u - w/2),
+                -- and the same down, in the view wanted: on the plane, or on
+                -- a globe turned the same way)
+                let sameKind = modelRotation savedMdl == modelRotation mdl
+                    (sx, sy) = modelCenter savedMdl
+                    (tx, ty) = modelCenter mdl
+                    (spx, spy) = modelPixelDim savedMdl
+                    (tpx, tpy) = modelPixelDim mdl
+                    (ox, oy) = ((sx - tx) / tpx, (ty - sy) / tpy)
+                    (scx, scy) = (spx / tpx, spy / tpy)
+                    moved = sameKind && (abs ox >= 0.5 || abs oy >= 0.5 || abs (scx - 1) > 1e-9 || abs (scy - 1) > 1e-9)
+                when moved $ paintUndrawn dc viewRect
                 get savedTileBitmap value >>= \case
                   Nothing -> pure ()
-                  Just bmp -> drawCenteredBitmapAt offset bmp dc viewRect (w, h)
+                  Just bmp
+                    | moved && (abs (scx - 1) > 1e-9 || abs (scy - 1) > 1e-9) -> do
+                        let (cxv, cyv) = (fromIntegral w / 2, fromIntegral h / 2)
+                        graphicsContextPushState gc
+                        graphicsContextTranslate gc (cxv + ox) (cyv + oy)
+                        graphicsContextScale gc (sz scx scy)
+                        graphicsContextTranslate gc (negate cxv) (negate cyv)
+                        drawCenteredBitmapAt (0, 0) bmp dc viewRect (w, h)
+                        graphicsContextPopState gc
+                    | moved -> drawCenteredBitmapAt (round ox, round oy) bmp dc viewRect (w, h)
+                    | otherwise -> drawCenteredBitmapAt (0, 0) bmp dc viewRect (w, h)
 
                 box <- viewBox
                 get currentTool value >>= \case
@@ -1213,8 +1232,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               -- A drag panned the view: its last step, and one step in the
               -- history.
               MouseLeftUp _ _ | Just (_, _, True) <- panNow -> do
-                readIORef pendingPan >>= mapM_ (\m -> do
-                  writeIORef pendingPan Nothing
+                readIORef pendingView >>= mapM_ (\m -> do
+                  writeIORef pendingView Nothing
                   jumpViewWith UnanimatedChange m)
                 get model value >>= \m -> modifyIORef' history (historyAppend m)
                 writeIORef panDrag Nothing
@@ -1320,7 +1339,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                       let (cx, cy) = modelCenter m0
                           (px, py) = modelPixelDim m0
                       writeIORef panDrag (Just (p0, m0, True))
-                      writeIORef pendingPan (Just m0 { modelCenter = (cx - fromIntegral dx * px, cy + fromIntegral dy * py) })
+                      writeIORef pendingView (Just m0 { modelCenter = (cx - fromIntegral dx * px, cy + fromIntegral dy * py) })
                       triggerRepaint
                     propagateEvent
 
@@ -1344,6 +1363,24 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               -- other mouse events
               _ -> propagateEvent
           ]
+
+    -- Pinching a trackpad zooms (see UI.Magnify): live, as a pan moves,
+    -- about the pointer (on the sphere, about the globe's center).
+    onPinch p $ \magnification (x, y) -> do
+      base <- readIORef pendingView >>= maybe (get model value) pure
+      Size { sizeW = w, sizeH = h } <- get f clientSize
+      let factor = 1 / (1 + max (-0.5) (min 0.5 magnification))
+          (px, py) = modelPixelDim base
+          (cx, cy) = modelCenter base
+          newCenter = case modelRotation base of
+            Just _ -> (cx, cy)
+            Nothing ->
+              let mx = cx + (fromIntegral x - fromIntegral w / 2) * px
+                  my = cy - (fromIntegral y - fromIntegral h / 2) * py
+              in (mx + (cx - mx) * factor, my + (cy - my) * factor)
+      writeIORef pendingView (Just base { modelCenter = newCenter, modelPixelDim = (px * factor, py * factor) })
+      getCurrentTime >>= writeIORef lastPinch . Just
+      triggerRepaint
 
     WX.windowOnScroll p $ \scroll -> do
       let mb = case scroll of
@@ -1482,19 +1519,31 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                            jumpViewWith UnanimatedChange m { modelRotation = Just r }
                    ]
 
-    -- The pan timer: render a drag's latest view (which the picture already
-    -- shows, moved) once the current render has finished, or has had a
-    -- tenth of a second, as the globe's turns are.
+    -- A pinch is over a third of a second after its last event (once its
+    -- view's rendering): a step in the history.
+    _ <- wxTimer host [ interval := 50
+                   , enabled := True
+                   , on command := readIORef lastPinch >>= mapM_ (\t -> do
+                       now <- getCurrentTime
+                       pending <- isJust <$> readIORef pendingView
+                       when (not pending && diffUTCTime now t >= 0.3) $ do
+                         writeIORef lastPinch Nothing
+                         get model value >>= \m -> modifyIORef' history (historyAppend m))
+                   ]
+
+    -- The view timer: render a pan's or a pinch's latest view (which the
+    -- picture already shows, moved or scaled) once the current render has
+    -- finished, or has had a tenth of a second, as the globe's turns are.
     _ <- wxTimer host [ interval := 16
                    , enabled := True
-                   , on command := readIORef pendingPan >>= \case
+                   , on command := readIORef pendingView >>= \case
                        Nothing -> pure ()
                        Just m -> do
                          finished <- tileFinished =<< get currentTile value
                          started <- readIORef lastViewRender
                          now <- getCurrentTime
                          when (finished || diffUTCTime now started >= 0.1) $ do
-                           writeIORef pendingPan Nothing
+                           writeIORef pendingView Nothing
                            jumpViewWith UnanimatedChange m
                    ]
 
