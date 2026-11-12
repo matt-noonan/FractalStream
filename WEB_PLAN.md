@@ -393,9 +393,17 @@ throughout).
 
 **Pinch to zoom** on the desktop: wxWidgets 3.2.9 has it (on macOS, a
 trackpad pinch is a `wxEVT_MAGNIFY` mouse event, with its magnification),
-but our wxHaskell binds neither the event nor `GetMagnification`. It
-would take a small C++ shim in `fractalstream-ui-wx` (compiled against
-the wx headers) to connect it and read the magnification; not done yet.
+but our wxHaskell binds neither the event nor `GetMagnification`, so a
+little C++ (`fractalstream-ui-wx/cbits/magnify.cpp`, compiled with the
+flags `Setup.hs` already gets from wx-config; a no-op on Windows, where
+wx is a prebuilt DLL) connects it, and `UI.Magnify.onPinch` calls back
+with each event's magnification and position. A pinch zooms live about
+the pointer (on the sphere, about the globe's center), as a pan moves:
+the picture is drawn scaled at once, and the renders follow. wx 3.2's
+magnify events don't say where in the gesture they are, so a pinch is
+over (a step in the history) a third of a second after its last event,
+as on the web. Checked with a synthesized pinch (a gesture CGEvent with
+macOS's undocumented magnify fields).
 
 ### 2026-11-12: The viewer menu
 

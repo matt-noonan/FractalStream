@@ -98,6 +98,7 @@ executable FractalStream
                        UI.Preferences
                        UI.AutocolorEditor
                        UI.MovieMaker
+                       UI.Magnify
 
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
@@ -129,6 +130,16 @@ executable FractalStream
                      , process
                      , directory
                      , network
+
+  -- Trackpad pinches (see UI.Magnify): C++ against wxWidgets' headers,
+  -- which Setup.hs gives the executable (from wx-config); on Windows,
+  -- where it can't, none.
+  if os(windows)
+     c-sources: cbits/magnify-none.c
+  else
+     cxx-sources: cbits/magnify.cpp
+     cxx-options: -std=c++17
+     extra-libraries: c++
 
   -- A GUI program, without a console window. GHC's default manifest is left
   -- out, since the Windows resources Setup.hs links in (windows/*.rc)
