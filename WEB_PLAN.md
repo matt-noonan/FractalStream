@@ -24,7 +24,8 @@ questions into **Decisions**.
 | D12 | The precision toggle is an **app-level preference** | Stored per browser with the other preferences (IndexedDB), not in project files. |
 | D14 | Kernels' math functions come from **musl's libm, compiled to wasm** (built each time) | Not JavaScript's `Math`: calling it from wasm on several worker threads crashed V8; and this way every host computes alike. |
 | D13 | **Backend.Wasm before the web app;** test wasm under Node from 0g on | The interpreter is about 2,500× slower than LLVM (0b), too slow even as a stopgap. |
-| D16 | Tools' handlers (and overlays) are **compiled by Backend.Wasm and run on the workers**; what it can't compile yet (text, tables, autocolor) is a tool compilation error, not interpreted | Interpreted, external rays took 7.5 s, and the engine's one thread was stuck meanwhile. On a worker the engine stays free, and Stop can come later by stopping the worker. (Without a worker pool, tools are interpreted.) |
+| D16 | Tools' handlers (and overlays) are **compiled by Backend.Wasm and run on the workers**; what it can't compile yet (tables, autocolor) is a tool compilation error, not interpreted | Interpreted, external rays took 7.5 s, and the engine's one thread was stuck meanwhile. On a worker the engine stays free, and Stop can come later by stopping the worker. (Without a worker pool, tools are interpreted.) |
+| D17 | Text in Backend.Wasm is a **tree of nodes in the arena** (literals, numbers, concatenations), formatted by the engine when it reads a text back | Numbers then print exactly as interpreted (`showValue`), without calling back into Haskell or reimplementing `show` for `Double`. Nothing in the language looks inside a text; if that changes (comparisons, `length`), revisit. |
 | D15 | Tools' drawings are drawn **by the page, with Canvas2D**, from shapes the engine sends; fsrun keeps Rasterific | Rasterific in wasm took 1.5 s for a 2,000-segment orbit; Canvas2D takes well under a millisecond, and drawings move with the view at once. Far-reaching shapes are clipped as `Actor.Viewer.Clip` does. |
 
 ## Architecture
@@ -265,8 +266,8 @@ wasmtime.
 - [x] Backend.Wasm for tools' handlers, run on the workers (D16);
   `dev-tools/wasm/compare-tools.sh` compares every library tool's results
   with LLVM's.
-- [ ] Text in Backend.Wasm (the Böttcher coordinate tool needs it), then
-  tables and autocolor in tools.
+- [x] Text in Backend.Wasm, wherever the LLVM backend has it (D17).
+- [ ] Tables and autocolor in tools.
 - [ ] Preferences (IndexedDB), including the precision toggle (D12).
 
 ### Phase 5: Backend.WGSL (df64, then f32)
@@ -305,6 +306,17 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-11: Text in Backend.Wasm
+
+Text compiles wherever the LLVM backend has it (D17): literals,
+`text(...)`, numbers as text, text variables and configuration fields
+(in and out), lists and pairs of text, and `write`. A new end-to-end test
+(`TextSpec`) runs a tool that builds texts (with non-ASCII characters,
+and numbers like `1.0e-2` and `1.0e10`), reads a text field and a list of
+texts, and writes them back: it passes with LLVM natively and with wasm
+under Node. All 51 of the library's tools now compile; the Böttcher
+coordinate tool's captures match LLVM's.
 
 ### 2026-11-11: Compiled tools
 

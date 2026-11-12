@@ -71,6 +71,7 @@ library
                        Backend.Wasm.Gen
                        Backend.Wasm.Value
                        Backend.Wasm.List
+                       Backend.Wasm.Text
                        Backend.Wasm.Code
   build-depends:       base >=4.8 && <5
                      , fractalstream-core

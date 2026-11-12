@@ -143,6 +143,7 @@ test-suite end-to-end
                     , bytestring
   other-modules:      OverlaySpec
                     , GeometrySpec
+                    , TextSpec
                     , TableSpec
                     , HoistSpec
 

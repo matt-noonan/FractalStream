@@ -21,6 +21,7 @@ import FractalStream.Prelude
 
 import Backend.Wasm.Code
 import Backend.Wasm.List (nodeSize, pairSecond)
+import Backend.Wasm.Text (literalNode, numberNode, concatNode, utf8Bytes, literalNodeBytes)
 import Backend.Wasm.Encode (MemoryImport(..))
 import Backend.Pure (interpretViewer)
 
@@ -48,6 +49,9 @@ import System.IO (hPutStrLn, stderr)
 import qualified System.Environment as Env
 import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.ByteString as BS
+import qualified GHC.Foreign as GHC
+import GHC.IO.Encoding (utf8)
+import Foreign.Ptr (castPtr)
 
 -- | Compile and instantiate a kernel module from bytes in the engine's
 -- memory, giving it that memory and what it imports: the math functions
@@ -244,12 +248,13 @@ workerArgsBase = 16
 arenaSize :: Int
 arenaSize = 1024 * 1024
 
--- | How many bytes the nodes of a value's lists take (see
--- "Backend.Wasm.List"), if it has any.
+-- | How many bytes the nodes of a value's lists and texts take (see
+-- "Backend.Wasm.List" and "Backend.Wasm.Text"), if it has any.
 valueListBytes :: TypeProxy t -> HaskellType t -> Int
 valueListBytes t v = case t of
   ListType i -> fromMaybe 0 (nodeSize i) * length v + sum (map (valueListBytes i) v)
   PairType a b -> let (x, y) = v in valueListBytes a x + valueListBytes b y
+  TextType -> literalNodeBytes v
   _ -> 0
 
 -- | Write a value into the arguments buffer at @p@ as 'argSize' lays it
@@ -263,7 +268,22 @@ pokeArg p base heap off t v = case t of
     pokeByteOff p off (fromIntegral addr :: Int32)
     pure (off + 8)
   PairType a b -> let (x, y) = v in pokeArg p base heap off a x >>= \off' -> pokeArg p base heap off' b y
+  TextType -> do
+    addr <- pokeText p base heap v
+    pokeByteOff p off (fromIntegral addr :: Int32)
+    pure (off + 8)
   _ -> pokeScalar p off t v >> pure (off + fromMaybe 0 (argSize t))
+
+-- | A text's literal node, at the heap's next free offset; gives its
+-- address (where the buffer will be once it's at @base@).
+pokeText :: Ptr Word8 -> Int -> IORef Int -> String -> IO Int
+pokeText p base heap s = do
+  let bytes = utf8Bytes s
+  start <- atomicModifyIORef' heap (\h -> (h + literalNodeBytes s, h))
+  pokeByteOff p start (fromIntegral literalNode :: Int32)
+  pokeByteOff p (start + 4) (fromIntegral (length bytes) :: Int32)
+  forM_ (zip [0 ..] bytes) $ \(k, b) -> pokeByteOff p (start + 8 + k) b
+  pure (base + start)
 
 -- | A list's nodes, at the heap's next free offset; gives its address
 -- (where the buffer will be once it's at @base@), or 0 if it's empty.
@@ -284,6 +304,7 @@ pokeList p base heap t xs = do
 pokeElem :: Ptr Word8 -> Int -> IORef Int -> Int -> TypeProxy t -> HaskellType t -> IO ()
 pokeElem p base heap off t v = case t of
   ListType i -> pokeList p base heap i v >>= \a -> pokeByteOff p off (fromIntegral a :: Int32)
+  TextType -> pokeText p base heap v >>= \a -> pokeByteOff p off (fromIntegral a :: Int32)
   PairType a b -> do
     let (x, y) = v
     pokeElem p base heap off a x
@@ -373,7 +394,7 @@ wasmToolExec sink envp code0 = do
                     pure $ case argSetValue arg of
                       Just set | Scalar ty old /= Scalar ty new -> set ty new
                       _ -> pure ()) (zipContext ctx vals)
-          drawn <- readDraws sink draws drawsLen
+          drawn <- readDraws at sink draws drawsLen
           pure (sequence_ sets >> sequence_ drawn)
 
 -- | Tools get an arena of their own, as with the LLVM backend: it starts
@@ -385,8 +406,8 @@ toolArenaMaxCapacity = 256 * 1024 * 1024
 -- | A tool's draw commands (see 'drawRecord'), as what draws them into
 -- the sink: they're put in the arena from the top down, so the first is
 -- the last record.
-readDraws :: DrawSink -> Ptr Word8 -> Int -> IO [IO ()]
-readDraws DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize - 1]) $ \k -> do
+readDraws :: (Int -> Ptr Word8) -> DrawSink -> Ptr Word8 -> Int -> IO [IO ()]
+readDraws at DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize - 1]) $ \k -> do
   let r = buf `plusPtr` (k * drawRecordSize)
       f64 :: Int -> IO Double
       f64 = peekByteOff r
@@ -402,6 +423,7 @@ readDraws DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize - 
     4 -> dsLine <$> pt 8 <*> pt 24
     5 -> dsCircle flag <$> f64 8 <*> pt 16
     6 -> dsRect flag <$> pt 8 <*> pt 24
+    7 -> dsWrite <$> (peekByteOff r 4 >>= \(a :: Int32) -> peekText at (fromIntegral a)) <*> pt 8
     _ -> pure (pure ())
 
 -- | Read a value from the arguments buffer as 'pokeArg' wrote it (the
@@ -410,6 +432,7 @@ readDraws DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize - 
 peekArg :: (Int -> Ptr Word8) -> Ptr Word8 -> TypeProxy t -> IO (HaskellType t)
 peekArg at p t = case t of
   ListType i -> peekByteOff p 0 >>= \(a :: Int32) -> peekList at i (fromIntegral a)
+  TextType -> peekByteOff p 0 >>= \(a :: Int32) -> peekText at (fromIntegral a)
   PairType a b -> (,) <$> peekArg at p a <*> peekArg at (p `plusPtr` fromMaybe 0 (argSize a)) b
   _ -> peekScalar p t
 
@@ -424,8 +447,33 @@ peekList at t addr = do
 peekElem :: (Int -> Ptr Word8) -> Ptr Word8 -> TypeProxy t -> IO (HaskellType t)
 peekElem at p t = case t of
   ListType i -> peekByteOff p 0 >>= \(a :: Int32) -> peekList at i (fromIntegral a)
+  TextType -> peekByteOff p 0 >>= \(a :: Int32) -> peekText at (fromIntegral a)
   PairType a b -> (,) <$> peekElem at p a <*> peekElem at (p `plusPtr` fromMaybe 0 (pairSecond a)) b
   _ -> peekScalar p t
+
+-- | A text, from its node's address (see "Backend.Wasm.Text"): its
+-- numbers formatted as the interpreter formats them.
+peekText :: (Int -> Ptr Word8) -> Int -> IO String
+peekText _ 0 = pure ""
+peekText at addr = do
+  let n = at addr
+  kind <- fromIntegral <$> (peekByteOff n 0 :: IO Int32)
+  if | kind == literalNode -> do
+         len <- peekByteOff n 4 :: IO Int32
+         GHC.peekCStringLen utf8 (castPtr (n `plusPtr` 8), fromIntegral len)
+     | kind == numberNode -> do
+         tag <- peekByteOff n 4 :: IO Int32
+         x <- peekByteOff n 8
+         y <- peekByteOff n 16
+         pure $ case tag of
+           0 -> showValue IntegerType (round x)
+           1 -> showValue RealType x
+           _ -> showValue ComplexType (x :+ y)
+     | kind == concatNode -> do
+         count <- peekByteOff n 4 :: IO Int32
+         parts <- forM [0 .. fromIntegral count - 1] $ \k -> peekByteOff n (8 + 4 * k)
+         concat <$> mapM (\(a :: Int32) -> peekText at (fromIntegral a)) parts
+     | otherwise -> fail ("internal error: a text node of kind " ++ show kind)
 
 peekScalar :: Ptr Word8 -> TypeProxy t -> IO (HaskellType t)
 peekScalar p t = case t of

@@ -131,7 +131,10 @@ code = indexedFold @CtxCode $ \case
         (x1, y1) <- point a
         (x2, y2) <- point b
         lift (drawRecord 6 [flagAt filled, f64At 8 x1, f64At 16 y1, f64At 24 x2, f64At 32 y2])
-      Write{} -> lift (unsupported "text")
+      Write _ t p -> do
+        txt <- value t >>= \case { LText l -> pure l; l -> lift (throwError ("internal error: a text of the wrong shape: " ++ show l)) }
+        (x, y) <- point p
+        lift (drawRecord 7 [\rec -> [localGet rec, localGet txt, i32Store 4], f64At 8 x, f64At 16 y])
   TableAllocate{} -> lift (unsupported "tables")
   TableWrite{} -> lift (unsupported "tables")
   TableWriteSlice{} -> lift (unsupported "tables")
@@ -160,11 +163,12 @@ drawRecordSize = 40
 
 -- | Put a draw command into the arena, below the ones before it: its tag
 -- (an i32 at 0: 0 erase, 1 the pen's color, 2 the fill's, 3 a point, 4 a
--- line, 5 a circle, 6 a rectangle), then its fields, written by the given
+-- line, 5 a circle, 6 a rectangle, 7 text), then its fields, written by the given
 -- instructions (given the record's address): a color's bytes at 4, 5 and
 -- 6; whether a shape's filled, an i32 at 4; its numbers, f64s from 8 on
 -- (a point's x and y; a line's or rectangle's two points; a circle's
--- radius, then its center). If there's no room, the overflow flag is set
+-- radius, then its center; text's place), and text's address, an i32 at
+-- 4 (see "Backend.Wasm.Text"). If there's no room, the overflow flag is set
 -- instead.
 drawRecord :: Int -> [Int -> [Instr]] -> Gen ()
 drawRecord tag fields = do
@@ -182,7 +186,8 @@ drawRecord tag fields = do
 
 -- | How many bytes of the arguments buffer a value of the given type
 -- takes: a truth value or integer (as an i32), a real number, or a color
--- (three bytes) take 8; a complex number 16; a pair its parts'. Nothing
+-- (three bytes), a list, or a text (an address) take 8; a complex number
+-- 16; a pair its parts'. Nothing
 -- for the types the wasm backend can't compile yet.
 argSize :: TypeProxy t -> Maybe Int
 argSize = \case
@@ -193,6 +198,7 @@ argSize = \case
   ComplexType -> Just 16
   PairType a b -> (+) <$> argSize a <*> argSize b
   ListType t -> elemSize t >> Just 8
+  TextType -> Just 8
   _ -> Nothing
 
 -- | Fresh locals for a variable of the given type.
@@ -205,6 +211,7 @@ locFor t = case t of
   ColorType -> LColor <$> newLocal I32 <*> newLocal I32 <*> newLocal I32
   PairType a b -> LPair <$> locFor a <*> locFor b
   ListType i | Just _ <- elemSize i -> LList <$> newLocal I32
+  TextType -> LText <$> newLocal I32
   _ -> unsupported ("variables of type " ++ showType t)
 
 -- | Load a variable from the arguments buffer (at the given param) into
@@ -222,6 +229,7 @@ loadArg argsParam off = \case
     pure (off + 8)
   LPair a b -> loadArg argsParam off a >>= \off' -> loadArg argsParam off' b
   LList l -> one (i32Load off) l >> pure (off + 8)
+  LText l -> one (i32Load off) l >> pure (off + 8)
   where one load l = emit [localGet argsParam, load, localSet l]
 
 -- | Store a variable's locals into the arguments buffer (at the given
@@ -239,6 +247,7 @@ storeArg argsParam off = \case
     pure (off + 8)
   LPair a b -> storeArg argsParam off a >>= \off' -> storeArg argsParam off' b
   LList l -> one (i32Store off) l >> pure (off + 8)
+  LText l -> one (i32Store off) l >> pure (off + 8)
   where one store l = emit [localGet argsParam, localGet l, store]
 
 pOut, pWidth, pHeight, pSubsamples, pArgs, pArena, pArenaSize, pSnapshot, pMisses,

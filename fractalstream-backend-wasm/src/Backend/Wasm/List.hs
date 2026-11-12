@@ -4,8 +4,8 @@
 -- node is the address of the next one (an i32), padded to 8 bytes, then
 -- the element: a truth value or integer as an i32, a real number as an
 -- f64, a complex number as two, a color as three bytes, a list as its
--- address, and a pair as its first part, then its second at the next
--- multiple of 8 bytes. (The arguments buffer holds a configuration's
+-- address, a text as its address (see "Backend.Wasm.Text"), and a pair
+-- as its first part, then its second at the next multiple of 8 bytes. (The arguments buffer holds a configuration's
 -- lists the same way: see "Backend.Wasm".)
 --
 -- Each operation does what the LLVM backend's does: a list that doesn't
@@ -30,6 +30,7 @@ module Backend.Wasm.List
   , listIndex
   , listRange
   , walkList
+  , alloc
   ) where
 
 import FractalStream.Prelude
@@ -52,6 +53,7 @@ elemSize = \case
   ComplexType -> Just 16
   ColorType -> Just 4
   ListType t -> elemSize t >> Just 4
+  TextType -> Just 4
   PairType a b -> (+) <$> pairSecond a <*> elemSize b
   _ -> Nothing
 
@@ -83,6 +85,7 @@ loadElem t p off = case t of
   ColorType -> LColor <$> one I32 (i32Load8U off) <*> one I32 (i32Load8U (off + 1))
                       <*> one I32 (i32Load8U (off + 2))
   ListType _ -> LList <$> one I32 (i32Load off)
+  TextType -> LText <$> one I32 (i32Load off)
   PairType a b -> do
     off2 <- pairSecondOffset a
     LPair <$> loadElem a p off <*> loadElem b p (off + off2)
@@ -105,6 +108,7 @@ storeElem t p off v = case (t, v) of
     emit [ localGet p, localGet r, i32Store8 off, localGet p, localGet g, i32Store8 (off + 1)
          , localGet p, localGet b, i32Store8 (off + 2) ]
   (ListType _, LList x) -> emit [localGet p, localGet x, i32Store off]
+  (TextType, LText x) -> emit [localGet p, localGet x, i32Store off]
   (PairType a b, LPair x y) -> do
     off2 <- pairSecondOffset a
     storeElem a p off x
@@ -120,6 +124,7 @@ zeroOf t = case t of
   ComplexType -> LComplex <$> zero F64 <*> zero F64
   ColorType -> LColor <$> zero I32 <*> zero I32 <*> zero I32
   ListType _ -> LList <$> zero I32
+  TextType -> LText <$> zero I32
   PairType a b -> LPair <$> zeroOf a <*> zeroOf b
   _ -> unsupported ("lists of " ++ showType t)
   where

@@ -14,6 +14,7 @@ import FractalStream.Prelude
 import Backend.Wasm.Encode
 import Backend.Wasm.Gen
 import Backend.Wasm.List
+import Backend.Wasm.Text
 
 import Language.Value
 import Data.Indexed.Functor
@@ -255,8 +256,15 @@ value = indexedFold go'
         lo <- mlo
         hi <- mhi
         lift (listRange lo hi)
-      ConcatText{} -> lift (unsupported "text")
-      ToText{} -> lift (unsupported "text")
+      ConcatText mparts -> do
+        parts <- sequence mparts
+        ts <- forM parts $ \case { LText t -> pure t; l -> lift (mismatch l) }
+        lift (concatText ts)
+      ToText ty mx -> mx >>= \x -> lift $ case (ty, x) of
+        (IntegerType, LInt i) -> textOfNumber 0 [i]
+        (RealType, LReal r) -> textOfNumber 1 [r]
+        (ComplexType, LComplex a b) -> textOfNumber 2 [a, b]
+        _ -> unsupported ("converting " ++ showType ty ++ " to text")
       -- looked up in the kernel's copy of the snapshot (a point to add goes
       -- on its list of misses: see Backend.Wasm)
       Autocolor mode n mp -> mp >>= \case
@@ -317,6 +325,7 @@ constant t c = case t of
         k v = unaryTo I32 id [i32Const (fromIntegral v)]
     LColor <$> k r <*> k g <*> k b
   PairType t1 t2 -> let (x, y) = c in LPair <$> constant t1 x <*> constant t2 y
+  TextType -> textLiteral c
   _ -> unsupported ("constants of type " ++ showType t)
 
 -- | A color component in [0, 1] as a byte: clamped (NaN counts as 0), and
