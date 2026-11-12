@@ -307,9 +307,17 @@ Only if 0c/0d come out well.
 
 ### Phase 6: Script editor
 
-- [ ] CodeMirror 6, with highlighting, symbol entry, normalizing and
-  error ranges from `Language.Editor.*` over RPC.
-- [ ] Rebuild the project when the script is edited, as the wx app does.
+- [x] CodeMirror 6 (bundled with esbuild), with the engine's coloring
+  (`Language.Editor.Highlight`), live error marks (`checkScript`),
+  normalizing (`Language.Editor.Normalize`), and symbol entry (a
+  TypeScript port of `Language.Editor.Symbols`, with the engine's
+  tables), over RPC; in a desk window, from the toolbar's Script button.
+- [x] Rebuild the project from the edited script, as the wx app does:
+  windows, views, minimized windows and tools kept, values and tables
+  carried over (`carryOverProjectState`).
+- [x] Windows minimize to their title bar (double-click it, or its
+  button), and stay so when saved.
+- [ ] Folding, line numbers, font: with preferences.
 
 ### Phase 7: Polish
 
@@ -329,6 +337,30 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: The script editor
+
+The editor is a desk window (the toolbar's Script button) holding
+CodeMirror 6. The page is now bundled by esbuild (TypeScript only type
+checks), which also takes in the WASI shim. The engine answers three new
+calls: `fs_analyze` (colors, the check's error, and normalizations, in
+UTF-16 offsets: a character outside the BMP, like 𝑖, is two), `fs_symbols`
+(the names' tables), and `fs_rebuild` (the project built again, through
+the same path as opening one: windows, views and tools stay).
+
+**Symbol entry is a port**, since it reacts to every keystroke; a
+cross-check of `web/src/symbols.ts` against `Language.Editor.Symbols`
+(names, accents with braces, spaces and nested names, double
+backslashes, previews, Tab completions) agreed on all 26 cases.
+
+**Error positions:** a `SourceRange` counts rows and columns from 0, and
+includes its last column (as `indicateError` draws it); a first guess of
+1-based rows marked the wrong text, which the editor check now catches.
+
+**Found on the way:** the tool shortcuts (one key each) took keys typed
+into the editor, which is a `contenteditable`, not an input; and clicking
+a viewer left the keyboard with the editor. Shortcuts now skip editable
+elements, and a viewer takes focus when it's clicked.
 
 ### 2026-11-12: Shipping
 

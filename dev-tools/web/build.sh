@@ -10,7 +10,8 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$root"
 dist=web/dist
-mkdir -p "$dist/vendor"
+rm -rf "$dist"
+mkdir -p "$dist"
 if ! command -v wasm32-wasi-cabal > /dev/null; then
   # shellcheck disable=SC1091
   source "$HOME/.ghc-wasm/env"
@@ -27,12 +28,15 @@ cp fractalstream-backend-wasm/js/kernel-worker.mjs fractalstream-backend-wasm/js
    fractalstream-backend-wasm/js/libm.wasm fractalstream-backend-wasm/js/autocolor.wasm \
    fractalstream-backend-wasm/js/tables.wasm "$dist/"
 
-# The page and the engine's worker. (Browsers don't resolve npm's bare
-# module names, so the WASI shim is copied in, and imported by path.)
-cp -R web/node_modules/@bjorn3/browser_wasi_shim/dist/. "$dist/vendor/browser_wasi_shim/"
-(cd web && node node_modules/typescript/bin/tsc -p .)
-sed -i.bak 's#from "@bjorn3/browser_wasi_shim"#from "./vendor/browser_wasi_shim/index.js"#' "$dist/engine.js"
-rm -f "$dist/engine.js.bak"
+# The page and the engine's worker: type-checked by TypeScript, and
+# bundled with their npm packages (CodeMirror, the WASI shim) by esbuild.
+# (drawing.js stands alone too, for dev-tools/web/check-tools.mjs; the
+# worker pool is copied in above.)
+(cd web && node node_modules/typescript/bin/tsc -p . --noEmit)
+(cd web && node_modules/.bin/esbuild src/main.ts src/engine.ts src/drawing.ts \
+   --bundle --format=esm --target=es2022 --sourcemap --minify-syntax \
+   --external:./worker-pool.mjs --external:./kernel-worker.mjs --outdir=dist --log-level=warning)
+rm -rf "$dist/vendor"
 cp web/index.html web/style.css "$dist/"
 # (the font drawings' text is in: the core's, as fsrun's captures use)
 cp fractalstream-core/fonts/DejaVuSans.ttf "$dist/"

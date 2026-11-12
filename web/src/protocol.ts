@@ -27,7 +27,13 @@ export type Request =
   | { type: "setTool"; viewer: number; name: string; text: string }
   /** Stop the viewer's running handler (its tool's, or its overlay's);
       a tool's, also switching back to navigating, if `navigate`. */
-  | { type: "stop"; viewer: number; navigate: boolean };
+  | { type: "stop"; viewer: number; navigate: boolean }
+  /** The script editor: color and check a script (answered by "analysis"
+      with the same id), the symbols' names, and rebuilding the project
+      from an edited script. */
+  | { type: "analyze"; id: number; text: string }
+  | { type: "symbols" }
+  | { type: "rebuild"; text: string };
 
 /** 0 a click, 1 a double click, 2 a drag so far, 3 a drag finished. */
 export type EventKind = 0 | 1 | 2 | 3;
@@ -97,12 +103,19 @@ export type Shape =
   | { k: "runs"; runs: [number, number][][]; s: string }
   | { k: "polygon"; pts: [number, number][]; f: string; s: string };
 
+/** Where a script's error is (no place, if it hasn't one), and what it is. */
+export interface ScriptError {
+  from: number | null;
+  to: number | null;
+  message: string;
+}
+
 /** The page's view state, saved in a project file (web-properties): each
     viewer's window (in CSS pixels), and what it shows (a pixel's size is
     per CSS pixel, so it's the same at any screen density). */
 export interface SavedViews {
   viewers?: Record<string, { x: number; y: number; width: number; height: number;
-                             cx: number; cy: number; "pixel-size": number }>;
+                             cx: number; cy: number; "pixel-size": number; minimized?: boolean }>;
 }
 
 /** A viewer's frame: RGBA pixels, and the view they show. */
@@ -123,8 +136,17 @@ export interface Frame {
 export type Message =
   | { type: "ready" }
   | { type: "library"; sections: LibrarySection[] }
+  /** A project to show: one opened, or (rebuilt) the open one, built again
+      from its edited script. */
   | { type: "project"; title: string; fileName: string; library: boolean; panel: Layout;
-      viewers: ViewerInfo[]; views: SavedViews | null }
+      viewers: ViewerInfo[]; views: SavedViews | null; script: string; rebuilt: boolean }
+  /** An edited script, colored and checked, with how to write it with
+      mathematical symbols (offsets in UTF-16 units, the end not included). */
+  | { type: "analysis"; id: number; spans: [number, number, string][]; error: ScriptError | null;
+      normalizations: [number, number, string][] }
+  | { type: "symbols"; names: [string, string][]; accents: [string, string][] }
+  /** An edited script didn't build: the project's as it was. */
+  | { type: "rebuildError"; error: ScriptError }
   /** The open project, saved: its file's name and contents. */
   | { type: "file"; name: string; bytes: ArrayBuffer }
   | { type: "field"; key: string; error: string | null; color?: string | null }
