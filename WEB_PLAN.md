@@ -211,8 +211,8 @@ wasmtime.
   through the JavaScript FFI (`WebAssembly.instantiate`), runs it over a
   block of pixels, and reads the result. Time it against LLVM, on one
   thread and then with a few workers over shared memory.
-- [ ] **0f.** Measure the engine's binary size and startup time, before
-  and after `wasm-opt` (25.5 MB unoptimized fsrun so far).
+- [x] **0f.** The engine's size and startup: see the findings for
+  2026-11-12 ("Shipping").
 - [ ] **0c / 0d** (before Phase 5): the df64 accuracy harness, and
   hand-written WGSL kernels timed against the CPU.
 
@@ -221,7 +221,7 @@ wasmtime.
 - [x] R5, R6 (git metadata; autocolor without a callback); `cabal.project.wasm`.
 - [x] The scenario runner and the core, library and headless `spec`
   suites under wasmtime.
-- [ ] Run the wasm tests in CI.
+- [x] Run the wasm tests in CI (`.github/workflows/web.yml`, with the app's checks).
 
 ### Phase 2: Backend.Wasm (default, f64)
 
@@ -262,7 +262,7 @@ wasmtime.
   status line; globe dragging for sphere viewers; faster pinch zoom; a
   chooser for the configuration's tabs.
 - [x] Try it in Safari and Firefox: every project works, no console errors; panning and zooming smooth after reprojecting frames onto the page's own view.
-- [ ] Deployed as a static site (`site/`, or a separate app directory).
+- [x] Deployed as a static site, at `/app/` on the project's GitHub Pages (from `main`, by `pages.yml`, once `web.yml`'s checks pass), linked from the landing page as a preview.
 - [ ] **Progressive rendering** (deferred). Today the page shows the last
   frame, moved and scaled, until the whole new render arrives, so a slow
   viewer (the forced pendulum takes about 8 s) shows nothing new until
@@ -329,6 +329,28 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: Shipping
+
+**Size and startup (0f).** The engine is 16.7 MB as GHC links it (2.9 MB
+gzipped, 2.1 MB with brotli). `wasm-opt -Oz` (binaryen, from the
+toolchain) brings it to 7.6 MB (2.35 MB gzipped, 1.8 MB brotli), with
+every check passing; `dev-tools/web/build.sh` now does it, after making
+the JavaScript glue from the module as GHC left it. (`-O2` gives 10.2 MB.)
+Served locally, the app shows the library about 0.3 s after the page
+loads, and draws a first project 0.3 s later; online, the download
+dominates.
+
+**CI.** `.github/workflows/web.yml` builds the app with the toolchain
+pinned (ghc-wasm-meta `8079eb96`, FLAVOUR 9.10, cached), runs the wasm
+end-to-end suite under Node and both browser checks, and uploads the app
+as an artifact; on pushes and pull requests touching the web side. The
+LLVM comparisons stay manual.
+
+**Deploying.** `pages.yml` runs `web.yml` on `main` as a job, and puts its
+artifact at `/app/` beside the landing page, which links to it as a
+preview. Everything in the app is relative, so it works under the
+project's Pages path (checked by serving it at `/FractalStream/app/`).
 
 ### 2026-11-12: Tools write tables, and use autocolor, in Backend.Wasm
 

@@ -19,8 +19,10 @@ fi
 # The engine, and the wasm backend's libm.wasm and autocolor.wasm.
 dev-tools/wasm/build.sh exe:fractalstream-web
 wasm="$(wasm32-wasi-cabal list-bin --project-file=cabal.project.wasm exe:fractalstream-web 2> /dev/null)"
-cp "$wasm" "$dist/fractalstream-web.wasm"
 "$(wasm32-wasi-ghc --print-libdir)/post-link.mjs" -i "$wasm" -o "$dist/fractalstream-web.js"
+# Smaller (16.7 MB to 7.6 MB; gzipped, 2.9 MB to 2.4 MB): optimized for
+# size, after the glue above is made from the module as GHC left it.
+wasm-opt -Oz "$wasm" -o "$dist/fractalstream-web.wasm"
 cp fractalstream-backend-wasm/js/kernel-worker.mjs fractalstream-backend-wasm/js/worker-pool.mjs \
    fractalstream-backend-wasm/js/libm.wasm fractalstream-backend-wasm/js/autocolor.wasm \
    fractalstream-backend-wasm/js/tables.wasm "$dist/"
