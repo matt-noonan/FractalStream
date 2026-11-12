@@ -311,7 +311,8 @@ Only if 0c/0d come out well.
   (`Language.Editor.Highlight`), live error marks (`checkScript`),
   normalizing (`Language.Editor.Normalize`), and symbol entry (a
   TypeScript port of `Language.Editor.Symbols`, with the engine's
-  tables), over RPC; in a desk window, from the toolbar's Script button.
+  tables), over RPC; over the whole workspace, from the toolbar's Script
+  button.
 - [x] Rebuild the project from the edited script, as the wx app does:
   windows, views, minimized windows and tools kept, values and tables
   carried over (`carryOverProjectState`).
@@ -356,6 +357,24 @@ backslashes, previews, Tab completions) agreed on all 26 cases.
 **Error positions:** a `SourceRange` counts rows and columns from 0, and
 includes its last column (as `indicateError` draws it); a first guess of
 1-based rows marked the wrong text, which the editor check now catches.
+
+**The editor pops over the workspace**, not as a window on the desk: in
+Safari, after a rebuild, the editor's text showed on top of a raised
+viewer window; and editing wants the room. It stays open through a
+rebuild, and keeps what's typed in it while it's closed.
+
+**A garbling race, found in Firefox but in every browser:** an analysis
+that came back after more had been typed (above what it would rewrite)
+was used with the text as it then was, so its normalizations landed off
+by what had been typed (`≔=`, `⟵-`, `<⟵`). Analyzing a long script takes
+150–350 ms, so this happens at a natural typing pace. Now an analysis is
+used only if the text is still what it was of. The editor check makes
+analyses 100 ms late and types above them, which garbled the script in
+Chromium, Firefox and WebKit before the fix.
+
+**Other browsers in the checks:** `FS_BROWSER=firefox` or `webkit` runs
+the checks in Playwright's Firefox or WebKit (install them first); the
+editor checks pass in all three.
 
 **Found on the way:** the tool shortcuts (one key each) took keys typed
 into the editor, which is a `contenteditable`, not an input; and clicking

@@ -359,14 +359,14 @@ async function editor() {
   const id = (title) => project.viewers.find((v) => v.title === title).id;
   const pp = id("Parameter plane"), dp = id("Dynamical plane");
   await page.locator("#toggle-script").click();
-  const doc = () => page.locator(".editor-window .cm-content").innerText();
+  const doc = () => page.locator(".editor-overlay .cm-content").innerText();
   const status = () => page.locator(".editor-status").textContent();
-  await page.waitForFunction(() => document.querySelectorAll(".editor-window [class*=tok-]").length > 20, null, { timeout: 10000 });
-  c.check(true, `the script is colored (${await page.locator(".editor-window [class*=tok-]").count()} spans)`);
+  await page.waitForFunction(() => document.querySelectorAll(".editor-overlay [class*=tok-]").length > 20, null, { timeout: 10000 });
+  c.check(true, `the script is colored (${await page.locator(".editor-overlay [class*=tok-]").count()} spans)`);
   c.check((await doc()).includes("z^2"), "and left as it is, until it's edited");
 
   // an error, marked, and undone
-  await page.locator(".editor-window .cm-content").click();
+  await page.locator(".editor-overlay .cm-content").click();
   await page.keyboard.press("ControlOrMeta+End");
   // (after characters outside the BMP, two UTF-16 units each, as the
   // engine's offsets have to allow for)
@@ -382,7 +382,7 @@ async function editor() {
   // mathematical symbols, once it's edited (the cursor's line aside)
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type("\n# notes: ");
-  await page.waitForFunction(() => document.querySelector(".editor-window .cm-content").innerText.includes("z²"), null, { timeout: 10000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelector(".editor-overlay .cm-content").innerText.includes("z²"), null, { timeout: 10000 }).catch(() => {});
   const d = await doc();
   c.check(d.includes("z²") && d.includes("⟼") && d.includes("≔"), "once edited, it's written with symbols (z², ⟼, ≔)");
   // symbols typed by name: a space finishes one, Tab completes one, an accent waits
@@ -395,12 +395,9 @@ async function editor() {
   c.check(line === "# notes: θ α x̂.", `symbols are typed by name (${JSON.stringify(line)})`);
 
   // rebuilding keeps windows, views and tools
-  // (the editor, moved down out of the viewers' way)
-  const edTitle = await page.locator(".editor-window .window-title").boundingBox();
-  await page.mouse.move(edTitle.x + 60, edTitle.y + edTitle.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(edTitle.x + 60, edTitle.y + edTitle.height / 2 + 520, { steps: 5 });
-  await page.mouse.up();
+  // (with the editor closed: it's over the viewers)
+  await page.locator(".editor-close").click();
+  c.check(await page.locator(".editor-overlay").count() === 0, "Close closes the editor");
   const ppWin = page.locator(".window", { hasText: "Parameter plane" }).first();
   const title = await ppWin.locator(".window-title").boundingBox();
   await page.mouse.move(title.x + 40, title.y + title.height / 2);
@@ -414,9 +411,11 @@ async function editor() {
   const dpWin = page.locator(".window", { hasText: "Dynamical plane" }).first();
   await dpWin.locator(".window-title").dblclick();
   c.check(await dpWin.evaluate((w) => w.classList.contains("minimized")), "double-clicking a title bar minimizes its window");
-  // (the configuration's label, renamed)
+  // (the configuration's label, renamed; the editor reopened, as it was)
+  await page.locator("#toggle-script").click();
+  c.check((await doc()).includes("# notes: θ α x̂."), "the Script button reopens it, with its text");
   const text = (await doc()).replace("Selected value of C:", "The value of C:");
-  await page.locator(".editor-window .cm-content").click();
+  await page.locator(".editor-overlay .cm-content").click();
   await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.insertText(text);
   await app.forgetMessages();
@@ -430,11 +429,17 @@ async function editor() {
   c.check(await page.locator(".window", { hasText: "Dynamical plane" }).first().evaluate((w) => w.classList.contains("minimized")), "and a minimized one stays minimized");
   const tool = (await app.messages("tool")).filter((m) => m.viewer === dp).pop();
   c.check(tool?.name === "Trace", `and a viewer keeps its tool (${tool?.name})`);
-  c.check(await page.locator(".editor-window").count() === 1 && (await doc()).includes("The value of C:"), "and the editor stays open, with its text");
+  c.check(await page.locator(".editor-overlay").count() === 1 && (await doc()).includes("The value of C:"), "and the editor stays open, with its text");
+  // (and over the viewers: what's at its middle is the editor)
+  const onTop = await page.evaluate(() => {
+    const r = document.querySelector(".editor-overlay").getBoundingClientRect();
+    return !!document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest(".editor-overlay");
+  });
+  c.check(onTop, "over everything in the workspace");
   c.check(/Rebuilt/.test(await status()), `saying so (${await status()})`);
 
   // a script that doesn't build leaves the project as it was
-  await page.locator(".editor-window .cm-content").click();
+  await page.locator(".editor-overlay .cm-content").click();
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type("\n@viewer");
   await app.forgetMessages();
@@ -448,4 +453,29 @@ async function editor() {
   c.check(!(await doc()).includes("@viewer\n@viewer") && !(await doc()).trimEnd().endsWith("@viewer") && (await doc()).includes("The value of C:"),
           "Revert goes back to the project's script");
   await shot("editor");
+
+  // An analysis that comes back after more's been typed (above what it
+  // would rewrite) isn't used: its offsets would garble the script. (The
+  // engine's analyses, made 100 ms late here, as a long script's are.)
+  await page.addInitScript(() => {
+    const add = Worker.prototype.addEventListener;
+    Worker.prototype.addEventListener = function (type, f, o) {
+      if (type !== "message") return add.call(this, type, f, o);
+      return add.call(this, type, (e) => e.data?.type === "analysis" ? setTimeout(() => f(e), 100) : f(e), o);
+    };
+  });
+  await page.reload();
+  await page.waitForSelector("#library li", { timeout: 60000 });
+  await app.openLibrary("Newton's method");
+  await page.locator("#toggle-script").click();
+  await page.waitForTimeout(1000);
+  await page.locator(".editor-overlay .cm-content").click();
+  await page.keyboard.press("ControlOrMeta+Home");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.type("# typed slowly", { delay: 180 });
+  await page.waitForTimeout(1500);
+  const lines = (await doc()).split("\n").filter((l) => /newton\(z\)|lastZ/.test(l));
+  c.check(lines.length > 0 && lines.every((l) => !/[≔⟵⟼′][=\-'>]|[<:'-][≔⟵⟼′]/.test(l)) && lines.some((l) => l.includes("≔")),
+          `typing while an analysis is out doesn't garble the script (${JSON.stringify(lines.slice(0, 3))})`);
 }

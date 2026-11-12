@@ -70,6 +70,8 @@ export class ScriptEditor {
   private symbols: Symbols | null = null;
   private script: string;
   private requested = 0;
+  /** The text the last analysis was asked for. */
+  private sentText = "";
   private analyzed: { text: string; analysis: Analysis } | null = null;
   private timer: number | undefined;
   private edited = false;
@@ -107,10 +109,13 @@ export class ScriptEditor {
 
   focus() { this.view.focus(); }
 
-  /** An analysis from the engine: shown, if it's of the text as it is. */
+  /** An analysis from the engine: used only if it's of the text as it is
+      now. (One of text that's been typed in since is dropped: its offsets
+      would be wrong, and rewriting the script with them would garble it.
+      Another is on its way, for the text as it is.) */
   analysis(id: number, analysis: Analysis) {
-    if (id !== this.requested) return;
     const text = this.view.state.doc.toString();
+    if (id !== this.requested || text !== this.sentText) return;
     this.analyzed = { text, analysis };
     const b = new RangeSetBuilder<Decoration>();
     const marks: [number, number, string][] = analysis.spans.map(([f, t, c]) => [f, t, `tok-${c}`]);
@@ -146,7 +151,10 @@ export class ScriptEditor {
 
   private reanalyze() {
     window.clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => this.host.analyze(++this.requested, this.view.state.doc.toString()), 150);
+    this.timer = window.setTimeout(() => {
+      this.sentText = this.view.state.doc.toString();
+      this.host.analyze(++this.requested, this.sentText);
+    }, 150);
   }
 
   /** Write the script with mathematical symbols, if it checked out as it

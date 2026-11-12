@@ -171,13 +171,12 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
   windows = [];
   activeViewer = null;
   const desk = new Desk(el("div"));
-  currentDesk = desk;
   toolPanelEl = el("div", { className: "tool-panel" });
   asideEl = el("aside", { className: "panel" },
                panelGrip(), panel ? layoutElement(panel, projectFields) : "", toolPanelEl);
-  projectEl.replaceChildren(
-    el("h1", { textContent: title }),
-    el("div", { className: "workspace" }, desk.element, asideEl));
+  workspaceEl = el("div", { className: "workspace" }, desk.element, asideEl);
+  projectEl.replaceChildren(el("h1", { textContent: title }), workspaceEl);
+  projectTitle = title;
   // Each viewer in a window, side by side: all scaled down alike if they
   // don't fit (each still showing its whole view), to no less than 40%,
   // and then onto more rows if they still don't fit.
@@ -204,9 +203,8 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
     x += w + gap;
     rowHeight = Math.max(rowHeight, h + 30);
   }
-  // (the script editor stays open through a rebuild, where it was)
-  editorWindow = null;
-  if (scriptEditor && editorPlace) showEditor(editorPlace);
+  // (the script editor stays open through a rebuild)
+  if (editorOpen) showEditor();
   activate(windows[0]?.view ?? null);
   status("");
 }
@@ -295,53 +293,49 @@ function panelGrip(): HTMLElement {
 }
 
 // ---------------------------------------------------------------------
-// The script editor: a window on the desk, from the toolbar's Script
-// button (see editor.ts).
+// The script editor: over the whole workspace (the viewers and the
+// configuration), from the toolbar's Script button (see editor.ts). It
+// stays open through a rebuild, and keeps what's typed in it while it's
+// closed, until another project is opened.
 
-let currentDesk: Desk | null = null;
+let workspaceEl: HTMLElement | null = null;
+let projectTitle = "";
 let projectScript = "";
 let scriptEditor: ScriptEditor | null = null;
-let editorWindow: HTMLElement | null = null;
-/** Where the editor's window is (kept while it's hidden, and through a
-    rebuild), if it's open. */
-let editorPlace: { x: number; y: number; width: number; height: number; minimized: boolean } | null = null;
+let editorOverlay: HTMLElement | null = null;
+let editorOpen = false;
 let symbolTables: [[string, string][], [string, string][]] | null = null;
 
-function placeOf(win: HTMLElement) {
-  const body = win.querySelector(".window-body") as HTMLElement;
-  return { x: win.offsetLeft, y: win.offsetTop, width: body.clientWidth || 600, height: body.clientHeight || 480,
-           minimized: Desk.isMinimized(win) };
-}
-
-function showEditor(place: { x: number; y: number; width: number; height: number; minimized: boolean }) {
-  if (!currentDesk || !scriptEditor) return;
-  editorWindow = currentDesk.add({ title: "Script", ...place, content: scriptEditor.element });
-  editorWindow.classList.add("editor-window");
-  scriptButton.setAttribute("aria-pressed", "true");
-}
-
-scriptButton.addEventListener("click", () => {
-  if (!currentDesk) return;
-  if (editorWindow) {
-    // (hidden, not thrown away: what's typed in it stays)
-    editorPlace = null;
-    editorWindow.remove();
-    editorWindow = null;
-    scriptButton.setAttribute("aria-pressed", "false");
-    return;
-  }
+function showEditor() {
+  if (!workspaceEl) return;
   if (!scriptEditor) {
     scriptEditor = new ScriptEditor(projectScript, {
       analyze: (id, text) => send({ type: "analyze", id, text }),
       rebuild: (text) => send({ type: "rebuild", text }),
     });
     if (symbolTables) scriptEditor.setSymbols(...symbolTables);
+    const close = el("button", { type: "button", className: "editor-close", textContent: "Close",
+                                 title: "Close the script (what's typed in it is kept)" });
+    close.addEventListener("click", () => hideEditor());
+    editorOverlay = el("div", { className: "editor-overlay", role: "dialog" },
+      el("div", { className: "editor-header" }, el("span", { className: "editor-title" }), close),
+      scriptEditor.element);
   }
-  const width = 600, height = 480;
-  editorPlace = { x: Math.max(12, currentDesk.element.clientWidth - width - 24), y: 12, width, height, minimized: false };
-  showEditor(editorPlace);
+  const titleEl = editorOverlay!.querySelector(".editor-title")!;
+  titleEl.textContent = `${projectTitle}: script`;
+  workspaceEl.append(editorOverlay!);
+  editorOpen = true;
+  scriptButton.setAttribute("aria-pressed", "true");
   scriptEditor.focus();
-});
+}
+
+function hideEditor() {
+  editorOverlay?.remove();
+  editorOpen = false;
+  scriptButton.setAttribute("aria-pressed", "false");
+}
+
+scriptButton.addEventListener("click", () => (editorOpen ? hideEditor() : showEditor()));
 
 /** What a panel's fields and buttons do: set a field, press a button. */
 interface PanelActions {
@@ -862,7 +856,6 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
         // (the same project, built again from its edited script: its
         // windows stay as they were, and so does the editor)
         const views = viewState();
-        if (editorWindow) editorPlace = placeOf(editorWindow);
         showProject(m.title, m.panel, m.viewers, views);
         scriptEditor?.projectScript(m.script, true);
         break;
@@ -873,7 +866,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       // (a new project: a new script, and no editor until it's asked for)
       projectScript = m.script;
       scriptEditor = null;
-      editorPlace = null;
+      editorOpen = false;
       showProject(m.title, m.panel, m.viewers, m.views);
       scriptButton.disabled = false;
       scriptButton.setAttribute("aria-pressed", "false");

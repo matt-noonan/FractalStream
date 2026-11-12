@@ -2,16 +2,19 @@
 // served on a free port, a headless Chromium page with the app open, every
 // message the engine sends kept for looking at, and helpers to drive it.
 //
-// Uses Playwright and its Chromium: the GHC wasm toolchain's (in
-// ~/.ghc-wasm; install the browser with
+// Uses Playwright and its browsers: the GHC wasm toolchain's (in
+// ~/.ghc-wasm; install a browser with
 // ~/.ghc-wasm/nodejs/lib/node_modules/.bin/playwright install chromium).
+// Chromium, unless FS_BROWSER says firefox or webkit (Safari's engine).
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
 const playwright = path.join(os.homedir(), ".ghc-wasm/nodejs/lib/node_modules/playwright/index.mjs");
-const { chromium } = await import(playwright);
+const browsers = await import(playwright);
+const browserType = browsers[process.env.FS_BROWSER || "chromium"];
+if (!browserType) throw new Error(`no browser ${process.env.FS_BROWSER} (chromium, firefox or webkit)`);
 
 const root = path.resolve(new URL("../../web/dist", import.meta.url).pathname);
 const types = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript",
@@ -29,7 +32,7 @@ export async function start() {
     fs.createReadStream(file).pipe(res);
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const browser = await chromium.launch();
+  const browser = await browserType.launch();
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   const app = new App(page, () => { browser.close(); server.close(); });
   // (every message from the engine, kept on the page; and a way to send
