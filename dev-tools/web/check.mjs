@@ -56,10 +56,10 @@ try {
       await page.waitForFunction((t) => document.querySelector("#project h1")?.textContent === t,
                                  title, { timeout: 30000 });
       await page.waitForFunction(() => {
-        const cs = [...document.querySelectorAll(".viewer canvas")];
-        return cs.length > 0 && cs.every((c) => c.width > 1);
+        const vs = [...document.querySelectorAll(".viewer")];
+        return vs.length > 0 && vs.every((v) => Number(v.dataset.frames ?? 0) > 0);
       }, null, { timeout: 60000 });
-      const viewers = await page.locator(".viewer canvas").count();
+      const viewers = await page.locator(".viewer").count();
       result = `${viewers} viewer(s) drawn in ${Date.now() - t} ms`;
     } catch (e) {
       result = `FAILED: ${e.message.split("\n")[0]}`;

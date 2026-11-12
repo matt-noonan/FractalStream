@@ -4,6 +4,7 @@
 
 import type { Request, Message, Layout, FieldLayout, Frame, LibrarySection, ViewerInfo } from "./protocol.js";
 import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
+import { Desk } from "./windows.js";
 
 const engine = new Worker(new URL("engine.js", import.meta.url), { type: "module" });
 const send = (r: Request) => engine.postMessage(r);
@@ -15,6 +16,16 @@ const openButton = document.getElementById("open") as HTMLButtonElement;
 const saveButton = document.getElementById("save") as HTMLButtonElement;
 const saveAsButton = document.getElementById("save-as") as HTMLButtonElement;
 const fileNameEl = document.getElementById("file-name")!;
+const libraryButton = document.getElementById("toggle-library") as HTMLButtonElement;
+const panelButton = document.getElementById("toggle-panel") as HTMLButtonElement;
+
+// Hiding and showing the library, and the configuration panel.
+function toggle(button: HTMLButtonElement, bodyClass: string) {
+  const hidden = document.body.classList.toggle(bodyClass);
+  button.setAttribute("aria-pressed", String(!hidden));
+}
+libraryButton.addEventListener("click", () => toggle(libraryButton, "no-library"));
+panelButton.addEventListener("click", () => toggle(panelButton, "no-panel"));
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {},
                                                  ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -117,16 +128,31 @@ const viewers = new Map<number, ViewerView>();
 function showProject(title: string, panel: Layout, infos: ViewerInfo[]) {
   fieldInputs.clear();
   viewers.clear();
-  const viewerEls = infos.map((info) => {
-    const v = new ViewerView(info);
-    viewers.set(info.id, v);
-    return v.element;
-  });
+  const desk = new Desk(el("div"));
   projectEl.replaceChildren(
     el("h1", { textContent: title }),
     el("div", { className: "workspace" },
-      el("div", { className: "viewers" }, ...viewerEls),
-      panel ? el("div", { className: "panel" }, layoutElement(panel)) : ""));
+      desk.element,
+      panel ? el("aside", { className: "panel" }, layoutElement(panel)) : ""));
+  // Each viewer in a window, side by side: all scaled down alike if they
+  // don't fit (each still showing its whole view), to no less than 40%,
+  // and then onto more rows if they still don't fit.
+  const gap = 16, margin = 12;
+  const room = desk.element.clientWidth - 2 * margin;
+  // (the gaps between them don't scale)
+  const widths = infos.reduce((sum, v) => sum + v.width, 0);
+  const scale = Math.min(1, Math.max(0.4, (room - gap * (infos.length - 1)) / widths));
+  let x = margin, y = margin, rowHeight = 0;
+  for (const info of infos) {
+    const w = Math.floor(info.width * scale), h = Math.floor(info.height * scale);
+    if (x > margin && x + w > margin + room + 1) { x = margin; y += rowHeight + gap; rowHeight = 0; }
+    const v = new ViewerView(info, w, h);
+    viewers.set(info.id, v);
+    desk.add({ title: info.title, x, y, width: w, height: h, content: v.element,
+               onResize: (width, height) => v.resize(width, height) });
+    x += w + gap;
+    rowHeight = Math.max(rowHeight, h + 30);
+  }
   status("");
 }
 
@@ -225,9 +251,14 @@ const sameView = (a: View, b: View) => {
   return close(a.cx, b.cx) && close(a.cy, b.cy) && close(a.px, b.px) && close(a.py, b.py);
 };
 
+/** How many canvas pixels to a CSS pixel: the screen's, up to 2 (each
+    doubling is four times the rendering). */
+const density = () => Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 1)));
+
 class ViewerView {
   readonly element: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
+  private readonly density = density();
   private readonly context: CanvasRenderingContext2D;
   /** The latest frame, as an image to draw from. */
   private frame: { view: View; image: HTMLCanvasElement } | null = null;
@@ -236,15 +267,31 @@ class ViewerView {
   private drawPending = false;
   private dragFrom: { x: number; y: number } | null = null;
 
-  constructor(private readonly info: ViewerInfo) {
-    this.canvas = el("canvas", { width: 1, height: 1 });
+  constructor(private readonly info: ViewerInfo, width: number, height: number) {
+    this.canvas = el("canvas");
     this.context = this.canvas.getContext("2d")!;
-    this.element = el("figure", { className: "viewer" }, this.canvas, el("figcaption", { textContent: info.title }));
+    this.element = el("div", { className: "viewer" }, this.canvas);
+    this.setSize(width, height);
     this.canvas.addEventListener("pointerdown", (e) => this.startDrag(e));
     this.canvas.addEventListener("pointermove", (e) => this.moveDrag(e));
     this.canvas.addEventListener("pointerup", () => (this.dragFrom = null));
     this.canvas.addEventListener("pointercancel", () => (this.dragFrom = null));
     this.canvas.addEventListener("wheel", (e) => this.zoom(e), { passive: false });
+  }
+
+  /** Show it at this size (in CSS pixels): the canvas has `density` times
+      as many pixels each way, and the view keeps its center and scale. */
+  private setSize(width: number, height: number) {
+    this.canvas.width = Math.round(width * this.density);
+    this.canvas.height = Math.round(height * this.density);
+    this.canvas.style.width = `${width}px`;
+    this.canvas.style.height = `${height}px`;
+  }
+
+  resize(width: number, height: number) {
+    this.setSize(width, height);
+    this.redraw();
+    this.request();
   }
 
   show(frame: Frame) {
@@ -253,10 +300,13 @@ class ViewerView {
       new ImageData(new Uint8ClampedArray(frame.pixels), frame.width, frame.height), 0, 0);
     const view = { cx: frame.cx, cy: frame.cy, px: frame.px, py: frame.py };
     this.frame = { view, image };
+    // (how many frames it's had: for tests, and anyone curious)
+    this.element.dataset.frames = String(Number(this.element.dataset.frames ?? 0) + 1);
     if (!this.target) {
-      this.target = { ...view };
-      this.canvas.width = frame.width;
-      this.canvas.height = frame.height;
+      // (the first frame, at the project's size: the same picture across
+      // the canvas, whatever its size)
+      const scale = frame.width / this.canvas.width;
+      this.target = { cx: view.cx, cy: view.cy, px: view.px * scale, py: view.py * scale };
     }
     // (whichever request this answers, the engine is free again)
     this.requested = null;
@@ -284,15 +334,17 @@ class ViewerView {
     });
   }
 
-  /** Ask the engine for the target view, unless it's busy (or has it). */
+  /** Ask the engine for the target view, at the canvas's size, unless it's
+      busy (or has it). */
   private request() {
     const t = this.target, f = this.frame;
     if (!t || !f) return;
     // (if an answer never came, ask again after a while)
     if (this.requested && performance.now() - this.requested.at < 2000) return;
-    if (sameView(t, f.view)) return;
+    const width = this.canvas.width, height = this.canvas.height;
+    if (sameView(t, f.view) && f.image.width === width && f.image.height === height) return;
     this.requested = { view: { ...t }, at: performance.now() };
-    send({ type: "view", viewer: this.info.id, cx: t.cx, cy: t.cy, pixelSize: t.px });
+    send({ type: "view", viewer: this.info.id, cx: t.cx, cy: t.cy, pixelSize: t.px, width, height });
   }
 
   /** The pointer's position in the canvas's pixels. */

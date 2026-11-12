@@ -82,7 +82,7 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "openFile": await engine.fs_open_file(r.name, new Uint8Array(r.bytes)); break;
       case "save": await engine.fs_save(); break;
       case "set": await engine.fs_set(r.name, r.text); break;
-      case "view": await engine.fs_view(r.viewer, r.cx, r.cy, r.pixelSize); break;
+      case "view": await engine.fs_view(r.viewer, r.cx, r.cy, r.pixelSize, r.width, r.height); break;
       case "resize": await engine.fs_resize(r.viewer, r.width, r.height); break;
     }
   } catch (err) {

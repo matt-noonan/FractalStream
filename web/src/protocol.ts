@@ -9,7 +9,7 @@ export type Request =
   | { type: "openFile"; name: string; bytes: ArrayBuffer }
   | { type: "save" }
   | { type: "set"; name: string; text: string }
-  | { type: "view"; viewer: number; cx: number; cy: number; pixelSize: number }
+  | { type: "view"; viewer: number; cx: number; cy: number; pixelSize: number; width: number; height: number }
   | { type: "resize"; viewer: number; width: number; height: number };
 
 export interface LibraryEntry {
@@ -43,6 +43,9 @@ export interface FieldLayout {
 export interface ViewerInfo {
   id: number;
   title: string;
+  /** Its size, as its project gives it (in pixels). */
+  width: number;
+  height: number;
 }
 
 /** A viewer's frame: RGBA pixels, and the view they show. */

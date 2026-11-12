@@ -49,13 +49,30 @@ main { flex: 1; min-width: 0; padding: 12px 20px; }
 #status { min-height: 1.4em; color: var(--muted); }
 #status.error { color: var(--error); white-space: pre-wrap; }
 h1 { font-size: 20px; margin: 4px 0 12px; }
-.workspace { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
-.viewers { display: flex; flex-wrap: wrap; gap: 16px; }
-.viewer { margin: 0; overflow: hidden; border: 1px solid var(--line); background: #808080; }
-.viewer canvas { display: block; max-width: min(600px, 100%); cursor: grab; touch-action: none; }
+.workspace { display: flex; gap: 16px; align-items: flex-start; }
+.desk {
+  position: relative; flex: 1; min-width: 0; min-height: calc(100vh - 130px);
+  overflow: auto; border: 1px dashed var(--line); border-radius: 8px;
+}
+.window {
+  position: absolute; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .15); overflow: hidden;
+}
+.window-title {
+  padding: 4px 10px; font-size: 12px; color: var(--muted); cursor: move;
+  user-select: none; border-bottom: 1px solid var(--line); touch-action: none;
+}
+.window-body { position: relative; background: #808080; }
+.window-grip {
+  position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 60%,
+                              transparent 60%, transparent 75%, var(--muted) 75%, var(--muted) 85%, transparent 85%);
+}
+.viewer canvas { display: block; cursor: grab; touch-action: none; }
 .viewer canvas:active { cursor: grabbing; }
-.viewer figcaption { padding: 4px 8px; font-size: 12px; background: var(--panel); color: var(--muted); }
-.panel { min-width: 260px; max-width: 420px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.panel { flex: none; width: 320px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 .panel fieldset { border: none; margin: 0; padding: 0; }
 .panel legend { font-weight: 600; margin-bottom: 6px; }
 .vertical { display: flex; flex-direction: column; gap: 6px; }
@@ -81,3 +98,7 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
 }
 #toolbar button:disabled { opacity: .5; cursor: default; }
 #file-name { margin-left: 8px; color: var(--muted); }
+#toolbar .separator { width: 12px; }
+#toolbar button[aria-pressed=true] { border-color: var(--accent); }
+body.no-library #library { display: none; }
+body.no-panel .panel { display: none; }

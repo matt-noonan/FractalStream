@@ -17,7 +17,8 @@ As the desktop app does (and unlike fsrun, which is for reproducible
 runs), a project opens with the configuration values (@values:@) and the
 tables (@tables:@) it was saved with, and is saved with its own.
 * @fs_set(name, text)@: set a configuration field (by name) from its text.
-* @fs_view(viewer, cx, cy, pixelSize)@: move or zoom a viewer.
+* @fs_view(viewer, cx, cy, pixelSize, width, height)@: move, zoom, or
+  resize a viewer (all at once, for one render).
 * @fs_resize(viewer, width, height)@: resize a viewer.
 
 and the engine posts JSON messages (@globalThis.fractalstreamPost@),
@@ -28,7 +29,7 @@ contents), which the worker forwards to the page.
 Messages:
 
 > { "type": "library", "sections": [ { "name", "entries": [ { "title", "description", "preview" } ] } ] }
-> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "panel": <layout> or null, "viewers": [ { "id", "title" } ] }
+> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height" } ] }
 > { "type": "field", "name", "error": <message> or null }
 > { "type": "error", "message" }
 
@@ -148,7 +149,7 @@ foreign export javascript "fs_open" open :: Int -> Int -> IO ()
 foreign export javascript "fs_open_file" openFile :: JSString -> JSVal -> IO ()
 foreign export javascript "fs_save" save :: IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
-foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> IO ()
+foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
 
 main :: IO ()
@@ -243,7 +244,8 @@ openProject fromLibrary projectTitle fileName contents = do
     pure (Aeson.object [ "kind" .= ("panel" :: Text.Text), "title" .= title, "body" .= body ]))
   viewerInfo <- forM viewers $ \(k, viewer) -> do
     title <- getDynamic (vTitle viewer)
-    pure (Aeson.object [ "id" .= k, "title" .= title ])
+    Dimensions (w, h) <- getDynamic (vSize viewer)
+    pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h ])
   post $ Aeson.object
     [ "type" .= ("project" :: Text.Text)
     , "title" .= projectTitle
@@ -291,8 +293,9 @@ withViewer k act = guarded $ readIORef sessionRef >>= \case
   Nothing -> pure ()
   Just Session{..} -> mapM_ act (Map.lookup k sViewers)
 
-setView :: Int -> Double -> Double -> Double -> IO ()
-setView k cx cy pixelSize = withViewer k $ \(viewer, signal) -> do
+setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
+setView k cx cy pixelSize w h = withViewer k $ \(viewer, signal) -> do
+  setValue (vSize viewer) (Dimensions (max 1 w, max 1 h))
   setValue (vCenter viewer) (cx, cy)
   setValue (vPixelSize viewer) pixelSize
   requestRender signal
