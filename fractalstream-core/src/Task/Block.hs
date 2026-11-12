@@ -11,6 +11,7 @@ module Task.Block
   , fillBlock
   , progressively
   , progressivelyOver
+  , progressivePlan
   , subBlockSize
   ) where
 
@@ -20,10 +21,8 @@ import Task.Concurrent
 
 import Control.Concurrent.MVar
 import Foreign.ForeignPtr
-import Control.Concurrent
 import Data.Array.IO hiding (index)
 import System.Random
-import Data.Time (diffUTCTime, getCurrentTime)
 import Foreign (Ptr, peekByteOff, pokeByteOff, allocaArray)
 
 type BlockComputeAction = Word32 -- ^ Block width, in subsamples
@@ -187,24 +186,44 @@ progressively = progressivelyOver (\_ _ -> False) (pure ())
 progressivelyOver :: (Int -> Int -> Bool) -> IO () -> (Block -> IO ()) -> (Block -> IO ())
 progressivelyOver shown covered render block = do
 
-    let width   = xSize block
-        height  = ySize block
-        xBlocks = let (z,r) = width `divMod` subBlockSize
-                  in zip [0 .. z - 1] (repeat subBlockSize) ++
+    todo <- progressivePlan subBlockSize (logSampleRate block) (xSize block) (ySize block) shown
+    let firsts = [ () | (True, _, _, _) <- todo ]
+
+    poolSize <- subtract 1 <$> renderConcurrency
+
+    -- (how many first passes are left)
+    firstsLeft <- newMVar (length firsts)
+    when (null firsts) covered
+
+    forPool_ poolSize todo $ \(isFirst,rate,(x,w),(y,h)) -> do
+      render $ block { xSize = w, ySize = h,
+                       x0 = subBlockSize * x, y0 = subBlockSize * y,
+                       logSampleRate = rate }
+      when isFirst $ do
+        remaining <- modifyMVar firstsLeft (\n -> pure (n - 1, n - 1))
+        when (remaining == 0) covered
+
+-- | The order 'progressivelyOver' draws an image in: its pieces (each
+-- @pieceSize@ square, but for those at the right and bottom edges), each
+-- as (whether it's the piece's first pass, the pass's 'logSampleRate',
+-- the piece's column (in pieces) and width, its row and height). Every
+-- piece's first pass comes before anything else; see 'progressivelyOver'
+-- (which is this, for 'subBlockSize' pieces) for the order after that.
+-- @shown@ says which pieces (by column and row) already show something.
+progressivePlan :: Int -> Int -> Int -> Int -> (Int -> Int -> Bool)
+                -> IO [(Bool, Int, (Int, Int), (Int, Int))]
+progressivePlan pieceSize sampleRate width height shown = do
+
+    let xBlocks = let (z,r) = width `divMod` pieceSize
+                  in zip [0 .. z - 1] (repeat pieceSize) ++
                      [(z,r) | r > 0]
-        yBlocks = let (z,r) = height `divMod` subBlockSize
-                  in zip [0 .. z - 1] (repeat subBlockSize) ++
+        yBlocks = let (z,r) = height `divMod` pieceSize
+                  in zip [0 .. z - 1] (repeat pieceSize) ++
                      [(z,r) | r > 0]
 
     subblocks <- shuffle [(x,y) | x <- xBlocks, y <- yBlocks]
 
-    poolSize <- subtract 1 <$> renderConcurrency
-
-    when False $ do
-      caps <- getNumCapabilities
-      putStrLn $ show caps ++ " capabilities, pool size " ++ show poolSize ++ " (w=" ++ show (xSize block) ++ ", h=" ++ show (ySize block) ++ ")"
-
-    let rates = filter (<= logSampleRate block) [-4, -2, 0, 1]
+    let rates = filter (<= sampleRate) [-4, -2, 0, 1]
 
     let fits rate (x, y) = rate >= 0 || (snd x `mod` 2^(negate rate) == 0 &&
                                          snd y `mod` 2^(negate rate) == 0)
@@ -221,25 +240,7 @@ progressivelyOver shown covered render block = do
             ++ [ (False, 0, x, y) | 0 `elem` rates, xy@(x, y) <- fresh, firstRate xy < 0 ]
             ++ [ (False, 0, x, y) | 0 `elem` rates, (x, y) <- kept ]
             ++ [ (False, rate, x, y) | rate <- rates, rate > 0, (x, y) <- subblocks ]
-    when False $ putStrLn $ "***** start @ rates=" ++ show rates
-    start <- getCurrentTime
-
-    -- (how many first passes are left)
-    firstsLeft <- newMVar (length firsts)
-    when (null firsts) covered
-
-    forPool_ poolSize todo $ \(isFirst,rate,(x,w),(y,h)) -> do
-      render $ block { xSize = w, ySize = h,
-                       x0 = subBlockSize * x, y0 = subBlockSize * y,
-                       logSampleRate = rate }
-      when isFirst $ do
-        remaining <- modifyMVar firstsLeft (\n -> pure (n - 1, n - 1))
-        when (remaining == 0) covered
-
-    end <- getCurrentTime
-    when False $ do
-      putStrLn $ "***** " ++ show width ++ " x " ++ show height ++ " @ rates " ++ show rates
-               ++ " rendered in " ++ show (diffUTCTime end start)
+    pure todo
 
 shuffle :: [a] -> IO [a]
 shuffle xs = do

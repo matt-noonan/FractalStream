@@ -29,6 +29,10 @@
 //             and an error, as a notice to dismiss
 //   pointer   "Show pointer position", from a viewer's menu: the point
 //             under the pointer, on the plane and on the sphere
+//   progressive  a slow viewer (dev-tools/web/slow.fs) rendered in pieces:
+//             patches long before it's done; a pan drops the render going
+//             on, and the next one's done; new parameters' first patch
+//             is held back
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
@@ -43,7 +47,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, panel };
+const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -223,7 +227,7 @@ async function refresh() {
   c.check(m0 && m1 && (m0[0] !== m1[0] || m0[1] !== m1[1]), `the C marker moves with C (${JSON.stringify(m0)} -> ${JSON.stringify(m1)})`);
   // (its radius is 4 pixel_size: 4 CSS pixels, on any screen, as on the
   // desktop, whatever the canvas's density)
-  const frame = (await app.messages("frame")).filter((m) => m.viewer === pp).pop();
+  const frame = (await app.messages("patch")).filter((m) => m.viewer === pp).pop();
   const r = (await app.drawing(pp)).find((s) => s.k === "circle").r / frame.px;
   const dpr = await page.evaluate(() => Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 1))));
   c.check(Math.abs(r - 4 * dpr) < 1e-6, `pixel_size is a CSS pixel's size: the marker's radius is ${r.toFixed(2)} canvas pixels, at ${dpr}x`);
@@ -622,4 +626,49 @@ async function pointer() {
   const centre = await hover(s, 0.5, 0.5);
   const off = await hover(s, 0.01, 0.01);
   c.check(/𝑖$/.test(centre) && off === "…", `on the sphere: ${centre} at the globe's center, and "…" off it`);
+}
+
+async function progressive() {
+  await app.forgetMessages();
+  const opened = Date.now();
+  await app.openFile(new URL("slow.fs", import.meta.url).pathname);
+  const took = Date.now() - opened;
+  // (the first render to be done: at a high density, the first one, at
+  // the project's size, is dropped for one at the canvas's)
+  const all0 = await app.messages("patch");
+  const doneId = all0.find((m) => m.done).id;
+  const patches = all0.filter((m) => m.id === doneId);
+  c.check(patches.length > 2 && patches.findIndex((m) => m.done) === patches.length - 1,
+          `render ${doneId} came in ${patches.length} patches, the last one done (after ${took} ms)`);
+
+  // a pan, while a render goes: it's dropped, and the next one's done
+  await app.forgetMessages();
+  await page.evaluate(() => (window.__set = performance.now()));
+  await page.locator(".panel input[type=text]").first().fill("1001");
+  await page.keyboard.press("Enter");
+  await app.waitForMessage(`(m) => m.type === "patch"`, 10000);
+  const first = await page.evaluate(() => {
+    const m = window.__messages.find((m) => m.type === "patch");
+    return { id: m.id, done: m.done };
+  });
+  const box = await app.canvas(0).boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await app.waitForMessage(`(m) => m.type === "patch" && m.done`, 60000).catch(() => {});
+  const all = await app.messages("patch");
+  const ids = [...new Set(all.map((m) => m.id))];
+  const finished = all.filter((m) => m.done).map((m) => m.id);
+  c.check(!first.done && ids.length >= 2 && !finished.includes(first.id) && finished.length >= 1,
+          `a pan dropped the render going on (render ${first.id}), and the next was done (${finished.join(", ")})`);
+
+  // new parameters: the first patch waits a tenth of a second
+  await app.forgetMessages();
+  await page.locator(".panel input[type=text]").first().fill("1002");
+  await page.evaluate(() => (window.__set = performance.now()));
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.__messages.some((m) => m.type === "patch"), null, { timeout: 10000 });
+  const wait = await page.evaluate(() => performance.now() - window.__set);
+  c.check(wait >= 100, `new parameters' first patch was held back (${wait.toFixed(0)} ms)`);
 }

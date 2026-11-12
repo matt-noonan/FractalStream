@@ -7,7 +7,7 @@
 
 import { WASI, OpenFile, File, ConsoleStdout } from "@bjorn3/browser_wasi_shim";
 import { createPool } from "./worker-pool.mjs";
-import type { Request, Message, Frame } from "./protocol.js";
+import type { Request, Message, Patch } from "./protocol.js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 const here = (name: string) => new URL(name, import.meta.url);
@@ -44,14 +44,27 @@ g.fractalstreamAutocolor = await WebAssembly.compile(await fetchBytes("autocolor
 // What the engine posts.
 g.fractalstreamPost = (json: string) => send(JSON.parse(json));
 // (as RGBA, ready for an ImageData: done here, off the page's thread)
-g.fractalstreamPostFrame = (viewer: number, rgb: Uint8Array, width: number, height: number,
-                            cx: number, cy: number, px: number, py: number) => {
-  const rgba = new Uint8ClampedArray(width * height * 4);
-  for (let i = 0, j = 0; i < rgb.length; i += 3, j += 4) {
-    rgba[j] = rgb[i]; rgba[j + 1] = rgb[i + 1]; rgba[j + 2] = rgb[i + 2]; rgba[j + 3] = 255;
+// A patch of a viewer's render (see Patch): the rectangles' pixels, read
+// out of the engine's image (RGB, `width` pixels a row) as RGBA, one
+// rectangle after another, row by row.
+g.fractalstreamPostPatch = (viewer: number, id: number, width: number, height: number,
+                            cx: number, cy: number, px: number, py: number,
+                            image: Uint8Array, rects: Int32Array, done: boolean) => {
+  let size = 0;
+  for (let r = 0; r < rects.length; r += 4) size += rects[r + 2] * rects[r + 3] * 4;
+  const rgba = new Uint8ClampedArray(size);
+  let j = 0;
+  for (let r = 0; r < rects.length; r += 4) {
+    const [x, y, w, h] = [rects[r], rects[r + 1], rects[r + 2], rects[r + 3]];
+    for (let row = y; row < y + h; row++) {
+      for (let i = 3 * (row * width + x), end = i + 3 * w; i < end; i += 3, j += 4) {
+        rgba[j] = image[i]; rgba[j + 1] = image[i + 1]; rgba[j + 2] = image[i + 2]; rgba[j + 3] = 255;
+      }
+    }
   }
-  const frame: Frame = { type: "frame", viewer, width, height, cx, cy, px, py, pixels: rgba.buffer };
-  send(frame, [frame.pixels]);
+  const patch: Patch = { type: "patch", viewer, id, width, height, cx, cy, px, py,
+                         rects: Array.from(rects), pixels: rgba.buffer, done };
+  send(patch, [patch.pixels]);
 };
 
 g.fractalstreamPostFile = (name: string, bytes: Uint8Array) => {
@@ -86,7 +99,7 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "save": await engine.fs_save(r.views); break;
       case "rotate": await engine.fs_rotate(r.viewer, r.fx, r.fy, r.tx, r.ty); break;
       case "set": await engine.fs_set(r.name, r.text); break;
-      case "view": await engine.fs_view(r.viewer, r.cx, r.cy, r.pixelSize, r.width, r.height); break;
+      case "view": await engine.fs_view(r.viewer, r.cx, r.cy, r.pixelSize, r.width, r.height, ...(r.covered ?? [0, 0, 0, 0])); break;
       case "resize": await engine.fs_resize(r.viewer, r.width, r.height); break;
       case "smoothing": await engine.fs_smoothing(r.on); break;
       case "density": await engine.fs_density(r.value); break;

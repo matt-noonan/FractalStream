@@ -68,7 +68,7 @@ export class App {
 
   clearErrors() { this.errors = []; }
 
-  /** The engine's messages of a type, so far (frames without their pixels). */
+  /** The engine's messages of a type, so far (patches without their pixels). */
   messages(type) {
     return this.page.evaluate((t) => window.__messages.filter((m) => m.type === t)
       .map((m) => ({ ...m, pixels: undefined })), type);
