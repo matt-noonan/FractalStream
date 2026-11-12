@@ -356,6 +356,47 @@ Only if 0c/0d come out well.
 
 Record spike results and surprises here, newest first.
 
+### 2026-11-12: The desktop on the shared renderer, with the web's pacing
+
+The desktop's tiles now render with the web's renderer: the core's
+`renderProgressivelyInto` draws into an `ImageTarget` (the frontend's
+buffer, its seed, and the pixels already final off a globe, which coarse
+passes leave alone, as `fillBlock` did), and `UI.Tile` calls it in its
+16-pixel pieces. `Task.Block` keeps just the plan. Recorded side by
+side, the desktop looked the same before and after (a recentring click
+and a wheel zoom, on Mandelbrot and Julia and on the forced pendulum).
+On the way, the desktop's viewer code now sees its pixel's size on every
+pass (it saw the step: 16 times that on the coarsest pass).
+
+Then the web's techniques, which the user found made it feel smoother:
+
+- **Live panning**: a plain drag on the plane moves the picture with the
+  pointer at once (the last captured picture, drawn moved, over grey),
+  and renders follow as the globe's turns do (once the current render's
+  done, or has had a tenth of a second). A drag that hasn't moved three
+  points is still a click (which recenters). A tool's own drag handlers
+  come first; a tool that handles neither drags nor their ends pans, as
+  on the web. The end of a pan is a step in the history.
+- **Shift and drag** for a box to zoom into (it was a plain drag).
+- **Every render held** for a tenth of a second before it's shown (it
+  was only new parameters'), so a quick one comes whole.
+- **A new view starts from the last finished picture**, moved, not from
+  a render stopped partway (a tile now knows whether its render was
+  done), and not across new parameters.
+- **Capturing at 30 Hz** (it was 10): a capture costs about 0.2 ms for a
+  600x600 viewer, measured.
+
+Recorded: a live pan on a quick viewer and on the slow pendulum (the
+picture follows the pointer; the new edges grey until rendered), a
+Shift-drag box zoom, a wheel zoom, and a turn of the globe (sharp
+throughout).
+
+**Pinch to zoom** on the desktop: wxWidgets 3.2.9 has it (on macOS, a
+trackpad pinch is a `wxEVT_MAGNIFY` mouse event, with its magnification),
+but our wxHaskell binds neither the event nor `GetMagnification`. It
+would take a small C++ shim in `fractalstream-ui-wx` (compiled against
+the wx headers) to connect it and read the magnification; not done yet.
+
 ### 2026-11-12: The viewer menu
 
 Each viewer's ☰ menu now has what the desktop's does (but Show

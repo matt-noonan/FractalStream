@@ -686,6 +686,7 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
   started <- getMonotonicTime
   drawn <- newIORef Set.empty
   lastPatch <- newIORef Nothing
+  imageRef <- newIORef Nothing
   let -- (a piece is shown if the page's picture covers all of it)
       shown c r = case covered of
         Nothing -> False
@@ -698,18 +699,19 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
         withArrayLen (map fromIntegral flat) $ \n rp -> withForeignPtr rbPixels $ \p ->
           postPatch k renderId rbWidth rbHeight (fst rbCenter) (snd rbCenter)
                     (fst rbPixelSize) (snd rbPixelSize) p rp (n `div` 4) done
-      pieceDrawn image p = do
+      pieceDrawn p = readIORef imageRef >>= mapM_ (\image -> do
         modifyIORef' drawn (Set.insert p)
         now <- getMonotonicTime
         due <- readIORef lastPatch <&> \case
           Nothing -> now - started >= renderHold
           Just t -> now - t >= patchInterval
-        when due $ writeIORef lastPatch (Just now) >> patch image False
+        when due $ writeIORef lastPatch (Just now) >> patch image False)
   try (renderProgressively Progressive
         { prPieceSize = webPieceSize, prConcurrency = concurrency, prScale = density
         , prSmooth = smooth, prShown = shown
           -- (another render's been asked for)
         , prStale = not <$> isEmptyMVar signal
+        , prStarted = writeIORef imageRef . Just, prCovered = pure ()
         , prDrawn = pieceDrawn } viewer) >>= \case
     -- (being stopped, when another project is opened, isn't an error: the
     -- loop just ends)
