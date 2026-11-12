@@ -6,6 +6,7 @@ module UI.Tile ( Tile()
                , renderTile
                , cancelTile
                , tileFinished
+               , tileComplete
                , tileCovered
                , tileRect
                , ifModified
@@ -24,6 +25,7 @@ import Data.Color
 
 import Control.Concurrent
 import Control.Concurrent.Async
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 
 import Foreign.ForeignPtr
 import Foreign.Ptr
@@ -48,7 +50,14 @@ data Tile = Tile
     , coveredTile      :: MVar ()
       -- ^ Full once every part of the tile shows something (the seed's
       --   picture, or the render's first pass).
+    , completeTile     :: IORef Bool
+      -- ^ Whether its render was done (not stopped for a newer one).
     }
+
+-- | Was the tile's render done, all of it (not stopped for a newer one, or
+-- cancelled)?
+tileComplete :: Tile -> IO Bool
+tileComplete = readIORef . completeTile
 
 
 -- | Cancel the tile, but don't wait for it to finish
@@ -135,6 +144,7 @@ renderTile smooth seed fn stale (width, height) (center, (px, py)) = do
 
     redraw     <- newMVar ()  -- used to request a redraw
     covered    <- newEmptyMVar
+    complete   <- newIORef False
     managedBuf <- synchronized buf
 
     -- The seed (if any) is worked out by the worker, before it renders,
@@ -145,7 +155,7 @@ renderTile smooth seed fn stale (width, height) (center, (px, py)) = do
                                  <* tryPutMVar redraw ()
         _ -> pure (\_ _ -> False)
       concurrency <- subtract 1 <$> renderConcurrency
-      void $ renderProgressivelyInto Progressive
+      done <- renderProgressivelyInto Progressive
         { prPieceSize = subBlockSize, prConcurrency = concurrency, prScale = 1
         , prSmooth = smooth, prShown = shown, prStale = stale
         , prStarted = const (pure ()), prCovered = void (tryPutMVar covered ())
@@ -155,6 +165,7 @@ renderTile smooth seed fn stale (width, height) (center, (px, py)) = do
                     , itWith = \act -> with managedBuf (`withForeignPtr` act)
                     , itFinals = finals }
         fn
+      writeIORef complete (isJust done)
     link worker
 
     return Tile { imageRect = iRect
@@ -162,4 +173,5 @@ renderTile smooth seed fn stale (width, height) (center, (px, py)) = do
                 , tileWorker = worker
                 , shouldRedrawTile = redraw
                 , coveredTile = covered
+                , completeTile = complete
                 }
