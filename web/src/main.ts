@@ -329,6 +329,9 @@ let scriptEditor: ScriptEditor | null = null;
 let editorOverlay: HTMLElement | null = null;
 let editorOpen = false;
 let symbolTables: [[string, string][], [string, string][]] | null = null;
+/** The viewer (by title) whose colorizer was just chosen, if the next
+    rebuild is for that (see the "project" message). */
+let colorizerChange: string | null = null;
 
 function showEditor() {
   if (!workspaceEl) return;
@@ -539,6 +542,9 @@ class ViewerView {
       (see `recordSoon`). */
   private recordWanted = false;
   private recordTimer: number | undefined;
+  /** A Shift-drag's box to zoom into (see `zoomToBox`), as it's drawn. */
+  private boxing = false;
+  private readonly boxEl: HTMLElement;
   /** Waiting for the engine to read an aspect ratio (see `askAspect`). */
   private aspectAnswer: ((error: string | null) => void) | null = null;
   private drawPending = false;
@@ -584,7 +590,8 @@ class ViewerView {
     this.errorEl = el("div", { className: "viewer-error", hidden: true });
     this.runEl = el("div", { className: "viewer-running", hidden: true, role: "status" });
     this.pointerEl = el("div", { className: "viewer-pointer", hidden: true, textContent: "…" });
-    this.element = el("div", { className: "viewer" }, this.canvas, this.errorEl, this.runEl, this.pointerEl);
+    this.boxEl = el("div", { className: "zoom-box", hidden: true });
+    this.element = el("div", { className: "viewer" }, this.canvas, this.boxEl, this.errorEl, this.runEl, this.pointerEl);
     this.setSize(width, height);
     // (focusable, and focused when it's clicked: so the keyboard's for the
     // tool shortcuts again, after typing in the script editor)
@@ -950,6 +957,9 @@ class ViewerView {
     this.canvas.setPointerCapture(e.pointerId);
     this.press = { start: this.pixel(e), dragging: false };
     this.dragFrom = this.press.start;
+    // (Shift and drag: a box to zoom into, on the plane, as on the desktop)
+    this.boxing = e.shiftKey && !this.info.sphere && !this.toolDrags;
+    if (this.boxing) return;
     if (this.info.sphere && !this.toolDrags) {
       const s = this.onScreen(this.dragFrom);
       this.turn = { from: s, to: s };
@@ -962,6 +972,12 @@ class ViewerView {
     this.dragFrom = null;
     if (!press || !this.target) return;
     const p = this.pixel(e);
+    if (this.boxing) {
+      this.boxing = false;
+      this.boxEl.hidden = true;
+      if (press.dragging) this.zoomToBox(press.start, p);
+      return;
+    }
     if (!press.dragging) { if (this.handles.has("click")) this.toolEvent(0, p); }
     else if (this.handles.has("dragDone")) this.toolEvent(3, press.start, p);
     // (a pan, or a turn of the globe, done: a step in the history)
@@ -992,6 +1008,15 @@ class ViewerView {
       if (Math.hypot(p.x - x, p.y - y) < 3 * this.density) return;
       this.press.dragging = true;
     }
+    if (this.boxing) {
+      // (the box, in CSS pixels over the canvas)
+      const a = this.press.start, d = this.density;
+      Object.assign(this.boxEl.style, {
+        left: `${Math.min(a.x, p.x) / d}px`, top: `${Math.min(a.y, p.y) / d}px`,
+        width: `${Math.abs(p.x - a.x) / d}px`, height: `${Math.abs(p.y - a.y) / d}px` });
+      this.boxEl.hidden = false;
+      return;
+    }
     if (this.toolDrags) {
       if (this.handles.has("drag")) this.toolEvent(2, this.press.start, p);
       return;
@@ -1017,6 +1042,25 @@ class ViewerView {
     // (a line or a page of scrolling counts as more than a pixel)
     const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
     this.zoomBy(Math.exp(delta * (e.ctrlKey ? 0.01 : 0.002)), this.pixel(e));
+  }
+
+  /** Zoom into a box (from one corner to the other, in canvas pixels), as
+      the desktop does: its center the view's, scaled so that its area is
+      the canvas's (unless it's too small to mean anything). A step in the
+      history. */
+  private zoomToBox(a: { x: number; y: number }, b: { x: number; y: number }) {
+    const t = this.target!;
+    const W = this.canvas.width, H = this.canvas.height;
+    const scale = Math.sqrt((Math.abs(b.x - a.x) * Math.abs(b.y - a.y)) / (W * H));
+    if (!(scale >= 0.001)) return;
+    const [mx, my] = this.toPlane({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    t.cx = mx;
+    t.cy = my;
+    t.px *= scale;
+    t.py *= scale;
+    this.redraw();
+    this.request();
+    this.recordSoon(0);
   }
 
   /** Zoom by a factor (of the pixel size: above 1 zooms out) about a point
@@ -1058,7 +1102,11 @@ class ViewerView {
       items.push({ kind: "separator" }, { kind: "submenu", label: "Colorizer", items: () => [
         ...c.items.map((i): MenuItem => ({
           kind: "toggle", label: i.label, on: i.inUse, help: i.description ?? undefined,
-          toggle: () => { if (!i.inUse) send({ type: "colorizer", viewer: this.info.id, name: i.name }); } })),
+          toggle: () => {
+            if (i.inUse) return;
+            colorizerChange = this.info.title;
+            send({ type: "colorizer", viewer: this.info.id, name: i.name });
+          } })),
         { kind: "separator" },
         { kind: "action", label: "Arguments…", enabled: c.arguments,
           run: () => send({ type: "colorizerArguments", viewer: this.info.id }) },
@@ -1140,6 +1188,7 @@ class ViewerView {
     askForm(this.element, `${name}: arguments`,
             fields.map((f) => ({ label: `${f.param} =`, note: f.note, value: f.text })),
             (answers) => {
+              colorizerChange = this.info.title;
               send({ type: "colorizerAnswers", viewer: this.info.id, name, answers });
               return null;
             });
@@ -1211,7 +1260,10 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
         scriptEditor?.projectScript(m.script, true);
         // (it worked: the editor's done its job)
         hideEditor();
-        status("Rebuilt.");
+        // (for a colorizer, which one the viewer uses now)
+        const changed = colorizerChange && m.viewers.find((v) => v.title === colorizerChange);
+        status(changed ? `${changed.title}: colored by ${changed.colorizer?.inUse ?? "its script"}.` : "Rebuilt.");
+        colorizerChange = null;
         break;
       }
       // (a new project has no file of its own yet: not even the one it
@@ -1264,7 +1316,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "running": viewers.get(m.viewer)?.showRunning(m.what, m.name); break;
     case "runDone": viewers.get(m.viewer)?.runDone(); break;
     case "viewerError": viewers.get(m.viewer)?.showError(m.message); break;
-    case "error": status(m.message, true); console.error(m.message); break;
+    case "error": colorizerChange = null; status(m.message, true); console.error(m.message); break;
     case "patch": viewers.get(m.viewer)?.patch(m); break;
   }
 });

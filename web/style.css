@@ -307,3 +307,11 @@ body.no-panel .panel { display: none; }
 .viewer-form .form-gap { flex: 1; }
 .viewer-form button { font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
                       border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+
+/* A Shift-drag's box to zoom into (main.ts's zoomToBox) */
+.zoom-box {
+  position: absolute; pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, .9); background: rgba(80, 140, 255, .25);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+}
+.zoom-box[hidden] { display: none; }
