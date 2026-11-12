@@ -79,6 +79,7 @@ library
                        Actor.Viewer.Clip
                        Actor.Viewer.Overlay
                        Actor.Viewer.Sphere
+                       Actor.Viewer.ViewModel
                        Actor.Viewer.Preview
                        Actor.Movie
                        Actor.Metadata

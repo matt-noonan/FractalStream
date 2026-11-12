@@ -332,6 +332,11 @@ Only if 0c/0d come out well.
 - [x] Sphere view (trackball): done in Phase 3.
 - [x] "Show pointer position", from each viewer's ☰ menu (on the plane
   and the sphere: the engine says what's under the pointer).
+- [x] The rest of the desktop's viewer menu: Last, Next and Original view
+  (`<`, `>`, `^`), Jump to view (`@`), Show on the sphere, the Colorizer
+  submenu (with Arguments…), and Use subpixel smoothing (per viewer, in
+  place of the toolbar's Smooth). Not Show configuration (`=`): the web's
+  configuration is always beside the viewers.
 - [x] Errors as notices, dismissed (not only the status line).
 - [ ] Autocolor editor.
 - [ ] Movies (WebCodecs).
@@ -348,6 +353,43 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: The viewer menu
+
+Each viewer's ☰ menu now has what the desktop's does (but Show
+configuration and Aspect ratio):
+
+- **Navigating** (Last, Next, Original view; `<`, `>`, `^`), with a
+  history per viewer, kept in the engine, which owns the globe's rotation
+  and the plane or sphere: the desktop's `UI.ViewModel` (its `Model` and
+  `History`) moved into the core, as `Actor.Viewer.ViewModel`, for both.
+  The page makes a step at the end of a gesture (a pan, a turn of the
+  globe; a zoom, once the wheel or pinch has paused for 300 ms; it's one
+  continuous motion on the web, where the desktop steps by 4x a wheel
+  notch), once the gesture's view has been asked for and answered; and
+  one for where it starts. When the engine moves a view itself (back,
+  next, home, a jump, the sphere), it tells the page (`view`).
+- **Jump to view** (`@`): a small form over the viewer (`askForm`): a
+  center (on the sphere, the point to face) and a CSS pixel's size,
+  starting from where it is (`fs_where`).
+- **Show on the sphere**, for a complex viewer: as the desktop's (the
+  point in the middle stays, at the script's zoom for the other kind).
+  Saved in `web-properties:`, with the desktop's keys (`view: sphere`,
+  `rotation`: a unit quaternion), and reopened so.
+- **Colorizer**: the colorizers the viewer can use, the one in use
+  checked; choosing one rebuilds the project (windows, views, tools,
+  smoothing and history kept), as the desktop's does; one whose
+  parameters the viewer can't fill in asks for its arguments first, and
+  Arguments… asks for the one in use's. The desktop's argument handling
+  moved into `Actor.Colorizer` (`missingArguments`, `argumentFields`,
+  `choiceWithArguments`), for both, with tests.
+- **Use subpixel smoothing**, per viewer (not saved, as on the desktop):
+  each starts off on a high-DPI screen, on otherwise; the toolbar's
+  Smooth is gone.
+
+Checks: `check-tools.mjs`'s `menu` section, in Chromium, Firefox and
+WebKit. (The harness now keeps the page's requests too, as
+`window.__sent`.)
 
 ### 2026-11-12: Progressive rendering, only for slow renders
 

@@ -33,6 +33,10 @@
 //             patches long before it's done; a pan drops the render going
 //             on, and the next one's done; new parameters' first patch
 //             is held back
+//   menu      a viewer's menu: last, next, original view (and their keys),
+//             jump to a view, the sphere and the plane (saved, and
+//             reopened so), its colorizer and a colorizer's arguments,
+//             and subpixel smoothing
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
@@ -47,7 +51,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, panel };
+const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -615,8 +619,9 @@ async function pointer() {
   const m = /^(-?\d+\.\d{14}) ([+-]) (\d+\.\d{14})𝑖$/.exec(t);
   c.check(m && Number(m[1]) > 0 && m[2] === "+" && Number(m[3]) > 0, `up and to the right of 0, it's there (${t})`);
   await page.locator(".window").nth(0).locator(".window-menu-button").click();
-  const checked = await page.locator(".window-menu button").getAttribute("aria-checked");
-  await page.locator(".window-menu button").click();
+  const item = page.locator(".window-menu button", { hasText: "Show pointer position" });
+  const checked = await item.getAttribute("aria-checked");
+  await item.click();
   c.check(checked === "true" && !(await readout(0).isVisible()), "the menu shows it's on, and turns it off");
 
   // the sphere: the globe's center is the view's, and off the globe, "…"
@@ -671,4 +676,147 @@ async function progressive() {
   await page.waitForFunction(() => window.__messages.some((m) => m.type === "patch"), null, { timeout: 10000 });
   const wait = await page.evaluate(() => performance.now() - window.__set);
   c.check(wait >= 100, `new parameters' first patch was held back (${wait.toFixed(0)} ms)`);
+}
+
+async function menu() {
+  let project = await app.openLibrary("Mandelbrot and Julia sets together");
+  const pp = project.viewers.find((v) => v.title === "Parameter plane").id;
+  await app.activate(pp);
+  await page.keyboard.press("n");
+  await page.waitForTimeout(500);
+  const win = page.locator(".window").nth(pp);
+  const openMenu = async () => { await win.locator(".window-menu-button").click(); };
+  const choose = async (label) => { await page.locator(".window-menu button", { hasText: label }).first().click(); };
+  await openMenu();
+  const labels = (await page.locator(".window-menu .menu-label").allTextContents()).join(" | ");
+  c.check(["Last view", "Next view", "Jump to view", "Original view", "Show on the sphere", "Colorizer",
+           "Show pointer position", "Use subpixel smoothing"].every((l) => labels.includes(l)), `the menu has: ${labels}`);
+  await page.keyboard.press("Escape");
+
+  // the view, as the page wants it (its latest request, or the engine's move)
+  const view = async () => (await page.evaluate((id) => {
+    const vs = window.__sent.filter((r) => r.viewer === id && r.type === "view");
+    const moved = window.__messages.filter((m) => m.viewer === id && m.type === "view");
+    return { sent: vs[vs.length - 1], moved: moved[moved.length - 1] };
+  }, pp));
+  const settle = () => page.waitForTimeout(700);
+  const box = await app.canvas(pp).boundingBox();
+  const drag = async (dx) => {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await settle();
+  };
+  await settle();
+  await drag(100);
+  const afterFirst = (await view()).sent;
+  await drag(100);
+  await page.keyboard.press("<");
+  await settle();
+  const back = (await view()).moved;
+  c.check(back && Math.abs(back.cx - afterFirst.cx) < 1e-12, `< goes back a step (to cx ${back?.cx.toFixed(4)}, as after the first pan: ${afterFirst.cx.toFixed(4)})`);
+  await page.keyboard.press("<");
+  await settle();
+  const start = (await view()).moved;
+  c.check(start && start.cx > afterFirst.cx, `and again, to where it started (cx ${start?.cx.toFixed(4)})`);
+  await page.keyboard.press(">");
+  await settle();
+  c.check(Math.abs((await view()).moved.cx - afterFirst.cx) < 1e-12, "> goes forward a step");
+  await drag(-50);
+  await page.keyboard.press("^");
+  await settle();
+  const home = (await view()).moved;
+  c.check(home && Math.abs(home.cx - start.cx) < 1e-12 && Math.abs(home.cy - start.cy) < 1e-12,
+          `^ goes to the original view (cx ${home?.cx.toFixed(4)})`);
+
+  // jump to a view
+  await page.keyboard.press("@");
+  await page.locator(".viewer-form").waitFor({ timeout: 5000 });
+  const inputs = page.locator(".viewer-form input");
+  c.check((await inputs.count()) === 3, `@ asks where to jump (starting from ${(await inputs.nth(0).inputValue()).slice(0, 8)}, ...)`);
+  await inputs.nth(0).fill("-1.25");
+  await inputs.nth(1).fill("0.125");
+  await inputs.nth(2).fill("0.001");
+  await page.keyboard.press("Enter");
+  await settle();
+  const jumped = (await view()).moved;
+  const dpr = await page.evaluate(() => Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 1))));
+  c.check(jumped && jumped.cx === -1.25 && jumped.cy === 0.125 && Math.abs(jumped.px * dpr - 0.001) < 1e-15,
+          `and goes there (${jumped?.cx}, ${jumped?.cy}, a pixel ${(jumped?.px * dpr).toPrecision(3)})`);
+
+  // the sphere, saved, and reopened so
+  await openMenu();
+  await choose("Show on the sphere");
+  await settle();
+  c.check((await view()).moved.sphere === true, "Show on the sphere puts it on the sphere");
+  const gb = await app.canvas(pp).boundingBox();
+  await page.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(gb.x + gb.width / 2 + 60, gb.y + gb.height / 2 + 20, { steps: 4 });
+  await page.mouse.up();
+  await settle();
+  await openMenu();
+  const onSphere = await page.locator(".window-menu button", { hasText: "Show on the sphere" }).getAttribute("aria-checked");
+  await page.keyboard.press("Escape");
+  c.check(onSphere === "true", "and the menu says so");
+  await app.forgetMessages();
+  await page.evaluate(() => { window.__saved = null; window.showSaveFilePicker = undefined; });
+  const download = page.waitForEvent("download", { timeout: 10000 });
+  await page.locator("#save-as").click();
+  const file = await (await download).path();
+  const saved = fs.readFileSync(file, "utf8");
+  const props = /Parameter plane:[\s\S]*?(?=\n {4}\S|\n\S|$)/.exec(saved.slice(saved.indexOf("web-properties:")))?.[0] ?? "";
+  c.check(/view: sphere/.test(props) && /rotation:/.test(props), "saved: on the sphere, and the globe's rotation");
+  const copy = path.join(os.tmpdir(), "menu-sphere.fs");
+  fs.writeFileSync(copy, saved);
+  project = await app.openFile(copy);
+  c.check(project.viewers[pp].sphere === true, "reopened, it's on the sphere");
+  await openMenu();
+  await choose("Show on the sphere");
+  await settle();
+  c.check((await view()).moved.sphere === false, "and Show on the sphere again puts it back on the plane");
+
+  // its colorizer
+  await openMenu();
+  await choose("Colorizer");
+  const inUse = await page.locator(".window-menu button[aria-checked=true] .menu-label").allTextContents();
+  c.check(inUse.join() === "Binary decomposition", `the Colorizer submenu has the one in use checked (${inUse.join()})`);
+  await app.forgetMessages();
+  await choose("Escape time");
+  project = await app.opened().catch(() => null);
+  const rebuilt = (await app.messages("project")).pop();
+  c.check(rebuilt?.rebuilt && rebuilt.viewers[pp].colorizer.inUse === "Escape time" && rebuilt.viewers[1 - pp].colorizer.inUse === "Binary decomposition",
+          `choosing another rebuilds the project, with it for this viewer only (${rebuilt?.viewers[pp].colorizer.inUse})`);
+  await openMenu();
+  await choose("Colorizer");
+  await choose("Binary decomposition");
+  await page.waitForTimeout(1500);
+  await openMenu();
+  await choose("Colorizer");
+  await choose("Arguments");
+  await page.locator(".viewer-form").waitFor({ timeout: 5000 });
+  const fieldLabels = await page.locator(".viewer-form .form-field span").allTextContents();
+  c.check(fieldLabels.length > 0, `Arguments… asks for them (${fieldLabels.join(" ")})`);
+  await page.locator(".viewer-form input").first().fill("12");
+  await app.forgetMessages();
+  await page.keyboard.press("Enter");
+  await app.waitForMessage(`(m) => m.type === "project"`, 30000).catch(() => {});
+  const withArgs = (await app.messages("project")).pop();
+  c.check(/^Binary decomposition\(12/.test(withArgs?.viewers[pp].colorizer.inUse ?? ""),
+          `and uses them (${withArgs?.viewers[pp].colorizer.inUse})`);
+
+  // subpixel smoothing, per viewer
+  await page.waitForTimeout(800);
+  const before = (await app.messages("patch")).filter((m) => m.viewer === pp && m.done).length;
+  await openMenu();
+  const smooth = await page.locator(".window-menu button", { hasText: "Use subpixel smoothing" }).getAttribute("aria-checked");
+  await choose("Use subpixel smoothing");
+  await page.waitForTimeout(1500);
+  const after = (await app.messages("patch")).filter((m) => m.viewer === pp && m.done).length;
+  await openMenu();
+  const smooth2 = await page.locator(".window-menu button", { hasText: "Use subpixel smoothing" }).getAttribute("aria-checked");
+  await page.keyboard.press("Escape");
+  c.check(smooth !== smooth2 && after > before, `Use subpixel smoothing toggles it (${smooth} -> ${smooth2}), and it's rendered again`);
+  c.check(await page.locator("#smoothing").count() === 0, "(and the toolbar has no Smooth switch)");
 }

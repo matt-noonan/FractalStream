@@ -110,6 +110,13 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
 }
 .window-menu button:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
 .window-menu button[aria-checked=true]::before { content: "✓"; position: absolute; left: 9px; }
+.window-menu button { display: flex; align-items: baseline; gap: 16px; }
+.window-menu button:disabled { color: var(--muted); cursor: default; background: none; }
+.window-menu .menu-label { flex: 1; }
+.window-menu kbd { font: inherit; font-size: 12px; color: var(--muted); }
+.window-menu .menu-back { color: var(--muted); }
+.window-menu .menu-separator { border: none; border-top: 1px solid var(--line); margin: 4px 6px; }
+.window-menu { max-height: 70vh; overflow-y: auto; min-width: 230px; }
 /* (minimized: just the title bar) */
 .window.minimized .window-body, .window.minimized .window-grip { display: none; }
 .window.minimized .window-title { border-bottom: none; }
@@ -279,3 +286,23 @@ body.no-panel .panel { display: none; }
 .cm-escape { outline: 1px solid var(--accent); border-radius: 2px; }
 .cm-symbol-preview { padding: 3px 8px; font: 12px ui-monospace, monospace; color: var(--muted); white-space: pre; }
 .cm-symbol-preview strong { color: var(--fg); }
+
+/* A small form over a viewer (main.ts's askForm): "Jump to view", a
+   colorizer's arguments. */
+.viewer-form {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5;
+  width: min(320px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25); font-size: 13px;
+}
+.viewer-form .form-title { font-weight: 600; }
+.viewer-form .form-field { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: center; }
+.viewer-form .form-field small { grid-column: 2; color: var(--muted); }
+.viewer-form input { font: 12px ui-monospace, monospace; padding: 3px 6px; border: 1px solid var(--line);
+                     border-radius: 4px; background: var(--bg); color: var(--fg); min-width: 0; }
+.viewer-form .form-error { color: var(--error); min-height: 1em; }
+.viewer-form .form-error:empty { display: none; }
+.viewer-form .form-buttons { display: flex; justify-content: flex-end; gap: 6px; }
+.viewer-form button { font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
+                      border: 1px solid var(--line); background: var(--bg); color: var(--fg); }

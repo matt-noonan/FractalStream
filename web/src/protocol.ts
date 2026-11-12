@@ -24,8 +24,25 @@ export type Request =
   | { type: "view"; viewer: number; cx: number; cy: number; pixelSize: number; width: number; height: number;
       covered: [number, number, number, number] | null }
   | { type: "resize"; viewer: number; width: number; height: number }
-  /** Whether frames are smoothed (four samples a pixel), for every viewer. */
+  /** Whether a viewer is smoothed (four samples a pixel) to begin with. */
   | { type: "smoothing"; on: boolean }
+  /** Whether a viewer is smoothed ("Use subpixel smoothing"). */
+  | { type: "viewerSmoothing"; viewer: number; on: boolean }
+  /** The last view, the next one, the original one, or the sphere (or
+      the plane) instead: answered by "view". */
+  | { type: "navigate"; viewer: number; what: Navigation }
+  /** The view as it is now is a step in the viewer's history. */
+  | { type: "record"; viewer: number }
+  /** Go to a view: centered on (x, y) (on the sphere, facing it), with a
+      CSS pixel this size. "where" asks where the viewer is now. */
+  | { type: "jump"; viewer: number; x: number; y: number; pixelSize: number }
+  | { type: "where"; viewer: number }
+  /** Use a colorizer for the viewer (one it can't fill in the parameters
+      of asks for its arguments first: "colorizerArguments"), ask for the
+      arguments of the one in use, or give the answers. */
+  | { type: "colorizer"; viewer: number; name: string }
+  | { type: "colorizerArguments"; viewer: number }
+  | { type: "colorizerAnswers"; viewer: number; name: string; answers: string[] }
   /** How many canvas pixels a CSS pixel is drawn with (see main.ts's
       `density`): tools are given a CSS pixel's size, as `pixel_size`. */
   | { type: "density"; value: number }
@@ -47,6 +64,9 @@ export type Request =
   | { type: "analyze"; id: number; text: string }
   | { type: "symbols" }
   | { type: "rebuild"; text: string };
+
+/** 0 the last view, 1 the next, 2 the original one, 3 the sphere or the plane. */
+export type Navigation = 0 | 1 | 2 | 3;
 
 /** 0 a click, 1 a double click, 2 a drag so far, 3 a drag finished. */
 export type EventKind = 0 | 1 | 2 | 3;
@@ -92,7 +112,21 @@ export interface ViewerInfo {
   height: number;
   /** Whether it shows the Riemann sphere (a globe), not the plane. */
   sphere: boolean;
+  /** Whether it can (a complex viewer). */
+  complex: boolean;
+  /** Whether it's smoothed. */
+  smooth: boolean;
+  /** Its colorizer menu, if it has one. */
+  colorizer: ColorizerMenu | null;
   tools: ToolInfo[];
+}
+
+export interface ColorizerMenu {
+  /** The one in use, as chosen (with any arguments). */
+  inUse: string;
+  /** Whether the one in use has parameters ("Arguments..."). */
+  arguments: boolean;
+  items: { name: string; label: string; description: string | null; inUse: boolean; asks: boolean }[];
 }
 
 export interface ToolInfo {
@@ -172,6 +206,11 @@ export type Message =
   /** An old FractalStream 1.0 file, not opened: "translate" translates it. */
   | { type: "ancient"; name: string }
   | { type: "pointer"; viewer: number; text: string }
+  /** The engine moved a viewer's view (a pixel's size in the canvas's pixels). */
+  | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean }
+  | { type: "where"; viewer: number; x: number; y: number; pixelSize: number }
+  /** What to ask for a colorizer's arguments: each parameter, a note, and its text to start with. */
+  | { type: "colorizerArguments"; viewer: number; name: string; fields: { param: string; note: string; text: string }[] }
   /** An edited script, colored and checked, with how to write it with
       mathematical symbols (offsets in UTF-16 units, the end not included). */
   | { type: "analysis"; id: number; spans: [number, number, string][]; error: ScriptError | null;
