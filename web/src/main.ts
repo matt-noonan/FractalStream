@@ -2,7 +2,9 @@
 // viewers. The engine runs in a worker (engine.ts); see protocol.ts for
 // what they say to each other.
 
-import type { Request, Message, Layout, FieldLayout, Frame, LibrarySection, ViewerInfo, SavedViews } from "./protocol.js";
+import type { Request, Message, Layout, FieldLayout, Frame, LibrarySection, ViewerInfo, SavedViews,
+              Shape, Handled, EventKind } from "./protocol.js";
+import { drawLayers } from "./drawing.js";
 import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
 import { Desk } from "./windows.js";
 
@@ -18,6 +20,7 @@ const saveAsButton = document.getElementById("save-as") as HTMLButtonElement;
 const fileNameEl = document.getElementById("file-name")!;
 const libraryButton = document.getElementById("toggle-library") as HTMLButtonElement;
 const panelButton = document.getElementById("toggle-panel") as HTMLButtonElement;
+const paletteEl = document.getElementById("tools")!;
 
 // Hiding and showing the library, and the configuration panel.
 function toggle(button: HTMLButtonElement, bodyClass: string) {
@@ -139,9 +142,16 @@ document.addEventListener("drop", async (e) => { e.preventDefault(); openFile(aw
 // ---------------------------------------------------------------------
 // A project
 
+/** Each field's input, by its key (see FieldLayout). */
 const fieldInputs = new Map<string, { input: HTMLInputElement | HTMLSelectElement; error: HTMLElement;
-                                      swatch?: HTMLInputElement }>();
+                                      swatch?: HTMLInputElement; setText: (text: string) => void }>();
 const viewers = new Map<number, ViewerView>();
+/** The viewer the tool palette, its shortcuts and the tool's panel are
+    for: the one last clicked. */
+let activeViewer: ViewerView | null = null;
+/** Where the active viewer's tool's panel goes (in the side panel). */
+let toolPanelEl: HTMLElement | null = null;
+let asideEl: HTMLElement | null = null;
 /** The open project's viewers' windows, for saving the view state. */
 let windows: { title: string; view: ViewerView; window: HTMLElement }[] = [];
 
@@ -156,12 +166,14 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
   fieldInputs.clear();
   viewers.clear();
   windows = [];
+  activeViewer = null;
   const desk = new Desk(el("div"));
+  toolPanelEl = el("div", { className: "tool-panel" });
+  asideEl = el("aside", { className: "panel" },
+               panel ? layoutElement(panel, projectFields) : "", toolPanelEl);
   projectEl.replaceChildren(
     el("h1", { textContent: title }),
-    el("div", { className: "workspace" },
-      desk.element,
-      panel ? el("aside", { className: "panel" }, layoutElement(panel)) : ""));
+    el("div", { className: "workspace" }, desk.element, asideEl));
   // Each viewer in a window, side by side: all scaled down alike if they
   // don't fit (each still showing its whole view), to no less than 40%,
   // and then onto more rows if they still don't fit.
@@ -182,33 +194,95 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
     viewers.set(info.id, v);
     const win = desk.add({ title: info.title, ...place, content: v.element,
                            onResize: (width, height) => v.resize(width, height) });
+    win.addEventListener("pointerdown", () => activate(v), { capture: true });
+    v.window = win;
     windows.push({ title: info.title, view: v, window: win });
     x += w + gap;
     rowHeight = Math.max(rowHeight, h + 30);
   }
+  activate(windows[0]?.view ?? null);
   status("");
 }
 
-function layoutElement(layout: Layout): Node {
+/** Make a viewer the active one: the palette, and its tool's panel, are its. */
+function activate(v: ViewerView | null) {
+  if (activeViewer === v) return;
+  activeViewer?.window?.classList.remove("active");
+  activeViewer = v;
+  v?.window?.classList.toggle("active", viewers.size > 1);
+  showPalette();
+  showToolPanel();
+}
+
+/** The tool palette, in the toolbar: Navigate, and the active viewer's tools. */
+function showPalette() {
+  const v = activeViewer;
+  if (!v) { paletteEl.replaceChildren(); return; }
+  const button = (name: string | null, label: string, help: string, shortcut: string) => {
+    const b = el("button", { type: "button", textContent: label,
+                             title: help + (shortcut ? ` (${shortcut})` : "") });
+    b.setAttribute("aria-pressed", String(v.toolName === name));
+    b.addEventListener("click", () => v.selectTool(name));
+    return b;
+  };
+  paletteEl.replaceChildren(
+    button(null, "Navigate", "Drag to move around; scroll or pinch to zoom", "n"),
+    ...v.info.tools.map((t) => button(t.name, t.name, t.help, t.shortcut)));
+}
+
+function showToolPanel() {
+  if (!toolPanelEl || !asideEl) return;
+  toolPanelEl.replaceChildren(activeViewer?.toolPanel ?? "");
+  // (no side panel at all, if there's nothing to put in it)
+  asideEl.hidden = asideEl.querySelector("fieldset, .field, button, p, .tabs") === null;
+}
+
+// A tool's shortcut key (and n for Navigate) picks it, for the active viewer.
+document.addEventListener("keydown", (e) => {
+  const v = activeViewer;
+  if (!v || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target instanceof HTMLElement && e.target.closest("input, select, textarea")) return;
+  const key = e.key.toLowerCase();
+  const tool = v.info.tools.find((t) => t.shortcut && t.shortcut.toLowerCase() === key);
+  if (tool) { e.preventDefault(); v.selectTool(tool.name); }
+  else if (key === "n") { e.preventDefault(); v.selectTool(null); }
+});
+
+/** What a panel's fields and buttons do: set a field, press a button. */
+interface PanelActions {
+  set(name: string, text: string): void;
+  button?(label: string): void;
+}
+const projectFields: PanelActions = { set: (name, text) => send({ type: "set", name, text }) };
+
+/** A layout's elements. (`title` is the panel it's in's: a panel inside
+    it with the same title, as a tool's panel has, doesn't repeat it.) */
+function layoutElement(layout: Layout, actions: PanelActions, title?: string): Node {
   if (layout === null) return document.createTextNode("");
   switch (layout.kind) {
     case "vertical":
     case "horizontal":
-      return el("div", { className: layout.kind }, ...layout.children.map(layoutElement));
+      return el("div", { className: layout.kind }, ...layout.children.map((c) => layoutElement(c, actions, title)));
     case "panel":
-      return el("fieldset", {}, el("legend", { textContent: layout.title }), layoutElement(layout.body));
+      return el("fieldset", {}, layout.title === title ? "" : el("legend", { textContent: layout.title }),
+                layoutElement(layout.body, actions, layout.title));
     case "tabs":
-      return tabsElement(layout.tabs);
+      return tabsElement(layout.tabs, actions);
     case "plain":
       return el("p", { textContent: layout.text });
+    case "button": {
+      const b = el("button", { type: "button", textContent: layout.label });
+      b.addEventListener("click", () => actions.button?.(layout.label));
+      return b;
+    }
     default:
-      return fieldElement(layout);
+      return fieldElement(layout, actions);
   }
 }
 
 /** Tabs: a chooser of which one to show, and the one chosen. */
-function tabsElement(tabs: { label: string; body: Layout }[]): Node {
-  const bodies = tabs.map((t) => el("div", { className: "tab-body" }, layoutElement(t.body)));
+function tabsElement(tabs: { label: string; body: Layout }[], actions: PanelActions): Node {
+  const bodies = tabs.map((t) => el("div", { className: "tab-body" }, layoutElement(t.body, actions)));
   const chooser = el("select", { className: "tab-chooser", title: "Which settings to show" },
                      ...tabs.map((t, i) => el("option", { value: String(i), textContent: t.label })));
   const select = (i: number) => bodies.forEach((b, k) => (b.hidden = k !== i));
@@ -217,21 +291,24 @@ function tabsElement(tabs: { label: string; body: Layout }[]): Node {
   return el("div", { className: "tabs" }, chooser, ...bodies);
 }
 
-function fieldElement(f: FieldLayout): Node {
+function fieldElement(f: FieldLayout, actions: PanelActions): Node {
   const error = el("span", { className: "field-error" });
   let input: HTMLInputElement | HTMLSelectElement;
+  let setText: (text: string) => void;
   switch (f.kind) {
     case "check": {
       const box = el("input", { type: "checkbox", checked: f.text === "true" });
-      box.addEventListener("change", () => send({ type: "set", name: f.name, text: box.checked ? "true" : "false" }));
+      box.addEventListener("change", () => actions.set(f.name, box.checked ? "true" : "false"));
       input = box;
+      setText = (text) => (box.checked = text === "true");
       break;
     }
     case "select": {
       const select = el("select", {}, ...(f.options ?? []).map((o) => el("option", { value: o, textContent: o })));
       select.value = f.text;
-      select.addEventListener("change", () => send({ type: "set", name: f.name, text: select.value }));
+      select.addEventListener("change", () => actions.set(f.name, select.value));
       input = select;
+      setText = (text) => (select.value = text);
       break;
     }
     default: {
@@ -241,21 +318,22 @@ function fieldElement(f: FieldLayout): Node {
       const commit = () => {
         if (box.value !== committed) {
           committed = box.value;
-          send({ type: "set", name: f.name, text: box.value });
+          actions.set(f.name, box.value);
         }
       };
       box.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
       box.addEventListener("blur", commit);
       input = box;
+      setText = (text) => { committed = text; box.value = text; };
       if (f.kind === "color") {
         const swatch = el("input", { type: "color", value: f.color ?? "#000000", title: "Pick a color" });
         swatch.addEventListener("change", () => { box.value = rgbText(swatch.value); commit(); });
-        fieldInputs.set(f.name, { input, error, swatch });
+        fieldInputs.set(f.key, { input, error, swatch, setText });
         return el("label", { className: "field color" }, el("span", { textContent: f.label }), swatch, input, error);
       }
     }
   }
-  fieldInputs.set(f.name, { input, error });
+  fieldInputs.set(f.key, { input, error, setText });
   return el("label", { className: `field ${f.kind}` }, el("span", { textContent: f.label }), input, error);
 }
 
@@ -265,8 +343,18 @@ function rgbText(hex: string): string {
   return `rgb(${c(0)}, ${c(1)}, ${c(2)})`;
 }
 
-function fieldResult(name: string, error: string | null, color?: string | null) {
-  const f = fieldInputs.get(name);
+/** A tool's handler set a field. */
+function fieldText(key: string, text: string, color?: string | null) {
+  const f = fieldInputs.get(key);
+  if (!f) return;
+  f.setText(text);
+  if (f.swatch && color) f.swatch.value = color;
+  f.input.classList.remove("invalid");
+  f.error.textContent = "";
+}
+
+function fieldResult(key: string, error: string | null, color?: string | null) {
+  const f = fieldInputs.get(key);
   if (!f) return;
   if (f.swatch && color) f.swatch.value = color;
   f.input.classList.toggle("invalid", error !== null);
@@ -312,8 +400,26 @@ class ViewerView {
       globe was last turned from, and where the pointer is now. */
   private turn: { from: [number, number]; to: [number, number] } | null = null;
   private readonly errorEl: HTMLElement;
+  /** Its window, on the desk. */
+  window: HTMLElement | null = null;
 
-  constructor(private readonly info: ViewerInfo, width: number, height: number,
+  /** Its tool (null: navigating), the pointer events that tool handles,
+      and its panel. */
+  toolName: string | null = null;
+  private handles = new Set<Handled>();
+  toolPanel: HTMLElement | null = null;
+  /** What its tools have drawn, in screen-plane coordinates. */
+  private layers: Shape[][] = [];
+  /** The pointer, from when the button went down: where (in canvas
+      pixels), and whether it's moved far enough to be a drag. */
+  private press: { start: { x: number; y: number }; dragging: boolean } | null = null;
+  /** Pointer events for the tool, waiting to be sent: one at a time, and
+      only the latest of a run of drags (so a slow handler doesn't fall
+      behind the pointer). */
+  private events: Extract<Request, { type: "event" }>[] = [];
+  private eventSent = 0;
+
+  constructor(readonly info: ViewerInfo, width: number, height: number,
               private readonly saved: { cx: number; cy: number; "pixel-size": number } | null) {
     this.canvas = el("canvas");
     this.context = this.canvas.getContext("2d")!;
@@ -322,8 +428,11 @@ class ViewerView {
     this.setSize(width, height);
     this.canvas.addEventListener("pointerdown", (e) => this.startDrag(e));
     this.canvas.addEventListener("pointermove", (e) => this.moveDrag(e));
-    this.canvas.addEventListener("pointerup", () => (this.dragFrom = null));
-    this.canvas.addEventListener("pointercancel", () => (this.dragFrom = null));
+    this.canvas.addEventListener("pointerup", (e) => this.endDrag(e));
+    this.canvas.addEventListener("pointercancel", () => { this.dragFrom = null; this.press = null; });
+    this.canvas.addEventListener("dblclick", (e) => {
+      if (this.handles.has("doubleClick")) this.toolEvent(1, this.pixel(e));
+    });
     this.canvas.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
     // (Safari's pinches: gesture events, with the scale since the pinch began)
     let lastScale = 1;
@@ -352,6 +461,65 @@ class ViewerView {
     const t = this.target;
     return { width: Math.round(this.canvas.width / this.density), height: Math.round(this.canvas.height / this.density),
              cx: t?.cx ?? 0, cy: t?.cy ?? 0, "pixel-size": (t?.px ?? 0) * this.density };
+  }
+
+  /** Ask the engine to select a tool (null: navigate). */
+  selectTool(name: string | null) {
+    send({ type: "selectTool", viewer: this.info.id, name: name ?? "" });
+  }
+
+  /** The engine selected a tool. */
+  toolSelected(name: string | null, panel: Layout, handles: Handled[]) {
+    this.toolName = name;
+    this.handles = new Set(handles);
+    this.element.classList.toggle("tool", name !== null);
+    this.events = [];
+    for (const key of [...fieldInputs.keys()]) if (key.startsWith(`tool:${this.info.id}:`)) fieldInputs.delete(key);
+    const id = this.info.id;
+    this.toolPanel = panel === null ? null : el("div", {}, layoutElement(panel, {
+      set: (fieldName, text) => send({ type: "setTool", viewer: id, name: fieldName, text }),
+      button: (label) => send({ type: "button", viewer: id, label }),
+    }));
+    if (activeViewer === this) { showPalette(); showToolPanel(); }
+  }
+
+  get drawing() { return this.layers; }
+
+  showDrawing(layers: Shape[][]) {
+    this.layers = layers;
+    this.redraw();
+  }
+
+  /** The engine handled the last pointer event. */
+  eventDone() {
+    this.eventSent = 0;
+    this.sendEvent();
+  }
+
+  /** A screen-plane point: a model point, on the plane; on the sphere, in
+      its radii from the globe's center. */
+  private toPlane(p: { x: number; y: number }): [number, number] {
+    const t = this.target!;
+    return [t.cx + (p.x - this.canvas.width / 2) * t.px, t.cy - (p.y - this.canvas.height / 2) * t.py];
+  }
+
+  private toolEvent(kind: EventKind, a: { x: number; y: number }, b = a) {
+    if (!this.target) return;
+    const [x1, y1] = this.toPlane(a), [x2, y2] = this.toPlane(b);
+    const last = this.events[this.events.length - 1];
+    const event = { type: "event" as const, viewer: this.info.id, kind, x1, y1, x2, y2 };
+    if (kind === 2 && last?.kind === 2) this.events[this.events.length - 1] = event;
+    else this.events.push(event);
+    this.sendEvent();
+  }
+
+  private sendEvent() {
+    // (if an answer never came, go on after a while)
+    if (this.eventSent && performance.now() - this.eventSent < 5000) return;
+    const next = this.events.shift();
+    if (!next) return;
+    this.eventSent = performance.now();
+    send(next);
   }
 
   showError(message: string) {
@@ -409,6 +577,10 @@ class ViewerView {
       ctx.fillStyle = "#808080";
       ctx.fillRect(0, 0, W, H);
       ctx.drawImage(f.image, left, top, (fw * f.view.px) / t.px, (fh * f.view.py) / t.py);
+      if (this.layers.length) {
+        drawLayers(ctx, this.layers, ([x, y]) => [(x - t.cx) / t.px + W / 2, (t.cy - y) / t.py + H / 2],
+                   [t.px, t.py], this.density);
+      }
     });
   }
 
@@ -440,14 +612,28 @@ class ViewerView {
              y: (e.clientY - r.top) * this.canvas.height / r.height };
   }
 
+  /** Whether the tool handles dragging (else dragging navigates). */
+  private get toolDrags() { return this.handles.has("drag") || this.handles.has("dragDone"); }
+
   private startDrag(e: PointerEvent) {
-    if (!this.target) return;
+    if (!this.target || e.button !== 0) return;
     this.canvas.setPointerCapture(e.pointerId);
-    this.dragFrom = this.pixel(e);
-    if (this.info.sphere) {
+    this.press = { start: this.pixel(e), dragging: false };
+    this.dragFrom = this.press.start;
+    if (this.info.sphere && !this.toolDrags) {
       const s = this.onScreen(this.dragFrom);
       this.turn = { from: s, to: s };
     }
+  }
+
+  private endDrag(e: PointerEvent) {
+    const press = this.press;
+    this.press = null;
+    this.dragFrom = null;
+    if (!press || !this.target) return;
+    const p = this.pixel(e);
+    if (!press.dragging) { if (this.handles.has("click")) this.toolEvent(0, p); }
+    else if (this.handles.has("dragDone")) this.toolEvent(3, press.start, p);
   }
 
   /** A point of the canvas on the screen plane: in the sphere's radii from
@@ -459,8 +645,18 @@ class ViewerView {
 
   private moveDrag(e: PointerEvent) {
     const t = this.target;
-    if (!this.dragFrom || !t) return;
+    if (!this.dragFrom || !t || !this.press) return;
     const p = this.pixel(e);
+    // (it's a drag once it's moved a few pixels: until then, a click)
+    if (!this.press.dragging) {
+      const { x, y } = this.press.start;
+      if (Math.hypot(p.x - x, p.y - y) < 3 * this.density) return;
+      this.press.dragging = true;
+    }
+    if (this.toolDrags) {
+      if (this.handles.has("drag")) this.toolEvent(2, this.press.start, p);
+      return;
+    }
     if (this.info.sphere && this.turn) {
       // (the globe turns: the old frame can't show that, so it stays until
       // the new one comes)
@@ -527,11 +723,18 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
                                               (e) => status(`Couldn't save: ${e}`, true));
       break;
     }
-    case "field": fieldResult(m.name, m.error, m.color); break;
+    case "field": fieldResult(m.key, m.error, m.color); break;
+    case "fieldText": fieldText(m.key, m.text, m.color); break;
+    case "tool": viewers.get(m.viewer)?.toolSelected(m.name, m.panel, m.handles); break;
+    case "toolError": status(m.message, true); console.error(m.message); break;
+    case "drawing": viewers.get(m.viewer)?.showDrawing(m.layers); break;
+    case "eventDone": viewers.get(m.viewer)?.eventDone(); break;
     case "viewerError": viewers.get(m.viewer)?.showError(m.message); break;
     case "error": status(m.message, true); console.error(m.message); break;
     case "frame": viewers.get(m.viewer)?.show(m); break;
   }
 });
 engine.addEventListener("error", (e) => status(`The engine failed: ${e.message}`, true));
+// (drawings' text is in the core's font: redraw once it's loaded)
+document.fonts.load(`13px "DejaVu Sans"`).then(() => viewers.forEach((v) => v.showDrawing(v.drawing)));
 status("Starting the engine…");

@@ -31,4 +31,6 @@ cp -R web/node_modules/@bjorn3/browser_wasi_shim/dist/. "$dist/vendor/browser_wa
 sed -i.bak 's#from "@bjorn3/browser_wasi_shim"#from "./vendor/browser_wasi_shim/index.js"#' "$dist/engine.js"
 rm -f "$dist/engine.js.bak"
 cp web/index.html web/style.css "$dist/"
+# (the font drawings' text is in: the core's, as fsrun's captures use)
+cp fractalstream-core/fonts/DejaVuSans.ttf "$dist/"
 echo "Built $dist"

@@ -86,6 +86,10 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "view": await engine.fs_view(r.viewer, r.cx, r.cy, r.pixelSize, r.width, r.height); break;
       case "resize": await engine.fs_resize(r.viewer, r.width, r.height); break;
       case "smoothing": await engine.fs_smoothing(r.on); break;
+      case "selectTool": await engine.fs_select_tool(r.viewer, r.name); break;
+      case "event": await engine.fs_event(r.viewer, r.kind, r.x1, r.y1, r.x2, r.y2); break;
+      case "button": await engine.fs_button(r.viewer, r.label); break;
+      case "setTool": await engine.fs_set_tool(r.viewer, r.name, r.text); break;
     }
   } catch (err) {
     send({ type: "error", message: String(err) });

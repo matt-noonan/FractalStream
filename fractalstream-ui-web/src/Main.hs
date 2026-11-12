@@ -26,6 +26,24 @@ tables (@tables:@) it was saved with, and is saved with its own.
 * @fs_resize(viewer, width, height)@: resize a viewer.
 * @fs_smoothing(on)@: whether viewers are smoothed (each pixel the average
   of four samples, as fsrun's captures are), for every viewer from now on.
+* @fs_select_tool(viewer, name)@: select a viewer's tool (@""@: none, to
+  navigate), as the desktop app does: the old one's deactivated (and its
+  timers stopped), the new one activated (and refreshed, if it asks to be)
+  and its timers started; its panel (if it has one) is posted.
+* @fs_event(viewer, kind, x1, y1, x2, y2)@: a pointer event for the
+  viewer's tool, at points of the screen plane (a model point, on the
+  plane; on the sphere, in units of its radius): kind 0 a click (at x1,
+  y1), 1 a double click, 2 a drag (from x1, y1 to x2, y2) so far, 3 a drag
+  finished. A tool's drag handler is given the pointer's position, then
+  where it started, as on the desktop.
+* @fs_button(viewer, label)@: a button of the viewer's tool's panel.
+* @fs_set_tool(viewer, name, text)@: set a field of the viewer's tool's
+  panel; the tool is refreshed.
+
+After a tool's handler runs (and after each frame, with the viewer's
+overlay refreshed for its view), the viewer's drawings are posted, when
+they've changed (or always, on the sphere, where they move with it): see
+"Drawing".
 
 and the engine posts JSON messages (@globalThis.fractalstreamPost@),
 frames (@globalThis.fractalstreamPostFrame@: RGB pixels, with the view they
@@ -35,8 +53,16 @@ contents), which the worker forwards to the page.
 Messages:
 
 > { "type": "library", "sections": [ { "name", "entries": [ { "title", "description", "preview" } ] } ] }
-> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere" } ], "views": <the file's web-properties> or null }
-> { "type": "field", "name", "error": <message> or null, "color": <#rrggbb, for a color field> }
+> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "field", "key", "error": <message> or null, "color": <#rrggbb, for a color field> }
+> { "type": "fieldText", "key", "text", "color": <as above> }   (a tool's handler changed it)
+
+where a field's key is its name, in the project's panel, and
+@tool:<viewer>:<name>@ in a tool's.
+> { "type": "tool", "viewer", "name": <the selected tool> or null, "panel": <its layout> or null, "handles": [ "click" | "doubleClick" | "drag" | "dragDone" ] }
+> { "type": "eventDone", "viewer" }   (an fs_event has been handled)
+> { "type": "toolError", "viewer", "message" }   (a tool's handler failed: the viewer navigates again)
+> { "type": "drawing", "viewer", "layers": [ [ <shape> ] ] }   (see "Drawing")
 > { "type": "viewerError", "viewer", "message" }   (a render failed; the next frame clears it)
 > { "type": "error", "message" }
 
@@ -49,7 +75,8 @@ where a layout is @{ "kind": "vertical" | "horizontal", "children" }@,
 "label", "body" } ] }@, @{ "kind": "plain", "text" }@, or a field: @{
 "kind": "text" | "check" | "select" | "color", "label", "name", "text",
 "options" }@ (options for a selection; and for a color, @"color"@: its value, as
-@#rrggbb@).
+@#rrggbb@), or a button, @{ "kind": "button", "label" }@ (in a tool's
+panel, pressing it is @fs_button@).
 -}
 module Main (main) where
 
@@ -63,16 +90,21 @@ import qualified Data.Aeson.KeyMap as KM
 import Actor.Metadata (ProjectMetadata(..))
 import Actor.Layout
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges)
-import Actor.Event (ViewKind(..))
-import Actor.Viewer.Sphere (trackballRotation)
+import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderViewerBuffer, onParameterChanges, refreshOverlay, viewProjection)
+import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, runHandlerNow, EventArgument_)
+import Actor.Viewer.Sphere (trackballRotation, screenToPlane)
+import Actor.Tool (Tool(..), ToolInfo(..))
+import Actor.Configuration (Configuration(..))
+import Actor.Ensemble (buildToolContext)
+import Language.Environment (SomeContext(..), Context(..))
+import Drawing (drawingJSON)
 import Data.Color (colorToRGB)
 import Text.Printf (printf)
 import Backend (withBackend, Backend)
 import Data.DynamicValue
 import FractalStream.Library (LibrarySection(..), LibraryEntry(..), librarySections)
 
-import Control.Concurrent (forkIO, killThread)
+import Control.Concurrent (forkIO, killThread, threadDelay, ThreadId)
 import Control.Concurrent.MVar
 import Control.Exception (SomeException, SomeAsyncException, try, displayException, fromException, throwIO)
 import Data.Aeson ((.=))
@@ -130,16 +162,45 @@ guarded act = try act >>= \case
 ------------------------------------------------------------------------
 -- State
 
--- | The open project: its viewers (by id), each with its render loop's
--- request signal; the threads to stop when it's closed.
+-- | The open project: its viewers (by id); what tools are given (the
+-- ensemble's configuration); the threads to stop when it's closed.
 data Session = Session
-  { sViewers :: Map.Map Int (Viewer, MVar ())
+  { sViewers :: Map.Map Int ViewerState
+  , sContext :: SomeContext EventArgument_
   , sEnsemble :: Ensemble
   , sFileName :: String
   , sColors :: Map.Map String (IO (Maybe String))
     -- ^ each color field's value, as #rrggbb
   , sStop :: IO ()
   }
+
+-- | A viewer: its render loop's request signal, and its tool (if one's
+-- selected).
+data ViewerState = ViewerState
+  { vsId :: Int
+  , vsViewer :: Viewer
+  , vsSignal :: MVar ()
+  , vsTool :: IORef (Maybe ActiveTool)
+  , vsLock :: MVar ()
+    -- ^ held while its tool's handler runs: one at a time, as on the
+    -- desktop (where they all run on the GUI thread)
+  }
+
+data ActiveTool = ActiveTool
+  { atName :: String
+  , atDispatch :: ToolDispatcher
+  , atTimers :: [ThreadId]
+  , atFields :: [Field]
+  , atColors :: Map.Map String (IO (Maybe String))
+  }
+
+-- | Each field's text, by key, as the page was last told it.
+textsRef :: IORef (Map.Map String String)
+textsRef = unsafePerformIO (newIORef Map.empty)
+{-# NOINLINE textsRef #-}
+
+toolKey :: ViewerState -> String -> String
+toolKey vs n = "tool:" ++ show (vsId vs) ++ ":" ++ n
 
 sessionRef :: IORef (Maybe Session)
 sessionRef = unsafePerformIO (newIORef Nothing)
@@ -176,6 +237,10 @@ foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
 foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> IO ()
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
 foreign export javascript "fs_smoothing" setSmoothing :: Bool -> IO ()
+foreign export javascript "fs_select_tool" selectTool :: Int -> JSString -> IO ()
+foreign export javascript "fs_event" toolEvent :: Int -> Int -> Double -> Double -> Double -> Double -> IO ()
+foreign export javascript "fs_button" toolButton :: Int -> JSString -> IO ()
+foreign export javascript "fs_set_tool" setToolField :: Int -> JSString -> JSString -> IO ()
 
 main :: IO ()
 main = pure ()
@@ -249,10 +314,14 @@ openProject fromLibrary projectTitle fileName contents = do
   -- Run the project, collecting its panel and viewers.
   panelRef <- newIORef Nothing
   viewersRef <- newIORef []
+  contextRef <- newIORef (SomeContext EmptyContext)
   let ui = UI
         { newEnsemble = pure ()
         , makeLayout = \_ title lo -> writeIORef panelRef (Just (title, lo)) >> pure (pure ())
-        , makeViewer = \_ _ _ _ _ viewer -> modifyIORef' viewersRef (viewer :) >> pure (pure ())
+        , makeViewer = \_ _ _ ctx _ viewer -> do
+            modifyIORef' viewersRef (viewer :)
+            writeIORef contextRef ctx
+            pure (pure ())
         }
   runEnsemble backend ui ensemble
   viewers <- zip [0 ..] . reverse <$> readIORef viewersRef
@@ -261,23 +330,35 @@ openProject fromLibrary projectTitle fileName contents = do
   -- however many asks came while it was busy), and posts the frame.
   loops <- forM viewers $ \(k, viewer) -> do
     signal <- newMVar ()   -- (the first frame)
-    tid <- forkIO (renderLoop k viewer signal)
+    tool <- newIORef Nothing
+    lock <- newMVar ()
+    let vs = ViewerState k viewer signal tool lock
+    tid <- forkIO (renderLoop vs)
     unwatch <- onParameterChanges viewer (requestRender signal)
-    pure ((k, (viewer, signal)), (tid, unwatch))
+    pure ((k, vs), (tid, unwatch >> stopTimers vs))
   let stop = forM_ (map snd loops) $ \(tid, unwatch) -> killThread tid >> unwatch
+  context <- readIORef contextRef
 
   fields <- projectFieldTexts ensemble
+  writeIORef textsRef fields
   colorsRef <- newIORef Map.empty
   panel <- readIORef panelRef >>= traverse (\(title, lo) -> do
-    body <- layoutJSON colorsRef fields lo
+    body <- layoutJSON id colorsRef fields lo
     pure (Aeson.object [ "kind" .= ("panel" :: Text.Text), "title" .= title, "body" .= body ]))
   colors <- readIORef colorsRef
-  writeIORef sessionRef (Just (Session (Map.fromList (map fst loops)) ensemble fileName colors stop))
+  writeIORef sessionRef (Just (Session (Map.fromList (map fst loops)) context ensemble fileName colors stop))
   viewerInfo <- forM viewers $ \(k, viewer) -> do
     title <- getDynamic (vTitle viewer)
     Dimensions (w, h) <- getDynamic (vSize viewer)
     sphere <- (== SphereView) <$> getDynamic (vView viewer)
-    pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere ])
+    tools <- getDynamic (vTools viewer) >>= mapM (\t -> do
+      let ToolInfo{..} = toolInfo t
+      name <- getDynamic (source tiName)
+      shortcut <- getDynamic tiShortcut
+      help <- getDynamic tiShortHelp
+      pure (Aeson.object [ "name" .= name, "shortcut" .= shortcut, "help" .= help ]))
+    pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere
+                       , "tools" .= tools ])
   views <- KM.lookup "web-properties" <$> getDynamic (ensembleFrontendProperties ensemble)
   post $ Aeson.object
     [ "type" .= ("project" :: Text.Text)
@@ -288,6 +369,9 @@ openProject fromLibrary projectTitle fileName contents = do
     , "viewers" .= viewerInfo
     , "views" .= views
     ]
+  -- (as the desktop app does: a viewer with a "Select" tool starts with it)
+  forM_ (map (snd . fst) loops) $ \vs -> forM_ (vSelectTool (vsViewer vs)) $ \t ->
+    getDynamic (source (tiName (toolInfo t))) >>= activateTool vs
 
 -- | Stop the open project's render loops (if any).
 close :: IO ()
@@ -296,8 +380,8 @@ close = readIORef sessionRef >>= mapM_ (\s -> sStop s >> writeIORef sessionRef N
 requestRender :: MVar () -> IO ()
 requestRender signal = void (tryPutMVar signal ())
 
-renderLoop :: Int -> Viewer -> MVar () -> IO ()
-renderLoop k viewer signal = forever $ do
+renderLoop :: ViewerState -> IO ()
+renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = forever $ do
   takeMVar signal
   smooth <- readIORef smoothingRef
   try (renderViewerBuffer smooth viewer) >>= \case
@@ -308,10 +392,13 @@ renderLoop k viewer signal = forever $ do
       | otherwise -> postError (displayException e)
     Right (Left err) -> post $ Aeson.object
       [ "type" .= ("viewerError" :: Text.Text), "viewer" .= k, "message" .= err ]
-    Right (Right RenderedBuffer{..}) ->
+    Right (Right RenderedBuffer{..}) -> do
       withForeignPtr rbPixels $ \p ->
         postFrame k p (3 * rbWidth * rbHeight) rbWidth rbHeight
                   (fst rbCenter) (snd rbCenter) (fst rbPixelSize) (snd rbPixelSize)
+      -- (the overlay, for this view; and the drawings, if they've changed)
+      refreshOverlay viewer
+      postDrawings vs
 
 setField :: JSString -> JSString -> IO ()
 setField name text = guarded $ readIORef sessionRef >>= \case
@@ -325,12 +412,15 @@ setField name text = guarded $ readIORef sessionRef >>= \case
     color <- maybe (pure Nothing) id (Map.lookup n sColors)
     post $ Aeson.object $
       [ "type" .= ("field" :: Text.Text)
-      , "name" .= n
+      , "key" .= n
       , "error" .= either Just (const Nothing) result
       ] ++ [ "color" .= c | Just c <- [color] ]
 
 withViewer :: Int -> ((Viewer, MVar ()) -> IO ()) -> IO ()
-withViewer k act = guarded $ readIORef sessionRef >>= \case
+withViewer k act = withViewerState k (\vs -> act (vsViewer vs, vsSignal vs))
+
+withViewerState :: Int -> (ViewerState -> IO ()) -> IO ()
+withViewerState k act = guarded $ readIORef sessionRef >>= \case
   Nothing -> pure ()
   Just Session{..} -> mapM_ act (Map.lookup k sViewers)
 
@@ -345,7 +435,7 @@ setSmoothing :: Bool -> IO ()
 setSmoothing on = guarded $ do
   before <- atomicModifyIORef' smoothingRef (on,)
   when (before /= on) $ readIORef sessionRef >>=
-    mapM_ (\Session{..} -> mapM_ (requestRender . snd) (Map.elems sViewers))
+    mapM_ (\Session{..} -> mapM_ (requestRender . vsSignal) (Map.elems sViewers))
 
 rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 rotate k fx fy tx ty = withViewer k $ \(viewer, signal) -> do
@@ -359,6 +449,192 @@ resize k w h = withViewer k $ \(viewer, signal) -> do
   requestRender signal
 
 ------------------------------------------------------------------------
+-- Tools
+
+selectTool :: Int -> JSString -> IO ()
+selectTool k name = withViewerState k $ \vs -> case fromJSString name of
+  "" -> deactivateTool vs >> postTool vs Nothing Aeson.Null
+  n -> activateTool vs n
+
+-- | Select a viewer's tool by name, as the desktop app does.
+activateTool :: ViewerState -> String -> IO ()
+activateTool vs@ViewerState{..} name = do
+  deactivateTool vs
+  readIORef sessionRef >>= mapM_ (\Session{ sContext = ctx } -> do
+    tools <- getDynamic (vTools vsViewer)
+    named <- mapM (\t -> (, t) <$> getDynamic (source (tiName (toolInfo t)))) tools
+    case lookup name named of
+      Nothing -> postError ("no tool named " ++ name)
+      Just tool -> do
+        mcfg <- getDynamic (toolConfig tool)
+        built <- buildToolContext ctx mcfg >>= \case
+          Left err -> pure (Left err)
+          Right tctx -> do
+            layer <- getDynamic (toolDrawLayer tool)
+            script <- getDynamic (dyn (toolScript tool))
+            try (vBuildToolHandler vsViewer layer tctx script) <&> \case
+              Left (e :: SomeException) -> Left (displayException e)
+              Right r -> r
+        case built of
+          Left err -> toolFailed vs ("couldn't select " ++ name ++ ": " ++ err)
+          Right dispatch -> do
+            -- its panel
+            (panel, fields, colors) <- case mcfg of
+              Nothing -> pure (Aeson.Null, [], Map.empty)
+              Just Configuration{..} -> do
+                fs <- layoutFields coContents
+                texts <- Map.fromList <$> mapM (\f -> (fieldName f,) <$> fieldText f) fs
+                modifyIORef' textsRef (Map.union (Map.mapKeys (toolKey vs) texts))
+                colorsRef <- newIORef Map.empty
+                body <- layoutJSON (toolKey vs) colorsRef texts coContents
+                title <- getDynamic coTitle <&> fromRight name
+                cs <- readIORef colorsRef
+                -- (titled, unless its layout already is)
+                let titled = case coContents of
+                      Panel{} -> body
+                      _ -> Aeson.object [ "kind" .= ("panel" :: Text.Text), "title" .= title, "body" .= body ]
+                pure (titled, fs, cs)
+            writeIORef vsTool (Just (ActiveTool name dispatch [] fields colors))
+            postTool vs (Just name) panel
+            activated <- fire vs Activated
+            refreshFirst <- getDynamic (toolRefreshOnActivate tool)
+            ok <- if activated && refreshFirst then fire vs Refresh else pure activated
+            -- (its timers, unless it's already failed)
+            when ok $ do
+              timers <- getDynamic (toolTimers tool)
+              tids <- forM timers $ \(timer, ms) -> forkIO $ forever $ do
+                threadDelay (1000 * max 10 ms)
+                void (fire vs (Timer timer))
+                postDrawings vs
+              modifyIORef' vsTool (fmap (\t -> t { atTimers = tids }))
+            postDrawings vs)
+
+-- | Deselect a viewer's tool (if one's selected), stopping its timers.
+deactivateTool :: ViewerState -> IO ()
+deactivateTool vs = readIORef (vsTool vs) >>= \case
+  Nothing -> pure ()
+  Just _ -> do
+    stopTimers vs
+    void (fire vs Deactivated)
+    writeIORef (vsTool vs) Nothing
+    postDrawings vs
+
+stopTimers :: ViewerState -> IO ()
+stopTimers vs = readIORef (vsTool vs) >>= mapM_ (mapM_ killThread . atTimers)
+
+postTool :: ViewerState -> Maybe String -> Aeson.Value -> IO ()
+postTool vs name panel = do
+  -- (which pointer events it handles: the rest navigate, as on the desktop)
+  handles <- readIORef (vsTool vs) <&> \case
+    Nothing -> []
+    Just ActiveTool{..} ->
+      [ k | (k :: Text.Text, ev) <- [ ("click", Click (0, 0)), ("doubleClick", DoubleClick (0, 0))
+                                    , ("drag", Drag (0, 0) (0, 0)), ("dragDone", DragDone (0, 0) (0, 0)) ]
+          , isJust (atDispatch (1, 1) ev) ]
+  post $ Aeson.object
+    [ "type" .= ("tool" :: Text.Text), "viewer" .= vsId vs, "name" .= name, "panel" .= panel
+    , "handles" .= handles ]
+
+-- | A tool's handler failed: the viewer navigates again (without running
+-- the tool's Deactivated handler, which may well fail too).
+toolFailed :: ViewerState -> String -> IO ()
+toolFailed vs message = do
+  stopTimers vs
+  writeIORef (vsTool vs) Nothing
+  post $ Aeson.object [ "type" .= ("toolError" :: Text.Text), "viewer" .= vsId vs, "message" .= message ]
+  postTool vs Nothing Aeson.Null
+
+-- | Run the viewer's tool's handler for an event, if it has one; False if
+-- it failed.
+fire :: ViewerState -> Event -> IO Bool
+fire vs@ViewerState{..} ev = readIORef vsTool >>= \case
+  Nothing -> pure True
+  Just ActiveTool{..} -> do
+    px <- getDynamic (vPixelSize vsViewer)
+    aspect <- getDynamic (vAspect vsViewer)
+    case atDispatch (px, px * aspect) ev of
+      Nothing -> pure True
+      Just run -> try (withMVar vsLock (const (runHandlerNow run))) >>= \case
+        Left (e :: SomeException)
+          | Just (_ :: SomeAsyncException) <- fromException e -> throwIO e
+          | otherwise -> False <$ toolFailed vs (atName ++ ": " ++ displayException e)
+        Right () -> True <$ postFieldChanges
+
+-- | Tell the page of each field whose text has changed since it was last
+-- told (by a tool's handler, setting it), in the project's panel or a
+-- tool's.
+postFieldChanges :: IO ()
+postFieldChanges = readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  fields <- ensembleFields sEnsemble
+  project <- forM [ f | (ProjectConfig, f) <- fields ] $ \f ->
+    (fieldName f, fieldName f, Map.lookup (fieldName f) sColors,) <$> fieldText f
+  tools <- fmap concat . forM (Map.elems sViewers) $ \vs -> readIORef (vsTool vs) >>= \case
+    Nothing -> pure []
+    Just ActiveTool{..} -> forM atFields $ \f ->
+      (toolKey vs (fieldName f), fieldName f, Map.lookup (fieldName f) atColors,) <$> fieldText f
+  old <- readIORef textsRef
+  forM_ (project ++ tools) $ \(key, _, color, text) -> when (Map.lookup key old /= Just text) $ do
+    c <- maybe (pure Nothing) id color
+    post $ Aeson.object $ [ "type" .= ("fieldText" :: Text.Text), "key" .= key, "text" .= text ]
+                          ++ [ "color" .= x | Just x <- [c] ]
+  writeIORef textsRef (Map.union (Map.fromList [ (key, text) | (key, _, _, text) <- project ++ tools ]) old))
+
+-- | A point of the screen plane, as a point of the model (on the sphere,
+-- if it's on the globe).
+toModel :: Viewer -> (Double, Double) -> IO (Maybe (Double, Double))
+toModel viewer p = getDynamic (vView viewer) >>= \case
+  PlaneView -> pure (Just p)
+  SphereView -> getDynamic (vRotation viewer) <&> \r -> screenToPlane r p
+
+toolEvent :: Int -> Int -> Double -> Double -> Double -> Double -> IO ()
+toolEvent k kind x1 y1 x2 y2 = withViewerState k $ \vs -> do
+  a <- toModel (vsViewer vs) (x1, y1)
+  b <- toModel (vsViewer vs) (x2, y2)
+  let event = case (kind, a, b) of
+        (0, Just p, _) -> Just (Click p)
+        (1, Just p, _) -> Just (DoubleClick p)
+        -- (a drag handler is given where the pointer is, then where it
+        -- started, as the desktop app gives it)
+        (2, Just p, Just q) -> Just (Drag q p)
+        (3, Just p, Just q) -> Just (DragDone q p)
+        _ -> Nothing
+  forM_ event $ \ev -> fire vs ev >> postDrawings vs
+  -- (done with it: the page sends drags no faster than they're handled)
+  post $ Aeson.object [ "type" .= ("eventDone" :: Text.Text), "viewer" .= k ]
+
+toolButton :: Int -> JSString -> IO ()
+toolButton k label = withViewerState k $ \vs -> do
+  void (fire vs (ButtonPressed (fromJSString label)))
+  postDrawings vs
+
+setToolField :: Int -> JSString -> JSString -> IO ()
+setToolField k name text = withViewerState k $ \vs -> readIORef (vsTool vs) >>= mapM_ (\ActiveTool{..} -> do
+  let n = fromJSString name
+  result <- case [ f | f <- atFields, fieldName f == n ] of
+    f : _ -> setFieldText f (fromJSString text)
+    [] -> pure (Left ("no field named " ++ n))
+  color <- maybe (pure Nothing) id (Map.lookup n atColors)
+  post $ Aeson.object $
+    [ "type" .= ("field" :: Text.Text), "key" .= toolKey vs n
+    , "error" .= either Just (const Nothing) result ]
+    ++ [ "color" .= c | Just c <- [color] ]
+  -- (as the desktop app does, a tool hears that its values changed)
+  when (isRight result) $ void (fire vs Refresh)
+  postDrawings vs)
+
+-- | Post the viewer's drawings, if they've changed (or always, on the
+-- sphere, where they turn with the globe).
+postDrawings :: ViewerState -> IO ()
+postDrawings ViewerState{..} = do
+  changed <- vDrawCmdsChanged vsViewer
+  sphere <- (== SphereView) <$> getDynamic (vView vsViewer)
+  when (changed || sphere) $ do
+    layers <- vDrawCmds vsViewer
+    proj <- viewProjection (vView vsViewer) (vRotation vsViewer)
+    post $ Aeson.object
+      [ "type" .= ("drawing" :: Text.Text), "viewer" .= vsId, "layers" .= drawingJSON proj layers ]
+
+------------------------------------------------------------------------
 -- The panel
 
 -- | Each project field's text, by name.
@@ -369,8 +645,8 @@ projectFieldTexts ens = do
 
 -- | A layout, as JSON, with each field's text; and noting, in @colors@, how
 -- to get each color field's value (as #rrggbb).
-layoutJSON :: IORef (Map.Map String (IO (Maybe String))) -> Map.Map String String -> Layout -> IO Aeson.Value
-layoutJSON colors texts = go
+layoutJSON :: (String -> String) -> IORef (Map.Map String (IO (Maybe String))) -> Map.Map String String -> Layout -> IO Aeson.Value
+layoutJSON keyOf colors texts = go
   where
     kind :: Text.Text -> (Aeson.Key, Aeson.Value)
     kind k = "kind" .= k
@@ -380,7 +656,7 @@ layoutJSON colors texts = go
       getDynamic name >>= \case
         Left _ -> pure Aeson.Null
         Right n -> pure $ Aeson.object $
-          [ kind k, "label" .= lbl, "name" .= n, "text" .= Map.findWithDefault "" n texts ] ++ extra
+          [ kind k, "label" .= lbl, "name" .= n, "key" .= keyOf n, "text" .= Map.findWithDefault "" n texts ] ++ extra
     go = \case
       Vertical xs -> children "vertical" xs
       Horizontal xs -> children "horizontal" xs
@@ -395,7 +671,7 @@ layoutJSON colors texts = go
           pure (Aeson.object [ "label" .= l, "body" .= body ])
         pure (Aeson.object [ kind "tabs", "tabs" .= tabs ])
       PlainText t -> getDynamic t <&> \s -> Aeson.object [ kind "plain", "text" .= s ]
-      Button{} -> pure Aeson.Null
+      Button t -> getDynamic t <&> \l -> Aeson.object [ kind "button", "label" .= l ]
       ActionButton{} -> pure Aeson.Null
       HiddenTable{} -> pure Aeson.Null
       CheckBox l name _ -> field "check" l name []

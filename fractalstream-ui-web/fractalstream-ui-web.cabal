@@ -65,10 +65,11 @@ executable fractalstream-web
   if !arch(wasm32)
     buildable:         False
   main-is:             Main.hs
+  other-modules:       Drawing
   hs-source-dirs:      src
   -- (a reactor module: the page's worker calls its exports; see web/src/engine.ts)
   ghc-options:         -no-hs-main -optl-mexec-model=reactor
-                       "-optl-Wl,--export=fs_library,--export=fs_open,--export=fs_open_file,--export=fs_save,--export=fs_set,--export=fs_view,--export=fs_resize,--export=fs_smoothing,--export=fs_rotate"
+                       "-optl-Wl,--export=fs_library,--export=fs_open,--export=fs_open_file,--export=fs_save,--export=fs_set,--export=fs_view,--export=fs_resize,--export=fs_smoothing,--export=fs_rotate,--export=fs_select_tool,--export=fs_event,--export=fs_button,--export=fs_set_tool"
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
                      , fractalstream-library

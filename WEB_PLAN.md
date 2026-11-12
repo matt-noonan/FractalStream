@@ -24,6 +24,7 @@ questions into **Decisions**.
 | D12 | The precision toggle is an **app-level preference** | Stored per browser with the other preferences (IndexedDB), not in project files. |
 | D14 | Kernels' math functions come from **musl's libm, compiled to wasm** (built each time) | Not JavaScript's `Math`: calling it from wasm on several worker threads crashed V8; and this way every host computes alike. |
 | D13 | **Backend.Wasm before the web app;** test wasm under Node from 0g on | The interpreter is about 2,500× slower than LLVM (0b), too slow even as a stopgap. |
+| D15 | Tools' drawings are drawn **by the page, with Canvas2D**, from shapes the engine sends; fsrun keeps Rasterific | Rasterific in wasm took 1.5 s for a 2,000-segment orbit; Canvas2D takes well under a millisecond, and drawings move with the view at once. Far-reaching shapes are clipped as `Actor.Viewer.Clip` does. |
 
 ## Architecture
 
@@ -244,10 +245,17 @@ wasmtime.
 
 ### Phase 4: Tools and overlays
 
-- [ ] Tool events (click, drag, motion, buttons, timers) through the
-  interpreter; Backend.Wasm for tools later.
-- [ ] Overlay layer: Canvas2D painting of `DrawCommand`s, matching
-  `Actor.Viewer.Overlay`.
+- [x] Tool events through the interpreter, as the desktop app sends them:
+  click, double click, drag and drag finished (events a tool doesn't
+  handle navigate), buttons, timers, Activated/Deactivated/Refresh; the
+  default Select tool; a tool's own panel; fields a handler sets update
+  in the panels.
+- [x] A tool palette in the toolbar, for the active viewer (the last one
+  clicked), with each tool's shortcut key, and n for Navigate.
+- [x] Drawings and overlays: Canvas2D painting of `DrawCommand`s (D15),
+  matching `Actor.Viewer.Overlay`, on the plane and the sphere.
+- [ ] Progress and Stop for slow handlers (deferred).
+- [ ] Backend.Wasm for tools' handlers.
 - [ ] Preferences (IndexedDB), including the precision toggle (D12).
 
 ### Phase 5: Backend.WGSL (df64, then f32)
@@ -286,6 +294,35 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-11: Tools and drawings
+
+**Rasterific is too slow in wasm for live drawings.** Timing
+`Actor.Viewer.Overlay` on typical drawings at 600 by 600:
+
+| Drawing | Native | Wasm (Node) |
+|---|---|---|
+| Orbit, 2,000 segments | 290 ms | 1,490 ms |
+| 200 circles and points | 13 ms | 70 ms |
+| 20 rectangles with labels | 3 ms | 18 ms |
+
+Stroking a run of lines as one shape barely helped (295 to 261 ms
+natively): the cost is in outlining each segment. So the page draws them
+(D15): the same orbit takes 0.3 ms in Chromium at 1200 by 1200.
+
+**Far-away shapes.** The page places shapes in pixels in double precision,
+and cuts any that reach more than 10^4 pixels outside the view down to
+the part near it, porting `Actor.Viewer.Clip`. A line from 0 to 10^10 (or
+from -10^300 to 10^300), a circle of radius 10^10, and a rectangle out to
+10^12 each draw in under half a millisecond, and the line to 10^10 covers
+exactly the pixels a short line in the same direction does.
+
+**A drag's points are the wrong way round in fsrun.** A drag handler's
+first point is where the pointer is, and its second where the drag
+started (`parseDragScript`), and the desktop app sends them that way
+(`Drag now start`); the web app does too. But fsrun's `drag from A to B`
+sends `Drag A B`, so a script sees the drag going from B to A; and the
+comment on `Event`'s `Drag` says "from / to". Not fixed yet.
 
 ### 2026-11-11: A first web app
 

@@ -113,3 +113,23 @@ body.no-panel .panel { display: none; }
   background: rgba(0, 0, 0, .7); color: #ffb3a8; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap;
 }
 .field input[type=color] { width: 32px; height: 26px; padding: 0 2px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
+
+/* The tool palette: Navigate and the active viewer's tools, as one
+   segmented group; the selected one filled in. */
+@font-face { font-family: "DejaVu Sans"; src: url("DejaVuSans.ttf") format("truetype"); }
+.palette { display: inline-flex; flex-wrap: wrap; }
+#toolbar .palette button { border-radius: 0; margin-left: -1px; }
+#toolbar .palette button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+#toolbar .palette button:last-child { border-radius: 0 6px 6px 0; }
+#toolbar .palette button[aria-pressed=true] {
+  background: var(--accent); border-color: var(--accent); color: white; position: relative;
+}
+/* (with several viewers, the one the palette is for) */
+.window.active { border-color: var(--accent); }
+.window.active .window-title { color: var(--fg); }
+.viewer.tool canvas { cursor: crosshair; }
+.tool-panel:not(:empty) { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+.panel button {
+  font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
