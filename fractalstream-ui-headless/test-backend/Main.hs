@@ -7,10 +7,11 @@ module Main (main) where
 import Test.Hspec
 
 import FractalStream.Console (transliterateConsole)
+import qualified DragSpec
 import qualified GeometrySpec
 import qualified OverlaySpec
 import qualified TableSpec
 import qualified HoistSpec
 
 main :: IO ()
-main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec >> TableSpec.spec >> HoistSpec.spec)
+main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec >> DragSpec.spec >> TableSpec.spec >> HoistSpec.spec)

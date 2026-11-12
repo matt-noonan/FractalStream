@@ -134,6 +134,10 @@ every point its viewers find, renders the same either way.
 | `trigger refresh` | `Refresh` |
 | `trigger timer "<name>"` | `Timer` |
 
+`drag from A to B` reaches a tool as the live app's drags do: its `on
+drag from p to q:` (and `on drag-finished from p to q:`) handler gets
+`p` = A and `q` = B.
+
 `drag` synthesizes a single intermediate `Drag` position plus a final
 `DragDone`, rather than a full path of incremental positions -- a real
 drag in the live UI sends many `Drag` events as the mouse moves. That's

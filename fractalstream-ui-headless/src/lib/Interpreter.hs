@@ -224,8 +224,10 @@ execCommand st = \case
 
   DragFromTo p1 p2 -> withCurrentDispatcher st $ \viewer dispatcher ->
     withResolved ((,) <$> resolvePoint p1 <*> resolvePoint p2) $ \(xy1, xy2) -> do
-      fireOn viewer dispatcher (Drag xy1 xy2)
-      fireOn viewer dispatcher (DragDone xy1 xy2)
+      -- (where the pointer is, then where the drag started, as the live
+      -- app sends a drag)
+      fireOn viewer dispatcher (Drag xy2 xy1)
+      fireOn viewer dispatcher (DragDone xy2 xy1)
       pure (Right st)
 
   PressButton label -> withCurrentDispatcher st $ \viewer dispatcher -> do
