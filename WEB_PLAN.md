@@ -262,6 +262,16 @@ wasmtime.
   chooser for the configuration's tabs.
 - [x] Try it in Safari and Firefox: every project works, no console errors; panning and zooming smooth after reprojecting frames onto the page's own view.
 - [ ] Deployed as a static site (`site/`, or a separate app directory).
+- [ ] **Progressive rendering** (deferred). Today the page shows the last
+  frame, moved and scaled, until the whole new render arrives, so a slow
+  viewer (the forced pendulum takes about 8 s) shows nothing new until
+  it's done. The desktop renders coarse passes first, sharpening to full
+  resolution (`Task.Block.progressivelyOver`), keeping the moved old
+  picture where it has one. For the web, the engine would post partial
+  frames as passes finish, and the page would keep reprojecting the
+  newest. It must fit with reprojection (which pieces count as already
+  shown), smoothing (the subsampled pass comes last), and later the GPU
+  backend's frame-level API (R3).
 
 ### Phase 4: Tools and overlays
 
