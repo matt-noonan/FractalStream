@@ -1754,32 +1754,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     menuItem hamburgerMenu [ text := "Next view\t>", on command := goForward ]
     menuItem hamburgerMenu [ text := "Jump to view...\t@", on command := jumpToView ]
     menuItem hamburgerMenu [ text := "Original view\t^", on command := goHome ]
-    -- (a complex viewer's pixels are always square; it can be shown on
-    -- the plane or on the sphere instead)
-    case vCoordinate of
-      RealCoordinates{} -> void $
-        menuItem hamburgerMenu [ text := "Aspect ratio...", on command := setAspectRatio ]
-      ComplexCoordinate{} -> do
-        onSphere <- isJust . modelRotation <$> get model value
-        sphereItem <- menuItem hamburgerMenu [ text := "Show on the sphere", checkable := True
-                                             , checked := onSphere ]
-        set sphereItem [ on command := do
-          m <- get model value
-          -- keeping the point in the middle of the view there (see
-          -- 'Actor.Viewer.switchView'), each at its script's zoom
-          case modelRotation m of
-            Nothing -> changeViewTo (Model (0, 0) (vOriginalSpherePixelSize, vOriginalSpherePixelSize)
-                                           (Just (rotationFacing (modelCenter m))))
-            Just r -> do
-              let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
-                  finite a = not (isNaN a || isInfinite a) && abs a < 1e300
-                  px = snd vOriginalPlaneView
-              changeViewTo (Model (if finite cx && finite cy then c else (0, 0)) (px, px) Nothing)
-          isJust . modelRotation <$> get model value >>= \b -> set sphereItem [ checked := b ] ]
-        -- (whatever else changes the view: Last view and Next view, say)
-        modifyIORef' beforeMenu (>> (isJust . modelRotation <$> get model value
-                                       >>= \b -> set sphereItem [ checked := b ]))
-    menuItem hamburgerMenu [ text := "Show configuration\t=", on command := raiseConfigWindow ]
+    menuLine hamburgerMenu
 
     -- The colorizers this viewer can use, with the one it uses checked.
     -- Picking another rebuilds the project, replacing this window. One
@@ -1852,7 +1827,6 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 else old k
           ]
 --    menuItem hamburgerMenu [ text := "Clone viewer\t2", on command := clone ]
-    menuLine hamburgerMenu
     -- Capturing what the viewer shows: a picture, or a movie of it as
     -- the project's values change (see "UI.MovieMaker").
     captureMenu <- menuPane [ text := "Capture" ]
@@ -1863,29 +1837,33 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                              title <- getDynamic vTitle
                              makeMovieDialog f movieProject title ScriptSource ]
     void (menuSub hamburgerMenu captureMenu [ text := "Capture" ])
-    menuItem hamburgerMenu [ text := "Use this as preview"
-                           , on command := renderPreview False theViewer >>= \case
-                               Left err -> errorDialog f "Couldn't make a preview" err
-                               Right png -> pmSetPreview png ]
-    menuLine hamburgerMenu
-    menuLine hamburgerMenu
-    showToolPicker  <- menuItem hamburgerMenu [ text := "Show tool picker"
-                                              , checkable := True, checked := True ]
-    showPtrPosition <- menuItem hamburgerMenu [ text := "Show pointer position"
-                                              , checkable := True, checked := False ]
-    menuLine hamburgerMenu
-    menuItem hamburgerMenu [ text := "Save\tCtrl+S", enabled := True, on command := pmSave ]
-    menuItem hamburgerMenu [ text := "Save as...\tCtrl+Shift+S", enabled := True, on command := pmSaveAs ]
-    menuItem hamburgerMenu [ text := "Edit project script...\tCtrl+E"
-                           , enabled := True
-                           , on command := pmEditScript
-                           ]
-    menuItem hamburgerMenu [ text := "Project info...\tCtrl+I", on command := pmEditInfo (objectCast f) ]
-    menuItem hamburgerMenu [ text := "Close project\tCtrl+W", on command := pmClose ]
 
+    -- (a complex viewer's pixels are always square; it can be shown on
+    -- the plane or on the sphere instead)
+    case vCoordinate of
+      RealCoordinates{} -> void $
+        menuItem hamburgerMenu [ text := "Aspect ratio...", on command := setAspectRatio ]
+      ComplexCoordinate{} -> do
+        onSphere <- isJust . modelRotation <$> get model value
+        sphereItem <- menuItem hamburgerMenu [ text := "Show on the sphere", checkable := True
+                                             , checked := onSphere ]
+        set sphereItem [ on command := do
+          m <- get model value
+          -- keeping the point in the middle of the view there (see
+          -- 'Actor.Viewer.switchView'), each at its script's zoom
+          case modelRotation m of
+            Nothing -> changeViewTo (Model (0, 0) (vOriginalSpherePixelSize, vOriginalSpherePixelSize)
+                                           (Just (rotationFacing (modelCenter m))))
+            Just r -> do
+              let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
+                  finite a = not (isNaN a || isInfinite a) && abs a < 1e300
+                  px = snd vOriginalPlaneView
+              changeViewTo (Model (if finite cx && finite cy then c else (0, 0)) (px, px) Nothing)
+          isJust . modelRotation <$> get model value >>= \b -> set sphereItem [ checked := b ] ]
+        -- (whatever else changes the view: Last view and Next view, say)
+        modifyIORef' beforeMenu (>> (isJust . modelRotation <$> get model value
+                                       >>= \b -> set sphereItem [ checked := b ]))
 
-
-    menuLine hamburgerMenu
     smoothingSelection <- menuItem hamburgerMenu [ text := "Use subpixel smoothing"
                                                  , checkable := True
                                                  , checked := True
@@ -1896,6 +1874,30 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           set useSmoothing [ value := isChecked ]
           requestRefresh
       ]
+    menuLine hamburgerMenu
+    showToolPicker  <- menuItem hamburgerMenu [ text := "Show tool picker"
+                                              , checkable := True, checked := True ]
+    showPtrPosition <- menuItem hamburgerMenu [ text := "Show pointer position"
+                                              , checkable := True, checked := False ]
+    menuLine hamburgerMenu
+    projectMenu <- menuPane [ text := "Project" ]
+    menuItem projectMenu [ text := "Save\tCtrl+S", enabled := True, on command := pmSave ]
+    menuItem projectMenu [ text := "Save as...\tCtrl+Shift+S", enabled := True, on command := pmSaveAs ]
+    menuLine projectMenu
+    menuItem projectMenu [ text := "Edit project script...\tCtrl+E"
+                         , enabled := True
+                         , on command := pmEditScript
+                         ]
+    menuItem projectMenu [ text := "Project info...\tCtrl+I", on command := pmEditInfo (objectCast f) ]
+    menuItem projectMenu [ text := "Use this as preview"
+                           , on command := renderPreview False theViewer >>= \case
+                               Left err -> errorDialog f "Couldn't make a preview" err
+                               Right png -> pmSetPreview png ]
+    menuLine projectMenu
+    menuItem projectMenu [ text := "Close project\tCtrl+W", on command := pmClose ]
+    void (menuSub hamburgerMenu projectMenu [ text := "Project" ])
+
+    menuItem hamburgerMenu [ text := "Show configuration\t=", on command := raiseConfigWindow ]
 
     set showToolPicker [ on command := do
                            isChecked <- get showToolPicker checked

@@ -147,6 +147,9 @@ script: |
     draw circle at C with radius 5 pixel_size
 
   @tool "Böttcher coordinate" for="Dynamical plane" shortcut=b
+  text "Click in the dynamical plane to update these values"
+  saved_angle : R as "θ =" := 0
+  saved_G : R as "G =" := 0
   on click-or-drag at w:
     erase
     phi : C := 0
@@ -160,9 +163,13 @@ script: |
       t := arg phi / (2 pi)
       if t < 0:
         t <- t + 1
-      write text("angle ", t, ", G = ", log |phi|) at w + 14 i pixel_size
+      write text("θ = ", t, "\nG = ", log |phi|) at w + (80 + 30 i) pixel_size
+      saved_angle <- t
+      saved_G <- log |phi|
     else:
-      write "in K (or not escaped yet)" at w + 14 i pixel_size
+      write "in K" at w + 15 i pixel_size
+      saved_angle <- 0
+      saved_G <- 0
   on deactivated:
     erase
 
