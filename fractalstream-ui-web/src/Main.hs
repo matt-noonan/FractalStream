@@ -926,6 +926,8 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
   drawn <- newIORef Set.empty
   lastPatch <- newIORef Nothing
   imageRef <- newIORef Nothing
+  -- (whether every piece shows something yet: its first, coarse pass)
+  coveredYet <- newIORef False
   let -- (a piece is shown if the page's picture covers all of it)
       shown c r = case covered of
         Nothing -> False
@@ -945,12 +947,28 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
           Nothing -> now - started >= renderHold
           Just t -> now - t >= patchInterval
         when due $ writeIORef lastPatch (Just now) >> patch image False)
+      -- Whether the render's no longer wanted: another's been asked for
+      -- (new parameters, say, as a tool's dragged), and this one's shown
+      -- something. It's never dropped before every piece has its first,
+      -- coarse pass; and if it's shown nothing yet (it's still within the
+      -- hold), what it has shows as it's dropped. Else, while renders take
+      -- longer than a drag's steps, nothing would ever show.
+      stale = readIORef coveredYet >>= \case
+        False -> pure False
+        True -> isEmptyMVar signal >>= \case
+          True -> pure False
+          False -> do
+            posted <- isJust <$> readIORef lastPatch
+            unless posted $ readIORef imageRef >>= mapM_ (\image -> do
+              now <- getMonotonicTime
+              writeIORef lastPatch (Just now)
+              patch image False)
+            pure True
   try (renderProgressively Progressive
         { prPieceSize = webPieceSize, prConcurrency = concurrency, prScale = density
         , prSmooth = smooth, prShown = shown
-          -- (another render's been asked for)
-        , prStale = not <$> isEmptyMVar signal
-        , prStarted = writeIORef imageRef . Just, prCovered = pure ()
+        , prStale = stale
+        , prStarted = writeIORef imageRef . Just, prCovered = writeIORef coveredYet True
         , prDrawn = pieceDrawn } viewer) >>= \case
     -- (being stopped, when another project is opened, isn't an error: the
     -- loop just ends)

@@ -32,7 +32,8 @@
 //   progressive  a slow viewer (dev-tools/web/slow.fs) rendered in pieces:
 //             patches long before it's done; a pan drops the render going
 //             on, and the next one's done; new parameters' first patch
-//             is held back
+//             is held back; parameters changed faster than renders go
+//             each show something
 //   menu      a viewer's menu: last, next, original view (and their keys),
 //             jump to a view, the sphere and the plane (saved, and
 //             reopened so), its colorizer and a colorizer's arguments,
@@ -1112,6 +1113,19 @@ async function progressive() {
   await page.waitForFunction(() => window.__messages.some((m) => m.type === "patch"), null, { timeout: 10000 });
   const wait = await page.evaluate(() => performance.now() - window.__set);
   c.check(wait >= 100, `new parameters' first patch was held back (${wait.toFixed(0)} ms)`);
+
+  // new parameters faster than renders go (as a tool's dragged): each
+  // render shows its first pass before it's dropped, not nothing
+  await app.forgetMessages();
+  await page.evaluate(async () => {
+    for (let i = 0; i < 20; i++) {
+      window.__send({ type: "set", name: "work", text: String(1010 + i) });
+      await new Promise((r) => setTimeout(r, 30));
+    }
+  });
+  await page.waitForTimeout(300);
+  const shown = new Set((await app.messages("patch")).map((m) => m.id)).size;
+  c.check(shown >= 10, `parameters changed 20 times, every 30 ms: ${shown} renders showed something before they were dropped`);
 }
 
 async function menu() {
