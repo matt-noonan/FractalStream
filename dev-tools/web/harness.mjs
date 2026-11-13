@@ -53,7 +53,11 @@ export async function start() {
       constructor(...a) {
         super(...a);
         window.__send = (m) => this.postMessage(m);
-        this.addEventListener("message", (e) => window.__messages.push(e.data));
+        this.addEventListener("message", (e) => {
+          window.__messages.push(e.data);
+          // (a copy of a movie frame's pixels, before the page's encoder takes them)
+          if (e.data?.type === "movieFrame") (window.__frames ??= []).push(e.data.pixels.slice(0));
+        });
       }
     };
   });

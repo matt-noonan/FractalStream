@@ -1,6 +1,9 @@
 // Capturing what a viewer shows, from its menu's Capture submenu, as the
 // desktop app's does: a picture (Image...), or a movie made by running a
-// script for each frame (Movie...). The engine renders (a picture comes
+// script for each frame (Movie...), or (from the "Animate along path"
+// tool) one moving a viewer's coordinate along a path drawn in it, with
+// that viewer as an inset if asked for. A movie can be of any of the
+// project's viewers. The engine renders (a picture comes
 // back as a PNG to save; a movie's frames come one by one); the page
 // encodes a movie's frames as an MP4, with the browser's own video
 // encoder (WebCodecs), by way of Mediabunny.
@@ -81,8 +84,28 @@ export function saveDownload(m: Extract<Message, { type: "download" }>) {
 // ---------------------------------------------------------------------
 // Movies
 
-/** The last movie's settings (and script), to start the next one from. */
-const last = { script: null as string | null, frames: 150, fps: 30, loop: false, smooth: true, drawings: false };
+/** The last movie's settings (and script), to start the next one from:
+    which viewer it was of, too, and whether it had an inset, and where. */
+const last = { script: null as string | null, frames: 150, fps: 30, loop: false, smooth: true, drawings: false,
+               viewer: null as string | null, inset: false, corner: 3 };
+
+/** A project's viewer, as a movie can be made of it. */
+export interface MovieViewer { id: number; title: string; animates: string | null }
+
+/** What a movie animates: a script, or a path drawn in a viewer (its
+    points in that viewer's screen plane). */
+type Source = { kind: "script"; script: string } | { kind: "path"; drawnIn: MovieViewer; path: [number, number][] };
+
+const CORNERS = ["top left", "top right", "bottom left", "bottom right"];
+
+/** Whether a path ends about where it starts (within 5% of its length,
+    as the desktop has it): a movie along it loops, to begin with. */
+function closedPath(path: [number, number][]): boolean {
+  let total = 0;
+  for (let i = 1; i < path.length; i++) total += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);
+  const [a, b] = [path[0], path[path.length - 1]];
+  return path.length > 2 && Math.hypot(a[0] - b[0], a[1] - b[1]) < 0.05 * total;
+}
 
 /** Making a movie: the dialog asking how (its script checked as it's
     typed, as the desktop's is), then its progress while it's recorded
@@ -106,54 +129,106 @@ export class Movies {
   private progress: HTMLProgressElement | null = null;
   private progressText: HTMLElement | null = null;
 
-  constructor(private readonly send: Send, private readonly say: Say) {}
+  /** (`viewers`: the project's, as they are now) */
+  constructor(private readonly send: Send, private readonly say: Say,
+              private readonly viewers: () => MovieViewer[]) {}
 
   /** Capture > Movie...: the dialog (with the last movie's script, or one
-      to start with from the engine). */
+      to start with from the engine), from this viewer's menu. */
   ask(viewer: number, title: string) {
     if (this.recording) { this.say("A movie's being recorded already."); return; }
     this.viewer = viewer;
     this.title = title;
     if (last.script === null) this.send({ type: "movieTemplate", viewer });
-    else this.showDialog(last.script);
+    else this.showDialog({ kind: "script", script: last.script });
   }
 
   template(m: Extract<Message, { type: "movieTemplate" }>) {
-    if (m.viewer === this.viewer && !this.box) this.showDialog(m.script);
+    if (m.viewer === this.viewer && !this.box) this.showDialog({ kind: "script", script: m.script });
   }
 
-  private showDialog(script: string) {
-    const { box, close } = dialog(`Make a movie of ${this.title}`, () => !this.recording);
+  /** "Animate along path": a path's been drawn in a viewer. */
+  askPath(drawnIn: number, path: [number, number][]) {
+    if (this.recording) { this.say("A movie's being recorded already."); return; }
+    if (this.box) return;
+    const from = this.viewers().find((v) => v.id === drawnIn);
+    if (!from?.animates) return;
+    this.viewer = drawnIn;
+    this.title = from.title;
+    this.showDialog({ kind: "path", drawnIn: from, path });
+  }
+
+  private showDialog(source: Source) {
+    const { box, close } = dialog("Make a movie", () => !this.recording);
     this.box = box;
     this.close = () => { close(); this.box = null; };
     box.classList.add("movie-dialog");
-    this.script = el("textarea", { className: "movie-script", value: script, spellcheck: false, rows: 7 });
+    // which viewer to record: the last one, if it's still here; else, for
+    // a path, another than the one it was drawn in (a path in a parameter
+    // plane is for watching the dynamical plane change); else this one
+    const viewers = this.viewers();
+    const others = viewers.filter((v) => v.id !== this.viewer);
+    const first = viewers.find((v) => v.title === last.viewer)
+      ?? (source.kind === "path" ? others[0] : undefined) ?? viewers.find((v) => v.id === this.viewer) ?? viewers[0];
+    const which = el("select", {}, ...viewers.map((v) =>
+      el("option", { value: String(v.id), textContent: v.title, selected: v === first })));
+    which.setAttribute("aria-label", "Viewer to record");
     this.problem = el("div", { className: "form-error" });
-    this.script.addEventListener("input", () => {
-      clearTimeout(this.checkTimer);
-      this.checkTimer = window.setTimeout(() => this.check(), 300);
-    });
     const number = (value: number) => el("input", { type: "text", value: String(value), spellcheck: false });
     const frames = number(last.frames), fps = number(last.fps);
-    const loop = checkbox("Loop (the last frame comes just before the first again)", last.loop);
     const smooth = checkbox("Use subpixel smoothing", last.smooth);
     const drawings = checkbox("Include what the viewer's tools have drawn", last.drawings);
+    const parts: HTMLElement[] = [];
+    let loop: ReturnType<typeof checkbox>;
+    let inset: ReturnType<typeof checkbox> | null = null;
+    let corner: HTMLSelectElement | null = null;
+    if (source.kind === "script") {
+      this.script = el("textarea", { className: "movie-script", value: source.script, spellcheck: false, rows: 7 });
+      this.script.addEventListener("input", () => {
+        clearTimeout(this.checkTimer);
+        this.checkTimer = window.setTimeout(() => this.check(), 300);
+      });
+      parts.push(el("p", { textContent: "Run this script for each frame, with t going from 0 to 1:" }),
+                 this.script, this.problem);
+      loop = checkbox("Loop (the last frame comes just before the first again)", last.loop);
+    } else {
+      this.script = null;
+      const v = source.drawnIn;
+      parts.push(el("p", { textContent: `${v.animates} will move along the path drawn in “${v.title}”.` }), this.problem);
+      loop = checkbox("Loop back to start (along a straight line from the path's end)", closedPath(source.path));
+      inset = checkbox(`Show “${v.title}” as an inset, marking ${v.animates}, in the`, last.inset);
+      corner = el("select", { disabled: !last.inset }, ...CORNERS.map((c, i) =>
+        el("option", { value: String(i), textContent: `${c} corner`, selected: i === last.corner })));
+      corner.setAttribute("aria-label", "The inset's corner");
+      inset.input.addEventListener("change", () => { corner!.disabled = !inset!.input.checked; });
+    }
     const record = () => {
       const f = Math.round(Number(frames.value)), r = Math.round(Number(fps.value));
       if (!(f >= 1) || !(r >= 1)) { this.problem!.textContent = "The frames and frames per second should be positive whole numbers."; return; }
-      Object.assign(last, { script: this.script!.value, frames: f, fps: r, loop: loop.input.checked,
-                            smooth: smooth.input.checked, drawings: drawings.input.checked });
-      this.start();
+      const chosen = viewers.find((v) => String(v.id) === which.value) ?? first;
+      Object.assign(last, { frames: f, fps: r, smooth: smooth.input.checked, drawings: drawings.input.checked,
+                            viewer: chosen.title });
+      this.title = chosen.title;
+      const common = { viewer: chosen.id, frames: f, fps: r, loop: loop.input.checked,
+                       smooth: smooth.input.checked, drawings: drawings.input.checked };
+      if (source.kind === "script") {
+        Object.assign(last, { script: this.script!.value, loop: loop.input.checked });
+        this.start({ type: "movieStart", script: last.script!, ...common });
+      } else {
+        Object.assign(last, { inset: inset!.input.checked, corner: Number(corner!.value) });
+        this.start({ type: "moviePathStart", drawnIn: source.drawnIn.id, path: source.path, ...common,
+                     corner: last.inset ? last.corner : -1 });
+      }
     };
     box.append(
-      el("p", { textContent: "Run this script for each frame, with t going from 0 to 1:" }),
-      this.script, this.problem,
+      el("label", { className: "form-field" }, el("span", { textContent: "Record:" }), which),
+      ...parts,
       el("div", { className: "capture-grid" },
          el("span", { textContent: "Frames:" }), frames, el("span", { textContent: "Frames per second:" }), fps),
       loop.row, smooth.row, drawings.row,
+      ...(inset && corner ? [el("div", { className: "capture-inset" }, inset.row, corner)] : []),
       buttons(button("Cancel", () => this.close?.()), button("Record", record)));
-    this.script.focus();
-    this.check();
+    if (this.script) { this.script.focus(); this.check(); } else which.focus();
   }
 
   private check() {
@@ -167,7 +242,7 @@ export class Movies {
   }
 
   /** Record it: the dialog shows the progress (and Stop). */
-  private start() {
+  private start(request: Extract<Request, { type: "movieStart" | "moviePathStart" }>) {
     this.recording = true;
     this.failed = null;
     this.output = null;
@@ -180,8 +255,7 @@ export class Movies {
     this.box!.replaceChildren(
       el("div", { className: "form-title", textContent: `Making a movie of ${this.title}` }),
       this.progressText, this.progress, el("div", { className: "form-buttons" }, el("span", { className: "form-gap" }), stop));
-    this.send({ type: "movieStart", viewer: this.viewer, script: last.script!, frames: last.frames, fps: last.fps,
-                loop: last.loop, smooth: last.smooth, drawings: last.drawings });
+    this.send(request);
   }
 
   /** A frame: encoded in turn (the engine's told once it has been, so

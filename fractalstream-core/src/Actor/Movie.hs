@@ -39,6 +39,9 @@ module Actor.Movie
   , MovieInset(..)
   , InsetCorner(..)
   , describeInsetCorner
+  , PreparedInset
+  , prepareInset
+  , withInset
   , renderViewerImage
   , recordMovie
   , withFieldsRestored

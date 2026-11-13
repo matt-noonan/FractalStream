@@ -509,3 +509,5 @@ body {
 .editor-text .cm-foldGutter .cm-gutterElement { cursor: pointer; padding: 0 4px; }
 .editor-text .cm-foldPlaceholder { background: color-mix(in srgb, var(--fg) 10%, transparent); border: 1px solid var(--line);
                                    color: var(--muted); border-radius: 3px; padding: 0 4px; margin: 0 2px; }
+.capture-inset { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.capture-inset select:disabled { opacity: .5; }
