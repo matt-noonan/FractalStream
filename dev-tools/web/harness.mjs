@@ -90,8 +90,9 @@ export class App {
   }
 
   /** Wait for a project to open, and every viewer to have a frame; give
-      its "project" message. */
-  async opened(timeout = 60000) {
+      its "project" message. (Slow ones take a while on CI's machines: the
+      forced pendulum, 45 to 60 s.) */
+  async opened(timeout = 180000) {
     await this.page.waitForFunction(() => window.__messages.some((m) => m.type === "project"), null, { timeout });
     try {
       await this.page.waitForFunction(() => {
