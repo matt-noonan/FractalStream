@@ -644,9 +644,14 @@ Key modules:
 The JIT kernel signature (`KernelFun`) takes a pixel buffer, dimensions, step size,
 start coordinates, and an opaque context pointer.
 
-Text (`TextOp`) is a NUL-terminated UTF-8 `i8*`, built in the per-call arena
-(literals and `text(...)` concatenation via strlen/memcpy; arena overflow
-gives the empty string plus the overflow flag). Only tool handlers can
+Text (`TextOp`) is a NUL-terminated UTF-8 `i8*`. A literal points at a
+module-private constant (`fs.text.<k>`); `text(...)` concatenation is built
+in the per-call arena via strlen/memcpy (arena overflow gives the empty
+string plus the overflow flag). A list literal claims all its nodes with one
+bump of the arena pointer, at constant offsets. (Allocating literal nodes or
+texts one at a time, each with an overflow check, gives LLVM a chain of
+pointer `select`s whose alias analysis is superlinear in its length: a
+literal of 400 texts took ~9 s to compile.) Only tool handlers can
 convert numbers to text: they call back into the host's `showValue` (the
 `text.format` parameter), so output matches the interpreter exactly. `write`
 calls the `draw.write` callback, which forwards to `dsWrite`. Text and list
