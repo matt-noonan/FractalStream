@@ -126,6 +126,7 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "resize": await engine.fs_resize(r.viewer, r.width, r.height); break;
       case "smoothing": await engine.fs_smoothing(r.on); break;
       case "density": await engine.fs_density(r.value); break;
+      case "sphereShading": await engine.fs_sphere_shading(r.value); break;
       case "viewerSmoothing": await engine.fs_viewer_smoothing(r.viewer, r.on); break;
       case "navigate": await engine.fs_navigate(r.viewer, r.what); break;
       case "record": await engine.fs_record(r.viewer); break;

@@ -12,6 +12,8 @@ import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle 
 import { Desk, menuButton, type MenuItem } from "./windows.js";
 import type { Movies } from "./capture.js";
 import { Welcome } from "./welcome.js";
+import { onPreferences, preferences, smoothingNow, type Preferences } from "./preferences.js";
+import { showPreferences } from "./preferences-dialog.js";
 import { makeLink, readLink, hasLink, fetchProject } from "./links.js";
 import { sideBySide, fitted, tiled, toFractions, fromFractions, narrowScreen, type Place, type Room } from "./layout.js";
 
@@ -21,10 +23,19 @@ const send = (r: Request) => engine.postMessage(r);
 const projectEl = document.getElementById("project")!;
 const noticesEl = document.getElementById("notices")!;
 
-// Smoothing, each viewer's to begin with ("Use subpixel smoothing", in its
-// menu, changes it; not saved, as on the desktop): off on a high-DPI
-// screen (which is drawn at twice the resolution already), on otherwise.
-const smoothingAtFirst = (window.devicePixelRatio || 1) < 1.5;
+// The preferences the engine follows (once it's started): whether new
+// viewers are smoothed (each viewer's ☰ menu's "Use subpixel smoothing"
+// changes its own; not saved, as on the desktop), and the sphere's
+// shading.
+let engineReady = false;
+let engineFollows: Preferences | null = null;
+function sendPreferences(p: Preferences) {
+  if (!engineReady) return;
+  const before = engineFollows;
+  engineFollows = p;
+  if (!before || smoothingNow(before) !== smoothingNow(p)) send({ type: "smoothing", on: smoothingNow(p) });
+  if (!before || before.sphereShading !== p.sphereShading) send({ type: "sphereShading", value: p.sphereShading / 100 });
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {},
                                                  ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -74,6 +85,7 @@ function clearNotices() { noticesEl.replaceChildren(); }
 const welcome = new Welcome({
   open: (section, entry) => send({ type: "open", section, entry }),
   openFile: async () => openFile(await pickFile()),
+  preferences: showPreferences,
 });
 document.getElementById("welcome")!.append(welcome.element);
 const projectScreen = document.getElementById("project-screen")!;
@@ -445,6 +457,8 @@ const titleMenu = menuButton(() => [
   { kind: "toggle", label: "Edit project script", on: editorOpen, toggle: () => (editorOpen ? hideEditor() : showEditor()) },
   { kind: "separator" },
   { kind: "action", label: "Fit windows to the page", run: () => relayout(true) },
+  { kind: "separator" },
+  { kind: "action", label: "Preferences…", run: showPreferences },
 ], { content: [titleText, titleDot, el("span", { className: "project-title-arrow", textContent: "▾" })],
      className: "project-title-button", title: "Project", align: "left" });
 // (in the workspace, over its windows and under the drawer: see showProject)
@@ -806,7 +820,7 @@ function showEditor() {
     scriptEditor = new ScriptEditor(projectScript, {
       analyze: (id, text) => send({ type: "analyze", id, text }),
       rebuild: (text) => send({ type: "rebuild", text }),
-    });
+    }, preferences());
     if (symbolTables) scriptEditor.setSymbols(...symbolTables);
     const close = el("button", { type: "button", className: "editor-close", textContent: "Close",
                                  title: "Close the script (what's typed in it is kept)" });
@@ -1886,13 +1900,19 @@ function askForm(host: HTMLElement, title: string, fields: { label: string; note
   inputs[0]?.select();
 }
 
+onPreferences((p) => {
+  sendPreferences(p);
+  scriptEditor?.setPreferences(p);
+});
+
 // ---------------------------------------------------------------------
 
 engine.addEventListener("message", (e: MessageEvent<Message>) => {
   const m = e.data;
   switch (m.type) {
     case "ready":
-      send({ type: "smoothing", on: smoothingAtFirst });
+      engineReady = true;
+      sendPreferences(preferences());
       send({ type: "density", value: density() });
       send({ type: "symbols" });
       send({ type: "library" });

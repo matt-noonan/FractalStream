@@ -53,6 +53,12 @@
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
+//   preferences  the Preferences dialog (from the welcome screen, and the
+//             title's menu): the editor's line numbers, folds (stanzas and
+//             handlers, and code blocks if asked), symbols, font and
+//             colors, as they're changed; the sphere's shading (drawn
+//             again) and new viewers' smoothing; kept in local storage,
+//             by the desktop's settings' names, over a reload
 //
 // See harness.mjs for what it needs. The exit status is 1 if any check
 // failed.
@@ -64,7 +70,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel, preferences };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -79,7 +85,7 @@ try {
     try {
       await all[w]();
     } catch (e) {
-      c.check(false, `${w}: ${e.message.split("\n")[0]}`);
+      c.check(false, `${w}: ${e.message.split("\n").slice(0, 6).join(" ")}`);
     }
     c.check(app.errors.length === 0, `no errors on the page${app.errors.length ? ": " + app.errors.join(" | ") : ""}`);
   }
@@ -205,7 +211,7 @@ async function project() {
           "the project's title floats in the corner");
   await titleButton.click();
   const items = (await page.locator(".project-title .window-menu .menu-label").allTextContents()).join(" | ");
-  c.check(items === "Save project | Save project as… | Close project | Copy link | Edit project details… | Edit project script | Fit windows to the page",
+  c.check(items === "Save project | Save project as… | Close project | Copy link | Edit project details… | Edit project script | Fit windows to the page | Preferences…",
           `its menu: ${items}`);
   await page.keyboard.press("Escape");
 
@@ -1569,4 +1575,115 @@ async function capture() {
   const stopped = (await app.messages("movieDone")).pop();
   c.check(stopped?.stopped && (await dl) === null && (await app.messages("movieFrame")).length < 400,
           `Stop stops it, after ${(await app.messages("movieFrame")).length} frames, and saves nothing`);
+}
+
+async function preferences() {
+  const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem("fractalstream.preferences") || "{}"));
+  const tab = (name) => page.locator(".prefs-tab", { hasText: name }).click();
+  const box = (label) => page.locator(".prefs-check", { hasText: label }).locator("input");
+  await app.backToLibrary();
+  await page.evaluate(() => localStorage.removeItem("fractalstream.preferences"));
+  await page.locator(".welcome-preferences").click();
+  c.check(await page.locator(".prefs-dialog").isVisible(), "the welcome screen's ⚙ opens Preferences");
+  c.check((await page.locator(".prefs-tab").allTextContents()).join("|") === "Editor|Viewers|Colors", "with its tabs");
+  const isMac = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent));
+  c.check((await box("Emacs").count()) === (isMac ? 0 : 1), `emacs keys offered only where Control is the shortcut key (${isMac ? "not" : "yes"}, here)`);
+  await page.keyboard.press("Escape");
+  c.check(await page.locator(".prefs-dialog").count() === 0, "Escape closes it");
+
+  // the editor, following the preferences while it's open
+  await app.openLibrary("Mandelbrot and Julia sets together");
+  await app.projectMenu("Edit project script");
+  await page.waitForFunction(() => document.querySelectorAll(".editor-overlay [class*=tok-]").length > 20, null, { timeout: 10000 });
+  c.check(await page.locator(".editor-overlay .cm-lineNumbers").count() === 0, "no line numbers, at first");
+  const markers = () => page.locator('.editor-overlay .cm-foldGutter span[title="Fold line"]').count();
+  const stanzaFolds = await markers();
+  const stanzas = (await page.locator(".editor-overlay .cm-content").innerText()).split("\n").filter((l) => /^(@|on )/.test(l)).length;
+  c.check(stanzaFolds === stanzas, `stanzas and tool handlers fold (${stanzaFolds} of ${stanzas} such lines)`);
+  const linesBefore = await page.locator(".editor-overlay .cm-line").count();
+  await page.locator('.editor-overlay .cm-foldGutter span[title="Fold line"]').first().click();
+  await page.waitForTimeout(100);
+  c.check(await page.locator(".editor-overlay .cm-foldPlaceholder").count() === 1 &&
+          (await page.locator(".editor-overlay .cm-line").count()) < linesBefore, "folding a stanza hides it");
+  await page.locator(".editor-overlay .cm-foldPlaceholder").click();
+  await app.projectMenu("Preferences");
+  await tab("Editor");
+  await box("line numbers").check();
+  await box("Fold blocks").check();
+  await box("mathematical symbols").uncheck();
+  await page.locator(".prefs-dialog input[type=text]").fill("Courier New");
+  await page.locator(".prefs-size").fill("16");
+  await page.locator(".prefs-size").press("Tab");
+  await page.waitForTimeout(100);
+  c.check(await page.locator(".editor-overlay .cm-lineNumbers").count() === 1, "line numbers, once asked for");
+  c.check((await markers()) > stanzaFolds, `code blocks fold too, once asked (${await markers()} folds)`);
+  const font = await page.locator(".editor-overlay .cm-editor").evaluate((e) => [getComputedStyle(e).fontFamily, getComputedStyle(e).fontSize]);
+  c.check(/Courier New/.test(font[0]) && Math.abs(parseFloat(font[1]) - 16 * 4 / 3) < 0.1, `the font, as chosen (${font.join(", ")})`);
+
+  // the keywords' color, and back
+  await tab("Colors");
+  await page.locator(".prefs-colors select, .prefs-pane select").first().selectOption("light");
+  const keywordColor = () => page.locator(".editor-overlay .tok-keyword").first().evaluate((e) => getComputedStyle(e).color);
+  const before = await keywordColor();
+  await page.locator('input[aria-label="Color for keywords"]').evaluate((i) => {
+    i.value = "#ff0000"; i.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.locator('button[aria-label="Bold keywords"]').click();
+  const after = await keywordColor();
+  const bold = await page.locator(".editor-overlay .tok-keyword").first().evaluate((e) => getComputedStyle(e).fontWeight);
+  c.check(after === "rgb(255, 0, 0)" && Number(bold) >= 600, `a class's color and boldness, as chosen (${before} to ${after}, ${bold})`);
+  const s1 = await stored();
+  c.check(s1["editor-colors-light"]?.keyword?.color === "#ff0000" && s1["editor-colors-light"]?.keyword?.bold === true &&
+          s1["line-numbers"] === true && s1["math-symbols"] === false && s1["editor-font"] === "Courier New" &&
+          s1["editor-font-size"] === 16 && !("sphere-shading" in s1),
+          `kept, by the desktop's names, defaults left out (${JSON.stringify(s1)})`);
+  await page.locator('button[aria-label="Reset keywords"]').click();
+  c.check((await keywordColor()) === before, "Reset puts it back");
+  await page.locator(".prefs-dialog button", { hasText: "Done" }).click();
+
+  // no symbols: an edit leaves z^2 as it is
+  await page.locator(".editor-overlay .cm-content").click();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n# notes");
+  await page.keyboard.press("ArrowUp");
+  await page.waitForTimeout(800);
+  const doc = await page.locator(".editor-overlay .cm-content").innerText();
+  c.check(doc.includes("z^2") && !doc.includes("z²"), "without symbols, an edited script isn't rewritten");
+  await page.locator(".editor-close").click();
+
+  // the sphere's shading: drawn again; and new viewers' smoothing
+  const project = await app.openLibrary("Newton's method on the sphere");
+  const s = project.viewers.findIndex((v) => v.sphere);
+  const picture = () => app.canvas(s).evaluate((cv) => cv.toDataURL());
+  const shaded = await picture();
+  const frames = await app.frames(s);
+  await app.projectMenu("Preferences");
+  await tab("Viewers");
+  await page.locator(".prefs-dialog input[type=range]").evaluate((r) => {
+    r.value = "0"; r.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.waitForFunction(([s, f]) => Number(document.querySelectorAll(".viewer")[s].dataset.frames) > f, [s, frames], { timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const sent = await page.evaluate(() => window.__sent.filter((m) => m.type === "sphereShading").pop());
+  c.check(sent?.value === 0 && (await picture()) !== shaded, `0% shading: sent (${JSON.stringify(sent)}), and drawn again`);
+  await page.locator(".prefs-dialog select").selectOption("off");
+  const smooth = await page.evaluate(() => window.__sent.filter((m) => m.type === "smoothing").pop());
+  c.check(smooth?.on === false, "Off: new viewers aren't smoothed");
+  await page.locator(".prefs-dialog button", { hasText: "Done" }).click();
+
+  // over a reload
+  await app.backToLibrary();
+  await page.reload();
+  await app.waitForLibrary();
+  const sentAgain = await page.evaluate(() => window.__sent.filter((m) => m.type === "sphereShading" || m.type === "smoothing"));
+  c.check(sentAgain.some((m) => m.type === "sphereShading" && m.value === 0) && sentAgain.some((m) => m.type === "smoothing" && !m.on),
+          "reloaded, the engine's told them again");
+  await page.locator(".welcome-preferences").click();
+  c.check(await page.locator('.prefs-tab[aria-selected=true]').textContent() === "Viewers", "Preferences opens on the tab it was left on");
+  await tab("Editor");
+  c.check(await box("line numbers").isChecked() && !(await box("mathematical symbols").isChecked()), "and the dialog shows them");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => localStorage.removeItem("fractalstream.preferences"));
+  await page.reload();
+  await app.waitForLibrary();
 }

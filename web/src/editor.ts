@@ -3,7 +3,8 @@
 //
 // - It's colored, and its error marked, by the engine (Language.Editor.
 //   Highlight, and checking the script), a moment after each change.
-// - Once it checks out, it's written with mathematical symbols
+// - Once it checks out, it's written with mathematical symbols (unless
+//   the preferences say not to)
 //   (Language.Editor.Normalize: z^2 as z², := as ≔), except the line the
 //   cursor's on, until the cursor leaves it (so that what's being typed
 //   isn't rewritten under it), and only once it's been edited (so that
@@ -14,11 +15,18 @@
 // - Rebuild (or Ctrl/Cmd-Enter) builds the project again from it (and if
 //   that works, the page closes the editor); Revert goes back to the
 //   project's script.
+// - Its preferences (preferences.ts): line numbers, writing with
+//   symbols, emacs keys, and which blocks fold (stanzas and tool handlers
+//   always do, as on the desktop: by their indentation, UI.CodeEditor's
+//   foldLevelsForText); its font and colors are the page's stylesheet's.
 
-import { EditorState, StateEffect, StateField, RangeSetBuilder, Transaction, type Extension } from "@codemirror/state";
-import { EditorView, Decoration, type DecorationSet, keymap, showTooltip, type Tooltip, ViewPlugin,
+import { Compartment, EditorState, Prec, StateEffect, StateField, RangeSetBuilder, Transaction,
+         type Extension } from "@codemirror/state";
+import { EditorView, Decoration, type DecorationSet, keymap, lineNumbers, showTooltip, type Tooltip, ViewPlugin,
          type ViewUpdate } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from "@codemirror/commands";
+import { defaultKeymap, emacsStyleKeymap, history, historyKeymap, indentWithTab, isolateHistory } from "@codemirror/commands";
+import { codeFolding, foldGutter, foldKeymap, foldService, unfoldAll } from "@codemirror/language";
+import { isMac, type Preferences } from "./preferences.js";
 import type { ScriptError } from "./protocol.js";
 import { Symbols, typedName } from "./symbols.js";
 
@@ -64,6 +72,36 @@ const escapeStart = StateField.define<number | null>({
   },
 });
 
+// --- folding: a line folds if the lines after it are indented deeper
+// (blank lines aside), up to the last of them; a stanza's header (at the
+// left margin, as its body is) folds its whole stanza. Stanzas and tool
+// handlers (`on click:`, ...) always fold; other blocks only if asked.
+
+/** A line's depth: a stanza's header's is its indentation; every other
+    line's is deeper than any header's. */
+function depth(text: string): number {
+  const spaces = text.length - text.trimStart().length;
+  return text.startsWith("@") ? spaces : 1000 + spaces;
+}
+
+function folds(codeBlocks: boolean): Extension {
+  return foldService.of((state, lineStart) => {
+    const line = state.doc.lineAt(lineStart);
+    const text = line.text;
+    if (!text.trim() || !(codeBlocks || text.startsWith("@") || text.startsWith("on "))) return null;
+    const d = depth(text);
+    let end = -1;
+    for (let n = line.number + 1; n <= state.doc.lines; n++) {
+      const l = state.doc.line(n);
+      if (!l.text.trim()) continue;
+      if (depth(l.text) <= d) break;
+      end = l.to;
+    }
+    // (not the blank lines after it: folded stanzas keep the space between them)
+    return end < 0 ? null : { from: line.to, to: end };
+  });
+}
+
 export class ScriptEditor {
   readonly element: HTMLElement;
   private readonly view: EditorView;
@@ -77,8 +115,11 @@ export class ScriptEditor {
   private timer: number | undefined;
   private edited = false;
   private caretLine = 0;
+  private readonly numbering = new Compartment();
+  private readonly folding = new Compartment();
+  private readonly emacs = new Compartment();
 
-  constructor(script: string, private readonly host: EditorHost) {
+  constructor(script: string, private readonly host: EditorHost, private prefs: Preferences) {
     this.script = script;
     this.status = el("div", { className: "editor-status" });
     const rebuild = el("button", { type: "button", textContent: "Rebuild",
@@ -109,6 +150,26 @@ export class ScriptEditor {
   }
 
   focus() { this.view.focus(); }
+
+  /** The preferences changed. (If which blocks fold has, every fold's
+      opened first: one that can't fold any more would stay folded, with
+      nothing to open it by.) */
+  setPreferences(p: Preferences) {
+    const before = this.prefs;
+    this.prefs = p;
+    if (before.foldCodeBlocks !== p.foldCodeBlocks) unfoldAll(this.view);
+    this.view.dispatch({ effects: [
+      this.numbering.reconfigure(this.numberingFor(p)),
+      this.folding.reconfigure(this.foldingFor(p)),
+      this.emacs.reconfigure(this.emacsFor(p)),
+    ] });
+    if (p.mathSymbols && !before.mathSymbols) this.normalize(this.view.hasFocus);
+  }
+
+  private numberingFor(p: Preferences): Extension { return p.lineNumbers ? lineNumbers() : []; }
+  private foldingFor(p: Preferences): Extension { return folds(p.foldCodeBlocks); }
+  // (a Mac's editor has them already: the Control key isn't for shortcuts there)
+  private emacsFor(p: Preferences): Extension { return p.emacsKeys && !isMac ? Prec.high(keymap.of(emacsStyleKeymap)) : []; }
 
   /** What's been typed, if it isn't the project's script (not rebuilt
       yet): saved as the script, as the desktop app saves its editor's. */
@@ -170,7 +231,7 @@ export class ScriptEditor {
   private normalize(skipCaret: boolean) {
     const state = this.view.state;
     const a = this.analyzed;
-    if (!this.edited || !a || a.analysis.error || a.text !== state.doc.toString()) return;
+    if (!this.prefs.mathSymbols || !this.edited || !a || a.analysis.error || a.text !== state.doc.toString()) return;
     if (state.field(escapeStart) !== null) return;
     const caret = state.doc.lineAt(state.selection.main.head);
     const changes = a.analysis.normalizations
@@ -308,9 +369,13 @@ export class ScriptEditor {
       return [{ changes, userEvent: "input.paste", scrollIntoView: true }];
     });
     const extensions: Extension[] = [
-      history(), escapeKeys, keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+      history(), escapeKeys, this.emacs.of(this.emacsFor(this.prefs)),
+      keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
       colors, escapeStart, escapeBox, preview, watch, startEscape, pasteSymbols,
-      EditorView.lineWrapping,
+      EditorView.lineWrapping, this.numbering.of(this.numberingFor(this.prefs)),
+      // (its markers redrawn when which lines fold changes)
+      codeFolding(), foldGutter({ foldingChanged: (u) => u.startState.facet(foldService) !== u.state.facet(foldService) }),
+      this.folding.of(this.foldingFor(this.prefs)),
     ];
     return EditorState.create({ doc, extensions });
   }

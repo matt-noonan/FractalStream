@@ -89,6 +89,9 @@ export type Request =
   /** How many canvas pixels a CSS pixel is drawn with (see main.ts's
       `density`): tools are given a CSS pixel's size, as `pixel_size`. */
   | { type: "density"; value: number }
+  /** How strongly sphere viewers shade the globe, from 0 to 1 (a
+      preference). */
+  | { type: "sphereShading"; value: number }
   /** Select a viewer's tool ("": none, to navigate). */
   | { type: "selectTool"; viewer: number; name: string }
   /** A pointer event for a viewer's tool, at screen-plane points: a click

@@ -76,6 +76,9 @@ tables (@tables:@) it was saved with, and is saved with its own.
   of four samples, as fsrun's captures are) to begin with: each new
   viewer's choice, until @fs_viewer_smoothing(viewer, on)@ changes it
   ("Use subpixel smoothing", per viewer, as on the desktop; not saved).
+* @fs_sphere_shading(s)@: how strongly sphere viewers shade the globe,
+  from 0 to 1 (a preference: the page's, as the desktop's
+  @sphere-shading@ setting); they draw again.
 * @fs_navigate(viewer, what)@: 0 the last view, 1 the next one (in the
   viewer's history), 2 its original view (the script's, of the kind it
   shows now: plane or sphere), 3 a complex viewer on the sphere instead of
@@ -238,7 +241,7 @@ import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progre
                      pointerText)
 import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
-import Actor.Viewer.Sphere (trackballRotation, screenToPlane, Rotation(..), rotationFacing, rotateBy, sphereToPlane)
+import Actor.Viewer.Sphere (sphereShading, trackballRotation, screenToPlane, Rotation(..), rotationFacing, rotateBy, sphereToPlane)
 import Actor.Viewer.ViewModel (Model(..), History(..), historyBack, historyForward, historyAppend)
 import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceArguments, missingArguments,
                         argumentFields, choiceWithArguments)
@@ -524,6 +527,7 @@ foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
 foreign export javascript "fs_smoothing" setSmoothing :: Bool -> IO ()
 foreign export javascript "fs_density" setDensity :: Double -> IO ()
+foreign export javascript "fs_sphere_shading" setSphereShading :: Double -> IO ()
 foreign export javascript "fs_viewer_smoothing" setViewerSmoothing :: Int -> Bool -> IO ()
 foreign export javascript "fs_navigate" navigateTo :: Int -> Int -> IO ()
 foreign export javascript "fs_record" record :: Int -> IO ()
@@ -1000,6 +1004,18 @@ setDensity d = guarded (writeIORef densityRef (max 1 d))
 
 setSmoothing :: Bool -> IO ()
 setSmoothing on = guarded (writeIORef smoothingRef on)
+
+setSphereShading :: Double -> IO ()
+setSphereShading s = guarded $ do
+  before <- getDynamic sphereShading
+  let s' = max 0 (min 1 s)
+  when (s' /= before) $ do
+    setValue sphereShading s'
+    -- (the viewers on the sphere, drawn again: the page doesn't keep
+    -- their pictures, which are shaded differently now)
+    readIORef sessionRef >>= mapM_ (\Session{..} -> forM_ sViewers $ \vs -> do
+      sphere <- (== SphereView) <$> getDynamic (vView (vsViewer vs))
+      when sphere $ writeIORef (vsCovered vs) Nothing >> requestRender (vsSignal vs))
 
 setViewerSmoothing :: Int -> Bool -> IO ()
 setViewerSmoothing k on = withViewerState k $ \vs -> do

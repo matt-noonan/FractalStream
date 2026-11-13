@@ -35,6 +35,7 @@ function paragraphs(text: string): HTMLElement[] {
 export interface WelcomeHost {
   open(section: number, entry: number, title: string): void;
   openFile(): void;
+  preferences(): void;
 }
 
 /** Where the details are a sheet from the bottom, not a pane. */
@@ -57,6 +58,10 @@ export class Welcome {
     newButton.addEventListener("click", () => this.chooseSection(this.sections.findIndex((s) => s.startingPoints)));
     const openFile = el("button", { type: "button", textContent: "Open a file…", title: "Open a FractalStream project file (⌘O)" });
     openFile.addEventListener("click", () => host.openFile());
+    const prefs = el("button", { type: "button", className: "welcome-preferences", textContent: "⚙",
+                                 title: "Preferences" });
+    prefs.setAttribute("aria-label", "Preferences");
+    prefs.addEventListener("click", () => host.preferences());
     this.sectionsEl = el("nav", { className: "welcome-sections" });
     this.sectionsEl.setAttribute("aria-label", "Library sections");
     this.gridEl = el("ul", { className: "welcome-grid", tabIndex: 0 });
@@ -68,7 +73,7 @@ export class Welcome {
     this.detailsEl = el("aside", { className: "welcome-details" });
     this.element = el("div", { className: "welcome" },
       el("header", { className: "welcome-header" },
-        el("h1", { textContent: "FractalStream" }), el("span", { className: "welcome-gap" }), newButton, openFile),
+        el("h1", { textContent: "FractalStream" }), el("span", { className: "welcome-gap" }), newButton, openFile, prefs),
       el("div", { className: "welcome-panes" }, this.sectionsEl, this.gridEl, this.detailsEl),
       el("p", { className: "welcome-hint", textContent: "You can also drop a project file anywhere on this page." }));
     this.element.addEventListener("keydown", (e) => { if (e.key === "Escape") this.closeSheet(); });
