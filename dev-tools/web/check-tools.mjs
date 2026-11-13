@@ -64,7 +64,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -205,7 +205,7 @@ async function project() {
           "the project's title floats in the corner");
   await titleButton.click();
   const items = (await page.locator(".project-title .window-menu .menu-label").allTextContents()).join(" | ");
-  c.check(items === "Save project | Save project as… | Close project | Edit project details… | Edit project script | Fit windows to the page",
+  c.check(items === "Save project | Save project as… | Close project | Copy link | Edit project details… | Edit project script | Fit windows to the page",
           `its menu: ${items}`);
   await page.keyboard.press("Escape");
 
@@ -394,6 +394,91 @@ async function fit() {
   } finally {
     await page.setViewportSize(size);
   }
+}
+
+async function links() {
+  const copied = async () => {
+    await page.evaluate(() => {
+      window.__link = null;
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__link = t; } } });
+    });
+    await app.projectMenu("Copy link");
+    await page.waitForFunction(() => window.__link, null, { timeout: 10000 }).catch(() => {});
+    return page.evaluate(() => window.__link);
+  };
+  // (a page loaded afresh, at a link)
+  const visit = async (link) => {
+    await page.goto("about:blank");
+    await page.goto(link);
+  };
+  const field = () => page.locator(".panel .field", { hasText: /^Selected value of C/ }).locator("input");
+
+  // a library project: a short link, with its values and views
+  await app.openLibrary("Mandelbrot and Julia sets together");
+  await field().fill("0.25 + 0.5i");
+  await field().press("Enter");
+  await page.waitForTimeout(300);
+  const short = await copied();
+  c.check(/#open=getting-started\/mandelbrot-and-julia&s=/.test(short ?? "") && short.length < 1500,
+          `Copy link: a library project's is short (${short?.length} characters: ${short?.slice(short.indexOf("#"), short.indexOf("#") + 50)}…)`);
+  c.check(/Link copied/.test((await page.locator(".notice.passing").allTextContents()).join()), "and says it's copied");
+  await visit(short);
+  let project = await app.opened();
+  c.check(project.title === "Mandelbrot and Julia sets together" && project.library && !project.new,
+          "opened, it's the library project");
+  c.check((await field().inputValue()).replace(/\s/g, "") === "0.25+0.5i", `with its values (C = ${await field().inputValue()})`);
+  c.check(await page.evaluate(() => location.hash === "" && document.body.classList.contains("in-project")),
+          "and the link's taken out of the address bar");
+  await page.reload();
+  await app.waitForLibrary();
+  c.check(!(await page.evaluate(() => document.body.classList.contains("in-project"))), "(so reloading goes to the library)");
+
+  // edited: the whole project file, with what was typed, less its preview
+  await app.openLibrary("Mandelbrot and Julia sets together");
+  await app.projectMenu("Edit project script");
+  await page.locator(".editor-overlay .cm-content").click();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n# shared with a note");
+  await page.waitForTimeout(200);
+  const long = await copied();
+  c.check(/#project=.*&name=mandelbrot-and-julia\.fs$/.test(long ?? ""), `edited, it's the whole project (${long?.length} characters)`);
+  await visit(long);
+  project = await app.opened();
+  c.check(project.script.includes("# shared with a note") && !project.library, "opened, with what was typed, as a project of its own");
+
+  // a project file on the web, by its address
+  const fixed = fs.readFileSync(new URL("pixel-size.fs", import.meta.url).pathname);
+  const dataUrl = `data:text/plain;base64,${fixed.toString("base64")}`;
+  await visit(`${page.url().split("#")[0]}#url=${encodeURIComponent(dataUrl)}`);
+  project = await app.opened().catch(() => null);
+  c.check(project !== null && project.viewers.length > 0, `#url= opens a project file from its address (${project?.fileName})`);
+
+  // a link put in the address bar, over a project with changes: asked first
+  await app.openLibrary("Mandelbrot and Julia sets together");
+  await field().fill("0.1");
+  await field().press("Enter");
+  await app.waitForMessage(`(m) => m.type === "unsaved" && m.on`, 5000).catch(() => {});
+  await app.forgetMessages();
+  await page.evaluate((h) => { location.hash = h; }, short.slice(short.indexOf("#")));
+  const dialog = page.locator(".page-dialog");
+  await dialog.waitFor({ timeout: 5000 }).catch(() => {});
+  c.check(/Save the changes/.test(await dialog.textContent().catch(() => "")), "a link put in the address bar asks about unsaved changes first");
+  await dialog.locator("button", { hasText: "Don't save" }).click();
+  project = await app.opened();
+  c.check((await field().inputValue()).replace(/\s/g, "") === "0.25+0.5i", "then opens it");
+
+  // links that can't be opened: said so
+  for (const [hash, what] of [["#project=not-really-a-project", "a garbled link"],
+                              ["#open=no-such/project&s=", "a library project that isn't there"]]) {
+    await page.evaluate(() => { for (const n of document.querySelectorAll(".notice")) n.remove(); });
+    await visit(`${page.url().split("#")[0]}${hash}`);
+    await app.waitForLibrary();
+    const err = page.locator(".notice.error");
+    await err.first().waitFor({ timeout: 10000 }).catch(() => {});
+    c.check(await err.first().isVisible(), `${what}: an error (${(await err.first().textContent().catch(() => "")).slice(0, 70)}…)`);
+  }
+  // (those errors were on purpose)
+  app.clearErrors();
 }
 
 async function drawing() {

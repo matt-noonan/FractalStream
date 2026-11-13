@@ -12,6 +12,7 @@ import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle 
 import { Desk, menuButton, type MenuItem } from "./windows.js";
 import type { Movies } from "./capture.js";
 import { Welcome } from "./welcome.js";
+import { makeLink, readLink, hasLink, fetchProject } from "./links.js";
 import { sideBySide, fitted, tiled, toFractions, fromFractions, narrowScreen, type Place, type Room } from "./layout.js";
 
 const engine = new Worker(new URL("engine.js", import.meta.url), { type: "module" });
@@ -98,11 +99,88 @@ function leaveHistory() {
 }
 window.addEventListener("popstate", () => {
   if (leavingHistory) { leavingHistory = false; return; }
+  // (a link, typed or pasted into the address bar: see openLink)
+  if (hasLink(location.hash)) return;
   if (!current) return;
   // (stay, until the question's answered)
   history.pushState({ project: true }, "");
   void closeProject();
 });
+
+// ---------------------------------------------------------------------
+// Links (links.ts): opened when the page is, once the library's loaded,
+// or when one's put in the address bar; then taken out of it (so that
+// reloading goes back to the library). Copy link (in the title's menu)
+// makes one, of the project as it is now.
+
+let libraryLoaded = false;
+
+async function openLink() {
+  if (!libraryLoaded || !hasLink(location.hash)) return;
+  const hash = location.hash;
+  history.replaceState(history.state, "", location.pathname + location.search);
+  let link;
+  try {
+    link = await readLink(hash);
+  } catch {
+    say("That link couldn't be read: it may have been cut short, or changed.", true);
+    return;
+  }
+  if (!link) return;
+  switch (link.kind) {
+    case "library":
+      if (current && !(await offerToSave("opening the link"))) return;
+      welcome.setOpening(true);
+      send({ type: "openLink", id: link.id, state: link.state });
+      break;
+    case "project":
+      await openFile({ file: new File([link.bytes as BlobPart], link.name), handle: null });
+      break;
+    case "url":
+      try {
+        const { name, bytes } = await fetchProject(link.url);
+        await openFile({ file: new File([bytes], name), handle: null });
+      } catch (e) {
+        say(`Couldn't open ${link.url}: ${e instanceof Error ? e.message : e}. ` +
+            "(Its server has to let other web pages read it, as GitHub's raw files and Gists do.)", true);
+      }
+      break;
+  }
+}
+window.addEventListener("hashchange", () => void openLink());
+
+/** Copy link: a link to the project as it is now, to the clipboard (or,
+    if the page can't put it there, in a dialog, to copy). */
+function copyLink() {
+  send({ type: "share", views: JSON.stringify(viewState()), draft: scriptEditor?.draft() ?? null });
+}
+
+async function linkMade(m: Extract<Message, { type: "share" }>) {
+  const link = await makeLink(m);
+  try {
+    await navigator.clipboard.writeText(link);
+    say(m.library ? "Link copied: it opens this project, as it is now."
+                  : `Link copied: it opens this project, as it is now (its whole script is in it: ${Math.round(link.length / 1024)} KB).`);
+  } catch {
+    showLink(link);
+  }
+}
+
+function showLink(link: string) {
+  const text = el("textarea", { className: "link-text", value: link, readOnly: true, rows: 4 });
+  const done = el("button", { type: "button", textContent: "Done" });
+  const dialog = el("div", { className: "page-dialog", role: "dialog" },
+    el("div", { className: "page-dialog-box" },
+      el("div", { className: "form-title", textContent: "A link to this project" }),
+      el("p", { textContent: "Copy it to share the project as it is now:" }),
+      text,
+      el("div", { className: "form-buttons" }, el("span", { className: "form-gap" }), done)));
+  done.addEventListener("click", () => dialog.remove());
+  dialog.addEventListener("keydown", (e) => { if (e.key === "Escape") dialog.remove(); });
+  document.body.append(dialog);
+  text.focus();
+  text.select();
+}
 
 // ---------------------------------------------------------------------
 // Files
@@ -361,6 +439,7 @@ const titleMenu = menuButton(() => [
   { kind: "action", label: "Save project", shortcut: "⌘S", run: () => void save(false) },
   { kind: "action", label: "Save project as…", shortcut: "⇧⌘S", run: () => void save(true) },
   { kind: "action", label: "Close project", run: () => void closeProject() },
+  { kind: "action", label: "Copy link", help: "A link that opens this project as it is now", run: copyLink },
   { kind: "separator" },
   { kind: "action", label: "Edit project details…", run: () => send({ type: "details" }) },
   { kind: "toggle", label: "Edit project script", on: editorOpen, toggle: () => (editorOpen ? hideEditor() : showEditor()) },
@@ -1818,7 +1897,8 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       send({ type: "symbols" });
       send({ type: "library" });
       break;
-    case "library": welcome.show(m.sections); break;
+    case "library": welcome.show(m.sections); libraryLoaded = true; void openLink(); break;
+    case "share": void linkMade(m); break;
     case "project":
       if (m.rebuilt) {
         // (the same project, built again from its edited script: its

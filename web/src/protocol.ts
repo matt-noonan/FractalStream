@@ -20,6 +20,12 @@ export type Request =
       draft: string | null }
   /** Close the open project (back to the library). */
   | { type: "close" }
+  /** What a link to the open project shows (answered by "share"), with
+      the page's view state, and what's typed in its script editor (as
+      for "save"). */
+  | { type: "share"; views: string; draft: string | null }
+  /** Open a library project, by its id, with a link's state (JSON). */
+  | { type: "openLink"; id: string; state: string }
   /** The project's title, description and preview: answered by "details". */
   | { type: "details" }
   /** Set its title and description (empty: none). */
@@ -130,6 +136,8 @@ export type Navigation = 0 | 1 | 2 | 3;
 export type EventKind = 0 | 1 | 2 | 3;
 
 export interface LibraryEntry {
+  /** For links: its section's and its file's names (see links.ts). */
+  id: string;
   title: string;
   description: string;
   /** A PNG, base64-encoded. */
@@ -309,6 +317,9 @@ export type Message =
   | { type: "rebuildError"; error: ScriptError }
   /** The open project, saved: its file's name and contents. */
   | { type: "file"; name: string; bytes: ArrayBuffer }
+  /** What a link to the open project shows: a library project's id and
+      state, or else the whole project file. */
+  | { type: "share"; library: string | null; state: unknown; file: string | null; fileName: string }
   /** The project's details (see "details", "useAsPreview"). */
   | { type: "details"; title: string; description: string; preview: string | null; fileName: string;
       fromViewer: boolean }

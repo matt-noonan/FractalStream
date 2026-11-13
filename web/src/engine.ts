@@ -113,6 +113,8 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "pointer": await engine.fs_pointer(r.viewer, r.x, r.y); break;
       case "save": await engine.fs_save(r.views, r.tables, r.draft !== null, r.draft ?? ""); break;
       case "close": await engine.fs_close(); break;
+      case "share": await engine.fs_share(r.views, r.draft !== null, r.draft ?? ""); break;
+      case "openLink": await engine.fs_open_link(r.id, r.state); break;
       case "details": await engine.fs_details(); break;
       case "setDetails": await engine.fs_set_details(r.title, r.description); break;
       case "useAsPreview": await engine.fs_use_as_preview(r.viewer); break;

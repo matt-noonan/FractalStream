@@ -589,6 +589,33 @@ on refresh:
           Right (Object o) -> (what, KM.lookup "script" o) `shouldBe` (what, Just (String (Text.pack src)))
           other -> expectationFailure (what ++ ": " ++ show (fmap (const ()) other))
 
+    it "projectStateKeys and withProjectKeys: a project's state, put back on \
+       \its file, gives the project with that state and its own script, \
+       \metadata and tables" $ do
+      let original = BS.concat
+            [ "script: |\n  @viewer \"V\" var=z\n  pass\n"
+            , "metadata:\n  title: The original\n"
+            , "tables:\n  T: kept\n"
+            , "values:\n  x: '1'\n" ]
+          changed = BS.concat
+            [ "script: |\n  @viewer \"V\" var=z\n  # edited\n  pass\n"
+            , "metadata:\n  title: Another\n"
+            , "tables:\n  T: other\n"
+            , "values:\n  x: '2'\n"
+            , "web-properties:\n  viewers: {}\n" ]
+      keys <- either (fail . ("projectStateKeys: " ++)) pure (projectStateKeys changed)
+      KM.keys keys `shouldMatchList` ["values", "web-properties"]
+      combined <- either (fail . ("withProjectKeys: " ++)) pure (withProjectKeys keys original)
+      case YAML.decodeEither' combined of
+        Right (Object o) -> do
+          KM.lookup "script" o `shouldBe` Just (String "@viewer \"V\" var=z\npass\n")
+          (KM.lookup "metadata" o >>= \case Object m -> KM.lookup "title" m; _ -> Nothing)
+            `shouldBe` Just (String "The original")
+          (KM.lookup "tables" o >>= \case Object t -> KM.lookup "T" t; _ -> Nothing) `shouldBe` Just (String "kept")
+          (KM.lookup "values" o >>= \case Object v -> KM.lookup "x" v; _ -> Nothing) `shouldBe` Just (String "2")
+          KM.member "web-properties" o `shouldBe` True
+        other -> expectationFailure ("expected a YAML object, got " ++ show (fmap (const ()) other))
+
     it "encodeEnsemble omits scenarios: when there are none, and includes it \
 
        \with the scenario's name and commands when there are" $

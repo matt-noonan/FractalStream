@@ -484,3 +484,7 @@ body {
 .details-preview { width: 128px; height: 128px; object-fit: contain; align-self: center; border-radius: 4px; }
 .details-no-preview, .details-file { color: var(--muted); }
 .details-file { font-size: 12px; overflow-wrap: anywhere; }
+
+/* Copy link, where the clipboard can't be written: the link, to copy */
+.link-text { width: 100%; box-sizing: border-box; font: 12px/1.4 ui-monospace, monospace; padding: 6px 8px; resize: vertical;
+             border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); word-break: break-all; }
