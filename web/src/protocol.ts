@@ -72,6 +72,12 @@ export type Request =
   | { type: "movieStart"; viewer: number; script: string; frames: number; fps: number; loop: boolean;
       smooth: boolean; drawings: boolean }
   | { type: "movieAck"; frame: number }
+  /** A movie along a path drawn in a viewer (`drawnIn`), as "Animate
+      along path" makes it: the path's points (screen-plane), and the
+      corner for an inset of `drawnIn` (0 to 3: top left, top right,
+      bottom left, bottom right), or -1 for none. */
+  | { type: "moviePathStart"; viewer: number; drawnIn: number; path: [number, number][]; frames: number;
+      fps: number; loop: boolean; smooth: boolean; drawings: boolean; corner: number }
   | { type: "movieStop" }
   /** Whether the autocolor editor's open (the groups are posted, as they
       change, while it is), and an edit to a group (see Main.hs). */
@@ -190,6 +196,10 @@ export interface ViewerInfo {
   /** Its colorizer menu, if it has one. */
   colorizer: ColorizerMenu | null;
   tools: ToolInfo[];
+  /** What "Animate along path" moves (the viewer's coordinate, as the
+      project names it), if it can: null if it isn't a configuration
+      variable. */
+  animates: string | null;
 }
 
 export interface ColorizerMenu {

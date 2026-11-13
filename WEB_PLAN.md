@@ -343,7 +343,7 @@ Only if 0c/0d come out well.
   viewers.
 - [x] Errors as notices, dismissed (not only the status line).
 - [x] Autocolor editor: an overlay over the workspace (for now: windows are viewers), from each viewer's Colorizer submenu.
-- [x] Movies (WebCodecs), and pictures: Capture > Image… and Movie… (from a script). Still to come: the Animate along path tool, and a movie's inset.
+- [x] Movies (WebCodecs), and pictures: Capture > Image… and Movie… (from a script, of any viewer), and the Animate along path tool, with an inset.
 - [x] Saved tables: asked when saving, as the desktop asks (with each table's size), remembered for plain saves.
 - [x] Open a project from a URL; shareable links (Copy link, in the
   title's menu; `#open=`, `#project=` and `#url=` links).
@@ -368,6 +368,36 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-13: Animate along path
+
+As on the desktop: where a viewer's coordinate is a configuration
+variable (a parameter plane's `C`; the engine says so, as each viewer's
+`animates`), its tool chooser has "Animate along path", a tool of the
+page's own (the engine's viewer navigates meanwhile). A drag draws a path
+(white, with a dark edge; a point every two pixels, in the screen plane,
+as tools' drawings are), not a pan; letting go asks how to make a movie
+along it. The path stays until the next one, another tool, or (on the
+sphere) the globe turning.
+
+The movie dialog, for a path or a script (Capture > Movie…), asks which
+viewer to record: the last one recorded, if it's still there; else, for a
+path, another than the one it was drawn in (a path in a parameter plane is
+for watching the dynamical plane); else the one whose menu it was. For a
+path: "Loop back to start" (on, to begin with, for a path that ends about
+where it starts, as the desktop has it), and "Show *the viewer* as an
+inset, marking C" in a chosen corner. The engine
+(`fs_movie_path_start`) takes the path's points to the plane (on the
+sphere, those on the globe), and uses the core's `pathAnimation`, and its
+inset (`prepareInset`, `withInset`, exported for it): the inset viewer
+drawn once, its longer side 30% of the frame's shorter, with a crosshair
+at each frame's point. Recording a movie (either kind) no longer counts
+as a change to save: its values are put back afterwards.
+
+Checks: `check-tools.mjs`'s `path` section (the tool where it's offered,
+a path dragged, the dialog, a movie of the dynamical plane with the inset
+in the top right: its border, its crosshair moving, the Julia set
+changing; the values put back, with nothing to save).
 
 ### 2026-11-13: Preferences
 
@@ -555,9 +585,8 @@ code's size (370 KB), so `capture.ts` is loaded the first time it's
 used: esbuild now splits the bundle (`--splitting`), and the page loads
 637 KB as before.
 
-Still to come (the user's choice: a follow-up): the "Animate along
-path" tool (a path dragged in a parameter plane, which a movie follows),
-and a movie's inset (another viewer, in a corner).
+The "Animate along path" tool, and a movie's inset, followed: see
+2026-11-13, "Animate along path".
 
 Checks: `check-tools.mjs`'s `capture` section (a picture at twice the
 size; a movie: its template, a bad script said so, 8 frames recorded and

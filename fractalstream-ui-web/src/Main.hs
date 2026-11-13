@@ -115,6 +115,14 @@ tables (@tables:@) it was saved with, and is saved with its own.
   encodes them); then @movieDone@. @fs_movie_stop()@ stops it. The
   project's values are put back afterwards, and the viewers don't redraw
   while it's recorded (the script changes the values every frame).
+  @fs_movie_path_start(viewer, drawnIn, path, frames, fps, loop, smooth,
+  drawings, corner)@ records one as the desktop's "Animate along path"
+  tool makes it: the coordinate of the viewer @drawnIn@ (a configuration
+  variable: see "animates", in a viewer's info) moves along the path (a
+  JSON list of [x, y] points, in its screen plane, as the page draws it),
+  at a steady speed, back to the start if it's to loop; and, unless the
+  corner is -1, @drawnIn@ is shown as an inset in that corner (0 top
+  left, 1 top right, 2 bottom left, 3 bottom right), marking the point.
 * @fs_jump(viewer, x, y, pixelSize)@: go to a view: centered on (x, y)
   (on the sphere, the globe turned to face it), with a pixel this size
   (a CSS pixel's). @fs_where(viewer)@ posts where it is now, so (@where@).
@@ -245,7 +253,7 @@ import Actor.Viewer.Sphere (sphereShading, trackballRotation, screenToPlane, Rot
 import Actor.Viewer.ViewModel (Model(..), History(..), historyBack, historyForward, historyAppend)
 import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceArguments, missingArguments,
                         argumentFields, choiceWithArguments)
-import Actor.Event (Coordinate(..))
+import Actor.Event (Coordinate(..), showCoordinate)
 import Data.List (find)
 import Language.Value.Parser (parseConstant)
 import Language.Type (TypeProxy(RealType, ComplexType))
@@ -257,7 +265,8 @@ import Data.Color (Color, rgbToColor)
 import Data.Char (isHexDigit, digitToInt, isSpace, isAlphaNum, toLower)
 import Actor.Viewer.Preview (renderPreview)
 import Actor.Movie (MovieSettings(..), defaultMovieSettings, movieFrameTimes, scriptAnimation, checkMovieScript,
-                    movieScriptTemplate, complexVariables, withFieldsRestored, renderViewerImage)
+                    movieScriptTemplate, complexVariables, withFieldsRestored, renderViewerImage, Animation,
+                    pathAnimation, pathPoint, canAnimate, MovieInset(..), prepareInset, withInset)
 import Actor.Viewer (cloneViewer, withRenderedViewerBuffer, describeViewerIssues)
 import Language.Code.Parser (noCommonDefs)
 import Data.PNG (bufferToPng)
@@ -461,9 +470,11 @@ setUnsaved u = do
   writeIORef unsavedRef u
   post (Aeson.object [ "type" .= ("unsaved" :: Text.Text), "on" .= u ])
 
--- | Note a change to save (telling the page only the first time).
+-- | Note a change to save (telling the page only the first time). Not
+-- while a movie's recorded: it changes the values each frame, and puts
+-- them back afterwards (as the desktop has it).
 markUnsaved :: IO ()
-markUnsaved = do
+markUnsaved = readIORef recordingRef >>= \recording -> unless recording $ do
   was <- atomicModifyIORef' unsavedRef (\u -> (True, u))
   unless was (setUnsaved True)
 
@@ -536,6 +547,7 @@ foreign export javascript "fs_capture_image" captureImage :: Int -> Double -> Bo
 foreign export javascript "fs_movie_template" movieTemplate :: Int -> IO ()
 foreign export javascript "fs_movie_check" movieCheck :: Int -> JSString -> IO ()
 foreign export javascript "fs_movie_start" movieStart :: Int -> JSString -> Int -> Int -> Bool -> Bool -> Bool -> IO ()
+foreign export javascript "fs_movie_path_start" moviePathStart :: Int -> Int -> JSString -> Int -> Int -> Bool -> Bool -> Bool -> Int -> IO ()
 foreign export javascript "fs_movie_ack" movieAck :: Int -> IO ()
 foreign export javascript "fs_movie_stop" movieStop :: IO ()
 foreign export javascript "fs_autocolor_watch" autocolorWatch :: Bool -> IO ()
@@ -822,8 +834,12 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
       help <- getDynamic tiShortHelp
       pure (Aeson.object [ "name" .= name, "shortcut" .= shortcut, "help" .= help ]))
     let complex = case vCoordinate viewer of ComplexCoordinate _ -> True; _ -> False
+        -- (what "Animate along path" moves, if it can: the viewer's
+        -- coordinate, if it's a configuration variable)
+        animates = if canAnimate context (vCoordinate viewer) then Just (showCoordinate (vCoordinate viewer)) else Nothing
     pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere
-                       , "tools" .= tools, "complex" .= complex, "smooth" .= smooth, "colorizer" .= colorizer ])
+                       , "tools" .= tools, "complex" .= complex, "smooth" .= smooth, "colorizer" .= colorizer
+                       , "animates" .= animates ])
   let translated = case how of Translated _ -> True; _ -> False
   props0 <- getDynamic (ensembleFrontendProperties ensemble)
   let views = KM.lookup "web-properties" props0
@@ -1325,47 +1341,79 @@ movieAckRef = unsafePerformIO (newMVar 0)
 {-# NOINLINE movieAckRef #-}
 
 movieStart :: Int -> JSString -> Int -> Int -> Bool -> Bool -> Bool -> IO ()
-movieStart k txt frames fps loop smooth drawings = withViewerState k $ \vs -> readIORef sessionRef >>= mapM_ (\Session{..} -> do
-  let done (e :: Maybe String) stopped (issues :: Maybe String) = post $ Aeson.object
-        [ "type" .= ("movieDone" :: Text.Text), "error" .= e, "stopped" .= stopped, "issues" .= issues ]
-      settings = defaultMovieSettings { msFrames = max 1 frames, msFps = max 1 fps, msLoop = loop
-                                      , msSmooth = smooth, msWithDrawings = drawings }
-      times = movieFrameTimes settings
+movieStart k txt frames fps loop smooth drawings = withViewerState k $ \vs -> readIORef sessionRef >>= mapM_ (\session@Session{..} -> do
   defs <- ensembleCommonDefs sEnsemble
   animation <- either (pure . Left) (\ds -> scriptAnimation ds sContext (fromJSString txt)) defs
   case animation of
-    Left err -> done (Just err) False Nothing
-    Right animate -> void $ forkIO $ do
-      fields <- map snd . filter ((== ProjectConfig) . fst) <$> ensembleFields sEnsemble
-      vi <- scaledCopy (vsViewer vs) 1 True
-      writeIORef movieStopRef False
-      void (swapMVar movieAckRef 0)
-      writeIORef recordingRef True
-      result <- try $ withFieldsRestored fields $
-        foldM (\acc (i, t) -> case acc of
-          Left stopped -> pure (Left stopped)
-          Right issues -> readIORef movieStopRef >>= \case
-            True -> pure (Left True)
-            False -> do
-              -- (no more than two frames ahead of the page's encoder)
-              let waitForPage = do
-                    acked <- readMVar movieAckRef
-                    stop <- readIORef movieStopRef
-                    when (acked < i - 2 && not stop) (threadDelay 5000 >> waitForPage)
-              waitForPage
-              animate t
-              renderViewerImage smooth drawings vi >>= \case
-                Left err -> throwIO (userError err)
-                Right (frameIssues, img) -> do
-                  VS.unsafeWith (imageData img) $ \p ->
-                    postMovieFrame i (length times) (imageWidth img) (imageHeight img) (castPtr p)
-                  pure (Right (issues <> frameIssues)))
-          (Right mempty) (zip [1 ..] times)
-      writeIORef recordingRef False
-      case result of
-        Left (e :: SomeException) -> done (Just (displayException e)) False Nothing
-        Right (Left _) -> done Nothing True Nothing
-        Right (Right issues) -> done Nothing False (describeViewerIssues issues))
+    Left err -> movieDone (Just err) False Nothing
+    Right animate -> recordFrames session vs (movieSettings frames fps loop smooth drawings) animate Nothing)
+
+-- | A movie along a path drawn in a viewer (see "Animate along path").
+moviePathStart :: Int -> Int -> JSString -> Int -> Int -> Bool -> Bool -> Bool -> Int -> IO ()
+moviePathStart k drawnIn pathJson frames fps loop smooth drawings corner =
+  withViewerState k $ \vs -> withViewerState drawnIn $ \from -> readIORef sessionRef >>= mapM_ (\session@Session{..} -> do
+    let source = vsViewer from
+    -- (its points in the plane: on the sphere, those on the globe)
+    points <- case Aeson.decodeStrict (Text.encodeUtf8 (Text.pack (fromJSString pathJson))) of
+      Just (ps :: [(Double, Double)]) -> catMaybes <$> mapM (toModel source) ps
+      Nothing -> pure []
+    case pathAnimation sContext (vCoordinate source) loop points of
+      Left err -> movieDone (Just err) False Nothing
+      Right animate -> do
+        let inset = [ MovieInset source (pathPoint loop points) (toEnum corner) | corner >= 0 && corner <= 3 ]
+        recordFrames session vs (movieSettings frames fps loop smooth drawings) animate (listToMaybe inset))
+
+movieSettings :: Int -> Int -> Bool -> Bool -> Bool -> MovieSettings
+movieSettings frames fps loop smooth drawings =
+  defaultMovieSettings { msFrames = max 1 frames, msFps = max 1 fps, msLoop = loop
+                       , msSmooth = smooth, msWithDrawings = drawings }
+
+movieDone :: Maybe String -> Bool -> Maybe String -> IO ()
+movieDone e stopped issues = post $ Aeson.object
+  [ "type" .= ("movieDone" :: Text.Text), "error" .= e, "stopped" .= stopped, "issues" .= issues ]
+
+-- | Record a movie of a viewer: for each frame, the animation's step,
+-- and a copy of the viewer (at its size, made even, as H.264 needs)
+-- rendered (with the inset, if there is one) and posted, no more than
+-- two ahead of the page's encoder; the project's values put back after.
+recordFrames :: Session -> ViewerState -> MovieSettings -> Animation -> Maybe MovieInset -> IO ()
+recordFrames Session{..} vs settings@MovieSettings{..} animate minset = void $ forkIO $ do
+  let times = movieFrameTimes settings
+  fields <- map snd . filter ((== ProjectConfig) . fst) <$> ensembleFields sEnsemble
+  vi <- scaledCopy (vsViewer vs) 1 True
+  writeIORef movieStopRef False
+  void (swapMVar movieAckRef 0)
+  writeIORef recordingRef True
+  result <- try $ withFieldsRestored fields $ do
+    Dimensions size <- getDynamic (vSize vi)
+    inset <- forM minset $ \mi -> prepareInset msSmooth size mi >>= \case
+      Left err -> throwIO (userError ("Couldn't draw the inset: " ++ err))
+      Right ready -> pure ready
+    foldM (\acc (i, t) -> case acc of
+      Left stopped -> pure (Left stopped)
+      Right issues -> readIORef movieStopRef >>= \case
+        True -> pure (Left True)
+        False -> do
+          -- (no more than two frames ahead of the page's encoder)
+          let waitForPage = do
+                acked <- readMVar movieAckRef
+                stop <- readIORef movieStopRef
+                when (acked < i - 2 && not stop) (threadDelay 5000 >> waitForPage)
+          waitForPage
+          animate t
+          renderViewerImage msSmooth msWithDrawings vi >>= \case
+            Left err -> throwIO (userError err)
+            Right (frameIssues, img0) -> do
+              let img = maybe img0 (\ins -> withInset ins t img0) inset
+              VS.unsafeWith (imageData img) $ \p ->
+                postMovieFrame i (length times) (imageWidth img) (imageHeight img) (castPtr p)
+              pure (Right (issues <> frameIssues)))
+      (Right mempty) (zip [1 ..] times)
+  writeIORef recordingRef False
+  case result of
+    Left (e :: SomeException) -> movieDone (Just (displayException e)) False Nothing
+    Right (Left (_ :: Bool)) -> movieDone Nothing True Nothing
+    Right (Right issues) -> movieDone Nothing False (describeViewerIssues issues)
 
 movieAck :: Int -> IO ()
 movieAck i = guarded (void (swapMVar movieAckRef i))

@@ -137,6 +137,10 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "movieCheck": await engine.fs_movie_check(r.id, r.script); break;
       case "movieStart": await engine.fs_movie_start(r.viewer, r.script, r.frames, r.fps, r.loop, r.smooth, r.drawings); break;
       case "movieAck": await engine.fs_movie_ack(r.frame); break;
+      case "moviePathStart":
+        await engine.fs_movie_path_start(r.viewer, r.drawnIn, JSON.stringify(r.path), r.frames, r.fps, r.loop,
+                                         r.smooth, r.drawings, r.corner);
+        break;
       case "movieStop": await engine.fs_movie_stop(); break;
       case "autocolorWatch": await engine.fs_autocolor_watch(r.on); break;
       case "autocolorEdit": await engine.fs_autocolor_edit(JSON.stringify(r.edit)); break;

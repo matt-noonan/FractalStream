@@ -53,6 +53,11 @@
 //   panel     the configuration panel: a text box's whole value as its
 //             tooltip, as a tool changes it; widening the panel from its
 //             left edge, remembered
+//   path      the "Animate along path" tool (where a viewer's coordinate is
+//             a configuration variable): a path dragged out, and a movie
+//             along it of another viewer, with the first as an inset
+//             marking the point; the values put back; and the viewer to
+//             record, chosen in Capture > Movie… too
 //   preferences  the Preferences dialog (from the welcome screen, and the
 //             title's menu): the editor's line numbers, folds (stanzas and
 //             handlers, and code blocks if asked), symbols, font and
@@ -70,7 +75,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel, preferences };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -239,7 +244,7 @@ async function project() {
   const tools = (await page.locator(".window").nth(pp).locator(".window-menu .menu-label").allTextContents()).join(" | ");
   await page.locator(".window").nth(pp).locator(".window-menu button", { hasText: "Navigate" }).click();
   await app.waitForMessage(`(m) => m.type === "tool" && m.viewer === ${pp} && m.name === null`, 10000).catch(() => {});
-  c.check(tools === "Navigate | Select C" && (await chooser.textContent()).startsWith("Navigate"),
+  c.check(tools === "Navigate | Select C | Animate along path" && (await chooser.textContent()).startsWith("Navigate"),
           `its menu has its tools (${tools}); choosing one selects it`);
   await app.activate(pp);
   await app.forgetMessages();
@@ -1686,4 +1691,95 @@ async function preferences() {
   await page.evaluate(() => localStorage.removeItem("fractalstream.preferences"));
   await page.reload();
   await app.waitForLibrary();
+}
+
+async function pathMovie() {
+  const project = await app.openLibrary("Mandelbrot and Julia sets together");
+  const id = (title) => project.viewers.find((v) => v.title === title).id;
+  const pp = id("Parameter plane"), dp = id("Dynamical plane");
+  const ppWin = page.locator(".window").nth(pp), dpWin = page.locator(".window").nth(dp);
+  c.check(project.viewers[pp].animates === "C" && project.viewers[dp].animates === null,
+          "the parameter plane's coordinate (C) can be animated; the dynamical plane's (z) can't");
+  await dpWin.locator(".tool-chooser").click();
+  const dpItems = await page.locator(".window-menu button").allTextContents();
+  await page.keyboard.press("Escape");
+  await ppWin.locator(".tool-chooser").click();
+  await page.locator(".window-menu button", { hasText: "Animate along path" }).click();
+  c.check(!dpItems.some((t) => t.includes("Animate along path")) &&
+          (await ppWin.locator(".tool-chooser-label").textContent()) === "Animate along path",
+          "it's a tool of the parameter plane's (and not the dynamical plane's)");
+
+  // a path dragged out: not a pan
+  const box = await app.canvas(pp).boundingBox();
+  const views = async () => (await page.evaluate(() => window.__sent.filter((m) => m.type === "view").length));
+  const viewsBefore = await views();
+  const x0 = box.x + box.width * 0.4, y0 = box.y + box.height * 0.5;
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  await page.mouse.move(x0 + 40, y0, { steps: 6 });
+  await page.mouse.move(x0 + 40, y0 - 40, { steps: 6 });
+  await page.mouse.up();
+  const dialog = page.locator(".page-dialog");
+  await dialog.waitFor({ timeout: 10000 });
+  c.check((await views()) === viewsBefore, "dragging draws a path, not a pan");
+  const text = await dialog.textContent();
+  const recordWhich = await dialog.locator("select").first().evaluate((s) => s.selectedOptions[0].textContent);
+  c.check(/C will move along the path drawn in “Parameter plane”/.test(text) && recordWhich === "Dynamical plane",
+          `letting go asks how to make a movie along it, of the other viewer (${recordWhich})`);
+  c.check(!(await dialog.locator(".capture-check input").first().isChecked()), "an open path doesn't loop, to begin with");
+
+  // recorded, with the inset in the top right corner
+  await dialog.locator(".capture-inset input").check();
+  await dialog.locator(".capture-inset select").selectOption("1");
+  const fields = dialog.locator(".capture-grid input");
+  await fields.nth(0).fill("6");
+  await fields.nth(1).fill("4");
+  const before = await page.locator(".panel input[type=text]").first().inputValue();
+  await app.forgetMessages();
+  await page.evaluate(() => (window.__frames = []));
+  const dl = page.waitForEvent("download", { timeout: 60000 }).catch(() => null);
+  await dialog.locator("button", { hasText: "Record" }).click();
+  const mp4 = await dl;
+  const sent = await page.evaluate(() => window.__sent.filter((m) => m.type === "moviePathStart").pop());
+  c.check(sent?.viewer === dp && sent?.drawnIn === pp && sent.corner === 1 && sent.path.length >= 10 && !sent.loop,
+          `asked for: of the dynamical plane, along ${sent?.path.length} points, inset top right`);
+  c.check(mp4?.suggestedFilename() === "Dynamical plane.mp4", `saved as ${mp4?.suggestedFilename()}`);
+  const ppSize = await app.canvas(pp).evaluate((cv) => [cv.width, cv.height]);
+  const look = await page.evaluate(([pw, ph]) => {
+    const ms = window.__messages.filter((m) => m.type === "movieFrame");
+    const { width: fw, height: fh } = ms[0];
+    const frames = window.__frames.map((b) => new Uint8Array(b));
+    const short = Math.min(fw, fh), margin = Math.max(4, Math.floor(short / 40));
+    const long = Math.max(16, Math.round(0.3 * short)), scale = long / Math.max(pw, ph);
+    const iw = Math.max(1, Math.round(pw * scale)), ih = Math.max(1, Math.round(ph * scale));
+    const x0 = fw - margin - iw, y0 = margin;
+    const at = (f, x, y) => Array.from(f.subarray(4 * (y * fw + x), 4 * (y * fw + x) + 3));
+    const white = (p) => p.every((v) => v === 255);
+    // the inset's border (just outside it), and what's inside it, frame by frame
+    const border = [at(frames[0], x0 + 3, y0 - 1), at(frames[0], x0 - 1, y0 + 3), at(frames[0], fw - margin, y0 + 3)].every(white);
+    const inside = (f) => { let h = 0; for (let y = y0; y < y0 + ih; y++) for (let x = x0; x < x0 + iw; x++) h = (h * 31 + f[4 * (y * fw + x)]) | 0; return h; };
+    const last = frames[frames.length - 1];
+    return { n: frames.length, border, insetMoves: inside(frames[0]) !== inside(last),
+             juliaChanges: frames.some((f, i) => i > 0 && f.some((v, k) => v !== frames[0][k])) };
+  }, ppSize);
+  c.check(look.n === 6 && look.border, `6 frames, each with the inset, its white border in the top right corner (${JSON.stringify(look)})`);
+  c.check(look.insetMoves && look.juliaChanges, "the crosshair moves along the path, and the dynamical plane changes with C");
+  await page.waitForTimeout(500);
+  const after = await page.locator(".panel input[type=text]").first().inputValue();
+  c.check(after === before && await page.locator(".project-title-dot").isHidden(),
+          `the values are put back afterwards (C = ${after}), and it isn't a change to save`);
+
+  // Capture > Movie… can record another viewer too (the last one recorded, to begin with)
+  await ppWin.locator(".window-menu-button").click();
+  await page.locator(".window-menu button", { hasText: "Capture" }).click();
+  await page.locator(".window-menu button", { hasText: "Movie" }).click();
+  await dialog.locator("textarea").waitFor({ timeout: 10000 });
+  const options = await dialog.locator("select").first().evaluate((s) => [...s.options].map((o) => o.textContent));
+  const chosen = await dialog.locator("select").first().evaluate((s) => s.selectedOptions[0].textContent);
+  c.check(options.join("|") === "Parameter plane|Dynamical plane" && chosen === "Dynamical plane",
+          `Capture > Movie… asks which viewer to record (${chosen}, the last one)`);
+  await dialog.locator("button", { hasText: "Cancel" }).click();
+  await ppWin.locator(".tool-chooser").click();
+  await page.locator(".window-menu button", { hasText: "Navigate" }).click();
+  c.check((await ppWin.locator(".tool-chooser-label").textContent()) === "Navigate", "Navigate puts the tool down");
 }

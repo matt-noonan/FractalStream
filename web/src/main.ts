@@ -441,6 +441,9 @@ function askSaveTables(tables: TableSummary["tables"], initially: boolean): Prom
   });
 }
 
+/** The page's own tool, for making a movie along a path (see ViewerView). */
+const PATH_TOOL = "Animate along path";
+
 // ---------------------------------------------------------------------
 // The project's title, floating in the workspace's corner: a menu of what
 // to do with the project, and a dot when it has changes to save.
@@ -808,7 +811,8 @@ let symbolTables: [[string, string][], [string, string][]] | null = null;
     it's used, since its video muxer (Mediabunny) is most of its size. */
 const capture = () => import("./capture.js");
 let moviesMade: Promise<Movies> | null = null;
-const movies = () => (moviesMade ??= capture().then((c) => new c.Movies(send, say)));
+const movies = () => (moviesMade ??= capture().then((c) => new c.Movies(send, say, () =>
+  [...viewers.values()].map((v) => ({ id: v.info.id, title: v.info.title, animates: v.info.animates })))));
 
 /** The viewer (by title) whose colorizer was just chosen, if the next
     rebuild is for that (see the "project" message). */
@@ -1163,6 +1167,15 @@ class ViewerView {
   /** A tool's been chosen from its chooser (or with its shortcut): its
       panel, if it has one, opens the drawer. */
   private toolChosen = false;
+  /** The "Animate along path" tool (the page's own, as on the desktop: the
+      engine's navigating meanwhile), where the viewer's coordinate is a
+      configuration variable (`info.animates`): a drag draws a path, in
+      screen-plane coordinates, and letting go asks how to make a movie
+      along it. The path stays until the next, or another tool. */
+  private pathTool = false;
+  private path: [number, number][] | null = null;
+  /** A press with the tool: its drag starts a new path. */
+  private pathStarts = false;
 
   /** Its tool (null: navigating), the pointer events that tool handles,
       and its panel. */
@@ -1197,12 +1210,15 @@ class ViewerView {
     this.boxEl = el("div", { className: "zoom-box", hidden: true });
     this.element = el("div", { className: "viewer" }, this.canvas, this.boxEl, this.errorEl, this.runEl, this.pointerEl);
     this.toolLabel = el("span", { className: "tool-chooser-label", textContent: "Navigate" });
-    this.toolChooser = info.tools.length === 0 ? null : menuButton(() => [
-      { kind: "toggle", label: "Navigate", on: this.toolName === null, shortcut: "n",
+    this.toolChooser = info.tools.length === 0 && !info.animates ? null : menuButton(() => [
+      { kind: "toggle", label: "Navigate", on: this.toolName === null && !this.pathTool, shortcut: "n",
         help: "Drag to move around; scroll or pinch to zoom", toggle: () => this.selectTool(null) },
       ...info.tools.map((t): MenuItem => ({ kind: "toggle", label: t.name, on: this.toolName === t.name,
                                              shortcut: t.shortcut || undefined, help: t.help || undefined,
                                              toggle: () => this.selectTool(t.name) })),
+      ...(info.animates ? [{ kind: "toggle", label: PATH_TOOL, on: this.pathTool,
+                             help: `Drag a path for ${info.animates} to move along, in a movie`,
+                             toggle: () => this.selectPathTool() } as MenuItem] : []),
     ], { content: [this.toolLabel, el("span", { className: "tool-chooser-arrow", textContent: "▾" })],
          className: "tool-chooser", title: "Tool" });
     this.toolChooser?.classList.add("tool-chooser-wrap");
@@ -1280,12 +1296,30 @@ class ViewerView {
   /** Ask the engine to select a tool (null: navigate), as the user's chosen. */
   selectTool(name: string | null) {
     this.toolChosen = true;
+    this.setPathTool(false);
     send({ type: "selectTool", viewer: this.info.id, name: name ?? "" });
   }
+
+  /** Choose "Animate along path" (the engine's tool, if any, put down). */
+  private selectPathTool() {
+    if (this.toolName !== null) send({ type: "selectTool", viewer: this.info.id, name: "" });
+    this.setPathTool(true);
+  }
+
+  private setPathTool(on: boolean) {
+    if (!on && this.path) { this.path = null; this.redraw(); }
+    this.pathTool = on;
+    this.element.classList.toggle("tool", on || this.toolName !== null);
+    this.toolLabel.textContent = on ? PATH_TOOL : this.toolName ?? "Navigate";
+  }
+
+  /** The path being drawn, or drawn last, if any (screen-plane points). */
+  get moviePath() { return this.path; }
 
   /** The engine selected a tool. */
   toolSelected(name: string | null, panel: Layout, handles: Handled[]) {
     this.toolName = name;
+    if (name !== null) this.setPathTool(false);
     this.handles = new Set(handles);
     this.element.classList.toggle("tool", name !== null);
     this.events = [];
@@ -1295,8 +1329,9 @@ class ViewerView {
       set: (fieldName, text) => send({ type: "setTool", viewer: id, name: fieldName, text }),
       button: (label) => send({ type: "button", viewer: id, label }),
     }));
-    this.toolLabel.textContent = name ?? "Navigate";
-    this.toolChooser?.querySelector("button")?.setAttribute("title", `Tool: ${name ?? "Navigate"}`);
+    this.toolLabel.textContent = this.pathTool ? PATH_TOOL : name ?? "Navigate";
+    this.element.classList.toggle("tool", this.pathTool || name !== null);
+    this.toolChooser?.querySelector("button")?.setAttribute("title", `Tool: ${this.toolLabel.textContent}`);
     if (activeViewer === this) {
       showToolPanel();
       // (a tool chosen with a panel: the drawer's opened, to show it)
@@ -1532,9 +1567,22 @@ class ViewerView {
         this.flush(this.pending);
         this.drawPicture(ctx, this.pending.view, this.pending.image, t, W, H);
       }
-      if (this.layers.length) {
-        drawLayers(ctx, this.layers, ([x, y]) => [(x - t.cx) / t.px + W / 2, (t.cy - y) / t.py + H / 2],
-                   [t.px, t.py], this.density);
+      const toPx = ([x, y]: [number, number]): [number, number] => [(x - t.cx) / t.px + W / 2, (t.cy - y) / t.py + H / 2];
+      if (this.layers.length) drawLayers(ctx, this.layers, toPx, [t.px, t.py], this.density);
+      if (this.path && this.path.length > 1) {
+        // (as the desktop draws it: white, with a dark edge, to show on anything)
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        this.path.map(toPx).forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+        ctx.lineWidth = 4 * this.density;
+        ctx.stroke();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2 * this.density;
+        ctx.stroke();
+        ctx.restore();
       }
     });
   }
@@ -1603,13 +1651,14 @@ class ViewerView {
   }
 
   /** Whether the tool handles dragging (else dragging navigates). */
-  private get toolDrags() { return this.handles.has("drag") || this.handles.has("dragDone"); }
+  private get toolDrags() { return this.pathTool || this.handles.has("drag") || this.handles.has("dragDone"); }
 
   private startDrag(e: PointerEvent) {
     if (!this.target || e.button !== 0) return;
     this.canvas.setPointerCapture(e.pointerId);
     this.press = { start: this.pixel(e), dragging: false };
     this.dragFrom = this.press.start;
+    this.pathStarts = this.pathTool;
     // (Shift and drag: a box to zoom into, on the plane, as on the desktop)
     this.boxing = e.shiftKey && !this.info.sphere && !this.toolDrags;
     if (this.boxing) return;
@@ -1629,6 +1678,14 @@ class ViewerView {
       this.boxing = false;
       this.boxEl.hidden = true;
       if (press.dragging) this.zoomToBox(press.start, p);
+      return;
+    }
+    if (this.pathTool) {
+      // (a movie along it, if it's a path: Movies asks how)
+      if (press.dragging && this.path && this.path.length > 1) {
+        const path = this.path, id = this.info.id;
+        void movies().then((m) => m.askPath(id, path));
+      }
       return;
     }
     if (!press.dragging) { if (this.handles.has("click")) this.toolEvent(0, p); }
@@ -1668,6 +1725,18 @@ class ViewerView {
         left: `${Math.min(a.x, p.x) / d}px`, top: `${Math.min(a.y, p.y) / d}px`,
         width: `${Math.abs(p.x - a.x) / d}px`, height: `${Math.abs(p.y - a.y) / d}px` });
       this.boxEl.hidden = false;
+      return;
+    }
+    if (this.pathTool) {
+      // (a point every couple of pixels, as the desktop has it)
+      const z = this.toPlane(p);
+      if (this.pathStarts) { this.path = [this.toPlane(this.press.start)]; this.pathStarts = false; }
+      if (!this.path) return;
+      const [x, y] = this.path[this.path.length - 1];
+      if (Math.hypot((z[0] - x) / t.px, (z[1] - y) / t.py) >= 2 * this.density) {
+        this.path.push(z);
+        this.redraw();
+      }
       return;
     }
     if (this.toolDrags) {
@@ -1797,7 +1866,11 @@ class ViewerView {
       and what the engine's rendering. On the sphere, or turning to or
       from it, the last picture can't be moved to fit, so it goes. */
   moved(m: { cx: number; cy: number; px: number; py: number; sphere: boolean }) {
-    if (m.sphere || this.info.sphere) this.frame = null;
+    if (m.sphere || this.info.sphere) {
+      this.frame = null;
+      // (a path drawn on the globe, or on the plane before it, can't follow)
+      this.path = null;
+    }
     this.info.sphere = m.sphere;
     const view = { cx: m.cx, cy: m.cy, px: m.px, py: m.py };
     this.target = { ...view };
