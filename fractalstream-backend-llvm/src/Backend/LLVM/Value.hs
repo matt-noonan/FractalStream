@@ -26,6 +26,12 @@ import qualified LLVM.AST.Type as AST
 import qualified LLVM.AST.Constant as AC
 import LLVM.AST.Operand (Operand(ConstantOperand))
 import LLVM.AST.Name (Name)
+import qualified LLVM.AST as AST
+import qualified LLVM.AST.Global as G
+import qualified LLVM.AST.Linkage as L
+import qualified LLVM.AST.Visibility as V
+import qualified LLVM.AST.AddrSpace as AS
+import LLVM.IRBuilder.Internal.SnocList (getSnocList)
 
 import Control.Monad.Fix
 import qualified Data.Map as Map
@@ -642,8 +648,12 @@ buildValue getExtern arena = indexedFold go'
 -- | Allocate one node per element, link them, and return the head pointer.
 -- Elements are pre-evaluated.  A literal has a known length, so we do a single
 -- up-front bounds check: if the whole list will not fit, set the overflow flag
--- (pixel goes magenta) and return the empty list.  Otherwise every per-node
--- 'arenaAlloc' below is guaranteed to succeed, so no null can be written.
+-- (pixel goes magenta) and return the empty list.  Otherwise all the nodes are
+-- claimed with one bump of the arena pointer, and node k is at a constant
+-- offset from the first.  (Allocating them one at a time, each with its own
+-- overflow check, gave LLVM a chain of pointer @select@s as long as the
+-- literal, and its alias analysis took time superlinear in that length: a
+-- few hundred elements took seconds to compile.)
 buildLitList :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
              => ArenaState -> TypeProxy t -> Int -> [Op t] -> m (Op ('ListT t))
 buildLitList arena ty stride elems = mdo
@@ -661,7 +671,9 @@ buildLitList arena ty stride elems = mdo
   br litDone
 
   litBuild <- block `named` "lit_build"
-  nodePtrs <- mapM (const (arenaAlloc arena stride)) elems
+  store (asBumpAlloca arena) 0 needEnd
+  nodePtrs <- forM [0 .. length elems - 1] $ \k ->
+    gep bump [C.int32 (fromIntegral (stride * k))]
   let nextPtrs = drop 1 nodePtrs ++ [nullI8Ptr]
   forM_ (zip3 nodePtrs nextPtrs elems) $ \(nodePtr, nextPtr, elemOp) -> do
     nf <- bitcast nodePtr (AST.ptr (AST.ptr AST.i8))
@@ -1134,16 +1146,39 @@ withTextBuffer arena size fill = mdo
   mergeBb <- block `named` "text_done"
   TextOp <$> phi [(asEmptyText arena, entryBb), (buf, fillEnd)]
 
--- | A text literal, copied into the arena.
+-- | A text literal: a pointer to a module-private constant holding it.
+-- Texts are never changed in place, and every text a call produces is read
+-- back (or dropped) before its module goes away, so a literal needn't be
+-- copied into the arena. (Copying it, with an overflow check per literal,
+-- made a list of many text literals slow to compile: see 'buildLitList'.)
 textLiteral :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
             => ArenaState -> String -> m (Op 'TextT)
-textLiteral arena str = do
+textLiteral _arena str = do
   let bytes = utf8Bytes str ++ [0]
       n = length bytes
-      arr = AC.Array AST.i8 (map (AC.Int 8 . fromIntegral) bytes)
-  withTextBuffer arena (C.int64 (fromIntegral n)) $ \buf -> do
-    p <- bitcast buf (AST.ptr (AST.ArrayType (fromIntegral n) AST.i8))
-    store p 0 (ConstantOperand arr)
+      ty = AST.ArrayType (fromIntegral n) AST.i8
+  -- A name no other definition in this module has: the definitions so far,
+  -- counted.
+  k <- liftModuleState (gets (length . getSnocList . builderDefs))
+  let nm = AST.Name (fromString ("fs.text." ++ show k))
+  emitDefn $ AST.GlobalDefinition G.GlobalVariable
+    { G.name            = nm
+    , G.linkage         = L.Private
+    , G.visibility      = V.Default
+    , G.dllStorageClass = Nothing
+    , G.threadLocalMode = Nothing
+    , G.unnamedAddr     = Just G.GlobalAddr
+    , G.isConstant      = True
+    , G.type'           = ty
+    , G.addrSpace       = AS.AddrSpace 0
+    , G.initializer     = Just (AC.Array AST.i8 (map (AC.Int 8 . fromIntegral) bytes))
+    , G.section         = Nothing
+    , G.comdat          = Nothing
+    , G.alignment       = 0
+    , G.metadata        = []
+    }
+  pure $ TextOp $ ConstantOperand $
+    AC.GetElementPtr True (AC.GlobalReference (AST.ptr ty) nm) [AC.Int 32 0, AC.Int 32 0]
 
 -- | The concatenation of several texts.
 concatText :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)

@@ -12,7 +12,7 @@ import Data.DynamicValue
 import Data.Color
 import Language.Table (newTable, writeCell, freezeTable)
 import Data.IORef
-import Data.List (isInfixOf)
+import Data.List (isInfixOf, intercalate)
 import Control.Exception (IOException, ErrorCall(..), SomeException, try, throwIO)
 import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
@@ -307,6 +307,25 @@ spec = do
       compiled    <- runTool (compiledToolExec jit noAutocolor) src
       interpreted <- runTool interpretedToolExec src
       compiled `shouldBe` interpreted
+
+  describe "list and text literals" $ do
+
+    it "compiles a long list of text literals quickly, with the right texts" $ withJIT $ \jit -> do
+      -- Literals once allocated each node, and each text, with its own
+      -- overflow check, which LLVM's alias analysis took time superlinear
+      -- in the literal's length to see through: 400 texts took ~9 s to
+      -- compile, 800 far longer. Repeated texts (and an empty one) each
+      -- get a constant of their own.
+      let texts = [ "label " ++ show k | k <- [1 .. 800 :: Int] ] ++ ["★", "★", ""]
+          src = unlines
+            [ "words <- [" ++ intercalate ", " (map show texts) ++ "]"
+            , "msg <- words @ 801"
+            , "write words @ 800 at z"
+            , "write words @ 803 at z"
+            , "n <- length(words)" ]
+      compiled <- timeout 20000000 (runTool (compiledToolExec jit noAutocolor) src)
+      interpreted <- runTool interpretedToolExec src
+      compiled `shouldBe` Just interpreted
 
   describe "when rendering a viewer" $ do
 
