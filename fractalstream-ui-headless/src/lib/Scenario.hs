@@ -73,6 +73,9 @@ data Command
   | ClickAt Point
   | DoubleClickAt Point
   | DragFromTo Point Point
+  | DragViewFromTo Point Point
+    -- ^ Move the view as the Navigate tool's drag would, so that the first
+    -- (model) point ends up where the second is shown.
   | PressButton String
   | TriggerRefresh
   | TriggerTimer String
@@ -230,6 +233,8 @@ scenarioGrammar = mdo
     DoubleClickAt <$> (doubleClickKw *> kw "at" *> point <* nl)
   dragFromTo <- rule $
     DragFromTo <$> (kw "drag" *> kw "from" *> point) <*> (kw "to" *> point <* nl)
+  dragViewFromTo <- rule $
+    DragViewFromTo <$> (kw "drag" *> kw "view" *> kw "from" *> point) <*> (kw "to" *> point <* nl)
   pressButton <- rule $
     PressButton <$> (kw "press" *> kw "button" *> str <* nl)
   triggerRefresh <- rule $
@@ -283,7 +288,7 @@ scenarioGrammar = mdo
     [ selectViewer, selectTool, deselectTool
     , setParameter, setToolParameter, setColorizerParameter
     , resizeViewer, setViewerCenter, setViewerPixelSize, setViewerAspect, setViewerView
-    , clickAt, doubleClickAt, dragFromTo
+    , clickAt, doubleClickAt, dragViewFromTo, dragFromTo
     , pressButton, triggerRefresh, triggerTimer
     , waitForViewer
     , loadSavedTables

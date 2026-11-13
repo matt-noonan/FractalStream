@@ -31,7 +31,7 @@ import Actor.Layout (Field(..))
 import Actor.UI (UI(..))
 import Actor.Viewer
   ( Backend, Viewer(..)
-  , withRenderedViewerBuffer, snapshotToFile, switchView, centerViewOn, refreshOverlay
+  , withRenderedViewerBuffer, snapshotToFile, switchView, centerViewOn, dragView, refreshOverlay
   , ViewerIssues, describeViewerIssues
   )
 import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
@@ -221,6 +221,12 @@ execCommand st = \case
     withResolved (resolvePoint pt) $ \xy -> do
       fireOn viewer dispatcher (DoubleClick xy)
       pure (Right st)
+
+  DragViewFromTo p1 p2 -> withCurrentViewer st $ \viewer ->
+    withResolved (resolvePoint p1) $ \a -> withResolved (resolvePoint p2) $ \b ->
+      dragView viewer a b <&> \case
+        Left err -> Left ("can't drag the view: " ++ err)
+        Right () -> Right st
 
   DragFromTo p1 p2 -> withCurrentDispatcher st $ \viewer dispatcher ->
     withResolved ((,) <$> resolvePoint p1 <*> resolvePoint p2) $ \(xy1, xy2) -> do

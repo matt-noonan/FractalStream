@@ -1,0 +1,98 @@
+# Hyperbolic viewers: plan
+
+A living plan, like `WEB_PLAN.md`. Started 2026-11-13, after porting the
+Per_n(0) atlas (github.com/callieshlb/per_n-viewer), whose Per_6 .. Per_9
+models are drawn on the uniformizing disk of a hyperbolic surface. The port
+worked around the missing pieces in script (a "Recenter" tool, folding into
+the fundamental polygon by hand, data in saved tables); this plan builds
+them into FractalStream, in general, so that a specialized atlas is just a
+script and its data.
+
+## Decisions
+
+| | Decision | Why |
+|---|---|---|
+| H1 | **General, in layers**: a hyperbolic view first, then an optional group layer, then specializations as scripts + data. | Navigation and precision are the same for every surface or group; only the data differs. |
+| H2 | **The Poincaré disk first; the upper half-plane as a fast follow**, switchable between the two at run time. | The half-plane is the same machinery with a different map to the screen. |
+| H3 | **The script still sees a complex number** (`z` in the unit disk), as on the sphere. | Existing scripts and tools keep working; the view only decides which point a pixel is. |
+| H4 | **The view is an isometry**, s ↦ (a s + b)/(b̄ s + ā) with \|a\|² − \|b\|² = 1, plus a zoom of the disk on screen. | Composing isometries is exact enough and cheap; the pair (a, b) saves and restores. |
+| H5 | **Keep the homogeneous form** [a s + b : b̄ s + ā] until the last step. | Phase 2 folds the view itself by the group, so points near the boundary stay precise (a plain `z` within 1e-12 of the circle has few digits left). |
+| H6 | **`draw line` keeps its meaning** (a straight segment in `z`, drawn curved when the view moves it); `draw geodesic` may come later, or `draw line` may be revisited. | Drawing commands mean the same in every view. |
+| H7 | **A plane viewer isn't switchable to the disk** (not needed); disk ↔ half-plane is. | Outside the unit disk there'd be nothing to see. |
+| H8 | **Data stays in the project file**: no remote or loose sidecar data (see "Data", below). | Reproducibility: a researcher must be able to run a script decades later. |
+
+## Phase 1: `view=disk`
+
+- [ ] Header: `@viewer "..." view=disk center=<disk point> pixelSize=...`
+      (complex viewers only). `center=` is the disk point at the middle of
+      the window; `pixelSize` is in units of the disk's radius, as on the
+      sphere.
+- [ ] Geometry module (like `Actor.Viewer.Sphere`): isometries as (a, b),
+      composition, inverse, the translation taking one point to another,
+      normalization (renormalize after composing, so rounding can't drift
+      off the group).
+- [ ] The wrapper (`inTheDisk`, like `onTheSphere`): off the disk, a
+      background color; on it, `z` from the screen point through the
+      homogeneous pair. Live values `[internal] disk view` / the isometry,
+      as the sphere's rotation is passed.
+- [ ] Saved view: `wx-properties` `view: disk` and the isometry; the
+      original view for "Original view".
+- [ ] wx navigation: drag = the hyperbolic translation taking the grabbed
+      point to the cursor (live, one history step); scroll = magnify the
+      disk on screen about the cursor; double-click = recenter on the
+      clicked point; animation and history as for the other views.
+- [ ] Tools and overlays: points in disk coordinates; drawings mapped
+      through the view by sampling (as the sphere's `visibleRuns`), in both
+      wx and the headless overlay.
+- [ ] `fsrun`: set the disk view (center / isometry), and a navigation drag.
+- [ ] Tests: geometry (composition, inverses, drag translation, saved-view
+      round trip); golden renders of a small hyperbolic project in a few
+      views; the Per_6 atlas on `view=disk` renders as its Recenter-tool
+      version does for the same recentering.
+- [ ] Docs: the language reference, the skill's reference, CLAUDE_NOTES.
+
+## Phase 1b: the upper half-plane
+
+- [ ] `view=halfplane`; the same isometries, conjugated by the Cayley map.
+- [ ] Switching disk ↔ half-plane at run time (viewer menu), keeping the
+      view.
+
+## Phase 2: the group layer
+
+- [ ] `group=` names side-pairing data (the polygon's sides as geodesics,
+      and the Möbius map pairing each side with its partner), in tables.
+- [ ] The renderer folds each pixel *and the view* into the fundamental
+      polygon; the script gets the folded point, which group element (or
+      tile) it came from, and its distance to the polygon's sides.
+- [ ] Faster folding than testing every side at every step (thousands of
+      sides for Per_9): e.g. sides sorted by direction, or walking between
+      neighbours.
+- [ ] Tile edges drawn by the renderer (from the distance to the sides).
+- [ ] Overlays repeated across tiles.
+- [ ] Maybe `draw geodesic from p to q` (see H6).
+
+## Phase 3: specializations
+
+- [ ] The Per_n(0) atlases (examples/pern-atlas, not in the repo: kept
+      out of git for size) rewritten on phases 1–2, checked against the
+      site's pipeline as before (`verify_disk.py`).
+
+## Data (future work, not started)
+
+Self-contained, documented, compact:
+
+- [ ] An optional `.fsz` bundle: a zip of the YAML project and raw data
+      files (no base64), still one file to archive.
+- [ ] A 32-bit real table type (`R32`): float32 data stays float32.
+- [ ] Compact encodings for grids (byte shuffling, differences along rows,
+      as per_n-viewer's `.dxs`).
+- [ ] Provenance with each data set: source, method (with citation),
+      generator version, checksum.
+- [ ] A careful written spec of every binary format (or standard formats),
+      so that the data can be read without FractalStream, and so that other
+      tools can write data for FractalStream scripts.
+
+## Known limits
+
+- Kleinian groups act on the sphere, not the hyperbolic plane: their limit
+  sets aren't this view's business.

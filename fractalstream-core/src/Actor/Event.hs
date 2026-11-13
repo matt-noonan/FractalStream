@@ -928,8 +928,9 @@ data Coordinate = ComplexCoordinate String | RealCoordinates String String
   deriving (Eq, Show)
 
 -- | How a viewer shows its points: on the plane, or (for a complex
--- coordinate) on the Riemann sphere, as a globe.
-data ViewKind = PlaneView | SphereView
+-- coordinate) on the Riemann sphere, as a globe, or in the Poincaré disk,
+-- as the hyperbolic plane (see "Actor.Viewer.Disk").
+data ViewKind = PlaneView | SphereView | DiskView
   deriving (Eq, Show)
 
 -- | The names a 'Coordinate' binds.
