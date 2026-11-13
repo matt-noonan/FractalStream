@@ -348,10 +348,12 @@ Only if 0c/0d come out well.
   (as the desktop's welcome window); Close project goes back to it,
   asking first about unsaved changes (as the desktop counts them), as do
   the browser's Back and leaving the page.
-- [ ] The project screen: the title as a menu (Save, Save as, Close,
+- [x] The project screen: the title as a menu (Save, Save as, Close,
   Edit project details, Edit project script) floating in a corner, in
   place of the toolbar; the configuration as a drawer pulled out from the
   right; each viewer's tools chosen in its title bar; no status line.
+  Project details (title, description, preview) are edited as on the
+  desktop, with "Use this as preview" in each viewer's menu.
 
 ## Open questions
 
@@ -363,6 +365,38 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: The project screen, without the toolbar
+
+The toolbar and the status line are gone. The project screen is its
+viewers' windows on a desk filling the page, with:
+
+- **The title**, floating over the top-left corner: a menu of Save
+  project, Save project as…, Close project, Edit project details… and
+  Edit project script, with a dot when there are changes to save (and the
+  file's name as its tooltip). The desk keeps windows out from under it
+  (`Desk.keepClearOf`): none starts there, one dragged there stops just
+  below it, and any that are under it when it's renamed or the page is
+  resized are moved out. While its menu's open, it's over everything, the
+  script editor included.
+- **The configuration**, a drawer over the right of the workspace, shut
+  when a project opens: its tab pulls it out or pushes it back, with a
+  click or a drag (left out if it's more than a third out), and Escape
+  from inside it shuts it. It's still widened from its left edge, and
+  stays open or shut through a rebuild. Choosing a tool that has a panel
+  opens it, to show the panel.
+- **Each viewer's tool**, chosen from a chooser in its title bar (as a
+  menu of Navigate and its tools, with their shortcut keys, which still
+  work). The viewer's title is cut short before the tool's name is.
+- **Project details**, as the desktop's Project info: the title and
+  description, and the preview, made with a viewer's "Use this as
+  preview" (the core's `renderPreview`, as on the desktop). A new title is
+  the project's from then on, through rebuilds too.
+
+What the status line said is now a notice that goes after a few seconds
+(saved, rebuilt, a colorizer chosen, a movie saved), or for an error, as
+before, one that stays until it's dismissed. The script and autocolor
+editors cover the workspace below the title.
 
 ### 2026-11-12: The library as the welcome screen
 
@@ -379,7 +413,7 @@ the sections are a row of chips and the details a sheet that slides up
 when a project's tapped. Descriptions are reflowed: their files wrap them
 to fit a text editor.
 
-Close project (in the toolbar for now) goes back to the library. As on the
+Close project goes back to the library. As on the
 desktop, it asks first if there are changes to save, as the desktop counts
 them: the engine tracks them (`unsaved`: a configuration value or table
 changed, a rebuild, an autocolor edit, or a translation not yet saved; not

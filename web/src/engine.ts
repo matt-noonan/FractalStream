@@ -113,6 +113,9 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "pointer": await engine.fs_pointer(r.viewer, r.x, r.y); break;
       case "save": await engine.fs_save(r.views, r.tables, r.draft !== null, r.draft ?? ""); break;
       case "close": await engine.fs_close(); break;
+      case "details": await engine.fs_details(); break;
+      case "setDetails": await engine.fs_set_details(r.title, r.description); break;
+      case "useAsPreview": await engine.fs_use_as_preview(r.viewer); break;
       case "unsaved": await engine.fs_unsaved(r.on); break;
       case "tableSummary": await engine.fs_table_summary(); break;
       case "rotate": await engine.fs_rotate(r.viewer, r.fx, r.fy, r.tx, r.ty); break;
