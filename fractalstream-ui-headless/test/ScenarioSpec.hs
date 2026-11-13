@@ -200,6 +200,14 @@ parseSpec = describe "parseScenario" $ do
       DoubleClickAt _ -> pure ()
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
+  it "parses set viewer screen center to..." $
+    onlyCommand [r|set viewer screen center to (0.5, -0.25)
+|] $ \case
+      SetViewerScreenCenter (CartesianPoint x y) -> do
+        x `shouldResolveTo` 0.5
+        y `shouldResolveTo` (-0.25)
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
   it "parses drag view from...to..." $
     onlyCommand [r|drag view from (0.25, 0.1) to (-0.3, 0.2)
 |] $ \case
@@ -387,6 +395,7 @@ describeShape = \case
   SetColorizerParameter{} -> "SetColorizerParameter"
   ResizeViewer{}       -> "ResizeViewer"
   SetViewerCenter{}    -> "SetViewerCenter"
+  SetViewerScreenCenter{} -> "SetViewerScreenCenter"
   SetViewerPixelSize{} -> "SetViewerPixelSize"
   SetViewerAspect{}    -> "SetViewerAspect"
   SetViewerView{}      -> "SetViewerView"

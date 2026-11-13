@@ -65,6 +65,11 @@ spec = describe "a disk viewer" $ do
     [ "select viewer \"D\"", "set viewer center to 0", pixel "D" (300, 300) red
     , "drag view from 0 to 0.3", pixel "D" (375, 300) red, pixel "D" (300, 300) grey ]
 
+  it "can have its drawing's middle elsewhere (`set viewer screen center`)" $ scenario
+    -- facing 0, the drawing's point 0.5 is the model point 0.5
+    [ "select viewer \"D\"", "set viewer center to 0", "set viewer screen center to 0.5"
+    , pixel "D" (300, 300) blue ]
+
   it "gives its code the pixel's model width as `pixel_size`" $ scenario
     [ "select viewer \"P\"", pixel "P" (300, 300) "(128, 0, 0)" ]
 

@@ -38,7 +38,7 @@ import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
 import Actor.Viewer.Preview (renderPreview)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
-import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..),
+import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..),
                     ToolDispatcher, runHandlerNow)
 import Actor.Layout (Dimensions(..))
 
@@ -194,6 +194,11 @@ execCommand st = \case
       -- (on the sphere, the globe turns to face it)
       centerViewOn viewer xy
       pure (Right st)
+
+  SetViewerScreenCenter pt -> withCurrentViewer st $ \viewer ->
+    withResolved (resolvePoint pt) $ \xy -> getDynamic (vView viewer) >>= \case
+      SphereView -> pure (Left "the globe is always in the middle of a sphere viewer's window")
+      _ -> setValue' (vCenter viewer) xy >> pure (Right st)
 
   SetViewerView kind -> withCurrentViewer st $ \viewer -> case vCoordinate viewer of
     RealCoordinates _ _ -> pure (Left "only a complex viewer (one with `var=`) can be shown on the sphere")
