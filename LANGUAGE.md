@@ -665,7 +665,8 @@ in a real one. With `pixel_size` (and a real viewer's `pixel_height`),
 that's enough to find the pixel under a point. They follow the view as
 it's resized, panned and zoomed, and a viewer whose script reads them is
 drawn again when they change. On the sphere, `viewer_center` is the
-globe's center on the screen, 0. These names can't be declared in
+globe's center on the screen, 0; in the disk, it's the screen's center on
+the disk's drawing (0 until it's zoomed somewhere else). These names can't be declared in
 `@config`.
 
 ### Viewers on the Riemann sphere
@@ -693,6 +694,39 @@ does nothing.
 
 Near ∞, a complex number loses precision, so a script whose interesting
 part is near ∞ may look rough there for now.
+
+### Viewers of the hyperbolic plane (the Poincaré disk)
+
+A complex viewer can show the hyperbolic plane, as the Poincaré disk,
+with `view=disk`:
+
+```
+@viewer "Hyperbolic plane" var=z view=disk center=0.5
+r := 2 atanh(|z|)      -- the hyperbolic distance from 0
+color <- if mod(floor(2 r), 2) = 0 then light grey else dark grey
+```
+
+`z` is a point of the unit disk, the *model point* under each pixel. What
+the window shows is the disk moved by the view, an isometry of the
+hyperbolic plane: dragging with the Navigate tool moves the view by the
+hyperbolic translation that keeps the point under the pointer there, and
+a click moves the clicked point to the middle of the window, so the whole
+plane can be visited. Scrolling (and pinching) zooms in on the disk as it
+is drawn, anywhere on it, to see small details near its edge. `center=` is
+the point of the disk shown in the middle to start with (it must be in
+the disk), and `pixelSize=` is measured on the disk, whose radius is 1 (by
+default, the disk fills most of the window). Off the disk, there's
+nothing to draw.
+
+`pixel_size` is, as always, the width of a pixel in the model: in the disk
+it depends on the pixel, since the view stretches the disk. A pixel's
+size in the hyperbolic metric is `2 pixel_size / (1 - |z|²)`, the same
+anywhere the view puts it.
+
+Tools work in model points, as everywhere: a click gives the model point
+clicked, and what a tool draws at model points is placed where the view
+puts them (a straight segment between two model points may look curved).
+A disk viewer can't be shown on the plane or the sphere.
 
 ### Colorizers
 

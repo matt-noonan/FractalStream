@@ -200,6 +200,16 @@ parseSpec = describe "parseScenario" $ do
       DoubleClickAt _ -> pure ()
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
+  it "parses drag view from...to..." $
+    onlyCommand [r|drag view from (0.25, 0.1) to (-0.3, 0.2)
+|] $ \case
+      DragViewFromTo (CartesianPoint x1 y1) (CartesianPoint x2 y2) -> do
+        x1 `shouldResolveTo` 0.25
+        y1 `shouldResolveTo` 0.1
+        x2 `shouldResolveTo` (-0.3)
+        y2 `shouldResolveTo` 0.2
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
   it "parses drag from...to..." $
     onlyCommand [r|drag from (-0.75, 0.1) to (-0.7, 0.15)
 |] $ \case
@@ -383,6 +393,7 @@ describeShape = \case
   ClickAt{}            -> "ClickAt"
   DoubleClickAt{}      -> "DoubleClickAt"
   DragFromTo{}         -> "DragFromTo"
+  DragViewFromTo{}     -> "DragViewFromTo"
   PressButton{}        -> "PressButton"
   TriggerRefresh       -> "TriggerRefresh"
   TriggerTimer{}       -> "TriggerTimer"

@@ -5,6 +5,10 @@
 -- 'UI.WxProperties.KeptFrame'; the web app's engine keeps each viewer's.)
 module Actor.Viewer.ViewModel
   ( Model(..)
+  , ModelShape(..)
+  , modelRotation
+  , modelIsometry
+  , modelIsFlat
   , History(..)
   , historyBack
   , historyForward
@@ -12,17 +16,36 @@ module Actor.Viewer.ViewModel
   ) where
 
 import Actor.Viewer.Sphere (Rotation)
+import Actor.Viewer.Disk (Isometry)
 
 -- | A model of the view, in terms of the underlying coordinate system.
 data Model = Model
   { modelCenter   :: (Double, Double)
   , modelPixelDim :: (Double, Double)
-  , modelRotation :: Maybe Rotation
-    -- ^ The globe's orientation, when the viewer shows the sphere (then
-    -- the center and pixel size are on the screen plane, in units of
-    -- the sphere's radius); 'Nothing' on the plane.
+  , modelShape    :: ModelShape
+    -- ^ How the model's points reach the screen plane. Except on the
+    -- plane, the center and pixel size are on the screen plane, in units
+    -- of the sphere's (or the disk's) radius.
   }
   deriving Eq
+
+-- | The plane (the screen plane is the model's), the globe with its
+-- orientation, or the hyperbolic disk with its view (see
+-- "Actor.Viewer.Disk").
+data ModelShape = FlatShape | GlobeShape Rotation | DiskShape Isometry
+  deriving Eq
+
+-- | The globe's orientation, when the viewer shows the sphere.
+modelRotation :: Model -> Maybe Rotation
+modelRotation m = case modelShape m of { GlobeShape r -> Just r; _ -> Nothing }
+
+-- | The view of the hyperbolic plane, when the viewer shows the disk.
+modelIsometry :: Model -> Maybe Isometry
+modelIsometry m = case modelShape m of { DiskShape v -> Just v; _ -> Nothing }
+
+-- | Whether the screen plane is the model's (on the plane).
+modelIsFlat :: Model -> Bool
+modelIsFlat m = modelShape m == FlatShape
 
 -- | The views before the current one (most recent first), the current
 -- one, and the ones after it (gone back from, nearest first).

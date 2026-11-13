@@ -250,7 +250,8 @@ import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progre
 import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
 import Actor.Viewer.Sphere (sphereShading, trackballRotation, screenToPlane, Rotation(..), rotationFacing, rotateBy, sphereToPlane)
-import Actor.Viewer.ViewModel (Model(..), History(..), historyBack, historyForward, historyAppend)
+import Actor.Viewer.Disk (Isometry(..), normalizeIsometry, isometryFacing, isometryCenter, screenToDisk)
+import Actor.Viewer.ViewModel (Model(..), ModelShape(..), modelRotation, modelIsometry, History(..), historyBack, historyForward, historyAppend)
 import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceArguments, missingArguments,
                         argumentFields, choiceWithArguments)
 import Actor.Event (Coordinate(..), showCoordinate)
@@ -1071,17 +1072,21 @@ viewerModel v = do
   px <- getDynamic (vPixelSize v)
   aspect <- getDynamic (vAspect v)
   kind <- getDynamic (vView v)
-  r <- getDynamic (vRotation v)
-  pure (Model c (px, px * aspect) (if kind == SphereView then Just r else Nothing))
+  shape <- case kind of
+    PlaneView -> pure FlatShape
+    SphereView -> GlobeShape <$> getDynamic (vRotation v)
+    DiskView -> DiskShape <$> getDynamic (vIsometry v)
+  pure (Model c (px, px * aspect) shape)
 
 setViewerModel :: Viewer -> Model -> IO ()
-setViewerModel v (Model c (px, py) mr) = do
+setViewerModel v (Model c (px, py) shape) = do
   setValue (vCenter v) c
   setValue (vPixelSize v) px
   setValue (vAspect v) (py / px)
-  case mr of
-    Nothing -> setValue (vView v) PlaneView
-    Just r -> setValue (vRotation v) r >> setValue (vView v) SphereView
+  case shape of
+    FlatShape -> setValue (vView v) PlaneView
+    GlobeShape r -> setValue (vRotation v) r >> setValue (vView v) SphereView
+    DiskShape iso -> setValue (vIsometry v) iso >> setValue (vView v) DiskView
 
 -- | Go to a view (rendering it), and tell the page.
 goTo :: ViewerState -> Model -> IO ()
@@ -1089,9 +1094,10 @@ goTo vs m = do
   setViewerModel (vsViewer vs) m
   writeIORef (vsCovered vs) Nothing
   requestRender (vsSignal vs)
-  let Model (cx, cy) (px, py) mr = m
+  let Model (cx, cy) (px, py) _ = m
   post $ Aeson.object [ "type" .= ("view" :: Text.Text), "viewer" .= vsId vs, "cx" .= cx, "cy" .= cy
-                      , "px" .= px, "py" .= py, "sphere" .= isJust mr ]
+                      , "px" .= px, "py" .= py, "sphere" .= isJust (modelRotation m)
+                      , "disk" .= isJust (modelIsometry m) ]
 
 -- | Go to a view, as a new step in the history (after the view it's in).
 changeViewTo :: ViewerState -> Model -> IO ()
@@ -1113,22 +1119,29 @@ navigateTo k what = withViewerState k $ \vs -> do
   let step f = readIORef (vsHistory vs) >>= \h -> forM_ (h >>= f) $ \(h', m') ->
         writeIORef (vsHistory vs) (Just h') >> goTo vs m'
       -- (the script's views are in CSS pixels; the engine's in the canvas's)
-      originalPlane = let (c, px) = vOriginalPlaneView v in Model c (px / d, px / d * vOriginalAspect v) Nothing
-      sphereAt r = Model (0, 0) (vOriginalSpherePixelSize v / d, vOriginalSpherePixelSize v / d) (Just r)
+      originalPlane = let (c, px) = vOriginalPlaneView v in Model c (px / d, px / d * vOriginalAspect v) FlatShape
+      sphereAt r = Model (0, 0) (vOriginalSpherePixelSize v / d, vOriginalSpherePixelSize v / d) (GlobeShape r)
+      originalDisk = Model (vOriginalCenter v) (vOriginalPixelSize v / d, vOriginalPixelSize v / d)
+                           (DiskShape (vOriginalIsometry v))
   case what of
     0 -> step historyBack
     1 -> step historyForward
     -- (the original view of the kind it shows now)
-    2 -> changeViewTo vs (if isJust (modelRotation m) then sphereAt (vOriginalRotation v) else originalPlane)
+    2 -> changeViewTo vs (case modelShape m of
+                            GlobeShape _ -> sphereAt (vOriginalRotation v)
+                            DiskShape _ -> originalDisk
+                            FlatShape -> originalPlane)
     -- (the point in the middle of the view stays there, at the script's
     -- zoom for the other kind; see 'Actor.Viewer.switchView')
+    -- (a disk viewer shows the hyperbolic plane, and only that)
+    3 | vOriginalView v == DiskView -> pure ()
     3 -> case vCoordinate v of
       ComplexCoordinate _ -> changeViewTo vs $ case modelRotation m of
         Nothing -> sphereAt (rotationFacing (modelCenter m))
         Just r -> let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
                       finite a = not (isNaN a || isInfinite a) && abs a < 1e300
                       px = snd (vOriginalPlaneView v) / d
-                  in Model (if finite cx && finite cy then c else (0, 0)) (px, px) Nothing
+                  in Model (if finite cx && finite cy then c else (0, 0)) (px, px) FlatShape
       _ -> pure ()
     _ -> pure ()
 
@@ -1137,11 +1150,14 @@ navigateTo k what = withViewerState k $ \vs -> do
 jump :: Int -> Double -> Double -> Double -> IO ()
 jump k x y pixelSize = withViewerState k $ \vs -> do
   d <- readIORef densityRef
-  Model _ (px, py) mr <- viewerModel (vsViewer vs)
+  Model _ (px, py) shape <- viewerModel (vsViewer vs)
   let dz = pixelSize / d
-  changeViewTo vs $ case mr of
-    Nothing -> Model (x, y) (dz, dz * py / px) Nothing
-    Just _ -> Model (0, 0) (dz, dz) (Just (rotationFacing (x, y)))
+  case shape of
+    FlatShape -> changeViewTo vs (Model (x, y) (dz, dz * py / px) FlatShape)
+    GlobeShape _ -> changeViewTo vs (Model (0, 0) (dz, dz) (GlobeShape (rotationFacing (x, y))))
+    -- (in the disk, the point shown in the middle of the disk)
+    DiskShape _ | x * x + y * y < 1 -> changeViewTo vs (Model (0, 0) (dz, dz) (DiskShape (isometryFacing (x, y))))
+                | otherwise -> postError "That point isn't in the disk."
 
 -- | A real viewer's aspect ratio, from its text, as the desktop's Aspect
 -- ratio... sets it: keeping the center and a pixel's width, as a new
@@ -1153,7 +1169,7 @@ setAspect k txt = withViewerState k $ \vs -> do
   case parseConstant RealType (fromJSString txt) of
     Right a | a > 0, not (isInfinite a) -> do
       Model c (px, _) _ <- viewerModel (vsViewer vs)
-      changeViewTo vs (Model c (px, px * a) Nothing)
+      changeViewTo vs (Model c (px, px * a) FlatShape)
       reply Nothing
     _ -> reply (Just "The aspect ratio should be a positive number, like 2 or 1/2.")
 
@@ -1448,8 +1464,11 @@ movieStop = guarded (writeIORef movieStopRef True)
 whereIs :: Int -> IO ()
 whereIs k = withViewerState k $ \vs -> do
   d <- readIORef densityRef
-  Model c (px, _) mr <- viewerModel (vsViewer vs)
-  let (x, y) = maybe c (\r -> sphereToPlane (rotateBy r (0, 0, 1))) mr
+  Model c (px, _) shape <- viewerModel (vsViewer vs)
+  let (x, y) = case shape of
+        FlatShape -> c
+        GlobeShape r -> sphereToPlane (rotateBy r (0, 0, 1))
+        DiskShape iso -> isometryCenter iso
   post $ Aeson.object [ "type" .= ("where" :: Text.Text), "viewer" .= k, "x" .= x, "y" .= y
                       , "pixelSize" .= (px * d) ]
 
@@ -1464,6 +1483,9 @@ applySavedView v saved title = case saved of
     , Just (Aeson.Object p) <- KM.lookup (fromString title) vs -> do
         forM_ (KM.lookup "rotation" p >>= decodeValue) $ \case
           [w, x, y, z] -> setValue (vRotation v) (Rotation w x y z)
+          _ -> pure ()
+        forM_ (KM.lookup "isometry" p >>= decodeValue) $ \case
+          [ar, ai, br, bi] -> setValue (vIsometry v) (normalizeIsometry (Isometry (ar :+ ai) (br :+ bi)))
           _ -> pure ()
         forM_ (KM.lookup "aspect" p) $ \case
           Aeson.Number a | a > 0 -> setValue (vAspect v) (realToFrac a)
@@ -1489,10 +1511,13 @@ withViews viewers = \case
       title <- getDynamic (vTitle v)
       kind <- getDynamic (vView v)
       Rotation w x y z <- getDynamic (vRotation v)
+      Isometry (ar :+ ai) (br :+ bi) <- getDynamic (vIsometry v)
       aspect <- getDynamic (vAspect v)
-      let extra = [ ("view", Aeson.String (if kind == SphereView then "sphere" else "plane")) | kind /= vOriginalView v ]
+      let viewName = case kind of { SphereView -> "sphere"; PlaneView -> "plane"; DiskView -> "disk" }
+          extra = [ ("view", Aeson.String viewName) | kind /= vOriginalView v ]
                ++ [ ("aspect", Aeson.toJSON aspect) | aspect /= vOriginalAspect v ]
                ++ [ ("rotation", Aeson.toJSON [w, x, y, z]) | kind == SphereView ]
+               ++ [ ("isometry", Aeson.toJSON [ar, ai, br, bi]) | kind == DiskView ]
       pure $ case KM.lookup (fromString title) acc of
         Just (Aeson.Object p) -> KM.insert (fromString title) (Aeson.Object (foldr (uncurry KM.insert) p extra)) acc
         _ -> acc) vs (Map.elems viewers)
@@ -1775,6 +1800,7 @@ toModel :: Viewer -> (Double, Double) -> IO (Maybe (Double, Double))
 toModel viewer p = getDynamic (vView viewer) >>= \case
   PlaneView -> pure (Just p)
   SphereView -> getDynamic (vRotation viewer) <&> \r -> screenToPlane r p
+  DiskView -> getDynamic (vIsometry viewer) <&> \iso -> screenToDisk iso p
 
 toolEvent :: Int -> Int -> Double -> Double -> Double -> Double -> IO ()
 toolEvent k kind x1 y1 x2 y2 = withViewerState k $ \vs -> do
@@ -1817,10 +1843,11 @@ setToolField k name text = withViewerState k $ \vs -> readIORef (vsTool vs) >>= 
 postDrawings :: ViewerState -> IO ()
 postDrawings ViewerState{..} = do
   changed <- vDrawCmdsChanged vsViewer
-  sphere <- (== SphereView) <$> getDynamic (vView vsViewer)
-  when (changed || sphere) $ do
+  -- (on the sphere or in the disk, drawings move with the view)
+  curved <- (/= PlaneView) <$> getDynamic (vView vsViewer)
+  when (changed || curved) $ do
     layers <- vDrawCmds vsViewer
-    proj <- viewProjection (vView vsViewer) (vRotation vsViewer)
+    proj <- viewProjection (vView vsViewer) (vRotation vsViewer) (vIsometry vsViewer)
     post $ Aeson.object
       [ "type" .= ("drawing" :: Text.Text), "viewer" .= vsId, "layers" .= drawingJSON proj layers ]
 

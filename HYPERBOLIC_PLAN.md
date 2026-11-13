@@ -23,33 +23,45 @@ script and its data.
 
 ## Phase 1: `view=disk`
 
-- [ ] Header: `@viewer "..." view=disk center=<disk point> pixelSize=...`
+- [x] Header: `@viewer "..." view=disk center=<disk point> pixelSize=...`
       (complex viewers only). `center=` is the disk point at the middle of
       the window; `pixelSize` is in units of the disk's radius, as on the
       sphere.
-- [ ] Geometry module (like `Actor.Viewer.Sphere`): isometries as (a, b),
+- [x] Geometry module (like `Actor.Viewer.Sphere`): isometries as (a, b),
       composition, inverse, the translation taking one point to another,
       normalization (renormalize after composing, so rounding can't drift
       off the group).
-- [ ] The wrapper (`inTheDisk`, like `onTheSphere`): off the disk, a
+- [x] The wrapper (`inTheDisk`, like `onTheSphere`): off the disk, a
       background color; on it, `z` from the screen point through the
       homogeneous pair. Live values `[internal] disk view` / the isometry,
       as the sphere's rotation is passed.
-- [ ] Saved view: `wx-properties` `view: disk` and the isometry; the
+- [x] Saved view: `wx-properties` `view: disk` and the isometry; the
       original view for "Original view".
-- [ ] wx navigation: drag = the hyperbolic translation taking the grabbed
+- [x] wx navigation: drag = the hyperbolic translation taking the grabbed
       point to the cursor (live, one history step); scroll = magnify the
       disk on screen about the cursor; double-click = recenter on the
       clicked point; animation and history as for the other views.
-- [ ] Tools and overlays: points in disk coordinates; drawings mapped
+- [x] Tools and overlays: points in disk coordinates; drawings mapped
       through the view by sampling (as the sphere's `visibleRuns`), in both
       wx and the headless overlay.
-- [ ] `fsrun`: set the disk view (center / isometry), and a navigation drag.
-- [ ] Tests: geometry (composition, inverses, drag translation, saved-view
-      round trip); golden renders of a small hyperbolic project in a few
-      views; the Per_6 atlas on `view=disk` renders as its Recenter-tool
-      version does for the same recentering.
-- [ ] Docs: the language reference, the skill's reference, CLAUDE_NOTES.
+- [x] `fsrun`: set the disk view (center / isometry), and a navigation drag.
+- [x] Tests: geometry (`Actor.DiskSpec`: isometries, inverses, drag,
+      interpolation, headers); end to end (`DiskSpec` in the headless
+      suite: center, drag, pixel size, background, drawings). Checked by
+      hand: the Per_6 atlas on `view=disk` renders as its Recenter-tool
+      version (byte-identical facing 0; elsewhere only last-bit rounding
+      in chaotic regions), and the wx app restores a saved isometry.
+- [x] `pixel_size` is the pixel's local model width in the disk (it varies
+      with the pixel), so a pixel's hyperbolic size is
+      `2 pixel_size / (1 - |z|²)` (needed for tile edges and similar).
+- [ ] wx navigation checked by hand with the mouse (drag, click, scroll).
+- [ ] The web page: hyperbolic drag (its TypeScript pans the screen plane
+      for now; rendering, tools, drawings and saved views work).
+- [ ] Tools' marker sizes: a tool sizes markers in screen `pixel_size`,
+      which is wrong far from where the view is centered (a marker near the
+      model's edge, brought to the middle, is magnified). Maybe a local
+      pixel size for tools, with the group layer.
+- [x] Docs: the language reference, the skill's reference, CLAUDE_NOTES.
 
 ## Phase 1b: the upper half-plane
 

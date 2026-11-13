@@ -248,6 +248,36 @@ overlay and wx's `paintToolLayer`. In wx, `Model` has a `modelRotation`
 zooms about the globe's center, there's no zoom box or click-to-center
 yet, and `wx-properties` saves `view:` and `rotation:`.
 
+Disk viewers (`view=disk`, `DiskView`; complex viewers only; see
+HYPERBOLIC_PLAN.md): the hyperbolic plane in the Poincaré disk. The
+geometry is in `Actor.Viewer.Disk`: the view is an `Isometry` (a, b),
+s ↦ (a s + b)/(b̄ s + ā) with |a|² − |b|² = 1, renormalized after each
+composition; the screen plane is in units of the disk's radius, and
+`vCenter`/`vPixelSize` place it as on the plane (so zooming about the
+pointer works unchanged; only dragging is hyperbolic). `vIsometry` /
+`vOriginalIsometry` (and `cvIsometryV`, `cvDiskPixelSize`) hold the view;
+`center=` must be in the disk (`isometryFacing`). A disk viewer's context
+gets `[internal] disk view` and `[internal] disk a.re` .. `b.im` instead of
+the sphere's entries (`viewerViewEntries`/`viewerViewContext` take the
+script's view kind), and its body is wrapped by `inTheDisk` (chosen in
+`parseViewerScript` when the disk entries are present): off the disk the
+background; on it `z` from the homogeneous pair [a s + b : b̄ s + ā], and
+the pixel size reassigned to the pixel's local model width (screen pixel
+/ |b̄ s + ā|²). A disk viewer isn't switchable (`switchView` leaves it,
+and makes no other viewer one). Drawings go through `DiskProjection`
+(sampled, like the globe's). `Actor.Viewer.dragView` moves any view as a
+Navigate drag would (fsrun's `drag view from P to Q`). In the shared
+`Actor.Viewer.ViewModel`, `Model` carries a `ModelShape` (`FlatShape`,
+`GlobeShape`, `DiskShape`) instead of the old `Maybe Rotation`. In wx:
+Navigate's drag is `dragIsometry` (live via the globe-drag timer, now a
+pending `ModelShape`), a click recenters (`recenterDiskOn`), scrolling and
+pinching zoom about the pointer on the screen plane (`lastKnownScreen`),
+the zoom box works on the screen plane, `wx-properties` saves `isometry:`,
+and "Show on the sphere" isn't offered. The web app renders disk viewers,
+maps clicks, saves `isometry`, and pans/zooms the screen plane, but its
+page doesn't drag hyperbolically yet. The end-to-end `DiskSpec` covers
+center, drag, pixel size, background and drawings.
+
 How the wx viewer keeps view changes smooth (both views): a new view's
 render starts from the old image moved into the new view
 (`reprojectedSeed`, run on the render's worker thread, as `renderTile`'s

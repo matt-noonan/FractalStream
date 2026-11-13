@@ -87,6 +87,10 @@ data ViewerProperties = ViewerProperties
     -- ^ On the sphere, the globe's orientation (a unit quaternion: w, x,
     -- y, z). Its center and pixel size are then on the globe's screen
     -- plane.
+  , vpIsometry  :: Maybe [Double]
+    -- ^ In the disk, the view of the hyperbolic plane (a and b of
+    -- s ↦ (a s + b)/(b̄ s + ā): re a, im a, re b, im b). Its center and
+    -- pixel size are then on the disk's screen plane.
   }
 
 instance FromJSON ViewerProperties where
@@ -95,7 +99,7 @@ instance FromJSON ViewerProperties where
     <*> o .:? "width" <*> o .:? "height"
     <*> o .:? "resizable" <*> o .:? "visible"
     <*> o .:? "center" <*> o .:? "pixel-size" <*> o .:? "aspect"
-    <*> o .:? "view" <*> o .:? "rotation"
+    <*> o .:? "view" <*> o .:? "rotation" <*> o .:? "isometry"
 
 instance ToJSON ViewerProperties where
   toJSON ViewerProperties{..} = object $ catMaybes
@@ -105,6 +109,7 @@ instance ToJSON ViewerProperties where
     , ("center" .=) <$> vpCenter, ("pixel-size" .=) <$> vpPixelSize
     , ("aspect" .=) <$> vpAspect
     , ("view" .=) <$> vpView, ("rotation" .=) <$> vpRotation
+    , ("isometry" .=) <$> vpIsometry
     ]
 
 -- | Where a window without anything else worth remembering sits.
