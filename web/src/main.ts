@@ -1990,7 +1990,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       send({ type: "symbols" });
       send({ type: "library" });
       break;
-    case "library": welcome.show(m.sections); libraryLoaded = true; void openLink(); break;
+    case "library": welcome.show(m.sections, m.version); libraryLoaded = true; void openLink(); break;
     case "share": void linkMade(m); break;
     case "project":
       if (m.rebuilt) {

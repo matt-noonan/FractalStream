@@ -46,6 +46,9 @@ export class Welcome {
   private readonly sectionsEl: HTMLElement;
   private readonly gridEl: HTMLElement;
   private readonly detailsEl: HTMLElement;
+  /** Which FractalStream this is (its git tag, and commits since), by its
+      title: for telling which one a problem was seen in. */
+  private readonly versionEl = el("span", { className: "welcome-version" });
   private sections: LibrarySection[] = [];
   private section = -1;
   private entry = -1;
@@ -73,7 +76,8 @@ export class Welcome {
     this.detailsEl = el("aside", { className: "welcome-details" });
     this.element = el("div", { className: "welcome" },
       el("header", { className: "welcome-header" },
-        el("h1", { textContent: "FractalStream" }), el("span", { className: "welcome-gap" }), newButton, openFile, prefs),
+        el("div", { className: "welcome-name" }, el("h1", { textContent: "FractalStream" }), this.versionEl),
+        el("span", { className: "welcome-gap" }), newButton, openFile, prefs),
       el("div", { className: "welcome-panes" }, this.sectionsEl, this.gridEl, this.detailsEl),
       el("p", { className: "welcome-hint", textContent: "You can also drop a project file anywhere on this page." }));
     this.element.addEventListener("keydown", (e) => { if (e.key === "Escape") this.closeSheet(); });
@@ -82,7 +86,9 @@ export class Welcome {
 
   /** The library's sections, from the engine: shown from the first
       section of finished projects to explore, as the desktop's is. */
-  show(sections: LibrarySection[]) {
+  show(sections: LibrarySection[], version: string) {
+    this.versionEl.textContent = version;
+    this.versionEl.title = `FractalStream ${version}`;
     this.sections = sections;
     this.sectionsEl.replaceChildren(...sections.map((s, i) => {
       const b = el("button", { type: "button", textContent: s.name });

@@ -282,6 +282,7 @@ import Data.Color (colorToRGB)
 import Text.Printf (printf)
 import Backend (withBackend, Backend)
 import Data.DynamicValue
+import FractalStream.Metadata (gitTag, gitDirty)
 import FractalStream.Library (LibrarySection(..), LibraryEntry(..), librarySections)
 
 import Control.Concurrent (forkIO, killThread, threadDelay, ThreadId)
@@ -572,6 +573,9 @@ main = pure ()
 library :: IO ()
 library = guarded $ post $ Aeson.object
   [ "type" .= ("library" :: Text.Text)
+    -- (which FractalStream this is, as the desktop's About box says it:
+    -- its tag, and the commits since, as git describes it)
+  , "version" .= (gitTag ++ (if gitDirty then "-dirty" else ""))
   , "sections" .=
       [ Aeson.object
           [ "name" .= lsName s
