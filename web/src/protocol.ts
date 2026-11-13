@@ -287,7 +287,9 @@ export interface Patch {
 /** From the engine to the page. */
 export type Message =
   | { type: "ready" }
-  | { type: "library"; sections: LibrarySection[] }
+  /** (`version`: which FractalStream this is, as `git describe` says it:
+      its tag, or its tag, the commits since and the commit) */
+  | { type: "library"; sections: LibrarySection[]; version: string }
   /** A project to show: one opened, or (rebuilt) the open one, built again
       from its edited script. */
   | { type: "project"; title: string; fileName: string; library: boolean; panel: Layout;

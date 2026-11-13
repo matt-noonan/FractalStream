@@ -109,6 +109,11 @@ async function welcome() {
   // the library, as the welcome screen: the first section of projects to
   // explore, its first project chosen, and its details
   await app.backToLibrary();
+  // which FractalStream it is, after its title: as git describes it
+  const version = await page.locator(".welcome-version").textContent();
+  const described = (await app.messages("library")).pop().version;
+  c.check(version === described && /^(v[\w.-]+|[0-9a-f]{7,})(-dirty)?$/.test(version),
+          `which FractalStream it is, after the title (${version})`);
   const current = page.locator(".welcome-sections button[aria-current=true]");
   c.check((await current.textContent()) === "Getting started" && !(await inProject()),
           `the library's the welcome screen, from "${await current.textContent()}"`);

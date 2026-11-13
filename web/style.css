@@ -426,6 +426,8 @@ body {
   .welcome { padding: 10px 12px 6px; }
   .welcome-header { flex-wrap: nowrap; gap: 6px; }
   .welcome-header h1 { font-size: 18px; white-space: nowrap; }
+  .welcome-name { flex-direction: column; align-items: flex-start; gap: 0; }
+  .welcome-version { font-size: 10px; }
   .welcome-header button { font-size: 13px; padding: 4px 9px; white-space: nowrap; }
   .welcome-panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 8px; }
   .welcome-sections { flex-direction: row; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
@@ -511,3 +513,6 @@ body {
                                    color: var(--muted); border-radius: 3px; padding: 0 4px; margin: 0 2px; }
 .capture-inset { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .capture-inset select:disabled { opacity: .5; }
+/* (its title, and which FractalStream it is, after it; under it, on a phone) */
+.welcome-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.welcome-version { font-size: 12px; color: var(--muted); user-select: all; white-space: nowrap; }
