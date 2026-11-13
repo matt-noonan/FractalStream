@@ -91,23 +91,20 @@ buildValue getExtern arena = indexedFold go'
         throwError ("The LLVM backend can not compile constants of type " ++ showType t)
 
       -- ------------------------------------------------------------------ --
-      -- List literal: allocate one node per element in the arena, link them.
+      -- List literal: one block in the arena (see 'buildLitList').
       -- ------------------------------------------------------------------ --
       List ty mElems -> do
-        let stride = listNodeStride ty
         elems <- sequence mElems   -- evaluate all elements first
         case elems of
           [] -> pure (ListOp nullI8Ptr)
-          _  -> lift $ buildLitList arena ty stride elems
+          _  -> lift $ buildLitList arena ty elems
 
       -- ------------------------------------------------------------------ --
-      -- Join: copy every list from every input (conservative; safe for
-      -- future mutations).  Concatenate the copies in order.
+      -- Join: the lists one after the other, copied into one new list.
       -- ------------------------------------------------------------------ --
       Join ty mLists -> do
         lists <- sequence mLists
-        let headPtrs = map getListOp lists
-        lift $ buildJoin arena ty headPtrs
+        lift $ buildJoin getExtern arena ty (map getListOp lists)
 
       -- ------------------------------------------------------------------ --
       -- Remove: filter by predicate; keep elements where pred is FALSE.
@@ -147,12 +144,11 @@ buildValue getExtern arena = indexedFold go'
           detypeOperand BooleanType testOp
 
       -- ------------------------------------------------------------------ --
-      -- Length: count nodes.
+      -- Length: the list's header.
       -- ------------------------------------------------------------------ --
-      Length ty mxs -> do
+      Length _ mxs -> do
         xs <- mxs
-        let headPtr = getListOp xs
-        lift $ buildLength headPtr (toLLVMType ty)
+        lift $ buildLength (getListOp xs)
 
       -- ------------------------------------------------------------------ --
       -- Index: 1-based indexing, optionally cyclic.
@@ -645,24 +641,23 @@ buildValue getExtern arena = indexedFold go'
 -- List IR helpers
 ------------------------------------------------------------------------
 
--- | Allocate one node per element, link them, and return the head pointer.
--- Elements are pre-evaluated.  A literal has a known length, so we do a single
--- up-front bounds check: if the whole list will not fit, set the overflow flag
--- (pixel goes magenta) and return the empty list.  Otherwise all the nodes are
--- claimed with one bump of the arena pointer, and node k is at a constant
--- offset from the first.  (Allocating them one at a time, each with its own
+-- | A list literal: one block, its elements pre-evaluated. A literal has a
+-- known length, so there is a single up-front check that the block fits in
+-- the arena: if not, set the overflow flag (pixel goes magenta) and give
+-- the empty list. (The check, the arena bump, and every element's offset are
+-- each emitted once: a chain of per-element allocations, each with its own
 -- overflow check, gave LLVM a chain of pointer @select@s as long as the
--- literal, and its alias analysis took time superlinear in that length: a
--- few hundred elements took seconds to compile.)
+-- literal, and its alias analysis took time superlinear in that length.)
 buildLitList :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
-             => ArenaState -> TypeProxy t -> Int -> [Op t] -> m (Op ('ListT t))
-buildLitList arena ty stride elems = mdo
+             => ArenaState -> TypeProxy t -> [Op t] -> m (Op ('ListT t))
+buildLitList arena ty elems = mdo
+  let n = length elems
+      stride = listElemStride ty
   headSlot <- alloca (AST.ptr AST.i8) Nothing 0
   store headSlot 0 nullI8Ptr
 
-  -- Will all (length elems) nodes fit from the current bump position?
   bump    <- load (asBumpAlloca arena) 0
-  needEnd  <- gep bump [C.int32 (fromIntegral (stride * length elems))]
+  needEnd  <- gep bump [C.int64 (fromIntegral (8 + stride * n))]
   overflow <- icmp IP.UGT needEnd (asArenaEnd arena)   -- unsigned pointer compare
   condBr overflow litOverflow litBuild
 
@@ -672,141 +667,129 @@ buildLitList arena ty stride elems = mdo
 
   litBuild <- block `named` "lit_build"
   store (asBumpAlloca arena) 0 needEnd
-  nodePtrs <- forM [0 .. length elems - 1] $ \k ->
-    gep bump [C.int32 (fromIntegral (stride * k))]
-  let nextPtrs = drop 1 nodePtrs ++ [nullI8Ptr]
-  forM_ (zip3 nodePtrs nextPtrs elems) $ \(nodePtr, nextPtr, elemOp) -> do
-    nf <- bitcast nodePtr (AST.ptr (AST.ptr AST.i8))
-    store nf 0 nextPtr
-    storeListElem ty nodePtr elemOp
-  case nodePtrs of
-    (h:_) -> store headSlot 0 h
-    []    -> pure ()
+  lenPtr <- bitcast bump (AST.ptr AST.i32)
+  store lenPtr 0 (C.int32 (fromIntegral n))
+  forM_ (zip [0 :: Int ..] elems) $ \(k, elemOp) -> do
+    slot <- gep bump [C.int64 (fromIntegral (stride * k))]
+    storeListElem ty slot elemOp
+  store headSlot 0 bump
   br litDone
 
   litDone <- block `named` "lit_done"
   ListOp <$> load headSlot 0
 
--- | Copy every node from every input-list head ptr into the arena, linking
--- the copies end-to-end.  All input lists are copied (no sharing).
-buildJoin :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
-          => ArenaState -> TypeProxy t -> [Operand] -> m (Op ('ListT t))
-buildJoin arena ty inputHeads = do
-  let stride = listNodeStride ty
-  headSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store headSlot 0 nullI8Ptr
-  prevSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store prevSlot 0 nullI8Ptr
-  -- For each input list, copy its nodes and append to the result.
-  forM_ inputHeads $ \inputHead -> do
-    currSlot <- alloca (AST.ptr AST.i8) Nothing 0
-    store currSlot 0 inputHead
-    mdo
-      br copyHead
-      copyHead <- block `named` "join_copy_head"
-      curr <- load currSlot 0
-      done <- icmp P.EQ curr nullI8Ptr
-      condBr done copyExit copyBody
-      copyBody <- block `named` "join_copy_body"
-      newNode <- arenaAlloc arena stride
-      isNull <- icmp P.EQ newNode nullI8Ptr   -- arena overflow: bail with partial list
-      condBr isNull copyExit copyAlloc
-      copyAlloc <- block `named` "join_copy_alloc"
-      -- Copy element from curr to newNode
-      elemOp <- loadListElem ty curr
-      nf <- bitcast newNode (AST.ptr (AST.ptr AST.i8))
-      store nf 0 nullI8Ptr          -- new node's next = null
-      storeListElem ty newNode elemOp
-      -- Append to result
-      appendNode headSlot prevSlot newNode
-      -- Advance
-      nextPtr <- loadListNext curr
-      store currSlot 0 nextPtr
-      br copyHead
-      copyExit <- block `named` "join_copy_exit"
-      pure ()
-  ListOp <$> load headSlot 0
+-- | A loop over @k = 0 .. n - 1@ (i32s), running the body with @k@; the
+-- body says whether to go on.
+forIndex :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
+         => String -> Operand -> (Operand -> m Operand) -> m ()
+forIndex nm n body = do
+  kSlot <- alloca AST.i32 Nothing 0
+  store kSlot 0 (C.int32 0)
+  mdo
+    br loopHead
+    loopHead <- block `named` fromString (nm ++ "_head")
+    k <- load kSlot 0
+    more <- icmp P.SLT k n
+    condBr more loopBody loopExit
+    loopBody <- block `named` fromString (nm ++ "_body")
+    goOn <- body k
+    add k (C.int32 1) >>= store kSlot 0
+    condBr goOn loopHead loopExit
+    loopExit <- block `named` fromString (nm ++ "_exit")
+    pure ()
 
--- | Filter: keep elements where the predicate callback returns 0 (false).
--- The callback receives the element slot and returns an i1 Operand.
+-- | A new list of the given length (an i32), filled in by @fill@ (given the
+-- block) when the length is positive and the block fits in the arena;
+-- otherwise the empty list (with the overflow flag set if it didn't fit).
+withNewList :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
+            => ArenaState -> TypeProxy t -> String -> Operand -> (Operand -> m ())
+            -> m Operand
+withNewList arena ty nm n fill = do
+  resultSlot <- alloca (AST.ptr AST.i8) Nothing 0
+  store resultSlot 0 nullI8Ptr
+  mdo
+    positive <- icmp P.SGT n (C.int32 0)
+    condBr positive allocB doneB
+    allocB <- block `named` fromString (nm ++ "_alloc")
+    base <- listAlloc arena ty n
+    fits <- icmp P.NE base nullI8Ptr
+    condBr fits fillB doneB
+    fillB <- block `named` fromString (nm ++ "_fill")
+    fill base
+    store resultSlot 0 base
+    br doneB
+    doneB <- block `named` fromString (nm ++ "_done")
+    pure ()
+  load resultSlot 0
+
+-- | Several lists one after the other, copied into one new list.
+buildJoin :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
+          => (String -> Operand) -> ArenaState -> TypeProxy t -> [Operand] -> m (Op ('ListT t))
+buildJoin getExtern arena ty inputs = do
+  lens <- mapM listLength inputs
+  total <- foldM add (C.int32 0) lens
+  let stride = fromIntegral (listElemStride ty)
+  fmap ListOp $ withNewList arena ty "join" total $ \base -> do
+    _ <- foldM (\offset (input, len) -> mdo
+                  -- (an empty input may be null: copy nothing from it)
+                  nonEmpty <- icmp P.SGT len (C.int32 0)
+                  condBr nonEmpty copyB nextB
+                  copyB <- block `named` "join_copy"
+                  dst <- listSlot ty base offset >>= \s -> gep s [C.int64 8]
+                  src <- gep input [C.int64 8]
+                  bytes <- sext len AST.i64 >>= (`mul` C.int64 stride)
+                  _ <- call (getExtern "memcpy") [(dst, []), (src, []), (bytes, []), (C.bit 0, [])]
+                  br nextB
+                  nextB <- block `named` "join_next"
+                  add offset len)
+               (C.int32 0) (zip inputs lens)
+    pure ()
+
+-- | Filter: keep the elements where the predicate callback gives 0 (false).
+-- The result has room for every element; its length is what was kept.
 buildFilter :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
             => ArenaState -> TypeProxy t -> Operand -> PtrOp t
             -> (PtrOp t -> m Operand)   -- ^ predicate; keep when result = 0
             -> m (Op ('ListT t))
-buildFilter arena ty inputHead elemSlot predCb = do
-  let stride = listNodeStride ty
-  headSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store headSlot 0 nullI8Ptr
-  prevSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store prevSlot 0 nullI8Ptr
-  currSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store currSlot 0 inputHead
-  mdo
-    br filterHead
-    filterHead <- block `named` "filter_head"
-    curr <- load currSlot 0
-    done <- icmp P.EQ curr nullI8Ptr
-    condBr done filterExit filterBody
-    filterBody <- block `named` "filter_body"
-    elemOp <- loadListElem ty curr
-    storeOperand elemOp elemSlot
-    shouldRemove <- predCb elemSlot
-    condBr shouldRemove filterAdvance filterAdd
-    filterAdd <- block `named` "filter_add"
-    newNode <- arenaAlloc arena stride
-    isNull <- icmp P.EQ newNode nullI8Ptr   -- arena overflow: bail with partial list
-    condBr isNull filterExit filterStore
-    filterStore <- block `named` "filter_store"
-    nf <- bitcast newNode (AST.ptr (AST.ptr AST.i8))
-    store nf 0 nullI8Ptr
-    storeListElem ty newNode elemOp
-    appendNode headSlot prevSlot newNode
-    br filterAdvance
-    filterAdvance <- block `named` "filter_advance"
-    nextPtr <- loadListNext curr
-    store currSlot 0 nextPtr
-    br filterHead
-    filterExit <- block `named` "filter_exit"
-    pure ()
-  ListOp <$> load headSlot 0
+buildFilter arena ty input elemSlot predCb = do
+  len <- listLength input
+  countSlot <- alloca AST.i32 Nothing 0
+  store countSlot 0 (C.int32 0)
+  result <- withNewList arena ty "filter" len $ \base -> do
+    forIndex "filter" len $ \k -> mdo
+      elemOp <- listSlot ty input k >>= loadListElem ty
+      storeOperand elemOp elemSlot
+      shouldRemove <- predCb elemSlot
+      condBr shouldRemove nextB keepB
+      keepB <- block `named` "filter_keep"
+      count <- load countSlot 0
+      listSlot ty base count >>= \s -> storeListElem ty s elemOp
+      add count (C.int32 1) >>= store countSlot 0
+      br nextB
+      nextB <- block `named` "filter_next"
+      pure (C.bit 1)
+    count <- load countSlot 0
+    lenPtr <- bitcast base (AST.ptr AST.i32)
+    store lenPtr 0 count
+  -- nothing kept: the empty list
+  count <- load countSlot 0
+  none <- icmp P.EQ count (C.int32 0)
+  ListOp <$> select none nullI8Ptr result
 
 -- | Map: apply a callback to every element, building a new list with the results.
 buildMap :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
          => ArenaState -> TypeProxy t1 -> TypeProxy t2 -> Operand -> PtrOp t1
          -> (PtrOp t1 -> m (Op t2))   -- ^ transform callback
          -> m (Op ('ListT t2))
-buildMap arena ty1 ty2 inputHead elemSlot transformCb = do
-  let stride2 = listNodeStride ty2
-  headSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store headSlot 0 nullI8Ptr
-  prevSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store prevSlot 0 nullI8Ptr
-  currSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store currSlot 0 inputHead
-  mdo
-    br mapHead
-    mapHead <- block `named` "map_head"
-    curr <- load currSlot 0
-    done <- icmp P.EQ curr nullI8Ptr
-    condBr done mapExit mapBody
-    mapBody <- block `named` "map_body"
-    elemOp <- loadListElem ty1 curr
-    storeOperand elemOp elemSlot
-    outOp <- transformCb elemSlot
-    newNode <- arenaAlloc arena stride2
-    isNull <- icmp P.EQ newNode nullI8Ptr   -- arena overflow: bail with partial list
-    condBr isNull mapExit mapStore
-    mapStore <- block `named` "map_store"
-    nf <- bitcast newNode (AST.ptr (AST.ptr AST.i8))
-    store nf 0 nullI8Ptr
-    storeListElem ty2 newNode outOp
-    appendNode headSlot prevSlot newNode
-    nextPtr <- loadListNext curr
-    store currSlot 0 nextPtr
-    br mapHead
-    mapExit <- block `named` "map_exit"
-    pure ()
-  ListOp <$> load headSlot 0
+buildMap arena ty1 ty2 input elemSlot transformCb = do
+  len <- listLength input
+  fmap ListOp $ withNewList arena ty2 "map" len $ \base ->
+    forIndex "map" len $ \k -> do
+      elemOp <- listSlot ty1 input k >>= loadListElem ty1
+      storeOperand elemOp elemSlot
+      outOp <- transformCb elemSlot
+      listSlot ty2 base k >>= \s -> storeListElem ty2 s outOp
+      pure (C.bit 1)
 
 -- | Find: return first element where the predicate callback returns 1 (true),
 -- or the default value if no element matches.
@@ -814,59 +797,26 @@ buildFind :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, Monad
           => ArenaState -> TypeProxy t -> Operand -> PtrOp t -> Op t
           -> (PtrOp t -> m Operand)  -- ^ predicate callback
           -> m (Op t)
-buildFind _arena ty inputHead elemSlot defOp predCb = do
+buildFind _arena ty input elemSlot defOp predCb = do
   resultSlot <- allocaOp ty
   storeOperand defOp resultSlot
-  currSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store currSlot 0 inputHead
-  mdo
-    br findHead
-    findHead <- block `named` "find_head"
-    curr <- load currSlot 0
-    done <- icmp P.EQ curr nullI8Ptr
-    condBr done findExit findBody
-    findBody <- block `named` "find_body"
-    elemOp <- loadListElem ty curr
+  len <- listLength input
+  forIndex "find" len $ \k -> mdo
+    elemOp <- listSlot ty input k >>= loadListElem ty
     storeOperand elemOp elemSlot
     matched <- predCb elemSlot
-    condBr matched findFound findAdvance
-    findFound <- block `named` "find_found"
+    condBr matched foundB nextB
+    foundB <- block `named` "find_found"
     storeOperand elemOp resultSlot
-    br findExit
-    findAdvance <- block `named` "find_advance"
-    nextPtr <- loadListNext curr
-    store currSlot 0 nextPtr
-    br findHead
-    findExit <- block `named` "find_exit"
-    pure ()
+    br nextB
+    nextB <- block `named` "find_next"
+    I.xor matched (C.bit 1)   -- go on while not found
   derefOperand resultSlot
 
--- | Count the number of nodes in a linked list.
+-- | A list's length: its header (0 for the empty list).
 buildLength :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
-            => Operand     -- ^ head ptr
-            -> AST.Type    -- ^ element LLVM type (unused; for sizing only)
-            -> m (Op 'IntegerT)
-buildLength inputHead _elemTy = do
-  countSlot <- alloca AST.i32 Nothing 0
-  store countSlot 0 (C.int32 0)
-  currSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store currSlot 0 inputHead
-  mdo
-    br lenHead
-    lenHead <- block `named` "length_head"
-    curr <- load currSlot 0
-    done <- icmp P.EQ curr nullI8Ptr
-    condBr done lenExit lenBody
-    lenBody <- block `named` "length_body"
-    n <- load countSlot 0
-    n' <- add n (C.int32 1)
-    store countSlot 0 n'
-    nextPtr <- loadListNext curr
-    store currSlot 0 nextPtr
-    br lenHead
-    lenExit <- block `named` "length_exit"
-    pure ()
-  IntegerOp <$> load countSlot 0
+            => Operand -> m (Op 'IntegerT)
+buildLength input = IntegerOp <$> listLength input
 
 -- | 1-based list indexing.  For cyclic = False: positive indices count from
 -- the front, negative from the back.  For cyclic = True: wraps around.
@@ -877,60 +827,38 @@ buildLength inputHead _elemTy = do
 buildIndex :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
            => ArenaState -> TypeProxy t -> Bool -> Operand -> Operand
            -> m (Op t)
-buildIndex arena ty cyclic inputHead iOp = do
-  -- Allocate all slots up front (keeps allocas in the entry region).
-  stepSlot   <- alloca AST.i32 Nothing 0
-  currSlot   <- alloca (AST.ptr AST.i8) Nothing 0
+buildIndex arena ty cyclic input iOp = do
   resultSlot <- allocaOp ty
-  store currSlot 0 inputHead
-  -- Compute 0-based step count.  We always compute the length because we need
-  -- it for both cyclic wrapping and negative non-cyclic indices.
-  len <- getIntegerOp <$> buildLength inputHead (toLLVMType ty)
-  if cyclic
-    then do
-      -- step = ((i - 1) mod len + len) mod len   (handles any sign)
-      i1   <- sub iOp (C.int32 1)
-      r    <- srem i1 len
-      r'   <- add r len
-      step <- srem r' len
-      store stepSlot 0 step
-    else do
-      -- i >= 1: step = i - 1 (0-based from front)
-      -- i <= 0 (incl. negative): step = len + i  (0-based from back)
-      isNeg   <- icmp P.SLE iOp (C.int32 0)
-      posStep <- sub iOp (C.int32 1)
-      negStep <- add len iOp
-      finalStep <- select isNeg negStep posStep
-      store stepSlot 0 finalStep
-  -- Walk 'step' steps from the head.
+  len <- listLength input
+  (step, inRange) <-
+    if cyclic
+      then do
+        -- step = ((i - 1) mod len + len) mod len   (handles any sign);
+        -- only the empty list is out of range
+        isEmpty <- icmp P.EQ len (C.int32 0)
+        safeLen <- select isEmpty (C.int32 1) len
+        i1   <- sub iOp (C.int32 1)
+        r    <- srem i1 safeLen
+        r'   <- add r safeLen
+        step <- srem r' safeLen
+        ok   <- icmp P.NE len (C.int32 0)
+        pure (step, ok)
+      else do
+        -- i >= 1: step = i - 1 (0-based from front)
+        -- i <= 0 (incl. negative): step = len + i  (0-based from back)
+        isNeg   <- icmp P.SLE iOp (C.int32 0)
+        posStep <- sub iOp (C.int32 1)
+        negStep <- add len iOp
+        step    <- select isNeg negStep posStep
+        ok      <- icmp IP.ULT step len   -- 0 <= step < len
+        pure (step, ok)
   mdo
-    br stepHead
-    stepHead <- block `named` "index_step"
-    step <- load stepSlot 0
-    curr <- load currSlot 0
-    atTarget <- icmp P.EQ step (C.int32 0)
-    isNull   <- icmp P.EQ curr nullI8Ptr
-    atEnd    <- I.or atTarget isNull
-    condBr atEnd stepDone stepAdvance
-    stepAdvance <- block `named` "index_advance"
-    step' <- sub step (C.int32 1)
-    store stepSlot 0 step'
-    nextPtr <- loadListNext curr
-    store currSlot 0 nextPtr
-    br stepHead
-    stepDone <- block `named` "index_done"
-    pure ()
-  -- Load element or return zero on out-of-bounds.
-  curr     <- load currSlot 0
-  isNull   <- icmp P.EQ curr nullI8Ptr
-  mdo
-    condBr isNull oobBb elemBb
+    condBr inRange elemBb oobBb
     oobBb <- block `named` "index_oob"
     store (asIndexError arena) 0 (C.bit 1)    -- out-of-bounds → signal
     br mergeBb                                 -- resultSlot stays zero-initialised
     elemBb <- block `named` "index_elem"
-    curr2 <- load currSlot 0
-    e <- loadListElem ty curr2
+    e <- listSlot ty input step >>= loadListElem ty
     storeOperand e resultSlot
     br mergeBb
     mergeBb <- block `named` "index_merge"
@@ -948,41 +876,28 @@ buildTableSliceRead arena ty desc ixs = do
   (count, stride) <- case spans of
     [span1] -> pure span1
     _ -> throwError "internal error: a slice read as a list has one `*`"
-  let nodeStride = listNodeStride ty
-  headSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store headSlot 0 nullI8Ptr
-  prevSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store prevSlot 0 nullI8Ptr
-  iSlot <- alloca AST.i32 Nothing 0
-  store iSlot 0 (C.int32 0)
+  resultSlot <- alloca (AST.ptr AST.i8) Nothing 0
+  store resultSlot 0 nullI8Ptr
   mdo
-    condBr inRange sliceHead badB
-    sliceHead <- block `named` "slice_head"
-    i <- load iSlot 0
-    past <- icmp P.SGE i count
-    condBr past sliceExit sliceBody
-    sliceBody <- block `named` "slice_body"
-    newNode <- arenaAlloc arena nodeStride
-    isNull <- icmp P.EQ newNode nullI8Ptr   -- arena overflow: bail with partial list
-    condBr isNull sliceExit sliceAlloc
-    sliceAlloc <- block `named` "slice_alloc"
-    cell <- mul i stride >>= add base
-    elems <- loadTableElems desc
-    byteOffset <- sext cell AST.i64 >>= (`mul` C.int64 size)
-    p <- gep elems [byteOffset]
-    v <- loadElemAt ty p
-    nf <- bitcast newNode (AST.ptr (AST.ptr AST.i8))
-    store nf 0 nullI8Ptr
-    storeListElem ty newNode v
-    appendNode headSlot prevSlot newNode
-    add i (C.int32 1) >>= store iSlot 0
-    br sliceHead
+    condBr inRange readB badB
+    readB <- block `named` "slice_read"
+    lst <- withNewList arena ty "slice" count $ \out ->
+      forIndex "slice" count $ \i -> do
+        cell <- mul i stride >>= add base
+        elems <- loadTableElems desc
+        byteOffset <- sext cell AST.i64 >>= (`mul` C.int64 size)
+        p <- gep elems [byteOffset]
+        v <- loadElemAt ty p
+        listSlot ty out i >>= \s -> storeListElem ty s v
+        pure (C.bit 1)
+    store resultSlot 0 lst
+    br sliceExit
     badB <- block `named` "slice_out_of_range"
     store (asIndexError arena) 0 (C.bit 1)
     br sliceExit
     sliceExit <- block `named` "slice_exit"
     pure ()
-  ListOp <$> load headSlot 0
+  ListOp <$> load resultSlot 0
 
 -- | A table's elements (an @i8*@), from its descriptor.
 loadTableElems :: (MonadModuleBuilder m, MonadIRBuilder m) => Operand -> m Operand
@@ -994,58 +909,12 @@ loadTableElems desc = do
 buildRange :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
            => ArenaState -> Operand -> Operand -> m (Op ('ListT 'IntegerT))
 buildRange arena loOp hiOp = do
-  let stride = listNodeStride IntegerType
-  headSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store headSlot 0 nullI8Ptr
-  prevSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store prevSlot 0 nullI8Ptr
-  iSlot <- alloca AST.i32 Nothing 0
-  store iSlot 0 loOp
-  mdo
-    br rangeHead
-    rangeHead <- block `named` "range_head"
-    i <- load iSlot 0
-    past <- icmp P.SGT i hiOp
-    condBr past rangeExit rangeBody
-    rangeBody <- block `named` "range_body"
-    newNode <- arenaAlloc arena stride
-    isNull <- icmp P.EQ newNode nullI8Ptr   -- arena overflow: bail with partial list
-    condBr isNull rangeExit rangeAlloc
-    rangeAlloc <- block `named` "range_alloc"
-    nf <- bitcast newNode (AST.ptr (AST.ptr AST.i8))
-    store nf 0 nullI8Ptr
-    storeListElem IntegerType newNode (IntegerOp i)
-    appendNode headSlot prevSlot newNode
-    i' <- add i (C.int32 1)
-    store iSlot 0 i'
-    br rangeHead
-    rangeExit <- block `named` "range_exit"
-    pure ()
-  ListOp <$> load headSlot 0
-
--- | Append a new node to the result list tracked by (headSlot, prevSlot).
--- headSlot holds the head ptr (null = list is empty so far).
--- prevSlot holds the previous node ptr (null = no previous node yet).
-appendNode :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m, MonadFix m)
-           => Operand   -- ^ headSlot (i8**, alloca)
-           -> Operand   -- ^ prevSlot (i8**, alloca)
-           -> Operand   -- ^ newNode  (i8*)
-           -> m ()
-appendNode headSlot prevSlot newNode = do
-  prev <- load prevSlot 0
-  mdo
-    isFirst <- icmp P.EQ prev nullI8Ptr
-    condBr isFirst firstBb linkBb
-    firstBb <- block `named` "append_first"
-    store headSlot 0 newNode
-    br mergeBb
-    linkBb <- block `named` "append_link"
-    prevNextField <- bitcast prev (AST.ptr (AST.ptr AST.i8))
-    store prevNextField 0 newNode
-    br mergeBb
-    mergeBb <- block `named` "append_merge"
-    pure ()
-  store prevSlot 0 newNode
+  n <- sub hiOp loOp >>= add (C.int32 1)
+  fmap ListOp $ withNewList arena IntegerType "range" n $ \base ->
+    forIndex "range" n $ \k -> do
+      v <- add loOp k
+      listSlot IntegerType base k >>= \s -> storeListElem IntegerType s (IntegerOp v)
+      pure (C.bit 1)
 
 -- | Emit a loop computing @base ^ expo@ by repeated multiplication. This
 -- replaces a bogus @llvm.powi.i32@ "intrinsic" (LLVM's @llvm.powi@ only takes

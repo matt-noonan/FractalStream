@@ -781,29 +781,29 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
   ForEach pfList _listName (ListType itemTy) itemName pfNoItem _env _ body ->
     recallIsAbsent pfNoItem $ do
     ctx <- ask
-    -- Load the head pointer from the list variable's stack slot.
-    headPtr <- lift $ getListOp <$> derefOperand (getBinding ctx pfList)
-    -- Allocate a stack slot to track the current node pointer.
-    currPtrAlloca <- lift $ alloca (AST.ptr AST.i8) Nothing 0
-    lift $ store currPtrAlloca 0 headPtr
+    -- The list as it is when the loop starts (lists never change in place,
+    -- so assigning the variable in the body doesn't affect the loop).
+    listPtr <- lift $ getListOp <$> derefOperand (getBinding ctx pfList)
+    len <- lift $ listLength listPtr
+    kAlloca <- lift $ alloca AST.i32 Nothing 0
+    lift $ store kAlloca 0 (C.int32 0)
     -- Allocate a stack slot for the current element.
     elemSlot <- lift $ allocaOp itemTy
     mdo
       lift $ br loopHead
 
       loopHead <- block `named` "foreach_head"
-      currPtr <- lift $ load currPtrAlloca 0
-      isNull  <- lift $ icmp P.EQ currPtr nullI8Ptr
-      lift $ condBr isNull loopExit loopBody
+      k <- lift $ load kAlloca 0
+      more <- lift $ icmp P.SLT k len
+      lift $ condBr more loopBody loopExit
 
       loopBody <- block `named` "foreach_body"
       lift (checkCancelled arena)
-      elem_ <- lift $ loadListElem itemTy currPtr
+      elem_ <- lift $ listSlot itemTy listPtr k >>= loadListElem itemTy
       lift $ storeOperand elem_ elemSlot
       -- Run the body with the element bound in the context.
       lift $ runReaderT body (Bind itemName itemTy elemSlot ctx)
-      nextPtr <- lift $ loadListNext currPtr
-      lift $ store currPtrAlloca 0 nextPtr
+      lift $ add k (C.int32 1) >>= store kAlloca 0
       lift $ br loopHead
 
       loopExit <- block `named` "foreach_exit"
@@ -814,22 +814,22 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
          predicate action fallback ->
     recallIsAbsent pfNoItem $ do
     ctx <- ask
-    -- Load the head pointer from the list variable's stack slot.
-    headPtr <- lift $ getListOp <$> derefOperand (getBinding ctx pfList)
-    currPtrAlloca <- lift $ alloca (AST.ptr AST.i8) Nothing 0
-    lift $ store currPtrAlloca 0 headPtr
+    listPtr <- lift $ getListOp <$> derefOperand (getBinding ctx pfList)
+    len <- lift $ listLength listPtr
+    kAlloca <- lift $ alloca AST.i32 Nothing 0
+    lift $ store kAlloca 0 (C.int32 0)
     elemSlot <- lift $ allocaOp itemTy
     mdo
       lift $ br loopHead
 
       loopHead <- block `named` "lookup_head"
-      currPtr <- lift $ load currPtrAlloca 0
-      isNull  <- lift $ icmp P.EQ currPtr nullI8Ptr
-      lift $ condBr isNull notFound loopBody
+      k <- lift $ load kAlloca 0
+      more <- lift $ icmp P.SLT k len
+      lift $ condBr more loopBody notFound
 
       loopBody <- block `named` "lookup_body"
       lift (checkCancelled arena)
-      elem_ <- lift $ loadListElem itemTy currPtr
+      elem_ <- lift $ listSlot itemTy listPtr k >>= loadListElem itemTy
       lift $ storeOperand elem_ elemSlot
       -- Evaluate the predicate in the extended context.
       let extCtx = Bind itemName itemTy elemSlot ctx
@@ -838,8 +838,7 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
       lift $ condBr testBit foundBlock nextIter
 
       nextIter <- block `named` "lookup_next"
-      nextPtr <- lift $ loadListNext currPtr
-      lift $ store currPtrAlloca 0 nextPtr
+      lift $ add k (C.int32 1) >>= store kAlloca 0
       lift $ br loopHead
 
       foundBlock <- block `named` "lookup_found"

@@ -327,17 +327,46 @@ spec = do
       interpreted <- runTool interpretedToolExec src
       compiled `shouldBe` Just interpreted
 
+    it "gives the interpreter's results for every list operation" $ withJIT $ \jit -> do
+      let src = unlines
+            [ "ks := range(3, 7)"
+            , "ks <- join(ks, [], range(5, 4), [10])"
+            , "n <- ks @ 1 + ks @ (-1) + 10 (ks @@ 0) + 100 (ks @@ 13) + 1000 (ks @@ (-2)) + length(range(5, 4))"
+            , "evens := remove(ks, k ⟼ mod(k, 2) = 1)"
+            , "none := remove(ks, k ⟼ true)"
+            , "n <- n + 10000 length(evens) + 100000 length(none) + 1000000 (evens @ 2)"
+            , "pts <- transform(pts, p ⟼ p + z)"
+            , "pts <- append(pts, find(pts, p ⟼ re(p) > 1.5, 0))"
+            , "pts <- prepend(pts, 7i)"
+            , "legs <- append(prepend(legs, []), pts)"
+            , "words <- join(words, [\"x\"], remove(words, w ⟼ true), [\"y\"])"
+            , "for each l in legs:"
+            , "  x <- x + length(l)"
+            , "with first p matching im(p) < 0 in pts:"
+            , "  z <- p"
+            , "else:"
+            , "  z <- 0"
+            , "msg <- text(length(legs), \"/\", words @ (-1))" ]
+      compiled    <- runTool (compiledToolExec jit noAutocolor) src
+      interpreted <- runTool interpretedToolExec src
+      compiled `shouldBe` interpreted
+
+    it "reports cyclic indexing of the empty list as a bad index" $ withJIT $ \jit -> do
+      let src = "ks := remove(range(1, 3), k ⟼ true)\nn <- ks @@ 1"
+      runTool (compiledToolExec jit noAutocolor) src
+        `shouldThrow` (\e -> "index was out of range" `isInfixOf` show (e :: IOException))
+
   describe "when rendering a viewer" $ do
 
     let -- Render a 4x4 block of a script that's fine for n = 0, indexes a
         -- list out of range for n = 1, and runs out of its 1 MB of
-        -- scratch memory for n = 2 (a 100000-element list takes 1.6 MB).
+        -- scratch memory for n = 2 (a list of 200000 integers takes 1.6 MB).
         render :: LLVMJit -> Int64 -> IO (ViewerIssues, [Word8])
         render jit n = do
           let env = envProxy (Proxy @(ViewerEnv '[ '("n", 'IntegerT) ]))
               src = "color <- blue\nxs := [1, 2, 3]\n"
                  ++ "if n = 1:\n  k := xs @ 5\n  color <- if k > 0 then red else green\n"
-                 ++ "if n = 2:\n  ks := range(1, 100000)\n"
+                 ++ "if n = 2:\n  ks := range(1, 200000)\n"
                  ++ "  color <- if length(ks) > 0 then red else green"
           code <- either (fail . show) pure (parseCode env noCommonDefs src)
           withJittedViewer jit noAutocolor code $ \vf ->

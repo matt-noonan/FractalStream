@@ -43,7 +43,7 @@ import GHC.IO.Encoding (utf8)
 import Backend.LLVM.Code
 import Backend.LLVM.Table (newDescriptor, freeDescriptor, lookupDescriptor, withTableCallbacks, TableCallbacks(..))
 import Language.Table (tableFrozen)
-import Backend.LLVM.Operand (listNodeStride, pairSecondOffset)
+import Backend.LLVM.Operand (listElemStride, pairSecondOffset)
 
 import Language.Value
 import Language.Value.Evaluator (HaskellValue)
@@ -234,24 +234,19 @@ toFFIArgInOut t earg v = case t of
     Just setter | Scalar ty v /= Scalar ty newV -> setter ty newV
     _ -> pure ()
 
--- | Allocate and populate a contiguous buffer of linked-list nodes for a
--- Haskell list.  Returns the head pointer (null for empty) and a cleanup action.
--- Node layout (stride = listNodeStride itemTy):
---   bytes 0-7:  next pointer (null = end of list)
---   bytes 8+:   element data
+-- | Allocate and fill in a list's block, as compiled code lays lists out
+-- (see 'Backend.LLVM.Operand.ListOp'): the length (an i32, padded to 8
+-- bytes), then the elements, one every 'listElemStride' bytes. Returns the
+-- block (null for the empty list) and a cleanup action.
 buildListBuffer :: TypeProxy t -> [HaskellType t] -> IO (Ptr Word8, IO ())
 buildListBuffer _      []    = pure (nullPtr, pure ())
 buildListBuffer itemTy items = do
   let n      = length items
-      stride = listNodeStride itemTy
-  buf <- mallocBytes (n * stride) :: IO (Ptr Word8)
-  cleanups <- forM (zip [0 .. n - 1] items) $ \(i, item) -> do
-    let nodeBase = buf `plusPtr` (i * stride)
-        nextRaw  = if i == n - 1
-                   then nullPtr
-                   else buf `plusPtr` ((i + 1) * stride) :: Ptr Word8
-    poke (castPtr nodeBase :: Ptr (Ptr Word8)) nextRaw
-    pokeListElem itemTy (nodeBase `plusPtr` 8) item
+      stride = listElemStride itemTy
+  buf <- mallocBytes (8 + n * stride) :: IO (Ptr Word8)
+  poke (castPtr buf :: Ptr Int32) (fromIntegral n)
+  cleanups <- forM (zip [0 .. n - 1] items) $ \(i, item) ->
+    pokeListElem itemTy (buf `plusPtr` (8 + i * stride)) item
   pure (buf, sequence_ cleanups >> free buf)
 
 -- | Write element data for a single list node at the given byte address.
@@ -291,12 +286,14 @@ pokeListElem t ptr item = case t of
   done action = action >> pure (pure ())
 
 -- | Read back a list built by 'buildListBuffer' or by compiled code (in the
--- arena), starting from its head node (null for the empty list).
+-- arena), from its block (null for the empty list).
 peekList :: TypeProxy t -> Ptr Word8 -> IO [HaskellType t]
-peekList itemTy node
-  | node == nullPtr = pure []
-  | otherwise = (:) <$> peekListElem itemTy (node `plusPtr` 8)
-                    <*> (peek (castPtr node) >>= peekList itemTy)
+peekList itemTy buf
+  | buf == nullPtr = pure []
+  | otherwise = do
+      n <- fromIntegral <$> peek (castPtr buf :: Ptr Int32)
+      let stride = listElemStride itemTy
+      forM [0 .. n - 1] $ \i -> peekListElem itemTy (buf `plusPtr` (8 + i * stride))
 
 -- | Read the element data of a single list node; the inverse of
 -- 'pokeListElem'.

@@ -647,16 +647,30 @@ start coordinates, and an opaque context pointer.
 Text (`TextOp`) is a NUL-terminated UTF-8 `i8*`. A literal points at a
 module-private constant (`fs.text.<k>`); `text(...)` concatenation is built
 in the per-call arena via strlen/memcpy (arena overflow gives the empty
-string plus the overflow flag). A list literal claims all its nodes with one
-bump of the arena pointer, at constant offsets. (Allocating literal nodes or
-texts one at a time, each with an overflow check, gives LLVM a chain of
-pointer `select`s whose alias analysis is superlinear in its length: a
-literal of 400 texts took ~9 s to compile.) Only tool handlers can
+string plus the overflow flag).
+
+A list (`ListOp`) is an `i8*` to one block (null = the empty list): its
+length as an i32 (padded to 8 bytes), then its elements, one every
+`listElemStride` bytes (the element's size rounded up to 8), so `@`, `@@`
+and `length` are O(1) and `for each` indexes. Every list operation makes a
+new block of the right size (`listAlloc`; `remove` reserves the input's
+length and records how many it kept); `join`/`append`/`prepend` memcpy.
+The host builds and reads the same layout (`buildListBuffer`, `peekList` in
+`Backend.LLVM`), and so does the wasm backend (`Backend.Wasm.List`, with
+4-byte addresses). Lists were linked lists until November 2026; indexing
+was O(k), so `xs @ k` in a loop was quadratic: summing a 1128-element list
+per pixel took ~1450 CPU-s for a 600x600 render, now ~1.5 s. A list literal
+claims its block with one bump of the arena pointer, elements at constant
+offsets. (Allocating literal elements or texts one at a time, each with an
+overflow check, gives LLVM a chain of pointer `select`s whose alias analysis
+is superlinear in its length: a literal of 400 texts took ~9 s to compile.)
+
+Only tool handlers can
 convert numbers to text: they call back into the host's `showValue` (the
 `text.format` parameter), so output matches the interpreter exactly. `write`
 calls the `draw.write` callback, which forwards to `dsWrite`. Text and list
-config variables are in/out for tools (a cell holding the string/head-node
-pointer; compiled list ops never mutate nodes in place, so a changed pointer
+config variables are in/out for tools (a cell holding the string/list
+pointer; compiled code never changes a list in place, so a changed pointer
 means a changed list, read back with `peekList`).
 
 Tools don't use the viewers' arena pool: each call gets its own arena,

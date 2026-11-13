@@ -406,40 +406,33 @@ cellPtr ty desc cell = do
   gep elems [byteOffset]
 
 -- | Write a slice with one @*@ of the table in a variable's slot, from a
--- list (its head pointer) with one element for each of its cells; out of
--- range, or a list of another length, sets the index-error flag.
+-- list with one element for each of its cells; out of range, or a list of
+-- another length, sets the index-error flag.
 buildTableWriteSlice :: Build m => ArenaState -> Operand -> TypeProxy t -> Operand -> [Maybe Operand] -> Operand -> m ()
-buildTableWriteSlice arena thawF ty slot ixs listHead = do
+buildTableWriteSlice arena thawF ty slot ixs list = do
   desc <- thawSlot thawF ty slot
   (inRange, base, spans) <- buildSliceView desc ixs
   (count, stride) <- case spans of
     [span1] -> pure span1
     _ -> throwError "internal error: a list is written to a slice with one `*`"
+  len <- listLength list
+  sameLength <- icmp IP.EQ len count
+  ok <- I.and inRange sameLength
   iSlot <- alloca AST.i32 Nothing 0
   store iSlot 0 (C.int32 0)
-  nodeSlot <- alloca (AST.ptr AST.i8) Nothing 0
-  store nodeSlot 0 listHead
   mdo
-    condBr inRange headB badB
+    condBr ok headB badB
     headB <- block `named` "slice_write_head"
     i <- load iSlot 0
-    node <- load nodeSlot 0
-    atEnd <- icmp IP.EQ node nullI8Ptr
-    condBr atEnd endB moreB
-    moreB <- block `named` "slice_write_more"
-    full <- icmp IP.SGE i count
-    condBr full badB bodyB
+    more <- icmp IP.SLT i count
+    condBr more bodyB doneB
     bodyB <- block `named` "slice_write"
-    v <- loadListElem ty node
+    v <- listSlot ty list i >>= loadListElem ty
     cell <- mul i stride >>= add base
     p <- cellPtr ty desc cell
     storeElemAt ty p v
     add i (C.int32 1) >>= store iSlot 0
-    loadListNext node >>= store nodeSlot 0
     br headB
-    endB <- block `named` "slice_write_end"
-    short <- icmp IP.NE i count
-    condBr short badB doneB
     badB <- block `named` "slice_write_bad"
     store (asIndexError arena) 0 (C.bit 1)
     br doneB
