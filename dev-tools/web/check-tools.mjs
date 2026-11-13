@@ -295,12 +295,9 @@ async function fit() {
   }));
   const overlap = (bs) => bs.some((a, i) => bs.some((b, j) => i < j && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h));
   const sideways = () => page.locator(".desk").evaluate((d) => d.scrollWidth > d.clientWidth + 1);
-  // (the region a viewer was last asked to show: its width and height, in the model's units)
-  const region = (id) => page.evaluate((v) => {
-    const r = window.__sent.filter((m) => m.type === "view" && m.viewer === v).pop();
-    return r ? [r.pixelSize * r.width, r.pixelSize * r.height] : null;
-  }, id);
-  const near = (a, b, tol = 0.03) => a && b && Math.abs(a[0] / b[0] - 1) < tol;
+  // (the regions the viewers show, as a saved file has them: each one's width)
+  const regions = (text) => [...text.slice(text.indexOf("web-properties:")).matchAll(/region:\n\s+- (\S+)/g)].map((m) => Number(m[1]));
+  const near = (a, b, tol = 0.03) => a.length === b.length && a.length > 0 && a.every((x, i) => Math.abs(x / b[i] - 1) < tol);
   const saveAs = async () => {
     await page.evaluate(() => { window.showSaveFilePicker = undefined; });
     const download = page.waitForEvent("download", { timeout: 10000 });
@@ -328,14 +325,35 @@ async function fit() {
     b = await boxes();
     c.check(!overlap(b) && b.every((r) => r.x + r.w <= 844 && r.y + r.h <= 390 + 1) && b[0].y === b[1].y,
             "turned sideways, they're side by side, on the page");
+    // a smaller phone, sideways: tiled across it, on it; and so when
+    // they're fitted to it
+    await page.setViewportSize({ width: 667, height: 375 });
+    await page.waitForTimeout(800);
+    b = await boxes();
+    c.check(!overlap(b) && b.every((r) => r.x >= 0 && r.x + r.w <= 667 && r.y + r.h <= 375 + 1) && b[0].y === b[1].y && !(await sideways()),
+            `a smaller phone, sideways: side by side, both on it (${b.map((r) => `${Math.round(r.w)}×${Math.round(r.h)}`).join(", ")})`);
+    await app.projectMenu("Fit windows to the page");
+    await page.waitForTimeout(500);
+    b = await boxes();
+    c.check(!overlap(b) && b.every((r) => r.x + r.w <= 667 && r.y + r.h <= 375 + 1) && b[0].y === b[1].y,
+            "and \"Fit windows to the page\" leaves them so");
+    project = await app.openLibrary("Period 2");
+    b = await boxes();
+    c.check(b.length === 3 && !overlap(b) && b.every((r) => r.x + r.w <= 667 && r.y + r.h <= 375 + 1) && new Set(b.map((r) => r.y)).size === 1,
+            `three viewers, sideways: in a row, all on it (${b.map((r) => `${Math.round(r.w)}×${Math.round(r.h)}`).join(", ")})`);
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.waitForTimeout(800);
+    b = await boxes();
+    c.check(!overlap(b) && b.every((r) => r.x + r.w <= 375) && !(await sideways()),
+            `and upright: down the page, none off its side (${b.map((r) => `${Math.round(r.w)}×${Math.round(r.h)}`).join(", ")})`);
 
     // a wide screen: saved where they are, as fractions; reopened on a
     // smaller one, in the same places, each showing what it did
     await page.setViewportSize({ width: 1600, height: 1000 });
     project = await app.openLibrary("Mandelbrot and Julia sets together");
     await page.waitForTimeout(500);
-    const before = [await region(0), await region(1)];
     const big = await saveAs();
+    const before = regions(big);
     c.check(/place:/.test(big) && /region:/.test(big) && !/pixel-size:/.test(big), "saved: each window's place, and the region it shows");
     const copy = path.join(os.tmpdir(), "fit-saved.fs");
     fs.writeFileSync(copy, big);
@@ -347,9 +365,8 @@ async function fit() {
     const ratio = b[1].x / bigBoxes[1].x;
     c.check(Math.abs(ratio - 1000 / 1600) < 0.08 && b.every((r) => r.x + r.w <= 1000 && r.y + r.h <= 641) && !overlap(b),
             `reopened on a smaller screen, in the same places, smaller (${ratio.toFixed(2)} as far across), and on it`);
-    const after = [await region(0), await region(1)];
-    c.check(near(after[0], before[0]) && near(after[1], before[1]),
-            `each showing the same region (${before[0]?.[0].toFixed(3)} -> ${after[0]?.[0].toFixed(3)} wide)`);
+    const after = regions(await saveAs());
+    c.check(near(after, before), `each showing the same region (${before.join(", ")} -> ${after.join(", ")} wide)`);
 
     // made smaller than they fit (but not a phone's): shrunk to fit
     await page.setViewportSize({ width: 760, height: 500 });
@@ -357,8 +374,8 @@ async function fit() {
     b = await boxes();
     c.check(b.every((r) => r.x + r.w <= 760 && r.y + r.h <= 501) && !overlap(b) && !(await sideways()),
             "the page made smaller: they're shrunk to fit it");
-    const shrunk = [await region(0), await region(1)];
-    c.check(near(shrunk[0], before[0]) && near(shrunk[1], before[1]), "still showing the same regions");
+    const shrunk = regions(await saveAs());
+    c.check(near(shrunk, before), `still showing the same regions (${shrunk.join(", ")})`);
     // Fit windows to the page: side by side, as big as they fit
     await page.setViewportSize({ width: 1600, height: 1000 });
     await page.waitForTimeout(500);

@@ -389,13 +389,15 @@ a small one, and on a phone the page scrolled sideways. Now
   side by side, as big as they fit (up to the project's sizes).
 - **New projects** start side by side, in as many rows as lets them be
   biggest, up to the project's sizes (not shrunk to 40% and then wrapped).
-- **Tiled on a phone** (720 CSS pixels wide or less): the viewers go down
-  the page, each as wide as it, sharing its height (none less than 200
-  pixels high: then it scrolls down, never sideways), so a parameter plane
-  and its Julia set are both in view. Turned sideways (wide), they're
-  placed again. Saving on a phone keeps the wide screen's layout (the
+- **Tiled on a phone** (720 CSS pixels wide or less, or 480 high or
+  less, as a phone turned sideways is): the viewers are tiled over the
+  page in as many columns as makes them biggest (down it, upright; across
+  it, sideways; or a grid), none less than 200 pixels high (then it
+  scrolls down, never sideways), so a parameter plane and its Julia set
+  are both in view. Saving on a phone keeps the wide screen's layout (the
   tiles aren't saved). There, the configuration drawer starts below the
-  title, so that its menu can still be reached.
+  title, so that its menu can still be reached. (A window's title bar
+  doesn't widen it: what doesn't fit is cut short.)
 
 ### 2026-11-12: The project screen, without the toolbar
 

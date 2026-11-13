@@ -1,8 +1,8 @@
 // Where a project's windows go on the desk: as saved (as fractions of
 // the desk, so that a layout made on one screen fits another), or side by
 // side to begin with; shrunk, all alike, when they don't fit; and on a
-// narrow screen (a phone), tiled down the page, each as wide as it, so
-// that every viewer's in view at once.
+// phone, tiled over the page (down it, or across it, or in a grid:
+// whichever makes them biggest), so that every viewer's in view at once.
 //
 // A place is where a window's content (its body, under its title bar)
 // goes, in CSS pixels: its window's top-left corner, and its body's size.
@@ -19,8 +19,9 @@ export const GAP = 12;
 /** The smallest a window's body is made, fitting windows to the desk. */
 const MIN_SIDE = 96;
 
-/** A narrow screen: windows are tiled, not placed. */
-export const narrowScreen = window.matchMedia("(max-width: 720px)");
+/** A phone's screen (narrow, or turned sideways, short): windows are
+    tiled, not placed. */
+export const narrowScreen = window.matchMedia("(max-width: 720px), (max-height: 480px)");
 
 /** Windows side by side, in as many rows as lets them be biggest (each
     row filled in turn), at the sizes given or smaller (all alike). */
@@ -82,19 +83,43 @@ export function fitted(places: Place[], room: Room, minimized: boolean[] = []): 
   }));
 }
 
-/** On a narrow screen: the windows down the page, each as wide as the
-    room, sharing its height (minimized ones only their title bars), but
-    none less than `MIN_TILE` high (then the page scrolls). */
+/** On a phone: the windows tiled over the room, in as many columns as
+    makes them biggest (their shorter sides longest): down it, upright,
+    across it, turned sideways, or a grid. Minimized ones are only their
+    title bars, in a row of their own under the rest. None is less than
+    `MIN_TILE` high (or as wide as it is, if that's less): if they don't
+    fit, the page scrolls, down. */
 const MIN_TILE = 200;
 export function tiled(minimized: boolean[], room: Room): Place[] {
   const open = minimized.filter((m) => !m).length;
-  const bars = minimized.length * TITLE_BAR + (minimized.length - 1) * GAP;
-  const h = open ? Math.max(MIN_TILE, Math.floor((room.height - bars) / open)) : 0;
-  let y = room.top;
+  const shut = minimized.length - open;
+  // (the minimized ones' row, under the rest)
+  const shutRows = shut ? TITLE_BAR + GAP : 0;
+  const cell = (columns: number) => {
+    const rows = Math.ceil(open / columns);
+    const width = Math.floor((room.width - (columns - 1) * GAP) / columns);
+    const height = Math.floor((room.height - shutRows - rows * TITLE_BAR - (rows - 1) * GAP) / rows);
+    return { columns, width, height };
+  };
+  let best = cell(1);
+  for (let columns = 2; columns <= Math.max(1, open); columns++) {
+    const c = cell(columns);
+    if (Math.min(c.width, c.height) > Math.min(best.width, best.height)) best = c;
+  }
+  const width = best.width, height = Math.max(Math.min(MIN_TILE, width), best.height);
+  const shutWidth = shut ? Math.floor((room.width - (shut - 1) * GAP) / shut) : 0;
+  let k = 0, s = 0;
+  const openRows = open ? Math.ceil(open / best.columns) : 0;
+  const shutTop = room.top + openRows * (TITLE_BAR + height + GAP);
   return minimized.map((m) => {
-    const p = { x: room.left, y, width: room.width, height: m ? h || MIN_TILE : h };
-    y += TITLE_BAR + (m ? 0 : h) + GAP;
-    return p;
+    if (m) {
+      const p = { x: room.left + s * (shutWidth + GAP), y: shutTop, width: shutWidth, height };
+      s++;
+      return p;
+    }
+    const col = k % best.columns, row = Math.floor(k / best.columns);
+    k++;
+    return { x: room.left + col * (width + GAP), y: room.top + row * (TITLE_BAR + height + GAP), width, height };
   });
 }
 
