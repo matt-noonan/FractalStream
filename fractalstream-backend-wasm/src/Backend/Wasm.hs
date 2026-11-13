@@ -20,7 +20,7 @@ module Backend.Wasm
 import FractalStream.Prelude
 
 import Backend.Wasm.Code
-import Backend.Wasm.List (nodeSize, pairSecond)
+import Backend.Wasm.List (elemStrideOf, pairSecond)
 import Backend.Wasm.Text (literalNode, numberNode, concatNode, utf8Bytes, literalNodeBytes)
 import Backend.Wasm.Encode (MemoryImport(..))
 import Backend.Pure (interpretViewer)
@@ -324,7 +324,8 @@ arenaSize = 1024 * 1024
 -- "Backend.Wasm.List" and "Backend.Wasm.Text"), if it has any.
 valueListBytes :: TypeProxy t -> HaskellType t -> Int
 valueListBytes t v = case t of
-  ListType i -> fromMaybe 0 (nodeSize i) * length v + sum (map (valueListBytes i) v)
+  ListType i -> (if null v then 0 else 8 + fromMaybe 0 (elemStrideOf i) * length v)
+                + sum (map (valueListBytes i) v)
   PairType a b -> let (x, y) = v in valueListBytes a x + valueListBytes b y
   TextType -> literalNodeBytes v
   TableType{} -> descriptorBytes (length (tableDims v))
@@ -376,19 +377,17 @@ pokeText p base heap s = do
   forM_ (zip [0 ..] bytes) $ \(k, b) -> pokeByteOff p (start + 8 + k) b
   pure (base + start)
 
--- | A list's nodes, at the heap's next free offset; gives its address
--- (where the buffer will be once it's at @base@), or 0 if it's empty.
+-- | A list's block (see "Backend.Wasm.List"), at the heap's next free
+-- offset; gives its address (where the buffer will be once it's at
+-- @base@), or 0 if it's empty.
 pokeList :: Ptr Word8 -> Int -> IORef Int -> TypeProxy t -> [HaskellType t] -> IO Int
 pokeList _ _ _ _ [] = pure 0
 pokeList p base heap t xs = do
-  let stride = fromMaybe 0 (nodeSize t)
+  let stride = fromMaybe 0 (elemStrideOf t)
       n = length xs
-  start <- atomicModifyIORef' heap (\h -> (h + stride * n, h))
-  forM_ (zip [0 ..] xs) $ \(k, x) -> do
-    let node = start + k * stride
-        next = if k == n - 1 then 0 else base + node + stride
-    pokeByteOff p node (fromIntegral next :: Int32)
-    pokeElem p base heap (node + 8) t x
+  start <- atomicModifyIORef' heap (\h -> (h + 8 + stride * n, h))
+  pokeByteOff p start (fromIntegral n :: Int32)
+  forM_ (zip [0 ..] xs) $ \(k, x) -> pokeElem p base heap (start + 8 + k * stride) t x
   pure (base + start)
 
 -- | A list element, as "Backend.Wasm.List" lays it out.
@@ -574,13 +573,15 @@ peekArg at tableAt p t old = case t of
           pure t'
   _ -> peekScalar p t
 
+-- | A list, from its block's address (0 for the empty list): its length,
+-- then its elements (see "Backend.Wasm.List").
 peekList :: (Int -> Ptr Word8) -> TypeProxy t -> Int -> IO [HaskellType t]
 peekList _ _ 0 = pure []
 peekList at t addr = do
-  let node = at addr
-  next <- peekByteOff node 0 :: IO Int32
-  x <- peekElem at (node `plusPtr` 8) t
-  (x :) <$> peekList at t (fromIntegral next)
+  let block = at addr
+      stride = fromMaybe 0 (elemStrideOf t)
+  n <- peekByteOff block 0 :: IO Int32
+  forM [0 .. fromIntegral n - 1] $ \k -> peekElem at (block `plusPtr` (8 + k * stride)) t
 
 peekElem :: (Int -> Ptr Word8) -> Ptr Word8 -> TypeProxy t -> IO (HaskellType t)
 peekElem at p t = case t of

@@ -53,7 +53,7 @@ import FractalStream.Prelude
 
 import Backend.Wasm.Encode
 import Backend.Wasm.Gen
-import Backend.Wasm.List (alloc, nodeStride, storeElem, loadElem, newBuilder, append, Builder(..), walkList)
+import Backend.Wasm.List (alloc, elemStride, storeElem, loadElem, newList, forIndex, slotOf, walkList)
 
 import Language.Type
 import Language.Table (elementSize, secondOffset)
@@ -182,27 +182,20 @@ tableSliceRead ty desc mz ixs = do
   (count, step) <- case spans of
     [s] -> pure s
     _ -> throwError "internal error: a slice read as a list has one `*`"
-  stride <- nodeStride ty
-  b <- newBuilder
-  i <- newLocal I32
+  stride <- elemStride ty
+  out <- newLocal I32
   cell <- newLocal I32
-  (_, body) <- capture $ do
-    new <- alloc stride
-    (_, store) <- capture $ do
+  (_, readIt) <- capture $ do
+    l <- newList ty count $ \lst -> forIndex count $ \i _ -> do
       emit [localGet base, localGet i, localGet step, i32Mul, i32Add, localSet cell]
       p <- cellAddress ty desc cell
       e <- loadTableElem ty p 0
-      storeElem ty new 8 e
-      emit (append b new)
-    emit [ localGet new, i32Eqz, brIf 2 ]
-    emit store
-  emit [ localGet inRange
-       , IfElse [ i32Const 0, localSet i
-                , Block [ Loop ( [ localGet i, localGet count, i32GeS, brIf 1 ]
-                                 ++ body
-                                 ++ [ localGet i, i32Const 1, i32Add, localSet i, br 0 ] ) ] ]
-                [ i32Const 1, localSet arBadIndex ] ]
-  pure (LList (bHead b))
+      dst <- slotOf stride lst i
+      storeElem ty dst 8 e
+    emit [localGet l, localSet out]
+  emit [ i32Const 0, localSet out
+       , localGet inRange, IfElse readIt [ i32Const 1, localSet arBadIndex ] ]
+  pure (LList out)
 
 -- | A table's size: an integer, or nested pairs of them.
 tableSize :: TypeProxy sz -> Int -> Gen Loc
@@ -345,7 +338,7 @@ tableWriteSlice ty slot mz ixs xs = do
       _ -> throwError "internal error: a list is written to a slice with one `*`"
     i <- newLocal I32
     cell <- newLocal I32
-    (_, walk) <- capture $ walkList h $ \curr stop -> do
+    (_, walk) <- capture $ walkList ty h $ \curr stop -> do
       (_, store) <- capture $ do
         e <- loadElem ty curr 8
         emit [ localGet base, localGet i, localGet step, i32Mul, i32Add, localSet cell ]

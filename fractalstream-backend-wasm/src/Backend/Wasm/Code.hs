@@ -95,7 +95,7 @@ code = indexedFold @CtxCode $ \case
   ForEach pfList _ (ListType itemTy) itemName pfNoItem _ _ body -> recallIsAbsent pfNoItem $ do
     ctx <- ask
     case withKnownType (ListType itemTy) (getBinding ctx pfList) of
-      LList h -> lift $ walkList h $ \curr _ -> do
+      LList h -> lift $ walkList itemTy h $ \curr _ -> do
         e <- loadElem itemTy curr 8
         runReaderT body (Bind itemName itemTy e ctx)
       l -> lift (throwError ("internal error: a loop over a non-list: " ++ show l))
@@ -110,7 +110,7 @@ code = indexedFold @CtxCode $ \case
         found <- lift (newLocal I32)
         item <- lift (zeroOf itemTy)
         lift (emit [i32Const 0, localSet found])
-        lift $ walkList h $ \curr stop -> do
+        lift $ walkList itemTy h $ \curr stop -> do
           e <- loadElem itemTy curr 8
           runReaderT (value predicate) (Bind itemName itemTy e ctx) >>= \case
             LBool b -> do
