@@ -93,10 +93,22 @@ export class App {
       its "project" message. */
   async opened(timeout = 60000) {
     await this.page.waitForFunction(() => window.__messages.some((m) => m.type === "project"), null, { timeout });
-    await this.page.waitForFunction(() => {
-      const vs = [...document.querySelectorAll(".viewer")];
-      return vs.length > 0 && vs.every((v) => Number(v.dataset.frames ?? 0) > 0);
-    }, null, { timeout });
+    try {
+      await this.page.waitForFunction(() => {
+        const vs = [...document.querySelectorAll(".viewer")];
+        return vs.length > 0 && vs.every((v) => Number(v.dataset.frames ?? 0) > 0);
+      }, null, { timeout });
+    } catch (e) {
+      // (which project, and which of its viewers have no frame yet)
+      const said = await this.page.evaluate(() => {
+        const p = window.__messages.filter((m) => m.type === "project").pop();
+        const frames = [...document.querySelectorAll(".viewer")].map((v) => Number(v.dataset.frames ?? 0));
+        const asked = window.__sent.filter((m) => m.type === "view" || m.type === "resize").length;
+        return `${p?.title}: frames ${JSON.stringify(frames)}, ${asked} view/resize requests, ` +
+               `${window.__messages.filter((m) => m.type === "patch").length} patches`;
+      }).catch(() => "?");
+      throw new Error(`a project didn't draw (${said}): ${e.message.split("\n")[0]}`);
+    }
     return (await this.messages("project")).pop();
   }
 
