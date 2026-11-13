@@ -44,7 +44,7 @@ import Graphics.UI.WXCore.WxcDefs (wxCAPTION, wxCLOSE_BOX, wxSYSTEM_MENU)
 
 import Actor.Event (EventArgument_, Coordinate, showCoordinate)
 import Actor.Layout (Dimensions(..), Field(..))
-import Actor.Movie
+import Actor.Movie hiding (withInset)
 import Actor.Viewer (Viewer(..), cloneViewer, describeViewerIssues)
 import Data.DynamicValue
 import Data.Movie
