@@ -1,22 +1,24 @@
 -- | Lists in compiled code, made in the kernel's arena (see 'Arena').
 --
--- A list is the address of its first node, or 0 for the empty list. A
--- node is the address of the next one (an i32), padded to 8 bytes, then
--- the element: a truth value or integer as an i32, a real number as an
--- f64, a complex number as two, a color as three bytes, a list as its
--- address, a text as its address (see "Backend.Wasm.Text"), and a pair
--- as its first part, then its second at the next multiple of 8 bytes. (The arguments buffer holds a configuration's
--- lists the same way: see "Backend.Wasm".)
+-- A list is the address of one block, or 0 for the empty list. The block
+-- is the list's length (an i32), padded to 8 bytes, then the elements, one
+-- every 'elemStride' bytes: a truth value or integer as an i32, a real
+-- number as an f64, a complex number as two, a color as three bytes, a
+-- list as its address, a text as its address (see "Backend.Wasm.Text"),
+-- and a pair as its first part, then its second at the next multiple of 8
+-- bytes. So indexing and the length are O(1). Lists are never changed in
+-- place. (The arguments buffer holds a configuration's lists the same way:
+-- see "Backend.Wasm". The LLVM backend lays lists out alike.)
 --
 -- Each operation does what the LLVM backend's does: a list that doesn't
 -- fit in the arena sets the overflow flag and stops short, and indexing
 -- out of range sets the bad-index flag and gives zero.
 module Backend.Wasm.List
   ( elemSize
-  , nodeSize
+  , elemStrideOf
   , pairSecond
   , elemBytes
-  , nodeStride
+  , elemStride
   , pairSecondOffset
   , zeroOf
   , loadElem
@@ -30,10 +32,12 @@ module Backend.Wasm.List
   , listIndex
   , listRange
   , walkList
+  , forIndex
+  , slotOf
+  , lengthOf
+  , newList
   , alloc
-  , Builder(..)
-  , newBuilder
-  , append
+  , allocDyn
   ) where
 
 import FractalStream.Prelude
@@ -64,9 +68,9 @@ elemSize = \case
 pairSecond :: TypeProxy t -> Maybe Int
 pairSecond a = roundUp8 <$> elemSize a
 
--- | The size of a list node holding an element of the given type.
-nodeSize :: TypeProxy t -> Maybe Int
-nodeSize t = roundUp8 . (8 +) <$> elemSize t
+-- | The distance between a list's elements of the given type.
+elemStrideOf :: TypeProxy t -> Maybe Int
+elemStrideOf t = roundUp8 <$> elemSize t
 
 elemBytes :: TypeProxy t -> Gen Int
 elemBytes t = maybe (unsupported ("lists of " ++ showType t)) pure (elemSize t)
@@ -74,8 +78,8 @@ elemBytes t = maybe (unsupported ("lists of " ++ showType t)) pure (elemSize t)
 pairSecondOffset :: TypeProxy t -> Gen Int
 pairSecondOffset a = maybe (unsupported ("lists of " ++ showType a)) pure (pairSecond a)
 
-nodeStride :: TypeProxy t -> Gen Int
-nodeStride t = maybe (unsupported ("lists of " ++ showType t)) pure (nodeSize t)
+elemStride :: TypeProxy t -> Gen Int
+elemStride t = maybe (unsupported ("lists of " ++ showType t)) pure (elemStrideOf t)
 
 -- | Load an element at the address in local @p@ plus @off@, into fresh
 -- locals.
@@ -148,103 +152,149 @@ alloc size = do
                 [ localGet arBump, i32Const (fromIntegral size), i32Add, localSet arBump ] ]
   pure p
 
--- | A list being built, node by node: its head, and its last node.
-data Builder = Builder { bHead :: Int, bLast :: Int }
+-- | Like 'alloc', for a byte count in a local (a multiple of 8). The count
+-- is compared, not added, first: a huge one can't wrap around.
+allocDyn :: Int -> Gen Int
+allocDyn size = do
+  Arena{..} <- getArena
+  p <- newLocal I32
+  emit [ localGet arBump, localSet p
+       , localGet size, localGet arEnd, localGet arBump, i32Sub, i32GtU
+       , IfElse [ i32Const 1, localSet arOverflow, i32Const 0, localSet p ]
+                [ localGet arBump, localGet size, i32Add, localSet arBump ] ]
+  pure p
 
-newBuilder :: Gen Builder
-newBuilder = do
-  h <- newLocal I32
-  l <- newLocal I32
-  emit [i32Const 0, localSet h, i32Const 0, localSet l]
-  pure (Builder h l)
-
--- | Put a new node (whose element is already stored) at the end.
-append :: Builder -> Int -> [Instr]
-append Builder{..} node =
-  [ localGet node, i32Const 0, i32Store 0
-  , localGet bLast, i32Eqz
-  , IfElse [ localGet node, localSet bHead ]
-           [ localGet bLast, localGet node, i32Store 0 ]
-  , localGet node, localSet bLast ]
-
--- | Run the body for each node of the list in local @headL@, with the
--- node's address in a local, and a local to set (to 1) to stop early.
-walkList :: Int -> (Int -> Int -> Gen ()) -> Gen ()
-walkList headL body = do
-  curr <- newLocal I32
+-- | A loop over @k = 0 .. n - 1@ (@n@ a local), with @k@ in a local and a
+-- local to set (to 1) to stop early.
+forIndex :: Int -> (Int -> Int -> Gen ()) -> Gen ()
+forIndex n body = do
+  k <- newLocal I32
   stop <- newLocal I32
-  (_, b) <- capture (body curr stop)
-  emit [ localGet headL, localSet curr, i32Const 0, localSet stop
-       , Block [ Loop ( [ localGet curr, i32Eqz, localGet stop, i32Or, brIf 1 ]
+  (_, b) <- capture (body k stop)
+  emit [ i32Const 0, localSet k, i32Const 0, localSet stop
+       , Block [ Loop ( [ localGet k, localGet n, i32GeS, localGet stop, i32Or, brIf 1 ]
                         ++ b
-                        ++ [ localGet curr, i32Load 0, localSet curr, br 0 ] ) ] ]
+                        ++ [ localGet k, i32Const 1, i32Add, localSet k, br 0 ] ) ] ]
 
--- | A list literal (its elements already computed): all its nodes at
--- once, or the empty list (and the overflow flag) if they don't fit.
+-- | The slot of element @k@ (a local) of the list in local @h@, into a
+-- fresh local: the address 8 bytes before the element (so the slot of
+-- element 0 is the list itself), where 'loadElem' and 'storeElem' at
+-- offset 8 find it.
+slotOf :: Int -> Int -> Int -> Gen Int
+slotOf stride h k = do
+  s <- newLocal I32
+  emit [ localGet h, localGet k, i32Const (fromIntegral stride), i32Mul, i32Add, localSet s ]
+  pure s
+
+-- | Run the body for each element of the list in local @h@, with the
+-- element's slot (see 'slotOf') in a local, and a local to set (to 1) to
+-- stop early.
+walkList :: TypeProxy t -> Int -> (Int -> Int -> Gen ()) -> Gen ()
+walkList ty h body = do
+  stride <- elemStride ty
+  n <- lengthOf h
+  forIndex n $ \k stop -> do
+    s <- slotOf stride h k
+    body s stop
+
+-- | The length of the list in local @h@, into a fresh local.
+lengthOf :: Int -> Gen Int
+lengthOf h = do
+  n <- newLocal I32
+  emit [ localGet h, IfElse [ localGet h, i32Load 0, localSet n ] [ i32Const 0, localSet n ] ]
+  pure n
+
+-- | A new list with room for @n@ elements (a local), into a fresh local:
+-- @fill@ (given it) writes them, if @n > 0@ and it fits in the arena;
+-- otherwise the empty list (with the overflow flag set if it didn't fit).
+newList :: TypeProxy t -> Int -> (Int -> Gen ()) -> Gen Int
+newList ty n fill = do
+  stride <- elemStride ty
+  h <- newLocal I32
+  bytes <- newLocal I32
+  (_, made) <- capture $ do
+    emit [ localGet n, i32Const (fromIntegral stride), i32Mul, i32Const 8, i32Add, localSet bytes ]
+    p <- allocDyn bytes
+    (_, filled) <- capture (fill p)
+    emit [ localGet p
+         , IfElse ([ localGet p, localGet n, i32Store 0 ] ++ filled ++ [ localGet p, localSet h ]) [] ]
+  emit [ i32Const 0, localSet h
+       , localGet n, i32Const 0, i32GtS, IfElse made [] ]
+  pure h
+
+-- | A list literal (its elements already computed): one block, or the
+-- empty list (and the overflow flag) if it doesn't fit.
 listLiteral :: TypeProxy t -> [Loc] -> Gen Loc
 listLiteral ty elems = do
   h <- newLocal I32
   emit [i32Const 0, localSet h]
   unless (null elems) $ do
-    stride <- nodeStride ty
+    stride <- elemStride ty
     let n = length elems
-    p <- alloc (stride * n)
-    node <- newLocal I32
-    (_, fill) <- capture $ forM_ (zip [0 ..] elems) $ \(k, e) -> do
-      let next | k == n - 1 = [i32Const 0]
-               | otherwise = [localGet p, i32Const (fromIntegral ((k + 1) * stride)), i32Add]
-      emit ( [ localGet p, i32Const (fromIntegral (k * stride)), i32Add, localSet node
-             , localGet node ] ++ next ++ [ i32Store 0 ] )
-      storeElem ty node 8 e
-    emit [ localGet p, IfElse (fill ++ [localGet p, localSet h]) [] ]
+    p <- alloc (8 + stride * n)
+    (_, fill) <- capture $ forM_ (zip [0 ..] elems) $ \(k, e) -> storeElem ty p (8 + k * stride) e
+    emit [ localGet p
+         , IfElse ([ localGet p, i32Const (fromIntegral n), i32Store 0 ] ++ fill ++ [localGet p, localSet h]) [] ]
   pure (LList h)
 
--- | The lists one after another, copied.
+-- | The lists one after another, copied into one new list.
 listJoin :: TypeProxy t -> [Loc] -> Gen Loc
 listJoin ty lists = do
-  stride <- nodeStride ty
-  b <- newBuilder
-  forM_ lists $ \case
-    LList h -> walkList h $ \curr stop -> do
-      new <- alloc stride
-      (_, copy) <- capture $ do
-        e <- loadElem ty curr 8
-        storeElem ty new 8 e
-        emit (append b new)
-      emit [ localGet new, i32Eqz, IfElse [i32Const 1, localSet stop] copy ]
+  stride <- elemStride ty
+  hs <- forM lists $ \case
+    LList h -> pure h
     l -> throwError ("internal error: joining a non-list: " ++ show l)
-  pure (LList (bHead b))
+  lens <- mapM lengthOf hs
+  total <- newLocal I32
+  emit ([i32Const 0] ++ concat [ [localGet n, i32Add] | n <- lens ] ++ [localSet total])
+  out <- newList ty total $ \p -> do
+    at <- newLocal I32
+    emit [i32Const 0, localSet at]
+    forM_ hs $ \h -> walkList ty h $ \src _ -> do
+      e <- loadElem ty src 8
+      dst <- slotOf stride p at
+      storeElem ty dst 8 e
+      emit [localGet at, i32Const 1, i32Add, localSet at]
+  pure (LList out)
 
--- | The elements for which the test is false (@remove@).
+-- | The elements for which the test is false (@remove@): a list with room
+-- for all of them, and the length of what was kept (the empty list if
+-- nothing was).
 listFilter :: TypeProxy t -> Loc -> (Loc -> Gen Loc) -> Gen Loc
 listFilter ty xs test = case xs of
   LList h -> do
-    stride <- nodeStride ty
-    b <- newBuilder
-    walkList h $ \curr stop -> do
-      e <- loadElem ty curr 8
-      removeIt <- test e >>= boolLocal
-      (_, keep) <- capture $ do
-        new <- alloc stride
-        (_, store) <- capture (storeElem ty new 8 e >> emit (append b new))
-        emit [ localGet new, i32Eqz, IfElse [i32Const 1, localSet stop] store ]
-      emit [ localGet removeIt, IfElse [] keep ]
-    pure (LList (bHead b))
+    stride <- elemStride ty
+    n <- lengthOf h
+    kept <- newLocal I32
+    emit [i32Const 0, localSet kept]
+    out <- newList ty n $ \p -> do
+      walkList ty h $ \src _ -> do
+        e <- loadElem ty src 8
+        removeIt <- test e >>= boolLocal
+        (_, keep) <- capture $ do
+          dst <- slotOf stride p kept
+          storeElem ty dst 8 e
+          emit [localGet kept, i32Const 1, i32Add, localSet kept]
+        emit [ localGet removeIt, IfElse [] keep ]
+      emit [ localGet p, localGet kept, i32Store 0 ]
+    emit [ localGet kept, i32Eqz, IfElse [i32Const 0, localSet out] [] ]
+    pure (LList out)
   l -> throwError ("internal error: filtering a non-list: " ++ show l)
 
 -- | Each element transformed.
 listMap :: TypeProxy t1 -> TypeProxy t2 -> Loc -> (Loc -> Gen Loc) -> Gen Loc
 listMap ty1 ty2 xs f = case xs of
   LList h -> do
-    stride2 <- nodeStride ty2
-    b <- newBuilder
-    walkList h $ \curr stop -> do
-      e <- loadElem ty1 curr 8
-      out <- f e
-      new <- alloc stride2
-      (_, store) <- capture (storeElem ty2 new 8 out >> emit (append b new))
-      emit [ localGet new, i32Eqz, IfElse [i32Const 1, localSet stop] store ]
-    pure (LList (bHead b))
+    stride1 <- elemStride ty1
+    stride2 <- elemStride ty2
+    n <- lengthOf h
+    out <- newList ty2 n $ \p -> forIndex n $ \k _ -> do
+      src <- slotOf stride1 h k
+      e <- loadElem ty1 src 8
+      v <- f e
+      dst <- slotOf stride2 p k
+      storeElem ty2 dst 8 v
+    pure (LList out)
   l -> throwError ("internal error: mapping over a non-list: " ++ show l)
 
 -- | The first element for which the test is true, or the default.
@@ -253,7 +303,7 @@ listFind ty xs dflt test = case xs of
   LList h -> do
     result <- freshLike dflt
     copyInto dflt result
-    walkList h $ \curr stop -> do
+    walkList ty h $ \curr stop -> do
       e <- loadElem ty curr 8
       found <- test e >>= boolLocal
       (_, take') <- capture (copyInto e result)
@@ -263,43 +313,35 @@ listFind ty xs dflt test = case xs of
 
 listLength :: Loc -> Gen Loc
 listLength = \case
-  LList h -> do
-    n <- newLocal I32
-    emit [i32Const 0, localSet n]
-    walkList h $ \_ _ -> emit [localGet n, i32Const 1, i32Add, localSet n]
-    pure (LInt n)
+  LList h -> LInt <$> lengthOf h
   l -> throwError ("internal error: the length of a non-list: " ++ show l)
 
 -- | 1-based indexing: from the front for i >= 1, from the back for
--- i <= 0, or (cyclic) wrapping around. Out of range sets the bad-index
--- flag, and gives zero.
+-- i <= 0, or (cyclic) wrapping around. Out of range (and any index of the
+-- empty list) sets the bad-index flag, and gives zero.
 listIndex :: TypeProxy t -> Bool -> Loc -> Loc -> Gen Loc
 listIndex ty cyclic xs ix = case (xs, ix) of
   (LList h, LInt i) -> do
     Arena{..} <- getArena
-    len <- listLength xs >>= \case { LInt n -> pure n; l -> throwError (show l) }
+    stride <- elemStride ty
+    len <- lengthOf h
     step <- newLocal I32
+    ok <- newLocal I32
     if cyclic
-      -- ((i - 1) rem len + len) rem len, unless the list is empty (when
-      -- the walk below finds nothing, as the LLVM backend's does)
+      -- ((i - 1) rem len + len) rem len, unless the list is empty
       then emit [ localGet len, i32Eqz
-                , IfElse [ i32Const 0, localSet step ]
+                , IfElse [ i32Const 0, localSet step, i32Const 0, localSet ok ]
                     [ localGet i, i32Const 1, i32Sub, localGet len, i32RemS
-                    , localGet len, i32Add, localGet len, i32RemS, localSet step ] ]
+                    , localGet len, i32Add, localGet len, i32RemS, localSet step
+                    , i32Const 1, localSet ok ] ]
       else emit [ localGet len, localGet i, i32Add
                 , localGet i, i32Const 1, i32Sub
-                , localGet i, i32Const 0, i32LeS, select, localSet step ]
-    curr <- newLocal I32
-    emit [ localGet h, localSet curr
-         , Block [ Loop [ localGet step, i32Eqz, localGet curr, i32Eqz, i32Or, brIf 1
-                        , localGet step, i32Const 1, i32Sub, localSet step
-                        , localGet curr, i32Load 0, localSet curr
-                        , br 0 ] ] ]
-    -- (a negative step walks to the end: out of range)
+                , localGet i, i32Const 0, i32LeS, select, localSet step
+                -- 0 <= step < len, as one unsigned comparison
+                , localGet step, localGet len, i32LtU, localSet ok ]
     result <- zeroOf ty
-    (_, found) <- capture (loadElem ty curr 8 >>= (`copyInto` result))
-    emit [ localGet curr, i32Eqz, localGet step, i32Const 0, i32LtS, i32Or
-         , IfElse [ i32Const 1, localSet arBadIndex ] found ]
+    (_, found) <- capture (slotOf stride h step >>= \s -> loadElem ty s 8 >>= (`copyInto` result))
+    emit [ localGet ok, IfElse found [ i32Const 1, localSet arBadIndex ] ]
     pure result
   _ -> throwError ("internal error: indexing a non-list: " ++ show xs)
 
@@ -307,21 +349,15 @@ listIndex ty cyclic xs ix = case (xs, ix) of
 listRange :: Loc -> Loc -> Gen Loc
 listRange lo hi = case (lo, hi) of
   (LInt a, LInt z) -> do
-    stride <- nodeStride IntegerType
-    b <- newBuilder
-    i <- newLocal I32
-    new <- newLocal I32
-    (_, body) <- capture $ do
-      p <- alloc stride
-      emit [localGet p, localSet new]
-      (_, store) <- capture (storeElem IntegerType new 8 (LInt i) >> emit (append b new))
-      emit [ localGet new, i32Eqz, brIf 1 ]
-      emit store
-    emit [ localGet a, localSet i
-         , Block [ Loop ( [ localGet i, localGet z, i32GtS, brIf 1 ]
-                          ++ body
-                          ++ [ localGet i, i32Const 1, i32Add, localSet i, br 0 ] ) ] ]
-    pure (LList (bHead b))
+    stride <- elemStride IntegerType
+    n <- newLocal I32
+    emit [ localGet z, localGet a, i32Sub, i32Const 1, i32Add, localSet n ]
+    out <- newList IntegerType n $ \p -> forIndex n $ \k _ -> do
+      v <- newLocal I32
+      emit [ localGet a, localGet k, i32Add, localSet v ]
+      dst <- slotOf stride p k
+      storeElem IntegerType dst 8 (LInt v)
+    pure (LList out)
   _ -> throwError ("internal error: a range of non-integers: " ++ show lo)
 
 boolLocal :: Loc -> Gen Int

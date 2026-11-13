@@ -20,10 +20,12 @@ module Backend.LLVM.Operand
   , storeOperand
   , allocaOp
   , nullI8Ptr
-  , listNodeStride
+  , listElemStride
   , listElemBytes
   , pairSecondOffset
-  , loadListNext
+  , listSlot
+  , listLength
+  , listAlloc
   , loadListElem
   , storeListElem
   , loadElemAt
@@ -73,10 +75,12 @@ data Op (t :: FSType) where
   ComplexOp :: Operand -> Operand -> Op 'ComplexT
   ColorOp   :: Operand -> Operand -> Operand -> Op 'ColorT
   PairOp    :: forall t1 t2. Op t1 -> Op t2 -> Op ('Pair t1 t2)
-  -- | A list is represented as a pointer to the head node (null = empty).
-  -- Node layout (contiguous in memory):
-  --   bytes 0-7:  next pointer (i8*, null = end of list)
-  --   bytes 8+:   element data (type-dependent, see listNodeStride)
+  -- | A list is a pointer to one block of memory (null = the empty list):
+  --   bytes 0-3:  the length (i32; bytes 4-7 are padding)
+  --   bytes 8+:   the elements, one every 'listElemStride' bytes.
+  -- Element k (0-based) is at @8 + k * stride@; 'listSlot' gives the
+  -- address 8 bytes before it, where 'loadListElem' and 'storeListElem'
+  -- expect it. Lists are never changed in place.
   ListOp    :: forall t. Operand -> Op ('ListT t)
   -- | Text is a pointer to a NUL-terminated UTF-8 string, normally in the
   -- arena (see 'Backend.LLVM.Value').
@@ -188,7 +192,7 @@ toLLVMType = \case
                                                       , toLLVMType t2 ])
   ColorType      -> AST.ptr (AST.ArrayType 3 AST.i8)
   ImageType      -> AST.i32
-  -- A list is passed as an i8* pointing to the head node (null = empty list).
+  -- A list is passed as an i8* pointing to its block (null = empty list).
   ListType {}    -> AST.ptr AST.i8
   TableType {}   -> AST.ptr AST.i8
   TextType       -> AST.ptr AST.i8
@@ -310,10 +314,53 @@ typedOperand t op = do
 nullI8Ptr :: Operand
 nullI8Ptr = ConstantOperand (AST.Null (AST.ptr AST.i8))
 
--- | Byte stride between consecutive nodes in a serialized list buffer.
--- Layout: 8 bytes (next i8* pointer) + element data, rounded up to 8-byte alignment.
-listNodeStride :: TypeProxy t -> Int
-listNodeStride t = roundUp8 (8 + listElemBytes t)
+-- | Byte stride between consecutive elements of a list: the element's size,
+-- rounded up to 8-byte alignment.
+listElemStride :: TypeProxy t -> Int
+listElemStride t = roundUp8 (listElemBytes t)
+
+-- | The slot of a list's element @k@ (an i32, 0-based): the address 8 bytes
+-- before the element, which is where 'loadListElem' and 'storeListElem'
+-- want to be pointed. (So the slot of element 0 is the list itself.)
+listSlot :: (MonadModuleBuilder m, MonadIRBuilder m)
+         => TypeProxy t -> Operand -> Operand -> m Operand
+listSlot t base k = do
+  k64 <- sext k AST.i64
+  off <- mul k64 (int64 (fromIntegral (listElemStride t)))
+  gep base [off]
+
+-- | A list's length (an i32): 0 for the empty list (null), else its header.
+listLength :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
+           => Operand -> m Operand
+listLength base = mdo
+  entry <- currentBlock
+  isNull <- icmp P.EQ base nullI8Ptr
+  condBr isNull done header
+  header <- block
+  p <- bitcast base (AST.ptr AST.i32)
+  n <- load p 0
+  headerEnd <- currentBlock
+  br done
+  done <- block
+  phi [(int32 0, entry), (n, headerEnd)]
+
+-- | A new list block of the given length (an i32 >= 1) in the arena, its
+-- elements not yet written; null if it doesn't fit (with the overflow flag
+-- set, by 'arenaAllocDyn').
+listAlloc :: (MonadModuleBuilder m, MonadIRBuilder m, MonadFix m)
+          => ArenaState -> TypeProxy t -> Operand -> m Operand
+listAlloc arena t n = mdo
+  n64 <- sext n AST.i64
+  bytes <- mul n64 (int64 (fromIntegral (listElemStride t))) >>= add (int64 8)
+  base <- arenaAllocDyn arena bytes
+  isNull <- icmp P.EQ base nullI8Ptr
+  condBr isNull done fill
+  fill <- block
+  p <- bitcast base (AST.ptr AST.i32)
+  store p 0 n
+  br done
+  done <- block
+  pure base
 
 -- | The size in bytes of a list element's data.
 listElemBytes :: TypeProxy t -> Int
@@ -336,21 +383,11 @@ pairSecondOffset = roundUp8 . listElemBytes
 roundUp8 :: Int -> Int
 roundUp8 n = ((n + 7) `div` 8) * 8
 
--- | Emit LLVM IR to load the 'next' pointer from a list node.
--- The node pointer is an i8*; the next field lives at byte offset 0.
-loadListNext :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
-             => Operand   -- ^ i8* pointing to the current node
-             -> m Operand -- ^ i8* pointing to the next node (or null)
-loadListNext nodePtr = do
-  -- Cast the node ptr to i8** so we can load a pointer from it.
-  nextPtrPtr <- bitcast nodePtr (AST.ptr (AST.ptr AST.i8))
-  load nextPtrPtr 0
-
--- | Emit LLVM IR to load the element value from a list node.
--- The element lives at byte offset 8 (just after the 8-byte next pointer).
+-- | Emit LLVM IR to load an element from its slot (see 'listSlot'): the
+-- element lives at byte offset 8.
 loadListElem :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
              => TypeProxy t
-             -> Operand     -- ^ i8* pointing to the current node
+             -> Operand     -- ^ i8*: the element's slot
              -> m (Op t)
 loadListElem t nodePtr = gep nodePtr [int32 8] >>= loadElemAt t
 
@@ -392,11 +429,11 @@ loadElemAt t elemI8 =
       PairOp <$> loadElemAt a elemI8 <*> loadElemAt b secondI8
     _ -> throwError ("loadListElem: unsupported element type " ++ showType t)
 
--- | Write element data into a list node at the given byte offset (offset 8 past
--- the start of the node).  Mirror image of 'loadListElem'.
+-- | Write an element into its slot (see 'listSlot'), at byte offset 8.
+-- Mirror image of 'loadListElem'.
 storeListElem :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)
               => TypeProxy t
-              -> Operand   -- ^ i8* base of the node
+              -> Operand   -- ^ i8*: the element's slot
               -> Op t
               -> m ()
 storeListElem t nodePtr op = do
