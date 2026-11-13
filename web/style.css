@@ -245,7 +245,7 @@ body {
    error or status under it, and its buttons. */
 .script-editor { display: flex; flex-direction: column; background: var(--panel); }
 .editor-text { flex: 1; min-height: 0; }
-.editor-text .cm-editor { height: 100%; font: 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
+.editor-text .cm-editor { height: 100%; font: var(--editor-font-size, 13px)/1.5 var(--editor-font, monospace); }
 .editor-text .cm-scroller { font-family: inherit; }
 .editor-text .cm-content { caret-color: var(--fg); }
 .editor-text .cm-editor.cm-focused { outline: none; }
@@ -269,32 +269,8 @@ body {
   border: 1px solid var(--line); background: var(--bg); color: var(--fg);
 }
 .editor-overlay .script-editor { flex: 1; min-height: 0; }
-/* the engine's colors (Language.Editor.Highlight's classes) */
-.tok-keyword { color: #a626a4; }
-.tok-builtin-function { color: #4078f2; }
-.tok-builtin-value { color: #986801; }
-.tok-type { color: #c18401; }
-.tok-color { color: #0184bc; }
-.tok-number { color: #986801; }
-.tok-string { color: #50a14f; }
-.tok-comment { color: #8a8a85; font-style: italic; }
-.tok-operator { color: #6b6b66; }
-.tok-stanza-header { color: #2f6fd6; font-weight: 600; }
-.tok-parameter { color: #e45649; }
-.tok-function, .tok-code-block { color: #4078f2; font-style: italic; }
-.tok-undefined { text-decoration: underline dotted #c0392b; }
-@media (prefers-color-scheme: dark) {
-  .tok-keyword { color: #c678dd; }
-  .tok-builtin-function, .tok-function, .tok-code-block { color: #61afef; }
-  .tok-builtin-value, .tok-number { color: #d19a66; }
-  .tok-type { color: #e5c07b; }
-  .tok-color { color: #56b6c2; }
-  .tok-string { color: #98c379; }
-  .tok-comment { color: #7f848e; }
-  .tok-operator { color: #abb2bf; }
-  .tok-stanza-header { color: #6ea2ff; }
-  .tok-parameter { color: #e06c75; }
-}
+/* (the engine's colors, Language.Editor.Highlight's classes: preferences.ts
+   writes them, with the preferences' changes, and the editor's font) */
 .cm-script-error { text-decoration: underline wavy var(--error); text-decoration-skip-ink: none; }
 /* an escape being typed (\theta), and what it would become */
 .cm-escape { outline: 1px solid var(--accent); border-radius: 2px; }
@@ -488,3 +464,48 @@ body {
 /* Copy link, where the clipboard can't be written: the link, to copy */
 .link-text { width: 100%; box-sizing: border-box; font: 12px/1.4 ui-monospace, monospace; padding: 6px 8px; resize: vertical;
              border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); word-break: break-all; }
+
+/* Preferences (preferences-dialog.ts), in a page dialog */
+.page-dialog-box.prefs-dialog { width: min(600px, 100%); max-height: calc(100dvh - 32px); }
+.prefs-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.page-dialog-box .prefs-tab { border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0;
+                              background: none; margin-bottom: -1px; }
+.page-dialog-box .prefs-tab[aria-selected=true] { border-color: var(--line); background: var(--panel); font-weight: 600; }
+.prefs-body { overflow: auto; min-height: 0; flex: 1; }
+.prefs-pane { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
+.prefs-label { font-weight: 600; margin-top: 4px; }
+.prefs-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.prefs-row input[type=text] { flex: 1 1 12em; }
+.page-dialog-box .prefs-size { width: 5em; font: 12px ui-monospace, monospace; padding: 3px 6px; border: 1px solid var(--line);
+                               border-radius: 4px; background: var(--bg); color: var(--fg); }
+.prefs-row input[type=range] { flex: 1 1 12em; max-width: 280px; }
+.prefs-percent { min-width: 3em; font-variant-numeric: tabular-nums; }
+.prefs-check { display: flex; gap: 8px; align-items: baseline; }
+.prefs-hint, .prefs-note { color: var(--muted); font-size: 12px; }
+.page-dialog-box select { font: inherit; padding: 2px 4px; border: 1px solid var(--line); border-radius: 4px;
+                          background: var(--bg); color: var(--fg); max-width: 100%; }
+.prefs-colors { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 6px; padding: 4px 0; }
+.prefs-color-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px;
+                   padding: 2px 8px; }
+.prefs-sample { font: var(--editor-font-size, 13px)/1.5 var(--editor-font, monospace); padding: 0 2px;
+                overflow-wrap: anywhere; justify-self: start; }
+.prefs-color-controls { display: flex; align-items: center; gap: 4px; }
+.prefs-color-controls input[type=color] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--line);
+                                          border-radius: 4px; background: none; cursor: pointer; }
+.page-dialog-box .prefs-toggle { width: 26px; padding: 2px 0; }
+@media (max-width: 480px) {
+  .page-dialog-box .prefs-toggle { width: 22px; }
+  .page-dialog-box .prefs-color-controls button:last-child { padding: 3px 6px; }
+}
+.page-dialog-box .prefs-toggle[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: white; }
+.prefs-bold { font-weight: 700; }
+.prefs-italic { font-style: italic; }
+.prefs-underline { text-decoration: underline; }
+.page-dialog-box button:disabled { opacity: .5; cursor: default; }
+.welcome .welcome-preferences { font-size: 16px; padding: 2px 8px; }
+
+/* the script editor's gutters: line numbers, and folds */
+.editor-text .cm-gutters { background: var(--panel); color: var(--muted); border-right: 1px solid var(--line); }
+.editor-text .cm-foldGutter .cm-gutterElement { cursor: pointer; padding: 0 4px; }
+.editor-text .cm-foldPlaceholder { background: color-mix(in srgb, var(--fg) 10%, transparent); border: 1px solid var(--line);
+                                   color: var(--muted); border-radius: 3px; padding: 0 4px; margin: 0 2px; }

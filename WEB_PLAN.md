@@ -21,7 +21,7 @@ questions into **Decisions**.
 | D9 | UI is **TypeScript**, using Solid or plain DOM | Mostly forms built from `Layout`, plus canvases. |
 | D10 | **No ordering guarantees** for autocolor | GPU render order may assign hues differently; saved or locked groups stay stable. |
 | D11 | **cabal** for the wasm build; migrating everything off stack is open | See "Build". |
-| D12 | The precision toggle is an **app-level preference** | Stored per browser with the other preferences (IndexedDB), not in project files. |
+| D12 | The precision toggle is an **app-level preference** | Stored per browser with the other preferences (local storage: see the findings for 2026-11-13, "Preferences"), not in project files. Waits for Backend.WGSL: the CPU backend is always f64. |
 | D14 | Kernels' math functions come from **musl's libm, compiled to wasm** (built each time) | Not JavaScript's `Math`: calling it from wasm on several worker threads crashed V8; and this way every host computes alike. |
 | D13 | **Backend.Wasm before the web app;** test wasm under Node from 0g on | The interpreter is about 2,500× slower than LLVM (0b), too slow even as a stopgap. |
 | D16 | Tools' handlers (and overlays) are **compiled by Backend.Wasm and run on the workers**; what it can't compile is a tool compilation error, not interpreted | Interpreted, external rays took 7.5 s, and the engine's one thread was stuck meanwhile. On a worker the engine stays free, and Stop can come later by stopping the worker. (Without a worker pool, tools are interpreted.) |
@@ -292,7 +292,9 @@ wasmtime.
   with LLVM's.
 - [x] Text in Backend.Wasm, wherever the LLVM backend has it (D17).
 - [x] Tables and autocolor in tools.
-- [ ] Preferences (IndexedDB), including the precision toggle (D12).
+- [x] Preferences (in local storage): the script editor's font, line
+  numbers, symbols, folds, emacs keys and colors; the sphere's shading;
+  new viewers' smoothing. The precision toggle (D12) waits for Phase 5.
 
 ### Phase 5: Backend.WGSL (df64, then f32)
 
@@ -319,7 +321,7 @@ Only if 0c/0d come out well.
   carried over (`carryOverProjectState`).
 - [x] Windows minimize to their title bar (double-click it, or its
   button), and stay so when saved.
-- [ ] Folding, line numbers, font: with preferences.
+- [x] Folding, line numbers, font: with preferences.
 - [x] Opening as the desktop app does: an old FractalStream 1.0 file is
   translated if the user wants (a new project, its editor open, the
   translation's notes); a script that doesn't build opens with no viewers
@@ -366,6 +368,40 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-13: Preferences
+
+Preferences… (in the title's menu, and the welcome screen's ⚙) is the
+desktop's Preferences window, less the projects' folder: each change made,
+and kept, at once. They're this browser's (`web/src/preferences.ts`), in
+local storage, not IndexedDB (as D12 had it): they're small, and read at
+once, so nothing's shown with the wrong font before they arrive. They're
+kept as JSON with `settings.yaml`'s names (`line-numbers`,
+`editor-colors-light`, ...), defaults left out and unknown keys kept, as
+the desktop keeps them; but the two aren't shared (no importing the
+desktop's: its settings needn't suit a browser).
+
+- **Editor:** its font and size (in points); writing scripts with
+  symbols; line numbers; folding blocks of code, besides stanzas and tool
+  handlers, which always fold now (CodeMirror's fold gutter, from the
+  lines' indentation as the desktop's `foldLevelsForText` has it: a
+  stanza's header folds its stanza, and the blank lines after a block
+  stay out of its fold); and emacs keys (CodeMirror's `emacsStyleKeymap`),
+  offered only where Control is the shortcut key (a Mac's editor has them
+  already).
+- **Viewers:** the sphere's shading (`fs_sphere_shading`; sphere viewers
+  draw again), and whether new viewers are smoothed: Automatic (as
+  before: off on a high-DPI screen), On or Off. A web-only preference,
+  `smoothing`.
+- **Colors:** each class's color, background, bold, italic and underline,
+  for a light page and a dark one. The classes' own styles moved from
+  `style.css` into `preferences.ts`, which writes a stylesheet of them with
+  the changes (and the font, as CSS variables).
+
+Not the precision toggle (D12): until Backend.WGSL, there's only f64.
+
+Checks: `check-tools.mjs`'s `preferences` section, in Chromium, Firefox
+and WebKit.
 
 ### 2026-11-13: Links to a project
 
