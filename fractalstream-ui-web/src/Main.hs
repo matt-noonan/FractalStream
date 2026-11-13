@@ -33,6 +33,14 @@ worker (@web/src/engine.ts@). The worker calls these exports:
   The project has no changes to save after this (@unsaved@).
 * @fs_close()@: close the open project (the page has asked about its
   unsaved changes).
+* @fs_details()@: post the open project's title, description and
+  preview (@details@), for the page's Edit project details.
+* @fs_set_details(title, description)@: set them (an empty one: none; a
+  project with no title of its own is called by its file's name); the
+  project has changes to save.
+* @fs_use_as_preview(viewer)@: make what the viewer shows the project's
+  preview, as the desktop's "Use this as preview" does; posted as
+  @details@ (or an error).
 * @fs_unsaved(on)@: say whether the project has changes to save (the
   page says so again when a saved file couldn't be written).
 * @fs_table_summary()@: post the open project's tables that hold anything
@@ -142,6 +150,7 @@ Messages:
 
 > { "type": "library", "sections": [ { "name", "startingPoints", "entries": [ { "title", "description", "preview" } ] } ] }
 > { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "details", "title", "description", "preview": <a PNG, base64-encoded> or null, "fileName", "fromViewer": <whether it's from "Use this as preview"> }
 > { "type": "unsaved", "on" }   (whether the open project has changes to save, as the desktop app counts them, whenever that changes)
 > { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
 > { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere" }   (the engine moved the view: a pixel's size in the canvas's pixels)
@@ -232,7 +241,8 @@ import Actor.Autocolor (AutocolorGroup(..), AutocolorGroupId(..), autocolorGroup
                         setAutocolorEntryColor, moveAutocolorEntry, deleteAutocolor, addAutocolorEntry,
                         clearAutocolorGroup)
 import Data.Color (Color, rgbToColor)
-import Data.Char (isHexDigit, digitToInt)
+import Data.Char (isHexDigit, digitToInt, isSpace)
+import Actor.Viewer.Preview (renderPreview)
 import Actor.Movie (MovieSettings(..), defaultMovieSettings, movieFrameTimes, scriptAnimation, checkMovieScript,
                     movieScriptTemplate, complexVariables, withFieldsRestored, renderViewerImage)
 import Actor.Viewer (cloneViewer, withRenderedViewerBuffer, describeViewerIssues)
@@ -491,6 +501,9 @@ foreign export javascript "fs_translate" translateAncient :: IO ()
 foreign export javascript "fs_pointer" pointer :: Int -> Double -> Double -> IO ()
 foreign export javascript "fs_save" save :: JSString -> Int -> Bool -> JSString -> IO ()
 foreign export javascript "fs_close" closeProject :: IO ()
+foreign export javascript "fs_details" details :: IO ()
+foreign export javascript "fs_set_details" setDetails :: JSString -> JSString -> IO ()
+foreign export javascript "fs_use_as_preview" useAsPreview :: Int -> IO ()
 foreign export javascript "fs_unsaved" setUnsaved :: Bool -> IO ()
 foreign export javascript "fs_table_summary" tableSummary :: IO ()
 foreign export javascript "fs_rotate" rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
@@ -1151,6 +1164,49 @@ captureImage k multiplier smooth = withViewerState k $ \vs -> do
     Left err -> postError ("Couldn't draw the picture: " ++ err)
     Right (_, png) -> BS.useAsCStringLen (LBS.toStrict png) $ \(p, n) ->
       postDownload (toJSString (name ++ ".png")) (castPtr p) n
+
+------------------------------------------------------------------------
+-- The project's details
+
+-- | Post the project's details (see @fs_details@).
+details :: IO ()
+details = guarded $ readIORef sessionRef >>= mapM_ (postDetails False)
+
+postDetails :: Bool -> Session -> IO ()
+postDetails fromViewer Session{..} = do
+  md <- getDynamic (ensembleMetadata sEnsemble)
+  post $ Aeson.object
+    [ "type" .= ("details" :: Text.Text)
+    , "title" .= fromMaybe "" (mdTitle md)
+    , "description" .= fromMaybe "" (mdDescription md)
+    , "preview" .= fmap (Text.decodeUtf8 . B64.encode) (mdPreview md)
+    , "fileName" .= sFileName
+    , "fromViewer" .= fromViewer
+    ]
+
+-- | Set the project's title and description, as the desktop's Project
+-- info does. Its title (for a rebuild, too) is its new one, or else its
+-- file's name.
+setDetails :: JSString -> JSString -> IO ()
+setDetails title description = guarded $ readIORef sessionRef >>= mapM_ (\s@Session{..} -> do
+  let nonEmpty t = if all isSpace t then Nothing else Just t
+      newTitle = nonEmpty (fromJSString title)
+  md <- getDynamic (ensembleMetadata sEnsemble)
+  let md' = md { mdTitle = newTitle, mdDescription = nonEmpty (fromJSString description) }
+  when (md' /= md) $ do
+    setValue' (ensembleMetadata sEnsemble) md'
+    writeIORef sessionRef (Just s { sTitle = fromMaybe (takeBaseName sFileName) newTitle })
+    markUnsaved)
+
+-- | "Use this as preview": what the viewer shows (and its tools have
+-- drawn), small, as the project's preview.
+useAsPreview :: Int -> IO ()
+useAsPreview k = withViewerState k $ \vs -> renderPreview False (vsViewer vs) >>= \case
+  Left err -> postError ("Couldn't make a preview: " ++ err)
+  Right png -> readIORef sessionRef >>= mapM_ (\s -> do
+    modifyValue (ensembleMetadata (sEnsemble s)) (\md -> md { mdPreview = Just png })
+    markUnsaved
+    postDetails True s)
 
 -- | A movie's script to start with, as the desktop's: moving the first
 -- complex variable around a small circle, from where it is now.

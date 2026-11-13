@@ -4,7 +4,9 @@
 // double-clicking the title bar, or with its button there. A window can
 // have a menu (☰, in its title bar): actions (with their keyboard
 // shortcuts shown), options on or off, and submenus, which open in its
-// place (with a way back).
+// place (with a way back). Windows are kept out from under a part of the
+// desk that's covered (the project's title, floating over its corner), so
+// that every one can be grabbed by its title bar.
 
 export interface WindowOptions {
   title: string;
@@ -20,7 +22,12 @@ export interface WindowOptions {
   minimized?: boolean;
   /** Its menu's items, as they are when it's opened. */
   menu?: () => MenuItem[];
+  /** Something more in its title bar, after its title. */
+  titleExtra?: HTMLElement;
 }
+
+/** A part of the desk (in its coordinates) windows are kept out from under. */
+export interface Covered { left: number; top: number; right: number; bottom: number }
 
 export type MenuItem =
   /** Something to do (unless it's not `enabled`). */
@@ -34,9 +41,38 @@ const MIN_SIZE = 80;
 
 export class Desk {
   private top = 0;
+  private covered: () => Covered | null = () => null;
 
   constructor(readonly element: HTMLElement) {
     element.classList.add("desk");
+  }
+
+  /** Keep windows out from under this part of the desk: none is placed or
+      dragged so that it's under it (one that would be goes just below). */
+  keepClearOf(covered: () => Covered | null) {
+    this.covered = covered;
+    this.keepAllClear();
+  }
+
+  /** Move any window that's under the covered part out from under it (as
+      when the covered part has grown, or the desk's been resized). */
+  keepAllClear() {
+    for (const win of this.element.querySelectorAll<HTMLElement>(":scope > .window")) {
+      const [x, y] = this.clearSpot(win.offsetLeft, win.offsetTop, win.offsetWidth);
+      win.style.left = `${x}px`;
+      win.style.top = `${y}px`;
+    }
+  }
+
+  /** Where a window (this wide) can go, nearest (x, y): on the desk, and
+      not under its covered part. */
+  private clearSpot(x: number, y: number, width: number): [number, number] {
+    x = Math.max(0, x);
+    y = Math.max(0, y);
+    const c = this.covered();
+    // (anywhere above its bottom: the covered part's at the desk's top)
+    if (c && x < c.right && x + width > c.left && y < c.bottom) y = Math.ceil(c.bottom);
+    return [x, y];
   }
 
   clear() {
@@ -49,6 +85,7 @@ export class Desk {
     const minimize = Object.assign(document.createElement("button"), { type: "button", className: "window-minimize" });
     const title = Object.assign(document.createElement("div"), { className: "window-title" });
     title.append(label);
+    if (options.titleExtra) title.append(options.titleExtra);
     if (options.menu) title.append(menuButton(options.menu));
     title.append(minimize);
     const body = Object.assign(document.createElement("div"), { className: "window-body" });
@@ -56,11 +93,12 @@ export class Desk {
     body.append(options.content);
     const win = Object.assign(document.createElement("section"), { className: "window" });
     win.append(title, body, grip);
-    win.style.left = `${options.x}px`;
-    win.style.top = `${options.y}px`;
     body.style.width = `${options.width}px`;
     body.style.height = `${options.height}px`;
     this.element.append(win);
+    const [x0, y0] = this.clearSpot(options.x, options.y, win.offsetWidth);
+    win.style.left = `${x0}px`;
+    win.style.top = `${y0}px`;
     this.raise(win);
 
     win.addEventListener("pointerdown", () => this.raise(win), { capture: true });
@@ -81,10 +119,12 @@ export class Desk {
       setMinimized(!win.classList.contains("minimized"));
     });
 
-    // dragging the title bar moves it (not off the top or left of the desk)
+    // dragging the title bar moves it (not off the top or left of the
+    // desk, nor under its covered part)
     drag(title, (dx, dy, start: { x: number; y: number }) => {
-      win.style.left = `${Math.max(0, start.x + dx)}px`;
-      win.style.top = `${Math.max(0, start.y + dy)}px`;
+      const [x, y] = this.clearSpot(start.x + dx, start.y + dy, win.offsetWidth);
+      win.style.left = `${x}px`;
+      win.style.top = `${y}px`;
     }, () => ({ x: win.offsetLeft, y: win.offsetTop }));
 
     // dragging the corner resizes its contents
@@ -127,14 +167,26 @@ function drag<S>(handle: HTMLElement, move: (dx: number, dy: number, start: S) =
   });
 }
 
-/** A window's ☰ button, and the menu it opens (closed by choosing an
-    item, by clicking elsewhere, or with Escape). */
-function menuButton(items: () => MenuItem[]): HTMLElement {
+/** How a menu's button looks: its contents (☰, to begin with), its
+    class, its tooltip (and label), and which side its menu lines up with. */
+export interface MenuButtonOptions {
+  content?: (string | Node)[];
+  className?: string;
+  title?: string;
+  align?: "left" | "right";
+}
+
+/** A window's ☰ button (or another, as `options` say), and the menu it
+    opens (closed by choosing an item, by clicking elsewhere, or with
+    Escape). */
+export function menuButton(items: () => MenuItem[], options: MenuButtonOptions = {}): HTMLElement {
   const button = Object.assign(document.createElement("button"), {
-    type: "button", className: "window-menu-button", textContent: "☰", title: "Options" });
-  button.setAttribute("aria-label", "Options");
+    type: "button", className: options.className ?? "window-menu-button", title: options.title ?? "Options" });
+  button.append(...(options.content ?? ["☰"]));
+  button.setAttribute("aria-label", options.title ?? "Options");
   button.setAttribute("aria-haspopup", "menu");
   const wrap = Object.assign(document.createElement("span"), { className: "window-menu-wrap" });
+  if (options.align === "left") wrap.classList.add("menu-left");
   wrap.append(button);
   let menu: HTMLElement | null = null;
   const close = () => {

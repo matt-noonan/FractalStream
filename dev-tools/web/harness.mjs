@@ -112,11 +112,24 @@ export class App {
   async backToLibrary() {
     const { page } = this;
     if (!(await page.evaluate(() => document.body.classList.contains("in-project")))) return;
-    await page.locator("#close").click();
+    await this.projectMenu("Close project");
     await page.waitForFunction(() => !document.body.classList.contains("in-project") || document.querySelector(".page-dialog"));
     const dontSave = page.locator(".page-dialog button", { hasText: "Don't save" });
     if (await dontSave.count()) await dontSave.click();
     await page.waitForFunction(() => !document.body.classList.contains("in-project"));
+  }
+
+  /** Choose an item of the project's title's menu (by its label, or the start of it). */
+  async projectMenu(label) {
+    await this.page.locator(".project-title-button").click();
+    await this.page.locator(".project-title .window-menu button", { hasText: label }).first().click();
+  }
+
+  /** Pull the configuration drawer out (if it isn't), and wait for it. */
+  async openDrawer() {
+    if (await this.page.locator(".panel.open").count()) return;
+    await this.page.locator(".drawer-tab").click();
+    await this.page.waitForTimeout(300);
   }
 
   /** Every project in the library, in order: its section and entry, and title. */
@@ -159,7 +172,7 @@ export class App {
   canvas(id) { return this.page.locator(".viewer canvas").nth(id); }
   async frames(id) { return Number(await this.viewer(id).getAttribute("data-frames")); }
 
-  /** Make a viewer the active one (the palette's), by right-clicking it. */
+  /** Make a viewer the active one (the tool shortcuts'), by right-clicking it. */
   async activate(id) {
     const box = await this.canvas(id).boundingBox();
     await this.page.mouse.click(box.x + 5, box.y + 5, { button: "right" });
@@ -171,9 +184,19 @@ export class App {
     await this.waitForMessage(`(m) => m.type === "tool" && m.name === ${JSON.stringify(name)}`, 10000);
   }
 
-  /** The tool palette's pressed button(s). */
-  async pressed() {
-    return (await this.page.locator("#tools button[aria-pressed=true]").allTextContents()).join();
+  /** The active viewer's tool, as its tool chooser says. */
+  pressed() {
+    return this.page.evaluate(() =>
+      (document.querySelector(".window.active") ?? document.querySelector(".window"))
+        ?.querySelector(".tool-chooser-label")?.textContent ?? "Navigate");
+  }
+
+  /** Choose a tool from the active viewer's tool chooser, and wait for it. */
+  async chooseTool(name) {
+    const win = (await this.page.locator(".window.active").count()) ? ".window.active" : ".window";
+    await this.page.locator(`${win} .tool-chooser`).first().click();
+    await this.page.locator(`${win} .window-menu button`, { hasText: name }).first().click();
+    await this.waitForMessage(`(m) => m.type === "tool" && m.name === ${JSON.stringify(name)}`, 10000);
   }
 
   /** A viewer's latest drawing, as a flat list of shapes (or null). */

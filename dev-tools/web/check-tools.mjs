@@ -64,7 +64,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel };
+const all = { welcome, project, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -122,20 +122,20 @@ async function welcome() {
           "Return opens it, in place of the library");
 
   // Close, with nothing changed: back to the library, unasked
-  await page.locator("#close").click();
+  await app.projectMenu("Close project");
   await page.waitForTimeout(300);
   c.check(!(await inProject()) && !(await dialog.isVisible()) && (await sentClose()) === 1,
           "Close goes back to the library (nothing changed: nothing asked)");
 
   // a change: Close asks (Cancel stays); so does Back (Don't save closes)
   project = await app.openLibrary("Mandelbrot and Julia sets together");
-  c.check(!(await page.locator("#file-name").textContent()).includes("edited"), "opened, it has no changes to save");
+  c.check(!(await page.locator(".project-title-dot").isVisible()), "opened, it has no changes to save");
   const box = page.locator(".panel .field", { hasText: /^Selected value of C/ }).locator("input");
   await box.fill("0.25 + 0.5i");
   await box.press("Enter");
   await app.waitForMessage(`(m) => m.type === "unsaved" && m.on`, 10000).catch(() => {});
-  c.check((await page.locator("#file-name").textContent()).includes("edited"), "a value changed: it has changes to save");
-  await page.locator("#close").click();
+  c.check((await page.locator(".project-title-dot").isVisible()), "a value changed: it has changes to save");
+  await app.projectMenu("Close project");
   await dialog.waitFor({ timeout: 5000 }).catch(() => {});
   c.check(/Save the changes/.test(await dialog.textContent().catch(() => "")), "Close asks whether to save them");
   await dialog.locator("button", { hasText: "Cancel" }).click();
@@ -158,12 +158,12 @@ async function welcome() {
   await details.locator(".welcome-open").click();
   await app.waitForMessage(`(m) => m.type === "project"`, 30000);
   await page.waitForTimeout(500);
-  c.check(!(await page.locator("#file-name").textContent()).includes("edited"), "a starting point, unedited: nothing to save");
+  c.check(!(await page.locator(".project-title-dot").isVisible()), "a starting point, unedited: nothing to save");
   await page.locator(".editor-overlay .cm-content").click();
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type("\n# a note typed in");
   await page.waitForTimeout(200);
-  await page.locator("#close").click();
+  await app.projectMenu("Close project");
   await dialog.waitFor({ timeout: 5000 }).catch(() => {});
   c.check(await dialog.isVisible(), "typed in its script: Close asks");
   // (saved as a download: not with the browser's file picker)
@@ -195,6 +195,96 @@ async function welcome() {
   c.check(!(await sheetShown()), "and × puts them away");
   await page.setViewportSize(size);
   await shot("welcome");
+}
+
+async function project() {
+  let project = await app.openLibrary("Mandelbrot and Julia sets together");
+  c.check((await page.locator("#toolbar, #status").count()) === 0, "no toolbar, and no status line");
+  const titleButton = page.locator(".project-title-button");
+  c.check((await page.locator(".project-title-text").textContent()) === "Mandelbrot and Julia sets together",
+          "the project's title floats in the corner");
+  await titleButton.click();
+  const items = (await page.locator(".project-title .window-menu .menu-label").allTextContents()).join(" | ");
+  c.check(items === "Save project | Save project as… | Close project | Edit project details… | Edit project script",
+          `its menu: ${items}`);
+  await page.keyboard.press("Escape");
+
+  // no window under the title: not to begin with, nor dragged there
+  const titleBox = await page.locator(".project-title").boundingBox();
+  const under = async () => (await page.locator(".window").evaluateAll((ws, t) => ws.filter((w) => {
+    const r = w.getBoundingClientRect();
+    return r.left < t.x + t.width && r.right > t.x && r.top < t.y + t.height && r.bottom > t.y;
+  }).length, titleBox));
+  c.check((await under()) === 0, "no window starts under the title");
+  const bar = await page.locator(".window-title").first().boundingBox();
+  await page.mouse.move(bar.x + 40, bar.y + bar.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(titleBox.x + 30, titleBox.y + 5, { steps: 6 });
+  await page.mouse.up();
+  const top = (await page.locator(".window").first().boundingBox()).y;
+  c.check((await under()) === 0 && top >= titleBox.y + titleBox.height,
+          `a window dragged onto it stays below it (its top at ${Math.round(top)}, the title's bottom at ${Math.round(titleBox.y + titleBox.height)})`);
+
+  // each viewer's tools, chosen in its title bar
+  const pp = project.viewers.find((v) => v.title === "Parameter plane").id;
+  const chooser = page.locator(".window").nth(pp).locator(".tool-chooser");
+  c.check((await chooser.textContent()).startsWith("Select C"), `a viewer's tool chooser shows its tool (${await chooser.textContent()})`);
+  await chooser.click();
+  const tools = (await page.locator(".window").nth(pp).locator(".window-menu .menu-label").allTextContents()).join(" | ");
+  await page.locator(".window").nth(pp).locator(".window-menu button", { hasText: "Navigate" }).click();
+  await app.waitForMessage(`(m) => m.type === "tool" && m.viewer === ${pp} && m.name === null`, 10000).catch(() => {});
+  c.check(tools === "Navigate | Select C" && (await chooser.textContent()).startsWith("Navigate"),
+          `its menu has its tools (${tools}); choosing one selects it`);
+  await app.activate(pp);
+  await app.forgetMessages();
+  await page.keyboard.press("s");
+  await app.waitForMessage(`(m) => m.type === "tool" && m.viewer === ${pp} && m.name === "Select C"`, 10000).catch(() => {});
+  c.check((await chooser.textContent()).startsWith("Select C"), "and its shortcut key does too");
+  const fits = await page.locator(".tool-chooser-label").evaluateAll((ls) => ls.every((l) => l.scrollWidth <= l.clientWidth));
+  c.check(fits, "the tools' names fit");
+
+  // Edit project details: the title (kept through a rebuild), and the preview
+  await app.projectMenu("Edit project details");
+  const details = page.locator(".details-dialog");
+  await details.waitFor({ timeout: 5000 }).catch(() => {});
+  c.check((await details.locator("input").inputValue()) === "Mandelbrot and Julia sets together" &&
+          (await details.locator(".details-preview").count()) === 1, "Edit project details shows its title and preview");
+  await details.locator("input").fill("My own Julia sets");
+  await details.locator("button", { hasText: "OK" }).click();
+  await app.waitForMessage(`(m) => m.type === "unsaved" && m.on`, 5000).catch(() => {});
+  c.check((await page.locator(".project-title-text").textContent()) === "My own Julia sets" &&
+          await page.locator(".project-title-dot").isVisible(), "a new title: shown, and a change to save");
+  await app.projectMenu("Edit project script");
+  await page.locator(".editor-overlay .cm-content").click();
+  await app.forgetMessages();
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await app.opened().catch(() => null);
+  c.check((await page.locator(".project-title-text").textContent()) === "My own Julia sets", "kept when it's rebuilt");
+  await page.locator(".window").nth(pp).locator(".window-menu-button").click();
+  await page.locator(".window-menu button", { hasText: "Use this as preview" }).click();
+  await app.waitForMessage(`(m) => m.type === "details" && m.fromViewer`, 15000).catch(() => {});
+  const preview = (await app.messages("details")).pop()?.preview ?? "";
+  const said = (await page.locator(".notice.passing").allTextContents()).join(" | ");
+  c.check(preview.length > 100 && /preview/.test(said), `"Use this as preview" makes one (${preview.length} characters), and says so`);
+  await page.evaluate(() => { window.showSaveFilePicker = undefined; });
+  const download = page.waitForEvent("download", { timeout: 10000 }).catch(() => null);
+  await app.projectMenu("Save project as");
+  const dl = await download;
+  const saved = dl ? fs.readFileSync(await dl.path(), "utf8") : "";
+  c.check(/title: My own Julia sets/.test(saved) && saved.includes(preview.slice(0, 60)),
+          "saved, the file has the new title and preview");
+  c.check(!(await page.locator(".project-title-dot").isVisible()), "and no changes to save");
+  await page.waitForTimeout(4500);
+  c.check((await page.locator(".notice.passing").count()) === 0, "what's said goes after a few seconds");
+
+  // a tool with a panel, chosen: the drawer opens to show it
+  project = await app.openLibrary("Pullbacks and matings");
+  c.check((await page.locator(".panel.open").count()) === 0, "(the drawer's shut)");
+  await app.activate(project.viewers.find((v) => v.title === "Dynamics").id);
+  await app.chooseTool("Mark orbit of critical point");
+  await page.waitForTimeout(400);
+  c.check((await page.locator(".panel.open").count()) === 1, "choosing a tool with a panel opens the drawer");
+  await shot("project");
 }
 
 async function drawing() {
@@ -442,7 +532,7 @@ async function stop() {
   const tNav = Date.now();
   await bar(V).locator("button", { hasText: "Navigate" }).click();
   await bar(V).waitFor({ state: "hidden", timeout: 5000 });
-  await page.waitForFunction(() => document.querySelector("#tools button[aria-pressed=true]")?.textContent === "Navigate",
+  await page.waitForFunction(() => [...document.querySelectorAll(".tool-chooser-label")].some((l) => l.textContent === "Navigate"),
                              null, { timeout: 5000 }).catch(() => {});
   c.check((await app.pressed()) === "Navigate", `Stop and switch to Navigate does (${await app.pressed()}, after ${Date.now() - tNav} ms)`);
   await page.mouse.wheel(0, 200);
@@ -477,7 +567,31 @@ async function panel() {
   await page.mouse.click(pbox.x + pbox.width * 0.3, pbox.y + pbox.height * 0.4);
   await page.waitForTimeout(800);
   c.check((await box.getAttribute("title")) === (await box.inputValue()), `and stays so when a tool sets it (${await box.getAttribute("title")})`);
+  // the configuration's a drawer: shut to begin with; its tab pulls it
+  // out (and pushes it back), with a click or a drag
   const aside = page.locator(".panel");
+  const out = async () => {
+    const b = await aside.boundingBox();
+    return b ? Math.round(page.viewportSize().width - b.x) : 0;
+  };
+  c.check((await out()) <= 1, `the configuration's a drawer, shut to begin with (${await out()} px out)`);
+  await page.locator(".drawer-tab").click();
+  await page.waitForTimeout(400);
+  const width = (await aside.boundingBox()).width;
+  c.check(Math.abs((await out()) - width) <= 1, `its tab pulls it out (${await out()} of ${width} px)`);
+  await page.locator(".drawer-tab").click();
+  await page.waitForTimeout(400);
+  c.check((await out()) <= 1, "and pushes it back");
+  const tab = await page.locator(".drawer-tab").boundingBox();
+  await page.mouse.move(tab.x + tab.width / 2, tab.y + tab.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(tab.x - width * 0.25, tab.y + tab.height / 2, { steps: 5 });
+  const partly = await out();
+  await page.mouse.move(tab.x - width * 0.6, tab.y + tab.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  c.check(partly > 0.2 * width && partly < 0.35 * width && Math.abs((await out()) - width) <= 1,
+          `dragging its tab pulls it out as far as it's dragged (${partly} px), and it stays out (${await out()} px)`);
   const before = (await aside.boundingBox()).width;
   const grip = await page.locator(".panel-grip").boundingBox();
   // (by its middle: the panel's short)
@@ -498,7 +612,7 @@ async function editor() {
   const project = await app.openLibrary("Mandelbrot and Julia sets together");
   const id = (title) => project.viewers.find((v) => v.title === title).id;
   const pp = id("Parameter plane"), dp = id("Dynamical plane");
-  await page.locator("#toggle-script").click();
+  await app.projectMenu("Edit project script");
   const doc = () => page.locator(".editor-overlay .cm-content").innerText();
   const status = () => page.locator(".editor-status").textContent();
   await page.waitForFunction(() => document.querySelectorAll(".editor-overlay [class*=tok-]").length > 20, null, { timeout: 10000 });
@@ -552,7 +666,7 @@ async function editor() {
   await dpWin.locator(".window-title").dblclick();
   c.check(await dpWin.evaluate((w) => w.classList.contains("minimized")), "double-clicking a title bar minimizes its window");
   // (the configuration's label, renamed; the editor reopened, as it was)
-  await page.locator("#toggle-script").click();
+  await app.projectMenu("Edit project script");
   c.check((await doc()).includes("# notes: θ α x̂."), "the Script button reopens it, with its text");
   const text = (await doc()).replace("Selected value of C:", "The value of C:");
   await page.locator(".editor-overlay .cm-content").click();
@@ -570,8 +684,9 @@ async function editor() {
   const tool = (await app.messages("tool")).filter((m) => m.viewer === dp).pop();
   c.check(tool?.name === "Trace", `and a viewer keeps its tool (${tool?.name})`);
   c.check(await page.locator(".editor-overlay").count() === 0, "and, since it worked, closes the editor");
-  c.check(/Rebuilt/.test(await page.locator("#status").textContent()), `saying so (${await page.locator("#status").textContent()})`);
-  await page.locator("#toggle-script").click();
+  const saidRebuilt = (await page.locator(".notice.passing").allTextContents()).join(" | ");
+  c.check(/Rebuilt/.test(saidRebuilt), `saying so (${saidRebuilt})`);
+  await app.projectMenu("Edit project script");
   c.check((await doc()).includes("The value of C:"), "which, reopened, has the rebuilt script");
   // (and is over the viewers: what's at its middle is the editor)
   const onTop = await page.evaluate(() => {
@@ -611,7 +726,7 @@ async function editor() {
   await app.waitForLibrary();
   // (the starting point: it opens with its editor)
   await app.openLibrary("Newton's method");
-  if (!(await editorShown())) await page.locator("#toggle-script").click();
+  if (!(await editorShown())) await app.projectMenu("Edit project script");
   await page.waitForTimeout(1000);
   await page.locator(".editor-overlay .cm-content").click();
   await page.keyboard.press("ControlOrMeta+Home");
@@ -665,7 +780,7 @@ async function opening() {
   c.check(translated !== null && translated.new && translated.edit && translated.viewers.length > 0,
           `translated, it opens as a new project (${translated?.fileName}), with ${translated?.viewers.length} viewer(s)`);
   c.check(await editorShown(), "with its script editor open");
-  c.check(/Sarah3\.fs/.test(await page.locator("#file-name").textContent()) && translated?.notes !== undefined,
+  c.check(/Sarah3\.fs/.test(await page.locator(".project-title-button").getAttribute("title")) && translated?.notes !== undefined,
           `and the old file's name (${translated?.notes.length} translation note(s))`);
   await page.locator(".editor-close").click();
 
@@ -812,6 +927,12 @@ async function menu() {
   // a Shift-drag: a box to zoom into
   {
     const b = await app.canvas(pp).boundingBox();
+    // (a small pan first: the view, as it's asked for, to compare with)
+    await page.mouse.move(b.x + b.width * 0.6, b.y + b.height * 0.6);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width * 0.6 + 12, b.y + b.height * 0.6, { steps: 3 });
+    await page.mouse.up();
+    await page.waitForTimeout(400);
     const before = (await page.evaluate((id) => window.__sent.filter((r) => r.viewer === id && r.type === "view").pop(), pp));
     await page.keyboard.down("Shift");
     await page.mouse.move(b.x + b.width * 0.25, b.y + b.height * 0.25);
@@ -825,6 +946,9 @@ async function menu() {
     const ratio = before && after ? after.pixelSize / before.pixelSize : NaN;
     c.check(shown && Math.abs(ratio - 0.25) < 0.02 && !(await app.viewer(pp).locator(".zoom-box").isVisible()),
             `Shift-drag draws a box, and zooms into it (a pixel ${ratio.toFixed(3)} the size; a quarter of each side)`);
+    // (back where it started: before the box, and before the pan)
+    await page.keyboard.press("<");
+    await page.waitForTimeout(600);
     await page.keyboard.press("<");
     await page.waitForTimeout(600);
   }
@@ -899,7 +1023,7 @@ async function menu() {
   await app.forgetMessages();
   await page.evaluate(() => { window.__saved = null; window.showSaveFilePicker = undefined; });
   const download = page.waitForEvent("download", { timeout: 10000 });
-  await page.locator("#save-as").click();
+  await app.projectMenu("Save project as");
   const file = await (await download).path();
   const saved = fs.readFileSync(file, "utf8");
   const props = /Parameter plane:[\s\S]*?(?=\n {4}\S|\n\S|$)/.exec(saved.slice(saved.indexOf("web-properties:")))?.[0] ?? "";
@@ -924,7 +1048,7 @@ async function menu() {
   const rebuilt = (await app.messages("project")).pop();
   c.check(rebuilt?.rebuilt && rebuilt.viewers[pp].colorizer.inUse === "Escape time" && rebuilt.viewers[1 - pp].colorizer.inUse === "Binary decomposition",
           `choosing another rebuilds the project, with it for this viewer only (${rebuilt?.viewers[pp].colorizer.inUse})`);
-  const said = await page.locator("#status").textContent();
+  const said = (await page.locator(".notice.passing").allTextContents()).join(" | ");
   c.check(/Escape time/.test(said), `and says so (${said})`);
   await openMenu();
   await choose("Colorizer");
@@ -983,7 +1107,7 @@ async function menu() {
   await app.forgetMessages();
   await page.evaluate(() => { window.showSaveFilePicker = undefined; });
   const download2 = page.waitForEvent("download", { timeout: 10000 });
-  await page.locator("#save-as").click();
+  await app.projectMenu("Save project as");
   const saved2 = fs.readFileSync(await (await download2).path(), "utf8");
   c.check(/aspect: 1\.5/.test(saved2), "saved, with it");
   const copy2 = path.join(os.tmpdir(), "menu-aspect.fs");
@@ -1068,7 +1192,7 @@ async function autocolor() {
   // saved, with the edits
   await page.evaluate(() => { window.showSaveFilePicker = undefined; });
   const download = page.waitForEvent("download", { timeout: 10000 });
-  await page.locator("#save-as").click();
+  await app.projectMenu("Save project as");
   const saved = fs.readFileSync(await (await download).path(), "utf8");
   const ac = saved.slice(saved.indexOf("\nautocolor:"));
   // (the tolerance as YAML writes 0.02)
@@ -1091,7 +1215,7 @@ async function tables() {
   await page.evaluate(() => { window.showSaveFilePicker = undefined; });
   const saveAs = async () => {
     const download = page.waitForEvent("download", { timeout: 10000 }).catch(() => null);
-    await page.locator("#save-as").click();
+    await app.projectMenu("Save project as");
     return download;
   };
   const dialog = page.locator(".page-dialog");
@@ -1113,7 +1237,7 @@ async function tables() {
   c.check(!(await dialog.isVisible()) && (await dl) !== null, "with its tables empty, saving asks nothing");
 
   // filled by the tool: asked, with the sizes
-  await page.locator("#tools button", { hasText: "Fill" }).click();
+  await app.chooseTool("Fill");
   await page.waitForTimeout(300);
   const box = await app.canvas(0).boundingBox();
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -1164,22 +1288,22 @@ async function tables() {
     for (let i = 0; i < 50 && window.__written.length <= k; i++) await new Promise((r) => setTimeout(r, 100));
     return window.__written[k] ? await window.__written[k].text() : null;
   }, k);
-  await page.locator("#save-as").click();
+  await app.projectMenu("Save project as");
   await dialog.waitFor({ timeout: 5000 }).catch(() => {});
   await dialog.locator("button", { hasText: "Save without tables" }).click();
   const first = await written(0);
-  await page.locator("#save").click();
+  await app.projectMenu("Save project");
   await page.waitForTimeout(800);
   const asked = await dialog.isVisible();
   const second = await written(1);
   c.check(first !== null && !/\ntables:/.test(first) && !asked && second !== null && !/\ntables:/.test(second),
           "a plain save after it asks nothing, and keeps the answer (without them)");
-  await page.locator("#save-as").click();
+  await app.projectMenu("Save project as");
   await dialog.waitFor({ timeout: 5000 }).catch(() => {});
   const askedAgain = await dialog.isVisible();
   await dialog.locator("button", { hasText: "Save with tables" }).click();
   const third = await written(2);
-  await page.locator("#save").click();
+  await app.projectMenu("Save project");
   const fourth = await written(3);
   c.check(askedAgain && /\ntables:/.test(third ?? "") && /\ntables:/.test(fourth ?? ""),
           "Save as asks again, and plain saves keep the new answer (with them)");

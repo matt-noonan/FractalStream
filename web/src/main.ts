@@ -1,13 +1,15 @@
 // The page: the library (welcome.ts) while no project's open; then a
-// project's configuration panel and viewers, until it's closed. The engine runs in a worker (engine.ts); see protocol.ts for
-// what they say to each other.
+// project's viewers, its title (a menu, floating in the corner) and its
+// configuration (a drawer, pulled out from the right), until it's closed.
+// The engine runs in a worker (engine.ts); see protocol.ts for what they
+// say to each other.
 
 import type { Request, Message, Layout, FieldLayout, Patch, ViewerInfo, SavedViews,
               Shape, Handled, EventKind, Navigation, AutocolorGroup, AutocolorEdit } from "./protocol.js";
 import { drawLayers } from "./drawing.js";
 import { ScriptEditor } from "./editor.js";
 import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
-import { Desk, type MenuItem } from "./windows.js";
+import { Desk, menuButton, type MenuItem } from "./windows.js";
 import type { Movies } from "./capture.js";
 import { Welcome } from "./welcome.js";
 
@@ -15,23 +17,7 @@ const engine = new Worker(new URL("engine.js", import.meta.url), { type: "module
 const send = (r: Request) => engine.postMessage(r);
 
 const projectEl = document.getElementById("project")!;
-const statusEl = document.getElementById("status")!;
 const noticesEl = document.getElementById("notices")!;
-const openButton = document.getElementById("open") as HTMLButtonElement;
-const saveButton = document.getElementById("save") as HTMLButtonElement;
-const saveAsButton = document.getElementById("save-as") as HTMLButtonElement;
-const fileNameEl = document.getElementById("file-name")!;
-const closeButton = document.getElementById("close") as HTMLButtonElement;
-const panelButton = document.getElementById("toggle-panel") as HTMLButtonElement;
-const paletteEl = document.getElementById("tools")!;
-const scriptButton = document.getElementById("toggle-script") as HTMLButtonElement;
-
-// Hiding and showing the configuration panel.
-function toggle(button: HTMLButtonElement, bodyClass: string) {
-  const hidden = document.body.classList.toggle(bodyClass);
-  button.setAttribute("aria-pressed", String(!hidden));
-}
-panelButton.addEventListener("click", () => toggle(panelButton, "no-panel"));
 
 // Smoothing, each viewer's to begin with ("Use subpixel smoothing", in its
 // menu, changes it; not saved, as on the desktop): off on a high-DPI
@@ -45,15 +31,13 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
   return e;
 }
 
-/** What's happening, in the status line; an error is a notice instead
-    (and the status line's cleared). */
-function status(text: string, isError = false) {
-  if (isError) {
-    statusEl.textContent = "";
-    notice(text, "error");
-    return;
-  }
-  statusEl.textContent = text;
+/** Say something: an error, as a notice (until it's dismissed); else,
+    something that's happened, as a notice that goes after a few seconds. */
+function say(text: string, isError = false) {
+  if (isError) { notice(text, "error"); return; }
+  const n = notice(text, "info");
+  n.classList.add("passing");
+  setTimeout(() => n.remove(), 4000);
 }
 
 /** A notice under the toolbar, until it's dismissed (or one of its
@@ -86,10 +70,7 @@ function clearNotices() { noticesEl.replaceChildren(); }
 // open, and the project's.
 
 const welcome = new Welcome({
-  open: (section, entry, title) => {
-    status(`Opening ${title}…`);
-    send({ type: "open", section, entry });
-  },
+  open: (section, entry) => send({ type: "open", section, entry }),
   openFile: async () => openFile(await pickFile()),
 });
 document.getElementById("welcome")!.append(welcome.element);
@@ -150,7 +131,6 @@ async function openFile(opened: Opened | null) {
   if (current && !(await offerToSave("opening another project"))) return;
   opening = opened.handle;
   welcome.setOpening(true);
-  status(`Opening ${opened.file.name}…`);
   const bytes = await opened.file.arrayBuffer();
   engine.postMessage({ type: "openFile", name: opened.file.name, bytes } satisfies Request, [bytes]);
 }
@@ -199,7 +179,7 @@ async function save(saveAs: boolean): Promise<boolean> {
     }
     return saved;
   } catch (e) {
-    status(`Couldn't save: ${e}`, true);
+    say(`Couldn't save: ${e}`, true);
     return false;
   }
 }
@@ -244,14 +224,11 @@ function forgetProject() {
   activeViewer = null;
   toolPanelEl = asideEl = workspaceEl = null;
   projectEl.replaceChildren();
-  paletteEl.replaceChildren();
   current = null;
   engineUnsaved = false;
   showFileName();
-  scriptButton.disabled = true;
-  scriptButton.setAttribute("aria-pressed", "false");
+  closeDetails();
   clearNotices();
-  status("");
 }
 
 /** A question over the whole page, with buttons (the last is the
@@ -272,6 +249,61 @@ function ask(title: string, text: string, labels: string[], focus: number): Prom
     document.body.append(dialog);
     buttons[focus].focus();
   });
+}
+
+/** Edit project details (from the title's menu), as the desktop's
+    Project info: its title, description and preview, as the library shows
+    them. (The preview's made with a viewer's "Use this as preview".) */
+let detailsDialog: { element: HTMLElement; preview: HTMLElement } | null = null;
+
+function previewElement(preview: string | null): HTMLElement {
+  return preview
+    ? el("img", { className: "details-preview", src: `data:image/png;base64,${preview}`, alt: "The project's preview" })
+    : el("p", { className: "details-no-preview",
+                textContent: "No preview yet. To make one, choose “Use this as preview” from a viewer's ☰ menu." });
+}
+
+function showDetails(m: Extract<Message, { type: "details" }>) {
+  if (m.fromViewer) {
+    // (made with "Use this as preview": the dialog shows it, if it's open)
+    if (detailsDialog) detailsDialog.preview.replaceChildren(previewElement(m.preview));
+    say("That's the project's preview now, as the library will show it.");
+    return;
+  }
+  closeDetails();
+  const title = el("input", { type: "text", value: m.title, placeholder: m.fileName.replace(/\.fs$/, "") });
+  const description = el("textarea", { className: "details-description", value: m.description, rows: 6 });
+  const preview = el("div", {}, previewElement(m.preview));
+  const close = () => closeDetails();
+  const ok = () => {
+    send({ type: "setDetails", title: title.value, description: description.value });
+    // (as the engine calls it from now on)
+    projectTitle = title.value.trim() || m.fileName.replace(/\.fs$/, "");
+    showFileName();
+    close();
+  };
+  const cancelButton = el("button", { type: "button", textContent: "Cancel" });
+  const okButton = el("button", { type: "button", textContent: "OK" });
+  cancelButton.addEventListener("click", close);
+  okButton.addEventListener("click", ok);
+  title.addEventListener("keydown", (e) => { if (e.key === "Enter") ok(); });
+  const element = el("div", { className: "page-dialog", role: "dialog" },
+    el("div", { className: "page-dialog-box details-dialog" },
+      el("div", { className: "form-title", textContent: "Project details" }),
+      el("label", { className: "form-field" }, el("span", { textContent: "Title:" }), title),
+      el("label", { className: "details-field" }, el("span", { textContent: "Description:" }), description),
+      preview,
+      el("p", { className: "details-file", textContent: `File: ${m.fileName}` }),
+      el("div", { className: "form-buttons" }, cancelButton, el("span", { className: "form-gap" }), okButton)));
+  element.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); close(); } });
+  document.body.append(element);
+  detailsDialog = { element, preview };
+  title.focus();
+}
+
+function closeDetails() {
+  detailsDialog?.element.remove();
+  detailsDialog = null;
 }
 
 /** The tables that hold anything (see "tableSummary"). */
@@ -318,16 +350,37 @@ function askSaveTables(tables: TableSummary["tables"], initially: boolean): Prom
   });
 }
 
+// ---------------------------------------------------------------------
+// The project's title, floating in the workspace's corner: a menu of what
+// to do with the project, and a dot when it has changes to save.
+
+const titleText = el("span", { className: "project-title-text" });
+const titleDot = el("span", { className: "project-title-dot", title: "It has changes to save", hidden: true });
+const titleMenu = menuButton(() => [
+  { kind: "action", label: "Save project", shortcut: "⌘S", run: () => void save(false) },
+  { kind: "action", label: "Save project as…", shortcut: "⇧⌘S", run: () => void save(true) },
+  { kind: "action", label: "Close project", run: () => void closeProject() },
+  { kind: "separator" },
+  { kind: "action", label: "Edit project details…", run: () => send({ type: "details" }) },
+  { kind: "toggle", label: "Edit project script", on: editorOpen, toggle: () => (editorOpen ? hideEditor() : showEditor()) },
+], { content: [titleText, titleDot, el("span", { className: "project-title-arrow", textContent: "▾" })],
+     className: "project-title-button", title: "Project", align: "left" });
+// (in the workspace, over its windows and under the drawer: see showProject)
+const titleEl = el("div", { className: "project-title" }, titleMenu);
+// (windows are kept out from under it: as it's renamed, and as the page is resized)
+new ResizeObserver(() => desk?.keepAllClear()).observe(titleEl);
+window.addEventListener("resize", () => desk?.keepAllClear());
+
+/** The title, and whether there are changes to save; its file's name, as
+    its tooltip. */
 function showFileName() {
-  fileNameEl.textContent = current ? current.fileName + (current.library ? " (from the library)" : "")
-                                     + (unsaved() ? " (edited)" : "") : "";
-  saveButton.disabled = saveAsButton.disabled = closeButton.disabled = !current;
+  titleText.textContent = projectTitle;
+  titleDot.hidden = !unsaved();
+  titleMenu.querySelector("button")!.title = current
+    ? `${current.fileName}${current.library ? " (from the library)" : ""}${unsaved() ? ": changes not saved" : ""}`
+    : "";
 }
 
-openButton.addEventListener("click", async () => openFile(await pickFile()));
-saveButton.addEventListener("click", () => save(false));
-saveAsButton.addEventListener("click", () => save(true));
-closeButton.addEventListener("click", () => closeProject());
 document.addEventListener("keydown", async (e) => {
   if (!(e.metaKey || e.ctrlKey)) return;
   const key = e.key.toLowerCase();
@@ -344,12 +397,14 @@ document.addEventListener("drop", async (e) => { e.preventDefault(); openFile(aw
 const fieldInputs = new Map<string, { input: HTMLInputElement | HTMLSelectElement; error: HTMLElement;
                                       swatch?: HTMLInputElement; setText: (text: string) => void }>();
 const viewers = new Map<number, ViewerView>();
-/** The viewer the tool palette, its shortcuts and the tool's panel are
-    for: the one last clicked. */
+/** The viewer the tool shortcuts and the tool's panel are for: the one
+    last clicked. */
 let activeViewer: ViewerView | null = null;
 /** Where the active viewer's tool's panel goes (in the side panel). */
 let toolPanelEl: HTMLElement | null = null;
 let asideEl: HTMLElement | null = null;
+/** The desk the viewers' windows are on. */
+let desk: Desk | null = null;
 /** The open project's viewers' windows, for saving the view state. */
 let windows: { title: string; view: ViewerView; window: HTMLElement }[] = [];
 
@@ -366,22 +421,34 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
   viewers.clear();
   windows = [];
   activeViewer = null;
-  const desk = new Desk(el("div"));
+  desk = new Desk(el("div"));
   toolPanelEl = el("div", { className: "tool-panel" });
   asideEl = el("aside", { className: "panel" },
-               panelGrip(), panel ? layoutElement(panel, projectFields) : "", toolPanelEl);
-  workspaceEl = el("div", { className: "workspace" }, desk.element, asideEl);
-  projectEl.replaceChildren(el("h1", { textContent: title }), workspaceEl);
+               panelGrip(), el("div", { className: "panel-body" }, panel ? layoutElement(panel, projectFields) : "", toolPanelEl),
+               drawerTab());
+  workspaceEl = el("div", { className: "workspace" }, desk.element, titleEl, asideEl);
+  projectEl.replaceChildren(workspaceEl);
   projectTitle = title;
-  // Each viewer in a window, side by side: all scaled down alike if they
-  // don't fit (each still showing its whole view), to no less than 40%,
-  // and then onto more rows if they still don't fit.
-  const gap = 16, margin = 12;
+  showFileName();
+  // (the drawer's closed, to begin with)
+  setDrawer(false);
+  // (no window under the title)
+  const d = desk;
+  d.keepClearOf(() => {
+    const t = titleEl.getBoundingClientRect(), r = d.element.getBoundingClientRect();
+    const gap = 8;
+    return { left: t.left - r.left + d.element.scrollLeft - gap, top: t.top - r.top + d.element.scrollTop - gap,
+             right: t.right - r.left + d.element.scrollLeft + gap, bottom: t.bottom - r.top + d.element.scrollTop + gap };
+  });
+  // Each viewer in a window, side by side, below the title: all scaled
+  // down alike if they don't fit (each still showing its whole view), to
+  // no less than 40%, and then onto more rows if they still don't fit.
+  const gap = 16, margin = 12, top = titleEl.offsetTop + titleEl.offsetHeight + 12;
   const room = desk.element.clientWidth - 2 * margin;
   // (the gaps between them don't scale)
   const widths = infos.reduce((sum, v) => sum + v.width, 0);
   const scale = Math.min(1, Math.max(0.4, (room - gap * (infos.length - 1)) / widths));
-  let x = margin, y = margin, rowHeight = 0;
+  let x = margin, y = top, rowHeight = 0;
   for (const info of infos) {
     const w = Math.floor(info.width * scale), h = Math.floor(info.height * scale);
     if (x > margin && x + w > margin + room + 1) { x = margin; y += rowHeight + gap; rowHeight = 0; }
@@ -393,7 +460,7 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
     viewers.set(info.id, v);
     const win = desk.add({ title: info.title, ...place, content: v.element, minimized: saved?.minimized,
                            onResize: (width, height) => v.resize(width, height),
-                           menu: () => v.menu() });
+                           menu: () => v.menu(), titleExtra: v.toolChooser ?? undefined });
     win.addEventListener("pointerdown", () => activate(v), { capture: true });
     v.window = win;
     windows.push({ title: info.title, view: v, window: win });
@@ -401,41 +468,83 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
     rowHeight = Math.max(rowHeight, h + 30);
   }
   activate(windows[0]?.view ?? null);
-  status("");
 }
 
-/** Make a viewer the active one: the palette, and its tool's panel, are its. */
+/** Make a viewer the active one: the tool shortcuts, and its tool's panel, are its. */
 function activate(v: ViewerView | null) {
   if (activeViewer === v) return;
   activeViewer?.window?.classList.remove("active");
   activeViewer = v;
   v?.window?.classList.toggle("active", viewers.size > 1);
-  showPalette();
   showToolPanel();
-}
-
-/** The tool palette, in the toolbar: Navigate, and the active viewer's tools. */
-function showPalette() {
-  const v = activeViewer;
-  if (!v) { paletteEl.replaceChildren(); return; }
-  const button = (name: string | null, label: string, help: string, shortcut: string) => {
-    const b = el("button", { type: "button", textContent: label,
-                             title: help + (shortcut ? ` (${shortcut})` : "") });
-    b.setAttribute("aria-pressed", String(v.toolName === name));
-    b.addEventListener("click", () => v.selectTool(name));
-    return b;
-  };
-  paletteEl.replaceChildren(
-    button(null, "Navigate", "Drag to move around; scroll or pinch to zoom", "n"),
-    ...v.info.tools.map((t) => button(t.name, t.name, t.help, t.shortcut)));
 }
 
 function showToolPanel() {
   if (!toolPanelEl || !asideEl) return;
   toolPanelEl.replaceChildren(activeViewer?.toolPanel ?? "");
-  // (no side panel at all, if there's nothing to put in it)
-  asideEl.hidden = asideEl.querySelector("fieldset, .field, button, p, .tabs") === null;
+  // (no drawer at all, if there's nothing to put in it)
+  asideEl.hidden = asideEl.querySelector(".panel-body :is(fieldset, .field, button, p, .tabs)") === null;
 }
+
+// The configuration (and the active viewer's tool's panel), in a drawer
+// over the right of the workspace: pulled out, or pushed back, by its tab,
+// with a click or a drag (or Escape, from inside it, closes it).
+
+function setDrawer(open: boolean) {
+  if (!asideEl) return;
+  asideEl.classList.toggle("open", open);
+  asideEl.style.transform = "";
+  const tab = asideEl.querySelector(".drawer-tab");
+  tab?.setAttribute("aria-expanded", String(open));
+  tab?.setAttribute("title", open ? "Hide the configuration" : "Show the configuration");
+}
+
+function drawerTab(): HTMLElement {
+  const tab = el("button", { type: "button", className: "drawer-tab" },
+                 el("span", { className: "drawer-tab-label", textContent: "Configuration" }));
+  tab.setAttribute("aria-label", "Configuration");
+  tab.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !asideEl) return;
+    e.preventDefault();
+    tab.setPointerCapture(e.pointerId);
+    const aside = asideEl;
+    const width = aside.getBoundingClientRect().width;
+    const wasOpen = aside.classList.contains("open");
+    const x0 = e.clientX;
+    let moved = false, shown = wasOpen ? width : 0;
+    aside.classList.add("dragging");
+    const move = (m: PointerEvent) => {
+      const dx = m.clientX - x0;
+      if (Math.abs(dx) > 4) moved = true;
+      if (!moved) return;
+      // (how much of it is out)
+      shown = Math.max(0, Math.min(width, (wasOpen ? width : 0) - dx));
+      aside.style.transform = `translateX(${width - shown}px)`;
+    };
+    const up = () => {
+      aside.classList.remove("dragging");
+      tab.removeEventListener("pointermove", move);
+      tab.removeEventListener("pointerup", up);
+      tab.removeEventListener("pointercancel", up);
+      // (a click toggles it; a drag leaves it open if it's more than a third out)
+      setDrawer(moved ? shown > width / 3 : !wasOpen);
+    };
+    tab.addEventListener("pointermove", move);
+    tab.addEventListener("pointerup", up);
+    tab.addEventListener("pointercancel", up);
+  });
+  // (the keyboard: Space or Return, as a button)
+  tab.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDrawer(!asideEl?.classList.contains("open")); }
+  });
+  return tab;
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && asideEl?.classList.contains("open") && asideEl.contains(document.activeElement)) {
+    setDrawer(false);
+  }
+});
 
 // A tool's shortcut key (and n for Navigate) picks it, for the active viewer.
 document.addEventListener("keydown", (e) => {
@@ -453,7 +562,7 @@ document.addEventListener("keydown", (e) => {
   else if (key === "n") { e.preventDefault(); v.selectTool(null); }
 });
 
-// The configuration panel's width: dragged from its left edge, and
+// The configuration drawer's width: dragged from its left edge, and
 // remembered (in this browser).
 const PANEL_WIDTH_KEY = "fractalstream.panelWidth";
 const MIN_PANEL_WIDTH = 240;
@@ -493,7 +602,7 @@ function panelGrip(): HTMLElement {
 
 // ---------------------------------------------------------------------
 // The script editor: over the whole workspace (the viewers and the
-// configuration), from the toolbar's Script button (see editor.ts). A
+// configuration), from the title's Edit project script (see editor.ts). A
 // rebuild that works closes it (one that doesn't leaves it open, saying
 // why); it keeps what's typed in it while it's closed, until another
 // project is opened.
@@ -509,7 +618,7 @@ let symbolTables: [[string, string][], [string, string][]] | null = null;
     it's used, since its video muxer (Mediabunny) is most of its size. */
 const capture = () => import("./capture.js");
 let moviesMade: Promise<Movies> | null = null;
-const movies = () => (moviesMade ??= capture().then((c) => new c.Movies(send, (text, isError) => status(text, isError))));
+const movies = () => (moviesMade ??= capture().then((c) => new c.Movies(send, say)));
 
 /** The viewer (by title) whose colorizer was just chosen, if the next
     rebuild is for that (see the "project" message). */
@@ -534,17 +643,13 @@ function showEditor() {
   titleEl.textContent = `${projectTitle}: script`;
   workspaceEl.append(editorOverlay!);
   editorOpen = true;
-  scriptButton.setAttribute("aria-pressed", "true");
   scriptEditor.focus();
 }
 
 function hideEditor() {
   editorOverlay?.remove();
   editorOpen = false;
-  scriptButton.setAttribute("aria-pressed", "false");
 }
-
-scriptButton.addEventListener("click", () => (editorOpen ? hideEditor() : showEditor()));
 
 // ---------------------------------------------------------------------
 // The autocolor editor: the project's autocolor groups, over the
@@ -858,6 +963,13 @@ class ViewerView {
   private runTimer: number | undefined;
   /** Its window, on the desk. */
   window: HTMLElement | null = null;
+  /** Its tool chooser, in its title bar (if it has tools): the tool it
+      has, as a menu of its tools, and Navigate. */
+  readonly toolChooser: HTMLElement | null;
+  private readonly toolLabel: HTMLElement;
+  /** A tool's been chosen from its chooser (or with its shortcut): its
+      panel, if it has one, opens the drawer. */
+  private toolChosen = false;
 
   /** Its tool (null: navigating), the pointer events that tool handles,
       and its panel. */
@@ -891,6 +1003,16 @@ class ViewerView {
     this.pointerEl = el("div", { className: "viewer-pointer", hidden: true, textContent: "…" });
     this.boxEl = el("div", { className: "zoom-box", hidden: true });
     this.element = el("div", { className: "viewer" }, this.canvas, this.boxEl, this.errorEl, this.runEl, this.pointerEl);
+    this.toolLabel = el("span", { className: "tool-chooser-label", textContent: "Navigate" });
+    this.toolChooser = info.tools.length === 0 ? null : menuButton(() => [
+      { kind: "toggle", label: "Navigate", on: this.toolName === null, shortcut: "n",
+        help: "Drag to move around; scroll or pinch to zoom", toggle: () => this.selectTool(null) },
+      ...info.tools.map((t): MenuItem => ({ kind: "toggle", label: t.name, on: this.toolName === t.name,
+                                             shortcut: t.shortcut || undefined, help: t.help || undefined,
+                                             toggle: () => this.selectTool(t.name) })),
+    ], { content: [this.toolLabel, el("span", { className: "tool-chooser-arrow", textContent: "▾" })],
+         className: "tool-chooser", title: "Tool" });
+    this.toolChooser?.classList.add("tool-chooser-wrap");
     this.setSize(width, height);
     // (focusable, and focused when it's clicked: so the keyboard's for the
     // tool shortcuts again, after typing in the script editor)
@@ -932,8 +1054,9 @@ class ViewerView {
              cx: t?.cx ?? 0, cy: t?.cy ?? 0, "pixel-size": (t?.px ?? 0) * this.density };
   }
 
-  /** Ask the engine to select a tool (null: navigate). */
+  /** Ask the engine to select a tool (null: navigate), as the user's chosen. */
   selectTool(name: string | null) {
+    this.toolChosen = true;
     send({ type: "selectTool", viewer: this.info.id, name: name ?? "" });
   }
 
@@ -949,7 +1072,14 @@ class ViewerView {
       set: (fieldName, text) => send({ type: "setTool", viewer: id, name: fieldName, text }),
       button: (label) => send({ type: "button", viewer: id, label }),
     }));
-    if (activeViewer === this) { showPalette(); showToolPanel(); }
+    this.toolLabel.textContent = name ?? "Navigate";
+    this.toolChooser?.querySelector("button")?.setAttribute("title", `Tool: ${name ?? "Navigate"}`);
+    if (activeViewer === this) {
+      showToolPanel();
+      // (a tool chosen with a panel: the drawer's opened, to show it)
+      if (this.toolChosen && this.toolPanel) setDrawer(true);
+    }
+    this.toolChosen = false;
   }
 
   get drawing() { return this.layers; }
@@ -1421,6 +1551,8 @@ class ViewerView {
         { kind: "action", label: "Image…", run: () => void capture().then((c) => c.askImage(this.info.id, send)) },
         { kind: "action", label: "Movie…", run: () => void movies().then((m) => m.ask(this.info.id, this.info.title)) },
       ] },
+      { kind: "action", label: "Use this as preview", help: "Make what this viewer shows the project's preview, in the library",
+        run: () => send({ type: "useAsPreview", viewer: this.info.id }) },
       { kind: "separator" },
       { kind: "toggle", label: "Show pointer position", on: this.pointerShown,
         toggle: () => this.setPointerShown(!this.pointerShown) },
@@ -1553,10 +1685,9 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       send({ type: "smoothing", on: smoothingAtFirst });
       send({ type: "density", value: density() });
       send({ type: "symbols" });
-      status("Loading the library…");
       send({ type: "library" });
       break;
-    case "library": welcome.show(m.sections); status(""); break;
+    case "library": welcome.show(m.sections); break;
     case "project":
       if (m.rebuilt) {
         // (the same project, built again from its edited script: its
@@ -1566,14 +1697,17 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
         const views = { viewers: { ...m.views?.viewers, ...viewState().viewers } };
         // (an open autocolor editor stays open: the groups are the same)
         const autocolorOpen = autocolorOverlay?.isConnected ?? false;
+        // (and so does the drawer, open or not)
+        const drawerOpen = asideEl?.classList.contains("open") ?? false;
         showProject(m.title, m.panel, m.viewers, views);
+        setDrawer(drawerOpen);
         if (autocolorOpen && autocolorOverlay && workspaceEl) workspaceEl.append(autocolorOverlay);
         scriptEditor?.projectScript(m.script, true);
         // (it worked: the editor's done its job)
         hideEditor();
         // (for a colorizer, which one the viewer uses now)
         const changed = colorizerChange && m.viewers.find((v) => v.title === colorizerChange);
-        status(changed ? `${changed.title}: colored by ${changed.colorizer?.inUse ?? "its script"}.` : "Rebuilt.");
+        say(changed ? `${changed.title}: colored by ${changed.colorizer?.inUse ?? "its script"}.` : "Rebuilt.");
         colorizerChange = null;
         break;
       }
@@ -1591,21 +1725,16 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       showScreen(true);
       enterHistory();
       showProject(m.title, m.panel, m.viewers, m.views);
-      scriptButton.disabled = false;
-      scriptButton.setAttribute("aria-pressed", "false");
       if (m.notes.length) notice(`Translation notes:\n${m.notes.map((n) => `• ${n}`).join("\n")}`, "info");
-      if (m.edit) {
-        showEditor();
-        if (m.viewers.length === 0) status("Its script doesn't build yet: fix it, then Rebuild.");
-      }
+      // (its editor says why, if its script doesn't build)
+      if (m.edit) showEditor();
       break;
     case "ancient":
-      status("");
       opening = null;
       welcome.setOpening(false);
       notice(`“${m.name}” looks like a file from an old version of FractalStream (1.0). ` +
              `Translate it into a new project? (The old file is left as it is.)`, "info",
-             [{ label: "Translate", run: () => { status(`Translating ${m.name}…`); send({ type: "translate" }); } }]);
+             [{ label: "Translate", run: () => { welcome.setOpening(true); send({ type: "translate" }); } }]);
       break;
     case "pointer": viewers.get(m.viewer)?.showPointer(m.text); break;
     case "view": viewers.get(m.viewer)?.moved(m); break;
@@ -1626,9 +1755,9 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "file": {
       const write = pendingSave;
       pendingSave = null;
-      if (write) write.write(m.name, m.bytes).then((name) => { status(`Saved ${name}.`); write.done(true); },
+      if (write) write.write(m.name, m.bytes).then((name) => { say(`Saved ${name}.`); write.done(true); },
                                                     (e) => {
-                                                      status(`Couldn't save: ${e}`, true);
+                                                      say(`Couldn't save: ${e}`, true);
                                                       // (it still has changes to save)
                                                       send({ type: "unsaved", on: true });
                                                       write.done(false);
@@ -1639,17 +1768,17 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "field": fieldResult(m.key, m.error, m.color); break;
     case "fieldText": fieldText(m.key, m.text, m.color); break;
     case "tool": viewers.get(m.viewer)?.toolSelected(m.name, m.panel, m.handles); break;
-    case "toolError": status(m.message, true); console.error(m.message); break;
+    case "toolError": say(m.message, true); console.error(m.message); break;
     case "drawing": viewers.get(m.viewer)?.showDrawing(m.layers); break;
     case "eventDone": viewers.get(m.viewer)?.eventDone(); break;
     case "running": viewers.get(m.viewer)?.showRunning(m.what, m.name); break;
     case "runDone": viewers.get(m.viewer)?.runDone(); break;
     case "viewerError": viewers.get(m.viewer)?.showError(m.message); break;
-    case "error": colorizerChange = null; welcome.setOpening(false); status(m.message, true); console.error(m.message); break;
+    case "error": colorizerChange = null; welcome.setOpening(false); say(m.message, true); console.error(m.message); break;
+    case "details": showDetails(m); break;
     case "patch": viewers.get(m.viewer)?.patch(m); break;
   }
 });
-engine.addEventListener("error", (e) => { welcome.setOpening(false); status(`The engine failed: ${e.message}`, true); });
+engine.addEventListener("error", (e) => { welcome.setOpening(false); say(`The engine failed: ${e.message}`, true); });
 // (drawings' text is in the core's font: redraw once it's loaded)
 document.fonts.load(`13px "DejaVu Sans"`).then(() => viewers.forEach((v) => v.showDrawing(v.drawing)));
-status("Starting the engine…");

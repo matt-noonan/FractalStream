@@ -20,6 +20,13 @@ export type Request =
       draft: string | null }
   /** Close the open project (back to the library). */
   | { type: "close" }
+  /** The project's title, description and preview: answered by "details". */
+  | { type: "details" }
+  /** Set its title and description (empty: none). */
+  | { type: "setDetails"; title: string; description: string }
+  /** "Use this as preview": what the viewer shows, as the project's
+      preview (answered by "details"). */
+  | { type: "useAsPreview"; viewer: number }
   /** Whether the project has changes to save, again (a saved file
       couldn't be written). */
   | { type: "unsaved"; on: boolean }
@@ -286,6 +293,9 @@ export type Message =
   | { type: "rebuildError"; error: ScriptError }
   /** The open project, saved: its file's name and contents. */
   | { type: "file"; name: string; bytes: ArrayBuffer }
+  /** The project's details (see "details", "useAsPreview"). */
+  | { type: "details"; title: string; description: string; preview: string | null; fileName: string;
+      fromViewer: boolean }
   /** Whether the open project has changes to save (as the desktop app
       counts them), whenever that changes. */
   | { type: "unsaved"; on: boolean }

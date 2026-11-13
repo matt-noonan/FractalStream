@@ -28,8 +28,9 @@ body {
   color: var(--fg);
 }
 [hidden] { display: none !important; }
-main { min-width: 0; padding: 12px 20px; }
-#status { min-height: 1.4em; color: var(--muted); }
+/* The project's screen: its windows on a desk filling the page, its
+   title floating over the corner, its configuration a drawer on the right */
+#project-screen, #project, .workspace { position: fixed; inset: 0; overflow: hidden; }
 /* Notices (main.ts's `notice`): errors, and things to know or decide,
    until they're dismissed; over either screen, at the top. */
 #notices {
@@ -54,12 +55,27 @@ main { min-width: 0; padding: 12px 20px; }
   border: 1px solid transparent; border-radius: 4px; background: none; color: var(--muted); cursor: pointer;
 }
 .notice-dismiss:hover { border-color: var(--line); color: var(--fg); }
-h1 { font-size: 20px; margin: 4px 0 12px; }
-.workspace { display: flex; gap: 16px; align-items: flex-start; }
-.desk {
-  position: relative; flex: 1; min-width: 0; min-height: calc(100vh - 130px);
-  overflow: auto; border: 1px dashed var(--line); border-radius: 8px;
+/* (something that's happened: it goes by itself) */
+.notice.passing { animation: notice-passing 4s ease-in forwards; }
+@keyframes notice-passing { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+/* (the windows stack among themselves, under the title and the drawer) */
+.desk { position: absolute; inset: 0; overflow: auto; z-index: 0; }
+
+/* The project's title (main.ts): a menu, floating in the corner */
+.project-title { position: absolute; top: 12px; left: 12px; z-index: 2; max-width: calc(100% - 80px); }
+.project-title .window-menu-wrap { max-width: 100%; }
+/* (its menu, while it's open, over everything: the editors, the drawer) */
+.project-title:has([aria-expanded=true]) { z-index: 6; }
+.project-title-button {
+  display: flex; align-items: center; gap: 8px; max-width: 100%;
+  font: 600 15px/1.3 system-ui, sans-serif; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); color: var(--fg); box-shadow: 0 2px 10px rgba(0, 0, 0, .12);
 }
+.project-title-button:hover, .project-title-button[aria-expanded=true] { border-color: var(--accent); }
+.project-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-title-dot { flex: none; width: 8px; height: 8px; border-radius: 4px; background: var(--accent); }
+.project-title-arrow { flex: none; font-size: 11px; color: var(--muted); }
+.menu-left .window-menu { left: 0; right: auto; }
 .window {
   position: absolute; display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
@@ -76,6 +92,17 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
   border: 1px solid transparent; border-radius: 4px; background: none; color: var(--muted); cursor: pointer;
 }
 .window-minimize:hover { border-color: var(--line); color: var(--fg); }
+/* A viewer's tool chooser, in its title bar (main.ts): its tool's name
+   gets cut short only once the window's title has been */
+.window-menu-wrap.tool-chooser-wrap { flex: 0 1 auto; min-width: 0; max-width: 55%; }
+.tool-chooser {
+  display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; height: 18px; padding: 0 6px;
+  font: inherit; font-size: 12px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--bg); color: var(--fg); cursor: pointer;
+}
+.tool-chooser:hover, .tool-chooser[aria-expanded=true] { border-color: var(--accent); }
+.tool-chooser-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-chooser-arrow { flex: none; font-size: 9px; color: var(--muted); }
 /* A window's menu of options (windows.ts) */
 .window-menu-wrap { position: relative; flex: none; display: flex; }
 .window-menu-button {
@@ -114,15 +141,32 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
 }
 .viewer canvas { display: block; cursor: grab; touch-action: none; outline: none; }
 .viewer canvas:active { cursor: grabbing; }
+/* The configuration: a drawer over the right of the workspace, pulled out
+   by its tab (main.ts) */
 .panel {
-  flex: none; width: var(--panel-width, 320px); position: relative;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px;
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 3;
+  width: min(var(--panel-width, 320px), calc(100vw - 40px));
+  background: var(--panel); border-left: 1px solid var(--line);
+  transform: translateX(100%); transition: transform .2s ease-out;
 }
-/* (its left edge, to drag it wider or narrower) */
+.panel.open { transform: none; box-shadow: -6px 0 24px rgba(0, 0, 0, .15); }
+.panel.dragging { transition: none; }
+.panel-body { height: 100%; overflow-y: auto; padding: 12px; }
+.drawer-tab {
+  position: absolute; right: 100%; top: 72px; z-index: 1; padding: 12px 6px;
+  writing-mode: vertical-rl; transform: rotate(180deg); touch-action: none;
+  font: 600 12px system-ui, sans-serif; letter-spacing: .03em; cursor: pointer;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-left: none;
+  border-radius: 0 8px 8px 0; box-shadow: 4px 0 10px rgba(0, 0, 0, .1);
+}
+.drawer-tab:hover { color: var(--accent); }
+.drawer-tab:focus-visible { outline: 2px solid var(--accent); }
+/* (its left edge, to drag it wider or narrower, while it's out) */
 .panel-grip {
-  position: absolute; left: -9px; top: 0; bottom: 0; width: 10px; cursor: ew-resize; touch-action: none;
+  position: absolute; left: -5px; top: 0; bottom: 0; width: 10px; cursor: ew-resize; touch-action: none;
 }
-.panel-grip:hover, .panel-grip.dragging { border-right: 2px solid var(--accent); }
+.panel:not(.open) .panel-grip { display: none; }
+.panel-grip:hover, .panel-grip.dragging { border-left: 2px solid var(--accent); }
 .panel fieldset { border: none; margin: 0; padding: 0; }
 .panel legend { font-weight: 600; margin-bottom: 6px; }
 .vertical { display: flex; flex-direction: column; gap: 6px; }
@@ -141,17 +185,6 @@ h1 { font-size: 20px; margin: 4px 0 12px; }
 }
 .field input.invalid { border-color: var(--error); }
 .field-error { color: var(--error); cursor: help; }
-#toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-#toolbar button {
-  font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
-  border: 1px solid var(--line); background: var(--panel); color: var(--fg);
-}
-#toolbar button:disabled { opacity: .5; cursor: default; }
-#file-name { margin-left: 8px; color: var(--muted); }
-#toolbar .separator { width: 12px; }
-#toolbar button[aria-pressed=true] { border-color: var(--accent); }
-body.no-panel .panel { display: none; }
-#toolbar .toggle { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; color: var(--muted); cursor: pointer; }
 .tab-chooser {
   width: 100%; margin-bottom: 8px; font: inherit; padding: 4px 6px;
   border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);
@@ -163,17 +196,8 @@ body.no-panel .panel { display: none; }
 }
 .field input[type=color] { width: 32px; height: 26px; padding: 0 2px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
 
-/* The tool palette: Navigate and the active viewer's tools, as one
-   segmented group; the selected one filled in. */
 @font-face { font-family: "DejaVu Sans"; src: url("DejaVuSans.ttf") format("truetype"); }
-.palette { display: inline-flex; flex-wrap: wrap; }
-#toolbar .palette button { border-radius: 0; margin-left: -1px; }
-#toolbar .palette button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
-#toolbar .palette button:last-child { border-radius: 0 6px 6px 0; }
-#toolbar .palette button[aria-pressed=true] {
-  background: var(--accent); border-color: var(--accent); color: white; position: relative;
-}
-/* (with several viewers, the one the palette is for) */
+/* (with several viewers, the one the tool shortcuts are for) */
 .window.active { border-color: var(--accent); }
 .window.active .window-title { color: var(--fg); }
 .viewer.tool canvas { cursor: crosshair; }
@@ -225,10 +249,9 @@ body.no-panel .panel { display: none; }
   font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
   border: 1px solid var(--line); background: var(--bg); color: var(--fg);
 }
-/* over the whole workspace: the viewers and the configuration */
-.workspace { position: relative; }
+/* over the whole workspace (the viewers and the configuration), below the title */
 .editor-overlay {
-  position: absolute; inset: 0; z-index: 100000; display: flex; flex-direction: column;
+  position: absolute; inset: 60px 12px 12px; z-index: 4; display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, .2); overflow: hidden;
 }
@@ -442,3 +465,15 @@ body.no-panel .panel { display: none; }
   }
   .welcome-hint { display: none; }
 }
+
+/* "Loading the library…", until it's loaded */
+.welcome-loading { grid-column: 1 / -1; color: var(--muted); padding: 8px; }
+
+/* Edit project details (main.ts's showDetails) */
+.page-dialog-box.details-dialog { width: min(520px, 100%); }
+.details-field { display: flex; flex-direction: column; gap: 4px; }
+.details-description { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; resize: vertical;
+                       border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.details-preview { width: 128px; height: 128px; object-fit: contain; align-self: center; border-radius: 4px; }
+.details-no-preview, .details-file { color: var(--muted); }
+.details-file { font-size: 12px; overflow-wrap: anywhere; }

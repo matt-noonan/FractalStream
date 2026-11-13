@@ -63,6 +63,8 @@ export class Welcome {
     this.gridEl.setAttribute("role", "listbox");
     this.gridEl.setAttribute("aria-label", "Projects");
     this.gridEl.addEventListener("keydown", (e) => this.key(e));
+    // (until the engine's started, and said what's in the library)
+    this.gridEl.append(el("li", { className: "welcome-loading", textContent: "Loading the library…" }));
     this.detailsEl = el("aside", { className: "welcome-details" });
     this.element = el("div", { className: "welcome" },
       el("header", { className: "welcome-header" },
