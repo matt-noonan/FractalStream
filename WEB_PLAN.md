@@ -343,7 +343,8 @@ Only if 0c/0d come out well.
 - [x] Autocolor editor: an overlay over the workspace (for now: windows are viewers), from each viewer's Colorizer submenu.
 - [x] Movies (WebCodecs), and pictures: Capture > Image… and Movie… (from a script). Still to come: the Animate along path tool, and a movie's inset.
 - [x] Saved tables: asked when saving, as the desktop asks (with each table's size), remembered for plain saves.
-- [ ] Open a project from a URL; shareable links.
+- [x] Open a project from a URL; shareable links (Copy link, in the
+  title's menu; `#open=`, `#project=` and `#url=` links).
 - [x] The library as the welcome screen, shown while no project's open
   (as the desktop's welcome window); Close project goes back to it,
   asking first about unsaved changes (as the desktop counts them), as do
@@ -365,6 +366,37 @@ Only if 0c/0d come out well.
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-13: Links to a project
+
+Copy link (in the title's menu) copies a link that opens the project as
+it is now, in the part of the address after "#" (never sent to the
+server). Two kinds (`web/src/links.ts`), compressed with the browser's
+own deflate (`CompressionStream("deflate-raw")`) in base64url:
+
+- `#open=<id>&s=<state>`: a library project whose script hasn't changed
+  (its id is its section's and file's names: `quadratic-family/
+  external-rays`), with its state: what the file holds besides its
+  script, metadata, scenarios and tables (its values, `web-properties`,
+  colorizer choices and autocolor groups: the core's `projectStateKeys`).
+  Opened, the library's copy gets that state (`withProjectKeys`). A few
+  hundred characters. If the library project's been revised since, the
+  link opens the new one with the old state (values that no longer fit
+  are skipped).
+- `#project=<file>&name=<name>`: any other project (one of the user's,
+  edited, a starting point's, a translation), its whole file, with what's
+  typed in its script editor, less its tables and its preview
+  (`rewriteProjectFile`). About 1 to 4 KB.
+
+And `#url=<address>` opens a project file from the web, where its host
+lets other pages read it (as GitHub's raw files and Gists do).
+
+A link's opened when the page loads with one (once the library has), or
+when one's put in the address bar (asking first if the open project has
+changes to save, as Close does); then it's taken out of the address bar,
+so that reloading goes back to the library. A project opened from a link
+has no file of its own: saving it asks where. Links that can't be read,
+or name a library project that isn't there, say so.
 
 ### 2026-11-13: Windows that fit the screen
 

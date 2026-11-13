@@ -33,6 +33,14 @@ worker (@web/src/engine.ts@). The worker calls these exports:
   The project has no changes to save after this (@unsaved@).
 * @fs_close()@: close the open project (the page has asked about its
   unsaved changes).
+* @fs_share(views, withDraft, draft)@: what a link to the open project
+  shows (@share@), with the page's view state (as for @fs_save@): for a
+  library project whose script hasn't changed, its library id and its
+  state (its values, views, colorizers and autocolor: see
+  'projectStateKeys'); else its whole file (with what's typed in the
+  script editor, if @withDraft@), less its tables and its preview.
+* @fs_open_link(id, state)@: open a library project (by its id, as the
+  library posts it) with that state (JSON), from a link.
 * @fs_details()@: post the open project's title, description and
   preview (@details@), for the page's Edit project details.
 * @fs_set_details(title, description)@: set them (an empty one: none; a
@@ -148,8 +156,9 @@ contents), which the worker forwards to the page.
 
 Messages:
 
-> { "type": "library", "sections": [ { "name", "startingPoints", "entries": [ { "title", "description", "preview" } ] } ] }
+> { "type": "library", "sections": [ { "name", "startingPoints", "entries": [ { "title", "description", "preview", "id" } ] } ] }
 > { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "share", "library": <a library project's id> or null, "state": <its state> or null, "file": <the whole project file> or null, "fileName" }
 > { "type": "details", "title", "description", "preview": <a PNG, base64-encoded> or null, "fileName", "fromViewer": <whether it's from "Use this as preview"> }
 > { "type": "unsaved", "on" }   (whether the open project has changes to save, as the desktop app counts them, whenever that changes)
 > { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
@@ -215,7 +224,8 @@ module Main (main) where
 import FractalStream.Prelude
 
 import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, LoadedProject(..), ensembleFields, FieldOwner(..), ensembleCommonDefs,
-                       encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables, watchValues)
+                       encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables, watchValues,
+                       projectStateKeys, withProjectKeys, rewriteProjectFile, projectScript)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables, TableSummary(..), summarizeTables)
 import qualified Data.Aeson.KeyMap as KM
@@ -241,7 +251,7 @@ import Actor.Autocolor (AutocolorGroup(..), AutocolorGroupId(..), autocolorGroup
                         setAutocolorEntryColor, moveAutocolorEntry, deleteAutocolor, addAutocolorEntry,
                         clearAutocolorGroup)
 import Data.Color (Color, rgbToColor)
-import Data.Char (isHexDigit, digitToInt, isSpace)
+import Data.Char (isHexDigit, digitToInt, isSpace, isAlphaNum, toLower)
 import Actor.Viewer.Preview (renderPreview)
 import Actor.Movie (MovieSettings(..), defaultMovieSettings, movieFrameTimes, scriptAnimation, checkMovieScript,
                     movieScriptTemplate, complexVariables, withFieldsRestored, renderViewerImage)
@@ -501,6 +511,8 @@ foreign export javascript "fs_translate" translateAncient :: IO ()
 foreign export javascript "fs_pointer" pointer :: Int -> Double -> Double -> IO ()
 foreign export javascript "fs_save" save :: JSString -> Int -> Bool -> JSString -> IO ()
 foreign export javascript "fs_close" closeProject :: IO ()
+foreign export javascript "fs_share" share :: JSString -> Bool -> JSString -> IO ()
+foreign export javascript "fs_open_link" openLink :: JSString -> JSString -> IO ()
 foreign export javascript "fs_details" details :: IO ()
 foreign export javascript "fs_set_details" setDetails :: JSString -> JSString -> IO ()
 foreign export javascript "fs_use_as_preview" useAsPreview :: Int -> IO ()
@@ -553,11 +565,23 @@ library = guarded $ post $ Aeson.object
                   [ "title" .= leTitle e
                   , "description" .= leDescription e
                   , "preview" .= fmap (Text.decodeUtf8 . B64.encode) (lePreview e)
+                  , "id" .= libraryId s e
                   ]
               | e <- lsEntries s ]
           ]
       | s <- librarySections ]
   ]
+
+-- | A library project's id, for links: its section's name and its file's,
+-- as words joined by dashes (@quadratic-family/external-rays@).
+libraryId :: LibrarySection -> LibraryEntry -> String
+libraryId s e = slug (lsName s) ++ "/" ++ takeBaseName (leFileName e)
+  where
+    slug = intercalate "-" . words . map (\c -> if isAlphaNum c then toLower c else ' ') . filter (/= '\'')
+
+-- | The library project with this id, and its section, if there is one.
+libraryEntryById :: String -> Maybe (LibrarySection, LibraryEntry)
+libraryEntryById ident = find (\(s, e) -> libraryId s e == ident) [ (s, e) | s <- librarySections, e <- lsEntries s ]
 
 open :: Int -> Int -> IO ()
 open section entry = guarded $ do
@@ -625,13 +649,7 @@ save views withTables withDraft draft = guarded $ readIORef sessionRef >>= \case
     -- (what's typed in the script editor, if it's not been rebuilt, as
     -- the script: as the desktop app saves its editor's)
     when withDraft $ setValue' (ensembleSourceScript sEnsemble) (fromJSString draft)
-    -- (the page's view state, under its own key)
-    case Aeson.eitherDecodeStrict (Text.encodeUtf8 (Text.pack (fromJSString views))) of
-      Left err -> postError ("couldn't save the view: " ++ err)
-      Right (v :: Aeson.Value) -> withViews sViewers v >>= \v' ->
-        modifyValue (ensembleFrontendProperties sEnsemble) (KM.insert "web-properties" v')
-    -- (the values it was left with; and its tables, if its file had them)
-    changedValues sEnsemble >>= modifyValue (ensembleFrontendProperties sEnsemble) . writeSavedValues
+    keepState sViewers sEnsemble views
     -- (what its tables hold, if the page says so: see 'tableSummary')
     case withTables of
       1 -> do
@@ -642,6 +660,52 @@ save views withTables withDraft draft = guarded $ readIORef sessionRef >>= \case
     contents <- encodeEnsemble sEnsemble
     setUnsaved False
     BS.useAsCStringLen contents $ \(p, n) -> postFile (toJSString sFileName) (castPtr p) n
+
+-- | Keep the page's view state (under its own key), and the values the
+-- project's been left with, in its frontends' properties: to be saved.
+keepState :: Map.Map Int ViewerState -> Ensemble -> JSString -> IO ()
+keepState viewers ens views = do
+  case Aeson.eitherDecodeStrict (Text.encodeUtf8 (Text.pack (fromJSString views))) of
+    Left err -> postError ("couldn't save the view: " ++ err)
+    Right (v :: Aeson.Value) -> withViews viewers v >>= \v' ->
+      modifyValue (ensembleFrontendProperties ens) (KM.insert "web-properties" v')
+  changedValues ens >>= modifyValue (ensembleFrontendProperties ens) . writeSavedValues
+
+-- | What a link to the open project shows (see @fs_share@).
+share :: JSString -> Bool -> JSString -> IO ()
+share views withDraft draft = guarded $ readIORef sessionRef >>= mapM_ (\Session{..} -> do
+  keepState sViewers sEnsemble views
+  contents <- encodeEnsemble sEnsemble
+  script <- getDynamic (ensembleSourceScript sEnsemble)
+  let script' = if withDraft then fromJSString draft else script
+      -- (a library project, its script as the library has it)
+      fromLibrary = case sOpening of
+        FromLibrary -> find (\(_, e) -> leFileName e == sFileName && projectScript (leContents e) == Right script')
+                            [ (s, e) | s <- librarySections, e <- lsEntries s ]
+        _ -> Nothing
+      withoutPreview = KM.mapWithKey (\k v -> case v of
+        Aeson.Object m | k == "metadata" -> Aeson.Object (KM.delete "preview" m)
+        _ -> v)
+  case fromLibrary of
+    Just (s, e) -> do
+      keys <- either fail pure (projectStateKeys contents)
+      post $ Aeson.object [ "type" .= ("share" :: Text.Text), "library" .= libraryId s e, "state" .= Aeson.Object keys
+                          , "file" .= Aeson.Null, "fileName" .= sFileName ]
+    Nothing -> do
+      file <- either fail pure (rewriteProjectFile (const script') (withoutPreview . KM.delete "tables") contents)
+      post $ Aeson.object [ "type" .= ("share" :: Text.Text), "library" .= Aeson.Null, "state" .= Aeson.Null
+                          , "file" .= Text.decodeUtf8 file, "fileName" .= sFileName ])
+
+-- | Open a library project, with a link's state (see @fs_open_link@).
+openLink :: JSString -> JSString -> IO ()
+openLink ident linkState = guarded $ case libraryEntryById (fromJSString ident) of
+  Nothing -> fail ("The library has no project “" ++ fromJSString ident ++ "” (any more), so the link can't be opened.")
+  Just (_, LibraryEntry{..}) -> do
+    keys <- case Aeson.eitherDecodeStrict (Text.encodeUtf8 (Text.pack (fromJSString linkState))) of
+      Right (Aeson.Object o) -> pure o
+      _ -> fail "The link's project state couldn't be read."
+    contents <- either (fail . ("The link's project " ++)) pure (withProjectKeys keys leContents)
+    openProject FromLibrary leTitle leFileName contents
 
 -- | Build a project from a file's contents, and start showing it.
 --

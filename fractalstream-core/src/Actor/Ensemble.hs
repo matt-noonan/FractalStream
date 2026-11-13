@@ -16,6 +16,10 @@ module Actor.Ensemble
   , ViewerColorizer(..)
   , Colorizer(..)
   , encodeEnsemble
+  , projectStateKeys
+  , withProjectKeys
+  , rewriteProjectFile
+  , projectScript
   , carryOverProjectState
   , FieldOwner(..)
   , ensembleFields
@@ -499,6 +503,43 @@ encodeEnsemble ens = do
   pure $ scriptKey scriptText
       <> (if KM.null rest then mempty
           else encodePrettyYaml projectYamlConfig (Object rest))
+
+-- | What a project file holds that isn't its script, nor about it (its
+-- metadata and scenarios), nor its tables: its values, its frontends'
+-- properties (its windows and views), its colorizer choices and its
+-- autocolor groups. With a project whose script is known already (from
+-- the library), they're all it takes to show it as it was; see
+-- 'withProjectKeys'.
+projectStateKeys :: ByteString -> Either String (KM.KeyMap Aeson.Value)
+projectStateKeys contents = case YAML.decodeEither' contents of
+  Left err -> Left ("isn't valid YAML: " ++ show err)
+  Right (Object o) -> Right (foldr KM.delete o ["script", "metadata", "scenarios", "tables"])
+  Right _ -> Left "isn't a FractalStream project"
+
+-- | A project file with these keys (from 'projectStateKeys') in place of
+-- its own: its script and what's about it stay as they are.
+withProjectKeys :: KM.KeyMap Aeson.Value -> ByteString -> Either String ByteString
+withProjectKeys keys = rewriteProjectFile id $ \o ->
+  KM.union (KM.filterWithKey (\k _ -> k `elem` ["metadata", "scenarios", "tables"]) o) keys
+
+-- | Just a project file's script.
+projectScript :: ByteString -> Either String String
+projectScript contents = case YAML.decodeEither' contents of
+  Left err -> Left ("isn't valid YAML: " ++ show err)
+  Right (Object o) | Just (String src) <- KM.lookup "script" o -> Right (Text.unpack src)
+  Right _ -> Left "doesn't have a top-level `script:` key"
+
+-- | A project file rewritten: its script, and its other keys, changed as
+-- given (and written as 'encodeEnsemble' writes them).
+rewriteProjectFile :: (String -> String) -> (KM.KeyMap Aeson.Value -> KM.KeyMap Aeson.Value)
+                   -> ByteString -> Either String ByteString
+rewriteProjectFile script others contents = case YAML.decodeEither' contents of
+  Left err -> Left ("isn't valid YAML: " ++ show err)
+  Right (Object o) | Just (String src) <- KM.lookup "script" o ->
+    let rest = others (KM.delete "script" o)
+    in Right (scriptKey (script (Text.unpack src))
+              <> (if KM.null rest then mempty else encodePrettyYaml projectYamlConfig (Object rest)))
+  Right _ -> Left "doesn't have a top-level `script:` key"
 
 -- | The project file's @script:@ key, written as a YAML literal block, so
 -- that the script reads in the file just as it was written, with exactly
