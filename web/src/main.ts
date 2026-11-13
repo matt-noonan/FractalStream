@@ -4,7 +4,7 @@
 // The engine runs in a worker (engine.ts); see protocol.ts for what they
 // say to each other.
 
-import type { Request, Message, Layout, FieldLayout, Patch, ViewerInfo, SavedViews,
+import type { Request, Message, Layout, FieldLayout, Patch, ViewerInfo, SavedViews, SavedViewer,
               Shape, Handled, EventKind, Navigation, AutocolorGroup, AutocolorEdit } from "./protocol.js";
 import { drawLayers } from "./drawing.js";
 import { ScriptEditor } from "./editor.js";
@@ -12,6 +12,7 @@ import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle 
 import { Desk, menuButton, type MenuItem } from "./windows.js";
 import type { Movies } from "./capture.js";
 import { Welcome } from "./welcome.js";
+import { sideBySide, fitted, tiled, toFractions, fromFractions, narrowScreen, type Place, type Room } from "./layout.js";
 
 const engine = new Worker(new URL("engine.js", import.meta.url), { type: "module" });
 const send = (r: Request) => engine.postMessage(r);
@@ -363,6 +364,8 @@ const titleMenu = menuButton(() => [
   { kind: "separator" },
   { kind: "action", label: "Edit project details…", run: () => send({ type: "details" }) },
   { kind: "toggle", label: "Edit project script", on: editorOpen, toggle: () => (editorOpen ? hideEditor() : showEditor()) },
+  { kind: "separator" },
+  { kind: "action", label: "Fit windows to the page", run: () => relayout(true) },
 ], { content: [titleText, titleDot, el("span", { className: "project-title-arrow", textContent: "▾" })],
      className: "project-title-button", title: "Project", align: "left" });
 // (in the workspace, over its windows and under the drawer: see showProject)
@@ -405,16 +408,93 @@ let toolPanelEl: HTMLElement | null = null;
 let asideEl: HTMLElement | null = null;
 /** The desk the viewers' windows are on. */
 let desk: Desk | null = null;
-/** The open project's viewers' windows, for saving the view state. */
-let windows: { title: string; view: ViewerView; window: HTMLElement }[] = [];
+/** The open project's viewers' windows, for saving the view state; and
+    each one's place on a wide screen, as fractions of the desk, and its
+    shape (kept while they're tiled on a narrow screen: what's saved). */
+let windows: { title: string; view: ViewerView; window: HTMLElement; layout: number[] | null; shape: number }[] = [];
+/** Whether the windows are tiled (on a narrow screen), not placed. */
+let tiledNow = false;
+/** The desk's size when the windows were last laid out: where they are
+    is as fractions of this (the page may have been resized since). */
+let laidOutOn = { width: 1, height: 1 };
+
+function deskSize() {
+  return { width: desk?.element.clientWidth || window.innerWidth, height: desk?.element.clientHeight || window.innerHeight };
+}
+
+/** Where windows go: below the title, inside a margin. */
+function deskRoom(): Room {
+  const margin = 12, d = deskSize();
+  const top = titleEl.offsetTop + titleEl.offsetHeight + margin;
+  return { left: margin, top, width: d.width - 2 * margin, height: d.height - top - margin };
+}
+
+/** A window's place on the desk now. */
+function placeOf(w: { view: ViewerView; window: HTMLElement }): Place {
+  const { width, height } = w.view.cssSize();
+  return { x: w.window.offsetLeft, y: w.window.offsetTop, width, height };
+}
 
 function viewState(): SavedViews {
+  const d = laidOutOn;
   return {
-    viewers: Object.fromEntries(windows.map((w) =>
-      [w.title, { x: w.window.offsetLeft, y: w.window.offsetTop, ...w.view.state(),
-                  ...(Desk.isMinimized(w.window) ? { minimized: true } : {}) }])),
+    viewers: Object.fromEntries(windows.map((w) => {
+      const p = placeOf(w);
+      // (tiled: where it goes on a wide screen, if it's been anywhere)
+      const where = tiledNow ? (w.layout ? { place: w.layout, shape: w.shape } : {})
+                             : { place: toFractions(p, d), shape: Math.round((p.width / p.height) * 10000) / 10000 };
+      return [w.title, { ...where, ...w.view.state(), ...(Desk.isMinimized(w.window) ? { minimized: true } : {}) }];
+    })),
   };
 }
+
+/** Fit the windows to the page, as it is now: tiled, on a narrow screen;
+    else as they are, unless they're off it (then shrunk, all alike, to
+    fit), or, if `rearrange` (or coming back from being tiled), as they
+    were placed. Each viewer shows what it did, at its new size. */
+function relayout(rearrange = false) {
+  if (!desk || windows.length === 0) return;
+  const room = deskRoom(), d = deskSize();
+  const minimized = windows.map((w) => Desk.isMinimized(w.window));
+  // (going to tiles: where they were, as fractions of the desk they were
+  // laid out on, is what's kept)
+  if (narrowScreen.matches && !tiledNow) {
+    for (const w of windows) {
+      const p = placeOf(w);
+      w.layout = toFractions(p, laidOutOn);
+      w.shape = p.width / p.height;
+    }
+  }
+  let places: Place[];
+  if (narrowScreen.matches) places = tiled(minimized, room);
+  else if (rearrange || (tiledNow && windows.some((w) => !w.layout))) {
+    // (side by side, each with the shape it has now, as big as they fit,
+    // up to the project's sizes)
+    places = sideBySide(windows.map((w) => {
+      const p = placeOf(w);
+      return { width: w.view.info.width, height: w.view.info.width * (p.height / p.width) };
+    }), room);
+  } else if (tiledNow) {
+    places = fitted(windows.map((w) => fromFractions(w.layout!, w.shape, d)), room, minimized);
+  } else {
+    places = fitted(windows.map(placeOf), room, minimized);
+  }
+  tiledNow = narrowScreen.matches;
+  laidOutOn = d;
+  windows.forEach((w, i) => {
+    const before = placeOf(w), p = places[i];
+    if (before.x === p.x && before.y === p.y && before.width === p.width && before.height === p.height) return;
+    desk!.place(w.window, p.x, p.y, p.width, p.height);
+    if (before.width !== p.width || before.height !== p.height) w.view.fitTo(p.width, p.height);
+  });
+}
+
+// (when the page changes size: a window resized, a phone turned)
+let relayoutTimer: number | undefined;
+window.addEventListener("resize", () => {
+  clearTimeout(relayoutTimer);
+  relayoutTimer = window.setTimeout(() => relayout(), 150);
+});
 
 function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: SavedViews | null) {
   fieldInputs.clear();
@@ -433,41 +513,58 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
   // (the drawer's closed, to begin with)
   setDrawer(false);
   // (no window under the title)
-  const d = desk;
-  d.keepClearOf(() => {
-    const t = titleEl.getBoundingClientRect(), r = d.element.getBoundingClientRect();
+  const dk = desk;
+  dk.keepClearOf(() => {
+    const t = titleEl.getBoundingClientRect(), r = dk.element.getBoundingClientRect();
     const gap = 8;
-    return { left: t.left - r.left + d.element.scrollLeft - gap, top: t.top - r.top + d.element.scrollTop - gap,
-             right: t.right - r.left + d.element.scrollLeft + gap, bottom: t.bottom - r.top + d.element.scrollTop + gap };
+    return { left: t.left - r.left + dk.element.scrollLeft - gap, top: t.top - r.top + dk.element.scrollTop - gap,
+             right: t.right - r.left + dk.element.scrollLeft + gap, bottom: t.bottom - r.top + dk.element.scrollTop + gap };
   });
-  // Each viewer in a window, side by side, below the title: all scaled
-  // down alike if they don't fit (each still showing its whole view), to
-  // no less than 40%, and then onto more rows if they still don't fit.
-  const gap = 16, margin = 12, top = titleEl.offsetTop + titleEl.offsetHeight + 12;
-  const room = desk.element.clientWidth - 2 * margin;
-  // (the gaps between them don't scale)
-  const widths = infos.reduce((sum, v) => sum + v.width, 0);
-  const scale = Math.min(1, Math.max(0.4, (room - gap * (infos.length - 1)) / widths));
-  let x = margin, y = top, rowHeight = 0;
-  for (const info of infos) {
-    const w = Math.floor(info.width * scale), h = Math.floor(info.height * scale);
-    if (x > margin && x + w > margin + room + 1) { x = margin; y += rowHeight + gap; rowHeight = 0; }
-    // (where it was saved, if it was)
-    const saved = views?.viewers?.[info.title];
-    const place = saved ? { x: saved.x, y: saved.y, width: saved.width, height: saved.height }
-                        : { x, y, width: w, height: h };
-    const v = new ViewerView(info, place.width, place.height, saved ?? null);
+  // Each viewer in a window: where it was saved (as fractions of the
+  // desk; or, in an older file, where it was in CSS pixels), or else side
+  // by side below the title, as big as they fit, up to the project's
+  // sizes; and all shrunk alike if they don't fit. On a narrow screen,
+  // they're tiled down the page instead (but it's where they'd go on a
+  // wide one that's saved). Each shows the region it was saved showing.
+  const room = deskRoom(), d = deskSize();
+  const saved = infos.map((info) => views?.viewers?.[info.title]);
+  const minimized = saved.map((s) => s?.minimized ?? false);
+  const defaults = sideBySide(infos.map((i) => ({ width: i.width, height: i.height })), room);
+  const wide = fitted(infos.map((_, k): Place => {
+    const s = saved[k];
+    if (s?.place && s.place.length === 4 && (s.shape ?? 0) > 0) return fromFractions(s.place, s.shape!, d);
+    if (s && s.width && s.height && s.x !== undefined && s.y !== undefined) return { x: s.x, y: s.y, width: s.width, height: s.height };
+    return defaults[k];
+  }), room, minimized);
+  tiledNow = narrowScreen.matches;
+  laidOutOn = d;
+  const places = tiledNow ? tiled(minimized, room) : wide;
+  infos.forEach((info, k) => {
+    const s = saved[k];
+    const place = places[k];
+    const v = new ViewerView(info, place.width, place.height, s ? savedView(s) : null);
     viewers.set(info.id, v);
-    const win = desk.add({ title: info.title, ...place, content: v.element, minimized: saved?.minimized,
+    const win = dk.add({ title: info.title, ...place, content: v.element, minimized: s?.minimized,
                            onResize: (width, height) => v.resize(width, height),
                            menu: () => v.menu(), titleExtra: v.toolChooser ?? undefined });
     win.addEventListener("pointerdown", () => activate(v), { capture: true });
     v.window = win;
-    windows.push({ title: info.title, view: v, window: win });
-    x += w + gap;
-    rowHeight = Math.max(rowHeight, h + 30);
-  }
+    // (where it goes on a wide screen: as saved; else, if it's been placed
+    // on one, there; tiled to begin with, nowhere yet)
+    windows.push({ title: info.title, view: v, window: win,
+                   layout: s?.place?.length === 4 ? s.place : tiledNow ? null : toFractions(wide[k], d),
+                   shape: s?.place?.length === 4 && (s.shape ?? 0) > 0 ? s.shape! : wide[k].width / wide[k].height });
+  });
   activate(windows[0]?.view ?? null);
+}
+
+/** A saved view: its center, and the region it shows (in an older file,
+    from its size and a pixel's size). */
+function savedView(s: SavedViewer): SavedView | null {
+  if (s.region?.length === 2) return { cx: s.cx, cy: s.cy, region: [s.region[0], s.region[1]] };
+  const ps = s["pixel-size"];
+  if (ps && s.width && s.height) return { cx: s.cx, cy: s.cy, region: [s.width * ps, s.height * ps] };
+  return null;
 }
 
 /** Make a viewer the active one: the tool shortcuts, and its tool's panel, are its. */
@@ -923,6 +1020,9 @@ const sameView = (a: View, b: View) => {
     doubling is four times the rendering). */
 const density = () => Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 1)));
 
+/** A viewer's view, as it was saved: its center, and the region it showed. */
+interface SavedView { cx: number; cy: number; region: [number, number] }
+
 class ViewerView {
   readonly element: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
@@ -995,7 +1095,7 @@ class ViewerView {
   private pointerNext: [number, number] | null = null;
 
   constructor(readonly info: ViewerInfo, width: number, height: number,
-              private readonly saved: { cx: number; cy: number; "pixel-size": number } | null) {
+              private readonly saved: SavedView | null) {
     this.canvas = el("canvas");
     this.context = this.canvas.getContext("2d")!;
     this.errorEl = el("div", { className: "viewer-error", hidden: true });
@@ -1047,11 +1147,41 @@ class ViewerView {
     this.canvas.style.height = `${height}px`;
   }
 
-  /** What it shows, and its size, for saving (see SavedViews). */
-  state() {
+  /** Its size, in CSS pixels. */
+  cssSize() {
+    return { width: Math.round(this.canvas.width / this.density), height: Math.round(this.canvas.height / this.density) };
+  }
+
+  /** The region it shows, in the model's units (width and height): what
+      it's asked to show, or, before it's shown anything, what it was
+      saved showing. */
+  region(): [number, number] | null {
     const t = this.target;
-    return { width: Math.round(this.canvas.width / this.density), height: Math.round(this.canvas.height / this.density),
-             cx: t?.cx ?? 0, cy: t?.cy ?? 0, "pixel-size": (t?.px ?? 0) * this.density };
+    if (t) return [this.canvas.width * t.px, this.canvas.height * t.py];
+    return this.saved?.region ?? null;
+  }
+
+  /** What it shows, for saving (see SavedViews). */
+  state() {
+    const t = this.target, r = this.region();
+    return { cx: t?.cx ?? this.saved?.cx ?? 0, cy: t?.cy ?? this.saved?.cy ?? 0, ...(r ? { region: r } : {}) };
+  }
+
+  /** Show it at this size (in CSS pixels), as the windows are fitted to
+      the page: showing what it did (all of it, centered), unlike a
+      resize, which shows more or less of the view at the same scale. */
+  fitTo(width: number, height: number) {
+    const t = this.target, r = this.region();
+    this.setSize(width, height);
+    if (t && r) {
+      const ratio = t.py / t.px;
+      const px = Math.max(r[0] / this.canvas.width, r[1] / (this.canvas.height * ratio));
+      this.target = { ...t, px, py: px * ratio };
+    }
+    // (with no frame yet, the first's made to show the saved region, or
+    // the project's whole view, at the size it has then)
+    this.redraw();
+    this.request();
   }
 
   /** Ask the engine to select a tool (null: navigate), as the user's chosen. */
@@ -1240,10 +1370,11 @@ class ViewerView {
     this.errorEl.hidden = true;
     if (!this.target) {
       if (this.saved) {
-        // (as it was saved: on the sphere, the engine's turned the globe
-        // as it was too)
-        const ps = this.saved["pixel-size"] / this.density;
-        this.target = { cx: this.saved.cx, cy: this.saved.cy, px: ps, py: ps * (view.py / view.px) };
+        // (as it was saved: the region it showed, all of it, at its size
+        // now; on the sphere, the engine's turned the globe as it was too)
+        const ratio = view.py / view.px, [rw, rh] = this.saved.region;
+        const ps = Math.max(rw / this.canvas.width, rh / (this.canvas.height * ratio));
+        this.target = { cx: this.saved.cx, cy: this.saved.cy, px: ps, py: ps * ratio };
       } else {
         // (the first frame, at the project's size: the same picture across
         // the canvas, whatever its size)

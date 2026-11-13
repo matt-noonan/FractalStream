@@ -366,6 +366,39 @@ Only if 0c/0d come out well.
 
 Record spike results and surprises here, newest first.
 
+### 2026-11-13: Windows that fit the screen
+
+A project's windows used to be saved, and placed, in CSS pixels, with each
+view as a center and a pixel's size: a layout made on a big screen ran off
+a small one, and on a phone the page scrolled sideways. Now
+(`web/src/layout.ts`):
+
+- **Saved as fractions of the desk.** Each viewer's `web-properties:`
+  entry has `place` (its window's left, top, width and height, title bar
+  and all, as fractions of the desk it was laid out on) and `shape` (its
+  body's width over its height); and its view as `cx`, `cy` and `region`
+  (the width and height it shows, in the model's units), not a pixel
+  size. Opened, a window goes as big as fits in its fractions' box, with
+  its shape, and its viewer shows the same region (all of it) at that
+  size. Older files (pixel places and `pixel-size`) still open: their
+  windows where they were, and their views showing what they did.
+- **Shrunk to fit.** Windows that don't fit the page (as opened, or when
+  it's made smaller) are shrunk, all alike, toward the top left, each
+  still showing what it did. A window resized by hand still shows more or
+  less at the same scale. Title menu's "Fit windows to the page" puts them
+  side by side, as big as they fit (up to the project's sizes).
+- **New projects** start side by side, in as many rows as lets them be
+  biggest, up to the project's sizes (not shrunk to 40% and then wrapped).
+- **Tiled on a phone** (720 CSS pixels wide or less, or 480 high or
+  less, as a phone turned sideways is): the viewers are tiled over the
+  page in as many columns as makes them biggest (down it, upright; across
+  it, sideways; or a grid), none less than 200 pixels high (then it
+  scrolls down, never sideways), so a parameter plane and its Julia set
+  are both in view. Saving on a phone keeps the wide screen's layout (the
+  tiles aren't saved). There, the configuration drawer starts below the
+  title, so that its menu can still be reached. (A window's title bar
+  doesn't widen it: what doesn't fit is cut short.)
+
 ### 2026-11-12: The project screen, without the toolbar
 
 The toolbar and the status line are gone. The project screen is its

@@ -220,9 +220,25 @@ export interface ScriptError {
 /** The page's view state, saved in a project file (web-properties): each
     viewer's window (in CSS pixels), and what it shows (a pixel's size is
     per CSS pixel, so it's the same at any screen density). */
+/** The page's view state, as saved in a project's `web-properties:` (the
+    engine adds what it knows of each view: the sphere, its rotation, and
+    an aspect ratio). Each viewer's window, as fractions of the desk
+    (`place`: left, top, width and height of its body), and its body's
+    shape (width over height); and its view: its center, and the region it
+    shows, in the model's units. (Older files have the window's place and
+    size in CSS pixels, and a pixel's size per CSS pixel.) */
+export interface SavedViewer {
+  place?: number[];
+  shape?: number;
+  cx: number;
+  cy: number;
+  region?: number[];
+  minimized?: boolean;
+  x?: number; y?: number; width?: number; height?: number; "pixel-size"?: number;
+}
+
 export interface SavedViews {
-  viewers?: Record<string, { x: number; y: number; width: number; height: number;
-                             cx: number; cy: number; "pixel-size": number; minimized?: boolean }>;
+  viewers?: Record<string, SavedViewer>;
 }
 
 /** Part of a viewer's render, as it goes (see "Frames" in

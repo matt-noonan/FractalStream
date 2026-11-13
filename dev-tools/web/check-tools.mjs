@@ -64,7 +64,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel };
+const all = { welcome, project, fit, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -205,7 +205,7 @@ async function project() {
           "the project's title floats in the corner");
   await titleButton.click();
   const items = (await page.locator(".project-title .window-menu .menu-label").allTextContents()).join(" | ");
-  c.check(items === "Save project | Save project as… | Close project | Edit project details… | Edit project script",
+  c.check(items === "Save project | Save project as… | Close project | Edit project details… | Edit project script | Fit windows to the page",
           `its menu: ${items}`);
   await page.keyboard.press("Escape");
 
@@ -285,6 +285,115 @@ async function project() {
   await page.waitForTimeout(400);
   c.check((await page.locator(".panel.open").count()) === 1, "choosing a tool with a panel opens the drawer");
   await shot("project");
+}
+
+async function fit() {
+  const size = page.viewportSize();
+  const boxes = () => page.locator(".window").evaluateAll((ws) => ws.map((w) => {
+    const r = w.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }));
+  const overlap = (bs) => bs.some((a, i) => bs.some((b, j) => i < j && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h));
+  const sideways = () => page.locator(".desk").evaluate((d) => d.scrollWidth > d.clientWidth + 1);
+  // (the regions the viewers show, as a saved file has them: each one's width)
+  const regions = (text) => [...text.slice(text.indexOf("web-properties:")).matchAll(/region:\n\s+- (\S+)/g)].map((m) => Number(m[1]));
+  const near = (a, b, tol = 0.03) => a.length === b.length && a.length > 0 && a.every((x, i) => Math.abs(x / b[i] - 1) < tol);
+  const saveAs = async () => {
+    await page.evaluate(() => { window.showSaveFilePicker = undefined; });
+    const download = page.waitForEvent("download", { timeout: 10000 });
+    await app.projectMenu("Save project as");
+    return fs.readFileSync(await (await download).path(), "utf8");
+  };
+  // (a viewer's saved place, from a saved file's web-properties)
+  const placeOf = (text, title) => {
+    const section = text.slice(text.indexOf(`    ${title}:`));
+    const m = /place:\n((?:\s+- \S+\n){4})/.exec(section);
+    return m ? m[1].trim().split("\n").map((l) => Number(l.replace(/^\s*- /, ""))) : null;
+  };
+
+  try {
+    // a phone: the viewers tiled down it, each as wide as it, both in view
+    await page.setViewportSize({ width: 390, height: 844 });
+    let project = await app.openLibrary("Mandelbrot and Julia sets together");
+    let b = await boxes();
+    c.check(b.length === 2 && b.every((r) => r.w > 340 && r.x >= 0 && r.x + r.w <= 390) && !(await sideways()),
+            `on a phone, the viewers are as wide as it, and the page doesn't scroll sideways (${b.map((r) => Math.round(r.w)).join(", ")} px)`);
+    c.check(!overlap(b) && b.every((r) => r.y + r.h <= 844 + 1), "tiled down it, both in view");
+    // turned: side by side
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.waitForTimeout(800);
+    b = await boxes();
+    c.check(!overlap(b) && b.every((r) => r.x + r.w <= 844 && r.y + r.h <= 390 + 1) && b[0].y === b[1].y,
+            "turned sideways, they're side by side, on the page");
+    // a smaller phone, sideways: tiled across it, on it; and so when
+    // they're fitted to it
+    await page.setViewportSize({ width: 667, height: 375 });
+    await page.waitForTimeout(800);
+    b = await boxes();
+    c.check(!overlap(b) && b.every((r) => r.x >= 0 && r.x + r.w <= 667 && r.y + r.h <= 375 + 1) && b[0].y === b[1].y && !(await sideways()),
+            `a smaller phone, sideways: side by side, both on it (${b.map((r) => `${Math.round(r.w)}×${Math.round(r.h)}`).join(", ")})`);
+    await app.projectMenu("Fit windows to the page");
+    await page.waitForTimeout(500);
+    b = await boxes();
+    c.check(!overlap(b) && b.every((r) => r.x + r.w <= 667 && r.y + r.h <= 375 + 1) && b[0].y === b[1].y,
+            "and \"Fit windows to the page\" leaves them so");
+    project = await app.openLibrary("Period 2");
+    b = await boxes();
+    c.check(b.length === 3 && !overlap(b) && b.every((r) => r.x + r.w <= 667 && r.y + r.h <= 375 + 1) && new Set(b.map((r) => r.y)).size === 1,
+            `three viewers, sideways: in a row, all on it (${b.map((r) => `${Math.round(r.w)}×${Math.round(r.h)}`).join(", ")})`);
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.waitForTimeout(800);
+    b = await boxes();
+    c.check(!overlap(b) && b.every((r) => r.x + r.w <= 375) && !(await sideways()),
+            `and upright: down the page, none off its side (${b.map((r) => `${Math.round(r.w)}×${Math.round(r.h)}`).join(", ")})`);
+
+    // a wide screen: saved where they are, as fractions; reopened on a
+    // smaller one, in the same places, each showing what it did
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    project = await app.openLibrary("Mandelbrot and Julia sets together");
+    await page.waitForTimeout(500);
+    const big = await saveAs();
+    const before = regions(big);
+    c.check(/place:/.test(big) && /region:/.test(big) && !/pixel-size:/.test(big), "saved: each window's place, and the region it shows");
+    const copy = path.join(os.tmpdir(), "fit-saved.fs");
+    fs.writeFileSync(copy, big);
+    const bigBoxes = await boxes();
+    await page.setViewportSize({ width: 1000, height: 640 });
+    project = await app.openFile(copy);
+    await page.waitForTimeout(800);
+    b = await boxes();
+    const ratio = b[1].x / bigBoxes[1].x;
+    c.check(Math.abs(ratio - 1000 / 1600) < 0.08 && b.every((r) => r.x + r.w <= 1000 && r.y + r.h <= 641) && !overlap(b),
+            `reopened on a smaller screen, in the same places, smaller (${ratio.toFixed(2)} as far across), and on it`);
+    const after = regions(await saveAs());
+    c.check(near(after, before), `each showing the same region (${before.join(", ")} -> ${after.join(", ")} wide)`);
+
+    // made smaller than they fit (but not a phone's): shrunk to fit
+    await page.setViewportSize({ width: 760, height: 500 });
+    await page.waitForTimeout(800);
+    b = await boxes();
+    c.check(b.every((r) => r.x + r.w <= 760 && r.y + r.h <= 501) && !overlap(b) && !(await sideways()),
+            "the page made smaller: they're shrunk to fit it");
+    const shrunk = regions(await saveAs());
+    c.check(near(shrunk, before), `still showing the same regions (${shrunk.join(", ")})`);
+    // Fit windows to the page: side by side, as big as they fit
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.waitForTimeout(500);
+    await app.projectMenu("Fit windows to the page");
+    await page.waitForTimeout(500);
+    b = await boxes();
+    c.check(b[0].y === b[1].y && b[0].w > 400 && !overlap(b), `"Fit windows to the page" puts them side by side (${Math.round(b[0].w)} px wide)`);
+
+    // saved on a phone: where they go on a wide screen is kept
+    project = await app.openFile(copy);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(800);
+    const fromPhone = await saveAs();
+    c.check(JSON.stringify(placeOf(fromPhone, "Dynamical plane")) === JSON.stringify(placeOf(big, "Dynamical plane")),
+            `saved on a phone, the wide screen's layout is kept (${placeOf(fromPhone, "Dynamical plane")})`);
+  } finally {
+    await page.setViewportSize(size);
+  }
 }
 
 async function drawing() {

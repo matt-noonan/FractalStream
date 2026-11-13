@@ -138,6 +138,19 @@ export class Desk {
     return win;
   }
 
+  /** Put a window here, with its body this size (as a layout does: its
+      contents are resized by whoever's placing it, not by `onResize`). */
+  place(win: HTMLElement, x: number, y: number, width: number, height: number) {
+    const body = win.querySelector<HTMLElement>(":scope > .window-body")!;
+    body.style.width = `${width}px`;
+    body.style.height = `${height}px`;
+    // (a minimized window keeps its width as it was: this one)
+    if (win.classList.contains("minimized")) win.style.width = `${width + 2}px`;
+    const [x0, y0] = this.clearSpot(x, y, win.offsetWidth);
+    win.style.left = `${x0}px`;
+    win.style.top = `${y0}px`;
+  }
+
   /** Whether a window is minimized to its title bar. */
   static isMinimized(win: HTMLElement) {
     return win.classList.contains("minimized");
