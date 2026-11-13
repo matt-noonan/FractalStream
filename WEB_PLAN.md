@@ -369,6 +369,23 @@ Only if 0c/0d come out well.
 
 Record spike results and surprises here, newest first.
 
+### 2026-11-13: Renders starved while a parameter's dragged
+
+Dragging Select C in a parameter plane, the dynamical plane hardly
+changed until the drag stopped: in Firefox on a high-DPI screen, once in
+two seconds. A render was dropped as soon as another was asked for, and
+showed nothing within its hold (a tenth of a second); with a new C every
+35 ms or so and a render taking 50 ms or more, every render was dropped
+before it showed anything. (Chromium's renders, quicker than the drag's
+steps, mostly got through; WebKit's partly.) Now a render isn't dropped
+until every piece has its first, coarse pass (a pixel in 16 each way:
+quick), and if it's shown nothing when it's dropped, what it has shows
+then. Each new C shows, about every 35 ms in all three browsers, mostly
+sharp; the last one is finished when the drag stops.
+
+Checks: `check-tools.mjs`'s `progressive` section: parameters changed
+every 30 ms on a slow viewer, and each render shows something.
+
 ### 2026-11-13: Animate along path
 
 As on the desktop: where a viewer's coordinate is a configuration
