@@ -403,7 +403,8 @@ body.no-panel .panel { display: none; }
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
 }
 .welcome-details h2 { margin: 0; font-size: 17px; }
-.welcome-preview { width: 100%; max-width: 300px; align-self: center; border-radius: 6px; }
+/* (at the size it was made, as in the grid: scaled up, it's blurry) */
+.welcome-preview { width: 128px; height: 128px; object-fit: contain; align-self: center; border-radius: 4px; }
 .welcome-description { color: var(--fg); }
 .welcome-description p { margin: 0 0 8px; white-space: pre-line; }
 .welcome .welcome-open { align-self: flex-start; background: var(--accent); border-color: var(--accent); color: white; padding: 5px 18px; }
@@ -439,6 +440,5 @@ body.no-panel .panel { display: none; }
     display: block; position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; padding: 0;
     font-size: 18px; line-height: 26px; border-radius: 15px;
   }
-  .welcome-preview { max-width: min(220px, 60vw); }
   .welcome-hint { display: none; }
 }
