@@ -19,17 +19,15 @@ let app = null;
 try {
   app = await start();
   const { page } = app;
-  const n = await page.locator("#library li").count();
+  const projects = app.libraryProjects();
+  const n = projects.length;
   for (let i = 0; i < n; i++) {
     app.clearErrors();
-    await app.forgetMessages();
-    const item = page.locator("#library li").nth(i);
-    const title = (await item.textContent()).trim();
+    const { section, entry, title } = projects[i];
     const t = Date.now();
-    await item.click();
     let result;
     try {
-      const project = await app.opened();
+      const project = await app.openLibraryEntry(section, entry);
       result = `${project.viewers.length} viewer(s) drawn in ${Date.now() - t} ms`;
     } catch (e) {
       result = `FAILED: ${e.message.split("\n")[0]}`;

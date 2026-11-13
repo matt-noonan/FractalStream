@@ -344,17 +344,51 @@ Only if 0c/0d come out well.
 - [x] Movies (WebCodecs), and pictures: Capture > Image… and Movie… (from a script). Still to come: the Animate along path tool, and a movie's inset.
 - [x] Saved tables: asked when saving, as the desktop asks (with each table's size), remembered for plain saves.
 - [ ] Open a project from a URL; shareable links.
+- [x] The library as the welcome screen, shown while no project's open
+  (as the desktop's welcome window); Close project goes back to it,
+  asking first about unsaved changes (as the desktop counts them), as do
+  the browser's Back and leaving the page.
+- [ ] The project screen: the title as a menu (Save, Save as, Close,
+  Edit project details, Edit project script) floating in a corner, in
+  place of the toolbar; the configuration as a drawer pulled out from the
+  right; each viewer's tools chosen in its title bar; no status line.
 
 ## Open questions
 
-- **stack → cabal for desktop** (see "Build"): decide after Phase 1.
-- **libm for Backend.Wasm:** decide in Phase 3.
-- **Hosting:** which static host can set COOP/COEP (or do we use the
-  service-worker shim)? Settle in 0e.
+- **stack → cabal for desktop** (see "Build"): still open.
+- (Settled: libm is musl's, compiled to wasm (D14). Hosting is GitHub
+  Pages, with no COOP/COEP headers needed, since the kernel workers don't
+  share memory: see "Backend.Wasm on a pool of workers".)
 
 ## Findings log
 
 Record spike results and surprises here, newest first.
+
+### 2026-11-12: The library as the welcome screen
+
+The page has two screens now: the library's while no project's open, and
+the project's (`body.in-project`). The library (`web/src/welcome.ts`) is
+laid out as the desktop's welcome window: the sections down the left (the
+first section of projects to explore chosen to begin with, as there), the
+section's projects as a grid of previews, and the chosen project's
+preview, title and description on the right, with New project (the
+starting points) and Open a file…. A click chooses a project and a double
+click, Return or Open opens it; the arrow keys move around the grid. On a
+narrow screen (720 CSS pixels or less: the page's width, not the device),
+the sections are a row of chips and the details a sheet that slides up
+when a project's tapped. Descriptions are reflowed: their files wrap them
+to fit a text editor.
+
+Close project (in the toolbar for now) goes back to the library. As on the
+desktop, it asks first if there are changes to save, as the desktop counts
+them: the engine tracks them (`unsaved`: a configuration value or table
+changed, a rebuild, an autocolor edit, or a translation not yet saved; not
+windows or views) and the page adds what's typed in the script editor and
+not rebuilt. Saving now saves that text as the script, as the desktop
+does. Opening a project adds a step to the page's history, so the
+browser's Back closes it (asking the same way); leaving the page with
+changes to save asks too (`beforeunload`). Notices float over the top of
+either screen.
 
 ### 2026-11-12: Pictures and movies
 

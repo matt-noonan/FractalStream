@@ -14,7 +14,15 @@ export type Request =
   | { type: "pointer"; viewer: number; x: number; y: number }
   /** Save the open project, with its view state, and what its tables
       hold (1), or not (0), or as its file had them (2). */
-  | { type: "save"; views: string; tables: 0 | 1 | 2 }
+  | { type: "save"; views: string; tables: 0 | 1 | 2;
+      /** What's typed in the script editor (not rebuilt), to save as the
+          script, if there's any. */
+      draft: string | null }
+  /** Close the open project (back to the library). */
+  | { type: "close" }
+  /** Whether the project has changes to save, again (a saved file
+      couldn't be written). */
+  | { type: "unsaved"; on: boolean }
   /** The tables that hold anything: answered by "tableSummary". */
   | { type: "tableSummary" }
   /** Turn a sphere viewer's globe, as the pointer drags from one screen
@@ -123,6 +131,8 @@ export interface LibraryEntry {
 
 export interface LibrarySection {
   name: string;
+  /** Its projects start new ones (opened as "Untitled"). */
+  startingPoints: boolean;
   entries: LibraryEntry[];
 }
 
@@ -276,6 +286,9 @@ export type Message =
   | { type: "rebuildError"; error: ScriptError }
   /** The open project, saved: its file's name and contents. */
   | { type: "file"; name: string; bytes: ArrayBuffer }
+  /** Whether the open project has changes to save (as the desktop app
+      counts them), whenever that changes. */
+  | { type: "unsaved"; on: boolean }
   | { type: "field"; key: string; error: string | null; color?: string | null }
   /** A tool's handler changed a field. */
   | { type: "fieldText"; key: string; text: string; color?: string | null }

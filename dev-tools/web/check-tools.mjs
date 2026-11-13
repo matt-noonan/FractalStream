@@ -64,7 +64,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel };
+const all = { welcome, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, panel };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -90,6 +90,112 @@ console.log(c.failed ? `${c.failed} failed` : "all ok");
 process.exit(c.failed ? 1 : 0);
 
 // ---------------------------------------------------------------------
+
+async function welcome() {
+  const inProject = () => page.evaluate(() => document.body.classList.contains("in-project"));
+  const sentClose = () => page.evaluate(() => window.__sent.filter((m) => m.type === "close").length);
+  const dialog = page.locator(".page-dialog");
+  // the library, as the welcome screen: the first section of projects to
+  // explore, its first project chosen, and its details
+  await app.backToLibrary();
+  const current = page.locator(".welcome-sections button[aria-current=true]");
+  c.check((await current.textContent()) === "Getting started" && !(await inProject()),
+          `the library's the welcome screen, from "${await current.textContent()}"`);
+  const details = page.locator(".welcome-details");
+  const first = await page.locator(".welcome-tile").first().getAttribute("title");
+  c.check((await details.locator("h2").textContent()) === first && await details.locator(".welcome-open").isVisible(),
+          `its first project chosen, with its details (${first})`);
+  c.check((await details.locator(".welcome-description p").count()) >= 1, "its description as paragraphs");
+  // a click chooses, the arrow keys move, Return opens
+  await app.forgetMessages();
+  await page.locator(".welcome-tile").nth(1).click();
+  await page.waitForTimeout(500);
+  c.check((await details.locator("h2").textContent()) === await page.locator(".welcome-tile").nth(1).getAttribute("title")
+          && (await app.messages("project")).length === 0, "a click chooses a project, and doesn't open it");
+  await page.locator(".welcome-grid").focus();
+  await page.keyboard.press("ArrowRight");
+  const third = await page.locator(".welcome-tile").nth(2).getAttribute("title");
+  c.check((await details.locator("h2").textContent()) === third, `the arrow keys move (${third})`);
+  await page.keyboard.press("Enter");
+  let project = await app.opened();
+  c.check(project.title === third && await inProject() && !(await page.locator("#welcome").isVisible()),
+          "Return opens it, in place of the library");
+
+  // Close, with nothing changed: back to the library, unasked
+  await page.locator("#close").click();
+  await page.waitForTimeout(300);
+  c.check(!(await inProject()) && !(await dialog.isVisible()) && (await sentClose()) === 1,
+          "Close goes back to the library (nothing changed: nothing asked)");
+
+  // a change: Close asks (Cancel stays); so does Back (Don't save closes)
+  project = await app.openLibrary("Mandelbrot and Julia sets together");
+  c.check(!(await page.locator("#file-name").textContent()).includes("edited"), "opened, it has no changes to save");
+  const box = page.locator(".panel .field", { hasText: /^Selected value of C/ }).locator("input");
+  await box.fill("0.25 + 0.5i");
+  await box.press("Enter");
+  await app.waitForMessage(`(m) => m.type === "unsaved" && m.on`, 10000).catch(() => {});
+  c.check((await page.locator("#file-name").textContent()).includes("edited"), "a value changed: it has changes to save");
+  await page.locator("#close").click();
+  await dialog.waitFor({ timeout: 5000 }).catch(() => {});
+  c.check(/Save the changes/.test(await dialog.textContent().catch(() => "")), "Close asks whether to save them");
+  await dialog.locator("button", { hasText: "Cancel" }).click();
+  c.check(await inProject(), "Cancel: it stays open");
+  await page.goBack();
+  await dialog.waitFor({ timeout: 5000 }).catch(() => {});
+  c.check(await dialog.isVisible(), "the browser's Back asks too");
+  await dialog.locator("button", { hasText: "Don't save" }).click();
+  await page.waitForTimeout(300);
+  c.check(!(await inProject()), "Don't save: back to the library");
+  c.check(await page.evaluate(() => history.state === null), "(the project's step in the page's history is gone)");
+
+  // a starting point, from New project; typed in its editor: that's a
+  // change to save, and saving saves it as the script
+  await page.locator(".welcome-header button", { hasText: "New project" }).click();
+  c.check((await current.textContent()) === "Starting points", "New project goes to the starting points");
+  const start = page.locator(".welcome-tile", { hasText: "Iterate a function" }).first();
+  await app.forgetMessages();
+  await start.click();
+  await details.locator(".welcome-open").click();
+  await app.waitForMessage(`(m) => m.type === "project"`, 30000);
+  await page.waitForTimeout(500);
+  c.check(!(await page.locator("#file-name").textContent()).includes("edited"), "a starting point, unedited: nothing to save");
+  await page.locator(".editor-overlay .cm-content").click();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n# a note typed in");
+  await page.waitForTimeout(200);
+  await page.locator("#close").click();
+  await dialog.waitFor({ timeout: 5000 }).catch(() => {});
+  c.check(await dialog.isVisible(), "typed in its script: Close asks");
+  // (saved as a download: not with the browser's file picker)
+  await page.evaluate(() => { window.showSaveFilePicker = undefined; });
+  const download = page.waitForEvent("download", { timeout: 10000 }).catch(() => null);
+  await dialog.locator("button", { hasText: /^Save$/ }).click();
+  const dl = await download;
+  const saved = dl ? fs.readFileSync(await dl.path(), "utf8") : "";
+  c.check(saved.includes("# a note typed in"), "Save saves what was typed, as the script");
+  await page.waitForTimeout(500);
+  c.check(!(await inProject()), "and then it closes");
+
+  // narrow: the sections as chips, and a project's details a sheet from
+  // the bottom, when it's tapped
+  const size = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.locator(".welcome-sections button", { hasText: "Getting started" }).click();
+  const sheetShown = async () => {
+    const box = await details.boundingBox();
+    return (await details.isVisible()) && box !== null && box.y + box.height <= 801 && box.y < 800;
+  };
+  await page.waitForTimeout(300);
+  c.check(!(await sheetShown()), "narrow: no details until a project's tapped");
+  await page.locator(".welcome-tile").nth(1).click();
+  await page.waitForTimeout(400);
+  c.check(await sheetShown(), "tapped: its details slide up from the bottom");
+  await page.locator(".welcome-sheet-close").click();
+  await page.waitForTimeout(400);
+  c.check(!(await sheetShown()), "and × puts them away");
+  await page.setViewportSize(size);
+  await shot("welcome");
+}
 
 async function drawing() {
   const r = await page.evaluate(async () => {
@@ -269,14 +375,9 @@ async function refresh() {
 }
 
 async function sweep() {
-  const n = await page.locator("#library li").count();
   let count = 0, notCompiled = 0;
-  for (let i = 0; i < n; i++) {
-    const item = page.locator("#library li").nth(i);
-    const title = (await item.textContent()).trim();
-    await app.forgetMessages();
-    await item.click();
-    const project = await app.opened();
+  for (const { section, entry, title } of app.libraryProjects()) {
+    const project = await app.openLibraryEntry(section, entry);
     for (const v of project.viewers) {
       for (const tool of v.tools) {
         count++;
@@ -289,7 +390,7 @@ async function sweep() {
       }
     }
   }
-  c.check(notCompiled === 0, `${count} tools of ${n} projects, ${notCompiled} not compiled`);
+  c.check(notCompiled === 0, `${count} tools of ${app.libraryProjects().length} projects, ${notCompiled} not compiled`);
 }
 
 async function stop() {
@@ -379,14 +480,15 @@ async function panel() {
   const aside = page.locator(".panel");
   const before = (await aside.boundingBox()).width;
   const grip = await page.locator(".panel-grip").boundingBox();
-  await page.mouse.move(grip.x + grip.width / 2, grip.y + 100);
+  // (by its middle: the panel's short)
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await page.mouse.down();
-  await page.mouse.move(grip.x + grip.width / 2 - 150, grip.y + 100, { steps: 5 });
+  await page.mouse.move(grip.x + grip.width / 2 - 150, grip.y + grip.height / 2, { steps: 5 });
   await page.mouse.up();
   const after = (await aside.boundingBox()).width;
   c.check(Math.abs(after - before - 150) <= 2, `dragging the panel's left edge widens it (${before} -> ${after})`);
   await page.reload();
-  await page.waitForSelector("#library li", { timeout: 60000 });
+  await app.waitForLibrary();
   await app.openLibrary("Mandelbrot and Julia sets together");
   const again = (await page.locator(".panel").boundingBox()).width;
   c.check(Math.abs(again - after) <= 1, `and the width is remembered (${again})`);
@@ -506,7 +608,7 @@ async function editor() {
     };
   });
   await page.reload();
-  await page.waitForSelector("#library li", { timeout: 60000 });
+  await app.waitForLibrary();
   // (the starting point: it opens with its editor)
   await app.openLibrary("Newton's method");
   if (!(await editorShown())) await page.locator("#toggle-script").click();
@@ -540,6 +642,7 @@ async function density() {
 
 /** Drop a file's bytes on the page (any bytes: not only a project's text). */
 async function dropBytes(file, name = path.basename(file)) {
+  await app.backToLibrary();
   await app.forgetMessages();
   await page.evaluate(([b, name]) => {
     const dt = new DataTransfer();
