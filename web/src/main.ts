@@ -1,19 +1,19 @@
-// The page: the library, then a project's configuration panel and
-// viewers. The engine runs in a worker (engine.ts); see protocol.ts for
+// The page: the library (welcome.ts) while no project's open; then a
+// project's configuration panel and viewers, until it's closed. The engine runs in a worker (engine.ts); see protocol.ts for
 // what they say to each other.
 
-import type { Request, Message, Layout, FieldLayout, Patch, LibrarySection, ViewerInfo, SavedViews,
+import type { Request, Message, Layout, FieldLayout, Patch, ViewerInfo, SavedViews,
               Shape, Handled, EventKind, Navigation, AutocolorGroup, AutocolorEdit } from "./protocol.js";
 import { drawLayers } from "./drawing.js";
 import { ScriptEditor } from "./editor.js";
 import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
 import { Desk, type MenuItem } from "./windows.js";
 import type { Movies } from "./capture.js";
+import { Welcome } from "./welcome.js";
 
 const engine = new Worker(new URL("engine.js", import.meta.url), { type: "module" });
 const send = (r: Request) => engine.postMessage(r);
 
-const libraryEl = document.getElementById("library")!;
 const projectEl = document.getElementById("project")!;
 const statusEl = document.getElementById("status")!;
 const noticesEl = document.getElementById("notices")!;
@@ -21,17 +21,16 @@ const openButton = document.getElementById("open") as HTMLButtonElement;
 const saveButton = document.getElementById("save") as HTMLButtonElement;
 const saveAsButton = document.getElementById("save-as") as HTMLButtonElement;
 const fileNameEl = document.getElementById("file-name")!;
-const libraryButton = document.getElementById("toggle-library") as HTMLButtonElement;
+const closeButton = document.getElementById("close") as HTMLButtonElement;
 const panelButton = document.getElementById("toggle-panel") as HTMLButtonElement;
 const paletteEl = document.getElementById("tools")!;
 const scriptButton = document.getElementById("toggle-script") as HTMLButtonElement;
 
-// Hiding and showing the library, and the configuration panel.
+// Hiding and showing the configuration panel.
 function toggle(button: HTMLButtonElement, bodyClass: string) {
   const hidden = document.body.classList.toggle(bodyClass);
   button.setAttribute("aria-pressed", String(!hidden));
 }
-libraryButton.addEventListener("click", () => toggle(libraryButton, "no-library"));
 panelButton.addEventListener("click", () => toggle(panelButton, "no-panel"));
 
 // Smoothing, each viewer's to begin with ("Use subpixel smoothing", in its
@@ -83,29 +82,45 @@ function notice(text: string, kind: "error" | "info",
 function clearNotices() { noticesEl.replaceChildren(); }
 
 // ---------------------------------------------------------------------
-// The library
+// The library, and the two screens: the library's while no project's
+// open, and the project's.
 
-function showLibrary(sections: LibrarySection[]) {
-  libraryEl.replaceChildren(...sections.map((s, si) =>
-    el("section", {},
-      el("h2", { textContent: s.name }),
-      el("ul", {}, ...s.entries.map((e, ei) => {
-        const item = el("li", { title: e.description },
-          e.preview ? el("img", { src: `data:image/png;base64,${e.preview}`, alt: "" }) : "",
-          el("span", { textContent: e.title }));
-        item.addEventListener("click", () => {
-          deselectLibrary();
-          item.classList.add("selected");
-          status(`Opening ${e.title}…`);
-          send({ type: "open", section: si, entry: ei });
-        });
-        return item;
-      })))));
+const welcome = new Welcome({
+  open: (section, entry, title) => {
+    status(`Opening ${title}…`);
+    send({ type: "open", section, entry });
+  },
+  openFile: async () => openFile(await pickFile()),
+});
+document.getElementById("welcome")!.append(welcome.element);
+const projectScreen = document.getElementById("project-screen")!;
+
+function showScreen(project: boolean) {
+  document.body.classList.toggle("in-project", project);
+  projectScreen.hidden = !project;
+  welcome.element.parentElement!.hidden = project;
+  if (!project) welcome.focus();
 }
 
-function deselectLibrary() {
-  for (const li of libraryEl.querySelectorAll("li.selected")) li.classList.remove("selected");
+// The browser's Back button closes the project (asking first, as Close
+// does), back to the library: opening one adds a step to the page's
+// history, and closing it some other way takes that step back.
+let leavingHistory = false;
+// (a step left from before the page was reloaded isn't the open project's)
+if (history.state?.project) history.replaceState(null, "");
+function enterHistory() { if (!history.state?.project) history.pushState({ project: true }, ""); }
+function leaveHistory() {
+  if (!history.state?.project) return;
+  leavingHistory = true;
+  history.back();
 }
+window.addEventListener("popstate", () => {
+  if (leavingHistory) { leavingHistory = false; return; }
+  if (!current) return;
+  // (stay, until the question's answered)
+  history.pushState({ project: true }, "");
+  void closeProject();
+});
 
 // ---------------------------------------------------------------------
 // Files
@@ -116,13 +131,25 @@ function deselectLibrary() {
 let current: { fileName: string; library: boolean; handle: FileHandle | null; saveTables: boolean | null } | null = null;
 /** The handle of the file being opened, until its project comes. */
 let opening: FileHandle | null = null;
-/** Where the next saved file goes (see "file" messages). */
-let pendingSave: ((name: string, bytes: ArrayBuffer) => Promise<string>) | null = null;
+/** Where the next saved file goes (see "file" messages), and what to tell
+    once it's written (or not). */
+let pendingSave: { write: (name: string, bytes: ArrayBuffer) => Promise<string>; done: (ok: boolean) => void } | null = null;
+/** Whether the open project has changes to save, as the engine counts
+    them (see "unsaved"); or what's typed in its script editor isn't its
+    script. */
+let engineUnsaved = false;
+function unsaved(): boolean {
+  return current !== null && (engineUnsaved || (scriptEditor?.draft() ?? null) !== null);
+}
+// (leaving the page, as closing the project, asks first)
+window.addEventListener("beforeunload", (e) => { if (unsaved()) e.preventDefault(); });
 
 async function openFile(opened: Opened | null) {
   if (!opened) return;
+  // (another project, in place of the open one: as closing it, asked first)
+  if (current && !(await offerToSave("opening another project"))) return;
   opening = opened.handle;
-  deselectLibrary();
+  welcome.setOpening(true);
   status(`Opening ${opened.file.name}…`);
   const bytes = await opened.file.arrayBuffer();
   engine.postMessage({ type: "openFile", name: opened.file.name, bytes } satisfies Request, [bytes]);
@@ -132,9 +159,10 @@ async function openFile(opened: Opened | null) {
     tables hold (if they hold anything) is asked every time the file is
     chosen (before choosing it, so that choosing it is the last step), and
     the first time it isn't; the answer's kept for plain saves from then
-    on (to begin with, whether its file had them). */
-async function save(saveAs: boolean) {
-  if (!current) return;
+    on (to begin with, whether its file had them). Whether it was saved:
+    not if it was cancelled, or failed. */
+async function save(saveAs: boolean): Promise<boolean> {
+  if (!current) return false;
   const c = current;
   try {
     const choosing = saveAs || c.library || !c.handle;
@@ -146,7 +174,7 @@ async function save(saveAs: boolean) {
     else if (c.saveTables !== null && !choosing) tables = c.saveTables ? 1 : 0;
     else {
       answer = await askSaveTables(summary.tables, c.saveTables ?? true);
-      if (answer === null) return;
+      if (answer === null) return false;
       tables = answer ? 1 : 0;
     }
     const destination = await chooseDestination(c.library ? null : c.handle, saveAs, c.fileName, (handle) => {
@@ -155,13 +183,95 @@ async function save(saveAs: boolean) {
       c.fileName = handle.name;
       showFileName();
     });
-    if (!destination) return;
+    if (!destination) return false;
     if (answer !== null) c.saveTables = answer;
-    pendingSave = destination;
-    send({ type: "save", views: JSON.stringify(viewState()), tables });
+    const draft = scriptEditor?.draft() ?? null;
+    const saved = await new Promise<boolean>((done) => {
+      pendingSave = { write: destination, done };
+      send({ type: "save", views: JSON.stringify(viewState()), tables, draft });
+    });
+    // (what was typed is the project's script now, as saved: as the
+    // desktop's is, though it's not rebuilt yet)
+    if (saved && draft !== null) {
+      projectScript = draft;
+      scriptEditor?.projectScript(draft, false);
+      showFileName();
+    }
+    return saved;
   } catch (e) {
     status(`Couldn't save: ${e}`, true);
+    return false;
   }
+}
+
+/** Before closing the project (or opening another, or leaving the page),
+    as the desktop app does: if it has changes to save, ask whether to
+    save them first. Whether to go ahead: not if that's cancelled, or so
+    is saving. */
+async function offerToSave(what: string): Promise<boolean> {
+  if (!current || !unsaved()) return true;
+  const answer = await ask(`Save the changes to “${projectTitle}” before ${what}?`,
+                           "If you don't, they're lost.", ["Cancel", "Don't save", "Save"], 2);
+  if (answer === 2) return save(false);
+  return answer === 1;
+}
+
+/** Close the project, back to the library (asking about any changes to
+    save first). Whether it was closed. */
+async function closeProject(): Promise<boolean> {
+  if (!current) return true;
+  if (!(await offerToSave("closing it"))) return false;
+  send({ type: "close" });
+  forgetProject();
+  leaveHistory();
+  showScreen(false);
+  return true;
+}
+
+/** The page forgets the open project (the engine's closed it, or opened
+    another in its place). */
+function forgetProject() {
+  hideEditor();
+  scriptEditor = null;
+  editorOverlay = null;
+  projectScript = "";
+  hideAutocolor();
+  autocolorOverlay = null;
+  for (const v of viewers.values()) v.runDone();
+  viewers.clear();
+  fieldInputs.clear();
+  windows = [];
+  activeViewer = null;
+  toolPanelEl = asideEl = workspaceEl = null;
+  projectEl.replaceChildren();
+  paletteEl.replaceChildren();
+  current = null;
+  engineUnsaved = false;
+  showFileName();
+  scriptButton.disabled = true;
+  scriptButton.setAttribute("aria-pressed", "false");
+  clearNotices();
+  status("");
+}
+
+/** A question over the whole page, with buttons (the last is the
+    default): the button chosen, or 0 for Escape (as the first). */
+function ask(title: string, text: string, labels: string[], focus: number): Promise<number> {
+  return new Promise((resolve) => {
+    const buttons = labels.map((label, i) => {
+      const b = el("button", { type: "button", textContent: label });
+      b.addEventListener("click", () => { dialog.remove(); resolve(i); });
+      return b;
+    });
+    const dialog = el("div", { className: "page-dialog", role: "dialog" },
+      el("div", { className: "page-dialog-box" },
+        el("div", { className: "form-title", textContent: title }),
+        el("p", { textContent: text }),
+        el("div", { className: "form-buttons" }, buttons[0], el("span", { className: "form-gap" }), ...buttons.slice(1))));
+    dialog.addEventListener("keydown", (e) => { if (e.key === "Escape") { dialog.remove(); resolve(0); } });
+    document.body.append(dialog);
+    buttons[focus].focus();
+  });
 }
 
 /** The tables that hold anything (see "tableSummary"). */
@@ -209,13 +319,15 @@ function askSaveTables(tables: TableSummary["tables"], initially: boolean): Prom
 }
 
 function showFileName() {
-  fileNameEl.textContent = current ? current.fileName + (current.library ? " (from the library)" : "") : "";
-  saveButton.disabled = saveAsButton.disabled = !current;
+  fileNameEl.textContent = current ? current.fileName + (current.library ? " (from the library)" : "")
+                                     + (unsaved() ? " (edited)" : "") : "";
+  saveButton.disabled = saveAsButton.disabled = closeButton.disabled = !current;
 }
 
 openButton.addEventListener("click", async () => openFile(await pickFile()));
 saveButton.addEventListener("click", () => save(false));
 saveAsButton.addEventListener("click", () => save(true));
+closeButton.addEventListener("click", () => closeProject());
 document.addEventListener("keydown", async (e) => {
   if (!(e.metaKey || e.ctrlKey)) return;
   const key = e.key.toLowerCase();
@@ -1444,7 +1556,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       status("Loading the library…");
       send({ type: "library" });
       break;
-    case "library": showLibrary(m.sections); status("Pick a project."); break;
+    case "library": welcome.show(m.sections); status(""); break;
     case "project":
       if (m.rebuilt) {
         // (the same project, built again from its edited script: its
@@ -1467,18 +1579,17 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       }
       // (a new project has no file of its own yet: not even the one it
       // was translated from)
+      // (a new project: a new script, and no editor until it's asked for;
+      // nor the autocolor editor)
+      forgetProject();
       current = { fileName: m.fileName, library: m.library, handle: m.library || m.new ? null : opening,
                   saveTables: m.savedTables ? true : null };
       opening = null;
-      clearNotices();
+      welcome.setOpening(false);
       showFileName();
-      // (a new project: a new script, and no editor until it's asked for;
-      // nor the autocolor editor)
-      hideAutocolor();
-      autocolorOverlay = null;
       projectScript = m.script;
-      scriptEditor = null;
-      editorOpen = false;
+      showScreen(true);
+      enterHistory();
       showProject(m.title, m.panel, m.viewers, m.views);
       scriptButton.disabled = false;
       scriptButton.setAttribute("aria-pressed", "false");
@@ -1491,6 +1602,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "ancient":
       status("");
       opening = null;
+      welcome.setOpening(false);
       notice(`“${m.name}” looks like a file from an old version of FractalStream (1.0). ` +
              `Translate it into a new project? (The old file is left as it is.)`, "info",
              [{ label: "Translate", run: () => { status(`Translating ${m.name}…`); send({ type: "translate" }); } }]);
@@ -1514,10 +1626,16 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "file": {
       const write = pendingSave;
       pendingSave = null;
-      if (write) write(m.name, m.bytes).then((name) => status(`Saved ${name}.`),
-                                              (e) => status(`Couldn't save: ${e}`, true));
+      if (write) write.write(m.name, m.bytes).then((name) => { status(`Saved ${name}.`); write.done(true); },
+                                                    (e) => {
+                                                      status(`Couldn't save: ${e}`, true);
+                                                      // (it still has changes to save)
+                                                      send({ type: "unsaved", on: true });
+                                                      write.done(false);
+                                                    });
       break;
     }
+    case "unsaved": engineUnsaved = m.on; showFileName(); break;
     case "field": fieldResult(m.key, m.error, m.color); break;
     case "fieldText": fieldText(m.key, m.text, m.color); break;
     case "tool": viewers.get(m.viewer)?.toolSelected(m.name, m.panel, m.handles); break;
@@ -1527,11 +1645,11 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "running": viewers.get(m.viewer)?.showRunning(m.what, m.name); break;
     case "runDone": viewers.get(m.viewer)?.runDone(); break;
     case "viewerError": viewers.get(m.viewer)?.showError(m.message); break;
-    case "error": colorizerChange = null; status(m.message, true); console.error(m.message); break;
+    case "error": colorizerChange = null; welcome.setOpening(false); status(m.message, true); console.error(m.message); break;
     case "patch": viewers.get(m.viewer)?.patch(m); break;
   }
 });
-engine.addEventListener("error", (e) => status(`The engine failed: ${e.message}`, true));
+engine.addEventListener("error", (e) => { welcome.setOpening(false); status(`The engine failed: ${e.message}`, true); });
 // (drawings' text is in the core's font: redraw once it's loaded)
 document.fonts.load(`13px "DejaVu Sans"`).then(() => viewers.forEach((v) => v.showDrawing(v.drawing)));
 status("Starting the engine…");

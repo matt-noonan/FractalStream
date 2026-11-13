@@ -110,6 +110,13 @@ export class ScriptEditor {
 
   focus() { this.view.focus(); }
 
+  /** What's been typed, if it isn't the project's script (not rebuilt
+      yet): saved as the script, as the desktop app saves its editor's. */
+  draft(): string | null {
+    const text = this.view.state.doc.toString();
+    return text === this.script ? null : text;
+  }
+
   /** An analysis from the engine: used only if it's of the text as it is
       now. (One of text that's been typed in since is dropped: its offsets
       would be wrong, and rewriting the script with them would garble it.

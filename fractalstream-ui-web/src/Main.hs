@@ -23,11 +23,18 @@ worker (@web/src/engine.ts@). The worker calls these exports:
 * @fs_pointer(viewer, x, y)@: what the viewer's "Show pointer position"
   shows for a screen-plane point (as for @fs_event@): posted as
   @pointer@.
-* @fs_save(views, tables)@: post the open project as a file (its script,
-  changed values, and so on, as the desktop app saves it), with the page's
-  view state (JSON: see "web-properties" below); and what its tables hold
-  (@tables@ 1), or not (0), or as its file had them (2: for a script that
-  doesn't build, whose tables aren't there to save).
+* @fs_save(views, tables, withDraft, draft)@: post the open project as a
+  file (its script, changed values, and so on, as the desktop app saves
+  it), with the page's view state (JSON: see "web-properties" below); and
+  what its tables hold (@tables@ 1), or not (0), or as its file had them
+  (2: for a script that doesn't build, whose tables aren't there to save).
+  If @withDraft@, the script saved is @draft@ (what's typed in the script
+  editor, not rebuilt yet), as the desktop app saves its editor's.
+  The project has no changes to save after this (@unsaved@).
+* @fs_close()@: close the open project (the page has asked about its
+  unsaved changes).
+* @fs_unsaved(on)@: say whether the project has changes to save (the
+  page says so again when a saved file couldn't be written).
 * @fs_table_summary()@: post the open project's tables that hold anything
   (@tableSummary@), so that the page can ask whether to save them, as the
   desktop does.
@@ -133,8 +140,9 @@ contents), which the worker forwards to the page.
 
 Messages:
 
-> { "type": "library", "sections": [ { "name", "entries": [ { "title", "description", "preview" } ] } ] }
+> { "type": "library", "sections": [ { "name", "startingPoints", "entries": [ { "title", "description", "preview" } ] } ] }
 > { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "unsaved", "on" }   (whether the open project has changes to save, as the desktop app counts them, whenever that changes)
 > { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
 > { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere" }   (the engine moved the view: a pixel's size in the canvas's pixels)
 > { "type": "where", "viewer", "x", "y", "pixelSize" }
@@ -198,7 +206,7 @@ module Main (main) where
 import FractalStream.Prelude
 
 import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, LoadedProject(..), ensembleFields, FieldOwner(..), ensembleCommonDefs,
-                       encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables)
+                       encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables, watchValues)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables, TableSummary(..), summarizeTables)
 import qualified Data.Aeson.KeyMap as KM
@@ -414,6 +422,28 @@ sessionRef :: IORef (Maybe Session)
 sessionRef = unsafePerformIO (newIORef Nothing)
 {-# NOINLINE sessionRef #-}
 
+-- | Whether the open project has changes to save, as the desktop app
+-- counts them: a configuration value or a table changed, a rebuild (from
+-- an edited script, or another colorizer), an autocolor edit; or it's a
+-- translation, not yet saved. (Not where its windows are, nor its views.)
+-- The page is told when it changes ("unsaved"), to ask before closing it.
+unsavedRef :: IORef Bool
+unsavedRef = unsafePerformIO (newIORef False)
+{-# NOINLINE unsavedRef #-}
+
+-- | Set whether the project has changes to save (the page sets it again
+-- when writing a saved file fails), and tell the page.
+setUnsaved :: Bool -> IO ()
+setUnsaved u = do
+  writeIORef unsavedRef u
+  post (Aeson.object [ "type" .= ("unsaved" :: Text.Text), "on" .= u ])
+
+-- | Note a change to save (telling the page only the first time).
+markUnsaved :: IO ()
+markUnsaved = do
+  was <- atomicModifyIORef' unsavedRef (\u -> (True, u))
+  unless was (setUnsaved True)
+
 -- | Whether frames are smoothed (see 'renderViewerBuffer').
 -- | How many canvas pixels the page draws a CSS pixel with (2, on a
 -- high-DPI screen). A viewer's pixel size is a canvas pixel's; its code,
@@ -459,7 +489,9 @@ foreign export javascript "fs_open" open :: Int -> Int -> IO ()
 foreign export javascript "fs_open_file" openFile :: JSString -> JSVal -> IO ()
 foreign export javascript "fs_translate" translateAncient :: IO ()
 foreign export javascript "fs_pointer" pointer :: Int -> Double -> Double -> IO ()
-foreign export javascript "fs_save" save :: JSString -> Int -> IO ()
+foreign export javascript "fs_save" save :: JSString -> Int -> Bool -> JSString -> IO ()
+foreign export javascript "fs_close" closeProject :: IO ()
+foreign export javascript "fs_unsaved" setUnsaved :: Bool -> IO ()
 foreign export javascript "fs_table_summary" tableSummary :: IO ()
 foreign export javascript "fs_rotate" rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
@@ -502,6 +534,7 @@ library = guarded $ post $ Aeson.object
   , "sections" .=
       [ Aeson.object
           [ "name" .= lsName s
+          , "startingPoints" .= lsStartingPoints s
           , "entries" .=
               [ Aeson.object
                   [ "title" .= leTitle e
@@ -572,10 +605,13 @@ tableSummary = guarded $ readIORef sessionRef >>= mapM_ (\Session{..} -> do
     [ "type" .= ("tableSummary" :: Text.Text), "built" .= ensembleBuilt sEnsemble
     , "tables" .= [ Aeson.object [ "name" .= tsName t, "size" .= tsSize t, "bytes" .= tsBytes t ] | t <- tables ] ])
 
-save :: JSString -> Int -> IO ()
-save views withTables = guarded $ readIORef sessionRef >>= \case
+save :: JSString -> Int -> Bool -> JSString -> IO ()
+save views withTables withDraft draft = guarded $ readIORef sessionRef >>= \case
   Nothing -> postError "there's no project to save"
   Just Session{..} -> do
+    -- (what's typed in the script editor, if it's not been rebuilt, as
+    -- the script: as the desktop app saves its editor's)
+    when withDraft $ setValue' (ensembleSourceScript sEnsemble) (fromJSString draft)
     -- (the page's view state, under its own key)
     case Aeson.eitherDecodeStrict (Text.encodeUtf8 (Text.pack (fromJSString views))) of
       Left err -> postError ("couldn't save the view: " ++ err)
@@ -591,6 +627,7 @@ save views withTables = guarded $ readIORef sessionRef >>= \case
       0 -> modifyValue (ensembleFrontendProperties sEnsemble) (KM.delete "tables")
       _ -> pure ()
     contents <- encodeEnsemble sEnsemble
+    setUnsaved False
     BS.useAsCStringLen contents $ \(p, n) -> postFile (toJSString sFileName) (castPtr p) n
 
 -- | Build a project from a file's contents, and start showing it.
@@ -676,7 +713,10 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
     -- configuration value changes, whether or not the viewer re-renders)
     unlisten <- vListenOverlay viewer (void (tryPutMVar draw ()))
     pure ((k, vs), (tid, killThread drawTid >> unwatch >> unlisten >> stopTimers vs))
-  let stop = forM_ (map snd loops) $ \(tid, unwatch) -> killThread tid >> unwatch
+  unwatchValues <- newIORef (pure ())
+  let stop = do
+        forM_ (map snd loops) $ \(tid, unwatch) -> killThread tid >> unwatch
+        join (readIORef unwatchValues)
   context <- readIORef contextRef
 
   fields <- projectFieldTexts ensemble
@@ -733,11 +773,23 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
       -- (as the desktop app does: a viewer with a "Select" tool starts with it)
       _ -> forM_ (vSelectTool (vsViewer vs)) $ \t ->
              getDynamic (source (tiName (toolInfo t))) >>= activateTool vs
+  -- Changes to save from here on (not the project's own, as it starts).
+  -- A rebuild is one; a newly opened project has none, unless it's a
+  -- translation (which isn't anywhere yet but here).
+  if rebuilt then markUnsaved else setUnsaved (case how of Translated _ -> True; _ -> False)
+  watchValues ensemble markUnsaved >>= writeIORef unwatchValues
 
 -- | Stop the open project's render loops (if any).
 close :: IO ()
 close = readIORef sessionRef >>= mapM_ (\s -> sStop s >> writeIORef sessionRef Nothing)
 -- (an open autocolor editor goes on watching: the next project's groups)
+
+-- | Close the project, for the page's Close project (it's asked about
+-- unsaved changes already), back to the library.
+closeProject :: IO ()
+closeProject = guarded $ do
+  close
+  setUnsaved False
 
 requestRender :: MVar () -> IO ()
 requestRender signal = void (tryPutMVar signal ())
@@ -1041,7 +1093,9 @@ autocolorEdit edit = guarded $ readIORef sessionRef >>= mapM_ (\Session{..} -> d
           point = (,) <$> num "x" <*> num "y"
       case num "group" >>= \n -> Map.lookup (AutocolorGroupId (round n)) groups of
         Nothing -> say "There's no such autocolor group."
-        Just g -> case str "op" of
+        -- (an edit to save, as the desktop counts one: if it's refused,
+        -- the next save writes what was there anyway)
+        Just g -> markUnsaved >> case str "op" of
           Just "locked" -> mapM_ (setAutocolorLocked st g) (bool "on")
           Just "blend" -> mapM_ (setAutocolorBlendMisses st g) (bool "on")
           Just "tolerance" -> case parseConstant RealType (fromMaybe "" (str "text")) of

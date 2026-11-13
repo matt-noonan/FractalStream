@@ -58,7 +58,7 @@ export async function start() {
     };
   });
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
-  await page.waitForSelector("#library li", { timeout: 60000 });
+  await app.waitForLibrary();
   return app;
 }
 
@@ -100,15 +100,51 @@ export class App {
     return (await this.messages("project")).pop();
   }
 
-  /** Open a project from the library, by its title (or the start of it). */
-  async openLibrary(title) {
+  /** Wait for the library's welcome screen (after loading the page, or
+      reloading it), and keep its sections. */
+  async waitForLibrary() {
+    await this.page.waitForSelector(".welcome-tile", { timeout: 60000 });
+    this.library = (await this.messages("library")).pop().sections;
+  }
+
+  /** Close the open project, if there is one (not saving any changes),
+      back to the library. */
+  async backToLibrary() {
+    const { page } = this;
+    if (!(await page.evaluate(() => document.body.classList.contains("in-project")))) return;
+    await page.locator("#close").click();
+    await page.waitForFunction(() => !document.body.classList.contains("in-project") || document.querySelector(".page-dialog"));
+    const dontSave = page.locator(".page-dialog button", { hasText: "Don't save" });
+    if (await dontSave.count()) await dontSave.click();
+    await page.waitForFunction(() => !document.body.classList.contains("in-project"));
+  }
+
+  /** Every project in the library, in order: its section and entry, and title. */
+  libraryProjects() {
+    return this.library.flatMap((s, section) => s.entries.map((e, entry) => ({ section, entry, title: e.title })));
+  }
+
+  /** Open a library project (closing the open one first), by its section
+      and entry, as the user does: its section chosen, and its tile double-clicked. */
+  async openLibraryEntry(section, entry) {
+    await this.backToLibrary();
     await this.forgetMessages();
-    await this.page.locator("#library li", { hasText: title }).first().click();
+    await this.page.locator(".welcome-sections button").nth(section).click();
+    await this.page.locator(".welcome-tile").nth(entry).dblclick();
     return this.opened();
+  }
+
+  /** Open a project from the library, by its title (or part of it: the
+      first that has it). */
+  async openLibrary(title) {
+    const p = this.libraryProjects().find((p) => p.title.includes(title));
+    if (!p) throw new Error(`no library project called ${title}`);
+    return this.openLibraryEntry(p.section, p.entry);
   }
 
   /** Open a project file, as if it were dropped on the page. */
   async openFile(file) {
+    await this.backToLibrary();
     await this.forgetMessages();
     const text = fs.readFileSync(file, "utf8");
     await this.page.evaluate(([name, text]) => {
