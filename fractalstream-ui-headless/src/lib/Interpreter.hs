@@ -35,6 +35,7 @@ import Actor.Viewer
   , ViewerIssues, describeViewerIssues
   )
 import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
+import Actor.Viewer.Disk (axisAtBottom)
 import Actor.Viewer.Preview (renderPreview)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
@@ -187,6 +188,7 @@ execCommand st = \case
 
   ResizeViewer w h -> withCurrentViewer st $ \viewer -> do
     setValue' (vSize viewer) (Dimensions (w, h))
+    keepAxisAtBottom viewer
     pure (Right st)
 
   SetViewerCenter pt -> withCurrentViewer st $ \viewer ->
@@ -207,6 +209,7 @@ execCommand st = \case
   SetViewerPixelSize pv -> withCurrentViewer st $ \viewer ->
     withResolved (resolveReal pv) $ \px -> do
       setValue' (vPixelSize viewer) px
+      keepAxisAtBottom viewer
       pure (Right st)
 
   SetViewerAspect pv -> withCurrentViewer st $ \viewer -> case vCoordinate viewer of
@@ -469,3 +472,14 @@ checkPixel name img (px, py) (er, eg, eb) mtol st
     tol = fromMaybe 0 mtol
     close a e = abs (fromIntegral a - e) <= tol
     ok = close ar er && close ag eg && close ab eb
+
+-- | On the half-plane, keep the real axis along the window's bottom edge
+-- (after the window's size, or the zoom, changes), as the apps do.
+keepAxisAtBottom :: Viewer -> IO ()
+keepAxisAtBottom viewer = getDynamic (vView viewer) >>= \case
+  HalfPlaneView -> do
+    Dimensions (_, h) <- getDynamic (vSize viewer)
+    px <- getDynamic (vPixelSize viewer)
+    c <- getDynamic (vCenter viewer)
+    setValue' (vCenter viewer) (axisAtBottom h px c)
+  _ -> pure ()

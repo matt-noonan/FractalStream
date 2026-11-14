@@ -1553,7 +1553,14 @@ class ViewerView {
 
   /** Draw the picture in the target view, with the render going on over it
       (once per display frame). */
+  /** The half-plane keeps its real axis along the window's bottom edge,
+      however the view was zoomed or the window resized or fitted. */
+  private keepAxisAtBottom() {
+    if (this.info.halfPlane && this.target) this.target.cy = this.canvas.height / 2 * this.target.py;
+  }
+
   private redraw() {
+    this.keepAxisAtBottom();
     if (this.drawPending) return;
     this.drawPending = true;
     requestAnimationFrame(() => {
@@ -1593,6 +1600,7 @@ class ViewerView {
       changed: once it's answered the last request (see `sendRequest`),
       and once per display frame, at most. */
   private request() {
+    this.keepAxisAtBottom();
     if (this.requestPending) return;
     this.requestPending = true;
     requestAnimationFrame(() => {
@@ -1804,7 +1812,10 @@ class ViewerView {
     const t = this.target;
     if (!t) return;
     const W = this.canvas.width, H = this.canvas.height;
-    const p = this.info.sphere ? { x: W / 2, y: H / 2 } : p0;
+    // (on the half-plane, about the point of the real axis below the
+    // pointer, so the axis stays along the window's bottom edge)
+    const p = this.info.sphere ? { x: W / 2, y: H / 2 }
+            : this.info.halfPlane ? { x: p0.x, y: H / 2 + t.cy / t.py } : p0;
     // the model point under the pointer stays where it is
     const mx = t.cx + (p.x - W / 2) * t.px;
     const my = t.cy - (p.y - H / 2) * t.py;

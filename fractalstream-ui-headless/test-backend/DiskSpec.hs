@@ -42,8 +42,9 @@ project = unlines
   , "color <- if |z - i| < 0.05 then rgb(0, 1, 0) else if |z - 2i| < 0.05 then red else grey"
   , ""
   , "@viewer \"Q\" view=halfplane pixelSize=1/100"
-  -- the pixel size in the red channel: facing i, the screen is the model,
-  -- so at the middle it's 1/100: 1/2 of 1/50
+  -- the pixel size in the red channel: facing i (1/100 per pixel: i is
+  -- 100 pixels up), the screen is the model, so it's 1/100 everywhere:
+  -- 1/2 of 1/50
   , "color <- rgb(pixel_size * 50, 0, 0)"
   , ""
   , "@viewer \"F\" center=0 pixelSize=1/100"
@@ -115,19 +116,30 @@ spec = describe "a disk viewer" $ do
     , pixel "D" (175, 300 + 8) yellow
     , pixel "D" (175 + 12, 300) grey, pixel "D" (175, 300 - 12) grey ]
 
-  it "shows a half-plane script's i in the middle, and nothing below the real axis" $ scenario
-    -- 1/150 per pixel: the real axis is 150 pixels below i
-    [ "select viewer \"H\"", pixel "H" (300, 300) green, pixel "H" (300, 600 - 2) background
-    , pixel "H" (300, 300 - 150) red ]
+  it "shows the half-plane with its real axis along the window's bottom edge" $ scenario
+    -- 1/150 per pixel: i is 150 pixels up, 2i 300 (the middle); the
+    -- half-plane goes right down to the bottom row
+    [ "select viewer \"H\"", pixel "H" (300, 600 - 150) green, pixel "H" (300, 300) red
+    , pixel "H" (300, 600 - 1) grey ]
 
   it "switches between the half-plane and the disk, keeping the view" $ scenario
+    -- (i, the view's center, is in the disk's middle, then back where it was)
     [ "select viewer \"H\"", "set viewer view to disk", pixel "H" (300, 300) green
     , pixel "H" (2, 2) background
-    , "set viewer view to halfplane", pixel "H" (300, 300) green ]
+    , "set viewer view to halfplane", pixel "H" (300, 600 - 150) green, pixel "H" (300, 300) red ]
 
   it "drags the half-plane's view hyperbolically" $ scenario
-    -- 2i goes to where i was: the middle
-    [ "select viewer \"H\"", "drag view from 2i to i", pixel "H" (300, 300) red ]
+    -- 2i goes to where i was
+    [ "select viewer \"H\"", "drag view from 2i to i", pixel "H" (300, 600 - 150) red ]
+
+  it "centers a point in the half-plane's window, the axis staying at the bottom" $ scenario
+    [ "select viewer \"H\"", "set viewer center to i", pixel "H" (300, 300) green
+    , pixel "H" (300, 600 - 1) grey ]
+
+  it "keeps the half-plane's real axis at the bottom as it's resized and zoomed" $ scenario
+    [ "select viewer \"H\"", "resize viewer to 600x400", pixel "H" (300, 400 - 150) green
+    , pixel "H" (300, 400 - 1) grey
+    , "set viewer pixel size to 1/75", pixel "H" (300, 400 - 75) green, pixel "H" (300, 400 - 1) grey ]
 
   it "gives a half-plane script the pixel's model width as `pixel_size`" $ scenario
     [ "select viewer \"Q\"", pixel "Q" (300, 300) "(128, 0, 0)" ]

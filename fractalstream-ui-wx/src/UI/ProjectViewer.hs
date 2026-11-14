@@ -1456,7 +1456,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             Just _ -> (cx, cy)
             Nothing ->
               let mx = cx + (fromIntegral x - fromIntegral w / 2) * px
-                  my = cy - (fromIntegral y - fromIntegral h / 2) * py
+                  my = zoomPivotY base (cy - (fromIntegral y - fromIntegral h / 2) * py)
               in (mx + (cx - mx) * factor, my + (cy - my) * factor)
       writeIORef pendingView (Just base { modelCenter = newCenter, modelPixelDim = (px * factor, py * factor) })
       getCurrentTime >>= writeIORef lastPinch . Just
@@ -1490,10 +1490,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             -- on the plane)
             readIORef lastKnownScreen >>= \case
               Nothing -> propagateEvent
-              Just (pmx, pmy) -> do
+              Just (pmx, pmy0) -> do
                 isAnimating <- isJust <$> get animate value
                 unless isAnimating $ do
                   let (cmx, cmy) = modelCenter oldModel
+                      pmy = zoomPivotY oldModel pmy0
                       cmx' = pmx + (cmx - pmx) * scale
                       cmy' = pmy + (cmy - pmy) * scale
 
@@ -1665,8 +1666,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                   -- re-render if the image's size changed.
                                   Size w h <- get f clientSize
                                   tileSize <- tileRect <$> get currentTile value
+                                  -- (on the half-plane, keeping the real
+                                  -- axis along the window's bottom edge)
                                   when (tileSize /= (w, h)) $
-                                    jumpViewTo =<< get model value
+                                    jumpViewTo . keepAxisAtBottom h =<< get model value
                       ]
 
     -- Add a timer which checks if the tool layer should receive a refresh
@@ -1758,16 +1761,21 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         -- be where this window started out if a saved view was restored
         -- over it. Recorded as a new step in the history, like any other
         -- move, so "Last view" can still undo it.
-        goHome = changeViewTo
+        goHome = do
+         Size _ hWin <- get f clientSize
+         changeViewTo
           =<< (get model value <&> \m -> case modelShape m of
                  -- (the original view of the kind it shows now)
                  FlatShape -> let (c, px) = vOriginalPlaneView
                               in Model c (px, px * vOriginalAspect) FlatShape
                  GlobeShape _ -> Model (0, 0) (vOriginalSpherePixelSize, vOriginalSpherePixelSize)
                                        (GlobeShape vOriginalRotation)
+                 -- (the half-plane with its real axis along the window's
+                 -- bottom edge: see 'displayScreen')
                  HyperbolicShape hm display _ ->
-                   let px = (case display of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }) vOriginalHyperbolicPixelSizes
-                   in Model (displayMiddle display) (px, px) (HyperbolicShape hm display vOriginalIsometry))
+                   let (c, px) = displayScreen display hWin
+                                   ((case display of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }) vOriginalHyperbolicPixelSizes)
+                   in Model c (px, px) (HyperbolicShape hm display vOriginalIsometry))
 
         jumpToView = do
           oldModel <- get model value
@@ -1777,10 +1785,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 GlobeShape r -> sphereToPlane (rotateBy r (0, 0, 1))
                 -- (in the disk, the point in the middle of the disk)
                 -- (in the hyperbolic plane, the model point in the middle of
-                -- the display)
+                -- the window)
                 HyperbolicShape hm display v ->
-                  fromMaybe (0, 0) (screenToModelH hm display v (displayMiddle display))
+                  fromMaybe (0, 0) (screenToModelH hm display v (modelCenter oldModel))
               (oldPx, oldPy) = modelPixelDim oldModel
+          Size _ hWin <- get f clientSize
           d <- dialog f [ text := "Jump to view..." ]
           jp <- panel d []
           jOk <- button jp [ text := "Ok" ]
@@ -1804,10 +1813,16 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                         onDone ((\(x,y,dz) -> case modelShape oldModel of
                                    FlatShape -> Just (Model (x, y) (dz, dz * oldPy / oldPx) FlatShape)
                                    GlobeShape _ -> Just (Model (0, 0) (dz, dz) (GlobeShape (rotationFacing (x, y))))
+                                   -- (in the hyperbolic plane, the point in the
+                                   -- middle of the window; the half-plane's
+                                   -- real axis along its bottom edge)
                                    HyperbolicShape hm display _
                                      | inModel hm (x, y) ->
-                                         Just (Model (displayMiddle display) (dz, dz)
-                                                     (HyperbolicShape hm display (isometryFacing (modelToDisk hm (x, y)))))
+                                         let middle = case display of
+                                               DiskDisplay -> (0, 0)
+                                               HalfPlaneDisplay -> axisAtBottom hWin dz (0, 0)
+                                         in Just (Model middle (dz, dz)
+                                                     (HyperbolicShape hm display (viewShowing hm display (x, y) middle)))
                                      | otherwise -> Nothing) =<<
                                  ((,,) <$> mx <*> my <*> mp)) ]
           case result of
@@ -1948,9 +1963,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           m <- get model value
           case modelShape m of
             HyperbolicShape hm display v -> do
+              Size _ hWin <- get f clientSize
               let display' = case display of { DiskDisplay -> HalfPlaneDisplay; HalfPlaneDisplay -> DiskDisplay }
-                  px = (case display' of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }) vOriginalHyperbolicPixelSizes
-              changeViewTo (Model (displayMiddle display') (px, px) (HyperbolicShape hm display' v))
+                  (c, px) = displayScreen display' hWin
+                              ((case display' of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }) vOriginalHyperbolicPixelSizes)
+              changeViewTo (Model c (px, px) (HyperbolicShape hm display' v))
             _ -> pure ()
           get model value >>= \m' -> set halfItem [ checked := onHalfPlane m' ] ]
         modifyIORef' beforeMenu (>> (get model value >>= \m -> set halfItem [ checked := onHalfPlane m ]))
@@ -2273,6 +2290,22 @@ reprojectedSeed oldTile old new (w, h)
           i = round ((x - cx) / px + fromIntegral w / 2)
           j = round ((cy - y) / py + fromIntegral h / 2)
       in if i >= 0 && i < w && j >= 0 && j < h then Just (i, j) else Nothing
+
+-- | Zooming about a point (with the pointer there), on the half-plane:
+-- about the point of the real axis below it instead, so that the axis
+-- stays where it is, along the window's bottom edge (zooming about a
+-- point of the axis moves the half-plane by an isometry).
+zoomPivotY :: Model -> Double -> Double
+zoomPivotY m y = case modelShape m of
+  HyperbolicShape _ HalfPlaneDisplay _ -> 0
+  _ -> y
+
+-- | A model, its window resized to @h@ pixels high: on the half-plane,
+-- keeping the real axis along the window's bottom edge.
+keepAxisAtBottom :: Int -> Model -> Model
+keepAxisAtBottom h m = case modelShape m of
+  HyperbolicShape _ HalfPlaneDisplay _ -> m { modelCenter = axisAtBottom h (snd (modelPixelDim m)) (modelCenter m) }
+  _ -> m
 
 -- | What a new sphere view's render shows until it's drawn, when it
 -- starts from scratch: grey on the globe, and the background off it,

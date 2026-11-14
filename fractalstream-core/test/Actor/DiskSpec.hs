@@ -85,6 +85,19 @@ spec = do
     sequence_ [ screenToModelH m d (isometryFacing (modelToDisk m c)) (displayMiddle d) `shouldSatisfy` maybe False (close2 c)
               | m <- models, d <- displays, let c = if m == DiskModel then (0.3, -0.2) else (1, 2) ]
 
+  it "lays the half-plane out with its real axis along the window's bottom edge" $ do
+    -- (a window 600 pixels high: the middle row's 300 pixels up)
+    displayScreen HalfPlaneDisplay 600 (1 / 150) `shouldBe` ((0, 2), 1 / 150)
+    -- (i no higher than the middle)
+    displayScreen HalfPlaneDisplay 600 (1 / 1000) `shouldBe` ((0, 1), 1 / 300)
+    displayScreen DiskDisplay 600 (1 / 280) `shouldBe` ((0, 0), 1 / 280)
+    axisAtBottom 400 (1 / 100) (0.5, 7) `shouldBe` (0.5, 2)
+
+  it "shows a model point at a screen point" $
+    sequence_ [ screenToModelH m d (viewShowing m d c s) s `shouldSatisfy` maybe False (close2 c)
+              | m <- models, d <- displays, s <- shown d
+              , c <- if m == DiskModel then [(0.3, -0.2), (0, 0.9)] else [(1, 2), (-4, 0.01)] ]
+
   it "keeps the point under the pointer there while dragging, on the half-plane" $
     sequence_ [ case screenToModelH m HalfPlaneDisplay v from of
                   Nothing -> expectationFailure "off the half-plane"

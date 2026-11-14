@@ -58,6 +58,9 @@ module Actor.Viewer.Disk
   , modelToDisk
   , displayToDiskPoint
   , displayMiddle
+  , displayScreen
+  , axisAtBottom
+  , viewShowing
   , screenToModelH
   , modelToScreenH
   , dragOnDisplay
@@ -269,6 +272,30 @@ displayMiddle :: HyperbolicDisplay -> (Double, Double)
 displayMiddle = \case
   DiskDisplay -> (0, 0)
   HalfPlaneDisplay -> (0, 1)
+
+-- | A display's screen in a window @h@ pixels high, at a zoom (a pixel
+-- size): the screen point in the window's middle, and the pixel size. The
+-- disk is centered in the window. The half-plane has its real axis along
+-- the window's bottom edge (no space is wasted below it), and the view's
+-- center ('displayMiddle', @i@) 1/zoom pixels above that, or in the
+-- window's middle if that's lower.
+displayScreen :: HyperbolicDisplay -> Int -> Double -> ((Double, Double), Double)
+displayScreen DiskDisplay _ q = ((0, 0), q)
+displayScreen HalfPlaneDisplay h q =
+  let px = max q (2 / fromIntegral (max 1 h))
+  in ((0, fromIntegral h * px / 2), px)
+
+-- | The screen point in the middle of a half-plane display's window @h@
+-- pixels high, at a pixel size, keeping its real axis along the window's
+-- bottom edge (after the window's resized, or zoomed, say).
+axisAtBottom :: Int -> Double -> (Double, Double) -> (Double, Double)
+axisAtBottom h px (cx, _) = (cx, fromIntegral h * px / 2)
+
+-- | The view showing a model point at a screen point (the window's
+-- middle, say), by a hyperbolic translation from the view facing it.
+viewShowing :: HyperbolicModel -> HyperbolicDisplay -> (Double, Double) -> (Double, Double) -> Isometry
+viewShowing model display c s =
+  dragOnDisplay display (isometryFacing (modelToDisk model c)) (displayMiddle display) s
 
 -- | The model point under a screen point, if it shows the hyperbolic plane.
 screenToModelH :: HyperbolicModel -> HyperbolicDisplay -> Isometry -> (Double, Double) -> Maybe (Double, Double)

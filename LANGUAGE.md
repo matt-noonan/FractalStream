@@ -741,17 +741,24 @@ the size of a pixel facing you.) A disk viewer can't be shown on the plane
 or the sphere.
 
 A script can work in the upper half-plane instead, with `view=halfplane`:
-`z` is then a point with a positive imaginary part, and `center=` (by
-default `i`) is the point shown in the middle of the window. In the
+`z` is then a point with a positive imaginary part. The half-plane is drawn
+with its real axis along the window's bottom edge, and `center=` (by
+default `i`) shown 1/`pixelSize` pixels above it (by default 150), halfway
+across, or in the middle of the window if that's lower. So for
+`center=i`, `pixelSize=` is the width of a pixel at `i`. In the
 half-plane, a pixel's hyperbolic size is `pixel_size / im(z)`.
 
 Either way, the viewer's menu can show the hyperbolic plane as the disk or
 as the half-plane ("Show as the half-plane"), keeping the view: the script
-still sees points of its own model. In the half-plane drawing, the real
-axis is the boundary, and nothing is drawn below it. `pixelSize=` is for
-the drawing the script's `view=` names; the other starts at its own zoom
-(`i` in the middle at 1/150 per pixel for the half-plane; the disk filling
-most of the window for the disk).
+still sees points of its own model, and the view's center goes from the
+middle of the disk to its place above the half-plane's axis (and back).
+`pixelSize=` is for the drawing the script's `view=` names; the other
+starts at its own zoom (1/150 for the half-plane; the disk filling most of
+the window for the disk). On the half-plane drawing, zooming (with the
+scroll wheel or a pinch) is about the point of the real axis below the
+pointer, and resizing the window keeps the axis at the bottom, so there's
+no empty space below it; double-clicking a point, or jumping to one, puts
+it in the middle of the window.
 
 ### Colorizers
 

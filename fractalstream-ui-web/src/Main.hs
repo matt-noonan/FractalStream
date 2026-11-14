@@ -254,8 +254,8 @@ import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progre
 import Actor.Event (ViewKind(..), hyperbolicDisplay, hyperbolicModel, Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
 import Actor.Viewer.Sphere (sphereShading, trackballRotation, screenToPlane, Rotation(..), rotationFacing, rotateBy, sphereToPlane)
-import Actor.Viewer.Disk (Isometry(..), HyperbolicDisplay(..), normalizeIsometry, isometryFacing, modelToDisk, inModel,
-                          screenToModelH, displayMiddle, dragOnDisplay)
+import Actor.Viewer.Disk (Isometry(..), HyperbolicDisplay(..), normalizeIsometry, inModel,
+                          screenToModelH, dragOnDisplay, displayScreen, axisAtBottom, viewShowing)
 import Actor.Viewer.ViewModel (Model(..), ModelShape(..), modelRotation, modelIsometry, History(..), historyBack, historyForward, historyAppend)
 import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceArguments, missingArguments,
                         argumentFields, choiceWithArguments)
@@ -1143,15 +1143,18 @@ navigateTo k what = withViewerState k $ \vs -> do
   let v = vsViewer vs
   d <- readIORef densityRef
   m <- viewerModel v
+  Dimensions (_, hWin) <- getDynamic (vSize v)
   let step f = readIORef (vsHistory vs) >>= \h -> forM_ (h >>= f) $ \(h', m') ->
         writeIORef (vsHistory vs) (Just h') >> goTo vs m'
       -- (the script's views are in CSS pixels; the engine's in the canvas's)
       originalPlane = let (c, px) = vOriginalPlaneView v in Model c (px / d, px / d * vOriginalAspect v) FlatShape
       sphereAt r = Model (0, 0) (vOriginalSpherePixelSize v / d, vOriginalSpherePixelSize v / d) (GlobeShape r)
-      -- (a hyperbolic viewer's original view, on a display)
+      -- (a hyperbolic viewer's original view, on a display: the
+      -- half-plane with its real axis along the window's bottom edge)
       hyperbolicAt display iso =
-        let px = (case display of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }) (vOriginalHyperbolicPixelSizes v) / d
-        in Model (displayMiddle display) (px, px) (HyperbolicShape (hyperbolicModel (vOriginalView v)) display iso)
+        let (c, px) = displayScreen display hWin
+                        ((case display of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }) (vOriginalHyperbolicPixelSizes v) / d)
+        in Model c (px, px) (HyperbolicShape (hyperbolicModel (vOriginalView v)) display iso)
   case what of
     0 -> step historyBack
     1 -> step historyForward
@@ -1183,15 +1186,19 @@ jump :: Int -> Double -> Double -> Double -> IO ()
 jump k x y pixelSize = withViewerState k $ \vs -> do
   d <- readIORef densityRef
   Model _ (px, py) shape <- viewerModel (vsViewer vs)
+  Dimensions (_, hWin) <- getDynamic (vSize (vsViewer vs))
   let dz = pixelSize / d
   case shape of
     FlatShape -> changeViewTo vs (Model (x, y) (dz, dz * py / px) FlatShape)
     GlobeShape _ -> changeViewTo vs (Model (0, 0) (dz, dz) (GlobeShape (rotationFacing (x, y))))
-    -- (in the disk, the point shown in the middle of the disk)
+    -- (in the hyperbolic plane, the point in the middle of the window; the
+    -- half-plane's real axis along its bottom edge)
     HyperbolicShape model display _
       | inModel model (x, y) ->
-          changeViewTo vs (Model (displayMiddle display) (dz, dz)
-                                 (HyperbolicShape model display (isometryFacing (modelToDisk model (x, y)))))
+          let middle = case display of
+                DiskDisplay -> (0, 0)
+                HalfPlaneDisplay -> axisAtBottom hWin dz (0, 0)
+          in changeViewTo vs (Model middle (dz, dz) (HyperbolicShape model display (viewShowing model display (x, y) middle)))
                 | otherwise -> postError "That point isn't in the disk."
 
 -- | A real viewer's aspect ratio, from its text, as the desktop's Aspect
@@ -1503,7 +1510,8 @@ whereIs k = withViewerState k $ \vs -> do
   let (x, y) = case shape of
         FlatShape -> c
         GlobeShape r -> sphereToPlane (rotateBy r (0, 0, 1))
-        HyperbolicShape model display iso -> fromMaybe (0, 0) (screenToModelH model display iso (displayMiddle display))
+        -- (in the hyperbolic plane, the point in the middle of the window)
+        HyperbolicShape model display iso -> fromMaybe (0, 0) (screenToModelH model display iso c)
   post $ Aeson.object [ "type" .= ("where" :: Text.Text), "viewer" .= k, "x" .= x, "y" .= y
                       , "pixelSize" .= (px * d) ]
 

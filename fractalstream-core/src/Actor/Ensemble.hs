@@ -1420,8 +1420,9 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
     -- the one `view=` picks).
     -- A viewer of the hyperbolic plane starts with its view showing the
     -- script's `center=` (a point of its model, the disk or the half-plane)
-    -- in the middle of its display (the disk's center, or i), and that in
-    -- the middle of the window.
+    -- at its display's middle (the disk's center, in the middle of the
+    -- window; or i, 1/pixelSize pixels above the real axis, which is
+    -- along the window's bottom edge: see 'displayScreen').
     let originalRotation = rotationFacing centerVal
         originalIsometry = isometryFacing (modelToDisk (hyperbolicModel vfView) centerVal)
         (planePixel, spherePixel) = case vfView of
@@ -1436,13 +1437,13 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
     cvViewV      <- newVariable vfView
     cvRotationV  <- newVariable originalRotation
     cvIsometryV  <- newVariable originalIsometry
-    -- (on the sphere, the globe is centered on the screen; so is the disk,
-    -- and the half-plane's i)
+    -- (on the sphere, the globe is centered on the screen; so is the disk;
+    -- the half-plane's real axis is along the window's bottom edge)
     cvCenterV    <- newVariable (case hyperbolicDisplay vfView of
-                                   Just display -> displayMiddle display
+                                   Just display -> fst (displayScreen display 600 (snd hyperbolicPixels))
                                    Nothing | vfView == SphereView -> (0, 0)
                                            | otherwise -> centerVal)
-    cvSizeV      <- newVariable (Dimensions (600, 600))
+    cvSizeV      <- newVariable (Dimensions (600, 600))  -- (see cvCenterV)
     cvPositionV  <- newVariable (Dimensions (100 + 30 * n, 100 + 30 * n))
     cvCanResizeV <- newVariable True
 
@@ -1696,6 +1697,7 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
         vPosition = cvPosition
 
     vCanResize <- getDynamic cvCanResize
+    Dimensions (_, height0) <- getDynamic cvSize
     let vOriginalView = cvView
         vOriginalRotation = cvOriginalRotation
         vOriginalPlaneView = (cvCenter, cvPixelSize)
@@ -1705,7 +1707,7 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
           PlaneView -> vOriginalPlaneView
           SphereView -> ((0, 0), cvSpherePixelSize)
           DiskView -> ((0, 0), fst cvHyperbolicPixelSizes)
-          HalfPlaneView -> (displayMiddle HalfPlaneDisplay, snd cvHyperbolicPixelSizes)
+          HalfPlaneView -> displayScreen HalfPlaneDisplay height0 (snd cvHyperbolicPixelSizes)
         vOriginalAspect = cvAspect
         vCoordinate = cvCoord
         vView = cvViewV

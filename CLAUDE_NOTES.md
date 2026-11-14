@@ -259,7 +259,13 @@ screen → model, of determinant 1 (`viewMobius`: display → disk by the Cayley
 map, the view, disk → model), as `[internal] hyperbolic a.re` .. `d.im`, plus
 `[internal] half-plane display` for the off-display test; tools' hidden
 values carry its a and c (`pixel_size_at(p)` = px |a − c p|²); in wx and the
-web app a `HyperbolicShape` carries the model, display and view. The rest
+web app a `HyperbolicShape` carries the model, display and view. The
+half-plane display keeps its real axis on the window's bottom edge
+(`displayScreen`, `axisAtBottom`): zooms pivot on the axis point below the
+pointer (wx `zoomPivotY`, the page's `zoomBy`), and resizes (wx's resize
+timer, the page's `keepAxisAtBottom`, fsrun's resize/pixel size) re-pin it;
+the view's center (`displayMiddle`, i) is 1/zoom pixels up, so switching
+displays keeps the isometry as it is. The rest
 of this paragraph is from phase 1, the disk alone: The
 geometry is in `Actor.Viewer.Disk`: the view is an `Isometry` (a, b),
 s ↦ (a s + b)/(b̄ s + ā) with |a|² − |b|² = 1, renormalized after each

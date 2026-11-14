@@ -87,7 +87,7 @@ import Language.Value.Evaluator
 import Foreign
 import Data.PNG
 import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Rotation, Projection(..), ScreenView(..), rotationFacing, rotateBy, sphereToPlane, planeToScreen, trackballRotation)
-import Actor.Viewer.Disk (hyperbolicViewName, inTheHyperbolicPlane, Isometry, isometryFacing, modelToDisk, modelToScreenH, dragOnDisplay, displayMiddle, HyperbolicDisplay(..))
+import Actor.Viewer.Disk (hyperbolicViewName, inTheHyperbolicPlane, Isometry, modelToScreenH, dragOnDisplay, displayScreen, axisAtBottom, viewShowing, HyperbolicDisplay(..))
 import qualified Data.Map as Map
 import Text.Printf (printf)
 
@@ -606,16 +606,18 @@ downsampleRows bigW w rows stride big dest =
 --
 -- A viewer of the hyperbolic plane can switch between its displays, the
 -- disk and the half-plane, keeping its view (and each display starting at
--- its own zoom, with the view's center in the middle); no other viewer can
+-- its own zoom: see 'displayScreen'); no other viewer can
 -- show the hyperbolic plane, nor one that does the plane or the sphere.
 switchView :: Viewer -> ViewKind -> IO ()
 switchView v kind = do
   old <- getDynamic (vView v)
   case (hyperbolicDisplay old, hyperbolicDisplay kind) of
     (Just a, Just b) | a /= b -> do
-      setValue' (vCenter v) (displayMiddle b)
+      Dimensions (_, h) <- getDynamic (vSize v)
       let pick = case b of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }
-      setValue' (vPixelSize v) (pick (vOriginalHyperbolicPixelSizes v))
+          (c, px) = displayScreen b h (pick (vOriginalHyperbolicPixelSizes v))
+      setValue' (vCenter v) c
+      setValue' (vPixelSize v) px
       setValue' (vView v) kind
     (Nothing, Nothing) -> when (old /= kind) (switchFlat kind)
     _ -> pure ()
@@ -639,13 +641,18 @@ switchView v kind = do
 
 -- | Center a viewer's view on a point: on the sphere, turn the globe to
 -- face it; in the hyperbolic plane, move the view to show the (model)
--- point in the middle of the display (the disk's center, or @i@), and that
--- in the middle of the window.
+-- point in the middle of the window (at the same zoom: the disk centered
+-- in the window, or the half-plane's real axis along its bottom edge).
 centerViewOn :: Viewer -> (Double, Double) -> IO ()
 centerViewOn v c = getDynamic (vView v) >>= \kind -> case (kind, hyperbolicDisplay kind) of
   (_, Just display) -> do
-    setValue' (vIsometry v) (isometryFacing (modelToDisk (hyperbolicModel (vOriginalView v)) c))
-    setValue' (vCenter v) (displayMiddle display)
+    Dimensions (_, h) <- getDynamic (vSize v)
+    px <- getDynamic (vPixelSize v)
+    let middle = case display of
+          DiskDisplay -> (0, 0)
+          HalfPlaneDisplay -> axisAtBottom h px (0, 0)
+    setValue' (vIsometry v) (viewShowing (hyperbolicModel (vOriginalView v)) display c middle)
+    setValue' (vCenter v) middle
   (PlaneView, _) -> setValue' (vCenter v) c
   (SphereView, _) -> setValue' (vRotation v) (rotationFacing c)
   (_, Nothing) -> pure ()
