@@ -73,7 +73,7 @@ compositeDrawLayers ScreenView{ svCenter = center, svPixelSize = pixelSize, svPr
            -- (the globe and the disk: drawings are sampled, and each
            -- point projected)
            GlobeProjection _ -> mapM_ (drawGlobeLayer image proj toPx) layers
-           DiskProjection _ -> mapM_ (drawGlobeLayer image proj toPx) layers)
+           HyperbolicProjection {} -> mapM_ (drawGlobeLayer image proj toPx) layers)
                    baseImage
 
 -- | Lay a (non-premultiplied, as Rasterific makes them) RGBA image over

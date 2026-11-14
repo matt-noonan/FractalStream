@@ -29,8 +29,8 @@
 //             and an error, as a notice to dismiss
 //   disk      a disk viewer (view=disk, dev-tools/web/disk.fs): Navigate's
 //             drag moves the view by a hyperbolic translation (the point
-//             under the pointer stays under it), and its menu has no
-//             "Show on the sphere"
+//             under the pointer stays under it); its menu has no "Show on
+//             the sphere", and shows it as the half-plane, keeping the view
 //   pointer   "Show pointer position", from a viewer's menu: the point
 //             under the pointer, on the plane and on the sphere
 //   progressive  a slow viewer (dev-tools/web/slow.fs) rendered in pieces:
@@ -1111,6 +1111,19 @@ async function disk() {
   await page.locator(".window").nth(0).locator(".window-menu-button").click();
   c.check(await page.locator(".window-menu button", { hasText: "Show on the sphere" }).count() === 0,
           "its menu doesn't offer the sphere");
+  // the half-plane, from the menu: the same view (the same point in the
+  // middle: i, on the half-plane), drawn again
+  const framesBefore = await app.frames(0);
+  await page.locator(".window-menu button", { hasText: "Show as the half-plane" }).click();
+  await page.waitForFunction((n) => Number(document.querySelector(".viewer").dataset.frames) > n, framesBefore, { timeout: 60000 });
+  await app.send({ type: "where", viewer: 0 });
+  await page.waitForTimeout(500);
+  const there = (await app.messages("where")).pop();
+  c.check(there && Math.abs(there.x + 0.3) < 1e-6 && Math.abs(there.y) < 1e-6,
+          `shown as the half-plane, the same point's in the middle (${there?.x}, ${there?.y})`);
+  await page.locator(".window").nth(0).locator(".window-menu-button").click();
+  const toggle = page.locator(".window-menu button", { hasText: "Show as the half-plane" });
+  c.check(await toggle.getAttribute("aria-checked") === "true", "its menu shows it's the half-plane");
   await page.keyboard.press("Escape");
 }
 

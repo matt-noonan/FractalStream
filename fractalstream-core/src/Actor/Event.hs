@@ -10,6 +10,8 @@ module Actor.Event
   , PixelDims
   , coordinateNames
   , ViewKind(..)
+  , hyperbolicDisplay
+  , hyperbolicModel
   , showCoordinate
   , bindOrDeclare
   , RealIn(..)
@@ -85,6 +87,7 @@ import Control.Exception (Exception)
 import Data.DynamicValue
 import Data.Codec
 import Actor.Viewer.Types
+import Actor.Viewer.Disk (HyperbolicDisplay(..), HyperbolicModel(..))
 --import Data.Typeable
 
 type Point = (Double, Double)
@@ -928,10 +931,24 @@ data Coordinate = ComplexCoordinate String | RealCoordinates String String
   deriving (Eq, Show)
 
 -- | How a viewer shows its points: on the plane, or (for a complex
--- coordinate) on the Riemann sphere, as a globe, or in the Poincaré disk,
--- as the hyperbolic plane (see "Actor.Viewer.Disk").
-data ViewKind = PlaneView | SphereView | DiskView
+-- coordinate) on the Riemann sphere, as a globe, or the hyperbolic plane,
+-- in the Poincaré disk or the upper half-plane (see "Actor.Viewer.Disk").
+data ViewKind = PlaneView | SphereView | DiskView | HalfPlaneView
   deriving (Eq, Show)
+
+-- | How a view draws the hyperbolic plane, if it does.
+hyperbolicDisplay :: ViewKind -> Maybe HyperbolicDisplay
+hyperbolicDisplay = \case
+  DiskView -> Just DiskDisplay
+  HalfPlaneView -> Just HalfPlaneDisplay
+  _ -> Nothing
+
+-- | Where a script's points are, by the view its script names: the
+-- half-plane for @view=halfplane@, else the disk.
+hyperbolicModel :: ViewKind -> HyperbolicModel
+hyperbolicModel = \case
+  HalfPlaneView -> HalfPlaneModel
+  _ -> DiskModel
 
 -- | The names a 'Coordinate' binds.
 coordinateNames :: Coordinate -> [String]

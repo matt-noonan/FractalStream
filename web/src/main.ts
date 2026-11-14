@@ -1827,6 +1827,11 @@ class ViewerView {
       { kind: "action", label: "Jump to view…", shortcut: "@", run: () => this.askJump() },
       { kind: "action", label: "Original view", shortcut: "^", run: () => this.navigate(2) },
     ];
+    // (a viewer of the hyperbolic plane can show it as the disk or the
+    // half-plane, keeping its view)
+    if (this.info.disk) {
+      items.push({ kind: "toggle", label: "Show as the half-plane", on: this.info.halfPlane, toggle: () => this.navigate(3) });
+    }
     // (a complex viewer's pixels are square; it can show the sphere instead,
     // unless it shows the hyperbolic plane)
     if (this.info.complex && !this.info.disk) {
@@ -1879,7 +1884,7 @@ class ViewerView {
   /** The engine moved the view (going back, say): it's the target now,
       and what the engine's rendering. On the sphere, or turning to or
       from it, the last picture can't be moved to fit, so it goes. */
-  moved(m: { cx: number; cy: number; px: number; py: number; sphere: boolean; disk: boolean }) {
+  moved(m: { cx: number; cy: number; px: number; py: number; sphere: boolean; disk: boolean; halfPlane: boolean }) {
     // (in the disk, the view of the hyperbolic plane may have moved too)
     if (m.sphere || this.info.sphere || m.disk) {
       this.frame = null;
@@ -1887,6 +1892,7 @@ class ViewerView {
       this.path = null;
     }
     this.info.sphere = m.sphere;
+    this.info.halfPlane = m.halfPlane;
     const view = { cx: m.cx, cy: m.cy, px: m.px, py: m.py };
     this.target = { ...view };
     this.sent = { view: { ...view }, width: this.canvas.width, height: this.canvas.height };

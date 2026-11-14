@@ -43,9 +43,9 @@ data ComplexViewer = ComplexViewer
   , cvOriginalRotation :: Rotation
   , cvOriginalIsometry :: Isometry
   , cvSpherePixelSize :: Double
-  , cvDiskPixelSize :: Double
-    -- ^ The pixel size its disk view starts with (in units of the disk's
-    -- radius), for a disk viewer.
+  , cvHyperbolicPixelSizes :: (Double, Double)
+    -- ^ The pixel sizes its displays of the hyperbolic plane start with:
+    -- the disk's (in units of its radius), and the half-plane's.
     -- ^ The pixel size its sphere view starts with (in units of the
     -- sphere's radius); 'cvPixelSize' is its plane view's.
   , cvPixel :: Mapped (Maybe String) (Either String (Maybe String))

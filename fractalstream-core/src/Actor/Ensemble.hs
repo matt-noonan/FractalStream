@@ -68,7 +68,7 @@ import Language.Value.Typecheck
    InternalIterations, InternalStuck, InternalIterationLimit)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv)
-import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs, viewKindName, viewPixelSizeName, viewIsometryNames)
+import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs, viewKindName, viewPixelSizeName, viewMobiusNames)
 import Language.Code.Hoist (Split(..))
 import Language.Parser.SourceRange
 import Data.Color (black, grey)
@@ -852,7 +852,7 @@ checkViewer configEnv env myTools ViewerFields{..} = do
 -- hyperbolic plane (see "Actor.Viewer.Disk").
 viewerViewEntries :: Coordinate -> ViewKind -> [(String, SomeType)]
 viewerViewEntries coord view0 = viewerGeometryEntries coord ++ case coord of
-  ComplexCoordinate _ | view0 == DiskView -> diskViewEntries
+  ComplexCoordinate _ | isJust (hyperbolicDisplay view0) -> hyperbolicViewEntries
   ComplexCoordinate _ -> sphereViewEntries
   RealCoordinates _ _ -> []
 
@@ -883,18 +883,21 @@ viewerGeometryEntries coord =
 -- | How a viewer shows its points, for its tools' @pixel_size_at@ (see
 -- 'Language.Code.Parser.builtinFunctions'): the kind of view, the width
 -- of a pixel on the screen plane, and the disk's view.
-toolViewValues :: Dynamic ViewKind -> Dynamic Double -> Dynamic Isometry -> [(String, LiveValue)]
-toolViewValues view pixelSize iso =
+toolViewValues :: ViewKind -> Dynamic ViewKind -> Dynamic Double -> Dynamic Isometry -> [(String, LiveValue)]
+toolViewValues view0 view pixelSize iso =
   (viewKindName, LiveValue IntegerType (kindCode <$> view))
   : (viewPixelSizeName, LiveValue RealType pixelSize)
-  : [ (n, LiveValue RealType ((!! k) . isometryEntries <$> iso)) | (k, n) <- zip [0 ..] viewIsometryNames ]
+  : [ (n, LiveValue RealType ((!! k) . ac <$> mobius)) | (k, n) <- zip [0 ..] viewMobiusNames ]
   where
-    kindCode = \case { PlaneView -> 0; SphereView -> 1; DiskView -> 2 }
+    kindCode = \case { PlaneView -> 0; SphereView -> 1; DiskView -> 2; HalfPlaneView -> 2 }
+    mobius = viewMobius (hyperbolicModel view0) <$> (fromMaybe DiskDisplay . hyperbolicDisplay <$> view) <*> iso
+    -- (a and c of the screen-to-model map)
+    ac (Mobius (ar :+ ai) _ (cr :+ ci) _) = [ar, ai, cr, ci]
 
 -- | The names and types of 'toolViewValues'.
 toolViewEntries :: [(String, SomeType)]
 toolViewEntries =
-  [ (n, SomeType ty) | (n, LiveValue ty _) <- toolViewValues (pure PlaneView) (pure 0) (pure identityIsometry) ]
+  [ (n, SomeType ty) | (n, LiveValue ty _) <- toolViewValues PlaneView (pure PlaneView) (pure 0) (pure identityIsometry) ]
 
 -- | A viewer's geometry, and how it shows its points (see
 -- 'toolViewValues'), as read-only arguments for its tools.
@@ -920,9 +923,12 @@ viewerViewContext coord view0 sizeV centerV viewV rotationV isometryV = foldM ad
     entries :: [(String, LiveValue)]
     entries = viewerGeometry coord (dyn sizeV) (dyn centerV) ++ case coord of
       RealCoordinates _ _ -> []
-      ComplexCoordinate _ | view0 == DiskView ->
-        (diskViewName, LiveValue BooleanType ((== DiskView) <$> dyn viewV))
-        : [ (n, LiveValue RealType ((!! k) . isometryEntries <$> dyn isometryV)) | (k, n) <- zip [0 ..] isometryNames ]
+      ComplexCoordinate _ | isJust (hyperbolicDisplay view0) ->
+        let display = fromMaybe DiskDisplay . hyperbolicDisplay <$> dyn viewV
+            mobius = viewMobius (hyperbolicModel view0) <$> display <*> dyn isometryV
+        in (hyperbolicViewName, LiveValue BooleanType (isJust . hyperbolicDisplay <$> dyn viewV))
+           : (halfPlaneDisplayName, LiveValue BooleanType ((== HalfPlaneDisplay) <$> display))
+           : [ (n, LiveValue RealType ((!! k) . mobiusEntries <$> mobius)) | (k, n) <- zip [0 ..] mobiusNames ]
       ComplexCoordinate _ ->
         (sphereViewName, LiveValue BooleanType ((== SphereView) <$> dyn viewV))
         : (sphereShadingName, LiveValue RealType (dyn sphereShading))
@@ -1143,7 +1149,8 @@ parseConstantE ty s = left (errorLocation &&& unlines . pp) (parseConstant ty s)
 -- number @x + y i@.
 parseViewGeometry :: ViewerFields -> Either (SourceRange, String) ((Double, Double), Double, Double)
 parseViewGeometry ViewerFields{..} = do
-  let centerSrc = fromMaybe "0" vfCenter
+  -- (a half-plane viewer's default center is i)
+  let centerSrc = fromMaybe (if vfView == HalfPlaneView then "i" else "0") vfCenter
       complexCenter = (\(x :+ y) -> (x, y)) <$> parseConstantE ComplexType centerSrc
   center <- case vfCoord of
     ComplexCoordinate _ -> complexCenter
@@ -1152,11 +1159,14 @@ parseViewGeometry ViewerFields{..} = do
       Left _ -> left (\(sr, _) -> (sr, "A real viewer's `center` must be a point, like `(1, -1/2)`, \
                                        \or a complex number, not `" ++ centerSrc ++ "`."))
                      complexCenter
-  -- (a disk viewer's center is the point of the disk it starts showing in
-  -- the middle)
-  when (vfView == DiskView && not (let (x, y) = center in x * x + y * y < 1)) $
+  -- (a hyperbolic viewer's center is the point of its model it starts
+  -- showing in the middle)
+  when (vfView == DiskView && not (inModel DiskModel center)) $
     Left (NoSourceRange, "A disk viewer's `center` must be a point of the disk (|center| < 1), not `"
                          ++ centerSrc ++ "`.")
+  when (vfView == HalfPlaneView && not (inModel HalfPlaneModel center)) $
+    Left (NoSourceRange, "A half-plane viewer's `center` must be a point of the upper half-plane \
+                         \(with a positive imaginary part), not `" ++ centerSrc ++ "`.")
   pixelSize <- parseConstantE RealType (fromMaybe "1/128" vfPixelSize)
   unless (pixelSize > 0) $
     Left (NoSourceRange, "A viewer's `pixelSize` must be positive.")
@@ -1408,24 +1418,30 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
     -- The view: a complex viewer can show the plane or the sphere, each
     -- starting from the script's `center=` (and its `pixelSize=`, for
     -- the one `view=` picks).
-    -- A disk viewer starts with its view showing the script's `center=`
-    -- (a point of the disk) in the middle of the disk, and the disk in the
-    -- middle of the window.
+    -- A viewer of the hyperbolic plane starts with its view showing the
+    -- script's `center=` (a point of its model, the disk or the half-plane)
+    -- in the middle of its display (the disk's center, or i), and that in
+    -- the middle of the window.
     let originalRotation = rotationFacing centerVal
-        originalIsometry = isometryFacing centerVal
+        originalIsometry = isometryFacing (modelToDisk (hyperbolicModel vfView) centerVal)
         (planePixel, spherePixel) = case vfView of
           PlaneView -> (pixelVal, defaultSpherePixelSize)
           SphereView -> (1 / 128, maybe defaultSpherePixelSize (const pixelVal) vfPixelSize)
           DiskView -> (1 / 128, defaultSpherePixelSize)
-        diskPixel = maybe defaultDiskPixelSize (const pixelVal) vfPixelSize
+          HalfPlaneView -> (1 / 128, defaultSpherePixelSize)
+        -- (the script's `pixelSize=` is for the display its `view=` names)
+        hyperbolicPixels =
+          ( if vfView == DiskView then maybe defaultDiskPixelSize (const pixelVal) vfPixelSize else defaultDiskPixelSize
+          , if vfView == HalfPlaneView then maybe defaultHalfPlanePixelSize (const pixelVal) vfPixelSize else defaultHalfPlanePixelSize )
     cvViewV      <- newVariable vfView
     cvRotationV  <- newVariable originalRotation
     cvIsometryV  <- newVariable originalIsometry
-    -- (on the sphere, the globe is centered on the screen; so is the disk)
-    cvCenterV    <- newVariable (case vfView of
-                                   PlaneView -> centerVal
-                                   SphereView -> (0, 0)
-                                   DiskView -> (0, 0))
+    -- (on the sphere, the globe is centered on the screen; so is the disk,
+    -- and the half-plane's i)
+    cvCenterV    <- newVariable (case hyperbolicDisplay vfView of
+                                   Just display -> displayMiddle display
+                                   Nothing | vfView == SphereView -> (0, 0)
+                                           | otherwise -> centerVal)
     cvSizeV      <- newVariable (Dimensions (600, 600))
     cvPositionV  <- newVariable (Dimensions (100 + 30 * n, 100 + 30 * n))
     cvCanResizeV <- newVariable True
@@ -1564,7 +1580,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvOriginalRotation = originalRotation
               , cvOriginalIsometry = originalIsometry
               , cvSpherePixelSize = spherePixel
-              , cvDiskPixelSize = diskPixel
+              , cvHyperbolicPixelSizes = hyperbolicPixels
               , cvPixel = cvPixelM
               , cvEscapeRadius = cvEscapeP
               , cvVanishRadius = cvVanishP
@@ -1688,13 +1704,15 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
         (vOriginalCenter, vOriginalPixelSize) = case cvView of
           PlaneView -> vOriginalPlaneView
           SphereView -> ((0, 0), cvSpherePixelSize)
-          DiskView -> ((0, 0), cvDiskPixelSize)
+          DiskView -> ((0, 0), fst cvHyperbolicPixelSizes)
+          HalfPlaneView -> (displayMiddle HalfPlaneDisplay, snd cvHyperbolicPixelSizes)
         vOriginalAspect = cvAspect
         vCoordinate = cvCoord
         vView = cvViewV
         vRotation = cvRotationV
         vIsometry = cvIsometryV
         vOriginalIsometry = cvOriginalIsometry
+        vOriginalHyperbolicPixelSizes = cvHyperbolicPixelSizes
     -- (the same variable the viewer's code and tools read the
     -- center from, starting over from the original view on a rebuild)
     let vCenter = cvCenterV
@@ -1710,7 +1728,7 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
         -- (a tool is also given its viewer's geometry)
         vBuildToolHandler layer args script =
           case viewerGeometryArgs cvCoord (dyn vSize) (dyn vCenter)
-                                  (toolViewValues (dyn vView) (dyn vPixelSize) (dyn vIsometry)) of
+                                  (toolViewValues vOriginalView (dyn vView) (dyn vPixelSize) (dyn vIsometry)) of
             Left err -> pure (Left err)
             Right geometry -> case SomeContext' (Right args) <> SomeContext' (Right geometry) of
               SomeContext' (Left err) -> pure (Left err)

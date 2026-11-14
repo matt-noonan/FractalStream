@@ -50,11 +50,47 @@ spec = do
       Left (_, err) -> err `shouldSatisfy` isInfixOf "Only a complex viewer"
       Right _ -> expectationFailure "expected an error"
 
+  it "reads `view=halfplane`, and checks that `center` is above the real axis" $ do
+    case parseScript "@viewer \"V\" var=z view=halfplane\npass\n" of
+      Right [ViewerStanza{..}] -> vsView `shouldBe` HalfPlaneView
+      _ -> expectationFailure "expected one viewer"
+    checkScript "@viewer \"V\" var=z view=halfplane\ncolor <- if im(z) > 1 then red else blue\n" `shouldBe` Right ()
+
   it "builds a disk viewer, whose pixel size is the local model width" $ do
     checkScript "@viewer \"V\" var=z view=disk center=\"0.5 + 0.25i\"\ncolor <- if |z| < 0.5 and pixel_size > 0 then red else blue\n"
       `shouldBe` Right ()
     checkScript "@config \"P\"\nC : C := 0\n\n@viewer \"V\" var=C view=disk\nz := 0\niterate z -> z^2 + C until z escapes\n"
       `shouldBe` Right ()
+
+ describe "the half-plane, and the disk, as models and displays" $ do
+
+  let models = [DiskModel, HalfPlaneModel]
+      displays = [DiskDisplay, HalfPlaneDisplay]
+      shown DiskDisplay = [(0, 0), (0.5, 0.5), (-0.9, 0.1)]
+      shown HalfPlaneDisplay = [(0, 1), (0.5, 0.2), (-3, 7)]
+
+  it "takes the half-plane to the disk by the Cayley map: i to 0" $ do
+    applyMobius cayley (0 :+ 1) `shouldSatisfy` closeC 0
+    sequence_ [ magnitude (applyMobius cayley z) `shouldSatisfy` (< 1) | z <- [0 :+ 0.01, 5 :+ 2, (-3) :+ 100] ]
+
+  it "takes screen points to each model and back, on each display" $
+    sequence_ [ (screenToModelH m d v s >>= modelToScreenH m d v) `shouldSatisfy` maybe False (close2 s)
+              | m <- models, d <- displays, v <- views, s <- shown d ]
+
+  it "shows the half-plane model on the half-plane display as it is, facing i" $
+    sequence_ [ screenToModelH HalfPlaneModel HalfPlaneDisplay identityIsometry s `shouldSatisfy` maybe False (close2 s)
+              | s <- shown HalfPlaneDisplay ]
+
+  it "shows the view's center in the middle of each display" $
+    sequence_ [ screenToModelH m d (isometryFacing (modelToDisk m c)) (displayMiddle d) `shouldSatisfy` maybe False (close2 c)
+              | m <- models, d <- displays, let c = if m == DiskModel then (0.3, -0.2) else (1, 2) ]
+
+  it "keeps the point under the pointer there while dragging, on the half-plane" $
+    sequence_ [ case screenToModelH m HalfPlaneDisplay v from of
+                  Nothing -> expectationFailure "off the half-plane"
+                  Just p -> modelToScreenH m HalfPlaneDisplay (dragOnDisplay HalfPlaneDisplay v from to) p
+                              `shouldSatisfy` maybe False (\s -> abs (fst s - fst to) < 1e-6 && abs (snd s - snd to) < 1e-6)
+              | m <- models, v <- views, (from, to) <- [((0, 1), (0.5, 2)), ((-1, 0.5), (2, 3))] ]
 
  describe "the disk's geometry" $ do
 
