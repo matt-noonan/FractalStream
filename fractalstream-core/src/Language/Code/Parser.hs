@@ -9,7 +9,7 @@ module Language.Code.Parser
   , builtinFunctionNames
   , viewKindName
   , viewPixelSizeName
-  , viewIsometryNames
+  , viewMobiusNames
   -- * Re-exports
   , TCError
   , ParseError
@@ -61,22 +61,26 @@ builtinFunctionNames = ["pixel_size_at"]
 
 -- | The names under which a tool is told how its viewer shows its points
 -- (see "Actor.Ensemble"): the kind of view (0 the plane, 1 the sphere, 2
--- the disk), the width of a pixel on the screen plane, and in the disk,
--- the view's isometry (the real and imaginary parts of @a@ and @b@; see
--- "Actor.Viewer.Disk").
+-- the hyperbolic plane), the width of a pixel on the screen plane, and in
+-- the hyperbolic plane, part of the map from the screen to the model (see
+-- 'viewMobiusNames').
 viewKindName, viewPixelSizeName :: String
 viewKindName = "[internal] view kind"
 viewPixelSizeName = "[internal] view pixel size"
 
-viewIsometryNames :: [String]
-viewIsometryNames = [ "[internal] view " ++ n | n <- ["a.re", "a.im", "b.re", "b.im"] ]
+-- (the real and imaginary parts of @a@ and @c@ of the Möbius map, of
+-- determinant 1, from the screen to the model: see
+-- 'Actor.Viewer.Disk.viewMobius')
+viewMobiusNames :: [String]
+viewMobiusNames = [ "[internal] view " ++ n | n <- ["a.re", "a.im", "c.re", "c.im"] ]
 
 -- | The built-in functions' definitions.
 --
 -- @pixel_size_at(p)@ is the width, in the model, of a screen pixel at the
 -- model point @p@: on the plane, the pixel size; in the disk, the pixel
 -- size stretched by the view at @p@ (|V'(s)| at the screen point s showing
--- p, which is |a - b̄ p|²); on the sphere, by the stereographic projection
+-- p: for the screen-to-model map (a s + b)/(c s + d), of determinant 1,
+-- that's |a - c p|²); on the sphere, by the stereographic projection
 -- at @p@, (1 + |p|²) / 2 (a pixel facing the viewer: near the globe's rim,
 -- pixels are longer one way). A tool sizes a marker at @p@ with it, so the
 -- marker looks the same anywhere in the view.
@@ -91,13 +95,13 @@ builtinFunctions = [ Stmt NoSourceRange (SFun "pixel_size_at" ["p"] pixelSizeAt)
     bin op x y = e (EBin op x y)
     absSq x = bin OpMul (e (EUn OpAbs x)) (e (EUn OpAbs x))
     p = var "p"
-    (ar, ai, br, bi) = case map var viewIsometryNames of
+    (ar, ai, cr, ci) = case map var viewMobiusNames of
       [w, x, y, z] -> (w, x, y, z)
-      _ -> error "internal error: an isometry has four parts"
+      _ -> error "internal error: a, c: four parts"
     av = bin OpAdd ar (bin OpMul ai i)
-    bbar = bin OpSub br (bin OpMul bi i)
+    cv = bin OpAdd cr (bin OpMul ci i)
     kind = var viewKindName
-    disk = absSq (bin OpSub av (bin OpMul bbar p))
+    disk = absSq (bin OpSub av (bin OpMul cv p))
     sphere = bin OpDiv (bin OpAdd (real 1) (absSq p)) (real 2)
     pixelSizeAt = bin OpMul (var viewPixelSizeName)
       (e (EITE (bin OpExactEq kind (int 2)) disk

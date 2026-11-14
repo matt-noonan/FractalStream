@@ -857,14 +857,15 @@ validateViewerHeader sr vhTitle attrs = do
     Just "plane" -> Right PlaneView
     Just "sphere" -> Right SphereView
     Just "disk" -> Right DiskView
-    Just v -> Left (sr, "A viewer's `view` is `plane`, `sphere`, or `disk`, not `" ++ v ++ "`.")
+    Just "halfplane" -> Right HalfPlaneView
+    Just v -> Left (sr, "A viewer's `view` is `plane`, `sphere`, `disk`, or `halfplane`, not `" ++ v ++ "`.")
   case (vhCoord, vhView) of
     (RealCoordinates _ _, SphereView) ->
       Left (sr, "Only a complex viewer (one with `var=`) can be shown on the sphere \
                 \(`view=sphere`): a real viewer's points are pairs of real numbers.")
-    (RealCoordinates _ _, DiskView) ->
-      Left (sr, "Only a complex viewer (one with `var=`) can show the hyperbolic disk \
-                \(`view=disk`): a real viewer's points are pairs of real numbers.")
+    (RealCoordinates _ _, v) | v `elem` [DiskView, HalfPlaneView] ->
+      Left (sr, "Only a complex viewer (one with `var=`) can show the hyperbolic plane \
+                \(`view=disk` or `view=halfplane`): a real viewer's points are pairs of real numbers.")
     _ -> Right ()
   pure ViewerHeader
     { vhTitle, vhCoord, vhAspect, vhView

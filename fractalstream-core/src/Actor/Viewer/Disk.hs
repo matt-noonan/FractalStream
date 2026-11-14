@@ -42,15 +42,38 @@ module Actor.Viewer.Disk
     -- * Points
   , screenToDisk
   , diskToScreen
+    -- * Models and displays: the disk and the half-plane
+  , HyperbolicModel(..)
+  , HyperbolicDisplay(..)
+  , Mobius(..)
+  , applyMobius
+  , composeMobius
+  , inverseMobius
+  , isometryMobius
+  , cayley
+  , viewMobius
+  , mobiusEntries
+  , onDisplay
+  , inModel
+  , modelToDisk
+  , displayToDiskPoint
+  , displayMiddle
+  , displayScreen
+  , axisAtBottom
+  , viewShowing
+  , screenToModelH
+  , modelToScreenH
+  , dragOnDisplay
     -- * Defaults
   , defaultDiskPixelSize
+  , defaultHalfPlanePixelSize
   , diskBackground
-    -- * A viewer's code, in the disk
-  , diskViewName
-  , isometryNames
-  , isometryEntries
-  , diskViewEntries
-  , inTheDisk
+    -- * A viewer's code, in the hyperbolic plane
+  , hyperbolicViewName
+  , halfPlaneDisplayName
+  , mobiusNames
+  , hyperbolicViewEntries
+  , inTheHyperbolicPlane
   ) where
 
 import Data.Color (Color, rgbToColor)
@@ -157,11 +180,160 @@ diskToScreen v (x, y)
   | not (x * x + y * y < 1) = Nothing
   | otherwise = let u :+ w = applyIsometry (inverseIsometry v) (x :+ y) in Just (u, w)
 
+------------------------------------------------------------------------
+-- Models and displays
+
+-- | Where a script's points are: the unit disk, or the upper half-plane
+-- (set by its @view=@: @disk@ or @halfplane@).
+data HyperbolicModel = DiskModel | HalfPlaneModel
+  deriving (Eq, Show)
+
+-- | How the hyperbolic plane is drawn on the screen: as the disk (screen
+-- points in the unit disk) or as the half-plane (screen points with
+-- positive imaginary part). A viewer can switch between them; its view
+-- (an 'Isometry' of the disk) is the same either way.
+data HyperbolicDisplay = DiskDisplay | HalfPlaneDisplay
+  deriving (Eq, Show)
+
+-- | A Möbius map @s ↦ (a s + b) / (c s + d)@, kept with @ad - bc = 1@.
+data Mobius = Mobius !(Complex Double) !(Complex Double) !(Complex Double) !(Complex Double)
+  deriving (Eq, Show)
+
+applyMobius :: Mobius -> Complex Double -> Complex Double
+applyMobius (Mobius a b c d) s = (a * s + b) / (c * s + d)
+
+normalizeMobius :: Mobius -> Mobius
+normalizeMobius (Mobius a b c d) = let k = sqrt (a * d - b * c) in Mobius (a / k) (b / k) (c / k) (d / k)
+
+-- | @composeMobius f g@ is @f . g@.
+composeMobius :: Mobius -> Mobius -> Mobius
+composeMobius (Mobius a b c d) (Mobius e f g h) =
+  normalizeMobius (Mobius (a * e + b * g) (a * f + b * h) (c * e + d * g) (c * f + d * h))
+
+inverseMobius :: Mobius -> Mobius
+inverseMobius (Mobius a b c d) = Mobius d (negate b) (negate c) a
+
+isometryMobius :: Isometry -> Mobius
+isometryMobius (Isometry a b) = Mobius a b (conjugate b) (conjugate a)
+
+identityMobius :: Mobius
+identityMobius = Mobius 1 0 0 1
+
+-- | The Cayley map, taking the upper half-plane to the disk: @s ↦ (s - i)
+-- / (s + i)@ (so @i@ goes to 0, and the real axis to the circle).
+cayley :: Mobius
+cayley = normalizeMobius (Mobius 1 (0 :+ (-1)) 1 (0 :+ 1))
+
+-- | From a display's screen points to the disk.
+displayToDisk :: HyperbolicDisplay -> Mobius
+displayToDisk = \case
+  DiskDisplay -> identityMobius
+  HalfPlaneDisplay -> cayley
+
+-- | From the disk to a model's points.
+diskToModel :: HyperbolicModel -> Mobius
+diskToModel = \case
+  DiskModel -> identityMobius
+  HalfPlaneModel -> inverseMobius cayley
+
+-- | What a viewer's code computes its point from: the screen point (of a
+-- display), moved by the view (in the disk), as a point of the model.
+viewMobius :: HyperbolicModel -> HyperbolicDisplay -> Isometry -> Mobius
+viewMobius model display v =
+  composeMobius (diskToModel model) (composeMobius (isometryMobius v) (displayToDisk display))
+
+-- | A Möbius map's entries, in the order of 'mobiusNames'.
+mobiusEntries :: Mobius -> [Double]
+mobiusEntries (Mobius (ar :+ ai) (br :+ bi) (cr :+ ci) (dr :+ di)) = [ar, ai, br, bi, cr, ci, dr, di]
+
+-- | Whether a screen point shows the hyperbolic plane, on a display.
+onDisplay :: HyperbolicDisplay -> (Double, Double) -> Bool
+onDisplay display (x, y) = case display of
+  DiskDisplay -> x * x + y * y < 1
+  HalfPlaneDisplay -> y > 0
+
+-- | Whether a point is in a model.
+inModel :: HyperbolicModel -> (Double, Double) -> Bool
+inModel model (x, y) = case model of
+  DiskModel -> x * x + y * y < 1
+  HalfPlaneModel -> y > 0
+
+-- | A model's point, in the disk (where views act).
+modelToDisk :: HyperbolicModel -> (Double, Double) -> (Double, Double)
+modelToDisk model (x, y) = let u :+ w = applyMobius (inverseMobius (diskToModel model)) (x :+ y) in (u, w)
+
+-- | A display's screen point, in the disk.
+displayToDiskPoint :: HyperbolicDisplay -> (Double, Double) -> (Double, Double)
+displayToDiskPoint display (x, y) = let u :+ w = applyMobius (displayToDisk display) (x :+ y) in (u, w)
+
+-- | The screen point showing the disk's center (where a view's center
+-- is): the disk's center, or @i@ on the half-plane.
+displayMiddle :: HyperbolicDisplay -> (Double, Double)
+displayMiddle = \case
+  DiskDisplay -> (0, 0)
+  HalfPlaneDisplay -> (0, 1)
+
+-- | A display's screen in a window @h@ pixels high, at a zoom (a pixel
+-- size): the screen point in the window's middle, and the pixel size. The
+-- disk is centered in the window. The half-plane has its real axis along
+-- the window's bottom edge (no space is wasted below it), and the view's
+-- center ('displayMiddle', @i@) 1/zoom pixels above that, or in the
+-- window's middle if that's lower.
+displayScreen :: HyperbolicDisplay -> Int -> Double -> ((Double, Double), Double)
+displayScreen DiskDisplay _ q = ((0, 0), q)
+displayScreen HalfPlaneDisplay h q =
+  let px = max q (2 / fromIntegral (max 1 h))
+  in ((0, fromIntegral h * px / 2), px)
+
+-- | The screen point in the middle of a half-plane display's window @h@
+-- pixels high, at a pixel size, keeping its real axis along the window's
+-- bottom edge (after the window's resized, or zoomed, say).
+axisAtBottom :: Int -> Double -> (Double, Double) -> (Double, Double)
+axisAtBottom h px (cx, _) = (cx, fromIntegral h * px / 2)
+
+-- | The view showing a model point at a screen point (the window's
+-- middle, say), by a hyperbolic translation from the view facing it.
+viewShowing :: HyperbolicModel -> HyperbolicDisplay -> (Double, Double) -> (Double, Double) -> Isometry
+viewShowing model display c s =
+  dragOnDisplay display (isometryFacing (modelToDisk model c)) (displayMiddle display) s
+
+-- | The model point under a screen point, if it shows the hyperbolic plane.
+screenToModelH :: HyperbolicModel -> HyperbolicDisplay -> Isometry -> (Double, Double) -> Maybe (Double, Double)
+screenToModelH model display v s@(x, y)
+  | not (onDisplay display s) = Nothing
+  | otherwise = let u :+ w = applyMobius (viewMobius model display v) (x :+ y) in Just (u, w)
+
+-- | Where a model point is on the screen, if it's shown.
+modelToScreenH :: HyperbolicModel -> HyperbolicDisplay -> Isometry -> (Double, Double) -> Maybe (Double, Double)
+modelToScreenH model display v p@(x, y)
+  | not (inModel model p) = Nothing
+  | otherwise =
+      let u :+ w = applyMobius (inverseMobius (viewMobius model display v)) (x :+ y)
+      in if onDisplay display (u, w) then Just (u, w) else Nothing
+
+-- | The view after dragging from one screen point to another, on a
+-- display: the model point under the first is under the second (see
+-- 'dragIsometry', in the disk).
+dragOnDisplay :: HyperbolicDisplay -> Isometry -> (Double, Double) -> (Double, Double) -> Isometry
+dragOnDisplay display v from to =
+  dragIsometry v (displayToDiskPoint display (pull from)) (displayToDiskPoint display (pull to))
+  where
+    -- (a point below the half-plane counts as just above the real axis)
+    pull (x, y) = case display of
+      HalfPlaneDisplay | y <= 0 -> (x, 1e-6)
+      _ -> (x, y)
+
 -- | The size of a pixel (in units of the disk's radius) that a disk viewer
 -- starts with, unless its script says: the disk fills most of a
 -- 600-pixel window.
 defaultDiskPixelSize :: Double
 defaultDiskPixelSize = 1 / 280
+
+-- | The size of a pixel a half-plane display starts with, unless its
+-- script says: the window, centered on @i@, shows the real axis a quarter
+-- of the way up a 600-pixel window.
+defaultHalfPlanePixelSize :: Double
+defaultHalfPlanePixelSize = 1 / 150
 
 -- | The color off the disk.
 diskBackground :: Color
@@ -170,46 +342,52 @@ diskBackground = rgbToColor (48, 48, 48)
 ------------------------------------------------------------------------
 -- A viewer's code, in the disk
 
--- | The name under which a disk viewer's code is told that it shows the
--- disk (a truth value no script can name; always true, for now).
-diskViewName :: String
-diskViewName = "[internal] disk view"
+-- | The name under which a hyperbolic viewer's code is told that it
+-- shows the hyperbolic plane (a truth value no script can name; always
+-- true, for now).
+hyperbolicViewName :: String
+hyperbolicViewName = "[internal] disk view"
 
--- | The names under which a disk viewer's code is given its view: the
--- real and imaginary parts of @a@ and @b@.
-isometryNames :: [String]
-isometryNames = [ "[internal] disk " ++ n | n <- ["a.re", "a.im", "b.re", "b.im"] ]
+-- | The name under which it's told whether its display is the half-plane
+-- (else the disk).
+halfPlaneDisplayName :: String
+halfPlaneDisplayName = "[internal] half-plane display"
 
--- | A view's entries, in the order of 'isometryNames'.
-isometryEntries :: Isometry -> [Double]
-isometryEntries (Isometry (ar :+ ai) (br :+ bi)) = [ar, ai, br, bi]
+-- | The names under which it's given its 'viewMobius': the real and
+-- imaginary parts of @a@, @b@, @c@, @d@.
+mobiusNames :: [String]
+mobiusNames = [ "[internal] hyperbolic " ++ n
+              | n <- ["a.re", "a.im", "b.re", "b.im", "c.re", "c.im", "d.re", "d.im"] ]
 
--- | What a disk viewer's code is given, besides its configuration.
-diskViewEntries :: [(String, SomeType)]
-diskViewEntries = (diskViewName, SomeType BooleanType)
-                : [ (n, SomeType RealType) | n <- isometryNames ]
+-- | What a hyperbolic viewer's code is given, besides its configuration.
+hyperbolicViewEntries :: [(String, SomeType)]
+hyperbolicViewEntries = (hyperbolicViewName, SomeType BooleanType)
+                      : (halfPlaneDisplayName, SomeType BooleanType)
+                      : [ (n, SomeType RealType) | n <- mobiusNames ]
 
--- | A disk viewer's code (with coordinate @z@, and pixel size @px@),
+-- | A hyperbolic viewer's code (with coordinate @z@, and pixel size @px@),
 -- wrapped so that @z@ is the model point under the pixel, and a pixel off
--- the disk gets the background color:
+-- the display (the disk, or the half-plane) gets the background color:
 --
--- > if x² + y² >= 1:
+-- > if (half-plane and y <= 0) or (not half-plane and x² + y² >= 1):
 -- >   color <- background
 -- > else:
 -- >   s := x + y i
--- >   num := a s + b          -- the homogeneous [a s + b : b̄ s + ā]
--- >   den := conj(b) s + conj(a)
+-- >   num := a s + b          -- the homogeneous [a s + b : c s + d]
+-- >   den := c s + d
 -- >   z <- num / den
 -- >   px <- px / |den|²
 -- >   body
 --
--- The pixel size is, as everywhere, the model width of a pixel: here it
--- depends on the pixel, since the view stretches the disk (by |V'(s)| =
--- 1 / |den|²). A pixel's hyperbolic size is then @2 px / (1 - |z|²)@.
-inTheDisk :: String -> String -> Stmt -> Stmt
-inTheDisk z px body =
-  stmt (SIf offDisk (stmt (SSet "color" background))
-                    (stmt (SBlock (lift ++ [body]))))
+-- with @(a, b, c, d)@ the 'viewMobius' (determinant 1). The pixel size is,
+-- as everywhere, the model width of a pixel: here it depends on the
+-- pixel, since the view stretches the plane (by |dz/ds| = 1 / |den|²). In
+-- the disk model, a pixel's hyperbolic size is @2 px / (1 - |z|²)@; in the
+-- half-plane model, @px / im(z)@.
+inTheHyperbolicPlane :: String -> String -> Stmt -> Stmt
+inTheHyperbolicPlane z px body =
+  stmt (SIf offDisplay (stmt (SSet "color" background))
+                       (stmt (SBlock (lift ++ [body]))))
   where
     stmt = Stmt NoSourceRange
     e = Syn NoSourceRange
@@ -220,19 +398,20 @@ inTheDisk z px body =
     sy = var "[internal] y"
     i = e (ELit "i" (SomeHaskellType ComplexType (0 :+ 1)))
     cplx re im = bin OpAdd re (bin OpMul im i)
+    halfPlane = var halfPlaneDisplayName
     d2 = bin OpAdd (bin OpMul sx sx) (bin OpMul sy sy)
-    offDisk = bin OpGe d2 (real 1)
+    offDisplay = bin OpOr (bin OpAnd halfPlane (bin OpLe sy (real 0)))
+                          (bin OpAnd (e (EUn OpNot halfPlane)) (bin OpGe d2 (real 1)))
     background = e (ELit "the background" (SomeHaskellType ColorType diskBackground))
-    (ar, ai, br, bi) = case map var isometryNames of
-      [p1, p2, p3, p4] -> (p1, p2, p3, p4)
-      _ -> error "internal error: an isometry has four entries"
+    (ma, mb, mc, md) = case map var mobiusNames of
+      [ar, ai, br, bi, cr, ci, dr, di] -> (cplx ar ai, cplx br bi, cplx cr ci, cplx dr di)
+      _ -> error "internal error: a Möbius map has eight entries"
     s = "[internal] disk.s"
     num = "[internal] disk.num"
     den = "[internal] disk.den"
     lift =
       [ stmt (SDecl s (Just ComplexT) (cplx sx sy))
-      , stmt (SDecl num (Just ComplexT) (bin OpAdd (bin OpMul (cplx ar ai) (var s)) (cplx br bi)))
-      , stmt (SDecl den (Just ComplexT) (bin OpAdd (bin OpMul (cplx br (e (EUn OpNeg bi))) (var s))
-                                                   (cplx ar (e (EUn OpNeg ai)))))
+      , stmt (SDecl num (Just ComplexT) (bin OpAdd (bin OpMul ma (var s)) mb))
+      , stmt (SDecl den (Just ComplexT) (bin OpAdd (bin OpMul mc (var s)) md))
       , stmt (SSet z (bin OpDiv (var num) (var den)))
       , stmt (SSet px (bin OpDiv (var px) (bin OpMul (e (EUn OpAbs (var den))) (e (EUn OpAbs (var den)))))) ]

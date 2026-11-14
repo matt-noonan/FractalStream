@@ -29,8 +29,9 @@
 //             and an error, as a notice to dismiss
 //   disk      a disk viewer (view=disk, dev-tools/web/disk.fs): Navigate's
 //             drag moves the view by a hyperbolic translation (the point
-//             under the pointer stays under it), and its menu has no
-//             "Show on the sphere"
+//             under the pointer stays under it); its menu has no "Show on
+//             the sphere", and shows it as the half-plane (the real axis
+//             along the bottom edge) and back, keeping the view
 //   pointer   "Show pointer position", from a viewer's menu: the point
 //             under the pointer, on the plane and on the sphere
 //   progressive  a slow viewer (dev-tools/web/slow.fs) rendered in pieces:
@@ -1111,7 +1112,39 @@ async function disk() {
   await page.locator(".window").nth(0).locator(".window-menu-button").click();
   c.check(await page.locator(".window-menu button", { hasText: "Show on the sphere" }).count() === 0,
           "its menu doesn't offer the sphere");
-  await page.keyboard.press("Escape");
+  // the half-plane, from the menu: drawn again, its real axis along the
+  // window's bottom edge (the plane, not the background, right down to the
+  // bottom row)
+  let framesBefore = await app.frames(0);
+  await page.locator(".window-menu button", { hasText: "Show as the half-plane" }).click();
+  await page.waitForFunction((n) => Number(document.querySelector(".viewer").dataset.frames) > n, framesBefore, { timeout: 60000 });
+  const isGrey = ([r, g, b]) => Math.abs(r - 128) < 20 && Math.abs(g - 128) < 20 && Math.abs(b - 128) < 20;
+  const bottom = await pixelAt(0.5, 0.998);
+  c.check(isGrey(bottom), `the half-plane goes down to the bottom edge (${bottom})`);
+  // zooming out (about the axis below the pointer) keeps it there (once
+  // the Jump to view dialog `where` opened is closed)
+  await page.locator("button", { hasText: "Cancel" }).click();
+  await page.mouse.move(cx + 40, cy - 40);
+  await page.mouse.wheel(0, 400);
+  await page.waitForTimeout(3000);
+  const bottom2 = await pixelAt(0.5, 0.998);
+  c.check(isGrey(bottom2), `zoomed out, it still goes down to the bottom edge (${bottom2})`);
+  await app.send({ type: "where", viewer: 0 });
+  await page.waitForTimeout(500);
+  const zoomed = (await app.messages("where")).pop();
+  c.check(zoomed && zoomed.pixelSize > 1 / 150 * 1.2, `and it zoomed out (a pixel's ${zoomed?.pixelSize})`);
+  await page.locator(".window").nth(0).locator(".window-menu-button").click();
+  const toggle = page.locator(".window-menu button", { hasText: "Show as the half-plane" });
+  c.check(await toggle.getAttribute("aria-checked") === "true", "its menu shows it's the half-plane");
+  // and back to the disk: the same view (the same point in the middle)
+  framesBefore = await app.frames(0);
+  await toggle.click();
+  await page.waitForFunction((n) => Number(document.querySelector(".viewer").dataset.frames) > n, framesBefore, { timeout: 60000 });
+  await app.send({ type: "where", viewer: 0 });
+  await page.waitForTimeout(500);
+  const there = (await app.messages("where")).pop();
+  c.check(there && Math.abs(there.x + 0.3) < 1e-6 && Math.abs(there.y) < 1e-6,
+          `back on the disk, the same point's in the middle (${there?.x}, ${there?.y})`);
 }
 
 async function progressive() {

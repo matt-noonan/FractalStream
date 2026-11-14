@@ -172,12 +172,12 @@ contents), which the worker forwards to the page.
 Messages:
 
 > { "type": "library", "sections": [ { "name", "startingPoints", "entries": [ { "title", "description", "preview", "id" } ] } ] }
-> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "disk", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "disk", "halfPlane", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
 > { "type": "share", "library": <a library project's id> or null, "state": <its state> or null, "file": <the whole project file> or null, "fileName" }
 > { "type": "details", "title", "description", "preview": <a PNG, base64-encoded> or null, "fileName", "fromViewer": <whether it's from "Use this as preview"> }
 > { "type": "unsaved", "on" }   (whether the open project has changes to save, as the desktop app counts them, whenever that changes)
 > { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
-> { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere", "disk" }   (the engine moved the view: a pixel's size in the canvas's pixels)
+> { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere", "disk", "halfPlane" }   (the engine moved the view: a pixel's size in the canvas's pixels)
 > { "type": "where", "viewer", "x", "y", "pixelSize" }
 > { "type": "aspect", "viewer", "error": <why it isn't one> or null }
 > { "type": "movieTemplate", "viewer", "script" }
@@ -251,10 +251,11 @@ import Actor.Layout
 import Actor.UI (UI(..))
 import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progressive(..), ImagePiece(..), onParameterChanges, viewProjection,
                      pointerText)
-import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
+import Actor.Event (ViewKind(..), hyperbolicDisplay, hyperbolicModel, Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
 import Actor.Viewer.Sphere (sphereShading, trackballRotation, screenToPlane, Rotation(..), rotationFacing, rotateBy, sphereToPlane)
-import Actor.Viewer.Disk (Isometry(..), normalizeIsometry, isometryFacing, isometryCenter, screenToDisk, dragIsometry)
+import Actor.Viewer.Disk (Isometry(..), HyperbolicDisplay(..), normalizeIsometry, inModel,
+                          screenToModelH, dragOnDisplay, displayScreen, axisAtBottom, viewShowing)
 import Actor.Viewer.ViewModel (Model(..), ModelShape(..), modelRotation, modelIsometry, History(..), historyBack, historyForward, historyAppend)
 import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceArguments, missingArguments,
                         argumentFields, choiceWithArguments)
@@ -852,8 +853,11 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
         -- (what "Animate along path" moves, if it can: the viewer's
         -- coordinate, if it's a configuration variable)
         animates = if canAnimate context (vCoordinate viewer) then Just (showCoordinate (vCoordinate viewer)) else Nothing
-    disk <- (== DiskView) <$> getDynamic (vView viewer)
+    kind <- getDynamic (vView viewer)
+    let disk = isJust (hyperbolicDisplay kind)
+        halfPlane = kind == HalfPlaneView
     pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere, "disk" .= disk
+                       , "halfPlane" .= halfPlane
                        , "tools" .= tools, "complex" .= complex, "smooth" .= smooth, "colorizer" .= colorizer
                        , "animates" .= animates ])
   let translated = case how of Translated _ -> True; _ -> False
@@ -937,7 +941,7 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
   covered0 <- atomicModifyIORef' (vsCovered vs) (Nothing,)
   -- (in the disk, the page's picture shows this view's points only if it
   -- was drawn with this view of the hyperbolic plane)
-  isDisk <- (== DiskView) <$> getDynamic (vView viewer)
+  isDisk <- isJust . hyperbolicDisplay <$> getDynamic (vView viewer)
   isoNow <- getDynamic (vIsometry viewer)
   pictureIso <- readIORef (vsPictureIso vs)
   let covered | isDisk && pictureIso /= Just isoNow = Nothing
@@ -1094,7 +1098,8 @@ viewerModel v = do
   shape <- case kind of
     PlaneView -> pure FlatShape
     SphereView -> GlobeShape <$> getDynamic (vRotation v)
-    DiskView -> DiskShape <$> getDynamic (vIsometry v)
+    DiskView -> HyperbolicShape (hyperbolicModel (vOriginalView v)) DiskDisplay <$> getDynamic (vIsometry v)
+    HalfPlaneView -> HyperbolicShape (hyperbolicModel (vOriginalView v)) HalfPlaneDisplay <$> getDynamic (vIsometry v)
   pure (Model c (px, px * aspect) shape)
 
 setViewerModel :: Viewer -> Model -> IO ()
@@ -1105,7 +1110,9 @@ setViewerModel v (Model c (px, py) shape) = do
   case shape of
     FlatShape -> setValue (vView v) PlaneView
     GlobeShape r -> setValue (vRotation v) r >> setValue (vView v) SphereView
-    DiskShape iso -> setValue (vIsometry v) iso >> setValue (vView v) DiskView
+    HyperbolicShape _ display iso -> do
+      setValue (vIsometry v) iso
+      setValue (vView v) (case display of { DiskDisplay -> DiskView; HalfPlaneDisplay -> HalfPlaneView })
 
 -- | Go to a view (rendering it), and tell the page.
 goTo :: ViewerState -> Model -> IO ()
@@ -1116,7 +1123,8 @@ goTo vs m = do
   let Model (cx, cy) (px, py) _ = m
   post $ Aeson.object [ "type" .= ("view" :: Text.Text), "viewer" .= vsId vs, "cx" .= cx, "cy" .= cy
                       , "px" .= px, "py" .= py, "sphere" .= isJust (modelRotation m)
-                      , "disk" .= isJust (modelIsometry m) ]
+                      , "disk" .= isJust (modelIsometry m)
+                      , "halfPlane" .= case modelShape m of { HyperbolicShape _ HalfPlaneDisplay _ -> True; _ -> False } ]
 
 -- | Go to a view, as a new step in the history (after the view it's in).
 changeViewTo :: ViewerState -> Model -> IO ()
@@ -1135,25 +1143,33 @@ navigateTo k what = withViewerState k $ \vs -> do
   let v = vsViewer vs
   d <- readIORef densityRef
   m <- viewerModel v
+  Dimensions (_, hWin) <- getDynamic (vSize v)
   let step f = readIORef (vsHistory vs) >>= \h -> forM_ (h >>= f) $ \(h', m') ->
         writeIORef (vsHistory vs) (Just h') >> goTo vs m'
       -- (the script's views are in CSS pixels; the engine's in the canvas's)
       originalPlane = let (c, px) = vOriginalPlaneView v in Model c (px / d, px / d * vOriginalAspect v) FlatShape
       sphereAt r = Model (0, 0) (vOriginalSpherePixelSize v / d, vOriginalSpherePixelSize v / d) (GlobeShape r)
-      originalDisk = Model (vOriginalCenter v) (vOriginalPixelSize v / d, vOriginalPixelSize v / d)
-                           (DiskShape (vOriginalIsometry v))
+      -- (a hyperbolic viewer's original view, on a display: the
+      -- half-plane with its real axis along the window's bottom edge)
+      hyperbolicAt display iso =
+        let (c, px) = displayScreen display hWin
+                        ((case display of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }) (vOriginalHyperbolicPixelSizes v) / d)
+        in Model c (px, px) (HyperbolicShape (hyperbolicModel (vOriginalView v)) display iso)
   case what of
     0 -> step historyBack
     1 -> step historyForward
     -- (the original view of the kind it shows now)
     2 -> changeViewTo vs (case modelShape m of
                             GlobeShape _ -> sphereAt (vOriginalRotation v)
-                            DiskShape _ -> originalDisk
+                            HyperbolicShape _ display _ -> hyperbolicAt display (vOriginalIsometry v)
                             FlatShape -> originalPlane)
     -- (the point in the middle of the view stays there, at the script's
     -- zoom for the other kind; see 'Actor.Viewer.switchView')
     -- (a disk viewer shows the hyperbolic plane, and only that)
-    3 | vOriginalView v == DiskView -> pure ()
+    -- (a viewer of the hyperbolic plane: the disk or the half-plane, keeping
+    -- its view)
+    3 | HyperbolicShape _ display iso <- modelShape m ->
+          changeViewTo vs (hyperbolicAt (case display of { DiskDisplay -> HalfPlaneDisplay; HalfPlaneDisplay -> DiskDisplay }) iso)
     3 -> case vCoordinate v of
       ComplexCoordinate _ -> changeViewTo vs $ case modelRotation m of
         Nothing -> sphereAt (rotationFacing (modelCenter m))
@@ -1170,12 +1186,19 @@ jump :: Int -> Double -> Double -> Double -> IO ()
 jump k x y pixelSize = withViewerState k $ \vs -> do
   d <- readIORef densityRef
   Model _ (px, py) shape <- viewerModel (vsViewer vs)
+  Dimensions (_, hWin) <- getDynamic (vSize (vsViewer vs))
   let dz = pixelSize / d
   case shape of
     FlatShape -> changeViewTo vs (Model (x, y) (dz, dz * py / px) FlatShape)
     GlobeShape _ -> changeViewTo vs (Model (0, 0) (dz, dz) (GlobeShape (rotationFacing (x, y))))
-    -- (in the disk, the point shown in the middle of the disk)
-    DiskShape _ | x * x + y * y < 1 -> changeViewTo vs (Model (0, 0) (dz, dz) (DiskShape (isometryFacing (x, y))))
+    -- (in the hyperbolic plane, the point in the middle of the window; the
+    -- half-plane's real axis along its bottom edge)
+    HyperbolicShape model display _
+      | inModel model (x, y) ->
+          let middle = case display of
+                DiskDisplay -> (0, 0)
+                HalfPlaneDisplay -> axisAtBottom hWin dz (0, 0)
+          in changeViewTo vs (Model middle (dz, dz) (HyperbolicShape model display (viewShowing model display (x, y) middle)))
                 | otherwise -> postError "That point isn't in the disk."
 
 -- | A real viewer's aspect ratio, from its text, as the desktop's Aspect
@@ -1487,7 +1510,8 @@ whereIs k = withViewerState k $ \vs -> do
   let (x, y) = case shape of
         FlatShape -> c
         GlobeShape r -> sphereToPlane (rotateBy r (0, 0, 1))
-        DiskShape iso -> isometryCenter iso
+        -- (in the hyperbolic plane, the point in the middle of the window)
+        HyperbolicShape model display iso -> fromMaybe (0, 0) (screenToModelH model display iso c)
   post $ Aeson.object [ "type" .= ("where" :: Text.Text), "viewer" .= k, "x" .= x, "y" .= y
                       , "pixelSize" .= (px * d) ]
 
@@ -1510,14 +1534,17 @@ applySavedView v saved title = case saved of
           Aeson.Number a | a > 0 -> setValue (vAspect v) (realToFrac a)
           _ -> pure ()
         case KM.lookup "view" p of
-          Just (Aeson.String "sphere") | isComplex -> setValue (vView v) SphereView
-          Just (Aeson.String "plane") -> setValue (vView v) PlaneView
+          Just (Aeson.String "sphere") | isComplex, not hyperbolic -> setValue (vView v) SphereView
+          Just (Aeson.String "plane") | not hyperbolic -> setValue (vView v) PlaneView
+          Just (Aeson.String "disk") | hyperbolic -> setValue (vView v) DiskView
+          Just (Aeson.String "halfplane") | hyperbolic -> setValue (vView v) HalfPlaneView
           _ -> pure ()
   _ -> pure ()
   where
     decodeValue :: Aeson.Value -> Maybe [Double]
     decodeValue x = case Aeson.fromJSON x of Aeson.Success r -> Just r; _ -> Nothing
     isComplex = case vCoordinate v of ComplexCoordinate _ -> True; _ -> False
+    hyperbolic = isJust (hyperbolicDisplay (vOriginalView v))
 
 -- | The page's view state, with what the engine knows of each viewer's
 -- view: on the sphere or the plane (when it isn't the script's), and the
@@ -1532,11 +1559,11 @@ withViews viewers = \case
       Rotation w x y z <- getDynamic (vRotation v)
       Isometry (ar :+ ai) (br :+ bi) <- getDynamic (vIsometry v)
       aspect <- getDynamic (vAspect v)
-      let viewName = case kind of { SphereView -> "sphere"; PlaneView -> "plane"; DiskView -> "disk" }
+      let viewName = case kind of { SphereView -> "sphere"; PlaneView -> "plane"; DiskView -> "disk"; HalfPlaneView -> "halfplane" }
           extra = [ ("view", Aeson.String viewName) | kind /= vOriginalView v ]
                ++ [ ("aspect", Aeson.toJSON aspect) | aspect /= vOriginalAspect v ]
                ++ [ ("rotation", Aeson.toJSON [w, x, y, z]) | kind == SphereView ]
-               ++ [ ("isometry", Aeson.toJSON [ar, ai, br, bi]) | kind == DiskView ]
+               ++ [ ("isometry", Aeson.toJSON [ar, ai, br, bi]) | isJust (hyperbolicDisplay kind) ]
       pure $ case KM.lookup (fromString title) acc of
         Just (Aeson.Object p) -> KM.insert (fromString title) (Aeson.Object (foldr (uncurry KM.insert) p extra)) acc
         _ -> acc) vs (Map.elems viewers)
@@ -1627,7 +1654,8 @@ useColorizer title chosen = readIORef sessionRef >>= mapM_ (\Session{..} -> do
 diskDrag :: Int -> Double -> Double -> Double -> Double -> IO ()
 diskDrag k fx fy tx ty = withViewerState k $ \vs -> do
   iso <- getDynamic (vIsometry (vsViewer vs))
-  setValue (vIsometry (vsViewer vs)) (dragIsometry iso (fx, fy) (tx, ty))
+  display <- fromMaybe DiskDisplay . hyperbolicDisplay <$> getDynamic (vView (vsViewer vs))
+  setValue (vIsometry (vsViewer vs)) (dragOnDisplay display iso (fx, fy) (tx, ty))
   -- (the last picture shows none of it where it is now)
   writeIORef (vsCovered vs) Nothing
   requestRender (vsSignal vs)
@@ -1830,7 +1858,8 @@ toModel :: Viewer -> (Double, Double) -> IO (Maybe (Double, Double))
 toModel viewer p = getDynamic (vView viewer) >>= \case
   PlaneView -> pure (Just p)
   SphereView -> getDynamic (vRotation viewer) <&> \r -> screenToPlane r p
-  DiskView -> getDynamic (vIsometry viewer) <&> \iso -> screenToDisk iso p
+  DiskView -> getDynamic (vIsometry viewer) <&> \iso -> screenToModelH (hyperbolicModel (vOriginalView viewer)) DiskDisplay iso p
+  HalfPlaneView -> getDynamic (vIsometry viewer) <&> \iso -> screenToModelH (hyperbolicModel (vOriginalView viewer)) HalfPlaneDisplay iso p
 
 toolEvent :: Int -> Int -> Double -> Double -> Double -> Double -> IO ()
 toolEvent k kind x1 y1 x2 y2 = withViewerState k $ \vs -> do
@@ -1877,7 +1906,7 @@ postDrawings ViewerState{..} = do
   curved <- (/= PlaneView) <$> getDynamic (vView vsViewer)
   when (changed || curved) $ do
     layers <- vDrawCmds vsViewer
-    proj <- viewProjection (vView vsViewer) (vRotation vsViewer) (vIsometry vsViewer)
+    proj <- viewProjection (vOriginalView vsViewer) (vView vsViewer) (vRotation vsViewer) (vIsometry vsViewer)
     post $ Aeson.object
       [ "type" .= ("drawing" :: Text.Text), "viewer" .= vsId, "layers" .= drawingJSON proj layers ]
 

@@ -200,6 +200,12 @@ parseSpec = describe "parseScenario" $ do
       DoubleClickAt _ -> pure ()
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
+  it "parses set viewer view to halfplane" $
+    onlyCommand [r|set viewer view to halfplane
+|] $ \case
+      SetViewerView HalfPlaneView -> pure ()
+      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
+
   it "parses set viewer screen center to..." $
     onlyCommand [r|set viewer screen center to (0.5, -0.25)
 |] $ \case

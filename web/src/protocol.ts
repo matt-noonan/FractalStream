@@ -193,8 +193,10 @@ export interface ViewerInfo {
   height: number;
   /** Whether it shows the Riemann sphere (a globe), not the plane. */
   sphere: boolean;
-  /** Whether it shows the hyperbolic plane, in the Poincaré disk. */
+  /** Whether it shows the hyperbolic plane (as the disk or the half-plane). */
   disk: boolean;
+  /** Whether it shows the hyperbolic plane as the upper half-plane. */
+  halfPlane: boolean;
   /** Whether it can (a complex viewer). */
   complex: boolean;
   /** Whether it's smoothed. */
@@ -314,7 +316,7 @@ export type Message =
   | { type: "ancient"; name: string }
   | { type: "pointer"; viewer: number; text: string }
   /** The engine moved a viewer's view (a pixel's size in the canvas's pixels). */
-  | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean; disk: boolean }
+  | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean; disk: boolean; halfPlane: boolean }
   | { type: "where"; viewer: number; x: number; y: number; pixelSize: number }
   | { type: "aspect"; viewer: number; error: string | null }
   /** A file to save as it is (a picture). */

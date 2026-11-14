@@ -248,8 +248,25 @@ overlay and wx's `paintToolLayer`. In wx, `Model` has a `modelRotation`
 zooms about the globe's center, there's no zoom box or click-to-center
 yet, and `wx-properties` saves `view:` and `rotation:`.
 
-Disk viewers (`view=disk`, `DiskView`; complex viewers only; see
-HYPERBOLIC_PLAN.md): the hyperbolic plane in the Poincaré disk. The
+Hyperbolic viewers (`view=disk`/`view=halfplane`, `DiskView`/
+`HalfPlaneView`; complex viewers only; see HYPERBOLIC_PLAN.md): the
+hyperbolic plane, in the Poincaré disk or the upper half-plane. The script's
+`view=` fixes its *model* (`hyperbolicModel`: where its points are); the view
+kind is the *display* (`hyperbolicDisplay`), switchable between the disk and
+the half-plane (`switchView`, the menus' "Show as the half-plane"), keeping
+the view, which always acts on the disk. The kernel gets one Möbius map,
+screen → model, of determinant 1 (`viewMobius`: display → disk by the Cayley
+map, the view, disk → model), as `[internal] hyperbolic a.re` .. `d.im`, plus
+`[internal] half-plane display` for the off-display test; tools' hidden
+values carry its a and c (`pixel_size_at(p)` = px |a − c p|²); in wx and the
+web app a `HyperbolicShape` carries the model, display and view. The
+half-plane display keeps its real axis on the window's bottom edge
+(`displayScreen`, `axisAtBottom`): zooms pivot on the axis point below the
+pointer (wx `zoomPivotY`, the page's `zoomBy`), and resizes (wx's resize
+timer, the page's `keepAxisAtBottom`, fsrun's resize/pixel size) re-pin it;
+the view's center (`displayMiddle`, i) is 1/zoom pixels up, so switching
+displays keeps the isometry as it is. The rest
+of this paragraph is from phase 1, the disk alone: The
 geometry is in `Actor.Viewer.Disk`: the view is an `Isometry` (a, b),
 s ↦ (a s + b)/(b̄ s + ā) with |a|² − |b|² = 1, renormalized after each
 composition; the screen plane is in units of the disk's radius, and

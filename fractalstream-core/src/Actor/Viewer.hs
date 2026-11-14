@@ -60,7 +60,7 @@ import Data.DynamicValue
 import Actor.Layout (Dimensions(..))
 import Actor.Tool
 import Actor.Event ( ToolRunner(..), defaultToolRunner, EventArgument_, ParsedToolScript
-                   , Coordinate(..), ViewKind(..), bindOrDeclare, RealIn(..), bindFreshReals
+                   , Coordinate(..), ViewKind(..), hyperbolicDisplay, hyperbolicModel, bindOrDeclare, RealIn(..), bindFreshReals
                    , pixelWidthVar, pixelHeightVar, PixelDims, ToolDispatcher
                    , ToolExec, EventArgument(..), HandlerRun(..), newCancelFlag, CancelFlag )
 import Language.Code.Hoist (Split, splitHoistable, hoistedIterations, hoistedStuck)
@@ -87,7 +87,7 @@ import Language.Value.Evaluator
 import Foreign
 import Data.PNG
 import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Rotation, Projection(..), ScreenView(..), rotationFacing, rotateBy, sphereToPlane, planeToScreen, trackballRotation)
-import Actor.Viewer.Disk (diskViewName, inTheDisk, Isometry, isometryFacing, diskToScreen, dragIsometry)
+import Actor.Viewer.Disk (hyperbolicViewName, inTheHyperbolicPlane, Isometry, modelToScreenH, dragOnDisplay, displayScreen, axisAtBottom, viewShowing, HyperbolicDisplay(..))
 import qualified Data.Map as Map
 import Text.Printf (printf)
 
@@ -242,6 +242,9 @@ data Viewer = Viewer
   , vOriginalView :: ViewKind
   , vOriginalRotation :: Rotation
   , vOriginalIsometry :: Isometry
+  , vOriginalHyperbolicPixelSizes :: (Double, Double)
+    -- ^ The pixel sizes a hyperbolic viewer's displays start with: the
+    -- disk's, and the half-plane's
   , vOriginalPlaneView :: ((Double, Double), Double)
     -- ^ The plane view the script describes (center and pixel size),
     -- whichever view it starts with.
@@ -374,7 +377,7 @@ renderViewerBufferAt scale downsample Viewer{..} = case vCodeWithArgs of
       Dimensions (w, h) <- getDynamic vSize
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
-      projection <- viewProjection vView vRotation vIsometry
+      projection <- viewProjection vOriginalView vView vRotation vIsometry
       center <- getDynamic vCenter
       ViewerFunction bind <- getDynamic code
       fn <- bind vaArgs
@@ -481,7 +484,7 @@ renderProgressively pr Viewer{..} = case vCodeWithArgs of
       Dimensions (w, h) <- getDynamic vSize
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
-      projection <- viewProjection vView vRotation vIsometry
+      projection <- viewProjection vOriginalView vView vRotation vIsometry
       center <- getDynamic vCenter
       ViewerFunction bind <- getDynamic code
       fn <- bind vaArgs
@@ -601,13 +604,27 @@ downsampleRows bigW w rows stride big dest =
 -- point the globe faced (or 0, if that was ∞). Each starts at the zoom
 -- the script gives it.
 --
--- A disk viewer stays one, and no other viewer becomes one (the disk is
--- the hyperbolic plane: outside it, there'd be nothing to see).
+-- A viewer of the hyperbolic plane can switch between its displays, the
+-- disk and the half-plane, keeping its view (and each display starting at
+-- its own zoom: see 'displayScreen'); no other viewer can
+-- show the hyperbolic plane, nor one that does the plane or the sphere.
 switchView :: Viewer -> ViewKind -> IO ()
 switchView v kind = do
   old <- getDynamic (vView v)
-  when (old /= kind && old /= DiskView) $ case kind of
+  case (hyperbolicDisplay old, hyperbolicDisplay kind) of
+    (Just a, Just b) | a /= b -> do
+      Dimensions (_, h) <- getDynamic (vSize v)
+      let pick = case b of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }
+          (c, px) = displayScreen b h (pick (vOriginalHyperbolicPixelSizes v))
+      setValue' (vCenter v) c
+      setValue' (vPixelSize v) px
+      setValue' (vView v) kind
+    (Nothing, Nothing) -> when (old /= kind) (switchFlat kind)
+    _ -> pure ()
+ where
+  switchFlat = \case
     DiskView -> pure ()
+    HalfPlaneView -> pure ()
     SphereView -> do
       c <- getDynamic (vCenter v)
       setValue' (vRotation v) (rotationFacing c)
@@ -623,13 +640,22 @@ switchView v kind = do
       setValue' (vView v) PlaneView
 
 -- | Center a viewer's view on a point: on the sphere, turn the globe to
--- face it; in the disk, move the view to show it in the middle of the
--- disk, and the disk in the middle of the window.
+-- face it; in the hyperbolic plane, move the view to show the (model)
+-- point in the middle of the window (at the same zoom: the disk centered
+-- in the window, or the half-plane's real axis along its bottom edge).
 centerViewOn :: Viewer -> (Double, Double) -> IO ()
-centerViewOn v c = getDynamic (vView v) >>= \case
-  PlaneView -> setValue' (vCenter v) c
-  SphereView -> setValue' (vRotation v) (rotationFacing c)
-  DiskView -> setValue' (vIsometry v) (isometryFacing c) >> setValue' (vCenter v) (0, 0)
+centerViewOn v c = getDynamic (vView v) >>= \kind -> case (kind, hyperbolicDisplay kind) of
+  (_, Just display) -> do
+    Dimensions (_, h) <- getDynamic (vSize v)
+    px <- getDynamic (vPixelSize v)
+    let middle = case display of
+          DiskDisplay -> (0, 0)
+          HalfPlaneDisplay -> axisAtBottom h px (0, 0)
+    setValue' (vIsometry v) (viewShowing (hyperbolicModel (vOriginalView v)) display c middle)
+    setValue' (vCenter v) middle
+  (PlaneView, _) -> setValue' (vCenter v) c
+  (SphereView, _) -> setValue' (vRotation v) (rotationFacing c)
+  (_, Nothing) -> pure ()
 
 -- | Move a viewer's view as dragging it would (the Navigate tool), so
 -- that the model point @p@ ends up where @q@ is shown now: on the plane,
@@ -637,7 +663,13 @@ centerViewOn v c = getDynamic (vView v) >>= \case
 -- (trackball-style); in the disk, by the hyperbolic translation that
 -- keeps the point under the pointer. Both points must be visible.
 dragView :: Viewer -> (Double, Double) -> (Double, Double) -> IO (Either String ())
-dragView v p@(px, py) q@(qx, qy) = getDynamic (vView v) >>= \case
+dragView v p@(px, py) q@(qx, qy) = getDynamic (vView v) >>= \kind -> case kind of
+  _ | Just display <- hyperbolicDisplay kind -> do
+    iso <- getDynamic (vIsometry v)
+    let model = hyperbolicModel (vOriginalView v)
+    case (modelToScreenH model display iso p, modelToScreenH model display iso q) of
+      (Just sp, Just sq) -> Right () <$ setValue' (vIsometry v) (dragOnDisplay display iso sp sq)
+      _ -> pure (Left "both points must be shown")
   PlaneView -> do
     (cx, cy) <- getDynamic (vCenter v)
     setValue' (vCenter v) (cx + px - qx, cy + py - qy)
@@ -647,18 +679,15 @@ dragView v p@(px, py) q@(qx, qy) = getDynamic (vView v) >>= \case
     case (planeToScreen r p, planeToScreen r q) of
       (Just sp, Just sq) -> Right () <$ setValue' (vRotation v) (trackballRotation r sp sq)
       _ -> pure (Left "both points must be on the visible side of the globe")
-  DiskView -> do
-    iso <- getDynamic (vIsometry v)
-    case (diskToScreen iso p, diskToScreen iso q) of
-      (Just sp, Just sq) -> Right () <$ setValue' (vIsometry v) (dragIsometry iso sp sq)
-      _ -> pure (Left "both points must be in the disk")
+  _ -> pure (Right ())
 
 -- | How a viewer's model points get onto its screen now.
-viewProjection :: Variable ViewKind -> Variable Rotation -> Variable Isometry -> IO Projection
-viewProjection viewV rotationV isometryV = getDynamic viewV >>= \case
-  PlaneView -> pure FlatProjection
-  SphereView -> GlobeProjection <$> getDynamic rotationV
-  DiskView -> DiskProjection <$> getDynamic isometryV
+-- (A hyperbolic viewer's model is the one its script's view names.)
+viewProjection :: ViewKind -> Variable ViewKind -> Variable Rotation -> Variable Isometry -> IO Projection
+viewProjection originalView viewV rotationV isometryV = getDynamic viewV >>= \kind -> case (kind, hyperbolicDisplay kind) of
+  (_, Just display) -> HyperbolicProjection (hyperbolicModel originalView) display <$> getDynamic isometryV
+  (SphereView, _) -> GlobeProjection <$> getDynamic rotationV
+  _ -> pure FlatProjection
 
 -- | Render a viewer to a PNG file, returning any issues the render ran into.
 snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Either String ViewerIssues)
@@ -802,8 +831,8 @@ parseViewerScript mpx ViewerContext{..} c = do
           -- "Actor.Viewer.Sphere"; or the hyperbolic disk, see
           -- "Actor.Viewer.Disk")
           c' = case vcCoord of
-            ComplexCoordinate z | diskViewName `Map.member` envToMap env
-                                  -> inTheDisk z (fromMaybe "[unused] pixel size" mpx) c
+            ComplexCoordinate z | hyperbolicViewName `Map.member` envToMap env
+                                  -> inTheHyperbolicPlane z (fromMaybe "[unused] pixel size" mpx) c
                                 | sphereViewName `Map.member` envToMap env -> onTheSphere z c
             _ -> c
           body :: forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e)
@@ -933,6 +962,7 @@ cloneViewer v = do
     , vOriginalView = vOriginalView v
     , vOriginalRotation = vOriginalRotation v
     , vOriginalIsometry = vOriginalIsometry v
+    , vOriginalHyperbolicPixelSizes = vOriginalHyperbolicPixelSizes v
     , vOriginalPlaneView = vOriginalPlaneView v
     , vOriginalSpherePixelSize = vOriginalSpherePixelSize v
     , vSaveView = vSaveView v

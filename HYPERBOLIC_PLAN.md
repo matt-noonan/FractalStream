@@ -65,9 +65,19 @@ script and its data.
 
 ## Phase 1b: the upper half-plane
 
-- [ ] `view=halfplane`; the same isometries, conjugated by the Cayley map.
-- [ ] Switching disk ↔ half-plane at run time (viewer menu), keeping the
+Decided: a script's `view=` fixes its *model* (the disk or the half-plane:
+where its `z` is); the *display* (how it's drawn) is switchable, keeping the
+view. The kernel gets one Möbius map, screen → model.
+
+- [x] `view=halfplane`; the same isometries, conjugated by the Cayley map.
+- [x] Switching disk ↔ half-plane at run time (viewer menu), keeping the
       view.
+- [x] The half-plane drawn with its real axis along the window's bottom
+      edge (no dead space below it): `center=` 1/`pixelSize` pixels above
+      it; zooms about the axis point below the pointer (an isometry, so the
+      axis stays put); resizes keep it there.
+- [ ] Maybe a preference for where the real axis goes (the bottom edge, as
+      now, or with the view's center in the middle of the window).
 
 ## Phase 2: the group layer
 

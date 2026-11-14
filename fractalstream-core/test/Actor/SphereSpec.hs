@@ -90,7 +90,7 @@ spec = do
           Right _ -> expectationFailure ("expected an error for " ++ hdr)
 
     it "rejects other views, and real viewers on the sphere" $ do
-      headerError "@viewer \"V\" view=torus" "`plane`, `sphere`, or `disk`"
+      headerError "@viewer \"V\" view=torus" "`plane`, `sphere`, `disk`, or `halfplane`"
       headerError "@viewer \"V\" xvar=x yvar=y view=sphere" "Only a complex viewer"
 
     it "builds a sphere viewer, and keeps a complex viewer's names free" $ do

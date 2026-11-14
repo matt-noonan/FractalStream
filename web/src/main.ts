@@ -1553,7 +1553,14 @@ class ViewerView {
 
   /** Draw the picture in the target view, with the render going on over it
       (once per display frame). */
+  /** The half-plane keeps its real axis along the window's bottom edge,
+      however the view was zoomed or the window resized or fitted. */
+  private keepAxisAtBottom() {
+    if (this.info.halfPlane && this.target) this.target.cy = this.canvas.height / 2 * this.target.py;
+  }
+
   private redraw() {
+    this.keepAxisAtBottom();
     if (this.drawPending) return;
     this.drawPending = true;
     requestAnimationFrame(() => {
@@ -1593,6 +1600,7 @@ class ViewerView {
       changed: once it's answered the last request (see `sendRequest`),
       and once per display frame, at most. */
   private request() {
+    this.keepAxisAtBottom();
     if (this.requestPending) return;
     this.requestPending = true;
     requestAnimationFrame(() => {
@@ -1804,7 +1812,10 @@ class ViewerView {
     const t = this.target;
     if (!t) return;
     const W = this.canvas.width, H = this.canvas.height;
-    const p = this.info.sphere ? { x: W / 2, y: H / 2 } : p0;
+    // (on the half-plane, about the point of the real axis below the
+    // pointer, so the axis stays along the window's bottom edge)
+    const p = this.info.sphere ? { x: W / 2, y: H / 2 }
+            : this.info.halfPlane ? { x: p0.x, y: H / 2 + t.cy / t.py } : p0;
     // the model point under the pointer stays where it is
     const mx = t.cx + (p.x - W / 2) * t.px;
     const my = t.cy - (p.y - H / 2) * t.py;
@@ -1827,6 +1838,11 @@ class ViewerView {
       { kind: "action", label: "Jump to view…", shortcut: "@", run: () => this.askJump() },
       { kind: "action", label: "Original view", shortcut: "^", run: () => this.navigate(2) },
     ];
+    // (a viewer of the hyperbolic plane can show it as the disk or the
+    // half-plane, keeping its view)
+    if (this.info.disk) {
+      items.push({ kind: "toggle", label: "Show as the half-plane", on: this.info.halfPlane, toggle: () => this.navigate(3) });
+    }
     // (a complex viewer's pixels are square; it can show the sphere instead,
     // unless it shows the hyperbolic plane)
     if (this.info.complex && !this.info.disk) {
@@ -1879,7 +1895,7 @@ class ViewerView {
   /** The engine moved the view (going back, say): it's the target now,
       and what the engine's rendering. On the sphere, or turning to or
       from it, the last picture can't be moved to fit, so it goes. */
-  moved(m: { cx: number; cy: number; px: number; py: number; sphere: boolean; disk: boolean }) {
+  moved(m: { cx: number; cy: number; px: number; py: number; sphere: boolean; disk: boolean; halfPlane: boolean }) {
     // (in the disk, the view of the hyperbolic plane may have moved too)
     if (m.sphere || this.info.sphere || m.disk) {
       this.frame = null;
@@ -1887,6 +1903,7 @@ class ViewerView {
       this.path = null;
     }
     this.info.sphere = m.sphere;
+    this.info.halfPlane = m.halfPlane;
     const view = { cx: m.cx, cy: m.cy, px: m.px, py: m.py };
     this.target = { ...view };
     this.sent = { view: { ...view }, width: this.canvas.width, height: this.canvas.height };

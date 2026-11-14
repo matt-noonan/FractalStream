@@ -695,7 +695,7 @@ does nothing.
 Near ∞, a complex number loses precision, so a script whose interesting
 part is near ∞ may look rough there for now.
 
-### Viewers of the hyperbolic plane (the Poincaré disk)
+### Viewers of the hyperbolic plane (the Poincaré disk, the half-plane)
 
 A complex viewer can show the hyperbolic plane, as the Poincaré disk,
 with `view=disk`:
@@ -739,6 +739,26 @@ is a dot 3 pixels in radius, wherever `q` is shown. (`pixel_size_at` works
 in every tool: on the plane it's just `pixel_size`, and on the sphere it's
 the size of a pixel facing you.) A disk viewer can't be shown on the plane
 or the sphere.
+
+A script can work in the upper half-plane instead, with `view=halfplane`:
+`z` is then a point with a positive imaginary part. The half-plane is drawn
+with its real axis along the window's bottom edge, and `center=` (by
+default `i`) shown 1/`pixelSize` pixels above it (by default 150), halfway
+across, or in the middle of the window if that's lower. So for
+`center=i`, `pixelSize=` is the width of a pixel at `i`. In the
+half-plane, a pixel's hyperbolic size is `pixel_size / im(z)`.
+
+Either way, the viewer's menu can show the hyperbolic plane as the disk or
+as the half-plane ("Show as the half-plane"), keeping the view: the script
+still sees points of its own model, and the view's center goes from the
+middle of the disk to its place above the half-plane's axis (and back).
+`pixelSize=` is for the drawing the script's `view=` names; the other
+starts at its own zoom (1/150 for the half-plane; the disk filling most of
+the window for the disk). On the half-plane drawing, zooming (with the
+scroll wheel or a pinch) is about the point of the real axis below the
+pointer, and resizing the window keeps the axis at the bottom, so there's
+no empty space below it; double-clicking a point, or jumping to one, puts
+it in the middle of the window.
 
 ### Colorizers
 

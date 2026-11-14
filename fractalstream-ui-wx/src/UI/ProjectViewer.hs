@@ -56,7 +56,7 @@ import Actor.Configuration
 import Actor.Viewer
 import Actor.Ensemble (buildToolContext, layoutToArgs, Colorizer(..), ViewerColorizer(..))
 import Actor.Colorizer (choiceName, choiceArguments, missingArguments, argumentFields, choiceWithArguments)
-import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..), ToolDispatcher, HandlerRun, newCancelFlag)
+import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..), hyperbolicDisplay, hyperbolicModel, ToolDispatcher, HandlerRun, newCancelFlag)
 import Language.Value.Parser (parseConstant)
 import Language.Type
 import Language.Draw
@@ -241,9 +241,14 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         RealCoordinates{} -> mapM_ (setValue' vAspect) vpAspect
         ComplexCoordinate{} -> do
           -- (and a complex viewer's view: the plane, or the globe)
+          -- (a viewer of the hyperbolic plane can show the disk or the
+          -- half-plane; others, the plane or the sphere)
+          let hyperbolic = isJust (hyperbolicDisplay vOriginalView)
           case vpView of
-            Just "sphere" -> setValue' vView SphereView
-            Just "plane" -> setValue' vView PlaneView
+            Just "sphere" | not hyperbolic -> setValue' vView SphereView
+            Just "plane" | not hyperbolic -> setValue' vView PlaneView
+            Just "disk" | hyperbolic -> setValue' vView DiskView
+            Just "halfplane" | hyperbolic -> setValue' vView HalfPlaneView
             _ -> pure ()
           case vpRotation of
             Just [w, x, y, z] -> setValue' vRotation (normalizeRotation (Rotation w x y z))
@@ -351,9 +356,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         , vpCenter = Just viewCenter, vpPixelSize = Just pixelSize
         , vpAspect = if aspect == 1 then Nothing else Just aspect
         , vpView = if view == vOriginalView then Nothing
-                   else Just (case view of { SphereView -> "sphere"; PlaneView -> "plane"; DiskView -> "disk" })
+                   else Just (case view of { SphereView -> "sphere"; PlaneView -> "plane"; DiskView -> "disk"; HalfPlaneView -> "halfplane" })
         , vpRotation = if view == SphereView then Just [rw, rx, ry, rz] else Nothing
-        , vpIsometry = if view == DiskView then Just [ar, ai, br, bi] else Nothing
+        , vpIsometry = if isJust (hyperbolicDisplay view) then Just [ar, ai, br, bi] else Nothing
         }
 
     -- When the configuration's variables change (which ones there are,
@@ -541,10 +546,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     (initialX, initialY) <- getDynamic vCenter
     initialPx <- getDynamic vPixelSize
     initialAspect <- getDynamic vAspect
-    initialShape <- getDynamic vView >>= \case
-      PlaneView -> pure FlatShape
-      SphereView -> GlobeShape <$> getDynamic vRotation
-      DiskView -> DiskShape <$> getDynamic vIsometry
+    initialShape <- getDynamic vView >>= \k -> case (k, hyperbolicDisplay k) of
+      (_, Just display) -> HyperbolicShape (hyperbolicModel vOriginalView) display <$> getDynamic vIsometry
+      (SphereView, _) -> GlobeShape <$> getDynamic vRotation
+      _ -> pure FlatShape
 
     let initialModel = Model (initialX, initialY) (initialPx, initialPx * initialAspect) initialShape
     model <- variable [value := initialModel]
@@ -875,7 +880,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           case newShape of
             FlatShape -> setValue' vView PlaneView
             GlobeShape r -> setValue' vRotation r >> setValue' vView SphereView
-            DiskShape v -> setValue' vIsometry v >> setValue' vView DiskView
+            HyperbolicShape _ display v -> do
+              setValue' vIsometry v
+              setValue' vView (case display of { DiskDisplay -> DiskView; HalfPlaneDisplay -> HalfPlaneView })
           oldTile <- get currentTile value
           -- (the last tile that was done, to start from: see 'lastCompleteTile')
           oldComplete <- tileComplete oldTile
@@ -952,9 +959,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         -- middle (a step in the history, animated).
         recenterDiskOn pt = do
           m <- get model value
-          forM_ (modelIsometry m) $ \v -> do
-            s <- viewToScreen pt
-            changeViewTo m { modelShape = DiskShape (dragIsometry v s (modelCenter m)) }
+          case modelShape m of
+            HyperbolicShape hm display v -> do
+              s <- viewToScreen pt
+              changeViewTo m { modelShape = HyperbolicShape hm display (dragOnDisplay display v s (modelCenter m)) }
+            _ -> pure ()
 
     -- Set paint handlers
     -- Everything is drawn through one graphics context (a wxGCDC around
@@ -1122,7 +1131,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     globeDrag <- newIORef (Nothing :: Maybe (Rotation, (Double, Double), Bool))
     -- (a drag moving the disk's view: the view it started from, where
     -- on the screen plane it started, and whether it's moved yet)
-    diskDrag <- newIORef (Nothing :: Maybe (Isometry, (Double, Double), Bool))
+    diskDrag <- newIORef (Nothing :: Maybe ((HyperbolicModel, HyperbolicDisplay, Isometry), (Double, Double), Bool))
     -- (the pointer's last place on the screen plane, to zoom about)
     lastKnownScreen <- newIORef Nothing
 
@@ -1217,7 +1226,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 m <- get model value
                 s0 <- viewToScreen pt
                 writeIORef globeDrag ((\r -> (r, s0, False)) <$> modelRotation m)
-                writeIORef diskDrag ((\v -> (v, s0, False)) <$> modelIsometry m)
+                writeIORef diskDrag (case modelShape m of
+                                       HyperbolicShape hm display v -> Just ((hm, display, v), s0, False)
+                                       _ -> Nothing)
                 writeIORef panDrag (if modelIsFlat m then Just (pt, m, False) else Nothing)
                 propagateEvent
 
@@ -1374,7 +1385,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               MouseLeftDrag pt modifiers
                 | isNoShiftAltControlDown modifiers
                 , Left NavTool <- currentToolNow
-                , Just (v0, s0@(x0, y0), moved) <- diskDragNow -> do
+                , Just (v0@(hModel, hDisplay, iso0), s0@(x0, y0), moved) <- diskDragNow -> do
                     -- Move the disk's view by the hyperbolic translation
                     -- that keeps the model point under the pointer there.
                     -- (It's a drag once it's moved a little: until then, a
@@ -1385,7 +1396,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                         moving = moved || abs (x1 - x0) + abs (y1 - y0) > 3 * px
                     when moving $ do
                       writeIORef diskDrag (Just (v0, s0, True))
-                      writeIORef pendingGlobe (Just (DiskShape (dragIsometry v0 s0 s1)))
+                      writeIORef pendingGlobe (Just (HyperbolicShape hModel hDisplay (dragOnDisplay hDisplay iso0 s0 s1)))
                     propagateEvent
 
               MouseLeftDrag pt modifiers
@@ -1445,7 +1456,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             Just _ -> (cx, cy)
             Nothing ->
               let mx = cx + (fromIntegral x - fromIntegral w / 2) * px
-                  my = cy - (fromIntegral y - fromIntegral h / 2) * py
+                  my = zoomPivotY base (cy - (fromIntegral y - fromIntegral h / 2) * py)
               in (mx + (cx - mx) * factor, my + (cy - my) * factor)
       writeIORef pendingView (Just base { modelCenter = newCenter, modelPixelDim = (px * factor, py * factor) })
       getCurrentTime >>= writeIORef lastPinch . Just
@@ -1479,10 +1490,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             -- on the plane)
             readIORef lastKnownScreen >>= \case
               Nothing -> propagateEvent
-              Just (pmx, pmy) -> do
+              Just (pmx, pmy0) -> do
                 isAnimating <- isJust <$> get animate value
                 unless isAnimating $ do
                   let (cmx, cmy) = modelCenter oldModel
+                      pmy = zoomPivotY oldModel pmy0
                       cmx' = pmx + (cmx - pmx) * scale
                       cmy' = pmy + (cmy - pmy) * scale
 
@@ -1654,8 +1666,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                   -- re-render if the image's size changed.
                                   Size w h <- get f clientSize
                                   tileSize <- tileRect <$> get currentTile value
+                                  -- (on the half-plane, keeping the real
+                                  -- axis along the window's bottom edge)
                                   when (tileSize /= (w, h)) $
-                                    jumpViewTo =<< get model value
+                                    jumpViewTo . keepAxisAtBottom h =<< get model value
                       ]
 
     -- Add a timer which checks if the tool layer should receive a refresh
@@ -1747,15 +1761,21 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         -- be where this window started out if a saved view was restored
         -- over it. Recorded as a new step in the history, like any other
         -- move, so "Last view" can still undo it.
-        goHome = changeViewTo
+        goHome = do
+         Size _ hWin <- get f clientSize
+         changeViewTo
           =<< (get model value <&> \m -> case modelShape m of
                  -- (the original view of the kind it shows now)
                  FlatShape -> let (c, px) = vOriginalPlaneView
                               in Model c (px, px * vOriginalAspect) FlatShape
                  GlobeShape _ -> Model (0, 0) (vOriginalSpherePixelSize, vOriginalSpherePixelSize)
                                        (GlobeShape vOriginalRotation)
-                 DiskShape _ -> Model vOriginalCenter (vOriginalPixelSize, vOriginalPixelSize)
-                                      (DiskShape vOriginalIsometry))
+                 -- (the half-plane with its real axis along the window's
+                 -- bottom edge: see 'displayScreen')
+                 HyperbolicShape hm display _ ->
+                   let (c, px) = displayScreen display hWin
+                                   ((case display of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }) vOriginalHyperbolicPixelSizes)
+                   in Model c (px, px) (HyperbolicShape hm display vOriginalIsometry))
 
         jumpToView = do
           oldModel <- get model value
@@ -1764,8 +1784,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 FlatShape -> modelCenter oldModel
                 GlobeShape r -> sphereToPlane (rotateBy r (0, 0, 1))
                 -- (in the disk, the point in the middle of the disk)
-                DiskShape v -> isometryCenter v
+                -- (in the hyperbolic plane, the model point in the middle of
+                -- the window)
+                HyperbolicShape hm display v ->
+                  fromMaybe (0, 0) (screenToModelH hm display v (modelCenter oldModel))
               (oldPx, oldPy) = modelPixelDim oldModel
+          Size _ hWin <- get f clientSize
           d <- dialog f [ text := "Jump to view..." ]
           jp <- panel d []
           jOk <- button jp [ text := "Ok" ]
@@ -1789,8 +1813,16 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                         onDone ((\(x,y,dz) -> case modelShape oldModel of
                                    FlatShape -> Just (Model (x, y) (dz, dz * oldPy / oldPx) FlatShape)
                                    GlobeShape _ -> Just (Model (0, 0) (dz, dz) (GlobeShape (rotationFacing (x, y))))
-                                   DiskShape _
-                                     | x * x + y * y < 1 -> Just (Model (0, 0) (dz, dz) (DiskShape (isometryFacing (x, y))))
+                                   -- (in the hyperbolic plane, the point in the
+                                   -- middle of the window; the half-plane's
+                                   -- real axis along its bottom edge)
+                                   HyperbolicShape hm display _
+                                     | inModel hm (x, y) ->
+                                         let middle = case display of
+                                               DiskDisplay -> (0, 0)
+                                               HalfPlaneDisplay -> axisAtBottom hWin dz (0, 0)
+                                         in Just (Model middle (dz, dz)
+                                                     (HyperbolicShape hm display (viewShowing hm display (x, y) middle)))
                                      | otherwise -> Nothing) =<<
                                  ((,,) <$> mx <*> my <*> mp)) ]
           case result of
@@ -1921,8 +1953,25 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     case vCoordinate of
       RealCoordinates{} -> void $
         menuItem hamburgerMenu [ text := "Aspect ratio...", on command := setAspectRatio ]
-      -- (a disk viewer shows the hyperbolic plane, and only that)
-      ComplexCoordinate{} -> when (vOriginalView /= DiskView) $ do
+      -- (a viewer of the hyperbolic plane shows it as the disk or the
+      -- half-plane, keeping its view)
+      ComplexCoordinate{} | isJust (hyperbolicDisplay vOriginalView) -> do
+        let onHalfPlane m = case modelShape m of { HyperbolicShape _ HalfPlaneDisplay _ -> True; _ -> False }
+        halfItem <- menuItem hamburgerMenu [ text := "Show as the half-plane", checkable := True ]
+        get model value >>= \m -> set halfItem [ checked := onHalfPlane m ]
+        set halfItem [ on command := do
+          m <- get model value
+          case modelShape m of
+            HyperbolicShape hm display v -> do
+              Size _ hWin <- get f clientSize
+              let display' = case display of { DiskDisplay -> HalfPlaneDisplay; HalfPlaneDisplay -> DiskDisplay }
+                  (c, px) = displayScreen display' hWin
+                              ((case display' of { DiskDisplay -> fst; HalfPlaneDisplay -> snd }) vOriginalHyperbolicPixelSizes)
+              changeViewTo (Model c (px, px) (HyperbolicShape hm display' v))
+            _ -> pure ()
+          get model value >>= \m' -> set halfItem [ checked := onHalfPlane m' ] ]
+        modifyIORef' beforeMenu (>> (get model value >>= \m -> set halfItem [ checked := onHalfPlane m ]))
+      ComplexCoordinate{} -> do
         onSphere <- isJust . modelRotation <$> get model value
         sphereItem <- menuItem hamburgerMenu [ text := "Show on the sphere", checkable := True
                                              , checked := onSphere ]
@@ -2130,7 +2179,8 @@ screenToModel :: Model -> (Double, Double) -> (Double, Double)
 screenToModel m s@(x, y) = case modelShape m of
   FlatShape -> s
   GlobeShape r -> fromMaybe s (screenToPlane r s')
-  DiskShape v -> fromMaybe s (screenToDisk v s')
+  HyperbolicShape model DiskDisplay v -> fromMaybe s (screenToModelH model DiskDisplay v s')
+  HyperbolicShape model HalfPlaneDisplay v -> fromMaybe s (screenToModelH model HalfPlaneDisplay v (x, max y 1e-12))
   where
     d = sqrt (x * x + y * y)
     s' = if d >= 1 then (0.999999 * x / d, 0.999999 * y / d) else s
@@ -2138,14 +2188,17 @@ screenToModel m s@(x, y) = case modelShape m of
 -- | Whether a point of the screen plane shows the model: on the sphere,
 -- whether it's on the globe.
 showsModel :: Model -> (Double, Double) -> Bool
-showsModel m (x, y) = modelIsFlat m || x * x + y * y <= 1
+showsModel m (x, y) = case modelShape m of
+  FlatShape -> True
+  HyperbolicShape _ HalfPlaneDisplay _ -> y > 0
+  _ -> x * x + y * y <= 1
 
 -- | How a model's points get onto its screen plane.
 modelProjection :: Model -> Projection
 modelProjection m = case modelShape m of
   FlatShape -> FlatProjection
   GlobeShape r -> GlobeProjection r
-  DiskShape v -> DiskProjection v
+  HyperbolicShape model display v -> HyperbolicProjection model display v
 
 -- | Given the dimensions of the window, work out a rectangle describing
 -- the viewport in the underlying coordinate system.
@@ -2164,7 +2217,8 @@ interpolateModel t m1 m2 = m2
     , modelPixelDim = logInterpolate modelPixelDim
     , modelShape = case (modelShape m1, modelShape m2) of
         (GlobeShape r1, GlobeShape r2) -> GlobeShape (slerp r1 r2 t)
-        (DiskShape v1, DiskShape v2) -> DiskShape (interpolateIsometry v1 v2 t)
+        (HyperbolicShape model d1 v1, HyperbolicShape _ d2 v2) | d1 == d2 ->
+          HyperbolicShape model d1 (interpolateIsometry v1 v2 t)
         (_, sh2) -> sh2
     }
   where
@@ -2202,9 +2256,9 @@ reprojectedSeed oldTile old new (w, h)
                 (GlobeShape ro, GlobeShape rn) -> do
                   p <- screenToSphere rn screen
                   sphereToScreen ro p >>= screenToPixel old
-                (DiskShape vo, DiskShape vn) -> do
-                  p <- screenToDisk vn screen
-                  diskToScreen vo p >>= screenToPixel old
+                (HyperbolicShape model dd vo, HyperbolicShape _ _ vn) -> do
+                  p <- screenToModelH model dd vn screen
+                  modelToScreenH model dd vo p >>= screenToPixel old
                 _ -> screenToPixel old screen
               d = 3 * (j * w + i)
           case from of
@@ -2225,7 +2279,8 @@ reprojectedSeed oldTile old new (w, h)
       pure (\bx by -> (bx, by) `Set.notMember` missing)
   where
     shapeKind :: ModelShape -> Int
-    shapeKind = \case { FlatShape -> 0; GlobeShape _ -> 1; DiskShape _ -> 2 }
+    shapeKind = \case { FlatShape -> 0; GlobeShape _ -> 1
+                      ; HyperbolicShape _ DiskDisplay _ -> 2; HyperbolicShape _ HalfPlaneDisplay _ -> 3 }
     pixelToScreen m = pixelSample m (w, h)
     -- the pixel sampled nearest a point of a view's screen plane, if it's
     -- in the window
@@ -2236,6 +2291,22 @@ reprojectedSeed oldTile old new (w, h)
           j = round ((cy - y) / py + fromIntegral h / 2)
       in if i >= 0 && i < w && j >= 0 && j < h then Just (i, j) else Nothing
 
+-- | Zooming about a point (with the pointer there), on the half-plane:
+-- about the point of the real axis below it instead, so that the axis
+-- stays where it is, along the window's bottom edge (zooming about a
+-- point of the axis moves the half-plane by an isometry).
+zoomPivotY :: Model -> Double -> Double
+zoomPivotY m y = case modelShape m of
+  HyperbolicShape _ HalfPlaneDisplay _ -> 0
+  _ -> y
+
+-- | A model, its window resized to @h@ pixels high: on the half-plane,
+-- keeping the real axis along the window's bottom edge.
+keepAxisAtBottom :: Int -> Model -> Model
+keepAxisAtBottom h m = case modelShape m of
+  HyperbolicShape _ HalfPlaneDisplay _ -> m { modelCenter = axisAtBottom h (snd (modelPixelDim m)) (modelCenter m) }
+  _ -> m
+
 -- | What a new sphere view's render shows until it's drawn, when it
 -- starts from scratch: grey on the globe, and the background off it,
 -- since that's all there is to draw there (so the pieces wholly off the
@@ -2243,7 +2314,8 @@ reprojectedSeed oldTile old new (w, h)
 backgroundSeed :: Model -> (Int, Int) -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
 backgroundSeed m (w, h) = case modelShape m of
   FlatShape -> Nothing
-  -- (the globe, or the disk: a unit disk at the screen plane's origin)
+  -- (the globe, or the disk: a unit disk at the screen plane's origin; or
+  -- the half-plane)
   _ -> Just $ \dest finals -> do
     -- Row by row: the globe is one span of a row (left as it is, not drawn
     -- yet), with the background on either side of it.
@@ -2259,7 +2331,10 @@ backgroundSeed m (w, h) = case modelShape m of
               -- the render will say they are
               lo = ceiling ((negate half - cx) / px + fromIntegral w / 2) :: Int
               hi = floor ((half - cx) / px + fromIntegral w / 2) :: Int
-          in if half < 0 then (w, w - 1) else (max 0 lo, min (w - 1) hi)
+          in case modelShape m of
+               -- (the half-plane: a row is all on it, above the real axis, or all off)
+               HyperbolicShape _ HalfPlaneDisplay _ -> if y > 0 then (0, w - 1) else (w, w - 1)
+               _ -> if half < 0 then (w, w - 1) else (max 0 lo, min (w - 1) hi)
         spans = [ span' j | j <- [0 .. h - 1] ]
     forM_ (zip [0 ..] spans) $ \(j, (lo, hi)) -> do
       forM_ [0 .. lo - 1] $ \i -> pokeBackground dest finals (3 * (j * w + i))

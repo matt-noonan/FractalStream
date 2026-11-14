@@ -61,7 +61,7 @@ module Actor.Viewer.Sphere
   , onTheSphere
   ) where
 
-import Actor.Viewer.Disk (Isometry, diskToScreen)
+import Actor.Viewer.Disk (Isometry, HyperbolicModel, HyperbolicDisplay, modelToScreenH)
 import Data.Color (Color, rgbToColor, black)
 import Data.DynamicValue (Variable, newVariable)
 import FractalStream.Settings (defaultSphereShading)
@@ -201,9 +201,11 @@ planeToScreen r = sphereToScreen r . planeToSphere
 -- How model points reach the screen
 
 -- | How a viewer's model points are placed on its screen plane: as they
--- are (the plane), on the globe, with its orientation, or in the disk,
--- moved by its view (see "Actor.Viewer.Disk").
-data Projection = FlatProjection | GlobeProjection Rotation | DiskProjection Isometry
+-- are (the plane), on the globe, with its orientation, or in the
+-- hyperbolic plane, from its model, moved by its view, onto its display
+-- (see "Actor.Viewer.Disk").
+data Projection = FlatProjection | GlobeProjection Rotation
+                | HyperbolicProjection HyperbolicModel HyperbolicDisplay Isometry
   deriving (Eq, Show)
 
 -- | Where a viewer's screen plane is: the point at the image's center,
@@ -221,7 +223,7 @@ projectToScreen :: Projection -> (Double, Double) -> Maybe (Double, Double)
 projectToScreen = \case
   FlatProjection -> Just
   GlobeProjection r -> planeToScreen r
-  DiskProjection v -> diskToScreen v
+  HyperbolicProjection model display v -> modelToScreenH model display v
 
 -- | The runs of a polyline (in model points) that are visible, on the
 -- screen plane.
