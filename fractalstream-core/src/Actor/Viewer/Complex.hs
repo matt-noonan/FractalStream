@@ -12,6 +12,7 @@ import Actor.Tool
 import Actor.Event (Coordinate(..), ViewKind(..))
 import Actor.Viewer.Sphere (Rotation)
 import Actor.Viewer.Disk (Isometry)
+import Actor.Viewer.Group (FoldData)
 
 import Data.DynamicValue
 
@@ -54,6 +55,8 @@ data ComplexViewer = ComplexViewer
   , cvIterationLimit :: Parsed (Maybe ParsedValue)
   , cvCode :: Mapped CodeString (Either (SourceRange, String) SomeViewerWithContext)
   , cvTools :: Variable [Tool]
+  , cvGroup :: Maybe (Dynamic FoldData)
+    -- ^ Its group (@group=@), ready to fold with, if it has one.
   , cvOverlay :: Maybe Tool
     -- ^ Its overlay (@\@tool overlay@), if it has one: built like a tool,
     -- but never offered for selection (see 'Actor.Viewer.vRefreshOverlay').

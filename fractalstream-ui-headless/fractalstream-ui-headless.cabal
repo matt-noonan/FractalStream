@@ -145,6 +145,7 @@ test-suite end-to-end
                     , DragSpec
                     , GeometrySpec
                     , DiskSpec
+                    , GroupSpec
                     , PixelSizeSpec
                     , BlocksSpec
                     , TextSpec

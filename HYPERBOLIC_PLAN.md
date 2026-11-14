@@ -81,23 +81,58 @@ view. The kernel gets one Möbius map, screen → model.
 
 ## Phase 2: the group layer
 
-- [ ] `group=` names side-pairing data (the polygon's sides as geodesics,
-      and the Möbius map pairing each side with its partner), in tables.
-- [ ] The renderer folds each pixel *and the view* into the fundamental
-      polygon; the script gets the folded point, which group element (or
-      tile) it came from, and its distance to the polygon's sides.
-- [ ] Faster folding than testing every side at every step (thousands of
-      sides for Per_9): e.g. sides sorted by direction, or walking between
-      neighbours.
-- [ ] Tile edges drawn by the renderer (from the distance to the sides).
-- [ ] Overlays repeated across tiles.
+Decided (2026-11-14): `group=` names a `Table 2 of C` of side pairings
+(rows 1-4: a, b, c, d of each side's map, in the script's model, taking
+the outside of the side back in; further rows the script's own), or
+`modular`. The polygon is the one the pairings' bisectors bound (the
+Dirichlet polygon about `groupCenter=`, by default the model's middle). The
+script sees the folded `z` plus `side_distance`, `side_index`,
+`fold_count`; tools get folded points, and their drawings are repeated in
+each visible tile. Implemented in `Actor.Viewer.Group`.
+
+- [x] `group=` names side-pairing data, in a table (or `modular`).
+- [x] The renderer folds each pixel (generated code around the script, with
+      the group's sides as hidden values, prepared once per version of the
+      table) *and the view* (reduced after each move, in fsrun, wx and the
+      web app; the old view by the same element, so animations don't
+      change); the script gets the folded point, how many steps it took,
+      and its distance to the polygon's sides.
+- [x] Faster folding: in the Klein model the polygon is convex about its
+      center, so a binary search of the sides' angles finds the side a
+      point is beyond (Per_9: 2250 sides, about 11 comparisons a step).
+      Per_9 renders in 25 s of CPU instead of 42.
+- [x] Tile edges, from `side_distance` and `side_index` (the script draws
+      them, in its own colors).
+- [x] Overlays repeated across tiles: a breadth-first walk across sides,
+      keeping tiles that cover at least 3% of the polygon's own area on the
+      screen and are shown at most twice as large anywhere (corners and
+      center), up to 2000.
+- [x] Tests: `Actor.GroupSpec` (folding, reduction, tiles, headers);
+      `GroupSpec` end to end (folding, tools, copies, a view moved 77 units
+      along an axis by the group staying exact); `check-tools.mjs group`.
+- [x] Examples: examples/j-invariant.fs (the modular group), and
+      examples/hyperbolic-surface.fs (a genus-g surface, its table worked
+      out by a tool).
 - [ ] Maybe `draw geodesic from p to q` (see H6).
+- [ ] Copies of a drawing keep its model size: a marker a tool sized with
+      `pixel_size_at` for its own place is smaller or larger elsewhere. A
+      way to say "this is a marker, keep its screen size" would help.
+- [ ] In fsrun, an overlay's table writes take effect after the capture
+      that ran it (the surface example's first capture is grey).
+- [ ] A bad group table folds nothing, silently: say why somewhere.
+
+Navigation note (2026-11-13): a pinch or scroll can't zoom about the
+pointer by hyperbolic motions, since those that fix a point are rotations
+about it; on the half-plane both zoom about the point of the real axis
+below the pointer (an isometry), so the axis stays at the bottom.
 
 ## Phase 3: specializations
 
-- [ ] The Per_n(0) atlases (examples/pern-atlas, not in the repo: kept
-      out of git for size) rewritten on phases 1–2, checked against the
-      site's pipeline as before (`verify_disk.py`).
+- [x] The Per_n(0) atlases (examples/pern-atlas, not in the repo: kept
+      out of git for size) rewritten on phases 1–2 (`gen_group.py`:
+      `group=pairings`), and checked against the earlier, verified renders:
+      Per_6 identical but for rounding noise near the circle (a different
+      but equivalent order of fold steps).
 
 ## Data (future work, not started)
 

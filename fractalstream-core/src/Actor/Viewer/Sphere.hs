@@ -216,6 +216,10 @@ data ScreenView = ScreenView
   { svCenter     :: (Double, Double)
   , svPixelSize  :: (Double, Double)
   , svProjection :: Projection
+  , svCopies     :: [Projection]
+    -- ^ the projections drawings are drawn with (see
+    -- 'Actor.Viewer.overlayProjections'): 'svProjection', and with a group,
+    -- one for each tile on the screen
   } deriving (Eq, Show)
 
 -- | A model point's place on the screen plane, if it's visible.

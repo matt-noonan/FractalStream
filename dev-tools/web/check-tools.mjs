@@ -27,6 +27,10 @@
 //             broken.fs), with its editor open, and its saved value and
 //             window once it's fixed; a starting point, as a new project;
 //             and an error, as a notice to dismiss
+//   group     a viewer with a group (group=modular, dev-tools/web/group.fs):
+//             each pixel folded into the modular group's domain (the fold
+//             compiled to WebAssembly), a tool's dot drawn in every tile,
+//             and a drag of the view
 //   disk      a disk viewer (view=disk, dev-tools/web/disk.fs): Navigate's
 //             drag moves the view by a hyperbolic translation (the point
 //             under the pointer stays under it); its menu has no "Show on
@@ -81,7 +85,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -1145,6 +1149,47 @@ async function disk() {
   const there = (await app.messages("where")).pop();
   c.check(there && Math.abs(there.x + 0.3) < 1e-6 && Math.abs(there.y) < 1e-6,
           `back on the disk, the same point's in the middle (${there?.x}, ${there?.y})`);
+}
+
+async function group() {
+  await app.openFile(new URL("group.fs", import.meta.url).pathname);
+  const box = await app.canvas(0).boundingBox();
+  // (1/150 per CSS pixel, the real axis along the bottom: x + y i is at
+  // 150 x right of the middle, 150 y up from the bottom)
+  const at = (x, y) => [box.x + box.width / 2 + 150 * x, box.y + box.height - 150 * y];
+  const pixelAt = ([px, py]) => page.evaluate(([fx, fy]) => {
+    const c = document.querySelectorAll(".viewer canvas")[0];
+    const d = c.getContext("2d").getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data;
+    return [d[0], d[1], d[2]];
+  }, [(px - box.x) / box.width, (py - box.y) / box.height]);
+  const isRed = ([r, g, b]) => r > 200 && g < 60 && b < 60;
+  const isBlue = ([r, g, b]) => r < 60 && g < 60 && b > 200;
+  const isBlack = ([r, g, b]) => r < 40 && g < 40 && b < 40;
+  c.check(isRed(await pixelAt(at(0.1, 1.5))), "0.1 + 1.5i is in the modular group's domain");
+  c.check(isBlue(await pixelAt(at(0.8, 1.5))), "0.8 + 1.5i is a step away from it");
+  c.check(isBlack(await pixelAt(at(0.5, 1.5))), "re z = 1/2 is one of its sides");
+  // a dot, in every tile
+  await app.pressTool("d", "Dot");
+  await page.mouse.click(...at(0.2, 1.5));
+  await page.waitForTimeout(1500);
+  const dots = await app.drawing(0);
+  c.check(dots && dots.filter((s) => s.k === "polygon" || s.k === "runs").length >= 3,
+          `the dot is drawn in its tile and the ones beside it (${kinds(dots)})`);
+  // a drag, which moves the view (and keeps it reduced)
+  // (Navigate isn't a script's tool: the engine says no tool's selected)
+  await page.locator(".window .tool-chooser").first().click();
+  await page.locator(".window .window-menu button", { hasText: "Navigate" }).first().click();
+  await page.waitForFunction(() => [...document.querySelectorAll(".tool-chooser-label")].some((l) => l.textContent === "Navigate"),
+                             null, { timeout: 5000 });
+  const frames = await app.frames(0);
+  const [x0, y0] = at(0, 1.5);
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  for (let k = 1; k <= 15; k++) await page.mouse.move(x0 + 8 * k, y0);
+  await page.mouse.up();
+  await page.waitForFunction((n) => Number(document.querySelector(".viewer").dataset.frames) > n, frames, { timeout: 60000 });
+  const sent = await page.evaluate(() => window.__sent.map((m) => m.type));
+  c.check(sent.includes("diskDrag"), "the drag moves the view of the hyperbolic plane");
 }
 
 async function progressive() {

@@ -1,0 +1,240 @@
+=== viewer 0: j-invariant
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `sigma3` = [1; 9; 28; 73; 126; 252; 344; 585] in:
+                        block:
+                          let `sigma5` = [1; 33; 244; 1057; 3126; 8052; 16808; 33825] in:
+                            block:
+                              let `s4` = 0:R:C in:
+                                block:
+                                  let `s6` = 0:R:C in:
+                                    block:
+                                      let `[list at 32:0]` = range(1, 8) in:
+                                        block:
+                                          set `[hoisted] sigma3` := sigma3
+                                          set `[hoisted] sigma5` := sigma5
+                                          set `[hoisted] s4` := s4
+                                          set `[hoisted] s6` := s6
+                                          set `[hoisted] [list at 32:0]` := [list at 32:0]
+
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              if (([internal] half-plane display and !(0.0 < [internal] y)) or (![internal] half-plane display and !((([internal] x * [internal] x) + ([internal] y * [internal] y)) < 1.0))) then:
+                set `color` := Color 48 48 48
+              else:
+                block:
+                  let `[internal] disk.s` = ([internal] x:C + ([internal] y:C * 0.0 :+ 1.0)) in:
+                    block:
+                      let `[internal] disk.num` = ((([internal] hyperbolic a.re:C + ([internal] hyperbolic a.im:C * 0.0 :+ 1.0)) * [internal] disk.s) + ([internal] hyperbolic b.re:C + ([internal] hyperbolic b.im:C * 0.0 :+ 1.0))) in:
+                        block:
+                          let `[internal] disk.den` = ((([internal] hyperbolic c.re:C + ([internal] hyperbolic c.im:C * 0.0 :+ 1.0)) * [internal] disk.s) + ([internal] hyperbolic d.re:C + ([internal] hyperbolic d.im:C * 0.0 :+ 1.0))) in:
+                            block:
+                              let `[internal] group.gz` = ([internal] disk.num / [internal] disk.den) in:
+                                block:
+                                  set `pixel_size` := (pixel_size / (|[internal] disk.den| ^ 2:R))
+                                  let `[internal] group.gdz` = 1.0 in:
+                                    block:
+                                      let `[internal] group.gsteps` = 0 in:
+                                        block:
+                                          let `[internal] group.gnw` = |[internal] group angles| in:
+                                            block:
+                                              let `[internal] group.gwedge` = [internal] group.gnw in:
+                                                block:
+                                                  let `[internal] group.gaon` = True in:
+                                                    block:
+                                                      let `[internal] fresh #55` = 0 in:
+                                                        let `[internal] fresh #56` = 1000 in:
+                                                          block:
+                                                            if ([internal] group.gaon and ([internal] fresh #55 < [internal] fresh #56)) then:
+                                                              do-while ([internal] group.gaon and ([internal] fresh #55 < [internal] fresh #56)):
+                                                                block:
+                                                                  block:
+                                                                    let `[internal] group.gkz` = ((2:R:C * [internal] group.gz) / (1:R + (|[internal] group.gz| ^ 2:R)):C) in:
+                                                                      block:
+                                                                        let `[internal] group.gph` = arg([internal] group.gkz) in:
+                                                                          block:
+                                                                            set `[internal] group.gwedge` := [internal] group.gnw
+                                                                            if !([internal] group.gph < ([internal] group angles@1)) then:
+                                                                              block:
+                                                                                let `[internal] group.glo` = 1 in:
+                                                                                  block:
+                                                                                    let `[internal] group.ghi` = [internal] group.gnw in:
+                                                                                      block:
+                                                                                        let `[internal] fresh #61` = 0 in:
+                                                                                          let `[internal] fresh #62` = 64 in:
+                                                                                            block:
+                                                                                              if (([internal] group.glo < [internal] group.ghi) and ([internal] fresh #61 < [internal] fresh #62)) then:
+                                                                                                do-while (([internal] group.glo < [internal] group.ghi) and ([internal] fresh #61 < [internal] fresh #62)):
+                                                                                                  block:
+                                                                                                    block:
+                                                                                                      let `[internal] group.gmid` = ((([internal] group.glo + [internal] group.ghi) + 1) / 2) in:
+                                                                                                        block:
+                                                                                                          if !([internal] group.gph < ([internal] group angles@[internal] group.gmid)) then:
+                                                                                                            block:
+                                                                                                              set `[internal] group.glo` := [internal] group.gmid
+                                                                                                          else:
+                                                                                                            block:
+                                                                                                              set `[internal] group.ghi` := ([internal] group.gmid - 1)
+                                                                                                    set `[internal] fresh #61` := ([internal] fresh #61 + 1)
+                                                                                              else:
+                                                                                                no-op
+                                                                                              set `[internal] iteration count` := [internal] fresh #61
+                                                                                              set `[internal] stuck` := ([internal] fresh #61 = [internal] fresh #62)
+                                                                                        set `[internal] group.gwedge` := [internal] group.glo
+                                                                            else:
+                                                                              no-op
+                                                                            let `[internal] group.gside` = ([internal] group wedge sides@[internal] group.gwedge) in:
+                                                                              block:
+                                                                                set `[internal] group.gaon` := False
+                                                                                if (0 < [internal] group.gside) then:
+                                                                                  block:
+                                                                                    let `[internal] group.gnk` = ([internal] group normals@[internal] group.gside) in:
+                                                                                      block:
+                                                                                        if (([internal] group reach@[internal] group.gside) < ((re([internal] group.gkz) * re([internal] group.gnk)) + (im([internal] group.gkz) * im([internal] group.gnk)))) then:
+                                                                                          block:
+                                                                                            let `[internal] group.gden2` = ((([internal] group c@[internal] group.gside) * [internal] group.gz) + ([internal] group d@[internal] group.gside)) in:
+                                                                                              block:
+                                                                                                set `[internal] group.gz` := (((([internal] group a@[internal] group.gside) * [internal] group.gz) + ([internal] group b@[internal] group.gside)) / [internal] group.gden2)
+                                                                                                set `[internal] group.gdz` := ([internal] group.gdz / (|[internal] group.gden2| ^ 2:R))
+                                                                                                set `[internal] group.gsteps` := ([internal] group.gsteps + 1)
+                                                                                                set `[internal] group.gaon` := True
+                                                                                        else:
+                                                                                          no-op
+                                                                                else:
+                                                                                  no-op
+                                                                  set `[internal] fresh #55` := ([internal] fresh #55 + 1)
+                                                            else:
+                                                              no-op
+                                                            set `[internal] iteration count` := [internal] fresh #55
+                                                            set `[internal] stuck` := ([internal] fresh #55 = [internal] fresh #56)
+                                                      let `[internal] group.gbest` = -1.0 in:
+                                                        block:
+                                                          let `[internal] group.gbk` = 0 in:
+                                                            block:
+                                                              let `[internal] group.gcand` = 0 in:
+                                                                block:
+                                                                  set `[internal] group.gcand` := ([internal] group wedge sides@if ([internal] group.gwedge = 1) then [internal] group.gnw else ([internal] group.gwedge - 1))
+                                                                  if (0 < [internal] group.gcand) then:
+                                                                    block:
+                                                                      let `[internal] group.gcc` = ([internal] group circles@[internal] group.gcand) in:
+                                                                        block:
+                                                                          let `[internal] group.grr` = ([internal] group radii@[internal] group.gcand) in:
+                                                                            block:
+                                                                              let `[internal] group.gq` = ((|([internal] group.gz - [internal] group.gcc)| ^ 2:R) - ([internal] group.grr ^ 2:R)) in:
+                                                                                block:
+                                                                                  let `[internal] group.gsd` = (|[internal] group.gq| / ([internal] group.grr * (1:R - (|[internal] group.gz| ^ 2:R)))) in:
+                                                                                    block:
+                                                                                      if (([internal] group.gbest < 0:R) or ([internal] group.gsd < [internal] group.gbest)) then:
+                                                                                        block:
+                                                                                          set `[internal] group.gbest` := [internal] group.gsd
+                                                                                          set `[internal] group.gbk` := [internal] group.gcand
+                                                                                      else:
+                                                                                        no-op
+                                                                  else:
+                                                                    no-op
+                                                                  set `[internal] group.gcand` := ([internal] group wedge sides@[internal] group.gwedge)
+                                                                  if (0 < [internal] group.gcand) then:
+                                                                    block:
+                                                                      let `[internal] group.gcc` = ([internal] group circles@[internal] group.gcand) in:
+                                                                        block:
+                                                                          let `[internal] group.grr` = ([internal] group radii@[internal] group.gcand) in:
+                                                                            block:
+                                                                              let `[internal] group.gq` = ((|([internal] group.gz - [internal] group.gcc)| ^ 2:R) - ([internal] group.grr ^ 2:R)) in:
+                                                                                block:
+                                                                                  let `[internal] group.gsd` = (|[internal] group.gq| / ([internal] group.grr * (1:R - (|[internal] group.gz| ^ 2:R)))) in:
+                                                                                    block:
+                                                                                      if (([internal] group.gbest < 0:R) or ([internal] group.gsd < [internal] group.gbest)) then:
+                                                                                        block:
+                                                                                          set `[internal] group.gbest` := [internal] group.gsd
+                                                                                          set `[internal] group.gbk` := [internal] group.gcand
+                                                                                      else:
+                                                                                        no-op
+                                                                  else:
+                                                                    no-op
+                                                                  set `[internal] group.gcand` := ([internal] group wedge sides@if ([internal] group.gwedge = [internal] group.gnw) then 1 else ([internal] group.gwedge + 1))
+                                                                  if (0 < [internal] group.gcand) then:
+                                                                    block:
+                                                                      let `[internal] group.gcc` = ([internal] group circles@[internal] group.gcand) in:
+                                                                        block:
+                                                                          let `[internal] group.grr` = ([internal] group radii@[internal] group.gcand) in:
+                                                                            block:
+                                                                              let `[internal] group.gq` = ((|([internal] group.gz - [internal] group.gcc)| ^ 2:R) - ([internal] group.grr ^ 2:R)) in:
+                                                                                block:
+                                                                                  let `[internal] group.gsd` = (|[internal] group.gq| / ([internal] group.grr * (1:R - (|[internal] group.gz| ^ 2:R)))) in:
+                                                                                    block:
+                                                                                      if (([internal] group.gbest < 0:R) or ([internal] group.gsd < [internal] group.gbest)) then:
+                                                                                        block:
+                                                                                          set `[internal] group.gbest` := [internal] group.gsd
+                                                                                          set `[internal] group.gbk` := [internal] group.gcand
+                                                                                      else:
+                                                                                        no-op
+                                                                  else:
+                                                                    no-op
+                                                                  let `side_distance` = if ([internal] group.gbest < 0:R) then 1000000.0 else asinh([internal] group.gbest) in:
+                                                                    block:
+                                                                      let `side_index` = [internal] group.gbk in:
+                                                                        block:
+                                                                          let `fold_count` = [internal] group.gsteps in:
+                                                                            block:
+                                                                              let `[internal] group.gfk` = ((([internal] group from fold@3) * [internal] group.gz) + ([internal] group from fold@4)) in:
+                                                                                block:
+                                                                                  set `z` := (((([internal] group from fold@1) * [internal] group.gz) + ([internal] group from fold@2)) / [internal] group.gfk)
+                                                                                  set `pixel_size` := ((pixel_size * [internal] group.gdz) / (|[internal] group.gfk| ^ 2:R))
+                                                                                  block:
+                                                                                    let `sigma3` = [hoisted] sigma3 in:
+                                                                                      block:
+                                                                                        let `sigma5` = [hoisted] sigma5 in:
+                                                                                          block:
+                                                                                            let `s4` = [hoisted] s4 in:
+                                                                                              block:
+                                                                                                let `s6` = [hoisted] s6 in:
+                                                                                                  block:
+                                                                                                    let `[list at 32:0]` = [hoisted] [list at 32:0] in:
+                                                                                                      block:
+                                                                                                        let `q` = exp((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * z)) in:
+                                                                                                          block:
+                                                                                                            let `qn` = q in:
+                                                                                                              block:
+                                                                                                                {TODO: ForEach}
+                                                                                                                let `e4` = (1:R:C + (240:R:C * s4)) in:
+                                                                                                                  block:
+                                                                                                                    let `e6` = (1:R:C - (504:R:C * s6)) in:
+                                                                                                                      block:
+                                                                                                                        let `j` = ((1728:R:C * (e4 ^ 3:R:C)) / ((e4 ^ 3:R:C) - (e6 ^ 2:R:C))) in:
+                                                                                                                          block:
+                                                                                                                            set `color` := let #wheel-arg = ((arg(j) / (2:R * 3.141592653589793)) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))))
+                                                                                                                            if (show_bands and (0:R < |j|)) then:
+                                                                                                                              block:
+                                                                                                                                let `band` = ((log(|j|) / log(2:R)) mod 1.0) in:
+                                                                                                                                  block:
+                                                                                                                                    set `color` := blend((0.35 * band), Color 0 0 0, color)
+                                                                                                                            else:
+                                                                                                                              no-op
+                                                                                                                            if show_edges then:
+                                                                                                                              block:
+                                                                                                                                let `w` = (pixel_size / im(z)) in:
+                                                                                                                                  block:
+                                                                                                                                    set `color` := blend(let [internal] clamp01.v #0 = (((1.5 * w) - side_distance) / w) in if ([internal] clamp01.v #0 < 0:R) then 0.0 else if (1:R < [internal] clamp01.v #0) then 1.0 else [internal] clamp01.v #0, Color 0 0 0, color)
+                                                                                                                            else:
+                                                                                                                              no-op
+
+
+--- tool Mark
+ERROR: No variable named [internal] view a.im is defined here.
+

@@ -54,7 +54,7 @@ compositeDrawLayers
   -> (Word32, Word32)   -- ^ buffer dimensions, in pixels
   -> Ptr Word8          -- ^ the rendered base image, as RGB8
   -> IO (Image PixelRGBA8)
-compositeDrawLayers ScreenView{ svCenter = center, svPixelSize = pixelSize, svProjection = proj }
+compositeDrawLayers ScreenView{ svCenter = center, svPixelSize = pixelSize, svProjection = proj, svCopies = copies }
                     layers (w32, h32) buf = do
   let w = fromIntegral w32
       h = fromIntegral h32
@@ -73,7 +73,8 @@ compositeDrawLayers ScreenView{ svCenter = center, svPixelSize = pixelSize, svPr
            -- (the globe and the disk: drawings are sampled, and each
            -- point projected)
            GlobeProjection _ -> mapM_ (drawGlobeLayer image proj toPx) layers
-           HyperbolicProjection {} -> mapM_ (drawGlobeLayer image proj toPx) layers)
+           -- (with a group, in each tile on the screen)
+           HyperbolicProjection {} -> sequence_ [ drawGlobeLayer image p toPx layer | layer <- layers, p <- copies ])
                    baseImage
 
 -- | Lay a (non-premultiplied, as Rasterific makes them) RGBA image over

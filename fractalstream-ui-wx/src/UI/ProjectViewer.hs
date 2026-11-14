@@ -869,9 +869,19 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         -- globe doesn't: its steps keep the last image up until the new
         -- render's pixels arrive), or re-render the same view for new
         -- parameters.
-        jumpViewWith how newModel@(Model newCenter (newPixelSize, newPixelHeight) newShape) = do
+        jumpViewWith how newModel0 = do
           let animated = how == AnimatedChange
-          oldModel <- get model value
+          -- (with a group, the new view reduced, so that its numbers stay
+          -- small however far it's moved; the old one by the same element,
+          -- so the move between them, and its animation, are the same)
+          (oldModel, newModel@(Model newCenter (newPixelSize, newPixelHeight) newShape)) <-
+            (get model value >>= \old0 -> case modelShape newModel0 of
+              HyperbolicShape _ _ v -> viewReductionFor theViewer v <&> \r ->
+                let fix m = case modelShape m of
+                      HyperbolicShape hm d u -> m { modelShape = HyperbolicShape hm d (r u) }
+                      _ -> m
+                in (fix old0, fix newModel0)
+              _ -> pure (old0, newModel0))
           Size { sizeW = w, sizeH = h } <- get f clientSize
           set model [ value := newModel ]
           setValue' vCenter    newCenter
@@ -954,6 +964,13 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           Size { sizeW = w, sizeH = h } <- get f clientSize
           pure (Box 0 0 (fromIntegral w) (fromIntegral h))
         screenToView mdl pt = toViewPoint <$> screenToViewD mdl pt
+        -- A grouped viewer's tools' drawings, in each tile on the screen
+        -- but the polygon's own (which the usual painting draws).
+        paintTileCopies mdl box dc = when (isJust vGroup) $ do
+          Size { sizeW = cw, sizeH = ch } <- get f clientSize
+          copies <- overlayProjections theViewer (modelProjection mdl) (modelCenter mdl) (fst (modelPixelDim mdl)) (cw, ch)
+          forM_ (drop 1 copies) $ \proj ->
+            paintToolLayer proj (screenToViewD mdl) box (modelPixelDim mdl) vDrawCmds dc
         -- Recenter the disk's view on the model point under a point of the
         -- window: the hyperbolic translation taking it to the window's
         -- middle (a step in the history, animated).
@@ -1012,6 +1029,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                     | otherwise -> drawCenteredBitmapAt (0, 0) bmp dc viewRect (w, h)
 
                 box <- viewBox
+                -- (with a group, the drawings in each other tile on the
+                -- screen too; see 'Actor.Viewer.overlayProjections')
+                paintTileCopies mdl box dc
                 get currentTool value >>= \case
                   Left NavTool | isNothing (modelRotation mdl) -> paintToolLayerWithDragBox (modelProjection mdl) (screenToViewD mdl) box (modelPixelDim mdl) vDrawCmds lastClick draggedTo dc r viewRect
                   Left MoviePathTool -> do
@@ -1121,6 +1141,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                         graphicsContextClipByRectangle gc (Rect x y rw rh)
                         withLayer 1 drawNew
                 box <- viewBox
+                paintTileCopies midModel box dc
                 paintToolLayer (modelProjection midModel) (screenToViewD midModel) box (modelPixelDim midModel) vDrawCmds dc
             paintHud dc
           ]

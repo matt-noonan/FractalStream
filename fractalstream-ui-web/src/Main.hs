@@ -250,6 +250,7 @@ import Language.Legacy.Translate (Translation(..), translateLegacyScript)
 import Actor.Layout
 import Actor.UI (UI(..))
 import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progressive(..), ImagePiece(..), onParameterChanges, viewProjection,
+                     overlayProjections, reducedView,
                      pointerText)
 import Actor.Event (ViewKind(..), hyperbolicDisplay, hyperbolicModel, Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
@@ -1111,7 +1112,8 @@ setViewerModel v (Model c (px, py) shape) = do
     FlatShape -> setValue (vView v) PlaneView
     GlobeShape r -> setValue (vRotation v) r >> setValue (vView v) SphereView
     HyperbolicShape _ display iso -> do
-      setValue (vIsometry v) iso
+      -- (with a group, reduced: see 'Actor.Viewer.Group.reduceView')
+      setValue (vIsometry v) =<< reducedView v iso
       setValue (vView v) (case display of { DiskDisplay -> DiskView; HalfPlaneDisplay -> HalfPlaneView })
 
 -- | Go to a view (rendering it), and tell the page.
@@ -1655,7 +1657,7 @@ diskDrag :: Int -> Double -> Double -> Double -> Double -> IO ()
 diskDrag k fx fy tx ty = withViewerState k $ \vs -> do
   iso <- getDynamic (vIsometry (vsViewer vs))
   display <- fromMaybe DiskDisplay . hyperbolicDisplay <$> getDynamic (vView (vsViewer vs))
-  setValue (vIsometry (vsViewer vs)) (dragOnDisplay display iso (fx, fy) (tx, ty))
+  setValue (vIsometry (vsViewer vs)) =<< reducedView (vsViewer vs) (dragOnDisplay display iso (fx, fy) (tx, ty))
   -- (the last picture shows none of it where it is now)
   writeIORef (vsCovered vs) Nothing
   requestRender (vsSignal vs)
@@ -1907,8 +1909,13 @@ postDrawings ViewerState{..} = do
   when (changed || curved) $ do
     layers <- vDrawCmds vsViewer
     proj <- viewProjection (vOriginalView vsViewer) (vView vsViewer) (vRotation vsViewer) (vIsometry vsViewer)
+    -- (with a group, in each tile on the screen)
+    Dimensions size <- getDynamic (vSize vsViewer)
+    center <- getDynamic (vCenter vsViewer)
+    px <- getDynamic (vPixelSize vsViewer)
+    projs <- overlayProjections vsViewer proj center px size
     post $ Aeson.object
-      [ "type" .= ("drawing" :: Text.Text), "viewer" .= vsId, "layers" .= drawingJSON proj layers ]
+      [ "type" .= ("drawing" :: Text.Text), "viewer" .= vsId, "layers" .= drawingJSON projs layers ]
 
 ------------------------------------------------------------------------
 -- The script editor

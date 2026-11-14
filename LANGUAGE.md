@@ -760,6 +760,52 @@ pointer, and resizing the window keeps the axis at the bottom, so there's
 no empty space below it; double-clicking a point, or jumping to one, puts
 it in the middle of the window.
 
+#### Groups: tilings and surfaces
+
+A viewer of the hyperbolic plane can have a *group* acting on it: a
+Fuchsian group, given by the side pairings of a fundamental polygon. The
+viewer then *folds* each pixel's point into the polygon before its code
+sees it, so the code works on the quotient (a surface, or an orbifold),
+and the picture is repeated over the plane, one copy per tile:
+
+```
+@viewer "j-invariant" view=halfplane group=modular
+...
+```
+
+`group=modular` is the modular group PSL(2, ℤ), whose polygon is the
+familiar one: |re z| ≤ 1/2 and |z| ≥ 1, in the half-plane (moved to the
+disk by the Cayley map, for a `view=disk` script). Otherwise, `group=` names
+a `Table 2 of C` of the configuration: column `k` is the polygon's side
+`k`, and `T @ (1, k)` .. `T @ (4, k)` are the `a`, `b`, `c`, `d` of its
+*pairing*, the map `s ↦ (a s + b)/(c s + d)` of the script's model (the disk
+or the half-plane) that takes a point beyond the side back across it. The
+side itself is halfway between the polygon's center and the point that the
+pairing takes to the center (so the polygon is the Dirichlet polygon about
+its center, when the pairings generate the group and include each one's
+inverse). The center is the middle of the model (0, or `i`), or
+`groupCenter=`, which no pairing may fix. Further rows of the table are the
+script's own (to keep data about each side, say). A tool can write the
+table, and the viewer redraws.
+
+Besides its folded point, a viewer with a group has:
+
+- `side_distance`: the hyperbolic distance from the point to the nearest
+  side of the polygon. A pixel's hyperbolic size is `2 pixel_size / (1 -
+  |z|²)` in the disk and `pixel_size / im(z)` in the half-plane, so
+  `side_distance < 1.5 * that` draws the tiles' edges 3 pixels wide.
+- `side_index`: which side that is (its column of the table).
+- `fold_count`: how many sides the pixel's point was moved across to reach
+  the polygon. (This one depends on where the view is, not just on the
+  point of the surface.)
+
+Its tools' points are folded too, and their drawings are drawn in each tile
+on the screen that's large enough to see, though not in tiles shown much
+larger than the polygon itself (where a marker sized for its own place
+would be blown up). The view is kept *reduced*: after each move, its center
+is folded back into the polygon, which shows the same picture but keeps the
+view's numbers small, however far it's moved.
+
 ### Colorizers
 
 A viewer script often only needs to say what to compute, like
