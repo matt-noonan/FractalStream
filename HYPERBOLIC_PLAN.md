@@ -54,7 +54,7 @@ script and its data.
 - [x] `pixel_size` is the pixel's local model width in the disk (it varies
       with the pixel), so a pixel's hyperbolic size is
       `2 pixel_size / (1 - |z|²)` (needed for tile edges and similar).
-- [ ] wx navigation checked by hand with the mouse (drag, click, scroll).
+- [x] wx navigation checked by hand with the mouse (drag, click, scroll).
 - [x] The web page: hyperbolic drag (`diskDrag`; the engine refuses the
       page's covered region once the view has moved), checked in headless
       Chromium (`check-tools.mjs disk`).
