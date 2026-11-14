@@ -73,6 +73,7 @@ import Language.Value.Typecheck
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv)
 import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs, viewKindName, viewPixelSizeName, viewMobiusNames)
+import Language.Code.Typecheck (hyperbolicToolName)
 import Language.Code.Hoist (Split(..))
 import Language.Parser.SourceRange
 import Data.Color (black, grey)
@@ -904,16 +905,18 @@ toolViewValues view0 view pixelSize iso =
   (viewKindName, LiveValue IntegerType (kindCode <$> view))
   : (viewPixelSizeName, LiveValue RealType pixelSize)
   : [ (n, LiveValue RealType ((!! k) . ac <$> mobius)) | (k, n) <- zip [0 ..] viewMobiusNames ]
+  -- (in the hyperbolic plane, @draw geodesic@ can be used)
+  ++ [ (hyperbolicToolName, LiveValue BooleanType (pure True)) | isJust (hyperbolicDisplay view0) ]
   where
     kindCode = \case { PlaneView -> 0; SphereView -> 1; DiskView -> 2; HalfPlaneView -> 2 }
     mobius = viewMobius (hyperbolicModel view0) <$> (fromMaybe DiskDisplay . hyperbolicDisplay <$> view) <*> iso
     -- (a and c of the screen-to-model map)
     ac (Mobius (ar :+ ai) _ (cr :+ ci) _) = [ar, ai, cr, ci]
 
--- | The names and types of 'toolViewValues'.
-toolViewEntries :: [(String, SomeType)]
-toolViewEntries =
-  [ (n, SomeType ty) | (n, LiveValue ty _) <- toolViewValues PlaneView (pure PlaneView) (pure 0) (pure identityIsometry) ]
+-- | The names and types of 'toolViewValues', for a viewer of this kind.
+toolViewEntries :: ViewKind -> [(String, SomeType)]
+toolViewEntries view0 =
+  [ (n, SomeType ty) | (n, LiveValue ty _) <- toolViewValues view0 (pure view0) (pure 0) (pure identityIsometry) ]
 
 -- | A viewer's geometry, and how it shows its points (see
 -- 'toolViewValues'), as read-only arguments for its tools.
@@ -974,7 +977,7 @@ checkViewerTools configEnv myTools ViewerFields{..} = do
                     , fromMaybe defaultMaxRadius mEscPV
                     , fromMaybe defaultMinRadius mVanPV
                     )
-  forM_ myTools (checkTool (configEnv ++ viewerGeometryEntries vfCoord ++ toolViewEntries) vfCoord toolLimits vfPixelVar)
+  forM_ myTools (checkTool (configEnv ++ viewerGeometryEntries vfCoord ++ toolViewEntries vfView) vfCoord toolLimits vfPixelVar)
 
 -- | The pure, allocation-free check of a tool's own code, which in the
 -- app is otherwise first type-checked by 'Actor.Event.buildHandlerWith'.
@@ -1472,7 +1475,9 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
     cvSizeV      <- newVariable (Dimensions (600, 600))  -- (see cvCenterV)
     -- (its group, if it has one, ready to fold with)
     groupCache   <- newIORef Nothing
-    let groupDyn = (\src -> groupFoldDyn (hyperbolicModel vfView) groupCache src contextDyn) <$> groupSource
+    let groupStatus = (\src -> groupFoldDyn (hyperbolicModel vfView) groupCache src contextDyn) <$> groupSource
+        groupDyn = fmap (either (const noFolding) id) <$> groupStatus
+        groupProblem = maybe (pure Nothing) (fmap (either Just (const Nothing))) groupStatus
     cvPositionV  <- newVariable (Dimensions (100 + 30 * n, 100 + 30 * n))
     cvCanResizeV <- newVariable True
 
@@ -1619,6 +1624,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvTools = cvToolsV
               , cvOverlay = listToMaybe overlays
               , cvGroup = groupDyn
+              , cvGroupProblem = groupProblem
               }
 
 ------------------------------------------------------------
@@ -1889,7 +1895,12 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
 
         withEnvironment env $ do
 
-          let vGetArgs = case someContext of
+          -- (with a group whose table can't be used, the viewer is
+          -- paused, saying why)
+          let vGetArgs = getDynamic cvGroupProblem >>= \case
+                Just problem -> pure (Left problem)
+                Nothing -> vGetArgsFromConfig
+              vGetArgsFromConfig = case someContext of
                 SomeContext context' -> case sameEnvironment (contextToEnv context) (contextToEnv context') of
                   Just Refl -> do
                     rawResult <- mapContextM @DynamicValue' @HaskellValueOrError (\_ _ -> getDynamic) context'
@@ -2022,25 +2033,30 @@ viewerGroupSource ViewerFields{..} = case vfGroup of
       "modular" -> BuiltinGroup (let gr = modularGroup model in maybe gr (\c -> gr { groupCenter = c }) center)
       name -> TableGroup name (fromMaybe (if model == DiskModel then (0, 0) else (0, 1)) center)
 
--- | A viewer's group, ready to fold with, as its configuration changes
--- (a group that's not ready yet, or wrong, folds nothing). Getting a
--- table's group ready is done once for each version of the table.
-groupFoldDyn :: HyperbolicModel -> IORef (Maybe ((ForeignPtr Word8, [Int], Int), FoldData))
-             -> GroupSource -> Dynamic (Either String (SomeContext DynamicValue)) -> Dynamic FoldData
+-- | A viewer's group, ready to fold with, as its configuration changes;
+-- or what's wrong with its table. A table with nothing in it yet (one a
+-- tool or overlay fills in, say) folds nothing, without complaint.
+-- Getting a table's group ready is done once for each version of the
+-- table.
+groupFoldDyn :: HyperbolicModel -> IORef (Maybe ((ForeignPtr Word8, [Int], Int), Either String FoldData))
+             -> GroupSource -> Dynamic (Either String (SomeContext DynamicValue)) -> Dynamic (Either String FoldData)
 groupFoldDyn model cache src contextDyn = case src of
-  BuiltinGroup g -> pure (either (const noFolding) id (prepareGroup model g))
+  BuiltinGroup g -> pure (prepareGroup model g)
   TableGroup name c -> contextDyn >>= \case
-    Left _ -> pure noFolding
+    -- (a problem with the configuration is reported as such)
+    Left _ -> pure (Right noFolding)
     Right sctx -> case lookupSomeContextByName name sctx of
-      Just (FoundBinding (TableType _ ComplexType) v) -> cachedFold c <$> v
-      _ -> pure noFolding
+      Just (FoundBinding (TableType _ ComplexType) v) -> cachedFold name c <$> v
+      _ -> pure (Right noFolding)
   where
-    cachedFold c t = unsafePerformIO $ do
+    cachedFold name c t = unsafePerformIO $ do
       let version = (tableBuffer t, tableDims t, tableVersion t)
       readIORef cache >>= \case
         Just (k, fd) | k == version -> pure fd
         _ -> do
-          let fd = either (const noFolding) id (groupFromTable c t >>= prepareGroup model)
+          let fd | product (tableDims t) == 0 = Right noFolding
+                 | otherwise = either (\err -> Left ("The group's table, `" ++ name ++ "`, can't be used: " ++ err)) Right
+                                      (groupFromTable c t >>= prepareGroup model)
           writeIORef cache (Just (version, fd))
           pure fd
 

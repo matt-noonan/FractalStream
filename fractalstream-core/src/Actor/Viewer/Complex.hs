@@ -57,6 +57,9 @@ data ComplexViewer = ComplexViewer
   , cvTools :: Variable [Tool]
   , cvGroup :: Maybe (Dynamic FoldData)
     -- ^ Its group (@group=@), ready to fold with, if it has one.
+  , cvGroupProblem :: Dynamic (Maybe String)
+    -- ^ What's wrong with its group's table, if anything (the viewer is
+    -- paused, saying so, until it's put right).
   , cvOverlay :: Maybe Tool
     -- ^ Its overlay (@\@tool overlay@), if it has one: built like a tool,
     -- but never offered for selection (see 'Actor.Viewer.vRefreshOverlay').

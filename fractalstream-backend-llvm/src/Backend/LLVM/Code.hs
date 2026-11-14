@@ -544,8 +544,8 @@ data DrawVTable = DrawVTable
   , dvStroke :: Operand   -- ^ void(i8 r, i8 g, i8 b)
   , dvFill   :: Operand   -- ^ void(i8 r, i8 g, i8 b)
   , dvPoint  :: Operand   -- ^ void(double x, double y)
-  , dvLine   :: Operand   -- ^ void(double x1, double y1, double x2, double y2)
-  , dvCircle :: Operand   -- ^ void(i8 fill, double r, double x, double y)
+  , dvLine   :: Operand   -- ^ void(i8 geodesic, double x1, double y1, double x2, double y2)
+  , dvCircle :: Operand   -- ^ void(i8 flags, double r, double x, double y): bit 0 filled, bit 1 radius in pixels
   , dvRect   :: Operand   -- ^ void(i8 fill, double x1, double y1, double x2, double y2)
   , dvWrite  :: Operand   -- ^ void(i8* text, double x, double y)
   }
@@ -618,7 +618,7 @@ compileToolHandler envp name code = runExcept $
       fillF   <- bitcast fillP   (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
       pointF  <- bitcast pointP  (fnPtrTy AST.void [AST.double, AST.double])
       lineF   <- bitcast lineP
-                   (fnPtrTy AST.void [AST.double, AST.double, AST.double, AST.double])
+                   (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double, AST.double])
       circleF <- bitcast circleP
                    (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double])
       rectF   <- bitcast rectP
@@ -869,11 +869,13 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
         DrawPoint _ pv -> withPt pv $ \x y ->
           void $ call (dvPoint vt) [(x,[]),(y,[])]
         DrawLine _ p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
-          void $ call (dvLine vt) [(x1,[]),(y1,[]),(x2,[]),(y2,[])]
-        DrawCircle _ fill rv pv -> value_ getExtern arena rv >>= \case
+          void $ call (dvLine vt) [(C.int8 0,[]),(x1,[]),(y1,[]),(x2,[]),(y2,[])]
+        DrawGeodesic _ p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
+          void $ call (dvLine vt) [(C.int8 1,[]),(x1,[]),(y1,[]),(x2,[]),(y2,[])]
+        DrawCircle _ fill unit rv pv -> value_ getExtern arena rv >>= \case
           RealOp r -> withPt pv $ \x y ->
             void $ call (dvCircle vt)
-              [(C.int8 (if fill then 1 else 0),[]),(r,[]),(x,[]),(y,[])]
+              [(C.int8 ((if fill then 1 else 0) + (if unit == ScreenPixels then 2 else 0)),[]),(r,[]),(x,[]),(y,[])]
         DrawRect _ fill p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
           void $ call (dvRect vt)
             [(C.int8 (if fill then 1 else 0),[]),(x1,[]),(y1,[]),(x2,[]),(y2,[])]

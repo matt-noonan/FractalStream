@@ -4,6 +4,7 @@ import Test.Hspec
 
 import Actor.Viewer.Overlay
 import Actor.Viewer.Sphere (ScreenView(..), Projection(..))
+import Actor.Viewer.Disk (HyperbolicModel(..), HyperbolicDisplay(..), identityIsometry, isometryFacing)
 import Language.Draw
 import Language.Environment
 import Data.Color (red, blue)
@@ -41,7 +42,7 @@ spec = describe "compositeDrawLayers" $ do
 
   it "fills shapes with the fill color and outlines them in the stroke color, as the app does" $ do
     let colorAt painted xy = [ (r, g, b) | (x, y, PixelRGBA8 r g b _) <- painted, (x, y) == xy ]
-        shapes = [ DrawCircle EmptyEnvProxy True 10 (0, 0)
+        shapes = [ DrawCircle EmptyEnvProxy True ModelUnits 10 (0, 0)
                  , DrawRect EmptyEnvProxy True (-50, -15) (-30, 15) ]
     painted <- paintedPixels ([ SetStroke EmptyEnvProxy red, SetFill EmptyEnvProxy blue ] ++ shapes)
     -- inside: the fill color
@@ -50,6 +51,28 @@ spec = describe "compositeDrawLayers" $ do
     -- on the edge: the stroke color
     colorAt painted (70, 20) `shouldBe` [(255, 0, 0)]
     colorAt painted (10, 20) `shouldBe` [(255, 0, 0)]
+
+  it "draws a marker (a radius in pixels) the same size with every view" $ do
+    let views = [ HyperbolicProjection DiskModel DiskDisplay identityIsometry
+                , HyperbolicProjection DiskModel DiskDisplay (isometryFacing (0.6, 0)) ]
+        sizes unit r = mapM (\vs -> length <$> paintedOnDisk vs [DrawCircle EmptyEnvProxy True unit r (0, 0)])
+                            [take 1 views, drop 1 views, views]
+    -- (one copy where the view shows the model at full size, one where
+    -- it's 0.64 as large: in pixels, both the same; in the model, not)
+    [one, other, both] <- sizes ScreenPixels 5
+    other `shouldBe` one
+    both `shouldBe` 2 * one
+    [one', other', _] <- sizes ModelUnits 0.05
+    fromIntegral other' / fromIntegral one' `shouldSatisfy` (< (0.6 :: Double))
+
+  it "draws a geodesic of the disk as its arc, not as a straight line" $ do
+    -- (from -0.5 + 0.5i to 0.5 + 0.5i: an arc of the circle about 1.5i,
+    -- through 0.382i, and not along the chord at 0.5i)
+    painted <- paintedOnDisk [HyperbolicProjection DiskModel DiskDisplay identityIsometry]
+                             [DrawGeodesic EmptyEnvProxy (-0.5, 0.5) (0.5, 0.5)]
+    let at (x, y) = not (null [ () | (x', y', _) <- painted, (x', y') == (x, y) ])
+    at (120, 82) `shouldBe` True
+    at (120, 70) `shouldBe` False
 
   it "draws a point as a dot outlined by the pen, as the app does" $ do
     painted <- paintedPixels [DrawPoint EmptyEnvProxy (0, 0)]
@@ -65,8 +88,8 @@ spec = describe "compositeDrawLayers" $ do
     painted <- paintedPixels
       [ DrawPoint EmptyEnvProxy (nan, 0)
       , DrawLine EmptyEnvProxy (0, 0) (inf, 1)
-      , DrawCircle EmptyEnvProxy True nan (0, 0)
-      , DrawCircle EmptyEnvProxy False 3 (0, nan)
+      , DrawCircle EmptyEnvProxy True ModelUnits nan (0, 0)
+      , DrawCircle EmptyEnvProxy False ModelUnits 3 (0, nan)
       , DrawRect EmptyEnvProxy True (0, 0) (nan, nan)
       , Write EmptyEnvProxy "x" (nan, nan)
       ]
@@ -103,20 +126,20 @@ spec = describe "compositeDrawLayers" $ do
     it "circles" $ do
       forM_ far $ \d -> do
         -- one the image is inside: all of it, when filled
-        quickly [DrawCircle e True d (0, 0)] >>= (`shouldSatisfy` ((== 120 * 40) . length))
-        quickly [DrawCircle e False d (0, 0)] >>= (`shouldBe` [])
+        quickly [DrawCircle e True ModelUnits d (0, 0)] >>= (`shouldSatisfy` ((== 120 * 40) . length))
+        quickly [DrawCircle e False ModelUnits d (0, 0)] >>= (`shouldBe` [])
         -- one far away
-        quickly [DrawCircle e True 1 (d, d)] >>= (`shouldBe` [])
-        quickly [DrawCircle e False d (3 * d, 0)] >>= (`shouldBe` [])
+        quickly [DrawCircle e True ModelUnits 1 (d, d)] >>= (`shouldBe` [])
+        quickly [DrawCircle e False ModelUnits d (3 * d, 0)] >>= (`shouldBe` [])
       -- and one whose edge runs across the image, 5 pixels above the
       -- middle: nearly straight there. (Not 1e20 away: its center, 5 +
       -- 1e20, rounds to 1e20, so where its edge falls is lost before it's
       -- drawn.)
       forM_ (filter (< 1e10) far) $ \d -> do
-        edge <- quickly [DrawCircle e False d (0, 5 + d)]
+        edge <- quickly [DrawCircle e False ModelUnits d (0, 5 + d)]
         [ y | (_, y, _) <- edge ] `shouldSatisfy` all (\y -> y >= 13 && y <= 17)
         length edge `shouldSatisfy` (>= 120 * 2)
-        inside <- quickly [DrawCircle e True d (0, 5 + d)]
+        inside <- quickly [DrawCircle e True ModelUnits d (0, 5 + d)]
         [ y | (_, y, _) <- inside ] `shouldSatisfy` all (<= 16)
         length inside `shouldSatisfy` (\n -> n >= 120 * 15 && n <= 120 * 17)
 
@@ -127,6 +150,18 @@ spec = describe "compositeDrawLayers" $ do
     paintedPixels [Write EmptyEnvProxy "" (0, 0)] >>= (`shouldBe` [])
 
 -- | 'paintedPixels', failing if it takes more than five seconds.
+-- | Composite draw commands onto a black 240x240 image of the disk, at
+-- 1/100 per pixel, drawn with each of the given views (as a group's tiles
+-- are), and return the non-black pixels.
+paintedOnDisk :: [Projection] -> [DrawCommand] -> IO [(Int, Int, PixelRGBA8)]
+paintedOnDisk projs cmds = allocaArray (240 * 240 * 3) $ \buf -> do
+  pokeArray buf (replicate (240 * 240 * 3) (0 :: Word8))
+  let base = case projs of { p : _ -> p; [] -> FlatProjection }
+  img <- compositeDrawLayers (ScreenView (0, 0) (0.01, 0.01) base projs) [cmds] (240, 240) buf
+  pure [ (x, y, p) | x <- [0 .. imageWidth img - 1], y <- [0 .. imageHeight img - 1]
+                   , let p@(PixelRGBA8 r g b _) = pixelAt img x y
+                   , (r, g, b) /= (0, 0, 0) ]
+
 quickly :: [DrawCommand] -> IO [(Int, Int, PixelRGBA8)]
 quickly cmds = timeout 5000000 (paintedPixels cmds >>= \ps -> length ps `seq` pure ps)
   >>= maybe (fail "took more than five seconds") pure

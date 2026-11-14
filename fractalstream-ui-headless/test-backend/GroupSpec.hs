@@ -8,6 +8,8 @@ module GroupSpec (spec) where
 
 import Test.Hspec
 
+import Data.List (isInfixOf)
+
 import Actor.Ensemble (buildEnsembleFromScript)
 import Backend (withBackend)
 import Interpreter (runScenario)
@@ -42,13 +44,49 @@ project = unlines
   , "  use rgb(0, 1, 0) for fill"
   , "  use rgb(0, 1, 0) for stroke"
   , "  draw filled circle at p with radius 0.05"
+  , ""
+  , "@tool \"Marker\" for=\"G\""
+  , "on click at p:"
+  , "  erase"
+  , "  use rgb(0, 1, 0) for fill"
+  , "  use rgb(0, 1, 0) for stroke"
+  , "  draw filled circle at p with radius 6 pixels"
   ]
 
+-- | The modular group again, from a table that the viewer's overlay fills
+-- in (z + 1, z - 1, -1/z), unless @bad@: then its one side is the
+-- identity, which can't be a side of anything. The tiles one step away
+-- are blue.
+tableProject :: Bool -> String
+tableProject bad = unlines $
+  [ "@config \"Group\""
+  , "T : Table 2 of C"
+  , ""
+  , "@viewer \"G\" view=halfplane group=T groupCenter=\"2i\""
+  , "color <- if fold_count = 0 then red else blue"
+  , ""
+  , "@tool overlay for=\"G\""
+  , "on refresh:"
+  , "  (rows, n) := table_size(T)"
+  , "  if n = 0:" ]
+  ++ (if bad
+        then [ "    reset T to (4, 1)", "    T @ (1, 1) <- 1", "    T @ (4, 1) <- 1" ]
+        else [ "    reset T to (4, 3)"
+             , "    T @ (1, 1) <- 1", "    T @ (2, 1) <- 1", "    T @ (4, 1) <- 1"
+             , "    T @ (1, 2) <- 1", "    T @ (2, 2) <- -1", "    T @ (4, 2) <- 1"
+             , "    T @ (2, 3) <- -1", "    T @ (3, 3) <- 1" ])
+
 scenario :: [String] -> Expectation
-scenario cmds = do
-  ens <- buildEnsembleFromScript project >>= either (fail . snd) pure
+scenario = scenarioOn project
+
+scenarioOn :: String -> [String] -> Expectation
+scenarioOn proj cmds = runOn proj cmds >>= either expectationFailure pure
+
+runOn :: String -> [String] -> IO (Either String ())
+runOn proj cmds = do
+  ens <- buildEnsembleFromScript proj >>= either (fail . snd) pure
   commands <- either (fail . snd) pure (parseScenario (unlines cmds))
-  withBackend (\backend -> runScenario backend ens commands) >>= either expectationFailure pure
+  withBackend (\backend -> runScenario backend ens commands)
 
 pixel :: (Int, Int) -> String -> String
 pixel = at "G"
@@ -82,6 +120,22 @@ spec = describe "a viewer with a group" $ do
     -- 0.2 + 1.5i, and its copies one tile left and right
     [ "select viewer \"G\"", "select tool \"Dot\"", "click at 0.2 + 1.5i"
     , pixel (330, 375) green, pixel (480, 375) green, pixel (180, 375) green ]
+
+  it "draws a marker its size on the screen, however the view is zoomed" $ scenario
+    -- 0.2 + 1.5i, and its copies one tile left and right; then zoomed out
+    -- (1/75 per pixel), where it is at (315, 488): 6 pixels in radius each
+    -- time
+    [ "select viewer \"G\"", "select tool \"Marker\"", "click at 0.2 + 1.5i"
+    , pixel (335, 375) green, pixel (338, 375) red, pixel (485, 375) green, pixel (185, 375) green
+    , "set viewer pixel size to 1/75"
+    , pixel (320, 488) green, pixel (323, 488) red ]
+
+  it "uses a group's table filled in by the overlay, from the first picture" $ scenarioOn (tableProject False)
+    [ "select viewer \"G\"", pixel (300, 300) red, pixel (420, 300) blue, pixel (300, 525) blue ]
+
+  it "says what's wrong with a group's table it can't use" $ do
+    r <- runOn (tableProject True) [ "select viewer \"G\"", pixel (300, 300) red ]
+    r `shouldSatisfy` either ("The group's table, `T`, can't be used: " `isInfixOf`) (const False)
 
   it "keeps its view precise however far it's moved" $ scenario
     -- forty drags along the axis of A(z) = (2z + 1)/(z + 1), each by its

@@ -193,5 +193,5 @@ noDrawing :: DrawSink
 noDrawing = DrawSink
   { dsClear = pure (), dsStroke = const (pure ()), dsFill = const (pure ())
   , dsPoint = const (pure ()), dsLine = \_ _ -> pure ()
-  , dsCircle = \_ _ _ -> pure (), dsRect = \_ _ _ -> pure ()
-  , dsWrite = \_ _ -> pure () }
+  , dsCircle = \_ _ _ _ -> pure (), dsRect = \_ _ _ -> pure ()
+  , dsWrite = \_ _ -> pure (), dsGeodesic = \_ _ -> pure () }

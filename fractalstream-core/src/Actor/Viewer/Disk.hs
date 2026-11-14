@@ -60,6 +60,7 @@ module Actor.Viewer.Disk
   , onDisplay
   , inModel
   , modelToDisk
+  , geodesicPoints
   , displayToDiskPoint
   , displayMiddle
   , displayScreen
@@ -265,6 +266,36 @@ inModel model (x, y) = case model of
 -- | A model's point, in the disk (where views act).
 modelToDisk :: HyperbolicModel -> (Double, Double) -> (Double, Double)
 modelToDisk model (x, y) = let u :+ w = applyMobius (inverseMobius (diskToModel model)) (x :+ y) in (u, w)
+
+-- | Points along the geodesic between two of a model's points, ends
+-- included, as this many pieces (for @draw geodesic@). In the disk, a
+-- geodesic is an arc of the circle through both points that meets the
+-- boundary at right angles (or a diameter's segment, when the two points
+-- are in line with the middle); it's sampled evenly along that arc, and
+-- taken to the model.
+geodesicPoints :: HyperbolicModel -> Int -> (Double, Double) -> (Double, Double) -> [(Double, Double)]
+geodesicPoints model n p q = p : map fromDisk (drop 1 (init (diskGeodesic (modelToDisk model p) (modelToDisk model q)))) ++ [q]
+  where
+    fromDisk (u, w) = let x :+ y = applyMobius (diskToModel model) (u :+ w) in (x, y)
+    steps = [ fromIntegral k / fromIntegral n | k <- [0 .. n] ] :: [Double]
+    diskGeodesic (ax, ay) (bx, by)
+      -- (in line with the middle: a straight segment)
+      | abs det < 1e-9 = [ (ax + t * (bx - ax), ay + t * (by - ay)) | t <- steps ]
+      | otherwise =
+          -- the circle's center c has c.a = (1 + |a|^2)/2, and the same
+          -- for b: it goes through a and b and meets the boundary at
+          -- right angles. The arc inside the disk is less than a half
+          -- turn, so it's the shorter way around from a to b.
+          let ka = (1 + ax * ax + ay * ay) / 2
+              kb = (1 + bx * bx + by * by) / 2
+              cx = (ka * by - ay * kb) / det
+              cy = (ax * kb - ka * bx) / det
+              r = sqrt ((ax - cx) ^ (2 :: Int) + (ay - cy) ^ (2 :: Int))
+              t0 = atan2 (ay - cy) (ax - cx)
+              turn = let d = atan2 (by - cy) (bx - cx) - t0
+                     in if d > pi then d - 2 * pi else if d <= negate pi then d + 2 * pi else d
+          in [ (cx + r * cos (t0 + t * turn), cy + r * sin (t0 + t * turn)) | t <- steps ]
+      where det = ax * by - ay * bx
 
 -- | A display's screen point, in the disk.
 displayToDiskPoint :: HyperbolicDisplay -> (Double, Double) -> (Double, Double)

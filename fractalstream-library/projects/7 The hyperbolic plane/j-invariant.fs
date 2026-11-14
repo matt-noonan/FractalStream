@@ -66,7 +66,7 @@ script: |
     j_here <- 1728 e4^3 / (e4^3 - e6^2)
     use white for fill
     use black for stroke
-    draw filled circle at p with radius 4 pixel_size_at(p)
+    draw filled circle at p with radius 4 pixels
   on deactivated:
     erase
 metadata:

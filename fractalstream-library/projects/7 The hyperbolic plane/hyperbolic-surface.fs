@@ -12,7 +12,10 @@ script: |
   #
   # Tools: "Circle" (c) draws a hyperbolic circle about a point, which
   # wraps around the surface once it's larger than the polygon: its copies
-  # are drawn in each tile.
+  # are drawn in each tile. "Geodesic" (g) draws the geodesic between
+  # where a drag starts and where it is (both in the polygon, as tools'
+  # points are), an arc of a circle meeting the disk's edge at right
+  # angles: the same segment of the surface in every tile.
 
   @config "Surface"
   genus : Z as "Genus" := 2
@@ -69,7 +72,18 @@ script: |
     use white for stroke
     use white for fill
     draw circle at p (1 - t^2) / k with radius t (1 - |p|^2) / k
-    draw filled circle at p with radius 3 pixel_size_at(p)
+    draw filled circle at p with radius 3 pixels
+  on deactivated:
+    erase
+
+  @tool "Geodesic" for="Surface" shortcut=g
+  on drag from s to p:
+    erase
+    use white for stroke
+    use white for fill
+    draw geodesic from s to p
+    draw filled circle at s with radius 3 pixels
+    draw filled circle at p with radius 3 pixels
   on deactivated:
     erase
 metadata:
@@ -79,8 +93,6 @@ metadata:
     glued, tiling the Poincaré disk. The viewer folds each point into the
     polygon (group=sides); the tool's drawings are repeated in every tile.
   preview-commands: |
-    # (the first capture runs the overlay, which fills in the group's table)
-    capture viewer "Surface" to "/dev/null"
     capture viewer "Surface" as preview
   preview: |
     iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAACQKUlEQVR4nOy9d1hU97r2P0OzYMXe

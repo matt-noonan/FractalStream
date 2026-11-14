@@ -29,6 +29,7 @@ import Language.Parser.SourceRange (SourceRange(..), Pos(..))
 import Language.Code
 import Language.Parser.Tokenizer
 import Language.Code.Syntax
+import Language.Draw (RadiusUnit(..))
 import Language.Value.Syntax (Syn(..), ExprF(..), BinOp(..), UnOp(..))
 import Language.Code.Typecheck
 
@@ -351,7 +352,8 @@ codeStatementsGrammar CommonDefs{..} = mdo
     , draw
       (DrawCircleAt <$> (isJust <$> optional (tok "filled"))
                     <*> ((tok "circle" *> tok "at") *> value)
-                    <*> ((tok "with" *> tok "radius") *> value))
+                    <*> ((tok "with" *> tok "radius") *> value)
+                    <*> (maybe ModelUnits (const ScreenPixels) <$> optional (tok "pixels")))
     , draw
       (DrawRectFrom <$> (isJust <$> optional (tok "filled"))
                     <*> ((tok "rectangle" *> tok "from") *> value)
@@ -359,6 +361,9 @@ codeStatementsGrammar CommonDefs{..} = mdo
     , draw
       (DrawLineFrom <$> ((tok "line" *> tok "from") *> value)
                     <*> (tok "to" *> value))
+    , draw
+      (DrawGeodesicFrom <$> ((tok "geodesic" *> tok "from") *> value)
+                        <*> (tok "to" *> value))
     ]
 
   strokeOrLine <- ruleChoice

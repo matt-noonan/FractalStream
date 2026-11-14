@@ -362,7 +362,8 @@ interpretedToolExec sink _ code =
 drawHandlerForSink :: DrawSink -> DrawHandler ScalarIORefM
 drawHandlerForSink sink = DrawHandler $ \case
   DrawPoint _ pv          -> eval pv >>= liftIO . dsPoint sink
-  DrawCircle _ fill rv pv -> do r <- eval rv; p <- eval pv; liftIO (dsCircle sink fill r p)
+  DrawCircle _ fill u rv pv -> do r <- eval rv; p <- eval pv; liftIO (dsCircle sink fill u r p)
+  DrawGeodesic _ fv tv    -> do f <- eval fv; t <- eval tv; liftIO (dsGeodesic sink f t)
   DrawLine _ fv tv        -> do f <- eval fv; t <- eval tv; liftIO (dsLine sink f t)
   DrawRect _ fill fv tv   -> do f <- eval fv; t <- eval tv; liftIO (dsRect sink fill f t)
   SetStroke _ cv          -> eval cv >>= liftIO . dsStroke sink

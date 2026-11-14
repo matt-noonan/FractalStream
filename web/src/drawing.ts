@@ -139,6 +139,18 @@ export function drawLayers(ctx: CanvasRenderingContext2D, layers: Shape[][], toP
           else strokePolyline(arc);
           break;
         }
+        case "marker": {
+          // a circle on the screen, its radius in pixels (CSS pixels, as
+          // pens and dots are)
+          const c = toPx(s.c);
+          const r = Math.abs(s.px) * scale;
+          if (!nearPoint(c) || !Number.isFinite(r)) break;
+          ctx.beginPath();
+          ctx.arc(c[0], c[1], r, 0, 2 * Math.PI);
+          if (s.f) { ctx.fillStyle = s.f; ctx.fill(); }
+          ctx.stroke();
+          break;
+        }
         case "text": {
           const p = toPx(s.p);
           if (!nearPoint(p)) break;

@@ -728,17 +728,13 @@ clicked, and what a tool draws at model points is placed where the view
 puts them (a straight segment between two model points may look curved).
 Since the view stretches the disk, a tool's `pixel_size` (the width of a
 pixel where the disk's drawing is centered) isn't the right size for a
-marker elsewhere: `pixel_size_at(p)` is the model width of a screen pixel
-at the model point `p`, so
-
-```
-draw filled circle at q with radius 3 pixel_size_at(q)
-```
-
-is a dot 3 pixels in radius, wherever `q` is shown. (`pixel_size_at` works
-in every tool: on the plane it's just `pixel_size`, and on the sphere it's
-the size of a pixel facing you.) A disk viewer can't be shown on the plane
-or the sphere.
+marker elsewhere. For a marker, give a circle's radius in pixels
+(`draw filled circle at q with radius 3 pixels`: see "Drawing circles").
+For a size in the model that depends on how large `p` is shown,
+`pixel_size_at(p)` is the model width of a screen pixel at the model point
+`p`. (`pixel_size_at` works in every tool: on the plane it's just
+`pixel_size`, and on the sphere it's the size of a pixel facing you.) A
+disk viewer can't be shown on the plane or the sphere.
 
 A script can work in the upper half-plane instead, with `view=halfplane`:
 `z` is then a point with a positive imaginary part. The half-plane is drawn
@@ -786,7 +782,10 @@ its center, when the pairings generate the group and include each one's
 inverse). The center is the middle of the model (0, or `i`), or
 `groupCenter=`, which no pairing may fix. Further rows of the table are the
 script's own (to keep data about each side, say). A tool can write the
-table, and the viewer redraws.
+table, and the viewer redraws. A table with nothing in it yet folds
+nothing; one that can't be used (a pairing that isn't invertible, doesn't
+take the plane to itself, or fixes the center) pauses the viewer, which
+says what's wrong with it.
 
 Besides its folded point, a viewer with a group has:
 
@@ -801,8 +800,10 @@ Besides its folded point, a viewer with a group has:
 
 Its tools' points are folded too, and their drawings are drawn in each tile
 on the screen that's large enough to see, though not in tiles shown much
-larger than the polygon itself (where a marker sized for its own place
-would be blown up). The view is kept *reduced*: after each move, its center
+larger than the polygon itself. A drawing's copy is the same shape moved to
+that tile, so it's larger or smaller with the tile, except a circle whose
+radius is in pixels (a marker: see "Drawing circles"), which is the same
+size in every tile. The view is kept *reduced*: after each move, its center
 is folded back into the polygon, which shows the same picture but keeps the
 view's numbers small, however far it's moved.
 
@@ -1069,6 +1070,19 @@ draw line from z to w
 Lines are drawn using the stroke color. The points can either be given by
 complex numbers or by ordered pairs of real numbers.
 
+In a viewer of the hyperbolic plane (`view=disk` or `view=halfplane`), a
+line is still a straight segment between the two points (which the view
+may show curved). The shortest path there, the hyperbolic segment, is
+
+```
+draw geodesic from z to w
+```
+
+an arc of a circle that meets the disk's edge (or the half-plane's real
+axis) at right angles, or a straight segment when it's in line with the
+middle of the disk (or vertical, in the half-plane). Only a tool of a
+viewer of the hyperbolic plane can draw a geodesic.
+
 #### Drawing rectangles
 
 To draw an empty rectangle in the view with opposite corners `z` and `w`,
@@ -1106,6 +1120,19 @@ draw filled circle at z with radius r
 The boundary of the circle will be drawn using the stroke color, and
 the circle will be filled with the fill color. The center can either
 be given by a complex number or by an ordered pair of real numbers.
+
+A circle like that is a shape in the plane: it grows when you zoom in.
+For a marker, a dot that stays the same size on the screen, give the
+radius in pixels:
+
+```
+draw filled circle at z with radius 4 pixels
+```
+
+It's 4 pixels in radius at any zoom, wherever `z` is shown: on the sphere,
+in the hyperbolic plane, and in each tile of a group (see "Groups: tilings
+and surfaces"). (`pixels` is a word of its own, so it can't be used as a
+name in an expression.)
 
 #### Drawing text
 

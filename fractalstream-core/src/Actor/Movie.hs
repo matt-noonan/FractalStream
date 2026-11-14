@@ -296,12 +296,15 @@ withFieldsRestored fields action = do
 -- image of the viewer's size, in parallel strips, supersampled if
 -- smoothing. Tools' drawings are included if asked for.
 renderViewerImage :: Bool -> Bool -> Viewer -> IO (Either String (ViewerIssues, Image PixelRGB8))
-renderViewerImage smooth withDrawings viewer = renderViewerBuffer smooth viewer >>= \case
+renderViewerImage smooth withDrawings viewer = do
+ -- (the overlay first: what it changes, a group's table say, is in the
+ -- picture it's drawn over)
+ when withDrawings (refreshOverlay viewer)
+ renderViewerBuffer smooth viewer >>= \case
   Left err -> pure (Left err)
   Right RenderedBuffer{..} -> do
     img <- if withDrawings
       then do
-        refreshOverlay viewer
         layers <- vDrawCmds viewer
         withForeignPtr rbPixels $ \buf ->
           pixelMap dropAlpha <$>

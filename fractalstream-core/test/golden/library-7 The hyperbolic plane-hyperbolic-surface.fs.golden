@@ -198,7 +198,58 @@ let `[internal] vanishing radius` = vanishing_radius in:
 
 
 --- tool Circle
-ERROR: No variable named [internal] view a.im is defined here.
+  -- on click
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `p` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] px in:
+              block:
+                erase
+                let `t` = tanh((radius / 2:R)) in:
+                  block:
+                    let `k` = (1:R - ((t ^ 2:R) * (|p| ^ 2:R))) in:
+                      block:
+                        use Color 255 255 255 for line
+                        use Color 255 255 255 for line
+                        draw circle at ((p * (1:R - (t ^ 2:R)):C) / k:C):R^2 with radius ((t * (1:R - (|p| ^ 2:R))) / k)
+                        draw filled circle at p:R^2 with radius 3:R pixels
+
+  -- on drag
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `p` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+              let `pixel_size` = [internal] px in:
+                block:
+                  erase
+                  let `t` = tanh((radius / 2:R)) in:
+                    block:
+                      let `k` = (1:R - ((t ^ 2:R) * (|p| ^ 2:R))) in:
+                        block:
+                          use Color 255 255 255 for line
+                          use Color 255 255 255 for line
+                          draw circle at ((p * (1:R - (t ^ 2:R)):C) / k:C):R^2 with radius ((t * (1:R - (|p| ^ 2:R))) / k)
+                          draw filled circle at p:R^2 with radius 3:R pixels
+
+  -- on deactivated
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+
+
+--- tool Geodesic
+ERROR: `draw geodesic` is only for tools of a viewer of the hyperbolic plane (`view=disk` or `view=halfplane`): elsewhere, use `draw line`.
 
 --- tool overlay
 ERROR: Only a viewer's tool knows its window: give the table's corners, `reset sides to (...) from p to q`.

@@ -9,6 +9,7 @@ module Language.Draw
   , DrawHandler(..)
   , runDrawHandler
   , DrawSink(..)
+  , RadiusUnit(..)
   , bufferedSink
   , ignoreDrawing
   ) where
@@ -36,13 +37,22 @@ data DrawSink = DrawSink
   , dsPoint  :: HaskellType ('Pair 'RealT 'RealT) -> IO ()
   , dsLine   :: HaskellType ('Pair 'RealT 'RealT)
              -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
-  , dsCircle :: Bool -> HaskellType 'RealT
+  , dsCircle :: Bool -> RadiusUnit -> HaskellType 'RealT
              -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
   , dsRect   :: Bool -> HaskellType ('Pair 'RealT 'RealT)
              -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
   , dsWrite  :: HaskellType 'TextT
              -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
+  , dsGeodesic :: HaskellType ('Pair 'RealT 'RealT)
+               -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
   }
+
+-- | What a circle's radius is measured in: the viewer's own coordinates
+-- (so the circle is a shape in the plane, moving and growing with the
+-- view), or pixels of the screen (a marker, the same size at any zoom
+-- and in every tile of a group).
+data RadiusUnit = ModelUnits | ScreenPixels
+  deriving (Eq, Show)
 
 -- | A sink that records draw commands (newest first) instead of drawing
 -- them, to be replayed on the given sink later: so that a tool handler's
@@ -52,8 +62,8 @@ ignoreDrawing :: DrawSink
 ignoreDrawing = DrawSink
   { dsClear = pure (), dsStroke = const (pure ()), dsFill = const (pure ())
   , dsPoint = const (pure ()), dsLine = \_ _ -> pure ()
-  , dsCircle = \_ _ _ -> pure (), dsRect = \_ _ _ -> pure ()
-  , dsWrite = \_ _ -> pure () }
+  , dsCircle = \_ _ _ _ -> pure (), dsRect = \_ _ _ -> pure ()
+  , dsWrite = \_ _ -> pure (), dsGeodesic = \_ _ -> pure () }
 
 bufferedSink :: IORef [IO ()] -> DrawSink -> DrawSink
 bufferedSink ref sink = DrawSink
@@ -62,9 +72,10 @@ bufferedSink ref sink = DrawSink
   , dsFill   = later . dsFill sink
   , dsPoint  = later . dsPoint sink
   , dsLine   = \p q -> later (dsLine sink p q)
-  , dsCircle = \f r p -> later (dsCircle sink f r p)
+  , dsCircle = \f u r p -> later (dsCircle sink f u r p)
   , dsRect   = \f p q -> later (dsRect sink f p q)
   , dsWrite  = \t p -> later (dsWrite sink t p)
+  , dsGeodesic = \p q -> later (dsGeodesic sink p q)
   }
   where later action = modifyIORef' ref (action :)
 
@@ -90,9 +101,11 @@ data Draw_ (value :: Environment -> FSType -> Exp Type)
 
   -- | draw circle at POINT with radius VALUE
   -- | draw filled circle at POINT with radius VALUE
+  -- | (either one) ... with radius VALUE pixels
   DrawCircle :: forall env value
               . EnvironmentProxy env
              -> Bool
+             -> RadiusUnit
              -> Eval (value env 'RealT)
              -> Eval (value env ('Pair 'RealT 'RealT))
              -> Draw_ value env
@@ -103,6 +116,14 @@ data Draw_ (value :: Environment -> FSType -> Exp Type)
            -> Eval (value env ('Pair 'RealT 'RealT))
            -> Eval (value env ('Pair 'RealT 'RealT))
            -> Draw_ value env
+
+  -- | draw geodesic from POINT to POINT (in a viewer of the hyperbolic
+  -- plane: the shortest path there, a circular arc or a straight segment)
+  DrawGeodesic :: forall env value
+                . EnvironmentProxy env
+               -> Eval (value env ('Pair 'RealT 'RealT))
+               -> Eval (value env ('Pair 'RealT 'RealT))
+               -> Draw_ value env
 
   -- | draw rectangle from POINT to POINT
   -- | draw filled rectangle from POINT to POINT
@@ -146,7 +167,8 @@ finiteDrawCommand :: DrawCommand -> Bool
 finiteDrawCommand = \case
   DrawPoint _ p        -> finitePt p
   DrawLine _ p q       -> finitePt p && finitePt q
-  DrawCircle _ _ r p   -> finite r && finitePt p
+  DrawCircle _ _ _ r p -> finite r && finitePt p
+  DrawGeodesic _ p q   -> finitePt p && finitePt q
   DrawRect _ _ p q     -> finitePt p && finitePt q
   Write _ _ p          -> finitePt p
   SetStroke {}         -> True
@@ -169,7 +191,8 @@ transformDrawValuesM :: forall env m
                      -> m (Draw env)
 transformDrawValuesM f = \case
   DrawPoint env pt -> DrawPoint env <$> f pt
-  DrawCircle env fill r c -> DrawCircle env fill <$> f r <*> f c
+  DrawCircle env fill unit r c -> DrawCircle env fill unit <$> f r <*> f c
+  DrawGeodesic env pt1 pt2 -> DrawGeodesic env <$> f pt1 <*> f pt2
   DrawLine env pt1 pt2 -> DrawLine env <$> f pt1 <*> f pt2
   DrawRect env fill pt1 pt2 -> DrawRect env fill <$> f pt1 <*> f pt2
   SetStroke env c -> SetStroke env <$> f c

@@ -433,8 +433,10 @@ pprintCode = unlines . go
         in ["if " ++ pprint c ++ " then:"] ++ yy ++ ["else:"] ++ nn
       DrawCommand cmd -> (:[]) $ case cmd of
         DrawPoint _ v -> "draw point at " ++ pprint v
-        DrawCircle _ f r v -> "draw " ++ (if f then "filled " else "") ++
-                              "circle at " ++ pprint v ++ " with radius " ++ pprint r
+        DrawCircle _ f unit r v -> "draw " ++ (if f then "filled " else "") ++
+                                   "circle at " ++ pprint v ++ " with radius " ++ pprint r ++
+                                   (if unit == ScreenPixels then " pixels" else "")
+        DrawGeodesic _ p q -> "draw geodesic from " ++ pprint p ++ " to " ++ pprint q
         DrawLine _ p q -> "draw line from " ++ pprint p ++ " to " ++ pprint q
         DrawRect _ f p q -> "draw " ++ (if f then "filled " else "") ++
                             "rectangle from " ++ pprint p ++ " to " ++ pprint q

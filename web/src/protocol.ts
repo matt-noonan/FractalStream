@@ -234,6 +234,7 @@ export type Shape =
   | { k: "point"; p: [number, number]; s: string }
   | { k: "line"; a: [number, number]; b: [number, number]; s: string }
   | { k: "circle"; c: [number, number]; r: number; f: string | null; s: string }
+  | { k: "marker"; c: [number, number]; px: number; f: string | null; s: string }
   | { k: "rect"; a: [number, number]; b: [number, number]; f: string | null; s: string }
   | { k: "text"; p: [number, number]; t: string; s: string }
   | { k: "runs"; runs: [number, number][][]; s: string }

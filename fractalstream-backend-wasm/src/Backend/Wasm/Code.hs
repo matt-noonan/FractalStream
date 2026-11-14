@@ -46,7 +46,7 @@ import Backend.Wasm.Table (freezeTable, tableImports, tableAllocate, tableWrite,
 
 import Actor.Viewer.Types (ViewerEnv, MissingViewerArgs)
 import Language.Code
-import Language.Draw (Draw_(..))
+import Language.Draw (Draw_(..), RadiusUnit(..))
 import Data.Indexed.Functor
 import Data.Color (colorToRGB, grey)
 import Language.Table (elementSize)
@@ -135,10 +135,15 @@ code = indexedFold @CtxCode $ \case
         (x1, y1) <- point a
         (x2, y2) <- point b
         lift (drawRecord 4 [f64At 8 x1, f64At 16 y1, f64At 24 x2, f64At 32 y2])
-      DrawCircle _ filled r p -> do
+      DrawGeodesic _ a b -> do
+        (x1, y1) <- point a
+        (x2, y2) <- point b
+        lift (drawRecord 8 [f64At 8 x1, f64At 16 y1, f64At 24 x2, f64At 32 y2])
+      DrawCircle _ filled unit r p -> do
         rad <- value r >>= \case { LReal l -> pure l; l -> lift (throwError ("internal error: a radius of the wrong shape: " ++ show l)) }
         (x, y) <- point p
-        lift (drawRecord 5 [flagAt filled, f64At 8 rad, f64At 16 x, f64At 24 y])
+        -- (flags: bit 0 filled, bit 1 radius in pixels)
+        lift (drawRecord 5 [flagsAt ((if filled then 1 else 0) + (if unit == ScreenPixels then 2 else 0)), f64At 8 rad, f64At 16 x, f64At 24 y])
       DrawRect _ filled a b -> do
         (x1, y1) <- point a
         (x2, y2) <- point b
@@ -208,7 +213,8 @@ code = indexedFold @CtxCode $ \case
       l -> throwError ("internal error: a color of the wrong shape: " ++ show l)
     f64At off l rec = [localGet rec, localGet l, f64Store off]
     byteAt off l rec = [localGet rec, localGet l, i32Store8 off]
-    flagAt filled rec = [localGet rec, i32Const (if filled then 1 else 0), i32Store 4]
+    flagAt filled = flagsAt (if filled then 1 else 0)
+    flagsAt flags rec = [localGet rec, i32Const flags, i32Store 4]
 
 ------------------------------------------------------------------------
 -- Draw commands
