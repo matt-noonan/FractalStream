@@ -54,6 +54,10 @@ worker (@web/src/engine.ts@). The worker calls these exports:
 * @fs_table_summary()@: post the open project's tables that hold anything
   (@tableSummary@), so that the page can ask whether to save them, as the
   desktop does.
+* @fs_disk_drag(viewer, fx, fy, tx, ty)@: move a disk viewer's view by the
+  hyperbolic translation that keeps the point under the pointer, as it's
+  dragged from one point of the screen plane to another (the disk's
+  drawing, in its radii, y up).
 * @fs_rotate(viewer, fx, fy, tx, ty)@: turn a sphere viewer's globe,
   trackball-style, as the pointer drags from one point of the screen to
   another (in units of the sphere's radius, from its center, y up).
@@ -168,12 +172,12 @@ contents), which the worker forwards to the page.
 Messages:
 
 > { "type": "library", "sections": [ { "name", "startingPoints", "entries": [ { "title", "description", "preview", "id" } ] } ] }
-> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
+> { "type": "project", "title", "fileName", "library": <whether it's from the library>, "new": <whether it's a new project, with no file of its own yet (a starting point's, or a translation)>, "edit": <whether to open its script editor>, "notes": [ <a translation's notes> ], "panel": <layout> or null, "viewers": [ { "id", "title", "width", "height", "sphere", "disk", "tools": [ { "name", "shortcut", "help" } ] } ], "views": <the file's web-properties> or null }
 > { "type": "share", "library": <a library project's id> or null, "state": <its state> or null, "file": <the whole project file> or null, "fileName" }
 > { "type": "details", "title", "description", "preview": <a PNG, base64-encoded> or null, "fileName", "fromViewer": <whether it's from "Use this as preview"> }
 > { "type": "unsaved", "on" }   (whether the open project has changes to save, as the desktop app counts them, whenever that changes)
 > { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
-> { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere" }   (the engine moved the view: a pixel's size in the canvas's pixels)
+> { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere", "disk" }   (the engine moved the view: a pixel's size in the canvas's pixels)
 > { "type": "where", "viewer", "x", "y", "pixelSize" }
 > { "type": "aspect", "viewer", "error": <why it isn't one> or null }
 > { "type": "movieTemplate", "viewer", "script" }
@@ -250,7 +254,7 @@ import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progre
 import Actor.Event (ViewKind(..), Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
 import Actor.Viewer.Sphere (sphereShading, trackballRotation, screenToPlane, Rotation(..), rotationFacing, rotateBy, sphereToPlane)
-import Actor.Viewer.Disk (Isometry(..), normalizeIsometry, isometryFacing, isometryCenter, screenToDisk)
+import Actor.Viewer.Disk (Isometry(..), normalizeIsometry, isometryFacing, isometryCenter, screenToDisk, dragIsometry)
 import Actor.Viewer.ViewModel (Model(..), ModelShape(..), modelRotation, modelIsometry, History(..), historyBack, historyForward, historyAppend)
 import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceArguments, missingArguments,
                         argumentFields, choiceWithArguments)
@@ -419,6 +423,10 @@ data ViewerState = ViewerState
     --   a render
   , vsRenders :: IORef Int
     -- ^ its renders' number (the latest's)
+  , vsPictureIso :: IORef (Maybe Isometry)
+    -- ^ in the disk, the view of the last render done, which is the picture
+    --   the page shows: a render takes the page's 'vsCovered' only if the
+    --   view's still that (a drag moves the whole picture)
   , vsSmooth :: IORef Bool
     -- ^ whether it's smoothed ("Use subpixel smoothing")
   , vsHistory :: IORef (Maybe History)
@@ -535,6 +543,7 @@ foreign export javascript "fs_use_as_preview" useAsPreview :: Int -> IO ()
 foreign export javascript "fs_unsaved" setUnsaved :: Bool -> IO ()
 foreign export javascript "fs_table_summary" tableSummary :: IO ()
 foreign export javascript "fs_rotate" rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
+foreign export javascript "fs_disk_drag" diskDrag :: Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
 foreign export javascript "fs_view" setView :: Int -> Double -> Double -> Double -> Int -> Int -> Int -> Int -> Int -> Int -> IO ()
 foreign export javascript "fs_resize" resize :: Int -> Int -> Int -> IO ()
@@ -801,7 +810,8 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
     running <- newIORef Nothing
     covered <- newIORef Nothing
     renders <- newIORef 0
-    let vs = ViewerState k viewer signal tool draw toolRefresh running lock covered renders smooth history
+    pictureIso <- newIORef Nothing
+    let vs = ViewerState k viewer signal tool draw toolRefresh running lock covered renders pictureIso smooth history
     tid <- forkIO (renderLoop vs)
     drawTid <- forkIO (drawingLoop vs)
     unwatch <- onParameterChanges viewer $ do
@@ -842,7 +852,8 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
         -- (what "Animate along path" moves, if it can: the viewer's
         -- coordinate, if it's a configuration variable)
         animates = if canAnimate context (vCoordinate viewer) then Just (showCoordinate (vCoordinate viewer)) else Nothing
-    pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere
+    disk <- (== DiskView) <$> getDynamic (vView viewer)
+    pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere, "disk" .= disk
                        , "tools" .= tools, "complex" .= complex, "smooth" .= smooth, "colorizer" .= colorizer
                        , "animates" .= animates ])
   let translated = case how of Translated _ -> True; _ -> False
@@ -923,7 +934,14 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
   smooth <- readIORef (vsSmooth vs)
   -- (the viewer's code sees a CSS pixel's size, as tools do: see 'densityRef')
   density <- readIORef densityRef
-  covered <- atomicModifyIORef' (vsCovered vs) (Nothing,)
+  covered0 <- atomicModifyIORef' (vsCovered vs) (Nothing,)
+  -- (in the disk, the page's picture shows this view's points only if it
+  -- was drawn with this view of the hyperbolic plane)
+  isDisk <- (== DiskView) <$> getDynamic (vView viewer)
+  isoNow <- getDynamic (vIsometry viewer)
+  pictureIso <- readIORef (vsPictureIso vs)
+  let covered | isDisk && pictureIso /= Just isoNow = Nothing
+              | otherwise = covered0
   renderId <- atomicModifyIORef' (vsRenders vs) (\n -> (n + 1, n + 1))
   Dimensions (w, h) <- getDynamic (vSize viewer)
   concurrency <- renderConcurrency
@@ -986,6 +1004,7 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
     Right (Right Nothing) -> pure ()
     Right (Right (Just image)) -> do
       patch image True
+      writeIORef (vsPictureIso vs) (if isDisk then Just isoNow else Nothing)
       -- (the overlay and the tool, for this view, as the desktop app
       -- refreshes them with each render)
       writeIORef (vsToolRefresh vs) True
@@ -1601,6 +1620,17 @@ useColorizer title chosen = readIORef sessionRef >>= mapM_ (\Session{..} -> do
   buildEnsembleWithColorizers choices' src >>= \case
     Left (_, err) -> postError ("Couldn't use that colorizer: " ++ err)
     Right new -> rebuildAs new)
+
+-- | Move a disk viewer's view as the pointer drags from one point of the
+-- screen plane to another (the disk's drawing, in its radii, y up): the
+-- hyperbolic translation that keeps the point under the pointer.
+diskDrag :: Int -> Double -> Double -> Double -> Double -> IO ()
+diskDrag k fx fy tx ty = withViewerState k $ \vs -> do
+  iso <- getDynamic (vIsometry (vsViewer vs))
+  setValue (vIsometry (vsViewer vs)) (dragIsometry iso (fx, fy) (tx, ty))
+  -- (the last picture shows none of it where it is now)
+  writeIORef (vsCovered vs) Nothing
+  requestRender (vsSignal vs)
 
 rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 rotate k fx fy tx ty = withViewerState k $ \vs -> do

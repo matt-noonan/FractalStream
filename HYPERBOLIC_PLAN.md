@@ -55,8 +55,9 @@ script and its data.
       with the pixel), so a pixel's hyperbolic size is
       `2 pixel_size / (1 - |z|²)` (needed for tile edges and similar).
 - [ ] wx navigation checked by hand with the mouse (drag, click, scroll).
-- [ ] The web page: hyperbolic drag (its TypeScript pans the screen plane
-      for now; rendering, tools, drawings and saved views work).
+- [x] The web page: hyperbolic drag (`diskDrag`; the engine refuses the
+      page's covered region once the view has moved), checked in headless
+      Chromium (`check-tools.mjs disk`).
 - [ ] Tools' marker sizes: a tool sizes markers in screen `pixel_size`,
       which is wrong far from where the view is centered (a marker near the
       model's edge, brought to the middle, is magnified). Maybe a local
