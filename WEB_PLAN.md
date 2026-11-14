@@ -12,7 +12,7 @@ questions into **Decisions**.
 |---|---|---|
 | D1 | Compile Haskell with **GHC's wasm backend**, not the JS backend | Better numeric performance, cleaner C support (wasi-sdk clang), JSFFI, TH via external interpreter. |
 | D2 | **WebGPU only**, no WebGL2 fallback | WebGL has no compute shaders; all major browsers now ship WebGPU. |
-| D3 | Precision is a **user toggle**, not chosen automatically | Single precision is rarely useful for the systems people study, so double precision (df64 on the GPU or f64 on the CPU) is the main path; see "Precision". |
+| D3 | Precision is a **user toggle**, not chosen automatically | Single precision is rarely useful for the systems people study, so double precision (df64 on the GPU or f64 on the CPU) is the main path; see "Precision". (Refined by D20.) |
 | D4 | GPU output must be **visually identical within tolerance**, not pixel-identical | Golden comparisons for the GPU path use a tolerance. |
 | D5 | The **script editor is deferred** but in scope | Phase 6. |
 | D6 | **Static site** first; a server only if that hits a roadblock | |
@@ -21,13 +21,14 @@ questions into **Decisions**.
 | D9 | UI is **TypeScript**, using Solid or plain DOM | Mostly forms built from `Layout`, plus canvases. |
 | D10 | **No ordering guarantees** for autocolor | GPU render order may assign hues differently; saved or locked groups stay stable. |
 | D11 | **cabal** for the wasm build; migrating everything off stack is open | See "Build". |
-| D12 | The precision toggle is an **app-level preference** | Stored per browser with the other preferences (local storage: see the findings for 2026-11-13, "Preferences"), not in project files. Waits for Backend.WGSL: the CPU backend is always f64. |
+| D12 | The precision toggle is an **app-level preference** | Stored per browser with the other preferences (local storage: see the findings for 2026-11-13, "Preferences"), not in project files. Waits for Backend.WGSL: the CPU backend is always f64. (It's D20's list.) |
 | D14 | Kernels' math functions come from **musl's libm, compiled to wasm** (built each time) | Not JavaScript's `Math`: calling it from wasm on several worker threads crashed V8; and this way every host computes alike. |
 | D13 | **Backend.Wasm before the web app;** test wasm under Node from 0g on | The interpreter is about 2,500× slower than LLVM (0b), too slow even as a stopgap. |
 | D16 | Tools' handlers (and overlays) are **compiled by Backend.Wasm and run on the workers**; what it can't compile is a tool compilation error, not interpreted | Interpreted, external rays took 7.5 s, and the engine's one thread was stuck meanwhile. On a worker the engine stays free, and Stop can come later by stopping the worker. (Without a worker pool, tools are interpreted.) |
 | D17 | Text in Backend.Wasm is a **tree of nodes in the arena** (literals, numbers, concatenations), formatted by the engine when it reads a text back | Numbers then print exactly as interpreted (`showValue`), without calling back into Haskell or reimplementing `show` for `Double`. Nothing in the language looks inside a text; if that changes (comparisons, `length`), revisit. |
 | D18 | A slow handler (a tool's, or an overlay's refresh) shows a **bar in its viewer's window** after a quarter of a second, with Stop (and, for a tool, Stop and switch to Navigate); **Stop kills the worker** running it, which the pool replaces; a stopped overlay is off until the project's reopened (or, later, recompiled) | Not a modal window, which is the wrong idiom on the web: the rest of the app stays usable. Killing the worker needs no shared memory (so no cross-origin isolation), and stops even an endless loop. |
 | D19 | **Tables on the workers: per-worker copies**, by version (`Table`'s new `tableVersion`): the pool keeps a copy of each version (up to 512 MB), sends it once to each worker that needs it, and a worker keeps up to 256 MB of them in its memory, above its jobs' scratch memory; only the tables a kernel reads are sent | Works without shared memory (so without cross-origin isolation); revisit if we get COOP/COEP. A tool's operations on tables will be C compiled to wasm, as autocolor is, since calling JavaScript from wasm on workers crashed V8. |
+| D20 | **Backends are an ordered preference list** (of GPU df64, GPU single precision, later GPU f64, LLVM, Backend.Wasm), the same in FractalStream everywhere, desktop and web. Each viewer renders with the first that accepts its script *and* its view; a backend declines what it can't compute faithfully. Ranked by **precision first, then speed**: a fresh install (no saved preference) uses GPU df64, then the CPU (LLVM on the desktop, Backend.Wasm on the web), then GPU single precision | Decided 2026-11-14. df64 is a little coarser than f64 (about 48 bits against 53) with f32's exponent range, so it declines any view or script that needs more: a pixel size below about 1e-13 of the view's center, or literals and thresholds out of its range (Per_n's `10^(-300)`), which then fall to the CPU. So nothing renders worse than doubles would, and ordinary views get the GPU's speed (13x Backend.Wasm on Per_n's loop: see "The GPU spike"). Backends the platform lacks are listed but skipped. The viewer's menu says which backend it's on. GPU f64 exists only through native drivers (Vulkan, DirectX 12), not WebGPU or Metal. |
 | D15 | Tools' drawings are drawn **by the page, with Canvas2D**, from shapes the engine sends; fsrun keeps Rasterific | Rasterific in wasm took 1.5 s for a 2,000-segment orbit; Canvas2D takes well under a millisecond, and drawings move with the view at once. Far-reaching shapes are clipped as `Actor.Viewer.Clip` does. |
 
 ## Architecture
@@ -213,8 +214,9 @@ wasmtime.
   thread and then with a few workers over shared memory.
 - [x] **0f.** The engine's size and startup: see the findings for
   2026-11-12 ("Shipping").
-- [ ] **0c / 0d** (before Phase 5): the df64 accuracy harness, and
-  hand-written WGSL kernels timed against the CPU.
+- [x] **0c / 0d** (before Phase 5): the df64 accuracy harness, and
+  hand-written WGSL kernels timed against the CPU: `dev-tools/gpu-spike`,
+  and the findings for 2026-11-14 ("The GPU spike").
 
 ### Phase 1: Headless engine (mostly done)
 
@@ -366,6 +368,44 @@ Only if 0c/0d come out well.
   share memory: see "Backend.Wasm on a pool of workers".)
 
 ## Findings log
+
+### 2026-11-14: The GPU spike (0c / 0d)
+
+`dev-tools/gpu-spike/run.mjs` runs hand-written WGSL kernels in headless
+Chromium (the full build: its headless shell has no WebGPU) and WebKit,
+both on the Apple GPU through Metal (an M5); Playwright's Firefox gives no
+adapter. Each kernel is written once over a number type `R`, f32 or df64,
+and compared pixel by pixel with the same kernel in JavaScript's doubles.
+
+- **df64 needs guarding, and only one guard works.** Both browsers'
+  compilers rewrite two_sum/quick_two_sum (Metal's fast math), so plain
+  df64 is only as accurate as f32 (1.5e-7). Multiplying each step by 1
+  from a uniform rescues products but not sums. Passing each step of the
+  error-free transforms through its bits, xored with 0 from a uniform
+  (`bitcast<f32>(bitcast<u32>(x) ^ zero)`), works in both: worst relative
+  errors over 100000 random operands of every size: add 5.5e-15, mul
+  1.2e-14, div 7.7e-15, sqrt 1.3e-14. Backend.WGSL must emit that guard
+  (and the accuracy check belongs in its tests, per browser).
+- **Accuracy where it matters:** a Mandelbrot zoom at 1e-12 per pixel
+  agrees with doubles at 91.7% of pixels in df64 and 0% in f32; the whole
+  set, 99.98% and 99.76%. Per_n's fate loop (the family f(z) = (z - x)(z -
+  w)/z^2 over a square of x's, y fixed, 500 steps) agrees at 82% (df64) and
+  72% (f32); but doubles agree with themselves, x moved by 1e-15, at only
+  83.5% there (most of the square is chaotic), so df64 is as good as
+  doubles and f32 visibly worse.
+- **Speed, Per_n's fate loop, a million pixels of about 336 steps:**
+  one JavaScript thread 20 s (60 ns a step); native LLVM 36 ns a step on
+  one core and 7 on all ten; the web app's Backend.Wasm about 20 ns on its
+  ten workers (6.6 s, estimated from a smoothed 600 x 600 render); the GPU
+  1.5 ns in df64 (0.50 s Chromium, 0.48 s WebKit) and 0.07-0.2 ns in f32
+  (22-64 ms). So df64 on the GPU is about 13x the web app's CPU path and
+  5x native LLVM on every core; f32, 100-300x the web app's.
+- **df64 has f32's exponent range** (about 1e±38, subnormals flushed):
+  scripts' thresholds like `10^(-300)` (Per_n's `fz`) need rewriting, or
+  the backend must decline them. `exp`, `log`, trig and `pow` in df64 are
+  still to be written (Per_n's coloring uses them, once a pixel).
+- **Pipelines compile in 15-120 ms**, once per kernel; a first dispatch
+  costs about 10 ms more than later ones.
 
 Record spike results and surprises here, newest first.
 
