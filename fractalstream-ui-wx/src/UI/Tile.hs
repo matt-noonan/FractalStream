@@ -18,7 +18,8 @@ import FractalStream.Prelude
 
 import Task.Block (subBlockSize)
 import Task.Concurrent
-import Actor.Viewer (ViewerArgs, ViewerIssues, Progressive(..), ImageTarget(..), renderProgressivelyInto)
+import Actor.Viewer (Renderer, Progressive(..), ImageTarget(..), renderProgressivelyInto)
+import FractalStream.Backends (RenderReport)
 import Data.Planar
 
 import Data.Color
@@ -111,7 +112,10 @@ renderTile :: Bool -- ^ Use smoothing?
               --   It's also given a byte per pixel (zeroed, row by row)
               --   to mark the pixels it gave their final color (nonzero),
               --   which the coarse passes then leave alone.
-           -> (ViewerArgs -> IO ViewerIssues) -- ^ The viewer's block function
+           -> Renderer     -- ^ The viewer's backends, to draw it with
+           -> (RenderReport -> IO ())
+                           -- ^ A backend's starting the render, or none
+                           --   will ('prBackend')
            -> IO Bool      -- ^ Whether the render's no longer wanted (a
                            --   newer one has replaced it): it stops, between
                            --   pieces
@@ -121,7 +125,7 @@ renderTile :: Bool -- ^ Use smoothing?
            -> IO Tile      -- ^ An action which allocates the tile and
                            --   forks a task which draws into it.
 
-renderTile smooth seed fn stale (width, height) (center, (px, py)) = do
+renderTile smooth seed renderer started stale (width, height) (center, (px, py)) = do
 
     -- Allocate an red/green/blue pixel byte for each point in the tile
     buf <- mallocForeignPtrBytes (3 * width * height)
@@ -159,12 +163,12 @@ renderTile smooth seed fn stale (width, height) (center, (px, py)) = do
         { prPieceSize = subBlockSize, prConcurrency = concurrency, prScale = 1
         , prSmooth = smooth, prShown = shown, prStale = stale
         , prStarted = const (pure ()), prCovered = void (tryPutMVar covered ())
-        , prDrawn = const (void (tryPutMVar redraw ())) }
+        , prDrawn = const (void (tryPutMVar redraw ())), prBackend = started }
         ImageTarget { itWidth = width, itHeight = height, itCenter = center
                     , itPixelSize = px, itAspect = py / px
                     , itWith = \act -> with managedBuf (`withForeignPtr` act)
                     , itFinals = finals }
-        fn
+        renderer
       writeIORef complete (isJust done)
     link worker
 

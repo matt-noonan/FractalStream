@@ -9,6 +9,7 @@ import FractalStream.Prelude hiding (get)
 import Data.DynamicValue
 import FractalStream.Library (projectsDirectory)
 import FractalStream.Settings
+import FractalStream.Backends (BackendId, backendLabel, defaultBackendOrder)
 import UI.EditorKeys (emacsKeysByDefault)
 import UI.EditorStyle (Style(..), classStyle, defaultClassStyle, editorBackground)
 import UI.CodeEditor (frameIsLight)
@@ -27,9 +28,9 @@ import System.IO (hPutStrLn, stderr)
 import Control.Exception (IOException, try)
 
 -- | Show a new Preferences window for the settings in the given
--- variable, returning it.
-preferencesWindow :: Variable Settings -> IO (Frame ())
-preferencesWindow settingsVar = do
+-- variable, returning it, given the backends the app has.
+preferencesWindow :: [BackendId] -> Variable Settings -> IO (Frame ())
+preferencesWindow available settingsVar = do
   f <- frame [ text := "Preferences", resizeable := True ]
   p <- panel f []
   -- a tab for each kind of setting
@@ -63,6 +64,16 @@ preferencesWindow settingsVar = do
   shadingText <- staticText viewersTab [ text := "100%" ]
   shadingNote <- staticText viewersTab [ text := "Shades the globe as if it were lit from the upper left. \
                                                  \At 0% it isn't shaded at all." ]
+  -- ...and the order viewers try the backends in (GPU_PLAN.md, G1)
+  renderingList <- singleListBox viewersTab [ items := [], size := sz 320 80 ]
+  upButton <- button viewersTab [ text := "Move up" ]
+  downButton <- button viewersTab [ text := "Move down" ]
+  defaultOrderButton <- button viewersTab [ text := "Use the default" ]
+  -- (in lines: a static text doesn't wrap, and would widen the window)
+  renderingNote <- staticText viewersTab [ text := "Each viewer is drawn with the first of these that can draw it as\n\
+                                                   \precisely as the CPU's doubles would (the GPU's double-float can't\n\
+                                                   \zoom as deep, for instance), and so those after the CPU only when\n\
+                                                   \it can't. A viewer's menu can choose one for that viewer." ]
 
   -- The Colors tab: for light windows or dark ones (the kind this one
   -- is, to start with), each class's sample, and buttons and boxes for
@@ -94,6 +105,13 @@ preferencesWindow settingsVar = do
         set symbolsBox [ checked := setMathSymbols settings ]
         set shadingSlider [ selection := setSphereShading settings ]
         set shadingText [ text := show (setSphereShading settings) ++ "%" ]
+        chosen <- get renderingList selection
+        let order = setRendering settings
+            describe b = backendLabel b ++ (if b `elem` available then "" else " (not in this version)")
+        set renderingList [ items := map describe order ]
+        when (chosen >= 0) $ set renderingList [ selection := chosen ]
+        set defaultOrderButton [ enabled := order /= defaultBackendOrder ]
+        showRenderingButtons
         let custom = isJust (setEditorFont settings) || isJust (setEditorFontSize settings)
         set fontText [ text := editorFont settings
                                  ++ maybe "" (\n -> ", " ++ show n ++ " pt") (setEditorFontSize settings)
@@ -101,6 +119,21 @@ preferencesWindow settingsVar = do
         set defaultFontButton [ enabled := custom ]
         showColors settings
         windowReLayout f
+      showRenderingButtons = do
+        chosen <- get renderingList selection
+        n <- length . setRendering <$> getDynamic settingsVar
+        set upButton [ enabled := chosen > 0 ]
+        set downButton [ enabled := chosen >= 0 && chosen < n - 1 ]
+      -- move the chosen backend by one place (and keep it chosen)
+      moveBackend by = do
+        chosen <- get renderingList selection
+        order <- setRendering <$> getDynamic settingsVar
+        let to = chosen + by
+        when (chosen >= 0 && to >= 0 && to < length order) $ do
+          let swapped = [ if k == chosen then order !! to else if k == to then order !! chosen else b
+                        | (k, b) <- zip [0 ..] order ]
+          set renderingList [ selection := to ]
+          change (\s -> s { setRendering = swapped })
       showColors settings = do
         isLight <- (== 0) <$> get appearance selection
         let changes = (if isLight then setEditorColorsLight else setEditorColorsDark) settings
@@ -184,6 +217,10 @@ preferencesWindow settingsVar = do
                         v <- get shadingSlider selection
                         current <- setSphereShading <$> getDynamic settingsVar
                         when (v /= current) $ change (\s -> s { setSphereShading = v }) ]
+  set renderingList [ on select := showRenderingButtons ]
+  set upButton [ on command := moveBackend (-1) ]
+  set downButton [ on command := moveBackend 1 ]
+  set defaultOrderButton [ on command := change (\s -> s { setRendering = defaultBackendOrder }) ]
   set symbolsBox [ on command := do
                      on' <- get symbolsBox checked
                      change (\s -> s { setMathSymbols = on' }) ]
@@ -221,6 +258,10 @@ preferencesWindow settingsVar = do
                 [ label "Shading of the Riemann sphere:"
                 , row 6 [ hfill (widget shadingSlider), widget shadingText ]
                 , hstretch (widget shadingNote)
+                , label "Drawing viewers, in order of preference:"
+                , row 6 [ widget renderingList
+                        , column 6 [ widget upButton, widget downButton, widget defaultOrderButton ], hglue ]
+                , hstretch (widget renderingNote)
                 , glue
                 ]
             , tab "Colors" $ container colorsTab $ margin 12 $ column 8

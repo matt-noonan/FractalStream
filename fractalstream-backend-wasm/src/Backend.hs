@@ -4,6 +4,7 @@ module Backend
   ) where
 
 import Actor.Viewer
+import FractalStream.Backends (BackendId(..))
 import Control.Monad (when)
 import Actor.Event (interpretedToolExec)
 import Language.Draw (ignoreDrawing)
@@ -19,7 +20,7 @@ withBackend action = do
   workers <- workerPoolSize
   when (workers > 0) (defaultRenderConcurrency workers)
   action Backend
-    { bViewerCompiler    = ViewerCompiler wasmViewer
+    { bViewerCompilers   = [(Cpu, ViewerCompiler (\a c -> Right . cpuViewer <$> wasmViewer a c))]
     , bToolRunnerFactory = defaultToolRunnerFactory
     , bToolRunner        = wasmToolRunner
     , bRunOnce           = \_ -> interpretedToolExec ignoreDrawing

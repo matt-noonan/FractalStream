@@ -41,11 +41,33 @@ export interface Preferences {
   /** Whether new viewers are smoothed: "auto" is on, except on a high-DPI
       screen (drawn at twice the resolution already). */
   smoothing: Smoothing;
+  /** The order viewers try the backends in (GPU_PLAN.md, G1): every one,
+      once. */
+  rendering: Backend[];
+}
+
+/** A way of drawing viewers (FractalStream.Backends). */
+export type Backend = "gpu-df64" | "cpu" | "gpu-f32";
+
+export const backendLabels: Record<Backend, string> = {
+  "gpu-df64": "GPU, double-float", "cpu": "CPU", "gpu-f32": "GPU, single precision",
+};
+
+/** Precision first, then speed. */
+export const defaultRendering: Backend[] = ["gpu-df64", "cpu", "gpu-f32"];
+
+/** An order with every backend once: as given, without repeats or names
+    this page doesn't know, then the rest, in the default order. */
+export function normalizeRendering(xs: unknown[]): Backend[] {
+  const known = xs.filter((x): x is Backend => typeof x === "string" && x in backendLabels);
+  const order = [...new Set(known)];
+  return [...order, ...defaultRendering.filter((b) => !order.includes(b))];
 }
 
 export const defaults: Preferences = {
   editorFont: null, editorFontSize: null, lineNumbers: false, emacsKeys: false, mathSymbols: true,
   foldCodeBlocks: false, editorColorsLight: {}, editorColorsDark: {}, sphereShading: 75, smoothing: "auto",
+  rendering: defaultRendering,
 };
 
 const KEY = "fractalstream.preferences";
@@ -62,7 +84,7 @@ const keys: Record<keyof Preferences, string> = {
   editorFont: "editor-font", editorFontSize: "editor-font-size", lineNumbers: "line-numbers",
   emacsKeys: "emacs-keys", mathSymbols: "math-symbols", foldCodeBlocks: "fold-code-blocks",
   editorColorsLight: "editor-colors-light", editorColorsDark: "editor-colors-dark",
-  sphereShading: "sphere-shading", smoothing: "smoothing",
+  sphereShading: "sphere-shading", smoothing: "smoothing", rendering: "rendering",
 };
 
 const hexColor = (x: unknown): x is string => typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x);
@@ -101,6 +123,8 @@ function read(stored: Json): Preferences {
   if (typeof shading === "number" && Number.isInteger(shading) && shading >= 0 && shading <= 100) p.sphereShading = shading;
   const smoothing = v("smoothing");
   if (smoothing === "auto" || smoothing === "on" || smoothing === "off") p.smoothing = smoothing;
+  const rendering = v("rendering");
+  if (Array.isArray(rendering)) p.rendering = normalizeRendering(rendering);
   return p;
 }
 
@@ -110,8 +134,8 @@ function write(p: Preferences, other: Json): Json {
   const out: Json = { ...other };
   for (const k of Object.keys(keys) as (keyof Preferences)[]) {
     const value = p[k], def = defaults[k];
-    const same = typeof value === "object" && value !== null
-      ? Object.keys(value).length === 0 : value === def;
+    const same = Array.isArray(value) ? value.join() === (def as unknown[]).join()
+      : typeof value === "object" && value !== null ? Object.keys(value).length === 0 : value === def;
     if (same) delete out[keys[k]]; else out[keys[k]] = value;
   }
   return out;

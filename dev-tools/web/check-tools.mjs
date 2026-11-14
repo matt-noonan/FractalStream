@@ -81,11 +81,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { start, Checks, kinds } from "./harness.mjs";
+//   backends  a viewer's "Draw with" submenu: the order in Preferences,
+//             checked; the CPU, which drew it; the GPU's backends, not in
+//             this version yet. Choosing the CPU tells the engine (and
+//             it's checked); the order in Preferences goes to the engine,
+//             and is kept, as a reordered list
 
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences, backends };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -1928,4 +1933,51 @@ async function pathMovie() {
   await ppWin.locator(".tool-chooser").click();
   await page.locator(".window-menu button", { hasText: "Navigate" }).click();
   c.check((await ppWin.locator(".tool-chooser-label").textContent()) === "Navigate", "Navigate puts the tool down");
+}
+
+async function backends() {
+  const project = await app.openLibrary("Mandelbrot and Julia sets together");
+  const pp = project.viewers.find((v) => v.title === "Parameter plane").id;
+  const win = page.locator(".window").nth(pp);
+  const drawWith = async () => {
+    await win.locator(".window-menu-button").click();
+    await page.locator(".window-menu button", { hasText: "Draw with" }).click();
+    return page.locator(".window-menu button");
+  };
+  const checkedOf = async (items, label) => (await items.filter({ hasText: label }).first().getAttribute("aria-checked")) === "true";
+  await page.waitForTimeout(500);
+  let items = await drawWith();
+  const labels = (await page.locator(".window-menu .menu-label").allTextContents()).join(" | ");
+  c.check(labels.includes("Drawn with: CPU") && labels.includes("GPU, double-float (not in this version)")
+          && labels.includes("GPU, single precision (not in this version)"), `its "Draw with" menu: ${labels}`);
+  c.check(await checkedOf(items, "The order in Preferences") && !(await checkedOf(items, "CPU")),
+          "the order in Preferences is checked, to start with");
+  c.check(await items.filter({ hasText: "GPU, double-float" }).first().isDisabled(), "a backend not in this version can't be chosen");
+  await items.filter({ hasText: /^CPU/ }).first().click();
+  await page.waitForTimeout(300);
+  const sent = await page.evaluate((id) => window.__sent.filter((r) => r.type === "viewerBackend" && r.viewer === id).pop(), pp);
+  c.check(sent?.backend === "cpu", `choosing the CPU tells the engine (${JSON.stringify(sent)})`);
+  items = await drawWith();
+  c.check(await checkedOf(items, "CPU") && !(await checkedOf(items, "The order in Preferences")), "and it's checked now");
+  await items.filter({ hasText: "The order in Preferences" }).first().click();
+  await page.waitForTimeout(300);
+  const back = await page.evaluate((id) => window.__sent.filter((r) => r.type === "viewerBackend" && r.viewer === id).pop(), pp);
+  c.check(back?.backend === null, "the order in Preferences, again");
+
+  // the order, in Preferences
+  await app.backToLibrary();
+  await page.locator(".welcome-preferences").click();
+  await page.locator(".prefs-tab", { hasText: "Viewers" }).click();
+  const order = () => page.locator(".prefs-order li span").allTextContents();
+  c.check((await order()).join(" | ").startsWith("GPU, double-float (not in this version) | CPU | GPU, single precision"),
+          `the backends' order, the default to start with: ${(await order()).join(" | ")}`);
+  await page.locator(".prefs-order li").nth(1).locator("button", { hasText: "↑" }).click();
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("fractalstream.preferences") || "{}").rendering);
+  const toEngine = await page.evaluate(() => window.__sent.filter((r) => r.type === "rendering").pop());
+  c.check((await order())[0] === "CPU" && JSON.stringify(stored) === JSON.stringify(["cpu", "gpu-df64", "gpu-f32"])
+          && JSON.stringify(toEngine?.order) === JSON.stringify(stored), `moved up, the CPU's first, kept (${JSON.stringify(stored)}), and sent`);
+  await page.locator(".prefs-pane button", { hasText: "Use the default" }).click();
+  c.check(await page.evaluate(() => JSON.parse(localStorage.getItem("fractalstream.preferences") || "{}").rendering) === undefined,
+          "the default again: nothing kept");
+  await page.keyboard.press("Escape");
 }

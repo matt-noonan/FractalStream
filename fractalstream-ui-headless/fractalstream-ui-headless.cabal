@@ -148,6 +148,7 @@ test-suite end-to-end
                     , GroupSpec
                     , PixelSizeSpec
                     , BlocksSpec
+                    , ChainSpec
                     , TextSpec
                     , ToolAutocolorSpec
                     , TableSpec

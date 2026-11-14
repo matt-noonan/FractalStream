@@ -4,6 +4,7 @@ module Backend
   ) where
 
 import Actor.Viewer
+import FractalStream.Backends (BackendId(..))
 import Actor.Event (interpretedToolExec)
 import Language.Draw (ignoreDrawing)
 import Backend.Pure
@@ -11,7 +12,7 @@ import Backend.Pure
 withBackend :: (Backend -> IO a) -> IO a
 withBackend action =
   action Backend
-    { bViewerCompiler    = ViewerCompiler (const interpretedViewer)
+    { bViewerCompilers   = [(Cpu, ViewerCompiler (\_ c -> Right . cpuViewer <$> interpretedViewer c))]
     , bToolRunnerFactory = defaultToolRunnerFactory
     , bToolRunner        = defaultToolRunner
     , bRunOnce           = \_ -> interpretedToolExec ignoreDrawing

@@ -65,6 +65,7 @@ library
   exposed-modules:
                        FractalStream.Prelude
                        FractalStream.Metadata
+                       FractalStream.Backends
 
                        Actor.Tool
                        Actor.Configuration

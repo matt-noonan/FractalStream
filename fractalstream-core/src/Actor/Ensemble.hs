@@ -54,6 +54,7 @@ import Actor.Layout
 import Actor.Event
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Viewer
+import FractalStream.Backends (BackendId(..), backendPreference, normalizeOrder)
 import Actor.Viewer.Complex
 import Actor.Viewer.Sphere
 import Actor.Viewer.Disk
@@ -103,7 +104,7 @@ import Language.Value.Evaluator (evaluate, evaluateInContext)
 
 import Control.Exception (Exception, IOException, SomeException, SomeAsyncException, fromException, displayException, throwIO, try)
 import System.IO (hPutStrLn, stderr)
-import Control.Concurrent.MVar (newMVar, modifyMVar_)
+import Control.Concurrent.MVar (newMVar, modifyMVar, modifyMVar_)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Foreign.ForeignPtr (ForeignPtr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -1797,6 +1798,7 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
     let vCenter = cvCenterV
     vPixelSize <- newVariable vOriginalPixelSize
     vAspect <- newVariable vOriginalAspect
+    vBackendOverride <- newVariable Nothing
 
     let vSaveView = pure ()
 
@@ -1864,7 +1866,8 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
       Left (_, err) -> do
         let vTools = dyn cvTools
             vSelectTool = Nothing
-            vCodeWithArgs = CodeWithArgs (pure $ Right EmptyContext) Nothing (pure allGrey)
+            vCodeWithArgs = CodeWithArgs (pure $ Right EmptyContext) Nothing
+                              (ViewerChain [(Cpu, pure (Right (cpuViewer allGrey)))])
             vListen = const (pure $ pure ())
 
         putStrLn ("Can't build viewer: " ++ err)
@@ -1929,12 +1932,31 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
                            then Just <$> makeSelectTool cvCoord else pure Nothing
           let vTools = maybe id (:) vSelectTool <$> dyn cvTools
 
-          fun0 <- compileViewer (bViewerCompiler backend) lookupAutocolor code
-          fun <- case mprefix of
-            Nothing -> pure fun0
-            Just prefix -> hoistedViewerFunction (bRunOnce backend lookupAutocolor) env prefix fun0
-          let vCodeWithArgs = CodeWithArgs vGetArgs (Just code) (pure fun)
+          -- Each of the platform's backends compiles the viewer when it's
+          -- first needed, once; the first in the app's order that accepts
+          -- it does so now, while the project's loading.
+          chain <- forM (bViewerCompilers backend) $ \(b, compiler) -> fmap (b,) $ once $
+            compileViewer compiler lookupAutocolor code >>= traverse (\fun0 -> case mprefix of
+              Nothing -> pure fun0
+              Just prefix -> hoistedViewerFunction (bRunOnce backend lookupAutocolor) env prefix fun0)
+          order <- normalizeOrder <$> getDynamic backendPreference
+          let compileFirst = \case
+                [] -> pure ()
+                b : bs -> case lookup b chain of
+                  Nothing -> compileFirst bs
+                  Just compiled -> compiled >>= either (const (compileFirst bs)) (const (pure ()))
+          compileFirst order
+          let vCodeWithArgs = CodeWithArgs vGetArgs (Just code) (ViewerChain chain)
           pure (shown Viewer{..})
+
+-- | An action that does another once, the first time it's run, and then
+-- gives back what it gave (from any thread).
+once :: IO a -> IO (IO a)
+once act = do
+  memo <- newMVar Nothing
+  pure $ modifyMVar memo $ \case
+    Just r -> pure (Just r, r)
+    Nothing -> act <&> \r -> (Just r, r)
 
 layoutToArgs :: Layout -> IO (SomeContext' EventArgument_)
 layoutToArgs = \case

@@ -17,7 +17,8 @@ import Test.Hspec
 
 import Actor.Ensemble (buildEnsembleFromScript, runEnsemble)
 import Actor.UI (UI(..))
-import Actor.Viewer (Viewer(..), CodeWithArgs(..), ViewerArgs(..), ViewerFunction(..), RenderedBuffer(..),
+import Actor.Viewer (Viewer(..), ViewerArgs(..), ViewerIssues, RenderedBuffer(..),
+                     Renderer(..), BlockFunction(..), viewerRenderer,
                      renderViewerBuffer, renderProgressively, Progressive(..), ImageTarget(..),
                      renderProgressivelyInto)
 import Foreign.ForeignPtr (mallocForeignPtrBytes)
@@ -27,7 +28,6 @@ import Actor.Layout (Dimensions(..))
 import Data.DynamicValue (setValue)
 import Foreign.ForeignPtr (withForeignPtr)
 import Backend (withBackend)
-import Data.DynamicValue (getDynamic)
 
 import Control.Monad (forM_)
 import qualified Data.ByteString as BS
@@ -52,12 +52,8 @@ height = 48
 -- offset by @offsetOf@: the image's pixels, as RGB rows.
 renderBlocks :: Viewer -> ((Int32, Int32) -> ((Double, Double), (Int32, Int32)))
              -> [(Int32, Int32, Int32, Int32)] -> IO BS.ByteString
-renderBlocks viewer place blocks = case vCodeWithArgs viewer of
-  CodeWithArgs getArgs _ code -> getArgs >>= \case
-    Left err -> fail err
-    Right args -> do
-      ViewerFunction bind <- getDynamic code
-      fn <- bind args
+renderBlocks viewer place blocks = do
+      fn <- cpuBlocks viewer
       image <- newIORef (BS.replicate (fromIntegral (3 * width * height)) 0)
       forM_ blocks $ \(c, r, w, h) ->
         allocaBytes (fromIntegral (3 * w * h)) $ \buf -> do
@@ -72,6 +68,15 @@ renderBlocks viewer place blocks = case vCodeWithArgs viewer of
             in BS.take at img <> line <> BS.drop (at + fromIntegral (3 * w)) img
       readIORef image
   where step = 1e-13
+
+-- | The viewer's first backend's block function (the CPU's, which never
+-- declines), its values bound.
+cpuBlocks :: Viewer -> IO (ViewerArgs -> IO ViewerIssues)
+cpuBlocks viewer = viewerRenderer viewer >>= either fail pure >>= \case
+  Renderer ((_, blocks) : _) -> blocks >>= \case
+    Left why -> fail (show why)
+    Right bf -> pure (\args -> bfBlock bf args >>= either (fail . show) pure)
+  Renderer [] -> fail "no backends"
 
 origin :: (Double, Double)
 origin = (1.0000001 - fromIntegral width / 2 * 1e-13, fromIntegral height / 2 * 1e-13)
@@ -125,7 +130,7 @@ spec = describe "a viewer's image, cut into blocks" $ do
             { prPieceSize = size, prConcurrency = 3, prScale = 1, prSmooth = smooth
             , prShown = \c r -> shown /= "nothing" && even (c + r)
             , prStale = pure False, prStarted = \_ -> pure (), prCovered = pure ()
-            , prDrawn = \_ -> modifyIORef' drawn (+ 1) } v
+            , prDrawn = \_ -> modifyIORef' drawn (+ 1), prBackend = \_ -> pure () } v
           image <- either fail (maybe (fail "abandoned") pure) got
           bytes image >>= (`shouldBe` expected)
           readIORef drawn >>= (`shouldSatisfy` (> 0))
@@ -142,16 +147,13 @@ spec = describe "a viewer's image, cut into blocks" $ do
       withForeignPtr finals $ \p -> forM_ [0 .. w * h - 1] $ \i ->
         pokeByteOff p i (if i `mod` w < w `div` 2 then 1 else 0 :: Word8)
       covered <- newIORef False
-      fn <- case vCodeWithArgs v of
-        CodeWithArgs getArgs _ code -> do
-          ViewerFunction bind <- getDynamic code
-          getArgs >>= either fail pure >>= bind
+      renderer <- viewerRenderer v >>= either fail pure
       _ <- renderProgressivelyInto Progressive
         { prPieceSize = 16, prConcurrency = 1, prScale = 1, prSmooth = False, prShown = \_ _ -> False
         , prStale = readIORef covered, prStarted = \_ -> pure (), prCovered = writeIORef covered True
-        , prDrawn = \_ -> pure () }
+        , prDrawn = \_ -> pure (), prBackend = \_ -> pure () }
         ImageTarget { itWidth = w, itHeight = h, itCenter = (-0.75, 0), itPixelSize = 0.03, itAspect = 1
-                    , itWith = withForeignPtr out, itFinals = Just finals } fn
+                    , itWith = withForeignPtr out, itFinals = Just finals } renderer
       readIORef covered >>= (`shouldBe` True)
       pixels <- withForeignPtr out $ \p -> BS.packCStringLen (castPtr p, 3 * w * h)
       let at x y = BS.index pixels (3 * (y * w + x))
@@ -163,7 +165,7 @@ spec = describe "a viewer's image, cut into blocks" $ do
       got <- renderProgressively Progressive
         { prPieceSize = 16, prConcurrency = 1, prScale = 1, prSmooth = False, prShown = \_ _ -> False
         , prStale = (> 3) <$> readIORef drawn, prStarted = \_ -> pure (), prCovered = pure ()
-        , prDrawn = \_ -> modifyIORef' drawn (+ 1) } v
+        , prDrawn = \_ -> modifyIORef' drawn (+ 1), prBackend = \_ -> pure () } v
       either fail (maybe (pure ()) (const (expectationFailure "it wasn't abandoned"))) got
       readIORef drawn >>= (`shouldBe` 4)
   where

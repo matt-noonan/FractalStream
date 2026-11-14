@@ -411,6 +411,23 @@ calls on many threads, and per-call marshalling (table descriptors going
 through one shared registry) once made each call cost ~0.5 ms. One-off
 renders can use `runViewerFunction`.
 
+**Backends as a chain** (GPU_PLAN.md, 5a). `Backend`'s `bViewerCompilers`
+lists the platform's backends (`FractalStream.Backends.BackendId`: today
+only `Cpu`). A `ViewerCompiler` gives `Either Decline (CompiledViewer env)`;
+a `CompiledViewer` binds the values to a `BlockFunction`, which can decline
+a view (`bfView`, given a `ViewGeometry`) or give up on a render (its
+`bfBlock` gives `Left`). `cpuViewer` turns a `ViewerFunction` into one that
+never declines. The ensemble keeps each viewer's `ViewerChain` (each
+backend's compile, done once, on demand; the first in the app's order that
+accepts is compiled at load). `viewerRenderer` orders the chain by
+`effectiveOrder` of the app's `backendPreference` (a global `Variable`, set
+by frontends from the `rendering` setting) and the viewer's
+`vBackendOverride` ("Draw with", put first); `runRenderer` tries each in
+turn, and `renderViewerBufferAt` and `renderProgressivelyInto` (through
+`prBackend`, with a `RenderReport`) redo a render from scratch on the next
+backend when one gives up. `ChainSpec` (end-to-end) checks this with
+made-up declining backends around the real CPU one.
+
 `ComplexViewer` is the YAML-serializable viewer config (extends to complex-plane viewers).
 
 ### Tools (`Actor.Tool`)

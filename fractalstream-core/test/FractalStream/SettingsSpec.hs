@@ -4,6 +4,7 @@ module FractalStream.SettingsSpec (spec) where
 import Test.Hspec
 
 import FractalStream.Settings
+import FractalStream.Backends
 
 import Data.Aeson (Value(..))
 import qualified Data.Aeson.KeyMap as KM
@@ -18,6 +19,7 @@ spec = describe "FractalStream's settings file" $ do
                                    , setFoldCodeBlocks = True, setMathSymbols = False
                                    , setEditorFont = Just "Iosevka", setEditorFontSize = Just 14
                                    , setLineNumbers = True, setSphereShading = 55
+                                   , setRendering = [Cpu, GpuDf64, GpuF32]
                                    , setEditorColorsDark = Map.fromList
                                        [ ("keyword", noClassStyle { csColor = Just "#c792ea" })
                                        , ("undefined", noClassStyle { csColor = Just "#ff8080", csItalic = Just True
@@ -33,7 +35,7 @@ spec = describe "FractalStream's settings file" $ do
     fst (readSettings "settings.yaml" (writeSettings settings)) `shouldBe` settings
 
   it "ignores (and warns about) settings that don't make sense" $ do
-    let (settings, warnings) = readSettings "settings.yaml" "projects-folder: 7\nemacs-keys: sometimes\nfold-code-blocks: 1\nmath-symbols: maybe\neditor-font: 12\neditor-font-size: big\nline-numbers: 3\nsphere-shading: 1.5\neditor-colors-light: {keyword: blue, number: {color: \"#123456\", sparkly: true}, string: \"#00aa00\"}\n"
+    let (settings, warnings) = readSettings "settings.yaml" "projects-folder: 7\nemacs-keys: sometimes\nfold-code-blocks: 1\nmath-symbols: maybe\neditor-font: 12\neditor-font-size: big\nline-numbers: 3\nsphere-shading: 1.5\nrendering: fast\neditor-colors-light: {keyword: blue, number: {color: \"#123456\", sparkly: true}, string: \"#00aa00\"}\n"
     setProjectsFolder settings `shouldBe` Nothing
     setEmacsKeys settings `shouldBe` False
     setFoldCodeBlocks settings `shouldBe` False
@@ -42,8 +44,13 @@ spec = describe "FractalStream's settings file" $ do
     setEditorFontSize settings `shouldBe` Nothing
     setLineNumbers settings `shouldBe` False
     setSphereShading settings `shouldBe` defaultSphereShading
+    setRendering settings `shouldBe` defaultBackendOrder
     setEditorColorsLight settings `shouldBe` Map.fromList [("string", noClassStyle { csColor = Just "#00aa00" })]
-    length warnings `shouldBe` 10
+    length warnings `shouldBe` 11
+
+  it "reads the backends' order, leaving out backends it doesn't know, and adding any left out" $ do
+    readSettings "settings.yaml" "rendering: [gpu-f64, gpu-f32, cpu]\n"
+      `shouldBe` (defaultSettings { setRendering = [GpuF32, Cpu, GpuDf64] }, [])
 
   it "uses the defaults for an empty file, or one that isn't YAML" $ do
     readSettings "settings.yaml" "" `shouldBe` (defaultSettings, [])

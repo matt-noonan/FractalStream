@@ -12,7 +12,7 @@ import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle 
 import { Desk, menuButton, type MenuItem } from "./windows.js";
 import type { Movies } from "./capture.js";
 import { Welcome } from "./welcome.js";
-import { onPreferences, preferences, smoothingNow, type Preferences } from "./preferences.js";
+import { backendLabels, onPreferences, preferences, smoothingNow, type Backend, type Preferences } from "./preferences.js";
 import { showPreferences } from "./preferences-dialog.js";
 import { makeLink, readLink, hasLink, fetchProject } from "./links.js";
 import { sideBySide, fitted, tiled, toFractions, fromFractions, narrowScreen, type Place, type Room } from "./layout.js";
@@ -28,6 +28,10 @@ const noticesEl = document.getElementById("notices")!;
 // changes its own; not saved, as on the desktop), and the sphere's
 // shading.
 let engineReady = false;
+// Which backend is drawing each viewer (by id), and why those before it
+// didn't, for its menu's "Draw with". (Kept here, not by the viewer's
+// window: a viewer's first render can start before the page has it.)
+const drawnWith = new Map<number, { backend: string | null; declined: [string, string][] }>();
 let engineFollows: Preferences | null = null;
 function sendPreferences(p: Preferences) {
   if (!engineReady) return;
@@ -35,6 +39,7 @@ function sendPreferences(p: Preferences) {
   engineFollows = p;
   if (!before || smoothingNow(before) !== smoothingNow(p)) send({ type: "smoothing", on: smoothingNow(p) });
   if (!before || before.sphereShading !== p.sphereShading) send({ type: "sphereShading", value: p.sphereShading / 100 });
+  if (!before || before.rendering.join() !== p.rendering.join()) send({ type: "rendering", order: p.rendering });
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {},
@@ -1883,7 +1888,28 @@ class ViewerView {
         toggle: () => {
           this.info.smooth = !this.info.smooth;
           send({ type: "viewerSmoothing", viewer: this.info.id, on: this.info.smooth });
-        } });
+        } },
+      // (the order in Preferences, or a backend this viewer tries first;
+      // and which drew it last, and why those before it didn't)
+      { kind: "submenu", label: "Draw with", items: () => {
+        const label = (b: string) => backendLabels[b as Backend] ?? b;
+        const drawWith = (backend: string | null) => {
+          this.info.drawWith = backend;
+          send({ type: "viewerBackend", viewer: this.info.id, backend });
+        };
+        const d = drawnWith.get(this.info.id);
+        return [
+          { kind: "toggle", label: "The order in Preferences", on: this.info.drawWith === null, toggle: () => drawWith(null) },
+          ...(Object.keys(backendLabels) as Backend[]).map((b): MenuItem => this.info.backends.includes(b)
+            ? { kind: "toggle", label: label(b), on: this.info.drawWith === b, toggle: () => drawWith(b) }
+            : { kind: "action", label: `${label(b)} (not in this version)`, enabled: false, run: () => {} }),
+          { kind: "separator" },
+          { kind: "action", enabled: false, run: () => {},
+            label: !d ? "Not drawn yet" : d.backend ? `Drawn with: ${label(d.backend)}` : "No backend could draw it" },
+          ...(d?.declined ?? []).map(([b, why]): MenuItem =>
+            ({ kind: "action", enabled: false, run: () => {}, label: `${label(b)} declined: ${why}` })),
+        ];
+      } });
     return items;
   }
 
@@ -2110,6 +2136,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "running": viewers.get(m.viewer)?.showRunning(m.what, m.name); break;
     case "runDone": viewers.get(m.viewer)?.runDone(); break;
     case "viewerError": viewers.get(m.viewer)?.showError(m.message); break;
+    case "backend": drawnWith.set(m.viewer, { backend: m.backend, declined: m.declined }); break;
     case "error": colorizerChange = null; welcome.setOpening(false); say(m.message, true); console.error(m.message); break;
     case "details": showDetails(m); break;
     case "patch": viewers.get(m.viewer)?.patch(m); break;

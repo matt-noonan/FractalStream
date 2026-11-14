@@ -54,6 +54,7 @@ import Actor.Tool
 import Actor.Layout
 import Actor.Configuration
 import Actor.Viewer
+import FractalStream.Backends
 import Actor.Ensemble (buildToolContext, layoutToArgs, Colorizer(..), ViewerColorizer(..))
 import Actor.Colorizer (choiceName, choiceArguments, missingArguments, argumentFields, choiceWithArguments)
 import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..), hyperbolicDisplay, hyperbolicModel, ToolDispatcher, HandlerRun, newCancelFlag)
@@ -776,31 +777,29 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- Main view
     -------------------------------------------------------
 
-    lastRenderAction <- newMVar (\_ -> pure mempty)
+    -- (until the viewer's first render: one drawing nothing)
+    lastRenderAction <- newMVar (Renderer [(Cpu, pure (Right (BlockFunction (const Nothing) (\_ -> pure (Right mempty)))))])
 
-    let getRenderAction = case vCodeWithArgs of
-          CodeWithArgs vGetArgs _ vCode -> do
-            vGetArgs >>= \case
-              Left err   -> do
-                setWarning (Just err)
-                readMVar lastRenderAction
-              Right vaArgs -> do
-                setWarning Nothing
-                -- (the values are bound once, for every block of the render)
-                ViewerFunction bind <- getDynamic vCode
-                action <- bind vaArgs
-                modifyMVar_ lastRenderAction (\_ -> pure action)
-                pure action
+    let getRenderAction = viewerRenderer theViewer >>= \case
+          Left err -> do
+            setWarning (Just err)
+            readMVar lastRenderAction
+          Right renderer -> do
+            setWarning Nothing
+            modifyMVar_ lastRenderAction (\_ -> pure renderer)
+            pure renderer
 
     renderId <- newIORef (0 :: Int)
     -- The issues reported so far by the current render, and its id.
     renderIssues <- newIORef (0 :: Int, mempty :: ViewerIssues)
+    -- Which backend is drawing the current render (or the last one).
+    renderReport <- newIORef (Nothing :: Maybe RenderReport)
 
     pendingResize <- variable [value := False]
 
     viewerTile     <- do
       renderAction <- getRenderAction
-      renderTile' renderId renderIssues True renderAction (backgroundSeed initialModel (width, height)) (width, height) model
+      renderTile' renderId renderIssues renderReport True renderAction (backgroundSeed initialModel (width, height)) (width, height) model
     currentTile    <- variable [value := viewerTile]
     savedTileImage <- variable [value := Nothing]
     -- The same, ready to draw (making a bitmap from an image is too slow
@@ -915,7 +914,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           let seed | how == ParameterChange = backgroundSeed newModel (w, h)
                    | otherwise = reprojectedSeed seedTile seedModel newModel (w, h)
                                    <|> backgroundSeed newModel (w, h)
-          newViewerTile <- renderTile' renderId renderIssues smoothing renderAction seed (w, h) model
+          newViewerTile <- renderTile' renderId renderIssues renderReport smoothing renderAction seed (w, h) model
           set currentTile [ value := newViewerTile ]
           writeIORef currentTileModel newModel
           now <- getCurrentTime
@@ -1569,9 +1568,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                        -- finds an issue or finishes, so that the bar doesn't
                        -- flicker away at the start of every render.
                        (_, issues) <- readIORef renderIssues
+                       report <- readIORef renderReport
                        finished <- tileFinished curTile
-                       when (finished || issues /= mempty) $
-                         setStatusMessage (fromMaybe "" (describeViewerIssues issues))
+                       let nobody = report >>= describeRenderReport
+                       when (finished || issues /= mempty || isJust nobody) $
+                         setStatusMessage (fromMaybe "" (nobody <|> describeViewerIssues issues))
                    ]
 
     -- Add a timer which will check for re-rendering requests from off the
@@ -1755,6 +1756,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     stopShadingListening <- watchDynamic sphereShading $ \_ -> do
       m <- get model value
       when (isJust (modelRotation m)) requestRefresh
+    -- ...and when the backends' order does, the app's or the viewer's own
+    stopOrderListening <- watchDynamic backendPreference (\_ -> requestRefresh)
+    stopOverrideListening <- watchDynamic vBackendOverride (\_ -> requestRefresh)
     -- (the overlay's refresh is only queued here: a value is being set)
     stopOverlayListening <- vListenOverlay (void (tryPutMVar needToRefreshOverlay ()))
     -- Hooks `windowOnDestroy`, not `on closing` -- `host` is torn down
@@ -1763,6 +1767,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- 'UI.Widgets.wxWatchDynamic'. (The render under way stops, too.)
     onOwnDestroy host $ do
       forgetViewer >> stopListening' >> stopOverlayListening >> stopShadingListening
+      stopOrderListening >> stopOverrideListening
       cancelTile =<< get currentTile value
 
     -------------------------------------------------------
@@ -2023,6 +2028,41 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           set useSmoothing [ value := isChecked ]
           requestRefresh
       ]
+
+    -- Which backend draws this viewer: the app's order (Preferences), or
+    -- one this viewer tries first; and, shown as the menu opens, which
+    -- drew the last render, and why the ones before it didn't.
+    drawMenu <- menuPane [ text := "Draw with" ]
+    let available = viewerBackends theViewer
+        setOverride o = setValue vBackendOverride o
+    defaultItem <- menuItem drawMenu [ text := "The order in Preferences", checkable := True ]
+    backendItems <- forM allBackends $ \b -> do
+      mi <- menuItem drawMenu [ text := backendLabel b ++ (if b `elem` available then "" else " (not in this version)")
+                                , checkable := True, enabled := b `elem` available ]
+      pure (b, mi)
+    menuLine drawMenu
+    drawnItem <- menuItem drawMenu [ text := "Not drawn yet", enabled := False ]
+    -- (a line per backend that declined: made afresh each time, since an
+    -- empty item would still take up a line)
+    declineItems <- newIORef []
+    set defaultItem [ on command := setOverride Nothing ]
+    forM_ backendItems $ \(b, mi) -> set mi [ on command := setOverride (Just b) ]
+    let showDrawMenu = do
+          override <- getDynamic vBackendOverride
+          set defaultItem [ checked := isNothing override ]
+          forM_ backendItems $ \(b, mi) -> set mi [ checked := override == Just b ]
+          report <- readIORef renderReport
+          set drawnItem [ text := case report of
+                            Nothing -> "Not drawn yet"
+                            Just RenderReport{ rrBackend = Just b } -> "Drawn with: " ++ backendLabel b
+                            Just _ -> "No backend could draw it" ]
+          let declines = maybe [] rrDeclined report
+          readIORef declineItems >>= mapM_ (menuDestroyByItem drawMenu)
+          fresh <- forM declines $ \(b, Decline why) ->
+            menuItem drawMenu [ text := "  " ++ backendLabel b ++ " declined: " ++ why, enabled := False ]
+          writeIORef declineItems fresh
+    modifyIORef' beforeMenu (>> showDrawMenu)
+    void (menuSub hamburgerMenu drawMenu [ text := "Draw with" ])
     menuLine hamburgerMenu
     showToolPicker  <- menuItem hamburgerMenu [ text := "Show tool picker"
                                               , checkable := True, checked := True ]
@@ -2426,27 +2466,33 @@ toolFieldValues Tool{..} = getDynamic toolConfig >>= \case
 renderTile' :: Valued w
             => IORef Int
             -> IORef (Int, ViewerIssues)
+            -> IORef (Maybe RenderReport)
             -> Bool
-            -> (ViewerArgs -> IO ViewerIssues)
+            -> Renderer
             -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
             -> (Int, Int)
             -> w Model
             -> IO Tile
-renderTile' renderId renderIssues smooth action seed dim model = do
+renderTile' renderId renderIssues renderReport smooth (Renderer tries) seed dim model = do
     iD <- atomicModifyIORef' renderId (\x -> (x + 1, x + 1))
     -- A new render starts out with no issues; each block adds its own,
     -- unless a newer render has started since.
     atomicWriteIORef renderIssues (iD, mempty)
     Model viewCenter pixelDim _ <- get model value
-    let action' args = do
-            issues <- action args
-            unless (issues == mempty) $
-              atomicModifyIORef' renderIssues $ \(i, old) ->
-                ((i, if i == iD then old <> issues else old), ())
-            pure issues
+    let record issues = unless (issues == mempty) $
+          atomicModifyIORef' renderIssues $ \(i, old) ->
+            ((i, if i == iD then old <> issues else old), ())
+        recording bf = bf { bfBlock = \args -> bfBlock bf args >>= \r -> r <$ either (const (pure ())) record r }
+        renderer = Renderer [ (b, fmap recording <$> blocks) | (b, blocks) <- tries ]
+        -- (a backend starting the render, perhaps over again, after one
+        -- gave up on it: the issues are its own)
+        started report = do
+          atomicModifyIORef' renderIssues $ \(i, old) -> ((i, if i == iD then mempty else old), ())
+          current <- readIORef renderId
+          when (current == iD) $ atomicWriteIORef renderReport (Just report)
         -- (once a newer render has started, this one stops, between pieces)
         stale = (/= iD) <$> readIORef renderId
-    renderTile smooth seed action' stale dim (viewCenter, pixelDim)
+    renderTile smooth seed renderer started stale dim (viewCenter, pixelDim)
 
 -- | 'drawCenteredBitmap', moved by an offset (in the window's units).
 drawCenteredBitmapAt :: (Int, Int) -> Bitmap () -> DC d -> Rect -> (Int,Int) -> IO ()
