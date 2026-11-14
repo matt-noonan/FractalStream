@@ -4,8 +4,8 @@
 // shading and viewers' smoothing, and the editor's colors. Each change is
 // made, and saved, as soon as it's made.
 
-import { classes, classStyle, editorBackground, isMac, preferences, setPreferences, smoothingNow,
-         type ClassStyle, type Preferences, type Smoothing } from "./preferences.js";
+import { backendLabels, classes, classStyle, defaultRendering, editorBackground, isMac, preferences, setPreferences,
+         smoothingNow, type ClassStyle, type Preferences, type Smoothing } from "./preferences.js";
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {},
                                                  ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -121,13 +121,39 @@ function viewersTab(): HTMLElement {
     choice.append(el("option", { value, textContent: label, selected: p.smoothing === value }));
   }
   choice.addEventListener("change", () => setPreferences({ smoothing: choice.value as Smoothing }));
+  // The order viewers try the backends in, each with buttons moving it up
+  // or down (those the engine doesn't have yet are said so).
+  const order = el("ol", { className: "prefs-order" });
+  const showOrder = () => {
+    const now = preferences().rendering;
+    const move = (k: number, by: number) => {
+      const next = [...now];
+      [next[k], next[k + by]] = [next[k + by], next[k]];
+      setPreferences({ rendering: next });
+      showOrder();
+    };
+    order.replaceChildren(...now.map((b, k) => {
+      const up = el("button", { textContent: "↑", disabled: k === 0, title: "Move up" });
+      const down = el("button", { textContent: "↓", disabled: k === now.length - 1, title: "Move down" });
+      up.addEventListener("click", () => move(k, -1));
+      down.addEventListener("click", () => move(k, 1));
+      return el("li", {}, el("span", { textContent: backendLabels[b] + (b === "cpu" ? "" : " (not in this version)") }),
+                up, down);
+    }));
+  };
+  showOrder();
+  const reset = el("button", { textContent: "Use the default" });
+  reset.addEventListener("click", () => { setPreferences({ rendering: defaultRendering }); showOrder(); });
   return el("div", { className: "prefs-pane" },
     el("div", { className: "prefs-label", textContent: "Shading of the Riemann sphere:" }),
     el("div", { className: "prefs-row" }, slider, shown),
     el("p", { className: "prefs-hint", textContent: "Shades the globe as if it were lit from the upper left. At 0% it isn't shaded at all." }),
     el("div", { className: "prefs-label", textContent: "Subpixel smoothing, for new viewers:" }),
     choice,
-    el("p", { className: "prefs-hint", textContent: "Each viewer's ☰ menu turns its own smoothing on or off." }));
+    el("p", { className: "prefs-hint", textContent: "Each viewer's ☰ menu turns its own smoothing on or off." }),
+    el("div", { className: "prefs-label", textContent: "Drawing viewers, in order of preference:" }),
+    order, reset,
+    el("p", { className: "prefs-hint", textContent: "Each viewer is drawn with the first of these that can draw it as precisely as the CPU's doubles would (the GPU's double-float can't zoom as deep, for instance), and those after the CPU only when it can't. A viewer's ☰ menu can choose one for that viewer." }));
 }
 
 // --- Colors

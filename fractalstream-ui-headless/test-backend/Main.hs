@@ -14,6 +14,7 @@ import qualified DiskSpec
 import qualified GroupSpec
 import qualified PixelSizeSpec
 import qualified BlocksSpec
+import qualified ChainSpec
 import qualified TextSpec
 import qualified ToolAutocolorSpec
 import qualified OverlaySpec
@@ -25,4 +26,4 @@ foreign export javascript "hs_start" main :: IO ()
 #endif
 
 main :: IO ()
-main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec >> DiskSpec.spec >> GroupSpec.spec >> PixelSizeSpec.spec >> BlocksSpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec)
+main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec >> DiskSpec.spec >> GroupSpec.spec >> PixelSizeSpec.spec >> BlocksSpec.spec >> ChainSpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec)

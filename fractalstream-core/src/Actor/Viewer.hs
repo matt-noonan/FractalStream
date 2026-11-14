@@ -15,6 +15,15 @@ module Actor.Viewer
   , ViewerCompiler(..)
   , ViewerArgs(..)
   , ViewerFunction(..)
+  , ViewGeometry(..)
+  , BlockFunction(..)
+  , CompiledViewer(..)
+  , cpuViewer
+  , ViewerChain(..)
+  , Renderer(..)
+  , viewerRenderer
+  , viewerBackends
+  , runRenderer
   , ViewerIssues(..)
   , describeViewerIssues
   , Viewer(..)
@@ -58,6 +67,7 @@ module Actor.Viewer
 import FractalStream.Prelude
 
 import Actor.Viewer.Types
+import FractalStream.Backends
 import Actor.Autocolor (AutocolorLookup)
 import Data.DynamicValue
 import Actor.Layout (Dimensions(..))
@@ -207,7 +217,7 @@ data CodeWithArgs where
                 . MissingViewerArgs env
                => IO (Either String (Context HaskellValue env))
                -> Maybe (Code (ViewerEnv env))
-               -> Dynamic (ViewerFunction env)
+               -> ViewerChain env
                -> CodeWithArgs
 
 data Viewer = Viewer
@@ -262,6 +272,10 @@ data Viewer = Viewer
   , vDrawCmds  :: IO [[DrawCommand]]
   , vDrawCmdsChanged :: IO Bool
   , vCodeWithArgs :: CodeWithArgs
+  , vBackendOverride :: Variable (Maybe BackendId)
+    -- ^ The backend this viewer tries first, ahead of the app's order
+    --   ('backendPreference'), if it's been told to prefer one (from its
+    --   menu): see 'effectiveOrder'.
   , vTools     :: Dynamic [Tool]
   , vSelectTool :: Maybe Tool
     -- ^ The built-in "Select ..." tool (also in 'vTools'), when the
@@ -346,6 +360,8 @@ data RenderedBuffer = RenderedBuffer
     -- a viewer with a group, in each tile on the screen too (see
     -- 'overlayProjections')
   , rbIssues    :: ViewerIssues
+  , rbReport    :: RenderReport
+    -- ^ which backend drew it, and why the ones before it didn't
   }
 
 -- | Render a viewer's base per-pixel script at its current size and view,
@@ -382,17 +398,14 @@ pointerText coord = \case
 -- high-DPI screen's density). A smoothed render's code sees the pixel's
 -- size too, not the finer step it's sampled at.
 renderViewerBufferAt :: Double -> Bool -> Viewer -> IO (Either String RenderedBuffer)
-renderViewerBufferAt scale downsample Viewer{..} = case vCodeWithArgs of
-  CodeWithArgs getArgs _ code -> getArgs >>= \case
-    Left err -> pure (Left err)
-    Right vaArgs -> do
+renderViewerBufferAt scale downsample Viewer{..} = viewerRenderer Viewer{..} >>= \case
+  Left err -> pure (Left err)
+  Right renderer -> do
       Dimensions (w, h) <- getDynamic vSize
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
       projection <- viewProjection vOriginalView vView vRotation vIsometry
       center <- getDynamic vCenter
-      ViewerFunction bind <- getDynamic code
-      fn <- bind vaArgs
       let s = if downsample then 2 else 1
           bigW = w * s
           ((x0, y0), (px, py)) = imageGeometry s w h center pixelSize aspect
@@ -400,13 +413,18 @@ renderViewerBufferAt scale downsample Viewer{..} = case vCodeWithArgs of
           -- capability busy even if some strips are slower than others
           stripRows = max 1 (min 16 (h `div` 64))
           strips = [ (r, min stripRows (h - r)) | r <- [0, stripRows .. h - 1] ]
+          geometry = ViewGeometry (bigW, h * s) center (px, py)
       caps <- renderConcurrency
       out <- mallocForeignPtrBytes (3 * w * h)
-      issuesVar <- newMVar mempty
-      withForeignPtr out $ \outPtr ->
-        forPool_ caps strips $ \(row, rows) ->
-          allocaBytes (3 * bigW * rows * s) $ \big -> do
-            issues <- fn ViewerArgs
+      result <- runRenderer renderer geometry $ \report fn -> do
+        issuesVar <- newMVar mempty
+        -- (once a strip gives up, the rest are skipped)
+        gaveUp <- newMVar Nothing
+        withForeignPtr out $ \outPtr ->
+          forPool_ caps strips $ \(row, rows) -> readMVar gaveUp >>= \case
+           Just _ -> pure ()
+           Nothing -> allocaBytes (3 * bigW * rows * s) $ \big -> do
+            fn ViewerArgs
               { vaPoint = (x0, y0)
               , vaOffset = (0, fromIntegral (row * s))
               , vaStep = (px, py)
@@ -414,14 +432,21 @@ renderViewerBufferAt scale downsample Viewer{..} = case vCodeWithArgs of
               , vaWidth = fromIntegral bigW
               , vaHeight = fromIntegral (rows * s)
               , vaSubsamples = 1
-              , vaBuffer = big }
-            modifyMVar_ issuesVar (pure . (<> issues))
-            let dest = outPtr `plusPtr` (3 * w * row)
-            if downsample then downsampleRows bigW w rows w big dest
-                          else copyBytes dest big (3 * w * rows)
-      issues <- readMVar issuesVar
-      copies <- overlayProjections Viewer{..} projection center pixelSize (w, h)
-      pure (Right (RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection copies issues))
+              , vaBuffer = big } >>= \case
+              Left why -> modifyMVar_ gaveUp (pure . (<|> Just why))
+              Right issues -> do
+                modifyMVar_ issuesVar (pure . (<> issues))
+                let dest = outPtr `plusPtr` (3 * w * row)
+                if downsample then downsampleRows bigW w rows w big dest
+                              else copyBytes dest big (3 * w * rows)
+        readMVar gaveUp >>= \case
+          Just why -> pure (Left why)
+          Nothing -> Right . (, report) <$> readMVar issuesVar
+      case result of
+        Left report -> pure (Left (fromMaybe "No backend could draw this viewer." (describeRenderReport report)))
+        Right (issues, report) -> do
+          copies <- overlayProjections Viewer{..} projection center pixelSize (w, h)
+          pure (Right (RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection copies issues report))
 
 -- | Where a viewer's image is, @s@ times as fine as the viewer's pixels
 -- each way (2, to smooth it; @w@ by @h@ of the viewer's pixels): its
@@ -466,6 +491,11 @@ data Progressive = Progressive
     --   done (at once, if every piece is shown)
   , prDrawn :: ImagePiece -> IO ()
     -- ^ a pass of a piece is in the image
+  , prBackend :: RenderReport -> IO ()
+    -- ^ a backend is starting the render (with why the ones before it
+    --   didn't draw it: one may have given up on it part way, leaving
+    --   its passes in the image until they're drawn over), or none will
+    --   ('rrBackend' is Nothing: the image is left as it is)
   }
 
 -- | What a progressive render draws ('renderProgressivelyInto'): an
@@ -490,23 +520,26 @@ data ImageTarget = ImageTarget
 -- done the image is just what 'renderViewerBufferAt' renders, to the
 -- byte. Nothing, if it's abandoned ('prStale').
 renderProgressively :: Progressive -> Viewer -> IO (Either String (Maybe RenderedBuffer))
-renderProgressively pr Viewer{..} = case vCodeWithArgs of
-  CodeWithArgs getArgs _ code -> getArgs >>= \case
+renderProgressively pr Viewer{..} = viewerRenderer Viewer{..} >>= \case
     Left err -> pure (Left err)
-    Right vaArgs -> do
+    Right renderer -> do
       Dimensions (w, h) <- getDynamic vSize
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
       projection <- viewProjection vOriginalView vView vRotation vIsometry
       center <- getDynamic vCenter
-      ViewerFunction bind <- getDynamic code
-      fn <- bind vaArgs
       out <- mallocForeignPtrBytes (max 1 (3 * w * h))
       copies <- overlayProjections Viewer{..} projection center pixelSize (w, h)
       let image = RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection copies mempty
+                                 (RenderReport Nothing [])
       prStarted pr image
-      renderProgressivelyInto pr (ImageTarget w h center pixelSize aspect (withForeignPtr out) Nothing) fn
-        <&> \done -> Right ((\issues -> image { rbIssues = issues }) <$> done)
+      reportVar <- newIORef (RenderReport Nothing [])
+      done <- renderProgressivelyInto pr { prBackend = \r -> writeIORef reportVar r >> prBackend pr r }
+                (ImageTarget w h center pixelSize aspect (withForeignPtr out) Nothing) renderer
+      report <- readIORef reportVar
+      pure $ case rrBackend report of
+        Nothing -> Left (fromMaybe "No backend could draw this viewer." (describeRenderReport report))
+        Just _ -> Right ((\issues -> image { rbIssues = issues, rbReport = report }) <$> done)
 
 -- | Render an image progressively, with a viewer's block function (its
 -- values bound), in pieces and passes, for both apps (in the order of
@@ -516,21 +549,37 @@ renderProgressively pr Viewer{..} = case vCodeWithArgs of
 -- final pixel takes its color from the one of its pixels nearest its
 -- middle that isn't, so that the edge of what's final (as a globe's) is
 -- as sharp in the coarse passes as in the end. The issues the viewer's
--- code ran into, or Nothing if it's abandoned ('prStale').
-renderProgressivelyInto :: Progressive -> ImageTarget -> (ViewerArgs -> IO ViewerIssues) -> IO (Maybe ViewerIssues)
-renderProgressivelyInto Progressive{..} ImageTarget{..} fn = do
+-- code ran into, or Nothing if it's abandoned ('prStale'). It's drawn by
+-- the first of the renderer's backends that will ('runRenderer', and
+-- 'prBackend'); if none will, the image is left as it is, with no issues.
+renderProgressivelyInto :: Progressive -> ImageTarget -> Renderer -> IO (Maybe ViewerIssues)
+renderProgressivelyInto pr target renderer = do
+  let geometry = ViewGeometry (itWidth target, itHeight target) (itCenter target)
+                              (itPixelSize target, itPixelSize target * itAspect target)
+  runRenderer renderer geometry (\report fn -> prBackend pr report >> renderPassesInto pr target fn) >>= \case
+    Left report -> Just mempty <$ prBackend pr report
+    Right done -> pure done
+
+-- | 'renderProgressivelyInto', with one backend's block function: Left if
+-- it gives up on the render (the pieces being rendered then finish, and
+-- the rest are skipped).
+renderPassesInto :: Progressive -> ImageTarget -> (ViewerArgs -> IO (Either Decline ViewerIssues))
+                 -> IO (Either Decline (Maybe ViewerIssues))
+renderPassesInto Progressive{..} ImageTarget{..} fn = do
   issuesVar <- newMVar mempty
   abandoned <- newIORef False
+  gaveUp <- newMVar Nothing
   let (w, h) = (itWidth, itHeight)
       pixel = (itPixelSize * prScale, itPixelSize * prScale * itAspect)
       (origin1, (px, py)) = imageGeometry 1 w h itCenter itPixelSize itAspect
       (origin2, step2) = imageGeometry 2 w h itCenter itPixelSize itAspect
-      call origin (ox, oy) step (bw, bh) buf = do
-        issues <- fn ViewerArgs { vaPoint = origin, vaOffset = (fromIntegral ox, fromIntegral oy)
-                                , vaStep = step, vaPixel = pixel
-                                , vaWidth = fromIntegral bw, vaHeight = fromIntegral bh
-                                , vaSubsamples = 1, vaBuffer = buf }
-        modifyMVar_ issuesVar (pure . (<> issues))
+      call origin (ox, oy) step (bw, bh) buf =
+        fn ViewerArgs { vaPoint = origin, vaOffset = (fromIntegral ox, fromIntegral oy)
+                      , vaStep = step, vaPixel = pixel
+                      , vaWidth = fromIntegral bw, vaHeight = fromIntegral bh
+                      , vaSubsamples = 1, vaBuffer = buf } >>= \case
+          Right issues -> modifyMVar_ issuesVar (pure . (<> issues))
+          Left why -> modifyMVar_ gaveUp (pure . (<|> Just why))
       isFinal :: Int -> Int -> IO Bool
       isFinal = case itFinals of
         Nothing -> \_ _ -> pure False
@@ -586,7 +635,9 @@ renderProgressivelyInto Progressive{..} ImageTarget{..} fn = do
     -- still finish)
     stop <- readIORef abandoned >>= \case
       True -> pure True
-      False -> prStale >>= \s -> s <$ when s (writeIORef abandoned True)
+      False -> readMVar gaveUp >>= \case
+        Just _ -> pure True
+        Nothing -> prStale >>= \s -> s <$ when s (writeIORef abandoned True)
     unless stop $ do
       let (x0, y0) = (prPieceSize * x, prPieceSize * y)
       piece rate (x0, pw) (y0, ph)
@@ -594,9 +645,11 @@ renderProgressivelyInto Progressive{..} ImageTarget{..} fn = do
       when isFirst $ do
         remaining <- modifyMVar firstsLeft (\n -> pure (n - 1, n - 1))
         when (remaining == 0) prCovered
-  readIORef abandoned >>= \case
-    True -> pure Nothing
-    False -> Just <$> readMVar issuesVar
+  readMVar gaveUp >>= \case
+    Just why -> pure (Left why)
+    Nothing -> readIORef abandoned >>= \case
+      True -> pure (Right Nothing)
+      False -> Right . Just <$> readMVar issuesVar
 
 -- | Average each 2x2 block of a @bigW@-pixel-wide RGB8 buffer down to
 -- one pixel of a @w@-pixel-wide piece of one whose rows are @stride@
@@ -754,6 +807,84 @@ newtype ViewerFunction env =
 runViewerFunction :: ViewerFunction env -> Context HaskellValue env -> ViewerArgs -> IO ViewerIssues
 runViewerFunction (ViewerFunction bind) args block = bind args >>= ($ block)
 
+-- | Where a render is, as a backend judges whether it can draw it
+-- ('bfView'): its image's size in pixels, its center, and a pixel's
+-- width and height (all as the render samples it: a smoothed render's
+-- pixels are half the viewer's).
+data ViewGeometry = ViewGeometry
+  { vgSize   :: (Int, Int)
+  , vgCenter :: (Double, Double)
+  , vgPixel  :: (Double, Double)
+  } deriving (Eq, Show)
+
+-- | A backend's block function, its values bound: whether it'll draw a
+-- view at all, and the function drawing each block of it, which can give
+-- up on the render (GPU_PLAN.md, "Declining"), so that the next backend
+-- draws it from scratch.
+data BlockFunction = BlockFunction
+  { bfView  :: ViewGeometry -> Maybe Decline
+  , bfBlock :: ViewerArgs -> IO (Either Decline ViewerIssues)
+  }
+
+-- | What a backend compiles a viewer to: given the configuration's
+-- values, its block function (as 'ViewerFunction', which a backend that
+-- never declines a view or a render can be: 'cpuViewer').
+newtype CompiledViewer env =
+  CompiledViewer (Context HaskellValue env -> IO BlockFunction)
+
+-- | A viewer function that draws every view, and never gives up.
+cpuViewer :: ViewerFunction env -> CompiledViewer env
+cpuViewer (ViewerFunction bind) = CompiledViewer $ \args -> do
+  fn <- bind args
+  pure BlockFunction { bfView = const Nothing, bfBlock = fmap Right . fn }
+
+-- | A viewer compiled (on demand, once) by each of the platform's
+-- backends ('bViewerCompilers'), or why that backend declined it.
+newtype ViewerChain env = ViewerChain [(BackendId, IO (Either Decline (CompiledViewer env)))]
+
+-- | A render's backends, in the order to try them ('runRenderer'): each
+-- one's block function, with the render's values bound, or why it
+-- declined the viewer. Each is compiled and bound only when it's tried.
+newtype Renderer = Renderer [(BackendId, IO (Either Decline BlockFunction))]
+
+-- | A viewer's renderer for its configuration's values now, in its order
+-- ('effectiveOrder'); or why the viewer can't render now (a configuration
+-- value has an error).
+viewerRenderer :: Viewer -> IO (Either String Renderer)
+viewerRenderer Viewer{..} = case vCodeWithArgs of
+  CodeWithArgs getArgs _ (ViewerChain chain) -> getArgs >>= \case
+    Left err -> pure (Left err)
+    Right args -> do
+      order <- effectiveOrder <$> getDynamic backendPreference <*> getDynamic vBackendOverride
+      pure $ Right $ Renderer
+        [ (b, compiled >>= traverse (\(CompiledViewer bind) -> bind args))
+        | b <- order, Just compiled <- [lookup b chain] ]
+
+-- | The backends a viewer can be drawn with (the platform's).
+viewerBackends :: Viewer -> [BackendId]
+viewerBackends Viewer{..} = case vCodeWithArgs of
+  CodeWithArgs _ _ (ViewerChain chain) -> map fst chain
+
+-- | Render with the first of a renderer's backends that accepts the
+-- viewer and the view, and doesn't give up on the render (the render
+-- function says it did: then the next one renders from scratch). The
+-- render function is given the report for its backend (it's drawing
+-- it). Left, with why, if none of them would.
+runRenderer :: Renderer -> ViewGeometry
+            -> (RenderReport -> (ViewerArgs -> IO (Either Decline ViewerIssues)) -> IO (Either Decline r))
+            -> IO (Either RenderReport r)
+runRenderer (Renderer tries) geometry render = go [] tries
+  where
+    go declined = \case
+      [] -> pure (Left (RenderReport Nothing (reverse declined)))
+      (b, getBlocks) : rest -> getBlocks >>= \case
+        Left why -> go ((b, why) : declined) rest
+        Right BlockFunction{..} -> case bfView geometry of
+          Just why -> go ((b, why) : declined) rest
+          Nothing -> render (RenderReport (Just b) (reverse declined)) bfBlock >>= \case
+            Left why -> go ((b, why) : declined) rest
+            Right r -> pure (Right r)
+
 -- | Problems a viewer's script ran into while rendering. A pixel that hit
 -- one of them is drawn magenta.
 data ViewerIssues = ViewerIssues
@@ -800,16 +931,17 @@ data AssertAbsent name env where
 
 
 -- | Compiles a viewer's code, given the project's autocolor lookup (for
--- @autocolor@ and @get_autocolor@; see "Actor.Autocolor"), to the
--- function that renders its blocks. The function is good for as long as
--- the backend is (rendering goes on long after the compile), and a
--- compile can be done on any thread.
+-- @autocolor@ and @get_autocolor@; see "Actor.Autocolor"), to what
+-- renders its blocks, or declines to (with why: GPU_PLAN.md,
+-- "Declining"), for the next backend to try. What it compiles to is good
+-- for as long as the backend is (rendering goes on long after the
+-- compile), and a compile can be done on any thread.
 newtype ViewerCompiler = ViewerCompiler
   { compileViewer :: forall env
                    . (MissingViewerArgs env, KnownEnvironment env)
                   => AutocolorLookup
                   -> Code (ViewerEnv env)
-                  -> IO (ViewerFunction env) }
+                  -> IO (Either Decline (CompiledViewer env)) }
 
 -- | Resolve a viewer's already-parsed body code ('ParsedCode', the untyped
 -- statement syntax 'Language.Code.Parser.parseParsedCode' produces) against
@@ -964,25 +1096,25 @@ hoistViewerCode mpx coord env code =
 -- and then renders with the given function, with those values as that
 -- part left them. If that part fails (an index out of range, say), every
 -- pixel is magenta, as it would have been had each pixel run it.
-hoistedViewerFunction :: ToolExec -> EnvironmentProxy env -> Code env -> ViewerFunction env
-                      -> IO (ViewerFunction env)
-hoistedViewerFunction exec env prefix (ViewerFunction bind) = do
+hoistedViewerFunction :: ToolExec -> EnvironmentProxy env -> Code env -> CompiledViewer env
+                      -> IO (CompiledViewer env)
+hoistedViewerFunction exec env prefix (CompiledViewer bind) = do
   invoke <- exec env prefix
-  pure $ ViewerFunction $ \args -> do
+  pure $ CompiledViewer $ \args -> do
     refs <- mapContextM @HaskellValue @IORefTypeOfBinding (\_ _ -> newIORef) args
     let eargs = mapContext @IORefTypeOfBinding @EventArgument_
                   (\_ _ r -> EventArgument (Just <$> readIORef r) (Just (\_ v -> writeIORef r v))) refs
     flag <- newCancelFlag
     try (startHandlerRun (invoke eargs) flag >>= id) >>= \case
       Right () -> mapContextM @IORefTypeOfBinding @HaskellValue (\_ _ -> readIORef) refs >>= bind
-      Left (err :: SomeException) -> pure $ \ViewerArgs{..} -> do
+      Left (err :: SomeException) -> pure $ BlockFunction (const Nothing) $ \ViewerArgs{..} -> do
         let (w, h) = (fromIntegral vaWidth, fromIntegral vaHeight) :: (Int, Int)
         forM_ [0 .. w * h - 1] $ \k -> do
           pokeElemOff vaBuffer (3 * k + 0) 0xff
           pokeElemOff vaBuffer (3 * k + 1) 0x00
           pokeElemOff vaBuffer (3 * k + 2) 0xff
         let memory = "memory" `isInfixOf` show err
-        pure ViewerIssues { viOutOfMemory = memory, viBadIndex = not memory }
+        pure (Right ViewerIssues { viOutOfMemory = memory, viBadIndex = not memory })
 
 cloneViewer :: Viewer -> IO Viewer
 cloneViewer v = do
@@ -995,6 +1127,7 @@ cloneViewer v = do
   newView      <- newVariable =<< getDynamic (vView v)
   newRotation  <- newVariable =<< getDynamic (vRotation v)
   newIsometry  <- newVariable =<< getDynamic (vIsometry v)
+  newOverride  <- newVariable =<< getDynamic (vBackendOverride v)
   pure $ Viewer
     { vTitle = newTitle
     , vSize  = newSize
@@ -1026,6 +1159,7 @@ cloneViewer v = do
     , vStopOverlay = vStopOverlay v
     , vListenOverlay = vListenOverlay v
     , vCodeWithArgs = vCodeWithArgs v
+    , vBackendOverride = newOverride
     , vDrawCmds = vDrawCmds v
     , vDrawCmdsChanged = vDrawCmdsChanged v
     , vBuildToolHandler = vBuildToolHandler v
@@ -1076,7 +1210,10 @@ newtype ToolRunnerFactory = ToolRunnerFactory
 
 -- | Bundles a viewer (shader) compiler with the tool execution machinery.
 data Backend = Backend
-  { bViewerCompiler    :: ViewerCompiler
+  { bViewerCompilers   :: [(BackendId, ViewerCompiler)]
+    -- ^ The backends this platform has, to compile viewers with (each
+    --   viewer is drawn with the first of them in its order that will
+    --   draw it: see 'Renderer').
   , bToolRunnerFactory :: ToolRunnerFactory
   , bToolRunner        :: ToolRunner
     -- ^ How tool event handlers are executed: 'defaultToolRunner' (interpreter)

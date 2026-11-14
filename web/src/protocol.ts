@@ -57,6 +57,10 @@ export type Request =
   | { type: "smoothing"; on: boolean }
   /** Whether a viewer is smoothed ("Use subpixel smoothing"). */
   | { type: "viewerSmoothing"; viewer: number; on: boolean }
+  /** The order viewers try the backends in (the preference). */
+  | { type: "rendering"; order: string[] }
+  /** The backend a viewer tries first ("Draw with"), or none. */
+  | { type: "viewerBackend"; viewer: number; backend: string | null }
   /** The last view, the next one, the original one, or the sphere (or
       the plane) instead: answered by "view". */
   | { type: "navigate"; viewer: number; what: Navigation }
@@ -208,6 +212,10 @@ export interface ViewerInfo {
       project names it), if it can: null if it isn't a configuration
       variable. */
   animates: string | null;
+  /** The backends the engine can draw it with, and the one it tries
+      first, if it's been told to ("Draw with"). */
+  backends: string[];
+  drawWith: string | null;
 }
 
 export interface ColorizerMenu {
@@ -363,5 +371,8 @@ export type Message =
   | { type: "runDone"; viewer: number }
   /** A viewer couldn't be drawn (its next frame clears this). */
   | { type: "viewerError"; viewer: number; message: string }
+  /** Which backend is drawing a viewer's render (null: none will), and
+      why those before it didn't ([name, reason] pairs). */
+  | { type: "backend"; viewer: number; backend: string | null; declined: [string, string][] }
   | { type: "error"; message: string }
   | Patch;

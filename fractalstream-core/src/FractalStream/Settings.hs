@@ -33,7 +33,11 @@ import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KM
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, mapMaybe)
+import Data.Foldable (toList)
+import Data.List (intercalate)
+import GHC.Exts (fromList)
+import FractalStream.Backends (BackendId, defaultBackendOrder, allBackends, backendKey, backendFromKey, normalizeOrder)
 import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Text as Text
@@ -75,6 +79,9 @@ data Settings = Settings
     -- ^ How strongly a viewer showing the Riemann sphere shades the globe,
     -- as if lit from the upper left, in front of it, in percent: from 0
     -- (no shading) to 100 ("Actor.Viewer.Sphere.onTheSphere").
+  , setRendering      :: [BackendId]
+    -- ^ The order viewers try the backends in ("FractalStream.Backends"):
+    -- every backend, once.
   , setOther          :: KM.KeyMap Value
     -- ^ Keys this version doesn't know, kept as they are.
   }
@@ -97,7 +104,7 @@ noClassStyle :: ClassStyle
 noClassStyle = ClassStyle Nothing Nothing Nothing Nothing Nothing
 
 defaultSettings :: Settings
-defaultSettings = Settings Nothing Nothing Nothing False False True False Map.empty Map.empty defaultSphereShading KM.empty
+defaultSettings = Settings Nothing Nothing Nothing False False True False Map.empty Map.empty defaultSphereShading defaultBackendOrder KM.empty
 
 -- | How strongly a sphere viewer shades the globe, unless the settings
 -- say: noticeably, though the far side never goes dark.
@@ -168,14 +175,23 @@ readSettings path contents = case YAML.decodeEither' contents of
           Nothing -> (defaultSphereShading, [])
           Just (Number n) | n >= 0, n <= 100, n == fromIntegral (round n :: Int) -> (round n, [])
           Just _ -> (defaultSphereShading, ["ignoring the sphere-shading setting, which should be a whole number from 0 to 100"])
+        -- (a backend this version doesn't know, a newer one's, is left out)
+        (rendering, renderingWarnings) = case KM.lookup "rendering" o of
+          Nothing -> (defaultBackendOrder, [])
+          Just (Array xs) | Just names <- mapM asString (toList xs) ->
+            (normalizeOrder (mapMaybe backendFromKey names), [])
+          Just _ -> (defaultBackendOrder, ["ignoring the rendering setting, which should be a list of backends ("
+                                           ++ intercalate ", " (map backendKey allBackends) ++ ")"])
+        asString = \case { String t -> Just (Text.unpack t); _ -> Nothing }
         other = foldr KM.delete o [ "projects-folder", "editor-font", "editor-font-size"
                                   , "line-numbers", "emacs-keys", "math-symbols", "fold-code-blocks"
-                                  , "editor-colors-light", "editor-colors-dark", "sphere-shading" ]
-    in ( Settings folder font fontSize numbers emacs symbols folds lightColors darkColors shading other
+                                  , "editor-colors-light", "editor-colors-dark", "sphere-shading"
+                                  , "rendering" ]
+    in ( Settings folder font fontSize numbers emacs symbols folds lightColors darkColors shading rendering other
        , map (("In " ++ quoted path ++ ", ") ++)
              (folderWarnings ++ fontWarnings ++ fontSizeWarnings ++ numberWarnings
               ++ emacsWarnings ++ symbolWarnings ++ foldWarnings ++ lightWarnings ++ darkWarnings
-              ++ shadingWarnings) )
+              ++ shadingWarnings ++ renderingWarnings) )
   Right _ -> (defaultSettings, [quoted path ++ " isn't a set of settings, so it's being ignored"])
 
 -- | The settings file's contents for these settings. A setting that's
@@ -194,6 +210,8 @@ writeSettings Settings{..} = encodeYaml $ Object $ KM.union
     , colors "editor-colors-dark" setEditorColorsDark
     , if setSphereShading == defaultSphereShading then Nothing
       else Just ("sphere-shading", Number (fromIntegral setSphereShading))
+    , if normalizeOrder setRendering == defaultBackendOrder then Nothing
+      else Just ("rendering", Array (fromList (map (String . Text.pack . backendKey) (normalizeOrder setRendering))))
     ]))
   setOther
 

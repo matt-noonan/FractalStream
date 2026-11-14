@@ -83,6 +83,14 @@ tables (@tables:@) it was saved with, and is saved with its own.
 * @fs_sphere_shading(s)@: how strongly sphere viewers shade the globe,
   from 0 to 1 (a preference: the page's, as the desktop's
   @sphere-shading@ setting); they draw again.
+* @fs_rendering(order)@: the order viewers try the backends in (a
+  preference: the page's, as the desktop's @rendering@ setting), as their
+  names (@gpu-df64@, @cpu@, @gpu-f32@) separated by commas; viewers draw
+  again. Each render posts @backend@: which backend is drawing it (or
+  null: none will), and why those before it didn't (@declined@: pairs of
+  a name and a reason).
+* @fs_viewer_backend(viewer, name)@: the backend a viewer tries first,
+  ahead of that order ("Draw with", in its menu), or "" for none.
 * @fs_navigate(viewer, what)@: 0 the last view, 1 the next one (in the
   viewer's history), 2 its original view (the script's, of the kind it
   shows now: plane or sphere), 3 a complex viewer on the sphere instead of
@@ -274,7 +282,8 @@ import Actor.Viewer.Preview (renderPreview)
 import Actor.Movie (MovieSettings(..), defaultMovieSettings, movieFrameTimes, scriptAnimation, checkMovieScript,
                     movieScriptTemplate, complexVariables, withFieldsRestored, renderViewerImage, Animation,
                     pathAnimation, pathPoint, canAnimate, MovieInset(..), prepareInset, withInset)
-import Actor.Viewer (cloneViewer, withRenderedViewerBuffer, describeViewerIssues)
+import Actor.Viewer (cloneViewer, withRenderedViewerBuffer, describeViewerIssues, viewerBackends)
+import FractalStream.Backends (RenderReport(..), Decline(..), backendKey, backendFromKey, backendPreference, normalizeOrder)
 import Language.Code.Parser (noCommonDefs)
 import Data.PNG (bufferToPng)
 import Codec.Picture (Image(..))
@@ -553,6 +562,8 @@ foreign export javascript "fs_smoothing" setSmoothing :: Bool -> IO ()
 foreign export javascript "fs_density" setDensity :: Double -> IO ()
 foreign export javascript "fs_sphere_shading" setSphereShading :: Double -> IO ()
 foreign export javascript "fs_viewer_smoothing" setViewerSmoothing :: Int -> Bool -> IO ()
+foreign export javascript "fs_rendering" setRendering :: JSString -> IO ()
+foreign export javascript "fs_viewer_backend" setViewerBackend :: Int -> JSString -> IO ()
 foreign export javascript "fs_navigate" navigateTo :: Int -> Int -> IO ()
 foreign export javascript "fs_record" record :: Int -> IO ()
 foreign export javascript "fs_jump" jump :: Int -> Double -> Double -> Double -> IO ()
@@ -855,12 +866,14 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
         -- coordinate, if it's a configuration variable)
         animates = if canAnimate context (vCoordinate viewer) then Just (showCoordinate (vCoordinate viewer)) else Nothing
     kind <- getDynamic (vView viewer)
+    override <- getDynamic (vBackendOverride viewer)
     let disk = isJust (hyperbolicDisplay kind)
         halfPlane = kind == HalfPlaneView
     pure (Aeson.object [ "id" .= k, "title" .= title, "width" .= w, "height" .= h, "sphere" .= sphere, "disk" .= disk
                        , "halfPlane" .= halfPlane
                        , "tools" .= tools, "complex" .= complex, "smooth" .= smooth, "colorizer" .= colorizer
-                       , "animates" .= animates ])
+                       , "animates" .= animates, "backends" .= map backendKey (viewerBackends viewer)
+                       , "drawWith" .= fmap backendKey override ])
   let translated = case how of Translated _ -> True; _ -> False
   props0 <- getDynamic (ensembleFrontendProperties ensemble)
   let views = KM.lookup "web-properties" props0
@@ -956,7 +969,12 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
   imageRef <- newIORef Nothing
   -- (whether every piece shows something yet: its first, coarse pass)
   coveredYet <- newIORef False
-  let -- (a piece is shown if the page's picture covers all of it)
+  let -- (which backend is drawing it, for the viewer's menu)
+      postBackend RenderReport{..} = post $ Aeson.object
+        [ "type" .= ("backend" :: Text.Text), "viewer" .= k
+        , "backend" .= fmap backendKey rrBackend
+        , "declined" .= [ [backendKey b, why] | (b, Decline why) <- rrDeclined ] ]
+      -- (a piece is shown if the page's picture covers all of it)
       shown c r = case covered of
         Nothing -> False
         Just (cl, ct, cr, cb) ->
@@ -997,7 +1015,7 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
         , prSmooth = smooth, prShown = shown
         , prStale = stale
         , prStarted = writeIORef imageRef . Just, prCovered = writeIORef coveredYet True
-        , prDrawn = pieceDrawn } viewer) >>= \case
+        , prDrawn = pieceDrawn, prBackend = postBackend } viewer) >>= \case
     -- (being stopped, when another project is opened, isn't an error: the
     -- loop just ends)
     Left (e :: SomeException)
@@ -1079,6 +1097,27 @@ setSphereShading s = guarded $ do
     readIORef sessionRef >>= mapM_ (\Session{..} -> forM_ sViewers $ \vs -> do
       sphere <- (== SphereView) <$> getDynamic (vView (vsViewer vs))
       when sphere $ writeIORef (vsCovered vs) Nothing >> requestRender (vsSignal vs))
+
+setRendering :: JSString -> IO ()
+setRendering names = guarded $ do
+  let order = normalizeOrder (mapMaybe backendFromKey (splitOn ',' (fromJSString names)))
+  before <- getDynamic backendPreference
+  when (order /= before) $ do
+    setValue backendPreference order
+    readIORef sessionRef >>= mapM_ (\Session{..} -> forM_ sViewers $ \vs ->
+      writeIORef (vsCovered vs) Nothing >> requestRender (vsSignal vs))
+  where
+    splitOn c str = case break (== c) str of
+      (a, []) -> [a]
+      (a, _ : rest) -> a : splitOn c rest
+
+setViewerBackend :: Int -> JSString -> IO ()
+setViewerBackend k name = withViewerState k $ \vs -> do
+  let override = backendFromKey (fromJSString name)
+  before <- getDynamic (vBackendOverride (vsViewer vs))
+  when (override /= before) $ do
+    setValue (vBackendOverride (vsViewer vs)) override
+    writeIORef (vsCovered vs) Nothing >> requestRender (vsSignal vs)
 
 setViewerSmoothing :: Int -> Bool -> IO ()
 setViewerSmoothing k on = withViewerState k $ \vs -> do

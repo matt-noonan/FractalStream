@@ -482,6 +482,9 @@ body {
                                border-radius: 4px; background: var(--bg); color: var(--fg); }
 .prefs-row input[type=range] { flex: 1 1 12em; max-width: 280px; }
 .prefs-percent { min-width: 3em; font-variant-numeric: tabular-nums; }
+.prefs-order { margin: 0; padding-left: 1.6em; display: flex; flex-direction: column; gap: 4px; }
+.prefs-order li span { display: inline-block; min-width: 16em; }
+.prefs-order button { margin-left: 4px; }
 .prefs-check { display: flex; gap: 8px; align-items: baseline; }
 .prefs-hint, .prefs-note { color: var(--muted); font-size: 12px; }
 .page-dialog-box select { font: inherit; padding: 2px 4px; border: 1px solid var(--line); border-radius: 4px;

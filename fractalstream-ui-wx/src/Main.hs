@@ -59,6 +59,7 @@ import Data.Char (isSpace)
 import FractalStream.Library (LibraryEntry(..), projectsDirectory)
 import FractalStream.Settings (Settings(..), loadSettings)
 import Actor.Viewer.Sphere (sphereShading)
+import FractalStream.Backends (backendPreference)
 import UI.AppSettings (appSettings)
 import UI.Preferences (preferencesWindow)
 
@@ -125,6 +126,13 @@ runApp = withBackend $ \backend -> start $ do
   let followShading s = setValue sphereShading (fromIntegral (setSphereShading s) / 100)
   followShading initialSettings
   void (watchDynamic settings followShading)
+  -- (and viewers try the backends in the order the settings give, drawing
+  -- again when it changes)
+  let followRendering s = do
+        current <- getDynamic backendPreference
+        when (current /= setRendering s) $ setValue backendPreference (setRendering s)
+  followRendering initialSettings
+  void (watchDynamic settings followRendering)
 
   let -- A new project starts from one of the library's starting points
       -- (including a blank one), chosen in the library browser.
@@ -498,7 +506,7 @@ runApp = withBackend $ \backend -> start $ do
       showPreferences = readIORef preferencesFrame >>= \case
         Just f -> WX.windowRaise f
         Nothing -> do
-          f <- preferencesWindow settings
+          f <- preferencesWindow (map fst (bViewerCompilers backend)) settings
           writeIORef preferencesFrame (Just f)
           onOwnDestroy f (writeIORef preferencesFrame Nothing)
 
