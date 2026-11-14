@@ -7,6 +7,7 @@
 
 import { WASI, OpenFile, File, ConsoleStdout } from "@bjorn3/browser_wasi_shim";
 import { createPool } from "./worker-pool.mjs";
+import { createGpu } from "./gpu.mjs";
 import type { Request, Message, Patch } from "./protocol.js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -37,6 +38,9 @@ const pool = createPool(Array.from({ length: workerCount }, makeWorker), makeWor
 
 const g = globalThis as any;
 g.fractalstreamWorkers = pool;
+// The GPU, if there is one, for the GPU backends (see Backend.Wasm.Gpu).
+g.fractalstreamGpu = await createGpu().catch((e: unknown) => ({ error: `No GPU: ${e}` }));
+send({ type: "gpu", error: g.fractalstreamGpu.error ?? null });
 // What kernels on this thread import (see Backend.Wasm).
 g.fractalstreamMath = (await WebAssembly.instantiate(await fetchBytes("libm.wasm"))).instance.exports;
 g.fractalstreamAutocolor = await WebAssembly.compile(await fetchBytes("autocolor.wasm"));

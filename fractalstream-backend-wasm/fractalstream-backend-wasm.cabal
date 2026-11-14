@@ -74,9 +74,11 @@ library
                        Backend.Wasm.Text
                        Backend.Wasm.Table
                        Backend.Wasm.Code
+                       Backend.Wasm.Gpu
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
                      , fractalstream-backend-pure
+                     , fractalstream-backend-wgsl
                      , ghc-experimental
                      , mtl
                      , bytestring

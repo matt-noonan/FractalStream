@@ -416,7 +416,7 @@ renderViewerBufferAt scale downsample Viewer{..} = viewerRenderer Viewer{..} >>=
           geometry = ViewGeometry (bigW, h * s) center (px, py)
       caps <- renderConcurrency
       out <- mallocForeignPtrBytes (3 * w * h)
-      result <- runRenderer renderer geometry $ \report fn -> do
+      result <- runRenderer renderer geometry $ \report BlockFunction{ bfBlock = fn } -> do
         issuesVar <- newMVar mempty
         -- (once a strip gives up, the rest are skipped)
         gaveUp <- newMVar Nothing
@@ -544,7 +544,9 @@ renderProgressively pr Viewer{..} = viewerRenderer Viewer{..} >>= \case
 -- | Render an image progressively, with a viewer's block function (its
 -- values bound), in pieces and passes, for both apps (in the order of
 -- 'Task.Block.progressivePlan': coarse passes over what isn't shown yet,
--- then every piece at full resolution, then, smoothed, at twice that). On a coarse pass, a square
+-- then every piece at full resolution, then, smoothed, at twice that; a
+-- backend fast enough to skip the coarse passes, the GPU's, says so with
+-- 'bfCoarse', and draws in bigger pieces). On a coarse pass, a square
 -- doesn't cover the target's final pixels, and a square whose sample is a
 -- final pixel takes its color from the one of its pixels nearest its
 -- middle that isn't, so that the edge of what's final (as a globe's) is
@@ -556,16 +558,16 @@ renderProgressivelyInto :: Progressive -> ImageTarget -> Renderer -> IO (Maybe V
 renderProgressivelyInto pr target renderer = do
   let geometry = ViewGeometry (itWidth target, itHeight target) (itCenter target)
                               (itPixelSize target, itPixelSize target * itAspect target)
-  runRenderer renderer geometry (\report fn -> prBackend pr report >> renderPassesInto pr target fn) >>= \case
+  runRenderer renderer geometry (\report bf -> prBackend pr report >> renderPassesInto pr target bf) >>= \case
     Left report -> Just mempty <$ prBackend pr report
     Right done -> pure done
 
 -- | 'renderProgressivelyInto', with one backend's block function: Left if
 -- it gives up on the render (the pieces being rendered then finish, and
 -- the rest are skipped).
-renderPassesInto :: Progressive -> ImageTarget -> (ViewerArgs -> IO (Either Decline ViewerIssues))
+renderPassesInto :: Progressive -> ImageTarget -> BlockFunction
                  -> IO (Either Decline (Maybe ViewerIssues))
-renderPassesInto Progressive{..} ImageTarget{..} fn = do
+renderPassesInto Progressive{..} ImageTarget{..} BlockFunction{ bfBlock = fn, bfCoarse } = do
   issuesVar <- newMVar mempty
   abandoned <- newIORef False
   gaveUp <- newMVar Nothing
@@ -627,7 +629,13 @@ renderPassesInto Progressive{..} ImageTarget{..} fn = do
                     forM_ [ (x0 + skip * i + du, y0 + skip * j + dv) | dv <- [0 .. skip - 1], du <- [0 .. skip - 1] ] $ \(u, v) -> do
                       final <- isFinal u v
                       unless final $ copyBytes (outPtr `plusPtr` (3 * (v * w + u))) (small `plusPtr` (3 * (j * cw + i))) 3
-  plan <- progressivePlan prPieceSize (if prSmooth then 1 else 0) w h prShown
+  -- (a backend without coarse passes, the GPU's, draws in bigger pieces,
+  -- each of 4 x 4 of the usual ones: fewer, so each costs less to start;
+  -- one is shown if all of its usual ones are)
+  let k = if bfCoarse then 1 else 4
+      size = k * prPieceSize
+      shown c r = and [ prShown (k * c + i) (k * r + j) | i <- [0 .. k - 1], j <- [0 .. k - 1] ]
+  plan <- progressivePlan bfCoarse size (if prSmooth then 1 else 0) w h shown
   firstsLeft <- newMVar (length [ () | (True, _, _, _) <- plan ])
   when (null [ () | (True, _, _, _) <- plan ]) prCovered
   forPool_ prConcurrency plan $ \(isFirst, rate, (x, pw), (y, ph)) -> do
@@ -639,7 +647,7 @@ renderPassesInto Progressive{..} ImageTarget{..} fn = do
         Just _ -> pure True
         Nothing -> prStale >>= \s -> s <$ when s (writeIORef abandoned True)
     unless stop $ do
-      let (x0, y0) = (prPieceSize * x, prPieceSize * y)
+      let (x0, y0) = (size * x, size * y)
       piece rate (x0, pw) (y0, ph)
       prDrawn (ImagePiece x0 y0 pw ph)
       when isFirst $ do
@@ -822,8 +830,11 @@ data ViewGeometry = ViewGeometry
 -- up on the render (GPU_PLAN.md, "Declining"), so that the next backend
 -- draws it from scratch.
 data BlockFunction = BlockFunction
-  { bfView  :: ViewGeometry -> Maybe Decline
-  , bfBlock :: ViewerArgs -> IO (Either Decline ViewerIssues)
+  { bfView   :: ViewGeometry -> Maybe Decline
+  , bfBlock  :: ViewerArgs -> IO (Either Decline ViewerIssues)
+  , bfCoarse :: Bool
+    -- ^ whether a progressive render starts with coarse passes (the
+    --   CPU's do; the GPU's start at full resolution)
   }
 
 -- | What a backend compiles a viewer to: given the configuration's
@@ -836,7 +847,7 @@ newtype CompiledViewer env =
 cpuViewer :: ViewerFunction env -> CompiledViewer env
 cpuViewer (ViewerFunction bind) = CompiledViewer $ \args -> do
   fn <- bind args
-  pure BlockFunction { bfView = const Nothing, bfBlock = fmap Right . fn }
+  pure BlockFunction { bfView = const Nothing, bfBlock = fmap Right . fn, bfCoarse = True }
 
 -- | A viewer compiled (on demand, once) by each of the platform's
 -- backends ('bViewerCompilers'), or why that backend declined it.
@@ -871,7 +882,7 @@ viewerBackends Viewer{..} = case vCodeWithArgs of
 -- render function is given the report for its backend (it's drawing
 -- it). Left, with why, if none of them would.
 runRenderer :: Renderer -> ViewGeometry
-            -> (RenderReport -> (ViewerArgs -> IO (Either Decline ViewerIssues)) -> IO (Either Decline r))
+            -> (RenderReport -> BlockFunction -> IO (Either Decline r))
             -> IO (Either RenderReport r)
 runRenderer (Renderer tries) geometry render = go [] tries
   where
@@ -879,9 +890,9 @@ runRenderer (Renderer tries) geometry render = go [] tries
       [] -> pure (Left (RenderReport Nothing (reverse declined)))
       (b, getBlocks) : rest -> getBlocks >>= \case
         Left why -> go ((b, why) : declined) rest
-        Right BlockFunction{..} -> case bfView geometry of
+        Right bf -> case bfView bf geometry of
           Just why -> go ((b, why) : declined) rest
-          Nothing -> render (RenderReport (Just b) (reverse declined)) bfBlock >>= \case
+          Nothing -> render (RenderReport (Just b) (reverse declined)) bf >>= \case
             Left why -> go ((b, why) : declined) rest
             Right r -> pure (Right r)
 
@@ -1107,14 +1118,16 @@ hoistedViewerFunction exec env prefix (CompiledViewer bind) = do
     flag <- newCancelFlag
     try (startHandlerRun (invoke eargs) flag >>= id) >>= \case
       Right () -> mapContextM @IORefTypeOfBinding @HaskellValue (\_ _ -> readIORef) refs >>= bind
-      Left (err :: SomeException) -> pure $ BlockFunction (const Nothing) $ \ViewerArgs{..} -> do
-        let (w, h) = (fromIntegral vaWidth, fromIntegral vaHeight) :: (Int, Int)
-        forM_ [0 .. w * h - 1] $ \k -> do
-          pokeElemOff vaBuffer (3 * k + 0) 0xff
-          pokeElemOff vaBuffer (3 * k + 1) 0x00
-          pokeElemOff vaBuffer (3 * k + 2) 0xff
-        let memory = "memory" `isInfixOf` show err
-        pure (Right ViewerIssues { viOutOfMemory = memory, viBadIndex = not memory })
+      Left (err :: SomeException) -> do
+        let magenta ViewerArgs{..} = do
+              let (w, h) = (fromIntegral vaWidth, fromIntegral vaHeight) :: (Int, Int)
+              forM_ [0 .. w * h - 1] $ \k -> do
+                pokeElemOff vaBuffer (3 * k + 0) 0xff
+                pokeElemOff vaBuffer (3 * k + 1) 0x00
+                pokeElemOff vaBuffer (3 * k + 2) 0xff
+              let memory = "memory" `isInfixOf` show err
+              pure (Right ViewerIssues { viOutOfMemory = memory, viBadIndex = not memory })
+        pure BlockFunction { bfView = const Nothing, bfBlock = magenta, bfCoarse = True }
 
 cloneViewer :: Viewer -> IO Viewer
 cloneViewer v = do

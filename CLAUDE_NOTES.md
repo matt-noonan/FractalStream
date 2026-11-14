@@ -428,6 +428,32 @@ turn, and `renderViewerBufferAt` and `renderProgressivelyInto` (through
 backend when one gives up. `ChainSpec` (end-to-end) checks this with
 made-up declining backends around the real CPU one.
 
+**The GPU backends** (GPU_PLAN.md, 5b; `fractalstream-backend-wgsl`, pure
+Haskell for both GHCs). `Backend.WGSL.Code` compiles a viewer's code to a
+WGSL compute shader, once per precision (`Backend.WGSL.Runtime`: `R` is a
+df64 `vec2f` or an `f32`, and generated code uses only the runtime's `r*`
+and `c*` functions, so one generator does both); `gpuViewerCompilers`
+makes `GpuDf64` and `GpuF32` backends over any `GpuDevice` (or declining
+everything, with no GPU). The web's device is `Backend.Wasm.Gpu`, over
+`fractalstream-backend-wasm/js/gpu.mjs`, which `web/src/engine.ts` creates
+before the engine starts (and tells the page: the `gpu` message). A GPU
+block function has `bfCoarse = False`: no coarse passes, and pieces of 4 x
+4 of the usual. Things learned the hard way: the browsers' shader compilers
+use fast math, so the runtime tests NaN and infinity through their bits
+(`fisnan`, `fisinf`, NaN-safe `rlt`/`req`), never divides by numbers near
+f32's limits (division is by the reciprocal, which flushes to 0: `cabs` and
+`cdiv` scale by powers of 2 with `ldexp`), and df64's error-free steps
+go through `g` (the spike's bitcast-xor guard). The GPU skips `avoidSqrt`
+(squares overflow f32's range: Period 5's `|z| > 1e24`); comparisons of
+`|z|` are `cabslt`/`cabsgt` (squares when small, scaled `cabs` when not),
+which `Loc`'s `LAbsC` (an absolute value not computed yet) makes possible.
+Checks: `fractalstream-backend-wgsl`'s spec (no GPU: what's compiled and
+declined; `FS_WGSL_DUMP=dir` writes the shaders), and by hand
+`dev-tools/web/check-gpu.mjs [--images DIR] [section | file.fs ...]`
+(Chromium with WebGPU; compares each GPU picture with the CPU's, next to
+the CPU's own sensitivity to a 1e-15 nudge, and times each). `FS_WEBGPU=1`
+makes the other web checks use that browser too.
+
 `ComplexViewer` is the YAML-serializable viewer config (extends to complex-plane viewers).
 
 ### Tools (`Actor.Tool`)

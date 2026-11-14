@@ -778,7 +778,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -------------------------------------------------------
 
     -- (until the viewer's first render: one drawing nothing)
-    lastRenderAction <- newMVar (Renderer [(Cpu, pure (Right (BlockFunction (const Nothing) (\_ -> pure (Right mempty)))))])
+    lastRenderAction <- newMVar (Renderer [(Cpu, pure (Right (BlockFunction (const Nothing) (\_ -> pure (Right mempty)) True)))])
 
     let getRenderAction = viewerRenderer theViewer >>= \case
           Left err -> do

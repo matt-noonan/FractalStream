@@ -25,6 +25,7 @@ wasm="$(wasm32-wasi-cabal list-bin --project-file=cabal.project.wasm exe:fractal
 # size, after the glue above is made from the module as GHC left it.
 wasm-opt -Oz "$wasm" -o "$dist/fractalstream-web.wasm"
 cp fractalstream-backend-wasm/js/kernel-worker.mjs fractalstream-backend-wasm/js/worker-pool.mjs \
+   fractalstream-backend-wasm/js/gpu.mjs \
    fractalstream-backend-wasm/js/libm.wasm fractalstream-backend-wasm/js/autocolor.wasm \
    fractalstream-backend-wasm/js/tables.wasm "$dist/"
 
@@ -37,7 +38,7 @@ cp fractalstream-backend-wasm/js/kernel-worker.mjs fractalstream-backend-wasm/js
 (cd web && node node_modules/typescript/bin/tsc -p . --noEmit)
 (cd web && node_modules/.bin/esbuild src/main.ts src/engine.ts src/drawing.ts \
    --bundle --splitting --format=esm --target=es2022 --sourcemap --minify-syntax \
-   --external:./worker-pool.mjs --external:./kernel-worker.mjs --outdir=dist --log-level=warning)
+   --external:./worker-pool.mjs --external:./kernel-worker.mjs --external:./gpu.mjs --outdir=dist --log-level=warning)
 rm -rf "$dist/vendor"
 cp web/index.html web/style.css "$dist/"
 # (the font drawings' text is in: the core's, as fsrun's captures use)

@@ -6,7 +6,8 @@
 // ~/.ghc-wasm; install a browser with
 // ~/.ghc-wasm/nodejs/lib/node_modules/.bin/playwright install chromium).
 // Chromium, unless FS_BROWSER says firefox or webkit (Safari's engine);
-// with FS_DPR=2, on a high-DPI screen.
+// with FS_DPR=2, on a high-DPI screen. With FS_WEBGPU=1, Chromium is the
+// full browser (still headless), with WebGPU: its headless shell has none.
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -33,7 +34,9 @@ export async function start() {
     fs.createReadStream(file).pipe(res);
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const browser = await browserType.launch();
+  const webgpu = process.env.FS_WEBGPU && browserType === browsers.chromium
+    ? { channel: "chromium", args: ["--enable-unsafe-webgpu"] } : {};
+  const browser = await browserType.launch(webgpu);
   // (FS_DPR=2 makes it a high-DPI screen, as a Retina one is)
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 },
                                        deviceScaleFactor: Number(process.env.FS_DPR || 1) });
@@ -55,6 +58,8 @@ export async function start() {
         window.__send = (m) => this.postMessage(m);
         this.addEventListener("message", (e) => {
           window.__messages.push(e.data);
+          // (whether the engine has a GPU: said once, as it starts, so kept)
+          if (e.data?.type === "gpu") window.__gpu = e.data;
           // (a copy of a movie frame's pixels, before the page's encoder takes them)
           if (e.data?.type === "movieFrame") (window.__frames ??= []).push(e.data.pixels.slice(0));
         });

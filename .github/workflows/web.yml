@@ -17,6 +17,7 @@ on:
       - 'fractalstream-core/**'
       - 'fractalstream-backend-pure/**'
       - 'fractalstream-backend-wasm/**'
+      - 'fractalstream-backend-wgsl/**'
       - 'fractalstream-library/**'
       - 'fractalstream-ui-headless/**'
       - 'fractalstream-ui-web/**'
@@ -32,6 +33,7 @@ on:
       - 'fractalstream-core/**'
       - 'fractalstream-backend-pure/**'
       - 'fractalstream-backend-wasm/**'
+      - 'fractalstream-backend-wgsl/**'
       - 'fractalstream-library/**'
       - 'fractalstream-ui-headless/**'
       - 'fractalstream-ui-web/**'
@@ -126,6 +128,14 @@ jobs:
         dev-tools/wasm/build.sh --enable-tests fractalstream-ui-headless:test:end-to-end
         cd fractalstream-ui-headless
         ../dev-tools/wasm/node.sh fractalstream-ui-headless:test:end-to-end
+
+    # (CI has no GPU: this is what the GPU backends compile and decline,
+    # through a device that keeps their shaders; the GPU itself is checked
+    # by hand, with dev-tools/web/check-gpu.mjs: GPU_PLAN.md, G10)
+    - name: Run the GPU backends' spec on wasm, under Node
+      run: |
+        dev-tools/wasm/build.sh --enable-tests fractalstream-backend-wgsl:test:spec
+        dev-tools/wasm/node.sh fractalstream-backend-wgsl:test:spec
 
     - name: Install Chromium for the checks
       run: node ~/.ghc-wasm/nodejs/lib/node_modules/playwright/cli.js install --with-deps chromium
