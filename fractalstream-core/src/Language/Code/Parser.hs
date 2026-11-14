@@ -6,6 +6,10 @@ module Language.Code.Parser
   , codeStatementsGrammar
   , CommonDefs(..)
   , noCommonDefs
+  , builtinFunctionNames
+  , viewKindName
+  , viewPixelSizeName
+  , viewIsometryNames
   -- * Re-exports
   , TCError
   , ParseError
@@ -25,7 +29,7 @@ import Language.Parser.SourceRange (SourceRange(..), Pos(..))
 import Language.Code
 import Language.Parser.Tokenizer
 import Language.Code.Syntax
-import Language.Value.Syntax (Syn(..), ExprF(..))
+import Language.Value.Syntax (Syn(..), ExprF(..), BinOp(..), UnOp(..))
 import Language.Code.Typecheck
 
 import qualified Data.Set as Set
@@ -45,8 +49,59 @@ data CommonDefs = CommonDefs
     -- every viewer and tool script; see 'withCommon'.
   }
 
+-- | No project definitions: only the built-in functions (see
+-- 'builtinFunctions').
 noCommonDefs :: CommonDefs
-noCommonDefs = CommonDefs Set.empty []
+noCommonDefs = CommonDefs (Set.fromList builtinFunctionNames) builtinFunctions
+
+-- | Functions every tool can call, written as if in a project's @\@common@
+-- (so that, like those, they're only added to the scripts that use them).
+builtinFunctionNames :: [String]
+builtinFunctionNames = ["pixel_size_at"]
+
+-- | The names under which a tool is told how its viewer shows its points
+-- (see "Actor.Ensemble"): the kind of view (0 the plane, 1 the sphere, 2
+-- the disk), the width of a pixel on the screen plane, and in the disk,
+-- the view's isometry (the real and imaginary parts of @a@ and @b@; see
+-- "Actor.Viewer.Disk").
+viewKindName, viewPixelSizeName :: String
+viewKindName = "[internal] view kind"
+viewPixelSizeName = "[internal] view pixel size"
+
+viewIsometryNames :: [String]
+viewIsometryNames = [ "[internal] view " ++ n | n <- ["a.re", "a.im", "b.re", "b.im"] ]
+
+-- | The built-in functions' definitions.
+--
+-- @pixel_size_at(p)@ is the width, in the model, of a screen pixel at the
+-- model point @p@: on the plane, the pixel size; in the disk, the pixel
+-- size stretched by the view at @p@ (|V'(s)| at the screen point s showing
+-- p, which is |a - b̄ p|²); on the sphere, by the stereographic projection
+-- at @p@, (1 + |p|²) / 2 (a pixel facing the viewer: near the globe's rim,
+-- pixels are longer one way). A tool sizes a marker at @p@ with it, so the
+-- marker looks the same anywhere in the view.
+builtinFunctions :: [Stmt]
+builtinFunctions = [ Stmt NoSourceRange (SFun "pixel_size_at" ["p"] pixelSizeAt) ]
+  where
+    e = Syn NoSourceRange
+    var = e . EVar
+    real d = e (ELit (show d) (SomeHaskellType RealType d))
+    int k = e (ELit (show k) (SomeHaskellType IntegerType k))
+    i = e (ELit "i" (SomeHaskellType ComplexType (0 :+ 1)))
+    bin op x y = e (EBin op x y)
+    absSq x = bin OpMul (e (EUn OpAbs x)) (e (EUn OpAbs x))
+    p = var "p"
+    (ar, ai, br, bi) = case map var viewIsometryNames of
+      [w, x, y, z] -> (w, x, y, z)
+      _ -> error "internal error: an isometry has four parts"
+    av = bin OpAdd ar (bin OpMul ai i)
+    bbar = bin OpSub br (bin OpMul bi i)
+    kind = var viewKindName
+    disk = absSq (bin OpSub av (bin OpMul bbar p))
+    sphere = bin OpDiv (bin OpAdd (real 1) (absSq p)) (real 2)
+    pixelSizeAt = bin OpMul (var viewPixelSizeName)
+      (e (EITE (bin OpExactEq kind (int 2)) disk
+                (e (EITE (bin OpExactEq kind (int 1)) sphere (real 1)))))
 
 -- | Prepend the common statements that a script body uses (directly, or
 -- through other common definitions) to it, so that their declarations

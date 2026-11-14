@@ -28,6 +28,24 @@ project = unlines
   , "  use yellow for fill"
   , "  use yellow for stroke"
   , "  draw filled circle at 0 with radius 0.05"
+  , ""
+  -- a marker 10 screen pixels in radius, wherever its point is
+  , "@tool \"M\" for=\"D\""
+  , "on click at p:"
+  , "  erase"
+  , "  use yellow for fill"
+  , "  use yellow for stroke"
+  , "  draw filled circle at 0 with radius 10 pixel_size_at(0)"
+  , ""
+  , "@viewer \"F\" center=0 pixelSize=1/100"
+  , "color <- grey"
+  , ""
+  , "@tool \"N\" for=\"F\""
+  , "on click at p:"
+  , "  erase"
+  , "  use yellow for fill"
+  , "  use yellow for stroke"
+  , "  draw filled circle at 0.5 with radius 10 pixel_size_at(0.5)"
   ]
 
 -- | Run scenario commands against 'project'.
@@ -78,3 +96,15 @@ spec = describe "a disk viewer" $ do
     -- the view, s = (0 - 0.5) / (1 - 0) = -0.5, 125 pixels left
     [ "select viewer \"D\"", "select tool \"T\"", "click at 0.5"
     , pixel "D" (175, 300) yellow ]
+
+  it "sizes its tools' markers in screen pixels with `pixel_size_at`" $ scenario
+    -- the origin's on the screen at (175, 300), where the view shrinks the
+    -- model by 4/3: a marker 10 pixels in radius there
+    [ "select viewer \"D\"", "select tool \"M\"", "click at 0.5"
+    , pixel "D" (175 + 8, 300) yellow, pixel "D" (175 - 8, 300) yellow
+    , pixel "D" (175, 300 + 8) yellow
+    , pixel "D" (175 + 12, 300) grey, pixel "D" (175, 300 - 12) grey ]
+
+  it "has `pixel_size_at` the pixel size on the plane" $ scenario
+    [ "select viewer \"F\"", "select tool \"N\"", "click at 0"
+    , pixel "F" (350 + 8, 300) yellow, pixel "F" (350 + 12, 300) grey ]

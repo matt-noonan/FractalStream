@@ -275,7 +275,8 @@ parseCommonChunks chunks = do
       defs0 = withDefinedFunctions (concatMap snd commonChunks) noCommonDefs
   commonResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs0 c) commonChunks
   let common = concat [ stmts | (_, CommonStanza (Stmt _ (SBlock stmts))) <- commonResults ]
-  pure (commonResults, defs0 { commonCode = common })
+  -- (after the built-in functions: see 'noCommonDefs')
+  pure (commonResults, defs0 { commonCode = commonCode defs0 ++ common })
 
 -- | A synthesized @\@config@ stanza providing `max_iters`\/`escape_radius`\/
 -- `vanishing_radius`, meant to be appended to a parsed script's own stanzas

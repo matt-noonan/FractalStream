@@ -726,7 +726,19 @@ anywhere the view puts it.
 Tools work in model points, as everywhere: a click gives the model point
 clicked, and what a tool draws at model points is placed where the view
 puts them (a straight segment between two model points may look curved).
-A disk viewer can't be shown on the plane or the sphere.
+Since the view stretches the disk, a tool's `pixel_size` (the width of a
+pixel where the disk's drawing is centered) isn't the right size for a
+marker elsewhere: `pixel_size_at(p)` is the model width of a screen pixel
+at the model point `p`, so
+
+```
+draw filled circle at q with radius 3 pixel_size_at(q)
+```
+
+is a dot 3 pixels in radius, wherever `q` is shown. (`pixel_size_at` works
+in every tool: on the plane it's just `pixel_size`, and on the sphere it's
+the size of a pixel facing you.) A disk viewer can't be shown on the plane
+or the sphere.
 
 ### Colorizers
 

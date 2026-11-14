@@ -68,7 +68,7 @@ import Language.Value.Typecheck
    InternalIterations, InternalStuck, InternalIterationLimit)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv)
-import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs)
+import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs, viewKindName, viewPixelSizeName, viewIsometryNames)
 import Language.Code.Hoist (Split(..))
 import Language.Parser.SourceRange
 import Data.Color (black, grey)
@@ -880,10 +880,28 @@ viewerGeometryEntries :: Coordinate -> [(String, SomeType)]
 viewerGeometryEntries coord =
   [ (n, SomeType ty) | (n, LiveValue ty _) <- viewerGeometry coord (pure (Dimensions (0, 0))) (pure (0, 0)) ]
 
--- | A viewer's geometry, as read-only arguments for its tools.
-viewerGeometryArgs :: Coordinate -> Dynamic Dimensions -> Dynamic (Double, Double)
+-- | How a viewer shows its points, for its tools' @pixel_size_at@ (see
+-- 'Language.Code.Parser.builtinFunctions'): the kind of view, the width
+-- of a pixel on the screen plane, and the disk's view.
+toolViewValues :: Dynamic ViewKind -> Dynamic Double -> Dynamic Isometry -> [(String, LiveValue)]
+toolViewValues view pixelSize iso =
+  (viewKindName, LiveValue IntegerType (kindCode <$> view))
+  : (viewPixelSizeName, LiveValue RealType pixelSize)
+  : [ (n, LiveValue RealType ((!! k) . isometryEntries <$> iso)) | (k, n) <- zip [0 ..] viewIsometryNames ]
+  where
+    kindCode = \case { PlaneView -> 0; SphereView -> 1; DiskView -> 2 }
+
+-- | The names and types of 'toolViewValues'.
+toolViewEntries :: [(String, SomeType)]
+toolViewEntries =
+  [ (n, SomeType ty) | (n, LiveValue ty _) <- toolViewValues (pure PlaneView) (pure 0) (pure identityIsometry) ]
+
+-- | A viewer's geometry, and how it shows its points (see
+-- 'toolViewValues'), as read-only arguments for its tools.
+viewerGeometryArgs :: Coordinate -> Dynamic Dimensions -> Dynamic (Double, Double) -> [(String, LiveValue)]
                    -> Either String (SomeContext EventArgument_)
-viewerGeometryArgs coord size center = foldM addOne (SomeContext EmptyContext) (viewerGeometry coord size center)
+viewerGeometryArgs coord size center viewValues =
+  foldM addOne (SomeContext EmptyContext) (viewerGeometry coord size center ++ viewValues)
   where
     addOne :: SomeContext EventArgument_ -> (String, LiveValue) -> Either String (SomeContext EventArgument_)
     addOne (SomeContext acc) (name, LiveValue ty v) = withKnownType ty $ case someSymbolVal name of
@@ -928,7 +946,7 @@ checkViewerTools configEnv myTools ViewerFields{..} = do
                     , fromMaybe defaultMaxRadius mEscPV
                     , fromMaybe defaultMinRadius mVanPV
                     )
-  forM_ myTools (checkTool (configEnv ++ viewerGeometryEntries vfCoord) vfCoord toolLimits vfPixelVar)
+  forM_ myTools (checkTool (configEnv ++ viewerGeometryEntries vfCoord ++ toolViewEntries) vfCoord toolLimits vfPixelVar)
 
 -- | The pure, allocation-free check of a tool's own code, which in the
 -- app is otherwise first type-checked by 'Actor.Event.buildHandlerWith'.
@@ -1691,7 +1709,8 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
     let lookupAutocolor = autocolorLookup autocolorState
         -- (a tool is also given its viewer's geometry)
         vBuildToolHandler layer args script =
-          case viewerGeometryArgs cvCoord (dyn vSize) (dyn vCenter) of
+          case viewerGeometryArgs cvCoord (dyn vSize) (dyn vCenter)
+                                  (toolViewValues (dyn vView) (dyn vPixelSize) (dyn vIsometry)) of
             Left err -> pure (Left err)
             Right geometry -> case SomeContext' (Right args) <> SomeContext' (Right geometry) of
               SomeContext' (Left err) -> pure (Left err)

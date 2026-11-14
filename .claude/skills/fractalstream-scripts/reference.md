@@ -293,7 +293,12 @@ In scope in a handler: all config variables (ensemble and the tool's own;
 assigning them updates the UI and re-renders viewers that use them), the
 bound point, `pixel_size` (and a real viewer's `pixel_width`/`pixel_height`),
 the viewer's `viewer_width`, `viewer_height` and `viewer_center` (or
-`viewer_center_x`/`_y`), `max_iters` etc. Local variables are fresh on
+`viewer_center_x`/`_y`), `max_iters` etc., and the function
+`pixel_size_at(p)`: the model width of a screen pixel at the model point
+`p` (a complex number). On the plane it's `pixel_size`; in a disk viewer
+(and on the sphere) it varies, so size markers with it, e.g.
+`draw filled circle at q with radius 3 pixel_size_at(q)`, to make them
+look the same anywhere in the view. Local variables are fresh on
 every event; persistent tool state must be a declared tool variable.
 Loops in handlers obey the same limits as viewers.
 
@@ -363,7 +368,7 @@ an integer power rounds toward zero (0, or 1/-1 for a base of 1/-1).
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`,
 `times`, `text`, `escapes`, `vanishes`, `stops`, `previous`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
-`mod`, `point`, `table_size`, `table_cell`, `table_point`, `in`, `filled`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
+`mod`, `point`, `table_size`, `table_cell`, `table_point`, `in`, `filled`, `pixel_size_at`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
 names in `@config`), `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
 the color-wheel names, and the built-in function names (including `bar`, the
 complex conjugate; using one for a variable, function, or code block is

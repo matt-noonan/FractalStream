@@ -58,10 +58,9 @@ script and its data.
 - [x] The web page: hyperbolic drag (`diskDrag`; the engine refuses the
       page's covered region once the view has moved), checked in headless
       Chromium (`check-tools.mjs disk`).
-- [ ] Tools' marker sizes: a tool sizes markers in screen `pixel_size`,
-      which is wrong far from where the view is centered (a marker near the
-      model's edge, brought to the middle, is magnified). Maybe a local
-      pixel size for tools, with the group layer.
+- [x] Tools' marker sizes: `pixel_size_at(p)`, a built-in function for
+      tools (the model width of a screen pixel at the model point p, from
+      hidden view values each tool gets), so markers look the same anywhere.
 - [x] Docs: the language reference, the skill's reference, CLAUDE_NOTES.
 
 ## Phase 1b: the upper half-plane
