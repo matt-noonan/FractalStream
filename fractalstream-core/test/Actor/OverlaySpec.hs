@@ -136,7 +136,7 @@ quickly cmds = timeout 5000000 (paintedPixels cmds >>= \ps -> length ps `seq` pu
 paintedPixels :: [DrawCommand] -> IO [(Int, Int, PixelRGBA8)]
 paintedPixels cmds = allocaArray (120 * 40 * 3) $ \buf -> do
   pokeArray buf (replicate (120 * 40 * 3) (0 :: Word8))
-  img <- compositeDrawLayers (ScreenView (0, 0) (1, 1) FlatProjection) [cmds] (120, 40) buf
+  img <- compositeDrawLayers (ScreenView (0, 0) (1, 1) FlatProjection [FlatProjection]) [cmds] (120, 40) buf
   pure [ (x, y, p) | x <- [0 .. imageWidth img - 1], y <- [0 .. imageHeight img - 1]
                    , let p@(PixelRGBA8 r g b _) = pixelAt img x y
                    , (r, g, b) /= (0, 0, 0) ]

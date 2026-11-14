@@ -48,6 +48,10 @@ module Actor.Viewer.Disk
   , Mobius(..)
   , applyMobius
   , composeMobius
+  , normalizeMobius
+  , identityMobius
+  , diskToModel
+  , displayToDisk
   , inverseMobius
   , isometryMobius
   , cayley
@@ -384,8 +388,11 @@ hyperbolicViewEntries = (hyperbolicViewName, SomeType BooleanType)
 -- pixel, since the view stretches the plane (by |dz/ds| = 1 / |den|²). In
 -- the disk model, a pixel's hyperbolic size is @2 px / (1 - |z|²)@; in the
 -- half-plane model, @px / im(z)@.
-inTheHyperbolicPlane :: String -> String -> Stmt -> Stmt
-inTheHyperbolicPlane z px body =
+--
+-- A viewer with a group (see "Actor.Viewer.Group") sets @z@ and @px@ its
+-- own way, from the names of @num@ and @den@ (the last two lines above).
+inTheHyperbolicPlane :: String -> String -> Maybe (String -> String -> [Stmt]) -> Stmt -> Stmt
+inTheHyperbolicPlane z px mfold body =
   stmt (SIf offDisplay (stmt (SSet "color" background))
                        (stmt (SBlock (lift ++ [body]))))
   where
@@ -412,6 +419,9 @@ inTheHyperbolicPlane z px body =
     lift =
       [ stmt (SDecl s (Just ComplexT) (cplx sx sy))
       , stmt (SDecl num (Just ComplexT) (bin OpAdd (bin OpMul ma (var s)) mb))
-      , stmt (SDecl den (Just ComplexT) (bin OpAdd (bin OpMul mc (var s)) md))
-      , stmt (SSet z (bin OpDiv (var num) (var den)))
-      , stmt (SSet px (bin OpDiv (var px) (bin OpMul (e (EUn OpAbs (var den))) (e (EUn OpAbs (var den)))))) ]
+      , stmt (SDecl den (Just ComplexT) (bin OpAdd (bin OpMul mc (var s)) md)) ]
+      ++ case mfold of
+           Just fold -> fold num den
+           Nothing ->
+             [ stmt (SSet z (bin OpDiv (var num) (var den)))
+             , stmt (SSet px (bin OpDiv (var px) (bin OpMul (e (EUn OpAbs (var den))) (e (EUn OpAbs (var den)))))) ]

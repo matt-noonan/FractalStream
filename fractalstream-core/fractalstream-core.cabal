@@ -80,6 +80,7 @@ library
                        Actor.Viewer.Overlay
                        Actor.Viewer.Sphere
                        Actor.Viewer.Disk
+                       Actor.Viewer.Group
                        Actor.Viewer.ViewModel
                        Actor.Viewer.Preview
                        Actor.Movie
@@ -241,6 +242,7 @@ test-suite spec
                     , Actor.RealViewerSpec
                     , Actor.SphereSpec
                     , Actor.DiskSpec
+                    , Actor.GroupSpec
                     , Actor.ColorizerSpec
                     , Actor.AutocolorSpec
                     , Task.ConcurrentSpec

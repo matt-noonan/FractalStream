@@ -54,6 +54,7 @@ import Actor.Viewer
 import Actor.Viewer.Complex
 import Actor.Viewer.Sphere
 import Actor.Viewer.Disk
+import Actor.Viewer.Group
 import Actor.Metadata
 import Actor.SavedValues
 import Actor.SavedTables (readSavedTables, applySavedTables)
@@ -88,7 +89,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.UTF8 as UTF8
 import qualified Data.Map as Map
 import qualified GHC.TypeNats as TN
-import Language.Table (emptyTable, freezeTable)
+import Language.Table (emptyTable, freezeTable, Table(..))
 import qualified Data.Set as Set
 import Data.List (nub, (\\))
 import Data.Typeable (Typeable)
@@ -99,7 +100,9 @@ import Language.Value.Evaluator (evaluate, evaluateInContext)
 import Control.Exception (Exception, IOException, SomeException, SomeAsyncException, fromException, displayException, throwIO, try)
 import System.IO (hPutStrLn, stderr)
 import Control.Concurrent.MVar (newMVar, modifyMVar_)
-import Data.IORef (newIORef, readIORef, writeIORef)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Foreign.ForeignPtr (ForeignPtr)
+import System.IO.Unsafe (unsafePerformIO)
 import Language.Draw (DrawSink(..))
 
 import Data.Codec
@@ -815,6 +818,15 @@ checkViewer :: forall env. [(String, SomeType)] -> EnvironmentProxy env
             -> [ToolFields] -> ViewerFields -> Either (SourceRange, String) ()
 checkViewer configEnv env myTools ViewerFields{..} = do
   _ <- parseViewGeometry ViewerFields{..}
+  -- (a group's table must be a `Table 2 of C` of the configuration)
+  viewerGroupSource ViewerFields{..} >>= \case
+    Just (TableGroup name _) -> case lookup name configEnv of
+      Just (SomeType (TableType n ComplexType)) | fromSNat n == 2 -> Right ()
+      Just _ -> Left (NoSourceRange, "A viewer's `group` table `" ++ name ++ "` must be a `Table 2 of C` \
+                                     \(each column a side's pairing: rows a, b, c, d of s ↦ (a s + b)/(c s + d)).")
+      Nothing -> Left (NoSourceRange, "A viewer's `group` is `modular`, or the name of a `Table 2 of C` \
+                                      \in the configuration, not `" ++ name ++ "`.")
+    _ -> Right ()
   mIterPV <- parseMaybeAttrValue vfIterLimit
   mEscPV  <- parseMaybeAttrValue vfEscape
   mVanPV  <- parseMaybeAttrValue vfVanish
@@ -838,7 +850,7 @@ checkViewer configEnv env myTools ViewerFields{..} = do
       viewerCheck :: Either (SourceRange, String) ()
       -- (a complex viewer's code is also given its view; see
       -- 'viewerViewEntries')
-      viewEntries = viewerViewEntries vfCoord vfView
+      viewEntries = viewerViewEntries vfCoord vfView (isJust vfGroup)
       viewerCheck
         | null viewEntries = checkMainAndTools env
         | otherwise = withEnvFromMap (Map.fromList (configEnv ++ viewEntries)) checkMainAndTools
@@ -850,9 +862,10 @@ checkViewer configEnv env myTools ViewerFields{..} = do
 -- whether it's showing the sphere, and the globe's orientation (see
 -- "Actor.Viewer.Sphere"), or for a disk viewer, its view of the
 -- hyperbolic plane (see "Actor.Viewer.Disk").
-viewerViewEntries :: Coordinate -> ViewKind -> [(String, SomeType)]
-viewerViewEntries coord view0 = viewerGeometryEntries coord ++ case coord of
-  ComplexCoordinate _ | isJust (hyperbolicDisplay view0) -> hyperbolicViewEntries
+viewerViewEntries :: Coordinate -> ViewKind -> Bool -> [(String, SomeType)]
+viewerViewEntries coord view0 grouped = viewerGeometryEntries coord ++ case coord of
+  ComplexCoordinate _ | isJust (hyperbolicDisplay view0) ->
+    hyperbolicViewEntries ++ (if grouped then groupEntries else [])
   ComplexCoordinate _ -> sphereViewEntries
   RealCoordinates _ _ -> []
 
@@ -916,19 +929,25 @@ viewerGeometryArgs coord size center viewValues =
 -- | The live values of 'viewerViewEntries', from a viewer's size and
 -- view.
 viewerViewContext :: Coordinate -> ViewKind -> Variable Dimensions -> Variable (Double, Double)
-                  -> Variable ViewKind -> Variable Rotation -> Variable Isometry
+                  -> Variable ViewKind -> Variable Rotation -> Variable Isometry -> Maybe (Dynamic FoldData)
                   -> Either String (SomeContext DynamicValue)
-viewerViewContext coord view0 sizeV centerV viewV rotationV isometryV = foldM addOne (SomeContext EmptyContext) entries
+viewerViewContext coord view0 sizeV centerV viewV rotationV isometryV mgroup = foldM addOne (SomeContext EmptyContext) entries
   where
     entries :: [(String, LiveValue)]
     entries = viewerGeometry coord (dyn sizeV) (dyn centerV) ++ case coord of
       RealCoordinates _ _ -> []
       ComplexCoordinate _ | isJust (hyperbolicDisplay view0) ->
         let display = fromMaybe DiskDisplay . hyperbolicDisplay <$> dyn viewV
-            mobius = viewMobius (hyperbolicModel view0) <$> display <*> dyn isometryV
+            toModel = viewMobius (hyperbolicModel view0) <$> display <*> dyn isometryV
+            -- (with a group, to its fold coordinates instead: see
+            -- 'Actor.Viewer.Group.groupFoldCode')
+            mobius = case mgroup of
+              Nothing -> toModel
+              Just fd -> composeMobius . fdToFold <$> fd <*> toModel
         in (hyperbolicViewName, LiveValue BooleanType (isJust . hyperbolicDisplay <$> dyn viewV))
            : (halfPlaneDisplayName, LiveValue BooleanType ((== HalfPlaneDisplay) <$> display))
            : [ (n, LiveValue RealType ((!! k) . mobiusEntries <$> mobius)) | (k, n) <- zip [0 ..] mobiusNames ]
+           ++ maybe [] groupLiveValues mgroup
       ComplexCoordinate _ ->
         (sphereViewName, LiveValue BooleanType ((== SphereView) <$> dyn viewV))
         : (sphereShadingName, LiveValue RealType (dyn sphereShading))
@@ -1023,6 +1042,8 @@ data ViewerFields = ViewerFields
   , vfPixelSize :: Maybe String
   , vfAspect    :: Maybe String
   , vfView      :: ViewKind
+  , vfGroup     :: Maybe String
+  , vfGroupCenter :: Maybe String
   , vfIterLimit :: Maybe String
   , vfEscape    :: Maybe String
   , vfVanish    :: Maybe String
@@ -1035,6 +1056,7 @@ viewerFields = \case
   ViewerStanza{..} -> Just ViewerFields
     { vfTitle = vsTitle, vfCoord = vsCoord
     , vfCenter = vsCenter, vfPixelSize = vsPixelSize, vfAspect = vsAspect, vfView = vsView
+    , vfGroup = vsGroup, vfGroupCenter = vsGroupCenter
     , vfIterLimit = vsIterLimit, vfEscape = vsEscape, vfVanish = vsVanish
     , vfPixelVar = vsPixelVar
     , vfCode = vsCode
@@ -1410,6 +1432,7 @@ buildComplexViewer :: Dynamic (Either String (SomeContext DynamicValue))
                     -> IO (Either (SourceRange, String) ComplexViewer)
 buildComplexViewer contextDyn myTools n ViewerFields{..} =
   parseViewGeometry ViewerFields{..} >>=? \(centerVal, pixelVal, aspectVal) ->
+  viewerGroupSource ViewerFields{..} >>=? \groupSource ->
   parseMaybeAttrValue vfIterLimit >>=? \mIterPV ->
   parseMaybeAttrValue vfEscape >>=? \mEscPV ->
   parseMaybeAttrValue vfVanish >>=? \mVanPV -> do
@@ -1444,6 +1467,9 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
                                    Nothing | vfView == SphereView -> (0, 0)
                                            | otherwise -> centerVal)
     cvSizeV      <- newVariable (Dimensions (600, 600))  -- (see cvCenterV)
+    -- (its group, if it has one, ready to fold with)
+    groupCache   <- newIORef Nothing
+    let groupDyn = (\src -> groupFoldDyn (hyperbolicModel vfView) groupCache src contextDyn) <$> groupSource
     cvPositionV  <- newVariable (Dimensions (100 + 30 * n, 100 + 30 * n))
     cvCanResizeV <- newVariable True
 
@@ -1519,7 +1545,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
           Left err -> Left (NoSourceRange, err)
           Right (SomeContext (configOnly :: Context DynamicValue cEnv0)) ->
             -- (with the viewer's view, for a complex viewer)
-            case viewerViewContext vfCoord vfView cvSizeV cvCenterV cvViewV cvRotationV cvIsometryV of
+            case viewerViewContext vfCoord vfView cvSizeV cvCenterV cvViewV cvRotationV cvIsometryV groupDyn of
               Left err -> Left (NoSourceRange, err)
               Right (SomeContext viewCtx) -> case configOnly <#> viewCtx of
                 Left err -> Left (NoSourceRange, err)
@@ -1589,6 +1615,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvCode = cvCodeM
               , cvTools = cvToolsV
               , cvOverlay = listToMaybe overlays
+              , cvGroup = groupDyn
               }
 
 ------------------------------------------------------------
@@ -1715,6 +1742,7 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
         vIsometry = cvIsometryV
         vOriginalIsometry = cvOriginalIsometry
         vOriginalHyperbolicPixelSizes = cvHyperbolicPixelSizes
+        vGroup = cvGroup
     -- (the same variable the viewer's code and tools read the
     -- center from, starting over from the original view on a rebuild)
     let vCenter = cvCenterV
@@ -1735,7 +1763,10 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
             Right geometry -> case SomeContext' (Right args) <> SomeContext' (Right geometry) of
               SomeContext' (Left err) -> pure (Left err)
               SomeContext' (Right args') ->
-                runTool (bToolRunner backend) lookupAutocolor vDrawSink layer args' script
+                -- (a grouped viewer's tools get points folded into the
+                -- group's polygon, as its code does)
+                fmap (maybe id foldingDispatcher vGroup)
+                  <$> runTool (bToolRunner backend) lookupAutocolor vDrawSink layer args' script
 
     -- The overlay's dispatcher is built the first time it's needed (and
     -- kept, as a tool's is once it's selected); the lock also keeps two
@@ -1925,3 +1956,83 @@ tryNonAsync :: IO a -> IO (Either SomeException a)
 tryNonAsync action = try action >>= \case
   Left err | Just (_ :: SomeAsyncException) <- fromException err -> throwIO err
   r -> pure r
+
+------------------------------------------------------------
+-- Groups (see "Actor.Viewer.Group")
+------------------------------------------------------------
+
+-- | Where a viewer's group (@group=@) comes from: built in, or a table of
+-- the configuration (with the polygon's center).
+data GroupSource = BuiltinGroup Group | TableGroup String (Double, Double)
+
+viewerGroupSource :: ViewerFields -> Either (SourceRange, String) (Maybe GroupSource)
+viewerGroupSource ViewerFields{..} = case vfGroup of
+  Nothing -> Right Nothing
+  Just g -> do
+    let model = hyperbolicModel vfView
+    center <- case vfGroupCenter of
+      Nothing -> Right Nothing
+      Just src -> do
+        c <- (\(x :+ y) -> (x, y)) <$> parseConstantE ComplexType src
+        unless (inModel model c) $
+          Left (NoSourceRange, "A viewer's `groupCenter` must be a point of the hyperbolic plane, not `" ++ src ++ "`.")
+        pure (Just c)
+    pure $ Just $ case g of
+      "modular" -> BuiltinGroup (let gr = modularGroup model in maybe gr (\c -> gr { groupCenter = c }) center)
+      name -> TableGroup name (fromMaybe (if model == DiskModel then (0, 0) else (0, 1)) center)
+
+-- | A viewer's group, ready to fold with, as its configuration changes
+-- (a group that's not ready yet, or wrong, folds nothing). Getting a
+-- table's group ready is done once for each version of the table.
+groupFoldDyn :: HyperbolicModel -> IORef (Maybe ((ForeignPtr Word8, [Int], Int), FoldData))
+             -> GroupSource -> Dynamic (Either String (SomeContext DynamicValue)) -> Dynamic FoldData
+groupFoldDyn model cache src contextDyn = case src of
+  BuiltinGroup g -> pure (either (const noFolding) id (prepareGroup model g))
+  TableGroup name c -> contextDyn >>= \case
+    Left _ -> pure noFolding
+    Right sctx -> case lookupSomeContextByName name sctx of
+      Just (FoundBinding (TableType _ ComplexType) v) -> cachedFold c <$> v
+      _ -> pure noFolding
+  where
+    cachedFold c t = unsafePerformIO $ do
+      let version = (tableBuffer t, tableDims t, tableVersion t)
+      readIORef cache >>= \case
+        Just (k, fd) | k == version -> pure fd
+        _ -> do
+          let fd = either (const noFolding) id (groupFromTable c t >>= prepareGroup model)
+          writeIORef cache (Just (version, fd))
+          pure fd
+
+-- | A group's values, for a grouped viewer's code (see
+-- 'Actor.Viewer.Group.groupValueNames').
+groupLiveValues :: Dynamic FoldData -> [(String, LiveValue)]
+groupLiveValues fd = zip (map snd groupValueNames)
+  [ LiveValue (ListType RealType) (map fst . fdWedges <$> fd)
+  , LiveValue (ListType IntegerType) (map (fromIntegral . snd) . fdWedges <$> fd)
+  , LiveValue (ListType ComplexType) (map sideNormal . fdSides <$> fd)
+  , LiveValue (ListType RealType) (map sideReach . fdSides <$> fd)
+  , LiveValue (ListType ComplexType) (map ((\(Mobius a _ _ _) -> a) . sideMap) . fdSides <$> fd)
+  , LiveValue (ListType ComplexType) (map ((\(Mobius _ b _ _) -> b) . sideMap) . fdSides <$> fd)
+  , LiveValue (ListType ComplexType) (map ((\(Mobius _ _ c _) -> c) . sideMap) . fdSides <$> fd)
+  , LiveValue (ListType ComplexType) (map ((\(Mobius _ _ _ d) -> d) . sideMap) . fdSides <$> fd)
+  , LiveValue (ListType ComplexType) (map sideCircle . fdSides <$> fd)
+  , LiveValue (ListType RealType) (map sideRadius . fdSides <$> fd)
+  , LiveValue (ListType ComplexType) ((\(Mobius a b c d) -> [a, b, c, d]) . fdFromFold <$> fd) ]
+
+-- | A tool's dispatcher, its events' points folded into a group's polygon
+-- (by the group's value when the event's handler runs).
+foldingDispatcher :: Dynamic FoldData -> ToolDispatcher -> ToolDispatcher
+foldingDispatcher fdD dispatch dims event = folded <$ dispatch dims event
+  where
+    folded = HandlerRun $ \flag -> do
+      fd <- getDynamic fdD
+      let f = foldModelPoint fd
+          event' = case event of
+            Click p -> Click (f p)
+            DoubleClick p -> DoubleClick (f p)
+            Drag p q -> Drag (f p) (f q)
+            DragDone p q -> DragDone (f p) (f q)
+            other -> other
+      case dispatch dims event' of
+        Just r -> startHandlerRun r flag
+        Nothing -> pure (pure ())

@@ -37,8 +37,11 @@ module Actor.Viewer
   , renderProgressivelyInto
   , pointerText
   , viewProjection
+  , overlayProjections
   , switchView
   , centerViewOn
+  , viewReductionFor
+  , reducedView
   , dragView
   , allGrey
   , defaultIterLimit
@@ -87,6 +90,7 @@ import Language.Value.Evaluator
 import Foreign
 import Data.PNG
 import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Rotation, Projection(..), ScreenView(..), rotationFacing, rotateBy, sphereToPlane, planeToScreen, trackballRotation)
+import Actor.Viewer.Group (groupMarkerName, groupFoldCode, groupVariables, FoldData, viewReduction, tileViews)
 import Actor.Viewer.Disk (hyperbolicViewName, inTheHyperbolicPlane, Isometry, modelToScreenH, dragOnDisplay, displayScreen, axisAtBottom, viewShowing, HyperbolicDisplay(..))
 import qualified Data.Map as Map
 import Text.Printf (printf)
@@ -245,6 +249,10 @@ data Viewer = Viewer
   , vOriginalHyperbolicPixelSizes :: (Double, Double)
     -- ^ The pixel sizes a hyperbolic viewer's displays start with: the
     -- disk's, and the half-plane's
+  , vGroup :: Maybe (Dynamic FoldData)
+    -- ^ A hyperbolic viewer's group (@group=@), ready to fold with: its
+    -- code sees points folded into the group's polygon (see
+    -- "Actor.Viewer.Group")
   , vOriginalPlaneView :: ((Double, Double), Double)
     -- ^ The plane view the script describes (center and pixel size),
     -- whichever view it starts with.
@@ -320,7 +328,7 @@ withRenderedViewerBuffer viewer downsample withBuffer =
     Left err -> pure (Left err)
     Right RenderedBuffer{..} -> withForeignPtr rbPixels $ \buf ->
       Right . (rbIssues,) <$>
-        withBuffer (ScreenView rbCenter rbPixelSize rbProjection) (fromIntegral rbWidth, fromIntegral rbHeight) buf
+        withBuffer (ScreenView rbCenter rbPixelSize rbProjection rbCopies) (fromIntegral rbWidth, fromIntegral rbHeight) buf
 
 -- | A viewer's base render: @3 * rbWidth * rbHeight@ bytes of RGB8, with
 -- the model-space center and pixel size it was drawn at.
@@ -333,6 +341,10 @@ data RenderedBuffer = RenderedBuffer
     -- ^ the width and height of a pixel
   , rbProjection :: Projection
     -- ^ how model points get onto the image (on the plane, or the globe)
+  , rbCopies    :: [Projection]
+    -- ^ how a tool's drawings get onto it: as 'rbProjection' does, and for
+    -- a viewer with a group, in each tile on the screen too (see
+    -- 'overlayProjections')
   , rbIssues    :: ViewerIssues
   }
 
@@ -408,7 +420,8 @@ renderViewerBufferAt scale downsample Viewer{..} = case vCodeWithArgs of
             if downsample then downsampleRows bigW w rows w big dest
                           else copyBytes dest big (3 * w * rows)
       issues <- readMVar issuesVar
-      pure (Right (RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection issues))
+      copies <- overlayProjections Viewer{..} projection center pixelSize (w, h)
+      pure (Right (RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection copies issues))
 
 -- | Where a viewer's image is, @s@ times as fine as the viewer's pixels
 -- each way (2, to smooth it; @w@ by @h@ of the viewer's pixels): its
@@ -489,7 +502,8 @@ renderProgressively pr Viewer{..} = case vCodeWithArgs of
       ViewerFunction bind <- getDynamic code
       fn <- bind vaArgs
       out <- mallocForeignPtrBytes (max 1 (3 * w * h))
-      let image = RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection mempty
+      copies <- overlayProjections Viewer{..} projection center pixelSize (w, h)
+      let image = RenderedBuffer out w h center (pixelSize, pixelSize * aspect) projection copies mempty
       prStarted pr image
       renderProgressivelyInto pr (ImageTarget w h center pixelSize aspect (withForeignPtr out) Nothing) fn
         <&> \done -> Right ((\issues -> image { rbIssues = issues }) <$> done)
@@ -651,11 +665,23 @@ centerViewOn v c = getDynamic (vView v) >>= \kind -> case (kind, hyperbolicDispl
     let middle = case display of
           DiskDisplay -> (0, 0)
           HalfPlaneDisplay -> axisAtBottom h px (0, 0)
-    setValue' (vIsometry v) (viewShowing (hyperbolicModel (vOriginalView v)) display c middle)
+    setValue' (vIsometry v) =<< reducedView v (viewShowing (hyperbolicModel (vOriginalView v)) display c middle)
     setValue' (vCenter v) middle
   (PlaneView, _) -> setValue' (vCenter v) c
   (SphereView, _) -> setValue' (vRotation v) (rotationFacing c)
   (_, Nothing) -> pure ()
+
+-- | For a viewer with a group, the group's element that reduces a view
+-- (see 'Actor.Viewer.Group.viewReduction'), as it moves views; otherwise,
+-- leaving views as they are.
+viewReductionFor :: Viewer -> Isometry -> IO (Isometry -> Isometry)
+viewReductionFor v iso = case vGroup v of
+  Nothing -> pure id
+  Just d -> getDynamic d <&> \fd -> viewReduction (hyperbolicModel (vOriginalView v)) fd iso
+
+-- | A view, reduced by a viewer's group (if it has one).
+reducedView :: Viewer -> Isometry -> IO Isometry
+reducedView v iso = viewReductionFor v iso <&> ($ iso)
 
 -- | Move a viewer's view as dragging it would (the Navigate tool), so
 -- that the model point @p@ ends up where @q@ is shown now: on the plane,
@@ -668,7 +694,7 @@ dragView v p@(px, py) q@(qx, qy) = getDynamic (vView v) >>= \kind -> case kind o
     iso <- getDynamic (vIsometry v)
     let model = hyperbolicModel (vOriginalView v)
     case (modelToScreenH model display iso p, modelToScreenH model display iso q) of
-      (Just sp, Just sq) -> Right () <$ setValue' (vIsometry v) (dragOnDisplay display iso sp sq)
+      (Just sp, Just sq) -> Right () <$ (setValue' (vIsometry v) =<< reducedView v (dragOnDisplay display iso sp sq))
       _ -> pure (Left "both points must be shown")
   PlaneView -> do
     (cx, cy) <- getDynamic (vCenter v)
@@ -680,6 +706,21 @@ dragView v p@(px, py) q@(qx, qy) = getDynamic (vView v) >>= \kind -> case kind o
       (Just sp, Just sq) -> Right () <$ setValue' (vRotation v) (trackballRotation r sp sq)
       _ -> pure (Left "both points must be on the visible side of the globe")
   _ -> pure (Right ())
+
+-- | The projections a viewer's tools' drawings are drawn with: its own,
+-- and for a viewer with a group, one for each tile of the group's polygon
+-- that's on the screen (and large enough there, but not much larger than the polygon), so that the
+-- drawings are repeated in each (see 'Actor.Viewer.Group.tileViews'). Given
+-- the screen's middle, pixel size, and size in pixels.
+overlayProjections :: Viewer -> Projection -> (Double, Double) -> Double -> (Int, Int) -> IO [Projection]
+overlayProjections v proj (cx, cy) px (w, h) = case (proj, vGroup v) of
+  (HyperbolicProjection model display iso, Just d) -> do
+    fd <- getDynamic d
+    let halfW = fromIntegral w / 2 * px
+        halfH = fromIntegral h / 2 * px
+        visible (x, y) r = abs (x - cx) <= halfW + r && abs (y - cy) <= halfH + r
+    pure (map (HyperbolicProjection model display) (tileViews model display fd iso visible (0.03, 2) 2000))
+  _ -> pure [proj]
 
 -- | How a viewer's model points get onto its screen now.
 -- (A hyperbolic viewer's model is the one its script's view names.)
@@ -832,7 +873,10 @@ parseViewerScript mpx ViewerContext{..} c = do
           -- "Actor.Viewer.Disk")
           c' = case vcCoord of
             ComplexCoordinate z | hyperbolicViewName `Map.member` envToMap env
-                                  -> inTheHyperbolicPlane z (fromMaybe "[unused] pixel size" mpx) c
+                                  -> let px = fromMaybe "[unused] pixel size" mpx
+                                         -- (with a group, folded into its polygon)
+                                         grouped = groupMarkerName `Map.member` envToMap env
+                                     in inTheHyperbolicPlane z px (if grouped then Just (groupFoldCode z px) else Nothing) c
                                 | sphereViewName `Map.member` envToMap env -> onTheSphere z c
             _ -> c
           body :: forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e)
@@ -896,12 +940,17 @@ hoistViewerCode mpx coord env code =
       RealCoordinates _ _ -> [pixelWidthVar, pixelHeightVar]
     pixelInternals = [ symbolVal (Proxy @InternalX), symbolVal (Proxy @InternalY)
                      , symbolVal (Proxy @InternalDX), symbolVal (Proxy @InternalDY) ]
-    varying = Set.fromList ("color" : map fst coordinates ++ pixelSizes ++ pixelInternals)
+    -- (a grouped viewer's code is also given where its point is in the
+    -- group's polygon: see "Actor.Viewer.Group")
+    grouped = groupMarkerName `Map.member` envToMap env
+    groupVars = if grouped then groupVariables else []
+    varying = Set.fromList ("color" : map fst coordinates ++ pixelSizes ++ pixelInternals ++ map fst groupVars)
     -- (the types of the names the viewer's code sees, as 'parseViewerScript'
     -- binds them)
     tenv = strictTypeEnv $ Map.unions
       [ Map.map (\(SomeType t) -> typeToFS t) (envToMap env)
       , Map.fromList coordinates
+      , Map.fromList groupVars
       , Map.fromList [ (n, RealT) | n <- pixelSizes ++ pixelInternals ]
       , Map.fromList [ ("color", ColorT), (internalIterations, IntegerT), (internalStuck, BooleanT)
                      , (internalIterationLimit, IntegerT), (internalEscapeRadius, RealT)
@@ -963,6 +1012,7 @@ cloneViewer v = do
     , vOriginalRotation = vOriginalRotation v
     , vOriginalIsometry = vOriginalIsometry v
     , vOriginalHyperbolicPixelSizes = vOriginalHyperbolicPixelSizes v
+    , vGroup = vGroup v
     , vOriginalPlaneView = vOriginalPlaneView v
     , vOriginalSpherePixelSize = vOriginalSpherePixelSize v
     , vSaveView = vSaveView v

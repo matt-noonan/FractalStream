@@ -265,7 +265,21 @@ half-plane display keeps its real axis on the window's bottom edge
 pointer (wx `zoomPivotY`, the page's `zoomBy`), and resizes (wx's resize
 timer, the page's `keepAxisAtBottom`, fsrun's resize/pixel size) re-pin it;
 the view's center (`displayMiddle`, i) is 1/zoom pixels up, so switching
-displays keeps the isometry as it is. The rest
+displays keeps the isometry as it is.
+
+Groups (`group=`, `Actor.Viewer.Group`): side pairings (a table's rows 1-4,
+or `modular`) are prepared once per table version (`groupFoldDyn`'s cache)
+into fold coordinates (the disk, center at 0): each side's Klein normal and
+reach, circle, map, and the polygon's wedges (by clipping a square). The
+kernel gets them as hidden list values (`groupValueNames`), and the view's
+Möbius map goes to fold coordinates instead of the model; `groupFoldCode`
+(language source, parsed and renamed) folds by binary search of the wedges,
+then maps back to the model. Tools' events are folded (`foldingDispatcher`);
+views are reduced (`reducedView`, `viewReductionFor`: in wx's
+`jumpViewWith` both old and new by the same element); overlays repeat via
+`overlayProjections` (one `HyperbolicProjection` per tile:
+`tileViews`), in `ScreenView`'s `svCopies`, wx's `paintTileCopies`, and the
+web's `drawingJSON`. The rest
 of this paragraph is from phase 1, the disk alone: The
 geometry is in `Actor.Viewer.Disk`: the view is an `Isometry` (a, b),
 s ↦ (a s + b)/(b̄ s + ā) with |a|² − |b|² = 1, renormalized after each

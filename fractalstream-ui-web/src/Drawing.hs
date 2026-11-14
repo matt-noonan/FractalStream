@@ -40,8 +40,14 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Text as Text
 import Text.Printf (printf)
 
-drawingJSON :: Projection -> [[DrawCommand]] -> Aeson.Value
-drawingJSON proj = Aeson.toJSON . map (layer white white)
+-- | A viewer's drawings, one list per layer: drawn with each projection
+-- (a grouped viewer's are repeated in each tile on the screen: see
+-- 'Actor.Viewer.overlayProjections').
+drawingJSON :: [Projection] -> [[DrawCommand]] -> Aeson.Value
+drawingJSON projs layers = Aeson.toJSON [ concat [ drawingLayer p l | p <- projs ] | l <- layers ]
+
+drawingLayer :: Projection -> [DrawCommand] -> [Aeson.Value]
+drawingLayer proj = layer white white
   where
     layer :: Color -> Color -> [DrawCommand] -> [Aeson.Value]
     layer _ _ [] = []

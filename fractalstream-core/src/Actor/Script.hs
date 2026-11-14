@@ -145,6 +145,13 @@ data ParsedStanza
       , vsView        :: ViewKind
         -- ^ The @view=@ attribute: how the viewer starts out showing its
         -- points, on the plane (the default) or on the Riemann sphere.
+      , vsGroup       :: Maybe String
+        -- ^ The @group=@ attribute of a viewer of the hyperbolic plane:
+        -- a table of side pairings, or a built-in group (see
+        -- "Actor.Viewer.Group").
+      , vsGroupCenter :: Maybe String
+        -- ^ The @groupCenter=@ attribute: the center of its fundamental
+        -- polygon, as written.
         -- ^ The @aspect=@ attribute (a real viewer's pixel height over
         -- its pixel width), as written.
       , vsIterLimit   :: Maybe String
@@ -642,7 +649,7 @@ scriptGrammar defs = mdo
   viewerStanza <- rule $
     (\ehdr mcoloringE code ->
         (\ViewerHeader{..} mcoloring ->
-            ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhView vhIterLimit vhEscape vhVanish
+            ViewerStanza vhTitle vhCoord vhCenter vhPixelSize vhAspect vhView vhGroup vhGroupCenter vhIterLimit vhEscape vhVanish
                          vhPixelVar vhColorizer (fromMaybe [] mcoloring) code (funNames defs))
         <$> ehdr <*> sequence mcoloringE)
     <$> viewerHeader <*> optional coloringBlock
@@ -775,6 +782,8 @@ data ViewerHeader = ViewerHeader
   , vhPixelSize :: Maybe String
   , vhAspect    :: Maybe String
   , vhView      :: ViewKind
+  , vhGroup     :: Maybe String
+  , vhGroupCenter :: Maybe String
   , vhIterLimit :: Maybe String
   , vhEscape    :: Maybe String
   , vhVanish    :: Maybe String
@@ -829,7 +838,7 @@ validateViewerHeader sr vhTitle attrs = do
                 \by the user interface itself (for the wx UI, under the \
                 \project file's `wx-properties:` key).")
   checkKnownAttrs sr
-    [ "var", "xvar", "yvar", "center", "pixelSize", "aspect", "view"
+    [ "var", "xvar", "yvar", "center", "pixelSize", "aspect", "view", "group", "groupCenter"
     , "limit", "escape", "vanish", "pixelVar", "colorizer" ]
     attrs
   -- A beginner's first viewer doesn't need to think about a
@@ -867,8 +876,14 @@ validateViewerHeader sr vhTitle attrs = do
       Left (sr, "Only a complex viewer (one with `var=`) can show the hyperbolic plane \
                 \(`view=disk` or `view=halfplane`): a real viewer's points are pairs of real numbers.")
     _ -> Right ()
+  let vhGroup = lookupAttr "group" attrs
+      vhGroupCenter = lookupAttr "groupCenter" attrs
+  when ((isJust vhGroup || isJust vhGroupCenter) && vhView `notElem` [DiskView, HalfPlaneView]) $
+    Left (sr, "Only a viewer of the hyperbolic plane (`view=disk` or `view=halfplane`) can have a `group`.")
+  when (isJust vhGroupCenter && isNothing vhGroup) $
+    Left (sr, "A viewer's `groupCenter` is the center of its group's fundamental polygon: it needs a `group` too.")
   pure ViewerHeader
-    { vhTitle, vhCoord, vhAspect, vhView
+    { vhTitle, vhCoord, vhAspect, vhView, vhGroup, vhGroupCenter
     , vhCenter
     = lookupAttr "center" attrs
     , vhPixelSize = lookupAttr "pixelSize" attrs
