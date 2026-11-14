@@ -121,6 +121,7 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "unsaved": await engine.fs_unsaved(r.on); break;
       case "tableSummary": await engine.fs_table_summary(); break;
       case "rotate": await engine.fs_rotate(r.viewer, r.fx, r.fy, r.tx, r.ty); break;
+      case "diskDrag": await engine.fs_disk_drag(r.viewer, r.fx, r.fy, r.tx, r.ty); break;
       case "set": await engine.fs_set(r.name, r.text); break;
       case "view": await engine.fs_view(r.viewer, r.cx, r.cy, r.pixelSize, r.width, r.height, ...(r.covered ?? [0, 0, 0, 0])); break;
       case "resize": await engine.fs_resize(r.viewer, r.width, r.height); break;

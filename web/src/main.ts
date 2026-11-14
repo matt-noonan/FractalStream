@@ -1151,7 +1151,9 @@ class ViewerView {
   private drawPending = false;
   private dragFrom: { x: number; y: number } | null = null;
   /** On the sphere: the screen point (in the sphere's radii) where the
-      globe was last turned from, and where the pointer is now. */
+      globe was last turned from, and where the pointer is now. In the
+      disk: the same, on the disk's drawing (see `toPlane`), for the
+      hyperbolic translation that moves the view. */
   private turn: { from: [number, number]; to: [number, number] } | null = null;
   private readonly errorEl: HTMLElement;
   /** Shown while its tool's handler (or overlay) runs for a while: what's
@@ -1622,7 +1624,8 @@ class ViewerView {
     if (turned) {
       const { from, to } = this.turn!;
       this.turn!.from = to;
-      send({ type: "rotate", viewer: this.info.id, fx: from[0], fy: from[1], tx: to[0], ty: to[1] });
+      send({ type: this.info.disk ? "diskDrag" : "rotate", viewer: this.info.id,
+             fx: from[0], fy: from[1], tx: to[0], ty: to[1] });
     }
     if (moved) {
       this.sent = { view: { ...t }, width, height };
@@ -1664,6 +1667,9 @@ class ViewerView {
     if (this.boxing) return;
     if (this.info.sphere && !this.toolDrags) {
       const s = this.onScreen(this.dragFrom);
+      this.turn = { from: s, to: s };
+    } else if (this.info.disk && !this.toolDrags) {
+      const s = this.toPlane(this.dragFrom);
       this.turn = { from: s, to: s };
     }
   }
@@ -1750,6 +1756,13 @@ class ViewerView {
       this.request();
       return;
     }
+    if (this.info.disk && this.turn) {
+      // (the view of the hyperbolic plane moves: as on the sphere, the old
+      // frame stays until the new one comes)
+      this.turn.to = this.toPlane(p);
+      this.request();
+      return;
+    }
     t.cx -= (p.x - this.dragFrom.x) * t.px;
     t.cy += (p.y - this.dragFrom.y) * t.py;
     this.dragFrom = p;
@@ -1814,8 +1827,9 @@ class ViewerView {
       { kind: "action", label: "Jump to view…", shortcut: "@", run: () => this.askJump() },
       { kind: "action", label: "Original view", shortcut: "^", run: () => this.navigate(2) },
     ];
-    // (a complex viewer's pixels are square; it can show the sphere instead)
-    if (this.info.complex) {
+    // (a complex viewer's pixels are square; it can show the sphere instead,
+    // unless it shows the hyperbolic plane)
+    if (this.info.complex && !this.info.disk) {
       items.push({ kind: "toggle", label: "Show on the sphere", on: this.info.sphere, toggle: () => this.navigate(3) });
     } else {
       items.push({ kind: "action", label: "Aspect ratio…", run: () => this.askAspect() });
@@ -1865,8 +1879,9 @@ class ViewerView {
   /** The engine moved the view (going back, say): it's the target now,
       and what the engine's rendering. On the sphere, or turning to or
       from it, the last picture can't be moved to fit, so it goes. */
-  moved(m: { cx: number; cy: number; px: number; py: number; sphere: boolean }) {
-    if (m.sphere || this.info.sphere) {
+  moved(m: { cx: number; cy: number; px: number; py: number; sphere: boolean; disk: boolean }) {
+    // (in the disk, the view of the hyperbolic plane may have moved too)
+    if (m.sphere || this.info.sphere || m.disk) {
       this.frame = null;
       // (a path drawn on the globe, or on the plane before it, can't follow)
       this.path = null;

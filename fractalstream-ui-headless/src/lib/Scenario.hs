@@ -66,6 +66,10 @@ data Command
 
   | ResizeViewer Int Int
   | SetViewerCenter Point
+  | SetViewerScreenCenter Point
+    -- ^ The point of the drawing at the middle of the window: in a disk
+    -- viewer, on the disk's screen plane (in units of its radius), which
+    -- zooming moves; on the plane, the same as 'SetViewerCenter'.
   | SetViewerPixelSize ParsedValue
   | SetViewerAspect ParsedValue
   | SetViewerView ViewKind
@@ -73,6 +77,9 @@ data Command
   | ClickAt Point
   | DoubleClickAt Point
   | DragFromTo Point Point
+  | DragViewFromTo Point Point
+    -- ^ Move the view as the Navigate tool's drag would, so that the first
+    -- (model) point ends up where the second is shown.
   | PressButton String
   | TriggerRefresh
   | TriggerTimer String
@@ -216,6 +223,8 @@ scenarioGrammar = mdo
     ResizeViewer <$> (kw "resize" *> kw "viewer" *> kw "to" *> intLit) <*> (xHeight <* nl)
   setViewerCenter <- rule $
     SetViewerCenter <$> (kw "set" *> kw "viewer" *> kw "center" *> kw "to" *> point <* nl)
+  setViewerScreenCenter <- rule $
+    SetViewerScreenCenter <$> (kw "set" *> kw "viewer" *> kw "screen" *> kw "center" *> kw "to" *> point <* nl)
   setViewerPixelSize <- rule $
     SetViewerPixelSize <$> (kw "set" *> kw "viewer" *> kw "pixel" *> kw "size" *> kw "to" *> value <* nl)
   setViewerAspect <- rule $
@@ -230,6 +239,8 @@ scenarioGrammar = mdo
     DoubleClickAt <$> (doubleClickKw *> kw "at" *> point <* nl)
   dragFromTo <- rule $
     DragFromTo <$> (kw "drag" *> kw "from" *> point) <*> (kw "to" *> point <* nl)
+  dragViewFromTo <- rule $
+    DragViewFromTo <$> (kw "drag" *> kw "view" *> kw "from" *> point) <*> (kw "to" *> point <* nl)
   pressButton <- rule $
     PressButton <$> (kw "press" *> kw "button" *> str <* nl)
   triggerRefresh <- rule $
@@ -282,8 +293,8 @@ scenarioGrammar = mdo
   command <- ruleChoice
     [ selectViewer, selectTool, deselectTool
     , setParameter, setToolParameter, setColorizerParameter
-    , resizeViewer, setViewerCenter, setViewerPixelSize, setViewerAspect, setViewerView
-    , clickAt, doubleClickAt, dragFromTo
+    , resizeViewer, setViewerCenter, setViewerScreenCenter, setViewerPixelSize, setViewerAspect, setViewerView
+    , clickAt, doubleClickAt, dragViewFromTo, dragFromTo
     , pressButton, triggerRefresh, triggerTimer
     , waitForViewer
     , loadSavedTables

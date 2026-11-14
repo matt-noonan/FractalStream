@@ -41,6 +41,10 @@ export type Request =
   /** Turn a sphere viewer's globe, as the pointer drags from one screen
       point to another (in units of the sphere's radius, y up). */
   | { type: "rotate"; viewer: number; fx: number; fy: number; tx: number; ty: number }
+  /** Move a disk viewer's view by the hyperbolic translation that keeps
+      the point under the pointer, as it drags from one point of the
+      screen plane to another (the disk's drawing, in its radii, y up). */
+  | { type: "diskDrag"; viewer: number; fx: number; fy: number; tx: number; ty: number }
   | { type: "set"; name: string; text: string }
   /** Move, zoom, or resize a viewer: with where (in the new view's
       pixels: left, top, right and bottom, the last two not included) the
@@ -189,6 +193,8 @@ export interface ViewerInfo {
   height: number;
   /** Whether it shows the Riemann sphere (a globe), not the plane. */
   sphere: boolean;
+  /** Whether it shows the hyperbolic plane, in the Poincaré disk. */
+  disk: boolean;
   /** Whether it can (a complex viewer). */
   complex: boolean;
   /** Whether it's smoothed. */
@@ -308,7 +314,7 @@ export type Message =
   | { type: "ancient"; name: string }
   | { type: "pointer"; viewer: number; text: string }
   /** The engine moved a viewer's view (a pixel's size in the canvas's pixels). */
-  | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean }
+  | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean; disk: boolean }
   | { type: "where"; viewer: number; x: number; y: number; pixelSize: number }
   | { type: "aspect"; viewer: number; error: string | null }
   /** A file to save as it is (a picture). */

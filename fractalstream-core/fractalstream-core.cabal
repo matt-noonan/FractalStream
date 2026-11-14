@@ -79,6 +79,7 @@ library
                        Actor.Viewer.Clip
                        Actor.Viewer.Overlay
                        Actor.Viewer.Sphere
+                       Actor.Viewer.Disk
                        Actor.Viewer.ViewModel
                        Actor.Viewer.Preview
                        Actor.Movie
@@ -239,6 +240,7 @@ test-suite spec
                     , Language.TableSpec
                     , Actor.RealViewerSpec
                     , Actor.SphereSpec
+                    , Actor.DiskSpec
                     , Actor.ColorizerSpec
                     , Actor.AutocolorSpec
                     , Task.ConcurrentSpec

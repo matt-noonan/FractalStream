@@ -39,6 +39,7 @@ module Actor.Viewer
   , viewProjection
   , switchView
   , centerViewOn
+  , dragView
   , allGrey
   , defaultIterLimit
   , defaultMaxRadius
@@ -85,7 +86,8 @@ import Language.Parser.SourceRange
 import Language.Value.Evaluator
 import Foreign
 import Data.PNG
-import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Rotation, Projection(..), ScreenView(..), rotationFacing, rotateBy, sphereToPlane)
+import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Rotation, Projection(..), ScreenView(..), rotationFacing, rotateBy, sphereToPlane, planeToScreen, trackballRotation)
+import Actor.Viewer.Disk (diskViewName, inTheDisk, Isometry, isometryFacing, diskToScreen, dragIsometry)
 import qualified Data.Map as Map
 import Text.Printf (printf)
 
@@ -232,8 +234,14 @@ data Viewer = Viewer
     -- 'vPixelSize' is in units of the sphere's radius.
   , vRotation :: Variable Rotation
     -- ^ The globe's orientation, on the sphere (see "Actor.Viewer.Sphere").
+  , vIsometry :: Variable Isometry
+    -- ^ The view of the hyperbolic plane, in the disk (see
+    -- "Actor.Viewer.Disk"): the screen point @s@ shows the model point
+    -- @V(s)@. In the disk, 'vCenter' and 'vPixelSize' place the screen on
+    -- the disk (in units of its radius), as on the plane.
   , vOriginalView :: ViewKind
   , vOriginalRotation :: Rotation
+  , vOriginalIsometry :: Isometry
   , vOriginalPlaneView :: ((Double, Double), Double)
     -- ^ The plane view the script describes (center and pixel size),
     -- whichever view it starts with.
@@ -366,7 +374,7 @@ renderViewerBufferAt scale downsample Viewer{..} = case vCodeWithArgs of
       Dimensions (w, h) <- getDynamic vSize
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
-      projection <- viewProjection vView vRotation
+      projection <- viewProjection vView vRotation vIsometry
       center <- getDynamic vCenter
       ViewerFunction bind <- getDynamic code
       fn <- bind vaArgs
@@ -473,7 +481,7 @@ renderProgressively pr Viewer{..} = case vCodeWithArgs of
       Dimensions (w, h) <- getDynamic vSize
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
-      projection <- viewProjection vView vRotation
+      projection <- viewProjection vView vRotation vIsometry
       center <- getDynamic vCenter
       ViewerFunction bind <- getDynamic code
       fn <- bind vaArgs
@@ -592,10 +600,14 @@ downsampleRows bigW w rows stride big dest =
 -- the globe turns to face it; on the plane, the view is centered on the
 -- point the globe faced (or 0, if that was ∞). Each starts at the zoom
 -- the script gives it.
+--
+-- A disk viewer stays one, and no other viewer becomes one (the disk is
+-- the hyperbolic plane: outside it, there'd be nothing to see).
 switchView :: Viewer -> ViewKind -> IO ()
 switchView v kind = do
   old <- getDynamic (vView v)
-  when (old /= kind) $ case kind of
+  when (old /= kind && old /= DiskView) $ case kind of
+    DiskView -> pure ()
     SphereView -> do
       c <- getDynamic (vCenter v)
       setValue' (vRotation v) (rotationFacing c)
@@ -611,17 +623,42 @@ switchView v kind = do
       setValue' (vView v) PlaneView
 
 -- | Center a viewer's view on a point: on the sphere, turn the globe to
--- face it.
+-- face it; in the disk, move the view to show it in the middle of the
+-- disk, and the disk in the middle of the window.
 centerViewOn :: Viewer -> (Double, Double) -> IO ()
 centerViewOn v c = getDynamic (vView v) >>= \case
   PlaneView -> setValue' (vCenter v) c
   SphereView -> setValue' (vRotation v) (rotationFacing c)
+  DiskView -> setValue' (vIsometry v) (isometryFacing c) >> setValue' (vCenter v) (0, 0)
+
+-- | Move a viewer's view as dragging it would (the Navigate tool), so
+-- that the model point @p@ ends up where @q@ is shown now: on the plane,
+-- by moving the center; on the sphere, by turning the globe
+-- (trackball-style); in the disk, by the hyperbolic translation that
+-- keeps the point under the pointer. Both points must be visible.
+dragView :: Viewer -> (Double, Double) -> (Double, Double) -> IO (Either String ())
+dragView v p@(px, py) q@(qx, qy) = getDynamic (vView v) >>= \case
+  PlaneView -> do
+    (cx, cy) <- getDynamic (vCenter v)
+    setValue' (vCenter v) (cx + px - qx, cy + py - qy)
+    pure (Right ())
+  SphereView -> do
+    r <- getDynamic (vRotation v)
+    case (planeToScreen r p, planeToScreen r q) of
+      (Just sp, Just sq) -> Right () <$ setValue' (vRotation v) (trackballRotation r sp sq)
+      _ -> pure (Left "both points must be on the visible side of the globe")
+  DiskView -> do
+    iso <- getDynamic (vIsometry v)
+    case (diskToScreen iso p, diskToScreen iso q) of
+      (Just sp, Just sq) -> Right () <$ setValue' (vIsometry v) (dragIsometry iso sp sq)
+      _ -> pure (Left "both points must be in the disk")
 
 -- | How a viewer's model points get onto its screen now.
-viewProjection :: Variable ViewKind -> Variable Rotation -> IO Projection
-viewProjection viewV rotationV = getDynamic viewV >>= \case
+viewProjection :: Variable ViewKind -> Variable Rotation -> Variable Isometry -> IO Projection
+viewProjection viewV rotationV isometryV = getDynamic viewV >>= \case
   PlaneView -> pure FlatProjection
   SphereView -> GlobeProjection <$> getDynamic rotationV
+  DiskView -> DiskProjection <$> getDynamic isometryV
 
 -- | Render a viewer to a PNG file, returning any issues the render ran into.
 snapshotToFile :: Viewer -> Bool -> FilePath -> IO (Either String ViewerIssues)
@@ -761,10 +798,13 @@ parseViewerScript mpx ViewerContext{..} c = do
             ComplexCoordinate _ -> []
             RealCoordinates _ _ -> [ (pixelWidthVar, internal InternalDX)
                                    , (pixelHeightVar, internal InternalDY) ]
-          -- (a complex viewer given its view can show the sphere; see
-          -- "Actor.Viewer.Sphere")
+          -- (a complex viewer given its view can show the sphere, see
+          -- "Actor.Viewer.Sphere"; or the hyperbolic disk, see
+          -- "Actor.Viewer.Disk")
           c' = case vcCoord of
-            ComplexCoordinate z | sphereViewName `Map.member` envToMap env -> onTheSphere z c
+            ComplexCoordinate z | diskViewName `Map.member` envToMap env
+                                  -> inTheDisk z (fromMaybe "[unused] pixel size" mpx) c
+                                | sphereViewName `Map.member` envToMap env -> onTheSphere z c
             _ -> c
           body :: forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e)
           body e = bindFreshReals pixelVars e $ \e' ->
@@ -874,6 +914,7 @@ cloneViewer v = do
   newAspect    <- newVariable =<< getDynamic (vAspect v)
   newView      <- newVariable =<< getDynamic (vView v)
   newRotation  <- newVariable =<< getDynamic (vRotation v)
+  newIsometry  <- newVariable =<< getDynamic (vIsometry v)
   pure $ Viewer
     { vTitle = newTitle
     , vSize  = newSize
@@ -888,8 +929,10 @@ cloneViewer v = do
     , vCoordinate = vCoordinate v
     , vView = newView
     , vRotation = newRotation
+    , vIsometry = newIsometry
     , vOriginalView = vOriginalView v
     , vOriginalRotation = vOriginalRotation v
+    , vOriginalIsometry = vOriginalIsometry v
     , vOriginalPlaneView = vOriginalPlaneView v
     , vOriginalSpherePixelSize = vOriginalSpherePixelSize v
     , vSaveView = vSaveView v

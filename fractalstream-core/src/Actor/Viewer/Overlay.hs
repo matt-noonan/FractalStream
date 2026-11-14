@@ -70,7 +70,10 @@ compositeDrawLayers ScreenView{ svCenter = center, svPixelSize = pixelSize, svPr
   pure $ if all null layers then baseImage
     else overImage (renderDrawing w h (PixelRGBA8 0 0 0 0) $ case proj of
            FlatProjection -> drawLayers image toPx pixelSize layers
-           GlobeProjection _ -> mapM_ (drawGlobeLayer image proj toPx) layers)
+           -- (the globe and the disk: drawings are sampled, and each
+           -- point projected)
+           GlobeProjection _ -> mapM_ (drawGlobeLayer image proj toPx) layers
+           DiskProjection _ -> mapM_ (drawGlobeLayer image proj toPx) layers)
                    baseImage
 
 -- | Lay a (non-premultiplied, as Rasterific makes them) RGBA image over

@@ -27,6 +27,10 @@
 //             broken.fs), with its editor open, and its saved value and
 //             window once it's fixed; a starting point, as a new project;
 //             and an error, as a notice to dismiss
+//   disk      a disk viewer (view=disk, dev-tools/web/disk.fs): Navigate's
+//             drag moves the view by a hyperbolic translation (the point
+//             under the pointer stays under it), and its menu has no
+//             "Show on the sphere"
 //   pointer   "Show pointer position", from a viewer's menu: the point
 //             under the pointer, on the plane and on the sphere
 //   progressive  a slow viewer (dev-tools/web/slow.fs) rendered in pieces:
@@ -76,7 +80,7 @@ import { start, Checks, kinds } from "./harness.mjs";
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -1073,6 +1077,41 @@ async function pointer() {
   const centre = await hover(s, 0.5, 0.5);
   const off = await hover(s, 0.01, 0.01);
   c.check(/𝑖$/.test(centre) && off === "…", `on the sphere: ${centre} at the globe's center, and "…" off it`);
+}
+
+async function disk() {
+  await app.openFile(new URL("disk.fs", import.meta.url).pathname);
+  const box = await app.canvas(0).boundingBox();
+  // (a CSS pixel is 1/250 of the disk's radius: see disk.fs)
+  const radius = 250, cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  const pixelAt = (fx, fy) => page.evaluate(([fx, fy]) => {
+    const c = document.querySelectorAll(".viewer canvas")[0];
+    const d = c.getContext("2d").getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data;
+    return [d[0], d[1], d[2]];
+  }, [fx, fy]);
+  const isRed = ([r, g, b]) => r > 200 && g < 60 && b < 60;
+  c.check(isRed(await pixelAt(0.5, 0.5)), "the origin is in the middle of the disk, at first");
+  // drag from the middle 0.3 of the disk's radius to the right
+  const frames = await app.frames(0);
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  for (let i = 1; i <= 15; i++) await page.mouse.move(cx + 0.3 * radius * i / 15, cy);
+  await page.mouse.up();
+  await page.waitForFunction((n) => Number(document.querySelector(".viewer").dataset.frames) > n, frames, { timeout: 60000 });
+  await page.waitForTimeout(1000);
+  const sent = await page.evaluate(() => window.__sent.map((m) => m.type));
+  c.check(sent.includes("diskDrag") && !sent.includes("rotate"), "the drag moves the view of the hyperbolic plane");
+  await app.send({ type: "where", viewer: 0 });
+  await page.waitForTimeout(500);
+  const where = (await app.messages("where")).pop();
+  c.check(where && Math.abs(where.x + 0.3) < 1e-6 && Math.abs(where.y) < 1e-6,
+          `the point that was 0.3 to the left is in the middle now (${where?.x}, ${where?.y})`);
+  c.check(isRed(await pixelAt(0.5 + 0.3 * radius / box.width, 0.5)) && !isRed(await pixelAt(0.5, 0.5)),
+          "the origin is where the pointer let go of it");
+  await page.locator(".window").nth(0).locator(".window-menu-button").click();
+  c.check(await page.locator(".window-menu button", { hasText: "Show on the sphere" }).count() === 0,
+          "its menu doesn't offer the sphere");
+  await page.keyboard.press("Escape");
 }
 
 async function progressive() {

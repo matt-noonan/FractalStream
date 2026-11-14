@@ -275,7 +275,8 @@ parseCommonChunks chunks = do
       defs0 = withDefinedFunctions (concatMap snd commonChunks) noCommonDefs
   commonResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs0 c) commonChunks
   let common = concat [ stmts | (_, CommonStanza (Stmt _ (SBlock stmts))) <- commonResults ]
-  pure (commonResults, defs0 { commonCode = common })
+  -- (after the built-in functions: see 'noCommonDefs')
+  pure (commonResults, defs0 { commonCode = commonCode defs0 ++ common })
 
 -- | A synthesized @\@config@ stanza providing `max_iters`\/`escape_radius`\/
 -- `vanishing_radius`, meant to be appended to a parsed script's own stanzas
@@ -855,11 +856,15 @@ validateViewerHeader sr vhTitle attrs = do
     Nothing -> Right PlaneView
     Just "plane" -> Right PlaneView
     Just "sphere" -> Right SphereView
-    Just v -> Left (sr, "A viewer's `view` is `plane` or `sphere`, not `" ++ v ++ "`.")
+    Just "disk" -> Right DiskView
+    Just v -> Left (sr, "A viewer's `view` is `plane`, `sphere`, or `disk`, not `" ++ v ++ "`.")
   case (vhCoord, vhView) of
     (RealCoordinates _ _, SphereView) ->
       Left (sr, "Only a complex viewer (one with `var=`) can be shown on the sphere \
                 \(`view=sphere`): a real viewer's points are pairs of real numbers.")
+    (RealCoordinates _ _, DiskView) ->
+      Left (sr, "Only a complex viewer (one with `var=`) can show the hyperbolic disk \
+                \(`view=disk`): a real viewer's points are pairs of real numbers.")
     _ -> Right ()
   pure ViewerHeader
     { vhTitle, vhCoord, vhAspect, vhView

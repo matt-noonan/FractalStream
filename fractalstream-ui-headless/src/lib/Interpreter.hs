@@ -31,14 +31,14 @@ import Actor.Layout (Field(..))
 import Actor.UI (UI(..))
 import Actor.Viewer
   ( Backend, Viewer(..)
-  , withRenderedViewerBuffer, snapshotToFile, switchView, centerViewOn, refreshOverlay
+  , withRenderedViewerBuffer, snapshotToFile, switchView, centerViewOn, dragView, refreshOverlay
   , ViewerIssues, describeViewerIssues
   )
 import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
 import Actor.Viewer.Preview (renderPreview)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
-import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..),
+import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..),
                     ToolDispatcher, runHandlerNow)
 import Actor.Layout (Dimensions(..))
 
@@ -195,6 +195,11 @@ execCommand st = \case
       centerViewOn viewer xy
       pure (Right st)
 
+  SetViewerScreenCenter pt -> withCurrentViewer st $ \viewer ->
+    withResolved (resolvePoint pt) $ \xy -> getDynamic (vView viewer) >>= \case
+      SphereView -> pure (Left "the globe is always in the middle of a sphere viewer's window")
+      _ -> setValue' (vCenter viewer) xy >> pure (Right st)
+
   SetViewerView kind -> withCurrentViewer st $ \viewer -> case vCoordinate viewer of
     RealCoordinates _ _ -> pure (Left "only a complex viewer (one with `var=`) can be shown on the sphere")
     ComplexCoordinate _ -> switchView viewer kind >> pure (Right st)
@@ -221,6 +226,12 @@ execCommand st = \case
     withResolved (resolvePoint pt) $ \xy -> do
       fireOn viewer dispatcher (DoubleClick xy)
       pure (Right st)
+
+  DragViewFromTo p1 p2 -> withCurrentViewer st $ \viewer ->
+    withResolved (resolvePoint p1) $ \a -> withResolved (resolvePoint p2) $ \b ->
+      dragView viewer a b <&> \case
+        Left err -> Left ("can't drag the view: " ++ err)
+        Right () -> Right st
 
   DragFromTo p1 p2 -> withCurrentDispatcher st $ \viewer dispatcher ->
     withResolved ((,) <$> resolvePoint p1 <*> resolvePoint p2) $ \(xy1, xy2) -> do

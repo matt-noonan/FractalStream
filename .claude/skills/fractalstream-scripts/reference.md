@@ -100,7 +100,7 @@ below).
 | `xvar=`, `yvar=` | none | instead of `var=`: a *real viewer*, whose pixel is the pair of real coordinates `(x, y)` with these names. Both are needed, and they can't be used with `var=`. Either can be a real `@config` variable's name, for a plane of real parameters (`xvar=a yvar=b`). |
 | `center=` | `0` | original center ("Original view" returns here); quote anything but a plain number: `center="-0.75 + 0.1i"`. A real viewer's is a point, `center=(1, -1/2)`, or a complex number. |
 | `pixelSize=` | `1/128` | model width of one pixel (zoom) in the original view; `1/200`, `0.005` |
-| `view=` | `plane` | `sphere`: show a complex viewer's points on the Riemann sphere, as a globe. `z` is still a complex number (stereographic: 0 is the north pole, ∞ the south pole); `center=` is the point facing you, and `pixelSize=` is measured on the unit sphere (default: the globe fills most of the window). Navigate's drag turns the globe; the viewer's menu switches between sphere and plane. Not for real viewers. |
+| `view=` | `plane` | `sphere`: show a complex viewer's points on the Riemann sphere, as a globe. `z` is still a complex number (stereographic: 0 is the north pole, ∞ the south pole); `center=` is the point facing you, and `pixelSize=` is measured on the unit sphere (default: the globe fills most of the window). Navigate's drag turns the globe; the viewer's menu switches between sphere and plane. Not for real viewers. `disk`: the hyperbolic plane, as the Poincaré disk: `z` is a point of the unit disk (the model point), shown moved by the view (an isometry): Navigate's drag moves the view by a hyperbolic translation, a click recenters on the clicked point, scrolling zooms the drawing. `center=` is the disk point shown in the middle (must have \|center\| < 1), `pixelSize=` is in units of the disk's radius. `pixel_size` is the pixel's local model width (it varies), so a pixel's hyperbolic size is `2 pixel_size / (1 - \|z\|²)`. Can't switch to the plane or sphere. |
 | `aspect=` | `1` | real viewers only: a pixel's height over its width in the original view (`aspect=2` fits twice as much of the y axis). A complex viewer's pixels are always square. The wx viewer's menu has "Aspect ratio..." to change it. |
 | `limit=`, `escape=`, `vanish=` | `max_iters`, `escape_radius`, `vanishing_radius` | name a different (config) variable to use as the loop limit / escape radius / vanishing radius in this viewer |
 | `pixelVar=` | `pixel_size` | name under which the current pixel size is visible |
@@ -126,6 +126,7 @@ wx-properties:
       aspect: 2              # a real viewer's current aspect, when it isn't 1
       view: sphere           # a complex viewer showing the other view than its script's
       rotation: [1, 0, 0, 0] # on the sphere, the globe's orientation (a unit quaternion)
+      isometry: [1, 0, 0, 0] # in the disk, the view (re a, im a, re b, im b of s -> (a s + b)/(conj(b) s + conj(a)))
   configuration: { x: 40, y: 80 }
 ```
 
@@ -292,7 +293,12 @@ In scope in a handler: all config variables (ensemble and the tool's own;
 assigning them updates the UI and re-renders viewers that use them), the
 bound point, `pixel_size` (and a real viewer's `pixel_width`/`pixel_height`),
 the viewer's `viewer_width`, `viewer_height` and `viewer_center` (or
-`viewer_center_x`/`_y`), `max_iters` etc. Local variables are fresh on
+`viewer_center_x`/`_y`), `max_iters` etc., and the function
+`pixel_size_at(p)`: the model width of a screen pixel at the model point
+`p` (a complex number). On the plane it's `pixel_size`; in a disk viewer
+(and on the sphere) it varies, so size markers with it, e.g.
+`draw filled circle at q with radius 3 pixel_size_at(q)`, to make them
+look the same anywhere in the view. Local variables are fresh on
 every event; persistent tool state must be a declared tool variable.
 Loops in handlers obey the same limits as viewers.
 
@@ -362,7 +368,7 @@ an integer power rounds toward zero (0, or 1/-1 for a base of 1/-1).
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`,
 `times`, `text`, `escapes`, `vanishes`, `stops`, `previous`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
-`mod`, `point`, `table_size`, `table_cell`, `table_point`, `in`, `filled`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
+`mod`, `point`, `table_size`, `table_cell`, `table_point`, `in`, `filled`, `pixel_size_at`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
 names in `@config`), `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
 the color-wheel names, and the built-in function names (including `bar`, the
 complex conjugate; using one for a variable, function, or code block is
@@ -604,6 +610,8 @@ Command language (one per line, `#` comments): `select viewer "T"`,
 colorizer's setting), `resize viewer to 800x600`,
 `set viewer center to <point>`, `set viewer pixel size to <expr>`,
 `click at <point>`, `double-click at <point>`, `drag from <p> to <q>`,
+`drag view from <p> to <q>` (navigate: model point p ends up where q is shown),
+`set viewer screen center to <point>` (a disk viewer's drawing: its point at the window's middle, for zooming in off-center),
 `press button "L"`, `trigger refresh`, `trigger timer "name"`,
 `capture viewer "T" to "f.png"` (with tool drawings),
 `capture viewer "T" base to "f.png"` (without),

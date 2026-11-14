@@ -56,15 +56,15 @@ drawingJSON proj = Aeson.toJSON . map (layer white white)
       DrawPoint _ p -> [ obj "point" [ "p" .= q, "s" .= hex stroke ] | Just q <- [at p] ]
       DrawLine _ a b -> case proj of
         FlatProjection -> [ obj "line" [ "a" .= a, "b" .= b, "s" .= hex stroke ] | finite a, finite b ]
-        GlobeProjection _ -> runs stroke (sampleSegment 64 a b)
+        _ -> runs stroke (sampleSegment 64 a b)
       DrawCircle _ filled r c -> case proj of
         FlatProjection ->
           [ obj "circle" [ "c" .= c, "r" .= r, "f" .= fillOf filled, "s" .= hex stroke ] | finite c, finite (r, r) ]
-        GlobeProjection _ -> outline filled (sampleCircle 96 c r)
+        _ -> outline filled (sampleCircle 96 c r)
       DrawRect _ filled a@(x1, y1) b@(x2, y2) -> case proj of
         FlatProjection ->
           [ obj "rect" [ "a" .= a, "b" .= b, "f" .= fillOf filled, "s" .= hex stroke ] | finite a, finite b ]
-        GlobeProjection _ ->
+        _ ->
           let corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)]
           in outline filled (concat (zipWith (\p q -> init (sampleSegment 32 p q)) corners (drop 1 corners)) ++ [(x1, y1)])
       Write _ t p -> [ obj "text" [ "p" .= q, "t" .= t, "s" .= hex stroke ] | Just q <- [at p] ]
@@ -82,7 +82,7 @@ drawingJSON proj = Aeson.toJSON . map (layer white white)
     at :: (Double, Double) -> Maybe (Double, Double)
     at p = case proj of
       FlatProjection -> if finite p then Just p else Nothing
-      GlobeProjection _ -> projectToScreen proj p
+      _ -> projectToScreen proj p
 
     visible = filter (not . null) . map (filter finite) . visibleRuns proj . filter finite
 

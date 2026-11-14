@@ -11,6 +11,7 @@ import Actor.Layout
 import Actor.Tool
 import Actor.Event (Coordinate(..), ViewKind(..))
 import Actor.Viewer.Sphere (Rotation)
+import Actor.Viewer.Disk (Isometry)
 
 import Data.DynamicValue
 
@@ -34,11 +35,17 @@ data ComplexViewer = ComplexViewer
     -- plane and the sphere.
   , cvRotationV :: Variable Rotation
     -- ^ The globe's orientation, when it shows the sphere.
+  , cvIsometryV :: Variable Isometry
+    -- ^ The view of the hyperbolic plane, when it shows the disk.
   , cvCenterV :: Variable (Double, Double)
     -- ^ The current view's center (the 'Actor.Viewer.vCenter' of the
     -- viewer built from this), which its code and tools can read.
   , cvOriginalRotation :: Rotation
+  , cvOriginalIsometry :: Isometry
   , cvSpherePixelSize :: Double
+  , cvDiskPixelSize :: Double
+    -- ^ The pixel size its disk view starts with (in units of the disk's
+    -- radius), for a disk viewer.
     -- ^ The pixel size its sphere view starts with (in units of the
     -- sphere's radius); 'cvPixelSize' is its plane view's.
   , cvPixel :: Mapped (Maybe String) (Either String (Maybe String))

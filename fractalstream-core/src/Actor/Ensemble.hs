@@ -53,6 +53,7 @@ import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Viewer
 import Actor.Viewer.Complex
 import Actor.Viewer.Sphere
+import Actor.Viewer.Disk
 import Actor.Metadata
 import Actor.SavedValues
 import Actor.SavedTables (readSavedTables, applySavedTables)
@@ -67,7 +68,7 @@ import Language.Value.Typecheck
    InternalIterations, InternalStuck, InternalIterationLimit)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv)
-import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs)
+import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs, viewKindName, viewPixelSizeName, viewIsometryNames)
 import Language.Code.Hoist (Split(..))
 import Language.Parser.SourceRange
 import Data.Color (black, grey)
@@ -837,7 +838,7 @@ checkViewer configEnv env myTools ViewerFields{..} = do
       viewerCheck :: Either (SourceRange, String) ()
       -- (a complex viewer's code is also given its view; see
       -- 'viewerViewEntries')
-      viewEntries = viewerViewEntries vfCoord
+      viewEntries = viewerViewEntries vfCoord vfView
       viewerCheck
         | null viewEntries = checkMainAndTools env
         | otherwise = withEnvFromMap (Map.fromList (configEnv ++ viewEntries)) checkMainAndTools
@@ -847,9 +848,11 @@ checkViewer configEnv env myTools ViewerFields{..} = do
 -- | What a viewer's code is given besides its configuration: its
 -- window's geometry (see 'viewerGeometry'), and for a complex viewer,
 -- whether it's showing the sphere, and the globe's orientation (see
--- "Actor.Viewer.Sphere").
-viewerViewEntries :: Coordinate -> [(String, SomeType)]
-viewerViewEntries coord = viewerGeometryEntries coord ++ case coord of
+-- "Actor.Viewer.Sphere"), or for a disk viewer, its view of the
+-- hyperbolic plane (see "Actor.Viewer.Disk").
+viewerViewEntries :: Coordinate -> ViewKind -> [(String, SomeType)]
+viewerViewEntries coord view0 = viewerGeometryEntries coord ++ case coord of
+  ComplexCoordinate _ | view0 == DiskView -> diskViewEntries
   ComplexCoordinate _ -> sphereViewEntries
   RealCoordinates _ _ -> []
 
@@ -877,10 +880,28 @@ viewerGeometryEntries :: Coordinate -> [(String, SomeType)]
 viewerGeometryEntries coord =
   [ (n, SomeType ty) | (n, LiveValue ty _) <- viewerGeometry coord (pure (Dimensions (0, 0))) (pure (0, 0)) ]
 
--- | A viewer's geometry, as read-only arguments for its tools.
-viewerGeometryArgs :: Coordinate -> Dynamic Dimensions -> Dynamic (Double, Double)
+-- | How a viewer shows its points, for its tools' @pixel_size_at@ (see
+-- 'Language.Code.Parser.builtinFunctions'): the kind of view, the width
+-- of a pixel on the screen plane, and the disk's view.
+toolViewValues :: Dynamic ViewKind -> Dynamic Double -> Dynamic Isometry -> [(String, LiveValue)]
+toolViewValues view pixelSize iso =
+  (viewKindName, LiveValue IntegerType (kindCode <$> view))
+  : (viewPixelSizeName, LiveValue RealType pixelSize)
+  : [ (n, LiveValue RealType ((!! k) . isometryEntries <$> iso)) | (k, n) <- zip [0 ..] viewIsometryNames ]
+  where
+    kindCode = \case { PlaneView -> 0; SphereView -> 1; DiskView -> 2 }
+
+-- | The names and types of 'toolViewValues'.
+toolViewEntries :: [(String, SomeType)]
+toolViewEntries =
+  [ (n, SomeType ty) | (n, LiveValue ty _) <- toolViewValues (pure PlaneView) (pure 0) (pure identityIsometry) ]
+
+-- | A viewer's geometry, and how it shows its points (see
+-- 'toolViewValues'), as read-only arguments for its tools.
+viewerGeometryArgs :: Coordinate -> Dynamic Dimensions -> Dynamic (Double, Double) -> [(String, LiveValue)]
                    -> Either String (SomeContext EventArgument_)
-viewerGeometryArgs coord size center = foldM addOne (SomeContext EmptyContext) (viewerGeometry coord size center)
+viewerGeometryArgs coord size center viewValues =
+  foldM addOne (SomeContext EmptyContext) (viewerGeometry coord size center ++ viewValues)
   where
     addOne :: SomeContext EventArgument_ -> (String, LiveValue) -> Either String (SomeContext EventArgument_)
     addOne (SomeContext acc) (name, LiveValue ty v) = withKnownType ty $ case someSymbolVal name of
@@ -891,14 +912,17 @@ viewerGeometryArgs coord size center = foldM addOne (SomeContext EmptyContext) (
 
 -- | The live values of 'viewerViewEntries', from a viewer's size and
 -- view.
-viewerViewContext :: Coordinate -> Variable Dimensions -> Variable (Double, Double)
-                  -> Variable ViewKind -> Variable Rotation
+viewerViewContext :: Coordinate -> ViewKind -> Variable Dimensions -> Variable (Double, Double)
+                  -> Variable ViewKind -> Variable Rotation -> Variable Isometry
                   -> Either String (SomeContext DynamicValue)
-viewerViewContext coord sizeV centerV viewV rotationV = foldM addOne (SomeContext EmptyContext) entries
+viewerViewContext coord view0 sizeV centerV viewV rotationV isometryV = foldM addOne (SomeContext EmptyContext) entries
   where
     entries :: [(String, LiveValue)]
     entries = viewerGeometry coord (dyn sizeV) (dyn centerV) ++ case coord of
       RealCoordinates _ _ -> []
+      ComplexCoordinate _ | view0 == DiskView ->
+        (diskViewName, LiveValue BooleanType ((== DiskView) <$> dyn viewV))
+        : [ (n, LiveValue RealType ((!! k) . isometryEntries <$> dyn isometryV)) | (k, n) <- zip [0 ..] isometryNames ]
       ComplexCoordinate _ ->
         (sphereViewName, LiveValue BooleanType ((== SphereView) <$> dyn viewV))
         : (sphereShadingName, LiveValue RealType (dyn sphereShading))
@@ -922,7 +946,7 @@ checkViewerTools configEnv myTools ViewerFields{..} = do
                     , fromMaybe defaultMaxRadius mEscPV
                     , fromMaybe defaultMinRadius mVanPV
                     )
-  forM_ myTools (checkTool (configEnv ++ viewerGeometryEntries vfCoord) vfCoord toolLimits vfPixelVar)
+  forM_ myTools (checkTool (configEnv ++ viewerGeometryEntries vfCoord ++ toolViewEntries) vfCoord toolLimits vfPixelVar)
 
 -- | The pure, allocation-free check of a tool's own code, which in the
 -- app is otherwise first type-checked by 'Actor.Event.buildHandlerWith'.
@@ -1128,6 +1152,11 @@ parseViewGeometry ViewerFields{..} = do
       Left _ -> left (\(sr, _) -> (sr, "A real viewer's `center` must be a point, like `(1, -1/2)`, \
                                        \or a complex number, not `" ++ centerSrc ++ "`."))
                      complexCenter
+  -- (a disk viewer's center is the point of the disk it starts showing in
+  -- the middle)
+  when (vfView == DiskView && not (let (x, y) = center in x * x + y * y < 1)) $
+    Left (NoSourceRange, "A disk viewer's `center` must be a point of the disk (|center| < 1), not `"
+                         ++ centerSrc ++ "`.")
   pixelSize <- parseConstantE RealType (fromMaybe "1/128" vfPixelSize)
   unless (pixelSize > 0) $
     Left (NoSourceRange, "A viewer's `pixelSize` must be positive.")
@@ -1379,16 +1408,24 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
     -- The view: a complex viewer can show the plane or the sphere, each
     -- starting from the script's `center=` (and its `pixelSize=`, for
     -- the one `view=` picks).
+    -- A disk viewer starts with its view showing the script's `center=`
+    -- (a point of the disk) in the middle of the disk, and the disk in the
+    -- middle of the window.
     let originalRotation = rotationFacing centerVal
+        originalIsometry = isometryFacing centerVal
         (planePixel, spherePixel) = case vfView of
           PlaneView -> (pixelVal, defaultSpherePixelSize)
           SphereView -> (1 / 128, maybe defaultSpherePixelSize (const pixelVal) vfPixelSize)
+          DiskView -> (1 / 128, defaultSpherePixelSize)
+        diskPixel = maybe defaultDiskPixelSize (const pixelVal) vfPixelSize
     cvViewV      <- newVariable vfView
     cvRotationV  <- newVariable originalRotation
-    -- (on the sphere, the globe is centered on the screen)
+    cvIsometryV  <- newVariable originalIsometry
+    -- (on the sphere, the globe is centered on the screen; so is the disk)
     cvCenterV    <- newVariable (case vfView of
                                    PlaneView -> centerVal
-                                   SphereView -> (0, 0))
+                                   SphereView -> (0, 0)
+                                   DiskView -> (0, 0))
     cvSizeV      <- newVariable (Dimensions (600, 600))
     cvPositionV  <- newVariable (Dimensions (100 + 30 * n, 100 + 30 * n))
     cvCanResizeV <- newVariable True
@@ -1465,7 +1502,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
           Left err -> Left (NoSourceRange, err)
           Right (SomeContext (configOnly :: Context DynamicValue cEnv0)) ->
             -- (with the viewer's view, for a complex viewer)
-            case viewerViewContext vfCoord cvSizeV cvCenterV cvViewV cvRotationV of
+            case viewerViewContext vfCoord vfView cvSizeV cvCenterV cvViewV cvRotationV cvIsometryV of
               Left err -> Left (NoSourceRange, err)
               Right (SomeContext viewCtx) -> case configOnly <#> viewCtx of
                 Left err -> Left (NoSourceRange, err)
@@ -1522,9 +1559,12 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvView = vfView
               , cvViewV = cvViewV
               , cvRotationV = cvRotationV
+              , cvIsometryV = cvIsometryV
               , cvCenterV = cvCenterV
               , cvOriginalRotation = originalRotation
+              , cvOriginalIsometry = originalIsometry
               , cvSpherePixelSize = spherePixel
+              , cvDiskPixelSize = diskPixel
               , cvPixel = cvPixelM
               , cvEscapeRadius = cvEscapeP
               , cvVanishRadius = cvVanishP
@@ -1648,10 +1688,13 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
         (vOriginalCenter, vOriginalPixelSize) = case cvView of
           PlaneView -> vOriginalPlaneView
           SphereView -> ((0, 0), cvSpherePixelSize)
+          DiskView -> ((0, 0), cvDiskPixelSize)
         vOriginalAspect = cvAspect
         vCoordinate = cvCoord
         vView = cvViewV
         vRotation = cvRotationV
+        vIsometry = cvIsometryV
+        vOriginalIsometry = cvOriginalIsometry
     -- (the same variable the viewer's code and tools read the
     -- center from, starting over from the original view on a rebuild)
     let vCenter = cvCenterV
@@ -1666,7 +1709,8 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
     let lookupAutocolor = autocolorLookup autocolorState
         -- (a tool is also given its viewer's geometry)
         vBuildToolHandler layer args script =
-          case viewerGeometryArgs cvCoord (dyn vSize) (dyn vCenter) of
+          case viewerGeometryArgs cvCoord (dyn vSize) (dyn vCenter)
+                                  (toolViewValues (dyn vView) (dyn vPixelSize) (dyn vIsometry)) of
             Left err -> pure (Left err)
             Right geometry -> case SomeContext' (Right args) <> SomeContext' (Right geometry) of
               SomeContext' (Left err) -> pure (Left err)

@@ -1,3 +1,7 @@
+{-# OPTIONS_GHC -fmax-pmcheck-models=200 #-}
+-- (The mouse handler's one big case, with its guards, is past the pattern
+-- match checker's default limit: it then reports exhaustive matches as
+-- incomplete.)
 {-# language OverloadedStrings, UndecidableInstances, NumericUnderscores #-}
 {-# options_ghc -Wno-orphans #-}
 
@@ -37,6 +41,7 @@ import UI.MovieMaker
 import UI.ToolProgress
 import Actor.Movie (canAnimate)
 import Actor.Viewer.Sphere
+import Actor.Viewer.Disk
 import Actor.Viewer.Clip
 
 import Actor.Viewer.Preview (renderPreview)
@@ -243,6 +248,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           case vpRotation of
             Just [w, x, y, z] -> setValue' vRotation (normalizeRotation (Rotation w x y z))
             _ -> pure ()
+          -- (a disk viewer's view of the hyperbolic plane)
+          case vpIsometry of
+            Just [ar, ai, br, bi] -> setValue' vIsometry (normalizeIsometry (Isometry (ar :+ ai) (br :+ bi)))
+            _ -> pure ()
     let canResize = fromMaybe vCanResize (restored >>= vpResizable)
         startVisible = fromMaybe True (restored >>= vpVisible)
         frameStyle | canResize = frameDefaultStyle
@@ -331,6 +340,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       aspect <- getDynamic vAspect
       view <- getDynamic vView
       Rotation rw rx ry rz <- getDynamic vRotation
+      Isometry (ar :+ ai) (br :+ bi) <- getDynamic vIsometry
       shown <- windowIsShown f
       -- Leave out what's the same as the default anyway, so that a
       -- saved project file only says what's special about each window.
@@ -341,8 +351,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         , vpCenter = Just viewCenter, vpPixelSize = Just pixelSize
         , vpAspect = if aspect == 1 then Nothing else Just aspect
         , vpView = if view == vOriginalView then Nothing
-                   else Just (case view of { SphereView -> "sphere"; PlaneView -> "plane" })
+                   else Just (case view of { SphereView -> "sphere"; PlaneView -> "plane"; DiskView -> "disk" })
         , vpRotation = if view == SphereView then Just [rw, rx, ry, rz] else Nothing
+        , vpIsometry = if view == DiskView then Just [ar, ai, br, bi] else Nothing
         }
 
     -- When the configuration's variables change (which ones there are,
@@ -530,11 +541,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     (initialX, initialY) <- getDynamic vCenter
     initialPx <- getDynamic vPixelSize
     initialAspect <- getDynamic vAspect
-    initialRotation <- getDynamic vView >>= \case
-      PlaneView -> pure Nothing
-      SphereView -> Just <$> getDynamic vRotation
+    initialShape <- getDynamic vView >>= \case
+      PlaneView -> pure FlatShape
+      SphereView -> GlobeShape <$> getDynamic vRotation
+      DiskView -> DiskShape <$> getDynamic vIsometry
 
-    let initialModel = Model (initialX, initialY) (initialPx, initialPx * initialAspect) initialRotation
+    let initialModel = Model (initialX, initialY) (initialPx, initialPx * initialAspect) initialShape
     model <- variable [value := initialModel]
 
     -- History tracking: carried over from before the project was rebuilt,
@@ -797,7 +809,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- parameter changes are, so that each render gets to show something
     -- before the next replaces it (see the globe-drag timer below).
     lastViewRender <- newIORef =<< getCurrentTime
-    pendingGlobe <- newIORef (Nothing :: Maybe Rotation)
+    -- (a globe's or the disk's view, being dragged: see the timer below)
+    pendingGlobe <- newIORef (Nothing :: Maybe ModelShape)
     -- A drag panning the view (where it started, the view then, and
     -- whether it's moved yet); and a pan's or a pinch's latest view, not
     -- rendered yet: the picture follows the pointer at once (moved, or
@@ -851,7 +864,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         -- globe doesn't: its steps keep the last image up until the new
         -- render's pixels arrive), or re-render the same view for new
         -- parameters.
-        jumpViewWith how newModel@(Model newCenter (newPixelSize, newPixelHeight) newRotation) = do
+        jumpViewWith how newModel@(Model newCenter (newPixelSize, newPixelHeight) newShape) = do
           let animated = how == AnimatedChange
           oldModel <- get model value
           Size { sizeW = w, sizeH = h } <- get f clientSize
@@ -859,9 +872,10 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           setValue' vCenter    newCenter
           setValue' vPixelSize newPixelSize
           setValue' vAspect (newPixelHeight / newPixelSize)
-          case newRotation of
-            Nothing -> setValue' vView PlaneView
-            Just r -> setValue' vRotation r >> setValue' vView SphereView
+          case newShape of
+            FlatShape -> setValue' vView PlaneView
+            GlobeShape r -> setValue' vRotation r >> setValue' vView SphereView
+            DiskShape v -> setValue' vIsometry v >> setValue' vView DiskView
           oldTile <- get currentTile value
           -- (the last tile that was done, to start from: see 'lastCompleteTile')
           oldComplete <- tileComplete oldTile
@@ -933,6 +947,14 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           Size { sizeW = w, sizeH = h } <- get f clientSize
           pure (Box 0 0 (fromIntegral w) (fromIntegral h))
         screenToView mdl pt = toViewPoint <$> screenToViewD mdl pt
+        -- Recenter the disk's view on the model point under a point of the
+        -- window: the hyperbolic translation taking it to the window's
+        -- middle (a step in the history, animated).
+        recenterDiskOn pt = do
+          m <- get model value
+          forM_ (modelIsometry m) $ \v -> do
+            s <- viewToScreen pt
+            changeViewTo m { modelShape = DiskShape (dragIsometry v s (modelCenter m)) }
 
     -- Set paint handlers
     -- Everything is drawn through one graphics context (a wxGCDC around
@@ -957,7 +979,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 -- (the saved image's pixel at (u, v) is at w/2 + ox + s (u - w/2),
                 -- and the same down, in the view wanted: on the plane, or on
                 -- a globe turned the same way)
-                let sameKind = modelRotation savedMdl == modelRotation mdl
+                let sameKind = modelShape savedMdl == modelShape mdl
                     (sx, sy) = modelCenter savedMdl
                     (tx, ty) = modelCenter mdl
                     (spx, spy) = modelPixelDim savedMdl
@@ -1098,6 +1120,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- A drag turning the globe: the orientation and screen point it
     -- started from, and whether it has moved yet.
     globeDrag <- newIORef (Nothing :: Maybe (Rotation, (Double, Double), Bool))
+    -- (a drag moving the disk's view: the view it started from, where
+    -- on the screen plane it started, and whether it's moved yet)
+    diskDrag <- newIORef (Nothing :: Maybe (Isometry, (Double, Double), Bool))
+    -- (the pointer's last place on the screen plane, to zoom about)
+    lastKnownScreen <- newIORef Nothing
 
     -- Set click and drag event handlers
     -- The viewer's single-key shortcuts (`<`, `=`, a tool's letter, ...)
@@ -1181,7 +1208,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                      Nothing -> dragAction
                propagateEvent
 
-    set p [ on mouse   := \event -> focusWhenClicked event >> hudMouse event >>= \handled -> unless handled $ moviePathMouse event >>= \handledPath -> unless handledPath $ get lastClick value >>= \lastClickNow -> get currentTool value >>= \currentToolNow -> readIORef globeDrag >>= \globeDragNow -> readIORef panDrag >>= \panNow -> case event of
+    set p [ on mouse   := \event -> focusWhenClicked event >> hudMouse event >>= \handled -> unless handled $ moviePathMouse event >>= \handledPath -> unless handledPath $ get lastClick value >>= \lastClickNow -> get currentTool value >>= \currentToolNow -> readIORef globeDrag >>= \globeDragNow -> readIORef diskDrag >>= \diskDragNow -> readIORef panDrag >>= \panNow -> case event of
 
               MouseLeftDown pt modifiers | isNoShiftAltControlDown modifiers -> do
                 set lastClick [value := Just $ Viewport (pointX pt, pointY pt)]
@@ -1190,7 +1217,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 m <- get model value
                 s0 <- viewToScreen pt
                 writeIORef globeDrag ((\r -> (r, s0, False)) <$> modelRotation m)
-                writeIORef panDrag (if isNothing (modelRotation m) then Just (pt, m, False) else Nothing)
+                writeIORef diskDrag ((\v -> (v, s0, False)) <$> modelIsometry m)
+                writeIORef panDrag (if modelIsFlat m then Just (pt, m, False) else Nothing)
                 propagateEvent
 
               -- (Shift and drag: a box to zoom into, on the plane)
@@ -1217,14 +1245,35 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                     -- (A click does nothing on the sphere, for now.)
                     readIORef pendingGlobe >>= \case
                       Nothing -> pure ()
-                      Just r -> do
+                      Just sh -> do
                         writeIORef pendingGlobe Nothing
                         m <- get model value
-                        jumpViewWith UnanimatedChange m { modelRotation = Just r }
+                        jumpViewWith UnanimatedChange m { modelShape = sh }
                     case globeDragNow of
                       Just (_, _, True) -> get model value >>= \m -> modifyIORef' history (historyAppend m)
                       _ -> pure ()
                     writeIORef globeDrag Nothing
+                    set draggedTo [value := Nothing]
+                    set lastClick [value := Nothing]
+                    propagateEvent
+
+              MouseLeftUp pt modifiers
+                | isNoShiftAltControlDown modifiers
+                , Left NavTool <- currentToolNow
+                , Just (_, _, moved) <- diskDragNow -> do
+                    writeIORef diskDrag Nothing
+                    if moved
+                      then do
+                        -- A drag moved the disk's view: its last step, and
+                        -- one step in the history.
+                        readIORef pendingGlobe >>= \case
+                          Nothing -> pure ()
+                          Just sh -> do
+                            writeIORef pendingGlobe Nothing
+                            m <- get model value
+                            jumpViewWith UnanimatedChange m { modelShape = sh }
+                        get model value >>= \m -> modifyIORef' history (historyAppend m)
+                      else recenterDiskOn pt
                     set draggedTo [value := Nothing]
                     set lastClick [value := Nothing]
                     propagateEvent
@@ -1248,8 +1297,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 let recenterAction = do
                       -- Completed a click, recenter to the clicked point.
                       oldModel <- get model value
-                      newCenter <- viewToModel pt
-                      changeViewTo oldModel { modelCenter = toCoords newCenter }
+                      if isJust (modelIsometry oldModel) then recenterDiskOn pt else do
+                        newCenter <- viewToModel pt
+                        changeViewTo oldModel { modelCenter = toCoords newCenter }
                 ptz <- viewToModel pt
                 toolClickAction <- if not onModel then pure (pure ()) else get currentTool value <&> \case
                   Left NavTool -> recenterAction
@@ -1277,7 +1327,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                             -- the action as if it were a simple click.
                             oldModel <- get model value
                             Size { sizeW = w, sizeH = h } <- get f clientSize
-                            newCenter <- viewToModel (viewportToPoint $ rectCenter box)
+                            -- (on the screen plane: the model's own, on the plane)
+                            newCenter <- viewToScreen (viewportToPoint $ rectCenter box)
                             let (px, py) = modelPixelDim oldModel
                                 (boxW, boxH) = dimensions box
                                 oldArea = fromIntegral (w * h)
@@ -1317,7 +1368,24 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                     -- sphere under the pointer stays under it.
                     s1 <- viewToScreen pt
                     writeIORef globeDrag (Just (r0, s0, True))
-                    writeIORef pendingGlobe (Just (trackballRotation r0 s0 s1))
+                    writeIORef pendingGlobe (Just (GlobeShape (trackballRotation r0 s0 s1)))
+                    propagateEvent
+
+              MouseLeftDrag pt modifiers
+                | isNoShiftAltControlDown modifiers
+                , Left NavTool <- currentToolNow
+                , Just (v0, s0@(x0, y0), moved) <- diskDragNow -> do
+                    -- Move the disk's view by the hyperbolic translation
+                    -- that keeps the model point under the pointer there.
+                    -- (It's a drag once it's moved a little: until then, a
+                    -- click, which recenters.)
+                    s1@(x1, y1) <- viewToScreen pt
+                    m <- get model value
+                    let (px, _) = modelPixelDim m
+                        moving = moved || abs (x1 - x0) + abs (y1 - y0) > 3 * px
+                    when moving $ do
+                      writeIORef diskDrag (Just (v0, s0, True))
+                      writeIORef pendingGlobe (Just (DiskShape (dragIsometry v0 s0 s1)))
                     propagateEvent
 
               MouseLeftDrag pt modifiers
@@ -1348,6 +1416,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               MouseMotion pt modifiers | isNoShiftAltControlDown modifiers -> do
                 mpt <- viewToModel pt
                 writeIORef lastKnownMouse (Just mpt)
+                writeIORef lastKnownScreen . Just =<< viewToScreen pt
                 showPointerAt pt mpt
                 propagateEvent
 
@@ -1406,7 +1475,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             -}
             -- Calculate the new model center, so that the model coordinates of
             -- the pointer are the same in the new model and the old model.
-            readIORef lastKnownMouse >>= \case
+            -- (the pointer's place on the screen plane: the model's own,
+            -- on the plane)
+            readIORef lastKnownScreen >>= \case
               Nothing -> propagateEvent
               Just (pmx, pmy) -> do
                 isAnimating <- isJust <$> get animate value
@@ -1509,14 +1580,14 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                    , enabled := True
                    , on command := readIORef pendingGlobe >>= \case
                        Nothing -> pure ()
-                       Just r -> do
+                       Just sh -> do
                          finished <- tileFinished =<< get currentTile value
                          started <- readIORef lastViewRender
                          now <- getCurrentTime
                          when (finished || diffUTCTime now started >= 0.1) $ do
                            writeIORef pendingGlobe Nothing
                            m <- get model value
-                           jumpViewWith UnanimatedChange m { modelRotation = Just r }
+                           jumpViewWith UnanimatedChange m { modelShape = sh }
                    ]
 
     -- A pinch is over a third of a second after its last event (once its
@@ -1677,19 +1748,23 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         -- over it. Recorded as a new step in the history, like any other
         -- move, so "Last view" can still undo it.
         goHome = changeViewTo
-          =<< (get model value <&> \m -> case modelRotation m of
+          =<< (get model value <&> \m -> case modelShape m of
                  -- (the original view of the kind it shows now)
-                 Nothing -> let (c, px) = vOriginalPlaneView
-                            in Model c (px, px * vOriginalAspect) Nothing
-                 Just _ -> Model (0, 0) (vOriginalSpherePixelSize, vOriginalSpherePixelSize)
-                                 (Just vOriginalRotation))
+                 FlatShape -> let (c, px) = vOriginalPlaneView
+                              in Model c (px, px * vOriginalAspect) FlatShape
+                 GlobeShape _ -> Model (0, 0) (vOriginalSpherePixelSize, vOriginalSpherePixelSize)
+                                       (GlobeShape vOriginalRotation)
+                 DiskShape _ -> Model vOriginalCenter (vOriginalPixelSize, vOriginalPixelSize)
+                                      (DiskShape vOriginalIsometry))
 
         jumpToView = do
           oldModel <- get model value
           -- (on the sphere, the point the globe faces)
-          let (oldX, oldY) = case modelRotation oldModel of
-                Nothing -> modelCenter oldModel
-                Just r -> sphereToPlane (rotateBy r (0, 0, 1))
+          let (oldX, oldY) = case modelShape oldModel of
+                FlatShape -> modelCenter oldModel
+                GlobeShape r -> sphereToPlane (rotateBy r (0, 0, 1))
+                -- (in the disk, the point in the middle of the disk)
+                DiskShape v -> isometryCenter v
               (oldPx, oldPy) = modelPixelDim oldModel
           d <- dialog f [ text := "Jump to view..." ]
           jp <- panel d []
@@ -1711,9 +1786,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                         mp <- readMaybe <$> get jPixel   text
                         -- (keeping the aspect ratio)
                         -- (on the sphere, the point to face)
-                        onDone ((\(x,y,dz) -> case modelRotation oldModel of
-                                   Nothing -> Model (x, y) (dz, dz * oldPy / oldPx) Nothing
-                                   Just _ -> Model (0, 0) (dz, dz) (Just (rotationFacing (x, y)))) <$>
+                        onDone ((\(x,y,dz) -> case modelShape oldModel of
+                                   FlatShape -> Just (Model (x, y) (dz, dz * oldPy / oldPx) FlatShape)
+                                   GlobeShape _ -> Just (Model (0, 0) (dz, dz) (GlobeShape (rotationFacing (x, y))))
+                                   DiskShape _
+                                     | x * x + y * y < 1 -> Just (Model (0, 0) (dz, dz) (DiskShape (isometryFacing (x, y))))
+                                     | otherwise -> Nothing) =<<
                                  ((,,) <$> mx <*> my <*> mp)) ]
           case result of
             Nothing -> pure ()
@@ -1843,7 +1921,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     case vCoordinate of
       RealCoordinates{} -> void $
         menuItem hamburgerMenu [ text := "Aspect ratio...", on command := setAspectRatio ]
-      ComplexCoordinate{} -> do
+      -- (a disk viewer shows the hyperbolic plane, and only that)
+      ComplexCoordinate{} -> when (vOriginalView /= DiskView) $ do
         onSphere <- isJust . modelRotation <$> get model value
         sphereItem <- menuItem hamburgerMenu [ text := "Show on the sphere", checkable := True
                                              , checked := onSphere ]
@@ -1853,12 +1932,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           -- 'Actor.Viewer.switchView'), each at its script's zoom
           case modelRotation m of
             Nothing -> changeViewTo (Model (0, 0) (vOriginalSpherePixelSize, vOriginalSpherePixelSize)
-                                           (Just (rotationFacing (modelCenter m))))
+                                           (GlobeShape (rotationFacing (modelCenter m))))
             Just r -> do
               let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
                   finite a = not (isNaN a || isInfinite a) && abs a < 1e300
                   px = snd vOriginalPlaneView
-              changeViewTo (Model (if finite cx && finite cy then c else (0, 0)) (px, px) Nothing)
+              changeViewTo (Model (if finite cx && finite cy then c else (0, 0)) (px, px) FlatShape)
           isJust . modelRotation <$> get model value >>= \b -> set sphereItem [ checked := b ] ]
         -- (whatever else changes the view: Last view and Next view, say)
         modifyIORef' beforeMenu (>> (isJust . modelRotation <$> get model value
@@ -2048,21 +2127,25 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
 -- | The model point under a point of the screen plane. On the sphere, a
 -- point off the globe counts as the nearest point of its rim.
 screenToModel :: Model -> (Double, Double) -> (Double, Double)
-screenToModel m s@(x, y) = case modelRotation m of
-  Nothing -> s
-  Just r ->
-    let d = sqrt (x * x + y * y)
-        s' = if d >= 1 then (0.999999 * x / d, 0.999999 * y / d) else s
-    in fromMaybe s (screenToPlane r s')
+screenToModel m s@(x, y) = case modelShape m of
+  FlatShape -> s
+  GlobeShape r -> fromMaybe s (screenToPlane r s')
+  DiskShape v -> fromMaybe s (screenToDisk v s')
+  where
+    d = sqrt (x * x + y * y)
+    s' = if d >= 1 then (0.999999 * x / d, 0.999999 * y / d) else s
 
 -- | Whether a point of the screen plane shows the model: on the sphere,
 -- whether it's on the globe.
 showsModel :: Model -> (Double, Double) -> Bool
-showsModel m (x, y) = isNothing (modelRotation m) || x * x + y * y <= 1
+showsModel m (x, y) = modelIsFlat m || x * x + y * y <= 1
 
 -- | How a model's points get onto its screen plane.
 modelProjection :: Model -> Projection
-modelProjection = maybe FlatProjection GlobeProjection . modelRotation
+modelProjection m = case modelShape m of
+  FlatShape -> FlatProjection
+  GlobeShape r -> GlobeProjection r
+  DiskShape v -> DiskProjection v
 
 -- | Given the dimensions of the window, work out a rectangle describing
 -- the viewport in the underlying coordinate system.
@@ -2079,9 +2162,10 @@ interpolateModel :: Double -> Model -> Model -> Model
 interpolateModel t m1 m2 = m2
     { modelCenter   = interpolate modelCenter
     , modelPixelDim = logInterpolate modelPixelDim
-    , modelRotation = case (modelRotation m1, modelRotation m2) of
-        (Just r1, Just r2) -> Just (slerp r1 r2 t)
-        (_, r2) -> r2
+    , modelShape = case (modelShape m1, modelShape m2) of
+        (GlobeShape r1, GlobeShape r2) -> GlobeShape (slerp r1 r2 t)
+        (DiskShape v1, DiskShape v2) -> DiskShape (interpolateIsometry v1 v2 t)
+        (_, sh2) -> sh2
     }
   where
     interp p q = p + t * (q - p)
@@ -2105,7 +2189,7 @@ interpolateModel t m1 m2 = m2
 reprojectedSeed :: Tile -> Model -> Model -> (Int, Int) -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
 reprojectedSeed oldTile old new (w, h)
   | tileRect oldTile /= (w, h) = Nothing
-  | isJust (modelRotation old) /= isJust (modelRotation new) = Nothing
+  | shapeKind (modelShape old) /= shapeKind (modelShape new) = Nothing
   | otherwise = Just $ \dest finals -> withSynchedTileBuffer oldTile $ \src -> do
       -- (piece by piece, to tell which pieces it all came from the old image)
       let n = subBlockSize
@@ -2114,10 +2198,13 @@ reprojectedSeed oldTile old new (w, h)
         missed <- fmap or . forM [ (i, j) | j <- [by * n .. min h ((by + 1) * n) - 1]
                                            , i <- [bx * n .. min w ((bx + 1) * n) - 1] ] $ \(i, j) -> do
           let screen = pixelToScreen new (i, j)
-              from = case (modelRotation old, modelRotation new) of
-                (Just ro, Just rn) -> do
+              from = case (modelShape old, modelShape new) of
+                (GlobeShape ro, GlobeShape rn) -> do
                   p <- screenToSphere rn screen
                   sphereToScreen ro p >>= screenToPixel old
+                (DiskShape vo, DiskShape vn) -> do
+                  p <- screenToDisk vn screen
+                  diskToScreen vo p >>= screenToPixel old
                 _ -> screenToPixel old screen
               d = 3 * (j * w + i)
           case from of
@@ -2137,6 +2224,8 @@ reprojectedSeed oldTile old new (w, h)
       let missing = Set.fromList uncovered
       pure (\bx by -> (bx, by) `Set.notMember` missing)
   where
+    shapeKind :: ModelShape -> Int
+    shapeKind = \case { FlatShape -> 0; GlobeShape _ -> 1; DiskShape _ -> 2 }
     pixelToScreen m = pixelSample m (w, h)
     -- the pixel sampled nearest a point of a view's screen plane, if it's
     -- in the window
@@ -2152,9 +2241,10 @@ reprojectedSeed oldTile old new (w, h)
 -- since that's all there is to draw there (so the pieces wholly off the
 -- globe are done). On the plane, the usual grey.
 backgroundSeed :: Model -> (Int, Int) -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
-backgroundSeed m (w, h) = case modelRotation m of
-  Nothing -> Nothing
-  Just _ -> Just $ \dest finals -> do
+backgroundSeed m (w, h) = case modelShape m of
+  FlatShape -> Nothing
+  -- (the globe, or the disk: a unit disk at the screen plane's origin)
+  _ -> Just $ \dest finals -> do
     -- Row by row: the globe is one span of a row (left as it is, not drawn
     -- yet), with the background on either side of it.
     let n = subBlockSize
