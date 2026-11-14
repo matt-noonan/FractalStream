@@ -31,7 +31,7 @@ module Drawing
   ( drawingJSON
   ) where
 
-import Actor.Viewer.Sphere (Projection(..), projectToScreen, visibleRuns, sampleSegment, sampleCircle)
+import Actor.Viewer.Sphere (Projection(..), projectToScreen, visibleRuns, sampleSegment, sampleGeodesic, sampleCircle)
 import Data.Color (Color, colorToRGB, white)
 import Language.Draw
 
@@ -63,7 +63,13 @@ drawingLayer proj = layer white white
       DrawLine _ a b -> case proj of
         FlatProjection -> [ obj "line" [ "a" .= a, "b" .= b, "s" .= hex stroke ] | finite a, finite b ]
         _ -> runs stroke (sampleSegment 64 a b)
-      DrawCircle _ filled r c -> case proj of
+      DrawGeodesic _ a b -> case proj of
+        FlatProjection -> [ obj "line" [ "a" .= a, "b" .= b, "s" .= hex stroke ] | finite a, finite b ]
+        _ -> runs stroke (sampleGeodesic proj 64 a b)
+      -- (a marker: a circle on the screen, its radius in pixels)
+      DrawCircle _ filled ScreenPixels r c ->
+        [ obj "marker" [ "c" .= q, "px" .= r, "f" .= fillOf filled, "s" .= hex stroke ] | Just q <- [at c], finite (r, r) ]
+      DrawCircle _ filled ModelUnits r c -> case proj of
         FlatProjection ->
           [ obj "circle" [ "c" .= c, "r" .= r, "f" .= fillOf filled, "s" .= hex stroke ] | finite c, finite (r, r) ]
         _ -> outline filled (sampleCircle 96 c r)

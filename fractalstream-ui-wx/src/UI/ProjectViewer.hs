@@ -2584,6 +2584,15 @@ paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc
               clipped@(_ : _ : _ : _) -> polygon dc (map toViewPoint clipped) attrs
               _ -> pure ()
         nearPoint p = finitePx p && near box [p]
+        -- a straight segment of the screen plane
+        straightLine pt1 pt2 = do
+          p <- screenToView pt1
+          q <- screenToView pt2
+          when (finitePx p && finitePx q) $
+            if near box [p, q]
+              then line dc (toViewPoint p) (toViewPoint q) [ brush := brushTransparent ]
+              else forM_ (clipSegment cut p q) $ \(p', q') ->
+                     line dc (toViewPoint p') (toViewPoint q') [ brush := brushTransparent ]
         -- a closed outline on the globe: filled if it's all visible,
         -- else its visible runs
         outline fil pts = runsOf pts >>= \case
@@ -2616,17 +2625,20 @@ paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc
 
         DrawLine _ pt1 pt2
           | onGlobe -> runsOf (sampleSegment 64 pt1 pt2) >>= mapM_ (polylinePx [])
-          | otherwise -> do
-              p <- screenToView pt1
-              q <- screenToView pt2
-              when (finitePx p && finitePx q) $
-                if near box [p, q]
-                  then withFill False (line dc (toViewPoint p) (toViewPoint q))
-                  else forM_ (clipSegment cut p q) $ \(p', q') ->
-                         withFill False (line dc (toViewPoint p') (toViewPoint q'))
+          | otherwise -> straightLine pt1 pt2
 
-        DrawCircle _ fil r pt | onGlobe -> outline fil (sampleCircle 96 pt r)
-        DrawCircle _ fil r pt -> do
+        -- (in the hyperbolic plane, the shortest path there; in the
+        -- plane, a straight segment)
+        DrawGeodesic _ pt1 pt2
+          | onGlobe -> runsOf (sampleGeodesic proj 64 pt1 pt2) >>= mapM_ (polylinePx [])
+          | otherwise -> straightLine pt1 pt2
+
+        -- (a marker: a circle on the screen, its radius in pixels)
+        DrawCircle _ fil ScreenPixels r pt -> toView pt >>= \case
+          Just p | nearPoint p -> withFill fil (circle dc (toViewPoint p) (round (abs r)))
+          _ -> pure ()
+        DrawCircle _ fil ModelUnits r pt | onGlobe -> outline fil (sampleCircle 96 pt r)
+        DrawCircle _ fil ModelUnits r pt -> do
           -- A circle in model space: an ellipse, when a real viewer's
           -- pixels aren't square.
           c@(cx, cy) <- screenToView pt

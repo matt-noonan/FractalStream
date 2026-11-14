@@ -33,10 +33,13 @@ renderPreview baseOnly viewer = do
   Dimensions (w, h) <- getDynamic (vSize viewer)
   let scale = fromIntegral previewLongSide / fromIntegral (max 1 (max w h)) :: Double
       scaled n = max 1 (round (fromIntegral n * scale))
+  -- (the overlay first: what it changes, a group's table say, is in the
+  -- picture it's drawn over)
+  if baseOnly then pure () else refreshOverlay viewer
   preview <- cloneViewer viewer
   setValue' (vSize preview) (Dimensions (scaled w, scaled h))
   modifyValue (vPixelSize preview) (/ scale)
   fmap (BSL.toStrict . encodePng . snd) <$>
     withRenderedViewerBuffer preview True (\view dims buf -> do
-      layers <- if baseOnly then pure [] else refreshOverlay viewer >> vDrawCmds viewer
+      layers <- if baseOnly then pure [] else vDrawCmds viewer
       compositeDrawLayers view layers dims buf)

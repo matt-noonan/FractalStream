@@ -47,6 +47,7 @@ module Actor.Viewer.Sphere
   , projectToScreen
   , visibleRuns
   , sampleSegment
+  , sampleGeodesic
   , sampleCircle
     -- * Defaults
   , defaultSpherePixelSize
@@ -61,7 +62,7 @@ module Actor.Viewer.Sphere
   , onTheSphere
   ) where
 
-import Actor.Viewer.Disk (Isometry, HyperbolicModel, HyperbolicDisplay, modelToScreenH)
+import Actor.Viewer.Disk (Isometry, HyperbolicModel, HyperbolicDisplay, modelToScreenH, geodesicPoints)
 import Data.Color (Color, rgbToColor, black)
 import Data.DynamicValue (Variable, newVariable)
 import FractalStream.Settings (defaultSphereShading)
@@ -245,6 +246,15 @@ visibleRuns proj = go [] . map (projectToScreen proj)
 sampleSegment :: Int -> (Double, Double) -> (Double, Double) -> [(Double, Double)]
 sampleSegment n (x1, y1) (x2, y2) =
   [ (x1 + t * (x2 - x1), y1 + t * (y2 - y1)) | k <- [0 .. n], let t = fromIntegral k / fromIntegral n ]
+
+-- | Points along a geodesic, ends included, as this many pieces: in the
+-- hyperbolic plane, the shortest path there (see
+-- 'Actor.Viewer.Disk.geodesicPoints'); anywhere else, the straight
+-- segment ('sampleSegment').
+sampleGeodesic :: Projection -> Int -> (Double, Double) -> (Double, Double) -> [(Double, Double)]
+sampleGeodesic = \case
+  HyperbolicProjection model _ _ -> geodesicPoints model
+  _ -> sampleSegment
 
 -- | Points around a circle of the plane, the first repeated at the end.
 sampleCircle :: Int -> (Double, Double) -> Double -> [(Double, Double)]

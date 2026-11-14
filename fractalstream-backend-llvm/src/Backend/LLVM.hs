@@ -423,8 +423,8 @@ foreign import ccall "wrapper"
   wrapPoint :: (CDouble -> CDouble -> IO ())
             -> IO (FunPtr (CDouble -> CDouble -> IO ()))
 foreign import ccall "wrapper"
-  wrapLine :: (CDouble -> CDouble -> CDouble -> CDouble -> IO ())
-           -> IO (FunPtr (CDouble -> CDouble -> CDouble -> CDouble -> IO ()))
+  wrapLine :: (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
+           -> IO (FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()))
 foreign import ccall "wrapper"
   wrapCircle :: (Word8 -> CDouble -> CDouble -> CDouble -> IO ())
              -> IO (FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> IO ()))
@@ -465,7 +465,7 @@ withDrawVTablePtrs
        , FunPtr (Word8 -> Word8 -> Word8 -> IO ())
        , FunPtr (Word8 -> Word8 -> Word8 -> IO ())
        , FunPtr (CDouble -> CDouble -> IO ())
-       , FunPtr (CDouble -> CDouble -> CDouble -> CDouble -> IO ())
+       , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
        , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> IO ())
        , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
        , FunPtr (CString -> CDouble -> CDouble -> IO ())
@@ -477,12 +477,14 @@ withDrawVTablePtrs sink action = do
   strokeFP <- wrapColor3 (\r g b -> dsStroke sink (rgbToColor (r, g, b)))
   fillFP   <- wrapColor3 (\r g b -> dsFill sink (rgbToColor (r, g, b)))
   pointFP  <- wrapPoint  (\x y -> dsPoint sink (realToFrac x, realToFrac y))
-  lineFP   <- wrapLine   (\x1 y1 x2 y2 ->
-                            dsLine sink (realToFrac x1, realToFrac y1)
-                                        (realToFrac x2, realToFrac y2))
+  -- (a line or, for kind 1, a geodesic)
+  lineFP   <- wrapLine   (\kind x1 y1 x2 y2 ->
+                            (if kind == 1 then dsGeodesic sink else dsLine sink)
+                              (realToFrac x1, realToFrac y1) (realToFrac x2, realToFrac y2))
+  -- (flags: bit 0 filled, bit 1 radius in pixels)
   circleFP <- wrapCircle (\f r x y ->
-                            dsCircle sink (f /= 0) (realToFrac r)
-                                          (realToFrac x, realToFrac y))
+                            dsCircle sink (testBit f 0) (if testBit f 1 then ScreenPixels else ModelUnits)
+                                     (realToFrac r) (realToFrac x, realToFrac y))
   rectFP   <- wrapRect   (\f x1 y1 x2 y2 ->
                             dsRect sink (f /= 0) (realToFrac x1, realToFrac y1)
                                         (realToFrac x2, realToFrac y2))

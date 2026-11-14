@@ -29,7 +29,7 @@ import Actor.Autocolor (AutocolorLookup(..), autocolorSnapshot)
 import Actor.Event (ToolExec, HandlerRun(..), EventArgument(..), HandlerCancelled(..), runCancelled,
                     buildHandlerWith, snapshotEventArgs)
 import Actor.Viewer hiding (compileViewer)
-import Language.Draw (DrawSink(..))
+import Language.Draw (DrawSink(..), RadiusUnit(..))
 import Language.Code (Code, CodeF(..), transformValues, usedVarsInCode)
 import Data.Indexed.Functor (indexedFoldM)
 import Language.Table (Table(..), elementSize, newTable, freezeTable)
@@ -530,7 +530,8 @@ readDraws at DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize
       f64 = peekByteOff r
       pt o = (,) <$> f64 o <*> f64 (o + 8)
   tag <- peekByteOff r 0 :: IO Int32
-  flag <- (/= (0 :: Int32)) <$> peekByteOff r 4
+  flags <- peekByteOff r 4 :: IO Int32
+  let flag = flags /= 0
   color <- (\a b c -> rgbToColor (a, b, c)) <$> peekByteOff r 4 <*> peekByteOff r 5 <*> peekByteOff r 6
   case tag of
     0 -> pure dsClear
@@ -538,9 +539,10 @@ readDraws at DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize
     2 -> pure (dsFill color)
     3 -> dsPoint <$> pt 8
     4 -> dsLine <$> pt 8 <*> pt 24
-    5 -> dsCircle flag <$> f64 8 <*> pt 16
+    5 -> dsCircle (testBit flags 0) (if testBit flags 1 then ScreenPixels else ModelUnits) <$> f64 8 <*> pt 16
     6 -> dsRect flag <$> pt 8 <*> pt 24
     7 -> dsWrite <$> (peekByteOff r 4 >>= \(a :: Int32) -> peekText at (fromIntegral a)) <*> pt 8
+    8 -> dsGeodesic <$> pt 8 <*> pt 24
     _ -> pure (pure ())
 
 -- | Read a value from the arguments buffer as 'pokeArg' wrote it (the

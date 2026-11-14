@@ -1175,6 +1175,16 @@ async function group() {
   const dots = await app.drawing(0);
   c.check(dots && dots.filter((s) => s.k === "polygon" || s.k === "runs").length >= 3,
           `the dot is drawn in its tile and the ones beside it (${kinds(dots)})`);
+  // a marker (its radius in pixels) and a geodesic, in every tile
+  await app.pressTool("m", "Mark");
+  await page.mouse.click(...at(-0.2, 1.6));
+  await page.waitForTimeout(1500);
+  const marks = await app.drawing(0);
+  c.check(marks && marks.filter((s) => s.k === "marker").length >= 3 && marks.some((s) => s.k === "runs"),
+          `the marker and the geodesic are drawn in each tile (${kinds(marks)})`);
+  const [mx, my] = at(-0.2, 1.6);
+  const isGreen = ([r, g, b]) => r < 60 && g > 200 && b < 60;
+  c.check(isGreen(await pixelAt([mx + 4, my])), "the marker is 5 pixels in radius");
   // a drag, which moves the view (and keeps it reduced)
   // (Navigate isn't a script's tool: the engine says no tool's selected)
   await page.locator(".window .tool-chooser").first().click();

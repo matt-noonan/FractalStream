@@ -110,16 +110,20 @@ each visible tile. Implemented in `Actor.Viewer.Group`.
 - [x] Tests: `Actor.GroupSpec` (folding, reduction, tiles, headers);
       `GroupSpec` end to end (folding, tools, copies, a view moved 77 units
       along an axis by the group staying exact); `check-tools.mjs group`.
-- [x] Examples: examples/j-invariant.fs (the modular group), and
-      examples/hyperbolic-surface.fs (a genus-g surface, its table worked
-      out by a tool).
-- [ ] Maybe `draw geodesic from p to q` (see H6).
-- [ ] Copies of a drawing keep its model size: a marker a tool sized with
-      `pixel_size_at` for its own place is smaller or larger elsewhere. A
-      way to say "this is a marker, keep its screen size" would help.
-- [ ] In fsrun, an overlay's table writes take effect after the capture
-      that ran it (the surface example's first capture is grey).
-- [ ] A bad group table folds nothing, silently: say why somewhere.
+- [x] Examples, in the library's "7 The hyperbolic plane": j-invariant.fs
+      (the modular group), and hyperbolic-surface.fs (a genus-g surface,
+      its table worked out by the overlay; circles and geodesics).
+- [x] `draw geodesic from p to q` (hyperbolic viewers' tools only): the
+      hyperbolic segment, sampled and drawn like a line (see H6).
+- [x] Markers: `draw circle ... with radius r pixels`, a radius in screen
+      pixels, the same at any zoom and in every tile (copies of other
+      drawings are the same shape moved, so larger or smaller with the
+      tile).
+- [x] Overlays run before rendering (fsrun's captures and asserts,
+      previews, movie frames), so a table an overlay fills is in the
+      first picture.
+- [x] A group table that can't be used pauses the viewer, saying why (an
+      empty one folds nothing, as before).
 
 Navigation note (2026-11-13): a pinch or scroll can't zoom about the
 pointer by hyperbolic motions, since those that fix a point are rotations

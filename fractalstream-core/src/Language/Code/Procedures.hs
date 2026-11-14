@@ -89,7 +89,8 @@ renameStmt m (Stmt sr node) = Stmt sr $ case node of
   SAllocate n sz corners fill -> SAllocate (var n) (expr sz) (bimap expr expr <$> corners) (expr <$> fill)
   SDraw d -> SDraw $ case d of
     DrawPointAt p -> DrawPointAt (expr p)
-    DrawCircleAt f c r -> DrawCircleAt f (expr c) (expr r)
+    DrawCircleAt f c r unit -> DrawCircleAt f (expr c) (expr r) unit
+    DrawGeodesicFrom a b -> DrawGeodesicFrom (expr a) (expr b)
     DrawRectFrom f a b -> DrawRectFrom f (expr a) (expr b)
     DrawLineFrom a b -> DrawLineFrom (expr a) (expr b)
     UseStroke c -> UseStroke (expr c)

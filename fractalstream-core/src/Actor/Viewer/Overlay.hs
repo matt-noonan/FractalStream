@@ -25,7 +25,7 @@ import qualified Data.Planar as Planar
 
 import Actor.Viewer.Overlay.Font (overlayFont)
 import Actor.Viewer.Clip
-import Actor.Viewer.Sphere (Projection(..), ScreenView(..), projectToScreen, visibleRuns, sampleSegment, sampleCircle)
+import Actor.Viewer.Sphere (Projection(..), ScreenView(..), projectToScreen, visibleRuns, sampleSegment, sampleGeodesic, sampleCircle)
 import Graphics.Text.TrueType (Font, BoundingBox(..), stringBoundingBox)
 
 import Codec.Picture (Image(..), PixelRGBA8(..), writePng, generateImage, pixelAt)
@@ -226,8 +226,17 @@ drawGlobeLayer image proj toPx = go white white
       DrawLine _ pt1 pt2 -> do
         strokeRuns strokeColor (runs (sampleSegment 64 pt1 pt2))
         go strokeColor fillColor cmds
-      DrawCircle _ filled r pt -> do
+      DrawGeodesic _ pt1 pt2 -> do
+        strokeRuns strokeColor (runs (sampleGeodesic proj 64 pt1 pt2))
+        go strokeColor fillColor cmds
+      DrawCircle _ filled ModelUnits r pt -> do
         outline filled strokeColor fillColor (sampleCircle 96 pt r)
+        go strokeColor fillColor cmds
+      -- (a marker: a circle on the screen, around where its center is)
+      DrawCircle _ filled ScreenPixels r pt -> do
+        forM_ (at pt) $ \p -> nearPoint image p $ \p' ->
+          let prim = circle p' (realToFrac r)
+          in if filled then fillAndOutline fillColor strokeColor prim else strokeWith strokeColor prim
         go strokeColor fillColor cmds
       DrawRect _ filled (x1, y1) (x2, y2) -> do
         let corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)]
@@ -277,11 +286,16 @@ drawLayer image toPx (pxW, pxH) = go white white
                    strokeWith strokeColor (line (toPoint p') (toPoint q'))
         go strokeColor fillColor cmds
 
-      DrawCircle _ filled r pt -> do
-        -- A circle in model space: an ellipse, when pixels aren't square.
+      -- (a geodesic of the plane is a straight segment)
+      DrawGeodesic env pt1 pt2 -> go strokeColor fillColor (DrawLine env pt1 pt2 : cmds)
+
+      DrawCircle _ filled unit r pt -> do
+        -- A circle in model space: an ellipse, when pixels aren't square
+        -- (or a marker, measured in pixels).
         let c@(cx, cy) = toPx pt
-            rx = r / pxW
-            ry = r / pxH
+            (rx, ry) = case unit of
+              ModelUnits -> (r / pxW, r / pxH)
+              ScreenPixels -> (r, r)
         when (finitePx c && finitePx (rx, ry)) $
           if near image [(cx - rx, cy - ry), (cx + rx, cy + ry)]
             then let prim = ellipse (toPoint c) (realToFrac rx) (realToFrac ry)

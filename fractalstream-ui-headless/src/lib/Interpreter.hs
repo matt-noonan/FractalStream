@@ -277,9 +277,11 @@ execCommand st = \case
             [] -> Right st
             problems -> Left (intercalate "; " problems)
 
+  -- (the overlay first: what it changes, a group's table say, is in the
+  -- picture it's drawn over)
   CaptureViewer name path -> withNamedViewer st name $ \viewer -> do
+    refreshOverlay viewer
     r <- withRenderedViewerBuffer viewer True $ \view dims buf -> do
-      refreshOverlay viewer
       layers <- vDrawCmds viewer
       compositeDrawLayersToFile view layers dims buf path
     traverse (warnIssues name . fst) r <&> (st <$)
@@ -299,8 +301,8 @@ execCommand st = \case
 
 
   AssertPixel name (px, py) expected mtol -> withNamedViewer st name $ \viewer -> do
+    refreshOverlay viewer
     r <- withRenderedViewerBuffer viewer True $ \view dims buf -> do
-      refreshOverlay viewer
       layers <- vDrawCmds viewer
       compositeDrawLayers view layers dims buf
     case r of

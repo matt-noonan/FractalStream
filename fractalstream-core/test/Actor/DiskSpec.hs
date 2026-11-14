@@ -162,3 +162,46 @@ spec = do
     sequence_ [ applyIsometry (at 0) z `shouldSatisfy` closeC (applyIsometry v1 z) | z <- points ]
     sequence_ [ applyIsometry (at 1) z `shouldSatisfy` closeC (applyIsometry v2 z) | z <- points ]
     dist (c 0) (c 0.5) `shouldSatisfy` close (dist (c 0.5) (c 1))
+
+ describe "geodesics" $ do
+
+  let -- (the hyperbolic distance in each model)
+      distIn DiskModel (x1, y1) (x2, y2) = dist (x1 :+ y1) (x2 :+ y2)
+      distIn HalfPlaneModel (x1, y1) (x2, y2) =
+        acosh (1 + ((x1 - x2) ^ (2 :: Int) + (y1 - y2) ^ (2 :: Int)) / (2 * y1 * y2))
+      onGeodesic model p q w = abs (distIn model p w + distIn model w q - distIn model p q) < 1e-9
+
+  it "runs from one end to the other along the shortest path, in both models" $
+    sequence_ [ do let pts = geodesicPoints model 32 p q
+                   length pts `shouldBe` 33
+                   take 1 pts `shouldBe` [p]
+                   drop 32 pts `shouldBe` [q]
+                   pts `shouldSatisfy` all (onGeodesic model p q)
+              | (model, p, q) <-
+                  [ (DiskModel, (0.3, 0.2), (-0.5, 0.6))
+                  , (DiskModel, (0.9, 0.1), (0.1, -0.95))
+                  -- (in line with the middle: a diameter's segment)
+                  , (DiskModel, (0, 0), (0.5, 0.5))
+                  , (DiskModel, (-0.2, -0.2), (0.6, 0.6))
+                  , (HalfPlaneModel, (0, 1), (1, 1))
+                  , (HalfPlaneModel, (-3, 0.2), (2, 5))
+                  -- (one above the other: a vertical segment)
+                  , (HalfPlaneModel, (1, 1), (1, 3)) ] ]
+
+ describe "drawing" $ do
+
+  let project view tool = concat
+        [ "@viewer \"V\" ", view, "\ncolor <- grey\n\n@tool \"T\" for=\"V\"\non click at p:\n", tool ]
+
+  it "takes `draw geodesic` only in a viewer of the hyperbolic plane" $ do
+    checkScript (project "view=disk" "  draw geodesic from 0 to p\n") `shouldBe` Right ()
+    checkScript (project "view=halfplane" "  draw geodesic from i to p\n") `shouldBe` Right ()
+    checkScript (project "var=z" "  draw geodesic from 0 to p\n")
+      `shouldSatisfy` either (isInfixOf "`draw geodesic` is only for tools of a viewer of the hyperbolic plane" . snd) (const False)
+
+  it "takes a circle's radius in pixels, with `pixels` a word of its own" $ do
+    checkScript (project "var=z" "  draw filled circle at p with radius 6 pixels\n  draw circle at p with radius 2 + 1 pixels\n")
+      `shouldBe` Right ()
+    checkScript (project "var=z" "  q := 2\n  draw circle at p with radius q pixels\n") `shouldBe` Right ()
+    -- (not a variable times `pixels`)
+    checkScript (project "var=z" "  write 2 pixels at p\n") `shouldSatisfy` either (const True) (const False)

@@ -21,6 +21,7 @@ import Data.Set (Set)
 import Language.Type
 import Language.Parser.SourceRange
 import Language.Value.Syntax
+import Language.Draw (RadiusUnit(..))
 
 data Stmt = Stmt { stmtRange :: SourceRange, stmtNode :: StmtF }
   deriving Show
@@ -94,7 +95,9 @@ data StmtF
 
 data DrawStmt
   = DrawPointAt Expr
-  | DrawCircleAt Bool Expr Expr
+  | DrawCircleAt Bool Expr Expr RadiusUnit
+    -- ^ filled or not, the center, the radius, and what it's measured in
+  | DrawGeodesicFrom Expr Expr
   | DrawRectFrom Bool Expr Expr
   | DrawLineFrom Expr Expr
   | UseStroke Expr
@@ -123,7 +126,8 @@ stmtNames (Stmt _ node) = case node of
                                              <> foldMap exprNames fill)
   SDraw d -> case d of
     DrawPointAt p -> exprNames p
-    DrawCircleAt _ c r -> exprNames c <> exprNames r
+    DrawCircleAt _ c r _ -> exprNames c <> exprNames r
+    DrawGeodesicFrom a b -> exprNames a <> exprNames b
     DrawRectFrom _ a b -> exprNames a <> exprNames b
     DrawLineFrom a b -> exprNames a <> exprNames b
     UseStroke c -> exprNames c

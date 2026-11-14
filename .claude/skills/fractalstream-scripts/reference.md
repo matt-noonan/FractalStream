@@ -100,7 +100,7 @@ below).
 | `xvar=`, `yvar=` | none | instead of `var=`: a *real viewer*, whose pixel is the pair of real coordinates `(x, y)` with these names. Both are needed, and they can't be used with `var=`. Either can be a real `@config` variable's name, for a plane of real parameters (`xvar=a yvar=b`). |
 | `center=` | `0` | original center ("Original view" returns here); quote anything but a plain number: `center="-0.75 + 0.1i"`. A real viewer's is a point, `center=(1, -1/2)`, or a complex number. |
 | `pixelSize=` | `1/128` | model width of one pixel (zoom) in the original view; `1/200`, `0.005` |
-| `view=` | `plane` | `sphere`: show a complex viewer's points on the Riemann sphere, as a globe. `z` is still a complex number (stereographic: 0 is the north pole, ∞ the south pole); `center=` is the point facing you, and `pixelSize=` is measured on the unit sphere (default: the globe fills most of the window). Navigate's drag turns the globe; the viewer's menu switches between sphere and plane. Not for real viewers. `disk`: the hyperbolic plane, as the Poincaré disk: `z` is a point of the unit disk (the model point), shown moved by the view (an isometry): Navigate's drag moves the view by a hyperbolic translation, a click recenters on the clicked point, scrolling zooms the drawing. `center=` is the disk point shown in the middle (must have \|center\| < 1), `pixelSize=` is in units of the disk's radius. `pixel_size` is the pixel's local model width (it varies), so a pixel's hyperbolic size is `2 pixel_size / (1 - \|z\|²)`. Can't switch to the plane or sphere. `halfplane`: the same, with `z` in the upper half-plane, drawn with the real axis along the window's bottom edge and `center=` (default `i`) 1/`pixelSize` pixels above it (a pixel's hyperbolic size is `pixel_size / im(z)`). With `group=modular` (PSL(2, ℤ)) or `group=T` (a `Table 2 of C`: `T @ (1..4, k)` = a, b, c, d of side k's pairing `s ↦ (a s + b)/(c s + d)`, taking points beyond side k back in; optional `groupCenter=`), `z` is folded into the group's fundamental polygon, and the code also gets `side_distance` (hyperbolic, to the nearest side), `side_index`, `fold_count`; tools get folded points, and their drawings repeat in each visible tile. See examples/j-invariant.fs, examples/hyperbolic-surface.fs. A hyperbolic viewer's menu switches between drawing it as the disk and as the half-plane, keeping the view; the script always sees its own model's points. |
+| `view=` | `plane` | `sphere`: show a complex viewer's points on the Riemann sphere, as a globe. `z` is still a complex number (stereographic: 0 is the north pole, ∞ the south pole); `center=` is the point facing you, and `pixelSize=` is measured on the unit sphere (default: the globe fills most of the window). Navigate's drag turns the globe; the viewer's menu switches between sphere and plane. Not for real viewers. `disk`: the hyperbolic plane, as the Poincaré disk: `z` is a point of the unit disk (the model point), shown moved by the view (an isometry): Navigate's drag moves the view by a hyperbolic translation, a click recenters on the clicked point, scrolling zooms the drawing. `center=` is the disk point shown in the middle (must have \|center\| < 1), `pixelSize=` is in units of the disk's radius. `pixel_size` is the pixel's local model width (it varies), so a pixel's hyperbolic size is `2 pixel_size / (1 - \|z\|²)`. Can't switch to the plane or sphere. `halfplane`: the same, with `z` in the upper half-plane, drawn with the real axis along the window's bottom edge and `center=` (default `i`) 1/`pixelSize` pixels above it (a pixel's hyperbolic size is `pixel_size / im(z)`). With `group=modular` (PSL(2, ℤ)) or `group=T` (a `Table 2 of C`: `T @ (1..4, k)` = a, b, c, d of side k's pairing `s ↦ (a s + b)/(c s + d)`, taking points beyond side k back in; optional `groupCenter=`), `z` is folded into the group's fundamental polygon, and the code also gets `side_distance` (hyperbolic, to the nearest side), `side_index`, `fold_count`; tools get folded points, and their drawings repeat in each visible tile. A table with no cells yet folds nothing; a table that can't be used (a pairing that isn't invertible, doesn't keep the plane, or fixes the center) pauses the viewer with a message saying why. See the library's "7 The hyperbolic plane" (j-invariant.fs, hyperbolic-surface.fs). A hyperbolic viewer's menu switches between drawing it as the disk and as the half-plane, keeping the view; the script always sees its own model's points. |
 | `aspect=` | `1` | real viewers only: a pixel's height over its width in the original view (`aspect=2` fits twice as much of the y axis). A complex viewer's pixels are always square. The wx viewer's menu has "Aspect ratio..." to change it. |
 | `limit=`, `escape=`, `vanish=` | `max_iters`, `escape_radius`, `vanishing_radius` | name a different (config) variable to use as the loop limit / escape radius / vanishing radius in this viewer |
 | `pixelVar=` | `pixel_size` | name under which the current pixel size is visible |
@@ -296,9 +296,9 @@ the viewer's `viewer_width`, `viewer_height` and `viewer_center` (or
 `viewer_center_x`/`_y`), `max_iters` etc., and the function
 `pixel_size_at(p)`: the model width of a screen pixel at the model point
 `p` (a complex number). On the plane it's `pixel_size`; in a disk viewer
-(and on the sphere) it varies, so size markers with it, e.g.
-`draw filled circle at q with radius 3 pixel_size_at(q)`, to make them
-look the same anywhere in the view. Local variables are fresh on
+(and on the sphere) it varies. For markers, give the radius in pixels
+instead (`draw filled circle at q with radius 3 pixels`): the same size at
+any zoom, anywhere in the view, and in every tile of a group. Local variables are fresh on
 every event; persistent tool state must be a declared tool variable.
 Loops in handlers obey the same limits as viewers.
 
@@ -311,8 +311,10 @@ use red for stroke                      # (or `for line`): lines, outlines, poin
 use blue for fill                       # filled shapes
 draw point at p
 draw line from p to q
-draw circle at p with radius r          # r in model units; use k pixel_size for screen units
+draw circle at p with radius r          # r in model units: a shape, which grows as you zoom in
 draw filled circle at p with radius r
+draw filled circle at p with radius 4 pixels   # a marker: 4 screen pixels at any zoom, in every view and tile
+draw geodesic from p to q               # hyperbolic viewers' tools only (view=disk/halfplane): the hyperbolic segment
 draw rectangle from p to q
 draw filled rectangle from p to q
 write "label" at p                      # text centered on p, in the stroke color
@@ -368,7 +370,7 @@ an integer power rounds toward zero (0, or 1/-1 for a base of 1/-1).
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`,
 `times`, `text`, `escapes`, `vanishes`, `stops`, `previous`, `iterations`, `stuck`, `append`,
 `prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
-`mod`, `point`, `table_size`, `table_cell`, `table_point`, `in`, `filled`, `pixel_size_at`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
+`mod`, `point`, `table_size`, `table_cell`, `table_point`, `in`, `filled`, `pixels`, `pixel_size_at`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
 names in `@config`), `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
 the color-wheel names, and the built-in function names (including `bar`, the
 complex conjugate; using one for a variable, function, or code block is

@@ -660,7 +660,8 @@ stripRanges (Stmt _ node) = Stmt NoSourceRange $ case node of
   SAllocate n sz corners fill -> SAllocate n (ex sz) (bimap ex ex <$> corners) (ex <$> fill)
   SDraw d -> SDraw $ case d of
     DrawPointAt p -> DrawPointAt (ex p)
-    DrawCircleAt f c r -> DrawCircleAt f (ex c) (ex r)
+    DrawCircleAt f c r unit -> DrawCircleAt f (ex c) (ex r) unit
+    DrawGeodesicFrom a b -> DrawGeodesicFrom (ex a) (ex b)
     DrawRectFrom f a b -> DrawRectFrom f (ex a) (ex b)
     DrawLineFrom a b -> DrawLineFrom (ex a) (ex b)
     UseStroke c -> UseStroke (ex c)

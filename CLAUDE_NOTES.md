@@ -287,7 +287,18 @@ views are reduced (`reducedView`, `viewReductionFor`: in wx's
 `jumpViewWith` both old and new by the same element); overlays repeat via
 `overlayProjections` (one `HyperbolicProjection` per tile:
 `tileViews`), in `ScreenView`'s `svCopies`, wx's `paintTileCopies`, and the
-web's `drawingJSON`. The rest
+web's `drawingJSON`. A table that can't be used (`groupFoldDyn`'s `Left`;
+an empty one is `Right noFolding`) is `cvGroupProblem`, which `vGetArgs`
+returns as the viewer's `Left` (paused, with the message). Overlays are
+refreshed *before* rendering in fsrun's capture/assert, previews and movie
+frames, so a table an overlay fills is in the picture. Drawings:
+`DrawCircle`'s `RadiusUnit` (`ScreenPixels`: a marker, drawn at its
+projected center in screen pixels, so the same in every tile and zoom;
+LLVM/wasm pass it as bit 1 of the circle's flag byte) and `DrawGeodesic`
+(sampled by `Actor.Viewer.Disk.geodesicPoints` through `sampleGeodesic`,
+drawn like a line; LLVM passes it as the line callback with kind 1, wasm as
+draw record 8). Only tools whose context has `hyperbolicToolName` (from
+`toolViewValues`, for hyperbolic viewers) typecheck `draw geodesic`. The rest
 of this paragraph is from phase 1, the disk alone: The
 geometry is in `Actor.Viewer.Disk`: the view is an `Isometry` (a, b),
 s ↦ (a s + b)/(b̄ s + ā) with |a|² − |b|² = 1, renormalized after each

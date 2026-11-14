@@ -10,6 +10,7 @@ module Language.Code.Typecheck
   ( ParsedCode
   , runParsedCode
   , expandParsedCode
+  , hyperbolicToolName
   ) where
 
 import FractalStream.Prelude
@@ -177,8 +178,13 @@ elab funs env stmt@(Stmt sr node) = case node of
 
   SDraw d -> DrawCommand <$> case d of
     DrawPointAt p -> DrawPoint env <$> point funs env p
-    DrawCircleAt isFilled center radius ->
-      DrawCircle env isFilled <$> value funs env radius RealType <*> point funs env center
+    DrawCircleAt isFilled center radius unit ->
+      DrawCircle env isFilled unit <$> value funs env radius RealType <*> point funs env center
+    DrawGeodesicFrom p q
+      | hyperbolicToolName `Map.member` envToMap env ->
+          DrawGeodesic env <$> point funs env p <*> point funs env q
+      | otherwise -> throwError (Advice sr "`draw geodesic` is only for tools of a viewer of the hyperbolic plane \
+                                          \(`view=disk` or `view=halfplane`): elsewhere, use `draw line`.")
     DrawRectFrom isFilled ul lr -> DrawRect env isFilled <$> point funs env ul <*> point funs env lr
     DrawLineFrom ul lr -> DrawLine env <$> point funs env ul <*> point funs env lr
     UseStroke c -> SetStroke env <$> value funs env c ColorType
@@ -334,6 +340,12 @@ withFresh sr env ty value_ action = withEnvironment env $ do
 -- | An example of a table index with some number of dimensions.
 example :: Int -> String
 example dims = if dims == 1 then "k" else "(" ++ intercalate ", " (take dims (["j", "k"] ++ map (("k" ++) . show) [3 :: Int ..])) ++ ")"
+
+-- | A name (one no script can use) that only the tools of a viewer of
+-- the hyperbolic plane have, so that @draw geodesic@ can tell where it
+-- is (see 'Actor.Ensemble.toolViewValues').
+hyperbolicToolName :: String
+hyperbolicToolName = "[internal] hyperbolic tool"
 
 -- | The top left and bottom right corners of a viewer's window, from its
 -- geometry (see 'Actor.Ensemble.viewerGeometry') and pixel size, as a
