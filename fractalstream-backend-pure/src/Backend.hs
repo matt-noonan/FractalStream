@@ -11,7 +11,7 @@ import Backend.Pure
 withBackend :: (Backend -> IO a) -> IO a
 withBackend action =
   action Backend
-    { bViewerCompiler    = ViewerCompiler (const interpretViewer)
+    { bViewerCompiler    = ViewerCompiler (const interpretedViewer)
     , bToolRunnerFactory = defaultToolRunnerFactory
     , bToolRunner        = defaultToolRunner
     , bRunOnce           = \_ -> interpretedToolExec ignoreDrawing

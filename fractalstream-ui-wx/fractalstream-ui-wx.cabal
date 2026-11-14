@@ -90,6 +90,7 @@ executable FractalStream
                        UI.Widgets
                        UI.WxProperties
                        UI.ToolProgress
+                       UI.Loading
                        UI.SaveTables
                        UI.ProjectInfo
                        UI.PreviewImage

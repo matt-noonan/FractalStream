@@ -27,6 +27,8 @@ import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Layout (CodeString(..))
 
 import Backend (Backend)
+import UI.Loading (whileLoading)
+import Actor.Metadata (ProjectMetadata(..))
 import UI.Widgets (scriptWidget, scriptEditMenu, onOwnDestroy)
 import UI.WxProperties (WxLayout, rememberLayout, releaseViewerFrame, releaseConfigFrame, discardSpareFrames)
 import Data.DynamicValue
@@ -211,7 +213,7 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
           -- isn't in its script (scenarios, metadata, frontends' own
           -- keys), since a script alone has none of it.
           keep <- sehKeep
-          replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns
+          void (replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns)
     ]
 
   set f [ layout := fill $ container p $ fill $ margin 5 $ column 5
@@ -237,9 +239,20 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
 -- ('releaseViewerFrame'), and the rebuilt project fills them again,
 -- so they stay where they are, in front of or behind the others.
 -- Emptied windows that nothing took are destroyed afterwards.
+--
+-- The new project's viewers are compiled first, before anything is
+-- replaced, on another thread (with a window saying so if that's slow:
+-- see "UI.Loading"). If the user cancels that, the project stays as it
+-- was, and this says so ('False').
 replaceProject :: Backend -> Window a -> WxLayout -> Variable Ensemble -> UI
-               -> [Window ()] -> Ensemble -> IO ()
+               -> [Window ()] -> Ensemble -> IO Bool
 replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns = do
+  name <- fromMaybe "the project" . mdTitle <$> (getDynamic . ensembleMetadata =<< getDynamic currentEnsemble)
+  whileLoading name (prepareEnsemble backend newEns) >>= \case
+    Nothing -> pure False
+    Just prepared -> True <$ replaceWith prepared
+ where
+ replaceWith prepared = do
   rememberLayout wxLayout
   titles <- getDynamic (ensembleViewers newEns)
               >>= mapM (\cv -> fromRight "" <$> getDynamic (dyn (cvTitle cv)))
@@ -250,7 +263,7 @@ replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns = d
   oldEns <- getDynamic currentEnsemble
   carryOverProjectState oldEns newEns
   setValue' currentEnsemble newEns
-  runEnsemble backend ui newEns
+  showEnsemble ui prepared
   discardSpareFrames wxLayout
 
 -- | Rebuild a project from its script with changed colorizer choices
@@ -275,6 +288,6 @@ rebuildColorizers backend projectWindow ScriptEditorHooks{sehEditor, sehKeep} wx
       set replacer [ on command := do
                        set replacer [ enabled := False ]
                        keep <- (++) <$> (maybeToList <$> readIORef sehEditor) <*> sehKeep
-                       replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns
-                       after newEns ]
+                       replaced <- replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns
+                       when replaced (after newEns) ]
       pure (Right ())

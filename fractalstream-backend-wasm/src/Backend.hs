@@ -19,7 +19,7 @@ withBackend action = do
   workers <- workerPoolSize
   when (workers > 0) (defaultRenderConcurrency workers)
   action Backend
-    { bViewerCompiler    = ViewerCompiler withWasmViewer
+    { bViewerCompiler    = ViewerCompiler wasmViewer
     , bToolRunnerFactory = defaultToolRunnerFactory
     , bToolRunner        = wasmToolRunner
     , bRunOnce           = \_ -> interpretedToolExec ignoreDrawing

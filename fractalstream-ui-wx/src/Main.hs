@@ -13,6 +13,7 @@ import UI.OpenFiles (onOpenFiles, commandLineFiles)
 import UI.SingleInstance (handOffFiles, listenForFiles)
 import UI.ProjectViewer (viewProject, ProjectMenuActions(..))
 import UI.ProjectInfo (editProjectInfo)
+import UI.Loading (whileLoading)
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables, summarizeTables)
@@ -49,7 +50,7 @@ import Graphics.UI.WXCore.WxcClasses ( styledTextCtrlStyleSetFont
                                      , styledTextCtrlSetText
                                      , wxcAppSetAppName )
 
-import Control.Exception (Exception, try, catch, ErrorCall(..), IOException)
+import Control.Exception (Exception, try, catch, throwIO, ErrorCall(..), IOException)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
@@ -270,7 +271,7 @@ runApp = withBackend $ \backend -> start $ do
       -- the script editor open, ready to write. One of the user's own
       -- projects just opens, as itself.
       projectOpenLibrary = \LibraryEntry{..} ->
-        let load = const (asItIs (loadProjectBytes leTitle leContents))
+        let load = const (pure (asItIs (loadProjectBytes leTitle leContents)))
         in case leFile of
              Just path -> projectOpen path
              Nothing
@@ -301,32 +302,50 @@ runApp = withBackend $ \backend -> start $ do
 
         withRecoveryActions $ do
 
-          -- A project whose script doesn't build still opens, straight
-          -- into its script editor (which shows what's wrong), so that
-          -- it can be fixed; its viewers appear, with its saved layout
-          -- and values, when the fixed script is rebuilt. Only a file
-          -- that can't be read as a project at all is an error here.
-          (loaded, translated) <- either error id <$> load projectWindow
-          let (prj, scriptBuilds) = case loaded of
-                Built ens -> (ens, True)
-                BrokenScript ens _ -> (ens, False)
-          when fromStartingPoint $ setValue' (ensembleMetadata prj) noMetadata
-          -- Put back the configuration values the project was saved
-          -- with, where they differ from its script's defaults, before
-          -- anything is drawn with them. Like a malformed
-          -- `wx-properties:`, one that no longer fits is reported and
-          -- skipped rather than refusing to open the project.
-          when scriptBuilds $
-            readSavedValues <$> getDynamic (ensembleFrontendProperties prj) >>= \case
-              Left err -> putStrLn ("Ignoring unreadable `values:` in " ++ quoted name ++ ": " ++ err)
-              Right saved -> applySavedValues prj saved >>= mapM_ (putStrLn . (("In " ++ quoted name ++ ", ") ++))
-          -- And the same for what its tables held, if that was saved.
-          when scriptBuilds $
-            readSavedTables <$> getDynamic (ensembleFrontendProperties prj) >>= \case
-              Left err -> putStrLn ("Ignoring unreadable `tables:` in " ++ quoted name ++ ": " ++ err)
-              Right saved -> do
-                tables <- ensembleTables prj
-                applySavedTables tables saved >>= mapM_ (putStrLn . (("In " ++ quoted name ++ ", ") ++))
+          -- Reading the project and compiling its viewers is done on
+          -- another thread, with a window saying it's loading if that
+          -- takes long (see "UI.Loading"); making its windows is done
+          -- here, once it's ready.
+          loading <- load projectWindow
+          ready <- whileLoading (maybe name takeFileName file) $ do
+              -- A project whose script doesn't build still opens, straight
+              -- into its script editor (which shows what's wrong), so that
+              -- it can be fixed; its viewers appear, with its saved layout
+              -- and values, when the fixed script is rebuilt. Only a file
+              -- that can't be read as a project at all is an error here.
+              (loaded, translated) <- either (throwIO . ErrorCall) pure =<< loading
+              let (prj, scriptBuilds) = case loaded of
+                    Built ens -> (ens, True)
+                    BrokenScript ens _ -> (ens, False)
+              when fromStartingPoint $ setValue' (ensembleMetadata prj) noMetadata
+              -- Put back the configuration values the project was saved
+              -- with, where they differ from its script's defaults, before
+              -- anything is drawn with them. Like a malformed
+              -- `wx-properties:`, one that no longer fits is reported and
+              -- skipped rather than refusing to open the project.
+              when scriptBuilds $
+                readSavedValues <$> getDynamic (ensembleFrontendProperties prj) >>= \case
+                  Left err -> putStrLn ("Ignoring unreadable `values:` in " ++ quoted name ++ ": " ++ err)
+                  Right saved -> applySavedValues prj saved >>= mapM_ (putStrLn . (("In " ++ quoted name ++ ", ") ++))
+              -- And the same for what its tables held, if that was saved.
+              when scriptBuilds $
+                readSavedTables <$> getDynamic (ensembleFrontendProperties prj) >>= \case
+                  Left err -> putStrLn ("Ignoring unreadable `tables:` in " ++ quoted name ++ ": " ++ err)
+                  Right saved -> do
+                    tables <- ensembleTables prj
+                    applySavedTables tables saved >>= mapM_ (putStrLn . (("In " ++ quoted name ++ ", ") ++))
+              -- And its viewers' code compiled, ready to be shown.
+              prepared <- if scriptBuilds then Just <$> prepareEnsemble backend prj else pure Nothing
+              pure (prj, translated, scriptBuilds, prepared)
+          case ready of
+            -- (cancelled: there's nothing to undo)
+            Nothing -> do
+              void (WX.windowDestroy projectWindow)
+              showLibraryAfterClosing
+            Just loaded -> openLoaded projectWindow loaded
+
+        where
+         openLoaded projectWindow (prj, translated, scriptBuilds, prepared) = do
           saveTables <- newIORef . (\props -> if KM.member (Key.fromString "tables") props then Just True else Nothing)
                           =<< getDynamic (ensembleFrontendProperties prj)
           currentEnsemble <- newVariable prj
@@ -387,7 +406,7 @@ runApp = withBackend $ \backend -> start $ do
                 }
 
               -- `ui` and `editProjectScript` refer to each other: a
-              -- rebuild needs a `UI` to hand `runEnsemble` for the
+              -- rebuild needs a `UI` to hand `showEnsemble` for the
               -- *next* round of viewer windows, and that same `UI`
               -- needs the rebuild action for its own menus. Fine in
               -- Haskell as an ordinary lazy `let` -- `editProjectScript`
@@ -430,7 +449,7 @@ runApp = withBackend $ \backend -> start $ do
           -- project is too: the Project menu mustn't go on offering to
           -- show or hide it.
           onOwnDestroy projectWindow (forgetSession sessionHandle)
-          when scriptBuilds $ runEnsemble backend ui prj
+          forM_ prepared (showEnsemble ui)
           when (fromStartingPoint || not scriptBuilds) $
             editProjectScript backend projectWindow editorHooks wxLayout currentEnsemble ui
 
@@ -633,34 +652,39 @@ fatalErrorDialog projectWindow title mkContents = do
   close projectWindow
 
 -- | Load a project file, or translate it if it's an old FractalStream 1.0
--- file; with whether it was translated.
-loadOrTranslateProjectFile :: Frame a -> FilePath -> IO (Either String (LoadedProject, Bool))
+-- file; with whether it was translated. In two parts: reading the file
+-- (and, for an old one, asking whether to translate it), on the UI
+-- thread, gives the loading itself, which can be done on any thread.
+loadOrTranslateProjectFile :: Frame a -> FilePath -> IO (IO (Either String (LoadedProject, Bool)))
 loadOrTranslateProjectFile f path = do
   try (BS.readFile path) >>= \case
-    Left (e :: IOException) -> pure (Left ("could not read " ++ quoted path ++ ": " ++ show e))
+    Left (e :: IOException) -> pure (pure (Left ("could not read " ++ quoted path ++ ": " ++ show e)))
     Right contents -> do
       BS.length contents `seq` pure ()
       -- If the body can be read as a project for the current FractalStream
       -- version, do it. If not, see if it might be an old FractalStream
       -- save file and try to go through the translation flow.
       if mightBeAncientFS contents
-        then fmap (, True) <$> translateAncientProjectBytes f path contents
-        else fmap (, False) <$> loadProjectBytes path contents
+        then fmap (fmap (, True)) <$> translateAncientProjectBytes f path contents
+        else pure (fmap (, False) <$> loadProjectBytes path contents)
 
-translateAncientProjectBytes :: Frame a -> FilePath -> ByteString -> IO (Either String LoadedProject)
+-- | Offer to translate an old FractalStream 1.0 file, and do it if asked
+-- to, on the UI thread; giving the loading of the translation (as
+-- 'loadOrTranslateProjectFile' does).
+translateAncientProjectBytes :: Frame a -> FilePath -> ByteString -> IO (IO (Either String LoadedProject))
 translateAncientProjectBytes f path contents = do
   ok <- proceedDialog f "Translate ancient FractalStream script"
         "This appears to be a saved file from a very old version of FractalStream. Would you like to translate it to modern FractalStream?"
   if not ok
-    then pure (Left "User did not want to translate ancient script")
+    then pure (pure (Left "User did not want to translate ancient script"))
     else case decodeAncientFS contents of
-           Left err -> pure (Left ("I was not able to decode this file. " ++ err))
+           Left err -> pure (pure (Left ("I was not able to decode this file. " ++ err)))
            Right (title, body) -> case translateLegacyScript title body of
-             Left err -> pure (Left err)
+             Left err -> pure (pure (Left err))
              Right Translation{..} -> do
                when (not $ null translationWarnings) $
                  warningDialog f "Translation notes" (unlines translationWarnings)
-               loadProjectBytes path (UTF8.fromString translatedProject)
+               pure (loadProjectBytes path (UTF8.fromString translatedProject))
 
 data BadProject = BadProject String String deriving Show
 instance Exception BadProject

@@ -1,6 +1,6 @@
 --{-# options_ghc -Wno-unused-matches #-}
 module Backend.Pure
-  ( interpretViewer
+  ( interpretedViewer
   ) where
 
 import FractalStream.Prelude
@@ -17,14 +17,15 @@ import Data.Color (colorToRGB, grey)
 import Foreign hiding (void)
 import Data.IORef
 
-interpretViewer :: forall env t. MissingViewerArgs env
-                => Code (ViewerEnv env)
-                -> (ViewerFunction env -> IO t) -> IO t
-interpretViewer body0 action = do
+-- | Interpret a viewer's code: the function that renders its blocks.
+interpretedViewer :: forall env. MissingViewerArgs env
+                  => Code (ViewerEnv env)
+                  -> IO (ViewerFunction env)
+interpretedViewer body0 = do
   -- The same rewrites the LLVM backend applies, so both render alike.
   let body = transformValues backendRewrites body0
       env = toIndex body
-  withEnvironment env $ action $ ViewerFunction $ \vaArgs -> pure $ \ViewerArgs{..} -> do
+  withEnvironment env $ pure $ ViewerFunction $ \vaArgs -> pure $ \ViewerArgs{..} -> do
     let (x0, y0) = vaPoint
         (dx, dy) = vaStep
         -- (the pixel size the code sees, which needn't be the step)
