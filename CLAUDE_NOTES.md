@@ -179,7 +179,15 @@ An `Ensemble` is a loaded project:
 `buildEnsembleFromScript` builds one from a unified script (grammar in
 `Actor.Script`); `parseEnsembleFromFile :: FilePath -> IO (Either String Ensemble)`
 loads a `.fs` file, and `encodeEnsemble` saves one.
-`runEnsemble` launches the UI for an ensemble.
+`runEnsemble` launches the UI for an ensemble: `prepareEnsemble` (no UI:
+the configuration's contexts, and every viewer's code compiled, giving a
+`PreparedEnsemble`), then `showEnsemble` (the configuration panel and the
+viewers' windows, on the UI thread). Preparing doesn't change any value
+something might be watching (a viewer's center is reset when it's shown),
+so it can run on any thread and be cancelled: the wx app opens a project
+(and rebuilds one from the script editor) by loading and preparing it on
+another thread with `UI.Loading.whileLoading`, which waits 500 ms, then
+shows a modal "Loading ..." window with a spinner and Cancel.
 
 ### Viewer (`Actor.Viewer`, `Actor.Viewer.Complex`)
 
@@ -381,8 +389,9 @@ moves either kind (`Actor.Movie.canAnimate`, `coordinateSetter`), by
 length in model coordinates. `fsrun` has `set viewer aspect to` and
 `record ... moving (x, y) along ...`.
 
-`ViewerCompiler` wraps a backend's compilation function. `withCompiledViewer` compiles
-a `Code` into a `ViewerFunction` using the active backend. A `ViewerFunction` is
+`ViewerCompiler` wraps a backend's compilation function. `compileViewer` compiles
+a `Code` into a `ViewerFunction` using the active backend (on any thread; the
+function is good for as long as the backend is). A `ViewerFunction` is
 bound to the configuration's values once per render, giving the function that
 renders each block (`ViewerArgs`); the LLVM backend marshals the values there
 (lists, table descriptors, ...), and a finalizer frees them once the block
@@ -488,7 +497,7 @@ The `Ensemble` owns an `AutocolorState` (`ensembleAutocolor`, carried
 over by `carryOverProjectState`, saved under a core-owned `autocolor:`
 key that `fsrun` honors). Backends get an `AutocolorLookup`: the Haskell
 lookup function, and `autocolorCache`, a snapshot directory for compiled
-code. `withCompiledViewer` and `runTool` take one.
+code. `compileViewer` and `runTool` take one.
 
 Compiled code doesn't call back into Haskell for each lookup (that
 roughly doubled render times): viewer kernels (`#autocolor`,
@@ -691,7 +700,7 @@ Key modules:
 
 ### Pure backend (`fractalstream-backend-pure`)
 
-`Backend.Pure.interpretViewer` runs the code AST directly using `Language.Code.InterpretIO`
+`Backend.Pure.interpretedViewer` runs the code AST directly using `Language.Code.InterpretIO`
 (a state-monad interpreter over `IORef`-backed contexts). Slow but portable.
 
 ### LLVM backend (`fractalstream-backend-llvm`)
@@ -701,6 +710,18 @@ Key modules:
 - `Backend.LLVM.Value` - compiles `Value` AST to LLVM operands
 - `Backend.LLVM.Code` - compiles `Code` AST to LLVM instructions
 - `Backend.LLVM.Operand` - LLVM operand helpers
+
+Compiles take turns: `LLVMJit`'s `jitCompileLock`, held (by `withMVar`, so
+an exception lets go of it) over each compile in `jitFunction`, which every
+viewer, tool handler, and hoisted prefix goes through. The compile layer is
+a `SimpleCompiler` over the session's one `TargetMachine`, which LLVM 12
+supports from one thread at a time, and a module is compiled on whichever
+thread looks its symbol up (`materializeOnCurrentThread`); without the lock,
+compiles on several threads at once fail with "LLVM ERROR: Malformed MachO
+file" (the LLVMSpec test "compiles viewers on many threads at once").
+Everything else a compile uses is its own, and calling compiled kernels
+needs none of it, so renders go on during a compile. The lock isn't
+reentrant: nothing compiles inside `jitFunction`.
 
 The JIT kernel signature (`KernelFun`) takes a pixel buffer, dimensions, step size,
 start coordinates, and an opaque context pointer.

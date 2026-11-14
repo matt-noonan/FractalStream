@@ -800,14 +800,16 @@ data AssertAbsent name env where
 
 
 -- | Compiles a viewer's code, given the project's autocolor lookup (for
--- @autocolor@ and @get_autocolor@; see "Actor.Autocolor").
+-- @autocolor@ and @get_autocolor@; see "Actor.Autocolor"), to the
+-- function that renders its blocks. The function is good for as long as
+-- the backend is (rendering goes on long after the compile), and a
+-- compile can be done on any thread.
 newtype ViewerCompiler = ViewerCompiler
-  { withCompiledViewer :: forall env t
-                        . (MissingViewerArgs env, KnownEnvironment env)
-                       => AutocolorLookup
-                       -> Code (ViewerEnv env)
-                       -> (ViewerFunction env -> IO t)
-                       -> IO t }
+  { compileViewer :: forall env
+                   . (MissingViewerArgs env, KnownEnvironment env)
+                  => AutocolorLookup
+                  -> Code (ViewerEnv env)
+                  -> IO (ViewerFunction env) }
 
 -- | Resolve a viewer's already-parsed body code ('ParsedCode', the untyped
 -- statement syntax 'Language.Code.Parser.parseParsedCode' produces) against

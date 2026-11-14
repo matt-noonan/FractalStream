@@ -12,7 +12,7 @@
 -- fails to build. (Without workers, tools are interpreted.) Code that
 -- runs once per render is interpreted.
 module Backend.Wasm
-  ( withWasmViewer
+  ( wasmViewer
   , workerPoolSize
   , wasmToolRunner
   ) where
@@ -23,12 +23,12 @@ import Backend.Wasm.Code
 import Backend.Wasm.List (elemStrideOf, pairSecond)
 import Backend.Wasm.Text (literalNode, numberNode, concatNode, utf8Bytes, literalNodeBytes)
 import Backend.Wasm.Encode (MemoryImport(..))
-import Backend.Pure (interpretViewer)
+import Backend.Pure (interpretedViewer)
 
 import Actor.Autocolor (AutocolorLookup(..), autocolorSnapshot)
 import Actor.Event (ToolExec, HandlerRun(..), EventArgument(..), HandlerCancelled(..), runCancelled,
                     buildHandlerWith, snapshotEventArgs)
-import Actor.Viewer
+import Actor.Viewer hiding (compileViewer)
 import Language.Draw (DrawSink(..))
 import Language.Code (Code, CodeF(..), transformValues, usedVarsInCode)
 import Data.Indexed.Functor (indexedFoldM)
@@ -156,16 +156,18 @@ foreign import javascript unsafe
   "const n = Math.min($1.misses.length / 24, $3); new Uint8Array(__exports.memory.buffer, $2 + 8, n * 24).set($1.misses.subarray(0, n * 24)); new Int32Array(__exports.memory.buffer, $2, 1)[0] = n;"
   copyMisses :: JSVal -> Ptr Word8 -> Int -> IO ()
 
-withWasmViewer :: forall env t. (MissingViewerArgs env, KnownEnvironment env)
-               => AutocolorLookup
-               -> Code (ViewerEnv env)
-               -> (ViewerFunction env -> IO t) -> IO t
-withWasmViewer lookupAutocolor code0 action = do
+-- | Compile a viewer's code to WebAssembly, giving the function that
+-- renders its blocks (or, if it can't be, interpret it instead).
+wasmViewer :: forall env. (MissingViewerArgs env, KnownEnvironment env)
+           => AutocolorLookup
+           -> Code (ViewerEnv env)
+           -> IO (ViewerFunction env)
+wasmViewer lookupAutocolor code0 = do
   let code = transformValues backendRewrites code0
   case compileViewer UnsharedMemory code of
     Left err -> do
       hPutStrLn stderr ("note: " ++ err ++ "; interpreting this viewer instead")
-      interpretViewer code0 action
+      interpretedViewer code0
     Right bytes -> do
       -- (for debugging: FS_WASM_DUMP=folder writes each kernel there)
       Env.lookupEnv "FS_WASM_DUMP" >>= mapM_ (\dir -> do
@@ -203,7 +205,7 @@ withWasmViewer lookupAutocolor code0 action = do
                         (fst vaPoint) (snd vaPoint) (fst vaStep) (snd vaStep) (fst vaPixel) (snd vaPixel)
                         (fst vaOffset) (snd vaOffset)
       let used = usedNames code
-      action $ ViewerFunction $ \vaArgs -> do
+      pure $ ViewerFunction $ \vaArgs -> do
         -- The configuration's values, once for the whole render.
         Args args size tables <- makeArgs argsBase (workers == 0) used vaArgs
         -- A block that met points to add (autocolor) is drawn again, once

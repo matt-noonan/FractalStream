@@ -18,6 +18,7 @@ time: another one that's asked for meanwhile is skipped.
 module UI.ToolProgress
   ( RunOutcome(..)
   , runWithProgress
+  , spinnerFrames
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -128,5 +129,6 @@ showRunning owner name worker stopWorker = do
     Just toNavigate -> RunStopped toNavigate
     Nothing -> maybe (RunStopped False) outcomeOf result
 
+-- | The frames of a spinner, one character each.
 spinnerFrames :: [String]
 spinnerFrames = map pure "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"

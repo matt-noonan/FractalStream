@@ -10,7 +10,7 @@ import Backend.LLVM
 withBackend :: (Backend -> IO a) -> IO a
 withBackend action = withJIT $ \jit ->
   action Backend
-    { bViewerCompiler    = ViewerCompiler (withJittedViewer jit)
+    { bViewerCompiler    = ViewerCompiler (jittedViewer jit)
     , bToolRunnerFactory = defaultToolRunnerFactory
     , bToolRunner        = llvmToolRunner jit
     , bRunOnce           = \lookupAutocolor -> compiledToolExec jit lookupAutocolor ignoreDrawing

@@ -31,6 +31,9 @@ module Actor.Ensemble
   , formatScriptError
   , ensembleCommonDefs
   , runEnsemble
+  , prepareEnsemble
+  , showEnsemble
+  , PreparedEnsemble
 
   , contextValuesChanged
   , layoutToArgs
@@ -1676,47 +1679,86 @@ buildTool coord limits mpixel ToolFields{..} = do
 data HaskellValueOrError :: Symbol -> FSType -> Exp Type
 type instance Eval (HaskellValueOrError name t) = Either String (HaskellType t)
 
+-- | Run an ensemble: make its configuration panel and its viewers, with
+-- their code compiled. ('prepareEnsemble' and 'showEnsemble', one after
+-- the other.)
 runEnsemble :: Backend -> UI -> Ensemble -> IO ()
-runEnsemble backend UI{..} Ensemble{..} = do
+runEnsemble backend ui ens = prepareEnsemble backend ens >>= showEnsemble ui
 
-  -- Get a handle for the ensemble
-  project <- newEnsemble
+-- | An ensemble whose viewers' code is compiled, ready to be shown.
+data PreparedEnsemble = PreparedEnsemble
+  { peConfiguration :: Maybe (String, Layout)
+    -- ^ the configuration panel's title and layout, if it has one
+  , peEnvironment :: Dynamic (Either String SomeEnvironment)
+  , peViewers :: [ShowViewer]
+  }
 
-  -- Make the configuration panel
-  (someContext, configArgs, showConfig) <- getDynamic ensembleConfiguration >>= \case
-    Nothing -> pure (SomeContext EmptyContext, SomeContext EmptyContext, pure ())
+-- | How to show a prepared viewer, given the UI's handle for its
+-- ensemble, how the UI makes a viewer, and the action that shows the
+-- configuration panel.
+newtype ShowViewer = ShowViewer
+  (forall h. h -> MakeViewer h -> IO () -> IO ())
+
+type MakeViewer h = h -> IO () -> SomeContext EventArgument_ -> IO () -> Viewer -> IO (IO ())
+
+-- | The part of running an ensemble that doesn't involve the UI: working
+-- out its configuration's values and compiling its viewers' code, which
+-- can take a while. It can be done on any thread (it doesn't change any
+-- value something might be watching), and stopped (by an asynchronous
+-- exception) at any point, with nothing to undo. Fails (with
+-- 'BadEnsemble') if the configuration doesn't make sense.
+prepareEnsemble :: Backend -> Ensemble -> IO PreparedEnsemble
+prepareEnsemble backend Ensemble{..} = do
+  (someContext, configArgs, peConfiguration) <- getDynamic ensembleConfiguration >>= \case
+    Nothing -> pure (SomeContext EmptyContext, SomeContext EmptyContext, Nothing)
     Just Configuration{..} -> do
       title <- fromRight "???" <$> getDynamic coTitle
-      showConfig <- makeLayout project title coContents
       layoutContext' coContents >>= \case
         Left err -> throwIO (BadEnsemble err)
         Right c  -> layoutToArgs coContents >>= \case
           SomeContext' (Left err)   -> throwIO (BadEnsemble err)
-          SomeContext' (Right args) -> pure (c, args, showConfig)
+          SomeContext' (Right args) -> pure (c, args, Just (title, coContents))
 
-  let env = maybe (pure $ Right $ SomeEnvironment EmptyEnvProxy) (layoutEnv . coContents) =<< dyn ensembleConfiguration
-  watchDynamic env $ \env' -> putStrLn ("ENV: " ++ show env')
-  let mkViewer' x1 x2 = makeViewer x1 x2 env
+  let peEnvironment = maybe (pure $ Right $ SomeEnvironment EmptyEnvProxy) (layoutEnv . coContents) =<< dyn ensembleConfiguration
 
-  -- Make the viewers
   viewers <- getDynamic ensembleViewers
   autocolorState <- getDynamic ensembleAutocolor
-  forM_ viewers $ makeComplexViewer project backend autocolorState mkViewer' someContext configArgs showConfig
+  peViewers <- forM viewers (prepareComplexViewer backend autocolorState someContext configArgs)
+  pure PreparedEnsemble{..}
 
-makeComplexViewer :: forall ensembleHandle
-                   . ensembleHandle
-                  -> Backend
-                  -> AutocolorState
-                  -> (ensembleHandle -> IO () -> SomeContext EventArgument_ -> IO () -> Viewer -> IO (IO ()))
-                  -> SomeContext DynamicValue'
-                  -> SomeContext EventArgument_
-                  -> IO ()
-                  -> ComplexViewer
-                  -> IO ()
-makeComplexViewer project backend autocolorState mkViewer someContext configArgs showConfig ComplexViewer{..} = do
-   rebuildScript
+-- | Show a prepared ensemble: its configuration panel, then its viewers.
+-- On the UI's thread.
+showEnsemble :: UI -> PreparedEnsemble -> IO ()
+showEnsemble UI{..} PreparedEnsemble{..} = do
+  project <- newEnsemble
+  showConfig <- maybe (pure (pure ())) (uncurry (makeLayout project)) peConfiguration
+  watchDynamic peEnvironment $ \env' -> putStrLn ("ENV: " ++ show env')
+  let mkViewer' x1 x2 = makeViewer x1 x2 peEnvironment
+  forM_ peViewers $ \(ShowViewer showIt) -> showIt project mkViewer' showConfig
+
+-- | Prepare a viewer: compile its code (see 'prepareEnsemble'), giving
+-- the way to show it. A shown viewer can be rebuilt (prepared and shown
+-- again, at once).
+prepareComplexViewer :: Backend
+                     -> AutocolorState
+                     -> SomeContext DynamicValue'
+                     -> SomeContext EventArgument_
+                     -> ComplexViewer
+                     -> IO ShowViewer
+prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer{..} =
+   prepare
   where
-   rebuildScript = do
+   rebuild :: forall h. h -> MakeViewer h -> IO () -> IO ()
+   rebuild project mkViewer showConfig = prepare >>= \(ShowViewer showIt) -> showIt project mkViewer showConfig
+
+   -- (shown: made with the UI, starting over from the original view)
+   shown :: Viewer -> ShowViewer
+   shown v = ShowViewer $ \project mkViewer showConfig -> do
+     setValue' (vCenter v) (vOriginalCenter v)
+     -- FIXME, we should grab the "close this window" action and do something with it
+     void $ mkViewer project showConfig configArgs (rebuild project mkViewer showConfig) v
+
+   prepare = do
 
     let coordNames = coordinateNames cvCoord
     let vTitle    = source cvTitle
@@ -1744,9 +1786,9 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
         vOriginalHyperbolicPixelSizes = cvHyperbolicPixelSizes
         vGroup = cvGroup
     -- (the same variable the viewer's code and tools read the
-    -- center from, starting over from the original view on a rebuild)
+    -- center from, starting over from the original view when it's
+    -- shown: see 'shown')
     let vCenter = cvCenterV
-    setValue' vCenter vOriginalCenter
     vPixelSize <- newVariable vOriginalPixelSize
     vAspect <- newVariable vOriginalAspect
 
@@ -1820,7 +1862,7 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
             vListen = const (pure $ pure ())
 
         putStrLn ("Can't build viewer: " ++ err)
-        void $ mkViewer project showConfig configArgs rebuildScript Viewer{..}
+        pure (shown Viewer{..})
 
       Right (SomeViewerWithContext context code mprefix) -> do
 
@@ -1876,13 +1918,12 @@ makeComplexViewer project backend autocolorState mkViewer someContext configArgs
                            then Just <$> makeSelectTool cvCoord else pure Nothing
           let vTools = maybe id (:) vSelectTool <$> dyn cvTools
 
-          withCompiledViewer (bViewerCompiler backend) lookupAutocolor code $ \fun0 -> do
-            fun <- case mprefix of
-              Nothing -> pure fun0
-              Just prefix -> hoistedViewerFunction (bRunOnce backend lookupAutocolor) env prefix fun0
-            let vCodeWithArgs = CodeWithArgs vGetArgs (Just code) (pure fun)
-            -- FIXME, we should grab the "close this window" action and do something with it
-            void $ mkViewer project showConfig configArgs rebuildScript Viewer{..}
+          fun0 <- compileViewer (bViewerCompiler backend) lookupAutocolor code
+          fun <- case mprefix of
+            Nothing -> pure fun0
+            Just prefix -> hoistedViewerFunction (bRunOnce backend lookupAutocolor) env prefix fun0
+          let vCodeWithArgs = CodeWithArgs vGetArgs (Just code) (pure fun)
+          pure (shown Viewer{..})
 
 layoutToArgs :: Layout -> IO (SomeContext' EventArgument_)
 layoutToArgs = \case

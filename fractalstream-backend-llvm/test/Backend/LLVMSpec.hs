@@ -16,7 +16,7 @@ import Data.List (isInfixOf, intercalate)
 import Control.Exception (IOException, ErrorCall(..), SomeException, try, throwIO)
 import Control.Concurrent (forkIO, killThread, threadDelay)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
-import Control.Monad (forM_, forever, replicateM, replicateM_, void, (>=>))
+import Control.Monad (forM, forM_, forever, replicateM, replicateM_, void, (>=>))
 import System.Timeout (timeout)
 import Actor.Viewer (ViewerFunction(..), runViewerFunction, ViewerArgs(..), ViewerIssues(..),
                      buildViewerContext, parseViewerScript)
@@ -565,6 +565,46 @@ spec = do
             , vaBuffer = buf }
           peekArray (3 * 4 * 4) buf
       pixels `shouldBe` allPixels (colorToRGB green)
+
+    -- Compiling takes turns (see 'LLVMJit'), so viewers can be compiled
+    -- on any thread.
+    let -- (a 4x4 block of one of 48 different colors)
+        colorBlock :: LLVMJit -> Int -> IO [Word8]
+        colorBlock jit k = do
+          let env = envProxy (Proxy @(ViewerEnv '[]))
+              src = "color <- rgb(" ++ show k ++ " / 48, 1 - " ++ show k ++ " / 48, 0.5)"
+          code <- either (fail . show) pure (parseCode env noCommonDefs src)
+          vf <- jittedViewer jit noAutocolor code
+          allocaBytes (3 * 4 * 4) $ \buf -> do
+            _ <- runViewerFunction vf EmptyContext ViewerArgs
+              { vaPoint = (0, 0), vaOffset = (0, 0), vaStep = (0.1, 0.1), vaPixel = (0.1, 0.1)
+              , vaWidth = 4, vaHeight = 4, vaSubsamples = 1
+              , vaBuffer = buf }
+            peekArray (3 * 4 * 4) buf
+
+    it "compiles viewers on many threads at once" $ withJIT $ \jit -> do
+      expected <- mapM (colorBlock jit) [0 .. 47]
+      -- (8 threads, compiling 6 viewers each, all at once)
+      dones <- forM [0 .. 7] $ \t -> do
+        done <- newEmptyMVar
+        _ <- forkIO $ (try @SomeException >=> putMVar done) $
+               mapM (\j -> let k = 6 * t + j in (k,) <$> colorBlock jit k) [0 .. 5]
+        pure done
+      results <- concat <$> mapM (takeMVar >=> either throwIO pure) dones
+      length results `shouldBe` 48
+      forM_ results $ \(k, pixels) -> pixels `shouldBe` (expected !! k)
+
+    it "lets go of the compile lock however a compile ends" $ withJIT $ \jit -> do
+      -- (one that fails...)
+      failed <- try @ErrorCall (withCompileLock jit (throwIO (ErrorCall "no") :: IO ()))
+      failed `shouldBe` Left (ErrorCall "no")
+      -- (...and one that's stopped)
+      holding <- newEmptyMVar
+      t <- forkIO (withCompileLock jit (putMVar holding () >> forever (threadDelay 100000)))
+      takeMVar holding
+      killThread t
+      -- (so the next compile can go ahead)
+      timeout 20000000 (colorBlock jit 7) >>= (`shouldSatisfy` (/= Nothing))
 
     it "renders many blocks at once from one binding of the values" $ withJIT $ \jit -> do
       -- A render binds the configuration's values once (marshalling them

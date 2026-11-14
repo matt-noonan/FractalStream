@@ -8,6 +8,8 @@ module Backend.LLVM
   , withCompiledCode
   , withJIT
   , withJittedViewer
+  , jittedViewer
+  , withCompileLock
   , llvmToolRunner
   , compiledToolExec
   , runJX
@@ -17,6 +19,7 @@ module Backend.LLVM
   ) where
 
 import qualified Data.ByteString.Char8 as BS
+import qualified LLVM.AST
 
 import FractalStream.Prelude
 
@@ -32,7 +35,7 @@ import qualified LLVM.Relocation as Reloc
 import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
-import Control.Exception (bracket, finally, uninterruptibleMask_, throwIO)
+import Control.Exception (ErrorCall(..), bracket, finally, uninterruptibleMask_, throwIO)
 
 import Foreign.LibFFI
 import Foreign.C.Types
@@ -329,108 +332,83 @@ fromFFIRetArg t ptr = case t of
     pure (v /= 0)
   _ -> error ("todo: fromFFIRetArg " ++ showType t)
 
+-- | Compile a viewer's code, in the JIT session, to the function that
+-- renders its blocks. (The function stays valid for the rest of the
+-- session; see 'LLVMJit'.)
+jittedViewer :: forall env. (MissingViewerArgs env, KnownEnvironment env)
+             => LLVMJit
+             -> AutocolorLookup
+             -> Code (ViewerEnv env)
+             -> IO (ViewerFunction env)
+jittedViewer jit lookupAutocolor code0 = do
+  -- Do some basic AST-level optimizations first
+  let code = transformValues backendRewrites code0
+      arenaPool = jitArenas jit
+  name <- modifyMVar (jitNextId jit) (\n -> pure (n + 1, "kernel_" ++ show n))
+  m <- either error pure (compileRenderer' (fromString name) code)
+  kernelFn <- jitFunction jit "kernel" name m
+  let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
+
+  -- Borrow an arena from the session-wide pool for the duration of each
+  -- kernel call; bracket returns it even if AsyncCancelled is thrown.
+  -- The pool (and the arena lifetime) is owned by withJIT, not here,
+  -- because rendering goes on long after this compile (see LLVMJit).
+  -- The arena goes back with exceptions masked *uninterruptibly*:
+  -- 'writeChan' can block for a moment (on other threads
+  -- returning arenas), and with 'bracket''s ordinary
+  -- (interruptible) mask an asynchronous exception there --
+  -- such as cancelling a tile's render, which happens on every
+  -- redraw -- would abandon the release and lose the arena for
+  -- good. Lost arenas made quitting hang, waiting to free them.
+  --
+  -- The configuration's values are marshalled once, when they're
+  -- bound, and shared by every block the render draws (on many
+  -- threads at once: the kernel only reads them). They're freed
+  -- once the block function is garbage, by the finalizer of
+  -- 'bound', which each call keeps alive while it runs.
+  pure $ ViewerFunction $ \vaArgs -> do
+    (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
+    (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
+    anchor <- mallocBytes 1 :: IO (Ptr Word8)
+    bound <- FC.newForeignPtr anchor (sequence_ (colorFree : frees) >> free anchor)
+    pure $ \ViewerArgs{..} ->
+     withForeignPtr bound $ \_ ->
+     bracket (readChan arenaPool) (uninterruptibleMask_ . writeChan arenaPool) $ \arena ->
+     withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir -> do
+      issues <- allocaBytes 1 $ \issuesPtr -> do
+        -- Call the LLVM kernel with the arena as a raw pointer
+        let fullArgs = argPtr   vaBuffer
+                     : argInt32 vaWidth
+                     : argInt32 vaHeight
+                     : argInt32 vaSubsamples
+                     : argPtr   arena
+                     : argInt32 (fromIntegral arenaCapacity)
+                     : argPtr   issuesPtr
+                     : argPtr   (castFunPtrToPtr autocolorCacheLookup)
+                     : argPtr   autocolorDir
+                     : argCDouble (CDouble $ fst vaStep)
+                     : argCDouble (CDouble $ snd vaStep)
+                     : argInt32 (fst vaOffset)
+                     : argInt32 (snd vaOffset)
+                     : argCDouble (CDouble $ fst vaPoint)
+                     : argCDouble (CDouble $ snd vaPoint)
+                     : argCDouble (CDouble $ fst vaPixel)
+                     : argCDouble (CDouble $ snd vaPixel)
+                     : colorArg
+                     : args
+        callFFI fn retVoid fullArgs
+        status <- peek (issuesPtr :: Ptr Word8)
+        pure ViewerIssues { viOutOfMemory = testBit status 0
+                          , viBadIndex    = testBit status 1 }
+      pure issues
+
+-- | 'jittedViewer', handing the function on.
 withJittedViewer :: forall env t. (MissingViewerArgs env, KnownEnvironment env)
                  => LLVMJit
                  -> AutocolorLookup
                  -> Code (ViewerEnv env)
                  -> (ViewerFunction env -> IO t) -> IO t
-withJittedViewer (dylib, session, compileLayer, nextId, arenaPool) lookupAutocolor code0 action = do
-  -- Do some basic AST-level optimizations first
-  let code = transformValues backendRewrites code0
-  name <- modifyMVar nextId (\n -> pure (n + 1, "kernel_" ++ show n))
-  m <- either error pure (compileRenderer' (fromString name) code)
-  withContext $ \ctx ->
-    withModuleFromAST ctx m $ \md -> do
-    let pm = CuratedPassSetSpec
-             { optLevel = Just 2 -- "-O2"?
-             , sizeLevel = Nothing
-             , unitAtATime = Nothing
-             , simplifyLibCalls = Just True
-             , loopVectorize = Just True
-             , superwordLevelParallelismVectorize = Nothing
-             , useInlinerWithThreshold = Nothing
-             , dataLayout = Nothing
-             , targetLibraryInfo = Nothing
-             , targetMachine = Nothing
-             }
-    withPassManager pm (`runPassManager` md)
-
-    let dumpLLVM = False
-        dumpAsm  = False
-    when dumpLLVM $ do
-      putStrLn "------------------------------------------------------------"
-      asm' <- BS.unpack <$> moduleLLVMAssembly md
-      putStrLn asm'
-
-    withClonedThreadSafeModule md $ \tsm -> do
-      addModule tsm dylib compileLayer
-      lookupSymbol session compileLayer dylib (fromString name) >>= \case
-        Left err -> error ("error JITing kernel: " ++ show err)
-        Right (JITSymbol kernelFn _) -> do
-          when dumpLLVM $
-            putStrLn "------------------------------------------------------------"
-
-          when dumpAsm $ do
-            let dcfg = defaultConfig { confIn64BitMode = True }
-            instrs <- disassembleBlockWithConfig dcfg (wordPtrToPtr kernelFn) 1024
-            case instrs of
-              Left err -> putStrLn ("disassembly error: " ++ show err)
-              Right is -> forM_ is (\i -> putStrLn ("  " ++ showIntel i))
-
-          let fn = castPtrToFunPtr (wordPtrToPtr kernelFn)
-
-          -- Borrow an arena from the session-wide pool for the duration of each
-          -- kernel call; bracket returns it even if AsyncCancelled is thrown.
-          -- The pool (and the arena lifetime) is owned by withJIT, not here,
-          -- because rendering outlives this action (see LLVMJit).
-          -- The arena goes back with exceptions masked *uninterruptibly*:
-          -- 'writeChan' can block for a moment (on other threads
-          -- returning arenas), and with 'bracket''s ordinary
-          -- (interruptible) mask an asynchronous exception there --
-          -- such as cancelling a tile's render, which happens on every
-          -- redraw -- would abandon the release and lose the arena for
-          -- good. Lost arenas made quitting hang, waiting to free them.
-          --
-          -- The configuration's values are marshalled once, when they're
-          -- bound, and shared by every block the render draws (on many
-          -- threads at once: the kernel only reads them). They're freed
-          -- once the block function is garbage, by the finalizer of
-          -- 'bound', which each call keeps alive while it runs.
-          action $ ViewerFunction $ \vaArgs -> do
-            (colorArg, colorFree) <- toFFIArg (Proxy @"color") ColorType grey
-            (args, frees) <- unzip <$> fromContextM toFFIArg vaArgs
-            anchor <- mallocBytes 1 :: IO (Ptr Word8)
-            bound <- FC.newForeignPtr anchor (sequence_ (colorFree : frees) >> free anchor)
-            pure $ \ViewerArgs{..} ->
-             withForeignPtr bound $ \_ ->
-             bracket (readChan arenaPool) (uninterruptibleMask_ . writeChan arenaPool) $ \arena ->
-             withForeignPtr (autocolorCache lookupAutocolor) $ \autocolorDir -> do
-              issues <- allocaBytes 1 $ \issuesPtr -> do
-                -- Call the LLVM kernel with the arena as a raw pointer
-                let fullArgs = argPtr   vaBuffer
-                             : argInt32 vaWidth
-                             : argInt32 vaHeight
-                             : argInt32 vaSubsamples
-                             : argPtr   arena
-                             : argInt32 (fromIntegral arenaCapacity)
-                             : argPtr   issuesPtr
-                             : argPtr   (castFunPtrToPtr autocolorCacheLookup)
-                             : argPtr   autocolorDir
-                             : argCDouble (CDouble $ fst vaStep)
-                             : argCDouble (CDouble $ snd vaStep)
-                             : argInt32 (fst vaOffset)
-                             : argInt32 (snd vaOffset)
-                             : argCDouble (CDouble $ fst vaPoint)
-                             : argCDouble (CDouble $ snd vaPoint)
-                             : argCDouble (CDouble $ fst vaPixel)
-                             : argCDouble (CDouble $ snd vaPixel)
-                             : colorArg
-                             : args
-                callFFI fn retVoid fullArgs
-                status <- peek (issuesPtr :: Ptr Word8)
-                pure ViewerIssues { viOutOfMemory = testBit status 0
-                                  , viBadIndex    = testBit status 1 }
-              pure issues
+withJittedViewer jit lookupAutocolor code action = jittedViewer jit lookupAutocolor code >>= action
 
 ------------------------------------------------------------------------
 -- Compiled tools
@@ -522,12 +500,11 @@ withDrawVTablePtrs sink action = do
 -- | Execute a tool event handler by JIT-compiling it and calling it, with draw
 -- commands routed back to the given sink.  Compiles once per invocation for now.
 compiledToolExec :: LLVMJit -> AutocolorLookup -> DrawSink -> ToolExec
-compiledToolExec (dylib, session, compileLayer, nextId, _) lookupAutocolor sink =
+compiledToolExec jit lookupAutocolor sink =
   \envp code -> do
-    -- Compile the handler ONCE, when the dispatcher is built.  OrcJIT's
-    -- 'addModule' hands a clone of the module to the session-wide JIT, so the
-    -- resulting function pointer stays valid after these brackets close.
-    name <- modifyMVar nextId (\n -> pure (n + 1, "tool_" ++ show n))
+    -- Compile the handler ONCE, when the dispatcher is built; the function
+    -- stays valid for the rest of the session (see 'LLVMJit').
+    name <- modifyMVar (jitNextId jit) (\n -> pure (n + 1, "tool_" ++ show n))
 
     -- Same AST pre-pass as viewers: turn constant-exponent powers (e.g. z²)
     -- into multiplications instead of generic exp/log complex powers, which
@@ -535,27 +512,7 @@ compiledToolExec (dylib, session, compileLayer, nextId, _) lookupAutocolor sink 
     let code' = transformValues backendRewrites code
 
     m <- either error pure (compileToolHandler envp (fromString name) code')
-    fn <- withContext $ \llctx ->
-      withModuleFromAST llctx m $ \md -> do
-        let pm = CuratedPassSetSpec
-                 { optLevel = Just 2
-                 , sizeLevel = Nothing
-                 , unitAtATime = Nothing
-                 , simplifyLibCalls = Just True
-                 , loopVectorize = Just True
-                 , superwordLevelParallelismVectorize = Nothing
-                 , useInlinerWithThreshold = Nothing
-                 , dataLayout = Nothing
-                 , targetLibraryInfo = Nothing
-                 , targetMachine = Nothing
-                 }
-        _ <- withPassManager pm (`runPassManager` md)
-        withClonedThreadSafeModule md $ \tsm -> do
-          addModule tsm dylib compileLayer
-          lookupSymbol session compileLayer dylib (fromString name) >>= \case
-            Left err -> error ("error JITing tool handler: " ++ show err)
-            Right (JITSymbol fnPtr _) ->
-              pure (castPtrToFunPtr (wordPtrToPtr fnPtr) :: FunPtr ())
+    fn <- castPtrToFunPtr . wordPtrToPtr <$> jitFunction jit "tool handler" name m
 
     -- The per-event invoker: snapshot args, then run the handler, retrying
     -- with a bigger arena if it runs out.
@@ -704,11 +661,78 @@ withCompiledCode outputProxy outputTy env src run = do
 arenaCapacity :: Int
 arenaCapacity = 1024 * 1024
 
--- | The arena pool lives for the whole JIT session: the JIT'd kernels stay
--- resident until the session is torn down, and rendering runs on the wx event
--- loop *after* each 'withJittedViewer' action returns, so the arenas must
--- outlive any single viewer compile (and be shared across viewers).
-type LLVMJit = (JITDylib, ExecutionSession, IRCompileLayer, MVar Int, Chan (Ptr Word8))
+-- | A JIT session, shared by every viewer and tool compiled in it.
+--
+-- The JIT'd kernels stay resident until the session is torn down (they
+-- live in its dylib), so a compiled function outlives the compile that
+-- made it; and the arena pool lives for the whole session too, shared by
+-- every viewer's renders.
+--
+-- Compiles take turns, under 'jitCompileLock'. The compile layer is a
+-- 'SimpleCompiler' over the session's one 'TargetMachine', which LLVM
+-- (12) supports from one compiling thread at a time only, and a module is
+-- compiled on whichever thread looks its symbol up first. Everything
+-- else a compile uses is its own (an 'LLVM.Context.Context', a pass
+-- manager, a cloned module) or locks for itself (the session's symbol
+-- tables, the linking layer); and calling an already-compiled kernel
+-- touches none of it, so renders go on while another viewer compiles.
+data LLVMJit = LLVMJit
+  { jitDylib        :: JITDylib
+  , jitSession      :: ExecutionSession
+  , jitCompileLayer :: IRCompileLayer
+  , jitNextId       :: MVar Int
+    -- ^ for naming each kernel
+  , jitArenas       :: Chan (Ptr Word8)
+    -- ^ the viewers' arena pool
+  , jitCompileLock  :: MVar ()
+  }
+
+-- | Hold the session's compile lock while running an action, letting go
+-- of it however the action ends (an exception included). Not reentrant:
+-- the action mustn't compile anything itself.
+withCompileLock :: LLVMJit -> IO a -> IO a
+withCompileLock jit action = withMVar (jitCompileLock jit) (const action)
+
+-- | Compile an LLVM module (optimizing it at -O2 first), under the
+-- session's compile lock, and look up the address of the named function
+-- in it. The function stays valid for the rest of the session.
+jitFunction :: LLVMJit -> String -> String -> LLVM.AST.Module -> IO WordPtr
+jitFunction jit what name m = withCompileLock jit $
+  withContext $ \ctx ->
+    withModuleFromAST ctx m $ \md -> do
+      let pm = CuratedPassSetSpec
+               { optLevel = Just 2 -- "-O2"?
+               , sizeLevel = Nothing
+               , unitAtATime = Nothing
+               , simplifyLibCalls = Just True
+               , loopVectorize = Just True
+               , superwordLevelParallelismVectorize = Nothing
+               , useInlinerWithThreshold = Nothing
+               , dataLayout = Nothing
+               , targetLibraryInfo = Nothing
+               , targetMachine = Nothing
+               }
+      _ <- withPassManager pm (`runPassManager` md)
+
+      let dumpLLVM = False
+          dumpAsm  = False
+      when dumpLLVM $ do
+        putStrLn "------------------------------------------------------------"
+        asm' <- BS.unpack <$> moduleLLVMAssembly md
+        putStrLn asm'
+
+      withClonedThreadSafeModule md $ \tsm -> do
+        addModule tsm (jitDylib jit) (jitCompileLayer jit)
+        lookupSymbol (jitSession jit) (jitCompileLayer jit) (jitDylib jit) (fromString name) >>= \case
+          Left err -> throwIO (ErrorCall ("error JITing " ++ what ++ ": " ++ show err))
+          Right (JITSymbol fnPtr _) -> do
+            when dumpAsm $ do
+              let dcfg = defaultConfig { confIn64BitMode = True }
+              instrs <- disassembleBlockWithConfig dcfg (wordPtrToPtr fnPtr) 1024
+              case instrs of
+                Left err -> putStrLn ("disassembly error: " ++ show err)
+                Right is -> forM_ is (\k -> putStrLn ("  " ++ showIntel k))
+            pure fnPtr
 
 withJIT :: (LLVMJit -> IO t) -> IO t
 withJIT action = do
@@ -722,6 +746,7 @@ withJIT action = do
       addDynamicLibrarySearchGeneratorForCurrentProcess compileLayer dylib
       defineRuntimeSymbols compileLayer dylib
       nextId <- newMVar 0
+      compileLock <- newMVar ()
 
       -- Fixed pool of arenas (one per capability), shared by all viewers.
       numWorkers <- getNumCapabilities
@@ -734,7 +759,7 @@ withJIT action = do
       -- -- so freeing them and unmapping the session afterwards is safe.
       let drainAndFreeArenas =
             replicateM numWorkers (readChan arenaPool) >>= mapM_ free
-      action (dylib, session, compileLayer, nextId, arenaPool)
+      action (LLVMJit dylib session compileLayer nextId arenaPool compileLock)
         `finally` drainAndFreeArenas
 
 -- | Define symbols that JIT'd code may need but that the JIT can't find by
