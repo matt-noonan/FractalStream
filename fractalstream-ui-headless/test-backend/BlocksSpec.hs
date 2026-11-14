@@ -28,6 +28,7 @@ import Actor.Layout (Dimensions(..))
 import Data.DynamicValue (setValue)
 import Foreign.ForeignPtr (withForeignPtr)
 import Backend (withBackend)
+import FractalStream.Backends (BackendId(..))
 
 import Control.Monad (forM_)
 import qualified Data.ByteString as BS
@@ -69,14 +70,15 @@ renderBlocks viewer place blocks = do
       readIORef image
   where step = 1e-13
 
--- | The viewer's first backend's block function (the CPU's, which never
--- declines), its values bound.
+-- | The viewer's CPU backend's block function (which never declines),
+-- its values bound. (Not the first in its order: on the web, that's the
+-- GPU's, which declines without WebGPU, as under Node.)
 cpuBlocks :: Viewer -> IO (ViewerArgs -> IO ViewerIssues)
 cpuBlocks viewer = viewerRenderer viewer >>= either fail pure >>= \case
-  Renderer ((_, blocks) : _) -> blocks >>= \case
+  Renderer tries | Just blocks <- lookup Cpu tries -> blocks >>= \case
     Left why -> fail (show why)
     Right bf -> pure (\args -> bfBlock bf args >>= either (fail . show) pure)
-  Renderer [] -> fail "no backends"
+  Renderer _ -> fail "no CPU backend"
 
 origin :: (Double, Double)
 origin = (1.0000001 - fromIntegral width / 2 * 1e-13, fromIntegral height / 2 * 1e-13)
