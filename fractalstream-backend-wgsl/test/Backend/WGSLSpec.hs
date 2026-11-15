@@ -9,7 +9,7 @@ module Backend.WGSLSpec (spec, shaders) where
 
 import Test.Hspec
 
-import Backend (withBackend)
+import Backend.Pure (pureBackend)
 import Backend.WGSL
 import Backend.WGSL.Code (argWords, packArgs)
 import Data.Proxy (Proxy(..))
@@ -44,8 +44,8 @@ withViewer device script k = do
   let ui = UI { newEnsemble = pure ()
               , makeLayout = \_ _ _ -> pure (pure ())
               , makeViewer = \_ _ _ _ _ v -> writeIORef ref (Just v) >> pure (pure ()) }
-  withBackend $ \backend -> do
-    runEnsemble backend { bViewerCompilers = bViewerCompilers backend ++ gpuViewerCompilers device } ui ens
+  withBackends pureBackend [gpuBackends (pure device)] $ \backend -> do
+    runEnsemble backend ui ens
     readIORef ref >>= maybe (fail "no viewer") k
 
 -- | What each GPU backend makes of a script's viewer: its shader, or why

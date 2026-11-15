@@ -7,9 +7,12 @@
 -- won't compile, and every viewer when there's no GPU. A block the GPU
 -- fails to draw (the device was lost, say) gives up the render, which the
 -- next backend draws instead. Its renders skip the coarse passes
--- ('bfCoarse'): it's fast enough to start at full resolution.
+-- ('bfCoarse'): it's fast enough to start at full resolution. A frontend
+-- built with them includes 'gpuBackends', on its platform's device, in
+-- its backends ('Actor.Viewer.withBackends').
 module Backend.WGSL
-  ( gpuViewerCompilers
+  ( gpuBackends
+  , gpuViewerCompilers
   , viewerSource
   , module Backend.WGSL.Device
   , Precision(..)
@@ -21,7 +24,7 @@ import Backend.WGSL.Code
 import Backend.WGSL.Device
 import Backend.WGSL.Runtime (Precision(..))
 
-import Actor.Viewer (ViewerCompiler(..), CompiledViewer(..), BlockFunction(..), ViewerArgs(..), ViewerIssues(..))
+import Actor.Viewer (ViewerCompiler(..), CompiledViewer(..), BlockFunction(..), ViewerArgs(..), ViewerIssues(..), ViewerBackends(..))
 import Actor.Viewer.Types (ViewerEnv, MissingViewerArgs)
 import FractalStream.Backends (BackendId(..), Decline(..))
 import Language.Code (Code, transformValues)
@@ -33,17 +36,31 @@ import Data.Bits (testBit)
 import Foreign.Marshal.Array (withArray)
 import Language.Table (Table(..))
 import Foreign.Ptr (castPtr)
+import Control.Concurrent.MVar (newMVar, modifyMVar)
 
--- | The GPU backends, on this device (or, if there's none, declining
--- every viewer, saying why).
-gpuViewerCompilers :: Either String GpuDevice -> [(BackendId, ViewerCompiler)]
-gpuViewerCompilers device = [(GpuDf64, compiler DoubleFloat), (GpuF32, compiler Single)]
+-- | The GPU backends, on the device this starts (the platform's: the
+-- web's WebGPU, or the desktop's wgpu-native), or that says why there's
+-- none. It's started once, when a GPU backend first compiles a viewer: a
+-- session drawn on the CPU alone never touches the GPU.
+gpuBackends :: IO (Either String GpuDevice) -> ViewerBackends
+gpuBackends start = ViewerBackends $ do
+  started <- newMVar Nothing
+  let device = modifyMVar started $ \case
+        Just d -> pure (Just d, d)
+        Nothing -> start >>= \d -> pure (Just d, d)
+  pure (gpuViewerCompilers device)
+
+-- | The GPU backends' viewer compilers, on the device this gives (or,
+-- if there's none, declining every viewer, saying why).
+gpuViewerCompilers :: IO (Either String GpuDevice) -> [(BackendId, ViewerCompiler)]
+gpuViewerCompilers getDevice = [(GpuDf64, compiler DoubleFloat), (GpuF32, compiler Single)]
   where
-    compiler p = ViewerCompiler $ \_ code -> case device of
+    -- (what the GPU can't compile is declined without starting it)
+    compiler p = ViewerCompiler $ \_ code -> case viewerSource p code of
       Left why -> pure (Left (Decline why))
-      Right dev -> case viewerSource p code of
+      Right source -> getDevice >>= \case
         Left why -> pure (Left (Decline why))
-        Right source -> gdCompile dev source <&> \case
+        Right dev -> gdCompile dev source <&> \case
           Left err -> Left (Decline ("the GPU couldn't compile it: " ++ err))
           Right kernel -> Right (CompiledViewer (bind kernel))
 

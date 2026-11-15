@@ -16,7 +16,7 @@ import qualified Data.ByteString.Char8 as BS
 import Actor.Ensemble (Ensemble(..), buildEnsembleFromScript, encodeEnsemble, ensembleTables, parseEnsembleFromBytes)
 import Actor.SavedTables (captureTables)
 import Data.DynamicValue (getDynamic, setValue')
-import Backend (withBackend)
+import Backends (withBackend)
 import Interpreter (runScenario)
 import Scenario (parseScenario)
 

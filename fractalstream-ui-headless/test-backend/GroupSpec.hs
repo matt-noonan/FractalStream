@@ -11,7 +11,7 @@ import Test.Hspec
 import Data.List (isInfixOf)
 
 import Actor.Ensemble (buildEnsembleFromScript)
-import Backend (withBackend)
+import Backends (withBackend)
 import Interpreter (runScenario)
 import Scenario (parseScenario)
 

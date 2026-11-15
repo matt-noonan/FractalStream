@@ -65,8 +65,7 @@ library
   import: FractalStream-common
   if !arch(wasm32)
     buildable:         False
-  exposed-modules:     Backend
-                       Backend.Wasm
+  exposed-modules:     Backend.Wasm
                        Backend.Wasm.Encode
                        Backend.Wasm.Gen
                        Backend.Wasm.Value

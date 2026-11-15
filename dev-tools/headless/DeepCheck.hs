@@ -29,7 +29,7 @@ import Actor.Event
 import Actor.Configuration
 import Language.Environment (SomeContext(..), SomeContext'(..))
 import Data.DynamicValue
-import Backend
+import Backend.Pure (pureBackend)
 import Control.Monad (forM_)
 import Control.Exception (SomeException, try, evaluate)
 import System.Environment (getArgs)
@@ -84,6 +84,6 @@ checkOne backend path = do
         Right () -> putStrLn "runEnsemble returned normally"
 
 main :: IO ()
-main = withBackend $ \backend -> do
+main = withBackends pureBackend [] $ \backend -> do
   paths <- getArgs
   mapM_ (checkOne backend) paths

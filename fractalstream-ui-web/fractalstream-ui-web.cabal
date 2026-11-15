@@ -15,6 +15,11 @@ copyright:           2026, Matt Noonan
 category:            Math
 build-type:          Simple
 
+flag gpu
+  description: Offer the GPU backends too (on the browser's WebGPU, if it has one)
+  default: True
+  manual: True
+
 common FractalStream-common
   ghc-options:         -Wall -Werror -O2 -Wno-star-is-type
   -- This is basically the list of extensions from
@@ -65,7 +70,8 @@ executable fractalstream-web
   if !arch(wasm32)
     buildable:         False
   main-is:             Main.hs
-  other-modules:       Drawing
+  other-modules:       Backends
+                       Drawing
                        Editor
   hs-source-dirs:      src
   -- (a reactor module: the page's worker calls its exports; see web/src/engine.ts)
@@ -85,3 +91,7 @@ executable fractalstream-web
                      , filepath
                      , JuicyPixels
                      , vector
+  -- (the backends: see src/Backends.hs)
+  if flag(gpu)
+    build-depends:     fractalstream-backend-wgsl
+    cpp-options:       -DUSE_GPU

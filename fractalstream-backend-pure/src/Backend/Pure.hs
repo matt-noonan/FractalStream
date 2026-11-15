@@ -1,6 +1,7 @@
 --{-# options_ghc -Wno-unused-matches #-}
 module Backend.Pure
-  ( interpretedViewer
+  ( pureBackend
+  , interpretedViewer
   ) where
 
 import FractalStream.Prelude
@@ -16,6 +17,19 @@ import Data.Color (colorToRGB, grey)
 
 import Foreign hiding (void)
 import Data.IORef
+import FractalStream.Backends (BackendId(Cpu))
+import Actor.Event (interpretedToolExec)
+
+-- | The pure backend: viewers, tools and the code that runs once a
+-- render, all interpreted.
+pureBackend :: CpuBackend
+pureBackend = CpuBackend $ \action ->
+  action Backend
+    { bViewerCompilers   = [(Cpu, ViewerCompiler (\_ c -> Right . cpuViewer <$> interpretedViewer c))]
+    , bToolRunnerFactory = defaultToolRunnerFactory
+    , bToolRunner        = defaultToolRunner
+    , bRunOnce           = \_ -> interpretedToolExec ignoreDrawing
+    }
 
 -- | Interpret a viewer's code: the function that renders its blocks.
 interpretedViewer :: forall env. MissingViewerArgs env

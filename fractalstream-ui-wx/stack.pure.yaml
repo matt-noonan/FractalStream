@@ -10,6 +10,8 @@ packages:
 - ../fractalstream-core
 - ../fractalstream-library
 - ../fractalstream-backend-pure
+- ../fractalstream-backend-wgsl
+- ../fractalstream-backend-wgpu
 
 extra-deps:
 

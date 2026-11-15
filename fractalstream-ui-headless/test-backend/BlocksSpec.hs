@@ -27,7 +27,7 @@ import Data.Word (Word8)
 import Actor.Layout (Dimensions(..))
 import Data.DynamicValue (setValue)
 import Foreign.ForeignPtr (withForeignPtr)
-import Backend (withBackend)
+import Backends (withBackend)
 import FractalStream.Backends (BackendId(..))
 
 import Control.Monad (forM_)

@@ -11,6 +11,8 @@ packages:
 - .
 - ../fractalstream-core
 - ../fractalstream-backend-pure
+- ../fractalstream-backend-wgsl
+- ../fractalstream-backend-wgpu
 
 flags:
   fractalstream-ui-headless:

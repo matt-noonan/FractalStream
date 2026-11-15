@@ -1,6 +1,7 @@
 {-# language CPP, OverloadedStrings, ForeignFunctionInterface, AllowAmbiguousTypes, UndecidableInstances, RankNTypes #-}
 module Backend.LLVM
-  ( JITFun(..)
+  ( llvmBackend
+  , JITFun(..)
   , ToForeignFun(..)
   , type LLVMJit
   , invoke
@@ -66,6 +67,18 @@ import Foreign hiding (void)
 import qualified Foreign.Concurrent as FC
 
 import Text.Disassembler.X86Disassembler
+import FractalStream.Backends (BackendId(Cpu))
+
+-- | The LLVM backend: viewers and tools JIT-compiled to native code, and
+-- the code that runs once a render too.
+llvmBackend :: CpuBackend
+llvmBackend = CpuBackend $ \action -> withJIT $ \jit ->
+  action Backend
+    { bViewerCompilers   = [(Cpu, ViewerCompiler (\a c -> Right . cpuViewer <$> jittedViewer jit a c))]
+    , bToolRunnerFactory = defaultToolRunnerFactory
+    , bToolRunner        = llvmToolRunner jit
+    , bRunOnce           = \lookupAutocolor -> compiledToolExec jit lookupAutocolor ignoreDrawing
+    }
 
 data JITFun (env :: Environment) (ret :: FSType) where
   JITFun :: EnvironmentProxy env -> TypeProxy ret -> FunPtr () -> JITFun env ret

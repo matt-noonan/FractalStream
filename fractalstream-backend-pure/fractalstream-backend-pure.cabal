@@ -58,8 +58,7 @@ common FractalStream-common
 
 library
   import: FractalStream-common
-  exposed-modules:     Backend
-                       Backend.Pure
+  exposed-modules:     Backend.Pure
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
   hs-source-dirs:      src

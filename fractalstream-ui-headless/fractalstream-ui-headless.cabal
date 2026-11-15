@@ -15,7 +15,12 @@ category:            Math
 build-type:          Simple
 
 flag use-llvm
-  description: Use the LLVM backend
+  description: Use the LLVM backend (else the interpreter), on the CPU
+  default: True
+  manual: True
+
+flag gpu
+  description: Offer the GPU backends too (where the platform has a GPU device: macOS, and wasm32 with WebGPU)
   default: True
   manual: True
 
@@ -100,14 +105,22 @@ executable fsrun
                      , text
                      , optparse-applicative
 
+  -- (the backends: see src/backends/Backends.hs)
+  other-modules:       Backends
   if arch(wasm32)
      build-depends: fractalstream-backend-wasm
   elif flag(use-llvm)
      build-depends: fractalstream-backend-llvm
+     cpp-options:   -DUSE_LLVM
   else
      build-depends: fractalstream-backend-pure
+  if flag(gpu)
+     build-depends: fractalstream-backend-wgsl
+     cpp-options:   -DUSE_GPU
+     if !arch(wasm32)
+        build-depends: fractalstream-backend-wgpu
 
-  hs-source-dirs:      src
+  hs-source-dirs:      src src/backends
 
 test-suite spec
   import: FractalStream-common
@@ -126,7 +139,7 @@ test-suite spec
 -- Tests that run projects end to end, with a backend (see test-backend/Main.hs)
 test-suite end-to-end
   import: FractalStream-common
-  hs-source-dirs: test-backend
+  hs-source-dirs: test-backend src/backends
   type: exitcode-stdio-1.0
   main-is: Main.hs
   -- (On WebAssembly, with the wasm backend, as a reactor module exporting
@@ -154,9 +167,17 @@ test-suite end-to-end
                     , TableSpec
                     , HoistSpec
 
+  -- (the backends: see src/backends/Backends.hs)
+  other-modules:       Backends
   if arch(wasm32)
      build-depends: fractalstream-backend-wasm
   elif flag(use-llvm)
      build-depends: fractalstream-backend-llvm
+     cpp-options:   -DUSE_LLVM
   else
      build-depends: fractalstream-backend-pure
+  if flag(gpu)
+     build-depends: fractalstream-backend-wgsl
+     cpp-options:   -DUSE_GPU
+     if !arch(wasm32)
+        build-depends: fractalstream-backend-wgpu

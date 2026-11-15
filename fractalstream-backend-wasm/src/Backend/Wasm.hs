@@ -12,7 +12,8 @@
 -- fails to build. (Without workers, tools are interpreted.) Code that
 -- runs once per render is interpreted.
 module Backend.Wasm
-  ( wasmViewer
+  ( wasmBackend
+  , wasmViewer
   , workerPoolSize
   , wasmToolRunner
   ) where
@@ -60,6 +61,25 @@ import qualified Data.ByteString as BS
 import qualified GHC.Foreign as GHC
 import GHC.IO.Encoding (utf8)
 import Foreign.Ptr (castPtr)
+import FractalStream.Backends (BackendId(Cpu))
+import Language.Draw (ignoreDrawing)
+import Task.Concurrent (defaultRenderConcurrency)
+import qualified Actor.Event as Event
+
+-- | The WebAssembly backend: viewers and tools compiled to WebAssembly;
+-- the code that runs once a render is interpreted (as with the pure
+-- backend). A render works on as many blocks at once as the host has
+-- workers (unless the frontend says otherwise, as fsrun's @-j@ does).
+wasmBackend :: CpuBackend
+wasmBackend = CpuBackend $ \action -> do
+  workers <- workerPoolSize
+  when (workers > 0) (defaultRenderConcurrency workers)
+  action Backend
+    { bViewerCompilers   = [(Cpu, ViewerCompiler (\a c -> Right . cpuViewer <$> wasmViewer a c))]
+    , bToolRunnerFactory = defaultToolRunnerFactory
+    , bToolRunner        = wasmToolRunner
+    , bRunOnce           = \_ -> Event.interpretedToolExec ignoreDrawing
+    }
 
 -- | Compile and instantiate a kernel module from bytes in the engine's
 -- memory, giving it that memory and what it imports: the math functions
