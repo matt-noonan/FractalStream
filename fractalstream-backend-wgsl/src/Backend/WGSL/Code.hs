@@ -238,11 +238,32 @@ code = indexedFold @CtxCode $ \case
 
   NoOp -> pure ()
 
+  -- (xs <- append(xs, x): in place, when it can be: see listAppend)
+  Set pf name e
+    | Join ty [Var vn _ _, List _ elems] <- e, symbolVal vn == symbolVal name -> do
+        ctx <- ask
+        lift noteListSet
+        es <- mapM value elems
+        case withKnownType (typeOfValue e) (getBinding ctx pf) of
+          LList h -> lift (listAppend ty h es)
+          l -> lift (mismatch l)
+
   Set pf _ e -> do
     x <- value e
     ctx <- ask
     when (holdsList (typeOfValue e)) (lift noteListSet)
     lift (copyInto x (withKnownType (typeOfValue e) (getBinding ctx pf)))
+
+  -- (a list `for each` makes of a range, which no script can name, so no
+  -- script can set: just its ends, counted through, with no list made
+  -- unless something else needs it)
+  Let pf name val body
+    | "[list" `isPrefixOf` symbolVal name, Range mlo mhi <- val -> do
+        lo <- value mlo >>= lift . intName
+        hi <- value mhi >>= lift . intName
+        recallIsAbsent (absentInTail pf) $ do
+          ctx <- Bind name (typeOfValue val) (LRange lo hi) <$> ask
+          lift (runReaderT body ctx)
 
   Let pf name val body -> do
     x <- value val
@@ -282,6 +303,15 @@ code = indexedFold @CtxCode $ \case
           runReaderT body (Bind itemName itemTy e ctx)
           giveBack
         mapM_ emit ls
+      LRange lo hi -> lift $ do
+        k <- fresh
+        (_, ls) <- reclaiming $ \giveBack -> do
+          v <- fresh
+          emit ("var " ++ v ++ ": i32 = " ++ k ++ ";")
+          runReaderT body (Bind itemName itemTy (LInt v) ctx)
+          giveBack
+        nested ("for (var " ++ k ++ " = " ++ lo ++ "; " ++ k ++ " <= " ++ hi ++ "; " ++ k ++ "++) {") ls
+        emit "}"
       l -> lift (mismatch l)
 
   -- the first element for which the predicate holds: the action with it,
@@ -289,7 +319,8 @@ code = indexedFold @CtxCode $ \case
   Lookup pfList _ (ListType itemTy) itemName pfNoItem _ _ predicate action fallback ->
     recallIsAbsent pfNoItem $ do
     ctx <- ask
-    case withKnownType (ListType itemTy) (getBinding ctx pfList) of
+    list <- lift (force (withKnownType (ListType itemTy) (getBinding ctx pfList)))
+    case list of
       LList h -> lift $ do
         found <- fresh
         emit ("var " ++ found ++ " = false;")
@@ -547,11 +578,15 @@ copied = force >=> \case
   LReal a -> letOf LReal a
   LComplex a -> letOf LComplex a
   LColor a -> letOf LColor a
-  LList a -> letOf LList a
+  -- (whoever holds the copy shares the list: see listAppend)
+  LList a -> letOf LList a <* emit ("lshare(" ++ a ++ ");")
   LTable a -> letOf LTable a
   LPair a b -> LPair <$> copied a <*> copied b
   LNone what -> unsupported what
-  l@(LAbsC _) -> mismatch l
+  l -> mismatch l   -- (LAbsC, LRange: made by force)
+
+intName :: Loc -> Gen String
+intName = \case { LInt i -> pure i; l -> mismatch l }
 
 realOf, colorOf :: Loc -> Gen String
 realOf = force >=> \case { LReal r -> pure r; l -> mismatch l }

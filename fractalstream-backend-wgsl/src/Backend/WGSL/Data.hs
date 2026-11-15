@@ -11,6 +11,7 @@ module Backend.WGSL.Data
   , loadElem
   , storeElem
   , listLiteral
+  , listAppend
   , listJoin
   , listFilter
   , listMap
@@ -80,7 +81,11 @@ loadElem t a = case t of
   RealType -> letOf LReal (real a)
   ComplexType -> letOf LComplex ("C(" ++ real a ++ ", " ++ real (at a 2) ++ ")")
   ColorType -> letOf LColor ("cunpack(lw(" ++ a ++ "))")
-  ListType _ -> letOf LList ("lw(" ++ a ++ ")")
+  -- (whoever holds it now shares it with the list it's in)
+  ListType _ -> do
+    l <- letOf LList ("lw(" ++ a ++ ")")
+    case l of { LList h -> emit ("lshare(" ++ h ++ ");"); _ -> pure () }
+    pure l
   PairType x y -> do
     w <- stride x
     LPair <$> loadElem x a <*> loadElem y (at a w)
@@ -145,7 +150,7 @@ slot h w k = "(" ++ h ++ " + 1u + u32(" ++ k ++ ") * " ++ show w ++ "u)"
 walkList :: TypeProxy t -> String -> (String -> Gen ()) -> Gen ()
 walkList t h body = do
   w <- stride t
-  n <- letName ("i32(lw(" ++ h ++ "))")
+  n <- letName ("llen(" ++ h ++ ")")
   forIndex n (body . slot h w)
 
 -- | A new list with room for @n@ elements (an i32 expression), which
@@ -172,6 +177,31 @@ copyElem :: Int -> String -> String -> Gen ()
 copyElem w src dst = forM_ [0 .. w - 1] $ \i ->
   emit ("sw(" ++ at dst i ++ ", lw(" ++ at src i ++ "));")
 
+-- | @xs <- append(xs, x)@ (or of several elements), with @h@ the variable
+-- holding xs: in place, if xs's block is in the arena, unshared (no other
+-- variable or list holds it: see @lshare@), and the last thing made there,
+-- so it can grow there; else a new list, as 'listJoin' makes it (which is
+-- unshared, and the last thing made: the appends after it are in place).
+-- So a list made by appending in a loop takes room for its elements, not
+-- (as copies would) for every list it was on the way.
+listAppend :: TypeProxy t -> String -> [Loc] -> Gen ()
+listAppend t h es = do
+  w <- stride t
+  let k = length es
+  (_, inPlace) <- capture $ do
+    len <- letName ("llen(" ++ h ++ ")")
+    p <- letName ("alloc(" ++ show (k * w) ++ "u)")
+    (_, stores) <- capture (forM_ (zip [0 ..] es) $ \(i, e) -> storeElem t (at p (i * w)) e)
+    nested ("if (" ++ p ++ " != 0u) {") (stores ++ ["sw(" ++ h ++ ", u32(" ++ len ++ " + " ++ show k ++ "));"])
+    emit "}"
+  (_, copy) <- capture $ do
+    new <- listLiteral t es
+    joined <- listJoin t [LList h, new]
+    copyInto joined (LList h)
+  nested ("if (lgrowable(" ++ h ++ ", " ++ show w ++ "u)) {") inPlace
+  nested "} else {" copy
+  emit "}"
+
 listLiteral :: TypeProxy t -> [Loc] -> Gen Loc
 listLiteral t elems
   | null elems = letOf LList "0u"
@@ -186,7 +216,7 @@ listJoin :: TypeProxy t -> [Loc] -> Gen Loc
 listJoin t lists = do
   w <- stride t
   hs <- mapM listOf lists
-  total <- letName (if null hs then "0" else intercalate " + " [ "i32(lw(" ++ h ++ "))" | h <- hs ])
+  total <- letName (if null hs then "0" else intercalate " + " [ "llen(" ++ h ++ ")" | h <- hs ])
   h <- newList t total $ \p -> do
     k <- fresh
     emit ("var " ++ k ++ " = 0;")
@@ -200,7 +230,7 @@ listFilter :: TypeProxy t -> Loc -> (Loc -> Gen Loc) -> Gen Loc
 listFilter t xs test = do
   w <- stride t
   src <- listOf xs
-  n <- letName ("i32(lw(" ++ src ++ "))")
+  n <- letName ("llen(" ++ src ++ ")")
   kept <- fresh
   emit ("var " ++ kept ++ " = 0;")
   h <- newList t n $ \p -> do
@@ -219,7 +249,7 @@ listMap t1 t2 xs f = do
   w1 <- stride t1
   w2 <- stride t2
   src <- listOf xs
-  n <- letName ("i32(lw(" ++ src ++ "))")
+  n <- letName ("llen(" ++ src ++ ")")
   h <- newList t2 n $ \p -> forIndex n $ \k -> do
     v <- loadElem t1 (slot src w1 k)
     r <- f v
@@ -241,7 +271,7 @@ listFind t xs dflt test = do
   pure result
 
 listLength :: Loc -> Gen Loc
-listLength xs = listOf xs >>= \h -> letOf LInt ("i32(lw(" ++ h ++ "))")
+listLength xs = listOf xs >>= \h -> letOf LInt ("llen(" ++ h ++ ")")
 
 -- | 1-based: from the front for i >= 1, from the back for i <= 0, or
 -- (cyclic) wrapping around.
@@ -250,7 +280,7 @@ listIndex t cyclic xs ix = do
   w <- stride t
   h <- listOf xs
   i <- case ix of { LInt i -> pure i; l -> throwError ("internal error: an index of the wrong shape: " ++ show l) }
-  len <- letName ("i32(lw(" ++ h ++ "))")
+  len <- letName ("llen(" ++ h ++ ")")
   step <- letName $ if cyclic
     then "select(((" ++ i ++ " - 1) % " ++ len ++ " + " ++ len ++ ") % " ++ len ++ ", 0, " ++ len ++ " == 0)"
     else "select(" ++ i ++ " - 1, " ++ len ++ " + " ++ i ++ ", " ++ i ++ " <= 0)"
