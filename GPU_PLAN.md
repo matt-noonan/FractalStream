@@ -270,7 +270,12 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
         with `--backend gpu-df64` / `gpu-f32` (default `cpu`): GPU checks
         without a browser. Every library viewer but autocolor's draws, as
         on the web (the same percentages, the compiler being naga too).
-  - [ ] Linux and Windows (wgpu-native has their builds too).
+  - [ ] Linux (branch `linux-gpu`): wgpu-native's Linux builds, linked
+        statically as on macOS, with `dl`, `pthread`, `m` and `gcc_s`;
+        Vulkan's loader is found when the GPU starts, so a machine
+        without one says there's no GPU. Checked by hand on a Linux
+        machine with a GPU.
+  - [ ] Windows (wgpu-native's `x86_64-gnu` build, GHC's toolchain).
   - [ ] f64 (wgpu's native-only `SHADER_F64`), a fourth backend.
 
 ## Later

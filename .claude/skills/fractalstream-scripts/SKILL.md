@@ -51,7 +51,7 @@ repo's `examples/*.fs` has more (spider, tests, experiments).
    tools. If it helps, add a `scenarios:` entry so the user can re-run your
    check.
 
-If `fsrun` isn't built: `dev-tools/wgpu/fetch.sh` (once, on macOS), then `cd fractalstream-ui-headless && stack build`
+If `fsrun` isn't built: `dev-tools/wgpu/fetch.sh` (once, on macOS or Linux), then `cd fractalstream-ui-headless && stack build`
 (don't pass `--fast`; it fails on the embedded font).
 
 ## Skeleton

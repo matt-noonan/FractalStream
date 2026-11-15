@@ -16,7 +16,7 @@ fractalstream-core/           # Core library: ASTs, parsing, type system, actors
 fractalstream-backend-pure/   # Pure Haskell interpreter backend
 fractalstream-backend-llvm/   # LLVM JIT compiler backend (default)
 fractalstream-backend-wgsl/   # The GPU backends: viewers compiled to WGSL (web and desktop)
-fractalstream-backend-wgpu/   # The desktop's GPU device: wgpu-native, behind cbits/fsgpu.c (macOS)
+fractalstream-backend-wgpu/   # The desktop's GPU device: wgpu-native, behind cbits/fsgpu.c (macOS, Linux)
 fractalstream-library/        # The built-in project library (projects/), compiled in
 fractalstream-ui-wx/          # wxWidgets UI (the main executable: FractalStream)
 fractalstream-ui-headless/    # Headless frontend (`fsrun`), no GUI dependencies
@@ -1429,8 +1429,8 @@ See `LANGUAGE.md` for full docs. Key points:
 
 ## Build Notes
 
-- On macOS, run `dev-tools/wgpu/fetch.sh` once before building anything with
-  the LLVM backend: it puts wgpu-native (the desktop GPU's WebGPU, linked
+- On macOS and Linux, run `dev-tools/wgpu/fetch.sh` once before building a
+  frontend with the `gpu` flag (the default): it puts wgpu-native (the desktop GPU's WebGPU, linked
   statically) in `third_party/wgpu-native`, which isn't in git. `fsrun
   --backend gpu-df64` (or `gpu-f32`) draws viewers on the GPU without a
   browser; `fsrun` draws on the CPU unless told otherwise.

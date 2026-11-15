@@ -1,15 +1,16 @@
 {-# LANGUAGE CPP #-}
 -- | The desktop's GPU, for the GPU backends ("Backend.WGSL"): wgpu-native
 -- (WebGPU's C API, @webgpu.h@), through @cbits/fsgpu.c@, as
--- "Backend.Wasm.Gpu" is the web's. macOS only, for now: elsewhere there's
--- none ('nativeGpu' is 'Nothing'), and the GPU backends aren't offered.
+-- "Backend.Wasm.Gpu" is the web's. macOS and Linux, for now: elsewhere
+-- there's none ('nativeGpu' is 'Nothing'), and the GPU backends aren't
+-- offered.
 module Backend.WGPU
   ( nativeGpu
   ) where
 
 import Backend.WGSL.Device
 
-#if defined(darwin_HOST_OS)
+#if defined(darwin_HOST_OS) || defined(linux_HOST_OS)
 import Control.Concurrent.MVar
 import Control.Monad (forM_)
 import Data.Word (Word8, Word32)
@@ -109,7 +110,7 @@ message s | s == nullPtr = pure Nothing
               c_freeString s
               pure (Just m)
 #else
--- | No GPU in this build (macOS only, for now).
+-- | No GPU in this build (macOS and Linux only, for now).
 nativeGpu :: Maybe (IO (Either String GpuDevice))
 nativeGpu = Nothing
 #endif

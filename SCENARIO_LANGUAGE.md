@@ -51,7 +51,7 @@ every point its viewers find, renders the same either way.
 Viewers are drawn on the CPU by default; `-b B` (`--backend B`) draws
 them with another backend instead, and only with it: `cpu`, `gpu-df64`
 (the GPU, in double-float) or `gpu-f32` (the GPU, in single precision).
-The GPU backends are on macOS only, for now. A viewer the backend can't
+The GPU backends are on macOS and Linux, for now. A viewer the backend can't
 draw (one using autocolor, on the GPU) is an error saying why, rather
 than drawn by another backend, so what's checked is what that backend
 draws. Tools always run on the CPU.
