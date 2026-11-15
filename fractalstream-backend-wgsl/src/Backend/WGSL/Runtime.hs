@@ -21,8 +21,6 @@ module Backend.WGSL.Runtime
   ) where
 
 import Data.List (intercalate)
-import GHC.Float (castFloatToWord32)
-import Numeric (showHex)
 
 -- | How many words of scratch space (for lists) each pixel has: 4 KB.
 arenaWords :: Int
@@ -569,23 +567,26 @@ hornerMixed z zmax cs =
   in foldr (\c acc -> "radd(" ++ dfc c ++ ", rmul(" ++ z ++ ", " ++ acc ++ "))") start (init front)
 
 f32Lit :: Rational -> String
-f32Lit c = "bitcast<f32>(" ++ f32Bits (fromRational c) ++ ")"
+f32Lit c = f32Text (fromRational c)
 
 -- | A constant as df64: the f32 nearest it, and the f32 nearest the rest.
 dfc :: Rational -> String
 dfc r = let hi = fromRational r :: Float
             lo = fromRational (r - toRational hi) :: Float
-        in "R(bitcast<f32>(" ++ f32Bits hi ++ "), bitcast<f32>(" ++ f32Bits lo ++ "))"
+        in "R(" ++ f32Text hi ++ ", " ++ f32Text lo ++ ")"
 
 -- | A constant in three f32 parts (for 'rreduce').
 parts3 :: Rational -> String
 parts3 r = let p1 = fromRational r :: Float
                p2 = fromRational (r - toRational p1) :: Float
                p3 = fromRational (r - toRational p1 - toRational p2) :: Float
-           in "vec3f(bitcast<f32>(" ++ f32Bits p1 ++ "), bitcast<f32>(" ++ f32Bits p2 ++ "), bitcast<f32>(" ++ f32Bits p3 ++ "))"
+           in "vec3f(" ++ f32Text p1 ++ ", " ++ f32Text p2 ++ ", " ++ f32Text p3 ++ ")"
 
-f32Bits :: Float -> String
-f32Bits x = "0x" ++ showHex (castFloatToWord32 x) "u"
+-- | An f32 as a WGSL literal: the shortest decimal that reads back as
+-- exactly it (Haskell's 'show'), suffixed. (Not a bitcast of its bits:
+-- naga, Firefox's and Deno's compiler, can't bitcast in a const.)
+f32Text :: Float -> String
+f32Text x = "(" ++ show x ++ "f)"
 
 -- | A decimal number, exactly.
 decimal :: String -> Rational
