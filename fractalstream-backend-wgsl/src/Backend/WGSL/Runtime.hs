@@ -378,7 +378,8 @@ common = unlines
 -- | Lists and tables.
 --
 -- A list is a word address: 0 for the empty list, else its block's
--- first word, its length, followed by its elements (a truth value,
+-- first word, its length (its top bit: shared, see @lshare@), followed
+-- by its elements (a truth value,
 -- integer, color or list in one word; a real number in two, as @rbits@
 -- reads them; a complex number in four; a pair its parts'). A list made
 -- by the kernel is in the pixel's @arena@ (bump-allocated from word 1,
@@ -408,6 +409,14 @@ lists p = unlines $
   , "  let a = bump;"
   , "  bump += n;"
   , "  return a;"
+  , "}"
+  -- (a block's first word is its length, its top bit set once another
+  -- variable or list may hold it: so it's extended in place only while
+  -- it's unshared, and at the top of the arena; see Backend.WGSL.Data)
+  , "fn llen(h: u32) -> i32 { return i32(lw(h) & 0x7fffffffu); }"
+  , "fn lshare(h: u32) { if (h > 0u && h < " ++ show arenaWords ++ "u) { arena[h] = arena[h] | 0x80000000u; } }"
+  , "fn lgrowable(h: u32, w: u32) -> bool {"
+  , "  return h > 0u && h < " ++ show arenaWords ++ "u && (arena[h] & 0x80000000u) == 0u && h + 1u + arena[h] * w == bump;"
   , "}"
   , "fn cpack(c: vec3u) -> u32 { return c.x | (c.y << 8u) | (c.z << 16u); }"
   , "fn cunpack(w: u32) -> vec3u { return vec3u(w & 255u, (w >> 8u) & 255u, (w >> 16u) & 255u); }"

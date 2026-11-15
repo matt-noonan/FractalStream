@@ -48,6 +48,9 @@ data Loc
   | LAbsC String
     -- ^ the absolute value of this complex number (C), not computed yet:
     --   a comparison computes it as it needs to (see 'force')
+  | LRange String String
+    -- ^ the integers from one i32 to another, as a list not made yet:
+    --   @for each@ counts through them (see 'force')
   deriving Show
 
 -- | Contexts of 'Loc's, for each variable in scope.
@@ -144,6 +147,22 @@ letOf wrap e = do
 force :: Loc -> Gen Loc
 force = \case
   LAbsC z -> letOf LReal ("cabs(" ++ z ++ ")")
+  -- (a range, made into a list after all: as Backend.WGSL.Data's listRange)
+  LRange lo hi -> do
+    n <- letName (hi ++ " - " ++ lo ++ " + 1")
+    h <- fresh
+    p <- fresh
+    k <- fresh
+    emit ("var " ++ h ++ ": u32 = 0u;")
+    nested ("if (" ++ n ++ " > 0) {")
+      [ "let " ++ p ++ " = alloc(1u + u32(" ++ n ++ "));"
+      , "if (" ++ p ++ " != 0u) {"
+      , "  sw(" ++ p ++ ", u32(" ++ n ++ "));"
+      , "  for (var " ++ k ++ " = 0; " ++ k ++ " < " ++ n ++ "; " ++ k ++ "++) { sw(" ++ p ++ " + 1u + u32(" ++ k ++ "), bitcast<u32>(" ++ lo ++ " + " ++ k ++ ")); }"
+      , "  " ++ h ++ " = " ++ p ++ ";"
+      , "}" ]
+    emit "}"
+    pure (LList h)
   LPair a b -> LPair <$> force a <*> force b
   l -> pure l
 
@@ -188,6 +207,7 @@ parts = \case
   LTable a -> [a]
   LNone _ -> []
   LAbsC _ -> []
+  LRange _ _ -> []
 
 -- | Assign a value to variables of the same shape.
 copyInto :: Loc -> Loc -> Gen ()

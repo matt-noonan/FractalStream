@@ -169,8 +169,14 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
   each subsample, as the CPU's (which has 1 MB). Running out is as on
   the CPU (decided 2026-11-14): magenta pixels, and the viewer says so,
   adding that the GPU's space is smaller ("Draw with" CPU). A loop whose
-  body sets no variable to a list gives back its iteration's arena (so
-  `for each k in range(1, 10)` in a loop of thousands doesn't run out).
+  body sets no variable to a list gives back its iteration's arena.
+  `for each k in range(a, b)` counts from a to b with no list made, and
+  `xs <- append(xs, x)` extends xs's block in place when it's the last
+  thing in the arena and no other variable or list holds it (a block is
+  marked shared, the top bit of its length, when a variable holding it is
+  read, or it's read out of another list), so a list built by appending
+  takes room for its elements, not for every copy on the way (2026-11-15:
+  Per_8's and Per_9's disk views, magenta before, now draw on the GPU).
 - **Tables** (built in 5c) go to the GPU as their bytes, laid out as on
   the CPU, and the shader decodes each f64 into df64 itself (`rf64`): no
   conversion. A render's tables are one buffer (binding 3), uploaded once
@@ -253,6 +259,19 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
 - [ ] **5d. Autocolor** (snapshot buffer, misses appended, re-rendered).
 - [ ] **5e. The desktop**: a `GpuDevice` over webgpu.h, and
       GPU f64 where the driver has it (Vulkan, DirectX 12; not Metal).
+
+## Later
+
+- **List optimizations in the core** (noted 2026-11-15, not started):
+  ranges counted without lists, appends in place, and loop iterations
+  giving back their scratch space are only in the WGSL backend
+  (`Backend.WGSL.Code`, `Data`, `Gen`); the CPU backends (LLVM, wasm)
+  still make range lists and copy on every append. Move them into the
+  core as a transformation pass over the typed code, emitting new AST
+  nodes the backends compile (such as `AppendInPlace`, and a counted
+  `for each` over a range), so every backend gets them, and the analysis
+  (whether a list can be shared, whether it can outlive an iteration)
+  lives in one place.
 
 ## Settled questions (2026-11-14)
 
