@@ -307,6 +307,7 @@ import Control.Exception (Exception, SomeException, SomeAsyncException, try, cat
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BSI
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
@@ -314,7 +315,6 @@ import Data.IORef
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import Foreign.ForeignPtr (withForeignPtr)
-import Foreign.Marshal.Alloc (allocaBytes)
 import Foreign.Ptr (Ptr, castPtr)
 import GHC.Wasm.Prim (JSString(..), JSVal, toJSString, fromJSString)
 import System.FilePath (takeBaseName)
@@ -337,32 +337,32 @@ foreign import javascript unsafe "globalThis.fractalstreamPost($1)"
 -- rectangles drawn (x, y, width, height each), and whether the render's
 -- done. (The worker copies the rectangles' pixels out at once.)
 foreign import javascript unsafe
-  "globalThis.fractalstreamPostPatch($1, $2, $3, $4, $5, $6, $7, $8, new Uint8Array(__exports.memory.buffer, $9, 3 * $3 * $4), new Int32Array(__exports.memory.buffer, $10, 4 * $11).slice(), $12)"
+  "globalThis.fractalstreamPostPatch($1, $2, $3, $4, $5, $6, $7, $8, new Uint8Array(__exports.memory.buffer, ($9 >>> 0), 3 * $3 * $4), new Int32Array(__exports.memory.buffer, ($10 >>> 0), 4 * $11).slice(), $12)"
   postPatch :: Int -> Int -> Int -> Int -> Double -> Double -> Double -> Double
             -> Ptr Word8 -> Ptr Int32 -> Int -> Bool -> IO ()
 
 -- | A file for the page to save as it is (a picture): its name, and its
 -- contents.
 foreign import javascript unsafe
-  "globalThis.fractalstreamPostDownload($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice())"
+  "globalThis.fractalstreamPostDownload($1, new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $3).slice())"
   postDownload :: JSString -> Ptr Word8 -> Int -> IO ()
 
 -- | A movie's frame: its number (from 1), how many there are, its width
 -- and height, and its RGB pixels.
 foreign import javascript unsafe
-  "globalThis.fractalstreamPostMovieFrame($1, $2, $3, $4, new Uint8Array(__exports.memory.buffer, $5, 3 * $3 * $4))"
+  "globalThis.fractalstreamPostMovieFrame($1, $2, $3, $4, new Uint8Array(__exports.memory.buffer, ($5 >>> 0), 3 * $3 * $4))"
   postMovieFrame :: Int -> Int -> Int -> Int -> Ptr Word8 -> IO ()
 
 -- | A saved project file: its name, and its contents.
 foreign import javascript unsafe
-  "globalThis.fractalstreamPostFile($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice())"
+  "globalThis.fractalstreamPostFile($1, new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $3).slice())"
   postFile :: JSString -> Ptr Word8 -> Int -> IO ()
 
 foreign import javascript unsafe "$1.length"
   byteLength :: JSVal -> IO Int
 
 -- | Copy a Uint8Array into the engine's memory.
-foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, $2, $1.length).set($1)"
+foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $1.length).set($1)"
   copyBytes :: JSVal -> Ptr Word8 -> IO ()
 
 post :: Aeson.Value -> IO ()
@@ -638,7 +638,9 @@ open section entry = guarded $ do
 openFile :: JSString -> JSVal -> IO ()
 openFile name bytes = guarded $ do
   n <- byteLength bytes
-  contents <- allocaBytes (max 1 n) $ \p -> copyBytes bytes p >> BS.packCStringLen (castPtr p, n)
+  -- (copied once, straight into the ByteString: a project with large
+  -- tables can be over 100 MB)
+  contents <- BSI.create n (copyBytes bytes)
   let fileName = fromJSString name
   if mightBeAncientFS contents
     then do

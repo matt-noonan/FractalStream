@@ -21,5 +21,6 @@ js="${wasm%.wasm}.js"
 # the JavaScript FFI's glue, made again whenever the module changes
 if [ ! -f "$js" ] || [ "$wasm" -nt "$js" ]; then
   "$(wasm32-wasi-ghc --print-libdir)/post-link.mjs" -i "$wasm" -o "$js"
+  "$root/dev-tools/wasm/fix-glue.sh" "$js"
 fi
 exec node --disable-warning=ExperimentalWarning "$root/dev-tools/wasm/run-node.mjs" "$wasm" "$js" "$@"
