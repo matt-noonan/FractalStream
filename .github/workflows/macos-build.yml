@@ -229,6 +229,9 @@ jobs:
         restore-keys: ${{ runner.os }}-${{ runner.arch }}-cache-dot-stack-for-${{ inputs.wxwidgets }}
         path: ~/.stack
 
+    - name: Fetch wgpu-native (the GPU backends' WebGPU)
+      run: dev-tools/wgpu/fetch.sh
+
     - name: Build Haskell dependencies
       run: |
         cd fractalstream-ui-wx

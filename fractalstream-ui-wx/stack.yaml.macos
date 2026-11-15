@@ -4,6 +4,8 @@ packages:
 - .
 - ../fractalstream-core
 - ../fractalstream-backend-llvm
+- ../fractalstream-backend-wgsl
+- ../fractalstream-backend-wgpu
 
 
 extra-deps:

@@ -8,6 +8,8 @@ module Main (main) where
 import Test.Hspec
 
 import FractalStream.Console (transliterateConsole)
+import FractalStream.Backends (BackendId(..), backendPreference)
+import Data.DynamicValue (setValue')
 import qualified DragSpec
 import qualified GeometrySpec
 import qualified DiskSpec
@@ -26,4 +28,9 @@ foreign export javascript "hs_start" main :: IO ()
 #endif
 
 main :: IO ()
-main = transliterateConsole >> hspec (OverlaySpec.spec >> GeometrySpec.spec >> DiskSpec.spec >> GroupSpec.spec >> PixelSizeSpec.spec >> BlocksSpec.spec >> ChainSpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec)
+main = do
+  transliterateConsole
+  -- (on the CPU, as fsrun draws by default: these check how the CPU
+  -- draws, coarse passes and all; ChainSpec sets its own orders)
+  setValue' backendPreference [Cpu]
+  hspec (OverlaySpec.spec >> GeometrySpec.spec >> DiskSpec.spec >> GroupSpec.spec >> PixelSizeSpec.spec >> BlocksSpec.spec >> ChainSpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec)

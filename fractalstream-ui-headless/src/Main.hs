@@ -58,7 +58,8 @@ import Language.Legacy.Translate (Translation(..), translateLegacyScript)
 import Language.Editor.Normalize (normalize)
 import Actor.Metadata (ProjectMetadata(..))
 import Actor.UI (UI(..))
-import Actor.Viewer (Backend, Viewer(..), snapshotToFile, describeViewerIssues)
+import Actor.Viewer (Backend(..), Viewer(..), snapshotToFile, describeViewerIssues)
+import FractalStream.Backends (BackendId(..), allBackends, backendKey, backendFromKey)
 import Data.DynamicValue (getDynamic, setValue')
 import Backend (withBackend)
 import Scenario (parseScenario, Overrides(..), applyOverrides)
@@ -75,7 +76,7 @@ import System.FilePath (takeBaseName)
 
 import Options.Applicative
   ( Parser, ParserInfo, customExecParser, prefs, showHelpOnEmpty, info, helper, infoOption
-  , hsubparser, command, strOption, option, eitherReader, long, short, metavar, help
+  , hsubparser, command, strOption, option, eitherReader, long, short, metavar, help, value
   , fullDesc, progDesc, footer )
 import Control.Concurrent (setNumCapabilities)
 import Task.Concurrent (setRenderConcurrency)
@@ -115,13 +116,14 @@ main = do
       -- (And on wasm, where there's one capability, -j is how many
       -- workers a render uses: see 'renderConcurrency'.)
       forM_ invJobs $ \n -> setNumCapabilities n >> setRenderConcurrency n
-      run invProject invMode
+      run invBackend invProject invMode
     Translate{..} -> runTranslate invInput invOutput invTitle
 
 -- | A parsed command line.
 data Invocation
   = RunProject
     { invJobs    :: Maybe Int   -- ^ @-j@, if given (otherwise every core, from @-N@)
+    , invBackend :: BackendId   -- ^ @--backend@: what viewers are drawn with
     , invProject :: FilePath
     , invMode    :: Mode
     }
@@ -180,7 +182,7 @@ cliParser = hsubparser $ mconcat
   ]
   where
     subcommand name desc modeArgs = command name $
-      info (RunProject <$> jobsOption <*> projectOption <*> modeArgs) (progDesc desc)
+      info (RunProject <$> jobsOption <*> backendOption <*> projectOption <*> modeArgs) (progDesc desc)
     overridesOptions = Overrides
       <$> optional (strOption (long "capture-to" <> metavar "FILE.png"
             <> help "Write the scenario's one `capture` here instead"))
@@ -191,6 +193,15 @@ cliParser = hsubparser $ mconcat
       (long "jobs" <> short 'j' <> metavar "N" <>
        help ("Render with N threads (default: one per core). Use -j 1 to make "
              ++ "autocolor groups that aren't locked color the same way every run."))
+    backendOption = option backendName
+      (long "backend" <> short 'b' <> metavar "BACKEND" <> value Cpu <>
+       help ("Draw viewers with this backend, and only it: "
+             ++ intercalate ", " (map backendKey allBackends)
+             ++ " (default: cpu). A viewer it can't draw is an error, saying why. "
+             ++ "Tools always run on the CPU."))
+    backendName = eitherReader $ \str -> case backendFromKey str of
+      Just b -> Right b
+      Nothing -> Left ("expected a backend (" ++ intercalate ", " (map backendKey allBackends) ++ "), not " ++ show str)
     positive = eitherReader $ \str -> case readMaybe str of
       Just n | n >= 1 -> Right n
       _ -> Left ("expected a positive number of jobs, not " ++ show str)
@@ -220,8 +231,12 @@ runTranslate input output mtitle = do
         Left err -> dieWith ("The translation doesn't load as it is:\n" ++ err)
         Right () -> when (output /= "-") $ putStrLn ("Wrote " ++ output)
 
-run :: FilePath -> Mode -> IO ()
-run projectFile mode = withBackend $ \backend ->
+run :: BackendId -> FilePath -> Mode -> IO ()
+run which projectFile mode = withBackend $ \backend0 -> do
+  -- (only the backend asked for, so what's drawn is what it draws)
+  let backend = backend0 { bViewerCompilers = filter ((== which) . fst) (bViewerCompilers backend0) }
+  when (null (bViewerCompilers backend)) $
+    dieWith ("This fsrun can't draw with " ++ backendKey which ++ ": it isn't in this version.")
   parseEnsembleFromFile projectFile >>= \case
     Left err -> dieWith ("Could not load " ++ quoted projectFile ++ ":\n" ++ err)
     Right ensemble -> case mode of
