@@ -44,6 +44,7 @@ module Language.Table
   , packedElementSize
   , packTable
   , unpackTable
+  , unpackTableChunks
   ) where
 
 import FractalStream.Prelude
@@ -53,7 +54,7 @@ import Language.Table.Buffer
 import Data.Color (colorToRGB, rgbToColor)
 
 import Foreign.ForeignPtr (withForeignPtr, mallocForeignPtrBytes)
-import Foreign.Ptr (Ptr, plusPtr)
+import Foreign.Ptr (Ptr, plusPtr, castPtr)
 import Foreign.Marshal.Utils (fillBytes, copyBytes)
 import Foreign.Marshal.Alloc (allocaBytes)
 import Data.IORef (newIORef, writeIORef, readIORef)
@@ -63,6 +64,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.ByteString.Unsafe as BSU
+import qualified Data.ByteString.Lazy as BL
 import GHC.ByteOrder (ByteOrder(..), targetByteOrder)
 
 -- | The types a table can hold: numbers, truth values, colors, and
@@ -414,6 +416,45 @@ packTable ty t = do
                   copyBytes (dst `plusPtr` (cell * packed + at)) (src `plusPtr` (cell * size + off)) n
                   pure (at + n))
                0 parts
+
+-- | 'unpackTable', from the packed elements in chunks (as they're
+-- inflated from a project archive), each given to @seen@ too (to check
+-- them as they go by). Where a cell's packed elements are laid out as in
+-- memory (no padding, as for numbers and pairs of reals or complex
+-- numbers), the chunks go straight into the table, with no copy of the
+-- whole.
+unpackTableChunks :: TypeProxy t -> [Int] -> (Double, Double) -> (Double, Double)
+                  -> BL.ByteString -> (ByteString -> IO ()) -> IO (Either String Table)
+unpackTableChunks ty dims origin step chunks seen
+  | targetByteOrder /= LittleEndian = pure (Left "tables can't be loaded on a big-endian machine")
+  | any (< 0) dims = pure (Left "a table's size can't be negative")
+  | otherwise = case (,) <$> elementSize ty <*> elementParts ty of
+      Nothing -> pure (Left "that type can't be in a table")
+      Just (size, parts)
+        | sum (map snd parts) /= size || not (null (boolParts ty)) -> do
+            -- (padded, or with truth values to tidy: by way of the whole)
+            mapM_ seen (BL.toChunks chunks)
+            unpackTable ty dims origin step (BL.toStrict chunks)
+        | otherwise -> do
+            let expected = size * product dims
+            t <- newTableBytes size dims origin step
+            end <- withForeignPtr (tableBuffer t) $ \dst ->
+              foldM (\at chunk -> do
+                       seen chunk
+                       let n = min (BS.length chunk) (max 0 (expected - at))
+                       BSU.unsafeUseAsCString chunk $ \src -> copyBytes (dst `plusPtr` at) (castPtr src) n
+                       pure (at + BS.length chunk))
+                    0 (BL.toChunks chunks)
+            pure $ if end /= expected
+              then Left ("expected " ++ show expected ++ " bytes of data for a table of size "
+                         ++ show dims ++ ", but there are " ++ show end)
+              else Right t
+  where
+    boolParts :: TypeProxy t' -> [()]
+    boolParts = \case
+      BooleanType -> [()]
+      PairType a b -> boolParts a ++ boolParts b
+      _ -> []
 
 -- | A table of the given size, origin, and cell step, from its packed
 -- elements (as 'packTable' packs them), or why it can't be.

@@ -25,7 +25,7 @@ import Data.Movie (MovieFormat(..))
 import System.FilePath (takeExtension)
 import Data.Char (toLower)
 
-import Actor.SavedTables (readSavedTables, applySavedTables)
+import Actor.SavedTables (applySavedTables)
 import Actor.Ensemble (Ensemble(..), runEnsemble, ensembleTables, ensembleCommonDefs, buildToolContext, layoutToArgs, ensembleFields, FieldOwner(..))
 import Actor.Layout (Field(..))
 import Actor.UI (UI(..))
@@ -261,21 +261,18 @@ execCommand st = \case
     | otherwise -> pure (Left ("no viewer named " ++ show name))
 
   LoadSavedTables mnames -> do
-    props <- getDynamic (ensembleFrontendProperties (isEnsemble st))
+    saved <- getDynamic (ensembleSavedTables (isEnsemble st))
     tables <- ensembleTables (isEnsemble st)
-    case readSavedTables props of
-      Left err -> pure (Left ("the project's saved `tables:` can't be read: " ++ err))
-      Right saved -> case mnames of
-        Nothing -> load saved
-        Just names -> case [ n | n <- names, not (Map.member n saved) ] of
-          [] -> load (Map.restrictKeys saved (Set.fromList names))
-          missing -> pure (Left ("the project file has no saved " ++ plural missing "table" "tables"
-                                 ++ " " ++ intercalate ", " (map (\n -> "`" ++ n ++ "`") missing)))
-        where
-          plural xs one many' = if length xs == 1 then one else many'
-          load which = applySavedTables tables which <&> \case
-            [] -> Right st
-            problems -> Left (intercalate "; " problems)
+    let plural xs one many' = if length xs == 1 then one else many'
+        load which = applySavedTables tables which <&> \case
+          [] -> Right st
+          problems -> Left (intercalate "; " problems)
+    case mnames of
+      Nothing -> load saved
+      Just names -> case [ n | n <- names, not (Map.member n saved) ] of
+        [] -> load (Map.restrictKeys saved (Set.fromList names))
+        missing -> pure (Left ("the project file has no saved " ++ plural missing "table" "tables"
+                               ++ " " ++ intercalate ", " (map (\n -> "`" ++ n ++ "`") missing)))
 
   -- (the overlay first: what it changes, a group's table say, is in the
   -- picture it's drawn over)

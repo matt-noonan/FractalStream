@@ -54,8 +54,8 @@
 //             deleted; lock, tolerance (and a bad one), clear; saved
 //   tables    saving what a project's tables hold, as the desktop does
 //             (dev-tools/web/tables.fs): asked, with each table's size;
-//             saved with them (and reopened, filled) or without them;
-//             not asked when they're empty
+//             saved with them, as a .fsz archive (and reopened, filled),
+//             or without them, as a plain .fs; not asked when they're empty
 //   capture   a viewer's Capture submenu: a picture (its size times the
 //             multiplier, as a PNG), and a movie from a script (checked as
 //             it's typed; recorded, encoded and saved as an MP4; stopped;
@@ -1612,9 +1612,11 @@ async function tables() {
   c.check(/Save table data\?/.test(text) && /T:\s+\d+ × \d+,\s+[\d.]+ (KB|MB)/.test(text) && /before compression/.test(text),
           `filled, saving asks whether to save them (${(/T:[^A]*?(KB|MB)/.exec(text) ?? [""])[0]})`);
   await dialog.locator("button", { hasText: "Save with tables" }).click();
-  const withFile = fs.readFileSync(await (await dl).path(), "utf8");
-  c.check(/\ntables:/.test(withFile), "Save with tables saves them");
-  const copy = path.join(os.tmpdir(), "tables-saved.fs");
+  const withDownload = await dl;
+  const withFile = fs.readFileSync(await withDownload.path());
+  c.check(isArchive(withFile.toString("latin1")) && withDownload.suggestedFilename().endsWith(".fsz"),
+          `Save with tables saves them, in a .fsz archive (${withDownload.suggestedFilename()})`);
+  const copy = path.join(os.tmpdir(), "tables-saved.fsz");
   fs.writeFileSync(copy, withFile);
   await app.openFile(copy);
   await page.waitForTimeout(800);
@@ -1625,8 +1627,10 @@ async function tables() {
   dl = saveAs();
   await dialog.waitFor({ timeout: 5000 }).catch(() => {});
   await dialog.locator("button", { hasText: "Save without tables" }).click();
-  const withoutFile = fs.readFileSync(await (await dl).path(), "utf8");
-  c.check(!/\ntables:/.test(withoutFile), "Save without tables doesn't");
+  const withoutDownload = await dl;
+  const withoutFile = fs.readFileSync(await withoutDownload.path(), "utf8");
+  c.check(!isArchive(withoutFile) && !/\nmanifest:/.test(withoutFile) && withoutDownload.suggestedFilename().endsWith(".fs"),
+          `Save without tables doesn't: a plain .fs (${withoutDownload.suggestedFilename()})`);
 
   // and cancelled
   dl = saveAs();
@@ -1647,7 +1651,9 @@ async function tables() {
   });
   const written = async (k) => page.evaluate(async (k) => {
     for (let i = 0; i < 50 && window.__written.length <= k; i++) await new Promise((r) => setTimeout(r, 100));
-    return window.__written[k] ? await window.__written[k].text() : null;
+    if (!window.__written[k]) return null;
+    // (as latin1, so an archive's first bytes read as they are)
+    return Array.from(new Uint8Array(await window.__written[k].arrayBuffer()), (b) => String.fromCharCode(b)).join("");
   }, k);
   await app.projectMenu("Save project as");
   await dialog.waitFor({ timeout: 5000 }).catch(() => {});
@@ -1657,7 +1663,7 @@ async function tables() {
   await page.waitForTimeout(800);
   const asked = await dialog.isVisible();
   const second = await written(1);
-  c.check(first !== null && !/\ntables:/.test(first) && !asked && second !== null && !/\ntables:/.test(second),
+  c.check(first !== null && !isArchive(first) && !asked && second !== null && !isArchive(second),
           "a plain save after it asks nothing, and keeps the answer (without them)");
   await app.projectMenu("Save project as");
   await dialog.waitFor({ timeout: 5000 }).catch(() => {});
@@ -1666,9 +1672,12 @@ async function tables() {
   const third = await written(2);
   await app.projectMenu("Save project");
   const fourth = await written(3);
-  c.check(askedAgain && /\ntables:/.test(third ?? "") && /\ntables:/.test(fourth ?? ""),
+  c.check(askedAgain && isArchive(third) && isArchive(fourth),
           "Save as asks again, and plain saves keep the new answer (with them)");
 }
+
+// Whether a saved file is a .fsz archive (a zip: PROJECT_FILES.md).
+function isArchive(text) { return typeof text === "string" && text.startsWith("PK\u0003\u0004"); }
 
 async function capture() {
   const project = await app.openLibrary("Mandelbrot and Julia sets together");

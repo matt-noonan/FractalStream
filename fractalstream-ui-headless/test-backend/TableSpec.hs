@@ -14,8 +14,8 @@ import Data.List (isInfixOf)
 import qualified Data.ByteString.Char8 as BS
 
 import Actor.Ensemble (Ensemble(..), buildEnsembleFromScript, encodeEnsemble, ensembleTables, parseEnsembleFromBytes)
-import Actor.SavedTables (captureTables, writeSavedTables)
-import Data.DynamicValue (modifyValue)
+import Actor.SavedTables (captureTables)
+import Data.DynamicValue (getDynamic, setValue')
 import Backend (withBackend)
 import Interpreter (runScenario)
 import Scenario (parseScenario)
@@ -282,15 +282,15 @@ tupleSpec = describe "tables of tuples" $ do
     , at "Par" (10, 10) "(51, 102, 153)" ]
 
 -- | The project, saved (as the app saves it) after the given commands,
--- with its tables, and loaded again.
+-- with its tables (a .fsz archive), and loaded again.
 savedAfter :: String -> [String] -> IO Ensemble
 savedAfter proj cmds = do
   ens <- buildEnsembleFromScript proj >>= either (fail . snd) pure
   scenarioOn ens cmds
   saved <- captureTables =<< ensembleTables ens
-  modifyValue (ensembleFrontendProperties ens) (writeSavedTables saved)
+  setValue' (ensembleSavedTables ens) saved
   bytes <- encodeEnsemble ens
-  parseEnsembleFromBytes "saved.fs" bytes >>= either fail pure
+  parseEnsembleFromBytes "saved.fsz" bytes >>= either fail pure
 
 -- | Two tables, both filled by one tool.
 twoTables :: String
@@ -345,9 +345,11 @@ savedSpec = describe "saved tables" $ do
 
   it "can't be loaded into a table of another type" $ do
     ens <- savedAfter twoTables fill
-    bytes <- encodeEnsemble ens
-    let retyped = replaceAll "U : Table 2 of R" "U : Table 2 of Z" bytes
-    ens' <- parseEnsembleFromBytes "retyped.fs" retyped >>= either fail pure
+    -- (its script changed, and saved again, with the tables it was loaded with)
+    script <- getDynamic (ensembleSourceScript ens)
+    setValue' (ensembleSourceScript ens) (BS.unpack (replaceAll "U : Table 2 of R" "U : Table 2 of Z" (BS.pack script)))
+    retyped <- encodeEnsemble ens
+    ens' <- parseEnsembleFromBytes "retyped.fsz" retyped >>= either fail pure
     runOn ens' [ "load saved table U" ] >>= \case
       Left err -> err `shouldSatisfy` ("it was saved as a" `isInfixOf`)
       Right () -> expectationFailure "loaded a table saved with another type"

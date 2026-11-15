@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Compare the WebAssembly build's tables with the native LLVM build's: run
 # each scenario here (*.scenario, against the project of the same name,
-# .fs) with both, and compare the PNGs each one captures.
+# .fsz or .fs) with both, and compare the PNGs each one captures.
 #
 #   dev-tools/wasm/tables/compare.sh [-o DIR]
 #
@@ -26,7 +26,8 @@ native="$(cd "$root/fractalstream-ui-headless" && stack path --local-install-roo
 failed=0
 for scenario in "$here"/*.scenario; do
   name="$(basename "$scenario" .scenario)"
-  project="$here/${name%%.*}.fs"
+  project="$here/${name%%.*}.fsz"
+  [ -f "$project" ] || project="$here/${name%%.*}.fs"
   d="$out/$name"; mkdir -p "$d/wasm" "$d/llvm"
   (cd "$d/wasm" && "$root/dev-tools/wasm/fsrun.sh" commands --project "$project" --commands "$scenario" > log 2>&1) || true
   (cd "$d/llvm" && "$native" commands --project "$project" --commands "$scenario" -j 1 > log 2>&1) || true

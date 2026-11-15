@@ -11,6 +11,8 @@ import Actor.Script (overlayDrawLayer)
 import Actor.Layout (Dimensions(..), Layout(..), Label(..), UIVariable(..), TabItem(..), Field(..), layoutTables)
 import Language.Table (newTable, tableCellCount, writeCell, readCell, tableDims, tableOrigin)
 import Actor.SavedTables
+import Data.Zip (isZip, readZip)
+import qualified Data.ByteString.Lazy as BL
 import Data.IORef (newIORef, readIORef, modifyIORef')
 import Data.Complex (Complex(..))
 import Actor.SavedValues
@@ -591,16 +593,16 @@ on refresh:
 
     it "projectStateKeys and withProjectKeys: a project's state, put back on \
        \its file, gives the project with that state and its own script, \
-       \metadata and tables" $ do
+       \metadata and manifest" $ do
       let original = BS.concat
             [ "script: |\n  @viewer \"V\" var=z\n  pass\n"
             , "metadata:\n  title: The original\n"
-            , "tables:\n  T: kept\n"
+            , "manifest:\n  tables:\n    T: kept\n"
             , "values:\n  x: '1'\n" ]
           changed = BS.concat
             [ "script: |\n  @viewer \"V\" var=z\n  # edited\n  pass\n"
             , "metadata:\n  title: Another\n"
-            , "tables:\n  T: other\n"
+            , "manifest:\n  tables:\n    T: other\n"
             , "values:\n  x: '2'\n"
             , "web-properties:\n  viewers: {}\n" ]
       keys <- either (fail . ("projectStateKeys: " ++)) pure (projectStateKeys changed)
@@ -611,7 +613,9 @@ on refresh:
           KM.lookup "script" o `shouldBe` Just (String "@viewer \"V\" var=z\npass\n")
           (KM.lookup "metadata" o >>= \case Object m -> KM.lookup "title" m; _ -> Nothing)
             `shouldBe` Just (String "The original")
-          (KM.lookup "tables" o >>= \case Object t -> KM.lookup "T" t; _ -> Nothing) `shouldBe` Just (String "kept")
+          (KM.lookup "manifest" o >>= \case
+              Object m -> KM.lookup "tables" m >>= \case Object t -> KM.lookup "T" t; _ -> Nothing
+              _ -> Nothing) `shouldBe` Just (String "kept")
           (KM.lookup "values" o >>= \case Object v -> KM.lookup "x" v; _ -> Nothing) `shouldBe` Just (String "2")
           KM.member "web-properties" o `shouldBe` True
         other -> expectationFailure ("expected a YAML object, got " ++ show (fmap (const ()) other))
@@ -815,12 +819,18 @@ on refresh:
       fmap stType (Map.lookup "T" saved) `shouldBe` Just "Table 3 of (ℂ × ℤ)"
       summaries <- ensembleTables ens >>= summarizeTables
       summaries `shouldMatchList` [TableSummary "T" [2, 3, 2] (12 * 20), TableSummary "B" [3] 3]
-      modifyValue (ensembleFrontendProperties ens) (writeSavedTables saved)
+      -- (saved with its tables: a .fsz archive, its project.fs with a
+      -- manifest, and a file a table)
+      setValue' (ensembleSavedTables ens) saved
       bytes <- encodeEnsemble ens
-      Right loaded <- parseEnsembleFromBytes "saved.fs" bytes
-      props <- getDynamic (ensembleFrontendProperties loaded)
-      Right fromFile <- pure (readSavedTables props)
-      fromFile `shouldBe` saved
+      isZip bytes `shouldBe` True
+      projectFileName "saved.fs" bytes `shouldBe` "saved.fsz"
+      Right entries <- pure (readZip bytes)
+      map fst entries `shouldBe` ["project.fs", "tables/B.bin", "tables/T.bin"]
+      Right loaded <- parseEnsembleFromBytes "saved.fsz" bytes
+      fromFile <- getDynamic (ensembleSavedTables loaded)
+      Map.keys fromFile `shouldBe` Map.keys saved
+      fmap stData (Map.lookup "T" fromFile) `shouldBe` fmap stData (Map.lookup "T" saved)
       warnings <- ensembleTables loaded >>= \ts -> applySavedTables ts fromFile
       warnings `shouldBe` []
       t' <- getDynamic . dyn =<< tableNamed loaded "T"
@@ -830,9 +840,27 @@ on refresh:
         readCell pairT t' ixs `shouldBe` readCell pairT t ixs
       b' <- getDynamic . dyn =<< tableNamed loaded "B"
       map (readCell BooleanType b' . pure) [1, 2, 3] `shouldBe` map Just [False, True, False]
-      -- (an empty table isn't saved, and no saved tables means no key)
+      -- (an empty table isn't saved, and no saved tables means a plain
+      -- .fs, with no manifest)
       (tableCellCount <$> (getDynamic . dyn =<< tableNamed loaded "E")) >>= (`shouldBe` 0)
-      KM.member "tables" (writeSavedTables Map.empty props) `shouldBe` False
+      setValue' (ensembleSavedTables loaded) Map.empty
+      plain <- encodeEnsemble loaded
+      isZip plain `shouldBe` False
+      projectFileName "saved.fsz" plain `shouldBe` "saved.fs"
+      BS.isInfixOf "manifest:" plain `shouldBe` False
+
+    it "skips a saved table whose data isn't what its manifest says" $ do
+      Right ens <- buildEnsembleFromScript (unlines
+        [ "@config \"Configuration\"", "T : Table 1 of R", "@viewer \"V\" var=z", "pass" ])
+      Just t <- newTable RealType [4] (0, 0) (1, 1)
+      ensembleTables ens >>= mapM_ (\(_, _, v) -> setValue' v t)
+      ensembleTables ens >>= captureTables >>= setValue' (ensembleSavedTables ens)
+      bytes <- encodeEnsemble ens
+      Right loaded <- parseEnsembleFromBytes "saved.fsz" bytes
+      fromFile <- getDynamic (ensembleSavedTables loaded)
+      let tampered = Map.adjust (\st -> st { stData = BL.map (+ 1) (stData st) }) "T" fromFile
+      warnings <- ensembleTables loaded >>= \ts -> applySavedTables ts tampered
+      warnings `shouldBe` ["ignoring the saved table `T`: its data isn't what the manifest says (its checksum doesn't match)"]
 
     it "skips a saved table that no longer fits the project, with a warning" $ do
       Right old <- buildEnsembleFromScript (unlines

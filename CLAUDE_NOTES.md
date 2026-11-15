@@ -428,6 +428,17 @@ turn, and `renderViewerBufferAt` and `renderProgressivelyInto` (through
 backend when one gives up. `ChainSpec` (end-to-end) checks this with
 made-up declining backends around the real CPU one.
 
+**Project files** (PROJECT_FILES.md). A project with saved tables is a
+`.fsz` zip archive: `project.fs` (the YAML, with a `manifest:` key) and a
+file per table (raw packed bytes, SHA-256 in the manifest). `Data.Zip` is
+ours (stored/deflate, no zip64, fixed timestamps: reproducible bytes;
+CRC-32 from the zlib package's C zlib), since `zip-archive`'s `digest`
+needs a system zlib.h that the wasm toolchain lacks. `loadProjectBytes`
+reads either form (`projectArchive`), filling `ensembleSavedTables`, which
+frontends apply and then empty; `encodeEnsemble` writes a `.fsz` when that
+holds tables (`projectFileName` gives the extension). Inline `tables:` is
+no longer read (`dev-tools/fsz/inline-tables-to-fsz.py` converts).
+
 **The GPU backends** (GPU_PLAN.md, 5b; `fractalstream-backend-wgsl`, pure
 Haskell for both GHCs). `Backend.WGSL.Code` compiles a viewer's code to a
 WGSL compute shader, once per precision (`Backend.WGSL.Runtime`: `R` is a

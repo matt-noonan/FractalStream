@@ -1,24 +1,26 @@
 {-# language OverloadedStrings #-}
 
--- | A project file's @tables:@ key: what the project's tables held when it
--- was saved, by name, for the tables that weren't empty. Each one has its
--- type (as the script declares it), its size, where it lies in the plane
--- (the center of its cell (1, 1), and a cell's width and height), and its
--- elements, packed ('Language.Table.packTable'), compressed with zlib, and
--- written in base64, 76 characters to a line:
+-- | What a project's tables held when it was saved (the tables that
+-- weren't empty), which a project file keeps in a @.fsz@ archive (see
+-- PROJECT_FILES.md): each table's elements in a file of their own, packed
+-- ('Language.Table.packTable'), and described in the project's
+-- @manifest:@ key, by name:
 --
--- > tables:
--- >   crits:
--- >     type: Table 3 of (ℂ × ℤ)
--- >     size: [120, 120, 2]
--- >     origin: [-2.0, 1.5]
--- >     step: [0.025, 0.025]
--- >     data: |
--- >       eJzt3U1u2zAQ...
+-- > manifest:
+-- >   tables:
+-- >     crits:
+-- >       file: tables/crits.bin
+-- >       type: Table 3 of (ℂ × ℤ)
+-- >       size: [120, 120, 2]
+-- >       origin: [-2.0, 1.5]
+-- >       step: [0.025, 0.025]
+-- >       encoding: raw
+-- >       sha256: 3f2a...
 --
 -- Like @values:@ ("Actor.SavedValues"), these are where a project was
--- left, not part of what it is, so the wx app restores them and fsrun
--- ignores them; and saving them is up to the user, since they can be big.
+-- left, not part of what it is, so the apps restore them and fsrun
+-- ignores them (unless asked); and saving them is up to the user, since
+-- they can be big.
 module Actor.SavedTables
   ( SavedTable(..)
   , SavedTables
@@ -36,62 +38,76 @@ import Data.DynamicValue
 import Language.Type
 import Language.Table
 
-import Codec.Compression.Zlib (compress, decompress)
-import Control.Exception (evaluate, try, SomeException)
+import qualified Crypto.Hash.SHA256 as SHA256
 import Data.Aeson
 import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson.KeyMap as KM
-import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
-import Data.ByteString (ByteString)
 import qualified Data.Map as Map
-import qualified Data.Text as Text
-import qualified Data.Text.Encoding as Text
+import Data.IORef (newIORef, modifyIORef', readIORef)
+import Control.Exception (SomeException, try)
+import Numeric (showHex)
 
--- | One saved table, as the project file has it.
+-- | One saved table.
 data SavedTable = SavedTable
   { stType   :: String
   , stSize   :: [Int]
   , stOrigin :: (Double, Double)
   , stStep   :: (Double, Double)
-  , stData   :: ByteString
-    -- ^ the packed elements, compressed
+  , stData   :: BL.ByteString
+    -- ^ the packed elements (read from the archive as they're needed)
+  , stSha256 :: Maybe String
+    -- ^ what their SHA-256 should be, as the manifest says (in hex)
   }
-  deriving (Eq, Show)
 
 type SavedTables = Map String SavedTable
 
-instance FromJSON SavedTable where
+-- | A manifest's entry for a table: where its file is, and what's in it.
+data TableEntry = TableEntry
+  { teFile :: FilePath, teType :: String, teSize :: [Int]
+  , teOrigin :: (Double, Double), teStep :: (Double, Double), teSha256 :: Maybe String }
+
+instance FromJSON TableEntry where
   parseJSON = withObject "table" $ \o -> do
-    stType <- o .: "type"
-    stSize <- o .: "size"
-    stOrigin <- o .: "origin"
-    stStep <- o .: "step"
-    encoded <- o .: "data"
-    stData <- either (fail . ("its data isn't base64: " ++)) pure
-                (B64.decode (Text.encodeUtf8 (Text.filter (`notElem` [' ', '\n', '\r', '\t']) encoded)))
-    pure SavedTable{..}
+    encoding <- o .:? "encoding" .!= ("raw" :: String)
+    unless (encoding == "raw") $
+      fail ("its encoding is " ++ show encoding ++ ", which this version of FractalStream can't read")
+    TableEntry <$> o .: "file" <*> o .: "type" <*> o .: "size" <*> o .: "origin" <*> o .: "step"
+               <*> o .:? "sha256"
 
-instance ToJSON SavedTable where
-  toJSON SavedTable{..} = object
-    [ "type" .= stType
-    , "size" .= stSize
-    , "origin" .= stOrigin
-    , "step" .= stStep
-    , "data" .= (Text.unlines . Text.chunksOf 76 . Text.decodeUtf8 . B64.encode) stData
-    ]
+-- | The tables a project's @manifest:@ says it has, from its archive's
+-- files (by path); and a warning for each one that can't be had.
+readSavedTables :: KM.KeyMap Value -> Map FilePath BL.ByteString -> (SavedTables, [String])
+readSavedTables manifest files = case KM.lookup "tables" manifest of
+  Nothing -> (Map.empty, [])
+  Just v -> case parseEither parseJSON v of
+    Left err -> (Map.empty, ["ignoring the manifest's tables, which can't be read: " ++ err])
+    Right (entries :: Map String Value) ->
+      let one (name, e) = case parseEither parseJSON e of
+            Left err -> Left ("ignoring the saved table `" ++ name ++ "`: " ++ err)
+            Right TableEntry{..} -> case Map.lookup teFile files of
+              Nothing -> Left ("ignoring the saved table `" ++ name ++ "`: its file " ++ show teFile
+                               ++ " isn't in the project's archive")
+              Just bytes -> Right (name, SavedTable teType teSize teOrigin teStep bytes teSha256)
+          results = map one (Map.toList entries)
+      in (Map.fromList (rights results), lefts results)
 
--- | Read the @tables:@ key out of a project file's frontend keys. A
--- project without one has no saved tables.
-readSavedTables :: KM.KeyMap Value -> Either String SavedTables
-readSavedTables = maybe (Right Map.empty) (parseEither parseJSON) . KM.lookup "tables"
+-- | The @manifest:@ entries for these tables, and their files (each
+-- table's at @tables/<name>.bin@), to write into a project's archive.
+writeSavedTables :: SavedTables -> (Value, [(FilePath, BL.ByteString)])
+writeSavedTables tables =
+  ( object [ "tables" .= Map.fromList [ (name, entry name st) | (name, st) <- Map.toList tables ] ]
+  , [ (file name, stData st) | (name, st) <- Map.toList tables ] )
+  where
+    file name = "tables/" ++ name ++ ".bin"
+    entry name SavedTable{..} = object
+      [ "file" .= file name, "type" .= stType, "size" .= stSize
+      , "origin" .= stOrigin, "step" .= stStep, "encoding" .= ("raw" :: String)
+      , "sha256" .= hex (SHA256.hashlazy stData) ]
 
--- | Replace the @tables:@ key (or remove it, when there are no tables to
--- save), leaving the project's other keys alone.
-writeSavedTables :: SavedTables -> KM.KeyMap Value -> KM.KeyMap Value
-writeSavedTables tables
-  | Map.null tables = KM.delete "tables"
-  | otherwise = KM.insert "tables" (toJSON tables)
+hex :: BS.ByteString -> String
+hex = concatMap (\w -> (if w < 16 then ('0' :) else id) (showHex w "")) . BS.unpack
 
 -- | What the given tables hold, to save: the ones that aren't empty.
 captureTables :: [(String, SomeType, Variable Table)] -> IO SavedTables
@@ -104,12 +120,15 @@ captureTables tables = fmap (Map.fromList . catMaybes) . forM tables $ \(name, S
         , stSize = tableDims t
         , stOrigin = tableOrigin t
         , stStep = tableStep t
-        , stData = BL.toStrict (compress (BL.fromStrict packed)) })
+        , stData = BL.fromStrict packed
+        , stSha256 = Nothing })
     _ -> Nothing
 
 -- | Put saved tables back into the given tables, returning a warning for
 -- each one that couldn't be (because the project no longer has a table by
--- that name and type, or its data doesn't fit).
+-- that name and type, or its data doesn't fit, or isn't what the manifest
+-- says). Each table's data is read once, into the table, checked as it
+-- goes by.
 applySavedTables :: [(String, SomeType, Variable Table)] -> SavedTables -> IO [String]
 applySavedTables tables saved = fmap catMaybes . forM (Map.toList saved) $ \(name, st) ->
   case [ (ty, var) | (name', ty, var) <- tables, name' == name ] of
@@ -120,14 +139,19 @@ applySavedTables tables saved = fmap catMaybes . forM (Map.toList saved) $ \(nam
                       ++ stType st ++ ", but it's now a " ++ ppType ty))
       | TableType _ elemTy <- ty -> do
           let bad why = Just ("ignoring the saved table `" ++ name ++ "`: " ++ why)
-          try (evaluate (BL.toStrict (decompress (BL.fromStrict (stData st))))) >>= \case
+          hash <- newIORef SHA256.init
+          try (unpackTableChunks elemTy (stSize st) (stOrigin st) (stStep st) (stData st)
+                 (\chunk -> modifyIORef' hash (`SHA256.update` chunk))) >>= \case
             Left (_ :: SomeException) -> pure (bad "its data is damaged")
-            Right packed -> unpackTable elemTy (stSize st) (stOrigin st) (stStep st) packed >>= \case
-              Left err -> pure (bad err)
-              Right t -> do
-                freezeTable t
-                setValue' var t
-                pure Nothing
+            Right (Left err) -> pure (bad err)
+            Right (Right t) -> do
+              actual <- hex . SHA256.finalize <$> readIORef hash
+              if maybe False (/= actual) (stSha256 st)
+                then pure (bad "its data isn't what the manifest says (its checksum doesn't match)")
+                else do
+                  freezeTable t
+                  setValue' var t
+                  pure Nothing
       | otherwise -> pure (Just ("ignoring the saved table `" ++ name ++ "`, which isn't a table"))
 
 -- | A table's name, size, and how many bytes its data takes before

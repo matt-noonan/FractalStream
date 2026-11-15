@@ -246,11 +246,11 @@ module Main (main) where
 
 import FractalStream.Prelude
 
-import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, LoadedProject(..), ensembleFields, FieldOwner(..), ensembleCommonDefs,
+import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, projectFileName, LoadedProject(..), ensembleFields, FieldOwner(..), ensembleCommonDefs,
                        encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables, watchValues,
                        projectStateKeys, withProjectKeys, rewriteProjectFile, projectScript)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
-import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables, TableSummary(..), summarizeTables)
+import Actor.SavedTables (captureTables, applySavedTables, TableSummary(..), summarizeTables)
 import qualified Data.Aeson.KeyMap as KM
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Language.Legacy.Binary (mightBeAncientFS, decodeAncientFS)
@@ -693,16 +693,17 @@ save views withTables withDraft draft = guarded $ readIORef sessionRef >>= \case
     -- the script: as the desktop app saves its editor's)
     when withDraft $ setValue' (ensembleSourceScript sEnsemble) (fromJSString draft)
     keepState sViewers sEnsemble views
-    -- (what its tables hold, if the page says so: see 'tableSummary')
+    -- (what its tables hold, if the page says so: see 'tableSummary'; a
+    -- project with tables is saved as a .fsz archive)
     case withTables of
-      1 -> do
-        tables <- ensembleTables sEnsemble >>= captureTables
-        modifyValue (ensembleFrontendProperties sEnsemble) (writeSavedTables tables)
-      0 -> modifyValue (ensembleFrontendProperties sEnsemble) (KM.delete "tables")
+      1 -> ensembleTables sEnsemble >>= captureTables >>= setValue' (ensembleSavedTables sEnsemble)
+      0 -> setValue' (ensembleSavedTables sEnsemble) Map.empty
       _ -> pure ()
     contents <- encodeEnsemble sEnsemble
+    -- (and its tables go, now they're written: they're in the project)
+    when (ensembleBuilt sEnsemble) $ setValue' (ensembleSavedTables sEnsemble) Map.empty
     setUnsaved False
-    BS.useAsCStringLen contents $ \(p, n) -> postFile (toJSString sFileName) (castPtr p) n
+    BS.useAsCStringLen contents $ \(p, n) -> postFile (toJSString (projectFileName sFileName contents)) (castPtr p) n
 
 -- | Keep the page's view state (under its own key), and the values the
 -- project's been left with, in its frontends' properties: to be saved.
@@ -735,7 +736,7 @@ share views withDraft draft = guarded $ readIORef sessionRef >>= mapM_ (\Session
       post $ Aeson.object [ "type" .= ("share" :: Text.Text), "library" .= libraryId s e, "state" .= Aeson.Object keys
                           , "file" .= Aeson.Null, "fileName" .= sFileName ]
     Nothing -> do
-      file <- either fail pure (rewriteProjectFile (const script') (withoutPreview . KM.delete "tables") contents)
+      file <- either fail pure (rewriteProjectFile (const script') (withoutPreview . KM.delete "manifest") contents)
       post $ Aeson.object [ "type" .= ("share" :: Text.Text), "library" .= Aeson.Null, "state" .= Aeson.Null
                           , "file" .= Text.decodeUtf8 file, "fileName" .= sFileName ])
 
@@ -771,9 +772,10 @@ openProject how projectTitle fileName contents = do
     props <- getDynamic (ensembleFrontendProperties ensemble)
     either (\err -> putStrLn ("Ignoring unreadable `values:`: " ++ err))
            (applySavedValues ensemble >=> mapM_ putStrLn) (readSavedValues props)
-    either (\err -> putStrLn ("Ignoring unreadable `tables:`: " ++ err))
-           (\saved -> ensembleTables ensemble >>= \ts -> applySavedTables ts saved >>= mapM_ putStrLn)
-           (readSavedTables props)
+    -- (its tables, from its archive: their data goes once they're in place)
+    saved <- getDynamic (ensembleSavedTables ensemble)
+    ensembleTables ensemble >>= \ts -> applySavedTables ts saved >>= mapM_ putStrLn
+    setValue' (ensembleSavedTables ensemble) Map.empty
   startProject how projectTitle fileName False Map.empty ensemble
 
 -- | Show a project, in place of the open one (if any): run it, and post
