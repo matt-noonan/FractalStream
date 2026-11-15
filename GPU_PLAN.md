@@ -260,6 +260,19 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
 - [ ] **5e. The desktop**: a `GpuDevice` over webgpu.h, and
       GPU f64 where the driver has it (Vulkan, DirectX 12; not Metal).
 
+## Later
+
+- **List optimizations in the core** (noted 2026-11-15, not started):
+  ranges counted without lists, appends in place, and loop iterations
+  giving back their scratch space are only in the WGSL backend
+  (`Backend.WGSL.Code`, `Data`, `Gen`); the CPU backends (LLVM, wasm)
+  still make range lists and copy on every append. Move them into the
+  core as a transformation pass over the typed code, emitting new AST
+  nodes the backends compile (such as `AppendInPlace`, and a counted
+  `for each` over a range), so every backend gets them, and the analysis
+  (whether a list can be shared, whether it can outlive an iteration)
+  lives in one place.
+
 ## Settled questions (2026-11-14)
 
 - Desktop: yes (G4), the lighter of wgpu-native and Dawn.
