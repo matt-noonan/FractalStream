@@ -126,14 +126,21 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
   (smoothing), and writes RGB8 into the block's output buffer.
 - **The hoisted prefix** runs on the CPU (`bRunOnce`), as now; its results
   are bound like configuration values.
-- **Math** (all of it, in 5b): `+ - * /`, `sqrt`, `abs`, `floor`,
-  `round`, `mod` and comparisons; df64 `exp` (range reduction by ln 2, a
-  Taylor series of r/512, squared 9 times), `log` (two Newton steps on
-  `exp`, from f32's), `sin` and `cos` (reduction by pi/2 in three parts,
-  then Taylor), `atan2` (two Newton steps on `sin` and `cos`), the
+- **Math** (all of it, in 5b; df64's functions remade 2026-11-14):
+  `+ - * /`, `sqrt`, `abs`, `floor`, `round`, `mod` and comparisons; and
+  df64 `exp` (e^(r/16) by its series, r = a - m ln 2, squared up four
+  times), `log` (2 atanh((m - 1)/(m + 1)), m the mantissa, in [1/sqrt 2,
+  sqrt 2]), `sin` and `cos` (series in r^2, r = a - k pi/2), `atan2` (atan
+  (k/8) from a table, plus the series of atan u, |u| <= 1/16), the
   hyperbolic functions (a series near 0), and from those the inverses,
-  real and complex powers, and the complex functions. In f32, WGSL's own.
-  Colors are f32: a color is 8 bits a channel anyway.
+  real and complex powers, and the complex functions. Each reduction
+  subtracts its constant (ln 2, pi/2) in three f32 parts, the first two
+  exactly (two_prod); each polynomial is summed by Horner's rule with
+  df64 coefficients (no divisions), its small tail in f32. To about 1e-15
+  (sin to 6e-15 at 1e5), at about 1 ns a call on an Apple M5, 1.6 to 2.8
+  times as fast as the first versions (dev-tools/gpu/df64-check.mjs). In
+  f32, WGSL's own, but for sinh and tanh near 0 (a series: WGSL's
+  cancel). Colors are f32: a color is 8 bits a channel anyway.
 - **The browsers' compilers use fast math** (on Metal at least), so the
   runtime can't trust ordinary float comparisons with NaN or infinity, nor
   division near f32's limits (it's a multiplication by the reciprocal,
@@ -205,8 +212,10 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
   long it took, and how much of each GPU picture matches the CPU's (no
   channel off by more than 8), next to the yardstick: how much of the
   CPU's picture matches itself with the view nudged by 1e-15.
-- **The df64 harness** (the spike's primitive check, then the math
-  functions): still to do, as a check of its own.
+- **The df64 harness**: `dev-tools/gpu/df64-check.mjs RUNTIME.wgsl`
+  (the runtime from a shader the spec dumps with `FS_WGSL_DUMP`) runs
+  each real function on the GPU over many arguments, against
+  JavaScript's doubles (its worst error), and times it.
 - **Without a GPU** (CI): `fractalstream-backend-wgsl`'s spec, through a
   device that keeps the shaders and fails every block: what's compiled and
   what's declined, the arguments' layout, and a failed render drawn by the

@@ -20,6 +20,10 @@ module Backend.WGSL.Runtime
   , arenaWords
   ) where
 
+import Data.List (intercalate)
+import GHC.Float (castFloatToWord32)
+import Numeric (showHex)
+
 -- | How many words of scratch space (for lists) each pixel has: 4 KB.
 arenaWords :: Int
 arenaWords = 1024
@@ -56,7 +60,7 @@ bindings = unlines
 
 numbers :: Precision -> String
 numbers = \case
-  DoubleFloat -> unlines
+  DoubleFloat -> unlines $
     [ "alias R = vec2f;"
     , "fn g(x: f32) -> f32 { return bitcast<f32>(bitcast<u32>(x) ^ params.zero); }"
     , "fn two_sum(a: f32, b: f32) -> vec2f {"
@@ -133,94 +137,7 @@ numbers = \case
     , "fn rldexp(a: R, k: i32) -> R { return rscale(a, k); }"
     -- exp: e^a = 2^m e^r, r = a - m ln 2, and e^r as (1 + s)^512, s from
     -- the Taylor series of e^(r / 512) - 1
-    , "const LN2 = R(bitcast<f32>(0x3f317218u), bitcast<f32>(0xb102e308u));"
-    , "fn rexp(a: R) -> R {"
-    , "  if (fisnan(a.x)) { return R(fnan(), 0.0); }"
-    , "  if (a.x > 88.8) { return R(finf(), 0.0); }"
-    , "  if (a.x < -104.0) { return R(0.0, 0.0); }"
-    , "  if (a.x == 0.0) { return R(1.0, 0.0); }"
-    , "  let m = floor(a.x / LN2.x + 0.5);"
-    , "  let r = rscale(rsub(a, rmul(R(m, 0.0), LN2)), -9);"
-    , "  var t = r;"
-    , "  var s = r;"
-    , "  for (var k = 2; k <= 7; k++) {"
-    , "    t = rdiv(rmul(t, r), R(f32(k), 0.0));"
-    , "    s = radd(s, t);"
-    , "  }"
-    , "  for (var k = 0; k < 9; k++) { s = radd(rscale(s, 1), rmul(s, s)); }"
-    , "  return rscale(radd(s, R(1.0, 0.0)), i32(m));"
-    , "}"
-    -- log: Newton's method on exp, from the f32 log (twice: each doubles
-    -- its bits)
-    , "fn rlog(a: R) -> R {"
-    , "  if (a.x == 0.0) { return R(-finf(), 0.0); }"
-    , "  if (a.x < 0.0 || fisnan(a.x)) { return R(fnan(), 0.0); }"
-    , "  if (fisinf(a.x)) { return a; }"
-    , "  var x = R(log(a.x), 0.0);"
-    , "  for (var k = 0; k < 2; k++) { x = rsub(radd(x, rmul(a, rexp(rneg(x)))), R(1.0, 0.0)); }"
-    , "  return x;"
-    , "}"
-    -- sin and cos: a = k pi/2 + r (pi/2 in three parts), |r| <= pi/4,
-    -- and the Taylor series of r, by the quadrant
-    , "const PIO2 = R(bitcast<f32>(0x3fc90fdbu), bitcast<f32>(0xb33bbd2eu));"
-    , "const PIO2_3 = -1.7151245e-15;"
-    , "fn rsincos(a: R) -> vec4f {"
-    , "  let k = round(a.x / PIO2.x);"
-    , "  let r = rsub(rsub(a, rmul(R(k, 0.0), PIO2)), R(k * PIO2_3, 0.0));"
-    , "  let r2 = rmul(r, r);"
-    , "  var sn = r;"
-    , "  var cs = R(1.0, 0.0);"
-    , "  var ts = r;"
-    , "  var tc = R(1.0, 0.0);"
-    , "  for (var n = 1; n <= 10; n++) {"
-    , "    ts = rneg(rdiv(rmul(ts, r2), R(f32((2 * n) * (2 * n + 1)), 0.0)));"
-    , "    tc = rneg(rdiv(rmul(tc, r2), R(f32((2 * n - 1) * (2 * n)), 0.0)));"
-    , "    sn = radd(sn, ts);"
-    , "    cs = radd(cs, tc);"
-    , "  }"
-    , "  let q = i32(k - 4.0 * floor(k / 4.0));"
-    , "  if (q == 0) { return vec4f(sn, cs); }"
-    , "  if (q == 1) { return vec4f(cs, rneg(sn)); }"
-    , "  if (q == 2) { return vec4f(rneg(sn), rneg(cs)); }"
-    , "  return vec4f(rneg(cs), sn);"
-    , "}"
-    , "fn rsin(a: R) -> R { if (fisnan(a.x) || fisinf(a.x)) { return R(fnan(), 0.0); } return rsincos(a).xy; }"
-    , "fn rcos(a: R) -> R { if (fisnan(a.x) || fisinf(a.x)) { return R(fnan(), 0.0); } return rsincos(a).zw; }"
-    , "fn rtan(a: R) -> R { let sc = rsincos(a); return rdiv(sc.xy, sc.zw); }"
-    -- atan2: Newton's method on sin and cos, from the f32 atan2 (twice)
-    , "fn ratan2(y: R, x: R) -> R {"
-    , "  if (x.x == 0.0 && y.x == 0.0) { return R(0.0, 0.0); }"
-    , "  if (fisnan(x.x) || fisnan(y.x)) { return R(fnan(), 0.0); }"
-    , "  var z = R(atan2(y.x, x.x), 0.0);"
-    , "  for (var k = 0; k < 2; k++) {"
-    , "    let sc = rsincos(z);"
-    , "    z = radd(z, rdiv(rsub(rmul(y, sc.zw), rmul(x, sc.xy)), radd(rmul(x, sc.zw), rmul(y, sc.xy))));"
-    , "  }"
-    , "  return z;"
-    , "}"
-    -- (the hyperbolic functions: by a series near 0, where e^a - e^-a
-    -- would cancel)
-    , "fn rsinh(a: R) -> R {"
-    , "  if (abs(a.x) < 0.05) {"
-    , "    let a2 = rmul(a, a);"
-    , "    var t = a;"
-    , "    var s = a;"
-    , "    for (var n = 1; n <= 5; n++) {"
-    , "      t = rdiv(rmul(t, a2), R(f32((2 * n) * (2 * n + 1)), 0.0));"
-    , "      s = radd(s, t);"
-    , "    }"
-    , "    return s;"
-    , "  }"
-    , "  let e = rexp(a);"
-    , "  return rscale(rsub(e, rdiv(R(1.0, 0.0), e)), -1);"
-    , "}"
-    , "fn rcosh(a: R) -> R { let e = rexp(a); return rscale(radd(e, rdiv(R(1.0, 0.0), e)), -1); }"
-    , "fn rtanh(a: R) -> R {"
-    , "  if (a.x > 20.0) { return R(1.0, 0.0); }"
-    , "  if (a.x < -20.0) { return R(-1.0, 0.0); }"
-    , "  return rdiv(rsinh(a), rcosh(a));"
-    , "}"
-    ]
+    ] ++ df64Functions
   Single -> unlines
     [ "alias R = f32;"
     , "fn rbits(hi: u32, lo: u32) -> R { return bitcast<f32>(hi) + bitcast<f32>(lo); }"
@@ -258,9 +175,10 @@ numbers = \case
     , "fn rcos(a: R) -> R { return cos(a); }"
     , "fn rtan(a: R) -> R { return tan(a); }"
     , "fn ratan2(y: R, x: R) -> R { return atan2(y, x); }"
-    , "fn rsinh(a: R) -> R { return sinh(a); }"
+    -- (sinh and tanh by a series near 0, where WGSL's cancel)
+    , "fn rsinh(a: R) -> R { if (abs(a) < 0.05) { let z = a * a; return a * (1.0 + z * (1.0 / 6.0 + z / 120.0)); } return sinh(a); }"
     , "fn rcosh(a: R) -> R { return cosh(a); }"
-    , "fn rtanh(a: R) -> R { return tanh(a); }"
+    , "fn rtanh(a: R) -> R { if (abs(a) < 0.05) { let z = a * a; return a * (1.0 - z * (1.0 / 3.0 - z * 2.0 / 15.0)); } return tanh(a); }"
     ]
 
 -- | What both precisions share, written over R.
@@ -514,3 +432,166 @@ lists p = unlines $
       [ "fn rpn(v: vec2f) -> R { return v.x + v.y; }"
       , "fn rw0(r: R) -> u32 { return bitcast<u32>(r); }"
       , "fn rw1(r: R) -> u32 { return 0u; }" ]
+
+-- | df64's exponential, logarithm, sine and cosine, arctangent and
+-- hyperbolic functions: each reduces its argument (exactly, by constants
+-- in three parts, with two_prod), then sums a polynomial by Horner's rule,
+-- with df64 coefficients (no divisions), to about 1e-15 (see
+-- dev-tools/gpu/df64-check.mjs).
+df64Functions :: [String]
+df64Functions =
+  [ -- a - k c, for c in three parts: k p1 and k p2 exactly (two_prod)
+    "fn rreduce(a: R, k: f32, p: vec3f) -> R {"
+  , "  return rsub(rsub(rsub(a, two_prod(k, p.x)), two_prod(k, p.y)), R(g(k * p.z), 0.0));"
+  , "}"
+  , "const LN2 = " ++ dfc ln2 ++ ";"
+  , "const LN2_3 = " ++ parts3 ln2 ++ ";"
+  , "const PI = " ++ dfc piR ++ ";"
+  , "const PIO2 = " ++ dfc (piR / 2) ++ ";"
+  , "const PIO2_3 = " ++ parts3 (piR / 2) ++ ";"
+  -- exp: e^a = 2^m e^r, r = a - m ln 2; e^(r/16) - 1 by its series, then
+  -- squared back up (1 + s)^2 - 1 = 2 s + s^2, four times
+  , "fn rexp(a: R) -> R {"
+  , "  if (fisnan(a.x)) { return R(fnan(), 0.0); }"
+  , "  if (a.x > 88.8) { return R(finf(), 0.0); }"
+  , "  if (a.x < -104.0) { return R(0.0, 0.0); }"
+  , "  if (a.x == 0.0) { return R(1.0, 0.0); }"
+  , "  let m = round(a.x / LN2.x);"
+  , "  let r = rscale(rreduce(a, m, LN2_3), -4);"
+  , "  var s = rmul(r, " ++ hornerMixed "r" 0.0217 [ 1 / fact k | k <- [1 .. 8] ] ++ ");"
+  , "  for (var k = 0; k < 4; k++) { s = radd(rscale(s, 1), rmul(s, s)); }"
+  , "  return rscale(radd(s, R(1.0, 0.0)), i32(m));"
+  , "}"
+  -- log: a = m 2^e, m in [1/sqrt 2, sqrt 2]; log m = 2 atanh(s),
+  -- s = (m - 1)/(m + 1), by its series in s^2
+  , "fn rlog(a: R) -> R {"
+  , "  if (a.x == 0.0) { return R(-finf(), 0.0); }"
+  , "  if (a.x < 0.0 || fisnan(a.x)) { return R(fnan(), 0.0); }"
+  , "  if (fisinf(a.x)) { return a; }"
+  , "  var e = i32((bitcast<u32>(a.x) >> 23u) & 255u) - 127;"
+  , "  var m = rscale(a, -e);"
+  , "  if (m.x > 1.4142135) { m = rscale(m, -1); e += 1; }"
+  , "  let s = rdiv(rsub(m, R(1.0, 0.0)), radd(m, R(1.0, 0.0)));"
+  , "  let z = rmul(s, s);"
+  , "  let lm = rmul(rscale(s, 1), " ++ hornerMixed "z" 0.0295 [ 1 / fromIntegral (2 * k + 1) | k <- [0 .. 11 :: Int] ] ++ ");"
+  , "  let f = f32(e);"
+  , "  return radd(radd(radd(two_prod(f, LN2_3.x), two_prod(f, LN2_3.y)), R(g(f * LN2_3.z), 0.0)), lm);"
+  , "}"
+  -- sin and cos: a = k pi/2 + r, |r| <= pi/4, and their series in r^2,
+  -- by the quadrant
+  , "fn rsincos(a: R) -> vec4f {"
+  , "  let k = round(a.x / PIO2.x);"
+  , "  let r = rreduce(a, k, PIO2_3);"
+  , "  let z = rmul(r, r);"
+  , "  let sn = rmul(r, " ++ hornerMixed "z" 0.617 [ (-1) ^ n / fact (2 * n + 1) | n <- [0 .. 8 :: Int] ] ++ ");"
+  , "  let cs = " ++ hornerMixed "z" 0.617 [ (-1) ^ n / fact (2 * n) | n <- [0 .. 9 :: Int] ] ++ ";"
+  , "  let q = i32(k - 4.0 * floor(k / 4.0));"
+  , "  if (q == 0) { return vec4f(sn, cs); }"
+  , "  if (q == 1) { return vec4f(cs, rneg(sn)); }"
+  , "  if (q == 2) { return vec4f(rneg(sn), rneg(cs)); }"
+  , "  return vec4f(rneg(cs), sn);"
+  , "}"
+  , "fn rsin(a: R) -> R { if (fisnan(a.x) || fisinf(a.x)) { return R(fnan(), 0.0); } return rsincos(a).xy; }"
+  , "fn rcos(a: R) -> R { if (fisnan(a.x) || fisinf(a.x)) { return R(fnan(), 0.0); } return rsincos(a).zw; }"
+  , "fn rtan(a: R) -> R { let sc = rsincos(a); return rdiv(sc.xy, sc.zw); }"
+  -- atan2: t = min/max of |y| and |x|, in [0, 1]; atan t = atan c +
+  -- atan u, c = k/8 nearest t (atan c from the table), u = (t - c)/(1 + t c),
+  -- |u| <= 1/16, by its series; then by the octant
+  , "fn ratan2(y: R, x: R) -> R {"
+  , "  if (x.x == 0.0 && y.x == 0.0) { return R(0.0, 0.0); }"
+  , "  if (fisnan(x.x) || fisnan(y.x)) { return R(fnan(), 0.0); }"
+  , "  let ax = rabs(x);"
+  , "  let ay = rabs(y);"
+  , "  let swap = rlt(ax, ay);"
+  , "  let t = rdiv(select(ay, ax, swap), select(ax, ay, swap));"
+  , "  let k = round(t.x * 8.0);"
+  , "  let c = R(k * 0.125, 0.0);"
+  , "  let u = rdiv(rsub(t, c), radd(R(1.0, 0.0), rmul(t, c)));"
+  , "  let z = rmul(u, u);"
+  , "  var table = array<vec2f, 9>(" ++ intercalate ", " (map dfc atanTable) ++ ");"
+  , "  var r = radd(table[clamp(i32(k), 0, 8)], rmul(u, " ++ hornerMixed "z" 0.0042 [ (-1) ^ k / fromIntegral (2 * k + 1) | k <- [0 .. 7 :: Int] ] ++ "));"
+  , "  if (swap) { r = rsub(PIO2, r); }"
+  , "  if (rlt(x, R(0.0, 0.0))) { r = rsub(PI, r); }"
+  , "  if (rlt(y, R(0.0, 0.0))) { r = rneg(r); }"
+  , "  return r;"
+  , "}"
+  -- (the hyperbolic functions: by a series near 0, where e^a - e^-a
+  -- would cancel)
+  , "fn rsinhs(a: R) -> R {"
+  , "  let z = rmul(a, a);"
+  , "  return rmul(a, " ++ hornerMixed "z" 0.0025 [ 1 / fact (2 * n + 1) | n <- [0 .. 5 :: Int] ] ++ ");"
+  , "}"
+  , "fn rsinh(a: R) -> R {"
+  , "  if (abs(a.x) < 0.05) { return rsinhs(a); }"
+  , "  let e = rexp(a);"
+  , "  return rscale(rsub(e, rdiv(R(1.0, 0.0), e)), -1);"
+  , "}"
+  , "fn rcosh(a: R) -> R { let e = rexp(a); return rscale(radd(e, rdiv(R(1.0, 0.0), e)), -1); }"
+  , "fn rtanh(a: R) -> R {"
+  , "  if (a.x > 20.0) { return R(1.0, 0.0); }"
+  , "  if (a.x < -20.0) { return R(-1.0, 0.0); }"
+  , "  if (abs(a.x) < 0.05) { let s = rsinhs(a); return rdiv(s, rsqrt(radd(R(1.0, 0.0), rmul(s, s)))); }"
+  , "  let e2 = rexp(rscale(a, 1));"
+  , "  return rdiv(rsub(e2, R(1.0, 0.0)), radd(e2, R(1.0, 0.0)));"
+  , "}"
+  ]
+  where
+    fact :: Int -> Rational
+    fact n = fromIntegral (product [1 .. n])
+
+-- | A polynomial in z (WGSL, an R), its coefficients from the constant
+-- term up, by Horner's rule, for |z| at most @zmax@: the terms after the first whose tail
+-- (all the terms from it on) is below 1e-8 are summed in f32 (on z's high
+-- part), where f32's error, under 1e-15, is less than df64's own; the rest
+-- in df64.
+hornerMixed :: String -> Double -> [Rational] -> String
+hornerMixed z zmax cs =
+  let tails = [ sum [ abs (fromRational c) * zmax ^ j | (j, c) <- drop k (zip [0 :: Int ..] cs) ] | k <- [0 .. length cs] ]
+      k0 = max 1 (length (takeWhile (>= 1e-8) tails))
+      (front, tailCs) = splitAt k0 cs
+      tailExpr
+        | null tailCs = Nothing
+        | otherwise = Just (foldr (\c acc -> "(" ++ f32Lit c ++ " + " ++ z ++ ".x * " ++ acc ++ ")")
+                                   (f32Lit (last tailCs)) (init tailCs))
+      -- (the last df64 term picks the f32 tail up: c + z tail)
+      start = case tailExpr of
+        Nothing -> dfc (last front)
+        Just t -> "radd(" ++ dfc (last front) ++ ", rmul(" ++ z ++ ", R(" ++ t ++ ", 0.0)))"
+  in foldr (\c acc -> "radd(" ++ dfc c ++ ", rmul(" ++ z ++ ", " ++ acc ++ "))") start (init front)
+
+f32Lit :: Rational -> String
+f32Lit c = "bitcast<f32>(" ++ f32Bits (fromRational c) ++ ")"
+
+-- | A constant as df64: the f32 nearest it, and the f32 nearest the rest.
+dfc :: Rational -> String
+dfc r = let hi = fromRational r :: Float
+            lo = fromRational (r - toRational hi) :: Float
+        in "R(bitcast<f32>(" ++ f32Bits hi ++ "), bitcast<f32>(" ++ f32Bits lo ++ "))"
+
+-- | A constant in three f32 parts (for 'rreduce').
+parts3 :: Rational -> String
+parts3 r = let p1 = fromRational r :: Float
+               p2 = fromRational (r - toRational p1) :: Float
+               p3 = fromRational (r - toRational p1 - toRational p2) :: Float
+           in "vec3f(bitcast<f32>(" ++ f32Bits p1 ++ "), bitcast<f32>(" ++ f32Bits p2 ++ "), bitcast<f32>(" ++ f32Bits p3 ++ "))"
+
+f32Bits :: Float -> String
+f32Bits x = "0x" ++ showHex (castFloatToWord32 x) "u"
+
+-- | A decimal number, exactly.
+decimal :: String -> Rational
+decimal s = case break (== '.') s of
+  (whole, '.' : frac) -> fromInteger (read (whole ++ frac)) / 10 ^ length frac
+  _ -> fromInteger (read s)
+
+-- (to 40 digits: pi, ln 2, and atan (k/8), k = 0 .. 8)
+piR, ln2 :: Rational
+piR = decimal "3.1415926535897932384626433832795028841972"
+ln2 = decimal "0.6931471805599453094172321214581765680755"
+
+atanTable :: [Rational]
+atanTable = 0 : map decimal
+  [ "0.1243549945467614350313548491638710255732", "0.2449786631268641541720824812112758109141"
+  , "0.3587706702705722203959200639264604997770", "0.4636476090008061162142562314612144020285"
+  , "0.5585993153435624359715082164016612703464", "0.6435011087932843868028092287173226380415"
+  , "0.7188299996216245054170141515259046539514" ] ++ [piR / 4]
