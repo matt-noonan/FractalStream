@@ -259,8 +259,28 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
 - [ ] **5d. Autocolor** (snapshot buffer, misses appended, re-rendered).
 - [ ] **5e. The desktop**: a `GpuDevice` over webgpu.h, and
       GPU f64 where the driver has it (Vulkan, DirectX 12; not Metal).
+  - [x] macOS (2026-11-15, branch `desktop-gpu`): wgpu-native v29.0.1.1,
+        linked statically (`dev-tools/wgpu/fetch.sh` fetches it, pinned
+        by checksum, into `third_party/`), behind a small synchronous C
+        wrapper (`fractalstream-backend-wgpu/cbits/fsgpu.c`: one lock,
+        each call polling the device until its work's done), as
+        `Backend.WGPU.nativeGpu`. The LLVM backend offers the GPU
+        backends, starting the GPU when one first compiles a viewer. So
+        the app draws on the GPU by the order in Preferences, and `fsrun`
+        with `--backend gpu-df64` / `gpu-f32` (default `cpu`): GPU checks
+        without a browser. Every library viewer but autocolor's draws, as
+        on the web (the same percentages, the compiler being naga too).
+  - [ ] Linux and Windows (wgpu-native has their builds too).
+  - [ ] f64 (wgpu's native-only `SHADER_F64`), a fourth backend.
 
 ## Later
+
+- **Where the desktop's GPU backends are offered** (noted 2026-11-15):
+  for now the LLVM backend's `withBackend` adds them (5e's first step),
+  which ties the GPU to the CPU backend that happens to be linked.
+  Better: the frontends (wx, fsrun) put the platform's backends together
+  (a CPU backend, plus the GPU ones where there's a device), so each
+  backend package offers only itself.
 
 - **List optimizations in the core** (noted 2026-11-15, not started):
   ranges counted without lists, appends in place, and loop iterations

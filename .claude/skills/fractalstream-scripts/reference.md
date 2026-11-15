@@ -603,7 +603,10 @@ fsrun COMMAND --help                                # options for one subcommand
 
 Each subcommand also takes `-j N` / `--jobs N` (default: every core).
 Pass `-j 1` when asserting on a viewer that adds points to an unlocked
-autocolor group, whose colors otherwise depend on render order.
+autocolor group, whose colors otherwise depend on render order. And
+`-b B` / `--backend B`: draw viewers with `cpu` (the default),
+`gpu-df64` or `gpu-f32` (macOS only), and only it (a viewer it can't
+draw is an error).
 
 Command language (one per line, `#` comments): `select viewer "T"`,
 `select tool "N"`, `deselect tool`, `set parameter x to <expr>`,

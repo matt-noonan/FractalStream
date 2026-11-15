@@ -1,0 +1,32 @@
+cabal-version:       3.0
+name:                fractalstream-backend-wgpu
+version:             2.0.0.0
+synopsis:            FractalStream's desktop GPU: wgpu-native.
+description:         The GPU device the GPU backends (fractalstream-backend-wgsl) draw on, on the desktop: wgpu-native, WebGPU's C API. macOS only, for now; run dev-tools/wgpu/fetch.sh first.
+license:             BSD-3-Clause
+license-file:        LICENSE
+author:              Matt Noonan
+maintainer:          matt.noonan@gmail.com
+copyright:           2026, Matt Noonan
+category:            Math
+build-type:          Simple
+
+library
+  exposed-modules:     Backend.WGPU
+  build-depends:       base >=4.8 && <5
+                     , fractalstream-backend-wgsl
+  hs-source-dirs:      src
+  default-language:    Haskell2010
+  default-extensions:  LambdaCase
+  ghc-options:         -Wall -Werror -O2
+  if os(darwin)
+    c-sources:         cbits/fsgpu.c
+    cc-options:        -std=c11 -Wall
+    -- (wgpu-native, statically: dev-tools/wgpu/fetch.sh puts it in
+    -- third_party/wgpu-native. The archive is named in ld-options, not
+    -- found with extra-lib-dirs, since ghc-pkg won't register a relative
+    -- library directory; it's linked from the folder of whatever uses it,
+    -- which is always beside this one, in the repository's top level.)
+    include-dirs:      ../third_party/wgpu-native/include
+    ld-options:        ../third_party/wgpu-native/lib/libwgpu_native.a
+    frameworks:        Metal QuartzCore Foundation

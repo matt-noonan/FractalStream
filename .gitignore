@@ -36,3 +36,6 @@ fractalstream-backend-wasm/js/tables.wasm
 # The web app: npm packages, and what dev-tools/web/build.sh makes
 web/node_modules/
 web/dist/
+
+# Fetched by dev-tools/wgpu/fetch.sh
+third_party/

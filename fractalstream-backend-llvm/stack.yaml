@@ -8,6 +8,10 @@ work-dir: .stack-work-backend-llvm
 packages:
 - .
 - ../fractalstream-core
+- ../fractalstream-backend-wgsl
+- ../fractalstream-backend-wgpu
+# (for fractalstream-backend-wgsl's tests, which stack test runs too)
+- ../fractalstream-backend-pure
 
 extra-deps:
 
