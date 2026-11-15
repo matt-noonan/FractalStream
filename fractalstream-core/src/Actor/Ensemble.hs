@@ -7,6 +7,9 @@ module Actor.Ensemble
   , LoadedProject(..)
   , loadProjectFile
   , loadProjectBytes
+  , projectArchive
+  , projectYaml
+  , projectFileName
   , readProjectMetadata
   , checkProjectBytes
   , buildEnsembleFromScript
@@ -61,7 +64,10 @@ import Actor.Viewer.Disk
 import Actor.Viewer.Group
 import Actor.Metadata
 import Actor.SavedValues
-import Actor.SavedTables (readSavedTables, applySavedTables)
+import Actor.SavedTables (SavedTables, readSavedTables, writeSavedTables, applySavedTables)
+import Data.Zip (isZip, readZip, writeZip)
+import qualified Data.ByteString.Lazy as BL
+import System.FilePath (takeExtension, dropExtension)
 import Actor.Script
 import Actor.Colorizer (ViewerColorizer(..), Colorizer(..), Colorized(..), applyColorizers)
 import Actor.Autocolor
@@ -183,6 +189,13 @@ data Ensemble = Ensemble
     -- window geometry and current views, under @wx-properties:@ --
     -- which the core never interprets: each frontend reads and
     -- replaces its own key.
+  , ensembleSavedTables :: Variable SavedTables
+    -- ^ The tables the project file was saved with (its @manifest:@,
+    -- from its @.fsz@ archive: see "Actor.SavedTables"), until a
+    -- frontend puts them in place ('applySavedTables', then empties
+    -- this, so their data can go); and, when it's saved, the tables to
+    -- save with it ('encodeEnsemble'). A project whose script doesn't
+    -- build keeps them, to save them as its file had them.
   }
 
 contextValuesChanged :: SomeContext DynamicValue -> Dynamic ()
@@ -251,7 +264,9 @@ loadProjectFile path = try (BS.readFile path) >>= \case
 -- messages). Only a file that can't be read as a project at all is an
 -- error ('Left'); one whose script doesn't build is a 'BrokenScript'.
 loadProjectBytes :: String -> ByteString -> IO (Either String LoadedProject)
-loadProjectBytes path contents =
+loadProjectBytes path bytes = case projectArchive bytes of
+ Left err -> pure (Left (quoted path ++ " " ++ err))
+ Right (contents, files) ->
   -- A project's whole text lives under one top-level `script:` key
   -- (the unified @setup@/@config@/@viewer@/@tool@ script format --
   -- the older classic `setup:`/`configuration:`/`viewer(s):` shape
@@ -268,6 +283,14 @@ loadProjectBytes path contents =
           pure (ens, BrokenScript ens (formatScriptError src err))
       setValue' (ensembleFrontendProperties ens)
         (foldr KM.delete o coreKeys)
+      -- Its tables, from its archive, as its manifest describes them.
+      let manifest = case KM.lookup "manifest" o of { Just (Object m) -> m; _ -> KM.empty }
+          (saved, tableWarnings) = readSavedTables manifest files
+      forM_ tableWarnings $ \w -> hPutStrLn stderr ("warning: " ++ quoted path ++ ": " ++ w)
+      when (KM.member "tables" o) $
+        hPutStrLn stderr ("warning: " ++ quoted path ++ ": ignoring its `tables:`: a project's tables "
+                          ++ "are kept in a .fsz archive now (see PROJECT_FILES.md)")
+      setValue' (ensembleSavedTables ens) saved
       -- An unreadable `autocolor:` only costs its colors, which will be
       -- given out again as they're needed.
       forM_ (KM.lookup "autocolor" o) $ \v -> do
@@ -285,7 +308,24 @@ loadProjectBytes path contents =
 -- | The top-level keys of a project file that the core reads itself;
 -- the rest belong to frontends ('ensembleFrontendProperties').
 coreKeys :: [KM.Key]
-coreKeys = ["script", "scenarios", "metadata", "colorizers", "autocolor"]
+coreKeys = ["script", "scenarios", "metadata", "colorizers", "autocolor", "manifest", "tables"]
+
+-- | A project file's YAML, and the other files with it: a @.fsz@
+-- archive's @project.fs@ and the rest of its files (see PROJECT_FILES.md),
+-- or a plain @.fs@ file, with no others. (Or why the archive can't be
+-- read.)
+projectArchive :: ByteString -> Either String (ByteString, Map.Map FilePath BL.ByteString)
+projectArchive bytes
+  | isZip bytes = do
+      entries <- left ("isn't a readable project archive: " ++) (readZip bytes)
+      case lookup "project.fs" entries of
+        Nothing -> Left "is an archive without a project.fs"
+        Just yaml -> Right (BL.toStrict yaml, Map.fromList (filter ((/= "project.fs") . fst) entries))
+  | otherwise = Right (bytes, Map.empty)
+
+-- | A project file's YAML (from its archive, if it's a @.fsz@).
+projectYaml :: ByteString -> Either String ByteString
+projectYaml = fmap fst . projectArchive
 
 -- | A project file's @colorizers:@ key: the colorizer chosen for each
 -- viewer, by title. Anything unreadable in it is a warning (on stderr),
@@ -310,6 +350,7 @@ scriptOnlyEnsemble src choices =
            <*> newVariable src <*> newVariable Map.empty <*> pure False
            <*> newVariable noMetadata <*> newVariable choices <*> pure Map.empty
            <*> pure [] <*> (newAutocolorState >>= newVariable) <*> newVariable KM.empty
+           <*> newVariable Map.empty
 
 -- | A unified-script project can still carry a sibling top-level
 -- `scenarios:` key. Reading it has nothing to do with the unified-script
@@ -333,8 +374,8 @@ attachScenarios o ens = case KM.lookup "scenarios" o of
 -- tries to open it. The error, when there is one, shows where in the
 -- script it is, as 'formatScriptError' does.
 checkProjectBytes :: ByteString -> Either String ()
-checkProjectBytes contents = case YAML.decodeEither' contents of
-  Left err -> Left ("isn't valid YAML: " ++ show err)
+checkProjectBytes contents = case projectYaml contents >>= left show . YAML.decodeEither' of
+  Left err -> Left ("isn't valid YAML: " ++ err)
   Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
     let src = Text.unpack scriptText
     in left (formatScriptError src) (checkScript src)
@@ -346,8 +387,8 @@ checkProjectBytes contents = case YAML.decodeEither' contents of
 -- without the cost of compiling its script. A project without a
 -- @metadata:@ key has empty metadata.
 readProjectMetadata :: ByteString -> Either String ProjectMetadata
-readProjectMetadata contents = case YAML.decodeEither' contents of
-  Left err -> Left ("isn't valid YAML: " ++ show err)
+readProjectMetadata contents = case projectYaml contents >>= left show . YAML.decodeEither' of
+  Left err -> Left ("isn't valid YAML: " ++ err)
   Right (Object o) -> case KM.lookup "metadata" o of
     Nothing -> Right noMetadata
     Just v -> fst <$> readMetadata v
@@ -397,7 +438,8 @@ carryOverProjectState from to = do
     then void (changedValues from >>= applySavedValues to)
     else getDynamic (ensembleFrontendProperties from) >>= \props -> do
       either (const (pure ())) (void . applySavedValues to) (readSavedValues props)
-      either (const (pure ())) (\saved -> void (applySavedTables newTables saved)) (readSavedTables props)
+      saved <- getDynamic (ensembleSavedTables from)
+      void (applySavedTables newTables saved)
 
 
 -- | Which configuration panel a field is in: the project's own, or one
@@ -507,11 +549,25 @@ encodeEnsemble ens = do
   scenariosKV <- if null scenarios
     then pure []
     else (\v -> [("scenarios", v)]) <$> encodeValue scenarios
-  let rest = KM.union (KM.fromList (metadataKV ++ colorizersKV ++ autocolorKV ++ scenariosKV))
+  tables <- getDynamic (ensembleSavedTables ens)
+  let (manifest, files) = writeSavedTables tables
+      manifestKV = [ ("manifest", manifest) | not (Map.null tables) ]
+      rest = KM.union (KM.fromList (metadataKV ++ colorizersKV ++ autocolorKV ++ scenariosKV ++ manifestKV))
                       frontendProperties
-  pure $ scriptKey scriptText
-      <> (if KM.null rest then mempty
-          else encodePrettyYaml projectYamlConfig (Object rest))
+      yaml = scriptKey scriptText
+             <> (if KM.null rest then mempty
+                 else encodePrettyYaml projectYamlConfig (Object rest))
+  -- (with tables, an archive of the project's YAML and their files)
+  if Map.null tables then pure yaml else
+    either fail (pure . BL.toStrict) (writeZip (("project.fs", BL.fromStrict yaml) : files))
+
+-- | The name to save a project as: a @.fsz@ if its contents are an
+-- archive (it has tables), else a @.fs@, in place of the name's own
+-- extension (if it's either).
+projectFileName :: FilePath -> ByteString -> FilePath
+projectFileName name contents =
+  let base = if takeExtension name `elem` [".fs", ".fsz"] then dropExtension name else name
+  in base ++ (if isZip contents then ".fsz" else ".fs")
 
 -- | What a project file holds that isn't its script, nor about it (its
 -- metadata and scenarios), nor its tables: its values, its frontends'
@@ -520,21 +576,21 @@ encodeEnsemble ens = do
 -- the library), they're all it takes to show it as it was; see
 -- 'withProjectKeys'.
 projectStateKeys :: ByteString -> Either String (KM.KeyMap Aeson.Value)
-projectStateKeys contents = case YAML.decodeEither' contents of
-  Left err -> Left ("isn't valid YAML: " ++ show err)
-  Right (Object o) -> Right (foldr KM.delete o ["script", "metadata", "scenarios", "tables"])
+projectStateKeys contents = case projectYaml contents >>= left show . YAML.decodeEither' of
+  Left err -> Left ("isn't valid YAML: " ++ err)
+  Right (Object o) -> Right (foldr KM.delete o ["script", "metadata", "scenarios", "manifest", "tables"])
   Right _ -> Left "isn't a FractalStream project"
 
 -- | A project file with these keys (from 'projectStateKeys') in place of
 -- its own: its script and what's about it stay as they are.
 withProjectKeys :: KM.KeyMap Aeson.Value -> ByteString -> Either String ByteString
 withProjectKeys keys = rewriteProjectFile id $ \o ->
-  KM.union (KM.filterWithKey (\k _ -> k `elem` ["metadata", "scenarios", "tables"]) o) keys
+  KM.union (KM.filterWithKey (\k _ -> k `elem` ["metadata", "scenarios", "manifest"]) o) keys
 
 -- | Just a project file's script.
 projectScript :: ByteString -> Either String String
-projectScript contents = case YAML.decodeEither' contents of
-  Left err -> Left ("isn't valid YAML: " ++ show err)
+projectScript contents = case projectYaml contents >>= left show . YAML.decodeEither' of
+  Left err -> Left ("isn't valid YAML: " ++ err)
   Right (Object o) | Just (String src) <- KM.lookup "script" o -> Right (Text.unpack src)
   Right _ -> Left "doesn't have a top-level `script:` key"
 
@@ -542,8 +598,8 @@ projectScript contents = case YAML.decodeEither' contents of
 -- given (and written as 'encodeEnsemble' writes them).
 rewriteProjectFile :: (String -> String) -> (KM.KeyMap Aeson.Value -> KM.KeyMap Aeson.Value)
                    -> ByteString -> Either String ByteString
-rewriteProjectFile script others contents = case YAML.decodeEither' contents of
-  Left err -> Left ("isn't valid YAML: " ++ show err)
+rewriteProjectFile script others contents = case projectYaml contents >>= left show . YAML.decodeEither' of
+  Left err -> Left ("isn't valid YAML: " ++ err)
   Right (Object o) | Just (String src) <- KM.lookup "script" o ->
     let rest = others (KM.delete "script" o)
     in Right (scriptKey (script (Text.unpack src))
@@ -1034,8 +1090,9 @@ buildWithValidTargets configGroups viewers tools viewerTitles = do
           choicesVar      <- newVariable Map.empty
           autocolorVar    <- newAutocolorState >>= newVariable
           frontendVar     <- newVariable KM.empty
+          tablesVar       <- newVariable Map.empty
           pure (Right (Ensemble configVar viewersVar scenariosVar sourceScriptVar defaultsVar True
-                                metadataVar choicesVar Map.empty [] autocolorVar frontendVar))
+                                metadataVar choicesVar Map.empty [] autocolorVar frontendVar tablesVar))
 
 
 ------------------------------------------------------------

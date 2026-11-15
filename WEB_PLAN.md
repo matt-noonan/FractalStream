@@ -251,7 +251,7 @@ wasmtime.
 - [x] TypeScript UI renders `Layout`s as config panels (colors as text so far).
 - [x] Viewers with pan and zoom (in the page for now; R2 still to do).
 - [x] The built-in library.
-- [x] Open and save local `.fs` files (with `values:` and `tables:`, as the desktop app; Save writes back where the browser allows it, else downloads).
+- [x] Open and save local `.fs` files (with `values:`, and tables, as the desktop app: since 2026-11-14 a project with tables is a `.fsz` archive, PROJECT_FILES.md; Save writes back where the browser allows it, else downloads).
 - [x] Basic window management: viewers as windows to rearrange and
   resize; the configuration as a panel that pops in and out; hiding and
   showing the library.
@@ -1074,7 +1074,7 @@ In the fixture, a 960 KB table the viewer never reads isn't sent, and nor
 is one it reads only in the part run once per render.
 
 **Checked against LLVM:** `dev-tools/wasm/tables/compare.sh` renders
-`tables-read.fs` (saved tables, made by `MakeFixture.hs` through the
+`tables-read.fsz` (saved tables, made by `MakeFixture.hs` through the
 app's own save path, since fsrun can't save tables) with both builds:
 identical, including a view mostly off the tables. The library's tools
 still compare as before (`compare-tools.sh`: 34 identical, the rest the

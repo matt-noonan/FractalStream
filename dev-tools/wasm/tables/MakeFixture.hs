@@ -1,12 +1,13 @@
 {-# LANGUAGE DataKinds, TypeApplications #-}
--- | Write tables-read.fs: tables-read.fs.in (a project whose viewer reads
+-- | Write tables-read.fsz: tables-read.fs.in (a project whose viewer reads
 -- tables in every way a viewer can), with saved tables for it to read,
--- made here with the core's own code. (fsrun can't save tables.)
+-- made here with the core's own code, as an archive (PROJECT_FILES.md).
+-- (fsrun can't save tables.)
 --
 --   cd fractalstream-ui-headless && stack runghc ../dev-tools/wasm/tables/MakeFixture.hs
 module Main (main) where
 
-import Actor.SavedTables (captureTables, writeSavedTables)
+import Actor.SavedTables (captureTables)
 import Data.Color (rgbToColor)
 import Data.Complex (Complex(..))
 import Data.DynamicValue (newVariable)
@@ -15,7 +16,7 @@ import Language.Type
 import GHC.TypeNats (natSing)
 
 import Actor.Ensemble (Ensemble(..), parseEnsembleFromBytes, encodeEnsemble)
-import Data.DynamicValue (modifyValue)
+import Data.DynamicValue (setValue')
 import qualified Data.ByteString as BS
 import Control.Monad (forM_, void)
 
@@ -47,5 +48,5 @@ main = do
   -- (saved as the app saves a project with its tables)
   let template = "../dev-tools/wasm/tables/tables-read.fs.in"
   ens <- BS.readFile template >>= parseEnsembleFromBytes template >>= either fail pure
-  modifyValue (ensembleFrontendProperties ens) (writeSavedTables saved)
-  encodeEnsemble ens >>= BS.writeFile "../dev-tools/wasm/tables/tables-read.fs"
+  setValue' (ensembleSavedTables ens) saved
+  encodeEnsemble ens >>= BS.writeFile "../dev-tools/wasm/tables/tables-read.fsz"

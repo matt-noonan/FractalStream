@@ -6,7 +6,7 @@
 // 1e-15 (GPU_PLAN.md, "Testing": a picture's own sensitivity, which a GPU
 // picture matching as well as doubles would should come near).
 //
-//   node dev-tools/web/check-gpu.mjs [--images DIR] [section or file.fs ...]
+//   node dev-tools/web/check-gpu.mjs [--images DIR] [section or file.fs(z) ...]
 //
 // The library's sections by name, or the start of it (default: "Getting
 // started" and "Quadratic family"; "all" for every one), and project files. A pixel matches if no
@@ -23,8 +23,8 @@ const argv = process.argv.slice(2);
 const imagesAt = argv.indexOf("--images");
 const images = imagesAt >= 0 ? argv.splice(imagesAt, 2)[1] : null;
 if (images) fs.mkdirSync(images, { recursive: true });
-const files = argv.filter((a) => a.endsWith(".fs"));
-const wanted = argv.filter((a) => !a.endsWith(".fs"));
+const files = argv.filter((a) => /\.fsz?$/.test(a));
+const wanted = argv.filter((a) => !/\.fsz?$/.test(a));
 const sections = wanted.length || files.length ? wanted : ["Getting started", "Quadratic family"];
 const backends = ["cpu", "gpu-df64", "gpu-f32"];
 

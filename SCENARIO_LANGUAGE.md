@@ -156,7 +156,7 @@ No commands exist for `Motion`/`Resize`/`Pinch`/raw `MouseDown`/
 
 | Command | Effect |
 |---|---|
-| `load saved table <T>` | Put back what the project file saved table `T` holding (its `tables:` key, written when the app saves a project with its tables). `load saved tables T, U` loads several. It's an error if the file saved no table by that name, or if the saved table no longer fits the script's (a different type, say). |
+| `load saved table <T>` | Put back what the project file saved table `T` holding (a `.fsz` archive's table, written when the app saves a project with its tables: see PROJECT_FILES.md). `load saved tables T, U` loads several. It's an error if the file saved no table by that name, or if the saved table no longer fits the script's (a different type, say). |
 | `load all saved tables` | The same, for every table the file saved; nothing, if it saved none. |
 
 `fsrun` otherwise starts from the script alone: tables start empty, and

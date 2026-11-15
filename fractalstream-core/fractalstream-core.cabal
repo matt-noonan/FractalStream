@@ -88,6 +88,7 @@ library
                        Actor.Metadata
                        Actor.SavedValues
                        Actor.SavedTables
+                       Data.Zip
                        FractalStream.Settings
                        FractalStream.Quoted
                        FractalStream.Console
@@ -185,6 +186,7 @@ library
                        filepath,
                        utf8-string,
                        zlib,
+                       cryptohash-sha256,
                        JuicyPixels,
                        base64-bytestring,
                        Rasterific,
@@ -223,6 +225,7 @@ test-suite spec
                     , bytestring
                     , base64-bytestring
   other-modules:      Data.Indexed.FunctorSpec
+                    , Data.ZipSpec
                     , Language.Value.DerivativeSpec
                     , Language.Value.EvaluatorSpec
                     , Language.Value.ParserSpec

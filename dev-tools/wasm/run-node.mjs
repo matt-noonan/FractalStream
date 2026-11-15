@@ -92,4 +92,6 @@ try {
   else if (!/ExitSuccess/.test(String(e?.message ?? e))) { console.error(e); code = 1; }
 }
 pool?.terminate();
+// (FS_MEMORY=1: how big the engine's memory grew, which wasm never shrinks)
+if (process.env.FS_MEMORY) console.error(`memory: ${(instance.exports.memory.buffer.byteLength / 1048576).toFixed(0)} MB`);
 process.exit(code);

@@ -10,7 +10,7 @@
 // first; then the engine is asked for the file's contents, and given
 // `write`.
 
-const projectTypes = [{ description: "FractalStream projects", accept: { "application/x-fractalstream": [".fs"] } }];
+const projectTypes = [{ description: "FractalStream projects", accept: { "application/x-fractalstream": [".fs", ".fsz"] } }];
 
 // (not in TypeScript's DOM types yet)
 export interface FileHandle {
@@ -42,7 +42,7 @@ export async function pickFile(): Promise<Opened | null> {
       throw e;
     }
   }
-  const input = Object.assign(document.createElement("input"), { type: "file", accept: ".fs" });
+  const input = Object.assign(document.createElement("input"), { type: "file", accept: ".fs,.fsz" });
   return new Promise((resolve) => {
     input.addEventListener("change", () => resolve(input.files?.[0] ? { file: input.files[0], handle: null } : null));
     input.addEventListener("cancel", () => resolve(null));

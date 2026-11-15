@@ -253,7 +253,12 @@ async function save(saveAs: boolean): Promise<boolean> {
       if (answer === null) return false;
       tables = answer ? 1 : 0;
     }
-    const destination = await chooseDestination(c.library ? null : c.handle, saveAs, c.fileName, (handle) => {
+    // (a project with tables is a .fsz archive, without them a .fs: the
+    // engine saves it so, and a file of the other kind is saved elsewhere)
+    const archive = tables === 1 || (tables === 2 && /\.fsz$/i.test(c.fileName));
+    const name = c.fileName.replace(/\.fsz?$/i, "") + (archive ? ".fsz" : ".fs");
+    const elsewhere = saveAs || (c.handle !== null && c.handle.name !== name.split("/").pop());
+    const destination = await chooseDestination(c.library ? null : c.handle, elsewhere, name, (handle) => {
       c.handle = handle;
       c.library = false;
       c.fileName = handle.name;
@@ -367,14 +372,14 @@ function showDetails(m: Extract<Message, { type: "details" }>) {
     return;
   }
   closeDetails();
-  const title = el("input", { type: "text", value: m.title, placeholder: m.fileName.replace(/\.fs$/, "") });
+  const title = el("input", { type: "text", value: m.title, placeholder: m.fileName.replace(/\.fsz?$/, "") });
   const description = el("textarea", { className: "details-description", value: m.description, rows: 6 });
   const preview = el("div", {}, previewElement(m.preview));
   const close = () => closeDetails();
   const ok = () => {
     send({ type: "setDetails", title: title.value, description: description.value });
     // (as the engine calls it from now on)
-    projectTitle = title.value.trim() || m.fileName.replace(/\.fs$/, "");
+    projectTitle = title.value.trim() || m.fileName.replace(/\.fsz?$/, "");
     showFileName();
     close();
   };

@@ -16,7 +16,7 @@ import UI.ProjectInfo (editProjectInfo)
 import UI.Loading (whileLoading)
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
-import Actor.SavedTables (readSavedTables, writeSavedTables, captureTables, applySavedTables, summarizeTables)
+import Actor.SavedTables (captureTables, applySavedTables, summarizeTables)
 import UI.SaveTables (askSaveTables)
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Aeson.Key as Key
@@ -211,13 +211,17 @@ runApp = withBackend $ \backend -> start $ do
               values <- changedValues prj
               modifyValue (ensembleFrontendProperties prj) (writeSavedValues values)
             -- (and until then its tables are saved as its file had them)
-            forM_ withTables $ \b -> do
-              tables <- if b then ensembleTables prj >>= captureTables else pure Map.empty
-              modifyValue (ensembleFrontendProperties prj) (writeSavedTables tables)
+            forM_ withTables $ \b ->
+              setValue' (ensembleSavedTables prj) =<< (if b then ensembleTables prj >>= captureTables else pure Map.empty)
 
-            encodeEnsemble prj >>= BS.writeFile file
+            -- (a project with tables is a .fsz archive, whatever the name
+            -- asked for: see PROJECT_FILES.md)
+            contents <- encodeEnsemble prj
+            let file' = projectFileName file contents
+            BS.writeFile file' contents
+            when (ensembleBuilt prj) $ setValue' (ensembleSavedTables prj) Map.empty
             setValue isUnsaved False
-            setValue sessionFile (Just file)
+            setValue sessionFile (Just file')
 
       -- Setting the preview or editing the project's info changes what
       -- gets saved, unlike moving windows around, so it marks the
@@ -336,12 +340,12 @@ runApp = withBackend $ \backend -> start $ do
                   Left err -> putStrLn ("Ignoring unreadable `values:` in " ++ quoted name ++ ": " ++ err)
                   Right saved -> applySavedValues prj saved >>= mapM_ (putStrLn . (("In " ++ quoted name ++ ", ") ++))
               -- And the same for what its tables held, if that was saved.
-              when scriptBuilds $
-                readSavedTables <$> getDynamic (ensembleFrontendProperties prj) >>= \case
-                  Left err -> putStrLn ("Ignoring unreadable `tables:` in " ++ quoted name ++ ": " ++ err)
-                  Right saved -> do
-                    tables <- ensembleTables prj
-                    applySavedTables tables saved >>= mapM_ (putStrLn . (("In " ++ quoted name ++ ", ") ++))
+              -- (from its archive; their data goes once they're in place)
+              when scriptBuilds $ do
+                saved <- getDynamic (ensembleSavedTables prj)
+                tables <- ensembleTables prj
+                applySavedTables tables saved >>= mapM_ (putStrLn . (("In " ++ quoted name ++ ", ") ++))
+                setValue' (ensembleSavedTables prj) Map.empty
               -- And its viewers' code compiled, ready to be shown.
               prepared <- if scriptBuilds then Just <$> prepareEnsemble backend prj else pure Nothing
               pure (prj, translated, scriptBuilds, prepared)

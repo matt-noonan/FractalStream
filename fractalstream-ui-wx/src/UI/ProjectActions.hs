@@ -32,7 +32,7 @@ data ProjectActions = ProjectActions
 -- project.
 projectFileTypes :: [(String, [String])]
 projectFileTypes =
-  [ ("FractalStream project files", ["*.fs"])
+  [ ("FractalStream project files", ["*.fs", "*.fsz"])
   , ("All files", ["*.*"])
   ]
 
