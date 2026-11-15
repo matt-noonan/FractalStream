@@ -71,7 +71,7 @@ import Foreign.Ptr (castPtr)
 -- fine in Node and in a browser's worker, where the engine runs; a
 -- browser's main thread only allows it for small modules.)
 foreign import javascript unsafe
-  "const memory = __exports.memory; return new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array(memory.buffer, $1, $2).slice()), { env: { memory }, math: globalThis.fractalstreamMath, autocolor: new WebAssembly.Instance(globalThis.fractalstreamAutocolor, { env: { memory } }).exports });"
+  "const memory = __exports.memory; return new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array(memory.buffer, ($1 >>> 0), $2).slice()), { env: { memory }, math: globalThis.fractalstreamMath, autocolor: new WebAssembly.Instance(globalThis.fractalstreamAutocolor, { env: { memory } }).exports });"
   instantiate :: Ptr Word8 -> Int -> IO JSVal
 
 foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)"
@@ -83,7 +83,7 @@ foreign import javascript unsafe "$1.exports.kernel($2, $3, $4, $5, $6, $7, $8, 
 -- an arena of the given size (see @js/kernel-worker.mjs@), tagged (to
 -- stop it with 'stopToolJob').
 foreign import javascript safe
-  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.runTool($1, new Uint8Array(m, $2, $3).slice(), new Uint8Array(m, $4, $5).slice(), $6, $7, new Int32Array(m, $8, 2 * $9).slice())"
+  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.runTool($1, new Uint8Array(m, ($2 >>> 0), $3).slice(), new Uint8Array(m, ($4 >>> 0), $5).slice(), $6, $7, new Int32Array(m, ($8 >>> 0), 2 * $9).slice())"
   runToolOnWorker :: Int -> Ptr Word8 -> Int -> Ptr Word8 -> Int -> Int -> Int -> Ptr Int32 -> Int -> IO JSVal
 
 -- | Stop the tool job with this tag (its worker is replaced: see
@@ -103,13 +103,13 @@ foreign import javascript unsafe "$1.lists.length"
 foreign import javascript unsafe "$1.draws.length"
   toolDrawsLength :: JSVal -> IO Int
 
-foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, $2, $1.args.length).set($1.args)"
+foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $1.args.length).set($1.args)"
   copyToolArgs :: JSVal -> Ptr Word8 -> IO ()
 
-foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, $2, $1.lists.length).set($1.lists)"
+foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $1.lists.length).set($1.lists)"
   copyToolLists :: JSVal -> Ptr Word8 -> IO ()
 
-foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, $2, $1.draws.length).set($1.draws)"
+foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $1.draws.length).set($1.draws)"
   copyToolDraws :: JSVal -> Ptr Word8 -> IO ()
 
 -- | How many workers the host's pool has (0 without one).
@@ -119,7 +119,7 @@ foreign import javascript unsafe
 
 -- | Give the workers a kernel (its module's bytes: each compiles its own).
 foreign import javascript unsafe
-  "globalThis.fractalstreamWorkers.addKernel(new Uint8Array(__exports.memory.buffer, $1, $2).slice())"
+  "globalThis.fractalstreamWorkers.addKernel(new Uint8Array(__exports.memory.buffer, ($1 >>> 0), $2).slice())"
   addKernel :: Ptr Word8 -> Int -> IO Int
 
 -- | Render a block on a worker, with copies of the arguments and of the
@@ -129,7 +129,7 @@ foreign import javascript unsafe
 -- that asked for it: a render cancelled while it waits must not write
 -- into a buffer that's been freed.)
 foreign import javascript safe
-  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.run($1, new Uint8Array(m, $2, $3).slice(), new Uint8Array(m, $4, $5).slice(), $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, new Int32Array(m, $17, 2 * $18).slice())"
+  "const m = __exports.memory.buffer; return await globalThis.fractalstreamWorkers.run($1, new Uint8Array(m, ($2 >>> 0), $3).slice(), new Uint8Array(m, ($4 >>> 0), $5).slice(), $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, new Int32Array(m, ($17 >>> 0), 2 * $18).slice())"
   runOnWorker :: Int -> Ptr Word8 -> Int -> Ptr Word8 -> Int -> Int32 -> Int32 -> Int32
               -> Double -> Double -> Double -> Double -> Double -> Double -> Int32 -> Int32 -> Ptr Int32 -> Int -> IO JSVal
 
@@ -140,20 +140,20 @@ foreign import javascript unsafe "globalThis.fractalstreamWorkers.hasTable($1)"
 -- | Give the pool a copy of a table's contents (its version's), to send
 -- to the workers that need it.
 foreign import javascript unsafe
-  "globalThis.fractalstreamWorkers.addTable($1, new Uint8Array(__exports.memory.buffer, $2, $3).slice())"
+  "globalThis.fractalstreamWorkers.addTable($1, new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $3).slice())"
   poolAddTable :: Int -> Ptr Word8 -> Int -> IO ()
 
 foreign import javascript unsafe "$1.issues"
   resultIssues :: JSVal -> IO Int32
 
 foreign import javascript unsafe
-  "new Uint8Array(__exports.memory.buffer, $2, $1.pixels.length).set($1.pixels)"
+  "new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $1.pixels.length).set($1.pixels)"
   copyPixels :: JSVal -> Ptr Word8 -> IO ()
 
 -- | Copy a worker's misses (as many as fit) into a misses list in the
 -- engine's memory (see 'readMisses').
 foreign import javascript unsafe
-  "const n = Math.min($1.misses.length / 24, $3); new Uint8Array(__exports.memory.buffer, $2 + 8, n * 24).set($1.misses.subarray(0, n * 24)); new Int32Array(__exports.memory.buffer, $2, 1)[0] = n;"
+  "const n = Math.min($1.misses.length / 24, $3); new Uint8Array(__exports.memory.buffer, ($2 >>> 0) + 8, n * 24).set($1.misses.subarray(0, n * 24)); new Int32Array(__exports.memory.buffer, ($2 >>> 0), 1)[0] = n;"
   copyMisses :: JSVal -> Ptr Word8 -> Int -> IO ()
 
 -- | Compile a viewer's code to WebAssembly, giving the function that

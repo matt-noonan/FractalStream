@@ -25,7 +25,7 @@ foreign import javascript safe "return await globalThis.fractalstreamGpu.compile
   gpuCompile :: JSString -> IO JSVal
 
 foreign import javascript unsafe
-  "globalThis.fractalstreamGpu.bind($1, new Uint32Array(__exports.memory.buffer, $2, $3).slice(), $4)"
+  "globalThis.fractalstreamGpu.bind($1, new Uint32Array(__exports.memory.buffer, ($2 >>> 0), $3).slice(), $4)"
   gpuBind :: JSVal -> Ptr Word32 -> Int -> JSString -> IO JSVal
 
 foreign import javascript unsafe "globalThis.fractalstreamGpu.hasTables($1)"
@@ -36,16 +36,16 @@ foreign import javascript unsafe "globalThis.fractalstreamGpu.newTables($1, $2) 
   gpuNewTables :: JSString -> Int -> IO JSString
 
 foreign import javascript unsafe
-  "globalThis.fractalstreamGpu.writeTable($1, $2, new Uint8Array(__exports.memory.buffer, $3, $4))"
+  "globalThis.fractalstreamGpu.writeTable($1, $2, new Uint8Array(__exports.memory.buffer, ($3 >>> 0), $4))"
   gpuWriteTable :: JSString -> Int -> Ptr Word8 -> Int -> IO ()
 
 -- | A block's pixels, as RGB rows (copied into the engine's memory with
 -- 'copyRgb' only once it's done: memory can grow while it waits).
 foreign import javascript safe
-  "return await globalThis.fractalstreamGpu.run($1, new Uint8Array(__exports.memory.buffer, $2, 80).slice(), $3, $4)"
+  "return await globalThis.fractalstreamGpu.run($1, new Uint8Array(__exports.memory.buffer, ($2 >>> 0), 80).slice(), $3, $4)"
   gpuRun :: JSVal -> Ptr Word8 -> Int -> Int -> IO JSVal
 
-foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, $2, $1.pixels.length).set($1.pixels)"
+foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $1.pixels.length).set($1.pixels)"
   copyRgb :: JSVal -> Ptr Word8 -> IO ()
 
 foreign import javascript unsafe "$1.issues"

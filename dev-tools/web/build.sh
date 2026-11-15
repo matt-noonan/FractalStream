@@ -21,6 +21,8 @@ fi
 dev-tools/wasm/build.sh exe:fractalstream-web
 wasm="$(wasm32-wasi-cabal list-bin --project-file=cabal.project.wasm exe:fractalstream-web 2> /dev/null)"
 "$(wasm32-wasi-ghc --print-libdir)/post-link.mjs" -i "$wasm" -o "$dist/fractalstream-web.js"
+# (and past 2 GB of memory: see fix-glue.sh)
+dev-tools/wasm/fix-glue.sh "$dist/fractalstream-web.js"
 # Smaller (16.7 MB to 7.6 MB; gzipped, 2.9 MB to 2.4 MB): optimized for
 # size, after the glue above is made from the module as GHC left it.
 wasm-opt -Oz "$wasm" -o "$dist/fractalstream-web.wasm"

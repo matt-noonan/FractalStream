@@ -428,6 +428,14 @@ turn, and `renderViewerBufferAt` and `renderProgressivelyInto` (through
 backend when one gives up. `ChainSpec` (end-to-end) checks this with
 made-up declining backends around the real CPU one.
 
+**Engine memory past 2 GB (web).** A JavaScript import that views the
+engine's memory must read its address unsigned: `new Uint8Array(
+__exports.memory.buffer, ($2 >>> 0), $3)`, since JavaScript reads a
+pointer as a signed 32-bit number. GHC's own glue (its string
+conversions) is patched the same way by `dev-tools/wasm/fix-glue.sh`,
+which both `build.sh` and `node.sh` run after `post-link.mjs`, and which
+fails the build if any view is still signed.
+
 **Project files** (PROJECT_FILES.md). A project with saved tables is a
 `.fsz` zip archive: `project.fs` (the YAML, with a `manifest:` key) and a
 file per table (raw packed bytes, SHA-256 in the manifest). `Data.Zip` is
