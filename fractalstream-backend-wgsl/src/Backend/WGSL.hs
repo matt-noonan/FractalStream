@@ -21,7 +21,7 @@ import Backend.WGSL.Code
 import Backend.WGSL.Device
 import Backend.WGSL.Runtime (Precision(..))
 
-import Actor.Viewer (ViewerCompiler(..), CompiledViewer(..), BlockFunction(..), ViewerArgs(..))
+import Actor.Viewer (ViewerCompiler(..), CompiledViewer(..), BlockFunction(..), ViewerArgs(..), ViewerIssues(..))
 import Actor.Viewer.Types (ViewerEnv, MissingViewerArgs)
 import FractalStream.Backends (BackendId(..), Decline(..))
 import Language.Code (Code, transformValues)
@@ -29,7 +29,9 @@ import Language.Environment
 import Language.Value.Evaluator (HaskellValue)
 import Language.Value.Transform (shortCircuit, integerPowers)
 
+import Data.Bits (testBit)
 import Foreign.Marshal.Array (withArray)
+import Language.Table (Table(..))
 import Foreign.Ptr (castPtr)
 
 -- | The GPU backends, on this device (or, if there's none, declining
@@ -47,9 +49,10 @@ gpuViewerCompilers device = [(GpuDf64, compiler DoubleFloat), (GpuF32, compiler 
 
     bind :: GpuKernel -> Context HaskellValue env -> IO BlockFunction
     bind kernel args = do
-      let ws = concat (fromContext (\_ t v -> argWords t v) args)
+      let (ws, tables) = packArgs args
       -- (a binding can't be empty)
       gpuArgs <- gkBind kernel (if null ws then [0] else ws)
+        [ GpuTable (tableVersion t) off (tableBuffer t) bytes | (t, off, bytes) <- tables ]
       pure BlockFunction
         { bfView = const Nothing
         , bfCoarse = False
@@ -59,7 +62,8 @@ gpuViewerCompilers device = [(GpuDf64, compiler DoubleFloat), (GpuF32, compiler 
               gaRun gpuArgs (castPtr p) (fromIntegral vaWidth) (fromIntegral vaHeight) vaBuffer
             pure $ case result of
               Left err -> Left (Decline ("the GPU failed: " ++ err))
-              Right () -> Right mempty
+              Right issues -> Right ViewerIssues { viOutOfMemory = testBit issues 0
+                                                 , viBadIndex = testBit issues 1 }
         }
 
 -- | A viewer's shader, in this precision, or why there can't be one.

@@ -17,7 +17,12 @@
 module Backend.WGSL.Runtime
   ( Precision(..)
   , runtime
+  , arenaWords
   ) where
+
+-- | How many words of scratch space (for lists) each pixel has: 4 KB.
+arenaWords :: Int
+arenaWords = 1024
 
 -- | The two kinds of real number a kernel can compute with.
 data Precision = DoubleFloat | Single
@@ -25,7 +30,7 @@ data Precision = DoubleFloat | Single
 
 -- | The bindings and functions every kernel has.
 runtime :: Precision -> String
-runtime p = unlines [bindings, numbers p, common]
+runtime p = unlines [bindings, numbers p, common, lists p]
 
 bindings :: String
 bindings = unlines
@@ -41,8 +46,12 @@ bindings = unlines
   , "@group(0) @binding(0) var<uniform> params: Params;"
   , "// the configuration's values (see Backend.WGSL.Code)"
   , "@group(0) @binding(1) var<storage, read> args: array<u32>;"
-  , "// the block's pixels, 0x00BBGGRR"
+  , "// the block's pixels, 0xIIBBGGRR (II: the pixel's issues, bit 0 for"
+  , "// running out of list space, bit 1 for a bad index)"
   , "@group(0) @binding(2) var<storage, read_write> out: array<u32>;"
+  , "// the configuration's tables' elements, laid out as on the CPU"
+  , "// (Language.Table), one after another"
+  , "@group(0) @binding(3) var<storage, read> tables: array<u32>;"
   ]
 
 numbers :: Precision -> String
@@ -447,3 +456,61 @@ common = unlines
   , "  return u32(v) & 255u;"
   , "}"
   ]
+
+-- | Lists and tables.
+--
+-- A list is a word address: 0 for the empty list, else its block's
+-- first word, its length, followed by its elements (a truth value,
+-- integer, color or list in one word; a real number in two, as @rbits@
+-- reads them; a complex number in four; a pair its parts'). A list made
+-- by the kernel is in the pixel's @arena@ (bump-allocated from word 1,
+-- afresh for each subsample, never changed once made); a configuration's
+-- is in @args@, with the address's top bit set. Running out of arena sets
+-- @overflow@, and gives the empty list; indexing out of range sets
+-- @badIndex@: either makes the pixel magenta, as on the CPU.
+--
+-- A table is its descriptor's index in @args@: its elements' first word in
+-- @tables@, its number of dimensions, its origin's x and y, a cell's width
+-- and height (each as two words, as @rbits@ reads them), and its size
+-- along each dimension. Its elements are as on the CPU: reals as f64s,
+-- decoded by @rf64@.
+lists :: Precision -> String
+lists p = unlines $
+  [ "var<private> arena: array<u32, " ++ show arenaWords ++ ">;"
+  , "var<private> bump: u32;"
+  , "var<private> overflow: bool;"
+  , "var<private> badIndex: bool;"
+  , "fn lw(a: u32) -> u32 {"
+  , "  if (a >= 0x80000000u) { return args[a - 0x80000000u]; }"
+  , "  return arena[min(a, " ++ show (arenaWords - 1) ++ "u)];"
+  , "}"
+  , "fn sw(a: u32, v: u32) { if (a > 0u && a < " ++ show arenaWords ++ "u) { arena[a] = v; } }"
+  , "fn alloc(n: u32) -> u32 {"
+  , "  if (n > " ++ show arenaWords ++ "u - bump) { overflow = true; return 0u; }"
+  , "  let a = bump;"
+  , "  bump += n;"
+  , "  return a;"
+  , "}"
+  , "fn cpack(c: vec3u) -> u32 { return c.x | (c.y << 8u) | (c.z << 16u); }"
+  , "fn cunpack(w: u32) -> vec3u { return vec3u(w & 255u, (w >> 8u) & 255u, (w >> 16u) & 255u); }"
+  , "fn tbyte(b: u32) -> u32 { return (tables[b >> 2u] >> ((b & 3u) * 8u)) & 255u; }"
+  -- an f64's bits (low word first) as R: its top 24 bits of significand,
+  -- then the rest (rounded to 24 more)
+  , "fn rf64(lo: u32, hi: u32) -> R {"
+  , "  let e = i32((hi >> 20u) & 0x7ffu);"
+  , "  let s = select(1.0, -1.0, (hi >> 31u) != 0u);"
+  , "  if (e == 0) { return ri(0); }"
+  , "  if (e == 0x7ff) { return rp(vec2f(select(s * finf(), fnan(), ((hi & 0xfffffu) | lo) != 0u), 0.0)); }"
+  , "  let top = f32(0x800000u | ((hi & 0xfffffu) << 3u) | (lo >> 29u));"
+  , "  let rest = f32(lo & 0x1fffffffu);"
+  , "  return rpn(vec2f(s * ldexp(top, e - 1023 - 23), s * ldexp(rest, e - 1023 - 52)));"
+  , "}"
+  ] ++ case p of
+    DoubleFloat ->
+      [ "fn rpn(v: vec2f) -> R { return quick_two_sum(v.x, v.y); }"
+      , "fn rw0(r: R) -> u32 { return bitcast<u32>(r.x); }"
+      , "fn rw1(r: R) -> u32 { return bitcast<u32>(r.y); }" ]
+    Single ->
+      [ "fn rpn(v: vec2f) -> R { return v.x + v.y; }"
+      , "fn rw0(r: R) -> u32 { return bitcast<u32>(r); }"
+      , "fn rw1(r: R) -> u32 { return 0u; }" ]

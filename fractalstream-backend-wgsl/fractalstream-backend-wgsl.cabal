@@ -67,6 +67,7 @@ library
                        Backend.WGSL.Gen
                        Backend.WGSL.Runtime
                        Backend.WGSL.Code
+                       Backend.WGSL.Data
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
                      , mtl

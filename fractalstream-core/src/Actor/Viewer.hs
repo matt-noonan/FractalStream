@@ -26,6 +26,7 @@ module Actor.Viewer
   , runRenderer
   , ViewerIssues(..)
   , describeViewerIssues
+  , describeRenderIssues
   , Viewer(..)
   , refreshOverlay
   , refreshOverlayWith
@@ -919,6 +920,16 @@ describeViewerIssues ViewerIssues{..}
     problems =
       [ "ran out of scratch memory for its lists or text" | viOutOfMemory ]
       ++ [ "indexed a list or table out of range" | viBadIndex ]
+
+-- | 'describeViewerIssues', for a render a backend drew: on the GPU, whose
+-- scratch memory is much smaller than the CPU's, it says so.
+describeRenderIssues :: RenderReport -> ViewerIssues -> Maybe String
+describeRenderIssues RenderReport{..} issues = describeViewerIssues issues <&> \message ->
+  case rrBackend of
+    Just b | b /= Cpu, viOutOfMemory issues ->
+      message ++ " (On the GPU, a pixel's lists have 4 KB; on the CPU, 1 MB: "
+              ++ "\"Draw with\" CPU, in the viewer's menu.)"
+    _ -> message
 
 assertMissingViewerArgs :: forall env t
                          . EnvironmentProxy env

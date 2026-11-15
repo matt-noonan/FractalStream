@@ -1459,6 +1459,14 @@ class ViewerView {
   }
 
   showError(message: string) {
+    this.errorEl.classList.remove("warning");
+    this.errorEl.textContent = message;
+    this.errorEl.hidden = false;
+  }
+
+  /** What a finished render ran into (it's hidden again as the next one starts). */
+  showIssues(message: string) {
+    this.errorEl.classList.add("warning");
     this.errorEl.textContent = message;
     this.errorEl.hidden = false;
   }
@@ -2136,6 +2144,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "running": viewers.get(m.viewer)?.showRunning(m.what, m.name); break;
     case "runDone": viewers.get(m.viewer)?.runDone(); break;
     case "viewerError": viewers.get(m.viewer)?.showError(m.message); break;
+    case "viewerIssues": viewers.get(m.viewer)?.showIssues(m.message); break;
     case "backend": drawnWith.set(m.viewer, { backend: m.backend, declined: m.declined }); break;
     case "gpu": setGpuMissing(m.error); break;
     case "error": colorizerChange = null; welcome.setOpening(false); say(m.message, true); console.error(m.message); break;

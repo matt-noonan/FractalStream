@@ -7,10 +7,12 @@ module Backend.WGSL.Device
   ( GpuDevice(..)
   , GpuKernel(..)
   , GpuArgs(..)
+  , GpuTable(..)
   , paramsSize
   ) where
 
 import Data.Word (Word8, Word32)
+import Foreign.ForeignPtr (ForeignPtr)
 import Foreign.Ptr (Ptr)
 
 -- | A GPU, ready to use.
@@ -22,18 +24,29 @@ newtype GpuDevice = GpuDevice
 
 -- | A compiled shader.
 newtype GpuKernel = GpuKernel
-  { gkBind :: [Word32] -> IO GpuArgs
-    -- ^ the arguments (binding 1), on the GPU until they're dropped
+  { gkBind :: [Word32] -> [GpuTable] -> IO GpuArgs
+    -- ^ the arguments (binding 1), and the tables, one after another
+    --   (binding 3), on the GPU until they're dropped (a table's
+    --   elements are kept by its version, and copied only once)
+  }
+
+-- | A table's elements, as the CPU lays them out ("Language.Table").
+data GpuTable = GpuTable
+  { gtVersion :: Int              -- ^ which contents: a version never changes
+  , gtOffset  :: Int              -- ^ where they go in binding 3, in bytes
+  , gtBytes   :: ForeignPtr Word8
+  , gtSize    :: Int              -- ^ in bytes
   }
 
 -- | A shader with its arguments.
 newtype GpuArgs = GpuArgs
-  { gaRun :: Ptr Word8 -> Int -> Int -> Ptr Word8 -> IO (Either String ())
+  { gaRun :: Ptr Word8 -> Int -> Int -> Ptr Word8 -> IO (Either String Word32)
     -- ^ run it over a block of this width and height, with these
     --   parameters ('paramsSize' bytes: binding 0), writing its pixels
     --   into the buffer, as RGB rows (binding 2 holds a pixel a u32,
-    --   @0x00BBGGRR@, for the device to unpack); or say why it couldn't
-    --   (the device was lost, say)
+    --   @0xIIBBGGRR@, for the device to unpack), and giving its pixels'
+    --   issues (II, or'ed); or say why it couldn't (the device was lost,
+    --   say, or the tables didn't fit)
   }
 
 -- | How many bytes a block's parameters take (see "Backend.WGSL.Code").

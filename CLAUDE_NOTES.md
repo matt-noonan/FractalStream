@@ -452,7 +452,13 @@ declined; `FS_WGSL_DUMP=dir` writes the shaders), and by hand
 `dev-tools/web/check-gpu.mjs [--images DIR] [section | file.fs ...]`
 (Chromium with WebGPU; compares each GPU picture with the CPU's, next to
 the CPU's own sensitivity to a 1e-15 nudge, and times each). `FS_WEBGPU=1`
-makes the other web checks use that browser too.
+makes the other web checks use that browser too. Lists and tables (5c,
+`Backend.WGSL.Data`): lists are word addresses (top bit: in `args`, else
+the pixel's 4 KB `arena`); tables are uploaded as their raw bytes and
+decoded by the shader (`rf64`); loops that set no list variable give back
+their iteration's arena (`Gen.reclaiming`). Each pixel's issues are the
+top byte of its output word; the web viewer shows a render's issues
+(`viewerIssues`, `describeRenderIssues`).
 
 `ComplexViewer` is the YAML-serializable viewer config (extends to complex-plane viewers).
 

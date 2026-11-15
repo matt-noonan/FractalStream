@@ -11,7 +11,9 @@ import Test.Hspec
 
 import Backend (withBackend)
 import Backend.WGSL
-import Backend.WGSL.Code (argWords)
+import Backend.WGSL.Code (argWords, packArgs)
+import Data.Proxy (Proxy(..))
+import Language.Environment (Context(..))
 import Actor.Ensemble (buildEnsembleFromScript, runEnsemble)
 import Actor.Layout (Dimensions(..))
 import Actor.UI (UI(..))
@@ -31,7 +33,7 @@ import qualified System.Environment as Env
 keeping :: IORef [String] -> GpuDevice
 keeping kept = GpuDevice $ \source -> do
   modifyIORef kept (source :)
-  pure (Right (GpuKernel (\_ -> pure (GpuArgs (\_ _ _ _ -> pure (Left "no GPU here"))))))
+  pure (Right (GpuKernel (\_ _ -> pure (GpuArgs (\_ _ _ _ -> pure (Left "no GPU here"))))))
 
 -- | A script's viewer, with the platform's (pure) backend and the GPU's,
 -- on this device.
@@ -95,11 +97,44 @@ spec = describe "the GPU backends" $ do
       , "color <- rgb(mod(t + u, 1), 0, 0)" ]
     forM_ results $ \(_, r) -> r `shouldSatisfy` either (const False) (const True)
 
+  it "compile lists: literals, append, indexing, for each, and the rest" $ do
+    results <- shaders $ unlines
+      [ "@config \"C\""
+      , "ws : List of C := [1, i, -1]"
+      , "@viewer \"L\" var=z center=0 pixelSize=1/50"
+      , "xs : List of C := [z, 2 z]"
+      , "for each k in range(1, 5):"
+      , "  xs <- append(xs, z^k)"
+      , "for each w in ws:"
+      , "  xs <- append(xs, w z)"
+      , "ys := remove(xs, w -> |w| > 2)"
+      , "n := length(join(xs, ys))"
+      , "zs := transform(ys, w -> w / 2)"
+      , "u := find(zs, w -> re w > 0, 0)"
+      , "color <- if |xs @ 2| > 1 and n > 3 and |zs @@ 0| < 9 and |u| < 5 then white else black" ]
+    map fst results `shouldMatchList` [GpuDf64, GpuF32]
+    forM_ results $ \(_, r) -> r `shouldSatisfy` either (const False) ("arena" `isInfixOf`)
+
+  it "compile tables: by index, by point, and their sizes" $ do
+    results <- shaders $ unlines
+      [ "@config \"C\""
+      , "T : Table 2 of C"
+      , "U : Table 3 of R x Z"
+      , "@viewer \"T\" var=z center=0 pixelSize=1/50"
+      , "w := T @ point z else 0"
+      , "(r, k) := U @ (point z, 1) else (0, 0)"
+      , "(nx, ny) := table_size(T)"
+      , "(j, m) := table_cell(T, z)"
+      , "q := table_point(T, (j, m))"
+      , "vs := U @ (2, 3, *)"
+      , "color <- if |w| > r + k + nx + ny + |q| + length(vs) then white else black" ]
+    forM_ results $ \(_, r) -> r `shouldSatisfy` either (const False) ("rf64(" `isInfixOf`)
+
   describe "decline" $ do
-    it "lists" $ declines (unlines
-      [ "@viewer \"L\" var=z center=0 pixelSize=1/50"
-      , "xs := [z, 2 z]"
-      , "color <- if |xs @ 2| > 1 then white else black" ]) "not on the GPU yet: lists"
+    it "text" $ declines (unlines
+      [ "@viewer \"X\" var=z center=0 pixelSize=1/50"
+      , "s := text(\"z = \", z)"
+      , "color <- if length([s]) > 1 then white else black" ]) "not on the GPU yet: text"
 
     it "numbers past single precision's range" $ declines (unlines
       [ "@viewer \"N\" var=z center=0 pixelSize=1/50"
@@ -131,3 +166,6 @@ spec = describe "the GPU backends" $ do
         ws -> expectationFailure (show ws)
     it "as four f32s for a complex number" $
       length (argWords ComplexType (1 :+ 2)) `shouldBe` 4
+    it "as an address for a list, its length and elements after the slots" $ do
+      let ctx = Bind (Proxy @"n") IntegerType 7 (Bind (Proxy @"xs") (ListType IntegerType) [3, 4] EmptyContext)
+      fst (packArgs ctx) `shouldBe` [7, 0x80000002, 2, 3, 4]

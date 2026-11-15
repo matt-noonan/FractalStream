@@ -25,9 +25,17 @@ const types = { ".html": "text/html", ".css": "text/css", ".js": "text/javascrip
 
 /** Serve web/dist (as dev-tools/web/serve.mjs does), open the app in a
     headless browser, and wait for the library. */
+// Files a check opens (see `openFile`), by the path the page fetches.
+const opened = new Map();
+
 export async function start() {
   const server = http.createServer((req, res) => {
     const p = new URL(req.url, "http://localhost").pathname;
+    if (opened.has(p)) {
+      res.writeHead(200, { "content-type": "text/plain" });
+      fs.createReadStream(opened.get(p)).pipe(res);
+      return;
+    }
     const file = path.join(root, decodeURIComponent(p === "/" ? "/index.html" : p));
     if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) { res.writeHead(404).end(); return; }
     res.writeHead(200, { "content-type": types[path.extname(file)] ?? "application/octet-stream" });
@@ -181,12 +189,16 @@ export class App {
   async openFile(file) {
     await this.backToLibrary();
     await this.forgetMessages();
-    const text = fs.readFileSync(file, "utf8");
-    await this.page.evaluate(([name, text]) => {
+    // (served, and fetched by the page: a large file, such as Per_8's
+    // atlas, can't be passed in whole)
+    const url = `/__opened/${opened.size}/${encodeURIComponent(path.basename(file))}`;
+    opened.set(url, file);
+    await this.page.evaluate(async ([name, url]) => {
+      const bytes = await (await fetch(url)).blob();
       const dt = new DataTransfer();
-      dt.items.add(new File([text], name));
+      dt.items.add(new File([bytes], name));
       document.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
-    }, [path.basename(file), text]);
+    }, [path.basename(file), url]);
     return this.opened();
   }
 
