@@ -18,6 +18,7 @@
 module Backend.WGSL.Code
   ( kernelSource
   , argWords
+  , packArgs
   , blockParams
   ) where
 
@@ -25,11 +26,14 @@ import FractalStream.Prelude
 
 import Backend.WGSL.Gen
 import Backend.WGSL.Runtime
+import Backend.WGSL.Data
 
 import Actor.Viewer.Types (ViewerEnv, MissingViewerArgs)
 import Language.Code
 import Data.Indexed.Functor
 import Data.Color (colorToRGB, grey)
+import Language.Table (Table(..), elementSize)
+import Language.Value.Evaluator (HaskellValue)
 
 import GHC.Float (castFloatToWord32, double2Float, float2Double)
 import Numeric (showHex)
@@ -58,15 +62,21 @@ kernelSource p body = do
         emit "let px_x0 = radd(rp(params.x0), rmul(ri(params.offX + i32(gid.x)), rp(params.dx)));"
         emit "let px_y0 = rsub(rp(params.y0), rmul(ri(params.offY + i32(gid.y)), rp(params.dy)));"
         emit "var px_sum = vec3u(0u);"
+        emit "var px_issues = 0u;"
+        -- (each subsample from grey, with a fresh arena; magenta if it ran
+        -- out of room or indexed out of range, as on the CPU)
         nested "for (var px_k = 0u; px_k < params.subsamples; px_k++) {"
           ([ "px_x = px_x0;", "px_y = px_y0;"
            , "px_dx = rp(params.px);", "px_dy = rp(params.py);"
-           , "px_color = vec3u(" ++ show gr ++ "u, " ++ show gg ++ "u, " ++ show gb ++ "u);" ]
+           , "px_color = vec3u(" ++ show gr ++ "u, " ++ show gg ++ "u, " ++ show gb ++ "u);"
+           , "bump = 1u;", "overflow = false;", "badIndex = false;" ]
            ++ bodyLines
-           ++ [ "px_sum += px_color;" ])
+           ++ [ "if (overflow || badIndex) { px_color = vec3u(255u, 0u, 255u); }"
+              , "px_issues |= select(0u, 1u, overflow) | select(0u, 2u, badIndex);"
+              , "px_sum += px_color;" ])
         emit "}"
         emit "let px_c = px_sum / max(params.subsamples, 1u);"
-        emit "out[gid.y * params.width + gid.x] = px_c.x | (px_c.y << 8u) | (px_c.z << 16u);"
+        emit "out[gid.y * params.width + gid.x] = cpack(px_c) | (px_issues << 24u);"
   pure $ unlines $
     [ runtime p
     , "@compute @workgroup_size(8, 8)"
@@ -95,23 +105,92 @@ loadArg t = do
     ComplexType -> var LComplex "C" ("C(" ++ real 0 ++ ", " ++ real 2 ++ ")") 4
     ColorType -> var LColor "vec3u" ("vec3u(" ++ w 0 ++ " & 255u, (" ++ w 0 ++ " >> 8u) & 255u, (" ++ w 0 ++ " >> 16u) & 255u)") 1
     PairType a b -> LPair <$> loadArg a <*> loadArg b
+    ListType i | Just _ <- elemWords i -> var LList "u32" (w 0) 1
+    TableType _ i | Just _ <- elementSize i -> var LTable "u32" (w 0) 1
     _ -> pure (LNone (typeName t))
 
 -- | A value as the words 'loadArg' reads (none for a type it can't
 -- have): a truth value or integer one (integers are 32 bits, as in the
 -- CPU's compiled code), a real number two (hi and lo: their sum is the
 -- double, to about 48 bits), a complex number four, a color one
--- (@0x00BBGGRR@), and a pair its parts'.
+-- (@0x00BBGGRR@), and a pair its parts'. (A list or table is an address:
+-- see 'packArgs'.)
 argWords :: TypeProxy t -> HaskellType t -> [Word32]
-argWords t v = case t of
-  BooleanType -> [if v then 1 else 0]
-  IntegerType -> [fromIntegral (fromIntegral v :: Int32)]
-  RealType -> realWords v
-  ComplexType -> let a :+ b = v in realWords a ++ realWords b
+argWords t v = evalState (slotOf t v) (Packed [] 0 [] 0)
+
+-- | The arguments buffer's contents: the configuration's values, each in
+-- its slot as 'loadArg' reads it, then the blocks of its lists and the
+-- descriptors of its tables (see "Backend.WGSL.Runtime"); and its tables,
+-- each with where its elements start in @tables@ (in bytes, a multiple
+-- of 8) and how many bytes they take, in that order.
+packArgs :: Context HaskellValue env -> ([Word32], [(Table, Int, Int)])
+packArgs ctx =
+  let values = fromContext (\_ t v -> SomeArg t v) ctx
+      slots = sum [ slotSize t | SomeArg t _ <- values ]
+      (ws, st) = runState (concat <$> mapM (\(SomeArg t v) -> slotOf t v) values) (Packed [] slots [] 0)
+  in (ws ++ concat (reverse (pkHeap st)), reverse (pkTables st))
+
+data SomeArg where
+  SomeArg :: TypeProxy t -> HaskellType t -> SomeArg
+
+data Packed = Packed
+  { pkHeap :: [[Word32]]       -- ^ the blocks after the slots, newest first
+  , pkNext :: Int              -- ^ the next block's word
+  , pkTables :: [(Table, Int, Int)] -- ^ newest first
+  , pkTableBytes :: Int        -- ^ where the next table's elements go
+  }
+
+slotSize :: TypeProxy t -> Int
+slotSize = \case
+  BooleanType -> 1
+  IntegerType -> 1
+  RealType -> 2
+  ComplexType -> 4
+  ColorType -> 1
+  PairType a b -> slotSize a + slotSize b
+  ListType i | Just _ <- elemWords i -> 1
+  TableType _ i | Just _ <- elementSize i -> 1
+  _ -> 0
+
+-- | A block after the slots: its word.
+block :: [Word32] -> State Packed Int
+block ws = do
+  st <- get
+  put st { pkHeap = ws : pkHeap st, pkNext = pkNext st + length ws }
+  pure (pkNext st)
+
+slotOf :: TypeProxy t -> HaskellType t -> State Packed [Word32]
+slotOf t v = case t of
+  BooleanType -> pure [if v then 1 else 0]
+  IntegerType -> pure [fromIntegral (fromIntegral v :: Int32)]
+  RealType -> pure (realWords v)
+  ComplexType -> let a :+ b = v in pure (realWords a ++ realWords b)
   ColorType -> let (r, g, b) = colorToRGB v
-               in [fromIntegral r + 256 * fromIntegral g + 65536 * fromIntegral b]
-  PairType a b -> argWords a (fst v) ++ argWords b (snd v)
-  _ -> []
+               in pure [fromIntegral r + 256 * fromIntegral g + 65536 * fromIntegral b]
+  PairType a b -> (++) <$> slotOf a (fst v) <*> slotOf b (snd v)
+  -- (a list's elements are as its slots would be; in args, its address
+  -- has the top bit set)
+  ListType i | Just _ <- elemWords i -> case v of
+    [] -> pure [0]
+    _ -> do
+      elems <- concat <$> mapM (slotOf i) v
+      a <- block (fromIntegral (length v) : elems)
+      pure [0x80000000 + fromIntegral a]
+  TableType _ i | Just size <- elementSize i -> do
+    st <- get
+    off <- case lookup (tableVersion v) [ (tableVersion t', o) | (t', o, _) <- pkTables st ] of
+      Just o -> pure o
+      Nothing -> do
+        let o = pkTableBytes st
+            bytes = size * product (tableDims v)
+        put st { pkTables = (v, o, bytes) : pkTables st, pkTableBytes = o + (bytes + 7) `div` 8 * 8 }
+        pure o
+    let (ox, oy) = tableOrigin v
+        (sx, sy) = tableStep v
+    d <- block ([ fromIntegral (off `div` 4), fromIntegral (length (tableDims v)) ]
+                ++ concatMap realWords [ox, oy, sx, sy] ++ map fromIntegral (tableDims v))
+    pure [fromIntegral d]
+  _ -> pure []
 
 realWords :: Double -> [Word32]
 realWords x = let (hi, lo) = split x in [castFloatToWord32 hi, castFloatToWord32 lo]
@@ -132,6 +211,13 @@ blockParams (w, h) subsamples (ox, oy) (x0, y0) (dx, dy) (px, py) =
   [ fromIntegral w, fromIntegral h, fromIntegral subsamples, 0
   , fromIntegral ox, fromIntegral oy, 0, 0 ]
   ++ concatMap realWords [x0, y0, dx, dy, px, py]
+
+-- | Whether a value of this type holds a list.
+holdsList :: TypeProxy t -> Bool
+holdsList = \case
+  ListType _ -> True
+  PairType a b -> holdsList a || holdsList b
+  _ -> False
 
 typeName :: TypeProxy t -> String
 typeName = \case
@@ -155,6 +241,7 @@ code = indexedFold @CtxCode $ \case
   Set pf _ e -> do
     x <- value e
     ctx <- ask
+    when (holdsList (typeOfValue e)) (lift noteListSet)
     lift (copyInto x (withKnownType (typeOfValue e) (getBinding ctx pf)))
 
   Let pf name val body -> do
@@ -175,17 +262,52 @@ code = indexedFold @CtxCode $ \case
         emit "}"
     l -> lift (mismatch l)
 
-  -- (the body, then the test: again while it's true)
+  -- (the body, then the test: again while it's true. Its lists go once
+  -- the test is done, if none can outlive the iteration: see 'reclaiming')
   DoWhile cond body -> do
-    (_, loopLines) <- captured $ do
+    ctx <- ask
+    (_, loopLines) <- lift $ reclaiming $ \giveBack -> flip runReaderT ctx $ do
       body
       value cond >>= \case
-        LBool c -> lift (emit ("if (!" ++ c ++ ") { break; }"))
+        LBool c -> lift (giveBack >> emit ("if (!" ++ c ++ ") { break; }"))
         l -> lift (mismatch l)
     lift (nested "loop {" loopLines >> emit "}")
 
-  ForEach {} -> lift (unsupported "lists")
-  Lookup {} -> lift (unsupported "lists")
+  ForEach pfList _ (ListType itemTy) itemName pfNoItem _ _ body -> recallIsAbsent pfNoItem $ do
+    ctx <- ask
+    case withKnownType (ListType itemTy) (getBinding ctx pfList) of
+      LList h -> lift $ walkList itemTy h $ \a -> do
+        (_, ls) <- reclaiming $ \giveBack -> do
+          e <- loadElem itemTy a
+          runReaderT body (Bind itemName itemTy e ctx)
+          giveBack
+        mapM_ emit ls
+      l -> lift (mismatch l)
+
+  -- the first element for which the predicate holds: the action with it,
+  -- or the fallback (if any) when there's none
+  Lookup pfList _ (ListType itemTy) itemName pfNoItem _ _ predicate action fallback ->
+    recallIsAbsent pfNoItem $ do
+    ctx <- ask
+    case withKnownType (ListType itemTy) (getBinding ctx pfList) of
+      LList h -> lift $ do
+        found <- fresh
+        emit ("var " ++ found ++ " = false;")
+        item <- zeroOf itemTy
+        walkList itemTy h $ \a -> do
+          e <- loadElem itemTy a
+          runReaderT (value predicate) (Bind itemName itemTy e ctx) >>= \case
+            LBool b -> do
+              (_, take') <- capture (copyInto e item)
+              nested ("if (" ++ b ++ ") {") (take' ++ [found ++ " = true;", "break;"])
+              emit "}"
+            l -> mismatch l
+        (_, yes) <- capture (runReaderT action (Bind itemName itemTy item ctx))
+        (_, no) <- capture (maybe (pure ()) (`runReaderT` ctx) fallback)
+        nested ("if (" ++ found ++ ") {") yes
+        nested "} else {" no
+        emit "}"
+      l -> lift (mismatch l)
   DrawCommand _ -> lift (unsupported "drawing")
   TableAllocate {} -> lift (unsupported "tables")
   TableWrite {} -> lift (unsupported "tables")
@@ -348,24 +470,61 @@ value = indexedFold go'
       TanhC z -> nativeC "tanh" z
       PowC x y -> complex2 "cpow" x y
 
-      List {} -> lift (unsupported "lists")
-      Join {} -> lift (unsupported "lists")
-      Remove {} -> lift (unsupported "lists")
-      Find {} -> lift (unsupported "lists")
-      Transform {} -> lift (unsupported "lists")
-      Range {} -> lift (unsupported "lists")
-      Length {} -> lift (unsupported "lists")
-      Index {} -> lift (unsupported "lists")
+      List ty mElems -> sequence mElems >>= lift . listLiteral ty
+      Join ty mLists -> sequence mLists >>= lift . listJoin ty
+      Remove name ty pf mxs mtest -> recallIsAbsent pf $ do
+        ctx <- ask
+        xs <- mxs
+        lift (listFilter ty xs (\e -> runReaderT mtest (Bind name ty e ctx)))
+      Transform name ty1 ty2 pf mxs mf -> recallIsAbsent pf $ do
+        ctx <- ask
+        xs <- mxs
+        lift (listMap ty1 ty2 xs (\e -> runReaderT mf (Bind name ty1 e ctx)))
+      Find name ty pf mxs mtest mdefault -> recallIsAbsent pf $ do
+        ctx <- ask
+        xs <- mxs
+        dflt <- mdefault
+        lift (listFind ty xs dflt (\e -> runReaderT mtest (Bind name ty e ctx)))
+      Length _ mxs -> mxs >>= lift . listLength
+      Index ty cyclic mxs mi -> do
+        xs <- mxs
+        i <- mi
+        lift (listIndex ty cyclic xs i)
+      Range mlo mhi -> do
+        lo <- mlo
+        hi <- mhi
+        lift (listRange lo hi)
       ConcatText {} -> lift (unsupported "text")
       ToText {} -> lift (unsupported "text")
       Autocolor {} -> lift (unsupported "autocolor")
-      TableIndex {} -> lift (unsupported "tables")
-      TablePoint {} -> lift (unsupported "tables")
-      TableSlice {} -> lift (unsupported "tables")
-      TableSize {} -> lift (unsupported "tables")
-      TableContains {} -> lift (unsupported "tables")
-      TableCell {} -> lift (unsupported "tables")
-      TableCellPoint {} -> lift (unsupported "tables")
+      TableIndex _ ty mt mixs -> do
+        t <- mt
+        ixs <- sequence mixs
+        lift (tableRead ty t ixs)
+      TablePoint _ ty mt mz mixs -> do
+        t <- mt
+        z <- mz
+        ixs <- sequence mixs
+        lift (tablePoint ty t z ixs)
+      TableSlice _ ty mt mmz mixs -> do
+        t <- mt
+        z <- sequence mmz
+        ixs <- mapM sequence mixs
+        lift (tableSliceRead ty t z ixs)
+      TableSize _ _ sz mt -> mt >>= lift . tableSize sz
+      TableContains _ _ mt mz -> do
+        t <- mt
+        z <- mz
+        lift (tableContains t z)
+      TableCell _ _ sz mt mz -> do
+        t <- mt
+        z <- mz
+        lift (tableCellIndices sz t z)
+      TableCellPoint _ _ mt mj mk -> do
+        t <- mt
+        j <- mj
+        k <- mk
+        lift (tableCellPoint t j k)
 
     -- (see Backend.WGSL.Runtime: rexp, cexp, ...)
     native f r = real1 LReal ('r' : f) r
@@ -388,6 +547,8 @@ copied = force >=> \case
   LReal a -> letOf LReal a
   LComplex a -> letOf LComplex a
   LColor a -> letOf LColor a
+  LList a -> letOf LList a
+  LTable a -> letOf LTable a
   LPair a b -> LPair <$> copied a <*> copied b
   LNone what -> unsupported what
   l@(LAbsC _) -> mismatch l

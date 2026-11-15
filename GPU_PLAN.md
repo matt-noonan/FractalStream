@@ -8,8 +8,8 @@ spike"; `dev-tools/gpu-spike`): df64 on the GPU is about 13x the web
 app's CPU path and 5x native LLVM on every core, at about 1e-14, once its
 error-free transforms are guarded.
 
-Status: **agreed 2026-11-14**; 5a merged (#186); 5b built (branch
-`gpu-web`).
+Status: **agreed 2026-11-14**; 5a merged (#186); 5b merged (#187); 5c
+built (branch `gpu-data`).
 
 ## Decisions
 
@@ -93,8 +93,8 @@ declined; when none will, the viewer says why, as it would an error.
 
 **Compiling** (built in 5b). The GPU backends decline a script with:
 
-- lists, text, tables, or autocolor ("not on the GPU yet: lists"; 5c and
-  5d take these on);
+- text, or autocolor ("not on the GPU yet: text"; 5d takes autocolor on;
+  text stays on the CPU);
 - a literal outside f32's range (about 1e-38 to 3e38, nonzero), such as
   Per_n's `10^(-300)` thresholds;
 - a shader the GPU won't compile (its messages say why);
@@ -154,10 +154,26 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
   (as D19 keeps them on the workers). Per_n's are large: the backend asks
   the adapter for its largest `maxStorageBufferBindingSize`, and declines
   past it.
-- **Lists computed in the kernel** (`append` in a loop) live in a fixed
-  amount of private memory per invocation, sized from the code where it
-  can be bounded, else a default (1 KB); overflowing it is a render
-  decline (above), not a magenta pixel.
+- **Lists** (built in 5c) are word addresses: a block is a length, then
+  the elements (a truth value, integer, color or list a word; a real two,
+  as the arguments hold them; a complex number four). A configuration's
+  lists are in the arguments, after the slots (the address's top bit
+  set); a kernel's are in a private arena of 4 KB a pixel, afresh for
+  each subsample, as the CPU's (which has 1 MB). Running out is as on
+  the CPU (decided 2026-11-14): magenta pixels, and the viewer says so,
+  adding that the GPU's space is smaller ("Draw with" CPU). A loop whose
+  body sets no variable to a list gives back its iteration's arena (so
+  `for each k in range(1, 10)` in a loop of thousands doesn't run out).
+- **Tables** (built in 5c) go to the GPU as their bytes, laid out as on
+  the CPU, and the shader decodes each f64 into df64 itself (`rf64`): no
+  conversion. A render's tables are one buffer (binding 3), uploaded once
+  for each set of versions (the last two sets kept); their descriptors
+  are in the arguments. Tables past the GPU's largest binding are drawn by
+  the CPU, saying why.
+- **Issues**: each pixel's (out of room, bad index) ride in its output
+  word's top byte, or'ed by the device into the block's `ViewerIssues`.
+  The web viewer now shows a finished render's issues (any backend's),
+  as the desktop's status line does.
 
 ## Rendering
 
@@ -216,11 +232,15 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
       few percent where its precision shows. A deep zoom (1e-10 a pixel,
       5000 iterations, smoothed): CPU 1131 ms, df64 346 ms, f32 156 ms (and
       wrong: 5% matching, as expected).
-- [ ] **5c. Data.** Configuration lists and tables in storage buffers;
-      local lists. Target: Per_n (after rewriting its `10^(-300)`
-      thresholds, or with them declining to the CPU). (Groups and the
-      hyperbolic and sphere wrappers already compile: they're ordinary
-      code.)
+- [x] **5c. Data.** Configuration lists and tables in storage buffers;
+      local lists. Target met (2026-11-14): Per_1 to Per_6 draw on the GPU
+      in df64 as closely to the CPU's pictures as the CPU's to themselves
+      nudged by 1e-15 (Per_n's thresholds needed no rewriting: the atlas
+      uses 1e-30); df64 1.4 to 3.3 times as fast as the CPU, f32 4 to 15.
+      Every library viewer but autocolor's draws on the GPU (the forced
+      pendulum's parameter plane: CPU 9.3 s, df64 1.7 s, f32 0.1 s).
+      df64's transcendental functions are slow (the pendulum's dynamical
+      plane, a `sin` a step, is no faster than the CPU): a follow-up.
 - [ ] **5d. Autocolor** (snapshot buffer, misses appended, re-rendered).
 - [ ] **5e. The desktop**: a `GpuDevice` over webgpu.h, and
       GPU f64 where the driver has it (Vulkan, DirectX 12; not Metal).

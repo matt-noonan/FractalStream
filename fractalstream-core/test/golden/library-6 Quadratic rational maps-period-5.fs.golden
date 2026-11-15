@@ -138,8 +138,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                 let `[internal] fresh #48` = 0 in:
                                                                   let `[internal] fresh #49` = [internal] iteration limit in:
                                                                     block:
-                                                                      if (!(1.0e24 < |z|) and ([internal] fresh #48 < [internal] fresh #49)) then:
-                                                                        do-while (!(1.0e24 < |z|) and ([internal] fresh #48 < [internal] fresh #49)):
+                                                                      if (!(1.0e20 < |z|) and ([internal] fresh #48 < [internal] fresh #49)) then:
+                                                                        do-while (!(1.0e20 < |z|) and ([internal] fresh #48 < [internal] fresh #49)):
                                                                           block:
                                                                             set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
                                                                             set `[internal] fresh #48` := ([internal] fresh #48 + 1)
@@ -148,7 +148,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                       set `[internal] iteration count` := [internal] fresh #48
                                                                       set `[internal] stuck` := ([internal] fresh #48 = [internal] fresh #49)
                                                                 set `cap5` := [internal] iteration count
-                                                                if (1.0e24 < |z|) then:
+                                                                if (1.0e20 < |z|) then:
                                                                   block:
                                                                     set `cls5` := 1
                                                                 else:
@@ -294,8 +294,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                     let `[internal] fresh #49` = 0 in:
                                                                       let `[internal] fresh #50` = [internal] iteration limit in:
                                                                         block:
-                                                                          if (!(1.0e24 < |z|) and ([internal] fresh #49 < [internal] fresh #50)) then:
-                                                                            do-while (!(1.0e24 < |z|) and ([internal] fresh #49 < [internal] fresh #50)):
+                                                                          if (!(1.0e20 < |z|) and ([internal] fresh #49 < [internal] fresh #50)) then:
+                                                                            do-while (!(1.0e20 < |z|) and ([internal] fresh #49 < [internal] fresh #50)):
                                                                               block:
                                                                                 set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
                                                                                 set `[internal] fresh #49` := ([internal] fresh #49 + 1)
@@ -304,7 +304,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                           set `[internal] iteration count` := [internal] fresh #49
                                                                           set `[internal] stuck` := ([internal] fresh #49 = [internal] fresh #50)
                                                                     set `cap5` := [internal] iteration count
-                                                                    if (1.0e24 < |z|) then:
+                                                                    if (1.0e20 < |z|) then:
                                                                       block:
                                                                         set `cls5` := 1
                                                                     else:
@@ -396,8 +396,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                         let `[internal] fresh #50` = 0 in:
                                                                           let `[internal] fresh #51` = [internal] iteration limit in:
                                                                             block:
-                                                                              if (!(1.0e24 < |z|) and ([internal] fresh #50 < [internal] fresh #51)) then:
-                                                                                do-while (!(1.0e24 < |z|) and ([internal] fresh #50 < [internal] fresh #51)):
+                                                                              if (!(1.0e20 < |z|) and ([internal] fresh #50 < [internal] fresh #51)) then:
+                                                                                do-while (!(1.0e20 < |z|) and ([internal] fresh #50 < [internal] fresh #51)):
                                                                                   block:
                                                                                     set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
                                                                                     set `[internal] fresh #50` := ([internal] fresh #50 + 1)
@@ -406,7 +406,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                               set `[internal] iteration count` := [internal] fresh #50
                                                                               set `[internal] stuck` := ([internal] fresh #50 = [internal] fresh #51)
                                                                         set `cap5` := [internal] iteration count
-                                                                        if (1.0e24 < |z|) then:
+                                                                        if (1.0e20 < |z|) then:
                                                                           block:
                                                                             set `cls5` := 1
                                                                         else:
@@ -498,8 +498,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                             let `[internal] fresh #51` = 0 in:
                                                                               let `[internal] fresh #52` = [internal] iteration limit in:
                                                                                 block:
-                                                                                  if (!(1.0e24 < |z|) and ([internal] fresh #51 < [internal] fresh #52)) then:
-                                                                                    do-while (!(1.0e24 < |z|) and ([internal] fresh #51 < [internal] fresh #52)):
+                                                                                  if (!(1.0e20 < |z|) and ([internal] fresh #51 < [internal] fresh #52)) then:
+                                                                                    do-while (!(1.0e20 < |z|) and ([internal] fresh #51 < [internal] fresh #52)):
                                                                                       block:
                                                                                         set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
                                                                                         set `[internal] fresh #51` := ([internal] fresh #51 + 1)
@@ -508,7 +508,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                   set `[internal] iteration count` := [internal] fresh #51
                                                                                   set `[internal] stuck` := ([internal] fresh #51 = [internal] fresh #52)
                                                                             set `cap5` := [internal] iteration count
-                                                                            if (1.0e24 < |z|) then:
+                                                                            if (1.0e20 < |z|) then:
                                                                               block:
                                                                                 set `cls5` := 1
                                                                             else:
@@ -600,8 +600,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                 let `[internal] fresh #52` = 0 in:
                                                                                   let `[internal] fresh #53` = [internal] iteration limit in:
                                                                                     block:
-                                                                                      if (!(1.0e24 < |z|) and ([internal] fresh #52 < [internal] fresh #53)) then:
-                                                                                        do-while (!(1.0e24 < |z|) and ([internal] fresh #52 < [internal] fresh #53)):
+                                                                                      if (!(1.0e20 < |z|) and ([internal] fresh #52 < [internal] fresh #53)) then:
+                                                                                        do-while (!(1.0e20 < |z|) and ([internal] fresh #52 < [internal] fresh #53)):
                                                                                           block:
                                                                                             set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
                                                                                             set `[internal] fresh #52` := ([internal] fresh #52 + 1)
@@ -610,7 +610,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                       set `[internal] iteration count` := [internal] fresh #52
                                                                                       set `[internal] stuck` := ([internal] fresh #52 = [internal] fresh #53)
                                                                                 set `cap5` := [internal] iteration count
-                                                                                if (1.0e24 < |z|) then:
+                                                                                if (1.0e20 < |z|) then:
                                                                                   block:
                                                                                     set `cls5` := 1
                                                                                 else:
@@ -830,8 +830,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                             let `[internal] fresh #41` = 0 in:
                               let `[internal] fresh #42` = [internal] iteration limit in:
                                 block:
-                                  if (!(1.0e24 < |z|) and ([internal] fresh #41 < [internal] fresh #42)) then:
-                                    do-while (!(1.0e24 < |z|) and ([internal] fresh #41 < [internal] fresh #42)):
+                                  if (!(1.0e20 < |z|) and ([internal] fresh #41 < [internal] fresh #42)) then:
+                                    do-while (!(1.0e20 < |z|) and ([internal] fresh #41 < [internal] fresh #42)):
                                       block:
                                         set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
                                         set `[internal] fresh #41` := ([internal] fresh #41 + 1)
@@ -839,7 +839,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                     no-op
                                   set `[internal] iteration count` := [internal] fresh #41
                                   set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
-                            if (1.0e24 < |z|) then:
+                            if (1.0e20 < |z|) then:
                               block:
                                 set `color` := let #wheel-arg = (([internal] iteration count:R / period) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))))
                             else:
@@ -957,7 +957,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                           let `[internal] fresh #26` = 0 in:
                                             let `[internal] fresh #27` = 200 in:
                                               block:
-                                                do-while (!(1.0e24 < |w|) and ([internal] fresh #26 < [internal] fresh #27)):
+                                                do-while (!(1.0e20 < |w|) and ([internal] fresh #26 < [internal] fresh #27)):
                                                   block:
                                                     block:
                                                       set `[internal] previous.w #0` := w

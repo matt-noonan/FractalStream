@@ -201,6 +201,7 @@ body {
   position: absolute; left: 8px; right: 8px; bottom: 8px; padding: 6px 8px; border-radius: 6px;
   background: rgba(0, 0, 0, .7); color: #ffb3a8; font: 12px/1.35 ui-monospace, monospace; white-space: pre-wrap;
 }
+.viewer-error.warning { color: #ffd479; }
 .field input[type=color] { width: 32px; height: 26px; padding: 0 2px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
 
 @font-face { font-family: "DejaVu Sans"; src: url("DejaVuSans.ttf") format("truetype"); }

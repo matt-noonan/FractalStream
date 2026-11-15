@@ -282,7 +282,7 @@ import Actor.Viewer.Preview (renderPreview)
 import Actor.Movie (MovieSettings(..), defaultMovieSettings, movieFrameTimes, scriptAnimation, checkMovieScript,
                     movieScriptTemplate, complexVariables, withFieldsRestored, renderViewerImage, Animation,
                     pathAnimation, pathPoint, canAnimate, MovieInset(..), prepareInset, withInset)
-import Actor.Viewer (cloneViewer, withRenderedViewerBuffer, describeViewerIssues, viewerBackends)
+import Actor.Viewer (cloneViewer, withRenderedViewerBuffer, describeViewerIssues, describeRenderIssues, viewerBackends)
 import FractalStream.Backends (RenderReport(..), Decline(..), backendKey, backendFromKey, backendPreference, normalizeOrder)
 import Language.Code.Parser (noCommonDefs)
 import Data.PNG (bufferToPng)
@@ -1027,6 +1027,9 @@ renderLoop vs@ViewerState{ vsId = k, vsViewer = viewer, vsSignal = signal } = fo
     Right (Right Nothing) -> pure ()
     Right (Right (Just image)) -> do
       patch image True
+      -- (what the script ran into, if anything: magenta pixels, said why)
+      forM_ (describeRenderIssues (rbReport image) (rbIssues image)) $ \message -> post $ Aeson.object
+        [ "type" .= ("viewerIssues" :: Text.Text), "viewer" .= k, "message" .= message ]
       writeIORef (vsPictureIso vs) (if isDisk then Just isoNow else Nothing)
       -- (the overlay and the tool, for this view, as the desktop app
       -- refreshes them with each render)

@@ -88,11 +88,14 @@ import { start, Checks, kinds } from "./harness.mjs";
 //             CPU tells the engine (and it's checked); the order in
 //             Preferences goes to the engine, and is kept, as a reordered
 //             list
+//   issues    a render whose script indexes a list out of range
+//             (dev-tools/web/bad-index.fs): magenta pixels, and the viewer
+//             says why; gone with a render that's fine
 
 const args = process.argv.slice(2);
 let shots = null;
 if (args[0] === "--screenshots") { shots = args[1]; args.splice(0, 2); fs.mkdirSync(shots, { recursive: true }); }
-const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences, backends };
+const all = { welcome, project, fit, links, drawing, tools, refresh, sweep, stop, editor, density, opening, pointer, disk, group, progressive, menu, autocolor, tables, capture, path: pathMovie, panel, preferences, backends, issues };
 const wanted = args.length ? args : Object.keys(all);
 for (const w of wanted) if (!all[w]) { console.error(`no section "${w}" (there are: ${Object.keys(all).join(", ")})`); process.exit(2); }
 
@@ -1935,6 +1938,24 @@ async function pathMovie() {
   await ppWin.locator(".tool-chooser").click();
   await page.locator(".window-menu button", { hasText: "Navigate" }).click();
   c.check((await ppWin.locator(".tool-chooser-label").textContent()) === "Navigate", "Navigate puts the tool down");
+}
+
+async function issues() {
+  await app.openFile(new URL("bad-index.fs", import.meta.url).pathname);
+  await page.waitForTimeout(500);
+  const said = () => page.evaluate(() => {
+    const e = document.querySelector(".viewer-error");
+    return e.hidden ? null : { warning: e.classList.contains("warning"), text: e.textContent };
+  });
+  const s = await said();
+  c.check(s?.warning && s.text.startsWith("Magenta pixels: the script indexed a list or table out of range"),
+          `the viewer says why its pixels are magenta (${JSON.stringify(s)})`);
+  // (the left half is fine: zoomed into it, the render is too)
+  await app.forgetMessages();
+  await app.send({ type: "view", viewer: 0, cx: -1, cy: 0, pixelSize: 0.001, width: 200, height: 200, covered: null });
+  await app.waitForMessage(`(m) => m.type === "patch" && m.done`, 60000);
+  await page.waitForTimeout(300);
+  c.check((await said()) === null, "and nothing, once a render's fine");
 }
 
 async function backends() {

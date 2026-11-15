@@ -12,9 +12,12 @@ module Backend.WGSL.Gen
   , wgslType
   , emit
   , capture
+  , noteListSet
+  , reclaiming
   , nested
   , fresh
   , letOf
+  , letName
   , varLike
   , copyInto
   , force
@@ -39,6 +42,8 @@ data Loc
   | LComplex String   -- ^ C
   | LColor String     -- ^ vec3u, a byte a channel
   | LPair Loc Loc
+  | LList String      -- ^ u32: the list's address (see Backend.WGSL.Runtime)
+  | LTable String     -- ^ u32: the table's descriptor (see Backend.WGSL.Runtime)
   | LNone String
   | LAbsC String
     -- ^ the absolute value of this complex number (C), not computed yet:
@@ -56,11 +61,14 @@ wgslType = \case
   LReal _ -> Just "R"
   LComplex _ -> Just "C"
   LColor _ -> Just "vec3u"
+  LList _ -> Just "u32"
+  LTable _ -> Just "u32"
   _ -> Nothing
 
 data GenState = GenState
   { gsNext  :: Int
   , gsLines :: [String]   -- ^ the current block's lines, newest first
+  , gsListSet :: Bool     -- ^ whether a variable has been set to a list
   }
 
 newtype Gen a = Gen (ReaderT Precision (StateT GenState (Either String)) a)
@@ -69,7 +77,7 @@ newtype Gen a = Gen (ReaderT Precision (StateT GenState (Either String)) a)
 -- | Run a generator, giving its lines.
 runGen :: Precision -> Gen a -> Either String (a, [String])
 runGen p (Gen m) = do
-  (x, GenState{..}) <- runStateT (runReaderT m p) (GenState 0 [])
+  (x, GenState{..}) <- runStateT (runReaderT m p) (GenState 0 [] False)
   pure (x, reverse gsLines)
 
 precision :: Gen Precision
@@ -88,6 +96,28 @@ capture (Gen m) = Gen $ do
   inner <- gets gsLines
   modify (\st -> st { gsLines = outer })
   pure (x, reverse inner)
+
+-- | A variable was set to a list (or a tuple with one): a list made in a
+-- loop's body may outlive its iteration.
+noteListSet :: Gen ()
+noteListSet = Gen (modify (\st -> st { gsListSet = True }))
+
+-- | A loop body's lines, which give back the arena they used at the end
+-- of each iteration if no list they make can outlive it (none of them
+-- set a variable to a list): so that a loop of thousands of iterations,
+-- each making a small list (@for each k in range(1, 10)@), doesn't run
+-- out. The body gets where to put that, before its last lines (its test).
+reclaiming :: (Gen () -> Gen a) -> Gen (a, [String])
+reclaiming body = do
+  saved <- fresh
+  outer <- Gen (gets gsListSet)
+  Gen (modify (\st -> st { gsListSet = False }))
+  (x, ls) <- capture (body (emit ("bump = " ++ saved ++ ";")))
+  inner <- Gen (gets gsListSet)
+  Gen (modify (\st -> st { gsListSet = outer || inner }))
+  pure $ if inner
+    then (x, filter (/= ("bump = " ++ saved ++ ";")) ls)
+    else (x, ("let " ++ saved ++ " = bump;") : ls)
 
 -- | Emit a block: the header line, the lines indented, and the closing
 -- brace (with what follows it, as @} else {@).
@@ -117,6 +147,13 @@ force = \case
   LPair a b -> LPair <$> force a <*> force b
   l -> pure l
 
+-- | A fresh @let@ holding an expression: its name.
+letName :: String -> Gen String
+letName e = do
+  v <- fresh
+  emit ("let " ++ v ++ " = " ++ e ++ ";")
+  pure v
+
 -- | Fresh @var@s shaped like a value (uninitialized).
 varLike :: Loc -> Gen Loc
 varLike = force >=> \case
@@ -134,6 +171,8 @@ varLike = force >=> \case
       LReal _ -> LReal v
       LComplex _ -> LComplex v
       LColor _ -> LColor v
+      LList _ -> LList v
+      LTable _ -> LTable v
       l -> l
 
 -- | The names a value lives in.
@@ -145,6 +184,8 @@ parts = \case
   LComplex a -> [a]
   LColor a -> [a]
   LPair a b -> parts a ++ parts b
+  LList a -> [a]
+  LTable a -> [a]
   LNone _ -> []
   LAbsC _ -> []
 
