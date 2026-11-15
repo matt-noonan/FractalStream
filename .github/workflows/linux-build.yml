@@ -90,7 +90,7 @@ jobs:
         cmake -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=ON ..
         cmake --build .
 
-    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
+    - if: ${{ github.ref == 'refs/heads/main' && (steps.cache-wxc.outputs.cache-hit != 'true') }}
       name: Save build of wxc
       uses: actions/cache/save@v4
       with:
@@ -171,7 +171,10 @@ jobs:
         fsrun-dist/bin/fsrun snapshot --project plane.yaml --viewer Plane --output plane.png
         ls -l plane.png
 
-    - if: ${{ always() }}
+    # (Saved only from main: a cache saved for a pull request or a tag,
+    # such as a release's, can only be restored by that same pull request
+    # or tag, so it would just crowd out main's. A release restores main's.)
+    - if: ${{ always() && github.ref == 'refs/heads/main' }}
       name: Save .stack
       uses: actions/cache/save@v4
       with:

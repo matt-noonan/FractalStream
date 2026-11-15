@@ -83,9 +83,12 @@ jobs:
         ghc-version: '9.10.3'
         cabal-version: 'latest'
 
-    - name: Cache the wasm toolchain
+    # (Caches are restored on every run, but saved only from main: one
+    # saved for a pull request or a tag can only be restored by that same
+    # pull request or tag, so it would just crowd out main's.)
+    - name: Get the cached wasm toolchain
       id: toolchain
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: ~/.ghc-wasm
         key: ghc-wasm-${{ runner.os }}-${{ env.GHC_WASM_META }}-${{ env.FLAVOUR }}
@@ -98,11 +101,19 @@ jobs:
           | tar xz --strip-components=1 -C "$dir"
         (cd "$dir" && ./setup.sh)
 
+    - name: Save the wasm toolchain
+      if: github.ref == 'refs/heads/main' && steps.toolchain.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.ghc-wasm
+        key: ghc-wasm-${{ runner.os }}-${{ env.GHC_WASM_META }}-${{ env.FLAVOUR }}
+
     - name: Put the wasm toolchain on the path
       run: ~/.ghc-wasm/add_to_github_path.sh
 
-    - name: Cache the Haskell packages
-      uses: actions/cache@v4
+    - name: Get the cached Haskell packages
+      id: packages
+      uses: actions/cache/restore@v4
       with:
         path: |
           ~/.ghc-wasm/.cabal/store
@@ -145,6 +156,17 @@ jobs:
 
     - name: Check the tools
       run: node dev-tools/web/check-tools.mjs
+
+    # (after everything passed, as actions/cache would have; from main only)
+    - name: Save the Haskell packages
+      if: github.ref == 'refs/heads/main' && steps.packages.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/.ghc-wasm/.cabal/store
+          ~/.cabal/store
+          dist-newstyle
+        key: web-cabal-${{ runner.os }}-${{ env.GHC_WASM_META }}-${{ hashFiles('cabal.project.wasm', 'cabal/**', '**/*.cabal') }}
 
     - uses: actions/upload-artifact@v4
       with:

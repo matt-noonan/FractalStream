@@ -117,7 +117,7 @@ jobs:
         cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=ON -DwxBUILD_MONOLITHIC=ON ..
         cmake --build .
 
-    - if: ${{ inputs.wxwidgets != 'homebrew' && steps.cache-wxwidgets.outputs.cache-hit != 'true' }}
+    - if: ${{ github.ref == 'refs/heads/main' && (inputs.wxwidgets != 'homebrew' && steps.cache-wxwidgets.outputs.cache-hit != 'true') }}
       name: Save build of wxWidgets 3.2
       uses: actions/cache/save@v4
       with:
@@ -158,7 +158,7 @@ jobs:
         cmake ..
         cmake --build .
 
-    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
+    - if: ${{ github.ref == 'refs/heads/main' && (steps.cache-wxc.outputs.cache-hit != 'true') }}
       name: Save build of wxc
       uses: actions/cache/save@v4
       with:
@@ -203,7 +203,7 @@ jobs:
         cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_BUILD_LLVM_DYLIB=ON ..
         cmake --build .
 
-    - if: ${{ steps.cache-llvm-12-static.outputs.cache-hit != 'true' }}
+    - if: ${{ github.ref == 'refs/heads/main' && (steps.cache-llvm-12-static.outputs.cache-hit != 'true') }}
       name: Save build of LLVM 12
       uses: actions/cache/save@v4
       with:
@@ -262,7 +262,10 @@ jobs:
         strip fsrun
         ls -l fsrun
 
-    - if: ${{ always() }}
+    # (Saved only from main: a cache saved for a pull request or a tag,
+    # such as a release's, can only be restored by that same pull request
+    # or tag, so it would just crowd out main's. A release restores main's.)
+    - if: ${{ always() && github.ref == 'refs/heads/main' }}
       name: Save .stack
       uses: actions/cache/save@v4
       with:
