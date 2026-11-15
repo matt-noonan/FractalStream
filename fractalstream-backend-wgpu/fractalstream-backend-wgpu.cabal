@@ -9,7 +9,11 @@ author:              Matt Noonan
 maintainer:          matt.noonan@gmail.com
 copyright:           2026, Matt Noonan
 category:            Math
-build-type:          Simple
+build-type:          Custom
+
+-- (Setup.hs: where wgpu-native is)
+custom-setup
+  setup-depends:     base >=4.8 && <5, Cabal, directory
 
 library
   exposed-modules:     Backend.WGPU
@@ -23,12 +27,10 @@ library
     c-sources:         cbits/fsgpu.c
     cc-options:        -std=c11 -Wall
     -- (wgpu-native, statically: dev-tools/wgpu/fetch.sh puts it in
-    -- third_party/wgpu-native. The archive is named in ld-options, not
-    -- found with extra-lib-dirs, since ghc-pkg won't register a relative
-    -- library directory; it's linked from the folder of whatever uses it,
-    -- which is always beside this one, in the repository's top level.)
+    -- third_party/wgpu-native, with only its static library, whose
+    -- folder Setup.hs adds)
     include-dirs:      ../third_party/wgpu-native/include
-    ld-options:        ../third_party/wgpu-native/lib/libwgpu_native.a
+    extra-libraries:   wgpu_native
   -- (what wgpu-native needs from the system: it finds the GPU's drivers,
   -- Metal, or Vulkan's loader, libvulkan.so.1, itself, when it starts)
   if os(darwin)
