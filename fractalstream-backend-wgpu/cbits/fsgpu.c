@@ -17,6 +17,8 @@
  * parameters (a uniform), the arguments (read-only storage), the pixels
  * (storage, a u32 each, 0xIIBBGGRR), and the tables (read-only storage).
  */
+/* (strdup, nanosleep: POSIX, which -std=c11 leaves out on Linux) */
+#define _POSIX_C_SOURCE 200809L
 #include <pthread.h>
 #include <stdatomic.h>
 #include <time.h>

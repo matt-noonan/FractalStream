@@ -2,7 +2,7 @@
 -- | The app's backends, as its cabal flags choose them: one CPU backend
 -- (LLVM's, or the interpreter with @-use-llvm@), and, with the @gpu@ flag
 -- (the default), the GPU backends on wgpu-native, where this build has it
--- (macOS, for now).
+-- (macOS and Linux, for now).
 module Backends
   ( withBackend
   ) where

@@ -126,6 +126,9 @@ jobs:
         # fsrun links LLVM the same way.
         sed -i 's/shared-llvm: false/shared-llvm: true/' fractalstream-ui-headless/stack.yaml
 
+    - name: Fetch wgpu-native (the GPU backends' WebGPU)
+      run: dev-tools/wgpu/fetch.sh
+
     - name: Build Haskell dependencies
       run: |
         cd fractalstream-ui-wx
@@ -170,6 +173,12 @@ jobs:
         printf 'script: |\n  @viewer "Plane" var=z\n  color <- if |z| < 1 then blue else black\n' > plane.yaml
         fsrun-dist/bin/fsrun snapshot --project plane.yaml --viewer Plane --output plane.png
         ls -l plane.png
+        # (the runner has no GPU: drawing on it must say so, or draw with
+        # a software driver, not crash; a panic in wgpu aborts, with 134)
+        status=0
+        fsrun-dist/bin/fsrun snapshot --backend gpu-df64 --project plane.yaml --viewer Plane --output plane-gpu.png || status=$?
+        echo "fsrun on the GPU: exit status $status"
+        if [ "$status" -gt 1 ]; then echo "fsrun crashed on the GPU"; exit 1; fi
 
     # (Saved only from main: a cache saved for a pull request or a tag,
     # such as a release's, can only be restored by that same pull request

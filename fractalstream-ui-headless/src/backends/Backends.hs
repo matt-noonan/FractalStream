@@ -4,7 +4,7 @@
 -- or the interpreter with @-use-llvm@), and, with the @gpu@ flag (the
 -- default), the GPU backends on the platform's device (on wasm32, the
 -- host's WebGPU, if it has one; elsewhere wgpu-native, where this build
--- has it: macOS, for now).
+-- has it: macOS and Linux, for now).
 module Backends
   ( withBackend
   ) where

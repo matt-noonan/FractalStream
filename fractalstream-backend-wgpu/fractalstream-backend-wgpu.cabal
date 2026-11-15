@@ -2,7 +2,7 @@ cabal-version:       3.0
 name:                fractalstream-backend-wgpu
 version:             2.0.0.0
 synopsis:            FractalStream's desktop GPU: wgpu-native.
-description:         The GPU device the GPU backends (fractalstream-backend-wgsl) draw on, on the desktop: wgpu-native, WebGPU's C API. macOS only, for now; run dev-tools/wgpu/fetch.sh first.
+description:         The GPU device the GPU backends (fractalstream-backend-wgsl) draw on, on the desktop: wgpu-native, WebGPU's C API. macOS and Linux, for now; run dev-tools/wgpu/fetch.sh first.
 license:             BSD-3-Clause
 license-file:        LICENSE
 author:              Matt Noonan
@@ -19,7 +19,7 @@ library
   default-language:    Haskell2010
   default-extensions:  LambdaCase
   ghc-options:         -Wall -Werror -O2
-  if os(darwin)
+  if os(darwin) || os(linux)
     c-sources:         cbits/fsgpu.c
     cc-options:        -std=c11 -Wall
     -- (wgpu-native, statically: dev-tools/wgpu/fetch.sh puts it in
@@ -29,4 +29,9 @@ library
     -- which is always beside this one, in the repository's top level.)
     include-dirs:      ../third_party/wgpu-native/include
     ld-options:        ../third_party/wgpu-native/lib/libwgpu_native.a
+  -- (what wgpu-native needs from the system: it finds the GPU's drivers,
+  -- Metal, or Vulkan's loader, libvulkan.so.1, itself, when it starts)
+  if os(darwin)
     frameworks:        Metal QuartzCore Foundation
+  if os(linux)
+    extra-libraries:   dl pthread m gcc_s
