@@ -12,7 +12,7 @@ import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle 
 import { Desk, menuButton, type MenuItem } from "./windows.js";
 import type { Movies } from "./capture.js";
 import { Welcome } from "./welcome.js";
-import { backendLabels, onPreferences, preferences, smoothingNow, type Backend, type Preferences } from "./preferences.js";
+import { backendLabels, backendNote, onPreferences, preferences, setGpuMissing, smoothingNow, type Backend, type Preferences } from "./preferences.js";
 import { showPreferences } from "./preferences-dialog.js";
 import { makeLink, readLink, hasLink, fetchProject } from "./links.js";
 import { sideBySide, fitted, tiled, toFractions, fromFractions, narrowScreen, type Place, type Room } from "./layout.js";
@@ -1900,9 +1900,9 @@ class ViewerView {
         const d = drawnWith.get(this.info.id);
         return [
           { kind: "toggle", label: "The order in Preferences", on: this.info.drawWith === null, toggle: () => drawWith(null) },
-          ...(Object.keys(backendLabels) as Backend[]).map((b): MenuItem => this.info.backends.includes(b)
+          ...(Object.keys(backendLabels) as Backend[]).map((b): MenuItem => this.info.backends.includes(b) && !backendNote(b)
             ? { kind: "toggle", label: label(b), on: this.info.drawWith === b, toggle: () => drawWith(b) }
-            : { kind: "action", label: `${label(b)} (not in this version)`, enabled: false, run: () => {} }),
+            : { kind: "action", label: label(b) + (backendNote(b) || " (not in this version)"), enabled: false, run: () => {} }),
           { kind: "separator" },
           { kind: "action", enabled: false, run: () => {},
             label: !d ? "Not drawn yet" : d.backend ? `Drawn with: ${label(d.backend)}` : "No backend could draw it" },
@@ -2137,6 +2137,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "runDone": viewers.get(m.viewer)?.runDone(); break;
     case "viewerError": viewers.get(m.viewer)?.showError(m.message); break;
     case "backend": drawnWith.set(m.viewer, { backend: m.backend, declined: m.declined }); break;
+    case "gpu": setGpuMissing(m.error); break;
     case "error": colorizerChange = null; welcome.setOpening(false); say(m.message, true); console.error(m.message); break;
     case "details": showDetails(m); break;
     case "patch": viewers.get(m.viewer)?.patch(m); break;

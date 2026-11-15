@@ -25,7 +25,9 @@ subBlockSize = 16
 -- the piece's column (in pieces) and width, its row and height). A rate
 -- of -4 or -2 is a coarse pass (a sample a 16 or 4 pixel square), 0 full
 -- resolution, and 1 smoothed (four samples a pixel); @sampleRate@ is the
--- finest to go to. @shown@ says which pieces (by column and row) already
+-- finest to go to, and without @coarse@ there are no coarse passes (for a
+-- backend fast enough to start at full resolution: see
+-- 'Actor.Viewer.bfCoarse'). @shown@ says which pieces (by column and row) already
 -- show something (the last image, moved into this view).
 --
 -- The pieces that show nothing yet get the coarse passes first; the
@@ -36,9 +38,9 @@ subBlockSize = 16
 -- aren't a multiple of 16 or 4 can't have the coarsest ones), and all the
 -- first passes come before anything else, so that once they're done the
 -- whole image shows something.
-progressivePlan :: Int -> Int -> Int -> Int -> (Int -> Int -> Bool)
+progressivePlan :: Bool -> Int -> Int -> Int -> Int -> (Int -> Int -> Bool)
                 -> IO [(Bool, Int, (Int, Int), (Int, Int))]
-progressivePlan pieceSize sampleRate width height shown = do
+progressivePlan coarse pieceSize sampleRate width height shown = do
 
     let xBlocks = let (z,r) = width `divMod` pieceSize
                   in zip [0 .. z - 1] (repeat pieceSize) ++
@@ -49,7 +51,7 @@ progressivePlan pieceSize sampleRate width height shown = do
 
     subblocks <- shuffle [(x,y) | x <- xBlocks, y <- yBlocks]
 
-    let rates = filter (<= sampleRate) [-4, -2, 0, 1]
+    let rates = filter (\r -> r <= sampleRate && (coarse || r >= 0)) [-4, -2, 0, 1]
 
     let fits rate (x, y) = rate >= 0 || (snd x `mod` 2^(negate rate) == 0 &&
                                          snd y `mod` 2^(negate rate) == 0)

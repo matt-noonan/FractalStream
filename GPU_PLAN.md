@@ -8,14 +8,15 @@ spike"; `dev-tools/gpu-spike`): df64 on the GPU is about 13x the web
 app's CPU path and 5x native LLVM on every core, at about 1e-14, once its
 error-free transforms are guarded.
 
-Status: **agreed 2026-11-14**; 5a in progress (branch `gpu-plumbing`).
+Status: **agreed 2026-11-14**; 5a merged (#186); 5b built (branch
+`gpu-web`).
 
 ## Decisions
 
 | # | Decision | Notes |
 |---|---|---|
 | G1 | **Backends are an ordered preference list** (WEB_PLAN D20): GPU df64, then the CPU (LLVM, or Backend.Wasm on the web), then GPU f32, unless the user reorders it | Precision first, then speed. |
-| G2 | **A backend declines what it can't do as well as doubles**, at three points: compiling a script, starting a render of a view, and finishing one | So nothing renders worse than doubles would; see "Declining". |
+| G2 | **A backend declines what it can't do as well as doubles**, at three points: compiling a script, starting a render of a view, and finishing one | So nothing renders worse than doubles would; see "Declining". For now (2026-11-14) only what it can't compile: declining views (by pixel size, which varies in the disk, half-plane and sphere views) and renders (by values leaving df64's range) are deferred, to be reconsidered. |
 | G3 | **One code generator for desktop and web**: `Code` to WGSL, in a package that builds with both GHCs | Only a small device layer differs per platform. |
 | G4 | **Web first, then the desktop** | The desktop GPU is wanted (5e), on whichever of wgpu-native and Dawn is the lighter dependency (likely wgpu-native's prebuilt binaries); the df64 harness decides whether its compiler keeps the guard. |
 | G5 | **The block API stays** (`ViewerFunction`): a GPU backend renders the blocks it's given, and says which size it prefers | No separate frame-level API (WEB_PLAN's R3) unless the block API proves too slow. |
@@ -42,23 +43,25 @@ fractalstream-backend-wasm    + a GpuDevice over navigator.gpu (JS FFI),
 ### The device layer
 
 The only platform-specific part, deliberately small (compute only: no
-windows, no render passes):
+windows, no render passes). As built in 5b (`Backend.WGSL.Device`), a
+shader is compiled once a viewer, given its arguments once a render, and
+run once a block; the device owns its buffers:
 
 ```haskell
-data GpuDevice = GpuDevice
-  { gdLimits   :: GpuLimits                  -- buffer sizes, workgroup sizes
-  , gdCompile  :: Text -> IO (Either String GpuPipeline)   -- WGSL, one entry point
-  , gdBuffer   :: GpuUsage -> Int -> IO GpuBuffer
-  , gdWrite    :: GpuBuffer -> Int -> Ptr Word8 -> Int -> IO ()
-  , gdDispatch :: GpuPipeline -> [GpuBuffer] -> (Int, Int) -> IO ()
-  , gdRead     :: GpuBuffer -> Int -> Ptr Word8 -> Int -> IO ()  -- waits for the GPU
-  , gdLost     :: IO Bool                    -- the device was lost (fall back)
-  }
+newtype GpuDevice = GpuDevice { gdCompile :: String -> IO (Either String GpuKernel) }
+newtype GpuKernel = GpuKernel { gkBind :: [Word32] -> IO GpuArgs }
+newtype GpuArgs   = GpuArgs   { gaRun :: Ptr Word8 -> Int -> Int -> Ptr Word8 -> IO (Either String ()) }
+                              -- parameters (80 bytes), width, height, RGB out
 ```
 
-On the web, `gdRead` awaits `mapAsync` through an asynchronous JS FFI
-import (the engine's thread waits; the page doesn't). Validation errors
-are caught with error scopes (the spike's `checked`), and become a decline.
+On the web (`Backend.Wasm.Gpu`, over `fractalstream-backend-wasm/js/gpu.mjs`,
+which the engine's worker makes before the engine starts), a run awaits
+`mapAsync` through an asynchronous JS FFI import (the engine's thread
+waits; the page doesn't). Validation and out-of-memory errors are caught
+with error scopes, and a compile's become a decline, a run's a render the
+CPU draws instead. With no WebGPU (or no adapter), both GPU backends
+decline every viewer, saying why; the page is told too (the `gpu`
+message), for Preferences and the viewer's menu.
 
 ### The chain (WEB_PLAN's R4; built in 5a)
 
@@ -88,27 +91,23 @@ declined; when none will, the viewer says why, as it would an error.
 
 ## Declining
 
-**Compiling.** The GPU backend declines a script with:
+**Compiling** (built in 5b). The GPU backends decline a script with:
 
-- text (as WEB_PLAN planned), or autocolor (until 5c);
-- a literal outside df64's range (about 1e-38 to 1e38, nonzero), such as
-  Per_n's `10^(-300)` thresholds (constant-folded first, so `10^(-300)` is
-  seen as the number it is);
-- tables or lists of configuration values larger than the device's
-  storage limits;
-- anything not yet generated (each phase widens this).
+- lists, text, tables, or autocolor ("not on the GPU yet: lists"; 5c and
+  5d take these on);
+- a literal outside f32's range (about 1e-38 to 3e38, nonzero), such as
+  Per_n's `10^(-300)` thresholds;
+- a shader the GPU won't compile (its messages say why);
+- every script, with no GPU ("No WebGPU in this browser").
 
-**Viewing.** df64 has about 48 bits; the GPU backend declines a view whose
-pixel size is less than about 2^-40 times the largest coordinate in it
-(about 1e-12 relative: a pixel then still spans about 256 df64 ulps). f32
-declines below about 2^-16 (1e-5). Hyperbolic and sphere views are judged
-in the coordinates the code computes in.
-
-**Rendering.** Each invocation sets an issue bit if a value left df64's
-range (infinite or NaN where the script didn't divide by zero, or a
-magnitude past 1e30), or a local list outgrew its fixed space; any such
-bit makes the render go to the next backend, which draws it from scratch.
-(The CPU's own issues, a bad index, stay magenta pixels, as now.)
+**Viewing and rendering** (deferred, G2). As first planned: decline a view
+whose pixel size is below about 2^-40 of the largest coordinate in it (f32:
+2^-16), and a render in which a value left df64's range, or a local list
+outgrew its space. The pixel-size rule doesn't fit the views whose pixel
+size varies (the disk, the half-plane, the sphere), so it waits for a
+better rule; until then, a deep zoom in f32 draws what f32 can (the user
+chose it), and df64 past its depth draws what df64 can. The same goes for
+values past f32's range (about 3e38, where doubles go to 1e308).
 
 ## Code generation
 
@@ -127,12 +126,22 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
   (smoothing), and writes RGB8 into the block's output buffer.
 - **The hoisted prefix** runs on the CPU (`bRunOnce`), as now; its results
   are bound like configuration values.
-- **Math:** `+ - * /`, `sqrt`, `abs`, `floor`, `round`, `mod` and
-  comparisons first; then df64 `exp`, `log`, `sin`, `cos`, `tan`,
-  `atan2`, `sinh`, `cosh`, `tanh`, their inverses and complex `pow` (range
-  reduction plus series or Newton steps, tested against doubles to about
-  1e-13). Colors (`rgb`, `hsv`, `blend`, the color wheels) are f32: a color
-  is 8 bits a channel anyway.
+- **Math** (all of it, in 5b): `+ - * /`, `sqrt`, `abs`, `floor`,
+  `round`, `mod` and comparisons; df64 `exp` (range reduction by ln 2, a
+  Taylor series of r/512, squared 9 times), `log` (two Newton steps on
+  `exp`, from f32's), `sin` and `cos` (reduction by pi/2 in three parts,
+  then Taylor), `atan2` (two Newton steps on `sin` and `cos`), the
+  hyperbolic functions (a series near 0), and from those the inverses,
+  real and complex powers, and the complex functions. In f32, WGSL's own.
+  Colors are f32: a color is 8 bits a channel anyway.
+- **The browsers' compilers use fast math** (on Metal at least), so the
+  runtime can't trust ordinary float comparisons with NaN or infinity, nor
+  division near f32's limits (it's a multiplication by the reciprocal,
+  which flushes to 0 past about 8e37). What must handle them asks through
+  the bits (`fisnan`, `fisinf`, and NaN-safe `rlt`/`req`), and `|z|` is
+  scaled by a power of 2 (`ldexp`), not divided. (Found by the internal
+  rays project, whose `w` runs at twice `z`'s speed and passes 3e38: `|z
+  - w|` came out 0, and its orbits "vanished".)
 
 ## Data
 
@@ -152,10 +161,9 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
 
 ## Rendering
 
-- The GPU backend prefers large blocks (up to 256 x 256: big enough that
-  dispatch costs vanish, small enough to stay under GPU watchdogs and to
-  be stopped between blocks) and needs no coarse passes when it's fast:
-  `renderProgressivelyInto` takes the backend's preferences.
+- The GPU backend has no coarse passes (`bfCoarse`: it starts at full
+  resolution, then smooths), and draws in pieces of 4 x 4 of the usual
+  (256 x 256 on the web), so that fewer dispatches and read-backs start.
 - Blocks are read back into the buffer they were asked for, so the rest of
   the pipeline (patches to the page, the wx tiles, captures, movies) is
   unchanged. Drawing straight to the page's canvas, without a read-back,
@@ -165,7 +173,7 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
 ## Preferences
 
 - A "Rendering" list in Preferences (desktop and web), reorderable, with
-  each backend's availability ("no WebGPU in this browser"); saved as
+  each backend's availability ("No WebGPU in this browser"); saved as
   `rendering: [gpu-df64, cpu, gpu-f32]` (settings.yaml on the desktop,
   local storage on the web). No saved list: that default, the backends the
   platform lacks skipped.
@@ -174,17 +182,21 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
 
 ## Testing
 
+- **Golden comparisons with a tolerance** (WEB_PLAN D4), by hand:
+  `dev-tools/web/check-gpu.mjs [--images DIR] [section | file.fs ...]`
+  opens projects in Chromium with WebGPU and draws each viewer with each
+  backend ("Draw with"), saying which drew it (or why it declined), how
+  long it took, and how much of each GPU picture matches the CPU's (no
+  channel off by more than 8), next to the yardstick: how much of the
+  CPU's picture matches itself with the view nudged by 1e-15.
 - **The df64 harness** (the spike's primitive check, then the math
-  functions) as an automated check in every browser we test, failing if
-  any operation is worse than its bound.
-- **Golden comparisons with a tolerance** (WEB_PLAN D4): every library
-  project rendered by the GPU and the CPU backends, compared pixel by
-  pixel; the share of pixels within a color tolerance must be at least
-  what doubles give against themselves under a 1e-15 nudge (the spike's
-  measure of a picture's own sensitivity).
-- **Declining:** scripts and views on each side of each rule.
-- CI has no GPU; the checks are run by hand (G10). CI covers the code
-  generator's text and the declining rules, which need no GPU.
+  functions): still to do, as a check of its own.
+- **Without a GPU** (CI): `fractalstream-backend-wgsl`'s spec, through a
+  device that keeps the shaders and fails every block: what's compiled and
+  what's declined, the arguments' layout, and a failed render drawn by the
+  CPU instead. `check-tools.mjs backends` runs with WebGPU or without
+  (`FS_WEBGPU=1`: Chromium, the full browser).
+- CI has no GPU; the GPU checks are run by hand (G10).
 
 ## Phases
 
@@ -193,16 +205,22 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
       backends: no change in what's drawn. (Branch `gpu-plumbing`; see
       CLAUDE_NOTES.md, "Backends as a chain". A backend's preferred block
       size is left for 5b, which has a backend that wants one.)
-- [ ] **5b. The web device and the first kernels.** `GpuDevice` over
+- [x] **5b. The web device and the first kernels.** `GpuDevice` over
       `navigator.gpu`; WGSL for reals, complex numbers, integers, booleans,
-      colors, control flow and the first math; df64 and f32; view
-      declines. Target: the library's "Getting started" and "Quadratic
-      family" projects on the GPU, within tolerance.
-- [ ] **5c. Data and the rest of the math.** Configuration lists and
-      tables in storage buffers; local lists; groups and the hyperbolic
-      and sphere wrappers; df64 transcendental functions; render declines.
-      Target: Per_n (after rewriting its `10^(-300)` thresholds, or with
-      them declining to the CPU).
+      colors and control flow, and all the math (df64's transcendental
+      functions came forward from 5c: the target needed them); df64 and
+      f32; declining what it can't compile. Target met (2026-11-14, Apple
+      M5, Chromium): every viewer of "Getting started" and "Quadratic
+      family" draws in df64, matching the CPU's picture as closely as the
+      CPU's matches itself nudged by 1e-15 (to within 0.2%); f32 within a
+      few percent where its precision shows. A deep zoom (1e-10 a pixel,
+      5000 iterations, smoothed): CPU 1131 ms, df64 346 ms, f32 156 ms (and
+      wrong: 5% matching, as expected).
+- [ ] **5c. Data.** Configuration lists and tables in storage buffers;
+      local lists. Target: Per_n (after rewriting its `10^(-300)`
+      thresholds, or with them declining to the CPU). (Groups and the
+      hyperbolic and sphere wrappers already compile: they're ordinary
+      code.)
 - [ ] **5d. Autocolor** (snapshot buffer, misses appended, re-rendered).
 - [ ] **5e. The desktop**: a `GpuDevice` over webgpu.h, and
       GPU f64 where the driver has it (Vulkan, DirectX 12; not Metal).

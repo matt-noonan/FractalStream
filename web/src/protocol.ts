@@ -374,5 +374,7 @@ export type Message =
   /** Which backend is drawing a viewer's render (null: none will), and
       why those before it didn't ([name, reason] pairs). */
   | { type: "backend"; viewer: number; backend: string | null; declined: [string, string][] }
+  /** Whether the engine has a GPU (for the GPU backends): why not, if it hasn't. */
+  | { type: "gpu"; error: string | null }
   | { type: "error"; message: string }
   | Patch;

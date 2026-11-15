@@ -11,6 +11,7 @@ packages:
   fractalstream-core
   fractalstream-backend-pure
   fractalstream-backend-wasm
+  fractalstream-backend-wgsl
   fractalstream-library
   fractalstream-ui-headless
   fractalstream-ui-web

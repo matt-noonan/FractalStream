@@ -43,8 +43,8 @@ script: |
   # cell, |Re t| < 1.547 and |Im t| < 1.373, holds the whole parameter space.
   #
   # There is no attracting infinity in this family (oo maps to 1), so a
-  # captured orbit is recognised by its approach to the pole: |z| > 1e24
-  # means |z| < 1e-12 just before, which is inside the local basin of the
+  # captured orbit is recognised by its approach to the pole: |z| > 1e20
+  # means |z| < 1e-10 just before, which is inside the local basin of the
   # critical cycle for good.  The time that takes jumps by whole periods
   # between neighbouring parameters, so this plane does not use capture-time
   # bands: the captured set is one warm colour, decided by a vote over four
@@ -223,14 +223,14 @@ script: |
 
   # The period 5 family has no attracting fixed point at infinity: its critical
   # cycle runs 0 -> oo -> 1 -> f(1) -> f^2(1) -> 0, so a captured orbit is
-  # recognised by its approach to the pole 0 (|z| > 1e24 means |z| < 1e-12
+  # recognised by its approach to the pole 0 (|z| > 1e20 means |z| < 1e-10
   # before the pole), not by an escape.  Any orbit that gets that close is
   # caught for good -- it is within the local basin of the critical cycle at
   # once -- but the time it takes to get there varies wildly from pixel to
   # pixel near the edge of a capture region, which is why this plane looks
   # grainier than the other three.
   define shade5:
-    if |z| > 1000000000000000000000000.0:
+    if |z| > 100000000000000000000.0:
       color <- rainbow(iterations / period)
     else if periods:
       w := z
@@ -243,7 +243,7 @@ script: |
 
   # The parameter plane of the period 5 family cannot use capture-time bands.
   # There is no attracting infinity: a captured orbit is one that has come
-  # within 1e-12 of the pole, and how long that takes jumps by whole periods
+  # within 1e-10 of the pole, and how long that takes jumps by whole periods
   # between neighbouring parameters near the edge of a capture region, so a
   # ten-iteration rainbow turns the set into confetti.  Two ways out, both
   # found in Mandel.jl (V. Ambrosi) and in Ambrosi's note on the crisp
@@ -267,9 +267,9 @@ script: |
     pb := 0.0
     run per5_param(ts)
     z := -2 pb/pa
-    iterate z -> 1 + (pa z + pb)/z^2 until |z| > 1000000000000000000000000.0
+    iterate z -> 1 + (pa z + pb)/z^2 until |z| > 100000000000000000000.0
     cap5 <- iterations
-    if |z| > 1000000000000000000000000.0:
+    if |z| > 100000000000000000000.0:
       cls5 <- 1
     else:
       w := z
@@ -355,7 +355,7 @@ script: |
   pa := 0.0
   pb := 0.0
   run per5_param(t5)
-  iterate z -> 1 + (pa z + pb)/z^2 until |z| > 1000000000000000000000000.0
+  iterate z -> 1 + (pa z + pb)/z^2 until |z| > 100000000000000000000.0
   run shade5
 
   @tool overlay for="Parameter plane"
@@ -375,7 +375,7 @@ script: |
       draw point at w
       w <- 1 + (pa w + pb)/w^2
       draw line from previous w to w
-    until |w| > 1000000000000000000000000.0
+    until |w| > 100000000000000000000.0
   on deactivated:
     erase
 metadata:

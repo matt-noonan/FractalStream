@@ -4,7 +4,7 @@
 // shading and viewers' smoothing, and the editor's colors. Each change is
 // made, and saved, as soon as it's made.
 
-import { backendLabels, classes, classStyle, defaultRendering, editorBackground, isMac, preferences, setPreferences,
+import { backendLabels, backendNote, classes, classStyle, defaultRendering, editorBackground, isMac, preferences, setPreferences,
          smoothingNow, type ClassStyle, type Preferences, type Smoothing } from "./preferences.js";
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {},
@@ -122,7 +122,7 @@ function viewersTab(): HTMLElement {
   }
   choice.addEventListener("change", () => setPreferences({ smoothing: choice.value as Smoothing }));
   // The order viewers try the backends in, each with buttons moving it up
-  // or down (those the engine doesn't have yet are said so).
+  // or down (and why one can't draw anything here, if it can't).
   const order = el("ol", { className: "prefs-order" });
   const showOrder = () => {
     const now = preferences().rendering;
@@ -137,7 +137,7 @@ function viewersTab(): HTMLElement {
       const down = el("button", { textContent: "↓", disabled: k === now.length - 1, title: "Move down" });
       up.addEventListener("click", () => move(k, -1));
       down.addEventListener("click", () => move(k, 1));
-      return el("li", {}, el("span", { textContent: backendLabels[b] + (b === "cpu" ? "" : " (not in this version)") }),
+      return el("li", {}, el("span", { textContent: backendLabels[b] + backendNote(b) }),
                 up, down);
     }));
   };

@@ -53,6 +53,17 @@ export const backendLabels: Record<Backend, string> = {
   "gpu-df64": "GPU, double-float", "cpu": "CPU", "gpu-f32": "GPU, single precision",
 };
 
+// Why the engine has no GPU (null: it has one), as it says when it starts
+// (the "gpu" message): the GPU backends then decline every viewer.
+let gpuMissing: string | null = null;
+export function setGpuMissing(why: string | null) { gpuMissing = why; }
+
+/** What to say after a backend's name, where it's listed: why it can't
+    draw anything here, if it can't. */
+export function backendNote(b: Backend): string {
+  return b !== "cpu" && gpuMissing ? ` (${gpuMissing})` : "";
+}
+
 /** Precision first, then speed. */
 export const defaultRendering: Backend[] = ["gpu-df64", "cpu", "gpu-f32"];
 

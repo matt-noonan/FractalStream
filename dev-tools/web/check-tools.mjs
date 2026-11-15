@@ -82,10 +82,12 @@ import os from "node:os";
 import path from "node:path";
 import { start, Checks, kinds } from "./harness.mjs";
 //   backends  a viewer's "Draw with" submenu: the order in Preferences,
-//             checked; the CPU, which drew it; the GPU's backends, not in
-//             this version yet. Choosing the CPU tells the engine (and
-//             it's checked); the order in Preferences goes to the engine,
-//             and is kept, as a reordered list
+//             checked; the backend that drew it (the GPU's, in
+//             double-float, if the browser has WebGPU; else the CPU, and
+//             the GPU's say why not, and can't be chosen). Choosing the
+//             CPU tells the engine (and it's checked); the order in
+//             Preferences goes to the engine, and is kept, as a reordered
+//             list
 
 const args = process.argv.slice(2);
 let shots = null;
@@ -1946,13 +1948,18 @@ async function backends() {
   };
   const checkedOf = async (items, label) => (await items.filter({ hasText: label }).first().getAttribute("aria-checked")) === "true";
   await page.waitForTimeout(500);
+  // (why the engine has no GPU, if it hasn't)
+  const noGpu = await page.evaluate(() => window.__gpu?.error ?? null);
   let items = await drawWith();
   const labels = (await page.locator(".window-menu .menu-label").allTextContents()).join(" | ");
-  c.check(labels.includes("Drawn with: CPU") && labels.includes("GPU, double-float (not in this version)")
-          && labels.includes("GPU, single precision (not in this version)"), `its "Draw with" menu: ${labels}`);
+  c.check(noGpu
+    ? labels.includes("Drawn with: CPU") && labels.includes(`GPU, double-float (${noGpu})`)
+      && labels.includes(`GPU, single precision (${noGpu})`) && labels.includes(`GPU, double-float declined: ${noGpu}`)
+    : labels.includes("Drawn with: GPU, double-float"), `its "Draw with" menu (${noGpu ?? "with a GPU"}): ${labels}`);
   c.check(await checkedOf(items, "The order in Preferences") && !(await checkedOf(items, "CPU")),
           "the order in Preferences is checked, to start with");
-  c.check(await items.filter({ hasText: "GPU, double-float" }).first().isDisabled(), "a backend not in this version can't be chosen");
+  c.check(await items.filter({ hasText: "GPU, double-float" }).first().isDisabled() === !!noGpu,
+          noGpu ? "the GPU's backends can't be chosen" : "the GPU's backends can be chosen");
   await items.filter({ hasText: /^CPU/ }).first().click();
   await page.waitForTimeout(300);
   const sent = await page.evaluate((id) => window.__sent.filter((r) => r.type === "viewerBackend" && r.viewer === id).pop(), pp);
@@ -1969,7 +1976,8 @@ async function backends() {
   await page.locator(".welcome-preferences").click();
   await page.locator(".prefs-tab", { hasText: "Viewers" }).click();
   const order = () => page.locator(".prefs-order li span").allTextContents();
-  c.check((await order()).join(" | ").startsWith("GPU, double-float (not in this version) | CPU | GPU, single precision"),
+  const note = noGpu ? ` (${noGpu})` : "";
+  c.check((await order()).join(" | ") === `GPU, double-float${note} | CPU | GPU, single precision${note}`,
           `the backends' order, the default to start with: ${(await order()).join(" | ")}`);
   await page.locator(".prefs-order li").nth(1).locator("button", { hasText: "↑" }).click();
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("fractalstream.preferences") || "{}").rendering);
