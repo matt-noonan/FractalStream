@@ -476,7 +476,12 @@ are measured (accuracy against doubles, ns a call) by
 `dev-tools/gpu/df64-check.mjs DIR/gpu-df64.wgsl`, after
 `FS_WGSL_DUMP=DIR stack test fractalstream-backend-wgsl`; their
 constants are exact rationals in `Backend.WGSL.Runtime` (`dfc`,
-`parts3`), and their polynomials `hornerMixed` (an f32 tail). Lists and tables (5c,
+`parts3`), and their polynomials `hornerMixed` (an f32 tail). Firefox
+compiles WGSL with naga, which can't `bitcast` in a `const` (constants are
+decimal f32 literals: `f32Text`); check shaders with it by
+`dev-tools/gpu/dump-shaders.hs` and `deno run dev-tools/gpu/naga-check.ts`
+(Deno's WebGPU is wgpu, as Firefox's; Playwright's Firefox has no WebGPU
+on macOS). Lists and tables (5c,
 `Backend.WGSL.Data`): lists are word addresses (top bit: in `args`, else
 the pixel's 4 KB `arena`); tables are uploaded as their raw bytes and
 decoded by the shader (`rf64`); loops that set no list variable give back
