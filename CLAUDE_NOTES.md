@@ -471,7 +471,12 @@ declined; `FS_WGSL_DUMP=dir` writes the shaders), and by hand
 `dev-tools/web/check-gpu.mjs [--images DIR] [section | file.fs ...]`
 (Chromium with WebGPU; compares each GPU picture with the CPU's, next to
 the CPU's own sensitivity to a 1e-15 nudge, and times each). `FS_WEBGPU=1`
-makes the other web checks use that browser too. Lists and tables (5c,
+makes the other web checks use that browser too. df64's math functions
+are measured (accuracy against doubles, ns a call) by
+`dev-tools/gpu/df64-check.mjs DIR/gpu-df64.wgsl`, after
+`FS_WGSL_DUMP=DIR stack test fractalstream-backend-wgsl`; their
+constants are exact rationals in `Backend.WGSL.Runtime` (`dfc`,
+`parts3`), and their polynomials `hornerMixed` (an f32 tail). Lists and tables (5c,
 `Backend.WGSL.Data`): lists are word addresses (top bit: in `args`, else
 the pixel's 4 KB `arena`); tables are uploaded as their raw bytes and
 decoded by the shader (`rf64`); loops that set no list variable give back
