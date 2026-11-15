@@ -58,16 +58,13 @@ common FractalStream-common
 
 library
   import: FractalStream-common
-  exposed-modules:     Backend
-                       Backend.LLVM
+  exposed-modules:     Backend.LLVM
                        Backend.LLVM.Operand
                        Backend.LLVM.Value
                        Backend.LLVM.Code
                        Backend.LLVM.Table
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
-                     , fractalstream-backend-wgsl
-                     , fractalstream-backend-wgpu
                      , llvm-hs == 12.1.0
                      , llvm-hs-pure == 12.1.0
                      , containers

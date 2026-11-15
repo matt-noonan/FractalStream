@@ -264,9 +264,9 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
         by checksum, into `third_party/`), behind a small synchronous C
         wrapper (`fractalstream-backend-wgpu/cbits/fsgpu.c`: one lock,
         each call polling the device until its work's done), as
-        `Backend.WGPU.nativeGpu`. The LLVM backend offers the GPU
-        backends, starting the GPU when one first compiles a viewer. So
-        the app draws on the GPU by the order in Preferences, and `fsrun`
+        `Backend.WGPU.nativeGpu`. The frontends offer the GPU backends
+        (their `gpu` flag: see "Backends as data", below), starting the
+        GPU when one first compiles a viewer. So the app draws on the GPU by the order in Preferences, and `fsrun`
         with `--backend gpu-df64` / `gpu-f32` (default `cpu`): GPU checks
         without a browser. Every library viewer but autocolor's draws, as
         on the web (the same percentages, the compiler being naga too).
@@ -275,12 +275,14 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
 
 ## Later
 
-- **Where the desktop's GPU backends are offered** (noted 2026-11-15):
-  for now the LLVM backend's `withBackend` adds them (5e's first step),
-  which ties the GPU to the CPU backend that happens to be linked.
-  Better: the frontends (wx, fsrun) put the platform's backends together
-  (a CPU backend, plus the GPU ones where there's a device), so each
-  backend package offers only itself.
+- [x] **Backends as data** (2026-11-15, branch `backend-types`): each
+  backend package offers itself as a value (`Backend.LLVM.llvmBackend`,
+  `Backend.Pure.pureBackend`, `Backend.Wasm.wasmBackend`: a
+  `CpuBackend`; `Backend.WGSL.gpuBackends device`: `ViewerBackends`),
+  and each frontend's `Backends` module puts its own together with
+  `Actor.Viewer.withBackends`, by its cabal flags: `use-llvm` (the wx
+  app and fsrun) and `gpu` (every frontend; on by default, so release
+  builds have both). The packages no longer share a `Backend` module.
 
 - **List optimizations in the core** (noted 2026-11-15, not started):
   ranges counted without lists, appends in place, and loop iterations

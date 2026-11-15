@@ -14,7 +14,7 @@ Six Cabal packages, built with Stack (GHC 9.10.x):
 ```
 fractalstream-core/           # Core library: ASTs, parsing, type system, actors, dynamic values
 fractalstream-backend-pure/   # Pure Haskell interpreter backend
-fractalstream-backend-llvm/   # LLVM JIT compiler backend (default); also offers the GPU backends
+fractalstream-backend-llvm/   # LLVM JIT compiler backend (default)
 fractalstream-backend-wgsl/   # The GPU backends: viewers compiled to WGSL (web and desktop)
 fractalstream-backend-wgpu/   # The desktop's GPU device: wgpu-native, behind cbits/fsgpu.c (macOS)
 fractalstream-library/        # The built-in project library (projects/), compiled in
@@ -27,9 +27,18 @@ fractalstream-ui-headless/    # Headless frontend (`fsrun`), no GUI dependencies
 `SCENARIO_LANGUAGE.md`. It is the easiest way to check a change end to end,
 e.g. by rendering a viewer before and after and comparing the PNGs.
 
-`fractalstream-ui-wx` depends on `fractalstream-core` and exactly one backend
-(controlled by the `use-llvm` Cabal flag, default True). The `Backend` module in
-each backend package exposes a `withBackend` function that `Main.hs` calls.
+A frontend is built with one CPU backend, which also runs tools and the code
+that runs once a render (`Actor.Viewer.CpuBackend`: `Backend.LLVM.llvmBackend`,
+`Backend.Pure.pureBackend`, `Backend.Wasm.wasmBackend`), and any number of
+backends that only draw viewers (`Actor.Viewer.ViewerBackends`: the GPU's,
+`Backend.WGSL.gpuBackends` on a device: `Backend.WGPU.nativeGpu` on the
+desktop, `Backend.Wasm.Gpu.webGpu` on the web). Each frontend's own `Backends`
+module (`fractalstream-ui-wx/src/Backends.hs`,
+`fractalstream-ui-headless/src/backends/Backends.hs`, shared by fsrun and the
+end-to-end tests, and `fractalstream-ui-web/src/Backends.hs`) puts them
+together with `Actor.Viewer.withBackends`, as its cabal flags say: `use-llvm`
+(default True: LLVM, else the interpreter; wasm32 always uses WebAssembly) and
+`gpu` (default True). Its `withBackend` is what `Main.hs` calls.
 
 ## Core Architecture Concepts
 

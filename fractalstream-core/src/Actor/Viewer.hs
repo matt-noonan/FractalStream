@@ -62,6 +62,9 @@ module Actor.Viewer
   , ToolRunner(..)
   , defaultToolRunner
   , Backend(..)
+  , CpuBackend(..)
+  , ViewerBackends(..)
+  , withBackends
   , defaultToolRunnerFactory
   ) where
 
@@ -1232,7 +1235,9 @@ newtype ToolRunnerFactory = ToolRunnerFactory
                                  )
   }
 
--- | Bundles a viewer (shader) compiler with the tool execution machinery.
+-- | Everything a frontend draws and runs with: the backends it was built
+-- with, put together by 'withBackends' (a frontend's own @Backends@
+-- module chooses them, by its cabal flags).
 data Backend = Backend
   { bViewerCompilers   :: [(BackendId, ViewerCompiler)]
     -- ^ The backends this platform has, to compile viewers with (each
@@ -1248,6 +1253,28 @@ data Backend = Backend
     --   'hoistedViewerFunction'). Like a tool's handler, but drawing
     --   nothing.
   }
+
+-- | A CPU backend (LLVM, the interpreter, WebAssembly): a frontend is
+-- built with exactly one, which runs tools and the code that runs once a
+-- render, and draws viewers on the CPU. It's started for as long as an
+-- action runs, giving a 'Backend' whose only viewer compiler is its own.
+newtype CpuBackend = CpuBackend
+  { withCpuBackend :: forall a. (Backend -> IO a) -> IO a }
+
+-- | Backends that only draw viewers (the GPU's), alongside the CPU
+-- backend: their viewer compilers, made when the frontend starts (they
+-- should leave starting anything costly, a GPU, until they first compile
+-- a viewer).
+newtype ViewerBackends = ViewerBackends
+  { startViewerBackends :: IO [(BackendId, ViewerCompiler)] }
+
+-- | A frontend's backends, put together: the CPU backend's viewer
+-- compiler, then the others', in the order given (the order a viewer
+-- tries them in is the app's, not this: see 'Renderer').
+withBackends :: CpuBackend -> [ViewerBackends] -> (Backend -> IO a) -> IO a
+withBackends cpu others action = withCpuBackend cpu $ \backend -> do
+  more <- concat <$> mapM startViewerBackends others
+  action backend { bViewerCompilers = bViewerCompilers backend ++ more }
 
 -- | The default 'ToolRunnerFactory': tool scripts are executed by the
 -- pure Haskell interpreter, and draw commands are accumulated in an

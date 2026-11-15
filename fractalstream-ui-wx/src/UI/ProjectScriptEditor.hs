@@ -26,7 +26,7 @@ import Actor.Ensemble
 import Actor.Viewer.Complex (ComplexViewer(..))
 import Actor.Layout (CodeString(..))
 
-import Backend (Backend)
+import Actor.Viewer (Backend)
 import UI.Loading (whileLoading)
 import Actor.Metadata (ProjectMetadata(..))
 import UI.Widgets (scriptWidget, scriptEditMenu, onOwnDestroy)

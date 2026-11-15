@@ -16,7 +16,12 @@ custom-setup
     base >=4.8 && <5, Cabal, cabal-macosx, cabal-appimage, directory, filepath
 
 flag use-llvm
-  description: Use the LLVM backend
+  description: Use the LLVM backend (else the interpreter), on the CPU
+  default: True
+  manual: True
+
+flag gpu
+  description: Offer the GPU backends too (where this build has a GPU device: macOS, for now)
   default: True
   manual: True
 
@@ -71,7 +76,8 @@ executable FractalStream
 
   main-is:             Main.hs
 
-  other-modules:       UI.Tile
+  other-modules:       Backends
+                       UI.Tile
                        UI.ProjectViewer
                        UI.ConfigEditor
                        UI.CodeEditor
@@ -153,9 +159,14 @@ executable FractalStream
      ghc-options: -optl-mwindows -fno-gen-manifest
      build-depends: directory, filepath
 
+  -- (the backends: see src/Backends.hs)
   if flag(use-llvm)
      build-depends: fractalstream-backend-llvm
+     cpp-options:   -DUSE_LLVM
   else
      build-depends: fractalstream-backend-pure
+  if flag(gpu)
+     build-depends: fractalstream-backend-wgsl, fractalstream-backend-wgpu
+     cpp-options:   -DUSE_GPU
 
   hs-source-dirs:      src

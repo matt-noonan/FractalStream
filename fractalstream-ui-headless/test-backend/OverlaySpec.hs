@@ -10,7 +10,7 @@ module OverlaySpec (spec) where
 import Test.Hspec
 
 import Actor.Ensemble (buildEnsembleFromScript)
-import Backend (withBackend)
+import Backends (withBackend)
 import Interpreter (runScenario)
 import Scenario (parseScenario)
 

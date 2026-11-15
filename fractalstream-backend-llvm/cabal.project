@@ -1,4 +1,4 @@
-packages: . ../fractalstream-backend-wgsl ../fractalstream-backend-wgpu ../fractalstream-core
+packages: . ../fractalstream-core
 
 constraints: llvm-hs -shared-llvm
 

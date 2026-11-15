@@ -6,7 +6,7 @@
 --   stack exec --package hspec -- runghc -itest ../dev-tools/gpu/dump-shaders.hs DIR LIST
 {-# LANGUAGE LambdaCase #-}
 -- Dump every viewer's GPU shaders (both precisions) for the given project files.
-import Backend (withBackend)
+import Backend.Pure (pureBackend)
 import Backend.WGSL
 import Actor.Ensemble (loadProjectBytes, LoadedProject(..), runEnsemble)
 import Actor.UI (UI(..))
@@ -33,8 +33,8 @@ main = do
               pure (Right (GpuKernel (\_ _ -> pure (GpuArgs (\_ _ _ _ -> pure (Left "no"))))))
             ui = UI { newEnsemble = pure (), makeLayout = \_ _ _ -> pure (pure ())
                     , makeViewer = \_ _ _ _ _ v -> modifyIORef viewers (v :) >> pure (pure ()) }
-        withBackend $ \backend -> do
-          runEnsemble backend { bViewerCompilers = bViewerCompilers backend ++ gpuViewerCompilers (Right device) } ui ens
+        withBackends pureBackend [gpuBackends (pure (Right device))] $ \backend -> do
+          runEnsemble backend ui ens
           vs <- readIORef viewers
           forM_ vs $ \v -> viewerRenderer v >>= \case
             Right (Renderer tries) -> forM_ tries $ \(b, go) -> if b == Cpu then pure () else () <$ go

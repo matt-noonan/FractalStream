@@ -42,7 +42,8 @@ import qualified Data.Yaml as YAML
 
 import UI.Welcome
 
-import Backend
+import Backends (withBackend)
+import Actor.Viewer
 import Graphics.UI.WX --(start)
 import Graphics.UI.WXCore.Draw (withFontStyle)
 import Graphics.UI.WXCore.Frame (windowChildren)

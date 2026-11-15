@@ -14,7 +14,7 @@ import Actor.Ensemble (buildEnsembleFromScript, runEnsemble)
 import Actor.UI (UI(..))
 import Actor.Viewer
 import Actor.Layout (Dimensions(..))
-import Backend (withBackend)
+import Backends (withBackend)
 import Data.DynamicValue (getDynamic, setValue)
 import FractalStream.Backends
 

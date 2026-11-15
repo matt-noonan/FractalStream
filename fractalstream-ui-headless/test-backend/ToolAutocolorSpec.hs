@@ -9,7 +9,7 @@ import Test.Hspec
 
 import Actor.Ensemble (buildEnsembleFromScript, ensembleFields)
 import Actor.Layout (fieldName, fieldText)
-import Backend (withBackend)
+import Backends (withBackend)
 import Interpreter (runScenario)
 import Scenario (parseScenario)
 
