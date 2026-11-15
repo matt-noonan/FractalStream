@@ -2,11 +2,15 @@
  * through Backend.WGPU): wgpu-native's webgpu.h, behind a few synchronous
  * calls, as js/gpu.mjs (fractalstream-backend-wasm) is the web's.
  *
- * WebGPU's waits are callbacks; each call here waits for its own (polling
- * the device), so it returns when the work's done. Every call holds one
- * lock: render threads take turns (an error scope is the device's, so two
- * threads' work would see each other's errors), and the GPU runs one
- * block at a time anyway.
+ * WebGPU's waits are callbacks; each call here waits for its own, so it
+ * returns when the work's done. Calls take turns with one lock (an error
+ * scope is the device's, so two threads' work would see each other's
+ * errors), but a block's run doesn't hold it while the GPU draws: each
+ * block costs a round trip to the GPU, so the render threads' blocks are
+ * in flight together. And a block waits by polling without blocking,
+ * napping 50 us between polls: wgpu's blocking poll took about 1.2 ms
+ * more a block (on an M5: 1.45 ms a 64x64 block, against 0.24 ms, and
+ * 0.07 ms with blocks from several threads at once).
  *
  * Errors come back as strings the caller frees (fsgpu_free_string).
  * Every kernel has the bindings Backend.WGSL.Runtime declares: the
@@ -14,6 +18,8 @@
  * (storage, a u32 each, 0xIIBBGGRR), and the tables (read-only storage).
  */
 #include <pthread.h>
+#include <stdatomic.h>
+#include <time.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,12 +55,14 @@ void fsgpu_free_string(char *s) { free(s); }
 
 /* ---- waiting on callbacks ---- */
 
-struct waited { int done; int ok; char *message; void *handle; };
+struct waited { atomic_int done; int ok; char *message; void *handle; };
 
+/* (for what wgpu answers without the GPU: an adapter, a device, an error
+ * scope; it never blocks on the GPU's work) */
 static void wait_for(struct waited *w) {
-  while (!w->done) {
-    if (device) wgpuDevicePoll(device, 1, NULL);
+  while (!atomic_load(&w->done)) {
     wgpuInstanceProcessEvents(instance);
+    if (!atomic_load(&w->done) && device) wgpuDevicePoll(device, 0, NULL);
   }
 }
 
@@ -64,7 +72,7 @@ static void on_adapter(WGPURequestAdapterStatus status, WGPUAdapter a, WGPUStrin
   w->ok = status == WGPURequestAdapterStatus_Success;
   w->handle = a;
   if (!w->ok) w->message = copy_view("No GPU adapter: ", message);
-  w->done = 1;
+  atomic_store(&w->done, 1);
 }
 
 static void on_device(WGPURequestDeviceStatus status, WGPUDevice d, WGPUStringView message, void *u1, void *u2) {
@@ -73,7 +81,7 @@ static void on_device(WGPURequestDeviceStatus status, WGPUDevice d, WGPUStringVi
   w->ok = status == WGPURequestDeviceStatus_Success;
   w->handle = d;
   if (!w->ok) w->message = copy_view("No GPU device: ", message);
-  w->done = 1;
+  atomic_store(&w->done, 1);
 }
 
 static void on_lost(WGPUDevice const *d, WGPUDeviceLostReason reason, WGPUStringView message, void *u1, void *u2) {
@@ -97,7 +105,7 @@ static void on_scope(WGPUPopErrorScopeStatus status, WGPUErrorType type, WGPUStr
     w->message = status == WGPUPopErrorScopeStatus_Success ? copy_view(what, message)
                                                            : copy_string("the GPU's errors couldn't be read");
   }
-  w->done = 1;
+  atomic_store(&w->done, 1);
 }
 
 static void on_map(WGPUMapAsyncStatus status, WGPUStringView message, void *u1, void *u2) {
@@ -105,7 +113,7 @@ static void on_map(WGPUMapAsyncStatus status, WGPUStringView message, void *u1, 
   struct waited *w = u1;
   w->ok = status == WGPUMapAsyncStatus_Success;
   if (!w->ok) w->message = copy_view("the GPU's results couldn't be read: ", message);
-  w->done = 1;
+  atomic_store(&w->done, 1);
 }
 
 /* Work in error scopes: begin, then end with NULL or the first error. */
@@ -340,11 +348,18 @@ char *fsgpu_run(WGPUComputePipeline pipeline, WGPUBuffer args, WGPUBuffer tables
   if (!err && n) {
     struct waited w = {0};
     WGPUBufferMapCallbackInfo cb = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
-    cb.mode = WGPUCallbackMode_AllowProcessEvents;
+    /* (called from whichever thread's poll sees it done) */
+    cb.mode = WGPUCallbackMode_AllowSpontaneous;
     cb.callback = on_map;
     cb.userdata1 = &w;
     wgpuBufferMapAsync(read, WGPUMapMode_Read, 0, 4 * n, cb);
-    wait_for(&w);
+    /* (the GPU draws without the lock: other blocks go in meanwhile) */
+    pthread_mutex_unlock(&lock);
+    while (!atomic_load(&w.done)) {
+      wgpuDevicePoll(device, 0, NULL);
+      if (!atomic_load(&w.done)) nanosleep(&(struct timespec){ 0, 50000 }, NULL);
+    }
+    pthread_mutex_lock(&lock);
     if (!w.ok) err = w.message;
     else {
       const uint32_t *px = wgpuBufferGetConstMappedRange(read, 0, 4 * n);
