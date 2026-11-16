@@ -1,2 +1,5 @@
 sphinx>=8.0
 sphinx-lumina-theme
+myst-parser
+sphinx-design
+sphinx-typst-math
