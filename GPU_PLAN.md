@@ -275,7 +275,15 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
         Vulkan's loader is found when the GPU starts, so a machine
         without one says there's no GPU. Checked by hand on a Linux
         machine with a GPU.
-  - [ ] Windows (wgpu-native's `x86_64-gnu` build, GHC's toolchain).
+  - [x] Windows (branch `windows-gpu`): wgpu-native's `x86_64-gnu` build,
+        as its DLL (with its import library), not statically: GHC's
+        toolchain on Windows is LLVM's mingw and wgpu-native's is gcc's,
+        so they meet at the C API; and GHC's own linker doesn't have to
+        load a 37 MB Rust archive for Template Haskell. The DLL goes beside
+        the app and fsrun (the bundling step finds it on the PATH).
+        `fsgpu.c` takes an SRWLOCK there, and yields between polls (Windows
+        can't sleep 50 us). CI's runner has no GPU, but fsrun draws with
+        gpu-df64 on Direct3D 12's software device (WARP).
   - [ ] f64 (wgpu's native-only `SHADER_F64`), a fourth backend.
 
 ## Later
