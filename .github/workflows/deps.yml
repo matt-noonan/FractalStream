@@ -15,13 +15,6 @@ name: CI dependencies
 
 on:
   workflow_dispatch:
-  # TEMPORARY, while this workflow is developed on its branch (a workflow
-  # can only be run by hand once it's on main): remove before merging.
-  push:
-    branches: [ci-deps]
-    paths:
-      - 'dev-tools/ci/**'
-      - '.github/workflows/deps.yml'
 
 permissions:
   contents: write
