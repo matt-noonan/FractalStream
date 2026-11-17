@@ -32,6 +32,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #ifdef _WIN32
 #include <windows.h>
 #define fs_ac_yield() SwitchToThread()
@@ -113,6 +114,71 @@ const fs_ac_header *fs_ac_current(fs_ac_dir *dir)
 int64_t fs_ac_snapshot_size(const fs_ac_header *s)
 {
   return s ? fs_ac_size(s) : 0;
+}
+
+/* A double as two floats, the second the rest (as Backend.WGSL.Code's
+   realWords): their bits. */
+static void split_double(double x, uint32_t *hi, uint32_t *lo)
+{
+  float h = (float)x;
+  float l = (x != x || x - x != 0) ? 0.0f : (float)(x - (double)h);
+  memcpy(hi, &h, 4);
+  memcpy(lo, &l, 4);
+}
+
+/* The current snapshot as the GPU backends' palette (see
+   Backend.WGSL.Runtime's ac_lookup), in words: the number of groups; then
+   each group's number, whether it can add a point, its miss color
+   (0x00RRGGBB), how many entries it has, its squared tolerance (hi and lo
+   floats' bits), the word its entries start at, and whether it blends
+   misses; then each group's entries, as x and y (hi and lo each) and their
+   color. Gives how many words it takes, and writes them only if `cap` is
+   enough. Safe while other threads look points up and publish: it reads
+   the snapshot as a lookup does. */
+int64_t fs_ac_palette(fs_ac_dir *dir, uint32_t *out, int64_t cap)
+{
+  uint64_t parity;
+  for (;;) {
+    uint64_t epoch = __atomic_load_n(&dir->epoch, __ATOMIC_SEQ_CST);
+    parity = epoch & 1;
+    __atomic_add_fetch(&dir->readers[parity], 1, __ATOMIC_SEQ_CST);
+    if (__atomic_load_n(&dir->epoch, __ATOMIC_SEQ_CST) == epoch) break;
+    __atomic_sub_fetch(&dir->readers[parity], 1, __ATOMIC_SEQ_CST);
+  }
+
+  const fs_ac_header *s = __atomic_load_n(&dir->snapshot, __ATOMIC_SEQ_CST);
+  int32_t ngroups = s ? s->ngroups : 0;
+  const fs_ac_group *groups = s ? (const fs_ac_group *)(s + 1) : NULL;
+  int64_t entries = 0;
+  for (int32_t k = 0; k < ngroups; k++) entries += groups[k].count;
+  int64_t words = 1 + 8 * (int64_t)ngroups + 5 * entries;
+
+  if (words <= cap) {
+    out[0] = (uint32_t)ngroups;
+    int64_t next = 1 + 8 * (int64_t)ngroups;
+    for (int32_t k = 0; k < ngroups; k++) {
+      const fs_ac_group *g = &groups[k];
+      uint32_t *h = out + 1 + 8 * k;
+      h[0] = (uint32_t)g->group;
+      h[1] = g->can_add ? 1 : 0;
+      h[2] = g->miss;
+      h[3] = (uint32_t)g->count;
+      split_double(g->tol2, &h[4], &h[5]);
+      h[6] = (uint32_t)next;
+      h[7] = g->blend_misses ? 1 : 0;
+      const fs_ac_entry *e = (const fs_ac_entry *)((const char *)s + g->offset);
+      for (int32_t i = 0; i < g->count; i++) {
+        uint32_t *w = out + next + 5 * i;
+        split_double(e[i].x, &w[0], &w[1]);
+        split_double(e[i].y, &w[2], &w[3]);
+        w[4] = e[i].rgb;
+      }
+      next += 5 * (int64_t)g->count;
+    }
+  }
+
+  __atomic_sub_fetch(&dir->readers[parity], 1, __ATOMIC_SEQ_CST);
+  return words;
 }
 
 uint32_t fs_ac_lookup(fs_ac_dir *dir, uint8_t mode, int32_t group, double x, double y)

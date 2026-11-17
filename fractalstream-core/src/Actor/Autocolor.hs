@@ -29,6 +29,7 @@ module Actor.Autocolor
   , autocolorLookupFromFunction
   , autocolorCacheLookup
   , autocolorSnapshot
+  , autocolorPalette
   , autocolorEdits
   , AutocolorMode(..)
   , autocolor
@@ -79,7 +80,7 @@ import Language.Value.Parser (parseConstant)
 import qualified Data.Map as Map
 import Data.IORef
 import Data.Bits (shiftL, (.|.))
-import Foreign (Ptr, FunPtr, ForeignPtr, nullPtr, nullFunPtr, mallocBytes, pokeByteOff, freeHaskellFunPtr, withForeignPtr)
+import Foreign (Ptr, FunPtr, ForeignPtr, nullPtr, nullFunPtr, mallocBytes, pokeByteOff, freeHaskellFunPtr, withForeignPtr, mallocForeignPtrArray)
 import qualified Foreign.Concurrent as FC
 import Foreign.C.Types (CDouble(..))
 import System.IO (fixIO)
@@ -163,6 +164,22 @@ autocolorSnapshot AutocolorLookup{..} = withForeignPtr autocolorCache $ \dir -> 
   s <- currentSnapshot dir
   n <- snapshotSize s
   pure (s, fromIntegral n)
+
+foreign import ccall unsafe "fs_ac_palette"
+  paletteWords :: Ptr () -> Ptr Word32 -> Int64 -> IO Int64
+
+-- | The current snapshot of the autocolor groups as the GPU backends'
+-- palette (see @fs_ac_palette@, and Backend.WGSL.Runtime's @ac_lookup@):
+-- its words, and how many there are. Safe while render threads look
+-- points up and add them (it reads the snapshot as a lookup does).
+autocolorPalette :: AutocolorLookup -> IO (ForeignPtr Word32, Int)
+autocolorPalette AutocolorLookup{..} = withForeignPtr autocolorCache (go 1024)
+  where
+    -- (again, with room enough, if points were added meanwhile)
+    go cap dir = do
+      fp <- mallocForeignPtrArray cap
+      n <- withForeignPtr fp (\p -> paletteWords dir p (fromIntegral cap))
+      if fromIntegral n <= cap then pure (fp, fromIntegral n) else go (fromIntegral n) dir
 
 wrapAddFunction :: (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32)
                 -> IO (FunPtr (Word8 -> Int32 -> CDouble -> CDouble -> IO Word32))

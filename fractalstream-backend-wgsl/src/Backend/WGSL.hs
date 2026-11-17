@@ -2,9 +2,9 @@
 -- ("Backend.WGSL.Code"), in double-float or single precision, and drawn
 -- on a GPU device ("Backend.WGSL.Device"), which the platform supplies.
 --
--- A backend declines a viewer it can't draw yet (lists, text, tables,
--- autocolor; in double-float, the functions it hasn't yet), one the GPU
--- won't compile, and every viewer when there's no GPU. A block the GPU
+-- A backend declines a viewer it can't draw (text; in double-float, the
+-- functions it hasn't yet), one the GPU won't compile, and every viewer
+-- when there's no GPU. A block the GPU
 -- fails to draw (the device was lost, say) gives up the render, which the
 -- next backend draws instead. Its renders skip the coarse passes
 -- ('bfCoarse'): it's fast enough to start at full resolution. A frontend
@@ -32,10 +32,17 @@ import Language.Environment
 import Language.Value.Evaluator (HaskellValue)
 import Language.Value.Transform (shortCircuit, integerPowers)
 
+import Actor.Autocolor (AutocolorLookup(..), autocolorPalette)
+import Language.Type (AutocolorMode(..), autocolorModeCode)
 import Data.Bits (testBit)
+import Data.List (isInfixOf)
+import Foreign.ForeignPtr (withForeignPtr)
+import Foreign.Marshal.Alloc (allocaBytes)
 import Foreign.Marshal.Array (withArray)
+import Foreign.Storable (peekByteOff)
+import GHC.Float (float2Double)
 import Language.Table (Table(..))
-import Foreign.Ptr (castPtr)
+import Foreign.Ptr (Ptr, castPtr)
 import Control.Concurrent.MVar (newMVar, modifyMVar)
 
 -- | The GPU backends, on the device this starts (the platform's: the
@@ -56,16 +63,16 @@ gpuViewerCompilers :: IO (Either String GpuDevice) -> [(BackendId, ViewerCompile
 gpuViewerCompilers getDevice = [(GpuDf64, compiler DoubleFloat), (GpuF32, compiler Single)]
   where
     -- (what the GPU can't compile is declined without starting it)
-    compiler p = ViewerCompiler $ \_ code -> case viewerSource p code of
+    compiler p = ViewerCompiler $ \colors code -> case viewerSource p code of
       Left why -> pure (Left (Decline why))
       Right source -> getDevice >>= \case
         Left why -> pure (Left (Decline why))
         Right dev -> gdCompile dev source <&> \case
           Left err -> Left (Decline ("the GPU couldn't compile it: " ++ err))
-          Right kernel -> Right (CompiledViewer (bind kernel))
+          Right kernel -> Right (CompiledViewer (bind (usesAutocolor source) colors kernel))
 
-    bind :: GpuKernel -> Context HaskellValue env -> IO BlockFunction
-    bind kernel args = do
+    bind :: Bool -> AutocolorLookup -> GpuKernel -> Context HaskellValue env -> IO BlockFunction
+    bind withColors colors kernel args = do
       let (ws, tables) = packArgs args
       -- (a binding can't be empty)
       gpuArgs <- gkBind kernel (if null ws then [0] else ws)
@@ -75,13 +82,57 @@ gpuViewerCompilers getDevice = [(GpuDf64, compiler DoubleFloat), (GpuF32, compil
         , bfCoarse = False
         , bfBlock = \ViewerArgs{..} -> do
             let params = blockParams (vaWidth, vaHeight) vaSubsamples vaOffset vaPoint vaStep vaPixel
-            result <- withArray params $ \p ->
-              gaRun gpuArgs (castPtr p) (fromIntegral vaWidth) (fromIntegral vaHeight) vaBuffer
+                run ac = withArray params $ \p ->
+                  gaRun gpuArgs (castPtr p) (fromIntegral vaWidth) (fromIntegral vaHeight) vaBuffer ac
+            result <- if not withColors then run Nothing else allocaBytes missesBytes $ \misses -> do
+              -- A block that met points to add (autocolor) is drawn
+              -- again, once they're added, until it meets none: as the
+              -- wasm backend does (and so as the LLVM backend's comes
+              -- out, which adds them as it goes).
+              let go :: Int -> IO (Either String Word32)
+                  go tries = do
+                    (palette, n) <- autocolorPalette colors
+                    r <- withForeignPtr palette $ \pal -> run (Just (GpuAutocolor pal n misses))
+                    missed <- either (const (pure [])) (const (readMisses misses)) r
+                    if null missed || tries >= maxRedraws then pure r else do
+                      forM_ missed $ \(mode, g, x, y) -> autocolorFunction colors mode g x y
+                      go (tries + 1)
+              go 0
             pure $ case result of
               Left err -> Left (Decline ("the GPU failed: " ++ err))
               Right issues -> Right ViewerIssues { viOutOfMemory = testBit issues 0
                                                  , viBadIndex = testBit issues 1 }
         }
+
+-- | How many times a block is drawn again for the points it noted to add,
+-- at most (as the wasm backend's).
+maxRedraws :: Int
+maxRedraws = 8
+
+-- | Whether a viewer's shader looks autocolors up (so its blocks need the
+-- groups, and to be drawn again for points they add): whether its code
+-- calls @ac_lookup@, which every shader defines.
+usesAutocolor :: String -> Bool
+usesAutocolor = isInfixOf " = ac_lookup("
+
+-- | The points a block noted to add (see 'GpuAutocolor'): each one's
+-- mode, group, and point.
+readMisses :: Ptr Word8 -> IO [(AutocolorMode, Int, Double, Double)]
+readMisses p = do
+  count <- peekByteOff p 0 :: IO Word32
+  forM [0 .. min missCapacity (fromIntegral count) - 1] $ \k -> do
+    let e = 8 + 24 * k
+        real o = do
+          hi <- peekByteOff p (e + o) :: IO Float
+          lo <- peekByteOff p (e + o + 4) :: IO Float
+          pure (float2Double hi + float2Double lo)
+    group <- peekByteOff p e :: IO Int32
+    code <- peekByteOff p (e + 4) :: IO Word32
+    x <- real 8
+    y <- real 16
+    let mode = fromMaybe AddPoint (lookup (fromIntegral code)
+                 [ (autocolorModeCode m, m) | m <- [minBound .. maxBound] ])
+    pure (mode, fromIntegral group, x, y)
 
 -- | A viewer's shader, in this precision, or why there can't be one.
 -- It's rewritten as the CPU's is ('Language.Value.Transform.backendRewrites'),

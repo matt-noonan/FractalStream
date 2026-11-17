@@ -93,8 +93,7 @@ declined; when none will, the viewer says why, as it would an error.
 
 **Compiling** (built in 5b). The GPU backends decline a script with:
 
-- text, or autocolor ("not on the GPU yet: text"; 5d takes autocolor on;
-  text stays on the CPU);
+- text ("not on the GPU yet: text"; it stays on the CPU);
 - a literal outside f32's range (about 1e-38 to 3e38, nonzero), such as
   Per_n's `10^(-300)` thresholds;
 - a shader the GPU won't compile (its messages say why);
@@ -256,7 +255,17 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
       pendulum's parameter plane: CPU 9.3 s, df64 1.7 s, f32 0.1 s).
       df64's transcendental functions are slow (the pendulum's dynamical
       plane, a `sin` a step, is no faster than the CPU): a follow-up.
-- [ ] **5d. Autocolor** (snapshot buffer, misses appended, re-rendered).
+- [x] **5d. Autocolor** (branch `gpu-autocolor`): as the wasm backend
+      does it. Every kernel has two more bindings: the palette (4: the
+      autocolor snapshot, as `Actor.Autocolor.autocolorPalette` copies it,
+      safely, with `fs_ac_palette`: points and tolerances as hi/lo f32
+      pairs, so one layout serves both precisions) and the misses (5: an
+      atomic count and up to 256 points to add). `ac_lookup` in the runtime
+      is `fs_ac_find` in WGSL; a block that noted points to add has them
+      added (through `autocolorFunction`, as on the CPU) and is drawn again,
+      up to 8 times. A kernel without autocolor gets empty bindings and no
+      readback. Every library viewer now draws on the GPU (web: df64 100%
+      like the CPU, f32 99.8 to 99.99%).
 - [ ] **5e. The desktop**: a `GpuDevice` over webgpu.h, and
       GPU f64 where the driver has it (Vulkan, DirectX 12; not Metal).
   - [x] macOS (2026-11-15, branch `desktop-gpu`): wgpu-native v29.0.1.1,

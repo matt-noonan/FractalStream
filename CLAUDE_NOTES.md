@@ -642,6 +642,12 @@ so that a lookup reading one too late is caught instead of masked by
 malloc reusing the memory. A group's "full" warning is printed when it fills up, since afterwards
 compiled code no longer asks.
 
+The GPU backends look points up in the palette, a copy of the snapshot
+(`autocolorPalette`, through `fs_ac_palette`, which joins the readers as a
+lookup does), with `ac_lookup` (Backend.WGSL.Runtime); points to add go in a
+misses buffer, and the block is drawn again once they're added (GPU_PLAN.md,
+5d), as the wasm backend does with its own misses list.
+
 The pure evaluator can't compute autocolor (it's pure); it raises an
 error. Viewers redraw when `autocolorEdits` changes: at once for an edit
 (an entry recolored, moved, added by hand, or deleted; a group cleared,

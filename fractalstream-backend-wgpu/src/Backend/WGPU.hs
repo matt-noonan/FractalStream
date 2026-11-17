@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, RecordWildCards #-}
 -- | The desktop's GPU, for the GPU backends ("Backend.WGSL"): wgpu-native
 -- (WebGPU's C API, @webgpu.h@), through @cbits/fsgpu.c@, as
 -- "Backend.Wasm.Gpu" is the web's. On macOS, Linux and Windows:
@@ -34,7 +34,8 @@ foreign import ccall safe "fsgpu_storage" c_storage :: Word32 -> Ptr CString -> 
 foreign import ccall safe "fsgpu_write" c_write :: Ptr Buffer -> Word32 -> Ptr Word8 -> Word32 -> IO ()
 foreign import ccall safe "fsgpu_release_buffer" c_releaseBuffer :: Ptr Buffer -> IO ()
 foreign import ccall safe "fsgpu_run"
-  c_run :: Ptr Pipeline -> Ptr Buffer -> Ptr Buffer -> Ptr Word8 -> Word32 -> Word32 -> Ptr Word8 -> Ptr Word32 -> IO CString
+  c_run :: Ptr Pipeline -> Ptr Buffer -> Ptr Buffer -> Ptr Word8 -> Word32 -> Word32 -> Ptr Word8 -> Ptr Word32
+        -> Ptr Word32 -> Word32 -> Ptr Word8 -> Word32 -> IO CString
 foreign import ccall unsafe "fsgpu_free_string" c_freeString :: CString -> IO ()
 
 -- | The GPU, started the first time this is run (or why there's none).
@@ -59,13 +60,19 @@ nativeGpu = Just $ c_init >>= message >>= \case
       -- (a binding can't be empty, so there's always a word)
       argsE <- withArrayLen ws $ \n p -> filled (4 * n) [(0, castPtr p, 4 * n)]
       tablesE <- if null tables then pure (Right Nothing) else Just <$$> tableSet tableSets tables
-      pure GpuArgs { gaRun = \params w h out -> case (argsE, tablesE) of
+      pure GpuArgs { gaRun = \params w h out colors -> case (argsE, tablesE) of
         (Left why, _) -> pure (Left why)
         (_, Left why) -> pure (Left why)
         (Right args, Right mt) ->
           withForeignPtr pipeline $ \pp -> withForeignPtr args $ \ap -> withMaybe mt $ \tp ->
             alloca $ \issuesp -> do
+              -- (the autocolor groups, and room for the points to add, if
+              -- the kernel looks colors up)
+              let (palette, n, misses) = case colors of
+                    Just GpuAutocolor{..} -> (gacPalette, fromIntegral gacWords, gacMisses)
+                    Nothing -> (nullPtr, 0, nullPtr)
               e <- c_run pp ap tp params (fromIntegral w) (fromIntegral h) out issuesp
+                         palette n misses (fromIntegral missesBytes)
               message e >>= \case
                 Just why -> pure (Left why)
                 Nothing -> Right <$> peek issuesp }

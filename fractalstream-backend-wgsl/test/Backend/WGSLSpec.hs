@@ -33,7 +33,7 @@ import qualified System.Environment as Env
 keeping :: IORef [String] -> GpuDevice
 keeping kept = GpuDevice $ \source -> do
   modifyIORef kept (source :)
-  pure (Right (GpuKernel (\_ _ -> pure (GpuArgs (\_ _ _ _ -> pure (Left "no GPU here"))))))
+  pure (Right (GpuKernel (\_ _ -> pure (GpuArgs (\_ _ _ _ _ -> pure (Left "no GPU here"))))))
 
 -- | A script's viewer, with the platform's (pure) backend and the GPU's,
 -- on this device.
@@ -129,6 +129,18 @@ spec = describe "the GPU backends" $ do
       , "vs := U @ (2, 3, *)"
       , "color <- if |w| > r + k + nx + ny + |q| + length(vs) then white else black" ]
     forM_ results $ \(_, r) -> r `shouldSatisfy` either (const False) ("rf64(" `isInfixOf`)
+
+  it "compile autocolor, in each of its modes" $ do
+    results <- shaders $ unlines
+      [ "@viewer \"A\" var=z center=0 pixelSize=1/50"
+      , "a := autocolor(0, z)"
+      , "b := nearest_autocolor(1, z)"
+      , "color <- blend(0.5, a, blend(0.5, b, get_autocolor(0, z)))" ]
+    map fst results `shouldMatchList` [GpuDf64, GpuF32]
+    forM_ results $ \(_, r) -> do
+      r `shouldSatisfy` either (const False) ("= ac_lookup(1u, 0, " `isInfixOf`)
+      r `shouldSatisfy` either (const False) ("= ac_lookup(0u, 1, " `isInfixOf`)
+      r `shouldSatisfy` either (const False) ("= ac_lookup(2u, 0, " `isInfixOf`)
 
   describe "decline" $ do
     it "text" $ declines (unlines
