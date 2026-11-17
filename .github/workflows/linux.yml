@@ -1,8 +1,33 @@
 name: Linux build
 
 on:
-  - workflow_dispatch
+  workflow_dispatch:
+  # Also on pushes to main that change what it's built from, and twice a
+  # week, so that main's ~/.stack cache stays fresh (a cache unused for a
+  # week is deleted).
+  push:
+    branches: [main]
+    paths:
+      - 'fractalstream-core/**'
+      - 'fractalstream-library/**'
+      - 'fractalstream-backend-llvm/**'
+      - 'fractalstream-backend-pure/**'
+      - 'fractalstream-backend-wgsl/**'
+      - 'fractalstream-backend-wgpu/**'
+      - 'fractalstream-ui-wx/**'
+      - 'fractalstream-ui-headless/**'
+      - 'dev-tools/ci/**'
+      - 'dev-tools/wgpu/**'
+      - 'patches/**'
+      - '.github/workflows/linux.yml'
+      - '.github/workflows/linux-build.yml'
+  schedule:
+    - cron: '17 6 * * 1,4'
 
 jobs:
   build:
+    # (the build deletes the caches a new one replaces)
+    permissions:
+      contents: read
+      actions: write
     uses: ./.github/workflows/linux-build.yml

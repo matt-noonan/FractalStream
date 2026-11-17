@@ -8,11 +8,10 @@ name: Linux build (reusable)
 # where <suffix> is <version>-linux-x86_64 when a version is given, and
 # <commit>-linux-x86_64 otherwise.
 #
-# LLVM 12 comes from apt.llvm.org's xenial packages, which need that era's
-# libffi6 and libtinfo5, and is linked as a shared library. So fsrun is
-# shipped with every shared library it uses except glibc's own, found next
-# to it by an $ORIGIN rpath. Building on Ubuntu 24.04 means both need glibc
-# 2.39 or newer.
+# LLVM 12 and wxc are prebuilt by deps.yml (see dev-tools/ci/deps.env);
+# LLVM is linked statically. fsrun is shipped with every shared library it
+# uses except glibc's own, found next to it by an $ORIGIN rpath. Building on
+# Ubuntu 24.04 means both need glibc 2.39 or newer.
 
 on:
   workflow_call:
@@ -23,30 +22,28 @@ on:
         default: ''
         type: string
 
-env:
-  # The commit of github.com/matt-noonan/wxHaskell-3.2 to build wxc from.
-  # wxc's cache is keyed on it, so changing it rebuilds wxc.
-  WXC_COMMIT: 36e1fec2ed6a6b1e397544af3c13610f9e10d673
-
 jobs:
   build:
 
     runs-on: ubuntu-24.04
+    # (actions: write, to delete the ~/.stack caches a new one replaces)
+    permissions:
+      contents: read
+      actions: write
+
+    env:
+      GH_TOKEN: ${{ github.token }}
 
     steps:
 
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v4
+      with:
+        # (all of it, for the version githash gets from git describe)
+        fetch-depth: 0
 
     - name: Install dependencies
       run: |
-        # Install libffi6
         sudo apt update
-        curl -LO https://mirrors.kernel.org/ubuntu/pool/main/libf/libffi/libffi6_3.2.1-8_amd64.deb
-        sudo dpkg -i libffi6_3.2.1-8_amd64.deb
-
-        # Install libtinfo5
-        wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.3_amd64.deb
-        sudo apt install ./libtinfo5_6.3-2ubuntu0.3_amd64.deb
 
         # Install fuse for appimage, icnsutils for converting the macos icns
         # file, and patchelf for fsrun's bundled libraries
@@ -61,9 +58,7 @@ jobs:
         sudo chmod +x /usr/bin/linuxdeploy
         echo "/usr/bin" >> $GITHUB_PATH
 
-        # Install Haskell stack
-        #     (nope, already installed in this runner)
-        #curl -sSL https://get.haskellstack.org/ | sh
+        # (Haskell stack is already installed in this runner)
 
     - name: Install wxWidgets 3.2
       run: |
@@ -71,60 +66,30 @@ jobs:
         sudo apt install libwxgtk-media3.2-dev
         sudo ln -s /usr/bin/wx-config /usr/bin/wx-config-3.2
 
-    - name: Get cached build of wxc
-      id: cache-wxc
+    - name: Fetch wxc and LLVM 12
+      run: |
+        dev-tools/ci/fetch-deps.sh /usr/local "$(dev-tools/ci/asset.sh wxc)" "$(dev-tools/ci/asset.sh llvm)"
+        sudo ldconfig
+        llvm-config --version
+
+    # ~/.stack holds the snapshot's packages and the extra-deps, which
+    # change only with what dev-tools/ci/stack-cache-key.sh fingerprints:
+    # so it's saved (from main) only when that changes, as soon as they're
+    # built, and the one it replaces is deleted.
+    - name: Work out the ~/.stack cache's key
+      id: stack-key
+      run: |
+        prefix="${{ runner.os }}-stack-"
+        echo "prefix=$prefix" >> $GITHUB_OUTPUT
+        echo "key=$prefix$(dev-tools/ci/stack-cache-key.sh)" >> $GITHUB_OUTPUT
+
+    - name: Get cached ~/.stack
+      id: stack-cache
       uses: actions/cache/restore@v4
       with:
-        key: ${{ runner.os }}-cache-wxc-${{ env.WXC_COMMIT }}
-        path: wxHaskell-3.2
-
-    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
-      name: Build wxc from wxHaskell
-      run: |
-        git clone https://github.com/matt-noonan/wxHaskell-3.2.git
-        git -C wxHaskell-3.2 checkout -q "$WXC_COMMIT"
-        cd wxHaskell-3.2/wxc
-        ./generate-version-header.sh
-        mkdir build
-        cd build
-        cmake -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=ON ..
-        cmake --build .
-
-    - if: ${{ github.ref == 'refs/heads/main' && (steps.cache-wxc.outputs.cache-hit != 'true') }}
-      name: Save build of wxc
-      uses: actions/cache/save@v4
-      with:
-        key: ${{ runner.os }}-cache-wxc-${{ env.WXC_COMMIT }}
-        path: wxHaskell-3.2
-
-    - name: Install wxc
-      run: |
-        pwd
-        cd wxHaskell-3.2/wxc/build
-        sudo cmake --install .
-
-    - name: Install LLVM 12
-      run: |
-        printf "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" |sudo tee /etc/apt/sources.list.d/llvm-toolchain-xenial-12.list
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key |sudo apt-key add -
-        sudo apt update
-        sudo apt install llvm-12-dev
-
-    # Restore the newest saved .stack, and save a new one after every run,
-    # even a failed one, so that a failure late in the build doesn't throw
-    # away the dependencies that were built.
-    - name: Get cached .stack
-      uses: actions/cache/restore@v4
-      with:
-        key: ${{ runner.os }}-cache-dot-stack-${{ github.run_id }}
-        restore-keys: ${{ runner.os }}-cache-dot-stack
+        key: ${{ steps.stack-key.outputs.key }}
+        restore-keys: ${{ steps.stack-key.outputs.prefix }}
         path: ~/.stack
-
-    - name: Apply patch
-      run: |
-        git apply patches/shared-llvm.patch
-        # fsrun links LLVM the same way.
-        sed -i 's/shared-llvm: false/shared-llvm: true/' fractalstream-ui-headless/stack.yaml
 
     - name: Fetch wgpu-native (the GPU backends' WebGPU)
       run: dev-tools/wgpu/fetch.sh
@@ -134,20 +99,33 @@ jobs:
         cd fractalstream-ui-wx
         stack build --only-snapshot
 
-    - name: Build FractalStream
+    # (Saved only from main: a cache saved for a pull request or a tag,
+    # such as a release's, can only be restored by that same pull request
+    # or tag, so it would just crowd out main's. A release restores main's.)
+    - if: ${{ github.ref == 'refs/heads/main' && steps.stack-cache.outputs.cache-hit != 'true' }}
+      name: Save ~/.stack
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ steps.stack-key.outputs.key }}
+        path: ~/.stack
+
+    - if: ${{ github.ref == 'refs/heads/main' && steps.stack-cache.outputs.cache-hit != 'true' }}
+      name: Delete the ~/.stack cache this one replaces
+      run: dev-tools/ci/prune-caches.sh "${{ steps.stack-key.outputs.prefix }}" "${{ steps.stack-key.outputs.key }}"
+
+    # (fsrun too: it's in the app's stack project)
+    - name: Build FractalStream and fsrun
       run: |
         cd fractalstream-ui-wx
         icns2png -x FS.icns
         stack build
 
-    - name: Build fsrun
+    - name: Bundle fsrun
       run: |
         set -euo pipefail
-        cd fractalstream-ui-headless
-        stack build
-        mkdir -p ../fsrun-dist/bin ../fsrun-dist/lib
-        cp "$(stack path --local-install-root)/bin/fsrun" ../fsrun-dist/bin/
-        cd ../fsrun-dist
+        mkdir -p fsrun-dist/bin fsrun-dist/lib
+        cp "$(cd fractalstream-ui-wx && stack path --local-install-root)/bin/fsrun" fsrun-dist/bin/
+        cd fsrun-dist
         strip bin/fsrun
 
         # Bundle every shared library fsrun uses (ldd lists them all,
@@ -161,11 +139,20 @@ jobs:
         for l in lib/*; do patchelf --set-rpath '$ORIGIN' "$l"; done
         ls -l bin lib
 
-    - name: Check fsrun without the build machine's LLVM
+    - name: Check fsrun
       run: |
         set -euo pipefail
-        sudo apt remove -y llvm-12-dev llvm-12 libllvm12
         ldd fsrun-dist/bin/fsrun
+        # (LLVM is linked in, and none of it is exported: a graphics
+        # driver that uses its own LLVM would call ours instead, and crash)
+        if ldd fsrun-dist/bin/fsrun | grep -qi llvm; then
+          echo "fsrun links a shared LLVM"; exit 1
+        fi
+        exported="$(nm -D --defined-only fsrun-dist/bin/fsrun | grep -ci llvm || true)"
+        echo "LLVM symbols fsrun exports: $exported"
+        if [ "$exported" != 0 ]; then
+          echo "fsrun exports LLVM's symbols"; exit 1
+        fi
         if ldd fsrun-dist/bin/fsrun | grep -q "not found"; then
           echo "Some libraries were not found"; exit 1
         fi
@@ -179,16 +166,6 @@ jobs:
         fsrun-dist/bin/fsrun snapshot --backend gpu-df64 --project plane.yaml --viewer Plane --output plane-gpu.png || status=$?
         echo "fsrun on the GPU: exit status $status"
         if [ "$status" -gt 1 ]; then echo "fsrun crashed on the GPU"; exit 1; fi
-
-    # (Saved only from main: a cache saved for a pull request or a tag,
-    # such as a release's, can only be restored by that same pull request
-    # or tag, so it would just crowd out main's. A release restores main's.)
-    - if: ${{ always() && github.ref == 'refs/heads/main' }}
-      name: Save .stack
-      uses: actions/cache/save@v4
-      with:
-        key: ${{ runner.os }}-cache-dot-stack-${{ github.run_id }}
-        path: ~/.stack
 
     - name: Archive the AppImage and fsrun
       id: archive

@@ -17,7 +17,7 @@ on:
         required: true
         type: string
       wxwidgets:
-        description: 'How should we get the wxWidgets 3.2 dependency? (homebrew, build-static, or build-dynamic)'
+        description: 'How should we get the wxWidgets 3.2 dependency? (homebrew, or build-static: prebuilt by deps.yml)'
         required: false
         default: 'build-static'
         type: string
@@ -32,217 +32,110 @@ on:
         default: ''
         type: string
 
-env:
-  # The commit of github.com/matt-noonan/wxHaskell-3.2 to build wxc from.
-  # wxc's cache is keyed on it, so changing it rebuilds wxc.
-  WXC_COMMIT: 36e1fec2ed6a6b1e397544af3c13610f9e10d673
-
 jobs:
   build:
 
     runs-on: ${{ inputs.runner }}
+    # (actions: write, to delete the ~/.stack caches a new one replaces)
+    permissions:
+      contents: read
+      actions: write
+
+    env:
+      GH_TOKEN: ${{ github.token }}
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v4
+      with:
+        # (all of it, for the version githash gets from git describe)
+        fetch-depth: 0
+
     - name: Install homebrew packages for dependencies
       run: |
-        ##################################################################
-        # Install the developer tools and homebrew (already done in CI)
-        ##################################################################
-
-        #xcode-select --install
-        #/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-        ##################################################################
-        # Prerequisites
-        ##################################################################
-
-        brew install wget
         brew install haskell-stack
         brew install libffi
-
-        ##################################################################
-        # wxWidgets dependencies
-        ##################################################################
-
+        # wxWidgets' dependencies
         brew install pkgconf
         brew install libtiff
         brew install libpng
         brew install jpeg-turbo
         brew install pcre2
 
+    # wxWidgets and wxc, and LLVM 12, prebuilt by deps.yml (see
+    # dev-tools/ci/deps.env), into /usr/local.
     - if: ${{ inputs.wxwidgets != 'homebrew' }}
-      name: Get cached build of wxWidgets 3.2
-      id: cache-wxwidgets
-      uses: actions/cache/restore@v4
-      with:
-        key: ${{ runner.os }}-${{ runner.arch }}-cache-wxwidgets-${{ inputs.wxwidgets }}
-        path: wxWidgets-3.2.9
+      name: Fetch wxWidgets 3.2 and wxc
+      run: |
+        dev-tools/ci/fetch-deps.sh /usr/local \
+          "$(dev-tools/ci/asset.sh wxwidgets static)" "$(dev-tools/ci/asset.sh wxc static)"
+        wx-config --version-full
 
+    # (Homebrew's wxWidgets: wxc is built against it here, every time)
     - if: ${{ inputs.wxwidgets == 'homebrew' }}
-      name: Install wxWidgets@3.2 from Homebrew
+      name: Install wxWidgets@3.2 from Homebrew, and build wxc
       run: |
         brew install wxwidgets@3.2
         ln -s `which wx-config-3.2` /usr/local/bin/wx-config
         ln -s `which wxrc-3.2` /usr/local/bin/wxrc
-
-
-        wx-config --list
-        wx-config --version
         wx-config --version-full
-        wx-config --libs
+        dev-tools/ci/build-wxc.sh wxc.tar.gz
+        sudo tar --no-same-owner -xzf wxc.tar.gz -C /usr/local
 
-
-    - if: ${{ inputs.wxwidgets == 'build-static' && steps.cache-wxwidgets.outputs.cache-hit != 'true' }}
-      name: Build wxWidgets 3.2 for static linking
+    - name: Fetch LLVM 12
       run: |
-        wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.9/wxWidgets-3.2.9.tar.bz2
-        tar xvf wxWidgets-3.2.9.tar.bz2
-        cd wxWidgets-3.2.9
-        git apply ../patches/atomic-refcounts.patch && echo Applied patch
-        mkdir build-cocoa
-        cd build-cocoa
-        cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=OFF -DwxBUILD_MONOLITHIC=ON ..
-        cmake --build .
+        dev-tools/ci/fetch-deps.sh /usr/local "$(dev-tools/ci/asset.sh llvm)"
+        llvm-config --version
 
-    - if: ${{ inputs.wxwidgets == 'build-dynamic' && steps.cache-wxwidgets.outputs.cache-hit != 'true' }}
-      name: Build wxWidgets 3.2 for dynamic linking
+    # ~/.stack holds the snapshot's packages and the extra-deps, which
+    # change only with what dev-tools/ci/stack-cache-key.sh fingerprints:
+    # so it's saved (from main) only when that changes, as soon as they're
+    # built, and the one it replaces is deleted.
+    - name: Work out the ~/.stack cache's key
+      id: stack-key
       run: |
-        wget https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.9/wxWidgets-3.2.9.tar.bz2
-        tar xvf wxWidgets-3.2.9.tar.bz2
-        cd wxWidgets-3.2.9
-        git apply ../patches/atomic-refcounts.patch && echo Applied patch
-        mkdir build-cocoa
-        cd build-cocoa
-        cmake -DCMAKE_BUILD_TYPE=Release -DwxBUILD_SHARED=ON -DwxBUILD_MONOLITHIC=ON ..
-        cmake --build .
+        prefix="${{ runner.os }}-${{ runner.arch }}-stack-${{ inputs.wxwidgets }}-"
+        echo "prefix=$prefix" >> $GITHUB_OUTPUT
+        echo "key=$prefix$(dev-tools/ci/stack-cache-key.sh)" >> $GITHUB_OUTPUT
 
-    - if: ${{ github.ref == 'refs/heads/main' && (inputs.wxwidgets != 'homebrew' && steps.cache-wxwidgets.outputs.cache-hit != 'true') }}
-      name: Save build of wxWidgets 3.2
-      uses: actions/cache/save@v4
-      with:
-        key: ${{ runner.os }}-${{ runner.arch }}-cache-wxwidgets-${{ inputs.wxwidgets }}
-        path: wxWidgets-3.2.9
-
-    - if: ${{ inputs.wxwidgets != 'homebrew' }}
-      name: Install wxWidgets 3.2
-      run: |
-        cd wxWidgets-3.2.9/build-cocoa
-        ln -s wx-config /usr/local/bin/wx-config-3.2
-        ln -s lib/wxrc /usr/local/bin/wxrc-3.2
-        sudo cmake --build . --target=install
-
-    - name: Get cached build of wxc
-      id: cache-wxc
+    - name: Get cached ~/.stack
+      id: stack-cache
       uses: actions/cache/restore@v4
       with:
-        key: ${{ runner.os }}-${{ runner.arch }}-cache-wxc-for-${{ inputs.wxwidgets }}-${{ env.WXC_COMMIT }}
-        path: wxHaskell-3.2
-
-    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
-      name: Build wxc from wxHaskell
-      run: |
-        ##################################################################
-        # Before building wxHaskell we need to manually build the wxc
-        # program and make it available on the path.
-        ##################################################################
-
-        git clone https://github.com/matt-noonan/wxHaskell-3.2.git
-
-        git -C wxHaskell-3.2 checkout -q "$WXC_COMMIT"
-        cd wxHaskell-3.2
-        cd wxc
-        ./generate-version-header.sh
-        mkdir build
-        cd build
-        cmake ..
-        cmake --build .
-
-    - if: ${{ github.ref == 'refs/heads/main' && (steps.cache-wxc.outputs.cache-hit != 'true') }}
-      name: Save build of wxc
-      uses: actions/cache/save@v4
-      with:
-        key: ${{ runner.os }}-${{ runner.arch }}-cache-wxc-for-${{ inputs.wxwidgets }}-${{ env.WXC_COMMIT }}
-        path: wxHaskell-3.2
-
-    - name: Install wxc
-      run: |
-        ##################################################################
-        # Install wxc
-        ##################################################################
-        pwd
-        cd wxHaskell-3.2/wxc/build
-        sudo cmake --install .
-
-    - name: Get cached build of LLVM 12
-      id: cache-llvm-12-static
-      uses: actions/cache/restore@v4
-      with:
-        key: ${{ runner.os }}-${{ runner.arch }}-cache-llvm-12-static
-        path: llvm-12.0.1.src
-
-    - if: ${{ steps.cache-llvm-12-static.outputs.cache-hit != 'true' }}
-      name: Build LLVM 12
-      run: |
-        ##################################################################
-        # Build LLVM 12
-        ##################################################################
-
-        # Worked locally but failed in CI
-        #brew install llvm-hs/llvm/llvm-12
-
-        # Fails, deprecated in homebrew
-        #brew install llvm@12
-
-        # Try building from source
-        wget https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.1/llvm-12.0.1.src.tar.xz
-        tar xvf llvm-12.0.1.src.tar.xz
-        cd llvm-12.0.1.src
-        mkdir build
-        cd build
-        cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_BUILD_LLVM_DYLIB=ON ..
-        cmake --build .
-
-    - if: ${{ github.ref == 'refs/heads/main' && (steps.cache-llvm-12-static.outputs.cache-hit != 'true') }}
-      name: Save build of LLVM 12
-      uses: actions/cache/save@v4
-      with:
-        key: ${{ runner.os }}-${{ runner.arch }}-cache-llvm-12-static
-        path: llvm-12.0.1.src
-
-    - name: Install LLVM 12
-      run: |
-        ##################################################################
-        # Install LLVM 12
-        ##################################################################
-        cd llvm-12.0.1.src/build
-        sudo cmake --build . --target install
-        sudo ln -s /usr/local/lib/libLLVM.dylib /usr/local/lib/libLLVM-12.dylib
-
-    # Restore the newest saved .stack, and save a new one after every run,
-    # even a failed one, so that a failure late in the build doesn't throw
-    # away the dependencies that were built.
-    - name: Get cached .stack
-      uses: actions/cache/restore@v4
-      with:
-        key: ${{ runner.os }}-${{ runner.arch }}-cache-dot-stack-for-${{ inputs.wxwidgets }}-${{ github.run_id }}
-        restore-keys: ${{ runner.os }}-${{ runner.arch }}-cache-dot-stack-for-${{ inputs.wxwidgets }}
+        key: ${{ steps.stack-key.outputs.key }}
+        restore-keys: ${{ steps.stack-key.outputs.prefix }}
         path: ~/.stack
 
     - name: Fetch wgpu-native (the GPU backends' WebGPU)
       run: dev-tools/wgpu/fetch.sh
 
     - name: Build Haskell dependencies
+      id: haskell-deps
       run: |
         cd fractalstream-ui-wx
         stack build --only-snapshot
 
-    - name: Build FractalStream
+    # (Saved only from main: a cache saved for a pull request or a tag,
+    # such as a release's, can only be restored by that same pull request
+    # or tag, so it would just crowd out main's. A release restores main's.)
+    - if: ${{ github.ref == 'refs/heads/main' && steps.stack-cache.outputs.cache-hit != 'true' }}
+      name: Save ~/.stack
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ steps.stack-key.outputs.key }}
+        path: ~/.stack
+
+    - if: ${{ github.ref == 'refs/heads/main' && steps.stack-cache.outputs.cache-hit != 'true' }}
+      name: Delete the ~/.stack cache this one replaces
+      run: dev-tools/ci/prune-caches.sh "${{ steps.stack-key.outputs.prefix }}" "${{ steps.stack-key.outputs.key }}"
+
+    # (fsrun too: it's in the app's stack project)
+    - name: Build FractalStream and fsrun
       run: |
         cd fractalstream-ui-wx
         stack build
         mv `find . -name "FractalStream.app"` ../FractalStream.app
         mv ../FractalStream.app/PkgInfo ../FractalStream.app/Contents/PkgInfo
+        cp "$(stack path --local-install-root)/bin/fsrun" ../fsrun
 
         cd ../FractalStream.app
         ls -Ra
@@ -256,24 +149,10 @@ jobs:
         /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" FractalStream.app/Contents/Info.plist
         /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" FractalStream.app/Contents/Info.plist
 
-    - name: Build fsrun
+    - name: Strip fsrun
       run: |
-        cd fractalstream-ui-headless
-        stack build
-        cp "$(stack path --local-install-root)/bin/fsrun" ../fsrun
-        cd ..
         strip fsrun
         ls -l fsrun
-
-    # (Saved only from main: a cache saved for a pull request or a tag,
-    # such as a release's, can only be restored by that same pull request
-    # or tag, so it would just crowd out main's. A release restores main's.)
-    - if: ${{ always() && github.ref == 'refs/heads/main' }}
-      name: Save .stack
-      uses: actions/cache/save@v4
-      with:
-        key: ${{ runner.os }}-${{ runner.arch }}-cache-dot-stack-for-${{ inputs.wxwidgets }}-${{ github.run_id }}
-        path: ~/.stack
 
     - name: Sign app bundle and fsrun
       env:

@@ -30,24 +30,21 @@ on:
 # installing its own (--skip-msys), so that wxcore's configure script can find
 # pkg-config and wxc.
 #
-# For the LLVM backend: llvm-hs compiles its C++ shims with GHC's own
-# toolchain, which on Windows is clang with libc++. So LLVM 12 is built from
-# source with that same clang and libc++ (LLVM_ENABLE_LIBCXX=ON, which also
-# makes llvm-config report -stdlib=libc++, so llvm-hs links libc++). Only the
-# X86 target is built: llvm-hs initializes whichever targets LLVM was built
-# with. The LLVM build then runs the backend's tests and renders a project
-# with fsrun, to check that the JIT works on Windows.
-
-env:
-  # The commit of github.com/matt-noonan/wxHaskell-3.2 to build wxc from.
-  # wxc's cache is keyed on it, so changing it rebuilds wxc.
-  WXC_COMMIT: 36e1fec2ed6a6b1e397544af3c13610f9e10d673
+# wxc, and for the LLVM backend LLVM 12, are prebuilt by deps.yml (see
+# dev-tools/ci/deps.env). llvm-hs compiles its C++ shims with GHC's own
+# toolchain, which on Windows is clang with libc++, so LLVM is built with
+# that same clang and libc++. The LLVM build then runs the backend's tests
+# and renders a project with fsrun, to check that the JIT works on Windows.
 
 jobs:
   build:
 
     runs-on: windows-2022
     timeout-minutes: 360
+    # (actions: write, to delete the stack root caches a new one replaces)
+    permissions:
+      contents: read
+      actions: write
 
     defaults:
       run:
@@ -59,6 +56,7 @@ jobs:
       LLVM_PREFIX: C:\llvm12
       # The pure backend has its own stack.yaml in fractalstream-ui-wx.
       STACK_YAML: ${{ inputs.backend == 'pure' && 'stack.pure.yaml' || 'stack.yaml' }}
+      GH_TOKEN: ${{ github.token }}
 
     steps:
 
@@ -67,6 +65,9 @@ jobs:
       run: git config --system core.longpaths true
 
     - uses: actions/checkout@v4
+      with:
+        # (all of it, for the version githash gets from git describe)
+        fetch-depth: 0
 
     - name: Install MSYS2 and wxWidgets 3.2
       uses: msys2/setup-msys2@v2
@@ -105,49 +106,8 @@ jobs:
         fi
         stack --version
 
-    - name: Get cached build of wxc
-      id: cache-wxc
-      uses: actions/cache/restore@v4
-      with:
-        key: ${{ runner.os }}-cache-wxc-dll-${{ env.WXC_COMMIT }}
-        path: wxc-prefix
-
-    - if: ${{ steps.cache-wxc.outputs.cache-hit != 'true' }}
-      name: Build wxc from wxHaskell
-      run: |
-        set -euo pipefail
-        PREFIX="$PWD/wxc-prefix"
-        mkdir -p "$PREFIX/bin" "$PREFIX/lib" "$PREFIX/include"
-
-        git clone https://github.com/matt-noonan/wxHaskell-3.2.git
-
-        git -C wxHaskell-3.2 checkout -q "$WXC_COMMIT"
-        cd wxHaskell-3.2/wxc
-        ./generate-version-header.sh
-
-        # Build the same sources that wxc's CMakeLists.txt does, but call g++
-        # directly: CMake's FindwxWidgets is unreliable under MSYS2.
-        export CXXFLAGS="$(wx-config --cxxflags) -std=c++14 -O2 -DwxcREFUSE_MEDIACTRL -Iinclude"
-        mkdir -p obj
-        grep -o 'src/cpp/[A-Za-z_]*\.cpp' CMakeLists.txt \
-          | xargs -P 4 -I{} sh -c 'echo "$1"; g++ $CXXFLAGS -c "$1" -o "obj/$(basename "$1" .cpp).o"' _ {}
-
-        # Some wxc functions are marked dllexport and some aren't, so export
-        # everything.
-        g++ -shared -o "$PREFIX/bin/wxc.dll" obj/*.o \
-          -Wl,--export-all-symbols \
-          -Wl,--out-implib,"$PREFIX/lib/libwxc.dll.a" \
-          $(wx-config --libs gl,base,core,richtext,stc,xrc,propgrid,qa,html,adv,aui,ribbon,net)
-
-        cp -r include/wxc "$PREFIX/include/"
-
-    # (caches are saved only from main: see "Save stack root")
-    - if: ${{ github.ref == 'refs/heads/main' && steps.cache-wxc.outputs.cache-hit != 'true' }}
-      name: Save build of wxc
-      uses: actions/cache/save@v4
-      with:
-        key: ${{ runner.os }}-cache-wxc-dll-${{ env.WXC_COMMIT }}
-        path: wxc-prefix
+    - name: Fetch wxc
+      run: dev-tools/ci/fetch-deps.sh wxc-prefix "$(dev-tools/ci/asset.sh wxc)"
 
     - name: Install wxc
       run: |
@@ -175,16 +135,23 @@ jobs:
         pkg-config --cflags --libs wxc
         ls /ucrt64/include/wxc/wxc.h
 
-    # Restore the newest saved stack root for this backend (falling back to
-    # any backend's, which has the same snapshot packages), and save a new one
-    # after every run, even a failed one.
+    # The stack root holds GHC, the snapshot's packages and the extra-deps,
+    # which change only with what dev-tools/ci/stack-cache-key.sh
+    # fingerprints: so it's saved (from main) only when that changes, as
+    # soon as they're built, and the one it replaces is deleted.
+    - name: Work out the stack root cache's key
+      id: stack-key
+      run: |
+        prefix="${{ runner.os }}-stack-root-${{ inputs.backend }}-"
+        echo "prefix=$prefix" >> $GITHUB_OUTPUT
+        echo "key=$prefix$(dev-tools/ci/stack-cache-key.sh)" >> $GITHUB_OUTPUT
+
     - name: Get cached stack root
+      id: stack-cache
       uses: actions/cache/restore@v4
       with:
-        key: ${{ runner.os }}-cache-stack-root-${{ inputs.backend }}-${{ github.run_id }}
-        restore-keys: |
-          ${{ runner.os }}-cache-stack-root-${{ inputs.backend }}
-          ${{ runner.os }}-cache-stack-root-
+        key: ${{ steps.stack-key.outputs.key }}
+        restore-keys: ${{ steps.stack-key.outputs.prefix }}
         path: C:\sr
 
     - name: Install GHC and find its toolchain
@@ -216,54 +183,8 @@ jobs:
         done
 
     - if: ${{ inputs.backend == 'llvm' }}
-      name: Get cached build of LLVM 12
-      id: cache-llvm
-      uses: actions/cache/restore@v4
-      with:
-        key: ${{ runner.os }}-cache-llvm-12-x86-ghc-9.10.3
-        path: C:\llvm12
-
-    - if: ${{ inputs.backend == 'llvm' && steps.cache-llvm.outputs.cache-hit != 'true' }}
-      name: Build LLVM 12 with GHC's clang
-      run: |
-        set -euo pipefail
-        # Programs built with GHC's clang load libc++.dll from its mingw/bin,
-        # and the build runs some of them (llvm-tblgen).
-        export PATH="$PATH:$GHC_MINGW/bin"
-        curl -sSL -o llvm.tar.xz https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.1/llvm-12.0.1.src.tar.xz
-        tar xf llvm.tar.xz || true   # a few test symlinks can't be made on Windows
-        PREFIX="$(cygpath -m "$LLVM_PREFIX")"
-        cmake -G Ninja -S llvm-12.0.1.src -B llvm-build \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-          -DCMAKE_C_COMPILER="$(cygpath -m "$GHC_MINGW/bin/clang.exe")" \
-          -DCMAKE_CXX_COMPILER="$(cygpath -m "$GHC_MINGW/bin/clang++.exe")" \
-          -DCMAKE_AR="$(cygpath -m "$GHC_MINGW/bin/llvm-ar.exe")" \
-          -DCMAKE_RANLIB="$(cygpath -m "$GHC_MINGW/bin/llvm-ranlib.exe")" \
-          -DLLVM_USE_LINKER=lld \
-          -DLLVM_HOST_TRIPLE=x86_64-w64-windows-gnu \
-          -DLLVM_TARGETS_TO_BUILD=X86 \
-          -DLLVM_ENABLE_LIBCXX=ON \
-          -DLLVM_ENABLE_ZLIB=OFF \
-          -DLLVM_ENABLE_TERMINFO=OFF \
-          -DLLVM_ENABLE_LIBXML2=OFF \
-          -DLLVM_INCLUDE_TESTS=OFF \
-          -DLLVM_INCLUDE_EXAMPLES=OFF \
-          -DLLVM_INCLUDE_BENCHMARKS=OFF \
-          -DLLVM_INCLUDE_DOCS=OFF \
-          -DLLVM_BUILD_TOOLS=OFF \
-          -DLLVM_BUILD_UTILS=OFF
-        # Only the libraries, headers and llvm-config, which is all llvm-hs uses.
-        ninja -C llvm-build install-llvm-headers install-llvm-libraries llvm-config
-        mkdir -p "$(cygpath -u "$LLVM_PREFIX")/bin"
-        cp llvm-build/bin/llvm-config.exe "$(cygpath -u "$LLVM_PREFIX")/bin/"
-
-    - if: ${{ github.ref == 'refs/heads/main' && (inputs.backend == 'llvm' && steps.cache-llvm.outputs.cache-hit != 'true') }}
-      name: Save build of LLVM 12
-      uses: actions/cache/save@v4
-      with:
-        key: ${{ runner.os }}-cache-llvm-12-x86-ghc-9.10.3
-        path: C:\llvm12
+      name: Fetch LLVM 12
+      run: dev-tools/ci/fetch-deps.sh /c/llvm12 "$(dev-tools/ci/asset.sh llvm)"
 
     - if: ${{ inputs.backend == 'llvm' }}
       name: Check LLVM 12
@@ -288,31 +209,26 @@ jobs:
         cd fractalstream-ui-wx
         stack --skip-msys build --only-snapshot
 
+    # (Saved only from main: a cache saved for a pull request or a tag,
+    # such as a release's, can only be restored by that same pull request
+    # or tag, so it would just crowd out main's. A release restores main's.)
+    - if: ${{ github.ref == 'refs/heads/main' && steps.stack-cache.outputs.cache-hit != 'true' }}
+      name: Save stack root
+      uses: actions/cache/save@v4
+      with:
+        key: ${{ steps.stack-key.outputs.key }}
+        path: C:\sr
+
+    - if: ${{ github.ref == 'refs/heads/main' && steps.stack-cache.outputs.cache-hit != 'true' }}
+      name: Delete the stack root cache this one replaces
+      run: dev-tools/ci/prune-caches.sh "${{ steps.stack-key.outputs.prefix }}" "${{ steps.stack-key.outputs.key }}"
+
+    # (with the LLVM backend, fsrun too: it's in stack.yaml's project)
     - name: Build FractalStream
       run: |
         export PATH="$PATH:$GHC_MINGW/bin"   # llvm-config needs libc++.dll
         cd fractalstream-ui-wx
         stack --skip-msys build
-
-    # fsrun uses fractalstream-ui-headless's own stack.yaml, so STACK_YAML is
-    # unset. (It only has an LLVM build.)
-    - if: ${{ inputs.backend == 'llvm' }}
-      name: Build fsrun
-      run: |
-        export PATH="$PATH:$GHC_MINGW/bin"   # llvm-config needs libc++.dll
-        unset STACK_YAML
-        cd fractalstream-ui-headless
-        stack --skip-msys build
-
-    # (Saved only from main: a cache saved for a pull request or a tag,
-    # such as a release's, can only be restored by that same pull request
-    # or tag, so it would just crowd out main's. A release restores main's.)
-    - if: ${{ always() && github.ref == 'refs/heads/main' }}
-      name: Save stack root
-      uses: actions/cache/save@v4
-      with:
-        key: ${{ runner.os }}-cache-stack-root-${{ inputs.backend }}-${{ github.run_id }}
-        path: C:\sr
 
     - name: Collect the executables and their DLLs
       id: collect
@@ -351,8 +267,7 @@ jobs:
         BIN="$(cd fractalstream-ui-wx && cygpath -u "$(stack --skip-msys path --local-install-root)")/bin"
         bundle "$BIN/FractalStream.exe" FractalStream
         if [ "$BACKEND" = llvm ]; then
-          FSRUN_BIN="$(cd fractalstream-ui-headless && cygpath -u "$(env -u STACK_YAML stack --skip-msys path --local-install-root)")/bin"
-          bundle "$FSRUN_BIN/fsrun.exe" FractalStream/cli
+          bundle "$BIN/fsrun.exe" FractalStream/cli
         fi
         ls -lR FractalStream
 
@@ -383,14 +298,13 @@ jobs:
 
     # Check that the LLVM JIT actually works on Windows: the backend's tests
     # compile and run kernels, and the bundled fsrun renders a small project.
-    # (The tests use their own package's stack.yaml, so STACK_YAML is unset.)
+    # (In the app's project, with what it's already built.)
     - if: ${{ inputs.backend == 'llvm' }}
       name: Test the LLVM backend
       run: |
         export PATH="$PATH:$GHC_MINGW/bin"   # llvm-config needs libc++.dll
-        unset STACK_YAML
-        cd fractalstream-backend-llvm
-        stack --skip-msys test
+        cd fractalstream-ui-wx
+        stack --skip-msys test fractalstream-backend-llvm
 
     - if: ${{ inputs.backend == 'llvm' }}
       name: Render a project with the bundled fsrun
