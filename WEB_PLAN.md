@@ -514,6 +514,17 @@ own deflate (`CompressionStream("deflate-raw")`) in base64url:
 And `#url=<address>` opens a project file from the web, where its host
 lets other pages read it (as GitHub's raw files and Gists do).
 
+Any of the three can end with `&edit`, to open the project with its
+script editor showing; Copy link adds it when the editor's open.
+
+A page loaded with a link shows "Loading the project…" and a spinner in
+the library's place (an inline script in `index.html` marks the page
+`loading-project` before it's first drawn) until the project's open, or
+opening it fails, when the library shows. Any other project that takes
+more than half a second to open (from the library, a file, a link put in
+the address bar) shows the same screen, as the desktop's `UI.Loading`
+does: `setOpening` in `main.ts`.
+
 A link's opened when the page loads with one (once the library has), or
 when one's put in the address bar (asking first if the open project has
 changes to save, as Close does); then it's taken out of the address bar,

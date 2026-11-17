@@ -20,7 +20,7 @@ export interface ClassStyle {
 export type Smoothing = "auto" | "on" | "off";
 
 export interface Preferences {
-  /** The script editor's font (a CSS font family), or null for the page's. */
+  /** The script editor's font (a CSS font family), or null for DejaVu Sans. */
   editorFont: string | null;
   /** Its size, in points, or null for the editor's usual size. */
   editorFontSize: number | null;
@@ -249,7 +249,8 @@ export function styleCss(light: boolean, name: string, p: Preferences = current)
     `font-weight: ${s.bold ? 600 : "normal"}; font-style: ${s.italic ? "italic" : "normal"}; text-decoration: ${underline};`;
 }
 
-const DEFAULT_FONT = `ui-monospace, "SF Mono", Menlo, monospace`;
+// (DejaVu Sans, as the desktop's: the page has it, for the symbols scripts use)
+const DEFAULT_FONT = `"DejaVu Sans", sans-serif`;
 
 /** A font's name as CSS has it: quoted, unless it's a list already. */
 const fontFamily = (name: string) => (/[,"']/.test(name) ? name : `"${name}", monospace`);

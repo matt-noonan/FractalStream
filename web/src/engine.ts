@@ -8,6 +8,7 @@
 import { WASI, OpenFile, File, ConsoleStdout } from "@bjorn3/browser_wasi_shim";
 import { createPool } from "./worker-pool.mjs";
 import { createGpu } from "./gpu.mjs";
+import { deflateArchive, inflateArchive, isZip } from "./archive.js";
 import type { Request, Message, Patch } from "./protocol.js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -71,8 +72,15 @@ g.fractalstreamPostPatch = (viewer: number, id: number, width: number, height: n
   send(patch, [patch.pixels]);
 };
 
+// A saved project's file. (An archive's entries come stored, and are
+// deflated here, with the browser's zlib: see archive.ts. In order, if
+// one's saved while another's still being deflated.)
+let saving: Promise<unknown> = Promise.resolve();
 g.fractalstreamPostFile = (name: string, bytes: Uint8Array) => {
-  send({ type: "file", name, bytes: bytes.buffer as ArrayBuffer }, [bytes.buffer as ArrayBuffer]);
+  saving = saving.then(async () => {
+    const file = isZip(bytes) ? await deflateArchive(bytes) : bytes;
+    send({ type: "file", name, bytes: file.buffer as ArrayBuffer }, [file.buffer as ArrayBuffer]);
+  });
 };
 
 // A file for the page to save as it is (a picture).
@@ -112,7 +120,12 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
     switch (r.type) {
       case "library": await engine.fs_library(); break;
       case "open": await engine.fs_open(r.section, r.entry); break;
-      case "openFile": await engine.fs_open_file(r.name, new Uint8Array(r.bytes)); break;
+      case "openFile": {
+        // (a .fsz's tables inflated by the browser, not the engine: see archive.ts)
+        const bytes = new Uint8Array(r.bytes);
+        await engine.fs_open_file(r.name, isZip(bytes) ? await inflateArchive(bytes) : bytes);
+        break;
+      }
       case "translate": await engine.fs_translate(); break;
       case "pointer": await engine.fs_pointer(r.viewer, r.x, r.y); break;
       case "save": await engine.fs_save(r.views, r.tables, r.draft !== null, r.draft ?? ""); break;

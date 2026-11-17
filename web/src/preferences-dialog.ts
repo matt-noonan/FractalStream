@@ -14,7 +14,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
   return e;
 }
 
-const FONTS = ["ui-monospace", "SF Mono", "Menlo", "Monaco", "Consolas", "Cascadia Code", "DejaVu Sans Mono",
+const FONTS = ["DejaVu Sans", "ui-monospace", "SF Mono", "Menlo", "Monaco", "Consolas", "Cascadia Code", "DejaVu Sans Mono",
                "JetBrains Mono", "Fira Code", "Source Code Pro", "Courier New"];
 
 let open: HTMLElement | null = null;
@@ -71,7 +71,7 @@ function check(label: string, get: (p: Preferences) => boolean, set: (on: boolea
 function editorTab(): HTMLElement {
   const p = preferences();
   const list = el("datalist", { id: "prefs-fonts" }, ...FONTS.map((f) => el("option", { value: f })));
-  const font = el("input", { type: "text", value: p.editorFont ?? "", placeholder: "The usual fixed-width font" });
+  const font = el("input", { type: "text", value: p.editorFont ?? "", placeholder: "DejaVu Sans" });
   font.setAttribute("list", "prefs-fonts");
   font.setAttribute("aria-label", "Font for scripts");
   font.addEventListener("change", () => setPreferences({ editorFont: font.value.trim() || null }));

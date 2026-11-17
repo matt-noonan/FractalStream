@@ -5,10 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FractalStream</title>
   <link rel="stylesheet" href="style.css">
+  <!-- (opening a link: the loading screen in the library's place, from the
+       start, until its project's open; see setOpening in main.ts) -->
+  <script>
+    if (/^#(.*&)?(open|project|url)=/.test(location.hash)) document.documentElement.classList.add("loading-project");
+  </script>
   <script type="module" src="main.js"></script>
 </head>
 <body>
   <div id="welcome"></div>
+  <div id="project-loading" role="status"><span class="spinner-ring"></span>Loading the project…</div>
   <main id="project-screen" hidden>
     <div id="project"></div>
   </main>

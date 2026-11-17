@@ -15,12 +15,18 @@ spec = describe "Data.Zip" $ do
                 , ("empty.bin", "") ]
 
   it "reads back what it writes, names and contents" $ do
-    Right archive <- pure (writeZip entries)
+    Right archive <- pure (writeZip Deflated entries)
     isZip (BL.toStrict archive) `shouldBe` True
     readZip (BL.toStrict archive) `shouldBe` Right entries
 
+  it "reads back what it writes stored, too" $ do
+    Right archive <- pure (writeZip Stored entries)
+    readZip (BL.toStrict archive) `shouldBe` Right entries
+    -- (each entry as it is: the archive's bigger than its contents)
+    BL.length archive > sum (map (BL.length . snd) entries) `shouldBe` True
+
   it "writes the same bytes for the same entries" $
-    writeZip entries `shouldBe` writeZip entries
+    writeZip Deflated entries `shouldBe` writeZip Deflated entries
 
   it "isn't fooled by what isn't an archive" $ do
     isZip "script: |\n" `shouldBe` False

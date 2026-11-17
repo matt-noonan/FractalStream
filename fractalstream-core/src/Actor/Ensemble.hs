@@ -19,6 +19,7 @@ module Actor.Ensemble
   , ViewerColorizer(..)
   , Colorizer(..)
   , encodeEnsemble
+  , encodeEnsembleWith
   , projectStateKeys
   , withProjectKeys
   , rewriteProjectFile
@@ -65,7 +66,7 @@ import Actor.Viewer.Group
 import Actor.Metadata
 import Actor.SavedValues
 import Actor.SavedTables (SavedTables, readSavedTables, writeSavedTables, applySavedTables)
-import Data.Zip (isZip, readZip, writeZip)
+import Data.Zip (isZip, readZip, writeZip, Packing(..))
 import qualified Data.ByteString.Lazy as BL
 import System.FilePath (takeExtension, dropExtension)
 import Actor.Script
@@ -536,7 +537,12 @@ ensembleTables ens = getDynamic (ensembleConfiguration ens)
 -- Every frontend's save path
 -- should go through this rather than hand-rolling the YAML itself.
 encodeEnsemble :: Ensemble -> IO ByteString
-encodeEnsemble ens = do
+encodeEnsemble = encodeEnsembleWith Deflated
+
+-- | 'encodeEnsemble', with an archive's entries packed as given: the web
+-- app's are 'Stored', for its page to compress (see @web/src/archive.ts@).
+encodeEnsembleWith :: Packing -> Ensemble -> IO ByteString
+encodeEnsembleWith packing ens = do
   scriptText <- getDynamic (ensembleSourceScript ens)
   scenarios <- getDynamic (ensembleScenarios ens)
   frontendProperties <- getDynamic (ensembleFrontendProperties ens)
@@ -559,7 +565,7 @@ encodeEnsemble ens = do
                  else encodePrettyYaml projectYamlConfig (Object rest))
   -- (with tables, an archive of the project's YAML and their files)
   if Map.null tables then pure yaml else
-    either fail (pure . BL.toStrict) (writeZip (("project.fs", BL.fromStrict yaml) : files))
+    either fail (pure . BL.toStrict) (writeZip packing (("project.fs", BL.fromStrict yaml) : files))
 
 -- | The name to save a project as: a @.fsz@ if its contents are an
 -- archive (it has tables), else a @.fs@, in place of the name's own
