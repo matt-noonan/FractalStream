@@ -17,11 +17,11 @@
  * parameters (a uniform), the arguments (read-only storage), the pixels
  * (storage, a u32 each, 0xIIBBGGRR), and the tables (read-only storage).
  */
-/* (strdup, nanosleep: POSIX, which -std=c11 leaves out on Linux) */
+#if !defined(_WIN32)
+/* (nanosleep: POSIX, which -std=c11 leaves out on Linux) */
 #define _POSIX_C_SOURCE 200809L
-#include <pthread.h>
+#endif
 #include <stdatomic.h>
-#include <time.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,7 +30,23 @@
 #include "webgpu/webgpu.h"
 #include "webgpu/wgpu.h"
 
+/* The lock, and a nap between polls: POSIX's, or Windows'. (Windows can't
+ * sleep for 50 us, so a block's wait there yields the rest of its time
+ * slice instead.) */
+#if defined(_WIN32)
+#include <windows.h>
+static SRWLOCK lock = SRWLOCK_INIT;
+static void take_lock(void) { AcquireSRWLockExclusive(&lock); }
+static void give_lock(void) { ReleaseSRWLockExclusive(&lock); }
+static void nap(void) { SwitchToThread(); }
+#else
+#include <pthread.h>
+#include <time.h>
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static void take_lock(void) { pthread_mutex_lock(&lock); }
+static void give_lock(void) { pthread_mutex_unlock(&lock); }
+static void nap(void) { nanosleep(&(struct timespec){ 0, 50000 }, NULL); }
+#endif
 static WGPUInstance instance;
 static WGPUAdapter adapter;
 static WGPUDevice device;
@@ -51,7 +67,12 @@ static char *copy_view(const char *prefix, WGPUStringView v) {
   return s;
 }
 
-static char *copy_string(const char *s) { return strdup(s); }
+static char *copy_string(const char *s) {
+  size_t n = strlen(s) + 1;
+  char *c = malloc(n);
+  memcpy(c, s, n);
+  return c;
+}
 
 void fsgpu_free_string(char *s) { free(s); }
 
@@ -154,10 +175,10 @@ static char *init_error;
 static int initialized;
 
 char *fsgpu_init(void) {
-  pthread_mutex_lock(&lock);
+  take_lock();
   if (initialized) {
     char *e = init_error ? copy_string(init_error) : NULL;
-    pthread_mutex_unlock(&lock);
+    give_lock();
     return e;
   }
   initialized = 1;
@@ -222,13 +243,13 @@ char *fsgpu_init(void) {
 
 done:;
   char *e = init_error ? copy_string(init_error) : NULL;
-  pthread_mutex_unlock(&lock);
+  give_lock();
   return e;
 }
 
 /* A WGSL module, compiled: a pipeline, or NULL and why not (in *err). */
 WGPUComputePipeline fsgpu_compile(const char *source, char **err) {
-  pthread_mutex_lock(&lock);
+  take_lock();
   WGPUComputePipeline pipeline = NULL;
   *err = NULL;
   if (lost) { *err = copy_string(lost); goto done; }
@@ -247,20 +268,20 @@ WGPUComputePipeline fsgpu_compile(const char *source, char **err) {
   if (module) wgpuShaderModuleRelease(module);
   if (*err && pipeline) { wgpuComputePipelineRelease(pipeline); pipeline = NULL; }
 done:
-  pthread_mutex_unlock(&lock);
+  give_lock();
   return pipeline;
 }
 
 void fsgpu_release_pipeline(WGPUComputePipeline p) {
-  pthread_mutex_lock(&lock);
+  take_lock();
   wgpuComputePipelineRelease(p);
-  pthread_mutex_unlock(&lock);
+  give_lock();
 }
 
 /* A buffer of read-only storage with these bytes (a kernel's arguments,
  * or a set of tables, to fill with fsgpu_write): NULL and why not. */
 WGPUBuffer fsgpu_storage(uint64_t size, char **err) {
-  pthread_mutex_lock(&lock);
+  take_lock();
   WGPUBuffer b = NULL;
   *err = NULL;
   if (lost) { *err = copy_string(lost); goto done; }
@@ -281,13 +302,13 @@ WGPUBuffer fsgpu_storage(uint64_t size, char **err) {
     if (b) { wgpuBufferRelease(b); b = NULL; }
   }
 done:
-  pthread_mutex_unlock(&lock);
+  give_lock();
   return b;
 }
 
 /* Bytes into a buffer, at an offset (a multiple of 4). */
 void fsgpu_write(WGPUBuffer b, uint64_t offset, const uint8_t *bytes, size_t n) {
-  pthread_mutex_lock(&lock);
+  take_lock();
   size_t whole = n / 4 * 4;
   if (whole) wgpuQueueWriteBuffer(queue, b, offset, bytes, whole);
   if (n > whole) {   /* (writes are of whole words) */
@@ -295,14 +316,14 @@ void fsgpu_write(WGPUBuffer b, uint64_t offset, const uint8_t *bytes, size_t n) 
     memcpy(last, bytes + whole, n - whole);
     wgpuQueueWriteBuffer(queue, b, offset + whole, last, 4);
   }
-  pthread_mutex_unlock(&lock);
+  give_lock();
 }
 
 void fsgpu_release_buffer(WGPUBuffer b) {
-  pthread_mutex_lock(&lock);
+  take_lock();
   wgpuBufferDestroy(b);
   wgpuBufferRelease(b);
-  pthread_mutex_unlock(&lock);
+  give_lock();
 }
 
 /* A block: the kernel with its arguments and tables (NULL: none), these
@@ -312,7 +333,7 @@ void fsgpu_release_buffer(WGPUBuffer b) {
 char *fsgpu_run(WGPUComputePipeline pipeline, WGPUBuffer args, WGPUBuffer tables,
                 const uint8_t *params, uint32_t width, uint32_t height,
                 uint8_t *rgb, uint32_t *issues) {
-  pthread_mutex_lock(&lock);
+  take_lock();
   char *err = NULL;
   if (lost) { err = copy_string(lost); goto done; }
   uint64_t n = (uint64_t)width * height;
@@ -356,12 +377,12 @@ char *fsgpu_run(WGPUComputePipeline pipeline, WGPUBuffer args, WGPUBuffer tables
     cb.userdata1 = &w;
     wgpuBufferMapAsync(read, WGPUMapMode_Read, 0, 4 * n, cb);
     /* (the GPU draws without the lock: other blocks go in meanwhile) */
-    pthread_mutex_unlock(&lock);
+    give_lock();
     while (!atomic_load(&w.done)) {
       wgpuDevicePoll(device, 0, NULL);
-      if (!atomic_load(&w.done)) nanosleep(&(struct timespec){ 0, 50000 }, NULL);
+      if (!atomic_load(&w.done)) nap();
     }
-    pthread_mutex_lock(&lock);
+    take_lock();
     if (!w.ok) err = w.message;
     else {
       const uint32_t *px = wgpuBufferGetConstMappedRange(read, 0, 4 * n);
@@ -381,13 +402,13 @@ char *fsgpu_run(WGPUComputePipeline pipeline, WGPUBuffer args, WGPUBuffer tables
   wgpuBufferDestroy(out); wgpuBufferRelease(out);
   wgpuBufferDestroy(read); wgpuBufferRelease(read);
 done:
-  pthread_mutex_unlock(&lock);
+  give_lock();
   return err;
 }
 
 /* What GPU this is ("" before fsgpu_init succeeds): for messages. */
 char *fsgpu_name(void) {
-  pthread_mutex_lock(&lock);
+  take_lock();
   char *s;
   if (!adapter) s = copy_string("");
   else {
@@ -396,6 +417,6 @@ char *fsgpu_name(void) {
     s = copy_view("", info.device);
     wgpuAdapterInfoFreeMembers(info);
   }
-  pthread_mutex_unlock(&lock);
+  give_lock();
   return s;
 }

@@ -21,7 +21,7 @@ flag use-llvm
   manual: True
 
 flag gpu
-  description: Offer the GPU backends too (where this build has a GPU device: macOS and Linux, for now)
+  description: Offer the GPU backends too (where this build has a GPU device: macOS, Linux and Windows)
   default: True
   manual: True
 
