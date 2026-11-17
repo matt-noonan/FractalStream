@@ -489,6 +489,8 @@ const titleMenu = menuButton(() => [
   { kind: "action", label: "Save project", shortcut: "⌘S", run: () => void save(false) },
   { kind: "action", label: "Save project as…", shortcut: "⇧⌘S", run: () => void save(true) },
   { kind: "action", label: "Close project", run: () => void closeProject() },
+  // (apart, so that Copy link isn't a slip away from closing)
+  { kind: "separator" },
   { kind: "action", label: "Copy link", run: copyLink,
     help: editorOpen ? "A link that opens this project as it is now, with its script open"
                      : "A link that opens this project as it is now" },
