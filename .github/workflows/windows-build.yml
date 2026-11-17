@@ -203,6 +203,14 @@ jobs:
         cp "$LLVM_BIN/llvm-config.exe" "$LLVM_BIN/llvm-config-12.exe"
         "$LLVM_BIN/llvm-config-12" --version
 
+    # wgpu-native, for the GPU backends: its DLL (see dev-tools/wgpu/fetch.sh),
+    # on the PATH from here on: for Template Haskell, the tests, and the
+    # executables' DLLs (bundled with them below).
+    - name: Fetch wgpu-native (the GPU backends' WebGPU)
+      run: |
+        dev-tools/wgpu/fetch.sh
+        cygpath -w "$PWD/third_party/wgpu-native/lib" >> $GITHUB_PATH
+
     - name: Build Haskell dependencies
       run: |
         export PATH="$PATH:$GHC_MINGW/bin"   # llvm-config needs libc++.dll
@@ -317,6 +325,13 @@ jobs:
         FractalStream/cli/fsrun.exe --version
         FractalStream/cli/fsrun.exe snapshot --project plane.yaml --viewer Plane --output plane.png
         ls -l plane.png
+        # (on the GPU: the runner has none, but Direct3D 12's software one,
+        # WARP, may draw; either way it mustn't crash)
+        status=0
+        FractalStream/cli/fsrun.exe snapshot --backend gpu-df64 --project plane.yaml --viewer Plane --output plane-gpu.png || status=$?
+        echo "fsrun on the GPU: exit status $status"
+        if [ "$status" -gt 1 ]; then echo "fsrun crashed on the GPU"; exit 1; fi
+        ls FractalStream/cli | grep -i wgpu
 
     - if: ${{ inputs.backend == 'llvm' }}
       name: Upload the rendered image

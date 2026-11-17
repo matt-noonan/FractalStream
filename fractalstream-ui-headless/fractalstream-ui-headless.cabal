@@ -20,7 +20,7 @@ flag use-llvm
   manual: True
 
 flag gpu
-  description: Offer the GPU backends too (where the platform has a GPU device: macOS, Linux, and wasm32 with WebGPU)
+  description: Offer the GPU backends too (where the platform has a GPU device: macOS, Linux, Windows, and wasm32 with WebGPU)
   default: True
   manual: True
 
