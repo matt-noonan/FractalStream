@@ -168,6 +168,12 @@ executable FractalStream
      ghc-options: -optl-mwindows -fno-gen-manifest
      build-depends: directory, filepath
 
+  -- On Linux, export nothing from static libraries: LLVM is linked in
+  -- statically, and a graphics driver that uses its own LLVM (Mesa's,
+  -- loaded by wgpu) would otherwise call ours, and crash.
+  if os(linux)
+     ld-options: -Wl,--exclude-libs,ALL
+
   -- (the backends: see src/Backends.hs)
   if flag(use-llvm)
      build-depends: fractalstream-backend-llvm

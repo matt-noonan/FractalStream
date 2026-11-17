@@ -39,8 +39,15 @@ jobs:
         if gh release view "$DEPS_RELEASE" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
           echo "$DEPS_RELEASE is there"
         else
-          gh release create "$DEPS_RELEASE" --repo "$GITHUB_REPOSITORY" --prerelease \
-            --target "$GITHUB_SHA" --title "CI dependencies ($DEPS_RELEASE)" \
+          # Its tag is on a commit of its own, with nothing in it, on no
+          # branch: one on a branch would be what `git describe --tags`
+          # (githash, and the web build) names FractalStream's version by.
+          export GIT_AUTHOR_NAME=github-actions GIT_AUTHOR_EMAIL=github-actions@users.noreply.github.com
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit="$(git commit-tree "$(git hash-object -w -t tree /dev/null)" -m "CI dependencies: $DEPS_RELEASE")"
+          git push origin "$commit:refs/tags/$DEPS_RELEASE"
+          gh release create "$DEPS_RELEASE" --repo "$GITHUB_REPOSITORY" --prerelease --verify-tag \
+            --title "CI dependencies ($DEPS_RELEASE)" \
             --notes "Not a FractalStream release: the native dependencies its CI builds use, made by the CI dependencies workflow (.github/workflows/deps.yml) from dev-tools/ci/deps.env."
         fi
 

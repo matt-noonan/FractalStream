@@ -143,9 +143,15 @@ jobs:
       run: |
         set -euo pipefail
         ldd fsrun-dist/bin/fsrun
-        # (LLVM is linked in)
+        # (LLVM is linked in, and none of it is exported: a graphics
+        # driver that uses its own LLVM would call ours instead, and crash)
         if ldd fsrun-dist/bin/fsrun | grep -qi llvm; then
           echo "fsrun links a shared LLVM"; exit 1
+        fi
+        exported="$(nm -D --defined-only fsrun-dist/bin/fsrun | grep -ci llvm || true)"
+        echo "LLVM symbols fsrun exports: $exported"
+        if [ "$exported" != 0 ]; then
+          echo "fsrun exports LLVM's symbols"; exit 1
         fi
         if ldd fsrun-dist/bin/fsrun | grep -q "not found"; then
           echo "Some libraries were not found"; exit 1
