@@ -477,7 +477,8 @@ async function links() {
   await page.keyboard.type("\n# shared with a note");
   await page.waitForTimeout(200);
   const long = await copied();
-  c.check(/#project=.*&name=mandelbrot-and-julia\.fs$/.test(long ?? ""), `edited, it's the whole project (${long?.length} characters)`);
+  // (and opens its script, since that's open: `&edit`)
+  c.check(/#project=.*&name=mandelbrot-and-julia\.fs&edit$/.test(long ?? ""), `edited, it's the whole project, with its script open (${long?.length} characters)`);
   await visit(long);
   project = await app.opened();
   c.check(project.script.includes("# shared with a note") && !project.library, "opened, with what was typed, as a project of its own");

@@ -41,6 +41,7 @@ import qualified Data.Map as Map
 import qualified Data.Yaml as YAML
 
 import UI.Welcome
+import UI.BundledFont (addBundledFont)
 
 import Backends (withBackend)
 import Actor.Viewer
@@ -111,6 +112,10 @@ runApp :: IO ()
 runApp = withBackend $ \backend -> start $ do
 
   wxcAppSetAppName "FractalStream"
+
+  -- (the editors' default font, before any editor asks for it)
+  fontAdded <- addBundledFont
+  unless fontAdded $ putStrLn "Couldn't add DejaVu Sans to the editors' fonts"
 
   activeSessions <- newVariable []
   libraryWindow <- newIORef Nothing

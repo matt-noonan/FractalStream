@@ -106,6 +106,8 @@ executable FractalStream
                        UI.AutocolorEditor
                        UI.MovieMaker
                        UI.Magnify
+                       UI.BundledFont
+                       UI.Spinner
 
   build-depends:       base >=4.8 && <5
                      , fractalstream-core
@@ -151,6 +153,13 @@ executable FractalStream
         extra-libraries: c++
      else
         extra-libraries: stdc++
+
+  -- The editors' font, added to the process's own (see UI.BundledFont).
+  c-sources: cbits/bundled-font.c
+  if os(windows)
+     extra-libraries: gdi32
+  if os(darwin)
+     frameworks: CoreText CoreGraphics CoreFoundation
 
   -- A GUI program, without a console window. GHC's default manifest is left
   -- out, since the Windows resources Setup.hs links in (windows/*.rc)

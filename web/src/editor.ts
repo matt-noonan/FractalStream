@@ -12,6 +12,8 @@
 // - Symbols can be typed by their names (symbols.ts): \theta and a space
 //   is θ and a space; Tab completes a name, Return finishes one, Escape
 //   leaves it as typed; pasted names become their symbols.
+// - Return indents the new line as the one it breaks, and a level
+//   further after a ":" (as the desktop's does).
 // - Rebuild (or Ctrl/Cmd-Enter) builds the project again from it (and if
 //   that works, the page closes the editor); Revert goes back to the
 //   project's script.
@@ -20,7 +22,7 @@
 //   always do, as on the desktop: by their indentation, UI.CodeEditor's
 //   foldLevelsForText); its font and colors are the page's stylesheet's.
 
-import { Compartment, EditorState, Prec, StateEffect, StateField, RangeSetBuilder, Transaction,
+import { Compartment, EditorSelection, EditorState, Prec, type StateCommand, StateEffect, StateField, RangeSetBuilder, Transaction,
          type Extension } from "@codemirror/state";
 import { EditorView, Decoration, type DecorationSet, keymap, lineNumbers, showTooltip, type Tooltip, ViewPlugin,
          type ViewUpdate } from "@codemirror/view";
@@ -101,6 +103,50 @@ function folds(codeBlocks: boolean): Extension {
     return end < 0 ? null : { from: line.to, to: end };
   });
 }
+
+// --- Return: a new line, indented as the line it breaks is, and one level
+// further if that opens a block (ends with ":", not counting a comment),
+// as the desktop's (Language.Editor.newLineIndent, UI.EditorKeys.newLine)
+
+/** How many spaces one level of indentation is (Language.Editor.indentUnit). */
+const INDENT_UNIT = 2;
+
+/** A line without its comment: from a "#" that isn't in quotes on. */
+function withoutComment(line: string): string {
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === "#" && !inQuotes) return line.slice(0, i);
+    if (c === "\\" && inQuotes) i++;
+    else if (c === '"') inQuotes = !inQuotes;
+  }
+  return line;
+}
+
+/** How far to indent the line a break starts, given what's before the
+    break on its line. */
+export function newLineIndent(before: string): number {
+  const indent = before.length - before.replace(/^ +/, "").length;
+  return withoutComment(before).trimEnd().endsWith(":") ? indent + INDENT_UNIT : indent;
+}
+
+/** Break the line at each cursor (replacing what's selected): the spaces
+    around the break go, as they'd only be left trailing, or add to the
+    indentation. In a line's indentation, the new line's is as deep. */
+const newLine: StateCommand = ({ state, dispatch }) => {
+  dispatch(state.update(state.changeByRange((range) => {
+    const line = state.doc.lineAt(range.from);
+    const before = line.text.slice(0, range.from - line.from);
+    const after = state.doc.sliceString(range.to, state.doc.lineAt(range.to).to);
+    const allSpaces = /^ *$/.test(before);
+    const indent = allSpaces ? before.length : newLineIndent(before);
+    const from = allSpaces ? range.from : range.from - (before.length - before.trimEnd().length);
+    const to = range.to + (after.length - after.trimStart().length);
+    const insert = "\n" + " ".repeat(indent);
+    return { changes: { from, to, insert }, range: EditorSelection.cursor(from + insert.length) };
+  }), { scrollIntoView: true, userEvent: "input" }));
+  return true;
+};
 
 export class ScriptEditor {
   readonly element: HTMLElement;
@@ -310,6 +356,8 @@ export class ScriptEditor {
           return true;
         } },
       { key: "Mod-Enter", run: () => { editor.rebuild(); return true; } },
+      // (after finishing an escape, if there was one)
+      { key: "Enter", run: newLine },
     ]);
     // (the escape being typed, boxed, with what it would become below it)
     const escapeBox = EditorView.decorations.compute([escapeStart, "selection"], (state) => {

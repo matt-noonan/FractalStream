@@ -35,11 +35,13 @@ literal() {
   printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
 }
 
-# The same things githash reports for the desktop build.
+# The same things githash reports for the desktop build; but dirty only
+# for changes to tracked files: an untracked one (notes, downloaded builds,
+# local projects) can't change what's built.
 tag=$(git describe --always --tags)
 branch=$(git rev-parse --abbrev-ref HEAD)
 hash=$(git rev-parse HEAD)
-if [ -n "$(git status --porcelain)" ]; then dirty=True; else dirty=False; fi
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then dirty=True; else dirty=False; fi
 
 module="-- Written by dev-tools/wasm/build.sh; don't edit (or commit) it.
 module FractalStream.GitInfo (gitHash, gitTag, gitBranch, gitDirty) where

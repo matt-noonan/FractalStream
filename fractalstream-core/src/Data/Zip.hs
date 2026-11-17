@@ -10,6 +10,7 @@ module Data.Zip
   ( isZip
   , readZip
   , writeZip
+  , Packing(..)
   , crc32
   ) where
 
@@ -76,20 +77,31 @@ readZip bytes = do
       rest <- go (k - 1) (at + 46 + nameLen + extraLen + commentLen)
       pure ((name, contents) : rest)
 
--- | An archive of these entries (each deflated), or why it can't be one
--- (an entry, or the archive, past 4 GB).
-writeZip :: [(FilePath, BL.ByteString)] -> Either String BL.ByteString
-writeZip entries = do
+-- | How an archive's entries are written.
+data Packing
+  = Deflated
+    -- ^ compressed, as archives are saved
+  | Stored
+    -- ^ as they are: for the web app, whose page compresses them with the
+    -- browser's own zlib (which is much faster in Safari than the engine's)
+  deriving (Eq, Show)
+
+-- | An archive of these entries, or why it can't be one (an entry, or
+-- the archive, past 4 GB).
+writeZip :: Packing -> [(FilePath, BL.ByteString)] -> Either String BL.ByteString
+writeZip packing entries = do
   locals <- forM entries $ \(path, contents) -> do
     let name = Text.encodeUtf8 (Text.pack path)
-        packed = Raw.compressWith Raw.defaultCompressParams { Raw.compressLevel = Raw.defaultCompression } contents
+        packed = case packing of
+          Deflated -> Raw.compressWith Raw.defaultCompressParams { Raw.compressLevel = Raw.defaultCompression } contents
+          Stored -> contents
         size = BL.length contents
         packedSize = BL.length packed
     when (size >= 0xffffffff || packedSize >= 0xffffffff) $
       Left ("its entry " ++ show path ++ " is too large for a zip archive (4 GB)")
     pure (name, crc32 contents, fromIntegral packedSize, fromIntegral size, packed)
   let header (name, crc, packedSize, size, _) =
-        w16 20 <> w16 0x0800 <> w16 8 <> w16 0 <> w16 0x0021      -- version, UTF-8 names, deflate, 1980-01-01
+        w16 20 <> w16 0x0800 <> w16 method <> w16 0 <> w16 0x0021      -- version, UTF-8 names, method, 1980-01-01
         <> w32 crc <> w32 packedSize <> w32 size <> w16 (fromIntegral (BS.length name)) <> w16 0
       localOf e@(name, _, _, _, packed) = w32 0x04034b50 <> header e <> B.byteString name <> B.lazyByteString packed
       localSize (name, _, packedSize, _, _) = 30 + fromIntegral (BS.length name) + fromIntegral packedSize :: Integer
@@ -107,6 +119,7 @@ writeZip entries = do
     <> w32 0x06054b50 <> w16 0 <> w16 0 <> w16 (fromIntegral (length locals)) <> w16 (fromIntegral (length locals))
     <> w32 (fromIntegral cdSize) <> w32 (fromIntegral cdStart) <> w16 0
   where
+    method = case packing of Deflated -> 8; Stored -> 0
     w16 = B.word16LE
     w32 = B.word32LE
 

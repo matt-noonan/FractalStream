@@ -54,7 +54,7 @@ data Settings = Settings
     -- (a @FractalStream@ folder in their documents folder).
   , setEditorFont     :: Maybe String
     -- ^ The font code editors use, by name, or 'Nothing' for the
-    -- platform's usual fixed-width font ('defaultEditorFont').
+    -- default, DejaVu Sans ('defaultEditorFont').
   , setEditorFontSize :: Maybe Int
     -- ^ The size of that font, in points, or 'Nothing' for the editor's
     -- usual size.
@@ -111,12 +111,10 @@ defaultSettings = Settings Nothing Nothing Nothing False False True False Map.em
 defaultSphereShading :: Int
 defaultSphereShading = 75
 
--- | The platform's usual fixed-width font.
+-- | The editors' font, unless the settings say: DejaVu Sans, which has
+-- the symbols scripts use (the wx app carries a copy: see UI.BundledFont).
 defaultEditorFont :: String
-defaultEditorFont = case os of
-  "darwin"  -> "Monaco"
-  "mingw32" -> "Consolas"
-  _         -> "Monospace"
+defaultEditorFont = "DejaVu Sans"
 
 -- | The font code editors use.
 editorFont :: Settings -> String

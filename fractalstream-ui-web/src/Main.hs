@@ -247,7 +247,7 @@ module Main (main) where
 import FractalStream.Prelude
 
 import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, projectFileName, LoadedProject(..), ensembleFields, FieldOwner(..), ensembleCommonDefs,
-                       encodeEnsemble, readProjectMetadata, changedValues, applySavedValues, ensembleTables, watchValues,
+                       encodeEnsemble, encodeEnsembleWith, readProjectMetadata, changedValues, applySavedValues, ensembleTables, watchValues,
                        projectStateKeys, withProjectKeys, rewriteProjectFile, projectScript)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 import Actor.SavedTables (captureTables, applySavedTables, TableSummary(..), summarizeTables)
@@ -312,6 +312,7 @@ import qualified Data.ByteString.Internal as BSI
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
+import Data.Zip (Packing(..))
 import Data.IORef
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
@@ -702,7 +703,9 @@ save views withTables withDraft draft = guarded $ readIORef sessionRef >>= \case
       1 -> ensembleTables sEnsemble >>= captureTables >>= setValue' (ensembleSavedTables sEnsemble)
       0 -> setValue' (ensembleSavedTables sEnsemble) Map.empty
       _ -> pure ()
-    contents <- encodeEnsemble sEnsemble
+    -- (an archive's entries as they are: the page compresses them, with
+    -- the browser's zlib, before it's saved: see web/src/archive.ts)
+    contents <- encodeEnsembleWith Stored sEnsemble
     -- (and its tables go, now they're written: they're in the project)
     when (ensembleBuilt sEnsemble) $ setValue' (ensembleSavedTables sEnsemble) Map.empty
     setUnsaved False

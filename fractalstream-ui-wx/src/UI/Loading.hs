@@ -20,7 +20,7 @@ module UI.Loading
 import FractalStream.Prelude hiding (get)
 import FractalStream.Quoted (quoted)
 
-import UI.ToolProgress (spinnerFrames)
+import UI.Spinner (spinnerRing)
 
 import Graphics.UI.WX hiding (when, Color, Layout, finally)
 import qualified Graphics.UI.WXCore.Events as WX
@@ -59,11 +59,12 @@ showLoading name worker = do
   d <- dialog objectNull [ text := "Opening a project" ]
   p <- panel d []
   message <- staticText p [ text := "Loading " ++ quoted name ++ "..." ]
-  spinner <- staticText p [ text := spinnerFrames !! 0 ++ "  0 s" ]
+  spinner <- spinnerRing p
+  seconds <- staticText p [ text := "0 s" ]
   cancelButton <- button p [ text := "Cancel" ]
   set d [ layout := container p $ margin 12 $ column 10
             [ hfill (minsize (sz 360 (-1)) (widget message))
-            , widget spinner
+            , row 8 [ widget spinner, valignCenter (widget seconds) ]
             , row 8 [ hglue, widget cancelButton ] ] ]
   started <- getCurrentTime
   cancelling <- newIORef False
@@ -82,14 +83,12 @@ showLoading name worker = do
     -- (closing the window cancels too; it goes once loading has stopped)
     WX.windowOnClose d cancelLoading
     ticker <- timer d [ interval := 100 ]
-    ticks <- newIORef (0 :: Int)
     set ticker [ on command := poll worker >>= \case
                    Just r -> set ticker [ enabled := False ] >> done (Just r)
                    Nothing -> do
-                     n <- atomicModifyIORef' ticks (\k -> (k + 1, k + 1))
                      now <- getCurrentTime
-                     let seconds = floor (realToFrac (diffUTCTime now started) :: Double) :: Int
-                     set spinner [ text := printf "%s  %d s" (spinnerFrames !! (n `mod` length spinnerFrames)) seconds ] ]
+                     let elapsed = floor (realToFrac (diffUTCTime now started) :: Double) :: Int
+                     set seconds [ text := printf "%d s" elapsed ] ]
   void (windowDestroy d)
   readIORef cancelling <&> \case
     True -> Nothing

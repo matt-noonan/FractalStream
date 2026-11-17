@@ -9,14 +9,17 @@
 //   #url=<address>                     a project file on the web (where
 //                                      its host lets other pages read it)
 //
+// Any of them can have "&edit" on the end, to open the project with its
+// script editor showing (Copy link adds it when the editor's open).
+//
 // Compressed with the browser's own deflate, in base64url.
 
 import type { Message } from "./protocol.js";
 
-export type Link =
+export type Link = { edit: boolean } & (
   | { kind: "library"; id: string; state: string }
   | { kind: "project"; name: string; bytes: Uint8Array }
-  | { kind: "url"; url: string };
+  | { kind: "url"; url: string });
 
 async function squeeze(bytes: Uint8Array, how: "compress" | "decompress"): Promise<Uint8Array> {
   const stream = new Blob([bytes]).stream()
@@ -35,15 +38,17 @@ function fromBase64Url(text: string): Uint8Array {
   return Uint8Array.from(s, (c) => c.charCodeAt(0));
 }
 
-/** A link to what the engine said a link shows (see "share"). */
-export async function makeLink(m: Extract<Message, { type: "share" }>): Promise<string> {
+/** A link to what the engine said a link shows (see "share"), opening
+    with the script editor showing, or not. */
+export async function makeLink(m: Extract<Message, { type: "share" }>, edit: boolean): Promise<string> {
   const base = location.origin + location.pathname + location.search;
+  const editing = edit ? "&edit" : "";
   if (m.library !== null && m.state !== null) {
     const state = await squeeze(new TextEncoder().encode(JSON.stringify(m.state)), "compress");
-    return `${base}#open=${m.library}&s=${toBase64Url(state)}`;
+    return `${base}#open=${m.library}&s=${toBase64Url(state)}${editing}`;
   }
   const file = await squeeze(new TextEncoder().encode(m.file ?? ""), "compress");
-  return `${base}#project=${toBase64Url(file)}&name=${encodeURIComponent(m.fileName)}`;
+  return `${base}#project=${toBase64Url(file)}&name=${encodeURIComponent(m.fileName)}${editing}`;
 }
 
 /** The link in an address's "#" part, if there is one: a link this page
@@ -52,16 +57,17 @@ export async function makeLink(m: Extract<Message, { type: "share" }>): Promise<
 export async function readLink(hash: string): Promise<Link | null> {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   const open = params.get("open"), project = params.get("project"), url = params.get("url");
+  const edit = params.has("edit");
   if (open) {
     const state = params.get("s");
-    return { kind: "library", id: open,
+    return { kind: "library", id: open, edit,
              state: state ? new TextDecoder().decode(await squeeze(fromBase64Url(state), "decompress")) : "{}" };
   }
   if (project) {
-    return { kind: "project", name: params.get("name") || "Shared project.fs",
+    return { kind: "project", name: params.get("name") || "Shared project.fs", edit,
              bytes: await squeeze(fromBase64Url(project), "decompress") };
   }
-  if (url) return { kind: "url", url };
+  if (url) return { kind: "url", url, edit };
   return null;
 }
 

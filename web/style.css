@@ -234,7 +234,11 @@ body {
 }
 .viewer-pointer[hidden] { display: none; }
 .viewer-running:not([hidden]) ~ .viewer-pointer { bottom: 44px; }
-.viewer-running .spinner { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 4.5em; }
+.viewer-running .spinner {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-variant-numeric: tabular-nums; color: var(--muted); min-width: 4.5em;
+}
+.viewer-running .spinner-ring { width: 13px; height: 13px; }
 .viewer-running .message { flex: 1 0 auto; white-space: nowrap; }
 .viewer-running button {
   font: inherit; padding: 2px 10px; border-radius: 6px; cursor: pointer;
@@ -520,3 +524,22 @@ body {
 /* (its title, and which FractalStream it is, after it; under it, on a phone) */
 .welcome-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .welcome-version { font-size: 12px; color: var(--muted); user-select: all; white-space: nowrap; }
+
+/* Opening a project (setOpening in main.ts): this in the library's place,
+   from the start for a link the page's loaded with (index.html), or after
+   a moment for a project that's slow to open; until it's open (or it
+   fails, back to the library). */
+#project-loading { display: none; }
+.loading-project body:not(.in-project) #welcome { display: none; }
+.loading-project body:not(.in-project) #project-loading {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  height: 100vh; height: 100dvh; color: var(--muted); font-size: 15px;
+}
+/* A turning ring: the loading screen's, and a running tool's (main.ts). */
+.spinner-ring {
+  flex: none; width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid var(--line); border-top-color: var(--accent);
+  animation: spinner-turn 0.9s linear infinite;
+}
+@keyframes spinner-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner-ring { animation-duration: 3s; } }

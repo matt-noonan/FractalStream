@@ -12,7 +12,7 @@ import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle 
 import { Desk, menuButton, type MenuItem } from "./windows.js";
 import type { Movies } from "./capture.js";
 import { Welcome } from "./welcome.js";
-import { backendLabels, backendNote, onPreferences, preferences, setGpuMissing, smoothingNow, type Backend, type Preferences } from "./preferences.js";
+import { backendLabels, backendNote, isMac, onPreferences, preferences, setGpuMissing, smoothingNow, type Backend, type Preferences } from "./preferences.js";
 import { showPreferences } from "./preferences-dialog.js";
 import { makeLink, readLink, hasLink, fetchProject } from "./links.js";
 import { sideBySide, fitted, tiled, toFractions, fromFractions, narrowScreen, type Place, type Room } from "./layout.js";
@@ -88,7 +88,7 @@ function clearNotices() { noticesEl.replaceChildren(); }
 // open, and the project's.
 
 const welcome = new Welcome({
-  open: (section, entry) => send({ type: "open", section, entry }),
+  open: (section, entry) => { setOpening(true); send({ type: "open", section, entry }); },
   openFile: async () => openFile(await pickFile()),
   preferences: showPreferences,
 });
@@ -96,10 +96,23 @@ document.getElementById("welcome")!.append(welcome.element);
 const projectScreen = document.getElementById("project-screen")!;
 
 function showScreen(project: boolean) {
+  setOpening(false);
   document.body.classList.toggle("in-project", project);
   projectScreen.hidden = !project;
   welcome.element.parentElement!.hidden = project;
   if (!project) welcome.focus();
+}
+
+/** A project's being opened, or not any more (it's open, or it failed):
+    the library says so, and if it takes a while (as the desktop's waits:
+    UI.Loading), a loading screen takes the library's place, as it does
+    from the start for a link the page was loaded with (index.html). */
+let loadingTimer: number | undefined;
+function setOpening(on: boolean) {
+  welcome.setOpening(on);
+  clearTimeout(loadingTimer);
+  if (on) loadingTimer = window.setTimeout(() => document.documentElement.classList.add("loading-project"), 500);
+  else document.documentElement.classList.remove("loading-project");
 }
 
 // The browser's Back button closes the project (asking first, as Close
@@ -132,6 +145,7 @@ window.addEventListener("popstate", () => {
 
 let libraryLoaded = false;
 
+
 async function openLink() {
   if (!libraryLoaded || !hasLink(location.hash)) return;
   const hash = location.hash;
@@ -140,24 +154,29 @@ async function openLink() {
   try {
     link = await readLink(hash);
   } catch {
+    setOpening(false);
     say("That link couldn't be read: it may have been cut short, or changed.", true);
     return;
   }
-  if (!link) return;
+  if (!link) { setOpening(false); return; }
   switch (link.kind) {
     case "library":
       if (current && !(await offerToSave("opening the link"))) return;
-      welcome.setOpening(true);
+      setOpening(true);
+      editOnOpen = link.edit;
       send({ type: "openLink", id: link.id, state: link.state });
       break;
     case "project":
-      await openFile({ file: new File([link.bytes as BlobPart], link.name), handle: null });
+      await openFile({ file: new File([link.bytes as BlobPart], link.name), handle: null }, link.edit);
       break;
     case "url":
+      // (fetching it is part of opening it)
+      setOpening(true);
       try {
         const { name, bytes } = await fetchProject(link.url);
-        await openFile({ file: new File([bytes], name), handle: null });
+        await openFile({ file: new File([bytes], name), handle: null }, link.edit);
       } catch (e) {
+        setOpening(false);
         say(`Couldn't open ${link.url}: ${e instanceof Error ? e.message : e}. ` +
             "(Its server has to let other web pages read it, as GitHub's raw files and Gists do.)", true);
       }
@@ -173,11 +192,13 @@ function copyLink() {
 }
 
 async function linkMade(m: Extract<Message, { type: "share" }>) {
-  const link = await makeLink(m);
+  // (with the script editor open, the link opens it too)
+  const link = await makeLink(m, editorOpen);
+  const opens = editorOpen ? "this project, as it is now, with its script open" : "this project, as it is now";
   try {
     await navigator.clipboard.writeText(link);
-    say(m.library ? "Link copied: it opens this project, as it is now."
-                  : `Link copied: it opens this project, as it is now (its whole script is in it: ${Math.round(link.length / 1024)} KB).`);
+    say(m.library ? `Link copied: it opens ${opens}.`
+                  : `Link copied: it opens ${opens} (its whole script is in it: ${Math.round(link.length / 1024)} KB).`);
   } catch {
     showLink(link);
   }
@@ -208,6 +229,9 @@ function showLink(link: string) {
 let current: { fileName: string; library: boolean; handle: FileHandle | null; saveTables: boolean | null } | null = null;
 /** The handle of the file being opened, until its project comes. */
 let opening: FileHandle | null = null;
+/** Whether the project being opened opens with its script editor showing
+    (as a link can ask: see links.ts), until it comes. */
+let editOnOpen = false;
 /** Where the next saved file goes (see "file" messages), and what to tell
     once it's written (or not). */
 let pendingSave: { write: (name: string, bytes: ArrayBuffer) => Promise<string>; done: (ok: boolean) => void } | null = null;
@@ -221,12 +245,13 @@ function unsaved(): boolean {
 // (leaving the page, as closing the project, asks first)
 window.addEventListener("beforeunload", (e) => { if (unsaved()) e.preventDefault(); });
 
-async function openFile(opened: Opened | null) {
+async function openFile(opened: Opened | null, edit = false) {
   if (!opened) return;
   // (another project, in place of the open one: as closing it, asked first)
-  if (current && !(await offerToSave("opening another project"))) return;
+  if (current && !(await offerToSave("opening another project"))) { setOpening(false); return; }
   opening = opened.handle;
-  welcome.setOpening(true);
+  editOnOpen = edit;
+  setOpening(true);
   const bytes = await opened.file.arrayBuffer();
   engine.postMessage({ type: "openFile", name: opened.file.name, bytes } satisfies Request, [bytes]);
 }
@@ -464,10 +489,14 @@ const titleMenu = menuButton(() => [
   { kind: "action", label: "Save project", shortcut: "⌘S", run: () => void save(false) },
   { kind: "action", label: "Save project as…", shortcut: "⇧⌘S", run: () => void save(true) },
   { kind: "action", label: "Close project", run: () => void closeProject() },
-  { kind: "action", label: "Copy link", help: "A link that opens this project as it is now", run: copyLink },
+  // (apart, so that Copy link isn't a slip away from closing)
+  { kind: "separator" },
+  { kind: "action", label: "Copy link", run: copyLink,
+    help: editorOpen ? "A link that opens this project as it is now, with its script open"
+                     : "A link that opens this project as it is now" },
   { kind: "separator" },
   { kind: "action", label: "Edit project details…", run: () => send({ type: "details" }) },
-  { kind: "toggle", label: "Edit project script", on: editorOpen, toggle: () => (editorOpen ? hideEditor() : showEditor()) },
+  { kind: "toggle", label: "Edit project script", shortcut: isMac ? "⌘E" : "Ctrl+E", on: editorOpen, toggle: toggleEditor },
   { kind: "separator" },
   { kind: "action", label: "Fit windows to the page", run: () => relayout(true) },
   { kind: "separator" },
@@ -495,6 +524,13 @@ document.addEventListener("keydown", async (e) => {
   const key = e.key.toLowerCase();
   if (key === "o") { e.preventDefault(); openFile(await pickFile()); }
   else if (key === "s") { e.preventDefault(); save(e.shiftKey); }
+  // (the script editor, open or closed, as the desktop's Ctrl+E: Cmd+E on
+  // a Mac, where Control-E is the end of the line; and elsewhere, not
+  // when the editor's taken it, as emacs keys do)
+  else if (key === "e" && !e.shiftKey && !e.altKey && (isMac ? e.metaKey : e.ctrlKey) && !e.defaultPrevented && current) {
+    e.preventDefault();
+    toggleEditor();
+  }
 });
 document.addEventListener("dragover", (e) => { e.preventDefault(); });
 document.addEventListener("drop", async (e) => { e.preventDefault(); openFile(await droppedFile(e)); });
@@ -849,6 +885,8 @@ function showEditor() {
   editorOpen = true;
   scriptEditor.focus();
 }
+
+function toggleEditor() { if (editorOpen) hideEditor(); else showEditor(); }
 
 function hideEditor() {
   editorOverlay?.remove();
@@ -1425,9 +1463,10 @@ class ViewerView {
   /** A handler has been running for a while: say so, with a spinner and
       the time since it started, and buttons to stop it. */
   showRunning(what: "tool" | "overlay", name: string | null) {
-    const frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
     const started = performance.now() - 250;
-    const spinner = el("span", { className: "spinner" });
+    // (a turning ring, as the page's loading screen has, and the seconds)
+    const seconds = el("span");
+    const spinner = el("span", { className: "spinner" }, el("span", { className: "spinner-ring" }), seconds);
     const message = el("span", { className: "message",
       textContent: what === "tool" ? `Running the “${name}” tool…` : "Running the overlay…" });
     const stop = el("button", { type: "button", textContent: "Stop",
@@ -1445,13 +1484,10 @@ class ViewerView {
       nav.addEventListener("click", () => stopping(true));
       buttons.push(nav);
     }
-    let tick = 0;
-    const update = () => {
-      spinner.textContent = `${frames[tick++ % frames.length]} ${Math.floor((performance.now() - started) / 1000)} s`;
-    };
+    const update = () => { seconds.textContent = `${Math.floor((performance.now() - started) / 1000)} s`; };
     update();
     window.clearInterval(this.runTimer);
-    this.runTimer = window.setInterval(update, 100);
+    this.runTimer = window.setInterval(update, 250);
     this.runEl.replaceChildren(spinner, message, ...buttons);
     this.runEl.hidden = false;
   }
@@ -2094,22 +2130,24 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       current = { fileName: m.fileName, library: m.library, handle: m.library || m.new ? null : opening,
                   saveTables: m.savedTables ? true : null };
       opening = null;
-      welcome.setOpening(false);
+      setOpening(false);
       showFileName();
       projectScript = m.script;
       showScreen(true);
       enterHistory();
       showProject(m.title, m.panel, m.viewers, m.views);
       if (m.notes.length) notice(`Translation notes:\n${m.notes.map((n) => `• ${n}`).join("\n")}`, "info");
-      // (its editor says why, if its script doesn't build)
-      if (m.edit) showEditor();
+      // (its editor says why, if its script doesn't build; or a link asked for it)
+      if (m.edit || editOnOpen) showEditor();
+      editOnOpen = false;
       break;
     case "ancient":
       opening = null;
-      welcome.setOpening(false);
+      editOnOpen = false;
+      setOpening(false);
       notice(`“${m.name}” looks like a file from an old version of FractalStream (1.0). ` +
              `Translate it into a new project? (The old file is left as it is.)`, "info",
-             [{ label: "Translate", run: () => { welcome.setOpening(true); send({ type: "translate" }); } }]);
+             [{ label: "Translate", run: () => { setOpening(true); send({ type: "translate" }); } }]);
       break;
     case "pointer": viewers.get(m.viewer)?.showPointer(m.text); break;
     case "view": viewers.get(m.viewer)?.moved(m); break;
@@ -2152,11 +2190,11 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     case "viewerIssues": viewers.get(m.viewer)?.showIssues(m.message); break;
     case "backend": drawnWith.set(m.viewer, { backend: m.backend, declined: m.declined }); break;
     case "gpu": setGpuMissing(m.error); break;
-    case "error": colorizerChange = null; welcome.setOpening(false); say(m.message, true); console.error(m.message); break;
+    case "error": colorizerChange = null; editOnOpen = false; setOpening(false); say(m.message, true); console.error(m.message); break;
     case "details": showDetails(m); break;
     case "patch": viewers.get(m.viewer)?.patch(m); break;
   }
 });
-engine.addEventListener("error", (e) => { welcome.setOpening(false); say(`The engine failed: ${e.message}`, true); });
+engine.addEventListener("error", (e) => { setOpening(false); say(`The engine failed: ${e.message}`, true); });
 // (drawings' text is in the core's font: redraw once it's loaded)
 document.fonts.load(`13px "DejaVu Sans"`).then(() => viewers.forEach((v) => v.showDrawing(v.drawing)));

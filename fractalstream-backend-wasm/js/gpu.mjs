@@ -54,8 +54,9 @@ export async function createGpu() {
     device.pushErrorScope("out-of-memory");
     let result, failure;
     try { result = await work(); } catch (e) { failure = e; }
-    const oom = await device.popErrorScope();
-    const invalid = await device.popErrorScope();
+    // (waits on the GPU too: see awaitingGpu)
+    const oom = await awaitingGpu(device.popErrorScope());
+    const invalid = await awaitingGpu(device.popErrorScope());
     if (failure) throw failure;
     if (oom) throw new Error(`out of GPU memory: ${oom.message}`);
     if (invalid) throw new Error(invalid.message);
@@ -70,6 +71,24 @@ export async function createGpu() {
 
   // (a promise's failure as its result, { error })
   const failure = (p) => p.catch((e) => ({ error: String(e?.message ?? e) }));
+
+  // Firefox finds that GPU work has finished (resolving mapAsync) only
+  // every 100 ms, unless something wakes its device: which caps a viewer
+  // at 10 frames a second, however little it draws. A submit does, even an
+  // empty one; so while any block waits for its pixels, an empty submit
+  // goes every few milliseconds (the wait is then about 8 ms). Elsewhere
+  // it's harmless, and costs next to nothing.
+  let waiting = 0;
+  let nudging = null;
+  const nudge = () => {
+    if (waiting > 0 && !lost) device.queue.submit([]);
+    else { clearInterval(nudging); nudging = null; }
+  };
+  async function awaitingGpu(promise) {
+    waiting++;
+    if (nudging === null) nudging = setInterval(nudge, 4);
+    try { return await promise; } finally { waiting--; }
+  }
 
   return {
     compile(code) {
@@ -145,7 +164,7 @@ export async function createGpu() {
           pass.end();
           enc.copyBufferToBuffer(out, 0, read, 0, 4 * n);
           device.queue.submit([enc.finish()]);
-          await read.mapAsync(GPUMapMode.READ);
+          await awaitingGpu(read.mapAsync(GPUMapMode.READ));
           const pixels = new Uint32Array(read.getMappedRange(), 0, n);
           const rgb = new Uint8Array(3 * n);
           let issues = 0;

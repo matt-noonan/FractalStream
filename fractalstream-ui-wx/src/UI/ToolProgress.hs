@@ -18,7 +18,6 @@ time: another one that's asked for meanwhile is skipped.
 module UI.ToolProgress
   ( RunOutcome(..)
   , runWithProgress
-  , spinnerFrames
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -28,6 +27,7 @@ import Actor.Event (HandlerRun(..), HandlerCancelled(..), newCancelFlag, cancelR
 import Graphics.UI.WX hiding (when, Color, Layout, finally)
 import qualified Graphics.UI.WXCore.Events as WX
 import Graphics.UI.WXCore.WxcClassesMZ (windowDestroy)
+import UI.Spinner (spinnerRing)
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Async (async, cancel, poll, waitCatch, Async)
@@ -86,12 +86,13 @@ showRunning owner name worker stopWorker = do
   d <- dialog owner [ text := "Running a tool" ]
   p <- panel d []
   message <- staticText p [ text := "Running the \"" ++ name ++ "\" tool..." ]
-  spinner <- staticText p [ text := spinnerFrames !! 0 ++ "  0 s" ]
+  spinner <- spinnerRing p
+  seconds <- staticText p [ text := "0 s" ]
   stopButton <- button p [ text := "Stop" ]
   navigateButton <- button p [ text := "Stop and switch to Navigate" ]
   set d [ layout := container p $ margin 12 $ column 10
             [ hfill (minsize (sz 360 (-1)) (widget message))
-            , widget spinner
+            , row 8 [ widget spinner, valignCenter (widget seconds) ]
             , row 8 [ hglue, widget stopButton, widget navigateButton ] ] ]
   started <- getCurrentTime
   -- Whether the handler has been asked to stop, and if so, whether to
@@ -116,19 +117,13 @@ showRunning owner name worker stopWorker = do
     -- it has stopped)
     WX.windowOnClose d (stopRun False)
     ticker <- timer d [ interval := 100 ]
-    ticks <- newIORef (0 :: Int)
     set ticker [ on command := poll worker >>= \case
                    Just r -> set ticker [ enabled := False ] >> done (Just r)
                    Nothing -> do
-                     n <- atomicModifyIORef' ticks (\k -> (k + 1, k + 1))
                      now <- getCurrentTime
-                     let seconds = floor (realToFrac (diffUTCTime now started) :: Double) :: Int
-                     set spinner [ text := printf "%s  %d s" (spinnerFrames !! (n `mod` length spinnerFrames)) seconds ] ]
+                     let elapsed = floor (realToFrac (diffUTCTime now started) :: Double) :: Int
+                     set seconds [ text := printf "%d s" elapsed ] ]
   void (windowDestroy d)
   readIORef stopping <&> \case
     Just toNavigate -> RunStopped toNavigate
     Nothing -> maybe (RunStopped False) outcomeOf result
-
--- | The frames of a spinner, one character each.
-spinnerFrames :: [String]
-spinnerFrames = map pure "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"

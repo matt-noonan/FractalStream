@@ -458,6 +458,18 @@ frontends apply and then empty; `encodeEnsemble` writes a `.fsz` when that
 holds tables (`projectFileName` gives the extension). Inline `tables:` is
 no longer read (`dev-tools/fsz/inline-tables-to-fsz.py` converts).
 
+On the web, the browser compresses and inflates archives, not the engine
+(`web/src/archive.ts`): Safari runs the engine's wasm zlib some 150 times
+slower than Chrome does (Per_7's 92 MB table took 38 s to inflate; saving
+it, 53 s), while `DecompressionStream`/`CompressionStream` take a fraction
+of a second everywhere. The worker hands the engine an opened `.fsz` with
+every entry stored, and the engine saves with `encodeEnsembleWith Stored`
+for the worker to deflate. (Data written to those streams goes in pieces:
+WebKit can't stream a Blob of a hundred MB or so.) Even so, the rest of
+opening Per_8 takes about 15 s in Safari against 2 s in Chrome, mostly in
+`runEnsemble`: the engine's Haskell runs that much slower there, and
+`wasm-opt -O3` instead of `-Oz` doesn't change it.
+
 **The GPU backends** (GPU_PLAN.md, 5b; `fractalstream-backend-wgsl`, pure
 Haskell for both GHCs). `Backend.WGSL.Code` compiles a viewer's code to a
 WGSL compute shader, once per precision (`Backend.WGSL.Runtime`: `R` is a
@@ -466,7 +478,13 @@ and `c*` functions, so one generator does both); `gpuViewerCompilers`
 makes `GpuDf64` and `GpuF32` backends over any `GpuDevice` (or declining
 everything, with no GPU). The web's device is `Backend.Wasm.Gpu`, over
 `fractalstream-backend-wasm/js/gpu.mjs`, which `web/src/engine.ts` creates
-before the engine starts (and tells the page: the `gpu` message). A GPU
+before the engine starts (and tells the page: the `gpu` message).
+Firefox resolves GPU waits (`mapAsync`, `popErrorScope`,
+`onSubmittedWorkDone`) only on a 100 ms timer unless something wakes its
+device, which held every GPU viewer there to 10 frames a second; an empty
+`queue.submit([])` wakes it, so `gpu.mjs` sends one every 4 ms while any
+block is waiting (`awaitingGpu`): a frame of 9 blocks went from 100 ms to
+about 4 ms. (Buffer writes and creations don't wake it.) A GPU
 block function has `bfCoarse = False`: no coarse passes, and pieces of 4 x
 4 of the usual. Things learned the hard way: the browsers' shader compilers
 use fast math, so the runtime tests NaN and infinity through their bits
@@ -997,8 +1015,15 @@ Key modules:
   and stack caches wxcore by its own sources: a new wxc function needs
   wxc reinstalled, and a change under `wxcore/` for stack to rebuild it.
 - Code editors' font is the `editor-font` / `editor-font-size` settings
-  (`FractalStream.Settings.editorFont`; by default Monaco, Consolas, or
-  Monospace, by platform), and their line numbers the `line-numbers`
+  (`FractalStream.Settings.editorFont`; by default DejaVu Sans, which
+  covers the symbols scripts use where Consolas and Monaco don't: Scintilla
+  on Windows draws with GDI, which doesn't fall back to another font for
+  a missing glyph, so they showed as empty boxes). It's rarely installed on
+  Windows or macOS, so `UI.BundledFont` adds the core's embedded copy
+  (`Actor.Viewer.Overlay.Font.dejaVuSansFile`) to the process's own fonts
+  at startup (`cbits/bundled-font.c`: `AddFontMemResourceEx`, or Core
+  Text's `CTFontManagerRegisterGraphicsFont`; on Linux, the system's).
+  Their line numbers are the `line-numbers`
   setting (off by default): `UI.EditorStyle.setupStyles` and
   `showLineNumbers`, redone by `scriptWidget` when the settings change.
 - `UI.AppSettings` - the app-wide `Variable Settings` (`appSettings`),
