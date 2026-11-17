@@ -1475,7 +1475,15 @@ See `LANGUAGE.md` for full docs. Key points:
   build trees, which expired after a week unused and rebuilt on install. To
   change one: edit deps.env, name a new `DEPS_RELEASE`, run deps.yml, then
   the builds. LLVM is built for the host's target only, libraries, headers
-  and `llvm-config` (statically linked everywhere now, Linux included).
+  and `llvm-config` (statically linked everywhere now, Linux included). Its
+  release's tag is on an empty commit on no branch (deps.yml makes it so):
+  a tag on main's history would be what `git describe --tags` names
+  versions by. On Linux the executables link with
+  `-Wl,--exclude-libs,ALL` (their cabal files), since statically linked
+  LLVM's symbols, exported, would take the place of a graphics driver's
+  own LLVM (Mesa's, loaded by wgpu): fsrun crashed on the GPU check
+  until then; linux-build.yml fails if fsrun exports any. wxWidgets on
+  macOS is static only (a dynamic build has no OpenGL library for wxc).
 - CI's Haskell caches: `~/.stack` (the stack root on Windows) is keyed on
   `dev-tools/ci/stack-cache-key.sh`'s fingerprint (stack.yaml files,
   build-depends, deps.env), saved from main only when it changes, right
