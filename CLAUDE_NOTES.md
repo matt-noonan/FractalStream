@@ -478,7 +478,13 @@ and `c*` functions, so one generator does both); `gpuViewerCompilers`
 makes `GpuDf64` and `GpuF32` backends over any `GpuDevice` (or declining
 everything, with no GPU). The web's device is `Backend.Wasm.Gpu`, over
 `fractalstream-backend-wasm/js/gpu.mjs`, which `web/src/engine.ts` creates
-before the engine starts (and tells the page: the `gpu` message). A GPU
+before the engine starts (and tells the page: the `gpu` message).
+Firefox resolves GPU waits (`mapAsync`, `popErrorScope`,
+`onSubmittedWorkDone`) only on a 100 ms timer unless something wakes its
+device, which held every GPU viewer there to 10 frames a second; an empty
+`queue.submit([])` wakes it, so `gpu.mjs` sends one every 4 ms while any
+block is waiting (`awaitingGpu`): a frame of 9 blocks went from 100 ms to
+about 4 ms. (Buffer writes and creations don't wake it.) A GPU
 block function has `bfCoarse = False`: no coarse passes, and pieces of 4 x
 4 of the usual. Things learned the hard way: the browsers' shader compilers
 use fast math, so the runtime tests NaN and infinity through their bits
