@@ -1,6 +1,15 @@
 # The FractalStream scripting language
 
+Everything you see when you interact with a FractalStream project---the viewers, the editable
+configuration values, and even the tools---are defined using the FractalStream scripting language.
+This language is meant to provide lots of handy features for studying dynamical systems, especially
+in complex dynamics, while still producing fast viewers and rich custom interactions.
+
+If you are having trouble writing a script, feel free to ask for help on the (FractalStream discussion page)[https://github.com/matt-noonan/FractalStream/discussions].
+
 ## Types
+
+All values in a FractalStream script have an associated *type*, and the type of a value cannot change over time. The valid types for FractalStream variables are:
 
 | Name         | Alternative name | Meaning                                                                 |
 |--------------|------------------|---------------------------------------------------------------- |
@@ -42,7 +51,7 @@ For example, a complex-valued numeric field will accept input like `1 + 2i`, but
 input like `e^{2 pi i / 3}`.
 
 In addition to the values given here, there are a number of built-in color constants; see
-**TODO** below.
+the {ref}`Colors and gradients <colors-and-gradients>` section below.
 
 ### Special variables and predicates
 
@@ -137,7 +146,7 @@ dC := diff(C, f(z))
 ```
 
 In the case where a user-defined function has exactly one argument, you can also use the
-Newton prime notation for the derivative. For example, here is a script to run Newton's method
+prime notation for the derivative. For example, here is a script to run Newton's method
 on a cubic polynomial:
 
 ```{code-block} fs
@@ -152,9 +161,12 @@ color <- rainbow((1 + arg(z)/pi) / 2)
 
 Higher derivatives may be denoted with additional primes.
 
+(colors-and-gradients)=
 ### Colors and gradients
 
 FractalStream has a number of built-in color constants: `red`, `green`, `blue`, `black`, `white`, `grey`, `gray`, `orange`, `yellow`, `purple`, `violet`, and `pink`.
+
+Beyond the color constants, you can construct or modify existing colors using these color functions:
 
 | Operation | Meaning |
 | --------- | ------- |
@@ -168,6 +180,17 @@ FractalStream has a number of built-in color constants: `red`, `green`, `blue`, 
 
 
 ### List and table indexing
+
+FractalStream includes two different types for holding collections of data:
+- **Lists** are used to hold a variable-length amount of data. Lists are not designed to hold
+a huge amount of data, roughly on the order of something a user might enter by hand.
+- **Tables** are meant to hold a multi-dimensional array of data. A table's size is set when it
+is created, and can be very large. For example, some scripts build a table with one entry per
+pixel in the parameter space viewer, and populate it by using Newton's method to follow data
+from a dynamical plane to neighboring ones. Other scripts have used precomputed tables to
+hold the uniformization data for an algebraic curve that we want to draw in the hyperbolic plane.
+
+**TODO**: more to come
 
 ## Scripts
 
@@ -205,6 +228,15 @@ can be replaced with the multiple assignment
 ``` fractalstream
 x, y <- x + y, x
 ```
+
+The `:=` notation can also be used to define functions:
+
+``` fractalstream
+f(z) := z^2 + C
+```
+
+If a function references a variable that is not one of its parameters, then anywhere that
+function gets used *must* have that variable in scope. In the specific case of `f(z) := z^2 + C`, this means that `f` can only be used in parts of the script where `C` is also defined.
 
 ### Loops
 
@@ -281,13 +313,87 @@ repeat up to 1000 times:
   # etc
 ```
 
-
-
 ### Drawing
+
+Tool scripts are allowed to draw on top of the viewer, to provide indicators and other useful
+information. Each tool gets its own "layer" of annotations; within that layer they can accumulate
+more drawings, erase the existing drawings, and change properties such as the line- and fill-colors.
+
+
+| Drawing command | Effect |
+| --------------- | ------ |
+| `erase`         | Clear the tool's drawing layer |
+| `use COLOR for line` / `use COLOR for stroke` | Set the line color to `COLOR` for future drawing operations in this layer |
+| `use COLOR for fill` | Set the fill color to `COLOR` for future drawing operations in this layer |
+| `write TEXT at POINT` | Write the text `TEXT` at the point `POINT` |
+| `draw point at POINT` | Make a small dot at `POINT` |
+| `draw line from POINT1 to POINT2` | Draw a line from `POINT1` to `POINT2` using the line color |
+| `draw geodesic from POINT1 to POINT2` | Draw a geodesic from `POINT1` to `POINT2` using the line color (only in hyperbolic plane viewers) |
+| `draw rectangle from POINT1 to POINT2` | Draw an empty rectangle with corners `POINT1` and `POINT2` using the line color |
+| `draw filled rectangle from POINT1 to POINT2` | Draw a filled rectangle with corners `POINT1` and `POINT2` using the line color for the border and the fill color for the inside |
+| `draw circle at POINT with radius R` | Draw an empty circle around `POINT` with radius `R`, using the line color |
+| `draw filled circle at POINT with radius R` | Draw a filled circle around `POINT` with radius `R`, using the line color for the border and the fill color for the inside |
+
+
+```{note}
+In the drawing operations, `POINT`s are always given by *model* coordinates, not pixel offsets
+in the window. For example, the command `draw circle at i with radius 1` will always draw
+a circle centered at the complex number `i` and tangent to the real axis, no matter where
+the view is currently looking.
+```
+
+### Script fragments
+
+Sometimes different scripts in a project want to share some code in common. In those cases, the
+user might use `define` to create a script fragment, which later can be run with `run`. For
+example, here is a script fragment to carry out one step of Newton's method:
+
+``` fractalstream
+@common
+
+f(z) := z^3 + z + 1
+
+define newton_step:
+  z <- z - f(z) / f'(z)
+```
+
+Later, we can run this script fragment:
+
+``` fractalstream
+@viewer "Newton's method"
+repeat:
+  run newton_step
+until z stops
+```
+
+Script fragments can also take arguments. In this example, we'll write a fragment that carries out Newton's method given an initial guess, and also sets a variable called `found` when the iteration
+successfully converged.
+
+``` fractalstream
+@common
+
+f(z) := z^3 + z + 1
+
+define newton_root(z):
+  iterate z -> z - f(z) / f'(z) until z stops
+  found <- not stuck
+
+@viewer "Newton's method"
+run newton_root(z)
+if not found:
+  color <- black
+else:
+  color <- rainbow((1 + arg(z)/pi) / 2)
+```
+
 
 ### Lists
 
+**TODO**
+
 ### Tables
+
+**TODO**
 
 ## Project structure
 
@@ -298,7 +404,54 @@ a `@` at the start of the line. The different kinds of stanzas are described in 
 ### Viewers
 
 A *viewer* is defined by a stanza of the form `@viewer "VIEWER NAME"`, where `VIEWER NAME` is the
-quoted title of the viewer window.
+quoted title of the viewer window. The job of the viewer's script is to run once for each pixel in the view, and tell FractalStream how to color that pixel. This communication back and forth between FractalStream and the script works as follows:
+- FractalStream tells the script which pixel it is drawing by setting a variable. For complex viewers, this variable is called `z` by default.
+- The script tells FractalStream what color to use for this pixel by setting a variable called `color`, of `Color` type. If the script does not set `color`, FractalStream will fall back to a default colorizer (**TODO** link for more info)
+
+For example, the viewer script
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bY9NTsMwFIT3OcWoe1v9Se00K9bcIg0DsbASy3YJVNyFOyCx66pH6Un6RJWUBbv53nszmpfa6EKu8akK4OHNcWTE4vHgXYPEvJCpy4xNJo64fJ1wPH9DYaXttqystcbg0GfnZcvUNoFJHO3ghyjXP3DP8-IJuWOPsZM80Cdi75v2tRi5VyEOgTE7plrstxa_Epir3FDC32ssJ_1x10HSOB0pWL2j2sxotCmp1jMv9WZnqj9o19WEkS9u6O9RpTaV3f6PqZPXaqyKKw)
+---
+@viewer "Julia set"
+iterate z -> z^2 - 1.754877766 until z escapes
+color <- if z escaped then white else black
+```
+
+draws the "airplane" Julia set in black, with white for the rest of the plane.
+
+If a viewer's script does not explicitly set the `color` variable, FractalStream will implicitly insert some "colorizer" code at the of the script. For example, the default "Rainbow" colorizer is roughly equivalent to this script fragment:
+
+``` fractalstream
+if stuck:
+  color <- black
+else:
+  color <- rainbow(iterations / 20)
+```
+
+FractalStream currently supports three different kinds of viewers:
+
+| Kind | Default variables | Viewer modes |
+| ---- | ----------------- | ------------ |
+| Complex line | `z : C` | Plane, Riemann sphere |
+| Real plane | `x : R`, `y : R` | Plane |
+| Hyperbolic plane | `z : C` | Disk, upper halfplane; coordinate is bounded in norm by 1 |
+
+To use a different variable name for your viewer, add a `var=NAME` attribute to the end of your
+`@viewer` line. For example, here is a Mandelbrot viewer script that uses `C` instead of `z` for
+the variable name:
+
+```{code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bY9NCsIwEIX3PcWjW2mptvYnIAiuPURaBw2UNiSx_uAF3Lv3Dq5deRRPYmyxVXD3fY-ZeYwulJCG4eQA80bQjhTcJa9WVOaqNtBkXDRczRZ24Ijn-YLAkjCkuKF3cr3j-LhhhAW2lRGlzUgXXJJ2dpR7UtWSlBGkmd3rGloEfmu6DCj2rK1o-TCwLHlBnyEPiZ-RF_Ya-3FE3qT3wA-zOP3SZJJ-VNFa1NVwKvLjNJn-V72xnzCMnRc)
+---
+@viewer "Mandelbrot set" var=C
+z := 0
+iterate z -> z^2 + C until z escapes
+```
+
+For real plane viewers, use `xvar=` and `yvar=` instead of `var=` to change the variable names.
 
 ### Shared definitions
 
@@ -375,4 +528,59 @@ row:
 
 ### Tools
 
+Tools are additional scripts attached to a viewer that provide some user interaction customized
+to that viewer. A tool is defined by a header like `@tool NAME for="VIEWER"` where `NAME` is
+the name of the tool, and `VIEWER` is the name of the viewer that the tool should attach to.
+
+Tools work by running scripts in response to actions taken by the user. A tool can draw on top
+of the viewer's window, and can also change the value of configuration variables. Through these
+simple mechanisms, fairly sophisticated tools can be built.
+
+| Event name | Meaning |
+| ---------- | ------- |
+| `activated` | The user switched to this tool |
+| `deactivated` | The user switched away from this tool |
+| `refresh` | The tool's viewer redrew itself, often because some parameter changed value |
+| `click` / `click at NAME` | The user clicked at a point, represented by `NAME` (or the viewer's variable, if `NAME` was not given) |
+| `click-or-drag` / `click-or-drag at NAME` | The user clicked or dragged to a point, represented by `NAME` (or the viewer's variable, if `NAME` was not given) |
+| `drag from NAME1 to NAME2` | The user continued a drag; the starting point is stored in the variable `NAME1` and the ending point in `NAME2` |
+| `button TEXT` | The tool's button labeled with `TEXT` was pressed |
+
+A tool can also have its own configuration panel, which only appears when the tool is activated.
+Any `@config`-style variable definitions immediately following the `@tool` header will go
+into the tool's configuration panel, and those variables will be visible to the tool's event
+scripts.
+
+After the optional variable definitions, the tool's script defines any number of blocks of the form
+
+``` fractalstream
+on EVENT:
+  SCRIPT
+```
+
+As a simple example, let's build a blank viewer and a tool that draws the unit circle when it is
+activated, and erases it when a button is pressed:
+
+``` {code-block} fs
+---
+caption: [Try this code live](https://matt-noonan.github.io/FractalStream/app/#project=bZBNTsMwEIX3OcWT94lCW5I2EhICsecKrjMQCyuOxpOmSNyFU3AhToLz14LEbr55b954HAzbTip8JMD9ydJADPXgdPumYsd45xnfn18YGiuUjCbx3kE9WjaOFF48363-qAqdBeqZKQRIYwOOvYhvIR7EOlBsEsw8G-2Lqp5GbQqIpI3Ykxaqq8hAH6eY6nETnG1patashyUHWpBjsNKAdW37gJsl6G_6nDa9IhnomHbsO2KxFEZlPj3MpumeuYx_cK6Qr_X7te6cNrSaUpTZgdLtBYus2FG6uXCebQ_F_heWm_2KTK_Wt9eoXVbsy9v_MTS6oyqe-AM)
+---
+@viewer "Blank"
+color <- white
+
+@tool "Circle" for="Blank"
+
+text "Press this button to erase the circle"
+button "Erase"
+
+on activated:
+  use red for line
+  draw circle at 0 with radius 1
+
+on button "Erase":
+  erase
+```
+
 ### Colorizers
+
+**TODO**
