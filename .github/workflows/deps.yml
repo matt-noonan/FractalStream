@@ -1,7 +1,7 @@
 name: CI dependencies
 
 # Builds the native dependencies of the desktop builds (dev-tools/ci/deps.env:
-# LLVM for llvm-hs; wxWidgets on macOS; wxc everywhere), each into its
+# LLVM for llvm-hs; wxWidgets, static, on macOS; wxc everywhere), each into its
 # install prefix, and attaches them to the DEPS_RELEASE release (a
 # prerelease, made if it isn't there), named by dev-tools/ci/asset.sh. The
 # builds (macos-build.yml, linux-build.yml, windows-build.yml) fetch them
@@ -78,7 +78,9 @@ jobs:
       fail-fast: false
       matrix:
         runner: [macos-15, macos-15-intel]
-        link: [static, dynamic]
+        # (static only: the macOS builds' build-static; the dynamic build has
+        # no OpenGL library for wxc)
+        link: [static]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     steps:

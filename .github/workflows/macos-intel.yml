@@ -11,7 +11,6 @@ on:
         options:
           - 'homebrew'
           - 'build-static'
-          - 'build-dynamic'
       notarize:
         description: 'Submit the signed app bundle to the Apple notary service?'
         required: true

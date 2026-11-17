@@ -17,7 +17,7 @@ on:
         required: true
         type: string
       wxwidgets:
-        description: 'How should we get the wxWidgets 3.2 dependency? (homebrew, build-static, or build-dynamic)'
+        description: 'How should we get the wxWidgets 3.2 dependency? (homebrew, or build-static: prebuilt by deps.yml)'
         required: false
         default: 'build-static'
         type: string
@@ -67,8 +67,7 @@ jobs:
       name: Fetch wxWidgets 3.2 and wxc
       run: |
         dev-tools/ci/fetch-deps.sh /usr/local \
-          "$(dev-tools/ci/asset.sh wxwidgets ${{ inputs.wxwidgets == 'build-dynamic' && 'dynamic' || 'static' }})" \
-          "$(dev-tools/ci/asset.sh wxc ${{ inputs.wxwidgets == 'build-dynamic' && 'dynamic' || 'static' }})"
+          "$(dev-tools/ci/asset.sh wxwidgets static)" "$(dev-tools/ci/asset.sh wxc static)"
         wx-config --version-full
 
     # (Homebrew's wxWidgets: wxc is built against it here, every time)
