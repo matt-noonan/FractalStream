@@ -972,7 +972,8 @@ Key modules:
   a builtin) and then carries on. An assertion that fails during
   drawing used to hang the app, because the dialog's modal loop can't
   run inside `drawRect`. Set `WXC_ASSERT_DIALOGS=1` to get the dialogs
-  back. CI builds wxc from `WXC_COMMIT` in the workflows; locally,
+  back. CI uses wxc prebuilt from `WXC_COMMIT` (`dev-tools/ci/deps.env`:
+  change it there, with a new `DEPS_RELEASE`, and run deps.yml); locally,
   rebuild and `sudo cmake --install` wxc, then relink the app.
 - `UI.SymbolEntry` - LaTeX-style symbol names (`\theta` to θ; the table
   is `Language.Editor.Symbols`). Typing `\` starts a name, which is boxed
@@ -1463,9 +1464,27 @@ See `LANGUAGE.md` for full docs. Key points:
   from a package directory, e.g. `cd fractalstream-core && stack test`.
   `cd fractalstream-ui-headless && stack test` runs the core, LLVM backend, and
   headless suites together. There is no top-level `stack.yaml`; CI builds the
-  app from `fractalstream-ui-wx` (see `.github/workflows/`).
+  app from `fractalstream-ui-wx` (see `.github/workflows/`), whose project
+  includes `fractalstream-ui-headless`, so that `stack build` there builds
+  `fsrun` too, with the same build of the core.
+- CI's native dependencies (LLVM 12 for llvm-hs; wxWidgets on macOS; wxc)
+  are prebuilt by `.github/workflows/deps.yml` into install prefixes and
+  attached to a prerelease named by `DEPS_RELEASE` in `dev-tools/ci/deps.env`
+  (the one place their versions are set); the desktop builds fetch them
+  (`dev-tools/ci/fetch-deps.sh`, names from `asset.sh`), rather than caching
+  build trees, which expired after a week unused and rebuilt on install. To
+  change one: edit deps.env, name a new `DEPS_RELEASE`, run deps.yml, then
+  the builds. LLVM is built for the host's target only, libraries, headers
+  and `llvm-config` (statically linked everywhere now, Linux included).
+- CI's Haskell caches: `~/.stack` (the stack root on Windows) is keyed on
+  `dev-tools/ci/stack-cache-key.sh`'s fingerprint (stack.yaml files,
+  build-depends, deps.env), saved from main only when it changes, right
+  after the dependencies build, and `prune-caches.sh` deletes the one it
+  replaces; the web build's is keyed by run and pruned the same way. The
+  desktop builds run on pushes to main that touch them, and twice a week,
+  to keep main's caches from expiring.
 - wxHaskell is a local path dependency: `../wxHaskell/wx`, `../wxHaskell/wxcore`, etc.
-- LLVM backend requires shared LLVM (`shared-llvm: true` flag on `llvm-hs`)
+- The LLVM backend links LLVM statically (`shared-llvm: false` on `llvm-hs`)
 - `-threaded -rtsopts -with-rtsopts=-N` for parallel rendering (the wx app and `fsrun`)
 - GHC extensions used heavily: `DataKinds`, `GADTs`, `TypeFamilies`, `RankNTypes`,
   `KindSignatures`, `TypeOperators`, `ScopedTypeVariables`, `TypeApplications`

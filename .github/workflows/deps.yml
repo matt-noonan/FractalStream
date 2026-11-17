@@ -8,8 +8,10 @@ name: CI dependencies
 # from there with dev-tools/ci/fetch-deps.sh.
 #
 # Run it by hand after changing deps.env (with a new DEPS_RELEASE, since a
-# release's files shouldn't change under the builds using it). A job that
-# fails can be re-run on its own: each replaces only its own files.
+# release's files shouldn't change under the builds using it). Each job
+# builds only files the release doesn't have yet, so running it again after
+# a failure builds just what's missing. (To rebuild a file, delete it from
+# the release first.)
 
 on:
   workflow_dispatch:
@@ -52,10 +54,18 @@ jobs:
     timeout-minutes: 240
     steps:
     - uses: actions/checkout@v4
-    - run: brew install ninja
+    - name: See whether the release has them already
+      id: need
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: echo "missing=$(dev-tools/ci/missing-assets.sh "$(dev-tools/ci/asset.sh llvm)")" >> $GITHUB_OUTPUT
+    - if: steps.need.outputs.missing == 'true'
+      run: brew install ninja
     - name: Build LLVM
+      if: steps.need.outputs.missing == 'true'
       run: dev-tools/ci/build-llvm.sh /usr/local "$(dev-tools/ci/asset.sh llvm)"
     - name: Attach it to the release
+      if: steps.need.outputs.missing == 'true'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
@@ -73,9 +83,16 @@ jobs:
     timeout-minutes: 120
     steps:
     - uses: actions/checkout@v4
+    - name: See whether the release has them already
+      id: need
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: echo "missing=$(dev-tools/ci/missing-assets.sh "$(dev-tools/ci/asset.sh wxwidgets ${{ matrix.link }})" "$(dev-tools/ci/asset.sh wxc ${{ matrix.link }})")" >> $GITHUB_OUTPUT
     - name: Install wxWidgets' dependencies
+      if: steps.need.outputs.missing == 'true'
       run: brew install ninja pkgconf libtiff libpng jpeg-turbo pcre2
     - name: Build wxWidgets
+      if: steps.need.outputs.missing == 'true'
       run: |
         wx="$(dev-tools/ci/asset.sh wxwidgets ${{ matrix.link }})"
         dev-tools/ci/build-wxwidgets-macos.sh ${{ matrix.link }} "$wx"
@@ -83,8 +100,10 @@ jobs:
         sudo tar -xzf "$wx" -C /
         wx-config --version-full
     - name: Build wxc
+      if: steps.need.outputs.missing == 'true'
       run: dev-tools/ci/build-wxc.sh "$(dev-tools/ci/asset.sh wxc ${{ matrix.link }})"
     - name: Attach them to the release
+      if: steps.need.outputs.missing == 'true'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
@@ -99,14 +118,22 @@ jobs:
     timeout-minutes: 240
     steps:
     - uses: actions/checkout@v4
-    - run: sudo apt-get update && sudo apt-get install -y ninja-build
+    - name: See whether the release has them already
+      id: need
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: echo "missing=$(dev-tools/ci/missing-assets.sh "$(dev-tools/ci/asset.sh llvm)")" >> $GITHUB_OUTPUT
+    - if: steps.need.outputs.missing == 'true'
+      run: sudo apt-get update && sudo apt-get install -y ninja-build
     - name: Build LLVM
+      if: steps.need.outputs.missing == 'true'
       # (LLVM 12's headers lean on <cstdint> arriving with others, which
       # newer libstdc++ headers no longer do)
       run: |
         dev-tools/ci/build-llvm.sh /usr/local "$(dev-tools/ci/asset.sh llvm)" \
           -DCMAKE_CXX_FLAGS="-include cstdint"
     - name: Attach it to the release
+      if: steps.need.outputs.missing == 'true'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
@@ -119,12 +146,20 @@ jobs:
     timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
-    - run: sudo apt-get update && sudo apt-get install -y libwxgtk3.2-dev libwxgtk-media3.2-dev
+    - name: See whether the release has them already
+      id: need
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: echo "missing=$(dev-tools/ci/missing-assets.sh "$(dev-tools/ci/asset.sh wxc)")" >> $GITHUB_OUTPUT
+    - if: steps.need.outputs.missing == 'true'
+      run: sudo apt-get update && sudo apt-get install -y libwxgtk3.2-dev libwxgtk-media3.2-dev
     - name: Build wxc
+      if: steps.need.outputs.missing == 'true'
       run: |
         dev-tools/ci/build-wxc.sh "$(dev-tools/ci/asset.sh wxc)" \
           -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=ON
     - name: Attach it to the release
+      if: steps.need.outputs.missing == 'true'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
@@ -157,7 +192,15 @@ jobs:
           mingw-w64-ucrt-x86_64-wxwidgets3.2-msw
           mingw-w64-ucrt-x86_64-cmake
           mingw-w64-ucrt-x86_64-ninja
+    - name: See whether the release has them already
+      id: need
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        echo "wxc=$(dev-tools/ci/missing-assets.sh "$(dev-tools/ci/asset.sh wxc)")" >> $GITHUB_OUTPUT
+        echo "llvm=$(dev-tools/ci/missing-assets.sh "$(dev-tools/ci/asset.sh llvm)")" >> $GITHUB_OUTPUT
     - name: Build wxc
+      if: steps.need.outputs.wxc == 'true'
       run: |
         if ! command -v wx-config >/dev/null; then
           ln -s "$(command -v wx-config-3.2)" /ucrt64/bin/wx-config
@@ -168,6 +211,7 @@ jobs:
     # and libc++ (LLVM_ENABLE_LIBCXX, which also makes llvm-config ask for
     # libc++), for windows-build.yml's GHC (deps.env's GHC_VERSION).
     - name: Find GHC's toolchain
+      if: steps.need.outputs.llvm == 'true'
       run: |
         set -euo pipefail
         source dev-tools/ci/deps.env
@@ -180,6 +224,7 @@ jobs:
         GHC_BIN="$(cygpath -u "$(stack --skip-msys --resolver "ghc-$GHC_VERSION" path --compiler-bin)")"
         echo "GHC_MINGW=$(cd "$GHC_BIN/../mingw" && pwd)" >> $GITHUB_ENV
     - name: Build LLVM with GHC's clang
+      if: steps.need.outputs.llvm == 'true'
       run: |
         set -euo pipefail
         # (programs built with GHC's clang load libc++.dll from its
@@ -198,5 +243,7 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         source dev-tools/ci/deps.env
-        gh release upload "$DEPS_RELEASE" --clobber --repo "$GITHUB_REPOSITORY" \
-          "$(dev-tools/ci/asset.sh llvm)" "$(dev-tools/ci/asset.sh wxc)"
+        for kind in wxc llvm; do
+          f="$(dev-tools/ci/asset.sh $kind)"
+          if [ -f "$f" ]; then gh release upload "$DEPS_RELEASE" --clobber --repo "$GITHUB_REPOSITORY" "$f"; fi
+        done

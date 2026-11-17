@@ -21,7 +21,8 @@ git -C "$work/wxHaskell-3.2" checkout -q "$WXC_COMMIT"
 cd "$work/wxHaskell-3.2/wxc"
 ./generate-version-header.sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local "$@"
-cmake --build build --parallel
+# (as many jobs as cores: unlimited, the compilers run the runner out of memory)
+cmake --build build --parallel "$(getconf _NPROCESSORS_ONLN)"
 stage="$work/stage"
 DESTDIR="$stage" cmake --install build
 tar -czf "$tarball" -C "$stage" .
