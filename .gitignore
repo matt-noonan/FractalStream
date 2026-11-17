@@ -39,3 +39,6 @@ web/dist/
 
 # Fetched by dev-tools/wgpu/fetch.sh
 third_party/
+
+# docs/ just belongs to the `docs` branch
+docs/
