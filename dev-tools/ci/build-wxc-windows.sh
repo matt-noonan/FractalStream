@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build wxc (from wxHaskell-3.2 at WXC_COMMIT, deps.env) as a DLL, in an
-# MSYS2 UCRT64 shell, against MSYS2's wxWidgets 3.2, and package it as a
-# wxc-prefix folder (bin/wxc.dll, lib/libwxc.dll.a, include/wxc), for
-# unpacking in the workspace:
+# MSYS2 UCRT64 shell, against MSYS2's wxWidgets 3.2, and package it as the
+# contents of a prefix (bin/wxc.dll, lib/libwxc.dll.a, include/wxc), for
+# `fetch-deps.sh wxc-prefix ...`:
 #
 #   dev-tools/ci/build-wxc-windows.sh TARBALL
 #
@@ -41,7 +41,7 @@ g++ -shared -o "$prefix/bin/wxc.dll" obj/*.o \
   $(wx-config --libs gl,base,core,richtext,stc,xrc,propgrid,qa,html,adv,aui,ribbon,net)
 cp -r include/wxc "$prefix/include/"
 
-tar -czf "$tarball" -C "$work" wxc-prefix
+tar -czf "$tarball" -C "$prefix" .
 ls -l "$tarball"
 cd /
 rm -rf "$work"

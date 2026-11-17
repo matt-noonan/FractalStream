@@ -66,7 +66,7 @@ jobs:
     - if: ${{ inputs.wxwidgets != 'homebrew' }}
       name: Fetch wxWidgets 3.2 and wxc
       run: |
-        dev-tools/ci/fetch-deps.sh / \
+        dev-tools/ci/fetch-deps.sh /usr/local \
           "$(dev-tools/ci/asset.sh wxwidgets ${{ inputs.wxwidgets == 'build-dynamic' && 'dynamic' || 'static' }})" \
           "$(dev-tools/ci/asset.sh wxc ${{ inputs.wxwidgets == 'build-dynamic' && 'dynamic' || 'static' }})"
         wx-config --version-full
@@ -80,11 +80,11 @@ jobs:
         ln -s `which wxrc-3.2` /usr/local/bin/wxrc
         wx-config --version-full
         dev-tools/ci/build-wxc.sh wxc.tar.gz
-        sudo tar -xzf wxc.tar.gz -C /
+        sudo tar --no-same-owner -xzf wxc.tar.gz -C /usr/local
 
     - name: Fetch LLVM 12
       run: |
-        dev-tools/ci/fetch-deps.sh / "$(dev-tools/ci/asset.sh llvm)"
+        dev-tools/ci/fetch-deps.sh /usr/local "$(dev-tools/ci/asset.sh llvm)"
         llvm-config --version
 
     # ~/.stack holds the snapshot's packages and the extra-deps, which

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Download prebuilt dependencies from the DEPS_RELEASE release (see
-# deps.env) and unpack each into a directory:
+# deps.env) and unpack each into the prefix it was built for:
 #
-#   dev-tools/ci/fetch-deps.sh DIR ASSET...
+#   dev-tools/ci/fetch-deps.sh PREFIX ASSET...
 #
-# ASSET is a file name like llvm-12.0.1-macos-arm64.tar.gz. Unpacking into
-# / (as the macOS and Linux packages are made to be, under /usr/local) uses
-# sudo. Needs the gh CLI, with GH_TOKEN set.
+# ASSET is a file name like llvm-12.0.1-macos-arm64.tar.gz (from asset.sh),
+# holding what's installed in PREFIX (/usr/local on macOS and Linux, which
+# takes sudo). Needs the gh CLI, with GH_TOKEN set.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,11 +25,11 @@ for asset in "$@"; do
     echo "::error::$asset isn't in the $DEPS_RELEASE release: run the CI dependencies workflow (deps.yml) for it"
     exit 1
   fi
-  if [ "$dir" = / ]; then
-    sudo tar -xzf "$tmp/$asset" -C /
-  else
-    mkdir -p "$dir"
+  if mkdir -p "$dir" 2> /dev/null && [ -w "$dir" ]; then
     tar -xzf "$tmp/$asset" -C "$dir"
+  else
+    sudo mkdir -p "$dir"
+    sudo tar --no-same-owner -xzf "$tmp/$asset" -C "$dir"
   fi
   rm -f "$tmp/$asset"
 done

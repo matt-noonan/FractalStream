@@ -97,7 +97,7 @@ jobs:
         wx="$(dev-tools/ci/asset.sh wxwidgets ${{ matrix.link }})"
         dev-tools/ci/build-wxwidgets-macos.sh ${{ matrix.link }} "$wx"
         # (installed, for wxc)
-        sudo tar -xzf "$wx" -C /
+        sudo tar --no-same-owner -xzf "$wx" -C /usr/local
         wx-config --version-full
     - name: Build wxc
       if: steps.need.outputs.missing == 'true'

@@ -107,7 +107,7 @@ jobs:
         stack --version
 
     - name: Fetch wxc
-      run: dev-tools/ci/fetch-deps.sh . "$(dev-tools/ci/asset.sh wxc)"
+      run: dev-tools/ci/fetch-deps.sh wxc-prefix "$(dev-tools/ci/asset.sh wxc)"
 
     - name: Install wxc
       run: |
@@ -184,7 +184,7 @@ jobs:
 
     - if: ${{ inputs.backend == 'llvm' }}
       name: Fetch LLVM 12
-      run: dev-tools/ci/fetch-deps.sh /c "$(dev-tools/ci/asset.sh llvm)"
+      run: dev-tools/ci/fetch-deps.sh /c/llvm12 "$(dev-tools/ci/asset.sh llvm)"
 
     - if: ${{ inputs.backend == 'llvm' }}
       name: Check LLVM 12

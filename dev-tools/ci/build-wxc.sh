@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build wxc (from wxHaskell-3.2 at WXC_COMMIT, deps.env) against the
-# installed wxWidgets (wx-config), with its CMake build, and package it as
-# installed in /usr/local (paths from /, for `fetch-deps.sh / ...`):
+# installed wxWidgets (wx-config), with its CMake build, and package what
+# it installs in /usr/local (for `fetch-deps.sh /usr/local ...`):
 #
 #   dev-tools/ci/build-wxc.sh TARBALL [cmake arguments...]
 #
@@ -25,7 +25,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
 cmake --build build --parallel "$(getconf _NPROCESSORS_ONLN)"
 stage="$work/stage"
 DESTDIR="$stage" cmake --install build
-tar -czf "$tarball" -C "$stage" .
+tar -czf "$tarball" -C "$stage/usr/local" .
 ls -l "$tarball"
 cd /
 rm -rf "$work"

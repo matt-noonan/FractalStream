@@ -68,7 +68,7 @@ jobs:
 
     - name: Fetch wxc and LLVM 12
       run: |
-        dev-tools/ci/fetch-deps.sh / "$(dev-tools/ci/asset.sh wxc)" "$(dev-tools/ci/asset.sh llvm)"
+        dev-tools/ci/fetch-deps.sh /usr/local "$(dev-tools/ci/asset.sh wxc)" "$(dev-tools/ci/asset.sh llvm)"
         sudo ldconfig
         llvm-config --version
 

@@ -6,10 +6,8 @@
 # Only what llvm-hs uses: the libraries (static), the headers, and
 # llvm-config, for the host's target only, without zlib, terminfo or
 # libxml2 (so llvm-config asks for no system libraries beyond the basics).
-# With Ninja. On macOS and Linux, PREFIX is where it's installed (/usr/local)
-# and TARBALL holds it as paths from /, for `fetch-deps.sh / ...`; on
-# Windows (MSYS2), it's installed at PREFIX itself, and TARBALL holds that
-# folder, for unpacking in its parent.
+# With Ninja. TARBALL holds what's installed in PREFIX (/usr/local, or on
+# Windows C:/llvm12), for `fetch-deps.sh PREFIX ...`.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,14 +51,13 @@ if $windows; then
   ninja -C "$work/build" install-llvm-headers install-llvm-libraries llvm-config
   mkdir -p "$(cygpath -u "$prefix")/bin"
   cp "$work/build/bin/llvm-config.exe" "$(cygpath -u "$prefix")/bin/"
-  unix_prefix="$(cygpath -u "$prefix")"
-  tar -czf "$tarball" -C "$(dirname "$unix_prefix")" "$(basename "$unix_prefix")"
+  tar -czf "$tarball" -C "$(cygpath -u "$prefix")" .
 else
   stage="$work/stage"
   DESTDIR="$stage" ninja -C "$work/build" install-llvm-headers install-llvm-libraries llvm-config
   mkdir -p "$stage$prefix/bin"
   cp "$work/build/bin/llvm-config" "$stage$prefix/bin/"
-  tar -czf "$tarball" -C "$stage" .
+  tar -czf "$tarball" -C "$stage$prefix" .
 fi
 ls -l "$tarball"
 rm -rf "$work"

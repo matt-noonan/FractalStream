@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build wxWidgets (WX_VERSION, from deps.env) on macOS, monolithic, with
-# patches/atomic-refcounts.patch, and package it as installed in
-# /usr/local (paths from /, for `fetch-deps.sh / ...`), with wx-config-3.2
+# patches/atomic-refcounts.patch, and package what it installs in
+# /usr/local (for `fetch-deps.sh /usr/local ...`), with wx-config-3.2
 # and wxrc-3.2 beside wx-config and wxrc:
 #
 #   dev-tools/ci/build-wxwidgets-macos.sh static|dynamic TARBALL
@@ -37,6 +37,6 @@ stage="$work/stage"
 DESTDIR="$stage" ninja -C "$work/build" install
 ln -s wx-config "$stage/usr/local/bin/wx-config-3.2"
 if [ -e "$stage/usr/local/bin/wxrc" ]; then ln -s wxrc "$stage/usr/local/bin/wxrc-3.2"; fi
-tar -czf "$tarball" -C "$stage" .
+tar -czf "$tarball" -C "$stage/usr/local" .
 ls -l "$tarball"
 rm -rf "$work"
