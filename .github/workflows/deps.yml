@@ -190,7 +190,17 @@ jobs:
       shell: pwsh
       run: git config --system core.longpaths true
     - uses: actions/checkout@v4
-    - uses: msys2/setup-msys2@v2
+    # (in Git's bash, before MSYS2 is set up, which takes a while)
+    - name: See whether the release has them already
+      id: need
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        echo "wxc=$(dev-tools/ci/missing-assets.sh "$(dev-tools/ci/asset.sh wxc)")" >> $GITHUB_OUTPUT
+        echo "llvm=$(dev-tools/ci/missing-assets.sh "$(dev-tools/ci/asset.sh llvm)")" >> $GITHUB_OUTPUT
+    - if: steps.need.outputs.wxc == 'true' || steps.need.outputs.llvm == 'true'
+      uses: msys2/setup-msys2@v2
       with:
         msystem: UCRT64
         update: true
@@ -201,13 +211,6 @@ jobs:
           mingw-w64-ucrt-x86_64-wxwidgets3.2-msw
           mingw-w64-ucrt-x86_64-cmake
           mingw-w64-ucrt-x86_64-ninja
-    - name: See whether the release has them already
-      id: need
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        echo "wxc=$(dev-tools/ci/missing-assets.sh "$(dev-tools/ci/asset.sh wxc)")" >> $GITHUB_OUTPUT
-        echo "llvm=$(dev-tools/ci/missing-assets.sh "$(dev-tools/ci/asset.sh llvm)")" >> $GITHUB_OUTPUT
     - name: Build wxc
       if: steps.need.outputs.wxc == 'true'
       run: |
@@ -248,6 +251,8 @@ jobs:
           -DLLVM_HOST_TRIPLE=x86_64-w64-windows-gnu \
           -DLLVM_ENABLE_LIBCXX=ON
     - name: Attach them to the release
+      if: steps.need.outputs.wxc == 'true' || steps.need.outputs.llvm == 'true'
+      shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
