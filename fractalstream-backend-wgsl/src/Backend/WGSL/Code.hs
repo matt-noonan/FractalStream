@@ -527,7 +527,13 @@ value = indexedFold go'
         lift (listRange lo hi)
       ConcatText {} -> lift (unsupported "text")
       ToText {} -> lift (unsupported "text")
-      Autocolor {} -> lift (unsupported "autocolor")
+      -- (looked up in the autocolor snapshot, @palette@; a point to add
+      -- goes in @misses@, for the backend to add and draw the block again:
+      -- see Backend.WGSL.Runtime's ac_lookup)
+      Autocolor mode n mz -> do
+        z <- mz >>= lift . force >>= \case { LComplex c -> pure c; l -> lift (mismatch l) }
+        lift (letOf LColor ("ac_lookup(" ++ show (autocolorModeCode mode) ++ "u, " ++ show n
+                            ++ ", " ++ z ++ ".re, " ++ z ++ ".im)"))
       TableIndex _ ty mt mixs -> do
         t <- mt
         ixs <- sequence mixs

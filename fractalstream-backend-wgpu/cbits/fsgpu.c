@@ -15,7 +15,9 @@
  * Errors come back as strings the caller frees (fsgpu_free_string).
  * Every kernel has the bindings Backend.WGSL.Runtime declares: the
  * parameters (a uniform), the arguments (read-only storage), the pixels
- * (storage, a u32 each, 0xIIBBGGRR), and the tables (read-only storage).
+ * (storage, a u32 each, 0xIIBBGGRR), the tables (read-only storage), the
+ * autocolor palette (read-only storage), and the points to add to it
+ * (storage): see Backend.WGSL.Device's GpuAutocolor.
  */
 #if !defined(_WIN32)
 /* (nanosleep: POSIX, which -std=c11 leaves out on Linux) */
@@ -54,6 +56,8 @@ static WGPUQueue queue;
 static WGPUBindGroupLayout layout;
 static WGPUPipelineLayout pipeline_layout;
 static WGPUBuffer no_tables;
+static WGPUBuffer no_palette;   /* for a kernel without autocolor */
+static WGPUBuffer no_misses;
 static uint64_t max_binding;
 static char *lost;               /* why the device was lost, once it was */
 
@@ -221,10 +225,11 @@ char *fsgpu_init(void) {
   device = wd.handle;
   queue = wgpuDeviceGetQueue(device);
 
-  WGPUBindGroupLayoutEntry entries[4];
-  WGPUBufferBindingType types[4] = { WGPUBufferBindingType_Uniform, WGPUBufferBindingType_ReadOnlyStorage,
-                                     WGPUBufferBindingType_Storage, WGPUBufferBindingType_ReadOnlyStorage };
-  for (int k = 0; k < 4; k++) {
+  WGPUBindGroupLayoutEntry entries[6];
+  WGPUBufferBindingType types[6] = { WGPUBufferBindingType_Uniform, WGPUBufferBindingType_ReadOnlyStorage,
+                                     WGPUBufferBindingType_Storage, WGPUBufferBindingType_ReadOnlyStorage,
+                                     WGPUBufferBindingType_ReadOnlyStorage, WGPUBufferBindingType_Storage };
+  for (int k = 0; k < 6; k++) {
     WGPUBindGroupLayoutEntry e = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     e.binding = k;
     e.visibility = WGPUShaderStage_Compute;
@@ -232,7 +237,7 @@ char *fsgpu_init(void) {
     entries[k] = e;
   }
   WGPUBindGroupLayoutDescriptor ld = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-  ld.entryCount = 4;
+  ld.entryCount = 6;
   ld.entries = entries;
   layout = wgpuDeviceCreateBindGroupLayout(device, &ld);
   WGPUPipelineLayoutDescriptor pd = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
@@ -240,6 +245,9 @@ char *fsgpu_init(void) {
   pd.bindGroupLayouts = &layout;
   pipeline_layout = wgpuDeviceCreatePipelineLayout(device, &pd);
   no_tables = make_buffer(16, WGPUBufferUsage_Storage);
+  /* (no groups; nowhere to note points) */
+  no_palette = make_buffer(16, WGPUBufferUsage_Storage);
+  no_misses = make_buffer(16, WGPUBufferUsage_Storage);
 
 done:;
   char *e = init_error ? copy_string(init_error) : NULL;
@@ -330,21 +338,35 @@ void fsgpu_release_buffer(WGPUBuffer b) {
  * parameters (80 bytes), over width x height pixels; its pixels into rgb
  * (3 bytes each, rows), their issues or'ed into *issues. NULL, or why
  * it couldn't. */
+/* A block: its pixels as RGB rows, and their issues. With a palette (a
+ * kernel that looks autocolors up), the points it noted to add go in
+ * `misses` (misses_bytes of them), read back with the pixels. */
 char *fsgpu_run(WGPUComputePipeline pipeline, WGPUBuffer args, WGPUBuffer tables,
                 const uint8_t *params, uint32_t width, uint32_t height,
-                uint8_t *rgb, uint32_t *issues) {
+                uint8_t *rgb, uint32_t *issues,
+                const uint32_t *palette_words, uint32_t npalette,
+                uint8_t *misses, uint32_t misses_bytes) {
   take_lock();
   char *err = NULL;
   if (lost) { err = copy_string(lost); goto done; }
   uint64_t n = (uint64_t)width * height;
+  int colors = palette_words != NULL;
+  uint64_t extra = colors ? misses_bytes : 0;
   scopes_begin();
   WGPUBuffer uniform = make_buffer(80, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
   wgpuQueueWriteBuffer(queue, uniform, 0, params, 80);
   WGPUBuffer out = make_buffer(4 * n, WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc);
-  WGPUBuffer read = make_buffer(4 * n, WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst);
-  WGPUBuffer buffers[4] = { uniform, args, out, tables ? tables : no_tables };
-  WGPUBindGroupEntry entries[4];
-  for (int k = 0; k < 4; k++) {
+  WGPUBuffer read = make_buffer(4 * n + extra, WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst);
+  WGPUBuffer pal = no_palette, miss = no_misses;
+  if (colors) {
+    /* (a new buffer is zeroed: no points noted yet) */
+    pal = make_buffer(npalette ? 4 * (uint64_t)npalette : 16, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    if (npalette) wgpuQueueWriteBuffer(queue, pal, 0, palette_words, 4 * (size_t)npalette);
+    miss = make_buffer(misses_bytes, WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc);
+  }
+  WGPUBuffer buffers[6] = { uniform, args, out, tables ? tables : no_tables, pal, miss };
+  WGPUBindGroupEntry entries[6];
+  for (int k = 0; k < 6; k++) {
     WGPUBindGroupEntry e = WGPU_BIND_GROUP_ENTRY_INIT;
     e.binding = k;
     e.buffer = buffers[k];
@@ -352,7 +374,7 @@ char *fsgpu_run(WGPUComputePipeline pipeline, WGPUBuffer args, WGPUBuffer tables
   }
   WGPUBindGroupDescriptor bd = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
   bd.layout = layout;
-  bd.entryCount = 4;
+  bd.entryCount = 6;
   bd.entries = entries;
   WGPUBindGroup bind = wgpuDeviceCreateBindGroup(device, &bd);
   WGPUCommandEncoder enc = wgpuDeviceCreateCommandEncoder(device, NULL);
@@ -363,19 +385,20 @@ char *fsgpu_run(WGPUComputePipeline pipeline, WGPUBuffer args, WGPUBuffer tables
   wgpuComputePassEncoderEnd(pass);
   wgpuComputePassEncoderRelease(pass);
   if (n) wgpuCommandEncoderCopyBufferToBuffer(enc, out, 0, read, 0, 4 * n);
+  if (colors) wgpuCommandEncoderCopyBufferToBuffer(enc, miss, 0, read, 4 * n, extra);
   WGPUCommandBuffer cmds = wgpuCommandEncoderFinish(enc, NULL);
   wgpuCommandEncoderRelease(enc);
   wgpuQueueSubmit(queue, 1, &cmds);
   wgpuCommandBufferRelease(cmds);
   err = scopes_end();
-  if (!err && n) {
+  if (!err && n + extra) {
     struct waited w = {0};
     WGPUBufferMapCallbackInfo cb = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
     /* (called from whichever thread's poll sees it done) */
     cb.mode = WGPUCallbackMode_AllowSpontaneous;
     cb.callback = on_map;
     cb.userdata1 = &w;
-    wgpuBufferMapAsync(read, WGPUMapMode_Read, 0, 4 * n, cb);
+    wgpuBufferMapAsync(read, WGPUMapMode_Read, 0, 4 * n + extra, cb);
     /* (the GPU draws without the lock: other blocks go in meanwhile) */
     give_lock();
     while (!atomic_load(&w.done)) {
@@ -385,7 +408,7 @@ char *fsgpu_run(WGPUComputePipeline pipeline, WGPUBuffer args, WGPUBuffer tables
     take_lock();
     if (!w.ok) err = w.message;
     else {
-      const uint32_t *px = wgpuBufferGetConstMappedRange(read, 0, 4 * n);
+      const uint32_t *px = wgpuBufferGetConstMappedRange(read, 0, 4 * n + extra);
       uint32_t acc = 0;
       for (uint64_t k = 0; k < n; k++) {
         uint32_t p = px[k];
@@ -393,6 +416,7 @@ char *fsgpu_run(WGPUComputePipeline pipeline, WGPUBuffer args, WGPUBuffer tables
         acc |= p >> 24;
       }
       *issues = acc;
+      if (colors) memcpy(misses, (const uint8_t *)px + 4 * n, extra);
       wgpuBufferUnmap(read);
     }
   }
@@ -401,6 +425,10 @@ char *fsgpu_run(WGPUComputePipeline pipeline, WGPUBuffer args, WGPUBuffer tables
   wgpuBufferDestroy(uniform); wgpuBufferRelease(uniform);
   wgpuBufferDestroy(out); wgpuBufferRelease(out);
   wgpuBufferDestroy(read); wgpuBufferRelease(read);
+  if (colors) {
+    wgpuBufferDestroy(pal); wgpuBufferRelease(pal);
+    wgpuBufferDestroy(miss); wgpuBufferRelease(miss);
+  }
 done:
   give_lock();
   return err;

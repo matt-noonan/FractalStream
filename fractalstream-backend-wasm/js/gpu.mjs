@@ -13,15 +13,21 @@
 // gpu.writeTable(key, offset, bytes)  a table's elements, into that room
 // gpu.bind(kernel, words, key) -> args   a kernel with its arguments (a
 //                        Uint32Array) and those tables
-// gpu.run(args, params, width, height) -> Promise<{ pixels, issues } | { error }>
+// gpu.run(args, params, width, height, palette, missesBytes)
+//                        -> Promise<{ pixels, issues, misses } | { error }>
 //                        a block: the parameters (80 bytes), and the
 //                        block's pixels back, as RGB rows, with their
 //                        issues (or'ed); or why not (the GPU failed, or
-//                        was lost)
+//                        was lost). For a kernel that looks autocolors
+//                        up, the palette (a Uint32Array; else null), and
+//                        the points it noted to add back (missesBytes of
+//                        them: see Backend.WGSL.Device's GpuAutocolor)
 //
 // Every kernel has the same bindings (see Backend.WGSL.Runtime): the
 // parameters (a uniform), the arguments (read-only storage), the pixels
-// (storage, a u32 each, 0xIIBBGGRR), and the tables (read-only storage).
+// (storage, a u32 each, 0xIIBBGGRR), the tables (read-only storage), the
+// autocolor palette (read-only storage), and the points to add to it
+// (storage).
 
 export async function createGpu() {
   const gpu = globalThis.navigator?.gpu;
@@ -44,7 +50,9 @@ export async function createGpu() {
     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
     { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
     { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } }] });
+    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+    { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+    { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }] });
   const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
 
   // Run GPU work, failing on any validation error (which WebGPU otherwise
@@ -67,6 +75,9 @@ export async function createGpu() {
   // buffer, a table's elements at its offset); none: a small empty one.
   const tableSets = new Map();
   const noTables = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE });
+  // (for a kernel without autocolor: no groups, and nowhere to note points)
+  const noPalette = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE });
+  const noMisses = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE });
   const keepSets = 2;
 
   // (a promise's failure as its result, { error })
@@ -140,22 +151,29 @@ export async function createGpu() {
       return { pipeline, buffer, key };
     },
 
-    run(args, params, width, height) {
+    run(args, params, width, height, palette = null, missesBytes = 0) {
       if (lost) return Promise.resolve({ error: lost });
       const tables = args.key === "" ? noTables : tableSets.get(args.key);
       if (!tables) return Promise.resolve({ error: "its tables were dropped" });
       const n = width * height;
+      const extra = palette ? missesBytes : 0;
       return failure(checked(async () => {
         const uniform = device.createBuffer({ size: params.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
         device.queue.writeBuffer(uniform, 0, params);
         const out = device.createBuffer({ size: Math.max(16, 4 * n), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-        const read = device.createBuffer({ size: Math.max(16, 4 * n), usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const read = device.createBuffer({ size: Math.max(16, 4 * n + extra), usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        // (the groups, and a zeroed buffer for the points to add)
+        const pal = palette ? device.createBuffer({ size: Math.max(16, palette.byteLength), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }) : noPalette;
+        if (palette && palette.byteLength > 0) device.queue.writeBuffer(pal, 0, palette);
+        const miss = palette ? device.createBuffer({ size: missesBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC }) : noMisses;
         try {
           const bind = device.createBindGroup({ layout, entries: [
             { binding: 0, resource: { buffer: uniform } },
             { binding: 1, resource: { buffer: args.buffer } },
             { binding: 2, resource: { buffer: out } },
-            { binding: 3, resource: { buffer: tables } }] });
+            { binding: 3, resource: { buffer: tables } },
+            { binding: 4, resource: { buffer: pal } },
+            { binding: 5, resource: { buffer: miss } }] });
           const enc = device.createCommandEncoder();
           const pass = enc.beginComputePass();
           pass.setPipeline(args.pipeline);
@@ -163,9 +181,12 @@ export async function createGpu() {
           pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
           pass.end();
           enc.copyBufferToBuffer(out, 0, read, 0, 4 * n);
+          if (palette) enc.copyBufferToBuffer(miss, 0, read, 4 * n, extra);
           device.queue.submit([enc.finish()]);
           await awaitingGpu(read.mapAsync(GPUMapMode.READ));
-          const pixels = new Uint32Array(read.getMappedRange(), 0, n);
+          const mapped = read.getMappedRange();
+          const pixels = new Uint32Array(mapped, 0, n);
+          const misses = palette ? new Uint8Array(mapped, 4 * n, extra).slice() : null;
           const rgb = new Uint8Array(3 * n);
           let issues = 0;
           for (let i = 0, j = 0; i < n; i++, j += 3) {
@@ -174,9 +195,10 @@ export async function createGpu() {
             issues |= p >>> 24;
           }
           read.unmap();
-          return { pixels: rgb, issues };
+          return { pixels: rgb, issues, misses };
         } finally {
           uniform.destroy(); out.destroy(); read.destroy();
+          if (palette) { pal.destroy(); miss.destroy(); }
         }
       }));
     },

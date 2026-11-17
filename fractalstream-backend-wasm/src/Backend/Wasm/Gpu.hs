@@ -13,7 +13,7 @@ import Data.List (intercalate)
 import Foreign.ForeignPtr (withForeignPtr)
 import Data.Word (Word8, Word32)
 import Foreign.Marshal.Array (withArrayLen)
-import Foreign.Ptr (Ptr)
+import Foreign.Ptr (Ptr, nullPtr)
 import GHC.Wasm.Prim (JSString(..), JSVal, toJSString, fromJSString)
 
 -- | Why there's no GPU ("" if there is one).
@@ -40,10 +40,15 @@ foreign import javascript unsafe
   gpuWriteTable :: JSString -> Int -> Ptr Word8 -> Int -> IO ()
 
 -- | A block's pixels, as RGB rows (copied into the engine's memory with
--- 'copyRgb' only once it's done: memory can grow while it waits).
+-- 'copyRgb' only once it's done: memory can grow while it waits); with a
+-- palette (its words; a null pointer for none), the points to add too
+-- ('copyMisses', this many bytes of them).
 foreign import javascript safe
-  "return await globalThis.fractalstreamGpu.run($1, new Uint8Array(__exports.memory.buffer, ($2 >>> 0), 80).slice(), $3, $4)"
-  gpuRun :: JSVal -> Ptr Word8 -> Int -> Int -> IO JSVal
+  "return await globalThis.fractalstreamGpu.run($1, new Uint8Array(__exports.memory.buffer, ($2 >>> 0), 80).slice(), $3, $4, $5 ? new Uint32Array(__exports.memory.buffer, ($5 >>> 0), $6).slice() : null, $7)"
+  gpuRun :: JSVal -> Ptr Word8 -> Int -> Int -> Ptr Word32 -> Int -> Int -> IO JSVal
+
+foreign import javascript unsafe "if ($1.misses) new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $1.misses.length).set($1.misses)"
+  copyMisses :: JSVal -> Ptr Word8 -> IO ()
 
 foreign import javascript unsafe "new Uint8Array(__exports.memory.buffer, ($2 >>> 0), $1.pixels.length).set($1.pixels)"
   copyRgb :: JSVal -> Ptr Word8 -> IO ()
@@ -75,11 +80,13 @@ webGpu = fromJSString <$> gpuError >>= \case
           withForeignPtr (gtBytes t) $ \p -> gpuWriteTable key (gtOffset t) p (gtSize t)
         pure why
       args <- withArrayLen ws (\n p -> gpuBind pipeline p n key)
-      pure GpuArgs { gaRun = \params w h out ->
+      pure GpuArgs { gaRun = \params w h out colors ->
         if not (null problem) then pure (Left problem) else do
-          r <- attempt (gpuRun args params w h)
+          let (palette, n) = maybe (nullPtr, 0) (\c -> (gacPalette c, gacWords c)) colors
+          r <- attempt (gpuRun args params w h palette n missesBytes)
           forM r $ \result -> do
             copyRgb result out
+            forM_ colors (copyMisses result . gacMisses)
             fromIntegral <$> resultIssues result }
     -- (a failure the host reports, or, failing that, one it throws)
     attempt :: IO JSVal -> IO (Either String JSVal)

@@ -21,6 +21,7 @@ module Backend.WGSL.Runtime
   ) where
 
 import Data.List (intercalate)
+import Backend.WGSL.Device (missCapacity)
 
 -- | How many words of scratch space (for lists) each pixel has: 4 KB.
 arenaWords :: Int
@@ -32,7 +33,7 @@ data Precision = DoubleFloat | Single
 
 -- | The bindings and functions every kernel has.
 runtime :: Precision -> String
-runtime p = unlines [bindings, numbers p, common, lists p]
+runtime p = unlines [bindings, numbers p, common, lists p, autocolor]
 
 bindings :: String
 bindings = unlines
@@ -54,6 +55,9 @@ bindings = unlines
   , "// the configuration's tables' elements, laid out as on the CPU"
   , "// (Language.Table), one after another"
   , "@group(0) @binding(3) var<storage, read> tables: array<u32>;"
+  , "// the autocolor groups (see ac_lookup), and the points to add to them"
+  , "@group(0) @binding(4) var<storage, read> palette: array<u32>;"
+  , "@group(0) @binding(5) var<storage, read_write> misses: array<atomic<u32>>;"
   ]
 
 numbers :: Precision -> String
@@ -76,6 +80,8 @@ numbers = \case
     , "  return vec2f(p, g(fma(a, b, -p)));"
     , "}"
     , "fn rbits(hi: u32, lo: u32) -> R { return R(bitcast<f32>(hi), bitcast<f32>(lo)); }"
+    , "fn rhi(a: R) -> u32 { return bitcast<u32>(a.x); }"
+    , "fn rlo(a: R) -> u32 { return bitcast<u32>(a.y); }"
     , "fn rp(v: vec2f) -> R { return v; }"
     , "fn rf(a: R) -> f32 { return a.x + a.y; }"
     , "fn ri(i: i32) -> R { let h = f32(i); return R(h, f32(i - i32(h))); }"
@@ -139,6 +145,8 @@ numbers = \case
   Single -> unlines
     [ "alias R = f32;"
     , "fn rbits(hi: u32, lo: u32) -> R { return bitcast<f32>(hi) + bitcast<f32>(lo); }"
+    , "fn rhi(a: R) -> u32 { return bitcast<u32>(a); }"
+    , "fn rlo(a: R) -> u32 { return 0u; }"
     , "fn rp(v: vec2f) -> R { return v.x + v.y; }"
     , "fn rf(a: R) -> f32 { return a; }"
     , "fn ri(i: i32) -> R { return f32(i); }"
@@ -605,3 +613,79 @@ atanTable = 0 : map decimal
   , "0.3587706702705722203959200639264604997770", "0.4636476090008061162142562314612144020285"
   , "0.5585993153435624359715082164016612703464", "0.6435011087932843868028092287173226380415"
   , "0.7188299996216245054170141515259046539514" ] ++ [piR / 4]
+
+-- | Autocolor (see "Actor.Autocolor"), as @fs_ac_find@
+-- (@autocolor_lookup.h@) does it on the CPU, in either precision.
+-- @palette@ is the snapshot of the groups ("Actor.Autocolor"'s
+-- @autocolorPalette@): the number of groups; each group's number, whether
+-- it can add a point, its miss color (@0x00RRGGBB@), its number of
+-- entries, its squared tolerance (hi, lo), the word its entries start at,
+-- and whether it blends misses; then the entries, as x and y (hi, lo
+-- each) and their color. A point the kernel can't decide (one to add, or
+-- in a group the snapshot hasn't yet) goes in @misses@ (a count, a word of
+-- padding, then six words a point: its group, mode, x and y), for the
+-- backend to add before it draws the block again; meanwhile it's colored
+-- as the group would color it without adding it.
+autocolor :: String
+autocolor = unlines
+  [ "const AC_MISSES = " ++ show missCapacity ++ "u;"
+  , "fn ac_rgb(c: u32) -> vec3u { return vec3u((c >> 16u) & 255u, (c >> 8u) & 255u, c & 255u); }"
+  , "fn ac_miss(mode: u32, group: i32, x: R, y: R) {"
+  , "  let k = atomicAdd(&misses[0], 1u);"
+  , "  if (k >= AC_MISSES) { return; }"
+  , "  let e = 2u + 6u * k;"
+  , "  atomicStore(&misses[e], bitcast<u32>(group));"
+  , "  atomicStore(&misses[e + 1u], mode);"
+  , "  atomicStore(&misses[e + 2u], rhi(x));"
+  , "  atomicStore(&misses[e + 3u], rlo(x));"
+  , "  atomicStore(&misses[e + 4u], rhi(y));"
+  , "  atomicStore(&misses[e + 5u], rlo(y));"
+  , "}"
+  , "fn ac_dist2(e: u32, x: R, y: R) -> R {"
+  , "  let dx = rsub(rbits(palette[e], palette[e + 1u]), x);"
+  , "  let dy = rsub(rbits(palette[e + 2u], palette[e + 3u]), y);"
+  , "  return radd(rmul(dx, dx), rmul(dy, dy));"
+  , "}"
+  -- (every entry's color weighted by one over its squared distance,
+  -- rounded half up)
+  , "fn ac_blend(off: u32, count: u32, x: R, y: R) -> vec3u {"
+  , "  var total = ri(0);"
+  , "  var cr = ri(0);"
+  , "  var cg = ri(0);"
+  , "  var cb = ri(0);"
+  , "  for (var i = 0u; i < count; i++) {"
+  , "    let e = off + 5u * i;"
+  , "    let w = rdiv(ri(1), ac_dist2(e, x, y));"
+  , "    let c = palette[e + 4u];"
+  , "    total = radd(total, w);"
+  , "    cr = radd(cr, rmul(w, ri(i32((c >> 16u) & 255u))));"
+  , "    cg = radd(cg, rmul(w, ri(i32((c >> 8u) & 255u))));"
+  , "    cb = radd(cb, rmul(w, ri(i32(c & 255u))));"
+  , "  }"
+  , "  return min(vec3u(u32(rf(rdiv(cr, total)) + 0.5), u32(rf(rdiv(cg, total)) + 0.5),"
+  , "                   u32(rf(rdiv(cb, total)) + 0.5)), vec3u(255u));"
+  , "}"
+  -- (mode: 0 nearest_autocolor, 1 autocolor, 2 get_autocolor)
+  , "fn ac_lookup(mode: u32, group: i32, x: R, y: R) -> vec3u {"
+  , "  let ngroups = palette[0];"
+  , "  for (var k = 0u; k < ngroups; k++) {"
+  , "    let h = 1u + 8u * k;"
+  , "    if (bitcast<i32>(palette[h]) != group) { continue; }"
+  , "    let count = palette[h + 3u];"
+  , "    let off = palette[h + 6u];"
+  , "    var best = -1;"
+  , "    var bestd = rbits(palette[h + 4u], palette[h + 5u]);"
+  , "    for (var i = 0u; i < count; i++) {"
+  , "      let d = ac_dist2(off + 5u * i, x, y);"
+  , "      if ((rlt(d, bestd) || req(d, bestd)) && (best < 0 || rlt(d, bestd))) { best = i32(i); bestd = d; }"
+  , "    }"
+  , "    if (best >= 0) { return ac_rgb(palette[off + 5u * u32(best) + 4u]); }"
+  , "    if (mode == 1u && palette[h + 1u] != 0u) { ac_miss(mode, group, x, y); }"
+  , "    let blends = mode == 2u || (mode == 1u && palette[h + 7u] != 0u);"
+  , "    if (blends && count > 0u) { return ac_blend(off, count, x, y); }"
+  , "    return ac_rgb(palette[h + 2u]);"
+  , "  }"
+  , "  ac_miss(mode, group, x, y);"
+  , "  return vec3u(0u);"
+  , "}"
+  ]
