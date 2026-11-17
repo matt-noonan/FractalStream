@@ -44,6 +44,10 @@ jobs:
 
   macos:
     needs: check-tag
+    # (granted to the build, which deletes replaced caches: only on main)
+    permissions:
+      contents: read
+      actions: write
     strategy:
       matrix:
         runner:
@@ -59,12 +63,20 @@ jobs:
 
   linux:
     needs: check-tag
+    # (granted to the build, which deletes replaced caches: only on main)
+    permissions:
+      contents: read
+      actions: write
     uses: ./.github/workflows/linux-build.yml
     with:
       version: ${{ github.ref_name }}
 
   windows:
     needs: check-tag
+    # (granted to the build, which deletes replaced caches: only on main)
+    permissions:
+      contents: read
+      actions: write
     uses: ./.github/workflows/windows-build.yml
     with:
       backend: llvm

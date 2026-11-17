@@ -27,6 +27,7 @@ on:
       - 'dev-tools/web/**'
       - 'cabal.project.wasm'
       - 'cabal/**'
+      - 'dev-tools/ci/prune-caches.sh'
       - '.github/workflows/web.yml'
   pull_request:
     paths:
@@ -65,8 +66,10 @@ env:
 jobs:
   web:
     runs-on: ubuntu-24.04
+    # (actions: write, to delete the package cache a new one replaces)
     permissions:
       contents: read
+      actions: write
     timeout-minutes: 90
 
     steps:
@@ -119,7 +122,7 @@ jobs:
           ~/.ghc-wasm/.cabal/store
           ~/.cabal/store
           dist-newstyle
-        key: web-cabal-${{ runner.os }}-${{ env.GHC_WASM_META }}-${{ hashFiles('cabal.project.wasm', 'cabal/**', '**/*.cabal') }}
+        key: web-cabal-${{ runner.os }}-${{ env.GHC_WASM_META }}-${{ github.run_id }}
         restore-keys: web-cabal-${{ runner.os }}-${{ env.GHC_WASM_META }}-
 
     - name: Update the package lists
@@ -157,16 +160,27 @@ jobs:
     - name: Check the tools
       run: node dev-tools/web/check-tools.mjs
 
-    # (after everything passed, as actions/cache would have; from main only)
+    # (after everything passed, as actions/cache would have; from main
+    # only. Each run's replaces the last: it's keyed by the run, so that
+    # dist-newstyle's builds of our own packages stay recent, and the one
+    # it replaces is deleted.)
     - name: Save the Haskell packages
-      if: github.ref == 'refs/heads/main' && steps.packages.outputs.cache-hit != 'true'
+      if: github.ref == 'refs/heads/main'
       uses: actions/cache/save@v4
       with:
         path: |
           ~/.ghc-wasm/.cabal/store
           ~/.cabal/store
           dist-newstyle
-        key: web-cabal-${{ runner.os }}-${{ env.GHC_WASM_META }}-${{ hashFiles('cabal.project.wasm', 'cabal/**', '**/*.cabal') }}
+        key: web-cabal-${{ runner.os }}-${{ env.GHC_WASM_META }}-${{ github.run_id }}
+
+    - name: Delete the package cache this one replaces
+      if: github.ref == 'refs/heads/main'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        dev-tools/ci/prune-caches.sh "web-cabal-${{ runner.os }}-${{ env.GHC_WASM_META }}-" \
+          "web-cabal-${{ runner.os }}-${{ env.GHC_WASM_META }}-${{ github.run_id }}"
 
     - uses: actions/upload-artifact@v4
       with:

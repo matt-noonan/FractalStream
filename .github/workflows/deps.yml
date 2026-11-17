@@ -1,0 +1,202 @@
+name: CI dependencies
+
+# Builds the native dependencies of the desktop builds (dev-tools/ci/deps.env:
+# LLVM for llvm-hs; wxWidgets on macOS; wxc everywhere), each into its
+# install prefix, and attaches them to the DEPS_RELEASE release (a
+# prerelease, made if it isn't there), named by dev-tools/ci/asset.sh. The
+# builds (macos-build.yml, linux-build.yml, windows-build.yml) fetch them
+# from there with dev-tools/ci/fetch-deps.sh.
+#
+# Run it by hand after changing deps.env (with a new DEPS_RELEASE, since a
+# release's files shouldn't change under the builds using it). A job that
+# fails can be re-run on its own: each replaces only its own files.
+
+on:
+  workflow_dispatch:
+  # TEMPORARY, while this workflow is developed on its branch (a workflow
+  # can only be run by hand once it's on main): remove before merging.
+  push:
+    branches: [ci-deps]
+    paths:
+      - 'dev-tools/ci/**'
+      - '.github/workflows/deps.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+    - name: Make the release, if it isn't there
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        source dev-tools/ci/deps.env
+        if gh release view "$DEPS_RELEASE" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+          echo "$DEPS_RELEASE is there"
+        else
+          gh release create "$DEPS_RELEASE" --repo "$GITHUB_REPOSITORY" --prerelease \
+            --target "$GITHUB_SHA" --title "CI dependencies ($DEPS_RELEASE)" \
+            --notes "Not a FractalStream release: the native dependencies its CI builds use, made by the CI dependencies workflow (.github/workflows/deps.yml) from dev-tools/ci/deps.env."
+        fi
+
+  macos-llvm:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    steps:
+    - uses: actions/checkout@v4
+    - run: brew install ninja
+    - name: Build LLVM
+      run: dev-tools/ci/build-llvm.sh /usr/local "$(dev-tools/ci/asset.sh llvm)"
+    - name: Attach it to the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        source dev-tools/ci/deps.env
+        gh release upload "$DEPS_RELEASE" "$(dev-tools/ci/asset.sh llvm)" --clobber --repo "$GITHUB_REPOSITORY"
+
+  macos-wx:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+        link: [static, dynamic]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install wxWidgets' dependencies
+      run: brew install ninja pkgconf libtiff libpng jpeg-turbo pcre2
+    - name: Build wxWidgets
+      run: |
+        wx="$(dev-tools/ci/asset.sh wxwidgets ${{ matrix.link }})"
+        dev-tools/ci/build-wxwidgets-macos.sh ${{ matrix.link }} "$wx"
+        # (installed, for wxc)
+        sudo tar -xzf "$wx" -C /
+        wx-config --version-full
+    - name: Build wxc
+      run: dev-tools/ci/build-wxc.sh "$(dev-tools/ci/asset.sh wxc ${{ matrix.link }})"
+    - name: Attach them to the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        source dev-tools/ci/deps.env
+        gh release upload "$DEPS_RELEASE" --clobber --repo "$GITHUB_REPOSITORY" \
+          "$(dev-tools/ci/asset.sh wxwidgets ${{ matrix.link }})" \
+          "$(dev-tools/ci/asset.sh wxc ${{ matrix.link }})"
+
+  linux-llvm:
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+    - uses: actions/checkout@v4
+    - run: sudo apt-get update && sudo apt-get install -y ninja-build
+    - name: Build LLVM
+      # (LLVM 12's headers lean on <cstdint> arriving with others, which
+      # newer libstdc++ headers no longer do)
+      run: |
+        dev-tools/ci/build-llvm.sh /usr/local "$(dev-tools/ci/asset.sh llvm)" \
+          -DCMAKE_CXX_FLAGS="-include cstdint"
+    - name: Attach it to the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        source dev-tools/ci/deps.env
+        gh release upload "$DEPS_RELEASE" "$(dev-tools/ci/asset.sh llvm)" --clobber --repo "$GITHUB_REPOSITORY"
+
+  linux-wxc:
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - run: sudo apt-get update && sudo apt-get install -y libwxgtk3.2-dev libwxgtk-media3.2-dev
+    - name: Build wxc
+      run: |
+        dev-tools/ci/build-wxc.sh "$(dev-tools/ci/asset.sh wxc)" \
+          -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=ON
+    - name: Attach it to the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        source dev-tools/ci/deps.env
+        gh release upload "$DEPS_RELEASE" "$(dev-tools/ci/asset.sh wxc)" --clobber --repo "$GITHUB_REPOSITORY"
+
+  # In an MSYS2 UCRT64 shell, as windows-build.yml builds.
+  windows:
+    needs: release
+    runs-on: windows-2022
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      STACK_ROOT: C:\sr
+    steps:
+    - name: Allow long paths in git
+      shell: pwsh
+      run: git config --system core.longpaths true
+    - uses: actions/checkout@v4
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        path-type: inherit
+        install: >-
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-pkgconf
+          mingw-w64-ucrt-x86_64-wxwidgets3.2-msw
+          mingw-w64-ucrt-x86_64-cmake
+          mingw-w64-ucrt-x86_64-ninja
+    - name: Build wxc
+      run: |
+        if ! command -v wx-config >/dev/null; then
+          ln -s "$(command -v wx-config-3.2)" /ucrt64/bin/wx-config
+        fi
+        dev-tools/ci/build-wxc-windows.sh "$(dev-tools/ci/asset.sh wxc)"
+    # llvm-hs compiles its C++ shims with GHC's own toolchain, which on
+    # Windows is clang with libc++: so LLVM is built with that same clang
+    # and libc++ (LLVM_ENABLE_LIBCXX, which also makes llvm-config ask for
+    # libc++), for windows-build.yml's GHC (deps.env's GHC_VERSION).
+    - name: Find GHC's toolchain
+      run: |
+        set -euo pipefail
+        source dev-tools/ci/deps.env
+        if ! command -v stack >/dev/null; then
+          curl -sSL -o stack.zip https://get.haskellstack.org/stable/windows-x86_64.zip
+          mkdir -p /usr/local/bin
+          unzip -o stack.zip stack.exe -d /usr/local/bin
+        fi
+        stack --skip-msys --resolver "ghc-$GHC_VERSION" setup
+        GHC_BIN="$(cygpath -u "$(stack --skip-msys --resolver "ghc-$GHC_VERSION" path --compiler-bin)")"
+        echo "GHC_MINGW=$(cd "$GHC_BIN/../mingw" && pwd)" >> $GITHUB_ENV
+    - name: Build LLVM with GHC's clang
+      run: |
+        set -euo pipefail
+        # (programs built with GHC's clang load libc++.dll from its
+        # mingw/bin, and the build runs some of them: llvm-tblgen)
+        export PATH="$PATH:$GHC_MINGW/bin"
+        dev-tools/ci/build-llvm.sh C:/llvm12 "$(dev-tools/ci/asset.sh llvm)" \
+          -DCMAKE_C_COMPILER="$(cygpath -m "$GHC_MINGW/bin/clang.exe")" \
+          -DCMAKE_CXX_COMPILER="$(cygpath -m "$GHC_MINGW/bin/clang++.exe")" \
+          -DCMAKE_AR="$(cygpath -m "$GHC_MINGW/bin/llvm-ar.exe")" \
+          -DCMAKE_RANLIB="$(cygpath -m "$GHC_MINGW/bin/llvm-ranlib.exe")" \
+          -DLLVM_USE_LINKER=lld \
+          -DLLVM_HOST_TRIPLE=x86_64-w64-windows-gnu \
+          -DLLVM_ENABLE_LIBCXX=ON
+    - name: Attach them to the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        source dev-tools/ci/deps.env
+        gh release upload "$DEPS_RELEASE" --clobber --repo "$GITHUB_REPOSITORY" \
+          "$(dev-tools/ci/asset.sh llvm)" "$(dev-tools/ci/asset.sh wxc)"
