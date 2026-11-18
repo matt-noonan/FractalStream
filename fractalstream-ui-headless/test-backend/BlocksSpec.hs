@@ -31,6 +31,7 @@ import Backends (withBackend)
 import FractalStream.Backends (BackendId(..))
 
 import Control.Monad (forM_)
+import Data.List (intercalate)
 import qualified Data.ByteString as BS
 import Data.IORef
 import Data.Int (Int32)
@@ -134,7 +135,7 @@ spec = describe "a viewer's image, cut into blocks" $ do
             , prStale = pure False, prStarted = \_ -> pure (), prCovered = pure ()
             , prDrawn = \_ -> modifyIORef' drawn (+ 1), prBackend = \_ -> pure () } v
           image <- either fail (maybe (fail "abandoned") pure) got
-          bytes image >>= (`shouldBe` expected)
+          bytes image >>= sameImage 150 size expected
           readIORef drawn >>= (`shouldSatisfy` (> 0))
 
     it "leaves a target's final pixels alone in the coarse passes" $ withViewerOf mandelbrot $ \v -> do
@@ -173,6 +174,24 @@ spec = describe "a viewer's image, cut into blocks" $ do
   where
     bytes RenderedBuffer{..} = withForeignPtr rbPixels $ \p ->
       BS.packCStringLen (castPtr p, 3 * rbWidth * rbHeight)
+
+-- | Two images (RGB rows, this wide) the same; or a failure saying how many
+-- pixels differ, and where (and in which piece, of this size) the first
+-- few are. (Not their bytes: hspec's diff of two images' worth of them
+-- took half an hour on CI.)
+sameImage :: Int -> Int -> BS.ByteString -> BS.ByteString -> Expectation
+sameImage w piece expected got
+  | got == expected = pure ()
+  | BS.length got /= BS.length expected =
+      expectationFailure ("sizes differ: " ++ show (BS.length got) ++ " bytes, not " ++ show (BS.length expected))
+  | otherwise =
+      let px b i = BS.unpack (BS.take 3 (BS.drop (3 * i) b))
+          diffs = [ i | i <- [0 .. BS.length got `div` 3 - 1], px got i /= px expected i ]
+          describeAt i = let (y, x) = i `divMod` w
+                         in "(" ++ show x ++ ", " ++ show y ++ ") in piece (" ++ show (x `div` piece) ++ ", "
+                            ++ show (y `div` piece) ++ "): " ++ show (px got i) ++ ", not " ++ show (px expected i)
+      in expectationFailure (show (length diffs) ++ " of " ++ show (BS.length got `div` 3) ++ " pixels differ; "
+                             ++ intercalate "; " (map describeAt (take 8 diffs)))
 
 mandelbrot :: String
 mandelbrot = unlines

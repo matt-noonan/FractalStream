@@ -575,7 +575,17 @@ renderPassesInto Progressive{..} ImageTarget{..} BlockFunction{ bfBlock = fn, bf
   issuesVar <- newMVar mempty
   abandoned <- newIORef False
   gaveUp <- newMVar Nothing
+  -- (each piece's finest pass in the image so far: passes run a few at a
+  -- time, so a piece's coarse pass can finish after its full-resolution
+  -- one, which it mustn't then cover)
+  finest <- newMVar (Map.empty :: Map.Map (Int, Int) Int)
   let (w, h) = (itWidth, itHeight)
+      -- write a pass of the piece at (x0, y0) into the image, if nothing
+      -- finer is there already
+      commit (x0, y0) rate write = modifyMVar_ finest $ \m ->
+        if maybe True (< rate) (Map.lookup (x0, y0) m)
+          then Map.insert (x0, y0) rate m <$ write
+          else pure m
       pixel = (itPixelSize * prScale, itPixelSize * prScale * itAspect)
       (origin1, (px, py)) = imageGeometry 1 w h itCenter itPixelSize itAspect
       (origin2, step2) = imageGeometry 2 w h itCenter itPixelSize itAspect
@@ -594,11 +604,11 @@ renderPassesInto Progressive{..} ImageTarget{..} BlockFunction{ bfBlock = fn, bf
         -- smoothed: the piece at twice the size, averaged down
         | rate > 0 = allocaBytes (3 * 4 * pw * ph) $ \big -> do
             call origin2 (2 * x0, 2 * y0) step2 (2 * pw, 2 * ph) big
-            itWith $ \outPtr -> downsampleRows (2 * pw) pw ph w big (outPtr `plusPtr` (3 * (y0 * w + x0)))
+            commit (x0, y0) rate $ itWith $ \outPtr -> downsampleRows (2 * pw) pw ph w big (outPtr `plusPtr` (3 * (y0 * w + x0)))
         -- at full resolution, a pixel a sample
         | rate == 0 = allocaBytes (3 * pw * ph) $ \small -> do
             call origin1 (x0, y0) (px, py) (pw, ph) small
-            itWith $ \outPtr -> forM_ [0 .. ph - 1] $ \j ->
+            commit (x0, y0) rate $ itWith $ \outPtr -> forM_ [0 .. ph - 1] $ \j ->
               copyBytes (outPtr `plusPtr` (3 * ((y0 + j) * w + x0))) (small `plusPtr` (3 * pw * j)) (3 * pw)
         -- coarse: a sample a skip x skip square
         | otherwise = do
@@ -609,7 +619,7 @@ renderPassesInto Progressive{..} ImageTarget{..} BlockFunction{ bfBlock = fn, bf
                    (px * fromIntegral skip, py * fromIntegral skip) (cw, ch) small
               case itFinals of
                 -- (each sample's color across its square, row by row)
-                Nothing -> allocaBytes (3 * pw) $ \line -> itWith $ \outPtr ->
+                Nothing -> allocaBytes (3 * pw) $ \line -> commit (x0, y0) rate $ itWith $ \outPtr ->
                   forM_ [0 .. ch - 1] $ \j -> do
                     let row = small `plusPtr` (3 * cw * j)
                     forM_ [0 .. cw - 1] $ \i -> forM_ [0 .. skip - 1] $ \d ->
@@ -629,7 +639,7 @@ renderPassesInto Progressive{..} ImageTarget{..} BlockFunction{ bfBlock = fn, bf
                       case sortOn dist unfinal of
                         [] -> pure ()
                         (fu, fv) : _ -> call origin1 (fu, fv) (px, py) (1, 1) (small `plusPtr` (3 * (j * cw + i)))
-                  itWith $ \outPtr -> forM_ [ (i, j) | j <- [0 .. ch - 1], i <- [0 .. cw - 1] ] $ \(i, j) ->
+                  commit (x0, y0) rate $ itWith $ \outPtr -> forM_ [ (i, j) | j <- [0 .. ch - 1], i <- [0 .. cw - 1] ] $ \(i, j) ->
                     forM_ [ (x0 + skip * i + du, y0 + skip * j + dv) | dv <- [0 .. skip - 1], du <- [0 .. skip - 1] ] $ \(u, v) -> do
                       final <- isFinal u v
                       unless final $ copyBytes (outPtr `plusPtr` (3 * (v * w + u))) (small `plusPtr` (3 * (j * cw + i))) 3
