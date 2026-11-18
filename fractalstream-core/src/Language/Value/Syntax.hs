@@ -144,6 +144,12 @@ data ExprF r
     -- "Language.Code.Tuples").
   | EAdvice String
     -- ^ A parse that is accepted only to produce a helpful error
+  | EZero
+    -- ^ A placeholder of whatever type is expected of it (a variable's
+    -- declared or inferred type), as zero, @false@, @black@, @""@, or
+    -- @[]@: what the result of a @function@ starts out as before its body
+    -- gives it a value (see "Language.Code.FunctionBlocks"). No script can
+    -- write one.
   deriving (Show, Functor, Foldable, Traversable)
 
 -- | Values straight out of the parser.

@@ -80,7 +80,7 @@ a scenario runs `load saved table T[, U...]` or `load all saved tables`.
 ### `@common`
 
 Holds only definitions: variable declarations (`x := ...`, `x : T := ...`),
-functions (`f(z) := ...`), and code blocks (`define name: ...`). No
+functions (`f(z) := ...`, or `function f(z):` with a block), and code blocks (`define name: ...`). No
 attributes. Each viewer and tool handler gets the common definitions it
 uses (and whatever those use), as if written at its top, and each is
 type-checked separately in that script. So a common definition can mention a
@@ -551,6 +551,9 @@ else:
   ...
 f(z) := expr           # function; no recursion
 g(a, b) := a f(b)
+function f(w, c):         # a function with a body: gives its value by `f <- ...`
+  ...
+(w2, ok) := f(w, c)       # called only as a whole right-hand side, for now
 define shade(c):          # named code block, parameters optional
   ...
 run shade(blue)           # `run name` with no arguments, or run name(a, b)
@@ -579,10 +582,25 @@ times`. After a loop, `iterations` is how many times its body ran, and
 condition. `for each` is not limited and doesn't set them. Use `while
 true up to N times:` for a fixed number of iterations.
 
-Functions (`f(z) := ...`): the body is one expression; parameters are local; any
-other names refer to what's in scope where the function is *used* (so a
-common `f(z) := z^2 + C` works in a viewer whose `var=C`). A function
-works at whatever numeric type it's called with. No recursion.
+Functions (`f(z) := ...`): the body is one expression; parameters are local.
+Besides its parameters, a function sees the project's names (`@config`
+values, `@common` definitions, the viewer's or tool's variables, built-ins
+like `pixel_size`), as they are where it's *used* (so a common
+`f(z) := z^2 + C` works in a viewer whose `var=C`), but **not** variables the
+viewer's or tool's own code declares before it (an error: pass them as
+parameters). A function works at whatever numeric type it's called with. No
+recursion.
+
+Functions with a body: `function name(params):` and a block that gives the
+value by assigning the name (`name <- ...`), on every path (each `if` needs an
+`else`; an assignment only inside a loop doesn't count). A tuple works:
+`critical_point <- (w, ok)`, then `(w, ok) := critical_point(w0, c)`. Pure: no
+drawing, no assigning config/tool variables/`color`, no table writes, no
+`run`; its own variables may reuse the caller's names; its loops don't touch
+the caller's `iterations`/`stuck`. **Called only as a whole right-hand side**
+for now: `x := f(a)`, `x <- f(a)`, `(x, y) := f(a)` (not `f(a) + 1`). Prefer
+one over a `define` block that hands results back through the caller's
+variables.
 
 `define`/`run`: the block runs as if pasted at the `run` site; parameters
 become local variables (copies: assigning a parameter doesn't change the

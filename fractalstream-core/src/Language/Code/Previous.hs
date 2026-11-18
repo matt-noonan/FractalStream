@@ -38,6 +38,8 @@
 -- as an error.
 module Language.Code.Previous
   ( expandPrevious
+  , declaredIn
+  , mapStmtExprs
   ) where
 
 import FractalStream.Prelude
@@ -160,6 +162,7 @@ declaredIn (Stmt _ node) = case node of
   SForEach item _ body -> Set.insert item (declaredIn body)
   SWithFirst item _ _ body fallback -> Set.insert item (declaredIn body <> foldMap declaredIn fallback)
   SProc name _ body -> Set.insert name (declaredIn body)
+  SFunction name _ body -> Set.insert name (declaredIn body)
   _ -> Set.empty
 
 -- | Apply a function to every expression in a statement.
@@ -192,5 +195,6 @@ mapStmtExprs f (Stmt sr node) = Stmt sr <$> case node of
   SForEach item list body -> SForEach item list <$> go body
   SWithFirst item p list body fallback -> SWithFirst item <$> f p <*> pure list <*> go body <*> traverse go fallback
   SProc name params body -> SProc name params <$> go body
+  SFunction name params body -> SFunction name params <$> go body
   SRun name args -> SRun name <$> traverse f args
   where go = mapStmtExprs f

@@ -9,6 +9,7 @@ module Language.Code.Typecheck.Functions
   , expandCalls
   , splitArgs
   , rename
+  , freeVars
   ) where
 
 import FractalStream.Prelude

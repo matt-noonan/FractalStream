@@ -25,6 +25,7 @@ module Language.Parser
   , parse
   , ownBuiltinNames
   , isOwnableBuiltin
+  , functionValueName
   , ident
   , tok
 
@@ -110,7 +111,7 @@ parse p input
   = Left (IntegerTooBig sr n)
   | b : _ <- builtinBindings input
   = Left b
-  | otherwise = case P.fullParses (P.parser (fmap snd . runProd <$> p)) input of
+  | otherwise = case P.fullParses (P.parser (fmap snd . runProd <$> p)) (functionValues input) of
     ([], r)  -> Left (NoParse `onReport` r)
     ([x], _) -> pure x
     (_, r)   -> Left (AmbiguousParse `onReport` r)
@@ -119,6 +120,37 @@ parse p input
     toPos i = case mconcat (take (i + 1) (map tokenSourceRange input)) of
       NoSourceRange   -> Nothing
       SourceRange _ e -> Just e
+
+-- | The variable that holds a function's value inside its body (see
+-- "Language.Code.FunctionBlocks").
+functionValueName :: String -> String
+functionValueName f = f ++ "'s value"
+
+-- | Inside each @function f(...):@ block, @f@ is the variable holding the
+-- function's value (a function can't call itself), not the function: so
+-- that @f <- f + 1@ parses, with @f@ a variable, while @f(x)@ elsewhere
+-- is a call.
+functionValues :: [SRToken] -> [SRToken]
+functionValues = go True
+  where
+    go atStart = \case
+      fn@(SRToken (Identifier "function") _) : name@(SRToken (Identifier f) _) : rest | atStart ->
+        let (header, afterHeader) = break ((== Indent) . baseToken) rest
+        in case afterHeader of
+             ind : body -> let (inside, after) = within f (0 :: Int) body
+                           in fn : name : header ++ ind : inside ++ go True after
+             [] -> fn : name : go False rest
+      t : rest -> t : go (baseToken t `elem` [Newline, Indent, Dedent]) rest
+      [] -> []
+    -- the function's block, up to the Dedent that ends it
+    within f depth = \case
+      [] -> ([], [])
+      t@(SRToken here sr) : rest -> case here of
+        Dedent | depth == 0 -> ([], t : rest)
+        Dedent -> first (t :) (within f (depth - 1) rest)
+        Indent -> first (t :) (within f (depth + 1) rest)
+        Identifier n | n == f -> first (SRToken (Identifier (functionValueName f)) sr :) (within f depth rest)
+        _ -> first (t :) (within f depth rest)
 
 -- | Keywords a script uses for its own variables, functions, and code
 -- blocks (@i@, @e@, @iterations@, @length@, ...), which it can't: they're
@@ -159,6 +191,7 @@ scriptBindings = go True . map (\(SRToken t sr) -> (t, sr))
     here atStart = \case
       n : rest | atStart, Just _ <- functionDefinitionBody (map fst rest) -> named "function" n ++ params rest
       (Identifier "define", _) : n : rest -> named "code block" n ++ params rest
+      (Identifier "function", _) : n : rest | atStart -> named "function" n ++ params rest
       (Identifier "each", _) : n : _ -> named "variable" n
       (Identifier "first", _) : n : _ -> named "variable" n
       (Identifier "on", _) : rest | atStart -> handlerPoints rest

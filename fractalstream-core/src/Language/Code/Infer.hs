@@ -95,6 +95,7 @@ collect scope funs (Stmt sr node) = (Stmt sr .) <$> case node of
   SPass -> pure (const node)
   -- (expanded away before inference)
   SProc{} -> pure (const node)
+  SFunction{} -> pure (const node)
   SRun{} -> pure (const node)
   SDeclTuple{} -> pure (const node)
   SSetTuple{} -> pure (const node)

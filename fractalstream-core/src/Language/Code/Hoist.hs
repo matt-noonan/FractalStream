@@ -209,6 +209,7 @@ stmtWrites (Stmt _ node) = case node of
   SResize n _ _ -> Set.singleton n
   SAllocate n _ _ _ -> Set.singleton n
   SProc name _ _ -> Set.singleton name
+  SFunction name _ _ -> Set.singleton name
   SPass -> Set.empty
   SDraw{} -> Set.empty
   SRun{} -> Set.empty

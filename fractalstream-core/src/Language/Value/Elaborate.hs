@@ -279,6 +279,7 @@ elabOwn t (Syn (sr, _) node) = case node of
     _ -> inconsistent sr
 
   EAdvice{} -> inconsistent sr
+  EZero -> inconsistent sr
 
   where
     el :: forall u. TypeProxy u -> TExpr -> TC (Value '(env, u))

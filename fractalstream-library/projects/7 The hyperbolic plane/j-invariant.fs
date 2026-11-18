@@ -24,21 +24,26 @@ script: |
   @common
   clamp01(v) := if v < 0 then 0.0 else if v > 1 then 1.0 else v
 
+  # j at a point w of the upper half-plane, from q = e^(2 pi i w) and
+  # eight terms of the Eisenstein series E4 and E6 (with the divisor sums
+  # sigma_3(n) and sigma_5(n), for n = 1 .. 8)
+  function j_invariant(w):
+    sigma3 := [1, 9, 28, 73, 126, 252, 344, 585]
+    sigma5 := [1, 33, 244, 1057, 3126, 8052, 16808, 33825]
+    q := exp(2 pi i w)
+    qn := q
+    s4 : C := 0
+    s6 : C := 0
+    for each n in range(1, 8):
+      s4 <- s4 + (sigma3 @ n) qn
+      s6 <- s6 + (sigma5 @ n) qn
+      qn <- qn q
+    e4 := 1 + 240 s4
+    e6 := 1 - 504 s6
+    j_invariant <- 1728 e4^3 / (e4^3 - e6^2)
+
   @viewer "j-invariant" view=halfplane group=modular
-  # (divisor sums: sigma_3(n) and sigma_5(n), for n = 1 .. 8)
-  sigma3 := [1, 9, 28, 73, 126, 252, 344, 585]
-  sigma5 := [1, 33, 244, 1057, 3126, 8052, 16808, 33825]
-  q := exp(2 pi i z)
-  qn := q
-  s4 : C := 0
-  s6 : C := 0
-  for each n in range(1, 8):
-    s4 <- s4 + (sigma3 @ n) qn
-    s6 <- s6 + (sigma5 @ n) qn
-    qn <- qn q
-  e4 := 1 + 240 s4
-  e6 := 1 - 504 s6
-  j := 1728 e4^3 / (e4^3 - e6^2)
+  j := j_invariant(z)
   color <- rainbow(arg j / (2 pi))
   if show_bands and |j| > 0:
     band := mod(log(|j|) / log 2, 1.0)
@@ -52,19 +57,7 @@ script: |
   j_here : C as "j =" := 0
   on click-or-drag at p:
     erase
-    sigma3 := [1, 9, 28, 73, 126, 252, 344, 585]
-    sigma5 := [1, 33, 244, 1057, 3126, 8052, 16808, 33825]
-    q := exp(2 pi i p)
-    qn := q
-    s4 : C := 0
-    s6 : C := 0
-    for each n in range(1, 8):
-      s4 <- s4 + (sigma3 @ n) qn
-      s6 <- s6 + (sigma5 @ n) qn
-      qn <- qn q
-    e4 := 1 + 240 s4
-    e6 := 1 - 504 s6
-    j_here <- 1728 e4^3 / (e4^3 - e6^2)
+    j_here <- j_invariant(p)
     use white for fill
     use black for stroke
     draw filled circle at p with radius 4 pixels

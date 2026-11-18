@@ -20,13 +20,14 @@ import Language.Value
 import Language.Typecheck
 import Language.Value.Typecheck (atType, internalIterationLimit, InternalIterations, InternalStuck)
 import Language.Value.Syntax
-import Language.Value.Typing (TypeEnv, synth, typeEnvOf, tupleParts, tableIndexParts)
+import Language.Value.Typing (TypeEnv(..), synth, typeEnvOf, tupleParts, tableIndexParts)
 import qualified GHC.TypeNats as TN
 import Language.Code
 import Language.Code.Syntax
 import Language.Code.Typecheck.Functions
 import Language.Code.Infer
 import Language.Code.Procedures
+import Language.Code.FunctionBlocks
 import Language.Code.Previous
 import Language.Code.Stops
 import Language.Code.Tuples
@@ -46,7 +47,7 @@ type ParsedCode = Stmt
 -- | Check parsed code in the given environment.
 runParsedCode :: EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
 runParsedCode env c =
-  case withEnvironment env (expandRuns c >>= expandPrevious >>= expandStops >>= expandTuples >>= elab Map.empty env . inferDeclarations (typeEnvOf env) Map.empty) of
+  case withEnvironment env (expandFunctionBlocks (Map.keysSet (tyVars (typeEnvOf env))) c >>= expandRuns >>= expandPrevious >>= expandStops >>= expandTuples >>= elab Map.empty env . inferDeclarations (typeEnvOf env) Map.empty) of
     TC x -> x
 
 -- | The steps before elaboration, by themselves: expand @run@s, @stops@,
@@ -55,7 +56,7 @@ runParsedCode env c =
 -- result does nothing more to it before elaborating it.)
 expandParsedCode :: TypeEnv -> ParsedCode -> Either TCError ParsedCode
 expandParsedCode tenv c =
-  case inferDeclarations tenv Map.empty <$> (expandRuns c >>= expandPrevious >>= expandStops >>= expandTuples) of
+  case inferDeclarations tenv Map.empty <$> (expandFunctionBlocks (Map.keysSet (tyVars tenv)) c >>= expandRuns >>= expandPrevious >>= expandStops >>= expandTuples) of
     TC x -> x
 
 ------------------------------------------------------
@@ -174,6 +175,7 @@ elab funs env stmt@(Stmt sr node) = case node of
 
   -- these are expanded away before elaboration
   SProc{} -> throwError (Internal (Advice sr "unexpanded code definition"))
+  SFunction{} -> throwError (Internal (Advice sr "unexpanded function definition"))
   SRun name _ -> throwError (Internal (Advice sr ("unexpanded run of " ++ name)))
 
   SDraw d -> DrawCommand <$> case d of

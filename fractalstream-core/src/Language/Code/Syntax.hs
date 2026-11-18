@@ -66,6 +66,9 @@ data StmtF
     -- matching part of @e@'s value
   | SFun String [String] Expr
     -- ^ @f(x, y) := e@
+  | SFunction String [String] Stmt
+    -- ^ @function f(x, y):@ followed by a block, which gives @f@ its value
+    -- (see "Language.Code.FunctionBlocks")
   | SIf Expr Stmt Stmt
   | SLoop LoopKind Expr (Maybe Expr) Stmt
     -- ^ loop kind, condition, optional iteration limit, body
@@ -116,6 +119,7 @@ stmtNames (Stmt _ node) = case node of
   SDeclTuple p e -> Set.fromList (patternNames p) <> exprNames e
   SSetTuple p e -> Set.fromList (patternNames p) <> exprNames e
   SFun f _ e -> Set.insert f (exprNames e)
+  SFunction f _ body -> Set.insert f (stmtNames body)
   SIf c yes no -> exprNames c <> stmtNames yes <> stmtNames no
   SLoop _ c lim body -> exprNames c <> foldMap exprNames lim <> stmtNames body
   SIterate p e _ c lim -> Set.fromList (patternNames p) <> exprNames e <> exprNames c <> foldMap exprNames lim
@@ -146,5 +150,6 @@ definedNames (Stmt _ node) = case node of
   SDecl n _ _ -> [n]
   SDeclTuple p _ -> patternNames p
   SFun f _ _ -> [f]
+  SFunction f _ _ -> [f]
   SProc name _ _ -> [name]
   _ -> []

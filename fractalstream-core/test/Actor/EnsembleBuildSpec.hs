@@ -1146,6 +1146,36 @@ w <- w + 1
             (Left (_, cErr), Right _) ->
               expectationFailure ("checkScript rejected (" ++ cErr ++ "), but buildEnsembleFromScript accepted")
 
+    it "lets a function use @config, @common and the viewer's names, but not the stanza's own variables" $ do
+      checkAccepts (unlines
+        [ "@config \"P\""
+        , "C : C := 0.25"
+        , ""
+        , "@common"
+        , "k := 2"
+        , "f(w) := w^2 + C + k"
+        , "function g(w):"
+        , "  t := f(w)"
+        , "  g <- |t| + re z"
+        , ""
+        , "@viewer \"V\""
+        , "y := g(z)"
+        , "color <- if y > 3 then red else blue" ])
+      checkFailsWith (unlines
+        [ "@viewer \"V\""
+        , "k := 2"
+        , "f(w) := w + k"
+        , "y := f(z)"
+        , "color <- if |y| > 3 then red else blue" ])
+        "`k` is a variable of this stanza's own code, so the function `f` can't use it"
+      checkFailsWith (unlines
+        [ "@viewer \"V\""
+        , "k := 2"
+        , "function g(w):"
+        , "  g <- w + k"
+        , "color <- red" ])
+        "`k` is a variable of this stanza's own code, so the function `g` can't use it"
+
     it "takes a built-in's name for the script's own in the stanza that \
        \defines it, and everywhere for @config and @common names" $ do
       -- a tool's own `sin` is its variable; the viewer still has the built-in
