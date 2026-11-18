@@ -432,6 +432,7 @@ valueAndArithGrammar funs own = mdo
 
   atom <- ruleChoice
     [ simpleAtom
+    , fraction
     , token OpenParen   *> toplevel <* token CloseParen
     , token OpenBrace   *> toplevel <* token CloseBrace
     ]
@@ -561,6 +562,25 @@ valueAndArithGrammar funs own = mdo
   derivativeOrder <- rule $ tokenMatch $ \case
     NumberI n | n >= 1 -> Just (fromIntegral n)
     _ -> Nothing
+
+  -- `∂f/∂z` for `partial(z, f)` and `𝐝f/𝐝z` for `diff(z, f)`, and with an
+  -- order on both signs, `∂²f/∂z²` (an order only on the bottom would be
+  -- read as a power of the derivative: `∂f/∂z^2`)
+  fraction <- ruleChoice
+    [ fractionOf EPartial (token PartialSign)
+    , fractionOf EDiff (token DiffSign)
+    ]
+  let fractionOf mk sign =
+            withSourceRange (
+            (\f x sr -> Syn sr (mk x f))
+              <$> (sign *> atomOrFunAp) <*> (token Divide *> sign *> var))
+        <|> withSourceRange (
+            (\n f x m sr -> if n == m
+                then iterate (Syn sr . mk x) f !! n
+                else Syn sr (EAdvice ("The orders on the top and the bottom of this derivative are "
+                                      ++ show n ++ " and " ++ show m ++ ", which should be the same.")))
+              <$> (sign *> token Caret *> derivativeOrder) <*> atomOrFunAp
+              <*> (token Divide *> sign *> var) <*> (token Caret *> derivativeOrder))
 
   ------------------------------------------------------
   -- A duplicate of the precedence levels from 'arith' down to 'atom';

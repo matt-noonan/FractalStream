@@ -613,6 +613,17 @@ x <- d|] `shouldBe` Right 3
     it "follow |u| with respect to a real variable" $
       "t := 3.0\ny := |t - 5|\nx <- diff(t, y)" `gives` (-1)
 
+    it "can be written as fractions: 𝐝f/𝐝z for diff, ∂f/∂z for partial" $ do
+      "c := 2.0\ny := c^3\nx <- 𝐝y/𝐝c" `gives` 12
+      "c := 2.0\ny := c^3\nx <- ∂y/∂c" `gives` 0
+      "c := 2.0\nx <- ∂(c^3)/∂c + 1" `gives` 13
+      "c := 2.0\ny := c^3\nx <- 2 𝐝²y/𝐝c²" `gives` 24
+      "c := 2.0\ny := c^3\nx <- 𝐝 y / 𝐝 c" `gives` 12
+      "f(t) := t^3\nc := 2.0\nx <- ∂f(c)/∂c" `gives` 12
+      -- (a power of the derivative, not an order)
+      "c := 2.0\ny := c^3\nx <- 𝐝y/𝐝c^2" `gives` 144
+      failsWith "c := 2.0\ny := c^3\nx <- 𝐝²y/𝐝c³" "should be the same"
+
     it "leave partial to the expression alone" $ do
       "c := 2.0\ny := c^3\nx <- partial(c, y)" `gives` 0
       "c := 2.0\nx <- partial(c, c^3)" `gives` 12

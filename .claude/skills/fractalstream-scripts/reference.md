@@ -447,7 +447,10 @@ Functions:
   a copy, not the loop variable itself (`diff(z, z)` after iterating `z` is an
   error). `diff(x, e, 2)` = second derivative. Errors, never zero, through list/
   table items, floor/round/mod, and (w.r.t. a complex x) |w|, re, im, conj, arg
-  (fine w.r.t. a real x). `partial(x, e)`: other variables constant. For a
+  (fine w.r.t. a real x). `partial(x, e)`: other variables constant.
+  Fraction forms: `𝐝w/𝐝z` = `diff(z, w)` (𝐝 is U+1D41D, bold d), `∂w/∂z` =
+  `partial(z, w)`; top is a name, `f(z)`, or `( ... )`; `𝐝²w/𝐝z²` for order 2
+  (order on both signs; `𝐝w/𝐝z^2` is the square). For a
   one-variable user function `f`, `f'(z)` and `f''(z)`
 
 Constants: `pi`/`π`, `e`/`𝑒`, `i`/`𝑖`, `true`, `false`.

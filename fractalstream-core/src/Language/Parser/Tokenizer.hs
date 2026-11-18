@@ -94,6 +94,10 @@ data Token
   | AtAt
   | LengthKeyword
   | PreviousKeyword
+  | PartialSign
+    -- ^ @∂@, as in @∂f/∂z@ (@partial(z, f)@)
+  | DiffSign
+    -- ^ @𝐝@ (mathematical bold small d), as in @𝐝f/𝐝z@ (@diff(z, f)@)
   deriving (Eq, Ord, Show)
 
 instance IsString Token where fromString = Identifier
@@ -231,6 +235,7 @@ opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
   , ("⟼", RightArrow), ("↦", RightArrow)
   , ("⟶", RightArrow), ("⟵", LeftArrow)
   , ("@", At), ("@@", AtAt)
+  , ("∂", PartialSign), ("𝐝", DiffSign)
   ]
 
 longestMatchingOperator :: SRString -> Maybe (SRToken, SRString)

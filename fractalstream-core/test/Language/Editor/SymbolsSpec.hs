@@ -83,6 +83,13 @@ spec = describe "symbol names" $ do
       escapeAt False "\\theta " `shouldBe` Complete "θ" 6
       escapeAt False "\\alpha\\" `shouldBe` Complete "α" 6
       escapeAt True "\\theta" `shouldBe` Complete "θ" 6
+      -- (\d, for 𝐝f/𝐝z, finishes like any name, and doesn't get in the way of
+      -- the names it starts)
+      escapeAt False "\\d f" `shouldBe` Complete "𝐝" 2
+      escapeAt False "\\d\\" `shouldBe` Complete "𝐝" 2
+      escapeAt False "\\d" `shouldBe` Incomplete
+      escapeAt False "\\delta " `shouldBe` Complete "δ" 6
+      escapeAt False "\\partial " `shouldBe` Complete "∂" 8
 
     it "put an accent on what comes next" $ do
       escapeAt False "\\hat" `shouldBe` Incomplete
