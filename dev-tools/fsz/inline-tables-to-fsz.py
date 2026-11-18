@@ -2,7 +2,8 @@
 """Convert a project file with its tables inline (the old `tables:` key:
 each table's packed elements, zlib-compressed and base64-encoded) into a
 .fsz archive (PROJECT_FILES.md): project.fs with a `manifest:`, and each
-table's packed elements in tables/<name>.bin.
+table as two files, its description in tables/<name>.yaml and its packed
+elements beside it in tables/<name>.bin.
 
     dev-tools/fsz/inline-tables-to-fsz.py OLD.fs [NEW.fsz]
 
@@ -70,25 +71,27 @@ def main():
     manifest = ["manifest:", "  tables:"]
     for name, t in tables.items():
         packed = zlib.decompress(base64.b64decode("".join(t["data"])))
-        path = f"tables/{name}.bin"
-        files.append((path, packed))
-        manifest += [
-            f"    {name}:",
-            f"      file: {path}",
-            f"      type: {yaml_string(t['type'])}",
-            f"      size: {json.dumps(t['size'])}",
-            f"      origin: {json.dumps(t['origin'])}",
-            f"      step: {json.dumps(t['step'])}",
-            "      encoding: raw",
-            f"      sha256: {hashlib.sha256(packed).hexdigest()}",
-        ]
+        # (each table's description, and its data beside it)
+        description = "\n".join([
+            f"type: {yaml_string(t['type'])}",
+            f"size: {json.dumps(t['size'])}",
+            f"origin: {json.dumps(t['origin'])}",
+            f"step: {json.dumps(t['step'])}",
+            "encoding: raw",
+            f"file: {name}.bin",
+            f"sha256: {hashlib.sha256(packed).hexdigest()}",
+        ]) + "\n"
+        files.append((f"tables/{name}.yaml", description.encode("utf-8")))
+        files.append((f"tables/{name}.bin", packed))
+        manifest.append(f"    {name}: tables/{name}.yaml")
     project = "\n".join(lines[:start] + manifest) + "\n"
     with zipfile.ZipFile(new, "w", zipfile.ZIP_DEFLATED) as z:
         for path, data in [("project.fs", project.encode("utf-8"))] + files:
             info = zipfile.ZipInfo(path, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             z.writestr(info, data)
-    print(f"{new}: {len(files)} table(s), {sum(len(d) for _, d in files)} bytes of data")
+    data = [d for path, d in files if path.endswith(".bin")]
+    print(f"{new}: {len(data)} table(s), {sum(len(d) for d in data)} bytes of data")
 
 
 main()
