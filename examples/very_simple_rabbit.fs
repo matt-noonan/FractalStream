@@ -1,3 +1,4 @@
+format: 1
 script: |
   @viewer "Douady rabbit"
   iterate z ⟼ z² + -0.12256 + 0.74486 𝑖 until z escapes

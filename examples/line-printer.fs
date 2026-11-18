@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   xsize : R as "Cell width" := 0.035

@@ -1,3 +1,4 @@
+format: 1
 script: |
   # Mandelbrot set boundary by distance estimation: iterate z and its
   # derivative dz = d(z_n)/dC together, then estimate the distance to the

@@ -1,3 +1,4 @@
+format: 1
 script: |
   @viewer "List Literal — Integer" var=z center="1.5 + 1.5i" pixelSize="1/64"
   ns : List of Z := [0, 1, 2, 3]

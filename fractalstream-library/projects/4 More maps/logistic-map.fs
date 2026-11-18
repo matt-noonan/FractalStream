@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   outer : R as "outer tolerance: " := 0.01

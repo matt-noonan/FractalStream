@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   listA : List of R as "List A" := [-3, -1, 2, 4]

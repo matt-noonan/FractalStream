@@ -1,3 +1,4 @@
+format: 1
 script: |
   # Böttcher coordinates for z -> z^2 + C.
   #

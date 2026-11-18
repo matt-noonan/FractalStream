@@ -1,3 +1,4 @@
+format: 1
 script: |
   @common
   f(z) := z^2 + i

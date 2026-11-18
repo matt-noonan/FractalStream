@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Slow mating"
   c1 : C as "First polynomial z² + c1, c1 =" := -0.122561 + 0.744862i

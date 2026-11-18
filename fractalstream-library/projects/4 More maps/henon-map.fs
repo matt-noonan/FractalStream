@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   a : C as "a = " := 0.3

@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   pts : List of C as "Points" := [1, i, -1, -i]

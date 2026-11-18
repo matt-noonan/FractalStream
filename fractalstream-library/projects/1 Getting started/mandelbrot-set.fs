@@ -1,3 +1,4 @@
+format: 1
 script: |
   @viewer "Mandelbrot set with smooth coloring" var=C colorizer=Smooth
   coloring:

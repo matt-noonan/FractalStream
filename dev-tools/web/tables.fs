@@ -1,5 +1,6 @@
 # For dev-tools/web/check-tools.mjs's `tables` section: a table its tool
 # fills (click with Fill), which the viewer shows (black while it's empty).
+format: 1
 script: |
   @config "P"
   T : Table 2 of C

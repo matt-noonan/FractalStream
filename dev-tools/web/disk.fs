@@ -1,3 +1,4 @@
+format: 1
 script: |
   # A disk viewer (view=disk), for dev-tools/web/check-tools.mjs: red
   # around the hyperbolic plane's origin, grey elsewhere.

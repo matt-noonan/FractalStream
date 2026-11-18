@@ -1,4 +1,5 @@
 # Translated from a script for the original FractalStream.
+format: 1
 script: |
   @config "Parameters"
   p : C as "p =" := -0.125 + 0.75i

@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "About"
   text "Use the \"Vertical line\" tool (shortcut v) to compare points between the Mandelbrot set and the logistic map bifurcation diagram."

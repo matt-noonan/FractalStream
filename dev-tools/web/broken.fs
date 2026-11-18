@@ -1,6 +1,7 @@
 # For dev-tools/web/check-tools.mjs's `opening` section: a project whose
 # script doesn't build (the stray `(` ending its last line), with a saved value and
 # a saved window, which it should get once it's fixed and rebuilt.
+format: 1
 script: |
   @config "Configuration"
   shade : R := 0.5

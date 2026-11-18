@@ -630,6 +630,7 @@ translateT isReal title src body = do
       scriptLines = intercalate [""] (map (render 0) stanzas)
   pure . unlines $
     [ "# Translated from a script for the original FractalStream."
+    , "format: 1"
     , "script: |" ]
     ++ map (\l -> if null l then "" else "  " ++ l) scriptLines ++
     [ "metadata:"

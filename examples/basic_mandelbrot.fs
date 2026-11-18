@@ -1,3 +1,4 @@
+format: 1
 script: |
   @viewer "Mandelbrot set" var=C
   z := 0

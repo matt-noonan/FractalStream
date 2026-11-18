@@ -1,6 +1,7 @@
 # Lists on the GPU (check by hand with dev-tools/web/check-gpu.mjs: every
 # pixel green, on the CPU and both GPU backends): appending in place must
 # never change a list another variable (or list) holds; ranges in for each.
+format: 1
 script: |
   @viewer "Aliasing" var=z center=0 pixelSize=1/50
   n := round(|z| * 10) + 3

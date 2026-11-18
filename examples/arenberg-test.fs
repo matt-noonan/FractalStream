@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   use_arenberg : Boolean as "Use Arenberg rainbow" := false

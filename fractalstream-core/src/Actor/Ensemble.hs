@@ -272,7 +272,8 @@ loadProjectBytes path bytes = case projectArchive bytes of
   -- (the unified @setup@/@config@/@viewer@/@tool@ script format --
   -- the older classic `setup:`/`configuration:`/`viewer(s):` shape
   -- is no longer supported).
-  case YAML.decodeEither' contents of
+  case decodeProjectYaml contents of
+    Right (Object o) | Left err <- checkFormat o -> pure (Left (quoted path ++ " " ++ err))
     Right (Object o) | Just (String scriptText) <- KM.lookup "script" o -> do
       let src = Text.unpack scriptText
       choices <- readColorizerChoices path o
@@ -309,7 +310,7 @@ loadProjectBytes path bytes = case projectArchive bytes of
 -- | The top-level keys of a project file that the core reads itself;
 -- the rest belong to frontends ('ensembleFrontendProperties').
 coreKeys :: [KM.Key]
-coreKeys = ["script", "scenarios", "metadata", "colorizers", "autocolor", "manifest", "tables"]
+coreKeys = ["format", "script", "scenarios", "metadata", "colorizers", "autocolor", "manifest", "tables"]
 
 -- | A project file's YAML, and the other files with it: a @.fsz@
 -- archive's @project.fs@ and the rest of its files (see PROJECT_FILES.md),
@@ -327,6 +328,45 @@ projectArchive bytes
 -- | A project file's YAML (from its archive, if it's a @.fsz@).
 projectYaml :: ByteString -> Either String ByteString
 projectYaml = fmap fst . projectArchive
+
+-- | The project format this version of FractalStream reads and writes
+-- (a project file's @format:@ key; see PROJECT_FILES.md). It changes
+-- only when a project file's meaning does: its script's language, or its
+-- keys. A file without the key is format 1.
+projectFormat :: Int
+projectFormat = 1
+
+-- | A project file's YAML, decoded.
+decodeProjectYaml :: ByteString -> Either YAML.ParseException Aeson.Value
+decodeProjectYaml = YAML.decodeEither'
+
+-- | That a project file's @format:@ key (if it has one) is a format this
+-- version of FractalStream reads. (What's wrong if not, to follow the
+-- file's name in a message.)
+checkFormat :: KM.KeyMap Aeson.Value -> Either String ()
+checkFormat o = case KM.lookup "format" o of
+  Nothing -> Right ()
+  Just (Number n) | n == fromIntegral projectFormat -> Right ()
+                  | n > fromIntegral projectFormat, n == fromInteger (round n) ->
+      Left ("was saved by a newer version of FractalStream (its project format is "
+            ++ show (round n :: Integer) ++ ", and this version reads format "
+            ++ show projectFormat ++ ")")
+  Just v -> Left ("has a `format:` of " ++ yamlText v ++ ", which isn't a project format "
+                  ++ "(this version of FractalStream reads format " ++ show projectFormat ++ ")")
+  where
+    yamlText = UTF8.toString . BS.takeWhile (/= 10) . encodeYaml
+
+-- | A project file's top-level keys, from its contents (in an archive or
+-- not), if it's a project in a format this version reads.
+projectKeys :: ByteString -> Either String (KM.KeyMap Aeson.Value)
+projectKeys contents = case projectYaml contents >>= left show . decodeProjectYaml of
+  Left err -> Left ("isn't valid YAML: " ++ err)
+  Right (Object o) -> o <$ checkFormat o
+  Right _ -> Left "isn't a FractalStream project"
+
+-- | The line a saved project file starts with: its format.
+formatKey :: ByteString
+formatKey = UTF8.fromString ("format: " ++ show projectFormat ++ "\n")
 
 -- | A project file's @colorizers:@ key: the colorizer chosen for each
 -- viewer, by title. Anything unreadable in it is a warning (on stderr),
@@ -375,9 +415,9 @@ attachScenarios o ens = case KM.lookup "scenarios" o of
 -- tries to open it. The error, when there is one, shows where in the
 -- script it is, as 'formatScriptError' does.
 checkProjectBytes :: ByteString -> Either String ()
-checkProjectBytes contents = case projectYaml contents >>= left show . YAML.decodeEither' of
-  Left err -> Left ("isn't valid YAML: " ++ err)
-  Right (Object o) | Just (String scriptText) <- KM.lookup "script" o ->
+checkProjectBytes contents = case projectKeys contents of
+  Left err -> Left err
+  Right o | Just (String scriptText) <- KM.lookup "script" o ->
     let src = Text.unpack scriptText
     in left (formatScriptError src) (checkScript src)
   Right _ -> Left "doesn't have a top-level `script:` key"
@@ -388,12 +428,9 @@ checkProjectBytes contents = case projectYaml contents >>= left show . YAML.deco
 -- without the cost of compiling its script. A project without a
 -- @metadata:@ key has empty metadata.
 readProjectMetadata :: ByteString -> Either String ProjectMetadata
-readProjectMetadata contents = case projectYaml contents >>= left show . YAML.decodeEither' of
-  Left err -> Left ("isn't valid YAML: " ++ err)
-  Right (Object o) -> case KM.lookup "metadata" o of
-    Nothing -> Right noMetadata
-    Just v -> fst <$> readMetadata v
-  Right _ -> Left "isn't a FractalStream project"
+readProjectMetadata contents = projectKeys contents >>= \o -> case KM.lookup "metadata" o of
+  Nothing -> Right noMetadata
+  Just v -> fst <$> readMetadata v
 
 -- | A project's @metadata:@ key, if it has one. A preview that has to
 
@@ -560,7 +597,7 @@ encodeEnsembleWith packing ens = do
       manifestKV = [ ("manifest", manifest) | not (Map.null tables) ]
       rest = KM.union (KM.fromList (metadataKV ++ colorizersKV ++ autocolorKV ++ scenariosKV ++ manifestKV))
                       frontendProperties
-      yaml = scriptKey scriptText
+      yaml = formatKey <> scriptKey scriptText
              <> (if KM.null rest then mempty
                  else encodePrettyYaml projectYamlConfig (Object rest))
   -- (with tables, an archive of the project's YAML and their files)
@@ -582,10 +619,8 @@ projectFileName name contents =
 -- the library), they're all it takes to show it as it was; see
 -- 'withProjectKeys'.
 projectStateKeys :: ByteString -> Either String (KM.KeyMap Aeson.Value)
-projectStateKeys contents = case projectYaml contents >>= left show . YAML.decodeEither' of
-  Left err -> Left ("isn't valid YAML: " ++ err)
-  Right (Object o) -> Right (foldr KM.delete o ["script", "metadata", "scenarios", "manifest", "tables"])
-  Right _ -> Left "isn't a FractalStream project"
+projectStateKeys contents = projectKeys contents <&> \o ->
+  foldr KM.delete o ["format", "script", "metadata", "scenarios", "manifest", "tables"]
 
 -- | A project file with these keys (from 'projectStateKeys') in place of
 -- its own: its script and what's about it stay as they are.
@@ -595,20 +630,20 @@ withProjectKeys keys = rewriteProjectFile id $ \o ->
 
 -- | Just a project file's script.
 projectScript :: ByteString -> Either String String
-projectScript contents = case projectYaml contents >>= left show . YAML.decodeEither' of
-  Left err -> Left ("isn't valid YAML: " ++ err)
-  Right (Object o) | Just (String src) <- KM.lookup "script" o -> Right (Text.unpack src)
+projectScript contents = case projectKeys contents of
+  Left err -> Left err
+  Right o | Just (String src) <- KM.lookup "script" o -> Right (Text.unpack src)
   Right _ -> Left "doesn't have a top-level `script:` key"
 
 -- | A project file rewritten: its script, and its other keys, changed as
 -- given (and written as 'encodeEnsemble' writes them).
 rewriteProjectFile :: (String -> String) -> (KM.KeyMap Aeson.Value -> KM.KeyMap Aeson.Value)
                    -> ByteString -> Either String ByteString
-rewriteProjectFile script others contents = case projectYaml contents >>= left show . YAML.decodeEither' of
-  Left err -> Left ("isn't valid YAML: " ++ err)
-  Right (Object o) | Just (String src) <- KM.lookup "script" o ->
-    let rest = others (KM.delete "script" o)
-    in Right (scriptKey (script (Text.unpack src))
+rewriteProjectFile script others contents = case projectKeys contents of
+  Left err -> Left err
+  Right o | Just (String src) <- KM.lookup "script" o ->
+    let rest = KM.delete "format" (others (KM.delete "script" o))
+    in Right (formatKey <> scriptKey (script (Text.unpack src))
               <> (if KM.null rest then mempty else encodePrettyYaml projectYamlConfig (Object rest)))
   Right _ -> Left "doesn't have a top-level `script:` key"
 

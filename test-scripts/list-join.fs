@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   listA : List of C as "List A" := [0, 1, -1]
