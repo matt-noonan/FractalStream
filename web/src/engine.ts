@@ -83,9 +83,13 @@ g.fractalstreamPostFile = (name: string, bytes: Uint8Array) => {
   });
 };
 
-// A file for the page to save as it is (a picture).
+// A file for the page to save as it is (a picture), or, an archive (an
+// exported table), with its entries deflated here, as a project's are.
 g.fractalstreamPostDownload = (name: string, bytes: Uint8Array) => {
-  send({ type: "download", name, bytes: bytes.buffer as ArrayBuffer }, [bytes.buffer as ArrayBuffer]);
+  saving = saving.then(async () => {
+    const file = isZip(bytes) ? await deflateArchive(bytes) : bytes;
+    send({ type: "download", name, bytes: file.buffer as ArrayBuffer }, [file.buffer as ArrayBuffer]);
+  });
 };
 
 // A movie's frame (RGB, read out of the engine's memory), as RGBA for the
@@ -137,6 +141,13 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "useAsPreview": await engine.fs_use_as_preview(r.viewer); break;
       case "unsaved": await engine.fs_unsaved(r.on); break;
       case "tableSummary": await engine.fs_table_summary(); break;
+      case "tableExport": await engine.fs_table_export(r.name, r.csv); break;
+      case "tableImport": {
+        // (an exported table's entries inflated here, as a .fsz's are)
+        const bytes = new Uint8Array(r.bytes);
+        await engine.fs_table_import(r.name, isZip(bytes) ? await inflateArchive(bytes) : bytes);
+        break;
+      }
       case "rotate": await engine.fs_rotate(r.viewer, r.fx, r.fy, r.tx, r.ty); break;
       case "diskDrag": await engine.fs_disk_drag(r.viewer, r.fx, r.fy, r.tx, r.ty); break;
       case "set": await engine.fs_set(r.name, r.text); break;

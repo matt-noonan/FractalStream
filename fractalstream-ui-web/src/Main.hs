@@ -54,6 +54,13 @@ worker (@web/src/engine.ts@). The worker calls these exports:
 * @fs_table_summary()@: post the open project's tables that hold anything
   (@tableSummary@), so that the page can ask whether to save them, as the
   desktop does.
+* @fs_table_export(name, csv)@: a table of the project's panel, exported
+  (see "Actor.TableTransfer"): as a zip of its description and elements
+  (stored, for the page to deflate), or as CSV, posted to the page to save
+  (@fractalstreamPostDownload@), or an error.
+* @fs_table_import(name, bytes)@: replace a table's value with an
+  exported table's (a zip, its entries inflated by the page) or a CSV's;
+  answered with @tableImported@ (an error, or none).
 * @fs_disk_drag(viewer, fx, fy, tx, ty)@: move a disk viewer's view by the
   hyperbolic translation that keeps the point under the pointer, as it's
   dragged from one point of the screen plane to another (the disk's
@@ -240,7 +247,10 @@ where a layout is @{ "kind": "vertical" | "horizontal", "children" }@,
 "kind": "text" | "check" | "select" | "color", "label", "name", "text",
 "options" }@ (options for a selection; and for a color, @"color"@: its value, as
 @#rrggbb@), or a button, @{ "kind": "button", "label" }@ (in a tool's
-panel, pressing it is @fs_button@).
+panel, pressing it is @fs_button@), or a table, @{ "kind": "table",
+"name", "summary", "csv" }@ (what it is and its size, which @tableText@
+(@{ "type": "tableText", "name", "summary" }@) updates as it changes; and
+whether it can be exported and imported as CSV).
 -}
 module Main (main) where
 
@@ -251,6 +261,8 @@ import Actor.Ensemble (Ensemble(..), runEnsemble, loadProjectBytes, projectFileN
                        projectStateKeys, withProjectKeys, rewriteProjectFile, projectScript)
 import Actor.SavedValues (readSavedValues, writeSavedValues)
 import Actor.SavedTables (captureTables, applySavedTables, TableSummary(..), summarizeTables)
+import Actor.TableTransfer (TableFormat(..), exportTableFile, importTableFile, csvAvailable)
+import qualified Actor.TableTransfer as TableTransfer
 import qualified Data.Aeson.KeyMap as KM
 import Actor.Metadata (ProjectMetadata(..), noMetadata)
 import Language.Legacy.Binary (mightBeAncientFS, decodeAncientFS)
@@ -271,7 +283,8 @@ import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceAr
 import Actor.Event (Coordinate(..), showCoordinate)
 import Data.List (find)
 import Language.Value.Parser (parseConstant)
-import Language.Type (TypeProxy(RealType, ComplexType))
+import Language.Type (TypeProxy(RealType, ComplexType), SomeType(..))
+import Language.Table (Table)
 import Actor.Autocolor (AutocolorGroup(..), AutocolorGroupId(..), autocolorGroups, showAutocolorPoint,
                         setAutocolorLocked, setAutocolorBlendMisses, setAutocolorTolerance, setAutocolorMissColor,
                         setAutocolorEntryColor, moveAutocolorEntry, deleteAutocolor, addAutocolorEntry,
@@ -555,6 +568,8 @@ foreign export javascript "fs_set_details" setDetails :: JSString -> JSString ->
 foreign export javascript "fs_use_as_preview" useAsPreview :: Int -> IO ()
 foreign export javascript "fs_unsaved" setUnsaved :: Bool -> IO ()
 foreign export javascript "fs_table_summary" tableSummary :: IO ()
+foreign export javascript "fs_table_export" tableExport :: JSString -> Bool -> IO ()
+foreign export javascript "fs_table_import" tableImport :: JSString -> JSVal -> IO ()
 foreign export javascript "fs_rotate" rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_disk_drag" diskDrag :: Int -> Double -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_set" setField :: JSString -> JSString -> IO ()
@@ -688,6 +703,36 @@ tableSummary = guarded $ readIORef sessionRef >>= mapM_ (\Session{..} -> do
   post $ Aeson.object
     [ "type" .= ("tableSummary" :: Text.Text), "built" .= ensembleBuilt sEnsemble
     , "tables" .= [ Aeson.object [ "name" .= tsName t, "size" .= tsSize t, "bytes" .= tsBytes t ] | t <- tables ] ])
+
+tableSummaryText :: SomeType -> Table -> String
+tableSummaryText = TableTransfer.tableSummary
+
+-- | A table of the open project's panel, by name, and its type.
+projectTable :: Session -> String -> IO (Maybe (SomeType, Variable Table))
+projectTable Session{..} name = do
+  tables <- ensembleTables sEnsemble
+  pure (listToMaybe [ (ty, v) | (n, ty, v) <- tables, n == name ])
+
+tableExport :: JSString -> Bool -> IO ()
+tableExport jname csv = guarded $ readIORef sessionRef >>= mapM_ (\s -> do
+  let name = fromJSString jname
+  projectTable s name >>= \case
+    Nothing -> postError ("there's no table named " ++ name)
+    Just (ty, v) -> exportTableFile Stored (if csv then CsvFormat else ZipFormat) name ty v >>= \case
+      Left why -> postError ("Couldn't export the table: " ++ why)
+      Right bytes -> BS.useAsCStringLen (LBS.toStrict bytes) $ \(p, n) ->
+        postDownload (toJSString (name ++ "-table" ++ (if csv then ".csv" else ".zip"))) (castPtr p) n)
+
+tableImport :: JSString -> JSVal -> IO ()
+tableImport jname bytes = guarded $ readIORef sessionRef >>= mapM_ (\s -> do
+  let name = fromJSString jname
+  n <- byteLength bytes
+  contents <- BSI.create n (copyBytes bytes)
+  result <- projectTable s name >>= \case
+    Nothing -> pure (Left ("there's no table named " ++ name))
+    Just (ty, v) -> importTableFile ty v contents
+  post (Aeson.object [ "type" .= ("tableImported" :: Text.Text), "name" .= name
+                     , "error" .= either Just (const Nothing) result ]))
 
 save :: JSString -> Int -> Bool -> JSString -> IO ()
 save views withTables withDraft draft = guarded $ readIORef sessionRef >>= \case
@@ -916,7 +961,11 @@ startProject how projectTitle fileName rebuilt carried ensemble = do
   -- A rebuild is one; a newly opened project has none, unless it's a
   -- translation (which isn't anywhere yet but here).
   if rebuilt then markUnsaved else setUnsaved (case how of Translated _ -> True; _ -> False)
-  watchValues ensemble markUnsaved >>= writeIORef unwatchValues
+  stopValues <- watchValues ensemble markUnsaved
+  -- (each table's line on the page, as it changes: by a tool, say)
+  stopTables <- ensembleTables ensemble >>= mapM (\(name, st, v) -> watchDynamic v $ \t ->
+    post (Aeson.object [ "type" .= ("tableText" :: Text.Text), "name" .= name, "summary" .= tableSummaryText st t ]))
+  writeIORef unwatchValues (stopValues >> sequence_ stopTables)
 
 -- | Stop the open project's render loops (if any).
 close :: IO ()
@@ -2050,7 +2099,8 @@ layoutJSON keyOf colors texts = go
       PlainText t -> getDynamic t <&> \s -> Aeson.object [ kind "plain", "text" .= s ]
       Button t -> getDynamic t <&> \l -> Aeson.object [ kind "button", "label" .= l ]
       ActionButton{} -> pure Aeson.Null
-      HiddenTable{} -> pure Aeson.Null
+      TableField name st@(SomeType ty) v -> getDynamic v <&> \t -> Aeson.object
+        [ kind "table", "name" .= name, "summary" .= tableSummaryText st t, "csv" .= csvAvailable ty ]
       CheckBox l name _ -> field "check" l name []
       ColorPicker l name col -> do
         let hex = getDynamic col <&> either (const Nothing) (\c ->

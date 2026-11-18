@@ -13,6 +13,15 @@ import           Graphics.UI.WXCore.WxcClassesMZ
 
 import UI.Widgets
 
+import Actor.TableTransfer
+import Data.Zip (Packing(..))
+import Control.Exception (SomeException, displayException, try)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
+import Data.Char (toLower)
+import Language.Type (SomeType(..))
+import System.FilePath (takeExtension)
+
 -- | Build a layout's widgets. Its buttons run @buttonPress@ with their
 -- text (for a tool's handlers), and its 'ActionButton's run @appAction@.
 generateWxLayout :: (AppAction -> IO ())
@@ -89,8 +98,42 @@ generateWxLayout appAction buttonPress frame0 wLayout = do
           set btn [ on command := get btn text >>= buttonPress ]
           pure (hstretch . expand . container p' $ floatCentre $ margin 5 $ widget btn)
 
-        -- (a table has no widget)
-        HiddenTable{} -> pure Graphics.UI.WX.empty
+        -- (a table: what it is, its size as it changes, and Export… and
+        -- Import…: see Actor.TableTransfer)
+        TableField name st@(SomeType ty) var -> liftIO $ do
+          p' <- panel p []
+          nameTxt <- staticText p' [ text := name ]
+          summary <- staticText p' []
+          let showSummary t = set summary [ text := tableSummary st t ] >> windowReLayout p'
+          getDynamic var >>= showSummary
+          wxWatchDynamic p' var showSummary
+          let zipType = ("FractalStream table (.zip)", ["*.zip"])
+              csvType = ("CSV (.csv)", ["*.csv"])
+              csv = csvAvailable ty
+          exportBtn <- button p' [ text := "Export…" ]
+          importBtn <- button p' [ text := "Import…" ]
+          set exportBtn [ on command := do
+            picked <- fileSaveDialog p' True True ("Export the table " ++ name)
+                        (zipType : [ csvType | csv ]) "" (name ++ "-table.zip")
+            forM_ picked $ \path -> do
+              let format = if map toLower (takeExtension path) == ".csv" && csv then CsvFormat else ZipFormat
+              exportTableFile Deflated format name st var >>= \case
+                Left why -> errorDialog p' "Couldn't export the table" why
+                Right bytes -> try (BL.writeFile path bytes) >>= \case
+                  Right () -> pure ()
+                  Left (e :: SomeException) -> errorDialog p' "Couldn't export the table" (displayException e) ]
+          set importBtn [ on command := do
+            picked <- fileOpenDialog p' True True ("Import into the table " ++ name)
+                        (if csv then [("FractalStream table or CSV", ["*.zip", "*.csv"]), zipType, csvType]
+                                else [zipType]) "" ""
+            forM_ picked $ \path -> try (BS.readFile path) >>= \case
+              Left (e :: SomeException) -> errorDialog p' "Couldn't import the table" (displayException e)
+              Right bytes -> importTableFile st var bytes >>= \case
+                Left why -> errorDialog p' "Couldn't import the table" why
+                Right () -> pure () ]
+          set p' [ layout := row 5 [ margin 3 (widget nameTxt), margin 3 (hfill (widget summary))
+                                   , widget exportBtn, widget importBtn ] ]
+          pure (hstretch . expand . margin 5 $ widget p')
 
         ActionButton action txt -> liftIO $ do
           p' <- panel p []

@@ -88,6 +88,7 @@ library
                        Actor.Metadata
                        Actor.SavedValues
                        Actor.SavedTables
+                       Actor.TableTransfer
                        Data.Zip
                        FractalStream.Settings
                        FractalStream.Quoted
@@ -226,6 +227,7 @@ test-suite spec
                     , base64-bytestring
   other-modules:      Data.Indexed.FunctorSpec
                     , Data.ZipSpec
+                    , Actor.TableTransferSpec
                     , Language.Value.DerivativeSpec
                     , Language.Value.EvaluatorSpec
                     , Language.Value.ParserSpec

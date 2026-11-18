@@ -192,6 +192,14 @@ body {
 }
 .field input.invalid { border-color: var(--error); }
 .field-error { color: var(--error); cursor: help; }
+/* (a table: its name, what it is and its size, Export and Import) */
+.table-field { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.table-name { flex: none; min-width: 7em; color: var(--muted); }
+.table-summary { flex: 1 1 10em; min-width: 0; font: 13px ui-monospace, monospace; }
+.table-field button {
+  font: inherit; padding: 2px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer;
+}
 .tab-chooser {
   width: 100%; margin-bottom: 8px; font: inherit; padding: 4px 6px;
   border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);

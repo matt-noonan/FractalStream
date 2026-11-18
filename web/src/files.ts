@@ -50,6 +50,17 @@ export async function pickFile(): Promise<Opened | null> {
   });
 }
 
+/** Ask the user for a file to import into a table: an exported table
+    (.zip), or, if the table takes one, a CSV (null if they don't pick one). */
+export async function pickTableFile(csv: boolean): Promise<File | null> {
+  const input = Object.assign(document.createElement("input"), { type: "file", accept: csv ? ".zip,.csv" : ".zip" });
+  return new Promise((resolve) => {
+    input.addEventListener("change", () => resolve(input.files?.[0] ?? null));
+    input.addEventListener("cancel", () => resolve(null));
+    input.click();
+  });
+}
+
 /** A file dropped on the page, with its handle if the browser gives one. */
 export async function droppedFile(e: DragEvent): Promise<Opened | null> {
   const item = e.dataTransfer?.items?.[0] as (DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileHandle | null> }) | undefined;

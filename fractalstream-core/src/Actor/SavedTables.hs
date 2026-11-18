@@ -35,6 +35,8 @@ module Actor.SavedTables
   , writeSavedTables
   , tableFiles
   , readTableAt
+  , loadSavedTable
+  , saveTable
   , captureTables
   , applySavedTables
   , TableSummary(..)
@@ -158,16 +160,24 @@ hex = concatMap (\w -> (if w < 16 then ('0' :) else id) (showHex w "")) . BS.unp
 captureTables :: [(String, SomeType, Variable Table)] -> IO SavedTables
 captureTables tables = fmap (Map.fromList . catMaybes) . forM tables $ \(name, SomeType ty, var) -> do
   t <- getDynamic var
-  pure $ case ty of
-    TableType _ elemTy | tableCellCount t > 0, Just packed <- packTable elemTy t ->
-      Just (name, SavedTable
-        { stType = ppType ty
-        , stSize = tableDims t
-        , stOrigin = tableOrigin t
-        , stStep = tableStep t
-        , stData = BL.fromStrict packed
-        , stSha256 = Nothing })
+  pure $ case saveTable ty t of
+    Just st | tableCellCount t > 0 -> Just (name, st)
     _ -> Nothing
+
+-- | A table of this type, to save (or Nothing, if the type isn't a
+-- table's, or can't be packed).
+saveTable :: TypeProxy t -> Table -> Maybe SavedTable
+saveTable ty t = case ty of
+  TableType _ elemTy -> do
+    packed <- packTable elemTy t
+    pure SavedTable
+      { stType = ppType ty
+      , stSize = tableDims t
+      , stOrigin = tableOrigin t
+      , stStep = tableStep t
+      , stData = BL.fromStrict packed
+      , stSha256 = Nothing }
+  _ -> Nothing
 
 -- | Put saved tables back into the given tables, returning a warning for
 -- each one that couldn't be (because the project no longer has a table by
@@ -182,22 +192,27 @@ applySavedTables tables saved = fmap catMaybes . forM (Map.toList saved) $ \(nam
       | ppType ty /= stType st ->
           pure (Just ("ignoring the saved table `" ++ name ++ "`: it was saved as a "
                       ++ stType st ++ ", but it's now a " ++ ppType ty))
-      | TableType _ elemTy <- ty -> do
-          let bad why = Just ("ignoring the saved table `" ++ name ++ "`: " ++ why)
-          hash <- newIORef SHA256.init
-          try (unpackTableChunks elemTy (stSize st) (stOrigin st) (stStep st) (stData st)
-                 (\chunk -> modifyIORef' hash (`SHA256.update` chunk))) >>= \case
-            Left (_ :: SomeException) -> pure (bad "its data is damaged")
-            Right (Left err) -> pure (bad err)
-            Right (Right t) -> do
-              actual <- hex . SHA256.finalize <$> readIORef hash
-              if maybe False (/= actual) (stSha256 st)
-                then pure (bad "its data isn't what its description says (its checksum doesn't match)")
-                else do
-                  freezeTable t
-                  setValue' var t
-                  pure Nothing
+      | TableType _ elemTy <- ty -> loadSavedTable elemTy st >>= \case
+          Left why -> pure (Just ("ignoring the saved table `" ++ name ++ "`: " ++ why))
+          Right t -> Nothing <$ setValue' var t
       | otherwise -> pure (Just ("ignoring the saved table `" ++ name ++ "`, which isn't a table"))
+
+-- | A saved table's contents, as a table of these elements (frozen), or
+-- why they can't be: their data doesn't fit their size, or isn't what
+-- their description says (its checksum). Its data is read once, into the
+-- table, checked as it goes by.
+loadSavedTable :: TypeProxy t -> SavedTable -> IO (Either String Table)
+loadSavedTable elemTy st = do
+  hash <- newIORef SHA256.init
+  try (unpackTableChunks elemTy (stSize st) (stOrigin st) (stStep st) (stData st)
+         (\chunk -> modifyIORef' hash (`SHA256.update` chunk))) >>= \case
+    Left (_ :: SomeException) -> pure (Left "its data is damaged")
+    Right (Left err) -> pure (Left err)
+    Right (Right t) -> do
+      actual <- hex . SHA256.finalize <$> readIORef hash
+      if maybe False (/= actual) (stSha256 st)
+        then pure (Left "its data isn't what its description says (its checksum doesn't match)")
+        else Right t <$ freezeTable t
 
 -- | A table's name, size, and how many bytes its data takes before
 -- compression, for telling the user what saving the tables would save.
