@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Hénon map"
   a : R as "a =" := 1.4

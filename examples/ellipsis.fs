@@ -1,3 +1,4 @@
+format: 1
 script: |
   @viewer "Douady rabbit"
   # Iterate until we escape or loop 100 times

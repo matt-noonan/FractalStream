@@ -1,3 +1,4 @@
+format: 1
 script: |
   @viewer "z plane"
 

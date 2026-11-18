@@ -3,6 +3,7 @@
 # and one that does (Count), to see that clicks work after a stop. (A
 # `while` loop stops at the iteration limit unless it says `up to N times`;
 # nested, these two never finish in practice.)
+format: 1
 script: |
   @config "Configuration"
   count : Z := 0

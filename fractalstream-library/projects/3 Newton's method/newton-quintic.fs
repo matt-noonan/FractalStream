@@ -1,3 +1,4 @@
+format: 1
 script: |
   @common
   # z⁵ - z - 1 is the classic polynomial whose roots can't be written down

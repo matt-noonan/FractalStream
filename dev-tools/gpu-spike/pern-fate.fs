@@ -2,6 +2,7 @@
 # FractalStream project, to time the CPU backends on the same work: the
 # fate of the critical value of f(z) = (z - x)(z - w)/z^2 over a square of
 # x's, y fixed, captured near a marked point or not within 500 steps.
+format: 1
 script: |
   @viewer "Fate" var=x center="0.4 + 0.2i" pixelSize="4/600"
   y : C := 0.3 + 0.2i

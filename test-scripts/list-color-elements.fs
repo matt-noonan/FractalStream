@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   palette : List of Color as "Palette (4 colors)" := [red, green, blue, yellow]

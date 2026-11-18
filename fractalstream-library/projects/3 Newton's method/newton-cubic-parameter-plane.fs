@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Roots"
   a : C as "Third root a =" := -0.81 + 0.846i

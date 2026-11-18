@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   C : C as "C = " := 0.5000000000 + 0.8660254038*i

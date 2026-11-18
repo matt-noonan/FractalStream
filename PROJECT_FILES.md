@@ -3,16 +3,40 @@
 A project is one file, in one of two forms:
 
 - **`.fs`**: a YAML document (UTF-8) whose top-level `script:` key holds
-  the project's script, with its other keys alongside: `metadata:`
-  (title, description, preview), `scenarios:`, `colorizers:`,
-  `autocolor:`, `values:` (configuration values that differ from the
-  script's defaults), and the apps' own keys (`wx-properties:`,
+  the project's script, with its other keys alongside: `format:`
+  (below), `metadata:` (title, description, preview), `scenarios:`,
+  `colorizers:`, `autocolor:`, `values:` (configuration values that
+  differ from the script's defaults), and the apps' own keys (`wx-properties:`,
   `web-properties:`: windows and views).
 - **`.fsz`**: a zip archive of a `.fs` file, named `project.fs`, and the
   data files its `manifest:` key lists. A project is saved as a `.fsz`
   when it's saved with data that doesn't belong in YAML: today, what its
   tables hold. Everything a project needs is in the one file, so that it
   can be opened, as it was, years from now.
+
+## The format
+
+A project file's first key, `format:`, says which project format it's in:
+what its keys mean, and the language its script is in. This version of
+FractalStream reads and writes format 1:
+
+```yaml
+format: 1
+script: |
+  @viewer "Mandelbrot set" var=C
+  ...
+```
+
+A file without a `format:` key is format 1. The format changes only when
+an existing file would mean something else to the new version: a new key,
+a new builtin or a new kind of viewer doesn't change it, since a file
+that doesn't use them means what it did. A version of FractalStream
+refuses a file in a format newer than its own, rather than guess at it,
+and says so; one in an older format it reads (and saves in its own). An
+archive's `project.fs` carries the key; a table's description has its own
+`encoding:` instead.
+
+## Opening and saving
 
 The apps open either form (they tell them apart by their first bytes, not
 their names), and save a project with tables as a `.fsz`, without them as

@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   lo : Z as "lo" := -3

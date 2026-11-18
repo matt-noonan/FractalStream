@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   λ : C as "λ = " := 0.9 e^{2 pi i / 3}

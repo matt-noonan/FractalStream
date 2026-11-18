@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Parameter"
   λ : C as "λ =" := 0.005 + 0.1i

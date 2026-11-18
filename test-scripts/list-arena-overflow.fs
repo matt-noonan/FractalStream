@@ -1,3 +1,4 @@
+format: 1
 script: |
   @viewer "Arena overflow test" var=z pixelSize="1/128"
   # Arena overflow visual test
