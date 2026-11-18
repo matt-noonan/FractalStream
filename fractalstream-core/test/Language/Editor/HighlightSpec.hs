@@ -175,10 +175,13 @@ spec = describe "highlighting scripts" $ do
     let src = "repeat:\n  z <- z^2\n  draw line from previous z to z\nuntil z escapes\n"
     classOf src "previous" 0 `shouldBe` Just Keyword
 
-  it "keeps built-ins built-in, even where a script tries to define them" $ do
+  it "shows a built-in's name a script defines as the script's own, in that stanza" $ do
     let src = "define foo(bar):\n  bar <- bar + 1\n"
-    classOf src "bar" 0 `shouldBe` Just BuiltinFunction
-    classOf src "bar" 2 `shouldBe` Just BuiltinFunction
+    classOf src "bar" 0 `shouldBe` Just Variable
+    classOf src "bar" 2 `shouldBe` Just Variable
+    let two = "@viewer \"V\"\nfall := 0.5\ncolor <- rainbow(fall)\n\n@viewer \"W\"\ncolor <- fall(0.5)\n"
+    classOf two "fall" 1 `shouldBe` Just Variable
+    classOf two "fall" 2 `shouldBe` Just BuiltinFunction
 
   it "lets a script name a variable with a statement word" $
     classOf project "line" 0 `shouldBe` Just Variable

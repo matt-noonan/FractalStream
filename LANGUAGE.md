@@ -278,6 +278,44 @@ out, with a tuple: `u, v := 0, 1` (or `(u, v) := (0, 1)`).
 
 A new variable can be used in the rest of the block it is declared in.
 
+### Names
+
+A script can name its variables, functions, and code blocks with almost
+any word, including the names of FractalStream's built-in functions and
+colors. A name the script defines is the script's own: where it's
+defined, the built-in of that name isn't available. So a script can have
+a configuration value called `fall`, or a function called `max`:
+
+```
+@config "Parameters"
+fall : R := 0.25
+
+@common
+max(a, b) := if a > b then a else b
+
+@viewer "V"
+color <- rainbow(max(fall, re z))
+```
+
+A name defined in `@config` or `@common` is the script's everywhere. A name
+defined in a viewer, a tool, or a colorizer (a variable, a tool's field, a
+point a handler is given) is the script's only in that stanza: another
+viewer still has the built-in. A built-in that a later version of
+FractalStream adds can't change what an existing script means, since the
+script's own name still wins.
+
+A variable is a variable even when parentheses follow it: with a variable
+`max`, `max(a, b)` multiplies `max` by `(a, b)`, and FractalStream says so.
+
+Some words are keywords, and can't name anything: `if`, `then`, `else`,
+`and`, `or`, `not`, `true`, `false`, `e`, `i`, `pi`, `escapes`,
+`vanishes`, `stops`, `iterations`, `stuck`, `times`, `previous`, `text`,
+`append`, `prepend`, `join`, `remove`, `find`, `transform`, `range`,
+`length`, and `diff`. The words of statements (`draw`, `use`, `erase`,
+`for`, `each`, `reset`, ...) can be names, since they mean something only
+where a statement starts; and after `with radius` in `draw`, `pixels` is
+always the unit, even in a script with a variable called `pixels`.
+
 ### Defining functions
 
 To define your own function, write it as you would on paper, with `:=`
@@ -1131,8 +1169,8 @@ draw filled circle at z with radius 4 pixels
 
 It's 4 pixels in radius at any zoom, wherever `z` is shown: on the sphere,
 in the hyperbolic plane, and in each tile of a group (see "Groups: tilings
-and surfaces"). (`pixels` is a word of its own, so it can't be used as a
-name in an expression.)
+and surfaces"). (Here `pixels` is always the unit, even in a script with a
+variable called `pixels`: see "Names".)
 
 #### Drawing text
 

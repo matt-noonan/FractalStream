@@ -10,6 +10,7 @@ import Actor.Event (Coordinate(..))
 
 
 import Data.List (isInfixOf)
+import Control.Monad (forM_)
 import Text.RawString.QQ
 
 runScript :: String -> Either String [ParsedStanza]
@@ -466,13 +467,14 @@ on refresh:
   pass
 |] $ \stanzas -> length stanzas `shouldBe` 2
 
-  describe "fields named with built-in names" $
-    it "are reported, in @config stanzas, their tabs and rows, and tools" $ do
-      "@config \"P\"\nred : Color := blue\n" `shouldFailWith`
-        "`red` is a color's name, so it can't also name a variable"
-      "@config \"P\"\nbar : C := 0\n" `shouldFailWith`
-        "`bar` is a built-in function (the complex conjugate)"
-      "@config \"P\"\ntab \"T\":\n  sin : R := 1\n" `shouldFailWith` "`sin` is a built-in function"
-      "@config \"P\"\nrow:\n  x : R := 1\n  re : R := 2\n" `shouldFailWith` "`re` is a built-in function"
-      "@viewer \"V\"\ncolor <- black\n\n@tool \"T\"\nsin : R := 1\non click:\n  pass\n"
-        `shouldFailWith` "`sin` is a built-in function"
+  describe "fields named with built-in names" $ do
+    it "are the script's, in @config stanzas, their tabs and rows, and tools" $ do
+      forM_ [ "@config \"P\"\nred : Color := blue\n"
+            , "@config \"P\"\nbar : C := 0\n"
+            , "@config \"P\"\ntab \"T\":\n  sin : R := 1\n"
+            , "@config \"P\"\nrow:\n  x : R := 1\n  re : R := 2\n"
+            , "@viewer \"V\"\ncolor <- black\n\n@tool \"T\"\nsin : R := 1\non click:\n  pass\n" ] $ \src ->
+        shouldParseTo src (const (pure ()))
+    it "but not keywords" $ do
+      "@config \"P\"\nlength : Z := 3\n" `shouldFailWith` "`length` is a built-in function, so it can't also name a variable"
+      "@config \"P\"\nrow:\n  iterations : Z := 3\n" `shouldFailWith` "`iterations` is a built-in value"

@@ -501,7 +501,7 @@ resolveChoice available funs scope txt = do
     _ -> cname ++ " takes " ++ show (length params) ++ " arguments"
   given <- forM argTexts $ \argText ->
     left (\(e :: ParseError) -> unlines (pp e))
-         (fmap (const NoSourceRange) <$> parse (argumentGrammarWithFunctions funs) (tokenize argText))
+         (fmap (const NoSourceRange) <$> parse (argumentGrammarWithFunctions funs scope) (tokenize argText))
   let rest' = drop (length given) params
       missing = [ p | p <- rest', Map.notMember p defaults, p `Set.notMember` scope ]
   unless (null missing) $

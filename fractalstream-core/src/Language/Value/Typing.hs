@@ -43,6 +43,7 @@ import Language.Typecheck
 import Language.Parser.SourceRange
 import Language.Value.Syntax
 import Language.Value.Builtins
+import Language.Parser (isOwnableBuiltin)
 import Language.Value.Differentiate
 
 -- | The types of the variables in scope.
@@ -494,6 +495,10 @@ synthBin env sr op x y = case op of
       y' <- synth env y
       case joinType (exprType x') (exprType y') of
         Just t | isNumeric t -> pure (x', y', t)
+        _ | OpMul <- op, Syn _ (EVar n) <- x, isOwnableBuiltin n ->
+              -- (`max(a, b)`, with the script's own `max`)
+              advise sr ("`" ++ n ++ "` is this script's own variable here, not the built-in, \
+                         \so `" ++ n ++ "(...)` multiplies it by what's in the parentheses.")
         _ -> throwError $ case filter (not . isNumeric . exprType) [x', y'] of
           bad : _ -> mismatchNumeric bad
           [] -> mismatch y' (exprType x')
@@ -682,7 +687,8 @@ refit env ty x x'
 describe :: ExprF r -> String
 describe = \case
   ELit d _ -> d
-  EVar n -> n
+  EVar n | isOwnableBuiltin n -> n ++ " (this script's own variable here, not the built-in)"
+         | otherwise -> n
   ECast{} -> "this conversion"
   EITE{} -> "this if/then/else expression"
   EPair{} -> "this ordered pair"

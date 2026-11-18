@@ -510,16 +510,30 @@ x <- d|] `shouldBe` Right 3
 
     let failsWith input needle =
           runWithX (Scalar RealType 0) input `shouldSatisfy` either (needle `isInfixOf`) (const False)
+        gives input v = runWithX (Scalar RealType 0) input `shouldBe` Right v
 
-    it "says so, rather than failing to parse what comes after" $ do
-      failsWith "define foo(bar):\n  bar <- bar + 1\nrun foo(x)"
-        "`bar` is a built-in function (the complex conjugate), so it can't also name a variable"
+    it "takes it for the script's own: a variable, function, or code block, not the built-in" $ do
+      "define foo(bar):\n  bar <- bar + 1\n  x <- bar\nrun foo(2)" `gives` 3
+      "sin(t) := t + 1\nx <- sin(1)" `gives` 2
+      "define re:\n  x <- 5\nrun re" `gives` 5
+      "for each red in [1, 2]:\n  x <- x + red" `gives` 3
+      "fall := 2.0\nx <- fall + 1" `gives` 3
+      "x <- transform([1.0], arg -> arg + 1) @ 1" `gives` 2
+      -- (a variable followed by parentheses is a product, as for any variable)
+      "re := 2.0\nx <- re(3)" `gives` 6
+      "point := 1.5\nx <- point" `gives` 1.5
+      failsWith "rgb := 2.0\nx <- rgb(1, 2)"
+        "`rgb` is this script's own variable here, not the built-in, so `rgb(...)` multiplies it"
+
+    it "but a statement's own word is the statement's" $ do
+      "pixels := 2.0\nx <- pixels" `gives` 2
+      runWithX (Scalar RealType 0) "pixels := 2.0\ndraw filled circle at 0 with radius 4 pixels\nx <- pixels"
+        `shouldBe` Right 2
+
+    it "but not a keyword" $ do
       failsWith "i := 0" "`i` is the imaginary unit, so it can't also name a variable. Try another name (k, j, n, ...)."
-      failsWith "sin(t) := t\nx <- sin(1)" "`sin` is a built-in function, so it can't also name a function"
-      failsWith "define re:\n  pass" "`re` is a built-in function (the real part), so it can't also name a code block"
-      failsWith "for each red in [1, 2]:\n  pass" "`red` is a color's name"
-      failsWith "length : Z := 3" "`length` is a built-in function"
-      failsWith "x <- transform([1.0], arg -> arg + 1) @ 1" "`arg` is a built-in function (the argument)"
+      failsWith "length : Z := 3" "`length` is a built-in function, so it can't also name a variable"
+      failsWith "define range:\n  pass" "`range` is a built-in function, so it can't also name a code block"
 
     it "leaves built-ins used as built-ins alone" $ do
       runWithX (Scalar RealType 0) "x <- re(2 + i) + cos(0)" `shouldBe` Right 3.0

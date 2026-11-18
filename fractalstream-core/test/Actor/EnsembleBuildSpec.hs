@@ -1146,6 +1146,38 @@ w <- w + 1
             (Left (_, cErr), Right _) ->
               expectationFailure ("checkScript rejected (" ++ cErr ++ "), but buildEnsembleFromScript accepted")
 
+    it "takes a built-in's name for the script's own in the stanza that \
+       \defines it, and everywhere for @config and @common names" $ do
+      -- a tool's own `sin` is its variable; the viewer still has the built-in
+      checkAccepts (unlines
+        [ "@viewer \"V\""
+        , "color <- if sin(re z) > 0 then red else blue"
+        , ""
+        , "@tool \"T\" for=\"V\""
+        , "sin : R as \"sin\" := 1"
+        , "on click:"
+        , "  sin <- sin + 1" ])
+      -- a configuration value named like a color wheel, used in a viewer
+      checkAccepts (unlines
+        [ "@config \"P\""
+        , "fall : R := 0.5"
+        , ""
+        , "@viewer \"V\""
+        , "color <- rainbow(fall)" ])
+      -- a @common definition named like a built-in
+      checkAccepts (unlines
+        [ "@common"
+        , "max(a, b) := if a > b then a else b"
+        , "red := 0.25"
+        , ""
+        , "@viewer \"V\""
+        , "color <- rainbow(max(red, re z))" ])
+      -- and in the stanza that defines it, the name isn't the built-in
+      checkFailsWith (unlines
+        [ "@viewer \"V\""
+        , "red := 0.5"
+        , "color <- red" ]) "red (this script's own variable here, not the built-in) is a real number"
+
     it "accepts a simple, valid single-viewer script" $
       checkAccepts [r|
 @viewer "Mandelbrot Set" var=C
