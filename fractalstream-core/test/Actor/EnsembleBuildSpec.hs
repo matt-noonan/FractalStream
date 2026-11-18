@@ -820,13 +820,21 @@ on refresh:
       summaries <- ensembleTables ens >>= summarizeTables
       summaries `shouldMatchList` [TableSummary "T" [2, 3, 2] (12 * 20), TableSummary "B" [3] 3]
       -- (saved with its tables: a .fsz archive, its project.fs with a
-      -- manifest, and a file a table)
+      -- manifest, and two files a table: its description and its data)
       setValue' (ensembleSavedTables ens) saved
       bytes <- encodeEnsemble ens
       isZip bytes `shouldBe` True
       projectFileName "saved.fs" bytes `shouldBe` "saved.fsz"
       Right entries <- pure (readZip bytes)
-      map fst entries `shouldBe` ["project.fs", "tables/B.bin", "tables/T.bin"]
+      map fst entries `shouldBe` ["project.fs", "tables/B.yaml", "tables/B.bin", "tables/T.yaml", "tables/T.bin"]
+      Just projectFs <- pure (lookup "project.fs" entries)
+      BS.isInfixOf "    T: tables/T.yaml" (BL.toStrict projectFs) `shouldBe` True
+      Just described <- pure (lookup "tables/T.yaml" entries)
+      let describedLines = lines (Text.unpack (TE.decodeUtf8 (BL.toStrict described)))
+      init describedLines `shouldBe`
+        [ "type: Table 3 of (ℂ × ℤ)", "size:", "- 2", "- 3", "- 2", "origin:", "- -1", "- 1"
+        , "step:", "- 0.5", "- 0.5", "encoding: raw", "file: T.bin" ]
+      map length (words (last describedLines)) `shouldBe` [7, 64]
       Right loaded <- parseEnsembleFromBytes "saved.fsz" bytes
       fromFile <- getDynamic (ensembleSavedTables loaded)
       Map.keys fromFile `shouldBe` Map.keys saved
@@ -860,7 +868,7 @@ on refresh:
       fromFile <- getDynamic (ensembleSavedTables loaded)
       let tampered = Map.adjust (\st -> st { stData = BL.map (+ 1) (stData st) }) "T" fromFile
       warnings <- ensembleTables loaded >>= \ts -> applySavedTables ts tampered
-      warnings `shouldBe` ["ignoring the saved table `T`: its data isn't what the manifest says (its checksum doesn't match)"]
+      warnings `shouldBe` ["ignoring the saved table `T`: its data isn't what its description says (its checksum doesn't match)"]
 
     it "skips a saved table that no longer fits the project, with a warning" $ do
       Right old <- buildEnsembleFromScript (unlines

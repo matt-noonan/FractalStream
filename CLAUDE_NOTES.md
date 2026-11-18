@@ -448,8 +448,11 @@ which both `build.sh` and `node.sh` run after `post-link.mjs`, and which
 fails the build if any view is still signed.
 
 **Project files** (PROJECT_FILES.md). A project with saved tables is a
-`.fsz` zip archive: `project.fs` (the YAML, with a `manifest:` key) and a
-file per table (raw packed bytes, SHA-256 in the manifest). `Data.Zip` is
+`.fsz` zip archive: `project.fs` (the YAML, whose `manifest:` names each
+table's description) and two files per table, `tables/<name>.yaml` (type,
+size, origin, step, `file:` beside it, SHA-256) and `tables/<name>.bin`
+(raw packed bytes): `Actor.SavedTables.tableFiles` / `readTableAt`, the
+same pair a table is exported as (in a zip of its own). `Data.Zip` is
 ours (stored/deflate, no zip64, fixed timestamps: reproducible bytes;
 CRC-32 from the zlib package's C zlib), since `zip-archive`'s `digest`
 needs a system zlib.h that the wasm toolchain lacks. `loadProjectBytes`

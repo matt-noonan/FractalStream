@@ -2,20 +2,27 @@
 
 -- | What a project's tables held when it was saved (the tables that
 -- weren't empty), which a project file keeps in a @.fsz@ archive (see
--- PROJECT_FILES.md): each table's elements in a file of their own, packed
--- ('Language.Table.packTable'), and described in the project's
--- @manifest:@ key, by name:
+-- PROJECT_FILES.md). A table on disk is two files: its elements, packed
+-- ('Language.Table.packTable'), and a description of them, beside it:
+--
+-- > # tables/crits.yaml
+-- > type: Table 3 of (ℂ × ℤ)
+-- > size: [120, 120, 2]
+-- > origin: [-2.0, 1.5]
+-- > step: [0.025, 0.025]
+-- > encoding: raw
+-- > file: crits.bin
+-- > sha256: 3f2a...
+--
+-- (@file:@ is beside the description), and the project's @manifest:@
+-- says where each table's description is, by name:
 --
 -- > manifest:
 -- >   tables:
--- >     crits:
--- >       file: tables/crits.bin
--- >       type: Table 3 of (ℂ × ℤ)
--- >       size: [120, 120, 2]
--- >       origin: [-2.0, 1.5]
--- >       step: [0.025, 0.025]
--- >       encoding: raw
--- >       sha256: 3f2a...
+-- >     crits: tables/crits.yaml
+--
+-- The same two files, in a zip of their own, are a table exported from
+-- a project (and imported into one).
 --
 -- Like @values:@ ("Actor.SavedValues"), these are where a project was
 -- left, not part of what it is, so the apps restore them and fsrun
@@ -26,6 +33,8 @@ module Actor.SavedTables
   , SavedTables
   , readSavedTables
   , writeSavedTables
+  , tableFiles
+  , readTableAt
   , captureTables
   , applySavedTables
   , TableSummary(..)
@@ -48,6 +57,11 @@ import qualified Data.Map as Map
 import Data.IORef (newIORef, modifyIORef', readIORef)
 import Control.Exception (SomeException, try)
 import Numeric (showHex)
+import Data.List (elemIndex)
+import Data.Ord (comparing)
+import qualified Data.Yaml as YAML
+import qualified Data.Yaml.Pretty as YAMLPretty
+import Data.YamlUnicode (encodePrettyYaml)
 
 -- | One saved table.
 data SavedTable = SavedTable
@@ -63,48 +77,72 @@ data SavedTable = SavedTable
 
 type SavedTables = Map String SavedTable
 
--- | A manifest's entry for a table: where its file is, and what's in it.
-data TableEntry = TableEntry
-  { teFile :: FilePath, teType :: String, teSize :: [Int]
-  , teOrigin :: (Double, Double), teStep :: (Double, Double), teSha256 :: Maybe String }
+-- | A table's description: what's in its file, and where that is
+-- (beside the description).
+data TableInfo = TableInfo
+  { tiFile :: FilePath, tiType :: String, tiSize :: [Int]
+  , tiOrigin :: (Double, Double), tiStep :: (Double, Double), tiSha256 :: Maybe String }
 
-instance FromJSON TableEntry where
+instance FromJSON TableInfo where
   parseJSON = withObject "table" $ \o -> do
     encoding <- o .:? "encoding" .!= ("raw" :: String)
     unless (encoding == "raw") $
       fail ("its encoding is " ++ show encoding ++ ", which this version of FractalStream can't read")
-    TableEntry <$> o .: "file" <*> o .: "type" <*> o .: "size" <*> o .: "origin" <*> o .: "step"
-               <*> o .:? "sha256"
+    TableInfo <$> o .: "file" <*> o .: "type" <*> o .: "size" <*> o .: "origin" <*> o .: "step"
+              <*> o .:? "sha256"
 
--- | The tables a project's @manifest:@ says it has, from its archive's
--- files (by path); and a warning for each one that can't be had.
+-- | The tables a project's @manifest:@ says it has (each by its
+-- description's path), from its archive's files (by path); and a warning
+-- for each one that can't be had.
 readSavedTables :: KM.KeyMap Value -> Map FilePath BL.ByteString -> (SavedTables, [String])
 readSavedTables manifest files = case KM.lookup "tables" manifest of
   Nothing -> (Map.empty, [])
   Just v -> case parseEither parseJSON v of
     Left err -> (Map.empty, ["ignoring the manifest's tables, which can't be read: " ++ err])
-    Right (entries :: Map String Value) ->
-      let one (name, e) = case parseEither parseJSON e of
-            Left err -> Left ("ignoring the saved table `" ++ name ++ "`: " ++ err)
-            Right TableEntry{..} -> case Map.lookup teFile files of
-              Nothing -> Left ("ignoring the saved table `" ++ name ++ "`: its file " ++ show teFile
-                               ++ " isn't in the project's archive")
-              Just bytes -> Right (name, SavedTable teType teSize teOrigin teStep bytes teSha256)
+    Right (entries :: Map String FilePath) ->
+      let one (name, path) = either (\why -> Left ("ignoring the saved table `" ++ name ++ "`: " ++ why))
+                                    (\st -> Right (name, st))
+                                    (readTableAt files path)
           results = map one (Map.toList entries)
       in (Map.fromList (rights results), lefts results)
 
+-- | The table whose description is at this path among these files (its
+-- elements' file beside it), or why it can't be had.
+readTableAt :: Map FilePath BL.ByteString -> FilePath -> Either String SavedTable
+readTableAt files path = do
+  described <- maybe (Left ("its description " ++ show path ++ " isn't there")) Right (Map.lookup path files)
+  TableInfo{..} <- either (\e -> Left ("its description can't be read: " ++ show e)) Right
+                     (YAML.decodeEither' (BL.toStrict described))
+  let file = folderOf path ++ tiFile
+  bytes <- maybe (Left ("its file " ++ show file ++ " isn't there")) Right (Map.lookup file files)
+  pure (SavedTable tiType tiSize tiOrigin tiStep bytes tiSha256)
+  where
+    -- (archive paths: always with /, whatever the platform)
+    folderOf p = reverse (dropWhile (/= '/') (reverse p))
+
+-- | A table's two files, @<base>.yaml@ (its description) and @<base>.bin@
+-- (its elements), @base@ a path with /.
+tableFiles :: FilePath -> SavedTable -> [(FilePath, BL.ByteString)]
+tableFiles base SavedTable{..} =
+  [ (base ++ ".yaml", BL.fromStrict (encodePrettyYaml infoConfig description))
+  , (base ++ ".bin", stData) ]
+  where
+    fileName = reverse (takeWhile (/= '/') (reverse base)) ++ ".bin"
+    description = object
+      [ "type" .= stType, "size" .= stSize, "origin" .= stOrigin, "step" .= stStep
+      , "encoding" .= ("raw" :: String), "file" .= fileName
+      , "sha256" .= hex (SHA256.hashlazy stData) ]
+    infoConfig = YAMLPretty.setConfCompare (comparing rank) YAMLPretty.defConfig
+    rank k = (fromMaybe (length order) (elemIndex k order), k)
+    order = ["type", "size", "origin", "step", "encoding", "file", "sha256"]
+
 -- | The @manifest:@ entries for these tables, and their files (each
--- table's at @tables/<name>.bin@), to write into a project's archive.
+-- table's at @tables/<name>.yaml@ and @tables/<name>.bin@), to write into
+-- a project's archive.
 writeSavedTables :: SavedTables -> (Value, [(FilePath, BL.ByteString)])
 writeSavedTables tables =
-  ( object [ "tables" .= Map.fromList [ (name, entry name st) | (name, st) <- Map.toList tables ] ]
-  , [ (file name, stData st) | (name, st) <- Map.toList tables ] )
-  where
-    file name = "tables/" ++ name ++ ".bin"
-    entry name SavedTable{..} = object
-      [ "file" .= file name, "type" .= stType, "size" .= stSize
-      , "origin" .= stOrigin, "step" .= stStep, "encoding" .= ("raw" :: String)
-      , "sha256" .= hex (SHA256.hashlazy stData) ]
+  ( object [ "tables" .= Map.fromList [ (name, "tables/" ++ name ++ ".yaml") | name <- Map.keys tables ] ]
+  , concat [ tableFiles ("tables/" ++ name) st | (name, st) <- Map.toList tables ] )
 
 hex :: BS.ByteString -> String
 hex = concatMap (\w -> (if w < 16 then ('0' :) else id) (showHex w "")) . BS.unpack
@@ -126,8 +164,8 @@ captureTables tables = fmap (Map.fromList . catMaybes) . forM tables $ \(name, S
 
 -- | Put saved tables back into the given tables, returning a warning for
 -- each one that couldn't be (because the project no longer has a table by
--- that name and type, or its data doesn't fit, or isn't what the manifest
--- says). Each table's data is read once, into the table, checked as it
+-- that name and type, or its data doesn't fit, or isn't what its
+-- description says). Each table's data is read once, into the table, checked as it
 -- goes by.
 applySavedTables :: [(String, SomeType, Variable Table)] -> SavedTables -> IO [String]
 applySavedTables tables saved = fmap catMaybes . forM (Map.toList saved) $ \(name, st) ->
@@ -147,7 +185,7 @@ applySavedTables tables saved = fmap catMaybes . forM (Map.toList saved) $ \(nam
             Right (Right t) -> do
               actual <- hex . SHA256.finalize <$> readIORef hash
               if maybe False (/= actual) (stSha256 st)
-                then pure (bad "its data isn't what the manifest says (its checksum doesn't match)")
+                then pure (bad "its data isn't what its description says (its checksum doesn't match)")
                 else do
                   freezeTable t
                   setValue' var t

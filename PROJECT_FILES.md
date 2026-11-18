@@ -26,13 +26,14 @@ A standard zip file, as `zip` and `unzip` make and read: each entry
 stored or deflated (method 0 or 8), names in UTF-8, no zip64 (no entry,
 nor the archive, past 4 GB) and no encryption. FractalStream writes every
 entry deflated, with the timestamp 1980-01-01 00:00 (zip's first day),
-in a fixed order (`project.fs`, then the data files by name), so that
-the same project always gives the same bytes.
+in a fixed order (`project.fs`, then each table's two files, by the
+table's name), so that the same project always gives the same bytes.
 
 | Entry | What it is |
 |---|---|
 | `project.fs` | the project's YAML, as a `.fs` file, with a `manifest:` key |
-| `tables/<name>.bin` | a table's elements (see below), one file per table |
+| `tables/<name>.yaml` | a table's description (see below) |
+| `tables/<name>.bin` | the table's elements (see below) |
 
 Other entries are ignored, so later versions can add files (a preview
 image, say) without breaking older ones that only read what they know.
@@ -40,30 +41,42 @@ image, say) without breaking older ones that only read what they know.
 ## The manifest
 
 `project.fs`'s `manifest:` key lists the archive's data files, by kind.
-Today there's one kind, `tables:`, by the table's name in the script:
+Today there's one kind, `tables:`: each table, by its name in the script,
+and where its description is:
 
 ```yaml
 manifest:
   tables:
-    grids:
-      file: tables/grids.bin
-      type: "Table 3 of (ℂ × ℂ)"
-      size: [160, 160, 318]
-      origin: [0.0, 0.0]
-      step: [1.0, 1.0]
-      encoding: raw
-      sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+    grids: tables/grids.yaml
+```
+
+## Tables
+
+A table on disk is two files side by side: its elements, and a
+description of them. In a `.fsz` they're `tables/<name>.bin` and
+`tables/<name>.yaml`; a table exported from a project is the same two
+files in a zip of their own.
+
+```yaml
+# tables/grids.yaml
+type: "Table 3 of (ℂ × ℂ)"
+size: [160, 160, 318]
+origin: [0.0, 0.0]
+step: [1.0, 1.0]
+encoding: raw
+file: grids.bin
+sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 ```
 
 | Field | Meaning |
 |---|---|
-| `file` | the entry in the archive holding the table's elements |
 | `type` | the table's type, as the script declares it (written as FractalStream prints types: `ℝ`, `ℂ`, `ℤ`, `Boolean`, `Color`, and tuples as `(ℂ × ℤ)`) |
 | `size` | its size along each dimension |
 | `origin` | the point at the center of cell (1, 1) |
 | `step` | a cell's width and height (rows go down the plane) |
 | `encoding` | how the file holds the elements: `raw` (below); a version of FractalStream refuses one it doesn't know |
-| `sha256` | the SHA-256 of the file's bytes (as they are in the archive, inflated), in hex; FractalStream checks it, and refuses a table whose data doesn't match |
+| `file` | the file holding the elements, beside the description |
+| `sha256` | the SHA-256 of that file's bytes (inflated, in an archive), in hex; FractalStream checks it, and refuses a table whose data doesn't match |
 
 A table is restored only into a table the script still declares with the
 same name and type; the others are skipped, with a warning.
@@ -98,3 +111,8 @@ tuple's parts to 8 bytes; on disk they're packed.)
   each one's elements, zlib-compressed, in base64) into `.fsz` archives.
   A `.fs` file with a `tables:` key opens without its tables, with a
   warning; `dev-tools/fsz/inline-tables-to-fsz.py` converts one.
+- 2026-11-17: each table's description moved out of the manifest into a
+  file of its own, beside its data (`tables/<name>.yaml`), so that a
+  table is the same two files in a project and on its own (exported); the
+  manifest just names each table's description.
+  `dev-tools/fsz/split-table-descriptions.hs` converts an archive.
