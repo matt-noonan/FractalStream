@@ -48,12 +48,17 @@ data CommonDefs = CommonDefs
   , commonCode   :: [Stmt]
     -- ^ Statements (from a project's @\@common@ stanzas) to prepend to
     -- every viewer and tool script; see 'withCommon'.
+  , ownNames     :: Set String
+    -- ^ The built-in names the script takes for its own (see
+    -- 'Language.Parser.ownBuiltinNames'): the project's, from its
+    -- @\@config@ and @\@common@ stanzas, and the stanza's own. The
+    -- grammar reads them as the script's, not as the built-ins.
   }
 
 -- | No project definitions: only the built-in functions (see
 -- 'builtinFunctions').
 noCommonDefs :: CommonDefs
-noCommonDefs = CommonDefs (Set.fromList builtinFunctionNames) builtinFunctions
+noCommonDefs = CommonDefs (Set.fromList builtinFunctionNames) builtinFunctions Set.empty
 
 -- | Functions every tool can call, written as if in a project's @\@common@
 -- (so that, like those, they're only added to the scripts that use them).
@@ -130,10 +135,11 @@ withCommon CommonDefs{commonCode} body = case (used, body) of
 
 -- | Record the names of the functions defined (by @f(...) := ...@)
 -- anywhere in the given tokens, so that the grammar can parse calls to
--- them.
+-- them, and the built-in names they take for the script's own.
 withDefinedFunctions :: [SRToken] -> CommonDefs -> CommonDefs
 withDefinedFunctions toks defs =
-  defs { funNames = funNames defs `Set.union` Set.fromList (definedFunctionNames (map baseToken toks)) }
+  defs { funNames = funNames defs `Set.union` Set.fromList (definedFunctionNames (map baseToken toks))
+       , ownNames = ownNames defs `Set.union` ownBuiltinNames toks }
 
 -- | The names of the functions defined in the given tokens: a definition
 -- is a name, its parameters in parentheses, then @:=@, starting a line.
@@ -315,12 +321,16 @@ codeStatementsGrammar CommonDefs{..} = mdo
     , node
       (SAllocate <$> (lit "reset" *> ident)
                  <*> (lit "to" *> tableSize)
-                 <*> optional ((,) <$> (lit "from" *> value) <*> (lit "to" *> value))
+                 <*> optional ((,) <$> (lit "from" *> value) <*> (lit "to" *> beforeWords))
                  <*> optional (lit "filled" *> lit "with" *> value))
       <?> "table reset"
     ]
 
-  value <- valueGrammarWithFunctions funNames
+  value <- valueGrammarWithFunctions funNames ownNames
+  -- (a value a statement's own word can follow, `4 pixels` or `q filled
+  -- with`: there the word is the statement's, even if the script has a
+  -- variable of that name, which would make `4 pixels` a product)
+  beforeWords <- valueGrammarWithFunctions funNames (ownNames `Set.difference` Set.fromList ["pixels", "filled"])
 
   -- A table's size, in `allocate`: in parentheses, or a single name or
   -- number, so that what follows (`from p to q`) can't be read as part
@@ -352,7 +362,7 @@ codeStatementsGrammar CommonDefs{..} = mdo
     , draw
       (DrawCircleAt <$> (isJust <$> optional (tok "filled"))
                     <*> ((tok "circle" *> tok "at") *> value)
-                    <*> ((tok "with" *> tok "radius") *> value)
+                    <*> ((tok "with" *> tok "radius") *> beforeWords)
                     <*> (maybe ModelUnits (const ScreenPixels) <$> optional (tok "pixels")))
     , draw
       (DrawRectFrom <$> (isJust <$> optional (tok "filled"))

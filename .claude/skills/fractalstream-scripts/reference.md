@@ -366,17 +366,25 @@ integer, computed as a real power where a real is wanted; a negative `k` in
 an integer power rounds toward zero (0, or 1/-1 for a base of 1/-1).
 
 
-**Reserved words** that can't be variable or function names: `e`, `i`,
+**Keywords** that can't be variable or function names: `e`, `i`,
 `pi`, `if`, `then`, `else`, `and`, `or`, `not`, `true`, `false`,
 `times`, `text`, `escapes`, `vanishes`, `stops`, `previous`, `iterations`, `stuck`, `append`,
-`prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`,
-`mod`, `point`, `table_size`, `table_cell`, `table_point`, `in`, `filled`, `pixels`, `pixel_size_at`, `viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`; as
-names in `@config`), `rgb`, `blend`, `cycle`, `dark`, `light`, `invert`, the color names,
-the color-wheel names, and the built-in function names (including `bar`, the
-complex conjugate; using one for a variable, function, or code block is
-reported as such). In particular,
-**loop counters can't be called `i`** (use `k`, `j`, `n`) and **no variable
-can be called `e`**. Also avoid `C` as a type-vs-variable confusion: `C : C
+`prepend`, `join`, `remove`, `find`, `transform`, `range`, `length`, `diff`
+(using one is reported as such). Also not declarable: `pixel_size_at`,
+`viewer_width`, `viewer_height`, `viewer_center` (and `_x`/`_y`).
+In particular, **loop counters can't be called `i`** (use `k`, `j`, `n`)
+and **no variable can be called `e`**.
+
+**Built-in names can be the script's own.** Any other built-in (`sin`, `re`,
+`bar`, `mod`, `rgb`, `blend`, `point`, `in`, `filled`, `pixels`, the color
+names, the color wheels such as `fall`, `spring`, `fire`, ...) can name a
+script's variable, function, code block or field. Where the script defines
+it, it is the script's, and the built-in isn't available: everywhere for a
+name defined in `@config` or `@common`, and only in that stanza for a name
+a viewer, tool, or colorizer defines. So avoid shadowing a built-in you
+still want in the same stanza. A shadowed name followed by parentheses is a
+product (`max(a, b)` with a variable `max` multiplies), with an error that
+says so. After `with radius`, `pixels` is always the unit. Also avoid `C` as a type-vs-variable confusion: `C : C
 := 0` is legal and common (a complex variable named C).
 
 ## 3. Expressions
@@ -654,7 +662,8 @@ viewer color a pixel by a condition and assert on it.
 
 | Message | Usual cause |
 |---|---|
-| `I got stuck and couldn't parse the input here, where I was expecting ...` | a reserved word as a variable (`i := 0`), a statement where an expression should be, bad indentation, `text(x)` with one argument |
+| `` `max` is this script's own variable here, not the built-in, so `max(...)` multiplies it ... `` | the stanza (or `@config`/`@common`) defines a name that is also a built-in, and then uses the built-in: rename the variable |
+| `I got stuck and couldn't parse the input here, where I was expecting ...` | a keyword as a variable (`i := 0`), a statement where an expression should be, bad indentation, `text(x)` with one argument |
 | `To avoid ambiguity when using implicit multiplication, functions must go to the left of other values` | `cos 2z` (write `cos(2 z)`) |
 | `` `and` and `or` can't be mixed without parentheses ... `` | `p and q or r`; write `(p and q) or r` or `p and (q or r)` |
 | `A @config stanza can't have a button ...` | move the button into the `@tool` whose `on button` handles it |

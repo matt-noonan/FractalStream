@@ -86,9 +86,11 @@ script: |
 ## The mistakes that actually happen
 
 - `i` and `e` are the imaginary unit and Euler's number: **never name a
-  variable `i` or `e`** (loop counters: `k`, `j`, `n`). Other reserved
-  words include `text`, `length`, `range`, `times`, `mod`, `diff`, color
-  names, and function names (full list in reference.md).
+  variable `i` or `e`** (loop counters: `k`, `j`, `n`). Other keywords
+  include `text`, `length`, `range`, `times`, `diff` (full list in
+  reference.md). A built-in function's or color's name *can* be the
+  script's own (`fall`, `red`, `max`), but then that built-in isn't
+  available where the script defines it.
 - **No scientific notation.** `1e-6` is an error (`e` is Euler's
   number). Write `0.000001` or `10^(-6)`.
 

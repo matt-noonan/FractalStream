@@ -278,8 +278,12 @@ parseCommonChunks :: [(Int, [SRToken])]
                   -> Either (SourceRange, String) ([(Int, ParsedStanza)], CommonDefs)
 parseCommonChunks chunks = do
   let commonChunks = [ ic | ic@(_, c) <- chunks, isChunk "common" c ]
-      -- every stanza can call the functions defined in any @common stanza
-      defs0 = withDefinedFunctions (concatMap snd commonChunks) noCommonDefs
+      -- every stanza can call the functions defined in any @common stanza,
+      -- and the names that the @config and @common stanzas take from the
+      -- built-ins are the script's everywhere
+      configChunks = [ c | (_, c) <- chunks, isChunk "config" c ]
+      defs0 = (withDefinedFunctions (concatMap snd commonChunks) noCommonDefs)
+                { ownNames = ownBuiltinNames (concat configChunks ++ concatMap snd commonChunks) }
   commonResults <- traverse (\(i, c) -> (i,) <$> parseChunk defs0 c) commonChunks
   let common = concat [ stmts | (_, CommonStanza (Stmt _ (SBlock stmts))) <- commonResults ]
   -- (after the built-in functions: see 'noCommonDefs')
@@ -457,7 +461,7 @@ scriptGrammar defs = mdo
   viewerBody <- codeStatementsGrammar defs
   toolBody   <- toolBlocksGrammar defs
 
-  value <- valueGrammar
+  value <- valueGrammarWithFunctions Set.empty (ownNames defs)
   ty    <- typeGrammar
 
   colon <- rule (token Colon <?> ":")
@@ -680,7 +684,7 @@ scriptGrammar defs = mdo
       <$> (token At *> tok "colorizer" *> quotedP) <*> (attrs <* nl)
 
   -- (Not a top-level pair, `a, b`: the comma is between parameters.)
-  paramDefault <- argumentGrammarWithFunctions (funNames defs)
+  paramDefault <- argumentGrammarWithFunctions (funNames defs) (ownNames defs)
 
   colorizerParam <- rule $
     (\name mdef -> case mdef of

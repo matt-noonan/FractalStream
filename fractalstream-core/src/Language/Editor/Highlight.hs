@@ -291,11 +291,11 @@ lineSpans s defs l
       | n == "of", before == Just (Identifier "List") = TypeName
       | n == "of", Just (NumberI _) <- before, before2 == Just (Identifier "Table") = TypeName
       | n == "x", Just (Identifier b) <- before, b `Set.member` typeNames = TypeName
-      -- (a built-in can't be redefined: the parser takes it for the
-      -- built-in, and reports the definition)
+      -- (a name the script defines is its own, even a built-in's, as
+      -- the parser takes it: see 'Language.Parser.ownBuiltinNames')
+      | Just h <- Map.lookup n defs = h
       | n `Set.member` builtinFunctions = BuiltinFunction
       | n `Map.member` Builtins.colors = ColorName
-      | Just h <- Map.lookup n defs = h
       | n `Set.member` keywords = Keyword
       | n == "color" = BuiltinValue
       | n `Set.member` unicodeTypes = TypeName

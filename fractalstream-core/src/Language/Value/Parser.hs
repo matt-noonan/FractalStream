@@ -150,22 +150,27 @@ typeGrammar = mdo
   pure toplevel
 
 valueGrammar :: forall r. Grammar r (Prod r ParsedValue)
-valueGrammar = valueGrammarWithFunctions Set.empty
+valueGrammar = valueGrammarWithFunctions Set.empty Set.empty
 
 -- | The value grammar, also accepting calls to the named user-defined
--- functions. Those names are reserved: they can't be used as variables.
+-- functions (the first set: those names are reserved, and can't be used
+-- as variables), and taking the built-in names in the second set for the
+-- script's own (see 'Language.Parser.ownBuiltinNames'): they're
+-- variables there, not the built-ins.
 valueGrammarWithFunctions :: forall r
                            . Set String
+                          -> Set String
                           -> Grammar r (Prod r ParsedValue)
-valueGrammarWithFunctions funs = (\(v, _, _) -> v) <$> valueAndArithGrammar funs
+valueGrammarWithFunctions funs own = (\(v, _, _) -> v) <$> valueAndArithGrammar funs own
 
 -- | Like 'valueGrammarWithFunctions', but without unparenthesized pairs
 -- (@a, b@) at the top level: for one of several comma-separated
 -- arguments.
 argumentGrammarWithFunctions :: forall r
                               . Set String
+                             -> Set String
                              -> Grammar r (Prod r ParsedValue)
-argumentGrammarWithFunctions funs = (\(_, _, a) -> a) <$> valueAndArithGrammar funs
+argumentGrammarWithFunctions funs own = (\(_, _, a) -> a) <$> valueAndArithGrammar funs own
 
 -- | A self-contained arithmetic\/complex-valued expression grammar --
 -- @+ - * / ^@, unary minus, implicit-multiplication concatenation, named
@@ -190,12 +195,17 @@ argumentGrammarWithFunctions funs = (\(_, _, a) -> a) <$> valueAndArithGrammar f
 -- at. 'funAp' and 'simpleAtom' are reused unchanged, since neither can
 -- ever start with a bare @(@.
 arithGrammar :: forall r. Grammar r (Prod r ParsedValue)
-arithGrammar = (\(_, a, _) -> a) <$> valueAndArithGrammar Set.empty
+arithGrammar = (\(_, a, _) -> a) <$> valueAndArithGrammar Set.empty Set.empty
 
 valueAndArithGrammar :: forall r
                        . Set String
+                      -> Set String
                       -> Grammar r (Prod r ParsedValue, Prod r ParsedValue, Prod r ParsedValue)
-valueAndArithGrammar funs = mdo
+valueAndArithGrammar funs own = mdo
+
+  let -- a built-in name, unless it's the script's own
+      free n = not (Set.member n own)
+      builtinWord n = tokenMatch (\case { Identifier m | m == n, free m -> Just (); _ -> Nothing })
 
   let toplevel = cast
 
@@ -250,7 +260,7 @@ valueAndArithGrammar funs = mdo
 
   -- In a table's index, `point z` stands for its first two indices, and
   -- `*` for every index along a dimension: `T @ (point z, *)`.
-  pointIndex <- rule (node (EPointIndex <$> (token (Identifier "point") *> negated)))
+  pointIndex <- rule (node (EPointIndex <$> (builtinWord "point" *> negated)))
   sliceAll <- rule (node (ESliceAll <$ token Times))
   -- `(point z, ...)`, for `T @ (point z, m) else v`
   pointTuple <- rule (token OpenParen *> node (EPair <$> (pointIndex <* token Comma) <*> pair) <* token CloseParen)
@@ -296,7 +306,7 @@ valueAndArithGrammar funs = mdo
     , node (EBin OpGt  <$> (arith <* token GreaterThan) <*> arith)
     , node (EBin OpGe <$> (arith <* token GreaterThanOrEqual) <*> arith)
     , node (EBin OpLe <$> (arith <* token LessThanOrEqual) <*> arith)
-    , node ((\p tbl -> ETableHas tbl p) <$> (arith <* token (Identifier "in")) <*> arith)
+    , node ((\p tbl -> ETableHas tbl p) <$> (arith <* builtinWord "in") <*> arith)
     , node (EUn OpEscapes <$> (arith <* token Escapes))
     , node (EUn OpVanishes <$> (arith <* token Vanishes))
     , node (EUn OpStops <$> (arith <* token Stops))
@@ -355,22 +365,22 @@ valueAndArithGrammar funs = mdo
 
   funAp <- ruleChoice
     [ node (EApp . fst
-        <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n commonFunctions;
+        <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n commonFunctions;
                                  _ -> Nothing }))
         <*> atomOrFunAp)
 
     , node (EApp . fst
-        <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n realFunctions;
+        <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n realFunctions;
                                  _ -> Nothing }))
         <*> atomOrFunAp)
 
     , node (EApp . fst
-        <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n roundingFunctions;
+        <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n roundingFunctions;
                                  _ -> Nothing }))
         <*> atomOrFunAp)
 
     , node (EApp . fst
-        <$> (tokenMatch (\case { Identifier n -> (n,) <$> Map.lookup n complexFunctions;
+        <$> (tokenMatch (\case { Identifier n | free n -> (n,) <$> Map.lookup n complexFunctions;
                                  _ -> Nothing }))
         <*> atomOrFunAp)
     , node (ECall
@@ -381,7 +391,7 @@ valueAndArithGrammar funs = mdo
         <*> (length <$> some (token Prime))
         <*> ((:[]) <$> atomOrFunAp))
     , node (EBin OpMod
-        <$> (token (Identifier "mod") *> token OpenParen *> arith)
+        <$> (builtinWord "mod" *> token OpenParen *> arith)
         <*> (token Comma *> arith <* token CloseParen))
     ]
 
@@ -446,33 +456,33 @@ valueAndArithGrammar funs = mdo
   color <- ruleChoice
     [ node (
         fmap (\(n,c) -> literal n ColorType c) . tokenMatch $ \case
-            Identifier n -> ("`" ++ n ++ "`",) <$> Map.lookup n colors
+            Identifier n | free n -> ("`" ++ n ++ "`",) <$> Map.lookup n colors
             _ -> Nothing)
 
-    , node (EUn OpDark <$> (token (Identifier "dark") *> atom))
-    , node (EUn OpLight <$> (token (Identifier "light") *> atom))
-    , node (EUn OpInvert <$> (token (Identifier "invert") *> atom))
+    , node (EUn OpDark <$> (builtinWord "dark" *> atom))
+    , node (EUn OpLight <$> (builtinWord "light" *> atom))
+    , node (EUn OpInvert <$> (builtinWord "invert" *> atom))
     , node (
-        EColor3 OpBlend <$> (token (Identifier "blend") *> (token OpenParen *> arith))
+        EColor3 OpBlend <$> (builtinWord "blend" *> (token OpenParen *> arith))
                 <*> (token Comma *> atom)
                 <*> (token Comma *> atom <* token CloseParen))
     , node (
-        EColor3 OpCycle <$> (token (Identifier "cycle") *> (token OpenParen *> arith))
+        EColor3 OpCycle <$> (builtinWord "cycle" *> (token OpenParen *> arith))
                 <*> (token Comma *> atom)
                 <*> (token Comma *> atom <* token CloseParen))
     , node (
-        EApp <$> tokenMatch (\case { Identifier n | Map.member n wheels -> Just n; _ -> Nothing })
+        EApp <$> tokenMatch (\case { Identifier n | Map.member n wheels, free n -> Just n; _ -> Nothing })
              <*> (token OpenParen *> arith <* token CloseParen))
     , node (
-        EColor3 OpRGB <$> (token (Identifier "rgb") *> (token OpenParen *> arith))
+        EColor3 OpRGB <$> (builtinWord "rgb" *> (token OpenParen *> arith))
               <*> (token Comma *> arith)
               <*> (token Comma *> arith <* token CloseParen))
     , node (
-        EColor3 OpHSV <$> (token (Identifier "hsv") *> (token OpenParen *> arith))
+        EColor3 OpHSV <$> (builtinWord "hsv" *> (token OpenParen *> arith))
               <*> (token Comma *> arith)
               <*> (token Comma *> arith <* token CloseParen))
     , node (
-        EColor3 OpHSL <$> (token (Identifier "hsl") *> (token OpenParen *> arith))
+        EColor3 OpHSL <$> (builtinWord "hsl" *> (token OpenParen *> arith))
               <*> (token Comma *> arith)
               <*> (token Comma *> arith <* token CloseParen))
     -- `autocolor(n, p)` and `get_autocolor(n, p)` (typing checks that
@@ -484,7 +494,7 @@ valueAndArithGrammar funs = mdo
     ]
 
   autocolorName <- ruleChoice
-    [ mode <$ token (Identifier (autocolorModeName mode)) | mode <- [minBound .. maxBound] ]
+    [ mode <$ builtinWord (autocolorModeName mode) | mode <- [minBound .. maxBound] ]
 
   textConcat <- rule $ node $
     EText <$> ((:) <$> (token TextKeyword *> token OpenParen *> argument)
@@ -513,11 +523,11 @@ valueAndArithGrammar funs = mdo
     , node (ELength <$>
              (token LengthKeyword *> token OpenParen *> toplevel <* token CloseParen))
     , node (ETableSize <$>
-             (token (Identifier "table_size") *> token OpenParen *> toplevel <* token CloseParen))
-    , node (ETableCell <$> (token (Identifier "table_cell") *> token OpenParen *> toplevel)
+             (builtinWord "table_size" *> token OpenParen *> toplevel <* token CloseParen))
+    , node (ETableCell <$> (builtinWord "table_cell" *> token OpenParen *> toplevel)
                        <*> (token Comma *> toplevel <* token CloseParen))
     , node ((\tbl ix -> ETableCellPoint tbl [ix])
-             <$> (token (Identifier "table_point") *> token OpenParen *> toplevel)
+             <$> (builtinWord "table_point" *> token OpenParen *> toplevel)
              <*> (token Comma *> toplevel <* token CloseParen))
     ]
 
@@ -594,8 +604,8 @@ valueAndArithGrammar funs = mdo
 
   typ <- typeGrammar
 
-  let reserved = (`Set.member` reservedWords)
-      reservedWords = Set.fromList
+  let reserved n = Set.member n funs || (Set.member n builtinWords && free n)
+      builtinWords = Set.fromList
         [ "dark", "light", "invert", "blend", "cycle", "rainbow", "arenberg"
         , "romao", "bamo", "broco", "corko", "viko"
         , "ice", "fire", "rose", "wheat", "forest", "ocean"
@@ -608,7 +618,6 @@ valueAndArithGrammar funs = mdo
         `Set.union` Map.keysSet realFunctions
         `Set.union` Map.keysSet complexFunctions
         `Set.union` Map.keysSet roundingFunctions
-        `Set.union` funs
 
   pure (toplevel, addOrSubNp, argument)
 
