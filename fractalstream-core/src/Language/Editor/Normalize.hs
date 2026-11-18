@@ -66,7 +66,7 @@ normalizations src = concatMap lineEdits (scriptLines src)
       Just OpenParen -> afterType
       _ -> False
     -- (`List` and `of` count as types, so that `List of C x R` works)
-    typeNames = map fst typeSymbols ++ ["ℝ", "ℂ", "ℤ", "List", "Table", "Boolean", "Bool", "Color", "Text"]
+    typeNames = map fst typeSymbols ++ ["ℝ", "ℂ", "ℤ", "Ĉ", "ℙ", "List", "Table", "Boolean", "Bool", "Color", "Text"]
 
 -- | Apply all of 'normalizations'.
 normalize :: String -> String
@@ -82,7 +82,8 @@ operatorSymbols =
 typeSymbols :: [(String, String)]
 typeSymbols =
   [ ("R", "ℝ"), ("Real", "ℝ"), ("C", "ℂ"), ("Complex", "ℂ")
-  , ("Z", "ℤ"), ("Int", "ℤ"), ("Integer", "ℤ") ]
+  , ("Z", "ℤ"), ("Int", "ℤ"), ("Integer", "ℤ")
+  , ("Cinf", "Ĉ"), ("P1", "ℙ¹") ]
 
 superscript :: Integer -> String
 superscript = map digit . show

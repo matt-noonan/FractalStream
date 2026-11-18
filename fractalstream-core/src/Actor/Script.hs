@@ -985,6 +985,9 @@ validateConfigDecl sr name fsTy val valRange mlabel mchoices = do
   case fsTy of
     TableT{} -> Left (sr, "A table starts out empty, so it can't have a default value: write `"
                           ++ name ++ " : " ++ withType fsTy ppType ++ "`.")
+    _ | hasSpherePoint fsTy ->
+          Left (sr, "A field can't hold a point of the Riemann sphere (Ĉ or ℙ¹) yet: make `" ++ name
+                    ++ "` a complex number, and the point from it in the code that uses it.")
     _ -> Right ()
   case mchoices of
     Just _ | fsTy /= IntegerT ->
@@ -996,6 +999,17 @@ validateConfigDecl sr name fsTy val valRange mlabel mchoices = do
     , cdDefault = val, cdDefaultRange = valRange, cdDefaultSrc = ""
     , cdLabel = mlabel, cdChoices = mchoices
     }
+
+-- | Whether a type has points of the sphere in it, which only code (not
+-- a field) can hold for now (see "Language.Code.Projective").
+hasSpherePoint :: FSType -> Bool
+hasSpherePoint = \case
+  ProjectiveT -> True
+  ExtComplexT -> True
+  Pair a b -> hasSpherePoint a || hasSpherePoint b
+  ListT t -> hasSpherePoint t
+  TableT _ t -> hasSpherePoint t
+  _ -> False
 
 firstDuplicate :: Ord a => [a] -> Maybe a
 firstDuplicate = go Set.empty

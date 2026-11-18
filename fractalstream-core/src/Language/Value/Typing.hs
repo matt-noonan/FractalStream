@@ -31,6 +31,7 @@ module Language.Value.Typing
   , coercible
   , joinType
   , anType
+  , isProjective
   ) where
 
 import FractalStream.Prelude
@@ -67,7 +68,32 @@ strictTypeEnv vs = TypeEnv vs False
 lenientTypeEnv vs = TypeEnv vs True
 
 anType :: FSType -> String
-anType t = withType t (an . SomeType)
+anType = an . typeName
+
+-- | How a type is named in messages (as 'showType' names a 'TypeProxy').
+typeName :: FSType -> String
+typeName = \case
+  ProjectiveT -> "point of ℙ¹"
+  ExtComplexT -> "point of Ĉ (an extended complex number)"
+  ListT t -> "list of " <> typeName t
+  Pair a b -> "(" <> typeName a <> " x " <> typeName b <> ")"
+  TableT n t -> show n <> "-dimensional table of " <> typeName t
+  t -> withType t showType
+
+-- | A point of ℙ¹ or Ĉ (see 'ProjectiveT'), which only typing knows.
+isProjective :: FSType -> Bool
+isProjective t = t == ProjectiveT || t == ExtComplexT
+
+-- | What to say when a point of ℙ¹ or Ĉ is used where a number has to
+-- be.
+onTheSphere :: TExpr -> TC a
+onTheSphere t = advise (synRange t)
+  (subject ++ " a point of the Riemann sphere, which isn't a number: there, only arithmetic \
+   \(in Ĉ), `=`, `chordal`, `escapes` and `vanishes` are defined. For the complex number \
+   \it is in the plane, use `chart(" ++ arg ++ ")`.")
+  where (subject, arg) = case synNode t of
+          EVar n -> ("`" ++ n ++ "` is", n)
+          _ -> ("This is", "...")
 
 ------------------------------------------------------
 -- Implicit conversions
@@ -88,6 +114,8 @@ coercible :: FSType -> FSType -> Bool
 coercible from to
   | from == to = True
   | Just i <- numericRank from, Just j <- numericRank to = i <= j
+  -- (a number is a point of Ĉ: `z` is `[z : 1]`)
+  | to == ExtComplexT = isNumeric from
   | to == TextT = isNumeric from
   | otherwise = False
 
@@ -98,6 +126,8 @@ joinType :: FSType -> FSType -> Maybe FSType
 joinType a b
   | a == b = Just a
   | Just i <- numericRank a, Just j <- numericRank b = Just (if i >= j then a else b)
+  | a == ExtComplexT, isNumeric b = Just a
+  | b == ExtComplexT, isNumeric a = Just b
   | otherwise = Nothing
 
 ------------------------------------------------------
@@ -112,7 +142,9 @@ check env ty e = case pushdown env ty e of
   Just pushed -> synthOr pushed
   Nothing -> do
     t <- synth env e
-    if coercible (exprType t) ty then pure t else throwError (mismatch t ty)
+    if coercible (exprType t) ty then pure t
+    else if isProjective (exprType t) && isNumeric ty then onTheSphere t
+    else throwError (mismatch t ty)
   where
     -- Use the synthesized type if it converts to the expected one,
     -- otherwise fall back to the given alternative.
@@ -132,6 +164,10 @@ synthDerivative :: TypeEnv -> SourceRange -> Expr -> Expr -> TC TExpr
 synthDerivative env sr x f = do
   x' <- synth env x
   f' <- synth env f
+  when (any (isProjective . exprType) [x', f']) $
+    advise sr "A derivative on the Riemann sphere depends on the chart it's taken in, so it \
+              \isn't there yet: take it of `chart(p)`, or of the complex numbers the point is \
+              \made from."
   case filter (not . isNumeric . exprType) [x', f'] of
     bad : _ -> throwError (mismatch bad RealT)
     [] -> pure ()
@@ -194,6 +230,8 @@ zeroOf sr = \case
   TextT -> lit TextType ""
   Pair t1 t2 -> (\a b -> Syn sr (EPair a b)) <$> zeroOf sr t1 <*> zeroOf sr t2
   ListT _ -> pure (Syn sr (EList []))
+  ExtComplexT -> lit ComplexType 0
+  ProjectiveT -> (\a b -> Syn sr (EHomogeneous [a, b])) <$> lit ComplexType 0 <*> lit ComplexType 1
   t -> advise sr ("A function can't give " ++ anType t ++ ".")
   where
     lit :: TypeProxy t -> HaskellType t -> TC Expr
@@ -212,6 +250,12 @@ synth env (Syn sr node) = case node of
     Just t  -> done t (EVar n)
     Nothing -> throwError (MissingName sr n)
 
+  -- (a point of ℙ¹ is one of Ĉ, and back, only by saying so)
+  ECast x t | isProjective t -> do
+    x' <- synth env x
+    if isProjective (exprType x') || coercible (exprType x') t
+      then done t (ECast x' t)
+      else throwError (mismatch x' t)
   ECast x t -> do
     x' <- check env t x
     done t (ECast x' t)
@@ -258,8 +302,9 @@ synth env (Syn sr node) = case node of
   EApp f x
     | Map.member f commonFunctions -> do
         x' <- synth env x
+        when (isProjective (exprType x')) $ onTheSphere x'
         case joinType RealT (exprType x') of
-          Just t | t /= IntegerT -> done t (EApp f x')
+          Just t | t /= IntegerT, isNumeric t -> done t (EApp f x')
           _ -> throwError (Surprise sr ("the argument to " ++ f) (anType (exprType x'))
                              (Expected "a real or complex number"))
     | Map.member f realFunctions -> do
@@ -444,6 +489,28 @@ synth env (Syn sr node) = case node of
       Just t' -> done t' (EWiden t x')
       Nothing -> throwError (mismatch x' t)
 
+  EInfinity -> done ExtComplexT EInfinity
+
+  EHomogeneous [a, b] -> do
+    a' <- check env ComplexT a
+    b' <- check env ComplexT b
+    done ProjectiveT (EHomogeneous [a', b'])
+  EHomogeneous _ -> advise sr "A point of ℙ¹ has two homogeneous coordinates, `[a : b]`: \
+                              \the higher-dimensional projective spaces aren't there yet."
+
+  EChart p -> do
+    p' <- synth env p
+    if isProjective (exprType p') || isNumeric (exprType p')
+      then done ComplexT (EChart p')
+      else throwError (mismatch p' ExtComplexT)
+
+  EChordal p q -> do
+    p' <- synth env p
+    q' <- synth env q
+    case filter (\t -> not (isProjective (exprType t) || isNumeric (exprType t))) [p', q'] of
+      bad : _ -> throwError (mismatch bad ExtComplexT)
+      [] -> done RealT (EChordal p' q')
+
   EAdvice msg -> advise sr msg
   -- (only checked against a type, never synthesized: see 'pushdown')
   EZero -> advise sr "I couldn't work out what type of value this function gives."
@@ -490,6 +557,9 @@ synthBin env sr op x y = case op of
   -- negative constant: then it's a fraction, so it's real)
   OpPow -> do
     (x', y', t) <- numericPair
+    when (t == ExtComplexT && (exprType y' /= IntegerT || isNothing (constantInteger y))) $
+      advise (synRange y) "A power of a point of Ĉ needs a whole number for its exponent, \
+                          \written as a number: `w^2`, or `w^-1`."
     done (if t == IntegerT && maybe False (< 0) (constantInteger y) then RealT else t) x' y'
   OpDiv -> arith (Just RealT)
 
@@ -509,7 +579,7 @@ synthBin env sr op x y = case op of
   OpAnd -> logical
 
   OpExactEq -> do
-    (x', y', _) <- numericPair `catchTypeError` \_ ->
+    (x', y', _) <- sphereEq `catchTypeError` \_ ->
       advise sr "Arguments to ≡ must be real or complex numbers."
     done BooleanT x' y'
 
@@ -529,6 +599,13 @@ synthBin env sr op x y = case op of
       y' <- synth env y
       case joinType (exprType x') (exprType y') of
         Just t | isNumeric t -> pure (x', y', t)
+        -- arithmetic in Ĉ (see "Language.Code.Projective")
+        Just ExtComplexT | op `elem` [OpAdd, OpSub, OpMul, OpDiv, OpPow] -> pure (x', y', ExtComplexT)
+        _ | any ((== ProjectiveT) . exprType) [x', y'] ->
+              advise sr "A point of ℙ¹ has no arithmetic: work with its homogeneous coordinates \
+                        \(`[a : b] := p`, then a new point `[F : G]`, both parts of the same degree), \
+                        \or make it a point of Ĉ, `(p : Ĉ)`."
+        _ | (bad : _) <- filter (isProjective . exprType) [x', y'] -> onTheSphere bad
         _ | OpMul <- op, Syn _ (EVar n) <- x, isOwnableBuiltin n ->
               -- (`max(a, b)`, with the script's own `max`)
               advise sr ("`" ++ n ++ "` is this script's own variable here, not the built-in, \
@@ -536,6 +613,15 @@ synthBin env sr op x y = case op of
         _ -> throwError $ case filter (not . isNumeric . exprType) [x', y'] of
           bad : _ -> mismatchNumeric bad
           [] -> mismatch y' (exprType x')
+
+    -- two points of the sphere (or a point and a number) for an equality
+    sphereEq = do
+      x' <- synth env x
+      y' <- synth env y
+      let ok t = isProjective t || isNumeric t
+      if any (isProjective . exprType) [x', y'] && all (ok . exprType) [x', y']
+        then pure (x', y', ExtComplexT)
+        else numericPair
 
     mismatchNumeric t = Surprise (synRange t) (describe (synNode t))
                           (anType (exprType t)) (Expected "a number")
@@ -565,6 +651,13 @@ synthBin env sr op x y = case op of
       case (exprType x', exprType y') of
         (IntegerT, IntegerT) -> done BooleanT x' y'
         (BooleanT, BooleanT) -> done BooleanT x' y'
+        -- points of the sphere, compared by the chordal distance between
+        -- them (see "Language.Code.Projective")
+        (tx, ty) | isProjective tx || isProjective ty
+                 , all (\t -> isProjective t || isNumeric t) [tx, ty] -> do
+          unless (Map.member internalVanishingRadius (tyVars env)) $
+            throwError (MissingName sr internalVanishingRadius)
+          pure (wrap (Syn (sr, BooleanT) (EBin OpApproxEq x' y')))
         (tx, ty) | Just t <- joinType tx ty, isNumeric t -> do
           unless (Map.member internalVanishingRadius (tyVars env)) $
             throwError (MissingName sr internalVanishingRadius)
@@ -587,7 +680,10 @@ synthUn :: TypeEnv -> SourceRange -> UnOp -> Expr -> TC TExpr
 synthUn env sr op x = case op of
   OpNeg -> do
     x' <- synth env x
-    unless (isNumeric (exprType x')) $ throwError
+    when (exprType x' == ProjectiveT) $
+      advise sr "A point of ℙ¹ has no arithmetic: negate one of its homogeneous coordinates, \
+                \or make it a point of Ĉ, `(p : Ĉ)`."
+    unless (isNumeric (exprType x') || exprType x' == ExtComplexT) $ throwError
       (Surprise sr "the result of negation" (anType (exprType x')) (Expected "of some numeric type"))
     done (exprType x') x'
 
@@ -599,6 +695,7 @@ synthUn env sr op x = case op of
       IntegerT -> done IntegerT x'
       RealT    -> done RealT x'
       ComplexT -> done RealT x'
+      t | isProjective t -> onTheSphere x'
       _ -> advise sr "The argument to |·| is not a real or complex number"
 
   OpEscapes  -> radius internalEscapeRadius "escapes"
@@ -626,7 +723,7 @@ synthUn env sr op x = case op of
         Just RealT -> pure ()
         Just t -> throwError (Surprise sr name (anType t) (Expected (anType RealT)))
         Nothing -> throwError (MissingName sr name)
-      if isNumeric (exprType x') then done BooleanT x' else
+      if isNumeric (exprType x') || isProjective (exprType x') then done BooleanT x' else
         -- A tuple of numbers is measured by its length (as in the plane,
         -- for a pair of reals), with the tuple held in a fresh local.
         case freshLocals env of
@@ -776,6 +873,10 @@ describe = \case
   EProj{} -> "this part of a pair"
   EAdvice{} -> "this expression"
   EZero -> "this function's value"
+  EInfinity -> "∞"
+  EHomogeneous{} -> "this point"
+  EChart{} -> "the result of chart"
+  EChordal{} -> "the result of chordal"
   EFunRef f -> "the function " ++ f
   ELambda{} -> "this function"
 

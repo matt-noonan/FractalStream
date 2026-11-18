@@ -75,8 +75,9 @@ real numbers otherwise.
 
 ### Parentheses
 
-Any of `(`/`)`, `[`/`]`, and `{`/`}` can be used to parenthesize subexpressions,
-as in `𝑒^{π 𝑖 t}`.
+Either `(`/`)` or `{`/`}` can be used to parenthesize subexpressions,
+as in `𝑒^{π 𝑖 t}`. (Square brackets make lists, `[1, 2, 3]`, and points
+of ℙ¹, `[a : b]`.)
 
 ### Functions
 
@@ -140,6 +141,69 @@ can't be raised to a power without parentheses: `(ⅆw/ⅆz)^2` is its
 square, and `ⅆw/ⅆz^2` is an error that says so (a superscript on the
 bottom is always an order). In the editor, `\d` and a space types `ⅆ`,
 and `\partial` types `∂`.
+
+### The Riemann sphere: Ĉ and ℙ¹
+
+Complex numbers can't be ∞, so a script whose dynamics pass through ∞ has
+to work around it, with two charts or a flag that says "this is ∞". The
+types `Ĉ` and `ℙ¹` are points of the Riemann sphere, ∞ included.
+
+A point of **`Ĉ`** (the extended complex numbers; also spelled `ℂ̂`, or
+`Cinf`) is a complex number or `∞` (also spelled `infinity`). A complex
+number is one wherever a `Ĉ` is needed. `Ĉ` has arithmetic (`+`, `-`,
+`*`, `/`, and powers by a whole number written as a number, like `w^2` or
+`w^(-1)`), so a rational map is written as usual, and is right at ∞:
+
+```
+w : Ĉ := ∞
+w <- (w^2 - c) / (w^2 - 1)      # w is now 1
+```
+
+Behind the scenes, a point is a pair of complex numbers, its homogeneous
+coordinates `[a : b]` (the complex number `a / b`, or ∞ when `b` is 0).
+Each expression is worked out in homogeneous coordinates as a whole, the
+way you'd write it out by hand: with `w = [a : b]`, Newton's method
+`w - (w^3 - 1) / (3 w^2)` is `[2 a^3 + b^3 : 3 a^2 b]`, which is ∞ at ∞,
+where working out each operation in turn would meet ∞ / ∞. This is within
+one expression: a variable holds the point an expression worked out to,
+so splitting `(w^2 - c) / (w^2 - 1)` across statements, as
+`u := w^2 - c` then `u / (w^2 - 1)`, is ∞ / ∞ at ∞ again. What's undefined
+(∞ - ∞, 0 · ∞, 0 / 0) gives a point equal to nothing.
+
+A point of the sphere isn't a number, so `|w|`, `re`, `exp`, comparisons
+like `<`, and derivatives aren't defined on it (a derivative depends on
+the chart it's taken in). What is:
+
+- `chart(w)`, the complex number `a / b` (huge, or not a number, at ∞).
+- `p = q` and `p ≠ q`, which compare by the chordal distance, as `=`
+  compares numbers: equal when it's less than the vanishing radius.
+- `chordal(p, q)`, the chordal distance: the straight-line distance
+  between the points on the unit sphere (so `chordal(0, ∞)` is 2).
+- `w escapes`, as for a complex number, `|a| > R |b|`, and `w vanishes`,
+  `|a| < r |b|`, both right at ∞. `until w stops` works too.
+
+A point of **`ℙ¹`** (the projective line; also spelled `ℙ`, `P1`, or
+`P^1`) is written by its homogeneous coordinates, `[a : b]`, and has no
+arithmetic: a map is written in homogeneous coordinates instead, which is
+exact everywhere. Take a point apart with `[a : b] := p`, and make a new
+one from them:
+
+```
+[a : b] := p
+p <- [a^2 - c b^2 : a^2 - b^2]
+```
+
+Homogeneous coordinates are only defined up to scale (`[2 : 1]` and
+`[4 : 2]` are the same point), so `a` and `b` can only be used in ways that
+don't depend on it: in a point `[F : G]` with `F` and `G` of the same
+degree, or in a ratio of the same degree, like `a / b`. Anything else
+(`a` by itself, `a + 1`, `[a^2 : b]`) is an error. A `Ĉ` can be taken
+apart the same way. `(p : Ĉ)` makes a point of ℙ¹ one of Ĉ, and
+`(w : ℙ¹)` the other way around.
+
+After each assignment, a point is scaled so that its larger coordinate is
+1, so iterating a map never overflows. Points of higher-dimensional
+projective spaces, `[a : b : c]`, are reserved for later.
 
 ### Syntax quirks
 
@@ -298,6 +362,8 @@ Common types you might want to use include `Z` for the integers, `R` for the
 real numbers, `C` for the complex numbers, `Color` for a color, and
 `Boolean` for a truth value, and `Text` for plain text. You can also use
 the unicode blackboard bold variants `ℤ`, `ℝ`, and `ℂ`, or the full names `Integer`, `Real`, and `Complex`.
+For points of the Riemann sphere, `∞` included, there are `Ĉ` and `ℙ¹`
+(see "The Riemann sphere: Ĉ and ℙ¹").
 
 Lists of values of type `x` have the type `List of x`. Tables have types
 like `Table 2 of C` (see "Tables"), and are only declared in `@config`.
@@ -1332,6 +1398,9 @@ All lists in FractalStream are *homogeneous*, meaning that the elements of a lis
  (a `List of ℤ`), or `[1, 2, i]` (a `List of ℂ`), or even `[ [1], [2,3] ]`
  (a `List of (List of ℤ))` but not `[ 1, [2,3] ]` because it mixes elements
  of different types.
+
+An item given a type needs parentheses, `[(k : R), 2]`: `[a : b]` is a
+point of ℙ¹ (see "The Riemann sphere: Ĉ and ℙ¹").
 
 #### Length of a list
 

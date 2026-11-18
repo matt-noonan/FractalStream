@@ -12,8 +12,8 @@
 -- Names are as LaTeX has them, where LaTeX has one (so @\\epsilon@ is
 -- ϵ and @\\varepsilon@ is ε, as in LaTeX), except that @\\to@ and
 -- @\\gets@ are the arrows the language writes with, ⟼ and ⟵. Some
--- symbols (∞, ∂, ∑, ...) mean nothing in a script; they're for
--- comments and text.
+-- symbols (∑, ∫, ...) mean nothing in a script; they're for comments
+-- and text.
 module Language.Editor.Symbols
   ( symbolNames
   , accentNames
@@ -62,6 +62,8 @@ symbolNames = greek ++ language ++ other
       , ("ne", "≠"), ("neq", "≠"), ("equiv", "≡")
       , ("coloneqq", "≔"), ("coloneq", "≔"), ("times", "×"), ("prime", "′")
       , ("R", "ℝ"), ("C", "ℂ"), ("Z", "ℤ"), ("ldots", "…")
+      -- (Ĉ, the Riemann sphere, and ℙ, for ℙ¹)
+      , ("Cinf", "Ĉ"), ("Chat", "Ĉ"), ("P", "ℙ")
       -- (ⅆf/ⅆz is diff(z, f), and ∂f/∂z, below, partial(z, f))
       , ("d", "ⅆ") ]
     other =

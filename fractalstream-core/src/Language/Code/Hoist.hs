@@ -199,6 +199,7 @@ stmtWrites (Stmt _ node) = case node of
   SSet n _ -> Set.singleton n
   SDeclTuple p _ -> Set.fromList (patternNames p)
   SSetTuple p _ -> Set.fromList (patternNames p)
+  SDeclHomogeneous ns _ -> Set.fromList ns
   SFun f _ _ -> Set.singleton f
   SIf _ yes no -> stmtWrites yes <> stmtWrites no
   SLoop _ _ _ body -> loopBookkeeping <> stmtWrites body

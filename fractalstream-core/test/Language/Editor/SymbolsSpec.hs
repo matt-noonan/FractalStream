@@ -37,6 +37,8 @@ spec = describe "symbol names" $ do
     "times" `means` "*"
     "prime" `means` "'"
     "pi" `means` "pi"
+    map baseToken (tokenize (named "infty")) `shouldBe` [Infinity]
+    map named ["Cinf", "Chat", "P"] `shouldBe` ["Ĉ", "Ĉ", "ℙ"]
 
   it "put accents that make identifiers" $ do
     let accented = [ new | (n, _) <- accentNames, Complete new _ <- [escapeAt True ("\\" ++ n ++ " z")] ]

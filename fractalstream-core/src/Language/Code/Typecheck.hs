@@ -29,6 +29,7 @@ import Language.Code.Infer
 import Language.Code.Procedures
 import Language.Code.FunctionBlocks
 import Language.Code.Derivatives
+import Language.Code.Projective
 import Language.Code.Previous
 import Language.Code.Stops
 import Language.Code.Tuples
@@ -48,7 +49,7 @@ type ParsedCode = Stmt
 -- | Check parsed code in the given environment.
 runParsedCode :: EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
 runParsedCode env c =
-  case withEnvironment env (expandRuns c >>= expandFunctionBlocks (Map.keysSet (tyVars (typeEnvOf env))) >>= expandPrevious >>= expandStops >>= expandTuples >>= expandDerivatives (typeEnvOf env) . inferDeclarations (typeEnvOf env) Map.empty >>= elab Map.empty env) of
+  case withEnvironment env (expandRuns c >>= expandFunctionBlocks (Map.keysSet (tyVars (typeEnvOf env))) >>= expandPrevious >>= expandStops >>= expandTuples >>= (expandDerivatives (typeEnvOf env) . inferDeclarations (typeEnvOf env) Map.empty >=> expandProjective (typeEnvOf env)) >>= elab Map.empty env) of
     TC x -> x
 
 -- | The steps before elaboration, by themselves: expand @run@s, @stops@,
@@ -57,7 +58,7 @@ runParsedCode env c =
 -- result does nothing more to it before elaborating it.)
 expandParsedCode :: TypeEnv -> ParsedCode -> Either TCError ParsedCode
 expandParsedCode tenv c =
-  case expandDerivatives tenv . inferDeclarations tenv Map.empty =<< (expandRuns c >>= expandFunctionBlocks (Map.keysSet (tyVars tenv)) >>= expandPrevious >>= expandStops >>= expandTuples) of
+  case (expandDerivatives tenv . inferDeclarations tenv Map.empty >=> expandProjective tenv) =<< (expandRuns c >>= expandFunctionBlocks (Map.keysSet (tyVars tenv)) >>= expandPrevious >>= expandStops >>= expandTuples) of
     TC x -> x
 
 ------------------------------------------------------
@@ -171,6 +172,8 @@ elab funs env stmt@(Stmt sr node) = case node of
   SIterate PTuple{} _ _ _ _ -> throwError (Internal (Advice sr "unexpanded tuple iterate"))
   SDeclTuple{} -> throwError (Internal (Advice sr "unexpanded tuple declaration"))
   SSetTuple{} -> throwError (Internal (Advice sr "unexpanded tuple assignment"))
+  -- (expanded away before elaboration: "Language.Code.Projective")
+  SDeclHomogeneous{} -> throwError (Internal (Advice sr "unexpanded homogeneous coordinates"))
 
   SPass -> pure NoOp
 

@@ -98,6 +98,9 @@ types = Map.fromList
   , ("C", ComplexT), ("ℂ", ComplexT), ("Complex", ComplexT)
   , ("Bool", BooleanT), ("Boolean", BooleanT)
   , ("Color", ColorT), ("Text", TextT)
+  -- (ℙ¹ is also `ℙ¹` and `P^1`: see 'Language.Value.Parser.typeGrammar')
+  , ("ℙ", ProjectiveT), ("P1", ProjectiveT)
+  , ("Ĉ", ExtComplexT), ("ℂ\x0302", ExtComplexT), ("Cinf", ExtComplexT)
   ]
 
 -- | Color wheels: each cycles through 8 colors over the [0,1] interval.

@@ -155,6 +155,16 @@ data ExprF r
   | ELambda [String] r
     -- ^ @w -> e@ (or @(u, v) -> e@): a function written where it's given,
     -- as an argument to a function or a code block
+  | EInfinity
+    -- ^ @∞@ (or @infinity@): the point at infinity of Ĉ
+  | EHomogeneous [r]
+    -- ^ @[a : b]@: a point of ℙ¹, by its homogeneous coordinates (and,
+    -- with more of them, reserved for ℙⁿ)
+  | EChart r
+    -- ^ @chart(p)@: a point of ℙ¹ or Ĉ as a complex number, @a / b@
+  | EChordal r r
+    -- ^ @chordal(p, q)@: the distance between two points of the Riemann
+    -- sphere (the unit sphere), in a straight line
   | EZero
     -- ^ A placeholder of whatever type is expected of it (a variable's
     -- declared or inferred type), as zero, @false@, @black@, @""@, or

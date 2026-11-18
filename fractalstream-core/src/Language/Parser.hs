@@ -235,6 +235,7 @@ builtin = \case
       || n `Map.member` B.complexFunctions || n `Map.member` B.roundingFunctions
       || n `Map.member` B.wheels || n `elem` others -> Just (n, "a built-in function", True)
     | n `Map.member` B.colors -> Just (n, "a color's name", True)
+    | n == "infinity" -> Just (n, "a built-in value (the point at infinity)", True)
   t | Just n <- lookup t keywordNames -> Just (n, "a built-in function", False)
   _ -> Nothing
   where
@@ -246,7 +247,7 @@ builtin = \case
       , ("arg", "the argument"), ("Arg", "the argument") ]
     others = [ "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert"
              , "autocolor", "nearest_autocolor", "get_autocolor", "point", "table_size", "filled"
-             , "table_cell", "table_point", "in", "pixels", "partial" ]
+             , "table_cell", "table_point", "in", "pixels", "partial", "chart", "chordal" ]
     keywordNames = [ (t, n) | (n, t) <- Map.toList wordlikeTokens
                             , t `elem` [ TextKeyword, AppendKeyword, PrependKeyword, JoinKeyword
                                        , RemoveKeyword, FindKeyword, TransformKeyword, RangeKeyword

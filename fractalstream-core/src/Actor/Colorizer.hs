@@ -650,6 +650,7 @@ stripRanges (Stmt _ node) = Stmt NoSourceRange $ case node of
   SSet n e -> SSet n (ex e)
   SDeclTuple p e -> SDeclTuple (stripPattern p) (ex e)
   SSetTuple p e -> SSetTuple (stripPattern p) (ex e)
+  SDeclHomogeneous ns e -> SDeclHomogeneous ns (ex e)
   SFun f ps e -> SFun f ps (ex e)
   SIf c yes no -> SIf (ex c) (stripRanges yes) (stripRanges no)
   SLoop k c lim body -> SLoop k (ex c) (ex <$> lim) (stripRanges body)
