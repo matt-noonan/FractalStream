@@ -24,6 +24,8 @@ library
   default-extensions:  LambdaCase
   ghc-options:         -Wall -Werror -O2
   if os(darwin) || os(linux) || os(windows)
+    other-modules:     Backend.WGPU.Probe
+    build-depends:     bytestring, containers, directory, filepath, process, text
     c-sources:         cbits/fsgpu.c
     cc-options:        -std=c11 -Wall
     -- (wgpu-native: dev-tools/wgpu/fetch.sh puts it in

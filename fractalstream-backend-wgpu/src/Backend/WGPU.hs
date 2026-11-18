@@ -11,6 +11,7 @@ module Backend.WGPU
 import Backend.WGSL.Device
 
 #if defined(darwin_HOST_OS) || defined(linux_HOST_OS) || defined(mingw32_HOST_OS)
+import Backend.WGPU.Probe
 import Control.Concurrent.MVar
 import Control.Monad (forM_)
 import Data.Word (Word8, Word32)
@@ -37,24 +38,35 @@ foreign import ccall safe "fsgpu_run"
   c_run :: Ptr Pipeline -> Ptr Buffer -> Ptr Buffer -> Ptr Word8 -> Word32 -> Word32 -> Ptr Word8 -> Ptr Word32
         -> Ptr Word32 -> Word32 -> Ptr Word8 -> Word32 -> IO CString
 foreign import ccall unsafe "fsgpu_free_string" c_freeString :: CString -> IO ()
+foreign import ccall unsafe "fsgpu_version" c_version :: IO Word32
+foreign import ccall safe "fsgpu_name" c_name :: IO CString
 
 -- | The GPU, started the first time this is run (or why there's none).
+-- Shaders are compiled by the probe first ("Backend.WGPU.Probe"), so that
+-- a panic in wgpu's compiler doesn't take the program down.
 nativeGpu :: Maybe (IO (Either String GpuDevice))
-nativeGpu = Just $ c_init >>= message >>= \case
-  Just why -> pure (Left why)
-  Nothing -> do
-    -- (the last few sets of tables, by their versions and places, each
-    -- in one buffer: a render's arguments keep theirs, so one dropped
-    -- here is only freed once nothing draws with it)
-    tableSets <- newMVar []
-    pure (Right GpuDevice { gdCompile = compile tableSets })
+nativeGpu = Just $ isProbe >>= \case
+  True -> pure (Left "no GPU in the GPU's probe")
+  False -> c_init >>= message >>= \case
+    Just why -> pure (Left why)
+    Nothing -> do
+      version <- c_version
+      name <- maybe "" id <$> (c_name >>= message)
+      probe <- newProbe (show version ++ " " ++ name)
+      -- (the last few sets of tables, by their versions and places, each
+      -- in one buffer: a render's arguments keep theirs, so one dropped
+      -- here is only freed once nothing draws with it)
+      tableSets <- newMVar []
+      pure (Right GpuDevice { gdCompile = compile probe tableSets })
   where
-    compile tableSets source = withCString source $ \src -> alloca $ \errp -> do
-      p <- c_compile src errp
-      if p == nullPtr then Left . maybe "the GPU wouldn't compile it" id <$> (peek errp >>= message)
-      else do
-        pipeline <- FC.newForeignPtr p (c_releasePipeline p)
-        pure (Right GpuKernel { gkBind = bind tableSets pipeline })
+    compile probe tableSets source = probeShader probe source >>= \case
+      Failed why -> pure (Left why)
+      _ -> withCString source $ \src -> alloca $ \errp -> do
+        p <- c_compile src errp
+        if p == nullPtr then Left . maybe "the GPU wouldn't compile it" id <$> (peek errp >>= message)
+        else do
+          pipeline <- FC.newForeignPtr p (c_releasePipeline p)
+          pure (Right GpuKernel { gkBind = bind tableSets pipeline })
 
     bind tableSets pipeline ws tables = do
       -- (a binding can't be empty, so there's always a word)
