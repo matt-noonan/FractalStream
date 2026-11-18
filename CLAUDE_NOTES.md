@@ -1468,6 +1468,18 @@ See `LANGUAGE.md` for full docs. Key points:
   import library, with the DLL needed on the PATH and beside the app. `fsrun
   --backend gpu-df64` (or `gpu-f32`) draws viewers on the GPU without a
   browser; `fsrun` draws on the CPU unless told otherwise.
+- A panic in wgpu-native (Rust) aborts the whole process, so each new
+  shader is first read and checked by wgpu in a child process, the probe
+  (`Backend.WGPU.Probe`): the program itself again, with
+  `FRACTALSTREAM_GPU_PROBE=1`, which a constructor in `fsgpu.c` turns into
+  a checking server before `main` (no frontend changes needed). If the probe
+  dies, the viewer is declined with wgpu's panic message. Only the check
+  (naga, ~2 ms) is probed, not the pipeline (the Metal/Vulkan/DX12
+  translation and driver compile, ~200 ms on an M5), which would double a
+  new shader's wait: the user chose that trade (2026-11-17). Shaders that
+  passed are listed in `~/.cache/fractalstream/gpu-safe-shaders` (XDG cache;
+  `%LOCALAPPDATA%` on Windows), by an FNV-1a hash of wgpu's version, the GPU
+  and the WGSL; delete it to probe them again.
 - Each package has its own `stack.yaml` (resolver `lts-24.12`); build and test
   from a package directory, e.g. `cd fractalstream-core && stack test`.
   `cd fractalstream-ui-headless && stack test` runs the core, LLVM backend, and

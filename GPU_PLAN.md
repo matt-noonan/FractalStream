@@ -293,6 +293,12 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
         `fsgpu.c` takes an SRWLOCK there, and yields between polls (Windows
         can't sleep 50 us). CI's runner has no GPU, but fsrun draws with
         gpu-df64 on Direct3D 12's software device (WARP).
+  - [x] A wgpu panic can't take the app down (branch `gpu-panic-guard`):
+        each new shader is read and checked in a child process first (the
+        program again, as a server, from a constructor in `fsgpu.c`), and
+        declined if that dies. Only the check (~2 ms), not the pipeline's
+        translation and driver compile (~200 ms, which would double a new
+        shader's wait); shaders that passed are remembered on disk.
   - [ ] f64 (wgpu's native-only `SHADER_F64`), a fourth backend.
 
 ## Later

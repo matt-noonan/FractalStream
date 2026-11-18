@@ -13,6 +13,13 @@
  * 0.07 ms with blocks from several threads at once).
  *
  * Errors come back as strings the caller frees (fsgpu_free_string).
+ *
+ * wgpu is Rust: a panic in it (a bug, say, in compiling an unusual
+ * shader) can't unwind through C, so it aborts the whole process. So
+ * Backend.WGPU has each new shader read and checked in a child process
+ * first (this program again, with FRACTALSTREAM_GPU_PROBE=1: see
+ * probe_server, at the end), and only once that one survives compiles it
+ * here.
  * Every kernel has the bindings Backend.WGSL.Runtime declares: the
  * parameters (a uniform), the arguments (read-only storage), the pixels
  * (storage, a u32 each, 0xIIBBGGRR), the tables (read-only storage), the
@@ -24,6 +31,10 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include <stdatomic.h>
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -255,6 +266,28 @@ done:;
   return e;
 }
 
+/* A WGSL module, read and checked only (no pipeline): NULL, or why it
+ * isn't valid. For the probe: this is the part of a compile where wgpu's
+ * own code works on our shader (naga), in a couple of ms; making the
+ * pipeline (translating it for Metal, Vulkan or DirectX 12, and the
+ * driver compiling that: about 200 ms on an M5) is left to the app. */
+char *fsgpu_check(const char *source) {
+  take_lock();
+  char *err = NULL;
+  if (lost) { err = copy_string(lost); goto done; }
+  scopes_begin();
+  WGPUShaderSourceWGSL wgsl = WGPU_SHADER_SOURCE_WGSL_INIT;
+  wgsl.code = (WGPUStringView){ source, WGPU_STRLEN };
+  WGPUShaderModuleDescriptor md = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
+  md.nextInChain = &wgsl.chain;
+  WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &md);
+  err = scopes_end();
+  if (module) wgpuShaderModuleRelease(module);
+done:
+  give_lock();
+  return err;
+}
+
 /* A WGSL module, compiled: a pipeline, or NULL and why not (in *err). */
 WGPUComputePipeline fsgpu_compile(const char *source, char **err) {
   take_lock();
@@ -447,4 +480,56 @@ char *fsgpu_name(void) {
   }
   give_lock();
   return s;
+}
+
+/* wgpu's version (0xMMmmppqq), for Backend.WGPU's record of the shaders
+ * that compiled safely. */
+uint32_t fsgpu_version(void) { return wgpuGetVersion(); }
+
+/* ---- the probe: compiling shaders in a child process ----
+ *
+ * When this program starts with FRACTALSTREAM_GPU_PROBE=1, it's
+ * Backend.WGPU's probe: before main (and the Haskell runtime) runs, it
+ * starts the GPU and answers on stdout, then reads and checks each shader
+ * that comes in on stdin (fsgpu_check), answering for each, until stdin
+ * closes. A shader
+ * comes as its length (4 bytes, little-endian) and its UTF-8; an answer
+ * is a status byte (0: fine, 1: an error) and the message's length and
+ * bytes. If checking a shader panics, wgpu aborts this process, not the
+ * app. */
+static int read_all(void *p, size_t n) { return fread(p, 1, n, stdin) == n; }
+
+static void answer(const char *err) {
+  uint8_t status = err ? 1 : 0;
+  uint32_t n = err ? (uint32_t)strlen(err) : 0;
+  uint8_t len[4] = { n & 255, (n >> 8) & 255, (n >> 16) & 255, n >> 24 };
+  fwrite(&status, 1, 1, stdout);
+  fwrite(len, 1, 4, stdout);
+  if (n) fwrite(err, 1, n, stdout);
+  fflush(stdout);
+}
+
+__attribute__((constructor)) static void probe_server(void) {
+  const char *flag = getenv("FRACTALSTREAM_GPU_PROBE");
+  if (!flag || strcmp(flag, "1") != 0) return;
+#if defined(_WIN32)
+  _setmode(_fileno(stdin), _O_BINARY);
+  _setmode(_fileno(stdout), _O_BINARY);
+#endif
+  char *e = fsgpu_init();
+  answer(e);
+  if (e) _Exit(0);
+  for (;;) {
+    uint8_t len[4];
+    if (!read_all(len, 4)) break;
+    uint32_t n = len[0] | (uint32_t)len[1] << 8 | (uint32_t)len[2] << 16 | (uint32_t)len[3] << 24;
+    char *source = malloc((size_t)n + 1);
+    if (!source || !read_all(source, n)) break;
+    source[n] = 0;
+    char *err = fsgpu_check(source);
+    answer(err);
+    free(err);
+    free(source);
+  }
+  _Exit(0);   /* (no exit handlers: wgpu's own teardown is beside the point) */
 }

@@ -163,9 +163,12 @@ jobs:
         # (the runner has no GPU: drawing on it must say so, or draw with
         # a software driver, not crash; a panic in wgpu aborts, with 134)
         status=0
-        fsrun-dist/bin/fsrun snapshot --backend gpu-df64 --project plane.yaml --viewer Plane --output plane-gpu.png || status=$?
+        fsrun-dist/bin/fsrun snapshot --backend gpu-df64 --project plane.yaml --viewer Plane --output plane-gpu.png 2>&1 | tee gpu.log || status=${PIPESTATUS[0]}
         echo "fsrun on the GPU: exit status $status"
         if [ "$status" -gt 1 ]; then echo "fsrun crashed on the GPU"; exit 1; fi
+        # (and with a GPU, its shaders must have gone through the probe,
+        # Backend.WGPU.Probe: one that couldn't start says so)
+        if grep -q "without a probe" gpu.log; then echo "the GPU's probe didn't start"; exit 1; fi
 
     - name: Archive the AppImage and fsrun
       id: archive
