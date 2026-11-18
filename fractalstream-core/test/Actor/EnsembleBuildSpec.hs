@@ -832,8 +832,8 @@ on refresh:
       Just described <- pure (lookup "tables/T.yaml" entries)
       let describedLines = lines (Text.unpack (TE.decodeUtf8 (BL.toStrict described)))
       init describedLines `shouldBe`
-        [ "type: Table 3 of (ℂ × ℤ)", "size:", "- 2", "- 3", "- 2", "origin:", "- -1", "- 1"
-        , "step:", "- 0.5", "- 0.5", "encoding: raw", "file: T.bin" ]
+        [ "type: \"Table 3 of (ℂ × ℤ)\"", "size: [2, 3, 2]", "origin: [-1.0, 1.0]"
+        , "step: [0.5, 0.5]", "encoding: raw", "file: T.bin" ]
       map length (words (last describedLines)) `shouldBe` [7, 64]
       Right loaded <- parseEnsembleFromBytes "saved.fsz" bytes
       fromFile <- getDynamic (ensembleSavedTables loaded)

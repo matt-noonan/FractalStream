@@ -53,15 +53,13 @@ import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.Map as Map
 import Data.IORef (newIORef, modifyIORef', readIORef)
 import Control.Exception (SomeException, try)
 import Numeric (showHex)
-import Data.List (elemIndex)
-import Data.Ord (comparing)
+import Data.Char (isAlphaNum)
 import qualified Data.Yaml as YAML
-import qualified Data.Yaml.Pretty as YAMLPretty
-import Data.YamlUnicode (encodePrettyYaml)
 
 -- | One saved table.
 data SavedTable = SavedTable
@@ -121,20 +119,29 @@ readTableAt files path = do
     folderOf p = reverse (dropWhile (/= '/') (reverse p))
 
 -- | A table's two files, @<base>.yaml@ (its description) and @<base>.bin@
--- (its elements), @base@ a path with /.
+-- (its elements), @base@ a path with /. The description is written a
+-- field a line, in a fixed order, lists inline (each value as JSON, which
+-- YAML reads as it is).
 tableFiles :: FilePath -> SavedTable -> [(FilePath, BL.ByteString)]
 tableFiles base SavedTable{..} =
-  [ (base ++ ".yaml", BL.fromStrict (encodePrettyYaml infoConfig description))
+  [ (base ++ ".yaml", BL.concat [ field k v | (k, v) <- description ])
   , (base ++ ".bin", stData) ]
   where
     fileName = reverse (takeWhile (/= '/') (reverse base)) ++ ".bin"
-    description = object
-      [ "type" .= stType, "size" .= stSize, "origin" .= stOrigin, "step" .= stStep
-      , "encoding" .= ("raw" :: String), "file" .= fileName
-      , "sha256" .= hex (SHA256.hashlazy stData) ]
-    infoConfig = YAMLPretty.setConfCompare (comparing rank) YAMLPretty.defConfig
-    rank k = (fromMaybe (length order) (elemIndex k order), k)
-    order = ["type", "size", "origin", "step", "encoding", "file", "sha256"]
+    description =
+      [ ("type", json stType), ("size", list (map json stSize))
+      , ("origin", pair stOrigin), ("step", pair stStep)
+      , ("encoding", "raw"), ("file", plainOrJson fileName)
+      , ("sha256", BL8.pack (hex (SHA256.hashlazy stData))) ]
+    field k v = BL.concat [k, ": ", v, "\n"]
+    json :: ToJSON a => a -> BL.ByteString
+    json = encode
+    pair (a, b) = list [json a, json b]
+    -- (a file name as it is, if YAML would read it so; else quoted)
+    plainOrJson name
+      | not (null name), all (\c -> isAlphaNum c || c `elem` ("_.-" :: String)) name = BL8.pack name
+      | otherwise = json name
+    list xs = BL.concat ["[", BL.intercalate ", " xs, "]"]
 
 -- | The @manifest:@ entries for these tables, and their files (each
 -- table's at @tables/<name>.yaml@ and @tables/<name>.bin@), to write into
