@@ -38,6 +38,12 @@ export type Request =
   | { type: "unsaved"; on: boolean }
   /** The tables that hold anything: answered by "tableSummary". */
   | { type: "tableSummary" }
+  /** A table of the project's panel, exported (a zip, or CSV): answered
+      by "download" (or "error"). */
+  | { type: "tableExport"; name: string; csv: boolean }
+  /** Replace a table's value with a file's (an exported table's zip, or
+      a CSV): answered by "tableImported". */
+  | { type: "tableImport"; name: string; bytes: ArrayBuffer }
   /** Turn a sphere viewer's globe, as the pointer drags from one screen
       point to another (in units of the sphere's radius, y up). */
   | { type: "rotate"; viewer: number; fx: number; fy: number; tx: number; ty: number }
@@ -175,6 +181,9 @@ export type Layout =
   | { kind: "tabs"; tabs: { label: string; body: Layout }[] }
   | { kind: "plain"; text: string }
   | { kind: "button"; label: string }
+  /** A table: what it is and its size (updated by "tableText"), and
+      whether it can be exported and imported as CSV. */
+  | { kind: "table"; name: string; summary: string; csv: boolean }
   | FieldLayout;
 
 export interface FieldLayout {
@@ -336,6 +345,10 @@ export type Message =
   | { type: "movieFrame"; index: number; total: number; width: number; height: number; pixels: ArrayBuffer }
   | { type: "movieDone"; error: string | null; stopped: boolean; issues: string | null }
   | { type: "tableSummary"; built: boolean; tables: { name: string; size: number[]; bytes: number }[] }
+  /** A table's line in the panel, changed (a tool filled it, say). */
+  | { type: "tableText"; name: string; summary: string }
+  /** A table imported, or why it couldn't be. */
+  | { type: "tableImported"; name: string; error: string | null }
   | { type: "autocolor"; groups: AutocolorGroup[] }
   | { type: "autocolorError"; message: string }
   /** What to ask for a colorizer's arguments: each parameter, a note, and its text to start with. */

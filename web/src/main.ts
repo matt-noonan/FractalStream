@@ -8,7 +8,7 @@ import type { Request, Message, Layout, FieldLayout, Patch, ViewerInfo, SavedVie
               Shape, Handled, EventKind, Navigation, AutocolorGroup, AutocolorEdit } from "./protocol.js";
 import { drawLayers } from "./drawing.js";
 import { ScriptEditor } from "./editor.js";
-import { pickFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
+import { pickFile, pickTableFile, droppedFile, chooseDestination, type Opened, type FileHandle } from "./files.js";
 import { Desk, menuButton, type MenuItem } from "./windows.js";
 import type { Movies } from "./capture.js";
 import { Welcome } from "./welcome.js";
@@ -18,7 +18,7 @@ import { makeLink, readLink, hasLink, fetchProject } from "./links.js";
 import { sideBySide, fitted, tiled, toFractions, fromFractions, narrowScreen, type Place, type Room } from "./layout.js";
 
 const engine = new Worker(new URL("engine.js", import.meta.url), { type: "module" });
-const send = (r: Request) => engine.postMessage(r);
+const send = (r: Request, transfer: Transferable[] = []) => engine.postMessage(r, transfer);
 
 const projectEl = document.getElementById("project")!;
 const noticesEl = document.getElementById("notices")!;
@@ -1037,9 +1037,38 @@ function layoutElement(layout: Layout, actions: PanelActions, title?: string): N
       b.addEventListener("click", () => actions.button?.(layout.label));
       return b;
     }
+    case "table":
+      return tableElement(layout);
     default:
       return fieldElement(layout, actions);
   }
+}
+
+/** Each table's summary in the panel, by name (see "tableText"). */
+const tableSummaries = new Map<string, HTMLElement>();
+
+/** A table's line: its name, what it is and its size, and Export (and
+    Export CSV) and Import (see Actor.TableTransfer). */
+function tableElement(t: Extract<Layout, { kind: "table" }>): Node {
+  const summary = el("span", { className: "table-summary", textContent: t.summary });
+  tableSummaries.set(t.name, summary);
+  const button = (label: string, title: string, act: () => void) => {
+    const b = el("button", { type: "button", textContent: label, title });
+    b.addEventListener("click", act);
+    return b;
+  };
+  return el("div", { className: "table-field" },
+    el("span", { className: "table-name", textContent: t.name }), summary,
+    button("Export", `Save the table ${t.name} as a .zip file, to import later`,
+           () => send({ type: "tableExport", name: t.name, csv: false })),
+    ...(t.csv ? [button("Export CSV", `Save the table ${t.name} as CSV, for other programs`,
+                        () => send({ type: "tableExport", name: t.name, csv: true }))] : []),
+    button("Import", `Replace the table ${t.name} with an exported table${t.csv ? " or a CSV" : ""}`, async () => {
+      const file = await pickTableFile(t.csv);
+      if (!file) return;
+      const bytes = await file.arrayBuffer();
+      send({ type: "tableImport", name: t.name, bytes }, [bytes]);
+    }));
 }
 
 /** Tabs: a chooser of which one to show, and the one chosen. */
@@ -2179,6 +2208,8 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
     }
     case "unsaved": engineUnsaved = m.on; showFileName(); break;
     case "field": fieldResult(m.key, m.error, m.color); break;
+    case "tableText": { const s = tableSummaries.get(m.name); if (s) s.textContent = m.summary; break; }
+    case "tableImported": if (m.error) say(m.error, true); else say(`Imported into the table ${m.name}.`); break;
     case "fieldText": fieldText(m.key, m.text, m.color); break;
     case "tool": viewers.get(m.viewer)?.toolSelected(m.name, m.panel, m.handles); break;
     case "toolError": say(m.message, true); console.error(m.message); break;

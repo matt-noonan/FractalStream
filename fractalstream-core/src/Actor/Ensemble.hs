@@ -1289,7 +1289,7 @@ configStmtToLayout = \case
   ConfigAction a s -> pure (Right (ActionButton a s))
   ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdDefaultSrc cdLabel cdChoices
   ConfigTable _ name t@(SomeType ty) -> case ty of
-    TableType n _ -> Right . HiddenTable name t <$> newVariable (emptyTable (fromIntegral (TN.fromSNat n)))
+    TableType n _ -> Right . TableField name t <$> newVariable (emptyTable (fromIntegral (TN.fromSNat n)))
     _ -> pure (Left (NoSourceRange, "INTERNAL ERROR: `" ++ name ++ "` isn't a table"))
   ConfigRow stmts -> do
     results <- mapM configStmtToLayout stmts
@@ -2028,7 +2028,7 @@ layoutToArgs = \case
   Panel _ lo    -> getDynamic lo >>= layoutToArgs
   Tabbed ts     -> getDynamic ts >>= mapM (getDynamic . dyn . tiBody >=> layoutToArgs) <&> mconcat
   PlainText _   -> pure mempty
-  HiddenTable name0 (SomeType ty) v -> pure $ case (ty, someSymbolVal name0) of
+  TableField name0 (SomeType ty) v -> pure $ case (ty, someSymbolVal name0) of
     -- (a table a tool hands back is frozen: viewers may now read it)
     (TableType{}, SomeSymbol name) -> withKnownType ty $
       let arg = EventArgument (Just <$> getDynamic (dyn v))

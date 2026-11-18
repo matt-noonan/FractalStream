@@ -1624,6 +1624,51 @@ async function tables() {
   const reopened = await centre();
   c.check(reopened.join() === filled.join(), `reopened, the table's as it was (the viewer shows ${reopened})`);
 
+  // the table's line in the panel: what it is, Export and Import
+  await app.openDrawer();
+  const tableLine = page.locator(".table-field").first();
+  const summary = async () => (await tableLine.locator(".table-summary").textContent()) ?? "";
+  const shown = await summary();
+  const [, w, h] = /Table 2 of ℂ, (\d+) × (\d+)/.exec(shown) ?? [];
+  c.check(w !== undefined, `the panel shows the table, its type and size (${shown})`);
+  const exported = async (label) => {
+    const download = page.waitForEvent("download", { timeout: 10000 }).catch(() => null);
+    await tableLine.locator("button", { hasText: label }).first().click();
+    const d = await download;
+    return d && { name: d.suggestedFilename(), bytes: fs.readFileSync(await d.path()) };
+  };
+  const zip = await exported(/^Export$/);
+  c.check(zip !== null && zip.name === "T-table.zip" && isArchive(zip.bytes.toString("latin1"))
+          && zip.bytes.includes("T.yaml") && zip.bytes.includes("T.bin"),
+          `Export saves it as a zip of T.yaml and T.bin (${zip?.name})`);
+  const csv = await exported("Export CSV");
+  const csvLines = csv ? csv.bytes.toString("utf8").trim().split("\n") : [];
+  c.check(csv !== null && csv.name === "T-table.csv" && csvLines.length === Number(h)
+          && csvLines[0].split(",").length === 2 * Number(w),
+          `Export CSV saves it a line a row, two values a complex number (${csvLines.length} lines)`);
+  const importing = async (name, contents) => {
+    await app.forgetMessages();
+    const chooser = page.waitForEvent("filechooser", { timeout: 5000 });
+    await tableLine.locator("button", { hasText: "Import" }).click();
+    await (await chooser).setFiles({ name, mimeType: "application/octet-stream", buffer: Buffer.from(contents) });
+    await page.waitForTimeout(1200);
+  };
+  await importing("small.csv", "1,0,2,0\n3,0,4,0\n");
+  const small = await summary();
+  const smallColor = await centre();
+  c.check(small === "Table 2 of ℂ, 2 × 2" && smallColor.join() !== filled.join(),
+          `Import of a CSV replaces it, at the CSV's size (${small}; the viewer shows ${smallColor})`);
+  await importing("T-table.zip", zip?.bytes ?? Buffer.alloc(0));
+  const back = await summary();
+  const backColor = await centre();
+  c.check(back === shown && backColor.join() === filled.join(),
+          `Import of the exported zip puts it back as it was (${back}; the viewer shows ${backColor})`);
+  await importing("nonsense.csv", "this,isn't\nnumbers\n");
+  const error = (await page.locator(".notice.error .notice-text").first().textContent().catch(() => "")) ?? "";
+  c.check(/This CSV can't be read/.test(error) && (await summary()) === shown,
+          `a file it can't read is said so, and the table's left as it was (${error})`);
+  await page.locator(".notice.error .notice-dismiss").first().click().catch(() => {});
+
   // without them
   dl = saveAs();
   await dialog.waitFor({ timeout: 5000 }).catch(() => {});

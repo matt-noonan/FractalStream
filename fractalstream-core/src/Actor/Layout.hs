@@ -83,9 +83,11 @@ data Layout
   | ColorPicker (Variable Label) (Parsed String) (Parsed Color)
   | Selection (Variable Label) (Parsed String) (Variable Int64) (Variable [String])
   | TextBox (Variable Label) UIVariable
-  | HiddenTable String SomeType (Variable Table)
+  | TableField String SomeType (Variable Table)
     -- ^ A table: its name, its type (some 'TableType'), and its value.
-    -- It has no widget, and isn't saved with the project.
+    -- Its widget says what it is, with Export… and Import… (see
+    -- "Actor.TableTransfer"); what it holds is saved with the project
+    -- only if the user says so (see "Actor.SavedTables").
 
 -- | Things an 'ActionButton' can do in the app.
 data AppAction
@@ -178,7 +180,7 @@ layoutContext = fmap (\(SomeContext' ctx) -> ctx) . go
         Right v -> dyn c >>= \case
           Left e -> pure (SomeContext' $ Left e)
           Right c' -> single v ColorType (pure c')
-      HiddenTable n (SomeType ty) v -> case ty of
+      TableField n (SomeType ty) v -> case ty of
         TableType{} -> withKnownType ty (single n ty (dyn v))
         _ -> pure (SomeContext' $ Left "expected a table type")
       TextBox _ UIVariable{..} -> dyn exprValue >>= \case
@@ -210,14 +212,14 @@ data Field = Field
   }
 
 -- | Every table declared in a panel: its name, its type, and its value.
--- (Tables have no field: see 'HiddenTable'.)
+-- (Tables aren't 'Field's, which are text: see 'TableField'.)
 layoutTables :: Layout -> IO [(String, SomeType, Variable Table)]
 layoutTables = \case
   Vertical xs -> concat <$> (mapM layoutTables =<< getDynamic xs)
   Horizontal xs -> concat <$> (mapM layoutTables =<< getDynamic xs)
   Panel _ lo -> layoutTables =<< getDynamic lo
   Tabbed items -> concat <$> (mapM (layoutTables <=< getDynamic . tiBody) =<< getDynamic items)
-  HiddenTable name ty v -> pure [(name, ty, v)]
+  TableField name ty v -> pure [(name, ty, v)]
   _ -> pure []
 
 -- | Every named field in a panel, in order.
@@ -230,7 +232,7 @@ layoutFields = \case
   PlainText{} -> pure []
   Button{} -> pure []
   ActionButton{} -> pure []
-  HiddenTable{} -> pure []
+  TableField{} -> pure []
   CheckBox _ name b -> named name $ \n -> Field
     { fieldName = n
     , fieldText = showBool <$> getDynamic b
@@ -311,7 +313,7 @@ layoutContext' = fmap (\(SomeContext' x) -> x) . go
       Selection _ var x _ -> getDynamic var <&> \case
         Left e -> SomeContext' $ Left e
         Right v -> single v IntegerType (Right <$> dyn x)
-      HiddenTable n (SomeType ty) v -> pure $ case ty of
+      TableField n (SomeType ty) v -> pure $ case ty of
         TableType{} -> withKnownType ty (single n ty (Right <$> dyn v))
         _ -> SomeContext' (Left "expected a table type")
       CheckBox _ var b -> getDynamic var <&> \case
@@ -348,7 +350,7 @@ layoutBindings = \case
   PlainText{} -> pure (pure [])
   Button{} -> pure (pure [])
   ActionButton{} -> pure (pure [])
-  HiddenTable n t _ -> pure (Right [(n, t)])
+  TableField n t _ -> pure (Right [(n, t)])
   Selection _ var _ _ -> fmap (:[]) <$> (fmap (, SomeType IntegerType) <$> dyn var)
   CheckBox    _ var _ -> fmap (:[]) <$> (fmap (, SomeType BooleanType) <$> dyn var)
   ColorPicker _ var _ -> fmap (:[]) <$> (fmap (, SomeType ColorType)   <$> dyn var)

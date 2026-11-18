@@ -452,7 +452,12 @@ fails the build if any view is still signed.
 table's description) and two files per table, `tables/<name>.yaml` (type,
 size, origin, step, `file:` beside it, SHA-256) and `tables/<name>.bin`
 (raw packed bytes): `Actor.SavedTables.tableFiles` / `readTableAt`, the
-same pair a table is exported as (in a zip of its own). `Data.Zip` is
+same pair a table is exported as (in a zip of its own: `Actor.TableTransfer`,
+which also does CSV for 1-D/2-D tables of ℝ, ℤ, truth values and ℂ, and
+replaces a table's value on import; each table has a line in the
+configuration panel, `Actor.Layout.TableField`, with Export… and Import…,
+desktop and web; the web's zips are deflated and inflated in the worker,
+as `.fsz`s are). `Data.Zip` is
 ours (stored/deflate, no zip64, fixed timestamps: reproducible bytes;
 CRC-32 from the zlib package's C zlib), since `zip-archive`'s `digest`
 needs a system zlib.h that the wasm toolchain lacks. `loadProjectBytes`
