@@ -620,9 +620,18 @@ x <- d|] `shouldBe` Right 3
       "c := 2.0\ny := c^3\nx <- 2 𝐝²y/𝐝c²" `gives` 24
       "c := 2.0\ny := c^3\nx <- 𝐝 y / 𝐝 c" `gives` 12
       "f(t) := t^3\nc := 2.0\nx <- ∂f(c)/∂c" `gives` 12
-      -- (a power of the derivative, not an order)
-      "c := 2.0\ny := c^3\nx <- 𝐝y/𝐝c^2" `gives` 144
-      failsWith "c := 2.0\ny := c^3\nx <- 𝐝²y/𝐝c³" "should be the same"
+      -- (a power of a derivative takes parentheses)
+      "c := 2.0\ny := c^3\nx <- (𝐝y/𝐝c)^2" `gives` 144
+      failsWith "c := 2.0\ny := c^3\nx <- 𝐝y/𝐝c^2" "put it in parentheses: (𝐝f/𝐝z)^2"
+      failsWith "c := 2.0\ny := c^3\nx <- 𝐝²y/𝐝c³" "the order on top (2) isn't the sum of the orders on the bottom (3)"
+
+    it "can be mixed, with several variables on the bottom" $ do
+      -- f = a^2 b^3: ∂²f/∂a∂b = 6 a b^2, ∂³f/∂a∂b² = 12 a b
+      "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- ∂²(a^2 b^3)/∂a∂b" `gives` 108
+      "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- 𝐝²f/𝐝a𝐝b" `gives` 108
+      "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- 𝐝³f/𝐝a𝐝b²" `gives` 72
+      "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- 2 𝐝²f/𝐝a𝐝b + 1" `gives` 217
+      failsWith "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- 𝐝²f/𝐝a𝐝b²" "isn't the sum of the orders on the bottom (3)"
 
     it "leave partial to the expression alone" $ do
       "c := 2.0\ny := c^3\nx <- partial(c, y)" `gives` 0

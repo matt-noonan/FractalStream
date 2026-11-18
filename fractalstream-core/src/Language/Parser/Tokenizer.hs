@@ -202,8 +202,9 @@ skipString = go []
 -- | What an identifier goes on with, after its first letter: letters,
 -- digits, @_@, and combining marks (so @x̂@, x with a combining hat, is
 -- an identifier).
+-- (𝐝 is the d of 𝐝f/𝐝z, so it ends a name: 𝐝a𝐝b is two)
 identChar :: Char -> Bool
-identChar c = (isAlphaNum c && not (c `elem` superscripts) && (c /= '⁻'))
+identChar c = (isAlphaNum c && not (c `elem` superscripts) && (c /= '⁻') && (c /= '𝐝'))
               || c == '_' || isMark c
 
 -- | An identifier's name, as written: in Unicode's composed form (NFC),

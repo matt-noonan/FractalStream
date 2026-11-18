@@ -131,10 +131,15 @@ out from. It takes an order too: `partial(x, expr, 2)`.
 Both can be written as fractions, as on paper: `𝐝w/𝐝z` is `diff(z, w)`
 (with `𝐝`, a bold d), and `∂w/∂z` is `partial(z, w)`. The top is a name,
 a function applied (`∂f(z)/∂z`), or an expression in parentheses
-(`∂(z^2 + c)/∂c`); the bottom is a variable. With an order on both signs,
-`𝐝²w/𝐝z²` is the second derivative. (`𝐝w/𝐝z^2` is the derivative,
-squared.) In the editor, `\d` and a space types `𝐝`, and `\partial`
-types `∂`.
+(`∂(z^2 + c)/∂c`); the bottom is one or more variables, each with its
+own sign. With orders, `𝐝²w/𝐝z²` is the second derivative, and with
+several variables, `∂²f/∂x∂y` and `∂³f/∂x∂y²` are mixed partial
+derivatives (`partial(x, partial(y, f, 2))` for the last). The orders on
+the bottom must add up to the order on top. A derivative written this way
+can't be raised to a power without parentheses: `(𝐝w/𝐝z)^2` is its
+square, and `𝐝w/𝐝z^2` is an error that says so (a superscript on the
+bottom is always an order). In the editor, `\d` and a space types `𝐝`,
+and `\partial` types `∂`.
 
 ### Syntax quirks
 

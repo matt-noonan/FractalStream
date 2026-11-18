@@ -418,11 +418,13 @@ valueAndArithGrammar funs own = mdo
   power <- ruleChoice
     [ node (EBin OpPow <$> (atomOrFunAp <* token Caret) <*> power)
     , atomOrFunAp
+    , fraction
     ]
 
   noFunPower <- ruleChoice
     [ node (EBin OpPow <$> (atom <* token Caret) <*> power)
     , atom
+    , fraction
     ]
 
   atomOrFunAp <- ruleChoice [funAp, atom]
@@ -432,7 +434,6 @@ valueAndArithGrammar funs own = mdo
 
   atom <- ruleChoice
     [ simpleAtom
-    , fraction
     , token OpenParen   *> toplevel <* token CloseParen
     , token OpenBrace   *> toplevel <* token CloseBrace
     ]
@@ -563,24 +564,32 @@ valueAndArithGrammar funs own = mdo
     NumberI n | n >= 1 -> Just (fromIntegral n)
     _ -> Nothing
 
-  -- `∂f/∂z` for `partial(z, f)` and `𝐝f/𝐝z` for `diff(z, f)`, and with an
-  -- order on both signs, `∂²f/∂z²` (an order only on the bottom would be
-  -- read as a power of the derivative: `∂f/∂z^2`)
+  -- `∂f/∂z` for `partial(z, f)` and `𝐝f/𝐝z` for `diff(z, f)`; with
+  -- orders, `∂²f/∂z²`, and with several variables, `∂³f/∂x∂y²` (that is,
+  -- `partial(x, partial(y, f, 2))`), the orders on the bottom adding up to
+  -- the order on top. A fraction like this is never the base of a power
+  -- (see `power`): `(∂f/∂z)^2` is its square, so that a superscript after
+  -- a variable on the bottom is always that variable's order.
   fraction <- ruleChoice
-    [ fractionOf EPartial (token PartialSign)
-    , fractionOf EDiff (token DiffSign)
+    [ fractionOf EPartial (token PartialSign) "∂"
+    , fractionOf EDiff (token DiffSign) "𝐝"
     ]
-  let fractionOf mk sign =
-            withSourceRange (
-            (\f x sr -> Syn sr (mk x f))
-              <$> (sign *> atomOrFunAp) <*> (token Divide *> sign *> var))
-        <|> withSourceRange (
-            (\n f x m sr -> if n == m
-                then iterate (Syn sr . mk x) f !! n
-                else Syn sr (EAdvice ("The orders on the top and the bottom of this derivative are "
-                                      ++ show n ++ " and " ++ show m ++ ", which should be the same.")))
-              <$> (sign *> token Caret *> derivativeOrder) <*> atomOrFunAp
-              <*> (token Divide *> sign *> var) <*> (token Caret *> derivativeOrder))
+  let fractionOf mk sign symbol = withSourceRange $
+        (\n f bottom sr ->
+           let m = sum (map snd bottom)
+           in if n == m
+                then foldr (\(v, k) e -> iterate (Syn sr . mk (Syn sr (EVar v))) e !! k) f bottom
+                else Syn sr (EAdvice ("In this derivative, the order on top (" ++ show n
+                                      ++ ") isn't the sum of the orders on the bottom (" ++ show m
+                                      ++ "). To raise a derivative to a power, put it in parentheses: (" ++ symbol
+                                      ++ "f/" ++ symbol ++ "z)^2.")))
+          <$> (sign *> (fromMaybe 1 <$> optional (token Caret *> derivativeOrder)))
+          <*> atomOrFunAp
+          <*> (token Divide *> some ((,) <$> (sign *> varName)
+                                         <*> (fromMaybe 1 <$> optional (token Caret *> derivativeOrder))))
+  varName <- rule $ tokenMatch $ \case
+    Identifier n | not (reserved n) -> Just n
+    _ -> Nothing
 
   ------------------------------------------------------
   -- A duplicate of the precedence levels from 'arith' down to 'atom';
