@@ -510,22 +510,43 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     currentTool <- variable [value := Left NavTool ]
     -- The pointer over the viewer, as the web app's (see UI.Cursors): an
     -- open hand in Navigate, closed while the button's down; crosshairs
-    -- with a tool.
+    -- with a tool; and the arrow over the tool picker and the menu button.
     cursors <- newViewerCursors
     pointerPressed <- newIORef False
+    pointerOnButton <- newIORef False
     let refreshPointer = do
           tool <- get currentTool value
           pressed <- readIORef pointerPressed
+          onButton <- readIORef pointerOnButton
           void . windowSetCursor p $ case tool of
+            _ | onButton && not pressed -> vcArrow cursors
             Left NavTool | pressed -> vcClosedHand cursors
                          | otherwise -> vcOpenHand cursors
             _ -> vcCrosshair cursors
+        onHudButton pt' = hudSpotAt pt' <&> \case
+          Just ToolPickerSpot -> True
+          Just MenuSpot -> True
+          _ -> False
         trackPointer = \case
-          MouseLeftDown{} -> writeIORef pointerPressed True >> refreshPointer
-          MouseLeftUp{} -> writeIORef pointerPressed False >> refreshPointer
-          -- (a move with no button down: let go, perhaps outside the window)
-          MouseMotion{} -> readIORef pointerPressed >>= \down ->
-            when down (writeIORef pointerPressed False >> refreshPointer)
+          -- (a press on a button is a click on it, not a drag)
+          MouseLeftDown pt' _ -> onHudButton pt' >>= \onButton -> do
+            writeIORef pointerOnButton onButton
+            unless onButton (writeIORef pointerPressed True)
+            refreshPointer
+          MouseLeftUp pt' _ -> do
+            writeIORef pointerPressed False
+            onHudButton pt' >>= writeIORef pointerOnButton
+            refreshPointer
+          -- (a move with no button down, perhaps after letting go outside
+          -- the window)
+          MouseMotion pt' _ -> do
+            onButton <- onHudButton pt'
+            down <- readIORef pointerPressed
+            was <- readIORef pointerOnButton
+            when (down || onButton /= was) $ do
+              writeIORef pointerPressed False
+              writeIORef pointerOnButton onButton
+              refreshPointer
           _ -> pure ()
     refreshPointer
     -- The path the Animate along path tool is drawing (in model coordinates,

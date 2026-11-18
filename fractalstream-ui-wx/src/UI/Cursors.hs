@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP #-}
 -- | The mouse pointers over a viewer, as the web app's: an open hand in
--- Navigate (a closed one while dragging), and crosshairs while a tool is
--- in use.
+-- Navigate (a closed one while dragging), crosshairs while a tool is in
+-- use, and the arrow over the viewer's buttons.
 --
 -- macOS has open and closed hands of its own; wxWidgets has none on
 -- Windows or Linux (it gives the pointing finger instead), so there
@@ -26,6 +26,7 @@ data ViewerCursors = ViewerCursors
   { vcOpenHand   :: Cursor ()
   , vcClosedHand :: Cursor ()
   , vcCrosshair  :: Cursor ()
+  , vcArrow      :: Cursor ()
   }
 
 -- | (With FS_DRAWN_CURSORS=1, the drawn hands on macOS too: to see them.)
@@ -38,7 +39,8 @@ newViewerCursors = do
     -- so wxHaskell doesn't name them)
     else (,) <$> cursorCreateFromStock 29 <*> cursorCreateFromStock 30
   cross <- cursorCreateFromStock wxCURSOR_CROSS
-  pure ViewerCursors { vcOpenHand = open, vcClosedHand = closed, vcCrosshair = cross }
+  arrow <- cursorCreateFromStock wxCURSOR_ARROW
+  pure ViewerCursors { vcOpenHand = open, vcClosedHand = closed, vcCrosshair = cross, vcArrow = arrow }
 
 -- | Whether the system has open and closed hands of its own.
 systemHands :: Bool
