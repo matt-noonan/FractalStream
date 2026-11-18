@@ -183,6 +183,34 @@ static WGPUBuffer make_buffer(uint64_t size, WGPUBufferUsage usage) {
   return wgpuDeviceCreateBuffer(device, &d);
 }
 
+/* The instance. On Windows, Direct3D 12 compiles shaders with DXC
+ * (dxcompiler.dll, beside the program: dev-tools/wgpu/fetch.sh fetches
+ * it), where it's there: only with DXC does wgpu give shaders doubles
+ * (SHADER_F64). Without it, wgpu's default (FXC). */
+static WGPUInstance make_instance(void) {
+#if defined(_WIN32)
+  static char path[MAX_PATH + 32];
+  DWORD n = GetModuleFileNameA(NULL, path, MAX_PATH);
+  char *slash = n ? strrchr(path, '\\') : NULL;
+  if (slash) {
+    strcpy(slash + 1, "dxcompiler.dll");
+    if (GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) {
+      WGPUInstanceExtras extras;
+      memset(&extras, 0, sizeof extras);
+      extras.chain.sType = (WGPUSType)WGPUSType_InstanceExtras;
+      extras.dx12ShaderCompiler = WGPUDx12Compiler_Dxc;
+      extras.dxcPath = (WGPUStringView){ path, WGPU_STRLEN };
+      extras.dxcMaxShaderModel = WGPUDxcMaxShaderModel_V6_0;
+      WGPUInstanceDescriptor d = WGPU_INSTANCE_DESCRIPTOR_INIT;
+      d.nextInChain = &extras.chain;
+      WGPUInstance i = wgpuCreateInstance(&d);
+      if (i) return i;
+    }
+  }
+#endif
+  return wgpuCreateInstance(NULL);
+}
+
 /* ---- the calls ---- */
 
 /* Start the GPU: NULL, or why there's none. Once; later calls give the
@@ -198,7 +226,7 @@ char *fsgpu_init(void) {
     return e;
   }
   initialized = 1;
-  instance = wgpuCreateInstance(NULL);
+  instance = make_instance();
   if (!instance) { init_error = copy_string("No WebGPU here (wgpu couldn't start)"); goto done; }
 
   struct waited wa = {0};

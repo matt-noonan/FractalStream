@@ -277,6 +277,11 @@ jobs:
         if [ "$BACKEND" = llvm ]; then
           bundle "$BIN/fsrun.exe" FractalStream/cli
         fi
+        # (and DXC, which wgpu loads itself, so ldd doesn't see it: beside
+        # each program, where fsgpu.c looks)
+        for d in FractalStream FractalStream/cli; do
+          [ -d "$d" ] && cp third_party/wgpu-native/lib/dxcompiler.dll third_party/wgpu-native/lib/dxcompiler-LICENSE.txt "$d/"
+        done
         ls -lR FractalStream
 
         zip -r "FractalStream-$SUFFIX.zip" FractalStream

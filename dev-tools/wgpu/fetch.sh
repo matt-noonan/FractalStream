@@ -9,7 +9,12 @@
 # On macOS and Linux, the static library (linked in). On Windows, the DLL
 # and its import library: GHC's toolchain there is LLVM's mingw, and
 # wgpu-native's Windows build is gcc's, so they meet at the DLL's C API;
-# the DLL goes beside the app (and on the PATH, for building).
+# the DLL goes beside the app (and on the PATH, for building). And on
+# Windows, Microsoft's DXC (dxcompiler.dll, with its licences; not
+# dxil.dll, whose licence is Microsoft's own, and which DXC since 1.8.2502
+# doesn't need), which Direct3D 12 compiles shaders with: only with it does
+# wgpu give shaders doubles (the GPU f64 backend). It goes beside the app
+# too (fsgpu.c looks for it there).
 #
 #   dev-tools/wgpu/fetch.sh [aarch64|x86_64]
 set -eu
@@ -33,7 +38,9 @@ esac
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 DEST="$ROOT/third_party/wgpu-native"
-if [ -f "$DEST/VERSION" ] && [ "$(cat "$DEST/VERSION")" = "$VERSION $OS $ARCH" ]; then
+# (with DXC, on Windows: a folder fetched before it was added is fetched again)
+if [ -f "$DEST/VERSION" ] && [ "$(cat "$DEST/VERSION")" = "$VERSION $OS $ARCH" ] \
+   && { [ "$OS" != windows ] || [ -f "$DEST/lib/dxcompiler.dll" ]; }; then
   echo "wgpu-native $VERSION ($OS, $ARCH) is already in third_party/wgpu-native"
   exit 0
 fi
@@ -62,6 +69,20 @@ if [ "$OS" = windows ]; then
   cp "$WORK/x/lib/libwgpu_native.dll.a" "$WORK/x/lib/wgpu_native.dll" "$DEST/lib/"
 else
   cp "$WORK/x/lib/libwgpu_native.a" "$DEST/lib/"
+fi
+if [ "$OS" = windows ]; then
+  DXC_VERSION=v1.8.2505.1
+  DXC_SHA256=9ad895a6b039e3a8f8c22a1009f866800b840a74b50db9218d13319e215ea8a4
+  curl -fsSL -o "$WORK/dxc.zip" "https://github.com/microsoft/DirectXShaderCompiler/releases/download/$DXC_VERSION/dxc_2025_07_14.zip"
+  if command -v sha256sum >/dev/null; then GOT=$(sha256sum "$WORK/dxc.zip" | cut -d' ' -f1)
+  else GOT=$(shasum -a 256 "$WORK/dxc.zip" | cut -d' ' -f1); fi
+  if [ "$GOT" != "$DXC_SHA256" ]; then
+    echo "fetch.sh: DXC's checksum is $GOT, not $DXC_SHA256" >&2
+    exit 1
+  fi
+  unzip -q "$WORK/dxc.zip" bin/x64/dxcompiler.dll LICENSE-LLVM.txt LICENSE-MIT.txt -d "$WORK/dxc"
+  cp "$WORK/dxc/bin/x64/dxcompiler.dll" "$DEST/lib/"
+  cat "$WORK/dxc/LICENSE-MIT.txt" "$WORK/dxc/LICENSE-LLVM.txt" > "$DEST/lib/dxcompiler-LICENSE.txt"
 fi
 echo "$VERSION $OS $ARCH" > "$DEST/VERSION"
 echo "wgpu-native $VERSION ($OS, $ARCH) is in third_party/wgpu-native"
