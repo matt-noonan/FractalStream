@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   myList : List of C := [0, 1, i]

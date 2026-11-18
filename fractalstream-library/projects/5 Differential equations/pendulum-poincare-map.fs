@@ -1,3 +1,4 @@
+format: 1
 script: |
   # A forced, damped pendulum,
   #   θ'' + γ θ' + 𝝎_0² sin(θ) = cos(t),

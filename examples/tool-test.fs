@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Test"
   clicked : C as "test" := 0

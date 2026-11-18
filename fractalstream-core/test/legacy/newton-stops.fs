@@ -1,4 +1,5 @@
 # Translated from a script for the original FractalStream.
+format: 1
 script: |
   @config "Colors"
   default_exit_condition_color : Color as "Default Exit Condition" := blue

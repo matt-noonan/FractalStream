@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   C : C as "f(z) = z^2 +" := -0.11 + 0.78i

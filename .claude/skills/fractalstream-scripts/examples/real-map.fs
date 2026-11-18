@@ -1,3 +1,4 @@
+format: 1
 script: |
   # A real two-dimensional map, the Hénon map (x, y) -> (1 - a x^2 + y, b x).
   # A real viewer (xvar=, yvar=) names its pixel's two real coordinates.

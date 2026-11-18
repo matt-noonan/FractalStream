@@ -1,3 +1,4 @@
+format: 1
 script: |
   @common
   # the map, its second iterate, and its critical point

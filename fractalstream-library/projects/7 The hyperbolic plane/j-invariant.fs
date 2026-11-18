@@ -1,3 +1,4 @@
+format: 1
 script: |
   # Klein's j-invariant on the upper half-plane, where the modular group
   # PSL(2, Z) acts, tiled by copies of its fundamental domain: the strip

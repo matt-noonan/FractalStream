@@ -1,5 +1,6 @@
 # For dev-tools/web/check-tools.mjs's `progressive` section: a viewer slow
 # enough (a second or two) to watch its render go, coarse to fine.
+format: 1
 script: |
   @config "Configuration"
   work : Z := 1000

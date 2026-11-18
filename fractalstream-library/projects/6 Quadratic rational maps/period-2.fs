@@ -1,3 +1,4 @@
+format: 1
 script: |
   # Quadratic rational maps with a periodic critical point: period 2.
   #

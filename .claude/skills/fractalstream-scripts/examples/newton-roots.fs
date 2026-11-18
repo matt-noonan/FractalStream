@@ -1,3 +1,4 @@
+format: 1
 script: |
   # Newton's method for the polynomial whose roots are listed in the
   # configuration, with basins of attraction colored by root and shaded by

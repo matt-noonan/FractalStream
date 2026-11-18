@@ -1,3 +1,4 @@
+format: 1
 script: |
   @common
   # This script draws in the z-plane and in the C-plane, where C is a

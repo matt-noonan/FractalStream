@@ -1,3 +1,4 @@
+format: 1
 script: |
   # Parameter plane (Mandelbrot set) and dynamical plane (Julia set) for
   # z -> z^2 + C, with smooth escape-time coloring, a tool that picks C by

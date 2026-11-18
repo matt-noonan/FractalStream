@@ -1,3 +1,4 @@
+format: 1
 script: |
   # A viewer with a group (group=modular), for dev-tools/web/check-tools.mjs:
   # the modular group's domain red, the tiles one step away blue, the rest

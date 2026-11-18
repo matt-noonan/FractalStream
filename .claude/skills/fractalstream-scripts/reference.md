@@ -7,12 +7,14 @@ old YAML format, and says lists can't be used in viewers (they can).
 
 ## 1. Project files
 
-A project is a YAML file with one key, `script:`, holding a block literal
-(use `|`). The script is a sequence of *stanzas*, each starting with an
+A project is a YAML file with a `format: 1` key (the project format; a
+file without one is read as format 1) and a `script:` key holding a block
+literal (use `|`). The script is a sequence of *stanzas*, each starting with an
 `@` header at the left margin; a stanza's body is the following lines, at
 the same indentation as its header.
 
 ```yaml
+format: 1
 script: |
   @config "Title"          # configuration fields, shown in a panel
   ...

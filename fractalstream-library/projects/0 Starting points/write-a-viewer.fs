@@ -1,3 +1,4 @@
+format: 1
 script: |
   @viewer "One-variable complex dynamics" pixelSize=1/100
   # This script draws in the z-plane, running once per pixel in the view.

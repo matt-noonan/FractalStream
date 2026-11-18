@@ -1,4 +1,5 @@
 # Translated from a script for the original FractalStream.
+format: 1
 script: |
   @config "Parameters"
   a : R as "a =" := 0

@@ -57,6 +57,7 @@ If `fsrun` isn't built: `dev-tools/wgpu/fetch.sh` (once, on macOS or Linux), the
 ## Skeleton
 
 ```yaml
+format: 1
 script: |
   @config "Parameters"
   C : C as "C =" := -0.12 + 0.75i

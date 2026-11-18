@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   tol : R as "Tolerance" := 0.01

@@ -1,3 +1,4 @@
+format: 1
 script: |
   @viewer "Circle"
   if |z| < 1:

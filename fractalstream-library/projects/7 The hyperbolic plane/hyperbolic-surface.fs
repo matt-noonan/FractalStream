@@ -1,3 +1,4 @@
+format: 1
 script: |
   # A closed surface of genus g, as the quotient of the hyperbolic plane by
   # a Fuchsian group: the regular 4g-gon with corner angles 2 pi / 4g, with

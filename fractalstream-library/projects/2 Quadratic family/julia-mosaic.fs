@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   size : R as "Julia set size" := 0.05

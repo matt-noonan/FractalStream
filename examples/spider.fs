@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Input θ = p / q for S_θ"
   row:

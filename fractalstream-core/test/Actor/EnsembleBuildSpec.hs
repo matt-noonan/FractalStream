@@ -586,7 +586,7 @@ on refresh:
             , ("a carriage return", "@viewer \"V\" var=z\r\npass\r\n", False)
             ] $ \(what, src, readable) -> shouldBuild src $ \ens -> do
         bytes <- encodeEnsemble ens
-        (what, BS.isPrefixOf "script: |" bytes) `shouldBe` (what, readable)
+        (what, BS.isPrefixOf "format: 1\nscript: |" bytes) `shouldBe` (what, readable)
         case YAML.decodeEither' bytes of
           Right (Object o) -> (what, KM.lookup "script" o) `shouldBe` (what, Just (String (Text.pack src)))
           other -> expectationFailure (what ++ ": " ++ show (fmap (const ()) other))
@@ -698,7 +698,7 @@ on refresh:
           props <- getDynamic (ensembleFrontendProperties ens)
           KM.keys props `shouldBe` []
           bytes <- encodeEnsemble ens
-          BS8.unpack (BS.take 7 bytes) `shouldBe` "script:"
+          BS8.unpack (BS.take 18 bytes) `shouldBe` "format: 1\nscript: "
           reread <- withProjectFile (BS8.unpack bytes) parseEnsembleFromFile
           case reread of
             Left err -> expectationFailure err
@@ -959,6 +959,29 @@ on refresh:
         [ ("a", "1/2"), ("b", "e^(2 pi i / 3)"), ("p", "(1, 2.5)")
         , ("t", "hello"), ("xs", "1, 2, 3")
         , ("max_iters", "100"), ("escape_radius", "10"), ("vanishing_radius", "0.0001") ]
+
+    it "reads a project file's format, and refuses a format it doesn't know" $ do
+      let file fmt = BS8.pack (fmt ++ "script: |\n  @viewer \"V\" var=z\n  pass\n")
+          opened bytes = loadProjectBytes "p.fs" bytes >>= \case
+            Left err -> pure (Left err)
+            Right (Built _) -> pure (Right ())
+            Right (BrokenScript _ err) -> pure (Left err)
+      opened (file "") >>= (`shouldBe` Right ())
+      opened (file "format: 1\n") >>= (`shouldBe` Right ())
+      opened (file "format: 2\n") >>= (`shouldBe` Left "\8220p.fs\8221 was saved by a newer version of FractalStream \
+                                                 \(its project format is 2, and this version reads format 1)")
+      forM_ ["format: one\n", "format: 1.5\n", "format: 0\n", "format: [1]\n"] $ \fmt ->
+        opened (file fmt) >>= \case
+          Left err -> (fmt, "isn't a project format" `isInfixOf` err) `shouldBe` (fmt, True)
+          Right () -> expectationFailure (fmt ++ ": opened")
+      fmap (const ()) (checkProjectBytes (file "format: 2\n")) `shouldSatisfy` either (const True) (const False)
+      fmap (const ()) (projectScript (file "format: 2\n")) `shouldSatisfy` either (const True) (const False)
+      fmap (const ()) (readProjectMetadata (file "format: 2\n")) `shouldSatisfy` either (const True) (const False)
+      -- (written back with the format this version writes, once)
+      rewriteProjectFile id id (file "format: 1\n")
+        `shouldBe` Right "format: 1\nscript: |\n  @viewer \"V\" var=z\n  pass\n"
+      rewriteProjectFile id id (file "")
+        `shouldBe` Right "format: 1\nscript: |\n  @viewer \"V\" var=z\n  pass\n"
 
     it "loads a project whose script doesn't build, keeping its file's \
        \other keys, and puts its saved values in place once it's fixed" $ do

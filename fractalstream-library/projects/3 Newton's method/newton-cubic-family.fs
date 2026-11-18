@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Newton's method configuration"
   a : C as "a =" := 0

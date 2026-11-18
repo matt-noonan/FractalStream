@@ -1,3 +1,4 @@
+format: 1
 script: |
   @config "Configuration"
   C : C as "Selected value of C:" := -0.1226 + 0.7449i
