@@ -564,7 +564,7 @@ valueAndArithGrammar funs own = mdo
     NumberI n | n >= 1 -> Just (fromIntegral n)
     _ -> Nothing
 
-  -- `∂f/∂z` for `partial(z, f)` and `𝐝f/𝐝z` for `diff(z, f)`; with
+  -- `∂f/∂z` for `partial(z, f)` and `ⅆf/ⅆz` for `diff(z, f)`; with
   -- orders, `∂²f/∂z²`, and with several variables, `∂³f/∂x∂y²` (that is,
   -- `partial(x, partial(y, f, 2))`), the orders on the bottom adding up to
   -- the order on top. A fraction like this is never the base of a power
@@ -572,7 +572,7 @@ valueAndArithGrammar funs own = mdo
   -- a variable on the bottom is always that variable's order.
   fraction <- ruleChoice
     [ fractionOf EPartial (token PartialSign) "∂"
-    , fractionOf EDiff (token DiffSign) "𝐝"
+    , fractionOf EDiff (token DiffSign) "ⅆ"
     ]
   let fractionOf mk sign symbol = withSourceRange $
         (\n f bottom sr ->
