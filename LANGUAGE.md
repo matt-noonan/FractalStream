@@ -97,7 +97,36 @@ Functions that can be used only on complex values are
 
 `diff(x, expr)` is the derivative of `expr` with respect to the real or
 complex variable `x`. For example, `diff(z, z^3 - 1)` is `3 z^2`.
-Derivatives are computed symbolically, so they are exact.
+Derivatives are worked out symbolically, so they are exact.
+
+`diff` follows the variables `expr` uses back through the statements that
+worked them out, loops and all, to `x`. So the derivative of an orbit
+with respect to its starting point, or to the parameter, needs no
+bookkeeping:
+
+```
+w := z
+iterate w -> w^2 + C until w escapes
+distance := |w| log |w| / |diff(z, w)|
+```
+
+Behind the scenes, each variable a `diff` needs gets a companion holding
+its derivative, updated alongside it. `diff(x, expr, 2)` is the second
+derivative (the same as `diff(x, diff(x, expr))`), and so on.
+
+- An `if` isn't differentiated: the derivative is that of the branch taken.
+- `x` mustn't change between when a variable is worked out and the
+  `diff`, or the derivative would be with respect to an older `x`; that's
+  an error. In particular, to differentiate a loop's result with respect
+  to where it started, work from a copy (`w := z` above), not from `z`.
+- What has no derivative is an error, not zero: an item of a list or
+  table, `floor`, `round`, `mod`, `//`, and, with respect to a complex
+  variable, `|w|`, `re`, `im`, `conj` and `arg` (which aren't holomorphic).
+  With respect to a real variable, those last ones are fine.
+
+`partial(x, expr)` is the derivative of `expr` alone, with every other
+variable a constant: `partial(c, z^2 + c)` is `1`, whatever `z` was worked
+out from. It takes an order too: `partial(x, expr, 2)`.
 
 ### Syntax quirks
 

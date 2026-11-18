@@ -440,8 +440,15 @@ Functions:
 - real → integer: `round floor ceiling ceil`
 - absolute value / modulus: `|x|` (integer, real, or complex → real)
 - `mod(a, b)`
-- derivatives: `diff(z, expr)` (symbolic, exact); for a one-variable
-  user function `f`, `f'(z)` and `f''(z)`
+- derivatives: `diff(x, expr)` (symbolic, exact), which follows the
+  variables in `expr` back through the statements that computed them
+  (loops, branches) to `x`: `w := z`, iterate `w`, then `diff(z, w)` is
+  the orbit's derivative (no hand-carried `dw`). Differentiate with respect to
+  a copy, not the loop variable itself (`diff(z, z)` after iterating `z` is an
+  error). `diff(x, e, 2)` = second derivative. Errors, never zero, through list/
+  table items, floor/round/mod, and (w.r.t. a complex x) |w|, re, im, conj, arg
+  (fine w.r.t. a real x). `partial(x, e)`: other variables constant. For a
+  one-variable user function `f`, `f'(z)` and `f''(z)`
 
 Constants: `pi`/`π`, `e`/`𝑒`, `i`/`𝑖`, `true`, `false`.
 

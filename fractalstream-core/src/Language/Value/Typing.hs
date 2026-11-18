@@ -36,6 +36,7 @@ module Language.Value.Typing
 import FractalStream.Prelude
 
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 import Language.Type
 import Language.Environment
@@ -124,6 +125,24 @@ check env ty e = case pushdown env ty e of
 mismatch :: TExpr -> FSType -> TCError
 mismatch t ty =
   Surprise (synRange t) (describe (synNode t)) (anType (exprType t)) (Expected (anType ty))
+
+-- | The derivative of @f@ with respect to the variable @x@, every other
+-- variable a constant.
+synthDerivative :: TypeEnv -> SourceRange -> Expr -> Expr -> TC TExpr
+synthDerivative env sr x f = do
+  x' <- synth env x
+  f' <- synth env f
+  case filter (not . isNumeric . exprType) [x', f'] of
+    bad : _ -> throwError (mismatch bad RealT)
+    [] -> pure ()
+  var <- case synNode x of
+    EVar n | exprType x' `elem` [RealT, ComplexT] -> pure n
+    _ -> throwError (DiffInputMustBeVariable (synRange x))
+  -- The derivative is at least real, and at least as big as the types
+  -- of the variable and the function.
+  let t = fromMaybe ComplexT (joinType RealT =<< joinType (exprType x') (exprType f'))
+  df <- differentiateWith (DiffEnv var (exprType x' == RealT) Map.empty Set.empty) f
+  synth env (Syn sr (EWiden t df))
 
 -- | Push an expected type into a node that can adopt it, for the nodes
 -- where that can succeed even though synthesis did not produce a type
@@ -277,20 +296,11 @@ synth env (Syn sr node) = case node of
     p' <- check env ComplexT p
     done ColorT (EAutocolor mode g' p')
 
-  EDiff x f -> do
-    x' <- synth env x
-    f' <- synth env f
-    case filter (not . isNumeric . exprType) [x', f'] of
-      bad : _ -> throwError (mismatch bad RealT)
-      [] -> pure ()
-    var <- case synNode x of
-      EVar n | exprType x' `elem` [RealT, ComplexT] -> pure n
-      _ -> throwError (DiffInputMustBeVariable (synRange x))
-    -- The derivative is at least real, and at least as big as the types
-    -- of the variable and the function.
-    let t = fromMaybe ComplexT (joinType RealT =<< joinType (exprType x') (exprType f'))
-    df <- differentiate var f
-    synth env (Syn sr (EWiden t df))
+  -- (what's left of @diff@ after "Language.Code.Derivatives", such as
+  -- the derivatives @f'(z)@ expands to, follows no variables, as
+  -- @partial@ doesn't)
+  EDiff x f -> synthDerivative env sr x f
+  EPartial x f -> synthDerivative env sr x f
 
   EText xs -> do
     xs' <- traverse (check env TextT) xs
@@ -738,6 +748,7 @@ describe = \case
   EColor3{} -> "this color"
   EAutocolor{} -> "this color"
   EDiff{} -> "the result of a derivative"
+  EPartial{} -> "the result of a derivative"
   EText{} -> "this text"
   EJoin{} -> "the result of a join operation"
   EAppend{} -> "the result of an append operation"
