@@ -11,7 +11,8 @@
 --
 -- For now a call is the whole right-hand side of an assignment:
 -- @x := f(a)@, @x <- f(a)@, or a tuple's, @(w, ok) := f(a)@. Each call is
--- expanded, before code blocks are (see "Language.Code.Procedures"), into
+-- expanded, after code blocks are (see "Language.Code.Procedures", so
+-- that a code block can call a function it's given), into
 --
 -- > [internal] f #k := (a placeholder, of the type the body gives f)
 -- > (the caller's iterations and stuck, saved, if the body has loops)
@@ -41,7 +42,9 @@ import Language.Value.Syntax
 import Language.Value.Builtins (internalIterations, internalStuck)
 import Language.Code.Procedures (renameStmt)
 import Language.Code.Previous (declaredIn)
-import Language.Code.Typecheck.Functions (splitArgs, freeVars)
+import Language.Code.Typecheck.Functions (splitArgs, freeVars, isFunctionArg)
+import Language.Code.FunctionArgs (substituteFunctionInStmt)
+import Data.List (partition)
 import Language.Parser (functionValueName)
 
 -- | A function with a body: its parameters, its body, and the functions
@@ -297,12 +300,20 @@ expandCall defs sr f args = do
   args' <- lift (splitArgs sr f (length params) args)
   k <- get
   put (k + 1)
-  let tag n = "[internal] " ++ f ++ "." ++ n ++ " #" ++ show k
+  -- (a parameter given a function is put in place, applied, in the body,
+  -- after the body's own names are renamed, so that a function written in
+  -- place keeps the caller's: see "Language.Code.FunctionArgs")
+  let (fnArgs, valArgs) = partition (isFunctionArg . snd) (zip params args')
+      tag n = "[internal] " ++ f ++ "." ++ n ++ " #" ++ show k
       result = "[internal] " ++ f ++ " #" ++ show k
-      names = Map.fromList ((functionValueName f, result) : [ (n, tag n) | n <- params ++ Set.toList (declaredIn body) ])
+      names = Map.fromList ((functionValueName f, result)
+                            : [ (n, tag n) | n <- map fst valArgs ++ Set.toList (declaredIn body) ])
       st = Stmt sr
       var = Syn sr . EVar
-  body' <- stmt (Ctx bodyDefs Set.empty) (renameStmt names body)
+  body1 <- lift (foldM (\b (p, a) -> substituteFunctionInStmt (f ++ " #" ++ show k) p a b)
+                       (renameStmt names body) fnArgs)
+  -- (a function given by name can be one defined where the call is)
+  body' <- stmt (Ctx (bodyDefs `Map.union` defs) Set.empty) body1
   let hasLoops = not (null [ () | Stmt _ node <- allStmts body
                                 , case node of { SLoop{} -> True; SIterate{} -> True; _ -> False } ])
       savedIterations = tag "iterations"
@@ -311,7 +322,7 @@ expandCall defs sr f args = do
              , st (SDecl savedStuck Nothing (var internalStuck)) ]
       restore = [ st (SSet internalIterations (var savedIterations))
                 , st (SSet internalStuck (var savedStuck)) ]
-      run = st (SBlock ([ st (SDecl (tag p) Nothing a) | (p, a) <- zip params args' ] ++ [body']))
+      run = st (SBlock ([ st (SDecl (tag p) Nothing a) | (p, a) <- valArgs ] ++ [body']))
   pure ( st (SDecl result Nothing (Syn sr EZero))
            : (if hasLoops then save ++ [run] ++ restore else [run])
        , result )

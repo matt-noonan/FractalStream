@@ -111,6 +111,7 @@ library
                        Language.Code.Infer
                        Language.Code.Procedures
                        Language.Code.FunctionBlocks
+                       Language.Code.FunctionArgs
                        Language.Code.Hoist
                        Language.Code.Previous
                        Language.Code.Stops

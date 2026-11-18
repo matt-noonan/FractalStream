@@ -437,6 +437,10 @@ synth env (Syn sr node) = case node of
   EAdvice msg -> advise sr msg
   -- (only checked against a type, never synthesized: see 'pushdown')
   EZero -> advise sr "I couldn't work out what type of value this function gives."
+  EFunRef f -> advise sr ("`" ++ f ++ "` is a function, so here, without an argument, it can only be \
+                          \given to a function or a code block, as one of its arguments.")
+  ELambda{} -> advise sr "This is a function, so it can only be given to a function or a code \
+                         \block, as one of its arguments."
 
   where
     done :: FSType -> ExprF TExpr -> TC TExpr
@@ -761,6 +765,8 @@ describe = \case
   EProj{} -> "this part of a pair"
   EAdvice{} -> "this expression"
   EZero -> "this function's value"
+  EFunRef f -> "the function " ++ f
+  ELambda{} -> "this function"
 
 -- | The parts of a tuple written out with @n@ components (@(a, b, c)@ is
 -- @(a, (b, c))@), or the expression itself when @n@ is 1.

@@ -566,6 +566,58 @@ x <- d|] `shouldBe` Right 3
     it "are called only as a whole right-hand side, for now" $
       failsWith "function f(a):\n  f <- a\nx <- f(1) + 1" "can only be called as the whole right-hand side"
 
+  describe "functions given as arguments" $ do
+
+    let gives input v = runWithX (Scalar RealType 0) input `shouldBe` Right v
+        failsWith input needle =
+          runWithX (Scalar RealType 0) input `shouldSatisfy` either (needle `isInfixOf`) (const False)
+
+    it "can be given to a one-line function, by name or written in place" $ do
+      "sq(a) := a a\ntwice(g, v) := g(g(v))\nx <- twice(sq, 3)" `gives` 81
+      "twice(g, v) := g(g(v))\nx <- twice(w -> w + 1, 3)" `gives` 5
+      "ap(g, a, b) := g(a, b)\nx <- ap((u, v) -> u - v, 5, 2)" `gives` 3
+
+    it "are applied however the body writes it: g(x), g x, 2 g(x), g(x)^2" $ do
+      "sq(a) := a a\nh(g, v) := g(v)^2\nx <- h(w -> w + 1, 2)" `gives` 9
+      "sq(a) := a a\nh(g, v) := 2 g(v)\nx <- h(sq, 3)" `gives` 18
+      "h(g, v) := g v + 1\nx <- h(w -> 10 w, 3)" `gives` 31
+
+    it "keep the names where they're written" $
+      -- (the function's `x` is the caller's, not h's parameter)
+      "h(g, x) := g(x) + x\nx <- h(w -> w + x, 2)" `gives` 4
+
+    it "multiply when the argument is a number" $
+      "h(g, v) := g(v)\nx <- h(3, 2)" `gives` 6
+
+    it "can be given to a code block" $ do
+      "define apply_to_x(g):\n  x <- g(x)\nx <- 3\nrun apply_to_x(w -> w w)" `gives` 9
+      "function cube(a):\n  cube <- a a a\ndefine apply_to_x(g):\n  x <- g(x)\nx <- 2\nrun apply_to_x(cube)" `gives` 8
+
+    it "can be given to a function with a body, even another such function" $ do
+      unlines [ "function iter(g, z, n):"
+              , "  w := z"
+              , "  k := 0"
+              , "  while k < n:"
+              , "    w <- g(w)"
+              , "    k <- k + 1"
+              , "  iter <- w"
+              , "sq(a) := a a"
+              , "x <- iter(sq, 2, 3)" ] `gives` 256
+      unlines [ "function inc(a):"
+              , "  inc <- a + 1"
+              , "function twice(g, a):"
+              , "  b := g(a)"
+              , "  c := g(b)"
+              , "  twice <- c"
+              , "x <- twice(inc, 1)" ] `gives` 3
+
+    it "can be given on to another call" $
+      "sq(a) := a a\nap(g, v) := g(v)\nh(g, v) := ap(g, v) + 1\nx <- h(sq, 3)" `gives` 10
+
+    it "are functions, not values, anywhere else" $ do
+      failsWith "sq(a) := a a\ny := sq\nx <- 1" "`sq` is a function"
+      failsWith "f(a) := a + 1\nsq(a) := a a\nx <- f(sq)" "a function, so it can only be given to a function or a code block"
+
   describe "when a built-in name is used for the script's own" $ do
 
     let failsWith input needle =

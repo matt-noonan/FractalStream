@@ -144,6 +144,12 @@ data ExprF r
     -- "Language.Code.Tuples").
   | EAdvice String
     -- ^ A parse that is accepted only to produce a helpful error
+  | EFunRef String
+    -- ^ A function, by its name, given as an argument to a function or
+    -- a code block (see "Language.Code.FunctionArgs")
+  | ELambda [String] r
+    -- ^ @w -> e@ (or @(u, v) -> e@): a function written where it's given,
+    -- as an argument to a function or a code block
   | EZero
     -- ^ A placeholder of whatever type is expected of it (a variable's
     -- declared or inferred type), as zero, @false@, @black@, @""@, or
@@ -175,6 +181,7 @@ exprNames (Syn _ node) = here <> foldMap exprNames node
     here = case node of
       EVar n -> Set.singleton n
       ECall f _ -> Set.singleton f
+      EFunRef f -> Set.singleton f
       EDerivCall f _ _ -> Set.singleton f
       _ -> Set.empty
 

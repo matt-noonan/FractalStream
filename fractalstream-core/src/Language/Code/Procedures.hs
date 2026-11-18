@@ -22,7 +22,9 @@ import Language.Typecheck
 import Language.Parser.SourceRange
 import Language.Code.Syntax
 import Language.Value.Syntax (Expr)
-import Language.Code.Typecheck.Functions (splitArgs, rename)
+import Language.Code.Typecheck.Functions (splitArgs, rename, isFunctionArg)
+import Language.Code.FunctionArgs (substituteFunctionInStmt)
+import Data.List (partition)
 
 -- | A block of code: its parameters, its body, and the blocks of code that
 -- were defined where it was.
@@ -67,9 +69,15 @@ run procs sr name arg = do
     _ -> lift (splitArgs sr name (length params) (maybeToList arg))
   k <- get
   put (k + 1)
-  let names = [ "[internal] " ++ name ++ "." ++ p ++ " #" ++ show k | p <- params ]
-  body' <- stmt defProcs (renameStmt (Map.fromList (zip params names)) body)
-  pure (SBlock ([ Stmt sr (SDecl n Nothing a) | (n, a) <- zip names args ] ++ [body']))
+  -- (a parameter given a function is put in place, applied, in the code:
+  -- see "Language.Code.FunctionArgs")
+  let (fnArgs, valArgs) = partition (isFunctionArg . snd) (zip params args)
+      names = [ "[internal] " ++ name ++ "." ++ p ++ " #" ++ show k | (p, _) <- valArgs ]
+      tag = name ++ " #" ++ show k
+  body1 <- lift (foldM (\b (p, a) -> substituteFunctionInStmt tag p a b)
+                       (renameStmt (Map.fromList (zip (map fst valArgs) names)) body) fnArgs)
+  body' <- stmt defProcs body1
+  pure (SBlock ([ Stmt sr (SDecl n Nothing a) | (n, (_, a)) <- zip names valArgs ] ++ [body']))
 
 -- | Rename variables, wherever they occur.
 renameStmt :: Map String String -> Stmt -> Stmt
