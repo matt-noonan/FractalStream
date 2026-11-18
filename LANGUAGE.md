@@ -327,12 +327,17 @@ g(a, b) := a * f(b) - b
 iterate z -> g(2, z) until z escapes
 ```
 
-The body of a function is a single expression, and it can use any variables
-and functions that are defined where the function is defined. A function's
-parameters are separate from any variables with the same name, so `f`'s
-parameter `z` above has nothing to do with the viewer's own variable `z`.
-A function can be used in the rest of the block it is defined in, and its
-name can't also be used as a variable.
+The body of a function is a single expression. Besides its parameters, it
+can use the project's names: configuration values, `@common`'s
+definitions, the viewer's or tool's variables (like the viewer's `z`, or
+`C` in a viewer with `var=C`), and built-in ones like `pixel_size` and
+`escape_radius`, as they are where the function is used. It can't use the
+variables that the viewer's or tool's own code declares (give the function
+a parameter for those instead), and it can call the functions defined
+before it. A function's parameters are separate from any variables with
+the same name, so `f`'s parameter `z` above has nothing to do with the
+viewer's own variable `z`. A function can be used in the rest of the block
+it is defined in, and its name can't also be used as a variable.
 
 Functions don't need type annotations: each use of a function works with
 whatever kinds of numbers it is given, so `f(2)` and `f(z)` are both fine.
@@ -346,6 +351,44 @@ work inside `diff`, so Newton's method can be written as
 f(z) := z^3 - 1
 iterate z -> z - f(z) / f'(z) until f(z) vanishes
 ```
+
+### Functions with a body
+
+A function that takes more than one expression to work out is written as a
+block, after `function`, and gives its value by assigning to its own name:
+
+```
+function critical_point(w, c, tol):
+  step := w
+  repeat up to 100 times:
+    step <- newton_step(w, c)
+    w <- w - step
+  until |step| < tol
+  critical_point <- (w, |step| < tol)
+
+(crit, found) := critical_point(0.1, C, 0.000001)
+```
+
+Every way through the body has to give the function a value: in every
+branch of an `if` (with an `else`), and not only inside a loop, which
+might not run. The last value given is the one the function has, and once
+it has one, the body can use it (`f <- f + 1`). A tuple of values comes
+back as a tuple, taken apart as usual (`(crit, found) := ...`).
+
+A function works out a value, and does nothing else:
+
+- its parameters, like those of a code block, are new variables holding
+  the values it's given, and the variables it declares are its own, so
+  they can have the same names as the caller's;
+- it sees what a one-line function sees (see "Defining functions"): the
+  project's names, not the caller's variables;
+- it can't draw, change a configuration value, a tool's variable, `color`
+  or a table, or `run` a code block, though it can call other functions,
+  of either kind, defined before it;
+- its loops don't change the caller's `iterations` or `stuck`.
+
+For now, a function with a body can only be called as the whole right-hand
+side of an assignment: `x := f(a)`, `x <- f(a)`, or `(x, y) := f(a)`.
 
 ### Defining code to run
 
@@ -397,8 +440,8 @@ on click:
   until f(z) vanishes
 ```
 
-An `@common` stanza can only contain function definitions, code definitions
-(`define`), and variable declarations. Each script gets just the common definitions it uses (and
+An `@common` stanza can only contain function definitions (of either kind),
+code definitions (`define`), and variable declarations. Each script gets just the common definitions it uses (and
 whatever those use), checked against its own variables, so they can use
 anything in scope there: here, the configuration variable `a`, and each
 script's own `z`. A definition that mentions a variable some scripts don't

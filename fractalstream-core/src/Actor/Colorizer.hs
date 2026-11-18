@@ -672,6 +672,7 @@ stripRanges (Stmt _ node) = Stmt NoSourceRange $ case node of
   SWithFirst item p list body fallback ->
     SWithFirst item (ex p) list (stripRanges body) (stripRanges <$> fallback)
   SProc name ps body -> SProc name ps (stripRanges body)
+  SFunction name ps body -> SFunction name ps (stripRanges body)
   SRun name arg -> SRun name (ex <$> arg)
   where
     ex = fmap (const NoSourceRange)

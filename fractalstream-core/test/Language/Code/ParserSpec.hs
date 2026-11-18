@@ -506,6 +506,66 @@ x <- d|] `shouldBe` Right 3
       runWithX (Scalar RealType 0) "p : R × R := (1.5, 2)\nx <- (1.5 : R) × 2" `shouldBe` Right 3.0
       runWithX (Scalar RealType 0) "p : R x R := (1.5, 2)\nx <- 2 * 1.5" `shouldBe` Right 3.0
 
+  describe "functions with a body" $ do
+
+    let gives input v = runWithX (Scalar RealType 0) input `shouldBe` Right v
+        failsWith input needle =
+          runWithX (Scalar RealType 0) input `shouldSatisfy` either (needle `isInfixOf`) (const False)
+
+    it "give the value their body assigns to their name" $ do
+      "function sq_plus(a, b):\n  t := a a\n  sq_plus <- t + b\nx <- sq_plus(3, 1)" `gives` 10
+      "function sq_plus(a, b):\n  t := a a\n  sq_plus <- t + b\ny := sq_plus(3, 1)\nx <- y" `gives` 10
+      -- the last assignment wins, and the name can be read once assigned
+      "function f(a):\n  f <- a\n  f <- f + 1\nx <- f(2)" `gives` 3
+      -- a value on every path
+      "function m(a, b):\n  if a > b:\n    m <- a\n  else:\n    m <- b\nu := m(2, 5)\nv := m(7, 1)\nx <- u + v" `gives` 12
+
+    it "can give a tuple" $
+      "function both(a):\n  both <- (a, a + 1)\n(p, q) := both(2)\nx <- p q" `gives` 6
+
+    it "have variables of their own, whatever the caller's are called" $
+      "t := 100\nfunction f(a):\n  t := a + 1\n  f <- t\ny := f(1)\nx <- t + y" `gives` 102
+
+    it "don't change the caller's iterations or stuck" $
+      unlines [ "repeat up to 3 times:"
+              , "  pass"
+              , "until false"
+              , "function g(a):"
+              , "  s := 0"
+              , "  for each k in range(1, a):"
+              , "    s <- s + k"
+              , "  n := 0"
+              , "  while n < a:"
+              , "    n <- n + 1"
+              , "  g <- s + n"
+              , "y := g(4)"
+              , "x <- iterations + y + (if stuck then 100 else 0)" ] `gives` 117
+
+    it "can call other functions with bodies, and one-line functions" $
+      unlines [ "sq(a) := a a"
+              , "function f(a):"
+              , "  f <- sq(a) + 1"
+              , "function g(a):"
+              , "  b := f(a)"
+              , "  g <- 2 b"
+              , "x <- g(3)" ] `gives` 20
+
+    it "must give a value on every path" $ do
+      failsWith "function f(a):\n  if a > 0:\n    f <- a\nx <- f(1)" "`f` isn't given a value on every path"
+      failsWith "function f(a):\n  while a > 0:\n    f <- a\nx <- f(1)" "`f` isn't given a value on every path"
+      failsWith "function f(a):\n  b := f + 1\n  f <- b\nx <- f(1)" "`f` is read here before its body has given it a value"
+
+    it "only work out a value" $ do
+      failsWith "function f(a):\n  draw point at 0\n  f <- a\nx <- f(1)" "f can't draw"
+      failsWith "function f(a):\n  x <- 3\n  f <- a\nx <- f(1)" "f can't change `x`"
+      failsWith "define b:\n  pass\nfunction f(a):\n  run b\n  f <- a\nx <- f(1)" "f can't run the code block `b`"
+
+    it "see only what's in scope where they're defined" $
+      failsWith "function g(a):\n  g <- a + later\nlater := 2\nx <- g(1)" "No variable named later"
+
+    it "are called only as a whole right-hand side, for now" $
+      failsWith "function f(a):\n  f <- a\nx <- f(1) + 1" "can only be called as the whole right-hand side"
+
   describe "when a built-in name is used for the script's own" $ do
 
     let failsWith input needle =

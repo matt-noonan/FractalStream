@@ -45,6 +45,7 @@ import Language.Value.Syntax
 import Language.Value.Builtins
 import Language.Parser (isOwnableBuiltin)
 import Language.Value.Differentiate
+import Data.Color (black)
 
 -- | The types of the variables in scope.
 data TypeEnv = TypeEnv
@@ -160,7 +161,24 @@ pushdown env ty (Syn sr node) = fmap (fmap (Syn (sr, ty))) $ case (node, ty) of
     | Just TableT{} <- Map.lookup n (tyVars env) -> Nothing  -- (see synth)
   (EIndex cyc lst ix, _) -> Just $
     EIndex cyc <$> check env (ListT ty) lst <*> check env IntegerT ix
+  (EZero, _) -> Just (synNode <$> (check env ty =<< zeroOf sr ty))
   _ -> Nothing
+
+-- | The zero of a type, as an expression (see 'EZero').
+zeroOf :: SourceRange -> FSType -> TC Expr
+zeroOf sr = \case
+  IntegerT -> lit IntegerType 0
+  RealT -> lit RealType 0
+  ComplexT -> lit ComplexType 0
+  BooleanT -> lit BooleanType False
+  ColorT -> lit ColorType black
+  TextT -> lit TextType ""
+  Pair t1 t2 -> (\a b -> Syn sr (EPair a b)) <$> zeroOf sr t1 <*> zeroOf sr t2
+  ListT _ -> pure (Syn sr (EList []))
+  t -> advise sr ("A function can't give " ++ anType t ++ ".")
+  where
+    lit :: TypeProxy t -> HaskellType t -> TC Expr
+    lit t v = pure (Syn sr (ELit "0" (SomeHaskellType t v)))
 
 ------------------------------------------------------
 -- Synthesis
@@ -417,6 +435,8 @@ synth env (Syn sr node) = case node of
       Nothing -> throwError (mismatch x' t)
 
   EAdvice msg -> advise sr msg
+  -- (only checked against a type, never synthesized: see 'pushdown')
+  EZero -> advise sr "I couldn't work out what type of value this function gives."
 
   where
     done :: FSType -> ExprF TExpr -> TC TExpr
@@ -740,6 +760,7 @@ describe = \case
   EWiden{} -> "this value"
   EProj{} -> "this part of a pair"
   EAdvice{} -> "this expression"
+  EZero -> "this function's value"
 
 -- | The parts of a tuple written out with @n@ components (@(a, b, c)@ is
 -- @(a, (b, c))@), or the expression itself when @n@ is 1.

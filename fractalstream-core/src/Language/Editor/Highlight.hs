@@ -222,6 +222,7 @@ codeDefs toks = case toks of
   -- `f(x, y) := ...` (before tuple declarations, which it also looks like)
   Identifier f : rest@(OpenParen : ps) | Just _ <- functionDefinitionBody rest -> (f, Function) : params (takeWhile (/= CloseParen) ps)
   Identifier "define" : Identifier f : OpenParen : rest -> (f, CodeBlock) : params rest
+  Identifier "function" : Identifier f : OpenParen : rest -> (f, Function) : params rest
   Identifier "define" : Identifier f : _ -> [(f, CodeBlock)]
   Identifier "on" : rest -> handlerPoints rest
   -- a tuple declaration, `x, y := ...` or `(x, y) := ...`
@@ -329,7 +330,7 @@ tokenClass = \case
 keywords :: Set String
 keywords = Set.fromList
   [ "while", "until", "repeat", "iterate", "up", "to", "for", "each", "in", "with", "first"
-  , "matching", "define", "run", "pass", "draw", "use", "erase", "write", "point", "at"
+  , "matching", "define", "function", "run", "pass", "draw", "use", "erase", "write", "point", "at"
   , "circle", "filled", "radius", "pixels", "rectangle", "from", "line", "geodesic", "stroke", "fill", "on"
   , "as", "choice", "button", "row", "tab", "coloring", "reset", "resize" ]
 

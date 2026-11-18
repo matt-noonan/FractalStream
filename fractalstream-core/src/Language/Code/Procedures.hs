@@ -102,6 +102,8 @@ renameStmt m (Stmt sr node) = Stmt sr $ case node of
     SWithFirst (var item) (expr p) (var list) (go body) (go <$> fallback)
   SProc name params body ->
     SProc name params (renameStmt (Map.withoutKeys m (Set.fromList params)) body)
+  SFunction name params body ->
+    SFunction name params (renameStmt (Map.withoutKeys m (Set.fromList params)) body)
   SRun name arg -> SRun name (expr <$> arg)
   where
     go = renameStmt m

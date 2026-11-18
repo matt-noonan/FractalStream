@@ -11,21 +11,24 @@ let `color` = Color 128 128 128 in:
                 let `[internal] stuck` = False in:
                   let `[internal] iteration count` = 0 in:
                     block:
-                      let `sigma3` = [1; 9; 28; 73; 126; 252; 344; 585] in:
+                      let `[internal] j_invariant #0` = 0.0 :+ 0.0 in:
                         block:
-                          let `sigma5` = [1; 33; 244; 1057; 3126; 8052; 16808; 33825] in:
+                          let `[internal] j_invariant.sigma3 #0` = [1; 9; 28; 73; 126; 252; 344; 585] in:
                             block:
-                              let `s4` = 0:R:C in:
+                              let `[internal] j_invariant.sigma5 #0` = [1; 33; 244; 1057; 3126; 8052; 16808; 33825] in:
                                 block:
-                                  let `s6` = 0:R:C in:
+                                  let `[internal] j_invariant.s4 #0` = 0:R:C in:
                                     block:
-                                      let `[list at 32:0]` = range(1, 8) in:
+                                      let `[internal] j_invariant.s6 #0` = 0:R:C in:
                                         block:
-                                          set `[hoisted] sigma3` := sigma3
-                                          set `[hoisted] sigma5` := sigma5
-                                          set `[hoisted] s4` := s4
-                                          set `[hoisted] s6` := s6
-                                          set `[hoisted] [list at 32:0]` := [list at 32:0]
+                                          let `[internal] j_invariant.[list at 34:2] #0` = range(1, 8) in:
+                                            block:
+                                              set `[hoisted] [internal] j_invariant #0` := [internal] j_invariant #0
+                                              set `[hoisted] [internal] j_invariant.sigma3 #0` := [internal] j_invariant.sigma3 #0
+                                              set `[hoisted] [internal] j_invariant.sigma5 #0` := [internal] j_invariant.sigma5 #0
+                                              set `[hoisted] [internal] j_invariant.s4 #0` := [internal] j_invariant.s4 #0
+                                              set `[hoisted] [internal] j_invariant.s6 #0` := [internal] j_invariant.s6 #0
+                                              set `[hoisted] [internal] j_invariant.[list at 34:2] #0` := [internal] j_invariant.[list at 34:2] #0
 
 --- body
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -58,11 +61,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                 block:
                                                   let `[internal] group.gaon` = True in:
                                                     block:
-                                                      let `[internal] fresh #55` = 0 in:
-                                                        let `[internal] fresh #56` = 1000 in:
+                                                      let `[internal] fresh #56` = 0 in:
+                                                        let `[internal] fresh #57` = 1000 in:
                                                           block:
-                                                            if ([internal] group.gaon and ([internal] fresh #55 < [internal] fresh #56)) then:
-                                                              do-while ([internal] group.gaon and ([internal] fresh #55 < [internal] fresh #56)):
+                                                            if ([internal] group.gaon and ([internal] fresh #56 < [internal] fresh #57)) then:
+                                                              do-while ([internal] group.gaon and ([internal] fresh #56 < [internal] fresh #57)):
                                                                 block:
                                                                   block:
                                                                     let `[internal] group.gkz` = ((2:R:C * [internal] group.gz) / (1:R + (|[internal] group.gz| ^ 2:R)):C) in:
@@ -76,11 +79,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                   block:
                                                                                     let `[internal] group.ghi` = [internal] group.gnw in:
                                                                                       block:
-                                                                                        let `[internal] fresh #61` = 0 in:
-                                                                                          let `[internal] fresh #62` = 64 in:
+                                                                                        let `[internal] fresh #62` = 0 in:
+                                                                                          let `[internal] fresh #63` = 64 in:
                                                                                             block:
-                                                                                              if (([internal] group.glo < [internal] group.ghi) and ([internal] fresh #61 < [internal] fresh #62)) then:
-                                                                                                do-while (([internal] group.glo < [internal] group.ghi) and ([internal] fresh #61 < [internal] fresh #62)):
+                                                                                              if (([internal] group.glo < [internal] group.ghi) and ([internal] fresh #62 < [internal] fresh #63)) then:
+                                                                                                do-while (([internal] group.glo < [internal] group.ghi) and ([internal] fresh #62 < [internal] fresh #63)):
                                                                                                   block:
                                                                                                     block:
                                                                                                       let `[internal] group.gmid` = ((([internal] group.glo + [internal] group.ghi) + 1) / 2) in:
@@ -91,11 +94,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                           else:
                                                                                                             block:
                                                                                                               set `[internal] group.ghi` := ([internal] group.gmid - 1)
-                                                                                                    set `[internal] fresh #61` := ([internal] fresh #61 + 1)
+                                                                                                    set `[internal] fresh #62` := ([internal] fresh #62 + 1)
                                                                                               else:
                                                                                                 no-op
-                                                                                              set `[internal] iteration count` := [internal] fresh #61
-                                                                                              set `[internal] stuck` := ([internal] fresh #61 = [internal] fresh #62)
+                                                                                              set `[internal] iteration count` := [internal] fresh #62
+                                                                                              set `[internal] stuck` := ([internal] fresh #62 = [internal] fresh #63)
                                                                                         set `[internal] group.gwedge` := [internal] group.glo
                                                                             else:
                                                                               no-op
@@ -118,11 +121,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                           no-op
                                                                                 else:
                                                                                   no-op
-                                                                  set `[internal] fresh #55` := ([internal] fresh #55 + 1)
+                                                                  set `[internal] fresh #56` := ([internal] fresh #56 + 1)
                                                             else:
                                                               no-op
-                                                            set `[internal] iteration count` := [internal] fresh #55
-                                                            set `[internal] stuck` := ([internal] fresh #55 = [internal] fresh #56)
+                                                            set `[internal] iteration count` := [internal] fresh #56
+                                                            set `[internal] stuck` := ([internal] fresh #56 = [internal] fresh #57)
                                                       let `[internal] group.gbest` = -1.0 in:
                                                         block:
                                                           let `[internal] group.gbk` = 0 in:
@@ -197,42 +200,47 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                   set `z` := (((([internal] group from fold@1) * [internal] group.gz) + ([internal] group from fold@2)) / [internal] group.gfk)
                                                                                   set `pixel_size` := ((pixel_size * [internal] group.gdz) / (|[internal] group.gfk| ^ 2:R))
                                                                                   block:
-                                                                                    let `sigma3` = [hoisted] sigma3 in:
+                                                                                    let `[internal] j_invariant #0` = [hoisted] [internal] j_invariant #0 in:
                                                                                       block:
-                                                                                        let `sigma5` = [hoisted] sigma5 in:
+                                                                                        let `[internal] j_invariant.sigma3 #0` = [hoisted] [internal] j_invariant.sigma3 #0 in:
                                                                                           block:
-                                                                                            let `s4` = [hoisted] s4 in:
+                                                                                            let `[internal] j_invariant.sigma5 #0` = [hoisted] [internal] j_invariant.sigma5 #0 in:
                                                                                               block:
-                                                                                                let `s6` = [hoisted] s6 in:
+                                                                                                let `[internal] j_invariant.s4 #0` = [hoisted] [internal] j_invariant.s4 #0 in:
                                                                                                   block:
-                                                                                                    let `[list at 32:0]` = [hoisted] [list at 32:0] in:
+                                                                                                    let `[internal] j_invariant.s6 #0` = [hoisted] [internal] j_invariant.s6 #0 in:
                                                                                                       block:
-                                                                                                        let `q` = exp((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * z)) in:
+                                                                                                        let `[internal] j_invariant.[list at 34:2] #0` = [hoisted] [internal] j_invariant.[list at 34:2] #0 in:
                                                                                                           block:
-                                                                                                            let `qn` = q in:
+                                                                                                            let `[internal] j_invariant.w #0` = z in:
                                                                                                               block:
-                                                                                                                {TODO: ForEach}
-                                                                                                                let `e4` = (1:R:C + (240:R:C * s4)) in:
+                                                                                                                let `[internal] j_invariant.q #0` = exp((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] j_invariant.w #0)) in:
                                                                                                                   block:
-                                                                                                                    let `e6` = (1:R:C - (504:R:C * s6)) in:
+                                                                                                                    let `[internal] j_invariant.qn #0` = [internal] j_invariant.q #0 in:
                                                                                                                       block:
-                                                                                                                        let `j` = ((1728:R:C * (e4 ^ 3:R:C)) / ((e4 ^ 3:R:C) - (e6 ^ 2:R:C))) in:
+                                                                                                                        {TODO: ForEach}
+                                                                                                                        let `[internal] j_invariant.e4 #0` = (1:R:C + (240:R:C * [internal] j_invariant.s4 #0)) in:
                                                                                                                           block:
-                                                                                                                            set `color` := let #wheel-arg = ((arg(j) / (2:R * 3.141592653589793)) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))))
-                                                                                                                            if (show_bands and (0:R < |j|)) then:
+                                                                                                                            let `[internal] j_invariant.e6 #0` = (1:R:C - (504:R:C * [internal] j_invariant.s6 #0)) in:
                                                                                                                               block:
-                                                                                                                                let `band` = ((log(|j|) / log(2:R)) mod 1.0) in:
+                                                                                                                                set `[internal] j_invariant #0` := ((1728:R:C * ([internal] j_invariant.e4 #0 ^ 3:R:C)) / (([internal] j_invariant.e4 #0 ^ 3:R:C) - ([internal] j_invariant.e6 #0 ^ 2:R:C)))
+                                                                                                                                let `j` = [internal] j_invariant #0 in:
                                                                                                                                   block:
-                                                                                                                                    set `color` := blend((0.35 * band), Color 0 0 0, color)
-                                                                                                                            else:
-                                                                                                                              no-op
-                                                                                                                            if show_edges then:
-                                                                                                                              block:
-                                                                                                                                let `w` = (pixel_size / im(z)) in:
-                                                                                                                                  block:
-                                                                                                                                    set `color` := blend(let [internal] clamp01.v #0 = (((1.5 * w) - side_distance) / w) in if ([internal] clamp01.v #0 < 0:R) then 0.0 else if (1:R < [internal] clamp01.v #0) then 1.0 else [internal] clamp01.v #0, Color 0 0 0, color)
-                                                                                                                            else:
-                                                                                                                              no-op
+                                                                                                                                    set `color` := let #wheel-arg = ((arg(j) / (2:R * 3.141592653589793)) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))))
+                                                                                                                                    if (show_bands and (0:R < |j|)) then:
+                                                                                                                                      block:
+                                                                                                                                        let `band` = ((log(|j|) / log(2:R)) mod 1.0) in:
+                                                                                                                                          block:
+                                                                                                                                            set `color` := blend((0.35 * band), Color 0 0 0, color)
+                                                                                                                                    else:
+                                                                                                                                      no-op
+                                                                                                                                    if show_edges then:
+                                                                                                                                      block:
+                                                                                                                                        let `w` = (pixel_size / im(z)) in:
+                                                                                                                                          block:
+                                                                                                                                            set `color` := blend(let [internal] clamp01.v #0 = (((1.5 * w) - side_distance) / w) in if ([internal] clamp01.v #0 < 0:R) then 0.0 else if (1:R < [internal] clamp01.v #0) then 1.0 else [internal] clamp01.v #0, Color 0 0 0, color)
+                                                                                                                                    else:
+                                                                                                                                      no-op
 
 
 --- tool Mark
@@ -246,30 +254,37 @@ let `[internal] vanishing radius` = vanishing_radius in:
             let `pixel_size` = [internal] px in:
               block:
                 erase
-                let `sigma3` = [1; 9; 28; 73; 126; 252; 344; 585] in:
+                let `[internal] j_invariant #0` = 0.0 :+ 0.0 in:
                   block:
-                    let `sigma5` = [1; 33; 244; 1057; 3126; 8052; 16808; 33825] in:
-                      block:
-                        let `q` = exp((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * p)) in:
+                    block:
+                      let `[internal] j_invariant.w #0` = p in:
+                        block:
                           block:
-                            let `qn` = q in:
+                            let `[internal] j_invariant.sigma3 #0` = [1; 9; 28; 73; 126; 252; 344; 585] in:
                               block:
-                                let `s4` = 0:R:C in:
+                                let `[internal] j_invariant.sigma5 #0` = [1; 33; 244; 1057; 3126; 8052; 16808; 33825] in:
                                   block:
-                                    let `s6` = 0:R:C in:
+                                    let `[internal] j_invariant.q #0` = exp((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] j_invariant.w #0)) in:
                                       block:
-                                        block:
-                                          let `[list at 58:2]` = range(1, 8) in:
-                                            block:
-                                              {TODO: ForEach}
-                                        let `e4` = (1:R:C + (240:R:C * s4)) in:
+                                        let `[internal] j_invariant.qn #0` = [internal] j_invariant.q #0 in:
                                           block:
-                                            let `e6` = (1:R:C - (504:R:C * s6)) in:
+                                            let `[internal] j_invariant.s4 #0` = 0:R:C in:
                                               block:
-                                                set `j_here` := ((1728:R:C * (e4 ^ 3:R:C)) / ((e4 ^ 3:R:C) - (e6 ^ 2:R:C)))
-                                                use Color 255 255 255 for line
-                                                use Color 0 0 0 for line
-                                                draw filled circle at p:R^2 with radius 4:R pixels
+                                                let `[internal] j_invariant.s6 #0` = 0:R:C in:
+                                                  block:
+                                                    block:
+                                                      let `[internal] j_invariant.[list at 34:2] #0` = range(1, 8) in:
+                                                        block:
+                                                          {TODO: ForEach}
+                                                    let `[internal] j_invariant.e4 #0` = (1:R:C + (240:R:C * [internal] j_invariant.s4 #0)) in:
+                                                      block:
+                                                        let `[internal] j_invariant.e6 #0` = (1:R:C - (504:R:C * [internal] j_invariant.s6 #0)) in:
+                                                          block:
+                                                            set `[internal] j_invariant #0` := ((1728:R:C * ([internal] j_invariant.e4 #0 ^ 3:R:C)) / (([internal] j_invariant.e4 #0 ^ 3:R:C) - ([internal] j_invariant.e6 #0 ^ 2:R:C)))
+                    set `j_here` := [internal] j_invariant #0
+                    use Color 255 255 255 for line
+                    use Color 0 0 0 for line
+                    draw filled circle at p:R^2 with radius 4:R pixels
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -282,30 +297,37 @@ let `[internal] vanishing radius` = vanishing_radius in:
               let `pixel_size` = [internal] px in:
                 block:
                   erase
-                  let `sigma3` = [1; 9; 28; 73; 126; 252; 344; 585] in:
+                  let `[internal] j_invariant #0` = 0.0 :+ 0.0 in:
                     block:
-                      let `sigma5` = [1; 33; 244; 1057; 3126; 8052; 16808; 33825] in:
-                        block:
-                          let `q` = exp((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * p)) in:
+                      block:
+                        let `[internal] j_invariant.w #0` = p in:
+                          block:
                             block:
-                              let `qn` = q in:
+                              let `[internal] j_invariant.sigma3 #0` = [1; 9; 28; 73; 126; 252; 344; 585] in:
                                 block:
-                                  let `s4` = 0:R:C in:
+                                  let `[internal] j_invariant.sigma5 #0` = [1; 33; 244; 1057; 3126; 8052; 16808; 33825] in:
                                     block:
-                                      let `s6` = 0:R:C in:
+                                      let `[internal] j_invariant.q #0` = exp((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] j_invariant.w #0)) in:
                                         block:
-                                          block:
-                                            let `[list at 58:2]` = range(1, 8) in:
-                                              block:
-                                                {TODO: ForEach}
-                                          let `e4` = (1:R:C + (240:R:C * s4)) in:
+                                          let `[internal] j_invariant.qn #0` = [internal] j_invariant.q #0 in:
                                             block:
-                                              let `e6` = (1:R:C - (504:R:C * s6)) in:
+                                              let `[internal] j_invariant.s4 #0` = 0:R:C in:
                                                 block:
-                                                  set `j_here` := ((1728:R:C * (e4 ^ 3:R:C)) / ((e4 ^ 3:R:C) - (e6 ^ 2:R:C)))
-                                                  use Color 255 255 255 for line
-                                                  use Color 0 0 0 for line
-                                                  draw filled circle at p:R^2 with radius 4:R pixels
+                                                  let `[internal] j_invariant.s6 #0` = 0:R:C in:
+                                                    block:
+                                                      block:
+                                                        let `[internal] j_invariant.[list at 34:2] #0` = range(1, 8) in:
+                                                          block:
+                                                            {TODO: ForEach}
+                                                      let `[internal] j_invariant.e4 #0` = (1:R:C + (240:R:C * [internal] j_invariant.s4 #0)) in:
+                                                        block:
+                                                          let `[internal] j_invariant.e6 #0` = (1:R:C - (504:R:C * [internal] j_invariant.s6 #0)) in:
+                                                            block:
+                                                              set `[internal] j_invariant #0` := ((1728:R:C * ([internal] j_invariant.e4 #0 ^ 3:R:C)) / (([internal] j_invariant.e4 #0 ^ 3:R:C) - ([internal] j_invariant.e6 #0 ^ 2:R:C)))
+                      set `j_here` := [internal] j_invariant #0
+                      use Color 255 255 255 for line
+                      use Color 0 0 0 for line
+                      draw filled circle at p:R^2 with radius 4:R pixels
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

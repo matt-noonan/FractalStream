@@ -32,6 +32,9 @@ import Language.Code.Syntax
 import Language.Draw (RadiusUnit(..))
 import Language.Value.Syntax (Syn(..), ExprF(..), BinOp(..), UnOp(..))
 import Language.Code.Typecheck
+import Language.Code.Typecheck.Functions (freeVars)
+import Language.Code.FunctionBlocks (bodyUses)
+import qualified Data.Map as Map
 
 import qualified Data.Set as Set
 
@@ -120,7 +123,7 @@ builtinFunctions = [ Stmt NoSourceRange (SFun "pixel_size_at" ["p"] pixelSizeAt)
 -- don't have (like a viewer's coordinate, which tool refresh handlers
 -- don't see) only matters where it is used.
 withCommon :: CommonDefs -> ParsedCode -> ParsedCode
-withCommon CommonDefs{commonCode} body = case (used, body) of
+withCommon CommonDefs{commonCode} body0 = case (used, body) of
   ([], _) -> body
   (_, Stmt sr (SBlock stmts)) -> Stmt sr (SBlock (used ++ stmts))
   _ -> Stmt (stmtRange body) (SBlock (used ++ [body]))
@@ -128,10 +131,53 @@ withCommon CommonDefs{commonCode} body = case (used, body) of
     -- Walk the common statements backwards, keeping each one that
     -- defines something needed later (by the body, or by a kept
     -- definition after it).
+    body = stanzaFunctionScopes body0
     used = fst (foldr keep ([], stmtNames body) commonCode)
     keep stmt (kept, needed)
       | any (`Set.member` needed) (definedNames stmt) = (stmt : kept, needed <> stmtNames stmt)
       | otherwise = (kept, needed)
+
+-- | A function that a stanza's own code defines (not @\@common@'s) can't
+-- use the variables that code declares before it: a function sees its
+-- parameters, its own variables, and the project's names (from
+-- @\@config@ and @\@common@, and the viewer's or tool's variables, and the
+-- built-in ones). One that does is reported, by a statement after it
+-- that fails to typecheck with the explanation (whether or not the
+-- function is ever called).
+stanzaFunctionScopes :: ParsedCode -> ParsedCode
+stanzaFunctionScopes = go Set.empty
+  where
+    go declared (Stmt sr stmtNode) = Stmt sr $ case stmtNode of
+      SBlock body -> SBlock (block declared body)
+      SIf c yes no -> SIf c (go declared yes) (go declared no)
+      SLoop kind c lim body -> SLoop kind c lim (go declared body)
+      SForEach item list body -> SForEach item list (go (Set.insert item declared) body)
+      SWithFirst item p list body fallback ->
+        SWithFirst item p list (go (Set.insert item declared) body) (go declared <$> fallback)
+      SProc name params body -> SProc name params (go (declared <> Set.fromList params) body)
+      other -> other
+
+    block declared = \case
+      [] -> []
+      s@(Stmt _ sNode) : rest ->
+        let uses = case sNode of
+              SFun f params e -> (f,) <$> Map.toList (freeVars e `Map.withoutKeys` Set.fromList params)
+              SFunction f params b -> (f,) <$> Map.toList (bodyUses f params b)
+              _ -> []
+            here = case [ (f, n, usr) | (f, (n, usr)) <- uses, Set.member n declared ] of
+              (f, n, usr) : _ -> [scopeError f n usr]
+              [] -> []
+            declared' = declared <> Set.fromList (case sNode of
+              SDecl n _ _ -> [n]
+              SDeclTuple p _ -> patternNames p
+              _ -> [])
+        in go declared s : here ++ block declared' rest
+
+    scopeError f n usr = Stmt usr (SDecl "[internal] function scope" Nothing (Syn usr (EAdvice
+      ("`" ++ n ++ "` is a variable of this " ++ "stanza's own code, so the function `" ++ f
+       ++ "` can't use it: a function sees only its parameters, its own variables, and the \
+          \project's names (from @config and @common, and the viewer's or tool's variables). \
+          \Give `" ++ f ++ "` a parameter for it."))))
 
 -- | Record the names of the functions defined (by @f(...) := ...@)
 -- anywhere in the given tokens, so that the grammar can parse calls to
@@ -149,6 +195,8 @@ definedFunctionNames = go True
     go atStart = \case
       Identifier f : rest
         | atStart, Just _ <- functionDefinitionBody rest -> f : go False rest
+      Identifier "function" : Identifier f : rest@(OpenParen : _)
+        | atStart -> f : go False rest
       t : rest -> go (t `elem` [Newline, Indent, Dedent]) rest
       [] -> []
 
@@ -225,6 +273,10 @@ codeStatementsGrammar CommonDefs{..} = mdo
       (SProc <$> (lit "define" *> ident)
              <*> (fromMaybe [] <$> optional argList)
              <*> (colon *> nl *> block)) <?> "code definition"
+    , node
+      (SFunction <$> (lit "function" *> ident)
+                 <*> argList
+                 <*> (colon *> nl *> block)) <?> "function definition"
     , node
       (SRun <$> (lit "run" *> ident)
             <*> (optional value <* nl)) <?> "run"
