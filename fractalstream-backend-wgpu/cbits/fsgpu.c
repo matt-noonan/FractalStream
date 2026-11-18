@@ -187,14 +187,27 @@ static WGPUBuffer make_buffer(uint64_t size, WGPUBufferUsage usage) {
  * (dxcompiler.dll, beside the program: dev-tools/wgpu/fetch.sh fetches
  * it), where it's there: only with DXC does wgpu give shaders doubles
  * (SHADER_F64). Without it, wgpu's default (FXC). */
+static void on_log(WGPULogLevel level, WGPUStringView message, void *u) {
+  (void)level; (void)u;
+  fprintf(stderr, "wgpu: %.*s\n", (int)(message.length == WGPU_STRLEN ? strlen(message.data) : message.length), message.data);
+}
+
 static WGPUInstance make_instance(void) {
+  /* (FS_WGPU_LOG=1: wgpu's own log, on stderr, for finding out why) */
+  const char *log = getenv("FS_WGPU_LOG");
+  if (log && *log) {
+    wgpuSetLogCallback(on_log, NULL);
+    wgpuSetLogLevel(WGPULogLevel_Info);
+  }
 #if defined(_WIN32)
   static char path[MAX_PATH + 32];
   DWORD n = GetModuleFileNameA(NULL, path, MAX_PATH);
   char *slash = n ? strrchr(path, '\\') : NULL;
   if (slash) {
     strcpy(slash + 1, "dxcompiler.dll");
-    if (GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) {
+    int found = GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+    if (log && *log) fprintf(stderr, "fsgpu: %s %s\n", path, found ? "is there: using DXC" : "isn't there: using FXC");
+    if (found) {
       WGPUInstanceExtras extras;
       memset(&extras, 0, sizeof extras);
       extras.chain.sType = (WGPUSType)WGPUSType_InstanceExtras;
