@@ -116,35 +116,35 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                     set `tmp` := ((wx + 1:R:C) * wy)
                                                                                                                     set `pb` := (wx / tmp)
                                                                                                                     set `pa` := ((wx * pb) - 1:R:C)
-                                                        let `z` = (-(2:R:C * pb) / pa) in:
+                                                        let `u` = let [internal] sphere.scaled #0 = ((-(2:R:C * pb) / pa), 1.0 :+ 0.0) in if (((re((2nd [internal] sphere.scaled #0)) * re((2nd [internal] sphere.scaled #0))) + (im((2nd [internal] sphere.scaled #0)) * im((2nd [internal] sphere.scaled #0)))) < ((re((1st [internal] sphere.scaled #0)) * re((1st [internal] sphere.scaled #0))) + (im((1st [internal] sphere.scaled #0)) * im((1st [internal] sphere.scaled #0))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #0) / (1st [internal] sphere.scaled #0))) else (((1st [internal] sphere.scaled #0) / (2nd [internal] sphere.scaled #0)), 1.0 :+ 0.0) in:
                                                           block:
                                                             let `[internal] fresh #37` = 0 in:
                                                               let `[internal] fresh #38` = [internal] iteration limit in:
                                                                 block:
-                                                                  if (!(1.0e20 < |z|) and ([internal] fresh #37 < [internal] fresh #38)) then:
-                                                                    do-while (!(1.0e20 < |z|) and ([internal] fresh #37 < [internal] fresh #38)):
+                                                                  if (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #2 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #2) / (1st [internal] sphere.point #2))| < (10:R ^ -20:R)) and ([internal] fresh #37 < [internal] fresh #38)) then:
+                                                                    do-while (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #2 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #2) / (1st [internal] sphere.point #2))| < (10:R ^ -20:R)) and ([internal] fresh #37 < [internal] fresh #38)):
                                                                       block:
-                                                                        set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
+                                                                        set `u` := let [internal] sphere.scaled #1 = (((1:R:C * ((1st u) ^ 2:R:C)) + (((pa * (1st u)) + (pb * (2nd u))) * (2nd u))), ((1st u) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #1)) * re((2nd [internal] sphere.scaled #1))) + (im((2nd [internal] sphere.scaled #1)) * im((2nd [internal] sphere.scaled #1)))) < ((re((1st [internal] sphere.scaled #1)) * re((1st [internal] sphere.scaled #1))) + (im((1st [internal] sphere.scaled #1)) * im((1st [internal] sphere.scaled #1))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #1) / (1st [internal] sphere.scaled #1))) else (((1st [internal] sphere.scaled #1) / (2nd [internal] sphere.scaled #1)), 1.0 :+ 0.0)
                                                                         set `[internal] fresh #37` := ([internal] fresh #37 + 1)
                                                                   else:
                                                                     no-op
                                                                   set `[internal] iteration count` := [internal] fresh #37
                                                                   set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
                                                             set `cap5` := [internal] iteration count
-                                                            if (1.0e20 < |z|) then:
+                                                            if let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #3 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #3) / (1st [internal] sphere.point #3))| < (10:R ^ -20:R)) then:
                                                               block:
                                                                 set `cls5` := 1
                                                             else:
                                                               block:
-                                                                let `w` = z in:
+                                                                let `w` = ((1st u), (2nd u)) in:
                                                                   block:
                                                                     let `[internal] fresh #38` = 0 in:
                                                                       let `[internal] fresh #39` = 64 in:
                                                                         block:
-                                                                          do-while (!(|(w - z)| < [internal] vanishing radius) and ([internal] fresh #38 < [internal] fresh #39)):
+                                                                          do-while (!let [internal] sphere.point #4 = ((1st w), (2nd w)) in let [internal] sphere.point #5 = ((1st u), (2nd u)) in ((2:R * sqrt((((re((((1st [internal] sphere.point #4) * (2nd [internal] sphere.point #5)) - ((2nd [internal] sphere.point #4) * (1st [internal] sphere.point #5)))) * re((((1st [internal] sphere.point #4) * (2nd [internal] sphere.point #5)) - ((2nd [internal] sphere.point #4) * (1st [internal] sphere.point #5))))) + (im((((1st [internal] sphere.point #4) * (2nd [internal] sphere.point #5)) - ((2nd [internal] sphere.point #4) * (1st [internal] sphere.point #5)))) * im((((1st [internal] sphere.point #4) * (2nd [internal] sphere.point #5)) - ((2nd [internal] sphere.point #4) * (1st [internal] sphere.point #5)))))) / ((((re((1st [internal] sphere.point #4)) * re((1st [internal] sphere.point #4))) + (im((1st [internal] sphere.point #4)) * im((1st [internal] sphere.point #4)))) + ((re((2nd [internal] sphere.point #4)) * re((2nd [internal] sphere.point #4))) + (im((2nd [internal] sphere.point #4)) * im((2nd [internal] sphere.point #4))))) * (((re((1st [internal] sphere.point #5)) * re((1st [internal] sphere.point #5))) + (im((1st [internal] sphere.point #5)) * im((1st [internal] sphere.point #5)))) + ((re((2nd [internal] sphere.point #5)) * re((2nd [internal] sphere.point #5))) + (im((2nd [internal] sphere.point #5)) * im((2nd [internal] sphere.point #5))))))))) < [internal] vanishing radius) and ([internal] fresh #38 < [internal] fresh #39)):
                                                                             block:
                                                                               block:
-                                                                                set `w` := (1:R:C + (((pa * w) + pb) / (w ^ 2:R:C)))
+                                                                                set `w` := let [internal] sphere.scaled #6 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #6)) * re((2nd [internal] sphere.scaled #6))) + (im((2nd [internal] sphere.scaled #6)) * im((2nd [internal] sphere.scaled #6)))) < ((re((1st [internal] sphere.scaled #6)) * re((1st [internal] sphere.scaled #6))) + (im((1st [internal] sphere.scaled #6)) * im((1st [internal] sphere.scaled #6))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #6) / (1st [internal] sphere.scaled #6))) else (((1st [internal] sphere.scaled #6) / (2nd [internal] sphere.scaled #6)), 1.0 :+ 0.0)
                                                                               set `[internal] fresh #38` := ([internal] fresh #38 + 1)
                                                                           set `[internal] iteration count` := [internal] fresh #38
                                                                           set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
@@ -158,7 +158,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                     let `mixed` = False in:
                                                       block:
                                                         block:
-                                                          let `[list at 299:2]` = [(-1:R:C - 0.0 :+ 1.0); -1:R:C; (-1:R:C + 0.0 :+ 1.0); -0.0 :+ 1.0; 0.0 :+ 1.0; (1:R:C - 0.0 :+ 1.0); 1:R:C; (1:R:C + 0.0 :+ 1.0)] in:
+                                                          let `[list at 239:2]` = [(-1:R:C - 0.0 :+ 1.0); -1:R:C; (-1:R:C + 0.0 :+ 1.0); -0.0 :+ 1.0; 0.0 :+ 1.0; (1:R:C - 0.0 :+ 1.0); 1:R:C; (1:R:C + 0.0 :+ 1.0)] in:
                                                             block:
                                                               {TODO: ForEach}
                                                         if (cc = 1) then:
@@ -272,35 +272,35 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                         set `tmp` := ((wx + 1:R:C) * wy)
                                                                                                                         set `pb` := (wx / tmp)
                                                                                                                         set `pa` := ((wx * pb) - 1:R:C)
-                                                            let `z` = (-(2:R:C * pb) / pa) in:
+                                                            let `u` = let [internal] sphere.scaled #14 = ((-(2:R:C * pb) / pa), 1.0 :+ 0.0) in if (((re((2nd [internal] sphere.scaled #14)) * re((2nd [internal] sphere.scaled #14))) + (im((2nd [internal] sphere.scaled #14)) * im((2nd [internal] sphere.scaled #14)))) < ((re((1st [internal] sphere.scaled #14)) * re((1st [internal] sphere.scaled #14))) + (im((1st [internal] sphere.scaled #14)) * im((1st [internal] sphere.scaled #14))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #14) / (1st [internal] sphere.scaled #14))) else (((1st [internal] sphere.scaled #14) / (2nd [internal] sphere.scaled #14)), 1.0 :+ 0.0) in:
                                                               block:
                                                                 let `[internal] fresh #38` = 0 in:
                                                                   let `[internal] fresh #39` = [internal] iteration limit in:
                                                                     block:
-                                                                      if (!(1.0e20 < |z|) and ([internal] fresh #38 < [internal] fresh #39)) then:
-                                                                        do-while (!(1.0e20 < |z|) and ([internal] fresh #38 < [internal] fresh #39)):
+                                                                      if (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #16 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #16) / (1st [internal] sphere.point #16))| < (10:R ^ -20:R)) and ([internal] fresh #38 < [internal] fresh #39)) then:
+                                                                        do-while (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #16 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #16) / (1st [internal] sphere.point #16))| < (10:R ^ -20:R)) and ([internal] fresh #38 < [internal] fresh #39)):
                                                                           block:
-                                                                            set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
+                                                                            set `u` := let [internal] sphere.scaled #15 = (((1:R:C * ((1st u) ^ 2:R:C)) + (((pa * (1st u)) + (pb * (2nd u))) * (2nd u))), ((1st u) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #15)) * re((2nd [internal] sphere.scaled #15))) + (im((2nd [internal] sphere.scaled #15)) * im((2nd [internal] sphere.scaled #15)))) < ((re((1st [internal] sphere.scaled #15)) * re((1st [internal] sphere.scaled #15))) + (im((1st [internal] sphere.scaled #15)) * im((1st [internal] sphere.scaled #15))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #15) / (1st [internal] sphere.scaled #15))) else (((1st [internal] sphere.scaled #15) / (2nd [internal] sphere.scaled #15)), 1.0 :+ 0.0)
                                                                             set `[internal] fresh #38` := ([internal] fresh #38 + 1)
                                                                       else:
                                                                         no-op
                                                                       set `[internal] iteration count` := [internal] fresh #38
                                                                       set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
                                                                 set `cap5` := [internal] iteration count
-                                                                if (1.0e20 < |z|) then:
+                                                                if let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #17 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #17) / (1st [internal] sphere.point #17))| < (10:R ^ -20:R)) then:
                                                                   block:
                                                                     set `cls5` := 1
                                                                 else:
                                                                   block:
-                                                                    let `w` = z in:
+                                                                    let `w` = ((1st u), (2nd u)) in:
                                                                       block:
                                                                         let `[internal] fresh #39` = 0 in:
                                                                           let `[internal] fresh #40` = 64 in:
                                                                             block:
-                                                                              do-while (!(|(w - z)| < [internal] vanishing radius) and ([internal] fresh #39 < [internal] fresh #40)):
+                                                                              do-while (!let [internal] sphere.point #18 = ((1st w), (2nd w)) in let [internal] sphere.point #19 = ((1st u), (2nd u)) in ((2:R * sqrt((((re((((1st [internal] sphere.point #18) * (2nd [internal] sphere.point #19)) - ((2nd [internal] sphere.point #18) * (1st [internal] sphere.point #19)))) * re((((1st [internal] sphere.point #18) * (2nd [internal] sphere.point #19)) - ((2nd [internal] sphere.point #18) * (1st [internal] sphere.point #19))))) + (im((((1st [internal] sphere.point #18) * (2nd [internal] sphere.point #19)) - ((2nd [internal] sphere.point #18) * (1st [internal] sphere.point #19)))) * im((((1st [internal] sphere.point #18) * (2nd [internal] sphere.point #19)) - ((2nd [internal] sphere.point #18) * (1st [internal] sphere.point #19)))))) / ((((re((1st [internal] sphere.point #18)) * re((1st [internal] sphere.point #18))) + (im((1st [internal] sphere.point #18)) * im((1st [internal] sphere.point #18)))) + ((re((2nd [internal] sphere.point #18)) * re((2nd [internal] sphere.point #18))) + (im((2nd [internal] sphere.point #18)) * im((2nd [internal] sphere.point #18))))) * (((re((1st [internal] sphere.point #19)) * re((1st [internal] sphere.point #19))) + (im((1st [internal] sphere.point #19)) * im((1st [internal] sphere.point #19)))) + ((re((2nd [internal] sphere.point #19)) * re((2nd [internal] sphere.point #19))) + (im((2nd [internal] sphere.point #19)) * im((2nd [internal] sphere.point #19))))))))) < [internal] vanishing radius) and ([internal] fresh #39 < [internal] fresh #40)):
                                                                                 block:
                                                                                   block:
-                                                                                    set `w` := (1:R:C + (((pa * w) + pb) / (w ^ 2:R:C)))
+                                                                                    set `w` := let [internal] sphere.scaled #20 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #20)) * re((2nd [internal] sphere.scaled #20))) + (im((2nd [internal] sphere.scaled #20)) * im((2nd [internal] sphere.scaled #20)))) < ((re((1st [internal] sphere.scaled #20)) * re((1st [internal] sphere.scaled #20))) + (im((1st [internal] sphere.scaled #20)) * im((1st [internal] sphere.scaled #20))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #20) / (1st [internal] sphere.scaled #20))) else (((1st [internal] sphere.scaled #20) / (2nd [internal] sphere.scaled #20)), 1.0 :+ 0.0)
                                                                                   set `[internal] fresh #39` := ([internal] fresh #39 + 1)
                                                                               set `[internal] iteration count` := [internal] fresh #39
                                                                               set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
@@ -374,35 +374,35 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                             set `tmp` := ((wx + 1:R:C) * wy)
                                                                                                                             set `pb` := (wx / tmp)
                                                                                                                             set `pa` := ((wx * pb) - 1:R:C)
-                                                                let `z` = (-(2:R:C * pb) / pa) in:
+                                                                let `u` = let [internal] sphere.scaled #21 = ((-(2:R:C * pb) / pa), 1.0 :+ 0.0) in if (((re((2nd [internal] sphere.scaled #21)) * re((2nd [internal] sphere.scaled #21))) + (im((2nd [internal] sphere.scaled #21)) * im((2nd [internal] sphere.scaled #21)))) < ((re((1st [internal] sphere.scaled #21)) * re((1st [internal] sphere.scaled #21))) + (im((1st [internal] sphere.scaled #21)) * im((1st [internal] sphere.scaled #21))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #21) / (1st [internal] sphere.scaled #21))) else (((1st [internal] sphere.scaled #21) / (2nd [internal] sphere.scaled #21)), 1.0 :+ 0.0) in:
                                                                   block:
                                                                     let `[internal] fresh #39` = 0 in:
                                                                       let `[internal] fresh #40` = [internal] iteration limit in:
                                                                         block:
-                                                                          if (!(1.0e20 < |z|) and ([internal] fresh #39 < [internal] fresh #40)) then:
-                                                                            do-while (!(1.0e20 < |z|) and ([internal] fresh #39 < [internal] fresh #40)):
+                                                                          if (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #23 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #23) / (1st [internal] sphere.point #23))| < (10:R ^ -20:R)) and ([internal] fresh #39 < [internal] fresh #40)) then:
+                                                                            do-while (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #23 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #23) / (1st [internal] sphere.point #23))| < (10:R ^ -20:R)) and ([internal] fresh #39 < [internal] fresh #40)):
                                                                               block:
-                                                                                set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
+                                                                                set `u` := let [internal] sphere.scaled #22 = (((1:R:C * ((1st u) ^ 2:R:C)) + (((pa * (1st u)) + (pb * (2nd u))) * (2nd u))), ((1st u) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #22)) * re((2nd [internal] sphere.scaled #22))) + (im((2nd [internal] sphere.scaled #22)) * im((2nd [internal] sphere.scaled #22)))) < ((re((1st [internal] sphere.scaled #22)) * re((1st [internal] sphere.scaled #22))) + (im((1st [internal] sphere.scaled #22)) * im((1st [internal] sphere.scaled #22))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #22) / (1st [internal] sphere.scaled #22))) else (((1st [internal] sphere.scaled #22) / (2nd [internal] sphere.scaled #22)), 1.0 :+ 0.0)
                                                                                 set `[internal] fresh #39` := ([internal] fresh #39 + 1)
                                                                           else:
                                                                             no-op
                                                                           set `[internal] iteration count` := [internal] fresh #39
                                                                           set `[internal] stuck` := ([internal] fresh #39 = [internal] fresh #40)
                                                                     set `cap5` := [internal] iteration count
-                                                                    if (1.0e20 < |z|) then:
+                                                                    if let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #24 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #24) / (1st [internal] sphere.point #24))| < (10:R ^ -20:R)) then:
                                                                       block:
                                                                         set `cls5` := 1
                                                                     else:
                                                                       block:
-                                                                        let `w` = z in:
+                                                                        let `w` = ((1st u), (2nd u)) in:
                                                                           block:
                                                                             let `[internal] fresh #40` = 0 in:
                                                                               let `[internal] fresh #41` = 64 in:
                                                                                 block:
-                                                                                  do-while (!(|(w - z)| < [internal] vanishing radius) and ([internal] fresh #40 < [internal] fresh #41)):
+                                                                                  do-while (!let [internal] sphere.point #25 = ((1st w), (2nd w)) in let [internal] sphere.point #26 = ((1st u), (2nd u)) in ((2:R * sqrt((((re((((1st [internal] sphere.point #25) * (2nd [internal] sphere.point #26)) - ((2nd [internal] sphere.point #25) * (1st [internal] sphere.point #26)))) * re((((1st [internal] sphere.point #25) * (2nd [internal] sphere.point #26)) - ((2nd [internal] sphere.point #25) * (1st [internal] sphere.point #26))))) + (im((((1st [internal] sphere.point #25) * (2nd [internal] sphere.point #26)) - ((2nd [internal] sphere.point #25) * (1st [internal] sphere.point #26)))) * im((((1st [internal] sphere.point #25) * (2nd [internal] sphere.point #26)) - ((2nd [internal] sphere.point #25) * (1st [internal] sphere.point #26)))))) / ((((re((1st [internal] sphere.point #25)) * re((1st [internal] sphere.point #25))) + (im((1st [internal] sphere.point #25)) * im((1st [internal] sphere.point #25)))) + ((re((2nd [internal] sphere.point #25)) * re((2nd [internal] sphere.point #25))) + (im((2nd [internal] sphere.point #25)) * im((2nd [internal] sphere.point #25))))) * (((re((1st [internal] sphere.point #26)) * re((1st [internal] sphere.point #26))) + (im((1st [internal] sphere.point #26)) * im((1st [internal] sphere.point #26)))) + ((re((2nd [internal] sphere.point #26)) * re((2nd [internal] sphere.point #26))) + (im((2nd [internal] sphere.point #26)) * im((2nd [internal] sphere.point #26))))))))) < [internal] vanishing radius) and ([internal] fresh #40 < [internal] fresh #41)):
                                                                                     block:
                                                                                       block:
-                                                                                        set `w` := (1:R:C + (((pa * w) + pb) / (w ^ 2:R:C)))
+                                                                                        set `w` := let [internal] sphere.scaled #27 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #27)) * re((2nd [internal] sphere.scaled #27))) + (im((2nd [internal] sphere.scaled #27)) * im((2nd [internal] sphere.scaled #27)))) < ((re((1st [internal] sphere.scaled #27)) * re((1st [internal] sphere.scaled #27))) + (im((1st [internal] sphere.scaled #27)) * im((1st [internal] sphere.scaled #27))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #27) / (1st [internal] sphere.scaled #27))) else (((1st [internal] sphere.scaled #27) / (2nd [internal] sphere.scaled #27)), 1.0 :+ 0.0)
                                                                                       set `[internal] fresh #40` := ([internal] fresh #40 + 1)
                                                                                   set `[internal] iteration count` := [internal] fresh #40
                                                                                   set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
@@ -476,35 +476,35 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                                 set `tmp` := ((wx + 1:R:C) * wy)
                                                                                                                                 set `pb` := (wx / tmp)
                                                                                                                                 set `pa` := ((wx * pb) - 1:R:C)
-                                                                    let `z` = (-(2:R:C * pb) / pa) in:
+                                                                    let `u` = let [internal] sphere.scaled #28 = ((-(2:R:C * pb) / pa), 1.0 :+ 0.0) in if (((re((2nd [internal] sphere.scaled #28)) * re((2nd [internal] sphere.scaled #28))) + (im((2nd [internal] sphere.scaled #28)) * im((2nd [internal] sphere.scaled #28)))) < ((re((1st [internal] sphere.scaled #28)) * re((1st [internal] sphere.scaled #28))) + (im((1st [internal] sphere.scaled #28)) * im((1st [internal] sphere.scaled #28))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #28) / (1st [internal] sphere.scaled #28))) else (((1st [internal] sphere.scaled #28) / (2nd [internal] sphere.scaled #28)), 1.0 :+ 0.0) in:
                                                                       block:
                                                                         let `[internal] fresh #40` = 0 in:
                                                                           let `[internal] fresh #41` = [internal] iteration limit in:
                                                                             block:
-                                                                              if (!(1.0e20 < |z|) and ([internal] fresh #40 < [internal] fresh #41)) then:
-                                                                                do-while (!(1.0e20 < |z|) and ([internal] fresh #40 < [internal] fresh #41)):
+                                                                              if (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #30 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #30) / (1st [internal] sphere.point #30))| < (10:R ^ -20:R)) and ([internal] fresh #40 < [internal] fresh #41)) then:
+                                                                                do-while (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #30 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #30) / (1st [internal] sphere.point #30))| < (10:R ^ -20:R)) and ([internal] fresh #40 < [internal] fresh #41)):
                                                                                   block:
-                                                                                    set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
+                                                                                    set `u` := let [internal] sphere.scaled #29 = (((1:R:C * ((1st u) ^ 2:R:C)) + (((pa * (1st u)) + (pb * (2nd u))) * (2nd u))), ((1st u) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #29)) * re((2nd [internal] sphere.scaled #29))) + (im((2nd [internal] sphere.scaled #29)) * im((2nd [internal] sphere.scaled #29)))) < ((re((1st [internal] sphere.scaled #29)) * re((1st [internal] sphere.scaled #29))) + (im((1st [internal] sphere.scaled #29)) * im((1st [internal] sphere.scaled #29))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #29) / (1st [internal] sphere.scaled #29))) else (((1st [internal] sphere.scaled #29) / (2nd [internal] sphere.scaled #29)), 1.0 :+ 0.0)
                                                                                     set `[internal] fresh #40` := ([internal] fresh #40 + 1)
                                                                               else:
                                                                                 no-op
                                                                               set `[internal] iteration count` := [internal] fresh #40
                                                                               set `[internal] stuck` := ([internal] fresh #40 = [internal] fresh #41)
                                                                         set `cap5` := [internal] iteration count
-                                                                        if (1.0e20 < |z|) then:
+                                                                        if let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #31 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #31) / (1st [internal] sphere.point #31))| < (10:R ^ -20:R)) then:
                                                                           block:
                                                                             set `cls5` := 1
                                                                         else:
                                                                           block:
-                                                                            let `w` = z in:
+                                                                            let `w` = ((1st u), (2nd u)) in:
                                                                               block:
                                                                                 let `[internal] fresh #41` = 0 in:
                                                                                   let `[internal] fresh #42` = 64 in:
                                                                                     block:
-                                                                                      do-while (!(|(w - z)| < [internal] vanishing radius) and ([internal] fresh #41 < [internal] fresh #42)):
+                                                                                      do-while (!let [internal] sphere.point #32 = ((1st w), (2nd w)) in let [internal] sphere.point #33 = ((1st u), (2nd u)) in ((2:R * sqrt((((re((((1st [internal] sphere.point #32) * (2nd [internal] sphere.point #33)) - ((2nd [internal] sphere.point #32) * (1st [internal] sphere.point #33)))) * re((((1st [internal] sphere.point #32) * (2nd [internal] sphere.point #33)) - ((2nd [internal] sphere.point #32) * (1st [internal] sphere.point #33))))) + (im((((1st [internal] sphere.point #32) * (2nd [internal] sphere.point #33)) - ((2nd [internal] sphere.point #32) * (1st [internal] sphere.point #33)))) * im((((1st [internal] sphere.point #32) * (2nd [internal] sphere.point #33)) - ((2nd [internal] sphere.point #32) * (1st [internal] sphere.point #33)))))) / ((((re((1st [internal] sphere.point #32)) * re((1st [internal] sphere.point #32))) + (im((1st [internal] sphere.point #32)) * im((1st [internal] sphere.point #32)))) + ((re((2nd [internal] sphere.point #32)) * re((2nd [internal] sphere.point #32))) + (im((2nd [internal] sphere.point #32)) * im((2nd [internal] sphere.point #32))))) * (((re((1st [internal] sphere.point #33)) * re((1st [internal] sphere.point #33))) + (im((1st [internal] sphere.point #33)) * im((1st [internal] sphere.point #33)))) + ((re((2nd [internal] sphere.point #33)) * re((2nd [internal] sphere.point #33))) + (im((2nd [internal] sphere.point #33)) * im((2nd [internal] sphere.point #33))))))))) < [internal] vanishing radius) and ([internal] fresh #41 < [internal] fresh #42)):
                                                                                         block:
                                                                                           block:
-                                                                                            set `w` := (1:R:C + (((pa * w) + pb) / (w ^ 2:R:C)))
+                                                                                            set `w` := let [internal] sphere.scaled #34 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #34)) * re((2nd [internal] sphere.scaled #34))) + (im((2nd [internal] sphere.scaled #34)) * im((2nd [internal] sphere.scaled #34)))) < ((re((1st [internal] sphere.scaled #34)) * re((1st [internal] sphere.scaled #34))) + (im((1st [internal] sphere.scaled #34)) * im((1st [internal] sphere.scaled #34))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #34) / (1st [internal] sphere.scaled #34))) else (((1st [internal] sphere.scaled #34) / (2nd [internal] sphere.scaled #34)), 1.0 :+ 0.0)
                                                                                           set `[internal] fresh #41` := ([internal] fresh #41 + 1)
                                                                                       set `[internal] iteration count` := [internal] fresh #41
                                                                                       set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
@@ -578,35 +578,35 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                                     set `tmp` := ((wx + 1:R:C) * wy)
                                                                                                                                     set `pb` := (wx / tmp)
                                                                                                                                     set `pa` := ((wx * pb) - 1:R:C)
-                                                                        let `z` = (-(2:R:C * pb) / pa) in:
+                                                                        let `u` = let [internal] sphere.scaled #35 = ((-(2:R:C * pb) / pa), 1.0 :+ 0.0) in if (((re((2nd [internal] sphere.scaled #35)) * re((2nd [internal] sphere.scaled #35))) + (im((2nd [internal] sphere.scaled #35)) * im((2nd [internal] sphere.scaled #35)))) < ((re((1st [internal] sphere.scaled #35)) * re((1st [internal] sphere.scaled #35))) + (im((1st [internal] sphere.scaled #35)) * im((1st [internal] sphere.scaled #35))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #35) / (1st [internal] sphere.scaled #35))) else (((1st [internal] sphere.scaled #35) / (2nd [internal] sphere.scaled #35)), 1.0 :+ 0.0) in:
                                                                           block:
                                                                             let `[internal] fresh #41` = 0 in:
                                                                               let `[internal] fresh #42` = [internal] iteration limit in:
                                                                                 block:
-                                                                                  if (!(1.0e20 < |z|) and ([internal] fresh #41 < [internal] fresh #42)) then:
-                                                                                    do-while (!(1.0e20 < |z|) and ([internal] fresh #41 < [internal] fresh #42)):
+                                                                                  if (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #37 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #37) / (1st [internal] sphere.point #37))| < (10:R ^ -20:R)) and ([internal] fresh #41 < [internal] fresh #42)) then:
+                                                                                    do-while (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #37 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #37) / (1st [internal] sphere.point #37))| < (10:R ^ -20:R)) and ([internal] fresh #41 < [internal] fresh #42)):
                                                                                       block:
-                                                                                        set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
+                                                                                        set `u` := let [internal] sphere.scaled #36 = (((1:R:C * ((1st u) ^ 2:R:C)) + (((pa * (1st u)) + (pb * (2nd u))) * (2nd u))), ((1st u) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #36)) * re((2nd [internal] sphere.scaled #36))) + (im((2nd [internal] sphere.scaled #36)) * im((2nd [internal] sphere.scaled #36)))) < ((re((1st [internal] sphere.scaled #36)) * re((1st [internal] sphere.scaled #36))) + (im((1st [internal] sphere.scaled #36)) * im((1st [internal] sphere.scaled #36))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #36) / (1st [internal] sphere.scaled #36))) else (((1st [internal] sphere.scaled #36) / (2nd [internal] sphere.scaled #36)), 1.0 :+ 0.0)
                                                                                         set `[internal] fresh #41` := ([internal] fresh #41 + 1)
                                                                                   else:
                                                                                     no-op
                                                                                   set `[internal] iteration count` := [internal] fresh #41
                                                                                   set `[internal] stuck` := ([internal] fresh #41 = [internal] fresh #42)
                                                                             set `cap5` := [internal] iteration count
-                                                                            if (1.0e20 < |z|) then:
+                                                                            if let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #38 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #38) / (1st [internal] sphere.point #38))| < (10:R ^ -20:R)) then:
                                                                               block:
                                                                                 set `cls5` := 1
                                                                             else:
                                                                               block:
-                                                                                let `w` = z in:
+                                                                                let `w` = ((1st u), (2nd u)) in:
                                                                                   block:
                                                                                     let `[internal] fresh #42` = 0 in:
                                                                                       let `[internal] fresh #43` = 64 in:
                                                                                         block:
-                                                                                          do-while (!(|(w - z)| < [internal] vanishing radius) and ([internal] fresh #42 < [internal] fresh #43)):
+                                                                                          do-while (!let [internal] sphere.point #39 = ((1st w), (2nd w)) in let [internal] sphere.point #40 = ((1st u), (2nd u)) in ((2:R * sqrt((((re((((1st [internal] sphere.point #39) * (2nd [internal] sphere.point #40)) - ((2nd [internal] sphere.point #39) * (1st [internal] sphere.point #40)))) * re((((1st [internal] sphere.point #39) * (2nd [internal] sphere.point #40)) - ((2nd [internal] sphere.point #39) * (1st [internal] sphere.point #40))))) + (im((((1st [internal] sphere.point #39) * (2nd [internal] sphere.point #40)) - ((2nd [internal] sphere.point #39) * (1st [internal] sphere.point #40)))) * im((((1st [internal] sphere.point #39) * (2nd [internal] sphere.point #40)) - ((2nd [internal] sphere.point #39) * (1st [internal] sphere.point #40)))))) / ((((re((1st [internal] sphere.point #39)) * re((1st [internal] sphere.point #39))) + (im((1st [internal] sphere.point #39)) * im((1st [internal] sphere.point #39)))) + ((re((2nd [internal] sphere.point #39)) * re((2nd [internal] sphere.point #39))) + (im((2nd [internal] sphere.point #39)) * im((2nd [internal] sphere.point #39))))) * (((re((1st [internal] sphere.point #40)) * re((1st [internal] sphere.point #40))) + (im((1st [internal] sphere.point #40)) * im((1st [internal] sphere.point #40)))) + ((re((2nd [internal] sphere.point #40)) * re((2nd [internal] sphere.point #40))) + (im((2nd [internal] sphere.point #40)) * im((2nd [internal] sphere.point #40))))))))) < [internal] vanishing radius) and ([internal] fresh #42 < [internal] fresh #43)):
                                                                                             block:
                                                                                               block:
-                                                                                                set `w` := (1:R:C + (((pa * w) + pb) / (w ^ 2:R:C)))
+                                                                                                set `w` := let [internal] sphere.scaled #41 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #41)) * re((2nd [internal] sphere.scaled #41))) + (im((2nd [internal] sphere.scaled #41)) * im((2nd [internal] sphere.scaled #41)))) < ((re((1st [internal] sphere.scaled #41)) * re((1st [internal] sphere.scaled #41))) + (im((1st [internal] sphere.scaled #41)) * im((1st [internal] sphere.scaled #41))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #41) / (1st [internal] sphere.scaled #41))) else (((1st [internal] sphere.scaled #41) / (2nd [internal] sphere.scaled #41)), 1.0 :+ 0.0)
                                                                                               set `[internal] fresh #42` := ([internal] fresh #42 + 1)
                                                                                           set `[internal] iteration count` := [internal] fresh #42
                                                                                           set `[internal] stuck` := ([internal] fresh #42 = [internal] fresh #43)
@@ -786,40 +786,42 @@ let `[internal] vanishing radius` = vanishing_radius in:
                   block:
                     let `pb` = [hoisted] pb in:
                       block:
-                        let `[internal] fresh #30` = 0 in:
-                          let `[internal] fresh #31` = [internal] iteration limit in:
-                            block:
-                              if (!(1.0e20 < |z|) and ([internal] fresh #30 < [internal] fresh #31)) then:
-                                do-while (!(1.0e20 < |z|) and ([internal] fresh #30 < [internal] fresh #31)):
-                                  block:
-                                    set `z` := (1:R:C + (((pa * z) + pb) / (z ^ 2:R:C)))
-                                    set `[internal] fresh #30` := ([internal] fresh #30 + 1)
-                              else:
-                                no-op
-                              set `[internal] iteration count` := [internal] fresh #30
-                              set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
-                        if (1.0e20 < |z|) then:
+                        let `u` = (z, 1.0 :+ 0.0) in:
                           block:
-                            set `color` := let #wheel-arg = (([internal] iteration count:R / period) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))))
-                        else:
-                          if periods then:
-                            block:
-                              let `w` = z in:
+                            let `[internal] fresh #31` = 0 in:
+                              let `[internal] fresh #32` = [internal] iteration limit in:
                                 block:
-                                  let `[internal] fresh #31` = 0 in:
-                                    let `[internal] fresh #32` = 64 in:
+                                  if (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #1 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #1) / (1st [internal] sphere.point #1))| < (10:R ^ -20:R)) and ([internal] fresh #31 < [internal] fresh #32)) then:
+                                    do-while (!let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #1 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #1) / (1st [internal] sphere.point #1))| < (10:R ^ -20:R)) and ([internal] fresh #31 < [internal] fresh #32)):
                                       block:
-                                        do-while (!(|(w - z)| < [internal] vanishing radius) and ([internal] fresh #31 < [internal] fresh #32)):
+                                        set `u` := let [internal] sphere.scaled #0 = (((1:R:C * ((1st u) ^ 2:R:C)) + (((pa * (1st u)) + (pb * (2nd u))) * (2nd u))), ((1st u) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #0)) * re((2nd [internal] sphere.scaled #0))) + (im((2nd [internal] sphere.scaled #0)) * im((2nd [internal] sphere.scaled #0)))) < ((re((1st [internal] sphere.scaled #0)) * re((1st [internal] sphere.scaled #0))) + (im((1st [internal] sphere.scaled #0)) * im((1st [internal] sphere.scaled #0))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #0) / (1st [internal] sphere.scaled #0))) else (((1st [internal] sphere.scaled #0) / (2nd [internal] sphere.scaled #0)), 1.0 :+ 0.0)
+                                        set `[internal] fresh #31` := ([internal] fresh #31 + 1)
+                                  else:
+                                    no-op
+                                  set `[internal] iteration count` := [internal] fresh #31
+                                  set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
+                            if let [internal] captured5.u #0 = ((1st u), (2nd u)) in (|let [internal] sphere.point #2 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #2) / (1st [internal] sphere.point #2))| < (10:R ^ -20:R)) then:
+                              block:
+                                set `color` := let #wheel-arg = (([internal] iteration count:R / period) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))))
+                            else:
+                              if periods then:
+                                block:
+                                  let `w` = ((1st u), (2nd u)) in:
+                                    block:
+                                      let `[internal] fresh #32` = 0 in:
+                                        let `[internal] fresh #33` = 64 in:
                                           block:
-                                            block:
-                                              set `w` := (1:R:C + (((pa * w) + pb) / (w ^ 2:R:C)))
-                                            set `[internal] fresh #31` := ([internal] fresh #31 + 1)
-                                        set `[internal] iteration count` := [internal] fresh #31
-                                        set `[internal] stuck` := ([internal] fresh #31 = [internal] fresh #32)
-                                  set `color` := if [internal] stuck then Color 0 0 0 else blend(0.5, let #wheel-arg = (([internal] iteration count:R / 8:R) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))))), Color 255 255 255)
-                          else:
-                            block:
-                              set `color` := Color 0 0 0
+                                            do-while (!let [internal] sphere.point #3 = ((1st w), (2nd w)) in let [internal] sphere.point #4 = ((1st u), (2nd u)) in ((2:R * sqrt((((re((((1st [internal] sphere.point #3) * (2nd [internal] sphere.point #4)) - ((2nd [internal] sphere.point #3) * (1st [internal] sphere.point #4)))) * re((((1st [internal] sphere.point #3) * (2nd [internal] sphere.point #4)) - ((2nd [internal] sphere.point #3) * (1st [internal] sphere.point #4))))) + (im((((1st [internal] sphere.point #3) * (2nd [internal] sphere.point #4)) - ((2nd [internal] sphere.point #3) * (1st [internal] sphere.point #4)))) * im((((1st [internal] sphere.point #3) * (2nd [internal] sphere.point #4)) - ((2nd [internal] sphere.point #3) * (1st [internal] sphere.point #4)))))) / ((((re((1st [internal] sphere.point #3)) * re((1st [internal] sphere.point #3))) + (im((1st [internal] sphere.point #3)) * im((1st [internal] sphere.point #3)))) + ((re((2nd [internal] sphere.point #3)) * re((2nd [internal] sphere.point #3))) + (im((2nd [internal] sphere.point #3)) * im((2nd [internal] sphere.point #3))))) * (((re((1st [internal] sphere.point #4)) * re((1st [internal] sphere.point #4))) + (im((1st [internal] sphere.point #4)) * im((1st [internal] sphere.point #4)))) + ((re((2nd [internal] sphere.point #4)) * re((2nd [internal] sphere.point #4))) + (im((2nd [internal] sphere.point #4)) * im((2nd [internal] sphere.point #4))))))))) < [internal] vanishing radius) and ([internal] fresh #32 < [internal] fresh #33)):
+                                              block:
+                                                block:
+                                                  set `w` := let [internal] sphere.scaled #5 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #5)) * re((2nd [internal] sphere.scaled #5))) + (im((2nd [internal] sphere.scaled #5)) * im((2nd [internal] sphere.scaled #5)))) < ((re((1st [internal] sphere.scaled #5)) * re((1st [internal] sphere.scaled #5))) + (im((1st [internal] sphere.scaled #5)) * im((1st [internal] sphere.scaled #5))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #5) / (1st [internal] sphere.scaled #5))) else (((1st [internal] sphere.scaled #5) / (2nd [internal] sphere.scaled #5)), 1.0 :+ 0.0)
+                                                set `[internal] fresh #32` := ([internal] fresh #32 + 1)
+                                            set `[internal] iteration count` := [internal] fresh #32
+                                            set `[internal] stuck` := ([internal] fresh #32 = [internal] fresh #33)
+                                      set `color` := if [internal] stuck then Color 0 0 0 else blend(0.5, let #wheel-arg = (([internal] iteration count:R / 8:R) mod 1.0) in blend((1st if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))), (1st (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160)))), (2nd (2nd if (#wheel-arg < (1.0 / 2.0)) then if (#wheel-arg < (1.0 / 4.0)) then if (#wheel-arg < (1.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.0)), (Color 255 100 0, Color 255 0 0)) else ((8.0 * (#wheel-arg - 0.125)), (Color 255 255 0, Color 255 100 0)) else if (#wheel-arg < (3.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.25)), (Color 0 180 0, Color 255 255 0)) else ((8.0 * (#wheel-arg - 0.375)), (Color 0 128 128, Color 0 180 0)) else if (#wheel-arg < (3.0 / 4.0)) then if (#wheel-arg < (5.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.5)), (Color 0 0 255, Color 0 128 128)) else ((8.0 * (#wheel-arg - 0.625)), (Color 128 0 128, Color 0 0 255)) else if (#wheel-arg < (7.0 / 8.0)) then ((8.0 * (#wheel-arg - 0.75)), (Color 255 0 160, Color 128 0 128)) else ((8.0 * (#wheel-arg - 0.875)), (Color 255 0 0, Color 255 0 160))))), Color 255 255 255)
+                              else:
+                                block:
+                                  set `color` := Color 0 0 0
 
 
 --- tool Trace orbit
@@ -829,7 +831,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `w0` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] px in:
               block:
                 let `per5_omega1` = 1.5470797535511203 in:
@@ -903,23 +905,29 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                 set `tmp` := ((wx + 1:R:C) * wy)
                                                                                                 set `pb` := (wx / tmp)
                                                                                                 set `pa` := ((wx * pb) - 1:R:C)
-                                    block:
-                                      let `[internal] previous.w #0` = w in:
+                                    let `w` = (w0, 1.0 :+ 0.0) in:
+                                      block:
                                         block:
-                                          let `[internal] fresh #26` = 0 in:
-                                            let `[internal] fresh #27` = 200 in:
-                                              block:
-                                                do-while (!(1.0e20 < |w|) and ([internal] fresh #26 < [internal] fresh #27)):
+                                          let `[internal] previous.w #0` = ((1st w), (2nd w)) in:
+                                            block:
+                                              let `[internal] fresh #27` = 0 in:
+                                                let `[internal] fresh #28` = 200 in:
                                                   block:
-                                                    block:
-                                                      set `[internal] previous.w #0` := w
+                                                    do-while (!let [internal] captured5.u #0 = ((1st w), (2nd w)) in (|let [internal] sphere.point #0 = ((1st [internal] captured5.u #0), (2nd [internal] captured5.u #0)) in ((2nd [internal] sphere.point #0) / (1st [internal] sphere.point #0))| < (10:R ^ -20:R)) and ([internal] fresh #27 < [internal] fresh #28)):
                                                       block:
-                                                        draw point at w:R^2
-                                                        set `w` := (1:R:C + (((pa * w) + pb) / (w ^ 2:R:C)))
-                                                        draw line from [internal] previous.w #0:R^2 to w:R^2
-                                                    set `[internal] fresh #26` := ([internal] fresh #26 + 1)
-                                                set `[internal] iteration count` := [internal] fresh #26
-                                                set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                                                        block:
+                                                          set `[internal] previous.w #0` := ((1st w), (2nd w))
+                                                          block:
+                                                            draw point at let [internal] sphere.point #1 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #1) / (2nd [internal] sphere.point #1)):R^2
+                                                            set `w` := let [internal] sphere.scaled #2 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #2)) * re((2nd [internal] sphere.scaled #2))) + (im((2nd [internal] sphere.scaled #2)) * im((2nd [internal] sphere.scaled #2)))) < ((re((1st [internal] sphere.scaled #2)) * re((1st [internal] sphere.scaled #2))) + (im((1st [internal] sphere.scaled #2)) * im((1st [internal] sphere.scaled #2))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #2) / (1st [internal] sphere.scaled #2))) else (((1st [internal] sphere.scaled #2) / (2nd [internal] sphere.scaled #2)), 1.0 :+ 0.0)
+                                                            if !(let [internal] sphere.point #3 = ((1st w), (2nd w)) in let [internal] sphere.point #4 = (1.0 :+ 0.0, 0.0 :+ 0.0) in ((((1st [internal] sphere.point #3) * (2nd [internal] sphere.point #4)) - ((2nd [internal] sphere.point #3) * (1st [internal] sphere.point #4))) = 0.0 :+ 0.0) or let [internal] sphere.point #5 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in let [internal] sphere.point #6 = (1.0 :+ 0.0, 0.0 :+ 0.0) in ((((1st [internal] sphere.point #5) * (2nd [internal] sphere.point #6)) - ((2nd [internal] sphere.point #5) * (1st [internal] sphere.point #6))) = 0.0 :+ 0.0)) then:
+                                                              block:
+                                                                draw line from let [internal] sphere.point #7 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in ((1st [internal] sphere.point #7) / (2nd [internal] sphere.point #7)):R^2 to let [internal] sphere.point #8 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #8) / (2nd [internal] sphere.point #8)):R^2
+                                                            else:
+                                                              no-op
+                                                        set `[internal] fresh #27` := ([internal] fresh #27 + 1)
+                                                    set `[internal] iteration count` := [internal] fresh #27
+                                                    set `[internal] stuck` := ([internal] fresh #27 = [internal] fresh #28)
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:
