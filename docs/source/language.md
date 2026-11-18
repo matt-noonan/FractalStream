@@ -190,7 +190,60 @@ pixel in the parameter space viewer, and populate it by using Newton's method to
 from a dynamical plane to neighboring ones. Other scripts have used precomputed tables to
 hold the uniformization data for an algebraic curve that we want to draw in the hyperbolic plane.
 
-**TODO**: more to come
+#### Reading a table
+
+`T @ (j, k)` is the value in column `j` and row `k` of a 2-dimensional table `T`. Like lists,
+tables count from 1: `T @ (1, 1)` is the cell at the top left, columns go to the right, and rows
+go down. A table with `n` dimensions takes `n` indices, written as a tuple; a 1-dimensional table
+takes a single index, `T @ k`. Reading outside of the table is an error, just as it is for a list:
+the pixel is drawn in magenta, or a tool's changes are discarded.
+
+Every table also has a position in the plane (see {ref}`language-tables` below), so `T @ point z` is
+the value in the cell that contains the point `z`. Each cell covers a small rectangle of the
+plane; when a table is laid over a viewer's window, its cells are the viewer's pixels. Looking up
+a point outside of the table is an error, like reading an index out of range. To look up a point
+that may be off the table, give a value to use there instead with `else`:
+
+``` fractalstream
+color <- rainbow(saddle @ point C else 0)
+```
+
+The `else` part is a single value: `T @ point z else 0 + 1` adds 1 to the result, whichever it
+is, so put anything longer in parentheses.
+
+Only a table's first two dimensions (its columns and rows) are laid out in the plane. A table
+with more dimensions has *layers* over the plane: in a `Table 3 of C`, `T @ (j, k, m)` is column
+`j` and row `k` of layer `m`. In a lookup by point, `point z` stands for the first two indices,
+and the others follow it, as in `crit @ (point C, m)` or `crit @ (point C, m) else 0`. A
+1-dimensional table has no position in the plane.
+
+A `*` in place of an index stands for every index along that dimension, and gives a list:
+`T @ (j, *)` is column `j` of a 2-dimensional table, from the top down, and
+`crit @ (point C, *)` is the value at `C` in each layer, starting from the first. All of a
+1-dimensional table is `T @ *`.
+
+A few functions tell you more about a table:
+
+| Function | Meaning |
+| -------- | ------- |
+| `table_size(T)` | The table's size: an integer for a 1-dimensional table, or a tuple with one integer for each dimension. A table that hasn't been filled in yet has size 0. |
+| `z in T` | Whether the point `z` is on the table. |
+| `table_cell(T, z)` | The cell `(j, k)` containing the point `z`, even when `z` is off the table (then `j` or `k` is less than 1, or more than the table's size). |
+| `table_point(T, (j, k))` | The point at the center of the cell `(j, k)`, for any `j` and `k`. |
+
+For example, a viewer can check whether its table has been filled in yet before reading it:
+
+``` fractalstream
+(w, h) := table_size(saddle)
+color <- if w = 0 then grey else rainbow(arg(saddle @ point C) / (2 pi))
+```
+
+A table of tuples, like a `Table 2 of C x Z`, holds a tuple in each cell. Read a cell's tuple
+whole and take it apart as you would any other tuple:
+
+``` fractalstream
+(crit, found) := crits @ point c else (0, 0)
+```
 
 ## Scripts
 
@@ -391,9 +444,100 @@ else:
 
 **TODO**
 
+(language-tables)=
 ### Tables
 
-**TODO**
+Only a tool can change a table; viewers can only read them. A tool starts a table afresh with
+`reset`, which gives the table a size and a position in the plane, and fills every cell with zero
+(or `false`, or black, depending on the type of the table's elements):
+
+``` fractalstream
+reset T to (viewer_width, viewer_height)
+```
+
+This lays the table over the tool's viewer window. With the viewer's own size, as here, cell
+`(j, k)` is the pixel in column `j - 1` and row `k - 1` (pixels count from 0); with another size,
+the cells are stretched to cover the window. To cover a different rectangle of the plane, give
+its top left and bottom right corners:
+
+``` fractalstream
+reset T to (200, 100) from -2 + i to 2 - i
+```
+
+For a table with layers, give one more size for each further dimension:
+`reset crit to (viewer_width, viewer_height, 4)` lays 4 layers over the window. To start every
+cell with a value other than zero, add `filled with` at the end:
+
+``` fractalstream
+reset status to (viewer_width, viewer_height) filled with -1
+```
+
+The tool then writes the table's cells with `<-`, by index or by point:
+
+``` fractalstream
+T @ (j, k) <- v
+T @ point z <- v
+crit @ (point c, m) <- v
+```
+
+Writing outside of the table is an error, and the tool's changes are discarded. A slice with one
+`*` can be written all at once from a list with one item for each of its cells:
+
+``` fractalstream
+crit @ (point c, *) <- [z1, z2, z3]
+```
+
+and a slice can be copied onto another slice of the same shape, in the same table or in another
+table with the same kind of elements:
+
+``` fractalstream
+crit @ (*, *, 1) <- crit @ (*, *, 2)    # layer 2, copied onto layer 1
+crit @ (*, *, 3) <- saddle @ (*, *)     # a 2-dimensional table, copied onto layer 3
+```
+
+A cell of a table of tuples is always written whole, with a tuple: `crits @ (j, k) <- (w, 1)`.
+To change just one part of the tuple, read the cell and write it back with that part changed.
+
+A tool can also change a table's size with `resize`, which keeps the table where it is in the
+plane:
+
+``` fractalstream
+(w, h, n) := table_size(crit)
+resize crit to (w, h, n + 1)     # one more layer
+```
+
+Cell `(1, 1)` stays in the same place, and so does every cell that the table still has, along
+with its value. New cells are zero, or the value given by `filled with v` at the end. So adding
+columns or rows adds them at the right or the bottom, and removing them takes them away from
+there. To lay a table out somewhere else, `reset` it instead.
+
+A tool's changes to a table take effect when its handler finishes without an error, like its
+changes to any other configuration variable, and then every viewer that reads the table is drawn
+again. A viewer that is drawing while the tool runs keeps using the table as it was when the
+viewer started.
+
+For example, this tool works out a value for every pixel of a parameter plane, and both viewers
+can read the results:
+
+``` fractalstream
+@config "Parameters"
+C : C := 0
+data : Table 2 of C
+
+@viewer "Parameter plane" var=C
+(w, h) := table_size(data)
+color <- if w = 0 then grey else rainbow(arg(data @ point C) / (2 pi))
+
+@viewer "Dynamical plane"
+...  # can read `data @ point C`
+
+@tool "Compute" for="Parameter plane"
+on click:
+  reset data to (viewer_width, viewer_height)
+  for each j in range(1, viewer_width):
+    for each k in range(1, viewer_height):
+      data @ (j, k) <- ...  # the value for pixel (j - 1, k - 1)
+```
 
 ## Project structure
 
@@ -525,6 +669,22 @@ row:
   a : C := 0
   b : R := 1
 ```
+
+A table (see {ref}`language-tables`) is also declared in a `@config` stanza, with its type but
+without a default value, since every table starts out empty:
+
+``` fractalstream
+@config "Parameters"
+saddle : Table 2 of C
+```
+
+A table can hold integers, real numbers, complex numbers, truth values, colors, or tuples of
+these, in any number of dimensions (`Table 1 of R`, `Table 3 of Z`, `Table 2 of C x Z`, and so
+on). In the configuration panel, a table appears as a line showing its name, its type, and its
+current size, with buttons to export it to a file and import it from one (see {ref}`table-files`).
+
+When you edit a project's script and rebuild it, each table keeps its contents as long as the new
+script still declares it with the same name and type.
 
 ### Tools
 
