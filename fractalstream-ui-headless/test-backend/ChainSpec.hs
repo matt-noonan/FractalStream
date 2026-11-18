@@ -57,8 +57,9 @@ fill ViewerArgs{..} (r, g, b) =
     pokeByteOff vaBuffer (3 * k + 1) g
     pokeByteOff vaBuffer (3 * k + 2) b
 
--- | The viewer, on the platform's backends and these made-up ones (made
--- from its CPU backend), or on just the made-up ones.
+-- | The viewer, on the platform's CPU backend and these made-up ones (made
+-- from it), or on just the made-up ones. (Not the platform's GPU backends:
+-- what they'd say, the GPU's own, would be in the reports.)
 withChain :: Bool -> [(BackendId, ViewerCompiler -> ViewerCompiler)] -> (Viewer -> IO a) -> IO a
 withChain keepCpu fakes k = do
   ens <- buildEnsembleFromScript mandelbrot >>= either (fail . snd) pure
@@ -69,7 +70,7 @@ withChain keepCpu fakes k = do
   withBackend $ \backend -> do
     let cpu = fromMaybe (error "no CPU backend") (lookup Cpu (bViewerCompilers backend))
         backend' = backend { bViewerCompilers = [ (b, f cpu) | (b, f) <- fakes ]
-                                                ++ (if keepCpu then bViewerCompilers backend else []) }
+                                                ++ (if keepCpu then [ c | c@(Cpu, _) <- bViewerCompilers backend ] else []) }
     runEnsemble backend' ui ens
     v <- readIORef ref >>= maybe (fail "no viewer") pure
     setValue (vSize v) (Dimensions (90, 61))
@@ -142,9 +143,9 @@ spec = describe "a viewer's backends" $ do
 
   describe "their order" $ do
     it "has every backend once, those left out after, in the default order" $ do
-      normalizeOrder [Cpu, Cpu] `shouldBe` [Cpu, GpuDf64, GpuF32]
+      normalizeOrder [Cpu, Cpu] `shouldBe` [Cpu, GpuF64, GpuDf64, GpuF32]
       normalizeOrder [] `shouldBe` defaultBackendOrder
     it "puts a viewer's preferred backend first" $
-      effectiveOrder defaultBackendOrder (Just GpuF32) `shouldBe` [GpuF32, GpuDf64, Cpu]
+      effectiveOrder defaultBackendOrder (Just GpuF32) `shouldBe` [GpuF32, GpuF64, GpuDf64, Cpu]
     it "names backends as settings do" $
-      map backendKey allBackends `shouldBe` ["gpu-df64", "cpu", "gpu-f32"]
+      map backendKey allBackends `shouldBe` ["gpu-f64", "gpu-df64", "cpu", "gpu-f32"]

@@ -28,12 +28,12 @@ main = do
       Right (Built ens) -> do
         kept <- newIORef []
         viewers <- newIORef []
-        let device = GpuDevice $ \src -> do
+        let device = GpuDevice { gdF64 = True, gdCompile = \src -> do
               modifyIORef kept (src :)
-              pure (Right (GpuKernel (\_ _ -> pure (GpuArgs (\_ _ _ _ -> pure (Left "no"))))))
+              pure (Right (GpuKernel (\_ _ -> pure (GpuArgs (\_ _ _ _ _ -> pure (Left "no")))))) }
             ui = UI { newEnsemble = pure (), makeLayout = \_ _ _ -> pure (pure ())
                     , makeViewer = \_ _ _ _ _ v -> modifyIORef viewers (v :) >> pure (pure ()) }
-        withBackends pureBackend [gpuBackends (pure (Right device))] $ \backend -> do
+        withBackends pureBackend [gpuBackends allPrecisions (pure (Right device))] $ \backend -> do
           runEnsemble backend ui ens
           vs <- readIORef viewers
           forM_ vs $ \v -> viewerRenderer v >>= \case

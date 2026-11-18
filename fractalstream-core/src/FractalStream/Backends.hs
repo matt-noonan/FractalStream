@@ -26,11 +26,15 @@ module FractalStream.Backends
 
 import Data.DynamicValue (Variable, newVariable)
 import Data.List (intercalate, nub, (\\))
+import Data.Maybe (isJust, isNothing)
 import System.IO.Unsafe (unsafePerformIO)
 
 -- | A way of drawing a viewer.
 data BackendId
-  = GpuDf64
+  = GpuF64
+    -- ^ on the GPU, in doubles (where it has them: wgpu's native-only
+    --   SHADER_F64, on Vulkan and DirectX 12; not Metal, or the web)
+  | GpuDf64
     -- ^ on the GPU, in double-float (pairs of f32s: about 48 bits, with
     --   f32's range)
   | Cpu
@@ -44,11 +48,12 @@ allBackends = [minBound .. maxBound]
 
 -- | Precision first, then speed: what a fresh install uses.
 defaultBackendOrder :: [BackendId]
-defaultBackendOrder = [GpuDf64, Cpu, GpuF32]
+defaultBackendOrder = [GpuF64, GpuDf64, Cpu, GpuF32]
 
 -- | How settings name a backend.
 backendKey :: BackendId -> String
 backendKey = \case
+  GpuF64  -> "gpu-f64"
   GpuDf64 -> "gpu-df64"
   Cpu     -> "cpu"
   GpuF32  -> "gpu-f32"
@@ -59,14 +64,31 @@ backendFromKey k = lookup k [ (backendKey b, b) | b <- allBackends ]
 -- | How the user sees a backend's name.
 backendLabel :: BackendId -> String
 backendLabel = \case
+  GpuF64  -> "GPU, double precision"
   GpuDf64 -> "GPU, double-float"
   Cpu     -> "CPU"
   GpuF32  -> "GPU, single precision"
 
 -- | An order with every backend in it once: as given, without repeats,
--- and then any it left out, in the default order.
+-- and then any it left out, in the default order; but a backend newer
+-- than orders saved without it goes where it would have been
+-- ('placedBefore'): GPU f64 just before GPU df64.
 normalizeOrder :: [BackendId] -> [BackendId]
-normalizeOrder bs = let bs' = nub bs in bs' ++ (defaultBackendOrder \\ bs')
+normalizeOrder bs =
+  let bs' = nub bs
+      missing = defaultBackendOrder \\ bs'
+      appended = bs' ++ [ b | b <- missing, isNothing (placedBefore b) ]
+      place order b = case placedBefore b of
+        Just next | next `elem` order -> let (before, after) = break (== next) order in before ++ b : after
+        _ -> order ++ [b]
+  in foldl place appended [ b | b <- missing, isJust (placedBefore b) ]
+
+-- | Where a backend added since orders were first saved goes in one saved
+-- without it: before this one.
+placedBefore :: BackendId -> Maybe BackendId
+placedBefore = \case
+  GpuF64 -> Just GpuDf64
+  _ -> Nothing
 
 -- | A viewer's order: the app's, with the backend the viewer was told to
 -- prefer (if any) moved to the front.

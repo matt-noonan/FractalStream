@@ -70,6 +70,7 @@ static WGPUBuffer no_tables;
 static WGPUBuffer no_palette;   /* for a kernel without autocolor */
 static WGPUBuffer no_misses;
 static uint64_t max_binding;
+static int has_f64;              /* whether shaders can have f64s */
 static char *lost;               /* why the device was lost, once it was */
 
 static char *copy_view(const char *prefix, WGPUStringView v) {
@@ -220,9 +221,15 @@ char *fsgpu_init(void) {
   required.maxBufferSize = supported.maxBufferSize;
   max_binding = supported.maxStorageBufferBindingSize;
 
+  /* (doubles, where the GPU has them, for the GPU f64 backend: wgpu has
+   * them on Vulkan and DirectX 12, not Metal) */
+  WGPUFeatureName f64 = (WGPUFeatureName)WGPUNativeFeature_ShaderF64;
+  has_f64 = wgpuAdapterHasFeature(adapter, f64);
+
   struct waited wd = {0};
   WGPUDeviceDescriptor dd = WGPU_DEVICE_DESCRIPTOR_INIT;
   dd.requiredLimits = &required;
+  if (has_f64) { dd.requiredFeatureCount = 1; dd.requiredFeatures = &f64; }
   dd.deviceLostCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
   dd.deviceLostCallbackInfo.callback = on_lost;
   dd.uncapturedErrorCallbackInfo.callback = on_uncaptured;
@@ -466,6 +473,9 @@ done:
   give_lock();
   return err;
 }
+
+/* Whether shaders can have f64s (after fsgpu_init). */
+int fsgpu_has_f64(void) { return has_f64; }
 
 /* What GPU this is ("" before fsgpu_init succeeds): for messages. */
 char *fsgpu_name(void) {

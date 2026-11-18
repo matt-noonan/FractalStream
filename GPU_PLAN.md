@@ -15,7 +15,7 @@ built (branch `gpu-data`).
 
 | # | Decision | Notes |
 |---|---|---|
-| G1 | **Backends are an ordered preference list** (WEB_PLAN D20): GPU df64, then the CPU (LLVM, or Backend.Wasm on the web), then GPU f32, unless the user reorders it | Precision first, then speed. |
+| G1 | **Backends are an ordered preference list** (WEB_PLAN D20): GPU f64 (where the GPU has doubles, 2026-11-17), GPU df64, then the CPU (LLVM, or Backend.Wasm on the web), then GPU f32, unless the user reorders it | Precision first, then speed. |
 | G2 | **A backend declines what it can't do as well as doubles**, at three points: compiling a script, starting a render of a view, and finishing one | So nothing renders worse than doubles would; see "Declining". For now (2026-11-14) only what it can't compile: declining views (by pixel size, which varies in the disk, half-plane and sphere views) and renders (by values leaving df64's range) are deferred, to be reconsidered. |
 | G3 | **One code generator for desktop and web**: `Code` to WGSL, in a package that builds with both GHCs | Only a small device layer differs per platform. |
 | G4 | **Web first, then the desktop** | The desktop GPU is wanted (5e), on whichever of wgpu-native and Dawn is the lighter dependency (likely wgpu-native's prebuilt binaries); the df64 harness decides whether its compiler keeps the guard. |
@@ -299,7 +299,14 @@ emit IR, producing one WGSL compute shader a viewer (one per precision).
         declined if that dies. Only the check (~2 ms), not the pipeline's
         translation and driver compile (~200 ms, which would double a new
         shader's wait); shaders that passed are remembered on disk.
-  - [ ] f64 (wgpu's native-only `SHADER_F64`), a fourth backend.
+  - [x] f64 (branch `gpu-f64`): a fourth backend, `gpu-f64`, first in the
+        default order (a saved order gets it just before gpu-df64), on the
+        desktop where the GPU has wgpu's native-only `SHADER_F64` (Vulkan,
+        DirectX 12; never Metal or the web), declining elsewhere. Its
+        functions are arithmetic only (DirectX has no double builtins
+        beyond abs, min and max), within 3 ulp of JavaScript's Math
+        (`dev-tools/gpu/f64-check.mjs`); CI compares it with the CPU on
+        lavapipe and WARP (`dev-tools/ci/gpu-f64-check.sh`).
 
 ## Later
 

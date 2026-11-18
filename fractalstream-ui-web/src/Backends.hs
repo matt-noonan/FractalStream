@@ -10,7 +10,7 @@ import Actor.Viewer (Backend, ViewerBackends, withBackends)
 import Backend.Wasm (wasmBackend)
 
 #if defined(USE_GPU)
-import Backend.WGSL (gpuBackends)
+import Backend.WGSL (gpuBackends, Precision(..))
 import Backend.Wasm.Gpu (webGpu)
 #endif
 
@@ -20,7 +20,7 @@ withBackend = withBackends wasmBackend viewerBackends
 
 viewerBackends :: [ViewerBackends]
 #if defined(USE_GPU)
-viewerBackends = [gpuBackends webGpu]
+viewerBackends = [gpuBackends [DoubleFloat, Single] webGpu]   -- (WebGPU has no doubles)
 #else
 viewerBackends = []
 #endif

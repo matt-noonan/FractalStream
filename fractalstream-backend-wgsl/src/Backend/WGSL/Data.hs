@@ -63,12 +63,14 @@ at :: String -> Int -> String
 at a 0 = a
 at a k = "(" ++ a ++ " + " ++ show k ++ "u)"
 
--- | A double as an R, exactly as 'Backend.WGSL.Code' passes arguments.
+-- | A double as an R, to about 48 bits (as hi and lo f32s), in any
+-- precision.
 realLiteral :: Double -> String
 realLiteral x =
   let (hi, lo) | isNaN x || isInfinite x = (double2Float x, 0)
                | otherwise = let h = double2Float x in (h, double2Float (x - float2Double h))
-  in "rbits(0x" ++ showHex (castFloatToWord32 hi) "u, 0x" ++ showHex (castFloatToWord32 lo) "u)"
+      f v = "bitcast<f32>(0x" ++ showHex (castFloatToWord32 v) "u)"
+  in "rp(vec2f(" ++ f hi ++ ", " ++ f lo ++ "))"
 
 ------------------------------------------------------------------------
 -- Elements

@@ -19,7 +19,7 @@ spec = describe "FractalStream's settings file" $ do
                                    , setFoldCodeBlocks = True, setMathSymbols = False
                                    , setEditorFont = Just "Iosevka", setEditorFontSize = Just 14
                                    , setLineNumbers = True, setSphereShading = 55
-                                   , setRendering = [Cpu, GpuDf64, GpuF32]
+                                   , setRendering = [Cpu, GpuF64, GpuDf64, GpuF32]
                                    , setEditorColorsDark = Map.fromList
                                        [ ("keyword", noClassStyle { csColor = Just "#c792ea" })
                                        , ("undefined", noClassStyle { csColor = Just "#ff8080", csItalic = Just True
@@ -49,8 +49,14 @@ spec = describe "FractalStream's settings file" $ do
     length warnings `shouldBe` 11
 
   it "reads the backends' order, leaving out backends it doesn't know, and adding any left out" $ do
-    readSettings "settings.yaml" "rendering: [gpu-f64, gpu-f32, cpu]\n"
-      `shouldBe` (defaultSettings { setRendering = [GpuF32, Cpu, GpuDf64] }, [])
+    readSettings "settings.yaml" "rendering: [gpu-f128, gpu-f32, cpu]\n"
+      `shouldBe` (defaultSettings { setRendering = [GpuF32, Cpu, GpuF64, GpuDf64] }, [])
+
+  it "puts GPU f64, new since orders were first saved, just before GPU df64" $ do
+    readSettings "settings.yaml" "rendering: [gpu-df64, cpu, gpu-f32]\n"
+      `shouldBe` (defaultSettings { setRendering = [GpuF64, GpuDf64, Cpu, GpuF32] }, [])
+    readSettings "settings.yaml" "rendering: [cpu, gpu-f32, gpu-df64]\n"
+      `shouldBe` (defaultSettings { setRendering = [Cpu, GpuF32, GpuF64, GpuDf64] }, [])
 
   it "uses the defaults for an empty file, or one that isn't YAML" $ do
     readSettings "settings.yaml" "" `shouldBe` (defaultSettings, [])

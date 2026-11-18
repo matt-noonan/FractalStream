@@ -20,10 +20,11 @@ import Backend.Pure (pureBackend)
 #endif
 
 #if defined(USE_GPU)
-import Backend.WGSL (gpuBackends)
 #if defined(wasm32_HOST_ARCH)
+import Backend.WGSL (gpuBackends, Precision(..))
 import Backend.Wasm.Gpu (webGpu)
 #else
+import Backend.WGSL (gpuBackends, allPrecisions)
 import Backend.WGPU (nativeGpu)
 #endif
 #endif
@@ -43,9 +44,9 @@ cpuBackend = pureBackend
 
 viewerBackends :: [ViewerBackends]
 #if defined(USE_GPU) && defined(wasm32_HOST_ARCH)
-viewerBackends = [gpuBackends webGpu]
+viewerBackends = [gpuBackends [DoubleFloat, Single] webGpu]   -- (no doubles on the web)
 #elif defined(USE_GPU)
-viewerBackends = [ gpuBackends device | Just device <- [nativeGpu] ]
+viewerBackends = [ gpuBackends allPrecisions device | Just device <- [nativeGpu] ]
 #else
 viewerBackends = []
 #endif

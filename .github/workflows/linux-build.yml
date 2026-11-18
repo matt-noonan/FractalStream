@@ -169,6 +169,8 @@ jobs:
         # (and with a GPU, its shaders must have gone through the probe,
         # Backend.WGPU.Probe: one that couldn't start says so)
         if grep -q "without a probe" gpu.log; then echo "the GPU's probe didn't start"; exit 1; fi
+        # (in doubles, where the GPU has them: as the CPU draws)
+        if [ "$status" -eq 0 ]; then dev-tools/ci/gpu-f64-check.sh fsrun-dist/bin/fsrun gpu-f64-check; fi
 
     - name: Archive the AppImage and fsrun
       id: archive
