@@ -19,7 +19,7 @@ Within a viewer, you can navigate as if the view were a map: drag to recenter, a
 scroll to zoom in and out. You can navigate back and forth through your history with `<` and
 `>`, return to the initial view with `^`, or jump to a new view with `@`.
 
-![Viewer](_static/viewer.png)
+![Viewer](_static/navigate.gif)
 
 If your viewer offers additional tools, you will find them in the tool menu on the upper
 left corner of your viewer
@@ -36,7 +36,7 @@ To change the values of configuration variables, select `Show configuration` fro
 hamburger menu, or press `=` (desktop app only). Changes made to the configuration
 variables are immediately reflected in the viewers.
 
-**TODO**
+![Configuration values](_static/config.gif)
 
 ## Using tools
 

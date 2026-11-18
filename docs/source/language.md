@@ -247,6 +247,13 @@ whole and take it apart as you would any other tuple:
 
 ## Scripts
 
+FractalStream scripts are made up of a sequence of commands, each of which is a single line.
+A very long command can be broken over multiple lines by writing an ellipsis `...` at the end
+of one line, with the rest of the command on the next line.
+
+Some commands end with a `:`, which starts a new *block*: a nested sequence of commands,
+indented one additional level.
+
 ### Variable definition and assignment
 
 New variables are defined using the `:=` operator. A variable stays visible until the end of its
@@ -290,6 +297,35 @@ f(z) := z^2 + C
 
 If a function references a variable that is not one of its parameters, then anywhere that
 function gets used *must* have that variable in scope. In the specific case of `f(z) := z^2 + C`, this means that `f` can only be used in parts of the script where `C` is also defined.
+
+### If / else blocks
+
+Script blocks can be run conditionally using the `if` command.
+
+``` fractalstream
+if re(z) < 0:
+  color <- red
+```
+
+An `if` block can optionally be followed by an `else` block.
+
+``` fractalstream
+if re(z) < 0:
+  color <- red
+else:
+  color <- yellow
+```
+
+Multiple `if`/`else` blocks can also be chained together.
+
+``` fractalstream
+if re(z) < 0:
+  color <- red
+else if im(z) > 0:
+  color <- green
+else:
+  color <- blue
+```
 
 ### Loops
 
@@ -366,6 +402,7 @@ repeat up to 1000 times:
   # etc
 ```
 
+(draw-commands)=
 ### Drawing
 
 Tool scripts are allowed to draw on top of the viewer, to provide indicators and other useful
