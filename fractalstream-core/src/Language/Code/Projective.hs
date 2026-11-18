@@ -202,8 +202,7 @@ expandProjective tenv s
           EChart p -> do
             p' <- pointOf p
             withPoint sr p' $ \a b ->
-              let absE x = Syn sr (EUn OpAbs x)
-              in Syn sr (EITE (Syn sr (EBin OpLe (absE a) (absE b)))
+              Syn sr (EITE (Syn sr (EBin OpLe (norm2 sr a) (norm2 sr b)))
                               (Syn sr (EPair (Syn sr (EBin OpDiv a b)) (intE sr 1)))
                               (Syn sr (EPair (Syn sr (EBin OpDiv b a)) (intE sr 0))))
           EAffine k p -> do
@@ -427,8 +426,7 @@ expandProjective tenv s
       let v = Syn sr (EVar k)
           a = Syn sr (EProj False v)
           b = Syn sr (EProj True v)
-          absE x = Syn sr (EUn OpAbs x)
-          bigger = Syn sr (EBin OpGt (absE a) (absE b))
+          bigger = Syn sr (EBin OpGt (norm2 sr a) (norm2 sr b))
       pure (Syn sr (ELet k p (Syn sr (EITE bigger (Syn sr (EPair (cnum sr 1) (Syn sr (EBin OpDiv b a))))
                                                    (Syn sr (EPair (Syn sr (EBin OpDiv a b)) (cnum sr 1)))))))
 
@@ -579,15 +577,21 @@ cnum sr n = Syn sr (ELit (show n) (SomeHaskellType ComplexType (fromIntegral n :
 
 -- | The chordal distance between two points (by their coordinates):
 -- with @p = [a : b]@ and @q = [c : d]@,
--- @2 |a d - b c| / sqrt((|a|² + |b|²) (|c|² + |d|²))@.
+-- @2 |a d - b c| / sqrt((|a|² + |b|²) (|c|² + |d|²))@, with one square
+-- root.
 chordal :: SourceRange -> Expr -> Expr -> Expr -> Expr -> Expr
 chordal sr a b c d =
-  let absE x = Syn sr (EUn OpAbs x)
-      sq x = let m = absE x in Syn sr (EBin OpMul m m)
-      add x y = Syn sr (EBin OpAdd x y)
+  let add x y = Syn sr (EBin OpAdd x y)
       cross = Syn sr (EBin OpSub (mul sr a d) (mul sr b c))
-      norms = Syn sr (EApp "sqrt" (Syn sr (EBin OpMul (add (sq a) (sq b)) (add (sq c) (sq d)))))
-  in Syn sr (EBin OpDiv (Syn sr (EBin OpMul (intE sr 2) (absE cross))) norms)
+      ratio = Syn sr (EBin OpDiv (norm2 sr cross) (Syn sr (EBin OpMul (add (norm2 sr a) (norm2 sr b))
+                                                                         (add (norm2 sr c) (norm2 sr d)))))
+  in Syn sr (EBin OpMul (intE sr 2) (Syn sr (EApp "sqrt" ratio)))
+
+-- | @|x|²@, without a square root.
+norm2 :: SourceRange -> Expr -> Expr
+norm2 sr x =
+  let part f = let y = Syn sr (EApp f x) in Syn sr (EBin OpMul y y)
+  in Syn sr (EBin OpAdd (part "re") (part "im"))
 
 ------------------------------------------------------
 -- Homogeneity
