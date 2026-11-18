@@ -87,9 +87,10 @@ data ConfigStmt
         -- these choices; only valid when 'cdType' is @ℤ@, in which case
         -- the variable's value is the chosen index.
       , cdPoint :: Maybe FSType
-        -- ^ For a point of the sphere, Ĉ or ℙ¹: which it is ('cdType' is
-        -- then a pair of complex numbers, its homogeneous coordinates;
-        -- see "Language.Code.Projective").
+        -- ^ For a type with points of the sphere in it, Ĉ or ℙ¹ (a point,
+        -- a list of them, ...): the type as the script has it ('cdType'
+        -- has each point as a pair of complex numbers, its homogeneous
+        -- coordinates; see "Language.Code.Projective").
       }
   | ConfigTable SourceRange String SomeType
     -- ^ @T : Table 2 of C@: a table, with no default (it starts out
@@ -990,10 +991,6 @@ validateConfigDecl sr name fsTy val valRange mlabel mchoices = do
   case fsTy of
     TableT{} -> Left (sr, "A table starts out empty, so it can't have a default value: write `"
                           ++ name ++ " : " ++ withType fsTy ppType ++ "`.")
-    _ | fsTy `elem` [ExtComplexT, ProjectiveT] -> Right ()
-      | hasSpherePoint fsTy ->
-          Left (sr, "A field can hold one point of the Riemann sphere (Ĉ or ℙ¹), but not "
-                    ++ "a list or tuple of them: `" ++ name ++ " : Ĉ`.")
     _ -> Right ()
   case mchoices of
     Just _ | fsTy /= IntegerT ->
@@ -1004,7 +1001,7 @@ validateConfigDecl sr name fsTy val valRange mlabel mchoices = do
     { cdRange = sr, cdName = name, cdType = withType fsTy SomeType
     , cdDefault = val, cdDefaultRange = valRange, cdDefaultSrc = ""
     , cdLabel = mlabel, cdChoices = mchoices
-    , cdPoint = if fsTy `elem` [ExtComplexT, ProjectiveT] then Just fsTy else Nothing
+    , cdPoint = if hasSpherePoint fsTy then Just fsTy else Nothing
     }
 
 -- | Whether a type has points of the sphere in it, which only code (not

@@ -35,8 +35,8 @@ import Data.Codec
 import Language.Value
 import Language.Value.Parser
 import Language.Value.Evaluator (evaluate)
-import Language.Value.Typing (sphereMarkerName, projectiveMarkerName)
-import Language.Code.Projective (showPoint)
+import Language.Value.Typing (surfaceTypeMarker)
+import Language.Code.Projective (showFieldValue)
 
 import Data.Aeson hiding (Value)
 import qualified Data.Map as Map
@@ -153,12 +153,9 @@ instance ToJSON Dimensions where
 instance Codec Dimensions where codec = aeson
 
 -- | The marker saying that a field is a point of Ĉ or ℙ¹, which is in an
--- environment beside it (see 'Language.Value.Typing.sphereMarkerName').
+-- environment beside it (see 'Language.Value.Typing.surfaceTypeMarker').
 pointMarkerOf :: String -> Maybe FSType -> [(String, SomeType)]
-pointMarkerOf name = \case
-  Just ExtComplexT -> [(sphereMarkerName name, SomeType BooleanType)]
-  Just ProjectiveT -> [(projectiveMarkerName name, SomeType BooleanType)]
-  _ -> []
+pointMarkerOf name mpoint = [ (surfaceTypeMarker name t, SomeType BooleanType) | Just t <- [mpoint] ]
 
 layoutEnv :: Layout -> Dynamic (Either String SomeEnvironment)
 layoutEnv = fmap (fmap ((`withEnvFromMap` SomeEnvironment) . Map.fromList)) . layoutBindings
@@ -279,10 +276,7 @@ layoutFields = \case
     Right col -> Just (toUserString ColorType col)
     Left _ -> Nothing
   TextBox _ UIVariable{..} -> named exprName $ \n -> textField n exprValue $ \case
-    Right (SomeValue EmptyEnvProxy ty v)
-      | Just pt <- exprPoint, PairType ComplexType ComplexType <- ty ->
-          Just (showPoint (pt == ProjectiveT) (toUserString ComplexType) (evaluate v EmptyContext))
-      | otherwise -> Just (toUserString ty (evaluate v EmptyContext))
+    Right (SomeValue EmptyEnvProxy ty v) -> Just (showFieldValue exprPoint ty (evaluate v EmptyContext))
     _ -> Nothing
   where
     showBool b = if b then "true" else "false"

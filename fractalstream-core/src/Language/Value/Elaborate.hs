@@ -285,6 +285,7 @@ elabOwn t (Syn (sr, _) node) = case node of
   EInfinity -> inconsistent sr
   EHomogeneous{} -> inconsistent sr
   EChart{} -> inconsistent sr
+  EAffine{} -> inconsistent sr
   EChordal{} -> inconsistent sr
   EFunRef{} -> inconsistent sr
   ELambda{} -> inconsistent sr

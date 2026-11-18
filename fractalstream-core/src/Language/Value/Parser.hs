@@ -557,6 +557,8 @@ valueAndArithGrammar funs own = mdo
     , node (ETableCell <$> (builtinWord "table_cell" *> token OpenParen *> toplevel)
                        <*> (token Comma *> toplevel <* token CloseParen))
     , node (EChart <$> (builtinWord "chart" *> token OpenParen *> toplevel <* token CloseParen))
+    , node (EAffine <$> (builtinWord "affine" *> token OpenParen *> pairItem)
+                    <*> (token Comma *> pairItem <* token CloseParen))
     , node (EChordal <$> (builtinWord "chordal" *> token OpenParen *> pairItem)
                      <*> (token Comma *> pairItem <* token CloseParen))
     , node ((\tbl ix -> ETableCellPoint tbl [ix])
@@ -684,7 +686,7 @@ valueAndArithGrammar funs own = mdo
         , "winter", "spring", "summer", "fall"
         , "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size", "filled"
         , "table_cell", "table_point", "in", "pixels", "partial"
-        , "infinity", "chart", "chordal" ]
+        , "infinity", "chart", "affine", "chordal" ]
         `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions

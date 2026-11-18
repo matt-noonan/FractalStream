@@ -78,8 +78,8 @@ import Language.Value.Parser
 import Language.Value.Typecheck
   (InternalVanishingRadius, InternalEscapeRadius,
    InternalIterations, InternalStuck, InternalIterationLimit)
-import Language.Value.Typing (strictTypeEnv, sphereMarkerName, projectiveMarkerName)
-import Language.Code.Projective (lowerValueAt, showPoint)
+import Language.Value.Typing (strictTypeEnv, surfaceTypeMarker)
+import Language.Code.Projective (lowerValueAt, showFieldValue)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv)
 import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs, viewKindName, viewPixelSizeName, viewMobiusNames)
@@ -982,12 +982,9 @@ fieldValueAt mpoint e ty = case mpoint of
   Just pt -> lowerValueAt (strictTypeEnv mempty) pt e >>= \e' -> atType e' ty
 
 -- | The marker saying that a field is a point of Ĉ or ℙ¹, which is in an
--- environment beside it (see 'Language.Value.Typing.sphereMarkerName').
+-- environment beside it (see 'Language.Value.Typing.surfaceTypeMarker').
 pointMarker :: String -> Maybe FSType -> [(String, SomeType)]
-pointMarker name = \case
-  Just ExtComplexT -> [(sphereMarkerName name, SomeType BooleanType)]
-  Just ProjectiveT -> [(projectiveMarkerName name, SomeType BooleanType)]
-  _ -> []
+pointMarker name mpoint = [ (surfaceTypeMarker name t, SomeType BooleanType) | Just t <- [mpoint] ]
 
 -- | A live value of some type, for a viewer's code or its tools to read.
 data LiveValue where
@@ -1425,9 +1422,7 @@ buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) mpoint defaultValue defau
       -- written differently from a script's: text (no quotes) and lists
       -- (no brackets). Or if the script's text is spread over several
       -- lines, or somehow doesn't read back in the field.
-      let rendered = case (mpoint, ty) of
-            (Just pt, PairType ComplexType ComplexType) -> showPoint (pt == ProjectiveT) (toUserString ComplexType) v
-            _ -> toUserString ty v
+      let rendered = showFieldValue mpoint ty v
           asWritten = case ty of
             TextType -> False
             ListType _ -> False
@@ -1435,8 +1430,12 @@ buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) mpoint defaultValue defau
       exprValueP <- case mpoint of
         Nothing -> reactiveSomeValue EmptyEnvProxy ty (if asWritten then defaultSrc else rendered)
         Just _ -> do
-          let f src = bimap (`ppFullError` src) (SomeValue EmptyEnvProxy ty)
-                        (first Left (parseParsedValue src) >>= \e ->
+          -- (a list's text is written without its brackets)
+          let bracketed src = case mpoint of
+                Just (ListT _) -> "[" ++ src ++ "]"
+                _ -> src
+              f src = bimap (`ppFullError` src) (SomeValue EmptyEnvProxy ty)
+                        (first Left (parseParsedValue (bracketed src)) >>= \e ->
                            first Right (case fieldValueAt mpoint e ty of TC r -> r))
           newVariable (if asWritten then defaultSrc else rendered) >>= newMapped (pure f)
       getDynamic (dyn exprValueP) >>= \case
@@ -2137,9 +2136,7 @@ layoutToArgs = \case
                       Nothing -> Nothing
                       Just Refl -> Just (evaluate v' EmptyContext)
                 -- (a point of the sphere is written as one: ∞, say)
-                setter = Just (\t v -> setValue' (source exprValue) $ case (exprPoint, t) of
-                  (Just pt, PairType ComplexType ComplexType) -> showPoint (pt == ProjectiveT) (toUserString ComplexType) v
-                  _ -> toUserString t v)
+                setter = Just (\t v -> setValue' (source exprValue) (showFieldValue exprPoint t v))
                 marker :: String -> SomeContext' EventArgument_
                 marker m = case someSymbolVal m of
                   SomeSymbol mp ->

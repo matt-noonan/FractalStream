@@ -728,17 +728,17 @@ x <- d|] `shouldBe` Right 3
           runSphere input `shouldSatisfy` either (needle `isInfixOf`) (const False)
 
     it "do arithmetic in Ĉ, as complex numbers do" $ do
-      "w : Ĉ := 2 + i\nw <- w^2 + 1\nx <- chart(w)" `gives` (4 :+ 4)
-      "w : Cinf := 3\nv : Ĉ := (2 w + 1) / (w - 1)\nx <- chart(v)" `gives` 3.5
-      "p := [2 : 1]\nw := (p : Ĉ) + 1\nx <- chart(w)" `gives` 3
+      "w : Ĉ := 2 + i\nw <- w^2 + 1\nx <- affine(1, w)" `gives` (4 :+ 4)
+      "w : Cinf := 3\nv : Ĉ := (2 w + 1) / (w - 1)\nx <- affine(1, v)" `gives` 3.5
+      "p := [2 : 1]\nw := (p : Ĉ) + 1\nx <- affine(1, w)" `gives` 3
 
     it "are right at ∞, within an expression" $ do
-      "p := ∞\nq : Ĉ := (p^2 - 2) / (p^2 - 1)\nx <- chart(q)" `gives` 1
-      "p := infinity\nq : Ĉ := (2 p + 1) / (3 p - 1)\nx <- chart(q)" `gives` (2 / 3)
+      "p := ∞\nq : Ĉ := (p^2 - 2) / (p^2 - 1)\nx <- affine(1, q)" `gives` 1
+      "p := infinity\nq : Ĉ := (2 p + 1) / (3 p - 1)\nx <- affine(1, q)" `gives` (2 / 3)
       -- Newton's method for z^3 - 1 fixes ∞, and 1 / 0 is ∞
       "p := ∞\nq : Ĉ := p - (p^3 - 1) / (3 p^2)\nx <- if q = ∞ and q escapes then 1 else 0" `gives` 1
       "w : Ĉ := 0\nq : Ĉ := 1 / w\nx <- if q = ∞ then 1 else 0" `gives` 1
-      "f(w) := (w^2 - 2) / (w^2 - 1)\nq : Ĉ := f(∞)\nx <- chart(q)" `gives` 1
+      "f(w) := (w^2 - 2) / (w^2 - 1)\nq : Ĉ := f(∞)\nx <- affine(1, q)" `gives` 1
 
     it "leave ∞ - ∞ undefined, equal to nothing" $
       "p := ∞\nq : Ĉ := p - p\nx <- if q = 0 or q = 1 or q = ∞ then 1 else 0" `gives` 0
@@ -746,30 +746,37 @@ x <- d|] `shouldBe` Right 3
     it "iterate to ∞ without overflowing, and stop there" $
       "w : Ĉ := 3\niterate w -> w^2 until w stops up to 50 times\nx <- if w = ∞ then 1 else 0" `gives` 1
 
+    it "are in the chart where they're nearest the origin, or a given affine chart" $ do
+      "w, k := chart((3 : Ĉ))\nx <- w + k" `gives` (1 / 3)
+      "w, k := chart((0.5 : Ĉ))\nx <- w + 10 k" `gives` 10.5
+      "w, k := chart(∞)\nx <- w + k" `gives` 0
+      "x <- affine(0, [2 : 6])" `gives` 3
+      "x <- affine(1, [2 : 6]) + affine(0, ∞)" `gives` (1 / 3)
+
     it "are compared by the chordal distance" $ do
       "x <- if [2 : 1] = [4 : 2] then 1 else 0" `gives` 1
       "x <- chordal(0, ∞)" `gives` 2
       "x <- chordal(1, i)" `gives` sqrt 2
 
     it "can be taken apart into homogeneous coordinates, and maps made from them" $ do
-      "p := [2 : 1]\n[a : b] := p\nq := [a^2 + b^2 : b^2]\nx <- chart(q)" `gives` 5
-      "p : ℙ¹ := [1 : 0]\n[a : b] := p\nq := [a^2 - 2 b^2 : a^2 - b^2]\nx <- chart(q)" `gives` 1
+      "p := [2 : 1]\n[a : b] := p\nq := [a^2 + b^2 : b^2]\nx <- affine(1, q)" `gives` 5
+      "p : ℙ¹ := [1 : 0]\n[a : b] := p\nq := [a^2 - 2 b^2 : a^2 - b^2]\nx <- affine(1, q)" `gives` 1
       "p := [6 : 2]\n[a : b] := p\nx <- a / b" `gives` 3
       "w : Ĉ := 3\n[a : b] := w\nx <- a / b" `gives` 3
 
     it "have their types' other names" $ do
-      "w : Cinf := 2\nv : ℂ\x0302 := w\nx <- chart(v)" `gives` 2
-      "p : P1 := [1 : 1]\nq : ℙ¹ := p\nr : P^1 := q\ns : ℙ := r\nx <- chart(s)" `gives` 1
+      "w : Cinf := 2\nv : ℂ\x0302 := w\nx <- affine(1, v)" `gives` 2
+      "p : P1 := [1 : 1]\nq : ℙ¹ := p\nr : P^1 := q\ns : ℙ := r\nx <- affine(1, s)" `gives` 1
 
     it "can be a function's value, and be in lists" $ do
       "function g(w):\n  g <- 1 / w\nq : Ĉ := g((0 : Ĉ))\nx <- if q = ∞ then 1 else 0" `gives` 1
       "ps := [∞, 0, 1]\nfor each p in ps:\n  if p escapes:\n    x <- x + 1" `gives` 1
       "ps := [∞, 2]\nq := find(ps, p -> p = 5, ∞)\nx <- if q = ∞ then 1 else 0" `gives` 1
-      "ps := [∞, 2]\nx <- chart(ps @ 2) + chart(find(ps, p -> p = 2, 0))" `gives` 4
+      "ps := [∞, 2]\nx <- affine(1, ps @ 2) + affine(1, find(ps, p -> p = 2, 0))" `gives` 4
 
     it "aren't numbers" $ do
       failsWith "w : Ĉ := 1\nx <- sin(w)" "`w` is a point of the Riemann sphere"
-      failsWith "w : Ĉ := 1\ny := |w|" "use `chart(w)`"
+      failsWith "w : Ĉ := 1\ny := |w|" "use `affine(1, w)`"
       failsWith "w : Ĉ := 1\nx <- w" "is a point of the Riemann sphere"
       failsWith "w : Ĉ := 1\ny := w < 2" "`w` is a point of the Riemann sphere"
       failsWith "w : Ĉ := 2\ny := partial(w, w^2)" "depends on the chart"
@@ -785,7 +792,7 @@ x <- d|] `shouldBe` Right 3
       failsWith "p := [1 : 2]\n[a : b] := p\na <- 2" "can't be changed"
 
     it "are only in ℙ¹ for now" $
-      failsWith "x <- chart([1 : 2 : 3])" "higher-dimensional projective spaces"
+      failsWith "x <- affine(1, [1 : 2 : 3])" "higher-dimensional projective spaces"
 
     it "leave lists of values with types to parentheses" $
       runWithX (Scalar RealType 0) "xs := [(1 : R), 2]\nx <- xs @ 1" `shouldSatisfy` either (const False) (const True)

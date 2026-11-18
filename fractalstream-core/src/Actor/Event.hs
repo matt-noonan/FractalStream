@@ -89,7 +89,7 @@ import Data.Codec
 import Actor.Viewer.Types
 import Actor.Viewer.Disk (HyperbolicDisplay(..), HyperbolicModel(..))
 import Actor.Viewer.Sphere (sphereViewName)
-import Language.Value.Typing (sphereMarkerName)
+import Language.Value.Typing (surfaceTypeMarker)
 --import Data.Typeable
 
 type Point = (Double, Double)
@@ -507,7 +507,7 @@ bindEventCoordinate coord (RealIn getX) (RealIn getY) env k = withEnvironment en
           pairT = PairType ComplexType ComplexType
           point = PairV pairT (R2C x + i * R2C y) (Const (Scalar ComplexType 1))
       bindOrDeclare cp pairT point env $ \e -> withEnvironment e $
-        case someSymbolVal (sphereMarkerName c) of
+        case someSymbolVal (surfaceTypeMarker c ExtComplexT) of
           SomeSymbol mp -> case lookupEnv mp BooleanType e of
             Absent pf -> recallIsAbsent pf $ do
               let e' = BindingProxy mp BooleanType e

@@ -83,7 +83,7 @@ import Actor.Event ( ToolRunner(..), defaultToolRunner, EventArgument_, ParsedTo
 import Language.Code.Hoist (Split, splitHoistable, hoistedIterations, hoistedStuck)
 import Language.Code.Typecheck (expandParsedCode)
 import Language.Code.InterpretIO (IORefTypeOfBinding)
-import Language.Value.Typing (strictTypeEnv, sphereMarkerName, markSphere)
+import Language.Value.Typing (strictTypeEnv, surfaceTypeMarker, markSphere)
 import Language.Value.Builtins ( internalIterations, internalStuck, internalIterationLimit
                                , internalEscapeRadius, internalVanishingRadius )
 import Data.IORef (newIORef, readIORef, writeIORef)
@@ -1063,7 +1063,7 @@ parseViewerScript expanded mpx ViewerContext{..} c = do
         -- itself declares, or sets: see 'onTheSphere')
         ComplexCoordinate z | onSphere -> case Map.lookup z (envToMap env) of
           Just (SomeType t) | Just Refl <- sameHaskellType t (PairType ComplexType ComplexType)
-                            , sphereMarkerName z `Map.member` envToMap env -> body env'
+                            , surfaceTypeMarker z ExtComplexT `Map.member` envToMap env -> body env'
                             | otherwise -> throwError (NoSourceRange,
                                 "A sphere viewer's variable is a point of the Riemann sphere, so `" ++ z
                                 ++ "` should be one too: declare it `" ++ z ++ " : Ĉ`.")

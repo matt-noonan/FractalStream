@@ -347,7 +347,7 @@ builtinFunctions = Set.fromList $ concat
   , Map.keys Builtins.wheels
   , [ "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert"
     , "autocolor", "nearest_autocolor", "get_autocolor"
-    , "table_size", "table_cell", "table_point", "partial", "chart", "chordal" ] ]
+    , "table_size", "table_cell", "table_point", "partial", "chart", "affine", "chordal" ] ]
 
 typeNames :: Set String
 typeNames = Set.fromList (Map.keys Builtins.types)

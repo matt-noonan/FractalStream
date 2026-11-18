@@ -22,7 +22,7 @@
 -- scale, so @a@ and @b@ can only be used in ways that don't depend on it:
 -- in a point @[F : G]@ with @F@ and @G@ homogeneous of the same degree,
 -- or in a ratio of the same degree, like @a / b@. Anything else is an
--- error (pointing to @chart(p)@).
+-- error (pointing to @affine(1, p)@).
 --
 -- Comparisons use the chordal distance, the straight-line distance
 -- between the points of the unit sphere: @p = q@ when it's less than the
@@ -32,6 +32,8 @@ module Language.Code.Projective
   ( expandProjective
   , lowerValueAt
   , showPoint
+  , showSurfaceValue
+  , showFieldValue
   ) where
 
 import FractalStream.Prelude
@@ -145,14 +147,14 @@ expandProjective tenv s
         (decls ++) <$> blockIn scope' rest
       st : rest -> (:) <$> stmtIn scope st <*> blockIn scope rest
 
-    -- a point to draw at: a point of the sphere, at its chart
+    -- a point to draw at: a point of the sphere, where it is in the plane
     drawnAt :: Scope -> Expr -> M Expr
     drawnAt scope p = do
       p1 <- lift (expandCalls funs p)
       isPoint <- if involves scope p1
         then lift ((isProjective . exprType <$> synth (typeEnv scope) p1) `catchError` \_ -> pure False)
         else pure False
-      valueAt scope Nothing (if isPoint then Syn (synRange p) (EChart p) else p)
+      valueAt scope Nothing (if isPoint then Syn (synRange p) (EAffine (Syn (synRange p) (ELit "1" (SomeHaskellType IntegerType 1))) p) else p)
 
     withItem item list scope = case Map.lookup list (scTypes scope) of
       Just (ListT t) -> declare item t scope
@@ -175,7 +177,7 @@ expandProjective tenv s
           Nothing -> synth (typeEnv scope) e1
         when (isNothing mty && hasProjective (exprType te)) $
           lift (advise (synRange e) "This is a point of the Riemann sphere, which isn't a number: \
-                                    \for the complex number it is in the plane, use `chart(...)`.")
+                                    \for the complex number it is in the plane, use `affine(1, ...)`.")
         if isProjective target
           then do
             p <- materialize te
@@ -196,9 +198,23 @@ expandProjective tenv s
     -- of a list of points, and the like)
     structural :: FSType -> TExpr -> M Expr
     structural target (Syn (sr, own) node) = case node of
+          -- (the chart where the point is nearest the origin)
           EChart p -> do
             p' <- pointOf p
-            withPoint sr p' (\a b -> Syn sr (EBin OpDiv a b))
+            withPoint sr p' $ \a b ->
+              let absE x = Syn sr (EUn OpAbs x)
+              in Syn sr (EITE (Syn sr (EBin OpLe (absE a) (absE b)))
+                              (Syn sr (EPair (Syn sr (EBin OpDiv a b)) (intE sr 1)))
+                              (Syn sr (EPair (Syn sr (EBin OpDiv b a)) (intE sr 0))))
+          EAffine k p -> do
+            k' <- lowerAs IntegerT k
+            p' <- pointOf p
+            withPoint sr p' $ \a b -> case constantInteger k of
+              -- (a chart given by its number is picked here)
+              Just 0 -> Syn sr (EBin OpDiv b a)
+              Just _ -> Syn sr (EBin OpDiv a b)
+              Nothing -> Syn sr (EITE (Syn sr (EBin OpApproxEq k' (intE sr 0)))
+                                      (Syn sr (EBin OpDiv b a)) (Syn sr (EBin OpDiv a b)))
           EChordal p q -> do
             p' <- pointOf p
             q' <- pointOf q
@@ -434,6 +450,25 @@ showPoint isProjectiveLine showC (a, b)
   | b == 0 && a /= 0 = "∞"
   | otherwise = showC (a / b)
 
+-- | A value, with points of the sphere in it written as they are in a
+-- script (see 'showPoint'), given its type as the script has it: the rest
+-- as 'toUserString' writes it.
+showSurfaceValue :: FSType -> TypeProxy t -> HaskellType t -> String
+showSurfaceValue surf ty v = case (surf, ty) of
+  (_, PairType ComplexType ComplexType)
+    | isProjective surf -> showPoint (surf == ProjectiveT) (toUserString ComplexType) v
+  (Pair s1 s2, PairType t1 t2) -> "(" ++ showSurfaceValue s1 t1 (fst v) ++ ", " ++ showSurfaceValue s2 t2 (snd v) ++ ")"
+  (ListT s, ListType t) -> "[" ++ intercalate ", " (map (showSurfaceValue s t) v) ++ "]"
+  _ -> toUserString ty v
+
+-- | A field's value as its text box shows it (a list without its
+-- brackets, as 'toUserString' writes one).
+showFieldValue :: Maybe FSType -> TypeProxy t -> HaskellType t -> String
+showFieldValue msurf ty v = case msurf of
+  Just surf@(ListT _) -> let s = showSurfaceValue surf ty v in reverse (drop 1 (reverse (drop 1 s)))
+  Just surf -> showSurfaceValue surf ty v
+  Nothing -> toUserString ty v
+
 -- | What the homogeneous form of an expression is put together from: the
 -- value is @num / den@ times each point's second coordinate to the given
 -- power (by the name of the point's variable).
@@ -610,7 +645,7 @@ notHomogeneous scope points =
   in names ++ " are homogeneous coordinates, which are only defined up to scale, so they can \
      \only be used in ways that don't depend on it: in a point `[F : G]` with both parts of the \
      \same degree, or in a ratio of the same degree, like `a / b`. For the complex number a \
-     \point is in the plane, use `chart(p)`."
+     \point is in the plane, use `affine(1, p)`."
 
 -- | The value of an integer expression made of integer constants alone.
 constantInteger :: Syn ExprF a -> Maybe Integer
@@ -635,6 +670,7 @@ mentionsSphereE (Syn _ node) = case node of
   EInfinity -> True
   EHomogeneous{} -> True
   EChart{} -> True
+  EAffine{} -> True
   EChordal{} -> True
   ECast _ t | hasProjective t -> True
   _ -> any mentionsSphereE node

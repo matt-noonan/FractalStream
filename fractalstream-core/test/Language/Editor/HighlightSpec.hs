@@ -161,7 +161,7 @@ spec = describe "highlighting scripts" $ do
     classOf src "w" 1 `shouldBe` Just Variable
 
   it "knows the points of the Riemann sphere: ∞, homogeneous coordinates, chart" $ do
-    let src = "@viewer \"V\"\nw : Ĉ := infinity\n[a : b] := w\nq := [a^2 : b^2]\nx := chart(q) + chordal(w, ∞)\n"
+    let src = "@viewer \"V\"\nw : Ĉ := infinity\n[a : b] := w\nq := [a^2 : b^2]\nx := affine(1, q) + chordal(w, ∞)\nc := chart(w)\n"
     classOf src "Ĉ" 0 `shouldBe` Just TypeName
     classOf src "infinity" 0 `shouldBe` Just BuiltinValue
     classOf src "∞" 0 `shouldBe` Just BuiltinValue
