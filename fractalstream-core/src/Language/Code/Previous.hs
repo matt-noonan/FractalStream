@@ -173,6 +173,7 @@ mapStmtExprs f (Stmt sr node) = Stmt sr <$> case node of
   SSet n e -> SSet n <$> f e
   SDeclTuple p e -> SDeclTuple p <$> f e
   SSetTuple p e -> SSetTuple p <$> f e
+  SDeclHomogeneous ns e -> SDeclHomogeneous ns <$> f e
   SFun g params e -> SFun g params <$> f e
   SIf c yes no -> SIf <$> f c <*> go yes <*> go no
   SLoop kind c lim body -> SLoop kind <$> f c <*> traverse f lim <*> go body

@@ -351,6 +351,8 @@ text use the stroke color; filled shapes use the fill color.
 | list | `List of T` | `[1, 2, 3]`, `[]` |
 | pair | `T x U`, `T × U` | `(1.0, 2.0)` |
 | table | `Table N of T` (T one of Z, R, C, Boolean, Color, or a tuple of them: `Table 2 of C x Z`) | none: declared in `@config`, filled by tools; dims 1-2 in the plane, more are layers |
+| Riemann sphere | `Ĉ`, `ℂ̂`, `Cinf` | `∞`/`infinity`, any complex number |
+| projective line | `ℙ¹`, `ℙ`, `P1`, `P^1` | `[a : b]` (homogeneous coordinates) |
 
 Numbers widen automatically Z → R → C wherever needed (`k := 0` then
 `k <- 0.5` makes `k` real). Nothing narrows automatically: use `round`,
@@ -455,6 +457,27 @@ Functions:
   one-variable user function `f`, `f'(z)` and `f''(z)`
 
 Constants: `pi`/`π`, `e`/`𝑒`, `i`/`𝑖`, `true`, `false`.
+
+Points of the Riemann sphere (∞ included; use these instead of a `(z, zi)`
+flag or two charts by hand):
+- `Ĉ`: complex numbers widen to it; `+ - * /` and literal whole-number
+  powers (`w^2`, `w^(-1)`). Each expression is put in homogeneous form as a
+  whole, so a rational map written as usual is right at ∞
+  (`(w^2 - 2)/(w^2 - 1)` at `w = ∞` is 1; `w - (w^3-1)/(3 w^2)` fixes ∞);
+  across statements each variable is just a point (`u := w^2 - c` then
+  `u / (w^2 - 1)` is ∞/∞ at ∞, undefined). ∞-∞, 0·∞, 0/0: equal to nothing.
+- `ℙ¹`: `[a : b]` literals, no arithmetic. `[a : b] := p` takes a point
+  (ℙ¹ or Ĉ) apart; `a`, `b` may only appear in same-degree homogeneous parts
+  of a new point (`p <- [a^2 - c b^2 : a^2 - b^2]`) or same-degree ratios
+  (`a / b`); `a` alone, `a + 1`, `[a^2 : b]` are errors. `(p : Ĉ)` /
+  `(w : ℙ¹)` convert.
+- On both: `chart(p)` (the complex number a/b), `p = q` / `p ≠ q` (chordal
+  distance < vanishing radius), `chordal(p, q)` (unit sphere: `chordal(0, ∞)`
+  is 2), `p escapes` (`|a| > R|b|`), `p vanishes`, `until p stops`. Not
+  defined (errors pointing to `chart`): `|p|`, `re`, `exp`, `<`, diff/partial.
+- Each assignment rescales the point (larger coordinate 1): no overflow.
+  `[a : b : c]` (ℙ²+) is reserved. A list item with a type needs parentheses:
+  `[(k : R), 2]`.
 
 Colors:
 - names: `red green blue black white grey gray orange yellow purple violet pink`

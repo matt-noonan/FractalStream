@@ -281,6 +281,11 @@ elabOwn t (Syn (sr, _) node) = case node of
 
   EAdvice{} -> inconsistent sr
   EZero -> inconsistent sr
+  -- (points of the sphere are pairs by now: see "Language.Code.Projective")
+  EInfinity -> inconsistent sr
+  EHomogeneous{} -> inconsistent sr
+  EChart{} -> inconsistent sr
+  EChordal{} -> inconsistent sr
   EFunRef{} -> inconsistent sr
   ELambda{} -> inconsistent sr
 

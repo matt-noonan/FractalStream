@@ -104,6 +104,7 @@ wholeCall defs = \case
   SSet n e | Just (f, sr, args) <- call e -> Just (SSet n, f, sr, args)
   SDeclTuple p e | Just (f, sr, args) <- call e -> Just (SDeclTuple p, f, sr, args)
   SSetTuple p e | Just (f, sr, args) <- call e -> Just (SSetTuple p, f, sr, args)
+  SDeclHomogeneous ns e | Just (f, sr, args) <- call e -> Just (SDeclHomogeneous ns, f, sr, args)
   _ -> Nothing
   where
     call = \case
@@ -130,6 +131,7 @@ declare :: Stmt -> Ctx -> Ctx
 declare (Stmt _ node) = case node of
   SDecl n _ _ -> seeing [n]
   SDeclTuple p _ -> seeing (patternNames p)
+  SDeclHomogeneous ns _ -> seeing ns
   _ -> id
 
 -- | A call to a function with a body anywhere else than as the whole
@@ -157,6 +159,7 @@ ownExprs (Stmt _ node) = case node of
   SSet _ e -> [e]
   SDeclTuple _ e -> [e]
   SSetTuple _ e -> [e]
+  SDeclHomogeneous _ e -> [e]
   SFun _ _ e -> [e]
   SIf c _ _ -> [c]
   SLoop _ c lim _ -> c : maybeToList lim

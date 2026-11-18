@@ -93,6 +93,29 @@ runWithRealX x input =
              . (\c -> simulate noDraw c >> eval (Var (Proxy @"x") RealType bindingEvidence)))
      $ parseCode env noCommonDefs input
 
+-- | Like 'runWithX' for a complex @x@, with an escape radius (of 1000) and
+-- a vanishing radius (of 0.0001) in scope, for points of the sphere.
+runSphere :: String -> Either String (Complex Double)
+runSphere input =
+  let env = BindingProxy (Proxy @"x") ComplexType
+          $ BindingProxy (Proxy @InternalEscapeRadius) RealType
+          $ BindingProxy (Proxy @InternalVanishingRadius) RealType
+          $ BindingProxy (Proxy @InternalIterations) IntegerType
+          $ BindingProxy (Proxy @InternalIterationLimit) IntegerType
+          $ BindingProxy (Proxy @InternalStuck) BooleanType
+          $ EmptyEnvProxy
+      ctx = Bind (Proxy @"x") ComplexType 0
+          $ Bind (Proxy @InternalEscapeRadius) RealType 1000
+          $ Bind (Proxy @InternalVanishingRadius) RealType 0.0001
+          $ Bind (Proxy @InternalIterations) IntegerType 0
+          $ Bind (Proxy @InternalIterationLimit) IntegerType 100
+          $ Bind (Proxy @InternalStuck) BooleanType False
+          $ EmptyContext
+  in first (`ppFullError` input)
+     $ fmap ((`evalState` (ctx, ()))
+             . (\c -> simulate noDraw c >> eval (Var (Proxy @"x") ComplexType bindingEvidence)))
+     $ parseCode env noCommonDefs input
+
 noDraw :: DrawHandler (HaskellTypeM ())
 noDraw = DrawHandler (const $ pure ())
 
@@ -697,6 +720,75 @@ x <- d|] `shouldBe` Right 3
     it "are functions, not values, anywhere else" $ do
       failsWith "sq(a) := a a\ny := sq\nx <- 1" "`sq` is a function"
       failsWith "f(a) := a + 1\nsq(a) := a a\nx <- f(sq)" "a function, so it can only be given to a function or a code block"
+
+  describe "points of the Riemann sphere" $ do
+
+    let gives input v = runSphere input `shouldSatisfy` either (const False) (\z -> magnitude (z - v) < 1.0e-9)
+        failsWith input needle =
+          runSphere input `shouldSatisfy` either (needle `isInfixOf`) (const False)
+
+    it "do arithmetic in Ĉ, as complex numbers do" $ do
+      "w : Ĉ := 2 + i\nw <- w^2 + 1\nx <- chart(w)" `gives` (4 :+ 4)
+      "w : Cinf := 3\nv : Ĉ := (2 w + 1) / (w - 1)\nx <- chart(v)" `gives` 3.5
+      "p := [2 : 1]\nw := (p : Ĉ) + 1\nx <- chart(w)" `gives` 3
+
+    it "are right at ∞, within an expression" $ do
+      "p := ∞\nq : Ĉ := (p^2 - 2) / (p^2 - 1)\nx <- chart(q)" `gives` 1
+      "p := infinity\nq : Ĉ := (2 p + 1) / (3 p - 1)\nx <- chart(q)" `gives` (2 / 3)
+      -- Newton's method for z^3 - 1 fixes ∞, and 1 / 0 is ∞
+      "p := ∞\nq : Ĉ := p - (p^3 - 1) / (3 p^2)\nx <- if q = ∞ and q escapes then 1 else 0" `gives` 1
+      "w : Ĉ := 0\nq : Ĉ := 1 / w\nx <- if q = ∞ then 1 else 0" `gives` 1
+      "f(w) := (w^2 - 2) / (w^2 - 1)\nq : Ĉ := f(∞)\nx <- chart(q)" `gives` 1
+
+    it "leave ∞ - ∞ undefined, equal to nothing" $
+      "p := ∞\nq : Ĉ := p - p\nx <- if q = 0 or q = 1 or q = ∞ then 1 else 0" `gives` 0
+
+    it "iterate to ∞ without overflowing, and stop there" $
+      "w : Ĉ := 3\niterate w -> w^2 until w stops up to 50 times\nx <- if w = ∞ then 1 else 0" `gives` 1
+
+    it "are compared by the chordal distance" $ do
+      "x <- if [2 : 1] = [4 : 2] then 1 else 0" `gives` 1
+      "x <- chordal(0, ∞)" `gives` 2
+      "x <- chordal(1, i)" `gives` sqrt 2
+
+    it "can be taken apart into homogeneous coordinates, and maps made from them" $ do
+      "p := [2 : 1]\n[a : b] := p\nq := [a^2 + b^2 : b^2]\nx <- chart(q)" `gives` 5
+      "p : ℙ¹ := [1 : 0]\n[a : b] := p\nq := [a^2 - 2 b^2 : a^2 - b^2]\nx <- chart(q)" `gives` 1
+      "p := [6 : 2]\n[a : b] := p\nx <- a / b" `gives` 3
+      "w : Ĉ := 3\n[a : b] := w\nx <- a / b" `gives` 3
+
+    it "have their types' other names" $ do
+      "w : Cinf := 2\nv : ℂ\x0302 := w\nx <- chart(v)" `gives` 2
+      "p : P1 := [1 : 1]\nq : ℙ¹ := p\nr : P^1 := q\ns : ℙ := r\nx <- chart(s)" `gives` 1
+
+    it "can be a function's value, and be in lists" $ do
+      "function g(w):\n  g <- 1 / w\nq : Ĉ := g((0 : Ĉ))\nx <- if q = ∞ then 1 else 0" `gives` 1
+      "ps := [∞, 0, 1]\nfor each p in ps:\n  if p escapes:\n    x <- x + 1" `gives` 1
+      "ps := [∞, 2]\nq := find(ps, p -> p = 5, ∞)\nx <- if q = ∞ then 1 else 0" `gives` 1
+      "ps := [∞, 2]\nx <- chart(ps @ 2) + chart(find(ps, p -> p = 2, 0))" `gives` 4
+
+    it "aren't numbers" $ do
+      failsWith "w : Ĉ := 1\nx <- sin(w)" "`w` is a point of the Riemann sphere"
+      failsWith "w : Ĉ := 1\ny := |w|" "use `chart(w)`"
+      failsWith "w : Ĉ := 1\nx <- w" "is a point of the Riemann sphere"
+      failsWith "w : Ĉ := 1\ny := w < 2" "`w` is a point of the Riemann sphere"
+      failsWith "w : Ĉ := 2\ny := partial(w, w^2)" "depends on the chart"
+      failsWith "w : Ĉ := 2\nn := 2\ny : Ĉ := w^n" "a whole number for its exponent"
+
+    it "of ℙ¹ have no arithmetic" $
+      failsWith "p := [1 : 2]\nq := p + 1" "A point of ℙ¹ has no arithmetic"
+
+    it "have homogeneous coordinates only up to scale" $ do
+      failsWith "p := [1 : 2]\n[a : b] := p\ny := a" "only defined up to scale"
+      failsWith "p := [1 : 2]\n[a : b] := p\ny := a + 1" "only defined up to scale"
+      failsWith "p := [1 : 2]\n[a : b] := p\nq := [a^2 : b]" "of the same degree"
+      failsWith "p := [1 : 2]\n[a : b] := p\na <- 2" "can't be changed"
+
+    it "are only in ℙ¹ for now" $
+      failsWith "x <- chart([1 : 2 : 3])" "higher-dimensional projective spaces"
+
+    it "leave lists of values with types to parentheses" $
+      runWithX (Scalar RealType 0) "xs := [(1 : R), 2]\nx <- xs @ 1" `shouldSatisfy` either (const False) (const True)
 
   describe "when a built-in name is used for the script's own" $ do
 

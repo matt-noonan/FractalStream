@@ -170,6 +170,7 @@ stanzaFunctionScopes = go Set.empty
             declared' = declared <> Set.fromList (case sNode of
               SDecl n _ _ -> [n]
               SDeclTuple p _ -> patternNames p
+              SDeclHomogeneous ns _ -> ns
               _ -> [])
         in go declared s : here ++ block declared' rest
 
@@ -269,6 +270,10 @@ codeStatementsGrammar CommonDefs{..} = mdo
     , node
       (SDeclTuple <$> tupleTargets
                   <*> (token ColonEquals *> value <* nl)) <?> "variable initialization"
+    -- `[a : b] := p`: homogeneous coordinates of a point of ℙ¹ or Ĉ
+    , node
+      (SDeclHomogeneous <$> (token OpenBracket *> ((:) <$> ident <*> some (token Colon *> ident)) <* token CloseBracket)
+                        <*> (token ColonEquals *> value <* nl)) <?> "homogeneous coordinates"
     , node
       (SProc <$> (lit "define" *> ident)
              <*> (fromMaybe [] <$> optional argList)

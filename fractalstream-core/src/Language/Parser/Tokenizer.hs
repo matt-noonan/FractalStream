@@ -98,6 +98,8 @@ data Token
     -- ^ @∂@, as in @∂f/∂z@ (@partial(z, f)@)
   | DiffSign
     -- ^ @ⅆ@ (double-struck italic small d: Unicode's differential d), as in @ⅆf/ⅆz@ (@diff(z, f)@)
+  | Infinity
+    -- ^ @∞@, the point at infinity of Ĉ
   deriving (Eq, Ord, Show)
 
 instance IsString Token where fromString = Identifier
@@ -236,7 +238,7 @@ opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
   , ("⟼", RightArrow), ("↦", RightArrow)
   , ("⟶", RightArrow), ("⟵", LeftArrow)
   , ("@", At), ("@@", AtAt)
-  , ("∂", PartialSign), ("ⅆ", DiffSign)
+  , ("∂", PartialSign), ("ⅆ", DiffSign), ("∞", Infinity)
   ]
 
 longestMatchingOperator :: SRString -> Maybe (SRToken, SRString)

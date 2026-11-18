@@ -61,6 +61,9 @@ data StmtF
   | SDeclTuple Pattern Expr
     -- ^ @x, y := e@ (or @(x, y) := e@): declare each variable, with the
     -- matching part of @e@'s value (see "Language.Code.Tuples")
+  | SDeclHomogeneous [String] Expr
+    -- ^ @[a : b] := p@: declare @a@ and @b@ as homogeneous coordinates of
+    -- the point @p@ of ℙ¹ or Ĉ (see "Language.Code.Projective")
   | SSetTuple Pattern Expr
     -- ^ @x, y <- e@ (or @(x, y) <- e@): set each variable at once to the
     -- matching part of @e@'s value
@@ -118,6 +121,7 @@ stmtNames (Stmt _ node) = case node of
   SSet n e -> Set.insert n (exprNames e)
   SDeclTuple p e -> Set.fromList (patternNames p) <> exprNames e
   SSetTuple p e -> Set.fromList (patternNames p) <> exprNames e
+  SDeclHomogeneous ns e -> Set.fromList ns <> exprNames e
   SFun f _ e -> Set.insert f (exprNames e)
   SFunction f _ body -> Set.insert f (stmtNames body)
   SIf c yes no -> exprNames c <> stmtNames yes <> stmtNames no
@@ -149,6 +153,7 @@ definedNames :: Stmt -> [String]
 definedNames (Stmt _ node) = case node of
   SDecl n _ _ -> [n]
   SDeclTuple p _ -> patternNames p
+  SDeclHomogeneous ns _ -> ns
   SFun f _ _ -> [f]
   SFunction f _ _ -> [f]
   SProc name _ _ -> [name]

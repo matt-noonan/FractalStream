@@ -56,6 +56,7 @@ spec = describe "normalizing scripts" $ do
     normalize "p : R × C x Z := (0, 0, 1)" `shouldBe` "p : ℝ × ℂ × ℤ ≔ (0, 0, 1)"
     normalize "q <- (k : Real)" `shouldBe` "q ⟵ (k : ℝ)"
     normalize "z <- C x R" `shouldBe` "z ⟵ C x R"
+    normalize "w : Cinf := 0\np : P1 := [1 : 0]" `shouldBe` "w : Ĉ ≔ 0\np : ℙ¹ ≔ [1 : 0]"
 
   it "leaves stanza headers, comments, and strings alone" $
     normalize "@viewer \"a -> b\" var=C\nwrite \"x <- 1\" at z  # z <- z^2"

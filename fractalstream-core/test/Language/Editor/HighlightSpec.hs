@@ -160,6 +160,16 @@ spec = describe "highlighting scripts" $ do
     classOf src "v" 1 `shouldBe` Just Variable
     classOf src "w" 1 `shouldBe` Just Variable
 
+  it "knows the points of the Riemann sphere: ∞, homogeneous coordinates, chart" $ do
+    let src = "@viewer \"V\"\nw : Ĉ := infinity\n[a : b] := w\nq := [a^2 : b^2]\nx := chart(q) + chordal(w, ∞)\n"
+    classOf src "Ĉ" 0 `shouldBe` Just TypeName
+    classOf src "infinity" 0 `shouldBe` Just BuiltinValue
+    classOf src "∞" 0 `shouldBe` Just BuiltinValue
+    classOf src "a" 1 `shouldBe` Just Variable
+    classOf src "b" 1 `shouldBe` Just Variable
+    classOf src "chart" 0 `shouldBe` Just BuiltinFunction
+    classOf src "chordal" 0 `shouldBe` Just BuiltinFunction
+
   it "doesn't take a block's colon for a declaration" $ do
     let src = "@viewer \"V\"\ncoloring:\n  period <- 1\nrepeat:\n  pass\nuntil true\n"
     classOf src "coloring" 0 `shouldBe` Just Keyword

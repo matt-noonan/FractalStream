@@ -113,6 +113,7 @@ library
                        Language.Code.FunctionBlocks
                        Language.Code.FunctionArgs
                        Language.Code.Derivatives
+                       Language.Code.Projective
                        Language.Code.Hoist
                        Language.Code.Previous
                        Language.Code.Stops

@@ -143,9 +143,14 @@ typeGrammar = mdo
     , (token OpenParen *> toplevel <* token CloseParen)
     ]
 
-  scalarType <- rule $ tokenMatch $ \case
-    Identifier t -> Map.lookup t types
-    _ -> Nothing
+  scalarType <- ruleChoice
+    [ tokenMatch $ \case
+        Identifier t -> Map.lookup t types
+        _ -> Nothing
+    -- `ℙ¹`, or `P^1` (the tokenizer makes a superscript a power)
+    , ProjectiveT <$ (tokenMatch (\case { Identifier t | t `elem` ["ℙ", "P"] -> Just (); _ -> Nothing })
+                      *> token Caret *> token (NumberI 1))
+    ]
 
   pure toplevel
 
@@ -241,10 +246,16 @@ valueAndArithGrammar funs own = mdo
 
   list <- rule (node (EList <$> (token OpenBracket *> list' <* token CloseBracket)))
 
+  -- (an item with a type, `x : R`, needs parentheses here, `[(x : R)]`,
+  -- since `[z : w]` is a point of ℙ¹)
   list' <- ruleChoice
-    [ (:) <$> argument <*> many (token Comma *> argument)
+    [ (:) <$> argumentIte <*> many (token Comma *> argumentIte)
     , pure []
     ]
+
+  -- `[a : b]`: a point of ℙ¹, by its homogeneous coordinates (more of
+  -- them are for ℙⁿ, which typing reports as not there yet)
+  homogeneous <- rule (node (EHomogeneous <$> (token OpenBracket *> ((:) <$> arith <*> some (token Colon *> arith)) <* token CloseBracket)))
 
   -- A pair's first part can't be an unparenthesized pair or if/then/else,
   -- so that tuples nest to the right only (`a, b, c` is `a, (b, c)`), and
@@ -455,6 +466,8 @@ valueAndArithGrammar funs own = mdo
         <$> tokenMatch (\case { NumberF n -> Just n; _ -> Nothing }))
     , node (EUn OpAbs <$> (token Bar *> arith <* token Bar))
     , node (EUn OpPrevious <$> (token PreviousKeyword *> var))
+    , node (EInfinity <$ (void (token Infinity) <|> builtinWord "infinity"))
+    , homogeneous
 
     , textConcat
     , var
@@ -543,6 +556,9 @@ valueAndArithGrammar funs own = mdo
              (builtinWord "table_size" *> token OpenParen *> toplevel <* token CloseParen))
     , node (ETableCell <$> (builtinWord "table_cell" *> token OpenParen *> toplevel)
                        <*> (token Comma *> toplevel <* token CloseParen))
+    , node (EChart <$> (builtinWord "chart" *> token OpenParen *> toplevel <* token CloseParen))
+    , node (EChordal <$> (builtinWord "chordal" *> token OpenParen *> pairItem)
+                     <*> (token Comma *> pairItem <* token CloseParen))
     , node ((\tbl ix -> ETableCellPoint tbl [ix])
              <$> (builtinWord "table_point" *> token OpenParen *> toplevel)
              <*> (token Comma *> toplevel <* token CloseParen))
@@ -667,7 +683,8 @@ valueAndArithGrammar funs own = mdo
         , "ice", "fire", "rose", "wheat", "forest", "ocean"
         , "winter", "spring", "summer", "fall"
         , "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size", "filled"
-        , "table_cell", "table_point", "in", "pixels", "partial" ]
+        , "table_cell", "table_point", "in", "pixels", "partial"
+        , "infinity", "chart", "chordal" ]
         `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions

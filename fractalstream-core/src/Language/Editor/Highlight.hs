@@ -225,12 +225,17 @@ codeDefs toks = case toks of
   Identifier "function" : Identifier f : OpenParen : rest -> (f, Function) : params rest
   Identifier "define" : Identifier f : _ -> [(f, CodeBlock)]
   Identifier "on" : rest -> handlerPoints rest
+  -- homogeneous coordinates, `[a : b] := p`
+  OpenBracket : rest | (lhs, CloseBracket : ColonEquals : _) <- break (== CloseBracket) rest
+                     , all (\t -> t == Colon || isIdentifier t) lhs ->
+        [ (n, Variable) | Identifier n <- lhs ] ++ everywhere toks
   -- a tuple declaration, `x, y := ...` or `(x, y) := ...`
   _ | (lhs@(_ : _), ColonEquals : _) <- break (== ColonEquals) toks
     , Comma `elem` lhs, all tupleToken lhs ->
         [ (n, Variable) | Identifier n <- lhs ] ++ everywhere toks
   _ -> everywhere toks
   where
+    isIdentifier = \case { Identifier _ -> True; _ -> False }
     tupleToken = \case
       Identifier _ -> True
       t -> t `elem` [Comma, OpenParen, CloseParen]
@@ -298,7 +303,7 @@ lineSpans s defs l
       | n `Set.member` builtinFunctions = BuiltinFunction
       | n `Map.member` Builtins.colors = ColorName
       | n `Set.member` keywords = Keyword
-      | n == "color" = BuiltinValue
+      | n == "color" || n == "infinity" = BuiltinValue
       | n `Set.member` unicodeTypes = TypeName
       | otherwise = Undefined
 
@@ -317,7 +322,7 @@ tokenClass = \case
   ScientificNotation _ -> Just NumberLiteral
   Quoted _ -> Just StringLiteral
   t | t `elem` [If, Then, Else, Or_, And_, Not_, Escapes, Vanishes, Stops, PreviousKeyword, TimesKeyword] -> Just Keyword
-    | t `elem` [Euler, Pi, I, True_, False_, Iterations, Stuck] -> Just BuiltinValue
+    | t `elem` [Euler, Pi, I, True_, False_, Iterations, Stuck, Infinity] -> Just BuiltinValue
     | t `elem` [TextKeyword, AppendKeyword, PrependKeyword, JoinKeyword, RemoveKeyword, FindKeyword
                , TransformKeyword, RangeKeyword, LengthKeyword, DiffKeyword
                , PartialSign, DiffSign ] -> Just BuiltinFunction
@@ -342,7 +347,7 @@ builtinFunctions = Set.fromList $ concat
   , Map.keys Builtins.wheels
   , [ "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert"
     , "autocolor", "nearest_autocolor", "get_autocolor"
-    , "table_size", "table_cell", "table_point" ] ]
+    , "table_size", "table_cell", "table_point", "partial", "chart", "chordal" ] ]
 
 typeNames :: Set String
 typeNames = Set.fromList (Map.keys Builtins.types)

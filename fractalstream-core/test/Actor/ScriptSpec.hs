@@ -277,6 +277,12 @@ size : Z as "Size:" choice {"Small", "Medium", "Large"} := 0
 size : R as "Size:" choice {"Small", "Medium", "Large"} := 0.0
 |] `shouldFailWith` "can only be used with a \8484-typed declaration"
 
+    it "rejects a field holding a point of the Riemann sphere, for now" $
+      [r|
+@config "Configuration"
+c : Cinf := 0
+|] `shouldFailWith` "A field can't hold a point of the Riemann sphere"
+
     it "accepts a tool stanza with multiple event blocks" $
       shouldParseTo [r|
 @tool "Trace" for="Mandelbrot Set" shortcut="T" drawLayer="5" refreshOnActivate="false" refreshCanUpdate="true"

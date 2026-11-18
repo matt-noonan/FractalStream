@@ -54,6 +54,15 @@ data FSType
   | TableT Natural FSType
     -- ^ A table of the given number of dimensions.
   | TextT
+  | ProjectiveT
+    -- ^ ℙ¹, the projective line: a point @[a : b]@, its homogeneous
+    -- coordinates only defined up to scale. Only the typing pass knows it:
+    -- it's made into a pair of complex numbers before elaboration (see
+    -- "Language.Code.Projective"), so it has no 'TypeProxy' of its own.
+  | ExtComplexT
+    -- ^ Ĉ, the extended complex numbers (the Riemann sphere): ℙ¹ with
+    -- arithmetic, and @∞@. Like 'ProjectiveT', only the typing pass knows
+    -- it.
   deriving (Eq, Ord, Show)
 
 -- | Constant values for scalar types
@@ -215,6 +224,10 @@ withType t k = case t of
   TableT n lt -> withType lt $ \ty -> TN.withSomeSNat n $ \sn -> withKnownNat sn (k (TableType sn ty))
   RationalT  -> k RationalType
   Pair t1 t2 -> withType t1 $ \ty1 -> withType t2 $ \ty2 -> k (PairType ty1 ty2)
+  -- (a point of ℙ¹ or Ĉ is held as its homogeneous coordinates: see
+  -- 'ProjectiveT')
+  ProjectiveT -> k (PairType ComplexType ComplexType)
+  ExtComplexT -> k (PairType ComplexType ComplexType)
 
 -- | Forget the type-level index of a 'TypeProxy'; inverse of 'withType'.
 typeToFS :: TypeProxy t -> FSType

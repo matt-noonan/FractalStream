@@ -99,6 +99,7 @@ collect scope funs (Stmt sr node) = (Stmt sr .) <$> case node of
   SRun{} -> pure (const node)
   SDeclTuple{} -> pure (const node)
   SSetTuple{} -> pure (const node)
+  SDeclHomogeneous{} -> pure (const node)
   SIterate PTuple{} _ _ _ _ -> pure (const node)
   SDraw{} -> pure (const node)
   SSetTable{} -> pure (const node)
@@ -135,6 +136,10 @@ collectBlock scope funs = \case
 
   s@(Stmt _ (SDecl n (Just t) _)) : rest ->
     fmap (s :) <$> collectBlock (Map.insert n (Known t) scope) funs rest
+
+  -- (homogeneous coordinates are complex numbers)
+  s@(Stmt _ (SDeclHomogeneous ns _)) : rest ->
+    fmap (s :) <$> collectBlock (foldr (\n -> Map.insert n (Known ComplexT)) scope ns) funs rest
 
   s@(Stmt _ (SFun f params body)) : rest ->
     fmap (s :) <$> collectBlock scope (Map.insert f (FunDef params body funs) funs) rest

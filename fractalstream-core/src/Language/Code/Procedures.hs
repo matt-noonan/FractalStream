@@ -87,6 +87,7 @@ renameStmt m (Stmt sr node) = Stmt sr $ case node of
   SSet n e -> SSet (var n) (expr e)
   SDeclTuple p e -> SDeclTuple (pat p) (expr e)
   SSetTuple p e -> SSetTuple (pat p) (expr e)
+  SDeclHomogeneous ns e -> SDeclHomogeneous (map var ns) (expr e)
   SFun f params e -> SFun f params (rename (Map.withoutKeys m (Set.fromList params)) e)
   SIf c yes no -> SIf (expr c) (go yes) (go no)
   SLoop kind c lim body -> SLoop kind (expr c) (expr <$> lim) (go body)
