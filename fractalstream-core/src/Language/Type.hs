@@ -63,7 +63,7 @@ data FSType
     -- ^ Ĉ, the extended complex numbers (the Riemann sphere): ℙ¹ with
     -- arithmetic, and @∞@. Like 'ProjectiveT', only the typing pass knows
     -- it.
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Read)
 
 -- | Constant values for scalar types
 type family HaskellType (t :: FSType) :: Type where

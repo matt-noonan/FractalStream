@@ -202,9 +202,12 @@ execCommand st = \case
       SphereView -> pure (Left "the globe is always in the middle of a sphere viewer's window")
       _ -> setValue' (vCenter viewer) xy >> pure (Right st)
 
-  SetViewerView kind -> withCurrentViewer st $ \viewer -> case vCoordinate viewer of
-    RealCoordinates _ _ -> pure (Left "only a complex viewer (one with `var=`) can be shown on the sphere")
-    ComplexCoordinate _ -> switchView viewer kind >> pure (Right st)
+  -- (the disk or the half-plane: only a viewer of the hyperbolic plane
+  -- can change how it's shown)
+  SetViewerView kind -> withCurrentViewer st $ \viewer -> getDynamic (vView viewer) >>= \current ->
+    if current `elem` [DiskView, HalfPlaneView]
+      then switchView viewer kind >> pure (Right st)
+      else pure (Left "only a viewer of the hyperbolic plane (`view=disk` or `view=halfplane`) can change its view")
 
   SetViewerPixelSize pv -> withCurrentViewer st $ \viewer ->
     withResolved (resolveReal pv) $ \px -> do

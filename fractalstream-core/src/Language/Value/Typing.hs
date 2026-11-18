@@ -32,12 +32,17 @@ module Language.Value.Typing
   , joinType
   , anType
   , isProjective
+  , surfaceTypeMarker
+  , surfaceTypeEnvOf
+  , markSphere
   ) where
 
 import FractalStream.Prelude
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.List (isInfixOf, stripPrefix, findIndex, tails)
+import Text.Read (readMaybe)
 
 import Language.Type
 import Language.Environment
@@ -62,6 +67,39 @@ data TypeEnv = TypeEnv
 
 typeEnvOf :: EnvironmentProxy env -> TypeEnv
 typeEnvOf = strictTypeEnv . Map.map (\(SomeType t) -> typeToFS t) . envToMap
+
+-- | The types of an environment's variables as a script sees them, before
+-- points of the sphere are made into pairs ("Language.Code.Projective"):
+-- 'typeEnvOf', but with a variable marked as a point of Ĉ or ℙ¹ having
+-- that type. (Elaboration, after, sees the pairs: 'typeEnvOf'.)
+surfaceTypeEnvOf :: EnvironmentProxy env -> TypeEnv
+surfaceTypeEnvOf env = (typeEnvOf env) { tyVars = markSphere (tyVars (typeEnvOf env)) }
+
+-- | Each variable with a marker beside it (see 'surfaceTypeMarker'), at
+-- the type the marker says.
+markSphere :: Map String FSType -> Map String FSType
+markSphere vs = Map.union marked vs
+  where
+    marked = Map.fromList
+      [ (n, t) | k <- Map.keys vs, Just rest <- [stripPrefix markerPrefix k]
+               , let (n, t0) = breakOn markerSeparator rest
+               , Just t <- [readMaybe t0], Map.member n vs ]
+    breakOn sep str = case findIndex (sep `isPrefixOf`) (tails str) of
+      Just ix -> (take ix str, drop (ix + length sep) str)
+      Nothing -> (str, "")
+
+-- | The name of a marker in an environment (a truth value, which no
+-- script can name) saying the type a variable beside it has for a script,
+-- when that has points of the sphere in it, Ĉ or ℙ¹ (see
+-- "Language.Code.Projective"): the environment holds it with each point a
+-- pair of complex numbers. A field of @List of Ĉ@, say, or a sphere
+-- viewer's tool's point.
+surfaceTypeMarker :: String -> FSType -> String
+surfaceTypeMarker n t = markerPrefix ++ n ++ markerSeparator ++ show t
+
+markerPrefix, markerSeparator :: String
+markerPrefix = "[internal] surface type of "
+markerSeparator = " is "
 
 strictTypeEnv, lenientTypeEnv :: Map String FSType -> TypeEnv
 strictTypeEnv vs = TypeEnv vs False
@@ -90,7 +128,7 @@ onTheSphere :: TExpr -> TC a
 onTheSphere t = advise (synRange t)
   (subject ++ " a point of the Riemann sphere, which isn't a number: there, only arithmetic \
    \(in Ĉ), `=`, `chordal`, `escapes` and `vanishes` are defined. For the complex number \
-   \it is in the plane, use `chart(" ++ arg ++ ")`.")
+   \it is in the plane, use `affine(1, " ++ arg ++ ")`.")
   where (subject, arg) = case synNode t of
           EVar n -> ("`" ++ n ++ "` is", n)
           _ -> ("This is", "...")
@@ -164,9 +202,27 @@ synthDerivative :: TypeEnv -> SourceRange -> Expr -> Expr -> TC TExpr
 synthDerivative env sr x f = do
   x' <- synth env x
   f' <- synth env f
+  case synNode x of
+    -- `f'(w)` at a point `w` of Ĉ: the rational function f' at `w` (a
+    -- value, which doesn't depend on a chart, as a derivative of the map
+    -- at ∞ would)
+    EVar n | exprType x' == ExtComplexT, isDerivativeCallVar n
+           , isProjective (exprType f') || isNumeric (exprType f') -> do
+      df <- differentiateWith (DiffEnv n False Map.empty Set.empty) f
+      synth env (Syn sr (EWiden ExtComplexT df))
+    _ -> synthNumericDerivative env sr x f x' f'
+
+-- | Whether a variable is the one a derivative call @f'(a)@ is expanded
+-- around (see 'Language.Code.Typecheck.Functions.expandCalls', which
+-- names it @[internal] f'.x #k@).
+isDerivativeCallVar :: String -> Bool
+isDerivativeCallVar n = "[internal] " `isPrefixOf` n && "'." `isInfixOf` n
+
+synthNumericDerivative :: TypeEnv -> SourceRange -> Expr -> Expr -> TExpr -> TExpr -> TC TExpr
+synthNumericDerivative env sr x f x' f' = do
   when (any (isProjective . exprType) [x', f']) $
     advise sr "A derivative on the Riemann sphere depends on the chart it's taken in, so it \
-              \isn't there yet: take it of `chart(p)`, or of the complex numbers the point is \
+              \isn't there yet: take it of `affine(1, p)`, or of the complex numbers the point is \
               \made from."
   case filter (not . isNumeric . exprType) [x', f'] of
     bad : _ -> throwError (mismatch bad RealT)
@@ -501,7 +557,14 @@ synth env (Syn sr node) = case node of
   EChart p -> do
     p' <- synth env p
     if isProjective (exprType p') || isNumeric (exprType p')
-      then done ComplexT (EChart p')
+      then done (Pair ComplexT IntegerT) (EChart p')
+      else throwError (mismatch p' ExtComplexT)
+
+  EAffine k p -> do
+    k' <- check env IntegerT k
+    p' <- synth env p
+    if isProjective (exprType p') || isNumeric (exprType p')
+      then done ComplexT (EAffine k' p')
       else throwError (mismatch p' ExtComplexT)
 
   EChordal p q -> do
@@ -876,6 +939,7 @@ describe = \case
   EInfinity -> "∞"
   EHomogeneous{} -> "this point"
   EChart{} -> "the result of chart"
+  EAffine{} -> "the result of affine"
   EChordal{} -> "the result of chordal"
   EFunRef f -> "the function " ++ f
   ELambda{} -> "this function"

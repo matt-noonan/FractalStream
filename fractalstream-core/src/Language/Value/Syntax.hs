@@ -161,7 +161,13 @@ data ExprF r
     -- ^ @[a : b]@: a point of ℙ¹, by its homogeneous coordinates (and,
     -- with more of them, reserved for ℙⁿ)
   | EChart r
-    -- ^ @chart(p)@: a point of ℙ¹ or Ĉ as a complex number, @a / b@
+    -- ^ @chart(p)@: a point of ℙ¹ or Ĉ in the chart where it's nearest
+    -- the origin, @(w, k)@, with @|w| <= 1@ and @k@ the chart's index:
+    -- @(affine(k, p), k)@
+  | EAffine r r
+    -- ^ @affine(k, p)@: a point of ℙ¹ or Ĉ in the @k@th affine chart,
+    -- divided by its @k@th homogeneous coordinate: @affine(1, [a : b])@
+    -- is @a / b@, and @affine(0, [a : b])@ is @b / a@
   | EChordal r r
     -- ^ @chordal(p, q)@: the distance between two points of the Riemann
     -- sphere (the unit sphere), in a straight line

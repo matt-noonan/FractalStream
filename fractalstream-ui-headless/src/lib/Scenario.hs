@@ -231,8 +231,10 @@ scenarioGrammar = mdo
     SetViewerAspect <$> (kw "set" *> kw "viewer" *> kw "aspect" *> kw "to" *> value <* nl)
   setViewerView <- rule $
     SetViewerView <$> (kw "set" *> kw "viewer" *> kw "view" *> kw "to"
-                       *> ((PlaneView <$ kw "plane") <|> (SphereView <$ kw "sphere")
-                           <|> (DiskView <$ kw "disk") <|> (HalfPlaneView <$ kw "halfplane")) <* nl)
+                       -- (a viewer shows the plane or the sphere for good;
+                       -- one of the hyperbolic plane, the disk or the
+                       -- half-plane)
+                       *> ((DiskView <$ kw "disk") <|> (HalfPlaneView <$ kw "halfplane")) <* nl)
 
   clickAt <- rule $
     ClickAt <$> (kw "click" *> kw "at" *> point <* nl)

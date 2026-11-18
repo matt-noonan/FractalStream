@@ -78,10 +78,12 @@ import Language.Value.Parser
 import Language.Value.Typecheck
   (InternalVanishingRadius, InternalEscapeRadius,
    InternalIterations, InternalStuck, InternalIterationLimit)
+import Language.Value.Typing (strictTypeEnv, surfaceTypeMarker)
+import Language.Code.Projective (lowerValueAt, showFieldValue)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv)
 import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs, viewKindName, viewPixelSizeName, viewMobiusNames)
-import Language.Code.Typecheck (hyperbolicToolName)
+import Language.Code.Typecheck (hyperbolicToolName, runExpandedCode)
 import Language.Code.Hoist (Split(..))
 import Language.Parser.SourceRange
 import Data.Color (black, grey)
@@ -871,8 +873,8 @@ checkConfigStmt = \case
   ConfigRow stmts' -> checkConfigStmts stmts'
   ConfigTabs tabs  -> checkConfigStmts (concatMap snd tabs)
   ConfigDecl{..}    -> do
-    checkConfigDecl cdRange cdName cdType cdDefault cdChoices
-    pure [(cdName, cdType)]
+    checkConfigDecl cdRange cdName cdType cdPoint cdDefault cdChoices
+    pure ((cdName, cdType) : pointMarker cdName cdPoint)
   ConfigTable _ name ty -> Right [(name, ty)]
 
 -- | The pure, allocation-free counterpart of 'buildConfigDecl': the
@@ -883,11 +885,11 @@ checkConfigStmt = \case
 -- sync with 'buildConfigDecl' (the test suite cross-checks 'checkScript'
 -- and 'buildEnsembleFromScript' reject the same scripts, to catch
 -- drift between them).
-checkConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue
+checkConfigDecl :: SourceRange -> String -> SomeType -> Maybe FSType -> ParsedValue
                 -> Maybe [String]
                 -> Either (SourceRange, String) ()
-checkConfigDecl sr name (SomeType ty) defaultValue mchoices = withKnownType ty $
-  let evalDefault = case atType @'[] defaultValue ty of
+checkConfigDecl sr name (SomeType ty) mpoint defaultValue mchoices = withKnownType ty $
+  let evalDefault = case fieldValueAt mpoint defaultValue ty of
         TC (Left err) -> Left (sr, "The default value for `" ++ name ++
                                     "` doesn't match its declared type: " ++ ppError err)
         TC (Right v)  -> Right (evaluateInContext EmptyContext v)
@@ -946,7 +948,7 @@ checkViewer configEnv env myTools ViewerFields{..} = do
             let dummyCtx :: Context DynamicValue someEnv
                 dummyCtx = envToContext someEnv (\_ _ -> error "checkViewer: dummy context value forced unexpectedly")
             vc <- left (NoSourceRange,) (buildViewerContext someEnv dummyCtx vfCoord mIterPV mEscPV mVanPV)
-            _  <- parseViewerScript vfPixelVar vc vfCode
+            _  <- parseViewerScript False vfPixelVar vc vfCode
             pure ()
 
       viewerCheck :: Either (SourceRange, String) ()
@@ -968,8 +970,21 @@ viewerViewEntries :: Coordinate -> ViewKind -> Bool -> [(String, SomeType)]
 viewerViewEntries coord view0 grouped = viewerGeometryEntries coord ++ case coord of
   ComplexCoordinate _ | isJust (hyperbolicDisplay view0) ->
     hyperbolicViewEntries ++ (if grouped then groupEntries else [])
-  ComplexCoordinate _ -> sphereViewEntries
+  ComplexCoordinate _ | view0 == SphereView -> sphereViewEntries
+  ComplexCoordinate _ -> []
   RealCoordinates _ _ -> []
+
+-- | The value a field's text (or its default) gives it: for a point of
+-- the sphere, as its pair of homogeneous coordinates.
+fieldValueAt :: KnownType t => Maybe FSType -> ParsedValue -> TypeProxy t -> TC (Language.Value.Value '( '[], t))
+fieldValueAt mpoint e ty = case mpoint of
+  Nothing -> atType e ty
+  Just pt -> lowerValueAt (strictTypeEnv mempty) pt e >>= \e' -> atType e' ty
+
+-- | The marker saying that a field is a point of Ĉ or ℙ¹, which is in an
+-- environment beside it (see 'Language.Value.Typing.surfaceTypeMarker').
+pointMarker :: String -> Maybe FSType -> [(String, SomeType)]
+pointMarker name mpoint = [ (surfaceTypeMarker name t, SomeType BooleanType) | Just t <- [mpoint] ]
 
 -- | A live value of some type, for a viewer's code or its tools to read.
 data LiveValue where
@@ -1005,6 +1020,8 @@ toolViewValues view0 view pixelSize iso =
   : [ (n, LiveValue RealType ((!! k) . ac <$> mobius)) | (k, n) <- zip [0 ..] viewMobiusNames ]
   -- (in the hyperbolic plane, @draw geodesic@ can be used)
   ++ [ (hyperbolicToolName, LiveValue BooleanType (pure True)) | isJust (hyperbolicDisplay view0) ]
+  -- (in a sphere viewer, a tool's points are points of Ĉ)
+  ++ [ (sphereViewName, LiveValue BooleanType (pure True)) | view0 == SphereView ]
   where
     kindCode = \case { PlaneView -> 0; SphereView -> 1; DiskView -> 2; HalfPlaneView -> 2 }
     mobius = viewMobius (hyperbolicModel view0) <$> (fromMaybe DiskDisplay . hyperbolicDisplay <$> view) <*> iso
@@ -1052,10 +1069,12 @@ viewerViewContext coord view0 sizeV centerV viewV rotationV isometryV mgroup = f
            : (halfPlaneDisplayName, LiveValue BooleanType ((== HalfPlaneDisplay) <$> display))
            : [ (n, LiveValue RealType ((!! k) . mobiusEntries <$> mobius)) | (k, n) <- zip [0 ..] mobiusNames ]
            ++ maybe [] groupLiveValues mgroup
-      ComplexCoordinate _ ->
-        (sphereViewName, LiveValue BooleanType ((== SphereView) <$> dyn viewV))
+      -- (a viewer shows the sphere, or the plane, for good)
+      ComplexCoordinate _ | view0 == SphereView ->
+        (sphereViewName, LiveValue BooleanType (pure True))
         : (sphereShadingName, LiveValue RealType (dyn sphereShading))
         : [ (n, LiveValue RealType ((!! k) . matrixEntries <$> dyn rotationV)) | (k, n) <- zip [0 ..] rotationNames ]
+      ComplexCoordinate _ -> []
     matrixEntries r = let ((a, b, c), (d, e, f), (g, h, i)) = rotationMatrix r in [a, b, c, d, e, f, g, h, i]
     addOne :: SomeContext DynamicValue -> (String, LiveValue) -> Either String (SomeContext DynamicValue)
     addOne (SomeContext acc) (name, LiveValue ty v) = withKnownType ty $ case someSymbolVal name of
@@ -1322,7 +1341,7 @@ configStmtToLayout = \case
   ConfigText s   -> Right . PlainText <$> newVariable s
   ConfigButton _ s -> Right . Button <$> newVariable s
   ConfigAction a s -> pure (Right (ActionButton a s))
-  ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdDefault cdDefaultSrc cdLabel cdChoices
+  ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdPoint cdDefault cdDefaultSrc cdLabel cdChoices
   ConfigTable _ name t@(SomeType ty) -> case ty of
     TableType n _ -> Right . TableField name t <$> newVariable (emptyTable (fromIntegral (TN.fromSNat n)))
     _ -> pure (Left (NoSourceRange, "INTERNAL ERROR: `" ++ name ++ "` isn't a table"))
@@ -1354,12 +1373,12 @@ configStmtNames = \case
   ConfigButton{}     -> []
   ConfigAction{}     -> []
 
-buildConfigDecl :: SourceRange -> String -> SomeType -> ParsedValue -> String -> Maybe String -> Maybe [String]
+buildConfigDecl :: SourceRange -> String -> SomeType -> Maybe FSType -> ParsedValue -> String -> Maybe String -> Maybe [String]
                 -> IO (Either (SourceRange, String) Layout)
-buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue defaultSrc mlabel mchoices = withKnownType ty $
+buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) mpoint defaultValue defaultSrc mlabel mchoices = withKnownType ty $
   let lbl = Label (fromMaybe name mlabel)
 
-      evalDefault = case atType @'[] defaultValue ty of
+      evalDefault = case fieldValueAt mpoint defaultValue ty of
         TC (Left err) -> Left (sr, "The default value for `" ++ name ++
                                     "` doesn't match its declared type: " ++ ppError err)
         TC (Right v)  -> Right (evaluateInContext EmptyContext v)
@@ -1403,16 +1422,26 @@ buildConfigDecl sr name (SomeType (ty :: TypeProxy t)) defaultValue defaultSrc m
       -- written differently from a script's: text (no quotes) and lists
       -- (no brackets). Or if the script's text is spread over several
       -- lines, or somehow doesn't read back in the field.
-      let rendered = toUserString ty v
+      let rendered = showFieldValue mpoint ty v
           asWritten = case ty of
             TextType -> False
             ListType _ -> False
             _ -> not (null defaultSrc) && '\n' `notElem` defaultSrc
-      exprValueP <- reactiveSomeValue EmptyEnvProxy ty (if asWritten then defaultSrc else rendered)
+      exprValueP <- case mpoint of
+        Nothing -> reactiveSomeValue EmptyEnvProxy ty (if asWritten then defaultSrc else rendered)
+        Just _ -> do
+          -- (a list's text is written without its brackets)
+          let bracketed src = case mpoint of
+                Just (ListT _) -> "[" ++ src ++ "]"
+                _ -> src
+              f src = bimap (`ppFullError` src) (SomeValue EmptyEnvProxy ty)
+                        (first Left (parseParsedValue (bracketed src)) >>= \e ->
+                           first Right (case fieldValueAt mpoint e ty of TC r -> r))
+          newVariable (if asWritten then defaultSrc else rendered) >>= newMapped (pure f)
       getDynamic (dyn exprValueP) >>= \case
         Right _ -> pure ()
         Left _ -> setValue' (source exprValueP) rendered
-      pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprValueP)))
+      pure (Right (TextBox labelV (UIVariable exprNameP exprTypeP exprValueP mpoint)))
 
 
 -- | One @\@config@ stanza's statements, stacked vertically.
@@ -1520,7 +1549,7 @@ checkHoistedCode :: forall someEnv. EnvironmentProxy someEnv -> ParsedCode
                       (EnvironmentProxy (HoistedBookkeeping someEnv), Code (HoistedBookkeeping someEnv))
 checkHoistedCode env parsedCode = do
   env' <- declareBookkeeping env
-  code <- left (errorLocation &&& unlines . pp) (runParsedBody env' parsedCode)
+  code <- left (errorLocation &&& unlines . pp) (runExpandedCode env' parsedCode)
   pure (env', code)
 
 -- | Build the @n@th (counting from 0) @\@viewer@ of a script. Its
@@ -1594,7 +1623,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
           in fromMaybe (Left (NoSourceRange, "INTERNAL ERROR: redefined internal argument")) $
              assertMissingViewerArgs env $ do
                vc <- left (NoSourceRange,) (buildViewerContext env ctx vfCoord mIterPV mEscPV mVanPV)
-               code <- parseViewerScript vfPixelVar vc vfCode
+               code <- parseViewerScript False vfPixelVar vc vfCode
                pure (SomeViewerWithContext ctx code Nothing)
 
         -- A viewer whose code has a part that's the same for every pixel
@@ -1616,7 +1645,9 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
                 in fromMaybe (Left (NoSourceRange, "INTERNAL ERROR: redefined internal argument")) $
                    assertMissingViewerArgs env $ do
                      vc <- left (NoSourceRange,) (buildViewerContext env ctx vfCoord mIterPV mEscPV mVanPV)
-                     code <- parseViewerScript vfPixelVar vc splitRest
+                     -- (both parts have been expanded already: see
+                     -- 'hoistViewerCode')
+                     code <- parseViewerScript True vfPixelVar vc splitRest
                      (env', prefix0) <- checkHoistedCode env splitPrefix
                      let (_, prefix) = (env', prefix0)
                            & letInEnv (Const (Scalar typeProxy 0))
@@ -2104,8 +2135,16 @@ layoutToArgs = \case
                     EmptyEnvProxy -> case sameHaskellType ty ty' of
                       Nothing -> Nothing
                       Just Refl -> Just (evaluate v' EmptyContext)
-                setter = Just (\t -> setValue' (source exprValue) . toUserString t)
+                -- (a point of the sphere is written as one: ∞, say)
+                setter = Just (\t v -> setValue' (source exprValue) (showFieldValue exprPoint t v))
+                marker :: String -> SomeContext' EventArgument_
+                marker m = case someSymbolVal m of
+                  SomeSymbol mp ->
+                    let true :: EventArgument 'BooleanT
+                        true = EventArgument (pure (Just True)) Nothing
+                    in SomeContext' (Right $ SomeContext $ Bind mp BooleanType true EmptyContext)
             in SomeContext' (Right $ SomeContext $ Bind name ty arg EmptyContext)
+               <> mconcat [ marker m | (m, _) <- pointMarker name0 exprPoint ]
 
 
 

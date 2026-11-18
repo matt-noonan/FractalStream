@@ -5,6 +5,7 @@ module Backend.LLVM.Code
   , compileRenderer'
   , compileToolHandler
   , DrawVTable(..)
+  , toolInOut
   ) where
 
 import FractalStream.Prelude
@@ -952,7 +953,17 @@ toolInOut = \case
   TextType    -> True
   ListType _  -> True
   TableType{} -> True
+  -- (a pair whose parts are each passed as pointers, which compiled
+  -- code writes through: see 'Backend.LLVM.Operand.typedOperandPtr')
+  PairType a b -> byPointer a && byPointer b
   _           -> False
+  where
+    byPointer :: TypeProxy u -> Bool
+    byPointer = \case
+      ComplexType -> True
+      ColorType -> True
+      PairType a b -> byPointer a && byPointer b
+      _ -> False
 
 -- | A table that another variable now holds too is shared: writing either
 -- one copies it first (see "Backend.LLVM.Table").

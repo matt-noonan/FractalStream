@@ -168,16 +168,6 @@ parseSpec = describe "parseScenario" $ do
       SetViewerAspect pv -> pv `shouldResolveTo` 0.5
       cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
 
-  it "parses set viewer view" $ do
-    onlyCommand [r|set viewer view to sphere
-|] $ \case
-      SetViewerView v -> v `shouldBe` SphereView
-      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
-    onlyCommand [r|set viewer view to plane
-|] $ \case
-      SetViewerView v -> v `shouldBe` PlaneView
-      cmd -> expectationFailure ("wrong command shape: " ++ describeShape cmd)
-
   it "parses click at, Cartesian form" $
     onlyCommand [r|click at (-0.75, 0.1)
 |] $ \case

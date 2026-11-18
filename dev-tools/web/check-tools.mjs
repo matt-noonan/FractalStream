@@ -44,8 +44,8 @@
 //             is held back; parameters changed faster than renders go
 //             each show something
 //   menu      a viewer's menu: last, next, original view (and their keys),
-//             jump to a view, the sphere and the plane (saved, and
-//             reopened so), its colorizer and a colorizer's arguments,
+//             jump to a view (and no switching to the sphere), its
+//             colorizer and a colorizer's arguments,
 //             subpixel smoothing, and a real viewer's aspect ratio (saved,
 //             and reopened so)
 //   autocolor the autocolor editor (from a viewer's Colorizer submenu), on
@@ -1282,8 +1282,10 @@ async function menu() {
   const choose = async (label) => { await page.locator(".window-menu button", { hasText: label }).first().click(); };
   await openMenu();
   const labels = (await page.locator(".window-menu .menu-label").allTextContents()).join(" | ");
-  c.check(["Last view", "Next view", "Jump to view", "Original view", "Show on the sphere", "Colorizer",
-           "Show pointer position", "Use subpixel smoothing"].every((l) => labels.includes(l)), `the menu has: ${labels}`);
+  // (a viewer shows the plane or the sphere for good, as its script says)
+  c.check(["Last view", "Next view", "Jump to view", "Original view", "Colorizer",
+           "Show pointer position", "Use subpixel smoothing"].every((l) => labels.includes(l))
+          && !labels.includes("Show on the sphere"), `the menu has: ${labels}`);
   await page.keyboard.press("Escape");
 
   // a Shift-drag: a box to zoom into
@@ -1366,38 +1368,6 @@ async function menu() {
   const dpr = await page.evaluate(() => Math.min(2, Math.max(1, Math.round(window.devicePixelRatio || 1))));
   c.check(jumped && jumped.cx === -1.25 && jumped.cy === 0.125 && Math.abs(jumped.px * dpr - 0.001) < 1e-15,
           `and goes there (${jumped?.cx}, ${jumped?.cy}, a pixel ${(jumped?.px * dpr).toPrecision(3)})`);
-
-  // the sphere, saved, and reopened so
-  await openMenu();
-  await choose("Show on the sphere");
-  await settle();
-  c.check((await view()).moved.sphere === true, "Show on the sphere puts it on the sphere");
-  const gb = await app.canvas(pp).boundingBox();
-  await page.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(gb.x + gb.width / 2 + 60, gb.y + gb.height / 2 + 20, { steps: 4 });
-  await page.mouse.up();
-  await settle();
-  await openMenu();
-  const onSphere = await page.locator(".window-menu button", { hasText: "Show on the sphere" }).getAttribute("aria-checked");
-  await page.keyboard.press("Escape");
-  c.check(onSphere === "true", "and the menu says so");
-  await app.forgetMessages();
-  await page.evaluate(() => { window.__saved = null; window.showSaveFilePicker = undefined; });
-  const download = page.waitForEvent("download", { timeout: 10000 });
-  await app.projectMenu("Save project as");
-  const file = await (await download).path();
-  const saved = fs.readFileSync(file, "utf8");
-  const props = /Parameter plane:[\s\S]*?(?=\n {4}\S|\n\S|$)/.exec(saved.slice(saved.indexOf("web-properties:")))?.[0] ?? "";
-  c.check(/view: sphere/.test(props) && /rotation:/.test(props), "saved: on the sphere, and the globe's rotation");
-  const copy = path.join(os.tmpdir(), "menu-sphere.fs");
-  fs.writeFileSync(copy, saved);
-  project = await app.openFile(copy);
-  c.check(project.viewers[pp].sphere === true, "reopened, it's on the sphere");
-  await openMenu();
-  await choose("Show on the sphere");
-  await settle();
-  c.check((await view()).moved.sphere === false, "and Show on the sphere again puts it back on the plane");
 
   // its colorizer
   await openMenu();

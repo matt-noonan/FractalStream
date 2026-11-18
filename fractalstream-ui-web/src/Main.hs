@@ -1264,21 +1264,10 @@ navigateTo k what = withViewerState k $ \vs -> do
                             GlobeShape _ -> sphereAt (vOriginalRotation v)
                             HyperbolicShape _ display _ -> hyperbolicAt display (vOriginalIsometry v)
                             FlatShape -> originalPlane)
-    -- (the point in the middle of the view stays there, at the script's
-    -- zoom for the other kind; see 'Actor.Viewer.switchView')
-    -- (a disk viewer shows the hyperbolic plane, and only that)
     -- (a viewer of the hyperbolic plane: the disk or the half-plane, keeping
-    -- its view)
+    -- its view; a complex viewer shows the plane or the sphere for good)
     3 | HyperbolicShape _ display iso <- modelShape m ->
           changeViewTo vs (hyperbolicAt (case display of { DiskDisplay -> HalfPlaneDisplay; HalfPlaneDisplay -> DiskDisplay }) iso)
-    3 -> case vCoordinate v of
-      ComplexCoordinate _ -> changeViewTo vs $ case modelRotation m of
-        Nothing -> sphereAt (rotationFacing (modelCenter m))
-        Just r -> let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
-                      finite a = not (isNaN a || isInfinite a) && abs a < 1e300
-                      px = snd (vOriginalPlaneView v) / d
-                  in Model (if finite cx && finite cy then c else (0, 0)) (px, px) FlatShape
-      _ -> pure ()
     _ -> pure ()
 
 -- | Jump to a view: centered on a point (on the sphere, the globe turned
@@ -1635,8 +1624,8 @@ applySavedView v saved title = case saved of
           Aeson.Number a | a > 0 -> setValue (vAspect v) (realToFrac a)
           _ -> pure ()
         case KM.lookup "view" p of
-          Just (Aeson.String "sphere") | isComplex, not hyperbolic -> setValue (vView v) SphereView
-          Just (Aeson.String "plane") | not hyperbolic -> setValue (vView v) PlaneView
+          -- (a complex viewer's plane or sphere is its script's, so an
+          -- older "plane" or "sphere" here is ignored)
           Just (Aeson.String "disk") | hyperbolic -> setValue (vView v) DiskView
           Just (Aeson.String "halfplane") | hyperbolic -> setValue (vView v) HalfPlaneView
           _ -> pure ()
@@ -1644,7 +1633,6 @@ applySavedView v saved title = case saved of
   where
     decodeValue :: Aeson.Value -> Maybe [Double]
     decodeValue x = case Aeson.fromJSON x of Aeson.Success r -> Just r; _ -> Nothing
-    isComplex = case vCoordinate v of ComplexCoordinate _ -> True; _ -> False
     hyperbolic = isJust (hyperbolicDisplay (vOriginalView v))
 
 -- | The page's view state, with what the engine knows of each viewer's

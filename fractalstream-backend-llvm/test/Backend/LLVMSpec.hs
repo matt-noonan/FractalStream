@@ -516,7 +516,7 @@ spec = do
       vc <- either fail pure (buildViewerContext EmptyEnvProxy EmptyContext (RealCoordinates "x" "y")
                                 Nothing Nothing Nothing)
       parsed <- either (fail . show) pure (parseParsedCode noCommonDefs src)
-      code <- either (fail . snd) pure (parseViewerScript (Just "pixel_size") vc parsed)
+      code <- either (fail . snd) pure (parseViewerScript False (Just "pixel_size") vc parsed)
       pixels <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 2 * 2) $ \buf -> do
           _ <- runViewerFunction vf EmptyContext ViewerArgs
@@ -537,7 +537,7 @@ spec = do
       vc <- either fail pure (buildViewerContext EmptyEnvProxy EmptyContext (RealCoordinates "x" "y")
                                 Nothing (Just four) Nothing)
       parsed <- either (fail . show) pure (parseParsedCode noCommonDefs src)
-      code <- either (fail . snd) pure (parseViewerScript Nothing vc parsed)
+      code <- either (fail . snd) pure (parseViewerScript False Nothing vc parsed)
       pixels <- withJittedViewer jit noAutocolor code $ \vf ->
         allocaBytes (3 * 2) $ \buf -> do
           _ <- runViewerFunction vf EmptyContext ViewerArgs

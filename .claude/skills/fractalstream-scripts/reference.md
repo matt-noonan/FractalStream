@@ -102,7 +102,7 @@ below).
 | `xvar=`, `yvar=` | none | instead of `var=`: a *real viewer*, whose pixel is the pair of real coordinates `(x, y)` with these names. Both are needed, and they can't be used with `var=`. Either can be a real `@config` variable's name, for a plane of real parameters (`xvar=a yvar=b`). |
 | `center=` | `0` | original center ("Original view" returns here); quote anything but a plain number: `center="-0.75 + 0.1i"`. A real viewer's is a point, `center=(1, -1/2)`, or a complex number. |
 | `pixelSize=` | `1/128` | model width of one pixel (zoom) in the original view; `1/200`, `0.005` |
-| `view=` | `plane` | `sphere`: show a complex viewer's points on the Riemann sphere, as a globe. `z` is still a complex number (stereographic: 0 is the north pole, ∞ the south pole); `center=` is the point facing you, and `pixelSize=` is measured on the unit sphere (default: the globe fills most of the window). Navigate's drag turns the globe; the viewer's menu switches between sphere and plane. Not for real viewers. `disk`: the hyperbolic plane, as the Poincaré disk: `z` is a point of the unit disk (the model point), shown moved by the view (an isometry): Navigate's drag moves the view by a hyperbolic translation, a click recenters on the clicked point, scrolling zooms the drawing. `center=` is the disk point shown in the middle (must have \|center\| < 1), `pixelSize=` is in units of the disk's radius. `pixel_size` is the pixel's local model width (it varies), so a pixel's hyperbolic size is `2 pixel_size / (1 - \|z\|²)`. Can't switch to the plane or sphere. `halfplane`: the same, with `z` in the upper half-plane, drawn with the real axis along the window's bottom edge and `center=` (default `i`) 1/`pixelSize` pixels above it (a pixel's hyperbolic size is `pixel_size / im(z)`). With `group=modular` (PSL(2, ℤ)) or `group=T` (a `Table 2 of C`: `T @ (1..4, k)` = a, b, c, d of side k's pairing `s ↦ (a s + b)/(c s + d)`, taking points beyond side k back in; optional `groupCenter=`), `z` is folded into the group's fundamental polygon, and the code also gets `side_distance` (hyperbolic, to the nearest side), `side_index`, `fold_count`; tools get folded points, and their drawings repeat in each visible tile. A table with no cells yet folds nothing; a table that can't be used (a pairing that isn't invertible, doesn't keep the plane, or fixes the center) pauses the viewer with a message saying why. See the library's "7 The hyperbolic plane" (j-invariant.fs, hyperbolic-surface.fs). A hyperbolic viewer's menu switches between drawing it as the disk and as the half-plane, keeping the view; the script always sees its own model's points. |
+| `view=` | `plane` | `sphere`: show a complex viewer's points on the Riemann sphere, as a globe. `z` is a point of Ĉ, exact everywhere (stereographic: 0 is the north pole, ∞ the south pole; `affine(1, z)` for the complex number); `var=c` needs a field `c : Ĉ`. `center=` is the point facing you, and `pixelSize=` is measured on the unit sphere (default: the globe fills most of the window). Navigate's drag turns the globe. A viewer shows the plane or the sphere for good. Not for real viewers. `disk`: the hyperbolic plane, as the Poincaré disk: `z` is a point of the unit disk (the model point), shown moved by the view (an isometry): Navigate's drag moves the view by a hyperbolic translation, a click recenters on the clicked point, scrolling zooms the drawing. `center=` is the disk point shown in the middle (must have \|center\| < 1), `pixelSize=` is in units of the disk's radius. `pixel_size` is the pixel's local model width (it varies), so a pixel's hyperbolic size is `2 pixel_size / (1 - \|z\|²)`. Can't switch to the plane or sphere. `halfplane`: the same, with `z` in the upper half-plane, drawn with the real axis along the window's bottom edge and `center=` (default `i`) 1/`pixelSize` pixels above it (a pixel's hyperbolic size is `pixel_size / im(z)`). With `group=modular` (PSL(2, ℤ)) or `group=T` (a `Table 2 of C`: `T @ (1..4, k)` = a, b, c, d of side k's pairing `s ↦ (a s + b)/(c s + d)`, taking points beyond side k back in; optional `groupCenter=`), `z` is folded into the group's fundamental polygon, and the code also gets `side_distance` (hyperbolic, to the nearest side), `side_index`, `fold_count`; tools get folded points, and their drawings repeat in each visible tile. A table with no cells yet folds nothing; a table that can't be used (a pairing that isn't invertible, doesn't keep the plane, or fixes the center) pauses the viewer with a message saying why. See the library's "7 The hyperbolic plane" (j-invariant.fs, hyperbolic-surface.fs). A hyperbolic viewer's menu switches between drawing it as the disk and as the half-plane, keeping the view; the script always sees its own model's points. |
 | `aspect=` | `1` | real viewers only: a pixel's height over its width in the original view (`aspect=2` fits twice as much of the y axis). A complex viewer's pixels are always square. The wx viewer's menu has "Aspect ratio..." to change it. |
 | `limit=`, `escape=`, `vanish=` | `max_iters`, `escape_radius`, `vanishing_radius` | name a different (config) variable to use as the loop limit / escape radius / vanishing radius in this viewer |
 | `pixelVar=` | `pixel_size` | name under which the current pixel size is visible |
@@ -126,7 +126,7 @@ wx-properties:
       center: [-0.75, 0.1]   # current view (the script's center= is the original)
       pixel-size: 0.005
       aspect: 2              # a real viewer's current aspect, when it isn't 1
-      view: sphere           # a complex viewer showing the other view than its script's
+      view: halfplane        # a hyperbolic viewer showing the other model than its script's
       rotation: [1, 0, 0, 0] # on the sphere, the globe's orientation (a unit quaternion)
       isometry: [1, 0, 0, 0] # hyperbolic viewers: the view, in the disk (re a, im a, re b, im b of s -> (a s + b)/(conj(b) s + conj(a)))
   configuration: { x: 40, y: 80 }
@@ -471,10 +471,20 @@ flag or two charts by hand):
   of a new point (`p <- [a^2 - c b^2 : a^2 - b^2]`) or same-degree ratios
   (`a / b`); `a` alone, `a + 1`, `[a^2 : b]` are errors. `(p : Ĉ)` /
   `(w : ℙ¹)` convert.
-- On both: `chart(p)` (the complex number a/b), `p = q` / `p ≠ q` (chordal
+- On both: `affine(k, p)` (the k-th affine chart: `affine(1, [a : b])` =
+  a/b, the usual complex number; `affine(0, [a : b])` = b/a), `chart(p)` =
+  `(affine(k, p), k)` for the larger coordinate k (|w| ≤ 1, exact at ∞),
+  `p = q` / `p ≠ q` (chordal
   distance < vanishing radius), `chordal(p, q)` (unit sphere: `chordal(0, ∞)`
   is 2), `p escapes` (`|a| > R|b|`), `p vanishes`, `until p stops`. Not
-  defined (errors pointing to `chart`): `|p|`, `re`, `exp`, `<`, diff/partial.
+  defined (errors pointing to `affine`): `|p|`, `re`, `exp`, `<`, diff/partial.
+- `view=sphere` viewers: the coordinate is a point of Ĉ (exact, ∞ included);
+  use `affine(1, z)` for re/im/|·|. `var=c` on a sphere needs `c : Ĉ` in
+  @config. Their tools' click points are Ĉ; `draw ... at p` takes a Ĉ point.
+  A viewer is plane or sphere for good (no switching).
+- Fields: `c : Ĉ := ∞`, `p : ℙ¹ := [1 : 0]`, `cs : List of Ĉ := [∞, 1]`,
+  `q : Ĉ x R := (∞, 2.0)` (not tables of them).
+- `f'(w)` at a Ĉ point is fine (the rational function f' at w).
 - Each assignment rescales the point (larger coordinate 1): no overflow.
   `[a : b : c]` (ℙ²+) is reserved. A list item with a type needs parentheses:
   `[(k : R), 2]`.

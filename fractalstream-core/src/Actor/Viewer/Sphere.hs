@@ -311,33 +311,35 @@ sphereViewEntries = (sphereViewName, SomeType BooleanType)
                   : (sphereShadingName, SomeType RealType)
                   : [ (n, SomeType RealType) | n <- rotationNames ]
 
--- | A complex viewer's code (with coordinate @z@), wrapped so that while
--- the viewer shows the sphere, @z@ is the point of the globe under the
--- pixel, and a pixel off the globe gets the background color:
+-- | A sphere viewer's code (with coordinate @z@), wrapped so that @z@
+-- is the point of the globe under the pixel, a point of Ĉ (see
+-- "Language.Code.Projective"), and a pixel off the globe gets the
+-- background color:
 --
--- > if sphere and x² + y² > 1:
+-- > if x² + y² > 1:
 -- >   color <- background
 -- > else:
--- >   if sphere:
--- >     s := sqrt(1 - x² - y²)
--- >     (X, Y, Z) := rotation × (x, y, s)
--- >     z <- (X + Y i) / (1 + Z)      -- the homogeneous [X + iY : 1 + Z]
+-- >   s := sqrt(1 - x² - y²)
+-- >   (X, Y, Z) := rotation × (x, y, s)
+-- >   z : Ĉ := [X + Y i : 1 + Z]    -- or [1 - Z : X - Y i], for Z < 0
 -- >   body
--- >   if sphere:
--- >     light := ((x, y, sqrt(1 - x² - y²)) · L + 1) / 2
--- >     color <- blend(1 - shading (1 - light), color, black)
+-- >   light := ((x, y, sqrt(1 - x² - y²)) · L + 1) / 2
+-- >   color <- blend(1 - shading (1 - light), color, black)
 --
--- On the plane, it's just the body (with @z@ already @x + y i@). The
--- shading darkens the globe away from the light ('sphereLight', @L@),
--- by the viewer's @[internal] sphere shading@ ('sphereShading'): a
--- "half Lambert" light, which falls off gently and never goes all the
--- way to black on the visible side.
-onTheSphere :: String -> Stmt -> Stmt
-onTheSphere z body =
+-- The two forms of @z@'s homogeneous coordinates are the same point
+-- (as X² + Y² = 1 - Z²), each computed without cancellation on its
+-- half of the globe, so that ∞ is exactly @[2 : 0]@. A @z@ the viewer
+-- already has (a configuration value of Ĉ) is set, rather than
+-- declared. For code that's already had its points of the sphere made
+-- into pairs (see 'Language.Code.Typecheck.runExpandedCode'), @z@ is
+-- the pair. The shading darkens the globe away from the light
+-- ('sphereLight', @L@), by the viewer's @[internal] sphere shading@
+-- ('sphereShading'): a "half Lambert" light, which falls off gently and
+-- never goes all the way to black on the visible side.
+onTheSphere :: String -> Bool -> Bool -> Stmt -> Stmt
+onTheSphere z declared expanded body =
   stmt (SIf offGlobe (stmt (SSet "color" background))
-                     (stmt (SBlock [ stmt (SIf sphereOn (stmt (SBlock lift)) (stmt SPass))
-                                   , body
-                                   , stmt (SIf sphereOn (stmt (SBlock shade)) (stmt SPass)) ])))
+                     (stmt (SBlock (lift ++ [body] ++ shade))))
   where
     stmt = Stmt NoSourceRange
     e = Syn NoSourceRange
@@ -346,9 +348,8 @@ onTheSphere z body =
     bin op a b = e (EBin op a b)
     sx = var "[internal] x"
     sy = var "[internal] y"
-    sphereOn = var sphereViewName
     d2 = bin OpAdd (bin OpMul sx sx) (bin OpMul sy sy)
-    offGlobe = bin OpAnd sphereOn (bin OpGt d2 (real 1))
+    offGlobe = bin OpGt d2 (real 1)
     background = e (ELit "the background" (SomeHaskellType ColorType sphereBackground))
     i = e (ELit "i" (SomeHaskellType ComplexType (0 :+ 1)))
     s = "[internal] sphere.s"
@@ -359,11 +360,17 @@ onTheSphere z body =
     chunk (a : b : c : rest) = [a, b, c] : chunk rest
     chunk _ = []
     row ns = foldr1 (bin OpAdd) (zipWith (\m v -> bin OpMul (var m) v) ns [sx, sy, var s])
+    complex x = e (ECast x ComplexT)
+    point a b | expanded = e (EPair (complex a) (complex b))
+              | otherwise = e (EHomogeneous [a, b])
+    north = point (bin OpAdd (var cx) (bin OpMul (var cy) i)) (bin OpAdd (real 1) (var cz))
+    south = point (bin OpSub (real 1) (var cz)) (bin OpSub (var cx) (bin OpMul (var cy) i))
+    pointT = if expanded then Pair ComplexT ComplexT else ExtComplexT
+    here = e (ECast (e (EITE (bin OpGe (var cz) (real 0)) north south)) pointT)
     lift =
       [ stmt (SDecl s (Just RealT) (e (EApp "sqrt" (bin OpSub (real 1) d2)))) ]
       ++ [ stmt (SDecl c (Just RealT) (row ns)) | (c, ns) <- zip [cx, cy, cz] rows ]
-      ++ [ stmt (SSet z (bin OpDiv (bin OpAdd (var cx) (bin OpMul (var cy) i))
-                                   (bin OpAdd (real 1) (var cz)))) ]
+      ++ [ stmt (if declared then SDecl z (Just pointT) here else SSet z here) ]
     (lx, ly, lz) = sphereLight
     light = "[internal] sphere.light"
     shading = var sphereShadingName

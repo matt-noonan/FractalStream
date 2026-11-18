@@ -86,6 +86,11 @@ data ConfigStmt
         -- ^ When present, this declaration is shown as a dropdown with
         -- these choices; only valid when 'cdType' is @ℤ@, in which case
         -- the variable's value is the chosen index.
+      , cdPoint :: Maybe FSType
+        -- ^ For a type with points of the sphere in it, Ĉ or ℙ¹ (a point,
+        -- a list of them, ...): the type as the script has it ('cdType'
+        -- has each point as a pair of complex numbers, its homogeneous
+        -- coordinates; see "Language.Code.Projective").
       }
   | ConfigTable SourceRange String SomeType
     -- ^ @T : Table 2 of C@: a table, with no default (it starts out
@@ -327,6 +332,7 @@ implicitSettings =
       , cdDefaultSrc = defaultSrc
       , cdLabel = Just label
       , cdChoices = Nothing
+      , cdPoint = Nothing
       }
 
 -- | A script's stanzas, with the automatic settings of
@@ -985,9 +991,6 @@ validateConfigDecl sr name fsTy val valRange mlabel mchoices = do
   case fsTy of
     TableT{} -> Left (sr, "A table starts out empty, so it can't have a default value: write `"
                           ++ name ++ " : " ++ withType fsTy ppType ++ "`.")
-    _ | hasSpherePoint fsTy ->
-          Left (sr, "A field can't hold a point of the Riemann sphere (Ĉ or ℙ¹) yet: make `" ++ name
-                    ++ "` a complex number, and the point from it in the code that uses it.")
     _ -> Right ()
   case mchoices of
     Just _ | fsTy /= IntegerT ->
@@ -998,6 +1001,7 @@ validateConfigDecl sr name fsTy val valRange mlabel mchoices = do
     { cdRange = sr, cdName = name, cdType = withType fsTy SomeType
     , cdDefault = val, cdDefaultRange = valRange, cdDefaultSrc = ""
     , cdLabel = mlabel, cdChoices = mchoices
+    , cdPoint = if hasSpherePoint fsTy then Just fsTy else Nothing
     }
 
 -- | Whether a type has points of the sphere in it, which only code (not

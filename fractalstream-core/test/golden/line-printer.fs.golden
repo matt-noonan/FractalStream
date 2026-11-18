@@ -26,57 +26,33 @@ let `[internal] vanishing radius` = vanishing_radius in:
         let `[internal] iteration count` = 0 in:
           let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
-              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
-                set `color` := Color 48 48 48
-              else:
-                block:
-                  if [internal] sphere view then:
-                    block:
-                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
-                        block:
-                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
-                            block:
-                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
-                                block:
-                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
-                                    block:
-                                      set `w` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
-                  else:
-                    no-op
+              block:
+                let `ysize` = [hoisted] ysize in:
                   block:
-                    let `ysize` = [hoisted] ysize in:
+                    let `z` = [hoisted] z in:
                       block:
-                        let `z` = [hoisted] z in:
+                        let `C` = ((xsize * floor((re(w) / xsize)):R):C + ((0.0 :+ 1.0 * ysize:C) * floor((im(w) / ysize)):R:C)) in:
                           block:
-                            let `C` = ((xsize * floor((re(w) / xsize)):R):C + ((0.0 :+ 1.0 * ysize:C) * floor((im(w) / ysize)):R:C)) in:
+                            let `r` = (((2:R:C * ((w - C) / xsize:C)) - 1:R:C) - (1.66:C * 0.0 :+ 1.0)) in:
                               block:
-                                let `r` = (((2:R:C * ((w - C) / xsize:C)) - 1:R:C) - (1.66:C * 0.0 :+ 1.0)) in:
+                                set `C` := (C + shift:C)
+                                let `[internal] fresh #26` = 0 in:
+                                  let `[internal] fresh #27` = [internal] iteration limit in:
+                                    block:
+                                      if (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)) then:
+                                        do-while (!([internal] escape radius < |z|) and ([internal] fresh #26 < [internal] fresh #27)):
+                                          block:
+                                            set `z` := ((z ^ 2:R:C) + C)
+                                            set `[internal] fresh #26` := ([internal] fresh #26 + 1)
+                                      else:
+                                        no-op
+                                      set `[internal] iteration count` := [internal] fresh #26
+                                      set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
+                                set `color` := rgb(0.98, 0.976, 0.965)
+                                if ([internal] stuck and ((|r| ^ 2:R) < ((1.5 - cos((6:R * arg(r)))) / 3:R))) then:
                                   block:
-                                    set `C` := (C + shift:C)
-                                    let `[internal] fresh #37` = 0 in:
-                                      let `[internal] fresh #38` = [internal] iteration limit in:
-                                        block:
-                                          if (!([internal] escape radius < |z|) and ([internal] fresh #37 < [internal] fresh #38)) then:
-                                            do-while (!([internal] escape radius < |z|) and ([internal] fresh #37 < [internal] fresh #38)):
-                                              block:
-                                                set `z` := ((z ^ 2:R:C) + C)
-                                                set `[internal] fresh #37` := ([internal] fresh #37 + 1)
-                                          else:
-                                            no-op
-                                          set `[internal] iteration count` := [internal] fresh #37
-                                          set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
-                                    set `color` := rgb(0.98, 0.976, 0.965)
-                                    if ([internal] stuck and ((|r| ^ 2:R) < ((1.5 - cos((6:R * arg(r)))) / 3:R))) then:
-                                      block:
-                                        set `color` := Color 0 0 0
-                                    else:
-                                      no-op
-                  if [internal] sphere view then:
-                    block:
-                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
-                        block:
-                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
-                  else:
-                    no-op
+                                    set `color` := Color 0 0 0
+                                else:
+                                  no-op
 
 

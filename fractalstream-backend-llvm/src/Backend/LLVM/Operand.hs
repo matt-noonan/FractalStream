@@ -273,6 +273,15 @@ typedOperandPtr t op = do
            TextType -> pure (PtrOp (TextOp op))
            ListType _ -> pure (PtrOp (ListOp op))
            TableType _ _ -> pure (PtrOp (TableOp op))
+           -- (a pair of parts each passed as a pointer: the struct holds
+           -- their pointers)
+           PairType t1 t2 -> do
+             p <- load op 0
+             x1 <- extractValue p [0]
+             x2 <- extractValue p [1]
+             PtrOp a <- typedOperandPtr t1 x1
+             PtrOp b <- typedOperandPtr t2 x2
+             pure (PtrOp (PairOp a b))
            _ -> throwError "TODO: typedOperandPtr"
 
 typedOperand :: (MonadModuleBuilder m, MonadIRBuilder m, MonadError String m)

@@ -174,7 +174,14 @@ A point of the sphere isn't a number, so `|w|`, `re`, `exp`, comparisons
 like `<`, and derivatives aren't defined on it (a derivative depends on
 the chart it's taken in). What is:
 
-- `chart(w)`, the complex number `a / b` (huge, or not a number, at ∞).
+- `affine(k, w)`, the point in the `k`th affine chart: divided by its `k`th
+  homogeneous coordinate (counting from 0). `affine(1, w)` is the complex
+  number `a / b` (huge, or not a number, at ∞), and `affine(0, w)` is
+  `b / a`, the coordinate around ∞.
+- `chart(w)`, the point in the chart where it's nearest the origin, and
+  which chart that is: `(affine(k, w), k)`, with `k` the index of the larger
+  coordinate, so the complex number is never bigger than 1. `w, k :=
+  chart(w)` is exact everywhere, ∞ included.
 - `p = q` and `p ≠ q`, which compare by the chordal distance, as `=`
   compares numbers: equal when it's less than the vanishing radius.
 - `chordal(p, q)`, the chordal distance: the straight-line distance
@@ -204,6 +211,14 @@ apart the same way. `(p : Ĉ)` makes a point of ℙ¹ one of Ĉ, and
 After each assignment, a point is scaled so that its larger coordinate is
 1, so iterating a map never overflows. Points of higher-dimensional
 projective spaces, `[a : b : c]`, are reserved for later.
+
+A field can be a point of the sphere, `c : Ĉ := ∞` (or `p : ℙ¹ := [1 : 0]`),
+or a list or tuple with points in it (`cs : List of Ĉ := [∞, 1]`); a point
+in its text box is `∞` (or `infinity`), a complex number, or for ℙ¹
+`[a : b]`. A viewer on the sphere's points are points of `Ĉ` (see
+"Viewers on the Riemann sphere"). A derivative call `f'(w)` at a point `w`
+of `Ĉ` is the rational function `f'` at `w` (a value, unlike a derivative
+of a map at ∞, which depends on the chart).
 
 ### Syntax quirks
 
@@ -893,29 +908,33 @@ the disk's drawing (0 until it's zoomed somewhere else). These names can't be de
 
 ### Viewers on the Riemann sphere
 
-A complex viewer can show its points on the Riemann sphere instead of
-the plane: as a globe, with `view=sphere`.
+A complex viewer can show the Riemann sphere instead of the plane: as a
+globe, with `view=sphere`.
 
 ```
 @viewer "Newton's method" var=z view=sphere
 iterate z ⟼ z - (z³ - 1) / (3 z²) until z stops
+color ⟵ if re(affine(1, z)) < 0 then yellow else blue
 ```
 
-The script is the same as on the plane: `z` is the point of the globe
-under each pixel, by stereographic projection, so 0 is the globe's north
-pole, ∞ its south pole, and the unit circle its equator. With no
-rotation, 0 faces you, with the real axis to the right and the imaginary
-axis up, as on the plane; `center=` is the point that faces you to start
-with, and `pixelSize=` is measured on the sphere, whose radius is 1 (by
-default, the globe fills most of the window). Dragging with the Navigate
-tool turns the globe, and scrolling zooms in or out. The viewer's menu
-switches between the sphere and the plane ("Show on the sphere"), keeping
-the point in the middle of the view. Tools work the same way on the
-sphere, with what they draw placed on the globe; a click off the globe
-does nothing.
+On the sphere, `z` is the point of the globe under each pixel, a point of
+`Ĉ` (see "The Riemann sphere: Ĉ and ℙ¹"), by stereographic projection: 0
+is the globe's north pole, ∞ its south pole, and the unit circle its
+equator. It's exact everywhere, ∞ included, so a rational map is right
+all over the globe; for the complex number a point is, use `affine(1, z)`.
+A viewer whose variable is a field, as a parameter space is
+(`var=c`), needs the field to be a point of the sphere too: `c : Ĉ := 0`.
 
-Near ∞, a complex number loses precision, so a script whose interesting
-part is near ∞ may look rough there for now.
+With no rotation, 0 faces you, with the real axis to the right and the
+imaginary axis up, as on the plane; `center=` is the point that faces you
+to start with, and `pixelSize=` is measured on the sphere, whose radius
+is 1 (by default, the globe fills most of the window). Dragging with the
+Navigate tool turns the globe, and scrolling zooms in or out. A viewer
+shows the sphere, or the plane, for good, as its `view=` says.
+
+Tools work the same way on the sphere: the point a click or drag is at is
+a point of `Ĉ`, and drawing at a point of the sphere draws on the globe. A
+click off the globe does nothing.
 
 ### Viewers of the hyperbolic plane (the Poincaré disk, the half-plane)
 

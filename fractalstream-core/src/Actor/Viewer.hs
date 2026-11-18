@@ -83,7 +83,7 @@ import Actor.Event ( ToolRunner(..), defaultToolRunner, EventArgument_, ParsedTo
 import Language.Code.Hoist (Split, splitHoistable, hoistedIterations, hoistedStuck)
 import Language.Code.Typecheck (expandParsedCode)
 import Language.Code.InterpretIO (IORefTypeOfBinding)
-import Language.Value.Typing (strictTypeEnv)
+import Language.Value.Typing (strictTypeEnv, surfaceTypeMarker, markSphere)
 import Language.Value.Builtins ( internalIterations, internalStuck, internalIterationLimit
                                , internalEscapeRadius, internalVanishingRadius )
 import Data.IORef (newIORef, readIORef, writeIORef)
@@ -989,11 +989,12 @@ newtype ViewerCompiler = ViewerCompiler
 -- string into a 'ParsedCode' once and passes that in here, same as
 -- before.
 parseViewerScript :: forall env
-                   . Maybe String
+                   . Bool
+                  -> Maybe String
                   -> ViewerContext env
                   -> ParsedCode
                   -> Either (SourceRange, String) (Code (ViewerEnv env))
-parseViewerScript mpx ViewerContext{..} c = do
+parseViewerScript expanded mpx ViewerContext{..} c = do
   let env = contextToEnv vcContext
   withEnvironment env $ do
 
@@ -1028,6 +1029,8 @@ parseViewerScript mpx ViewerContext{..} c = do
                              "INTERNAL ERROR, there was a problem locating `" ++ symbolVal (Proxy @n) ++ "`")
 
       let i = Const (Scalar ComplexType (0 :+ 1))
+          -- (only a sphere viewer is given whether it's showing the sphere)
+          onSphere = sphereViewName `Map.member` envToMap env
           internal :: forall n -> KnownSymbol n => RealIn
           internal n = RealIn (getVar n RealType)
 
@@ -1046,16 +1049,25 @@ parseViewerScript mpx ViewerContext{..} c = do
                                          -- (with a group, folded into its polygon)
                                          grouped = groupMarkerName `Map.member` envToMap env
                                      in inTheHyperbolicPlane z px (if grouped then Just (groupFoldCode z px) else Nothing) c
-                                | sphereViewName `Map.member` envToMap env -> onTheSphere z c
+                                | onSphere -> onTheSphere z (not (z `Map.member` envToMap env)) expanded c
             _ -> c
           body :: forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e)
           body e = bindFreshReals pixelVars e $ \e' ->
-            left (errorLocation &&& unlines . pp) (runParsedCode e' c')
+            left (errorLocation &&& unlines . pp) ((if expanded then runExpandedCode else runParsedCode) e' c')
 
       -- Bind the viewer's coordinate(s) to the point: a variable that's
       -- already defined (a configuration value) is set, and must have
       -- the right type; otherwise, it's a new variable.
       code :: Code (InternalViewerEnv env) <- case vcCoord of
+        -- (on the sphere, the point is a point of Ĉ, which the code
+        -- itself declares, or sets: see 'onTheSphere')
+        ComplexCoordinate z | onSphere -> case Map.lookup z (envToMap env) of
+          Just (SomeType t) | Just Refl <- sameHaskellType t (PairType ComplexType ComplexType)
+                            , surfaceTypeMarker z ExtComplexT `Map.member` envToMap env -> body env'
+                            | otherwise -> throwError (NoSourceRange,
+                                "A sphere viewer's variable is a point of the Riemann sphere, so `" ++ z
+                                ++ "` should be one too: declare it `" ++ z ++ " : Ĉ`.")
+          Nothing -> body env'
         ComplexCoordinate z -> case someSymbolVal z of
           SomeSymbol zp -> do
             x <- getVar InternalX RealType env'
@@ -1101,7 +1113,9 @@ hoistViewerCode :: Maybe String -> Coordinate -> EnvironmentProxy env -> ParsedC
 hoistViewerCode mpx coord env code =
   either (const Nothing) (splitHoistable varying) (expandParsedCode tenv code)
   where
+    -- (a sphere viewer's point is a point of Ĉ)
     coordinates = case coord of
+      ComplexCoordinate z | sphereViewName `Map.member` envToMap env -> [(z, ExtComplexT)]
       ComplexCoordinate z -> [(z, ComplexT)]
       RealCoordinates x y -> [(x, RealT), (y, RealT)]
     pixelSizes = fromMaybe "[unused] pixel size" mpx : case coord of
@@ -1116,7 +1130,7 @@ hoistViewerCode mpx coord env code =
     varying = Set.fromList ("color" : map fst coordinates ++ pixelSizes ++ pixelInternals ++ map fst groupVars)
     -- (the types of the names the viewer's code sees, as 'parseViewerScript'
     -- binds them)
-    tenv = strictTypeEnv $ Map.unions
+    tenv = strictTypeEnv $ markSphere $ Map.unions
       [ Map.map (\(SomeType t) -> typeToFS t) (envToMap env)
       , Map.fromList coordinates
       , Map.fromList groupVars

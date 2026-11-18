@@ -22,7 +22,7 @@
 -- scale, so @a@ and @b@ can only be used in ways that don't depend on it:
 -- in a point @[F : G]@ with @F@ and @G@ homogeneous of the same degree,
 -- or in a ratio of the same degree, like @a / b@. Anything else is an
--- error (pointing to @chart(p)@).
+-- error (pointing to @affine(1, p)@).
 --
 -- Comparisons use the chordal distance, the straight-line distance
 -- between the points of the unit sphere: @p = q@ when it's less than the
@@ -30,6 +30,10 @@
 -- right at ∞), and @p vanishes@ when @|a| < r |b|@.
 module Language.Code.Projective
   ( expandProjective
+  , lowerValueAt
+  , showPoint
+  , showSurfaceValue
+  , showFieldValue
   ) where
 
 import FractalStream.Prelude
@@ -88,6 +92,18 @@ expandProjective tenv s
         let scope' = withItem item list scope
         Stmt sr <$> (SWithFirst item <$> valueAt scope' Nothing p <*> pure list
                                      <*> stmtIn scope' body <*> traverse (stmtIn scope) fallback)
+      -- (a point of the sphere is drawn where it is in the plane: on a
+      -- sphere viewer, that's where it is on the globe)
+      SDraw d -> Stmt sr . SDraw <$> case d of
+        DrawPointAt p -> DrawPointAt <$> drawnAt scope p
+        DrawCircleAt filled c r unit -> DrawCircleAt filled <$> drawnAt scope c <*> valueAt scope Nothing r <*> pure unit
+        DrawGeodesicFrom p q -> DrawGeodesicFrom <$> drawnAt scope p <*> drawnAt scope q
+        DrawRectFrom filled p q -> DrawRectFrom filled <$> drawnAt scope p <*> drawnAt scope q
+        DrawLineFrom p q -> DrawLineFrom <$> drawnAt scope p <*> drawnAt scope q
+        WriteAt t p -> WriteAt <$> valueAt scope Nothing t <*> drawnAt scope p
+        UseStroke c -> UseStroke <$> valueAt scope Nothing c
+        UseFill c -> UseFill <$> valueAt scope Nothing c
+        EraseAll -> pure EraseAll
       _ -> mapStmtShallow (valueAt scope Nothing) st
       where one = Stmt sr . SBlock <$> blockIn scope [st]
 
@@ -131,6 +147,15 @@ expandProjective tenv s
         (decls ++) <$> blockIn scope' rest
       st : rest -> (:) <$> stmtIn scope st <*> blockIn scope rest
 
+    -- a point to draw at: a point of the sphere, where it is in the plane
+    drawnAt :: Scope -> Expr -> M Expr
+    drawnAt scope p = do
+      p1 <- lift (expandCalls funs p)
+      isPoint <- if involves scope p1
+        then lift ((isProjective . exprType <$> synth (typeEnv scope) p1) `catchError` \_ -> pure False)
+        else pure False
+      valueAt scope Nothing (if isPoint then Syn (synRange p) (EAffine (Syn (synRange p) (ELit "1" (SomeHaskellType IntegerType 1))) p) else p)
+
     withItem item list scope = case Map.lookup list (scTypes scope) of
       Just (ListT t) -> declare item t scope
       _ -> scope
@@ -152,7 +177,7 @@ expandProjective tenv s
           Nothing -> synth (typeEnv scope) e1
         when (isNothing mty && hasProjective (exprType te)) $
           lift (advise (synRange e) "This is a point of the Riemann sphere, which isn't a number: \
-                                    \for the complex number it is in the plane, use `chart(...)`.")
+                                    \for the complex number it is in the plane, use `affine(1, ...)`.")
         if isProjective target
           then do
             p <- materialize te
@@ -173,9 +198,22 @@ expandProjective tenv s
     -- of a list of points, and the like)
     structural :: FSType -> TExpr -> M Expr
     structural target (Syn (sr, own) node) = case node of
+          -- (the chart where the point is nearest the origin)
           EChart p -> do
             p' <- pointOf p
-            withPoint sr p' (\a b -> Syn sr (EBin OpDiv a b))
+            withPoint sr p' $ \a b ->
+              Syn sr (EITE (Syn sr (EBin OpLe (norm2 sr a) (norm2 sr b)))
+                              (Syn sr (EPair (Syn sr (EBin OpDiv a b)) (intE sr 1)))
+                              (Syn sr (EPair (Syn sr (EBin OpDiv b a)) (intE sr 0))))
+          EAffine k p -> do
+            k' <- lowerAs IntegerT k
+            p' <- pointOf p
+            withPoint sr p' $ \a b -> case constantInteger k of
+              -- (a chart given by its number is picked here)
+              Just 0 -> Syn sr (EBin OpDiv b a)
+              Just _ -> Syn sr (EBin OpDiv a b)
+              Nothing -> Syn sr (EITE (Syn sr (EBin OpApproxEq k' (intE sr 0)))
+                                      (Syn sr (EBin OpDiv b a)) (Syn sr (EBin OpDiv a b)))
           EChordal p q -> do
             p' <- pointOf p
             q' <- pointOf q
@@ -248,6 +286,7 @@ expandProjective tenv s
             pure (H (cnum sr 1) (cnum sr 1) (Map.singleton infinityKey (-1)))
           ELit{} -> numberH . asComplex <$> lowerAs ComplexT te
           ECast x _ -> homog lets x
+          EWiden _ x -> homog lets x
           EUn OpNeg x -> (\h -> h { hNum = Syn sr (EUn OpNeg (hNum h)) }) <$> homog lets x
           EBin OpAdd x y -> addH sr False <$> homog lets x <*> homog lets y <*> gets psB
           EBin OpSub x y -> addH sr True <$> homog lets x <*> homog lets y <*> gets psB
@@ -299,7 +338,7 @@ expandProjective tenv s
       let factor sign = foldl' (mul sr) (cnum sr 1)
             [ powE sr b (abs e) | (k, e) <- Map.toList pows, signum e == sign
                                 , let b = Map.findWithDefault (cnum sr 1) k bOf ]
-      pure (Syn sr (EPair (mul sr num (factor 1)) (mul sr den (factor (-1)))))
+      pure (Syn sr (EPair (complexE (mul sr num (factor 1))) (complexE (mul sr den (factor (-1))))))
 
     -- (each term times the powers of the second coordinates it has more
     -- of than the other, so that the sum has the fewest)
@@ -387,10 +426,46 @@ expandProjective tenv s
       let v = Syn sr (EVar k)
           a = Syn sr (EProj False v)
           b = Syn sr (EProj True v)
-          absE x = Syn sr (EUn OpAbs x)
-          bigger = Syn sr (EBin OpGt (absE a) (absE b))
+          bigger = Syn sr (EBin OpGt (norm2 sr a) (norm2 sr b))
       pure (Syn sr (ELet k p (Syn sr (EITE bigger (Syn sr (EPair (cnum sr 1) (Syn sr (EBin OpDiv b a))))
                                                    (Syn sr (EPair (Syn sr (EBin OpDiv a b)) (cnum sr 1)))))))
+
+-- | An expression, given to something of a type with points of the
+-- sphere in it (a field's value), with them made into pairs.
+lowerValueAt :: TypeEnv -> FSType -> Expr -> TC Expr
+lowerValueAt tenv ty e = do
+  let n = "[internal] sphere.value"
+  Stmt _ out <- expandProjective tenv (Stmt (synRange e) (SBlock [Stmt (synRange e) (SDecl n (Just ty) e)]))
+  case out of
+    SBlock [Stmt _ (SDecl _ _ e')] -> pure e'
+    _ -> throwError (Internal (Advice (synRange e) "lowerValueAt: unexpected expansion"))
+
+-- | A point of Ĉ (or, with 'True', of ℙ¹), by its homogeneous
+-- coordinates, as it's written: @∞@, a complex number, or @[a : b]@.
+showPoint :: Bool -> (Complex Double -> String) -> (Complex Double, Complex Double) -> String
+showPoint isProjectiveLine showC (a, b)
+  | isProjectiveLine = "[" ++ showC a ++ " : " ++ showC b ++ "]"
+  | b == 0 && a /= 0 = "∞"
+  | otherwise = showC (a / b)
+
+-- | A value, with points of the sphere in it written as they are in a
+-- script (see 'showPoint'), given its type as the script has it: the rest
+-- as 'toUserString' writes it.
+showSurfaceValue :: FSType -> TypeProxy t -> HaskellType t -> String
+showSurfaceValue surf ty v = case (surf, ty) of
+  (_, PairType ComplexType ComplexType)
+    | isProjective surf -> showPoint (surf == ProjectiveT) (toUserString ComplexType) v
+  (Pair s1 s2, PairType t1 t2) -> "(" ++ showSurfaceValue s1 t1 (fst v) ++ ", " ++ showSurfaceValue s2 t2 (snd v) ++ ")"
+  (ListT s, ListType t) -> "[" ++ intercalate ", " (map (showSurfaceValue s t) v) ++ "]"
+  _ -> toUserString ty v
+
+-- | A field's value as its text box shows it (a list without its
+-- brackets, as 'toUserString' writes one).
+showFieldValue :: Maybe FSType -> TypeProxy t -> HaskellType t -> String
+showFieldValue msurf ty v = case msurf of
+  Just surf@(ListT _) -> let s = showSurfaceValue surf ty v in reverse (drop 1 (reverse (drop 1 s)))
+  Just surf -> showSurfaceValue surf ty v
+  Nothing -> toUserString ty v
 
 -- | What the homogeneous form of an expression is put together from: the
 -- value is @num / den@ times each point's second coordinate to the given
@@ -399,6 +474,13 @@ data H = H { hNum :: Expr, hDen :: Expr, _hPow :: Map String Int }
 
 asComplex :: Expr -> Expr
 asComplex e = Syn (synRange e) (ECast e ComplexT)
+
+-- | A coordinate, as a complex number (unless it's written as one).
+complexE :: Expr -> Expr
+complexE e = case e of
+  Syn _ (ELit _ (SomeHaskellType ComplexType _)) -> e
+  Syn _ (ECast _ ComplexT) -> e
+  _ -> asComplex e
 
 numberH :: Expr -> H
 numberH e = H e (cnum (synRange e) 1) Map.empty
@@ -495,15 +577,21 @@ cnum sr n = Syn sr (ELit (show n) (SomeHaskellType ComplexType (fromIntegral n :
 
 -- | The chordal distance between two points (by their coordinates):
 -- with @p = [a : b]@ and @q = [c : d]@,
--- @2 |a d - b c| / sqrt((|a|² + |b|²) (|c|² + |d|²))@.
+-- @2 |a d - b c| / sqrt((|a|² + |b|²) (|c|² + |d|²))@, with one square
+-- root.
 chordal :: SourceRange -> Expr -> Expr -> Expr -> Expr -> Expr
 chordal sr a b c d =
-  let absE x = Syn sr (EUn OpAbs x)
-      sq x = let m = absE x in Syn sr (EBin OpMul m m)
-      add x y = Syn sr (EBin OpAdd x y)
+  let add x y = Syn sr (EBin OpAdd x y)
       cross = Syn sr (EBin OpSub (mul sr a d) (mul sr b c))
-      norms = Syn sr (EApp "sqrt" (Syn sr (EBin OpMul (add (sq a) (sq b)) (add (sq c) (sq d)))))
-  in Syn sr (EBin OpDiv (Syn sr (EBin OpMul (intE sr 2) (absE cross))) norms)
+      ratio = Syn sr (EBin OpDiv (norm2 sr cross) (Syn sr (EBin OpMul (add (norm2 sr a) (norm2 sr b))
+                                                                         (add (norm2 sr c) (norm2 sr d)))))
+  in Syn sr (EBin OpMul (intE sr 2) (Syn sr (EApp "sqrt" ratio)))
+
+-- | @|x|²@, without a square root.
+norm2 :: SourceRange -> Expr -> Expr
+norm2 sr x =
+  let part f = let y = Syn sr (EApp f x) in Syn sr (EBin OpMul y y)
+  in Syn sr (EBin OpAdd (part "re") (part "im"))
 
 ------------------------------------------------------
 -- Homogeneity
@@ -561,7 +649,7 @@ notHomogeneous scope points =
   in names ++ " are homogeneous coordinates, which are only defined up to scale, so they can \
      \only be used in ways that don't depend on it: in a point `[F : G]` with both parts of the \
      \same degree, or in a ratio of the same degree, like `a / b`. For the complex number a \
-     \point is in the plane, use `chart(p)`."
+     \point is in the plane, use `affine(1, p)`."
 
 -- | The value of an integer expression made of integer constants alone.
 constantInteger :: Syn ExprF a -> Maybe Integer
@@ -586,6 +674,7 @@ mentionsSphereE (Syn _ node) = case node of
   EInfinity -> True
   EHomogeneous{} -> True
   EChart{} -> True
+  EAffine{} -> True
   EChordal{} -> True
   ECast _ t | hasProjective t -> True
   _ -> any mentionsSphereE node
