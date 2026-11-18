@@ -566,6 +566,66 @@ x <- d|] `shouldBe` Right 3
     it "are called only as a whole right-hand side, for now" $
       failsWith "function f(a):\n  f <- a\nx <- f(1) + 1" "can only be called as the whole right-hand side"
 
+  describe "derivatives through statements" $ do
+
+    let gives input v = runWithX (Scalar RealType 0) input `shouldBe` Right v
+        near input v = case runWithX (Scalar RealType 0) input of
+          Right got -> abs (got - v) `shouldSatisfy` (< 0.000000001)
+          Left err -> expectationFailure err
+        failsWith input needle =
+          runWithX (Scalar RealType 0) input `shouldSatisfy` either (needle `isInfixOf`) (const False)
+        loop3 = "c := 0.5\nz := 0\nk := 0\nwhile k < 3:\n  z <- z^2 + c\n  k <- k + 1\n"
+
+    it "follow a variable back through a loop" $
+      -- z_3 = (c^2 + c)^2 + c, so dz_3/dc = 2 (c^2 + c) (2 c + 1) + 1 = 4 at c = 0.5
+      (loop3 ++ "x <- diff(c, z)") `gives` 4
+
+    it "follow tuples, through functions that give pairs (as SaddleDrop's Hénon step)" $
+      unlines [ "step(p, q, c) := (p^2 + c - 0.3 q, p)"
+              , "w := 0.2"
+              , "u, v := (w, w)"
+              , "du, dv := 1.0, 1.0"
+              , "k := 0"
+              , "while k < 4:"
+              , "  du, dv <- 2 u du - 0.3 dv, du"
+              , "  u, v <- step(u, v, 0.4)"
+              , "  k <- k + 1"
+              , "x <- diff(w, u) - du" ] `near` 0
+
+    it "follow the branch taken" $
+      "c := 2.0\ny := 0.0\nif c > 1:\n  y <- c^3\nelse:\n  y <- c\nx <- diff(c, y)" `gives` 12
+
+    it "nest, for higher derivatives, or take an order" $ do
+      "c := 2.0\ny := c^3\nx <- diff(c, diff(c, y))" `gives` 12
+      "c := 2.0\ny := c^3\nx <- diff(c, y, 2)" `gives` 12
+      -- d^2 z_3/dc^2 = 2 (2 c + 1)^2 + 4 (c^2 + c) = 11 at c = 0.5
+      (loop3 ++ "x <- diff(c, z, 2)") `gives` 11
+
+    it "work in Newton's method, with the variable changing between passes" $
+      unlines [ "w := 1.0"
+              , "fw := 1.0"
+              , "repeat up to 30 times:"
+              , "  fw <- w^2 - 2"
+              , "  w <- w - fw / diff(w, fw)"
+              , "until |fw| < 0.0000000001"
+              , "x <- w" ] `near` sqrt 2
+
+    it "follow |u| with respect to a real variable" $
+      "t := 3.0\ny := |t - 5|\nx <- diff(t, y)" `gives` (-1)
+
+    it "leave partial to the expression alone" $ do
+      "c := 2.0\ny := c^3\nx <- partial(c, y)" `gives` 0
+      "c := 2.0\nx <- partial(c, c^3)" `gives` 12
+      "c := 2.0\nx <- partial(c, c^3, 2)" `gives` 12
+
+    it "say when the variable changes in between" $ do
+      failsWith "c := 2.0\ny := c^2\nc <- 3\nx <- diff(c, y)" "`y` was worked out from an earlier value of `c`"
+      failsWith "w := 2.0\nw <- w^2\nx <- diff(w, w)" "`w` changes before this, from its own value"
+
+    it "say what they can't follow, rather than give zero" $ do
+      failsWith "c := 2.0\nxs := [c, c^2]\ny := xs @ 2\nx <- diff(c, y)" "through an item of a list or table"
+      failsWith "c := 2.5\ny := mod(c, 1.0)\nx <- diff(c, y)" "which jumps"
+
   describe "functions given as arguments" $ do
 
     let gives input v = runWithX (Scalar RealType 0) input `shouldBe` Right v

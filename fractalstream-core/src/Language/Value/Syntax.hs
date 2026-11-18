@@ -86,6 +86,11 @@ data ExprF r
     -- The group number @n@ has to be an integer literal, which typing
     -- checks (see 'integerLiteral')
   | EDiff r r
+    -- ^ @diff(x, e)@: the derivative of @e@ with respect to @x@, following
+    -- the variables @e@ uses back to @x@ (see "Language.Code.Derivatives")
+  | EPartial r r
+    -- ^ @partial(x, e)@: the derivative of @e@ with respect to @x@, with
+    -- every other variable a constant
   | EText [r]
   | EJoin [r]
   | EAppend r r

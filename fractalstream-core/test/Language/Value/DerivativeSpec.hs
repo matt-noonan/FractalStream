@@ -1,6 +1,7 @@
 module Language.Value.DerivativeSpec (spec) where
 
 import Test.Hspec
+import Data.List (isInfixOf)
 
 import FractalStream.Prelude
 
@@ -75,17 +76,18 @@ spec = do
         ,""
         ,"I expected a real number here, but the result of a comparison is a truth value."])
 
+    it "differentiates |x|, re, im and conj with respect to a real variable" $ do
+      parseR 3 "diff(x, |x|)" `shouldBe` Right 1
+      parseR (-2) "diff(x, |x|)" `shouldBe` Right (-1)
+
     it "throws errors when trying to differentiate non-differentiable functions" $ do
-      parseR 0 "diff(x, |x|)" `shouldBe` Left (unlines
-        ["  diff(x, |x|)"
-        ,"          ^^^"
-        ,""
-        ,"The derivative of this function with respect to x is not implemented."])
       parseC 1 "diff(z, im z)" `shouldBe` Left (unlines
         ["  diff(z, im z)"
         ,"          ^^^^"
         ,""
-        ,"The derivative of this function with respect to z is not implemented."])
+        ,"`im` isn't holomorphic, so it has no derivative with respect to the complex variable `z` (with respect to a real variable, it would)."])
+      parseC 1 "diff(z, |z|)" `shouldSatisfy` either ("|·| isn't holomorphic" `isInfixOf`) (const False)
+      parseR 2.5 "diff(x, floor(x))" `shouldSatisfy` either ("which jumps" `isInfixOf`) (const False)
 
     it "throws errors when first argument is not a variable" $ do
       parseR 0 "diff(2, x)" `shouldBe` Left (unlines

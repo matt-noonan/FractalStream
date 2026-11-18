@@ -546,9 +546,21 @@ valueAndArithGrammar funs own = mdo
              <*> (token Comma *> toplevel <* token CloseParen))
     ]
 
-  diff <- rule $ node $
-    EDiff <$> (token DiffKeyword *> (token OpenParen *> toplevel))
-           <*> (token Comma *> toplevel <* token CloseParen)
+  -- `diff(x, e)`, or `diff(x, e, n)` for the n-th derivative (the same
+  -- as n nested diffs), and `partial` likewise
+  diff <- ruleChoice
+    [ derivative EDiff (void (token DiffKeyword))
+    , derivative EPartial (builtinWord "partial")
+    ]
+  let derivative mk word = withSourceRange $
+        (\x e n sr -> iterate (Syn sr . mk x) e !! fromMaybe 1 n)
+          <$> (word *> token OpenParen *> pairItem)
+          <*> (token Comma *> pairItem)
+          <*> optional (token Comma *> derivativeOrder)
+          <* token CloseParen
+  derivativeOrder <- rule $ tokenMatch $ \case
+    NumberI n | n >= 1 -> Just (fromIntegral n)
+    _ -> Nothing
 
   ------------------------------------------------------
   -- A duplicate of the precedence levels from 'arith' down to 'atom';
@@ -626,7 +638,7 @@ valueAndArithGrammar funs own = mdo
         , "ice", "fire", "rose", "wheat", "forest", "ocean"
         , "winter", "spring", "summer", "fall"
         , "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size", "filled"
-        , "table_cell", "table_point", "in", "pixels" ]
+        , "table_cell", "table_point", "in", "pixels", "partial" ]
         `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])
         `Set.union` Map.keysSet colors
         `Set.union` Map.keysSet commonFunctions

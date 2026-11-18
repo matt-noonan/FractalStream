@@ -246,7 +246,7 @@ builtin = \case
       , ("arg", "the argument"), ("Arg", "the argument") ]
     others = [ "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert"
              , "autocolor", "nearest_autocolor", "get_autocolor", "point", "table_size", "filled"
-             , "table_cell", "table_point", "in", "pixels" ]
+             , "table_cell", "table_point", "in", "pixels", "partial" ]
     keywordNames = [ (t, n) | (n, t) <- Map.toList wordlikeTokens
                             , t `elem` [ TextKeyword, AppendKeyword, PrependKeyword, JoinKeyword
                                        , RemoveKeyword, FindKeyword, TransformKeyword, RangeKeyword

@@ -175,6 +175,7 @@ elabOwn t (Syn (sr, _) node) = case node of
 
   -- replaced by the derivative itself during typing
   EDiff{} -> inconsistent sr
+  EPartial{} -> inconsistent sr
 
   EText xs -> same sr t TextType $ ConcatText <$> traverse (el t) xs
 
