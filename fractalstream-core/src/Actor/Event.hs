@@ -88,6 +88,8 @@ import Data.DynamicValue
 import Data.Codec
 import Actor.Viewer.Types
 import Actor.Viewer.Disk (HyperbolicDisplay(..), HyperbolicModel(..))
+import Actor.Viewer.Sphere (sphereViewName)
+import Language.Value.Typing (sphereMarkerName)
 --import Data.Typeable
 
 type Point = (Double, Double)
@@ -496,6 +498,22 @@ bindEventCoordinate :: forall env
                     -> (forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e))
                     -> Either (SourceRange, String) (Code env)
 bindEventCoordinate coord (RealIn getX) (RealIn getY) env k = withEnvironment env $ case coord of
+  -- (in a sphere viewer's tool, a point of Ĉ: see "Language.Code.Projective")
+  ComplexCoordinate c | sphereViewName `Map.member` envToMap env -> case someSymbolVal c of
+    SomeSymbol cp -> do
+      x <- getX env
+      y <- getY env
+      let i = Const (Scalar ComplexType (0 :+ 1))
+          pairT = PairType ComplexType ComplexType
+          point = PairV pairT (R2C x + i * R2C y) (Const (Scalar ComplexType 1))
+      bindOrDeclare cp pairT point env $ \e -> withEnvironment e $
+        case someSymbolVal (sphereMarkerName c) of
+          SomeSymbol mp -> case lookupEnv mp BooleanType e of
+            Absent pf -> recallIsAbsent pf $ do
+              let e' = BindingProxy mp BooleanType e
+              code <- withEnvironment e' (k e')
+              pure (snd (letInEnv (Const (Scalar BooleanType True)) (e', code)))
+            _ -> k e
   ComplexCoordinate c -> case someSymbolVal c of
     SomeSymbol cp -> do
       x <- getX env

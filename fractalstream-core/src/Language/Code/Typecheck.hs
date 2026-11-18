@@ -9,6 +9,7 @@
 module Language.Code.Typecheck
   ( ParsedCode
   , runParsedCode
+  , runExpandedCode
   , expandParsedCode
   , hyperbolicToolName
   ) where
@@ -20,7 +21,7 @@ import Language.Value
 import Language.Typecheck
 import Language.Value.Typecheck (atType, internalIterationLimit, InternalIterations, InternalStuck)
 import Language.Value.Syntax
-import Language.Value.Typing (TypeEnv(..), synth, typeEnvOf, tupleParts, tableIndexParts)
+import Language.Value.Typing (TypeEnv(..), synth, typeEnvOf, surfaceTypeEnvOf, tupleParts, tableIndexParts)
 import qualified GHC.TypeNats as TN
 import Language.Code
 import Language.Code.Syntax
@@ -48,8 +49,18 @@ type ParsedCode = Stmt
 
 -- | Check parsed code in the given environment.
 runParsedCode :: EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
-runParsedCode env c =
-  case withEnvironment env (expandRuns c >>= expandFunctionBlocks (Map.keysSet (tyVars (typeEnvOf env))) >>= expandPrevious >>= expandStops >>= expandTuples >>= (expandDerivatives (typeEnvOf env) . inferDeclarations (typeEnvOf env) Map.empty >=> expandProjective (typeEnvOf env)) >>= elab Map.empty env) of
+runParsedCode env = runCodeWith (surfaceTypeEnvOf env) env
+
+-- | Check code that has already been through 'expandParsedCode' (whose
+-- points of the sphere are pairs already), in the given environment.
+-- Its other steps change nothing in it, and it's typed as the pairs it
+-- holds are, not as the points of the sphere they are.
+runExpandedCode :: EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
+runExpandedCode env = runCodeWith (typeEnvOf env) env
+
+runCodeWith :: TypeEnv -> EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
+runCodeWith tenv env c =
+  case withEnvironment env (expandRuns c >>= expandFunctionBlocks (Map.keysSet (tyVars tenv)) >>= expandPrevious >>= expandStops >>= expandTuples >>= (expandDerivatives tenv . inferDeclarations tenv Map.empty >=> expandProjective tenv) >>= elab Map.empty env) of
     TC x -> x
 
 -- | The steps before elaboration, by themselves: expand @run@s, @stops@,

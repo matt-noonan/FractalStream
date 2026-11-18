@@ -30,6 +30,8 @@
 -- right at ∞), and @p vanishes@ when @|a| < r |b|@.
 module Language.Code.Projective
   ( expandProjective
+  , lowerValueAt
+  , showPoint
   ) where
 
 import FractalStream.Prelude
@@ -88,6 +90,18 @@ expandProjective tenv s
         let scope' = withItem item list scope
         Stmt sr <$> (SWithFirst item <$> valueAt scope' Nothing p <*> pure list
                                      <*> stmtIn scope' body <*> traverse (stmtIn scope) fallback)
+      -- (a point of the sphere is drawn where it is in the plane: on a
+      -- sphere viewer, that's where it is on the globe)
+      SDraw d -> Stmt sr . SDraw <$> case d of
+        DrawPointAt p -> DrawPointAt <$> drawnAt scope p
+        DrawCircleAt filled c r unit -> DrawCircleAt filled <$> drawnAt scope c <*> valueAt scope Nothing r <*> pure unit
+        DrawGeodesicFrom p q -> DrawGeodesicFrom <$> drawnAt scope p <*> drawnAt scope q
+        DrawRectFrom filled p q -> DrawRectFrom filled <$> drawnAt scope p <*> drawnAt scope q
+        DrawLineFrom p q -> DrawLineFrom <$> drawnAt scope p <*> drawnAt scope q
+        WriteAt t p -> WriteAt <$> valueAt scope Nothing t <*> drawnAt scope p
+        UseStroke c -> UseStroke <$> valueAt scope Nothing c
+        UseFill c -> UseFill <$> valueAt scope Nothing c
+        EraseAll -> pure EraseAll
       _ -> mapStmtShallow (valueAt scope Nothing) st
       where one = Stmt sr . SBlock <$> blockIn scope [st]
 
@@ -130,6 +144,15 @@ expandProjective tenv s
                        { scCoords = Map.insert a k (Map.insert b k (scCoords scope)) }
         (decls ++) <$> blockIn scope' rest
       st : rest -> (:) <$> stmtIn scope st <*> blockIn scope rest
+
+    -- a point to draw at: a point of the sphere, at its chart
+    drawnAt :: Scope -> Expr -> M Expr
+    drawnAt scope p = do
+      p1 <- lift (expandCalls funs p)
+      isPoint <- if involves scope p1
+        then lift ((isProjective . exprType <$> synth (typeEnv scope) p1) `catchError` \_ -> pure False)
+        else pure False
+      valueAt scope Nothing (if isPoint then Syn (synRange p) (EChart p) else p)
 
     withItem item list scope = case Map.lookup list (scTypes scope) of
       Just (ListT t) -> declare item t scope
@@ -248,6 +271,7 @@ expandProjective tenv s
             pure (H (cnum sr 1) (cnum sr 1) (Map.singleton infinityKey (-1)))
           ELit{} -> numberH . asComplex <$> lowerAs ComplexT te
           ECast x _ -> homog lets x
+          EWiden _ x -> homog lets x
           EUn OpNeg x -> (\h -> h { hNum = Syn sr (EUn OpNeg (hNum h)) }) <$> homog lets x
           EBin OpAdd x y -> addH sr False <$> homog lets x <*> homog lets y <*> gets psB
           EBin OpSub x y -> addH sr True <$> homog lets x <*> homog lets y <*> gets psB
@@ -299,7 +323,7 @@ expandProjective tenv s
       let factor sign = foldl' (mul sr) (cnum sr 1)
             [ powE sr b (abs e) | (k, e) <- Map.toList pows, signum e == sign
                                 , let b = Map.findWithDefault (cnum sr 1) k bOf ]
-      pure (Syn sr (EPair (mul sr num (factor 1)) (mul sr den (factor (-1)))))
+      pure (Syn sr (EPair (complexE (mul sr num (factor 1))) (complexE (mul sr den (factor (-1))))))
 
     -- (each term times the powers of the second coordinates it has more
     -- of than the other, so that the sum has the fewest)
@@ -392,6 +416,24 @@ expandProjective tenv s
       pure (Syn sr (ELet k p (Syn sr (EITE bigger (Syn sr (EPair (cnum sr 1) (Syn sr (EBin OpDiv b a))))
                                                    (Syn sr (EPair (Syn sr (EBin OpDiv a b)) (cnum sr 1)))))))
 
+-- | An expression, given to something of a type with points of the
+-- sphere in it (a field's value), with them made into pairs.
+lowerValueAt :: TypeEnv -> FSType -> Expr -> TC Expr
+lowerValueAt tenv ty e = do
+  let n = "[internal] sphere.value"
+  Stmt _ out <- expandProjective tenv (Stmt (synRange e) (SBlock [Stmt (synRange e) (SDecl n (Just ty) e)]))
+  case out of
+    SBlock [Stmt _ (SDecl _ _ e')] -> pure e'
+    _ -> throwError (Internal (Advice (synRange e) "lowerValueAt: unexpected expansion"))
+
+-- | A point of Ĉ (or, with 'True', of ℙ¹), by its homogeneous
+-- coordinates, as it's written: @∞@, a complex number, or @[a : b]@.
+showPoint :: Bool -> (Complex Double -> String) -> (Complex Double, Complex Double) -> String
+showPoint isProjectiveLine showC (a, b)
+  | isProjectiveLine = "[" ++ showC a ++ " : " ++ showC b ++ "]"
+  | b == 0 && a /= 0 = "∞"
+  | otherwise = showC (a / b)
+
 -- | What the homogeneous form of an expression is put together from: the
 -- value is @num / den@ times each point's second coordinate to the given
 -- power (by the name of the point's variable).
@@ -399,6 +441,13 @@ data H = H { hNum :: Expr, hDen :: Expr, _hPow :: Map String Int }
 
 asComplex :: Expr -> Expr
 asComplex e = Syn (synRange e) (ECast e ComplexT)
+
+-- | A coordinate, as a complex number (unless it's written as one).
+complexE :: Expr -> Expr
+complexE e = case e of
+  Syn _ (ELit _ (SomeHaskellType ComplexType _)) -> e
+  Syn _ (ECast _ ComplexT) -> e
+  _ -> asComplex e
 
 numberH :: Expr -> H
 numberH e = H e (cnum (synRange e) 1) Map.empty

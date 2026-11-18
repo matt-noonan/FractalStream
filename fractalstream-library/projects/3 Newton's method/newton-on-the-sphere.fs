@@ -10,9 +10,9 @@ script: |
   if stuck:
     color <- black
   else:
-    if re(z) < 0:
+    if re(chart(z)) < 0:
       color ⟵ yellow
-    else if im(z) > 0:
+    else if im(chart(z)) > 0:
       color ⟵ purple
     else:
       color ⟵ green

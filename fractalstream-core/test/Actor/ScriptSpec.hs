@@ -277,11 +277,18 @@ size : Z as "Size:" choice {"Small", "Medium", "Large"} := 0
 size : R as "Size:" choice {"Small", "Medium", "Large"} := 0.0
 |] `shouldFailWith` "can only be used with a \8484-typed declaration"
 
-    it "rejects a field holding a point of the Riemann sphere, for now" $
+    it "accepts a field holding a point of the Riemann sphere, but not a list of them" $ do
+      shouldParseTo [r|
+@config "Configuration"
+c : Cinf := ∞
+p : P1 := [1 : 0]
+|] $ \case
+        [ConfigStanza "Configuration" [ConfigDecl{cdPoint = Just ExtComplexT}, ConfigDecl{cdPoint = Just ProjectiveT}]] -> pure ()
+        other -> expectationFailure ("unexpected stanzas: " ++ show (length other))
       [r|
 @config "Configuration"
-c : Cinf := 0
-|] `shouldFailWith` "A field can't hold a point of the Riemann sphere"
+cs : List of Cinf := [∞]
+|] `shouldFailWith` "but not a list or tuple of them"
 
     it "accepts a tool stanza with multiple event blocks" $
       shouldParseTo [r|

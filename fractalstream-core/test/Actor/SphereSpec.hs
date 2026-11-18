@@ -93,9 +93,17 @@ spec = do
       headerError "@viewer \"V\" view=torus" "`plane`, `sphere`, `disk`, or `halfplane`"
       headerError "@viewer \"V\" xvar=x yvar=y view=sphere" "Only a complex viewer"
 
-    it "builds a sphere viewer, and keeps a complex viewer's names free" $ do
-      checkScript "@viewer \"V\" var=z view=sphere center=\"1 + i\"\nz <- z^2\ncolor <- red\n" `shouldBe` Right ()
-      checkScript "@config \"P\"\nC : C := 0\n\n@viewer \"V\" var=C view=sphere\nz := 0\niterate z -> z^2 + C until z escapes\n"
+    it "builds a sphere viewer, whose point is a point of Ĉ" $ do
+      checkScript "@viewer \"V\" var=z view=sphere center=\"1 + i\"\nz <- z^2\ncolor <- if z = ∞ then red else blue\n" `shouldBe` Right ()
+      checkScript "@config \"P\"\nC : Ĉ := 0\n\n@viewer \"V\" var=C view=sphere\nz := 0\niterate z -> z^2 + C until z escapes\n"
+        `shouldBe` Right ()
+      checkScript "@viewer \"V\" var=z view=sphere\nw : C := z\ncolor <- red\n"
+        `shouldSatisfy` either (("`z` is a point of the Riemann sphere" `isInfixOf`) . snd) (const False)
+      checkScript "@config \"P\"\nC : C := 0\n\n@viewer \"V\" var=C view=sphere\ncolor <- red\n"
+        `shouldSatisfy` either (("declare it `C : Ĉ`" `isInfixOf`) . snd) (const False)
+
+    it "gives a sphere viewer's tools points of Ĉ, drawn where they are" $
+      checkScript "@viewer \"V\" var=z view=sphere\ncolor <- red\n\n@tool \"T\" for=\"V\"\non click:\n  w := z^2\n  draw point at w\n  if w = ∞:\n    draw line from z to w\n"
         `shouldBe` Right ()
   where
     -- (dragging loses a little precision near the rim)

@@ -1926,11 +1926,8 @@ class ViewerView {
     if (this.info.disk) {
       items.push({ kind: "toggle", label: "Show as the half-plane", on: this.info.halfPlane, toggle: () => this.navigate(3) });
     }
-    // (a complex viewer's pixels are square; it can show the sphere instead,
-    // unless it shows the hyperbolic plane)
-    if (this.info.complex && !this.info.disk) {
-      items.push({ kind: "toggle", label: "Show on the sphere", on: this.info.sphere, toggle: () => this.navigate(3) });
-    } else {
+    // (a complex viewer's pixels are square)
+    if (!this.info.complex) {
       items.push({ kind: "action", label: "Aspect ratio…", run: () => this.askAspect() });
     }
     if (c) {

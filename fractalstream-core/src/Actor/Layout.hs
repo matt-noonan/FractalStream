@@ -35,6 +35,8 @@ import Data.Codec
 import Language.Value
 import Language.Value.Parser
 import Language.Value.Evaluator (evaluate)
+import Language.Value.Typing (sphereMarkerName, projectiveMarkerName)
+import Language.Code.Projective (showPoint)
 
 import Data.Aeson hiding (Value)
 import qualified Data.Map as Map
@@ -104,6 +106,10 @@ data UIVariable = UIVariable
   { exprName  :: Parsed String
   , exprType  :: Parsed SomeType
   , exprValue :: Parsed SomeValue
+  , exprPoint :: Maybe FSType
+    -- ^ For a point of the sphere, Ĉ or ℙ¹: which it is (its value is a
+    -- pair of complex numbers, its homogeneous coordinates; see
+    -- "Language.Code.Projective")
   }
 
 nonEmptyString :: String -> Either String String
@@ -145,6 +151,14 @@ instance ToJSON Dimensions where
   toJSON d = String . Text.pack $ show d
 
 instance Codec Dimensions where codec = aeson
+
+-- | The marker saying that a field is a point of Ĉ or ℙ¹, which is in an
+-- environment beside it (see 'Language.Value.Typing.sphereMarkerName').
+pointMarkerOf :: String -> Maybe FSType -> [(String, SomeType)]
+pointMarkerOf name = \case
+  Just ExtComplexT -> [(sphereMarkerName name, SomeType BooleanType)]
+  Just ProjectiveT -> [(projectiveMarkerName name, SomeType BooleanType)]
+  _ -> []
 
 layoutEnv :: Layout -> Dynamic (Either String SomeEnvironment)
 layoutEnv = fmap (fmap ((`withEnvFromMap` SomeEnvironment) . Map.fromList)) . layoutBindings
@@ -188,7 +202,10 @@ layoutContext = fmap (\(SomeContext' ctx) -> ctx) . go
         Right (SomeValue env ty v) -> dyn exprName >>= \case
           Left e -> pure (SomeContext' $ Left e)
           Right n -> case env of
-            EmptyEnvProxy -> withKnownType ty $ single n ty (pure $ evaluate v EmptyContext)
+            EmptyEnvProxy -> withKnownType ty $ do
+              here <- single n ty (pure $ evaluate v EmptyContext)
+              markers <- sequence [ single m BooleanType (pure True) | (m, _) <- pointMarkerOf n exprPoint ]
+              pure (mconcat (here : markers))
             _ -> pure (SomeContext' $ Left "expected an empty environment")
 
 -- | One named field of a configuration panel, as text: what a project
@@ -262,7 +279,10 @@ layoutFields = \case
     Right col -> Just (toUserString ColorType col)
     Left _ -> Nothing
   TextBox _ UIVariable{..} -> named exprName $ \n -> textField n exprValue $ \case
-    Right (SomeValue EmptyEnvProxy ty v) -> Just (toUserString ty (evaluate v EmptyContext))
+    Right (SomeValue EmptyEnvProxy ty v)
+      | Just pt <- exprPoint, PairType ComplexType ComplexType <- ty ->
+          Just (showPoint (pt == ProjectiveT) (toUserString ComplexType) (evaluate v EmptyContext))
+      | otherwise -> Just (toUserString ty (evaluate v EmptyContext))
     _ -> Nothing
   where
     showBool b = if b then "true" else "false"
@@ -334,6 +354,7 @@ layoutContext' = fmap (\(SomeContext' x) -> x) . go
                       Just Refl -> Right (evaluate v' EmptyContext)
                     _ -> Left "expected an empty environment"
               pure $ single n ty (either Left mk <$>dyn exprValue)
+                  <> mconcat [ single m BooleanType (pure (Right True)) | (m, _) <- pointMarkerOf n exprPoint ]
 
 layoutBindings :: Layout -> Dynamic (Either String [(String, SomeType)])
 layoutBindings = \case
@@ -357,5 +378,5 @@ layoutBindings = \case
   TextBox _ var -> do
     name <- dyn (exprName var)
     ty <- dyn (exprType var)
-    pure (((,) <$> name <*> ty) <&> (:[]))
+    pure ((\n t -> (n, t) : pointMarkerOf n (exprPoint var)) <$> name <*> ty)
 

@@ -32,12 +32,17 @@ module Language.Value.Typing
   , joinType
   , anType
   , isProjective
+  , sphereMarkerName
+  , projectiveMarkerName
+  , surfaceTypeEnvOf
+  , markSphere
   ) where
 
 import FractalStream.Prelude
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.List (isInfixOf)
 
 import Language.Type
 import Language.Environment
@@ -62,6 +67,32 @@ data TypeEnv = TypeEnv
 
 typeEnvOf :: EnvironmentProxy env -> TypeEnv
 typeEnvOf = strictTypeEnv . Map.map (\(SomeType t) -> typeToFS t) . envToMap
+
+-- | The types of an environment's variables as a script sees them, before
+-- points of the sphere are made into pairs ("Language.Code.Projective"):
+-- 'typeEnvOf', but with a variable marked as a point of Ĉ or ℙ¹ having
+-- that type. (Elaboration, after, sees the pairs: 'typeEnvOf'.)
+surfaceTypeEnvOf :: EnvironmentProxy env -> TypeEnv
+surfaceTypeEnvOf env = (typeEnvOf env) { tyVars = markSphere (tyVars (typeEnvOf env)) }
+
+-- | A pair of complex numbers marked as a point of Ĉ or ℙ¹ (see
+-- 'sphereMarkerName'), as one.
+markSphere :: Map String FSType -> Map String FSType
+markSphere vs = flip Map.mapWithKey vs $ \n t ->
+  if | Map.member (sphereMarkerName n) vs -> ExtComplexT
+     | Map.member (projectiveMarkerName n) vs -> ProjectiveT
+     | otherwise -> t
+
+-- | The name of a marker in an environment (a truth value, which no
+-- script can name) saying that the variable beside it, a pair of complex
+-- numbers there, is a point of Ĉ (see "Language.Code.Projective"): a
+-- field of Ĉ, or a sphere viewer's tool's point.
+sphereMarkerName :: String -> String
+sphereMarkerName n = "[internal] Ĉ " ++ n
+
+-- | Likewise, for a point of ℙ¹.
+projectiveMarkerName :: String -> String
+projectiveMarkerName n = "[internal] ℙ¹ " ++ n
 
 strictTypeEnv, lenientTypeEnv :: Map String FSType -> TypeEnv
 strictTypeEnv vs = TypeEnv vs False
@@ -164,6 +195,24 @@ synthDerivative :: TypeEnv -> SourceRange -> Expr -> Expr -> TC TExpr
 synthDerivative env sr x f = do
   x' <- synth env x
   f' <- synth env f
+  case synNode x of
+    -- `f'(w)` at a point `w` of Ĉ: the rational function f' at `w` (a
+    -- value, which doesn't depend on a chart, as a derivative of the map
+    -- at ∞ would)
+    EVar n | exprType x' == ExtComplexT, isDerivativeCallVar n
+           , isProjective (exprType f') || isNumeric (exprType f') -> do
+      df <- differentiateWith (DiffEnv n False Map.empty Set.empty) f
+      synth env (Syn sr (EWiden ExtComplexT df))
+    _ -> synthNumericDerivative env sr x f x' f'
+
+-- | Whether a variable is the one a derivative call @f'(a)@ is expanded
+-- around (see 'Language.Code.Typecheck.Functions.expandCalls', which
+-- names it @[internal] f'.x #k@).
+isDerivativeCallVar :: String -> Bool
+isDerivativeCallVar n = "[internal] " `isPrefixOf` n && "'." `isInfixOf` n
+
+synthNumericDerivative :: TypeEnv -> SourceRange -> Expr -> Expr -> TExpr -> TExpr -> TC TExpr
+synthNumericDerivative env sr x f x' f' = do
   when (any (isProjective . exprType) [x', f']) $
     advise sr "A derivative on the Riemann sphere depends on the chart it's taken in, so it \
               \isn't there yet: take it of `chart(p)`, or of the complex numbers the point is \

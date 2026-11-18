@@ -18,6 +18,7 @@ module Language.Code.Parser
   , withDefinedFunctions
   , withCommon
   , runParsedCode
+  , runExpandedCode
   ) where
 
 import FractalStream.Prelude

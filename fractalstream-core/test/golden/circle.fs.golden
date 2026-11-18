@@ -7,40 +7,16 @@ let `[internal] vanishing radius` = vanishing_radius in:
         let `[internal] iteration count` = 0 in:
           let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
             let `pixel_size` = [internal] dx in:
-              if ([internal] sphere view and (1.0 < (([internal] x * [internal] x) + ([internal] y * [internal] y)))) then:
-                set `color` := Color 48 48 48
-              else:
-                block:
-                  if [internal] sphere view then:
-                    block:
-                      let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
-                        block:
-                          let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
-                            block:
-                              let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
-                                block:
-                                  let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
-                                    block:
-                                      set `z` := (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)) / (1.0 + [internal] sphere.Z):C)
-                  else:
-                    no-op
+              block:
+                if (|z| < 1:R) then:
                   block:
-                    if (|z| < 1:R) then:
-                      block:
-                        set `color` := Color 255 0 0
-                    else:
-                      if (0:R < im(z)) then:
-                        block:
-                          set `color` := Color 0 180 0
-                      else:
-                        block:
-                          set `color` := Color 0 0 255
-                  if [internal] sphere view then:
+                    set `color` := Color 255 0 0
+                else:
+                  if (0:R < im(z)) then:
                     block:
-                      let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
-                        block:
-                          set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                      set `color` := Color 0 180 0
                   else:
-                    no-op
+                    block:
+                      set `color` := Color 0 0 255
 
 

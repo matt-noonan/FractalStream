@@ -88,7 +88,8 @@ script: |
     Bs <- prepend(Bs, b @ 1)
     # push the pixel up to the top level
     # (and its derivative, for drawing the equator at a constant width)
-    u := z
+    # (z is a point of the sphere; u is the same point as a complex number)
+    u := chart(z)
     du : C := 1
     for each n in range(1, L):
       u2 := u^2
@@ -118,7 +119,7 @@ script: |
         color <- blend(0.85, color, black)
       # |grad g|, and the size of a pixel in the plane at z
       dg := |dp| / (tt |p| exp((L + iterations) log 2))
-      px := pixel_size (1 + |z|^2) / 2
+      px := pixel_size (1 + |chart(z)|^2) / 2
       if show_equator and 1 - g < 1.5 px dg:
         color <- red
 

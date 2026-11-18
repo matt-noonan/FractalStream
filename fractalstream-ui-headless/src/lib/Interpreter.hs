@@ -203,8 +203,13 @@ execCommand st = \case
       _ -> setValue' (vCenter viewer) xy >> pure (Right st)
 
   SetViewerView kind -> withCurrentViewer st $ \viewer -> case vCoordinate viewer of
-    RealCoordinates _ _ -> pure (Left "only a complex viewer (one with `var=`) can be shown on the sphere")
-    ComplexCoordinate _ -> switchView viewer kind >> pure (Right st)
+    RealCoordinates _ _ -> pure (Left "only a complex viewer (one with `var=`) can change its view")
+    ComplexCoordinate _ -> getDynamic (vView viewer) >>= \current ->
+      -- (a viewer shows the plane or the sphere for good: its points are
+      -- complex numbers, or points of Ĉ)
+      if kind /= current && (kind `elem` [PlaneView, SphereView] || current `elem` [PlaneView, SphereView])
+        then pure (Left "a viewer shows the plane or the sphere for good, as its script's `view=` says")
+        else switchView viewer kind >> pure (Right st)
 
   SetViewerPixelSize pv -> withCurrentViewer st $ \viewer ->
     withResolved (resolveReal pv) $ \px -> do

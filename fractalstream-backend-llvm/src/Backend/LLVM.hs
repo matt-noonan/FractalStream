@@ -168,7 +168,65 @@ toFFIArg _ t v = case t of
   TableType{} -> do
     d <- newDescriptor v True
     pure (argPtr d, freeDescriptor d)
+  PairType a b -> do
+    (cell, cleanup, _) <- pairArg a b v
+    pure (argPtr cell, cleanup)
   _ -> error ("todo: toFFIArg " ++ showType t)
+
+-- | A pair, as compiled code takes one (see 'Backend.LLVM.Operand.toLLVMType'):
+-- a pointer to a struct of its two parts, each as its own argument would be,
+-- a scalar or a pointer to a buffer. Also how to free it, and how to read it
+-- back (after a tool handler, which may have written through the buffers).
+pairArg :: TypeProxy a -> TypeProxy b -> (HaskellType a, HaskellType b)
+        -> IO (Ptr Word8, IO (), IO (HaskellType a, HaskellType b))
+pairArg a b (x, y) = do
+  let (sa, aa) = argFieldLayout a
+      (sb, ab) = argFieldLayout b
+      off2 = roundUpTo ab sa
+      size = roundUpTo (max aa ab) (off2 + sb)
+  cell <- mallocBytes size :: IO (Ptr Word8)
+  (freeX, readX) <- pokeArgField a cell x
+  (freeY, readY) <- pokeArgField b (cell `plusPtr` off2) y
+  pure (cell, freeX >> freeY >> free cell, (,) <$> readX <*> readY)
+  where roundUpTo n k = ((k + n - 1) `div` n) * n
+
+-- | The size and alignment of a part of a pair, in its struct.
+argFieldLayout :: TypeProxy t -> (Int, Int)
+argFieldLayout = \case
+  BooleanType -> (1, 1)
+  IntegerType -> (4, 4)
+  RealType -> (8, 8)
+  _ -> (8, 8)  -- (a pointer)
+
+-- | Write one part of a pair into its struct (see 'pairArg').
+pokeArgField :: TypeProxy t -> Ptr Word8 -> HaskellType t -> IO (IO (), IO (HaskellType t))
+pokeArgField t p v = case t of
+  BooleanType -> do
+    poke p (if v then 1 else 0 :: Word8)
+    pure (pure (), (/= 0) <$> peek p)
+  IntegerType -> do
+    poke (castPtr p) (fromIntegral v :: Int32)
+    pure (pure (), fromIntegral <$> (peek (castPtr p) :: IO Int32))
+  RealType -> do
+    poke (castPtr p) v
+    pure (pure (), peek (castPtr p))
+  ComplexType -> do
+    let re :+ im = v
+    z <- mallocArray 2 :: IO (Ptr Double)
+    pokeArray z [re, im]
+    poke (castPtr p) z
+    pure (free z, peekArray 2 z <&> \case { [re', im'] -> re' :+ im'; _ -> v })
+  ColorType -> do
+    let (r, g, b) = colorToRGB v
+    c <- mallocArray 3 :: IO (Ptr Word8)
+    pokeArray c [r, g, b]
+    poke (castPtr p) c
+    pure (free c, peekArray 3 c <&> \case { [r', g', b'] -> rgbToColor (r', g', b'); _ -> v })
+  PairType a b -> do
+    (cell, cleanup, readBack) <- pairArg a b v
+    poke (castPtr p) cell
+    pure (cleanup, readBack)
+  _ -> error ("todo: a pair of " ++ showType t ++ " as an argument")
 
 -- | Like 'toFFIArg', but for tool handlers, which may /set/ config variables.
 -- Scalar values (Integer/Real/Boolean/Complex/Color) are passed as pointers and
@@ -242,6 +300,10 @@ toFFIArgInOut t earg v = case t of
     let writeBack = peek cell >>= \d' ->
           if d' /= d then maybe (pure ()) (setBack t) <$> lookupDescriptor d' else pure (pure ())
     pure (argPtr cell, free cell >> freeDescriptor d, writeBack)
+  -- (a pair of in/out parts: see 'toolInOut')
+  PairType a b | toolInOut t -> do
+    (cell, cleanup, readBack) <- pairArg a b v
+    pure (argPtr cell, cleanup, setBack t <$> readBack)
   _ -> do
     (arg, free') <- toFFIArg (Proxy @"tool-arg") t v
     pure (arg, free', pure (pure ()))

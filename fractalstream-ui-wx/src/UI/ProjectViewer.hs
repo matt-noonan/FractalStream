@@ -242,13 +242,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       case vCoordinate of
         RealCoordinates{} -> mapM_ (setValue' vAspect) vpAspect
         ComplexCoordinate{} -> do
-          -- (and a complex viewer's view: the plane, or the globe)
           -- (a viewer of the hyperbolic plane can show the disk or the
-          -- half-plane; others, the plane or the sphere)
+          -- half-plane; a complex viewer's plane or sphere is its
+          -- script's, so an older "plane" or "sphere" here is ignored)
           let hyperbolic = isJust (hyperbolicDisplay vOriginalView)
           case vpView of
-            Just "sphere" | not hyperbolic -> setValue' vView SphereView
-            Just "plane" | not hyperbolic -> setValue' vView PlaneView
             Just "disk" | hyperbolic -> setValue' vView DiskView
             Just "halfplane" | hyperbolic -> setValue' vView HalfPlaneView
             _ -> pure ()
@@ -2044,26 +2042,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             _ -> pure ()
           get model value >>= \m' -> set halfItem [ checked := onHalfPlane m' ] ]
         modifyIORef' beforeMenu (>> (get model value >>= \m -> set halfItem [ checked := onHalfPlane m ]))
-      ComplexCoordinate{} -> do
-        onSphere <- isJust . modelRotation <$> get model value
-        sphereItem <- menuItem hamburgerMenu [ text := "Show on the sphere", checkable := True
-                                             , checked := onSphere ]
-        set sphereItem [ on command := do
-          m <- get model value
-          -- keeping the point in the middle of the view there (see
-          -- 'Actor.Viewer.switchView'), each at its script's zoom
-          case modelRotation m of
-            Nothing -> changeViewTo (Model (0, 0) (vOriginalSpherePixelSize, vOriginalSpherePixelSize)
-                                           (GlobeShape (rotationFacing (modelCenter m))))
-            Just r -> do
-              let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
-                  finite a = not (isNaN a || isInfinite a) && abs a < 1e300
-                  px = snd vOriginalPlaneView
-              changeViewTo (Model (if finite cx && finite cy then c else (0, 0)) (px, px) FlatShape)
-          isJust . modelRotation <$> get model value >>= \b -> set sphereItem [ checked := b ] ]
-        -- (whatever else changes the view: Last view and Next view, say)
-        modifyIORef' beforeMenu (>> (isJust . modelRotation <$> get model value
-                                       >>= \b -> set sphereItem [ checked := b ]))
+      -- (a viewer shows the plane, or the sphere, for good: its points
+      -- are complex numbers, or points of Ĉ)
+      ComplexCoordinate{} -> pure ()
 
     smoothingSelection <- menuItem hamburgerMenu [ text := "Use subpixel smoothing"
                                                  , checkable := True
