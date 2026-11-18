@@ -31,7 +31,7 @@ import qualified System.Environment as Env
 
 -- | A device that keeps the shaders it's given, and fails every block.
 keeping :: IORef [String] -> GpuDevice
-keeping kept = GpuDevice { gdF64 = True, gdCompile = \source -> do
+keeping kept = GpuDevice { gdF64 = True, gdName = "", gdCompile = \source -> do
   modifyIORef kept (source :)
   pure (Right (GpuKernel (\_ _ -> pure (GpuArgs (\_ _ _ _ _ -> pure (Left "no GPU here")))))) }
 

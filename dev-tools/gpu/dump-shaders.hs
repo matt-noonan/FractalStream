@@ -28,7 +28,7 @@ main = do
       Right (Built ens) -> do
         kept <- newIORef []
         viewers <- newIORef []
-        let device = GpuDevice { gdF64 = True, gdCompile = \src -> do
+        let device = GpuDevice { gdF64 = True, gdName = "", gdCompile = \src -> do
               modifyIORef kept (src :)
               pure (Right (GpuKernel (\_ _ -> pure (GpuArgs (\_ _ _ _ _ -> pure (Left "no")))))) }
             ui = UI { newEnsemble = pure (), makeLayout = \_ _ _ -> pure (pure ())

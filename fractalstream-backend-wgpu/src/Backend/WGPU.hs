@@ -60,7 +60,7 @@ nativeGpu = Just $ isProbe >>= \case
       -- here is only freed once nothing draws with it)
       tableSets <- newMVar []
       f64 <- (/= 0) <$> c_hasF64
-      pure (Right GpuDevice { gdCompile = compile probe tableSets, gdF64 = f64 })
+      pure (Right GpuDevice { gdCompile = compile probe tableSets, gdF64 = f64, gdName = name })
   where
     compile probe tableSets source = probeShader probe source >>= \case
       Failed why -> pure (Left why)

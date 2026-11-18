@@ -161,7 +161,9 @@ jobs:
         fsrun-dist/bin/fsrun snapshot --project plane.yaml --viewer Plane --output plane.png
         ls -l plane.png
         # (the runner has no GPU: drawing on it must say so, or draw with
-        # a software driver, not crash; a panic in wgpu aborts, with 134)
+        # a software driver, not crash; a panic in wgpu aborts, with 134.
+        # Mesa's software Vulkan, lavapipe, has doubles, for gpu-f64)
+        sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1 > /dev/null
         status=0
         fsrun-dist/bin/fsrun snapshot --backend gpu-df64 --project plane.yaml --viewer Plane --output plane-gpu.png 2>&1 | tee gpu.log || status=${PIPESTATUS[0]}
         echo "fsrun on the GPU: exit status $status"

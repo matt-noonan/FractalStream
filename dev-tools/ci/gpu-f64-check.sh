@@ -7,11 +7,13 @@
 #   dev-tools/ci/gpu-f64-check.sh FSRUN OUTDIR
 set -uo pipefail
 
-fsrun="$1"
-out="$2"
-mkdir -p "$out"
+mkdir -p "$2"
+fsrun="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+out="$(cd "$2" && pwd)"
 here="$(cd "$(dirname "$0")" && pwd)"
-lib="$here/../../fractalstream-library/projects"
+# (projects by paths relative to the library: on Windows, MSYS's
+# conversion of an absolute path to fsrun's lost one with an apostrophe)
+cd "$here/../../fractalstream-library/projects"
 
 checks=(
   "1 Getting started/mandelbrot-set.fs|Mandelbrot set with smooth coloring"
@@ -29,9 +31,9 @@ for check in "${checks[@]}"; do
   viewer="${check#*|}"
   n=$((n + 1))
   echo "== $project: $viewer"
-  "$fsrun" snapshot --backend cpu --project "$lib/$project" --viewer "$viewer" --output "$out/$n-cpu.png" >/dev/null || { echo "the CPU couldn't draw it"; failed=1; continue; }
+  "$fsrun" snapshot --backend cpu --project "$project" --viewer "$viewer" --output "$out/$n-cpu.png" >/dev/null || { echo "the CPU couldn't draw it"; failed=1; continue; }
   start=$(date +%s)
-  if ! "$fsrun" snapshot --backend gpu-f64 --project "$lib/$project" --viewer "$viewer" --output "$out/$n-gpu-f64.png" > "$out/$n.log" 2>&1; then
+  if ! "$fsrun" snapshot --backend gpu-f64 --project "$project" --viewer "$viewer" --output "$out/$n-gpu-f64.png" > "$out/$n.log" 2>&1; then
     cat "$out/$n.log"
     if grep -q "has no doubles" "$out/$n.log"; then echo "(no doubles on this GPU)"; continue; fi
     failed=1

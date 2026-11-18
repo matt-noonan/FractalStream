@@ -79,7 +79,8 @@ gpuViewerCompilers ps getDevice = [ (backendOf p, compiler p) | p <- ps ]
         Left why -> pure (Left (Decline why))
         Right dev
           | p == Double64 && not (gdF64 dev) ->
-              pure (Left (Decline "this GPU has no doubles (wgpu's SHADER_F64: Vulkan and DirectX 12 may, Metal and the web don't)"))
+              pure (Left (Decline ("this GPU" ++ (if null (gdName dev) then "" else " (" ++ gdName dev ++ ")")
+                                   ++ " has no doubles (wgpu's SHADER_F64: Vulkan and DirectX 12 may, Metal and the web don't)")))
           | otherwise -> gdCompile dev source <&> \case
               Left err -> Left (Decline ("the GPU couldn't compile it: " ++ err))
               Right kernel -> Right (CompiledViewer (bind p (usesAutocolor source) colors kernel))

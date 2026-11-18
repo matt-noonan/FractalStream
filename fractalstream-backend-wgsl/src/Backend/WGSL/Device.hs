@@ -26,6 +26,8 @@ data GpuDevice = GpuDevice
   , gdF64 :: Bool
     -- ^ whether its shaders can have @f64@s (wgpu's native-only
     --   @SHADER_F64@)
+  , gdName :: String
+    -- ^ which GPU it is (and through which API), for messages
   }
 
 -- | A compiled shader.

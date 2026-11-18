@@ -477,7 +477,8 @@ done:
 /* Whether shaders can have f64s (after fsgpu_init). */
 int fsgpu_has_f64(void) { return has_f64; }
 
-/* What GPU this is ("" before fsgpu_init succeeds): for messages. */
+/* What GPU this is, and through which API ("" before fsgpu_init
+ * succeeds): for messages. */
 char *fsgpu_name(void) {
   take_lock();
   char *s;
@@ -485,7 +486,16 @@ char *fsgpu_name(void) {
   else {
     WGPUAdapterInfo info = WGPU_ADAPTER_INFO_INIT;
     wgpuAdapterGetInfo(adapter, &info);
-    s = copy_view("", info.device);
+    const char *api = info.backendType == WGPUBackendType_Vulkan ? "Vulkan"
+                    : info.backendType == WGPUBackendType_Metal ? "Metal"
+                    : info.backendType == WGPUBackendType_D3D12 ? "Direct3D 12"
+                    : info.backendType == WGPUBackendType_OpenGL ? "OpenGL"
+                    : info.backendType == WGPUBackendType_OpenGLES ? "OpenGL ES" : "?";
+    char *d = copy_view("", info.device);
+    size_t n = strlen(d) + strlen(api) + 8;
+    s = malloc(n);
+    snprintf(s, n, "%s, on %s", d, api);
+    free(d);
     wgpuAdapterInfoFreeMembers(info);
   }
   give_lock();
