@@ -17,6 +17,7 @@ import Control.Monad (forM_)
 import Data.Word (Word8, Word32)
 import qualified Foreign.Concurrent as FC
 import Foreign.C.String (CString, peekCString, withCString)
+import Foreign.C.Types (CInt(..))
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Marshal.Array (withArrayLen)
@@ -39,6 +40,7 @@ foreign import ccall safe "fsgpu_run"
         -> Ptr Word32 -> Word32 -> Ptr Word8 -> Word32 -> IO CString
 foreign import ccall unsafe "fsgpu_free_string" c_freeString :: CString -> IO ()
 foreign import ccall unsafe "fsgpu_version" c_version :: IO Word32
+foreign import ccall unsafe "fsgpu_has_f64" c_hasF64 :: IO CInt
 foreign import ccall safe "fsgpu_name" c_name :: IO CString
 
 -- | The GPU, started the first time this is run (or why there's none).
@@ -57,7 +59,8 @@ nativeGpu = Just $ isProbe >>= \case
       -- in one buffer: a render's arguments keep theirs, so one dropped
       -- here is only freed once nothing draws with it)
       tableSets <- newMVar []
-      pure (Right GpuDevice { gdCompile = compile probe tableSets })
+      f64 <- (/= 0) <$> c_hasF64
+      pure (Right GpuDevice { gdCompile = compile probe tableSets, gdF64 = f64, gdName = name })
   where
     compile probe tableSets source = probeShader probe source >>= \case
       Failed why -> pure (Left why)

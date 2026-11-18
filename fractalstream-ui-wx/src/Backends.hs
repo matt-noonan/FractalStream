@@ -16,7 +16,7 @@ import Backend.Pure (pureBackend)
 #endif
 
 #if defined(USE_GPU)
-import Backend.WGSL (gpuBackends)
+import Backend.WGSL (gpuBackends, allPrecisions)
 import Backend.WGPU (nativeGpu)
 #endif
 
@@ -33,7 +33,7 @@ cpuBackend = pureBackend
 
 viewerBackends :: [ViewerBackends]
 #if defined(USE_GPU)
-viewerBackends = [ gpuBackends device | Just device <- [nativeGpu] ]
+viewerBackends = [ gpuBackends allPrecisions device | Just device <- [nativeGpu] ]
 #else
 viewerBackends = []
 #endif

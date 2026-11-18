@@ -35,7 +35,8 @@ import Data.Color (colorToRGB, grey)
 import Language.Table (Table(..), elementSize)
 import Language.Value.Evaluator (HaskellValue)
 
-import GHC.Float (castFloatToWord32, double2Float, float2Double)
+import GHC.Float (castDoubleToWord64, castFloatToWord32, double2Float, float2Double)
+import Data.Bits (shiftR)
 import Numeric (showHex)
 
 ------------------------------------------------------------------------
@@ -59,15 +60,15 @@ kernelSource p body = do
         let ctx = Bind xn xt x (Bind yn yt y (Bind dxn dxt dx (Bind dyn dyt dy (Bind cn ct (LColor "px_color") restCtx))))
         (_, bodyLines) <- capture (runReaderT (code body) ctx)
         let (gr, gg, gb) = colorToRGB grey
-        emit "let px_x0 = radd(rp(params.x0), rmul(ri(params.offX + i32(gid.x)), rp(params.dx)));"
-        emit "let px_y0 = rsub(rp(params.y0), rmul(ri(params.offY + i32(gid.y)), rp(params.dy)));"
+        emit "let px_x0 = radd(rparam(params.x0), rmul(ri(params.offX + i32(gid.x)), rparam(params.dx)));"
+        emit "let px_y0 = rsub(rparam(params.y0), rmul(ri(params.offY + i32(gid.y)), rparam(params.dy)));"
         emit "var px_sum = vec3u(0u);"
         emit "var px_issues = 0u;"
         -- (each subsample from grey, with a fresh arena; magenta if it ran
         -- out of room or indexed out of range, as on the CPU)
         nested "for (var px_k = 0u; px_k < params.subsamples; px_k++) {"
           ([ "px_x = px_x0;", "px_y = px_y0;"
-           , "px_dx = rp(params.px);", "px_dy = rp(params.py);"
+           , "px_dx = rparam(params.px);", "px_dy = rparam(params.py);"
            , "px_color = vec3u(" ++ show gr ++ "u, " ++ show gg ++ "u, " ++ show gb ++ "u);"
            , "bump = 1u;", "overflow = false;", "badIndex = false;" ]
            ++ bodyLines
@@ -110,24 +111,23 @@ loadArg t = do
     _ -> pure (LNone (typeName t))
 
 -- | A value as the words 'loadArg' reads (none for a type it can't
--- have): a truth value or integer one (integers are 32 bits, as in the
--- CPU's compiled code), a real number two (hi and lo: their sum is the
--- double, to about 48 bits), a complex number four, a color one
--- (@0x00BBGGRR@), and a pair its parts'. (A list or table is an address:
--- see 'packArgs'.)
-argWords :: TypeProxy t -> HaskellType t -> [Word32]
-argWords t v = evalState (slotOf t v) (Packed [] 0 [] 0)
+-- have), in this precision: a truth value or integer one (integers are 32
+-- bits, as in the CPU's compiled code), a real number two (see
+-- 'realWords'), a complex number four, a color one (@0x00BBGGRR@), and a
+-- pair its parts'. (A list or table is an address: see 'packArgs'.)
+argWords :: Precision -> TypeProxy t -> HaskellType t -> [Word32]
+argWords p t v = evalState (slotOf p t v) (Packed [] 0 [] 0)
 
 -- | The arguments buffer's contents: the configuration's values, each in
 -- its slot as 'loadArg' reads it, then the blocks of its lists and the
 -- descriptors of its tables (see "Backend.WGSL.Runtime"); and its tables,
 -- each with where its elements start in @tables@ (in bytes, a multiple
 -- of 8) and how many bytes they take, in that order.
-packArgs :: Context HaskellValue env -> ([Word32], [(Table, Int, Int)])
-packArgs ctx =
+packArgs :: Precision -> Context HaskellValue env -> ([Word32], [(Table, Int, Int)])
+packArgs p ctx =
   let values = fromContext (\_ t v -> SomeArg t v) ctx
       slots = sum [ slotSize t | SomeArg t _ <- values ]
-      (ws, st) = runState (concat <$> mapM (\(SomeArg t v) -> slotOf t v) values) (Packed [] slots [] 0)
+      (ws, st) = runState (concat <$> mapM (\(SomeArg t v) -> slotOf p t v) values) (Packed [] slots [] 0)
   in (ws ++ concat (reverse (pkHeap st)), reverse (pkTables st))
 
 data SomeArg where
@@ -159,21 +159,21 @@ block ws = do
   put st { pkHeap = ws : pkHeap st, pkNext = pkNext st + length ws }
   pure (pkNext st)
 
-slotOf :: TypeProxy t -> HaskellType t -> State Packed [Word32]
-slotOf t v = case t of
+slotOf :: Precision -> TypeProxy t -> HaskellType t -> State Packed [Word32]
+slotOf p t v = case t of
   BooleanType -> pure [if v then 1 else 0]
   IntegerType -> pure [fromIntegral (fromIntegral v :: Int32)]
-  RealType -> pure (realWords v)
-  ComplexType -> let a :+ b = v in pure (realWords a ++ realWords b)
+  RealType -> pure (realWords p v)
+  ComplexType -> let a :+ b = v in pure (realWords p a ++ realWords p b)
   ColorType -> let (r, g, b) = colorToRGB v
                in pure [fromIntegral r + 256 * fromIntegral g + 65536 * fromIntegral b]
-  PairType a b -> (++) <$> slotOf a (fst v) <*> slotOf b (snd v)
+  PairType a b -> (++) <$> slotOf p a (fst v) <*> slotOf p b (snd v)
   -- (a list's elements are as its slots would be; in args, its address
   -- has the top bit set)
   ListType i | Just _ <- elemWords i -> case v of
     [] -> pure [0]
     _ -> do
-      elems <- concat <$> mapM (slotOf i) v
+      elems <- concat <$> mapM (slotOf p i) v
       a <- block (fromIntegral (length v) : elems)
       pure [0x80000000 + fromIntegral a]
   TableType _ i | Just size <- elementSize i -> do
@@ -188,12 +188,17 @@ slotOf t v = case t of
     let (ox, oy) = tableOrigin v
         (sx, sy) = tableStep v
     d <- block ([ fromIntegral (off `div` 4), fromIntegral (length (tableDims v)) ]
-                ++ concatMap realWords [ox, oy, sx, sy] ++ map fromIntegral (tableDims v))
+                ++ concatMap (realWords p) [ox, oy, sx, sy] ++ map fromIntegral (tableDims v))
     pure [fromIntegral d]
   _ -> pure []
 
-realWords :: Double -> [Word32]
-realWords x = let (hi, lo) = split x in [castFloatToWord32 hi, castFloatToWord32 lo]
+-- | A real number as two words, as @rbits@ reads them: in double-float
+-- and single precision, hi and lo f32s (their sum is the double, to about
+-- 48 bits); in double precision, the double's bits, low word first.
+realWords :: Precision -> Double -> [Word32]
+realWords p x = case p of
+  Double64 -> let w = castDoubleToWord64 x in [fromIntegral w, fromIntegral (w `shiftR` 32)]
+  _ -> let (hi, lo) = split x in [castFloatToWord32 hi, castFloatToWord32 lo]
 
 -- | A double as two f32s, the second the rest.
 split :: Double -> (Float, Float)
@@ -205,12 +210,12 @@ split x
 -- "Backend.WGSL.Runtime"'s @Params@): its size, how many subsamples, where
 -- it is in the image, the image's first pixel's point, the step, and the
 -- pixel size the code sees, as words.
-blockParams :: (Int32, Int32) -> Int32 -> (Int32, Int32) -> (Double, Double) -> (Double, Double) -> (Double, Double)
-            -> [Word32]
-blockParams (w, h) subsamples (ox, oy) (x0, y0) (dx, dy) (px, py) =
+blockParams :: Precision -> (Int32, Int32) -> Int32 -> (Int32, Int32) -> (Double, Double) -> (Double, Double)
+            -> (Double, Double) -> [Word32]
+blockParams p (w, h) subsamples (ox, oy) (x0, y0) (dx, dy) (px, py) =
   [ fromIntegral w, fromIntegral h, fromIntegral subsamples, 0
   , fromIntegral ox, fromIntegral oy, 0, 0 ]
-  ++ concatMap realWords [x0, y0, dx, dy, px, py]
+  ++ concatMap (realWords p) [x0, y0, dx, dy, px, py]
 
 -- | Whether a value of this type holds a list.
 holdsList :: TypeProxy t -> Bool
@@ -669,9 +674,10 @@ constant t c = case t of
   _ -> unsupported (typeName t)
   where
     real x = do
-      unless (inRange x) $
+      p <- precision
+      unless (p == Double64 || inRange x) $
         unsupported ("numbers as large or as small as " ++ show x)
-      pure $ case realWords x of
+      pure $ case realWords p x of
         [hi, lo] -> "rbits(0x" ++ showHex hi "u, 0x" ++ showHex lo "u)"
         _ -> "ri(0)"
     inRange x = isNaN x || isInfinite x || x == 0

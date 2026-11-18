@@ -1,5 +1,5 @@
 -- | The GPU backends (GPU_PLAN.md): viewers compiled to WGSL
--- ("Backend.WGSL.Code"), in double-float or single precision, and drawn
+-- ("Backend.WGSL.Code"), in double, double-float or single precision, and drawn
 -- on a GPU device ("Backend.WGSL.Device"), which the platform supplies.
 --
 -- A backend declines a viewer it can't draw (text; in double-float, the
@@ -12,6 +12,7 @@
 -- its backends ('Actor.Viewer.withBackends').
 module Backend.WGSL
   ( gpuBackends
+  , allPrecisions
   , gpuViewerCompilers
   , viewerSource
   , module Backend.WGSL.Device
@@ -45,35 +46,48 @@ import Language.Table (Table(..))
 import Foreign.Ptr (Ptr, castPtr)
 import Control.Concurrent.MVar (newMVar, modifyMVar)
 
--- | The GPU backends, on the device this starts (the platform's: the
+-- | The GPU backends in these precisions (the platform's: the web's
+-- WebGPU has no doubles), on the device this starts (the platform's: the
 -- web's WebGPU, or the desktop's wgpu-native), or that says why there's
 -- none. It's started once, when a GPU backend first compiles a viewer: a
 -- session drawn on the CPU alone never touches the GPU.
-gpuBackends :: IO (Either String GpuDevice) -> ViewerBackends
-gpuBackends start = ViewerBackends $ do
+gpuBackends :: [Precision] -> IO (Either String GpuDevice) -> ViewerBackends
+gpuBackends ps start = ViewerBackends $ do
   started <- newMVar Nothing
   let device = modifyMVar started $ \case
         Just d -> pure (Just d, d)
         Nothing -> start >>= \d -> pure (Just d, d)
-  pure (gpuViewerCompilers device)
+  pure (gpuViewerCompilers ps device)
+
+-- | Every precision: a GPU backend each.
+allPrecisions :: [Precision]
+allPrecisions = [Double64, DoubleFloat, Single]
 
 -- | The GPU backends' viewer compilers, on the device this gives (or,
 -- if there's none, declining every viewer, saying why).
-gpuViewerCompilers :: IO (Either String GpuDevice) -> [(BackendId, ViewerCompiler)]
-gpuViewerCompilers getDevice = [(GpuDf64, compiler DoubleFloat), (GpuF32, compiler Single)]
+gpuViewerCompilers :: [Precision] -> IO (Either String GpuDevice) -> [(BackendId, ViewerCompiler)]
+gpuViewerCompilers ps getDevice = [ (backendOf p, compiler p) | p <- ps ]
   where
+    backendOf = \case
+      Double64 -> GpuF64
+      DoubleFloat -> GpuDf64
+      Single -> GpuF32
     -- (what the GPU can't compile is declined without starting it)
     compiler p = ViewerCompiler $ \colors code -> case viewerSource p code of
       Left why -> pure (Left (Decline why))
       Right source -> getDevice >>= \case
         Left why -> pure (Left (Decline why))
-        Right dev -> gdCompile dev source <&> \case
-          Left err -> Left (Decline ("the GPU couldn't compile it: " ++ err))
-          Right kernel -> Right (CompiledViewer (bind (usesAutocolor source) colors kernel))
+        Right dev
+          | p == Double64 && not (gdF64 dev) ->
+              pure (Left (Decline ("this GPU" ++ (if null (gdName dev) then "" else " (" ++ gdName dev ++ ")")
+                                   ++ " has no doubles (wgpu's SHADER_F64: Vulkan and DirectX 12 may, Metal and the web don't)")))
+          | otherwise -> gdCompile dev source <&> \case
+              Left err -> Left (Decline ("the GPU couldn't compile it: " ++ err))
+              Right kernel -> Right (CompiledViewer (bind p (usesAutocolor source) colors kernel))
 
-    bind :: Bool -> AutocolorLookup -> GpuKernel -> Context HaskellValue env -> IO BlockFunction
-    bind withColors colors kernel args = do
-      let (ws, tables) = packArgs args
+    bind :: Precision -> Bool -> AutocolorLookup -> GpuKernel -> Context HaskellValue env -> IO BlockFunction
+    bind p withColors colors kernel args = do
+      let (ws, tables) = packArgs p args
       -- (a binding can't be empty)
       gpuArgs <- gkBind kernel (if null ws then [0] else ws)
         [ GpuTable (tableVersion t) off (tableBuffer t) bytes | (t, off, bytes) <- tables ]
@@ -81,9 +95,9 @@ gpuViewerCompilers getDevice = [(GpuDf64, compiler DoubleFloat), (GpuF32, compil
         { bfView = const Nothing
         , bfCoarse = False
         , bfBlock = \ViewerArgs{..} -> do
-            let params = blockParams (vaWidth, vaHeight) vaSubsamples vaOffset vaPoint vaStep vaPixel
-                run ac = withArray params $ \p ->
-                  gaRun gpuArgs (castPtr p) (fromIntegral vaWidth) (fromIntegral vaHeight) vaBuffer ac
+            let params = blockParams p (vaWidth, vaHeight) vaSubsamples vaOffset vaPoint vaStep vaPixel
+                run ac = withArray params $ \paramsp ->
+                  gaRun gpuArgs (castPtr paramsp) (fromIntegral vaWidth) (fromIntegral vaHeight) vaBuffer ac
             result <- if not withColors then run Nothing else allocaBytes missesBytes $ \misses -> do
               -- A block that met points to add (autocolor) is drawn
               -- again, once they're added, until it meets none: as the

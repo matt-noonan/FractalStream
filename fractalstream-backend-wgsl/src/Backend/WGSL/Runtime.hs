@@ -1,11 +1,15 @@
 -- | The WGSL a kernel starts with: its bindings, and the numbers it
--- computes with, in double-float or single precision.
+-- computes with, in double-float, single or double precision.
 --
 -- Generated code computes with real numbers only through the functions
--- here (@radd@, @rmul@, ...), on the type @R@, so the same code is either
+-- here (@radd@, @rmul@, ...), on the type @R@, so the same code is any
 -- precision: in double-float, @R@ is a @vec2f@ (hi, lo: the number is
 -- their sum, about 48 bits, with f32's range), after Dekker, Knuth and
--- the QD library; in single precision, an @f32@. Complex numbers are a
+-- the QD library; in single precision, an @f32@; in double precision, an
+-- @f64@ (wgpu's native-only @SHADER_F64@: Vulkan and DirectX 12, not
+-- Metal or the web). DirectX's shaders have only arithmetic, comparisons
+-- and conversions for doubles, and WGSL can't bitcast them, so f64's
+-- functions (floor, sqrt, exp, ..., and its bits) are all arithmetic. Complex numbers are a
 -- struct of two @R@s, integers @i32@s (wrapping, as the CPU's), truth
 -- values @bool@s, and colors @vec3u@s (a byte a channel).
 --
@@ -27,8 +31,8 @@ import Backend.WGSL.Device (missCapacity)
 arenaWords :: Int
 arenaWords = 1024
 
--- | The two kinds of real number a kernel can compute with.
-data Precision = DoubleFloat | Single
+-- | The kinds of real number a kernel can compute with.
+data Precision = DoubleFloat | Single | Double64
   deriving (Eq, Show)
 
 -- | The bindings and functions every kernel has.
@@ -38,13 +42,13 @@ runtime p = unlines [bindings, numbers p, common, lists p, autocolor]
 bindings :: String
 bindings = unlines
   [ "// A block's parameters (80 bytes): its size, how many subsamples a"
-  , "// pixel, 0 (for g), where the block is in the image, and (as pairs of"
-  , "// f32s, hi and lo) the image's first pixel's point, the step between"
-  , "// pixels, and the pixel size the code sees."
+  , "// pixel, 0 (for g), where the block is in the image, and (each in two"
+  , "// words, as rbits reads them) the image's first pixel's point, the"
+  , "// step between pixels, and the pixel size the code sees."
   , "struct Params {"
   , "  width: u32, height: u32, subsamples: u32, zero: u32,"
   , "  offX: i32, offY: i32, pad0: u32, pad1: u32,"
-  , "  x0: vec2f, y0: vec2f, dx: vec2f, dy: vec2f, px: vec2f, py: vec2f,"
+  , "  x0: vec2u, y0: vec2u, dx: vec2u, dy: vec2u, px: vec2u, py: vec2u,"
   , "}"
   , "@group(0) @binding(0) var<uniform> params: Params;"
   , "// the configuration's values (see Backend.WGSL.Code)"
@@ -80,6 +84,11 @@ numbers = \case
     , "  return vec2f(p, g(fma(a, b, -p)));"
     , "}"
     , "fn rbits(hi: u32, lo: u32) -> R { return R(bitcast<f32>(hi), bitcast<f32>(lo)); }"
+    , "fn rparam(v: vec2u) -> R { return rbits(v.x, v.y); }"
+    , "fn rhl(hi: u32, lo: u32) -> R { return rbits(hi, lo); }"
+    , "fn risnan(a: R) -> bool { return fisnan(a.x); }"
+    , "fn risinf(a: R) -> bool { return fisinf(a.x); }"
+    , "fn rexpo(a: R) -> i32 { return i32((bitcast<u32>(a.x) >> 23u) & 255u) - 127; }"
     , "fn rhi(a: R) -> u32 { return bitcast<u32>(a.x); }"
     , "fn rlo(a: R) -> u32 { return bitcast<u32>(a.y); }"
     , "fn rp(v: vec2f) -> R { return v; }"
@@ -145,6 +154,11 @@ numbers = \case
   Single -> unlines
     [ "alias R = f32;"
     , "fn rbits(hi: u32, lo: u32) -> R { return bitcast<f32>(hi) + bitcast<f32>(lo); }"
+    , "fn rparam(v: vec2u) -> R { return rbits(v.x, v.y); }"
+    , "fn rhl(hi: u32, lo: u32) -> R { return rbits(hi, lo); }"
+    , "fn risnan(a: R) -> bool { return fisnan(a); }"
+    , "fn risinf(a: R) -> bool { return fisinf(a); }"
+    , "fn rexpo(a: R) -> i32 { return i32((bitcast<u32>(a) >> 23u) & 255u) - 127; }"
     , "fn rhi(a: R) -> u32 { return bitcast<u32>(a); }"
     , "fn rlo(a: R) -> u32 { return 0u; }"
     , "fn rp(v: vec2f) -> R { return v.x + v.y; }"
@@ -186,6 +200,7 @@ numbers = \case
     , "fn rcosh(a: R) -> R { return cosh(a); }"
     , "fn rtanh(a: R) -> R { if (abs(a) < 0.05) { let z = a * a; return a * (1.0 - z * (1.0 / 3.0 - z * 2.0 / 15.0)); } return tanh(a); }"
     ]
+  Double64 -> unlines f64Numbers
 
 -- | What both precisions share, written over R.
 common :: String
@@ -233,9 +248,9 @@ common = unlines
   -- underflow or overflow, as it would in f32's range for |b| below 1e-19
   -- or above 1e19, where doubles' is fine)
   , "fn cdiv(a: C, b0: C) -> C {"
-  , "  let m = rf(select(rabs(b0.re), rabs(b0.im), rlt(rabs(b0.re), rabs(b0.im))));"
+  , "  let m = select(rabs(b0.re), rabs(b0.im), rlt(rabs(b0.re), rabs(b0.im)));"
   , "  var e = 0;"
-  , "  if (m != 0.0 && !fisinf(m) && !fisnan(m)) { e = i32((bitcast<u32>(m) >> 23u) & 255u) - 127; }"
+  , "  if (rnonzero(m) && !risinf(m) && !risnan(m)) { e = rexpo(m); }"
   , "  let b = C(rldexp(b0.re, -e), rldexp(b0.im, -e));"
   , "  let d = radd(rmul(b.re, b.re), rmul(b.im, b.im));"
   , "  return C(rldexp(rdiv(radd(rmul(a.re, b.re), rmul(a.im, b.im)), d), -e),"
@@ -247,11 +262,11 @@ common = unlines
   , "fn cabs(a: C) -> R {"
   , "  let x = rabs(a.re);"
   , "  let y = rabs(a.im);"
-  , "  if (fisinf(rf(x)) || fisinf(rf(y))) { return rp(vec2f(finf(), 0.0)); }"
-  , "  if (fisnan(rf(x)) || fisnan(rf(y))) { return rp(vec2f(fnan(), 0.0)); }"
+  , "  if (risinf(x) || risinf(y)) { return rp(vec2f(finf(), 0.0)); }"
+  , "  if (risnan(x) || risnan(y)) { return rp(vec2f(fnan(), 0.0)); }"
   , "  let m = select(x, y, rlt(x, y));"
   , "  if (!rnonzero(m)) { return ri(0); }"
-  , "  let e = i32((bitcast<u32>(rf(m)) >> 23u) & 255u) - 127;"
+  , "  let e = rexpo(m);"
   , "  let u = rldexp(x, -e);"
   , "  let v = rldexp(y, -e);"
   , "  return rldexp(rsqrt(radd(rmul(u, u), rmul(v, v))), e);"
@@ -427,9 +442,10 @@ lists p = unlines $
   , "fn cpack(c: vec3u) -> u32 { return c.x | (c.y << 8u) | (c.z << 16u); }"
   , "fn cunpack(w: u32) -> vec3u { return vec3u(w & 255u, (w >> 8u) & 255u, (w >> 16u) & 255u); }"
   , "fn tbyte(b: u32) -> u32 { return (tables[b >> 2u] >> ((b & 3u) * 8u)) & 255u; }"
+  ] ++ (if p == Double64 then [] else
   -- an f64's bits (low word first) as R: its top 24 bits of significand,
-  -- then the rest (rounded to 24 more)
-  , "fn rf64(lo: u32, hi: u32) -> R {"
+  -- then the rest (rounded to 24 more). (f64's own is with its numbers)
+  [ "fn rf64(lo: u32, hi: u32) -> R {"
   , "  let e = i32((hi >> 20u) & 0x7ffu);"
   , "  let s = select(1.0, -1.0, (hi >> 31u) != 0u);"
   , "  if (e == 0) { return ri(0); }"
@@ -438,7 +454,7 @@ lists p = unlines $
   , "  let rest = f32(lo & 0x1fffffffu);"
   , "  return rpn(vec2f(s * ldexp(top, e - 1023 - 23), s * ldexp(rest, e - 1023 - 52)));"
   , "}"
-  ] ++ case p of
+  ]) ++ case p of
     DoubleFloat ->
       [ "fn rpn(v: vec2f) -> R { return quick_two_sum(v.x, v.y); }"
       , "fn rw0(r: R) -> u32 { return bitcast<u32>(r.x); }"
@@ -447,6 +463,10 @@ lists p = unlines $
       [ "fn rpn(v: vec2f) -> R { return v.x + v.y; }"
       , "fn rw0(r: R) -> u32 { return bitcast<u32>(r); }"
       , "fn rw1(r: R) -> u32 { return 0u; }" ]
+    -- (an f64's bits, as rbits reads them: low word, then high)
+    Double64 ->
+      [ "fn rw0(r: R) -> u32 { return rtobits(r).x; }"
+      , "fn rw1(r: R) -> u32 { return rtobits(r).y; }" ]
 
 -- | df64's exponential, logarithm, sine and cosine, arctangent and
 -- hyperbolic functions: each reduces its argument (exactly, by constants
@@ -554,6 +574,248 @@ df64Functions =
     fact :: Int -> Rational
     fact n = fromIntegral (product [1 .. n])
 
+-- | f64's numbers. Only arithmetic, comparisons, @abs@, @min@ and @max@,
+-- and conversions, on doubles (all DirectX's shaders have): the rest by
+-- arithmetic. Powers of 2 by repeated squaring (exact); exponents by
+-- comparing with powers of 2; floor through u32s (exact, below 2^52);
+-- sqrt by Newton's method from f32's; exp, log, sin and cos, atan2 and
+-- the hyperbolic functions as df64's (reduced by constants in parts, then
+-- a series by Horner's rule), in f64. Arguments beyond about 1e6 lose
+-- sine's accuracy (as df64's do), and subnormals may be flushed (as the
+-- driver does).
+f64Numbers :: [String]
+f64Numbers =
+  [ "alias R = f64;"
+  , "const RMAX = 1.7976931348623157e308lf;"
+  , "const TWO32 = 4294967296.0lf;"
+  , "const TWO52 = 4503599627370496.0lf;"
+  , "fn rnan() -> R { return f64(fnan()); }"
+  , "fn rinf() -> R { return f64(finf()); }"
+  -- (NaN through f32's bits: a compiler may assume a != a is false)
+  , "fn risnan(a: R) -> bool { return fisnan(f32(a)); }"
+  , "fn risinf(a: R) -> bool { return !risnan(a) && abs(a) > RMAX; }"
+  , "fn rp(v: vec2f) -> R { return f64(v.x) + f64(v.y); }"
+  , "fn rf(a: R) -> f32 { return f32(a); }"
+  , "fn ri(i: i32) -> R { return f64(i); }"
+  , "fn radd(a: R, b: R) -> R { return a + b; }"
+  , "fn rneg(a: R) -> R { return -a; }"
+  , "fn rsub(a: R, b: R) -> R { return a - b; }"
+  , "fn rmul(a: R, b: R) -> R { return a * b; }"
+  , "fn rdiv(a: R, b: R) -> R { return a / b; }"
+  , "fn rabs(a: R) -> R { return abs(a); }"
+  , "fn rlt(a: R, b: R) -> bool { return a < b; }"
+  , "fn req(a: R, b: R) -> bool { return a == b; }"
+  -- 2^k, exactly (k from -1074 to 1023): f32's, in its range, else by
+  -- squaring
+  , "fn rpow2(k0: i32) -> R {"
+  , "  if (k0 >= -126 && k0 <= 127) { return f64(ldexp(1.0f, k0)); }"
+  , "  let k = clamp(k0, -1074, 1023);"
+  , "  var b = select(2.0lf, 0.5lf, k < 0);"
+  , "  var n = select(k, -k, k < 0);"
+  , "  var r = 1.0lf;"
+  , "  loop {"
+  , "    if ((n & 1) != 0) { r = r * b; }"
+  , "    n = n >> 1u;"
+  , "    if (n == 0) { break; }"
+  , "    b = b * b;"
+  , "  }"
+  , "  return r;"
+  , "}"
+  -- (in two steps, so that neither 2^k is out of range)
+  , "fn rldexp(a: R, k: i32) -> R {"
+  , "  if (k >= -1022 && k <= 1023) { return a * rpow2(k); }"
+  , "  let h = k >> 1u;"
+  , "  return a * rpow2(h) * rpow2(k - h);"
+  , "}"
+  , "fn rscale(a: R, k: i32) -> R { return rldexp(a, k); }"
+  -- the exponent of a nonzero finite a: 2^e <= |a| < 2^(e + 1). In f32's
+  -- range, f32's (one more, where a rounds up to a power of 2); else by
+  -- comparing with powers of 2
+  , "fn rexpo(a0: R) -> i32 {"
+  , "  var a = abs(a0);"
+  , "  if (a >= 1.1754943508222875e-38lf && a < 3.4028234663852886e38lf) {"
+  , "    let f = i32((bitcast<u32>(f32(a)) >> 23u) & 255u) - 127;"
+  , "    return select(f, f - 1, a < rpow2(f));"
+  , "  }"
+  , "  var e = 0;"
+  , "  if (a < 2.2250738585072014e-308lf) { a = a * 18014398509481984.0lf; e = -54; }"
+  , "  for (var j = 512; j >= 1; j = j >> 1u) {"
+  , "    if (a >= rpow2(j)) { a = a * rpow2(-j); e += j; }"
+  , "  }"
+  , "  for (var j = 512; j >= 1; j = j >> 1u) {"
+  , "    if (a < rpow2(1 - j)) { a = a * rpow2(j); e -= j; }"
+  , "  }"
+  , "  return e;"
+  , "}"
+  -- an f64 from its bits (low word first), and back
+  , "fn rf64(lo: u32, hi: u32) -> R {"
+  , "  let e = i32((hi >> 20u) & 0x7ffu);"
+  , "  let m = f64(hi & 0xfffffu) * TWO32 + f64(lo);"
+  , "  var v: R;"
+  , "  if (e == 0x7ff) { v = select(rinf(), rnan(), m != 0.0lf); }"
+  , "  else if (e == 0) { v = rldexp(m, -1074); }"
+  , "  else { v = rldexp(m + TWO52, e - 1075); }"
+  , "  return select(v, -v, (hi >> 31u) != 0u);"
+  , "}"
+  , "fn rbits(lo: u32, hi: u32) -> R { return rf64(lo, hi); }"
+  , "fn rparam(v: vec2u) -> R { return rf64(v.x, v.y); }"
+  , "fn rtobits(a: R) -> vec2u {"
+  , "  if (risnan(a)) { return vec2u(0u, 0x7ff80000u); }"
+  , "  let neg = a < 0.0lf || (a == 0.0lf && 1.0lf / a < 0.0lf);"
+  , "  let s = select(0u, 0x80000000u, neg);"
+  , "  let x = abs(a);"
+  , "  if (x > RMAX) { return vec2u(0u, s | 0x7ff00000u); }"
+  , "  if (x == 0.0lf) { return vec2u(0u, s); }"
+  , "  let e = max(rexpo(x), -1023);"
+  -- (the significand's 52 bits, as an integer; for a subnormal, its
+  -- multiple of 2^-1074)
+  , "  var m = rldexp(x, 52 - e);"
+  , "  if (e > -1023) { m = m - TWO52; } else { m = rldexp(x, 1074); }"
+  , "  let mh = u32(m * (1.0lf / TWO32));"
+  , "  let ml = u32(m - f64(mh) * TWO32);"
+  , "  return vec2u(ml, s | (u32(e + 1023) << 20u) | mh);"
+  , "}"
+  -- (the autocolor palette's numbers, and the points to add: two f32s)
+  , "fn rhl(hi: u32, lo: u32) -> R { return f64(bitcast<f32>(hi)) + f64(bitcast<f32>(lo)); }"
+  , "fn rhi(a: R) -> u32 { return bitcast<u32>(f32(a)); }"
+  , "fn rlo(a: R) -> u32 { if (risnan(a) || risinf(a)) { return 0u; } return bitcast<u32>(f32(a - f64(f32(a)))); }"
+  -- (toward 0, below 2^52: through two u32s)
+  , "fn rtrunc0(a: R) -> R {"
+  , "  let x = abs(a);"
+  , "  if (!(x < TWO52)) { return a; }"
+  , "  let h = f64(u32(x * (1.0lf / TWO32))) * TWO32;"
+  , "  let t = h + f64(u32(x - h));"
+  , "  return select(t, -t, a < 0.0lf);"
+  , "}"
+  , "fn rfloor(a: R) -> R {"
+  , "  if (risnan(a) || !(abs(a) < TWO52)) { return a; }"
+  , "  let t = rtrunc0(a);"
+  , "  return select(t, t - 1.0lf, t > a);"
+  , "}"
+  , "fn rround(a: R) -> R { return rfloor(a + 0.5lf); }"
+  , "fn rtoi(a: R) -> i32 {"
+  , "  if (risnan(a)) { return 0; }"
+  , "  if (a >= 2147483648.0lf) { return 2147483647; }"
+  , "  if (a < -2147483648.0lf) { return -2147483647 - 1; }"
+  , "  return i32(rtrunc0(a));"
+  , "}"
+  -- (from f32's 1/sqrt, of a scaled to [1, 4): two Newton steps for
+  -- 1/sqrt, then one for sqrt)
+  , "fn rsqrt(a: R) -> R {"
+  , "  if (risnan(a) || a < 0.0lf) { return rnan(); }"
+  , "  if (risinf(a)) { return a; }"
+  , "  if (a == 0.0lf) { return 0.0lf; }"
+  , "  let k = rexpo(a) >> 1u;"
+  , "  let m = rldexp(a, -2 * k);"
+  , "  var y = f64(inverseSqrt(f32(m)));"
+  , "  y = y * (1.5lf - 0.5lf * m * y * y);"
+  , "  y = y * (1.5lf - 0.5lf * m * y * y);"
+  , "  let x = m * y;"
+  , "  return rldexp(x + 0.5lf * y * (m - x * x), k);"
+  , "}"
+  , "const LN2_HI = " ++ f64Lit (decimal "0.693147180369123816490") ++ ";"
+  , "const LN2_LO = " ++ f64Lit (ln2 - toRational (fromRational (decimal "0.693147180369123816490") :: Double)) ++ ";"
+  , "const PIO2_1 = " ++ f64Lit pio2_1 ++ ";"
+  , "const PIO2_2 = " ++ f64Lit pio2_2 ++ ";"
+  , "const PIO2_3 = " ++ f64Lit (piR / 2 - pio2_1 - pio2_2) ++ ";"
+  , "const PI = " ++ f64Lit piR ++ ";"
+  , "const PIO2 = " ++ f64Lit (piR / 2) ++ ";"
+  -- exp: e^a = 2^k e^r, r = a - k ln 2 (|r| <= ln 2 / 2), e^r by its series
+  , "fn rexp(a: R) -> R {"
+  , "  if (risnan(a)) { return a; }"
+  , "  if (a > 709.8lf) { return rinf(); }"
+  , "  if (a < -745.2lf) { return 0.0lf; }"
+  , "  let k = rround(a / " ++ f64Lit ln2 ++ ");"
+  , "  let r = (a - k * LN2_HI) - k * LN2_LO;"
+  , "  return rldexp(" ++ horner64 "r" [ 1 / fact n | n <- [0 .. 14] ] ++ ", i32(k));"
+  , "}"
+  -- log: a = m 2^e, m in [1/sqrt 2, sqrt 2]; log m = 2 atanh(s),
+  -- s = (m - 1)/(m + 1), by its series in s^2
+  , "fn rlog(a: R) -> R {"
+  , "  if (a == 0.0lf) { return -rinf(); }"
+  , "  if (risnan(a) || a < 0.0lf) { return rnan(); }"
+  , "  if (risinf(a)) { return a; }"
+  , "  var e = rexpo(a);"
+  , "  var m = rldexp(a, -e);"
+  , "  if (m > 1.4142135623730951lf) { m = m * 0.5lf; e += 1; }"
+  , "  let f = m - 1.0lf;"
+  , "  let s = f / (2.0lf + f);"
+  , "  let z = s * s;"
+  , "  let lm = 2.0lf * s * " ++ horner64 "z" [ 1 / fromIntegral (2 * k + 1) | k <- [0 .. 12 :: Int] ] ++ ";"
+  , "  let fe = f64(e);"
+  , "  return fe * LN2_HI + (fe * LN2_LO + lm);"
+  , "}"
+  -- sin and cos: a = k pi/2 + r, |r| <= pi/4, by the quadrant
+  , "fn rsincos(a: R) -> vec2<f64> {"
+  , "  let k = rround(a / PIO2);"
+  , "  let r = ((a - k * PIO2_1) - k * PIO2_2) - k * PIO2_3;"
+  , "  let z = r * r;"
+  , "  let sn = r * " ++ horner64 "z" [ (-1) ^ n / fact (2 * n + 1) | n <- [0 .. 11 :: Int] ] ++ ";"
+  , "  let cs = " ++ horner64 "z" [ (-1) ^ n / fact (2 * n) | n <- [0 .. 11 :: Int] ] ++ ";"
+  , "  let q = i32(k - 4.0lf * rfloor(k / 4.0lf));"
+  , "  if (q == 0) { return vec2<f64>(sn, cs); }"
+  , "  if (q == 1) { return vec2<f64>(cs, -sn); }"
+  , "  if (q == 2) { return vec2<f64>(-sn, -cs); }"
+  , "  return vec2<f64>(-cs, sn);"
+  , "}"
+  , "fn rsin(a: R) -> R { if (risnan(a) || risinf(a)) { return rnan(); } return rsincos(a).x; }"
+  , "fn rcos(a: R) -> R { if (risnan(a) || risinf(a)) { return rnan(); } return rsincos(a).y; }"
+  , "fn rtan(a: R) -> R { let sc = rsincos(a); return sc.x / sc.y; }"
+  -- atan2: as df64's: t = min/max of |y| and |x|; atan t = atan c +
+  -- atan u, c = k/8 nearest t, u = (t - c)/(1 + t c), by its series
+  , "fn ratan2(y: R, x: R) -> R {"
+  , "  if (x == 0.0lf && y == 0.0lf) { return 0.0lf; }"
+  , "  if (risnan(x) || risnan(y)) { return rnan(); }"
+  , "  let ax = abs(x);"
+  , "  let ay = abs(y);"
+  , "  let swap = ax < ay;"
+  , "  let t = select(ay, ax, swap) / select(ax, ay, swap);"
+  , "  let k = rround(t * 8.0lf);"
+  , "  let c = k * 0.125lf;"
+  , "  let u = (t - c) / (1.0lf + t * c);"
+  , "  let z = u * u;"
+  , "  var table = array<f64, 9>(" ++ intercalate ", " (map f64Lit atanTable) ++ ");"
+  , "  var r = table[clamp(i32(k), 0, 8)] + u * " ++ horner64 "z" [ (-1) ^ k / fromIntegral (2 * k + 1) | k <- [0 .. 8 :: Int] ] ++ ";"
+  , "  if (swap) { r = PIO2 - r; }"
+  , "  if (x < 0.0lf) { r = PI - r; }"
+  , "  if (y < 0.0lf) { r = -r; }"
+  , "  return r;"
+  , "}"
+  , "fn rsinhs(a: R) -> R {"
+  , "  let z = a * a;"
+  , "  return a * " ++ horner64 "z" [ 1 / fact (2 * n + 1) | n <- [0 .. 10 :: Int] ] ++ ";"
+  , "}"
+  , "fn rsinh(a: R) -> R {"
+  , "  if (abs(a) < 1.0lf) { return rsinhs(a); }"
+  , "  let e = rexp(a);"
+  , "  return 0.5lf * (e - 1.0lf / e);"
+  , "}"
+  , "fn rcosh(a: R) -> R { let e = rexp(a); return 0.5lf * (e + 1.0lf / e); }"
+  , "fn rtanh(a: R) -> R {"
+  , "  if (a > 20.0lf) { return 1.0lf; }"
+  , "  if (a < -20.0lf) { return -1.0lf; }"
+  , "  if (abs(a) < 1.0lf) { let s = rsinhs(a); return s / rsqrt(1.0lf + s * s); }"
+  , "  let e2 = rexp(2.0lf * a);"
+  , "  return (e2 - 1.0lf) / (e2 + 1.0lf);"
+  , "}"
+  ]
+  where
+    fact :: Int -> Rational
+    fact n = fromIntegral (product [1 .. n])
+    -- (pi/2 in parts of 33 bits, as fdlibm's: k times each is exact for
+    -- k below 2^20)
+    pio2_1 = toRational (fromRational (decimal "1.57079632673412561417") :: Double)
+    pio2_2 = toRational (fromRational (decimal "0.0000000000607710050630396597660") :: Double)
+
+-- | A polynomial in z (an f64 name), its coefficients from the constant
+-- term up, by Horner's rule.
+horner64 :: String -> [Rational] -> String
+horner64 z cs = foldr (\c acc -> "(" ++ f64Lit c ++ " + " ++ z ++ " * " ++ acc ++ ")") (f64Lit (last cs)) (init cs)
+
+-- | A constant as an f64 literal: the double nearest it.
+f64Lit :: Rational -> String
+f64Lit r = "(" ++ show (fromRational r :: Double) ++ "lf)"
+
 -- | A polynomial in z (WGSL, an R), its coefficients from the constant
 -- term up, by Horner's rule, for |z| at most @zmax@: the terms after the first whose tail
 -- (all the terms from it on) is below 1e-8 are summed in f32 (on z's high
@@ -642,8 +904,8 @@ autocolor = unlines
   , "  atomicStore(&misses[e + 5u], rlo(y));"
   , "}"
   , "fn ac_dist2(e: u32, x: R, y: R) -> R {"
-  , "  let dx = rsub(rbits(palette[e], palette[e + 1u]), x);"
-  , "  let dy = rsub(rbits(palette[e + 2u], palette[e + 3u]), y);"
+  , "  let dx = rsub(rhl(palette[e], palette[e + 1u]), x);"
+  , "  let dy = rsub(rhl(palette[e + 2u], palette[e + 3u]), y);"
   , "  return radd(rmul(dx, dx), rmul(dy, dy));"
   , "}"
   -- (every entry's color weighted by one over its squared distance,
@@ -674,7 +936,7 @@ autocolor = unlines
   , "    let count = palette[h + 3u];"
   , "    let off = palette[h + 6u];"
   , "    var best = -1;"
-  , "    var bestd = rbits(palette[h + 4u], palette[h + 5u]);"
+  , "    var bestd = rhl(palette[h + 4u], palette[h + 5u]);"
   , "    for (var i = 0u; i < count; i++) {"
   , "      let d = ac_dist2(off + 5u * i, x, y);"
   , "      if ((rlt(d, bestd) || req(d, bestd)) && (best < 0 || rlt(d, bestd))) { best = i32(i); bestd = d; }"

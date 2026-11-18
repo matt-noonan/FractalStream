@@ -277,6 +277,11 @@ jobs:
         if [ "$BACKEND" = llvm ]; then
           bundle "$BIN/fsrun.exe" FractalStream/cli
         fi
+        # (and DXC, which wgpu loads itself, so ldd doesn't see it: beside
+        # each program, where fsgpu.c looks)
+        for d in FractalStream FractalStream/cli; do
+          [ -d "$d" ] && cp third_party/wgpu-native/lib/dxcompiler.dll third_party/wgpu-native/lib/dxcompiler-LICENSE.txt "$d/"
+        done
         ls -lR FractalStream
 
         zip -r "FractalStream-$SUFFIX.zip" FractalStream
@@ -334,6 +339,12 @@ jobs:
         # (and with a GPU, its shaders must have gone through the probe,
         # Backend.WGPU.Probe: one that couldn't start says so)
         if grep -q "without a probe" gpu.log; then echo "the GPU's probe didn't start"; exit 1; fi
+        # (in doubles, where the GPU has them: as the CPU draws)
+        if [ "$status" -eq 0 ]; then
+          # (wgpu's log for the first, to see which shader compiler it took)
+          FS_WGPU_LOG=1 FractalStream/cli/fsrun.exe snapshot --backend gpu-f64 --project plane.yaml --viewer Plane --output plane-f64.png 2>&1 | grep -iE "fsgpu|dxc|fxc|f64|shader model|compiler" | head -20 || true
+          dev-tools/ci/gpu-f64-check.sh FractalStream/cli/fsrun.exe gpu-f64-check
+        fi
         ls FractalStream/cli | grep -i wgpu
 
     - if: ${{ inputs.backend == 'llvm' }}

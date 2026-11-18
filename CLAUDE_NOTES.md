@@ -518,6 +518,30 @@ their iteration's arena (`Gen.reclaiming`). Each pixel's issues are the
 top byte of its output word; the web viewer shows a render's issues
 (`viewerIssues`, `describeRenderIssues`).
 
+**GPU f64** (`gpu-f64`, `Double64`, desktop only: wgpu's native-only
+`SHADER_F64`, which Vulkan and DirectX 12 may have and Metal never does;
+`fsgpu.c` requests it when the adapter has it, `gdF64` says so, and the
+backend declines otherwise; the web's `gpuBackends` leaves it out). First
+in the default order. DirectX's shaders have only arithmetic,
+comparisons, `abs`/`min`/`max` and conversions for doubles (naga passes
+`floor(double)` and the like straight through to HLSL), and WGSL can't
+bitcast an f64, so every f64 function in `f64Numbers` is arithmetic:
+`rpow2` by squaring, `rexpo` by comparing with powers of 2, `rfloor`
+through two u32s, `rsqrt` by Newton from f32's, `rf64`/`rtobits` (bits
+both ways, for arguments, tables and lists: f64's `realWords` are the
+double's bits, low word first), and exp, log, sin/cos, atan2 and the
+hyperbolics as df64's, in f64. Parameters are `vec2u` words for every
+precision (`rparam`); the autocolor palette and misses stay f32 pairs
+(`rhl`, `rhi`/`rlo`). This Mac can't run f64 shaders, so: naga
+(`~/.cargo/bin/naga`, 29.x, installed 2026-11-17 with the user's OK)
+validates them and translates them to SPIR-V and HLSL;
+`dev-tools/gpu/f64-check.mjs DIR/gpu-f64.wgsl` translates the f64
+runtime to JavaScript (whose numbers are f64s) and measures each function
+against `Math` (all within 3 ulp) and the bits' round trip; and CI's GPU
+checks run `dev-tools/ci/gpu-f64-check.sh`, drawing library viewers with
+the CPU and gpu-f64 on lavapipe (Linux) and WARP (Windows) and comparing
+them (`dev-tools/ci/compare-png.py`).
+
 `ComplexViewer` is the YAML-serializable viewer config (extends to complex-plane viewers).
 
 ### Tools (`Actor.Tool`)

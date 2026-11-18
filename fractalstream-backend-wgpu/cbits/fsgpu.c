@@ -70,6 +70,7 @@ static WGPUBuffer no_tables;
 static WGPUBuffer no_palette;   /* for a kernel without autocolor */
 static WGPUBuffer no_misses;
 static uint64_t max_binding;
+static int has_f64;              /* whether shaders can have f64s */
 static char *lost;               /* why the device was lost, once it was */
 
 static char *copy_view(const char *prefix, WGPUStringView v) {
@@ -182,6 +183,47 @@ static WGPUBuffer make_buffer(uint64_t size, WGPUBufferUsage usage) {
   return wgpuDeviceCreateBuffer(device, &d);
 }
 
+/* The instance. On Windows, Direct3D 12 compiles shaders with DXC
+ * (dxcompiler.dll, beside the program: dev-tools/wgpu/fetch.sh fetches
+ * it), where it's there: only with DXC does wgpu give shaders doubles
+ * (SHADER_F64). Without it, wgpu's default (FXC). */
+static void on_log(WGPULogLevel level, WGPUStringView message, void *u) {
+  (void)level; (void)u;
+  fprintf(stderr, "wgpu: %.*s\n", (int)(message.length == WGPU_STRLEN ? strlen(message.data) : message.length), message.data);
+}
+
+static WGPUInstance make_instance(void) {
+  /* (FS_WGPU_LOG=1: wgpu's own log, on stderr, for finding out why) */
+  const char *log = getenv("FS_WGPU_LOG");
+  if (log && *log) {
+    wgpuSetLogCallback(on_log, NULL);
+    wgpuSetLogLevel(WGPULogLevel_Info);
+  }
+#if defined(_WIN32)
+  static char path[MAX_PATH + 32];
+  DWORD n = GetModuleFileNameA(NULL, path, MAX_PATH);
+  char *slash = n ? strrchr(path, '\\') : NULL;
+  if (slash) {
+    strcpy(slash + 1, "dxcompiler.dll");
+    int found = GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+    if (log && *log) fprintf(stderr, "fsgpu: %s %s\n", path, found ? "is there: using DXC" : "isn't there: using FXC");
+    if (found) {
+      WGPUInstanceExtras extras;
+      memset(&extras, 0, sizeof extras);
+      extras.chain.sType = (WGPUSType)WGPUSType_InstanceExtras;
+      extras.dx12ShaderCompiler = WGPUDx12Compiler_Dxc;
+      extras.dxcPath = (WGPUStringView){ path, WGPU_STRLEN };
+      extras.dxcMaxShaderModel = WGPUDxcMaxShaderModel_V6_0;
+      WGPUInstanceDescriptor d = WGPU_INSTANCE_DESCRIPTOR_INIT;
+      d.nextInChain = &extras.chain;
+      WGPUInstance i = wgpuCreateInstance(&d);
+      if (i) return i;
+    }
+  }
+#endif
+  return wgpuCreateInstance(NULL);
+}
+
 /* ---- the calls ---- */
 
 /* Start the GPU: NULL, or why there's none. Once; later calls give the
@@ -197,7 +239,7 @@ char *fsgpu_init(void) {
     return e;
   }
   initialized = 1;
-  instance = wgpuCreateInstance(NULL);
+  instance = make_instance();
   if (!instance) { init_error = copy_string("No WebGPU here (wgpu couldn't start)"); goto done; }
 
   struct waited wa = {0};
@@ -220,9 +262,15 @@ char *fsgpu_init(void) {
   required.maxBufferSize = supported.maxBufferSize;
   max_binding = supported.maxStorageBufferBindingSize;
 
+  /* (doubles, where the GPU has them, for the GPU f64 backend: wgpu has
+   * them on Vulkan and DirectX 12, not Metal) */
+  WGPUFeatureName f64 = (WGPUFeatureName)WGPUNativeFeature_ShaderF64;
+  has_f64 = wgpuAdapterHasFeature(adapter, f64);
+
   struct waited wd = {0};
   WGPUDeviceDescriptor dd = WGPU_DEVICE_DESCRIPTOR_INIT;
   dd.requiredLimits = &required;
+  if (has_f64) { dd.requiredFeatureCount = 1; dd.requiredFeatures = &f64; }
   dd.deviceLostCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
   dd.deviceLostCallbackInfo.callback = on_lost;
   dd.uncapturedErrorCallbackInfo.callback = on_uncaptured;
@@ -467,7 +515,11 @@ done:
   return err;
 }
 
-/* What GPU this is ("" before fsgpu_init succeeds): for messages. */
+/* Whether shaders can have f64s (after fsgpu_init). */
+int fsgpu_has_f64(void) { return has_f64; }
+
+/* What GPU this is, and through which API ("" before fsgpu_init
+ * succeeds): for messages. */
 char *fsgpu_name(void) {
   take_lock();
   char *s;
@@ -475,7 +527,16 @@ char *fsgpu_name(void) {
   else {
     WGPUAdapterInfo info = WGPU_ADAPTER_INFO_INIT;
     wgpuAdapterGetInfo(adapter, &info);
-    s = copy_view("", info.device);
+    const char *api = info.backendType == WGPUBackendType_Vulkan ? "Vulkan"
+                    : info.backendType == WGPUBackendType_Metal ? "Metal"
+                    : info.backendType == WGPUBackendType_D3D12 ? "Direct3D 12"
+                    : info.backendType == WGPUBackendType_OpenGL ? "OpenGL"
+                    : info.backendType == WGPUBackendType_OpenGLES ? "OpenGL ES" : "?";
+    char *d = copy_view("", info.device);
+    size_t n = strlen(d) + strlen(api) + 8;
+    s = malloc(n);
+    snprintf(s, n, "%s, on %s", d, api);
+    free(d);
     wgpuAdapterInfoFreeMembers(info);
   }
   give_lock();

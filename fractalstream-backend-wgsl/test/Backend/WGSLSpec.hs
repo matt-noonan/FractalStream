@@ -31,9 +31,9 @@ import qualified System.Environment as Env
 
 -- | A device that keeps the shaders it's given, and fails every block.
 keeping :: IORef [String] -> GpuDevice
-keeping kept = GpuDevice $ \source -> do
+keeping kept = GpuDevice { gdF64 = True, gdName = "", gdCompile = \source -> do
   modifyIORef kept (source :)
-  pure (Right (GpuKernel (\_ _ -> pure (GpuArgs (\_ _ _ _ _ -> pure (Left "no GPU here"))))))
+  pure (Right (GpuKernel (\_ _ -> pure (GpuArgs (\_ _ _ _ _ -> pure (Left "no GPU here")))))) }
 
 -- | A script's viewer, with the platform's (pure) backend and the GPU's,
 -- on this device.
@@ -44,7 +44,7 @@ withViewer device script k = do
   let ui = UI { newEnsemble = pure ()
               , makeLayout = \_ _ _ -> pure (pure ())
               , makeViewer = \_ _ _ _ _ v -> writeIORef ref (Just v) >> pure (pure ()) }
-  withBackends pureBackend [gpuBackends (pure device)] $ \backend -> do
+  withBackends pureBackend [gpuBackends allPrecisions (pure device)] $ \backend -> do
     runEnsemble backend ui ens
     readIORef ref >>= maybe (fail "no viewer") k
 
@@ -57,7 +57,10 @@ shaders script = do
     Renderer tries <- viewerRenderer v >>= either fail pure
     results <- forM [ t | t@(b, _) <- tries, b /= Cpu ] $ \(b, compileAndBind) -> (b,) <$> compileAndBind
     sources <- readIORef kept
-    let precisionOf b = if b == GpuDf64 then "alias R = vec2f;" else "alias R = f32;"
+    let precisionOf b = case b of
+          GpuF64 -> "alias R = f64;"
+          GpuDf64 -> "alias R = vec2f;"
+          _ -> "alias R = f32;"
         sourceFor b = case filter (precisionOf b `isInfixOf`) sources of
           s : _ -> Right s
           [] -> Left "not compiled"
@@ -75,7 +78,7 @@ mandelbrot = unlines
 
 declines :: String -> String -> Expectation
 declines script why = shaders script >>= \results -> do
-  map fst results `shouldMatchList` [GpuDf64, GpuF32]
+  map fst results `shouldMatchList` [GpuF64, GpuDf64, GpuF32]
   forM_ results $ \(b, r) -> case r of
     Left said -> said `shouldSatisfy` (why `isInfixOf`)
     Right _ -> expectationFailure (backendKey b ++ " didn't decline it")
@@ -85,7 +88,7 @@ spec = describe "the GPU backends" $ do
 
   it "compile a viewer in double-float and in single precision" $ do
     results <- shaders mandelbrot
-    map fst results `shouldMatchList` [GpuDf64, GpuF32]
+    map fst results `shouldMatchList` [GpuF64, GpuDf64, GpuF32]
     forM_ results $ \(_, r) -> r `shouldSatisfy` either (const False) ("fn main(" `isInfixOf`)
 
   it "compile the functions of real and complex numbers" $ do
@@ -112,7 +115,7 @@ spec = describe "the GPU backends" $ do
       , "zs := transform(ys, w -> w / 2)"
       , "u := find(zs, w -> re w > 0, 0)"
       , "color <- if |xs @ 2| > 1 and n > 3 and |zs @@ 0| < 9 and |u| < 5 then white else black" ]
-    map fst results `shouldMatchList` [GpuDf64, GpuF32]
+    map fst results `shouldMatchList` [GpuF64, GpuDf64, GpuF32]
     forM_ results $ \(_, r) -> r `shouldSatisfy` either (const False) ("arena" `isInfixOf`)
 
   it "compile tables: by index, by point, and their sizes" $ do
@@ -136,7 +139,7 @@ spec = describe "the GPU backends" $ do
       , "a := autocolor(0, z)"
       , "b := nearest_autocolor(1, z)"
       , "color <- blend(0.5, a, blend(0.5, b, get_autocolor(0, z)))" ]
-    map fst results `shouldMatchList` [GpuDf64, GpuF32]
+    map fst results `shouldMatchList` [GpuF64, GpuDf64, GpuF32]
     forM_ results $ \(_, r) -> do
       r `shouldSatisfy` either (const False) ("= ac_lookup(1u, 0, " `isInfixOf`)
       r `shouldSatisfy` either (const False) ("= ac_lookup(0u, 1, " `isInfixOf`)
@@ -148,10 +151,15 @@ spec = describe "the GPU backends" $ do
       , "s := text(\"z = \", z)"
       , "color <- if length([s]) > 1 then white else black" ]) "not on the GPU yet: text"
 
-    it "numbers past single precision's range" $ declines (unlines
-      [ "@viewer \"N\" var=z center=0 pixelSize=1/50"
-      , "color <- if |z| < 0.00000000000000000000000000000000000000000001 then white else black" ])
-      "numbers as large or as small as"
+    it "numbers past single precision's range (but for double precision)" $ do
+      results <- shaders (unlines
+        [ "@viewer \"N\" var=z center=0 pixelSize=1/50"
+        , "color <- if |z| < 0.00000000000000000000000000000000000000000001 then white else black" ])
+      forM_ results $ \(b, r) -> case (b, r) of
+        (GpuF64, Right src) -> src `shouldSatisfy` ("rbits(0x" `isInfixOf`)
+        (GpuF64, Left why) -> expectationFailure ("gpu-f64 declined it: " ++ why)
+        (_, Left said) -> said `shouldSatisfy` ("numbers as large or as small as" `isInfixOf`)
+        (_, Right _) -> expectationFailure (backendKey b ++ " didn't decline it")
 
     it "every viewer, without a GPU" $ withViewer (Left "No WebGPU here") mandelbrot $ \v -> do
       Renderer tries <- viewerRenderer v >>= either fail pure
@@ -163,21 +171,24 @@ spec = describe "the GPU backends" $ do
     withViewer (Right (keeping kept)) mandelbrot $ \v -> do
       setValue (vSize v) (Dimensions (40, 30))
       img <- renderViewerBuffer False v >>= either fail pure
-      rbReport img `shouldBe` RenderReport (Just Cpu) [(GpuDf64, Decline "the GPU failed: no GPU here")]
+      rbReport img `shouldBe` RenderReport (Just Cpu) [(GpuF64, Decline "the GPU failed: no GPU here"), (GpuDf64, Decline "the GPU failed: no GPU here")]
 
   describe "lay out their arguments" $ do
     it "as a word for a truth value, an integer or a color" $ do
-      argWords BooleanType True `shouldBe` [1]
-      argWords IntegerType (-1) `shouldBe` [0xffffffff]
-      argWords ColorType (rgbToColor (1, 2, 3)) `shouldBe` [0x030201]
+      argWords DoubleFloat BooleanType True `shouldBe` [1]
+      argWords DoubleFloat IntegerType (-1) `shouldBe` [0xffffffff]
+      argWords DoubleFloat ColorType (rgbToColor (1, 2, 3)) `shouldBe` [0x030201]
     it "as two f32s for a real number, their sum the double (to about 48 bits)" $ do
-      argWords RealType 1.5 `shouldBe` [0x3fc00000, 0]
-      forM_ [0.1, -1 / 3, 1e10 + 1 / 7, 2.5e-20] $ \x -> case argWords RealType x of
+      argWords DoubleFloat RealType 1.5 `shouldBe` [0x3fc00000, 0]
+      forM_ [0.1, -1 / 3, 1e10 + 1 / 7, 2.5e-20] $ \x -> case argWords DoubleFloat RealType x of
         [hi, lo] -> let y = float2Double (castWord32ToFloat hi) + float2Double (castWord32ToFloat lo)
                     in abs (y - x) `shouldSatisfy` (<= abs x * 2 ** (-47))
         ws -> expectationFailure (show ws)
+    it "as the double's bits, low word first, for a real number in double precision" $ do
+      argWords Double64 RealType 1.5 `shouldBe` [0, 0x3ff80000]
+      argWords Double64 RealType (-0.1) `shouldBe` [0x9999999a, 0xbfb99999]
     it "as four f32s for a complex number" $
-      length (argWords ComplexType (1 :+ 2)) `shouldBe` 4
+      length (argWords DoubleFloat ComplexType (1 :+ 2)) `shouldBe` 4
     it "as an address for a list, its length and elements after the slots" $ do
       let ctx = Bind (Proxy @"n") IntegerType 7 (Bind (Proxy @"xs") (ListType IntegerType) [3, 4] EmptyContext)
-      fst (packArgs ctx) `shouldBe` [7, 0x80000002, 2, 3, 4]
+      fst (packArgs DoubleFloat ctx) `shouldBe` [7, 0x80000002, 2, 3, 4]

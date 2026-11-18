@@ -63,7 +63,7 @@ foreign import javascript unsafe "$1.error ?? ''"
 -- | The GPU, or why there's none.
 webGpu :: IO (Either String GpuDevice)
 webGpu = fromJSString <$> gpuError >>= \case
-  "" -> pure (Right GpuDevice { gdCompile = compile })
+  "" -> pure (Right GpuDevice { gdCompile = compile, gdF64 = False, gdName = "WebGPU" })
   why -> pure (Left why)
   where
     compile source = attempt (gpuCompile (toJSString source)) >>= \case

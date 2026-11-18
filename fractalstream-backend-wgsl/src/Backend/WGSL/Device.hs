@@ -19,10 +19,15 @@ import Foreign.ForeignPtr (ForeignPtr)
 import Foreign.Ptr (Ptr)
 
 -- | A GPU, ready to use.
-newtype GpuDevice = GpuDevice
+data GpuDevice = GpuDevice
   { gdCompile :: String -> IO (Either String GpuKernel)
     -- ^ a WGSL module (see "Backend.WGSL.Code": its bindings, and its
     --   entry point, @main@), or why the GPU wouldn't compile it
+  , gdF64 :: Bool
+    -- ^ whether its shaders can have @f64@s (wgpu's native-only
+    --   @SHADER_F64@)
+  , gdName :: String
+    -- ^ which GPU it is (and through which API), for messages
   }
 
 -- | A compiled shader.
