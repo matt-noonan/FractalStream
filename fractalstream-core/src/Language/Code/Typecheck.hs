@@ -47,7 +47,7 @@ type ParsedCode = Stmt
 -- | Check parsed code in the given environment.
 runParsedCode :: EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
 runParsedCode env c =
-  case withEnvironment env (expandFunctionBlocks (Map.keysSet (tyVars (typeEnvOf env))) c >>= expandRuns >>= expandPrevious >>= expandStops >>= expandTuples >>= elab Map.empty env . inferDeclarations (typeEnvOf env) Map.empty) of
+  case withEnvironment env (expandRuns c >>= expandFunctionBlocks (Map.keysSet (tyVars (typeEnvOf env))) >>= expandPrevious >>= expandStops >>= expandTuples >>= elab Map.empty env . inferDeclarations (typeEnvOf env) Map.empty) of
     TC x -> x
 
 -- | The steps before elaboration, by themselves: expand @run@s, @stops@,
@@ -56,7 +56,7 @@ runParsedCode env c =
 -- result does nothing more to it before elaborating it.)
 expandParsedCode :: TypeEnv -> ParsedCode -> Either TCError ParsedCode
 expandParsedCode tenv c =
-  case inferDeclarations tenv Map.empty <$> (expandFunctionBlocks (Map.keysSet (tyVars tenv)) c >>= expandRuns >>= expandPrevious >>= expandStops >>= expandTuples) of
+  case inferDeclarations tenv Map.empty <$> (expandRuns c >>= expandFunctionBlocks (Map.keysSet (tyVars tenv)) >>= expandPrevious >>= expandStops >>= expandTuples) of
     TC x -> x
 
 ------------------------------------------------------

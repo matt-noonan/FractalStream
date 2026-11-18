@@ -390,6 +390,37 @@ A function works out a value, and does nothing else:
 For now, a function with a body can only be called as the whole right-hand
 side of an assignment: `x := f(a)`, `x <- f(a)`, or `(x, y) := f(a)`.
 
+### Functions given as arguments
+
+A function, or a code block, can be given a function as an argument: by
+its name, or written where it's given, as `w -> ...` (or `(u, v) -> ...`
+for a function of two values):
+
+```
+sq(a) := a a
+twice(g, v) := g(g(v))
+
+x := twice(sq, 3)            # 81
+y := twice(w -> w + 1, 3)    # 5
+
+define shade(h):
+  color <- rainbow(h(iterations))
+
+run shade(n -> n / 20)
+```
+
+Nothing marks a parameter as a function: it's one wherever it's given a
+function, and then the body's `g(v)` (or `g v`, or `2 g(v)^2`) uses it.
+Given a number instead, `g(v)` is a product, as always. A function given
+as an argument can be given on to another call (`ap(g, v)` inside
+`twice`), but can't be used as a value. One written in place sees the
+names where it's written, not the ones inside the function it's given to.
+
+A function with a body can be given to another function with a body, or
+to a code block, where it's called as usual, as the whole right-hand side
+of an assignment. A one-line function can be given one-line functions,
+and functions written in place.
+
 ### Defining code to run
 
 A block of code can be given a name with `define`, and then run (as many

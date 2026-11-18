@@ -254,9 +254,24 @@ valueAndArithGrammar funs own = mdo
     , pOr
     , pointIndex
     , sliceAll
+    , funRef
+    , lambda
     ]
 
-  pairItem <- ruleChoice [ list, pOr, pointIndex, sliceAll ]
+  pairItem <- ruleChoice [ list, pOr, pointIndex, sliceAll, funRef, lambda ]
+
+  -- A function given as an argument (see "Language.Code.FunctionArgs"):
+  -- one of the script's, by its name alone, or one written in place,
+  -- `w -> e` or `(u, v) -> e`.
+  funRef <- rule (node (EFunRef <$> funName))
+  lambda <- rule (node (ELambda <$> lambdaParams <*> (token RightArrow *> pOr)))
+  lambdaParams <- ruleChoice
+    [ (:[]) <$> lambdaParam
+    , token OpenParen *> ((:) <$> lambdaParam <*> some (token Comma *> lambdaParam)) <* token CloseParen
+    ]
+  lambdaParam <- rule $ tokenMatch $ \case
+    Identifier n | not (reserved n) -> Just n
+    _ -> Nothing
 
   -- In a table's index, `point z` stands for its first two indices, and
   -- `*` for every index along a dimension: `T @ (point z, *)`.

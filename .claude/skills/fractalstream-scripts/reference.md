@@ -602,6 +602,16 @@ for now: `x := f(a)`, `x <- f(a)`, `(x, y) := f(a)` (not `f(a) + 1`). Prefer
 one over a `define` block that hands results back through the caller's
 variables.
 
+Functions as arguments: any function or code block can be given a function,
+by name (`twice(sq, 3)`) or written in place (`twice(w -> w + 1, 3)`,
+`(u, v) -> u - v` for two values). No declaration: a parameter is a function
+wherever it's given one, and the body's `g(v)` / `g v` / `2 g(v)^2` then calls
+it (given a number, `g(v)` is a product). It can be passed on to another call,
+not used as a value. A lambda sees the names where it's written. One-line
+functions can be given one-line functions or lambdas; a `function` block can
+be given to another `function` block or a code block. Use it instead of
+copying a block once per map (`define shade(g):` ... `w <- g(w)`).
+
 `define`/`run`: the block runs as if pasted at the `run` site; parameters
 become local variables (copies: assigning a parameter doesn't change the
 argument); it reads and assigns the caller's other variables (e.g.
