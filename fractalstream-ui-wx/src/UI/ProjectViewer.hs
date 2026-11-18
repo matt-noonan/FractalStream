@@ -32,6 +32,7 @@ import Data.Planar
 
 import UI.Tile
 import UI.Magnify (onPinch)
+import UI.Cursors
 import Task.Block (subBlockSize)
 import UI.Layout
 import UI.Widgets
@@ -507,6 +508,47 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           _ -> pure False
 
     currentTool <- variable [value := Left NavTool ]
+    -- The pointer over the viewer, as the web app's (see UI.Cursors): an
+    -- open hand in Navigate, closed while the button's down; crosshairs
+    -- with a tool; and the arrow over the tool picker and the menu button.
+    cursors <- newViewerCursors
+    pointerPressed <- newIORef False
+    pointerOnButton <- newIORef False
+    let refreshPointer = do
+          tool <- get currentTool value
+          pressed <- readIORef pointerPressed
+          onButton <- readIORef pointerOnButton
+          void . windowSetCursor p $ case tool of
+            _ | onButton && not pressed -> vcArrow cursors
+            Left NavTool | pressed -> vcClosedHand cursors
+                         | otherwise -> vcOpenHand cursors
+            _ -> vcCrosshair cursors
+        onHudButton pt' = hudSpotAt pt' <&> \case
+          Just ToolPickerSpot -> True
+          Just MenuSpot -> True
+          _ -> False
+        trackPointer = \case
+          -- (a press on a button is a click on it, not a drag)
+          MouseLeftDown pt' _ -> onHudButton pt' >>= \onButton -> do
+            writeIORef pointerOnButton onButton
+            unless onButton (writeIORef pointerPressed True)
+            refreshPointer
+          MouseLeftUp pt' _ -> do
+            writeIORef pointerPressed False
+            onHudButton pt' >>= writeIORef pointerOnButton
+            refreshPointer
+          -- (a move with no button down, perhaps after letting go outside
+          -- the window)
+          MouseMotion pt' _ -> do
+            onButton <- onHudButton pt'
+            down <- readIORef pointerPressed
+            was <- readIORef pointerOnButton
+            when (down || onButton /= was) $ do
+              writeIORef pointerPressed False
+              writeIORef pointerOnButton onButton
+              refreshPointer
+          _ -> pure ()
+    refreshPointer
     -- The path the Animate along path tool is drawing (in model coordinates,
     -- newest point first), and whether a drag is drawing it now.
     moviePath <- newIORef ([] :: [(Double, Double)])
@@ -639,6 +681,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         dropToNavigate Tool{..} = do
           stopToolTimers
           set currentTool [ value := Left NavTool ]
+          refreshPointer
           -- If it stopped partway through a click or drag, forget it,
           -- so that releasing the mouse doesn't zoom or recenter.
           set lastClick [ value := Nothing ]
@@ -691,6 +734,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           tname <- getDynamic (tiName toolInfo) <&> fromRight "--"
           setToolLabel tname
           set currentTool [ value := Right thisTool ]
+          refreshPointer
           showToolConfig <- getDynamic (dyn toolShowConfig)
           showToolConfig True
           activated <- runToolEventHandler thisTool Activated
@@ -715,6 +759,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           deactivateCurrentTool
           setToolLabel "Navigate"
           set currentTool [ value := Left NavTool ]
+          refreshPointer
 
         activateDebugTool = do
           deactivateCurrentTool
@@ -723,11 +768,13 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           windowRaise f
           focusOn p
           set currentTool [ value := Left DebugTool ]
+          refreshPointer
 
         activateMoviePathTool = do
           deactivateCurrentTool
           setToolLabel "Animate along path"
           set currentTool [ value := Left MoviePathTool ]
+          refreshPointer
 
         deactivateCurrentTool = stopToolTimers >> get currentTool value >>= \case
           Left NavTool -> pure ()
@@ -1237,7 +1284,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                      Nothing -> dragAction
                propagateEvent
 
-    set p [ on mouse   := \event -> focusWhenClicked event >> hudMouse event >>= \handled -> unless handled $ moviePathMouse event >>= \handledPath -> unless handledPath $ get lastClick value >>= \lastClickNow -> get currentTool value >>= \currentToolNow -> readIORef globeDrag >>= \globeDragNow -> readIORef diskDrag >>= \diskDragNow -> readIORef panDrag >>= \panNow -> case event of
+    set p [ on mouse   := \event -> trackPointer event >> focusWhenClicked event >> hudMouse event >>= \handled -> unless handled $ moviePathMouse event >>= \handledPath -> unless handledPath $ get lastClick value >>= \lastClickNow -> get currentTool value >>= \currentToolNow -> readIORef globeDrag >>= \globeDragNow -> readIORef diskDrag >>= \diskDragNow -> readIORef panDrag >>= \panNow -> case event of
 
               MouseLeftDown pt modifiers | isNoShiftAltControlDown modifiers -> do
                 set lastClick [value := Just $ Viewport (pointX pt, pointY pt)]

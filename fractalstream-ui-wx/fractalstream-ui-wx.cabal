@@ -106,6 +106,7 @@ executable FractalStream
                        UI.AutocolorEditor
                        UI.MovieMaker
                        UI.Magnify
+                       UI.Cursors
                        UI.BundledFont
                        UI.Spinner
 
