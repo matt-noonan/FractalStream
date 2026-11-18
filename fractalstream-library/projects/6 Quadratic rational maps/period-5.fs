@@ -44,11 +44,12 @@ script: |
   # cell, |Re t| < 1.547 and |Im t| < 1.373, holds the whole parameter space.
   #
   # There is no attracting infinity in this family (oo maps to 1), so a
-  # captured orbit is recognised by its approach to the pole: |z| > 1e20
-  # means |z| < 1e-10 just before, which is inside the local basin of the
-  # critical cycle for good.  The time that takes jumps by whole periods
-  # between neighbouring parameters, so this plane does not use capture-time
-  # bands: the captured set is one warm colour, decided by a vote over four
+  # captured orbit is recognised by its approach to oo, the image of the pole
+  # 0: the orbit is a point of the Riemann sphere (Ĉ), and coming within
+  # 1e-20 of oo (in the chart around it) means it was within 1e-10 of 0 just
+  # before, which is inside the local basin of the critical cycle for good.
+  # The time that takes jumps by whole periods between neighbouring
+  # parameters, so this plane does not use capture-time bands: the captured set is one warm colour, decided by a vote over four
   # samples per pixel.  Two boxes in the Coloring tab switch to the classical
   # level-set view instead (V. Ambrosi's rule, with n = 5 because the critical
   # cycle has period 5): gray where the 3 x 3 neighbourhood of escape times
@@ -146,102 +147,41 @@ script: |
     pb <- wx/tmp
     pa <- wx pb - 1
 
-  # Colour by what the critical orbit did: if it was thrown into the critical
-  # cycle, by how long that took; otherwise it has landed in some other
-  # attracting basin, so look for the cycle it is on and colour by its period
-  # ("stuck" after that little loop means no short cycle: black, which is the
-  # Julia set or a very weakly attracting component).
-  # In the parameter planes the Mandelbrot-like set is black, as it is
-  # traditionally drawn: black is every parameter whose free critical point is
-  # not in the basin of the critical cycle, hyperbolic components of other
-  # types included.  (The Julia-set viewers below do show those other basins,
-  # in pale colours, because there black means the Julia set itself.)
-  define shade2p:
-    if z escaped:
-      color <- rainbow(iterations / period)
-    else if periods:
-      w := z
-      repeat up to 64 times:
-        w <- f2(w)
-      until w = z
-      color <- if stuck then black else blend(0.5, rainbow(iterations / 8), white)
-    else:
-      color <- black
-
-  define shade3p:
-    if z escaped:
-      color <- rainbow(iterations / period)
-    else if periods:
-      w := z
-      repeat up to 64 times:
-        w <- f3(w)
-      until w = z
-      color <- if stuck then black else blend(0.5, rainbow(iterations / 8), white)
-    else:
-      color <- black
-
-  define shade4p:
-    if z escaped:
-      color <- rainbow(iterations / period)
-    else if periods:
-      w := z
-      repeat up to 64 times:
-        w <- f4(w)
-      until w = z
-      color <- if stuck then black else blend(0.5, rainbow(iterations / 8), white)
-    else:
-      color <- black
-
-  define shade2:
-    if z escaped:
-      color <- rainbow(iterations / period)
-    else:
-      w := z
-      repeat up to 64 times:
-        w <- f2(w)
-      until w = z
-      color <- if stuck then black else blend(0.5, rainbow(iterations / 8), white)
-
-  define shade3:
-    if z escaped:
-      color <- rainbow(iterations / period)
-    else:
-      w := z
-      repeat up to 64 times:
-        w <- f3(w)
-      until w = z
-      color <- if stuck then black else blend(0.5, rainbow(iterations / 8), white)
-
-  define shade4:
-    if z escaped:
-      color <- rainbow(iterations / period)
-    else:
-      w := z
-      repeat up to 64 times:
-        w <- f4(w)
-      until w = z
-      color <- if stuck then black else blend(0.5, rainbow(iterations / 8), white)
-
   # The period 5 family has no attracting fixed point at infinity: its critical
   # cycle runs 0 -> oo -> 1 -> f(1) -> f^2(1) -> 0, so a captured orbit is
-  # recognised by its approach to the pole 0 (|z| > 1e20 means |z| < 1e-10
-  # before the pole), not by an escape.  Any orbit that gets that close is
-  # caught for good -- it is within the local basin of the critical cycle at
-  # once -- but the time it takes to get there varies wildly from pixel to
-  # pixel near the edge of a capture region, which is why this plane looks
-  # grainier than the other three.
+  # recognised by its approach to oo, the image of the pole 0: within 1e-20
+  # of oo in the chart around it (|affine(0, u)| < 1e-20, so |u| > 1e20,
+  # which means |u| < 1e-10 a step before), not by an escape.  The orbit is a
+  # point of the Riemann sphere, so it can land on oo itself.  Any orbit that
+  # gets that close is caught for good -- it is within the local basin of the
+  # critical cycle at once -- but the time it takes to get there varies wildly
+  # from pixel to pixel near the edge of a capture region, which is why this
+  # plane looks grainier than the other three.
+  captured5(u) := |affine(0, u)| < 10⁻²⁰
+
+  # Colour by what the critical orbit u did: if it was thrown into the
+  # critical cycle, by how long that took; otherwise it has landed in some
+  # other attracting basin, so look for the cycle it is on and colour by its
+  # period ("stuck" after that little loop means no short cycle: black, which
+  # is the Julia set or a very weakly attracting component).
   define shade5:
-    if |z| > 100000000000000000000.0:
+    if captured5(u):
       color <- rainbow(iterations / period)
     else if periods:
-      w := z
+      w := u
       repeat up to 64 times:
         w <- 1 + (pa w + pb)/w^2
-      until w = z
+      until w = u
       color <- if stuck then black else blend(0.5, rainbow(iterations / 8), white)
     else:
       color <- black
 
+  # In the parameter plane the Mandelbrot-like set is black, as it is
+  # traditionally drawn: black is every parameter whose free critical point is
+  # not in the basin of the critical cycle, hyperbolic components of other
+  # types included.  (The Julia-set viewer does show those other basins, in
+  # pale colours, because there black means the Julia set itself.)
+  #
   # The parameter plane of the period 5 family cannot use capture-time bands.
   # There is no attracting infinity: a captured orbit is one that has come
   # within 1e-10 of the pole, and how long that takes jumps by whole periods
@@ -267,16 +207,16 @@ script: |
     pa := 0.0
     pb := 0.0
     run per5_param(ts)
-    z := -2 pb/pa
-    iterate z -> 1 + (pa z + pb)/z^2 until |z| > 100000000000000000000.0
+    u : Ĉ := -2 pb/pa
+    iterate u -> 1 + (pa u + pb)/u^2 until captured5(u)
     cap5 <- iterations
-    if |z| > 100000000000000000000.0:
+    if captured5(u):
       cls5 <- 1
     else:
-      w := z
+      w := u
       repeat up to 64 times:
         w <- 1 + (pa w + pb)/w^2
-      until w = z
+      until w = u
       cls5 <- if stuck then 0 else 2 + iterations
 
   define per5_paint(c):
@@ -356,7 +296,8 @@ script: |
   pa := 0.0
   pb := 0.0
   run per5_param(t5)
-  iterate z -> 1 + (pa z + pb)/z^2 until |z| > 100000000000000000000.0
+  u : Ĉ := z
+  iterate u -> 1 + (pa u + pb)/u^2 until captured5(u)
   run shade5
 
   @tool overlay for="Parameter plane"
@@ -366,17 +307,19 @@ script: |
     draw circle at t5 with radius 3 pixel_size
 
   @tool "Trace orbit" for="Julia set" shortcut=t
-  on click at w:
+  on click at w0:
     erase
     use yellow for stroke
     pa := 0.0
     pb := 0.0
     run per5_param(t5)
+    w : Ĉ := w0
     repeat up to 200 times:
       draw point at w
       w <- 1 + (pa w + pb)/w^2
-      draw line from previous w to w
-    until |w| > 100000000000000000000.0
+      if not (w ≡ ∞ or previous w ≡ ∞):
+        draw line from previous w to w
+    until captured5(w)
   on deactivated:
     erase
 metadata:
@@ -392,71 +335,67 @@ metadata:
   preview-commands: |
     capture viewer "Parameter plane" as preview
   preview: |
-    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
+    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
+    YII=
