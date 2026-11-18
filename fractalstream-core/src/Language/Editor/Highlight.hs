@@ -319,7 +319,8 @@ tokenClass = \case
   t | t `elem` [If, Then, Else, Or_, And_, Not_, Escapes, Vanishes, Stops, PreviousKeyword, TimesKeyword] -> Just Keyword
     | t `elem` [Euler, Pi, I, True_, False_, Iterations, Stuck] -> Just BuiltinValue
     | t `elem` [TextKeyword, AppendKeyword, PrependKeyword, JoinKeyword, RemoveKeyword, FindKeyword
-               , TransformKeyword, RangeKeyword, LengthKeyword, DiffKeyword] -> Just BuiltinFunction
+               , TransformKeyword, RangeKeyword, LengthKeyword, DiffKeyword
+               , PartialSign, DiffSign ] -> Just BuiltinFunction
     | t `elem` [ Plus, Minus, Times, Divide, IntegerDivide, Caret, Bar, Equal, ExactlyEqual
                , NotEqual, GreaterThan, LessThan, GreaterThanOrEqual, LessThanOrEqual
                , ColonEquals, Prime, LeftArrow, RightArrow, At, AtAt ] -> Just Operator

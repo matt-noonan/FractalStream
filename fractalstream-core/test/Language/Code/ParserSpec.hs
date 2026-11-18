@@ -613,6 +613,26 @@ x <- d|] `shouldBe` Right 3
     it "follow |u| with respect to a real variable" $
       "t := 3.0\ny := |t - 5|\nx <- diff(t, y)" `gives` (-1)
 
+    it "can be written as fractions: ⅆf/ⅆz for diff, ∂f/∂z for partial" $ do
+      "c := 2.0\ny := c^3\nx <- ⅆy/ⅆc" `gives` 12
+      "c := 2.0\ny := c^3\nx <- ∂y/∂c" `gives` 0
+      "c := 2.0\nx <- ∂(c^3)/∂c + 1" `gives` 13
+      "c := 2.0\ny := c^3\nx <- 2 ⅆ²y/ⅆc²" `gives` 24
+      "c := 2.0\ny := c^3\nx <- ⅆ y / ⅆ c" `gives` 12
+      "f(t) := t^3\nc := 2.0\nx <- ∂f(c)/∂c" `gives` 12
+      -- (a power of a derivative takes parentheses)
+      "c := 2.0\ny := c^3\nx <- (ⅆy/ⅆc)^2" `gives` 144
+      failsWith "c := 2.0\ny := c^3\nx <- ⅆy/ⅆc^2" "put it in parentheses: (ⅆf/ⅆz)^2"
+      failsWith "c := 2.0\ny := c^3\nx <- ⅆ²y/ⅆc³" "the order on top (2) isn't the sum of the orders on the bottom (3)"
+
+    it "can be mixed, with several variables on the bottom" $ do
+      -- f = a^2 b^3: ∂²f/∂a∂b = 6 a b^2, ∂³f/∂a∂b² = 12 a b
+      "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- ∂²(a^2 b^3)/∂a∂b" `gives` 108
+      "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- ⅆ²f/ⅆaⅆb" `gives` 108
+      "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- ⅆ³f/ⅆaⅆb²" `gives` 72
+      "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- 2 ⅆ²f/ⅆaⅆb + 1" `gives` 217
+      failsWith "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- ⅆ²f/ⅆaⅆb²" "isn't the sum of the orders on the bottom (3)"
+
     it "leave partial to the expression alone" $ do
       "c := 2.0\ny := c^3\nx <- partial(c, y)" `gives` 0
       "c := 2.0\nx <- partial(c, c^3)" `gives` 12

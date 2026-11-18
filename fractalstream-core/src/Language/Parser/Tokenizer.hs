@@ -94,6 +94,10 @@ data Token
   | AtAt
   | LengthKeyword
   | PreviousKeyword
+  | PartialSign
+    -- ^ @∂@, as in @∂f/∂z@ (@partial(z, f)@)
+  | DiffSign
+    -- ^ @ⅆ@ (double-struck italic small d: Unicode's differential d), as in @ⅆf/ⅆz@ (@diff(z, f)@)
   deriving (Eq, Ord, Show)
 
 instance IsString Token where fromString = Identifier
@@ -198,8 +202,9 @@ skipString = go []
 -- | What an identifier goes on with, after its first letter: letters,
 -- digits, @_@, and combining marks (so @x̂@, x with a combining hat, is
 -- an identifier).
+-- (ⅆ is the d of ⅆf/ⅆz, so it ends a name: ⅆaⅆb is two)
 identChar :: Char -> Bool
-identChar c = (isAlphaNum c && not (c `elem` superscripts) && (c /= '⁻'))
+identChar c = (isAlphaNum c && not (c `elem` superscripts) && (c /= '⁻') && (c /= 'ⅆ'))
               || c == '_' || isMark c
 
 -- | An identifier's name, as written: in Unicode's composed form (NFC),
@@ -231,6 +236,7 @@ opTokens = sortOn (\x -> (Down (length (fst x)), x)) $
   , ("⟼", RightArrow), ("↦", RightArrow)
   , ("⟶", RightArrow), ("⟵", LeftArrow)
   , ("@", At), ("@@", AtAt)
+  , ("∂", PartialSign), ("ⅆ", DiffSign)
   ]
 
 longestMatchingOperator :: SRString -> Maybe (SRToken, SRString)

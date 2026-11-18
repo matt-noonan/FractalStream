@@ -61,7 +61,9 @@ symbolNames = greek ++ language ++ other
       , ("le", "≤"), ("leq", "≤"), ("ge", "≥"), ("geq", "≥")
       , ("ne", "≠"), ("neq", "≠"), ("equiv", "≡")
       , ("coloneqq", "≔"), ("coloneq", "≔"), ("times", "×"), ("prime", "′")
-      , ("R", "ℝ"), ("C", "ℂ"), ("Z", "ℤ"), ("ldots", "…") ]
+      , ("R", "ℝ"), ("C", "ℂ"), ("Z", "ℤ"), ("ldots", "…")
+      -- (ⅆf/ⅆz is diff(z, f), and ∂f/∂z, below, partial(z, f))
+      , ("d", "ⅆ") ]
     other =
       [ ("N", "ℕ"), ("Q", "ℚ"), ("infty", "∞"), ("partial", "∂")
       , ("nabla", "∇"), ("sum", "∑"), ("prod", "∏"), ("int", "∫")

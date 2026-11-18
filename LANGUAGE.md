@@ -128,6 +128,19 @@ derivative (the same as `diff(x, diff(x, expr))`), and so on.
 variable a constant: `partial(c, z^2 + c)` is `1`, whatever `z` was worked
 out from. It takes an order too: `partial(x, expr, 2)`.
 
+Both can be written as fractions, as on paper: `ⅆw/ⅆz` is `diff(z, w)`
+(with `ⅆ`, Unicode's differential d), and `∂w/∂z` is `partial(z, w)`. The top is a name,
+a function applied (`∂f(z)/∂z`), or an expression in parentheses
+(`∂(z^2 + c)/∂c`); the bottom is one or more variables, each with its
+own sign. With orders, `ⅆ²w/ⅆz²` is the second derivative, and with
+several variables, `∂²f/∂x∂y` and `∂³f/∂x∂y²` are mixed partial
+derivatives (`partial(x, partial(y, f, 2))` for the last). The orders on
+the bottom must add up to the order on top. A derivative written this way
+can't be raised to a power without parentheses: `(ⅆw/ⅆz)^2` is its
+square, and `ⅆw/ⅆz^2` is an error that says so (a superscript on the
+bottom is always an order). In the editor, `\d` and a space types `ⅆ`,
+and `\partial` types `∂`.
+
 ### Syntax quirks
 
 FractalStream supports some syntactical shortcuts common in mathematics.
@@ -256,7 +269,9 @@ turned off in Preferences; `fsrun normalize` does the same to a
 project file.
 
 You can type symbols in the script editor by their LaTeX names:
-`\theta` gives `θ`, `\le` gives `≤`, `\R` gives `ℝ`, and so on. A
+`\theta` gives `θ`, `\le` gives `≤`, `\R` gives `ℝ`, and so on (and
+for derivatives, `\d` gives `ⅆ` and `\partial` gives `∂`: see
+"Derivatives"). A
 preview shows what a name will become as you type it, and Tab completes
 the name. Accents work as in LaTeX: `\hat x`, `\hat{x}` and
 `\hat\theta` give `x̂`, `x̂` and `θ̂`. The other accents are `\tilde`,
