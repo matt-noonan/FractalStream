@@ -76,18 +76,18 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `z` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 erase
                 use color1 for line
-                draw point at z:R^2
+                draw point at (z, 1.0 :+ 0.0)
                 set `pre1` := let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
                 set `pre2` := -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
                 use color2 for line
-                draw point at pre1:R^2
+                draw point at (pre1, 1.0 :+ 0.0)
                 use color3 for line
-                draw point at pre2:R^2
+                draw point at (pre2, 1.0 :+ 0.0)
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -95,19 +95,19 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `z` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   erase
                   use color1 for line
-                  draw point at z:R^2
+                  draw point at (z, 1.0 :+ 0.0)
                   set `pre1` := let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
                   set `pre2` := -let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C)))
                   use color2 for line
-                  draw point at pre1:R^2
+                  draw point at (pre1, 1.0 :+ 0.0)
                   use color3 for line
-                  draw point at pre2:R^2
+                  draw point at (pre2, 1.0 :+ 0.0)
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -141,7 +141,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
             block:
               erase
               use one_color for line
-              draw point at 1:R:C:R^2
+              draw point at (1:R:C, 1.0 :+ 0.0)
               use zero_orbit_color for line
               let `z` = 0:R:C in:
                 block:
@@ -153,10 +153,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                             do-while (!(|(z - 0:R:C)| < [internal] vanishing radius) and ([internal] fresh #22 < [internal] fresh #23)):
                               block:
                                 block:
-                                  draw point at z:R^2
+                                  draw point at (z, 1.0 :+ 0.0)
                                   if follow then:
                                     block:
-                                      draw line from last_z:R^2 to z:R^2
+                                      draw line from (last_z, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
                                       set `last_z` := z
                                   else:
                                     no-op
@@ -173,8 +173,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `z` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   let `pre1` = let [internal] preimage.z #0 = z in sqrt(((-C + [internal] preimage.z #0) / ([internal] preimage.z #0 - 1:R:C))) in:
@@ -184,7 +184,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                           if follow then:
                             block:
                               use color1 for line
-                              draw line from last_z:R^2 to z:R^2
+                              draw line from (last_z, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
                               set `last_z` := z
                               if (|(last_pre1 - pre2)| < |(last_pre1 - pre1)|) then:
                                 block:
@@ -195,21 +195,21 @@ let `[internal] vanishing radius` = vanishing_radius in:
                               else:
                                 no-op
                               use color2 for line
-                              draw line from last_pre1:R^2 to pre1:R^2
+                              draw line from (last_pre1, 1.0 :+ 0.0) to (pre1, 1.0 :+ 0.0)
                               set `last_pre1` := pre1
                               use color3 for line
-                              draw line from last_pre2:R^2 to pre2:R^2
+                              draw line from (last_pre2, 1.0 :+ 0.0) to (pre2, 1.0 :+ 0.0)
                               set `last_pre2` := pre2
                           else:
                             block:
                               use color1 for line
-                              draw point at z:R^2
+                              draw point at (z, 1.0 :+ 0.0)
                               set `last_z` := z
                               use color2 for line
-                              draw point at pre1:R^2
+                              draw point at (pre1, 1.0 :+ 0.0)
                               set `last_pre1` := pre1
                               use color3 for line
-                              draw point at pre2:R^2
+                              draw point at (pre2, 1.0 :+ 0.0)
                               set `last_pre2` := pre2
                               set `follow` := True
 
@@ -219,8 +219,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `z` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   set `follow` := False

@@ -1315,7 +1315,6 @@ defaultToolRunnerFactory = ToolRunnerFactory $ do
         , dsPoint  = \p -> emit n (DrawPoint EmptyEnvProxy p)
         , dsLine   = \f t -> emit n (DrawLine EmptyEnvProxy f t)
         , dsCircle = \fill u r p -> emit n (DrawCircle EmptyEnvProxy fill u r p)
-        , dsGeodesic = \f t -> emit n (DrawGeodesic EmptyEnvProxy f t)
         , dsRect   = \fill f t -> emit n (DrawRect EmptyEnvProxy fill f t)
         , dsWrite  = \txt pt -> emit n (Write EmptyEnvProxy txt pt)
         }

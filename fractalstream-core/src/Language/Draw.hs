@@ -27,24 +27,25 @@ type DrawCommand = Draw_ ConcreteValue '[]
 data ConcreteValue :: Environment -> FSType -> Exp Type
 type instance Eval (ConcreteValue env t) = HaskellType t
 
--- | A backend-agnostic sink for draw commands, in concrete (plane-coordinate)
--- Haskell values.  The interpreter adapts a 'DrawHandler' onto one of these;
+-- | A backend-agnostic sink for draw commands, in concrete Haskell values.
+-- A point is homogeneous, @[a : b]@ (see 'Language.Code.Projective'): on a
+-- sphere viewer, any point of the Riemann sphere, ∞ included; on any other
+-- viewer, @b@ is 1, and @a@ is the point (@x + iy@ for a real viewer's
+-- @(x, y)@).  The interpreter adapts a 'DrawHandler' onto one of these;
 -- the LLVM backend wraps each field as a C callback for compiled tools.
 data DrawSink = DrawSink
   { dsClear  :: IO ()
   , dsStroke :: HaskellType 'ColorT -> IO ()
   , dsFill   :: HaskellType 'ColorT -> IO ()
-  , dsPoint  :: HaskellType ('Pair 'RealT 'RealT) -> IO ()
-  , dsLine   :: HaskellType ('Pair 'RealT 'RealT)
-             -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
+  , dsPoint  :: HaskellType ('Pair 'ComplexT 'ComplexT) -> IO ()
+  , dsLine   :: HaskellType ('Pair 'ComplexT 'ComplexT)
+             -> HaskellType ('Pair 'ComplexT 'ComplexT) -> IO ()
   , dsCircle :: Bool -> RadiusUnit -> HaskellType 'RealT
-             -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
-  , dsRect   :: Bool -> HaskellType ('Pair 'RealT 'RealT)
-             -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
+             -> HaskellType ('Pair 'ComplexT 'ComplexT) -> IO ()
+  , dsRect   :: Bool -> HaskellType ('Pair 'ComplexT 'ComplexT)
+             -> HaskellType ('Pair 'ComplexT 'ComplexT) -> IO ()
   , dsWrite  :: HaskellType 'TextT
-             -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
-  , dsGeodesic :: HaskellType ('Pair 'RealT 'RealT)
-               -> HaskellType ('Pair 'RealT 'RealT) -> IO ()
+             -> HaskellType ('Pair 'ComplexT 'ComplexT) -> IO ()
   }
 
 -- | What a circle's radius is measured in: the viewer's own coordinates
@@ -63,7 +64,7 @@ ignoreDrawing = DrawSink
   { dsClear = pure (), dsStroke = const (pure ()), dsFill = const (pure ())
   , dsPoint = const (pure ()), dsLine = \_ _ -> pure ()
   , dsCircle = \_ _ _ _ -> pure (), dsRect = \_ _ _ -> pure ()
-  , dsWrite = \_ _ -> pure (), dsGeodesic = \_ _ -> pure () }
+  , dsWrite = \_ _ -> pure () }
 
 bufferedSink :: IORef [IO ()] -> DrawSink -> DrawSink
 bufferedSink ref sink = DrawSink
@@ -75,7 +76,6 @@ bufferedSink ref sink = DrawSink
   , dsCircle = \f u r p -> later (dsCircle sink f u r p)
   , dsRect   = \f p q -> later (dsRect sink f p q)
   , dsWrite  = \t p -> later (dsWrite sink t p)
-  , dsGeodesic = \p q -> later (dsGeodesic sink p q)
   }
   where later action = modifyIORef' ref (action :)
 
@@ -96,10 +96,12 @@ data Draw_ (value :: Environment -> FSType -> Exp Type)
   -- | draw point at POINT
   DrawPoint :: forall env value
              . EnvironmentProxy env
-            -> Eval (value env  ('Pair 'RealT 'RealT))
+            -> Eval (value env  ('Pair 'ComplexT 'ComplexT))
             -> Draw_ value env
 
-  -- | draw circle at POINT with radius VALUE
+  -- | draw circle at POINT with radius VALUE (in the viewer's own metric:
+  -- Euclidean in the plane, chordal on the sphere, hyperbolic in the disk
+  -- or the half-plane)
   -- | draw filled circle at POINT with radius VALUE
   -- | (either one) ... with radius VALUE pixels
   DrawCircle :: forall env value
@@ -107,31 +109,25 @@ data Draw_ (value :: Environment -> FSType -> Exp Type)
              -> Bool
              -> RadiusUnit
              -> Eval (value env 'RealT)
-             -> Eval (value env ('Pair 'RealT 'RealT))
+             -> Eval (value env ('Pair 'ComplexT 'ComplexT))
              -> Draw_ value env
 
-  -- | draw line from POINT to POINT
+  -- | draw line from POINT to POINT: the viewer's geodesic between them
+  -- (a straight segment in the plane, the shorter arc of a great circle
+  -- on the sphere, the hyperbolic geodesic in the disk or the half-plane)
   DrawLine :: forall env value
             . EnvironmentProxy env
-           -> Eval (value env ('Pair 'RealT 'RealT))
-           -> Eval (value env ('Pair 'RealT 'RealT))
+           -> Eval (value env ('Pair 'ComplexT 'ComplexT))
+           -> Eval (value env ('Pair 'ComplexT 'ComplexT))
            -> Draw_ value env
-
-  -- | draw geodesic from POINT to POINT (in a viewer of the hyperbolic
-  -- plane: the shortest path there, a circular arc or a straight segment)
-  DrawGeodesic :: forall env value
-                . EnvironmentProxy env
-               -> Eval (value env ('Pair 'RealT 'RealT))
-               -> Eval (value env ('Pair 'RealT 'RealT))
-               -> Draw_ value env
 
   -- | draw rectangle from POINT to POINT
   -- | draw filled rectangle from POINT to POINT
   DrawRect :: forall env value
             . EnvironmentProxy env
            -> Bool
-           -> Eval (value env ('Pair 'RealT 'RealT))
-           -> Eval (value env ('Pair 'RealT 'RealT))
+           -> Eval (value env ('Pair 'ComplexT 'ComplexT))
+           -> Eval (value env ('Pair 'ComplexT 'ComplexT))
            -> Draw_ value env
 
   -- | use COLOR for stroke
@@ -155,7 +151,7 @@ data Draw_ (value :: Environment -> FSType -> Exp Type)
   Write :: forall env value
          . EnvironmentProxy env
         -> Eval (value env 'TextT)
-        -> Eval (value env ('Pair 'RealT 'RealT))
+        -> Eval (value env ('Pair 'ComplexT 'ComplexT))
         -> Draw_ value env
 
 deriving instance Show DrawCommand
@@ -168,7 +164,6 @@ finiteDrawCommand = \case
   DrawPoint _ p        -> finitePt p
   DrawLine _ p q       -> finitePt p && finitePt q
   DrawCircle _ _ _ r p -> finite r && finitePt p
-  DrawGeodesic _ p q   -> finitePt p && finitePt q
   DrawRect _ _ p q     -> finitePt p && finitePt q
   Write _ _ p          -> finitePt p
   SetStroke {}         -> True
@@ -176,7 +171,8 @@ finiteDrawCommand = \case
   Clear {}             -> True
   where
     finite x = not (isNaN x || isInfinite x)
-    finitePt (x, y) = finite x && finite y
+    -- (a homogeneous point: its coordinates finite, and not both 0)
+    finitePt (a, b) = all finite [realPart a, imagPart a, realPart b, imagPart b] && (a /= 0 || b /= 0)
 
 transformDrawValues :: forall env
                      . (forall et. Value et -> Value et)
@@ -192,7 +188,6 @@ transformDrawValuesM :: forall env m
 transformDrawValuesM f = \case
   DrawPoint env pt -> DrawPoint env <$> f pt
   DrawCircle env fill unit r c -> DrawCircle env fill unit <$> f r <*> f c
-  DrawGeodesic env pt1 pt2 -> DrawGeodesic env <$> f pt1 <*> f pt2
   DrawLine env pt1 pt2 -> DrawLine env <$> f pt1 <*> f pt2
   DrawRect env fill pt1 pt2 -> DrawRect env fill <$> f pt1 <*> f pt2
   SetStroke env c -> SetStroke env <$> f c

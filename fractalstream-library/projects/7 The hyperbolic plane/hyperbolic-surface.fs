@@ -67,12 +67,10 @@ script: |
   radius : R as "Radius (hyperbolic)" := 1.5
   on click-or-drag at p:
     erase
-    # (a hyperbolic circle in the disk is a Euclidean one, elsewhere)
-    t := tanh(radius / 2)
-    k := 1 - t^2 |p|^2
     use white for stroke
     use white for fill
-    draw circle at p (1 - t^2) / k with radius t (1 - |p|^2) / k
+    # (in a hyperbolic viewer, a circle's radius is hyperbolic)
+    draw circle at p with radius radius
     draw filled circle at p with radius 3 pixels
   on deactivated:
     erase
@@ -82,7 +80,7 @@ script: |
     erase
     use white for stroke
     use white for fill
-    draw geodesic from s to p
+    draw line from s to p
     draw filled circle at s with radius 3 pixels
     draw filled circle at p with radius 3 pixels
   on deactivated:

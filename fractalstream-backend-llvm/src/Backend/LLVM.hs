@@ -494,21 +494,23 @@ foreign import ccall "wrapper"
 foreign import ccall "wrapper"
   wrapColor3 :: (Word8 -> Word8 -> Word8 -> IO ())
              -> IO (FunPtr (Word8 -> Word8 -> Word8 -> IO ()))
+-- (a drawing's point is homogeneous, [a : b], as four doubles: re a,
+-- im a, re b, im b; see 'Language.Draw.DrawSink')
+type PointFn r = CDouble -> CDouble -> CDouble -> CDouble -> r
+
 foreign import ccall "wrapper"
-  wrapPoint :: (CDouble -> CDouble -> IO ())
-            -> IO (FunPtr (CDouble -> CDouble -> IO ()))
+  wrapPoint :: PointFn (IO ()) -> IO (FunPtr (PointFn (IO ())))
 foreign import ccall "wrapper"
-  wrapLine :: (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
-           -> IO (FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()))
+  wrapLine :: PointFn (PointFn (IO ())) -> IO (FunPtr (PointFn (PointFn (IO ()))))
 foreign import ccall "wrapper"
-  wrapCircle :: (Word8 -> CDouble -> CDouble -> CDouble -> IO ())
-             -> IO (FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> IO ()))
+  wrapCircle :: (Word8 -> CDouble -> PointFn (IO ()))
+             -> IO (FunPtr (Word8 -> CDouble -> PointFn (IO ())))
 foreign import ccall "wrapper"
-  wrapRect :: (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
-           -> IO (FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()))
+  wrapRect :: (Word8 -> PointFn (PointFn (IO ())))
+           -> IO (FunPtr (Word8 -> PointFn (PointFn (IO ()))))
 foreign import ccall "wrapper"
-  wrapWrite :: (CString -> CDouble -> CDouble -> IO ())
-            -> IO (FunPtr (CString -> CDouble -> CDouble -> IO ()))
+  wrapWrite :: (CString -> PointFn (IO ()))
+            -> IO (FunPtr (CString -> PointFn (IO ())))
 foreign import ccall "wrapper"
   wrapFormat :: (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32)
              -> IO (FunPtr (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32))
@@ -539,33 +541,29 @@ withDrawVTablePtrs
   -> ( ( FunPtr (IO ())
        , FunPtr (Word8 -> Word8 -> Word8 -> IO ())
        , FunPtr (Word8 -> Word8 -> Word8 -> IO ())
-       , FunPtr (CDouble -> CDouble -> IO ())
-       , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
-       , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> IO ())
-       , FunPtr (Word8 -> CDouble -> CDouble -> CDouble -> CDouble -> IO ())
-       , FunPtr (CString -> CDouble -> CDouble -> IO ())
+       , FunPtr (PointFn (IO ()))
+       , FunPtr (PointFn (PointFn (IO ())))
+       , FunPtr (Word8 -> CDouble -> PointFn (IO ()))
+       , FunPtr (Word8 -> PointFn (PointFn (IO ())))
+       , FunPtr (CString -> PointFn (IO ()))
        , FunPtr (Word8 -> CDouble -> CDouble -> Ptr Word8 -> Int32 -> IO Int32) )
        -> IO a )
   -> IO a
 withDrawVTablePtrs sink action = do
+  let pt ar ai br bi = (realToFrac ar :+ realToFrac ai, realToFrac br :+ realToFrac bi)
   clearFP  <- wrapClear  (dsClear sink)
   strokeFP <- wrapColor3 (\r g b -> dsStroke sink (rgbToColor (r, g, b)))
   fillFP   <- wrapColor3 (\r g b -> dsFill sink (rgbToColor (r, g, b)))
-  pointFP  <- wrapPoint  (\x y -> dsPoint sink (realToFrac x, realToFrac y))
-  -- (a line or, for kind 1, a geodesic)
-  lineFP   <- wrapLine   (\kind x1 y1 x2 y2 ->
-                            (if kind == 1 then dsGeodesic sink else dsLine sink)
-                              (realToFrac x1, realToFrac y1) (realToFrac x2, realToFrac y2))
+  pointFP  <- wrapPoint  (\a b c d -> dsPoint sink (pt a b c d))
+  lineFP   <- wrapLine   (\a b c d a' b' c' d' -> dsLine sink (pt a b c d) (pt a' b' c' d'))
   -- (flags: bit 0 filled, bit 1 radius in pixels)
-  circleFP <- wrapCircle (\f r x y ->
+  circleFP <- wrapCircle (\f r a b c d ->
                             dsCircle sink (testBit f 0) (if testBit f 1 then ScreenPixels else ModelUnits)
-                                     (realToFrac r) (realToFrac x, realToFrac y))
-  rectFP   <- wrapRect   (\f x1 y1 x2 y2 ->
-                            dsRect sink (f /= 0) (realToFrac x1, realToFrac y1)
-                                        (realToFrac x2, realToFrac y2))
-  writeFP  <- wrapWrite  (\txt x y -> do
+                                     (realToFrac r) (pt a b c d))
+  rectFP   <- wrapRect   (\f a b c d a' b' c' d' -> dsRect sink (f /= 0) (pt a b c d) (pt a' b' c' d'))
+  writeFP  <- wrapWrite  (\txt a b c d -> do
                             str <- GHC.peekCString utf8 txt
-                            dsWrite sink str (realToFrac x, realToFrac y))
+                            dsWrite sink str (pt a b c d))
   formatFP <- wrapFormat formatNumber
   action (clearFP, strokeFP, fillFP, pointFP, lineFP, circleFP, rectFP, writeFP, formatFP)
     `finally` (   freeHaskellFunPtr clearFP  >> freeHaskellFunPtr strokeFP

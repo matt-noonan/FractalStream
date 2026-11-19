@@ -239,7 +239,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `w` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 erase
@@ -346,7 +346,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                   no-op
                             use Color 255 255 255 for line
                             use Color 255 255 255 for line
-                            draw filled circle at w:R^2 with radius (3:R * pixel_size)
+                            draw filled circle at (w, 1.0 :+ 0.0) with radius (3:R * pixel_size)
                             if found then:
                               block:
                                 let `t` = (arg(phi) / (2:R * 3.141592653589793)) in:
@@ -356,12 +356,12 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                         set `t` := (t + 1:R)
                                     else:
                                       no-op
-                                    write text("\952 = ", t:Text, "\nG = ", log(|phi|):Text) at (w + ((80:R:C + (30:R:C * 0.0 :+ 1.0)) * pixel_size:C)):R^2
+                                    write text("\952 = ", t:Text, "\nG = ", log(|phi|):Text) at ((w + ((80:R:C + (30:R:C * 0.0 :+ 1.0)) * pixel_size:C)), 1.0 :+ 0.0)
                                     set `saved_angle` := t
                                     set `saved_G` := log(|phi|)
                             else:
                               block:
-                                write "in K" at (w + ((15:R:C * 0.0 :+ 1.0) * pixel_size:C)):R^2
+                                write "in K" at ((w + ((15:R:C * 0.0 :+ 1.0) * pixel_size:C)), 1.0 :+ 0.0)
                                 set `saved_angle` := 0:R
                                 set `saved_G` := 0:R
 
@@ -371,8 +371,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `w` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   erase
@@ -479,7 +479,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                     no-op
                               use Color 255 255 255 for line
                               use Color 255 255 255 for line
-                              draw filled circle at w:R^2 with radius (3:R * pixel_size)
+                              draw filled circle at (w, 1.0 :+ 0.0) with radius (3:R * pixel_size)
                               if found then:
                                 block:
                                   let `t` = (arg(phi) / (2:R * 3.141592653589793)) in:
@@ -489,12 +489,12 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                           set `t` := (t + 1:R)
                                       else:
                                         no-op
-                                      write text("\952 = ", t:Text, "\nG = ", log(|phi|):Text) at (w + ((80:R:C + (30:R:C * 0.0 :+ 1.0)) * pixel_size:C)):R^2
+                                      write text("\952 = ", t:Text, "\nG = ", log(|phi|):Text) at ((w + ((80:R:C + (30:R:C * 0.0 :+ 1.0)) * pixel_size:C)), 1.0 :+ 0.0)
                                       set `saved_angle` := t
                                       set `saved_G` := log(|phi|)
                               else:
                                 block:
-                                  write "in K" at (w + ((15:R:C * 0.0 :+ 1.0) * pixel_size:C)):R^2
+                                  write "in K" at ((w + ((15:R:C * 0.0 :+ 1.0) * pixel_size:C)), 1.0 :+ 0.0)
                                   set `saved_angle` := 0:R
                                   set `saved_G` := 0:R
 
@@ -516,7 +516,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `w` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 erase
@@ -530,10 +530,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                           do-while (!([internal] escape radius < |w|) and ([internal] fresh #23 < [internal] fresh #24)):
                             block:
                               block:
-                                draw point at w:R^2
+                                draw point at (w, 1.0 :+ 0.0)
                                 set `prev` := w
                                 set `w` := let [internal] f.z #0 = w in (([internal] f.z #0 ^ 2:R:C) + C)
-                                draw line from prev:R^2 to w:R^2
+                                draw line from (prev, 1.0 :+ 0.0) to (w, 1.0 :+ 0.0)
                               set `[internal] fresh #23` := ([internal] fresh #23 + 1)
                           set `[internal] iteration count` := [internal] fresh #23
                           set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
@@ -544,8 +544,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `w` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   erase
@@ -559,10 +559,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                             do-while (!([internal] escape radius < |w|) and ([internal] fresh #26 < [internal] fresh #27)):
                               block:
                                 block:
-                                  draw point at w:R^2
+                                  draw point at (w, 1.0 :+ 0.0)
                                   set `prev` := w
                                   set `w` := let [internal] f.z #0 = w in (([internal] f.z #0 ^ 2:R:C) + C)
-                                  draw line from prev:R^2 to w:R^2
+                                  draw line from (prev, 1.0 :+ 0.0) to (w, 1.0 :+ 0.0)
                                 set `[internal] fresh #26` := ([internal] fresh #26 + 1)
                             set `[internal] iteration count` := [internal] fresh #26
                             set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)
@@ -796,8 +796,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
             block:
               erase
               use Color 255 255 255 for line
-              draw circle at C:R^2 with radius (4:R * pixel_size)
+              draw circle at (C, 1.0 :+ 0.0) with radius (4:R * pixel_size)
               use Color 0 0 0 for line
-              draw circle at C:R^2 with radius (5:R * pixel_size)
+              draw circle at (C, 1.0 :+ 0.0) with radius (5:R * pixel_size)
 
 

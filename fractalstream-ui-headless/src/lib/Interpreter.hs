@@ -48,7 +48,10 @@ import Language.Environment
   ( SomeContext(..), SomeContext'(..), Context(..)
   , FoundBinding(..), lookupSomeContextByName
   )
-import Language.Type (TypeProxy(RealType, ComplexType), HaskellType, withKnownType)
+import Language.Type (TypeProxy(RealType, ComplexType, PairType), FSType(..), HaskellType, withKnownType)
+import Language.Code.Projective (lowerValueAt)
+import Language.Value.Typing (strictTypeEnv)
+import qualified Actor.Event as E
 import Language.Value (Value)
 import Language.Value.Typecheck (ParsedValue, atType)
 import Language.Value.Evaluator (evaluate)
@@ -233,13 +236,13 @@ execCommand st = \case
         else pure (Left "a viewer's aspect ratio must be positive")
 
   ClickAt pt -> withCurrentDispatcher st $ \viewer dispatcher ->
-    withResolved (resolvePoint pt) $ \xy -> do
-      fireOn viewer dispatcher (Click xy)
+    resolveEventPoint viewer pt >>= \r -> withResolved r $ \p -> do
+      fireOn viewer dispatcher (Click p)
       pure (Right st)
 
   DoubleClickAt pt -> withCurrentDispatcher st $ \viewer dispatcher ->
-    withResolved (resolvePoint pt) $ \xy -> do
-      fireOn viewer dispatcher (DoubleClick xy)
+    resolveEventPoint viewer pt >>= \r -> withResolved r $ \p -> do
+      fireOn viewer dispatcher (DoubleClick p)
       pure (Right st)
 
   DragViewFromTo p1 p2 -> withCurrentViewer st $ \viewer ->
@@ -248,8 +251,10 @@ execCommand st = \case
         Left err -> Left ("can't drag the view: " ++ err)
         Right () -> Right st
 
-  DragFromTo p1 p2 -> withCurrentDispatcher st $ \viewer dispatcher ->
-    withResolved ((,) <$> resolvePoint p1 <*> resolvePoint p2) $ \(xy1, xy2) -> do
+  DragFromTo p1 p2 -> withCurrentDispatcher st $ \viewer dispatcher -> do
+    r1 <- resolveEventPoint viewer p1
+    r2 <- resolveEventPoint viewer p2
+    withResolved ((,) <$> r1 <*> r2) $ \(xy1, xy2) -> do
       -- (where the pointer is, then where the drag started, as the live
       -- app sends a drag)
       fireOn viewer dispatcher (Drag xy2 xy1)
@@ -450,6 +455,18 @@ resolveReal = resolveAtType RealType
 
 resolveComplex :: ParsedValue -> Either String (Complex Double)
 resolveComplex = resolveAtType ComplexType
+
+-- | Where a scenario's click or drag is, as the tool's event has it
+-- (see 'Actor.Event.Point'): on a sphere viewer, any point of Ĉ (so
+-- `click at ∞` works), and elsewhere a point of the plane.
+resolveEventPoint :: Viewer -> Point -> IO (Either String E.Point)
+resolveEventPoint viewer pt = getDynamic (vView viewer) <&> \case
+  SphereView | ComplexPoint pz <- pt ->
+    case lowerValueAt (strictTypeEnv mempty) ExtComplexT pz >>= \e -> atType e homT of
+      TC (Left e) -> Left (unlines (pp e))
+      TC (Right v) -> Right (evaluate (v :: Value '( '[], 'Pair 'ComplexT 'ComplexT)) EmptyContext)
+  _ -> E.planePoint <$> resolvePoint pt
+  where homT = PairType ComplexType ComplexType
 
 resolvePoint :: Point -> Either String (Double, Double)
 resolvePoint (CartesianPoint px py) = (,) <$> resolveReal px <*> resolveReal py

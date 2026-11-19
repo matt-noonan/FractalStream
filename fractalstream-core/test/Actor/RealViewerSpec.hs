@@ -155,18 +155,18 @@ pass
 
     it "bind a click's position, and the pixel height" $ do
       (a, b, h) <- runRealTool (RealCoordinates "x" "y")
-        "on click:\n  a <- x\n  b <- y\n  h <- pixel_height\n" (Click (3, 4))
+        "on click:\n  a <- x\n  b <- y\n  h <- pixel_height\n" (Click (planePoint (3, 4)))
       (a, b, h) `shouldBe` (3, 4, 2)
 
     it "bind a drag's start and current positions, as real pairs" $ do
       (a, b, h) <- runRealTool (RealCoordinates "x" "y")
         "on drag from (p, q) to (u, v):\n  a <- u - p\n  b <- v - q\n  h <- pixel_width\n"
-        (Drag (10, 20) (1, 2))
+        (Drag (planePoint (10, 20)) (planePoint (1, 2)))
       (a, b, h) `shouldBe` (9, 18, 0.5)
 
     it "set the viewer's coordinates, when they're configuration variables" $ do
       (a, b, h) <- runRealTool (RealCoordinates "a" "b")
-        "on click-or-drag:\n  h <- pixel_height\n" (Click (3, 4))
+        "on click-or-drag:\n  h <- pixel_height\n" (Click (planePoint (3, 4)))
       (a, b, h) `shouldBe` (3, 4, 2)
 
 -- | Run a tool's script in a real viewer with coordinate @coord@ and
@@ -194,4 +194,4 @@ noDrawing = DrawSink
   { dsClear = pure (), dsStroke = const (pure ()), dsFill = const (pure ())
   , dsPoint = const (pure ()), dsLine = \_ _ -> pure ()
   , dsCircle = \_ _ _ _ -> pure (), dsRect = \_ _ _ -> pure ()
-  , dsWrite = \_ _ -> pure (), dsGeodesic = \_ _ -> pure () }
+  , dsWrite = \_ _ -> pure () }

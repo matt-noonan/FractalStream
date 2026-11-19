@@ -37,7 +37,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `C` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `C` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 let `z` = 0:R:C in:
@@ -70,13 +70,13 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   set `[internal] stuck` := ([internal] fresh #19 = [internal] fresh #20)
                             if [internal] stuck then:
                               block:
-                                write "?" at C:R^2
+                                write "?" at (C, 1.0 :+ 0.0)
                             else:
                               block:
-                                write [internal] iteration count:Text at C:R^2
+                                write [internal] iteration count:Text at (C, 1.0 :+ 0.0)
                     else:
                       block:
-                        write "X" at C:R^2
+                        write "X" at (C, 1.0 :+ 0.0)
 
   -- on button Erase annotations
 let `[internal] vanishing radius` = vanishing_radius in:

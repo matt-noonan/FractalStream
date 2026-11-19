@@ -11,7 +11,7 @@ import Actor.Viewer.ViewModel
 import Actor.Viewer.Disk (HyperbolicModel(..), HyperbolicDisplay(..), identityIsometry)
 
 import Data.List (isInfixOf)
-import Data.Complex (Complex(..))
+import Data.Complex (Complex(..), magnitude)
 
 close :: Double -> Double -> Bool
 close a b = abs (a - b) < 1e-9
@@ -156,6 +156,45 @@ spec = do
           b = rotationFacing (-2, 0.5)
       rotateBy (slerp a b 0) (0, 0, 1) `shouldSatisfy` close3 (rotateBy a (0, 0, 1))
       rotateBy (slerp a b 1) (0, 0, 1) `shouldSatisfy` close3 (rotateBy b (0, 0, 1))
+
+  describe "a tool's drawings, at points of the sphere" $ do
+    let chordalH (a, b) (c, d) = 2 * magnitude (a * d - b * c)
+                                   / sqrt ((magnitude a ^ (2 :: Int) + magnitude b ^ (2 :: Int))
+                                           * (magnitude c ^ (2 :: Int) + magnitude d ^ (2 :: Int)))
+        pts = [ (0, 1), (1, 0), (2 :+ 1, 1), (1, 1e-12), (0.3 :+ (-0.4), 1), (1, 3 :+ 2) ]
+
+    it "draws a circle at a chordal distance from its center, ∞ included" $
+      sequence_ [ all (\q -> abs (chordalH c q - r) < 1e-9) (sphereCircle 32 c r) `shouldBe` True
+                | c <- pts, r <- [0.01, 0.6, 1.9] ]
+
+    it "draws a line as the shorter arc of a great circle, in even steps" $
+      sequence_ [ do
+          let arc = greatArc 16 p q
+              steps = zipWith chordalH arc (drop 1 arc)
+          take 1 (map (`chordalH` p) arc) `shouldSatisfy` all (< 1e-9)
+          take 1 (map (`chordalH` q) (reverse arc)) `shouldSatisfy` all (< 1e-9)
+          (maximum steps - minimum steps) `shouldSatisfy` (< 1e-9)
+          -- (on one great circle: the chordal distance along it, from p,
+          -- grows with the angle, never more than half way round)
+          let angle x = 2 * asin (min 1 (chordalH p x / 2))
+          and (zipWith (<=) (map angle arc) (drop 1 (map angle arc))) `shouldBe` True
+        | p <- pts, q <- pts, chordalH p q > 1e-6 ]
+
+    it "takes one great circle between opposite points" $ do
+      let arc = greatArc 16 (0, 1) (1, 0)
+      take 1 (map (`chordalH` (1, 0)) (reverse arc)) `shouldSatisfy` all (< 1e-9)
+      length arc `shouldBe` 17
+
+    it "draws a circle of the hyperbolic plane by its hyperbolic radius" $
+      sequence_ [ do
+          -- (the Euclidean circle a hyperbolic one is, in the disk)
+          let t = tanh (r / 2)
+              k = 1 - t * t * (px * px + py * py)
+              (cx, cy) = (px * (1 - t * t) / k, py * (1 - t * t) / k)
+              er = t * (1 - (px * px + py * py)) / k
+          all (\(x, y) -> abs (sqrt ((x - cx) ^ (2 :: Int) + (y - cy) ^ (2 :: Int)) - er) < 1e-9)
+              (hyperbolicCircle DiskModel 32 (px, py) r) `shouldBe` True
+        | (px, py) <- [(0, 0), (0.5, 0.2), (-0.9, 0.1)], r <- [0.1, 1.5, 4] ]
 
   describe "Jump to view's settings" $ do
 

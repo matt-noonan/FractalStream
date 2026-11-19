@@ -156,7 +156,7 @@ let `[internal] vanishing radius` = tol in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `z` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 let `r1` = 1 in:
@@ -187,14 +187,14 @@ let `[internal] vanishing radius` = tol in:
                                                             set `[internal] previous.z #0` := z
                                                             block:
                                                               set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
-                                                              draw point at [internal] previous.z #0:R^2
-                                                              draw line from [internal] previous.z #0:R^2 to z:R^2
+                                                              draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
+                                                              draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
                                                         set `[internal] fresh #22` := ([internal] fresh #22 + 1)
                                                   else:
                                                     no-op
                                                   set `[internal] iteration count` := [internal] fresh #22
                                                   set `[internal] stuck` := ([internal] fresh #22 = [internal] fresh #23)
-                            draw point at z:R^2
+                            draw point at (z, 1.0 :+ 0.0)
 
   -- on drag
 let `[internal] vanishing radius` = tol in:
@@ -202,8 +202,8 @@ let `[internal] vanishing radius` = tol in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `z` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   let `r1` = 1 in:
@@ -234,14 +234,14 @@ let `[internal] vanishing radius` = tol in:
                                                               set `[internal] previous.z #0` := z
                                                               block:
                                                                 set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] p.z #1 = [internal] newton.z #0 in ((([internal] p.z #1 - r1:R:C) * ([internal] p.z #1 - r2)) * ([internal] p.z #1 - r3)) / let [internal] p'.z #2 = [internal] newton.z #0 in ((([internal] p'.z #2 - r3) * (([internal] p'.z #2 - r2) + ([internal] p'.z #2 - r1:R:C))) + (([internal] p'.z #2 - r1:R:C) * ([internal] p'.z #2 - r2)))))
-                                                                draw point at [internal] previous.z #0:R^2
-                                                                draw line from [internal] previous.z #0:R^2 to z:R^2
+                                                                draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
+                                                                draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
                                                           set `[internal] fresh #25` := ([internal] fresh #25 + 1)
                                                     else:
                                                       no-op
                                                     set `[internal] iteration count` := [internal] fresh #25
                                                     set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
-                              draw point at z:R^2
+                              draw point at (z, 1.0 :+ 0.0)
 
   -- on deactivated
 let `[internal] vanishing radius` = tol in:

@@ -21,6 +21,12 @@ type InternalIterations = "[internal] iteration count"
 internalIterationLimit      = "[internal] iteration limit"
 type InternalIterationLimit = "[internal] iteration limit"
 type InternalStuck = "[internal] stuck"
+
+-- | The name under which a sphere viewer's code, and its tools', are told
+-- that they're on the sphere (a truth value no script can name): their
+-- points are points of Ĉ, which their drawings are drawn at as they are.
+sphereViewMarker :: String
+sphereViewMarker = "[internal] sphere view"
 internalStuck      = "[internal] stuck"
 
 type Fun a b = forall env value. KnownEnvironment env => Eval (value '(env, a)) -> ValueF value '(env, b)

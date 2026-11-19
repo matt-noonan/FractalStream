@@ -1221,7 +1221,7 @@ async function group() {
   const dots = await app.drawing(0);
   c.check(dots && dots.filter((s) => s.k === "polygon" || s.k === "runs").length >= 3,
           `the dot is drawn in its tile and the ones beside it (${kinds(dots)})`);
-  // a marker (its radius in pixels) and a geodesic, in every tile
+  // a marker (its radius in pixels) and a line (a geodesic), in every tile
   await app.pressTool("m", "Mark");
   await page.mouse.click(...at(-0.2, 1.6));
   await page.waitForTimeout(1500);

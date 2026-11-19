@@ -312,12 +312,11 @@ erase                                   # clear this tool's drawings
 use red for stroke                      # (or `for line`): lines, outlines, points, text
 use blue for fill                       # filled shapes
 draw point at p
-draw line from p to q
-draw circle at p with radius r          # r in model units: a shape, which grows as you zoom in
+draw line from p to q                   # the viewer's geodesic: plane straight; sphere (view=sphere, points of Ĉ, ∞ ok) great-circle arc; disk/half-plane hyperbolic segment
+draw circle at p with radius r          # r in the viewer's metric (plane: Euclidean; sphere: chordal; disk/half-plane: hyperbolic): a shape, which grows as you zoom in
 draw filled circle at p with radius r
 draw filled circle at p with radius 4 pixels   # a marker: 4 screen pixels at any zoom, in every view and tile
-draw geodesic from p to q               # hyperbolic viewers' tools only (view=disk/halfplane): the hyperbolic segment
-draw rectangle from p to q
+draw rectangle from p to q              # plane viewers only (an error on view=sphere/disk/halfplane)
 draw filled rectangle from p to q
 write "label" at p                      # text centered on p, in the stroke color
 write text("z = ", z, ", n = ", n) at p # text(...) needs 2+ arguments

@@ -429,9 +429,6 @@ codeStatementsGrammar CommonDefs{..} = mdo
     , draw
       (DrawLineFrom <$> ((tok "line" *> tok "from") *> value)
                     <*> (tok "to" *> value))
-    , draw
-      (DrawGeodesicFrom <$> ((tok "geodesic" *> tok "from") *> value)
-                        <*> (tok "to" *> value))
     ]
 
   strokeOrLine <- ruleChoice

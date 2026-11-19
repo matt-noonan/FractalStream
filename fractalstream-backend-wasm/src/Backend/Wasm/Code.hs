@@ -129,29 +129,25 @@ code = indexedFold @CtxCode $ \case
       SetStroke _ c -> value c >>= lift . colorRecord 1
       SetFill _ c -> value c >>= lift . colorRecord 2
       DrawPoint _ p -> do
-        (x, y) <- point p
-        lift (drawRecord 3 [f64At 8 x, f64At 16 y])
+        pt <- point p
+        lift (drawRecord 3 (pointAt 8 pt))
       DrawLine _ a b -> do
-        (x1, y1) <- point a
-        (x2, y2) <- point b
-        lift (drawRecord 4 [f64At 8 x1, f64At 16 y1, f64At 24 x2, f64At 32 y2])
-      DrawGeodesic _ a b -> do
-        (x1, y1) <- point a
-        (x2, y2) <- point b
-        lift (drawRecord 8 [f64At 8 x1, f64At 16 y1, f64At 24 x2, f64At 32 y2])
+        p <- point a
+        q <- point b
+        lift (drawRecord 4 (pointAt 8 p ++ pointAt 40 q))
       DrawCircle _ filled unit r p -> do
         rad <- value r >>= \case { LReal l -> pure l; l -> lift (throwError ("internal error: a radius of the wrong shape: " ++ show l)) }
-        (x, y) <- point p
+        pt <- point p
         -- (flags: bit 0 filled, bit 1 radius in pixels)
-        lift (drawRecord 5 [flagsAt ((if filled then 1 else 0) + (if unit == ScreenPixels then 2 else 0)), f64At 8 rad, f64At 16 x, f64At 24 y])
+        lift (drawRecord 5 (flagsAt ((if filled then 1 else 0) + (if unit == ScreenPixels then 2 else 0)) : f64At 8 rad : pointAt 16 pt))
       DrawRect _ filled a b -> do
-        (x1, y1) <- point a
-        (x2, y2) <- point b
-        lift (drawRecord 6 [flagAt filled, f64At 8 x1, f64At 16 y1, f64At 24 x2, f64At 32 y2])
+        p <- point a
+        q <- point b
+        lift (drawRecord 6 (flagAt filled : pointAt 8 p ++ pointAt 40 q))
       Write _ t p -> do
         txt <- value t >>= \case { LText l -> pure l; l -> lift (throwError ("internal error: a text of the wrong shape: " ++ show l)) }
-        (x, y) <- point p
-        lift (drawRecord 7 [\rec -> [localGet rec, localGet txt, i32Store 4], f64At 8 x, f64At 16 y])
+        pt <- point p
+        lift (drawRecord 7 ((\rec -> [localGet rec, localGet txt, i32Store 4]) : pointAt 8 pt))
   -- (only a tool's handler can change a table)
   TableAllocate pf _ n ty msizes mz1 mz2 mfill -> do
     slot <- withKnownType ty (tableSlot (TableType n ty) pf)
@@ -204,10 +200,13 @@ code = indexedFold @CtxCode $ \case
       pure (z, ixs)
     intLoc = \case { LInt i -> pure i; l -> throwError ("internal error: an index of the wrong shape: " ++ show l) }
     complexLoc = \case { LComplex x y -> pure (x, y); l -> throwError ("internal error: a point of the wrong shape: " ++ show l) }
-    point :: forall env'. Value '(env', 'Pair 'RealT 'RealT) -> ReaderT (Context WLoc env') Gen (Int, Int)
+    -- (a point is homogeneous, [a : b]: its four parts, re a, im a, re b,
+    -- im b; see 'Language.Draw.DrawSink')
+    point :: forall env'. Value '(env', 'Pair 'ComplexT 'ComplexT) -> ReaderT (Context WLoc env') Gen [Int]
     point p = value p >>= \case
-      LPair (LReal x) (LReal y) -> pure (x, y)
+      LPair (LComplex ar ai) (LComplex br' bi) -> pure [ar, ai, br', bi]
       l -> lift (throwError ("internal error: a point of the wrong shape: " ++ show l))
+    pointAt off ls = [ f64At (off + 8 * k) l | (k, l) <- zip [0 ..] ls ]
     colorRecord tag = \case
       LColor r g b -> drawRecord tag [byteAt 4 r, byteAt 5 g, byteAt 6 b]
       l -> throwError ("internal error: a color of the wrong shape: " ++ show l)
@@ -221,15 +220,16 @@ code = indexedFold @CtxCode $ \case
 
 -- | How many bytes a draw command takes in the arena.
 drawRecordSize :: Int
-drawRecordSize = 40
+drawRecordSize = 72
 
 -- | Put a draw command into the arena, below the ones before it: its tag
 -- (an i32 at 0: 0 erase, 1 the pen's color, 2 the fill's, 3 a point, 4 a
 -- line, 5 a circle, 6 a rectangle, 7 text), then its fields, written by the given
 -- instructions (given the record's address): a color's bytes at 4, 5 and
 -- 6; whether a shape's filled, an i32 at 4; its numbers, f64s from 8 on
--- (a point's x and y; a line's or rectangle's two points; a circle's
--- radius, then its center; text's place), and text's address, an i32 at
+-- (a point's four parts, re a, im a, re b, im b, for [a : b]; a line's or
+-- rectangle's two points; a circle's radius, then its center; text's
+-- place), and text's address, an i32 at
 -- 4 (see "Backend.Wasm.Text"). If there's no room, the overflow flag is set
 -- instead.
 drawRecord :: Int -> [Int -> [Instr]] -> Gen ()

@@ -35,6 +35,7 @@ import Language.Code.Previous
 import Language.Code.Stops
 import Language.Code.Tuples
 import Language.Draw
+import Language.Value.Builtins (sphereViewMarker)
 import Language.Parser.SourceRange
 
 import qualified Data.Map as Map
@@ -197,12 +198,16 @@ elab funs env stmt@(Stmt sr node) = case node of
     DrawPointAt p -> DrawPoint env <$> point funs env p
     DrawCircleAt isFilled center radius unit ->
       DrawCircle env isFilled unit <$> value funs env radius RealType <*> point funs env center
-    DrawGeodesicFrom p q
+    -- (a rectangle is a shape of the plane: a sphere's or a hyperbolic
+    -- plane's tool draws circles and lines, which are its own)
+    DrawRectFrom isFilled ul lr
+      | sphereViewMarker `Map.member` envToMap env ->
+          throwError (Advice sr "A sphere viewer's tools can't draw rectangles, which are shapes of the plane: \
+                                \draw lines (arcs of great circles) or circles instead.")
       | hyperbolicToolName `Map.member` envToMap env ->
-          DrawGeodesic env <$> point funs env p <*> point funs env q
-      | otherwise -> throwError (Advice sr "`draw geodesic` is only for tools of a viewer of the hyperbolic plane \
-                                          \(`view=disk` or `view=halfplane`): elsewhere, use `draw line`.")
-    DrawRectFrom isFilled ul lr -> DrawRect env isFilled <$> point funs env ul <*> point funs env lr
+          throwError (Advice sr "A hyperbolic viewer's tools can't draw rectangles, which are shapes of the \
+                                \Euclidean plane: draw lines (geodesics) or circles instead.")
+      | otherwise -> DrawRect env isFilled <$> point funs env ul <*> point funs env lr
     DrawLineFrom ul lr -> DrawLine env <$> point funs env ul <*> point funs env lr
     UseStroke c -> SetStroke env <$> value funs env c ColorType
     UseFill c -> SetFill env <$> value funs env c ColorType
@@ -259,20 +264,32 @@ value :: forall env ty. (KnownEnvironment env, KnownType ty)
       => Funs -> EnvironmentProxy env -> Expr -> TypeProxy ty -> TC (Value '(env, ty))
 value funs _ v ty = expandCalls funs v >>= \v' -> atType v' ty
 
--- | Something point-like: a pair of real numbers, or a (real or complex)
--- number, converted to a pair of reals.
+-- | A point to draw at, in homogeneous coordinates @[a : b]@ (see
+-- 'Language.Draw.DrawSink'). On a sphere viewer, a point of Ĉ, which
+-- "Language.Code.Projective" has made a pair of complex numbers already;
+-- anywhere else, a (real or complex) number @z@, as @[z : 1]@, or a pair
+-- of real numbers @(x, y)@, as @[x + iy : 1]@.
 point :: forall env. KnownEnvironment env
-      => Funs -> EnvironmentProxy env -> Expr -> TC (Value '(env, 'Pair 'RealT 'RealT))
+      => Funs -> EnvironmentProxy env -> Expr -> TC (Value '(env, 'Pair 'ComplexT 'ComplexT))
 point funs env p = do
   p' <- expandCalls funs p
-  isNumber <- (synth (typeEnvOf env) p' <&> \t -> exprType t `elem` [IntegerT, RealT, ComplexT])
-                `catchError` \_ -> pure False
-  if isNumber
-    then C2R2 <$> atType p' ComplexType
-    else atType p' (PairType RealType RealType) `catchTypeError` \_ ->
-      throwError (Surprise (synRange p) "this"
-                   "not a complex number or pair of real numbers"
-                   (Expected "something point-like"))
+  let homT = PairType ComplexType ComplexType
+      one = Const (Scalar ComplexType 1)
+  if sphereViewMarker `Map.member` envToMap env
+    then atType p' homT
+    else do
+      isNumber <- (synth (typeEnvOf env) p' <&> \t -> exprType t `elem` [IntegerT, RealT, ComplexT])
+                    `catchError` \_ -> pure False
+      if isNumber
+        then (\z -> PairV homT z one) <$> atType p' ComplexType
+        else do
+          xy <- atType p' (PairType RealType RealType) `catchTypeError` \_ ->
+            throwError (Surprise (synRange p) "this"
+                         "not a complex number or pair of real numbers"
+                         (Expected "something point-like"))
+          let pT = PairType RealType RealType
+              i = Const (Scalar ComplexType (0 :+ 1))
+          pure (PairV homT (R2C (ProjV1 pT xy) + i * R2C (ProjV2 pT xy)) one)
 
 ------------------------------------------------------
 -- Loops

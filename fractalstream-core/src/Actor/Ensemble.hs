@@ -2247,7 +2247,8 @@ foldingDispatcher fdD dispatch dims event = folded <$ dispatch dims event
   where
     folded = HandlerRun $ \flag -> do
       fd <- getDynamic fdD
-      let f = foldModelPoint fd
+      -- (a hyperbolic viewer's points are points of its plane: [z : 1])
+      let f = planePoint . foldModelPoint fd . homPlane
           event' = case event of
             Click p -> Click (f p)
             DoubleClick p -> DoubleClick (f p)

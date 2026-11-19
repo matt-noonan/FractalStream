@@ -15,6 +15,8 @@ module Actor.Event
   , showCoordinate
   , bindOrDeclare
   , RealIn(..)
+  , Point
+  , planePoint
   , bindFreshReals
   , realPixelVars
   , pixelWidthVar
@@ -86,13 +88,20 @@ import Control.Exception (Exception)
 
 import Data.DynamicValue
 import Data.Codec
-import Actor.Viewer.Types
 import Actor.Viewer.Disk (HyperbolicDisplay(..), HyperbolicModel(..))
 import Actor.Viewer.Sphere (sphereViewName)
 import Language.Value.Typing (surfaceTypeMarker)
 --import Data.Typeable
 
-type Point = (Double, Double)
+-- | Where an event is: a point in homogeneous coordinates @[a : b]@. In
+-- a sphere viewer, any point of the Riemann sphere (∞ is @[1 : 0]@); in
+-- any other, @b@ is 1 and @a@ is the point (@x + iy@ for a real viewer's
+-- @(x, y)@: see 'planePoint').
+type Point = (Complex Double, Complex Double)
+
+-- | A point of a viewer's plane (not a sphere's), as an event's 'Point'.
+planePoint :: (Double, Double) -> Point
+planePoint (x, y) = (x :+ y, 1)
 
 data Event
   = Click Point
@@ -243,8 +252,9 @@ makeEventHandler exec ctx CombinedEventHandler{..} = do
   -- only serve to recover each branch's 'EnvironmentProxy'; 'contextToEnv'
   -- ignores the values.
   let dummyR     = constArg 0 :: EventArgument 'RealT
-      clickEnvP  = contextToEnv (dummyR # dummyR # dummyR # dummyR # ctx)
-      dragEnvP   = contextToEnv (dummyR # dummyR # dummyR # dummyR # dummyR # dummyR # ctx)
+      dummyC     = constArg 0 :: EventArgument 'ComplexT
+      clickEnvP  = contextToEnv (dummyC # dummyC # dummyR # dummyR # ctx)
+      dragEnvP   = contextToEnv (dummyC # dummyC # dummyC # dummyC # dummyR # dummyR # ctx)
       unitEnvP   = contextToEnv (dummyR # dummyR # ctx)
   clickRun       <- traverse (exec clickEnvP) onClick
   dblClickRun    <- traverse (exec clickEnvP) onDoubleClick
@@ -256,14 +266,14 @@ makeEventHandler exec ctx CombinedEventHandler{..} = do
   activatedRun   <- traverse (exec unitEnvP)  onActivated
   deactivatedRun <- traverse (exec unitEnvP)  onDeactivated
   pure $ \(px, py) -> \case
-    Click (x, y) -> clickRun <&> \invoke ->
-      invoke (constArg x # constArg y # constArg px # constArg py # ctx)
-    DoubleClick (x, y) -> dblClickRun <&> \invoke ->
-      invoke (constArg x # constArg y # constArg px # constArg py # ctx)
-    Drag (x, y) (x', y') -> dragRun <&> \invoke ->
-      invoke (constArg x # constArg y # constArg x' # constArg y' # constArg px # constArg py # ctx)
-    DragDone (x, y) (x', y') -> dragDoneRun <&> \invoke ->
-      invoke (constArg x # constArg y # constArg x' # constArg y' # constArg px # constArg py # ctx)
+    Click (a, b) -> clickRun <&> \invoke ->
+      invoke (constArg a # constArg b # constArg px # constArg py # ctx)
+    DoubleClick (a, b) -> dblClickRun <&> \invoke ->
+      invoke (constArg a # constArg b # constArg px # constArg py # ctx)
+    Drag (a, b) (a', b') -> dragRun <&> \invoke ->
+      invoke (constArg a # constArg b # constArg a' # constArg b' # constArg px # constArg py # ctx)
+    DragDone (a, b) (a', b') -> dragDoneRun <&> \invoke ->
+      invoke (constArg a # constArg b # constArg a' # constArg b' # constArg px # constArg py # ctx)
     Timer name -> Map.lookup name timerRun <&> \(_, invoke) ->
       invoke (constArg px # constArg py # ctx)
     ButtonPressed name -> Map.lookup name buttonRun <&> \invoke ->
@@ -365,7 +375,6 @@ drawHandlerForSink :: DrawSink -> DrawHandler ScalarIORefM
 drawHandlerForSink sink = DrawHandler $ \case
   DrawPoint _ pv          -> eval pv >>= liftIO . dsPoint sink
   DrawCircle _ fill u rv pv -> do r <- eval rv; p <- eval pv; liftIO (dsCircle sink fill u r p)
-  DrawGeodesic _ fv tv    -> do f <- eval fv; t <- eval tv; liftIO (dsGeodesic sink f t)
   DrawLine _ fv tv        -> do f <- eval fv; t <- eval tv; liftIO (dsLine sink f t)
   DrawRect _ fill fv tv   -> do f <- eval fv; t <- eval tv; liftIO (dsRect sink fill f t)
   SetStroke _ cv          -> eval cv >>= liftIO . dsStroke sink
@@ -405,12 +414,16 @@ type InternalPy  = "[internal] py"
 -- event dispatcher is given them. A complex viewer's pixels are square.
 type PixelDims = (Double, Double)
 
+-- | An event's point, @[a : b]@ (see 'Point'), as its handler is given it.
+type InternalPointA = "[internal] point a"
+type InternalPointB = "[internal] point b"
+
 type ClickHandlerEnv env =
-  ( '(InternalX, 'RealT) ': '(InternalY, 'RealT) ':
+  ( '(InternalPointA, 'ComplexT) ': '(InternalPointB, 'ComplexT) ':
     '(InternalPx, 'RealT) ': '(InternalPy, 'RealT) ': env )
 
 type MissingClickArgs env =
-  ( NotPresent InternalX  env, NotPresent InternalY  env
+  ( NotPresent InternalPointA env, NotPresent InternalPointB env
   , NotPresent InternalPx env, NotPresent InternalPy env )
 
 assertMissingClickArgs :: forall env a
@@ -418,8 +431,8 @@ assertMissingClickArgs :: forall env a
                       -> (MissingClickArgs env => a)
                       -> a
 assertMissingClickArgs env k =
-  assertAbsent (Proxy @InternalX)    RealType env $
-  assertAbsent (Proxy @InternalY)    RealType env $
+  assertAbsent (Proxy @InternalPointA) ComplexType env $
+  assertAbsent (Proxy @InternalPointB) ComplexType env $
   assertAbsent (Proxy @InternalPx)   RealType env $
   assertAbsent (Proxy @InternalPy)   RealType env k
 
@@ -475,6 +488,14 @@ handlerBody body e = left (errorLocation &&& unlines . pp) (runParsedBody e body
 internalReal :: forall n -> KnownSymbol n => RealIn
 internalReal n = RealIn (getVar n RealType)
 
+-- | A complex value, read in whatever environment it ends up used in.
+newtype ComplexIn = ComplexIn
+  (forall e. EnvironmentProxy e -> Either (SourceRange, String) (Value '(e, 'ComplexT)))
+
+-- | An internal complex variable, as a 'ComplexIn'.
+internalComplex :: forall n -> KnownSymbol n => ComplexIn
+internalComplex n = ComplexIn (getVar n ComplexType)
+
 -- | The pixel-size variables a tool's handlers see, which depend on the
 -- kind of viewer the tool is in (not on how a handler names its event's
 -- position): the pixel size (@pixelVar=@, if any), and a real viewer's
@@ -486,26 +507,27 @@ toolPixelVars viewerCoord mpx =
     RealCoordinates _ _ -> [ (pixelWidthVar,  internalReal InternalPx)
                            , (pixelHeightVar, internalReal InternalPy) ]
 
--- | Bind an event position, read from the given internal variables, to
--- the coordinate a handler names it by, around some code: @z = x + i y@,
--- or @(x, y)@ for a pair of real variables. A coordinate that's already
--- defined (a configuration value) is set instead.
+-- | Bind an event position @[a : b]@ (see 'Point'), read from the given
+-- internal variables, to the coordinate a handler names it by, around
+-- some code: in a sphere viewer, the point of Ĉ itself; in any other
+-- (where @b@ is 1), @z = a@, or @(x, y)@ for a pair of real variables. A
+-- coordinate that's already defined (a configuration value) is set
+-- instead.
 bindEventCoordinate :: forall env
                      . Coordinate
-                    -> RealIn
-                    -> RealIn
+                    -> ComplexIn
+                    -> ComplexIn
                     -> EnvironmentProxy env
                     -> (forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e))
                     -> Either (SourceRange, String) (Code env)
-bindEventCoordinate coord (RealIn getX) (RealIn getY) env k = withEnvironment env $ case coord of
+bindEventCoordinate coord (ComplexIn getA) (ComplexIn getB) env k = withEnvironment env $ case coord of
   -- (in a sphere viewer's tool, a point of Ĉ: see "Language.Code.Projective")
   ComplexCoordinate c | sphereViewName `Map.member` envToMap env -> case someSymbolVal c of
     SomeSymbol cp -> do
-      x <- getX env
-      y <- getY env
-      let i = Const (Scalar ComplexType (0 :+ 1))
-          pairT = PairType ComplexType ComplexType
-          point = PairV pairT (R2C x + i * R2C y) (Const (Scalar ComplexType 1))
+      a <- getA env
+      b <- getB env
+      let pairT = PairType ComplexType ComplexType
+          point = PairV pairT a b
       bindOrDeclare cp pairT point env $ \e -> withEnvironment e $
         case someSymbolVal (surfaceTypeMarker c ExtComplexT) of
           SomeSymbol mp -> case lookupEnv mp BooleanType e of
@@ -516,16 +538,14 @@ bindEventCoordinate coord (RealIn getX) (RealIn getY) env k = withEnvironment en
             _ -> k e
   ComplexCoordinate c -> case someSymbolVal c of
     SomeSymbol cp -> do
-      x <- getX env
-      y <- getY env
-      let i = Const (Scalar ComplexType (0 :+ 1))
-      bindOrDeclare cp ComplexType (R2C x + i * R2C y) env k
+      a <- getA env
+      bindOrDeclare cp ComplexType a env k
   RealCoordinates p q -> case (someSymbolVal p, someSymbolVal q) of
     (SomeSymbol xp, SomeSymbol yp) -> do
-      x <- getX env
-      bindOrDeclare xp RealType x env $ \env' -> do
-        y <- getY env'
-        bindOrDeclare yp RealType y env' k
+      a <- getA env
+      bindOrDeclare xp RealType (ReC a) env $ \env' -> do
+        a' <- getA env'
+        bindOrDeclare yp RealType (ImC a') env' k
 
 parseClickScript :: CommonDefs
                  -> Coordinate
@@ -540,25 +560,26 @@ parseClickScript :: CommonDefs
 parseClickScript defs0 viewerCoord clickCoord limits mpixel body
   (env0 :: EnvironmentProxy env) = do
 
-  env1 <- (declareE InternalX  RealType
-       <=< declareE InternalY  RealType
+  env1 <- (declareE InternalPointA ComplexType
+       <=< declareE InternalPointB ComplexType
        <=< declareE InternalPx RealType
        <=< declareE InternalPy RealType) env0
 
   withBookkeeping env1 defs0 limits $ \env _defs ->
-    bindEventCoordinate clickCoord (internalReal InternalX) (internalReal InternalY) env $ \env' ->
+    bindEventCoordinate clickCoord (internalComplex InternalPointA) (internalComplex InternalPointB) env $ \env' ->
       bindFreshReals (toolPixelVars viewerCoord mpixel) env' (handlerBody body)
 
 ------------------------------------------------------------
 -- Drag-type event handler
 ------------------------------------------------------------
 
-type InternalOldX  = "[internal] oldx"
-type InternalOldY  = "[internal] oldy"
+-- | Where a drag started, @[a : b]@ (see 'Point').
+type InternalOldA  = "[internal] old point a"
+type InternalOldB  = "[internal] old point b"
 
 type MissingDragArgs env =
-  ( NotPresent InternalX  env, NotPresent InternalY  env
-  , NotPresent InternalOldX env, NotPresent InternalOldY  env
+  ( NotPresent InternalPointA env, NotPresent InternalPointB env
+  , NotPresent InternalOldA env, NotPresent InternalOldB env
   , NotPresent InternalPx env, NotPresent InternalPy env )
 
 assertMissingDragArgs :: forall env a
@@ -566,16 +587,16 @@ assertMissingDragArgs :: forall env a
                       -> (MissingDragArgs env => a)
                       -> a
 assertMissingDragArgs env k =
-  assertAbsent (Proxy @InternalX)    RealType env $
-  assertAbsent (Proxy @InternalY)    RealType env $
-  assertAbsent (Proxy @InternalOldX) RealType env $
-  assertAbsent (Proxy @InternalOldY) RealType env $
+  assertAbsent (Proxy @InternalPointA) ComplexType env $
+  assertAbsent (Proxy @InternalPointB) ComplexType env $
+  assertAbsent (Proxy @InternalOldA) ComplexType env $
+  assertAbsent (Proxy @InternalOldB) ComplexType env $
   assertAbsent (Proxy @InternalPx)   RealType env $
   assertAbsent (Proxy @InternalPy)   RealType env k
 
 type DragHandlerEnv env =
-  ( '(InternalX, 'RealT) ': '(InternalY, 'RealT) ':
-    '(InternalOldX, 'RealT) ': '(InternalOldY, 'RealT) ':
+  ( '(InternalPointA, 'ComplexT) ': '(InternalPointB, 'ComplexT) ':
+    '(InternalOldA, 'ComplexT) ': '(InternalOldB, 'ComplexT) ':
     '(InternalPx, 'RealT) ': '(InternalPy, 'RealT) ': env )
 
 type InternalDragHandlerEnv env =
@@ -652,10 +673,10 @@ parseDragScript _defs viewerCoord curCoord oldCoord (pMaxIters, pMaxRadius, pMin
         <=< declareE InternalIterationLimit  IntegerType
         <=< declareE InternalEscapeRadius    RealType
         <=< declareE InternalVanishingRadius RealType
-        <=< declareE InternalX               RealType
-        <=< declareE InternalY               RealType
-        <=< declareE InternalOldX            RealType
-        <=< declareE InternalOldY            RealType
+        <=< declareE InternalPointA          ComplexType
+        <=< declareE InternalPointB          ComplexType
+        <=< declareE InternalOldA            ComplexType
+        <=< declareE InternalOldB            ComplexType
         <=< declareE InternalPx              RealType
         <=< declareE InternalPy              RealType
       ) env
@@ -663,8 +684,8 @@ parseDragScript _defs viewerCoord curCoord oldCoord (pMaxIters, pMaxRadius, pMin
     withEnvironment env' $ do
 
       code :: Code (InternalDragHandlerEnv env) <-
-        bindEventCoordinate curCoord (internalReal InternalX) (internalReal InternalY) env' $ \env1 ->
-          bindEventCoordinate oldCoord (internalReal InternalOldX) (internalReal InternalOldY) env1 $ \env2 ->
+        bindEventCoordinate curCoord (internalComplex InternalPointA) (internalComplex InternalPointB) env' $ \env1 ->
+          bindEventCoordinate oldCoord (internalComplex InternalOldA) (internalComplex InternalOldB) env1 $ \env2 ->
             bindFreshReals (toolPixelVars viewerCoord mpixel) env2 (handlerBody body)
 
       -- Now bind all of the bookkeeping variables

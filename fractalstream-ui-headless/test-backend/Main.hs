@@ -22,6 +22,7 @@ import qualified ToolAutocolorSpec
 import qualified OverlaySpec
 import qualified TableSpec
 import qualified HoistSpec
+import qualified SphereDrawSpec
 
 #if defined(wasm32_HOST_ARCH)
 foreign export javascript "hs_start" main :: IO ()
@@ -33,4 +34,4 @@ main = do
   -- (on the CPU, as fsrun draws by default: these check how the CPU
   -- draws, coarse passes and all; ChainSpec sets its own orders)
   setValue' backendPreference [Cpu]
-  hspec (OverlaySpec.spec >> GeometrySpec.spec >> DiskSpec.spec >> GroupSpec.spec >> PixelSizeSpec.spec >> BlocksSpec.spec >> ChainSpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec)
+  hspec (OverlaySpec.spec >> GeometrySpec.spec >> DiskSpec.spec >> GroupSpec.spec >> PixelSizeSpec.spec >> BlocksSpec.spec >> ChainSpec.spec >> DragSpec.spec >> TextSpec.spec >> ToolAutocolorSpec.spec >> TableSpec.spec >> HoistSpec.spec >> SphereDrawSpec.spec)

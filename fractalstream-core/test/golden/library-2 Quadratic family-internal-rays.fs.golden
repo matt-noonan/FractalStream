@@ -256,7 +256,7 @@ let `[internal] vanishing radius` = minRadius in:
     let `[internal] iteration limit` = maxIters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `z` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 set `start` := z
@@ -294,8 +294,8 @@ let `[internal] vanishing radius` = minRadius in:
                                                     set `[internal] previous.z #0` := z
                                                     block:
                                                       set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                      draw point at [internal] previous.z #0:R^2
-                                                      draw line from [internal] previous.z #0:R^2 to z:R^2
+                                                      draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
+                                                      draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
                                                   set `[internal] fresh #25` := ([internal] fresh #25 + 1)
                                             else:
                                               no-op
@@ -304,7 +304,7 @@ let `[internal] vanishing radius` = minRadius in:
                             else:
                               no-op
                             use Color 0 180 0 for line
-                            draw circle at w:R^2 with radius minRadius
+                            draw circle at (w, 1.0 :+ 0.0) with radius minRadius
 
   -- on drag
 let `[internal] vanishing radius` = minRadius in:
@@ -312,8 +312,8 @@ let `[internal] vanishing radius` = minRadius in:
     let `[internal] iteration limit` = maxIters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `z` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   set `start` := z
@@ -351,8 +351,8 @@ let `[internal] vanishing radius` = minRadius in:
                                                       set `[internal] previous.z #0` := z
                                                       block:
                                                         set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                        draw point at [internal] previous.z #0:R^2
-                                                        draw line from [internal] previous.z #0:R^2 to z:R^2
+                                                        draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
+                                                        draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
                                                     set `[internal] fresh #28` := ([internal] fresh #28 + 1)
                                               else:
                                                 no-op
@@ -361,7 +361,7 @@ let `[internal] vanishing radius` = minRadius in:
                               else:
                                 no-op
                               use Color 0 180 0 for line
-                              draw circle at w:R^2 with radius minRadius
+                              draw circle at (w, 1.0 :+ 0.0) with radius minRadius
 
   -- on refresh
 let `[internal] vanishing radius` = minRadius in:
@@ -407,8 +407,8 @@ let `[internal] vanishing radius` = minRadius in:
                                                       set `[internal] previous.z #0` := z
                                                       block:
                                                         set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + c)
-                                                        draw point at [internal] previous.z #0:R^2
-                                                        draw line from [internal] previous.z #0:R^2 to z:R^2
+                                                        draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
+                                                        draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
                                                     set `[internal] fresh #23` := ([internal] fresh #23 + 1)
                                               else:
                                                 no-op
@@ -417,6 +417,6 @@ let `[internal] vanishing radius` = minRadius in:
                               else:
                                 no-op
                               use Color 0 180 0 for line
-                              draw circle at w:R^2 with radius minRadius
+                              draw circle at (w, 1.0 :+ 0.0) with radius minRadius
 
 

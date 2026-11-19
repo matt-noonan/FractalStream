@@ -35,7 +35,7 @@ project = unlines
   , "  erase"
   , "  use yellow for fill"
   , "  use yellow for stroke"
-  , "  draw filled circle at 0 with radius 10 pixel_size_at(0)"
+  , "  draw filled circle at 0 with radius 10 pixels"
   , ""
   -- the half-plane: green near i, red near 2i
   , "@viewer \"H\" view=halfplane"
@@ -108,9 +108,9 @@ spec = describe "a disk viewer" $ do
     [ "select viewer \"D\"", "select tool \"T\"", "click at 0.5"
     , pixel "D" (175, 300) yellow ]
 
-  it "sizes its tools' markers in screen pixels with `pixel_size_at`" $ scenario
+  it "sizes its tools' markers in screen pixels with `pixels`" $ scenario
     -- the origin's on the screen at (175, 300), where the view shrinks the
-    -- model by 4/3: a marker 10 pixels in radius there
+    -- model by 4/3: a marker 10 pixels in radius there, all the same
     [ "select viewer \"D\"", "select tool \"M\"", "click at 0.5"
     , pixel "D" (175 + 8, 300) yellow, pixel "D" (175 - 8, 300) yellow
     , pixel "D" (175, 300 + 8) yellow

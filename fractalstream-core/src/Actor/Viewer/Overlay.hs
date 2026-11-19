@@ -25,7 +25,7 @@ import qualified Data.Planar as Planar
 
 import Actor.Viewer.Overlay.Font (overlayFont)
 import Actor.Viewer.Clip
-import Actor.Viewer.Sphere (Projection(..), ScreenView(..), projectToScreen, visibleRuns, sampleSegment, sampleGeodesic, sampleCircle)
+import Actor.Viewer.Sphere (Projection(..), ScreenView(..), homPlane, homToScreen, lineOnScreen, circleOnScreen)
 import Graphics.Text.TrueType (Font, BoundingBox(..), stringBoundingBox)
 
 import Codec.Picture (Image(..), PixelRGBA8(..), writePng, generateImage, pixelAt)
@@ -205,14 +205,8 @@ drawGlobeLayer image proj toPx = go white white
   where
     white = PixelRGBA8 255 255 255 255
     toPixelColor c = let (r, g, b) = colorToRGB c in PixelRGBA8 r g b 255
-    at = fmap toPx . projectToScreen proj
-    runs = map (map toPx) . visibleRuns proj
-    strokeRuns color = mapM_ (strokePolyline image color)
-    -- a closed outline: filled (and outlined) if it's all visible, else
-    -- its visible runs, in the pen's color
-    outline filled strokeColor fillColor pts = case runs pts of
-      [r] | filled, length r == length pts -> fillPolygon image fillColor strokeColor r
-      rs -> strokeRuns strokeColor rs
+    at = fmap toPx . homToScreen proj
+    strokeRuns color = mapM_ (strokePolyline image color) . map (map toPx)
 
     go :: PixelRGBA8 -> PixelRGBA8 -> [DrawCommand] -> Drawing PixelRGBA8 ()
     go _ _ [] = pure ()
@@ -223,14 +217,16 @@ drawGlobeLayer image proj toPx = go white white
       DrawPoint _ pt -> do
         forM_ (at pt) $ \p -> nearPoint image p (drawDot strokeColor)
         go strokeColor fillColor cmds
+      -- (the viewer's geodesic: see 'lineOnScreen')
       DrawLine _ pt1 pt2 -> do
-        strokeRuns strokeColor (runs (sampleSegment 64 pt1 pt2))
+        strokeRuns strokeColor (lineOnScreen proj pt1 pt2)
         go strokeColor fillColor cmds
-      DrawGeodesic _ pt1 pt2 -> do
-        strokeRuns strokeColor (runs (sampleGeodesic proj 64 pt1 pt2))
-        go strokeColor fillColor cmds
+      -- (in the viewer's own metric: filled, and outlined, if it's all
+      -- visible, else its visible runs, in the pen's color)
       DrawCircle _ filled ModelUnits r pt -> do
-        outline filled strokeColor fillColor (sampleCircle 96 pt r)
+        case circleOnScreen proj pt r of
+          ([run], True) | filled -> fillPolygon image fillColor strokeColor (map toPx run)
+          (runs, _) -> strokeRuns strokeColor runs
         go strokeColor fillColor cmds
       -- (a marker: a circle on the screen, around where its center is)
       DrawCircle _ filled ScreenPixels r pt -> do
@@ -238,11 +234,9 @@ drawGlobeLayer image proj toPx = go white white
           let prim = circle p' (realToFrac r)
           in if filled then fillAndOutline fillColor strokeColor prim else strokeWith strokeColor prim
         go strokeColor fillColor cmds
-      DrawRect _ filled (x1, y1) (x2, y2) -> do
-        let corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)]
-            edges = concat (zipWith (\a b -> init (sampleSegment 32 a b)) corners (drop 1 corners)) ++ [(x1, y1)]
-        outline filled strokeColor fillColor edges
-        go strokeColor fillColor cmds
+      -- (a rectangle is a shape of the plane, which a sphere's or a
+      -- hyperbolic plane's tool can't draw)
+      DrawRect {} -> go strokeColor fillColor cmds
       Write _ txt pt -> do
         forM_ overlayFont $ \font -> forM_ (at pt) $ \p -> nearPoint image p $ \p' ->
           withTexture (uniformTexture strokeColor) (drawCenteredText font p' txt)
@@ -274,11 +268,11 @@ drawLayer image toPx (pxW, pxH) = go white white
       -- escaping orbit), so shapes at such points are skipped.
       -- Points are drawn in the stroke color, like the live app does.
       DrawPoint _ pt -> do
-        nearPoint image (toPx pt) (drawDot strokeColor)
+        nearPoint image (toPx (homPlane pt)) (drawDot strokeColor)
         go strokeColor fillColor cmds
 
       DrawLine _ pt1 pt2 -> do
-        let (p, q) = (toPx pt1, toPx pt2)
+        let (p, q) = (toPx (homPlane pt1), toPx (homPlane pt2))
         when (finitePx p && finitePx q) $
           if near image [p, q]
             then strokeWith strokeColor (line (toPoint p) (toPoint q))
@@ -286,13 +280,10 @@ drawLayer image toPx (pxW, pxH) = go white white
                    strokeWith strokeColor (line (toPoint p') (toPoint q'))
         go strokeColor fillColor cmds
 
-      -- (a geodesic of the plane is a straight segment)
-      DrawGeodesic env pt1 pt2 -> go strokeColor fillColor (DrawLine env pt1 pt2 : cmds)
-
       DrawCircle _ filled unit r pt -> do
         -- A circle in model space: an ellipse, when pixels aren't square
         -- (or a marker, measured in pixels).
-        let c@(cx, cy) = toPx pt
+        let c@(cx, cy) = toPx (homPlane pt)
             (rx, ry) = case unit of
               ModelUnits -> (r / pxW, r / pxH)
               ScreenPixels -> (r, r)
@@ -310,8 +301,8 @@ drawLayer image toPx (pxW, pxH) = go white white
         go strokeColor fillColor cmds
 
       DrawRect _ filled pt1 pt2 -> do
-        let (x1, y1) = toPx pt1
-            (x2, y2) = toPx pt2
+        let (x1, y1) = toPx (homPlane pt1)
+            (x2, y2) = toPx (homPlane pt2)
         when (finitePx (x1, y1) && finitePx (x2, y2)) $
           if near image [(x1, y1), (x2, y2)]
             then
@@ -327,6 +318,6 @@ drawLayer image toPx (pxW, pxH) = go white white
 
       -- Text is drawn in the stroke color, like the live app's textColor.
       Write _ txt pt -> do
-        forM_ overlayFont $ \font -> nearPoint image (toPx pt) $ \p ->
+        forM_ overlayFont $ \font -> nearPoint image (toPx (homPlane pt)) $ \p ->
           withTexture (uniformTexture strokeColor) (drawCenteredText font p txt)
         go strokeColor fillColor cmds

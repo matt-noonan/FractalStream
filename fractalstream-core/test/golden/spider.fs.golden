@@ -32,15 +32,15 @@ let `[internal] vanishing radius` = vanishing_radius in:
                               set `q` := (2 * q)
                               erase
                               use Color 128 128 128 for line
-                              draw circle at 0:R:C:R^2 with radius 1:R
+                              draw circle at (0:R:C, 1.0 :+ 0.0) with radius 1:R
                               let `star1` = (2.718281828459045:C ^ ((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * h1:R:C) / q:R:C)) in:
                                 block:
                                   let `star2` = (2.718281828459045:C ^ ((((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * h2:R:C) / q:R:C)) in:
                                     block:
-                                      draw line from star1:R^2 to star2:R^2
+                                      draw line from (star1, 1.0 :+ 0.0) to (star2, 1.0 :+ 0.0)
                                       use Color 0 0 0 for line
-                                      write "A" at ((0.0 :+ 1.0 * star2) / 2:R:C):R^2
-                                      write "B" at (-(0.0 :+ 1.0 * star2) / 2:R:C):R^2
+                                      write "A" at (((0.0 :+ 1.0 * star2) / 2:R:C), 1.0 :+ 0.0)
+                                      write "B" at ((-(0.0 :+ 1.0 * star2) / 2:R:C), 1.0 :+ 0.0)
                                       let `power` = 1 in:
                                         block:
                                           set `λ` := 1
@@ -148,8 +148,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                           block:
                                                                                                             set `iters` := join(iters, [B])
                                                                                                             set `kneading_seq` := text(kneading_seq, "B")
-                                                                                                    draw line from omega:R^2 to (10:R:C * omega):R^2
-                                                                                                    draw filled circle at omega:R^2 with radius foot
+                                                                                                    draw line from (omega, 1.0 :+ 0.0) to ((10:R:C * omega), 1.0 :+ 0.0)
+                                                                                                    draw filled circle at (omega, 1.0 :+ 0.0) with radius foot
                                                                                                     set `t` := ((2 * t) mod q)
                                                                                           set `[internal] fresh #39` := ([internal] fresh #39 + 1)
                                                                                     else:
@@ -189,8 +189,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                     set `ci` := (ci + delta)
                                                                                                     use blend(0.333, Color 0 0 0, c) for line
                                                                                                     use blend(0.333, Color 255 255 255, c) for line
-                                                                                                    draw line from omega:R^2 to (10:R:C * omega):R^2
-                                                                                                    draw filled circle at omega:R^2 with radius foot
+                                                                                                    draw line from (omega, 1.0 :+ 0.0) to ((10:R:C * omega), 1.0 :+ 0.0)
+                                                                                                    draw filled circle at (omega, 1.0 :+ 0.0) with radius foot
                                                                                                     set `t` := ((2 * t) mod q)
                                                                                           set `[internal] fresh #39` := ([internal] fresh #39 + 1)
                                                                                     else:
@@ -337,9 +337,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                           {TODO: ForEach}
                                                                           set `encloses_zero` := (0:R < im(integral))
                                                                           use blend(0.333, Color 255 255 255, Color 128 128 128) for line
-                                                                          draw point at -2:R:C:R^2
-                                                                          write "-2" at -2.2:C:R^2
-                                                                          write "\947" at (first_pt - (0.15:C * 0.0 :+ 1.0)):R^2
+                                                                          draw point at (-2:R:C, 1.0 :+ 0.0)
+                                                                          write "-2" at (-2.2:C, 1.0 :+ 0.0)
+                                                                          write "\947" at ((first_pt - (0.15:C * 0.0 :+ 1.0)), 1.0 :+ 0.0)
 
   -- on refresh
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -400,7 +400,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                       block:
                                                                         let `last_gamma` = (R:C * omega) in:
                                                                           block:
-                                                                            draw line from (20:R:C * omega):R^2 to last_gamma:R^2
+                                                                            draw line from ((20:R:C * omega), 1.0 :+ 0.0) to (last_gamma, 1.0 :+ 0.0)
                                                                             set `leg` := []
                                                                             let `[internal] fresh #37` = 0 in:
                                                                               let `[internal] fresh #38` = N in:
@@ -413,14 +413,14 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                           let `gamma` = (((R ^ (1:R - t)):C * omega) + (b * t:C)) in:
                                                                                             block:
                                                                                               set `leg` := join([last_gamma], leg)
-                                                                                              draw line from last_gamma:R^2 to gamma:R^2
+                                                                                              draw line from (last_gamma, 1.0 :+ 0.0) to (gamma, 1.0 :+ 0.0)
                                                                                               set `last_gamma` := gamma
                                                                                         set `[internal] fresh #37` := ([internal] fresh #37 + 1)
                                                                                   else:
                                                                                     no-op
                                                                                   set `[internal] iteration count` := [internal] fresh #37
                                                                                   set `[internal] stuck` := ([internal] fresh #37 = [internal] fresh #38)
-                                                                            draw filled circle at zi:R^2 with radius foot
+                                                                            draw filled circle at (zi, 1.0 :+ 0.0) with radius foot
                                                                             set `omega` := (omega ^ 2:R:C)
                                                                             set `spider` := join(spider, [leg])
                                                   set `[internal] fresh #29` := ([internal] fresh #29 + 1)
@@ -462,9 +462,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                               {TODO: ForEach}
                                                                               set `encloses_zero` := (0:R < im(integral))
                                                                               use blend(0.333, Color 255 255 255, Color 128 128 128) for line
-                                                                              draw point at -2:R:C:R^2
-                                                                              write "-2" at -2.2:C:R^2
-                                                                              write "\947" at (first_pt - (0.15:C * 0.0 :+ 1.0)):R^2
+                                                                              draw point at (-2:R:C, 1.0 :+ 0.0)
+                                                                              write "-2" at (-2.2:C, 1.0 :+ 0.0)
+                                                                              write "\947" at ((first_pt - (0.15:C * 0.0 :+ 1.0)), 1.0 :+ 0.0)
                                                                               set `spider_ready` := True
 
 

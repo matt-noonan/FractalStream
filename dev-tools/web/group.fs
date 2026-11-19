@@ -21,4 +21,4 @@ script: |
     use rgb(0, 1, 0) for fill
     use rgb(0, 1, 0) for stroke
     draw filled circle at p with radius 5 pixels
-    draw geodesic from p to 0.3 + 1.2i
+    draw line from p to 0.3 + 1.2i

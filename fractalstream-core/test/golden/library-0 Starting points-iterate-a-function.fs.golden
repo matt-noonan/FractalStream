@@ -39,7 +39,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `z` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 use Color 255 255 255 for line
@@ -56,9 +56,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   block:
                                     set `[internal] previous.z #0` := z
                                     block:
-                                      draw point at z:R^2
+                                      draw point at (z, 1.0 :+ 0.0)
                                       set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + 0.0 :+ 1.0)
-                                      draw line from z:R^2 to [internal] previous.z #0:R^2
+                                      draw line from (z, 1.0 :+ 0.0) to ([internal] previous.z #0, 1.0 :+ 0.0)
                                   set `[internal] fresh #17` := ([internal] fresh #17 + 1)
                             else:
                               no-op
@@ -71,8 +71,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `z` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   use Color 255 255 255 for line
@@ -89,9 +89,9 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                     block:
                                       set `[internal] previous.z #0` := z
                                       block:
-                                        draw point at z:R^2
+                                        draw point at (z, 1.0 :+ 0.0)
                                         set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + 0.0 :+ 1.0)
-                                        draw line from z:R^2 to [internal] previous.z #0:R^2
+                                        draw line from (z, 1.0 :+ 0.0) to ([internal] previous.z #0, 1.0 :+ 0.0)
                                     set `[internal] fresh #20` := ([internal] fresh #20 + 1)
                               else:
                                 no-op
