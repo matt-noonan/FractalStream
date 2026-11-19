@@ -18,8 +18,9 @@ on:
   # Also on pushes to main that change what it's built from, and twice a
   # week, so that main's ~/.stack cache stays fresh (a cache unused for a
   # week is deleted). And on pull requests that change what it's built
-  # from, as a check that the desktop app still builds: signed ad hoc,
-  # without the Developer ID certificate, and saving no caches.
+  # from, as a check that the desktop app still builds and the test suites
+  # pass: signed ad hoc, without the Developer ID certificate, and saving
+  # no caches.
   push:
     branches: [main]
     paths:
@@ -71,5 +72,8 @@ jobs:
       runner: macos-15
       wxwidgets: ${{ inputs.wxwidgets || 'build-static' }}
       sign: ${{ github.event_name != 'pull_request' }}
+      # (on pull requests and pushes to main; not on the twice-weekly runs,
+      # which are there for the cache, nor by hand)
+      test: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
       notarize: ${{ inputs.notarize || false }}
     secrets: inherit
