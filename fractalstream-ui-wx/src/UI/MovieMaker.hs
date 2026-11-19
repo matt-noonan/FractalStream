@@ -216,7 +216,7 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
                                 , checked := lastOr lmDrawings False ]
       let loopTip = case source of
             ScriptSource -> "Leave out the last frame, since a movie playing in a loop goes back to the first frame."
-            PathSource{} -> "Come back to the start along a straight line, and leave out the last frame, since a movie playing in a loop goes back to the first frame."
+            PathSource{} -> "Come back to the start along a straight line and leave out the last frame, since a movie playing in a loop goes back to the first frame."
       -- For a path: showing the viewer it was drawn in, in a corner of
       -- each frame, marking where along the path the frame is.
       insetControls <- case source of

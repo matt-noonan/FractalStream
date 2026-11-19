@@ -164,7 +164,7 @@ importTableCsv ty current bytes = case ty of
               -- (a value a line, or all on one line)
               (1, _) | all ((== 1) . length) cellRows -> Right ([length cellRows], concat cellRows)
               (1, [one]) -> Right ([length one], one)
-              (1, _) -> Left "a table of one dimension takes a value a line (or all of them on one line)"
+              (1, _) -> Left "a table of one dimension takes one value per line, or should be a single row with all values on one line"
               (_, r : _) | all ((== length r) . length) cellRows ->
                              Right ([length r, length cellRows], concat cellRows)
               _ -> Left "its lines don't all have the same number of values"

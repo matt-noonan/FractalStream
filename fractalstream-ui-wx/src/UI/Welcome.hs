@@ -111,7 +111,7 @@ welcome ProjectActions{..} = do
             inMine <- readIORef showingMine
             folder <- projectsFolder
             set descriptionText [ text := if inMine then emptyMine folder else
-                                    "Choose a project to see what it's about." ]
+                                    "Choose a project to see it's description." ]
           Just LibraryEntry{..} -> do
             set titleText [ text := leTitle ]
             -- A problem's script error marks where it is with a line of
@@ -123,8 +123,8 @@ welcome ProjectActions{..} = do
                                           fromMaybe leDescription leProblem ]
 
       emptyMine folder = "Your own projects go in " ++ quoted folder ++ ". Save a project \
-                  \there (or in a folder inside it, to give it a section of its \
-                  \own) to see it here."
+                  \there to see it in this section. To make subsections, add folders inside your \
+                  \project folder."
 
       entryAt i = (\es -> if i >= 0 && i < length es then Just (es !! i) else Nothing)
                   <$> readIORef shown

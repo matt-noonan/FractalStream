@@ -63,8 +63,8 @@ showLoading name worker = do
   seconds <- staticText p [ text := "0 s" ]
   cancelButton <- button p [ text := "Cancel" ]
   set d [ layout := container p $ margin 12 $ column 10
-            [ hfill (minsize (sz 360 (-1)) (widget message))
-            , row 8 [ widget spinner, valignCenter (widget seconds) ]
+            [ row 8 [ hfill (minsize (sz 360 (-1)) (widget message))
+                    , widget spinner, valignCenter (widget seconds) ]
             , row 8 [ hglue, widget cancelButton ] ] ]
   started <- getCurrentTime
   cancelling <- newIORef False

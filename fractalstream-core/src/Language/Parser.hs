@@ -284,8 +284,8 @@ instance PrettyPrint ParseError where
       expectingClause prods
     ScientificNumber _ s -> scientificNumberMessage s
     IntegerTooBig _ n ->
-      "`" ++ show n ++ "` is too big for an integer (they go up to " ++ show maxIntegerLiteral
-      ++ "). For the real number, write `" ++ show n ++ ".0`."
+      "`" ++ show n ++ "` is too big for an integer, which cannot exceed " ++ show maxIntegerLiteral
+      ++ ". For the real number, write `" ++ show n ++ ".0`."
     BuiltinName _ name what role ->
       "`" ++ name ++ "` is " ++ what ++ ", so it can't also name a " ++ role ++ ". Try another name"
       ++ (if name `elem` ["i", "e"] then " (k, j, n, ...)." else ".")
@@ -296,7 +296,7 @@ instance PrettyPrint ParseError where
 scientificNumberMessage :: String -> String
 scientificNumberMessage s =
   "`" ++ s ++ "` looks like scientific notation, which FractalStream doesn't use \
-  \(e is Euler's number). Write " ++ decimal ++ " (or " ++ powerOfTen ++
+  \(e is reserved for Euler's number). Write " ++ decimal ++ " (or " ++ powerOfTen ++
   ") for the number" ++ eulerClause ++ "."
   where
     (mantissa, afterMantissa) = break (`elem` ("eE" :: String)) s

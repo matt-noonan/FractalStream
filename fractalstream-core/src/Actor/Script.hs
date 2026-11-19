@@ -125,9 +125,7 @@ noButtons :: [ConfigStmt] -> Either (SourceRange, String) [ConfigStmt]
 noButtons stmts = stmts <$ mapM_ check stmts
   where
     check = \case
-      ConfigButton sr _ -> Left (sr, "A @config stanza can't have a button, since nothing "
-                                  ++ "would respond to it. Put the button in a @tool's "
-                                  ++ "declarations, and handle it there with `on button \"...\":`.")
+      ConfigButton sr _ -> Left (sr, "Buttons can only be created in `@tool` stanzas.")
       ConfigRow xs  -> mapM_ check xs
       ConfigTabs ts -> mapM_ (mapM_ check . snd) ts
       _ -> pure ()
@@ -844,10 +842,7 @@ validateViewerHeader sr vhTitle attrs = do
   -- attribute unknown.
   forM_ attrs $ \(k, _) ->
     when (k `elem` ["size", "position", "resizable"]) $
-      Left (sr, "The `" ++ k ++ "` attribute is no longer part of a `@viewer` \
-                \header: window size, position, and resizability are saved \
-                \by the user interface itself (for the wx UI, under the \
-                \project file's `wx-properties:` key).")
+      Left (sr, "The `" ++ k ++ "` attribute is no longer part of a `@viewer` stanza.")
   checkKnownAttrs sr
     [ "var", "xvar", "yvar", "center", "pixelSize", "aspect", "view", "group", "groupCenter"
     , "limit", "escape", "vanish", "pixelVar", "colorizer" ]
@@ -878,7 +873,7 @@ validateViewerHeader sr vhTitle attrs = do
     Just "sphere" -> Right SphereView
     Just "disk" -> Right DiskView
     Just "halfplane" -> Right HalfPlaneView
-    Just v -> Left (sr, "A viewer's `view` is `plane`, `sphere`, `disk`, or `halfplane`, not `" ++ v ++ "`.")
+    Just v -> Left (sr, "A viewer's `view` must be one of `plane`, `sphere`, `disk`, or `halfplane`, not `" ++ v ++ "`.")
   case (vhCoord, vhView) of
     (RealCoordinates _ _, SphereView) ->
       Left (sr, "Only a complex viewer (one with `var=`) can be shown on the sphere \

@@ -113,8 +113,8 @@ menuBarFor ProjectActions{..} thisProject f addlMenus = do
     menuLine prj
     menuItem prj [ text := "Save\tCtrl+S", on command := tpSave ]
     menuItem prj [ text := "Save as...\tCtrl+Shift+S", on command := tpSaveAs ]
-    menuItem prj [ text := "Edit Project Script...\tCtrl+E", on command := tpEditScript ]
-    menuItem prj [ text := "Project Info...\tCtrl+I", on command := tpEditInfo (objectCast f) ]
+    menuItem prj [ text := "Edit project script...\tCtrl+E", on command := tpEditScript ]
+    menuItem prj [ text := "Project info...\tCtrl+I", on command := tpEditInfo (objectCast f) ]
     menuItem prj [ text := "Close\tCtrl+W", on command := tpClose ]
 
 

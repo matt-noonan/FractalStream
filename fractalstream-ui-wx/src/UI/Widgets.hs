@@ -67,7 +67,7 @@ simpleDialog title m'label onOk makeControl p v = liftIO $ do
         Nothing -> fill (widget control)
         Just l  -> row 5 [ label l, fill (widget control) ]
 
-  epOk <- button ep [ text := "Ok" ]
+  epOk <- button ep [ text := "OK" ]
   epCancel <- button ep [ text := "Cancel" ]
   set editDialog [ layout := margin 10 $ fill $ container ep $ column 5
                  [ widgetRow
@@ -666,12 +666,12 @@ scriptEditMenu ScriptWidget{ swEditor = ce, swGoToError } = do
   _ <- menuItem m [ text := "Cut\tCtrl+X", on command := styledTextCtrlCut ce ]
   _ <- menuItem m [ text := "Copy\tCtrl+C", on command := styledTextCtrlCopy ce ]
   _ <- menuItem m [ text := "Paste" ++ shortcut "V", on command := pasteFittingIndentation ce ]
-  _ <- menuItem m [ text := "Select All" ++ shortcut "A", on command := styledTextCtrlSelectAll ce ]
+  _ <- menuItem m [ text := "Select all" ++ shortcut "A", on command := styledTextCtrlSelectAll ce ]
   menuLine m
-  _ <- menuItem m [ text := "Toggle Comment\tCtrl+/", on command := toggleCommentLines ce ]
-  _ <- menuItem m [ text := "Normalize Script", on command := normalizeEditor ce ]
+  _ <- menuItem m [ text := "Toggle comment\tCtrl+/", on command := toggleCommentLines ce ]
+  _ <- menuItem m [ text := "Normalize script", on command := normalizeEditor ce ]
   menuLine m
-  _ <- menuItem m [ text := "Go to Error\tF8", on command := swGoToError ]
+  _ <- menuItem m [ text := "Go to error\tF8", on command := swGoToError ]
   pure m
 
 -- | Rewrite all of an editor's script with mathematical symbols

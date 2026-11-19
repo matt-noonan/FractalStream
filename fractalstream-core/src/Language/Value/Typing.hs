@@ -666,7 +666,7 @@ synthBin env sr op x y = case op of
         Just ExtComplexT | op `elem` [OpAdd, OpSub, OpMul, OpDiv, OpPow] -> pure (x', y', ExtComplexT)
         _ | any ((== ProjectiveT) . exprType) [x', y'] ->
               advise sr "A point of ℙ¹ has no arithmetic: work with its homogeneous coordinates \
-                        \(`[a : b] := p`, then a new point `[F : G]`, both parts of the same degree), \
+                        \(`[a : b] := p` and construct a new point `[F : G]` with both parts of the same degree), \
                         \or make it a point of Ĉ, `(p : Ĉ)`."
         _ | (bad : _) <- filter (isProjective . exprType) [x', y'] -> onTheSphere bad
         _ | OpMul <- op, Syn _ (EVar n) <- x, isOwnableBuiltin n ->
@@ -973,7 +973,7 @@ tableIndexParts sr d ix = do
     _ -> advise sr (howToIndex d)
   rest <- forM (if isJust point then drop 1 parts else parts) $ \case
     Syn _ ESliceAll -> pure Nothing
-    Syn psr (EPointIndex _) -> advise psr "`point z` stands for a table's first two indices, so it has to come first: `T @ (point z, k)`."
+    Syn psr (EPointIndex _) -> advise psr "`point z` stands for a table's first two indices, so it has to come first, like `T @ (point z, k)`."
     e -> pure (Just e)
   pure (point, rest)
 

@@ -73,7 +73,7 @@ expandProjective tenv s
       SSet n e -> do
         when (Map.member n (scCoords scope)) $
           lift (advise sr ("`" ++ n ++ "` is one of a point's homogeneous coordinates, which can't be \
-                           \changed: make a new point, `[F : G]`, instead."))
+                           \changed: make a new point `[F : G]` instead."))
         Stmt sr . SSet n <$> valueAt scope (Map.lookup n (scTypes scope)) e
       SIterate p@(PVar _ n) e isWhile c lim -> do
         let t = Map.lookup n (scTypes scope)
@@ -128,8 +128,7 @@ expandProjective tenv s
       Stmt sr (SDeclHomogeneous ns e) : rest -> do
         (a, b) <- case ns of
           [a, b] -> pure (a, b)
-          _ -> lift (advise sr "A point of ℙ¹ has two homogeneous coordinates, `[a : b] := p`: \
-                               \the higher-dimensional projective spaces aren't there yet.")
+          _ -> lift (advise sr "A point of ℙ¹ has two homogeneous coordinates, `[a : b] := p`.")
         e1 <- lift (expandCalls funs e)
         lift (homogeneityCheck scope e1)
         te <- lift (synth (typeEnv scope) e1)
@@ -181,7 +180,7 @@ expandProjective tenv s
           Nothing -> synth (typeEnv scope) e1
         when (isNothing mty && hasProjective (exprType te)) $
           lift (advise (synRange e) "This is a point of the Riemann sphere, which isn't a number: \
-                                    \for the complex number it is in the plane, use `affine(1, ...)`.")
+                                    \to get a complex number, use `affine(1, ...)`.")
         if isProjective target
           then do
             p <- materialize te

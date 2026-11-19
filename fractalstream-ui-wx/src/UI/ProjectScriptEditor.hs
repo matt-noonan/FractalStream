@@ -168,7 +168,7 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
   editMenu <- scriptEditMenu sw
   sehAddMenuBar f [editMenu]
 
-  rebuildBtn <- button p [ text := "Rebuild" ]
+  rebuildBtn <- button p [ text := "Run script" ]
   cancelBtn  <- button p [ text := "Cancel"
                          , on command := void (windowClose f True) ]
 
