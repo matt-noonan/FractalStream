@@ -436,6 +436,10 @@ scriptWidgetWith known p scriptCode = do
   -- as long as the process runs, every time the enclosing window
   -- (and so this widget) is closed.
   enclosingFrame <- liftIO (windowGetFrameParent p)
+  -- (the editor's width, for re-wrapping an error's note when it changes:
+  -- noticed here, rather than by handling the editor's size events, which
+  -- Scintilla has to have to know its size)
+  editorWidth <- liftIO $ newIORef (0 :: Int)
   void $ wxTimer enclosingFrame [ interval := 200, enabled := True
                    , on command := do
                        new <- styledTextCtrlGetText ce
@@ -451,6 +455,11 @@ scriptWidgetWith known p scriptCode = do
                        when (lineNow /= lineBefore) $ do
                          writeIORef caretLine lineNow
                          normalizeExcept (Just lineNow)
+                         refreshNoteLater
+                       Size widthNow _ <- get ce clientSize
+                       widthBefore <- readIORef editorWidth
+                       when (widthNow /= widthBefore) $ do
+                         writeIORef editorWidth widthNow
                          refreshNoteLater ]
   -- Show the script when it's changed from elsewhere. wxWatchDynamic
   -- runs this up to 100ms after the change, so it also hears, late, about
@@ -608,7 +617,6 @@ scriptWidgetWith known p scriptCode = do
         writeIORef noteChosen (Just (isNothing shown))
         refreshNote
     set errorText [ on click := \_ -> goToError ]
-    set ce [ on resize :~ \editorsOwn -> editorsOwn >> refreshNote ]
     editorsKeys <- windowGetOnKeyDown ce
     windowOnKeyDown ce $ \k -> case keyKey k of
       KeyF8 -> goToError
