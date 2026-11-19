@@ -21,6 +21,11 @@ says how big they are:
 
 Later saves keep your answer, so you're only asked again when you choose `Save project as`.
 
+Every project file that FractalStream saves starts with the line `format: 1`, which tells which
+version of the project file format it uses. If a future version of FractalStream changes the
+format, it will save a higher number, and an older FractalStream will say it can't open the file,
+rather than misreading it.
+
 ## Exporting a table
 
 To save one table's contents in a file of its own, use the **Export** button on its line in

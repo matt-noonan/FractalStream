@@ -26,10 +26,11 @@ How the app's classes become Pygments tokens:
 App class           Pygments token
 ==================  ============================================
 keyword             Keyword
-builtin-function    Name.Builtin
+builtin-function    Name.Builtin (also ``∂`` and ``ⅆ``)
 builtin-value       Keyword.Constant (``pi``, ``i``, ``e``,
-                    ``true``, ``false``) or Name.Builtin.Pseudo
-                    (``iterations``, ``stuck``, ``color``)
+                    ``true``, ``false``, ``∞``, ``infinity``) or
+                    Name.Builtin.Pseudo (``iterations``, ``stuck``,
+                    ``color``)
 type                Keyword.Type
 color               Name.Constant
 number              Number.Integer / Number.Float
@@ -93,7 +94,8 @@ _RESERVED = (_RESERVED_KEYWORDS | _RESERVED_CONSTANTS | _RESERVED_PSEUDO
 # unless the script defines them.
 _KEYWORDS = {
     "while", "until", "repeat", "iterate", "up", "to", "for", "each", "in",
-    "with", "first", "matching", "define", "run", "pass", "draw", "use",
+    "with", "first", "matching", "define", "function", "run", "pass", "draw",
+    "use",
     "erase", "write", "point", "at", "circle", "filled", "radius", "pixels",
     "rectangle", "from", "line", "geodesic", "stroke", "fill", "on", "as",
     "choice", "button", "row", "tab", "coloring", "reset", "resize",
@@ -120,6 +122,7 @@ _BUILTIN_FUNCTIONS = {
     "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert",
     "autocolor", "nearest_autocolor", "get_autocolor",
     "table_size", "table_cell", "table_point",
+    "partial", "chart", "affine", "chordal",
 }
 
 # Language.Value.Builtins.colors
@@ -129,9 +132,12 @@ _COLORS = {
 }
 
 # Language.Value.Builtins.types
+# (ℙ¹ is also `ℙ¹`, a superscript after `ℙ`: see _classify, and `P^1`,
+# which is left as it is: Language.Value.Parser.typeGrammar)
 _TYPES = {
     "R", "ℝ", "Real", "Z", "ℤ", "Int", "Integer", "C", "ℂ", "Complex",
     "Bool", "Boolean", "Color", "Text",
+    "ℙ", "P1", "Ĉ", "ℂ\u0302", "Cinf",
 }
 _UNICODE_TYPES = {t for t in _TYPES if not t.isascii()}
 
@@ -152,7 +158,12 @@ _OPERATORS = [
     "!=", "=/=", "≠", "->", "<-", "⭢", "⭠", "→", "←", "⟼", "↦", "⟶", "⟵",
     "@", "@@",
 ]
-_SYMBOLS = sorted(_PUNCTUATION + _OPERATORS, key=lambda s: (-len(s), s))
+# (∂ and ⅆ start a derivative written as a fraction, ∂f/∂z and ⅆf/ⅆz,
+# and are classed as built-in functions; ∞ is a built-in value)
+_DERIVATIVE_SIGNS = ["∂", "ⅆ"]
+_INFINITY = "∞"
+_SYMBOLS = sorted(_PUNCTUATION + _OPERATORS + _DERIVATIVE_SIGNS + [_INFINITY],
+                  key=lambda s: (-len(s), s))
 
 _SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
 # Combining marks (Language.Parser.Tokenizer.identChar allows any).
@@ -167,7 +178,7 @@ _TOKEN_RE = re.compile(
     | (?P<int>\d+)
     | (?P<super>⁻?[{sup}]+)
     | (?P<symbol>{symbols})
-    | (?P<ident>(?![{sup}])[^\W\d_](?:(?![{sup}])\w|[{marks}])*)
+    | (?P<ident>(?![{sup}ⅆ])[^\W\d_](?:(?![{sup}ⅆ])\w|[{marks}])*)
     | (?P<junk>.)
     """.format(
         sup=_SUPERSCRIPTS,
@@ -452,6 +463,9 @@ def _code_definitions(toks):
     # `f(x, y) := ...` (before tuple declarations, which it also looks like)
     if t0.is_ident() and _function_definition(toks[1:]):
         return [(t0.name, FUNCTION)] + params(toks[2:])
+    if (t0.is_ident("function") and len(toks) > 2 and toks[1].is_ident()
+            and toks[2].is_symbol("(")):
+        return [(toks[1].name, FUNCTION)] + params(toks[3:])
     if t0.is_ident("define") and len(toks) > 1 and toks[1].is_ident():
         if len(toks) > 2 and toks[2].is_symbol("("):
             return [(toks[1].name, CODE_BLOCK)] + params(toks[3:])
@@ -462,6 +476,15 @@ def _code_definitions(toks):
                 if b.is_ident() and (a.is_ident("at") or a.is_ident("from")
                                      or a.is_ident("to")
                                      or a.is_symbol("(", ","))]
+    # homogeneous coordinates, `[a : b] := p`
+    if t0.is_symbol("["):
+        close = next((k for k, t in enumerate(toks) if t.is_symbol("]")), None)
+        if (close is not None and close + 1 < len(toks)
+                and toks[close + 1].kind == "symbol"
+                and _symbol_key(toks[close + 1].text) == ":="
+                and all(t.is_ident() or t.is_symbol(":") for t in toks[1:close])):
+            return ([(t.name, VARIABLE) for t in toks[1:close] if t.is_ident()]
+                    + everywhere(toks))
     # a tuple declaration, `x, y := ...` or `(x, y) := ...`
     k = next((k for k, t in enumerate(toks)
               if t.kind == "symbol" and _symbol_key(t.text) == ":="), None)
@@ -537,17 +560,19 @@ def _classify_identifier(tok, before, before2, defs):
         return Keyword.Type
     if n == "x" and before is not None and before.is_ident() and before.name in _TYPES:
         return Keyword.Type
-    # (a built-in can't be redefined)
+    # (a name the script defines is its own, even a built-in's)
+    if n in defs:
+        return _DEFINED_TOKENS[defs[n]]
     if n in _BUILTIN_FUNCTIONS:
         return Name.Builtin
     if n in _COLORS:
         return Name.Constant
-    if n in defs:
-        return _DEFINED_TOKENS[defs[n]]
     if n in _KEYWORDS:
         return Keyword
     if n == "color":
         return Name.Builtin.Pseudo
+    if n == "infinity":
+        return Keyword.Constant
     if n in _UNICODE_TYPES:
         return Keyword.Type
     return Name
@@ -575,10 +600,18 @@ def _classify(tok, before, before2, defs):
     if kind in ("float", "sci"):
         return Number.Float
     if kind == "super":
+        # (`ℙ¹`, in a type)
+        if (tok.text == "¹" and before is not None and before.is_ident("ℙ")
+                and _in_type_position(before2)):
+            return Keyword.Type
         return Number.Integer
     if kind == "string":
         return String.Double
     if kind == "symbol":
+        if tok.text in _DERIVATIVE_SIGNS:
+            return Name.Builtin
+        if tok.text == _INFINITY:
+            return Keyword.Constant
         return Punctuation if tok.text in _PUNCTUATION else Operator
     if kind == "continuation":
         return Punctuation

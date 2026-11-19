@@ -17,6 +17,8 @@ All values in a FractalStream script have an associated *type*, and the type of 
 | `Z` | `ℤ`, `Int`, `Integer` | Integer |
 | `R`            | `ℝ`, `Real`                | Real number                                                             |
 | `C`            | `ℂ`, `Complex`                | Complex number                                                          |
+| `Ĉ`            | `ℂ̂`, `Cinf`                | Point of the Riemann sphere: a complex number, or `∞` (see {ref}`riemann-sphere`) |
+| `ℙ¹`           | `ℙ`, `P1`, `P^1`           | Point of the projective line, by its homogeneous coordinates `[a : b]` (see {ref}`riemann-sphere`) |
 | `Color`        |                  | RGB color                                                               |
 | `Text`         |                  | Plain text                                                              |
 | `P x Q`        | `P × Q`            | Product type; pair of a value of type `P` and one of type `Q`               |
@@ -34,6 +36,31 @@ as you type. For example, to type `λ` you may write `\lambda` in the editor. It
 some combining characters: typing `\hat z` yields `ẑ`, and `\ddot \theta` yields `θ̈`. These are
 all valid variable names.
 
+A script can use almost any word as a name, even the name of a built-in function or color. A
+name your script defines is your script's own: where it is defined, the built-in with that name
+isn't available. So a script can have a configuration value called `fall`, or define its own
+function called `max`:
+
+``` fractalstream
+@config "Parameters"
+fall : R := 0.25
+
+@common
+max(a, b) := if a > b then a else b
+
+@viewer "V"
+color <- rainbow(max(fall, re z))
+```
+
+A name defined in `@config` or `@common` is the script's everywhere; a name defined in a viewer
+or a tool is the script's only in that stanza. This also means that a built-in function added in a
+later version of FractalStream can never change what your script means.
+
+A few words are reserved and can't name anything: `if`, `then`, `else`, `and`, `or`, `not`,
+`true`, `false`, `e`, `i`, `pi`, `escapes`, `vanishes`, `stops`, `iterations`, `stuck`, `times`,
+`previous`, `text`, `append`, `prepend`, `join`, `remove`, `find`, `transform`, `range`,
+`length`, and `diff`.
+
 ### Built-in constants
 
 FractalStream knows about several special constants
@@ -43,6 +70,7 @@ FractalStream knows about several special constants
 | `e`, `𝑒`    | Euler's number |
 | `pi`, `π`   | Pi |
 | `i`, `𝑖` | The imaginary unit |
+| `∞`, `infinity` | The point at infinity of the Riemann sphere (a value of type `Ĉ`; see {ref}`riemann-sphere`) |
 | `true`  | Boolean true value |
 | `false` | Boolean false value |
 
@@ -122,7 +150,10 @@ Inequality can be tested with the `!=` /  `=/=` / `≠` operator.
 - Functions that work for real numbers only: `arccos` / `acos`, `arcsin` / `asin`, `arctan` / `atan`, `arccosh` / `acosh`, `arcsinh` / `asinh`, `arctanh` / `atanh`.
 - Functions that work for complex numbers only: `re` / `Re`, `im` / `Im`, `arg` / `Arg`, `conj` / `bar` / `Conj` / `Bar`.
 - Rounding functions: `round`, `floor`, `ceiling` / `ceil`.
+- Functions for points of the Riemann sphere: `affine`, `chart`, `chordal` (see {ref}`riemann-sphere`).
+- Derivatives: `diff`, `partial` (see {ref}`derivatives`).
 
+(derivatives)=
 ### Derivatives
 
 You can take the derivative of an expression using the `diff(VARIABLE, EXPRESSION)` operation.
@@ -132,8 +163,39 @@ For example:
 dz := diff(z, z^2 + C)
 ```
 
-will set `dz` to `2 z`. If you have made user-defined functions, those can also be used
-inside `diff`:
+will set `dz` to `2 z`. Derivatives are worked out symbolically, so they are exact.
+
+`diff` follows the variables in the expression back through the statements that computed them,
+loops and all. So the derivative of an orbit with respect to its starting point, or with respect
+to a parameter, needs no extra bookkeeping:
+
+``` fractalstream
+w := z
+iterate w -> w^2 + C until w escapes
+distance := |w| log |w| / |diff(z, w)|
+```
+
+A few rules apply:
+- An `if` isn't differentiated: the derivative is the derivative of the branch that was taken.
+- The variable you differentiate with respect to can't change between the moment another variable
+  is computed and the `diff`. That's why the example above iterates a copy `w` of `z`, instead of
+  iterating `z` itself.
+- Something that has no derivative is an error, not zero: an item of a list or table, `floor`,
+  `round`, `mod`, `//`, and, with respect to a complex variable, `|w|`, `re`, `im`, `conj` and
+  `arg`.
+
+`diff(x, EXPRESSION, 2)` is the second derivative, and so on.
+
+If you want the derivative of an expression *alone*, treating every other variable as a constant
+no matter how it was computed, use `partial(VARIABLE, EXPRESSION)` instead. For example,
+`partial(c, z^2 + c)` is always `1`.
+
+Both can also be written as fractions, just as on paper: `ⅆw/ⅆz` means `diff(z, w)`, and
+`∂w/∂z` means `partial(z, w)`. Higher derivatives are written with superscripts, as in `ⅆ²w/ⅆz²`,
+and mixed partial derivatives look like `∂²f/∂x∂y`. To raise a derivative to a power, use
+parentheses: `(ⅆw/ⅆz)^2`. In the editor, type `\d` and a space for `ⅆ`, and `\partial` for `∂`.
+
+If you have made user-defined functions, those can also be used inside `diff`:
 
 ``` fractalstream
 f(z) := z^2 + C
@@ -160,6 +222,61 @@ color <- rainbow((1 + arg(z)/pi) / 2)
 ```
 
 Higher derivatives may be denoted with additional primes.
+
+(riemann-sphere)=
+### Points of the Riemann sphere
+
+Complex numbers can't be ∞, so a script whose dynamics pass through ∞ would have to work around
+it, for example by keeping track of two charts by hand. Instead, FractalStream has two types whose
+values are points of the Riemann sphere, ∞ included.
+
+A value of type **`Ĉ`** (also written `ℂ̂`, or `Cinf`) is either a complex number or `∞` (also
+written `infinity`). A complex number can be used anywhere a `Ĉ` is expected. You can add,
+subtract, multiply and divide points of `Ĉ`, and raise them to whole-number powers written as
+numbers (like `w^2` or `w^(-1)`). So a rational map is written as usual, and is correct at ∞:
+
+``` fractalstream
+w : Ĉ := ∞
+w <- (w^2 - c) / (w^2 - 1)      # w is now 1
+```
+
+Behind the scenes, a point is stored by its homogeneous coordinates `[a : b]`, meaning the complex
+number `a / b`, or ∞ when `b` is 0. Each expression is worked out in homogeneous coordinates as a
+whole, the way you would do it by hand, so Newton's method `w - (w^3 - 1) / (3 w^2)` is exactly ∞
+at ∞. This happens one expression at a time: if you split a computation across several
+statements, an intermediate result can be ∞ / ∞. Something undefined (∞ - ∞, 0 · ∞, 0 / 0)
+gives a point that isn't equal to anything.
+
+A point of the sphere isn't a number, so `|w|`, `re`, `exp`, comparisons like `<`, and
+derivatives aren't defined on it. These are:
+
+| Operation | Meaning |
+| --------- | ------- |
+| `affine(k, w)` | The point in the `k`th affine chart, counting from 0: `affine(1, w)` is the complex number `a / b` (huge, or not a number, at ∞), and `affine(0, w)` is `b / a`, a coordinate around ∞ |
+| `chart(w)` | The pair `(affine(k, w), k)`, using whichever chart puts the point closest to 0, so the complex number is never bigger than 1. `(u, k) := chart(w)` is exact everywhere, ∞ included |
+| `chordal(p, q)` | The chordal distance: the straight-line distance between the two points on the unit sphere, so `chordal(0, ∞)` is 2 |
+| `p = q`, `p ≠ q` | Equal when the chordal distance is less than `min_radius` |
+| `w escapes`, `w vanishes`, `w stops` | As for complex numbers, and correct at ∞ |
+
+A value of type **`ℙ¹`** (the projective line; also written `ℙ`, `P1`, or `P^1`) is written by its
+homogeneous coordinates `[a : b]`, and has no arithmetic: you write a map in homogeneous
+coordinates instead, which is exact everywhere. Take a point apart with `[a : b] := p`, and build
+a new one from the pieces:
+
+``` fractalstream
+[a : b] := p
+p <- [a^2 - c b^2 : a^2 - b^2]
+```
+
+Homogeneous coordinates are only defined up to scale (`[2 : 1]` and `[4 : 2]` are the same point),
+so `a` and `b` can only be used in ways that don't depend on the scale: in a point `[F : G]` where
+`F` and `G` have the same degree, or in a ratio of the same degree, like `a / b`. Anything else,
+like `a` by itself, `a + 1`, or `[a^2 : b]`, is an error. A `Ĉ` can be taken apart in the same
+way. To convert between the two types, use a type annotation: `(p : Ĉ)` or `(w : ℙ¹)`.
+
+Configuration values can be points of the sphere too, as in `c : Ĉ := ∞` or `p : ℙ¹ := [1 : 0]`,
+as can lists and tuples of them. In a configuration text box, a point is written as `∞`, as a
+complex number, or (for `ℙ¹`) as `[a : b]`.
 
 (colors-and-gradients)=
 ### Colors and gradients
@@ -289,14 +406,61 @@ can be replaced with the multiple assignment
 x, y <- x + y, x
 ```
 
+### Functions
+
 The `:=` notation can also be used to define functions:
 
 ``` fractalstream
 f(z) := z^2 + C
+g(a, b) := a * f(b) - b
 ```
 
-If a function references a variable that is not one of its parameters, then anywhere that
-function gets used *must* have that variable in scope. In the specific case of `f(z) := z^2 + C`, this means that `f` can only be used in parts of the script where `C` is also defined.
+Besides its parameters, a function can use the project's names: configuration values, the
+definitions in `@common`, the viewer's or tool's own variables (like the viewer's `z`), and
+built-in values like `pixel_size`. It can't use variables that a viewer's or tool's script
+declares itself; give the function a parameter for those instead. A function's parameters are
+separate from any variables with the same name, so the parameter `z` of `f` above has nothing to do
+with the viewer's own `z`. Functions don't need type annotations: `f(2)` and `f(z)` both work.
+
+A function that takes more than one expression to work out can be written as a block, starting
+with `function`. It gives its result by assigning to its own name:
+
+``` fractalstream
+function critical_point(w, c, tol):
+  step := w
+  repeat up to 100 times:
+    step <- newton_step(w, c)
+    w <- w - step
+  until |step| < tol
+  critical_point <- (w, |step| < tol)
+
+(crit, found) := critical_point(0.1, C, 0.000001)
+```
+
+Every way through the function's body must give it a value: in every branch of an `if` (which then
+needs an `else`), and not only inside a loop, which might not run at all. A function computes a
+value and does nothing else: its variables are its own, and it can't draw, change a
+configuration value, or set `color`. Its loops don't change the caller's `iterations` or `stuck`.
+For now, a function with a body can only be called as the whole right-hand side of an assignment,
+as in `x := f(a)` or `(x, y) := f(a)`.
+
+A function can also be given to another function, or to a script fragment, as an argument. Give
+it by name, or write it in place as `w -> ...` (or `(u, v) -> ...` for a function of two values):
+
+``` fractalstream
+sq(a) := a a
+twice(g, v) := g(g(v))
+
+x := twice(sq, 3)            # 81
+y := twice(w -> w + 1, 3)    # 5
+
+define shade(h):
+  color <- rainbow(h(iterations))
+
+run shade(n -> n / 20)
+```
+
+Nothing special marks a parameter as a function: it is one wherever it is given a function.
 
 ### If / else blocks
 
@@ -611,11 +775,12 @@ else:
   color <- rainbow(iterations / 20)
 ```
 
-FractalStream currently supports three different kinds of viewers:
+FractalStream currently supports four different kinds of viewers:
 
 | Kind | Default variables | Viewer modes |
 | ---- | ----------------- | ------------ |
-| Complex line | `z : C` | Plane, Riemann sphere |
+| Complex line | `z : C` | Plane |
+| Riemann sphere (`view=sphere`) | `z : Ĉ` | Globe; see {ref}`sphere-viewers` |
 | Real plane | `x : R`, `y : R` | Plane |
 | Hyperbolic plane | `z : C` | Disk, upper halfplane; coordinate is bounded in norm by 1 |
 
@@ -633,6 +798,33 @@ iterate z -> z^2 + C until z escapes
 ```
 
 For real plane viewers, use `xvar=` and `yvar=` instead of `var=` to change the variable names.
+
+(sphere-viewers)=
+#### Viewers on the Riemann sphere
+
+Add `view=sphere` to a complex viewer's `@viewer` line to show the whole Riemann sphere as a
+globe, instead of the plane:
+
+``` fractalstream
+@viewer "Newton's method" var=z view=sphere
+iterate z -> z - (z^3 - 1) / (3 z^2) until z stops
+color <- if re(affine(1, z)) < 0 then yellow else blue
+```
+
+Here `z` is the point of the sphere under each pixel, a value of type `Ĉ` (see
+{ref}`riemann-sphere`): 0 is the globe's north pole, ∞ its south pole, and the unit circle its
+equator. It is exact everywhere, ∞ included, so a rational map is right all over the globe. To
+get the complex number a point stands for, use `affine(1, z)`. If the viewer's variable is a
+configuration value, as for a parameter space (`var=c`), declare it as a point of the sphere:
+`c : Ĉ := 0`.
+
+The globe always fills the window. `center=` is the point that faces you to start with, and
+`pixelSize=` is the size of a pixel in the middle of the globe, measured on the sphere (whose
+radius is 1); leave it out to start with the front half of the sphere filling the globe. In the
+viewer's script, `pixel_size` is the size of the current pixel on the sphere.
+
+A tool on a sphere viewer works the same way: the point a click or drag is at is a point of `Ĉ`,
+and drawing at a point of the sphere draws on the globe. A click off the globe does nothing.
 
 ### Shared definitions
 
