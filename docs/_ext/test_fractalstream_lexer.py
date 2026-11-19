@@ -147,3 +147,53 @@ def test_hash_in_string_is_not_a_comment():
 def test_combining_marks_in_names():
     # x with a combining hat is one name
     assert classes("x̂ := 1")[0] == ("x̂", Name.Variable)
+
+
+SPHERE = '''\
+@config "Parameters"
+c : Ĉ := ∞
+p : ℙ¹ := [1 : 0]
+
+@common
+function critical_point(w, k):
+  critical_point <- w
+
+@viewer "Newton" var=z view=sphere
+w : Cinf := infinity
+[a : b] := p
+u, j := chart(w)
+d := chordal(w, ∞) + |affine(1, z)|
+g := ∂(z^2 + c)/∂c + ⅆw/ⅆz + ⅆ²w/ⅆz²
+h := partial(z, z^2) + diff(z, w, 2)
+max(x, y) := if x > y then x else y
+m := max(1, 2)
+q := (w : ℂ̂)
+'''
+
+
+def test_no_errors_in_sphere_example():
+    assert not [v for v, t in classes(SPHERE) if t is Error]
+
+
+@pytest.mark.parametrize("text, ttype", [
+    ("Ĉ", Keyword.Type), ("ℂ̂", Keyword.Type), ("Cinf", Keyword.Type),
+    ("ℙ", Keyword.Type), ("¹", Keyword.Type),
+    ("∞", Keyword.Constant), ("infinity", Keyword.Constant),
+    ("∂", Name.Builtin), ("ⅆ", Name.Builtin),
+    ("chart", Name.Builtin), ("chordal", Name.Builtin),
+    ("affine", Name.Builtin), ("partial", Name.Builtin),
+    ("function", Keyword), ("critical_point", Name.Function),
+    ("a", Name.Variable), ("b", Name.Variable),
+])
+def test_sphere_classes(text, ttype):
+    assert class_of(SPHERE, text) == ttype
+
+
+def test_d_ends_a_name():
+    # (ⅆw is the differential sign, then the name w)
+    assert ("w", Name.Variable) in classes("w := 0\ng := ⅆw/ⅆz\n")
+    assert ("ⅆw", Name) not in classes("w := 0\ng := ⅆw/ⅆz\n")
+
+
+def test_own_names_win_over_builtins():
+    assert class_of(SPHERE, "max", 1) == Name.Function
