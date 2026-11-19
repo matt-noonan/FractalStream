@@ -1207,8 +1207,6 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     -- (a drag moving the disk's view: the view it started from, where
     -- on the screen plane it started, and whether it's moved yet)
     diskDrag <- newIORef (Nothing :: Maybe ((HyperbolicModel, HyperbolicDisplay, Isometry), (Double, Double), Bool))
-    -- (the pointer's last place on the screen plane, to zoom about)
-    lastKnownScreen <- newIORef Nothing
 
     -- Set click and drag event handlers
     -- The viewer's single-key shortcuts (`<`, `=`, a tool's letter, ...)
@@ -1502,7 +1500,6 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
               MouseMotion pt modifiers | isNoShiftAltControlDown modifiers -> do
                 mpt <- viewToModel pt
                 writeIORef lastKnownMouse (Just mpt)
-                writeIORef lastKnownScreen . Just =<< viewToScreen pt
                 showPointerAt pt mpt
                 propagateEvent
 
@@ -1551,23 +1548,15 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             let (px, py) = modelPixelDim oldModel
                 speed = 4
                 scale = if b then speed else 1.0 / speed
-            {-
-            -- This *seems* like it should work to get the position of the
-            -- mouse, based on similar code in wxcore's Events module for
-            -- getting the coordinates of mouse events. But no luck, so
-            -- for now we're just stealing the last known mouse coordinate.
-            -- FIXME
-            ptrLoc' <- wxcGetMousePosition
-            ptrLoc <- windowCalcUnscrolledPosition (objectCast p) ptrLoc'
-            (pmx, pmy) <- viewToModel ptrLoc
-            -}
+            -- Where the pointer is now (the last motion seen may be stale:
+            -- a drag, or a click, doesn't record one, and none may have
+            -- come since the window opened), in the window's coordinates.
             -- Calculate the new model center, so that the model coordinates of
             -- the pointer are the same in the new model and the old model.
             -- (the pointer's place on the screen plane: the model's own,
             -- on the plane)
-            readIORef lastKnownScreen >>= \case
-              Nothing -> propagateEvent
-              Just (pmx, pmy0) -> do
+            (pmx, pmy0) <- viewToScreen =<< windowScreenToClient p =<< wxcGetMousePosition
+            do
                 isAnimating <- isJust <$> get animate value
                 unless isAnimating $ do
                   let (cmx, cmy) = modelCenter oldModel
@@ -2364,10 +2353,19 @@ reprojectedSeed shading oldTile old new (w, h)
         missed <- fmap or . forM [ (i, j) | j <- [by * n .. min h ((by + 1) * n) - 1]
                                            , i <- [bx * n .. min w ((bx + 1) * n) - 1] ] $ \(i, j) -> do
           let screen = pixelToScreen new (i, j)
+              -- (on the globe, the old picture's rim is blended into the
+              -- background, so it's never taken from: points nearer the
+              -- rim than 'globeSampleRadius', or that the old picture
+              -- didn't show at all, take the color at the nearest place
+              -- within it, and the latter still need drawing)
+              globeFrom = do
+                f <- globeMap
+                let (sx, sy) = screen
+                guard (sx * sx + sy * sy <= 1)
+                let (ox, oy, seen) = f sx sy
+                (, seen) <$> screenToPixel old (ox, oy)
               from = case (modelShape old, modelShape new) of
-                (GlobeShape ro, GlobeShape rn) -> do
-                  p <- screenToSphere rn screen
-                  sphereToScreen ro p >>= screenToPixel old
+                (GlobeShape _, GlobeShape _) -> globeFrom >>= \(ij, seen) -> if seen then Just ij else Nothing
                 (HyperbolicShape model dd vo, HyperbolicShape _ _ vn) -> do
                   p <- screenToModelH model dd vn screen
                   modelToScreenH model dd vo p >>= screenToPixel old
@@ -2393,9 +2391,7 @@ reprojectedSeed shading oldTile old new (w, h)
               -- (on the globe, a point the old picture didn't show: until
               -- it's drawn, the color at the nearest place on the old
               -- globe's rim, rather than grey)
-              | GlobeShape ro <- modelShape old, GlobeShape rn <- modelShape new
-              , Just p <- screenToSphere rn screen
-              , Just (i', j') <- screenToPixel old (sphereToScreenNearest ro p) -> do
+              | Just ((i', j'), _) <- globeFrom -> do
                   let f q = globeLight shading q
                       relight' = f screen / max 1e-6 (f (pixelSample old (w, h) (i', j')))
                   forM_ [0, 1, 2] $ \k ->
@@ -2416,6 +2412,13 @@ reprojectedSeed shading oldTile old new (w, h)
     shapeKind = \case { FlatShape -> 0; GlobeShape _ -> 1
                       ; HyperbolicShape _ DiskDisplay _ -> 2; HyperbolicShape _ HalfPlaneDisplay _ -> 3 }
     pixelToScreen m = pixelSample m (w, h)
+    -- (a few pixels inside the rim, for a globe filling a window)
+    globeSampleRadius = 0.985
+    -- (on the globe, the new view's screen to the old one's, worked out
+    -- once for all the pixels)
+    globeMap = case (modelShape old, modelShape new) of
+      (GlobeShape ro, GlobeShape rn) -> Just (globeReprojection ro rn globeSampleRadius)
+      _ -> Nothing
     -- the pixel sampled nearest a point of a view's screen plane, if it's
     -- in the window
     screenToPixel m (x, y) =

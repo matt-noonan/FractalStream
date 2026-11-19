@@ -103,6 +103,17 @@ spec = do
                        _ -> pure ()
                 | g <- globes ]
 
+    it "moves a picture from one view to another as the views say" $
+      sequence_ [ let f = globeReprojection g1 g2 0.985
+                      (ox, oy, seen) = f x y
+                  in case screenToSphere g2 (x, y) of
+                       Just p -> do
+                         let ((ex, ey), eseen) = sphereToScreenWithin 0.985 g1 p
+                         (seen, abs (ox - ex) < 1e-9 && abs (oy - ey) < 1e-9) `shouldBe` (eseen, True)
+                       Nothing -> pure ()
+                | g1 <- take 4 globes, g2 <- drop 4 globes
+                , (x, y) <- [(0, 0), (0.3, -0.2), (-0.7, 0.6), (0.99, 0)] ]
+
     it "interpolates between views, ending at each" $
       sequence_ [ do screenToPlane (slerpGlobe g1 g2 0) (0.2, 0.1) `shouldSatisfy` closeTo (screenToPlane g1 (0.2, 0.1))
                      screenToPlane (slerpGlobe g1 g2 1) (0.2, 0.1) `shouldSatisfy` closeTo (screenToPlane g2 (0.2, 0.1))

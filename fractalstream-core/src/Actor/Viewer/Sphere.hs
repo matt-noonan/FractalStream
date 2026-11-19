@@ -59,7 +59,8 @@ module Actor.Viewer.Sphere
   , Vec3
   , screenToSphere
   , sphereToScreen
-  , sphereToScreenNearest
+  , sphereToScreenWithin
+  , globeReprojection
   , sphereToPlane
   , planeToSphere
   , screenToPlane
@@ -338,13 +339,49 @@ screenToSphere g (x, y)
 onGlobe :: Globe -> Vec3 -> Vec3
 onGlobe g = homToVec . applyGlobe g . vecToHom
 
--- | Where a point of the sphere is on the screen, or, if it's on the far
--- side, the nearest place on the rim (just inside it).
-sphereToScreenNearest :: Globe -> Vec3 -> (Double, Double)
-sphereToScreenNearest g p =
+-- | Where a point of the sphere is on the screen, kept within a radius
+-- (less than 1), and whether it's on the visible side: a point on the far
+-- side, or too near the rim, is taken to the nearest place at that
+-- radius.
+sphereToScreenWithin :: Double -> Globe -> Vec3 -> ((Double, Double), Bool)
+sphereToScreenWithin rmax g p =
   let (x, y, z) = homToVec (applyGlobe (inverseGlobe g) (vecToHom p))
       r = sqrt (x * x + y * y)
-  in if z >= 0 then (x, y) else if r == 0 then (0.999, 0) else (0.999 * x / r, 0.999 * y / r)
+      pulled = if r == 0 then (rmax, 0) else (rmax * x / r, rmax * y / r)
+  in (if z >= 0 && r <= rmax then (x, y) else pulled, z >= 0)
+
+-- | For moving a picture of the globe from one view to another: given the
+-- old view, the new one and a radius (less than 1), a map from a screen
+-- point on the new view's globe to where the same point of the sphere is
+-- on the old view's screen, as 'sphereToScreenWithin' takes it (kept
+-- within the radius), with whether the old view showed it. It's applied
+-- to every pixel, so the views are composed once, and each point worked
+-- out in plain numbers.
+globeReprojection :: Globe -> Globe -> Double -> (Double -> Double -> (Double, Double, Bool))
+globeReprojection old new rmax =
+  let Globe (ar :+ ai) (br :+ bi) (cr :+ ci) (dr :+ di) = inverseGlobe old `composeGlobe` new
+  in \ !x !y ->
+    let !s = sqrt (max 0 (1 - x * x - y * y))
+        !v = 1 + s
+        -- (A, B) = N (x + iy, v)
+        !aRe = ar * x - ai * y + br * v
+        !aIm = ar * y + ai * x + bi * v
+        !bRe = cr * x - ci * y + dr * v
+        !bIm = cr * y + ci * x + di * v
+        !na = aRe * aRe + aIm * aIm
+        !nb = bRe * bRe + bIm * bIm
+        !n = na + nb
+        -- (A conj(B))
+        !pRe = aRe * bRe + aIm * bIm
+        !pIm = aIm * bRe - aRe * bIm
+        !ox = 2 * pRe / n
+        !oy = 2 * pIm / n
+        !seen = nb >= na
+        !r2 = ox * ox + oy * oy
+    in if seen && r2 <= rmax * rmax then (ox, oy, True)
+       else let !r = sqrt r2
+            in if r == 0 then (rmax, 0, seen) else (rmax * ox / r, rmax * oy / r, seen)
+{-# INLINE globeReprojection #-}
 
 -- | Where a point of the sphere is on the screen, if it's on the
 -- visible side.
