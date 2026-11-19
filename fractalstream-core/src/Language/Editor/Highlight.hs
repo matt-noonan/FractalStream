@@ -337,7 +337,7 @@ keywords :: Set String
 keywords = Set.fromList
   [ "while", "until", "repeat", "iterate", "up", "to", "for", "each", "in", "with", "first"
   , "matching", "define", "function", "run", "pass", "draw", "use", "erase", "write", "point", "at"
-  , "circle", "filled", "radius", "pixels", "rectangle", "from", "line", "geodesic", "stroke", "fill", "on"
+  , "circle", "filled", "radius", "pixels", "rectangle", "from", "line", "stroke", "fill", "on"
   , "as", "choice", "button", "row", "tab", "coloring", "reset", "resize" ]
 
 builtinFunctions :: Set String
