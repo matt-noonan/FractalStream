@@ -1896,8 +1896,8 @@ class ViewerView {
     const t = this.target;
     if (!t) return;
     if (this.info.sphere) {
+      // (as when the globe turns, the old frame stays until the new one comes)
       const [sx, sy] = this.onScreen(p0);
-      this.frame = null;
       send({ type: "globeZoom", viewer: this.info.id, sx, sy, factor });
       this.recordSoon(300);
       return;

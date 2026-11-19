@@ -59,6 +59,7 @@ module Actor.Viewer.Sphere
   , Vec3
   , screenToSphere
   , sphereToScreen
+  , sphereToScreenNearest
   , sphereToPlane
   , planeToSphere
   , screenToPlane
@@ -80,6 +81,7 @@ module Actor.Viewer.Sphere
   , sphereShadingName
   , sphereShading
   , sphereLight
+  , globeLight
   , sphereViewEntries
   , onTheSphere
   ) where
@@ -336,6 +338,14 @@ screenToSphere g (x, y)
 onGlobe :: Globe -> Vec3 -> Vec3
 onGlobe g = homToVec . applyGlobe g . vecToHom
 
+-- | Where a point of the sphere is on the screen, or, if it's on the far
+-- side, the nearest place on the rim (just inside it).
+sphereToScreenNearest :: Globe -> Vec3 -> (Double, Double)
+sphereToScreenNearest g p =
+  let (x, y, z) = homToVec (applyGlobe (inverseGlobe g) (vecToHom p))
+      r = sqrt (x * x + y * y)
+  in if z >= 0 then (x, y) else if r == 0 then (0.999, 0) else (0.999 * x / r, 0.999 * y / r)
+
 -- | Where a point of the sphere is on the screen, if it's on the
 -- visible side.
 sphereToScreen :: Globe -> Vec3 -> Maybe (Double, Double)
@@ -527,6 +537,16 @@ sphereShading = unsafePerformIO (newVariable (fromIntegral defaultSphereShading 
 sphereLight :: Vec3
 sphereLight = (-1 / n, 1 / n, 1.5 / n)
   where n = sqrt 4.25
+
+-- | How the globe's shading scales a color at a point of the screen (in
+-- the sphere's radii), for a shading strength from 0 to 1: the factor
+-- 'onTheSphere' darkens the color by there.
+globeLight :: Double -> (Double, Double) -> Double
+globeLight shading (x, y) =
+  let (lx, ly, lz) = sphereLight
+      z = sqrt (max 0 (1 - x * x - y * y))
+      light = (lx * x + ly * y + lz * z + 1) / 2
+  in 1 - shading * (1 - light)
 
 -- | What a complex viewer's code is given, besides its configuration, so
 -- that it can be shown on the plane or on the sphere.

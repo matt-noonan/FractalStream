@@ -965,8 +965,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           -- background off the globe is already in place. A view change
           -- that doesn't change the view, such as a globe drag's first
           -- step, keeps the image as it is.)
+          shading <- getDynamic sphereShading
           let seed | how == ParameterChange = backgroundSeed newModel (w, h)
-                   | otherwise = reprojectedSeed seedTile seedModel newModel (w, h)
+                   | otherwise = reprojectedSeed shading seedTile seedModel newModel (w, h)
                                    <|> backgroundSeed newModel (w, h)
           newViewerTile <- renderTile' renderId renderIssues renderReport smoothing renderAction seed (w, h) model
           set currentTile [ value := newViewerTile ]
@@ -2351,8 +2352,8 @@ interpolateModel t m1 m2 = m2
 -- the sphere, if it was on the old globe's visible side. Anything else
 -- starts grey; so does everything, when the window's size or the kind
 -- of view has changed.
-reprojectedSeed :: Tile -> Model -> Model -> (Int, Int) -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
-reprojectedSeed oldTile old new (w, h)
+reprojectedSeed :: Double -> Tile -> Model -> Model -> (Int, Int) -> Maybe (Ptr Word8 -> Ptr Word8 -> IO (Int -> Int -> Bool))
+reprojectedSeed shading oldTile old new (w, h)
   | tileRect oldTile /= (w, h) = Nothing
   | shapeKind (modelShape old) /= shapeKind (modelShape new) = Nothing
   | otherwise = Just $ \dest finals -> withSynchedTileBuffer oldTile $ \src -> do
@@ -2372,13 +2373,35 @@ reprojectedSeed oldTile old new (w, h)
                   modelToScreenH model dd vo p >>= screenToPixel old
                 _ -> screenToPixel old screen
               d = 3 * (j * w + i)
+          -- (on the sphere, the old pixel's color is relit for where it
+          -- is now: the globe's shading is a factor that depends on the
+          -- place on the screen, see 'Actor.Viewer.Sphere.onTheSphere')
+          let relight = case modelShape new of
+                GlobeShape _ | Just (i', j') <- from ->
+                  let f p = globeLight shading p
+                  in f screen / max 1e-6 (f (pixelSample old (w, h) (i', j')))
+                _ -> 1
           case from of
             Just (i', j') -> do
               forM_ [0, 1, 2] $ \k ->
-                peekByteOff src (3 * (j' * w + i') + k) >>= \(b :: Word8) -> pokeByteOff dest (d + k) b
+                peekByteOff src (3 * (j' * w + i') + k) >>= \(b :: Word8) ->
+                  pokeByteOff dest (d + k)
+                    (if relight == 1 then b else fromIntegral (min 255 (round (fromIntegral b * relight) :: Int)) :: Word8)
               pure False
             -- (off the globe, the background, which is all there is to draw)
             Nothing
+              -- (on the globe, a point the old picture didn't show: until
+              -- it's drawn, the color at the nearest place on the old
+              -- globe's rim, rather than grey)
+              | GlobeShape ro <- modelShape old, GlobeShape rn <- modelShape new
+              , Just p <- screenToSphere rn screen
+              , Just (i', j') <- screenToPixel old (sphereToScreenNearest ro p) -> do
+                  let f q = globeLight shading q
+                      relight' = f screen / max 1e-6 (f (pixelSample old (w, h) (i', j')))
+                  forM_ [0, 1, 2] $ \k ->
+                    peekByteOff src (3 * (j' * w + i') + k) >>= \(b :: Word8) ->
+                      pokeByteOff dest (d + k) (fromIntegral (min 255 (round (fromIntegral b * relight') :: Int)) :: Word8)
+                  pure True
               | showsModel new screen -> do
                   pokeUndrawn dest d
                   pure True
