@@ -5,21 +5,30 @@ name: Landing page
 # without the leading v). Nothing is committed: the rewritten copy is
 # uploaded as a Pages artifact and deployed from there.
 #
-# The web app goes with it, at /app/: built and checked from main by
-# web.yml (as a job of this workflow), and deployed only if its checks
-# pass.
+# The web app goes with it, at /app/: built and checked from the release's
+# tag by web.yml (as a job of this workflow), and deployed only if its
+# checks pass. So the app on the site is always the release the page
+# points at.
 #
 # It deploys when:
 #   - a release is published (pre-releases too), pointing the page at that
 #     release. This is publishing, not release.yml drafting the release:
 #     a draft's files can't be downloaded yet, so the links would 404.
-#   - site/, or the web app, changes on main, pointing the page at the
-#     newest published release.
 #   - it is run by hand from the Actions tab, pointing the page at the tag
 #     given, or at the newest published release if left blank.
+# Merging to main doesn't deploy: a change to site/ goes live with the
+# next release, or on a run by hand.
 #
 # The page is always built from site/ on main, even for a release, so a
 # release tagged before a change to the page still gets the change.
+#
+# Pages keys each deployment by the commit of the run that made it, and
+# quietly keeps what it already has when asked to deploy a commit again.
+# So a run by hand from main, when main is the commit the live deployment
+# was made from, reports success but changes nothing. (A release run is
+# made from its tag's commit, so this also bites a second release tagged on
+# the same commit as the one already deployed.) To get around it, merge
+# anything to main, then run this by hand from main.
 #
 # Repository settings this needs:
 #   - Settings > Pages > Source: GitHub Actions.
@@ -31,26 +40,6 @@ name: Landing page
 on:
   release:
     types: [published]
-  push:
-    branches: [main]
-    paths:
-      - 'site/**'
-      - '.github/workflows/pages.yml'
-      # (the web app: the same as web.yml's)
-      - 'fractalstream-core/**'
-      - 'fractalstream-backend-pure/**'
-      - 'fractalstream-backend-wasm/**'
-      - 'fractalstream-backend-wgsl/**'
-      - 'fractalstream-library/**'
-      - 'fractalstream-ui-headless/**'
-      - 'fractalstream-ui-web/**'
-      - 'fractalstream-gitinfo/**'
-      - 'web/**'
-      - 'dev-tools/wasm/**'
-      - 'dev-tools/web/**'
-      - 'cabal.project.wasm'
-      - 'cabal/**'
-      - '.github/workflows/web.yml'
   workflow_dispatch:
     inputs:
       tag:
@@ -63,29 +52,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The web app, from main (see web.yml): its `web-app` artifact.
-  app:
-    uses: ./.github/workflows/web.yml
-    # (actions: write: web.yml deletes the package cache a new one replaces)
-    permissions:
-      contents: read
-      actions: write
-    with:
-      ref: ${{ github.event.repository.default_branch }}
-
-  build:
-    needs: app
+  # Which release the page points at, and the web app is built from.
+  tag:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
 
     steps:
-    - name: Check out main
-      uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.repository.default_branch }}
-
-    - name: Fill in the version
+    - id: tag
+      name: Pick the release
       env:
         GH_TOKEN: ${{ github.token }}
         TAG: ${{ github.event.release.tag_name || inputs.tag }}
@@ -100,7 +77,7 @@ jobs:
           fi
         fi
         # The same rule as release.yml's check-tag job; it also keeps the
-        # version safe to put in the sed expression below.
+        # version safe to put in the build job's sed expression.
         if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[A-Za-z0-9]+(\.[A-Za-z0-9]+)*)?$ ]]; then
           echo "::error::Release tags must look like v1.2.3 or v1.2.3-beta.1, not $TAG"
           exit 1
@@ -109,8 +86,37 @@ jobs:
           echo "::error::$TAG is not a published release"
           exit 1
         fi
-
         echo "Pointing the page at $TAG"
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  # The web app, from the release's tag (see web.yml): its `web-app`
+  # artifact.
+  app:
+    needs: tag
+    uses: ./.github/workflows/web.yml
+    # (actions: write: web.yml deletes the package cache a new one replaces)
+    permissions:
+      contents: read
+      actions: write
+    with:
+      ref: ${{ needs.tag.outputs.tag }}
+
+  build:
+    needs: [tag, app]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+    - name: Check out main
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.repository.default_branch }}
+
+    - name: Fill in the version
+      env:
+        TAG: ${{ needs.tag.outputs.tag }}
+      run: |
         if ! grep -q '@VERSION@' site/index.html; then
           echo "::error::site/index.html has no @VERSION@ to fill in"
           exit 1

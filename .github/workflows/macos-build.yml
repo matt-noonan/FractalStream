@@ -21,8 +21,13 @@ on:
         required: false
         default: 'build-static'
         type: string
+      sign:
+        description: 'Sign the app bundle and fsrun with the Developer ID certificate? (If not, they are signed ad hoc: Gatekeeper will refuse them until their quarantine is cleared. Pull requests build this way, since a fork has no secrets.)'
+        required: false
+        default: true
+        type: boolean
       notarize:
-        description: 'Submit the signed app bundle and fsrun to the Apple notary service?'
+        description: 'Submit the signed app bundle and fsrun to the Apple notary service? (Needs sign.)'
         required: false
         default: false
         type: boolean
@@ -154,7 +159,8 @@ jobs:
         strip fsrun
         ls -l fsrun
 
-    - name: Sign app bundle and fsrun
+    - if: ${{ inputs.sign }}
+      name: Sign app bundle and fsrun
       env:
         MACOS_CERTIFICATE: ${{ secrets.PROD_MACOS_CERTIFICATE }}
         MACOS_CERTIFICATE_PWD: ${{ secrets.PROD_MACOS_CERTIFICATE_PWD }}
@@ -177,7 +183,13 @@ jobs:
         # fsrun gets the same entitlements, since the LLVM backend JITs code.
         /usr/bin/codesign --force -s "$MACOS_CERTIFICATE_NAME" --options runtime --entitlements macos/Entitlements.plist fsrun -v
 
-    - if: ${{ inputs.notarize }}
+    - if: ${{ !inputs.sign }}
+      name: Sign app bundle and fsrun ad hoc
+      run: |
+        /usr/bin/codesign --deep --force -s - --options runtime --entitlements macos/Entitlements.plist FractalStream.app -v
+        /usr/bin/codesign --force -s - --options runtime --entitlements macos/Entitlements.plist fsrun -v
+
+    - if: ${{ inputs.sign && inputs.notarize }}
       name: Notarize app bundle and fsrun
       env:
         PROD_MACOS_NOTARIZATION_APPLE_ID: ${{ secrets.PROD_MACOS_NOTARIZATION_APPLE_ID }}
@@ -232,8 +244,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         # (a week, for the builds that run on their own, which are there to
-        # keep main's caches fresh; else the repository's default)
-        retention-days: ${{ inputs.version == '' && (github.event_name == 'schedule' || github.event_name == 'push') && 7 || 0 }}
+        # keep main's caches fresh, and for pull requests' checks; else the
+        # repository's default)
+        retention-days: ${{ inputs.version == '' && (github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'pull_request') && 7 || 0 }}
         name: macos-${{ steps.archive.outputs.arch }}
         path: |
           FractalStream-${{ steps.archive.outputs.suffix }}.zip
