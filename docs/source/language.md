@@ -581,12 +581,12 @@ more drawings, erase the existing drawings, and change properties such as the li
 | `use COLOR for fill` | Set the fill color to `COLOR` for future drawing operations in this layer |
 | `write TEXT at POINT` | Write the text `TEXT` at the point `POINT` |
 | `draw point at POINT` | Make a small dot at `POINT` |
-| `draw line from POINT1 to POINT2` | Draw a line from `POINT1` to `POINT2` using the line color |
-| `draw geodesic from POINT1 to POINT2` | Draw a geodesic from `POINT1` to `POINT2` using the line color (only in hyperbolic plane viewers) |
-| `draw rectangle from POINT1 to POINT2` | Draw an empty rectangle with corners `POINT1` and `POINT2` using the line color |
-| `draw filled rectangle from POINT1 to POINT2` | Draw a filled rectangle with corners `POINT1` and `POINT2` using the line color for the border and the fill color for the inside |
-| `draw circle at POINT with radius R` | Draw an empty circle around `POINT` with radius `R`, using the line color |
-| `draw filled circle at POINT with radius R` | Draw a filled circle around `POINT` with radius `R`, using the line color for the border and the fill color for the inside |
+| `draw line from POINT1 to POINT2` | Draw the shortest path from `POINT1` to `POINT2` in the viewer's geometry, using the line color |
+| `draw rectangle from POINT1 to POINT2` | Draw an empty rectangle with corners `POINT1` and `POINT2` using the line color (only in viewers of the plane) |
+| `draw filled rectangle from POINT1 to POINT2` | Draw a filled rectangle with corners `POINT1` and `POINT2` using the line color for the border and the fill color for the inside (only in viewers of the plane) |
+| `draw circle at POINT with radius R` | Draw an empty circle around `POINT` with radius `R`, measured in the viewer's geometry, using the line color |
+| `draw filled circle at POINT with radius R` | Draw a filled circle around `POINT` with radius `R`, measured in the viewer's geometry, using the line color for the border and the fill color for the inside |
+| `draw circle at POINT with radius R pixels` | Draw a marker: a circle `R` pixels in radius on the screen, the same size at any zoom (also `draw filled circle`) |
 
 
 ```{note}
@@ -595,6 +595,17 @@ in the window. For example, the command `draw circle at i with radius 1` will al
 a circle centered at the complex number `i` and tangent to the real axis, no matter where
 the view is currently looking.
 ```
+
+Lines and circles are drawn in the geometry of the tool's viewer:
+
+| Viewer | A line is... | A circle's radius is... |
+| ------ | ------------ | ----------------------- |
+| Real or complex plane | a straight segment | the usual distance |
+| Riemann sphere (`view=sphere`) | the shorter arc of a great circle (any one, between opposite points) | the chordal distance |
+| Hyperbolic plane (`view=disk`, `view=halfplane`) | the hyperbolic geodesic | the hyperbolic distance |
+
+On a sphere viewer, the points are points of `Ĉ`, so a tool can draw at `∞`, or draw a line
+through it.
 
 ### Script fragments
 
@@ -824,7 +835,9 @@ radius is 1); leave it out to start with the front half of the sphere filling th
 viewer's script, `pixel_size` is the size of the current pixel on the sphere.
 
 A tool on a sphere viewer works the same way: the point a click or drag is at is a point of `Ĉ`,
-and drawing at a point of the sphere draws on the globe. A click off the globe does nothing.
+exactly (a click on ∞ is ∞ itself), and drawing at a point of the sphere draws on the globe, with
+lines as arcs of great circles and circles measured by chordal distance (see
+{ref}`draw-commands`). A click off the globe does nothing.
 
 ### Shared definitions
 

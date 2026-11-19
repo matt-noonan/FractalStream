@@ -97,7 +97,7 @@ _KEYWORDS = {
     "with", "first", "matching", "define", "function", "run", "pass", "draw",
     "use",
     "erase", "write", "point", "at", "circle", "filled", "radius", "pixels",
-    "rectangle", "from", "line", "geodesic", "stroke", "fill", "on", "as",
+    "rectangle", "from", "line", "stroke", "fill", "on", "as",
     "choice", "button", "row", "tab", "coloring", "reset", "resize",
 }
 
