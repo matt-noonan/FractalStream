@@ -64,6 +64,8 @@ module Actor.Viewer.Sphere
   , sphereToPlane
   , planeToSphere
   , screenToPlane
+  , screenToHom
+  , farAway
   , planeToScreen
     -- * How model points reach the screen
   , Projection(..)
@@ -71,8 +73,17 @@ module Actor.Viewer.Sphere
   , projectToScreen
   , visibleRuns
   , sampleSegment
-  , sampleGeodesic
   , sampleCircle
+    -- * Drawing at homogeneous points
+  , HPoint
+  , homPlane
+  , homToScreen
+  , visibleRunsH
+  , greatArc
+  , sphereCircle
+  , hyperbolicCircle
+  , lineOnScreen
+  , circleOnScreen
     -- * Defaults
   , defaultSpherePixelSize
   , sphereBackground
@@ -87,7 +98,7 @@ module Actor.Viewer.Sphere
   , onTheSphere
   ) where
 
-import Actor.Viewer.Disk (Isometry, HyperbolicModel, HyperbolicDisplay, modelToScreenH, geodesicPoints)
+import Actor.Viewer.Disk (Isometry, HyperbolicModel, HyperbolicDisplay, modelToScreenH, geodesicPoints, modelToDisk, diskToModel, applyMobius)
 import Data.Color (Color, rgbToColor, black)
 import Data.DynamicValue (Variable, newVariable)
 import FractalStream.Settings (defaultSphereShading)
@@ -97,6 +108,7 @@ import Language.Type
 import Language.Parser.SourceRange (SourceRange(..))
 import Language.Code.Syntax
 import Language.Value.Syntax
+import Language.Value.Builtins (sphereViewMarker)
 
 -- | A rotation, as a unit quaternion @w + x i + y j + z k@.
 data Rotation = Rotation !Double !Double !Double !Double
@@ -404,13 +416,47 @@ planeToSphere (a, b)
       let m = a * a + b * b
       in (2 * a / (1 + m), 2 * b / (1 + m), (1 - m) / (1 + m))
 
--- | The complex number under a screen point, if it's on the globe.
+-- | The complex number under a screen point, if it's on the globe:
+-- worked out from the view's Möbius map, as the kernel does (@A / B@ for
+-- @[A : B] = M [x + iy : 1 + s]@), not through the sphere's 3-D points,
+-- so that it keeps its precision however near ∞ it is. ∞ itself, which
+-- a complex number can't be, is 'farAway'.
 screenToPlane :: Globe -> (Double, Double) -> Maybe (Double, Double)
-screenToPlane g = fmap sphereToPlane . screenToSphere g
+screenToPlane g = fmap homToPlane . screenToHom g
 
--- | Where a complex number is on the screen, if it's on the visible side.
+-- | The point of the sphere under a screen point, if it's on the globe,
+-- in homogeneous coordinates: exact everywhere, ∞ included (as @[A : B]
+-- = M [x + iy : 1 + s]@, which the kernel works out too). A tool's
+-- events on a sphere viewer are given these (see 'Actor.Event.Point').
+screenToHom :: Globe -> (Double, Double) -> Maybe (Complex Double, Complex Double)
+screenToHom g (x, y)
+  | d > 1 = Nothing
+  | otherwise = Just (applyGlobe g (x :+ y, (1 + sqrt (1 - d)) :+ 0))
+  where d = x * x + y * y
+
+-- | The complex number with these homogeneous coordinates; for ∞,
+-- 'farAway'.
+homToPlane :: (Complex Double, Complex Double) -> (Double, Double)
+homToPlane (a, b)
+  | magnitude b * farAway <= magnitude a = (farAway, 0)
+  | otherwise = let u :+ v = a / b in (u, v)
+
+-- | The complex number that stands in for ∞ where a point has to be a
+-- complex number (a click on ∞, say): so far out that no view can tell
+-- it from ∞ (a point of the sphere 10⁻¹⁵⁰ from it), and its square still
+-- a finite number, so that working with it on Ĉ goes as it would at ∞.
+farAway :: Double
+farAway = 1e150
+
+-- | Where a complex number is on the screen, if it's on the visible side
+-- (an infinite one, or one beyond 'farAway', is ∞): through the view's
+-- Möbius map, as 'screenToPlane' works, keeping its precision near ∞.
 planeToScreen :: Globe -> (Double, Double) -> Maybe (Double, Double)
-planeToScreen g = sphereToScreen g . planeToSphere
+planeToScreen g (u, v) =
+  let hom | isInfinite u || isInfinite v || u * u + v * v >= farAway * farAway = (1, 0)
+          | otherwise = (u :+ v, 1)
+      (x, y, z) = homToVec (applyGlobe (inverseGlobe g) hom)
+  in if z < 0 then Nothing else Just (x, y)
 
 -- | The view after dragging the globe from one screen point to another
 -- (in units of the sphere's radius): the globe turned rigidly, as it's
@@ -503,13 +549,7 @@ projectToScreen = \case
 -- | The runs of a polyline (in model points) that are visible, on the
 -- screen plane.
 visibleRuns :: Projection -> [(Double, Double)] -> [[(Double, Double)]]
-visibleRuns proj = go [] . map (projectToScreen proj)
-  where
-    go run = \case
-      [] -> finish run
-      Just p : rest -> go (p : run) rest
-      Nothing : rest -> finish run ++ go [] rest
-    finish run = [ reverse run | length run >= 2 ]
+visibleRuns proj = splitRuns . map (projectToScreen proj)
 
 -- | Points along a straight segment of the plane, ends included: on the
 -- sphere, a segment is an arc, drawn as this many pieces.
@@ -517,19 +557,117 @@ sampleSegment :: Int -> (Double, Double) -> (Double, Double) -> [(Double, Double
 sampleSegment n (x1, y1) (x2, y2) =
   [ (x1 + t * (x2 - x1), y1 + t * (y2 - y1)) | k <- [0 .. n], let t = fromIntegral k / fromIntegral n ]
 
--- | Points along a geodesic, ends included, as this many pieces: in the
--- hyperbolic plane, the shortest path there (see
--- 'Actor.Viewer.Disk.geodesicPoints'); anywhere else, the straight
--- segment ('sampleSegment').
-sampleGeodesic :: Projection -> Int -> (Double, Double) -> (Double, Double) -> [(Double, Double)]
-sampleGeodesic = \case
-  HyperbolicProjection model _ _ -> geodesicPoints model
-  _ -> sampleSegment
-
 -- | Points around a circle of the plane, the first repeated at the end.
 sampleCircle :: Int -> (Double, Double) -> Double -> [(Double, Double)]
 sampleCircle n (cx, cy) r =
   [ (cx + r * cos a, cy + r * sin a) | k <- [0 .. n], let a = 2 * pi * fromIntegral k / fromIntegral n ]
+
+------------------------------------------------------------------------
+-- Drawing at homogeneous points
+
+-- | A point a tool draws at, by its homogeneous coordinates @[a : b]@
+-- (see 'Language.Draw.DrawSink'): on a sphere viewer, any point of the
+-- sphere; on any other, @b@ is 1.
+type HPoint = (Complex Double, Complex Double)
+
+-- | The point of the plane a drawing's point is, off the sphere (where its
+-- @b@ is 1).
+homPlane :: HPoint -> (Double, Double)
+homPlane (a, b) = let x :+ y = a / b in (x, y)
+
+-- | A homogeneous point scaled so that its larger coordinate is 1 (so
+-- that working with it can't overflow).
+scaleHom :: HPoint -> HPoint
+scaleHom (a, b) = let m = max (magnitude a) (magnitude b)
+                  in if m == 0 || isInfinite m then (a, b) else (a / (m :+ 0), b / (m :+ 0))
+
+-- | Where a drawing's point is on the screen plane, if it's visible: on the
+-- globe, through the view's Möbius map, exact however near ∞.
+homToScreen :: Projection -> HPoint -> Maybe (Double, Double)
+homToScreen proj p = case proj of
+  GlobeProjection g ->
+    let (x, y, z) = homToVec (applyGlobe (inverseGlobe g) (scaleHom p))
+    in if z < 0 then Nothing else Just (x, y)
+  _ -> projectToScreen proj (homPlane p)
+
+-- | The runs of a polyline (in drawing points) that are visible, on the
+-- screen plane.
+visibleRunsH :: Projection -> [HPoint] -> [[(Double, Double)]]
+visibleRunsH proj = splitRuns . map (homToScreen proj)
+
+splitRuns :: [Maybe (Double, Double)] -> [[(Double, Double)]]
+splitRuns = go []
+  where
+    go run = \case
+      [] -> finish run
+      Just p : rest -> go (p : run) rest
+      Nothing : rest -> finish run ++ go [] rest
+    finish run = [ reverse run | length run >= 2 ]
+
+-- | A rotation of the sphere taking 0 to a point (and ∞ to the point
+-- opposite).
+rotationTo :: HPoint -> Globe
+rotationTo p = let (a, b) = scaleHom p
+                   n = sqrt (magnitude a ^ (2 :: Int) + magnitude b ^ (2 :: Int)) :+ 0
+               in Globe (conjugate b / n) (a / n) (negate (conjugate a) / n) (b / n)
+
+-- | Points along the shorter arc of the great circle from one point of the
+-- sphere to another, ends included, as this many pieces. Between opposite
+-- points, every great circle through them is as short: this takes one.
+greatArc :: Int -> HPoint -> HPoint -> [HPoint]
+greatArc n p q =
+  let r = rotationTo p
+      (qa, qb) = scaleHom (applyGlobe (inverseGlobe r) (scaleHom q))
+      -- (q, with p turned to 0: at an angle θ from it, in the direction u)
+      theta = 2 * atan2 (magnitude qa) (magnitude qb)
+      d = qa * conjugate qb
+      u = if magnitude d == 0 then 1 else d / (magnitude d :+ 0)
+  in [ applyGlobe r ((sin (t / 2) :+ 0) * u, cos (t / 2) :+ 0)
+     | k <- [0 .. n], let t = theta * fromIntegral k / fromIntegral n ]
+
+-- | Points around the circle of the sphere at a chordal distance from a
+-- point (see @chordal@), the first repeated at the end.
+sphereCircle :: Int -> HPoint -> Double -> [HPoint]
+sphereCircle n c r =
+  let rot = rotationTo c
+      theta = 2 * asin (max 0 (min 1 (r / 2)))
+  in [ applyGlobe rot ((sin (theta / 2) :+ 0) * cis phi, cos (theta / 2) :+ 0)
+     | k <- [0 .. n], let phi = 2 * pi * fromIntegral k / fromIntegral n ]
+
+-- | Points around the circle of the hyperbolic plane with a hyperbolic
+-- radius about a point of a model (for the metric of curvature -1), the
+-- first repeated at the end.
+hyperbolicCircle :: HyperbolicModel -> Int -> (Double, Double) -> Double -> [(Double, Double)]
+hyperbolicCircle model n c r =
+  let (cx, cy) = modelToDisk model c
+      p = cx :+ cy
+      t = tanh (r / 2) :+ 0
+      -- (the circle about 0 of that radius, moved to p)
+      move w = (w + p) / (1 + conjugate p * w)
+      toModel w = let x :+ y = applyMobius (diskToModel model) w in (x, y)
+  in [ toModel (move (t * cis phi)) | k <- [0 .. n], let phi = 2 * pi * fromIntegral k / fromIntegral n ]
+
+-- | A tool's line from one point to another, as the viewer's geodesic
+-- between them, in its visible runs on the screen plane: a straight
+-- segment in the plane, the shorter arc of a great circle on the sphere,
+-- the hyperbolic geodesic in the disk or the half-plane.
+lineOnScreen :: Projection -> HPoint -> HPoint -> [[(Double, Double)]]
+lineOnScreen proj p q = case proj of
+  FlatProjection -> visibleRuns proj [homPlane p, homPlane q]
+  GlobeProjection _ -> visibleRunsH proj (greatArc 64 p q)
+  HyperbolicProjection model _ _ -> visibleRuns proj (geodesicPoints model 64 (homPlane p) (homPlane q))
+
+-- | A tool's circle about a point, with a radius in the viewer's own
+-- metric (Euclidean in the plane, chordal on the sphere, hyperbolic in the
+-- disk or the half-plane), in its visible runs on the screen plane, and
+-- whether all of it is visible (so that it can be filled).
+circleOnScreen :: Projection -> HPoint -> Double -> ([[(Double, Double)]], Bool)
+circleOnScreen proj c r =
+  let pts = case proj of
+        FlatProjection -> map Just (sampleCircle 96 (homPlane c) r)
+        GlobeProjection _ -> map (homToScreen proj) (sphereCircle 96 c r)
+        HyperbolicProjection model _ _ -> map (projectToScreen proj) (hyperbolicCircle model 96 (homPlane c) r)
+  in (splitRuns pts, all (maybe False (const True)) pts)
 
 -- | The size of a pixel (in units of the sphere's radius) that a sphere
 -- viewer starts with, unless its script says: the globe fills most of
@@ -547,7 +685,7 @@ sphereBackground = rgbToColor (48, 48, 48)
 -- | The name under which a complex viewer's code is told whether it's
 -- showing the sphere (a truth value no script can name).
 sphereViewName :: String
-sphereViewName = "[internal] sphere view"
+sphereViewName = sphereViewMarker
 
 -- | The names under which a sphere viewer's code is given its view's
 -- Möbius map, @a@, @b@, @c@ and @d@ (see 'globeMobius').

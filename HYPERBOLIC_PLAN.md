@@ -17,7 +17,7 @@ script and its data.
 | H3 | **The script still sees a complex number** (`z` in the unit disk), as on the sphere. | Existing scripts and tools keep working; the view only decides which point a pixel is. |
 | H4 | **The view is an isometry**, s ↦ (a s + b)/(b̄ s + ā) with \|a\|² − \|b\|² = 1, plus a zoom of the disk on screen. | Composing isometries is exact enough and cheap; the pair (a, b) saves and restores. |
 | H5 | **Keep the homogeneous form** [a s + b : b̄ s + ā] until the last step. | Phase 2 folds the view itself by the group, so points near the boundary stay precise (a plain `z` within 1e-12 of the circle has few digits left). |
-| H6 | **`draw line` keeps its meaning** (a straight segment in `z`, drawn curved when the view moves it); `draw geodesic` may come later, or `draw line` may be revisited. | Drawing commands mean the same in every view. |
+| H6 | ~~**`draw line` keeps its meaning**~~ Revisited 2026-11-19: `draw line` is the viewer's geodesic (here the hyperbolic segment) and `draw geodesic` is gone; circles take the hyperbolic radius. | Each viewer's shapes are its own geometry's. |
 | H7 | **A plane viewer isn't switchable to the disk** (not needed); disk ↔ half-plane is. | Outside the unit disk there'd be nothing to see. |
 | H8 | **Data stays in the project file**: no remote or loose sidecar data (see "Data", below). | Reproducibility: a researcher must be able to run a script decades later. |
 

@@ -685,7 +685,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
             block:
               erase
               use Color 255 255 255 for line
-              draw circle at t5:R^2 with radius (3:R * pixel_size)
+              draw circle at (t5, 1.0 :+ 0.0) with radius (3:R * pixel_size)
 
 
 === viewer 1: Julia set
@@ -831,7 +831,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w0` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `w0` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 let `per5_omega1` = 1.5470797535511203 in:
@@ -918,11 +918,11 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                         block:
                                                           set `[internal] previous.w #0` := ((1st w), (2nd w))
                                                           block:
-                                                            draw point at let [internal] sphere.point #1 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #1) / (2nd [internal] sphere.point #1)):R^2
+                                                            draw point at (let [internal] sphere.point #1 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #1) / (2nd [internal] sphere.point #1)), 1.0 :+ 0.0)
                                                             set `w` := let [internal] sphere.scaled #2 = (((1:R:C * ((1st w) ^ 2:R:C)) + (((pa * (1st w)) + (pb * (2nd w))) * (2nd w))), ((1st w) ^ 2:R:C)) in if (((re((2nd [internal] sphere.scaled #2)) * re((2nd [internal] sphere.scaled #2))) + (im((2nd [internal] sphere.scaled #2)) * im((2nd [internal] sphere.scaled #2)))) < ((re((1st [internal] sphere.scaled #2)) * re((1st [internal] sphere.scaled #2))) + (im((1st [internal] sphere.scaled #2)) * im((1st [internal] sphere.scaled #2))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #2) / (1st [internal] sphere.scaled #2))) else (((1st [internal] sphere.scaled #2) / (2nd [internal] sphere.scaled #2)), 1.0 :+ 0.0)
                                                             if !(let [internal] sphere.point #3 = ((1st w), (2nd w)) in let [internal] sphere.point #4 = (1.0 :+ 0.0, 0.0 :+ 0.0) in ((((1st [internal] sphere.point #3) * (2nd [internal] sphere.point #4)) - ((2nd [internal] sphere.point #3) * (1st [internal] sphere.point #4))) = 0.0 :+ 0.0) or let [internal] sphere.point #5 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in let [internal] sphere.point #6 = (1.0 :+ 0.0, 0.0 :+ 0.0) in ((((1st [internal] sphere.point #5) * (2nd [internal] sphere.point #6)) - ((2nd [internal] sphere.point #5) * (1st [internal] sphere.point #6))) = 0.0 :+ 0.0)) then:
                                                               block:
-                                                                draw line from let [internal] sphere.point #7 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in ((1st [internal] sphere.point #7) / (2nd [internal] sphere.point #7)):R^2 to let [internal] sphere.point #8 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #8) / (2nd [internal] sphere.point #8)):R^2
+                                                                draw line from (let [internal] sphere.point #7 = ((1st [internal] previous.w #0), (2nd [internal] previous.w #0)) in ((1st [internal] sphere.point #7) / (2nd [internal] sphere.point #7)), 1.0 :+ 0.0) to (let [internal] sphere.point #8 = ((1st w), (2nd w)) in ((1st [internal] sphere.point #8) / (2nd [internal] sphere.point #8)), 1.0 :+ 0.0)
                                                             else:
                                                               no-op
                                                         set `[internal] fresh #27` := ([internal] fresh #27 + 1)

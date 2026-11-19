@@ -193,11 +193,17 @@ spec = do
   let project view tool = concat
         [ "@viewer \"V\" ", view, "\ncolor <- grey\n\n@tool \"T\" for=\"V\"\non click at p:\n", tool ]
 
-  it "takes `draw geodesic` only in a viewer of the hyperbolic plane" $ do
-    checkScript (project "view=disk" "  draw geodesic from 0 to p\n") `shouldBe` Right ()
-    checkScript (project "view=halfplane" "  draw geodesic from i to p\n") `shouldBe` Right ()
-    checkScript (project "var=z" "  draw geodesic from 0 to p\n")
-      `shouldSatisfy` either (isInfixOf "`draw geodesic` is only for tools of a viewer of the hyperbolic plane" . snd) (const False)
+  it "draws lines and circles in every kind of viewer, rectangles only on the plane" $ do
+    checkScript (project "view=disk" "  draw line from 0 to p\n  draw circle at p with radius 1\n") `shouldBe` Right ()
+    checkScript (project "view=halfplane" "  draw line from i to p\n") `shouldBe` Right ()
+    checkScript (project "view=sphere" "  draw line from ∞ to p\n  draw circle at ∞ with radius 0.5\n") `shouldBe` Right ()
+    checkScript (project "var=z" "  draw rectangle from 0 to p\n") `shouldBe` Right ()
+    checkScript (project "view=disk" "  draw rectangle from 0 to p\n")
+      `shouldSatisfy` either (isInfixOf "can't draw rectangles" . snd) (const False)
+    checkScript (project "view=sphere" "  draw rectangle from 0 to p\n")
+      `shouldSatisfy` either (isInfixOf "can't draw rectangles" . snd) (const False)
+    -- (`draw geodesic` is gone: every line is the viewer's geodesic)
+    checkScript (project "view=disk" "  draw geodesic from 0 to p\n") `shouldSatisfy` either (const True) (const False)
 
   it "takes a circle's radius in pixels, with `pixels` a word of its own" $ do
     checkScript (project "var=z" "  draw filled circle at p with radius 6 pixels\n  draw circle at p with radius 2 + 1 pixels\n")

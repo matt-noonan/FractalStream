@@ -103,7 +103,6 @@ data DrawStmt
   = DrawPointAt Expr
   | DrawCircleAt Bool Expr Expr RadiusUnit
     -- ^ filled or not, the center, the radius, and what it's measured in
-  | DrawGeodesicFrom Expr Expr
   | DrawRectFrom Bool Expr Expr
   | DrawLineFrom Expr Expr
   | UseStroke Expr
@@ -135,7 +134,6 @@ stmtNames (Stmt _ node) = case node of
   SDraw d -> case d of
     DrawPointAt p -> exprNames p
     DrawCircleAt _ c r _ -> exprNames c <> exprNames r
-    DrawGeodesicFrom a b -> exprNames a <> exprNames b
     DrawRectFrom _ a b -> exprNames a <> exprNames b
     DrawLineFrom a b -> exprNames a <> exprNames b
     UseStroke c -> exprNames c

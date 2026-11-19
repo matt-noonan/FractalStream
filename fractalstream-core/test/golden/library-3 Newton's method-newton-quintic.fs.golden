@@ -68,7 +68,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `z` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 erase
@@ -90,12 +90,12 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                           set `[internal] previous.z #0` := z
                                           block:
                                             set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 ^ 5:R:C) - [internal] f.z #1) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in ((5:R:C * ([internal] f'.z #2 ^ 4:R:C)) - 1:R:C)))
-                                            draw point at [internal] previous.z #0:R^2
-                                            draw line from [internal] previous.z #0:R^2 to z:R^2
+                                            draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
+                                            draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
                                       set `[internal] fresh #21` := ([internal] fresh #21 + 1)
                                   set `[internal] iteration count` := [internal] fresh #21
                                   set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
-                draw point at z:R^2
+                draw point at (z, 1.0 :+ 0.0)
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -103,8 +103,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `z` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   erase
@@ -126,12 +126,12 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                             set `[internal] previous.z #0` := z
                                             block:
                                               set `z` := let [internal] newton.z #0 = z in ([internal] newton.z #0 - (let [internal] f.z #1 = [internal] newton.z #0 in ((([internal] f.z #1 ^ 5:R:C) - [internal] f.z #1) - 1:R:C) / let [internal] f'.z #2 = [internal] newton.z #0 in ((5:R:C * ([internal] f'.z #2 ^ 4:R:C)) - 1:R:C)))
-                                              draw point at [internal] previous.z #0:R^2
-                                              draw line from [internal] previous.z #0:R^2 to z:R^2
+                                              draw point at ([internal] previous.z #0, 1.0 :+ 0.0)
+                                              draw line from ([internal] previous.z #0, 1.0 :+ 0.0) to (z, 1.0 :+ 0.0)
                                         set `[internal] fresh #24` := ([internal] fresh #24 + 1)
                                     set `[internal] iteration count` := [internal] fresh #24
                                     set `[internal] stuck` := ([internal] fresh #24 = [internal] fresh #25)
-                  draw point at z:R^2
+                  draw point at (z, 1.0 :+ 0.0)
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

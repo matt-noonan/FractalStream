@@ -250,7 +250,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `p` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `p` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 erase
@@ -284,7 +284,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                     set `j_here` := [internal] j_invariant #0
                     use Color 255 255 255 for line
                     use Color 0 0 0 for line
-                    draw filled circle at p:R^2 with radius 4:R pixels
+                    draw filled circle at (p, 1.0 :+ 0.0) with radius 4:R pixels
 
   -- on drag
 let `[internal] vanishing radius` = vanishing_radius in:
@@ -292,8 +292,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `p` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `p` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   erase
@@ -327,7 +327,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                       set `j_here` := [internal] j_invariant #0
                       use Color 255 255 255 for line
                       use Color 0 0 0 for line
-                      draw filled circle at p:R^2 with radius 4:R pixels
+                      draw filled circle at (p, 1.0 :+ 0.0) with radius 4:R pixels
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

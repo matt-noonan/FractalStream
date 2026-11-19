@@ -305,11 +305,17 @@ refreshed *before* rendering in fsrun's capture/assert, previews and movie
 frames, so a table an overlay fills is in the picture. Drawings:
 `DrawCircle`'s `RadiusUnit` (`ScreenPixels`: a marker, drawn at its
 projected center in screen pixels, so the same in every tile and zoom;
-LLVM/wasm pass it as bit 1 of the circle's flag byte) and `DrawGeodesic`
-(sampled by `Actor.Viewer.Disk.geodesicPoints` through `sampleGeodesic`,
-drawn like a line; LLVM passes it as the line callback with kind 1, wasm as
-draw record 8). Only tools whose context has `hyperbolicToolName` (from
-`toolViewValues`, for hyperbolic viewers) typecheck `draw geodesic`. The rest
+LLVM/wasm pass it as bit 1 of the circle's flag byte). Every drawing point
+is homogeneous, `[a : b]` (`Pair C C`; LLVM callbacks take 4 doubles a
+point, wasm records are 72 bytes): `b` is 1 except on a sphere viewer,
+whose tools draw at points of Ĉ as they are (`Language.Code.Projective`'s
+`drawnAt`, `Typecheck.point` keyed on `sphereViewMarker`); click/drag events
+are homogeneous too (`Actor.Event.Point`, internal `point a`/`point b`). Each
+shape is drawn in the viewer's geometry by `Actor.Viewer.Sphere`'s
+`lineOnScreen`/`circleOnScreen` (plane: straight, Euclidean; sphere: great
+arc, chordal radius; hyperbolic: `geodesicPoints`, hyperbolic radius), used
+by all three renderers. `draw geodesic` is gone (`draw line` is the
+geodesic); rectangles are a type error in sphere and hyperbolic tools. The rest
 of this paragraph is from phase 1, the disk alone: The
 geometry is in `Actor.Viewer.Disk`: the view is an `Isometry` (a, b),
 s ↦ (a s + b)/(b̄ s + ā) with |a|² − |b|² = 1, renormalized after each

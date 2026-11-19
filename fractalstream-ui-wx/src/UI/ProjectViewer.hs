@@ -58,7 +58,7 @@ import Actor.Viewer
 import FractalStream.Backends
 import Actor.Ensemble (buildToolContext, layoutToArgs, Colorizer(..), ViewerColorizer(..))
 import Actor.Colorizer (choiceName, choiceArguments, missingArguments, argumentFields, choiceWithArguments)
-import Actor.Event (Event(..), EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..), hyperbolicDisplay, hyperbolicModel, ToolDispatcher, HandlerRun, newCancelFlag)
+import Actor.Event (Event(..), planePoint, EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..), hyperbolicDisplay, hyperbolicModel, ToolDispatcher, HandlerRun, newCancelFlag)
 import Language.Value.Parser (parseConstant)
 import Language.Type
 import Language.Draw
@@ -1002,6 +1002,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         viewToModel pt = do
           m <- get model value
           screenToModel m <$> viewToScreen pt
+        -- (where a point of the window is, as a tool's event has it: see
+        -- 'screenToEventPoint')
+        viewToEventPoint pt = do
+          m <- get model value
+          screenToEventPoint m <$> viewToScreen pt
         -- whether a point of the window shows the model (on the sphere,
         -- whether it's on the globe)
         showsModelAt pt = showsModel <$> get model value <*> viewToScreen pt
@@ -1279,8 +1284,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                get lastClick value >>= \case
                  Nothing -> pure ()
                  Just (Viewport vstart) -> do
-                   zstart <- viewToModel (uncurry Point vstart)
-                   z <- viewToModel pt
+                   zstart <- viewToEventPoint (uncurry Point vstart)
+                   z <- viewToEventPoint pt
                    Model _ pxDims _ <- get model value
                    handle <- getToolEventHandler tool
                    case handle pxDims (Drag z zstart) of
@@ -1384,7 +1389,6 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                       if isJust (modelIsometry oldModel) then recenterDiskOn pt else do
                         newCenter <- viewToModel pt
                         changeViewTo oldModel { modelCenter = toCoords newCenter }
-                ptz <- viewToModel pt
                 toolClickAction <- if not onModel then pure (pure ()) else get currentTool value <&> \case
                   Left NavTool -> recenterAction
                   Left MoviePathTool -> pure ()
@@ -1395,7 +1399,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                   Right tool -> do
                     Model _ pxDims _ <- get model value
                     handle <- getToolEventHandler tool
-                    case handle pxDims (Click ptz) of
+                    clickAt <- viewToEventPoint pt
+                    case handle pxDims (Click clickAt) of
                       Nothing -> recenterAction
                       Just action -> do
                         void (runToolHandler tool action)
@@ -1427,8 +1432,8 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                           get lastClick value >>= \case
                             Nothing -> pure ()
                             Just (Viewport vstart) -> do
-                              zstart <- viewToModel (uncurry Point vstart)
-                              z <- viewToModel pt
+                              zstart <- viewToEventPoint (uncurry Point vstart)
+                              z <- viewToEventPoint pt
                               Model _ pxDims _ <- get model value
                               handle <- getToolEventHandler tool
                               case handle pxDims (DragDone z zstart) of
@@ -1480,7 +1485,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                       Right tool -> do
                         -- (the tool's, if it handles drags; else, a pan)
                         handle <- getToolEventHandler tool
-                        let z = modelCenter m0
+                        let z = planePoint (modelCenter m0)
                         pure (isNothing (handle (modelPixelDim m0) (Drag z z))
                               && isNothing (handle (modelPixelDim m0) (DragDone z z)))
                       Left _ -> pure False
@@ -1507,7 +1512,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                 get currentTool value >>= \case
                    Left _ -> pure ()
                    Right tool -> do
-                     z <- viewToModel pt
+                     z <- viewToEventPoint pt
                      void $ runToolEventHandler tool (DoubleClick z)
                      vDrawCmdsChanged >>= \tf -> when tf triggerRepaint
                      propagateEvent
@@ -2286,6 +2291,18 @@ screenToModel m s@(x, y) = case modelShape m of
     d = sqrt (x * x + y * y)
     s' = if d >= 1 then (0.999999 * x / d, 0.999999 * y / d) else s
 
+-- | Where a point of the screen plane is, as a tool's event has it (see
+-- 'Actor.Event.Point'): on the sphere, the point of Ĉ under it, exactly
+-- (∞ included), a point off the globe counting as the nearest point of its
+-- rim; elsewhere, the model point under it.
+screenToEventPoint :: Model -> (Double, Double) -> HPoint
+screenToEventPoint m s@(x, y) = case modelShape m of
+  GlobeShape g | Just p <- screenToHom g s' -> p
+  _ -> planePoint (screenToModel m s)
+  where
+    d = sqrt (x * x + y * y)
+    s' = if d >= 1 then (0.999999 * x / d, 0.999999 * y / d) else s
+
 -- | Whether a point of the screen plane shows the model: on the sphere,
 -- whether it's on the globe.
 showsModel :: Model -> (Double, Double) -> Bool
@@ -2693,8 +2710,9 @@ paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc
     -- 32-bit integers, which wrap around (see "Actor.Viewer.Clip").
     let onGlobe = proj /= FlatProjection
         cut = cutBox box
-        toView p = traverse screenToView (projectToScreen proj p)
-        runsOf pts = mapM (mapM screenToView) (visibleRuns proj pts)
+        -- (a drawing's points are homogeneous: see 'Language.Draw.DrawSink')
+        toView p = traverse screenToView (homToScreen proj p)
+        onScreen = mapM (mapM screenToView)
         polylinePx attrs pts
           | not (all finitePx pts) = pure ()
           | near box pts = polyline dc (map toViewPoint pts) attrs
@@ -2708,17 +2726,17 @@ paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc
         nearPoint p = finitePx p && near box [p]
         -- a straight segment of the screen plane
         straightLine pt1 pt2 = do
-          p <- screenToView pt1
-          q <- screenToView pt2
+          p <- screenToView (homPlane pt1)
+          q <- screenToView (homPlane pt2)
           when (finitePx p && finitePx q) $
             if near box [p, q]
               then line dc (toViewPoint p) (toViewPoint q) [ brush := brushTransparent ]
               else forM_ (clipSegment cut p q) $ \(p', q') ->
                      line dc (toViewPoint p') (toViewPoint q') [ brush := brushTransparent ]
-        -- a closed outline on the globe: filled if it's all visible,
+        -- a closed outline off the plane: filled if it's all visible,
         -- else its visible runs
-        outline fil pts = runsOf pts >>= \case
-          [r] | fil, length r == length pts -> polygonPx [] r
+        outline fil (runs, whole) = onScreen runs >>= \case
+          [r] | fil, whole -> polygonPx [] r
           rs -> forM_ rs (polylinePx [ brush := brushTransparent ])
 
     cmdss <- getDrawCommands
@@ -2745,25 +2763,21 @@ paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc
             set dc [ brush := oldBrush ]
           _ -> pure ()
 
+        -- (the viewer's geodesic: see 'lineOnScreen')
         DrawLine _ pt1 pt2
-          | onGlobe -> runsOf (sampleSegment 64 pt1 pt2) >>= mapM_ (polylinePx [])
-          | otherwise -> straightLine pt1 pt2
-
-        -- (in the hyperbolic plane, the shortest path there; in the
-        -- plane, a straight segment)
-        DrawGeodesic _ pt1 pt2
-          | onGlobe -> runsOf (sampleGeodesic proj 64 pt1 pt2) >>= mapM_ (polylinePx [])
+          | onGlobe -> onScreen (lineOnScreen proj pt1 pt2) >>= mapM_ (polylinePx [])
           | otherwise -> straightLine pt1 pt2
 
         -- (a marker: a circle on the screen, its radius in pixels)
         DrawCircle _ fil ScreenPixels r pt -> toView pt >>= \case
           Just p | nearPoint p -> withFill fil (circle dc (toViewPoint p) (round (abs r)))
           _ -> pure ()
-        DrawCircle _ fil ModelUnits r pt | onGlobe -> outline fil (sampleCircle 96 pt r)
+        -- (its radius in the viewer's own metric: see 'circleOnScreen')
+        DrawCircle _ fil ModelUnits r pt | onGlobe -> outline fil (circleOnScreen proj pt r)
         DrawCircle _ fil ModelUnits r pt -> do
           -- A circle in model space: an ellipse, when a real viewer's
           -- pixels aren't square.
-          c@(cx, cy) <- screenToView pt
+          c@(cx, cy) <- screenToView (homPlane pt)
           let rx = r / fst pxDim
               ry = r / snd pxDim
           when (finitePx c && finitePx (rx, ry)) $
@@ -2781,11 +2795,13 @@ paintToolLayer proj screenToView box pxDim getDrawCommands dc = dcEncapsulate dc
                   | fil -> polygonPx [] (edge ++ [c])
                   | otherwise -> polylinePx [ brush := brushTransparent ] edge
 
-        DrawRect _ fil (x1, y1) (x2, y2) | onGlobe -> do
-          let corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)]
-          outline fil (concat (zipWith (\a b -> init (sampleSegment 32 a b)) corners (drop 1 corners)) ++ [(x1, y1)])
-        DrawRect _ fil pt1 pt3 -> do
-          let pt2 = (fst pt1, snd pt3)
+        -- (only on the plane: a sphere's or a hyperbolic plane's tool
+        -- can't draw rectangles)
+        DrawRect {} | onGlobe -> pure ()
+        DrawRect _ fil hp1 hp3 -> do
+          let pt1 = homPlane hp1
+              pt3 = homPlane hp3
+              pt2 = (fst pt1, snd pt3)
               pt4 = (fst pt3, snd pt1)
           boxpts <- mapM screenToView [pt1, pt2, pt3, pt4]
           if fil || near box boxpts

@@ -548,7 +548,8 @@ readDraws at DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize
   let r = buf `plusPtr` (k * drawRecordSize)
       f64 :: Int -> IO Double
       f64 = peekByteOff r
-      pt o = (,) <$> f64 o <*> f64 (o + 8)
+      -- (a point is homogeneous, [a : b], as re a, im a, re b, im b)
+      pt o = (\ar ai br bi -> (ar :+ ai, br :+ bi)) <$> f64 o <*> f64 (o + 8) <*> f64 (o + 16) <*> f64 (o + 24)
   tag <- peekByteOff r 0 :: IO Int32
   flags <- peekByteOff r 4 :: IO Int32
   let flag = flags /= 0
@@ -558,11 +559,10 @@ readDraws at DrawSink{..} buf len = forM (reverse [0 .. len `div` drawRecordSize
     1 -> pure (dsStroke color)
     2 -> pure (dsFill color)
     3 -> dsPoint <$> pt 8
-    4 -> dsLine <$> pt 8 <*> pt 24
+    4 -> dsLine <$> pt 8 <*> pt 40
     5 -> dsCircle (testBit flags 0) (if testBit flags 1 then ScreenPixels else ModelUnits) <$> f64 8 <*> pt 16
-    6 -> dsRect flag <$> pt 8 <*> pt 24
+    6 -> dsRect flag <$> pt 8 <*> pt 40
     7 -> dsWrite <$> (peekByteOff r 4 >>= \(a :: Int32) -> peekText at (fromIntegral a)) <*> pt 8
-    8 -> dsGeodesic <$> pt 8 <*> pt 24
     _ -> pure (pure ())
 
 -- | Read a value from the arguments buffer as 'pokeArg' wrote it (the

@@ -255,7 +255,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `w` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 set `c2` := w
@@ -266,8 +266,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `w` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   set `c2` := w
@@ -285,10 +285,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
               erase
               use Color 0 0 0 for line
               use color1 for line
-              draw filled circle at c1:R^2 with radius (5:R * pixel_size)
-              draw circle at c1:R^2 with radius (5:R * pixel_size)
+              draw filled circle at (c1, 1.0 :+ 0.0) with radius (5:R * pixel_size)
+              draw circle at (c1, 1.0 :+ 0.0) with radius (5:R * pixel_size)
               use color2 for line
-              draw filled circle at c2:R^2 with radius (5:R * pixel_size)
-              draw circle at c2:R^2 with radius (5:R * pixel_size)
+              draw filled circle at (c2, 1.0 :+ 0.0) with radius (5:R * pixel_size)
+              draw circle at (c2, 1.0 :+ 0.0) with radius (5:R * pixel_size)
 
 

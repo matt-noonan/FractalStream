@@ -148,6 +148,10 @@ draws. Tools always run on the CPU.
 drag from p to q:` (and `on drag-finished from p to q:`) handler gets
 `p` = A and `q` = B.
 
+On a sphere viewer (`view=sphere`), a click's or a drag's point can be any
+point of `Ĉ`, ∞ included (`click at ∞`), which the tool is given exactly,
+as a point of the sphere; elsewhere, it's a point of the plane.
+
 `drag` synthesizes a single intermediate `Drag` position plus a final
 `DragDone`, rather than a full path of incremental positions -- a real
 drag in the live UI sends many `Drag` events as the mouse moves. That's

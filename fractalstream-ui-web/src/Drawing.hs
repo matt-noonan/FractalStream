@@ -11,8 +11,9 @@ fsrun's captures: each layer starts with white for the pen and the fill.
 The page places a shape by its screen-plane coordinates: on the plane,
 those are the model's own; on the sphere (where a viewer's center is the
 globe's), they're in units of its radius, so a shape is projected here,
-as the overlay does it ('visibleRuns' of points sampled along it), into
-the runs of it on the near side of the globe.
+as the overlay does it ('lineOnScreen', 'circleOnScreen': points sampled
+along it), into the runs of it that are visible. A drawing's points are
+homogeneous (see 'Language.Draw.DrawSink').
 
 Shapes:
 
@@ -31,7 +32,7 @@ module Drawing
   ( drawingJSON
   ) where
 
-import Actor.Viewer.Sphere (Projection(..), projectToScreen, visibleRuns, sampleSegment, sampleGeodesic, sampleCircle)
+import Actor.Viewer.Sphere (Projection(..), HPoint, homPlane, homToScreen, lineOnScreen, circleOnScreen)
 import Data.Color (Color, colorToRGB, white)
 import Language.Draw
 
@@ -60,47 +61,46 @@ drawingLayer proj = layer white white
     shape :: Color -> Color -> DrawCommand -> [Aeson.Value]
     shape stroke fill = \case
       DrawPoint _ p -> [ obj "point" [ "p" .= q, "s" .= hex stroke ] | Just q <- [at p] ]
+      -- (the viewer's geodesic: see 'lineOnScreen')
       DrawLine _ a b -> case proj of
-        FlatProjection -> [ obj "line" [ "a" .= a, "b" .= b, "s" .= hex stroke ] | finite a, finite b ]
-        _ -> runs stroke (sampleSegment 64 a b)
-      DrawGeodesic _ a b -> case proj of
-        FlatProjection -> [ obj "line" [ "a" .= a, "b" .= b, "s" .= hex stroke ] | finite a, finite b ]
-        _ -> runs stroke (sampleGeodesic proj 64 a b)
+        FlatProjection -> [ obj "line" [ "a" .= homPlane a, "b" .= homPlane b, "s" .= hex stroke ]
+                          | finite (homPlane a), finite (homPlane b) ]
+        _ -> runs stroke (lineOnScreen proj a b)
       -- (a marker: a circle on the screen, its radius in pixels)
       DrawCircle _ filled ScreenPixels r c ->
         [ obj "marker" [ "c" .= q, "px" .= r, "f" .= fillOf filled, "s" .= hex stroke ] | Just q <- [at c], finite (r, r) ]
+      -- (its radius in the viewer's own metric: see 'circleOnScreen')
       DrawCircle _ filled ModelUnits r c -> case proj of
         FlatProjection ->
-          [ obj "circle" [ "c" .= c, "r" .= r, "f" .= fillOf filled, "s" .= hex stroke ] | finite c, finite (r, r) ]
-        _ -> outline filled (sampleCircle 96 c r)
-      DrawRect _ filled a@(x1, y1) b@(x2, y2) -> case proj of
+          [ obj "circle" [ "c" .= homPlane c, "r" .= r, "f" .= fillOf filled, "s" .= hex stroke ]
+          | finite (homPlane c), finite (r, r) ]
+        _ -> case circleOnScreen proj c r of
+          (rs, True) | filled, [run] <- clean rs ->
+            [ obj "polygon" [ "pts" .= run, "f" .= hex fill, "s" .= hex stroke ] ]
+          (rs, _) -> runs stroke rs
+      -- (only on the plane: a sphere's or a hyperbolic plane's tool can't
+      -- draw rectangles)
+      DrawRect _ filled a b -> case proj of
         FlatProjection ->
-          [ obj "rect" [ "a" .= a, "b" .= b, "f" .= fillOf filled, "s" .= hex stroke ] | finite a, finite b ]
-        _ ->
-          let corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)]
-          in outline filled (concat (zipWith (\p q -> init (sampleSegment 32 p q)) corners (drop 1 corners)) ++ [(x1, y1)])
+          [ obj "rect" [ "a" .= homPlane a, "b" .= homPlane b, "f" .= fillOf filled, "s" .= hex stroke ]
+          | finite (homPlane a), finite (homPlane b) ]
+        _ -> []
       Write _ t p -> [ obj "text" [ "p" .= q, "t" .= t, "s" .= hex stroke ] | Just q <- [at p] ]
       _ -> []
       where
         fillOf filled = if filled then Just (hex fill) else Nothing
-        -- a closed outline on the sphere: filled (and outlined) if it's
-        -- all on the near side, else the runs of it that are
-        outline filled pts
-          | filled, [r] <- visible pts, length r == length pts =
-              [ obj "polygon" [ "pts" .= r, "f" .= hex fill, "s" .= hex stroke ] ]
-          | otherwise = runs stroke pts
 
     -- where a point is on the screen plane (nowhere, behind the globe)
-    at :: (Double, Double) -> Maybe (Double, Double)
-    at p = case proj of
-      FlatProjection -> if finite p then Just p else Nothing
-      _ -> projectToScreen proj p
+    at :: HPoint -> Maybe (Double, Double)
+    at p = case homToScreen proj p of
+      Just q | finite q -> Just q
+      _ -> Nothing
 
-    visible = filter (not . null) . map (filter finite) . visibleRuns proj . filter finite
+    clean = filter (\r -> length r >= 2) . map (filter finite)
 
-    runs stroke pts = case visible pts of
+    runs stroke rs = case clean rs of
       [] -> []
-      rs -> [ obj "runs" [ "runs" .= rs, "s" .= hex stroke ] ]
+      rs' -> [ obj "runs" [ "runs" .= rs', "s" .= hex stroke ] ]
 
     obj :: Text.Text -> [(Aeson.Key, Aeson.Value)] -> Aeson.Value
     obj k fields = Aeson.object (("k" .= k) : fields)

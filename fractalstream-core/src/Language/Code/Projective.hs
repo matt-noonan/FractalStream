@@ -45,7 +45,7 @@ import Language.Type
 import Language.Typecheck
 import Language.Parser.SourceRange
 import Language.Value.Syntax
-import Language.Value.Builtins (internalEscapeRadius, internalVanishingRadius)
+import Language.Value.Builtins (internalEscapeRadius, internalVanishingRadius, sphereViewMarker)
 import Language.Value.Typing (TypeEnv(..), synth, check, strictTypeEnv, isProjective)
 import Language.Code.Syntax
 import Language.Code.Typecheck.Functions (FunDef(..), Funs, expandCalls)
@@ -92,12 +92,12 @@ expandProjective tenv s
         let scope' = withItem item list scope
         Stmt sr <$> (SWithFirst item <$> valueAt scope' Nothing p <*> pure list
                                      <*> stmtIn scope' body <*> traverse (stmtIn scope) fallback)
-      -- (a point of the sphere is drawn where it is in the plane: on a
-      -- sphere viewer, that's where it is on the globe)
+      -- (a sphere viewer's tool draws at points of the sphere, as they
+      -- are; elsewhere, a point of the sphere is drawn where it is in the
+      -- plane)
       SDraw d -> Stmt sr . SDraw <$> case d of
         DrawPointAt p -> DrawPointAt <$> drawnAt scope p
         DrawCircleAt filled c r unit -> DrawCircleAt filled <$> drawnAt scope c <*> valueAt scope Nothing r <*> pure unit
-        DrawGeodesicFrom p q -> DrawGeodesicFrom <$> drawnAt scope p <*> drawnAt scope q
         DrawRectFrom filled p q -> DrawRectFrom filled <$> drawnAt scope p <*> drawnAt scope q
         DrawLineFrom p q -> DrawLineFrom <$> drawnAt scope p <*> drawnAt scope q
         WriteAt t p -> WriteAt <$> valueAt scope Nothing t <*> drawnAt scope p
@@ -147,9 +147,13 @@ expandProjective tenv s
         (decls ++) <$> blockIn scope' rest
       st : rest -> (:) <$> stmtIn scope st <*> blockIn scope rest
 
-    -- a point to draw at: a point of the sphere, where it is in the plane
+    -- a point to draw at: on a sphere viewer, the point of the sphere it
+    -- is (a complex number, as a point of Ĉ); elsewhere, a point of the
+    -- sphere where it is in the plane
     drawnAt :: Scope -> Expr -> M Expr
-    drawnAt scope p = do
+    drawnAt scope p
+      | sphereViewMarker `Map.member` scTypes scope = valueAt scope (Just ExtComplexT) p
+      | otherwise = do
       p1 <- lift (expandCalls funs p)
       isPoint <- if involves scope p1
         then lift ((isProjective . exprType <$> synth (typeEnv scope) p1) `catchError` \_ -> pure False)
@@ -710,7 +714,6 @@ mapStmtShallow f (Stmt sr node) = Stmt sr <$> case node of
   SDraw d -> SDraw <$> case d of
     DrawPointAt p -> DrawPointAt <$> f p
     DrawCircleAt filled c r unit -> DrawCircleAt filled <$> f c <*> f r <*> pure unit
-    DrawGeodesicFrom p q -> DrawGeodesicFrom <$> f p <*> f q
     DrawRectFrom filled p q -> DrawRectFrom filled <$> f p <*> f q
     DrawLineFrom p q -> DrawLineFrom <$> f p <*> f q
     UseStroke c -> UseStroke <$> f c

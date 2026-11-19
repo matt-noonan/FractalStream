@@ -544,11 +544,13 @@ data DrawVTable = DrawVTable
   { dvClear  :: Operand   -- ^ void()
   , dvStroke :: Operand   -- ^ void(i8 r, i8 g, i8 b)
   , dvFill   :: Operand   -- ^ void(i8 r, i8 g, i8 b)
-  , dvPoint  :: Operand   -- ^ void(double x, double y)
-  , dvLine   :: Operand   -- ^ void(i8 geodesic, double x1, double y1, double x2, double y2)
-  , dvCircle :: Operand   -- ^ void(i8 flags, double r, double x, double y): bit 0 filled, bit 1 radius in pixels
-  , dvRect   :: Operand   -- ^ void(i8 fill, double x1, double y1, double x2, double y2)
-  , dvWrite  :: Operand   -- ^ void(i8* text, double x, double y)
+  -- (each point is homogeneous, [a : b] (see 'Language.Draw.DrawSink'), as
+  -- four doubles: re a, im a, re b, im b)
+  , dvPoint  :: Operand   -- ^ void(point)
+  , dvLine   :: Operand   -- ^ void(point, point)
+  , dvCircle :: Operand   -- ^ void(i8 flags, double r, point): bit 0 filled, bit 1 radius in pixels
+  , dvRect   :: Operand   -- ^ void(i8 fill, point, point)
+  , dvWrite  :: Operand   -- ^ void(i8* text, point)
   }
 
 -- | Compile a single tool event handler into a native function.  Unlike a
@@ -617,14 +619,12 @@ compileToolHandler envp name code = runExcept $
       clearF  <- bitcast clearP  (fnPtrTy AST.void [])
       strokeF <- bitcast strokeP (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
       fillF   <- bitcast fillP   (fnPtrTy AST.void [AST.i8, AST.i8, AST.i8])
-      pointF  <- bitcast pointP  (fnPtrTy AST.void [AST.double, AST.double])
-      lineF   <- bitcast lineP
-                   (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double, AST.double])
-      circleF <- bitcast circleP
-                   (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double])
-      rectF   <- bitcast rectP
-                   (fnPtrTy AST.void [AST.i8, AST.double, AST.double, AST.double, AST.double])
-      writeF  <- bitcast writeP  (fnPtrTy AST.void [AST.ptr AST.i8, AST.double, AST.double])
+      let pt = replicate 4 AST.double
+      pointF  <- bitcast pointP  (fnPtrTy AST.void pt)
+      lineF   <- bitcast lineP   (fnPtrTy AST.void (pt ++ pt))
+      circleF <- bitcast circleP (fnPtrTy AST.void ([AST.i8, AST.double] ++ pt))
+      rectF   <- bitcast rectP   (fnPtrTy AST.void ([AST.i8] ++ pt ++ pt))
+      writeF  <- bitcast writeP  (fnPtrTy AST.void (AST.ptr AST.i8 : pt))
       let vt = DrawVTable { dvClear = clearF, dvStroke = strokeF, dvFill = fillF
                           , dvPoint = pointF, dvLine = lineF, dvCircle = circleF
                           , dvRect = rectF, dvWrite = writeF }
@@ -858,31 +858,29 @@ compileCode getExtern arena mvtable = indexedFold @(OperandPtrContext m) $ \case
   DrawCommand d -> case mvtable of
     Nothing -> throwError "internal error: draw command compiled without a draw vtable"
     Just vt -> do
-      -- A point Value has type (Pair RealT RealT) -> PairOp (RealOp x) (RealOp y).
+      -- A point Value is homogeneous, (Pair ComplexT ComplexT), passed as
+      -- its four parts.
       let withPt pv k = value_ getExtern arena pv >>= \case
-            PairOp (RealOp x) (RealOp y) -> k x y
+            PairOp (ComplexOp aRe aIm) (ComplexOp bRe bIm) -> k [(aRe,[]),(aIm,[]),(bRe,[]),(bIm,[])]
       case d of
         Clear _ -> void $ call (dvClear vt) []
         SetStroke _ cv -> value_ getExtern arena cv >>= \case
           ColorOp r g b -> void $ call (dvStroke vt) [(r,[]),(g,[]),(b,[])]
         SetFill _ cv -> value_ getExtern arena cv >>= \case
           ColorOp r g b -> void $ call (dvFill vt) [(r,[]),(g,[]),(b,[])]
-        DrawPoint _ pv -> withPt pv $ \x y ->
-          void $ call (dvPoint vt) [(x,[]),(y,[])]
-        DrawLine _ p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
-          void $ call (dvLine vt) [(C.int8 0,[]),(x1,[]),(y1,[]),(x2,[]),(y2,[])]
-        DrawGeodesic _ p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
-          void $ call (dvLine vt) [(C.int8 1,[]),(x1,[]),(y1,[]),(x2,[]),(y2,[])]
+        DrawPoint _ pv -> withPt pv $ \p ->
+          void $ call (dvPoint vt) p
+        DrawLine _ p1 p2 -> withPt p1 $ \p -> withPt p2 $ \q ->
+          void $ call (dvLine vt) (p ++ q)
         DrawCircle _ fill unit rv pv -> value_ getExtern arena rv >>= \case
-          RealOp r -> withPt pv $ \x y ->
+          RealOp r -> withPt pv $ \p ->
             void $ call (dvCircle vt)
-              [(C.int8 ((if fill then 1 else 0) + (if unit == ScreenPixels then 2 else 0)),[]),(r,[]),(x,[]),(y,[])]
-        DrawRect _ fill p1 p2 -> withPt p1 $ \x1 y1 -> withPt p2 $ \x2 y2 ->
-          void $ call (dvRect vt)
-            [(C.int8 (if fill then 1 else 0),[]),(x1,[]),(y1,[]),(x2,[]),(y2,[])]
+              ([(C.int8 ((if fill then 1 else 0) + (if unit == ScreenPixels then 2 else 0)),[]),(r,[])] ++ p)
+        DrawRect _ fill p1 p2 -> withPt p1 $ \p -> withPt p2 $ \q ->
+          void $ call (dvRect vt) ((C.int8 (if fill then 1 else 0),[]) : p ++ q)
         Write _ tv pv -> value_ getExtern arena tv >>= \case
-          TextOp txt -> withPt pv $ \x y ->
-            void $ call (dvWrite vt) [(txt,[]),(x,[]),(y,[])]
+          TextOp txt -> withPt pv $ \p ->
+            void $ call (dvWrite vt) ((txt,[]) : p)
 
 
 -- | A module-local constant empty string, the value of any text that didn't

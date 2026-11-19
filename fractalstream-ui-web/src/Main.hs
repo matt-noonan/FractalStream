@@ -277,9 +277,9 @@ import Actor.UI (UI(..))
 import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progressive(..), ImagePiece(..), onParameterChanges, viewProjection,
                      overlayProjections, reducedView,
                      pointerText)
-import Actor.Event (ViewKind(..), hyperbolicDisplay, hyperbolicModel, Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
+import Actor.Event (ViewKind(..), hyperbolicDisplay, hyperbolicModel, Event(..), Point, planePoint, ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
-import Actor.Viewer.Sphere (sphereShading, trackballGlobe, zoomGlobeAbout, screenToPlane, Rotation(..), rotationGlobe, withGlobeZoom, globeEntries, globeFromEntries)
+import Actor.Viewer.Sphere (sphereShading, trackballGlobe, zoomGlobeAbout, screenToPlane, screenToHom, Rotation(..), rotationGlobe, withGlobeZoom, globeEntries, globeFromEntries)
 import Actor.Viewer.Disk (Isometry(..), HyperbolicDisplay(..), normalizeIsometry,
                           screenToModelH, dragOnDisplay, displayScreen)
 import Actor.Viewer.ViewModel (Model(..), ModelShape(..), modelGlobe, modelIsometry, ViewSettings(..), viewSettings, settingsView, fitGlobe, History(..), historyBack, historyForward, historyAppend)
@@ -1868,8 +1868,9 @@ postTool vs name panel = do
   handles <- readIORef (vsTool vs) <&> \case
     Nothing -> []
     Just ActiveTool{..} ->
-      [ k | (k :: Text.Text, ev) <- [ ("click", Click (0, 0)), ("doubleClick", DoubleClick (0, 0))
-                                    , ("drag", Drag (0, 0) (0, 0)), ("dragDone", DragDone (0, 0) (0, 0)) ]
+      [ k | let o = planePoint (0, 0)
+          , (k :: Text.Text, ev) <- [ ("click", Click o), ("doubleClick", DoubleClick o)
+                                    , ("drag", Drag o o), ("dragDone", DragDone o o) ]
           , isJust (atDispatch (1, 1) ev) ]
   post $ Aeson.object
     [ "type" .= ("tool" :: Text.Text), "viewer" .= vsId vs, "name" .= name, "panel" .= panel
@@ -1976,10 +1977,18 @@ toModel viewer p = getDynamic (vView viewer) >>= \case
   DiskView -> getDynamic (vIsometry viewer) <&> \iso -> screenToModelH (hyperbolicModel (vOriginalView viewer)) DiskDisplay iso p
   HalfPlaneView -> getDynamic (vIsometry viewer) <&> \iso -> screenToModelH (hyperbolicModel (vOriginalView viewer)) HalfPlaneDisplay iso p
 
+-- | A point of the screen plane, as a tool's event has it (see
+-- 'Actor.Event.Point'): on the sphere, the point of Ĉ under it, exactly
+-- (∞ included), if it's on the globe; elsewhere, the point of the model.
+toEventPoint :: Viewer -> (Double, Double) -> IO (Maybe Point)
+toEventPoint viewer p = getDynamic (vView viewer) >>= \case
+  SphereView -> getDynamic (vGlobe viewer) <&> \g -> screenToHom g p
+  _ -> fmap planePoint <$> toModel viewer p
+
 toolEvent :: Int -> Int -> Double -> Double -> Double -> Double -> IO ()
 toolEvent k kind x1 y1 x2 y2 = withViewerState k $ \vs -> do
-  a <- toModel (vsViewer vs) (x1, y1)
-  b <- toModel (vsViewer vs) (x2, y2)
+  a <- toEventPoint (vsViewer vs) (x1, y1)
+  b <- toEventPoint (vsViewer vs) (x2, y2)
   let event = case (kind, a, b) of
         (0, Just p, _) -> Just (Click p)
         (1, Just p, _) -> Just (DoubleClick p)

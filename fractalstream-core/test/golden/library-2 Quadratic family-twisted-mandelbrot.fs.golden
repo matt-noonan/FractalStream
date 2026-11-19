@@ -114,7 +114,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `z` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 let `prevZ` = z in:
@@ -128,7 +128,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                               block:
                                 block:
                                   set `prevZ` := z
-                                  draw point at z:R^2
+                                  draw point at (z, 1.0 :+ 0.0)
                                   block:
                                     block:
                                       set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
@@ -141,7 +141,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                   set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
                                           else:
                                             no-op
-                                  draw line from z:R^2 to prevZ:R^2
+                                  draw line from (z, 1.0 :+ 0.0) to (prevZ, 1.0 :+ 0.0)
                                 set `[internal] fresh #36` := ([internal] fresh #36 + 1)
                           else:
                             no-op
@@ -154,8 +154,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `z` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   let `prevZ` = z in:
@@ -169,7 +169,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                 block:
                                   block:
                                     set `prevZ` := z
-                                    draw point at z:R^2
+                                    draw point at (z, 1.0 :+ 0.0)
                                     block:
                                       block:
                                         set `z` := let [internal] f.z #0 = z in (([internal] f.z #0 ^ 2:R:C) + C)
@@ -182,7 +182,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                     set `z` := (((2.718281828459045:C ^ (0.0 :+ 1.0 * theta:C)) * (z - twist_center)) + twist_center)
                                             else:
                                               no-op
-                                    draw line from z:R^2 to prevZ:R^2
+                                    draw line from (z, 1.0 :+ 0.0) to (prevZ, 1.0 :+ 0.0)
                                   set `[internal] fresh #39` := ([internal] fresh #39 + 1)
                             else:
                               no-op
@@ -207,8 +207,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `z0` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `z` = [internal] point a in:
+            let `z0` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   let `eps` = (5:R * pixel_size) in:
@@ -251,10 +251,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                           block:
                             block:
                               use Color 255 0 0 for line
-                              draw point at twist_center:R^2
+                              draw point at (twist_center, 1.0 :+ 0.0)
                               use Color 255 255 255 for line
-                              draw circle at twist_center:R^2 with radius r0
-                              draw circle at twist_center:R^2 with radius r1
+                              draw circle at (twist_center, 1.0 :+ 0.0) with radius r0
+                              draw circle at (twist_center, 1.0 :+ 0.0) with radius r1
                       else:
                         no-op
 
@@ -264,8 +264,8 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
-            let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `z` = [internal] point a in:
+            let `[unused] start` = [internal] old point a in:
               let `pixel_size` = [internal] px in:
                 block:
                   set `drag_target` := 0
@@ -281,10 +281,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 block:
                   use Color 255 0 0 for line
-                  draw point at twist_center:R^2
+                  draw point at (twist_center, 1.0 :+ 0.0)
                   use Color 255 255 255 for line
-                  draw circle at twist_center:R^2 with radius r0
-                  draw circle at twist_center:R^2 with radius r1
+                  draw circle at (twist_center, 1.0 :+ 0.0) with radius r0
+                  draw circle at (twist_center, 1.0 :+ 0.0) with radius r1
 
   -- on deactivated
 let `[internal] vanishing radius` = vanishing_radius in:

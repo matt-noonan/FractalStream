@@ -182,7 +182,6 @@ mapStmtExprs f (Stmt sr node) = Stmt sr <$> case node of
   SDraw d -> SDraw <$> case d of
     DrawPointAt p -> DrawPointAt <$> f p
     DrawCircleAt filled c r unit -> DrawCircleAt filled <$> f c <*> f r <*> pure unit
-    DrawGeodesicFrom p q -> DrawGeodesicFrom <$> f p <*> f q
     DrawRectFrom filled p q -> DrawRectFrom filled <$> f p <*> f q
     DrawLineFrom p q -> DrawLineFrom <$> f p <*> f q
     UseStroke c -> UseStroke <$> f c

@@ -952,8 +952,10 @@ the hyperbolic plane, the point in the middle, how far the picture is
 turned about it, and a pixel's size.
 
 Tools work the same way on the sphere: the point a click or drag is at is
-a point of `Ĉ`, and drawing at a point of the sphere draws on the globe. A
-click off the globe does nothing.
+a point of `Ĉ`, exactly (a click on ∞ is ∞ itself, so `p = ∞` holds), and
+a tool draws at points of `Ĉ`, on the globe: a line is an arc of a great
+circle, and a circle's radius is chordal (see "Drawing commands"). A click
+off the globe does nothing.
 
 ### Viewers of the hyperbolic plane (the Poincaré disk, the half-plane)
 
@@ -1290,7 +1292,16 @@ model; you don't have to worry about converting from model coordinates
 to window coordinates.
 
 Points can be specified either with ordered pairs of real numbers, or
-with complex numbers which will be interpreted as ordered pairs.
+with complex numbers which will be interpreted as ordered pairs. A tool
+of a sphere viewer (`view=sphere`) draws at points of `Ĉ` (see "The
+Riemann sphere: Ĉ and ℙ¹"), ∞ included: a complex number is the point it
+is on the sphere.
+
+Shapes are drawn in the geometry of the viewer they're in: a line is the
+viewer's own shortest path between two points, and a circle's radius is
+measured as that viewer measures distances (see "Drawing lines" and
+"Drawing circles"). A rectangle is a shape of the plane, so only a tool of
+a viewer of the plane (complex or real) can draw one.
 
 #### Setting the pen color
 Drawing commands work with a virtual pen that can have a stroke color, used
@@ -1330,18 +1341,16 @@ draw line from z to w
 Lines are drawn using the stroke color. The points can either be given by
 complex numbers or by ordered pairs of real numbers.
 
-In a viewer of the hyperbolic plane (`view=disk` or `view=halfplane`), a
-line is still a straight segment between the two points (which the view
-may show curved). The shortest path there, the hyperbolic segment, is
+A line is the shortest path between its ends in the viewer's own geometry:
 
-```
-draw geodesic from z to w
-```
-
-an arc of a circle that meets the disk's edge (or the half-plane's real
-axis) at right angles, or a straight segment when it's in line with the
-middle of the disk (or vertical, in the half-plane). Only a tool of a
-viewer of the hyperbolic plane can draw a geodesic.
+- in the plane, a straight segment;
+- on the sphere (`view=sphere`), the shorter arc of the great circle through
+  the two points, which can go through ∞ (between two opposite points,
+  every great circle through them is as short, and it takes one);
+- in the hyperbolic plane (`view=disk` or `view=halfplane`), the hyperbolic
+  segment: an arc of a circle that meets the disk's edge (or the
+  half-plane's real axis) at right angles, or a straight segment when it's
+  in line with the middle of the disk (or vertical, in the half-plane).
 
 #### Drawing rectangles
 
@@ -1362,6 +1371,9 @@ The boundary of the rectangle will be drawn using the stroke color, and
 the rectangle will be filled with the fill color. The points can either
 be given by complex numbers or by ordered pairs of real numbers.
 
+Only a tool of a viewer of the plane can draw a rectangle: on the sphere
+or in the hyperbolic plane, it's an error (draw lines or circles there).
+
 #### Drawing circles
 
 To draw an empty circle in the view with center `z` and radius `r`,
@@ -1381,9 +1393,15 @@ The boundary of the circle will be drawn using the stroke color, and
 the circle will be filled with the fill color. The center can either
 be given by a complex number or by an ordered pair of real numbers.
 
-A circle like that is a shape in the plane: it grows when you zoom in.
-For a marker, a dot that stays the same size on the screen, give the
-radius in pixels:
+The radius is a distance as the viewer measures it: in the plane, the
+usual one; on the sphere, the chordal distance (see `chordal`), so a
+circle about ∞ is drawn too; in the hyperbolic plane, the hyperbolic
+distance (for the metric of curvature -1), so a circle of the same radius
+looks smaller nearer the edge of the disk.
+
+A circle like that is a shape of the viewer's geometry: it grows when you
+zoom in. For a marker, a dot that stays the same size on the screen, give
+the radius in pixels:
 
 ```
 draw filled circle at z with radius 4 pixels

@@ -174,7 +174,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                   set `n` := (n + 1)
                                                   if (100 < n) then:
                                                     block:
-                                                      draw point at (x, y)
+                                                      draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
                                                   else:
                                                     no-op
                                                 set `[internal] fresh #24` := ([internal] fresh #24 + 1)
@@ -201,15 +201,15 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `x` = [internal] x in:
-            let `y` = [internal] y in:
+          let `x` = re([internal] point a) in:
+            let `y` = im([internal] point a) in:
               let `pixel_size` = [internal] px in:
                 let `pixel_width` = [internal] px in:
                   let `pixel_height` = [internal] py in:
                     block:
                       erase
                       use Color 255 255 255 for line
-                      draw point at (x, y)
+                      draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
                       use Color 255 255 0 for line
                       let `[internal] fresh #23` = 0 in:
                         let `[internal] fresh #24` = orbit_length in:
@@ -225,7 +225,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                             block:
                                               set `x` := [internal] tuple #0
                                               set `y` := [internal] tuple #1
-                                  draw point at (x, y)
+                                  draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
                                 set `[internal] fresh #23` := ([internal] fresh #23 + 1)
                             set `[internal] iteration count` := [internal] fresh #23
                             set `[internal] stuck` := ([internal] fresh #23 = [internal] fresh #24)
@@ -236,16 +236,16 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = max_iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `x` = [internal] x in:
-            let `y` = [internal] y in:
-              let `[unused] start` = ([internal] oldx:C + (0.0 :+ 1.0 * [internal] oldy:C)) in:
+          let `x` = re([internal] point a) in:
+            let `y` = im([internal] point a) in:
+              let `[unused] start` = [internal] old point a in:
                 let `pixel_size` = [internal] px in:
                   let `pixel_width` = [internal] px in:
                     let `pixel_height` = [internal] py in:
                       block:
                         erase
                         use Color 255 255 255 for line
-                        draw point at (x, y)
+                        draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
                         use Color 255 255 0 for line
                         let `[internal] fresh #26` = 0 in:
                           let `[internal] fresh #27` = orbit_length in:
@@ -261,7 +261,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                               block:
                                                 set `x` := [internal] tuple #0
                                                 set `y` := [internal] tuple #1
-                                    draw point at (x, y)
+                                    draw point at (((1st (x, y)):C + (0.0 :+ 1.0 * (2nd (x, y)):C)), 1.0 :+ 0.0)
                                   set `[internal] fresh #26` := ([internal] fresh #26 + 1)
                               set `[internal] iteration count` := [internal] fresh #26
                               set `[internal] stuck` := ([internal] fresh #26 = [internal] fresh #27)

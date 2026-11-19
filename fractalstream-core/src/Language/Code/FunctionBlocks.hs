@@ -167,7 +167,6 @@ ownExprs (Stmt _ node) = case node of
   SDraw d -> case d of
     DrawPointAt p -> [p]
     DrawCircleAt _ c r _ -> [c, r]
-    DrawGeodesicFrom a b -> [a, b]
     DrawRectFrom _ a b -> [a, b]
     DrawLineFrom a b -> [a, b]
     UseStroke c -> [c]

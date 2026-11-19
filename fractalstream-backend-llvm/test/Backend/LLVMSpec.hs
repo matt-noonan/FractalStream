@@ -143,8 +143,8 @@ spec = do
           , ("if/then/else", "write (if n > 2 then \"big\" else \"small\") at 0")
           , ("the empty string", "msg <- \"\"\nwrite text(msg, msg) at 0")
           , ("a local text variable", "t := text(\"k=\", n)\nwrite t at 0\nmsg <- t")
-          , ("shapes, markers and geodesics",
-             "draw line from 0 to z\ndraw geodesic from 0.1 to z\ndraw circle at z with radius 0.5\n\
+          , ("shapes, markers and lines",
+             "draw line from 0 to z\ndraw line from 0.1 to z\ndraw circle at z with radius 0.5\n\
              \draw filled circle at z with radius 6 pixels\ndraw circle at 0 with radius x pixels\n\
              \draw filled rectangle from 0 to 1 + i")
           ]
@@ -677,9 +677,7 @@ type ToolTestEnv =
    , '("words", 'ListT 'TextT)
    , '("[internal] iteration count", 'IntegerT)
    , '("[internal] iteration limit", 'IntegerT)
-   , '("[internal] stuck", 'BooleanT)
-     -- (as a hyperbolic viewer's tools have, for `draw geodesic`)
-   , '("[internal] hyperbolic tool", 'BooleanT) ]
+   , '("[internal] stuck", 'BooleanT) ]
 
 -- | Run a tool handler with the given executor, returning everything it drew
 -- and the final values of the variables it can set.
@@ -698,7 +696,6 @@ runTool exec src = do
   vI   <- newVariable (0 :: Int64)
   vL   <- newVariable (100 :: Int64)
   vS   <- newVariable False
-  vH   <- newVariable True
   let ctx :: Context EventArgument_ ToolTestEnv
       ctx = Bind (Proxy @"msg") TextType (mutableVar vMsg)
           $ Bind (Proxy @"n") IntegerType (mutableVar vN)
@@ -710,7 +707,6 @@ runTool exec src = do
           $ Bind (Proxy @"[internal] iteration count") IntegerType (mutableVar vI)
           $ Bind (Proxy @"[internal] iteration limit") IntegerType (mutableVar vL)
           $ Bind (Proxy @"[internal] stuck") BooleanType (mutableVar vS)
-          $ Bind (Proxy @"[internal] hyperbolic tool") BooleanType (mutableVar vH)
           $ EmptyContext
       env = contextToEnv ctx
   code <- either (fail . show) pure (parseCode env noCommonDefs src)
@@ -725,7 +721,6 @@ runTool exec src = do
         , dsCircle = \f u r p -> record ("circle " ++ show (f, u, r, p))
         , dsRect   = \f p q -> record ("rect " ++ show (f, p, q))
         , dsWrite  = \t p -> record ("write " ++ show t ++ " at " ++ show p)
-        , dsGeodesic = \p q -> record ("geodesic " ++ show (p, q))
         }
   invoker <- exec sink env code
   runHandlerNow (invoker ctx)
@@ -744,4 +739,4 @@ noDrawing :: DrawSink
 noDrawing = DrawSink
   { dsClear = pure (), dsStroke = const (pure ()), dsFill = const (pure ())
   , dsPoint = const (pure ()), dsLine = \_ _ -> pure (), dsCircle = \_ _ _ _ -> pure ()
-  , dsRect = \_ _ _ -> pure (), dsWrite = \_ _ -> pure (), dsGeodesic = \_ _ -> pure () }
+  , dsRect = \_ _ _ -> pure (), dsWrite = \_ _ -> pure () }

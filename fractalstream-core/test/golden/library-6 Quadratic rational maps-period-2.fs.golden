@@ -60,7 +60,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
             block:
               erase
               use Color 255 255 255 for line
-              draw circle at c:R^2 with radius (3:R * pixel_size)
+              draw circle at (c, 1.0 :+ 0.0) with radius (3:R * pixel_size)
 
 
 === viewer 1: Julia set
@@ -118,7 +118,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
     let `[internal] iteration limit` = iters in:
       let `[internal] stuck` = False in:
         let `[internal] iteration count` = 0 in:
-          let `w` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+          let `w` = [internal] point a in:
             let `pixel_size` = [internal] px in:
               block:
                 erase
@@ -131,10 +131,10 @@ let `[internal] vanishing radius` = vanishing_radius in:
                           do-while (!([internal] escape radius < |w|) and ([internal] fresh #21 < [internal] fresh #22)):
                             block:
                               block:
-                                draw point at w:R^2
+                                draw point at (w, 1.0 :+ 0.0)
                                 set `prev` := w
                                 set `w` := let [internal] f.z #0 = w in ((([internal] f.z #0 ^ 2:R:C) + c) / (1:R:C - ([internal] f.z #0 ^ 2:R:C)))
-                                draw line from prev:R^2 to w:R^2
+                                draw line from (prev, 1.0 :+ 0.0) to (w, 1.0 :+ 0.0)
                               set `[internal] fresh #21` := ([internal] fresh #21 + 1)
                           set `[internal] iteration count` := [internal] fresh #21
                           set `[internal] stuck` := ([internal] fresh #21 = [internal] fresh #22)
