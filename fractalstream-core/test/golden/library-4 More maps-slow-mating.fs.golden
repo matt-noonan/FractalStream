@@ -17,20 +17,20 @@ let `color` = Color 128 128 128 in:
                             block:
                               let `top` = (2:R * tt) in:
                                 block:
-                                  let `[internal] fresh #48` = 0 in:
-                                    let `[internal] fresh #49` = 64 in:
+                                  let `[internal] fresh #44` = 0 in:
+                                    let `[internal] fresh #45` = 64 in:
                                       block:
-                                        if ((top < 30:R) and ([internal] fresh #48 < [internal] fresh #49)) then:
-                                          do-while ((top < 30:R) and ([internal] fresh #48 < [internal] fresh #49)):
+                                        if ((top < 30:R) and ([internal] fresh #44 < [internal] fresh #45)) then:
+                                          do-while ((top < 30:R) and ([internal] fresh #44 < [internal] fresh #45)):
                                             block:
                                               block:
                                                 set `L` := (L + 1)
                                                 set `top` := (2:R * top)
-                                              set `[internal] fresh #48` := ([internal] fresh #48 + 1)
+                                              set `[internal] fresh #44` := ([internal] fresh #44 + 1)
                                         else:
                                           no-op
-                                        set `[internal] iteration count` := [internal] fresh #48
-                                        set `[internal] stuck` := ([internal] fresh #48 = [internal] fresh #49)
+                                        set `[internal] iteration count` := [internal] fresh #44
+                                        set `[internal] stuck` := ([internal] fresh #44 = [internal] fresh #45)
                                   let `xs` = [c1] in:
                                     block:
                                       let `ys` = [c2] in:
@@ -54,11 +54,11 @@ let `color` = Color 128 128 128 in:
                                                                         block:
                                                                           let `k` = (L - 1) in:
                                                                             block:
-                                                                              let `[internal] fresh #59` = 0 in:
-                                                                                let `[internal] fresh #60` = 64 in:
+                                                                              let `[internal] fresh #55` = 0 in:
+                                                                                let `[internal] fresh #56` = 64 in:
                                                                                   block:
-                                                                                    if (!(k < 1) and ([internal] fresh #59 < [internal] fresh #60)) then:
-                                                                                      do-while (!(k < 1) and ([internal] fresh #59 < [internal] fresh #60)):
+                                                                                    if (!(k < 1) and ([internal] fresh #55 < [internal] fresh #56)) then:
+                                                                                      do-while (!(k < 1) and ([internal] fresh #55 < [internal] fresh #56)):
                                                                                         block:
                                                                                           block:
                                                                                             set `s` := (s / 2:R)
@@ -79,11 +79,11 @@ let `color` = Color 128 128 128 in:
                                                                                                             set `a` := na
                                                                                                             set `b` := nb
                                                                                                             set `k` := (k - 1)
-                                                                                          set `[internal] fresh #59` := ([internal] fresh #59 + 1)
+                                                                                          set `[internal] fresh #55` := ([internal] fresh #55 + 1)
                                                                                     else:
                                                                                       no-op
-                                                                                    set `[internal] iteration count` := [internal] fresh #59
-                                                                                    set `[internal] stuck` := ([internal] fresh #59 = [internal] fresh #60)
+                                                                                    set `[internal] iteration count` := [internal] fresh #55
+                                                                                    set `[internal] stuck` := ([internal] fresh #55 = [internal] fresh #56)
                                                                               set `As` := join([(a@1)], As)
                                                                               set `Bs` := join([(b@1)], Bs)
                                                                               let `du` = 1:R:C in:
@@ -113,13 +113,14 @@ let `[internal] vanishing radius` = vanishing_radius in:
               block:
                 let `[internal] sphere.s` = sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y)))) in:
                   block:
-                    let `[internal] sphere.X` = (([internal] sphere rotation 11 * [internal] x) + (([internal] sphere rotation 12 * [internal] y) + ([internal] sphere rotation 13 * [internal] sphere.s))) in:
+                    let `[internal] sphere.u` = ([internal] x:C + ([internal] y:C * 0.0 :+ 1.0)) in:
                       block:
-                        let `[internal] sphere.Y` = (([internal] sphere rotation 21 * [internal] x) + (([internal] sphere rotation 22 * [internal] y) + ([internal] sphere rotation 23 * [internal] sphere.s))) in:
+                        let `[internal] sphere.v` = (1.0 + [internal] sphere.s) in:
                           block:
-                            let `[internal] sphere.Z` = (([internal] sphere rotation 31 * [internal] x) + (([internal] sphere rotation 32 * [internal] y) + ([internal] sphere rotation 33 * [internal] sphere.s))) in:
+                            let `[internal] sphere.w2` = ((([internal] x * [internal] x) + ([internal] y * [internal] y)) / ([internal] sphere.v * [internal] sphere.v)) in:
                               block:
-                                let `z` = if !([internal] sphere.Z < 0.0) then (([internal] sphere.X:C + ([internal] sphere.Y:C * 0.0 :+ 1.0)), (1.0 + [internal] sphere.Z):C) else ((1.0 - [internal] sphere.Z):C, ([internal] sphere.X:C - ([internal] sphere.Y:C * 0.0 :+ 1.0))) in:
+                                set `pixel_size` := ([internal] dx * (([internal] sphere zoom * (1.0 + [internal] sphere.w2)) / (1.0 + (([internal] sphere zoom * [internal] sphere zoom) * [internal] sphere.w2))))
+                                let `z` = ((([internal] sphere view a * [internal] sphere.u) + ([internal] sphere view b * [internal] sphere.v:C)), (([internal] sphere view c * [internal] sphere.u) + ([internal] sphere view d * [internal] sphere.v:C))) in:
                                   block:
                                     block:
                                       let `tt` = [hoisted] tt in:
@@ -147,20 +148,20 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                 block:
                                                                                   let `cc` = if first then c1 else c2 in:
                                                                                     block:
-                                                                                      let `[internal] fresh #63` = 0 in:
-                                                                                        let `[internal] fresh #64` = [internal] iteration limit in:
+                                                                                      let `[internal] fresh #59` = 0 in:
+                                                                                        let `[internal] fresh #60` = [internal] iteration limit in:
                                                                                           block:
-                                                                                            if (!(1000:R < |p|) and ([internal] fresh #63 < [internal] fresh #64)) then:
-                                                                                              do-while (!(1000:R < |p|) and ([internal] fresh #63 < [internal] fresh #64)):
+                                                                                            if (!(1000:R < |p|) and ([internal] fresh #59 < [internal] fresh #60)) then:
+                                                                                              do-while (!(1000:R < |p|) and ([internal] fresh #59 < [internal] fresh #60)):
                                                                                                 block:
                                                                                                   block:
                                                                                                     set `dp` := ((2:R:C * p) * dp)
                                                                                                     set `p` := ((p ^ 2:R:C) + cc)
-                                                                                                  set `[internal] fresh #63` := ([internal] fresh #63 + 1)
+                                                                                                  set `[internal] fresh #59` := ([internal] fresh #59 + 1)
                                                                                             else:
                                                                                               no-op
-                                                                                            set `[internal] iteration count` := [internal] fresh #63
-                                                                                            set `[internal] stuck` := ([internal] fresh #63 = [internal] fresh #64)
+                                                                                            set `[internal] iteration count` := [internal] fresh #59
+                                                                                            set `[internal] stuck` := ([internal] fresh #59 = [internal] fresh #60)
                                                                                       let `inside` = [internal] stuck in:
                                                                                         block:
                                                                                           let `g [hoisting 0]` = ((log(|p|) / exp(((L + [internal] iteration count):R * log(2:R)))) / tt) in:
@@ -189,7 +190,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                                                       set `color` := Color 255 0 0
                                                                                                                   else:
                                                                                                                     no-op
-                                    let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * sqrt((1.0 - (([internal] x * [internal] x) + ([internal] y * [internal] y))))))) + 1.0) / 2.0) in:
+                                    let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * [internal] sphere.s))) + 1.0) / 2.0) in:
                                       block:
                                         set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
 

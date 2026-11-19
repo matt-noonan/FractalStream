@@ -1050,9 +1050,9 @@ viewerGeometryArgs coord size center viewValues =
 -- | The live values of 'viewerViewEntries', from a viewer's size and
 -- view.
 viewerViewContext :: Coordinate -> ViewKind -> Variable Dimensions -> Variable (Double, Double)
-                  -> Variable ViewKind -> Variable Rotation -> Variable Isometry -> Maybe (Dynamic FoldData)
+                  -> Variable ViewKind -> Variable Globe -> Variable Isometry -> Maybe (Dynamic FoldData)
                   -> Either String (SomeContext DynamicValue)
-viewerViewContext coord view0 sizeV centerV viewV rotationV isometryV mgroup = foldM addOne (SomeContext EmptyContext) entries
+viewerViewContext coord view0 sizeV centerV viewV globeV isometryV mgroup = foldM addOne (SomeContext EmptyContext) entries
   where
     entries :: [(String, LiveValue)]
     entries = viewerGeometry coord (dyn sizeV) (dyn centerV) ++ case coord of
@@ -1073,9 +1073,10 @@ viewerViewContext coord view0 sizeV centerV viewV rotationV isometryV mgroup = f
       ComplexCoordinate _ | view0 == SphereView ->
         (sphereViewName, LiveValue BooleanType (pure True))
         : (sphereShadingName, LiveValue RealType (dyn sphereShading))
-        : [ (n, LiveValue RealType ((!! k) . matrixEntries <$> dyn rotationV)) | (k, n) <- zip [0 ..] rotationNames ]
+        : (sphereZoomName, LiveValue RealType (globeZoom <$> dyn globeV))
+        : [ (n, LiveValue ComplexType ((!! k) . globeEntries <$> dyn globeV)) | (k, n) <- zip [0 ..] globeMobiusNames ]
       ComplexCoordinate _ -> []
-    matrixEntries r = let ((a, b, c), (d, e, f), (g, h, i)) = rotationMatrix r in [a, b, c, d, e, f, g, h, i]
+    globeEntries g = let (a, b, c, d) = globeMobius g in [a, b, c, d]
     addOne :: SomeContext DynamicValue -> (String, LiveValue) -> Either String (SomeContext DynamicValue)
     addOne (SomeContext acc) (name, LiveValue ty v) = withKnownType ty $ case someSymbolVal name of
       SomeSymbol nameProxy -> case acc <#> Bind nameProxy ty v EmptyContext of
@@ -1580,19 +1581,22 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
     -- at its display's middle (the disk's center, in the middle of the
     -- window; or i, 1/pixelSize pixels above the real axis, which is
     -- along the window's bottom edge: see 'displayScreen').
-    let originalRotation = rotationFacing centerVal
+    -- On the sphere, the globe fills the window, and the script's
+    -- `pixelSize=` is the size on the sphere of a pixel in the middle,
+    -- which the zoom sets (a pixel there is the zoom times the screen's).
+    let globePixel = globeScreenPixelSize (600, 600)
+        originalGlobe = (globeFacing centerVal)
+          { globeZoom = maybe 1 (const (clampGlobeZoom (pixelVal / globePixel))) vfPixelSize }
         originalIsometry = isometryFacing (modelToDisk (hyperbolicModel vfView) centerVal)
-        (planePixel, spherePixel) = case vfView of
-          PlaneView -> (pixelVal, defaultSpherePixelSize)
-          SphereView -> (1 / 128, maybe defaultSpherePixelSize (const pixelVal) vfPixelSize)
-          DiskView -> (1 / 128, defaultSpherePixelSize)
-          HalfPlaneView -> (1 / 128, defaultSpherePixelSize)
+        planePixel = case vfView of
+          PlaneView -> pixelVal
+          _ -> 1 / 128
         -- (the script's `pixelSize=` is for the display its `view=` names)
         hyperbolicPixels =
           ( if vfView == DiskView then maybe defaultDiskPixelSize (const pixelVal) vfPixelSize else defaultDiskPixelSize
           , if vfView == HalfPlaneView then maybe defaultHalfPlanePixelSize (const pixelVal) vfPixelSize else defaultHalfPlanePixelSize )
     cvViewV      <- newVariable vfView
-    cvRotationV  <- newVariable originalRotation
+    cvGlobeV     <- newVariable originalGlobe
     cvIsometryV  <- newVariable originalIsometry
     -- (on the sphere, the globe is centered on the screen; so is the disk;
     -- the half-plane's real axis is along the window's bottom edge)
@@ -1683,7 +1687,7 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
           Left err -> Left (NoSourceRange, err)
           Right (SomeContext (configOnly :: Context DynamicValue cEnv0)) ->
             -- (with the viewer's view, for a complex viewer)
-            case viewerViewContext vfCoord vfView cvSizeV cvCenterV cvViewV cvRotationV cvIsometryV groupDyn of
+            case viewerViewContext vfCoord vfView cvSizeV cvCenterV cvViewV cvGlobeV cvIsometryV groupDyn of
               Left err -> Left (NoSourceRange, err)
               Right (SomeContext viewCtx) -> case configOnly <#> viewCtx of
                 Left err -> Left (NoSourceRange, err)
@@ -1739,12 +1743,11 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
               , cvCoord = vfCoord
               , cvView = vfView
               , cvViewV = cvViewV
-              , cvRotationV = cvRotationV
+              , cvGlobeV = cvGlobeV
               , cvIsometryV = cvIsometryV
               , cvCenterV = cvCenterV
-              , cvOriginalRotation = originalRotation
+              , cvOriginalGlobe = originalGlobe
               , cvOriginalIsometry = originalIsometry
-              , cvSpherePixelSize = spherePixel
               , cvHyperbolicPixelSizes = hyperbolicPixels
               , cvPixel = cvPixelM
               , cvEscapeRadius = cvEscapeP
@@ -1903,20 +1906,20 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
 
     vCanResize <- getDynamic cvCanResize
     Dimensions (_, height0) <- getDynamic cvSize
+    Dimensions (width0, _) <- getDynamic cvSize
     let vOriginalView = cvView
-        vOriginalRotation = cvOriginalRotation
+        vOriginalGlobe = cvOriginalGlobe
         vOriginalPlaneView = (cvCenter, cvPixelSize)
-        vOriginalSpherePixelSize = cvSpherePixelSize
-        -- (on the sphere, the globe is centered on the screen)
+        -- (on the sphere, the globe is centered on the screen, and fills it)
         (vOriginalCenter, vOriginalPixelSize) = case cvView of
           PlaneView -> vOriginalPlaneView
-          SphereView -> ((0, 0), cvSpherePixelSize)
+          SphereView -> ((0, 0), globeScreenPixelSize (width0, height0))
           DiskView -> ((0, 0), fst cvHyperbolicPixelSizes)
           HalfPlaneView -> displayScreen HalfPlaneDisplay height0 (snd cvHyperbolicPixelSizes)
         vOriginalAspect = cvAspect
         vCoordinate = cvCoord
         vView = cvViewV
-        vRotation = cvRotationV
+        vGlobe = cvGlobeV
         vIsometry = cvIsometryV
         vOriginalIsometry = cvOriginalIsometry
         vOriginalHyperbolicPixelSizes = cvHyperbolicPixelSizes
@@ -1926,6 +1929,9 @@ prepareComplexViewer backend autocolorState someContext configArgs ComplexViewer
     -- shown: see 'shown')
     let vCenter = cvCenterV
     vPixelSize <- newVariable vOriginalPixelSize
+    -- (the globe fills the window, whatever its size)
+    when (cvView == SphereView) $ void $ watchDynamic cvSize $ \(Dimensions wh) ->
+      setValue' vPixelSize (globeScreenPixelSize wh)
     vAspect <- newVariable vOriginalAspect
     vBackendOverride <- newVariable Nothing
 

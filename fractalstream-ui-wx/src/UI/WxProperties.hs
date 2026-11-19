@@ -81,12 +81,15 @@ data ViewerProperties = ViewerProperties
   , vpAspect    :: Maybe Double
     -- ^ A real viewer's pixel height over its width, when it isn't 1.
   , vpView      :: Maybe String
-    -- ^ @sphere@ or @plane@, for a complex viewer showing the other one
-    -- than its script starts with.
+    -- ^ @disk@ or @halfplane@, for a viewer of the hyperbolic plane
+    -- showing the other one than its script starts with.
   , vpRotation  :: Maybe [Double]
     -- ^ On the sphere, the globe's orientation (a unit quaternion: w, x,
-    -- y, z). Its center and pixel size are then on the globe's screen
-    -- plane.
+    -- y, z). The globe fills the window, so its center and pixel size
+    -- aren't saved.
+  , vpZoom      :: Maybe Double
+    -- ^ On the sphere, the globe's zoom (see "Actor.Viewer.Sphere"), when
+    -- it isn't 1.
   , vpIsometry  :: Maybe [Double]
     -- ^ In the disk, the view of the hyperbolic plane (a and b of
     -- s ↦ (a s + b)/(b̄ s + ā): re a, im a, re b, im b). Its center and
@@ -99,7 +102,7 @@ instance FromJSON ViewerProperties where
     <*> o .:? "width" <*> o .:? "height"
     <*> o .:? "resizable" <*> o .:? "visible"
     <*> o .:? "center" <*> o .:? "pixel-size" <*> o .:? "aspect"
-    <*> o .:? "view" <*> o .:? "rotation" <*> o .:? "isometry"
+    <*> o .:? "view" <*> o .:? "rotation" <*> o .:? "zoom" <*> o .:? "isometry"
 
 instance ToJSON ViewerProperties where
   toJSON ViewerProperties{..} = object $ catMaybes
@@ -108,7 +111,7 @@ instance ToJSON ViewerProperties where
     , ("resizable" .=) <$> vpResizable, ("visible" .=) <$> vpVisible
     , ("center" .=) <$> vpCenter, ("pixel-size" .=) <$> vpPixelSize
     , ("aspect" .=) <$> vpAspect
-    , ("view" .=) <$> vpView, ("rotation" .=) <$> vpRotation
+    , ("view" .=) <$> vpView, ("rotation" .=) <$> vpRotation, ("zoom" .=) <$> vpZoom
     , ("isometry" .=) <$> vpIsometry
     ]
 

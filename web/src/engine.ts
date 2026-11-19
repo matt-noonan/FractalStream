@@ -149,6 +149,7 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
         break;
       }
       case "rotate": await engine.fs_rotate(r.viewer, r.fx, r.fy, r.tx, r.ty); break;
+      case "globeZoom": await engine.fs_globe_zoom(r.viewer, r.sx, r.sy, r.factor); break;
       case "diskDrag": await engine.fs_disk_drag(r.viewer, r.fx, r.fy, r.tx, r.ty); break;
       case "set": await engine.fs_set(r.name, r.text); break;
       case "view": await engine.fs_view(r.viewer, r.cx, r.cy, r.pixelSize, r.width, r.height, ...(r.covered ?? [0, 0, 0, 0])); break;
@@ -161,7 +162,7 @@ scope.addEventListener("message", async (e: MessageEvent<Request>) => {
       case "viewerBackend": await engine.fs_viewer_backend(r.viewer, r.backend ?? ""); break;
       case "navigate": await engine.fs_navigate(r.viewer, r.what); break;
       case "record": await engine.fs_record(r.viewer); break;
-      case "jump": await engine.fs_jump(r.viewer, r.x, r.y, r.pixelSize); break;
+      case "jump": await engine.fs_jump(r.viewer, r.x, r.y, r.turn, r.pixelSize); break;
       case "where": await engine.fs_where(r.viewer); break;
       case "captureImage": await engine.fs_capture_image(r.viewer, r.multiplier, r.smooth); break;
       case "movieTemplate": await engine.fs_movie_template(r.viewer); break;

@@ -66,6 +66,8 @@ module Actor.Viewer.Disk
   , displayScreen
   , axisAtBottom
   , viewShowing
+  , viewShowingTurned
+  , viewTurn
   , screenToModelH
   , modelToScreenH
   , dragOnDisplay
@@ -331,6 +333,30 @@ axisAtBottom h px (cx, _) = (cx, fromIntegral h * px / 2)
 viewShowing :: HyperbolicModel -> HyperbolicDisplay -> (Double, Double) -> (Double, Double) -> Isometry
 viewShowing model display c s =
   dragOnDisplay display (isometryFacing (modelToDisk model c)) (displayMiddle display) s
+
+-- | 'viewShowing', with the picture turned counterclockwise by an angle
+-- (in radians) about the screen point @s@.
+viewShowingTurned :: HyperbolicModel -> HyperbolicDisplay -> (Double, Double) -> (Double, Double) -> Double -> Isometry
+viewShowingTurned model display c s angle =
+  let base = viewShowing model display c s
+      m = displayToDiskPoint display s
+      t = translationTo (fst m :+ snd m)
+      r = Isometry (cis (negate angle / 2)) 0
+  in composeIsometry base (composeIsometry t (composeIsometry r (inverseIsometry t)))
+
+-- | How far a view is turned about the screen point @s@, beyond
+-- 'viewShowing' the model point there (as 'viewShowingTurned' turns it):
+-- in radians.
+viewTurn :: HyperbolicModel -> HyperbolicDisplay -> (Double, Double) -> Isometry -> Double
+viewTurn model display s v = case screenToModelH model display v s of
+  Nothing -> 0
+  Just c ->
+    let base = viewShowing model display c s
+        m = displayToDiskPoint display s
+        t = translationTo (fst m :+ snd m)
+        Isometry a _ = composeIsometry (inverseIsometry t)
+                         (composeIsometry (inverseIsometry base) (composeIsometry v t))
+    in negate (2 * phase a)
 
 -- | The model point under a screen point, if it shows the hyperbolic plane.
 screenToModelH :: HyperbolicModel -> HyperbolicDisplay -> Isometry -> (Double, Double) -> Maybe (Double, Double)

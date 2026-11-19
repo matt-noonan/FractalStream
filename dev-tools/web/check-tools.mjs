@@ -1093,6 +1093,41 @@ async function pointer() {
   const centre = await hover(s, 0.5, 0.5);
   const off = await hover(s, 0.01, 0.01);
   c.check(/𝑖$/.test(centre) && off === "…", `on the sphere: ${centre} at the globe's center, and "…" off it`);
+
+  // zooming the globe: it stays put, filling the window, and its view zooms
+  // (the engine's answer opens "Jump to view…", closed again here)
+  const where = async () => {
+    await app.forgetMessages();
+    await app.send({ type: "where", viewer: s });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => document.querySelectorAll(".viewer-form").forEach((f) => f.remove()));
+    return (await app.messages("where")).pop();
+  };
+  const before = await where();
+  const gbox = await app.canvas(s).boundingBox();
+  await page.mouse.move(gbox.x + gbox.width / 2, gbox.y + gbox.height / 2);
+  for (let k = 0; k < 5; k++) await page.mouse.wheel(0, -200);
+  await page.waitForTimeout(1500);
+  const sent = await page.evaluate(() => window.__sent.map((m) => m.type));
+  const after = await where();
+  c.check(sent.includes("globeZoom") && after?.kind === "sphere" && after.pixelSize < before.pixelSize / 2,
+          `scrolling zooms the globe's view (a middle pixel ${before?.pixelSize.toPrecision(3)} -> ${after?.pixelSize.toPrecision(3)} on the sphere)`);
+
+  // "Jump to view…" on the sphere: the point faced (∞ too), the turn, the pixel size
+  await app.activate(s);
+  await page.keyboard.press("@");
+  await page.locator(".viewer-form").waitFor({ timeout: 5000 });
+  const inputs = page.locator(".viewer-form input");
+  c.check((await inputs.count()) === 4, `@ on the sphere asks for the point faced, the turn, and the pixel size (${await inputs.count()} fields)`);
+  await inputs.nth(0).fill("∞");
+  await inputs.nth(1).fill("0");
+  await inputs.nth(2).fill("30");
+  await inputs.nth(3).fill("0.00001");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(1500);
+  const jumped = await where();
+  c.check(jumped && jumped.x === null && Math.abs(jumped.turn - 30) < 1e-6 && Math.abs(jumped.pixelSize / 0.00001 - 1) < 1e-6,
+          `and goes there (facing ${jumped?.x === null ? "∞" : jumped?.x}, turned ${jumped?.turn?.toFixed(3)}, a pixel ${jumped?.pixelSize})`);
 }
 
 async function disk() {

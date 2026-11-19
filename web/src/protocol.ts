@@ -47,6 +47,10 @@ export type Request =
   /** Turn a sphere viewer's globe, as the pointer drags from one screen
       point to another (in units of the sphere's radius, y up). */
   | { type: "rotate"; viewer: number; fx: number; fy: number; tx: number; ty: number }
+  /** Zoom a sphere viewer's globe by a factor (less than 1 zooms in),
+      keeping the point under a screen point (in the sphere's radii, y up)
+      where it is; the globe stays put, filling the window. */
+  | { type: "globeZoom"; viewer: number; sx: number; sy: number; factor: number }
   /** Move a disk viewer's view by the hyperbolic translation that keeps
       the point under the pointer, as it drags from one point of the
       screen plane to another (the disk's drawing, in its radii, y up). */
@@ -72,9 +76,11 @@ export type Request =
   | { type: "navigate"; viewer: number; what: Navigation }
   /** The view as it is now is a step in the viewer's history. */
   | { type: "record"; viewer: number }
-  /** Go to a view: centered on (x, y) (on the sphere, facing it), with a
-      CSS pixel this size. "where" asks where the viewer is now. */
-  | { type: "jump"; viewer: number; x: number; y: number; pixelSize: number }
+  /** Go to a view, as "Jump to view…" sets it: the point in the middle
+      (on the sphere, the one the globe faces; x Infinity for ∞), how far
+      it's turned (degrees counterclockwise; NaN on the plane), and a CSS
+      pixel's size there. "where" asks where the viewer is now. */
+  | { type: "jump"; viewer: number; x: number; y: number; turn: number; pixelSize: number }
   | { type: "where"; viewer: number }
   /** A picture of a viewer (its size times the multiplier), as a PNG: answered by "download". */
   | { type: "captureImage"; viewer: number; multiplier: number; smooth: boolean }
@@ -335,7 +341,10 @@ export type Message =
   | { type: "pointer"; viewer: number; text: string }
   /** The engine moved a viewer's view (a pixel's size in the canvas's pixels). */
   | { type: "view"; viewer: number; cx: number; cy: number; px: number; py: number; sphere: boolean; disk: boolean; halfPlane: boolean }
-  | { type: "where"; viewer: number; x: number; y: number; pixelSize: number }
+  /** Where a viewer is, as "Jump to view…" shows it: x is null for ∞, and
+      turn null on the plane. */
+  | { type: "where"; viewer: number; x: number | null; y: number; turn: number | null; pixelSize: number;
+      kind: "plane" | "sphere" | "hyperbolic" }
   | { type: "aspect"; viewer: number; error: string | null }
   /** A file to save as it is (a picture). */
   | { type: "download"; name: string; bytes: ArrayBuffer }

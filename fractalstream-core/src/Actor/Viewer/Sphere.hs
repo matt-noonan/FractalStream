@@ -33,6 +33,21 @@ module Actor.Viewer.Sphere
   , rotationFacing
   , trackballRotation
   , slerp
+  , rollOf
+    -- * Views: a rotation and a zoom
+  , Globe(..)
+  , noGlobe
+  , globeFacing
+  , globeFacingRolled
+  , globeCenter
+  , trackballGlobe
+  , zoomGlobeAbout
+  , slerpGlobe
+  , minGlobeZoom
+  , maxGlobeZoom
+  , clampGlobeZoom
+  , globeMobius
+  , globeScreenPixelSize
     -- * Points
   , Vec3
   , screenToSphere
@@ -54,7 +69,8 @@ module Actor.Viewer.Sphere
   , sphereBackground
     -- * A viewer's code, on the sphere
   , sphereViewName
-  , rotationNames
+  , globeMobiusNames
+  , sphereZoomName
   , sphereShadingName
   , sphereShading
   , sphereLight
@@ -133,8 +149,19 @@ normalize (a, b, c) = let n = sqrt (a * a + b * b + c * c) in (a / n, b / n, c /
 
 -- | The orientation in which the point @z@ faces the viewer: the
 -- shortest rotation from the one where 0 does.
+--
+-- It's worked out from @z@ itself, not from its point of the sphere, so
+-- that it's exact however near ∞ @z@ is: the turn is by the angle θ with
+-- @tan(θ/2) = |z|@, about the axis @(-y, x, 0)@.
 rotationFacing :: (Double, Double) -> Rotation
-rotationFacing z = rotationBetween (0, 0, 1) (planeToSphere z)
+rotationFacing (a, b)
+  | isInfinite a || isInfinite b = Rotation 0 0 1 0
+  | otherwise =
+      -- (scaled by the larger of |a|, |b| and 1, so that nothing overflows)
+      let m = maximum [1, abs a, abs b]
+          (a', b', one) = (a / m, b / m, 1 / m)
+          n = sqrt (one * one + a' * a' + b' * b')
+      in Rotation (one / n) (negate b' / n) (a' / n) 0
 
 -- | The orientation after dragging the globe, trackball-style, from one
 -- screen point to another (in units of the sphere's radius): the point
@@ -161,19 +188,86 @@ slerp (Rotation w1 x1 y1 z1) (Rotation w2' x2' y2' z2') t
       (s1 * w1 + s2 * sign * w2') (s1 * x1 + s2 * sign * x2')
       (s1 * y1 + s2 * sign * y2') (s1 * z1 + s2 * sign * z2')
 
+------------------------------------------------------------------------
+-- Views: a rotation and a zoom
+
+-- | A sphere viewer's view: the globe's orientation, and its zoom, a
+-- dilation @w -> λ w@ about the point facing the viewer (in the
+-- stereographic coordinate @w@ of the viewer's frame, where that point is
+-- 0). So the point under a pixel of the globe whose own point is @w@ is
+-- the rotation of @λ w@: the Möbius map 'globeMobius'. At @λ = 1@ the
+-- globe shows its front hemisphere as it is; a smaller @λ@ zooms in on the
+-- point in the middle (the rest of the sphere squeezed towards the rim),
+-- and a larger one shows more than a hemisphere.
+data Globe = Globe { globeRotation :: !Rotation, globeZoom :: !Double }
+  deriving (Eq, Show)
+
+noGlobe :: Globe
+noGlobe = Globe noRotation 1
+
+-- | The view facing the point @z@, unzoomed.
+globeFacing :: (Double, Double) -> Globe
+globeFacing z = Globe (rotationFacing z) 1
+
+-- | The view facing the point @z@, turned by an angle (in radians,
+-- counterclockwise) about the line of sight, at a zoom.
+globeFacingRolled :: (Double, Double) -> Double -> Double -> Globe
+globeFacingRolled z angle = Globe (compose (rotationFacing z) (Rotation (cos (angle / 2)) 0 0 (sin (angle / 2))))
+
+-- | The point in the middle of a view (as a complex number: infinite at
+-- ∞).
+-- It's found from the view's Möbius map ('globeMobius'), which takes 0
+-- to @b / d@, so that it's exact however near ∞ it is.
+globeCenter :: Globe -> (Double, Double)
+globeCenter g =
+  let (_, b, _, d) = globeMobius g
+  in if d == 0 then (1 / 0, 0) else let x :+ y = b / d in (x, y)
+
+-- | How far a rotation is turned about the line of sight, beyond the
+-- shortest rotation facing the same point ('rotationFacing'): in radians.
+rollOf :: Rotation -> Double
+rollOf r =
+  let facing = rotationFacing (globeCenter (Globe r 1))
+      (x, y, _) = unrotateBy facing (rotateBy r (1, 0, 0))
+  in atan2 y x
+
+-- | How far a view can zoom in, and out (see 'Globe').
+minGlobeZoom, maxGlobeZoom :: Double
+minGlobeZoom = 1e-14
+maxGlobeZoom = 100
+
+clampGlobeZoom :: Double -> Double
+clampGlobeZoom l = max minGlobeZoom (min maxGlobeZoom l)
+
+-- | A point of the viewer's frame, dilated by @λ@ in its stereographic
+-- coordinate.
+dilate :: Double -> Vec3 -> Vec3
+dilate l p@(x, y, z)
+  | l == 1 = p
+  | otherwise =
+      let (a, b) = sphereToPlane (x, y, z)
+          m = l * l * (a * a + b * b)
+      in if isInfinite a || isInfinite b || isNaN m then (0, 0, -1)
+         else (2 * l * a / (1 + m), 2 * l * b / (1 + m), (1 - m) / (1 + m))
+
 -- | The point of the sphere (in the sphere's frame) under a screen
 -- point, if it's on the globe.
-screenToSphere :: Rotation -> (Double, Double) -> Maybe Vec3
-screenToSphere r (x, y)
+screenToSphere :: Globe -> (Double, Double) -> Maybe Vec3
+screenToSphere g (x, y)
   | d > 1 = Nothing
-  | otherwise = Just (rotateBy r (x, y, sqrt (1 - d)))
+  | otherwise = Just (onGlobe g (x, y, sqrt (1 - d)))
   where d = x * x + y * y
+
+-- | The point of the sphere a point of the globe (in the viewer's frame)
+-- shows.
+onGlobe :: Globe -> Vec3 -> Vec3
+onGlobe (Globe r l) = rotateBy r . dilate l
 
 -- | Where a point of the sphere is on the screen, if it's on the
 -- visible side.
-sphereToScreen :: Rotation -> Vec3 -> Maybe (Double, Double)
-sphereToScreen r p =
-  let (x, y, z) = unrotateBy r p
+sphereToScreen :: Globe -> Vec3 -> Maybe (Double, Double)
+sphereToScreen (Globe r l) p =
+  let (x, y, z) = dilate (1 / l) (unrotateBy r p)
   in if z < 0 then Nothing else Just (x, y)
 
 -- | A point of the sphere as a complex number, @(X + iY) / (1 + Z)@ (as
@@ -191,12 +285,58 @@ planeToSphere (a, b)
       in (2 * a / (1 + m), 2 * b / (1 + m), (1 - m) / (1 + m))
 
 -- | The complex number under a screen point, if it's on the globe.
-screenToPlane :: Rotation -> (Double, Double) -> Maybe (Double, Double)
-screenToPlane r = fmap sphereToPlane . screenToSphere r
+screenToPlane :: Globe -> (Double, Double) -> Maybe (Double, Double)
+screenToPlane g = fmap sphereToPlane . screenToSphere g
 
 -- | Where a complex number is on the screen, if it's on the visible side.
-planeToScreen :: Rotation -> (Double, Double) -> Maybe (Double, Double)
-planeToScreen r = sphereToScreen r . planeToSphere
+planeToScreen :: Globe -> (Double, Double) -> Maybe (Double, Double)
+planeToScreen g = sphereToScreen g . planeToSphere
+
+-- | The view after dragging the globe from one screen point to another
+-- (in units of the sphere's radius): turned so that the point of the
+-- sphere under the first is under the second (a point off the globe
+-- counts as on its rim). Zoomed in, this pans.
+trackballGlobe :: Globe -> (Double, Double) -> (Double, Double) -> Globe
+trackballGlobe g@(Globe r l) from to =
+  let lift (x, y) = let d = x * x + y * y
+                    in onGlobe g (if d >= 1 then normalize (x, y, 0) else (x, y, sqrt (1 - d)))
+  in Globe (compose (rotationBetween (lift to) (lift from)) r) l
+
+-- | The view zoomed by a factor (less than 1 zooms in), keeping the point
+-- of the sphere under a screen point where it is.
+zoomGlobeAbout :: Globe -> (Double, Double) -> Double -> Globe
+zoomGlobeAbout g@(Globe r l) s f =
+  let g' = Globe r (clampGlobeZoom (l * f))
+  in case (screenToSphere g s, screenToSphere g' s) of
+       (Just p, Just p') -> g' { globeRotation = compose (rotationBetween p' p) r }
+       _ -> g'
+
+-- | Interpolate views: the rotations along the sphere, the zooms
+-- geometrically.
+slerpGlobe :: Globe -> Globe -> Double -> Globe
+slerpGlobe (Globe r1 l1) (Globe r2 l2) t = Globe (slerp r1 r2 t) (l1 ** (1 - t) * l2 ** t)
+
+-- | A view as the Möbius map @(a, b, c, d)@ taking a point of the globe
+-- in the viewer's frame, by its homogeneous stereographic coordinates
+-- @[u : v]@ (@w = u / v@), to the point of the sphere it shows:
+-- @[a u + b v : c u + d v]@. It's the rotation's Möbius map (found from
+-- where it takes 0, ∞ and 1), after the dilation by λ.
+globeMobius :: Globe -> (Complex Double, Complex Double, Complex Double, Complex Double)
+globeMobius (Globe r l) =
+  let hom (x, y, z) = if z >= 0 then (x :+ y, (1 + z) :+ 0) else ((1 - z) :+ 0, x :+ negate y)
+      (p0a, p0b) = hom (rotateBy r (0, 0, 1))
+      (pia, pib) = hom (rotateBy r (0, 0, -1))
+      (p1a, p1b) = hom (rotateBy r (1, 0, 0))
+      k = (p0b * p1a - p0a * p1b) / (pia * p1b - pib * p1a)
+      (a, b, c, d) = (k * pia * (l :+ 0), p0a, k * pib * (l :+ 0), p0b)
+      -- (scaled so that the determinant is 1, so the entries are of a size)
+      s = sqrt (a * d - b * c)
+  in (a / s, b / s, c / s, d / s)
+
+-- | The size of a pixel (in units of the sphere's radius) that makes the
+-- globe fill a window of the given size, with a small margin.
+globeScreenPixelSize :: (Int, Int) -> Double
+globeScreenPixelSize (w, h) = 2 / (0.92 * fromIntegral (max 1 (min w h)))
 
 ------------------------------------------------------------------------
 -- How model points reach the screen
@@ -205,7 +345,7 @@ planeToScreen r = sphereToScreen r . planeToSphere
 -- are (the plane), on the globe, with its orientation, or in the
 -- hyperbolic plane, from its model, moved by its view, onto its display
 -- (see "Actor.Viewer.Disk").
-data Projection = FlatProjection | GlobeProjection Rotation
+data Projection = FlatProjection | GlobeProjection Globe
                 | HyperbolicProjection HyperbolicModel HyperbolicDisplay Isometry
   deriving (Eq, Show)
 
@@ -227,7 +367,7 @@ data ScreenView = ScreenView
 projectToScreen :: Projection -> (Double, Double) -> Maybe (Double, Double)
 projectToScreen = \case
   FlatProjection -> Just
-  GlobeProjection r -> planeToScreen r
+  GlobeProjection g -> planeToScreen g
   HyperbolicProjection model display v -> modelToScreenH model display v
 
 -- | The runs of a polyline (in model points) that are visible, on the
@@ -279,10 +419,15 @@ sphereBackground = rgbToColor (48, 48, 48)
 sphereViewName :: String
 sphereViewName = "[internal] sphere view"
 
--- | The names under which a complex viewer's code is given its
--- rotation's matrix, by rows.
-rotationNames :: [String]
-rotationNames = [ "[internal] sphere rotation " ++ show i ++ show j | i <- [1 .. 3 :: Int], j <- [1 .. 3 :: Int] ]
+-- | The names under which a sphere viewer's code is given its view's
+-- Möbius map, @a@, @b@, @c@ and @d@ (see 'globeMobius').
+globeMobiusNames :: [String]
+globeMobiusNames = [ "[internal] sphere view " ++ [k] | k <- "abcd" ]
+
+-- | The name under which a sphere viewer's code is given its zoom (see
+-- 'Globe').
+sphereZoomName :: String
+sphereZoomName = "[internal] sphere zoom"
 
 -- | The name under which a complex viewer's code is told how strongly
 -- to shade the globe, from 0 to 1 (see 'onTheSphere').
@@ -309,10 +454,11 @@ sphereLight = (-1 / n, 1 / n, 1.5 / n)
 sphereViewEntries :: [(String, SomeType)]
 sphereViewEntries = (sphereViewName, SomeType BooleanType)
                   : (sphereShadingName, SomeType RealType)
-                  : [ (n, SomeType RealType) | n <- rotationNames ]
+                  : (sphereZoomName, SomeType RealType)
+                  : [ (n, SomeType ComplexType) | n <- globeMobiusNames ]
 
 -- | A sphere viewer's code (with coordinate @z@), wrapped so that @z@
--- is the point of the globe under the pixel, a point of Ĉ (see
+-- is the point of the sphere under the pixel, a point of Ĉ (see
 -- "Language.Code.Projective"), and a pixel off the globe gets the
 -- background color:
 --
@@ -320,24 +466,28 @@ sphereViewEntries = (sphereViewName, SomeType BooleanType)
 -- >   color <- background
 -- > else:
 -- >   s := sqrt(1 - x² - y²)
--- >   (X, Y, Z) := rotation × (x, y, s)
--- >   z : Ĉ := [X + Y i : 1 + Z]    -- or [1 - Z : X - Y i], for Z < 0
+-- >   u, v := x + y i, 1 + s           -- the globe's own point, [u : v]
+-- >   z : Ĉ := [a u + b v : c u + d v]  -- the view's Möbius map
+-- >   pixel_size <- dx λ (1 + |w|²) / (1 + λ² |w|²)    -- w = u / v
 -- >   body
--- >   light := ((x, y, sqrt(1 - x² - y²)) · L + 1) / 2
+-- >   light := ((x, y, s) · L + 1) / 2
 -- >   color <- blend(1 - shading (1 - light), color, black)
 --
--- The two forms of @z@'s homogeneous coordinates are the same point
--- (as X² + Y² = 1 - Z²), each computed without cancellation on its
--- half of the globe, so that ∞ is exactly @[2 : 0]@. A @z@ the viewer
--- already has (a configuration value of Ĉ) is set, rather than
+-- On the visible side @s >= 0@, so @[u : v]@ is computed without
+-- cancellation, and the Möbius map (the view's rotation after its zoom:
+-- see 'globeMobius') takes it to the exact point of the sphere, ∞
+-- included, however far the view is zoomed in. @pixel_size@ (when the
+-- viewer names it) is a pixel's size on the sphere there: the zoom
+-- shrinks the middle of the globe by λ, less towards the rim. A @z@ the
+-- viewer already has (a configuration value of Ĉ) is set, rather than
 -- declared. For code that's already had its points of the sphere made
--- into pairs (see 'Language.Code.Typecheck.runExpandedCode'), @z@ is
--- the pair. The shading darkens the globe away from the light
--- ('sphereLight', @L@), by the viewer's @[internal] sphere shading@
--- ('sphereShading'): a "half Lambert" light, which falls off gently and
--- never goes all the way to black on the visible side.
-onTheSphere :: String -> Bool -> Bool -> Stmt -> Stmt
-onTheSphere z declared expanded body =
+-- into pairs (see 'Language.Code.Typecheck.runExpandedCode'), @z@ is the
+-- pair. The shading darkens the globe away from the light ('sphereLight',
+-- @L@), by the viewer's @[internal] sphere shading@ ('sphereShading'): a
+-- "half Lambert" light, which falls off gently and never goes all the way
+-- to black on the visible side.
+onTheSphere :: String -> Maybe String -> Bool -> Bool -> Stmt -> Stmt
+onTheSphere z mpx declared expanded body =
   stmt (SIf offGlobe (stmt (SSet "color" background))
                      (stmt (SBlock (lift ++ [body] ++ shade))))
   where
@@ -353,30 +503,35 @@ onTheSphere z declared expanded body =
     background = e (ELit "the background" (SomeHaskellType ColorType sphereBackground))
     i = e (ELit "i" (SomeHaskellType ComplexType (0 :+ 1)))
     s = "[internal] sphere.s"
-    cx = "[internal] sphere.X"
-    cy = "[internal] sphere.Y"
-    cz = "[internal] sphere.Z"
-    rows = chunk rotationNames
-    chunk (a : b : c : rest) = [a, b, c] : chunk rest
-    chunk _ = []
-    row ns = foldr1 (bin OpAdd) (zipWith (\m v -> bin OpMul (var m) v) ns [sx, sy, var s])
+    u = "[internal] sphere.u"
+    v = "[internal] sphere.v"
+    w2 = "[internal] sphere.w2"
+    mobius k = var ("[internal] sphere view " ++ [k])
+    (ma, mb, mc, md) = (mobius 'a', mobius 'b', mobius 'c', mobius 'd')
+    lam = var sphereZoomName
     complex x = e (ECast x ComplexT)
     point a b | expanded = e (EPair (complex a) (complex b))
               | otherwise = e (EHomogeneous [a, b])
-    north = point (bin OpAdd (var cx) (bin OpMul (var cy) i)) (bin OpAdd (real 1) (var cz))
-    south = point (bin OpSub (real 1) (var cz)) (bin OpSub (var cx) (bin OpMul (var cy) i))
     pointT = if expanded then Pair ComplexT ComplexT else ExtComplexT
-    here = e (ECast (e (EITE (bin OpGe (var cz) (real 0)) north south)) pointT)
+    here = e (ECast (point (bin OpAdd (bin OpMul ma (var u)) (bin OpMul mb (var v)))
+                           (bin OpAdd (bin OpMul mc (var u)) (bin OpMul md (var v)))) pointT)
+    -- (a pixel's size on the sphere: the screen's, times the zoom's
+    -- stretch at w)
+    stretch = bin OpDiv (bin OpMul lam (bin OpAdd (real 1) (var w2)))
+                        (bin OpAdd (real 1) (bin OpMul (bin OpMul lam lam) (var w2)))
     lift =
-      [ stmt (SDecl s (Just RealT) (e (EApp "sqrt" (bin OpSub (real 1) d2)))) ]
-      ++ [ stmt (SDecl c (Just RealT) (row ns)) | (c, ns) <- zip [cx, cy, cz] rows ]
+      [ stmt (SDecl s (Just RealT) (e (EApp "sqrt" (bin OpSub (real 1) d2))))
+      , stmt (SDecl u (Just ComplexT) (bin OpAdd sx (bin OpMul sy i)))
+      , stmt (SDecl v (Just RealT) (bin OpAdd (real 1) (var s)))
+      , stmt (SDecl w2 (Just RealT) (bin OpDiv d2 (bin OpMul (var v) (var v)))) ]
+      ++ [ stmt (SSet px (bin OpMul (var "[internal] dx") stretch)) | Just px <- [mpx] ]
       ++ [ stmt (if declared then SDecl z (Just pointT) here else SSet z here) ]
     (lx, ly, lz) = sphereLight
     light = "[internal] sphere.light"
     shading = var sphereShadingName
     facing = foldr1 (bin OpAdd)
       [ bin OpMul (real lx) sx, bin OpMul (real ly) sy
-      , bin OpMul (real lz) (e (EApp "sqrt" (bin OpSub (real 1) d2))) ]
+      , bin OpMul (real lz) (var s) ]
     shade =
       [ stmt (SDecl light (Just RealT) (bin OpDiv (bin OpAdd facing (real 1)) (real 2)))
       , stmt (SSet "color" (e (EColor3 OpBlend

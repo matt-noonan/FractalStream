@@ -1890,15 +1890,22 @@ class ViewerView {
   }
 
   /** Zoom by a factor (of the pixel size: above 1 zooms out) about a point
-      (on the sphere, about the globe's center). */
+      (on the sphere, the globe stays put, filling the window, and its view
+      zooms about the point under the pointer: the engine does that). */
   private zoomBy(factor: number, p0: { x: number; y: number }) {
     const t = this.target;
     if (!t) return;
+    if (this.info.sphere) {
+      const [sx, sy] = this.onScreen(p0);
+      this.frame = null;
+      send({ type: "globeZoom", viewer: this.info.id, sx, sy, factor });
+      this.recordSoon(300);
+      return;
+    }
     const W = this.canvas.width, H = this.canvas.height;
     // (on the half-plane, about the point of the real axis below the
     // pointer, so the axis stays along the window's bottom edge)
-    const p = this.info.sphere ? { x: W / 2, y: H / 2 }
-            : this.info.halfPlane ? { x: p0.x, y: H / 2 + t.cy / t.py } : p0;
+    const p = this.info.halfPlane ? { x: p0.x, y: H / 2 + t.cy / t.py } : p0;
     // the model point under the pointer stays where it is
     const mx = t.cx + (p.x - W / 2) * t.px;
     const my = t.cy - (p.y - H / 2) * t.py;
@@ -2017,18 +2024,29 @@ class ViewerView {
     send({ type: "where", viewer: this.info.id });
   }
 
-  /** Ask where to go: a center (on the sphere, the point to face) and a
-      pixel's size, starting from where it is. */
-  jumpFrom(x: number, y: number, pixelSize: number) {
-    const sphere = this.info.sphere;
-    askForm(this.element, "Jump to view", [
-      { label: sphere ? "Face x =" : "x =", value: String(x) },
-      { label: sphere ? "Face y =" : "y =", value: String(y) },
-      { label: "pixel size =", value: String(pixelSize) },
-    ], (values) => {
-      const [nx, ny, ps] = values.map((v) => Number(v.trim()));
-      if (![nx, ny, ps].every(Number.isFinite) || !(ps > 0)) return "Each should be a number (and the pixel size more than 0).";
-      send({ type: "jump", viewer: this.info.id, x: nx, y: ny, pixelSize: ps });
+  /** Ask where to go, as each kind of viewer describes a view, starting
+      from where it is: the point in the middle (on the sphere, the point
+      the globe faces, which can be ∞), how far the picture is turned about
+      it (not on the plane), and a pixel's size there. */
+  jumpFrom(m: { x: number | null; y: number; turn: number | null; pixelSize: number; kind: "plane" | "sphere" | "hyperbolic" }) {
+    const sphere = m.kind === "sphere";
+    const turned = m.turn !== null;
+    const fields = [
+      { label: sphere ? "Face x =" : "x =", value: m.x === null ? "∞" : String(m.x),
+        note: sphere ? "(∞ for the point at infinity)" : undefined },
+      { label: sphere ? "Face y =" : "y =", value: String(m.y) },
+      ...(turned ? [{ label: "turned (degrees) =", value: String(Number(m.turn!.toPrecision(10))) }] : []),
+      { label: sphere ? "pixel size (on the sphere) =" : "pixel size =", value: String(m.pixelSize) },
+    ];
+    askForm(this.element, "Jump to view", fields, (values) => {
+      const number = (v: string) => ["∞", "inf", "infinity", "Infinity"].includes(v.trim()) ? Infinity : Number(v.trim());
+      const [nx, ny] = [number(values[0]), number(values[1])];
+      const nt = turned ? number(values[2]) : NaN;
+      const ps = number(values[turned ? 3 : 2]);
+      const xOk = Number.isFinite(nx) || (sphere && nx === Infinity);
+      if (!xOk || !Number.isFinite(ny) || (turned && !Number.isFinite(nt)) || !(ps > 0 && Number.isFinite(ps)))
+        return "Each should be a number (and the pixel size more than 0).";
+      send({ type: "jump", viewer: this.info.id, x: nx, y: ny, turn: nt, pixelSize: ps });
       return null;
     });
   }
@@ -2177,7 +2195,7 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
       break;
     case "pointer": viewers.get(m.viewer)?.showPointer(m.text); break;
     case "view": viewers.get(m.viewer)?.moved(m); break;
-    case "where": viewers.get(m.viewer)?.jumpFrom(m.x, m.y, m.pixelSize); break;
+    case "where": viewers.get(m.viewer)?.jumpFrom(m); break;
     case "aspect": viewers.get(m.viewer)?.aspectAnswered(m.error); break;
     case "tableSummary": tableSummaryWaiting?.(m); tableSummaryWaiting = null; break;
     case "download": void capture().then((c) => c.saveDownload(m)); break;

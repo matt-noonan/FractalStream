@@ -925,12 +925,30 @@ all over the globe; for the complex number a point is, use `affine(1, z)`.
 A viewer whose variable is a field, as a parameter space is
 (`var=c`), needs the field to be a point of the sphere too: `c : Ĉ := 0`.
 
-With no rotation, 0 faces you, with the real axis to the right and the
-imaginary axis up, as on the plane; `center=` is the point that faces you
-to start with, and `pixelSize=` is measured on the sphere, whose radius
-is 1 (by default, the globe fills most of the window). Dragging with the
-Navigate tool turns the globe, and scrolling zooms in or out. A viewer
-shows the sphere, or the plane, for good, as its `view=` says.
+The globe always fills the window. With no rotation, 0 faces you, with
+the real axis to the right and the imaginary axis up, as on the plane;
+`center=` is the point that faces you to start with. Dragging with the
+Navigate tool turns the globe (zoomed in, that pans), and scrolling zooms
+in or out about the point under the pointer: zooming is a dilation of the
+sphere about the point facing you, which the globe then shows magnified
+in its middle (and the rest of the sphere squeezed towards its rim).
+Zoomed out, it shows more than half the sphere. The point under each
+pixel is exact however far you zoom in, anywhere on the sphere, ∞
+included. A viewer shows the sphere, or the plane, for good, as its
+`view=` says.
+
+`pixelSize=` is the size of a pixel in the middle of the globe, measured
+on the sphere (whose radius is 1); leave it out to start with the
+front half of the sphere filling the globe. In the code, `pixel_size` is
+the size of that pixel on the sphere, which is smaller towards the
+middle of a zoomed-in globe than near its rim.
+
+"Jump to view…" (`@`) shows and sets the view as each kind of viewer
+describes it: on the plane, the point in the middle and a pixel's size;
+on the sphere, the point the globe faces (`∞` for ∞), how far it's
+turned about it, and the size of a pixel in the middle on the sphere; in
+the hyperbolic plane, the point in the middle, how far the picture is
+turned about it, and a pixel's size.
 
 Tools work the same way on the sphere: the point a click or drag is at is
 a point of `Ĉ`, and drawing at a point of the sphere draws on the globe. A
