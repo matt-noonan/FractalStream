@@ -64,6 +64,7 @@ module Actor.Viewer.Sphere
   , sphereToPlane
   , planeToSphere
   , screenToPlane
+  , farAway
   , planeToScreen
     -- * How model points reach the screen
   , Projection(..)
@@ -404,13 +405,42 @@ planeToSphere (a, b)
       let m = a * a + b * b
       in (2 * a / (1 + m), 2 * b / (1 + m), (1 - m) / (1 + m))
 
--- | The complex number under a screen point, if it's on the globe.
+-- | The complex number under a screen point, if it's on the globe:
+-- worked out from the view's Möbius map, as the kernel does (@A / B@ for
+-- @[A : B] = M [x + iy : 1 + s]@), not through the sphere's 3-D points,
+-- so that it keeps its precision however near ∞ it is. ∞ itself, which
+-- a complex number can't be, is 'farAway'.
 screenToPlane :: Globe -> (Double, Double) -> Maybe (Double, Double)
-screenToPlane g = fmap sphereToPlane . screenToSphere g
+screenToPlane g (x, y)
+  | d > 1 = Nothing
+  | otherwise =
+      let (a, b) = applyGlobe g (x :+ y, (1 + sqrt (1 - d)) :+ 0)
+      in Just (homToPlane (a, b))
+  where d = x * x + y * y
 
--- | Where a complex number is on the screen, if it's on the visible side.
+-- | The complex number with these homogeneous coordinates; for ∞,
+-- 'farAway'.
+homToPlane :: (Complex Double, Complex Double) -> (Double, Double)
+homToPlane (a, b)
+  | magnitude b * farAway <= magnitude a = (farAway, 0)
+  | otherwise = let u :+ v = a / b in (u, v)
+
+-- | The complex number that stands in for ∞ where a point has to be a
+-- complex number (a click on ∞, say): so far out that no view can tell
+-- it from ∞ (a point of the sphere 10⁻¹⁵⁰ from it), and its square still
+-- a finite number, so that working with it on Ĉ goes as it would at ∞.
+farAway :: Double
+farAway = 1e150
+
+-- | Where a complex number is on the screen, if it's on the visible side
+-- (an infinite one, or one beyond 'farAway', is ∞): through the view's
+-- Möbius map, as 'screenToPlane' works, keeping its precision near ∞.
 planeToScreen :: Globe -> (Double, Double) -> Maybe (Double, Double)
-planeToScreen g = sphereToScreen g . planeToSphere
+planeToScreen g (u, v) =
+  let hom | isInfinite u || isInfinite v || u * u + v * v >= farAway * farAway = (1, 0)
+          | otherwise = (u :+ v, 1)
+      (x, y, z) = homToVec (applyGlobe (inverseGlobe g) hom)
+  in if z < 0 then Nothing else Just (x, y)
 
 -- | The view after dragging the globe from one screen point to another
 -- (in units of the sphere's radius): the globe turned rigidly, as it's

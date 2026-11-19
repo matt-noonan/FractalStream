@@ -103,6 +103,23 @@ spec = do
                        _ -> pure ()
                 | g <- globes ]
 
+    it "finds the complex number under a screen point precisely, however deep a zoom near ∞" $
+      sequence_ [ do
+          let g = globeFacingRolled c 0 zoom
+              -- (a screen point a few pixels from the middle, a pixel being
+              -- 1/300 of the globe's radius)
+              sp = (3 / 300, -2 / 300)
+          case screenToPlane g sp >>= planeToScreen g of
+            Just (x, y) -> (abs (x - fst sp) < 1e-9 && abs (y - snd sp) < 1e-9) `shouldBe` True
+            Nothing -> expectationFailure "off the globe"
+        | c <- [(1e6, 1e6), (1e12, -3), (-7, 1e15)], zoom <- [1, 1e-6, 1e-12] ]
+
+    it "takes ∞ to a far-away complex number and back" $ do
+      let g = globeFacing (1 / 0, 0)
+      screenToPlane g (0, 0) `shouldBe` Just (farAway, 0)
+      planeToScreen g (1 / 0, 0) `shouldBe` Just (0, 0)
+      planeToScreen g (farAway, 0) `shouldBe` Just (0, 0)
+
     it "moves a picture from one view to another as the views say" $
       sequence_ [ let f = globeReprojection g1 g2 0.985
                       (ox, oy, seen) = f x y
