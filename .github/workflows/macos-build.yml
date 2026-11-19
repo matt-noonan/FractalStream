@@ -26,6 +26,11 @@ on:
         required: false
         default: true
         type: boolean
+      test:
+        description: 'Run the test suites (core, library, backends, headless UI) after building?'
+        required: false
+        default: false
+        type: boolean
       notarize:
         description: 'Submit the signed app bundle and fsrun to the Apple notary service? (Needs sign.)'
         required: false
@@ -94,13 +99,17 @@ jobs:
     # ~/.stack holds the snapshot's packages and the extra-deps, which
     # change only with what dev-tools/ci/stack-cache-key.sh fingerprints:
     # so it's saved (from main) only when that changes, as soon as they're
-    # built, and the one it replaces is deleted.
+    # built, and the one it replaces is deleted. It holds the test suites'
+    # dependencies too, whether or not this build runs them, so that every
+    # build saves the same thing under a key; the key's -tests marks that.
+    # (Keeping the prefix lets the first such build start from the cache
+    # without them, which it then replaces.)
     - name: Work out the ~/.stack cache's key
       id: stack-key
       run: |
         prefix="${{ runner.os }}-${{ runner.arch }}-stack-${{ inputs.wxwidgets }}-"
         echo "prefix=$prefix" >> $GITHUB_OUTPUT
-        echo "key=$prefix$(dev-tools/ci/stack-cache-key.sh)" >> $GITHUB_OUTPUT
+        echo "key=$prefix$(dev-tools/ci/stack-cache-key.sh)-tests" >> $GITHUB_OUTPUT
 
     - name: Get cached ~/.stack
       id: stack-cache
@@ -117,7 +126,7 @@ jobs:
       id: haskell-deps
       run: |
         cd fractalstream-ui-wx
-        stack build --only-snapshot
+        stack build --only-snapshot --test
 
     # (Saved only from main: a cache saved for a pull request or a tag,
     # such as a release's, can only be restored by that same pull request
@@ -133,17 +142,27 @@ jobs:
       name: Delete the ~/.stack cache this one replaces
       run: dev-tools/ci/prune-caches.sh "${{ steps.stack-key.outputs.prefix }}" "${{ steps.stack-key.outputs.key }}"
 
-    # (fsrun too: it's in the app's stack project)
+    # (fsrun too: it's in the app's stack project. With the test suites
+    # too, when they're run: building them along with the libraries, rather
+    # than after, keeps stack from building the libraries a second time.)
     - name: Build FractalStream and fsrun
+      env:
+        TEST_FLAGS: ${{ inputs.test && '--test --no-run-tests' || '' }}
       run: |
         cd fractalstream-ui-wx
-        stack build
+        stack build $TEST_FLAGS
         mv `find . -name "FractalStream.app"` ../FractalStream.app
         mv ../FractalStream.app/PkgInfo ../FractalStream.app/Contents/PkgInfo
         cp "$(stack path --local-install-root)/bin/fsrun" ../fsrun
 
         cd ../FractalStream.app
         ls -Ra
+
+    - if: ${{ inputs.test }}
+      name: Run the test suites
+      run: |
+        cd fractalstream-ui-wx
+        stack test
 
     - if: ${{ inputs.version != '' }}
       name: Set the app bundle's version
