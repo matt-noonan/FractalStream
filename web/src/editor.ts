@@ -270,7 +270,7 @@ export class ScriptEditor {
     this.script = script;
     this.status = el("div", { className: "editor-status" });
     this.status.addEventListener("click", () => { if (this.status.classList.contains("clickable")) this.goToError(); });
-    const rebuild = el("button", { type: "button", textContent: "Rebuild",
+    const rebuild = el("button", { type: "button", textContent: "Run script",
                                    title: "Build the project again from this script (Ctrl/Cmd-Enter)" });
     const revert = el("button", { type: "button", textContent: "Revert", title: "Go back to the project's script" });
     rebuild.addEventListener("click", () => this.rebuild());

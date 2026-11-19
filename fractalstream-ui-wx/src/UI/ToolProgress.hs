@@ -91,8 +91,9 @@ showRunning owner name worker stopWorker = do
   stopButton <- button p [ text := "Stop" ]
   navigateButton <- button p [ text := "Stop and switch to Navigate" ]
   set d [ layout := container p $ margin 12 $ column 10
-            [ hfill (minsize (sz 360 (-1)) (widget message))
-            , row 8 [ widget spinner, valignCenter (widget seconds) ]
+            [ row 8 [ hfill (minsize (sz 360 (-1)) (widget message))
+                    , widget spinner
+                    , valignCenter (widget seconds) ]
             , row 8 [ hglue, widget stopButton, widget navigateButton ] ] ]
   started <- getCurrentTime
   -- Whether the handler has been asked to stop, and if so, whether to

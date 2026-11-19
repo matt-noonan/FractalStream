@@ -39,9 +39,8 @@ editAutocolor owner st changed closed = do
   groupChoice <- choice p []
   lockBox <- checkBox p [ text := "Lock", tooltip := "Add no new points to this group" ]
   blendBox <- checkBox p [ text := "Blend when no matching point"
-                         , tooltip := "When the group is locked (or full), give points that aren't \
-                                      \near any of its points a blend of its colors, rather than \
-                                      \the color for points not in the group" ]
+                         , tooltip := "When the group is locked or full, give points that aren't \
+                                      \near any of its points a blend of its colors" ]
   clearBtn <- button p [ text := "Clear all" ]
   toleranceEntry <- textEntry p [ text := "", processEnter := True
                                 , tooltip := "How near a point has to be to an entry to get its color" ]

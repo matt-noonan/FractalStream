@@ -12,6 +12,7 @@ packages:
 - ../fractalstream-backend-llvm
 - ../fractalstream-backend-wgsl
 - ../fractalstream-backend-wgpu
+- ../fractalstream-backend-pure
 # (fsrun too, so that CI builds it with the app's build of the core and the
 # backends, rather than building them again in its own project)
 - ../fractalstream-ui-headless

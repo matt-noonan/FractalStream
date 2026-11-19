@@ -184,10 +184,10 @@ withMovieScript defs (SomeContext ctx) script k = do
         _ -> [Stmt sr parsed]
   case [ (r, params) | Stmt r (SProc "animate" params _) <- stmts ] of
     [] -> Left (NoSourceRange, "The script should define the animation as a block, \
-                               \`define animate(t):`, followed by what to do at time t \
-                               \(which goes from 0 to 1).")
+                               \`define animate(t):`, followed by what to do at time `t` \
+                               \as `t` ranges from 0 to 1.")
     [(_, [_])] -> pure ()
-    (r, _) : _ -> Left (r, "`animate` should have one parameter, the time (from 0 to 1): \
+    (r, _) : _ -> Left (r, "`animate` should have one parameter, the time: \
                           \`define animate(t):`.")
   let runIt = Stmt NoSourceRange (SRun "animate" (Just (Syn NoSourceRange (EVar movieTimeName))))
       body = withCommon defs (Stmt sr (SBlock (stmts ++ [runIt])))

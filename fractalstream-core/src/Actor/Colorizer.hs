@@ -112,10 +112,10 @@ builtinColorizers =
       , colorizerCode = Nothing
       }
   , builtin $ unlines
-      [ "@colorizer \"Rainbow\" description=\"Points that escape cycle through \
+      [ "@colorizer \"Rainbow\" description=\"Escaping points will cycle through \
         \the rainbow by iteration count; the rest are black.\""
       , "color_speed : R as \"Iterations per color cycle:\" := 20"
-      , "use_arenberg : Boolean as \"Use the perceptually even Arenberg wheel\" := false"
+      , "use_arenberg : Boolean as \"Use Arenberg rainbow\" := false"
       , "define colorize(t = iterations / color_speed):"
       , "  if stuck:"
       , "    color <- black"
@@ -158,8 +158,8 @@ builtinColorizers =
       ]
   , builtin $ unlines
       [ "@colorizer \"Binary decomposition\" description=\"Smooth color by escape \
-        \time, in different colors where the escaping variable ends up in the upper \
-        \and lower half-planes. Its argument is the variable that escapes.\""
+        \time, in different colors when the escaping variable ends up in the upper \
+        \or lower half-planes. Its argument is the variable that escapes.\""
       , "period : R as \"Iterations per color cycle:\" := 10"
       , degreeDecl
       , "row:"
@@ -181,10 +181,10 @@ builtinColorizers =
       ]
   , withSettingsButton $ builtin $ unlines
       [ "@colorizer \"Autocolor\" description=\"Gives each point its argument ends up \
-        \at a color of its own, the first time it's seen: each root a Newton's \
-        \method converges to, say. Viewers using it share its colors (it uses \
-        \autocolor group 0). Without new entries, a point near none of the \
-        \group's points blends their colors, or (if not blending) gets its miss color. Its argument is the variable that converges.\""
+        \at a color of its own, the first time it's seen.\
+        \Viewers using it share its colors, using autocolor group 0.\
+        \When locked, a point near none of the autocolor points\
+        \can either blends their colors, or use the miss color. Its argument is the variable that converges.\""
       , "allow_new : Boolean as \"Allow new autocolor entries\" := true"
       , "blend_misses : Boolean as \"Blend when no matching point\" := true"
       , "shade : Boolean as \"Shade by iteration count\" := true"

@@ -43,8 +43,6 @@ preferencesWindow available settingsVar = do
   folderText <- staticText libraryTab [ text := "" ]
   chooseButton <- button libraryTab [ text := "Choose..." ]
   useDefaultButton <- button libraryTab [ text := "Use the default" ]
-  note <- staticText libraryTab [ text := "Changing the folder doesn't move any projects: it only \
-                                          \changes where the library browser looks for them." ]
   fontText <- staticText editorTab [ text := "" ]
   chooseFontButton <- button editorTab [ text := "Choose..." ]
   defaultFontButton <- button editorTab [ text := "Use the default" ]
@@ -54,7 +52,7 @@ preferencesWindow available settingsVar = do
   symbolsBox <- checkBox editorTab [ text := "Write scripts with mathematical symbols \
                                      \(\x27F5, \x211D, z\xB2, ...) as they're edited" ]
   numbersBox <- checkBox editorTab [ text := "Show line numbers" ]
-  foldBox <- checkBox editorTab [ text := "Fold blocks of code, not just stanzas and tool handlers" ]
+  foldBox <- checkBox editorTab [ text := "Code folding" ]
   emacsBox <- if emacsKeysByDefault then pure Nothing else
     Just <$> checkBox editorTab [ text := "Emacs-style movement keys (Control-A, Control-E, ...)" ]
 
@@ -63,7 +61,7 @@ preferencesWindow available settingsVar = do
   shadingSlider <- horizontalSlider viewersTab 0 100 defaultSphereShading 240
   shadingText <- staticText viewersTab [ text := "100%" ]
   shadingNote <- staticText viewersTab [ text := "Shades the globe as if it were lit from the upper left. \
-                                                 \At 0% it isn't shaded at all." ]
+                                                 \Use 0% for no shading at all." ]
   -- ...and the order viewers try the backends in (GPU_PLAN.md, G1)
   renderingList <- singleListBox viewersTab [ items := [], size := sz 320 80 ]
   upButton <- button viewersTab [ text := "Move up" ]
@@ -242,7 +240,6 @@ preferencesWindow available settingsVar = do
                 [ label "My projects folder:"
                 , hfill (widget folderText)
                 , row 6 [ widget chooseButton, widget useDefaultButton, hglue ]
-                , hstretch (widget note)
                 , glue
                 ]
             , tab "Editor" $ container editorTab $ margin 12 $ column 8 $

@@ -195,8 +195,8 @@ scanProjectsIn dir = doesDirectoryExist dir >>= \case
             let entry = libraryEntry False (Just path) name contents
             in case (leProblem entry, checkProjectBytes contents) of
                  (Nothing, Left err) -> entry
-                   { leProblem = Just ("This project has an error in its script (open it \
-                                       \to fix it):\n\n" ++ err) }
+                   { leProblem = Just ("This project has an error in its script; open it \
+                                       \to fix it:\n\n" ++ err) }
                  _ -> entry)
 
 
@@ -210,7 +210,7 @@ libraryEntry isStart file name contents = LibraryEntry
   , leContents = contents
   , leStartingPoint = isStart
   , leFile = file
-  , leProblem = either (\err -> Just ("This file couldn't be read as a FractalStream project: it " ++ err ++ "."))
+  , leProblem = either (\err -> Just ("This file couldn't be read as a FractalStream project: " ++ err))
                        (const Nothing) parsed
   , leCanOpen = either (const False) (const True) parsed
   }

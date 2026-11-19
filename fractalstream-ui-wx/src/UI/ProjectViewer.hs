@@ -189,7 +189,7 @@ askColorizerArguments :: Frame a -> String -> [(String, String, String)] -> IO (
 askColorizerArguments f name params = do
   d <- dialog f [ text := name ]
   p <- panel d []
-  ok <- button p [ text := "Ok" ]
+  ok <- button p [ text := "OK" ]
   cancel <- button p [ text := "Cancel" ]
   fields <- forM params $ \(param, _, current) -> textEntry p [ text := current, tooltip := param ]
   let fieldRow (param, note, _) field = row 5
@@ -1885,7 +1885,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                                      \degrees, counterclockwise), and a pixel's size."
           d <- dialog f [ text := "Jump to view..." ]
           jp <- panel d []
-          jOk <- button jp [ text := "Ok" ]
+          jOk <- button jp [ text := "OK" ]
           jCancel <- button jp [ text := "Cancel" ]
           jCenterX <- textEntry jp [ text := shownNumber oldX ]
           jCenterY <- textEntry jp [ text := shownNumber oldY ]
@@ -1924,7 +1924,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           let (px, py) = modelPixelDim oldModel
           d <- dialog f [ text := "Aspect ratio..." ]
           aPanel <- panel d []
-          aOk <- button aPanel [ text := "Ok" ]
+          aOk <- button aPanel [ text := "OK" ]
           aCancel <- button aPanel [ text := "Cancel" ]
           aSquare <- button aPanel [ text := "Square pixels" ]
           aEntry <- textEntry aPanel [ text := printf "%g" (py / px) ]
@@ -2847,7 +2847,7 @@ takePicture f v0 = do
   p <- panel d []
   mbox <- textEntry p [ text := "1" ]
   cbox <- checkBox  p [ text := "Use subpixel smoothing?", checkable := True, checked := True ]
-  ok     <- button p [ text := "Ok" ]
+  ok     <- button p [ text := "OK" ]
   cancel <- button p [ text := "Cancel" ]
   p' <- panel p []
   txt <- staticText p' [ text := "Choose any resolution adjustments for the saved picture" ]

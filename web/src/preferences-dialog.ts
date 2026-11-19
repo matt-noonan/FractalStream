@@ -43,7 +43,6 @@ export function showPreferences() {
     el("div", { className: "page-dialog-box prefs-dialog" },
       el("div", { className: "form-title", textContent: "Preferences" }),
       tabRow, body,
-      el("p", { className: "prefs-note", textContent: "These are this browser's, for every project." }),
       el("div", { className: "form-buttons" }, el("span", { className: "form-gap" }), done)));
   dialog.setAttribute("aria-label", "Preferences");
   dialog.addEventListener("keydown", (e) => {

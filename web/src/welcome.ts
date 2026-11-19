@@ -57,7 +57,7 @@ export class Welcome {
 
   constructor(private readonly host: WelcomeHost) {
     const newButton = el("button", { type: "button", textContent: "New project",
-                                     title: "Start a project from one of the starting points" });
+                                     title: "Start a new project from one of the starting points" });
     newButton.addEventListener("click", () => this.chooseSection(this.sections.findIndex((s) => s.startingPoints)));
     const openFile = el("button", { type: "button", textContent: "Open a file…", title: "Open a FractalStream project file (⌘O)" });
     openFile.addEventListener("click", () => host.openFile());

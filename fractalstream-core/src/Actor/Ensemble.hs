@@ -293,7 +293,7 @@ loadProjectBytes path bytes = case projectArchive bytes of
       forM_ tableWarnings $ \w -> hPutStrLn stderr ("warning: " ++ quoted path ++ ": " ++ w)
       when (KM.member "tables" o) $
         hPutStrLn stderr ("warning: " ++ quoted path ++ ": ignoring its `tables:`: a project's tables "
-                          ++ "are kept in a .fsz archive now (see PROJECT_FILES.md)")
+                          ++ "should be stored in a .fsz archive.")
       setValue' (ensembleSavedTables ens) saved
       -- An unreadable `autocolor:` only costs its colors, which will be
       -- given out again as they're needed.

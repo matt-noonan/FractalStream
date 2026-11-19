@@ -81,15 +81,15 @@ pass
       [r|
 @viewer "Mandelbrot Set" var=C size=500x500
 pass
-|] `shouldFailWith` "`size` attribute is no longer part of a `@viewer` header"
+|] `shouldFailWith` "`size` attribute is no longer part of a `@viewer` stanza"
       [r|
 @viewer "Mandelbrot Set" var=C position="10x20"
 pass
-|] `shouldFailWith` "wx-properties"
+|] `shouldFailWith` "`position` attribute is no longer part of a `@viewer` stanza"
       [r|
 @viewer "Mandelbrot Set" var=C resizable=false
 pass
-|] `shouldFailWith` "wx-properties"
+|] `shouldFailWith` "`resizable` attribute is no longer part of a `@viewer` stanza"
 
     it "defaults a viewer's `var` to `z` when the attribute is omitted" $
       shouldParseTo [r|
@@ -161,13 +161,13 @@ text "Here is some text"
       [r|
 @config "Configuration"
 button "Reset"
-|] `shouldFailWith` "can't have a button"
+|] `shouldFailWith` "Buttons can only"
       [r|
 @config "Configuration"
 tab "A":
   row:
     button "Reset"
-|] `shouldFailWith` "can't have a button"
+|] `shouldFailWith` "Buttons can only"
 
     it "decodes escape sequences in text" $
       shouldParseTo "@config \"C\"\ntext \"say \\\"hi\\\" \\\\ bye\"\n" $ \case

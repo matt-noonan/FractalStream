@@ -642,17 +642,14 @@ errorCalled :: Frame a -> ErrorCall -> IO ()
 errorCalled projectWindow (ErrorCall msg) =
   fatalErrorDialog projectWindow "Internal error" $ \p -> withFontStyle fontFixed $ \fnt -> do
     txt <- staticText p
-      [ text := unlines
-        [ "Oh my."
-        , ""
-        , "There was an uncaught internal error:" ]]
+      [ text := "There was an uncaught internal error:" ]
     moreTxt <- styledTextCtrl p []
     styledTextCtrlStyleSetFont moreTxt 0 fnt
     styledTextCtrlSetText moreTxt msg
     yetMoreTxt <- staticText p
       [ text := unlines
         [ ""
-        , "Perhaps you should report this at"
+        , "You can report this error at"
         , "https://github.com/matt-noonan/FractalStream/issues"
         ]
       ]

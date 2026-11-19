@@ -85,7 +85,7 @@ spec = do
         ["  diff(z, im z)"
         ,"          ^^^^"
         ,""
-        ,"`im` isn't holomorphic, so it has no derivative with respect to the complex variable `z` (with respect to a real variable, it would)."])
+        ,"`im` isn't holomorphic, so it has no derivative with respect to the complex variable `z`."])
       parseC 1 "diff(z, |z|)" `shouldSatisfy` either ("|·| isn't holomorphic" `isInfixOf`) (const False)
       parseR 2.5 "diff(x, floor(x))" `shouldSatisfy` either ("which jumps" `isInfixOf`) (const False)
 

@@ -135,10 +135,9 @@ differentiateWith env e@(Syn sr node)
     jumps what = advise sr ("`diff` can't follow `" ++ x ++ "` through " ++ what
                             ++ ", which jumps, so has no derivative there.")
     notHolomorphic what = advise sr (what ++ " isn't holomorphic, so it has no derivative with \
-                                     \respect to the complex variable `" ++ x ++ "` (with respect to \
-                                     \a real variable, it would).")
+                                     \respect to the complex variable `" ++ x ++ "`.")
     throughData = advise sr ("`diff` can't follow `" ++ x ++ "` through an item of a list or \
-                             \table: work its derivative out alongside it instead.")
+                             \table: work its derivative out manually instead.")
 
 -- | The variables an expression's value depends on, in a way a derivative
 -- could follow: not through conditions (which pick a branch, and aren't

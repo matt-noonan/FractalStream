@@ -178,8 +178,7 @@ stanzaFunctionScopes = go Set.empty
     scopeError f n usr = Stmt usr (SDecl "[internal] function scope" Nothing (Syn usr (EAdvice
       ("`" ++ n ++ "` is a variable of this " ++ "stanza's own code, so the function `" ++ f
        ++ "` can't use it: a function sees only its parameters, its own variables, and the \
-          \project's names (from @config and @common, and the viewer's or tool's variables). \
-          \Give `" ++ f ++ "` a parameter for it."))))
+          \project's names (from @config and @common, and the viewer's or tool's variables)."))))
 
 -- | Record the names of the functions defined (by @f(...) := ...@)
 -- anywhere in the given tokens, so that the grammar can parse calls to
