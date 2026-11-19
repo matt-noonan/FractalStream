@@ -11,6 +11,8 @@ module UI.EditorStyle
   , classStyle
   , defaultClassStyle
   , editorBackground
+  , errorNoteStyle
+  , errorColor
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -69,6 +71,9 @@ setupStyles stc isLight settings = do
   forM_ (setEditorFontSize settings) (styledTextCtrlStyleSetSize stc 32)
   styledTextCtrlStyleClearAll stc
   styledTextCtrlStyleSetSpec stc 33 lineNumbers
+  -- an error's note, under its line ("UI.CodeEditor.showErrorNote")
+  styledTextCtrlStyleSetSpec stc errorNoteStyle
+    (if isLight then "fore:#7a1010,back:#fbe6e6" else "fore:#ffc0c0,back:#3a1e24")
   forM_ [minBound .. maxBound] $ \h -> do
     let Style{..} = classStyle isLight settings h
         n = styleFor h
@@ -77,6 +82,16 @@ setupStyles stc isLight settings = do
     styledTextCtrlStyleSetBold stc n stBold
     styledTextCtrlStyleSetItalic stc n stItalic
     styledTextCtrlStyleSetUnderline stc n stUnderline
+
+-- | The style of an error's note, under its line: past the classes'
+-- styles, and Scintilla's own (32 to 39).
+errorNoteStyle :: Int
+errorNoteStyle = 50
+
+-- | The color errors are marked in (their squiggles, and the margin's
+-- mark), in a light window or a dark one, as red, green and blue.
+errorColor :: Bool -> (Word8, Word8, Word8)
+errorColor isLight = if isLight then (0xd0, 0x20, 0x20) else (0xff, 0x60, 0x60)
 
 -- | Show line numbers in an editor's margin, or not. (Its width depends
 -- on the font: this goes after 'setupStyles'.)

@@ -60,7 +60,7 @@ import Actor.Layout (CodeString(..))
 import Graphics.UI.WXCore.WxcClasses (styledTextCtrlGetText)
 
 import UI.ShowInFileManager (openWithDefaultApp)
-import UI.Widgets (wxTimer, onOwnDestroy, scriptWidgetWith)
+import UI.Widgets (wxTimer, onOwnDestroy, scriptWidgetWith, ScriptWidget(..))
 
 import Control.Concurrent.Async (async, cancel, poll, AsyncCancelled(..))
 import Control.Exception (SomeException, displayException, try, finally, fromException)
@@ -188,12 +188,13 @@ makeMovieDialog owner project@MovieProject{..} fromTitle source = do
           scriptSource <- newVariable (CodeString initial)
           scriptCheck <- newMapped
             (pure (\(CodeString s) -> checkMovieScript defs mpConfig s)) scriptSource
-          (editor, problem) <- scriptWidgetWith (movieScriptNames defs mpConfig) p scriptCheck
+          sw <- scriptWidgetWith (movieScriptNames defs mpConfig) p scriptCheck
+          let editor = swEditor sw
           let getScript = styledTextCtrlGetText editor
           pure ( column 5
                    [ hfill (label "Run this script for each frame, with the argument going from 0 to 1:")
                    , fill (minsize (sz 460 110) (widget editor))
-                   , hfill (widget problem) ]
+                   , hfill (widget (swStatus sw)) ]
                , \_ -> case defsOrError of
                    Left err -> pure (Left err)
                    Right _ -> getScript >>= scriptAnimation defs mpConfig

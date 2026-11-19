@@ -1059,6 +1059,22 @@ Key modules:
   generated from the *installed* wxc headers when wxcore is configured,
   and stack caches wxcore by its own sources: a new wxc function needs
   wxc reinstalled, and a change under `wxcore/` for stack to rebuild it.
+- An error in a code editor (`UI.Widgets.scriptWidget`, returning a
+  `ScriptWidget`) is underlined, its line marked with a red dot in
+  margin 1 (`markErrorLine`), and summed up on one line under the editor
+  (`swStatus`, cut short with "…"; clicking it goes to the error, as do
+  Edit > Go to Error and F8). Its whole message goes in a boxed note under
+  its line: a Scintilla annotation (`UI.CodeEditor.showErrorNote`, set
+  through `styledTextCtrlSendMsgString`, the fork's string-taking
+  SendMsg, since SendMsg's ints can't hold a pointer). The note shows once
+  the cursor's off the error's line, or the editor isn't focused; clicking
+  the dot shows or hides it from then on, until there's no error.
+  Annotations don't wrap, so `errorNoteLayout` wraps the message to the
+  editor's width, and places the carets under the error in pixels (a boxed
+  note starts at the line's indentation, and the font needn't be
+  monospaced). A Rebuild's error (`swRebuildError`) is shown the same way
+  while the text is what was rebuilt. The web editor (`web/src/editor.ts`)
+  does the same with a gutter, a block widget and its arrow (`placeNote`).
 - Code editors' font is the `editor-font` / `editor-font-size` settings
   (`FractalStream.Settings.editorFont`; by default DejaVu Sans, which
   covers the symbols scripts use where Consolas and Monaco don't: Scintilla

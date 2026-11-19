@@ -5,6 +5,9 @@ module UI.CodeEditor
   , refreshFolds
   , markError
   , clearError
+  , showErrorNote
+  , markErrorLine
+  , errorNoteLayout
   , frameIsLight
   , editorOffsetMap
   ) where
@@ -16,7 +19,7 @@ import Data.DynamicValue
 import Actor.Layout (CodeString(..))
 import UI.EditorKeys
 import UI.SymbolEntry
-import UI.EditorStyle (setupStyles, showLineNumbers)
+import UI.EditorStyle (setupStyles, showLineNumbers, errorNoteStyle, errorColor)
 import Language.Editor (indentUnit, visibleSpan)
 import UI.AppSettings (appSettings)
 import FractalStream.Settings (Settings(..))
@@ -48,25 +51,33 @@ editorOffsetMap = Map.fromList . go 0 . zip [0..]
       [] -> []
       ((src, c) : cs) -> (src, tgt) : go (tgt + BS.length (Utf8.fromChar c)) cs
 
-codeEditor :: Window a -> Mapped CodeString (Either (SourceRange, String) t) -> IO (StyledTextCtrl ())
-codeEditor cep code = do
+-- | An editor for a script, with what clicking the margin's mark of an
+-- error does (given the line clicked).
+codeEditor :: Window a -> Mapped CodeString (Either (SourceRange, String) t) -> (Int -> IO ())
+           -> IO (StyledTextCtrl ())
+codeEditor cep code onErrorMarkClick = do
   CodeString txt <- getDynamic (source code)
-  codeEditorWithText cep txt
+  codeEditorWithText cep txt onErrorMarkClick
 
--- | The margin used for the fold margin (0 is line numbers; 1 is
--- unused).
-foldMarginIndex :: Int
+-- | The editor's margins: 0 is line numbers, 1 marks the line with an
+-- error, and 2 is for folding.
+errorMarginIndex, foldMarginIndex :: Int
+errorMarginIndex = 1
 foldMarginIndex = 2
+
+-- | The marker that marks the line with an error (in the error margin;
+-- the fold margin's are 25 to 31).
+errorMarker :: Int
+errorMarker = 0
 
 -- | The styled-text-control setup shared by every code\/script editor in
 -- this UI, taking the initial text directly rather than through a
 -- 'Mapped' -- for a caller whose own reactivity can't be expressed as a
 -- 'Mapped' (its recompute step is an 'IO' action, e.g. allocating fresh
 -- 'Variable's, not a pure function of the source text).
-codeEditorWithText :: Window a -> String -> IO (StyledTextCtrl ())
-codeEditorWithText cep txt = do
+codeEditorWithText :: Window a -> String -> (Int -> IO ()) -> IO (StyledTextCtrl ())
+codeEditorWithText cep txt onErrorMarkClick = do
     stc <- styledTextCtrl cep [ clientSize := sz 100 100 ]
-    styledTextCtrlSetMarginWidth stc 1 0
     -- see Style Definition at https://www.scintilla.org/ScintillaDoc.html#Styling
     isLight <- frameIsLight cep
     -- each class of span its own style ("UI.EditorStyle")
@@ -111,6 +122,20 @@ codeEditorWithText cep txt = do
     styledTextCtrlSetMarginWidth stc foldMarginIndex 16
     styledTextCtrlSetFoldFlags stc wxSTC_FOLDFLAG_LINEBEFORE_CONTRACTED
 
+    -- The error margin: a red dot on the line with an error, which can
+    -- be clicked (to show its message, or hide it: see 'showErrorNote').
+    let (er, eg, eb) = errorColor isLight
+    styledTextCtrlSetMarginType stc errorMarginIndex wxSTC_MARGIN_SYMBOL
+    styledTextCtrlSetMarginMask stc errorMarginIndex (2 ^ errorMarker)
+    styledTextCtrlSetMarginSensitive stc errorMarginIndex True
+    styledTextCtrlSetMarginWidth stc errorMarginIndex 12
+    styledTextCtrlMarkerDefine stc errorMarker wxSTC_MARK_CIRCLE (rgb er eg eb) (rgb er eg eb)
+    -- (an arrow, not the reversed one Scintilla's margins have, since
+    -- this isn't for selecting lines)
+    void (styledTextCtrlSendMsg stc sciSetMarginCursorN errorMarginIndex sciCursorArrow)
+    -- An error's message goes in a box under its line.
+    void (styledTextCtrlSendMsg stc sciAnnotationSetVisible sciAnnotationBoxed 0)
+
     -- symbols typed by name ("UI.SymbolEntry")
     symbols <- symbolEntry stc isLight
     -- where the cursor was ("UI.EditorKeys.keepCursorOnCharacters")
@@ -120,6 +145,8 @@ codeEditorWithText cep txt = do
       STCMarginClick _ _ _ pos clickedMargin | clickedMargin == foldMarginIndex -> do
         lineNum <- styledTextCtrlLineFromPosition stc pos
         styledTextCtrlToggleFold stc lineNum
+      STCMarginClick _ _ _ pos clickedMargin | clickedMargin == errorMarginIndex ->
+        styledTextCtrlLineFromPosition stc pos >>= onErrorMarkClick
       STCCharAdded c _ -> symbolCharAdded symbols c
       STCModified pos modType _ len _ _ _ _ -> symbolTextModified symbols pos modType len
       STCUpdateUI -> do
@@ -135,8 +162,7 @@ codeEditorWithText cep txt = do
     -- key, so changing it applies to editors that are already open)
     -- errors are underlined with a red squiggle
     styledTextCtrlIndicatorSetStyle stc errorIndicator sciIndicSquigglePixmap
-    styledTextCtrlIndicatorSetForeground stc errorIndicator
-      (if isLight then rgb 0xd0 0x20 (0x20 :: Word8) else rgb 0xff 0x60 (0x60 :: Word8))
+    styledTextCtrlIndicatorSetForeground stc errorIndicator (rgb er eg eb)
 
     handleEditorKeys stc symbols $ if emacsKeysByDefault then pure True
                           else setEmacsKeys <$> getDynamic appSettings
@@ -195,7 +221,72 @@ clearError stc = do
   void (styledTextCtrlSendMsg stc sciSetIndicatorCurrent errorIndicator 0)
   void (styledTextCtrlSendMsg stc sciIndicatorClearRange 0 docLen)
 
+-- | Show an error's note under a line (its lines of text: see
+-- "Language.Editor.errorNote"), or no note. There's only ever one note:
+-- this replaces any other.
+--
+-- (Scintilla's annotations: drawn under their line, in the error
+-- note's style, moving with the line as the text is edited.)
+showErrorNote :: StyledTextCtrl a -> Maybe (Int, [String]) -> IO ()
+showErrorNote stc note = do
+  void (styledTextCtrlSendMsg stc sciAnnotationClearAll 0 0)
+  forM_ note $ \(lineNum, noteLines) -> do
+    void (styledTextCtrlSendMsgString stc sciAnnotationSetText lineNum (intercalate "\n" noteLines))
+    void (styledTextCtrlSendMsg stc sciAnnotationSetStyle lineNum errorNoteStyle)
+
+-- | Mark the line with an error in the margin, or no line.
+markErrorLine :: StyledTextCtrl a -> Maybe Int -> IO ()
+markErrorLine stc lineNum = do
+  styledTextCtrlMarkerDeleteAll stc errorMarker
+  forM_ lineNum $ \l -> void (styledTextCtrlMarkerAdd stc l errorMarker)
+
+-- | How to lay out an error's note under a line, given where the error
+-- is in it (byte positions, the end not included), if anywhere: how many
+-- columns wide the note can be, to fit in the editor as it is now (a
+-- note doesn't wrap, as the text does), and where its carets go under
+-- the error, as how many spaces go before them and how many there are
+-- (see "Language.Editor.errorNote").
+--
+-- Scintilla draws a boxed note from the line's indentation, and the
+-- font may not be monospaced, so that's found from where they are on
+-- the screen; no carets, if the error isn't in the first row of a line
+-- that wraps.
+errorNoteLayout :: StyledTextCtrl a -> Int -> Maybe (Int, Int) -> IO (Int, Maybe (Int, Int))
+errorNoteLayout stc lineNum span' = do
+  indentPos <- styledTextCtrlGetLineIndentPosition stc lineNum
+  let pointAt pos = (,) <$> styledTextCtrlSendMsg stc sciPointXFromPosition 0 pos
+                        <*> styledTextCtrlSendMsg stc sciPointYFromPosition 0 pos
+      widthOf t = max 1 <$> styledTextCtrlTextWidth stc errorNoteStyle t
+  (x0, y0) <- pointAt indentPos
+  Size w _ <- get stc clientSize
+  digit <- widthOf "0"
+  spaceWidth <- widthOf " "
+  caretWidth <- widthOf "^"
+  let width = max 20 ((w - x0) `div` digit - 3)
+      near :: Int -> Int -> Int
+      near a b = round (fromIntegral a / fromIntegral b :: Double)
+  carets <- case span' of
+    Nothing -> pure Nothing
+    Just (from, to) -> do
+      (xs, ys) <- pointAt from
+      (xe, ye) <- pointAt to
+      pure $ if ys /= y0 || ye /= y0 then Nothing
+             else Just (near (xs - x0) spaceWidth, max 1 (near (xe - xs) caretWidth))
+  pure (width, carets)
+
 -- Scintilla's numbers for these (from Scintilla.h)
+sciAnnotationSetText, sciAnnotationSetStyle, sciAnnotationClearAll, sciAnnotationSetVisible :: Int
+sciAnnotationSetText = 2540
+sciAnnotationSetStyle = 2542
+sciAnnotationClearAll = 2547
+sciAnnotationSetVisible = 2548
+sciPointXFromPosition, sciPointYFromPosition :: Int
+sciPointXFromPosition = 2164
+sciPointYFromPosition = 2165
+sciAnnotationBoxed, sciSetMarginCursorN, sciCursorArrow :: Int
+sciAnnotationBoxed = 2
+sciSetMarginCursorN = 2248
+sciCursorArrow = 2
 sciSetIndicatorCurrent, sciIndicatorFillRange, sciIndicatorClearRange, sciIndicSquigglePixmap :: Int
 sciSetIndicatorCurrent = 2500
 sciIndicatorFillRange = 2504
