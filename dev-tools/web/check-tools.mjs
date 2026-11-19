@@ -931,7 +931,7 @@ async function editor() {
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type("\n@viewer");
   await app.forgetMessages();
-  await page.locator(".editor-buttons button", { hasText: "Rebuild" }).click();
+  await page.locator(".editor-buttons button", { hasText: "Run script" }).click();
   await app.waitForMessage("(m) => m.type === 'rebuildError'", 30000).catch(() => {});
   c.check((await app.messages("rebuildError")).length === 1 && (await app.messages("project")).length === 0 && /⚠|error|expected/i.test(await status()),
           `one that doesn't build says why, and leaves the project (${await status()})`);
@@ -1030,7 +1030,7 @@ async function opening() {
   for (let i = 0; i < 2; i++) await page.keyboard.press("Backspace");
   await page.waitForFunction(() => !document.querySelector(".editor-status.error"), null, { timeout: 10000 }).catch(() => {});
   await app.forgetMessages();
-  await page.locator(".editor-buttons button", { hasText: "Rebuild" }).click();
+  await page.locator(".editor-buttons button", { hasText: "Run script" }).click();
   const fixed = await app.opened().catch(() => null);
   c.check(fixed?.viewers.length === 1 && !(await editorShown()), "fixed and rebuilt, its viewer comes, and the editor closes");
   const field = page.locator(".panel input[type=text]").first();
