@@ -1073,10 +1073,9 @@ viewerViewContext coord view0 sizeV centerV viewV globeV isometryV mgroup = fold
       ComplexCoordinate _ | view0 == SphereView ->
         (sphereViewName, LiveValue BooleanType (pure True))
         : (sphereShadingName, LiveValue RealType (dyn sphereShading))
-        : (sphereZoomName, LiveValue RealType (globeZoom <$> dyn globeV))
-        : [ (n, LiveValue ComplexType ((!! k) . globeEntries <$> dyn globeV)) | (k, n) <- zip [0 ..] globeMobiusNames ]
+        : [ (n, LiveValue ComplexType ((!! k) . mobiusList <$> dyn globeV)) | (k, n) <- zip [0 ..] globeMobiusNames ]
       ComplexCoordinate _ -> []
-    globeEntries g = let (a, b, c, d) = globeMobius g in [a, b, c, d]
+    mobiusList g = let (a, b, c, d) = globeMobius g in [a, b, c, d]
     addOne :: SomeContext DynamicValue -> (String, LiveValue) -> Either String (SomeContext DynamicValue)
     addOne (SomeContext acc) (name, LiveValue ty v) = withKnownType ty $ case someSymbolVal name of
       SomeSymbol nameProxy -> case acc <#> Bind nameProxy ty v EmptyContext of
@@ -1585,8 +1584,8 @@ buildComplexViewer contextDyn myTools n ViewerFields{..} =
     -- `pixelSize=` is the size on the sphere of a pixel in the middle,
     -- which the zoom sets (a pixel there is the zoom times the screen's).
     let globePixel = globeScreenPixelSize (600, 600)
-        originalGlobe = (globeFacing centerVal)
-          { globeZoom = maybe 1 (const (clampGlobeZoom (pixelVal / globePixel))) vfPixelSize }
+        originalGlobe = globeFacingRolled centerVal 0
+          (maybe 1 (const (clampGlobeZoom (pixelVal / globePixel))) vfPixelSize)
         originalIsometry = isometryFacing (modelToDisk (hyperbolicModel vfView) centerVal)
         planePixel = case vfView of
           PlaneView -> pixelVal

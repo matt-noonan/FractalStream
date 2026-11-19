@@ -44,27 +44,29 @@ let `[internal] vanishing radius` = vanishing_radius in:
                       block:
                         let `[internal] sphere.v` = (1.0 + [internal] sphere.s) in:
                           block:
-                            let `[internal] sphere.w2` = ((([internal] x * [internal] x) + ([internal] y * [internal] y)) / ([internal] sphere.v * [internal] sphere.v)) in:
+                            let `[internal] sphere.A` = (([internal] sphere view a * [internal] sphere.u) + ([internal] sphere view b * [internal] sphere.v:C)) in:
                               block:
-                                set `pixel_size` := ([internal] dx * (([internal] sphere zoom * (1.0 + [internal] sphere.w2)) / (1.0 + (([internal] sphere zoom * [internal] sphere zoom) * [internal] sphere.w2))))
-                                let `z` = let [internal] sphere.scaled #1 = let [internal] sphere.point #0 = ((([internal] sphere view a * [internal] sphere.u) + ([internal] sphere view b * [internal] sphere.v:C)), (([internal] sphere view c * [internal] sphere.u) + ([internal] sphere view d * [internal] sphere.v:C))) in ((1st [internal] sphere.point #0), (2nd [internal] sphere.point #0)) in if (((re((2nd [internal] sphere.scaled #1)) * re((2nd [internal] sphere.scaled #1))) + (im((2nd [internal] sphere.scaled #1)) * im((2nd [internal] sphere.scaled #1)))) < ((re((1st [internal] sphere.scaled #1)) * re((1st [internal] sphere.scaled #1))) + (im((1st [internal] sphere.scaled #1)) * im((1st [internal] sphere.scaled #1))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #1) / (1st [internal] sphere.scaled #1))) else (((1st [internal] sphere.scaled #1) / (2nd [internal] sphere.scaled #1)), 1.0 :+ 0.0) in:
+                                let `[internal] sphere.B` = (([internal] sphere view c * [internal] sphere.u) + ([internal] sphere view d * [internal] sphere.v:C)) in:
                                   block:
-                                    block:
-                                      let `[internal] fresh #30` = 0 in:
-                                        let `[internal] fresh #31` = [internal] iteration limit in:
-                                          block:
-                                            if (!let [internal] sphere.point #5 = ((1st z), (2nd z)) in (([internal] escape radius * |(2nd [internal] sphere.point #5)|) < |(1st [internal] sphere.point #5)|) and ([internal] fresh #30 < [internal] fresh #31)) then:
-                                              do-while (!let [internal] sphere.point #5 = ((1st z), (2nd z)) in (([internal] escape radius * |(2nd [internal] sphere.point #5)|) < |(1st [internal] sphere.point #5)|) and ([internal] fresh #30 < [internal] fresh #31)):
-                                                block:
-                                                  set `z` := let [internal] sphere.scaled #4 = let [internal] sphere.numerator #2 = (1st z) in let [internal] sphere.denominator #3 = 1.0 :+ 0.0 in (((([internal] sphere.numerator #2 ^ 2:R:C) * ([internal] sphere.numerator #2 ^ 2:R:C)) + (((λ * ([internal] sphere.denominator #3 ^ 2:R:C)) * ([internal] sphere.denominator #3 ^ 2:R:C)) * ((2nd z) ^ 4:R:C))), ((([internal] sphere.denominator #3 ^ 2:R:C) * ([internal] sphere.numerator #2 ^ 2:R:C)) * ((2nd z) ^ 2:R:C))) in if (((re((2nd [internal] sphere.scaled #4)) * re((2nd [internal] sphere.scaled #4))) + (im((2nd [internal] sphere.scaled #4)) * im((2nd [internal] sphere.scaled #4)))) < ((re((1st [internal] sphere.scaled #4)) * re((1st [internal] sphere.scaled #4))) + (im((1st [internal] sphere.scaled #4)) * im((1st [internal] sphere.scaled #4))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #4) / (1st [internal] sphere.scaled #4))) else (((1st [internal] sphere.scaled #4) / (2nd [internal] sphere.scaled #4)), 1.0 :+ 0.0)
-                                                  set `[internal] fresh #30` := ([internal] fresh #30 + 1)
-                                            else:
-                                              no-op
-                                            set `[internal] iteration count` := [internal] fresh #30
-                                            set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
-                                      set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 6:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 255 100 0), blend(0.333, Color 255 255 255, Color 255 255 0))
-                                    let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * [internal] sphere.s))) + 1.0) / 2.0) in:
+                                    set `pixel_size` := ([internal] dx * (((([internal] x * [internal] x) + ([internal] y * [internal] y)) + ([internal] sphere.v * [internal] sphere.v)) / ((|[internal] sphere.A| * |[internal] sphere.A|) + (|[internal] sphere.B| * |[internal] sphere.B|))))
+                                    let `z` = let [internal] sphere.scaled #1 = let [internal] sphere.point #0 = ([internal] sphere.A, [internal] sphere.B) in ((1st [internal] sphere.point #0), (2nd [internal] sphere.point #0)) in if (((re((2nd [internal] sphere.scaled #1)) * re((2nd [internal] sphere.scaled #1))) + (im((2nd [internal] sphere.scaled #1)) * im((2nd [internal] sphere.scaled #1)))) < ((re((1st [internal] sphere.scaled #1)) * re((1st [internal] sphere.scaled #1))) + (im((1st [internal] sphere.scaled #1)) * im((1st [internal] sphere.scaled #1))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #1) / (1st [internal] sphere.scaled #1))) else (((1st [internal] sphere.scaled #1) / (2nd [internal] sphere.scaled #1)), 1.0 :+ 0.0) in:
                                       block:
-                                        set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
+                                        block:
+                                          let `[internal] fresh #30` = 0 in:
+                                            let `[internal] fresh #31` = [internal] iteration limit in:
+                                              block:
+                                                if (!let [internal] sphere.point #5 = ((1st z), (2nd z)) in (([internal] escape radius * |(2nd [internal] sphere.point #5)|) < |(1st [internal] sphere.point #5)|) and ([internal] fresh #30 < [internal] fresh #31)) then:
+                                                  do-while (!let [internal] sphere.point #5 = ((1st z), (2nd z)) in (([internal] escape radius * |(2nd [internal] sphere.point #5)|) < |(1st [internal] sphere.point #5)|) and ([internal] fresh #30 < [internal] fresh #31)):
+                                                    block:
+                                                      set `z` := let [internal] sphere.scaled #4 = let [internal] sphere.numerator #2 = (1st z) in let [internal] sphere.denominator #3 = 1.0 :+ 0.0 in (((([internal] sphere.numerator #2 ^ 2:R:C) * ([internal] sphere.numerator #2 ^ 2:R:C)) + (((λ * ([internal] sphere.denominator #3 ^ 2:R:C)) * ([internal] sphere.denominator #3 ^ 2:R:C)) * ((2nd z) ^ 4:R:C))), ((([internal] sphere.denominator #3 ^ 2:R:C) * ([internal] sphere.numerator #2 ^ 2:R:C)) * ((2nd z) ^ 2:R:C))) in if (((re((2nd [internal] sphere.scaled #4)) * re((2nd [internal] sphere.scaled #4))) + (im((2nd [internal] sphere.scaled #4)) * im((2nd [internal] sphere.scaled #4)))) < ((re((1st [internal] sphere.scaled #4)) * re((1st [internal] sphere.scaled #4))) + (im((1st [internal] sphere.scaled #4)) * im((1st [internal] sphere.scaled #4))))) then (1.0 :+ 0.0, ((2nd [internal] sphere.scaled #4) / (1st [internal] sphere.scaled #4))) else (((1st [internal] sphere.scaled #4) / (2nd [internal] sphere.scaled #4)), 1.0 :+ 0.0)
+                                                      set `[internal] fresh #30` := ([internal] fresh #30 + 1)
+                                                else:
+                                                  no-op
+                                                set `[internal] iteration count` := [internal] fresh #30
+                                                set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
+                                          set `color` := if [internal] stuck then Color 0 0 0 else let #cycle-arg = (([internal] iteration count:R / 6:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, Color 255 100 0), blend(0.333, Color 255 255 255, Color 255 255 0))
+                                        let `[internal] sphere.light` = ((((-0.48507125007266594 * [internal] x) + ((0.48507125007266594 * [internal] y) + (0.7276068751089989 * [internal] sphere.s))) + 1.0) / 2.0) in:
+                                          block:
+                                            set `color` := blend((1.0 - ([internal] sphere shading * (1.0 - [internal] sphere.light))), color, Color 0 0 0)
 
 

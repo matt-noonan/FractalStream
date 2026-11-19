@@ -19,7 +19,7 @@ module Actor.Viewer.ViewModel
   , historyAppend
   ) where
 
-import Actor.Viewer.Sphere (Globe(..), globeCenter, rollOf, globeFacingRolled, clampGlobeZoom, globeScreenPixelSize)
+import Actor.Viewer.Sphere (Globe, globeCenter, globeTurn, globeZoom, globeFacingRolled, clampGlobeZoom, globeScreenPixelSize)
 import Actor.Viewer.Disk ( Isometry, HyperbolicModel, HyperbolicDisplay(..), screenToModelH, viewShowingTurned
                          , viewTurn, inModel, axisAtBottom )
 
@@ -75,7 +75,7 @@ data ViewSettings = ViewSettings
 viewSettings :: (Int, Int) -> Model -> ViewSettings
 viewSettings (_, h) m = case modelShape m of
   FlatShape -> ViewSettings (modelCenter m) Nothing (fst (modelPixelDim m))
-  GlobeShape g -> ViewSettings (globeCenter g) (Just (negate (degrees (rollOf (globeRotation g)))))
+  GlobeShape g -> ViewSettings (globeCenter g) (Just (degrees (globeTurn g)))
                                (globeZoom g * fst (modelPixelDim m))
   HyperbolicShape hm display v ->
     let s = middleOf display
@@ -100,7 +100,7 @@ settingsView wh@(_, h) m (ViewSettings c turn px)
       GlobeShape _ ->
         let fitted = fitGlobe wh m
             screenPx = fst (modelPixelDim fitted)
-            angle = negate (radians (maybe 0 id turn))
+            angle = radians (maybe 0 id turn)
         in Right fitted { modelShape = GlobeShape (globeFacingRolled c angle (clampGlobeZoom (px / screenPx))) }
       HyperbolicShape hm display _
         | not (inModel hm c) -> Left "That point isn't in the hyperbolic plane's model."

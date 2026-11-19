@@ -252,9 +252,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
             Just "disk" | hyperbolic -> setValue' vView DiskView
             Just "halfplane" | hyperbolic -> setValue' vView HalfPlaneView
             _ -> pure ()
-          case vpRotation of
-            Just [w, x, y, z] -> setValue' vGlobe (Globe (normalizeRotation (Rotation w x y z))
-                                                         (clampGlobeZoom (fromMaybe 1 vpZoom)))
+          -- (on the sphere, the view; or, saved before views were Möbius
+          -- maps, its rotation and zoom)
+          case (vpMobius >>= globeFromEntries, vpRotation) of
+            (Just g, _) -> setValue' vGlobe g
+            (Nothing, Just [w, x, y, z]) ->
+              setValue' vGlobe (withGlobeZoom (fromMaybe 1 vpZoom) (rotationGlobe (normalizeRotation (Rotation w x y z))))
             _ -> pure ()
           -- (a disk viewer's view of the hyperbolic plane)
           case vpIsometry of
@@ -347,7 +350,7 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
       view <- getDynamic vView
-      Globe (Rotation rw rx ry rz) zoom <- getDynamic vGlobe
+      globe <- getDynamic vGlobe
       Isometry (ar :+ ai) (br :+ bi) <- getDynamic vIsometry
       shown <- windowIsShown f
       -- Leave out what's the same as the default anyway, so that a
@@ -361,8 +364,9 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
         , vpAspect = if aspect == 1 then Nothing else Just aspect
         , vpView = if view == vOriginalView then Nothing
                    else Just (case view of { SphereView -> "sphere"; PlaneView -> "plane"; DiskView -> "disk"; HalfPlaneView -> "halfplane" })
-        , vpRotation = if view == SphereView then Just [rw, rx, ry, rz] else Nothing
-        , vpZoom = if view == SphereView && zoom /= 1 then Just zoom else Nothing
+        , vpMobius = if view == SphereView then Just (globeEntries globe) else Nothing
+        , vpRotation = Nothing
+        , vpZoom = Nothing
         , vpIsometry = if isJust (hyperbolicDisplay view) then Just [ar, ai, br, bi] else Nothing
         }
 
@@ -1570,11 +1574,20 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
                       cmx' = pmx + (cmx - pmx) * scale
                       cmy' = pmy + (cmy - pmy) * scale
 
-                  -- (on the sphere, the globe stays put, and zooms about
-                  -- the pointer)
-                  changeViewTo $ case modelShape oldModel of
-                    GlobeShape g -> oldModel { modelShape = GlobeShape (zoomGlobeAbout g (pmx, pmy0) scale) }
-                    _ -> oldModel { modelPixelDim = (px * scale, py * scale), modelCenter = (cmx', cmy') }
+                  case modelShape oldModel of
+                    -- (on the sphere, the globe stays put, and zooms about
+                    -- the pointer: in small steps, as pinching does, the
+                    -- last picture moved to fit until the new one's drawn)
+                    GlobeShape _ -> do
+                      base <- readIORef pendingView >>= maybe (get model value) pure
+                      case modelShape base of
+                        GlobeShape g -> do
+                          let step = if b then 1.15 else 1 / 1.15
+                          writeIORef pendingView (Just base { modelShape = GlobeShape (zoomGlobeAbout g (pmx, pmy0) step) })
+                          getCurrentTime >>= writeIORef lastPinch . Just
+                          triggerRepaint
+                        _ -> pure ()
+                    _ -> changeViewTo oldModel { modelPixelDim = (px * scale, py * scale), modelCenter = (cmx', cmy') }
 
         _ -> propagateEvent
 

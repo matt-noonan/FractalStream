@@ -279,7 +279,7 @@ import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progre
                      pointerText)
 import Actor.Event (ViewKind(..), hyperbolicDisplay, hyperbolicModel, Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
-import Actor.Viewer.Sphere (sphereShading, trackballGlobe, zoomGlobeAbout, clampGlobeZoom, screenToPlane, Rotation(..), Globe(..))
+import Actor.Viewer.Sphere (sphereShading, trackballGlobe, zoomGlobeAbout, screenToPlane, Rotation(..), rotationGlobe, withGlobeZoom, globeEntries, globeFromEntries)
 import Actor.Viewer.Disk (Isometry(..), HyperbolicDisplay(..), normalizeIsometry,
                           screenToModelH, dragOnDisplay, displayScreen)
 import Actor.Viewer.ViewModel (Model(..), ModelShape(..), modelGlobe, modelIsometry, ViewSettings(..), viewSettings, settingsView, fitGlobe, History(..), historyBack, historyForward, historyAppend)
@@ -1623,12 +1623,15 @@ applySavedView v saved title = case saved of
   Just (Aeson.Object o)
     | Just (Aeson.Object vs) <- KM.lookup "viewers" o
     , Just (Aeson.Object p) <- KM.lookup (fromString title) vs -> do
-        forM_ (KM.lookup "rotation" p >>= decodeValue) $ \case
-          [w, x, y, z] -> do
+        -- (on the sphere, the view; or, saved before views were Möbius
+        -- maps, its rotation and zoom)
+        case (KM.lookup "mobius" p >>= decodeValue >>= globeFromEntries, KM.lookup "rotation" p >>= decodeValue) of
+          (Just g, _) -> setValue (vGlobe v) g
+          (Nothing, Just [w, x, y, z]) -> do
             let zoom = case KM.lookup "zoom" p of
-                  Just (Aeson.Number l) | l > 0 -> clampGlobeZoom (realToFrac l)
+                  Just (Aeson.Number l) | l > 0 -> realToFrac l
                   _ -> 1
-            setValue (vGlobe v) (Globe (Rotation w x y z) zoom)
+            setValue (vGlobe v) (withGlobeZoom zoom (rotationGlobe (Rotation w x y z)))
           _ -> pure ()
         forM_ (KM.lookup "isometry" p >>= decodeValue) $ \case
           [ar, ai, br, bi] -> setValue (vIsometry v) (normalizeIsometry (Isometry (ar :+ ai) (br :+ bi)))
@@ -1658,14 +1661,13 @@ withViews viewers = \case
       let v = vsViewer st
       title <- getDynamic (vTitle v)
       kind <- getDynamic (vView v)
-      Globe (Rotation w x y z) zoom <- getDynamic (vGlobe v)
+      globe <- getDynamic (vGlobe v)
       Isometry (ar :+ ai) (br :+ bi) <- getDynamic (vIsometry v)
       aspect <- getDynamic (vAspect v)
       let viewName = case kind of { SphereView -> "sphere"; PlaneView -> "plane"; DiskView -> "disk"; HalfPlaneView -> "halfplane" }
           extra = [ ("view", Aeson.String viewName) | kind /= vOriginalView v ]
                ++ [ ("aspect", Aeson.toJSON aspect) | aspect /= vOriginalAspect v ]
-               ++ [ ("rotation", Aeson.toJSON [w, x, y, z]) | kind == SphereView ]
-               ++ [ ("zoom", Aeson.toJSON zoom) | kind == SphereView, zoom /= 1 ]
+               ++ [ ("mobius", Aeson.toJSON (globeEntries globe)) | kind == SphereView ]
                ++ [ ("isometry", Aeson.toJSON [ar, ai, br, bi]) | isJust (hyperbolicDisplay kind) ]
       pure $ case KM.lookup (fromString title) acc of
         Just (Aeson.Object p) -> KM.insert (fromString title) (Aeson.Object (foldr (uncurry KM.insert) p extra)) acc

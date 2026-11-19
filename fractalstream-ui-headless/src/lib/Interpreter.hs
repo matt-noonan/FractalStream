@@ -36,7 +36,7 @@ import Actor.Viewer
   )
 import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
 import Actor.Viewer.Disk (axisAtBottom)
-import Actor.Viewer.Sphere (Globe(..), clampGlobeZoom)
+import Actor.Viewer.Sphere (withGlobeZoom)
 import Actor.Viewer.Preview (renderPreview)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
@@ -217,7 +217,7 @@ execCommand st = \case
       SphereView -> do
         screenPx <- getDynamic (vPixelSize viewer)
         g <- getDynamic (vGlobe viewer)
-        setValue' (vGlobe viewer) g { globeZoom = clampGlobeZoom (px / screenPx) }
+        setValue' (vGlobe viewer) (withGlobeZoom (px / screenPx) g)
         pure (Right st)
       _ -> do
         setValue' (vPixelSize viewer) px

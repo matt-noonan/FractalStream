@@ -33,7 +33,10 @@ rotations =
 
 -- | Some views: the rotations, unzoomed, zoomed in, and zoomed out.
 globes :: [Globe]
-globes = [ Globe r l | r <- rotations, l <- [1, 0.001, 7] ]
+globes = [ rotationGlobe r `composeGlobe` zoomed | r <- rotations
+          , zoomed <- [ noGlobe, globeFacingRolled (0, 0) 0 0.001, globeFacingRolled (0, 0) 0 7
+                      -- (zoomed about a point that isn't in the middle)
+                      , zoomGlobeAbout noGlobe (0.3, 0.4) 0.01 ] ]
 
 points :: [(Double, Double)]
 points = [ (0, 0), (1, 0), (0, 1), (0.5, -0.25), (-2, 3), (0.001, 0.002), (40, -7) ]
@@ -74,10 +77,11 @@ spec = do
             [ (1e30, 0), (-3e20, 1e20), (7e15, -2e15) ]
 
     it "zooms about the middle: a zoom of λ shrinks it by λ" $ do
-      let g = Globe (rotationFacing (2, 1)) 0.001
+      let g = globeFacingRolled (2, 1) 0 0.001
       -- (a screen point near the middle shows a point λ times as far,
       -- chordally, as it would unzoomed)
-      case (screenToSphere g (0.01, 0), screenToSphere g { globeZoom = 1 } (0.01, 0)) of
+      globeZoom g `shouldSatisfy` (\z -> abs (z / 0.001 - 1) < 1e-9)
+      case (screenToSphere g (0.01, 0), screenToSphere (globeFacing (2, 1)) (0.01, 0)) of
         (Just p, Just q) -> let mid = planeToSphere (2, 1)
                                 dist (a, b, c) (d, e, f) = sqrt ((a - d)^(2 :: Int) + (b - e)^(2 :: Int) + (c - f)^(2 :: Int))
                             in (dist p mid / dist q mid) `shouldSatisfy` (\r -> abs (r - 0.001) < 1e-6)
@@ -88,6 +92,21 @@ spec = do
                     Nothing -> expectationFailure "off the globe"
                     Just p -> sphereToScreen (zoomGlobeAbout g s f) p `shouldSatisfy` maybe False (close2' s)
                 | g <- globes, s <- [(0.3, 0.2), (-0.1, 0.5)], f <- [0.5, 2] ]
+
+    it "turns what it shows rigidly when it's dragged, however it's zoomed" $
+      sequence_ [ let g' = trackballGlobe g (0.1, 0.2) (0.4, -0.1)
+                      shown s = screenToSphere g s >>= sphereToScreen g'
+                      lift (x, y) = (x, y, sqrt (1 - x * x - y * y))
+                      dist (a, b, c) (d, e, f) = sqrt ((a - d)^(2 :: Int) + (b - e)^(2 :: Int) + (c - f)^(2 :: Int))
+                  in case (shown (0, 0), shown (0.2, 0.1)) of
+                       (Just p, Just q) -> dist (lift p) (lift q) `shouldSatisfy` (\d -> abs (d - dist (lift (0, 0)) (lift (0.2, 0.1))) < 1e-9)
+                       _ -> pure ()
+                | g <- globes ]
+
+    it "interpolates between views, ending at each" $
+      sequence_ [ do screenToPlane (slerpGlobe g1 g2 0) (0.2, 0.1) `shouldSatisfy` closeTo (screenToPlane g1 (0.2, 0.1))
+                     screenToPlane (slerpGlobe g1 g2 1) (0.2, 0.1) `shouldSatisfy` closeTo (screenToPlane g2 (0.2, 0.1))
+                | g1 <- take 4 globes, g2 <- drop 4 globes ]
 
     it "is the Möbius map the kernel applies" $
       sequence_ [ let (a, b, c, d) = globeMobius g
@@ -174,5 +193,8 @@ spec = do
     -- (dragging loses a little precision near the rim)
     close2' (a, b) (c, d) = abs (a - c) < 1e-6 && abs (b - d) < 1e-6
     toPair (a :+ b) = (a, b)
+    closeTo a b = case (a, b) of
+      (Just p, Just q) -> close3' (planeToSphere p) (planeToSphere q)
+      _ -> a == b
     close3' (a, b, c) (d, e, f) = abs (a - d) < 1e-9 && abs (b - e) < 1e-9 && abs (c - f) < 1e-9
 

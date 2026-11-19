@@ -927,12 +927,13 @@ A viewer whose variable is a field, as a parameter space is
 
 The globe always fills the window. With no rotation, 0 faces you, with
 the real axis to the right and the imaginary axis up, as on the plane;
-`center=` is the point that faces you to start with. Dragging with the
-Navigate tool turns the globe (zoomed in, that pans), and scrolling zooms
-in or out about the point under the pointer: zooming is a dilation of the
-sphere about the point facing you, which the globe then shows magnified
-in its middle (and the rest of the sphere squeezed towards its rim).
-Zoomed out, it shows more than half the sphere. The point under each
+`center=` is the point that faces you to start with. Scrolling zooms in
+or out about the point under the pointer: a dilation of the globe, as you
+see it, about that point, which shows the piece of the sphere there
+magnified (and the rest of the sphere squeezed towards the rim). Zoomed
+out, it shows more than half the sphere. Dragging with the Navigate tool
+turns the globe as you see it, rigidly, whatever the zoom: zoomed in, that
+pans. The point under each
 pixel is exact however far you zoom in, anywhere on the sphere, ∞
 included. A viewer shows the sphere, or the plane, for good, as its
 `view=` says.

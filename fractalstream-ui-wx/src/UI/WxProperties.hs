@@ -83,13 +83,15 @@ data ViewerProperties = ViewerProperties
   , vpView      :: Maybe String
     -- ^ @disk@ or @halfplane@, for a viewer of the hyperbolic plane
     -- showing the other one than its script starts with.
+  , vpMobius    :: Maybe [Double]
+    -- ^ On the sphere, the view: its Möbius map's matrix (see
+    -- "Actor.Viewer.Sphere"), re and im of a, b, c, d. The globe fills the
+    -- window, so its center and pixel size aren't saved.
   , vpRotation  :: Maybe [Double]
-    -- ^ On the sphere, the globe's orientation (a unit quaternion: w, x,
-    -- y, z). The globe fills the window, so its center and pixel size
-    -- aren't saved.
+    -- ^ (read only, from before views were Möbius maps: the globe's
+    -- orientation, a unit quaternion w, x, y, z)
   , vpZoom      :: Maybe Double
-    -- ^ On the sphere, the globe's zoom (see "Actor.Viewer.Sphere"), when
-    -- it isn't 1.
+    -- ^ (read only, likewise: its zoom)
   , vpIsometry  :: Maybe [Double]
     -- ^ In the disk, the view of the hyperbolic plane (a and b of
     -- s ↦ (a s + b)/(b̄ s + ā): re a, im a, re b, im b). Its center and
@@ -102,7 +104,7 @@ instance FromJSON ViewerProperties where
     <*> o .:? "width" <*> o .:? "height"
     <*> o .:? "resizable" <*> o .:? "visible"
     <*> o .:? "center" <*> o .:? "pixel-size" <*> o .:? "aspect"
-    <*> o .:? "view" <*> o .:? "rotation" <*> o .:? "zoom" <*> o .:? "isometry"
+    <*> o .:? "view" <*> o .:? "mobius" <*> o .:? "rotation" <*> o .:? "zoom" <*> o .:? "isometry"
 
 instance ToJSON ViewerProperties where
   toJSON ViewerProperties{..} = object $ catMaybes
@@ -111,7 +113,7 @@ instance ToJSON ViewerProperties where
     , ("resizable" .=) <$> vpResizable, ("visible" .=) <$> vpVisible
     , ("center" .=) <$> vpCenter, ("pixel-size" .=) <$> vpPixelSize
     , ("aspect" .=) <$> vpAspect
-    , ("view" .=) <$> vpView, ("rotation" .=) <$> vpRotation, ("zoom" .=) <$> vpZoom
+    , ("view" .=) <$> vpView, ("mobius" .=) <$> vpMobius
     , ("isometry" .=) <$> vpIsometry
     ]
 

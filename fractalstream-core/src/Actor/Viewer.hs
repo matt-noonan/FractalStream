@@ -103,7 +103,7 @@ import Language.Parser.SourceRange
 import Language.Value.Evaluator
 import Foreign
 import Data.PNG
-import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Globe(..), Projection(..), ScreenView(..), rotationFacing, planeToScreen, trackballGlobe)
+import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Globe, Projection(..), ScreenView(..), globeFacingRolled, globeTurn, globeZoom, planeToScreen, trackballGlobe)
 import Actor.Viewer.Group (groupMarkerName, groupFoldCode, groupVariables, FoldData, viewReduction, tileViews)
 import Actor.Viewer.Disk (hyperbolicViewName, inTheHyperbolicPlane, Isometry, modelToScreenH, dragOnDisplay, displayScreen, axisAtBottom, viewShowing, HyperbolicDisplay(..))
 import qualified Data.Map as Map
@@ -728,8 +728,8 @@ centerViewOn v c = getDynamic (vView v) >>= \kind -> case (kind, hyperbolicDispl
     setValue' (vCenter v) middle
   (PlaneView, _) -> setValue' (vCenter v) c
   (SphereView, _) -> do
-    Globe _ l <- getDynamic (vGlobe v)
-    setValue' (vGlobe v) (Globe (rotationFacing c) l)
+    g <- getDynamic (vGlobe v)
+    setValue' (vGlobe v) (globeFacingRolled c (globeTurn g) (globeZoom g))
   (_, Nothing) -> pure ()
 
 -- | For a viewer with a group, the group's element that reduces a view
