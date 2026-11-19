@@ -103,7 +103,7 @@ import Language.Parser.SourceRange
 import Language.Value.Evaluator
 import Foreign
 import Data.PNG
-import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Rotation, Projection(..), ScreenView(..), rotationFacing, rotateBy, sphereToPlane, planeToScreen, trackballRotation)
+import Actor.Viewer.Sphere (sphereViewName, onTheSphere, Globe, Projection(..), ScreenView(..), globeFacingRolled, globeTurn, globeZoom, planeToScreen, trackballGlobe)
 import Actor.Viewer.Group (groupMarkerName, groupFoldCode, groupVariables, FoldData, viewReduction, tileViews)
 import Actor.Viewer.Disk (hyperbolicViewName, inTheHyperbolicPlane, Isometry, modelToScreenH, dragOnDisplay, displayScreen, axisAtBottom, viewShowing, HyperbolicDisplay(..))
 import qualified Data.Map as Map
@@ -250,15 +250,17 @@ data Viewer = Viewer
     -- ^ Whether a complex viewer shows the plane or the sphere. On the
     -- sphere, 'vCenter' is the globe's center on the screen (0), and
     -- 'vPixelSize' is in units of the sphere's radius.
-  , vRotation :: Variable Rotation
-    -- ^ The globe's orientation, on the sphere (see "Actor.Viewer.Sphere").
+  , vGlobe :: Variable Globe
+    -- ^ The globe's orientation and zoom, on the sphere (see
+    -- "Actor.Viewer.Sphere"). The globe fills the window: 'vPixelSize'
+    -- follows the window's size ('globeScreenPixelSize').
   , vIsometry :: Variable Isometry
     -- ^ The view of the hyperbolic plane, in the disk (see
     -- "Actor.Viewer.Disk"): the screen point @s@ shows the model point
     -- @V(s)@. In the disk, 'vCenter' and 'vPixelSize' place the screen on
     -- the disk (in units of its radius), as on the plane.
   , vOriginalView :: ViewKind
-  , vOriginalRotation :: Rotation
+  , vOriginalGlobe :: Globe
   , vOriginalIsometry :: Isometry
   , vOriginalHyperbolicPixelSizes :: (Double, Double)
     -- ^ The pixel sizes a hyperbolic viewer's displays start with: the
@@ -270,7 +272,6 @@ data Viewer = Viewer
   , vOriginalPlaneView :: ((Double, Double), Double)
     -- ^ The plane view the script describes (center and pixel size),
     -- whichever view it starts with.
-  , vOriginalSpherePixelSize :: Double
   , vSaveView  :: IO ()
   , vListen    :: IO () -> IO (IO ())
   , vDrawCmds  :: IO [[DrawCommand]]
@@ -408,7 +409,7 @@ renderViewerBufferAt scale downsample Viewer{..} = viewerRenderer Viewer{..} >>=
       Dimensions (w, h) <- getDynamic vSize
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
-      projection <- viewProjection vOriginalView vView vRotation vIsometry
+      projection <- viewProjection vOriginalView vView vGlobe vIsometry
       center <- getDynamic vCenter
       let s = if downsample then 2 else 1
           bigW = w * s
@@ -530,7 +531,7 @@ renderProgressively pr Viewer{..} = viewerRenderer Viewer{..} >>= \case
       Dimensions (w, h) <- getDynamic vSize
       pixelSize <- getDynamic vPixelSize
       aspect <- getDynamic vAspect
-      projection <- viewProjection vOriginalView vView vRotation vIsometry
+      projection <- viewProjection vOriginalView vView vGlobe vIsometry
       center <- getDynamic vCenter
       out <- mallocForeignPtrBytes (max 1 (3 * w * h))
       copies <- overlayProjections Viewer{..} projection center pixelSize (w, h)
@@ -708,25 +709,8 @@ switchView v kind = do
       setValue' (vCenter v) c
       setValue' (vPixelSize v) px
       setValue' (vView v) kind
-    (Nothing, Nothing) -> when (old /= kind) (switchFlat kind)
+    -- (a viewer shows the plane or the sphere for good)
     _ -> pure ()
- where
-  switchFlat = \case
-    DiskView -> pure ()
-    HalfPlaneView -> pure ()
-    SphereView -> do
-      c <- getDynamic (vCenter v)
-      setValue' (vRotation v) (rotationFacing c)
-      setValue' (vCenter v) (0, 0)
-      setValue' (vPixelSize v) (vOriginalSpherePixelSize v)
-      setValue' (vView v) SphereView
-    PlaneView -> do
-      r <- getDynamic (vRotation v)
-      let c@(cx, cy) = sphereToPlane (rotateBy r (0, 0, 1))
-          finite a = not (isNaN a || isInfinite a) && abs a < 1e300
-      setValue' (vCenter v) (if finite cx && finite cy then c else (0, 0))
-      setValue' (vPixelSize v) (snd (vOriginalPlaneView v))
-      setValue' (vView v) PlaneView
 
 -- | Center a viewer's view on a point: on the sphere, turn the globe to
 -- face it; in the hyperbolic plane, move the view to show the (model)
@@ -743,7 +727,9 @@ centerViewOn v c = getDynamic (vView v) >>= \kind -> case (kind, hyperbolicDispl
     setValue' (vIsometry v) =<< reducedView v (viewShowing (hyperbolicModel (vOriginalView v)) display c middle)
     setValue' (vCenter v) middle
   (PlaneView, _) -> setValue' (vCenter v) c
-  (SphereView, _) -> setValue' (vRotation v) (rotationFacing c)
+  (SphereView, _) -> do
+    g <- getDynamic (vGlobe v)
+    setValue' (vGlobe v) (globeFacingRolled c (globeTurn g) (globeZoom g))
   (_, Nothing) -> pure ()
 
 -- | For a viewer with a group, the group's element that reduces a view
@@ -776,9 +762,9 @@ dragView v p@(px, py) q@(qx, qy) = getDynamic (vView v) >>= \kind -> case kind o
     setValue' (vCenter v) (cx + px - qx, cy + py - qy)
     pure (Right ())
   SphereView -> do
-    r <- getDynamic (vRotation v)
-    case (planeToScreen r p, planeToScreen r q) of
-      (Just sp, Just sq) -> Right () <$ setValue' (vRotation v) (trackballRotation r sp sq)
+    g <- getDynamic (vGlobe v)
+    case (planeToScreen g p, planeToScreen g q) of
+      (Just sp, Just sq) -> Right () <$ setValue' (vGlobe v) (trackballGlobe g sp sq)
       _ -> pure (Left "both points must be on the visible side of the globe")
   _ -> pure (Right ())
 
@@ -799,10 +785,10 @@ overlayProjections v proj (cx, cy) px (w, h) = case (proj, vGroup v) of
 
 -- | How a viewer's model points get onto its screen now.
 -- (A hyperbolic viewer's model is the one its script's view names.)
-viewProjection :: ViewKind -> Variable ViewKind -> Variable Rotation -> Variable Isometry -> IO Projection
-viewProjection originalView viewV rotationV isometryV = getDynamic viewV >>= \kind -> case (kind, hyperbolicDisplay kind) of
+viewProjection :: ViewKind -> Variable ViewKind -> Variable Globe -> Variable Isometry -> IO Projection
+viewProjection originalView viewV globeV isometryV = getDynamic viewV >>= \kind -> case (kind, hyperbolicDisplay kind) of
   (_, Just display) -> HyperbolicProjection (hyperbolicModel originalView) display <$> getDynamic isometryV
-  (SphereView, _) -> GlobeProjection <$> getDynamic rotationV
+  (SphereView, _) -> GlobeProjection <$> getDynamic globeV
   _ -> pure FlatProjection
 
 -- | Render a viewer to a PNG file, returning any issues the render ran into.
@@ -1049,7 +1035,7 @@ parseViewerScript expanded mpx ViewerContext{..} c = do
                                          -- (with a group, folded into its polygon)
                                          grouped = groupMarkerName `Map.member` envToMap env
                                      in inTheHyperbolicPlane z px (if grouped then Just (groupFoldCode z px) else Nothing) c
-                                | onSphere -> onTheSphere z (not (z `Map.member` envToMap env)) expanded c
+                                | onSphere -> onTheSphere z mpx (not (z `Map.member` envToMap env)) expanded c
             _ -> c
           body :: forall e. KnownEnvironment e => EnvironmentProxy e -> Either (SourceRange, String) (Code e)
           body e = bindFreshReals pixelVars e $ \e' ->
@@ -1176,7 +1162,7 @@ cloneViewer v = do
   newPixelSize <- newVariable =<< getDynamic (vPixelSize v)
   newAspect    <- newVariable =<< getDynamic (vAspect v)
   newView      <- newVariable =<< getDynamic (vView v)
-  newRotation  <- newVariable =<< getDynamic (vRotation v)
+  newGlobe     <- newVariable =<< getDynamic (vGlobe v)
   newIsometry  <- newVariable =<< getDynamic (vIsometry v)
   newOverride  <- newVariable =<< getDynamic (vBackendOverride v)
   pure $ Viewer
@@ -1192,15 +1178,14 @@ cloneViewer v = do
     , vOriginalAspect = vOriginalAspect v
     , vCoordinate = vCoordinate v
     , vView = newView
-    , vRotation = newRotation
+    , vGlobe = newGlobe
     , vIsometry = newIsometry
     , vOriginalView = vOriginalView v
-    , vOriginalRotation = vOriginalRotation v
+    , vOriginalGlobe = vOriginalGlobe v
     , vOriginalIsometry = vOriginalIsometry v
     , vOriginalHyperbolicPixelSizes = vOriginalHyperbolicPixelSizes v
     , vGroup = vGroup v
     , vOriginalPlaneView = vOriginalPlaneView v
-    , vOriginalSpherePixelSize = vOriginalSpherePixelSize v
     , vSaveView = vSaveView v
 
     , vListen = vListen v

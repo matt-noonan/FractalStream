@@ -36,6 +36,7 @@ import Actor.Viewer
   )
 import Actor.Viewer.Overlay (compositeDrawLayers, compositeDrawLayersToFile)
 import Actor.Viewer.Disk (axisAtBottom)
+import Actor.Viewer.Sphere (withGlobeZoom)
 import Actor.Viewer.Preview (renderPreview)
 import Actor.Tool (Tool(..), ToolInfo(..))
 import Actor.Configuration (Configuration(..))
@@ -210,10 +211,18 @@ execCommand st = \case
       else pure (Left "only a viewer of the hyperbolic plane (`view=disk` or `view=halfplane`) can change its view")
 
   SetViewerPixelSize pv -> withCurrentViewer st $ \viewer ->
-    withResolved (resolveReal pv) $ \px -> do
-      setValue' (vPixelSize viewer) px
-      keepAxisAtBottom viewer
-      pure (Right st)
+    withResolved (resolveReal pv) $ \px -> getDynamic (vView viewer) >>= \case
+      -- (on the sphere, the size of a pixel in the middle, on the sphere:
+      -- the globe fills the window, so this sets the zoom)
+      SphereView -> do
+        screenPx <- getDynamic (vPixelSize viewer)
+        g <- getDynamic (vGlobe viewer)
+        setValue' (vGlobe viewer) (withGlobeZoom (px / screenPx) g)
+        pure (Right st)
+      _ -> do
+        setValue' (vPixelSize viewer) px
+        keepAxisAtBottom viewer
+        pure (Right st)
 
   SetViewerAspect pv -> withCurrentViewer st $ \viewer -> case vCoordinate viewer of
     ComplexCoordinate _ -> pure (Left "only a real viewer (one with `xvar=` and `yvar=`) has an \

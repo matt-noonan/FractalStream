@@ -68,6 +68,10 @@ worker (@web/src/engine.ts@). The worker calls these exports:
 * @fs_rotate(viewer, fx, fy, tx, ty)@: turn a sphere viewer's globe,
   trackball-style, as the pointer drags from one point of the screen to
   another (in units of the sphere's radius, from its center, y up).
+* @fs_globe_zoom(viewer, sx, sy, factor)@: zoom a sphere viewer's globe by
+  a factor (less than 1 zooms in), keeping the point under a screen point
+  (in units of the sphere's radius) where it is; the globe stays put,
+  filling the window.
 
 As the desktop app does (and unlike fsrun, which is for reproducible
 runs), a project opens with the configuration values (@values:@) and the
@@ -142,7 +146,8 @@ tables (@tables:@) it was saved with, and is saved with its own.
   at a steady speed, back to the start if it's to loop; and, unless the
   corner is -1, @drawnIn@ is shown as an inset in that corner (0 top
   left, 1 top right, 2 bottom left, 3 bottom right), marking the point.
-* @fs_jump(viewer, x, y, pixelSize)@: go to a view: centered on (x, y)
+* @fs_jump(viewer, x, y, turn, pixelSize)@: go to a view, as "Jump to
+  view…" sets it (see 'jump'): centered on (x, y)
   (on the sphere, the globe turned to face it), with a pixel this size
   (a CSS pixel's). @fs_where(viewer)@ posts where it is now, so (@where@).
 * @fs_colorizer(viewer, name)@: use another colorizer for the viewer,
@@ -193,7 +198,7 @@ Messages:
 > { "type": "unsaved", "on" }   (whether the open project has changes to save, as the desktop app counts them, whenever that changes)
 > { "type": "ancient", "name" }   (an old FractalStream file, to translate with fs_translate, if the user wants)
 > { "type": "view", "viewer", "cx", "cy", "px", "py", "sphere", "disk", "halfPlane" }   (the engine moved the view: a pixel's size in the canvas's pixels)
-> { "type": "where", "viewer", "x", "y", "pixelSize" }
+> { "type": "where", "viewer", "x" (null for ∞), "y", "turn" (null on the plane), "pixelSize", "kind": "plane" | "sphere" | "hyperbolic" }
 > { "type": "aspect", "viewer", "error": <why it isn't one> or null }
 > { "type": "movieTemplate", "viewer", "script" }
 > { "type": "movieCheck", "id", "error": { "from", "to", "message" } or null }
@@ -274,10 +279,10 @@ import Actor.Viewer (Viewer(..), RenderedBuffer(..), renderProgressively, Progre
                      pointerText)
 import Actor.Event (ViewKind(..), hyperbolicDisplay, hyperbolicModel, Event(..), ToolDispatcher, EventArgument_, HandlerRun(..), HandlerCancelled(..),
                     CancelFlag, newCancelFlag, cancelRun)
-import Actor.Viewer.Sphere (sphereShading, trackballRotation, screenToPlane, Rotation(..), rotationFacing, rotateBy, sphereToPlane)
-import Actor.Viewer.Disk (Isometry(..), HyperbolicDisplay(..), normalizeIsometry, inModel,
-                          screenToModelH, dragOnDisplay, displayScreen, axisAtBottom, viewShowing)
-import Actor.Viewer.ViewModel (Model(..), ModelShape(..), modelRotation, modelIsometry, History(..), historyBack, historyForward, historyAppend)
+import Actor.Viewer.Sphere (sphereShading, trackballGlobe, zoomGlobeAbout, screenToPlane, Rotation(..), rotationGlobe, withGlobeZoom, globeEntries, globeFromEntries)
+import Actor.Viewer.Disk (Isometry(..), HyperbolicDisplay(..), normalizeIsometry,
+                          screenToModelH, dragOnDisplay, displayScreen)
+import Actor.Viewer.ViewModel (Model(..), ModelShape(..), modelGlobe, modelIsometry, ViewSettings(..), viewSettings, settingsView, fitGlobe, History(..), historyBack, historyForward, historyAppend)
 import Actor.Colorizer (Colorizer(..), ViewerColorizer(..), choiceName, choiceArguments, missingArguments,
                         argumentFields, choiceWithArguments)
 import Actor.Event (Coordinate(..), showCoordinate)
@@ -583,7 +588,8 @@ foreign export javascript "fs_rendering" setRendering :: JSString -> IO ()
 foreign export javascript "fs_viewer_backend" setViewerBackend :: Int -> JSString -> IO ()
 foreign export javascript "fs_navigate" navigateTo :: Int -> Int -> IO ()
 foreign export javascript "fs_record" record :: Int -> IO ()
-foreign export javascript "fs_jump" jump :: Int -> Double -> Double -> Double -> IO ()
+foreign export javascript "fs_jump" jump :: Int -> Double -> Double -> Double -> Double -> IO ()
+foreign export javascript "fs_globe_zoom" zoomGlobe :: Int -> Double -> Double -> Double -> IO ()
 foreign export javascript "fs_capture_image" captureImage :: Int -> Double -> Bool -> IO ()
 foreign export javascript "fs_movie_template" movieTemplate :: Int -> IO ()
 foreign export javascript "fs_movie_check" movieCheck :: Int -> JSString -> IO ()
@@ -1133,8 +1139,12 @@ setView :: Int -> Double -> Double -> Double -> Int -> Int -> Int -> Int -> Int 
 setView k cx cy pixelSize w h cl ct cr cb = withViewerState k $ \vs -> do
   let viewer = vsViewer vs
   setValue (vSize viewer) (Dimensions (max 1 w, max 1 h))
-  setValue (vCenter viewer) (cx, cy)
-  setValue (vPixelSize viewer) pixelSize
+  -- (on the sphere, the globe fills the window, whatever the page says)
+  getDynamic (vView viewer) >>= \case
+    SphereView -> pure ()
+    _ -> do
+      setValue (vCenter viewer) (cx, cy)
+      setValue (vPixelSize viewer) pixelSize
   -- (where the page still shows the last picture, after anything the
   -- changes above set off)
   writeIORef (vsCovered vs) (if cr > cl && cb > ct then Just (cl, ct, cr, cb) else Nothing)
@@ -1197,7 +1207,7 @@ viewerModel v = do
   kind <- getDynamic (vView v)
   shape <- case kind of
     PlaneView -> pure FlatShape
-    SphereView -> GlobeShape <$> getDynamic (vRotation v)
+    SphereView -> GlobeShape <$> getDynamic (vGlobe v)
     DiskView -> HyperbolicShape (hyperbolicModel (vOriginalView v)) DiskDisplay <$> getDynamic (vIsometry v)
     HalfPlaneView -> HyperbolicShape (hyperbolicModel (vOriginalView v)) HalfPlaneDisplay <$> getDynamic (vIsometry v)
   pure (Model c (px, px * aspect) shape)
@@ -1209,7 +1219,7 @@ setViewerModel v (Model c (px, py) shape) = do
   setValue (vAspect v) (py / px)
   case shape of
     FlatShape -> setValue (vView v) PlaneView
-    GlobeShape r -> setValue (vRotation v) r >> setValue (vView v) SphereView
+    GlobeShape g -> setValue (vGlobe v) g >> setValue (vView v) SphereView
     HyperbolicShape _ display iso -> do
       -- (with a group, reduced: see 'Actor.Viewer.Group.reduceView')
       setValue (vIsometry v) =<< reducedView v iso
@@ -1223,7 +1233,7 @@ goTo vs m = do
   requestRender (vsSignal vs)
   let Model (cx, cy) (px, py) _ = m
   post $ Aeson.object [ "type" .= ("view" :: Text.Text), "viewer" .= vsId vs, "cx" .= cx, "cy" .= cy
-                      , "px" .= px, "py" .= py, "sphere" .= isJust (modelRotation m)
+                      , "px" .= px, "py" .= py, "sphere" .= isJust (modelGlobe m)
                       , "disk" .= isJust (modelIsometry m)
                       , "halfPlane" .= case modelShape m of { HyperbolicShape _ HalfPlaneDisplay _ -> True; _ -> False } ]
 
@@ -1244,12 +1254,13 @@ navigateTo k what = withViewerState k $ \vs -> do
   let v = vsViewer vs
   d <- readIORef densityRef
   m <- viewerModel v
-  Dimensions (_, hWin) <- getDynamic (vSize v)
+  Dimensions (wWin, hWin) <- getDynamic (vSize v)
   let step f = readIORef (vsHistory vs) >>= \h -> forM_ (h >>= f) $ \(h', m') ->
         writeIORef (vsHistory vs) (Just h') >> goTo vs m'
       -- (the script's views are in CSS pixels; the engine's in the canvas's)
       originalPlane = let (c, px) = vOriginalPlaneView v in Model c (px / d, px / d * vOriginalAspect v) FlatShape
-      sphereAt r = Model (0, 0) (vOriginalSpherePixelSize v / d, vOriginalSpherePixelSize v / d) (GlobeShape r)
+      -- (the globe fills the window)
+      sphereAt g = fitGlobe (wWin, hWin) (Model (0, 0) (1, 1) (GlobeShape g))
       -- (a hyperbolic viewer's original view, on a display: the
       -- half-plane with its real axis along the window's bottom edge)
       hyperbolicAt display iso =
@@ -1261,7 +1272,7 @@ navigateTo k what = withViewerState k $ \vs -> do
     1 -> step historyForward
     -- (the original view of the kind it shows now)
     2 -> changeViewTo vs (case modelShape m of
-                            GlobeShape _ -> sphereAt (vOriginalRotation v)
+                            GlobeShape _ -> sphereAt (vOriginalGlobe v)
                             HyperbolicShape _ display _ -> hyperbolicAt display (vOriginalIsometry v)
                             FlatShape -> originalPlane)
     -- (a viewer of the hyperbolic plane: the disk or the half-plane, keeping
@@ -1270,26 +1281,20 @@ navigateTo k what = withViewerState k $ \vs -> do
           changeViewTo vs (hyperbolicAt (case display of { DiskDisplay -> HalfPlaneDisplay; HalfPlaneDisplay -> DiskDisplay }) iso)
     _ -> pure ()
 
--- | Jump to a view: centered on a point (on the sphere, the globe turned
--- to face it), with a pixel of a size (a CSS pixel's).
-jump :: Int -> Double -> Double -> Double -> IO ()
-jump k x y pixelSize = withViewerState k $ \vs -> do
+-- | Jump to a view, as "Jump to view…" sets it (see
+-- 'Actor.Viewer.ViewModel.viewSettings'): the point in the middle (on the
+-- sphere, the one the globe faces: infinite for ∞), how far it's turned
+-- (in degrees; NaN where a view isn't turned, on the plane), and a pixel's
+-- size there (a CSS pixel's).
+jump :: Int -> Double -> Double -> Double -> Double -> IO ()
+jump k x y turn pixelSize = withViewerState k $ \vs -> do
   d <- readIORef densityRef
-  Model _ (px, py) shape <- viewerModel (vsViewer vs)
-  Dimensions (_, hWin) <- getDynamic (vSize (vsViewer vs))
-  let dz = pixelSize / d
-  case shape of
-    FlatShape -> changeViewTo vs (Model (x, y) (dz, dz * py / px) FlatShape)
-    GlobeShape _ -> changeViewTo vs (Model (0, 0) (dz, dz) (GlobeShape (rotationFacing (x, y))))
-    -- (in the hyperbolic plane, the point in the middle of the window; the
-    -- half-plane's real axis along its bottom edge)
-    HyperbolicShape model display _
-      | inModel model (x, y) ->
-          let middle = case display of
-                DiskDisplay -> (0, 0)
-                HalfPlaneDisplay -> axisAtBottom hWin dz (0, 0)
-          in changeViewTo vs (Model middle (dz, dz) (HyperbolicShape model display (viewShowing model display (x, y) middle)))
-                | otherwise -> postError "That point isn't in the disk."
+  m <- viewerModel (vsViewer vs)
+  Dimensions wh <- getDynamic (vSize (vsViewer vs))
+  let settings = ViewSettings (x, if isInfinite x then 0 else y) (if isNaN turn then Nothing else Just turn) (pixelSize / d)
+  case settingsView wh m settings of
+    Right m' -> changeViewTo vs m'
+    Left err -> postError err
 
 -- | A real viewer's aspect ratio, from its text, as the desktop's Aspect
 -- ratio... sets it: keeping the center and a pixel's width, as a new
@@ -1591,19 +1596,23 @@ movieAck i = guarded (void (swapMVar movieAckRef i))
 movieStop :: IO ()
 movieStop = guarded (writeIORef movieStopRef True)
 
--- | Where a viewer is: the point in the middle of its view (on the
--- sphere, the one the globe faces), and a CSS pixel's size.
+-- | Where a viewer is, as "Jump to view…" shows it (see 'jump'): the
+-- point in the middle (on the sphere, the one the globe faces; @x@ is
+-- null for ∞), how far it's turned (null on the plane), and a CSS pixel's
+-- size there, and which kind of view it is.
 whereIs :: Int -> IO ()
 whereIs k = withViewerState k $ \vs -> do
   d <- readIORef densityRef
-  Model c (px, _) shape <- viewerModel (vsViewer vs)
-  let (x, y) = case shape of
-        FlatShape -> c
-        GlobeShape r -> sphereToPlane (rotateBy r (0, 0, 1))
-        -- (in the hyperbolic plane, the point in the middle of the window)
-        HyperbolicShape model display iso -> fromMaybe (0, 0) (screenToModelH model display iso c)
-  post $ Aeson.object [ "type" .= ("where" :: Text.Text), "viewer" .= k, "x" .= x, "y" .= y
-                      , "pixelSize" .= (px * d) ]
+  m <- viewerModel (vsViewer vs)
+  Dimensions wh <- getDynamic (vSize (vsViewer vs))
+  let ViewSettings (x, y) turn px = viewSettings wh m
+      kind = case modelShape m of
+        FlatShape -> "plane" :: Text.Text
+        GlobeShape _ -> "sphere"
+        HyperbolicShape{} -> "hyperbolic"
+  post $ Aeson.object [ "type" .= ("where" :: Text.Text), "viewer" .= k
+                      , "x" .= (if isInfinite x then Nothing else Just x), "y" .= (if isInfinite x then 0 else y)
+                      , "turn" .= turn, "pixelSize" .= (px * d), "kind" .= kind ]
 
 -- | A viewer's view as its file saved it (in @web-properties:@, with the
 -- desktop's keys): on the sphere (@view: sphere@), the globe's rotation
@@ -1614,8 +1623,15 @@ applySavedView v saved title = case saved of
   Just (Aeson.Object o)
     | Just (Aeson.Object vs) <- KM.lookup "viewers" o
     , Just (Aeson.Object p) <- KM.lookup (fromString title) vs -> do
-        forM_ (KM.lookup "rotation" p >>= decodeValue) $ \case
-          [w, x, y, z] -> setValue (vRotation v) (Rotation w x y z)
+        -- (on the sphere, the view; or, saved before views were Möbius
+        -- maps, its rotation and zoom)
+        case (KM.lookup "mobius" p >>= decodeValue >>= globeFromEntries, KM.lookup "rotation" p >>= decodeValue) of
+          (Just g, _) -> setValue (vGlobe v) g
+          (Nothing, Just [w, x, y, z]) -> do
+            let zoom = case KM.lookup "zoom" p of
+                  Just (Aeson.Number l) | l > 0 -> realToFrac l
+                  _ -> 1
+            setValue (vGlobe v) (withGlobeZoom zoom (rotationGlobe (Rotation w x y z)))
           _ -> pure ()
         forM_ (KM.lookup "isometry" p >>= decodeValue) $ \case
           [ar, ai, br, bi] -> setValue (vIsometry v) (normalizeIsometry (Isometry (ar :+ ai) (br :+ bi)))
@@ -1645,13 +1661,13 @@ withViews viewers = \case
       let v = vsViewer st
       title <- getDynamic (vTitle v)
       kind <- getDynamic (vView v)
-      Rotation w x y z <- getDynamic (vRotation v)
+      globe <- getDynamic (vGlobe v)
       Isometry (ar :+ ai) (br :+ bi) <- getDynamic (vIsometry v)
       aspect <- getDynamic (vAspect v)
       let viewName = case kind of { SphereView -> "sphere"; PlaneView -> "plane"; DiskView -> "disk"; HalfPlaneView -> "halfplane" }
           extra = [ ("view", Aeson.String viewName) | kind /= vOriginalView v ]
                ++ [ ("aspect", Aeson.toJSON aspect) | aspect /= vOriginalAspect v ]
-               ++ [ ("rotation", Aeson.toJSON [w, x, y, z]) | kind == SphereView ]
+               ++ [ ("mobius", Aeson.toJSON (globeEntries globe)) | kind == SphereView ]
                ++ [ ("isometry", Aeson.toJSON [ar, ai, br, bi]) | isJust (hyperbolicDisplay kind) ]
       pure $ case KM.lookup (fromString title) acc of
         Just (Aeson.Object p) -> KM.insert (fromString title) (Aeson.Object (foldr (uncurry KM.insert) p extra)) acc
@@ -1751,9 +1767,19 @@ diskDrag k fx fy tx ty = withViewerState k $ \vs -> do
 
 rotate :: Int -> Double -> Double -> Double -> Double -> IO ()
 rotate k fx fy tx ty = withViewerState k $ \vs -> do
-  r <- getDynamic (vRotation (vsViewer vs))
-  setValue (vRotation (vsViewer vs)) (trackballRotation r (fx, fy) (tx, ty))
+  g <- getDynamic (vGlobe (vsViewer vs))
+  setValue (vGlobe (vsViewer vs)) (trackballGlobe g (fx, fy) (tx, ty))
   -- (the globe's turned: the last picture shows none of it where it is now)
+  writeIORef (vsCovered vs) Nothing
+  requestRender (vsSignal vs)
+
+-- | Zoom a sphere viewer's globe by a factor (less than 1 zooms in),
+-- keeping the point under a screen point (in the sphere's radii) where it
+-- is. The globe itself stays put, filling the window.
+zoomGlobe :: Int -> Double -> Double -> Double -> IO ()
+zoomGlobe k sx sy factor = withViewerState k $ \vs -> do
+  g <- getDynamic (vGlobe (vsViewer vs))
+  setValue (vGlobe (vsViewer vs)) (zoomGlobeAbout g (sx, sy) factor)
   writeIORef (vsCovered vs) Nothing
   requestRender (vsSignal vs)
 
@@ -1946,7 +1972,7 @@ postFieldChanges = readIORef sessionRef >>= mapM_ (\Session{..} -> do
 toModel :: Viewer -> (Double, Double) -> IO (Maybe (Double, Double))
 toModel viewer p = getDynamic (vView viewer) >>= \case
   PlaneView -> pure (Just p)
-  SphereView -> getDynamic (vRotation viewer) <&> \r -> screenToPlane r p
+  SphereView -> getDynamic (vGlobe viewer) <&> \g -> screenToPlane g p
   DiskView -> getDynamic (vIsometry viewer) <&> \iso -> screenToModelH (hyperbolicModel (vOriginalView viewer)) DiskDisplay iso p
   HalfPlaneView -> getDynamic (vIsometry viewer) <&> \iso -> screenToModelH (hyperbolicModel (vOriginalView viewer)) HalfPlaneDisplay iso p
 
@@ -1995,7 +2021,7 @@ postDrawings ViewerState{..} = do
   curved <- (/= PlaneView) <$> getDynamic (vView vsViewer)
   when (changed || curved) $ do
     layers <- vDrawCmds vsViewer
-    proj <- viewProjection (vOriginalView vsViewer) (vView vsViewer) (vRotation vsViewer) (vIsometry vsViewer)
+    proj <- viewProjection (vOriginalView vsViewer) (vView vsViewer) (vGlobe vsViewer) (vIsometry vsViewer)
     -- (with a group, in each tile on the screen)
     Dimensions size <- getDynamic (vSize vsViewer)
     center <- getDynamic (vCenter vsViewer)
