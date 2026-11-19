@@ -3,6 +3,7 @@ module Language.EditorSpec (spec) where
 import Test.Hspec
 
 import Language.Editor
+import Language.Parser.SourceRange (SourceRange(..), Pos(..))
 
 spec :: Spec
 spec = describe "editing scripts" $ do
@@ -36,6 +37,36 @@ spec = describe "editing scripts" $ do
       characterBoundary line 7 False `shouldBe` 7
       characterBoundary line 0 True `shouldBe` 0
       characterBoundary line (length line) False `shouldBe` length line
+
+  describe "showing an error" $ do
+
+    it "summarizes it on one line, after its line number" $ do
+      errorSummary (SourceRange (Pos 22 4) (Pos 22 7)) "No variable\nnamed  x." `shouldBe` "Line 23: No variable named x."
+      errorSummary NoSourceRange "Something's wrong." `shouldBe` "Something's wrong."
+
+    it "finds what's wrong in its line" $ do
+      errorSpanInLine "  color <- 3" (SourceRange (Pos 0 11) (Pos 0 11)) `shouldBe` Just (11, 12)
+      errorSpanInLine "  m := itertions + 1" (SourceRange (Pos 3 7) (Pos 3 15)) `shouldBe` Just (7, 16)
+      -- (x\x302 is one character: x with a hat)
+      errorSpanInLine "x\x302 + y" (SourceRange (Pos 0 1) (Pos 0 1)) `shouldBe` Just (0, 2)
+      errorSpanInLine "anything" NoSourceRange `shouldBe` Nothing
+
+    it "takes all of the code of an error's first line, for one over several" $ do
+      errorSpanInLine "  if z escaped" (SourceRange (Pos 0 0) (Pos 2 0)) `shouldBe` Just (2, 14)
+
+    it "puts carets under what's wrong, then the message" $ do
+      errorNote 40 (Just (3, 2)) "No variable named x." `shouldBe` ["   ^^", "No variable named x."]
+      errorNote 40 Nothing "m" `shouldBe` ["m"]
+
+    it "leaves out carets that don't fit, and cuts short ones that don't all fit" $ do
+      errorNote 10 (Just (12, 1)) "m" `shouldBe` ["m"]
+      errorNote 10 (Just (8, 6)) "m" `shouldBe` ["        ^^", "m"]
+
+    it "wraps the message, keeping its lines and their indentation" $ do
+      errorNote 12 Nothing "one two three four\n  five six seven\n\n"
+        `shouldBe` ["one two", "three four", "  five six", "  seven"]
+      wrapText 5 "a verylongword b" `shouldBe` ["a", "verylongword", "b"]
+      wrapText 5 "" `shouldBe` [""]
 
   describe "what to underline" $ do
 

@@ -262,8 +262,11 @@ body {
 .editor-text .cm-scroller { font-family: inherit; }
 .editor-text .cm-content { caret-color: var(--fg); }
 .editor-text .cm-editor.cm-focused { outline: none; }
-.editor-status { padding: 4px 8px; min-height: 1.4em; font-size: 12px; color: var(--muted); white-space: pre-wrap; border-top: 1px solid var(--line); }
+.editor-status { padding: 4px 8px; min-height: 1.4em; font-size: 12px; color: var(--muted); white-space: nowrap;
+                 overflow: hidden; text-overflow: ellipsis; border-top: 1px solid var(--line); }
 .editor-status.error { color: var(--error); }
+.editor-status.clickable { cursor: pointer; }
+.editor-status.clickable:hover { text-decoration: underline; }
 .editor-buttons { display: flex; gap: 6px; padding: 4px 8px 8px; }
 .editor-buttons button {
   font: inherit; padding: 3px 12px; border-radius: 6px; cursor: pointer;
@@ -285,6 +288,17 @@ body {
 /* (the engine's colors, Language.Editor.Highlight's classes: preferences.ts
    writes them, with the preferences' changes, and the editor's font) */
 .cm-script-error { text-decoration: underline wavy var(--error); text-decoration-skip-ink: none; }
+/* an error's line, marked in the gutter; and its note, under the line */
+.editor-text .cm-error-gutter .cm-gutterElement { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.cm-error-dot { width: 8px; height: 8px; margin: 0 3px; border-radius: 50%; background: var(--error); }
+.cm-error-note-row { padding: 6px 0 4px; }
+.cm-error-note { position: relative; width: fit-content; max-width: min(48em, 100%); box-sizing: border-box;
+                 padding: 4px 10px; border: 1px solid var(--error); border-radius: 6px;
+                 background: color-mix(in srgb, var(--error) 12%, var(--panel)); color: var(--fg);
+                 white-space: pre-wrap; font-family: system-ui, sans-serif; font-size: 12px; line-height: 1.4; cursor: text; }
+.cm-error-note-arrow { position: absolute; top: -6px; width: 10px; height: 10px; margin-left: -5px;
+                       background: inherit; border-left: 1px solid var(--error); border-top: 1px solid var(--error);
+                       transform: rotate(45deg); }
 /* an escape being typed (\theta), and what it would become */
 .cm-escape { outline: 1px solid var(--accent); border-radius: 2px; }
 .cm-symbol-preview { padding: 3px 8px; font: 12px ui-monospace, monospace; color: var(--muted); white-space: pre; }

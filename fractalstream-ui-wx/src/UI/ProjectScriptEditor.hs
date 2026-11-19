@@ -29,7 +29,7 @@ import Actor.Layout (CodeString(..))
 import Actor.Viewer (Backend)
 import UI.Loading (whileLoading)
 import Actor.Metadata (ProjectMetadata(..))
-import UI.Widgets (scriptWidget, scriptEditMenu, onOwnDestroy)
+import UI.Widgets (scriptWidget, ScriptWidget(..), scriptEditMenu, onOwnDestroy)
 import UI.WxProperties (WxLayout, rememberLayout, releaseViewerFrame, releaseConfigFrame, discardSpareFrames)
 import Data.DynamicValue
 
@@ -145,7 +145,8 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
   choices0 <- getDynamic (ensembleColorizerChoices prj)
   srcVar <- newVariable (CodeString srcText)
   scriptCheck <- newMapped (pure (\(CodeString s) -> checkScriptWithColorizers choices0 s)) srcVar
-  (ce, liveErrorText) <- scriptWidget p scriptCheck
+  sw <- scriptWidget p scriptCheck
+  let ce = swEditor sw
 
   -- While this editor is open, what's in it is the project's script, as
   -- far as saving goes, whether or not it's been rebuilt yet (saving
@@ -164,17 +165,8 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
       Just w | w == objectCast f -> Nothing
       other -> other
   void (watchDynamic srcVar (const sehMarkUnsaved))
-  editMenu <- scriptEditMenu ce
+  editMenu <- scriptEditMenu sw
   sehAddMenuBar f [editMenu]
-
-  -- Separate from `liveErrorText` above: that one reflects the
-  -- *current* text's live check, continuously; this one reflects
-  -- the *last explicit Rebuild attempt*, and is the only place a
-  -- deeper error 'checkScript' doesn't catch (e.g. a config
-  -- field's default not matching its declared type -- only
-  -- found by 'buildWithValidTargets', which interleaves that
-  -- check with allocation) ever gets reported.
-  rebuildErrorText <- staticText p [ text := "", visible := False ]
 
   rebuildBtn <- button p [ text := "Rebuild" ]
   cancelBtn  <- button p [ text := "Cancel"
@@ -184,9 +176,11 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
       newText <- styledTextCtrlGetText ce
       choices <- getDynamic . ensembleColorizerChoices =<< getDynamic currentEnsemble
       buildEnsembleWithColorizers choices newText >>= \case
-        Left err -> do
-          set rebuildErrorText [ text := formatScriptError newText err, visible := True ]
-          windowReLayout f
+        -- (an error the check as it's typed doesn't find: a config
+        -- field's default not matching its declared type, say, found
+        -- only by 'buildWithValidTargets', which interleaves that check
+        -- with allocation)
+        Left err -> swRebuildError sw err
         Right newEns -> do
           -- `windowDestroy`, not `windowClose ... True`: every
           -- viewer frame ('UI.ProjectViewer.makeWxComplexViewer')
@@ -218,8 +212,7 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
 
   set f [ layout := fill $ container p $ fill $ margin 5 $ column 5
             [ fill $ widget ce
-            , hstretch $ expand $ widget liveErrorText
-            , hstretch $ expand $ widget rebuildErrorText
+            , hstretch $ expand $ widget (swStatus sw)
             , hstretch $ expand $ row 5 [ widget rebuildBtn, widget cancelBtn ]
             ]
         , clientSize := sz 700 500

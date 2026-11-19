@@ -10,6 +10,11 @@ module Language.Editor
   , lastCharacterStart
   , firstCharacterLength
   , characterBoundary
+  , errorLine
+  , errorSummary
+  , errorNote
+  , errorSpanInLine
+  , wrapText
   ) where
 
 import Data.Char (isSpace, isMark, generalCategory, GeneralCategory(Format))
@@ -192,3 +197,55 @@ characterBoundary line i back
       if back then lastCharacterStart (take i line)
       else i + length (takeWhile isMark (drop i line))
   | otherwise = i
+
+-- | The line an error is on (counting from 0), if it says where it is.
+errorLine :: SourceRange -> Maybe Int
+errorLine = \case
+  NoSourceRange -> Nothing
+  SourceRange (Pos r _) _ -> Just r
+
+-- | An error's message on one line, after which line it's on (counting
+-- from 1, as an editor numbers them): for a status line, which shows as
+-- much of it as fits.
+errorSummary :: SourceRange -> String -> String
+errorSummary range msg =
+  maybe "" (\r -> "Line " ++ show (r + 1) ++ ": ") (errorLine range) ++ unwords (words msg)
+
+-- | Where in its line an error is (character offsets in the line given,
+-- the end not included): over whole characters ('visibleSpan'), and for
+-- an error over several lines, all of its first line's code. Nothing, if
+-- it doesn't say, or nothing there shows.
+errorSpanInLine :: String -> SourceRange -> Maybe (Int, Int)
+errorSpanInLine line = \case
+  NoSourceRange -> Nothing
+  SourceRange (Pos r c) (Pos r' c')
+    | r == r' -> visibleSpan line c (c' + 1)
+    | otherwise -> visibleSpan line (length (takeWhile isSpace line)) (length line)
+
+-- | What to show under the line with an error, at most @width@ columns
+-- wide: a line of carets under what's wrong, if it's given as how many
+-- spaces go before them and how many there are (as far as they fit),
+-- then the message, wrapped to fit.
+errorNote :: Int -> Maybe (Int, Int) -> String -> [String]
+errorNote width carets msg = caretLine ++ concatMap (wrapText width) paragraphs
+  where
+    paragraphs = dropWhileEnd (all isSpace) (map (dropWhileEnd isSpace) (lines msg))
+    caretLine = case carets of
+      Just (lead, n) | lead >= 0, lead < width -> [replicate lead ' ' ++ replicate (max 1 (min n (width - lead))) '^']
+      _ -> []
+
+-- | Text wrapped at spaces into lines at most @width@ columns wide (a
+-- word longer than that gets a line of its own), each keeping the
+-- text's own indentation.
+wrapText :: Int -> String -> [String]
+wrapText width text = case words rest of
+  [] -> [""]
+  w : ws -> go w ws
+  where
+    (indent, rest) = span (== ' ') text
+    room = max 1 (width - length indent)
+    go current = \case
+      [] -> [indent ++ current]
+      w : ws
+        | length current + 1 + length w <= room -> go (current ++ " " ++ w) ws
+        | otherwise -> (indent ++ current) : go w ws

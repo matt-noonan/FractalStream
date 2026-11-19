@@ -11,6 +11,7 @@ module UI.Widgets
   , expressionWidget
   , scriptWidget
   , scriptWidgetWith
+  , ScriptWidget(..)
   , scriptEditMenu
   , normalizeEditor
   ) where
@@ -24,6 +25,7 @@ import Actor.Layout
 import Language.Parser.SourceRange (SourceRange, spanOfSourceRange, SourceSpan(..))
 import Language.Editor.Highlight (Highlight, highlightsWith)
 import Language.Editor.Normalize (normalizations)
+import Language.Editor (errorLine, errorSummary, errorNote, errorSpanInLine)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as Utf8
 import UI.EditorStyle (styleFor)
@@ -31,7 +33,7 @@ import UI.EditorStyle (styleFor)
 import UI.CodeEditor
 import UI.AppSettings (appSettings)
 import FractalStream.Settings (Settings(..), ClassStyle, editorFont)
-import UI.EditorStyle (setupStyles, showLineNumbers)
+import UI.EditorStyle (setupStyles, showLineNumbers, errorColor)
 import UI.EditorKeys (emacsKeysByDefault, pasteFittingIndentation, toggleCommentLines)
 
 import Graphics.UI.WX hiding (pt, when, grey, Color)
@@ -43,6 +45,8 @@ import Graphics.UI.WXCore.WxcClassTypes (ColourPickerCtrl, WxObject)
 import Control.Concurrent
 import Data.Char (toUpper)
 import Data.IORef
+import Data.Bits ((.|.))
+import Graphics.UI.WXCore.WxcDefs (wxST_NO_AUTORESIZE)
 import Text.Printf
 import qualified Data.Map as Map
 
@@ -304,15 +308,36 @@ genericExpressionWidget _canEditEnvironment p l UIVariable{..} = liftIO $ do
 
   pure (labelTxt, te, errorMessage)
 
+-- | An editor for a script ('scriptWidget'), and what goes with it.
+data ScriptWidget = ScriptWidget
+  { swEditor :: StyledTextCtrl ()
+    -- | The line under the editor that says what's wrong with the script,
+    -- if anything (shown only then); clicking it goes to the error.
+  , swStatus :: StaticText ()
+    -- | Show an error found in building the project from the script as
+    -- it is now (one the check as it's typed didn't find), and go to it;
+    -- shown until the script's changed.
+  , swRebuildError :: (SourceRange, String) -> IO ()
+    -- | Go to the error, if there is one, showing its message (as F8 does
+    -- in the editor).
+  , swGoToError :: IO ()
+  }
+
 -- | Everything about editing a piece of unified-script text that comes
 -- "for free" from a reactive 'Mapped': live syntax coloring (comments)
--- and an inline error indicator at the first error's source span, kept
--- in sync as the text changes. Any pure text -> @'Either' ('SourceRange',
--- 'String') t@ check can drive it.
+-- and its first error, kept in sync as the text changes. Any pure text
+-- -> @'Either' ('SourceRange', 'String') t@ check can drive it.
+--
+-- An error is underlined, its line marked in the margin, and summed up
+-- under the editor, on one line. Its whole message goes in a note under
+-- its line: shown once the cursor's off that line (so that it doesn't
+-- come and go while the line's being typed), or the editor isn't being
+-- typed in. Clicking the margin's mark shows or hides the note, from
+-- then on; clicking the summary, or F8, goes to the error and shows it.
 scriptWidget :: MonadIO io
              => Window a
              -> Mapped CodeString (Either (SourceRange, String) t)
-             -> io (StyledTextCtrl (), StaticText ())
+             -> io ScriptWidget
 scriptWidget = scriptWidgetWith Map.empty
 
 -- | 'scriptWidget', for a script that can refer to names it doesn't
@@ -322,12 +347,24 @@ scriptWidgetWith :: MonadIO io
                  => Map String Highlight
                  -> Window a
                  -> Mapped CodeString (Either (SourceRange, String) t)
-                 -> io (StyledTextCtrl (), StaticText ())
+                 -> io ScriptWidget
 scriptWidgetWith known p scriptCode = do
-  ce <- liftIO $ codeEditor p scriptCode
+  -- (what clicking the error's mark in the margin does, once there's
+  -- an editor for it to do it in)
+  onMarkClick <- liftIO $ newIORef (\_ -> pure ())
+  -- (and refreshing the error's note, for what's set up before it is)
+  noteRefresher <- liftIO $ newIORef (pure ())
+  let refreshNoteLater = join (readIORef noteRefresher)
+  ce <- liftIO $ codeEditor p scriptCode (\l -> readIORef onMarkClick >>= ($ l))
   txt <- unCodeString <$> getDynamic (source scriptCode)
   lastText <- liftIO $ newIORef txt
-  errorText <- liftIO $ staticText p [ text := "" ]
+  isLight0 <- liftIO (frameIsLight p)
+  let (er, eg, eb) = errorColor isLight0
+  -- (cut short with "…" if it's too long: wxST_ELLIPSIZE_END)
+  errorText <- liftIO $ do
+    t <- staticTextCreate p idAny "" rectNull (0x0010 .|. wxST_NO_AUTORESIZE)
+    set t [ visible := False, textColor := rgb er eg eb ]
+    pure t
 
   -- Writing the script with mathematical symbols ("Language.Editor.
   -- Normalize"), with the math-symbols setting: once it's been edited
@@ -374,8 +411,10 @@ scriptWidgetWith known p scriptCode = do
           True -> do
             writeIORef focused True
             styledTextCtrlGetText ce >>= writeIORef lastText
+            refreshNoteLater
           False -> do
             writeIORef focused False
+            refreshNoteLater
             new <- styledTextCtrlGetText ce
             old <- readIORef lastText
             when (new /= old) $ do
@@ -411,7 +450,8 @@ scriptWidgetWith known p scriptCode = do
                        lineBefore <- readIORef caretLine
                        when (lineNow /= lineBefore) $ do
                          writeIORef caretLine lineNow
-                         normalizeExcept (Just lineNow) ]
+                         normalizeExcept (Just lineNow)
+                         refreshNoteLater ]
   -- Show the script when it's changed from elsewhere. wxWatchDynamic
   -- runs this up to 100ms after the change, so it also hears, late, about
   -- the changes this editor made itself, by which time there may be more
@@ -443,48 +483,172 @@ scriptWidgetWith known p scriptCode = do
       setupStyles ce isLight settings
     -- (every time: the margin's width depends on the font, too)
     showLineNumbers ce (setLineNumbers settings)
-  isError <- liftIO ((isLeft <$> getDynamic scriptCode) >>= \startError ->
-                        variable [ value := startError ])
+    -- (and so does how wide the note can be)
+    refreshNoteLater
+  -- The error shown: the check's, as the script's typed, if it finds
+  -- one; or else one from building the project from the script (with
+  -- the text it was found in, since it's only shown for that text).
+  liveError <- liftIO $ (either Just (const Nothing) <$> getDynamic scriptCode) >>= newIORef
+  rebuildError <- liftIO $ newIORef (Nothing :: Maybe (String, (SourceRange, String)))
+  -- whether the error's note is to be shown, if that's been chosen (by
+  -- clicking its mark, or going to it), until there's no error
+  noteChosen <- liftIO $ newIORef (Nothing :: Maybe Bool)
+  -- what's shown now: the error (whether from a rebuild, where, and
+  -- what it says), and its note
+  shownError <- liftIO $ newIORef (Nothing :: Maybe (Bool, SourceRange, String))
+  shownNote <- liftIO $ newIORef (Nothing :: Maybe (Int, [String]))
+
+  let currentError = readIORef liveError >>= \case
+        Just (loc, msg) -> pure (Just (False, loc, msg))
+        Nothing -> readIORef rebuildError >>= \case
+          Just (forText, (loc, msg)) -> do
+            code <- styledTextCtrlGetText ce
+            pure (if code == forText then Just (True, loc, msg) else Nothing)
+          Nothing -> pure Nothing
+
+      -- (the error's line, as a line there is)
+      lineOfError loc = do
+        lineCount <- styledTextCtrlGetLineCount ce
+        pure (errorLine loc <&> \l -> max 0 (min (lineCount - 1) l))
+
+      -- The note: shown if that's been chosen, or else if the cursor's
+      -- off the error's line, or the editor isn't being typed in.
+      refreshNote = do
+        err <- readIORef shownError
+        note <- case err of
+          Nothing -> pure Nothing
+          Just (_, loc, msg) -> lineOfError loc >>= \case
+            Nothing -> pure Nothing
+            Just l -> do
+              chosen <- readIORef noteChosen
+              isFocused <- readIORef focused
+              lineNow <- currentLine
+              let wanted = fromMaybe (not isFocused || lineNow /= l) chosen
+              if not wanted then pure Nothing else do
+                code <- styledTextCtrlGetText ce
+                lineStart <- styledTextCtrlPositionFromLine ce l
+                let lineText = fromMaybe "" (listToMaybe (drop l (lines code)))
+                    byteAt i = lineStart + BS.length (Utf8.fromString (take i lineText))
+                    span' = errorSpanInLine lineText loc <&> \(i, j) -> (byteAt i, byteAt j)
+                (width, carets) <- errorNoteLayout ce l span'
+                pure (Just (l, errorNote width carets msg))
+        before <- readIORef shownNote
+        when (note /= before) $ do
+          writeIORef shownNote note
+          showErrorNote ce note
+
+      -- Show the error there is now, if any: underlined, marked in the
+      -- margin, summed up under the editor, and its note.
+      refreshError = do
+        err <- currentError
+        before <- readIORef shownError
+        when (isNothing err) (writeIORef noteChosen Nothing)
+        writeIORef shownError err
+        code <- styledTextCtrlGetText ce
+        case err of
+          Nothing -> do
+            clearError ce
+            markErrorLine ce Nothing
+          Just (_, loc, _) -> do
+            case convertSourceSpan code <$> spanOfSourceRange loc of
+              Nothing -> clearError ce
+              Just (s, e) -> do
+                -- (byte positions: the map is from characters to bytes,
+                -- and the end of the text maps to nothing, so it's its
+                -- length)
+                docLen <- styledTextCtrlGetLength ce
+                let m = editorOffsetMap code
+                    byteAt i = Map.findWithDefault docLen i m
+                    from = byteAt s
+                markError ce from (byteAt (e + 1) - from)
+            lineOfError loc >>= markErrorLine ce
+        refreshNote
+        when (err /= before) $ do
+          case err of
+            Nothing -> set errorText [ text := "", tooltip := "", visible := False ]
+            Just (fromRebuild, loc, msg) -> do
+              let why = if fromRebuild then "Not rebuilt. " else ""
+              set errorText [ text := "⚠️ " ++ why ++ errorSummary loc msg
+                            , tooltip := msg ++ (if isJust (errorLine loc) then "\n\n(Click to go to it.)" else "")
+                            , visible := True ]
+          when (isJust err /= isJust before) (windowReLayout p)
+
+      goToError = currentError >>= \case
+        Nothing -> pure ()
+        Just (_, loc, _) -> lineOfError loc >>= \case
+          Nothing -> pure ()
+          Just l -> do
+            code <- styledTextCtrlGetText ce
+            docLen <- styledTextCtrlGetLength ce
+            let start' = case convertSourceSpan code <$> spanOfSourceRange loc of
+                  Just (s, _) -> Map.findWithDefault docLen s (editorOffsetMap code)
+                  Nothing -> 0
+            styledTextCtrlEnsureVisible ce l
+            styledTextCtrlGotoPos ce start'
+            writeIORef noteChosen (Just True)
+            writeIORef caretLine l
+            refreshNote
+            -- with room for the note under the line, if it's near the
+            -- bottom (or off the screen)
+            noteLines <- maybe 0 (length . snd) <$> readIORef shownNote
+            shownAt <- styledTextCtrlVisibleFromDocLine ce l
+            topLine <- styledTextCtrlGetFirstVisibleLine ce
+            onScreen <- styledTextCtrlLinesOnScreen ce
+            when (shownAt < topLine || shownAt + noteLines + 1 >= topLine + onScreen) $
+              styledTextCtrlLineScroll ce 0 (shownAt - onScreen `div` 3 - topLine)
+            windowSetFocus ce
+
+  liftIO $ do
+    writeIORef noteRefresher refreshNote
+    writeIORef onMarkClick $ \l -> do
+      shown <- readIORef shownNote
+      err <- readIORef shownError
+      lineNow <- maybe (pure Nothing) (\(_, loc, _) -> lineOfError loc) err
+      when (lineNow == Just l) $ do
+        writeIORef noteChosen (Just (isNothing shown))
+        refreshNote
+    set errorText [ on click := \_ -> goToError ]
+    set ce [ on resize :~ \editorsOwn -> editorsOwn >> refreshNote ]
+    editorsKeys <- windowGetOnKeyDown ce
+    windowOnKeyDown ce $ \k -> case keyKey k of
+      KeyF8 -> goToError
+      _ -> editorsKeys k
+
   wxWatchDynamic p scriptCode $ \case
-    Left (loc, msg) -> do
+    Left err -> do
       writeIORef checkedText Nothing
-      set isError [ value := True ]
-      set errorText [ text := "⚠️ " ++ msg, visible := True ]
-      windowReLayout p
-      code <- styledTextCtrlGetText ce
-      m <- doSyntaxColoring
-      case convertSourceSpan code <$> spanOfSourceRange loc of
-        Nothing -> clearError ce
-        Just (s, e) -> do
-          -- (byte positions: the map is from characters to bytes, and
-          -- the end of the text maps to nothing, so it's its length)
-          docLen <- styledTextCtrlGetLength ce
-          let byteAt i = Map.findWithDefault docLen i m
-              from = byteAt s
-          markError ce from (byteAt (e + 1) - from)
-    Right _ -> do
-      wasError <- get isError value
+      writeIORef liveError (Just err)
       void doSyntaxColoring
-      clearError ce
+      refreshError
+    Right _ -> do
+      writeIORef liveError Nothing
+      void doSyntaxColoring
+      refreshError
       CodeString good <- getDynamic (source scriptCode)
       writeIORef checkedText (Just good)
       isFocused <- readIORef focused
       lineNow <- currentLine
       normalizeExcept (if isFocused then Just lineNow else Nothing)
-      when wasError $ do
-        set isError [ value := False ]
-        set errorText [ text := "", visible := False ]
-        windowReLayout p
 
   void $ liftIO doSyntaxColoring
-  pure (ce, errorText)
+  liftIO refreshError
+  pure ScriptWidget
+    { swEditor = ce
+    , swStatus = errorText
+    , swRebuildError = \err -> do
+        code <- styledTextCtrlGetText ce
+        writeIORef rebuildError (Just (code, err))
+        refreshError
+        goToError
+    , swGoToError = goToError
+    }
 
 -- | An Edit menu for a code editor: the usual commands, and toggling
 -- comments and normalizing the script. (With emacs keys where Control
 -- is the shortcut key, Select All and Paste have no shortcuts, so that
 -- Control-A and Control-V stay emacs keys.)
-scriptEditMenu :: StyledTextCtrl a -> IO (Menu ())
-scriptEditMenu ce = do
+scriptEditMenu :: ScriptWidget -> IO (Menu ())
+scriptEditMenu ScriptWidget{ swEditor = ce, swGoToError } = do
   emacs <- setEmacsKeys <$> getDynamic appSettings
   let shortcut letter = if emacs && not emacsKeysByDefault then "" else "\tCtrl+" ++ letter
   m <- menuPane [ text := "&Edit" ]
@@ -498,6 +662,8 @@ scriptEditMenu ce = do
   menuLine m
   _ <- menuItem m [ text := "Toggle Comment\tCtrl+/", on command := toggleCommentLines ce ]
   _ <- menuItem m [ text := "Normalize Script", on command := normalizeEditor ce ]
+  menuLine m
+  _ <- menuItem m [ text := "Go to Error\tF8", on command := swGoToError ]
   pure m
 
 -- | Rewrite all of an editor's script with mathematical symbols

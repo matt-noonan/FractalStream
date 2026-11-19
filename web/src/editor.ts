@@ -22,12 +22,12 @@
 //   always do, as on the desktop: by their indentation, UI.CodeEditor's
 //   foldLevelsForText); its font and colors are the page's stylesheet's.
 
-import { Compartment, EditorSelection, EditorState, Prec, type StateCommand, StateEffect, StateField, RangeSetBuilder, Transaction,
-         type Extension } from "@codemirror/state";
-import { EditorView, Decoration, type DecorationSet, keymap, lineNumbers, showTooltip, type Tooltip, ViewPlugin,
-         type ViewUpdate } from "@codemirror/view";
+import { Compartment, EditorSelection, EditorState, Prec, type StateCommand, StateEffect, StateField, RangeSet, RangeSetBuilder,
+         Transaction, type Extension } from "@codemirror/state";
+import { EditorView, Decoration, type DecorationSet, gutter, GutterMarker, keymap, lineNumbers, showTooltip, type Tooltip,
+         ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { defaultKeymap, emacsStyleKeymap, history, historyKeymap, indentWithTab, isolateHistory } from "@codemirror/commands";
-import { codeFolding, foldGutter, foldKeymap, foldService, unfoldAll } from "@codemirror/language";
+import { codeFolding, foldedRanges, foldGutter, foldKeymap, foldService, unfoldAll, unfoldEffect } from "@codemirror/language";
 import { isMac, type Preferences } from "./preferences.js";
 import type { ScriptError } from "./protocol.js";
 import { Symbols, typedName } from "./symbols.js";
@@ -56,6 +56,99 @@ const colors = StateField.define<DecorationSet>({
   },
   provide: (f) => EditorView.decorations.from(f),
 });
+
+// --- the error shown: underlined, its line marked in the gutter, and its
+// message in a note under its line (if the note's shown). Its place moves
+// with the text as it's edited, until the next analysis.
+
+interface ShownError {
+  /** Where it is, if it says (the end not included). */
+  from: number | null;
+  to: number | null;
+  message: string;
+  /** Found in rebuilding, rather than as it was typed. */
+  rebuild: boolean;
+  note: boolean;
+}
+
+const setShownError = StateEffect.define<ShownError | null>();
+const setNote = StateEffect.define<boolean>();
+const shownError = StateField.define<ShownError | null>({
+  create: () => null,
+  update(e, tr) {
+    if (e && tr.docChanged && e.from !== null && e.to !== null)
+      e = { ...e, from: tr.changes.mapPos(e.from), to: tr.changes.mapPos(e.to, 1) };
+    for (const x of tr.effects) {
+      if (x.is(setShownError)) e = x.value;
+      else if (x.is(setNote) && e) e = { ...e, note: x.value };
+    }
+    return e;
+  },
+});
+
+/** Where an error is in a text as it is: at least a character (an error
+    at the very end, at the last one), or nowhere. */
+function errorRange(state: EditorState, e: ShownError | null): { from: number; to: number } | null {
+  if (!e || e.from === null || e.to === null || state.doc.length === 0) return null;
+  const from = Math.min(e.from, state.doc.length - 1);
+  return { from, to: Math.min(Math.max(e.to, from + 1), state.doc.length) };
+}
+
+/** An error's note: its message in a box, with an arrow up at the error
+    (put in place by placeNote, once it's been drawn). */
+class NoteWidget extends WidgetType {
+  constructor(readonly message: string) { super(); }
+  eq(other: NoteWidget) { return other.message === this.message; }
+  toDOM() {
+    return el("div", { className: "cm-error-note-row" },
+              el("div", { className: "cm-error-note" },
+                 el("div", { className: "cm-error-note-arrow" }), el("div", { textContent: this.message })));
+  }
+  // (its text can be selected, and copied)
+  ignoreEvent() { return true; }
+}
+
+const errorDecorations = EditorView.decorations.compute([shownError], (state) => {
+  const e = state.field(shownError);
+  const r = errorRange(state, e);
+  if (!e || !r) return Decoration.none;
+  const marks = [Decoration.mark({ class: "cm-script-error" }).range(r.from, r.to)];
+  if (e.note) marks.push(Decoration.widget({ widget: new NoteWidget(e.message), block: true, side: 1 })
+                                   .range(state.doc.lineAt(r.from).to));
+  return Decoration.set(marks, true);
+});
+
+/** The note's box under the error (as far as it fits), and its arrow at it. */
+const placeNote = ViewPlugin.fromClass(class {
+  constructor(view: EditorView) { this.place(view); }
+  update(u: ViewUpdate) {
+    if (u.docChanged || u.geometryChanged || u.viewportChanged || u.startState.field(shownError) !== u.state.field(shownError))
+      this.place(u.view);
+  }
+  place(view: EditorView) {
+    view.requestMeasure({
+      read: (v) => {
+        const r = errorRange(v.state, v.state.field(shownError));
+        const box = v.contentDOM.querySelector<HTMLElement>(".cm-error-note");
+        if (!r || !box || !box.parentElement) return null;
+        const at = v.coordsAtPos(r.from, 1);
+        const row = box.parentElement.getBoundingClientRect();
+        return { box, x: at ? at.left - row.left : 0, rowWidth: row.width, boxWidth: box.offsetWidth };
+      },
+      write: (m) => {
+        if (!m) return;
+        const left = Math.max(0, Math.min(m.x - 16, m.rowWidth - m.boxWidth));
+        m.box.style.marginLeft = `${left}px`;
+        const arrow = m.box.querySelector<HTMLElement>(".cm-error-note-arrow");
+        if (arrow) arrow.style.left = `${Math.max(4, m.x - left)}px`;
+      },
+    });
+  }
+});
+
+const errorDot = new class extends GutterMarker {
+  toDOM() { return el("div", { className: "cm-error-dot" }); }
+};
 
 // --- symbol entry: the escape being typed (from its backslash), if any
 
@@ -161,6 +254,14 @@ export class ScriptEditor {
   private timer: number | undefined;
   private edited = false;
   private caretLine = 0;
+  /** The error the last analysis found, if any (in the text it was of). */
+  private liveError: ScriptError | null = null;
+  /** The error rebuilding found, if any, with the text it was found in:
+      shown while that's the text (and there's no other). */
+  private rebuildError: { text: string; error: ScriptError } | null = null;
+  /** Whether an error's note is shown, if that's been chosen (by clicking
+      its mark, or going to it), until there's no error. */
+  private noteChosen: boolean | null = null;
   private readonly numbering = new Compartment();
   private readonly folding = new Compartment();
   private readonly emacs = new Compartment();
@@ -168,6 +269,7 @@ export class ScriptEditor {
   constructor(script: string, private readonly host: EditorHost, private prefs: Preferences) {
     this.script = script;
     this.status = el("div", { className: "editor-status" });
+    this.status.addEventListener("click", () => { if (this.status.classList.contains("clickable")) this.goToError(); });
     const rebuild = el("button", { type: "button", textContent: "Rebuild",
                                    title: "Build the project again from this script (Ctrl/Cmd-Enter)" });
     const revert = el("button", { type: "button", textContent: "Revert", title: "Go back to the project's script" });
@@ -191,8 +293,83 @@ export class ScriptEditor {
     if (rebuilt) this.say("Rebuilt.", false);
   }
 
+  /** Rebuilding found an error (one the analysis as it's typed didn't):
+      it's shown, and gone to, until the script's changed. */
   rebuildFailed(error: ScriptError) {
-    this.say(`⚠ It didn't build, so the project's as it was: ${error.message}`, true);
+    this.rebuildError = { text: this.view.state.doc.toString(), error };
+    this.showError();
+    this.goToError();
+  }
+
+  /** The error there is now, if any: the analysis's, or rebuilding's (for
+      the text as it is). */
+  private currentError(): { error: ScriptError; rebuild: boolean } | null {
+    if (this.liveError) return { error: this.liveError, rebuild: false };
+    const r = this.rebuildError;
+    if (r && r.text === this.view.state.doc.toString()) return { error: r.error, rebuild: true };
+    return null;
+  }
+
+  /** Show the error there is now, if any: in the text, and summed up below it. */
+  private showError() {
+    const current = this.currentError();
+    if (!current) {
+      this.noteChosen = null;
+      if (this.view.state.field(shownError)) this.view.dispatch({ effects: setShownError.of(null) });
+      if (this.status.classList.contains("error")) this.say("", false);
+      return;
+    }
+    const { error, rebuild } = current;
+    const message = error.message.trim();
+    const e: ShownError = { from: error.from, to: error.to, message, rebuild, note: false };
+    e.note = this.wantNote(e, this.view.state);
+    this.view.dispatch({ effects: setShownError.of(e) });
+    const r = errorRange(this.view.state, e);
+    const line = r ? `Line ${this.view.state.doc.lineAt(r.from).number}: ` : "";
+    this.say(`⚠ ${rebuild ? "Not rebuilt. " : ""}${line}${message.split(/\s+/).join(" ")}`, true,
+             r ? `${message}\n\n(Click to go to it.)` : message, r !== null);
+  }
+
+  /** Whether an error's note is to be shown: if that's been chosen; or
+      else once the cursor's off its line, or the editor isn't being typed in. */
+  private wantNote(e: ShownError, state: EditorState): boolean {
+    if (this.noteChosen !== null) return this.noteChosen;
+    const r = errorRange(state, e);
+    if (!r) return false;
+    return !this.view.hasFocus || state.doc.lineAt(r.from).number !== state.doc.lineAt(state.selection.main.head).number;
+  }
+
+  /** Show or hide the error's note, as it's to be now. */
+  private refreshNote() {
+    const e = this.view.state.field(shownError);
+    if (!e) return;
+    const want = this.wantNote(e, this.view.state);
+    if (want !== e.note) this.view.dispatch({ effects: setNote.of(want) });
+  }
+
+  /** The error's mark was clicked: show its note, or hide it, from now on. */
+  private toggleNote(lineFrom: number): boolean {
+    const state = this.view.state;
+    const r = errorRange(state, state.field(shownError));
+    if (!r || state.doc.lineAt(r.from).from !== lineFrom) return false;
+    this.noteChosen = !state.field(shownError)!.note;
+    this.refreshNote();
+    return true;
+  }
+
+  /** Go to the error, if there is one, showing its note (F8). */
+  goToError(): boolean {
+    const state = this.view.state;
+    const r = errorRange(state, state.field(shownError));
+    if (!r) return false;
+    // (opening any fold it's in)
+    const unfold: StateEffect<unknown>[] = [];
+    foldedRanges(state).between(r.from, r.from, (from, to) => { unfold.push(unfoldEffect.of({ from, to })); });
+    this.noteChosen = true;
+    this.view.dispatch({ selection: { anchor: r.from }, effects: [...unfold, setNote.of(true),
+                         EditorView.scrollIntoView(r.from, { y: "center" })] });
+    this.view.focus();
+    return true;
   }
 
   focus() { this.view.focus(); }
@@ -234,21 +411,21 @@ export class ScriptEditor {
     this.analyzed = { text, analysis };
     const b = new RangeSetBuilder<Decoration>();
     const marks: [number, number, string][] = analysis.spans.map(([f, t, c]) => [f, t, `tok-${c}`]);
-    const e = analysis.error;
-    if (e && e.from !== null && e.to !== null) {
-      const to = Math.max(e.to, e.from + 1);
-      marks.push([Math.min(e.from, text.length), Math.min(to, text.length), "cm-script-error"]);
-    }
     marks.sort((a, z) => a[0] - z[0] || a[1] - z[1]);
     for (const [f, t, c] of marks) if (t > f) b.add(f, t, Decoration.mark({ class: c }));
     this.view.dispatch({ effects: setColors.of(b.finish()) });
-    if (e) this.say(`⚠ ${e.message}`, true);
-    else { if (this.status.classList.contains("error")) this.say("", false); this.normalize(this.view.hasFocus); }
+    this.liveError = analysis.error;
+    this.showError();
+    if (!analysis.error) this.normalize(this.view.hasFocus);
   }
 
-  private say(text: string, error: boolean) {
+  /** Say something under the editor: the whole of it as its tooltip, if
+      it's too long to show; clicking it goes to the error, if it's clickable. */
+  private say(text: string, error: boolean, title = "", clickable = false) {
     this.status.textContent = text;
+    this.status.title = title;
     this.status.classList.toggle("error", error);
+    this.status.classList.toggle("clickable", clickable);
   }
 
   private rebuild() {
@@ -260,6 +437,7 @@ export class ScriptEditor {
   private revert() {
     this.view.setState(this.newState(this.script));
     this.edited = false;
+    this.rebuildError = null;
     this.say("", false);
     this.reanalyze();
   }
@@ -356,6 +534,7 @@ export class ScriptEditor {
           return true;
         } },
       { key: "Mod-Enter", run: () => { editor.rebuild(); return true; } },
+      { key: "F8", run: () => editor.goToError() },
       // (after finishing an escape, if there was one)
       { key: "Enter", run: newLine },
     ]);
@@ -397,6 +576,8 @@ export class ScriptEditor {
           if (!u.docChanged) queueMicrotask(() => editor.normalize(true));
         }
         if (u.focusChanged && !u.view.hasFocus) queueMicrotask(() => editor.normalize(false));
+        // (the error's note: shown once the cursor's off its line, ...)
+        if (u.selectionSet || u.focusChanged) queueMicrotask(() => editor.refreshNote());
       }
     });
     // (a backslash typed starts an escape; pasted names become symbols)
@@ -420,7 +601,18 @@ export class ScriptEditor {
       history(), escapeKeys, this.emacs.of(this.emacsFor(this.prefs)),
       keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
       colors, escapeStart, escapeBox, preview, watch, startEscape, pasteSymbols,
+      shownError, errorDecorations, placeNote,
       EditorView.lineWrapping, this.numbering.of(this.numberingFor(this.prefs)),
+      // (the error's line marked, between the line numbers and the folds)
+      gutter({
+        class: "cm-error-gutter",
+        markers: (v) => {
+          const r = errorRange(v.state, v.state.field(shownError));
+          return r ? RangeSet.of([errorDot.range(v.state.doc.lineAt(r.from).from)]) : RangeSet.empty;
+        },
+        initialSpacer: () => errorDot,
+        domEventHandlers: { mousedown: (_v, line) => editor.toggleNote(line.from) },
+      }),
       // (its markers redrawn when which lines fold changes)
       codeFolding(), foldGutter({ foldingChanged: (u) => u.startState.facet(foldService) !== u.state.facet(foldService) }),
       this.folding.of(this.foldingFor(this.prefs)),
