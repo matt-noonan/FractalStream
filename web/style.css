@@ -282,6 +282,9 @@ body {
 /* (the engine's colors, Language.Editor.Highlight's classes: preferences.ts
    writes them, with the preferences' changes, and the editor's font) */
 .cm-script-error { text-decoration: underline wavy var(--error); text-decoration-skip-ink: none; }
+/* the bracket at the cursor and its match, or one with no match (editor.ts's bracketDecorations) */
+.cm-bracket-match { background: color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 2px; }
+.cm-bracket-unmatched { background: color-mix(in srgb, var(--error) 25%, transparent); color: var(--error); border-radius: 2px; }
 /* an error's line, marked in the gutter; and its note, under the line */
 .editor-text .cm-error-gutter .cm-gutterElement { display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .cm-error-dot { width: 8px; height: 8px; margin: 0 3px; border-radius: 50%; background: var(--error); }

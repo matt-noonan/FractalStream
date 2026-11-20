@@ -23,7 +23,7 @@
 //   foldLevelsForText); its font and colors are the page's stylesheet's.
 
 import { Compartment, EditorSelection, EditorState, Prec, type StateCommand, StateEffect, StateField, RangeSet, RangeSetBuilder,
-         Transaction, type Extension } from "@codemirror/state";
+         type Text, Transaction, type Extension } from "@codemirror/state";
 import { EditorView, Decoration, type DecorationSet, gutter, GutterMarker, keymap, lineNumbers, showTooltip, type Tooltip,
          ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { defaultKeymap, emacsStyleKeymap, history, historyKeymap, indentWithTab, isolateHistory } from "@codemirror/commands";
@@ -107,6 +107,76 @@ class NoteWidget extends WidgetType {
   // (its text can be selected, and copied)
   ignoreEvent() { return true; }
 }
+
+// --- the bracket at the cursor, and the one it matches (or that it matches
+// none), as the desktop's editor shows them (UI.CodeEditor.highlightBrackets):
+// not a bracket in a comment or text, and only the same kind of bracket.
+
+const BRACKETS: Record<string, [string, number]> = {
+  "(": [")", 1], "[": ["]", 1], "{": ["}", 1], ")": ["(", -1], "]": ["[", -1], "}": ["{", -1],
+};
+
+/** Which characters of a line are code: not in text (in quotes) or a comment. */
+function codeMask(line: string): boolean[] {
+  const mask = new Array<boolean>(line.length).fill(true);
+  let inText = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inText) {
+      mask[i] = false;
+      if (c === "\\" && i + 1 < line.length) mask[++i] = false;
+      else if (c === '"') inText = false;
+    } else if (c === '"') {
+      mask[i] = false;
+      inText = true;
+    } else if (c === "#") {
+      mask.fill(false, i);
+      break;
+    }
+  }
+  return mask;
+}
+
+/** The bracket at a position (just before it, or else just after it), if
+    there's one, and where its match is (null if it has none). */
+export function bracketMatch(doc: Text, head: number): { at: number; match: number | null } | null {
+  const isBracket = (p: number) => {
+    if (p < 0 || p >= doc.length) return false;
+    const line = doc.lineAt(p);
+    return line.text[p - line.from] in BRACKETS && codeMask(line.text)[p - line.from];
+  };
+  const at = isBracket(head - 1) ? head - 1 : isBracket(head) ? head : null;
+  if (at === null) return null;
+  const self = doc.sliceString(at, at + 1);
+  const [other, dir] = BRACKETS[self];
+  let line = doc.lineAt(at);
+  let i = at - line.from;
+  let depth = 0;
+  // (not past a long way: a bracket with no match in a long script)
+  for (let scanned = 0; scanned < 100000;) {
+    const mask = codeMask(line.text);
+    for (; i >= 0 && i < line.text.length; i += dir, scanned++) {
+      if (!mask[i]) continue;
+      const c = line.text[i];
+      if (c === self) depth++;
+      else if (c === other && --depth === 0) return { at, match: line.from + i };
+    }
+    const next = line.number + dir;
+    if (next < 1 || next > doc.lines) break;
+    line = doc.line(next);
+    i = dir > 0 ? 0 : line.text.length - 1;
+  }
+  return { at, match: null };
+}
+
+const bracketDecorations = EditorView.decorations.compute(["doc", "selection"], (state) => {
+  const m = bracketMatch(state.doc, state.selection.main.head);
+  if (!m) return Decoration.none;
+  if (m.match === null) return Decoration.set([Decoration.mark({ class: "cm-bracket-unmatched" }).range(m.at, m.at + 1)]);
+  const [a, b] = m.at < m.match ? [m.at, m.match] : [m.match, m.at];
+  return Decoration.set([Decoration.mark({ class: "cm-bracket-match" }).range(a, a + 1),
+                         Decoration.mark({ class: "cm-bracket-match" }).range(b, b + 1)]);
+});
 
 const errorDecorations = EditorView.decorations.compute([shownError], (state) => {
   const e = state.field(shownError);
@@ -645,7 +715,7 @@ export class ScriptEditor {
       history(), escapeKeys, this.emacs.of(this.emacsFor(this.prefs)),
       keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
       colors, escapeStart, escapeBox, preview, watch, startEscape, pasteSymbols,
-      shownError, errorDecorations, placeNote,
+      shownError, errorDecorations, placeNote, bracketDecorations,
       EditorView.lineWrapping, this.numbering.of(this.numberingFor(this.prefs)),
       // (the error's line marked, between the line numbers and the folds)
       gutter({
