@@ -190,6 +190,11 @@ export type Layout =
   /** A table: what it is and its size (updated by "tableText"), and
       whether it can be exported and imported as CSV. */
   | { kind: "table"; name: string; summary: string; csv: boolean }
+  /** The colorizer of the viewer with this title: a menu of them, and
+      Arguments… (from the viewer's info's `colorizer`). */
+  | { kind: "colorizer"; viewer: string }
+  /** The project's autocolor groups, to see and edit. */
+  | { kind: "autocolor" }
   | FieldLayout;
 
 export interface FieldLayout {

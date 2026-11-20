@@ -294,7 +294,7 @@ Two other functions look a point up the same way, but never add one:
 
 A group stops adding points once it's locked, or once it has 256 of them;
 `autocolor` then works like `get_autocolor`, or, if the group's "Blend when
-no matching point" setting (in the Autocolor window) is off, like
+no matching point" setting (in the autocolor settings) is off, like
 `nearest_autocolor`.
 
 Which point gets which color depends on the order the points are first
@@ -303,9 +303,9 @@ seen in, and the app draws in pieces, on several threads at once: so
 starts from scratch**. Saving a project saves its groups' colors, and
 then they stay put.
 
-"Autocolor settings..." in a viewer's Colorizer menu (or the "Open
-autocolor settings..." button in the Autocolor colorizer's settings) opens
-a window for a project's groups:
+The "Autocolor settings" page of the configuration window's "Color
+settings" (where each viewer has a page too, with its colorizer) shows a
+project's groups:
 pick a group to see its points and their colors, and change a point or
 its color, add or delete points, clear the group, lock it, change its
 tolerance or the color it gives points it doesn't have, or choose whether

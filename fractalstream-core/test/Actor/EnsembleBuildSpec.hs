@@ -270,10 +270,10 @@ pass
             Tabbed tabsV -> do
               tabs <- getDynamic tabsV
               labels <- mapM (getDynamic . tiLabel) tabs
-              [ l | Label l <- labels ] `shouldBe` ["Dynamics", "Coloring", "Iteration settings"]
+              [ l | Label l <- labels ] `shouldBe` ["Dynamics", "Coloring", "Color settings", "Iteration settings"]
               pages <- mapM (getDynamic . tiBody) tabs
               sizes <- mapM (\case { Vertical v -> length <$> getDynamic v; _ -> pure (-1) }) pages
-              sizes `shouldBe` [2, 1, 3]
+              sizes `shouldBe` [2, 1, 1, 3]
             _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
 
     it "builds a row: block into a Horizontal layout" $
@@ -444,7 +444,8 @@ pass
         Just cfg <- getDynamic (ensembleConfiguration ens)
         case coContents cfg of
           Tabbed tabsV -> getDynamic tabsV >>= \case
-            [TabItem titleV bodyV] -> do
+            -- (after the viewer's "Color settings")
+            [_colors, TabItem titleV bodyV] -> do
               Label title <- getDynamic titleV
               title `shouldBe` "Iteration settings"
               getDynamic bodyV >>= \case
@@ -462,7 +463,7 @@ pass
                       evaluateInContext EmptyContext r2 `shouldBe` 0.0001
                     _ -> expectationFailure ("expected Z, R, R defaults 100/10/0.0001, got: " ++ show (length values) ++ " values")
                 _ -> expectationFailure "expected the tab body to be Vertical"
-            other -> expectationFailure ("expected a single implicit tab, got " ++ show (length other))
+            other -> expectationFailure ("expected \"Color settings\" and the implicit tab, got " ++ show (length other))
           _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
 
     it "lets an explicit `limit=`/`escape=`/`vanish=`/`pixelVar=` override \
@@ -492,10 +493,12 @@ iterate z -> z^2 until z vanishes
           Tabbed tabsV -> do
             tabs <- getDynamic tabsV
             labels <- mapM (getDynamic . tiLabel) tabs
-            [ l | Label l <- labels ] `shouldBe` ["Iteration settings"]
+            -- (the script's own "Iteration settings" come before the viewer's
+            -- "Color settings")
+            [ l | Label l <- labels ] `shouldBe` ["Iteration settings", "Color settings"]
             pages <- mapM (getDynamic . tiBody) tabs
             case pages of
-              [Vertical itemsV] -> getDynamic itemsV >>= \items -> do
+              [Vertical itemsV, _] -> getDynamic itemsV >>= \items -> do
                 values <- mapM (getDynamic . dyn . exprValue) [ uv | TextBox _ uv <- items ]
                 case values of
                   [ Right (SomeValue EmptyEnvProxy RealType v)
@@ -521,10 +524,10 @@ iterate z -> z^2 until z escapes
           Tabbed tabsV -> do
             tabs <- getDynamic tabsV
             labels <- mapM (getDynamic . tiLabel) tabs
-            [ l | Label l <- labels ] `shouldBe` ["Configuration", "Iteration settings"]
+            [ l | Label l <- labels ] `shouldBe` ["Configuration", "Color settings", "Iteration settings"]
             pages <- mapM (getDynamic . tiBody) tabs
             sizes <- mapM (\case { Vertical v -> length <$> getDynamic v; _ -> pure (-1) }) pages
-            sizes `shouldBe` [1, 2]
+            sizes `shouldBe` [1, 1, 2]
           _ -> expectationFailure "expected the top-level Configuration layout to be Tabbed"
 
     it "rejects a script's own automatic setting of the wrong type" $

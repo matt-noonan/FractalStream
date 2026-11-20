@@ -2121,7 +2121,8 @@ layoutJSON keyOf colors texts = go
         pure (Aeson.object [ kind "tabs", "tabs" .= tabs ])
       PlainText t -> getDynamic t <&> \s -> Aeson.object [ kind "plain", "text" .= s ]
       Button t -> getDynamic t <&> \l -> Aeson.object [ kind "button", "label" .= l ]
-      ActionButton{} -> pure Aeson.Null
+      AppWidgetL (ColorizerChooser viewer) -> pure (Aeson.object [ kind "colorizer", "viewer" .= viewer ])
+      AppWidgetL AutocolorEditor -> pure (Aeson.object [ kind "autocolor" ])
       TableField name st@(SomeType ty) v -> getDynamic v <&> \t -> Aeson.object
         [ kind "table", "name" .= name, "summary" .= tableSummaryText st t, "csv" .= csvAvailable ty ]
       CheckBox l name _ -> field "check" l name []

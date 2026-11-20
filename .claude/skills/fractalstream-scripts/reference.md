@@ -217,7 +217,7 @@ within the group's tolerance (0.001). Never adding: `nearest_autocolor(n, p)`
 (a miss gives the group's miss color, grey) and `get_autocolor(n, p)` (a
 miss gives a blend of all the group's colors, weighted by 1/distance²). A
 locked (or full, 256-point) group's `autocolor` blends too, unless the group's
-`blend-misses: false` (Autocolor window: "Blend when no matching point"). For Newton basins without
+`blend-misses: false` (Color settings > Autocolor settings: "Blend when no matching point"). For Newton basins without
 known roots: `color <- if stuck then black else autocolor(0, z)`.
 Viewers naming the same group share colors. Usable in viewers and tools;
 LLVM backend only. Colors depend on the order points are first seen, so

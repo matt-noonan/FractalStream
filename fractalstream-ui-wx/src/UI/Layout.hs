@@ -1,5 +1,7 @@
 module UI.Layout
   ( generateWxLayout
+  , LayoutHooks(..)
+  , noAppWidgets
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -9,7 +11,6 @@ import Actor.Layout
 
 import Graphics.UI.WX hiding (pt, grey, glue, when, tool, Object, Dimensions, Horizontal, Vertical, Layout, Color)
 import qualified Graphics.UI.WX as WX
-import           Graphics.UI.WXCore.WxcClassesMZ
 
 import UI.Widgets
 
@@ -22,25 +23,38 @@ import Data.Char (toLower)
 import Language.Type (SomeType(..))
 import System.FilePath (takeExtension)
 
--- | Build a layout's widgets. Its buttons run @buttonPress@ with their
--- text (for a tool's handlers), and its 'ActionButton's run @appAction@.
-generateWxLayout :: (AppAction -> IO ())
-                 -> (String -> IO ())
+-- | What a layout's widgets do in the app.
+data LayoutHooks = LayoutHooks
+  { lhButtonPress :: String -> IO ()
+    -- ^ A button's press, with its text (for a tool's handlers).
+  , lhAppWidget :: forall b. Window b -> AppWidget -> IO WX.Layout
+    -- ^ The widgets of an 'AppWidget', in this window.
+  , lhPages :: Maybe PageMemory
+    -- ^ Where its menus of pages remember the page they show.
+  }
+
+-- | For a layout with no 'AppWidget's (a tool's).
+noAppWidgets :: Window b -> AppWidget -> IO WX.Layout
+noAppWidgets _ _ = pure WX.empty
+
+-- | Build a layout's widgets.
+generateWxLayout :: LayoutHooks
                  -> Window a
                  -> Layout
                  -> IO (IO (), WX.Layout)
 
-generateWxLayout appAction buttonPress frame0 wLayout = do
+generateWxLayout LayoutHooks{..} frame0 wLayout = do
   panel0 <- panel frame0 []
 
-  let go :: Window a -> Layout -> StateT (IO ()) IO WX.Layout
-      go p = \case
+  -- (`pagePath`: the labels of the pages this is on, for remembering pages)
+  let go :: [String] -> Window a -> Layout -> StateT (IO ()) IO WX.Layout
+      go pagePath p = \case
 
         Panel pTitle innerLayout -> do
           Label title <- getDynamic pTitle
           p' <- liftIO $ panel p [ ]
           inner <- getDynamic innerLayout
-          lo <- go p' inner
+          lo <- go pagePath p' inner
           liftIO $ set p' [ layout := lo ]
           pure (hstretch $ expand $ margin 5 $ boxed title (fill $ widget p'))
 
@@ -56,7 +70,7 @@ generateWxLayout appAction buttonPress frame0 wLayout = do
           parts <- getDynamic v
           lo <- case parts of
             [] -> pure WX.empty
-            _  -> hstretch . expand . margin 5 . column 5 <$> mapM (go p') parts
+            _  -> hstretch . expand . margin 5 . column 5 <$> mapM (go pagePath p') parts
           liftIO $ set p' [ layout := lo ]
           pure (hstretch $ expand (widget p'))
 
@@ -65,26 +79,21 @@ generateWxLayout appAction buttonPress frame0 wLayout = do
           parts <- getDynamic v
           lo <- case parts of
             [] -> pure WX.empty
-            _  -> fill . margin 5 . row 5 <$> mapM (go p') parts
+            _  -> fill . margin 5 . row 5 <$> mapM (go pagePath p') parts
           liftIO $ set p' [ layout := lo ]
           pure (hstretch $ expand (widget p'))
 
         Tabbed dts -> do
-          nb <- liftIO $ feed2 [ visible := True ] 0 $
-                initialWindow $ \iD rect' ps s -> do
-                   e <- notebookCreate p iD rect' s
-                   set e ps
-                   pure e
+          -- (a menu of pages, not a notebook's crowded tabs)
+          book <- liftIO $ choiceBook ((, pagePath) <$> lhPages) p
           ts <- getDynamic dts
-          forM_ ts $ \TabItem{..} -> do
+          pages <- forM ts $ \TabItem{..} -> do
             Label lab <- getDynamic tiLabel
-            c <- liftIO $ panel nb []
-            page <- go c =<< getDynamic tiBody
-            liftIO $ do
-              set c [ layout := page ]
-              notebookAddPage nb c lab True (-1)
-          liftIO $ notebookSetSelection nb 0
-          pure (fill $ margin 5 $ widget nb)
+            c <- liftIO $ choiceBookPage book
+            page <- go (pagePath ++ [lab]) c =<< getDynamic tiBody
+            pure (lab, c, page)
+          lo <- liftIO $ choiceBookLayout book pages
+          pure (fill $ margin 5 lo)
 
         PlainText tv -> liftIO $ do
           p' <- panel p []
@@ -95,7 +104,7 @@ generateWxLayout appAction buttonPress frame0 wLayout = do
         Button tv -> liftIO $ do
           p' <- panel p []
           btn <- buttonWidget p' tv
-          set btn [ on command := get btn text >>= buttonPress ]
+          set btn [ on command := get btn text >>= lhButtonPress ]
           pure (hstretch . expand . container p' $ floatCentre $ margin 5 $ widget btn)
 
         -- (a table: what it is, its size as it changes, and Export… and
@@ -135,10 +144,11 @@ generateWxLayout appAction buttonPress frame0 wLayout = do
                                    , widget exportBtn, widget importBtn ] ]
           pure (hstretch . expand . margin 5 $ widget p')
 
-        ActionButton action txt -> liftIO $ do
+        AppWidgetL w -> liftIO $ do
           p' <- panel p []
-          btn <- button p' [ text := txt, on command := appAction action ]
-          pure (hstretch . expand . container p' $ floatLeft $ margin 5 $ widget btn)
+          lo <- lhAppWidget p' w
+          set p' [ layout := lo ]
+          pure (hstretch . expand . margin 5 $ widget p')
 
         Selection _l v pick options -> do
           p' <- liftIO $ panel p []
@@ -160,5 +170,5 @@ generateWxLayout appAction buttonPress frame0 wLayout = do
                                                      , hfill (widget te)
                                                      , widget errorMessage ])
 
-  (computedLayout, done) <- runStateT (go panel0 wLayout) (pure ())
+  (computedLayout, done) <- runStateT (go [] panel0 wLayout) (pure ())
   pure (done, container panel0 $ fill  computedLayout)

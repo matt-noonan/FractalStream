@@ -44,11 +44,12 @@
 //             is held back; parameters changed faster than renders go
 //             each show something
 //   menu      a viewer's menu: last, next, original view (and their keys),
-//             jump to a view (and no switching to the sphere), its
-//             colorizer and a colorizer's arguments,
+//             jump to a view (and no switching to the sphere), Color
+//             settings… (its page of the configuration: its colorizer,
+//             kept chosen through the rebuild, and a colorizer's arguments),
 //             subpixel smoothing, and a real viewer's aspect ratio (saved,
 //             and reopened so)
-//   autocolor the autocolor editor (from a viewer's Colorizer submenu), on
+//   autocolor the autocolor editor (the configuration's "Color settings"), on
 //             Newton's method for z⁵ - z - 1: its groups and points; a
 //             point recolored (and the viewer drawn again), added, moved,
 //             deleted; lock, tolerance (and a bad one), clear; saved
@@ -813,6 +814,12 @@ async function panel() {
   await page.locator(".drawer-tab").click();
   await page.waitForTimeout(400);
   c.check((await out()) <= 1, "and pushes it back");
+  // (= pulls it out too, as the desktop's = shows its configuration)
+  await page.keyboard.press("=");
+  await page.waitForTimeout(400);
+  c.check(Math.abs((await out()) - width) <= 1, `= pulls it out (${await out()} px)`);
+  await page.locator(".drawer-tab").click();
+  await page.waitForTimeout(400);
   const tab = await page.locator(".drawer-tab").boundingBox();
   await page.mouse.move(tab.x + tab.width / 2, tab.y + tab.height / 2);
   await page.mouse.down();
@@ -837,6 +844,19 @@ async function panel() {
   await app.openLibrary("Mandelbrot and Julia sets together");
   const again = (await page.locator(".panel").boundingBox()).width;
   c.check(Math.abs(again - after) <= 1, `and the width is remembered (${again})`);
+  // every viewer's colorizer is on one page, with a menu of a page for
+  // each viewer, and one for the autocolor groups
+  const chooser = page.locator(".panel .tab-chooser").first();
+  const pages = await chooser.locator("option").allTextContents();
+  c.check(pages.filter((p) => /color/i.test(p)).join("|") === "Color settings", `the pages include one "Color settings" (${pages.join(", ")})`);
+  await chooser.selectOption({ label: "Color settings" });
+  const inner = page.locator(".panel .tab-body:not([hidden]) .tab-chooser");
+  const innerPages = await inner.locator("option").allTextContents();
+  c.check(innerPages.join("|") === "Parameter plane|Dynamical plane|Autocolor settings",
+          `with a page for each viewer, and the autocolor groups (${innerPages.join(", ")})`);
+  const shown = page.locator(".panel .tab-body:not([hidden]) .tab-body:not([hidden])");
+  c.check((await shown.locator(".colorizer-field select").count()) === 1, "a viewer's page has its colorizer's menu");
+  if (shots) { await app.openDrawer(); await shot("color-settings", await page.locator(".panel").boundingBox()); }
 }
 
 async function editor() {
@@ -863,6 +883,12 @@ async function editor() {
   for (let i = 0; i < 3; i++) await page.keyboard.press("ControlOrMeta+z");
   await page.waitForFunction(() => !document.querySelector(".editor-status.error"), null, { timeout: 10000 }).catch(() => {});
   c.check((await page.locator(".cm-script-error").count()) === 0, "undoing it clears it");
+  // (= is typed, not the shortcut for the configuration)
+  const drawerOut = () => page.locator(".panel.open").count();
+  const wasOut = await drawerOut();
+  await page.keyboard.press("=");
+  c.check((await doc()).trimEnd().endsWith("=") && (await drawerOut()) === wasOut, "= is typed in the editor (and doesn't pull out the configuration)");
+  await page.keyboard.press("ControlOrMeta+z");
 
   // mathematical symbols, once it's edited (the cursor's line aside)
   await page.keyboard.press("ControlOrMeta+End");
@@ -1318,7 +1344,7 @@ async function menu() {
   await openMenu();
   const labels = (await page.locator(".window-menu .menu-label").allTextContents()).join(" | ");
   // (a viewer shows the plane or the sphere for good, as its script says)
-  c.check(["Last view", "Next view", "Jump to view", "Original view", "Colorizer",
+  c.check(["Last view", "Next view", "Jump to view", "Original view", "Color settings",
            "Show pointer position", "Use subpixel smoothing"].every((l) => labels.includes(l))
           && !labels.includes("Show on the sphere"), `the menu has: ${labels}`);
   await page.keyboard.press("Escape");
@@ -1404,26 +1430,33 @@ async function menu() {
   c.check(jumped && jumped.cx === -1.25 && jumped.cy === 0.125 && Math.abs(jumped.px * dpr - 0.001) < 1e-15,
           `and goes there (${jumped?.cx}, ${jumped?.cy}, a pixel ${(jumped?.px * dpr).toPrecision(3)})`);
 
-  // its colorizer
+  // its colorizer, on its page of the configuration's "Color settings"
   await openMenu();
-  await choose("Colorizer");
-  const inUse = await page.locator(".window-menu button[aria-checked=true] .menu-label").allTextContents();
-  c.check(inUse.join() === "Binary decomposition", `the Colorizer submenu has the one in use checked (${inUse.join()})`);
+  await choose("Color settings");
+  await page.waitForTimeout(400);
+  // (the page showing, in the page showing)
+  const colorPage = () => page.locator(".panel .tab-body:not([hidden]) .tab-body:not([hidden])");
+  const colorizerMenu = () => colorPage().locator(".colorizer-field select");
+  const pagePath = () => page.evaluate(() => [...document.querySelectorAll(".panel .tab-chooser")]
+    .filter((s) => s.closest("[hidden]") === null).map((s) => s.selectedOptions[0]?.textContent));
+  c.check((await page.locator(".panel.open").count()) === 1 && (await pagePath()).join(" > ") === "Color settings > Parameter plane",
+          `Color settings… opens the configuration on the viewer's page (${(await pagePath()).join(" > ")})`);
+  const inUse = await colorizerMenu().evaluate((s) => s.selectedOptions[0]?.textContent);
+  c.check(inUse === "Binary decomposition", `its colorizer's menu has the one in use chosen (${inUse})`);
   await app.forgetMessages();
-  await choose("Escape time");
+  await colorizerMenu().selectOption({ label: "Escape time" });
   project = await app.opened().catch(() => null);
   const rebuilt = (await app.messages("project")).pop();
   c.check(rebuilt?.rebuilt && rebuilt.viewers[pp].colorizer.inUse === "Escape time" && rebuilt.viewers[1 - pp].colorizer.inUse === "Binary decomposition",
           `choosing another rebuilds the project, with it for this viewer only (${rebuilt?.viewers[pp].colorizer.inUse})`);
   const said = (await page.locator(".notice.passing").allTextContents()).join(" | ");
   c.check(/Escape time/.test(said), `and says so (${said})`);
-  await openMenu();
-  await choose("Colorizer");
-  await choose("Binary decomposition");
+  c.check((await pagePath()).join(" > ") === "Color settings > Parameter plane"
+          && await colorizerMenu().evaluate((s) => s.selectedOptions[0]?.textContent) === "Escape time",
+          `the configuration stays on the viewer's page, with the new one chosen (${(await pagePath()).join(" > ")})`);
+  await colorizerMenu().selectOption({ label: "Binary decomposition" });
   await page.waitForTimeout(1500);
-  await openMenu();
-  await choose("Colorizer");
-  await choose("Arguments");
+  await colorPage().locator(".colorizer-field button", { hasText: "Arguments" }).click();
   await page.locator(".viewer-form").waitFor({ timeout: 5000 });
   const fieldLabels = await page.locator(".viewer-form .form-field span").allTextContents();
   c.check(fieldLabels.length > 0, `Arguments… asks for them (${fieldLabels.join(" ")})`);
@@ -1496,15 +1529,18 @@ async function autocolor() {
   const v = project.viewers.findIndex((x) => x.colorizer?.inUse === "Autocolor");
   c.check(v >= 0, "a viewer colored by Autocolor");
   await page.locator(".window").nth(v).locator(".window-menu-button").click();
-  await page.locator(".window-menu button", { hasText: "Colorizer" }).click();
-  await page.locator(".window-menu button", { hasText: "Autocolor settings" }).click();
-  const overlay = page.locator(".autocolor-overlay");
+  await page.locator(".window-menu button", { hasText: "Color settings" }).click();
+  await page.locator(".panel .tab-body:not([hidden]) .tab-chooser").selectOption({ label: "Autocolor settings" });
+  const overlay = page.locator(".panel .autocolor-body");
+  // (a field left, as a click elsewhere would)
+  const blur = () => page.evaluate(() => document.activeElement?.blur());
   await overlay.locator(".autocolor-entry").first().waitFor({ timeout: 10000 }).catch(() => {});
   const latest = async () => (await app.messages("autocolor")).pop()?.groups ?? [];
   const groups = await latest();
   const n0 = groups[0]?.entries.length ?? 0;
   c.check(await overlay.isVisible() && n0 > 0 && (await overlay.locator(".autocolor-entry").count()) === n0,
-          `Autocolor settings… opens the editor: ${groups.length} group(s), ${n0} point(s)`);
+          `the "Autocolor settings" page has the editor: ${groups.length} group(s), ${n0} point(s)`);
+  if (shots) { await page.waitForTimeout(500); await shot("autocolor-page", await page.locator(".panel").boundingBox()); }
   const settle = () => page.waitForTimeout(900);
   const entries = () => latest().then((gs) => gs[0]?.entries ?? []);
 
@@ -1530,7 +1566,7 @@ async function autocolor() {
           "a tolerance that isn't positive is refused, and said so");
   await tolerance.fill("0.02");
   await tolerance.press("Enter");
-  await page.locator(".autocolor-overlay .editor-header").click();
+  await blur();
   await settle();
   c.check((await latest())[0]?.tolerance === "0.02", `and a good one's set (${(await latest())[0]?.tolerance})`);
 
@@ -1538,7 +1574,7 @@ async function autocolor() {
   const newPoint = overlay.locator(".autocolor-row input[type=text]").last();
   await newPoint.fill("0.5 + 0.25i");
   await newPoint.press("Enter");
-  await page.locator(".autocolor-overlay .editor-header").click();
+  await blur();
   await settle();
   let es = await entries();
   const added = es.find((e) => e.x === 0.5 && e.y === 0.25);
@@ -1547,7 +1583,7 @@ async function autocolor() {
   const row = overlay.locator(".autocolor-entry").nth(es.indexOf(added));
   await row.locator("input[type=text]").fill("0.75 - 0.25i");
   await row.locator("input[type=text]").press("Enter");
-  await page.locator(".autocolor-overlay .editor-header").click();
+  await blur();
   await settle();
   es = await entries();
   c.check(es.some((e) => e.x === 0.75 && e.y === -0.25) && !es.some((e) => e.x === 0.5 && e.y === 0.25), "moved");
@@ -1569,11 +1605,12 @@ async function autocolor() {
   await overlay.locator("button", { hasText: "Clear all" }).click();
   await settle();
   c.check((await entries()).length === 0, "Clear all empties the group");
-  await overlay.locator(".editor-close").click();
+  // (another page chosen: the groups aren't posted any more)
+  await page.locator(".panel .tab-body:not([hidden]) .tab-chooser").selectOption({ index: 0 });
   await app.forgetMessages();
   await page.waitForTimeout(800);
   c.check(!(await overlay.isVisible()) && (await app.messages("autocolor")).length === 0,
-          "Close closes it (and the groups aren't posted any more)");
+          "another page hides it (and the groups aren't posted any more)");
 }
 
 async function tables() {
@@ -1800,13 +1837,14 @@ async function capture() {
 
 async function preferences() {
   const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem("fractalstream.preferences") || "{}"));
-  const tab = (name) => page.locator(".prefs-tab", { hasText: name }).click();
+  const chooser = () => page.locator(".prefs-dialog .tab-chooser");
+  const tab = (name) => chooser().selectOption({ label: name });
   const box = (label) => page.locator(".prefs-check", { hasText: label }).locator("input");
   await app.backToLibrary();
   await page.evaluate(() => localStorage.removeItem("fractalstream.preferences"));
   await page.locator(".welcome-preferences").click();
   c.check(await page.locator(".prefs-dialog").isVisible(), "the welcome screen's ⚙ opens Preferences");
-  c.check((await page.locator(".prefs-tab").allTextContents()).join("|") === "Editor|Viewers|Colors", "with its tabs");
+  c.check((await chooser().locator("option").allTextContents()).join("|") === "Editor|Viewers|Colors", "with a menu of its pages");
   const isMac = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent));
   c.check((await box("Emacs").count()) === (isMac ? 0 : 1), `emacs keys offered only where Control is the shortcut key (${isMac ? "not" : "yes"}, here)`);
   await page.keyboard.press("Escape");
@@ -1887,7 +1925,7 @@ async function preferences() {
   await page.waitForTimeout(1500);
   const sent = await page.evaluate(() => window.__sent.filter((m) => m.type === "sphereShading").pop());
   c.check(sent?.value === 0 && (await picture()) !== shaded, `0% shading: sent (${JSON.stringify(sent)}), and drawn again`);
-  await page.locator(".prefs-dialog select").selectOption("off");
+  await page.locator(".prefs-body select").selectOption("off");
   const smooth = await page.evaluate(() => window.__sent.filter((m) => m.type === "smoothing").pop());
   c.check(smooth?.on === false, "Off: new viewers aren't smoothed");
   await page.locator(".prefs-dialog button", { hasText: "Done" }).click();
@@ -1900,7 +1938,7 @@ async function preferences() {
   c.check(sentAgain.some((m) => m.type === "sphereShading" && m.value === 0) && sentAgain.some((m) => m.type === "smoothing" && !m.on),
           "reloaded, the engine's told them again");
   await page.locator(".welcome-preferences").click();
-  c.check(await page.locator('.prefs-tab[aria-selected=true]').textContent() === "Viewers", "Preferences opens on the tab it was left on");
+  c.check(await chooser().evaluate((s) => s.selectedOptions[0]?.textContent) === "Viewers", "Preferences opens on the page it was left on");
   await tab("Editor");
   c.check(await box("line numbers").isChecked() && !(await box("mathematical symbols").isChecked()), "and the dialog shows them");
   await page.keyboard.press("Escape");
@@ -2055,7 +2093,7 @@ async function backends() {
   // the order, in Preferences
   await app.backToLibrary();
   await page.locator(".welcome-preferences").click();
-  await page.locator(".prefs-tab", { hasText: "Viewers" }).click();
+  await page.locator(".prefs-dialog .tab-chooser").selectOption({ label: "Viewers" });
   const order = () => page.locator(".prefs-order li span").allTextContents();
   const note = noGpu ? ` (${noGpu})` : "";
   c.check((await order()).join(" | ") === `GPU, double-float${note} | CPU | GPU, single precision${note}`,

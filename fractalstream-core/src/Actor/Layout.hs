@@ -1,7 +1,7 @@
 {-# language UndecidableInstances, OverloadedStrings, TemplateHaskell #-}
 module Actor.Layout
   ( Layout(..)
-  , AppAction(..)
+  , AppWidget(..)
   , Label(..)
   , TabItem(..)
   , CodeString(..)
@@ -78,9 +78,9 @@ data Layout
   | Tabbed (Variable [TabItem])
   | PlainText (Variable String)
   | Button (Variable String)
-  | ActionButton AppAction String
-    -- ^ A button that does something in the app itself, rather than run
-    -- a tool's handler (see 'AppAction')
+  | AppWidgetL AppWidget
+    -- ^ Something the app itself draws and runs (see 'AppWidget'),
+    -- rather than a field of the project's
   | CheckBox (Variable Label) (Parsed String) (Variable Bool)
   | ColorPicker (Variable Label) (Parsed String) (Parsed Color)
   | Selection (Variable Label) (Parsed String) (Variable Int64) (Variable [String])
@@ -91,10 +91,15 @@ data Layout
     -- "Actor.TableTransfer"); what it holds is saved with the project
     -- only if the user says so (see "Actor.SavedTables").
 
--- | Things an 'ActionButton' can do in the app.
-data AppAction
-  = OpenAutocolorSettings
-    -- ^ show the project's autocolor window
+-- | Parts of the configuration panel that the app draws and runs itself:
+-- they change the app's own state, not the project's values. (No script
+-- can write one: the "Color settings" page has them.)
+data AppWidget
+  = ColorizerChooser String
+    -- ^ The colorizer of the viewer with this title: a menu of the ones
+    -- it can use, and Arguments… for the one in use
+  | AutocolorEditor
+    -- ^ The project's autocolor groups, to see and edit
   deriving (Eq, Show)
 
 data TabItem = TabItem
@@ -179,7 +184,7 @@ layoutContext = fmap (\(SomeContext' ctx) -> ctx) . go
         mconcat <$> mapM go parts
       PlainText{} -> pure mempty
       Button{}    -> pure mempty
-      ActionButton{} -> pure mempty
+      AppWidgetL{} -> pure mempty
       Selection _ var x _ -> dyn var >>= \case
         Left e -> pure (SomeContext' $ Left e)
         Right v -> single v IntegerType (dyn x)
@@ -245,7 +250,7 @@ layoutFields = \case
   Tabbed items -> concat <$> (mapM (layoutFields <=< getDynamic . tiBody) =<< getDynamic items)
   PlainText{} -> pure []
   Button{} -> pure []
-  ActionButton{} -> pure []
+  AppWidgetL{} -> pure []
   TableField{} -> pure []
   CheckBox _ name b -> named name $ \n -> Field
     { fieldName = n
@@ -323,7 +328,7 @@ layoutContext' = fmap (\(SomeContext' x) -> x) . go
         mconcat <$> mapM (go <=< getDynamic) parts
       PlainText{} -> pure mempty
       Button{}    -> pure mempty
-      ActionButton{} -> pure mempty
+      AppWidgetL{} -> pure mempty
       Selection _ var x _ -> getDynamic var <&> \case
         Left e -> SomeContext' $ Left e
         Right v -> single v IntegerType (Right <$> dyn x)
@@ -364,7 +369,7 @@ layoutBindings = \case
     fmap concat . sequence <$> (mapM layoutBindings parts)
   PlainText{} -> pure (pure [])
   Button{} -> pure (pure [])
-  ActionButton{} -> pure (pure [])
+  AppWidgetL{} -> pure (pure [])
   TableField n t _ -> pure (Right [(n, t)])
   Selection _ var _ _ -> fmap (:[]) <$> (fmap (, SomeType IntegerType) <$> dyn var)
   CheckBox    _ var _ -> fmap (:[]) <$> (fmap (, SomeType BooleanType) <$> dyn var)
