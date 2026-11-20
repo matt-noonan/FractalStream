@@ -869,7 +869,7 @@ checkConfigStmt :: ConfigStmt -> Either (SourceRange, String) [(String, SomeType
 checkConfigStmt = \case
   ConfigText{}     -> Right []
   ConfigButton{}   -> Right []
-  ConfigAction{}   -> Right []
+  ConfigWidget{}   -> Right []
   ConfigRow stmts' -> checkConfigStmts stmts'
   ConfigTabs tabs  -> checkConfigStmts (concatMap snd tabs)
   ConfigDecl{..}    -> do
@@ -1340,7 +1340,7 @@ configStmtToLayout :: ConfigStmt -> IO (Either (SourceRange, String) Layout)
 configStmtToLayout = \case
   ConfigText s   -> Right . PlainText <$> newVariable s
   ConfigButton _ s -> Right . Button <$> newVariable s
-  ConfigAction a s -> pure (Right (ActionButton a s))
+  ConfigWidget w -> pure (Right (AppWidgetL w))
   ConfigDecl{..} -> buildConfigDecl cdRange cdName cdType cdPoint cdDefault cdDefaultSrc cdLabel cdChoices
   ConfigTable _ name t@(SomeType ty) -> case ty of
     TableType n _ -> Right . TableField name t <$> newVariable (emptyTable (fromIntegral (TN.fromSNat n)))
@@ -1371,7 +1371,7 @@ configStmtNames = \case
   ConfigTabs tabs    -> concatMap (concatMap configStmtNames . snd) tabs
   ConfigText{}       -> []
   ConfigButton{}     -> []
-  ConfigAction{}     -> []
+  ConfigWidget{}     -> []
 
 buildConfigDecl :: SourceRange -> String -> SomeType -> Maybe FSType -> ParsedValue -> String -> Maybe String -> Maybe [String]
                 -> IO (Either (SourceRange, String) Layout)
@@ -2107,7 +2107,7 @@ layoutToArgs = \case
       in SomeContext' $ Right $ SomeContext $ Bind name ty arg EmptyContext
     _ -> SomeContext' (Left "expected a table type")
   Button _      -> pure mempty
-  ActionButton{} -> pure mempty
+  AppWidgetL{} -> pure mempty
   Selection _ n x _ -> getDynamic (dyn n) <&> \case
     Left err -> SomeContext' (Left err)
     Right name0 -> case someSymbolVal name0 of

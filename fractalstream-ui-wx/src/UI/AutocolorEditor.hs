@@ -1,8 +1,9 @@
--- | A window for a project's autocolor groups (see "Actor.Autocolor"): pick a
--- group, and see, edit, add, and delete its points and their colors; lock
--- or unlock it; or clear it.
+-- | A panel for a project's autocolor groups (see "Actor.Autocolor"), on
+-- the configuration window's \"Color settings\": pick a group, and see,
+-- edit, add, and delete its points and their colors; lock or unlock it;
+-- or clear it.
 module UI.AutocolorEditor
-  ( editAutocolor
+  ( autocolorEditor
   ) where
 
 import FractalStream.Prelude hiding (get)
@@ -13,14 +14,14 @@ import Data.DynamicValue
 import Language.Type (TypeProxy(ComplexType, RealType))
 import Language.Value.Parser (parseConstant)
 
-import UI.Widgets (wxWatchDynamic, wxWatchDynamic1, onOwnDestroy)
+import UI.Widgets (wxWatchDynamic, wxWatchDynamic1)
 
 import Graphics.UI.WX hiding (pt, when, grey, Color, Object, Layout)
 import qualified Graphics.UI.WX as WX
 import Graphics.UI.WXCore.Events
 import Graphics.UI.WXCore.WxcClassesAL
 import Graphics.UI.WXCore.WxcClassesMZ
-import Graphics.UI.WXCore.Frame (frameDefaultStyle, windowChildren)
+import Graphics.UI.WXCore.Frame (windowChildren)
 import Graphics.UI.WXCore.WxcClassTypes (ColourPickerCtrl)
 
 import Data.IORef
@@ -28,13 +29,12 @@ import Control.Exception (SomeException, catch, displayException)
 import System.IO (hPutStrLn, stderr)
 import qualified Data.Map as Map
 
--- | Open the autocolor window, over the project's window. @changed@ is
--- run after each change made in it (to mark the project as changed), and
--- @closed@ once the window is gone.
-editAutocolor :: Window a -> AutocolorState -> IO () -> IO () -> IO (Frame ())
-editAutocolor owner st changed closed = do
-  f <- frameEx frameDefaultStyle [ text := "Autocolor", visible := False ] owner
-  p <- panel f []
+-- | The autocolor editor, in a new panel in this window, and its layout.
+-- @changed@ is run after each change made in it (to mark the project as
+-- changed).
+autocolorEditor :: Window a -> AutocolorState -> IO () -> IO (Panel (), WX.Layout)
+autocolorEditor owner st changed = do
+  p <- panel owner []
 
   groupChoice <- choice p []
   lockBox <- checkBox p [ text := "Lock", tooltip := "Add no new points to this group" ]
@@ -61,7 +61,9 @@ editAutocolor owner st changed closed = do
   -- "lost focus" commit, on a field that's half gone.)
   generation <- newIORef (0 :: Int)
 
-  let say msg = set status [ text := msg ] >> windowReLayout f
+  -- (laid out again in its own panel: the configuration window keeps
+  -- its size)
+  let say msg = set status [ text := msg ] >> void (windowLayout p)
 
       showTolerance g = do
         r <- getDynamic (agTolerance g)
@@ -122,7 +124,7 @@ editAutocolor owner st changed closed = do
             -- (`column` can't be given no rows at all)
             set list [ layout := if null rows then WX.empty else margin 5 (column 3 rows) ]
         windowFitInside list
-        windowReLayout f
+        void (windowLayout p)
 
       selectGroup ix = do
         ids <- readIORef groupIds
@@ -156,7 +158,7 @@ editAutocolor owner st changed closed = do
           unless (null ids) $ set groupChoice [ selection := ix ]
           selectGroup (if null ids then -1 else ix)
         when (null ids) $
-          say "No viewer has used autocolor yet: a group appears here once one does."
+          say "No viewer has used autocolor yet:\na group appears here once one does."
 
       -- Keep the list up to date with the points scripts add while they
       -- draw: rebuilt only when the selected group's points change, so that
@@ -198,7 +200,10 @@ editAutocolor owner st changed closed = do
   set addBtn [ on command := addEntry ]
   set newPoint [ on command := addEntry ]
 
-  set f [ layout := fill $ container p $ margin 5 $ column 5
+  -- (the list scrolls, rather than make the window as tall as it is;
+  -- but it's never shorter than this, for a few points)
+  windowSetMinSize list (sz 440 150)
+  set p [ layout := margin 5 $ column 5
             [ hfill $ row 5 [ hfill (widget groupChoice), widget lockBox, widget clearBtn ]
             , hfill $ grid 5 5
                 [ [ margin 3 (label "Tolerance:"), hfill (widget toleranceEntry) ]
@@ -206,30 +211,25 @@ editAutocolor owner st changed closed = do
             , hfill $ row 5 [ widget blendBox, hglue ]
             , fill (widget list)
             , hfill $ row 5 [ margin 3 (label "New point:"), hfill (widget newPoint), widget addBtn ]
-            , hfill (widget status) ]
-        , clientSize := sz 520 420 ]
+            , hfill (widget status) ] ]
 
   -- The tables change on render threads; 'wxWatchDynamic' runs these on
   -- the GUI thread. Each group's table is watched once it appears (a
   -- watch can't be stopped, so it lasts as long as the window does).
   watched <- newIORef ([] :: [AutocolorGroupId])
-  wxWatchDynamic1 f (autocolorGroupsDynamic st) $ \groups -> do
+  wxWatchDynamic1 p (autocolorGroupsDynamic st) $ \groups -> do
     already <- readIORef watched
     forM_ (Map.toList groups) $ \(gId, g) -> unless (gId `elem` already) $ do
       modifyIORef' watched (gId :)
-      wxWatchDynamic f (agTable g) (\_ -> reportFailure "updating the list" syncEntries)
+      wxWatchDynamic p (agTable g) (\_ -> reportFailure "updating the list" syncEntries)
     reportFailure "updating the groups" syncGroups
-  -- (only on the window's own destruction: see 'onOwnDestroy')
-  onOwnDestroy f closed
-  void (windowShow f)
-  windowRaise f
-  pure f
+  pure (p, fill (widget p))
 
 -- | Run an action from a watch, reporting (on stderr) anything it throws,
 -- rather than letting it vanish into the wx event loop.
 reportFailure :: String -> IO () -> IO ()
 reportFailure what action = action `catch` \(e :: SomeException) ->
-  hPutStrLn stderr ("autocolor window: error " ++ what ++ ": " ++ displayException e)
+  hPutStrLn stderr ("autocolor editor: error " ++ what ++ ": " ++ displayException e)
 
 -- | A color picker showing the given color, running the action with each
 -- color picked.

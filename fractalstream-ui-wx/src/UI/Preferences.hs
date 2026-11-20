@@ -13,6 +13,7 @@ import FractalStream.Backends (BackendId, backendLabel, defaultBackendOrder)
 import UI.EditorKeys (emacsKeysByDefault)
 import UI.EditorStyle (Style(..), classStyle, defaultClassStyle, editorBackground)
 import UI.CodeEditor (frameIsLight)
+import UI.Widgets (choiceBook, choiceBookPage, choiceBookLayout)
 import Language.Editor.Highlight (Highlight, highlightName)
 import qualified Language.Editor.Highlight as H
 import qualified Graphics.UI.WX as WX
@@ -33,12 +34,12 @@ preferencesWindow :: [BackendId] -> Variable Settings -> IO (Frame ())
 preferencesWindow available settingsVar = do
   f <- frame [ text := "Preferences", resizeable := True ]
   p <- panel f []
-  -- a tab for each kind of setting
-  nb <- notebook p []
-  libraryTab <- panel nb []
-  editorTab <- panel nb []
-  colorsTab <- panel nb []
-  viewersTab <- panel nb []
+  -- a page for each kind of setting, with a menu of them
+  book <- choiceBook Nothing p
+  libraryTab <- choiceBookPage book
+  editorTab <- choiceBookPage book
+  colorsTab <- choiceBookPage book
+  viewersTab <- choiceBookPage book
 
   folderText <- staticText libraryTab [ text := "" ]
   chooseButton <- button libraryTab [ text := "Choose..." ]
@@ -235,14 +236,14 @@ preferencesWindow available settingsVar = do
 
   -- The folder's path can grow and wrap sideways; the buttons and the
   -- note keep their size. (See CLAUDE_NOTES.md on wxHaskell's layout.)
-  set f [ layout := container p $ margin 12 $ tabs nb
-            [ tab "Library" $ container libraryTab $ margin 12 $ column 8
+  pages <- choiceBookLayout book
+            [ ("Library", libraryTab, margin 12 $ column 8
                 [ label "My projects folder:"
                 , hfill (widget folderText)
                 , row 6 [ widget chooseButton, widget useDefaultButton, hglue ]
                 , glue
-                ]
-            , tab "Editor" $ container editorTab $ margin 12 $ column 8 $
+                ])
+            , ("Editor", editorTab, margin 12 $ column 8 $
                 [ label "Font for scripts:"
                 , row 6 [ widget fontText, widget chooseFontButton, widget defaultFontButton, hglue ]
                 , widget numbersBox
@@ -250,8 +251,8 @@ preferencesWindow available settingsVar = do
                 , widget foldBox
                 ] ++
                 [ widget box | Just box <- [emacsBox] ] ++
-                [ glue ]
-            , tab "Viewers" $ container viewersTab $ margin 12 $ column 8
+                [ glue ])
+            , ("Viewers", viewersTab, margin 12 $ column 8
                 [ label "Shading of the Riemann sphere:"
                 , row 6 [ hfill (widget shadingSlider), widget shadingText ]
                 , hstretch (widget shadingNote)
@@ -260,17 +261,17 @@ preferencesWindow available settingsVar = do
                         , column 6 [ widget upButton, widget downButton, widget defaultOrderButton ], hglue ]
                 , hstretch (widget renderingNote)
                 , glue
-                ]
-            , tab "Colors" $ container colorsTab $ margin 12 $ column 8
+                ])
+            , ("Colors", colorsTab, margin 12 $ column 8
                 [ row 6 [ label "Colors for", widget appearance, hglue, widget resetAllButton ]
                 , grid 8 4
                     [ [ fill (widget samplePanel), widget colorButton, widget backgroundButton
                       , widget boldBox, widget italicBox, widget underlineBox, widget resetButton ]
                     | (_, samplePanel, _, colorButton, backgroundButton, boldBox, italicBox, underlineBox, resetButton) <- classRows ]
                 , glue
-                ]
+                ])
             ]
-        ]
+  set f [ layout := container p $ margin 12 pages ]
   showSettings
   windowRaise f
   pure f

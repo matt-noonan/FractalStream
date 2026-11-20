@@ -46,6 +46,8 @@ module Actor.Colorizer
   , ViewerColorizer(..)
   , Colorized(..)
   , applyColorizers
+  , colorSettingsTitle
+  , autocolorPageTitle
   , setsColor
   , splitArguments
   , choiceName
@@ -64,7 +66,7 @@ import Data.List (unzip4, find, dropWhileEnd, nub, (\\))
 
 import Actor.Script
 import Actor.Event (coordinateNames, realPixelVars)
-import Actor.Layout (AppAction(..))
+import Actor.Layout (AppWidget(..))
 import Language.Parser (ParseError, parse)
 import Language.Parser.Tokenizer (tokenize)
 import Language.Parser.SourceRange
@@ -179,7 +181,7 @@ builtinColorizers =
       , "      s <- " ++ smoothIterations
       , "    color <- if im z > 0 then cycle(s / period, upper1, upper2) else cycle(s / period, lower1, lower2)"
       ]
-  , withSettingsButton $ builtin $ unlines
+  , builtin $ unlines
       [ "@colorizer \"Autocolor\" description=\"Gives each point its argument ends up \
         \at a color of its own, the first time it's seen.\
         \Viewers using it share its colors, using autocolor group 0.\
@@ -266,13 +268,6 @@ builtin src = case parseScript src of
   where
     broken why = error ("A built-in colorizer is broken: " ++ why ++ "\n" ++ src)
 
--- | Add a button to a colorizer's settings that opens the autocolor
--- window, where its colors are kept.
-withSettingsButton :: Colorizer -> Colorizer
-withSettingsButton c = c
-  { colorizerConfig = colorizerConfig c
-      ++ [ConfigAction OpenAutocolorSettings "Open autocolor settings..."] }
-
 -- | The colorizer a @\@colorizer@ stanza defines.
 fromStanza :: ParsedStanza -> Maybe Colorizer
 fromStanza = \case
@@ -316,11 +311,22 @@ data Colorized = Colorized
   , colorizedWarnings  :: [String]
   }
 
+-- | The configuration panel's tab with every viewer's colorizer settings.
+colorSettingsTitle :: String
+colorSettingsTitle = "Color settings"
+
+-- | The "Color settings" page for the project's autocolor groups (after
+-- one for each viewer's colorizer).
+autocolorPageTitle :: String
+autocolorPageTitle = "Autocolor settings"
+
 -- | Add each viewer's colorizer to a parsed script: its code to the end
--- of the viewer's code, and its fields as a configuration stanza of their
--- own. Takes the interactive choices, by viewer title; one that can't be
+-- of the viewer's code, and a page of the "Color settings" for the
+-- viewer: a menu of the colorizers, and the fields of the one in use.
+-- Takes the interactive choices, by viewer title; one that can't be
 -- used (an unknown colorizer, say) gives a warning, and the viewer's
 -- default instead.
+
 applyColorizers :: Map String String
                 -> [ParsedStanza]
                 -> Either (SourceRange, String) Colorized
@@ -360,14 +366,21 @@ applyColorizers choices stanzas = do
                 | otherwise = choice
           (code', config) = colorize vsTitle inUse vsCode
           info = ViewerColorizer (rcText choice) (rcText defaultChoice) scope
-      pure ([ViewerStanza{vsCode = code', ..}], config, [(vsTitle, info)], warnings)
+          -- (the viewer's page of the "Color settings")
+          page = (vsTitle, ConfigWidget (ColorizerChooser vsTitle) : config)
+      pure ([ViewerStanza{vsCode = code', ..}], [page], [(vsTitle, info)], warnings)
     ColorizerStanza{} -> pure ([], [], [], [])
     other -> pure ([other], [], [], [])
   let (stanzas', configs, infos, warnings) = unzip4 results
   pure Colorized
     { -- The colorizers' fields come after the script's own (and so
       -- before the implicit "Iteration settings").
-      colorizedStanzas = concat stanzas' ++ concat configs
+      -- All the viewers' colorizers share one page, with a menu of a
+      -- page for each viewer, and one for the autocolor groups.
+      colorizedStanzas = concat stanzas'
+                         ++ [ ConfigStanza colorSettingsTitle
+                                [ConfigTabs (concat configs ++ [(autocolorPageTitle, [ConfigWidget AutocolorEditor])])]
+                            | not (null (concat configs)) ]
     , colorizedViewers = Map.fromList (concat infos)
     , colorizedAvailable = available
     , colorizedWarnings = shadowWarnings ++ concat warnings
@@ -375,8 +388,6 @@ applyColorizers choices stanzas = do
   where
     configScope = Set.fromList (concatMap configNames
       (concat [ body | ConfigStanza _ body <- stanzas ++ [implicitBookkeepingStanza] ]))
-    single = length [ () | ViewerStanza{} <- stanzas ] == 1
-    tabTitle title = if single then "Coloring" else title ++ " coloring"
 
     colorize title ResolvedChoice{rcColorizer = colorizer, rcArgs = args} viewerCode =
       case colorizerCode colorizer of
@@ -400,9 +411,7 @@ applyColorizers choices stanzas = do
                 common
                 ++ [ Stmt NoSourceRange (SDecl (hide p) Nothing (value a)) | (p, a) <- zip params args ]
                 ++ [ renameStmt renaming body ]
-              config = [ ConfigStanza (tabTitle title)
-                           (map (renameConfig hide False) (colorizerConfig colorizer))
-                       | not (null (colorizerConfig colorizer)) ]
+              config = map (renameConfig hide False) (colorizerConfig colorizer)
           in (appendStmt viewerCode code, config)
 
 -- | A colorizer's settings, with the defaults replaced by a viewer's

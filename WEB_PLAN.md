@@ -1465,3 +1465,15 @@ run yet; that is spike 0b.
   https://luma.gl/docs/api-guide/shaders/gpu-floating-point-precision
 - gpuweb implementation status:
   https://github.com/gpuweb/gpuweb/wiki/implementation-status
+
+### 2026-11-20: Color settings
+
+The configuration's pages are a menu (as they always were here; the
+desktop's tab bar is a menu now too, and so are both Preferences). Every
+viewer's colorizer is on one page, "Color settings", with a menu of a
+page for each viewer (its colorizer's menu and Arguments…, then its
+settings) and "Autocolor settings", where the autocolor editor is now (no
+overlay: it watches the groups while its page is showing). A viewer's
+menu has "Color settings…" for its page in place of the Colorizer
+submenu. Which page each menu shows is kept through rebuilds (choosing a
+colorizer rebuilds the project), by its path of page labels.

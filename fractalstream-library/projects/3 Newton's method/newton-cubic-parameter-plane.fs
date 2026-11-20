@@ -50,7 +50,8 @@ metadata:
     (S) in the parameter plane to see its basins in the dynamical plane,
     and Trace (t) a point's Newton steps there. The roots' colors are saved
     and locked; to give a new a's root a color of its own, delete the old
-    one in the viewer's Autocolor window (or clear the list), then turn
+    one in the autocolor settings (Color settings, in the configuration;
+    or clear the list), then turn
     Lock off and on again.
   preview-commands: |
     select viewer "Parameter plane"

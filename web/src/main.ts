@@ -341,8 +341,10 @@ function forgetProject() {
   scriptEditor = null;
   editorOverlay = null;
   projectScript = "";
-  hideAutocolor();
-  autocolorOverlay = null;
+  autocolorHost = null;
+  syncAutocolorWatch();
+  pageChosen.clear();
+  pageShowing.clear();
   for (const v of viewers.values()) v.runDone();
   viewers.clear();
   fieldInputs.clear();
@@ -639,6 +641,8 @@ window.addEventListener("resize", () => {
 });
 
 function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: SavedViews | null) {
+  // (the viewers' colorizers, for the "Color settings")
+  projectInfos = infos;
   fieldInputs.clear();
   viewers.clear();
   windows = [];
@@ -646,10 +650,12 @@ function showProject(title: string, panel: Layout, infos: ViewerInfo[], views: S
   desk = new Desk(el("div"));
   toolPanelEl = el("div", { className: "tool-panel" });
   asideEl = el("aside", { className: "panel" },
-               panelGrip(), el("div", { className: "panel-body" }, panel ? layoutElement(panel, projectFields) : "", toolPanelEl),
+               panelGrip(), el("div", { className: "panel-body" }, panel ? layoutElement(panel, projectFields, undefined, []) : "", toolPanelEl),
                drawerTab());
   workspaceEl = el("div", { className: "workspace" }, desk.element, titleEl, asideEl);
   projectEl.replaceChildren(workspaceEl);
+  // (the autocolor editor, if its page is the one shown)
+  syncAutocolorWatch();
   projectTitle = title;
   showFileName();
   // (the drawer's closed, to begin with)
@@ -792,8 +798,10 @@ document.addEventListener("keydown", (e) => {
   // (not while typing: in a text box, or the script editor)
   if (e.target instanceof HTMLElement && (e.target.closest("input, select, textarea") || e.target.isContentEditable)) return;
   // (moving about: as on the desktop)
+  // (and = pulls out the configuration, as the desktop's shows its window)
   const navigation: Record<string, () => void> = { "<": () => v.navigate(0), ">": () => v.navigate(1),
-                                                   "^": () => v.navigate(2), "@": () => v.askJump() };
+                                                   "^": () => v.navigate(2), "@": () => v.askJump(),
+                                                   "=": () => { if (asideEl && !asideEl.hidden) setDrawer(true); } };
   if (navigation[e.key]) { e.preventDefault(); navigation[e.key](); return; }
   const key = e.key.toLowerCase();
   const tool = v.info.tools.find((t) => t.shortcut && t.shortcut.toLowerCase() === key);
@@ -894,43 +902,47 @@ function hideEditor() {
 }
 
 // ---------------------------------------------------------------------
-// The autocolor editor: the project's autocolor groups, over the
-// workspace (as the script editor is), as the desktop's Autocolor window
-// shows them: pick a group; lock it, blend its colors for points not in
-// it, clear it; its tolerance and the color for points not in it; and its
-// points, each moved, recolored or deleted, and new ones added. The
-// engine posts the groups as they change (renders add points) while it's
-// open; the list isn't rebuilt while one of its fields is being typed in.
+// The autocolor editor: the project's autocolor groups, on the
+// configuration's "Color settings" page, as the desktop's shows them: pick
+// a group; lock it, blend its colors for points not in it, clear it; its
+// tolerance and the color for points not in it; and its points, each
+// moved, recolored or deleted, and new ones added. The engine posts the
+// groups as they change (renders add points) while the page is showing;
+// the list isn't rebuilt while one of its fields is being typed in.
 
-let autocolorOverlay: HTMLElement | null = null;
+/** Where the editor is: on the configuration panel's page, if it has one. */
+let autocolorHost: HTMLElement | null = null;
+/** The open project's viewers, for their colorizers' menus. */
+let projectInfos: ViewerInfo[] = [];
+/** Whether the engine's been asked to post the groups. */
+let autocolorWatching = false;
 let autocolorGroups: AutocolorGroup[] = [];
 let autocolorGroup: number | null = null;
 /** The groups' last rendering, to rebuild only what's changed. */
 let autocolorShown = "";
 
-function showAutocolor() {
-  if (!workspaceEl) return;
-  if (!autocolorOverlay) {
-    const close = el("button", { type: "button", className: "editor-close", textContent: "Close" });
-    close.addEventListener("click", hideAutocolor);
-    autocolorOverlay = el("div", { className: "editor-overlay autocolor-overlay", role: "dialog" },
-      el("div", { className: "editor-header" }, el("span", { className: "editor-title", textContent: "Autocolor" }), close),
-      el("div", { className: "autocolor-body" }));
-    autocolorOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") hideAutocolor(); });
-    // (a field typed in: once it's left, the list can be rebuilt)
-    autocolorOverlay.addEventListener("focusout", () => setTimeout(renderAutocolor, 0));
-  }
+function autocolorElement(): Node {
   autocolorShown = "";
-  autocolorOverlay.querySelector(".autocolor-body")!.replaceChildren(
-    el("p", { className: "autocolor-status", textContent: "…" }));
-  workspaceEl.append(autocolorOverlay);
-  send({ type: "autocolorWatch", on: true });
+  autocolorHost = el("div", { className: "autocolor-body" }, el("p", { className: "autocolor-status", textContent: "…" }));
+  // (a field typed in: once it's left, the list can be rebuilt)
+  autocolorHost.addEventListener("focusout", () => setTimeout(renderAutocolor, 0));
+  return autocolorHost;
 }
 
-function hideAutocolor() {
-  if (!autocolorOverlay?.isConnected) return;
-  autocolorOverlay.remove();
-  send({ type: "autocolorWatch", on: false });
+/** Whether the editor's showing: on the page, and the page chosen. */
+function autocolorShowing(): boolean {
+  return !!autocolorHost && autocolorHost.isConnected && autocolorHost.closest("[hidden]") === null;
+}
+
+/** Have the engine post the groups while the editor's showing, and not
+    when it isn't. */
+function syncAutocolorWatch() {
+  const on = autocolorShowing();
+  if (on !== autocolorWatching) {
+    autocolorWatching = on;
+    send({ type: "autocolorWatch", on });
+  }
+  if (on) renderAutocolor();
 }
 
 function autocolorEdit(edit: AutocolorEdit) {
@@ -939,16 +951,16 @@ function autocolorEdit(edit: AutocolorEdit) {
 }
 
 function autocolorSay(text: string) {
-  const s = autocolorOverlay?.querySelector(".autocolor-status");
+  const s = autocolorHost?.querySelector(".autocolor-status");
   if (s) s.textContent = text;
 }
 
 function renderAutocolor() {
-  const body = autocolorOverlay?.querySelector(".autocolor-body");
-  if (!body || !autocolorOverlay!.isConnected) return;
+  const body = autocolorHost;
+  if (!body || !autocolorShowing()) return;
   // (not while a field's being typed in: it'd be wiped)
   const active = document.activeElement;
-  if (active instanceof HTMLInputElement && active.type === "text" && autocolorOverlay!.contains(active)) return;
+  if (active instanceof HTMLInputElement && active.type === "text" && body.contains(active)) return;
   const groups = autocolorGroups;
   if (autocolorGroup === null || !groups.some((g) => g.id === autocolorGroup)) autocolorGroup = groups[0]?.id ?? null;
   const key = JSON.stringify([autocolorGroup, groups]);
@@ -1018,18 +1030,24 @@ interface PanelActions {
 const projectFields: PanelActions = { set: (name, text) => send({ type: "set", name, text }) };
 
 /** A layout's elements. (`title` is the panel it's in's: a panel inside
-    it with the same title, as a tool's panel has, doesn't repeat it.) */
-function layoutElement(layout: Layout, actions: PanelActions, title?: string): Node {
+    it with the same title, as a tool's panel has, doesn't repeat it.
+    `path`, for the project's own panel, is the labels of the pages it's
+    on, for remembering which page each menu of pages shows.) */
+function layoutElement(layout: Layout, actions: PanelActions, title?: string, path: string[] | null = null): Node {
   if (layout === null) return document.createTextNode("");
   switch (layout.kind) {
     case "vertical":
     case "horizontal":
-      return el("div", { className: layout.kind }, ...layout.children.map((c) => layoutElement(c, actions, title)));
+      return el("div", { className: layout.kind }, ...layout.children.map((c) => layoutElement(c, actions, title, path)));
     case "panel":
       return el("fieldset", {}, layout.title === title ? "" : el("legend", { textContent: layout.title }),
-                layoutElement(layout.body, actions, layout.title));
+                layoutElement(layout.body, actions, layout.title, path));
     case "tabs":
-      return tabsElement(layout.tabs, actions);
+      return tabsElement(layout.tabs, actions, path);
+    case "colorizer":
+      return colorizerElement(layout.viewer);
+    case "autocolor":
+      return autocolorElement();
     case "plain":
       return el("p", { textContent: layout.text });
     case "button": {
@@ -1071,15 +1089,69 @@ function tableElement(t: Extract<Layout, { kind: "table" }>): Node {
     }));
 }
 
-/** Tabs: a chooser of which one to show, and the one chosen. */
-function tabsElement(tabs: { label: string; body: Layout }[], actions: PanelActions): Node {
-  const bodies = tabs.map((t) => el("div", { className: "tab-body" }, layoutElement(t.body, actions)));
+// Which page each menu of pages in the project's panel shows, kept while
+// the project is rebuilt, by the menu's path (the labels of the pages it's
+// on, as JSON); and the menus showing now, to choose a page in.
+const pageChosen = new Map<string, string>();
+const pageShowing = new Map<string, (label: string) => void>();
+
+/** Show the page with each of these labels, on the menu at its path:
+    ["Color settings", "Julia set"] shows the "Color settings" page, and
+    the "Julia set" page on it. */
+function showPages(labels: string[]) {
+  labels.forEach((label, i) => {
+    const key = JSON.stringify(labels.slice(0, i));
+    pageChosen.set(key, label);
+    pageShowing.get(key)?.(label);
+  });
+}
+
+/** Pages: a menu of which one to show, and the one chosen (the one last
+    chosen at this path, if it's remembered: see pageChosen). */
+function tabsElement(tabs: { label: string; body: Layout }[], actions: PanelActions, path: string[] | null): Node {
+  const bodies = tabs.map((t) => el("div", { className: "tab-body" },
+                                    layoutElement(t.body, actions, undefined, path && [...path, t.label])));
   const chooser = el("select", { className: "tab-chooser", title: "Which settings to show" },
                      ...tabs.map((t, i) => el("option", { value: String(i), textContent: t.label })));
-  const select = (i: number) => bodies.forEach((b, k) => (b.hidden = k !== i));
+  const key = path && JSON.stringify(path);
+  const select = (i: number) => {
+    chooser.value = String(i);
+    bodies.forEach((b, k) => (b.hidden = k !== i));
+    if (key !== null) pageChosen.set(key, tabs[i].label);
+    syncAutocolorWatch();
+  };
   chooser.addEventListener("change", () => select(Number(chooser.value)));
-  select(0);
+  const byLabel = (label: string | undefined) => tabs.findIndex((t) => t.label === label);
+  if (key !== null) pageShowing.set(key, (label) => { const i = byLabel(label); if (i >= 0) select(i); });
+  select(Math.max(0, key !== null ? byLabel(pageChosen.get(key)) : 0));
   return el("div", { className: "tabs" }, chooser, ...bodies);
+}
+
+/** A viewer's colorizer, on its "Color settings" page: a menu of the ones
+    it can use, with the one it uses chosen, and Arguments… for that one.
+    Choosing another rebuilds the project (one with parameters the viewer
+    can't fill in asks for its arguments first). */
+function colorizerElement(viewerTitle: string): Node {
+  const info = projectInfos.find((i) => i.title === viewerTitle);
+  const c = info?.colorizer;
+  if (!info || !c) return document.createTextNode("");
+  const id = info.id;
+  const inUse = c.items.findIndex((i) => i.inUse);
+  const menu = el("select", { title: c.items[inUse]?.description ?? "" },
+                  ...c.items.map((i, k) => el("option", { value: String(k), textContent: i.label, selected: i.inUse,
+                                                          title: i.description ?? "" })));
+  menu.addEventListener("change", () => {
+    const chosen = c.items[Number(menu.value)];
+    // (back to the one in use, until the project's rebuilt with the new one)
+    menu.value = String(inUse);
+    if (!chosen || chosen.inUse) return;
+    colorizerChange = viewerTitle;
+    send({ type: "colorizer", viewer: id, name: chosen.name });
+  });
+  const args = el("button", { type: "button", textContent: "Arguments…", disabled: !c.arguments,
+                              title: `The arguments of ${c.inUse}` });
+  args.addEventListener("click", () => send({ type: "colorizerArguments", viewer: id }));
+  return el("div", { className: "field colorizer-field" }, el("span", { textContent: "Colorizer:" }), menu, args);
 }
 
 function fieldElement(f: FieldLayout, actions: PanelActions): Node {
@@ -1937,22 +2009,13 @@ class ViewerView {
     if (!this.info.complex) {
       items.push({ kind: "action", label: "Aspect ratio…", run: () => this.askAspect() });
     }
+    // (how it's colored: on the configuration's "Color settings" page,
+    // with a page for each viewer)
     if (c) {
-      items.push({ kind: "separator" }, { kind: "submenu", label: "Colorizer", items: () => [
-        ...c.items.map((i): MenuItem => ({
-          kind: "toggle", label: i.label, on: i.inUse, help: i.description ?? undefined,
-          toggle: () => {
-            if (i.inUse) return;
-            colorizerChange = this.info.title;
-            send({ type: "colorizer", viewer: this.info.id, name: i.name });
-          } })),
-        { kind: "separator" },
-        { kind: "action", label: "Arguments…", enabled: c.arguments,
-          run: () => send({ type: "colorizerArguments", viewer: this.info.id }) },
-        // (the project's, not this viewer's: kept here, as on the desktop,
-        // so that the menu stays short)
-        { kind: "action", label: "Autocolor settings…", run: () => showAutocolor() },
-      ] });
+      items.push({ kind: "separator" }, { kind: "action", label: "Color settings…", run: () => {
+        showPages(["Color settings", this.info.title]);
+        setDrawer(true);
+      } });
     }
     items.push(
       { kind: "separator" },
@@ -2150,13 +2213,10 @@ engine.addEventListener("message", (e: MessageEvent<Message>) => {
         // (and, for one whose script hadn't built, so had no windows yet,
         // where its file had them)
         const views = { viewers: { ...m.views?.viewers, ...viewState().viewers } };
-        // (an open autocolor editor stays open: the groups are the same)
-        const autocolorOpen = autocolorOverlay?.isConnected ?? false;
         // (and so does the drawer, open or not)
         const drawerOpen = asideEl?.classList.contains("open") ?? false;
         showProject(m.title, m.panel, m.viewers, views);
         setDrawer(drawerOpen);
-        if (autocolorOpen && autocolorOverlay && workspaceEl) workspaceEl.append(autocolorOverlay);
         scriptEditor?.projectScript(m.script, true);
         // (it worked: the editor's done its job)
         hideEditor();

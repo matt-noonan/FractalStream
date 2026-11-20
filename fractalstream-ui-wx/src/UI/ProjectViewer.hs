@@ -57,7 +57,9 @@ import Actor.Configuration
 import Actor.Viewer
 import FractalStream.Backends
 import Actor.Ensemble (buildToolContext, layoutToArgs, Colorizer(..), ViewerColorizer(..))
-import Actor.Colorizer (choiceName, choiceArguments, missingArguments, argumentFields, choiceWithArguments)
+import Actor.Colorizer (choiceName, choiceArguments, missingArguments, argumentFields, choiceWithArguments, colorSettingsTitle)
+import Actor.Autocolor (AutocolorState)
+import UI.AutocolorEditor (autocolorEditor)
 import Actor.Event (Event(..), planePoint, EventArgument_, EventArgument(..), Coordinate(..), ViewKind(..), hyperbolicDisplay, hyperbolicModel, ToolDispatcher, HandlerRun, newCancelFlag)
 import Language.Value.Parser (parseConstant)
 import Language.Type
@@ -76,7 +78,7 @@ import Text.Read (readMaybe)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Char (toLower)
-import Data.List (find)
+import Data.List (find, findIndex)
 import qualified System.Info as System
 
 -- | What a viewer's menu can do to the project as a whole.
@@ -105,8 +107,10 @@ data ProjectMenuActions = ProjectMenuActions
   , pmColorizers    :: String -> IO (Maybe ([Colorizer], ViewerColorizer))
     -- ^ The colorizers the viewer with this title can use, and how it's
     -- colorized now.
-  , pmEditAutocolor :: IO ()
-    -- ^ Show the project's autocolor window (see "UI.AutocolorEditor").
+  , pmAutocolorState :: IO AutocolorState
+    -- ^ The project's autocolor groups (see "UI.AutocolorEditor").
+  , pmPages         :: PageMemory
+    -- ^ The pages the configuration window shows, through rebuilds.
   , pmMovies        :: MovieSupport
     -- ^ The project's viewers, for making movies of (see "UI.MovieMaker").
   , pmCommonDefs    :: IO (Either String CommonDefs)
@@ -161,7 +165,10 @@ viewProject projectWindow wxLayout addMenuBar projectActions = UI
       -- (a reused window keeps its menu bar: see 'makeWxComplexViewer')
       when (isNothing spare) (addMenuBar f [])
 
-      (stopListening, innerLayout) <- generateWxLayout (runAppAction projectActions) (\_ -> pure ()) host ui
+      let hooks = LayoutHooks { lhButtonPress = \_ -> pure ()
+                              , lhAppWidget = appWidget projectActions
+                              , lhPages = Just (pmPages projectActions) }
+      (stopListening, innerLayout) <- generateWxLayout hooks host ui
       resetButton <- button host [ text := "Reset to defaults"
                                  , on command := pmResetValues projectActions ]
       set host [ layout := fill . margin 5 . column 5 $
@@ -185,7 +192,7 @@ data BuiltinTool = NavTool | DebugTool | MoviePathTool
 
 -- | Ask for the arguments to give a colorizer with parameters, as they'd
 -- be written between its parentheses.
-askColorizerArguments :: Frame a -> String -> [(String, String, String)] -> IO (Maybe [String])
+askColorizerArguments :: Window a -> String -> [(String, String, String)] -> IO (Maybe [String])
 askColorizerArguments f name params = do
   d <- dialog f [ text := name ]
   p <- panel d []
@@ -203,10 +210,63 @@ askColorizerArguments f name params = do
     set cancel [ on command := onDone Nothing ]
     set ok [ on command := mapM (`get` text) fields >>= onDone . Just ]
 
--- | Do what an 'ActionButton' in a layout asks.
-runAppAction :: ProjectMenuActions -> AppAction -> IO ()
-runAppAction pm = \case
-  OpenAutocolorSettings -> pmEditAutocolor pm
+-- | The widgets of the configuration window's 'AppWidget's, in this
+-- window.
+appWidget :: ProjectMenuActions -> Window a -> AppWidget -> IO WX.Layout
+appWidget pm owner = \case
+  ColorizerChooser title -> colorizerChooser pm owner title
+  AutocolorEditor -> do
+    st <- pmAutocolorState pm
+    snd <$> autocolorEditor owner st (setValue (pmUnsaved pm) True)
+
+-- | A viewer's colorizer: a menu of the ones it can use, with the one it
+-- uses chosen, and Arguments... for that one, if it has parameters.
+-- Choosing another rebuilds the project, replacing this window. One with
+-- parameters uses the viewer's variables of the same names, if it has
+-- them all; if not, it asks for the arguments first (and its item says
+-- so, with "...").
+colorizerChooser :: ProjectMenuActions -> Window a -> String -> IO WX.Layout
+colorizerChooser ProjectMenuActions{..} owner title = pmColorizers title >>= \case
+  Nothing -> pure WX.empty
+  Just (available, ViewerColorizer{..}) -> do
+    let nameOf = choiceName
+        argsOf = choiceArguments
+        missingFrom = missingArguments colorizerScope
+        inUseIx = fromMaybe 0 (findIndex ((== nameOf colorizerInUse) . colorizerName) available)
+        itemText c@Colorizer{..}
+          | nameOf colorizerInUse == colorizerName = colorizerInUse
+          | null (missingFrom c) = colorizerName
+          | otherwise = colorizerName ++ "..."
+        describe c = fromMaybe "" (colorizerDescription c)
+        useColorizer chosen = pmSetColorizer title chosen >>= \case
+          Left err -> errorDialog owner "Couldn't use that colorizer" err
+          Right () -> pure ()
+        -- Ask for a colorizer's arguments, one field per parameter,
+        -- starting from the ones written. A field left empty means the
+        -- parameter's default, or else the viewer's variable of its
+        -- name; arguments that come to that, at the end, are left out
+        -- (all of them: the choice is just the colorizer's name).
+        askArguments c written =
+          askColorizerArguments owner (colorizerName c) (argumentFields colorizerScope c written)
+            >>= mapM_ (useColorizer . choiceWithArguments c)
+        inUse = available !! inUseIx
+    colorizerMenu <- choice owner [ items := map itemText available, selection := inUseIx
+                         , tooltip := describe inUse ]
+    argsButton <- button owner [ text := "Arguments..."
+                               , enabled := not (null (colorizerParams inUse))
+                               , tooltip := "The arguments of " ++ colorizerName inUse
+                               , on command := askArguments inUse (argsOf colorizerInUse) ]
+    set colorizerMenu [ on select := do
+      ix <- get colorizerMenu selection
+      -- (back to the one in use, in case the project isn't rebuilt
+      -- after all: it is, with the new one chosen, if it is)
+      set colorizerMenu [ selection := inUseIx ]
+      when (ix /= inUseIx && ix >= 0 && ix < length available) $ do
+        let c = available !! ix
+        if null (missingFrom c)
+          then useColorizer (colorizerName c)
+          else askArguments c (if nameOf colorizerDefault == colorizerName c then argsOf colorizerDefault else "") ]
+    pure (row 5 [ margin 3 (label "Colorizer:"), hfill (widget colorizerMenu), widget argsButton ])
 
 makeWxComplexViewer :: Window ()
                     -> WxLayout
@@ -1954,59 +2014,12 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
     menuItem hamburgerMenu [ text := "Original view\t^", on command := goHome ]
     menuLine hamburgerMenu
 
-    -- The colorizers this viewer can use, with the one it uses checked.
-    -- Picking another rebuilds the project, replacing this window. One
-    -- with parameters uses the viewer's variables of the same names, if
-    -- it has them all; if not, it asks for the arguments first (and its
-    -- item says so, with "..."). "Arguments..." changes the arguments of
-    -- the one in use.
-    pmColorizers title0 >>= mapM_ (\(available, ViewerColorizer{..}) -> do
-      colorizerMenu <- menuPane [ text := "Colorizer" ]
-      let nameOf = choiceName
-          argsOf = choiceArguments
-          missingFrom = missingArguments colorizerScope
-          useColorizer chosen = pmSetColorizer title0 chosen >>= \case
-            Left err -> errorDialog f "Couldn't use that colorizer" err
-            Right () -> pure ()
-          -- Ask for a colorizer's arguments, one field per parameter,
-          -- starting from the ones written. A field left empty means the
-          -- parameter's default, or else the viewer's variable of its
-          -- name; arguments that come to that, at the end, are left out
-          -- (all of them: the choice is just the colorizer's name).
-          askArguments c written =
-            askColorizerArguments f (colorizerName c) (argumentFields colorizerScope c written)
-              >>= mapM_ (useColorizer . choiceWithArguments c)
-      forM_ available $ \c@Colorizer{..} -> do
-        let inUse = nameOf colorizerInUse == colorizerName
-            missing = missingFrom c
-            itemText | inUse = colorizerInUse
-                     | null missing = colorizerName
-                     | otherwise = colorizerName ++ "..."
-        colorizerItem <- menuItem colorizerMenu [ text := itemText, checkable := True, checked := inUse
-                                                , help := fromMaybe "" colorizerDescription ]
-        set colorizerItem [ on command := do
-          -- (Clicking a checkable item toggles it: put it back, in
-          -- case the project isn't rebuilt after all.)
-          set colorizerItem [ checked := inUse ]
-          unless inUse $
-            if null missing
-              then useColorizer colorizerName
-              else askArguments c
-                     (if nameOf colorizerDefault == colorizerName then argsOf colorizerDefault else "") ]
-      -- The arguments of the colorizer in use, if it has parameters.
-      let inUseColorizer = find ((== nameOf colorizerInUse) . colorizerName) available
-          inUseParams = maybe [] colorizerParams inUseColorizer
-      menuLine colorizerMenu
-      void $ menuItem colorizerMenu
-        [ text := "Arguments..."
-        , enabled := not (null inUseParams)
-        , on command := mapM_ (\c -> askArguments c (argsOf colorizerInUse)) inUseColorizer ]
-      -- (not really about this viewer's colorizer, since every viewer's
-      -- autocolor groups are the project's; but kept here so that the
-      -- viewer menu stays short)
-      void $ menuItem colorizerMenu
-        [ text := "Autocolor settings...", on command := pmEditAutocolor ]
-      void (menuSub hamburgerMenu colorizerMenu [ text := "Colorizer" ]))
+    -- How the viewer is colored is on the configuration window's "Color
+    -- settings" page, with a page for each viewer.
+    menuItem hamburgerMenu [ text := "Color settings..."
+                           , on command := do
+                               showPages pmPages [colorSettingsTitle, title0]
+                               raiseConfigWindow ]
     set p [ on keyboard :~ \old k -> do
               let mods = keyModifiers k
               if not (altDown mods) && not (controlDown mods) && not (metaDown mods)
@@ -2168,12 +2181,11 @@ makeWxComplexViewer projectWindow wxLayout addMenuBar ProjectMenuActions{..} rai
           WX.windowOnClose tf (set tf [ visible := False ])
           onOwnDestroy host (void (windowDestroy tf))
           modifyIORef' toolWindows (Map.insert n tf)
-          let appAction = \case
-                OpenAutocolorSettings -> pmEditAutocolor
-              buttonPress txt = do
+          let buttonPress txt = do
                 void $ runToolEventHandler Tool{..} (ButtonPressed txt)
                 vDrawCmdsChanged >>= \yn -> when yn triggerRepaint
-          (stopListening, tlo) <- generateWxLayout appAction buttonPress tf (coContents tcfg)
+              hooks = LayoutHooks { lhButtonPress = buttonPress, lhAppWidget = noAppWidgets, lhPages = Nothing }
+          (stopListening, tlo) <- generateWxLayout hooks tf (coContents tcfg)
           set tf [ layout := margin 10 $ fill $ tlo ]
           -- Hooks `windowOnDestroy`, not `on closing` -- see the note
           -- on 'UI.Widgets.wxWatchDynamic'.

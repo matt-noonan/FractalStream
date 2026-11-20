@@ -28,9 +28,8 @@ import Data.Maybe (fromMaybe, isNothing)
 import Control.Concurrent.MVar (newMVar, modifyMVar, modifyMVar_)
 import qualified System.Info
 import UI.ProjectScriptEditor (editProjectScript, ScriptEditorHooks(..), rebuildColorizers)
-import UI.AutocolorEditor (editAutocolor)
 import UI.MovieMaker (newMovieSupport)
-import UI.Widgets (onOwnDestroy)
+import UI.Widgets (onOwnDestroy, newPageMemory)
 
 import UI.Session
 import UI.WxProperties
@@ -235,9 +234,11 @@ runApp = withBackend $ \backend -> start $ do
       --
       -- @rebuild@ rebuilds the project with changed colorizer choices
       -- (see 'rebuildColorizers').
-      projectMenuActions currentEnsemble sessionUnsaved pmMovies pmProjectName pmSave pmSaveAs pmEditScript pmClose pmCloseWindow rebuild pmEditAutocolor =
+      projectMenuActions currentEnsemble sessionUnsaved pmMovies pmProjectName pmSave pmSaveAs pmEditScript pmClose pmCloseWindow rebuild pmPages =
         ProjectMenuActions
-          { pmSave, pmSaveAs, pmEditScript, pmClose, pmCloseWindow, pmEditAutocolor
+          { pmSave, pmSaveAs, pmEditScript, pmClose, pmCloseWindow, pmPages
+          -- (the same groups through rebuilds: see 'carryOverProjectState')
+          , pmAutocolorState = getDynamic . ensembleAutocolor =<< getDynamic currentEnsemble
           , pmMovies, pmProjectName
           , pmUnsaved = sessionUnsaved
           , pmCommonDefs = getDynamic currentEnsemble >>= ensembleCommonDefs
@@ -400,7 +401,8 @@ runApp = withBackend $ \backend -> start $ do
           scriptDraft <- newIORef Nothing
           movieSupport <- newMovieSupport
           scriptEditorWindow <- newIORef Nothing
-          autocolorWindow <- newIORef Nothing
+          -- (the pages its configuration window shows, through rebuilds)
+          configPages <- newPageMemory
           -- Changing a configuration value changes what gets saved, so
           -- it marks the project as having unsaved changes -- following
           -- the project through rebuilds, which replace its ensemble.
@@ -418,7 +420,6 @@ runApp = withBackend $ \backend -> start $ do
                 { sehAfterClosingProject = showLibraryAfterClosing
                 , sehDraft = scriptDraft
                 , sehEditor = scriptEditorWindow
-                , sehKeep = maybe [] (pure . objectCast) <$> readIORef autocolorWindow
                 , sehMarkUnsaved = setValue sessionUnsaved True
                 , sehAddMenuBar = \fr menus -> makeMenuBar ProjectActions{..} (Just thisProject) fr menus
                 }
@@ -436,15 +437,7 @@ runApp = withBackend $ \backend -> start $ do
                               (editProjectScript backend projectWindow editorHooks wxLayout currentEnsemble ui)
                               (closeSession si) closeFromWindow
                               (rebuildColorizers backend projectWindow editorHooks wxLayout currentEnsemble ui)
-                              editAutocolorWindow
-              -- One autocolor window per project: asking again raises it.
-              editAutocolorWindow = readIORef autocolorWindow >>= \case
-                Just w -> void (WX.windowShow w) >> WX.windowRaise w
-                Nothing -> do
-                  st <- getDynamic . ensembleAutocolor =<< getDynamic currentEnsemble
-                  w <- editAutocolor projectWindow st (setValue sessionUnsaved True)
-                                     (writeIORef autocolorWindow Nothing)
-                  writeIORef autocolorWindow (Just w)
+                              configPages
               -- A viewer's own close button closes the project, asking
               -- first if that takes other viewers with it.
               closeFromWindow = do

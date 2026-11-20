@@ -23,26 +23,23 @@ export function showPreferences() {
   if (open) return;
   const tabs: [string, () => HTMLElement][] = [["Editor", editorTab], ["Viewers", viewersTab], ["Colors", colorsTab]];
   const body = el("div", { className: "prefs-body" });
-  const tabButtons = tabs.map(([label], i) => {
-    const b = el("button", { type: "button", className: "prefs-tab", textContent: label });
-    b.setAttribute("role", "tab");
-    b.addEventListener("click", () => choose(i));
-    return b;
-  });
+  // (a menu of the pages, like the configuration panel's)
+  const chooser = el("select", { className: "tab-chooser", title: "Which settings to show" },
+                     ...tabs.map(([label], i) => el("option", { value: String(i), textContent: label })));
+  chooser.setAttribute("aria-label", "Which settings to show");
+  chooser.addEventListener("change", () => choose(Number(chooser.value)));
   const choose = (i: number) => {
-    tabButtons.forEach((b, k) => b.setAttribute("aria-selected", String(k === i)));
+    chooser.value = String(i);
     body.replaceChildren(tabs[i][1]());
     try { sessionStorage.setItem("fractalstream.preferencesTab", String(i)); } catch { /* (not remembered) */ }
   };
   const done = el("button", { type: "button", textContent: "Done" });
   const close = () => { dialog.remove(); open = null; };
   done.addEventListener("click", close);
-  const tabRow = el("div", { className: "prefs-tabs" }, ...tabButtons);
-  tabRow.setAttribute("role", "tablist");
   const dialog = el("div", { className: "page-dialog", role: "dialog" },
     el("div", { className: "page-dialog-box prefs-dialog" },
       el("div", { className: "form-title", textContent: "Preferences" }),
-      tabRow, body,
+      chooser, body,
       el("div", { className: "form-buttons" }, el("span", { className: "form-gap" }), done)));
   dialog.setAttribute("aria-label", "Preferences");
   dialog.addEventListener("keydown", (e) => {
@@ -56,7 +53,7 @@ export function showPreferences() {
   choose(first);
   document.body.append(dialog);
   open = dialog;
-  tabButtons[first].focus();
+  chooser.focus();
 }
 
 // --- Editor

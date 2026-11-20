@@ -162,10 +162,12 @@ tool info), but projects themselves are not encoded through a `Codec`: see
 - `Tabbed` - tabbed interface
 - `TextBox` - text entry for a named variable
 - `Button`, `CheckBox`, `Selection`, `ColorPicker`
-- `ActionButton` - a button that does something in the app (an `AppAction`, such as
-  `OpenAutocolorSettings`) rather than run a tool's `on button` handler; it comes
-  from a `ConfigAction` statement, which no script can write (the built-in Autocolor
-  colorizer adds one), and `UI.Layout.generateWxLayout` is given its handler
+- `AppWidgetL` - something the app draws and runs itself (an `AppWidget`: a
+  viewer's `ColorizerChooser`, or the `AutocolorEditor`), changing the app's
+  state rather than a project value; it comes from a `ConfigWidget` statement,
+  which no script can write (the "Color settings" page has them), and each
+  frontend draws it (`LayoutHooks`' `lhAppWidget` for `UI.Layout.generateWxLayout`;
+  kinds "colorizer" and "autocolor" in the web page's layout JSON)
 
 `layoutContext` converts a `Layout` into a `SomeContext DynamicValue` (live values for
 each named variable in the layout).
@@ -174,8 +176,9 @@ each named variable in the layout).
 
 `Configuration` bundles a title, size (`Dimensions`), and `Layout` into a panel.
 Each `Ensemble` has an optional `Configuration` (from its `@config` stanzas):
-a `Tabbed` layout with one tab per stanza title (stanzas sharing a title are
-merged), ending with the implicit "Iteration settings" tab. A tool's own
+a `Tabbed` layout with one page per stanza title (stanzas sharing a title are
+merged), then "Color settings" (see the colorizers), ending with the implicit
+"Iteration settings" page. A tool's own
 declarations instead become a single titled `Panel`
 (`buildMaybeConfiguration AsTabs`/`AsPanels`).
 
@@ -602,8 +605,15 @@ these with no interactive choices). For each viewer it picks the colorizer
 (interactive choice by title, from `colorizers:`; else `colorizer=`; else
 Manual if the body assigns `color` (`setsColor`, after `define`/`run`
 expansion) and Rainbow if not), appends its code to the viewer's code, and
-adds its settings as a `ConfigStanza` (tab "Coloring", or "<title>
-coloring" with several viewers). Every name the colorizer declares
+adds a page for it to one `ConfigStanza`, "Color settings"
+(`colorSettingsTitle`), after the script's own: a `ConfigTabs` with a page
+per viewer (by its title: a `ColorizerChooser` widget, then the colorizer's
+settings) and a last one, "Autocolor settings" (`autocolorPageTitle`), with
+the `AutocolorEditor`. The viewer menu's "Color settings..." shows its
+viewer's page (`showPages`). Choosing a colorizer there rebuilds the
+project, so each frontend remembers which page each menu of pages shows,
+by its path of page labels, through rebuilds (`UI.Widgets.PageMemory` on
+the desktop, one per project session; `pageChosen` in the web page). Every name the colorizer declares
 (settings, parameters, locals) is renamed `[colorizer] <title>: <name>`,
 so it can't clash with the script's names and each viewer has its own
 settings. Its `@common` dependencies (`czCommon`) are added unless the
@@ -698,12 +708,11 @@ the viewer that added them finds nothing new the second time.
 In the `autocolor:` key, points are complex literals in ASCII
 (`showAutocolorPoint`: 10 decimals, |x| < 1e-9 written as 0; a plain
 YAML number is accepted too) and colors are written by `toUserString`,
-both read back with `parseConstant`. The wx autocolor window
-(`UI.AutocolorEditor`, one per project, from "Autocolor settings..." in
-the viewer's Colorizer menu, or the Autocolor colorizer's "Open autocolor
-settings..." button: a `ConfigAction OpenAutocolorSettings` statement,
-which no script can write, that becomes a `Layout` `ActionButton`, run by
-`generateWxLayout`'s `AppAction` handler) shows a group
+both read back with `parseConstant`. The wx autocolor editor
+(`UI.AutocolorEditor`, a panel on the configuration window's "Color
+settings" > "Autocolor settings" page, built anew with the window; its
+list has a minimum size and scrolls, so that it doesn't decide the
+window's size) shows a group
 selector, each entry's point (edited in place, committed on Enter or
 leaving the field) and color picker with a Delete button, an add-a-point
 field, "Clear all", a lock checkbox, the group's tolerance (a positive
@@ -1123,7 +1132,7 @@ destroyed, not just the window itself. Use `UI.Widgets.onOwnDestroy`,
 which checks the event's source and chains the handlers installed before
 it; every destroy hook in the app does (including those in
 `wxWatchDynamic` and `wxTimer`). Before it, a window that rebuilt some of
-its widgets (the autocolor window's list) silently stopped every watch and
+its widgets (the autocolor editor's list) silently stopped every watch and
 timer on it, since their cleanup ran on the first child destroyed. Mixing
 in a plain handler would bring that back: it would run on a child's
 destruction and call the chained cleanups unconditionally.
@@ -1393,7 +1402,10 @@ Config statements (in `@config`, and at the top of `@tool`) can be grouped
 with indented `row:` blocks (side by side) and `tab "Label":` blocks. Each
 `tab` parses as its own one-page `ConfigTabs`, and `configStmts` merges runs
 of consecutive ones, so the grammar stays unambiguous; a group becomes a
-`Tabbed` layout (a wx notebook). Color fields re-parse their text like text
+`Tabbed` layout: a menu of pages, not a tab bar (`UI.Widgets.choiceBook`
+on the desktop, since wxHaskell has no `wxChoicebook`: a `wxChoice` over
+scrolled pages, all as big as the biggest but no taller than 3/5 of the
+display; `tabsElement` on the web). Preferences uses the same menu. Color fields re-parse their text like text
 boxes do; they used to be frozen `constParsed` values, which silently
 ignored the color picker and `set parameter`. A `button` is only allowed in
 a `@tool` (`noButtons` rejects it in `@config`, since only a tool's own

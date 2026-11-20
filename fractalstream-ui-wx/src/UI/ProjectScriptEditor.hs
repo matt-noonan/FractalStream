@@ -48,9 +48,6 @@ data ScriptEditorHooks = ScriptEditorHooks
   , sehEditor :: IORef (Maybe (Window ()))
     -- ^ The open editor's window, if any: rebuilding the project for
     -- some other reason (a new colorizer) leaves it open.
-  , sehKeep :: IO [Window ()]
-    -- ^ Other windows of the project that outlast its rebuilds (its
-    -- autocolor editor): they aren't built from its script.
   , sehMarkUnsaved :: IO ()
   , sehAddMenuBar :: forall a. Frame a -> [Menu ()] -> IO ()
     -- ^ Give the editor its project's menu bar (on macOS, where Command+S
@@ -206,8 +203,7 @@ editProjectScript backend projectWindow ScriptEditorHooks{..} wxLayout currentEn
           -- defaults; and carry over everything about the project that
           -- isn't in its script (scenarios, metadata, frontends' own
           -- keys), since a script alone has none of it.
-          keep <- sehKeep
-          void (replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns)
+          void (replaceProject backend projectWindow wxLayout currentEnsemble ui [] newEns)
     ]
 
   set f [ layout := fill $ container p $ fill $ margin 5 $ column 5
@@ -270,7 +266,7 @@ rebuildColorizers :: Backend -> Window a -> ScriptEditorHooks -> WxLayout -> Var
                   -> (Map.Map String String -> Map.Map String String)
                   -> (Ensemble -> IO ())
                   -> IO (Either String ())
-rebuildColorizers backend projectWindow ScriptEditorHooks{sehEditor, sehKeep} wxLayout currentEnsemble ui change after = do
+rebuildColorizers backend projectWindow ScriptEditorHooks{sehEditor} wxLayout currentEnsemble ui change after = do
   prj <- getDynamic currentEnsemble
   src <- getDynamic (ensembleSourceScript prj)
   choices <- change <$> getDynamic (ensembleColorizerChoices prj)
@@ -280,7 +276,7 @@ rebuildColorizers backend projectWindow ScriptEditorHooks{sehEditor, sehKeep} wx
       replacer <- timer projectWindow [ interval := 1 ]
       set replacer [ on command := do
                        set replacer [ enabled := False ]
-                       keep <- (++) <$> (maybeToList <$> readIORef sehEditor) <*> sehKeep
+                       keep <- maybeToList <$> readIORef sehEditor
                        replaced <- replaceProject backend projectWindow wxLayout currentEnsemble ui keep newEns
                        when replaced (after newEns) ]
       pure (Right ())

@@ -1,12 +1,12 @@
-{-# language QuasiQuotes, OverloadedStrings #-}
+{-# language QuasiQuotes, OverloadedStrings, RecordWildCards #-}
 module Actor.ColorizerSpec (spec) where
 
 import Test.Hspec
 
 import Actor.Colorizer
 import Actor.Ensemble
-import Actor.Layout (Field(..), AppAction(..))
-import Actor.Script (ConfigStmt(..))
+import Actor.Layout (Field(..), AppWidget(..), Layout(..), Label(..), TabItem(..))
+import Actor.Configuration (Configuration(..))
 import Actor.SavedValues (noSavedValues)
 import Actor.Viewer (SomeViewerWithContext(..))
 import Actor.Viewer.Complex (ComplexViewer(..))
@@ -59,11 +59,6 @@ spec = do
       let names = map colorizerName builtinColorizers
       sort names `shouldBe` sort (Map.keys (Map.fromList (map (,()) names)))
       map colorizerName builtinColorizers `shouldContain` [manualColorizerName, rainbowColorizerName]
-
-    it "include a button to the autocolor window in Autocolor's settings, and only there" $ do
-      let actions c = [ a | ConfigAction a _ <- colorizerConfig c ]
-      forM_ builtinColorizers $ \c -> map show (actions c) `shouldBe`
-        [ show OpenAutocolorSettings | colorizerName c == "Autocolor" ]
 
     it "each build, on a Julia set's viewer and on a Mandelbrot set's" $
       forM_ builtinColorizers $ \c -> do
@@ -153,7 +148,7 @@ iterate z -> z^2 - 1 until z escapes
 |]
       fieldNames ens >>= (`shouldContain` ["color_speed", "[colorizer] V: color_speed"])
 
-    it "are separate for each viewer, each with a tab of its own" $ do
+    it "are separate for each viewer" $ do
       ens <- buildWith Map.empty [r|
 @viewer "A"
 iterate z -> z^2 - 1 until z escapes
@@ -164,6 +159,57 @@ iterate z -> z^2 + 0.25 until z escapes
       names <- fieldNames ens
       names `shouldContain` ["[colorizer] A: color_speed"]
       names `shouldContain` ["[colorizer] B: color_speed"]
+
+  describe "the \"Color settings\" page" $ do
+    let pages :: Layout -> IO [(String, [Layout])]
+        pages = \case
+          Tabbed tabsV -> getDynamic tabsV >>= mapM (\TabItem{..} -> do
+            Label l <- getDynamic tiLabel
+            body <- getDynamic tiBody >>= \case
+              Vertical v -> getDynamic v
+              _ -> fail "expected a page to be Vertical"
+            pure (l, body))
+          _ -> fail "expected a menu of pages"
+        topPages ens = getDynamic (ensembleConfiguration ens) >>= \case
+          Just cfg -> pages (coContents cfg)
+          Nothing -> fail "expected a configuration"
+        -- the "Color settings" page's own pages: each one's title, and
+        -- its app widgets and how many other things it has
+        colorPages ens = topPages ens >>= \ts -> case lookup colorSettingsTitle ts of
+          Just [inner] -> pages inner >>= mapM (\(l, body) ->
+            pure (l, [ w | AppWidgetL w <- body ], length [ () | x <- body, not (isAppWidget x) ]))
+          _ -> fail "expected the \"Color settings\" page to be a menu of pages"
+        isAppWidget = \case { AppWidgetL{} -> True; _ -> False }
+
+    it "comes after the script's own pages, before \"Iteration settings\"" $ do
+      ens <- buildWith Map.empty "@config \"Mine\"\nk : Z := 3\n\n@viewer \"V\"\npass\n"
+      map fst <$> topPages ens >>= (`shouldBe` ["Mine", colorSettingsTitle, "Iteration settings"])
+
+    it "has a page for each viewer, with its colorizer's menu and settings, then the autocolor groups" $ do
+      ens <- buildWith Map.empty [r|
+@viewer "A"
+iterate z -> z^2 - 1 until z escapes
+
+@viewer "B"
+color <- red
+
+@viewer "C"
+iterate z -> z^2 + 0.25 until z escapes
+|]
+      -- (B's colorizer, Manual, has no settings)
+      colorPages ens >>= (`shouldBe`
+        [ ("A", [ColorizerChooser "A"], 2)
+        , ("B", [ColorizerChooser "B"], 0)
+        , ("C", [ColorizerChooser "C"], 2)
+        , (autocolorPageTitle, [AutocolorEditor], 0) ])
+
+    it "has the same pages for one viewer" $ do
+      ens <- buildWith Map.empty escapeOnly
+      map (\(l, _, _) -> l) <$> colorPages ens >>= (`shouldBe` ["V", autocolorPageTitle])
+
+    it "isn't there without viewers" $ do
+      ens <- buildWith Map.empty "@config \"Mine\"\nk : Z := 3\n"
+      map fst <$> topPages ens >>= (`shouldBe` ["Mine", "Iteration settings"])
 
   describe "the project file" $ do
     let file extra = BS8.pack (unlines (["script: |"] ++ map ("  " ++) (lines escapeOnly) ++ extra))

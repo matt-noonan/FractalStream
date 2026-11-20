@@ -6,6 +6,13 @@ module UI.Widgets
   , checkboxWidget
   , selectionWidget
   , plainTextWidget
+  , ChoiceBook
+  , PageMemory
+  , newPageMemory
+  , showPages
+  , choiceBook
+  , choiceBookPage
+  , choiceBookLayout
   , buttonWidget
   , colorWidget
   , expressionWidget
@@ -37,6 +44,7 @@ import UI.EditorStyle (setupStyles, showLineNumbers, errorColor)
 import UI.EditorKeys (emacsKeysByDefault, pasteFittingIndentation, toggleCommentLines)
 
 import Graphics.UI.WX hiding (pt, when, grey, Color)
+import qualified Graphics.UI.WX as WX
 import Graphics.UI.WXCore.Events
 import Graphics.UI.WXCore.WxcClassesAL
 import Graphics.UI.WXCore.WxcClassesMZ
@@ -45,6 +53,8 @@ import Graphics.UI.WXCore.WxcClassTypes (ColourPickerCtrl, WxObject)
 import Control.Concurrent
 import Data.Char (toUpper)
 import Data.IORef
+import Data.Unique (Unique, newUnique)
+import Data.List (elemIndex, inits)
 import Data.Bits ((.|.))
 import Graphics.UI.WXCore.WxcDefs (wxST_NO_AUTORESIZE)
 import Text.Printf
@@ -158,6 +168,89 @@ selectionWidget p v pick options = liftIO $ do
       then set c [ enabled := False ]
       else set c [ enabled := True, selection := fromIntegral newIx ]
   pure c
+
+-- | Pages with a menu of which one to show, in place of a notebook's
+-- tabs (which get crowded). Make one with 'choiceBook', its pages with
+-- 'choiceBookPage', and lay them out with 'choiceBookLayout'.
+data ChoiceBook = ChoiceBook
+  { cbPanel  :: Panel ()
+  , cbChoice :: Choice ()
+  , cbMemory :: Maybe (PageMemory, [String])
+  }
+
+-- | Which page each menu of pages shows, kept for a project while its
+-- configuration window is rebuilt, by the menu's path: the labels of the
+-- pages it's on (@[]@ for the window's own, @["Color settings"]@ for the
+-- one on that page). And the menus showing now, to choose a page in.
+data PageMemory = PageMemory
+  { pmChosen :: IORef (Map.Map [String] String)
+  , pmShowing :: IORef (Map.Map [String] (Unique, String -> IO ()))
+  }
+
+newPageMemory :: IO PageMemory
+newPageMemory = PageMemory <$> newIORef Map.empty <*> newIORef Map.empty
+
+-- | Show the page with each of these labels, on the menu at its path:
+-- @["Color settings", "Julia set"]@ shows the \"Color settings\" page,
+-- and the \"Julia set\" page on it. (Remembered, if they aren't showing
+-- now.)
+showPages :: PageMemory -> [String] -> IO ()
+showPages PageMemory{..} labels = forM_ (zip (inits labels) labels) $ \(path, l) -> do
+  modifyIORef' pmChosen (Map.insert path l)
+  readIORef pmShowing >>= mapM_ (($ l) . snd) . Map.lookup path
+
+-- | A menu of pages, remembering the page it shows at this path, if
+-- given a memory.
+choiceBook :: Maybe (PageMemory, [String]) -> Window a -> IO ChoiceBook
+choiceBook memory owner = do
+  p <- panel owner []
+  c <- choice p [ tooltip := "Which settings to show" ]
+  pure (ChoiceBook p c memory)
+
+-- | A new page, for its widgets. (A page scrolls, if it's too long.)
+choiceBookPage :: ChoiceBook -> IO (ScrolledWindow ())
+choiceBookPage ChoiceBook{cbPanel} = scrolledWindow cbPanel [ scrollRate := sz 0 10 ]
+
+-- | Lay out the pages, each with its label and contents, showing the one
+-- remembered, or the first. Every page is as big as the biggest, so that
+-- the window doesn't change size from one to the next, but no taller
+-- than most of the display: a longer one scrolls.
+choiceBookLayout :: ChoiceBook -> [(String, ScrolledWindow (), WX.Layout)] -> IO WX.Layout
+choiceBookLayout ChoiceBook{..} pages = do
+  let labels = [ l | (l, _, _) <- pages ]
+  set cbChoice [ items := labels ]
+  sizes <- forM pages $ \(_, w, lo) -> do
+    set w [ layout := lo ]
+    windowGetSizer w >>= sizerGetMinSize
+  Size _ displayH <- wxcAppDisplaySize
+  let w0 = maximum (0 : map sizeW sizes)
+      h0 = maximum (0 : map sizeH sizes)
+      maxH = displayH * 3 `div` 5
+      -- (room for the scroll bar, if it's needed)
+      w' = if h0 > maxH then w0 + 20 else w0
+  forM_ pages $ \(_, w, _) -> windowSetMinSize w (sz w' (min h0 maxH))
+  let showOnly i = do
+        set cbChoice [ selection := i ]
+        forM_ (zip [0 :: Int ..] pages) $ \(k, (_, w, _)) ->
+          void (if k == i then windowShow w else windowHide w)
+        void (windowLayout cbPanel)
+        forM_ cbMemory $ \(PageMemory{pmChosen}, path) ->
+          forM_ (take 1 (drop i labels)) $ \l -> modifyIORef' pmChosen (Map.insert path l)
+      showLabel l = forM_ (elemIndex l labels) showOnly
+  set cbChoice [ on select := get cbChoice selection >>= showOnly ]
+  initial <- case cbMemory of
+    Nothing -> pure 0
+    Just (PageMemory{..}, path) -> do
+      -- (the menu showing at this path now: until it's destroyed,
+      -- unless another's taken its place by then)
+      me <- newUnique
+      modifyIORef' pmShowing (Map.insert path (me, showLabel))
+      onOwnDestroy cbPanel $ modifyIORef' pmShowing (Map.update (\(u, f) -> if u == me then Nothing else Just (u, f)) path)
+      remembered <- Map.lookup path <$> readIORef pmChosen
+      pure (fromMaybe 0 (remembered >>= (`elemIndex` labels)))
+  showOnly initial
+  pure (container cbPanel $ column 5 $
+          hfill (widget cbChoice) : [ fill (widget w) | (_, w, _) <- pages ])
 
 plainTextWidget :: MonadIO io => Window a -> Variable String -> io (StaticText ())
 plainTextWidget p s = liftIO $ do
@@ -784,7 +877,7 @@ wxTimer w props = liftIO $ do
 -- destruction: `wxWindowDestroyEvent` is a command event, so it propagates
 -- up from child windows, and a plain handler runs whenever any child is
 -- destroyed -- which, for 'wxWatchDynamic' and 'wxTimer', meant a window
--- that rebuilds some of its widgets (the autocolor window's list) silently
+-- that rebuilds some of its widgets (the autocolor editor's list) silently
 -- stopped every watch and timer on it.
 onOwnDestroy :: Window a -> IO () -> IO ()
 onOwnDestroy w action = do

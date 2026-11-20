@@ -178,12 +178,6 @@ body {
 .panel legend { font-weight: 600; margin-bottom: 6px; }
 .vertical { display: flex; flex-direction: column; gap: 6px; }
 .horizontal { display: flex; flex-wrap: wrap; gap: 8px; }
-.tab-buttons { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-.tab-buttons button {
-  font: inherit; padding: 3px 10px; border-radius: 6px;
-  border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer;
-}
-.tab-buttons button.selected { background: var(--accent); border-color: var(--accent); color: white; }
 .field { display: flex; align-items: center; gap: 8px; }
 .field > span:first-child { flex: none; min-width: 7em; color: var(--muted); }
 .field input[type=text], .field select {
@@ -333,13 +327,11 @@ body {
 }
 .zoom-box[hidden] { display: none; }
 
-/* The autocolor editor (main.ts's showAutocolor), over the workspace as
-   the script editor is. */
-.autocolor-overlay .autocolor-body {
-  flex: 1; min-height: 0; overflow: auto; padding: 10px 12px;
-  width: 100%; max-width: 640px; box-sizing: border-box;
-  display: flex; flex-direction: column; gap: 10px; font-size: 13px;
-}
+/* The autocolor editor (main.ts's autocolorElement), on the
+   configuration's "Color settings" page. */
+.autocolor-body { display: flex; flex-direction: column; gap: 10px; }
+/* (a viewer's colorizer, on its "Color settings" page) */
+.colorizer-field button { flex: none; }
 .autocolor-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .autocolor-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; align-items: center; }
 .autocolor-list { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
@@ -496,11 +488,8 @@ body {
 
 /* Preferences (preferences-dialog.ts), in a page dialog */
 .page-dialog-box.prefs-dialog { width: min(600px, 100%); max-height: calc(100dvh - 32px); }
-.prefs-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
-.page-dialog-box .prefs-tab { border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0;
-                              background: none; margin-bottom: -1px; }
-.page-dialog-box .prefs-tab[aria-selected=true] { border-color: var(--line); background: var(--panel); font-weight: 600; }
 .prefs-body { overflow: auto; min-height: 0; flex: 1; }
+.page-dialog-box .tab-chooser { width: auto; align-self: flex-start; margin: 0; padding: 3px 6px; border-radius: 6px; }
 .prefs-pane { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
 .prefs-label { font-weight: 600; margin-top: 4px; }
 .prefs-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
