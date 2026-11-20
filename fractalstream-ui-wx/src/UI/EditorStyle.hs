@@ -71,6 +71,12 @@ setupStyles stc isLight settings = do
   forM_ (setEditorFontSize settings) (styledTextCtrlStyleSetSize stc 32)
   styledTextCtrlStyleClearAll stc
   styledTextCtrlStyleSetSpec stc 33 lineNumbers
+  -- the bracket at the cursor and its match (Scintilla's style 34), or
+  -- one with no match (35): "UI.CodeEditor.highlightBrackets"
+  styledTextCtrlStyleSetSpec stc 34
+    (if isLight then "fore:#000000,back:#c8dcff" else "fore:#ffffff,back:#3c5078")
+  styledTextCtrlStyleSetSpec stc 35
+    (if isLight then "fore:#c00000,back:#fbd8d8" else "fore:#ff9090,back:#5a2430")
   -- an error's note, under its line ("UI.CodeEditor.showErrorNote")
   styledTextCtrlStyleSetSpec stc errorNoteStyle
     (if isLight then "fore:#7a1010,back:#fbe6e6" else "fore:#ffc0c0,back:#3a1e24")

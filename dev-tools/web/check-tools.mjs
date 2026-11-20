@@ -883,6 +883,31 @@ async function editor() {
   for (let i = 0; i < 3; i++) await page.keyboard.press("ControlOrMeta+z");
   await page.waitForFunction(() => !document.querySelector(".editor-status.error"), null, { timeout: 10000 }).catch(() => {});
   c.check((await page.locator(".cm-script-error").count()) === 0, "undoing it clears it");
+
+  // the bracket at the cursor, and its match (or that it has none); not
+  // one in a comment
+  const matched = () => page.locator(".cm-bracket-match").allTextContents();
+  const unmatched = () => page.locator(".cm-bracket-unmatched").allTextContents();
+  const testLine = "    w := (z + [1, 2][0]) * 2 # (not code";
+  const toCursor = async (i) => {
+    await page.keyboard.press("End");
+    for (let k = testLine.length; k > i; k--) await page.keyboard.press("ArrowLeft");
+  };
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.insertText("\n" + testLine);
+  await toCursor(testLine.indexOf(")") + 1);
+  c.check((await matched()).join("") === "()" && (await unmatched()).length === 0,
+          `just after a bracket, it and its match are highlighted (${(await matched()).join(" ")})`);
+  await toCursor(testLine.indexOf("[0]") + 1);
+  c.check((await matched()).join("") === "[]", `and the same for each kind (${(await matched()).join(" ")})`);
+  await toCursor(testLine.lastIndexOf("(") + 1);
+  c.check((await matched()).length === 0 && (await unmatched()).length === 0, "but not one in a comment");
+  await page.keyboard.insertText("\n    v := (z");
+  await page.keyboard.press("ArrowLeft");
+  c.check((await unmatched()).join("") === "(" && (await matched()).length === 0, "one with no match is shown so");
+  await page.locator(".editor-buttons button", { hasText: "Revert" }).click();
+  await page.waitForTimeout(400);
+  await page.locator(".editor-overlay .cm-content").click();
   // (= is typed, not the shortcut for the configuration)
   const drawerOut = () => page.locator(".panel.open").count();
   const wasOut = await drawerOut();

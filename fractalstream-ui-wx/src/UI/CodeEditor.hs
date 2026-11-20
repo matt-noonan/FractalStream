@@ -19,7 +19,8 @@ import Data.DynamicValue
 import Actor.Layout (CodeString(..))
 import UI.EditorKeys
 import UI.SymbolEntry
-import UI.EditorStyle (setupStyles, showLineNumbers, errorNoteStyle, errorColor)
+import UI.EditorStyle (setupStyles, showLineNumbers, errorNoteStyle, errorColor, styleFor)
+import Language.Editor.Highlight (Highlight(Comment, StringLiteral))
 import Language.Editor (indentUnit, visibleSpan)
 import UI.AppSettings (appSettings)
 import FractalStream.Settings (Settings(..))
@@ -152,6 +153,7 @@ codeEditorWithText cep txt onErrorMarkClick = do
       STCUpdateUI -> do
         symbolUpdateUI symbols
         keepCursorOnCharacters stc lastCursor
+        highlightBrackets stc
       _ -> pure ()
     -- (a caller that handles focus too has to keep this, with `:~`)
     set stc [ on focus := \gained -> do
@@ -396,3 +398,29 @@ foldLevelsForText codeBlocks txt =
     -- which lines can be folded: stanza headers and tool handlers' `on`
     -- lines (both at the left margin), and others only if asked for
     folds l = codeBlocks || "@" `isPrefixOf` l || "on " `isPrefixOf` l
+
+-- | Highlight the bracket at the cursor (just before it, or else just
+-- after it) and the one it matches, or show that it matches none. Not a
+-- bracket in a comment or text, which Scintilla wouldn't match with one
+-- outside (it matches brackets of the same style), and isn't code.
+highlightBrackets :: StyledTextCtrl a -> IO ()
+highlightBrackets stc = do
+  pos <- styledTextCtrlGetCurrentPos stc
+  len <- styledTextCtrlGetLength stc
+  let bracketAt p
+        | p < 0 || p >= len = pure False
+        | otherwise = do
+            c <- styledTextCtrlGetCharAt stc p
+            st <- styledTextCtrlGetStyleAt stc p
+            pure (c `elem` map fromEnum ("()[]{}" :: String)
+                  && st `notElem` map styleFor [Comment, StringLiteral])
+  before <- bracketAt (pos - 1)
+  after <- bracketAt pos
+  case (before, after) of
+    (True, _) -> highlight (pos - 1)
+    (_, True) -> highlight pos
+    _ -> styledTextCtrlBraceHighlight stc (-1) (-1)
+  where
+    highlight p = styledTextCtrlBraceMatch stc p >>= \case
+      m | m < 0 -> styledTextCtrlBraceBadLight stc p
+        | otherwise -> styledTextCtrlBraceHighlight stc p m

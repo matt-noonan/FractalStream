@@ -1084,6 +1084,14 @@ Key modules:
   monospaced). A Rebuild's error (`swRebuildError`) is shown the same way
   while the text is what was rebuilt. The web editor (`web/src/editor.ts`)
   does the same with a gutter, a block widget and its arrow (`placeNote`).
+- The bracket at the cursor (just before it, or else just after it), one
+  of `()[]{}`, is highlighted with the one it matches (Scintilla's style
+  34), or alone if it matches none (35): `UI.CodeEditor.highlightBrackets`,
+  on each STCUpdateUI, with Scintilla's BraceMatch, which pairs a bracket
+  only with its own kind and the same style. Not one in a comment or
+  text. The web editor does the same itself (`bracketMatch`, with a
+  per-line mask of what's code: not in quotes, nor after `#`), since it
+  has no CodeMirror grammar for `bracketMatching()` to skip those with.
 - Code editors' font is the `editor-font` / `editor-font-size` settings
   (`FractalStream.Settings.editorFont`; by default DejaVu Sans, which
   covers the symbols scripts use where Consolas and Monaco don't: Scintilla
