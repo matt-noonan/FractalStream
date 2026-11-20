@@ -4,6 +4,8 @@ import Test.Hspec
 
 import Language.Editor
 import Language.Parser.SourceRange (SourceRange(..), Pos(..))
+import Actor.Ensemble (checkScript)
+import Data.List (isPrefixOf)
 
 spec :: Spec
 spec = describe "editing scripts" $ do
@@ -37,6 +39,32 @@ spec = describe "editing scripts" $ do
       characterBoundary line 7 False `shouldBe` 7
       characterBoundary line 0 True `shouldBe` 0
       characterBoundary line (length line) False `shouldBe` length line
+
+  describe "code still being written" $ do
+    -- (the line the error's on, counting from 1 as the editor shows them,
+    -- and how its message starts)
+    let errorAt src = case checkScript src of
+          Left (loc, msg) -> Just (fmap (+ 1) (errorLine loc), unwords (words msg))
+          Right () -> Nothing
+        viewer = "@viewer \"V\" var=z\nz <- z\n"
+
+    it "says a block has nothing in it yet, on the line under its header" $ do
+      let says = maybe False (("This block has nothing in it yet" `isPrefixOf`) . snd)
+      -- (just after Enter, at the end, on the new line, indented or not)
+      errorAt (viewer ++ "repeat 3 times:\n") `shouldSatisfy` \e -> says e && fmap fst e == Just (Just 4)
+      errorAt (viewer ++ "repeat 3 times:\n    ") `shouldSatisfy` \e -> says e && fmap fst e == Just (Just 4)
+      -- (with more code after it)
+      errorAt (viewer ++ "if z == 0 then:\n\ncolor <- red\n") `shouldSatisfy` \e -> says e && fmap fst e == Just (Just 4)
+      -- (in a nested block, the first one that's empty)
+      errorAt (viewer ++ "repeat 3 times:\n  repeat 2 times:\n  z <- z\n") `shouldSatisfy` \e -> says e && fmap fst e == Just (Just 5)
+
+    it "says a line that ends early isn't finished, there" $ do
+      errorAt (viewer ++ "z <- z^2 +\ncolor <- red\n") `shouldBe` Just (Just 3, "This line isn't finished.")
+      errorAt (viewer ++ "z <- (z^2\ncolor <- red\n") `shouldBe` Just (Just 3, "This line isn't finished (a bracket on it is still open).")
+      errorAt (viewer ++ "z <- z^2 +") `shouldSatisfy` maybe False ((== Just 3) . fst)
+
+    it "still says where it got stuck, for code that's wrong, not unfinished" $
+      errorAt (viewer ++ "z <- z ^ ^ 2\n") `shouldSatisfy` maybe False (("I got stuck" `isPrefixOf`) . snd)
 
   describe "showing an error" $ do
 

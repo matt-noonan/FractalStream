@@ -112,7 +112,7 @@ parse p input
   | b : _ <- builtinBindings input
   = Left b
   | otherwise = case P.fullParses (P.parser (fmap snd . runProd <$> p)) (functionValues input) of
-    ([], r)  -> Left (NoParse `onReport` r)
+    ([], r)  -> Left (unfinished r)
     ([x], _) -> pure x
     (_, r)   -> Left (AmbiguousParse `onReport` r)
   where
@@ -120,6 +120,28 @@ parse p input
     toPos i = case mconcat (take (i + 1) (map tokenSourceRange input)) of
       NoSourceRange   -> Nothing
       SourceRange _ e -> Just e
+    -- What's still being written, said so, rather than that the parser
+    -- got stuck: a block with nothing in it yet (a line ending with a
+    -- colon is always a block's header, so its next token has to start
+    -- the block), or a line that ends early.
+    unfinished r@P.Report{..}
+      | sr : _ <- [ sr | (SRToken Colon sr, SRToken Newline _, next) <- triples
+                       , maybe True ((/= Indent) . baseToken) next ]
+      = EmptyBlock sr
+      | maybe True ((`elem` [Newline, Dedent]) . baseToken) (listToMaybe (drop position input))
+      = UnfinishedLine (toPos position) (unclosedOn position) (Set.fromList expected)
+      | otherwise = NoParse `onReport` r
+    triples = zip3 input (drop 1 input) (map Just (drop 2 input) ++ [Nothing, Nothing])
+    -- (the brackets left open on the line that ends at this token)
+    unclosedOn i =
+      let line = reverse (takeWhile ((`notElem` [Newline, Indent, Dedent]) . baseToken)
+                                    (reverse (take i input)))
+          depth = sum [ case baseToken t of
+                          OpenParen -> 1; OpenBracket -> 1; OpenBrace -> 1
+                          CloseParen -> -1; CloseBracket -> -1; CloseBrace -> -1
+                          _ -> 0 :: Int
+                      | t <- line ]
+      in depth > 0
 
 -- | The variable that holds a function's value inside its body (see
 -- "Language.Code.FunctionBlocks").
@@ -258,6 +280,13 @@ withSourceRange (Prod p) = Prod $ (\(sr, f) -> (sr, f sr)) <$> p
 
 data ParseError
   = NoParse (Maybe Pos) (Set String)
+  | EmptyBlock SourceRange
+    -- ^ A block's header (where its colon is), with nothing in the block
+    -- yet. It's reported on the line after the header: where its first
+    -- line is to go, and where the cursor is, once a header's typed.
+  | UnfinishedLine (Maybe Pos) Bool (Set String)
+    -- ^ A line that ends before what's on it does (where it ends; whether
+    -- a bracket on it is still open), as one does while it's typed.
   | AmbiguousParse (Maybe Pos) (Set String)
   | ScientificNumber SourceRange String
     -- ^ A number written in scientific notation (see
@@ -280,6 +309,10 @@ instance PrettyPrint ParseError where
   pp = (:[]) . \case
     NoParse _ prods -> "I got stuck and couldn't parse the input here" ++
       expectingClause prods
+    EmptyBlock _ -> "This block has nothing in it yet: it needs at least one line, indented under it."
+    UnfinishedLine _ unclosed prods ->
+      "This line isn't finished" ++ (if unclosed then " (a bracket on it is still open)" else "")
+      ++ expectingClause prods
     AmbiguousParse _ prods -> "I got stuck because the grammar is ambiguous here" ++
       expectingClause prods
     ScientificNumber _ s -> scientificNumberMessage s
@@ -350,6 +383,10 @@ expectingClause prods = case unsnoc (Set.toList prods) of
 instance HasErrorLocation ParseError where
   errorLocation = \case
     NoParse mp _ -> maybe NoSourceRange (\p -> SourceRange p p) mp
+    EmptyBlock sr -> case sr of
+      SourceRange (Pos r _) _ -> let p = Pos (r + 1) 0 in SourceRange p p
+      NoSourceRange -> NoSourceRange
+    UnfinishedLine mp _ _ -> maybe NoSourceRange (\p -> SourceRange p p) mp
     AmbiguousParse mp _ -> maybe NoSourceRange (\p -> SourceRange p p) mp
     ScientificNumber sr _ -> sr
     IntegerTooBig sr _ -> sr

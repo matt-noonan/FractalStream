@@ -326,6 +326,11 @@ export class ScriptEditor {
   private caretLine = 0;
   /** The error the last analysis found, if any (in the text it was of). */
   private liveError: ScriptError | null = null;
+  /** The analysis's error that's shown (see admitLiveError), and when the
+      text was last changed (performance.now()). */
+  private liveShown: ScriptError | null = null;
+  private lastEdit = 0;
+  private waitTimer: number | undefined;
   /** The error rebuilding found, if any, with the text it was found in:
       shown while that's the text (and there's no other). */
   private rebuildError: { text: string; error: ScriptError } | null = null;
@@ -374,14 +379,47 @@ export class ScriptEditor {
   /** The error there is now, if any: the analysis's, or rebuilding's (for
       the text as it is). */
   private currentError(): { error: ScriptError; rebuild: boolean } | null {
-    if (this.liveError) return { error: this.liveError, rebuild: false };
+    if (this.liveShown) return { error: this.liveShown, rebuild: false };
     const r = this.rebuildError;
     if (r && r.text === this.view.state.doc.toString()) return { error: r.error, rebuild: true };
     return null;
   }
 
+  /** The analysis's error, shown as the script's typed: not at once (one
+      is often only there because the code's still being written), but once
+      the typing stops for a second; and if it's on the cursor's line, once
+      the cursor's left the line, or the typing's stopped for three. Once
+      shown, it stays while it's the same error, and goes as soon as it
+      isn't. */
+  private admitLiveError() {
+    window.clearTimeout(this.waitTimer);
+    const live = this.liveError;
+    if (!live) { this.liveShown = null; return; }
+    if (this.liveShown && this.liveShown.message === live.message) { this.liveShown = live; return; }
+    const state = this.view.state;
+    const onCursorLine = this.view.hasFocus && live.from !== null
+      && state.doc.lineAt(Math.min(live.from, state.doc.length)).number === state.doc.lineAt(state.selection.main.head).number;
+    const wait = (onCursorLine ? 3000 : 1000) - (performance.now() - this.lastEdit);
+    if (wait <= 0) { this.liveShown = live; return; }
+    this.liveShown = null;
+    this.waitTimer = window.setTimeout(() => this.showError(), wait + 20);
+  }
+
+  /** Whether there's an error waiting to be shown. */
+  private waiting(): boolean {
+    return this.liveError !== null && this.liveShown?.message !== this.liveError.message;
+  }
+
+  /** The text's changed: an error waits for the typing to stop. */
+  private typed() { this.lastEdit = performance.now(); }
+
+  /** The cursor's moved (or the focus): an error waiting for it to leave
+      its line may be shown now. */
+  private moved() { if (this.waiting()) this.showError(); }
+
   /** Show the error there is now, if any: in the text, and summed up below it. */
   private showError() {
+    this.admitLiveError();
     const current = this.currentError();
     if (!current) {
       this.noteChosen = null;
@@ -427,8 +465,13 @@ export class ScriptEditor {
     return true;
   }
 
-  /** Go to the error, if there is one, showing its note (F8). */
+  /** Go to the error, if there is one, showing its note (F8): one waiting
+      to be shown is shown at once. */
   goToError(): boolean {
+    if (this.waiting()) {
+      this.liveShown = this.liveError;
+      this.showError();
+    }
     const state = this.view.state;
     const r = errorRange(state, state.field(shownError));
     if (!r) return false;
@@ -635,6 +678,7 @@ export class ScriptEditor {
     const watch = ViewPlugin.fromClass(class {
       update(u: ViewUpdate) {
         if (u.docChanged) {
+          editor.typed();
           if (u.transactions.some((t) => t.isUserEvent("input") || t.isUserEvent("delete"))) editor.edited = true;
           editor.reanalyze();
           if (u.transactions.some((t) => t.isUserEvent("input.type"))) queueMicrotask(() => editor.onTyped(u.view));
@@ -647,7 +691,7 @@ export class ScriptEditor {
         }
         if (u.focusChanged && !u.view.hasFocus) queueMicrotask(() => editor.normalize(false));
         // (the error's note: shown once the cursor's off its line, ...)
-        if (u.selectionSet || u.focusChanged) queueMicrotask(() => editor.refreshNote());
+        if (u.selectionSet || u.focusChanged) queueMicrotask(() => { editor.moved(); editor.refreshNote(); });
       }
     });
     // (a backslash typed starts an escape; pasted names become symbols)

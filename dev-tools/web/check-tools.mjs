@@ -915,6 +915,34 @@ async function editor() {
   c.check((await doc()).trimEnd().endsWith("=") && (await drawerOut()) === wasOut, "= is typed in the editor (and doesn't pull out the configuration)");
   await page.keyboard.press("ControlOrMeta+z");
 
+  // code still being written: its errors are held back while it's typed
+  const marks = () => page.locator(".cm-script-error").count();
+  const erring = () => page.locator(".editor-status.error").count();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n    z <- z^2 +");
+  await page.waitForTimeout(1500);
+  c.check((await marks()) === 0 && (await erring()) === 0, "an unfinished line isn't marked while the cursor's on it");
+  await page.keyboard.press("ArrowUp");
+  await page.waitForTimeout(500);
+  c.check((await marks()) === 1 && /isn't finished/.test(await status()),
+          `once the cursor's left it, it is (${(await status()).trim()})`);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("End");
+  await page.keyboard.type(" 1");
+  await page.waitForTimeout(600);
+  c.check((await marks()) === 0 && (await erring()) === 0, "finishing it clears it at once");
+  await page.keyboard.type("\n    repeat 3 times:");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(2000);
+  c.check((await marks()) === 0 && (await erring()) === 0, "a block just started, with nothing in it yet, isn't marked");
+  await page.waitForTimeout(1800);
+  c.check(/nothing in it yet/.test(await status()), `until the typing's stopped for a while (${(await status()).trim()})`);
+  // (and back to the script as it was, for what's next)
+  await page.locator(".editor-buttons button", { hasText: "Revert" }).click();
+  await page.waitForTimeout(400);
+  c.check((await marks()) === 0 && (await erring()) === 0, "(and back as it was, with no error)");
+  await page.locator(".editor-overlay .cm-content").click();
+
   // mathematical symbols, once it's edited (the cursor's line aside)
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type("\n# notes: ");
