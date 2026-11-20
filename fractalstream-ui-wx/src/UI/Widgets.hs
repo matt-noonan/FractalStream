@@ -55,6 +55,7 @@ import Data.Char (toUpper)
 import Data.IORef
 import Data.Unique (Unique, newUnique)
 import Data.List (elemIndex, inits)
+import GHC.Clock (getMonotonicTime)
 import Data.Bits ((.|.))
 import Graphics.UI.WXCore.WxcDefs (wxST_NO_AUTORESIZE)
 import Text.Printf
@@ -448,6 +449,11 @@ scriptWidgetWith known p scriptCode = do
   -- (and refreshing the error's note, for what's set up before it is)
   noteRefresher <- liftIO $ newIORef (pure ())
   let refreshNoteLater = join (readIORef noteRefresher)
+  -- (and the error, for one that's waiting to be shown: see 'admitLiveError')
+  errorRefresher <- liftIO $ newIORef (pure ())
+  -- when the script was last changed, in seconds (long ago, to begin
+  -- with: an error the script has when it's opened is shown at once)
+  lastEditAt <- liftIO $ newIORef (-1e9 :: Double)
   ce <- liftIO $ codeEditor p scriptCode (\l -> readIORef onMarkClick >>= ($ l))
   txt <- unCodeString <$> getDynamic (source scriptCode)
   lastText <- liftIO $ newIORef txt
@@ -539,6 +545,7 @@ scriptWidgetWith known p scriptCode = do
                        old <- readIORef lastText
                        when (new /= old) $ do
                          writeIORef lastText new
+                         writeIORef lastEditAt =<< getMonotonicTime
                          writeIORef edited True
                          updateFoldLevels ce new
                          setValue (source scriptCode) (CodeString new)
@@ -549,6 +556,8 @@ scriptWidgetWith known p scriptCode = do
                          writeIORef caretLine lineNow
                          normalizeExcept (Just lineNow)
                          refreshNoteLater
+                       -- (an error waiting to be shown, until it is)
+                       join (readIORef errorRefresher)
                        Size widthNow _ <- get ce clientSize
                        widthBefore <- readIORef editorWidth
                        when (widthNow /= widthBefore) $ do
@@ -591,6 +600,9 @@ scriptWidgetWith known p scriptCode = do
   -- one; or else one from building the project from the script (with
   -- the text it was found in, since it's only shown for that text).
   liveError <- liftIO $ (either Just (const Nothing) <$> getDynamic scriptCode) >>= newIORef
+  -- the check's error that's shown (see 'admitLiveError'): the one there
+  -- was when the editor opened, if any, at once
+  liveShown <- liftIO $ readIORef liveError >>= newIORef
   rebuildError <- liftIO $ newIORef (Nothing :: Maybe (String, (SourceRange, String)))
   -- whether the error's note is to be shown, if that's been chosen (by
   -- clicking its mark, or going to it), until there's no error
@@ -600,7 +612,7 @@ scriptWidgetWith known p scriptCode = do
   shownError <- liftIO $ newIORef (Nothing :: Maybe (Bool, SourceRange, String))
   shownNote <- liftIO $ newIORef (Nothing :: Maybe (Int, [String]))
 
-  let currentError = readIORef liveError >>= \case
+  let currentError = readIORef liveShown >>= \case
         Just (loc, msg) -> pure (Just (False, loc, msg))
         Nothing -> readIORef rebuildError >>= \case
           Just (forText, (loc, msg)) -> do
@@ -639,9 +651,34 @@ scriptWidgetWith known p scriptCode = do
           writeIORef shownNote note
           showErrorNote ce note
 
+      -- The check's error, shown as the script's typed: not at once (one
+      -- is often only there because the code's still being written), but
+      -- once the typing stops for a second; and if it's on the cursor's
+      -- line, once the cursor's left the line, or the typing's stopped for
+      -- three. Once shown, it stays while it's the same error, and goes as
+      -- soon as it isn't.
+      admitLiveError = readIORef liveError >>= \case
+        Nothing -> writeIORef liveShown Nothing
+        Just live@(loc, msg) -> readIORef liveShown >>= \case
+          Just (_, shownMsg) | shownMsg == msg -> writeIORef liveShown (Just live)
+          _ -> do
+            quiet <- (-) <$> getMonotonicTime <*> readIORef lastEditAt
+            isFocused <- readIORef focused
+            lineNow <- currentLine
+            onCursorLine <- (\l -> isFocused && l == Just lineNow) <$> lineOfError loc
+            writeIORef liveShown $
+              if quiet >= 1 && (not onCursorLine || quiet >= 3) then Just live else Nothing
+
+      -- (an error waiting to be shown: shown, if it's time)
+      refreshIfWaiting = do
+        live <- readIORef liveError
+        shown <- readIORef liveShown
+        when (isJust live && fmap snd live /= fmap snd shown) refreshError
+
       -- Show the error there is now, if any: underlined, marked in the
       -- margin, summed up under the editor, and its note.
       refreshError = do
+        admitLiveError
         err <- currentError
         before <- readIORef shownError
         when (isNothing err) (writeIORef noteChosen Nothing)
@@ -675,7 +712,8 @@ scriptWidgetWith known p scriptCode = do
                             , visible := True ]
           when (isJust err /= isJust before) (windowReLayout p)
 
-      goToError = currentError >>= \case
+      -- (one waiting to be shown is shown at once, when it's asked for)
+      goToError = showWaiting >> currentError >>= \case
         Nothing -> pure ()
         Just (_, loc, _) -> lineOfError loc >>= \case
           Nothing -> pure ()
@@ -700,8 +738,16 @@ scriptWidgetWith known p scriptCode = do
               styledTextCtrlLineScroll ce 0 (shownAt - onScreen `div` 3 - topLine)
             windowSetFocus ce
 
+      showWaiting = do
+        live <- readIORef liveError
+        shown <- readIORef liveShown
+        when (isJust live && fmap snd live /= fmap snd shown) $ do
+          writeIORef liveShown live
+          refreshError
+
   liftIO $ do
     writeIORef noteRefresher refreshNote
+    writeIORef errorRefresher refreshIfWaiting
     writeIORef onMarkClick $ \l -> do
       shown <- readIORef shownNote
       err <- readIORef shownError

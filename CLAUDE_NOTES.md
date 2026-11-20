@@ -1084,6 +1084,20 @@ Key modules:
   monospaced). A Rebuild's error (`swRebuildError`) is shown the same way
   while the text is what was rebuilt. The web editor (`web/src/editor.ts`)
   does the same with a gutter, a block widget and its arrow (`placeNote`).
+- The check's error, as a script's typed, is held back (`admitLiveError`,
+  in both editors): it's shown once there's been no typing for a second,
+  and if it's on the cursor's line, once the cursor's left the line or
+  there's been none for three; once shown it stays while the message is
+  the same, and goes as soon as it isn't (or there's no error). F8, or
+  clicking the status, shows one that's waiting at once. Rebuild errors,
+  and an error the script has when the editor opens, show at once. So that
+  code still being written gets this grace, `Language.Parser.parse` says
+  what's unfinished when a parse fails (from the tokens): `EmptyBlock` (a
+  `: Newline` not followed by `Indent`: a colon at a line's end always
+  starts a block), reported on the line after the header, where the
+  cursor is once Enter's pressed; and `UnfinishedLine` (the parse stopped
+  at a line's `Newline`/`Dedent`, or the end), at the line's end, saying
+  if a bracket on it is still open.
 - Code editors' font is the `editor-font` / `editor-font-size` settings
   (`FractalStream.Settings.editorFont`; by default DejaVu Sans, which
   covers the symbols scripts use where Consolas and Monaco don't: Scintilla
