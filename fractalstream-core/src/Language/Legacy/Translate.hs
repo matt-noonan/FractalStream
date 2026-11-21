@@ -84,6 +84,7 @@ import Language.Legacy.Syntax
 import Language.Legacy.Parser (ParseNote(..), parseLegacyScript)
 import Language.Parser.Tokenizer (wordlikeTokens)
 import qualified Language.Value.Builtins as Builtins
+import Language.Stdlib (stdlibFunctionNames)
 
 -- | A translated project, and anything about the translation worth
 -- knowing: commands that couldn't be translated, renamed variables, ...
@@ -277,8 +278,8 @@ reserved = Set.fromList $ concat
   , Map.keys Builtins.colors, Map.keys Builtins.realFunctions
   , Map.keys Builtins.commonFunctions, Map.keys Builtins.complexFunctions
   , Map.keys Builtins.roundingFunctions, Map.keys Builtins.types
-  , Map.keys Builtins.wheels
-  , [ "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert", "mod"
+  , Set.toList stdlibFunctionNames
+  , [ "rgb", "hsv", "hsl", "blend", "invert", "mod"
     , "autocolor", "nearest_autocolor", "get_autocolor", "color"
     , "max_iters", "escape_radius", "vanishing_radius", "pixel_size"
     , "to", "for", "each", "in", "while", "until", "repeat", "iterate", "up"

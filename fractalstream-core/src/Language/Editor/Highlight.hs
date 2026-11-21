@@ -34,6 +34,7 @@ import Data.Maybe (listToMaybe, maybeToList)
 import Language.Parser.Tokenizer (Token(..), functionDefinitionBody)
 import Language.Editor.Lines
 import qualified Language.Value.Builtins as Builtins
+import Language.Stdlib (stdlibFunctionNames)
 
 -- | What a span of a script is.
 data Highlight
@@ -344,8 +345,8 @@ builtinFunctions :: Set String
 builtinFunctions = Set.fromList $ concat
   [ Map.keys Builtins.realFunctions, Map.keys Builtins.commonFunctions
   , Map.keys Builtins.complexFunctions, Map.keys Builtins.roundingFunctions
-  , Map.keys Builtins.wheels
-  , [ "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert"
+  , Set.toList stdlibFunctionNames
+  , [ "mod", "rgb", "hsv", "hsl", "blend", "invert"
     , "autocolor", "nearest_autocolor", "get_autocolor"
     , "table_size", "table_cell", "table_point", "partial", "chart", "affine", "chordal" ] ]
 

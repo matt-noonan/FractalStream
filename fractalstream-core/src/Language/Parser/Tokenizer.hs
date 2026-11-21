@@ -7,6 +7,7 @@ module Language.Parser.Tokenizer
   , wordlikeTokens
   , identifierName
   , functionDefinitionBody
+  , definedFunctionNames
   ) where
 
 import FractalStream.Prelude
@@ -429,3 +430,16 @@ functionDefinitionBody = \case
       Identifier _ : CloseParen : ColonEquals : rest -> Just rest
       Identifier _ : Comma : rest -> params rest
       _ -> Nothing
+
+-- | The names of the functions defined in the given tokens: a definition
+-- is a name, its parameters in parentheses, then @:=@, starting a line.
+definedFunctionNames :: [Token] -> [String]
+definedFunctionNames = go True
+  where
+    go atStart = \case
+      Identifier f : rest
+        | atStart, Just _ <- functionDefinitionBody rest -> f : go False rest
+      Identifier "function" : Identifier f : rest@(OpenParen : _)
+        | atStart -> f : go False rest
+      t : rest -> go (t `elem` [Newline, Indent, Dedent]) rest
+      [] -> []

@@ -40,6 +40,7 @@ module Language.Code.Previous
   ( expandPrevious
   , declaredIn
   , mapStmtExprs
+  , mapStmtRanges
   ) where
 
 import FractalStream.Prelude
@@ -49,6 +50,7 @@ import qualified Data.Set as Set
 
 import Language.Typecheck (TC, advise)
 import Language.Parser.SourceRange (SourceRange)
+import Data.Functor.Identity (Identity(..))
 import Language.Code.Syntax
 import Language.Value.Syntax
 
@@ -164,6 +166,27 @@ declaredIn (Stmt _ node) = case node of
   SProc name _ body -> Set.insert name (declaredIn body)
   SFunction name _ body -> Set.insert name (declaredIn body)
   _ -> Set.empty
+
+-- | Change every source range in a statement: its statements', its
+-- expressions', and its patterns'.
+mapStmtRanges :: (SourceRange -> SourceRange) -> Stmt -> Stmt
+mapStmtRanges g = runIdentity . mapStmtExprs (pure . fmap g) . stmts
+  where
+    stmts (Stmt sr node) = Stmt (g sr) $ case node of
+      SBlock body -> SBlock (map stmts body)
+      SDeclTuple p e -> SDeclTuple (pat p) e
+      SSetTuple p e -> SSetTuple (pat p) e
+      SIf c yes no -> SIf c (stmts yes) (stmts no)
+      SLoop kind c lim body -> SLoop kind c lim (stmts body)
+      SIterate p e isWhile c lim -> SIterate (pat p) e isWhile c lim
+      SForEach item list body -> SForEach item list (stmts body)
+      SWithFirst item p list body fallback -> SWithFirst item p list (stmts body) (stmts <$> fallback)
+      SProc name params body -> SProc name params (stmts body)
+      SFunction name params body -> SFunction name params (stmts body)
+      other -> other
+    pat = \case
+      PVar r n -> PVar (g r) n
+      PTuple r a b -> PTuple (g r) (pat a) (pat b)
 
 -- | Apply a function to every expression in a statement.
 mapStmtExprs :: Monad m => (Expr -> m Expr) -> Stmt -> m Stmt

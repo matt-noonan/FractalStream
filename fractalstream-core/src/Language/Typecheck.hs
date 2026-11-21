@@ -6,6 +6,7 @@ module Language.Typecheck
   , isTypeError
   , catchTypeError
   , advise
+  , blockFunctionCallAdvice
   , ppError
 
   -- * Utility functions and types
@@ -21,6 +22,7 @@ import FractalStream.Prelude
 import Language.Type
 import Language.Environment
 import Language.Parser.SourceRange
+import Language.Stdlib (withoutStdlibPrefix)
 
 ----------------------------------------------------
 -- A monad for the type- and environment-checking
@@ -77,8 +79,10 @@ instance HasErrorLocation TCError where
 instance PrettyPrint TCError where
   pp = (:[]) . ppError
 
+-- (a standard library function is named as scripts write it: see
+-- "Language.Stdlib")
 ppError :: TCError -> String
-ppError = concat .  \case
+ppError = withoutStdlibPrefix . concat .  \case
   Surprise _ thing got (Expected wanted) ->
     ["I expected ", wanted, " here, but ", thing, " is ", got, "."]
   MissingName _ name ->
@@ -150,3 +154,12 @@ findVarAtType sr name ty env = case lookupEnv name ty env of
   Absent{} -> throwError (MissingName sr (symbolVal name))
   WrongType ty' -> withKnownType ty $
     throwError (Surprise sr (symbolVal name) (an ty') (Expected $ an ty))
+
+-- | What to say about a call to a function with a body anywhere but as the
+-- whole right-hand side of an assignment (see
+-- "Language.Code.FunctionBlocks").
+blockFunctionCallAdvice :: String -> String
+blockFunctionCallAdvice f =
+  "`" ++ f ++ "` is a function with a body, which can only be called as the whole \
+  \right-hand side of an assignment for now: `x := " ++ f ++ "(...)`, `x <- "
+  ++ f ++ "(...)`, or `(x, y) := " ++ f ++ "(...)`."

@@ -428,7 +428,7 @@ foldSource = unlines $
   , "gcand := 0"
   ] ++ concatMap nearest
   [ "if gwedge = 1 then gnw else gwedge - 1", "gwedge", "if gwedge = gnw then 1 else gwedge + 1" ] ++
-  [ "side_distance := if gbest < 0 then 1000000.0 else asinh(gbest)"
+  [ "side_distance := if gbest < 0 then 1000000.0 else arcsinh(gbest)"
   , "side_index := gbk"
   , "fold_count := gsteps"
   , "gfk := (gk @ 3) gz + gk @ 4"

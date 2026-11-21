@@ -65,7 +65,8 @@ expandCalls funs0 e0 = evalStateT (go funs0 e0) (0 :: Int)
   where
     go funs (Syn sr node) = case node of
       ECall f args -> do
-        (params, body, bodyFuns) <- lookupFun sr f funs
+        (params, body0, bodyFuns) <- lookupFun sr f funs
+        let body = atCallSite sr body0
         args' <- traverse (go funs) =<< lift (splitArgs sr f (length params) args)
         -- (a parameter given a function is put in place, applied, in the
         -- body: see "Language.Code.FunctionArgs")
@@ -79,8 +80,9 @@ expandCalls funs0 e0 = evalStateT (go funs0 e0) (0 :: Int)
         pure (foldr (\(n, a) b -> Syn sr (ELet n a b)) body' (zip names (map snd valArgs)))
 
       EDerivCall f order args -> do
-        (params, body, bodyFuns) <- lookupFun sr f funs
-        let f' = f ++ replicate order '\''
+        (params, body0, bodyFuns) <- lookupFun sr f funs
+        let body = atCallSite sr body0
+            f' = f ++ replicate order '\''
         param <- case params of
           [p] -> pure p
           p : _ -> advise sr ("Only a function of one variable can be differentiated with "
@@ -138,6 +140,12 @@ splitArgs sr f n = \case
     go k (Syn _ (EPair x rest)) = (x :) <$> go (k - 1) rest
     go _ _ = wrongCount
     wrongCount = advise sr (f ++ " takes " ++ show n ++ " argument" ++ (if n == 1 then "" else "s") ++ ".")
+
+-- | A function's body, where it's called: the parts of it with no
+-- source range (such as the standard library's) are said to be at the
+-- call.
+atCallSite :: SourceRange -> Expr -> Expr
+atCallSite sr = fmap (\case { NoSourceRange -> sr; r -> r })
 
 -- | Rename free variables.
 rename :: Map String String -> Expr -> Expr

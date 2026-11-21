@@ -41,7 +41,7 @@ import Language.Code.Syntax
 import Language.Value.Syntax
 import Language.Value.Builtins (internalIterations, internalStuck)
 import Language.Code.Procedures (renameStmt)
-import Language.Code.Previous (declaredIn)
+import Language.Code.Previous (declaredIn, mapStmtRanges)
 import Language.Code.Typecheck.Functions (splitArgs, freeVars, isFunctionArg)
 import Language.Code.FunctionArgs (substituteFunctionInStmt)
 import Data.List (partition)
@@ -139,10 +139,7 @@ declare (Stmt _ node) = case node of
 noOtherCalls :: FunctionDefs -> Stmt -> TC ()
 noOtherCalls defs s = forM_ (ownExprs s) $ \e ->
   case [ (sr, f) | (sr, f) <- calls e, Map.member f defs ] of
-    (sr, f) : _ -> advise sr
-      ("`" ++ f ++ "` is a function with a body, which can only be called as the whole \
-       \right-hand side of an assignment for now: `x := " ++ f ++ "(...)`, `x <- "
-       ++ f ++ "(...)`, or `(x, y) := " ++ f ++ "(...)`.")
+    (sr, f) : _ -> advise sr (blockFunctionCallAdvice f)
     [] -> pure ()
   where
     calls (Syn sr node) = here ++ foldMap calls node
@@ -297,8 +294,11 @@ definitelyAssigns f value = go
 -- its result, and the name of the variable holding the result.
 expandCall :: FunctionDefs -> SourceRange -> String -> [Expr] -> Expand ([Stmt], String)
 expandCall defs sr f args = do
-  FunctionDef params body bodyDefs <-
+  FunctionDef params body0 bodyDefs <-
     maybe (throwError (MissingFunction sr f)) pure (Map.lookup f defs)
+  -- (the parts of the body with no source range, such as the standard
+  -- library's, are said to be at the call)
+  let body = mapStmtRanges (\case { NoSourceRange -> sr; r -> r }) body0
   args' <- lift (splitArgs sr f (length params) args)
   k <- get
   put (k + 1)

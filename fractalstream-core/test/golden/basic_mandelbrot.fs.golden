@@ -40,7 +40,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                           set `[internal] stuck` := ([internal] fresh #20 = [internal] fresh #21)
                     if ([internal] escape radius < |z|) then:
                       block:
-                        set `color` := let #cycle-arg = (([internal] iteration count:R / 20:R) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), Color 255 0 0, Color 255 255 0)
+                        set `color` := let [internal] [std] cycle.t #0 = ([internal] iteration count:R / 20:R) in let [internal] [std] cycle.c1 #0 = Color 255 0 0 in let [internal] [std] cycle.c2 #0 = Color 255 255 0 in let [internal] [std] cycle_at.s #1 = ([internal] [std] cycle.t #0 mod 1.0) in let [internal] [std] cycle_at.c1 #1 = [internal] [std] cycle.c1 #0 in let [internal] [std] cycle_at.c2 #1 = [internal] [std] cycle.c2 #0 in blend(if ([internal] [std] cycle_at.s #1 < 0.5) then (2:R * [internal] [std] cycle_at.s #1) else (2:R - (2:R * [internal] [std] cycle_at.s #1)), [internal] [std] cycle_at.c1 #1, [internal] [std] cycle_at.c2 #1)
                     else:
                       block:
                         set `color` := Color 0 0 0

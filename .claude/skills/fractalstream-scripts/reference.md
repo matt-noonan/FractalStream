@@ -500,6 +500,14 @@ Colors:
   `bamo(t)`, `broco(t)`, `corko(t)`, `viko(t)`; gradient wheels: `ice fire
   wheat rose forest ocean winter spring summer fall`. Typical use:
   `rainbow(arg z / (2 pi))`, `cycle(iterations / 20, dark c, light c)`.
+- `wheel8(t, c1, ..., c8)`: a period-1 wheel through eight colors (c1 at
+  integers); `rgb255(r, g, b)`: components from 0 to 255
+- Standard library: the wheels, `cycle`, `dark`, `light`, `wheel8`,
+  `rgb255`, `pixel_size_at`, and the alternate spellings (`acos`, `Re`,
+  `bar`, `ceil`, ...) are script-language definitions in
+  `fractalstream-core/stdlib/standard.fs`, present in every project as if
+  in `@common`. A script's own definition of one of these names wins; the
+  standard library's definitions only ever use each other.
 
 Text: `text(a, b, ...)` concatenates two or more values of any scalar type
 into Text. It can't take pairs.

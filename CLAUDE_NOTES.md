@@ -91,8 +91,9 @@ Key constructors: `Const`, `Var`, `LocalLet`, `ITE`, `AddF/AddC/AddI`, `RGB`, `B
 
 Some color syntax has no node of its own: elaboration (`Language.Value.Elaborate`)
 rewrites it into simpler values, binding its arguments with `LocalLet` under
-`#`-prefixed names no script can write. `cycle(t, c1, c2)` (`cycleColors`) and the
-wheels like `rainbow(t)` (`wheel`) become `Blend`s; `hsv(h, s, v)` and `hsl(h, s, l)`
+`#`-prefixed names no script can write. (`cycle`, `dark`, `light`, and the
+wheels like `rainbow(t)` aren't syntax: they're in the standard library, below.)
+`hsv(h, s, v)` and `hsl(h, s, l)`
 (surface `EColor3 OpHSV/OpHSL`; `hueColor`) become an `RGB` of real arithmetic,
 binding the arguments, then the hue (×6, mod 6) and the clamped saturation and
 value/lightness, so nothing is computed twice. `hsl` matches `Data.Color.hslToColor`
@@ -100,6 +101,44 @@ exactly; `hsv` agrees with `hsvToColor` to within 1 per channel (a different, bu
 equal, formula; `hsvToColor` is left alone since autocolor picks its hues with it).
 
 `pprint :: Value et -> String` pretty-prints values.
+
+### The standard library (`fractalstream-core/stdlib/standard.fs`)
+
+Definitions written in the script language, embedded at compile time
+(`Language.Stdlib`, which only knows the source and the defined names, from
+tokens, so the parsers can import it), parsed by
+`Language.Value.Parser.stdlibDefinitions`. Every script gets the ones it uses,
+prepended like `@common` (`Language.Code.Parser.stdlibCode`, via
+`noCommonDefs`/`withCommon`; `parseCode` uses `withUsedCommon`). Values outside
+any script (config defaults, typed-in field values) expand calls to them with
+`expandStdlibCalls` (`fieldValueAt`, `parseValue`).
+
+- **Names.** Each definition goes by `[std] f`, which no script can write. The
+  grammar reads a stdlib name the script doesn't own (`ownNames`) as `[std] f`;
+  the stdlib itself is parsed with no own names, so it always means its own
+  definitions (hygiene). A script that defines `f` (anywhere `ownBuiltinNames`
+  sees) gets its own. `ppError` strips `[std] ` from messages.
+- **Rules for the file.** Functions only: `f(x, ...) := expr` on one line
+  (brackets can't span lines), or `function f(x):` with a body. A definition
+  can only use the ones above it (`withCommon` keeps definitions by walking
+  backwards). Parameters and locals mustn't be keywords (`e`, `i`) or stdlib
+  names (the stdlib is parsed with no own names). `internal_view_*` names stand
+  for the values no script can name (`stdlibInternalNames`).
+- **Block functions** are for scripts only: `Language.Code.Parser.parseStdlib`
+  parses both kinds; `Language.Value.Parser.stdlibItems` keeps the one-line
+  ones for values outside scripts, and `expandStdlibCalls` gives the usual
+  "function with a body" advice (`blockFunctionCallAdvice`) for the others.
+  **Never turn a one-line function into a block function**: callers that use it
+  inside an expression would break (block → one-line is safe).
+- **Source ranges.** Definitions lose theirs (`mapStmtRanges`), and expansion
+  (`expandCalls`'s `atCallSite`, `FunctionBlocks.expandCall`) puts the call's
+  range on unranged parts, so errors point at the call.
+- **Generated code** parsed with `noCommonDefs` but not passed through
+  `withCommon` (e.g. `Actor.Viewer.Group`'s fold code) must call primitives
+  (`arcsinh`, not `asinh`).
+- **Changing it** changes existing projects: `StdlibSpec` pins the wheels to the
+  old Haskell algorithm, and moving the wheels was checked by byte-identical
+  renders of all library and example viewers (CPU and GPU) and equal timings.
 
 ### Code AST (`Language.Code`)
 

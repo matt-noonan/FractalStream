@@ -92,7 +92,8 @@ these can also be spelled in its abbreviated form (e.g. `arccos` -> `acos`)
 
 Functions that can be used only on complex values are
 `re`, `im`, `arg`, and `conj`. These can also be spelled in capitalized form
-(e.g. `re` -> `Re`)
+(e.g. `re` -> `Re`), and `conj` as `bar` or `Bar`. (The other spellings are
+in the standard library: see "The standard library".)
 
 ### Derivatives
 
@@ -260,6 +261,18 @@ gives a grey, in either.
 Two different colors can be blended by `blend(t, c1, c2)` where `t`
 is a real number from `0` to `1` representing the percentage to take
 from `c1`, with `(1 - t)` taken from `c2`.
+
+`cycle(t, c1, c2)` goes back and forth between two colors as `t` grows: it
+is `c2` when `t` is a whole number and `c1` halfway between. The color
+wheels `rainbow(t)`, `arenberg(t)`, `romao(t)`, `bamo(t)`, `broco(t)`,
+`corko(t)`, and `viko(t)` go once around a wheel of colors as `t` goes from
+`0` to `1`, and the wheels `ice`, `fire`, `wheat`, `rose`, `forest`,
+`ocean`, `winter`, `spring`, `summer`, and `fall` go through a gradient and
+back. So `rainbow(arg z / (2 pi))` colors by the angle of `z`. Make a wheel
+of your own with `wheel8(t, c1, c2, c3, c4, c5, c6, c7, c8)`, which goes
+through eight colors, and give colors by their components from `0` to
+`255` with `rgb255(r, g, b)`. These are all part of the standard library
+(see below).
 
 #### Automatic colors
 
@@ -603,6 +616,22 @@ anything in scope there: here, the configuration variable `a`, and each
 script's own `z`. A definition that mentions a variable some scripts don't
 have is only a problem in scripts that use it. A project can have several
 `@common` stanzas, anywhere in the script.
+
+### The standard library
+
+Some of FractalStream's functions are written in the scripting language
+itself, in its *standard library*: the color wheels, `cycle`, `dark`,
+`light`, `wheel8`, `rgb255`, `pixel_size_at`, and the other spellings of
+functions (`acos`, `Re`, `bar`, `ceil`, ...). Every project has them, as if
+they were in an `@common` stanza, and each script gets just the ones it
+uses. The standard library's source is `fractalstream-core/stdlib/standard.fs`.
+
+A project can define any of the standard library's names for itself (see
+"Names"), and then its own definition is the one it gets, wherever it
+defines it. So a new definition in a later version of FractalStream's
+standard library never changes what an existing project means. The standard
+library's definitions always use each other, never a project's: a project
+that defines its own `wheel8` still gets the standard `rainbow`.
 
 ### Line continuations
 
