@@ -417,8 +417,8 @@ valueAndArithGrammar funs own = mdo
         <*> (length <$> some (token Prime))
         <*> ((:[]) <$> atomOrFunAp))
     , node (EBin OpMod
-        <$> (builtinWord "mod" *> token OpenParen *> arith)
-        <*> (token Comma *> arith <* token CloseParen))
+        <$> (builtinWord "mod" *> token OpenParen *> argument)
+        <*> (token Comma *> argument <* token CloseParen))
     ]
 
   negated <- ruleChoice
@@ -491,11 +491,11 @@ valueAndArithGrammar funs own = mdo
 
     , node (EUn OpDark <$> (builtinWord "dark" *> atom))
     , node (EUn OpLight <$> (builtinWord "light" *> atom))
-    , node (EUn OpInvert <$> (builtinWord "invert" *> atom))
+    , node (EUn OpInvert <$> (builtinWord "invert" *> atomOrFunAp))
     , node (
-        EColor3 OpBlend <$> (builtinWord "blend" *> (token OpenParen *> arith))
-                <*> (token Comma *> atom)
-                <*> (token Comma *> atom <* token CloseParen))
+        EColor3 OpBlend <$> (builtinWord "blend" *> (token OpenParen *> argument))
+                <*> (token Comma *> argument)
+                <*> (token Comma *> argument <* token CloseParen))
     , node (
         EColor3 OpCycle <$> (builtinWord "cycle" *> (token OpenParen *> arith))
                 <*> (token Comma *> atom)
@@ -504,23 +504,23 @@ valueAndArithGrammar funs own = mdo
         EApp <$> tokenMatch (\case { Identifier n | Map.member n wheels, free n -> Just n; _ -> Nothing })
              <*> (token OpenParen *> arith <* token CloseParen))
     , node (
-        EColor3 OpRGB <$> (builtinWord "rgb" *> (token OpenParen *> arith))
-              <*> (token Comma *> arith)
-              <*> (token Comma *> arith <* token CloseParen))
+        EColor3 OpRGB <$> (builtinWord "rgb" *> (token OpenParen *> argument))
+              <*> (token Comma *> argument)
+              <*> (token Comma *> argument <* token CloseParen))
     , node (
-        EColor3 OpHSV <$> (builtinWord "hsv" *> (token OpenParen *> arith))
-              <*> (token Comma *> arith)
-              <*> (token Comma *> arith <* token CloseParen))
+        EColor3 OpHSV <$> (builtinWord "hsv" *> (token OpenParen *> argument))
+              <*> (token Comma *> argument)
+              <*> (token Comma *> argument <* token CloseParen))
     , node (
-        EColor3 OpHSL <$> (builtinWord "hsl" *> (token OpenParen *> arith))
-              <*> (token Comma *> arith)
-              <*> (token Comma *> arith <* token CloseParen))
+        EColor3 OpHSL <$> (builtinWord "hsl" *> (token OpenParen *> argument))
+              <*> (token Comma *> argument)
+              <*> (token Comma *> argument <* token CloseParen))
     -- `autocolor(n, p)` and `get_autocolor(n, p)` (typing checks that
     -- the group number is a plain number)
     , node (
         EAutocolor <$> autocolorName
-                   <*> (token OpenParen *> arith)
-                   <*> (token Comma *> arith <* token CloseParen))
+                   <*> (token OpenParen *> argument)
+                   <*> (token Comma *> argument <* token CloseParen))
     ]
 
   autocolorName <- ruleChoice
