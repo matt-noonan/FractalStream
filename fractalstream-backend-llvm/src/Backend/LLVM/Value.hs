@@ -472,15 +472,15 @@ buildValue getExtern arena = indexedFold go'
       -- Language.Value.Arithmetic's roundHalfAway)
       RoundF r -> r >>= \case
         (RealOp x) -> IntegerOp <$>
-          (call (getExtern "round") [(x, [])] >>= (`fptosi` AST.i32))
+          (call (getExtern "round") [(x, [])] >>= toInt32 getExtern)
 
       FloorF r -> r >>= \case
         (RealOp x) -> IntegerOp <$>
-          (call (getExtern "floor") [(x, [])] >>= (`fptosi` AST.i32))
+          (call (getExtern "floor") [(x, [])] >>= toInt32 getExtern)
 
       CeilingF r -> r >>= \case
         (RealOp x) -> IntegerOp <$>
-          (call (getExtern "ceil") [(x, [])] >>= (`fptosi` AST.i32))
+          (call (getExtern "ceil") [(x, [])] >>= toInt32 getExtern)
 
       AbsF r -> r >>= \case
         (RealOp x)  -> RealOp <$> call (getExtern "fabs") [(x, [])]
@@ -926,6 +926,13 @@ buildRange arena loOp hiOp = do
       listSlot IntegerType base k >>= \s -> storeListElem IntegerType s (IntegerOp v)
       pure (C.bit 1)
 
+-- | A real as a 32-bit integer, saturating, as the wasm and GPU backends:
+-- NaN is 0, and a real beyond the integers' range is the nearest end of it
+-- (fptosi would be poison for both).
+toInt32 :: (MonadModuleBuilder m, MonadIRBuilder m)
+        => (String -> Operand) -> Operand -> m Operand
+toInt32 getExtern' x = call (getExtern' "fptosi_sat") [(x, [])]
+
 -- | Euclidean division of 32-bit integers, as Language.Value.Arithmetic's
 -- euclidDiv and euclidMod: the quotient and the remainder, in [0, |b|).
 -- Dividing by 0 gives 0 both ways, and the smallest integer divided by -1
@@ -1001,6 +1008,7 @@ getGetExtern = do
     , ("trunc", extern "llvm.trunc.f64" [AST.double] AST.double)
     , ("floor", extern "llvm.floor.f64" [AST.double] AST.double)
     , ("round", extern "llvm.round.f64" [AST.double] AST.double)
+    , ("fptosi_sat", extern "llvm.fptosi.sat.i32.f64" [AST.double] AST.i32)
     , ("ceil", extern "llvm.ceil.f64" [AST.double] AST.double)
     , ("log", extern "llvm.log.f64" [AST.double] AST.double)
     , ("exp", extern "llvm.exp.f64" [AST.double] AST.double)

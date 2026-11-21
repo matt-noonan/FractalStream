@@ -128,6 +128,28 @@ spec = do
           c <- invoke' env ColorType f x (truncate (roundHalfAway x)) black 0 0 False 0 0
           (x, c) `shouldBe` (x, white)
 
+    it "saturates a real made an integer, as the wasm and GPU backends" $ do
+      let env = declare @"x" RealType
+              $ declare @"n" IntegerType
+              $ declare @"color" ColorType
+              $ declare @"[internal] iteration count" IntegerType
+              $ declare @"[internal] iteration limit" IntegerType
+              $ declare @"[internal] stuck" BooleanType
+              $ declare @"[internal] escape radius" RealType
+              $ declare @"[internal] vanishing radius" RealType
+              $ endOfDecls
+          hi = fromIntegral (maxBound :: Int32)
+          lo = fromIntegral (minBound :: Int32)
+          cases = [ (0 / 0, 0), (1 / 0, hi), (-1 / 0, lo), (1e12, hi), (-1e12, lo)
+                  , (2147483647.4, hi), (-2147483648.4, lo) ]
+      forM_ ["round", "floor", "ceiling"] $ \fn ->
+        withCompiledCode (Proxy @"color") ColorType env
+            ("color <- if " ++ fn ++ "(x) = n then white else black") $ \f ->
+          forM_ cases $ \(x, n) -> do
+            c <- invoke' env ColorType f x n black 0 0 False 0 0
+            -- (x shown: NaN isn't equal to itself)
+            (fn, show x, c) `shouldBe` (fn, show x, white)
+
     it "computes hsv and hsl colors as Data.Color does" $ do
       let env = declare @"x" RealType
               $ declare @"y" RealType

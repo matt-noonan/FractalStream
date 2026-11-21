@@ -179,7 +179,6 @@ value = indexedFold go'
       ConjC z -> complex1 z $ \(a, b) ->
         LComplex a <$> realOf [f64Const 0, localGet b, f64Sub]
 
-      -- (`round` truncates, as the LLVM backend's does)
       -- (a half away from zero, as Language.Value.Arithmetic's
       -- roundHalfAway: wasm's f64.nearest takes a half to even)
       RoundF r -> r >>= \case
