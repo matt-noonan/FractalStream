@@ -12,7 +12,7 @@ script: |
   if stuck:
     color <- black
   else:
-    color <- blend ((iterations / max_iters)^p, dark blue, white)
+    color <- blend ((iterations / max_iters)^p, white, dark blue)
 
   @tool "Demo" for="Julia set" shortcut=x
   R : R as "R =" := 1

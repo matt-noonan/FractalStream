@@ -25,7 +25,7 @@ script: |
   else if z escapes:
     color <- grey
   if not stuck:
-    color <- cycle(iterations/20, light color, dark color)
+    color <- cycle(iterations/20, dark color, light color)
 
   @tool "Trace" for="Collatz sequence" shortcut=t
   on click-or-drag:

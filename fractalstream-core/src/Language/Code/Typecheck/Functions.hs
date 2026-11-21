@@ -58,7 +58,7 @@ defineFunction sr funs env f params body = do
 
 -- | Replace each call to a user-defined function with local bindings of
 -- its (freshly renamed) parameters around a copy of its body, and each
--- derivative call @f'(a)@ with @diff(t, f(t))@ where @t@ is a fresh
+-- derivative call @f'(a)@ with @diff(f(t), t)@ where @t@ is a fresh
 -- variable bound to @a@.
 expandCalls :: Funs -> Expr -> TC Expr
 expandCalls funs0 e0 = evalStateT (go funs0 e0) (0 :: Int)
@@ -88,8 +88,8 @@ expandCalls funs0 e0 = evalStateT (go funs0 e0) (0 :: Int)
           p : _ -> advise sr ("Only a function of one variable can be differentiated with "
                               ++ f' ++ ". To differentiate " ++ f
                               ++ " with respect to one of its arguments, use diff instead, like "
-                              ++ "diff(" ++ p ++ ", " ++ f
-                              ++ "(" ++ intercalate ", " params ++ ")).")
+                              ++ "diff(" ++ f ++ "(" ++ intercalate ", " params ++ "), "
+                              ++ p ++ ").")
           [] -> throwError (Internal (Advice sr (f ++ " has no parameters")))
         arg <- lift (splitArgs sr f 1 args) >>= \case
           [a] -> go funs a

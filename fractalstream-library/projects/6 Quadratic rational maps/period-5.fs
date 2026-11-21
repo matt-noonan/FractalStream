@@ -172,7 +172,7 @@ script: |
       repeat up to 64 times:
         w <- 1 + (pa w + pb)/w^2
       until w = u
-      color <- if stuck then black else blend(0.5, rainbow(iterations / 8), white)
+      color <- if stuck then black else blend(0.5, white, rainbow(iterations / 8))
     else:
       color <- black
 
@@ -223,7 +223,7 @@ script: |
     if c = 1:
       color <- rgb(0.95, 0.55, 0.25)
     else if (c > 1) and periods:
-      color <- blend(0.5, rainbow((c - 2) / 8), white)
+      color <- blend(0.5, white, rainbow((c - 2) / 8))
     else:
       color <- black
 
@@ -255,7 +255,7 @@ script: |
           sh5 <- 0.0
         if sh5 > 1.0:
           sh5 <- 1.0
-        color <- blend(0.6 sh5, black, rainbow(cr / 5))
+        color <- blend(0.6 sh5, rainbow(cr / 5), black)
       else:
         color <- white
     else:

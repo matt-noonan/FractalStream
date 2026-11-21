@@ -47,10 +47,10 @@ ceil(x) := ceiling(x)
 rgb255(r, g, b) := rgb(r / 255, g / 255, b / 255)
 
 # A darker or lighter shade of a color.
-dark(c) := blend(0.333, black, c)
-light(c) := blend(0.333, white, c)
+dark(c) := blend(0.333, c, black)
+light(c) := blend(0.333, c, white)
 
-# Back and forth between two colors: c2 at whole numbers, c1 halfway
+# Back and forth between two colors: c1 at whole numbers, c2 halfway
 # between them.
 cycle_at(s, c1, c2) := blend((if s < 0.5 then 2 s else 2 - 2 s), c1, c2)
 cycle(t, c1, c2) := cycle_at(mod(t, 1.0), c1, c2)
@@ -58,7 +58,7 @@ cycle(t, c1, c2) := cycle_at(mod(t, 1.0), c1, c2)
 # A color wheel through eight colors: c1 at whole numbers, blending into c2
 # at 1/8, c3 at 2/8, and so on, then back to c1. Its helpers take u from
 # 0 to 1, and the part of the wheel from lo to lo + 1/4 or 1/8.
-wheel2_at(u, lo, c1, c2, c3) := if u < lo + 0.125 then blend(8 (u - lo), c2, c1) else blend(8 (u - (lo + 0.125)), c3, c2)
+wheel2_at(u, lo, c1, c2, c3) := if u < lo + 0.125 then blend(8 (u - lo), c1, c2) else blend(8 (u - (lo + 0.125)), c2, c3)
 wheel4_at(u, lo, c1, c2, c3, c4, c5) := if u < lo + 0.25 then wheel2_at(u, lo, c1, c2, c3) else wheel2_at(u, lo + 0.25, c3, c4, c5)
 wheel8_at(u, c1, c2, c3, c4, c5, c6, c7, c8) := if u < 0.5 then wheel4_at(u, 0.0, c1, c2, c3, c4, c5) else wheel4_at(u, 0.5, c5, c6, c7, c8, c1)
 wheel8(t, c1, c2, c3, c4, c5, c6, c7, c8) := wheel8_at(mod(t, 1.0), c1, c2, c3, c4, c5, c6, c7, c8)

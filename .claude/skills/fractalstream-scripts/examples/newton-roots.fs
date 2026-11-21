@@ -33,7 +33,7 @@ script: |
       k <- k + 1
       if |z - r| < 0.001:
         color <- rainbow(k / length(roots))
-    color <- blend(1 / (1 + n / 10), color, dark color)
+    color <- blend(1 / (1 + n / 10), dark color, color)
   else:
     color <- black
 

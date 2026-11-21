@@ -138,7 +138,7 @@ spec = describe "the GPU backends" $ do
       [ "@viewer \"A\" var=z center=0 pixelSize=1/50"
       , "a := autocolor(0, z)"
       , "b := nearest_autocolor(1, z)"
-      , "color <- blend(0.5, a, blend(0.5, b, get_autocolor(0, z)))" ]
+      , "color <- blend(0.5, blend(0.5, get_autocolor(0, z), b), a)" ]
     map fst results `shouldMatchList` [GpuF64, GpuDf64, GpuF32]
     forM_ results $ \(_, r) -> do
       r `shouldSatisfy` either (const False) ("= ac_lookup(1u, 0, " `isInfixOf`)

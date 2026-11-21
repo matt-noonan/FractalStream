@@ -27,7 +27,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                         set `color` := [colorizer] Julia set: gives_up
                     else:
                       block:
-                        set `color` := blend((([internal] iteration count:R / max_iters:R) ^ [colorizer] Julia set: brightness), [colorizer] Julia set: near, [colorizer] Julia set: far)
+                        set `color` := blend((([internal] iteration count:R / max_iters:R) ^ [colorizer] Julia set: brightness), [colorizer] Julia set: far, [colorizer] Julia set: near)
 
 
 --- tool Trace

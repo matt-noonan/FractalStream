@@ -69,6 +69,6 @@ script: |
           hit <- |z - a @ j|^2 < (k @ j) nz
         if hit:
           cj <- j
-  color <- if cj = 0 then black else blend(t / 500, rainbow(cj / 6), white)
+  color <- if cj = 0 then black else blend(t / 500, white, rainbow(cj / 6))
 metadata:
   title: GPU spike, Per_n fate

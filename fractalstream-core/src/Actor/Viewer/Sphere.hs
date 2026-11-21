@@ -745,7 +745,7 @@ sphereViewEntries = (sphereViewName, SomeType BooleanType)
 -- >   pixel_size <- dx (|u|² + |v|²) / (|A|² + |B|²)
 -- >   body
 -- >   light := ((x, y, s) · L + 1) / 2
--- >   color <- blend(1 - shading (1 - light), color, black)
+-- >   color <- blend(1 - shading (1 - light), black, color)
 --
 -- On the visible side @s >= 0@, so @[u : v]@ is computed without
 -- cancellation, and the Möbius map (the view's rotation after its zoom:

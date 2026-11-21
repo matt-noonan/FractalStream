@@ -62,6 +62,6 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                         no-op
                                       set `[internal] iteration count` := [internal] fresh #25
                                       set `[internal] stuck` := ([internal] fresh #25 = [internal] fresh #26)
-                                set `color` := blend((best / outer), Color 255 255 255, Color 0 0 0)
+                                set `color` := blend((best / outer), Color 0 0 0, Color 255 255 255)
 
 

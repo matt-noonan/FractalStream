@@ -96,9 +96,9 @@ data Token
   | LengthKeyword
   | PreviousKeyword
   | PartialSign
-    -- ^ @∂@, as in @∂f/∂z@ (@partial(z, f)@)
+    -- ^ @∂@, as in @∂f/∂z@ (@partial(f, z)@)
   | DiffSign
-    -- ^ @ⅆ@ (double-struck italic small d: Unicode's differential d), as in @ⅆf/ⅆz@ (@diff(z, f)@)
+    -- ^ @ⅆ@ (double-struck italic small d: Unicode's differential d), as in @ⅆf/ⅆz@ (@diff(f, z)@)
   | Infinity
     -- ^ @∞@, the point at infinity of Ĉ
   deriving (Eq, Ord, Show)

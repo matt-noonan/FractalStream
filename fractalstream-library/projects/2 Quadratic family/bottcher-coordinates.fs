@@ -102,13 +102,13 @@ script: |
       a := t nk
       dt := |a - round a| / nk       # distance to the nearest ray j / nk
       d := (if dG < 2 pi dt then dG else 2 pi dt) / grad
-      bg := blend(0.25, rainbow(t), white)
+      bg := blend(0.25, white, rainbow(t))
       color <- if d < line_width pixel_size then black else bg
     else:
       band := u - floor u
-      color <- blend(0.35 + 0.65 band, rainbow(t), black)
+      color <- blend(0.35 + 0.65 band, black, rainbow(t))
     if dim_invalid and not valid:
-      color <- blend(0.35, color, grey)
+      color <- blend(0.35, grey, color)
 
   @viewer "Dynamical plane" center=0 pixelSize=1/150
   # The critical level G(0) = G(C) / 2; zero if C doesn't escape (C is in

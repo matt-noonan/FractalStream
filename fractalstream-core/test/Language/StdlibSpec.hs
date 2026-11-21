@@ -95,10 +95,10 @@ spec = do
           (name, t, colorWith t ("color <- " ++ name ++ "(x)")) `shouldBe` (name, t, Right (referenceWheel cs t))
 
     it "has cycle, dark, and light" $ do
-      colorWith 0 "color <- cycle(x, red, blue)" `shouldBe` Right blue
-      colorWith 0.5 "color <- cycle(x, red, blue)" `shouldBe` Right red
-      colorWith 1.25 "color <- cycle(x, red, blue)" `shouldBe` Right (mixColors 0.5 red blue)
-      colorWith 0.25 "color <- dark cycle(x, red, blue)" `shouldBe` Right (mixColors 0.333 black (mixColors 0.5 red blue))
+      colorWith 0 "color <- cycle(x, blue, red)" `shouldBe` Right blue
+      colorWith 0.5 "color <- cycle(x, blue, red)" `shouldBe` Right red
+      colorWith 1.25 "color <- cycle(x, blue, red)" `shouldBe` Right (mixColors 0.5 red blue)
+      colorWith 0.25 "color <- dark cycle(x, blue, red)" `shouldBe` Right (mixColors 0.333 black (mixColors 0.5 red blue))
       colorWith 0 "color <- dark red" `shouldBe` Right (mixColors 0.333 black red)
       colorWith 0 "color <- light light red" `shouldBe` Right (mixColors 0.333 white (mixColors 0.333 white red))
 

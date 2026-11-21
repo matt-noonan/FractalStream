@@ -11,11 +11,11 @@ script: |
   @viewer "Parameter plane" var=λ center=-0.1 pixelSize=1/1500
   z := 2 sqrt(λ)
   iterate z -> f(z) until z escapes
-  color <- if stuck then black else cycle(iterations / 12, dark blue, white)
+  color <- if stuck then black else cycle(iterations / 12, white, dark blue)
 
   @viewer "Julia set" var=z view=sphere center=1
   iterate z -> f(z) until z escapes
-  color <- if stuck then black else cycle(iterations / 6, dark orange, light yellow)
+  color <- if stuck then black else cycle(iterations / 6, light yellow, dark orange)
 metadata:
   title: The McMullen family
   description: |

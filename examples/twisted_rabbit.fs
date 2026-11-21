@@ -26,4 +26,4 @@ script: |
     c2 := if im(z) > 0 then green else red
     s := iterations + 1 - (log (log (|z|^2 / 2))) / log 2
     s <- cos (s pi / 10)^2
-    color <- blend (s, c1, c2)
+    color <- blend (s, c2, c1)

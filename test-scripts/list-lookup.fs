@@ -8,7 +8,7 @@ script: |
   color <- black
 
   with first c matching |z - c| < radius in myList:
-    color <- blend(|z - c| / radius, red, yellow)
+    color <- blend(|z - c| / radius, yellow, red)
 
 wx-properties:
   viewers:

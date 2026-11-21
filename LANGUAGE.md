@@ -97,8 +97,8 @@ in the standard library: see "The standard library".)
 
 ### Derivatives
 
-`diff(x, expr)` is the derivative of `expr` with respect to the real or
-complex variable `x`. For example, `diff(z, z^3 - 1)` is `3 z^2`.
+`diff(expr, x)` is the derivative of `expr` with respect to the real or
+complex variable `x`. For example, `diff(z^3 - 1, z)` is `3 z^2`.
 Derivatives are worked out symbolically, so they are exact.
 
 `diff` follows the variables `expr` uses back through the statements that
@@ -109,12 +109,12 @@ bookkeeping:
 ```
 w := z
 iterate w -> w^2 + C until w escapes
-distance := |w| log |w| / |diff(z, w)|
+distance := |w| log |w| / |diff(w, z)|
 ```
 
 Behind the scenes, each variable a `diff` needs gets a companion holding
-its derivative, updated alongside it. `diff(x, expr, 2)` is the second
-derivative (the same as `diff(x, diff(x, expr))`), and so on.
+its derivative, updated alongside it. `diff(expr, x, 2)` is the second
+derivative (the same as `diff(diff(expr, x), x)`), and so on.
 
 - An `if` isn't differentiated: the derivative is that of the branch taken.
 - `x` mustn't change between when a variable is worked out and the
@@ -126,17 +126,17 @@ derivative (the same as `diff(x, diff(x, expr))`), and so on.
   variable, `|w|`, `re`, `im`, `conj` and `arg` (which aren't holomorphic).
   With respect to a real variable, those last ones are fine.
 
-`partial(x, expr)` is the derivative of `expr` alone, with every other
-variable a constant: `partial(c, z^2 + c)` is `1`, whatever `z` was worked
-out from. It takes an order too: `partial(x, expr, 2)`.
+`partial(expr, x)` is the derivative of `expr` alone, with every other
+variable a constant: `partial(z^2 + c, c)` is `1`, whatever `z` was worked
+out from. It takes an order too: `partial(expr, x, 2)`.
 
-Both can be written as fractions, as on paper: `ⅆw/ⅆz` is `diff(z, w)`
-(with `ⅆ`, Unicode's differential d), and `∂w/∂z` is `partial(z, w)`. The top is a name,
+Both can be written as fractions, as on paper: `ⅆw/ⅆz` is `diff(w, z)`
+(with `ⅆ`, Unicode's differential d), and `∂w/∂z` is `partial(w, z)`. The top is a name,
 a function applied (`∂f(z)/∂z`), or an expression in parentheses
 (`∂(z^2 + c)/∂c`); the bottom is one or more variables, each with its
 own sign. With orders, `ⅆ²w/ⅆz²` is the second derivative, and with
 several variables, `∂²f/∂x∂y` and `∂³f/∂x∂y²` are mixed partial
-derivatives (`partial(x, partial(y, f, 2))` for the last). The orders on
+derivatives (`partial(partial(f, y, 2), x)` for the last). The orders on
 the bottom must add up to the order on top. A derivative written this way
 can't be raised to a power without parentheses: `(ⅆw/ⅆz)^2` is its
 square, and `ⅆw/ⅆz^2` is an error that says so (a superscript on the
@@ -258,12 +258,13 @@ by the angle of `z`). The saturation, value, and lightness run from `0` to
 is the brightest the color gets, and `0` is black. With `hsl`, lightness
 `0.5` is the full color, `0` is black, and `1` is white; saturation `0`
 gives a grey, in either.
-Two different colors can be blended by `blend(t, c1, c2)` where `t`
-is a real number from `0` to `1` representing the percentage to take
-from `c1`, with `(1 - t)` taken from `c2`.
+Two different colors can be blended by `blend(t, c1, c2)`, where `t`
+is a real number from `0` to `1` saying how far to go from `c1` to `c2`:
+`blend(0, c1, c2)` is `c1`, `blend(1, c1, c2)` is `c2`, and
+`blend(0.25, c1, c2)` takes `0.75` of `c1` and `0.25` of `c2`.
 
 `cycle(t, c1, c2)` goes back and forth between two colors as `t` grows: it
-is `c2` when `t` is a whole number and `c1` halfway between. The color
+is `c1` when `t` is a whole number and `c2` halfway between. The color
 wheels `rainbow(t)`, `arenberg(t)`, `romao(t)`, `bamo(t)`, `broco(t)`,
 `corko(t)`, and `viko(t)` go once around a wheel of colors as `t` goes from
 `0` to `1`, and the wheels `ice`, `fire`, `wheat`, `rose`, `forest`,
@@ -481,7 +482,7 @@ Functions don't need type annotations: each use of a function works with
 whatever kinds of numbers it is given, so `f(2)` and `f(z)` are both fine.
 
 The derivative of a function of one variable can be written with a prime:
-`f'(z)` means the same as `diff(z, f(z))`, and `f''(z)` is the second
+`f'(z)` means the same as `diff(f(z), z)`, and `f''(z)` is the second
 derivative. (You can also use `′`.) Derivatives of your own functions also
 work inside `diff`, so Newton's method can be written as
 
@@ -569,7 +570,7 @@ define shade(c):
   if stuck:
     color <- black
   else:
-    color <- blend(iterations / 20, light c, dark c)
+    color <- blend(iterations / 20, dark c, light c)
 
 iterate z -> z^2 + C until z escapes
 run shade(blue)
@@ -1202,7 +1203,7 @@ inside : Color as "Interior color" ≔ black
 define colorize(z):
   if z escaped:
     m ≔ iterations + 1 - log (log |z| / log escape_radius) / log 2
-    color ⭠ blend (cos (π m / period)², dark blue, light yellow)
+    color ⭠ blend (cos (π m / period)², light yellow, dark blue)
   else:
     color ⭠ inside
 ```

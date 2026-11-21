@@ -441,16 +441,16 @@ Functions:
 - real → integer: `round floor ceiling ceil`
 - absolute value / modulus: `|x|` (integer, real, or complex → real)
 - `mod(a, b)`
-- derivatives: `diff(x, expr)` (symbolic, exact), which follows the
+- derivatives: `diff(expr, x)` (symbolic, exact), which follows the
   variables in `expr` back through the statements that computed them
-  (loops, branches) to `x`: `w := z`, iterate `w`, then `diff(z, w)` is
+  (loops, branches) to `x`: `w := z`, iterate `w`, then `diff(w, z)` is
   the orbit's derivative (no hand-carried `dw`). Differentiate with respect to
   a copy, not the loop variable itself (`diff(z, z)` after iterating `z` is an
-  error). `diff(x, e, 2)` = second derivative. Errors, never zero, through list/
+  error). `diff(e, x, 2)` = second derivative. Errors, never zero, through list/
   table items, floor/round/mod, and (w.r.t. a complex x) |w|, re, im, conj, arg
-  (fine w.r.t. a real x). `partial(x, e)`: other variables constant.
-  Fraction forms: `ⅆw/ⅆz` = `diff(z, w)` (ⅆ is U+2146, Unicode's differential d), `∂w/∂z` =
-  `partial(z, w)`; top is a name, `f(z)`, or `( ... )`; `ⅆ²w/ⅆz²` for order 2,
+  (fine w.r.t. a real x). `partial(e, x)`: other variables constant.
+  Fraction forms: `ⅆw/ⅆz` = `diff(w, z)` (ⅆ is U+2146, Unicode's differential d), `∂w/∂z` =
+  `partial(w, z)`; top is a name, `f(z)`, or `( ... )`; `ⅆ²w/ⅆz²` for order 2,
   mixed `∂²f/∂x∂y`, `∂³f/∂x∂y²` (bottom orders sum to the top's). Never the base
   of a power: write `(ⅆw/ⅆz)^2`; `ⅆw/ⅆz^2` is an error. For a
   one-variable user function `f`, `f'(z)` and `f''(z)`
@@ -494,12 +494,12 @@ Colors:
 - `hsv(h, s, v)`, `hsl(h, s, l)`: hue h mod 1 (0 red, 1/3 green, 2/3 blue),
   s/v/l clamped to [0, 1]; hsl's l = 0.5 is the full color, 1 white
 - `dark c`, `light c`, `invert c` (stackable: `light light red`)
-- `blend(t, c1, c2)`: t·c1 + (1 − t)·c2 (so t = 1 gives c1)
-- `cycle(t, c1, c2)`: period 1 in t, c2 at integers, c1 at half-integers
+- `blend(t, c1, c2)`: (1 − t)·c1 + t·c2 (so t = 0 gives c1, t = 1 gives c2)
+- `cycle(t, c1, c2)`: period 1 in t, c1 at integers, c2 at half-integers
 - smooth color wheels, period 1: `rainbow(t)`, `arenberg(t)`, `romao(t)`,
   `bamo(t)`, `broco(t)`, `corko(t)`, `viko(t)`; gradient wheels: `ice fire
   wheat rose forest ocean winter spring summer fall`. Typical use:
-  `rainbow(arg z / (2 pi))`, `cycle(iterations / 20, dark c, light c)`.
+  `rainbow(arg z / (2 pi))`, `cycle(iterations / 20, light c, dark c)`.
 - `wheel8(t, c1, ..., c8)`: a period-1 wheel through eight colors (c1 at
   integers); `rgb255(r, g, b)`: components from 0 to 255
 - Standard library: the wheels, `cycle`, `dark`, `light`, `wheel8`,

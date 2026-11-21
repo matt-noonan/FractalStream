@@ -10,7 +10,7 @@ script: |
       closest <- d
   # Color also encodes length (n=4 -> white background, else grey)
   base : R := if n = 4 then 0.1 else 0.5
-  color <- blend(exp(-closest * 6) * (1 - base) + base, white, black)
+  color <- blend(exp(-closest * 6) * (1 - base) + base, black, white)
 
 wx-properties:
   viewers:

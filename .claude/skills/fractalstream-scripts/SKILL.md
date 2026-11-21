@@ -139,7 +139,7 @@ script: |
   clicking, so the dynamical plane follows. Add a Trace tool on the
   dynamical plane.
   See `examples/mandelbrot-julia.fs`.
-- **Derivatives.** `f'(z)` and `diff(z, expr)` are exact and symbolic; use
+- **Derivatives.** `f'(z)` and `diff(expr, z)` are exact and symbolic; use
   them for Newton's method, multipliers (`|f'(z)|` along a cycle), and
   critical points. Track an orbit derivative alongside the orbit in a loop
   body (`dz <- 2 z dz + 1` for d/dC of z^2 + C; `dz <- 2 z dz` for d/dz).

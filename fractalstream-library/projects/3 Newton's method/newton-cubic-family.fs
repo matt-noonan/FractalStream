@@ -23,7 +23,7 @@ script: |
       c <- blue
 
     s := (cos (iterations pi / 10))^2
-    color <- if z = lastZ then blend (s, dark c, light c) else black
+    color <- if z = lastZ then blend (s, light c, dark c) else black
 
   @viewer "Parameter plane" var=a vanish=tol
   z := 0

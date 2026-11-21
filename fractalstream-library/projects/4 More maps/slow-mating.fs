@@ -114,9 +114,9 @@ script: |
       color <- if first then color1 else color2
     else:
       side := if first then color1 else color2
-      color <- blend(g, blend(0.3, side, white), dark side)
+      color <- blend(g, dark side, blend(0.3, white, side))
       if show_bands and mod(band, 2) = 1:
-        color <- blend(0.85, color, black)
+        color <- blend(0.85, black, color)
       # |grad g|, and the size of a pixel in the plane at z
       dg := |dp| / (tt |p| exp((L + iterations) log 2))
       px := pixel_size (1 + |affine(1, z)|^2) / 2

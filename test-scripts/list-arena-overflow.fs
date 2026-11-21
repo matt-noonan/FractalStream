@@ -21,7 +21,7 @@ script: |
   n : ℤ ≔ round(50000.0 * (re z + 1.5))
 
   # Horizontal gradient so the safe region is clearly distinguishable
-  color ⭠ blend(re z / 2.0 + 0.5, green, dark blue)
+  color ⭠ blend(re z / 2.0 + 0.5, dark blue, green)
 
   if n > 0:
     xs : List of ℤ ≔ range(1, n)
@@ -29,7 +29,7 @@ script: |
 
     # Shade by traversed length: confirms list was actually walked, not just allocated.
     # blend clamps to [0,1] so large-but-not-overflow values stay in the green band.
-    color ⭠ blend(re z / 2.0 + 0.5, light green, dark green)
+    color ⭠ blend(re z / 2.0 + 0.5, dark green, light green)
 
 wx-properties:
   viewers:

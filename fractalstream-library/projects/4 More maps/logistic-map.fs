@@ -16,7 +16,7 @@ script: |
     x <- r x (1 - x)
     if |x - x0| < best:
       best <- |x - x0|
-  color <- blend(best / outer, white, black)
+  color <- blend(best / outer, black, white)
 metadata:
   title: The logistic map
   description: |

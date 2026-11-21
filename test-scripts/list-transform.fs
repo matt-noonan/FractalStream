@@ -8,7 +8,7 @@ script: |
     d : R := |z - c|
     if d < closest:
       closest <- d
-  color <- blend(exp(-closest * 8), white, black)
+  color <- blend(exp(-closest * 8), black, white)
 
 wx-properties:
   viewers:

@@ -12,8 +12,8 @@ script: |
   vanishing_radius : R as "Vanishing radius: " := 0.01
 
   @common
-  shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...
-    else blend(-sin(2 pi t), light c, c)
+  shade(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), c, dark c) ...
+    else blend(-sin(2 pi t), c, light c)
 
   define script(limit):
     u := 0

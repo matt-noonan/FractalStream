@@ -28,7 +28,7 @@ script: |
     else if use_rainbow:
       color <- rainbow (iterations / 10)
     else:
-      color <- cycle (iterations / 10, blue, white)
+      color <- cycle (iterations / 10, white, blue)
 
   @viewer "a-plane" var=a
   run draw_henon(0, false)

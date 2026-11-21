@@ -30,7 +30,7 @@ script: |
   else if z = c:
     col <- blue
   if z = lastZ:
-    color <- blend ((cos (iterations pi / 10))^2, dark col, light col)
+    color <- blend ((cos (iterations pi / 10))^2, light col, dark col)
   else:
     color <- black
 

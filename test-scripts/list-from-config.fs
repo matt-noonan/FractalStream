@@ -11,7 +11,7 @@ script: |
     d : R := |z - c|
     if d < closest:
       closest <- d
-  color <- blend(exp(-closest * 4), white, black)
+  color <- blend(exp(-closest * 4), black, white)
 
   @tool "Show points" shortcut="s"
   on refresh:

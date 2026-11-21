@@ -14,7 +14,7 @@ script: |
   @viewer "Hénon map" xvar=x yvar=y center=(0, 0) pixelSize=1/200
   # A tuple iterates both coordinates at once, and escapes by its length.
   iterate (x, y) -> (1 - a x^2 + y, b x) until (x, y) escapes
-  color <- if stuck then black else cycle(iterations / 10, dark blue, white)
+  color <- if stuck then black else cycle(iterations / 10, white, dark blue)
 
   @tool "Orbit" for="Hénon map" shortcut=o
   on click at (px, py):
