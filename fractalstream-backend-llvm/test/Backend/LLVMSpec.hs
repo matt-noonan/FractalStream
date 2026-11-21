@@ -23,6 +23,8 @@ import Actor.Viewer (ViewerFunction(..), runViewerFunction, ViewerArgs(..), View
 import Actor.Viewer.Types (ViewerEnv)
 import Foreign (allocaBytes, peekArray, Word8)
 import Backend.LLVM
+import Language.Value.Arithmetic (euclidDiv, euclidMod, euclidModReal, roundHalfAway)
+import Data.Int (Int32)
 import Actor.Autocolor (AutocolorLookup, autocolorLookupFromFunction)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -73,6 +75,80 @@ spec = do
         invoke' env ColorType f (300 / 255) 0.5 black 0 0 False 0 0 `shouldReturn` rgbToColor (255, 128, 255)
         -- (0 / 0 is NaN, which counts as 0)
         invoke' env ColorType f 0 0 black 0 0 False 0 0 `shouldReturn` rgbToColor (0, 0, 0)
+
+    it "computes // and mod as Euclidean division, as the interpreter" $ do
+      let env = declare @"a" IntegerType
+              $ declare @"b" IntegerType
+              $ declare @"q" IntegerType
+              $ declare @"r" IntegerType
+              $ declare @"x" RealType
+              $ declare @"y" RealType
+              $ declare @"m" RealType
+              $ declare @"color" ColorType
+              $ declare @"[internal] iteration count" IntegerType
+              $ declare @"[internal] iteration limit" IntegerType
+              $ declare @"[internal] stuck" BooleanType
+              $ declare @"[internal] escape radius" RealType
+              $ declare @"[internal] vanishing radius" RealType
+              $ endOfDecls
+          lo = fromIntegral (minBound :: Int32)
+          hi = fromIntegral (maxBound :: Int32)
+          ints = [-7, -6, -3, -1, 0, 1, 3, 6, 7, lo, lo + 1, hi]
+          -- (the expected answers at 32 bits, as the compiled code computes)
+          at32 f a b = fromIntegral (f (fromIntegral a :: Int32) (fromIntegral b))
+          reals = [-7.5, -3, -1, -1e-20, 0, 1e-20, 1, 2.5, 3, 7.5]
+      withCompiledCode (Proxy @"color") ColorType env
+          "color <- if a // b = q and mod(a, b) = r then white else black" $ \f ->
+        forM_ ints $ \a -> forM_ ints $ \b -> do
+          let q = at32 euclidDiv a b; r = at32 euclidMod a b
+          c <- invoke' env ColorType f a b q r 0 0 0 black 0 0 False 0 0
+          (a, b, c) `shouldBe` (a, b, white)
+      -- (reals are equal within the vanishing radius, the last argument)
+      withCompiledCode (Proxy @"color") ColorType env
+          "color <- if mod(x, y) = m then white else black" $ \f ->
+        do bad <- fmap (concat . concat) $ forM reals $ \x -> forM reals $ \y -> do
+             c <- invoke' env ColorType f 0 0 0 0 x y (euclidModReal x y) black 0 0 False 0 1e-100
+             pure [ (x, y, euclidModReal x y) | c /= white ]
+           bad `shouldBe` []
+
+    it "rounds a half away from zero, as the interpreter" $ do
+      let env = declare @"x" RealType
+              $ declare @"n" IntegerType
+              $ declare @"color" ColorType
+              $ declare @"[internal] iteration count" IntegerType
+              $ declare @"[internal] iteration limit" IntegerType
+              $ declare @"[internal] stuck" BooleanType
+              $ declare @"[internal] escape radius" RealType
+              $ declare @"[internal] vanishing radius" RealType
+              $ endOfDecls
+          xs = [ -3.5, -2.5, -2.4999, -1.5, -0.5, -0.49999999999999994, 0, 0.49999999999999994
+               , 0.5, 1.5, 2.4999, 2.5, 2.9999999, 3.5, 1000000.5, -1000000.5 ]
+      withCompiledCode (Proxy @"color") ColorType env "color <- if round(x) = n then white else black" $ \f ->
+        forM_ xs $ \x -> do
+          c <- invoke' env ColorType f x (truncate (roundHalfAway x)) black 0 0 False 0 0
+          (x, c) `shouldBe` (x, white)
+
+    it "saturates a real made an integer, as the wasm and GPU backends" $ do
+      let env = declare @"x" RealType
+              $ declare @"n" IntegerType
+              $ declare @"color" ColorType
+              $ declare @"[internal] iteration count" IntegerType
+              $ declare @"[internal] iteration limit" IntegerType
+              $ declare @"[internal] stuck" BooleanType
+              $ declare @"[internal] escape radius" RealType
+              $ declare @"[internal] vanishing radius" RealType
+              $ endOfDecls
+          hi = fromIntegral (maxBound :: Int32)
+          lo = fromIntegral (minBound :: Int32)
+          cases = [ (0 / 0, 0), (1 / 0, hi), (-1 / 0, lo), (1e12, hi), (-1e12, lo)
+                  , (2147483647.4, hi), (-2147483648.4, lo) ]
+      forM_ ["round", "floor", "ceiling"] $ \fn ->
+        withCompiledCode (Proxy @"color") ColorType env
+            ("color <- if " ++ fn ++ "(x) = n then white else black") $ \f ->
+          forM_ cases $ \(x, n) -> do
+            c <- invoke' env ColorType f x n black 0 0 False 0 0
+            -- (x shown: NaN isn't equal to itself)
+            (fn, show x, c) `shouldBe` (fn, show x, white)
 
     it "computes hsv and hsl colors as Data.Color does" $ do
       let env = declare @"x" RealType

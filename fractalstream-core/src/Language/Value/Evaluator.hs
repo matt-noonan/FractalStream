@@ -20,7 +20,7 @@ import Language.Table (readCell, readSlice, pointCell, pointIndices, cellPoint, 
 import Data.Color
 
 import Unsafe.Coerce
-import Numeric.Extras
+import Language.Value.Arithmetic
 
 -- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
 data HaskellValue :: Symbol -> FSType -> Exp Type
@@ -164,10 +164,7 @@ evaluator v0 ctx = case v0 of
     SubF x y -> x ctx - y ctx
     MulF x y -> x ctx * y ctx
     DivF x y -> x ctx / y ctx
-    ModF x y ->
-      let y' = y ctx
-          m = fmod (x ctx) (y ctx)
-      in if m < 0 then m + y' else m
+    ModF x y -> euclidModReal (x ctx) (y ctx)
 
     PowF x n -> x ctx ** n ctx
     AbsF x   -> abs (x ctx)
@@ -177,7 +174,7 @@ evaluator v0 ctx = case v0 of
     LogF x -> log (x ctx)
     SqrtF x -> sqrt (x ctx)
 
-    RoundF x -> Prelude.round (x ctx)
+    RoundF x -> Prelude.truncate (roundHalfAway (x ctx))
     FloorF x -> Prelude.floor (x ctx)
     CeilingF x -> Prelude.ceiling (x ctx)
 
@@ -230,16 +227,8 @@ evaluator v0 ctx = case v0 of
     AddI x y -> x ctx + y ctx
     SubI x y -> x ctx - y ctx
     MulI x y -> x ctx * y ctx
-    DivI x y ->
-      let yy = y ctx
-      in if yy == 0
-         then error "Integer division by 0"
-         else x ctx `div` yy
-    ModI x y ->
-      let yy = y ctx
-      in if yy == 0
-         then error "Integer modulo by 0"
-         else x ctx `mod` yy
+    DivI x y -> euclidDiv (x ctx) (y ctx)
+    ModI x y -> euclidMod (x ctx) (y ctx)
     PowI x y -> intPower (x ctx) (y ctx)
     AbsI x   -> abs (x ctx)
     NegI x   -> negate (x ctx)

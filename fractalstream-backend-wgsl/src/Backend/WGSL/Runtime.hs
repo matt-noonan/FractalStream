@@ -217,8 +217,17 @@ common = unlines
   , "fn rnonzero(a: R) -> bool { return !req(a, ri(0)); }"
   , "fn rceil(a: R) -> R { return rneg(rfloor(rneg(a))); }"
   , "fn rtrunc(a: R) -> R { return select(rceil(a), rfloor(a), !rlt(a, ri(0))); }"
-  -- (fmod, then nonnegative for a positive divisor, as the CPU's. fmod's
-  -- remainder is exact, with a's sign, and less than |b|: the quotient,
+  -- (the script's round: to the nearest, a half away from zero, as the
+  -- CPU's. a - trunc(a) is exact, and a half if twice it is 1. WGSL's own
+  -- round takes a half to even)
+  , "fn rround_away(a: R) -> R {"
+  , "  let t = rtrunc(a);"
+  , "  let d = rabs(rsub(a, t));"
+  , "  if (rlt(radd(d, d), ri(1))) { return t; }"
+  , "  if (rlt(a, ri(0))) { return rsub(t, ri(1)); }"
+  , "  return radd(t, ri(1));"
+  , "}"
+  -- (fmod, as the CPU's. fmod's remainder is exact, with a's sign, and less than |b|: the quotient,
   -- rounded, can be one off, which the remainder shows)
   , "fn rfmod(a: R, b: R) -> R {"
   , "  let bb = rabs(b);"
@@ -232,9 +241,19 @@ common = unlines
   , "  }"
   , "  return m;"
   , "}"
+  -- (Euclidean, in [0, |b|), as Language.Value.Arithmetic's euclidModReal:
+  -- a tiny negative remainder plus |b| can round to |b|, which is taken as
+  -- 0. mod(a, 0) is 0)
   , "fn rmod(a: R, b: R) -> R {"
+  , "  if (req(b, ri(0))) { return ri(0); }"
   , "  let m = rfmod(a, b);"
-  , "  return select(m, radd(m, b), rlt(m, ri(0)));"
+  , "  if (rlt(m, ri(0))) {"
+  , "    let bb = rabs(b);"
+  , "    let m2 = radd(m, bb);"
+  , "    if (rlt(m2, bb)) { return m2; }"
+  , "    return ri(0);"
+  , "  }"
+  , "  return m;"
   , "}"
   , "struct C { re: R, im: R }"
   , "fn cadd(a: C, b: C) -> C { return C(radd(a.re, b.re), radd(a.im, b.im)); }"
@@ -353,17 +372,22 @@ common = unlines
   -- (ordered and unequal: NaN is unequal to nothing, as the CPU's)
   , "fn rne(a: R, b: R) -> bool { return rlt(a, b) || rlt(b, a); }"
   , "fn cne(a: C, b: C) -> bool { return rne(a.re, b.re) || rne(a.im, b.im); }"
-  -- (integers, as the CPU's: dividing by 0 gives 0, and the remainder
-  -- the dividend)
+  -- (Euclidean division of integers, as the CPU's: the remainder is in
+  -- [0, |y|), dividing by 0 gives 0 both ways, and the smallest integer
+  -- divided by -1 wraps to itself. r - y for a negative y, not r + |y|,
+  -- which can overflow)
   , "fn idiv(x: i32, y: i32) -> i32 {"
   , "  if (y == 0) { return 0; }"
   , "  if (y == -1) { return 0 - x; }"
-  , "  return x / y;"
+  , "  let q = x / y;"
+  , "  if (x % y < 0) { return select(q - 1, q + 1, y < 0); }"
+  , "  return q;"
   , "}"
   , "fn imod(x: i32, y: i32) -> i32 {"
-  , "  if (y == 0) { return x; }"
-  , "  if (y == -1) { return 0; }"
-  , "  return x % y;"
+  , "  if (y == 0 || y == -1) { return 0; }"
+  , "  let r = x % y;"
+  , "  if (r < 0) { return select(r + y, r - y, y < 0); }"
+  , "  return r;"
   , "}"
   , "fn ipow(b: i32, e: i32) -> i32 {"
   , "  if (e < 0) {"

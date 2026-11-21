@@ -144,16 +144,22 @@ value = indexedFold go'
       SubF x y -> real2 f64Sub x y
       MulF x y -> real2 f64Mul x y
       DivF x y -> real2 f64Div x y
-      -- fmod, made nonnegative for a positive divisor (as the LLVM backend)
+      -- (as Language.Value.Arithmetic's euclidModReal, and the LLVM backend)
       ModF x y -> do
         a <- x; b <- y
         case (a, b) of
           (LReal p, LReal q) -> lift $ do
             m <- newLocal F64
-            emit [localGet p, localGet q, call (mathFn "fmod"), localSet m]
+            absB <- newLocal F64
+            m' <- newLocal F64
+            emit [ localGet p, localGet q, call (mathFn "fmod"), localSet m
+                 , localGet q, f64Abs, localSet absB
+                 , localGet m, localGet absB, f64Add, localSet m' ]
             unaryTo F64 LReal
-              [ localGet m, localGet q, f64Add, localGet m
-              , localGet m, f64Const 0, f64Lt, select ]
+              [ f64Const 0
+              , f64Const 0, localGet m', localGet m', localGet absB, f64Eq, select
+              , localGet m, localGet m, f64Const 0, f64Lt, select
+              , localGet q, f64Const 0, f64Eq, select ]
           _ -> lift (mismatch a)
       NegF r -> r >>= \case
         LReal x -> lift (unaryTo F64 LReal [f64Const 0, localGet x, f64Sub])
@@ -173,8 +179,18 @@ value = indexedFold go'
       ConjC z -> complex1 z $ \(a, b) ->
         LComplex a <$> realOf [f64Const 0, localGet b, f64Sub]
 
-      -- (`round` truncates, as the LLVM backend's does)
-      RoundF r -> real1To I32 LInt r [f64Trunc, i32TruncSatF64S]
+      -- (a half away from zero, as Language.Value.Arithmetic's
+      -- roundHalfAway: wasm's f64.nearest takes a half to even)
+      RoundF r -> r >>= \case
+        LReal x -> lift $ do
+          t <- newLocal F64
+          emit [localGet x, f64Trunc, localSet t]
+          unaryTo I32 LInt
+            [ localGet t, f64Const 1, localGet x, f64Copysign, f64Add
+            , localGet t
+            , localGet x, localGet t, f64Sub, f64Abs, f64Const 0.5, f64Ge
+            , select, i32TruncSatF64S ]
+        l -> lift (mismatch l)
       FloorF r -> real1To I32 LInt r [f64Floor, i32TruncSatF64S]
       CeilingF r -> real1To I32 LInt r [f64Ceil, i32TruncSatF64S]
       AbsF r -> real1To F64 LReal r [f64Abs]
@@ -541,23 +557,34 @@ notEqual t a b = case (t, a, b) of
     cmp = unaryTo I32 LBool
     one p q = [localGet p, localGet q, f64Lt, localGet p, localGet q, f64Gt, i32Or]
 
--- | Integer division or remainder. Where wasm would trap, this gives what
--- the LLVM backend's code gives on 64-bit ARM: dividing by 0 gives 0 (and
--- the remainder is the dividend), and the smallest integer divided by -1
--- is itself (remainder 0).
+-- | Euclidean integer division or remainder, as Language.Value.Arithmetic's
+-- euclidDiv and euclidMod (and the LLVM backend's): the remainder is in
+-- [0, |b|). Dividing by 0 gives 0 both ways, and the smallest integer
+-- divided by -1 wraps to itself, where wasm would trap.
 intDivision :: Bool -> Loc -> Loc -> Gen Loc
 intDivision isDiv a b = case (a, b) of
   (LInt x, LInt y) -> do
+    res <- newLocal I32
+    q <- newLocal I32
     r <- newLocal I32
-    emit [ localGet y, i32Eqz
-         , IfElse [ if isDiv then i32Const 0 else localGet x, localSet r ]
-             [ localGet y, i32Const (-1), i32Eq
-             , IfElse (if isDiv then [i32Const 0, localGet x, i32Sub, localSet r]
-                                else [i32Const 0, localSet r])
-                 [ localGet x, localGet y, if isDiv then i32DivS else i32RemS, localSet r ]
-             ]
-         ]
-    pure (LInt r)
+    let special = if isDiv
+          then [ i32Const 0, i32Const 0, localGet x, i32Sub, localGet y, i32Eqz, select ]
+          else [ i32Const 0 ]
+        -- (when the truncated remainder is negative: one more or less, and
+        -- r - b for a negative b, not r + |b|, which can overflow)
+        general = if isDiv
+          then [ localGet x, localGet y, i32DivS, localSet q
+               , localGet x, localGet y, i32RemS, localSet r
+               , localGet q, i32Const 1, i32Add, localGet q, i32Const 1, i32Sub
+               , localGet y, i32Const 0, i32LtS, select
+               , localGet q, localGet r, i32Const 0, i32LtS, select ]
+          else [ localGet x, localGet y, i32RemS, localSet r
+               , localGet r, localGet y, i32Sub, localGet r, localGet y, i32Add
+               , localGet y, i32Const 0, i32LtS, select
+               , localGet r, localGet r, i32Const 0, i32LtS, select ]
+    emit [ localGet y, i32Eqz, localGet y, i32Const (-1), i32Eq, i32Or
+         , IfElse (special ++ [localSet res]) (general ++ [localSet res]) ]
+    pure (LInt res)
   _ -> mismatch a
 
 -- | An integer power by repeated multiplication, as the LLVM backend: a

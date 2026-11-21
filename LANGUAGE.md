@@ -20,6 +20,19 @@ The usual arithmetic operators `+`, `-`, `*` (multiplication, also written `×`)
 `/`, these are also available for integer types. For integer division,
 use `//` instead.
 
+`mod(a, b)`, for integers or reals, is the remainder of dividing `a` by
+`b`: the number `r` with `a = b k + r` for a whole number `k`, and
+`0 ≤ r < |b|`. It's never negative, whatever the signs of `a` and `b`:
+`mod(-7, 3)` is 2, `mod(7, -3)` is 1, and `mod(-0.5, 1)` is 0.5. For
+integers, `a // b` is that `k`, so `a = b (a // b) + mod(a, b)`:
+`-7 // 3` is -3, and `7 // -3` is -2. Dividing by 0 gives 0, both ways:
+`mod(a, 0)` and `a // 0` are 0. Integers wrap: the smallest integer,
+divided by -1, is itself.
+
+`round(x)` is the whole number nearest `x`, and a half rounds away from
+zero: `round(2.5)` is 3, `round(-2.5)` is -3, and `round(2.4)` is 2.
+`floor(x)` rounds down and `ceiling(x)` (or `ceil(x)`) rounds up.
+
 A power of integers is an integer (`2^10` is 1024), except that a negative
 power is a fraction, so it's a real number: `10^(-2)` is 0.01, and
 `3.5 * 10^(-2)` is 0.035. That's decided by the exponent as it's written:

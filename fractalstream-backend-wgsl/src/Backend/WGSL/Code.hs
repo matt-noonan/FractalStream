@@ -465,7 +465,7 @@ value = indexedFold go'
       AbsF r -> real1 LReal "rabs" r
       SqrtF r -> real1 LReal "rsqrt" r
       -- (`round` truncates, as the CPU's does)
-      RoundF r -> real1 LInt "rtoi(rtrunc" r
+      RoundF r -> real1 LInt "rtoi(rround_away" r
       FloorF r -> real1 LInt "rtoi(rfloor" r
       CeilingF r -> real1 LInt "rtoi(rceil" r
 

@@ -399,9 +399,9 @@ buildValue getExtern arena = indexedFold go'
       MulI x y -> ((,) <$> x <*> y) >>= \case
          (IntegerOp lhs, IntegerOp rhs) -> IntegerOp <$> mul lhs rhs
       DivI x y -> ((,) <$> x <*> y) >>= \case
-         (IntegerOp lhs, IntegerOp rhs) -> IntegerOp <$> sdiv lhs rhs
+         (IntegerOp lhs, IntegerOp rhs) -> IntegerOp . fst <$> euclidDivMod lhs rhs
       ModI x y -> ((,) <$> x <*> y) >>= \case
-         (IntegerOp lhs, IntegerOp rhs) -> IntegerOp <$> srem lhs rhs
+         (IntegerOp lhs, IntegerOp rhs) -> IntegerOp . snd <$> euclidDivMod lhs rhs
       NegI i -> i >>= \case
          (IntegerOp x) -> IntegerOp <$> sub (C.int32 0) x
       PowI mx my -> ((,) <$> mx <*> my) >>= \case
@@ -417,12 +417,20 @@ buildValue getExtern arena = indexedFold go'
           (RealOp lhs, RealOp rhs) -> RealOp <$> fmul lhs rhs
       DivF x y -> ((,) <$> x <*> y) >>= \case
           (RealOp lhs, RealOp rhs) -> RealOp <$> fdiv lhs rhs
+      -- (as Language.Value.Arithmetic's euclidModReal: frem is fmod)
       ModF x y -> ((,) <$> x <*> y) >>= \case
           (RealOp lhs, RealOp rhs) -> do
             m <- frem lhs rhs
-            cond <- fcmp P.OLT m (C.double 0.0)
-            m' <- fadd m rhs
-            RealOp <$> select cond m' m
+            bNeg <- fcmp P.OLT rhs (C.double 0.0)
+            negB <- fsub (C.double 0.0) rhs
+            absB <- select bNeg negB rhs
+            mNeg <- fcmp P.OLT m (C.double 0.0)
+            m' <- fadd m absB
+            rounded <- fcmp P.OEQ m' absB
+            m'' <- select rounded (C.double 0.0) m'
+            r <- select mNeg m'' m
+            bZero <- fcmp P.OEQ rhs (C.double 0.0)
+            RealOp <$> select bZero (C.double 0.0) r
       NegF r -> r >>= \case
           (RealOp x) -> RealOp <$> fsub (C.double 0.0) x
 
@@ -460,17 +468,19 @@ buildValue getExtern arena = indexedFold go'
       ConjC z -> z >>= \case
         ComplexOp x y -> ComplexOp x <$> fsub (C.double 0.0) y
 
+      -- (llvm.round rounds a half away from zero, as
+      -- Language.Value.Arithmetic's roundHalfAway)
       RoundF r -> r >>= \case
         (RealOp x) -> IntegerOp <$>
-          (call (getExtern "trunc") [(x, [])] >>= (`fptosi` AST.i32))
+          (call (getExtern "round") [(x, [])] >>= toInt32 getExtern)
 
       FloorF r -> r >>= \case
         (RealOp x) -> IntegerOp <$>
-          (call (getExtern "floor") [(x, [])] >>= (`fptosi` AST.i32))
+          (call (getExtern "floor") [(x, [])] >>= toInt32 getExtern)
 
       CeilingF r -> r >>= \case
         (RealOp x) -> IntegerOp <$>
-          (call (getExtern "ceil") [(x, [])] >>= (`fptosi` AST.i32))
+          (call (getExtern "ceil") [(x, [])] >>= toInt32 getExtern)
 
       AbsF r -> r >>= \case
         (RealOp x)  -> RealOp <$> call (getExtern "fabs") [(x, [])]
@@ -916,6 +926,43 @@ buildRange arena loOp hiOp = do
       listSlot IntegerType base k >>= \s -> storeListElem IntegerType s (IntegerOp v)
       pure (C.bit 1)
 
+-- | A real as a 32-bit integer, saturating, as the wasm and GPU backends:
+-- NaN is 0, and a real beyond the integers' range is the nearest end of it
+-- (fptosi would be poison for both).
+toInt32 :: (MonadModuleBuilder m, MonadIRBuilder m)
+        => (String -> Operand) -> Operand -> m Operand
+toInt32 getExtern' x = call (getExtern' "fptosi_sat") [(x, [])]
+
+-- | Euclidean division of 32-bit integers, as Language.Value.Arithmetic's
+-- euclidDiv and euclidMod: the quotient and the remainder, in [0, |b|).
+-- Dividing by 0 gives 0 both ways, and the smallest integer divided by -1
+-- wraps to itself, where sdiv and srem would be undefined.
+euclidDivMod :: (MonadModuleBuilder m, MonadIRBuilder m)
+             => Operand -> Operand -> m (Operand, Operand)
+euclidDivMod a b = do
+  bZero <- icmp P.EQ b (C.int32 0)
+  bMinus1 <- icmp P.EQ b (C.int32 (-1))
+  special <- I.or bZero bMinus1
+  -- (dividing by 1 instead, in the special cases: the remainder is then 0)
+  safeB <- select special (C.int32 1) b
+  q <- sdiv a safeB
+  r <- srem a safeB
+  rNeg <- icmp P.SLT r (C.int32 0)
+  bNeg <- icmp P.SLT safeB (C.int32 0)
+  -- (r - b for a negative b, not r + |b|, which can overflow)
+  rMinusB <- sub r safeB
+  rPlusB <- add r safeB
+  rFixed <- select bNeg rMinusB rPlusB
+  qPlus1 <- add q (C.int32 1)
+  qMinus1 <- sub q (C.int32 1)
+  qFixed <- select bNeg qPlus1 qMinus1
+  r' <- select rNeg rFixed r
+  q' <- select rNeg qFixed q
+  negA <- sub (C.int32 0) a
+  q'' <- select bMinus1 negA =<< select bZero (C.int32 0) q'
+  pure (q'', r')
+
+
 -- | Emit a loop computing @base ^ expo@ by repeated multiplication. This
 -- replaces a bogus @llvm.powi.i32@ "intrinsic" (LLVM's @llvm.powi@ only takes
 -- a floating-point base, so the old declaration produced garbage when
@@ -960,6 +1007,8 @@ getGetExtern = do
     [ ("absi", extern "llvm.abs.i32" [AST.i32, AST.i1] AST.i32)
     , ("trunc", extern "llvm.trunc.f64" [AST.double] AST.double)
     , ("floor", extern "llvm.floor.f64" [AST.double] AST.double)
+    , ("round", extern "llvm.round.f64" [AST.double] AST.double)
+    , ("fptosi_sat", extern "llvm.fptosi.sat.i32.f64" [AST.double] AST.i32)
     , ("ceil", extern "llvm.ceil.f64" [AST.double] AST.double)
     , ("log", extern "llvm.log.f64" [AST.double] AST.double)
     , ("exp", extern "llvm.exp.f64" [AST.double] AST.double)

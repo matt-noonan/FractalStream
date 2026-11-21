@@ -275,7 +275,9 @@ pointIndices getExtern desc x y = do
   let nearest u = do  -- 1 + floor(u + 1/2 + 10^-6), as 'nearestCell'
         v <- fadd u (C.double 0.500001)
         f <- call (getExtern "floor") [(v, [])]
-        n <- fptosi f AST.i32
+        -- (saturating, as the wasm backend's: a NaN point is cell 1, not
+        -- poison)
+        n <- call (getExtern "fptosi_sat") [(f, [])]
         add n (C.int32 1)
   j <- fsub x ox >>= (`fdiv` sx) >>= nearest
   k <- fsub oy y >>= (`fdiv` sy) >>= nearest

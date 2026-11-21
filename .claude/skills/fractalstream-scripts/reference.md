@@ -357,7 +357,10 @@ Numbers widen automatically Z → R → C wherever needed (`k := 0` then
 `k <- 0.5` makes `k` real). Nothing narrows automatically: use `round`,
 `floor`, `ceiling`/`ceil` (real → Z), `re`, `im`, `abs |…|`, `arg`.
 `/` always produces a real (`7 / 2` is 3.5); `//` is integer division;
-`mod(a, b)` works on integers and reals. A cast is written `(e : T)`.
+`mod(a, b)` works on integers and reals. Both are Euclidean: `mod(a, b)`
+is in `[0, |b|)` whatever the signs (`mod(-7, 3)` is 2, `mod(7, -3)` is
+1), with `a = b (a // b) + mod(a, b)` (`-7 // 3` is -3); dividing by 0
+gives 0 both ways. A cast is written `(e : T)`.
 
 **No scientific notation**: `1e-6` (or `3.5e-2`, `2e5`, `1E-6`) is an error,
 since `e` is Euler's number; the message says what to write instead. Write
@@ -438,7 +441,8 @@ Functions:
 - real only: `arcsin arccos arctan arcsinh arccosh arctanh` (also
   `asin`, `acos`, `atan`, `asinh`, `acosh`, `atanh`)
 - complex → real: `re im arg` (also `Re Im Arg`); complex → complex: `conj`/`bar`
-- real → integer: `round floor ceiling ceil`
+- real → integer: `round floor ceiling ceil` (`round` is to the nearest,
+  a half away from zero: `round(2.5)` is 3, `round(-2.5)` is -3)
 - absolute value / modulus: `|x|` (integer, real, or complex → real)
 - `mod(a, b)`
 - derivatives: `diff(expr, x)` (symbolic, exact), which follows the

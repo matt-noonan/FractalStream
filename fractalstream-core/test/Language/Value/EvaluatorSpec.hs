@@ -3,6 +3,9 @@ module Language.Value.EvaluatorSpec (spec) where
 import Test.Hspec
 import Language.Value
 import Language.Value.Evaluator
+import Language.Value.Arithmetic
+import Data.Int (Int32)
+import Control.Monad (forM_)
 
 spec :: Spec
 spec = do
@@ -59,3 +62,67 @@ spec = do
       evaluate v2 EmptyContext `shouldBe` False
       evaluate v3 EmptyContext `shouldBe` False
       evaluate v4 EmptyContext `shouldBe` True
+
+  describe "Euclidean division (// and mod)" $ do
+
+    it "gives the remainder in [0, |b|), with a = b (a // b) + mod(a, b)" $ do
+      let cases :: [(Integer, Integer, Integer, Integer)]
+          cases = [ (7, 3, 2, 1), (-7, 3, -3, 2), (7, -3, -2, 1), (-7, -3, 3, 2)
+                  , (6, 3, 2, 0), (-6, 3, -2, 0), (6, -3, -2, 0), (-6, -3, 2, 0)
+                  , (0, 5, 0, 0), (0, -5, 0, 0), (5, -1, -5, 0), (-5, 1, -5, 0)
+                  , (7, 0, 0, 0), (-7, 0, 0, 0), (0, 0, 0, 0) ]
+      forM_ cases $ \(a, b, q, r) -> do
+        (a, b, euclidDiv a b) `shouldBe` (a, b, q)
+        (a, b, euclidMod a b) `shouldBe` (a, b, r)
+      forM_ [-20 .. 20 :: Integer] $ \a -> forM_ ([-7 .. -1] ++ [1 .. 7]) $ \b -> do
+        let r = euclidMod a b
+        (a, b, r >= 0 && r < abs b, b * euclidDiv a b + r) `shouldBe` (a, b, True, a)
+
+    it "wraps the smallest integer divided by -1, and doesn't overflow" $ do
+      let lo = minBound :: Int32
+      euclidDiv lo (-1) `shouldBe` lo
+      euclidMod lo (-1) `shouldBe` 0
+      euclidMod (-1) lo `shouldBe` maxBound
+      euclidDiv (-1) lo `shouldBe` 1
+      euclidMod lo 3 `shouldBe` 1
+      euclidMod lo lo `shouldBe` 0
+
+    it "gives a real remainder in [0, |b|)" $ do
+      let cases = [ (7.5, 2, 1.5), (-7.5, 2, 0.5), (7.5, -2, 1.5), (-7.5, -2, 0.5)
+                  , (-1, -3, 2), (-1, 3, 2), (1, -3, 1), (3, 3, 0), (-3, 3, 0)
+                  , (-1e-20, 3, 0), (-1e-20, -3, 0), (2.5, 0, 0), (0, 1, 0) ]
+      forM_ cases $ \(a, b, r) -> (a, b, euclidModReal a b) `shouldBe` (a, b, r :: Double)
+      isNaN (euclidModReal (1 / 0) 2) `shouldBe` True
+      isNaN (euclidModReal (0 / 0) 2) `shouldBe` True
+
+    it "is what the evaluator computes" $ do
+      let i :: Integer -> Value '( '[], 'IntegerT)
+          i = fromInteger
+      evaluate (ModI (i (-7)) 3) EmptyContext `shouldBe` 2
+      evaluate (ModI 7 (i (-3))) EmptyContext `shouldBe` 1
+      evaluate (DivI (i (-7)) 3) EmptyContext `shouldBe` (-3)
+      evaluate (DivI 7 (i (-3))) EmptyContext `shouldBe` (-2)
+      evaluate (DivI 7 0) EmptyContext `shouldBe` 0
+      evaluate (ModI 7 0) EmptyContext `shouldBe` 0
+      let x :: Double -> Value '( '[], 'RealT)
+          x = realToFrac
+      evaluate (ModF (x (-1)) (x (-3))) EmptyContext `shouldBe` 2
+      evaluate (ModF (x (-1e-20)) 3) EmptyContext `shouldBe` 0
+      evaluate (ModF 2.5 0) EmptyContext `shouldBe` 0
+
+  describe "round" $ do
+
+    it "rounds to the nearest whole number, and a half away from zero" $ do
+      let cases :: [(Double, Double)]
+          cases = [ (2.5, 3), (-2.5, -3), (0.5, 1), (-0.5, -1), (1.5, 2), (-1.5, -2)
+                  , (2.4999, 2), (-2.4999, -2), (2.5001, 3), (2.9999999, 3), (-2.9999999, -3)
+                  , (0, 0), (0.49999999999999994, 0), (-0.49999999999999994, 0)
+                  , (4503599627370495.5, 4503599627370496), (1e300, 1e300) ]
+      forM_ cases $ \(x, r) -> (x, roundHalfAway x) `shouldBe` (x, r)
+      isNaN (roundHalfAway (0 / 0)) `shouldBe` True
+
+    it "is what the evaluator computes" $ do
+      let x :: Double -> Value '( '[], 'RealT)
+          x = realToFrac
+      forM_ [(2.5, 3), (-2.5, -3), (0.5, 1), (-0.5, -1), (2.9999999, 3), (-2.4, -2)] $ \(v, r) ->
+        (v, evaluate (RoundF (x v)) EmptyContext) `shouldBe` (v, r)
