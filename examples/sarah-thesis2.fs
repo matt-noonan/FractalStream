@@ -15,6 +15,6 @@ script: |
   iterate z -> p z^2 + 1 until z escapes
 
   if z escapes:
-      color <- cycle(saved_count / 20, dark red, light red)
+      color <- cycle(saved_count / 20, light red, dark red)
   else:
-      color <- cycle(saved_count / 20, dark green, light green)
+      color <- cycle(saved_count / 20, light green, dark green)

@@ -11,7 +11,7 @@ script: |
   squared : List of R := transform(positives, x -> x * x)
   result : R := find(squared, x -> x > threshold, -1)
   d : R := |re z - result|
-  color <- if result < 0 then grey else blend(exp(-d * 15), white, black)
+  color <- if result < 0 then grey else blend(exp(-d * 15), black, white)
 
 wx-properties:
   viewers:

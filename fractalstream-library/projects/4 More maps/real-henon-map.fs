@@ -21,7 +21,7 @@ script: |
   x, y := 0, 0
   iterate (x, y) -> (1 - a x² + y, b x) until (x, y) escapes up to settle times
   if not stuck:
-    color <- cycle(iterations / 20, dark blue, white)
+    color <- cycle(iterations / 20, white, dark blue)
   else:
     x0, y0 := x, y
     repeat up to max_period times:
@@ -37,7 +37,7 @@ script: |
 
   @viewer "Dynamical plane" xvar=x yvar=y center=(0, 0) pixelSize=1/200 aspect=1/2
   iterate (x, y) -> (1 - a x² + y, b x) until (x, y) escapes
-  color <- if stuck then black else cycle(iterations / 10, dark blue, white)
+  color <- if stuck then black else cycle(iterations / 10, white, dark blue)
 
   @tool "Attractor" for="Dynamical plane" shortcut=a
   points : Z as "Points" := 5000

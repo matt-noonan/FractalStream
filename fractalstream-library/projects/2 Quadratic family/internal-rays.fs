@@ -23,7 +23,7 @@ script: |
       color <- if im(z) > 0 then blue else yellow
 
       s := iterations + 1 - (log (log |z|)) / (log degree)
-      color <- blend (cos (s pi)^2, light color, dark color)
+      color <- blend (cos (s pi)^2, dark color, light color)
 
     else:
       λ := 1
@@ -56,7 +56,7 @@ script: |
         color <- if mod(pθ, 1 / den) > 0.5 / den then red else rgb(0,1,1)
 
       s_adjusted := s + 1 - log |z-w| / log |λ|
-      color <- blend (cos (s_adjusted pi)^2, light color, dark color)
+      color <- blend (cos (s_adjusted pi)^2, dark color, light color)
 
   # Draw the orbit of `z`, once it settles down to a cycle.
   define trace(initial_last):

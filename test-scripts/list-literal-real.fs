@@ -7,7 +7,7 @@ script: |
     d : R := |re z - x|
     if d < closest:
       closest <- d
-  color <- blend(exp(-closest * 6), white, black)
+  color <- blend(exp(-closest * 6), black, white)
 
 wx-properties:
   viewers:

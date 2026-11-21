@@ -11,13 +11,13 @@ script: |
     if d < closest:
       closest <- d
 
-  color <- blend(exp(-closest * 8), white, black)
+  color <- blend(exp(-closest * 8), black, white)
 
   for each c in pts:
     d : R := |z - c|
     if d < closest:
       closest <- d
-      color <- blend(exp(-closest * 8), red, black)
+      color <- blend(exp(-closest * 8), black, red)
 
 wx-properties:
   viewers:

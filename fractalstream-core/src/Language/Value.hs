@@ -211,6 +211,9 @@ data ValueF (value :: (Environment, FSType) -> Exp Type) (et :: (Environment, FS
       -> Eval (value '(env, 'RealT))
       -> ValueF value '(env, 'ColorT)
 
+  -- | @Blend t c1 c2@ is t·c1 + (1 - t)·c2 ('Data.Color.mixColors'),
+  -- which scripts write @blend(t, c2, c1)@ (going from c2 at t = 0 to c1
+  -- at t = 1).
   Blend :: forall env value
          . KnownEnvironment env
         => Eval (value '(env, 'RealT))
@@ -877,7 +880,7 @@ pprint = indexedFold @PrecString @ValueF go
     ITE _ c x y -> unwords ["if", c, "then", x, "else", y]
     RGB r g b     -> fun "rgb" [r,g,b]
     Autocolor mode n p -> fun (autocolorModeName mode) [show n, p]
-    Blend s c1 c2 -> fun "blend" [s,c1,c2]
+    Blend s c1 c2 -> fun "blend" [s,c2,c1]  -- (as scripts write it: c2 at s = 0)
     InvertRGB c   -> fun "invert" [c]
     AddF x y -> binop "+" x y
     SubF x y -> binop "-" x y

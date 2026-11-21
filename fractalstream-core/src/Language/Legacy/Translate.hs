@@ -617,8 +617,8 @@ translateT isReal title src body = do
   -- and back again at t = 1
   let common =
         [ Line "@common"
-        , Line (shadeFn ++ "(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), dark c, c) ...")
-        , Line "  else blend(-sin(2 pi t), light c, c)"
+        , Line (shadeFn ++ "(c, t) := if sin(2 pi t) > 0 then blend(sin(2 pi t), c, dark c) ...")
+        , Line "  else blend(-sin(2 pi t), c, light c)"
         , Line "" ]
         ++ intercalate [Line ""] (scriptDef : probeDefs)
       -- the old program's tolerance for `vanishes`, `=`, and `stops`

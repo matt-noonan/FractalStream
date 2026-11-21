@@ -64,7 +64,7 @@ symbolNames = greek ++ language ++ other
       , ("R", "ℝ"), ("C", "ℂ"), ("Z", "ℤ"), ("ldots", "…")
       -- (Ĉ, the Riemann sphere, and ℙ, for ℙ¹)
       , ("Cinf", "Ĉ"), ("Chat", "Ĉ"), ("P", "ℙ")
-      -- (ⅆf/ⅆz is diff(z, f), and ∂f/∂z, below, partial(z, f))
+      -- (ⅆf/ⅆz is diff(f, z), and ∂f/∂z, below, partial(f, z))
       , ("d", "ⅆ") ]
     other =
       [ ("N", "ℕ"), ("Q", "ℚ"), ("infty", "∞"), ("partial", "∂")

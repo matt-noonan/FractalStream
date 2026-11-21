@@ -33,7 +33,7 @@ steps : Z := 20
 @common
 f(z) := z^2 + C
 define shade(c):
-  color <- blend(0.5, light c, dark c)
+  color <- blend(0.5, dark c, light c)
 
 @viewer "Julia set" pixelSize=1/150
 iterate z -> f(z) until z escapes  # the usual

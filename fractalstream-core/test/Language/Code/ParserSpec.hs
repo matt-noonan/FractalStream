@@ -307,7 +307,7 @@ x <- f(1)|] `shouldSatisfy` either ("No function named f" `isInfixOf`) (const Fa
   describe "when differentiating user-defined functions" $ do
 
     it "differentiates calls inside diff" $
-      runWithX (Scalar RealType 2) "f(t) := t^3\nx <- diff(x, f(x))" `shouldBe` Right 12.0
+      runWithX (Scalar RealType 2) "f(t) := t^3\nx <- diff(f(x), x)" `shouldBe` Right 12.0
 
     it "desugars f' to a derivative, at any numeric argument" $ do
       runWithX (Scalar RealType 0) "f(t) := t^3\nx <- f'(2)" `shouldBe` Right 12.0
@@ -326,17 +326,17 @@ g(s) := f(s) + 2 s
 x <- g'(1)|] `shouldBe` Right 5.0
 
     it "differentiates derivatives inside diff" $
-      runWithX (Scalar RealType 2) "f(t) := t^3\nx <- diff(x, f'(x))" `shouldBe` Right 12.0
+      runWithX (Scalar RealType 2) "f(t) := t^3\nx <- diff(f'(x), x)" `shouldBe` Right 12.0
 
     it "differentiates through local bindings by the chain rule" $ do
       -- f'(2x) = 12 x^2, so its derivative at x = 1 is 24
-      runWithX (Scalar RealType 1) "f(t) := t^3\nx <- diff(x, f'(2x))" `shouldBe` Right 24.0
-      runWithX (Scalar RealType 1) "f(t) := t^3\nx <- diff(x, 1 + x f'(2x))" `shouldBe` Right 36.0
-      runWithX (Scalar RealType 2) "f(t) := t^3\ng(s) := f(s + 1)\nx <- diff(x, g(x x))" `shouldBe` Right 300.0
+      runWithX (Scalar RealType 1) "f(t) := t^3\nx <- diff(f'(2x), x)" `shouldBe` Right 24.0
+      runWithX (Scalar RealType 1) "f(t) := t^3\nx <- diff(1 + x f'(2x), x)" `shouldBe` Right 36.0
+      runWithX (Scalar RealType 2) "f(t) := t^3\ng(s) := f(s + 1)\nx <- diff(g(x x), x)" `shouldBe` Right 300.0
 
     it "suggests diff for f' of functions of several variables" $
       runWithX (Scalar RealType 0) "f(a, b) := a b\nx <- f'(1, 2)" `shouldSatisfy`
-        either ("use diff instead, like diff(a, f(a, b))" `isInfixOf`) (const False)
+        either ("use diff instead, like diff(f(a, b), a)" `isInfixOf`) (const False)
 
   describe "when defining and running code" $ do
 
@@ -397,9 +397,9 @@ if true:
     it "infers parameter types from the arguments" $
       runWithXYC (Scalar RealType 0) (Scalar RealType 0) [r|
 define paint(c):
-  color <- blend(0.5, light c, dark c)
+  color <- blend(0.5, dark c, light c)
 run paint(red)|] `shouldBe` runWithXYC (Scalar RealType 0) (Scalar RealType 0)
-        "color <- blend(0.5, light red, dark red)"
+        "color <- blend(0.5, dark red, light red)"
 
     it "reports code that isn't defined" $ do
       failsWith "run q" "No code named q"
@@ -601,7 +601,7 @@ x <- d|] `shouldBe` Right 3
 
     it "follow a variable back through a loop" $
       -- z_3 = (c^2 + c)^2 + c, so dz_3/dc = 2 (c^2 + c) (2 c + 1) + 1 = 4 at c = 0.5
-      (loop3 ++ "x <- diff(c, z)") `gives` 4
+      (loop3 ++ "x <- diff(z, c)") `gives` 4
 
     it "follow tuples, through functions that give pairs (as SaddleDrop's Hénon step)" $
       unlines [ "step(p, q, c) := (p^2 + c - 0.3 q, p)"
@@ -613,28 +613,28 @@ x <- d|] `shouldBe` Right 3
               , "  du, dv <- 2 u du - 0.3 dv, du"
               , "  u, v <- step(u, v, 0.4)"
               , "  k <- k + 1"
-              , "x <- diff(w, u) - du" ] `near` 0
+              , "x <- diff(u, w) - du" ] `near` 0
 
     it "follow the branch taken" $
-      "c := 2.0\ny := 0.0\nif c > 1:\n  y <- c^3\nelse:\n  y <- c\nx <- diff(c, y)" `gives` 12
+      "c := 2.0\ny := 0.0\nif c > 1:\n  y <- c^3\nelse:\n  y <- c\nx <- diff(y, c)" `gives` 12
 
     it "nest, for higher derivatives, or take an order" $ do
-      "c := 2.0\ny := c^3\nx <- diff(c, diff(c, y))" `gives` 12
-      "c := 2.0\ny := c^3\nx <- diff(c, y, 2)" `gives` 12
+      "c := 2.0\ny := c^3\nx <- diff(diff(y, c), c)" `gives` 12
+      "c := 2.0\ny := c^3\nx <- diff(y, c, 2)" `gives` 12
       -- d^2 z_3/dc^2 = 2 (2 c + 1)^2 + 4 (c^2 + c) = 11 at c = 0.5
-      (loop3 ++ "x <- diff(c, z, 2)") `gives` 11
+      (loop3 ++ "x <- diff(z, c, 2)") `gives` 11
 
     it "work in Newton's method, with the variable changing between passes" $
       unlines [ "w := 1.0"
               , "fw := 1.0"
               , "repeat up to 30 times:"
               , "  fw <- w^2 - 2"
-              , "  w <- w - fw / diff(w, fw)"
+              , "  w <- w - fw / diff(fw, w)"
               , "until |fw| < 0.0000000001"
               , "x <- w" ] `near` sqrt 2
 
     it "follow |u| with respect to a real variable" $
-      "t := 3.0\ny := |t - 5|\nx <- diff(t, y)" `gives` (-1)
+      "t := 3.0\ny := |t - 5|\nx <- diff(y, t)" `gives` (-1)
 
     it "can be written as fractions: ⅆf/ⅆz for diff, ∂f/∂z for partial" $ do
       "c := 2.0\ny := c^3\nx <- ⅆy/ⅆc" `gives` 12
@@ -657,17 +657,17 @@ x <- d|] `shouldBe` Right 3
       failsWith "a := 2.0\nb := 3.0\nf := a^2 b^3\nx <- ⅆ²f/ⅆaⅆb²" "isn't the sum of the orders on the bottom (3)"
 
     it "leave partial to the expression alone" $ do
-      "c := 2.0\ny := c^3\nx <- partial(c, y)" `gives` 0
-      "c := 2.0\nx <- partial(c, c^3)" `gives` 12
-      "c := 2.0\nx <- partial(c, c^3, 2)" `gives` 12
+      "c := 2.0\ny := c^3\nx <- partial(y, c)" `gives` 0
+      "c := 2.0\nx <- partial(c^3, c)" `gives` 12
+      "c := 2.0\nx <- partial(c^3, c, 2)" `gives` 12
 
     it "say when the variable changes in between" $ do
-      failsWith "c := 2.0\ny := c^2\nc <- 3\nx <- diff(c, y)" "`y` was worked out from an earlier value of `c`"
+      failsWith "c := 2.0\ny := c^2\nc <- 3\nx <- diff(y, c)" "`y` was worked out from an earlier value of `c`"
       failsWith "w := 2.0\nw <- w^2\nx <- diff(w, w)" "`w` changes before this, from its own value"
 
     it "say what they can't follow, rather than give zero" $ do
-      failsWith "c := 2.0\nxs := [c, c^2]\ny := xs @ 2\nx <- diff(c, y)" "through an item of a list or table"
-      failsWith "c := 2.5\ny := mod(c, 1.0)\nx <- diff(c, y)" "which jumps"
+      failsWith "c := 2.0\nxs := [c, c^2]\ny := xs @ 2\nx <- diff(y, c)" "through an item of a list or table"
+      failsWith "c := 2.5\ny := mod(c, 1.0)\nx <- diff(y, c)" "which jumps"
 
   describe "functions given as arguments" $ do
 
@@ -779,7 +779,7 @@ x <- d|] `shouldBe` Right 3
       failsWith "w : Ĉ := 1\ny := |w|" "use `affine(1, w)`"
       failsWith "w : Ĉ := 1\nx <- w" "is a point of the Riemann sphere"
       failsWith "w : Ĉ := 1\ny := w < 2" "`w` is a point of the Riemann sphere"
-      failsWith "w : Ĉ := 2\ny := partial(w, w^2)" "depends on the chart"
+      failsWith "w : Ĉ := 2\ny := partial(w^2, w)" "depends on the chart"
       failsWith "w : Ĉ := 2\nn := 2\ny : Ĉ := w^n" "a whole number for its exponent"
 
     it "of ℙ¹ have no arithmetic" $

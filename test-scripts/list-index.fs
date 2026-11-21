@@ -13,7 +13,7 @@ script: |
   d1 : R := |z - chosen|
   d2 : R := |z - chosen2|
   closest : R := if d1 < d2 then d1 else d2
-  color <- blend(exp(-closest * 8), white, black)
+  color <- blend(exp(-closest * 8), black, white)
 
 wx-properties:
   viewers:

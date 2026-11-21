@@ -95,7 +95,7 @@ script: |
       repeat up to 64 times:
         w <- f(w)
       until w = z
-      color <- if stuck then black else blend(0.5, rainbow(iterations / 8), white)
+      color <- if stuck then black else blend(0.5, white, rainbow(iterations / 8))
     else:
       color <- black
 
@@ -111,7 +111,7 @@ script: |
       repeat up to 64 times:
         w <- g(w)
       until w = z
-      color <- if stuck then black else blend(0.5, rainbow(iterations / 8), white)
+      color <- if stuck then black else blend(0.5, white, rainbow(iterations / 8))
     else:
       color <- black
 

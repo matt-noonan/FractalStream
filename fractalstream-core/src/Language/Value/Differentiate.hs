@@ -1,4 +1,4 @@
--- | Symbolic differentiation of surface expressions: @diff(x, e)@ is
+-- | Symbolic differentiation of surface expressions: @diff(e, x)@ is
 -- replaced (during typing) by the derivative of @e@ with respect to the
 -- variable @x@, which is then typed and elaborated like any other
 -- expression.

@@ -138,7 +138,7 @@ builtinColorizers =
       , "  else:"
       , "    color <- " ++ paletteExpr
       , "    if shade:"
-      , "      color <- cycle(iterations / period, dark color, light color)"
+      , "      color <- cycle(iterations / period, light color, dark color)"
       ]
   , builtin $ unlines $
       [ "@colorizer \"Smooth\" description=\"Continuous color by escape time, \
@@ -179,7 +179,7 @@ builtinColorizers =
       , "    s := iterations"
       , "    if smooth and z escaped:"
       , "      s <- " ++ smoothIterations
-      , "    color <- if im z > 0 then cycle(s / period, upper1, upper2) else cycle(s / period, lower1, lower2)"
+      , "    color <- if im z > 0 then cycle(s / period, upper2, upper1) else cycle(s / period, lower2, lower1)"
       ]
   , builtin $ unlines
       [ "@colorizer \"Autocolor\" description=\"Gives each point its argument ends up \
@@ -203,7 +203,7 @@ builtinColorizers =
       , "    else:"
       , "      color <- nearest_autocolor(0, z)"
       , "    if shade:"
-      , "      color <- cycle(iterations / period, dark color, light color)"
+      , "      color <- cycle(iterations / period, light color, dark color)"
       ]
   , builtin $ unlines $
       [ "@colorizer \"Glow\" description=\"Blends between two colors by how close \
@@ -217,7 +217,7 @@ builtinColorizers =
       , "  if stuck:"
       , "    color <- gives_up"
       , "  else:"
-      , "    color <- blend ((iterations / max_iters)^brightness, near, far)"
+      , "    color <- blend ((iterations / max_iters)^brightness, far, near)"
       ]
   ]
 
@@ -228,7 +228,7 @@ palettes =
   [ (name, map toLower name ++ "(t)")
   | name <- ["Rainbow", "Arenberg", "Romao", "Bamo", "Broco", "Corko", "Viko"
             , "Fire", "Ice", "Ocean", "Forest", "Rose", "Wheat"] ]
-  ++ [ ("Two colors", "cycle(t, color1, color2)") ]
+  ++ [ ("Two colors", "cycle(t, color2, color1)") ]
 
 paletteDecl, givesUpDecl, degreeDecl, smoothIterations, paletteExpr :: String
 paletteDecl = "palette : Z as \"Palette:\" choice { "

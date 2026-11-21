@@ -42,6 +42,6 @@ let `[internal] vanishing radius` = vanishing_radius in:
                             let `s` = (([internal] iteration count + 1):R - (log(log(((|z| ^ 2:R) / 2:R))) / log(2:R))) in:
                               block:
                                 set `s` := (cos(((s * 3.141592653589793) / 10:R)) ^ 2:R)
-                                set `color` := blend(s, c1, c2)
+                                set `color` := blend(s, c2, c1)
 
 

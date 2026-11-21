@@ -35,68 +35,68 @@ spec = do
           _ -> actual `shouldBe` Right expected
 
     it "can differentiate constants" $ do
-      parseR 2 "diff(x, 42)" `shouldBe` Right 0
-      parseR 1 "diff(x, pi)" `shouldBe` Right 0
+      parseR 2 "diff(42, x)" `shouldBe` Right 0
+      parseR 1 "diff(pi, x)" `shouldBe` Right 0
 
     it "can differentiate algebraic expressions" $ do
       parseR 3 "diff(x, x)" `shouldBe` Right 1
-      parseR 1 "diff(x, 3x + 1)" `shouldBe` Right 3
-      parseR 2 "diff(x, x * x)" `shouldBe` Right 4
-      parseR 1 "diff(x, x^2)" `shouldBe` Right 2
-      parseR 1 "diff(x, 1/x^3)" `shouldBe` Right (-3)
+      parseR 1 "diff(3x + 1, x)" `shouldBe` Right 3
+      parseR 2 "diff(x * x, x)" `shouldBe` Right 4
+      parseR 1 "diff(x^2, x)" `shouldBe` Right 2
+      parseR 1 "diff(1/x^3, x)" `shouldBe` Right (-3)
 
     it "can differentiate transcendental functions" $ do
-      parseR pi "diff(x, sin(x))" `shouldBe` Right (-1)
-      parseR 0 "diff(x, exp(x))" `shouldBe` Right 1
-      parseR 1 "diff(x, log(x))" `shouldBe` Right 1
+      parseR pi "diff(sin(x), x)" `shouldBe` Right (-1)
+      parseR 0 "diff(exp(x), x)" `shouldBe` Right 1
+      parseR 1 "diff(log(x), x)" `shouldBe` Right 1
 
     it "can differentiate inverse trigonometric functions" $ do
-      parseR 0.5 "diff(x, arcsin(x))" `shouldBe` Right (1 / sqrt 0.75)
-      parseR 0.5 "diff(x, arccos(x))" `shouldBe` Right (-1 / sqrt 0.75)
-      parseR 1 "diff(x, arctan(x))" `shouldBe` Right 0.5
-      parseR 1 "diff(x, arcsinh(x))" `shouldBe` Right (1 / sqrt 2)
-      parseR 2 "diff(x, arccosh(x))" `shouldBe` Right (1 / sqrt 3)
-      parseR 0.5 "diff(x, arctanh(x))" `shouldBe` Right (1 / 0.75)
+      parseR 0.5 "diff(arcsin(x), x)" `shouldBe` Right (1 / sqrt 0.75)
+      parseR 0.5 "diff(arccos(x), x)" `shouldBe` Right (-1 / sqrt 0.75)
+      parseR 1 "diff(arctan(x), x)" `shouldBe` Right 0.5
+      parseR 1 "diff(arcsinh(x), x)" `shouldBe` Right (1 / sqrt 2)
+      parseR 2 "diff(arccosh(x), x)" `shouldBe` Right (1 / sqrt 3)
+      parseR 0.5 "diff(arctanh(x), x)" `shouldBe` Right (1 / 0.75)
 
     it "treats parts that don't depend on the variable as constants" $
-      parseR 3 "diff(x, x |2 - 7|)" `shouldBe` Right 5
+      parseR 3 "diff(x |2 - 7|, x)" `shouldBe` Right 5
 
     it "can differentiate powers with variable exponents" $
-      parseR 2 "diff(x, x^x)" `shouldBe` Right (4 * (log 2 + 1))
+      parseR 2 "diff(x^x, x)" `shouldBe` Right (4 * (log 2 + 1))
 
     it "can apply the chain rule correctly" $ do
-      parseR 4 "diff(x, 8 * log(sqrt x))" `shouldBe` Right 1
-      parseC 2 "diff(z, exp(z^2) / e^4)" `shouldBeNear` (4 :+ 0)
-      parseC 2 "diff(z, log(z^2))" `shouldBe` Right (1.0 :+ 0.0)
+      parseR 4 "diff(8 * log(sqrt x), x)" `shouldBe` Right 1
+      parseC 2 "diff(exp(z^2) / e^4, z)" `shouldBeNear` (4 :+ 0)
+      parseC 2 "diff(log(z^2), z)" `shouldBe` Right (1.0 :+ 0.0)
 
     it "throws errors when trying to differentiate non-numeric variables" $ do
-      parseR 0 "diff(x, 2x+1 < 1)" `shouldBe` Left (unlines
-        ["  diff(x, 2x+1 < 1)"
-        ,"          ^^^^^^^^"
+      parseR 0 "diff(2x+1 < 1, x)" `shouldBe` Left (unlines
+        ["  diff(2x+1 < 1, x)"
+        ,"       ^^^^^^^^"
         ,""
         ,"I expected a real number here, but the result of a comparison is a truth value."])
 
     it "differentiates |x|, re, im and conj with respect to a real variable" $ do
-      parseR 3 "diff(x, |x|)" `shouldBe` Right 1
-      parseR (-2) "diff(x, |x|)" `shouldBe` Right (-1)
+      parseR 3 "diff(|x|, x)" `shouldBe` Right 1
+      parseR (-2) "diff(|x|, x)" `shouldBe` Right (-1)
 
     it "throws errors when trying to differentiate non-differentiable functions" $ do
-      parseC 1 "diff(z, im z)" `shouldBe` Left (unlines
-        ["  diff(z, im z)"
-        ,"          ^^^^"
+      parseC 1 "diff(im z, z)" `shouldBe` Left (unlines
+        ["  diff(im z, z)"
+        ,"       ^^^^"
         ,""
         ,"`im` isn't holomorphic, so it has no derivative with respect to the complex variable `z`."])
-      parseC 1 "diff(z, |z|)" `shouldSatisfy` either ("|·| isn't holomorphic" `isInfixOf`) (const False)
-      parseR 2.5 "diff(x, floor(x))" `shouldSatisfy` either ("which jumps" `isInfixOf`) (const False)
+      parseC 1 "diff(|z|, z)" `shouldSatisfy` either ("|·| isn't holomorphic" `isInfixOf`) (const False)
+      parseR 2.5 "diff(floor(x), x)" `shouldSatisfy` either ("which jumps" `isInfixOf`) (const False)
 
-    it "throws errors when first argument is not a variable" $ do
-      parseR 0 "diff(2, x)" `shouldBe` Left (unlines
-        ["  diff(2, x)"
-        ,"       ^"
+    it "throws errors when the variable isn't a variable" $ do
+      parseR 0 "diff(x, 2)" `shouldBe` Left (unlines
+        ["  diff(x, 2)"
+        ,"          ^"
         ,""
-        ,"First argument of the derivative must be a real or complex variable."])
-      parseC 1 "diff(z^2, z)" `shouldBe` Left (unlines
-        ["  diff(z^2, z)"
-        ,"       ^^^"
+        ,"A derivative must be taken with respect to a real or complex variable."])
+      parseC 1 "diff(z, z^2)" `shouldBe` Left (unlines
+        ["  diff(z, z^2)"
+        ,"          ^^^"
         ,""
-        ,"First argument of the derivative must be a real or complex variable."])
+        ,"A derivative must be taken with respect to a real or complex variable."])

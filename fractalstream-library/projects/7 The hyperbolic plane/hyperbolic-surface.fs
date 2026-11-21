@@ -34,13 +34,13 @@ script: |
     # (the hue by direction from the polygon's center; bands by distance)
     dist := 2 atanh(|z|)
     color <- rainbow(arg z / (2 pi))
-    color <- blend(0.25 + 0.25 cos(6 dist), white, color)
+    color <- blend(0.25 + 0.25 cos(6 dist), color, white)
     if show_edges:
       # (a pixel's hyperbolic size, and the edge colored by its pair of sides)
       w := 2 pixel_size / (1 - |z|^2)
       pair := mod(side_index - 1, n // 2)
       edge := rainbow(pair / (n // 2))
-      color <- blend(clamp01((1.5 w - side_distance) / w), dark edge, color)
+      color <- blend(clamp01((1.5 w - side_distance) / w), color, dark edge)
 
   # The side pairings: the 4g-gon's sides are at distance d from its
   # center, cosh d = cot(pi / 4g); the pairing of side k (toward e^(i t))

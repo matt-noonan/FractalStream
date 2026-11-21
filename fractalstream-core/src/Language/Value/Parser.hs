@@ -607,10 +607,13 @@ valueAndArithGrammar funs own = mdo
             _ -> Nothing)
 
     , node (EUn OpInvert <$> (builtinWord "invert" *> atomOrFunAp))
+    -- `blend(t, c1, c2)` is c1 at t = 0 and c2 at t = 1: the surface
+    -- 'OpBlend' (like 'Language.Value.Blend') takes t of its first color
     , node (
-        EColor3 OpBlend <$> (builtinWord "blend" *> (token OpenParen *> argument))
-                <*> (token Comma *> argument)
-                <*> (token Comma *> argument <* token CloseParen))
+        (\t c1 c2 -> EColor3 OpBlend t c2 c1)
+          <$> (builtinWord "blend" *> (token OpenParen *> argument))
+          <*> (token Comma *> argument)
+          <*> (token Comma *> argument <* token CloseParen))
     , node (
         EColor3 OpRGB <$> (builtinWord "rgb" *> (token OpenParen *> argument))
               <*> (token Comma *> argument)
@@ -674,14 +677,15 @@ valueAndArithGrammar funs own = mdo
              <*> (token Comma *> toplevel <* token CloseParen))
     ]
 
-  -- `diff(x, e)`, or `diff(x, e, n)` for the n-th derivative (the same
-  -- as n nested diffs), and `partial` likewise
+  -- `diff(e, x)`, the derivative of e with respect to x, or `diff(e, x, n)`
+  -- for the n-th derivative (the same as n nested diffs), and `partial`
+  -- likewise
   diff <- ruleChoice
     [ derivative EDiff (void (token DiffKeyword))
     , derivative EPartial (builtinWord "partial")
     ]
   let derivative mk word = withSourceRange $
-        (\x e n sr -> iterate (Syn sr . mk x) e !! fromMaybe 1 n)
+        (\e x n sr -> iterate (Syn sr . mk x) e !! fromMaybe 1 n)
           <$> (word *> token OpenParen *> pairItem)
           <*> (token Comma *> pairItem)
           <*> optional (token Comma *> derivativeOrder)
@@ -690,9 +694,9 @@ valueAndArithGrammar funs own = mdo
     NumberI n | n >= 1 -> Just (fromIntegral n)
     _ -> Nothing
 
-  -- `∂f/∂z` for `partial(z, f)` and `ⅆf/ⅆz` for `diff(z, f)`; with
+  -- `∂f/∂z` for `partial(f, z)` and `ⅆf/ⅆz` for `diff(f, z)`; with
   -- orders, `∂²f/∂z²`, and with several variables, `∂³f/∂x∂y²` (that is,
-  -- `partial(x, partial(y, f, 2))`), the orders on the bottom adding up to
+  -- `partial(partial(f, y, 2), x)`), the orders on the bottom adding up to
   -- the order on top. A fraction like this is never the base of a power
   -- (see `power`): `(∂f/∂z)^2` is its square, so that a superscript after
   -- a variable on the bottom is always that variable's order.

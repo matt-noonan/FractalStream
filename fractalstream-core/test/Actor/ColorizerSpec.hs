@@ -275,7 +275,7 @@ inside : Color as "Interior color" := black
 define colorize(v):
   if v escaped:
     m := iterations + 1 - log (log (|v|^2) / (2 log escape_radius)) / log 2
-    color <- blend (cos (pi m / period)^2, dark blue, light yellow)
+    color <- blend (cos (pi m / period)^2, light yellow, dark blue)
   else:
     color <- inside
 |]

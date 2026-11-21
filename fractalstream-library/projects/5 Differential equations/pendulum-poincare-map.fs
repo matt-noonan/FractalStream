@@ -35,7 +35,7 @@ script: |
   # up on), shaded by how long that took.
   define color_basin:
     color ⟵ rainbow(θ / (12 π))
-    color ⟵ if stuck then black else cycle(iterations / 20, dark color, light color)
+    color ⟵ if stuck then black else cycle(iterations / 20, light color, dark color)
 
   @viewer "Parameter plane" xvar=γ yvar=𝝎_0 center=(0.5, 1.5) pixelSize=1/200
   # (starting from the pendulum at rest, hanging down)

@@ -19,7 +19,7 @@ script: |
     if z escaped:
       # continuous ("smooth") iteration count
       m := iterations + 1 - log (log (|z|^2) / (2 log escape_radius)) / log 2
-      color <- blend (cos (pi m / period)^2, dark blue, light yellow)
+      color <- blend (cos (pi m / period)^2, light yellow, dark blue)
     else:
       color <- inside
 

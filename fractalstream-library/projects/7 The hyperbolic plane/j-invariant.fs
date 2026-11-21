@@ -47,11 +47,11 @@ script: |
   color <- rainbow(arg j / (2 pi))
   if show_bands and |j| > 0:
     band := mod(log(|j|) / log 2, 1.0)
-    color <- blend(0.35 band, black, color)
+    color <- blend(0.35 band, color, black)
   # (a pixel's size, in the hyperbolic plane: its width over im z)
   if show_edges:
     w := pixel_size / im(z)
-    color <- blend(clamp01((1.5 w - side_distance) / w), black, color)
+    color <- blend(clamp01((1.5 w - side_distance) / w), color, black)
 
   @tool "Mark" for="j-invariant" shortcut=m
   j_here : C as "j =" := 0

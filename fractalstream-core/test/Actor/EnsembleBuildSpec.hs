@@ -1518,7 +1518,7 @@ define shade(c):
   if stuck:
     color <- black
   else:
-    color <- blend(iterations / 20, light c, dark c)
+    color <- blend(iterations / 20, dark c, light c)
 define trace:
   erase
   repeat up to 10 times:

@@ -1,4 +1,4 @@
--- | Derivatives through statements: @diff(x, v)@, with @v@ worked out
+-- | Derivatives through statements: @diff(v, x)@, with @v@ worked out
 -- from @x@ by earlier statements (loops, branches and all), is the
 -- derivative of @v@'s value with respect to @x@'s.
 --
@@ -12,9 +12,9 @@
 -- > d z/d c <- 2 z (d z/d c) + 1
 -- > z <- z^2 + c
 --
--- and @diff(c, z)@ becomes @d z/d c@. Only the variables some @diff@
+-- and @diff(z, c)@ becomes @d z/d c@. Only the variables some @diff@
 -- needs get companions, so code without one is unchanged. A second
--- derivative, @diff(x, diff(x, v))@ (or @diff(x, v, 2)@), follows the
+-- derivative, @diff(diff(v, x), x)@ (or @diff(v, x, 2)@), follows the
 -- companions the inner one made, in a second round.
 --
 -- What it follows, and doesn't:
@@ -29,7 +29,7 @@
 --   @mod@, or, with respect to a complex variable, @|z|@, @re@, @conj@)
 --   is an error saying so (see "Language.Value.Differentiate").
 --
--- @partial(x, e)@ differentiates @e@ alone, every other variable a
+-- @partial(e, x)@ differentiates @e@ alone, every other variable a
 -- constant, and is left for typing, as is the @diff@ that @f'(z)@ expands
 -- to.
 module Language.Code.Derivatives

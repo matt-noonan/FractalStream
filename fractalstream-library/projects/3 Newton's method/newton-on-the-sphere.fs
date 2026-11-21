@@ -16,7 +16,7 @@ script: |
       color ⟵ purple
     else:
       color ⟵ green
-    color <- cycle(iterations / 20, dark color, light color)
+    color <- cycle(iterations / 20, light color, dark color)
 
   @tool "Trace" for="Newton's method on the sphere" shortcut=t
   on deactivated:

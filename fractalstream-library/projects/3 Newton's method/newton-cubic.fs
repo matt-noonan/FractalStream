@@ -15,7 +15,7 @@ script: |
     z <- newton(z)
   if z = lastZ:
     color <- rainbow(arg z / (2π))
-    color <- cycle(iterations / 20, dark color, light color)
+    color <- cycle(iterations / 20, light color, dark color)
   else:
     color <- black
 

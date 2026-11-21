@@ -14,7 +14,7 @@ script: |
       closest <- d
   # Encode length in brightness of far-field to verify count is correct
   bg : R := n / 20
-  color <- blend(exp(-closest * 6) + bg, white, black)
+  color <- blend(exp(-closest * 6) + bg, black, white)
 
 wx-properties:
   viewers:

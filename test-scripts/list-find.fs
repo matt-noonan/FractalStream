@@ -7,7 +7,7 @@ script: |
   @viewer "List Find" var=z pixelSize="1/64"
   found : R := find(myList, x -> x > threshold, -99)
   d : R := |re z - found|
-  color <- if found = -99 then grey else blend(exp(-d * 8), white, black)
+  color <- if found = -99 then grey else blend(exp(-d * 8), black, white)
 
 wx-properties:
   viewers:
