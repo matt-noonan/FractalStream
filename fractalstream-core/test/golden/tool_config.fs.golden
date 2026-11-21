@@ -25,7 +25,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                     set `color` := Color 0 0 0
                 else:
                   block:
-                    set `color` := blend((([internal] iteration count:R / max_iters:R) ^ p), blend(0.333, Color 0 0 0, Color 0 0 255), Color 255 255 255)
+                    set `color` := blend((([internal] iteration count:R / max_iters:R) ^ p), let [internal] [std] dark.c #0 = Color 0 0 255 in blend(0.333, Color 0 0 0, [internal] [std] dark.c #0), Color 255 255 255)
 
 
 --- tool Demo

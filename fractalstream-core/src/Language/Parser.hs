@@ -44,6 +44,7 @@ import Language.Parser.Tokenizer
 import qualified Language.Value.Builtins as B
 import qualified Data.Map as Map
 import Language.Parser.SourceRange
+import Language.Stdlib (isStdlibFunction)
 
 ------------------------------------------------------
 -- Versions of types and combinators from Text.Earley,
@@ -255,19 +256,17 @@ builtin = \case
     | Just what <- lookup n described -> Just (n, "a built-in function (" ++ what ++ ")", True)
     | n `Map.member` B.realFunctions || n `Map.member` B.commonFunctions
       || n `Map.member` B.complexFunctions || n `Map.member` B.roundingFunctions
-      || n `Map.member` B.wheels || n `elem` others -> Just (n, "a built-in function", True)
+      || n `elem` others -> Just (n, "a built-in function", True)
+    | isStdlibFunction n -> Just (n, "a standard library function", True)
     | n `Map.member` B.colors -> Just (n, "a color's name", True)
     | n == "infinity" -> Just (n, "a built-in value (the point at infinity)", True)
   t | Just n <- lookup t keywordNames -> Just (n, "a built-in function", False)
   _ -> Nothing
   where
     described =
-      [ ("bar", "the complex conjugate"), ("conj", "the complex conjugate")
-      , ("Bar", "the complex conjugate"), ("Conj", "the complex conjugate")
-      , ("re", "the real part"), ("Re", "the real part")
-      , ("im", "the imaginary part"), ("Im", "the imaginary part")
-      , ("arg", "the argument"), ("Arg", "the argument") ]
-    others = [ "mod", "rgb", "hsv", "hsl", "blend", "cycle", "dark", "light", "invert"
+      [ ("conj", "the complex conjugate"), ("re", "the real part")
+      , ("im", "the imaginary part"), ("arg", "the argument") ]
+    others = [ "mod", "rgb", "hsv", "hsl", "blend", "invert"
              , "autocolor", "nearest_autocolor", "get_autocolor", "point", "table_size", "filled"
              , "table_cell", "table_point", "in", "pixels", "partial", "chart", "affine", "chordal" ]
     keywordNames = [ (t, n) | (n, t) <- Map.toList wordlikeTokens

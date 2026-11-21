@@ -372,9 +372,6 @@ synth env (Syn sr node) = case node of
     | Just (ComplexFun resultTy _) <- Map.lookup f complexFunctions -> do
         x' <- check env ComplexT x
         done (typeToFS resultTy) (EApp f x')
-    | Map.member f wheels -> do
-        x' <- check env RealT x
-        done ColorT (EApp f x')
     | otherwise -> throwError (Internal (MissingName sr f))
 
   EColor3 op x y z -> do
@@ -770,8 +767,6 @@ synthUn env sr op x = case op of
   -- rewritten away.
   OpPrevious -> advise sr "`previous` can only be used inside a loop."
 
-  OpDark   -> check env ColorT x >>= done ColorT
-  OpLight  -> check env ColorT x >>= done ColorT
   OpInvert -> check env ColorT x >>= done ColorT
 
   where

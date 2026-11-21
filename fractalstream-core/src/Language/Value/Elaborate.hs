@@ -19,7 +19,6 @@ import Language.Value.Builtins
 import qualified GHC.TypeNats as TN
 import Language.Typecheck
 import Language.Parser.SourceRange
-import Data.Color
 
 -- | Elaborate a typed expression at the given type, inserting an implicit
 -- conversion from the expression's own type if needed.
@@ -141,10 +140,6 @@ elabOwn t (Syn (sr, _) node) = case node of
       LTF <$> absValue x <*> variable sr internalVanishingRadius RealType
     OpStops -> inconsistent sr
     OpPrevious -> inconsistent sr
-    OpDark -> same sr t ColorType $
-      Blend (Const $ Scalar RealType 0.333) (Const $ Scalar ColorType black) <$> el t x
-    OpLight -> same sr t ColorType $
-      Blend (Const $ Scalar RealType 0.333) (Const $ Scalar ColorType white) <$> el t x
     OpInvert -> same sr t ColorType $ InvertRGB <$> el t x
 
   EApp f x
@@ -158,8 +153,6 @@ elabOwn t (Syn (sr, _) node) = case node of
         same sr t IntegerType $ makeF <$> el RealType x
     | Just (ComplexFun resultTy makeC) <- Map.lookup f complexFunctions ->
         same sr t resultTy $ makeC <$> el ComplexType x
-    | Just cs <- Map.lookup f wheels ->
-        same sr t ColorType $ wheel sr cs =<< el RealType x
     | otherwise -> inconsistent sr
 
   EColor3 op x y z -> same sr t ColorType $ case op of
@@ -167,7 +160,6 @@ elabOwn t (Syn (sr, _) node) = case node of
     OpRGB   -> RGB <$> el RealType x <*> el RealType y <*> el RealType z
     OpHSV   -> join (hueColor sr HSV <$> el RealType x <*> el RealType y <*> el RealType z)
     OpHSL   -> join (hueColor sr HSL <$> el RealType x <*> el RealType y <*> el RealType z)
-    OpCycle -> el RealType x >>= \x' -> cycleColors sr x' y z
 
   EAutocolor mode g p -> case integerLiteral g of
     Just n -> same sr t ColorType $ Autocolor mode (fromInteger n) <$> el ComplexType p
@@ -344,26 +336,8 @@ withBinder sr n _ k = case someSymbolVal n of
     Absent' pf -> recallIsAbsent pf (k name pf)
 
 ------------------------------------------------------
--- Color cycles and wheels
+-- Hue colors
 ------------------------------------------------------
-
-cycleColors :: forall env
-             . KnownEnvironment env
-            => SourceRange
-            -> Value '(env, 'RealT)
-            -> TExpr
-            -> TExpr
-            -> TC (Value '(env, 'ColorT))
-cycleColors sr t c1 c2 = do
-  let argName = Proxy @"#cycle-arg"
-  case lookupEnv' argName (envProxy (Proxy @env)) of
-    Found' {} -> throwError (internal $ AlreadyDefined sr (symbolVal argName))
-    Absent' pf -> recallIsAbsent pf $ do
-      let argVal = ModF t 1
-          argVar = Var argName RealType bindingEvidence
-          expr = ITE RealType (argVar `LTF` 0.5) (2 * argVar) (2 - 2 * argVar)
-      blend <- Blend expr <$> elaborate ColorType c1 <*> elaborate ColorType c2
-      pure (LocalLet argName RealType pf argVal ColorType blend)
 
 data HueModel = HSV | HSL
 
@@ -431,41 +405,3 @@ hueColor sr model h s w = do
               color = RGB (channel red') (channel green') (channel blue')
           pure (LocalLet argName tripleType pf (triple h s w) ColorType
                   (LocalLet partsName tripleType pf' parts ColorType color))
-
-wheel :: forall env
-       . KnownEnvironment env
-      => SourceRange
-      -> [Color]
-      -> Value '(env, 'RealT)
-      -> TC (Value '(env, 'ColorT))
-wheel sr cs t = do
-  let argName = Proxy @"#wheel-arg"
-  case lookupEnv' argName (envProxy (Proxy @env)) of
-    Found' {} -> throwError (internal $ AlreadyDefined sr (symbolVal argName))
-    Absent' pf -> recallIsAbsent pf $ do
-      let argVal = ModF t 1
-          argVar = Var argName RealType bindingEvidence
-          ifBelow = ITE tripleType . LTF argVar
-          expr = ifBelow 0.5
-                   (ifBelow 0.25
-                      (ifBelow 0.125 (triple 0) (triple 1))
-                      (ifBelow 0.375 (triple 2) (triple 3)))
-                   (ifBelow 0.75
-                      (ifBelow 0.625 (triple 4) (triple 5))
-                      (ifBelow 0.875 (triple 6) (triple 7)))
-          colorWheel = map (Const . Scalar ColorType) (cs ++ take 1 cs)
-
-          triple :: Int -> Value '( '("#wheel-arg", 'RealT) ': env, 'Pair 'RealT ('Pair 'ColorT 'ColorT))
-          triple i =
-            let lo = fromIntegral i * 0.125
-            in PairV tripleType (8 * (argVar - Const (Scalar RealType lo)))
-                     (PairV pairType (colorWheel !! (i + 1)) (colorWheel !! i))
-
-          tripleType = PairType RealType pairType
-          pairType = PairType ColorType ColorType
-
-          blend = Blend (ProjV1 tripleType expr)
-                        (ProjV1 pairType (ProjV2 tripleType expr))
-                        (ProjV2 pairType (ProjV2 tripleType expr))
-
-      pure (LocalLet argName RealType pf argVal ColorType blend)

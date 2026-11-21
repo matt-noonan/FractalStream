@@ -57,7 +57,7 @@ let `[internal] vanishing radius` = tol in:
                               no-op
                         if (|(z - lastZ)| < [internal] vanishing radius) then:
                           block:
-                            set `color` := blend((cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R), blend(0.333, Color 0 0 0, col), blend(0.333, Color 255 255 255, col))
+                            set `color` := blend((cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R), let [internal] [std] dark.c #0 = col in blend(0.333, Color 0 0 0, [internal] [std] dark.c #0), let [internal] [std] light.c #1 = col in blend(0.333, Color 255 255 255, [internal] [std] light.c #1))
                         else:
                           block:
                             set `color` := Color 0 0 0

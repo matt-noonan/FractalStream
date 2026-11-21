@@ -18,6 +18,12 @@ module Language.Value.Parser
   , TCError
   , ParseError
   , ppFullError
+  -- * The standard library
+  , stdlibDefinitions
+  , stdlibBlockFunctions
+  , stdlibInternalNames
+  , stdlibFuns
+  , expandStdlibCalls
   ) where
 
 import Language.Table (isTableElementType)
@@ -34,6 +40,8 @@ import Language.Parser
 import Language.Typecheck
 import Language.Parser.Tokenizer
 import Language.Parser.SourceRange
+import Language.Stdlib (isStdlibFunction, stdlibName, stdlibSource, fromStdlibName)
+import Language.Code.Typecheck.Functions (Funs, FunDef(..), expandCalls, rename)
 import Language.Value.Evaluator (evaluateInContext)
 
 ------------------------------------------------------
@@ -63,7 +71,7 @@ parseValue :: forall env ty. (KnownEnvironment env, KnownType ty)
            -> Either (Either ParseError TCError) (Value '(env, ty))
 parseValue input = do
   tv <- first Left (parseParsedValue input)
-  case atType tv typeProxy of TC x -> first Right x
+  case expandStdlibCalls tv >>= (`atType` typeProxy) of TC x -> first Right x
 
 parseParsedValue :: String -> Either ParseError ParsedValue
 parseParsedValue = parse valueGrammar . tokenize
@@ -78,6 +86,110 @@ parseInputValue input = case typeProxy @ty of
     "" -> pure (List ity [])
     _  -> parseValue ("[" ++ input ++ "]")
   _ -> parseValue input
+
+------------------------------------------------------
+-- The standard library
+------------------------------------------------------
+
+-- | The standard library's functions with a single expression for a body
+-- (see "Language.Stdlib"): each function's name (as scripts write it),
+-- parameters, and body. These are the ones a value outside any script's
+-- code can call (see 'expandStdlibCalls'); the standard library's
+-- functions with a body ('stdlibBlockFunctions') are only for scripts (see
+-- 'Language.Code.Parser.parseStdlib').
+--
+-- The standard library is parsed as no script's own: so where it uses
+-- one of its own names, it means its own definition. Its @internal_@
+-- names are the values no script can name ('stdlibInternalNames').
+--
+-- Each definition's body has no source ranges (which would point into the
+-- standard library's source, not the script's): so where a script calls
+-- one, anything said about its body is said about the call (see
+-- 'Language.Code.Typecheck.Functions.expandCalls').
+stdlibDefinitions :: [(String, [String], ParsedValue)]
+stdlibDefinitions = [ d | Right d <- stdlibItems ]
+
+-- | The names (as scripts write them) of the standard library's functions
+-- with a body, @function f(x):@.
+stdlibBlockFunctions :: Set String
+stdlibBlockFunctions = Set.fromList [ f | Left f <- stdlibItems ]
+
+-- | The standard library's definitions, in order: a function with a body
+-- (by its name), or one with a single expression for a body.
+stdlibItems :: [Either String (String, [String], ParsedValue)]
+stdlibItems = map item (topLevelLines (tokenizeWithIndentation stdlibSource))
+  where
+    item = \case
+      SRToken (Identifier "function") _ : SRToken (Identifier f) _ : _ -> Left f
+      line -> Right (definition line)
+
+    definition line = case break ((== ColonEquals) . baseToken) line of
+      (SRToken (Identifier f) _ : header, _ : body)
+        | Just params <- parameters (map baseToken header)
+        , Right e <- parse (valueGrammarWithFunctions Set.empty Set.empty) body
+        -> (f, params, rename internals (NoSourceRange <$ e))
+      _ -> error ("internal error: in the standard library, this isn't a definition \
+                  \like `f(x) := ...` or `function f(x):`: " ++ unwords (map (show . baseToken) line))
+
+    parameters = \case
+      OpenParen : rest -> go rest
+      _ -> Nothing
+      where go = \case
+              [Identifier p, CloseParen] -> Just [p]
+              Identifier p : Comma : rest -> (p :) <$> go rest
+              _ -> Nothing
+
+    internals = Map.fromList stdlibInternalNames
+
+-- | The lines at the top level of some code (each with any block that
+-- follows it, as a function's body follows its header).
+topLevelLines :: [SRToken] -> [[SRToken]]
+topLevelLines toks0 = go (0 :: Int) [] (unwrap toks0)
+  where
+    -- (the whole code is one indented block)
+    unwrap = \case
+      SRToken Indent _ : rest | not (null rest), baseToken (last rest) == Dedent -> init rest
+      toks -> toks
+    go depth line = \case
+      [] -> emit line []
+      t : rest -> case baseToken t of
+        Newline | depth == 0 -> emit line (go 0 [] rest)
+        Indent -> go (depth + 1) (t : line) rest
+        Dedent | depth == 1 -> emit (t : line) (go 0 [] rest)
+               | otherwise -> go (depth - 1) (t : line) rest
+        _ -> go depth (t : line) rest
+    emit line more = if null line then more else reverse line : more
+
+-- | The values no script can name, under the names the standard library
+-- uses for them.
+stdlibInternalNames :: [(String, String)]
+stdlibInternalNames =
+  [ ("internal_view_kind", viewKindName)
+  , ("internal_view_pixel_size", viewPixelSizeName) ]
+  ++ zip [ "internal_view_" ++ n | n <- ["a_re", "a_im", "c_re", "c_im"] ] viewMobiusNames
+
+-- | The standard library's functions, for expanding calls to them in a
+-- value that isn't part of a script's code (see 'expandStdlibCalls').
+stdlibFuns :: Funs
+stdlibFuns = foldl' define Map.empty stdlibDefinitions
+  where define funs (f, params, body) = Map.insert (stdlibName f) (FunDef params body funs) funs
+
+-- | Expand the calls to the standard library's functions in a value that
+-- isn't part of a script's code, like a configuration value's default.
+-- (Its functions with a body can't be called there, as nowhere but as the
+-- whole right-hand side of an assignment.)
+expandStdlibCalls :: ParsedValue -> TC ParsedValue
+expandStdlibCalls e = do
+  forM_ (calls e) $ \(sr, f) -> case fromStdlibName f of
+    Just n | Set.member n stdlibBlockFunctions -> advise sr (blockFunctionCallAdvice f)
+    _ -> pure ()
+  expandCalls stdlibFuns e
+  where
+    calls (Syn sr n) = here ++ foldMap calls n
+      where here = case n of
+              ECall f _ -> [(sr, f)]
+              EDerivCall f _ _ -> [(sr, f)]
+              _ -> []
 
 ------------------------------------------------------
 -- Type and Value grammars
@@ -417,8 +529,8 @@ valueAndArithGrammar funs own = mdo
         <*> (length <$> some (token Prime))
         <*> ((:[]) <$> atomOrFunAp))
     , node (EBin OpMod
-        <$> (builtinWord "mod" *> token OpenParen *> arith)
-        <*> (token Comma *> arith <* token CloseParen))
+        <$> (builtinWord "mod" *> token OpenParen *> argument)
+        <*> (token Comma *> argument <* token CloseParen))
     ]
 
   negated <- ruleChoice
@@ -440,8 +552,13 @@ valueAndArithGrammar funs own = mdo
 
   atomOrFunAp <- ruleChoice [funAp, atom]
 
+  -- (a standard library function, unless the script defines that name
+  -- itself, is the standard library's: see "Language.Stdlib")
   funName <- rule $
-    tokenMatch (\case { Identifier n | Set.member n funs -> Just n; _ -> Nothing })
+    tokenMatch (\case
+      Identifier n | Set.member n funs -> Just n
+                   | isStdlibFunction n, free n -> Just (stdlibName n)
+      _ -> Nothing)
 
   atom <- ruleChoice
     [ simpleAtom
@@ -489,38 +606,29 @@ valueAndArithGrammar funs own = mdo
             Identifier n | free n -> ("`" ++ n ++ "`",) <$> Map.lookup n colors
             _ -> Nothing)
 
-    , node (EUn OpDark <$> (builtinWord "dark" *> atom))
-    , node (EUn OpLight <$> (builtinWord "light" *> atom))
-    , node (EUn OpInvert <$> (builtinWord "invert" *> atom))
+    , node (EUn OpInvert <$> (builtinWord "invert" *> atomOrFunAp))
     , node (
-        EColor3 OpBlend <$> (builtinWord "blend" *> (token OpenParen *> arith))
-                <*> (token Comma *> atom)
-                <*> (token Comma *> atom <* token CloseParen))
+        EColor3 OpBlend <$> (builtinWord "blend" *> (token OpenParen *> argument))
+                <*> (token Comma *> argument)
+                <*> (token Comma *> argument <* token CloseParen))
     , node (
-        EColor3 OpCycle <$> (builtinWord "cycle" *> (token OpenParen *> arith))
-                <*> (token Comma *> atom)
-                <*> (token Comma *> atom <* token CloseParen))
+        EColor3 OpRGB <$> (builtinWord "rgb" *> (token OpenParen *> argument))
+              <*> (token Comma *> argument)
+              <*> (token Comma *> argument <* token CloseParen))
     , node (
-        EApp <$> tokenMatch (\case { Identifier n | Map.member n wheels, free n -> Just n; _ -> Nothing })
-             <*> (token OpenParen *> arith <* token CloseParen))
+        EColor3 OpHSV <$> (builtinWord "hsv" *> (token OpenParen *> argument))
+              <*> (token Comma *> argument)
+              <*> (token Comma *> argument <* token CloseParen))
     , node (
-        EColor3 OpRGB <$> (builtinWord "rgb" *> (token OpenParen *> arith))
-              <*> (token Comma *> arith)
-              <*> (token Comma *> arith <* token CloseParen))
-    , node (
-        EColor3 OpHSV <$> (builtinWord "hsv" *> (token OpenParen *> arith))
-              <*> (token Comma *> arith)
-              <*> (token Comma *> arith <* token CloseParen))
-    , node (
-        EColor3 OpHSL <$> (builtinWord "hsl" *> (token OpenParen *> arith))
-              <*> (token Comma *> arith)
-              <*> (token Comma *> arith <* token CloseParen))
+        EColor3 OpHSL <$> (builtinWord "hsl" *> (token OpenParen *> argument))
+              <*> (token Comma *> argument)
+              <*> (token Comma *> argument <* token CloseParen))
     -- `autocolor(n, p)` and `get_autocolor(n, p)` (typing checks that
     -- the group number is a plain number)
     , node (
         EAutocolor <$> autocolorName
-                   <*> (token OpenParen *> arith)
-                   <*> (token Comma *> arith <* token CloseParen))
+                   <*> (token OpenParen *> argument)
+                   <*> (token Comma *> argument <* token CloseParen))
     ]
 
   autocolorName <- ruleChoice
@@ -678,13 +786,9 @@ valueAndArithGrammar funs own = mdo
 
   typ <- typeGrammar
 
-  let reserved n = Set.member n funs || (Set.member n builtinWords && free n)
+  let reserved n = Set.member n funs || ((Set.member n builtinWords || isStdlibFunction n) && free n)
       builtinWords = Set.fromList
-        [ "dark", "light", "invert", "blend", "cycle", "rainbow", "arenberg"
-        , "romao", "bamo", "broco", "corko", "viko"
-        , "ice", "fire", "rose", "wheat", "forest", "ocean"
-        , "winter", "spring", "summer", "fall"
-        , "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size", "filled"
+        [ "invert", "blend", "rgb", "hsv", "hsl", "mod", "diff", "point", "table_size", "filled"
         , "table_cell", "table_point", "in", "pixels", "partial"
         , "infinity", "chart", "affine", "chordal" ]
         `Set.union` Set.fromList (map autocolorModeName [minBound .. maxBound])

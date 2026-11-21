@@ -59,12 +59,12 @@ data UnOp
   | OpStops
     -- ^ @x stops@: only meaningful in a loop's condition, where
     -- "Language.Code.Stops" rewrites it away before typing
-  | OpDark | OpLight | OpInvert
+  | OpInvert
   | OpPrevious
     -- ^ @previous x@ is only meaningful within a loop
   deriving (Eq, Show)
 
-data Color3Op = OpBlend | OpCycle | OpRGB | OpHSV | OpHSL
+data Color3Op = OpBlend | OpRGB | OpHSV | OpHSL
   deriving (Eq, Show)
 
 data ExprF r

@@ -56,7 +56,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                   set `color` := nearest_autocolor(0, [colorizer] Roots of f: z)
                             if [colorizer] Roots of f: shade then:
                               block:
-                                set `color` := let #cycle-arg = (([internal] iteration count:R / [colorizer] Roots of f: period) mod 1.0) in blend(if (#cycle-arg < (1.0 / 2.0)) then (2.0 * #cycle-arg) else (2.0 - (2.0 * #cycle-arg)), blend(0.333, Color 0 0 0, color), blend(0.333, Color 255 255 255, color))
+                                set `color` := let [internal] [std] cycle.t #2 = ([internal] iteration count:R / [colorizer] Roots of f: period) in let [internal] [std] cycle.c1 #2 = let [internal] [std] dark.c #0 = color in blend(0.333, Color 0 0 0, [internal] [std] dark.c #0) in let [internal] [std] cycle.c2 #2 = let [internal] [std] light.c #1 = color in blend(0.333, Color 255 255 255, [internal] [std] light.c #1) in let [internal] [std] cycle_at.s #3 = ([internal] [std] cycle.t #2 mod 1.0) in let [internal] [std] cycle_at.c1 #3 = [internal] [std] cycle.c1 #2 in let [internal] [std] cycle_at.c2 #3 = [internal] [std] cycle.c2 #2 in blend(if ([internal] [std] cycle_at.s #3 < 0.5) then (2:R * [internal] [std] cycle_at.s #3) else (2:R - (2:R * [internal] [std] cycle_at.s #3)), [internal] [std] cycle_at.c1 #3, [internal] [std] cycle_at.c2 #3)
                             else:
                               no-op
 

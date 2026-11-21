@@ -398,6 +398,12 @@ spec = do
       parseC "cycle(0.25, hsv(1/2 + 1/2, 1, 1), hsl(0, 0, 0))"
         `shouldBe` parseC "blend(0.5, red, black)"
 
+    it "take any expression as an argument, but a pair" $ do
+      parseC "blend(if 1 > 2 then 0.0 else 1.0, red, blue)" `shouldBe` Right red
+      parseC "rgb(1, 0, if 1 < 2 then 1 else 0)" `shouldBe` Right (rgbToColor (255, 0, 255))
+      parseC "blend(mod(if true then 3 else 2, 2) / 2, red, blue)" `shouldBe` parseC "blend(0.5, red, blue)"
+      parseC "invert dark white" `shouldBe` parseC "invert (dark white)"
+
   describe "when using keywords that require special variables" $ do
 
     let ctx :: Complex Double -> Double -> Double -> Double

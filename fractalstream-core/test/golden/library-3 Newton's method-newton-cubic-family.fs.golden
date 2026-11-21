@@ -69,7 +69,7 @@ let `[internal] vanishing radius` = tol in:
                                               no-op
                                         let `s` = (cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R) in:
                                           block:
-                                            set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, blend(0.333, Color 0 0 0, c), blend(0.333, Color 255 255 255, c)) else Color 0 0 0
+                                            set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, let [internal] [std] dark.c #0 = c in blend(0.333, Color 0 0 0, [internal] [std] dark.c #0), let [internal] [std] light.c #1 = c in blend(0.333, Color 255 255 255, [internal] [std] light.c #1)) else Color 0 0 0
 
 
 === viewer 1: Newton's method dynamics
@@ -146,7 +146,7 @@ let `[internal] vanishing radius` = tol in:
                                           no-op
                                     let `s` = (cos((([internal] iteration count:R * 3.141592653589793) / 10:R)) ^ 2:R) in:
                                       block:
-                                        set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, blend(0.333, Color 0 0 0, c), blend(0.333, Color 255 255 255, c)) else Color 0 0 0
+                                        set `color` := if (|(z - lastZ)| < [internal] vanishing radius) then blend(s, let [internal] [std] dark.c #0 = c in blend(0.333, Color 0 0 0, [internal] [std] dark.c #0), let [internal] [std] light.c #1 = c in blend(0.333, Color 255 255 255, [internal] [std] light.c #1)) else Color 0 0 0
 
 
 --- tool Trace

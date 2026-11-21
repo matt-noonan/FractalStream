@@ -82,7 +82,8 @@ import Language.Value.Typing (strictTypeEnv, surfaceTypeMarker)
 import Language.Code.Projective (lowerValueAt, showFieldValue)
 import Language.Typecheck (TC(..), ppError)
 import Language.Code (Code, letInEnv)
-import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs, viewKindName, viewPixelSizeName, viewMobiusNames)
+import Language.Code.Parser (noCommonDefs, ParsedCode, CommonDefs)
+import Language.Value.Builtins (viewKindName, viewPixelSizeName, viewMobiusNames)
 import Language.Code.Typecheck (hyperbolicToolName, runExpandedCode)
 import Language.Code.Hoist (Split(..))
 import Language.Parser.SourceRange
@@ -977,7 +978,7 @@ viewerViewEntries coord view0 grouped = viewerGeometryEntries coord ++ case coor
 -- | The value a field's text (or its default) gives it: for a point of
 -- the sphere, as its pair of homogeneous coordinates.
 fieldValueAt :: KnownType t => Maybe FSType -> ParsedValue -> TypeProxy t -> TC (Language.Value.Value '( '[], t))
-fieldValueAt mpoint e ty = case mpoint of
+fieldValueAt mpoint e0 ty = expandStdlibCalls e0 >>= \e -> case mpoint of
   Nothing -> atType e ty
   Just pt -> lowerValueAt (strictTypeEnv mempty) pt e >>= \e' -> atType e' ty
 
@@ -1011,7 +1012,7 @@ viewerGeometryEntries coord =
   [ (n, SomeType ty) | (n, LiveValue ty _) <- viewerGeometry coord (pure (Dimensions (0, 0))) (pure (0, 0)) ]
 
 -- | How a viewer shows its points, for its tools' @pixel_size_at@ (see
--- 'Language.Code.Parser.builtinFunctions'): the kind of view, the width
+-- the standard library, "Language.Stdlib"): the kind of view, the width
 -- of a pixel on the screen plane, and the disk's view.
 toolViewValues :: ViewKind -> Dynamic ViewKind -> Dynamic Double -> Dynamic Isometry -> [(String, LiveValue)]
 toolViewValues view0 view pixelSize iso =

@@ -12,6 +12,7 @@ category:            Math
 build-type:          Simple
 extra-source-files:  fonts/DejaVuSans.ttf
                      fonts/DejaVuSans-LICENSE
+                     stdlib/standard.fs
                      src/Actor/autocolor_lookup.h
 
 common FractalStream-common
@@ -139,6 +140,7 @@ library
                        Language.Value.Typecheck
                        Language.Value.Syntax
                        Language.Value.Builtins
+                       Language.Stdlib
                        Language.Value.Typing
                        Language.Value.Elaborate
                        Language.Value.Transform
@@ -233,6 +235,7 @@ test-suite spec
                     , Data.ZipSpec
                     , Actor.TableTransferSpec
                     , Language.Value.DerivativeSpec
+                    , Language.StdlibSpec
                     , Language.Value.EvaluatorSpec
                     , Language.Value.ParserSpec
                     , Language.Code.ParserSpec

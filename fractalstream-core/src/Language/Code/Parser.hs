@@ -6,7 +6,8 @@ module Language.Code.Parser
   , codeStatementsGrammar
   , CommonDefs(..)
   , noCommonDefs
-  , builtinFunctionNames
+  , stdlibCode
+  , parseStdlib
   , viewKindName
   , viewPixelSizeName
   , viewMobiusNames
@@ -31,13 +32,17 @@ import Language.Code
 import Language.Parser.Tokenizer
 import Language.Code.Syntax
 import Language.Draw (RadiusUnit(..))
-import Language.Value.Syntax (Syn(..), ExprF(..), BinOp(..), UnOp(..))
+import Language.Value.Syntax (Syn(..), ExprF(..))
 import Language.Code.Typecheck
 import Language.Code.Typecheck.Functions (freeVars)
 import Language.Code.FunctionBlocks (bodyUses)
 import qualified Data.Map as Map
 
 import qualified Data.Set as Set
+import Language.Stdlib (stdlibName, stdlibSource)
+import Language.Code.Procedures (renameStmt)
+import Language.Code.Previous (mapStmtRanges)
+import Language.Value.Builtins (viewKindName, viewPixelSizeName, viewMobiusNames)
 
 ------------------------------------------------------
 -- Main function for parsing Code
@@ -59,63 +64,43 @@ data CommonDefs = CommonDefs
     -- grammar reads them as the script's, not as the built-ins.
   }
 
--- | No project definitions: only the built-in functions (see
--- 'builtinFunctions').
+-- | No project definitions: only the standard library's (see
+-- 'stdlibCode').
 noCommonDefs :: CommonDefs
-noCommonDefs = CommonDefs (Set.fromList builtinFunctionNames) builtinFunctions Set.empty
+noCommonDefs = CommonDefs Set.empty stdlibCode Set.empty
 
--- | Functions every tool can call, written as if in a project's @\@common@
--- (so that, like those, they're only added to the scripts that use them).
-builtinFunctionNames :: [String]
-builtinFunctionNames = ["pixel_size_at"]
+-- | The standard library's definitions (see "Language.Stdlib"), written as
+-- if in a project's @\@common@ (so that, like those, they're only added to
+-- the scripts that use them).
+stdlibCode :: [Stmt]
+stdlibCode = parseStdlib stdlibSource
 
--- | The names under which a tool is told how its viewer shows its points
--- (see "Actor.Ensemble"): the kind of view (0 the plane, 1 the sphere, 2
--- the hyperbolic plane), the width of a pixel on the screen plane, and in
--- the hyperbolic plane, part of the map from the screen to the model (see
--- 'viewMobiusNames').
-viewKindName, viewPixelSizeName :: String
-viewKindName = "[internal] view kind"
-viewPixelSizeName = "[internal] view pixel size"
-
--- (the real and imaginary parts of @a@ and @c@ of the Möbius map, of
--- determinant 1, from the screen to the model: see
--- 'Actor.Viewer.Disk.viewMobius')
-viewMobiusNames :: [String]
-viewMobiusNames = [ "[internal] view " ++ n | n <- ["a.re", "a.im", "c.re", "c.im"] ]
-
--- | The built-in functions' definitions.
+-- | Parse a standard library's source: function definitions, @f(x) := ...@
+-- or @function f(x):@ with a body, under the names no script can write
+-- ('stdlibName').
 --
--- @pixel_size_at(p)@ is the width, in the model, of a screen pixel at the
--- model point @p@: on the plane, the pixel size; in the disk, the pixel
--- size stretched by the view at @p@ (|V'(s)| at the screen point s showing
--- p: for the screen-to-model map (a s + b)/(c s + d), of determinant 1,
--- that's |a - c p|²); on the sphere, by the stereographic projection
--- at @p@, (1 + |p|²) / 2 (a pixel facing the viewer: near the globe's rim,
--- pixels are longer one way). A tool sizes a marker at @p@ with it, so the
--- marker looks the same anywhere in the view.
-builtinFunctions :: [Stmt]
-builtinFunctions = [ Stmt NoSourceRange (SFun "pixel_size_at" ["p"] pixelSizeAt) ]
+-- The standard library is parsed as no script's own: so where it uses one
+-- of its own names, it means its own definition. Its @internal_@ names are
+-- the values no script can name
+-- ('Language.Value.Parser.stdlibInternalNames'). Its definitions have no
+-- source ranges (which would point into the standard library's source,
+-- not the script's): so where a script calls one, anything said about its
+-- body is said about the call.
+parseStdlib :: String -> [Stmt]
+parseStdlib src =
+  case parse (codeBlockGrammar (CommonDefs Set.empty [] Set.empty)) (tokenizeWithIndentation src) of
+    Left err -> error ("internal error: the standard library doesn't parse: " ++ ppFullError err src)
+    Right (Stmt _ (SBlock stmts)) -> map define stmts
+    Right stmt -> [define stmt]
   where
-    e = Syn NoSourceRange
-    var = e . EVar
-    real d = e (ELit (show d) (SomeHaskellType RealType d))
-    int k = e (ELit (show k) (SomeHaskellType IntegerType k))
-    i = e (ELit "i" (SomeHaskellType ComplexType (0 :+ 1)))
-    bin op x y = e (EBin op x y)
-    absSq x = bin OpMul (e (EUn OpAbs x)) (e (EUn OpAbs x))
-    p = var "p"
-    (ar, ai, cr, ci) = case map var viewMobiusNames of
-      [w, x, y, z] -> (w, x, y, z)
-      _ -> error "internal error: a, c: four parts"
-    av = bin OpAdd ar (bin OpMul ai i)
-    cv = bin OpAdd cr (bin OpMul ci i)
-    kind = var viewKindName
-    disk = absSq (bin OpSub av (bin OpMul cv p))
-    sphere = bin OpDiv (bin OpAdd (real 1) (absSq p)) (real 2)
-    pixelSizeAt = bin OpMul (var viewPixelSizeName)
-      (e (EITE (bin OpExactEq kind (int 2)) disk
-                (e (EITE (bin OpExactEq kind (int 1)) sphere (real 1)))))
+    define (Stmt _ def) = mapStmtRanges (const NoSourceRange) . renameStmt internals . Stmt NoSourceRange $
+      case def of
+        SFun f params e -> SFun (stdlibName f) params e
+        SFunction f params body ->
+          SFunction (stdlibName f) params
+            (renameStmt (Map.singleton (functionValueName f) (functionValueName (stdlibName f))) body)
+        other -> error ("internal error: the standard library may only define functions: " ++ show other)
+    internals = Map.fromList stdlibInternalNames
 
 -- | Prepend the common statements that a script body uses (directly, or
 -- through other common definitions) to it, so that their declarations
@@ -124,7 +109,12 @@ builtinFunctions = [ Stmt NoSourceRange (SFun "pixel_size_at" ["p"] pixelSizeAt)
 -- don't have (like a viewer's coordinate, which tool refresh handlers
 -- don't see) only matters where it is used.
 withCommon :: CommonDefs -> ParsedCode -> ParsedCode
-withCommon CommonDefs{commonCode} body0 = case (used, body) of
+withCommon defs = withUsedCommon defs . stanzaFunctionScopes
+
+-- | Prepend the common statements that the code uses, as 'withCommon'
+-- does, without its checks of the code's own functions.
+withUsedCommon :: CommonDefs -> ParsedCode -> ParsedCode
+withUsedCommon CommonDefs{commonCode} body = case (used, body) of
   ([], _) -> body
   (_, Stmt sr (SBlock stmts)) -> Stmt sr (SBlock (used ++ stmts))
   _ -> Stmt (stmtRange body) (SBlock (used ++ [body]))
@@ -132,7 +122,6 @@ withCommon CommonDefs{commonCode} body0 = case (used, body) of
     -- Walk the common statements backwards, keeping each one that
     -- defines something needed later (by the body, or by a kept
     -- definition after it).
-    body = stanzaFunctionScopes body0
     used = fst (foldr keep ([], stmtNames body) commonCode)
     keep stmt (kept, needed)
       | any (`Set.member` needed) (definedNames stmt) = (stmt : kept, needed <> stmtNames stmt)
@@ -188,19 +177,8 @@ withDefinedFunctions toks defs =
   defs { funNames = funNames defs `Set.union` Set.fromList (definedFunctionNames (map baseToken toks))
        , ownNames = ownNames defs `Set.union` ownBuiltinNames toks }
 
--- | The names of the functions defined in the given tokens: a definition
--- is a name, its parameters in parentheses, then @:=@, starting a line.
-definedFunctionNames :: [Token] -> [String]
-definedFunctionNames = go True
-  where
-    go atStart = \case
-      Identifier f : rest
-        | atStart, Just _ <- functionDefinitionBody rest -> f : go False rest
-      Identifier "function" : Identifier f : rest@(OpenParen : _)
-        | atStart -> f : go False rest
-      t : rest -> go (t `elem` [Newline, Indent, Dedent]) rest
-      [] -> []
-
+-- | Parse and typecheck code, with the common definitions it uses (see
+-- 'withUsedCommon'), such as the standard library's.
 parseCode :: forall env
            . EnvironmentProxy env
           -> CommonDefs
@@ -208,7 +186,9 @@ parseCode :: forall env
           -> Either (Either ParseError TCError) (Code env)
 parseCode env defs input = do
   c <- parseParsedCode defs input
-  first Right (runParsedCode env c)
+  first Right (runParsedCode env (withUsedCommon defs c))
+
+-- | Parse code, without the common definitions it uses (see 'withCommon').
 
 parseParsedCode :: CommonDefs -> String -> Either (Either ParseError TCError) ParsedCode
 parseParsedCode defs input =
