@@ -135,6 +135,7 @@ library
                        Language.Environment
                        Language.Value
                        Language.Value.Differentiate
+                       Language.Value.Euclidean
                        Language.Value.Evaluator
                        Language.Value.Parser
                        Language.Value.Typecheck

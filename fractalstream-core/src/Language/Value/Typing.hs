@@ -52,6 +52,7 @@ import Language.Value.Syntax
 import Language.Value.Builtins
 import Language.Parser (isOwnableBuiltin)
 import Language.Value.Differentiate
+import Language.Value.Euclidean (euclidDiv)
 import Data.Color (black)
 
 -- | The types of the variables in scope.
@@ -604,7 +605,7 @@ constantInteger e = case synNode e of
       OpAdd -> Just (a + b)
       OpSub -> Just (a - b)
       OpMul -> Just (a * b)
-      OpIDiv | b /= 0 -> Just (a `div` b)
+      OpIDiv -> Just (a `euclidDiv` b)
       _ -> Nothing
   _ -> Nothing
 

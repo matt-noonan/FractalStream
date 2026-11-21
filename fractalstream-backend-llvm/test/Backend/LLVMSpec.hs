@@ -23,6 +23,8 @@ import Actor.Viewer (ViewerFunction(..), runViewerFunction, ViewerArgs(..), View
 import Actor.Viewer.Types (ViewerEnv)
 import Foreign (allocaBytes, peekArray, Word8)
 import Backend.LLVM
+import Language.Value.Euclidean (euclidDiv, euclidMod, euclidModReal)
+import Data.Int (Int32)
 import Actor.Autocolor (AutocolorLookup, autocolorLookupFromFunction)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -73,6 +75,41 @@ spec = do
         invoke' env ColorType f (300 / 255) 0.5 black 0 0 False 0 0 `shouldReturn` rgbToColor (255, 128, 255)
         -- (0 / 0 is NaN, which counts as 0)
         invoke' env ColorType f 0 0 black 0 0 False 0 0 `shouldReturn` rgbToColor (0, 0, 0)
+
+    it "computes // and mod as Euclidean division, as the interpreter" $ do
+      let env = declare @"a" IntegerType
+              $ declare @"b" IntegerType
+              $ declare @"q" IntegerType
+              $ declare @"r" IntegerType
+              $ declare @"x" RealType
+              $ declare @"y" RealType
+              $ declare @"m" RealType
+              $ declare @"color" ColorType
+              $ declare @"[internal] iteration count" IntegerType
+              $ declare @"[internal] iteration limit" IntegerType
+              $ declare @"[internal] stuck" BooleanType
+              $ declare @"[internal] escape radius" RealType
+              $ declare @"[internal] vanishing radius" RealType
+              $ endOfDecls
+          lo = fromIntegral (minBound :: Int32)
+          hi = fromIntegral (maxBound :: Int32)
+          ints = [-7, -6, -3, -1, 0, 1, 3, 6, 7, lo, lo + 1, hi]
+          -- (the expected answers at 32 bits, as the compiled code computes)
+          at32 f a b = fromIntegral (f (fromIntegral a :: Int32) (fromIntegral b))
+          reals = [-7.5, -3, -1, -1e-20, 0, 1e-20, 1, 2.5, 3, 7.5]
+      withCompiledCode (Proxy @"color") ColorType env
+          "color <- if a // b = q and mod(a, b) = r then white else black" $ \f ->
+        forM_ ints $ \a -> forM_ ints $ \b -> do
+          let q = at32 euclidDiv a b; r = at32 euclidMod a b
+          c <- invoke' env ColorType f a b q r 0 0 0 black 0 0 False 0 0
+          (a, b, c) `shouldBe` (a, b, white)
+      -- (reals are equal within the vanishing radius, the last argument)
+      withCompiledCode (Proxy @"color") ColorType env
+          "color <- if mod(x, y) = m then white else black" $ \f ->
+        do bad <- fmap (concat . concat) $ forM reals $ \x -> forM reals $ \y -> do
+             c <- invoke' env ColorType f 0 0 0 0 x y (euclidModReal x y) black 0 0 False 0 1e-100
+             pure [ (x, y, euclidModReal x y) | c /= white ]
+           bad `shouldBe` []
 
     it "computes hsv and hsl colors as Data.Color does" $ do
       let env = declare @"x" RealType
