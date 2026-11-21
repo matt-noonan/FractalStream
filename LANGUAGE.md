@@ -29,6 +29,10 @@ integers, `a // b` is that `k`, so `a = b (a // b) + mod(a, b)`:
 `mod(a, 0)` and `a // 0` are 0. Integers wrap: the smallest integer,
 divided by -1, is itself.
 
+`round(x)` is the whole number nearest `x`, and a half rounds away from
+zero: `round(2.5)` is 3, `round(-2.5)` is -3, and `round(2.4)` is 2.
+`floor(x)` rounds down and `ceiling(x)` (or `ceil(x)`) rounds up.
+
 A power of integers is an integer (`2^10` is 1024), except that a negative
 power is a fraction, so it's a real number: `10^(-2)` is 0.01, and
 `3.5 * 10^(-2)` is 0.035. That's decided by the exponent as it's written:

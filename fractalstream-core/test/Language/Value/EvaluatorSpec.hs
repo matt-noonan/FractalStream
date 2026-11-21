@@ -3,7 +3,7 @@ module Language.Value.EvaluatorSpec (spec) where
 import Test.Hspec
 import Language.Value
 import Language.Value.Evaluator
-import Language.Value.Euclidean
+import Language.Value.Arithmetic
 import Data.Int (Int32)
 import Control.Monad (forM_)
 
@@ -109,3 +109,20 @@ spec = do
       evaluate (ModF (x (-1)) (x (-3))) EmptyContext `shouldBe` 2
       evaluate (ModF (x (-1e-20)) 3) EmptyContext `shouldBe` 0
       evaluate (ModF 2.5 0) EmptyContext `shouldBe` 0
+
+  describe "round" $ do
+
+    it "rounds to the nearest whole number, and a half away from zero" $ do
+      let cases :: [(Double, Double)]
+          cases = [ (2.5, 3), (-2.5, -3), (0.5, 1), (-0.5, -1), (1.5, 2), (-1.5, -2)
+                  , (2.4999, 2), (-2.4999, -2), (2.5001, 3), (2.9999999, 3), (-2.9999999, -3)
+                  , (0, 0), (0.49999999999999994, 0), (-0.49999999999999994, 0)
+                  , (4503599627370495.5, 4503599627370496), (1e300, 1e300) ]
+      forM_ cases $ \(x, r) -> (x, roundHalfAway x) `shouldBe` (x, r)
+      isNaN (roundHalfAway (0 / 0)) `shouldBe` True
+
+    it "is what the evaluator computes" $ do
+      let x :: Double -> Value '( '[], 'RealT)
+          x = realToFrac
+      forM_ [(2.5, 3), (-2.5, -3), (0.5, 1), (-0.5, -1), (2.9999999, 3), (-2.4, -2)] $ \(v, r) ->
+        (v, evaluate (RoundF (x v)) EmptyContext) `shouldBe` (v, r)

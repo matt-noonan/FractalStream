@@ -417,7 +417,7 @@ buildValue getExtern arena = indexedFold go'
           (RealOp lhs, RealOp rhs) -> RealOp <$> fmul lhs rhs
       DivF x y -> ((,) <$> x <*> y) >>= \case
           (RealOp lhs, RealOp rhs) -> RealOp <$> fdiv lhs rhs
-      -- (as Language.Value.Euclidean's euclidModReal: frem is fmod)
+      -- (as Language.Value.Arithmetic's euclidModReal: frem is fmod)
       ModF x y -> ((,) <$> x <*> y) >>= \case
           (RealOp lhs, RealOp rhs) -> do
             m <- frem lhs rhs
@@ -468,9 +468,11 @@ buildValue getExtern arena = indexedFold go'
       ConjC z -> z >>= \case
         ComplexOp x y -> ComplexOp x <$> fsub (C.double 0.0) y
 
+      -- (llvm.round rounds a half away from zero, as
+      -- Language.Value.Arithmetic's roundHalfAway)
       RoundF r -> r >>= \case
         (RealOp x) -> IntegerOp <$>
-          (call (getExtern "trunc") [(x, [])] >>= (`fptosi` AST.i32))
+          (call (getExtern "round") [(x, [])] >>= (`fptosi` AST.i32))
 
       FloorF r -> r >>= \case
         (RealOp x) -> IntegerOp <$>
@@ -924,7 +926,7 @@ buildRange arena loOp hiOp = do
       listSlot IntegerType base k >>= \s -> storeListElem IntegerType s (IntegerOp v)
       pure (C.bit 1)
 
--- | Euclidean division of 32-bit integers, as Language.Value.Euclidean's
+-- | Euclidean division of 32-bit integers, as Language.Value.Arithmetic's
 -- euclidDiv and euclidMod: the quotient and the remainder, in [0, |b|).
 -- Dividing by 0 gives 0 both ways, and the smallest integer divided by -1
 -- wraps to itself, where sdiv and srem would be undefined.
@@ -998,6 +1000,7 @@ getGetExtern = do
     [ ("absi", extern "llvm.abs.i32" [AST.i32, AST.i1] AST.i32)
     , ("trunc", extern "llvm.trunc.f64" [AST.double] AST.double)
     , ("floor", extern "llvm.floor.f64" [AST.double] AST.double)
+    , ("round", extern "llvm.round.f64" [AST.double] AST.double)
     , ("ceil", extern "llvm.ceil.f64" [AST.double] AST.double)
     , ("log", extern "llvm.log.f64" [AST.double] AST.double)
     , ("exp", extern "llvm.exp.f64" [AST.double] AST.double)

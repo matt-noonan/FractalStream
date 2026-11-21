@@ -52,7 +52,7 @@ import Language.Value.Syntax
 import Language.Value.Builtins
 import Language.Parser (isOwnableBuiltin)
 import Language.Value.Differentiate
-import Language.Value.Euclidean (euclidDiv)
+import Language.Value.Arithmetic (euclidDiv)
 import Data.Color (black)
 
 -- | The types of the variables in scope.

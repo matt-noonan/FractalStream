@@ -144,7 +144,7 @@ value = indexedFold go'
       SubF x y -> real2 f64Sub x y
       MulF x y -> real2 f64Mul x y
       DivF x y -> real2 f64Div x y
-      -- (as Language.Value.Euclidean's euclidModReal, and the LLVM backend)
+      -- (as Language.Value.Arithmetic's euclidModReal, and the LLVM backend)
       ModF x y -> do
         a <- x; b <- y
         case (a, b) of
@@ -180,7 +180,18 @@ value = indexedFold go'
         LComplex a <$> realOf [f64Const 0, localGet b, f64Sub]
 
       -- (`round` truncates, as the LLVM backend's does)
-      RoundF r -> real1To I32 LInt r [f64Trunc, i32TruncSatF64S]
+      -- (a half away from zero, as Language.Value.Arithmetic's
+      -- roundHalfAway: wasm's f64.nearest takes a half to even)
+      RoundF r -> r >>= \case
+        LReal x -> lift $ do
+          t <- newLocal F64
+          emit [localGet x, f64Trunc, localSet t]
+          unaryTo I32 LInt
+            [ localGet t, f64Const 1, localGet x, f64Copysign, f64Add
+            , localGet t
+            , localGet x, localGet t, f64Sub, f64Abs, f64Const 0.5, f64Ge
+            , select, i32TruncSatF64S ]
+        l -> lift (mismatch l)
       FloorF r -> real1To I32 LInt r [f64Floor, i32TruncSatF64S]
       CeilingF r -> real1To I32 LInt r [f64Ceil, i32TruncSatF64S]
       AbsF r -> real1To F64 LReal r [f64Abs]
@@ -547,7 +558,7 @@ notEqual t a b = case (t, a, b) of
     cmp = unaryTo I32 LBool
     one p q = [localGet p, localGet q, f64Lt, localGet p, localGet q, f64Gt, i32Or]
 
--- | Euclidean integer division or remainder, as Language.Value.Euclidean's
+-- | Euclidean integer division or remainder, as Language.Value.Arithmetic's
 -- euclidDiv and euclidMod (and the LLVM backend's): the remainder is in
 -- [0, |b|). Dividing by 0 gives 0 both ways, and the smallest integer
 -- divided by -1 wraps to itself, where wasm would trap.

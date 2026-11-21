@@ -20,7 +20,7 @@ import Language.Table (readCell, readSlice, pointCell, pointIndices, cellPoint, 
 import Data.Color
 
 import Unsafe.Coerce
-import Language.Value.Euclidean
+import Language.Value.Arithmetic
 
 -- | First-class family corresponding to 'HaskellType', suitable to use in a 'Context'
 data HaskellValue :: Symbol -> FSType -> Exp Type
@@ -174,7 +174,7 @@ evaluator v0 ctx = case v0 of
     LogF x -> log (x ctx)
     SqrtF x -> sqrt (x ctx)
 
-    RoundF x -> Prelude.round (x ctx)
+    RoundF x -> Prelude.truncate (roundHalfAway (x ctx))
     FloorF x -> Prelude.floor (x ctx)
     CeilingF x -> Prelude.ceiling (x ctx)
 

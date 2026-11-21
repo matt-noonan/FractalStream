@@ -441,7 +441,8 @@ Functions:
 - real only: `arcsin arccos arctan arcsinh arccosh arctanh` (also
   `asin`, `acos`, `atan`, `asinh`, `acosh`, `atanh`)
 - complex → real: `re im arg` (also `Re Im Arg`); complex → complex: `conj`/`bar`
-- real → integer: `round floor ceiling ceil`
+- real → integer: `round floor ceiling ceil` (`round` is to the nearest,
+  a half away from zero: `round(2.5)` is 3, `round(-2.5)` is -3)
 - absolute value / modulus: `|x|` (integer, real, or complex → real)
 - `mod(a, b)`
 - derivatives: `diff(expr, x)` (symbolic, exact), which follows the

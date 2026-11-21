@@ -21,7 +21,7 @@ module Backend.Wasm.Encode
   , i32Add, i32Sub, i32Mul, i32DivS, i32DivU, i32RemS, i32And, i32Or, i32Xor, i32Shl, i32ShrU
   , f64Eq, f64Ne, f64Lt, f64Gt, f64Le, f64Ge
   , f64Abs, f64Neg, f64Ceil, f64Floor, f64Trunc, f64Sqrt
-  , f64Add, f64Sub, f64Mul, f64Div
+  , f64Add, f64Sub, f64Mul, f64Div, f64Copysign
   , f64ConvertI32S, f64ConvertI32U
   , i32TruncSatF64S, i32TruncSatF64U
   , select
@@ -169,8 +169,9 @@ f64Abs, f64Neg, f64Ceil, f64Floor, f64Trunc, f64Sqrt :: Instr
 f64Abs = Op [0x99]; f64Neg = Op [0x9a]; f64Ceil = Op [0x9b]
 f64Floor = Op [0x9c]; f64Trunc = Op [0x9d]; f64Sqrt = Op [0x9f]
 
-f64Add, f64Sub, f64Mul, f64Div :: Instr
+f64Add, f64Sub, f64Mul, f64Div, f64Copysign :: Instr
 f64Add = Op [0xa0]; f64Sub = Op [0xa1]; f64Mul = Op [0xa2]; f64Div = Op [0xa3]
+f64Copysign = Op [0xa6]
 
 f64ConvertI32S, f64ConvertI32U :: Instr
 f64ConvertI32S = Op [0xb7]; f64ConvertI32U = Op [0xb8]

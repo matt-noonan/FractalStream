@@ -23,7 +23,7 @@ import Actor.Viewer (ViewerFunction(..), runViewerFunction, ViewerArgs(..), View
 import Actor.Viewer.Types (ViewerEnv)
 import Foreign (allocaBytes, peekArray, Word8)
 import Backend.LLVM
-import Language.Value.Euclidean (euclidDiv, euclidMod, euclidModReal)
+import Language.Value.Arithmetic (euclidDiv, euclidMod, euclidModReal, roundHalfAway)
 import Data.Int (Int32)
 import Actor.Autocolor (AutocolorLookup, autocolorLookupFromFunction)
 import System.IO.Unsafe (unsafePerformIO)
@@ -110,6 +110,23 @@ spec = do
              c <- invoke' env ColorType f 0 0 0 0 x y (euclidModReal x y) black 0 0 False 0 1e-100
              pure [ (x, y, euclidModReal x y) | c /= white ]
            bad `shouldBe` []
+
+    it "rounds a half away from zero, as the interpreter" $ do
+      let env = declare @"x" RealType
+              $ declare @"n" IntegerType
+              $ declare @"color" ColorType
+              $ declare @"[internal] iteration count" IntegerType
+              $ declare @"[internal] iteration limit" IntegerType
+              $ declare @"[internal] stuck" BooleanType
+              $ declare @"[internal] escape radius" RealType
+              $ declare @"[internal] vanishing radius" RealType
+              $ endOfDecls
+          xs = [ -3.5, -2.5, -2.4999, -1.5, -0.5, -0.49999999999999994, 0, 0.49999999999999994
+               , 0.5, 1.5, 2.4999, 2.5, 2.9999999, 3.5, 1000000.5, -1000000.5 ]
+      withCompiledCode (Proxy @"color") ColorType env "color <- if round(x) = n then white else black" $ \f ->
+        forM_ xs $ \x -> do
+          c <- invoke' env ColorType f x (truncate (roundHalfAway x)) black 0 0 False 0 0
+          (x, c) `shouldBe` (x, white)
 
     it "computes hsv and hsl colors as Data.Color does" $ do
       let env = declare @"x" RealType

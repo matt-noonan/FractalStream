@@ -217,6 +217,16 @@ common = unlines
   , "fn rnonzero(a: R) -> bool { return !req(a, ri(0)); }"
   , "fn rceil(a: R) -> R { return rneg(rfloor(rneg(a))); }"
   , "fn rtrunc(a: R) -> R { return select(rceil(a), rfloor(a), !rlt(a, ri(0))); }"
+  -- (the script's round: to the nearest, a half away from zero, as the
+  -- CPU's. a - trunc(a) is exact, and a half if twice it is 1. WGSL's own
+  -- round takes a half to even)
+  , "fn rround_away(a: R) -> R {"
+  , "  let t = rtrunc(a);"
+  , "  let d = rabs(rsub(a, t));"
+  , "  if (rlt(radd(d, d), ri(1))) { return t; }"
+  , "  if (rlt(a, ri(0))) { return rsub(t, ri(1)); }"
+  , "  return radd(t, ri(1));"
+  , "}"
   -- (fmod, as the CPU's. fmod's remainder is exact, with a's sign, and less than |b|: the quotient,
   -- rounded, can be one off, which the remainder shows)
   , "fn rfmod(a: R, b: R) -> R {"
@@ -231,7 +241,7 @@ common = unlines
   , "  }"
   , "  return m;"
   , "}"
-  -- (Euclidean, in [0, |b|), as Language.Value.Euclidean's euclidModReal:
+  -- (Euclidean, in [0, |b|), as Language.Value.Arithmetic's euclidModReal:
   -- a tiny negative remainder plus |b| can round to |b|, which is taken as
   -- 0. mod(a, 0) is 0)
   , "fn rmod(a: R, b: R) -> R {"
