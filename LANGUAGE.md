@@ -539,8 +539,27 @@ A function works out a value, and does nothing else:
   of either kind, defined before it;
 - its loops don't change the caller's `iterations` or `stuck`.
 
-For now, a function with a body can only be called as the whole right-hand
-side of an assignment: `x := f(a)`, `x <- f(a)`, or `(x, y) := f(a)`.
+A function with a body is called like any other, anywhere in a script's
+code: `x <- x - f(x) / g(x)`, `if close(f(z), 0):`, `while f(z) > tol:`.
+It's called only when its value is needed: in `if c then f(a) else b`,
+`f(a)` is only worked out when `c` holds, and in `p and f(a)` (or
+`p or f(a)`) only when `p` doesn't already decide the answer. In a loop's
+condition, it's called before each check of the condition; in a loop's
+limit, once, before the loop. `diff` sees through it, as through any
+other code (`diff(f(x), x)`).
+
+It can't be called where only a single value can be worked out, or where
+its call would have to be repeated in ways a value can't say:
+
+- in a one-line function: `g(x) := 1 + f(x)` is an error, so make `g` a
+  function with a body (`function g(x):`, then `g <- 1 + f(x)`);
+- in a value outside a script's code, like a configuration value's
+  default;
+- under `partial`, which treats everything but its variable as a
+  constant (`diff` can be used instead);
+- for now, in the parts of `remove`, `find` and `transform` worked out
+  for each item, in the condition of `with first`, in the value after a
+  table lookup's `else`, and as `f'(x)`.
 
 ### Functions given as arguments
 
@@ -569,9 +588,10 @@ as an argument can be given on to another call (`ap(g, v)` inside
 names where it's written, not the ones inside the function it's given to.
 
 A function with a body can be given to another function with a body, or
-to a code block, where it's called as usual, as the whole right-hand side
-of an assignment. A one-line function can be given one-line functions,
-and functions written in place.
+to a code block, where it's called as usual. A one-line function can be
+given one-line functions, and functions written in place. A function
+written in place can call a function with a body only when it's given to
+a function with a body.
 
 ### Defining code to run
 

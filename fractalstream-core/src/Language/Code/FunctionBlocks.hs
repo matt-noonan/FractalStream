@@ -9,8 +9,12 @@
 -- change anything but its own variables, write a table, or run a code
 -- block, and its loops don't change the caller's @iterations@ or @stuck@.
 --
--- For now a call is the whole right-hand side of an assignment:
--- @x := f(a)@, @x <- f(a)@, or a tuple's, @(w, ok) := f(a)@. Each call is
+-- A call can be anywhere in a script's code (but where 'checkStmt' says
+-- it can't be): one inside an expression is first lifted out of it, into
+-- an assignment of its own just before it (see 'expandStmt' and
+-- 'liftExpr'), so that each call is the whole right-hand side of an
+-- assignment: @x := f(a)@, @x <- f(a)@, or a tuple's, @(w, ok) := f(a)@.
+-- Each call is
 -- expanded, after code blocks are (see "Language.Code.Procedures", so
 -- that a code block can call a function it's given) and after @previous@
 -- is (see "Language.Code.Previous", so that a @previous@ belongs to the
@@ -155,11 +159,16 @@ expandStmt ctx s@(Stmt sr node) = case node of
     c' <- liftExpr ctx c
     Stmt sr <$> (SIf c' <$> inner yes <*> inner no)
 
-  -- A loop's condition is worked out before each check of it: before
-  -- the first pass (unless the loop runs its body first), and at the end
-  -- of each pass.
+  -- A loop's limit is worked out once, before the loop (as
+  -- "Language.Code.Typecheck" does), and its condition before each check
+  -- of it: before the first pass (unless the loop runs its body first),
+  -- and at the end of each pass.
   SLoop kind c lim body
+    | any (hasCall defs) lim && not (hasCall defs c) -> lifted $ do
+        lim' <- traverse (liftExpr ctx) lim
+        Stmt sr . SLoop kind c lim' <$> inner body
     | hasCall defs c -> lifted $ do
+        lim' <- traverse (liftExpr ctx) lim
         cv <- freshName "condition"
         body' <- inner body
         initial <- if kind `elem` [LoopDoWhile, LoopDoUntil]
@@ -167,11 +176,11 @@ expandStmt ctx s@(Stmt sr node) = case node of
                    else liftExpr ctx c
         tell [Stmt sr (SDecl cv Nothing initial)]
         (c', again) <- lift (runWriterT (liftExpr ctx c))
-        pure (Stmt sr (SLoop kind (Syn sr (EVar cv)) lim
+        pure (Stmt sr (SLoop kind (Syn sr (EVar cv)) lim'
                         (Stmt sr (SBlock (body' : again ++ [Stmt sr (SSet cv c')])))))
   -- (an @iterate@ is the loop "Language.Code.Typecheck" makes of it)
   SIterate p e isWhile c lim
-    | hasCall defs e || hasCall defs c ->
+    | hasCall defs e || hasCall defs c || any (hasCall defs) lim ->
         expandStmt ctx $ Stmt sr $ SLoop (if isWhile then LoopWhile else LoopUntil) c lim $ Stmt sr $
           case p of
             PVar _ n -> SSet n e
@@ -290,17 +299,6 @@ checkStmt defs s@(Stmt _ node) = case node of
     "`" ++ g ++ "` is defined with `:=`, so it is a single value, but it calls `" ++ f
     ++ "`, a function with a body. Make `" ++ g ++ "` a function with a body too: `function "
     ++ g ++ "(...):`, then `" ++ g ++ " <- ...` on the next line, indented."
-  SLoop _ c lim _ -> do
-    checkExpr defs c
-    forM_ lim $ \l -> refuseIn l $ \f ->
-      "A loop's limit can't call `" ++ f ++ "`, a function with a body, for now. \
-      \Work it out before the loop: `n := " ++ f ++ "(...)`."
-  SIterate _ e _ c lim -> do
-    checkExpr defs e
-    checkExpr defs c
-    forM_ lim $ \l -> refuseIn l $ \f ->
-      "A loop's limit can't call `" ++ f ++ "`, a function with a body, for now. \
-      \Work it out before the loop: `n := " ++ f ++ "(...)`."
   SWithFirst item p _ _ _ -> refuseIn p $ \f ->
     "The condition of `with first " ++ item ++ "` is checked for each item, so it can't call `"
     ++ f ++ "`, a function with a body, for now. Use a `for each` loop instead."

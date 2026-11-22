@@ -608,13 +608,16 @@ x <- d|] `shouldBe` Right 3
       "function f(a):\n  f <- a > 0\nx <- if x > 1 or f(-1) then 1 else 2" `gives` 2
       "function f(a):\n  f <- a + 1\nx <- if x < 1 then (if x < 1 then f(1) else f(2)) else f(3)" `gives` 2
 
-    it "is called before each check of a loop's condition" $ do
+    it "is called before each check of a loop's condition, and once for its limit" $ do
       "function f(a):\n  f <- a < 10\nwhile f(x):\n  x <- x + 3" `gives` 12
       "function f(a):\n  f <- a > 10\nuntil f(x):\n  x <- x + 3" `gives` 12
       "function f(a):\n  f <- a < 10\nrepeat:\n  x <- x + 3\nwhile f(x)" `gives` 12
       "function f(a):\n  f <- a < 0\nrepeat:\n  x <- x + 3\nwhile f(x)" `gives` 3
       "function f(a):\n  f <- a + 3\nfunction g(a):\n  g <- a > 10\niterate x -> f(x) until g(x)" `gives` 12
       "function f(a):\n  f <- a + 3\nwhile x < 10:\n  x <- f(x) + 0" `gives` 12
+      "function f(a):\n  f <- a + 2\nrepeat f(1) times:\n  x <- x + 1" `gives` 3
+      "function f(a):\n  f <- a + 2\nwhile x < 100 up to f(1) times:\n  x <- x + 1" `gives` 3
+      "function f(a):\n  f <- a + 2\nfunction g(a):\n  g <- a < 100\nwhile g(x) up to f(1) times:\n  x <- x + 1" `gives` 3
 
     it "can be differentiated, by `diff`" $
       "function sq(a):\n  sq <- a a\nx <- 3\nx <- diff(sq(x) + x, x)" `gives` 7
@@ -624,7 +627,6 @@ x <- d|] `shouldBe` Right 3
       failsWith "function f(a):\n  f <- a\nx <- partial(f(x), x)" "`partial` treats everything but its variable"
       failsWith "function f(a):\n  f <- a\nl := transform([1, 2], v -> f(v))\nx <- 1" "`transform` works this out for each `v`"
       failsWith "function f(a):\n  f <- a\nl := find([1, 2], v -> f(v) > 1, 0)\nx <- 1" "`find` works this out for each `v`"
-      failsWith "function f(a):\n  f <- 3\nrepeat f(1) times:\n  x <- x + 1" "A loop's limit can't call `f`"
       failsWith "function f(a):\n  f <- a\nsq(a) := a a\nap(g, v) := g(v)\nx <- ap(w -> f(w), 2)" "only a function given to a function with a body"
       failsWith "function f(a):\n  f <- a\nx <- f'(1)" "has no derivative by `f'`"
 

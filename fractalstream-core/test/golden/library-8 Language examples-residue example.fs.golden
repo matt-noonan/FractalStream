@@ -82,9 +82,7 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                                                             set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
                                               set `[internal] iteration count` := [internal] [std] riemann_sum.iterations #1
                                               set `[internal] stuck` := [internal] [std] riemann_sum.stuck #1
-                                              let `[internal] [std] residue.integral #0` = [internal] [std] riemann_sum #1 in:
-                                                block:
-                                                  set `[internal] [std] residue #0` := ([internal] [std] residue.integral #0 / ((2:R * 3.141592653589793):C * 0.0 :+ 1.0))
+                                              set `[internal] [std] residue #0` := ([internal] [std] riemann_sum #1 / ((2:R * 3.141592653589793):C * 0.0 :+ 1.0))
                   let `res` = [internal] [std] residue #0 in:
                     block:
                       use Color 255 255 255 for line

@@ -182,12 +182,10 @@ function riemann_sum(γ, f, N):
     γt, next_γt <- next_γt, γ(t)
 
 function residue(f, z, r, N):
-  integral := riemann_sum(t -> z + r e^{2 π i t}, f, N)
-  residue <- integral / (2 π i)
+  residue <- riemann_sum(t -> z + r e^{2 π i t}, f, N) / (2 π i)
 
 function winding_number(γ, z0, N):
-  integral := riemann_sum(γ, z -> 1 / (z - z0), N)
-  winding_number <- round (im integral / (2 π))
+  winding_number <- round (im riemann_sum(γ, z -> 1 / (z - z0), N) / (2 π))
 
 # ---------------------------------------------------------------------------
 # Coloring the plane
