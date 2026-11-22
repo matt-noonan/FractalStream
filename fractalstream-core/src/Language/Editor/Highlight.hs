@@ -252,7 +252,7 @@ codeDefs toks = case toks of
                                 , before `elem` [OpenParen, Comma] ]
     -- `on click at w:`, `at (x, y)`, `on drag from s to w:`
     handlerPoints ts = [ (n, Variable) | (before, Identifier n) <- zip ts (drop 1 ts)
-                                       , before `elem` [Identifier "at", Identifier "from", Identifier "to", OpenParen, Comma] ]
+                                       , before `elem` [Identifier "at", Identifier "from", ToKeyword, OpenParen, Comma] ]
 
 -- | A tool handler's first line, @on ...:@.
 isHandler :: Line -> Bool
