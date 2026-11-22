@@ -18,7 +18,7 @@ script: |-
     color ⟵ blue
   else:
     color ⟵ red
-    
+
   @tool overlay for="z plane"
   on refresh:
     erase
@@ -29,10 +29,12 @@ script: |-
     repeat steps times:
       draw line from path(t) to path(t + dt)
       t ⟵ t + dt
-      
 metadata:
   title: Computing winding numbers
   description: A demonstration of the builtin function `winding_number`
+  preview-commands: |
+    select viewer "z plane"
+    capture viewer "z plane" as preview
   preview: |
     iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAKg0lEQVR4nO2df2yV1RnHn3t76e0P
     sIO1GAFhhpEO6ToKjWVKDagriLYO5hBlw+o24/gRNqQG08TEqZmNiVbNNAyNskKYuJRlCAm//nAx
@@ -83,17 +85,3 @@ metadata:
     8oKGQ4dKv3zLBogImojtwvG6txdEYyOI+hoQ1dX5A12VkmlYPT0gtm2TT/mpU/rbwgYoAbQTqfsz
     sAEYNgDDBmBKBBvAcdgAjsMGcBw2gOOwARyHDeA4bADHYQM4DhvAcdgAjsMGcJz/AxvAmGIhEMFa
     AAAAAElFTkSuQmCC
-wx-properties:
-  viewers:
-    z plane:
-      x: 100
-      'y': 100
-      width: 600
-      height: 600
-      center:
-      - 0
-      - 0
-      pixel-size: 7.8125e-3
-  configuration:
-    x: 692
-    'y': 191
