@@ -131,10 +131,12 @@ spec = do
       colorWithDefs (withBlockRainbow blockRainbow) 0.75 "c := rainbow(x)\ncolor <- c"
         `shouldBe` Right blue
 
-    it "can't be called anywhere else, like any function with a body" $
+    it "can be called inside an expression, but not by a function defined with `:=`" $ do
       colorWithDefs (withBlockRainbow blockRainbow) 0 "color <- light rainbow(x)"
+        `shouldBe` colorWithDefs (withBlockRainbow blockRainbow) 0 "c := rainbow(x)\ncolor <- light c"
+      colorWithDefs (withBlockRainbow blockRainbow) 0 "f(t) := light rainbow(t)\ncolor <- f(x)"
         `shouldSatisfy` \case
-          Left err -> "`rainbow` is a function with a body" `isInfixOf` err
+          Left err -> "`rainbow`, a function with a body" `isInfixOf` err
                       && not ("[std]" `isInfixOf` err)
           Right _ -> False
 

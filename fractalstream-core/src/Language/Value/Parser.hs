@@ -182,8 +182,8 @@ stdlibFuns = foldl' define Map.empty stdlibDefinitions
 
 -- | Expand the calls to the standard library's functions in a value that
 -- isn't part of a script's code, like a configuration value's default.
--- (Its functions with a body can't be called there, as nowhere but as the
--- whole right-hand side of an assignment.)
+-- (Its functions with a body can't be called there: only in a script's
+-- code, where their calls are lifted into statements of their own.)
 expandStdlibCalls :: ParsedValue -> TC ParsedValue
 expandStdlibCalls e = do
   forM_ (calls e) $ \(sr, f) -> case fromStdlibName f of

@@ -9,10 +9,16 @@
 -- change anything but its own variables, write a table, or run a code
 -- block, and its loops don't change the caller's @iterations@ or @stuck@.
 --
--- For now a call is the whole right-hand side of an assignment:
--- @x := f(a)@, @x <- f(a)@, or a tuple's, @(w, ok) := f(a)@. Each call is
+-- A call can be anywhere in a script's code (but where 'checkStmt' says
+-- it can't be): one inside an expression is first lifted out of it, into
+-- an assignment of its own just before it (see 'expandStmt' and
+-- 'liftExpr'), so that each call is the whole right-hand side of an
+-- assignment: @x := f(a)@, @x <- f(a)@, or a tuple's, @(w, ok) := f(a)@.
+-- Each call is
 -- expanded, after code blocks are (see "Language.Code.Procedures", so
--- that a code block can call a function it's given), into
+-- that a code block can call a function it's given) and after @previous@
+-- is (see "Language.Code.Previous", so that a @previous@ belongs to the
+-- loop around it where it's written, in the body or in the caller), into
 --
 -- > [internal] f #k := (a placeholder, of the type the body gives f)
 -- > (the caller's iterations and stuck, saved, if the body has loops)
@@ -41,10 +47,11 @@ import Language.Code.Syntax
 import Language.Value.Syntax
 import Language.Value.Builtins (internalIterations, internalStuck)
 import Language.Code.Procedures (renameStmt)
-import Language.Code.Previous (declaredIn, mapStmtRanges)
+import Language.Code.Previous (declaredIn, mapStmtRanges, mapStmtExprs)
 import Language.Code.Typecheck.Functions (splitArgs, freeVars, isFunctionArg)
 import Language.Code.FunctionArgs (substituteFunctionInStmt)
 import Data.List (partition)
+import Control.Monad.Writer.Strict (WriterT, runWriterT, tell)
 import Language.Parser (functionValueName)
 
 -- | A function with a body: its parameters, its body, and the functions
@@ -83,17 +90,11 @@ block ctx = \case
     lift (checkDefinition ctx sr f params body)
     block ctx { ctxDefs = Map.insert f (FunctionDef params body (ctxDefs ctx)) (ctxDefs ctx) } rest
 
-  s@(Stmt sr node) : rest -> case wholeCall (ctxDefs ctx) node of
-    Just (rebuild, f, callSr, args) -> do
-      (before, result) <- expandCall (ctxDefs ctx) callSr f args
-      let s' = Stmt sr (rebuild (Syn callSr (EVar result)))
-      rest' <- block (declare s' ctx) rest
-      pure (before ++ [s'] ++ rest')
-    Nothing -> do
-      lift (noOtherCalls (ctxDefs ctx) s)
-      s' <- descend ctx s
-      rest' <- block (declare s ctx) rest
-      pure (s' : rest')
+  s : rest -> do
+    lift (checkStmt (ctxDefs ctx) s)
+    ss <- expandStmt ctx s
+    rest' <- block (declare s ctx) rest
+    pure (ss ++ rest')
 
 -- | A statement whose right-hand side is a call to a function with a
 -- body: how to put the statement back together around another
@@ -134,19 +135,221 @@ declare (Stmt _ node) = case node of
   SDeclHomogeneous ns _ -> seeing ns
   _ -> id
 
--- | A call to a function with a body anywhere else than as the whole
--- right-hand side of an assignment is an error, for now.
-noOtherCalls :: FunctionDefs -> Stmt -> TC ()
-noOtherCalls defs s = forM_ (ownExprs s) $ \e ->
-  case [ (sr, f) | (sr, f) <- calls e, Map.member f defs ] of
-    (sr, f) : _ -> advise sr (blockFunctionCallAdvice f)
-    [] -> pure ()
+------------------------------------------------------
+-- Calls inside expressions
+------------------------------------------------------
+
+-- | Lifting: the statements that work out the calls in an expression,
+-- to run before it.
+type Lift = WriterT [Stmt] Expand
+
+-- | A statement, with every call to a function with a body in it
+-- expanded: each one is lifted out of its expression, into the
+-- statements just before it, and replaced by the variable holding its
+-- result. 'checkStmt' has made sure there are calls only where they can
+-- be lifted.
+expandStmt :: Ctx -> Stmt -> Expand [Stmt]
+expandStmt ctx s@(Stmt sr node) = case node of
+  _ | Just (rebuild, f, callSr, args) <- wholeCall defs node -> lifted $ do
+        args' <- mapM liftArg args
+        result <- call callSr f args'
+        pure (Stmt sr (rebuild (Syn callSr (EVar result))))
+
+  SIf c yes no -> lifted $ do
+    c' <- liftExpr ctx c
+    Stmt sr <$> (SIf c' <$> inner yes <*> inner no)
+
+  -- A loop's limit is worked out once, before the loop (as
+  -- "Language.Code.Typecheck" does), and its condition before each check
+  -- of it: before the first pass (unless the loop runs its body first),
+  -- and at the end of each pass.
+  SLoop kind c lim body
+    | any (hasCall defs) lim && not (hasCall defs c) -> lifted $ do
+        lim' <- traverse (liftExpr ctx) lim
+        Stmt sr . SLoop kind c lim' <$> inner body
+    | hasCall defs c -> lifted $ do
+        lim' <- traverse (liftExpr ctx) lim
+        cv <- freshName "condition"
+        body' <- inner body
+        initial <- if kind `elem` [LoopDoWhile, LoopDoUntil]
+                   then pure (Syn sr EZero)
+                   else liftExpr ctx c
+        tell [Stmt sr (SDecl cv Nothing initial)]
+        (c', again) <- lift (runWriterT (liftExpr ctx c))
+        pure (Stmt sr (SLoop kind (Syn sr (EVar cv)) lim'
+                        (Stmt sr (SBlock (body' : again ++ [Stmt sr (SSet cv c')])))))
+  -- (an @iterate@ is the loop "Language.Code.Typecheck" makes of it)
+  SIterate p e isWhile c lim
+    | hasCall defs e || hasCall defs c || any (hasCall defs) lim ->
+        expandStmt ctx $ Stmt sr $ SLoop (if isWhile then LoopWhile else LoopUntil) c lim $ Stmt sr $
+          case p of
+            PVar _ n -> SSet n e
+            PTuple{} -> SSetTuple p e
+
+  _ | null (ownExprs s) || not (any (hasCall defs) (ownExprs s)) -> (: []) <$> descend ctx s
+    | otherwise -> lifted (mapStmtExprs (liftExpr ctx) s)
   where
-    calls (Syn sr node) = here ++ foldMap calls node
-      where here = case node of
-              ECall f _ -> [(sr, f)]
-              EDerivCall f _ _ -> [(sr, f)]
-              _ -> []
+    defs = ctxDefs ctx
+    lifted m = do
+      (s', before) <- runWriterT m
+      pure (before ++ [s'])
+    inner = lift . stmt ctx
+    liftArg a = if isFunctionArg a then pure a else liftExpr ctx a
+    call callSr f args = do
+      (before, result) <- lift (expandCall defs callSr f args)
+      tell before
+      pure result
+
+-- | An expression with its calls to functions with bodies lifted out (see
+-- 'expandStmt'). A call that only some of the time runs (in a branch of
+-- an @if ... then ... else ...@, or on the right of @and@ or @or@) is
+-- lifted into an @if@ of its own, so that it runs just when it would:
+--
+-- > x <- if c then f(a) else b
+--
+-- becomes
+--
+-- > [internal] lifted #k := c
+-- > [internal] f #j := 0
+-- > if [internal] lifted #k:
+-- >   (f's body, with a, giving [internal] f #j)
+-- > x <- if [internal] lifted #k then [internal] f #j else b
+--
+-- The expression itself stays as it was, but for its calls, so it's typed
+-- just as it would be.
+liftExpr :: Ctx -> Expr -> Lift Expr
+liftExpr ctx e@(Syn sr node)
+  | not (hasCall defs e) = pure e
+  | otherwise = case node of
+      ECall f args | Map.member f defs -> do
+        args' <- mapM (\a -> if isFunctionArg a then pure a else liftExpr ctx a) args
+        (before, result) <- lift (expandCall defs sr f args')
+        tell before
+        pure (Syn sr (EVar result))
+      EITE c a b -> do
+        cv <- bindFresh =<< liftExpr ctx c
+        a' <- onlyIf (var cv) a
+        b' <- onlyIfNot (var cv) b
+        pure (Syn sr (EITE (var cv) a' b'))
+      EBin OpAnd a b | hasCall defs b -> do
+        av <- bindFresh =<< liftExpr ctx a
+        Syn sr . EBin OpAnd (var av) <$> onlyIf (var av) b
+      EBin OpOr a b | hasCall defs b -> do
+        av <- bindFresh =<< liftExpr ctx a
+        Syn sr . EBin OpOr (var av) <$> onlyIfNot (var av) b
+      _ -> Syn sr <$> traverse (liftExpr ctx) node
+  where
+    defs = ctxDefs ctx
+    var = Syn sr . EVar
+    st = Stmt sr
+    bindFresh v = do
+      n <- freshName "lifted"
+      tell [st (SDecl n Nothing v)]
+      pure n
+    onlyIf g = conditionally (\body -> st (SIf g body (st SPass)))
+    onlyIfNot g = conditionally (\body -> st (SIf g (st SPass) body))
+    -- The calls in an expression, lifted into a statement of their own
+    -- that runs only some of the time. The variables they declare are
+    -- used by the expression, outside that statement, so they're
+    -- declared before it (as placeholders, like a call's result), and
+    -- only given their values in it.
+    conditionally wrap x = do
+      (x', before) <- lift (runWriterT (liftExpr ctx x))
+      unless (null before) $ do
+        let declared = [ (n, ty, v) | Stmt _ (SDecl n ty v) <- before ]
+            body = [ case b of
+                       Stmt bsr (SDecl n _ v) -> Stmt bsr (SSet n v)
+                       _ -> b
+                   | b <- before, not (isPlaceholder b) ]
+        tell [ st (SDecl n ty (Syn sr EZero)) | (n, ty, _) <- declared ]
+        tell [ wrap (st (SBlock body)) ]
+      pure x'
+    isPlaceholder = \case
+      Stmt _ (SDecl _ _ (Syn _ EZero)) -> True
+      _ -> False
+
+-- | A fresh internal name.
+freshName :: MonadState Int m => String -> m String
+freshName what = do
+  k <- get
+  put (k + 1)
+  pure ("[internal] " ++ what ++ " #" ++ show k)
+
+-- | Whether an expression calls a function with a body.
+hasCall :: FunctionDefs -> Expr -> Bool
+hasCall defs = not . null . callsIn defs
+
+-- | The calls to functions with bodies in an expression, with where each
+-- is.
+callsIn :: FunctionDefs -> Expr -> [(SourceRange, String)]
+callsIn defs (Syn sr node) = here ++ foldMap (callsIn defs) node
+  where here = case node of
+          ECall f _ | Map.member f defs -> [(sr, f)]
+          EDerivCall f _ _ | Map.member f defs -> [(sr, f)]
+          _ -> []
+
+-- | Make sure that a statement calls functions with bodies only where
+-- the calls can be lifted out (see 'expandStmt'): not in the parts of an
+-- expression worked out once for each item of a list, or under a
+-- @partial@, and so on. The calls in a function given to a function
+-- with a body are checked once it's put in place, in the body.
+checkStmt :: FunctionDefs -> Stmt -> TC ()
+checkStmt defs s@(Stmt _ node) = case node of
+  SFun g _ e -> refuseIn e $ \f ->
+    "`" ++ g ++ "` is defined with `:=`, so it is a single value, but it calls `" ++ f
+    ++ "`, a function with a body. Make `" ++ g ++ "` a function with a body too: `function "
+    ++ g ++ "(...):`, then `" ++ g ++ " <- ...` on the next line, indented."
+  SWithFirst item p _ _ _ -> refuseIn p $ \f ->
+    "The condition of `with first " ++ item ++ "` is checked for each item, so it can't call `"
+    ++ f ++ "`, a function with a body, for now. Use a `for each` loop instead."
+  _ -> mapM_ (checkExpr defs) (ownExprs s)
+  where refuseIn = refuseCallsIn defs
+
+-- | Make sure an expression calls functions with bodies only where the
+-- calls can be lifted out (see 'checkStmt').
+checkExpr :: FunctionDefs -> Expr -> TC ()
+checkExpr defs (Syn sr node) = case node of
+  ECall f args | Map.member f defs -> mapM_ (\a -> unless (isFunctionArg a) (checkExpr defs a)) args
+  EDerivCall f _ _ | Map.member f defs -> advise sr
+    ("`" ++ f ++ "` is a function with a body, so it has no derivative by `" ++ f
+     ++ "'`, for now. Differentiate its value instead: `y := " ++ f ++ "(x)`, then `diff(y, x)`.")
+  ELambda _ body -> refuseIn body $ \f ->
+    "This function can't call `" ++ f ++ "`, a function with a body, for now: only a function \
+    \given to a function with a body can."
+  EPartial e x -> do
+    refuseIn e partialAdvice
+    refuseIn x partialAdvice
+  ERemove l item p -> checkExpr defs l >> refuseIn p (perItem "remove" item)
+  ETransform l item p -> checkExpr defs l >> refuseIn p (perItem "transform" item)
+  EFind l item p d -> do
+    checkExpr defs l
+    refuseIn p (perItem "find" item)
+    refuseIn d (perItem "find" item)
+  ETablePointOr t z v -> do
+    checkExpr defs t
+    checkExpr defs z
+    refuseIn v $ \f ->
+      "The value after `else` is only used for a point off the table, so it can't call `" ++ f
+      ++ "`, a function with a body, for now. Work it out first: `v := " ++ f ++ "(...)`."
+  ELet _ v body -> do
+    checkExpr defs v
+    refuseIn body $ \f -> "Here, `" ++ f ++ "`, a function with a body, can't be called, for now."
+  _ -> mapM_ (checkExpr defs) node
+  where
+    refuseIn = refuseCallsIn defs
+    partialAdvice f =
+      "`partial` treats everything but its variable as a constant, so it can't see inside `" ++ f
+      ++ "`, a function with a body. Use `diff`, which can."
+    perItem what item f =
+      "`" ++ what ++ "` works this out for each `" ++ item ++ "`, so it can't call `" ++ f
+      ++ "`, a function with a body, for now. Use a `for each` loop instead."
+
+-- | An error at the first call to a function with a body in an
+-- expression, if there is one.
+refuseCallsIn :: FunctionDefs -> Expr -> (String -> String) -> TC ()
+refuseCallsIn defs e msg = case callsIn defs e of
+  (sr, f) : _ -> advise sr (msg f)
+  [] -> pure ()
 
 -- | The expressions a statement has of its own (not those of the
 -- statements inside it).
@@ -221,10 +424,8 @@ checkDefinition ctx sr f params body = do
   -- what it may see: its own names, and what's in scope where it's defined
   forM_ (Map.toList (bodyUses f params body `Map.withoutKeys` ctxVisible ctx)) $ \(n, usr) ->
     throwError (MissingName usr n)
-  -- calls to other functions with bodies: only as whole right-hand sides
-  forM_ (allStmts body) $ \s@(Stmt _ node) -> case wholeCall (ctxDefs ctx) node of
-    Just _ -> pure ()
-    Nothing -> noOtherCalls (ctxDefs ctx) s
+  -- calls to other functions with bodies: only where they can be lifted
+  mapM_ (checkStmt (ctxDefs ctx)) (allStmts body)
   -- every path gives f a value, and nothing reads it before then
   given <- definitelyAssigns f value False body
   unless given $ advise sr

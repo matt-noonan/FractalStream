@@ -61,7 +61,7 @@ runExpandedCode env = runCodeWith (typeEnvOf env) env
 
 runCodeWith :: TypeEnv -> EnvironmentProxy env -> ParsedCode -> Either TCError (Code env)
 runCodeWith tenv env c =
-  case withEnvironment env (expandRuns c >>= expandFunctionBlocks (Map.keysSet (tyVars tenv)) >>= expandPrevious >>= expandStops >>= expandTuples >>= (expandDerivatives tenv . inferDeclarations tenv Map.empty >=> expandProjective tenv) >>= elab Map.empty env) of
+  case withEnvironment env (expandRuns c >>= expandPrevious >>= expandFunctionBlocks (Map.keysSet (tyVars tenv)) >>= expandStops >>= expandTuples >>= (expandDerivatives tenv . inferDeclarations tenv Map.empty >=> expandProjective tenv) >>= elab Map.empty env) of
     TC x -> x
 
 -- | The steps before elaboration, by themselves: expand @run@s, @stops@,
@@ -70,7 +70,7 @@ runCodeWith tenv env c =
 -- result does nothing more to it before elaborating it.)
 expandParsedCode :: TypeEnv -> ParsedCode -> Either TCError ParsedCode
 expandParsedCode tenv c =
-  case (expandDerivatives tenv . inferDeclarations tenv Map.empty >=> expandProjective tenv) =<< (expandRuns c >>= expandFunctionBlocks (Map.keysSet (tyVars tenv)) >>= expandPrevious >>= expandStops >>= expandTuples) of
+  case (expandDerivatives tenv . inferDeclarations tenv Map.empty >=> expandProjective tenv) =<< (expandRuns c >>= expandPrevious >>= expandFunctionBlocks (Map.keysSet (tyVars tenv)) >>= expandStops >>= expandTuples) of
     TC x -> x
 
 ------------------------------------------------------

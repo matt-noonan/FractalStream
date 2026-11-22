@@ -101,25 +101,23 @@ let `[internal] vanishing radius` = vanishing_radius in:
                                                               set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
                                                         set `[internal] iteration count` := [internal] [std] riemann_sum.iterations #1
                                                         set `[internal] stuck` := [internal] [std] riemann_sum.stuck #1
-                                                        let `[internal] [std] winding_number.integral #0` = [internal] [std] riemann_sum #1 in:
+                                                        set `[internal] [std] winding_number #0` := round((im([internal] [std] riemann_sum #1) / (2:R * 3.141592653589793)))
+                                                        let `n` = [internal] [std] winding_number #0 in:
                                                           block:
-                                                            set `[internal] [std] winding_number #0` := round((im([internal] [std] winding_number.integral #0) / (2:R * 3.141592653589793)))
-                                                            let `n` = [internal] [std] winding_number #0 in:
+                                                            if (n = 0) then:
                                                               block:
-                                                                if (n = 0) then:
+                                                                set `color` := Color 255 255 0
+                                                            else:
+                                                              if (n = 1) then:
+                                                                block:
+                                                                  set `color` := Color 0 180 0
+                                                              else:
+                                                                if (n = 2) then:
                                                                   block:
-                                                                    set `color` := Color 255 255 0
+                                                                    set `color` := Color 0 0 255
                                                                 else:
-                                                                  if (n = 1) then:
-                                                                    block:
-                                                                      set `color` := Color 0 180 0
-                                                                  else:
-                                                                    if (n = 2) then:
-                                                                      block:
-                                                                        set `color` := Color 0 0 255
-                                                                    else:
-                                                                      block:
-                                                                        set `color` := Color 255 0 0
+                                                                  block:
+                                                                    set `color` := Color 255 0 0
 
 
 --- tool overlay

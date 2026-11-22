@@ -90,6 +90,11 @@ stmt (Stmt sr node) = case node of
   SWithFirst item p list body fallback ->
     Stmt sr <$> (SWithFirst item p list <$> stmt body <*> traverse stmt fallback)
   SProc name params body -> Stmt sr . SProc name params <$> stmt body
+  -- (functions with bodies are expanded after this, so a @previous@ in
+  -- one belongs to a loop in its body, and one in a function given as an
+  -- argument belongs to the loop around the call: see
+  -- "Language.Code.FunctionBlocks")
+  SFunction name params body -> Stmt sr . SFunction name params <$> stmt body
   _ -> pure (Stmt sr node)
 
 -- | A loop (whose inner loops have been rewritten), with the @previous@s

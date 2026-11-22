@@ -586,8 +586,49 @@ x <- d|] `shouldBe` Right 3
     it "see only what's in scope where they're defined" $
       failsWith "function g(a):\n  g <- a + later\nlater := 2\nx <- g(1)" "No variable named later"
 
-    it "are called only as a whole right-hand side, for now" $
-      failsWith "function f(a):\n  f <- a\nx <- f(1) + 1" "can only be called as the whole right-hand side"
+    it "can be called inside an expression, in the order it's written" $ do
+      "function f(a):\n  f <- a + 1\nx <- f(1) + 1" `gives` 3
+      "function f(a):\n  f <- a + 1\nx <- f(f(1)) f(0)" `gives` 3
+      "function sq(a):\n  sq <- a a\nx <- 2\nx <- x - sq(x) / (2 x)" `gives` 1
+      "function f(a):\n  f <- a + 1\nx <- 0\nif f(x) > 0:\n  x <- 5" `gives` 5
+      "function f(a):\n  f <- a + 1\ny := 0\nx, y <- f(y), f(x)" `gives` 1
+      "function both(a):\n  both <- (a, a + 1)\nfunction add(t):\n  (p, q) := t\n  add <- p + q\nx <- add(both(3)) + 0" `gives` 7
+      "function g(a):\n  g <- a a\nfunction f(a):\n  f <- g(a) + g(a + 1)\nx <- f(1)" `gives` 5
+
+    it "is only called where it would be worked out, in `if`, `and` and `or`" $ do
+      -- (`slow` never finishes, so it can't be called)
+      let slow = "function slow(a):\n  b := a\n  while true:\n    b <- b + 1\n  slow <- b\n"
+      (slow ++ "x <- if x < 1 then 4 else slow(x)") `gives` 4
+      (slow ++ "x <- if x > 0 then slow(x) else 6") `gives` 6
+      (slow ++ "x <- if x < 1 or slow(x) > 0 then 1 else 2") `gives` 1
+      (slow ++ "x <- if x > 0 and slow(x) > 0 then 1 else 2") `gives` 2
+      (slow ++ "if x > 0:\n  x <- slow(x)\nelse if x < 1:\n  x <- 8\nelse if slow(x) > 0:\n  x <- 9") `gives` 8
+      "function f(a):\n  f <- a + 1\nx <- if x < 1 then f(f(2)) else 0" `gives` 4
+      "function f(a):\n  f <- a > 0\nx <- if x < 1 and f(1) then 1 else 2" `gives` 1
+      "function f(a):\n  f <- a > 0\nx <- if x > 1 or f(-1) then 1 else 2" `gives` 2
+      "function f(a):\n  f <- a + 1\nx <- if x < 1 then (if x < 1 then f(1) else f(2)) else f(3)" `gives` 2
+
+    it "is called before each check of a loop's condition, and once for its limit" $ do
+      "function f(a):\n  f <- a < 10\nwhile f(x):\n  x <- x + 3" `gives` 12
+      "function f(a):\n  f <- a > 10\nuntil f(x):\n  x <- x + 3" `gives` 12
+      "function f(a):\n  f <- a < 10\nrepeat:\n  x <- x + 3\nwhile f(x)" `gives` 12
+      "function f(a):\n  f <- a < 0\nrepeat:\n  x <- x + 3\nwhile f(x)" `gives` 3
+      "function f(a):\n  f <- a + 3\nfunction g(a):\n  g <- a > 10\niterate x -> f(x) until g(x)" `gives` 12
+      "function f(a):\n  f <- a + 3\nwhile x < 10:\n  x <- f(x) + 0" `gives` 12
+      "function f(a):\n  f <- a + 2\nrepeat f(1) times:\n  x <- x + 1" `gives` 3
+      "function f(a):\n  f <- a + 2\nwhile x < 100 up to f(1) times:\n  x <- x + 1" `gives` 3
+      "function f(a):\n  f <- a + 2\nfunction g(a):\n  g <- a < 100\nwhile g(x) up to f(1) times:\n  x <- x + 1" `gives` 3
+
+    it "can be differentiated, by `diff`" $
+      "function sq(a):\n  sq <- a a\nx <- 3\nx <- diff(sq(x) + x, x)" `gives` 7
+
+    it "can't be called where its call can't be lifted out, for now" $ do
+      failsWith "function f(a):\n  f <- a\ng(a) := f(a) + 1\nx <- g(1)" "`g` is defined with `:=`"
+      failsWith "function f(a):\n  f <- a\nx <- partial(f(x), x)" "`partial` treats everything but its variable"
+      failsWith "function f(a):\n  f <- a\nl := transform([1, 2], v -> f(v))\nx <- 1" "`transform` works this out for each `v`"
+      failsWith "function f(a):\n  f <- a\nl := find([1, 2], v -> f(v) > 1, 0)\nx <- 1" "`find` works this out for each `v`"
+      failsWith "function f(a):\n  f <- a\nsq(a) := a a\nap(g, v) := g(v)\nx <- ap(w -> f(w), 2)" "only a function given to a function with a body"
+      failsWith "function f(a):\n  f <- a\nx <- f'(1)" "has no derivative by `f'`"
 
   describe "derivatives through statements" $ do
 
@@ -713,6 +754,33 @@ x <- d|] `shouldBe` Right 3
               , "  c := g(b)"
               , "  twice <- c"
               , "x <- twice(inc, 1)" ] `gives` 3
+
+    it "take `previous` in a body to the body's loop, and in an argument to the caller's" $ do
+      unlines [ "function last_step(a):"
+              , "  w := a"
+              , "  d := 0"
+              , "  k := 0"
+              , "  while k < 3:"
+              , "    w <- 2 w"
+              , "    d <- w - previous w"
+              , "    k <- k + 1"
+              , "  last_step <- d"
+              , "x <- last_step(1)" ] `gives` 4
+      -- (`previous z` is z at the start of the caller's pass, 5, not z in
+      -- the body's loop, which is 7 throughout)
+      unlines [ "function total(g, n):"
+              , "  s := 0"
+              , "  k := 0"
+              , "  while k < n:"
+              , "    s <- s + g(k)"
+              , "    k <- k + 1"
+              , "  total <- s"
+              , "z := 5"
+              , "k := 0"
+              , "while k < 1:"
+              , "  z <- 7"
+              , "  x <- total(j -> previous z, 2)"
+              , "  k <- k + 1" ] `gives` 10
 
     it "can be given on to another call" $
       "sq(a) := a a\nap(g, v) := g(v)\nh(g, v) := ap(g, v) + 1\nx <- h(sq, 3)" `gives` 10

@@ -155,11 +155,11 @@ findVarAtType sr name ty env = case lookupEnv name ty env of
   WrongType ty' -> withKnownType ty $
     throwError (Surprise sr (symbolVal name) (an ty') (Expected $ an ty))
 
--- | What to say about a call to a function with a body anywhere but as the
--- whole right-hand side of an assignment (see
+-- | What to say about a call to a function with a body in a value that
+-- isn't part of a script's code, like a configuration value's default,
+-- where only a single value can be worked out (see
 -- "Language.Code.FunctionBlocks").
 blockFunctionCallAdvice :: String -> String
 blockFunctionCallAdvice f =
-  "`" ++ f ++ "` is a function with a body, which can only be called as the whole \
-  \right-hand side of an assignment for now: `x := " ++ f ++ "(...)`, `x <- "
-  ++ f ++ "(...)`, or `(x, y) := " ++ f ++ "(...)`."
+  "`" ++ f ++ "` is a function with a body, so it can only be called in a script's code, \
+  \not in a value like this one."
