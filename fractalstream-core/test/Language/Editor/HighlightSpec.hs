@@ -145,6 +145,12 @@ spec = describe "highlighting scripts" $ do
     let src = "@viewer \"V\" var=w\npass\n\n@tool \"T\"\non click:\n  draw point at w\n"
     classOf src "w" 1 `shouldBe` Just Variable
 
+  it "knows the points of a drag handler, after `from` and after `to`" $ do
+    let src = "@viewer \"V\"\npass\n\n@tool \"T\"\non drag from p1 to q1:\n  draw line from p1 to q1\n"
+    classOf src "p1" 0 `shouldBe` Just Variable
+    classOf src "q1" 0 `shouldBe` Just Variable
+    classOf src "q1" 1 `shouldBe` Just Variable
+
   it "knows a real viewer's coordinates and pixel dimensions, in it and its tools" $ do
     let src = "@viewer \"V\" xvar=a yvar=b\ncolor <- if a < b and pixel_height > 0 then red else blue\n\n"
            ++ "@tool \"T\"\non click:\n  draw point at (a, b)\n  write text(pixel_width) at (a, b)\n"

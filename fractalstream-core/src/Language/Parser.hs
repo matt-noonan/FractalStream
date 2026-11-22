@@ -88,9 +88,12 @@ ident = tokenMatch $ \case
   Identifier n -> Just n
   _ -> Nothing
 
+-- | A word, as the tokenizer gives it: an identifier, or the keyword
+-- token for a word the tokenizer reads as one (like @to@).
 tok :: String -> Prod r ()
 tok s = tokenMatch $ \case
   Identifier n | n == s -> Just ()
+  t | Just t == Map.lookup s wordlikeTokens -> Just ()
   _ -> Nothing
 
 ruleChoice :: [Prod r a] -> P.Grammar r (Prod r a)
@@ -241,7 +244,7 @@ scriptBindings = go True . map (\(SRToken t sr) -> (t, sr))
       let line = takeWhile ((/= Colon) . fst) toks
       in concat [ named "variable" n
                 | ((before, _), n) <- zip line (drop 1 line)
-                , before `elem` [Identifier "at", Identifier "from", Identifier "to", OpenParen, Comma] ]
+                , before `elem` [Identifier "at", Identifier "from", ToKeyword, OpenParen, Comma] ]
 
 -- | A built-in name, what it is, and whether a script can take it for its
 -- own (all but the tokenizer's keywords), if this token is one.

@@ -153,12 +153,18 @@ topLevelLines toks0 = go (0 :: Int) [] (unwrap toks0)
     go depth line = \case
       [] -> emit line []
       t : rest -> case baseToken t of
-        Newline | depth == 0 -> emit line (go 0 [] rest)
+        -- (a header's line ends before the block that follows it, as in
+        -- @function f(x):@, Newline, Indent, ...: that block is part of
+        -- the same top-level line)
+        Newline | depth == 0, not (startsBlock rest) -> emit line (go 0 [] rest)
         Indent -> go (depth + 1) (t : line) rest
         Dedent | depth == 1 -> emit (t : line) (go 0 [] rest)
                | otherwise -> go (depth - 1) (t : line) rest
         _ -> go depth (t : line) rest
     emit line more = if null line then more else reverse line : more
+    startsBlock = \case
+      t : _ -> baseToken t == Indent
+      [] -> False
 
 -- | The values no script can name, under the names the standard library
 -- uses for them.

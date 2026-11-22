@@ -293,6 +293,10 @@ codeStatementsGrammar CommonDefs{..} = mdo
         <$> (lit "repeat" *> optional upTo <* colon <* nl)
         <*> block
         <*> (lit "until" *> value <* nl)) <?> "repeat...until loop"
+    , node
+      ((\l b -> SLoop LoopWhile true (Just l) b)
+       <$> (lit "repeat" *> value <* token TimesKeyword <* colon <* nl)
+       <*> block)
     , effect <?> "extended operation"
     ]
 
@@ -300,7 +304,7 @@ codeStatementsGrammar CommonDefs{..} = mdo
     ((:) <$> (token OpenParen *> ident)
          <*> ((many (token Comma *> ident)) <* token CloseParen))
 
-  upTo <- rule (lit "up" *> lit "to" *> value <* token TimesKeyword)
+  upTo <- rule (lit "up" *> token ToKeyword *> value <* token TimesKeyword)
 
   -- What a tuple assignment assigns to: a variable, or two or more
   -- patterns in parentheses, nesting to the right as pairs do.
@@ -342,6 +346,11 @@ codeStatementsGrammar CommonDefs{..} = mdo
         <*> ((lit "while" $> True) <|> (lit "until" $> False))
         <*> value
         <*> optional upTo)
+    , node
+      ( (\v e n -> SIterate v e True true (Just n))
+       <$> (lit "iterate" *> iterateTarget <* token RightArrow)
+       <*> value
+       <*> (lit "for" *> value <* token TimesKeyword))
     , node (SPass <$ lit "pass") <?> "pass"
     -- writing a table's cell: `T @ (j, k) <- v`, or `T @ point z <- v`,
     -- or a slice of it: `T @ (j, *) <- xs`, `T @ * <- xs`
@@ -351,17 +360,19 @@ codeStatementsGrammar CommonDefs{..} = mdo
     -- `resize T to (w, h)`, maybe `filled with v`
     , node
       (SResize <$> (lit "resize" *> ident)
-               <*> (lit "to" *> tableSize)
+               <*> (token ToKeyword *> tableSize)
                <*> optional (lit "filled" *> lit "with" *> value))
       <?> "table resize"
     -- `reset T to (w, h)`, maybe `from p to q`, maybe `filled with v`
     , node
       (SAllocate <$> (lit "reset" *> ident)
-                 <*> (lit "to" *> tableSize)
-                 <*> optional ((,) <$> (lit "from" *> value) <*> (lit "to" *> beforeWords))
+                 <*> (token ToKeyword *> tableSize)
+                 <*> optional ((,) <$> (lit "from" *> value) <*> (token ToKeyword *> beforeWords))
                  <*> optional (lit "filled" *> lit "with" *> value))
       <?> "table reset"
     ]
+
+  let true = Syn NoSourceRange (ELit "`true`" (SomeHaskellType BooleanType True))
 
   value <- valueGrammarWithFunctions funNames ownNames
   -- (a value a statement's own word can follow, `4 pixels` or `q filled
@@ -404,10 +415,10 @@ codeStatementsGrammar CommonDefs{..} = mdo
     , draw
       (DrawRectFrom <$> (isJust <$> optional (tok "filled"))
                     <*> ((tok "rectangle" *> tok "from") *> value)
-                    <*> (tok "to" *> value))
+                    <*> (token ToKeyword *> value))
     , draw
       (DrawLineFrom <$> ((tok "line" *> tok "from") *> value)
-                    <*> (tok "to" *> value))
+                    <*> (token ToKeyword *> value))
     ]
 
   strokeOrLine <- ruleChoice

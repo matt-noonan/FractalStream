@@ -91,6 +91,7 @@ data Token
   | TransformKeyword
   | RangeKeyword
   | DiffKeyword
+  | ToKeyword
   | At
   | AtAt
   | LengthKeyword
@@ -268,6 +269,7 @@ wordlikeTokens = Map.fromList
   , ("find", FindKeyword), ("transform", TransformKeyword)
   , ("range", RangeKeyword), ("length", LengthKeyword)
   , ("diff", DiffKeyword), ("previous", PreviousKeyword)
+  , ("to", ToKeyword)
   ]
 
 data TokenGroup

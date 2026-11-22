@@ -1,0 +1,161 @@
+=== viewer 0: z plane
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `[internal] [std] winding_number #0` = 0 in:
+                        block:
+                          let `[internal] [std] winding_number.N #0` = steps in:
+                            block:
+                              let `[internal] [std] riemann_sum #1` = 0.0 :+ 0.0 in:
+                                block:
+                                  let `[internal] [std] riemann_sum.iterations #1` = [internal] iteration count in:
+                                    block:
+                                      let `[internal] [std] riemann_sum.stuck #1` = [internal] stuck in:
+                                        block:
+                                          let `[internal] [std] riemann_sum.N #1` = [internal] [std] winding_number.N #0 in:
+                                            block:
+                                              set `[internal] [std] riemann_sum #1` := 0:R:C
+                                              let `[internal] tuple #0` = 0 in:
+                                                block:
+                                                  let `[internal] tuple #1` = (1:R / [internal] [std] riemann_sum.N #1:R) in:
+                                                    block:
+                                                      let `[internal] [std] riemann_sum.t #1` = [internal] tuple #0:R in:
+                                                        block:
+                                                          let `[internal] [std] riemann_sum.dt #1` = [internal] tuple #1 in:
+                                                            block:
+                                                              let `[internal] tuple #2` = let [internal] path.t #0 = 0 in (((1:R + (2:R * cos(((2:R * 3.141592653589793) * [internal] path.t #0:R)))):C * (2.718281828459045:C ^ (((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] path.t #0:R:C))) - 1:R:C) in:
+                                                                block:
+                                                                  let `[internal] tuple #3` = let [internal] path.t #0 = [internal] [std] riemann_sum.dt #1 in (((1:R + (2:R * cos(((2:R * 3.141592653589793) * [internal] path.t #0)))):C * (2.718281828459045:C ^ (((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] path.t #0:C))) - 1:R:C) in:
+                                                                    block:
+                                                                      let `[internal] [std] riemann_sum.γt #1` = [internal] tuple #2 in:
+                                                                        block:
+                                                                          let `[internal] [std] riemann_sum.next_γt #1` = [internal] tuple #3 in:
+                                                                            block:
+                                                                              set `[hoisted] [internal] [std] winding_number #0` := [internal] [std] winding_number #0
+                                                                              set `[hoisted] [internal] [std] riemann_sum #1` := [internal] [std] riemann_sum #1
+                                                                              set `[hoisted] [internal] [std] riemann_sum.iterations #1` := [internal] [std] riemann_sum.iterations #1
+                                                                              set `[hoisted] [internal] [std] riemann_sum.stuck #1` := [internal] [std] riemann_sum.stuck #1
+                                                                              set `[hoisted] [internal] [std] riemann_sum.N #1` := [internal] [std] riemann_sum.N #1
+                                                                              set `[hoisted] [internal] [std] riemann_sum.t #1` := [internal] [std] riemann_sum.t #1
+                                                                              set `[hoisted] [internal] [std] riemann_sum.dt #1` := [internal] [std] riemann_sum.dt #1
+                                                                              set `[hoisted] [internal] [std] riemann_sum.γt #1` := [internal] [std] riemann_sum.γt #1
+                                                                              set `[hoisted] [internal] [std] riemann_sum.next_γt #1` := [internal] [std] riemann_sum.next_γt #1
+
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `[internal] [std] winding_number #0` = [hoisted] [internal] [std] winding_number #0 in:
+                  block:
+                    let `[internal] [std] riemann_sum #1` = [hoisted] [internal] [std] riemann_sum #1 in:
+                      block:
+                        let `[internal] [std] riemann_sum.iterations #1` = [hoisted] [internal] [std] riemann_sum.iterations #1 in:
+                          block:
+                            let `[internal] [std] riemann_sum.stuck #1` = [hoisted] [internal] [std] riemann_sum.stuck #1 in:
+                              block:
+                                let `[internal] [std] riemann_sum.N #1` = [hoisted] [internal] [std] riemann_sum.N #1 in:
+                                  block:
+                                    let `[internal] [std] riemann_sum.t #1` = [hoisted] [internal] [std] riemann_sum.t #1 in:
+                                      block:
+                                        let `[internal] [std] riemann_sum.dt #1` = [hoisted] [internal] [std] riemann_sum.dt #1 in:
+                                          block:
+                                            let `[internal] [std] riemann_sum.γt #1` = [hoisted] [internal] [std] riemann_sum.γt #1 in:
+                                              block:
+                                                let `[internal] [std] riemann_sum.next_γt #1` = [hoisted] [internal] [std] riemann_sum.next_γt #1 in:
+                                                  block:
+                                                    let `[internal] [std] winding_number.z0 #0` = z in:
+                                                      block:
+                                                        let `[internal] fresh #38` = 0 in:
+                                                          let `[internal] fresh #39` = [internal] [std] riemann_sum.N #1 in:
+                                                            block:
+                                                              if (True and ([internal] fresh #38 < [internal] fresh #39)) then:
+                                                                do-while (True and ([internal] fresh #38 < [internal] fresh #39)):
+                                                                  block:
+                                                                    block:
+                                                                      set `[internal] [std] riemann_sum #1` := ([internal] [std] riemann_sum #1 + (let [internal] [std] riemann_sum #1.z @8:4 = [internal] [std] riemann_sum.γt #1 in (1:R:C / ([internal] [std] riemann_sum #1.z @8:4 - [internal] [std] winding_number.z0 #0)) * ([internal] [std] riemann_sum.next_γt #1 - [internal] [std] riemann_sum.γt #1)))
+                                                                      set `[internal] [std] riemann_sum.t #1` := ([internal] [std] riemann_sum.t #1 + [internal] [std] riemann_sum.dt #1)
+                                                                      let `[internal] tuple #4` = [internal] [std] riemann_sum.next_γt #1 in:
+                                                                        block:
+                                                                          let `[internal] tuple #5` = let [internal] path.t #0 = [internal] [std] riemann_sum.t #1 in (((1:R + (2:R * cos(((2:R * 3.141592653589793) * [internal] path.t #0)))):C * (2.718281828459045:C ^ (((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] path.t #0:C))) - 1:R:C) in:
+                                                                            block:
+                                                                              set `[internal] [std] riemann_sum.γt #1` := [internal] tuple #4
+                                                                              set `[internal] [std] riemann_sum.next_γt #1` := [internal] tuple #5
+                                                                    set `[internal] fresh #38` := ([internal] fresh #38 + 1)
+                                                              else:
+                                                                no-op
+                                                              set `[internal] iteration count` := [internal] fresh #38
+                                                              set `[internal] stuck` := ([internal] fresh #38 = [internal] fresh #39)
+                                                        set `[internal] iteration count` := [internal] [std] riemann_sum.iterations #1
+                                                        set `[internal] stuck` := [internal] [std] riemann_sum.stuck #1
+                                                        let `[internal] [std] winding_number.integral #0` = [internal] [std] riemann_sum #1 in:
+                                                          block:
+                                                            set `[internal] [std] winding_number #0` := round((im([internal] [std] winding_number.integral #0) / (2:R * 3.141592653589793)))
+                                                            let `n` = [internal] [std] winding_number #0 in:
+                                                              block:
+                                                                if (n = 0) then:
+                                                                  block:
+                                                                    set `color` := Color 255 255 0
+                                                                else:
+                                                                  if (n = 1) then:
+                                                                    block:
+                                                                      set `color` := Color 0 180 0
+                                                                  else:
+                                                                    if (n = 2) then:
+                                                                      block:
+                                                                        set `color` := Color 0 0 255
+                                                                    else:
+                                                                      block:
+                                                                        set `color` := Color 255 0 0
+
+
+--- tool overlay
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+              use Color 0 0 0 for line
+              let `[internal] tuple #0` = 0 in:
+                block:
+                  let `[internal] tuple #1` = (1:R / steps:R) in:
+                    block:
+                      let `t` = [internal] tuple #0:R in:
+                        block:
+                          let `dt` = [internal] tuple #1 in:
+                            block:
+                              draw line from (2:R:C, 1.0 :+ 0.0) to ((1.9:C - (0.3:C * 0.0 :+ 1.0)), 1.0 :+ 0.0)
+                              draw line from (2:R:C, 1.0 :+ 0.0) to ((2.1:C - (0.3:C * 0.0 :+ 1.0)), 1.0 :+ 0.0)
+                              let `[internal] fresh #16` = 0 in:
+                                let `[internal] fresh #17` = steps in:
+                                  block:
+                                    if (True and ([internal] fresh #16 < [internal] fresh #17)) then:
+                                      do-while (True and ([internal] fresh #16 < [internal] fresh #17)):
+                                        block:
+                                          block:
+                                            draw line from (let [internal] path.t #0 = t in (((1:R + (2:R * cos(((2:R * 3.141592653589793) * [internal] path.t #0)))):C * (2.718281828459045:C ^ (((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] path.t #0:C))) - 1:R:C), 1.0 :+ 0.0) to (let [internal] path.t #0 = (t + dt) in (((1:R + (2:R * cos(((2:R * 3.141592653589793) * [internal] path.t #0)))):C * (2.718281828459045:C ^ (((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] path.t #0:C))) - 1:R:C), 1.0 :+ 0.0)
+                                            set `t` := (t + dt)
+                                          set `[internal] fresh #16` := ([internal] fresh #16 + 1)
+                                    else:
+                                      no-op
+                                    set `[internal] iteration count` := [internal] fresh #16
+                                    set `[internal] stuck` := ([internal] fresh #16 = [internal] fresh #17)
+
+

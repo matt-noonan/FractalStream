@@ -18,7 +18,7 @@ script: |
     iterate z -> z^2 + C until z escapes up to limit times
 
   define probe_cycle_length(C):
-    for each k in range(1, 500):
+    repeat 500 times:
       z <- z^2 + C
     count := 0
     savedZ := z

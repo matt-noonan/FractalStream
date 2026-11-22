@@ -252,7 +252,7 @@ codeDefs toks = case toks of
                                 , before `elem` [OpenParen, Comma] ]
     -- `on click at w:`, `at (x, y)`, `on drag from s to w:`
     handlerPoints ts = [ (n, Variable) | (before, Identifier n) <- zip ts (drop 1 ts)
-                                       , before `elem` [Identifier "at", Identifier "from", Identifier "to", OpenParen, Comma] ]
+                                       , before `elem` [Identifier "at", Identifier "from", ToKeyword, OpenParen, Comma] ]
 
 -- | A tool handler's first line, @on ...:@.
 isHandler :: Line -> Bool
@@ -322,7 +322,7 @@ tokenClass = \case
   NumberF _ -> Just NumberLiteral
   ScientificNotation _ -> Just NumberLiteral
   Quoted _ -> Just StringLiteral
-  t | t `elem` [If, Then, Else, Or_, And_, Not_, Escapes, Vanishes, Stops, PreviousKeyword, TimesKeyword] -> Just Keyword
+  t | t `elem` [If, Then, Else, Or_, And_, Not_, Escapes, Vanishes, Stops, PreviousKeyword, TimesKeyword, ToKeyword] -> Just Keyword
     | t `elem` [Euler, Pi, I, True_, False_, Iterations, Stuck, Infinity] -> Just BuiltinValue
     | t `elem` [TextKeyword, AppendKeyword, PrependKeyword, JoinKeyword, RemoveKeyword, FindKeyword
                , TransformKeyword, RangeKeyword, LengthKeyword, DiffKeyword
@@ -336,7 +336,7 @@ tokenClass = \case
 -- @\@config@ fields (unless the script defines them as something else).
 keywords :: Set String
 keywords = Set.fromList
-  [ "while", "until", "repeat", "iterate", "up", "to", "for", "each", "in", "with", "first"
+  [ "while", "until", "repeat", "iterate", "up", "for", "each", "in", "with", "first"
   , "matching", "define", "function", "run", "pass", "draw", "use", "erase", "write", "point", "at"
   , "circle", "filled", "radius", "pixels", "rectangle", "from", "line", "stroke", "fill", "on"
   , "as", "choice", "button", "row", "tab", "coloring", "reset", "resize" ]

@@ -96,15 +96,100 @@ fall(t) := wheel8(t, rgb255(128, 55, 3), rgb255(158, 99, 26), rgb255(186, 143, 5
 # In the hyperbolic plane, the screen-to-model map is (a s + b)/(c s + d),
 # of determinant 1, and it stretches a pixel at the screen point s that
 # shows p by |a - c p|².
-mobius_stretch(a, c, p) := |a - c p| |a - c p|
+mobius_stretch(a, c, p) := |a - c p|^2
 hyperbolic_stretch_at(p) := mobius_stretch(internal_view_a_re + internal_view_a_im i, internal_view_c_re + internal_view_c_im i, p)
 
 # How much the view stretches a screen pixel at the point p: not at all on
 # the plane; on the sphere, by the stereographic projection at p (for a
 # pixel facing the viewer: near the globe's rim, pixels are longer one
 # way).
-view_stretch_at(p) := if internal_view_kind = 2 then hyperbolic_stretch_at(p) else if internal_view_kind = 1 then (1 + |p| |p|) / 2 else 1.0
+view_stretch_at(p) := if internal_view_kind = 2 then hyperbolic_stretch_at(p) else if internal_view_kind = 1 then (1 + |p|^2) / 2 else 1.0
 
 # The width, in the model, of a screen pixel at the point p, so that a tool
 # can size a marker at p to look the same anywhere in the view.
 pixel_size_at(p) := internal_view_pixel_size view_stretch_at(p)
+
+# ---------------------------------------------------------------------------
+# Newton's method
+
+function full_newton_root(f, x, N, stop):
+  repeat up to N times:
+    y := f(x)
+    x <- x - y / (ⅆy/ⅆx)
+  until stop(x, previous x)
+  full_newton_root <- not stuck, x
+
+function newton_root(f, x):
+  newton_root <- full_newton_root(f, x, max_iters, (x,y) -> x = y)
+
+# ---------------------------------------------------------------------------
+# Schwarzian derivative
+
+function S(f, x):
+  y := f(x)
+  S <- diff(y, x, 3) / diff(y, x) - (3/2) (diff(y, x, 2) / diff(y, x))^2
+
+# ---------------------------------------------------------------------------
+# min / max / clamp
+
+min(x, y) := if x < y then x else y
+
+max(x, y) := if x > y then x else y
+
+clamp(x, lo, hi) := if x < lo then lo else if x > hi then hi else x
+
+# ---------------------------------------------------------------------------
+# Floyd's tortoise and hare algorithm
+
+function find_cycle(f, z, warmup, max_period, same, χ):
+
+  find_cycle <- false, 0, 0
+
+  iterate z -> f(z) while χ(z) up to warmup times
+
+  if χ(z):
+    tortoise := f(z)
+    hare := f(tortoise)
+
+    # FIXME: is this "up to" bound correct?
+    while χ(tortoise) and χ(hare) and not same(tortoise, hare) up to max_period times:
+      tortoise <- f(tortoise)
+      hare <- f(f(hare))
+
+    if χ(tortoise) and χ(hare):
+      tortoise <- z
+      while not same(tortoise, hare):
+        tortoise <- f(tortoise)
+        hare <- f(hare)
+
+      λ := 1
+      hare <- f(tortoise)
+      while not same(tortoise, hare):
+        hare, λ <- f(hare), λ + 1
+
+      find_cycle <- true, hare, λ
+
+# ---------------------------------------------------------------------------
+# Integrals, residue, winding number
+
+function riemann_sum(γ, f, N):
+  riemann_sum <- 0
+  t, dt := 0, 1/N
+  γt, next_γt := γ(0), γ(dt)
+  repeat N times:
+    riemann_sum <- riemann_sum + f(γt) (next_γt - γt)
+    t <- t + dt
+    γt, next_γt <- next_γt, γ(t)
+
+function residue(f, z, r, N):
+  integral := riemann_sum(t -> z + r e^{2 π i t}, f, N)
+  residue <- integral / (2 π i)
+
+function winding_number(γ, z0, N):
+  integral := riemann_sum(γ, z -> 1 / (z - z0), N)
+  winding_number <- round (im integral / (2 π))
+
+# ---------------------------------------------------------------------------
+# Coloring the plane
+
+domain_color(z) ≔ hsl((arg(z) / (2 π)) + 1/3, 1, |z|² / (1 + |z|²))

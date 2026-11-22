@@ -1,0 +1,65 @@
+=== viewer 0: Newton's method basin boundaries
+--- once per render
+let `color` = Color 128 128 128 in:
+  let `[internal] dy` = 0.0 in:
+    let `[internal] dx` = 0.0 in:
+      let `[internal] y` = 0.0 in:
+        let `[internal] x` = 0.0 in:
+          let `[internal] vanishing radius` = vanishing_radius in:
+            let `[internal] escape radius` = escape_radius in:
+              let `[internal] iteration limit` = max_iters in:
+                let `[internal] stuck` = False in:
+                  let `[internal] iteration count` = 0 in:
+                    block:
+                      let `d w/d z` = 1:R:C in:
+                        block:
+                          let `[internal] stops.started #0` = False in:
+                            block:
+                              set `[hoisted] d w/d z` := d w/d z
+                              set `[hoisted] [internal] stops.started #0` := [internal] stops.started #0
+
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `d w/d z` = [hoisted] d w/d z in:
+                  block:
+                    let `[internal] stops.started #0` = [hoisted] [internal] stops.started #0 in:
+                      block:
+                        let `w` = z in:
+                          block:
+                            let `[internal] stops.prev #1` = w in:
+                              block:
+                                let `[internal] fresh #24` = 0 in:
+                                  let `[internal] fresh #25` = [internal] iteration limit in:
+                                    block:
+                                      if (!([internal] stops.started #0 and (|(w - [internal] stops.prev #1)| < [internal] vanishing radius)) and ([internal] fresh #24 < [internal] fresh #25)) then:
+                                        do-while (!([internal] stops.started #0 and (|(w - [internal] stops.prev #1)| < [internal] vanishing radius)) and ([internal] fresh #24 < [internal] fresh #25)):
+                                          block:
+                                            block:
+                                              set `[internal] stops.prev #1` := w
+                                              set `[internal] stops.started #0` := True
+                                              set `d w/d z` := (d w/d z - (((let [internal] f'.z #1 = w in ((3:R:C * ([internal] f'.z #1 ^ 2:R:C)) + 0.0 :+ 1.0) * let [internal] f.z #0 = w in (((3:R:C * ([internal] f.z #0 ^ 2:R:C)) + 0.0 :+ 1.0) * d w/d z)) - (let [internal] f.z #0 = w in ((([internal] f.z #0 ^ 3:R:C) + (0.0 :+ 1.0 * [internal] f.z #0)) - 1:R:C) * let [internal] f'.z #1 = w in ((3:R:C * (2:R:C * [internal] f'.z #1)) * d w/d z))) / (let [internal] f'.z #1 = w in ((3:R:C * ([internal] f'.z #1 ^ 2:R:C)) + 0.0 :+ 1.0) * let [internal] f'.z #1 = w in ((3:R:C * ([internal] f'.z #1 ^ 2:R:C)) + 0.0 :+ 1.0))))
+                                              set `w` := (w - (let [internal] f.z #0 = w in ((([internal] f.z #0 ^ 3:R:C) + (0.0 :+ 1.0 * [internal] f.z #0)) - 1:R:C) / let [internal] f'.z #1 = w in ((3:R:C * ([internal] f'.z #1 ^ 2:R:C)) + 0.0 :+ 1.0)))
+                                            set `[internal] fresh #24` := ([internal] fresh #24 + 1)
+                                      else:
+                                        no-op
+                                      set `[internal] iteration count` := [internal] fresh #24
+                                      set `[internal] stuck` := ([internal] fresh #24 = [internal] fresh #25)
+                                if ((vanishing_radius / 10:R) < |d w/d z|) then:
+                                  block:
+                                    set `color` := Color 0 0 0
+                                else:
+                                  if (|(w - z)| < 2.5e-2) then:
+                                    block:
+                                      set `color` := Color 255 0 0
+                                  else:
+                                    block:
+                                      set `color` := Color 255 255 255
+
+

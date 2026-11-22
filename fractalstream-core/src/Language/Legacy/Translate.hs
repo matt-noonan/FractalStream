@@ -819,11 +819,10 @@ stmt ctx top inLoop = \case
 
   Repeat n b -> do
     b' <- stmtsIn True b
-    let k = fresh "k"
-        count = case n of
+    let count = case n of
           Num s | all isDigit s -> s
           _ -> "round(" ++ (if exprTy (cxTy ctx . cxName ctx) n == TReal then ex n else "re(" ++ ex n ++ ")") ++ ")"
-    pure [Line ("for each " ++ k ++ " in range(1, " ++ count ++ "):"), Nest (orPass b')]
+    pure [Line ("repeat " ++ count ++ " times:"), Nest (orPass b')]
 
   Reduce v e -> do
     let v' = cxName ctx v
@@ -870,7 +869,6 @@ stmt ctx top inLoop = \case
   where
     ex = expr ctx 0
     cnd = cond ctx 0
-    fresh = freshIn (cxUsed ctx)
 
     -- a loop's own limit on its passes, if it has one
     iterateCap = maybe "" (\n -> " up to " ++ n ++ " times") (cxLoopCap ctx)
