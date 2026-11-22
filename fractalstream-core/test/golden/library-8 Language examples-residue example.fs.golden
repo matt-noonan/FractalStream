@@ -1,0 +1,95 @@
+=== viewer 0: z plane
+--- body
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `z` = ([internal] x:C + (0.0 :+ 1.0 * [internal] y:C)) in:
+            let `pixel_size` = [internal] dx in:
+              block:
+                let `w` = let [internal] f.z #0 = z in (1:R:C / ((([internal] f.z #0 ^ 2:R:C) - 1:R:C) ^ 2:R:C)) in:
+                  block:
+                    set `color` := let #hue-arg = (((1:R / 2:R) + ((arg(w) + ((3:R * 3.141592653589793) / 2:R)) / (2:R * 3.141592653589793))), (1:R, ((2:R * atan(|w|)) / 3.141592653589793))) in let #hue-parts = ((6.0 * ((1st #hue-arg) mod 1.0)), (if ((1st (2nd #hue-arg)) < 0.0) then 0.0 else if (1.0 < (1st (2nd #hue-arg))) then 1.0 else (1st (2nd #hue-arg)), if ((2nd (2nd #hue-arg)) < 0.0) then 0.0 else if (1.0 < (2nd (2nd #hue-arg))) then 1.0 else (2nd (2nd #hue-arg)))) in rgb(((2nd (2nd #hue-parts)) + (((1.0 - |((2.0 * (2nd (2nd #hue-parts))) - 1.0)|) * (1st (2nd #hue-parts))) * (if ((|((1st #hue-parts) - 3.0)| - 1.0) < 0.0) then 0.0 else if (1.0 < (|((1st #hue-parts) - 3.0)| - 1.0)) then 1.0 else (|((1st #hue-parts) - 3.0)| - 1.0) - (1.0 / 2.0)))), ((2nd (2nd #hue-parts)) + (((1.0 - |((2.0 * (2nd (2nd #hue-parts))) - 1.0)|) * (1st (2nd #hue-parts))) * (if ((2.0 - |((1st #hue-parts) - 2.0)|) < 0.0) then 0.0 else if (1.0 < (2.0 - |((1st #hue-parts) - 2.0)|)) then 1.0 else (2.0 - |((1st #hue-parts) - 2.0)|) - (1.0 / 2.0)))), ((2nd (2nd #hue-parts)) + (((1.0 - |((2.0 * (2nd (2nd #hue-parts))) - 1.0)|) * (1st (2nd #hue-parts))) * (if ((2.0 - |((1st #hue-parts) - 4.0)|) < 0.0) then 0.0 else if (1.0 < (2.0 - |((1st #hue-parts) - 4.0)|)) then 1.0 else (2.0 - |((1st #hue-parts) - 4.0)|) - (1.0 / 2.0)))))
+
+
+--- tool overlay
+  -- on refresh
+let `[internal] vanishing radius` = vanishing_radius in:
+  let `[internal] escape radius` = escape_radius in:
+    let `[internal] iteration limit` = max_iters in:
+      let `[internal] stuck` = False in:
+        let `[internal] iteration count` = 0 in:
+          let `pixel_size` = [internal] px in:
+            block:
+              erase
+              let `[internal] [std] residue #0` = 0.0 :+ 0.0 in:
+                block:
+                  block:
+                    let `[internal] [std] residue.z #0` = z0 in:
+                      block:
+                        let `[internal] [std] residue.r #0` = r in:
+                          block:
+                            let `[internal] [std] residue.N #0` = steps in:
+                              block:
+                                block:
+                                  let `[internal] [std] riemann_sum #1` = 0.0 :+ 0.0 in:
+                                    block:
+                                      let `[internal] [std] riemann_sum.iterations #1` = [internal] iteration count in:
+                                        block:
+                                          let `[internal] [std] riemann_sum.stuck #1` = [internal] stuck in:
+                                            block:
+                                              block:
+                                                let `[internal] [std] riemann_sum.N #1` = [internal] [std] residue.N #0 in:
+                                                  block:
+                                                    block:
+                                                      set `[internal] [std] riemann_sum #1` := 0:R:C
+                                                      let `[internal] tuple #0` = 0 in:
+                                                        block:
+                                                          let `[internal] tuple #1` = (1:R / [internal] [std] riemann_sum.N #1:R) in:
+                                                            block:
+                                                              let `[internal] [std] riemann_sum.t #1` = [internal] tuple #0:R in:
+                                                                block:
+                                                                  let `[internal] [std] riemann_sum.dt #1` = [internal] tuple #1 in:
+                                                                    block:
+                                                                      let `[internal] tuple #2` = let [internal] [std] riemann_sum #1.t @15:8 = 0 in ([internal] [std] residue.z #0 + ([internal] [std] residue.r #0:C * (2.718281828459045:C ^ (((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] [std] riemann_sum #1.t @15:8:R:C)))) in:
+                                                                        block:
+                                                                          let `[internal] tuple #3` = let [internal] [std] riemann_sum #1.t @15:8 = [internal] [std] riemann_sum.dt #1 in ([internal] [std] residue.z #0 + ([internal] [std] residue.r #0:C * (2.718281828459045:C ^ (((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] [std] riemann_sum #1.t @15:8:C)))) in:
+                                                                            block:
+                                                                              let `[internal] [std] riemann_sum.γt #1` = [internal] tuple #2 in:
+                                                                                block:
+                                                                                  let `[internal] [std] riemann_sum.next_γt #1` = [internal] tuple #3 in:
+                                                                                    block:
+                                                                                      let `[internal] fresh #30` = 0 in:
+                                                                                        let `[internal] fresh #31` = [internal] [std] riemann_sum.N #1 in:
+                                                                                          block:
+                                                                                            if (True and ([internal] fresh #30 < [internal] fresh #31)) then:
+                                                                                              do-while (True and ([internal] fresh #30 < [internal] fresh #31)):
+                                                                                                block:
+                                                                                                  block:
+                                                                                                    set `[internal] [std] riemann_sum #1` := ([internal] [std] riemann_sum #1 + (let [internal] f.z #0 = [internal] [std] riemann_sum.γt #1 in (1:R:C / ((([internal] f.z #0 ^ 2:R:C) - 1:R:C) ^ 2:R:C)) * ([internal] [std] riemann_sum.next_γt #1 - [internal] [std] riemann_sum.γt #1)))
+                                                                                                    set `[internal] [std] riemann_sum.t #1` := ([internal] [std] riemann_sum.t #1 + [internal] [std] riemann_sum.dt #1)
+                                                                                                    let `[internal] tuple #4` = [internal] [std] riemann_sum.next_γt #1 in:
+                                                                                                      block:
+                                                                                                        let `[internal] tuple #5` = let [internal] [std] riemann_sum #1.t @15:8 = [internal] [std] riemann_sum.t #1 in ([internal] [std] residue.z #0 + ([internal] [std] residue.r #0:C * (2.718281828459045:C ^ (((2:R * 3.141592653589793):C * 0.0 :+ 1.0) * [internal] [std] riemann_sum #1.t @15:8:C)))) in:
+                                                                                                          block:
+                                                                                                            set `[internal] [std] riemann_sum.γt #1` := [internal] tuple #4
+                                                                                                            set `[internal] [std] riemann_sum.next_γt #1` := [internal] tuple #5
+                                                                                                  set `[internal] fresh #30` := ([internal] fresh #30 + 1)
+                                                                                            else:
+                                                                                              no-op
+                                                                                            set `[internal] iteration count` := [internal] fresh #30
+                                                                                            set `[internal] stuck` := ([internal] fresh #30 = [internal] fresh #31)
+                                              set `[internal] iteration count` := [internal] [std] riemann_sum.iterations #1
+                                              set `[internal] stuck` := [internal] [std] riemann_sum.stuck #1
+                                              let `[internal] [std] residue.integral #0` = [internal] [std] riemann_sum #1 in:
+                                                block:
+                                                  set `[internal] [std] residue #0` := ([internal] [std] residue.integral #0 / ((2:R * 3.141592653589793):C * 0.0 :+ 1.0))
+                  let `res` = [internal] [std] residue #0 in:
+                    block:
+                      use Color 255 255 255 for line
+                      write text("Res_{", z0:Text, "}(f) = ", res:Text) at (0.0 :+ 1.0, 1.0 :+ 0.0)
+                      draw point at (z0, 1.0 :+ 0.0)
+                      draw circle at (z0, 1.0 :+ 0.0) with radius r
+
+

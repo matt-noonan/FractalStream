@@ -19,7 +19,7 @@ script: |
 
   define probe_period_counter(C):
     z <- 0
-    for each k in range(1, 1000):
+    repeat 1000 times:
       z <- z^2 + C
     w := z
     p := 0

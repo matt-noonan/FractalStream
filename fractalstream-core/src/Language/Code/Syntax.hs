@@ -77,7 +77,8 @@ data StmtF
     -- ^ loop kind, condition, optional iteration limit, body
   | SIterate Pattern Expr Bool Expr (Maybe Expr)
     -- ^ @iterate x -> e while/until c up to n times@, or with a tuple:
-    -- @iterate (x, y) -> (e1, e2) ...@
+    -- @iterate (x, y) -> (e1, e2) ...@, or
+    -- @iterate x -> e for n times@
   | SPass
   | SDraw DrawStmt
   | SSetTable String Expr Expr

@@ -23,7 +23,7 @@ script: |
     repeat up to limit times:
       u, v <- x, y
       t <- 0
-      for each k in range(1, 10):
+      repeat 10 times:
         x <- x + h * y
         y <- y + h * (cos(t) - a * y - b * sin(x))
         t <- t + h

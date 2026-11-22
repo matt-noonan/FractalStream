@@ -873,7 +873,7 @@ toolBlocksGrammar defs = mdo
           <*> (ident <* token CloseParen))
 
   fromTo <- rule $
-    (,) <$> (tok "from" *> coordSpec) <*> (tok "to" *> coordSpec)
+    (,) <$> (tok "from" *> coordSpec) <*> (token ToKeyword *> coordSpec)
 
   quoted <- rule (tokenMatch (\case { Quoted s -> Just s; _ -> Nothing }))
   intLit <- rule (tokenMatch (\case { NumberI n -> Just (fromIntegral n); _ -> Nothing }))

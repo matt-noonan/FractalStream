@@ -12,6 +12,7 @@ import Language.Type
 import Language.Value
 import Language.Value.Builtins (InternalIterations, InternalIterationLimit, InternalStuck)
 import Language.Code.Parser
+import Language.Value.Parser (stdlibDefinitions, stdlibBlockFunctions)
 import Language.Code.Syntax
 import Language.Code.Simulator
 import Language.Draw
@@ -88,6 +89,17 @@ spec = do
         other -> expectationFailure ("not a function definition: " ++ show other)
       Set.fromList ["rainbow", "cycle", "dark", "pixel_size_at", "acos"]
         `shouldSatisfy` (`Set.isSubsetOf` stdlibFunctionNames)
+
+    it "has the same definitions for values outside a script as for scripts" $ do
+      let byKind = [ (isBlock, f) | Stmt _ def <- stdlibCode
+                                  , (isBlock, Just f) <- case def of
+                                      SFun g _ _ -> [(False, fromStdlibName g)]
+                                      SFunction g _ _ -> [(True, fromStdlibName g)]
+                                      _ -> [] ]
+          blocks = Set.fromList [ f | (True, f) <- byKind ]
+      blocks `shouldSatisfy` (not . Set.null)
+      stdlibBlockFunctions `shouldBe` blocks
+      [ f | (f, _, _) <- stdlibDefinitions ] `shouldBe` [ f | (False, f) <- byKind ]
 
     it "has the same color wheels as before" $
       forM_ [("rainbow", rainbowColors), ("arenberg", arenbergColors), ("fire", fireColors)] $ \(name, cs) ->
