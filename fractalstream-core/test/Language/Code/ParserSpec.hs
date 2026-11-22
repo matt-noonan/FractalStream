@@ -714,6 +714,33 @@ x <- d|] `shouldBe` Right 3
               , "  twice <- c"
               , "x <- twice(inc, 1)" ] `gives` 3
 
+    it "take `previous` in a body to the body's loop, and in an argument to the caller's" $ do
+      unlines [ "function last_step(a):"
+              , "  w := a"
+              , "  d := 0"
+              , "  k := 0"
+              , "  while k < 3:"
+              , "    w <- 2 w"
+              , "    d <- w - previous w"
+              , "    k <- k + 1"
+              , "  last_step <- d"
+              , "x <- last_step(1)" ] `gives` 4
+      -- (`previous z` is z at the start of the caller's pass, 5, not z in
+      -- the body's loop, which is 7 throughout)
+      unlines [ "function total(g, n):"
+              , "  s := 0"
+              , "  k := 0"
+              , "  while k < n:"
+              , "    s <- s + g(k)"
+              , "    k <- k + 1"
+              , "  total <- s"
+              , "z := 5"
+              , "k := 0"
+              , "while k < 1:"
+              , "  z <- 7"
+              , "  x <- total(j -> previous z, 2)"
+              , "  k <- k + 1" ] `gives` 10
+
     it "can be given on to another call" $
       "sq(a) := a a\nap(g, v) := g(v)\nh(g, v) := ap(g, v) + 1\nx <- h(sq, 3)" `gives` 10
 

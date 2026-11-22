@@ -12,7 +12,9 @@
 -- For now a call is the whole right-hand side of an assignment:
 -- @x := f(a)@, @x <- f(a)@, or a tuple's, @(w, ok) := f(a)@. Each call is
 -- expanded, after code blocks are (see "Language.Code.Procedures", so
--- that a code block can call a function it's given), into
+-- that a code block can call a function it's given) and after @previous@
+-- is (see "Language.Code.Previous", so that a @previous@ belongs to the
+-- loop around it where it's written, in the body or in the caller), into
 --
 -- > [internal] f #k := (a placeholder, of the type the body gives f)
 -- > (the caller's iterations and stuck, saved, if the body has loops)
