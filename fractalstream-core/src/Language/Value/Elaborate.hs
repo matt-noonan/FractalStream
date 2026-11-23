@@ -281,6 +281,8 @@ elabOwn t (Syn (sr, _) node) = case node of
   EChordal{} -> inconsistent sr
   EFunRef{} -> inconsistent sr
   ELambda{} -> inconsistent sr
+  ECompose{} -> inconsistent sr
+  EDerivOf{} -> inconsistent sr
 
   where
     el :: forall u. TypeProxy u -> TExpr -> TC (Value '(env, u))

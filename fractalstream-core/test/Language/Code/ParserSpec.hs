@@ -736,6 +736,38 @@ x <- d|] `shouldBe` Right 3
       "newton(f, z) := z - f(z) / f'(z)\nx <- newton(w -> w^2 - 4, 4)" `gives` 2.5
       "sq(a) := a a\nh(g, v) := g'(v)\nk(g, v) := h(g, v)\nx <- k(sq, 5)" `gives` 10
 
+    it "can be composed with ∘, and the composition applied" $ do
+      "sq(a) := a a\ninc(a) := a + 1\nx <- (sq ∘ inc)(2)" `gives` 9
+      "sq(a) := a a\ninc(a) := a + 1\nx <- (inc ∘ sq)(2)" `gives` 5
+      "sq(a) := a a\ninc(a) := a + 1\nx <- (inc ∘ sq ∘ inc)(2)" `gives` 10
+      "sq(a) := a a\nx <- (sq ∘ (w -> w - 1))(4) + 1" `gives` 10
+      "sq(a) := a a\nx <- (sq ∘ (w -> w - 1))(4)^2" `gives` 81
+      "sq(a) := a a\nh(g, v) := (sq ∘ g)(v)\nx <- h(w -> 3 w, 1)" `gives` 9
+      "sq(a) := a a\ny := (sq ∘ (w -> cos(w)))(0)\nx <- y + 1" `gives` 2
+
+    it "can give a composition to a function" $ do
+      "sq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- twice(sq ∘ inc, 1)" `gives` 25
+      "inc(a) := a + 1\nh(g, v) := g'(v)\nx <- h((w -> w^3) ∘ inc, 1)" `gives` 12
+
+    it "can differentiate a composition" $ do
+      "sq(a) := a a\ninc(a) := a + 1\nx <- (sq ∘ inc)'(2)" `gives` 6
+      "sq(a) := a a\nx <- (sq ∘ sq)''(1)" `gives` 12
+
+    it "spreads a tuple over a function's parameters" $ do
+      "sub(a, b) := a - b\npair(t) := (t + 5, t)\nx <- (sub ∘ pair)(2)" `gives` 5
+      "sub(a, b) := a - b\npair(t) := (t + 5, t)\nx <- sub(pair(2))" `gives` 5
+      "f(a, b, c) := a - b c\ntrip(t) := (t, t + 1, t + 2)\nx <- f(trip(1))" `gives` (-5)
+      "pair(t) := (t + 5, t)\nx <- (((u, v) -> u v) ∘ pair)(1)" `gives` 6
+
+    it "rejects composing something that isn't a function" $
+      "sq(a) := a a\nh(g, v) := (sq ∘ g)(v)\nx <- h(3, 1)" `failsWith` "isn't a function"
+
+    it "rejects spreading a value that isn't a tuple" $
+      "sub(a, b) := a - b\nsq(a) := a a\nx <- sub(sq(2))" `failsWith` "I expected a tuple"
+
+    it "rejects composing a function with a body, for now" $
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\nx <- (sq ∘ dbl)(1)" `failsWith` "can't be composed"
+
     it "multiply when the argument is a number" $
       "h(g, v) := g(v)\nx <- h(3, 2)" `gives` 6
 

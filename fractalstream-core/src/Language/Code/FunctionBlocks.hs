@@ -305,6 +305,13 @@ checkStmt defs s@(Stmt _ node) = case node of
   _ -> mapM_ (checkExpr defs) (ownExprs s)
   where refuseIn = refuseCallsIn defs
 
+-- | The functions, by name, that a composition is made of.
+composed :: Expr -> [String]
+composed (Syn _ node) = case node of
+  EFunRef f -> [f]
+  ECompose f g -> composed f ++ composed g
+  _ -> []
+
 -- | Make sure an expression calls functions with bodies only where the
 -- calls can be lifted out (see 'checkStmt').
 checkExpr :: FunctionDefs -> Expr -> TC ()
@@ -313,6 +320,9 @@ checkExpr defs (Syn sr node) = case node of
   EDerivCall f _ _ | Map.member f defs -> advise sr
     ("`" ++ f ++ "` is a function with a body, so it has no derivative by `" ++ f
      ++ "'`, for now. Differentiate its value instead: `y := " ++ f ++ "(x)`, then `diff(y, x)`.")
+  ECompose{} -> forM_ (composed (Syn sr node)) $ \f -> when (Map.member f defs) $ advise sr
+    ("`" ++ f ++ "` is a function with a body, so it can't be composed with `∘`, for now: \
+     \only one-line functions can.")
   ELambda _ body -> refuseIn body $ \f ->
     "This function can't call `" ++ f ++ "`, a function with a body, for now: only a function \
     \given to a function with a body can."
@@ -500,9 +510,9 @@ expandCall defs sr f args = do
   -- (the parts of the body with no source range, such as the standard
   -- library's, are said to be at the call)
   let body = mapStmtRanges (\case { NoSourceRange -> sr; r -> r }) body0
-  args' <- lift (splitArgs sr f (length params) args)
   k <- get
   put (k + 1)
+  (spread, args') <- lift (splitArgs sr f (length params) ("[internal] " ++ f ++ ".tuple #" ++ show k) args)
   -- (a parameter given a function is put in place, applied, in the body,
   -- after the body's own names are renamed, so that a function written in
   -- place keeps the caller's: see "Language.Code.FunctionArgs")
@@ -525,7 +535,8 @@ expandCall defs sr f args = do
              , st (SDecl savedStuck Nothing (var internalStuck)) ]
       restore = [ st (SSet internalIterations (var savedIterations))
                 , st (SSet internalStuck (var savedStuck)) ]
-      run = st (SBlock ([ st (SDecl (tag p) Nothing a) | (p, a) <- valArgs ] ++ [body']))
+      run = st (SBlock ([ st (SDecl n Nothing a) | (n, a) <- spread ]
+                        ++ [ st (SDecl (tag p) Nothing a) | (p, a) <- valArgs ] ++ [body']))
   pure ( st (SDecl result Nothing (Syn sr EZero))
            : (if hasLoops then save ++ [run] ++ restore else [run])
        , result )

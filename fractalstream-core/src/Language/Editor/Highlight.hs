@@ -329,7 +329,7 @@ tokenClass = \case
                , PartialSign, DiffSign ] -> Just BuiltinFunction
     | t `elem` [ Plus, Minus, Times, Divide, IntegerDivide, Caret, Bar, Equal, ExactlyEqual
                , NotEqual, GreaterThan, LessThan, GreaterThanOrEqual, LessThanOrEqual
-               , ColonEquals, Prime, LeftArrow, RightArrow, At, AtAt ] -> Just Operator
+               , ColonEquals, Prime, Compose, LeftArrow, RightArrow, At, AtAt ] -> Just Operator
     | otherwise -> Nothing
 
 -- | Words with a meaning of their own in statements, handlers, and

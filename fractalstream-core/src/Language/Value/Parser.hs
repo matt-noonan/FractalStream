@@ -385,15 +385,36 @@ valueAndArithGrammar funs own = mdo
     , sliceAll
     , funRef
     , lambda
+    , compose
     ]
 
-  pairItem <- ruleChoice [ list, pOr, pointIndex, sliceAll, funRef, lambda ]
+  pairItem <- ruleChoice [ list, pOr, pointIndex, sliceAll, funRef, lambda, compose ]
 
   -- A function given as an argument (see "Language.Code.FunctionArgs"):
   -- one of the script's, by its name alone, or one written in place,
   -- `w -> e` or `(u, v) -> e`.
   funRef <- rule (node (EFunRef <$> funName))
   lambda <- rule (node (ELambda <$> lambdaParams <*> (token RightArrow *> pOr)))
+
+  -- `f ∘ g`, a function made of two: each a function by its name, a
+  -- parameter (given a function at each call), or, in parentheses, a
+  -- function written in place or another composition. `f ∘ g ∘ h` is
+  -- `f ∘ (g ∘ h)`.
+  compose <- rule (node (ECompose <$> composeOperand <*> (token Compose *> composeRest)))
+  composeRest <- ruleChoice [compose, composeOperand]
+  composeOperand <- ruleChoice
+    [ funRef
+    , node (EVar <$> paramName)
+    , token OpenParen *> lambda <* token CloseParen
+    , token OpenParen *> compose <* token CloseParen
+    ]
+
+  -- a name that may be a parameter given a function: one that isn't
+  -- already a function's (see "Language.Code.FunctionArgs")
+  paramName <- rule $ tokenMatch (\case
+    Identifier n | not (reserved n), not (Set.member n funs)
+                 , not (isStdlibFunction n && free n) -> Just n
+    _ -> Nothing)
   lambdaParams <- ruleChoice
     [ (:[]) <$> lambdaParam
     , token OpenParen *> ((:) <$> lambdaParam <*> some (token Comma *> lambdaParam)) <* token CloseParen
@@ -537,12 +558,14 @@ valueAndArithGrammar funs own = mdo
     -- `g'(x)` for a parameter `g`, which is a function where it's given
     -- one (see "Language.Code.FunctionArgs")
     , node (EDerivCall
-        <$> tokenMatch (\case
-              Identifier n | not (reserved n), not (Set.member n funs)
-                           , not (isStdlibFunction n && free n) -> Just n
-              _ -> Nothing)
+        <$> paramName
         <*> (length <$> some (token Prime))
         <*> ((:[]) <$> atomOrFunAp))
+    -- `(f ∘ g)'(x)`
+    , node (EDerivOf
+        <$> (token OpenParen *> compose <* token CloseParen)
+        <*> (length <$> some (token Prime))
+        <*> atomOrFunAp)
     , node (EBin OpMod
         <$> (builtinWord "mod" *> token OpenParen *> argument)
         <*> (token Comma *> argument <* token CloseParen))
