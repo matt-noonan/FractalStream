@@ -590,11 +590,12 @@ as an argument can be given on to another call (`ap(g, v)` inside
 `twice`), but can't be used as a value. One written in place sees the
 names where it's written, not the ones inside the function it's given to.
 
-A function with a body can be given to another function with a body, or
-to a code block, where it's called as usual. A one-line function can be
-given one-line functions, and functions written in place. A function
-written in place can call a function with a body only when it's given to
-a function with a body.
+Any function can be given to any function or code block: a function
+with a body (or a composition with one in it, or a function written in
+place that calls one) given to a one-line function makes that call work
+like a call of a function with a body, so `twice(dbl, 1)` works for a
+one-line `twice` and a `dbl` with a body. (A one-line function's own
+body still can't call a function with a body by name.)
 
 A parameter given a function can also be differentiated, as `g'(v)`:
 
@@ -631,9 +632,8 @@ both `(sub ∘ pair)(2)` and `sub(pair(2))` are 5.
 
 Functions with a body can be composed too, `(sq ∘ dbl)(x)` being
 `sq(dbl(x))`, and a composition can be given to a function with a body
-or a code block, or differentiated, as `(sq ∘ dbl)'(x)`. For now, a
-composition with a function with a body in it can't be given to a
-one-line function.
+or a code block, or a one-line function, or differentiated, as
+`(sq ∘ dbl)'(x)`.
 
 Built-in functions of one value, such as `sin`, `exp`, `re` or `floor`,
 can be composed by name: `(sin ∘ sq)(x)` is `sin(sq(x))`.
