@@ -12,6 +12,7 @@ module Language.Code.Typecheck.Functions
   , freeVars
   , isFunctionArg
   , substituteFunction
+  , applyFunction
   ) where
 
 import FractalStream.Prelude

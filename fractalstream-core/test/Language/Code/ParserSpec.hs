@@ -628,7 +628,6 @@ x <- d|] `shouldBe` Right 3
       failsWith "function f(a):\n  f <- a\nl := transform([1, 2], v -> f(v))\nx <- 1" "`transform` works this out for each `v`"
       failsWith "function f(a):\n  f <- a\nl := find([1, 2], v -> f(v) > 1, 0)\nx <- 1" "`find` works this out for each `v`"
       failsWith "function f(a):\n  f <- a\nsq(a) := a a\nap(g, v) := g(v)\nx <- ap(w -> f(w), 2)" "only a function given to a function with a body"
-      failsWith "function f(a):\n  f <- a\nx <- f'(1)" "has no derivative by `f'`"
 
   describe "derivatives through statements" $ do
 
@@ -787,8 +786,18 @@ x <- d|] `shouldBe` Right 3
     it "applies a function written in place that calls a function with a body" $
       "function dbl(a):\n  dbl <- 2 a\nfunction ap(g, v):\n  ap <- g(v) + 1\nx <- ap(w -> dbl(w) + 1, 2)" `gives` 6
 
+    it "differentiates functions with a body, and compositions with them" $ do
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\nx <- (sq ∘ dbl)'(1)" `gives` 8
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\nx <- cube'(2)" `gives` 12
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\nx <- cube''(2)" `gives` 12
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\nx <- (sq ∘ cube)'(1)" `gives` 6
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\nx <- (inc ∘ cube ∘ dbl)'(1)" `gives` 24
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\nx <- ((w -> cube(w) + w) ∘ inc)'(1)" `gives` 13
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\nx <- if x > 100 then cube'(x) else 7" `gives` 7
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\nfunction h(g, v):\n  h <- g'(v)\nx <- h(cube, 2) + h(sq ∘ cube, 1)" `gives` 18
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\ndefine ap(g):\n  x <- g'(x)\nx <- 2\nrun ap(dbl ∘ cube)" `gives` 24
+
     it "rejects what a composition with a body can't do yet" $ do
-      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- (sq ∘ dbl)'(1)" `failsWith` "has no derivative"
       "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- twice(sq ∘ dbl, 1)" `failsWith` "can't be given to the one-line function"
 
     it "multiply when the argument is a number" $

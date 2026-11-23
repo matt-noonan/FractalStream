@@ -48,7 +48,8 @@ import Language.Value.Syntax
 import Language.Value.Builtins (internalIterations, internalStuck)
 import Language.Code.Procedures (renameStmt)
 import Language.Code.Previous (declaredIn, mapStmtRanges, mapStmtExprs)
-import Language.Code.Typecheck.Functions (splitArgs, freeVars, isFunctionArg, rename, substituteFunction)
+import Language.Code.Typecheck.Functions (splitArgs, freeVars, isFunctionArg, rename, substituteFunction, applyFunction)
+import Language.Type (FSType(RealT))
 import Language.Code.FunctionArgs (substituteFunctionInStmt)
 import Data.List (partition)
 import Control.Monad.Writer.Strict (WriterT, runWriterT, tell)
@@ -103,6 +104,11 @@ block ctx = \case
 -- in the body it's given to. (The rest are made functions written in
 -- place when one-line calls are expanded: see
 -- "Language.Code.Typecheck.Functions".)
+--
+-- Their derivatives, and those of functions with a body, @(f ∘ g)'(x)@
+-- and @f'(x)@, are made @diff@s by a fresh variable, @t@, bound to @x@:
+-- @diff(f(g(t)), t)@, which "Language.Code.Derivatives" works out
+-- through the lifted calls' statements.
 compositions :: FunctionDefs -> Expr -> Expand Expr
 compositions defs e = do
   (e', found) <- runWriterT (pull e)
@@ -113,9 +119,22 @@ compositions defs e = do
         v <- freshName "composition"
         tell [(v, Syn sr node)]
         pure (Syn sr (EVar v))
-      -- (no derivative, for now: see 'checkExpr')
-      EDerivOf{} -> pure (Syn sr node)
+      EDerivOf c order arg | withBody c -> do
+        arg' <- pull arg
+        derivative sr order arg' c
+      EDerivCall f order [arg] | Map.member f defs -> do
+        arg' <- pull arg
+        derivative sr order arg' (Syn sr (EFunRef f))
       _ -> Syn sr <$> traverse pull node
+
+    derivative sr order arg fn = do
+      t <- freshName "derivative"
+      tag <- freshName "applied"
+      let x = Syn sr (EVar t)
+      applied <- pull =<< lift (lift (applyFunction tag sr fn x))
+      -- the variable must be at least real to differentiate by it
+      pure (Syn sr (ELet t (Syn (synRange arg) (EWiden RealT arg))
+                           (iterate (Syn sr . EDiff x) applied !! order)))
     withBody c = any (`Map.member` defs) (composed c) || hasCall defs c
 
 -- | A statement whose right-hand side is a call to a function with a
@@ -359,11 +378,8 @@ composed (Syn _ node) = case node of
 -- | Make sure an expression calls functions with bodies only where the
 -- calls can be lifted out (see 'checkStmt').
 checkExpr :: FunctionDefs -> Expr -> TC ()
-checkExpr defs (Syn sr node) = case node of
+checkExpr defs (Syn _ node) = case node of
   ECall f args | Map.member f defs -> mapM_ (\a -> unless (isFunctionArg a) (checkExpr defs a)) (argParts args)
-  EDerivCall f _ _ | Map.member f defs -> advise sr
-    ("`" ++ f ++ "` is a function with a body, so it has no derivative by `" ++ f
-     ++ "'`, for now. Differentiate its value instead: `y := " ++ f ++ "(x)`, then `diff(y, x)`.")
   -- (a composition given to a one-line function)
   ECall g args -> forM_ (argParts args) $ \a -> case a of
     Syn asr ECompose{} -> do
@@ -375,9 +391,6 @@ checkExpr defs (Syn sr node) = case node of
     -- (a function written in place, given to a one-line function, is
     -- checked as it is: it can't call a function with a body)
     _ -> checkExpr defs a
-  EDerivOf c _ _ -> forM_ (composed c) $ \f -> when (Map.member f defs) $ advise sr
-    ("`" ++ f ++ "` is a function with a body, so a composition with it has no derivative, for now. \
-     \Differentiate its value instead: `y := (...)(x)`, then `diff(y, x)`.")
   ELambda _ body -> refuseIn body $ \f ->
     "This function can't call `" ++ f ++ "`, a function with a body, for now: only a function \
     \given to a function with a body can."
