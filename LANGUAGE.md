@@ -559,7 +559,10 @@ its call would have to be repeated in ways a value can't say:
   constant (`diff` can be used instead);
 - for now, in the parts of `remove`, `find` and `transform` worked out
   for each item, in the condition of `with first`, in the value after a
-  table lookup's `else`, and as `f'(x)`.
+  table lookup's `else`.
+
+A function with a body can be differentiated, as `f'(x)` (or with
+`diff(f(x), x)`): the derivative is worked out through its statements.
 
 ### Functions given as arguments
 
@@ -628,8 +631,9 @@ both `(sub ∘ pair)(2)` and `sub(pair(2))` are 5.
 
 Functions with a body can be composed too, `(sq ∘ dbl)(x)` being
 `sq(dbl(x))`, and a composition can be given to a function with a body
-or a code block. For now, a composition with a function with a body in
-it can't be differentiated, or given to a one-line function. Built-in
+or a code block, or differentiated, as `(sq ∘ dbl)'(x)`. For now, a
+composition with a function with a body in it can't be given to a
+one-line function. Built-in
 functions such as `sin` can't be composed yet: write `w -> sin(w)`
 instead.
 
