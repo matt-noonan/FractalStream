@@ -110,6 +110,15 @@ view_stretch_at(p) := if internal_view_kind = 2 then hyperbolic_stretch_at(p) el
 pixel_size_at(p) := internal_view_pixel_size view_stretch_at(p)
 
 # ---------------------------------------------------------------------------
+# Iterating a function
+
+# f applied N times, starting from x: compose(f, 3, x) is f(f(f(x))).
+function compose(f, N, x):
+  repeat N times:
+    x <- f(x)
+  compose <- x
+
+# ---------------------------------------------------------------------------
 # Newton's method
 
 function full_newton_root(f, x, N, stop):
