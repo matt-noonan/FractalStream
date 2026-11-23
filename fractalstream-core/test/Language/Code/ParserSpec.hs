@@ -730,6 +730,12 @@ x <- d|] `shouldBe` Right 3
       -- (the function's `x` is the caller's, not h's parameter)
       "h(g, x) := g(x) + x\nx <- h(w -> w + x, 2)" `gives` 4
 
+    it "can be differentiated with g'(x)" $ do
+      "sq(a) := a a\nh(g, v) := g'(v)\nx <- h(sq, 3)" `gives` 6
+      "h(g, v) := g''(v)\nx <- h(w -> w^3, 2)" `gives` 12
+      "newton(f, z) := z - f(z) / f'(z)\nx <- newton(w -> w^2 - 4, 4)" `gives` 2.5
+      "sq(a) := a a\nh(g, v) := g'(v)\nk(g, v) := h(g, v)\nx <- k(sq, 5)" `gives` 10
+
     it "multiply when the argument is a number" $
       "h(g, v) := g(v)\nx <- h(3, 2)" `gives` 6
 

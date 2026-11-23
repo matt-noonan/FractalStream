@@ -52,7 +52,8 @@ defineFunction sr funs env f params body = do
   -- Everything the body refers to must already be in scope here.
   forM_ (Map.toList (freeVars body `Map.withoutKeys` Set.fromList params)) $ \(n, vsr) ->
     unless (Map.member n tenv) $ throwError (MissingName vsr n)
-  forM_ (Map.toList (calledFunctions body)) $ \(g, gsr) ->
+  -- (a parameter differentiated, `g'(x)`, is given its function at each call)
+  forM_ (Map.toList (calledFunctions body `Map.withoutKeys` Set.fromList params)) $ \(g, gsr) ->
     unless (Map.member g funs) $ throwError (MissingFunction gsr g)
   pure (Map.insert f (FunDef params body funs) funs)
 
@@ -199,6 +200,7 @@ substituteFunction tag p fn = go
         Just e' -> pure e'
         Nothing -> Syn sr <$> traverse go node
       EVar n | n == p -> pure fn
+      EDerivCall n order args | n == p -> traverse go args >>= derivOf sr order
       -- (where p is bound again, it's something else)
       ELambda ps _ | p `elem` ps -> pure e
       ELet n v body | n == p -> (\v' -> Syn sr (ELet n v' body)) <$> go v
@@ -238,6 +240,24 @@ substituteFunction tag p fn = go
             names = map fresh ps
             body' = rename (Map.fromList (zip ps names)) body
         pure (foldr (\(n, a) b -> Syn sr (ELet n a b)) body' (zip names args))
+      _ -> throwError (Internal (Advice sr "substituteFunction: not a function"))
+
+    -- `p'(x)`: the derivative of the function given for p, at x
+    derivOf sr order args = case fn of
+      Syn _ (EFunRef f) -> pure (Syn sr (EDerivCall f order args))
+      Syn _ (ELambda [w] body) -> do
+        arg <- splitArgs sr "this function" 1 args >>= \case
+          [a] -> pure a
+          _ -> throwError (Internal (Advice sr "splitArgs: wrong number of arguments"))
+        let t = "[internal] " ++ tag ++ "." ++ w ++ " " ++ position sr
+            x = Syn sr (EVar t)
+            body' = rename (Map.singleton w t) body
+        -- the variable must be at least real to differentiate by it
+        pure (Syn sr (ELet t (Syn (synRange arg) (EWiden RealT arg))
+                             (iterate (Syn sr . EDiff x) body' !! order)))
+      Syn _ (ELambda _ _) ->
+        advise sr ("Only a function of one variable can be differentiated with "
+                   ++ p ++ replicate order '\'' ++ ".")
       _ -> throwError (Internal (Advice sr "substituteFunction: not a function"))
 
     position = \case
