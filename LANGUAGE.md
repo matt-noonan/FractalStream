@@ -626,10 +626,12 @@ parts, the parts are `f`'s arguments. This works for any call, not only
 for a composition: with `sub(a, b) := a - b` and `pair(t) := (t + 5, t)`,
 both `(sub ∘ pair)(2)` and `sub(pair(2))` are 5.
 
-For now, only one-line functions (and functions written in place) can be
-composed, and a composition can't be given to a function with a body or
-a code block. Built-in functions such as `sin` can't be composed yet:
-write `w -> sin(w)` instead.
+Functions with a body can be composed too, `(sq ∘ dbl)(x)` being
+`sq(dbl(x))`, and a composition can be given to a function with a body
+or a code block. For now, a composition with a function with a body in
+it can't be differentiated, or given to a one-line function. Built-in
+functions such as `sin` can't be composed yet: write `w -> sin(w)`
+instead.
 
 ### Defining code to run
 
