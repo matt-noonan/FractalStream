@@ -633,9 +633,10 @@ Functions with a body can be composed too, `(sq ∘ dbl)(x)` being
 `sq(dbl(x))`, and a composition can be given to a function with a body
 or a code block, or differentiated, as `(sq ∘ dbl)'(x)`. For now, a
 composition with a function with a body in it can't be given to a
-one-line function. Built-in
-functions such as `sin` can't be composed yet: write `w -> sin(w)`
-instead.
+one-line function.
+
+Built-in functions of one value, such as `sin`, `exp`, `re` or `floor`,
+can be composed by name: `(sin ∘ sq)(x)` is `sin(sq(x))`.
 
 ### Defining code to run
 

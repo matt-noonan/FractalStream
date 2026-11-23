@@ -797,6 +797,15 @@ x <- d|] `shouldBe` Right 3
       "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\nfunction h(g, v):\n  h <- g'(v)\nx <- h(cube, 2) + h(sq ∘ cube, 1)" `gives` 18
       "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ninc(a) := a + 1\ndefine ap(g):\n  x <- g'(x)\nx <- 2\nrun ap(dbl ∘ cube)" `gives` 24
 
+    it "composes built-in functions" $ do
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- (sq ∘ cos)(0) + (cos ∘ sq)(0)" `gives` 2
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- (floor ∘ (w -> w + 0.5))(2)" `gives` 2
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- (re ∘ exp)(0)" `gives` 1
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- (sin ∘ (w -> 2 w))'(0)" `gives` 2
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- (sin ∘ dbl)'(0)" `gives` 2
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- twice(floor ∘ (w -> w + 1.5), 0)" `gives` 2
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\ndefine ap(g):\n  x <- g(x)\nx <- 1.3\nrun ap(floor ∘ dbl)" `gives` 2
+
     it "rejects what a composition with a body can't do yet" $ do
       "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- twice(sq ∘ dbl, 1)" `failsWith` "can't be given to the one-line function"
 

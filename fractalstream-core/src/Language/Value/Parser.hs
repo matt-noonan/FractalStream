@@ -405,6 +405,9 @@ valueAndArithGrammar funs own = mdo
   composeOperand <- ruleChoice
     [ funRef
     , node (EVar <$> paramName)
+    -- a built-in function, `sin`, as the function `w -> sin(w)`
+    , node ((\n -> ELambda [builtinParam] (Syn NoSourceRange (EApp n (Syn NoSourceRange (EVar builtinParam)))))
+            <$> builtinFunName)
     , token OpenParen *> lambda <* token CloseParen
     , token OpenParen *> compose <* token CloseParen
     ]
@@ -413,8 +416,15 @@ valueAndArithGrammar funs own = mdo
   -- already a function's (see "Language.Code.FunctionArgs")
   paramName <- rule $ tokenMatch (\case
     Identifier n | not (reserved n), not (Set.member n funs)
-                 , not (isStdlibFunction n && free n) -> Just n
+                 , not (isStdlibFunction n && free n), not (isBuiltinFun n) -> Just n
     _ -> Nothing)
+  builtinFunName <- rule $ tokenMatch (\case
+    Identifier n | isBuiltinFun n -> Just n
+    _ -> Nothing)
+  let isBuiltinFun n = free n && any (Map.member n)
+        [ Map.map (const ()) commonFunctions, Map.map (const ()) realFunctions
+        , Map.map (const ()) roundingFunctions, Map.map (const ()) complexFunctions ]
+      builtinParam = "[internal] built-in argument"
   lambdaParams <- ruleChoice
     [ (:[]) <$> lambdaParam
     , token OpenParen *> ((:) <$> lambdaParam <*> some (token Comma *> lambdaParam)) <* token CloseParen
