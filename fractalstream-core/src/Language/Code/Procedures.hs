@@ -63,12 +63,13 @@ run :: Procs -> SourceRange -> String -> Maybe Expr -> Expand StmtF
 run procs sr name arg = do
   ProcDef params body defProcs <-
     maybe (throwError (MissingCode sr name)) pure (Map.lookup name procs)
-  args <- case (params, arg) of
-    ([], Nothing) -> pure []
-    ([], Just _) -> advise sr (name ++ " takes no arguments.")
-    _ -> lift (splitArgs sr name (length params) (maybeToList arg))
   k <- get
   put (k + 1)
+  (spread, args) <- case (params, arg) of
+    ([], Nothing) -> pure ([], [])
+    ([], Just _) -> advise sr (name ++ " takes no arguments.")
+    _ -> lift (splitArgs sr name (length params) ("[internal] " ++ name ++ ".tuple #" ++ show k)
+                         (maybeToList arg))
   -- (a parameter given a function is put in place, applied, in the code:
   -- see "Language.Code.FunctionArgs")
   let (fnArgs, valArgs) = partition (isFunctionArg . snd) (zip params args)
@@ -77,7 +78,8 @@ run procs sr name arg = do
   body1 <- lift (foldM (\b (p, a) -> substituteFunctionInStmt tag p a b)
                        (renameStmt (Map.fromList (zip (map fst valArgs) names)) body) fnArgs)
   body' <- stmt defProcs body1
-  pure (SBlock ([ Stmt sr (SDecl n Nothing a) | (n, (_, a)) <- zip names valArgs ] ++ [body']))
+  pure (SBlock ([ Stmt sr (SDecl n Nothing a) | (n, a) <- spread ]
+                ++ [ Stmt sr (SDecl n Nothing a) | (n, (_, a)) <- zip names valArgs ] ++ [body']))
 
 -- | Rename variables, wherever they occur.
 renameStmt :: Map String String -> Stmt -> Stmt

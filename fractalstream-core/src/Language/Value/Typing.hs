@@ -343,7 +343,10 @@ synth env (Syn sr node) = case node of
     x' <- synth env x
     case exprType x' of
       Pair t1 t2 -> done (if isSecond then t2 else t1) (EProj isSecond x')
-      t -> throwError (Surprise sr "the value for this tuple of variables" (anType t)
+      t | Syn _ (EVar n) <- x, isSpreadName n ->
+            throwError (Surprise sr "this value" (anType t)
+                         (Expected "a tuple, with a part for each of the function's parameters"))
+        | otherwise -> throwError (Surprise sr "the value for this tuple of variables" (anType t)
                          (Expected "a pair, with a part for each"))
 
   EList [] -> advise sr "I can't tell what type of items this empty list should hold."
@@ -579,6 +582,9 @@ synth env (Syn sr node) = case node of
                           \given to a function or a code block, as one of its arguments.")
   ELambda{} -> advise sr "This is a function, so it can only be given to a function or a code \
                          \block, as one of its arguments."
+  ECompose{} -> advise sr "This is a function, so it can only be applied to an argument, \
+                          \like `(f ∘ g)(x)`, or given to a function or a code block, as one of its arguments."
+  EDerivOf{} -> advise sr "I couldn't work out the function to differentiate here."
 
   where
     done :: FSType -> ExprF TExpr -> TC TExpr
@@ -939,6 +945,8 @@ describe = \case
   EChordal{} -> "the result of chordal"
   EFunRef f -> "the function " ++ f
   ELambda{} -> "this function"
+  ECompose{} -> "this function"
+  EDerivOf{} -> "this derivative"
 
 -- | The parts of a tuple written out with @n@ components (@(a, b, c)@ is
 -- @(a, (b, c))@), or the expression itself when @n@ is 1.

@@ -593,6 +593,44 @@ given one-line functions, and functions written in place. A function
 written in place can call a function with a body only when it's given to
 a function with a body.
 
+A parameter given a function can also be differentiated, as `g'(v)`:
+
+```
+newton_step(f, z) := z - f(z) / f'(z)
+
+w := newton_step(u -> u^2 - 4, 4)    # 2.5
+```
+
+### Composing functions
+
+`f ∘ g` (typed as `\circ`) is the function that applies `g`, then `f`:
+`(f ∘ g)(x)` is `f(g(x))`. Either side can be a function's name, a
+parameter given a function, or, in parentheses, a function written in
+place or another composition; `f ∘ g ∘ h` is `f ∘ (g ∘ h)`. A
+composition can be applied, differentiated (`(f ∘ g)'(x)`), or given to
+a one-line function:
+
+```
+sq(a) := a a
+inc(a) := a + 1
+twice(g, v) := g(g(v))
+
+x := (sq ∘ inc)(2)              # 9
+y := (sq ∘ (w -> w - 1))(4)     # 9
+d := (sq ∘ inc)'(2)             # 6
+t := twice(sq ∘ inc, 1)         # 25
+```
+
+When `g` gives a tuple and `f` takes as many arguments as the tuple has
+parts, the parts are `f`'s arguments. This works for any call, not only
+for a composition: with `sub(a, b) := a - b` and `pair(t) := (t + 5, t)`,
+both `(sub ∘ pair)(2)` and `sub(pair(2))` are 5.
+
+For now, only one-line functions (and functions written in place) can be
+composed, and a composition can't be given to a function with a body or
+a code block. Built-in functions such as `sin` can't be composed yet:
+write `w -> sin(w)` instead.
+
 ### Defining code to run
 
 A block of code can be given a name with `define`, and then run (as many

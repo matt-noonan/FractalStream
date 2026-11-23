@@ -20,10 +20,13 @@ module Language.Value.Syntax
   , exprNames
   , textLiteral
   , integerLiteral
+  , spreadName
+  , isSpreadName
   ) where
 
 import qualified Data.Set as Set
 import Data.Set (Set)
+import Data.List (isPrefixOf)
 
 
 import Language.Type
@@ -155,6 +158,13 @@ data ExprF r
   | ELambda [String] r
     -- ^ @w -> e@ (or @(u, v) -> e@): a function written where it's given,
     -- as an argument to a function or a code block
+  | ECompose r r
+    -- ^ @f ∘ g@: a function, given or applied like a function written in
+    -- place; made one (@w -> f(g(w))@) when calls are expanded (see
+    -- "Language.Code.Typecheck.Functions")
+  | EDerivOf r Int r
+    -- ^ @(f ∘ g)'(x)@: a derivative of a function that isn't named, by
+    -- the number of primes, at the argument
   | EInfinity
     -- ^ @∞@ (or @infinity@): the point at infinity of Ĉ
   | EHomogeneous [r]
@@ -205,6 +215,15 @@ exprNames (Syn _ node) = here <> foldMap exprNames node
       EFunRef f -> Set.singleton f
       EDerivCall f _ _ -> Set.singleton f
       _ -> Set.empty
+
+-- | The name of a variable holding a tuple that is spread over a
+-- function's parameters (see 'Language.Code.Typecheck.Functions.splitArgs'),
+-- made from a name unique to the call.
+spreadName :: String -> String
+spreadName = ("[internal] spread " ++)
+
+isSpreadName :: String -> Bool
+isSpreadName = ("[internal] spread " `isPrefixOf`)
 
 -- | The value of an expression that's just an integer literal.
 integerLiteral :: Syn ExprF a -> Maybe Integer
