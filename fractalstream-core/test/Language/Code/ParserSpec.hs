@@ -627,7 +627,6 @@ x <- d|] `shouldBe` Right 3
       failsWith "function f(a):\n  f <- a\nx <- partial(f(x), x)" "`partial` treats everything but its variable"
       failsWith "function f(a):\n  f <- a\nl := transform([1, 2], v -> f(v))\nx <- 1" "`transform` works this out for each `v`"
       failsWith "function f(a):\n  f <- a\nl := find([1, 2], v -> f(v) > 1, 0)\nx <- 1" "`find` works this out for each `v`"
-      failsWith "function f(a):\n  f <- a\nsq(a) := a a\nap(g, v) := g(v)\nx <- ap(w -> f(w), 2)" "only a function given to a function with a body"
 
   describe "derivatives through statements" $ do
 
@@ -806,8 +805,16 @@ x <- d|] `shouldBe` Right 3
       "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- twice(floor ∘ (w -> w + 1.5), 0)" `gives` 2
       "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\ndefine ap(g):\n  x <- g(x)\nx <- 1.3\nrun ap(floor ∘ dbl)" `gives` 2
 
-    it "rejects what a composition with a body can't do yet" $ do
-      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- twice(sq ∘ dbl, 1)" `failsWith` "can't be given to the one-line function"
+    it "gives functions with a body to one-line functions" $ do
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\nx <- twice(dbl, 1)" `gives` 4
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\nx <- twice(sq ∘ dbl, 1)" `gives` 64
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\nx <- ap(w -> dbl(w) + 1, 2)" `gives` 6
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\nx <- 1 + twice(dbl, 1)" `gives` 5
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\nx <- if x > 1 then twice(dbl, 1) else 3" `gives` 3
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\nx <- twice(sq, 3) + twice(dbl, 3)" `gives` 93
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\nh(g, v) := g'(v)\nx <- h(cube, 2)" `gives` 12
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\nfour(g, v) := twice(g, twice(g, v))\nx <- four(dbl, 1)" `gives` 16
+      "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\ndefine go(g):\n  x <- twice(g, x)\nx <- 3\nrun go(dbl)" `gives` 12
 
     it "multiply when the argument is a number" $
       "h(g, v) := g(v)\nx <- h(3, 2)" `gives` 6

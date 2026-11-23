@@ -92,11 +92,43 @@ block ctx = \case
     block ctx { ctxDefs = Map.insert f (FunctionDef params body (ctxDefs ctx)) (ctxDefs ctx) } rest
 
   s0 : rest -> do
-    s <- mapStmtExprs (compositions (ctxDefs ctx)) s0
+    s <- mapStmtExprs (fmap (withBodies (ctxDefs ctx)) . compositions (ctxDefs ctx)) s0
     lift (checkStmt (ctxDefs ctx) s)
     ss <- expandStmt ctx s
-    rest' <- block (declare s ctx) rest
+    rest' <- block (oneLine s (declare s ctx)) rest
     pure (ss ++ rest')
+
+-- | A one-line function, @g(x) := e@, is also defined as a function with
+-- a body, @g <- e@, under another name ('withBodyName'), for the calls
+-- that give it a function with a body (see 'withBodies'): those are
+-- expanded as calls of a function with a body, so that the calls in the
+-- function it's given can be lifted.
+oneLine :: Stmt -> Ctx -> Ctx
+oneLine (Stmt sr node) ctx = case node of
+  SFun g params e ->
+    let g' = withBodyName g
+        body = Stmt sr (SSet (functionValueName g') e)
+    in ctx { ctxDefs = Map.insert g' (FunctionDef params body (ctxDefs ctx)) (ctxDefs ctx) }
+  _ -> ctx
+
+withBodyName :: String -> String
+withBodyName g = g ++ " (given a function with a body)"
+
+-- | Calls of one-line functions given a function with a body (by name,
+-- or in a composition, or written in place, calling one), made calls of
+-- their versions with a body (see 'oneLine').
+withBodies :: FunctionDefs -> Expr -> Expr
+withBodies defs (Syn sr node) = Syn sr $ case node of
+  ECall g args
+    | Map.member (withBodyName g) defs, any givesBody (argParts args) ->
+        ECall (withBodyName g) (map (withBodies defs) args)
+  _ -> fmap (withBodies defs) node
+  where
+    givesBody a@(Syn _ n) = case n of
+      EFunRef f -> Map.member f defs
+      ECompose{} -> any (`Map.member` defs) (composed a) || hasCall defs a
+      ELambda _ b -> hasCall defs (withBodies defs b)
+      _ -> False
 
 -- | Compositions with a function with a body in them, @(f ∘ g)(x)@, made
 -- nested calls, @f(g(x))@, where they're applied, so that the calls can
