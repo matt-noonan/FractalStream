@@ -638,6 +638,11 @@ or a code block, or a one-line function, or differentiated, as
 Built-in functions of one value, such as `sin`, `exp`, `re` or `floor`,
 can be composed by name: `(sin ∘ sq)(x)` is `sin(sq(x))`.
 
+To apply a function many times over, the standard library's
+`compose(f, N, x)` applies `f` to `x`, `N` times: `compose(sq, 3, x)` is
+`sq(sq(sq(x)))`. Any function can be given to it, including a function
+with a body, a composition, or one written in place.
+
 ### Defining code to run
 
 A block of code can be given a name with `define`, and then run (as many
@@ -700,7 +705,7 @@ have is only a problem in scripts that use it. A project can have several
 
 Some of FractalStream's functions are written in the scripting language
 itself, in its *standard library*: the color wheels, `cycle`, `dark`,
-`light`, `wheel8`, `rgb255`, `pixel_size_at`, and the other spellings of
+`light`, `wheel8`, `rgb255`, `pixel_size_at`, `compose`, and the other spellings of
 functions (`acos`, `Re`, `bar`, `ceil`, ...). Every project has them, as if
 they were in an `@common` stanza, and each script gets just the ones it
 uses. The standard library's source is `fractalstream-core/stdlib/standard.fs`.

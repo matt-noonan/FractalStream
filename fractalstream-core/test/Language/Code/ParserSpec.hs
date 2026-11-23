@@ -816,6 +816,16 @@ x <- d|] `shouldBe` Right 3
       "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\nfour(g, v) := twice(g, twice(g, v))\nx <- four(dbl, 1)" `gives` 16
       "function dbl(a):\n  dbl <- 2 a\nfunction cube(a):\n  b := a a\n  cube <- a b\nsq(a) := a a\ntwice(g, v) := g(g(v))\nap(g, v) := g(v) + 1\ndefine go(g):\n  x <- twice(g, x)\nx <- 3\nrun go(dbl)" `gives` 12
 
+    it "can be iterated with the standard library's compose" $ do
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- compose(sq, 3, 2)" `gives` 256
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- compose(dbl, 3, 1)" `gives` 8
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- compose(w -> w + 1, 5, 0)" `gives` 5
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- compose(sq ∘ inc, 2, 1)" `gives` 25
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- compose(dbl, 0, 7)" `gives` 7
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- 1 + compose(dbl, 2, 1) + compose(inc, 2, 1)" `gives` 8
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- compose(w -> dbl(w) + 1, 2, 0)" `gives` 3
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\nx <- 3\nx <- diff(compose(sq, 2, x), x)" `gives` 108
+
     it "multiply when the argument is a number" $
       "h(g, v) := g(v)\nx <- h(3, 2)" `gives` 6
 
