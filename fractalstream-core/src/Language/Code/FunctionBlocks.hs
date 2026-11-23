@@ -48,7 +48,7 @@ import Language.Value.Syntax
 import Language.Value.Builtins (internalIterations, internalStuck)
 import Language.Code.Procedures (renameStmt)
 import Language.Code.Previous (declaredIn, mapStmtRanges, mapStmtExprs)
-import Language.Code.Typecheck.Functions (splitArgs, freeVars, isFunctionArg)
+import Language.Code.Typecheck.Functions (splitArgs, freeVars, isFunctionArg, rename, substituteFunction)
 import Language.Code.FunctionArgs (substituteFunctionInStmt)
 import Data.List (partition)
 import Control.Monad.Writer.Strict (WriterT, runWriterT, tell)
@@ -90,11 +90,33 @@ block ctx = \case
     lift (checkDefinition ctx sr f params body)
     block ctx { ctxDefs = Map.insert f (FunctionDef params body (ctxDefs ctx)) (ctxDefs ctx) } rest
 
-  s : rest -> do
+  s0 : rest -> do
+    s <- mapStmtExprs (compositions (ctxDefs ctx)) s0
     lift (checkStmt (ctxDefs ctx) s)
     ss <- expandStmt ctx s
     rest' <- block (declare s ctx) rest
     pure (ss ++ rest')
+
+-- | Compositions with a function with a body in them, @(f ∘ g)(x)@, made
+-- nested calls, @f(g(x))@, where they're applied, so that the calls can
+-- be lifted; given on to a call, a composition stays one, to be applied
+-- in the body it's given to. (The rest are made functions written in
+-- place when one-line calls are expanded: see
+-- "Language.Code.Typecheck.Functions".)
+compositions :: FunctionDefs -> Expr -> Expand Expr
+compositions defs e = do
+  (e', found) <- runWriterT (pull e)
+  foldM (\b (v, c) -> lift (substituteFunction v v c b)) e' found
+  where
+    pull (Syn sr node) = case node of
+      ECompose{} | withBody (Syn sr node) -> do
+        v <- freshName "composition"
+        tell [(v, Syn sr node)]
+        pure (Syn sr (EVar v))
+      -- (no derivative, for now: see 'checkExpr')
+      EDerivOf{} -> pure (Syn sr node)
+      _ -> Syn sr <$> traverse pull node
+    withBody c = any (`Map.member` defs) (composed c) || hasCall defs c
 
 -- | A statement whose right-hand side is a call to a function with a
 -- body: how to put the statement back together around another
@@ -194,7 +216,7 @@ expandStmt ctx s@(Stmt sr node) = case node of
       (s', before) <- runWriterT m
       pure (before ++ [s'])
     inner = lift . stmt ctx
-    liftArg a = if isFunctionArg a then pure a else liftExpr ctx a
+    liftArg = liftArgWith (liftExpr ctx)
     call callSr f args = do
       (before, result) <- lift (expandCall defs callSr f args)
       tell before
@@ -222,7 +244,7 @@ liftExpr ctx e@(Syn sr node)
   | not (hasCall defs e) = pure e
   | otherwise = case node of
       ECall f args | Map.member f defs -> do
-        args' <- mapM (\a -> if isFunctionArg a then pure a else liftExpr ctx a) args
+        args' <- mapM (liftArgWith (liftExpr ctx)) args
         (before, result) <- lift (expandCall defs sr f args')
         tell before
         pure (Syn sr (EVar result))
@@ -237,6 +259,11 @@ liftExpr ctx e@(Syn sr node)
       EBin OpOr a b | hasCall defs b -> do
         av <- bindFresh =<< liftExpr ctx a
         Syn sr . EBin OpOr (var av) <$> onlyIfNot (var av) b
+      -- (a function written in place, applied: its parameters are
+      -- declared, so that the calls in its body can be lifted)
+      ELet n v body | hasCall defs body -> do
+        nv <- bindFresh =<< liftExpr ctx v
+        liftExpr ctx (rename (Map.singleton n nv) body)
       _ -> Syn sr <$> traverse (liftExpr ctx) node
   where
     defs = ctxDefs ctx
@@ -267,6 +294,23 @@ liftExpr ctx e@(Syn sr node)
     isPlaceholder = \case
       Stmt _ (SDecl _ _ (Syn _ EZero)) -> True
       _ -> False
+
+-- | Lift the calls in a call's arguments, but not in the functions given
+-- as arguments: those are lifted where they're applied, in the body. (The
+-- arguments of @f(a, b)@ are the parts of a tuple.)
+liftArgWith :: Monad m => (Expr -> m Expr) -> Expr -> m Expr
+liftArgWith liftOne = go
+  where
+    go a@(Syn sr node) = case node of
+      _ | isFunctionArg a -> pure a
+      EPair x y -> (\x' y' -> Syn sr (EPair x' y')) <$> go x <*> go y
+      _ -> liftOne a
+
+-- | A call's arguments: the parts of the tuple of @f(a, b)@.
+argParts :: [Expr] -> [Expr]
+argParts = concatMap $ \case
+  Syn _ (EPair x y) -> argParts [x, y]
+  a -> [a]
 
 -- | A fresh internal name.
 freshName :: MonadState Int m => String -> m String
@@ -316,13 +360,24 @@ composed (Syn _ node) = case node of
 -- calls can be lifted out (see 'checkStmt').
 checkExpr :: FunctionDefs -> Expr -> TC ()
 checkExpr defs (Syn sr node) = case node of
-  ECall f args | Map.member f defs -> mapM_ (\a -> unless (isFunctionArg a) (checkExpr defs a)) args
+  ECall f args | Map.member f defs -> mapM_ (\a -> unless (isFunctionArg a) (checkExpr defs a)) (argParts args)
   EDerivCall f _ _ | Map.member f defs -> advise sr
     ("`" ++ f ++ "` is a function with a body, so it has no derivative by `" ++ f
      ++ "'`, for now. Differentiate its value instead: `y := " ++ f ++ "(x)`, then `diff(y, x)`.")
-  ECompose{} -> forM_ (composed (Syn sr node)) $ \f -> when (Map.member f defs) $ advise sr
-    ("`" ++ f ++ "` is a function with a body, so it can't be composed with `∘`, for now: \
-     \only one-line functions can.")
+  -- (a composition given to a one-line function)
+  ECall g args -> forM_ (argParts args) $ \a -> case a of
+    Syn asr ECompose{} -> do
+      forM_ (composed a) $ \f -> when (Map.member f defs) $ advise asr
+        ("`" ++ f ++ "` is a function with a body, so a composition with it can't be given to the \
+         \one-line function `" ++ g ++ "`, for now.")
+      refuseIn a $ \f -> "This composition calls `" ++ f ++ "`, a function with a body, so it can't \
+                         \be given to the one-line function `" ++ g ++ "`, for now."
+    -- (a function written in place, given to a one-line function, is
+    -- checked as it is: it can't call a function with a body)
+    _ -> checkExpr defs a
+  EDerivOf c _ _ -> forM_ (composed c) $ \f -> when (Map.member f defs) $ advise sr
+    ("`" ++ f ++ "` is a function with a body, so a composition with it has no derivative, for now. \
+     \Differentiate its value instead: `y := (...)(x)`, then `diff(y, x)`.")
   ELambda _ body -> refuseIn body $ \f ->
     "This function can't call `" ++ f ++ "`, a function with a body, for now: only a function \
     \given to a function with a body can."
@@ -341,9 +396,7 @@ checkExpr defs (Syn sr node) = case node of
     refuseIn v $ \f ->
       "The value after `else` is only used for a point off the table, so it can't call `" ++ f
       ++ "`, a function with a body, for now. Work it out first: `v := " ++ f ++ "(...)`."
-  ELet _ v body -> do
-    checkExpr defs v
-    refuseIn body $ \f -> "Here, `" ++ f ++ "`, a function with a body, can't be called, for now."
+  ELet _ v body -> checkExpr defs v >> checkExpr defs body
   _ -> mapM_ (checkExpr defs) node
   where
     refuseIn = refuseCallsIn defs

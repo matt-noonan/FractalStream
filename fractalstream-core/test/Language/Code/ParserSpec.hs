@@ -765,8 +765,31 @@ x <- d|] `shouldBe` Right 3
     it "rejects spreading a value that isn't a tuple" $
       "sub(a, b) := a - b\nsq(a) := a a\nx <- sub(sq(2))" `failsWith` "I expected a tuple"
 
-    it "rejects composing a function with a body, for now" $
-      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\nx <- (sq ∘ dbl)(1)" `failsWith` "can't be composed"
+    it "composes functions with a body, applied" $ do
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- (sq ∘ dbl)(1)" `gives` 4
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- (dbl ∘ sq)(3)" `gives` 18
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- (dbl ∘ inc ∘ dbl)(1)" `gives` 6
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- (dbl ∘ dbl)(2) + (inc ∘ dbl)(1)" `gives` 11
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- ((w -> dbl(w) + 1) ∘ inc)(1)" `gives` 5
+
+    it "applies a composition with a body only when it would run" $
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- if x > 100 then (dbl ∘ dbl)(x) else 7" `gives` 7
+
+    it "gives compositions to functions with a body, and code blocks" $ do
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ndefine ap(g):\n  x <- g(x)\nx <- 3\nrun ap(dbl ∘ inc)" `gives` 8
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ndefine ap(g):\n  x <- g(x)\nx <- 3\nrun ap(sq ∘ inc)" `gives` 16
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nfunction twice(g, a):\n  b := g(a)\n  twice <- g(b)\nx <- twice(dbl ∘ inc, 1)" `gives` 10
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nfunction h(g, v):\n  h <- g'(v)\nx <- h(sq ∘ inc, 2)" `gives` 6
+
+    it "spreads a tuple from a function with a body" $
+      "function pair(t):\n  pair <- (t, t + 1)\nsub(a, b) := a - b\nx <- (sub ∘ pair)(2) + sub(pair(5))" `gives` (-2)
+
+    it "applies a function written in place that calls a function with a body" $
+      "function dbl(a):\n  dbl <- 2 a\nfunction ap(g, v):\n  ap <- g(v) + 1\nx <- ap(w -> dbl(w) + 1, 2)" `gives` 6
+
+    it "rejects what a composition with a body can't do yet" $ do
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\nx <- (sq ∘ dbl)'(1)" `failsWith` "has no derivative"
+      "function dbl(a):\n  dbl <- 2 a\nsq(a) := a a\ninc(a) := a + 1\ntwice(g, v) := g(g(v))\nx <- twice(sq ∘ dbl, 1)" `failsWith` "can't be given to the one-line function"
 
     it "multiply when the argument is a number" $
       "h(g, v) := g(v)\nx <- h(3, 2)" `gives` 6

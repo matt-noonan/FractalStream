@@ -260,13 +260,9 @@ applyFunction tag sr fn arg = case fn of
         body' = rename (Map.fromList (zip ps names)) body
     (spread, args) <- splitArgs sr "this function" (length ps) (fresh "tuple") [arg]
     pure (foldr (\(n, a) b -> Syn sr (ELet n a b)) body' (spread ++ zip names args))
-  Syn _ ECompose{} -> advise sr notYet
+  -- (`(f ∘ g)(x)` is `f(g(x))`)
+  Syn _ (ECompose f g) -> applyFunction (tag ++ "∘") sr f =<< applyFunction (tag ++ "∘'") sr g arg
   _ -> throwError (Internal (Advice sr "applyFunction: not a function"))
-
--- (a composition is made a function written in place for one-line
--- functions only, so far)
-notYet :: String
-notYet = "A composition made with `∘` can only be given to a one-line function, for now."
 
 position :: SourceRange -> String
 position = \case
@@ -334,5 +330,9 @@ substituteFunction tag p fn = go
       Syn _ (ELambda _ _) ->
         advise sr ("Only a function of one variable can be differentiated with "
                    ++ p ++ replicate order '\'' ++ ".")
-      Syn _ ECompose{} -> advise sr notYet
+      -- (worked out where compositions are: see 'expandCalls', and
+      -- "Language.Code.FunctionBlocks")
+      Syn _ ECompose{} -> case args of
+        [arg] -> pure (Syn sr (EDerivOf fn order arg))
+        _ -> throwError (Internal (Advice sr "substituteFunction: a derivative's arguments"))
       _ -> throwError (Internal (Advice sr "substituteFunction: not a function"))
