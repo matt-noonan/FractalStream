@@ -534,6 +534,15 @@ valueAndArithGrammar funs own = mdo
         <$> funName
         <*> (length <$> some (token Prime))
         <*> ((:[]) <$> atomOrFunAp))
+    -- `g'(x)` for a parameter `g`, which is a function where it's given
+    -- one (see "Language.Code.FunctionArgs")
+    , node (EDerivCall
+        <$> tokenMatch (\case
+              Identifier n | not (reserved n), not (Set.member n funs)
+                           , not (isStdlibFunction n && free n) -> Just n
+              _ -> Nothing)
+        <*> (length <$> some (token Prime))
+        <*> ((:[]) <$> atomOrFunAp))
     , node (EBin OpMod
         <$> (builtinWord "mod" *> token OpenParen *> argument)
         <*> (token Comma *> argument <* token CloseParen))
