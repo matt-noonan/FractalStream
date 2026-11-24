@@ -87,7 +87,7 @@ spec = describe "highlighting scripts" $ do
     let src = unlines
           [ "@config \"P\"", "T : Table 3 of R", ""
           , "@viewer \"V\"", "color <- red", ""
-          , "@tool \"Fill\" for=\"V\"", "on click at p:"
+          , "@tool \"Fill\" for=\"V\"", "on click:", "  p := click"
           , "  reset T to (viewer_width, viewer_height, 2) filled with 1"
           , "  resize T to (viewer_width, viewer_height, 3)"
           , "  T @ (point p, *) <- [1, 2, 3]" ]
